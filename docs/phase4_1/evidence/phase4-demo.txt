@@ -12,4 +12,4 @@ Project SEAM Phase 4 demo completed
   bounded cache evictions: 7
   scheduler completed: 1
   scheduler cache hits: 1
-  output: "/mnt/data/project-seam-phase4_1-work/project-seam-phase4/out/phase4_1/phase4"
+  output: "/mnt/data/project-seam-phase4_1-final-work/project-seam/out/phase4_1/phase4"

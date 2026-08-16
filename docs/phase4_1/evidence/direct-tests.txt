@@ -79,7 +79,8 @@
 [PASS] phase-aligned seam remains continuous after overlap ends
 [PASS] scheduler applies a final revision gate after cache publication
 [PASS] playback transport uses command queue and consumer-owned reset epoch
+[PASS] loop and play-state changes discard already buffered future audio
 [PASS] playback feeder remains race-free under threaded transport changes
 [PASS] command transactions restore project state on apply and undo failure
 
-83 passed, 0 failed
+84 passed, 0 failed

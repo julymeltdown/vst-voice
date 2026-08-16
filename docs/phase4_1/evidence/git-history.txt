@@ -1,4 +1,12 @@
-4e90615 (HEAD -> master) fix: stabilize Phase 4 render persistence and concurrency
+64dbe1b (HEAD -> master) docs: record concurrent verification isolation
+ab05ab4 test: isolate concurrent temporary directories
+3d01343 fix: support resumable Phase 4.1 evidence collection
+3779d9f fix: validate complete Phase 4.1 evidence output
+def3f8e docs: record complete Phase 4.1 sanitizer verification
+eaab974 fix: normalize generated Phase 4.1 evidence
+debb691 docs: align Phase 4.1 verification and evidence policy
+140acf1 fix: bound frozen assets and reset buffered transport state
+4e90615 fix: stabilize Phase 4 render persistence and concurrency
 09a82b4 chore: record Phase 4 package verification
 f3400ff chore: add Phase 4 verification evidence
 1bde611 fix: make Phase 4 evidence collection resumable

@@ -45,7 +45,7 @@
       "fallback": false,
       "forced": true,
       "requestedRenderer": "classic-psola",
-      "seamAmount": 0.68000000715255737,
+      "seamAmount": 0.6800000071525574,
       "unitId": "ja.original.e4.k-i.02"
     },
     {
@@ -61,7 +61,7 @@
       "fallback": false,
       "forced": true,
       "requestedRenderer": "stretch",
-      "seamAmount": 0.68000000715255737,
+      "seamAmount": 0.6800000071525574,
       "unitId": "ja.original.g4.h-a.01"
     },
     {
@@ -69,7 +69,7 @@
       "fallback": false,
       "forced": true,
       "requestedRenderer": "raw",
-      "seamAmount": 0.68000000715255737,
+      "seamAmount": 0.6800000071525574,
       "unitId": "ja.original.a4.a-sustain.01"
     }
   ],

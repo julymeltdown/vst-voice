@@ -217,7 +217,7 @@ docs/phase4_1/evidence/phase4-playback-mix.wav
 docs/phase4_1/evidence/phase4-raw-reference.wav
 docs/phase4_1/evidence/phase4-spectrogram.pgm
 docs/phase4_1/evidence/phase4-summary.json
-docs/phase4_1/evidence/test-output.txt
+docs/phase4_1/evidence/thread-sanitizer-direct-tests.txt
 docs/phase4_1/evidence/verification-matrix.json
 docs/references/REFERENCE_LEDGER.md
 docs/ux/PHASE1_INTERACTIONS.md
@@ -348,7 +348,6 @@ libs/seam-voicebank/src/wav.cpp
 libs/seam-voicebank/src/waveform.cpp
 licenses/allowlist.yml
 licenses/denylist.yml
-scripts/__pycache__/generate_phase4_1_evidence.cpython-313.pyc
 scripts/generate_phase1_evidence.py
 scripts/generate_phase2_evidence.py
 scripts/generate_phase3_evidence.py

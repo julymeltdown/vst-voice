@@ -7,19 +7,19 @@
     "cacheEntriesStored": 16,
     "cacheMemoryEntries": 0,
     "cacheMemoryEvictions": 16,
-    "cacheStoreMs": 41.548,
+    "cacheStoreMs": 57.076,
     "callbackAudioSeconds": 12.8,
     "callbackIterations": 2400,
     "callbackUnderflowFrames": 0,
-    "playbackMs": 4.935,
-    "playbackThroughputMultiple": 2593.824,
+    "playbackMs": 5.011,
+    "playbackThroughputMultiple": 2554.558,
     "spectralIterations": 18,
-    "spectralMs": 7353.633,
-    "spectralRealTimeMultiple": 2.448,
+    "spectralMs": 7381.31,
+    "spectralRealTimeMultiple": 2.439,
     "spectralRenderedSamples": 864000,
     "stretchIterations": 80,
-    "stretchMs": 364.225,
-    "stretchRealTimeMultiple": 236.118,
+    "stretchMs": 374.756,
+    "stretchRealTimeMultiple": 229.483,
     "stretchRenderedSamples": 4128000
   },
   "branchPolicy": "master-only-pass",
@@ -30,11 +30,11 @@
   },
   "directTests": {
     "failed": 0,
-    "passed": 83
+    "passed": 84
   },
   "gitDiffCheck": "pass",
   "gitFsck": "pass",
-  "gitHeadAtEvidenceGeneration": "4e906158a237361589b3d49609d8728b503b187b",
+  "gitHeadAtEvidenceGeneration": "64dbe1ba0bf6c3264e6ff3ae9fcafd5ba912ad07",
   "licenseAudit": "pass",
   "phase": "4.1",
   "phase4Regression": {
@@ -71,7 +71,7 @@
   "threadSanitizer": {
     "configured": true,
     "directSuite": "pass",
-    "directTestCount": 83,
+    "directTestCount": 84,
     "fullCtest": "pass"
   },
   "warningsAsErrors": true

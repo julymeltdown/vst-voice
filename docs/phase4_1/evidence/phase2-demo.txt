@@ -3,8 +3,8 @@ Project SEAM Phase 2 demo completed
   selected units: 4
   raw output frames: 78405
   voicebank errors: 0
-  project: "/mnt/data/project-seam-phase4_1-work/project-seam-phase4/out/phase4_1/phase2/phase2-demo.seam.json"
-  voicebank: "/mnt/data/project-seam-phase4_1-work/project-seam-phase4/out/phase4_1/phase2/synthetic-voicebank/manifest.json"
-  audio: "/mnt/data/project-seam-phase4_1-work/project-seam-phase4/out/phase4_1/phase2/phase2-raw-phrase.wav"
-  editor evidence: "/mnt/data/project-seam-phase4_1-work/project-seam-phase4/out/phase4_1/phase2/phase2-editor.svg"
-  summary: "/mnt/data/project-seam-phase4_1-work/project-seam-phase4/out/phase4_1/phase2/phase2-summary.json"
+  project: "/mnt/data/project-seam-phase4_1-final-work/project-seam/out/phase4_1/phase2/phase2-demo.seam.json"
+  voicebank: "/mnt/data/project-seam-phase4_1-final-work/project-seam/out/phase4_1/phase2/synthetic-voicebank/manifest.json"
+  audio: "/mnt/data/project-seam-phase4_1-final-work/project-seam/out/phase4_1/phase2/phase2-raw-phrase.wav"
+  editor evidence: "/mnt/data/project-seam-phase4_1-final-work/project-seam/out/phase4_1/phase2/phase2-editor.svg"
+  summary: "/mnt/data/project-seam-phase4_1-final-work/project-seam/out/phase4_1/phase2/phase2-summary.json"
