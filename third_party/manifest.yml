@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "distributedDependencies": [],
+  "plannedOrReferenceOnly": [
+    {
+      "name": "iPlug2",
+      "source": "https://github.com/iplug2/iplug2",
+      "declaredLicense": "Zlib-like",
+      "status": "reference-only-not-vendored",
+      "purpose": "future desktop and plugin shell"
+    },
+    {
+      "name": "Skia",
+      "source": "https://github.com/google/skia",
+      "declaredLicense": "BSD-3-Clause",
+      "status": "reference-only-not-vendored",
+      "purpose": "future high-density 2D renderer"
+    },
+    {
+      "name": "OpenUtau",
+      "source": "https://github.com/openutau/OpenUtau",
+      "declaredLicense": "MIT",
+      "status": "behavioral-reference-only",
+      "purpose": "singing-editor workflow study"
+    },
+    {
+      "name": "vLabeler",
+      "source": "https://github.com/sdercolin/vlabeler",
+      "declaredLicense": "Apache-2.0",
+      "status": "behavioral-reference-only",
+      "purpose": "voicebank marker workflow study"
+    }
+  ]
+}

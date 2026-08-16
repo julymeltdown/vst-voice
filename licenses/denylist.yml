@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "deniedPatterns": [
+    "GPL-*",
+    "AGPL-*",
+    "LGPL-*",
+    "MPL-*",
+    "SSPL-*",
+    "CC-BY-NC-*",
+    "CC-BY-NC-SA-*",
+    "LicenseRef-Proprietary",
+    "UNKNOWN",
+    "NOASSERTION"
+  ]
+}

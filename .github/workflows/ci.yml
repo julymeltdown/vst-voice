@@ -1,0 +1,30 @@
+name: phase1-ci
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+jobs:
+  portable-core:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - name: Configure
+        run: cmake -S . -B build/ci -DSEAM_BUILD_TESTS=ON -DSEAM_BUILD_BENCHMARKS=ON -DSEAM_WARNINGS_AS_ERRORS=ON
+      - name: Build
+        run: cmake --build build/ci --config Debug --parallel 2
+      - name: Test
+        run: ctest --test-dir build/ci -C Debug --output-on-failure
+      - name: Master-only and license audit
+        shell: bash
+        run: |
+          python scripts/verify_master_branch.py --root .
+          python tools/license-auditor/audit.py --root .

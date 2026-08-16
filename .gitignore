@@ -1,0 +1,8 @@
+/build/
+/out/
+/.cache/
+*.tmp
+*.swp
+.DS_Store
+Thumbs.db
+compile_commands.json

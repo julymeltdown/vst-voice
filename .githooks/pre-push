@@ -1,0 +1,4 @@
+#!/bin/sh
+set -eu
+python3 scripts/verify_master_branch.py --root .
+python3 tools/license-auditor/audit.py --root .
