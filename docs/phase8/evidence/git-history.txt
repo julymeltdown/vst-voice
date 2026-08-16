@@ -1,4 +1,5 @@
-a6cd87e (HEAD -> master) feat: implement Phase 8 Windows and macOS native adapters
+43ec1d8 (HEAD -> master) chore: add Phase 8 verification evidence
+a6cd87e feat: implement Phase 8 Windows and macOS native adapters
 512a401 fix: harden Phase 7 package trust and character binding
 cb8a909 feat: implement Phase 7 signed seambank distribution
 76fbc63 feat: implement Phase 6 multichannel routing
@@ -37,4 +38,3 @@ b76f4b3 fix: clarify native adapter dependency gate
 9e32bab docs: document Phase 1 architecture and verification
 c84050a feat: add Phase 1 low-poly character directions
 533eed0 feat: implement Phase 1 editor and domain foundation
-6f5f3c1 chore: establish master-only repository and license policy

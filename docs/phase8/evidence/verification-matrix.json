@@ -27,14 +27,12 @@
     "sourceImplementation": "Win32 + native EDIT/TSF services + WASAPI output/capture",
     "sourceContract": "pass",
     "targetHostWorkflow": "configured",
-    "targetNativeGuiSmoke": "configured",
     "runtimeCertifiedInThisLinuxContainer": false
   },
   "macOS": {
     "sourceImplementation": "AppKit + NSTextInputClient + CoreAudio output/HAL capture",
     "sourceContract": "pass",
     "targetHostWorkflow": "configured",
-    "targetNativeGuiSmoke": "configured",
     "runtimeCertifiedInThisLinuxContainer": false
   },
   "characterBoundary": "presentation-only; unchanged across native backends"
