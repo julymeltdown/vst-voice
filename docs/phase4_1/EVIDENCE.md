@@ -12,6 +12,15 @@ When all build directories are already configured and current:
 python3 scripts/generate_phase4_1_evidence.py --root . --skip-build
 ```
 
+For constrained CI runners, the verification commands may be executed separately. Place the complete `direct-tests.txt`, Debug/Release/Sanitizer CTest logs, and both ThreadSanitizer logs in `docs/phase4_1/evidence/`, then collect the remaining deterministic artifacts with:
+
+```bash
+python3 scripts/generate_phase4_1_evidence.py \
+  --root . --skip-build --reuse-verification
+```
+
+Reuse mode validates every required log and refuses to assemble an incomplete evidence set.
+
 The CMake convenience target is:
 
 ```bash
