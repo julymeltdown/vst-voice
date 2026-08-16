@@ -22,6 +22,7 @@ Development uses the **`master` branch only**.
 - Immutable phoneme and deterministic Unit plans owned by the snapshot.
 - Selected Unit metadata only; unrelated Unit edits do not invalidate the Phrase.
 - SHA-256 of each selected WAV's actual bytes.
+- Decoded selected Unit audio is frozen from those same bytes, so an in-flight render cannot diverge after a file replacement.
 - Effective Raw, PSOLA, Spectral, Stretch, Pitch Curve, fallback, and Seam settings.
 - Cache identity and production rendering consume the same immutable plans.
 
@@ -94,11 +95,11 @@ Development uses the **`master` branch only**.
 Current Phase 4.1 verification:
 
 ```text
-Named tests                         83 PASS / 0 FAIL
+Named tests                         84 PASS / 0 FAIL
 Debug CTest                         6/6 PASS
 Release CTest                       6/6 PASS
 ASan + UBSan CTest                  6/6 PASS
-ThreadSanitizer targets             6/6 PASS
+ThreadSanitizer named suite         84 PASS / 0 FAIL
 Master-only policy                  PASS
 Dependency-license audit            PASS
 Git object integrity                PASS

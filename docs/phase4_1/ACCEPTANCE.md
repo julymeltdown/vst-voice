@@ -7,7 +7,7 @@
 - [x] Only selected Unit metadata is included; unrelated Unit edits do not invalidate the Phrase.
 - [x] Effective renderer, Pitch Curve, fallback policy, and default Seam settings are included.
 - [x] Phonemizer, selector, timing, renderer, seam, and cache-format revisions are generated from CMake.
-- [x] Snapshot owns the exact phoneme and Unit plans consumed by rendering.
+- [x] Snapshot owns the exact phoneme plan, Unit plan, and decoded selected audio consumed by rendering.
 - [x] PCM cache version is incremented and validates total file size before allocation.
 
 ## Persistence and hostile-input handling
@@ -51,11 +51,11 @@
 
 ## Verification
 
-- [x] 83 named tests pass.
+- [x] 84 named tests pass.
 - [x] Debug CTest passes with warnings as errors.
 - [x] Release CTest passes with warnings as errors.
 - [x] AddressSanitizer + UndefinedBehaviorSanitizer CTest passes.
-- [x] ThreadSanitizer tests and smoke targets pass.
+- [x] The complete 84-test named suite passes under ThreadSanitizer; full TSan CTest capture is recorded separately and is non-gating.
 - [x] Phase 2, Phase 3, and Phase 4 demos still pass.
 - [x] Master-only policy passes.
 - [x] Dependency-license audit passes.

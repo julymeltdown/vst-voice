@@ -100,11 +100,6 @@ def main() -> int:
     parser.add_argument("--root", type=Path, default=Path.cwd())
     parser.add_argument("--skip-build", action="store_true")
     parser.add_argument(
-        "--reuse-verification",
-        action="store_true",
-        help="Reuse existing direct/CTest logs instead of rerunning verification",
-    )
-    parser.add_argument(
         "--skip-thread-sanitizer",
         action="store_true",
         help="Skip TSan configure/build/direct-suite verification",
@@ -114,8 +109,7 @@ def main() -> int:
     root = args.root.resolve()
     evidence = root / "docs/phase4_1/evidence"
     out = root / "out/phase4_1"
-    if not args.reuse_verification:
-        shutil.rmtree(evidence, ignore_errors=True)
+    shutil.rmtree(evidence, ignore_errors=True)
     shutil.rmtree(out, ignore_errors=True)
     evidence.mkdir(parents=True, exist_ok=True)
     out.mkdir(parents=True, exist_ok=True)
@@ -124,46 +118,34 @@ def main() -> int:
     if not args.skip_thread_sanitizer:
         required_presets.append("thread-sanitize")
 
-    if not args.skip_build and not args.reuse_verification:
+    if not args.skip_build:
         for preset in required_presets:
             configure_and_build(root, preset)
 
-    if args.reuse_verification:
-        direct_path = evidence / "direct-tests.txt"
-        if not direct_path.is_file() and (evidence / "test-output.txt").is_file():
-            shutil.copy2(evidence / "test-output.txt", direct_path)
-        if not direct_path.is_file():
-            raise RuntimeError("reuse-verification requires direct-tests.txt")
-        direct_output = direct_path.read_text(encoding="utf-8")
-    else:
-        direct_output = run(
-            [str(root / "build/dev/seam_tests")],
-            root,
-            capture=True,
-            timeout_seconds=180,
-        )
-        write_log(evidence / "direct-tests.txt", direct_output)
+    direct_output = run(
+        [str(root / "build/dev/seam_tests")],
+        root,
+        capture=True,
+        timeout_seconds=180,
+    )
+    write_log(evidence / "direct-tests.txt", direct_output)
     direct_passed = parse_direct_tests(direct_output)
 
     ctest_results: dict[str, str] = {}
     for preset in ("dev", "release", "sanitize"):
         log_path = evidence / f"ctest-{preset}.txt"
-        if args.reuse_verification:
-            if not log_path.is_file():
-                raise RuntimeError(f"reuse-verification requires {log_path.name}")
-            output = log_path.read_text(encoding="utf-8")
-        else:
-            testfile = root / "build" / preset / "CTestTestfile.cmake"
-            if not testfile.is_file():
-                ctest_results[preset] = "not-configured"
-                continue
-            output = run(
-                ["ctest", "--preset", preset, "--output-on-failure"],
-                root,
-                capture=True,
-                timeout_seconds=600,
+        testfile = root / "build" / preset / "CTestTestfile.cmake"
+        if not testfile.is_file():
+            raise RuntimeError(
+                f"required CTest preset is not configured: {preset}"
             )
-            write_log(log_path, output)
+        output = run(
+            ["ctest", "--preset", preset, "--output-on-failure"],
+            root,
+            capture=True,
+            timeout_seconds=600,
+        )
+        write_log(log_path, output)
         if not ctest_passed(output):
             raise RuntimeError(f"{preset} CTest output did not record a full pass")
         ctest_results[preset] = "pass"
@@ -174,45 +156,51 @@ def main() -> int:
         "fullCtest": "not-run",
     }
     tsan_binary = root / "build/thread-sanitize/seam_tests"
-    if not args.skip_thread_sanitizer and tsan_binary.is_file():
+    if not args.skip_thread_sanitizer and not tsan_binary.is_file():
+        raise RuntimeError(
+            "ThreadSanitizer named-suite binary is required but is not built"
+        )
+    if not args.skip_thread_sanitizer:
         tsan["configured"] = True
-        if args.reuse_verification:
-            tsan_log = evidence / "ctest-thread-sanitize.txt"
-            if not tsan_log.is_file():
-                raise RuntimeError("reuse-verification requires ctest-thread-sanitize.txt")
-            full_tsan_output = tsan_log.read_text(encoding="utf-8")
-            if "TSAN_RESULT=PASS" not in full_tsan_output:
-                raise RuntimeError("TSan evidence does not record TSAN_RESULT=PASS")
-            tsan["directTestCount"] = direct_passed
-            tsan["directSuite"] = "pass"
-            tsan["fullCtest"] = "pass"
-        else:
-            tsan_output = run(
-                [str(tsan_binary)],
+        tsan_output = run(
+            [str(tsan_binary)],
+            root,
+            capture=True,
+            timeout_seconds=300,
+        )
+        write_log(evidence / "thread-sanitizer-direct-tests.txt", tsan_output)
+        tsan_direct_count = parse_direct_tests(tsan_output)
+        if tsan_direct_count != direct_passed:
+            raise RuntimeError(
+                "ThreadSanitizer named-suite count does not match the development suite"
+            )
+        tsan["directTestCount"] = tsan_direct_count
+        tsan["directSuite"] = "pass"
+
+        try:
+            full_tsan_output = run(
+                ["ctest", "--preset", "thread-sanitize", "--output-on-failure"],
                 root,
                 capture=True,
-                timeout_seconds=300,
+                timeout_seconds=120,
             )
-            write_log(evidence / "thread-sanitizer-direct-tests.txt", tsan_output)
-            tsan["directTestCount"] = parse_direct_tests(tsan_output)
-            tsan["directSuite"] = "pass"
-
-            try:
-                full_tsan_output = run(
-                    ["ctest", "--preset", "thread-sanitize", "--output-on-failure"],
-                    root,
-                    capture=True,
-                    timeout_seconds=360,
-                )
-                write_log(evidence / "ctest-thread-sanitize.txt", full_tsan_output)
-                tsan["fullCtest"] = "pass" if ctest_passed(full_tsan_output) else "incomplete"
-            except CommandTimeout as error:
-                write_log(
-                    evidence / "ctest-thread-sanitize.txt",
-                    error.output
-                    + f"\n[phase4.1-evidence] timed out after {error.timeout_seconds}s",
-                )
-                tsan["fullCtest"] = "timeout-non-gating"
+            write_log(evidence / "ctest-thread-sanitize.txt", full_tsan_output)
+            tsan["fullCtest"] = (
+                "pass" if ctest_passed(full_tsan_output) else "incomplete-non-gating"
+            )
+        except CommandTimeout as error:
+            write_log(
+                evidence / "ctest-thread-sanitize.txt",
+                error.output
+                + f"\n[phase4.1-evidence] timed out after {error.timeout_seconds}s",
+            )
+            tsan["fullCtest"] = "timeout-non-gating"
+        except RuntimeError as error:
+            write_log(
+                evidence / "ctest-thread-sanitize.txt",
+                f"{error}\n[phase4.1-evidence] optional full TSan CTest failed",
+            )
+            tsan["fullCtest"] = "failed-non-gating"
 
     phase_smokes: dict[str, str] = {}
     for phase in (2, 3, 4):

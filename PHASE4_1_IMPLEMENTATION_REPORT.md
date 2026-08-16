@@ -309,16 +309,18 @@ A new `tests/test_stabilization.cpp` suite covers:
 3. exact `int64_t`, Unicode surrogate pairs, and JSON budgets;
 4. atomic-write fault injection;
 5. selected WAV and effective-option render identity;
-6. voicebank symlink escape rejection;
-7. PCM declared-payload guard before allocation;
-8. Spectral/Stretch transition preservation;
-9. seam continuity after overlap;
-10. scheduler final-revision race;
-11. playback command queue and reset epoch;
-12. threaded feeder/control stress under ThreadSanitizer;
-13. command apply/undo transaction restoration.
+6. frozen selected audio remains stable after an on-disk WAV replacement;
+7. voicebank symlink escape rejection;
+8. PCM declared-payload guard before allocation;
+9. Spectral/Stretch transition preservation;
+10. seam continuity after overlap;
+11. scheduler final-revision race;
+12. playback command queue and reset epoch;
+13. loop/play-state queued-audio invalidation;
+14. threaded feeder/control stress under ThreadSanitizer;
+15. command apply/undo transaction restoration.
 
-The named test count increased from 70 to 83.
+The named test count increased from 70 to 84.
 
 Build presets now include:
 
