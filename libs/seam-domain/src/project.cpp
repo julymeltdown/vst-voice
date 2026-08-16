@@ -274,6 +274,22 @@ core::Result<void> Project::validate() const {
     return core::failure(core::ErrorCode::InvariantViolation,
                          "Project snap grid must be positive");
   }
+  const auto routingValidation = routing_.validate();
+  if (!routingValidation) return routingValidation;
+
+  const auto validateTrackRoute = [this](const TrackOutputRoute& route,
+                                         TrackId trackId) -> core::Result<void> {
+    const auto routeValidation = route.validate();
+    if (!routeValidation) return routeValidation;
+    const auto* bus = routing_.findBus(route.bus);
+    if (bus == nullptr || route.matrix.sourceChannels != 1U ||
+        route.matrix.destinationChannels != bus->channelCount) {
+      return core::failure(core::ErrorCode::InvariantViolation,
+                           "Track output route does not match its destination bus",
+                           trackId.toString());
+    }
+    return core::success();
+  };
 
   std::unordered_set<TrackId> trackIds;
   std::unordered_set<RegionId> regionIds;
@@ -288,6 +304,8 @@ core::Result<void> Project::validate() const {
       return core::failure(core::ErrorCode::InvariantViolation,
                            "Track mix settings are invalid", track.id.toString());
     }
+    const auto routeValidation = validateTrackRoute(track.outputRoute, track.id);
+    if (!routeValidation) return routeValidation;
     for (const auto& region : track.regions) {
       if (!regionIds.insert(region.id).second) {
         return core::failure(core::ErrorCode::InvariantViolation,
@@ -310,6 +328,13 @@ core::Result<void> Project::validate() const {
       return core::failure(core::ErrorCode::InvariantViolation,
                            "Audio track ID must be valid and unique");
     }
+    if (!std::isfinite(track.gainDb) || !std::isfinite(track.pan) ||
+        track.pan < -1.0F || track.pan > 1.0F) {
+      return core::failure(core::ErrorCode::InvariantViolation,
+                           "Audio track mix settings are invalid", track.id.toString());
+    }
+    const auto routeValidation = validateTrackRoute(track.outputRoute, track.id);
+    if (!routeValidation) return routeValidation;
   }
   return core::success();
 }

@@ -26,6 +26,9 @@ void ProjectFactory::synchronizeWith(const domain::Project& project) noexcept {
   for (const auto& track : project.audioTracks()) {
     observe(track.id.value());
   }
+  for (const auto& bus : project.routing().buses) {
+    observe(bus.id.value());
+  }
   ids_.reserveAtLeast(maximum == std::numeric_limits<std::uint64_t>::max()
                           ? maximum
                           : maximum + 1U);

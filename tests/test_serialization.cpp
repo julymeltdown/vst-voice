@@ -97,9 +97,9 @@ TEST_CASE("project decoder migrates schema one regions without phoneme overrides
   const auto encoded = codec.encode(project);
   CHECK(encoded);
   auto legacy = encoded.value();
-  const auto schemaPosition = legacy.find("\"schemaVersion\": 3");
+  const auto schemaPosition = legacy.find("\"schemaVersion\": 4");
   CHECK(schemaPosition != std::string::npos);
-  legacy.replace(schemaPosition, std::string{"\"schemaVersion\": 3"}.size(),
+  legacy.replace(schemaPosition, std::string{"\"schemaVersion\": 4"}.size(),
                  "\"schemaVersion\": 1");
   for (const auto field : {"phonemeOverrides", "unitSelectionOverrides",
                            "seamOverrides", "pitchAutomation"}) {

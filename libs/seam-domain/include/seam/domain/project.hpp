@@ -5,6 +5,7 @@
 #include "seam/domain/note.hpp"
 #include "seam/domain/phoneme.hpp"
 #include "seam/domain/render_controls.hpp"
+#include "seam/domain/routing.hpp"
 #include "seam/time/meter_map.hpp"
 #include "seam/time/tempo_map.hpp"
 
@@ -81,6 +82,7 @@ struct VocalTrack final {
   float pan{0.0F};
   bool muted{false};
   bool solo{false};
+  TrackOutputRoute outputRoute{};
 
   [[nodiscard]] VocalRegion* findRegion(RegionId regionId) noexcept;
   [[nodiscard]] const VocalRegion* findRegion(RegionId regionId) const noexcept;
@@ -94,7 +96,10 @@ struct AudioTrack final {
   std::string mediaPath;
   time::Tick startTick;
   float gainDb{0.0F};
+  float pan{0.0F};
   bool muted{false};
+  bool solo{false};
+  TrackOutputRoute outputRoute{};
 
   friend bool operator==(const AudioTrack&, const AudioTrack&) = default;
 };
@@ -115,6 +120,8 @@ public:
   [[nodiscard]] const time::MeterMap& meterMap() const noexcept { return meterMap_; }
   [[nodiscard]] ProjectSettings& settings() noexcept { return settings_; }
   [[nodiscard]] const ProjectSettings& settings() const noexcept { return settings_; }
+  [[nodiscard]] ProjectRouting& routing() noexcept { return routing_; }
+  [[nodiscard]] const ProjectRouting& routing() const noexcept { return routing_; }
 
   [[nodiscard]] std::vector<VocalTrack>& vocalTracks() noexcept { return vocalTracks_; }
   [[nodiscard]] const std::vector<VocalTrack>& vocalTracks() const noexcept { return vocalTracks_; }
@@ -139,6 +146,7 @@ private:
   time::TempoMap tempoMap_;
   time::MeterMap meterMap_;
   ProjectSettings settings_;
+  ProjectRouting routing_;
   std::vector<VocalTrack> vocalTracks_;
   std::vector<AudioTrack> audioTracks_;
 };

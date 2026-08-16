@@ -840,6 +840,7 @@ int main(int argc, char** argv) {
         .frameCount = callbackFrames,
         .left = callbackLeft,
         .right = callbackRight,
+        .outputs = {},
     });
     for (std::size_t frame = 0U; frame < callbackFrames; ++frame) {
       callbackCapture.push_back(callbackLeft[frame]);

@@ -1,4 +1,4 @@
-# Project SEAM — Phase 5.1 native product surfaces
+# Project SEAM — Phase 6 multichannel routing
 
 Project SEAM is a C++20 sample-concatenative singing-voice editor. Phoneme boundaries, source-unit changes, pitch-shift artifacts, and sample seams are editable musical material rather than defects that must always be hidden.
 
@@ -10,9 +10,36 @@ This repository contains:
 - Phase 4 multi-renderer synthesis, Unit/Sample inspection, callback-ready playback, and bounded cache;
 - Phase 4.1 correctness, durability, security, and concurrency stabilization;
 - Phase 5 native standalone/runtime vertical slice;
-- completed **Phase 5.1 native product surfaces, Character 01 integration, graphical Voicebank Studio, and recording transport**.
+- completed **Phase 5.1 native product surfaces, Character 01 integration, graphical Voicebank Studio, and recording transport**;
+- completed **Phase 6 persisted multichannel project routing and callback delivery for 1–8 output channels**.
 
 Development uses the **`master` branch only**.
+
+
+## Phase 6 implementation
+
+### Persisted project routing graph
+
+- Project JSON schema 4 persists buses, sends, track-output matrices, a master bus, and device-output routes.
+- Schemas 1–3 migrate to the former stereo behavior.
+- Matrices are explicit row-major destination-channel × source-channel maps.
+- Routing validation rejects missing buses, duplicate IDs, dimension mismatches, invalid master buses, and cycles.
+- Topological ordering is deterministic, so identical routing state produces identical processing order.
+
+### Multichannel render and playback
+
+- `RoutedPlaybackTimeline` mixes mono or interleaved 1–8 channel clips into preallocated bus workspaces.
+- Bus gain, mute, solo, and downstream sends are applied before device mapping.
+- `SpscInterleavedAudioRingBuffer` preserves complete multichannel frames rather than independent samples.
+- `MultichannelPlaybackFeederService` retains the Phase 4.1 control-queue and consumer-owned reset-epoch contract.
+- `MultichannelRingBufferAudioProcessor` deinterleaves callback PCM into 1–8 device channel views without allocation, locks, file I/O, or routing-graph traversal in the callback.
+- Linux PulseAudio and the deterministic threaded device adapter accept 1–8 output channels.
+
+### Phase 6 evidence
+
+`seam_phase6_demo` constructs a real four-channel graph: vocal stereo is routed to device channels 1–2 and backing stereo to channels 3–4. It exports the schema-4 project and a four-channel WAV, then passes the same content through the feeder, interleaved ring, and callback processor.
+
+See [`docs/phase6/IMPLEMENTATION_REPORT.md`](docs/phase6/IMPLEMENTATION_REPORT.md), [`docs/phase6/ACCEPTANCE.md`](docs/phase6/ACCEPTANCE.md), and [`docs/formats/PROJECT_JSON_V4.md`](docs/formats/PROJECT_JSON_V4.md).
 
 
 ## Phase 5.1 implementation
@@ -156,15 +183,14 @@ seam_phase5_benchmark   software paint and callback regression benchmark
 
 ## Verification
 
-Current Phase 5.1 verification is generated under `docs/phase5_1/evidence/`. The named suite contains 98 tests; CTest additionally covers the headless demo, native editor X11/Xvfb smoke test, and graphical Voicebank Studio X11/Xvfb smoke test.
+Phase 6 extends the named suite to cover routing-graph validation, four-channel bus/device mapping, multichannel feeder/ring/callback order, and schema-4 round trips. CTest additionally covers the Phase 6 four-channel smoke path, the prior headless demos, native editor X11/Xvfb smoke test, and graphical Voicebank Studio X11/Xvfb smoke test.
 
 ```text
-Named tests                         98 PASS / 0 FAIL
-Debug CTest                          9/9 PASS
-Release CTest                        9/9 PASS
-ASan + UBSan CTest                   9/9 PASS
-ThreadSanitizer named suite         98 PASS / 0 FAIL
-ThreadSanitizer split CTest          9/9 PASS
+Named tests                        102 PASS / 0 FAIL
+Debug CTest                         10/10 PASS
+Release CTest                       10/10 PASS
+ASan + UBSan CTest                  10/10 PASS
+ThreadSanitizer coverage             pending Phase 6 evidence refresh
 Master-only policy                  PASS
 Dependency-license audit            PASS
 Git object integrity                PASS
@@ -174,18 +200,17 @@ All configured builds use warnings as errors.
 
 ## Honest current boundary
 
-Phase 5.1 now contains real Linux/X11 native editing lanes, the canonical Character 01 runtime/product binding, a graphical Voicebank Studio, and microphone-input/recording infrastructure. The repository still does **not** claim:
+Phase 6 now contains real persisted 1–8 channel routing, bus/send processing, device mapping, a multichannel feeder/ring/callback path, and four-channel evidence. The repository still does **not** claim:
 
-- Windows shell, TSF, or WASAPI verification;
-- macOS AppKit, NSTextInputClient, or CoreAudio verification;
+- signed/installable `.seambank` packages;
+- Windows shell, TSF, or WASAPI runtime verification;
+- macOS AppKit, NSTextInputClient, or CoreAudio runtime verification;
 - audited iPlug2 + Skia production integration;
 - production CJK font shaping/rasterization in the first-party software painter;
-- true stereo/multichannel project bus routing;
 - a contracted human-recorded commercial voicebank;
-- signed/installable `.seambank` packages;
 - CLAP, VST3, or AU targets.
 
-Those items are separate platform, distribution, and content-production phases. They are not represented by fake placeholders. Character 01 is intentionally already integrated because its product role can be implemented and verified independently of those future platform targets.
+Those items are separate distribution, platform, and content-production phases. They are not represented by fake placeholders. Character 01 remains an optional product surface and voicebank binding; it does not participate in routing, synthesis, cache identity, or exported PCM.
 
 ## Build
 
@@ -213,6 +238,21 @@ ThreadSanitizer:
 cmake --preset thread-sanitize
 cmake --build --preset thread-sanitize
 ctest --preset thread-sanitize --output-on-failure
+```
+
+
+## Run the Phase 6 multichannel vertical slice
+
+```bash
+./build/dev/seam_phase6_demo --output out/phase6
+```
+
+Key output:
+
+```text
+out/phase6/phase6-routing-project.json
+out/phase6/phase6-four-channel-routing.wav
+out/phase6/phase6-summary.json
 ```
 
 ## Run the Phase 5 native runtime
@@ -308,6 +348,9 @@ git config core.hooksPath .githooks
 
 ## Documentation
 
+- [`docs/phase6/IMPLEMENTATION_REPORT.md`](docs/phase6/IMPLEMENTATION_REPORT.md)
+- [`docs/phase6/ACCEPTANCE.md`](docs/phase6/ACCEPTANCE.md)
+- [`docs/formats/PROJECT_JSON_V4.md`](docs/formats/PROJECT_JSON_V4.md)
 - [`PHASE5_IMPLEMENTATION_REPORT.md`](PHASE5_IMPLEMENTATION_REPORT.md)
 - [`docs/architecture/PHASE5_NATIVE_RUNTIME.md`](docs/architecture/PHASE5_NATIVE_RUNTIME.md)
 - [`docs/phase5/ACCEPTANCE.md`](docs/phase5/ACCEPTANCE.md)

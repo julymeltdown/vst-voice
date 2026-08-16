@@ -1,8 +1,11 @@
 #include "seam/platform/audio_device.hpp"
 
+#include "seam/domain/routing.hpp"
+
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <span>
 #include <stop_token>
 #include <thread>
 #include <vector>
@@ -19,9 +22,10 @@ core::Result<void> validateConfig(const AudioDeviceConfig& config) {
     return core::failure(core::ErrorCode::InvalidArgument,
                          "Audio block size is outside the supported range");
   }
-  if (config.outputChannels == 0U || config.outputChannels > 2U) {
+  if (config.outputChannels == 0U ||
+      config.outputChannels > domain::kMaximumAudioChannels) {
     return core::failure(core::ErrorCode::Unsupported,
-                         "Phase 5 audio devices support mono or stereo output");
+                         "Audio output channel count is outside the supported range");
   }
   return core::success();
 }
@@ -40,8 +44,11 @@ public:
     if (!valid) return valid;
     config_ = config;
     processor_ = &processor;
-    left_.assign(config.blockFrames, 0.0F);
-    right_.assign(config.blockFrames, 0.0F);
+    channels_.assign(config.outputChannels,
+                     std::vector<float>(config.blockFrames, 0.0F));
+    outputViews_.clear();
+    outputViews_.reserve(channels_.size());
+    for (auto& channel : channels_) outputViews_.emplace_back(channel);
     opened_ = true;
     return core::success();
   }
@@ -69,8 +76,10 @@ public:
           processor_->process(AudioProcessContext{
               .sampleRate = static_cast<double>(config_.sampleRate),
               .frameCount = config_.blockFrames,
-              .left = left_,
-              .right = right_,
+              .left = outputViews_.empty() ? std::span<float>{} : outputViews_[0],
+              .right = outputViews_.size() < 2U ? std::span<float>{}
+                                                : outputViews_[1],
+              .outputs = outputViews_,
           });
           callbacks_.fetch_add(1U, std::memory_order_relaxed);
           frames_.fetch_add(config_.blockFrames, std::memory_order_relaxed);
@@ -126,8 +135,8 @@ public:
 private:
   AudioDeviceConfig config_;
   IAudioProcessor* processor_{nullptr};
-  std::vector<float> left_;
-  std::vector<float> right_;
+  std::vector<std::vector<float>> channels_;
+  std::vector<std::span<float>> outputViews_;
   std::jthread worker_;
   std::atomic<bool> running_{false};
   std::atomic<std::uint64_t> callbacks_{0U};

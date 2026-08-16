@@ -1,4 +1,5 @@
 #include "seam/platform/audio_device.hpp"
+#include "seam/domain/routing.hpp"
 
 #if defined(SEAM_AUDIO_PULSE)
 
@@ -125,9 +126,10 @@ core::Result<void> validateConfig(const AudioDeviceConfig& config) {
     return core::failure(core::ErrorCode::InvalidArgument,
                          "Audio block size is outside the supported range");
   }
-  if (config.outputChannels == 0U || config.outputChannels > 2U) {
+  if (config.outputChannels == 0U ||
+      config.outputChannels > domain::kMaximumAudioChannels) {
     return core::failure(core::ErrorCode::Unsupported,
-                         "PulseAudio adapter supports mono or stereo output");
+                         "PulseAudio adapter channel count is outside the supported range");
   }
   return core::success();
 }
@@ -175,8 +177,11 @@ public:
     }
     config_ = config;
     processor_ = &processor;
-    left_.assign(config.blockFrames, 0.0F);
-    right_.assign(config.blockFrames, 0.0F);
+    channels_.assign(config.outputChannels,
+                     std::vector<float>(config.blockFrames, 0.0F));
+    outputViews_.clear();
+    outputViews_.reserve(channels_.size());
+    for (auto& channel : channels_) outputViews_.emplace_back(channel);
     interleaved_.assign(config.blockFrames * config.outputChannels, 0);
     opened_ = true;
     return core::success();
@@ -199,13 +204,16 @@ public:
           processor_->process(AudioProcessContext{
               .sampleRate = static_cast<double>(config_.sampleRate),
               .frameCount = config_.blockFrames,
-              .left = left_,
-              .right = right_,
+              .left = outputViews_.empty() ? std::span<float>{} : outputViews_[0],
+              .right = outputViews_.size() < 2U ? std::span<float>{}
+                                                : outputViews_[1],
+              .outputs = outputViews_,
           });
           for (std::size_t frame = 0U; frame < config_.blockFrames; ++frame) {
-            interleaved_[frame * config_.outputChannels] = floatToS16(left_[frame]);
-            if (config_.outputChannels == 2U) {
-              interleaved_[frame * 2U + 1U] = floatToS16(right_[frame]);
+            for (std::uint8_t channel = 0U; channel < config_.outputChannels;
+                 ++channel) {
+              interleaved_[frame * config_.outputChannels + channel] =
+                  floatToS16(channels_[channel][frame]);
             }
           }
           int error = 0;
@@ -280,8 +288,8 @@ private:
   PulseSimple* handle_{nullptr};
   AudioDeviceConfig config_;
   IAudioProcessor* processor_{nullptr};
-  std::vector<float> left_;
-  std::vector<float> right_;
+  std::vector<std::vector<float>> channels_;
+  std::vector<std::span<float>> outputViews_;
   std::vector<std::int16_t> interleaved_;
   std::jthread worker_;
   std::atomic<bool> running_{false};

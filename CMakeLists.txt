@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.25)
 
-project(ProjectSEAM VERSION 0.5.1 LANGUAGES CXX)
+project(ProjectSEAM VERSION 0.6.0 LANGUAGES CXX)
 
 option(SEAM_BUILD_TESTS "Build Project SEAM tests" ON)
 option(SEAM_BUILD_BENCHMARKS "Build Project SEAM benchmarks" ON)
@@ -51,6 +51,7 @@ add_library(seam_domain
   libs/seam-domain/src/note.cpp
   libs/seam-domain/src/phoneme.cpp
   libs/seam-domain/src/render_controls.cpp
+  libs/seam-domain/src/routing.cpp
   libs/seam-domain/src/project.cpp
 )
 target_include_directories(seam_domain PUBLIC libs/seam-domain/include)
@@ -148,6 +149,9 @@ add_library(seam_rendering
   libs/seam-rendering/src/render_pipeline.cpp
   libs/seam-rendering/src/pcm_cache.cpp
   libs/seam-rendering/src/audio_ring_buffer.cpp
+  libs/seam-rendering/src/interleaved_audio_ring_buffer.cpp
+  libs/seam-rendering/src/multichannel_routing.cpp
+  libs/seam-rendering/src/multichannel_playback.cpp
   libs/seam-rendering/src/playback_engine.cpp
   libs/seam-rendering/src/playback_feeder_service.cpp
   libs/seam-rendering/src/stale_audio_store.cpp
@@ -220,6 +224,7 @@ endif()
 
 add_library(seam_playback_platform
   libs/seam-platform/src/ring_buffer_processor.cpp
+  libs/seam-platform/src/multichannel_ring_buffer_processor.cpp
 )
 target_include_directories(seam_playback_platform PUBLIC libs/seam-platform/include)
 target_link_libraries(seam_playback_platform PUBLIC
@@ -270,6 +275,13 @@ if(SEAM_BUILD_NATIVE_DESKTOP)
   seam_apply_compiler_options(seam_voicebank_studio_native)
 endif()
 
+
+add_executable(seam_phase6_demo apps/seam-phase6-demo/main.cpp)
+target_link_libraries(seam_phase6_demo PRIVATE
+  seam_playback_platform seam_platform seam_rendering seam_formats
+  seam_voicebank seam_domain seam_core)
+seam_apply_compiler_options(seam_phase6_demo)
+
 add_executable(seam_voicebank_cli apps/seam-voicebank-cli/main.cpp)
 target_link_libraries(seam_voicebank_cli PRIVATE
   seam_voicebank seam_formats seam_domain seam_core)
@@ -297,6 +309,7 @@ if(SEAM_BUILD_TESTS)
     tests/test_rendering.cpp
     tests/test_inspection.cpp
     tests/test_stabilization.cpp
+    tests/test_multichannel.cpp
   )
   if(SEAM_BUILD_NATIVE_DESKTOP)
     list(APPEND SEAM_TEST_SOURCES
@@ -320,6 +333,8 @@ if(SEAM_BUILD_TESTS)
     COMMAND seam_phase3_demo --output ${CMAKE_BINARY_DIR}/phase3-smoke)
   add_test(NAME seam_phase4_demo_smoke
     COMMAND seam_phase4_demo --output ${CMAKE_BINARY_DIR}/phase4-smoke)
+  add_test(NAME seam_phase6_demo_smoke
+    COMMAND seam_phase6_demo --output ${CMAKE_BINARY_DIR}/phase6-smoke)
   add_test(NAME seam_voicebank_cli_help COMMAND seam_voicebank_cli --help)
   add_test(NAME seam_voicebank_cli_validate
     COMMAND seam_voicebank_cli validate

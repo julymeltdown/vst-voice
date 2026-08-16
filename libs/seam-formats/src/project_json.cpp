@@ -117,6 +117,257 @@ domain::CharacterDisplayMode parseCharacterMode(std::string_view value) {
   return domain::CharacterDisplayMode::Minimal;
 }
 
+JsonValue encodeRoutingMatrix(const domain::RoutingMatrix& matrix) {
+  Array gains;
+  gains.reserve(matrix.gains.size());
+  for (const auto gain : matrix.gains) {
+    gains.emplace_back(static_cast<double>(gain));
+  }
+  return JsonValue{Object{
+      {"sourceChannels", JsonValue{static_cast<std::int64_t>(matrix.sourceChannels)}},
+      {"destinationChannels", JsonValue{static_cast<std::int64_t>(matrix.destinationChannels)}},
+      {"gains", JsonValue{std::move(gains)}},
+  }};
+}
+
+core::Result<domain::RoutingMatrix> decodeRoutingMatrix(
+    const JsonValue& value, std::string_view field) {
+  if (!value.isObject()) {
+    return core::failure<domain::RoutingMatrix>(core::ErrorCode::ParseError,
+        std::string(field) + " must be an object");
+  }
+  const auto* sourceChannels = value.find("sourceChannels");
+  const auto* destinationChannels = value.find("destinationChannels");
+  const auto* gains = value.find("gains");
+  if (sourceChannels == nullptr || destinationChannels == nullptr || gains == nullptr ||
+      !sourceChannels->isNumber() || !destinationChannels->isNumber() || !gains->isArray()) {
+    return core::failure<domain::RoutingMatrix>(core::ErrorCode::ParseError,
+        std::string(field) + " fields are invalid");
+  }
+  const auto sourceValue = sourceChannels->asInt64();
+  const auto destinationValue = destinationChannels->asInt64();
+  if (sourceValue <= 0 || sourceValue > domain::kMaximumAudioChannels ||
+      destinationValue <= 0 || destinationValue > domain::kMaximumAudioChannels) {
+    return core::failure<domain::RoutingMatrix>(core::ErrorCode::ParseError,
+        std::string(field) + " channel count is invalid");
+  }
+  domain::RoutingMatrix matrix{
+      .sourceChannels = static_cast<std::uint8_t>(sourceValue),
+      .destinationChannels = static_cast<std::uint8_t>(destinationValue),
+      .gains = {},
+  };
+  matrix.gains.reserve(gains->asArray().size());
+  for (const auto& gain : gains->asArray()) {
+    if (!gain.isNumber()) {
+      return core::failure<domain::RoutingMatrix>(core::ErrorCode::ParseError,
+          std::string(field) + " contains a non-numeric gain");
+    }
+    matrix.gains.push_back(static_cast<float>(gain.asNumber()));
+  }
+  const auto validation = matrix.validate();
+  if (!validation) return core::Result<domain::RoutingMatrix>{validation.error()};
+  return matrix;
+}
+
+JsonValue encodeTrackOutputRoute(const domain::TrackOutputRoute& route) {
+  return JsonValue{Object{
+      {"busId", idValue(route.bus)},
+      {"matrix", encodeRoutingMatrix(route.matrix)},
+  }};
+}
+
+core::Result<domain::TrackOutputRoute> decodeTrackOutputRoute(
+    const JsonValue& value, std::string_view field) {
+  if (!value.isObject()) {
+    return core::failure<domain::TrackOutputRoute>(core::ErrorCode::ParseError,
+        std::string(field) + " must be an object");
+  }
+  const auto* busId = value.find("busId");
+  const auto* matrix = value.find("matrix");
+  if (busId == nullptr || matrix == nullptr) {
+    return core::failure<domain::TrackOutputRoute>(core::ErrorCode::ParseError,
+        std::string(field) + " is incomplete");
+  }
+  auto parsedBus = parseId<domain::BusTag>(*busId, "outputRoute.busId");
+  if (!parsedBus) return core::Result<domain::TrackOutputRoute>{parsedBus.error()};
+  auto parsedMatrix = decodeRoutingMatrix(*matrix, "outputRoute.matrix");
+  if (!parsedMatrix) return core::Result<domain::TrackOutputRoute>{parsedMatrix.error()};
+  domain::TrackOutputRoute result{
+      .bus = parsedBus.value(),
+      .matrix = std::move(parsedMatrix.value()),
+  };
+  const auto validation = result.validate();
+  if (!validation) return core::Result<domain::TrackOutputRoute>{validation.error()};
+  return result;
+}
+
+JsonValue encodeRouting(const domain::ProjectRouting& routing) {
+  Array buses;
+  for (const auto& bus : routing.buses) {
+    buses.emplace_back(Object{
+        {"id", idValue(bus.id)},
+        {"name", JsonValue{bus.name}},
+        {"channelCount", JsonValue{static_cast<std::int64_t>(bus.channelCount)}},
+        {"gainDb", JsonValue{static_cast<double>(bus.gainDb)}},
+        {"muted", JsonValue{bus.muted}},
+        {"solo", JsonValue{bus.solo}},
+    });
+  }
+  Array sends;
+  for (const auto& send : routing.sends) {
+    sends.emplace_back(Object{
+        {"sourceBus", idValue(send.sourceBus)},
+        {"destinationBus", idValue(send.destinationBus)},
+        {"matrix", encodeRoutingMatrix(send.matrix)},
+        {"gainDb", JsonValue{static_cast<double>(send.gainDb)}},
+        {"enabled", JsonValue{send.enabled}},
+    });
+  }
+  Array deviceRoutes;
+  for (const auto& route : routing.deviceRoutes) {
+    deviceRoutes.emplace_back(Object{
+        {"sourceBus", idValue(route.sourceBus)},
+        {"matrix", encodeRoutingMatrix(route.matrix)},
+        {"gainDb", JsonValue{static_cast<double>(route.gainDb)}},
+        {"enabled", JsonValue{route.enabled}},
+    });
+  }
+  return JsonValue{Object{
+      {"deviceOutputChannels", JsonValue{static_cast<std::int64_t>(routing.deviceOutputChannels)}},
+      {"masterBus", idValue(routing.masterBus)},
+      {"buses", JsonValue{std::move(buses)}},
+      {"sends", JsonValue{std::move(sends)}},
+      {"deviceRoutes", JsonValue{std::move(deviceRoutes)}},
+  }};
+}
+
+core::Result<domain::ProjectRouting> decodeRouting(const JsonValue& value) {
+  if (!value.isObject()) {
+    return core::failure<domain::ProjectRouting>(core::ErrorCode::ParseError,
+                                                 "Project routing must be an object");
+  }
+  const auto* deviceChannels = value.find("deviceOutputChannels");
+  const auto* masterBus = value.find("masterBus");
+  const auto* buses = value.find("buses");
+  const auto* sends = value.find("sends");
+  const auto* deviceRoutes = value.find("deviceRoutes");
+  if (deviceChannels == nullptr || masterBus == nullptr || buses == nullptr ||
+      sends == nullptr || deviceRoutes == nullptr || !deviceChannels->isNumber() ||
+      !masterBus->isString() || !buses->isArray() || !sends->isArray() ||
+      !deviceRoutes->isArray()) {
+    return core::failure<domain::ProjectRouting>(core::ErrorCode::ParseError,
+                                                 "Project routing fields are invalid");
+  }
+  const auto channelValue = deviceChannels->asInt64();
+  if (channelValue <= 0 || channelValue > domain::kMaximumAudioChannels) {
+    return core::failure<domain::ProjectRouting>(core::ErrorCode::ParseError,
+                                                 "Device output channel count is invalid");
+  }
+  auto parsedMaster = parseId<domain::BusTag>(*masterBus, "routing.masterBus");
+  if (!parsedMaster) return core::Result<domain::ProjectRouting>{parsedMaster.error()};
+
+  domain::ProjectRouting routing;
+  routing.deviceOutputChannels = static_cast<std::uint8_t>(channelValue);
+  routing.masterBus = parsedMaster.value();
+  routing.buses.clear();
+  routing.sends.clear();
+  routing.deviceRoutes.clear();
+
+  for (const auto& busValue : buses->asArray()) {
+    if (!busValue.isObject()) {
+      return core::failure<domain::ProjectRouting>(core::ErrorCode::ParseError,
+                                                   "Audio bus must be an object");
+    }
+    const auto* id = busValue.find("id");
+    const auto* name = busValue.find("name");
+    const auto* channels = busValue.find("channelCount");
+    const auto* gainDb = busValue.find("gainDb");
+    const auto* muted = busValue.find("muted");
+    const auto* solo = busValue.find("solo");
+    if (id == nullptr || name == nullptr || channels == nullptr || gainDb == nullptr ||
+        muted == nullptr || solo == nullptr || !id->isString() || !name->isString() ||
+        !channels->isNumber() || !gainDb->isNumber() || !muted->isBool() || !solo->isBool()) {
+      return core::failure<domain::ProjectRouting>(core::ErrorCode::ParseError,
+                                                   "Audio bus fields are invalid");
+    }
+    auto parsedId = parseId<domain::BusTag>(*id, "routing.bus.id");
+    if (!parsedId) return core::Result<domain::ProjectRouting>{parsedId.error()};
+    const auto count = channels->asInt64();
+    if (count <= 0 || count > domain::kMaximumAudioChannels) {
+      return core::failure<domain::ProjectRouting>(core::ErrorCode::ParseError,
+                                                   "Audio bus channel count is invalid");
+    }
+    routing.buses.push_back(domain::AudioBus{
+        .id = parsedId.value(),
+        .name = name->asString(),
+        .channelCount = static_cast<std::uint8_t>(count),
+        .gainDb = static_cast<float>(gainDb->asNumber()),
+        .muted = muted->asBool(),
+        .solo = solo->asBool(),
+    });
+  }
+
+  for (const auto& sendValue : sends->asArray()) {
+    if (!sendValue.isObject()) {
+      return core::failure<domain::ProjectRouting>(core::ErrorCode::ParseError,
+                                                   "Bus send must be an object");
+    }
+    const auto* source = sendValue.find("sourceBus");
+    const auto* destination = sendValue.find("destinationBus");
+    const auto* matrix = sendValue.find("matrix");
+    const auto* gainDb = sendValue.find("gainDb");
+    const auto* enabled = sendValue.find("enabled");
+    if (source == nullptr || destination == nullptr || matrix == nullptr ||
+        gainDb == nullptr || enabled == nullptr || !source->isString() ||
+        !destination->isString() || !gainDb->isNumber() || !enabled->isBool()) {
+      return core::failure<domain::ProjectRouting>(core::ErrorCode::ParseError,
+                                                   "Bus send fields are invalid");
+    }
+    auto parsedSource = parseId<domain::BusTag>(*source, "routing.send.sourceBus");
+    auto parsedDestination = parseId<domain::BusTag>(*destination, "routing.send.destinationBus");
+    auto parsedMatrix = decodeRoutingMatrix(*matrix, "routing.send.matrix");
+    if (!parsedSource) return core::Result<domain::ProjectRouting>{parsedSource.error()};
+    if (!parsedDestination) return core::Result<domain::ProjectRouting>{parsedDestination.error()};
+    if (!parsedMatrix) return core::Result<domain::ProjectRouting>{parsedMatrix.error()};
+    routing.sends.push_back(domain::BusSend{
+        .sourceBus = parsedSource.value(),
+        .destinationBus = parsedDestination.value(),
+        .matrix = std::move(parsedMatrix.value()),
+        .gainDb = static_cast<float>(gainDb->asNumber()),
+        .enabled = enabled->asBool(),
+    });
+  }
+
+  for (const auto& routeValue : deviceRoutes->asArray()) {
+    if (!routeValue.isObject()) {
+      return core::failure<domain::ProjectRouting>(core::ErrorCode::ParseError,
+                                                   "Device route must be an object");
+    }
+    const auto* source = routeValue.find("sourceBus");
+    const auto* matrix = routeValue.find("matrix");
+    const auto* gainDb = routeValue.find("gainDb");
+    const auto* enabled = routeValue.find("enabled");
+    if (source == nullptr || matrix == nullptr || gainDb == nullptr || enabled == nullptr ||
+        !source->isString() || !gainDb->isNumber() || !enabled->isBool()) {
+      return core::failure<domain::ProjectRouting>(core::ErrorCode::ParseError,
+                                                   "Device route fields are invalid");
+    }
+    auto parsedSource = parseId<domain::BusTag>(*source, "routing.deviceRoute.sourceBus");
+    auto parsedMatrix = decodeRoutingMatrix(*matrix, "routing.deviceRoute.matrix");
+    if (!parsedSource) return core::Result<domain::ProjectRouting>{parsedSource.error()};
+    if (!parsedMatrix) return core::Result<domain::ProjectRouting>{parsedMatrix.error()};
+    routing.deviceRoutes.push_back(domain::DeviceOutputRoute{
+        .sourceBus = parsedSource.value(),
+        .matrix = std::move(parsedMatrix.value()),
+        .gainDb = static_cast<float>(gainDb->asNumber()),
+        .enabled = enabled->asBool(),
+    });
+  }
+  const auto validation = routing.validate();
+  if (!validation) return core::Result<domain::ProjectRouting>{validation.error()};
+  return routing;
+}
+
 JsonValue encodeTempo(const time::TempoMap& map) {
   Array events;
   for (const auto& event : map.events()) {
@@ -252,6 +503,7 @@ JsonValue encodeProject(const domain::Project& project) {
         {"pan", JsonValue{static_cast<double>(track.pan)}},
         {"muted", JsonValue{track.muted}},
         {"solo", JsonValue{track.solo}},
+        {"outputRoute", encodeTrackOutputRoute(track.outputRoute)},
         {"regions", JsonValue{std::move(regions)}}});
   }
 
@@ -262,7 +514,10 @@ JsonValue encodeProject(const domain::Project& project) {
                                     {"mediaPath", JsonValue{track.mediaPath}},
                                     {"startTick", JsonValue{track.startTick.value()}},
                                     {"gainDb", JsonValue{static_cast<double>(track.gainDb)}},
-                                    {"muted", JsonValue{track.muted}}});
+                                    {"pan", JsonValue{static_cast<double>(track.pan)}},
+                                    {"muted", JsonValue{track.muted}},
+                                    {"solo", JsonValue{track.solo}},
+                                    {"outputRoute", encodeTrackOutputRoute(track.outputRoute)}});
   }
 
   return JsonValue{Object{
@@ -278,6 +533,7 @@ JsonValue encodeProject(const domain::Project& project) {
           {"characterDisplay", JsonValue{characterModeName(project.settings().characterDisplay)}},
           {"snapEnabled", JsonValue{project.settings().snapEnabled}},
           {"snapGrid", JsonValue{project.settings().snapGrid.value()}}}}},
+      {"routing", encodeRouting(project.routing())},
       {"vocalTracks", JsonValue{std::move(vocalTracks)}},
       {"audioTracks", JsonValue{std::move(audioTracks)}}}};
 }
@@ -295,6 +551,7 @@ core::Result<domain::Project> decodeProject(const JsonValue& root) {
   const auto tempo = required(root, "tempoMap", isArray, "an array");
   const auto meter = required(root, "meterMap", isArray, "an array");
   const auto settings = required(root, "settings", isObject, "an object");
+  const auto* routingValue = root.find("routing");
   const auto vocalTracks = required(root, "vocalTracks", isArray, "an array");
   const auto audioTracks = required(root, "audioTracks", isArray, "an array");
   if (!format || !schema || !projectIdValue || !name || !ppqValue || !tempo || !meter ||
@@ -377,6 +634,15 @@ core::Result<domain::Project> decodeProject(const JsonValue& root) {
   project.settings().characterDisplay = parseCharacterMode(characterDisplay->asString());
   project.settings().snapEnabled = snapEnabled->asBool();
   project.settings().snapGrid = time::Tick{snapGrid->asInt64()};
+  if (schemaVersion >= 4) {
+    if (routingValue == nullptr) {
+      return core::failure<domain::Project>(core::ErrorCode::ParseError,
+                                            "Schema 4 project is missing routing");
+    }
+    auto parsedRouting = decodeRouting(*routingValue);
+    if (!parsedRouting) return core::Result<domain::Project>{parsedRouting.error()};
+    project.routing() = std::move(parsedRouting.value());
+  }
 
   for (const auto& trackValue : vocalTracks.value()->asArray()) {
     if (!trackValue.isObject()) {
@@ -391,6 +657,7 @@ core::Result<domain::Project> decodeProject(const JsonValue& root) {
     const auto* pan = trackValue.find("pan");
     const auto* muted = trackValue.find("muted");
     const auto* solo = trackValue.find("solo");
+    const auto* outputRoute = trackValue.find("outputRoute");
     const auto* regions = trackValue.find("regions");
     if (idJson == nullptr || trackName == nullptr || voicebank == nullptr || character == nullptr ||
         gainDb == nullptr || pan == nullptr || muted == nullptr || solo == nullptr || regions == nullptr ||
@@ -424,7 +691,21 @@ core::Result<domain::Project> decodeProject(const JsonValue& root) {
         .pan = static_cast<float>(pan->asNumber()),
         .muted = muted->asBool(),
         .solo = solo->asBool(),
+        .outputRoute = domain::TrackOutputRoute{
+            .bus = project.routing().masterBus,
+            .matrix = domain::RoutingMatrix::monoToStereo(
+                static_cast<float>(pan->asNumber())),
+        },
     };
+    if (schemaVersion >= 4) {
+      if (outputRoute == nullptr) {
+        return core::failure<domain::Project>(core::ErrorCode::ParseError,
+                                              "Schema 4 vocal track is missing outputRoute");
+      }
+      auto parsedRoute = decodeTrackOutputRoute(*outputRoute, "vocalTrack.outputRoute");
+      if (!parsedRoute) return core::Result<domain::Project>{parsedRoute.error()};
+      track.outputRoute = std::move(parsedRoute.value());
+    }
 
     for (const auto& regionValue : regions->asArray()) {
       if (!regionValue.isObject()) {
@@ -744,23 +1025,41 @@ core::Result<domain::Project> decodeProject(const JsonValue& root) {
     const auto* mediaPath = trackValue.find("mediaPath");
     const auto* startTick = trackValue.find("startTick");
     const auto* gainDb = trackValue.find("gainDb");
+    const auto* pan = trackValue.find("pan");
     const auto* muted = trackValue.find("muted");
+    const auto* solo = trackValue.find("solo");
+    const auto* outputRoute = trackValue.find("outputRoute");
     if (idJson == nullptr || trackName == nullptr || mediaPath == nullptr || startTick == nullptr ||
         gainDb == nullptr || muted == nullptr || !idJson->isString() || !trackName->isString() ||
-        !mediaPath->isString() || !startTick->isNumber() || !gainDb->isNumber() || !muted->isBool()) {
+        !mediaPath->isString() || !startTick->isNumber() || !gainDb->isNumber() || !muted->isBool() ||
+        (schemaVersion >= 4 && (pan == nullptr || solo == nullptr || outputRoute == nullptr ||
+         !pan->isNumber() || !solo->isBool()))) {
       return core::failure<domain::Project>(core::ErrorCode::ParseError,
                                             "Audio track fields are invalid");
     }
     auto trackId = parseId<domain::TrackTag>(*idJson, "audioTrack.id");
     if (!trackId) return core::Result<domain::Project>{trackId.error()};
-    project.audioTracks().push_back(domain::AudioTrack{
+    domain::AudioTrack track{
         .id = trackId.value(),
         .name = trackName->asString(),
         .mediaPath = mediaPath->asString(),
         .startTick = time::Tick{startTick->asInt64()},
         .gainDb = static_cast<float>(gainDb->asNumber()),
+        .pan = pan == nullptr ? 0.0F : static_cast<float>(pan->asNumber()),
         .muted = muted->asBool(),
-    });
+        .solo = solo == nullptr ? false : solo->asBool(),
+        .outputRoute = domain::TrackOutputRoute{
+            .bus = project.routing().masterBus,
+            .matrix = domain::RoutingMatrix::monoToStereo(
+                pan == nullptr ? 0.0F : static_cast<float>(pan->asNumber())),
+        },
+    };
+    if (schemaVersion >= 4) {
+      auto parsedRoute = decodeTrackOutputRoute(*outputRoute, "audioTrack.outputRoute");
+      if (!parsedRoute) return core::Result<domain::Project>{parsedRoute.error()};
+      track.outputRoute = std::move(parsedRoute.value());
+    }
+    project.audioTracks().push_back(std::move(track));
   }
 
   const auto validation = project.validate();
