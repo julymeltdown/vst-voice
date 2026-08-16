@@ -8,6 +8,7 @@ import hashlib
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -133,9 +134,16 @@ def main() -> int:
 
     tsan = "not-run"
     if not args.skip_thread_sanitizer:
+        tsan_binary = str(root / "build/thread-sanitize/seam_tests")
+        script_utility = shutil.which("script")
+        tsan_command = (
+            [script_utility, "-q", "-e", "-c", shlex.quote(tsan_binary), "/dev/null"]
+            if script_utility is not None
+            else [tsan_binary]
+        )
         text = captured(
             "thread-sanitizer-direct-tests.txt",
-            [str(root / "build/thread-sanitize/seam_tests")],
+            tsan_command,
             600,
             lambda value: parse_tests(value) > 0,
         )
