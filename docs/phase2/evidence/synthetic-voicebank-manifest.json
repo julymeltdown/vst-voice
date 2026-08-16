@@ -1,0 +1,148 @@
+{
+  "displayName": "SEAM Phase 2 Synthetic Test Bank",
+  "expectedSampleRate": 48000,
+  "formatId": "com.project-seam.voicebank",
+  "id": "official.voice.01.phase2.synthetic",
+  "language": "ja",
+  "schemaVersion": 1,
+  "styles": [
+    "original"
+  ],
+  "units": [
+    {
+      "alias": "k i",
+      "audio": "audio/k-i-01.wav",
+      "enabled": true,
+      "gainDb": 0,
+      "id": "ja.original.e4.k-i.01",
+      "kind": "cv",
+      "markers": {
+        "audioEnd": 24000,
+        "audioOffset": 0,
+        "consonantEnd": 2600,
+        "loopEnd": 16800,
+        "loopStart": 7200,
+        "releaseStart": 19800,
+        "stableStart": 5200,
+        "vowelOnset": 3600
+      },
+      "phones": [
+        "k",
+        "i"
+      ],
+      "priority": 2,
+      "renderer": "raw",
+      "rootMidi": 64,
+      "style": "original",
+      "take": 1
+    },
+    {
+      "alias": "k i",
+      "audio": "audio/k-i-02.wav",
+      "enabled": true,
+      "gainDb": 0,
+      "id": "ja.original.e4.k-i.02",
+      "kind": "cv",
+      "markers": {
+        "audioEnd": 24000,
+        "audioOffset": 0,
+        "consonantEnd": 2600,
+        "loopEnd": 16800,
+        "loopStart": 7200,
+        "releaseStart": 19800,
+        "stableStart": 5200,
+        "vowelOnset": 3600
+      },
+      "phones": [
+        "k",
+        "i"
+      ],
+      "priority": 0,
+      "renderer": "raw",
+      "rootMidi": 64,
+      "style": "original",
+      "take": 2
+    },
+    {
+      "alias": "m i",
+      "audio": "audio/m-i-01.wav",
+      "enabled": true,
+      "gainDb": 0,
+      "id": "ja.original.fs4.m-i.01",
+      "kind": "cv",
+      "markers": {
+        "audioEnd": 24000,
+        "audioOffset": 0,
+        "consonantEnd": 2600,
+        "loopEnd": 16800,
+        "loopStart": 7200,
+        "releaseStart": 19800,
+        "stableStart": 5200,
+        "vowelOnset": 3600
+      },
+      "phones": [
+        "m",
+        "i"
+      ],
+      "priority": 0,
+      "renderer": "raw",
+      "rootMidi": 66,
+      "style": "original",
+      "take": 1
+    },
+    {
+      "alias": "h a",
+      "audio": "audio/h-a-01.wav",
+      "enabled": true,
+      "gainDb": 0,
+      "id": "ja.original.g4.h-a.01",
+      "kind": "cv",
+      "markers": {
+        "audioEnd": 24000,
+        "audioOffset": 0,
+        "consonantEnd": 2600,
+        "loopEnd": 16800,
+        "loopStart": 7200,
+        "releaseStart": 19800,
+        "stableStart": 5200,
+        "vowelOnset": 3600
+      },
+      "phones": [
+        "h",
+        "a"
+      ],
+      "priority": 0,
+      "renderer": "raw",
+      "rootMidi": 67,
+      "style": "original",
+      "take": 1
+    },
+    {
+      "alias": "a sustain",
+      "audio": "audio/a-sustain-01.wav",
+      "enabled": true,
+      "gainDb": 0,
+      "id": "ja.original.a4.a-sustain.01",
+      "kind": "sustain",
+      "markers": {
+        "audioEnd": 24000,
+        "audioOffset": 0,
+        "consonantEnd": 2600,
+        "loopEnd": 16800,
+        "loopStart": 7200,
+        "releaseStart": 19800,
+        "stableStart": 5200,
+        "vowelOnset": 3600
+      },
+      "phones": [
+        "a"
+      ],
+      "priority": 0,
+      "renderer": "raw",
+      "rootMidi": 69,
+      "style": "original",
+      "take": 1
+    }
+  ],
+  "version": "0.2.0-dev"
+}

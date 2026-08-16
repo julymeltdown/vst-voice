@@ -1,0 +1,119 @@
+{
+  "audioTracks": [],
+  "formatId": "com.project-seam.project",
+  "meterMap": [
+    {
+      "denominator": 4,
+      "numerator": 4,
+      "tick": 0
+    }
+  ],
+  "name": "Project SEAM — Phase 2 Raw Voice Vertical Slice",
+  "ppq": 960,
+  "projectId": "3e8",
+  "schemaVersion": 2,
+  "settings": {
+    "characterDisplay": "minimal",
+    "sampleRate": 48000,
+    "snapEnabled": true,
+    "snapGrid": 240
+  },
+  "tempoMap": [
+    {
+      "bpm": 154,
+      "tick": 0
+    }
+  ],
+  "vocalTracks": [
+    {
+      "character": {
+        "id": "official.character.01",
+        "version": "0.2.0-dev"
+      },
+      "gainDb": 0,
+      "id": "3e9",
+      "muted": false,
+      "name": "Voicebank 01 / Original",
+      "pan": 0,
+      "regions": [
+        {
+          "durationTick": 15360,
+          "id": "3ea",
+          "lyrics": [
+            {
+              "id": "3eb",
+              "language": "ja",
+              "surface": "き"
+            },
+            {
+              "id": "3ed",
+              "language": "ja",
+              "surface": "み"
+            },
+            {
+              "id": "3ef",
+              "language": "ja",
+              "surface": "は"
+            },
+            {
+              "id": "3f1",
+              "language": "ja",
+              "surface": "ー"
+            }
+          ],
+          "name": "Demo phrase",
+          "notes": [
+            {
+              "articulation": "normal",
+              "durationTick": 960,
+              "id": "3ec",
+              "lyricId": "3eb",
+              "midiKey": 64,
+              "startTick": 1920
+            },
+            {
+              "articulation": "normal",
+              "durationTick": 960,
+              "id": "3ee",
+              "lyricId": "3ed",
+              "midiKey": 66,
+              "startTick": 2880
+            },
+            {
+              "articulation": "normal",
+              "durationTick": 960,
+              "id": "3f0",
+              "lyricId": "3ef",
+              "midiKey": 67,
+              "startTick": 3840
+            },
+            {
+              "articulation": "normal",
+              "durationTick": 960,
+              "id": "3f2",
+              "lyricId": "3f1",
+              "midiKey": 69,
+              "startTick": 4800
+            }
+          ],
+          "phonemeOverrides": [
+            {
+              "endOffsetUs": 0,
+              "locked": true,
+              "noteId": "3ec",
+              "ordinal": 0,
+              "startOffsetUs": -70000
+            }
+          ],
+          "startTick": 0
+        }
+      ],
+      "solo": false,
+      "voicebank": {
+        "contentHash": "phase2-synthetic-content",
+        "id": "official.voice.01.phase2.synthetic",
+        "version": "0.2.0-dev"
+      }
+    }
+  ]
+}

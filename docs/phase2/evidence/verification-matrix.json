@@ -1,0 +1,48 @@
+{
+  "phase": 2,
+  "branchPolicy": "master-only",
+  "devBuild": "pass",
+  "devCTest": {
+    "passed": 4,
+    "failed": 0
+  },
+  "releaseBuild": "pass",
+  "releaseCTest": {
+    "passed": 4,
+    "failed": 0
+  },
+  "sanitizerBuild": "pass",
+  "sanitizerCTest": {
+    "passed": 4,
+    "failed": 0
+  },
+  "individualTests": {
+    "passed": 33,
+    "failed": 0
+  },
+  "endToEndDemo": "pass",
+  "voicebankValidation": "pass-with-intentional-warnings",
+  "voicebankCli": "pass",
+  "rawAudio": {
+    "channels": 1,
+    "sampleWidthBytes": 2,
+    "sampleRate": 48000,
+    "frames": 78405,
+    "durationSeconds": 1.6334375
+  },
+  "licenseAudit": "pass",
+  "gitFsck": "pass",
+  "gitDiffCheck": "pass",
+  "benchmark": {
+    "rawRenderIterations": 200,
+    "rawRenderMs": 395.298,
+    "rawRenderedSamples": 4800000,
+    "rawRealTimeMultiple": 252.974,
+    "seamIterations": 200,
+    "seamComposeMs": 1503.616,
+    "seamComposedSamples": 15600000,
+    "pitchIterations": 5,
+    "pitchAnalysisMs": 2579.288,
+    "pitchFrames": 430
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "errors": 0,
+  "issues": [
+    {
+      "code": "loop-discontinuity",
+      "message": "Sustain loop boundary has a large waveform jump",
+      "severity": "warning",
+      "unitId": "ja.original.g4.h-a.01"
+    },
+    {
+      "code": "duplicate-alias",
+      "message": "Alias has multiple variants: k i",
+      "severity": "info",
+      "unitId": ""
+    }
+  ],
+  "ok": true,
+  "root": "/mnt/data/project-seam-work/project-seam/out/phase2/synthetic-voicebank",
+  "unitsChecked": 5,
+  "version": "0.2.0-dev",
+  "voicebankId": "official.voice.01.phase2.synthetic",
+  "warnings": 1
+}
+

@@ -1,0 +1,12 @@
+{
+  "rawRenderIterations": 200,
+  "rawRenderMs": 395.298,
+  "rawRenderedSamples": 4800000,
+  "rawRealTimeMultiple": 252.974,
+  "seamIterations": 200,
+  "seamComposeMs": 1503.616,
+  "seamComposedSamples": 15600000,
+  "pitchIterations": 5,
+  "pitchAnalysisMs": 2579.288,
+  "pitchFrames": 430
+}

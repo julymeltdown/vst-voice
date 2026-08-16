@@ -1,0 +1,79 @@
+{
+  "displayName": "SEAM Phase 2 Synthetic Test Bank",
+  "id": "official.voice.01.phase2.synthetic",
+  "sampleRate": 48000,
+  "unitCount": 5,
+  "units": [
+    {
+      "alias": "k i",
+      "audio": "audio/k-i-01.wav",
+      "id": "ja.original.e4.k-i.01",
+      "kind": "cv",
+      "phones": [
+        "k",
+        "i"
+      ],
+      "renderer": "raw",
+      "rootMidi": 64,
+      "style": "original",
+      "take": 1
+    },
+    {
+      "alias": "k i",
+      "audio": "audio/k-i-02.wav",
+      "id": "ja.original.e4.k-i.02",
+      "kind": "cv",
+      "phones": [
+        "k",
+        "i"
+      ],
+      "renderer": "raw",
+      "rootMidi": 64,
+      "style": "original",
+      "take": 2
+    },
+    {
+      "alias": "m i",
+      "audio": "audio/m-i-01.wav",
+      "id": "ja.original.fs4.m-i.01",
+      "kind": "cv",
+      "phones": [
+        "m",
+        "i"
+      ],
+      "renderer": "raw",
+      "rootMidi": 66,
+      "style": "original",
+      "take": 1
+    },
+    {
+      "alias": "h a",
+      "audio": "audio/h-a-01.wav",
+      "id": "ja.original.g4.h-a.01",
+      "kind": "cv",
+      "phones": [
+        "h",
+        "a"
+      ],
+      "renderer": "raw",
+      "rootMidi": 67,
+      "style": "original",
+      "take": 1
+    },
+    {
+      "alias": "a sustain",
+      "audio": "audio/a-sustain-01.wav",
+      "id": "ja.original.a4.a-sustain.01",
+      "kind": "sustain",
+      "phones": [
+        "a"
+      ],
+      "renderer": "raw",
+      "rootMidi": 69,
+      "style": "original",
+      "take": 1
+    }
+  ],
+  "version": "0.2.0-dev"
+}
+

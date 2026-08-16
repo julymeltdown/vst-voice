@@ -1,0 +1,40 @@
+{
+  "audioDcOffset": 2.0562888964333747e-06,
+  "audioFrames": 78405,
+  "audioPeak": 0.25246447324752808,
+  "audioRms": 0.12724015176383394,
+  "audioStartFrame": 33803,
+  "bankErrors": 0,
+  "bankIssues": [
+    {
+      "code": "loop-discontinuity",
+      "message": "Sustain loop boundary has a large waveform jump",
+      "severity": "warning",
+      "unitId": "ja.original.g4.h-a.01"
+    },
+    {
+      "code": "duplicate-alias",
+      "message": "Alias has multiple variants: k i",
+      "severity": "info",
+      "unitId": ""
+    }
+  ],
+  "bankWarnings": 1,
+  "branchPolicy": "master-only",
+  "characterDisplay": "minimal",
+  "lockedPhonemeOverride": true,
+  "notes": 4,
+  "phase": 2,
+  "phonemes": 7,
+  "projectRoundTripEqual": true,
+  "projectSchema": 2,
+  "selectedUnits": [
+    "ja.original.e4.k-i.01",
+    "ja.original.fs4.m-i.01",
+    "ja.original.g4.h-a.01",
+    "ja.original.a4.a-sustain.01"
+  ],
+  "timingIssues": 3,
+  "voicebankSchema": 1
+}
+

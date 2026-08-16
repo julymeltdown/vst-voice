@@ -1,0 +1,35 @@
+[PASS] tempo map converts ticks, seconds, and sample frames
+[PASS] tempo map preserves an initial event
+[PASS] meter map reports one-based bar and beat
+[PASS] quantizer handles positive and negative ticks
+[PASS] add note command is undoable and redoable
+[PASS] moving notes changes time and pitch as one transaction
+[PASS] resizing notes rejects non-positive duration
+[PASS] deleting notes removes unreferenced lyrics and is reversible
+[PASS] project factory reserves IDs after loading an existing project
+[PASS] lyric and phoneme overrides are reversible editor commands
+[PASS] deleting a note removes and restores its phoneme overrides
+[PASS] internal JSON parser handles nested UTF-8 data
+[PASS] project JSON round trip preserves the canonical model
+[PASS] project decoder rejects an unsupported schema
+[PASS] project decoder migrates schema one regions without phoneme overrides
+[PASS] timeline zoom keeps the anchor tick stable
+[PASS] spatial index virtualizes a ten-thousand-note project
+[PASS] piano roll draws, selects, moves, and hit-tests notes
+[PASS] text composition models native IME begin update commit and cancel
+[PASS] phoneme lane exposes generated and manually timed phonemes
+[PASS] phase one audio callback produces deterministic silence
+[PASS] Japanese phonemizer handles hiragana katakana and contracted mora
+[PASS] Japanese phonemizer preserves sokuon moraic nasal and long vowel
+[PASS] phoneme overrides replace symbols timing and lock state
+[PASS] unsupported Japanese lyric creates a visible warning and pause
+[PASS] PCM16 WAV round trip and audio statistics remain bounded
+[PASS] waveform spectrogram and pitch analysis produce inspectable data
+[PASS] marker editor enforces monotonic sample landmarks
+[PASS] voicebank manifest persists and validator checks real audio
+[PASS] deterministic unit selector prefers longer lower-score coverage
+[PASS] raw loop renderer preserves frame count and exposes vowel onset
+[PASS] seam composer changes overlap character without changing bounds
+[PASS] raw phrase pipeline aligns vowels and renders inspectable audio
+
+33 passed, 0 failed
