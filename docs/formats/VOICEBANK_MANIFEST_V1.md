@@ -1,3 +1,5 @@
+> **Superseded:** Schema 2 is current. See [`VOICEBANK_MANIFEST_V2.md`](VOICEBANK_MANIFEST_V2.md).
+
 # Voicebank Manifest Schema v1
 
 ## Root

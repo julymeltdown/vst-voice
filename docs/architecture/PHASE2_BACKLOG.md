@@ -1,3 +1,5 @@
+> Superseded for implemented Phase 3 items by `docs/architecture/PHASE3_RENDER_LOOP.md` and `PHASE3_IMPLEMENTATION_REPORT.md`. This file remains as the historical Phase 2 planning record.
+
 # Phase 2 Backlog and Status
 
 ## Completed in Phase 2

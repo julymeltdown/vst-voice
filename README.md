@@ -1,70 +1,69 @@
-# Project SEAM — Phase 2 + Raw Concatenative Vertical Slice
+# Project SEAM — Phase 3: Editable PSOLA and Background Phrase Rendering
 
-Project SEAM is a C++20 sample-concatenative singing-voice editor. Its deliberate product constraint is that phoneme and sample boundaries are editable musical material rather than defects that must always be hidden.
+Project SEAM is a C++20 sample-concatenative singing-voice editor. Phoneme boundaries, source-unit changes, pitch-shift artifacts, and sample seams are treated as editable musical material rather than defects that must always be hidden.
 
-This repository contains Phase 1 plus the completed Phase 2 phoneme/voicebank foundation and an additional end-to-end **raw sample-concatenation vertical slice**. Development remains on the **`master` branch only**.
+This repository contains the Phase 1 editor/domain foundation, the Phase 2 phoneme/voicebank/raw-synthesis vertical slice, and the completed **Phase 3 production render foundation**. Development remains on the **`master` branch only**.
 
-## Implemented
+## Phase 3 implementation
 
-### Editor and canonical state
+### Persistent render intent
 
-- Integer musical time, tempo/meter maps, and sample-frame conversion.
-- Project, track, region, note, lyric, voicebank, and character references.
-- Strong typed IDs and post-load ID synchronization.
-- Command-based editing with undo/redo and monotonic revision.
-- Piano-roll geometry, selection, snapping, zoom/pan, hit testing, and 10,000-note virtualization.
-- `PhonemeKey`, generated phoneme tokens, explicit symbol/timing/lock overrides.
-- Reversible lyric and phoneme-override commands.
-- Note deletion that removes and restores attached overrides.
-- Project JSON schema 2 with schema 1 migration.
-- Backend-independent IME composition state and Phoneme Lane geometry.
+- Project JSON schema 3.
+- Explicit `UnitSelectionOverride` with unit ID, token span, renderer choice, and lock state.
+- Explicit per-boundary `SeamOverride` for seam amount, overlap, curve, phase reset, and envelope blend.
+- Region-level pitch automation in cents with step, linear, and smooth interpolation.
+- Undoable upsert/remove commands for unit selection, seams, and pitch points.
+- Note deletion removes and restores dependent phoneme and render overrides.
 
-### Language front end
+### Voicebank and PSOLA
 
-- `IPhonemizer` abstraction.
-- Japanese Hiragana/Katakana normalization.
-- Contracted mora, sokuon, moraic nasal, long-vowel continuation, punctuation, and warnings.
-- Override application without storing derived phoneme plans as canonical state.
+- Voicebank manifest schema 2 with editable pitch marks.
+- Schema 1 → 2 migration with an empty pitch-mark collection.
+- Deterministic pitch-mark generation, validation, add/move/remove, and lock operations.
+- `ClassicPsolaRenderer` for voiced sustain resynthesis.
+- Source consonant and release-transient preservation.
+- Pitch curves, source-pitch residual, gain, cancellation, and finite-output validation.
+- Renderer dispatcher for Raw and Classic PSOLA.
+- Explicit Raw fallback for currently unimplemented SpectralClassic and Stretch requests; fallback is reported rather than hidden.
 
-### Voicebank foundation
+### Phrase render pipeline
 
-- Data-only manifest schema 1.
-- Relative-path and metadata validation.
-- Bounded RIFF/WAVE reader for common PCM/float formats.
-- Mono PCM16 writer.
-- Peak, RMS, clipping, and DC statistics.
-- Multilevel waveform summaries and SVG output.
-- First-party radix-2 FFT spectrogram output.
-- Autocorrelation F0 analysis with octave-error-resistant peak selection.
-- Acoustic marker normalization/editing.
-- Full-bank validator for files, markers, pitch, clipping, DC, loops, and inventory.
-- `seam_voicebank_cli` for validation, inspection, and WAV analysis.
+- Stable phrase segmentation and neighboring dirty-phrase invalidation.
+- Immutable, phrase-scoped render snapshots.
+- Audio-only content hashes that ignore project title, character presentation, snap settings, unrelated phrases, and tempo/meter events after the phrase.
+- Japanese phonemizer → deterministic unit selection → vowel-onset timing → mixed Raw/PSOLA rendering → seam composition.
+- Unit overrides, pitch automation, and per-boundary seams honored by the production phrase renderer.
 
-### Raw synthesis vertical slice
+### Background rendering and playback handoff
 
-- Exact-phone unit candidate generation.
-- Deterministic dynamic-programming complete-cover selector.
-- Pitch distance, unit length, priority, and take scoring.
-- Vowel-onset-to-note-on timing.
-- Explicit timing issue reporting.
-- `RawLoopRenderer` with pitch/time resampling, stable-vowel loop, release, gain, DC removal, and de-click.
-- `SeamComposer` with a controllable smooth-to-hard overlap character.
-- End-to-end synthetic bank → lyrics → phonemes → units → timing → PCM WAV.
+- Priority background scheduler with `Playhead`, `Next`, `Selected`, `Viewport`, and `Background` levels.
+- Revision cancellation and stale-completion rejection.
+- Content-addressed PCM cache with versioned binary format, checksum, bounds checking, finite-sample validation, memory/disk tiers, and atomic temporary-file replacement.
+- Cache content separated from project revision so identical audio can be reused by a newer revision.
+- Stale-while-render store that keeps old PCM readable until a newer revision is published.
+- Preallocated single-producer/single-consumer audio ring buffer.
 
-### Verification and product work
+### Evidence and verification
 
-- 33 individually reported tests covering domain, commands, UI models, codecs, phonemizer, bank analysis, and synthesis.
-- Debug/release warnings-as-errors and sanitizer presets.
-- Phase 1/2 benchmarks and reproducible evidence generators.
-- Master-only hooks and branch verifier.
-- License allowlist audit and SBOM/notice scaffolding.
-- First-party low-poly emo character direction assets remain included from Phase 1.
+- 55 individually reported tests.
+- Debug, release, and ASan/UBSan presets with warnings treated as errors.
+- End-to-end Phase 3 demo producing real PSOLA/raw PCM, editor evidence, project schema 3, voicebank schema 2, and scheduler/cache evidence.
+- Phase 3 benchmark for PSOLA, seam composition, disk cache, and scheduler throughput.
+- Master-only policy and license audit targets.
 
 ## Honest current boundary
 
-This repository does **not** yet contain the production iPlug2 + Skia native window, native Windows/macOS IME overlay, PSOLA, spectral synthesis, background render scheduler/cache, official human-recorded voicebank, or plugin targets.
+The repository still does **not** contain:
 
-The Phase 2 editor image is an SVG proof generated from real note and phoneme view models. The WAV is genuinely rendered by the implemented raw concatenative pipeline. The synthetic voicebank is test data, not a commercial voice.
+- the production iPlug2 + Skia native window;
+- Windows/macOS native IME overlays;
+- the final Voicebank Studio GUI or recording transport;
+- an implemented SpectralClassic or Signalsmith Stretch renderer;
+- an official licensed human-recorded voicebank;
+- a real audio-device callback connected to the new scheduler/ring-buffer path;
+- CLAP, VST3, or AU targets.
+
+The Phase 3 preview is generated from the actual project, phoneme, unit-plan, and render-placement data. The supplied WAV is genuinely generated by the implemented mixed Raw/Classic-PSOLA pipeline. The included voicebank remains synthetic test data.
 
 ## Build
 
@@ -86,49 +85,47 @@ cmake --build --preset sanitize
 ctest --preset sanitize
 ```
 
-## Run the Phase 2 vertical slice
+## Run the Phase 3 vertical slice
 
 ```bash
-./build/dev/seam_phase2_demo --output out/phase2
+./build/dev/seam_phase3_demo --output out/phase3
 ```
 
 Key outputs:
 
 ```text
-out/phase2/phase2-editor.svg
-out/phase2/phase2-raw-phrase.wav
-out/phase2/phase2-raw-waveform.svg
-out/phase2/phase2-raw-spectrogram.pgm
-out/phase2/phase2-demo.seam.json
-out/phase2/phase2-summary.json
-out/phase2/synthetic-voicebank/manifest.json
+out/phase3/phase3-demo.seam.json
+out/phase3/phase3-editor.svg
+out/phase3/phase3-psola-phrase.wav
+out/phase3/phase3-raw-reference.wav
+out/phase3/phase3-waveform.svg
+out/phase3/phase3-spectrogram.pgm
+out/phase3/phase3-summary.json
+out/phase3/synthetic-voicebank/manifest.json
+out/phase3/pcm-cache/*.spcm
 ```
 
-## Voicebank CLI
+## Generate reproducible evidence
 
 ```bash
-./build/dev/seam_voicebank_cli validate out/phase2/synthetic-voicebank/manifest.json
-./build/dev/seam_voicebank_cli inspect out/phase2/synthetic-voicebank/manifest.json
-./build/dev/seam_voicebank_cli analyze \
-  out/phase2/phase2-raw-phrase.wav out/phase2/analysis
+python3 scripts/generate_phase3_evidence.py --root .
 ```
 
-## Evidence
+Or through CMake after a dev build:
 
 ```bash
-python3 scripts/generate_phase2_evidence.py --root .
+cmake --build --preset dev --target seam_phase3_evidence
 ```
-
-This runs the test suite, demo, CLI, benchmark, branch policy, license audit, and generates PNG/audio metadata when supporting tools are installed.
 
 ## Benchmarks
 
 ```bash
 ./build/dev/seam_phase1_benchmark
 ./build/dev/seam_phase2_benchmark
+./build/dev/seam_phase3_benchmark
 ```
 
-Benchmark values are machine-specific evidence, not a universal performance guarantee.
+Benchmark values are machine-specific regression evidence, not universal performance guarantees.
 
 ## Repository policy
 
@@ -140,11 +137,11 @@ git config core.hooksPath .githooks
 
 ## Documentation
 
-- [`PHASE2_IMPLEMENTATION_REPORT.md`](PHASE2_IMPLEMENTATION_REPORT.md)
-- [`docs/architecture/PHASE2_PIPELINE.md`](docs/architecture/PHASE2_PIPELINE.md)
-- [`docs/phase2/ACCEPTANCE.md`](docs/phase2/ACCEPTANCE.md)
-- [`docs/formats/PROJECT_JSON_V2.md`](docs/formats/PROJECT_JSON_V2.md)
-- [`docs/formats/VOICEBANK_MANIFEST_V1.md`](docs/formats/VOICEBANK_MANIFEST_V1.md)
+- [`PHASE3_IMPLEMENTATION_REPORT.md`](PHASE3_IMPLEMENTATION_REPORT.md)
+- [`docs/architecture/PHASE3_RENDER_PIPELINE.md`](docs/architecture/PHASE3_RENDER_PIPELINE.md)
+- [`docs/phase3/ACCEPTANCE.md`](docs/phase3/ACCEPTANCE.md)
+- [`docs/formats/PROJECT_JSON_V3.md`](docs/formats/PROJECT_JSON_V3.md)
+- [`docs/formats/VOICEBANK_MANIFEST_V2.md`](docs/formats/VOICEBANK_MANIFEST_V2.md)
 - [`docs/licensing/DEPENDENCY_POLICY.md`](docs/licensing/DEPENDENCY_POLICY.md)
 
 ## Ownership and licensing

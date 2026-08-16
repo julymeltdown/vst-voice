@@ -1,3 +1,5 @@
+> **Superseded:** Schema 3 is current. See [`PROJECT_JSON_V3.md`](PROJECT_JSON_V3.md).
+
 # Project JSON Schema v2
 
 ## Status
