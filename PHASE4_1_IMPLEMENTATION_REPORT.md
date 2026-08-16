@@ -320,7 +320,7 @@ A new `tests/test_stabilization.cpp` suite covers:
 14. threaded feeder/control stress under ThreadSanitizer;
 15. command apply/undo transaction restoration.
 
-The named test count increased from 70 to 84.
+The named test count increased from 70 to 84. Test temporary directories now include the operating-system process ID as well as a process-local counter, preventing concurrent CTest, sanitizer, and package-verification runs from deleting or replacing one another's voicebank fixtures. Two simultaneous 84-test executions were used as a regression check.
 
 Build presets now include:
 

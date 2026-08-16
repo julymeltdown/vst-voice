@@ -56,6 +56,7 @@
 - [x] Release CTest passes with warnings as errors.
 - [x] AddressSanitizer + UndefinedBehaviorSanitizer CTest passes.
 - [x] The complete 84-test named suite passes under ThreadSanitizer; full TSan CTest capture is recorded separately and is non-gating.
+- [x] Concurrent test processes use process-scoped temporary directories and do not corrupt one another's fixtures.
 - [x] Phase 2, Phase 3, and Phase 4 demos still pass.
 - [x] Master-only policy passes.
 - [x] Dependency-license audit passes.
