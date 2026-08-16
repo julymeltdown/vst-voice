@@ -159,12 +159,32 @@ JsonValue encodeProject(const domain::Project& project) {
         }
         notes.emplace_back(std::move(noteObject));
       }
+      Array phonemeOverrides;
+      for (const auto& overrideValue : region.phonemeOverrides) {
+        Object overrideObject{{"noteId", idValue(overrideValue.key.noteId)},
+                              {"ordinal", JsonValue{static_cast<std::int64_t>(
+                                  overrideValue.key.ordinal)}},
+                              {"locked", JsonValue{overrideValue.locked}}};
+        if (overrideValue.symbol.has_value()) {
+          overrideObject.emplace("symbol", JsonValue{*overrideValue.symbol});
+        }
+        if (overrideValue.timing.startOffset.has_value()) {
+          overrideObject.emplace("startOffsetUs",
+                                 JsonValue{*overrideValue.timing.startOffset});
+        }
+        if (overrideValue.timing.endOffset.has_value()) {
+          overrideObject.emplace("endOffsetUs",
+                                 JsonValue{*overrideValue.timing.endOffset});
+        }
+        phonemeOverrides.emplace_back(std::move(overrideObject));
+      }
       regions.emplace_back(Object{{"id", idValue(region.id)},
                                   {"name", JsonValue{region.name}},
                                   {"startTick", JsonValue{region.startTick.value()}},
                                   {"durationTick", JsonValue{region.durationTick.value()}},
                                   {"lyrics", JsonValue{std::move(lyrics)}},
-                                  {"notes", JsonValue{std::move(notes)}}});
+                                  {"notes", JsonValue{std::move(notes)}},
+                                  {"phonemeOverrides", JsonValue{std::move(phonemeOverrides)}}});
     }
     vocalTracks.emplace_back(Object{
         {"id", idValue(track.id)},
@@ -240,7 +260,8 @@ core::Result<domain::Project> decodeProject(const JsonValue& root) {
     return core::failure<domain::Project>(core::ErrorCode::Unsupported,
                                           "Unsupported project format");
   }
-  if (schema.value()->asInt64() != ProjectJsonCodec::kSchemaVersion) {
+  const auto schemaVersion = schema.value()->asInt64();
+  if (schemaVersion < 1 || schemaVersion > ProjectJsonCodec::kSchemaVersion) {
     return core::failure<domain::Project>(core::ErrorCode::Unsupported,
                                           "Unsupported project schema version");
   }
@@ -362,6 +383,7 @@ core::Result<domain::Project> decodeProject(const JsonValue& root) {
       const auto* durationTick = regionValue.find("durationTick");
       const auto* lyrics = regionValue.find("lyrics");
       const auto* notes = regionValue.find("notes");
+      const auto* phonemeOverrides = regionValue.find("phonemeOverrides");
       if (regionIdJson == nullptr || regionName == nullptr || startTick == nullptr ||
           durationTick == nullptr || lyrics == nullptr || notes == nullptr ||
           !regionIdJson->isString() || !regionName->isString() || !startTick->isNumber() ||
@@ -378,6 +400,7 @@ core::Result<domain::Project> decodeProject(const JsonValue& root) {
           .durationTick = time::Tick{durationTick->asInt64()},
           .lyrics = {},
           .notes = {},
+          .phonemeOverrides = {},
       };
       for (const auto& lyricValue : lyrics->asArray()) {
         if (!lyricValue.isObject()) {
@@ -436,6 +459,70 @@ core::Result<domain::Project> decodeProject(const JsonValue& root) {
           note.slurGroup = parsedSlur.value();
         }
         region.notes.push_back(std::move(note));
+      }
+      if (phonemeOverrides != nullptr) {
+        if (!phonemeOverrides->isArray()) {
+          return core::failure<domain::Project>(core::ErrorCode::ParseError,
+                                                "Phoneme overrides must be an array");
+        }
+        for (const auto& overrideJson : phonemeOverrides->asArray()) {
+          if (!overrideJson.isObject()) {
+            return core::failure<domain::Project>(core::ErrorCode::ParseError,
+                                                  "Phoneme override must be an object");
+          }
+          const auto* overrideNoteId = overrideJson.find("noteId");
+          const auto* ordinal = overrideJson.find("ordinal");
+          const auto* locked = overrideJson.find("locked");
+          if (overrideNoteId == nullptr || ordinal == nullptr || locked == nullptr ||
+              !overrideNoteId->isString() || !ordinal->isNumber() || !locked->isBool()) {
+            return core::failure<domain::Project>(core::ErrorCode::ParseError,
+                                                  "Phoneme override fields are invalid");
+          }
+          auto parsedNoteId = parseId<domain::NoteTag>(*overrideNoteId,
+                                                        "phonemeOverride.noteId");
+          if (!parsedNoteId) {
+            return core::Result<domain::Project>{parsedNoteId.error()};
+          }
+          const auto ordinalValue = ordinal->asInt64();
+          if (ordinalValue < 0 || ordinalValue > 65535) {
+            return core::failure<domain::Project>(core::ErrorCode::ParseError,
+                                                  "Phoneme override ordinal is invalid");
+          }
+          domain::PhonemeOverride overrideValue{
+              .key = domain::PhonemeKey{
+                  parsedNoteId.value(), static_cast<std::uint16_t>(ordinalValue)},
+              .symbol = std::nullopt,
+              .timing = {},
+              .locked = locked->asBool(),
+          };
+          if (const auto* symbol = overrideJson.find("symbol"); symbol != nullptr) {
+            if (!symbol->isString()) {
+              return core::failure<domain::Project>(core::ErrorCode::ParseError,
+                                                    "Phoneme override symbol must be a string");
+            }
+            overrideValue.symbol = symbol->asString();
+          }
+          if (const auto* startOffset = overrideJson.find("startOffsetUs");
+              startOffset != nullptr) {
+            if (!startOffset->isNumber()) {
+              return core::failure<domain::Project>(core::ErrorCode::ParseError,
+                                                    "Phoneme start offset must be a number");
+            }
+            overrideValue.timing.startOffset = startOffset->asInt64();
+          }
+          if (const auto* endOffset = overrideJson.find("endOffsetUs");
+              endOffset != nullptr) {
+            if (!endOffset->isNumber()) {
+              return core::failure<domain::Project>(core::ErrorCode::ParseError,
+                                                    "Phoneme end offset must be a number");
+            }
+            overrideValue.timing.endOffset = endOffset->asInt64();
+          }
+          region.phonemeOverrides.push_back(std::move(overrideValue));
+        }
+      } else if (schemaVersion >= 2) {
+        return core::failure<domain::Project>(core::ErrorCode::ParseError,
+                                              "Schema 2 region is missing phonemeOverrides");
       }
       region.sortNotes();
       track.regions.push_back(std::move(region));

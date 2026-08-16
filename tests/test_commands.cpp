@@ -2,6 +2,7 @@
 
 #include "seam/application/editor_session.hpp"
 #include "seam/application/note_commands.hpp"
+#include "seam/application/lyric_commands.hpp"
 #include "seam/application/project_factory.hpp"
 
 #include <memory>
@@ -128,4 +129,70 @@ TEST_CASE("project factory reserves IDs after loading an existing project") {
       seam::time::Tick{480}, seam::time::Tick{480}, 62, U"i");
   CHECK(newLyric.id.value() > previousMaximum);
   CHECK(newNote.id.value() > newLyric.id.value());
+}
+
+TEST_CASE("lyric and phoneme overrides are reversible editor commands") {
+  Fixture fixture;
+  auto [lyric, note] = fixture.factory.makeNote(
+      seam::time::Tick{0}, seam::time::Tick{960}, 60, U"き");
+  const auto lyricId = lyric.id;
+  const auto noteId = note.id;
+  auto* region = fixture.project.findRegion(fixture.regionId);
+  region->lyrics.push_back(lyric);
+  region->notes.push_back(note);
+
+  seam::application::EditorSession session{std::move(fixture.project)};
+  CHECK(session.execute(std::make_unique<seam::application::SetLyricCommand>(
+      lyricId, U"ぎ", seam::domain::Language::Japanese)));
+  CHECK(session.project().findRegion(fixture.regionId)->findLyric(lyricId)->surface == U"ぎ");
+
+  seam::domain::PhonemeOverride overrideValue{
+      .key = seam::domain::PhonemeKey{noteId, 0},
+      .symbol = std::string{"g"},
+      .timing = seam::domain::PhonemeTiming{
+          .startOffset = seam::time::Microseconds{-45000},
+          .endOffset = seam::time::Microseconds{0},
+      },
+      .locked = true,
+  };
+  CHECK(session.execute(
+      std::make_unique<seam::application::UpsertPhonemeOverrideCommand>(
+          fixture.regionId, overrideValue)));
+  CHECK(session.project().findRegion(fixture.regionId)
+            ->findPhonemeOverride(overrideValue.key) != nullptr);
+  CHECK(session.undo());
+  CHECK(session.project().findRegion(fixture.regionId)
+            ->findPhonemeOverride(overrideValue.key) == nullptr);
+  CHECK(session.undo());
+  CHECK(session.project().findRegion(fixture.regionId)->findLyric(lyricId)->surface == U"き");
+  CHECK(session.redo());
+  CHECK(session.redo());
+  CHECK(session.project().findRegion(fixture.regionId)
+            ->findPhonemeOverride(overrideValue.key)->locked);
+}
+
+TEST_CASE("deleting a note removes and restores its phoneme overrides") {
+  Fixture fixture;
+  auto [lyric, note] = fixture.factory.makeNote(
+      seam::time::Tick{0}, seam::time::Tick{960}, 60, U"き");
+  const auto noteId = note.id;
+  const seam::domain::PhonemeKey key{noteId, 0};
+  auto* region = fixture.project.findRegion(fixture.regionId);
+  region->lyrics.push_back(lyric);
+  region->notes.push_back(note);
+  region->phonemeOverrides.push_back(seam::domain::PhonemeOverride{
+      .key = key,
+      .symbol = std::string{"g"},
+      .timing = {},
+      .locked = true,
+  });
+
+  seam::application::EditorSession session{std::move(fixture.project)};
+  CHECK(session.execute(std::make_unique<seam::application::RemoveNotesCommand>(
+      std::vector<seam::domain::NoteId>{noteId})));
+  CHECK(session.project().findRegion(fixture.regionId)->findPhonemeOverride(key) == nullptr);
+  CHECK(session.undo());
+  CHECK(session.project().findRegion(fixture.regionId)->findPhonemeOverride(key) != nullptr);
+  CHECK(session.redo());
+  CHECK(session.project().findRegion(fixture.regionId)->findPhonemeOverride(key) == nullptr);
 }

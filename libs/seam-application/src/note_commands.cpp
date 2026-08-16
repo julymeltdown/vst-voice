@@ -106,6 +106,7 @@ core::Result<void> RemoveNotesCommand::capture(const domain::Project& project) {
 
   removedNotes_.clear();
   removedLyrics_.clear();
+  removedOverrides_.clear();
   for (const auto noteId : uniqueIds) {
     const auto location = findNoteLocation(project, noteId);
     if (location.region == nullptr) {
@@ -155,6 +156,21 @@ core::Result<void> RemoveNotesCommand::capture(const domain::Project& project) {
     });
   }
 
+  for (const auto& track : project.vocalTracks()) {
+    for (const auto& region : track.regions) {
+      for (std::size_t index = 0; index < region.phonemeOverrides.size(); ++index) {
+        const auto& overrideValue = region.phonemeOverrides[index];
+        if (selected.contains(overrideValue.key.noteId)) {
+          removedOverrides_.push_back(RemovedPhonemeOverride{
+              .regionId = region.id,
+              .overrideValue = overrideValue,
+              .originalIndex = index,
+          });
+        }
+      }
+    }
+  }
+
   noteIds_ = std::move(uniqueIds);
   captured_ = true;
   return core::success();
@@ -168,6 +184,19 @@ core::Result<void> RemoveNotesCommand::removeCaptured(domain::Project& project) 
                            "A note to delete was not found",
                            removed.note.id.toString());
     }
+  }
+
+  for (const auto& removed : removedOverrides_) {
+    auto* region = project.findRegion(removed.regionId);
+    if (region == nullptr) {
+      return core::failure(core::ErrorCode::NotFound,
+                           "Region for a phoneme override was not found",
+                           removed.regionId.toString());
+    }
+    std::erase_if(region->phonemeOverrides,
+                  [&removed](const domain::PhonemeOverride& value) {
+                    return value.key == removed.overrideValue.key;
+                  });
   }
 
   for (const auto& removed : removedNotes_) {
@@ -252,6 +281,28 @@ core::Result<void> RemoveNotesCommand::revert(domain::Project& project) {
     region->notes.insert(region->notes.begin() + static_cast<std::ptrdiff_t>(index),
                          removed.note);
   }
+  auto overrides = removedOverrides_;
+  std::stable_sort(overrides.begin(), overrides.end(), [](const auto& lhs, const auto& rhs) {
+    if (lhs.regionId == rhs.regionId) {
+      return lhs.originalIndex < rhs.originalIndex;
+    }
+    return lhs.regionId < rhs.regionId;
+  });
+  for (const auto& removed : overrides) {
+    auto* region = project.findRegion(removed.regionId);
+    if (region == nullptr) {
+      return core::failure(core::ErrorCode::NotFound,
+                           "Region for a deleted phoneme override was not found",
+                           removed.regionId.toString());
+    }
+    if (region->findPhonemeOverride(removed.overrideValue.key) == nullptr) {
+      const auto index = std::min(removed.originalIndex, region->phonemeOverrides.size());
+      region->phonemeOverrides.insert(
+          region->phonemeOverrides.begin() + static_cast<std::ptrdiff_t>(index),
+          removed.overrideValue);
+    }
+  }
+
   for (auto& track : project.vocalTracks()) {
     for (auto& region : track.regions) {
       region.sortNotes();

@@ -2,6 +2,7 @@
 
 #include <cmath>
 #include <unordered_set>
+#include <set>
 
 namespace seam::domain {
 
@@ -27,6 +28,18 @@ const LyricToken* VocalRegion::findLyric(LyricTokenId lyricId) const noexcept {
   const auto iterator = std::find_if(lyrics.begin(), lyrics.end(),
       [lyricId](const LyricToken& lyric) { return lyric.id == lyricId; });
   return iterator == lyrics.end() ? nullptr : &*iterator;
+}
+
+PhonemeOverride* VocalRegion::findPhonemeOverride(PhonemeKey key) noexcept {
+  const auto iterator = std::find_if(phonemeOverrides.begin(), phonemeOverrides.end(),
+      [key](const PhonemeOverride& overrideValue) { return overrideValue.key == key; });
+  return iterator == phonemeOverrides.end() ? nullptr : &*iterator;
+}
+
+const PhonemeOverride* VocalRegion::findPhonemeOverride(PhonemeKey key) const noexcept {
+  const auto iterator = std::find_if(phonemeOverrides.begin(), phonemeOverrides.end(),
+      [key](const PhonemeOverride& overrideValue) { return overrideValue.key == key; });
+  return iterator == phonemeOverrides.end() ? nullptr : &*iterator;
 }
 
 void VocalRegion::sortNotes() {
@@ -75,6 +88,24 @@ core::Result<void> VocalRegion::validate() const {
     if (note.endTick() > durationTick) {
       return core::failure(core::ErrorCode::InvariantViolation,
                            "Note extends beyond region duration", note.id.toString());
+    }
+  }
+
+  std::set<PhonemeKey> overrideKeys;
+  for (const auto& overrideValue : phonemeOverrides) {
+    const auto overrideResult = overrideValue.validate();
+    if (!overrideResult) {
+      return overrideResult;
+    }
+    if (!noteIds.contains(overrideValue.key.noteId)) {
+      return core::failure(core::ErrorCode::InvariantViolation,
+                           "Phoneme override references a missing note",
+                           overrideValue.key.toString());
+    }
+    if (!overrideKeys.insert(overrideValue.key).second) {
+      return core::failure(core::ErrorCode::InvariantViolation,
+                           "Phoneme override keys must be unique",
+                           overrideValue.key.toString());
     }
   }
   return core::success();

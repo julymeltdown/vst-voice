@@ -17,6 +17,8 @@ struct NoteVisual final {
   domain::NoteId noteId;
   Rect bounds;
   std::uint8_t midiKey{60};
+  time::Tick absoluteStart;
+  time::Tick duration;
   bool selected{false};
   std::string lyric;
 };
@@ -39,6 +41,10 @@ public:
 
   void setViewport(PianoRollViewport viewport) noexcept { viewport_ = viewport; }
   [[nodiscard]] const PianoRollViewport& viewport() const noexcept { return viewport_; }
+  [[nodiscard]] const domain::Project& project() const noexcept { return session_.project(); }
+  [[nodiscard]] domain::RegionId regionId() const noexcept { return regionId_; }
+  [[nodiscard]] double pixelAtMicrosecondOffset(
+      time::Tick absoluteStart, time::Microseconds offset) const noexcept;
 
   void rebuildIndex();
   [[nodiscard]] std::vector<NoteVisual> visibleNotes() const;

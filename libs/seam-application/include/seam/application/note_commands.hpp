@@ -58,12 +58,19 @@ private:
     std::size_t originalIndex{0};
   };
 
+  struct RemovedPhonemeOverride final {
+    domain::RegionId regionId;
+    domain::PhonemeOverride overrideValue;
+    std::size_t originalIndex{0};
+  };
+
   [[nodiscard]] core::Result<void> capture(const domain::Project& project);
   [[nodiscard]] core::Result<void> removeCaptured(domain::Project& project) const;
 
   std::vector<domain::NoteId> noteIds_;
   std::vector<RemovedNote> removedNotes_;
   std::vector<RemovedLyric> removedLyrics_;
+  std::vector<RemovedPhonemeOverride> removedOverrides_;
   bool captured_{false};
 };
 

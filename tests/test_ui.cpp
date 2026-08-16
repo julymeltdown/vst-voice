@@ -3,6 +3,9 @@
 #include "seam/application/editor_session.hpp"
 #include "seam/application/project_factory.hpp"
 #include "seam/ui/note_spatial_index.hpp"
+#include "seam/ui/phoneme_lane_model.hpp"
+#include "seam/ui/text_composition_model.hpp"
+#include "seam/phonemizer/japanese_phonemizer.hpp"
 #include "seam/ui/piano_roll_model.hpp"
 #include "seam/ui/timeline_transform.hpp"
 
@@ -74,4 +77,66 @@ TEST_CASE("piano roll draws, selects, moves, and hit-tests notes") {
   CHECK(session.project().findNote(added.value()) == nullptr);
   CHECK(session.undo());
   CHECK(session.project().findNote(added.value()) != nullptr);
+}
+
+TEST_CASE("text composition models native IME begin update commit and cancel") {
+  seam::ui::TextCompositionModel composition;
+  const seam::domain::LyricTokenId lyricId{55};
+  CHECK(composition.begin(lyricId, U"き"));
+  CHECK(composition.active());
+  CHECK(composition.update(U"きゃ", seam::ui::CompositionSelection{1, 1}));
+  CHECK(!composition.update(U"きゃ", seam::ui::CompositionSelection{4, 0}));
+  const auto committed = composition.commit();
+  CHECK(committed);
+  CHECK(committed.value().lyricId == lyricId);
+  CHECK(committed.value().text == U"きゃ");
+  CHECK(!composition.active());
+
+  CHECK(composition.begin(lyricId, U"あ"));
+  composition.cancel();
+  CHECK(!composition.active());
+  CHECK(!composition.commit());
+}
+
+TEST_CASE("phoneme lane exposes generated and manually timed phonemes") {
+  seam::application::ProjectFactory factory{200};
+  auto project = factory.createProject("Phoneme lane");
+  const auto trackId = factory.addVocalTrack(project, "Track");
+  const auto regionId = factory.addRegion(
+      project, trackId, "Region", seam::time::Tick{0}, seam::time::Tick{15360});
+  auto [lyric, note] = factory.makeNote(
+      seam::time::Tick{960}, seam::time::Tick{960}, 60, U"き");
+  const auto noteId = note.id;
+  auto* region = project.findRegion(regionId);
+  region->lyrics.push_back(lyric);
+  region->notes.push_back(note);
+  region->phonemeOverrides.push_back(seam::domain::PhonemeOverride{
+      .key = seam::domain::PhonemeKey{noteId, 0},
+      .symbol = std::nullopt,
+      .timing = seam::domain::PhonemeTiming{
+          .startOffset = seam::time::Microseconds{-60000},
+          .endOffset = seam::time::Microseconds{0},
+      },
+      .locked = true,
+  });
+
+  seam::phonemizer::JapaneseKanaPhonemizer phonemizer;
+  const auto phonemes = phonemizer.phonemize(*region);
+  seam::application::EditorSession session{std::move(project)};
+  seam::ui::PianoRollModel pianoRoll{session, factory, regionId};
+  pianoRoll.setViewport({{0, 0, 1280, 720}, 72});
+  pianoRoll.timeline().setPixelsPerQuarter(96.0);
+  pianoRoll.pitch().setTopMidiKey(84);
+
+  seam::ui::PhonemeLaneModel lane;
+  lane.rebuild(pianoRoll, phonemes, 600.0, 32.0);
+  CHECK(lane.visuals().size() == 2);
+  CHECK(lane.visuals().front().symbol == "k");
+  CHECK(lane.visuals().front().locked);
+  CHECK(lane.visuals().front().timingOverridden);
+  const auto center = seam::ui::Point{
+      lane.visuals().front().bounds.x + 1.0,
+      lane.visuals().front().bounds.y + 1.0};
+  const seam::domain::PhonemeKey expectedKey{noteId, 0};
+  CHECK(lane.hitTest(center) == expectedKey);
 }

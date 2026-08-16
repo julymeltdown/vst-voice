@@ -3,6 +3,7 @@
 #include "seam/core/result.hpp"
 #include "seam/domain/ids.hpp"
 #include "seam/domain/note.hpp"
+#include "seam/domain/phoneme.hpp"
 #include "seam/time/meter_map.hpp"
 #include "seam/time/tempo_map.hpp"
 
@@ -46,11 +47,14 @@ struct VocalRegion final {
   time::Tick durationTick;
   std::vector<LyricToken> lyrics;
   std::vector<Note> notes;
+  std::vector<PhonemeOverride> phonemeOverrides;
 
   [[nodiscard]] Note* findNote(NoteId noteId) noexcept;
   [[nodiscard]] const Note* findNote(NoteId noteId) const noexcept;
   [[nodiscard]] LyricToken* findLyric(LyricTokenId lyricId) noexcept;
   [[nodiscard]] const LyricToken* findLyric(LyricTokenId lyricId) const noexcept;
+  [[nodiscard]] PhonemeOverride* findPhonemeOverride(PhonemeKey key) noexcept;
+  [[nodiscard]] const PhonemeOverride* findPhonemeOverride(PhonemeKey key) const noexcept;
   [[nodiscard]] core::Result<void> validate() const;
   void sortNotes();
 

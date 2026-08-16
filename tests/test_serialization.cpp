@@ -31,6 +31,16 @@ TEST_CASE("project JSON round trip preserves the canonical model") {
       seam::time::Tick{960}, seam::time::Tick{720}, 64, U"あ");
   project.findRegion(regionId)->lyrics.push_back(lyric);
   project.findRegion(regionId)->notes.push_back(note);
+  project.findRegion(regionId)->phonemeOverrides.push_back(
+      seam::domain::PhonemeOverride{
+          .key = seam::domain::PhonemeKey{note.id, 0},
+          .symbol = std::string{"y"},
+          .timing = seam::domain::PhonemeTiming{
+              .startOffset = seam::time::Microseconds{-42000},
+              .endOffset = seam::time::Microseconds{0},
+          },
+          .locked = true,
+      });
 
   seam::formats::ProjectJsonCodec codec;
   const auto encoded = codec.encode(project);
@@ -46,4 +56,32 @@ TEST_CASE("project decoder rejects an unsupported schema") {
       R"({"formatId":"com.project-seam.project","schemaVersion":99,"projectId":"1","name":"x","ppq":960,"tempoMap":[],"meterMap":[],"settings":{},"vocalTracks":[],"audioTracks":[]})");
   CHECK(!decoded);
   CHECK(decoded.error().code == seam::core::ErrorCode::Unsupported);
+}
+
+TEST_CASE("project decoder migrates schema one regions without phoneme overrides") {
+  seam::application::ProjectFactory factory{300};
+  auto project = factory.createProject("Schema one fixture");
+  const auto trackId = factory.addVocalTrack(project, "Track");
+  const auto regionId = factory.addRegion(
+      project, trackId, "Region", seam::time::Tick{0}, seam::time::Tick{15360});
+  auto [lyric, note] = factory.makeNote(
+      seam::time::Tick{0}, seam::time::Tick{960}, 60, U"あ");
+  project.findRegion(regionId)->lyrics.push_back(lyric);
+  project.findRegion(regionId)->notes.push_back(note);
+
+  seam::formats::ProjectJsonCodec codec;
+  const auto encoded = codec.encode(project);
+  CHECK(encoded);
+  auto legacy = encoded.value();
+  const auto schemaPosition = legacy.find("\"schemaVersion\": 2");
+  CHECK(schemaPosition != std::string::npos);
+  legacy.replace(schemaPosition, std::string{"\"schemaVersion\": 2"}.size(),
+                 "\"schemaVersion\": 1");
+  const auto overridePosition = legacy.find(",\n          \"phonemeOverrides\": []");
+  CHECK(overridePosition != std::string::npos);
+  legacy.erase(overridePosition,
+               std::string{",\n          \"phonemeOverrides\": []"}.size());
+  const auto decoded = codec.decode(legacy);
+  CHECK(decoded);
+  CHECK(decoded.value() == project);
 }

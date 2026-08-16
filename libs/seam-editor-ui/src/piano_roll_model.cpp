@@ -25,6 +25,15 @@ domain::VocalRegion* PianoRollModel::region() noexcept {
   return session_.project().findRegion(regionId_);
 }
 
+
+double PianoRollModel::pixelAtMicrosecondOffset(
+    time::Tick absoluteStart, time::Microseconds offset) const noexcept {
+  const auto startSeconds = session_.project().tempoMap().secondsAt(absoluteStart);
+  const auto offsetSeconds = static_cast<double>(offset) / 1'000'000.0;
+  const auto tick = session_.project().tempoMap().tickAtSeconds(startSeconds + offsetSeconds);
+  return viewport_.bounds.x + viewport_.keyboardWidth + timeline_.tickToPixel(tick);
+}
+
 void PianoRollModel::rebuildIndex() {
   index_.rebuild(session_.project());
 }
@@ -60,6 +69,8 @@ std::vector<NoteVisual> PianoRollModel::visibleNotes() const {
         .noteId = indexed.noteId,
         .bounds = noteBounds(indexed),
         .midiKey = indexed.midiKey,
+        .absoluteStart = indexed.absoluteStart,
+        .duration = indexed.absoluteEnd - indexed.absoluteStart,
         .selected = session_.selection().contains(indexed.noteId),
         .lyric = std::move(lyric),
     });
