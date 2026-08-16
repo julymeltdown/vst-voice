@@ -1,0 +1,35 @@
+newmtl skin
+Kd 0.7200 0.5200 0.4200
+Ka 0.02 0.02 0.02
+Ns 4
+
+newmtl hair
+Kd 0.0250 0.0250 0.0350
+Ka 0.02 0.02 0.02
+Ns 4
+
+newmtl hoodie
+Kd 0.0550 0.0550 0.0700
+Ka 0.02 0.02 0.02
+Ns 4
+
+newmtl shirt
+Kd 0.0900 0.0800 0.1000
+Ka 0.02 0.02 0.02
+Ns 4
+
+newmtl jeans
+Kd 0.0350 0.0350 0.0450
+Ka 0.02 0.02 0.02
+Ns 4
+
+newmtl shoe
+Kd 0.0600 0.0550 0.0600
+Ka 0.02 0.02 0.02
+Ns 4
+
+newmtl accent
+Kd 0.2600 0.1200 0.3800
+Ka 0.02 0.02 0.02
+Ns 4
+

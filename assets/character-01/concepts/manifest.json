@@ -1,0 +1,52 @@
+{
+  "schemaVersion": 1,
+  "phase": 1,
+  "status": "three-directions-retained",
+  "concepts": [
+    {
+      "id": "concept-a-burgundy",
+      "role": "primary direction",
+      "strengths": [
+        "restrained emo silhouette",
+        "hoodie and canvas-shoe everyday wear",
+        "burgundy accent supports seam identity"
+      ],
+      "phase2Changes": [
+        "remove dangling pseudo-label",
+        "simplify waveform chest graphic",
+        "reduce chain hardware"
+      ]
+    },
+    {
+      "id": "concept-b-violet",
+      "role": "minimal silhouette control",
+      "strengths": [
+        "clean 128px recognition",
+        "few accessories",
+        "low-poly face reads clearly"
+      ],
+      "phase2Changes": [
+        "remove generic gothic interpretation",
+        "replace decorative stitches with functional splice seams"
+      ]
+    },
+    {
+      "id": "concept-c-teal",
+      "role": "software-state accent experiment",
+      "strengths": [
+        "clear product accent color",
+        "strong asymmetric silhouette",
+        "sample indexing details"
+      ],
+      "phase2Changes": [
+        "replace combat boots with canvas footwear",
+        "reduce techwear tags",
+        "shorten layered shirt"
+      ]
+    }
+  ],
+  "assetClass": "first-party-internal-concept",
+  "commercialReleaseStatus": "not-approved",
+  "provenance": "../PROVENANCE.md",
+  "license": "../LICENSE.md"
+}
