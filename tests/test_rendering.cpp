@@ -4,6 +4,9 @@
 #include "seam/application/project_factory.hpp"
 #include "seam/rendering/audio_ring_buffer.hpp"
 #include "seam/rendering/pcm_cache.hpp"
+#include "seam/rendering/playback_engine.hpp"
+#include "seam/platform/ring_buffer_processor.hpp"
+#include "seam/platform/audio_callback.hpp"
 #include "seam/rendering/phrase_segmenter.hpp"
 #include "seam/rendering/render_pipeline.hpp"
 #include "seam/rendering/render_scheduler.hpp"
@@ -620,4 +623,211 @@ TEST_CASE("scheduler rejects an older cached revision without replacing the late
   CHECK(older.front().pcm == nullptr);
   CHECK(scheduler.stats().cacheHits == 1);
   CHECK(scheduler.stats().stale == 1);
+}
+
+
+TEST_CASE("bounded PCM cache evicts memory and old disk entries") {
+  const auto directory = seam::test::support::temporaryDirectory("pcm-cache-limits");
+  seam::rendering::PcmCache cache{
+      directory,
+      seam::rendering::PcmCacheLimits{
+          .maximumMemoryBytes = 600,
+          .maximumDiskBytes = 900,
+          .maximumDiskEntries = 2,
+      }};
+  for (int index = 0; index < 4; ++index) {
+    const seam::rendering::CachedPcm pcm{
+        .sampleRate = 48000,
+        .startFrame = index * 64,
+        .samples = std::vector<float>(128, static_cast<float>(index) * 0.1F),
+    };
+    CHECK(cache.store("limited" + std::to_string(index), pcm));
+    std::this_thread::sleep_for(std::chrono::milliseconds{2});
+  }
+  const auto usage = cache.usage();
+  CHECK(usage);
+  CHECK(usage.value().memoryBytes <= 600);
+  CHECK(usage.value().diskBytes <= 900);
+  CHECK(usage.value().diskEntries <= 2);
+  CHECK(cache.stats().memoryEvictions > 0);
+  CHECK(cache.stats().diskEvictions > 0);
+  CHECK(!cache.load("limited0"));
+  CHECK(cache.load("limited3"));
+}
+
+TEST_CASE("playback timeline mixes vocal and backing clips at absolute frames") {
+  auto vocal = std::make_shared<const seam::rendering::CachedPcm>(
+      seam::rendering::CachedPcm{
+          .sampleRate = 48000,
+          .startFrame = 4,
+          .samples = std::vector<float>(8, 0.5F),
+      });
+  auto backing = std::make_shared<const seam::rendering::CachedPcm>(
+      seam::rendering::CachedPcm{
+          .sampleRate = 48000,
+          .startFrame = 0,
+          .samples = std::vector<float>(16, 0.2F),
+      });
+  seam::rendering::PlaybackTimeline timeline{48000};
+  CHECK(timeline.setClips({
+      seam::rendering::PlaybackClip{
+          .id = "backing",
+          .pcm = backing,
+          .gain = 0.5F,
+      },
+      seam::rendering::PlaybackClip{
+          .id = "vocal",
+          .pcm = vocal,
+          .gain = 1.0F,
+          .fadeInFrames = 2,
+          .fadeOutFrames = 2,
+      },
+  }));
+  std::array<float, 16> output{};
+  timeline.mix(0, output);
+  CHECK_NEAR(output[0], 0.1, 1.0e-6);
+  CHECK(output[4] > 0.1F);
+  CHECK(output[7] > 0.55F);
+  CHECK_NEAR(output[15], 0.1, 1.0e-6);
+  CHECK(timeline.startFrame() == 0);
+  CHECK(timeline.endFrame() == 16);
+}
+
+TEST_CASE("playback feeder loops into the preallocated callback path") {
+  auto pcm = std::make_shared<const seam::rendering::CachedPcm>(
+      seam::rendering::CachedPcm{
+          .sampleRate = 48000,
+          .startFrame = 0,
+          .samples = {0.1F, 0.2F, 0.3F, 0.4F},
+      });
+  auto timeline = std::make_shared<seam::rendering::PlaybackTimeline>(48000);
+  CHECK(timeline->addClip(seam::rendering::PlaybackClip{
+      .id = "loop",
+      .pcm = pcm,
+  }));
+  seam::rendering::SpscAudioRingBuffer ring{32};
+  seam::rendering::PlaybackFeeder feeder{ring, 48000, 8};
+  CHECK(feeder.setTimeline(timeline));
+  CHECK(feeder.setLoop(seam::rendering::PlaybackLoop{
+      .enabled = true,
+      .startFrame = 0,
+      .endFrame = 4,
+  }));
+  feeder.setPlaying(true);
+  CHECK(feeder.feedToWatermark(16) >= 16);
+
+  seam::platform::RingBufferAudioProcessor processor{ring};
+  seam::platform::AudioCallbackSimulator simulator{48000.0, 8};
+  simulator.run(processor, 2);
+  const auto stats = processor.stats();
+  CHECK(stats.callbacks == 2);
+  CHECK(stats.requestedFrames == 16);
+  CHECK(stats.deliveredFrames == 16);
+  CHECK(stats.underflowFrames == 0);
+  CHECK(feeder.stats().loopWraps >= 3);
+  const auto left = simulator.left();
+  CHECK_NEAR(left[0], 0.1, 1.0e-6);
+  CHECK_NEAR(left[1], 0.2, 1.0e-6);
+  CHECK_NEAR(left[2], 0.3, 1.0e-6);
+  CHECK_NEAR(left[3], 0.4, 1.0e-6);
+  CHECK_NEAR(left[4], 0.1, 1.0e-6);
+}
+
+TEST_CASE("ring buffer processor reports zero-filled underflow") {
+  seam::rendering::SpscAudioRingBuffer ring{8};
+  const std::array<float, 3> input{0.25F, -0.25F, 0.5F};
+  CHECK(ring.write(input) == input.size());
+  seam::platform::RingBufferAudioProcessor processor{ring};
+  seam::platform::AudioCallbackSimulator simulator{48000.0, 8};
+  simulator.run(processor, 1);
+  const auto stats = processor.stats();
+  CHECK(stats.deliveredFrames == 3);
+  CHECK(stats.underflowFrames == 5);
+  CHECK_NEAR(simulator.left()[0], 0.25, 1.0e-6);
+  CHECK_NEAR(simulator.left()[3], 0.0, 1.0e-6);
+  CHECK(simulator.left()[0] == simulator.right()[0]);
+}
+
+TEST_CASE("playback timeline mixes overlapping cached phrases with fades") {
+  auto first = std::make_shared<const seam::rendering::CachedPcm>(
+      seam::rendering::CachedPcm{
+          .sampleRate = 48000,
+          .startFrame = 0,
+          .samples = std::vector<float>(8, 0.5F),
+      });
+  auto second = std::make_shared<const seam::rendering::CachedPcm>(
+      seam::rendering::CachedPcm{
+          .sampleRate = 48000,
+          .startFrame = 4,
+          .samples = std::vector<float>(8, 0.25F),
+      });
+  seam::rendering::PlaybackTimeline timeline{48000};
+  CHECK(timeline.setClips({
+      seam::rendering::PlaybackClip{
+          .id = "phrase-a", .pcm = first, .gain = 1.0F,
+          .fadeInFrames = 2, .fadeOutFrames = 2, .enabled = true},
+      seam::rendering::PlaybackClip{
+          .id = "backing", .pcm = second, .gain = 0.5F,
+          .fadeInFrames = 0, .fadeOutFrames = 0, .enabled = true},
+  }));
+  std::array<float, 12> output{};
+  timeline.mix(0, output);
+  CHECK(output[0] > 0.0F && output[0] < 0.5F);
+  CHECK(output[4] > 0.5F);
+  CHECK_NEAR(output[10], 0.125F, 1.0e-6);
+  CHECK(timeline.startFrame() == 0);
+  CHECK(timeline.endFrame() == 12);
+}
+
+TEST_CASE("playback feeder loops and fills a preallocated ring buffer") {
+  auto pcm = std::make_shared<const seam::rendering::CachedPcm>(
+      seam::rendering::CachedPcm{
+          .sampleRate = 48000,
+          .startFrame = 0,
+          .samples = {0.1F, 0.2F, 0.3F, 0.4F},
+      });
+  auto timeline = std::make_shared<seam::rendering::PlaybackTimeline>(48000);
+  CHECK(timeline->addClip(seam::rendering::PlaybackClip{
+      .id = "loop", .pcm = pcm, .gain = 1.0F,
+      .fadeInFrames = 0, .fadeOutFrames = 0, .enabled = true}));
+  seam::rendering::SpscAudioRingBuffer ring{32};
+  seam::rendering::PlaybackFeeder feeder{ring, 48000, 6};
+  CHECK(feeder.setTimeline(timeline));
+  CHECK(feeder.setLoop(seam::rendering::PlaybackLoop{
+      .enabled = true, .startFrame = 0, .endFrame = 4}));
+  feeder.setPlaying(true);
+  CHECK(feeder.feedToWatermark(12) >= 12);
+  std::array<float, 12> output{};
+  CHECK(ring.read(output) == output.size());
+  CHECK(output == (std::array<float, 12>{
+      0.1F, 0.2F, 0.3F, 0.4F,
+      0.1F, 0.2F, 0.3F, 0.4F,
+      0.1F, 0.2F, 0.3F, 0.4F}));
+  CHECK(feeder.stats().loopWraps >= 2);
+}
+
+TEST_CASE("PCM cache enforces memory and disk budgets deterministically") {
+  const auto directory = seam::test::support::temporaryDirectory("pcm-cache-budget");
+  seam::rendering::PcmCache cache{
+      directory,
+      seam::rendering::PcmCacheLimits{
+          .maximumMemoryBytes = 64,
+          .maximumDiskBytes = 4096,
+          .maximumDiskEntries = 2,
+      }};
+  for (int index = 0; index < 4; ++index) {
+    CHECK(cache.store("budget-" + std::to_string(index),
+        seam::rendering::CachedPcm{
+            .sampleRate = 48000,
+            .startFrame = index * 16,
+            .samples = std::vector<float>(16, static_cast<float>(index) * 0.1F),
+        }));
+  }
+  const auto usage = cache.usage();
+  CHECK(usage);
+  CHECK(usage.value().memoryBytes <= 64);
+  CHECK(usage.value().memoryEntries <= 1);
+  CHECK(usage.value().diskEntries <= 2);
+  CHECK(cache.stats().memoryEvictions >= 3);
+  CHECK(cache.stats().diskEvictions >= 2);
 }

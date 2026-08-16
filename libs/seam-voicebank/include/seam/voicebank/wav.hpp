@@ -28,6 +28,11 @@ struct AudioStatistics final {
 };
 
 [[nodiscard]] core::Result<AudioBuffer> readWav(const std::filesystem::path& path);
+[[nodiscard]] core::Result<void> writePcm16Wav(
+    const std::filesystem::path& path,
+    std::uint32_t sampleRate,
+    std::uint16_t channels,
+    std::span<const float> interleaved);
 [[nodiscard]] core::Result<void> writeMonoPcm16Wav(
     const std::filesystem::path& path,
     std::uint32_t sampleRate,

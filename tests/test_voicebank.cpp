@@ -180,3 +180,17 @@ TEST_CASE("voicebank schema one migrates without pitch marks") {
   CHECK(decoded);
   CHECK(decoded.value() == manifest);
 }
+
+TEST_CASE("stereo PCM16 WAV writer round trips channel layout") {
+  const auto directory = seam::test::support::temporaryDirectory("stereo-wav");
+  const std::vector<float> interleaved{
+      0.1F, -0.1F, 0.2F, -0.2F, 0.3F, -0.3F, 0.4F, -0.4F};
+  const auto path = directory / "stereo.wav";
+  CHECK(seam::voicebank::writePcm16Wav(path, 48000, 2, interleaved));
+  const auto loaded = seam::voicebank::readWav(path);
+  CHECK(loaded);
+  CHECK(loaded.value().channels == 2);
+  CHECK(loaded.value().frameCount() == 4);
+  CHECK_NEAR(loaded.value().interleaved[0], 0.1F, 1.0e-4);
+  CHECK_NEAR(loaded.value().interleaved[1], -0.1F, 1.0e-4);
+}

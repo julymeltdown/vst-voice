@@ -212,14 +212,19 @@ core::Result<AudioBuffer> readWav(const std::filesystem::path& path) {
   return result;
 }
 
-core::Result<void> writeMonoPcm16Wav(const std::filesystem::path& path,
-                                     std::uint32_t sampleRate,
-                                     std::span<const float> samples) {
-  if (sampleRate < 8000 || sampleRate > 384000) {
+core::Result<void> writePcm16Wav(const std::filesystem::path& path,
+                                 std::uint32_t sampleRate,
+                                 std::uint16_t channels,
+                                 std::span<const float> interleaved) {
+  if (sampleRate < 8000 || sampleRate > 384000 || channels == 0 || channels > 8 ||
+      interleaved.empty() || interleaved.size() % channels != 0) {
     return core::failure(core::ErrorCode::InvalidArgument,
-                         "WAV sample rate is unsupported");
+                         "WAV output format is invalid");
   }
-  if (samples.size() > (std::numeric_limits<std::uint32_t>::max() - 36U) / 2U) {
+  const auto channelCount = static_cast<std::uint32_t>(channels);
+  if (sampleRate > std::numeric_limits<std::uint32_t>::max() /
+                       (channelCount * 2U) ||
+      interleaved.size() > (std::numeric_limits<std::uint32_t>::max() - 36U) / 2U) {
     return core::failure(core::ErrorCode::Unsupported,
                          "WAV output is too large for RIFF");
   }
@@ -239,22 +244,24 @@ core::Result<void> writeMonoPcm16Wav(const std::filesystem::path& path,
                          path.string());
   }
 
-  const auto dataBytes = static_cast<std::uint32_t>(samples.size() * 2U);
+  const auto dataBytes = static_cast<std::uint32_t>(interleaved.size() * 2U);
+  const auto blockAlign = static_cast<std::uint16_t>(channels * 2U);
   stream.write("RIFF", 4);
   writeU32(stream, 36U + dataBytes);
   stream.write("WAVE", 4);
   stream.write("fmt ", 4);
   writeU32(stream, 16);
   writeU16(stream, 1);
-  writeU16(stream, 1);
+  writeU16(stream, channels);
   writeU32(stream, sampleRate);
-  writeU32(stream, sampleRate * 2U);
-  writeU16(stream, 2);
+  writeU32(stream, sampleRate * channelCount * 2U);
+  writeU16(stream, blockAlign);
   writeU16(stream, 16);
   stream.write("data", 4);
   writeU32(stream, dataBytes);
-  for (const auto sample : samples) {
-    const auto clamped = std::clamp(sample, -1.0F, 1.0F);
+  for (const auto sample : interleaved) {
+    const auto finite = std::isfinite(sample) ? sample : 0.0F;
+    const auto clamped = std::clamp(finite, -1.0F, 1.0F);
     const auto scaled = static_cast<std::int32_t>(std::lround(
         static_cast<double>(clamped) * (clamped < 0.0F ? 32768.0 : 32767.0)));
     writeU16(stream, static_cast<std::uint16_t>(static_cast<std::int16_t>(scaled)));
@@ -266,6 +273,16 @@ core::Result<void> writeMonoPcm16Wav(const std::filesystem::path& path,
                          path.string());
   }
   return core::success();
+}
+
+core::Result<void> writeMonoPcm16Wav(const std::filesystem::path& path,
+                                     std::uint32_t sampleRate,
+                                     std::span<const float> samples) {
+  if (samples.empty()) {
+    return core::failure(core::ErrorCode::InvalidArgument,
+                         "Mono WAV output cannot be empty");
+  }
+  return writePcm16Wav(path, sampleRate, 1U, samples);
 }
 
 AudioStatistics analyzeAudio(std::span<const float> samples) noexcept {

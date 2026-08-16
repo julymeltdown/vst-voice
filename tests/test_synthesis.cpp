@@ -8,9 +8,12 @@
 #include "seam/synthesis/renderer_dispatcher.hpp"
 #include "seam/synthesis/raw_renderer.hpp"
 #include "seam/synthesis/seam_composer.hpp"
+#include "seam/synthesis/spectral_classic.hpp"
+#include "seam/synthesis/stretch_renderer.hpp"
 #include "seam/synthesis/timing_solver.hpp"
 #include "seam/synthesis/unit_selection.hpp"
 #include "seam/voicebank/pitch.hpp"
+#include "seam/voicebank/spectrogram.hpp"
 #include "seam/voicebank/wav.hpp"
 
 #include <algorithm>
@@ -345,7 +348,7 @@ TEST_CASE("phase reset and envelope blend are real boundary operations") {
   CHECK(reset.value().samples != aligned.value().samples);
 }
 
-TEST_CASE("renderer dispatcher exposes explicit fallback instead of hiding it") {
+TEST_CASE("renderer dispatcher executes spectral and stretch backends explicitly") {
   constexpr std::uint32_t sampleRate = 48000;
   const auto samples = seam::test::support::sineWave(sampleRate, 440.0, 0.5);
   seam::voicebank::AudioBuffer source{
@@ -356,7 +359,38 @@ TEST_CASE("renderer dispatcher exposes explicit fallback instead of hiding it") 
   auto unit = seam::test::support::makeUnit(
       "stretch-request", {"a"}, "audio/a.wav", 69,
       seam::voicebank::UnitKind::Sustain, samples.size());
+  seam::synthesis::UnitRendererDispatcher dispatcher;
+
   unit.renderer = seam::voicebank::RendererHint::Stretch;
+  const auto stretched = dispatcher.render(unit, source, sampleRate, 24000, 72);
+  CHECK(stretched);
+  CHECK(stretched.value().requested == seam::voicebank::RendererHint::Stretch);
+  CHECK(stretched.value().actual == seam::voicebank::RendererHint::Stretch);
+  CHECK(!stretched.value().usedFallback);
+  CHECK(stretched.value().diagnostic.empty());
+
+  unit.renderer = seam::voicebank::RendererHint::SpectralClassic;
+  const auto spectral = dispatcher.render(unit, source, sampleRate, 24000, 72);
+  CHECK(spectral);
+  CHECK(spectral.value().requested == seam::voicebank::RendererHint::SpectralClassic);
+  CHECK(spectral.value().actual == seam::voicebank::RendererHint::SpectralClassic);
+  CHECK(!spectral.value().usedFallback);
+}
+
+TEST_CASE("renderer dispatcher reports an actual raw fallback") {
+  constexpr std::uint32_t sampleRate = 48000;
+  const auto samples = seam::test::support::sineWave(sampleRate, 440.0, 0.5);
+  seam::voicebank::AudioBuffer source{
+      .sampleRate = sampleRate,
+      .channels = 1,
+      .interleaved = samples,
+  };
+  auto unit = seam::test::support::makeUnit(
+      "short-loop", {"a"}, "audio/a.wav", 69,
+      seam::voicebank::UnitKind::Sustain, samples.size());
+  unit.renderer = seam::voicebank::RendererHint::Stretch;
+  unit.markers.loopStart = 8000;
+  unit.markers.loopEnd = 8010;
   seam::synthesis::UnitRendererDispatcher dispatcher;
   const auto rendered = dispatcher.render(unit, source, sampleRate, 24000, 69);
   CHECK(rendered);
@@ -364,4 +398,106 @@ TEST_CASE("renderer dispatcher exposes explicit fallback instead of hiding it") 
   CHECK(rendered.value().actual == seam::voicebank::RendererHint::Raw);
   CHECK(rendered.value().usedFallback);
   CHECK(!rendered.value().diagnostic.empty());
+}
+
+TEST_CASE("spectral classic preserves exact length and moves harmonic energy") {
+  constexpr std::uint32_t sampleRate = 48000;
+  const auto samples = seam::test::support::sineWave(sampleRate, 220.0, 0.6, 0.35F);
+  seam::voicebank::AudioBuffer source{
+      .sampleRate = sampleRate,
+      .channels = 1,
+      .interleaved = samples,
+  };
+  auto unit = seam::test::support::makeUnit(
+      "spectral-a3", {"a"}, "audio/a.wav", 57,
+      seam::voicebank::UnitKind::Sustain, samples.size());
+  unit.renderer = seam::voicebank::RendererHint::SpectralClassic;
+  unit.markers.loopStart = 8000;
+  unit.markers.loopEnd = 22000;
+  unit.markers.releaseStart = 25000;
+  unit.markers.audioEnd = static_cast<seam::time::SampleFrame>(samples.size());
+
+  seam::synthesis::SpectralClassicRenderer renderer;
+  const auto rendered = renderer.render(
+      unit, source, sampleRate, 30000, 69,
+      seam::synthesis::SpectralRenderParameters{
+          .fftSize = 1024,
+          .hopSize = 256,
+          .formantFollow = 0.45F,
+          .phaseReset = 0.0F,
+          .additionalGainDb = -2.0F,
+          .pitchCurve = {},
+      });
+  CHECK(rendered);
+  CHECK(rendered.value().samples.size() == 30000);
+  CHECK(std::all_of(rendered.value().samples.begin(), rendered.value().samples.end(),
+                    [](float value) { return std::isfinite(value); }));
+  const auto begin = rendered.value().samples.begin() + 9000;
+  const auto end = rendered.value().samples.begin() + 19000;
+  const std::vector<float> sustain(begin, end);
+  const auto pitch = seam::voicebank::analyzePitch(
+      sustain, sampleRate,
+      seam::voicebank::PitchConfig{.frameSize = 2048,
+                                   .hopSize = 256,
+                                   .minimumHz = 250.0,
+                                   .maximumHz = 700.0,
+                                   .voicingThreshold = 0.20});
+  CHECK(pitch);
+  const auto median = seam::voicebank::medianVoicedPitch(pitch.value());
+  const auto gram = seam::voicebank::buildSpectrogram(
+      sustain, seam::voicebank::SpectrogramConfig{.fftSize = 2048, .hopSize = 256,
+          .minimumDb = -120.0F, .maximumDb = 0.0F});
+  double dominantHz = 0.0;
+  if (gram) {
+    std::size_t bestBin = 1;
+    double bestScore = -1.0e30;
+    for (std::size_t bin = 1; bin < gram.value().bins; ++bin) {
+      double score = 0.0;
+      for (std::size_t column = 0; column < gram.value().columns; ++column) {
+        score += gram.value().at(column, bin);
+      }
+      if (score > bestScore) { bestScore = score; bestBin = bin; }
+    }
+    dominantHz = static_cast<double>(bestBin) * 48000.0 / 2048.0;
+  }
+  CHECK(median > 360.0);
+  CHECK(median < 520.0);
+  CHECK(dominantHz > 390.0);
+  CHECK(dominantHz < 510.0);
+}
+
+TEST_CASE("granular stretch is finite deterministic and unit scoped") {
+  constexpr std::uint32_t sampleRate = 48000;
+  const auto samples = seam::test::support::sineWave(sampleRate, 329.627556, 0.6, 0.32F);
+  seam::voicebank::AudioBuffer source{
+      .sampleRate = sampleRate,
+      .channels = 1,
+      .interleaved = samples,
+  };
+  auto unit = seam::test::support::makeUnit(
+      "stretch-e4", {"i"}, "audio/i.wav", 64,
+      seam::voicebank::UnitKind::Sustain, samples.size());
+  unit.markers.loopStart = 7200;
+  unit.markers.loopEnd = 23000;
+  unit.markers.releaseStart = 25000;
+  unit.markers.audioEnd = static_cast<seam::time::SampleFrame>(samples.size());
+  seam::synthesis::StretchUnitRenderer renderer;
+  const seam::synthesis::StretchRenderParameters parameters{
+      .grainSize = 1024,
+      .hopSize = 256,
+      .transientPreservation = 0.20F,
+      .sourceDrift = 0.35F,
+      .additionalGainDb = -1.0F,
+      .pitchCurve = {},
+  };
+  const auto first = renderer.render(unit, source, sampleRate, 42000, 67, parameters);
+  const auto second = renderer.render(unit, source, sampleRate, 42000, 67, parameters);
+  CHECK(first);
+  CHECK(second);
+  CHECK(first.value().samples == second.value().samples);
+  CHECK(first.value().samples.size() == 42000);
+  CHECK(std::any_of(first.value().samples.begin(), first.value().samples.end(),
+                    [](float value) { return std::abs(value) > 0.01F; }));
+  CHECK(std::all_of(first.value().samples.begin(), first.value().samples.end(),
+                    [](float value) { return std::isfinite(value); }));
 }

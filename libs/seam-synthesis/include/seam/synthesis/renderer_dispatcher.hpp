@@ -4,6 +4,8 @@
 #include "seam/domain/render_controls.hpp"
 #include "seam/synthesis/classic_psola.hpp"
 #include "seam/synthesis/raw_renderer.hpp"
+#include "seam/synthesis/spectral_classic.hpp"
+#include "seam/synthesis/stretch_renderer.hpp"
 #include "seam/voicebank/voicebank.hpp"
 #include "seam/voicebank/wav.hpp"
 
@@ -18,6 +20,8 @@ enum class RenderPolicy {
   RespectVoicebank,
   ForceRaw,
   ForceClassicPsola,
+  ForceSpectralClassic,
+  ForceStretch,
 };
 
 struct RendererDispatchParameters final {
@@ -26,6 +30,8 @@ struct RendererDispatchParameters final {
   std::optional<domain::UnitRendererKind> rendererOverride;
   RawRenderParameters raw{};
   PsolaRenderParameters psola{};
+  SpectralRenderParameters spectral{};
+  StretchRenderParameters stretch{};
 };
 
 struct DispatchedRenderedUnit final {

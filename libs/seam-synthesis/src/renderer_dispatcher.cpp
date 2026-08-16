@@ -24,9 +24,37 @@ voicebank::RendererHint requestedRenderer(
     case RenderPolicy::ForceRaw: return voicebank::RendererHint::Raw;
     case RenderPolicy::ForceClassicPsola:
       return voicebank::RendererHint::ClassicPsola;
+    case RenderPolicy::ForceSpectralClassic:
+      return voicebank::RendererHint::SpectralClassic;
+    case RenderPolicy::ForceStretch:
+      return voicebank::RendererHint::Stretch;
     case RenderPolicy::RespectVoicebank: return unit.renderer;
   }
   return voicebank::RendererHint::Raw;
+}
+
+core::Result<RenderedUnit> rawFallback(
+    const voicebank::Unit& unit,
+    const voicebank::AudioBuffer& source,
+    std::uint32_t outputSampleRate,
+    time::SampleFrame outputFrames,
+    std::int32_t targetMidi,
+    const RawRenderParameters& parameters) {
+  RawLoopRenderer fallback;
+  return fallback.render(unit, source, outputSampleRate, outputFrames,
+                         targetMidi, parameters);
+}
+
+DispatchedRenderedUnit fallbackResult(RenderedUnit unit,
+                                      voicebank::RendererHint requested,
+                                      std::string diagnostic) {
+  return DispatchedRenderedUnit{
+      .unit = std::move(unit),
+      .requested = requested,
+      .actual = voicebank::RendererHint::Raw,
+      .usedFallback = true,
+      .diagnostic = std::move(diagnostic),
+  };
 }
 
 }  // namespace
@@ -45,67 +73,56 @@ core::Result<DispatchedRenderedUnit> UnitRendererDispatcher::render(
   }
   const auto requested = requestedRenderer(
       unit, parameters.policy, parameters.rendererOverride);
-  if (requested == voicebank::RendererHint::ClassicPsola) {
-    ClassicPsolaRenderer renderer;
-    auto result = renderer.render(unit, source, outputSampleRate, outputFrames,
-                                  targetMidi, parameters.psola, stopToken);
-    if (result) {
-      return DispatchedRenderedUnit{
-          .unit = std::move(result).value(),
-          .requested = requested,
-          .actual = voicebank::RendererHint::ClassicPsola,
-          .usedFallback = false,
-          .diagnostic = {},
-      };
+
+  core::Result<RenderedUnit> rendered = core::failure<RenderedUnit>(
+      core::ErrorCode::Internal, "Renderer dispatch did not select a backend",
+      unit.id);
+  switch (requested) {
+    case voicebank::RendererHint::Raw: {
+      RawLoopRenderer renderer;
+      rendered = renderer.render(unit, source, outputSampleRate, outputFrames,
+                                 targetMidi, parameters.raw);
+      break;
     }
-    if (!parameters.allowRawFallback || stopToken.stop_requested()) {
-      return core::Result<DispatchedRenderedUnit>{result.error()};
+    case voicebank::RendererHint::ClassicPsola: {
+      ClassicPsolaRenderer renderer;
+      rendered = renderer.render(unit, source, outputSampleRate, outputFrames,
+                                 targetMidi, parameters.psola, stopToken);
+      break;
     }
-    RawLoopRenderer fallback;
-    auto raw = fallback.render(unit, source, outputSampleRate, outputFrames,
-                               targetMidi, parameters.raw);
-    if (!raw) return core::Result<DispatchedRenderedUnit>{raw.error()};
-    return DispatchedRenderedUnit{
-        .unit = std::move(raw).value(),
-        .requested = requested,
-        .actual = voicebank::RendererHint::Raw,
-        .usedFallback = true,
-        .diagnostic = result.error().message,
-    };
+    case voicebank::RendererHint::SpectralClassic: {
+      SpectralClassicRenderer renderer;
+      rendered = renderer.render(unit, source, outputSampleRate, outputFrames,
+                                 targetMidi, parameters.spectral, stopToken);
+      break;
+    }
+    case voicebank::RendererHint::Stretch: {
+      StretchUnitRenderer renderer;
+      rendered = renderer.render(unit, source, outputSampleRate, outputFrames,
+                                 targetMidi, parameters.stretch, stopToken);
+      break;
+    }
   }
 
-  if (requested == voicebank::RendererHint::SpectralClassic ||
-      requested == voicebank::RendererHint::Stretch) {
-    if (!parameters.allowRawFallback) {
-      return core::failure<DispatchedRenderedUnit>(
-          core::ErrorCode::Unsupported,
-          "Requested renderer is not implemented in Phase 3",
-          unit.id);
-    }
-    RawLoopRenderer fallback;
-    auto raw = fallback.render(unit, source, outputSampleRate, outputFrames,
-                               targetMidi, parameters.raw);
-    if (!raw) return core::Result<DispatchedRenderedUnit>{raw.error()};
+  if (rendered) {
     return DispatchedRenderedUnit{
-        .unit = std::move(raw).value(),
+        .unit = std::move(rendered).value(),
         .requested = requested,
-        .actual = voicebank::RendererHint::Raw,
-        .usedFallback = true,
-        .diagnostic = "Requested renderer is not implemented; RawLoopRenderer was used",
+        .actual = requested,
+        .usedFallback = false,
+        .diagnostic = {},
     };
   }
+  if (!parameters.allowRawFallback || requested == voicebank::RendererHint::Raw ||
+      stopToken.stop_requested()) {
+    return core::Result<DispatchedRenderedUnit>{rendered.error()};
+  }
 
-  RawLoopRenderer renderer;
-  auto raw = renderer.render(unit, source, outputSampleRate, outputFrames,
-                             targetMidi, parameters.raw);
+  const auto diagnostic = rendered.error().message;
+  auto raw = rawFallback(unit, source, outputSampleRate, outputFrames,
+                         targetMidi, parameters.raw);
   if (!raw) return core::Result<DispatchedRenderedUnit>{raw.error()};
-  return DispatchedRenderedUnit{
-      .unit = std::move(raw).value(),
-      .requested = requested,
-      .actual = voicebank::RendererHint::Raw,
-      .usedFallback = false,
-      .diagnostic = {},
-  };
+  return fallbackResult(std::move(raw).value(), requested, diagnostic);
 }
 
 }  // namespace seam::synthesis

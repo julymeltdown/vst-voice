@@ -177,7 +177,10 @@ core::Result<PhraseRenderResult> ConcatenativePhraseRenderer::render(
           uniquePoints.push_back(point);
         }
       }
-      dispatchParameters.psola.pitchCurve = PitchCurve{std::move(uniquePoints)};
+      auto curve = PitchCurve{std::move(uniquePoints)};
+      dispatchParameters.psola.pitchCurve = curve;
+      dispatchParameters.spectral.pitchCurve = curve;
+      dispatchParameters.stretch.pitchCurve = std::move(curve);
     }
 
     auto renderedUnit = dispatcher.render(
