@@ -1,120 +1,120 @@
-# Project SEAM — Phase 3: Editable PSOLA and Background Phrase Rendering
+# Project SEAM — Phase 4: Multi-renderer synthesis and callback-ready playback
 
 Project SEAM is a C++20 sample-concatenative singing-voice editor. Phoneme boundaries, source-unit changes, pitch-shift artifacts, and sample seams are treated as editable musical material rather than defects that must always be hidden.
 
-This repository contains the Phase 1 editor/domain foundation, the Phase 2 phoneme/voicebank/raw-synthesis vertical slice, and the completed **Phase 3 production render foundation**. Development remains on the **`master` branch only**.
+This repository contains the Phase 1 editor/domain foundation, Phase 2 phoneme/voicebank/Raw vertical slice, Phase 3 editable PSOLA and background render loop, and the completed **Phase 4 multi-renderer, inspection, playback, and bounded-cache foundation**. Development uses the **`master` branch only**.
 
-## Phase 3 implementation
+## Phase 4 implementation
 
-### Persistent render intent
+### Four concrete Unit renderers
 
-- Project JSON schema 3.
-- Explicit `UnitSelectionOverride` with unit ID, token span, renderer choice, and lock state.
-- Explicit per-boundary `SeamOverride` for seam amount, overlap, curve, phase reset, and envelope blend.
-- Region-level pitch automation in cents with step, linear, and smooth interpolation.
-- Undoable upsert/remove commands for unit selection, seams, and pitch points.
-- Note deletion removes and restores dependent phoneme and render overrides.
+- `RawLoopRenderer` for direct sample character and loop print.
+- `ClassicPsolaRenderer` for pitch-mark-controlled voiced sustain.
+- `SpectralClassicRenderer` for stable-vowel STFT pitch transformation with explicit formant and phase controls.
+- `StretchUnitRenderer` for deterministic Unit-scoped granular stretch.
+- Requested renderer, actual renderer, fallback state, and diagnostic remain inspectable.
+- Raw fallback occurs only after a backend rejection and an explicit fallback policy.
+- All four renderers can coexist in one Phrase.
 
-### Voicebank and PSOLA
+### Inspection models
 
-- Voicebank manifest schema 2 with editable pitch marks.
-- Schema 1 → 2 migration with an empty pitch-mark collection.
-- Deterministic pitch-mark generation, validation, add/move/remove, and lock operations.
-- `ClassicPsolaRenderer` for voiced sustain resynthesis.
-- Source consonant and release-transient preservation.
-- Pitch curves, source-pitch residual, gain, cancellation, and finite-output validation.
-- Renderer dispatcher for Raw and Classic PSOLA.
-- Explicit Raw fallback for currently unimplemented SpectralClassic and Stretch requests; fallback is reported rather than hidden.
+- Unit Lane model with selected Unit, alternatives, destination geometry, target MIDI, forced state, actual renderer, fallback, and seam data.
+- Sample Microscope model with waveform columns, spectrogram, acoustic markers, pitch marks, frame/pixel mapping, and hit tests.
+- Validated acoustic-marker and pitch-mark movement.
+- Edited voicebank manifest persistence in the end-to-end demo.
 
-### Phrase render pipeline
+### Playback handoff
 
-- Stable phrase segmentation and neighboring dirty-phrase invalidation.
-- Immutable, phrase-scoped render snapshots.
-- Audio-only content hashes that ignore project title, character presentation, snap settings, unrelated phrases, and tempo/meter events after the phrase.
-- Japanese phonemizer → deterministic unit selection → vowel-onset timing → mixed Raw/PSOLA rendering → seam composition.
-- Unit overrides, pitch automation, and per-boundary seams honored by the production phrase renderer.
+- Absolute-frame `PlaybackTimeline` for vocal and backing clips.
+- Per-clip gain and edge fades.
+- Preallocated `PlaybackFeeder` with seek, loop, and watermark fill.
+- SPSC ring handoff.
+- Allocation-free `RingBufferAudioProcessor` with deterministic zero-fill and underflow counters.
+- Stereo PCM16 evidence writer.
 
-### Background rendering and playback handoff
+### Cache governance
 
-- Priority background scheduler with `Playhead`, `Next`, `Selected`, `Viewport`, and `Background` levels.
-- Revision cancellation and stale-completion rejection.
-- Content-addressed PCM cache with versioned binary format, checksum, bounds checking, finite-sample validation, memory/disk tiers, and atomic temporary-file replacement.
-- Cache content separated from project revision so identical audio can be reused by a newer revision.
-- Stale-while-render store that keeps old PCM readable until a newer revision is published.
-- Preallocated single-producer/single-consumer audio ring buffer.
+- Configurable memory byte budget.
+- Configurable disk byte and entry budgets.
+- Memory and disk eviction statistics.
+- Existing checksummed, versioned, finite-value-validated, atomic cache format retained.
 
-### Evidence and verification
+### Verification
 
-- 55 individually reported tests.
-- Debug, release, and ASan/UBSan presets with warnings treated as errors.
-- End-to-end Phase 3 demo producing real PSOLA/raw PCM, editor evidence, project schema 3, voicebank schema 2, and scheduler/cache evidence.
-- Phase 3 benchmark for PSOLA, seam composition, disk cache, and scheduler throughput.
-- Master-only policy and license audit targets.
+- Direct named test suite and CTest smoke targets.
+- Debug, release, and ASan/UBSan presets with warnings as errors.
+- Phase 4 demo executes Raw, PSOLA, SpectralClassic, and Stretch once each.
+- Editor, microscope, waveform, spectrogram, playback, callback, cache, project, and voicebank evidence.
+- Phase 4 benchmark for Spectral, Stretch, callback throughput, and cache pruning.
+- Master-only and dependency-license policy checks.
 
 ## Honest current boundary
 
 The repository still does **not** contain:
 
-- the production iPlug2 + Skia native window;
-- Windows/macOS native IME overlays;
-- the final Voicebank Studio GUI or recording transport;
-- an implemented SpectralClassic or Signalsmith Stretch renderer;
+- a production iPlug2 + Skia native window;
+- Windows/macOS native IME adapters;
+- a complete Voicebank Studio application shell or recording transport;
+- a physical audio-device adapter and long-running feeder thread;
+- true multichannel project routing;
 - an official licensed human-recorded voicebank;
-- a real audio-device callback connected to the new scheduler/ring-buffer path;
+- signed `.seambank` packages;
 - CLAP, VST3, or AU targets.
 
-The Phase 3 preview is generated from the actual project, phoneme, unit-plan, and render-placement data. The supplied WAV is genuinely generated by the implemented mixed Raw/Classic-PSOLA pipeline. The included voicebank remains synthetic test data.
+The Phase 4 images are generated from the actual Unit Lane and Sample Microscope models, but they are not native-window screenshots. The WAVs are genuinely generated by the implemented sample renderers and playback path. The included voicebank remains synthetic test data.
 
 ## Build
 
 ```bash
 cmake --preset dev
 cmake --build --preset dev
-ctest --preset dev
+ctest --preset dev --output-on-failure
 ```
 
-Release and sanitizers:
+Release and sanitizer builds:
 
 ```bash
 cmake --preset release
 cmake --build --preset release
-ctest --preset release
+ctest --preset release --output-on-failure
 
 cmake --preset sanitize
 cmake --build --preset sanitize
-ctest --preset sanitize
+ctest --preset sanitize --output-on-failure
 ```
 
-## Run the Phase 3 vertical slice
+## Run Phase 4
 
 ```bash
-./build/dev/seam_phase3_demo --output out/phase3
+./build/dev/seam_phase4_demo --output out/phase4
 ```
 
-Key outputs:
+Key output:
 
 ```text
-out/phase3/phase3-demo.seam.json
-out/phase3/phase3-editor.svg
-out/phase3/phase3-psola-phrase.wav
-out/phase3/phase3-raw-reference.wav
-out/phase3/phase3-waveform.svg
-out/phase3/phase3-spectrogram.pgm
-out/phase3/phase3-summary.json
-out/phase3/synthetic-voicebank/manifest.json
-out/phase3/pcm-cache/*.spcm
+out/phase4/phase4-demo.seam.json
+out/phase4/phase4-editor.svg
+out/phase4/phase4-microscope.svg
+out/phase4/phase4-mixed-render.wav
+out/phase4/phase4-raw-reference.wav
+out/phase4/phase4-playback-mix.wav
+out/phase4/phase4-callback-preview.wav
+out/phase4/phase4-waveform.svg
+out/phase4/phase4-spectrogram.pgm
+out/phase4/phase4-edited-voicebank-manifest.json
+out/phase4/phase4-summary.json
 ```
 
-## Generate reproducible evidence
+## Reproducible evidence
 
 ```bash
-python3 scripts/generate_phase3_evidence.py --root .
+python3 scripts/generate_phase4_evidence.py --root .
 ```
 
-Or through CMake after a dev build:
+Or:
 
 ```bash
-cmake --build --preset dev --target seam_phase3_evidence
+cmake --build --preset dev --target seam_phase4_evidence
 ```
 
 ## Benchmarks
@@ -123,13 +123,14 @@ cmake --build --preset dev --target seam_phase3_evidence
 ./build/dev/seam_phase1_benchmark
 ./build/dev/seam_phase2_benchmark
 ./build/dev/seam_phase3_benchmark
+./build/dev/seam_phase4_benchmark
 ```
 
-Benchmark values are machine-specific regression evidence, not universal performance guarantees.
+Benchmark values are machine- and build-specific regression evidence, not universal performance guarantees. SpectralClassic is currently a correctness-first quality renderer and is not presented as a guaranteed real-time preview path.
 
 ## Repository policy
 
-Only `master` is permitted. Hooks are configured through:
+Only `master` is permitted. Hooks are configured with:
 
 ```bash
 git config core.hooksPath .githooks
@@ -137,11 +138,10 @@ git config core.hooksPath .githooks
 
 ## Documentation
 
-- [`PHASE3_IMPLEMENTATION_REPORT.md`](PHASE3_IMPLEMENTATION_REPORT.md)
-- [`docs/architecture/PHASE3_RENDER_PIPELINE.md`](docs/architecture/PHASE3_RENDER_PIPELINE.md)
-- [`docs/phase3/ACCEPTANCE.md`](docs/phase3/ACCEPTANCE.md)
-- [`docs/formats/PROJECT_JSON_V3.md`](docs/formats/PROJECT_JSON_V3.md)
-- [`docs/formats/VOICEBANK_MANIFEST_V2.md`](docs/formats/VOICEBANK_MANIFEST_V2.md)
+- [`PHASE4_IMPLEMENTATION_REPORT.md`](PHASE4_IMPLEMENTATION_REPORT.md)
+- [`docs/architecture/PHASE4_SPECTRAL_PLAYBACK.md`](docs/architecture/PHASE4_SPECTRAL_PLAYBACK.md)
+- [`docs/phase4/ACCEPTANCE.md`](docs/phase4/ACCEPTANCE.md)
+- [`docs/phase4/EVIDENCE.md`](docs/phase4/EVIDENCE.md)
 - [`docs/licensing/DEPENDENCY_POLICY.md`](docs/licensing/DEPENDENCY_POLICY.md)
 
 ## Ownership and licensing
