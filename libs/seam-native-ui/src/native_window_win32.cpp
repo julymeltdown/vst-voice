@@ -3,6 +3,7 @@
 #if defined(SEAM_NATIVE_WIN32)
 
 #include "seam/domain/note.hpp"
+#include "seam/text/text_engine.hpp"
 
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -144,6 +145,8 @@ public:
 
     config_ = config;
     client_ = &client;
+    auto textEngine = text::TextEngine::createSystem();
+    if (textEngine) textEngine_ = std::move(textEngine.value());
     static_cast<void>(SetProcessDpiAwarenessContext(
         DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2));
 
@@ -541,7 +544,7 @@ private:
     if (client_ == nullptr || surface_.pixels().empty() || device == nullptr) {
       return;
     }
-    RasterCanvas canvas{surface_, scale_};
+    RasterCanvas canvas{surface_, scale_, textEngine_.get()};
     client_->paint(canvas);
     BITMAPINFO bitmap{};
     bitmap.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
@@ -599,6 +602,7 @@ private:
   ITfThreadMgr* threadManager_{nullptr};
   TfClientId tfClientId_{TF_CLIENTID_NULL};
   PixelSurface surface_;
+  std::unique_ptr<text::TextEngine> textEngine_;
   double scale_{1.0};
   std::atomic<bool> repaintRequested_{false};
   std::chrono::steady_clock::time_point openedAt_{};

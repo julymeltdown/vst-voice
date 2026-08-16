@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.25)
 
-project(ProjectSEAM VERSION 0.8.0 LANGUAGES CXX)
+project(ProjectSEAM VERSION 0.9.0 LANGUAGES CXX)
 
 option(SEAM_BUILD_TESTS "Build Project SEAM tests" ON)
 option(SEAM_BUILD_BENCHMARKS "Build Project SEAM benchmarks" ON)
@@ -47,6 +47,23 @@ target_include_directories(seam_core PUBLIC
   libs/seam-core/include
   ${CMAKE_CURRENT_BINARY_DIR}/generated)
 seam_apply_compiler_options(seam_core)
+
+add_library(seam_text
+  libs/seam-text/src/unicode.cpp
+  libs/seam-text/src/text_engine.cpp
+  libs/seam-text/src/stb_truetype_impl.cpp
+)
+target_include_directories(seam_text PUBLIC libs/seam-text/include)
+target_include_directories(seam_text PRIVATE third_party/stb)
+target_link_libraries(seam_text PUBLIC seam_core)
+seam_apply_compiler_options(seam_text)
+if(MSVC)
+  set_source_files_properties(libs/seam-text/src/stb_truetype_impl.cpp
+    PROPERTIES COMPILE_OPTIONS "/w")
+else()
+  set_source_files_properties(libs/seam-text/src/stb_truetype_impl.cpp
+    PROPERTIES COMPILE_OPTIONS "-w")
+endif()
 
 add_library(seam_domain
   libs/seam-domain/src/tempo_map.cpp
@@ -253,7 +270,7 @@ if(SEAM_BUILD_NATIVE_DESKTOP)
   target_include_directories(seam_native_ui PUBLIC
     libs/seam-native-ui/include)
   target_link_libraries(seam_native_ui PUBLIC
-    seam_character seam_editor_inspection seam_voicebank seam_editor_ui seam_phonemizer seam_application seam_domain seam_core)
+    seam_character seam_editor_inspection seam_voicebank seam_editor_ui seam_phonemizer seam_application seam_domain seam_text seam_core)
   if(WIN32)
     target_compile_definitions(seam_native_ui PRIVATE
       SEAM_NATIVE_WIN32=1 WIN32_LEAN_AND_MEAN NOMINMAX _WIN32_WINNT=0x0A00)
@@ -342,6 +359,13 @@ add_executable(seam_phase8_demo apps/seam-phase8-demo/main.cpp)
 target_link_libraries(seam_phase8_demo PRIVATE seam_platform seam_core)
 seam_apply_compiler_options(seam_phase8_demo)
 
+if(SEAM_BUILD_NATIVE_DESKTOP)
+  add_executable(seam_phase9_demo apps/seam-phase9-demo/main.cpp)
+  target_link_libraries(seam_phase9_demo PRIVATE
+    seam_native_ui seam_text seam_formats seam_core)
+  seam_apply_compiler_options(seam_phase9_demo)
+endif()
+
 add_executable(seam_voicebank_cli apps/seam-voicebank-cli/main.cpp)
 target_link_libraries(seam_voicebank_cli PRIVATE
   seam_voicebank seam_formats seam_domain seam_core)
@@ -374,6 +398,7 @@ if(SEAM_BUILD_TESTS)
     tests/test_multichannel.cpp
     tests/test_distribution.cpp
     tests/test_platform_capabilities.cpp
+    tests/test_text.cpp
   )
   if(SEAM_BUILD_NATIVE_DESKTOP)
     list(APPEND SEAM_TEST_SOURCES
@@ -385,7 +410,7 @@ if(SEAM_BUILD_TESTS)
   target_include_directories(seam_tests PRIVATE tests)
   target_link_libraries(seam_tests PRIVATE
     seam_distribution seam_editor_inspection seam_rendering seam_synthesis seam_voicebank seam_editor_ui seam_phonemizer seam_formats
-    seam_playback_platform seam_platform seam_application seam_domain seam_core)
+    seam_playback_platform seam_platform seam_application seam_domain seam_text seam_core)
   if(SEAM_BUILD_NATIVE_DESKTOP)
     target_link_libraries(seam_tests PRIVATE seam_native_ui)
   endif()
@@ -403,6 +428,10 @@ if(SEAM_BUILD_TESTS)
     COMMAND seam_phase7_demo --output ${CMAKE_BINARY_DIR}/phase7-smoke)
   add_test(NAME seam_phase8_demo_smoke
     COMMAND seam_phase8_demo --output ${CMAKE_BINARY_DIR}/phase8-smoke)
+  if(SEAM_BUILD_NATIVE_DESKTOP)
+    add_test(NAME seam_phase9_demo_smoke
+      COMMAND seam_phase9_demo --output ${CMAKE_BINARY_DIR}/phase9-smoke)
+  endif()
   if(Python3_Interpreter_FOUND)
     add_test(NAME seam_phase8_platform_source_contract
       COMMAND ${Python3_EXECUTABLE}
@@ -488,6 +517,10 @@ if(SEAM_BUILD_BENCHMARKS)
       seam_native_ui seam_playback_platform seam_platform seam_rendering
       seam_editor_ui seam_application seam_domain seam_core)
     seam_apply_compiler_options(seam_phase5_benchmark)
+
+    add_executable(seam_phase9_benchmark benchmarks/phase9_benchmark.cpp)
+    target_link_libraries(seam_phase9_benchmark PRIVATE seam_text seam_core)
+    seam_apply_compiler_options(seam_phase9_benchmark)
   endif()
 
 endif()
@@ -555,6 +588,12 @@ if(Python3_Interpreter_FOUND)
         DEPENDS seam_tests seam_phase8_demo seam_editor_native seam_voicebank_studio_native
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
         COMMENT "Generating Phase 8 cross-platform source and Linux regression evidence")
+      add_custom_target(seam_phase9_evidence
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/generate_phase9_evidence.py
+                --root ${CMAKE_CURRENT_SOURCE_DIR} --skip-build
+        DEPENDS seam_tests seam_phase9_demo seam_editor_native seam_phase9_benchmark
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        COMMENT "Generating Phase 9 Unicode/CJK rendering evidence")
     endif()
   endif()
 endif()

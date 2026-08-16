@@ -3,6 +3,7 @@
 #if defined(SEAM_NATIVE_X11)
 
 #include "seam/domain/note.hpp"
+#include "seam/text/text_engine.hpp"
 
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
@@ -100,6 +101,8 @@ public:
     }
     config_ = config;
     client_ = &client;
+    auto textEngine = text::TextEngine::createSystem();
+    if (textEngine) textEngine_ = std::move(textEngine.value());
     scale_ = config.scale;
     screen_ = DefaultScreen(display_);
     visual_ = DefaultVisual(display_, screen_);
@@ -436,7 +439,7 @@ private:
 
   void paintAndPresent() noexcept {
     if (client_ == nullptr || surface_.pixels().empty()) return;
-    RasterCanvas canvas{surface_, scale_};
+    RasterCanvas canvas{surface_, scale_, textEngine_.get()};
     client_->paint(canvas);
 
     const auto byteCount = surface_.pixels().size() * sizeof(std::uint32_t);
@@ -468,6 +471,7 @@ private:
   XIM xim_{nullptr};
   XIC xic_{nullptr};
   PixelSurface surface_;
+  std::unique_ptr<text::TextEngine> textEngine_;
   double scale_{1.0};
   std::atomic<bool> repaintRequested_{false};
   std::chrono::steady_clock::time_point openedAt_{};

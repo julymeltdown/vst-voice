@@ -140,8 +140,8 @@ TEST_CASE("SHA-256 implementation matches published vectors") {
         "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
 }
 
-TEST_CASE("generated build identity owns the Phase 4.1 render ABI") {
-  CHECK(seam::build::kApplicationVersion == "0.8.0");
+TEST_CASE("generated build identity owns the current application and render ABI") {
+  CHECK(seam::build::kApplicationVersion == "0.9.0");
   CHECK(!seam::build::kRenderAbiId.empty());
   CHECK(seam::build::kRenderAbiId.find("4.1") != std::string_view::npos);
   CHECK(seam::build::kPcmCacheFormatRevision >= 3U);

@@ -8,3 +8,5 @@ Thumbs.db
 compile_commands.json
 *.seam-private-key.json
 *.seambank.tmp-*
+__pycache__/
+*.py[cod]

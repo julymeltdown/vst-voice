@@ -9,6 +9,10 @@
 #include <string_view>
 #include <vector>
 
+namespace seam::text {
+class TextEngine;
+}
+
 namespace seam::native_ui {
 
 struct Color final {
@@ -60,12 +64,16 @@ private:
 
 class RasterCanvas final {
 public:
-  explicit RasterCanvas(PixelSurface& surface, double scale = 1.0) noexcept;
+  explicit RasterCanvas(PixelSurface& surface, double scale = 1.0,
+                        text::TextEngine* textEngine = nullptr) noexcept;
 
   [[nodiscard]] double scale() const noexcept { return scale_; }
   [[nodiscard]] double logicalWidth() const noexcept;
   [[nodiscard]] double logicalHeight() const noexcept;
   [[nodiscard]] PixelSurface& surface() noexcept { return surface_; }
+  [[nodiscard]] bool unicodeTextEnabled() const noexcept {
+    return textEngine_ != nullptr;
+  }
 
   void clear(Color color) noexcept;
   void fillRect(ui::Rect rect, Color color) noexcept;
@@ -88,6 +96,7 @@ private:
 
   PixelSurface& surface_;
   double scale_{1.0};
+  text::TextEngine* textEngine_{nullptr};
 };
 
 }  // namespace seam::native_ui

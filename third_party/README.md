@@ -1,5 +1,13 @@
 # Third-party source directory
 
-No third-party production source is vendored in Phase 1.
+Third-party production source may be placed here only after its exact immutable
+revision, source hash, build/distribution mode, and license file are registered
+in `manifest.yml` and accepted by `tools/license-auditor/audit.py`.
 
-A library may be added here only after its exact immutable revision, source hash, full build closure, license files, and distribution mode are recorded in `manifest.yml` and accepted by `tools/license-auditor/audit.py`.
+Current distributed source:
+
+- `stb/stb_truetype.h` — pinned MIT-selected TrueType/TTC rasterizer used only
+  behind Project SEAM's bounded trusted-system-font API.
+
+Font files are not third-party source dependencies and must never be committed
+or distributed from this directory.

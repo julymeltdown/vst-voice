@@ -2,8 +2,8 @@
   "spdxVersion": "SPDX-2.3",
   "dataLicense": "CC0-1.0",
   "SPDXID": "SPDXRef-DOCUMENT",
-  "name": "Project-SEAM-Phase8-SBOM",
-  "documentNamespace": "https://example.invalid/project-seam/sbom/phase8/0.8.0",
+  "name": "Project-SEAM-Phase9-SBOM",
+  "documentNamespace": "https://example.invalid/project-seam/sbom/phase9/0.9.0",
   "creationInfo": {
     "created": "2026-08-17T00:00:00Z",
     "creators": [
@@ -12,9 +12,9 @@
   },
   "packages": [
     {
-      "name": "Project SEAM Phase 8",
+      "name": "Project SEAM Phase 9",
       "SPDXID": "SPDXRef-Package-ProjectSEAM",
-      "versionInfo": "0.8.0",
+      "versionInfo": "0.9.0",
       "downloadLocation": "NOASSERTION",
       "filesAnalyzed": false,
       "licenseConcluded": "NOASSERTION",
@@ -53,6 +53,17 @@
       "licenseDeclared": "NOASSERTION",
       "copyrightText": "NOASSERTION",
       "comment": "AppKit, Foundation, CoreGraphics, CoreAudio, AudioToolbox, and CoreFoundation system frameworks; not redistributed."
+    },
+    {
+      "name": "stb_truetype",
+      "SPDXID": "SPDXRef-Package-stb-truetype",
+      "versionInfo": "f58f558c120e9b32c217290b80bad1a0729fbb2c",
+      "downloadLocation": "https://github.com/nothings/stb",
+      "filesAnalyzed": false,
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
+      "copyrightText": "Copyright (c) 2017 Sean Barrett",
+      "comment": "Vendored single-header TrueType/TTC rasterizer; Project SEAM redistributes no fonts."
     }
   ],
   "relationships": [
@@ -75,6 +86,11 @@
       "spdxElementId": "SPDXRef-Package-ProjectSEAM",
       "relationshipType": "DEPENDS_ON",
       "relatedSpdxElement": "SPDXRef-Package-macOS-System-Frameworks"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-ProjectSEAM",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-stb-truetype"
     }
   ]
 }

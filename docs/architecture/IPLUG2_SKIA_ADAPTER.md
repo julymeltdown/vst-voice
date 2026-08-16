@@ -1,6 +1,6 @@
 # Optional iPlug2 + Skia Production Adapter Plan
 
-## Phase 5 status
+## Phase 9 status
 
 Project SEAM now has a first-party native standalone reference shell:
 
@@ -11,14 +11,14 @@ NativeEditorController
 → X11 window + XIM
 ```
 
-This closes the native lifecycle, event, logical-DPI, text-input, feeder-thread, and callback contracts on the available verification platform. It does **not** mean iPlug2 or Skia is present. `SEAM_ENABLE_IPLUG2_SKIA=ON` continues to fail fast until exact source revisions and their complete dependency closure are approved.
+This closes the native lifecycle, event, logical-DPI, text-input, feeder-thread, callback, and production CJK display contracts on the available verification platform. Phase 9 adds trusted system-font TTF/TTC rasterization to the first-party canvas. It does **not** mean iPlug2 or Skia is present. `SEAM_ENABLE_IPLUG2_SKIA=ON` continues to fail fast until exact source revisions and their complete dependency closure are approved.
 
 ## Why retain the future adapter
 
 The software-raster shell is designed for correctness and deterministic evidence. A production editor still benefits from:
 
 - GPU-accelerated waveform and spectrogram tiles;
-- full Unicode/CJK font shaping and rasterization;
+- GPU-backed text and path rendering beyond the Phase 9 CJK/Latin rasterizer;
 - Windows/macOS standalone lifecycle;
 - later CLAP/VST3/AU entry points;
 - host resize, DPI, and focus integration.
@@ -70,7 +70,7 @@ Before enabling the adapter:
 
 - native windows on Windows and macOS;
 - editor geometry matches the Phase 5 software reference within documented tolerance;
-- full CJK text input and display;
+- CJK text input and display equivalent to or better than the Phase 9 reference;
 - 100–200% DPI scaling;
 - no domain/application header includes iPlug2 or Skia;
 - native drag commits one command;

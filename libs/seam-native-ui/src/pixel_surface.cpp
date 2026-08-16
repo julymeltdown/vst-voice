@@ -1,6 +1,7 @@
 #include "seam/native_ui/pixel_surface.hpp"
 
 #include "seam/core/file_io.hpp"
+#include "seam/text/text_engine.hpp"
 
 #include <algorithm>
 #include <array>
@@ -240,9 +241,11 @@ core::Result<PixelSurface> PixelSurface::loadPpm(
   return surface;
 }
 
-RasterCanvas::RasterCanvas(PixelSurface& surface, double scale) noexcept
+RasterCanvas::RasterCanvas(PixelSurface& surface, double scale,
+                           text::TextEngine* textEngine) noexcept
     : surface_(surface),
-      scale_(std::isfinite(scale) ? std::clamp(scale, 0.5, 4.0) : 1.0) {}
+      scale_(std::isfinite(scale) ? std::clamp(scale, 0.5, 4.0) : 1.0),
+      textEngine_(textEngine) {}
 
 double RasterCanvas::logicalWidth() const noexcept {
   return static_cast<double>(surface_.width()) / scale_;
@@ -367,6 +370,46 @@ void RasterCanvas::drawGlyph(std::int32_t x, std::int32_t y, char character,
 
 void RasterCanvas::drawText(ui::Point origin, std::string_view text,
                             Color color, double size) noexcept {
+  if (textEngine_ != nullptr && !text.empty() && std::isfinite(size) &&
+      size > 0.0) {
+    try {
+      const auto rendered = textEngine_->render(
+          text, text::TextStyle{
+                    .pixelHeight = static_cast<float>(size * scale_),
+                    .letterSpacing = 0.0F,
+                    .lineSpacing = 1.20F,
+                    .maximumWidth = 0U,
+                    .maximumLines = 32U,
+                    .ellipsize = false,
+                });
+      if (rendered) {
+        const auto& bitmap = rendered.value().bitmap;
+        const auto startX = static_cast<std::int32_t>(
+            std::lround(origin.x * scale_));
+        const auto startY = static_cast<std::int32_t>(
+            std::lround(origin.y * scale_));
+        for (std::uint32_t row = 0U; row < bitmap.height; ++row) {
+          for (std::uint32_t column = 0U; column < bitmap.width; ++column) {
+            const auto coverage = bitmap.alpha[
+                static_cast<std::size_t>(row) * bitmap.width + column];
+            if (coverage == 0U) continue;
+            const auto combinedAlpha = static_cast<std::uint8_t>(
+                (static_cast<std::uint32_t>(coverage) * color.alpha + 127U) /
+                255U);
+            blendPixel(startX + static_cast<std::int32_t>(column),
+                       startY + static_cast<std::int32_t>(row),
+                       Color{color.red, color.green, color.blue,
+                             combinedAlpha});
+          }
+        }
+        return;
+      }
+    } catch (...) {
+      // The deterministic ASCII rasterizer remains the fail-safe path for
+      // low-memory and unavailable-font conditions.
+    }
+  }
+
   const auto glyphPixel = std::max(1, static_cast<std::int32_t>(
       std::lround(size * scale_ / 7.0)));
   auto x = static_cast<std::int32_t>(std::lround(origin.x * scale_));

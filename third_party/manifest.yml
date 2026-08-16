@@ -1,6 +1,19 @@
 {
   "schemaVersion": 1,
-  "distributedDependencies": [],
+  "distributedDependencies": [
+    {
+      "name": "stb_truetype",
+      "source": "https://github.com/nothings/stb",
+      "revision": "f58f558c120e9b32c217290b80bad1a0729fbb2c",
+      "sourceSha256": "ecd30b05e0dd4fea3a13c26810dd9e1992dc379049482c393d5a19e6b5090aab",
+      "license": "MIT",
+      "licenseFile": "third_party/stb/LICENSE",
+      "usage": "source",
+      "distribution": "vendored-single-header",
+      "modified": false,
+      "purpose": "bounded TrueType/TTC glyph rasterization for trusted system CJK fonts"
+    }
+  ],
   "plannedOrReferenceOnly": [
     {
       "name": "iPlug2",

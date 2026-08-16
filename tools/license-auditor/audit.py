@@ -167,7 +167,7 @@ def main() -> int:
         print(f"[license-audit] failed with {len(errors)} error(s)", file=sys.stderr)
         return 1
 
-    print("[license-audit] distributedDependencies=0")
+    print(f"[license-audit] distributedDependencies={len(load_json_yaml(root / 'third_party/manifest.yml').get('distributedDependencies', []))}")
     print("[license-audit] branchPolicy=master-only")
     print("[license-audit] characterDirections=3")
     print("[license-audit] status=PASS")

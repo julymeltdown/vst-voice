@@ -1,4 +1,4 @@
-# Project SEAM — Phase 8 native platform adapters
+# Project SEAM — Phase 9 production CJK text rendering
 
 Project SEAM is a C++20 sample-concatenative singing-voice editor. Phoneme boundaries, source-unit changes, pitch-shift artifacts, and sample seams are editable musical material rather than defects that must always be hidden.
 
@@ -13,9 +13,47 @@ This repository contains:
 - completed **Phase 5.1 native product surfaces, Character 01 integration, graphical Voicebank Studio, and recording transport**;
 - completed **Phase 6 persisted multichannel project routing and callback delivery for 1–8 output channels**;
 - completed **Phase 7 signed, verifiable, and transactional `.seambank` packaging and installation**;
-- integrated **Phase 8 Windows Win32/TSF/WASAPI and macOS AppKit/NSTextInputClient/CoreAudio platform adapters**.
+- integrated **Phase 8 Windows Win32/TSF/WASAPI and macOS AppKit/NSTextInputClient/CoreAudio platform adapters**;
+- completed **Phase 9 trusted system-font Unicode/CJK rasterization for Korean, Japanese, Chinese, and Latin native UI text**.
 
 Development uses the **`master` branch only**.
+
+
+## Phase 9 implementation
+
+### Native Korean, Japanese, and Chinese display
+
+- New first-party `seam_text` module with strict UTF-8 scalar validation.
+- Trusted system TTF/TTC discovery with locale-aware CJK face selection and
+  fallback.
+- Antialiased glyph rasterization, same-face kerning, text metrics, wrapping,
+  ellipsis, and combining-mark placement.
+- Bounded whole-text cache: 512 entries and 32 MiB.
+- `RasterCanvas` uses the Unicode engine on X11, Win32, and AppKit while keeping
+  the deterministic ASCII bitmap renderer as a non-fatal fallback.
+- Native Japanese lyric labels now render as glyphs instead of UTF-8 byte
+  placeholders.
+
+### Font trust and licensing boundary
+
+- Project SEAM redistributes no font files.
+- Projects, voicebanks, character packages, and `.seambank` archives cannot
+  provide fonts or font paths.
+- Only known operating-system locations or explicit trusted absolute files are
+  parsed.
+- The pinned `stb_truetype` single header is the only new distributed source
+  dependency; its exact revision, SHA-256, MIT notice, and SPDX entry are
+  recorded.
+
+### Accurate limitation
+
+Phase 9 targets CJK and Latin product UI. It does not claim full Arabic, Indic,
+Southeast Asian, or arbitrary OpenType shaping. The audited iPlug2 + Skia
+production adapter remains a separate later phase.
+
+See [`docs/phase9/IMPLEMENTATION_REPORT.md`](docs/phase9/IMPLEMENTATION_REPORT.md),
+[`docs/phase9/ACCEPTANCE.md`](docs/phase9/ACCEPTANCE.md), and
+[`docs/architecture/UNICODE_TEXT_RENDERING.md`](docs/architecture/UNICODE_TEXT_RENDERING.md).
 
 
 ## Phase 8 implementation
@@ -249,33 +287,36 @@ seam_phase5_benchmark   software paint and callback regression benchmark
 
 ## Verification
 
-Phase 8 extends the named suite with the platform-capability contract and adds a static source-contract test alongside every prior domain, synthesis, routing, distribution, recording, native editor, and Voicebank Studio test.
+Phase 9 extends the named suite with strict UTF-8, system-font trust, CJK rasterization, wrapping, ellipsis, cache, and native-canvas integration tests while retaining every prior domain, synthesis, routing, distribution, recording, native editor, and Voicebank Studio test.
 
 ```text
-Named tests                        114 PASS / 0 FAIL
-Linux Debug CTest                   14/14 PASS
-Linux X11 editor smoke              PASS
-Linux Voicebank Studio smoke        PASS
-Phase 8 source contract             PASS
-Master-only policy                  PASS
-Dependency-license audit            PASS
-Git object integrity                PASS
+Named tests                            122 PASS / 0 FAIL
+Linux Debug CTest                       15/15 PASS
+Linux Release CTest                     15/15 PASS
+ASan + UBSan core CTest                 13/13 PASS
+ASan + UBSan X11 editor smoke           PASS
+ASan + UBSan Voicebank Studio smoke     PASS
+Linux X11 editor CJK screenshot         PASS
+Phase 8 platform source contract        PASS
+Master-only policy                      PASS
+Dependency-license audit                PASS
+Git object integrity                    PASS
 ```
 
-Release, sanitizer, clean-package extraction, and package verification are refreshed for the final Phase 8 archive. Windows/macOS runtime evidence must be collected on those operating systems.
+The two X11 sanitizer smokes are executed explicitly outside the aggregate sanitizer CTest invocation because some Xvfb wrappers retain CTest's process handles under ASan. Both binaries terminate normally and produce non-empty screenshots. Windows/macOS runtime evidence must still be collected on those operating systems.
 
 All configured builds use warnings as errors.
 
 ## Honest current boundary
 
-Phase 8 contains first-party source implementations for Linux, Windows, and macOS native windows, composition input, output devices, and recording devices. Linux is runtime-verified in the current environment. Windows and macOS are source-integrated and CI-gated but are **not** represented as locally hardware-certified.
+Phase 9 contains first-party source implementations for Linux, Windows, and macOS native windows, composition input, output devices, recording devices, and trusted-system-font CJK/Latin rasterization. Linux is runtime-verified in the current environment. Windows and macOS are source-integrated and CI-gated but are **not** represented as locally hardware-certified.
 
 The repository still does **not** claim:
 
 - physical Windows runtime acceptance for TSF, WASAPI speaker/microphone, DPI, focus, and window lifecycle;
 - physical macOS runtime acceptance for `NSTextInputClient`, CoreAudio speaker/microphone, backing scale, and lifecycle;
 - audited iPlug2 + Skia production integration;
-- production CJK font shaping/rasterization in the first-party software painter;
+- full complex-script shaping beyond the implemented CJK/Latin product-UI scope;
 - a contract-recorded and release-cleared human voicebank;
 - CLAP, VST3, or AU plugin delivery.
 

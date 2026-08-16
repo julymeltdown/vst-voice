@@ -3,6 +3,7 @@
 #if defined(SEAM_NATIVE_APPKIT)
 
 #include "seam/domain/note.hpp"
+#include "seam/text/text_engine.hpp"
 
 #import <AppKit/AppKit.h>
 #import <CoreGraphics/CoreGraphics.h>
@@ -118,6 +119,8 @@ public:
     }
     config_ = config;
     client_ = &client;
+    auto textEngine = text::TextEngine::createSystem();
+    if (textEngine) textEngine_ = std::move(textEngine.value());
     application_ = [NSApplication sharedApplication];
     [application_ setActivationPolicy:NSApplicationActivationPolicyRegular];
     [application_ finishLaunching];
@@ -227,7 +230,7 @@ public:
     if (client_ == nullptr || view == nil) return;
     updateScaleAndSurface();
     if (surface_.pixels().empty()) return;
-    RasterCanvas canvas{surface_, scale_};
+    RasterCanvas canvas{surface_, scale_, textEngine_.get()};
     client_->paint(canvas);
 
     CGColorSpaceRef colorSpace = CGColorSpaceCreateDeviceRGB();
@@ -532,7 +535,7 @@ private:
     if (view_ == nil) return;
     updateScaleAndSurface();
     if (client_ != nullptr && !surface_.pixels().empty()) {
-      RasterCanvas canvas{surface_, scale_};
+      RasterCanvas canvas{surface_, scale_, textEngine_.get()};
       client_->paint(canvas);
     }
   }
@@ -555,6 +558,7 @@ private:
   SeamNativeEditorView* __strong view_{nil};
   NSMutableString* __strong textStorage_{nil};
   PixelSurface surface_;
+  std::unique_ptr<text::TextEngine> textEngine_;
   double scale_{1.0};
   std::atomic<bool> repaintRequested_{false};
   std::chrono::steady_clock::time_point openedAt_{};
