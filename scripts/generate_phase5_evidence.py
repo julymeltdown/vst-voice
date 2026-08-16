@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -79,15 +80,33 @@ def main() -> int:
     parser.add_argument("--root", type=Path, default=Path.cwd())
     parser.add_argument("--skip-build", action="store_true")
     parser.add_argument("--skip-thread-sanitizer", action="store_true")
+    parser.add_argument("--resume", action="store_true",
+                        help="reuse already validated evidence files")
     args = parser.parse_args()
 
     root = args.root.resolve()
     evidence = root / "docs/phase5/evidence"
     output = root / "out/phase5"
-    shutil.rmtree(evidence, ignore_errors=True)
-    shutil.rmtree(output, ignore_errors=True)
+    if not args.resume:
+        shutil.rmtree(evidence, ignore_errors=True)
+        shutil.rmtree(output, ignore_errors=True)
     evidence.mkdir(parents=True, exist_ok=True)
     output.mkdir(parents=True, exist_ok=True)
+
+    def captured(name: str, command: list[str], timeout: int,
+                 validator=None) -> str:
+        path = evidence / name
+        if args.resume and path.is_file():
+            text = path.read_text(encoding="utf-8")
+            if validator is None or validator(text):
+                print(f"[phase5-evidence] reuse {name}", flush=True)
+                return text
+        print(f"[phase5-evidence] run {name}", flush=True)
+        text = run(command, root, timeout)
+        if validator is not None and not validator(text):
+            raise RuntimeError(f"evidence validation failed: {name}")
+        write(path, text)
+        return text
 
     presets = ["dev", "release", "sanitize"]
     if not args.skip_thread_sanitizer:
@@ -96,22 +115,30 @@ def main() -> int:
         for preset in presets:
             configure_build(root, preset)
 
-    direct = run([str(root / "build/dev/seam_tests")], root, 300)
-    write(evidence / "direct-tests.txt", direct)
+    direct = captured(
+        "direct-tests.txt", [str(root / "build/dev/seam_tests")], 300,
+        lambda text: parse_tests(text) > 0,
+    )
     direct_count = parse_tests(direct)
 
     ctest: dict[str, str] = {}
     for preset in ("dev", "release", "sanitize"):
-        text = run(["ctest", "--preset", preset, "--output-on-failure"], root, 900)
-        write(evidence / f"ctest-{preset}.txt", text)
-        if not ctest_ok(text):
-            raise RuntimeError(f"{preset} CTest did not record a complete pass")
+        text = captured(
+            f"ctest-{preset}.txt",
+            ["ctest", "--preset", preset, "--output-on-failure"],
+            900,
+            ctest_ok,
+        )
         ctest[preset] = "pass"
 
     tsan = "not-run"
     if not args.skip_thread_sanitizer:
-        text = run([str(root / "build/thread-sanitize/seam_tests")], root, 600)
-        write(evidence / "thread-sanitizer-direct-tests.txt", text)
+        text = captured(
+            "thread-sanitizer-direct-tests.txt",
+            [str(root / "build/thread-sanitize/seam_tests")],
+            600,
+            lambda value: parse_tests(value) > 0,
+        )
         if parse_tests(text) != direct_count:
             raise RuntimeError("ThreadSanitizer and dev named-test counts differ")
         tsan = "pass"
@@ -217,14 +244,14 @@ def main() -> int:
         json.dumps(hashes, indent=2) + "\n", encoding="utf-8"
     )
 
-    file_tree = "\n".join(
-        str(path.relative_to(root))
-        for path in sorted(root.rglob("*"))
-        if path.is_file()
-        and ".git" not in path.parts
-        and "build" not in path.parts
-        and "out" not in path.parts
-    )
+    files: list[str] = []
+    excluded = {".git", "build", "out", ".cache", "__pycache__"}
+    for directory, names, filenames in os.walk(root):
+        names[:] = sorted(name for name in names if name not in excluded)
+        base = Path(directory)
+        for filename in sorted(filenames):
+            files.append(str((base / filename).relative_to(root)))
+    file_tree = "\n".join(files)
     write(root / "docs/phase5/FILE_TREE.txt", file_tree)
     print(json.dumps(matrix, indent=2))
     return 0
