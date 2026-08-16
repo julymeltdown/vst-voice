@@ -1,54 +1,78 @@
-# iPlug2 + Skia Adapter Plan
+# Optional iPlug2 + Skia Production Adapter Plan
 
-## Phase 1 status
+## Phase 5 status
 
-The native adapter is intentionally not vendored or compiled. `SEAM_ENABLE_IPLUG2_SKIA=ON` fails fast rather than silently pretending the production shell exists.
+Project SEAM now has a first-party native standalone reference shell:
 
-The reasons are operational rather than architectural:
+```text
+NativeEditorController
+→ EditorScenePainter
+→ RasterCanvas / PixelSurface
+→ X11 window + XIM
+```
 
-1. exact source revisions must be pinned;
-2. the complete build closure, including optional graphics/font dependencies, must pass the permissive-license policy;
-3. Windows and macOS toolchains must use the same approved revisions;
-4. no UI/business logic may migrate into SDK-specific controls while integration is in progress.
+This closes the native lifecycle, event, logical-DPI, text-input, feeder-thread, and callback contracts on the available verification platform. It does **not** mean iPlug2 or Skia is present. `SEAM_ENABLE_IPLUG2_SKIA=ON` continues to fail fast until exact source revisions and their complete dependency closure are approved.
 
-## Adapter responsibilities
+## Why retain the future adapter
+
+The software-raster shell is designed for correctness and deterministic evidence. A production editor still benefits from:
+
+- GPU-accelerated waveform and spectrogram tiles;
+- full Unicode/CJK font shaping and rasterization;
+- Windows/macOS standalone lifecycle;
+- later CLAP/VST3/AU entry points;
+- host resize, DPI, and focus integration.
+
+The future adapter must reuse the Phase 5 controller and scene contracts instead of moving editor behavior into SDK-specific controls.
+
+## Planned responsibilities
 
 ```text
 iPlug2
-- application/window lifecycle
-- standalone audio/MIDI device integration
-- later CLAP/VST3/AU entry points
+- Windows/macOS application lifecycle
+- standalone audio/MIDI device integration or platform bridge
+- later plug-in entry points
 - host resize and DPI bridge
 
 Skia
-- piano-roll grid
-- notes and text
+- piano-roll grid and notes
+- shaped Unicode text
 - automation paths
 - waveform/spectrogram tiles
 - retained editor scene painting
 ```
 
-## Required interface mapping
+## Required mapping
 
 ```text
-Native pointer/keyboard event
-→ Project SEAM InputEvent
-→ interaction state machine
+Native/iPlug2 pointer or keyboard event
+→ Project SEAM Input DTO
+→ NativeEditorController
 → application command
 
-Editor scene
+Editor scene state
 → Skia painter
 → platform surface
 ```
 
-The existing `PianoRollModel` and transforms remain unchanged. `SvgEditorRenderer` serves as the geometry reference for the first Skia painter.
+## Dependency gate
+
+Before enabling the adapter:
+
+1. pin exact immutable iPlug2 and Skia revisions;
+2. enumerate all source and binary inputs used by Windows and macOS builds;
+3. verify each license and notice under the repository allowlist;
+4. record source hashes in `third_party/manifest.yml`;
+5. produce a clean package SBOM;
+6. test native close, resize, focus, IME, and audio shutdown on both platforms.
 
 ## Acceptance criteria
 
-- native window on Windows and macOS;
-- editor preview matches SVG fixture geometry within a documented tolerance;
-- high-DPI scaling from 100% to 200%; 
-- no domain/application headers include iPlug2 or Skia;
-- native mouse drag commits exactly one command;
-- graphics work does not occur on the audio callback;
-- exact dependency commits and notices are present in the manifest.
+- native windows on Windows and macOS;
+- editor geometry matches the Phase 5 software reference within documented tolerance;
+- full CJK text input and display;
+- 100–200% DPI scaling;
+- no domain/application header includes iPlug2 or Skia;
+- native drag commits one command;
+- graphics and font work never execute on the callback;
+- exact dependency commits and notices ship with the package.

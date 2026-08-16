@@ -1,14 +1,20 @@
 # Third-Party Notices
 
-## Phase 1 distributed code
+## Distributed source and binary code
 
-No third-party source code or binary library is distributed in the Phase 1 repository build. The implementation uses the C++ standard library and first-party Project SEAM source.
+No third-party source code or binary library is copied into the Project SEAM Phase 5 repository build. The implementation uses the C++ standard library and first-party Project SEAM source.
 
 Projects listed under `plannedOrReferenceOnly` in `third_party/manifest.yml` were studied or selected as future candidates but are not included in the build or archive as dependencies.
 
+## Operating-system integrations
+
+The Linux build uses Xlib/XIM headers and links the operating system's X11 client library. The physical audio adapter loads the operating system's PulseAudio Simple shared library at runtime when available. Project SEAM does not redistribute X11 or PulseAudio source or shared libraries in this repository package.
+
+The callback-clock audio fallback is first-party code and does not represent physical speaker output.
+
 ## Development tools
 
-CMake, compilers, Python, Ninja, Git, and optional Inkscape are development tools and are not incorporated into the resulting Project SEAM binaries by this repository.
+CMake, compilers, Python, Ninja, Git, Xvfb, and optional ImageMagick are development or evidence-generation tools and are not incorporated into Project SEAM binaries by this repository.
 
 ## First-party concept assets
 

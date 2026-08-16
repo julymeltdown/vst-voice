@@ -1,13 +1,14 @@
 cmake_minimum_required(VERSION 3.25)
 
-project(ProjectSEAM VERSION 0.4.1 LANGUAGES CXX)
+project(ProjectSEAM VERSION 0.5.0 LANGUAGES CXX)
 
 option(SEAM_BUILD_TESTS "Build Project SEAM tests" ON)
 option(SEAM_BUILD_BENCHMARKS "Build Project SEAM benchmarks" ON)
 option(SEAM_WARNINGS_AS_ERRORS "Treat compiler warnings as errors" ON)
 option(SEAM_ENABLE_SANITIZERS "Enable AddressSanitizer and UndefinedBehaviorSanitizer" OFF)
 option(SEAM_ENABLE_THREAD_SANITIZER "Enable ThreadSanitizer" OFF)
-option(SEAM_ENABLE_IPLUG2_SKIA "Enable the production iPlug2 + Skia shell adapter" OFF)
+option(SEAM_ENABLE_IPLUG2_SKIA "Enable the optional iPlug2 + Skia shell adapter" OFF)
+option(SEAM_BUILD_NATIVE_DESKTOP "Build the first-party native desktop editor" ON)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -140,6 +141,7 @@ add_library(seam_rendering
   libs/seam-rendering/src/pcm_cache.cpp
   libs/seam-rendering/src/audio_ring_buffer.cpp
   libs/seam-rendering/src/playback_engine.cpp
+  libs/seam-rendering/src/playback_feeder_service.cpp
   libs/seam-rendering/src/stale_audio_store.cpp
   libs/seam-rendering/src/render_scheduler.cpp
 )
@@ -162,10 +164,45 @@ seam_apply_compiler_options(seam_editor_inspection)
 
 add_library(seam_platform
   libs/seam-platform/src/audio_callback.cpp
+  libs/seam-platform/src/threaded_audio_device.cpp
+  libs/seam-platform/src/pulse_audio_device.cpp
+  libs/seam-platform/src/system_audio_device_unavailable.cpp
 )
 target_include_directories(seam_platform PUBLIC libs/seam-platform/include)
-target_link_libraries(seam_platform PUBLIC seam_core)
+target_link_libraries(seam_platform PUBLIC seam_core Threads::Threads ${CMAKE_DL_LIBS})
+if(UNIX AND NOT APPLE)
+  target_compile_definitions(seam_platform PRIVATE SEAM_AUDIO_PULSE=1)
+endif()
 seam_apply_compiler_options(seam_platform)
+
+
+if(SEAM_BUILD_NATIVE_DESKTOP)
+  set(SEAM_NATIVE_UI_SOURCES
+    libs/seam-native-ui/src/pixel_surface.cpp
+    libs/seam-native-ui/src/editor_scene.cpp
+    libs/seam-native-ui/src/editor_controller.cpp
+    libs/seam-native-ui/src/native_window_unavailable.cpp)
+
+  if(UNIX AND NOT APPLE)
+    find_package(X11)
+    if(X11_FOUND)
+      list(APPEND SEAM_NATIVE_UI_SOURCES
+        libs/seam-native-ui/src/native_window_x11.cpp)
+    endif()
+  endif()
+
+  add_library(seam_native_ui ${SEAM_NATIVE_UI_SOURCES})
+  target_include_directories(seam_native_ui PUBLIC
+    libs/seam-native-ui/include)
+  target_link_libraries(seam_native_ui PUBLIC
+    seam_editor_ui seam_application seam_domain seam_core)
+  if(UNIX AND NOT APPLE AND X11_FOUND)
+    target_compile_definitions(seam_native_ui PRIVATE SEAM_NATIVE_X11=1)
+    target_include_directories(seam_native_ui PRIVATE ${X11_INCLUDE_DIR})
+    target_link_libraries(seam_native_ui PRIVATE ${X11_LIBRARIES})
+  endif()
+  seam_apply_compiler_options(seam_native_ui)
+endif()
 
 add_library(seam_playback_platform
   libs/seam-platform/src/ring_buffer_processor.cpp
@@ -199,6 +236,20 @@ target_link_libraries(seam_phase4_demo PRIVATE
   seam_editor_ui seam_phonemizer seam_formats seam_application seam_domain seam_core)
 seam_apply_compiler_options(seam_phase4_demo)
 
+if(SEAM_BUILD_NATIVE_DESKTOP)
+  add_executable(seam_phase5_demo apps/seam-phase5-demo/main.cpp)
+  target_link_libraries(seam_phase5_demo PRIVATE
+    seam_native_ui seam_playback_platform seam_platform seam_rendering
+    seam_voicebank seam_editor_ui seam_application seam_domain seam_core)
+  seam_apply_compiler_options(seam_phase5_demo)
+
+  add_executable(seam_editor_native apps/seam-editor-native/main.cpp)
+  target_link_libraries(seam_editor_native PRIVATE
+    seam_native_ui seam_playback_platform seam_platform seam_rendering
+    seam_editor_ui seam_application seam_domain seam_core)
+  seam_apply_compiler_options(seam_editor_native)
+endif()
+
 add_executable(seam_voicebank_cli apps/seam-voicebank-cli/main.cpp)
 target_link_libraries(seam_voicebank_cli PRIVATE
   seam_voicebank seam_formats seam_domain seam_core)
@@ -213,7 +264,7 @@ endif()
 
 if(SEAM_BUILD_TESTS)
   enable_testing()
-  add_executable(seam_tests
+  set(SEAM_TEST_SOURCES
     tests/test_main.cpp
     tests/test_time.cpp
     tests/test_commands.cpp
@@ -227,10 +278,20 @@ if(SEAM_BUILD_TESTS)
     tests/test_inspection.cpp
     tests/test_stabilization.cpp
   )
+  if(SEAM_BUILD_NATIVE_DESKTOP)
+    list(APPEND SEAM_TEST_SOURCES
+      tests/test_native_ui.cpp
+      tests/test_native_runtime.cpp)
+  endif()
+
+  add_executable(seam_tests ${SEAM_TEST_SOURCES})
   target_include_directories(seam_tests PRIVATE tests)
   target_link_libraries(seam_tests PRIVATE
     seam_editor_inspection seam_rendering seam_synthesis seam_voicebank seam_editor_ui seam_phonemizer seam_formats
     seam_playback_platform seam_platform seam_application seam_domain seam_core)
+  if(SEAM_BUILD_NATIVE_DESKTOP)
+    target_link_libraries(seam_tests PRIVATE seam_native_ui)
+  endif()
   seam_apply_compiler_options(seam_tests)
   add_test(NAME seam_tests COMMAND seam_tests)
   add_test(NAME seam_phase2_demo_smoke
@@ -245,6 +306,21 @@ if(SEAM_BUILD_TESTS)
             ${CMAKE_BINARY_DIR}/phase2-smoke/synthetic-voicebank/manifest.json)
   set_tests_properties(seam_voicebank_cli_validate PROPERTIES
     DEPENDS seam_phase2_demo_smoke)
+  if(SEAM_BUILD_NATIVE_DESKTOP)
+    add_test(NAME seam_phase5_demo_smoke
+      COMMAND seam_phase5_demo --output ${CMAKE_BINARY_DIR}/phase5-smoke)
+    if(UNIX AND NOT APPLE AND X11_FOUND)
+      find_program(SEAM_XVFB_RUN_EXECUTABLE xvfb-run)
+      if(SEAM_XVFB_RUN_EXECUTABLE)
+        add_test(NAME seam_native_editor_x11_smoke
+          COMMAND ${SEAM_XVFB_RUN_EXECUTABLE} -a
+                  $<TARGET_FILE:seam_editor_native>
+                  --force-threaded-audio
+                  --auto-close-ms 250
+                  --screenshot ${CMAKE_BINARY_DIR}/phase5-native-window.ppm)
+      endif()
+    endif()
+  endif()
 endif()
 
 if(SEAM_BUILD_BENCHMARKS)
@@ -267,6 +343,14 @@ if(SEAM_BUILD_BENCHMARKS)
   target_link_libraries(seam_phase4_benchmark PRIVATE
     seam_playback_platform seam_platform seam_rendering seam_synthesis seam_voicebank seam_domain seam_core)
   seam_apply_compiler_options(seam_phase4_benchmark)
+
+  if(SEAM_BUILD_NATIVE_DESKTOP)
+    add_executable(seam_phase5_benchmark benchmarks/phase5_benchmark.cpp)
+    target_link_libraries(seam_phase5_benchmark PRIVATE
+      seam_native_ui seam_playback_platform seam_platform seam_rendering
+      seam_editor_ui seam_application seam_domain seam_core)
+    seam_apply_compiler_options(seam_phase5_benchmark)
+  endif()
 
 endif()
 
@@ -320,5 +404,14 @@ if(Python3_Interpreter_FOUND)
               seam_voicebank_cli seam_phase4_benchmark
       WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
       COMMENT "Generating Phase 4.1 stabilization evidence")
+
+    if(SEAM_BUILD_NATIVE_DESKTOP)
+      add_custom_target(seam_phase5_evidence
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/generate_phase5_evidence.py
+                --root ${CMAKE_CURRENT_SOURCE_DIR} --skip-build
+        DEPENDS seam_tests seam_phase5_demo seam_editor_native seam_phase5_benchmark
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        COMMENT "Generating Phase 5 native-runtime evidence")
+    endif()
   endif()
 endif()

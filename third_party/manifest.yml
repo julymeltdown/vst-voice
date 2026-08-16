@@ -30,5 +30,19 @@
       "status": "behavioral-reference-only",
       "purpose": "voicebank marker workflow study"
     }
+  ],
+  "systemRuntimeIntegrations": [
+    {
+      "name": "Xlib/XIM",
+      "status": "system-api-not-distributed",
+      "purpose": "Linux native window, input, and IME integration",
+      "verifiedOn": "Debian 13 / X11"
+    },
+    {
+      "name": "PulseAudio Simple",
+      "status": "runtime-loaded-system-library-not-distributed",
+      "purpose": "Linux physical audio output",
+      "verifiedBehavior": "explicit open error when no server is available"
+    }
   ]
 }
