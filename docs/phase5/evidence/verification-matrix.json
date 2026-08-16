@@ -1,0 +1,37 @@
+{
+  "phase": "5.0",
+  "applicationVersion": "0.5.0",
+  "branchPolicy": "master-only-pass",
+  "warningsAsErrors": true,
+  "namedTests": {
+    "passed": 92,
+    "failed": 0
+  },
+  "ctest": {
+    "dev": "pass",
+    "release": "pass",
+    "sanitize": "pass"
+  },
+  "threadSanitizerNamedSuite": "pass",
+  "headlessDemo": "pass",
+  "nativeX11Window": "pass",
+  "nativeImePath": "XIM/XIC",
+  "physicalAudioAdapter": "PulseAudio Simple runtime adapter",
+  "evidenceAudioBackend": "threaded-callback-clock",
+  "evidenceAudioPhysical": false,
+  "callbackUnderflowFrames": 0,
+  "oneXChecksum": 14742125921731678301,
+  "twoXChecksum": 899445302345542677,
+  "benchmark": {
+    "phase": "5.0",
+    "visibleNotes": 74,
+    "paintIterations": 60,
+    "averagePaintMs": 0.571201,
+    "surfaceChecksum": 7220873665527326144,
+    "audioCallbacks": 94,
+    "feederFrames": 28672,
+    "deliveredFrames": 12032,
+    "underflowFrames": 0,
+    "buildPreset": "release"
+  }
+}

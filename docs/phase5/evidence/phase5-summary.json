@@ -1,0 +1,21 @@
+{
+  "phase": "5.0",
+  "nativeUi": {
+    "renderer": "first-party software raster",
+    "oneXChecksum": 14742125921731678301,
+    "twoXChecksum": 899445302345542677,
+    "visibleNotes": 12,
+    "editorRevision": 2,
+    "repaintRequests": 8,
+    "textInputRequests": 1
+  },
+  "audio": {
+    "backend": "threaded-callback-clock",
+    "physical": false,
+    "callbacks": 66,
+    "deviceFrames": 16896,
+    "feederFrames": 33792,
+    "deliveredFrames": 16896,
+    "underflowFrames": 0
+  }
+}

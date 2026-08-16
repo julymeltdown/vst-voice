@@ -1,0 +1,21 @@
+Test project /mnt/data/project-seam-phase5-master/build/sanitize
+    Start 1: seam_tests
+1/8 Test #1: seam_tests .......................   Passed    5.46 sec
+    Start 2: seam_phase2_demo_smoke
+2/8 Test #2: seam_phase2_demo_smoke ...........   Passed    2.78 sec
+    Start 3: seam_phase3_demo_smoke
+3/8 Test #3: seam_phase3_demo_smoke ...........   Passed    3.70 sec
+    Start 4: seam_phase4_demo_smoke
+4/8 Test #4: seam_phase4_demo_smoke ...........   Passed    5.10 sec
+    Start 5: seam_voicebank_cli_help
+5/8 Test #5: seam_voicebank_cli_help ..........   Passed    0.01 sec
+    Start 6: seam_voicebank_cli_validate
+6/8 Test #6: seam_voicebank_cli_validate ......   Passed    2.93 sec
+    Start 7: seam_phase5_demo_smoke
+7/8 Test #7: seam_phase5_demo_smoke ...........   Passed    1.72 sec
+    Start 8: seam_native_editor_x11_smoke
+8/8 Test #8: seam_native_editor_x11_smoke .....   Passed    1.04 sec
+
+100% tests passed, 0 tests failed out of 8
+
+Total Test time (real) =  22.76 sec

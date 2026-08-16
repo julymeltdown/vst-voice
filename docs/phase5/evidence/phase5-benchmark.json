@@ -1,0 +1,12 @@
+{
+  "phase": "5.0",
+  "visibleNotes": 74,
+  "paintIterations": 60,
+  "averagePaintMs": 0.571201,
+  "surfaceChecksum": 7220873665527326144,
+  "audioCallbacks": 94,
+  "feederFrames": 28672,
+  "deliveredFrames": 12032,
+  "underflowFrames": 0,
+  "buildPreset": "release"
+}
