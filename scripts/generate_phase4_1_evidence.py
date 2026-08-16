@@ -220,7 +220,9 @@ def main() -> int:
     if not phase4_summary_path.is_file():
         raise RuntimeError(f"Phase 4 summary missing: {phase4_summary_path}")
     phase4_summary = json.loads(phase4_summary_path.read_text(encoding="utf-8"))
-    shutil.copy2(phase4_summary_path, evidence / "phase4-summary.json")
+    (evidence / "phase4-summary.json").write_text(
+        json.dumps(phase4_summary, indent=2) + "\n", encoding="utf-8"
+    )
 
     for artifact in (
         "phase4-editor.svg",
