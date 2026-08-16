@@ -45,10 +45,10 @@
 - [x] Named test suite has zero failures.
 - [x] Native editor X11 smoke passes with Character 01 package.
 - [x] Voicebank Studio X11 smoke passes.
-- [ ] Release CTest refreshed after final Phase 5.1 changes.
-- [ ] ASan + UBSan CTest refreshed after final Phase 5.1 changes.
-- [ ] ThreadSanitizer suite refreshed after final Phase 5.1 changes.
-- [ ] Final ZIP clean extraction/rebuild/retest completed.
+- [x] Release CTest refreshed after final Phase 5.1 changes.
+- [x] ASan + UBSan CTest refreshed after final Phase 5.1 changes.
+- [x] ThreadSanitizer suite refreshed after final Phase 5.1 changes.
+- [ ] Final ZIP clean extraction/rebuild/retest completed after the Phase 5.1 commit.
 
 ## Explicitly not claimed complete in Phase 5.1
 

@@ -1,0 +1,22 @@
+=== phase2 ===
+Project SEAM Phase 2 demo completed
+  phonemes: 7
+  selected units: 4
+  raw output frames: 78405
+  voicebank errors: 0
+  project: "build/thread-sanitize/phase2-smoke-51/phase2-demo.seam.json"
+  voicebank: "build/thread-sanitize/phase2-smoke-51/synthetic-voicebank/manifest.json"
+  audio: "build/thread-sanitize/phase2-smoke-51/phase2-raw-phrase.wav"
+  editor evidence: "build/thread-sanitize/phase2-smoke-51/phase2-editor.svg"
+  summary: "build/thread-sanitize/phase2-smoke-51/phase2-summary.json"
+PASS
+=== phase3 ===
+Project SEAM Phase 3 demo completed
+  project schema: 3
+  voicebank schema: 3
+  persistent unit overrides: 1
+  editable seam overrides: 1
+  PSOLA placements: 3
+  scheduler completed: 1
+  scheduler cache hits: 1
+  output: "build/thread-sanitize/phase3-smoke-51"

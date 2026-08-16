@@ -156,14 +156,15 @@ seam_phase5_benchmark   software paint and callback regression benchmark
 
 ## Verification
 
-Current Phase 5 verification is generated under `docs/phase5/evidence/`. The named suite contains 98 tests and CTest includes the Phase 5 headless demo and X11/Xvfb native-window smoke test.
+Current Phase 5.1 verification is generated under `docs/phase5_1/evidence/`. The named suite contains 98 tests; CTest additionally covers the headless demo, native editor X11/Xvfb smoke test, and graphical Voicebank Studio X11/Xvfb smoke test.
 
 ```text
 Named tests                         98 PASS / 0 FAIL
 Debug CTest                          9/9 PASS
-Release CTest                        8/8 PASS
-ASan + UBSan CTest                   8/8 PASS
-ThreadSanitizer named suite         92 PASS / 0 FAIL
+Release CTest                        9/9 PASS
+ASan + UBSan CTest                   9/9 PASS
+ThreadSanitizer named suite         98 PASS / 0 FAIL
+ThreadSanitizer split CTest          9/9 PASS
 Master-only policy                  PASS
 Dependency-license audit            PASS
 Git object integrity                PASS

@@ -1,0 +1,76 @@
+=== seam_phase2_demo_smoke ===
+Internal ctest changing into directory: /mnt/data/project-seam-work/project-seam-phase5-master/build/thread-sanitize
+Test project /mnt/data/project-seam-work/project-seam-phase5-master/build/thread-sanitize
+    Start 2: seam_phase2_demo_smoke
+1/1 Test #2: seam_phase2_demo_smoke ...........   Passed    9.03 sec
+
+100% tests passed, 0 tests failed out of 1
+
+Total Test time (real) =   9.03 sec
+=== seam_phase3_demo_smoke ===
+Internal ctest changing into directory: /mnt/data/project-seam-work/project-seam-phase5-master/build/thread-sanitize
+Test project /mnt/data/project-seam-work/project-seam-phase5-master/build/thread-sanitize
+    Start 3: seam_phase3_demo_smoke
+1/1 Test #3: seam_phase3_demo_smoke ...........   Passed   12.02 sec
+
+100% tests passed, 0 tests failed out of 1
+
+Total Test time (real) =  12.02 sec
+=== seam_phase4_demo_smoke ===
+Internal ctest changing into directory: /mnt/data/project-seam-work/project-seam-phase5-master/build/thread-sanitize
+Test project /mnt/data/project-seam-work/project-seam-phase5-master/build/thread-sanitize
+    Start 4: seam_phase4_demo_smoke
+1/1 Test #4: seam_phase4_demo_smoke ...........   Passed   13.39 sec
+
+100% tests passed, 0 tests failed out of 1
+
+Total Test time (real) =  13.39 sec
+=== seam_voicebank_cli_help ===
+Internal ctest changing into directory: /mnt/data/project-seam-work/project-seam-phase5-master/build/thread-sanitize
+Test project /mnt/data/project-seam-work/project-seam-phase5-master/build/thread-sanitize
+    Start 5: seam_voicebank_cli_help
+1/1 Test #5: seam_voicebank_cli_help ..........   Passed    0.01 sec
+
+100% tests passed, 0 tests failed out of 1
+
+Total Test time (real) =   0.01 sec
+=== seam_voicebank_cli_validate ===
+Internal ctest changing into directory: /mnt/data/project-seam-work/project-seam-phase5-master/build/thread-sanitize
+Test project /mnt/data/project-seam-work/project-seam-phase5-master/build/thread-sanitize
+    Start 6: seam_voicebank_cli_validate
+=== seam_voicebank_cli_validate ===
+Internal ctest changing into directory: /mnt/data/project-seam-work/project-seam-phase5-master/build/thread-sanitize
+Test project /mnt/data/project-seam-work/project-seam-phase5-master/build/thread-sanitize
+    Start 6: seam_voicebank_cli_validate
+1/1 Test #6: seam_voicebank_cli_validate ......   Passed    8.80 sec
+
+100% tests passed, 0 tests failed out of 1
+
+Total Test time (real) =   8.80 sec
+=== seam_phase5_demo_smoke ===
+Internal ctest changing into directory: /mnt/data/project-seam-work/project-seam-phase5-master/build/thread-sanitize
+Test project /mnt/data/project-seam-work/project-seam-phase5-master/build/thread-sanitize
+    Start 7: seam_phase5_demo_smoke
+1/1 Test #7: seam_phase5_demo_smoke ...........   Passed    2.03 sec
+
+100% tests passed, 0 tests failed out of 1
+
+Total Test time (real) =   2.03 sec
+=== seam_native_editor_x11_smoke ===
+Internal ctest changing into directory: /mnt/data/project-seam-work/project-seam-phase5-master/build/thread-sanitize
+Test project /mnt/data/project-seam-work/project-seam-phase5-master/build/thread-sanitize
+    Start 8: seam_native_editor_x11_smoke
+1/1 Test #8: seam_native_editor_x11_smoke .....   Passed    0.81 sec
+
+100% tests passed, 0 tests failed out of 1
+
+Total Test time (real) =   0.81 sec
+=== seam_voicebank_studio_x11_smoke ===
+Internal ctest changing into directory: /mnt/data/project-seam-work/project-seam-phase5-master/build/thread-sanitize
+Test project /mnt/data/project-seam-work/project-seam-phase5-master/build/thread-sanitize
+    Start 9: seam_voicebank_studio_x11_smoke
+1/1 Test #9: seam_voicebank_studio_x11_smoke ...   Passed    0.93 sec
+
+100% tests passed, 0 tests failed out of 1
+
+Total Test time (real) =   0.93 sec

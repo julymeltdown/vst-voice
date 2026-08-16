@@ -1,0 +1,36 @@
+{
+  "phase": "5.1",
+  "applicationVersion": "0.5.1",
+  "branchPolicy": "master-only-pass",
+  "warningsAsErrors": true,
+  "namedTests": {
+    "passed": 98,
+    "failed": 0
+  },
+  "ctest": {
+    "dev": "pass",
+    "release": "pass",
+    "asanUbsan": "pass",
+    "threadSanitizerSplit": "pass"
+  },
+  "nativeEditorX11": "pass",
+  "graphicalVoicebankStudioX11": "pass",
+  "characterPackage": "pass",
+  "voicebankManifestSchema": 3,
+  "recordingTransport": {
+    "physicalLinux": "PulseAudio runtime adapter",
+    "headlessFallback": "threaded synthetic input"
+  },
+  "characterDisplayModes": [
+    "Full",
+    "Minimal",
+    "Off"
+  ],
+  "explicitlyNotClaimed": [
+    "Windows native shell/TSF/WASAPI",
+    "macOS AppKit/NSTextInputClient/CoreAudio",
+    "multichannel routing",
+    "signed .seambank",
+    "CLAP/VST3/AU"
+  ]
+}
