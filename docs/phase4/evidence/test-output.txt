@@ -1,0 +1,72 @@
+[PASS] tempo map converts ticks, seconds, and sample frames
+[PASS] tempo map preserves an initial event
+[PASS] meter map reports one-based bar and beat
+[PASS] quantizer handles positive and negative ticks
+[PASS] add note command is undoable and redoable
+[PASS] moving notes changes time and pitch as one transaction
+[PASS] resizing notes rejects non-positive duration
+[PASS] deleting notes removes unreferenced lyrics and is reversible
+[PASS] project factory reserves IDs after loading an existing project
+[PASS] lyric and phoneme overrides are reversible editor commands
+[PASS] deleting a note removes and restores its phoneme overrides
+[PASS] unit seam and pitch controls are persistent undoable commands
+[PASS] deleting a note removes and restores render overrides
+[PASS] internal JSON parser handles nested UTF-8 data
+[PASS] project JSON round trip preserves the canonical model
+[PASS] project decoder rejects an unsupported schema
+[PASS] project decoder migrates schema one regions without phoneme overrides
+[PASS] timeline zoom keeps the anchor tick stable
+[PASS] spatial index virtualizes a ten-thousand-note project
+[PASS] piano roll draws, selects, moves, and hit-tests notes
+[PASS] text composition models native IME begin update commit and cancel
+[PASS] phoneme lane exposes generated and manually timed phonemes
+[PASS] phase one audio callback produces deterministic silence
+[PASS] ring buffer audio processor delivers callback audio and accounts underflow
+[PASS] Japanese phonemizer handles hiragana katakana and contracted mora
+[PASS] Japanese phonemizer preserves sokuon moraic nasal and long vowel
+[PASS] phoneme overrides replace symbols timing and lock state
+[PASS] unsupported Japanese lyric creates a visible warning and pause
+[PASS] PCM16 WAV round trip and audio statistics remain bounded
+[PASS] waveform spectrogram and pitch analysis produce inspectable data
+[PASS] marker editor enforces monotonic sample landmarks
+[PASS] voicebank manifest persists and validator checks real audio
+[PASS] pitch marks are generated validated and edited deterministically
+[PASS] voicebank schema one migrates without pitch marks
+[PASS] stereo PCM16 WAV writer round trips channel layout
+[PASS] deterministic unit selector prefers longer lower-score coverage
+[PASS] raw loop renderer preserves frame count and exposes vowel onset
+[PASS] seam composer changes overlap character without changing bounds
+[PASS] raw phrase pipeline aligns vowels and renders inspectable audio
+[PASS] explicit unit selection persists renderer choice and alternatives
+[PASS] classic PSOLA follows target pitch and keeps consonant frames finite
+[PASS] phase reset and envelope blend are real boundary operations
+[PASS] renderer dispatcher executes spectral and stretch backends explicitly
+[PASS] renderer dispatcher reports an actual raw fallback
+[PASS] spectral classic preserves exact length and moves harmonic energy
+[PASS] granular stretch is finite deterministic and unit scoped
+[PASS] phrase segmentation is stable and dirty invalidation includes neighbors
+[PASS] render snapshot content hash changes with canonical edit
+[PASS] phrase snapshot cache key ignores unrelated phrase edits
+[PASS] phrase snapshot ignores presentation changes and future tempo events
+[PASS] immutable snapshot executes the complete phrase render pipeline
+[PASS] content addressed PCM cache survives memory eviction
+[PASS] PCM cache rejects non-finite and corrupted payloads
+[PASS] background scheduler cancels obsolete revision and reuses cache
+[PASS] stale audio remains readable until a newer revision is published
+[PASS] SPSC audio ring buffer wraps without allocation or data reordering
+[PASS] scheduler rejects an immediately stale request without running its task
+[PASS] cached audio content can be reused by a newer revision
+[PASS] render scheduler executes queued jobs by priority
+[PASS] scheduler rejects an older cached revision without replacing the latest
+[PASS] bounded PCM cache evicts memory and old disk entries
+[PASS] playback timeline mixes vocal and backing clips at absolute frames
+[PASS] playback feeder loops into the preallocated callback path
+[PASS] ring buffer processor reports zero-filled underflow
+[PASS] playback timeline mixes overlapping cached phrases with fades
+[PASS] playback feeder loops and fills a preallocated ring buffer
+[PASS] PCM cache enforces memory and disk budgets deterministically
+[PASS] unit lane exposes actual renderer fallback seam and alternatives
+[PASS] sample microscope maps waveform markers pitch marks and hit tests
+[PASS] sample microscope applies validated marker and pitch-mark edits
+
+70 passed, 0 failed

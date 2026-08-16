@@ -1,0 +1,15 @@
+1bde611 (HEAD -> master) fix: make Phase 4 evidence collection resumable
+157f532 fix: use release benchmark for Phase 4 evidence
+ed7d224 docs: define Phase 4 architecture and acceptance
+793c0a0 feat: implement Phase 4 multi-renderer playback and inspection
+d1afe62 chore: add Phase 3 verification evidence
+1f4744e docs: define Phase 3 architecture and acceptance
+4a5b485 feat: implement Phase 3 editable render loop
+786e12d chore: add Phase 2 verification evidence
+7325ecc docs: document Phase 2 architecture and acceptance
+b76f4b3 fix: clarify native adapter dependency gate
+90ec54c feat: implement Phase 2 phoneme and raw synthesis pipeline
+9e32bab docs: document Phase 1 architecture and verification
+c84050a feat: add Phase 1 low-poly character directions
+533eed0 feat: implement Phase 1 editor and domain foundation
+6f5f3c1 chore: establish master-only repository and license policy

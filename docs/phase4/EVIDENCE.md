@@ -8,6 +8,22 @@ python3 scripts/generate_phase4_evidence.py --root .
 
 Evidence is written to `docs/phase4/evidence/`.
 
+For constrained CI runners, verification can be split into separate commands and
+the logs reused during collection:
+
+```bash
+./build/dev/seam_tests > docs/phase4/evidence/test-output.txt
+ctest --preset dev --output-on-failure > docs/phase4/evidence/ctest-dev.txt
+ctest --preset release --output-on-failure > docs/phase4/evidence/ctest-release.txt
+ctest --preset sanitize --output-on-failure > docs/phase4/evidence/ctest-sanitize.txt
+
+python3 scripts/generate_phase4_evidence.py \
+  --root . --skip-build --reuse-verification --skip-image-conversion
+```
+
+`--skip-image-conversion` preserves the canonical SVG and PGM evidence. PNG
+derivatives are optional presentation artifacts and can be produced independently.
+
 | Artifact | Meaning |
 |---|---|
 | `test-output.txt` | Individually named test cases and aggregate result |

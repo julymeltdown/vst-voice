@@ -1,0 +1,36 @@
+{
+  "errors": 0,
+  "issues": [
+    {
+      "code": "loop-discontinuity",
+      "message": "Sustain loop boundary has a large waveform jump",
+      "severity": "warning",
+      "unitId": "ja.original.e4.k-i.01"
+    },
+    {
+      "code": "loop-discontinuity",
+      "message": "Sustain loop boundary has a large waveform jump",
+      "severity": "warning",
+      "unitId": "ja.original.e4.k-i.02"
+    },
+    {
+      "code": "loop-discontinuity",
+      "message": "Sustain loop boundary has a large waveform jump",
+      "severity": "warning",
+      "unitId": "ja.original.fs4.m-i.01"
+    },
+    {
+      "code": "duplicate-alias",
+      "message": "Alias has multiple variants: k i",
+      "severity": "info",
+      "unitId": ""
+    }
+  ],
+  "ok": true,
+  "root": "/mnt/data/project-seam-phase4/out/phase4/synthetic-voicebank",
+  "unitsChecked": 5,
+  "version": "0.4.0-dev",
+  "voicebankId": "official.voice.01.phase4.synthetic",
+  "warnings": 3
+}
+

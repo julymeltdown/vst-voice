@@ -1,0 +1,42 @@
+{
+  "mixedRender": {
+    "channels": 1,
+    "sampleWidthBytes": 2,
+    "sampleRate": 48000,
+    "frames": 78605,
+    "durationSeconds": 1.6376041666666667,
+    "peak": 0.217498779296875,
+    "rms": 0.09831875069069047,
+    "dcOffset": 0.00010418721748576744
+  },
+  "rawReference": {
+    "channels": 1,
+    "sampleWidthBytes": 2,
+    "sampleRate": 48000,
+    "frames": 78605,
+    "durationSeconds": 1.6376041666666667,
+    "peak": 0.217926025390625,
+    "rms": 0.11534686022775799,
+    "dcOffset": -1.3705636320447173e-05
+  },
+  "playbackMix": {
+    "channels": 2,
+    "sampleWidthBytes": 2,
+    "sampleRate": 48000,
+    "frames": 78605,
+    "durationSeconds": 1.6376041666666667,
+    "peak": 0.2310028076171875,
+    "rms": 0.08919355791274793,
+    "dcOffset": 9.999403508593204e-05
+  },
+  "callbackPreview": {
+    "channels": 2,
+    "sampleWidthBytes": 2,
+    "sampleRate": 48000,
+    "frames": 24576,
+    "durationSeconds": 0.512,
+    "peak": 0.2059326171875,
+    "rms": 0.08711808055446285,
+    "dcOffset": 0.00010893245538075765
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "spectralIterations": 18,
+  "spectralMs": 7964.412,
+  "spectralRenderedSamples": 864000,
+  "spectralRealTimeMultiple": 2.26,
+  "stretchIterations": 80,
+  "stretchMs": 391.715,
+  "stretchRenderedSamples": 4128000,
+  "stretchRealTimeMultiple": 219.547,
+  "callbackIterations": 2400,
+  "callbackAudioSeconds": 12.8,
+  "playbackMs": 4.931,
+  "playbackThroughputMultiple": 2595.916,
+  "callbackUnderflowFrames": 0,
+  "cacheEntriesStored": 16,
+  "cacheStoreMs": 24.218,
+  "cacheMemoryEntries": 0,
+  "cacheDiskEntries": 1,
+  "cacheMemoryEvictions": 16,
+  "cacheDiskEvictions": 15,
+  "buildPreset": "release"
+}
