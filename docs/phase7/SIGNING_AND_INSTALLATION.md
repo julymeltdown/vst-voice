@@ -17,6 +17,8 @@ User installation
     --public-key official-public.json
 ```
 
+The installer API itself rejects an empty trust set; trust is not merely a command-line convention.
+
 The private key is never placed in a voicebank, source archive, installer, application resource, or repository. The current key file is raw Ed25519 material in a permission-restricted JSON envelope; production releases should keep it offline and may wrap it with a hardware or organizational key-management process.
 
 ## Installer transaction
@@ -33,4 +35,4 @@ A failed installation does not publish a partial voicebank. Existing installatio
 
 ## Character package relationship
 
-The official Character 01 assets may be included as data inside the signed voicebank package. They remain presentation assets: changing or omitting character data does not alter synthesis or phrase PCM cache identity. The voicebank manifest binds the character product ID and version.
+The official Character 01 assets may be included as data inside the signed voicebank package. They remain presentation assets: changing or omitting character data does not alter synthesis or phrase PCM cache identity. The voicebank manifest binds the character product ID and version. A bound package must include a matching `character/manifest.json` and every runtime state asset named by it. Character files remain presentation-only and do not affect synthesis or render-cache identity.

@@ -152,3 +152,51 @@ TEST_CASE("seambank path policy rejects traversal executable and hidden assets")
   CHECK(!seam::distribution::isAllowedSeambankAsset("script.sh"));
   CHECK(seam::distribution::isAllowedSeambankAsset("character/neutral.png"));
 }
+
+TEST_CASE("seambank installer requires a trusted signer at the core API") {
+  const auto root = seam::test::support::temporaryDirectory("distribution-trust-required");
+  const auto source = createBankSource(root);
+  auto key = seam::distribution::generateSigningKeyPair();
+  CHECK(key);
+  const auto packagePath = root / "test.seambank";
+  CHECK(seam::distribution::packSeambank(source, packagePath, key.value()));
+  CHECK(!seam::distribution::installSeambank(
+      packagePath, root / "installed",
+      seam::distribution::InstallSeambankOptions{}));
+}
+
+TEST_CASE("character-bound seambank requires matching embedded runtime assets") {
+  const auto root = seam::test::support::temporaryDirectory("distribution-character");
+  const auto source = createBankSource(root);
+  seam::voicebank::ManifestJsonCodec codec;
+  auto manifest = codec.load(source / "manifest.json");
+  CHECK(manifest);
+  manifest.value().characterId = "official.character.test";
+  manifest.value().characterVersion = "1.0.0";
+  CHECK(codec.save(manifest.value(), source / "manifest.json"));
+  auto key = seam::distribution::generateSigningKeyPair();
+  CHECK(key);
+  const auto packagePath = root / "character.seambank";
+  CHECK(!seam::distribution::packSeambank(source, packagePath, key.value()));
+
+  std::filesystem::create_directories(source / "character/runtime");
+  std::ofstream(source / "character/runtime/neutral.ppm", std::ios::binary)
+      << "P6\n1 1\n255\n\0\0\0";
+  std::ofstream characterManifest(source / "character/manifest.json",
+                                  std::ios::binary);
+  characterManifest
+      << "{\n"
+      << "  \"schemaVersion\": 1,\n"
+      << "  \"characterId\": \"official.character.test\",\n"
+      << "  \"displayName\": \"Test Character\",\n"
+      << "  \"version\": \"1.0.0\",\n"
+      << "  \"voicebankId\": \"test.voicebank\",\n"
+      << "  \"style\": \"low-poly-emo\",\n"
+      << "  \"states\": {\"neutral\": \"runtime/neutral.ppm\"}\n"
+      << "}\n";
+  characterManifest.close();
+  auto packed = seam::distribution::packSeambank(source, packagePath,
+                                                  key.value());
+  CHECK(packed);
+  CHECK(packed.value().manifest.characterId == "official.character.test");
+}

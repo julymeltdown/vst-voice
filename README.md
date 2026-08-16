@@ -215,29 +215,29 @@ seam_phase5_benchmark   software paint and callback regression benchmark
 
 ## Verification
 
-Phase 6 extends the named suite to cover routing-graph validation, four-channel bus/device mapping, multichannel feeder/ring/callback order, and schema-4 round trips. CTest additionally covers the Phase 6 four-channel smoke path, the prior headless demos, native editor X11/Xvfb smoke test, and graphical Voicebank Studio X11/Xvfb smoke test.
+Phase 7 extends the named suite with Ed25519 key persistence, deterministic package construction, tamper rejection, explicit trust enforcement, transactional replacement, path-policy checks, Character 01 binding, and installer receipts. CTest additionally covers the signed package demo and CLI surface alongside all earlier headless and X11/Xvfb smoke paths.
 
 ```text
-Named tests                        102 PASS / 0 FAIL
-Debug CTest                         10/10 PASS
-Release CTest                       10/10 PASS
-ASan + UBSan CTest                  10/10 PASS
-ThreadSanitizer coverage             pending Phase 6 evidence refresh
+Named tests                        113 PASS / 0 FAIL
+Debug CTest                         12/12 PASS
 Master-only policy                  PASS
 Dependency-license audit            PASS
 Git object integrity                PASS
 ```
 
+Release, sanitizer, package-extraction, and platform-source verification are refreshed before the Phase 8 package is published.
+
 All configured builds use warnings as errors.
 
 ## Honest current boundary
 
-Phase 6 now contains real persisted 1–8 channel routing, bus/send processing, device mapping, a multichannel feeder/ring/callback path, and four-channel evidence. The repository still does **not** claim:
+Phase 7 now contains real persisted 1–8 channel routing plus signed, explicitly trusted, transactional `.seambank` distribution. Character-bound official packages are cryptographically tied to matching embedded runtime presentation assets. The repository still does **not** claim:
 
-- signed/installable `.seambank` packages;
 - Windows shell, TSF, or WASAPI runtime verification;
 - macOS AppKit, NSTextInputClient, or CoreAudio runtime verification;
 - audited iPlug2 + Skia production integration;
+- a contract-recorded and release-cleared human voicebank;
+- CLAP, VST3, or AU plug-in delivery.
 - production CJK font shaping/rasterization in the first-party software painter;
 - a contracted human-recorded commercial voicebank;
 - CLAP, VST3, or AU targets.

@@ -2,6 +2,7 @@
 
 #include "seam/core/file_io.hpp"
 #include "seam/core/sha256.hpp"
+#include "seam/formats/json_value.hpp"
 #include "seam/voicebank/manifest_json.hpp"
 
 #include <algorithm>
@@ -218,6 +219,11 @@ core::Result<std::vector<CollectedFile>> collectFiles(
           iterator->path().string());
     }
     auto relative = std::filesystem::relative(canonical, root, error).generic_string();
+    // Editors keep durable backup generations beside manifests. They are not
+    // package inputs and must never be signed as distributable assets.
+    if (!error && std::filesystem::path{relative}.extension() == ".bak") {
+      continue;
+    }
     if (error || relative.size() > limits.maximumPathBytes ||
         !isSafeSeambankPath(relative) || !isAllowedSeambankAsset(relative)) {
       return core::failure<std::vector<CollectedFile>>(
@@ -310,6 +316,89 @@ core::Result<std::vector<std::byte>> readEntryUnchecked(
                                                  "Unable to read seambank entry", entry.path);
   }
   return bytes;
+}
+
+const SeambankEntry* findEntry(
+    const std::vector<SeambankEntry>& entries, std::string_view path) noexcept {
+  const auto iterator = std::lower_bound(
+      entries.begin(), entries.end(), path,
+      [](const SeambankEntry& entry, std::string_view candidate) {
+        return entry.path < candidate;
+      });
+  return iterator == entries.end() || iterator->path != path ? nullptr
+                                                              : &*iterator;
+}
+
+core::Result<std::string> characterField(
+    const formats::JsonValue& root, std::string_view field) {
+  const auto* value = root.find(field);
+  if (value == nullptr || !value->isString() || value->asString().empty()) {
+    return core::failure<std::string>(
+        core::ErrorCode::ParseError,
+        "Embedded character manifest is missing an identity field",
+        std::string{field});
+  }
+  return value->asString();
+}
+
+core::Result<void> validateCharacterBinding(
+    std::ifstream& stream, const voicebank::Manifest& voicebankManifest,
+    const std::vector<SeambankEntry>& entries) {
+  if (voicebankManifest.characterId.empty()) return core::success();
+  const auto* manifestEntry = findEntry(entries, "character/manifest.json");
+  if (manifestEntry == nullptr) {
+    return core::failure(
+        core::ErrorCode::NotFound,
+        "Character-bound seambank lacks character/manifest.json");
+  }
+  auto bytes = readEntryUnchecked(stream, *manifestEntry, 1024U * 1024U);
+  if (!bytes) return core::Result<void>{bytes.error()};
+  const std::string text(reinterpret_cast<const char*>(bytes.value().data()),
+                         bytes.value().size());
+  auto parsed = formats::parseJson(text, formats::JsonParseLimits{
+      .maximumInputBytes = 1024U * 1024U,
+      .maximumDepth = 16U,
+      .maximumNodes = 2048U,
+      .maximumStringBytes = 64U * 1024U,
+      .maximumCollectionEntries = 512U,
+  });
+  if (!parsed) return core::Result<void>{parsed.error()};
+  if (!parsed.value().isObject()) {
+    return core::failure(core::ErrorCode::ParseError,
+                         "Embedded character manifest root must be an object");
+  }
+  auto characterId = characterField(parsed.value(), "characterId");
+  auto characterVersion = characterField(parsed.value(), "version");
+  auto voicebankId = characterField(parsed.value(), "voicebankId");
+  if (!characterId) return core::Result<void>{characterId.error()};
+  if (!characterVersion) return core::Result<void>{characterVersion.error()};
+  if (!voicebankId) return core::Result<void>{voicebankId.error()};
+  if (characterId.value() != voicebankManifest.characterId ||
+      characterVersion.value() != voicebankManifest.characterVersion ||
+      voicebankId.value() != voicebankManifest.id) {
+    return core::failure(
+        core::ErrorCode::Conflict,
+        "Embedded character identity does not match the signed voicebank binding");
+  }
+  const auto* states = parsed.value().find("states");
+  if (states == nullptr || !states->isObject() || states->asObject().empty()) {
+    return core::failure(core::ErrorCode::ParseError,
+                         "Embedded character manifest has no runtime states");
+  }
+  for (const auto& [state, asset] : states->asObject()) {
+    if (state.empty() || !asset.isString() ||
+        !isSafeSeambankPath(asset.asString())) {
+      return core::failure(core::ErrorCode::ParseError,
+                           "Embedded character state asset is invalid", state);
+    }
+    const auto packagedPath = "character/" + asset.asString();
+    if (findEntry(entries, packagedPath) == nullptr) {
+      return core::failure(core::ErrorCode::NotFound,
+                           "Embedded character state asset is missing",
+                           packagedPath);
+    }
+  }
+  return core::success();
 }
 
 }  // namespace
@@ -572,11 +661,15 @@ core::Result<SeambankPackageInfo> verifySeambank(
   if (!manifest) return core::Result<SeambankPackageInfo>{manifest.error()};
   for (const auto& unit : manifest.value().units) {
     const auto asset = unit.audioPath.generic_string();
-    if (std::none_of(entries.begin(), entries.end(),
-                     [&asset](const auto& entry) { return entry.path == asset; })) {
+    if (findEntry(entries, asset) == nullptr) {
       return core::failure<SeambankPackageInfo>(core::ErrorCode::NotFound,
                                                  "Signed manifest references a missing asset", asset);
     }
+  }
+  const auto characterBinding =
+      validateCharacterBinding(stream, manifest.value(), entries);
+  if (!characterBinding) {
+    return core::Result<SeambankPackageInfo>{characterBinding.error()};
   }
 
   const auto trusted = std::any_of(options.trustedPublicKeys.begin(),

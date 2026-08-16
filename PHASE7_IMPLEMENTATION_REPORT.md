@@ -14,7 +14,9 @@ Phase 7 implements signed and installable `.seambank` distribution after complet
 - Installation receipt with package digest and signer identity.
 - `seam_bank_tool` commands: `keygen`, `pack`, `verify`, `list`, and `install`.
 - `seam_phase7_demo` signed-package vertical slice.
-- Tests for tampering, untrusted signers, path policy, replacement, and key persistence.
+- Tests for tampering, untrusted signers, path policy, replacement, key persistence, installer trust enforcement, and Character 01 package binding.
+- Character-bound packages require a matching embedded character manifest and all declared runtime-state assets.
+- Durable editor backup generations (`*.bak`) are deliberately excluded from package inputs.
 
 ## Security boundary
 

@@ -37,3 +37,8 @@ The v1 allowlist covers voicebank metadata, PCM WAV, analysis data, dictionaries
 ## Trust
 
 A valid embedded signature proves package integrity and identifies the signing key. Installation additionally requires the signer public key to be present in an explicit trust set. Merely embedding a self-selected key does not make a package trusted.
+## Character binding
+
+When the signed voicebank manifest declares both `characterId` and `characterVersion`, the package must contain `character/manifest.json`. Its character ID, version, and `voicebankId` must match the signed voicebank manifest. Every runtime state path declared by the character manifest must resolve to a safe data entry under `character/`. Character assets remain presentation data and do not participate in synthesis or PCM cache identity.
+
+Durable editor backup generations such as `manifest.json.bak` are working-directory artifacts and are excluded from package collection rather than signed.

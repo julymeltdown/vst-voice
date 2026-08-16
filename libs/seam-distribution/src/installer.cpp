@@ -17,7 +17,7 @@ namespace {
 std::atomic<std::uint64_t> gInstallCounter{0U};
 
 bool safeComponent(std::string_view value) noexcept {
-  if (value.empty() || value == "." || value == "..") return false;
+  if (value.empty() || value.front() == '.' || value == "." || value == "..") return false;
   return std::all_of(value.begin(), value.end(), [](unsigned char character) {
     return std::isalnum(character) != 0 || character == '.' || character == '-' || character == '_';
   });
