@@ -3,16 +3,20 @@
 
 #include "seam/application/project_factory.hpp"
 #include "seam/phonemizer/japanese_phonemizer.hpp"
+#include "seam/synthesis/classic_psola.hpp"
 #include "seam/synthesis/phrase_renderer.hpp"
+#include "seam/synthesis/renderer_dispatcher.hpp"
 #include "seam/synthesis/raw_renderer.hpp"
 #include "seam/synthesis/seam_composer.hpp"
 #include "seam/synthesis/timing_solver.hpp"
 #include "seam/synthesis/unit_selection.hpp"
+#include "seam/voicebank/pitch.hpp"
 #include "seam/voicebank/wav.hpp"
 
 #include <algorithm>
 #include <cmath>
 #include <filesystem>
+#include <numbers>
 #include <vector>
 
 namespace {
@@ -118,6 +122,7 @@ TEST_CASE("seam composer changes overlap character without changing bounds") {
           .samples = std::vector<float>(32, 0.8F),
           .vowelOnsetOffset = 0,
       },
+      .incomingBoundary = std::nullopt,
   };
   seam::synthesis::PlacedRenderedUnit right{
       .destinationStart = 16,
@@ -126,6 +131,7 @@ TEST_CASE("seam composer changes overlap character without changing bounds") {
           .samples = std::vector<float>(32, -0.8F),
           .vowelOnsetOffset = 0,
       },
+      .incomingBoundary = std::nullopt,
   };
   const std::vector<seam::synthesis::PlacedRenderedUnit> units{left, right};
   seam::synthesis::SeamComposer composer;
@@ -199,4 +205,163 @@ TEST_CASE("raw phrase pipeline aligns vowels and renders inspectable audio") {
   CHECK(std::any_of(rendered.value().audio.samples.begin(),
                     rendered.value().audio.samples.end(),
                     [](float value) { return std::abs(value) > 0.01F; }));
+}
+
+
+TEST_CASE("explicit unit selection persists renderer choice and alternatives") {
+  SynthesisFixture fixture;
+  const auto noteId = fixture.add(U"か", seam::time::Tick{1920});
+  auto* region = fixture.project.findRegion(fixture.regionId);
+  seam::phonemizer::JapaneseKanaPhonemizer phonemizer;
+  const auto phonemes = phonemizer.phonemize(*region);
+  auto cvA = seam::test::support::makeUnit(
+      "cv-a", {"k", "a"}, "audio/cv-a.wav", 69,
+      seam::voicebank::UnitKind::Cv);
+  auto cvB = cvA;
+  cvB.id = "cv-b";
+  cvB.take = 2;
+  const auto manifest = seam::test::support::makeManifest({cvA, cvB});
+  region->unitSelectionOverrides.push_back(seam::domain::UnitSelectionOverride{
+      .startKey = seam::domain::PhonemeKey{noteId, 0},
+      .tokenCount = 2,
+      .unitId = "cv-b",
+      .renderer = seam::domain::UnitRendererKind::ClassicPsola,
+      .locked = true,
+  });
+  seam::synthesis::DeterministicUnitSelector selector;
+  const auto selected = selector.select(manifest, *region, phonemes.tokens, "original");
+  CHECK(selected);
+  CHECK(selected.value().entries.size() == 1);
+  CHECK(selected.value().entries.front().unitId == "cv-b");
+  CHECK(selected.value().entries.front().forced);
+  CHECK(selected.value().entries.front().renderer ==
+        seam::domain::UnitRendererKind::ClassicPsola);
+  CHECK(selected.value().entries.front().alternatives ==
+        (std::vector<std::string>{"cv-a"}));
+}
+
+TEST_CASE("classic PSOLA follows target pitch and keeps consonant frames finite") {
+  constexpr std::uint32_t sampleRate = 48000;
+  const auto sourceSamples = seam::test::support::sineWave(sampleRate, 440.0, 0.75);
+  seam::voicebank::AudioBuffer source{
+      .sampleRate = sampleRate,
+      .channels = 1,
+      .interleaved = sourceSamples,
+  };
+  auto unit = seam::test::support::makeUnit(
+      "a-psola", {"a"}, "audio/a.wav", 69,
+      seam::voicebank::UnitKind::Sustain, sourceSamples.size());
+  unit.renderer = seam::voicebank::RendererHint::ClassicPsola;
+  unit.pitchMarks.clear();
+  constexpr seam::time::SampleFrame period = 109;
+  for (auto frame = unit.markers.stableStart;
+       frame < unit.markers.releaseStart.value(); frame += period) {
+    unit.pitchMarks.push_back(seam::voicebank::PitchMark{
+        .frame = frame,
+        .confidence = 1.0F,
+        .locked = false,
+    });
+  }
+  CHECK(unit.validate());
+
+  seam::synthesis::ClassicPsolaRenderer renderer;
+  const auto rendered = renderer.render(
+      unit, source, sampleRate, 36000, 72,
+      seam::synthesis::PsolaRenderParameters{
+          .sourcePitchResidual = 0.0F,
+          .additionalGainDb = 0.0F,
+          .pitchCurve = seam::synthesis::PitchCurve{
+              std::vector<seam::synthesis::PitchPoint>{
+                  {.frame = 0, .cents = 0.0F},
+                  {.frame = 35999, .cents = 0.0F},
+              }},
+      });
+  CHECK(rendered);
+  CHECK(rendered.value().samples.size() == 36000);
+  CHECK(std::all_of(rendered.value().samples.begin(), rendered.value().samples.end(),
+                    [](float value) { return std::isfinite(value); }));
+  const std::span<const float> sustain{
+      rendered.value().samples.data() + 8000, 18000};
+  const auto pitch = seam::voicebank::analyzePitch(sustain, sampleRate);
+  CHECK(pitch);
+  CHECK_NEAR(seam::voicebank::medianVoicedPitch(pitch.value()), 523.25, 22.0);
+}
+
+
+
+TEST_CASE("phase reset and envelope blend are real boundary operations") {
+  constexpr std::size_t total = 256;
+  constexpr std::size_t overlap = 128;
+  constexpr double period = 32.0;
+  std::vector<float> leftSamples(total, 0.0F);
+  std::vector<float> rightSamples(total, 0.0F);
+  for (std::size_t index = 0; index < total; ++index) {
+    const auto phase = 2.0 * std::numbers::pi *
+                       static_cast<double>(index) / period;
+    leftSamples[index] = 0.8F * static_cast<float>(std::sin(phase));
+    rightSamples[index] = 0.18F * static_cast<float>(
+        std::sin(phase + std::numbers::pi * 0.5));
+  }
+  const auto makeUnits = [&](float phaseReset, float envelopeBlend) {
+    return std::vector<seam::synthesis::PlacedRenderedUnit>{
+        seam::synthesis::PlacedRenderedUnit{
+            .destinationStart = 0,
+            .unit = seam::synthesis::RenderedUnit{
+                .unitId = "left-phase",
+                .samples = leftSamples,
+                .vowelOnsetOffset = 0,
+            },
+            .incomingBoundary = std::nullopt,
+        },
+        seam::synthesis::PlacedRenderedUnit{
+            .destinationStart = static_cast<seam::time::SampleFrame>(total - overlap),
+            .unit = seam::synthesis::RenderedUnit{
+                .unitId = "right-phase",
+                .samples = rightSamples,
+                .vowelOnsetOffset = 0,
+            },
+            .incomingBoundary = seam::synthesis::BoundarySeamSettings{
+                .seamAmount = 1.0F,
+                .curve = seam::domain::SeamCurve::HardCharacter,
+                .maxOverlapFrames = static_cast<seam::time::SampleFrame>(overlap),
+                .phaseReset = phaseReset,
+                .envelopeBlend = envelopeBlend,
+            },
+        },
+    };
+  };
+  seam::synthesis::SeamComposer composer;
+  const auto reset = composer.compose(makeUnits(1.0F, 0.0F));
+  const auto aligned = composer.compose(makeUnits(0.0F, 1.0F));
+  CHECK(reset);
+  CHECK(aligned);
+  CHECK(reset.value().samples.size() == aligned.value().samples.size());
+  const auto switchFrame = total - overlap + overlap / 2U;
+  const auto resetJump = std::abs(reset.value().samples[switchFrame] -
+                                  reset.value().samples[switchFrame - 1U]);
+  const auto alignedJump = std::abs(aligned.value().samples[switchFrame] -
+                                    aligned.value().samples[switchFrame - 1U]);
+  CHECK(alignedJump < resetJump);
+  CHECK(reset.value().samples != aligned.value().samples);
+}
+
+TEST_CASE("renderer dispatcher exposes explicit fallback instead of hiding it") {
+  constexpr std::uint32_t sampleRate = 48000;
+  const auto samples = seam::test::support::sineWave(sampleRate, 440.0, 0.5);
+  seam::voicebank::AudioBuffer source{
+      .sampleRate = sampleRate,
+      .channels = 1,
+      .interleaved = samples,
+  };
+  auto unit = seam::test::support::makeUnit(
+      "stretch-request", {"a"}, "audio/a.wav", 69,
+      seam::voicebank::UnitKind::Sustain, samples.size());
+  unit.renderer = seam::voicebank::RendererHint::Stretch;
+  seam::synthesis::UnitRendererDispatcher dispatcher;
+  const auto rendered = dispatcher.render(unit, source, sampleRate, 24000, 69);
+  CHECK(rendered);
+  CHECK(rendered.value().requested == seam::voicebank::RendererHint::Stretch);
+  CHECK(rendered.value().actual == seam::voicebank::RendererHint::Raw);
+  CHECK(rendered.value().usedFallback);
+  CHECK(!rendered.value().diagnostic.empty());
 }

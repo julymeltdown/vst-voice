@@ -47,6 +47,14 @@ struct UnitMarkers final {
   friend bool operator==(const UnitMarkers&, const UnitMarkers&) = default;
 };
 
+struct PitchMark final {
+  time::SampleFrame frame{0};
+  float confidence{1.0F};
+  bool locked{false};
+
+  friend bool operator==(const PitchMark&, const PitchMark&) = default;
+};
+
 struct Unit final {
   std::string id;
   std::string alias;
@@ -60,6 +68,7 @@ struct Unit final {
   float gainDb{0.0F};
   RendererHint renderer{RendererHint::Raw};
   UnitMarkers markers;
+  std::vector<PitchMark> pitchMarks;
   bool enabled{true};
 
   [[nodiscard]] core::Result<void> validate() const;
@@ -67,7 +76,7 @@ struct Unit final {
 };
 
 struct Manifest final {
-  static constexpr std::int32_t kSchemaVersion = 1;
+  static constexpr std::int32_t kSchemaVersion = 2;
 
   std::string id;
   std::string version;

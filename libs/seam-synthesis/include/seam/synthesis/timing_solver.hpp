@@ -26,9 +26,12 @@ struct TimingIssue final {
 
 struct TimedUnitPlacement final {
   std::string unitId;
+  domain::PhonemeKey startKey;
   std::size_t tokenStart{0};
   std::size_t tokenCount{0};
   std::int32_t targetMidi{60};
+  time::Tick sourceStartTick;
+  time::Tick sourceEndTick;
   time::SampleFrame noteOn{0};
   time::SampleFrame destinationStart{0};
   time::SampleFrame destinationEnd{0};

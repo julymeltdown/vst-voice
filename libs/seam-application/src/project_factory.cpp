@@ -65,6 +65,9 @@ domain::RegionId ProjectFactory::addRegion(domain::Project& project,
       .lyrics = {},
       .notes = {},
       .phonemeOverrides = {},
+      .unitSelectionOverrides = {},
+      .seamOverrides = {},
+      .pitchAutomation = {},
   });
   return id;
 }

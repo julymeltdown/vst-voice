@@ -64,6 +64,18 @@ private:
     std::size_t originalIndex{0};
   };
 
+  struct RemovedUnitSelectionOverride final {
+    domain::RegionId regionId;
+    domain::UnitSelectionOverride overrideValue;
+    std::size_t originalIndex{0};
+  };
+
+  struct RemovedSeamOverride final {
+    domain::RegionId regionId;
+    domain::SeamOverride overrideValue;
+    std::size_t originalIndex{0};
+  };
+
   [[nodiscard]] core::Result<void> capture(const domain::Project& project);
   [[nodiscard]] core::Result<void> removeCaptured(domain::Project& project) const;
 
@@ -71,6 +83,8 @@ private:
   std::vector<RemovedNote> removedNotes_;
   std::vector<RemovedLyric> removedLyrics_;
   std::vector<RemovedPhonemeOverride> removedOverrides_;
+  std::vector<RemovedUnitSelectionOverride> removedUnitOverrides_;
+  std::vector<RemovedSeamOverride> removedSeamOverrides_;
   bool captured_{false};
 };
 

@@ -83,9 +83,12 @@ core::Result<TimingPlan> TimingSolver::solve(
     }
     result.placements.push_back(TimedUnitPlacement{
         .unitId = entry.unitId,
+        .startKey = tokens[entry.tokenStart].key,
         .tokenStart = entry.tokenStart,
         .tokenCount = entry.tokenCount,
         .targetMidi = entry.targetMidi,
+        .sourceStartTick = firstNote->startTick,
+        .sourceEndTick = lastNote->endTick(),
         .noteOn = noteOn,
         .destinationStart = destinationStart,
         .destinationEnd = destinationEnd,

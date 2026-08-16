@@ -4,6 +4,7 @@
 #include "seam/domain/ids.hpp"
 #include "seam/domain/note.hpp"
 #include "seam/domain/phoneme.hpp"
+#include "seam/domain/render_controls.hpp"
 #include "seam/time/meter_map.hpp"
 #include "seam/time/tempo_map.hpp"
 
@@ -48,6 +49,9 @@ struct VocalRegion final {
   std::vector<LyricToken> lyrics;
   std::vector<Note> notes;
   std::vector<PhonemeOverride> phonemeOverrides;
+  std::vector<UnitSelectionOverride> unitSelectionOverrides;
+  std::vector<SeamOverride> seamOverrides;
+  PitchAutomation pitchAutomation;
 
   [[nodiscard]] Note* findNote(NoteId noteId) noexcept;
   [[nodiscard]] const Note* findNote(NoteId noteId) const noexcept;
@@ -55,6 +59,12 @@ struct VocalRegion final {
   [[nodiscard]] const LyricToken* findLyric(LyricTokenId lyricId) const noexcept;
   [[nodiscard]] PhonemeOverride* findPhonemeOverride(PhonemeKey key) noexcept;
   [[nodiscard]] const PhonemeOverride* findPhonemeOverride(PhonemeKey key) const noexcept;
+  [[nodiscard]] UnitSelectionOverride* findUnitSelectionOverride(PhonemeKey startKey) noexcept;
+  [[nodiscard]] const UnitSelectionOverride* findUnitSelectionOverride(
+      PhonemeKey startKey) const noexcept;
+  [[nodiscard]] SeamOverride* findSeamOverride(PhonemeKey incomingStartKey) noexcept;
+  [[nodiscard]] const SeamOverride* findSeamOverride(
+      PhonemeKey incomingStartKey) const noexcept;
   [[nodiscard]] core::Result<void> validate() const;
   void sortNotes();
 

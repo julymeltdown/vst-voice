@@ -125,6 +125,7 @@ seam::voicebank::Unit makeUnit(std::string id,
           .releaseStart = 19800,
           .audioEnd = 24000,
       },
+      .pitchMarks = {},
       .enabled = true,
   };
 }

@@ -41,6 +41,30 @@ TEST_CASE("project JSON round trip preserves the canonical model") {
           },
           .locked = true,
       });
+  project.findRegion(regionId)->unitSelectionOverrides.push_back(
+      seam::domain::UnitSelectionOverride{
+          .startKey = seam::domain::PhonemeKey{note.id, 0},
+          .tokenCount = 1,
+          .unitId = "unit.alt.02",
+          .renderer = seam::domain::UnitRendererKind::ClassicPsola,
+          .locked = true,
+      });
+  project.findRegion(regionId)->seamOverrides.push_back(
+      seam::domain::SeamOverride{
+          .incomingStartKey = seam::domain::PhonemeKey{note.id, 0},
+          .seamAmount = 0.82F,
+          .overlap = seam::time::Microseconds{9000},
+          .phaseReset = 0.6F,
+          .envelopeBlend = 0.15F,
+          .curve = seam::domain::SeamCurve::HardCharacter,
+          .locked = true,
+      });
+  CHECK(project.findRegion(regionId)->pitchAutomation.upsert(
+      seam::domain::PitchAutomationPoint{
+          .tick = seam::time::Tick{1080},
+          .cents = 22.0F,
+          .interpolation = seam::domain::CurveInterpolation::Smooth,
+      }));
 
   seam::formats::ProjectJsonCodec codec;
   const auto encoded = codec.encode(project);
@@ -73,14 +97,17 @@ TEST_CASE("project decoder migrates schema one regions without phoneme overrides
   const auto encoded = codec.encode(project);
   CHECK(encoded);
   auto legacy = encoded.value();
-  const auto schemaPosition = legacy.find("\"schemaVersion\": 2");
+  const auto schemaPosition = legacy.find("\"schemaVersion\": 3");
   CHECK(schemaPosition != std::string::npos);
-  legacy.replace(schemaPosition, std::string{"\"schemaVersion\": 2"}.size(),
+  legacy.replace(schemaPosition, std::string{"\"schemaVersion\": 3"}.size(),
                  "\"schemaVersion\": 1");
-  const auto overridePosition = legacy.find(",\n          \"phonemeOverrides\": []");
-  CHECK(overridePosition != std::string::npos);
-  legacy.erase(overridePosition,
-               std::string{",\n          \"phonemeOverrides\": []"}.size());
+  for (const auto field : {"phonemeOverrides", "unitSelectionOverrides",
+                           "seamOverrides", "pitchAutomation"}) {
+    const auto fragment = std::string{",\n          \""} + field + "\": []";
+    const auto position = legacy.find(fragment);
+    CHECK(position != std::string::npos);
+    legacy.erase(position, fragment.size());
+  }
   const auto decoded = codec.decode(legacy);
   CHECK(decoded);
   CHECK(decoded.value() == project);

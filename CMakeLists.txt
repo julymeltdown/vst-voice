@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.25)
 
-project(ProjectSEAM VERSION 0.2.0 LANGUAGES CXX)
+project(ProjectSEAM VERSION 0.3.0 LANGUAGES CXX)
 
 option(SEAM_BUILD_TESTS "Build Project SEAM tests" ON)
 option(SEAM_BUILD_BENCHMARKS "Build Project SEAM benchmarks" ON)
@@ -16,6 +16,8 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 include(SeamCompilerOptions)
 
+find_package(Threads REQUIRED)
+
 add_library(seam_core
   libs/seam-core/src/logger.cpp
 )
@@ -27,6 +29,7 @@ add_library(seam_domain
   libs/seam-domain/src/meter_map.cpp
   libs/seam-domain/src/note.cpp
   libs/seam-domain/src/phoneme.cpp
+  libs/seam-domain/src/render_controls.cpp
   libs/seam-domain/src/project.cpp
 )
 target_include_directories(seam_domain PUBLIC libs/seam-domain/include)
@@ -46,6 +49,7 @@ add_library(seam_application
   libs/seam-application/src/command.cpp
   libs/seam-application/src/note_commands.cpp
   libs/seam-application/src/lyric_commands.cpp
+  libs/seam-application/src/render_commands.cpp
   libs/seam-application/src/editor_session.cpp
   libs/seam-application/src/project_factory.cpp
 )
@@ -80,6 +84,7 @@ add_library(seam_voicebank
   libs/seam-voicebank/src/waveform.cpp
   libs/seam-voicebank/src/spectrogram.cpp
   libs/seam-voicebank/src/pitch.cpp
+  libs/seam-voicebank/src/pitch_marks.cpp
   libs/seam-voicebank/src/marker_editor.cpp
   libs/seam-voicebank/src/validator.cpp
   libs/seam-voicebank/src/manifest_json.cpp
@@ -93,6 +98,9 @@ add_library(seam_synthesis
   libs/seam-synthesis/src/unit_selection.cpp
   libs/seam-synthesis/src/timing_solver.cpp
   libs/seam-synthesis/src/raw_renderer.cpp
+  libs/seam-synthesis/src/pitch_curve.cpp
+  libs/seam-synthesis/src/classic_psola.cpp
+  libs/seam-synthesis/src/renderer_dispatcher.cpp
   libs/seam-synthesis/src/seam_composer.cpp
   libs/seam-synthesis/src/phrase_renderer.cpp
 )
@@ -100,6 +108,22 @@ target_include_directories(seam_synthesis PUBLIC libs/seam-synthesis/include)
 target_link_libraries(seam_synthesis PUBLIC
   seam_voicebank seam_phonemizer seam_formats seam_domain seam_core)
 seam_apply_compiler_options(seam_synthesis)
+
+
+add_library(seam_rendering
+  libs/seam-rendering/src/phrase_segmenter.cpp
+  libs/seam-rendering/src/render_snapshot.cpp
+  libs/seam-rendering/src/render_pipeline.cpp
+  libs/seam-rendering/src/pcm_cache.cpp
+  libs/seam-rendering/src/audio_ring_buffer.cpp
+  libs/seam-rendering/src/stale_audio_store.cpp
+  libs/seam-rendering/src/render_scheduler.cpp
+)
+target_include_directories(seam_rendering PUBLIC libs/seam-rendering/include)
+target_link_libraries(seam_rendering PUBLIC
+  seam_synthesis seam_voicebank seam_phonemizer seam_formats seam_domain seam_core
+  Threads::Threads)
+seam_apply_compiler_options(seam_rendering)
 
 add_library(seam_platform
   libs/seam-platform/src/audio_callback.cpp
@@ -118,6 +142,13 @@ target_link_libraries(seam_phase2_demo PRIVATE
   seam_synthesis seam_voicebank seam_editor_ui seam_phonemizer seam_formats
   seam_application seam_domain seam_core)
 seam_apply_compiler_options(seam_phase2_demo)
+
+
+add_executable(seam_phase3_demo apps/seam-phase3-demo/main.cpp)
+target_link_libraries(seam_phase3_demo PRIVATE
+  seam_rendering seam_synthesis seam_voicebank seam_editor_ui seam_phonemizer
+  seam_formats seam_application seam_domain seam_core)
+seam_apply_compiler_options(seam_phase3_demo)
 
 add_executable(seam_voicebank_cli apps/seam-voicebank-cli/main.cpp)
 target_link_libraries(seam_voicebank_cli PRIVATE
@@ -143,15 +174,18 @@ if(SEAM_BUILD_TESTS)
     tests/test_phonemizer.cpp
     tests/test_voicebank.cpp
     tests/test_synthesis.cpp
+    tests/test_rendering.cpp
   )
   target_include_directories(seam_tests PRIVATE tests)
   target_link_libraries(seam_tests PRIVATE
-    seam_synthesis seam_voicebank seam_editor_ui seam_phonemizer seam_formats
+    seam_rendering seam_synthesis seam_voicebank seam_editor_ui seam_phonemizer seam_formats
     seam_platform seam_application seam_domain seam_core)
   seam_apply_compiler_options(seam_tests)
   add_test(NAME seam_tests COMMAND seam_tests)
   add_test(NAME seam_phase2_demo_smoke
     COMMAND seam_phase2_demo --output ${CMAKE_BINARY_DIR}/phase2-smoke)
+  add_test(NAME seam_phase3_demo_smoke
+    COMMAND seam_phase3_demo --output ${CMAKE_BINARY_DIR}/phase3-smoke)
   add_test(NAME seam_voicebank_cli_help COMMAND seam_voicebank_cli --help)
   add_test(NAME seam_voicebank_cli_validate
     COMMAND seam_voicebank_cli validate
@@ -170,6 +204,11 @@ if(SEAM_BUILD_BENCHMARKS)
   target_link_libraries(seam_phase2_benchmark PRIVATE
     seam_synthesis seam_voicebank seam_domain seam_core)
   seam_apply_compiler_options(seam_phase2_benchmark)
+
+  add_executable(seam_phase3_benchmark benchmarks/phase3_benchmark.cpp)
+  target_link_libraries(seam_phase3_benchmark PRIVATE
+    seam_rendering seam_synthesis seam_voicebank seam_domain seam_core)
+  seam_apply_compiler_options(seam_phase3_benchmark)
 endif()
 
 find_package(Python3 COMPONENTS Interpreter)
@@ -200,5 +239,12 @@ if(Python3_Interpreter_FOUND)
       DEPENDS seam_tests seam_phase2_demo seam_voicebank_cli seam_phase2_benchmark
       WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
       COMMENT "Generating Phase 2 verification evidence")
+
+    add_custom_target(seam_phase3_evidence
+      COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/generate_phase3_evidence.py
+              --root ${CMAKE_CURRENT_SOURCE_DIR} --skip-build
+      DEPENDS seam_tests seam_phase3_demo seam_voicebank_cli seam_phase3_benchmark
+      WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+      COMMENT "Generating Phase 3 verification evidence")
   endif()
 endif()

@@ -4,6 +4,7 @@
 #include "seam/voicebank/manifest_json.hpp"
 #include "seam/voicebank/marker_editor.hpp"
 #include "seam/voicebank/pitch.hpp"
+#include "seam/voicebank/pitch_marks.hpp"
 #include "seam/voicebank/spectrogram.hpp"
 #include "seam/voicebank/validator.hpp"
 #include "seam/voicebank/wav.hpp"
@@ -128,4 +129,54 @@ TEST_CASE("voicebank manifest persists and validator checks real audio") {
   CHECK(report.unitsChecked == 2);
   CHECK(report.errorCount() == 0);
   CHECK(report.ok());
+}
+
+
+TEST_CASE("pitch marks are generated validated and edited deterministically") {
+  constexpr std::uint32_t sampleRate = 48000;
+  const auto samples = seam::test::support::sineWave(sampleRate, 220.0, 0.60);
+  const auto generated = seam::voicebank::generatePitchMarks(
+      samples, sampleRate, 2400,
+      static_cast<seam::time::SampleFrame>(samples.size() - 2400U));
+  CHECK(generated);
+  CHECK(generated.value().size() > 40);
+  CHECK(seam::voicebank::validatePitchMarks(
+      generated.value(), 2400,
+      static_cast<seam::time::SampleFrame>(samples.size() - 2400U)));
+
+  auto marks = generated.value();
+  seam::voicebank::PitchMarkEditor editor;
+  const auto originalFrame = marks[3].frame;
+  CHECK(editor.move(marks, 3, originalFrame + 2, 2400,
+                    static_cast<seam::time::SampleFrame>(samples.size() - 2400U)));
+  CHECK(editor.setLocked(marks, 3, true));
+  CHECK(!editor.move(marks, 3, originalFrame + 4, 2400,
+                     static_cast<seam::time::SampleFrame>(samples.size() - 2400U)));
+  CHECK(editor.setLocked(marks, 3, false));
+  const auto before = marks.size();
+  CHECK(editor.remove(marks, 3, 2400,
+                      static_cast<seam::time::SampleFrame>(samples.size() - 2400U)));
+  CHECK(marks.size() + 1U == before);
+}
+
+TEST_CASE("voicebank schema one migrates without pitch marks") {
+  auto unit = seam::test::support::makeUnit(
+      "a", {"a"}, "audio/a.wav", 69,
+      seam::voicebank::UnitKind::Sustain, 24000);
+  unit.renderer = seam::voicebank::RendererHint::Raw;
+  auto manifest = seam::test::support::makeManifest({unit});
+  seam::voicebank::ManifestJsonCodec codec;
+  auto encoded = codec.encode(manifest);
+  CHECK(encoded);
+  auto legacy = encoded.value();
+  const auto schema = legacy.find("\"schemaVersion\": 2");
+  CHECK(schema != std::string::npos);
+  legacy.replace(schema, std::string{"\"schemaVersion\": 2"}.size(),
+                 "\"schemaVersion\": 1");
+  const auto marks = legacy.find(",\n      \"pitchMarks\": []");
+  CHECK(marks != std::string::npos);
+  legacy.erase(marks, std::string{",\n      \"pitchMarks\": []"}.size());
+  const auto decoded = codec.decode(legacy);
+  CHECK(decoded);
+  CHECK(decoded.value() == manifest);
 }

@@ -74,6 +74,22 @@ core::Result<void> Unit::validate() const {
                          "Voicebank unit metadata is outside supported ranges",
                          id);
   }
+  time::SampleFrame previous = -1;
+  for (const auto& mark : pitchMarks) {
+    if (mark.frame <= previous || mark.frame < markers.audioOffset ||
+        mark.frame >= markers.audioEnd || !std::isfinite(mark.confidence) ||
+        mark.confidence < 0.0F || mark.confidence > 1.0F) {
+      return core::failure(core::ErrorCode::InvariantViolation,
+                           "Voicebank pitch marks are invalid",
+                           id);
+    }
+    previous = mark.frame;
+  }
+  if (renderer == RendererHint::ClassicPsola && pitchMarks.size() < 3U) {
+    return core::failure(core::ErrorCode::InvariantViolation,
+                         "Classic PSOLA units require at least three pitch marks",
+                         id);
+  }
   return core::success();
 }
 

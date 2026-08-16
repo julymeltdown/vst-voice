@@ -53,6 +53,14 @@ JsonValue encodeManifest(const Manifest& manifest) {
   for (const auto& unit : manifest.units) {
     Array phones;
     for (const auto& phone : unit.phones) phones.emplace_back(phone);
+    Array pitchMarks;
+    for (const auto& mark : unit.pitchMarks) {
+      pitchMarks.emplace_back(Object{
+          {"frame", JsonValue{mark.frame}},
+          {"confidence", JsonValue{static_cast<double>(mark.confidence)}},
+          {"locked", JsonValue{mark.locked}},
+      });
+    }
     units.emplace_back(Object{
         {"id", JsonValue{unit.id}},
         {"alias", JsonValue{unit.alias}},
@@ -67,6 +75,7 @@ JsonValue encodeManifest(const Manifest& manifest) {
         {"renderer", JsonValue{std::string(rendererHintName(unit.renderer))}},
         {"enabled", JsonValue{unit.enabled}},
         {"markers", encodeMarkers(unit.markers)},
+        {"pitchMarks", JsonValue{std::move(pitchMarks)}},
     });
   }
   return JsonValue{Object{
@@ -175,7 +184,8 @@ core::Result<Manifest> decodeManifest(const JsonValue& root) {
     return core::failure<Manifest>(core::ErrorCode::Unsupported,
                                    "Unsupported voicebank manifest format");
   }
-  if (schema->asInt64() != Manifest::kSchemaVersion) {
+  const auto schemaVersion = schema->asInt64();
+  if (schemaVersion < 1 || schemaVersion > Manifest::kSchemaVersion) {
     return core::failure<Manifest>(core::ErrorCode::Unsupported,
                                    "Unsupported voicebank manifest schema");
   }
@@ -215,6 +225,7 @@ core::Result<Manifest> decodeManifest(const JsonValue& root) {
     const auto* renderer = unitJson.find("renderer");
     const auto* enabled = unitJson.find("enabled");
     const auto* markersJson = unitJson.find("markers");
+    const auto* pitchMarks = unitJson.find("pitchMarks");
     if (unitId == nullptr || alias == nullptr || phones == nullptr || kind == nullptr ||
         audio == nullptr || style == nullptr || gainDb == nullptr || renderer == nullptr ||
         enabled == nullptr || markersJson == nullptr || !unitId->isString() ||
@@ -251,6 +262,34 @@ core::Result<Manifest> decodeManifest(const JsonValue& root) {
     unit.gainDb = static_cast<float>(gainDb->asNumber());
     unit.renderer = parseRendererHint(renderer->asString());
     unit.markers = markers.value();
+    if (pitchMarks != nullptr) {
+      if (!pitchMarks->isArray()) {
+        return core::failure<Manifest>(core::ErrorCode::ParseError,
+                                       "Voicebank pitchMarks must be an array");
+      }
+      for (const auto& markJson : pitchMarks->asArray()) {
+        if (!markJson.isObject()) {
+          return core::failure<Manifest>(core::ErrorCode::ParseError,
+                                         "Voicebank pitch mark must be an object");
+        }
+        const auto* frame = markJson.find("frame");
+        const auto* confidence = markJson.find("confidence");
+        const auto* locked = markJson.find("locked");
+        if (frame == nullptr || confidence == nullptr || locked == nullptr ||
+            !frame->isNumber() || !confidence->isNumber() || !locked->isBool()) {
+          return core::failure<Manifest>(core::ErrorCode::ParseError,
+                                         "Voicebank pitch mark fields are invalid");
+        }
+        unit.pitchMarks.push_back(PitchMark{
+            .frame = frame->asInt64(),
+            .confidence = static_cast<float>(confidence->asNumber()),
+            .locked = locked->asBool(),
+        });
+      }
+    } else if (schemaVersion >= 2) {
+      return core::failure<Manifest>(core::ErrorCode::ParseError,
+                                     "Schema 2 unit is missing pitchMarks");
+    }
     unit.enabled = enabled->asBool();
     manifest.units.push_back(std::move(unit));
   }

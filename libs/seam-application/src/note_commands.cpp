@@ -107,6 +107,8 @@ core::Result<void> RemoveNotesCommand::capture(const domain::Project& project) {
   removedNotes_.clear();
   removedLyrics_.clear();
   removedOverrides_.clear();
+  removedUnitOverrides_.clear();
+  removedSeamOverrides_.clear();
   for (const auto noteId : uniqueIds) {
     const auto location = findNoteLocation(project, noteId);
     if (location.region == nullptr) {
@@ -168,6 +170,26 @@ core::Result<void> RemoveNotesCommand::capture(const domain::Project& project) {
           });
         }
       }
+      for (std::size_t index = 0; index < region.unitSelectionOverrides.size(); ++index) {
+        const auto& overrideValue = region.unitSelectionOverrides[index];
+        if (selected.contains(overrideValue.startKey.noteId)) {
+          removedUnitOverrides_.push_back(RemovedUnitSelectionOverride{
+              .regionId = region.id,
+              .overrideValue = overrideValue,
+              .originalIndex = index,
+          });
+        }
+      }
+      for (std::size_t index = 0; index < region.seamOverrides.size(); ++index) {
+        const auto& overrideValue = region.seamOverrides[index];
+        if (selected.contains(overrideValue.incomingStartKey.noteId)) {
+          removedSeamOverrides_.push_back(RemovedSeamOverride{
+              .regionId = region.id,
+              .overrideValue = overrideValue,
+              .originalIndex = index,
+          });
+        }
+      }
     }
   }
 
@@ -196,6 +218,31 @@ core::Result<void> RemoveNotesCommand::removeCaptured(domain::Project& project) 
     std::erase_if(region->phonemeOverrides,
                   [&removed](const domain::PhonemeOverride& value) {
                     return value.key == removed.overrideValue.key;
+                  });
+  }
+  for (const auto& removed : removedUnitOverrides_) {
+    auto* region = project.findRegion(removed.regionId);
+    if (region == nullptr) {
+      return core::failure(core::ErrorCode::NotFound,
+                           "Region for a unit selection override was not found",
+                           removed.regionId.toString());
+    }
+    std::erase_if(region->unitSelectionOverrides,
+                  [&removed](const domain::UnitSelectionOverride& value) {
+                    return value.startKey == removed.overrideValue.startKey;
+                  });
+  }
+  for (const auto& removed : removedSeamOverrides_) {
+    auto* region = project.findRegion(removed.regionId);
+    if (region == nullptr) {
+      return core::failure(core::ErrorCode::NotFound,
+                           "Region for a seam override was not found",
+                           removed.regionId.toString());
+    }
+    std::erase_if(region->seamOverrides,
+                  [&removed](const domain::SeamOverride& value) {
+                    return value.incomingStartKey ==
+                           removed.overrideValue.incomingStartKey;
                   });
   }
 
@@ -299,6 +346,50 @@ core::Result<void> RemoveNotesCommand::revert(domain::Project& project) {
       const auto index = std::min(removed.originalIndex, region->phonemeOverrides.size());
       region->phonemeOverrides.insert(
           region->phonemeOverrides.begin() + static_cast<std::ptrdiff_t>(index),
+          removed.overrideValue);
+    }
+  }
+
+  auto unitOverrides = removedUnitOverrides_;
+  std::stable_sort(unitOverrides.begin(), unitOverrides.end(),
+      [](const auto& lhs, const auto& rhs) {
+        if (lhs.regionId == rhs.regionId) return lhs.originalIndex < rhs.originalIndex;
+        return lhs.regionId < rhs.regionId;
+      });
+  for (const auto& removed : unitOverrides) {
+    auto* region = project.findRegion(removed.regionId);
+    if (region == nullptr) {
+      return core::failure(core::ErrorCode::NotFound,
+                           "Region for a deleted unit selection override was not found",
+                           removed.regionId.toString());
+    }
+    if (region->findUnitSelectionOverride(removed.overrideValue.startKey) == nullptr) {
+      const auto index = std::min(removed.originalIndex,
+                                  region->unitSelectionOverrides.size());
+      region->unitSelectionOverrides.insert(
+          region->unitSelectionOverrides.begin() +
+              static_cast<std::ptrdiff_t>(index),
+          removed.overrideValue);
+    }
+  }
+
+  auto seamOverrides = removedSeamOverrides_;
+  std::stable_sort(seamOverrides.begin(), seamOverrides.end(),
+      [](const auto& lhs, const auto& rhs) {
+        if (lhs.regionId == rhs.regionId) return lhs.originalIndex < rhs.originalIndex;
+        return lhs.regionId < rhs.regionId;
+      });
+  for (const auto& removed : seamOverrides) {
+    auto* region = project.findRegion(removed.regionId);
+    if (region == nullptr) {
+      return core::failure(core::ErrorCode::NotFound,
+                           "Region for a deleted seam override was not found",
+                           removed.regionId.toString());
+    }
+    if (region->findSeamOverride(removed.overrideValue.incomingStartKey) == nullptr) {
+      const auto index = std::min(removed.originalIndex, region->seamOverrides.size());
+      region->seamOverrides.insert(
+          region->seamOverrides.begin() + static_cast<std::ptrdiff_t>(index),
           removed.overrideValue);
     }
   }

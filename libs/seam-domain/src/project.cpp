@@ -42,6 +42,42 @@ const PhonemeOverride* VocalRegion::findPhonemeOverride(PhonemeKey key) const no
   return iterator == phonemeOverrides.end() ? nullptr : &*iterator;
 }
 
+UnitSelectionOverride* VocalRegion::findUnitSelectionOverride(PhonemeKey startKey) noexcept {
+  const auto iterator = std::find_if(unitSelectionOverrides.begin(),
+                                     unitSelectionOverrides.end(),
+      [startKey](const UnitSelectionOverride& value) {
+        return value.startKey == startKey;
+      });
+  return iterator == unitSelectionOverrides.end() ? nullptr : &*iterator;
+}
+
+const UnitSelectionOverride* VocalRegion::findUnitSelectionOverride(
+    PhonemeKey startKey) const noexcept {
+  const auto iterator = std::find_if(unitSelectionOverrides.begin(),
+                                     unitSelectionOverrides.end(),
+      [startKey](const UnitSelectionOverride& value) {
+        return value.startKey == startKey;
+      });
+  return iterator == unitSelectionOverrides.end() ? nullptr : &*iterator;
+}
+
+SeamOverride* VocalRegion::findSeamOverride(PhonemeKey incomingStartKey) noexcept {
+  const auto iterator = std::find_if(seamOverrides.begin(), seamOverrides.end(),
+      [incomingStartKey](const SeamOverride& value) {
+        return value.incomingStartKey == incomingStartKey;
+      });
+  return iterator == seamOverrides.end() ? nullptr : &*iterator;
+}
+
+const SeamOverride* VocalRegion::findSeamOverride(
+    PhonemeKey incomingStartKey) const noexcept {
+  const auto iterator = std::find_if(seamOverrides.begin(), seamOverrides.end(),
+      [incomingStartKey](const SeamOverride& value) {
+        return value.incomingStartKey == incomingStartKey;
+      });
+  return iterator == seamOverrides.end() ? nullptr : &*iterator;
+}
+
 void VocalRegion::sortNotes() {
   std::stable_sort(notes.begin(), notes.end(), [](const Note& lhs, const Note& rhs) {
     if (lhs.startTick == rhs.startTick) {
@@ -107,6 +143,45 @@ core::Result<void> VocalRegion::validate() const {
                            "Phoneme override keys must be unique",
                            overrideValue.key.toString());
     }
+  }
+
+  std::set<PhonemeKey> unitOverrideKeys;
+  for (const auto& overrideValue : unitSelectionOverrides) {
+    const auto overrideResult = overrideValue.validate();
+    if (!overrideResult) return overrideResult;
+    if (!noteIds.contains(overrideValue.startKey.noteId)) {
+      return core::failure(core::ErrorCode::InvariantViolation,
+                           "Unit selection override references a missing note",
+                           overrideValue.startKey.toString());
+    }
+    if (!unitOverrideKeys.insert(overrideValue.startKey).second) {
+      return core::failure(core::ErrorCode::InvariantViolation,
+                           "Unit selection override keys must be unique",
+                           overrideValue.startKey.toString());
+    }
+  }
+
+  std::set<PhonemeKey> seamOverrideKeys;
+  for (const auto& overrideValue : seamOverrides) {
+    const auto overrideResult = overrideValue.validate();
+    if (!overrideResult) return overrideResult;
+    if (!noteIds.contains(overrideValue.incomingStartKey.noteId)) {
+      return core::failure(core::ErrorCode::InvariantViolation,
+                           "Seam override references a missing note",
+                           overrideValue.incomingStartKey.toString());
+    }
+    if (!seamOverrideKeys.insert(overrideValue.incomingStartKey).second) {
+      return core::failure(core::ErrorCode::InvariantViolation,
+                           "Seam override keys must be unique",
+                           overrideValue.incomingStartKey.toString());
+    }
+  }
+  const auto pitchValidation = pitchAutomation.validate();
+  if (!pitchValidation) return pitchValidation;
+  if (!pitchAutomation.points().empty() &&
+      pitchAutomation.points().back().tick > durationTick) {
+    return core::failure(core::ErrorCode::InvariantViolation,
+                         "Pitch automation extends beyond the region");
   }
   return core::success();
 }

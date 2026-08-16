@@ -48,6 +48,7 @@ seam::voicebank::Unit benchmarkUnit() {
           .releaseStart = 19800,
           .audioEnd = 24000,
       },
+      .pitchMarks = {},
       .enabled = true,
   };
 }
@@ -92,6 +93,7 @@ int main() {
     placements.push_back(seam::synthesis::PlacedRenderedUnit{
         .destinationStart = static_cast<seam::time::SampleFrame>(index * 18000),
         .unit = lastRendered,
+        .incomingBoundary = std::nullopt,
     });
   }
   constexpr std::size_t seamIterations = 200;

@@ -4,6 +4,7 @@
 #include "seam/application/note_commands.hpp"
 #include "seam/application/lyric_commands.hpp"
 #include "seam/application/project_factory.hpp"
+#include "seam/application/render_commands.hpp"
 
 #include <memory>
 
@@ -195,4 +196,95 @@ TEST_CASE("deleting a note removes and restores its phoneme overrides") {
   CHECK(session.project().findRegion(fixture.regionId)->findPhonemeOverride(key) != nullptr);
   CHECK(session.redo());
   CHECK(session.project().findRegion(fixture.regionId)->findPhonemeOverride(key) == nullptr);
+}
+
+
+TEST_CASE("unit seam and pitch controls are persistent undoable commands") {
+  Fixture fixture;
+  auto [lyric, note] = fixture.factory.makeNote(
+      seam::time::Tick{0}, seam::time::Tick{960}, 60, U"き");
+  const auto noteId = note.id;
+  auto* region = fixture.project.findRegion(fixture.regionId);
+  region->lyrics.push_back(lyric);
+  region->notes.push_back(note);
+  seam::application::EditorSession session{std::move(fixture.project)};
+
+  const seam::domain::PhonemeKey key{noteId, 0};
+  CHECK(session.execute(std::make_unique<
+      seam::application::UpsertUnitSelectionOverrideCommand>(
+      fixture.regionId, seam::domain::UnitSelectionOverride{
+          .startKey = key,
+          .tokenCount = 2,
+          .unitId = "ja.original.c4.k-i.02",
+          .renderer = seam::domain::UnitRendererKind::ClassicPsola,
+          .locked = true,
+      })));
+  CHECK(session.execute(std::make_unique<
+      seam::application::UpsertSeamOverrideCommand>(
+      fixture.regionId, seam::domain::SeamOverride{
+          .incomingStartKey = key,
+          .seamAmount = 0.9F,
+          .overlap = seam::time::Microseconds{7000},
+          .phaseReset = 0.8F,
+          .envelopeBlend = 0.1F,
+          .curve = seam::domain::SeamCurve::HardCharacter,
+          .locked = true,
+      })));
+  CHECK(session.execute(std::make_unique<
+      seam::application::UpsertPitchAutomationPointCommand>(
+      fixture.regionId, seam::domain::PitchAutomationPoint{
+          .tick = seam::time::Tick{240},
+          .cents = -18.0F,
+          .interpolation = seam::domain::CurveInterpolation::Smooth,
+      })));
+
+  const auto* edited = session.project().findRegion(fixture.regionId);
+  CHECK(edited->unitSelectionOverrides.size() == 1);
+  CHECK(edited->seamOverrides.size() == 1);
+  CHECK(edited->pitchAutomation.points().size() == 1);
+  CHECK(session.undo());
+  CHECK(session.project().findRegion(fixture.regionId)->pitchAutomation.points().empty());
+  CHECK(session.undo());
+  CHECK(session.project().findRegion(fixture.regionId)->seamOverrides.empty());
+  CHECK(session.undo());
+  CHECK(session.project().findRegion(fixture.regionId)->unitSelectionOverrides.empty());
+  CHECK(session.redo());
+  CHECK(session.redo());
+  CHECK(session.redo());
+  CHECK(session.project().findRegion(fixture.regionId)->validate());
+}
+
+TEST_CASE("deleting a note removes and restores render overrides") {
+  Fixture fixture;
+  auto [lyric, note] = fixture.factory.makeNote(
+      seam::time::Tick{0}, seam::time::Tick{960}, 60, U"き");
+  const auto noteId = note.id;
+  const seam::domain::PhonemeKey key{noteId, 0};
+  auto* region = fixture.project.findRegion(fixture.regionId);
+  region->lyrics.push_back(lyric);
+  region->notes.push_back(note);
+  region->unitSelectionOverrides.push_back(seam::domain::UnitSelectionOverride{
+      .startKey = key,
+      .tokenCount = 2,
+      .unitId = "unit.02",
+      .renderer = seam::domain::UnitRendererKind::Raw,
+      .locked = true,
+  });
+  region->seamOverrides.push_back(seam::domain::SeamOverride{
+      .incomingStartKey = key,
+      .seamAmount = 0.7F,
+      .overlap = std::nullopt,
+      .phaseReset = std::nullopt,
+      .envelopeBlend = std::nullopt,
+      .curve = seam::domain::SeamCurve::Linear,
+      .locked = true,
+  });
+  seam::application::EditorSession session{std::move(fixture.project)};
+  CHECK(session.execute(std::make_unique<seam::application::RemoveNotesCommand>(
+      std::vector<seam::domain::NoteId>{noteId})));
+  CHECK(session.project().findRegion(fixture.regionId)->unitSelectionOverrides.empty());
+  CHECK(session.project().findRegion(fixture.regionId)->seamOverrides.empty());
+  CHECK(session.undo());
+  CHECK(session.project().findRegion(fixture.regionId)->unitSelectionOverrides.size() == 1);
+  CHECK(session.project().findRegion(fixture.regionId)->seamOverrides.size() == 1);
 }

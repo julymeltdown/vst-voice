@@ -178,13 +178,66 @@ JsonValue encodeProject(const domain::Project& project) {
         }
         phonemeOverrides.emplace_back(std::move(overrideObject));
       }
+      Array unitSelectionOverrides;
+      for (const auto& overrideValue : region.unitSelectionOverrides) {
+        unitSelectionOverrides.emplace_back(Object{
+            {"noteId", idValue(overrideValue.startKey.noteId)},
+            {"ordinal", JsonValue{static_cast<std::int64_t>(
+                overrideValue.startKey.ordinal)}},
+            {"tokenCount", JsonValue{static_cast<std::int64_t>(
+                overrideValue.tokenCount)}},
+            {"unitId", JsonValue{overrideValue.unitId}},
+            {"renderer", JsonValue{std::string(
+                domain::unitRendererKindName(overrideValue.renderer))}},
+            {"locked", JsonValue{overrideValue.locked}},
+        });
+      }
+      Array seamOverrides;
+      for (const auto& overrideValue : region.seamOverrides) {
+        Object seamObject{
+            {"noteId", idValue(overrideValue.incomingStartKey.noteId)},
+            {"ordinal", JsonValue{static_cast<std::int64_t>(
+                overrideValue.incomingStartKey.ordinal)}},
+            {"curve", JsonValue{std::string(domain::seamCurveName(overrideValue.curve))}},
+            {"locked", JsonValue{overrideValue.locked}},
+        };
+        if (overrideValue.seamAmount.has_value()) {
+          seamObject.emplace("seamAmount", JsonValue{static_cast<double>(
+              *overrideValue.seamAmount)});
+        }
+        if (overrideValue.overlap.has_value()) {
+          seamObject.emplace("overlapUs", JsonValue{*overrideValue.overlap});
+        }
+        if (overrideValue.phaseReset.has_value()) {
+          seamObject.emplace("phaseReset", JsonValue{static_cast<double>(
+              *overrideValue.phaseReset)});
+        }
+        if (overrideValue.envelopeBlend.has_value()) {
+          seamObject.emplace("envelopeBlend", JsonValue{static_cast<double>(
+              *overrideValue.envelopeBlend)});
+        }
+        seamOverrides.emplace_back(std::move(seamObject));
+      }
+      Array pitchAutomation;
+      for (const auto& point : region.pitchAutomation.points()) {
+        pitchAutomation.emplace_back(Object{
+            {"tick", JsonValue{point.tick.value()}},
+            {"cents", JsonValue{static_cast<double>(point.cents)}},
+            {"interpolation", JsonValue{std::string(
+                domain::curveInterpolationName(point.interpolation))}},
+        });
+      }
       regions.emplace_back(Object{{"id", idValue(region.id)},
                                   {"name", JsonValue{region.name}},
                                   {"startTick", JsonValue{region.startTick.value()}},
                                   {"durationTick", JsonValue{region.durationTick.value()}},
                                   {"lyrics", JsonValue{std::move(lyrics)}},
                                   {"notes", JsonValue{std::move(notes)}},
-                                  {"phonemeOverrides", JsonValue{std::move(phonemeOverrides)}}});
+                                  {"phonemeOverrides", JsonValue{std::move(phonemeOverrides)}},
+                                  {"unitSelectionOverrides",
+                                   JsonValue{std::move(unitSelectionOverrides)}},
+                                  {"seamOverrides", JsonValue{std::move(seamOverrides)}},
+                                  {"pitchAutomation", JsonValue{std::move(pitchAutomation)}}});
     }
     vocalTracks.emplace_back(Object{
         {"id", idValue(track.id)},
@@ -384,6 +437,9 @@ core::Result<domain::Project> decodeProject(const JsonValue& root) {
       const auto* lyrics = regionValue.find("lyrics");
       const auto* notes = regionValue.find("notes");
       const auto* phonemeOverrides = regionValue.find("phonemeOverrides");
+      const auto* unitSelectionOverrides = regionValue.find("unitSelectionOverrides");
+      const auto* seamOverrides = regionValue.find("seamOverrides");
+      const auto* pitchAutomation = regionValue.find("pitchAutomation");
       if (regionIdJson == nullptr || regionName == nullptr || startTick == nullptr ||
           durationTick == nullptr || lyrics == nullptr || notes == nullptr ||
           !regionIdJson->isString() || !regionName->isString() || !startTick->isNumber() ||
@@ -401,6 +457,9 @@ core::Result<domain::Project> decodeProject(const JsonValue& root) {
           .lyrics = {},
           .notes = {},
           .phonemeOverrides = {},
+          .unitSelectionOverrides = {},
+          .seamOverrides = {},
+          .pitchAutomation = {},
       };
       for (const auto& lyricValue : lyrics->asArray()) {
         if (!lyricValue.isObject()) {
@@ -522,7 +581,151 @@ core::Result<domain::Project> decodeProject(const JsonValue& root) {
         }
       } else if (schemaVersion >= 2) {
         return core::failure<domain::Project>(core::ErrorCode::ParseError,
-                                              "Schema 2 region is missing phonemeOverrides");
+                                              "Schema 2+ region is missing phonemeOverrides");
+      }
+
+      if (unitSelectionOverrides != nullptr) {
+        if (!unitSelectionOverrides->isArray()) {
+          return core::failure<domain::Project>(core::ErrorCode::ParseError,
+              "Unit selection overrides must be an array");
+        }
+        for (const auto& overrideJson : unitSelectionOverrides->asArray()) {
+          if (!overrideJson.isObject()) {
+            return core::failure<domain::Project>(core::ErrorCode::ParseError,
+                "Unit selection override must be an object");
+          }
+          const auto* overrideNoteId = overrideJson.find("noteId");
+          const auto* ordinal = overrideJson.find("ordinal");
+          const auto* tokenCount = overrideJson.find("tokenCount");
+          const auto* unitId = overrideJson.find("unitId");
+          const auto* renderer = overrideJson.find("renderer");
+          const auto* locked = overrideJson.find("locked");
+          if (overrideNoteId == nullptr || ordinal == nullptr || tokenCount == nullptr ||
+              unitId == nullptr || locked == nullptr || !overrideNoteId->isString() ||
+              !ordinal->isNumber() || !tokenCount->isNumber() || !unitId->isString() ||
+              (renderer != nullptr && !renderer->isString()) || !locked->isBool()) {
+            return core::failure<domain::Project>(core::ErrorCode::ParseError,
+                "Unit selection override fields are invalid");
+          }
+          auto parsedNoteId = parseId<domain::NoteTag>(
+              *overrideNoteId, "unitSelectionOverride.noteId");
+          if (!parsedNoteId) return core::Result<domain::Project>{parsedNoteId.error()};
+          const auto ordinalValue = ordinal->asInt64();
+          const auto tokenCountValue = tokenCount->asInt64();
+          if (ordinalValue < 0 || ordinalValue > 65535 || tokenCountValue <= 0 ||
+              tokenCountValue > 65535) {
+            return core::failure<domain::Project>(core::ErrorCode::ParseError,
+                "Unit selection override range is invalid");
+          }
+          region.unitSelectionOverrides.push_back(domain::UnitSelectionOverride{
+              .startKey = domain::PhonemeKey{
+                  parsedNoteId.value(), static_cast<std::uint16_t>(ordinalValue)},
+              .tokenCount = static_cast<std::uint16_t>(tokenCountValue),
+              .unitId = unitId->asString(),
+              .renderer = renderer == nullptr
+                  ? domain::UnitRendererKind::Inherit
+                  : domain::parseUnitRendererKind(renderer->asString()),
+              .locked = locked->asBool(),
+          });
+        }
+      } else if (schemaVersion >= 3) {
+        return core::failure<domain::Project>(core::ErrorCode::ParseError,
+            "Schema 3 region is missing unitSelectionOverrides");
+      }
+
+      if (seamOverrides != nullptr) {
+        if (!seamOverrides->isArray()) {
+          return core::failure<domain::Project>(core::ErrorCode::ParseError,
+              "Seam overrides must be an array");
+        }
+        for (const auto& overrideJson : seamOverrides->asArray()) {
+          if (!overrideJson.isObject()) {
+            return core::failure<domain::Project>(core::ErrorCode::ParseError,
+                "Seam override must be an object");
+          }
+          const auto* overrideNoteId = overrideJson.find("noteId");
+          const auto* ordinal = overrideJson.find("ordinal");
+          const auto* curve = overrideJson.find("curve");
+          const auto* locked = overrideJson.find("locked");
+          const auto* seamAmount = overrideJson.find("seamAmount");
+          const auto* overlap = overrideJson.find("overlapUs");
+          const auto* phaseReset = overrideJson.find("phaseReset");
+          const auto* envelopeBlend = overrideJson.find("envelopeBlend");
+          if (overrideNoteId == nullptr || ordinal == nullptr || curve == nullptr ||
+              locked == nullptr || !overrideNoteId->isString() || !ordinal->isNumber() ||
+              !curve->isString() || !locked->isBool() ||
+              (seamAmount != nullptr && !seamAmount->isNumber()) ||
+              (overlap != nullptr && !overlap->isNumber()) ||
+              (phaseReset != nullptr && !phaseReset->isNumber()) ||
+              (envelopeBlend != nullptr && !envelopeBlend->isNumber())) {
+            return core::failure<domain::Project>(core::ErrorCode::ParseError,
+                "Seam override fields are invalid");
+          }
+          auto parsedNoteId = parseId<domain::NoteTag>(
+              *overrideNoteId, "seamOverride.noteId");
+          if (!parsedNoteId) return core::Result<domain::Project>{parsedNoteId.error()};
+          const auto ordinalValue = ordinal->asInt64();
+          if (ordinalValue < 0 || ordinalValue > 65535) {
+            return core::failure<domain::Project>(core::ErrorCode::ParseError,
+                "Seam override ordinal is invalid");
+          }
+          domain::SeamOverride value{
+              .incomingStartKey = domain::PhonemeKey{
+                  parsedNoteId.value(), static_cast<std::uint16_t>(ordinalValue)},
+              .seamAmount = std::nullopt,
+              .overlap = std::nullopt,
+              .phaseReset = std::nullopt,
+              .envelopeBlend = std::nullopt,
+              .curve = domain::parseSeamCurve(curve->asString()),
+              .locked = locked->asBool(),
+          };
+          if (seamAmount != nullptr) {
+            value.seamAmount = static_cast<float>(seamAmount->asNumber());
+          }
+          if (overlap != nullptr) value.overlap = overlap->asInt64();
+          if (phaseReset != nullptr) {
+            value.phaseReset = static_cast<float>(phaseReset->asNumber());
+          }
+          if (envelopeBlend != nullptr) {
+            value.envelopeBlend = static_cast<float>(envelopeBlend->asNumber());
+          }
+          region.seamOverrides.push_back(std::move(value));
+        }
+      } else if (schemaVersion >= 3) {
+        return core::failure<domain::Project>(core::ErrorCode::ParseError,
+            "Schema 3 region is missing seamOverrides");
+      }
+
+      if (pitchAutomation != nullptr) {
+        if (!pitchAutomation->isArray()) {
+          return core::failure<domain::Project>(core::ErrorCode::ParseError,
+              "Pitch automation must be an array");
+        }
+        for (const auto& pointJson : pitchAutomation->asArray()) {
+          if (!pointJson.isObject()) {
+            return core::failure<domain::Project>(core::ErrorCode::ParseError,
+                "Pitch automation point must be an object");
+          }
+          const auto* tick = pointJson.find("tick");
+          const auto* cents = pointJson.find("cents");
+          const auto* interpolation = pointJson.find("interpolation");
+          if (tick == nullptr || cents == nullptr || interpolation == nullptr ||
+              !tick->isNumber() || !cents->isNumber() || !interpolation->isString()) {
+            return core::failure<domain::Project>(core::ErrorCode::ParseError,
+                "Pitch automation point fields are invalid");
+          }
+          const auto inserted = region.pitchAutomation.upsert(
+              domain::PitchAutomationPoint{
+                  .tick = time::Tick{tick->asInt64()},
+                  .cents = static_cast<float>(cents->asNumber()),
+                  .interpolation = domain::parseCurveInterpolation(
+                      interpolation->asString()),
+              });
+          if (!inserted) return core::Result<domain::Project>{inserted.error()};
+        }
+      } else if (schemaVersion >= 3) {
+        return core::failure<domain::Project>(core::ErrorCode::ParseError,
+            "Schema 3 region is missing pitchAutomation");
       }
       region.sortNotes();
       track.regions.push_back(std::move(region));

@@ -80,6 +80,7 @@ inline voicebank::Unit makeUnit(std::string id,
           .releaseStart = std::min<time::SampleFrame>(19200, frame * 9 / 10),
           .audioEnd = frame,
       },
+      .pitchMarks = {},
       .enabled = true,
   };
 }
