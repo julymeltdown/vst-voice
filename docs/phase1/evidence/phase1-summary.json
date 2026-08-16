@@ -1,0 +1,11 @@
+{
+  "branchPolicy": "master-only",
+  "projectNotes": 10000,
+  "visibleNotes": 76,
+  "editorRevision": 3,
+  "svgBuildMs": 0.137274,
+  "svgWriteMs": 0.092737,
+  "audioCallbacks": 256,
+  "audioFrames": 16384,
+  "roundTripEqual": true
+}

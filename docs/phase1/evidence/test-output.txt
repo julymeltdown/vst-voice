@@ -1,0 +1,18 @@
+[PASS] tempo map converts ticks, seconds, and sample frames
+[PASS] tempo map preserves an initial event
+[PASS] meter map reports one-based bar and beat
+[PASS] quantizer handles positive and negative ticks
+[PASS] add note command is undoable and redoable
+[PASS] moving notes changes time and pitch as one transaction
+[PASS] resizing notes rejects non-positive duration
+[PASS] deleting notes removes unreferenced lyrics and is reversible
+[PASS] project factory reserves IDs after loading an existing project
+[PASS] internal JSON parser handles nested UTF-8 data
+[PASS] project JSON round trip preserves the canonical model
+[PASS] project decoder rejects an unsupported schema
+[PASS] timeline zoom keeps the anchor tick stable
+[PASS] spatial index virtualizes a ten-thousand-note project
+[PASS] piano roll draws, selects, moves, and hit-tests notes
+[PASS] phase one audio callback produces deterministic silence
+
+16 passed, 0 failed

@@ -1,0 +1,8 @@
+{
+  "notes": 10000,
+  "rebuildMs": 2.335,
+  "queries": 1000,
+  "queryTotalMs": 5.123,
+  "queryAverageUs": 5.123,
+  "visibleAccumulator": 64500
+}

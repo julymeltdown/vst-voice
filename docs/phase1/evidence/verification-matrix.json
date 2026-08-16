@@ -1,0 +1,22 @@
+{
+  "environment": {
+    "compiler": "GCC 14.2.0",
+    "cmake": "3.31.6",
+    "ninja": "1.12.1",
+    "python": "3.13.5"
+  },
+  "builds": {
+    "debugWarningsAsErrors": "pass",
+    "releaseWarningsAsErrors": "pass",
+    "addressUndefinedSanitizers": "pass"
+  },
+  "tests": {
+    "caseCount": 16,
+    "debug": "pass",
+    "release": "pass",
+    "sanitizer": "pass"
+  },
+  "demoUnderSanitizers": "pass",
+  "licenseAudit": "pass",
+  "branchPolicy": "master-only"
+}
