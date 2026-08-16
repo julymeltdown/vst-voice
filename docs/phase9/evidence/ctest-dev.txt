@@ -1,0 +1,35 @@
+Test project /mnt/data/project-seam-phase9-work/project-seam-phase8-master/build/dev
+      Start  1: seam_tests
+ 1/15 Test  #1: seam_tests .............................   Passed   10.83 sec
+      Start  2: seam_phase2_demo_smoke
+ 2/15 Test  #2: seam_phase2_demo_smoke .................   Passed    1.62 sec
+      Start  3: seam_phase3_demo_smoke
+ 3/15 Test  #3: seam_phase3_demo_smoke .................   Passed    2.17 sec
+      Start  4: seam_phase4_demo_smoke
+ 4/15 Test  #4: seam_phase4_demo_smoke .................   Passed    2.58 sec
+      Start  5: seam_phase6_demo_smoke
+ 5/15 Test  #5: seam_phase6_demo_smoke .................   Passed    0.04 sec
+      Start  6: seam_phase7_demo_smoke
+ 6/15 Test  #6: seam_phase7_demo_smoke .................   Passed    0.03 sec
+      Start  7: seam_phase8_demo_smoke
+ 7/15 Test  #7: seam_phase8_demo_smoke .................   Passed    0.00 sec
+      Start  8: seam_phase9_demo_smoke
+ 8/15 Test  #8: seam_phase9_demo_smoke .................   Passed    1.60 sec
+      Start  9: seam_phase8_platform_source_contract
+ 9/15 Test  #9: seam_phase8_platform_source_contract ...   Passed    0.55 sec
+      Start 10: seam_bank_tool_help
+10/15 Test #10: seam_bank_tool_help ....................   Passed    0.00 sec
+      Start 11: seam_voicebank_cli_help
+11/15 Test #11: seam_voicebank_cli_help ................   Passed    0.00 sec
+      Start 12: seam_voicebank_cli_validate
+12/15 Test #12: seam_voicebank_cli_validate ............   Passed    1.46 sec
+      Start 13: seam_phase5_demo_smoke
+13/15 Test #13: seam_phase5_demo_smoke .................   Passed    0.70 sec
+      Start 14: seam_native_editor_x11_smoke
+14/15 Test #14: seam_native_editor_x11_smoke ...........   Passed    1.93 sec
+      Start 15: seam_voicebank_studio_x11_smoke
+15/15 Test #15: seam_voicebank_studio_x11_smoke ........   Passed    1.95 sec
+
+100% tests passed, 0 tests failed out of 15
+
+Total Test time (real) =  25.48 sec

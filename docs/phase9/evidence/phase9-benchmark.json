@@ -1,0 +1,12 @@
+{
+  "phase": "9.0",
+  "fontFaces": 4,
+  "coldStrings": 4,
+  "coldTotalMs": 0.774629,
+  "warmIterations": 2000,
+  "warmTotalMs": 1.73723,
+  "warmAverageUs": 0.868614,
+  "cacheHits": 2000,
+  "cacheMisses": 4,
+  "cacheEntries": 4
+}

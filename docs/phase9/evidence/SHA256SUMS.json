@@ -1,0 +1,22 @@
+{
+  "branch-policy.txt": "346a02a4fdc58def7de6ec7784ba9088ce4ba4ec15ee51e04497b41916f712c3",
+  "ctest-dev.txt": "99ffc77a635c659fda2ae533849d674a54fd332e7305e6cb446a63282ec99841",
+  "ctest-release.txt": "620b1a5be806a86704248b3871cfc960d12e399be29dd731325981440098c303",
+  "ctest-sanitize.txt": "4ac8f9aa63aac6b39d314c4d6f214a785927244cc3fa6c063a24c609c45783bd",
+  "direct-tests.txt": "abbcb64c25e9d8a0d54d50f16e1141e751656006ec82d75bff73d4678c10d252",
+  "git-diff-check.txt": "7e62a729ba7f670676ab0fd8234e42c5a05091d447027abf91854d95b4937a3f",
+  "git-fsck.txt": "edf3428423b6d82dde47c1b518f12ae4b458ef7295a35069c715567262e5ad6c",
+  "git-history.txt": "49c7a4510bdf9a14620cf32335e71d6a28f6e6a8a0faec5b5f219caaae2760eb",
+  "license-audit.txt": "2eaf7c18d412d3cde0c6a05cf8f85f5b6dfbe872e8891eafa4b497c888c8c9fb",
+  "native-editor-smoke.txt": "46ccf5ed33f54f3d5de3d2fd3ab13df9272bb86ab5cc31782816043c69a78c51",
+  "phase9-benchmark.json": "9a505327008e377986883a2f3e8c7c7ec9019e16014135b441943ffd713fb486",
+  "phase9-cjk-text.png": "8dbdb5b61cd0239f0dc2f9b7e56721a809248338a12821043df6b916938998b9",
+  "phase9-cjk-text.ppm": "74624ab750805ce2e7e17177a96de7ead974d3b8cc6faf7ece8002bc21c1144f",
+  "phase9-demo.txt": "f5db7a37a0dfb453648f446b88ce48b0d0ea6d2b88e3686b3240d12ece32ca8e",
+  "phase9-native-editor.png": "46de5169cc59da8e0d552d9d4608ef7f7fe56462e714990db954e31536e3432b",
+  "phase9-native-editor.ppm": "2a527aafd44b94ec01f9dae6b6c417749eb565f3335e24f258825cf009e0a795",
+  "phase9-summary.json": "73afb72c3fa14203b9372336ec2e4c63a77919af4340a7584901fae3c1b6ee3c",
+  "sanitize-native-editor-smoke.txt": "6e6bd5b34250f49dd5dd0bc0554a769164d1343d69337d4051a42ebbe8724bfd",
+  "sanitize-voicebank-studio-smoke.txt": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+  "verification-matrix.json": "7f15969f62b098173890863c80b53ab45d20d14597d471a0c022c950987d398f"
+}

@@ -1,0 +1,43 @@
+8c62290 (HEAD -> master) feat: implement Phase 9 production CJK text rendering
+7a8cea8 chore: record Phase 8 verification evidence
+43ec1d8 chore: add Phase 8 verification evidence
+a6cd87e feat: implement Phase 8 Windows and macOS native adapters
+512a401 fix: harden Phase 7 package trust and character binding
+cb8a909 feat: implement Phase 7 signed seambank distribution
+76fbc63 feat: implement Phase 6 multichannel routing
+fee54fc chore: record Phase 5.1 package verification
+bc170d2 chore: finalize Phase 5.1 verification evidence
+0ed7213 feat: complete Phase 5.1 character, studio, and recording integration
+d43559d chore: add Phase 5 verification evidence
+4f7c016 docs: expand Phase 5 implementation report
+8b2d435 fix: capture ThreadSanitizer evidence through a pseudo-terminal
+7da6eca chore: make Phase 5 evidence generation resumable
+5f51236 fix: harden Phase 5 platform boundaries
+c7f813e feat: implement Phase 5 native runtime
+475bacc chore: record complete Phase 4.1 verification evidence
+64dbe1b docs: record concurrent verification isolation
+ab05ab4 test: isolate concurrent temporary directories
+3d01343 fix: support resumable Phase 4.1 evidence collection
+3779d9f fix: validate complete Phase 4.1 evidence output
+def3f8e docs: record complete Phase 4.1 sanitizer verification
+eaab974 fix: normalize generated Phase 4.1 evidence
+debb691 docs: align Phase 4.1 verification and evidence policy
+140acf1 fix: bound frozen assets and reset buffered transport state
+4e90615 fix: stabilize Phase 4 render persistence and concurrency
+09a82b4 chore: record Phase 4 package verification
+f3400ff chore: add Phase 4 verification evidence
+1bde611 fix: make Phase 4 evidence collection resumable
+157f532 fix: use release benchmark for Phase 4 evidence
+ed7d224 docs: define Phase 4 architecture and acceptance
+793c0a0 feat: implement Phase 4 multi-renderer playback and inspection
+d1afe62 chore: add Phase 3 verification evidence
+1f4744e docs: define Phase 3 architecture and acceptance
+4a5b485 feat: implement Phase 3 editable render loop
+786e12d chore: add Phase 2 verification evidence
+7325ecc docs: document Phase 2 architecture and acceptance
+b76f4b3 fix: clarify native adapter dependency gate
+90ec54c feat: implement Phase 2 phoneme and raw synthesis pipeline
+9e32bab docs: document Phase 1 architecture and verification
+c84050a feat: add Phase 1 low-poly character directions
+533eed0 feat: implement Phase 1 editor and domain foundation
+6f5f3c1 chore: establish master-only repository and license policy

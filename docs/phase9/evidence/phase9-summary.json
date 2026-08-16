@@ -1,0 +1,46 @@
+{
+  "cache": {
+    "bytes": 107946,
+    "entries": 10,
+    "evictions": 0,
+    "hits": 1,
+    "misses": 10
+  },
+  "fontFilesRedistributed": false,
+  "fonts": [
+    {
+      "faceIndex": 0,
+      "path": "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+      "probeCoverage": 6,
+      "sha256": "b76b0433203017ca80401b2ee0dd69350349871c4b19d504c34dbdd80541690a"
+    },
+    {
+      "faceIndex": 0,
+      "path": "/usr/share/fonts/truetype/nanum/NanumGothic.ttf",
+      "probeCoverage": 6,
+      "sha256": "48a28e97b34fc8e5b157657633670cd1b7de126cfc414da65ce9c3d5bc8be733"
+    },
+    {
+      "faceIndex": 0,
+      "path": "/usr/share/fonts/truetype/nanum/NanumGothicCoding.ttf",
+      "probeCoverage": 5,
+      "sha256": "787effd7efed2abca88ade231faa8191f4e9fcf85b1805a13ee1dc3724b72089"
+    },
+    {
+      "faceIndex": 0,
+      "path": "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+      "probeCoverage": 3,
+      "sha256": "57f73e11f51999432bf7ab22ce55b6f945d5eca1bf824404cfa9ec2e3718c84e"
+    }
+  ],
+  "metrics": {
+    "baseline": 26,
+    "height": 39,
+    "lines": 1,
+    "truncated": false,
+    "width": 410.2763671875
+  },
+  "phase": 9,
+  "surfaceChecksum": 2080427360298865773,
+  "unicodeRenderer": true
+}

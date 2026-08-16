@@ -1,0 +1,5 @@
+fonts=4
+cacheHits=1
+cacheMisses=10
+bitmap=415x43
+surfaceChecksum=2080427360298865773

@@ -1,0 +1,7 @@
+window_backend=X11 software raster + XIM
+audio_backend=threaded-callback-clock
+audio_physical=false
+audio_callbacks=519
+feeder_frames=0
+callback_delivered=0
+callback_underflow=132864
