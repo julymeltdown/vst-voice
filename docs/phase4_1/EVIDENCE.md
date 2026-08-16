@@ -42,6 +42,7 @@ The final evidence script derives counts from the executable instead of hard-cod
 | Release CTest | 6/6 passed |
 | ASan + UBSan CTest | 6/6 passed |
 | ThreadSanitizer direct named suite | 84 passed / 0 failed |
+| ThreadSanitizer CTest | 6/6 passed |
 | Phase 2–4 smoke demos | passed |
 | Master-only policy | passed |
 | License audit | passed |

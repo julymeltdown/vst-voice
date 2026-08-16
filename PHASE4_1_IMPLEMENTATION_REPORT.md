@@ -349,7 +349,7 @@ Phase 4.1 is accepted when all of the following are true:
 - Debug, Release, ASan/UBSan, and TSan verification pass;
 - master-only and license policy checks pass.
 
-The exact verification logs are indexed in `docs/phase4_1/EVIDENCE.md`.
+The exact verification logs are indexed in `docs/phase4_1/EVIDENCE.md`. The final source-tree verification recorded 84/84 named tests, 6/6 Debug CTest, 6/6 Release CTest, 6/6 ASan+UBSan CTest, and 6/6 ThreadSanitizer CTest.
 
 ## 14. Remaining scope after Phase 4.1
 

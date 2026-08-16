@@ -100,6 +100,7 @@ Debug CTest                         6/6 PASS
 Release CTest                       6/6 PASS
 ASan + UBSan CTest                  6/6 PASS
 ThreadSanitizer named suite         84 PASS / 0 FAIL
+ThreadSanitizer CTest                6/6 PASS
 Master-only policy                  PASS
 Dependency-license audit            PASS
 Git object integrity                PASS
