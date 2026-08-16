@@ -2,59 +2,93 @@
 
 ## Architectural style
 
-Project SEAM is a modular monolith. Audio editing requires deterministic in-process state and low-latency data flow; splitting the core into network services would add failure modes without product value.
+Project SEAM is a local-first modular monolith. Score state, reversible editing, sample selection, phrase rendering, and playback require deterministic in-process coordination. Network services would add latency and failure modes without product value.
 
 ## Dependency graph
 
 ```text
 seam_core
-  └─ seam_domain
-       └─ seam_application
-            ├─ seam_editor_ui
-            ├─ seam_formats
-            └─ seam_platform adapters
+   │
+   ├── seam_domain
+   │      ├── seam_application
+   │      ├── seam_phonemizer
+   │      └── seam_formats
+   │              │
+   │              └── seam_voicebank
+   │                       │
+   │                       └── seam_synthesis
+   │
+   ├── seam_editor_ui
+   └── seam_platform
+
+apps
+├── seam_phase1_demo
+├── seam_phase2_demo
+└── seam_voicebank_cli
 ```
 
-`seam_editor_ui`, `seam_formats`, and `seam_platform` are replaceable adapters around the application/domain core.
-
-## Modules
-
-### seam_core
-
-Provides only generic primitives: typed IDs, error/result, logging, and hashing.
-
-### seam_domain
-
-Owns canonical musical and project state. It cannot include or link graphics, serialization, databases, plugin SDKs, or OS APIs.
-
-### seam_application
-
-Owns use cases and reversible commands. It validates the domain after each command and increments a revision only after a successful state transition.
-
-### seam_editor_ui
-
-Owns editor geometry and interaction semantics. Phase 1 uses SVG as a proof painter. Phase 2 will add a Skia painter without changing note editing rules.
-
-### seam_formats
-
-Maps canonical state to external representation. Format code may depend on the domain, but the domain never depends on format code.
-
-### seam_platform
-
-Defines real-time and desktop adapter contracts. Device and plugin SDK integration stays here.
+The actual CMake graph adds only the narrow public dependencies listed in `MODULE_BOUNDARIES.md`.
 
 ## State flow
 
 ```text
-Input event
-→ interaction state
+Native/editor input
 → application command
-→ domain validation
+→ canonical domain validation
 → project revision
-→ spatial-index rebuild or dirty-region update
-→ painter / future render scheduler
+→ regenerate phonemes as needed
+→ regenerate deterministic unit and timing plans
+→ render units
+→ compose explicit seams
+→ cache or export PCM
 ```
+
+## Current implementation layers
+
+### `seam_core`
+
+Errors, results, typed IDs, and logging.
+
+### `seam_domain`
+
+Tempo, meter, project, notes, lyrics, phoneme keys, and user overrides. It has no serialization, graphics, or DSP dependency.
+
+### `seam_application`
+
+Reversible commands, editor sessions, selection, and ID-safe project construction.
+
+### `seam_phonemizer`
+
+Deterministic language front end. The Phase 2 implementation supports Japanese Kana and applies canonical user overrides.
+
+### `seam_voicebank`
+
+Data-only bank model, manifest codec, WAV I/O, marker editing, waveform, spectrogram, F0 analysis, and validation.
+
+### `seam_synthesis`
+
+Unit candidates, deterministic complete-cover selection, note-on/vowel-onset timing, raw sample looping, seam composition, and phrase rendering.
+
+### `seam_editor_ui`
+
+Backend-independent piano-roll and phoneme-lane geometry plus text-composition state. SVG proof views remain the current visual adapter.
+
+### `seam_platform`
+
+Real-time callback contracts. A production device/window adapter is still dependency-gated.
 
 ## Real-time boundary
 
-The future audio callback may read only preallocated buffers and atomics. It may not traverse the project, parse files, select units, perform FFT planning, allocate memory, or block on a lock.
+The future callback may read only preallocated PCM buffers and atomics. It may not:
+
+- allocate or free memory;
+- parse files;
+- traverse project state;
+- phonemize;
+- select units;
+- load WAV files;
+- run FFT or F0 analysis;
+- wait on locks;
+- write logs.
+
+Phase 2 renders offline and exports evidence. Background scheduling and callback feeding are later phases.

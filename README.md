@@ -1,40 +1,70 @@
-# Project SEAM — Phase 1
+# Project SEAM — Phase 2 + Raw Concatenative Vertical Slice
 
-Project SEAM is a C++20 foundation for a sample-concatenative singing-voice editor. The product is designed around a deliberate constraint: phoneme and sample boundaries are editable musical material rather than defects to be hidden.
+Project SEAM is a C++20 sample-concatenative singing-voice editor. Its deliberate product constraint is that phoneme and sample boundaries are editable musical material rather than defects that must always be hidden.
 
-This repository contains the completed **Phase 1 editor foundation** on the **`master` branch only**.
+This repository contains Phase 1 plus the completed Phase 2 phoneme/voicebank foundation and an additional end-to-end **raw sample-concatenation vertical slice**. Development remains on the **`master` branch only**.
 
-## Phase 1 delivered
+## Implemented
 
-- Integer musical time (`Tick`) with tempo and meter maps.
-- Tick, second, and sample-frame conversion.
-- Canonical project model: project, vocal/audio tracks, regions, notes, lyrics, voicebank and character references.
+### Editor and canonical state
+
+- Integer musical time, tempo/meter maps, and sample-frame conversion.
+- Project, track, region, note, lyric, voicebank, and character references.
 - Strong typed IDs and post-load ID synchronization.
-- Command-based editing with undo/redo and monotonic project revision.
-- Add, move, resize, box-select, and delete note operations.
-- Snap/quantize behavior for positive and negative musical time.
-- Piano-roll viewport model with zoom, pan, hit testing, piano keyboard rows, and 10,000-note virtualization.
-- Backend-independent SVG proof renderer for the editor scene.
-- UTF-8-aware project serialization with an in-house JSON parser and staged temporary-file replacement.
-- Real-time-safe audio callback contract plus a deterministic callback simulator.
-- Test suite, benchmark, sanitizer preset, CI policy, license audit, and master-only branch enforcement.
-- Three retained low-poly character directions, 128 px silhouette tests, and generated blockout OBJ fixtures.
+- Command-based editing with undo/redo and monotonic revision.
+- Piano-roll geometry, selection, snapping, zoom/pan, hit testing, and 10,000-note virtualization.
+- `PhonemeKey`, generated phoneme tokens, explicit symbol/timing/lock overrides.
+- Reversible lyric and phoneme-override commands.
+- Note deletion that removes and restores attached overrides.
+- Project JSON schema 2 with schema 1 migration.
+- Backend-independent IME composition state and Phoneme Lane geometry.
 
-## Deliberate Phase 1 boundary
+### Language front end
 
-The canonical editor and interaction model is complete for Phase 1, but the production **iPlug2 + Skia native window adapter is not vendored or compiled in this repository**. It remains dependency-gated until exact source revisions and the resulting build closure pass the project license audit. The current proof renderer writes the same visible editor model to SVG, so application logic and UI geometry can be tested without coupling the domain to a graphics SDK.
+- `IPhonemizer` abstraction.
+- Japanese Hiragana/Katakana normalization.
+- Contracted mora, sokuon, moraic nasal, long-vowel continuation, punctuation, and warnings.
+- Override application without storing derived phoneme plans as canonical state.
 
-This is not a complete singing synthesizer yet. Phonemization, voicebank labeling, unit selection, timing solving, sample rendering, partial audio rendering, and the production native shell are Phase 2 and later work.
+### Voicebank foundation
 
-## Requirements
+- Data-only manifest schema 1.
+- Relative-path and metadata validation.
+- Bounded RIFF/WAVE reader for common PCM/float formats.
+- Mono PCM16 writer.
+- Peak, RMS, clipping, and DC statistics.
+- Multilevel waveform summaries and SVG output.
+- First-party radix-2 FFT spectrogram output.
+- Autocorrelation F0 analysis with octave-error-resistant peak selection.
+- Acoustic marker normalization/editing.
+- Full-bank validator for files, markers, pitch, clipping, DC, loops, and inventory.
+- `seam_voicebank_cli` for validation, inspection, and WAV analysis.
 
-- CMake 3.25+
-- A C++20 compiler
-- Ninja for the supplied presets
-- Python 3 for policy checks and evidence generation
-- Optional: Inkscape for PNG preview generation
+### Raw synthesis vertical slice
 
-Tested in the provided Linux build environment with GCC. The CI definition also builds the portable Phase 1 libraries on Windows and macOS runners.
+- Exact-phone unit candidate generation.
+- Deterministic dynamic-programming complete-cover selector.
+- Pitch distance, unit length, priority, and take scoring.
+- Vowel-onset-to-note-on timing.
+- Explicit timing issue reporting.
+- `RawLoopRenderer` with pitch/time resampling, stable-vowel loop, release, gain, DC removal, and de-click.
+- `SeamComposer` with a controllable smooth-to-hard overlap character.
+- End-to-end synthetic bank → lyrics → phonemes → units → timing → PCM WAV.
+
+### Verification and product work
+
+- 33 individually reported tests covering domain, commands, UI models, codecs, phonemizer, bank analysis, and synthesis.
+- Debug/release warnings-as-errors and sanitizer presets.
+- Phase 1/2 benchmarks and reproducible evidence generators.
+- Master-only hooks and branch verifier.
+- License allowlist audit and SBOM/notice scaffolding.
+- First-party low-poly emo character direction assets remain included from Phase 1.
+
+## Honest current boundary
+
+This repository does **not** yet contain the production iPlug2 + Skia native window, native Windows/macOS IME overlay, PSOLA, spectral synthesis, background render scheduler/cache, official human-recorded voicebank, or plugin targets.
+
+The Phase 2 editor image is an SVG proof generated from real note and phoneme view models. The WAV is genuinely rendered by the implemented raw concatenative pipeline. The synthetic voicebank is test data, not a commercial voice.
 
 ## Build
 
@@ -44,7 +74,7 @@ cmake --build --preset dev
 ctest --preset dev
 ```
 
-Release and sanitizer builds:
+Release and sanitizers:
 
 ```bash
 cmake --preset release
@@ -56,84 +86,69 @@ cmake --build --preset sanitize
 ctest --preset sanitize
 ```
 
-## Run the Phase 1 demonstration
+## Run the Phase 2 vertical slice
 
 ```bash
-./build/dev/seam_phase1_demo --output out/phase1
+./build/dev/seam_phase2_demo --output out/phase2
 ```
 
-The demonstration:
-
-1. creates a 10,000-note project;
-2. performs a multi-note move, undo, and redo;
-3. saves and reloads the canonical project;
-4. verifies round-trip equality;
-5. renders the visible piano-roll viewport;
-6. simulates 256 audio callbacks.
-
-Outputs:
+Key outputs:
 
 ```text
-out/phase1/phase1-demo.seam.json
-out/phase1/phase1-piano-roll.svg
-out/phase1/phase1-summary.json
+out/phase2/phase2-editor.svg
+out/phase2/phase2-raw-phrase.wav
+out/phase2/phase2-raw-waveform.svg
+out/phase2/phase2-raw-spectrogram.pgm
+out/phase2/phase2-demo.seam.json
+out/phase2/phase2-summary.json
+out/phase2/synthetic-voicebank/manifest.json
 ```
 
-Generate all verification evidence, including a PNG preview when Inkscape is installed:
+## Voicebank CLI
 
 ```bash
-python3 scripts/generate_phase1_evidence.py --root .
+./build/dev/seam_voicebank_cli validate out/phase2/synthetic-voicebank/manifest.json
+./build/dev/seam_voicebank_cli inspect out/phase2/synthetic-voicebank/manifest.json
+./build/dev/seam_voicebank_cli analyze \
+  out/phase2/phase2-raw-phrase.wav out/phase2/analysis
 ```
 
-## Benchmark
+## Evidence
+
+```bash
+python3 scripts/generate_phase2_evidence.py --root .
+```
+
+This runs the test suite, demo, CLI, benchmark, branch policy, license audit, and generates PNG/audio metadata when supporting tools are installed.
+
+## Benchmarks
 
 ```bash
 ./build/dev/seam_phase1_benchmark
+./build/dev/seam_phase2_benchmark
 ```
 
-The benchmark measures index rebuild time and 1,000 viewport queries over a 10,000-note fixture. Results are environment-specific and are recorded as evidence rather than treated as a cross-machine guarantee.
+Benchmark values are machine-specific evidence, not a universal performance guarantee.
 
 ## Repository policy
 
-Only the `master` branch is allowed. The repository includes:
-
-- `.githooks/pre-commit`
-- `.githooks/pre-push`
-- `scripts/verify_master_branch.py`
-- CI branch-policy validation
-
-The active repository is configured with:
+Only `master` is permitted. Hooks are configured through:
 
 ```bash
 git config core.hooksPath .githooks
 ```
 
-## Architecture
+## Documentation
 
-```text
-seam_core
-    ↓
-seam_domain
-    ↓
-seam_application
-    ↓
-seam_editor_ui       seam_formats       seam_platform
-          \              |                 /
-                  seam_phase1_demo
-```
-
-The domain has no dependency on iPlug2, Skia, JSON, SQLite, plugin SDKs, or operating-system APIs.
-
-Detailed documents:
-
-- [`PHASE1_IMPLEMENTATION_REPORT.md`](PHASE1_IMPLEMENTATION_REPORT.md)
-- [`docs/architecture/OVERVIEW.md`](docs/architecture/OVERVIEW.md)
-- [`docs/phase1/ACCEPTANCE.md`](docs/phase1/ACCEPTANCE.md)
-- [`docs/brand/CHARACTER_DIRECTION_PHASE1.md`](docs/brand/CHARACTER_DIRECTION_PHASE1.md)
+- [`PHASE2_IMPLEMENTATION_REPORT.md`](PHASE2_IMPLEMENTATION_REPORT.md)
+- [`docs/architecture/PHASE2_PIPELINE.md`](docs/architecture/PHASE2_PIPELINE.md)
+- [`docs/phase2/ACCEPTANCE.md`](docs/phase2/ACCEPTANCE.md)
+- [`docs/formats/PROJECT_JSON_V2.md`](docs/formats/PROJECT_JSON_V2.md)
+- [`docs/formats/VOICEBANK_MANIFEST_V1.md`](docs/formats/VOICEBANK_MANIFEST_V1.md)
 - [`docs/licensing/DEPENDENCY_POLICY.md`](docs/licensing/DEPENDENCY_POLICY.md)
 
 ## Ownership and licensing
 
-Project source and first-party concept assets are currently proprietary and all rights are reserved. No production third-party source is vendored in Phase 1. Reference projects are documented separately and were used for behavioral study, not copied implementation.
+Project source and first-party concept assets are currently proprietary and all rights are reserved. No production third-party source is vendored. Reference projects are documented for behavioral study only.
 
 See [`LICENSE`](LICENSE), [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md), and [`third_party/manifest.yml`](third_party/manifest.yml).
