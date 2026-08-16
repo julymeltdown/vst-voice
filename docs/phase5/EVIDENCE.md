@@ -31,4 +31,4 @@ SHA256SUMS.json
 
 The native screenshot is produced by the actual X11 window under Xvfb, not by an SVG-only evidence renderer. The headless 1×/2× images use the same `EditorScenePainter` and `PixelSurface` as the native window.
 
-Physical PulseAudio output is probed by the named test. A CI environment without a Pulse server is expected to receive an explicit open error and use the callback-clock backend for deterministic runtime evidence.
+The named test points PulseAudio at a deliberately unreachable local endpoint so the error path is deterministic and bounded. The native application still attempts the user's real default PulseAudio server at runtime and falls back explicitly when unavailable.

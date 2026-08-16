@@ -50,7 +50,7 @@ The named suite expands from 84 to 92 tests. New coverage includes:
 - feeder service lifecycle;
 - threaded callback device;
 - concurrent seek/play controls under active feeder and callback threads;
-- explicit physical audio open success or error.
+- a bounded physical-audio open path with an explicit success or failure result.
 
 ## Honest boundary
 

@@ -8,8 +8,10 @@
 #include "seam/rendering/playback_feeder_service.hpp"
 
 #include <chrono>
+#include <cstdlib>
 #include <cmath>
 #include <memory>
+#include <string>
 #include <thread>
 #include <vector>
 
@@ -148,7 +150,15 @@ TEST_CASE("playback controls remain race-free while feeder and callback threads 
   CHECK(device->stats().callbacks > 0U);
 }
 
-TEST_CASE("system audio adapter reports a physical backend or an explicit error") {
+TEST_CASE("system audio adapter reports an explicit bounded open result") {
+#if defined(__linux__)
+  const auto* previous = std::getenv("PULSE_SERVER");
+  const std::string previousValue = previous == nullptr ? std::string{} : previous;
+  const bool hadPrevious = previous != nullptr;
+  CHECK(::setenv("PULSE_SERVER",
+                 "unix:/__project_seam_nonexistent__/pulse.sock", 1) == 0);
+#endif
+
   seam::platform::SilenceProcessor processor;
   auto device = seam::platform::createSystemAudioDevice();
   CHECK(device != nullptr);
@@ -160,6 +170,15 @@ TEST_CASE("system audio adapter reports a physical backend or an explicit error"
                                        .streamName = "probe",
                                    },
                                    processor);
+
+#if defined(__linux__)
+  if (hadPrevious) {
+    CHECK(::setenv("PULSE_SERVER", previousValue.c_str(), 1) == 0);
+  } else {
+    CHECK(::unsetenv("PULSE_SERVER") == 0);
+  }
+#endif
+
   if (opened) {
     CHECK(device->info().physical);
     device->stop();
