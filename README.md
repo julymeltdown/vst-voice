@@ -1,4 +1,4 @@
-# Project SEAM — Phase 7 signed voicebank distribution
+# Project SEAM — Phase 8 native platform adapters
 
 Project SEAM is a C++20 sample-concatenative singing-voice editor. Phoneme boundaries, source-unit changes, pitch-shift artifacts, and sample seams are editable musical material rather than defects that must always be hidden.
 
@@ -12,9 +12,43 @@ This repository contains:
 - Phase 5 native standalone/runtime vertical slice;
 - completed **Phase 5.1 native product surfaces, Character 01 integration, graphical Voicebank Studio, and recording transport**;
 - completed **Phase 6 persisted multichannel project routing and callback delivery for 1–8 output channels**;
-- completed **Phase 7 signed, verifiable, and transactional `.seambank` packaging and installation**.
+- completed **Phase 7 signed, verifiable, and transactional `.seambank` packaging and installation**;
+- integrated **Phase 8 Windows Win32/TSF/WASAPI and macOS AppKit/NSTextInputClient/CoreAudio platform adapters**.
 
 Development uses the **`master` branch only**.
+
+
+## Phase 8 implementation
+
+### Windows native adapters
+
+- Real Win32 native window using the existing first-party software-raster editor scene.
+- Per-monitor DPI, resize, repaint, pointer, wheel, keyboard, close, and screenshot paths.
+- Unicode lyric editing through a native `EDIT` overlay participating in TSF, with explicit `ITfThreadMgr` activation.
+- Shared-mode event-driven WASAPI output for one through eight float channels.
+- Shared-mode event-driven WASAPI mono capture for Voicebank Studio recording.
+
+The text adapter is accurately described as a **native `EDIT` overlay under TSF text services**. It is not claimed to be a custom `ITextStoreACP` implementation.
+
+### macOS native adapters
+
+- Real AppKit `NSWindow` and custom `NSView` using the same first-party software-raster editor scene.
+- Backing-scale-aware CoreGraphics presentation, pointer, wheel, keyboard, resize, close, and screenshot paths.
+- `NSTextInputClient` marked-text, selection, commit, cancel, deletion, cursor movement, and candidate-window positioning.
+- CoreAudio DefaultOutput AudioUnit output for one through eight non-interleaved float channels when accepted by the selected device.
+- CoreAudio HALOutput mono capture for Voicebank Studio recording.
+
+### Platform verification boundary
+
+- Linux X11/XIM/PulseAudio remains runtime-verified in the current environment.
+- Windows and macOS implementations are selected by CMake, covered by a static source-contract test, and included in a three-platform GitHub Actions build/test matrix.
+- This Linux package does not claim physical Windows/macOS speaker, microphone, DPI, focus, lifecycle, or IME runtime certification. Those tests remain platform release gates.
+
+### Character 01 across native platforms
+
+Character 01 continues to use the shared product-presentation layer. Windows and macOS do not duplicate character policy. Full/Minimal/Off display state, voicebank cards, welcome surfaces, and status portraits remain optional UI surfaces; Character 01 never enters synthesis, multichannel routing, recording, cache identity, `.seambank` trust decisions, or exported PCM.
+
+See [`docs/phase8/IMPLEMENTATION_REPORT.md`](docs/phase8/IMPLEMENTATION_REPORT.md), [`docs/phase8/PLATFORM_MATRIX.md`](docs/phase8/PLATFORM_MATRIX.md), and [`docs/architecture/NATIVE_PLATFORM_ADAPTERS.md`](docs/architecture/NATIVE_PLATFORM_ADAPTERS.md).
 
 
 ## Phase 7 implementation
@@ -215,34 +249,37 @@ seam_phase5_benchmark   software paint and callback regression benchmark
 
 ## Verification
 
-Phase 7 extends the named suite with Ed25519 key persistence, deterministic package construction, tamper rejection, explicit trust enforcement, transactional replacement, path-policy checks, Character 01 binding, and installer receipts. CTest additionally covers the signed package demo and CLI surface alongside all earlier headless and X11/Xvfb smoke paths.
+Phase 8 extends the named suite with the platform-capability contract and adds a static source-contract test alongside every prior domain, synthesis, routing, distribution, recording, native editor, and Voicebank Studio test.
 
 ```text
-Named tests                        113 PASS / 0 FAIL
-Debug CTest                         12/12 PASS
+Named tests                        114 PASS / 0 FAIL
+Linux Debug CTest                   14/14 PASS
+Linux X11 editor smoke              PASS
+Linux Voicebank Studio smoke        PASS
+Phase 8 source contract             PASS
 Master-only policy                  PASS
 Dependency-license audit            PASS
 Git object integrity                PASS
 ```
 
-Release, sanitizer, package-extraction, and platform-source verification are refreshed before the Phase 8 package is published.
+Release, sanitizer, clean-package extraction, and package verification are refreshed for the final Phase 8 archive. Windows/macOS runtime evidence must be collected on those operating systems.
 
 All configured builds use warnings as errors.
 
 ## Honest current boundary
 
-Phase 7 now contains real persisted 1–8 channel routing plus signed, explicitly trusted, transactional `.seambank` distribution. Character-bound official packages are cryptographically tied to matching embedded runtime presentation assets. The repository still does **not** claim:
+Phase 8 contains first-party source implementations for Linux, Windows, and macOS native windows, composition input, output devices, and recording devices. Linux is runtime-verified in the current environment. Windows and macOS are source-integrated and CI-gated but are **not** represented as locally hardware-certified.
 
-- Windows shell, TSF, or WASAPI runtime verification;
-- macOS AppKit, NSTextInputClient, or CoreAudio runtime verification;
+The repository still does **not** claim:
+
+- physical Windows runtime acceptance for TSF, WASAPI speaker/microphone, DPI, focus, and window lifecycle;
+- physical macOS runtime acceptance for `NSTextInputClient`, CoreAudio speaker/microphone, backing scale, and lifecycle;
 - audited iPlug2 + Skia production integration;
-- a contract-recorded and release-cleared human voicebank;
-- CLAP, VST3, or AU plug-in delivery.
 - production CJK font shaping/rasterization in the first-party software painter;
-- a contracted human-recorded commercial voicebank;
-- CLAP, VST3, or AU targets.
+- a contract-recorded and release-cleared human voicebank;
+- CLAP, VST3, or AU plugin delivery.
 
-Those items are separate distribution, platform, and content-production phases. They are not represented by fake placeholders. Character 01 remains an optional product surface and voicebank binding; it does not participate in routing, synthesis, cache identity, or exported PCM.
+These are separate platform/content/plugin release gates, not fake placeholders. Character 01 remains an optional product surface and voicebank binding; it does not participate in routing, synthesis, recording, cache identity, package trust, or exported PCM.
 
 ## Build
 
@@ -272,6 +309,15 @@ cmake --build --preset thread-sanitize
 ctest --preset thread-sanitize --output-on-failure
 ```
 
+
+## Run the Phase 8 capability evidence
+
+```bash
+./build/dev/seam_phase8_demo --output out/phase8
+python3 scripts/verify_phase8_platform_sources.py --root .
+```
+
+The JSON output reports the platform selected by the current build. It does not replace physical-device and IME runtime acceptance.
 
 ## Run the Phase 6 multichannel vertical slice
 
@@ -334,6 +380,12 @@ out/phase4/phase4-summary.json
 
 ## Reproducible evidence
 
+Phase 8 cross-platform source and Linux regression evidence:
+
+```bash
+python3 scripts/generate_phase8_evidence.py --root .
+```
+
 Phase 5 native-runtime evidence:
 
 ```bash
@@ -380,6 +432,11 @@ git config core.hooksPath .githooks
 
 ## Documentation
 
+- [`PHASE8_IMPLEMENTATION_REPORT.md`](PHASE8_IMPLEMENTATION_REPORT.md)
+- [`docs/phase8/ACCEPTANCE.md`](docs/phase8/ACCEPTANCE.md)
+- [`docs/phase8/PLATFORM_MATRIX.md`](docs/phase8/PLATFORM_MATRIX.md)
+- [`docs/phase8/BUILD_AND_RUNTIME.md`](docs/phase8/BUILD_AND_RUNTIME.md)
+- [`docs/architecture/NATIVE_PLATFORM_ADAPTERS.md`](docs/architecture/NATIVE_PLATFORM_ADAPTERS.md)
 - [`PHASE7_IMPLEMENTATION_REPORT.md`](PHASE7_IMPLEMENTATION_REPORT.md)
 - [`docs/phase7/SIGNING_AND_INSTALLATION.md`](docs/phase7/SIGNING_AND_INSTALLATION.md)
 - [`docs/phase7/ACCEPTANCE.md`](docs/phase7/ACCEPTANCE.md)

@@ -2,19 +2,19 @@
   "spdxVersion": "SPDX-2.3",
   "dataLicense": "CC0-1.0",
   "SPDXID": "SPDXRef-DOCUMENT",
-  "name": "Project-SEAM-Phase7-SBOM",
-  "documentNamespace": "https://example.invalid/project-seam/sbom/phase7/0.7.0",
+  "name": "Project-SEAM-Phase8-SBOM",
+  "documentNamespace": "https://example.invalid/project-seam/sbom/phase8/0.8.0",
   "creationInfo": {
-    "created": "2026-08-16T00:00:00Z",
+    "created": "2026-08-17T00:00:00Z",
     "creators": [
       "Tool: Project-SEAM-license-auditor-0.1"
     ]
   },
   "packages": [
     {
-      "name": "Project SEAM Phase 7",
+      "name": "Project SEAM Phase 8",
       "SPDXID": "SPDXRef-Package-ProjectSEAM",
-      "versionInfo": "0.7.0",
+      "versionInfo": "0.8.0",
       "downloadLocation": "NOASSERTION",
       "filesAnalyzed": false,
       "licenseConcluded": "NOASSERTION",
@@ -31,6 +31,28 @@
       "licenseDeclared": "Apache-2.0",
       "copyrightText": "NOASSERTION",
       "comment": "System libcrypto integration; not redistributed in the repository package."
+    },
+    {
+      "name": "Microsoft Windows Native APIs",
+      "SPDXID": "SPDXRef-Package-Windows-System-APIs",
+      "versionInfo": "Windows 10 or later API contract",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION",
+      "comment": "Win32, TSF, WASAPI, COM, and MMCSS operating-system APIs; not redistributed."
+    },
+    {
+      "name": "Apple macOS Native Frameworks",
+      "SPDXID": "SPDXRef-Package-macOS-System-Frameworks",
+      "versionInfo": "macOS platform SDK",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION",
+      "comment": "AppKit, Foundation, CoreGraphics, CoreAudio, AudioToolbox, and CoreFoundation system frameworks; not redistributed."
     }
   ],
   "relationships": [
@@ -43,6 +65,16 @@
       "spdxElementId": "SPDXRef-Package-ProjectSEAM",
       "relationshipType": "DEPENDS_ON",
       "relatedSpdxElement": "SPDXRef-Package-OpenSSL-System"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-ProjectSEAM",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-Windows-System-APIs"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-ProjectSEAM",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-macOS-System-Frameworks"
     }
   ]
 }

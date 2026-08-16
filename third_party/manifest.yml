@@ -50,6 +50,18 @@
       "license": "Apache-2.0",
       "purpose": "Ed25519 signing and verification for .seambank packages",
       "verifiedOn": "OpenSSL library 3.5.5 / pkg-config 3.5.6"
+    },
+    {
+      "name": "Win32 / Text Services Framework / WASAPI",
+      "status": "operating-system-api-not-distributed",
+      "purpose": "Windows native window, TSF-backed lyric input, multichannel output, and microphone capture",
+      "verification": "source-integrated and native CI matrix configured; physical runtime acceptance requires Windows hardware"
+    },
+    {
+      "name": "AppKit / NSTextInputClient / CoreAudio",
+      "status": "operating-system-framework-not-distributed",
+      "purpose": "macOS native window, composition input, multichannel output, and microphone capture",
+      "verification": "source-integrated and native CI matrix configured; physical runtime acceptance requires macOS hardware"
     }
   ]
 }

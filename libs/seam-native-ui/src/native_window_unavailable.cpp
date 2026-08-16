@@ -1,7 +1,7 @@
 #include "seam/native_ui/native_window.hpp"
 
-#if !defined(SEAM_NATIVE_X11)
-
+#if !defined(SEAM_NATIVE_X11) && !defined(SEAM_NATIVE_WIN32) && \
+    !defined(SEAM_NATIVE_APPKIT)
 namespace seam::native_ui {
 namespace {
 

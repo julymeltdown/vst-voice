@@ -48,10 +48,10 @@ public:
   [[nodiscard]] virtual AudioDeviceStats stats() const noexcept = 0;
 };
 
-// Creates the physical system adapter for the current platform. On Linux this
-// is a runtime-loaded PulseAudio Simple adapter, so the product does not ship
-// or statically link libpulse. open() returns Unsupported/IoError when the
-// library or server is unavailable.
+// Creates the physical system adapter for the current platform: event-driven
+// WASAPI on Windows, CoreAudio on macOS, and runtime-loaded PulseAudio Simple
+// on Linux. open() reports Unsupported/IoError when the platform service or
+// physical endpoint is unavailable.
 [[nodiscard]] std::unique_ptr<IAudioDevice> createSystemAudioDevice();
 
 // Deterministic callback-clock fallback. This owns a real dedicated OS thread

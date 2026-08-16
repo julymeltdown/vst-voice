@@ -77,3 +77,23 @@ Character package --------X--------> render cache identity
 ```
 
 The editor must still open and synthesize when a bound character package is missing. The UI should report the missing presentation asset and fall back to text-only voicebank identity.
+
+## Phase 8 platform-shell parity
+
+Windows, macOS, and Linux native shells consume the same `CharacterPresentation` model and the same packaged runtime portraits. Operating-system adapters may present pixels and input differently, but they may not redefine character states, placement rules, or audio dependencies.
+
+```text
+Shared CharacterPresentation
+        ├── X11 shell
+        ├── Win32 shell
+        └── AppKit shell
+```
+
+Platform-specific code therefore does not:
+
+- choose a different Character 01 personality or costume;
+- place the character over technical lanes;
+- add the character to routing, recording, cache, package trust, or export state;
+- force Full mode when the user selected Minimal or Off.
+
+Physical platform acceptance must check that the dedicated dock and compact identity surface scale correctly at each operating system's DPI/backing scale, but a rendering difference must not alter product policy.

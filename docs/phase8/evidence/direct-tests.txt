@@ -1,0 +1,116 @@
+[PASS] tempo map converts ticks, seconds, and sample frames
+[PASS] tempo map preserves an initial event
+[PASS] meter map reports one-based bar and beat
+[PASS] quantizer handles positive and negative ticks
+[PASS] add note command is undoable and redoable
+[PASS] moving notes changes time and pitch as one transaction
+[PASS] resizing notes rejects non-positive duration
+[PASS] deleting notes removes unreferenced lyrics and is reversible
+[PASS] project factory reserves IDs after loading an existing project
+[PASS] lyric and phoneme overrides are reversible editor commands
+[PASS] deleting a note removes and restores its phoneme overrides
+[PASS] unit seam and pitch controls are persistent undoable commands
+[PASS] deleting a note removes and restores render overrides
+[PASS] internal JSON parser handles nested UTF-8 data
+[PASS] project JSON round trip preserves the canonical model
+[PASS] project decoder rejects an unsupported schema
+[PASS] project decoder migrates schema one regions without phoneme overrides
+[PASS] timeline zoom keeps the anchor tick stable
+[PASS] spatial index virtualizes a ten-thousand-note project
+[PASS] piano roll draws, selects, moves, and hit-tests notes
+[PASS] text composition models native IME begin update commit and cancel
+[PASS] phoneme lane exposes generated and manually timed phonemes
+[PASS] phase one audio callback produces deterministic silence
+[PASS] ring buffer audio processor delivers callback audio and accounts underflow
+[PASS] threaded audio input feeds recording session without allocation-sensitive overflow
+[PASS] Japanese phonemizer handles hiragana katakana and contracted mora
+[PASS] Japanese phonemizer preserves sokuon moraic nasal and long vowel
+[PASS] phoneme overrides replace symbols timing and lock state
+[PASS] unsupported Japanese lyric creates a visible warning and pause
+[PASS] PCM16 WAV round trip and audio statistics remain bounded
+[PASS] waveform spectrogram and pitch analysis produce inspectable data
+[PASS] marker editor enforces monotonic sample landmarks
+[PASS] voicebank manifest persists and validator checks real audio
+[PASS] pitch marks are generated validated and edited deterministically
+[PASS] voicebank schema one migrates without pitch marks
+[PASS] stereo PCM16 WAV writer round trips channel layout
+[PASS] voicebank schema three binds an optional character product identity
+[PASS] voicebank schema two migrates without a character binding
+[PASS] deterministic unit selector prefers longer lower-score coverage
+[PASS] raw loop renderer preserves frame count and exposes vowel onset
+[PASS] seam composer changes overlap character without changing bounds
+[PASS] raw phrase pipeline aligns vowels and renders inspectable audio
+[PASS] explicit unit selection persists renderer choice and alternatives
+[PASS] classic PSOLA follows target pitch and keeps consonant frames finite
+[PASS] phase reset and envelope blend are real boundary operations
+[PASS] renderer dispatcher executes spectral and stretch backends explicitly
+[PASS] renderer dispatcher reports an actual raw fallback
+[PASS] spectral classic preserves exact length and moves harmonic energy
+[PASS] granular stretch is finite deterministic and unit scoped
+[PASS] phrase segmentation is stable and dirty invalidation includes neighbors
+[PASS] render snapshot content hash changes with canonical edit
+[PASS] phrase snapshot cache key ignores unrelated phrase edits
+[PASS] phrase snapshot ignores presentation changes and future tempo events
+[PASS] immutable snapshot executes the complete phrase render pipeline
+[PASS] content addressed PCM cache survives memory eviction
+[PASS] PCM cache rejects non-finite and corrupted payloads
+[PASS] background scheduler cancels obsolete revision and reuses cache
+[PASS] stale audio remains readable until a newer revision is published
+[PASS] SPSC audio ring buffer wraps without allocation or data reordering
+[PASS] scheduler rejects an immediately stale request without running its task
+[PASS] cached audio content can be reused by a newer revision
+[PASS] render scheduler executes queued jobs by priority
+[PASS] scheduler rejects an older cached revision without replacing the latest
+[PASS] bounded PCM cache evicts memory and old disk entries
+[PASS] playback timeline mixes vocal and backing clips at absolute frames
+[PASS] playback feeder loops into the preallocated callback path
+[PASS] ring buffer processor reports zero-filled underflow
+[PASS] playback timeline mixes overlapping cached phrases with fades
+[PASS] playback feeder loops and fills a preallocated ring buffer
+[PASS] PCM cache enforces memory and disk budgets deterministically
+[PASS] unit lane exposes actual renderer fallback seam and alternatives
+[PASS] sample microscope maps waveform markers pitch marks and hit tests
+[PASS] sample microscope applies validated marker and pitch-mark edits
+[PASS] SHA-256 implementation matches published vectors
+[PASS] generated build identity owns the Phase 4.1 render ABI
+[PASS] JSON preserves int64 surrogate pairs and parser budgets
+[PASS] durable atomic write preserves old data across injected faults
+[PASS] render identity binds selected WAV bytes and effective render options
+[PASS] voicebank asset resolver rejects symbolic-link escapes
+[PASS] PCM cache validates declared payload before allocating samples
+[PASS] spectral and stretch renderers preserve the recorded vowel transition
+[PASS] phase-aligned seam remains continuous after overlap ends
+[PASS] scheduler applies a final revision gate after cache publication
+[PASS] playback transport uses command queue and consumer-owned reset epoch
+[PASS] loop and play-state changes discard already buffered future audio
+[PASS] playback feeder remains race-free under threaded transport changes
+[PASS] command transactions restore project state on apply and undo failure
+[PASS] routing graph rejects cycles and preserves deterministic order
+[PASS] multichannel timeline routes independent buses to four outputs
+[PASS] multichannel feeder ring and callback preserve channel order
+[PASS] project schema four persists buses sends and track output matrix
+[PASS] bus solo includes dependencies and output path but excludes siblings
+[PASS] clip solo mutes other clips before bus routing
+[PASS] multichannel feeder stops after non-looping timeline end
+[PASS] interleaved ring rejects partial frames
+[PASS] Ed25519 keys sign verify and persist
+[PASS] signed seambank packs verifies and reads canonical entries
+[PASS] seambank rejects payload tampering and untrusted signers
+[PASS] trusted seambank installs atomically with receipt
+[PASS] seambank path policy rejects traversal executable and hidden assets
+[PASS] seambank installer requires a trusted signer at the core API
+[PASS] character-bound seambank requires matching embedded runtime assets
+[PASS] platform capability contract names the native composition and audio adapters
+[PASS] software raster surface paints deterministically and exports PPM
+[PASS] editor scene remains logically identical at one and two times scale
+[PASS] native controller commits one move command at pointer release
+[PASS] native text input commits Unicode lyric through undoable command
+[PASS] character package loads low-poly portrait and display mode cycles
+[PASS] native scene renders phoneme unit pitch and full character dock
+[PASS] graphical voicebank studio loads audio and commits validated marker edits
+[PASS] dedicated playback feeder service owns production and stops cleanly
+[PASS] threaded audio device drives the real callback contract
+[PASS] playback controls remain race-free while feeder and callback threads run
+[PASS] system audio adapter reports an explicit bounded open result
+
+114 passed, 0 failed

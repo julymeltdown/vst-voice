@@ -1,7 +1,7 @@
 #include "seam/platform/audio_input_device.hpp"
 
-#if !defined(SEAM_AUDIO_PULSE)
-
+#if !defined(SEAM_AUDIO_PULSE) && !defined(SEAM_AUDIO_WASAPI) && \
+    !defined(SEAM_AUDIO_COREAUDIO)
 namespace seam::platform {
 namespace {
 
