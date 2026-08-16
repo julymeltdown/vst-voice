@@ -1,0 +1,4 @@
+[license-audit] distributedDependencies=0
+[license-audit] branchPolicy=master-only
+[license-audit] characterDirections=3
+[license-audit] status=PASS

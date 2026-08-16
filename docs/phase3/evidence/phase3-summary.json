@@ -1,0 +1,64 @@
+{
+  "audioRingFramesRead": 512,
+  "audioRingFramesWritten": 4096,
+  "bankErrors": 0,
+  "bankWarnings": 3,
+  "branchPolicy": "master-only",
+  "cacheDiskHits": 0,
+  "cacheMemoryHits": 2,
+  "cacheWrites": 1,
+  "notes": 4,
+  "phase": 3,
+  "phonemes": 7,
+  "phraseId": "phrase-f01d34e49537b59d",
+  "pitchAutomationPoints": 3,
+  "productionFrames": 78605,
+  "projectRoundTripEqual": true,
+  "projectSchema": 3,
+  "rawFrames": 78605,
+  "renderedUnits": [
+    {
+      "actualRenderer": "classic-psola",
+      "fallback": false,
+      "forced": true,
+      "requestedRenderer": "classic-psola",
+      "seamAmount": 0.68000000715255737,
+      "unitId": "ja.original.e4.k-i.02"
+    },
+    {
+      "actualRenderer": "classic-psola",
+      "fallback": false,
+      "forced": false,
+      "requestedRenderer": "classic-psola",
+      "seamAmount": 0.9100000262260437,
+      "unitId": "ja.original.fs4.m-i.01"
+    },
+    {
+      "actualRenderer": "raw",
+      "fallback": false,
+      "forced": false,
+      "requestedRenderer": "raw",
+      "seamAmount": 0.68000000715255737,
+      "unitId": "ja.original.g4.h-a.01"
+    },
+    {
+      "actualRenderer": "classic-psola",
+      "fallback": false,
+      "forced": false,
+      "requestedRenderer": "classic-psola",
+      "seamAmount": 0.68000000715255737,
+      "unitId": "ja.original.a4.a-sustain.01"
+    }
+  ],
+  "schedulerCacheHits": 1,
+  "schedulerCancelled": 1,
+  "schedulerCompleted": 1,
+  "schedulerStale": 0,
+  "schedulerSubmitted": 3,
+  "seamOverrides": 1,
+  "snapshotHash": "952ddd922e1ae52e",
+  "staleWhileRenderRevision": 1,
+  "unitSelectionOverrides": 1,
+  "voicebankSchema": 2
+}
+

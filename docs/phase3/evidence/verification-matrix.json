@@ -1,0 +1,71 @@
+{
+  "phase": 3,
+  "branchPolicy": "master-only",
+  "devBuild": "pass",
+  "ctestPresets": {
+    "dev": "pass",
+    "release": "pass",
+    "sanitize": "pass"
+  },
+  "individualTests": {
+    "passed": 55,
+    "failed": 0
+  },
+  "endToEndDemo": "pass",
+  "projectSchema": 3,
+  "voicebankSchema": 2,
+  "projectRoundTrip": true,
+  "classicPsolaPlacements": 3,
+  "scheduler": {
+    "submitted": 3,
+    "completed": 1,
+    "cacheHits": 1,
+    "cancelled": 1,
+    "stale": 0
+  },
+  "voicebankValidation": {
+    "status": "pass-with-nonfatal-synthetic-bank-warnings",
+    "errors": 0,
+    "warnings": 3
+  },
+  "audio": {
+    "psolaPhrase": {
+      "channels": 1,
+      "sampleWidthBytes": 2,
+      "sampleRate": 48000,
+      "frames": 78605,
+      "durationSeconds": 1.6376041666666667,
+      "peak": 0.217987060546875,
+      "rms": 0.1139968411980056,
+      "dcOffset": 9.984126278147065e-05
+    },
+    "rawReference": {
+      "channels": 1,
+      "sampleWidthBytes": 2,
+      "sampleRate": 48000,
+      "frames": 78605,
+      "durationSeconds": 1.6376041666666667,
+      "peak": 0.217926025390625,
+      "rms": 0.11534686022775799,
+      "dcOffset": -1.3705636320447173e-05
+    }
+  },
+  "licenseAudit": "pass",
+  "gitFsck": "pass",
+  "benchmark": {
+    "psolaIterations": 120,
+    "psolaMs": 791.355,
+    "psolaRenderedSamples": 4320000,
+    "psolaRealTimeMultiple": 113.729,
+    "seamIterations": 120,
+    "seamMs": 1653.458,
+    "seamComposedSamples": 14040000,
+    "cacheDiskReadIterations": 80,
+    "cacheDiskReadMs": 205.833,
+    "cacheReadSamples": 2880000,
+    "cacheDiskHits": 80,
+    "schedulerTasks": 48,
+    "schedulerMs": 11.02,
+    "schedulerCompleted": 48
+  }
+}

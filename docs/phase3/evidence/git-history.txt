@@ -1,0 +1,10 @@
+1f4744e (HEAD -> master) docs: define Phase 3 architecture and acceptance
+4a5b485 feat: implement Phase 3 editable render loop
+786e12d chore: add Phase 2 verification evidence
+7325ecc docs: document Phase 2 architecture and acceptance
+b76f4b3 fix: clarify native adapter dependency gate
+90ec54c feat: implement Phase 2 phoneme and raw synthesis pipeline
+9e32bab docs: document Phase 1 architecture and verification
+c84050a feat: add Phase 1 low-poly character directions
+533eed0 feat: implement Phase 1 editor and domain foundation
+6f5f3c1 chore: establish master-only repository and license policy

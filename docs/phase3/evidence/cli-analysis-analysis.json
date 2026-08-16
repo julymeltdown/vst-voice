@@ -1,0 +1,1814 @@
+{
+  "channels": 1,
+  "clippedSamples": 0,
+  "dcOffset": 9.9841262781470651e-05,
+  "frames": 78605,
+  "medianPitchHz": 391.79601120523819,
+  "peak": 0.217987060546875,
+  "pitchFrames": [
+    {
+      "confidence": 0.067394400681400304,
+      "f0Hz": 0,
+      "sourceFrame": 0,
+      "voiced": false
+    },
+    {
+      "confidence": 0.068835383329252972,
+      "f0Hz": 0,
+      "sourceFrame": 256,
+      "voiced": false
+    },
+    {
+      "confidence": 0.076717644985793851,
+      "f0Hz": 0,
+      "sourceFrame": 512,
+      "voiced": false
+    },
+    {
+      "confidence": 0.080750264766277877,
+      "f0Hz": 0,
+      "sourceFrame": 768,
+      "voiced": false
+    },
+    {
+      "confidence": 0.082639359044932761,
+      "f0Hz": 0,
+      "sourceFrame": 1024,
+      "voiced": false
+    },
+    {
+      "confidence": 0.19951155530077733,
+      "f0Hz": 0,
+      "sourceFrame": 1280,
+      "voiced": false
+    },
+    {
+      "confidence": 0.37210070499202369,
+      "f0Hz": 344.26633931838063,
+      "sourceFrame": 1536,
+      "voiced": true
+    },
+    {
+      "confidence": 0.60833002644417822,
+      "f0Hz": 338.37377010445869,
+      "sourceFrame": 1792,
+      "voiced": true
+    },
+    {
+      "confidence": 0.77487247426272421,
+      "f0Hz": 337.58309470263021,
+      "sourceFrame": 2048,
+      "voiced": true
+    },
+    {
+      "confidence": 0.87892588067211841,
+      "f0Hz": 331.4647767276731,
+      "sourceFrame": 2304,
+      "voiced": true
+    },
+    {
+      "confidence": 0.93167448766667216,
+      "f0Hz": 331.31429383534095,
+      "sourceFrame": 2560,
+      "voiced": true
+    },
+    {
+      "confidence": 0.96403954080861964,
+      "f0Hz": 330.24850258459571,
+      "sourceFrame": 2816,
+      "voiced": true
+    },
+    {
+      "confidence": 0.97873285377943475,
+      "f0Hz": 329.40446563062443,
+      "sourceFrame": 3072,
+      "voiced": true
+    },
+    {
+      "confidence": 0.98650001981089919,
+      "f0Hz": 329.44851433319923,
+      "sourceFrame": 3328,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99059413200259738,
+      "f0Hz": 329.5679077832587,
+      "sourceFrame": 3584,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99054302904337477,
+      "f0Hz": 330.54914593205558,
+      "sourceFrame": 3840,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99235683279547637,
+      "f0Hz": 330.35947477522427,
+      "sourceFrame": 4096,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99309206200400213,
+      "f0Hz": 330.33848014756586,
+      "sourceFrame": 4352,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99352579070682756,
+      "f0Hz": 330.36520758932204,
+      "sourceFrame": 4608,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99375108532417977,
+      "f0Hz": 330.52860410553683,
+      "sourceFrame": 4864,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99379948049908751,
+      "f0Hz": 330.54008142535014,
+      "sourceFrame": 5120,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99386442173466227,
+      "f0Hz": 330.60531264830865,
+      "sourceFrame": 5376,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99599102143670937,
+      "f0Hz": 329.91153681920787,
+      "sourceFrame": 5632,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99606955485470638,
+      "f0Hz": 330.14728157013519,
+      "sourceFrame": 5888,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99630472100609657,
+      "f0Hz": 330.50338049613316,
+      "sourceFrame": 6144,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99643041077075967,
+      "f0Hz": 330.74839713133662,
+      "sourceFrame": 6400,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99653533524915838,
+      "f0Hz": 330.83192676993247,
+      "sourceFrame": 6656,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99664620219475719,
+      "f0Hz": 331.07681784372397,
+      "sourceFrame": 6912,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99673528564453473,
+      "f0Hz": 331.36320517022841,
+      "sourceFrame": 7168,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99681551455319839,
+      "f0Hz": 331.56719994688922,
+      "sourceFrame": 7424,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99673855415133583,
+      "f0Hz": 331.7475490568653,
+      "sourceFrame": 7680,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99674139386089489,
+      "f0Hz": 331.89981588139113,
+      "sourceFrame": 7936,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99674589608140118,
+      "f0Hz": 332.24802803317999,
+      "sourceFrame": 8192,
+      "voiced": true
+    },
+    {
+      "confidence": 0.9969391426072205,
+      "f0Hz": 332.46395792088026,
+      "sourceFrame": 8448,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99693157353769835,
+      "f0Hz": 332.58312283027857,
+      "sourceFrame": 8704,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99707249910080964,
+      "f0Hz": 332.82686459824646,
+      "sourceFrame": 8960,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99707372238122849,
+      "f0Hz": 333.20668944282443,
+      "sourceFrame": 9216,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99715188675153177,
+      "f0Hz": 333.49213177164205,
+      "sourceFrame": 9472,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99711775323878638,
+      "f0Hz": 333.65322808404085,
+      "sourceFrame": 9728,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99708531761853614,
+      "f0Hz": 333.82142688979786,
+      "sourceFrame": 9984,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99690999074707187,
+      "f0Hz": 334.08665620836769,
+      "sourceFrame": 10240,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99677305492341894,
+      "f0Hz": 334.218133721046,
+      "sourceFrame": 10496,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99672849925952045,
+      "f0Hz": 334.5411700546386,
+      "sourceFrame": 10752,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99662535684927955,
+      "f0Hz": 334.62838617726555,
+      "sourceFrame": 11008,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99675631902666217,
+      "f0Hz": 334.94481331157567,
+      "sourceFrame": 11264,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99672501017312931,
+      "f0Hz": 335.11978128911727,
+      "sourceFrame": 11520,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99681732069411078,
+      "f0Hz": 335.41953740110739,
+      "sourceFrame": 11776,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99692257628451286,
+      "f0Hz": 335.55163869004548,
+      "sourceFrame": 12032,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99697400199128516,
+      "f0Hz": 335.58014799912473,
+      "sourceFrame": 12288,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99699832780182474,
+      "f0Hz": 335.66616455217661,
+      "sourceFrame": 12544,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99696318934706452,
+      "f0Hz": 335.61934273186233,
+      "sourceFrame": 12800,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99701629067583974,
+      "f0Hz": 335.59438420799057,
+      "sourceFrame": 13056,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99710037454684108,
+      "f0Hz": 335.56804950931092,
+      "sourceFrame": 13312,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99708959601035219,
+      "f0Hz": 335.47675857086205,
+      "sourceFrame": 13568,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99705252473945183,
+      "f0Hz": 335.47576038309171,
+      "sourceFrame": 13824,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99692319529217521,
+      "f0Hz": 335.2952019171517,
+      "sourceFrame": 14080,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99695045368359514,
+      "f0Hz": 335.09867187668982,
+      "sourceFrame": 14336,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99675808240192809,
+      "f0Hz": 334.86964046780798,
+      "sourceFrame": 14592,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99682327721530661,
+      "f0Hz": 334.72738587445474,
+      "sourceFrame": 14848,
+      "voiced": true
+    },
+    {
+      "confidence": 0.86410404057403467,
+      "f0Hz": 334.53790334203751,
+      "sourceFrame": 15104,
+      "voiced": true
+    },
+    {
+      "confidence": 0.86118593809039345,
+      "f0Hz": 333.53570249345245,
+      "sourceFrame": 15360,
+      "voiced": true
+    },
+    {
+      "confidence": 0.86271948737485937,
+      "f0Hz": 333.06559815902909,
+      "sourceFrame": 15616,
+      "voiced": true
+    },
+    {
+      "confidence": 0.86098345683019117,
+      "f0Hz": 332.18116097742541,
+      "sourceFrame": 15872,
+      "voiced": true
+    },
+    {
+      "confidence": 0.86517542295028105,
+      "f0Hz": 331.21357717397427,
+      "sourceFrame": 16128,
+      "voiced": true
+    },
+    {
+      "confidence": 0.86254199249110708,
+      "f0Hz": 330.34550648538004,
+      "sourceFrame": 16384,
+      "voiced": true
+    },
+    {
+      "confidence": 0.86297226095554458,
+      "f0Hz": 329.58212438794573,
+      "sourceFrame": 16640,
+      "voiced": true
+    },
+    {
+      "confidence": 0.89242242861582055,
+      "f0Hz": 329.31760986127586,
+      "sourceFrame": 16896,
+      "voiced": true
+    },
+    {
+      "confidence": 0.95518657854722078,
+      "f0Hz": 329.68491618386003,
+      "sourceFrame": 17152,
+      "voiced": true
+    },
+    {
+      "confidence": 0.94662739099634308,
+      "f0Hz": 329.50529913739234,
+      "sourceFrame": 17408,
+      "voiced": true
+    },
+    {
+      "confidence": 0.93406174003311626,
+      "f0Hz": 329.68052877330484,
+      "sourceFrame": 17664,
+      "voiced": true
+    },
+    {
+      "confidence": 0.9166258883700692,
+      "f0Hz": 329.68707020335927,
+      "sourceFrame": 17920,
+      "voiced": true
+    },
+    {
+      "confidence": 0.88052644952058012,
+      "f0Hz": 329.86298439680547,
+      "sourceFrame": 18176,
+      "voiced": true
+    },
+    {
+      "confidence": 0.81367098759536272,
+      "f0Hz": 330.21146378027981,
+      "sourceFrame": 18432,
+      "voiced": true
+    },
+    {
+      "confidence": 0.54317272863631494,
+      "f0Hz": 336.53006888327366,
+      "sourceFrame": 18688,
+      "voiced": true
+    },
+    {
+      "confidence": 0.092350317991290204,
+      "f0Hz": 0,
+      "sourceFrame": 18944,
+      "voiced": false
+    },
+    {
+      "confidence": 0.076351711451923696,
+      "f0Hz": 0,
+      "sourceFrame": 19200,
+      "voiced": false
+    },
+    {
+      "confidence": 0.093579729570560308,
+      "f0Hz": 0,
+      "sourceFrame": 19456,
+      "voiced": false
+    },
+    {
+      "confidence": 0.21252274662043286,
+      "f0Hz": 0,
+      "sourceFrame": 19712,
+      "voiced": false
+    },
+    {
+      "confidence": 0.57915218097170929,
+      "f0Hz": 386.87034558583071,
+      "sourceFrame": 19968,
+      "voiced": true
+    },
+    {
+      "confidence": 0.83169356441608211,
+      "f0Hz": 368.94875928389831,
+      "sourceFrame": 20224,
+      "voiced": true
+    },
+    {
+      "confidence": 0.92132978999921211,
+      "f0Hz": 370.26094134979473,
+      "sourceFrame": 20480,
+      "voiced": true
+    },
+    {
+      "confidence": 0.95380370856613705,
+      "f0Hz": 372.07549761612228,
+      "sourceFrame": 20736,
+      "voiced": true
+    },
+    {
+      "confidence": 0.97392160516416915,
+      "f0Hz": 371.19604496552489,
+      "sourceFrame": 20992,
+      "voiced": true
+    },
+    {
+      "confidence": 0.98347284391003609,
+      "f0Hz": 371.06419944568972,
+      "sourceFrame": 21248,
+      "voiced": true
+    },
+    {
+      "confidence": 0.98849049670794409,
+      "f0Hz": 370.53204770800312,
+      "sourceFrame": 21504,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99080796831028828,
+      "f0Hz": 370.45193420451693,
+      "sourceFrame": 21760,
+      "voiced": true
+    },
+    {
+      "confidence": 0.9920565105829966,
+      "f0Hz": 370.31440211597902,
+      "sourceFrame": 22016,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99282218079737972,
+      "f0Hz": 370.30650217448203,
+      "sourceFrame": 22272,
+      "voiced": true
+    },
+    {
+      "confidence": 0.9929326581297746,
+      "f0Hz": 371.08245484753047,
+      "sourceFrame": 22528,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99348564103708803,
+      "f0Hz": 370.99423627778191,
+      "sourceFrame": 22784,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99392691739465011,
+      "f0Hz": 371.05681465625935,
+      "sourceFrame": 23040,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99424938808748742,
+      "f0Hz": 371.09436329750292,
+      "sourceFrame": 23296,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99448938443388135,
+      "f0Hz": 371.23290551875789,
+      "sourceFrame": 23552,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99459850315575826,
+      "f0Hz": 371.29405761332595,
+      "sourceFrame": 23808,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99473510236216112,
+      "f0Hz": 371.49663778391272,
+      "sourceFrame": 24064,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99613332134840116,
+      "f0Hz": 370.68636835684208,
+      "sourceFrame": 24320,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99605235765910638,
+      "f0Hz": 370.67958003494221,
+      "sourceFrame": 24576,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99623771177865372,
+      "f0Hz": 370.76817783634527,
+      "sourceFrame": 24832,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99611981141066508,
+      "f0Hz": 370.71564463899364,
+      "sourceFrame": 25088,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99601275573451897,
+      "f0Hz": 370.71776292954058,
+      "sourceFrame": 25344,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99591998014157168,
+      "f0Hz": 370.72516998703884,
+      "sourceFrame": 25600,
+      "voiced": true
+    },
+    {
+      "confidence": 0.9959657202712433,
+      "f0Hz": 370.83530125950796,
+      "sourceFrame": 25856,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99587912363832909,
+      "f0Hz": 370.72900486871231,
+      "sourceFrame": 26112,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99585950778479138,
+      "f0Hz": 370.65884445959534,
+      "sourceFrame": 26368,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99591431231072325,
+      "f0Hz": 370.76678296532941,
+      "sourceFrame": 26624,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99584633914921028,
+      "f0Hz": 370.6259115158449,
+      "sourceFrame": 26880,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99592501282724277,
+      "f0Hz": 370.7290352821384,
+      "sourceFrame": 27136,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99602584820447204,
+      "f0Hz": 370.67862938594328,
+      "sourceFrame": 27392,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99617262705511478,
+      "f0Hz": 370.75790240738735,
+      "sourceFrame": 27648,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99603098213581021,
+      "f0Hz": 370.77280408678138,
+      "sourceFrame": 27904,
+      "voiced": true
+    },
+    {
+      "confidence": 0.9960188409067271,
+      "f0Hz": 370.83710296717396,
+      "sourceFrame": 28160,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99591790646125988,
+      "f0Hz": 370.82491881952166,
+      "sourceFrame": 28416,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99587374183140387,
+      "f0Hz": 370.77600026272864,
+      "sourceFrame": 28672,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99585515020390081,
+      "f0Hz": 370.82802943826232,
+      "sourceFrame": 28928,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99582456944930631,
+      "f0Hz": 370.82032004356586,
+      "sourceFrame": 29184,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99569998269319615,
+      "f0Hz": 370.78902832768961,
+      "sourceFrame": 29440,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99570182077484992,
+      "f0Hz": 370.74632902999554,
+      "sourceFrame": 29696,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99580627965398527,
+      "f0Hz": 370.67883434603982,
+      "sourceFrame": 29952,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99588112966921605,
+      "f0Hz": 370.70643185580809,
+      "sourceFrame": 30208,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99594222357369155,
+      "f0Hz": 370.7047756608016,
+      "sourceFrame": 30464,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99601106344839063,
+      "f0Hz": 370.71821244076961,
+      "sourceFrame": 30720,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99611176197431339,
+      "f0Hz": 370.74389747956235,
+      "sourceFrame": 30976,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99616292608145129,
+      "f0Hz": 370.83945764268725,
+      "sourceFrame": 31232,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99613083048081685,
+      "f0Hz": 370.7380865959243,
+      "sourceFrame": 31488,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99610518934416969,
+      "f0Hz": 370.73893917277582,
+      "sourceFrame": 31744,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99606669833932171,
+      "f0Hz": 370.71724142777833,
+      "sourceFrame": 32000,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99606347960240027,
+      "f0Hz": 370.74100721322509,
+      "sourceFrame": 32256,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99608275101541,
+      "f0Hz": 370.77782789445837,
+      "sourceFrame": 32512,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99603185010408701,
+      "f0Hz": 370.75952952215198,
+      "sourceFrame": 32768,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99607800924072154,
+      "f0Hz": 370.7639360408163,
+      "sourceFrame": 33024,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99611190378157544,
+      "f0Hz": 370.7628862465877,
+      "sourceFrame": 33280,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99612007482451081,
+      "f0Hz": 370.75488142565331,
+      "sourceFrame": 33536,
+      "voiced": true
+    },
+    {
+      "confidence": 0.8808900881322036,
+      "f0Hz": 371.04747896490426,
+      "sourceFrame": 33792,
+      "voiced": true
+    },
+    {
+      "confidence": 0.88063932973472592,
+      "f0Hz": 371.13149056432604,
+      "sourceFrame": 34048,
+      "voiced": true
+    },
+    {
+      "confidence": 0.8803581124231824,
+      "f0Hz": 370.97758597918136,
+      "sourceFrame": 34304,
+      "voiced": true
+    },
+    {
+      "confidence": 0.88016108644973978,
+      "f0Hz": 370.97853470114779,
+      "sourceFrame": 34560,
+      "voiced": true
+    },
+    {
+      "confidence": 0.87978530877450012,
+      "f0Hz": 370.81916769446707,
+      "sourceFrame": 34816,
+      "voiced": true
+    },
+    {
+      "confidence": 0.87907047725370369,
+      "f0Hz": 370.63591032323563,
+      "sourceFrame": 35072,
+      "voiced": true
+    },
+    {
+      "confidence": 0.87867397329469721,
+      "f0Hz": 370.6255398792913,
+      "sourceFrame": 35328,
+      "voiced": true
+    },
+    {
+      "confidence": 0.88926914808012958,
+      "f0Hz": 369.89055393632566,
+      "sourceFrame": 35584,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99582427450198607,
+      "f0Hz": 370.04316869100847,
+      "sourceFrame": 35840,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99591428001908067,
+      "f0Hz": 370.00137917313896,
+      "sourceFrame": 36096,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99594880733088798,
+      "f0Hz": 370.03863881044288,
+      "sourceFrame": 36352,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99592806006801027,
+      "f0Hz": 369.99163799661142,
+      "sourceFrame": 36608,
+      "voiced": true
+    },
+    {
+      "confidence": 0.995903730931325,
+      "f0Hz": 369.97325676416875,
+      "sourceFrame": 36864,
+      "voiced": true
+    },
+    {
+      "confidence": 0.995799438956122,
+      "f0Hz": 369.90282508018936,
+      "sourceFrame": 37120,
+      "voiced": true
+    },
+    {
+      "confidence": 0.97657915913019766,
+      "f0Hz": 369.97722644181442,
+      "sourceFrame": 37376,
+      "voiced": true
+    },
+    {
+      "confidence": 0.96699679004581995,
+      "f0Hz": 370.59044312575588,
+      "sourceFrame": 37632,
+      "voiced": true
+    },
+    {
+      "confidence": 0.95529412838252226,
+      "f0Hz": 371.1443949149446,
+      "sourceFrame": 37888,
+      "voiced": true
+    },
+    {
+      "confidence": 0.93878399337843244,
+      "f0Hz": 371.46764963908555,
+      "sourceFrame": 38144,
+      "voiced": true
+    },
+    {
+      "confidence": 0.91370726920648004,
+      "f0Hz": 372.30120849158419,
+      "sourceFrame": 38400,
+      "voiced": true
+    },
+    {
+      "confidence": 0.86876506334866244,
+      "f0Hz": 373.161444226105,
+      "sourceFrame": 38656,
+      "voiced": true
+    },
+    {
+      "confidence": 0.78202063106393316,
+      "f0Hz": 379.55066600989028,
+      "sourceFrame": 38912,
+      "voiced": true
+    },
+    {
+      "confidence": 0.53712237266951113,
+      "f0Hz": 413.36826860897088,
+      "sourceFrame": 39168,
+      "voiced": true
+    },
+    {
+      "confidence": 0.68951083839078553,
+      "f0Hz": 413.63812005452729,
+      "sourceFrame": 39424,
+      "voiced": true
+    },
+    {
+      "confidence": 0.8047185566020113,
+      "f0Hz": 403.20352943042701,
+      "sourceFrame": 39680,
+      "voiced": true
+    },
+    {
+      "confidence": 0.87076240833107921,
+      "f0Hz": 401.97211274813247,
+      "sourceFrame": 39936,
+      "voiced": true
+    },
+    {
+      "confidence": 0.91394111183629878,
+      "f0Hz": 394.83415797039487,
+      "sourceFrame": 40192,
+      "voiced": true
+    },
+    {
+      "confidence": 0.93862108439040615,
+      "f0Hz": 394.23154513323425,
+      "sourceFrame": 40448,
+      "voiced": true
+    },
+    {
+      "confidence": 0.95288941744357103,
+      "f0Hz": 394.03439470253574,
+      "sourceFrame": 40704,
+      "voiced": true
+    },
+    {
+      "confidence": 0.96225624720942904,
+      "f0Hz": 393.61531744081054,
+      "sourceFrame": 40960,
+      "voiced": true
+    },
+    {
+      "confidence": 0.9938490812025883,
+      "f0Hz": 392.02988091193163,
+      "sourceFrame": 41216,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99479889634655272,
+      "f0Hz": 391.91572900399552,
+      "sourceFrame": 41472,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99559436994680162,
+      "f0Hz": 392.02258324301431,
+      "sourceFrame": 41728,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99579673311018835,
+      "f0Hz": 391.91465823780027,
+      "sourceFrame": 41984,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99590897966876757,
+      "f0Hz": 391.92739052012831,
+      "sourceFrame": 42240,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99595769357078956,
+      "f0Hz": 391.87867362016959,
+      "sourceFrame": 42496,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99590809728688845,
+      "f0Hz": 391.80176326130868,
+      "sourceFrame": 42752,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99515881390174099,
+      "f0Hz": 391.94726031402286,
+      "sourceFrame": 43008,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99435979500931027,
+      "f0Hz": 391.9944460452574,
+      "sourceFrame": 43264,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99431769910727763,
+      "f0Hz": 391.96881217070603,
+      "sourceFrame": 43520,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99434822961213909,
+      "f0Hz": 391.94005112767815,
+      "sourceFrame": 43776,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99435417967281248,
+      "f0Hz": 391.99483195182296,
+      "sourceFrame": 44032,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99425162877890172,
+      "f0Hz": 391.94676103513569,
+      "sourceFrame": 44288,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99423139379877301,
+      "f0Hz": 392.01111634945443,
+      "sourceFrame": 44544,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99422505628352942,
+      "f0Hz": 391.99411153956652,
+      "sourceFrame": 44800,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99568494007677111,
+      "f0Hz": 391.9237233679201,
+      "sourceFrame": 45056,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99568551105884051,
+      "f0Hz": 391.93419810573869,
+      "sourceFrame": 45312,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99563033815162549,
+      "f0Hz": 391.92799451041572,
+      "sourceFrame": 45568,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99557435002711037,
+      "f0Hz": 391.9146705464816,
+      "sourceFrame": 45824,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99553192087055542,
+      "f0Hz": 391.84719108988247,
+      "sourceFrame": 46080,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99555801365098051,
+      "f0Hz": 391.82757705610129,
+      "sourceFrame": 46336,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99572672892895886,
+      "f0Hz": 391.86389516892007,
+      "sourceFrame": 46592,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99573623156327817,
+      "f0Hz": 391.87504139412687,
+      "sourceFrame": 46848,
+      "voiced": true
+    },
+    {
+      "confidence": 0.9957930765696853,
+      "f0Hz": 391.865034866185,
+      "sourceFrame": 47104,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99575514108216323,
+      "f0Hz": 391.91855473768152,
+      "sourceFrame": 47360,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99590912843894897,
+      "f0Hz": 391.89971759102804,
+      "sourceFrame": 47616,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99589076029172119,
+      "f0Hz": 391.90292179673582,
+      "sourceFrame": 47872,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99600721778052759,
+      "f0Hz": 391.87584685753774,
+      "sourceFrame": 48128,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99597995686956375,
+      "f0Hz": 391.89522649474918,
+      "sourceFrame": 48384,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99591099735345479,
+      "f0Hz": 391.89990794690567,
+      "sourceFrame": 48640,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99586646994997963,
+      "f0Hz": 391.9249432719318,
+      "sourceFrame": 48896,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99592704503088358,
+      "f0Hz": 391.87211549041427,
+      "sourceFrame": 49152,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99601208344717973,
+      "f0Hz": 391.84520119091547,
+      "sourceFrame": 49408,
+      "voiced": true
+    },
+    {
+      "confidence": 0.9960674206339083,
+      "f0Hz": 391.79025914916764,
+      "sourceFrame": 49664,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99599795977668304,
+      "f0Hz": 391.82712841754255,
+      "sourceFrame": 49920,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99599153111369798,
+      "f0Hz": 391.78632150308067,
+      "sourceFrame": 50176,
+      "voiced": true
+    },
+    {
+      "confidence": 0.996043627530525,
+      "f0Hz": 391.82072004149143,
+      "sourceFrame": 50432,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99607352606595934,
+      "f0Hz": 391.92039700308754,
+      "sourceFrame": 50688,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99610041684726724,
+      "f0Hz": 391.94168464584845,
+      "sourceFrame": 50944,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99597730153979369,
+      "f0Hz": 391.8999865574001,
+      "sourceFrame": 51200,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99589976314289486,
+      "f0Hz": 391.97635197248093,
+      "sourceFrame": 51456,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99577262009447476,
+      "f0Hz": 391.93452977221182,
+      "sourceFrame": 51712,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99591888599208622,
+      "f0Hz": 392.0118356280347,
+      "sourceFrame": 51968,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99585452120764784,
+      "f0Hz": 391.88399790612874,
+      "sourceFrame": 52224,
+      "voiced": true
+    },
+    {
+      "confidence": 0.93316908803520282,
+      "f0Hz": 396.92633192111356,
+      "sourceFrame": 52480,
+      "voiced": true
+    },
+    {
+      "confidence": 0.9331004840958852,
+      "f0Hz": 396.78355474171542,
+      "sourceFrame": 52736,
+      "voiced": true
+    },
+    {
+      "confidence": 0.93333243063497418,
+      "f0Hz": 396.83560661651137,
+      "sourceFrame": 52992,
+      "voiced": true
+    },
+    {
+      "confidence": 0.93337874905345852,
+      "f0Hz": 396.84718339104421,
+      "sourceFrame": 53248,
+      "voiced": true
+    },
+    {
+      "confidence": 0.93352242537489327,
+      "f0Hz": 396.78069624533981,
+      "sourceFrame": 53504,
+      "voiced": true
+    },
+    {
+      "confidence": 0.93343828643832372,
+      "f0Hz": 396.83619621236716,
+      "sourceFrame": 53760,
+      "voiced": true
+    },
+    {
+      "confidence": 0.93341332072645733,
+      "f0Hz": 396.87011613483685,
+      "sourceFrame": 54016,
+      "voiced": true
+    },
+    {
+      "confidence": 0.93332321919440264,
+      "f0Hz": 396.8955201354367,
+      "sourceFrame": 54272,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99593235070352648,
+      "f0Hz": 392.00522941331781,
+      "sourceFrame": 54528,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99580406714520064,
+      "f0Hz": 391.92848298148743,
+      "sourceFrame": 54784,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99582041121241227,
+      "f0Hz": 391.95166202670197,
+      "sourceFrame": 55040,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99580095471259211,
+      "f0Hz": 391.98333034910564,
+      "sourceFrame": 55296,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99581134217221423,
+      "f0Hz": 392.00043066377208,
+      "sourceFrame": 55552,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99586644652085887,
+      "f0Hz": 392.01189942118856,
+      "sourceFrame": 55808,
+      "voiced": true
+    },
+    {
+      "confidence": 0.97881665310446031,
+      "f0Hz": 392.05023055511083,
+      "sourceFrame": 56064,
+      "voiced": true
+    },
+    {
+      "confidence": 0.9756974052692361,
+      "f0Hz": 392.10327907172478,
+      "sourceFrame": 56320,
+      "voiced": true
+    },
+    {
+      "confidence": 0.97126399392645824,
+      "f0Hz": 392.08216519873611,
+      "sourceFrame": 56576,
+      "voiced": true
+    },
+    {
+      "confidence": 0.964711378342611,
+      "f0Hz": 392.24325635886879,
+      "sourceFrame": 56832,
+      "voiced": true
+    },
+    {
+      "confidence": 0.9520061466205334,
+      "f0Hz": 392.56257785506051,
+      "sourceFrame": 57088,
+      "voiced": true
+    },
+    {
+      "confidence": 0.92271326827865952,
+      "f0Hz": 393.87587430718651,
+      "sourceFrame": 57344,
+      "voiced": true
+    },
+    {
+      "confidence": 0.84897895809454604,
+      "f0Hz": 401.26782527990019,
+      "sourceFrame": 57600,
+      "voiced": true
+    },
+    {
+      "confidence": 0.78004807851371161,
+      "f0Hz": 431.61359103190165,
+      "sourceFrame": 57856,
+      "voiced": true
+    },
+    {
+      "confidence": 0.69259097716744589,
+      "f0Hz": 440.01104599361844,
+      "sourceFrame": 58112,
+      "voiced": true
+    },
+    {
+      "confidence": 0.79704333654893988,
+      "f0Hz": 440.27479086275014,
+      "sourceFrame": 58368,
+      "voiced": true
+    },
+    {
+      "confidence": 0.86944396761509735,
+      "f0Hz": 440.23024700964004,
+      "sourceFrame": 58624,
+      "voiced": true
+    },
+    {
+      "confidence": 0.90889607244048987,
+      "f0Hz": 440.23425137580028,
+      "sourceFrame": 58880,
+      "voiced": true
+    },
+    {
+      "confidence": 0.92918057178217039,
+      "f0Hz": 440.19255018547619,
+      "sourceFrame": 59136,
+      "voiced": true
+    },
+    {
+      "confidence": 0.94358152589557909,
+      "f0Hz": 440.15173268896791,
+      "sourceFrame": 59392,
+      "voiced": true
+    },
+    {
+      "confidence": 0.95182617608931541,
+      "f0Hz": 440.0910401454596,
+      "sourceFrame": 59648,
+      "voiced": true
+    },
+    {
+      "confidence": 0.9953304202654184,
+      "f0Hz": 439.56315765013909,
+      "sourceFrame": 59904,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99552713352902578,
+      "f0Hz": 439.59385327648926,
+      "sourceFrame": 60160,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99559866805809971,
+      "f0Hz": 439.3913608079751,
+      "sourceFrame": 60416,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99554783715726836,
+      "f0Hz": 439.36507343948983,
+      "sourceFrame": 60672,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99560890727166329,
+      "f0Hz": 439.45942101345673,
+      "sourceFrame": 60928,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99567458101184381,
+      "f0Hz": 439.35814394786411,
+      "sourceFrame": 61184,
+      "voiced": true
+    },
+    {
+      "confidence": 0.9955686710580085,
+      "f0Hz": 439.4325195108903,
+      "sourceFrame": 61440,
+      "voiced": true
+    },
+    {
+      "confidence": 0.9959741075897256,
+      "f0Hz": 439.55732293340657,
+      "sourceFrame": 61696,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99610478554305726,
+      "f0Hz": 439.56314710657921,
+      "sourceFrame": 61952,
+      "voiced": true
+    },
+    {
+      "confidence": 0.9961087627976799,
+      "f0Hz": 439.59995873837101,
+      "sourceFrame": 62208,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99624136870012703,
+      "f0Hz": 439.70854402212984,
+      "sourceFrame": 62464,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99632593993950802,
+      "f0Hz": 439.57543744094045,
+      "sourceFrame": 62720,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99629631364529558,
+      "f0Hz": 439.52502735484723,
+      "sourceFrame": 62976,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99635115598014357,
+      "f0Hz": 439.48363840441681,
+      "sourceFrame": 63232,
+      "voiced": true
+    },
+    {
+      "confidence": 0.9964389643362237,
+      "f0Hz": 439.69701997235001,
+      "sourceFrame": 63488,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99637934673186146,
+      "f0Hz": 439.7735175318748,
+      "sourceFrame": 63744,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99638679303139577,
+      "f0Hz": 439.599289855216,
+      "sourceFrame": 64000,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99626891251417193,
+      "f0Hz": 439.57428150238485,
+      "sourceFrame": 64256,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99618714324461632,
+      "f0Hz": 439.51326670108557,
+      "sourceFrame": 64512,
+      "voiced": true
+    },
+    {
+      "confidence": 0.9962668853218507,
+      "f0Hz": 439.8037348965845,
+      "sourceFrame": 64768,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99620926990319858,
+      "f0Hz": 439.79028811554895,
+      "sourceFrame": 65024,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99605838863802953,
+      "f0Hz": 439.55351161435766,
+      "sourceFrame": 65280,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99616715730403194,
+      "f0Hz": 439.56685908934031,
+      "sourceFrame": 65536,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99604163799465495,
+      "f0Hz": 439.5671182952417,
+      "sourceFrame": 65792,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99610109251570689,
+      "f0Hz": 439.78089196462713,
+      "sourceFrame": 66048,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99611952369274992,
+      "f0Hz": 439.63031543191215,
+      "sourceFrame": 66304,
+      "voiced": true
+    },
+    {
+      "confidence": 0.9960281431417719,
+      "f0Hz": 439.49325212964993,
+      "sourceFrame": 66560,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99600131442128148,
+      "f0Hz": 439.52029515075083,
+      "sourceFrame": 66816,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99610250577840709,
+      "f0Hz": 439.66480298198269,
+      "sourceFrame": 67072,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99597736542508097,
+      "f0Hz": 439.69537276946716,
+      "sourceFrame": 67328,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99590713455278379,
+      "f0Hz": 439.49968450373154,
+      "sourceFrame": 67584,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99599652659036841,
+      "f0Hz": 439.51967182021849,
+      "sourceFrame": 67840,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99594068668376123,
+      "f0Hz": 439.52168762557829,
+      "sourceFrame": 68096,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99598747390965159,
+      "f0Hz": 439.73783025289623,
+      "sourceFrame": 68352,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99611908399138283,
+      "f0Hz": 439.69835415789748,
+      "sourceFrame": 68608,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99607895478577446,
+      "f0Hz": 439.50867892205758,
+      "sourceFrame": 68864,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99602064239416577,
+      "f0Hz": 439.45689741188937,
+      "sourceFrame": 69120,
+      "voiced": true
+    },
+    {
+      "confidence": 0.9962139874811472,
+      "f0Hz": 439.52270475084998,
+      "sourceFrame": 69376,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99622364697889487,
+      "f0Hz": 439.7477400270422,
+      "sourceFrame": 69632,
+      "voiced": true
+    },
+    {
+      "confidence": 0.9962431896671835,
+      "f0Hz": 439.59162387441808,
+      "sourceFrame": 69888,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99627502032049842,
+      "f0Hz": 439.48222016030689,
+      "sourceFrame": 70144,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99626472065624927,
+      "f0Hz": 439.46396208464091,
+      "sourceFrame": 70400,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99635390091070342,
+      "f0Hz": 439.62726133930744,
+      "sourceFrame": 70656,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99643411852531394,
+      "f0Hz": 439.75179284016326,
+      "sourceFrame": 70912,
+      "voiced": true
+    },
+    {
+      "confidence": 0.96309159105212072,
+      "f0Hz": 437.03705688227274,
+      "sourceFrame": 71168,
+      "voiced": true
+    },
+    {
+      "confidence": 0.96308998012295122,
+      "f0Hz": 437.09413564788451,
+      "sourceFrame": 71424,
+      "voiced": true
+    },
+    {
+      "confidence": 0.96351823436580109,
+      "f0Hz": 437.11022160124242,
+      "sourceFrame": 71680,
+      "voiced": true
+    },
+    {
+      "confidence": 0.96249777203680187,
+      "f0Hz": 437.28411110902709,
+      "sourceFrame": 71936,
+      "voiced": true
+    },
+    {
+      "confidence": 0.96264198143994817,
+      "f0Hz": 437.29873304594003,
+      "sourceFrame": 72192,
+      "voiced": true
+    },
+    {
+      "confidence": 0.96286705040091569,
+      "f0Hz": 437.34854121395176,
+      "sourceFrame": 72448,
+      "voiced": true
+    },
+    {
+      "confidence": 0.9621075368690799,
+      "f0Hz": 437.24011123588753,
+      "sourceFrame": 72704,
+      "voiced": true
+    },
+    {
+      "confidence": 0.96239858678293044,
+      "f0Hz": 437.33946542308729,
+      "sourceFrame": 72960,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99613512649341696,
+      "f0Hz": 440.04959306928902,
+      "sourceFrame": 73216,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99612327434298864,
+      "f0Hz": 439.98648230023201,
+      "sourceFrame": 73472,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99621260867697425,
+      "f0Hz": 439.96747530471026,
+      "sourceFrame": 73728,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99634828889035509,
+      "f0Hz": 439.92895320939181,
+      "sourceFrame": 73984,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99636146799507597,
+      "f0Hz": 439.95980583604563,
+      "sourceFrame": 74240,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99645151127352172,
+      "f0Hz": 439.95732931811716,
+      "sourceFrame": 74496,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99649075465406833,
+      "f0Hz": 439.94851525292285,
+      "sourceFrame": 74752,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99644404210010318,
+      "f0Hz": 440.00294733426517,
+      "sourceFrame": 75008,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99650651097205123,
+      "f0Hz": 439.99396827959436,
+      "sourceFrame": 75264,
+      "voiced": true
+    },
+    {
+      "confidence": 0.9964844289967022,
+      "f0Hz": 439.96201938890806,
+      "sourceFrame": 75520,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99616984059295088,
+      "f0Hz": 439.99704464475292,
+      "sourceFrame": 75776,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99532364058793921,
+      "f0Hz": 440.08493088055837,
+      "sourceFrame": 76032,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99430219286983812,
+      "f0Hz": 440.021483631271,
+      "sourceFrame": 76288,
+      "voiced": true
+    },
+    {
+      "confidence": 0.99265756589703091,
+      "f0Hz": 440.06079883113438,
+      "sourceFrame": 76544,
+      "voiced": true
+    }
+  ],
+  "rms": 0.1139968411980056,
+  "sampleRate": 48000,
+  "source": "/mnt/data/project-seam-phase3-work/project-seam-phase2/out/phase3/phase3-psola-phrase.wav"
+}
+

@@ -1,0 +1,150 @@
+{
+  "audioTracks": [],
+  "formatId": "com.project-seam.project",
+  "meterMap": [
+    {
+      "denominator": 4,
+      "numerator": 4,
+      "tick": 0
+    }
+  ],
+  "name": "Project SEAM — Phase 3 Persistent Editing and Render Loop",
+  "ppq": 960,
+  "projectId": "bb8",
+  "schemaVersion": 3,
+  "settings": {
+    "characterDisplay": "minimal",
+    "sampleRate": 48000,
+    "snapEnabled": true,
+    "snapGrid": 240
+  },
+  "tempoMap": [
+    {
+      "bpm": 154,
+      "tick": 0
+    }
+  ],
+  "vocalTracks": [
+    {
+      "character": {
+        "id": "official.character.01",
+        "version": "0.3.0-dev"
+      },
+      "gainDb": 0,
+      "id": "bb9",
+      "muted": false,
+      "name": "Voicebank 01 / Original",
+      "pan": 0,
+      "regions": [
+        {
+          "durationTick": 15360,
+          "id": "bba",
+          "lyrics": [
+            {
+              "id": "bbb",
+              "language": "ja",
+              "surface": "き"
+            },
+            {
+              "id": "bbd",
+              "language": "ja",
+              "surface": "み"
+            },
+            {
+              "id": "bbf",
+              "language": "ja",
+              "surface": "は"
+            },
+            {
+              "id": "bc1",
+              "language": "ja",
+              "surface": "ー"
+            }
+          ],
+          "name": "Controlled discontinuity",
+          "notes": [
+            {
+              "articulation": "normal",
+              "durationTick": 960,
+              "id": "bbc",
+              "lyricId": "bbb",
+              "midiKey": 64,
+              "startTick": 1920
+            },
+            {
+              "articulation": "normal",
+              "durationTick": 960,
+              "id": "bbe",
+              "lyricId": "bbd",
+              "midiKey": 66,
+              "startTick": 2880
+            },
+            {
+              "articulation": "normal",
+              "durationTick": 960,
+              "id": "bc0",
+              "lyricId": "bbf",
+              "midiKey": 67,
+              "startTick": 3840
+            },
+            {
+              "articulation": "normal",
+              "durationTick": 960,
+              "id": "bc2",
+              "lyricId": "bc1",
+              "midiKey": 69,
+              "startTick": 4800
+            }
+          ],
+          "phonemeOverrides": [],
+          "pitchAutomation": [
+            {
+              "cents": -16,
+              "interpolation": "smooth",
+              "tick": 1920
+            },
+            {
+              "cents": 28,
+              "interpolation": "smooth",
+              "tick": 2400
+            },
+            {
+              "cents": 0,
+              "interpolation": "linear",
+              "tick": 2879
+            }
+          ],
+          "seamOverrides": [
+            {
+              "curve": "hard-character",
+              "envelopeBlend": 0.11999999731779099,
+              "locked": true,
+              "noteId": "bbe",
+              "ordinal": 0,
+              "overlapUs": 8500,
+              "phaseReset": 0.75,
+              "seamAmount": 0.9100000262260437
+            }
+          ],
+          "startTick": 0,
+          "unitSelectionOverrides": [
+            {
+              "locked": true,
+              "noteId": "bbc",
+              "ordinal": 0,
+              "renderer": "classic-psola",
+              "tokenCount": 2,
+              "unitId": "ja.original.e4.k-i.02"
+            }
+          ]
+        }
+      ],
+      "solo": false,
+      "voicebank": {
+        "contentHash": "phase3-synthetic-content",
+        "id": "official.voice.01.phase3.synthetic",
+        "version": "0.3.0-dev"
+      }
+    }
+  ]
+}

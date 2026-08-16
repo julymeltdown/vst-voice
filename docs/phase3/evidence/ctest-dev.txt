@@ -1,0 +1,15 @@
+Test project /mnt/data/project-seam-phase3-work/project-seam-phase2/build/dev
+    Start 1: seam_tests
+1/5 Test #1: seam_tests .......................   Passed    1.93 sec
+    Start 2: seam_phase2_demo_smoke
+2/5 Test #2: seam_phase2_demo_smoke ...........   Passed    1.61 sec
+    Start 3: seam_phase3_demo_smoke
+3/5 Test #3: seam_phase3_demo_smoke ...........   Passed    2.14 sec
+    Start 4: seam_voicebank_cli_help
+4/5 Test #4: seam_voicebank_cli_help ..........   Passed    0.00 sec
+    Start 5: seam_voicebank_cli_validate
+5/5 Test #5: seam_voicebank_cli_validate ......   Passed    1.46 sec
+
+100% tests passed, 0 tests failed out of 5
+
+Total Test time (real) =   7.14 sec

@@ -1,0 +1,9 @@
+Project SEAM Phase 3 demo completed
+  project schema: 3
+  voicebank schema: 2
+  persistent unit overrides: 1
+  editable seam overrides: 1
+  PSOLA placements: 3
+  scheduler completed: 1
+  scheduler cache hits: 1
+  output: "/mnt/data/project-seam-phase3-work/project-seam-phase2/out/phase3"

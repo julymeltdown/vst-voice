@@ -1,0 +1,16 @@
+{
+  "psolaIterations": 120,
+  "psolaMs": 791.355,
+  "psolaRenderedSamples": 4320000,
+  "psolaRealTimeMultiple": 113.729,
+  "seamIterations": 120,
+  "seamMs": 1653.458,
+  "seamComposedSamples": 14040000,
+  "cacheDiskReadIterations": 80,
+  "cacheDiskReadMs": 205.833,
+  "cacheReadSamples": 2880000,
+  "cacheDiskHits": 80,
+  "schedulerTasks": 48,
+  "schedulerMs": 11.02,
+  "schedulerCompleted": 48
+}
