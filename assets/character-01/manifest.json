@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "characterId": "official.character.01",
+  "displayName": "Character 01",
+  "version": "0.1.0",
+  "voicebankId": "official.voice.01",
+  "style": "early-2000s-emo-low-poly",
+  "defaultState": "neutral",
+  "accent": {
+    "primary": "#8B4C69",
+    "secondary": "#6E5A86"
+  },
+  "states": {
+    "neutral": "runtime/neutral.ppm",
+    "focused": "runtime/focused.ppm",
+    "rendering": "runtime/rendering.ppm",
+    "complete": "runtime/complete.ppm",
+    "warning": "runtime/warning.ppm",
+    "error": "runtime/error.ppm"
+  }
+}

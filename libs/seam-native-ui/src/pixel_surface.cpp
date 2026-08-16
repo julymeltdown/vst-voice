@@ -1,10 +1,13 @@
 #include "seam/native_ui/pixel_surface.hpp"
 
+#include "seam/core/file_io.hpp"
+
 #include <algorithm>
 #include <array>
 #include <cmath>
 #include <fstream>
 #include <limits>
+#include <string>
 
 namespace seam::native_ui {
 namespace {
@@ -154,6 +157,87 @@ core::Result<void> PixelSurface::writePpm(
                          "Unable to write PPM output", path.string());
   }
   return core::success();
+}
+
+
+core::Result<PixelSurface> PixelSurface::loadPpm(
+    const std::filesystem::path& path, std::uint64_t maximumBytes) {
+  auto bytes = core::readFileBytesLimited(path, maximumBytes);
+  if (!bytes) return core::Result<PixelSurface>{bytes.error()};
+  const auto& data = bytes.value();
+  std::size_t cursor = 0U;
+  const auto skip = [&] {
+    for (;;) {
+      while (cursor < data.size()) {
+        const auto ch = static_cast<char>(data[cursor]);
+        if (ch == '#') {
+          while (cursor < data.size() && static_cast<char>(data[cursor]) != '\n') ++cursor;
+          continue;
+        }
+        if (ch == ' ' || ch == '\t' || ch == '\r' || ch == '\n') {
+          ++cursor;
+          continue;
+        }
+        break;
+      }
+      break;
+    }
+  };
+  const auto token = [&]() -> std::string {
+    skip();
+    const auto start = cursor;
+    while (cursor < data.size()) {
+      const auto ch = static_cast<char>(data[cursor]);
+      if (ch == ' ' || ch == '\t' || ch == '\r' || ch == '\n' || ch == '#') break;
+      ++cursor;
+    }
+    return std::string{reinterpret_cast<const char*>(data.data() + start), cursor - start};
+  };
+  if (token() != "P6") {
+    return core::failure<PixelSurface>(core::ErrorCode::ParseError,
+                                       "Only binary P6 PPM images are supported",
+                                       path.string());
+  }
+  std::uint64_t width = 0U;
+  std::uint64_t height = 0U;
+  std::uint64_t maximum = 0U;
+  try {
+    width = std::stoull(token());
+    height = std::stoull(token());
+    maximum = std::stoull(token());
+  } catch (...) {
+    return core::failure<PixelSurface>(core::ErrorCode::ParseError,
+                                       "PPM header dimensions are invalid",
+                                       path.string());
+  }
+  if (width == 0U || height == 0U || width > kMaximumDimension ||
+      height > kMaximumDimension || width * height > kMaximumPixels || maximum != 255U) {
+    return core::failure<PixelSurface>(core::ErrorCode::Unsupported,
+                                       "PPM dimensions or color range are unsupported",
+                                       path.string());
+  }
+  skip();
+  if (width * height > std::numeric_limits<std::size_t>::max() / 3U) {
+    return core::failure<PixelSurface>(core::ErrorCode::Unsupported,
+                                       "PPM payload is too large", path.string());
+  }
+  const auto payload = static_cast<std::size_t>(width * height * 3U);
+  if (cursor > data.size() || data.size() - cursor != payload) {
+    return core::failure<PixelSurface>(core::ErrorCode::ParseError,
+                                       "PPM payload size does not match the header",
+                                       path.string());
+  }
+  PixelSurface surface{static_cast<std::uint32_t>(width),
+                       static_cast<std::uint32_t>(height)};
+  auto pixels = surface.pixels();
+  for (std::size_t index = 0U; index < pixels.size(); ++index) {
+    const auto base = cursor + index * 3U;
+    const auto red = static_cast<std::uint8_t>(data[base]);
+    const auto green = static_cast<std::uint8_t>(data[base + 1U]);
+    const auto blue = static_cast<std::uint8_t>(data[base + 2U]);
+    pixels[index] = Color{red, green, blue, 255U}.bgra();
+  }
+  return surface;
 }
 
 RasterCanvas::RasterCanvas(PixelSurface& surface, double scale) noexcept
@@ -311,6 +395,45 @@ void RasterCanvas::drawVerticalGradient(ui::Rect rect, Color top,
                    static_cast<double>(height - 1 > 0 ? height - 1 : 1);
     fillPhysicalRect(physicalLeft, y, physicalRight, y + 1,
                      interpolate(top, bottom, t));
+  }
+}
+
+
+void RasterCanvas::drawImageNearest(ui::Rect destination,
+                                    const PixelSurface& image,
+                                    double opacity) noexcept {
+  if (destination.width <= 0.0 || destination.height <= 0.0 ||
+      image.width() == 0U || image.height() == 0U || !std::isfinite(opacity)) {
+    return;
+  }
+  const auto alpha = std::clamp(opacity, 0.0, 1.0);
+  if (alpha <= 0.0) return;
+  const auto left = static_cast<std::int32_t>(std::floor(destination.x * scale_));
+  const auto top = static_cast<std::int32_t>(std::floor(destination.y * scale_));
+  const auto right = static_cast<std::int32_t>(std::ceil(destination.right() * scale_));
+  const auto bottom = static_cast<std::int32_t>(std::ceil(destination.bottom() * scale_));
+  const auto physicalWidth = std::max(1, right - left);
+  const auto physicalHeight = std::max(1, bottom - top);
+  const auto source = image.pixels();
+  for (auto y = std::max(0, top); y < std::min(bottom, static_cast<std::int32_t>(surface_.height())); ++y) {
+    const auto localY = y - top;
+    const auto sourceY = std::min<std::uint32_t>(
+        image.height() - 1U,
+        static_cast<std::uint32_t>((static_cast<std::uint64_t>(localY) * image.height()) /
+                                   static_cast<std::uint64_t>(physicalHeight)));
+    for (auto x = std::max(0, left); x < std::min(right, static_cast<std::int32_t>(surface_.width())); ++x) {
+      const auto localX = x - left;
+      const auto sourceX = std::min<std::uint32_t>(
+          image.width() - 1U,
+          static_cast<std::uint32_t>((static_cast<std::uint64_t>(localX) * image.width()) /
+                                     static_cast<std::uint64_t>(physicalWidth)));
+      const auto pixel = source[static_cast<std::size_t>(sourceY) * image.width() + sourceX];
+      const auto blue = static_cast<std::uint8_t>(pixel & 0xFFU);
+      const auto green = static_cast<std::uint8_t>((pixel >> 8U) & 0xFFU);
+      const auto red = static_cast<std::uint8_t>((pixel >> 16U) & 0xFFU);
+      blendPixel(x, y, Color{red, green, blue,
+                             static_cast<std::uint8_t>(std::lround(alpha * 255.0))});
+    }
   }
 }
 

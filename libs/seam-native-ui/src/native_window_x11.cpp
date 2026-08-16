@@ -58,6 +58,12 @@ NativeKey nativeKey(KeySym key) noexcept {
     case XK_Z: return NativeKey::Z;
     case XK_y:
     case XK_Y: return NativeKey::Y;
+    case XK_c:
+    case XK_C: return NativeKey::C;
+    case XK_s:
+    case XK_S: return NativeKey::S;
+    case XK_r:
+    case XK_R: return NativeKey::R;
     case XK_plus:
     case XK_equal:
     case XK_KP_Add: return NativeKey::Plus;

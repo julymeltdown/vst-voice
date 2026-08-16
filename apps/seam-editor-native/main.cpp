@@ -1,6 +1,7 @@
 #include "seam/application/editor_session.hpp"
 #include "seam/application/project_factory.hpp"
 #include "seam/core/result.hpp"
+#include "seam/native_ui/character_presentation.hpp"
 #include "seam/native_ui/editor_controller.hpp"
 #include "seam/native_ui/editor_scene.hpp"
 #include "seam/native_ui/native_window.hpp"
@@ -39,6 +40,7 @@ struct CommandLine final {
   double scale{1.0};
   bool forceThreadedAudio{false};
   bool startPaused{false};
+  std::filesystem::path characterPackage{"assets/character-01"};
 };
 
 void printUsage() {
@@ -48,7 +50,8 @@ void printUsage() {
       << "  --screenshot PATH       write the final software-raster frame as PPM\n"
       << "  --scale N               logical UI scale from 0.5 to 4.0\n"
       << "  --force-threaded-audio  skip physical system audio\n"
-      << "  --paused                do not start transport automatically\n";
+      << "  --paused                do not start transport automatically\n"
+      << "  --character-package P   character package root (default assets/character-01)\n";
 }
 
 std::optional<CommandLine> parseArguments(int argc, char** argv) {
@@ -65,6 +68,10 @@ std::optional<CommandLine> parseArguments(int argc, char** argv) {
     }
     if (argument == "--paused") {
       result.startPaused = true;
+      continue;
+    }
+    if (argument == "--character-package" && index + 1 < argc) {
+      result.characterPackage = std::filesystem::path{argv[++index]};
       continue;
     }
     if (argument == "--auto-close-ms" && index + 1 < argc) {
@@ -108,22 +115,55 @@ seam::domain::Project makeDemoProject(
   regionId = factory.addRegion(project, trackId, "VERSE A",
                                seam::time::Tick{0}, seam::time::Tick{15360});
   auto* region = project.findRegion(regionId);
+  project.settings().characterDisplay = seam::domain::CharacterDisplayMode::Full;
+  if (auto* track = project.findVocalTrack(trackId); track != nullptr) {
+    track->voicebank = seam::domain::VoicebankReference{
+        .id = "official.voice.01", .version = "0.1.0", .contentHash = "demo"};
+    track->character = seam::domain::CharacterReference{
+        .id = "official.character.01", .version = "0.1.0"};
+  }
   const std::vector<std::tuple<std::int64_t, std::int64_t, std::uint8_t,
                                std::u32string>> notes{
-      {0, 720, 64U, U"hold"},       {720, 480, 67U, U"the"},
-      {1200, 960, 69U, U"seam"},    {2400, 480, 67U, U"and"},
-      {2880, 720, 64U, U"leave"},   {3600, 960, 62U, U"it"},
-      {4800, 480, 64U, U"un"},      {5280, 480, 67U, U"re"},
-      {5760, 1440, 71U, U"solved"}, {7440, 480, 69U, U"a"},
-      {7920, 960, 67U, U"gain"},    {9360, 1920, 64U, U"..."},
+      {0, 720, 64U, U"こ"},       {720, 480, 67U, U"え"},
+      {1200, 960, 69U, U"を"},    {2400, 480, 67U, U"つ"},
+      {2880, 720, 64U, U"な"},    {3600, 960, 62U, U"ぐ"},
+      {4800, 480, 64U, U"ま"},    {5280, 480, 67U, U"ま"},
+      {5760, 1440, 71U, U"で"},   {7440, 480, 69U, U"い"},
+      {7920, 960, 67U, U"い"},    {9360, 1920, 64U, U"よ"},
   };
-  for (const auto& [start, duration, key, lyricText] : notes) {
+  for (const auto& [startTick, duration, key, lyricText] : notes) {
     auto [lyric, note] = factory.makeNote(
-        seam::time::Tick{start}, seam::time::Tick{duration}, key, lyricText,
-        seam::domain::Language::English);
+        seam::time::Tick{startTick}, seam::time::Tick{duration}, key, lyricText,
+        seam::domain::Language::Japanese);
     region->lyrics.push_back(std::move(lyric));
     region->notes.push_back(std::move(note));
   }
+  region->sortNotes();
+  if (region->notes.size() >= 4U) {
+    region->unitSelectionOverrides.push_back(seam::domain::UnitSelectionOverride{
+        .startKey = seam::domain::PhonemeKey{.noteId = region->notes[0].id, .ordinal = 0U},
+        .tokenCount = 2U,
+        .unitId = "ja.original.mid.k-o.01",
+        .renderer = seam::domain::UnitRendererKind::ClassicPsola,
+        .locked = true,
+    });
+    region->unitSelectionOverrides.push_back(seam::domain::UnitSelectionOverride{
+        .startKey = seam::domain::PhonemeKey{.noteId = region->notes[3].id, .ordinal = 0U},
+        .tokenCount = 2U,
+        .unitId = "ja.original.mid.ts-u.01",
+        .renderer = seam::domain::UnitRendererKind::SpectralClassic,
+        .locked = true,
+    });
+  }
+  static_cast<void>(region->pitchAutomation.upsert(seam::domain::PitchAutomationPoint{
+      .tick = seam::time::Tick{0}, .cents = -18.0F,
+      .interpolation = seam::domain::CurveInterpolation::Smooth}));
+  static_cast<void>(region->pitchAutomation.upsert(seam::domain::PitchAutomationPoint{
+      .tick = seam::time::Tick{2400}, .cents = 42.0F,
+      .interpolation = seam::domain::CurveInterpolation::Linear}));
+  static_cast<void>(region->pitchAutomation.upsert(seam::domain::PitchAutomationPoint{
+      .tick = seam::time::Tick{5760}, .cents = -34.0F,
+      .interpolation = seam::domain::CurveInterpolation::Smooth}));
   region->sortNotes();
   return project;
 }
@@ -203,6 +243,14 @@ public:
             }) {}
 
   ~NativeEditorApp() override { shutdownAudio(); }
+
+  seam::core::Result<void> initializeCharacter(
+      const std::filesystem::path& packageRoot) {
+    auto result = character_.load(packageRoot);
+    if (!result) return result;
+    controller_.setCharacterMetadata(character_.displayName(), character_.styleName());
+    return seam::core::success();
+  }
 
   seam::core::Result<void> initializeAudio(bool forceThreaded,
                                             bool startPaused) {
@@ -298,6 +346,11 @@ public:
         frame, session_.project().settings().sampleRate);
     auto state = controller_.sceneState();
     state.playheadPixel = controller_.pianoRoll().timeline().tickToPixel(tick);
+    character_.setDisplayMode(state.characterMode);
+    character_.setState(state.characterState);
+    state.characterPortrait = character_.portrait();
+    if (state.characterName.empty()) state.characterName = character_.displayName();
+    if (state.characterStyle.empty()) state.characterStyle = character_.styleName();
     painter_.paint(canvas, controller_.pianoRoll(), state);
   }
 
@@ -368,6 +421,7 @@ private:
   seam::rendering::PlaybackFeeder feeder_;
   seam::rendering::PlaybackFeederService feederService_;
   seam::platform::RingBufferAudioProcessor processor_;
+  seam::native_ui::CharacterPresentation character_;
   seam::native_ui::EditorScenePainter painter_;
   seam::native_ui::NativeEditorController controller_;
   std::unique_ptr<seam::platform::IAudioDevice> audioDevice_;
@@ -389,6 +443,14 @@ int main(int argc, char** argv) {
   }
 
   NativeEditorApp app;
+  const auto character = app.initializeCharacter(commandLine->characterPackage);
+  if (!character) {
+    std::cerr << "Character package unavailable: " << character.error().message;
+    if (!character.error().context.empty()) {
+      std::cerr << " (" << character.error().context << ')';
+    }
+    std::cerr << '\n';
+  }
   const auto audio = app.initializeAudio(commandLine->forceThreadedAudio,
                                          commandLine->startPaused);
   if (!audio) {

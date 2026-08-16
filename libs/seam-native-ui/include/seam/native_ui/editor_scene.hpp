@@ -1,11 +1,15 @@
 #pragma once
 
+#include "seam/character/character.hpp"
+#include "seam/domain/project.hpp"
 #include "seam/native_ui/pixel_surface.hpp"
+#include "seam/phonemizer/phonemizer.hpp"
 #include "seam/ui/piano_roll_model.hpp"
 
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <vector>
 
 namespace seam::native_ui {
 
@@ -26,8 +30,12 @@ struct EditorSceneTheme final {
   Color primaryText{241, 235, 242, 255};
   Color secondaryText{170, 159, 171, 255};
   Color accent{170, 77, 116, 255};
+  Color accentSecondary{110, 90, 134, 255};
   Color playhead{98, 192, 190, 255};
   Color selection{155, 88, 124, 58};
+  Color phoneme{70, 67, 87, 255};
+  Color unit{56, 72, 78, 255};
+  Color automation{186, 104, 145, 255};
 };
 
 struct EditorSceneState final {
@@ -41,6 +49,16 @@ struct EditorSceneState final {
   std::optional<ui::Rect> lyricEditor;
   std::string compositionPreview;
   double playheadPixel{0.0};
+
+  phonemizer::Result phonemes;
+  std::vector<domain::UnitSelectionOverride> unitOverrides;
+  std::vector<domain::PitchAutomationPoint> pitchAutomation;
+
+  domain::CharacterDisplayMode characterMode{domain::CharacterDisplayMode::Minimal};
+  character::State characterState{character::State::Neutral};
+  std::string characterName;
+  std::string characterStyle;
+  const PixelSurface* characterPortrait{nullptr};
 };
 
 struct EditorSceneLayout final {
@@ -48,9 +66,16 @@ struct EditorSceneLayout final {
   double rulerHeight{34.0};
   double statusHeight{28.0};
   double keyboardWidth{76.0};
+  double phonemeLaneHeight{42.0};
+  double unitLaneHeight{52.0};
+  double automationLaneHeight{72.0};
+  double characterDockWidth{238.0};
 
   [[nodiscard]] double contentTop() const noexcept {
     return toolbarHeight + rulerHeight;
+  }
+  [[nodiscard]] double lanesHeight() const noexcept {
+    return phonemeLaneHeight + unitLaneHeight + automationLaneHeight;
   }
 };
 
@@ -66,10 +91,16 @@ public:
 private:
   void paintToolbar(RasterCanvas& canvas, const EditorSceneState& state) const noexcept;
   void paintGrid(RasterCanvas& canvas, const ui::PianoRollModel& model,
-                 double contentBottom) const noexcept;
+                 double editorRight, double contentBottom) const noexcept;
   void paintKeyboard(RasterCanvas& canvas, const ui::PianoRollModel& model,
                      double contentBottom) const noexcept;
-  void paintNotes(RasterCanvas& canvas, const ui::PianoRollModel& model) const noexcept;
+  void paintNotes(RasterCanvas& canvas,
+                  const ui::PianoRollModel& model) const noexcept;
+  void paintTechnicalLanes(RasterCanvas& canvas, const ui::PianoRollModel& model,
+                           const EditorSceneState& state, double editorRight,
+                           double pianoBottom) const noexcept;
+  void paintCharacter(RasterCanvas& canvas, const EditorSceneState& state,
+                      double editorRight, double contentBottom) const noexcept;
   void paintStatus(RasterCanvas& canvas, const ui::PianoRollModel& model,
                    const EditorSceneState& state) const noexcept;
 

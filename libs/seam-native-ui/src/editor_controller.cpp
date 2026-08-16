@@ -1,6 +1,7 @@
 #include "seam/native_ui/editor_controller.hpp"
 
 #include "seam/application/lyric_commands.hpp"
+#include "seam/phonemizer/japanese_phonemizer.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -33,25 +34,43 @@ EditorSceneState NativeEditorController::sceneState() const {
       .lyricEditor = std::nullopt,
       .compositionPreview = {},
       .playheadPixel = playheadPixel_,
+      .phonemes = {},
+      .unitOverrides = {},
+      .pitchAutomation = {},
+      .characterMode = session_.project().settings().characterDisplay,
+      .characterState = playing_ ? character::State::Focused
+                                 : (dirty_ ? character::State::Warning
+                                           : character::State::Neutral),
+      .characterName = characterName_,
+      .characterStyle = characterStyle_,
+      .characterPortrait = nullptr,
   };
   if (dragMode_ == DragMode::BoxSelect) {
     const auto left = std::min(dragStart_.x, dragCurrent_.x);
     const auto top = std::min(dragStart_.y, dragCurrent_.y);
-    state.boxSelection = ui::Rect{left, top, std::abs(dragCurrent_.x - dragStart_.x),
+    state.boxSelection = ui::Rect{left, top,
+                                  std::abs(dragCurrent_.x - dragStart_.x),
                                   std::abs(dragCurrent_.y - dragStart_.y)};
   }
   if (composition_.active()) {
-    for (const auto& visual : pianoRoll_.visibleNotes()) {
-      const auto* note = session_.project().findNote(visual.noteId);
-      if (note == nullptr || note->lyricTokenId != composition_.lyricId()) continue;
-      auto bounds = visual.bounds;
-      bounds.y += layout_.contentTop();
-      bounds.height = std::max(28.0, bounds.height + 8.0);
-      bounds.width = std::max(120.0, bounds.width);
-      state.lyricEditor = bounds;
-      state.compositionPreview = domain::toUtf8(composition_.compositionText());
-      break;
+    if (const auto* region = session_.project().findRegion(regionId_); region != nullptr) {
+      const auto note = std::find_if(region->notes.begin(), region->notes.end(),
+                                     [this](const domain::Note& candidate) {
+                                       return candidate.lyricTokenId == composition_.lyricId();
+                                     });
+      if (note != region->notes.end()) {
+        if (const auto bounds = noteWindowBounds(note->id); bounds.has_value()) {
+          state.lyricEditor = *bounds;
+        }
+      }
     }
+    state.compositionPreview = domain::toUtf8(composition_.compositionText());
+  }
+  if (const auto* region = session_.project().findRegion(regionId_); region != nullptr) {
+    phonemizer::JapaneseKanaPhonemizer phonemizer;
+    state.phonemes = phonemizer.phonemize(*region);
+    state.unitOverrides = region->unitSelectionOverrides;
+    state.pitchAutomation = region->pitchAutomation.points();
   }
   return state;
 }
@@ -61,7 +80,8 @@ void NativeEditorController::resize(double logicalWidth,
   logicalWidth_ = std::max(480.0, logicalWidth);
   logicalHeight_ = std::max(320.0, logicalHeight);
   const auto contentHeight = std::max(
-      1.0, logicalHeight_ - layout_.contentTop() - layout_.statusHeight);
+      1.0, logicalHeight_ - layout_.contentTop() - layout_.statusHeight -
+               layout_.lanesHeight());
   pianoRoll_.setViewport(ui::PianoRollViewport{
       .bounds = ui::Rect{0.0, 0.0, logicalWidth_, contentHeight},
       .keyboardWidth = layout_.keyboardWidth,
@@ -85,8 +105,9 @@ void NativeEditorController::finishTextInput() const {
 core::Result<void> NativeEditorController::pointerDown(
     const PointerEvent& event) {
   if (event.button != PointerButton::Left) return core::success();
+  const auto pianoBottom = logicalHeight_ - layout_.statusHeight - layout_.lanesHeight();
   if (event.position.y < layout_.contentTop() ||
-      event.position.y >= logicalHeight_ - layout_.statusHeight) {
+      event.position.y >= pianoBottom) {
     return core::success();
   }
   const auto point = modelPoint(event.position);
@@ -197,6 +218,16 @@ core::Result<void> NativeEditorController::keyDown(const KeyEvent& event) {
   } else if (event.key == NativeKey::Enter) {
     const auto selected = session_.selection().noteIds();
     if (!selected.empty()) result = beginLyricEdit(selected.front());
+  } else if (event.key == NativeKey::C) {
+    auto& mode = session_.project().settings().characterDisplay;
+    if (mode == domain::CharacterDisplayMode::Full) {
+      mode = domain::CharacterDisplayMode::Minimal;
+    } else if (mode == domain::CharacterDisplayMode::Minimal) {
+      mode = domain::CharacterDisplayMode::Off;
+    } else {
+      mode = domain::CharacterDisplayMode::Full;
+    }
+    dirty_ = true;
   } else if (event.key == NativeKey::Plus || event.key == NativeKey::Minus) {
     pianoRoll_.timeline().zoomAround(
         (logicalWidth_ - layout_.keyboardWidth) * 0.5,

@@ -76,11 +76,13 @@ struct Unit final {
 };
 
 struct Manifest final {
-  static constexpr std::int32_t kSchemaVersion = 2;
+  static constexpr std::int32_t kSchemaVersion = 3;
 
   std::string id;
   std::string version;
   std::string displayName;
+  std::string characterId;
+  std::string characterVersion;
   domain::Language language{domain::Language::Unspecified};
   std::uint32_t expectedSampleRate{48000};
   std::vector<std::string> styles{"original"};

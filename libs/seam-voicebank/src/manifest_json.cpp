@@ -86,6 +86,8 @@ JsonValue encodeManifest(const Manifest& manifest) {
       {"id", JsonValue{manifest.id}},
       {"version", JsonValue{manifest.version}},
       {"displayName", JsonValue{manifest.displayName}},
+      {"characterId", JsonValue{manifest.characterId}},
+      {"characterVersion", JsonValue{manifest.characterVersion}},
       {"language", JsonValue{languageName(manifest.language)}},
       {"expectedSampleRate", JsonValue{static_cast<std::int64_t>(manifest.expectedSampleRate)}},
       {"styles", JsonValue{std::move(styles)}},
@@ -169,6 +171,8 @@ core::Result<Manifest> decodeManifest(const JsonValue& root) {
   const auto* id = root.find("id");
   const auto* version = root.find("version");
   const auto* displayName = root.find("displayName");
+  const auto* characterId = root.find("characterId");
+  const auto* characterVersion = root.find("characterVersion");
   const auto* language = root.find("language");
   const auto* expectedSampleRate = root.find("expectedSampleRate");
   const auto* styles = root.find("styles");
@@ -201,6 +205,15 @@ core::Result<Manifest> decodeManifest(const JsonValue& root) {
   manifest.id = id->asString();
   manifest.version = version->asString();
   manifest.displayName = displayName->asString();
+  if (schemaVersion >= 3) {
+    if (characterId == nullptr || characterVersion == nullptr ||
+        !characterId->isString() || !characterVersion->isString()) {
+      return core::failure<Manifest>(core::ErrorCode::ParseError,
+                                     "Schema 3 voicebank character binding is invalid");
+    }
+    manifest.characterId = characterId->asString();
+    manifest.characterVersion = characterVersion->asString();
+  }
   manifest.language = parseLanguage(language->asString());
   manifest.expectedSampleRate = static_cast<std::uint32_t>(sampleRateValue);
   manifest.styles.clear();

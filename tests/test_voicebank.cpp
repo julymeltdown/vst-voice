@@ -169,9 +169,9 @@ TEST_CASE("voicebank schema one migrates without pitch marks") {
   auto encoded = codec.encode(manifest);
   CHECK(encoded);
   auto legacy = encoded.value();
-  const auto schema = legacy.find("\"schemaVersion\": 2");
+  const auto schema = legacy.find("\"schemaVersion\": 3");
   CHECK(schema != std::string::npos);
-  legacy.replace(schema, std::string{"\"schemaVersion\": 2"}.size(),
+  legacy.replace(schema, std::string{"\"schemaVersion\": 3"}.size(),
                  "\"schemaVersion\": 1");
   const auto marks = legacy.find(",\n      \"pitchMarks\": []");
   CHECK(marks != std::string::npos);
@@ -193,4 +193,43 @@ TEST_CASE("stereo PCM16 WAV writer round trips channel layout") {
   CHECK(loaded.value().frameCount() == 4);
   CHECK_NEAR(loaded.value().interleaved[0], 0.1F, 1.0e-4);
   CHECK_NEAR(loaded.value().interleaved[1], -0.1F, 1.0e-4);
+}
+
+TEST_CASE("voicebank schema three binds an optional character product identity") {
+  auto unit = seam::test::support::makeUnit(
+      "a", {"a"}, "audio/a.wav", 69,
+      seam::voicebank::UnitKind::Sustain, 24000);
+  auto manifest = seam::test::support::makeManifest({unit});
+  manifest.characterId = "official.character.01";
+  manifest.characterVersion = "0.1.0";
+  seam::voicebank::ManifestJsonCodec codec;
+  const auto encoded = codec.encode(manifest);
+  CHECK(encoded);
+  CHECK(encoded.value().find("official.character.01") != std::string::npos);
+  const auto decoded = codec.decode(encoded.value());
+  CHECK(decoded);
+  CHECK(decoded.value().characterId == "official.character.01");
+  CHECK(decoded.value().characterVersion == "0.1.0");
+
+  manifest.characterVersion.clear();
+  CHECK(!manifest.validate());
+}
+
+TEST_CASE("voicebank schema two migrates without a character binding") {
+  auto unit = seam::test::support::makeUnit(
+      "a", {"a"}, "audio/a.wav", 69,
+      seam::voicebank::UnitKind::Sustain, 24000);
+  auto manifest = seam::test::support::makeManifest({unit});
+  seam::voicebank::ManifestJsonCodec codec;
+  auto encoded = codec.encode(manifest);
+  CHECK(encoded);
+  auto legacy = encoded.value();
+  const auto schema = legacy.find("\"schemaVersion\": 3");
+  CHECK(schema != std::string::npos);
+  legacy.replace(schema, std::string{"\"schemaVersion\": 3"}.size(),
+                 "\"schemaVersion\": 2");
+  const auto decoded = codec.decode(legacy);
+  CHECK(decoded);
+  CHECK(decoded.value().characterId.empty());
+  CHECK(decoded.value().characterVersion.empty());
 }

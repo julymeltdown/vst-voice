@@ -1,4 +1,4 @@
-# Project SEAM — Phase 5 native runtime
+# Project SEAM — Phase 5.1 native product surfaces
 
 Project SEAM is a C++20 sample-concatenative singing-voice editor. Phoneme boundaries, source-unit changes, pitch-shift artifacts, and sample seams are editable musical material rather than defects that must always be hidden.
 
@@ -9,9 +9,44 @@ This repository contains:
 - Phase 3 editable PSOLA and background phrase render loop;
 - Phase 4 multi-renderer synthesis, Unit/Sample inspection, callback-ready playback, and bounded cache;
 - Phase 4.1 correctness, durability, security, and concurrency stabilization;
-- completed **Phase 5 native standalone/runtime vertical slice**.
+- Phase 5 native standalone/runtime vertical slice;
+- completed **Phase 5.1 native product surfaces, Character 01 integration, graphical Voicebank Studio, and recording transport**.
 
 Development uses the **`master` branch only**.
+
+
+## Phase 5.1 implementation
+
+### Character 01 is now a defined product surface
+
+- Character 01 is the avatar of the first official voicebank and SEAM's sample-splice product identity; it is not a singer persona.
+- Canonical low-poly art lives under `assets/character-01/source/`; bounded pre-rendered runtime portraits live under `assets/character-01/runtime/`.
+- Voicebank Manifest schema 3 can bind an optional `characterId` and `characterVersion`.
+- Native editor presentation modes are `Full`, `Minimal`, and `Off`.
+- Full mode occupies a dedicated right-side dock and never covers Piano Roll, Phoneme, Unit, or Automation lanes.
+- Character package presence never changes synthesis, exported audio, or PCM cache identity.
+- See `docs/phase5_1/CHARACTER_INTEGRATION.md` for the exact surface matrix and architecture boundary.
+
+### Native technical editor surfaces
+
+- Native Phoneme Lane populated from the Japanese phonemizer.
+- Native Unit Lane populated from persistent Unit selection overrides and renderer choice.
+- Native Pitch Automation lane.
+- Technical lanes are excluded from piano-roll note-drag hit testing.
+
+### Graphical Voicebank Studio and recording transport
+
+- `seam_voicebank_studio_native` is a real X11 application.
+- Unit browser, waveform, spectrogram, acoustic-marker editing, Pitch-Mark editing, and manifest save are wired to existing validated domain paths.
+- `IAudioInputDevice` adds an input-side platform contract.
+- Linux can capture through runtime-loaded PulseAudio Simple; CI/headless mode uses an explicit non-physical threaded input fallback.
+- `RecordingSession` uses preallocated bounded storage and exports mono PCM16 takes.
+
+### New executable
+
+```text
+seam_voicebank_studio_native   graphical bank inspector/editor + recording transport
+```
 
 ## Phase 5 implementation
 
@@ -121,11 +156,11 @@ seam_phase5_benchmark   software paint and callback regression benchmark
 
 ## Verification
 
-Current Phase 5 verification is generated under `docs/phase5/evidence/`. The named suite contains 92 tests and CTest includes the Phase 5 headless demo and X11/Xvfb native-window smoke test.
+Current Phase 5 verification is generated under `docs/phase5/evidence/`. The named suite contains 98 tests and CTest includes the Phase 5 headless demo and X11/Xvfb native-window smoke test.
 
 ```text
-Named tests                         92 PASS / 0 FAIL
-Debug CTest                          8/8 PASS
+Named tests                         98 PASS / 0 FAIL
+Debug CTest                          9/9 PASS
 Release CTest                        8/8 PASS
 ASan + UBSan CTest                   8/8 PASS
 ThreadSanitizer named suite         92 PASS / 0 FAIL
@@ -138,21 +173,18 @@ All configured builds use warnings as errors.
 
 ## Honest current boundary
 
-Phase 5 verifies the native runtime on Linux/X11. The repository still does **not** contain:
+Phase 5.1 now contains real Linux/X11 native editing lanes, the canonical Character 01 runtime/product binding, a graphical Voicebank Studio, and microphone-input/recording infrastructure. The repository still does **not** claim:
 
-- Windows shell or TSF adapter;
-- macOS AppKit shell or native composition adapter;
-- WASAPI or CoreAudio adapters;
-- the audited iPlug2 + Skia production shell;
-- production CJK font shaping/rasterization in the software painter;
-- complete native Phoneme, Unit, Automation, and Sample Microscope panels;
-- a complete graphical Voicebank Studio or microphone recording transport;
-- true multichannel project routing;
-- an official licensed human-recorded voicebank;
-- signed `.seambank` packages;
+- Windows shell, TSF, or WASAPI verification;
+- macOS AppKit, NSTextInputClient, or CoreAudio verification;
+- audited iPlug2 + Skia production integration;
+- production CJK font shaping/rasterization in the first-party software painter;
+- true stereo/multichannel project bus routing;
+- a contracted human-recorded commercial voicebank;
+- signed/installable `.seambank` packages;
 - CLAP, VST3, or AU targets.
 
-The X11 screenshot is produced by an actual native window. The included audio remains synthetic technical preview material. A missing PulseAudio server is reported and uses the explicit non-physical callback-clock fallback.
+Those items are separate platform, distribution, and content-production phases. They are not represented by fake placeholders. Character 01 is intentionally already integrated because its product role can be implemented and verified independently of those future platform targets.
 
 ## Build
 

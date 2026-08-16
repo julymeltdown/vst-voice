@@ -48,6 +48,9 @@ public:
   [[nodiscard]] std::uint64_t checksum() const noexcept;
   [[nodiscard]] core::Result<void> writePpm(
       const std::filesystem::path& path) const;
+  [[nodiscard]] static core::Result<PixelSurface> loadPpm(
+      const std::filesystem::path& path,
+      std::uint64_t maximumBytes = 16ULL * 1024ULL * 1024ULL);
 
 private:
   std::uint32_t width_{0};
@@ -72,6 +75,8 @@ public:
   void drawText(ui::Point origin, std::string_view text, Color color,
                 double size = 12.0) noexcept;
   void drawVerticalGradient(ui::Rect rect, Color top, Color bottom) noexcept;
+  void drawImageNearest(ui::Rect destination, const PixelSurface& image,
+                        double opacity = 1.0) noexcept;
 
 private:
   void blendPixel(std::int32_t x, std::int32_t y, Color color) noexcept;

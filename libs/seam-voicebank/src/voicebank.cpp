@@ -110,6 +110,10 @@ core::Result<void> Manifest::validate() const {
     return core::failure(core::ErrorCode::InvariantViolation,
                          "Voicebank identity fields must not be empty");
   }
+  if (characterId.empty() != characterVersion.empty()) {
+    return core::failure(core::ErrorCode::InvariantViolation,
+                         "Voicebank character binding requires both ID and version");
+  }
   if (language == domain::Language::Unspecified) {
     return core::failure(core::ErrorCode::InvariantViolation,
                          "Voicebank language must be specified");

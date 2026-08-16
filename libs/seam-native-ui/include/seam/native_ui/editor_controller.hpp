@@ -27,6 +27,9 @@ enum class NativeKey {
   Down,
   Z,
   Y,
+  C,
+  S,
+  R,
   Plus,
   Minus,
 };
@@ -100,6 +103,10 @@ public:
   void setAudioState(bool online, std::string backend);
   void setDirty(bool dirty) noexcept;
   void setPlayheadPixel(double value) noexcept;
+  void setCharacterMetadata(std::string name, std::string style) {
+    characterName_ = std::move(name);
+    characterStyle_ = std::move(style);
+  }
 
 private:
   enum class DragMode { None, MoveNotes, BoxSelect };
@@ -127,6 +134,8 @@ private:
   double logicalWidth_{1440.0};
   double logicalHeight_{900.0};
   double playheadPixel_{0.0};
+  std::string characterName_;
+  std::string characterStyle_;
 };
 
 }  // namespace seam::native_ui

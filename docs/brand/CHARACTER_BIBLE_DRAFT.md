@@ -36,3 +36,18 @@ She is not permanently sad, hostile, fragile, or elitist. She does not police ot
 ## Phase 1 status
 
 Three directions remain under evaluation. Character name, final face, production topology, voice-provider relationship, and commercial key art are intentionally not locked.
+
+## Product integration rule (Phase 5.1)
+
+Character 01 is the first official voicebank's product avatar, not a singer persona. The product must use the character consistently but selectively:
+
+- full art on Welcome, voicebank product pages, installer/store/docs;
+- optional full dock in the editor;
+- minimal portrait in the toolbar/voicebank identity surface;
+- state portrait for render complete/warning/error feedback;
+- textual product binding in technical Voicebank Studio surfaces;
+- never cover Piano Roll, Phoneme, Unit, Automation, Waveform, or Spectrogram editing areas;
+- never participate in DSP, rendering, PCM cache keys, or exported audio;
+- Full/Minimal/Off is always a user choice.
+
+The canonical low-poly visual source for Character 01 is maintained under `assets/character-01/source/` and runtime assets are derived from that source.

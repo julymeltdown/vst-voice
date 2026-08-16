@@ -1,11 +1,19 @@
 #include "test_framework.hpp"
+#include "test_support.hpp"
 
 #include "seam/platform/audio_callback.hpp"
+#include "seam/platform/audio_input_device.hpp"
+#include "seam/platform/recording_session.hpp"
 #include "seam/platform/ring_buffer_processor.hpp"
 #include "seam/rendering/audio_ring_buffer.hpp"
 
 #include <algorithm>
 #include <array>
+#include <chrono>
+#include <filesystem>
+#include <thread>
+
+#include "seam/voicebank/wav.hpp"
 
 TEST_CASE("phase one audio callback produces deterministic silence") {
   seam::platform::SilenceProcessor processor;
@@ -40,4 +48,38 @@ TEST_CASE("ring buffer audio processor delivers callback audio and accounts unde
   CHECK(stats.requestedFrames == 8);
   CHECK(stats.deliveredFrames == 4);
   CHECK(stats.underflowFrames == 4);
+}
+
+TEST_CASE("threaded audio input feeds recording session without allocation-sensitive overflow") {
+  seam::platform::RecordingSession recording{48000U, 1U};
+  auto input = seam::platform::createThreadedSilenceInputDevice();
+  CHECK(input != nullptr);
+  CHECK(input->open(seam::platform::AudioInputDeviceConfig{
+      .sampleRate = 48000U,
+      .blockFrames = 128U,
+      .applicationName = "Project SEAM Test",
+      .streamName = "Synthetic Recording",
+  }, recording));
+  CHECK(recording.arm());
+  CHECK(input->start());
+  std::this_thread::sleep_for(std::chrono::milliseconds{40});
+  input->stop();
+  recording.stop();
+  CHECK(!input->running());
+  CHECK(recording.recordedFrames() > 0U);
+  CHECK(!recording.overflowed());
+  CHECK(input->stats().callbacks > 0U);
+  CHECK(input->stats().frames == recording.recordedFrames());
+  CHECK(std::all_of(recording.samples().begin(), recording.samples().end(),
+                    [](float value) { return value == 0.0F; }));
+
+  const auto directory = seam::test::support::temporaryDirectory("recording-session");
+  const auto path = directory / "take.wav";
+  CHECK(recording.exportWav(path));
+  CHECK(std::filesystem::exists(path));
+  const auto loaded = seam::voicebank::readWav(path);
+  CHECK(loaded);
+  CHECK(loaded.value().sampleRate == 48000U);
+  CHECK(loaded.value().channels == 1U);
+  CHECK(loaded.value().frameCount() == recording.recordedFrames());
 }

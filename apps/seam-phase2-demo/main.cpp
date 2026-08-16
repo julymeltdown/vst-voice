@@ -164,6 +164,8 @@ seam::core::Result<seam::voicebank::Manifest> createDemoBank(
       .id = "official.voice.01.phase2.synthetic",
       .version = "0.2.0-dev",
       .displayName = "SEAM Phase 2 Synthetic Test Bank",
+      .characterId = "",
+      .characterVersion = "",
       .language = seam::domain::Language::Japanese,
       .expectedSampleRate = kSampleRate,
       .styles = {"original"},

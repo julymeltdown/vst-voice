@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.25)
 
-project(ProjectSEAM VERSION 0.5.0 LANGUAGES CXX)
+project(ProjectSEAM VERSION 0.5.1 LANGUAGES CXX)
 
 option(SEAM_BUILD_TESTS "Build Project SEAM tests" ON)
 option(SEAM_BUILD_BENCHMARKS "Build Project SEAM benchmarks" ON)
@@ -99,6 +99,14 @@ target_link_libraries(seam_formats PUBLIC seam_domain seam_core)
 seam_apply_compiler_options(seam_formats)
 
 
+
+add_library(seam_character
+  libs/seam-character/src/character.cpp
+)
+target_include_directories(seam_character PUBLIC libs/seam-character/include)
+target_link_libraries(seam_character PUBLIC seam_formats seam_core)
+seam_apply_compiler_options(seam_character)
+
 add_library(seam_voicebank
   libs/seam-voicebank/src/voicebank.cpp
   libs/seam-voicebank/src/asset_path.cpp
@@ -167,9 +175,13 @@ add_library(seam_platform
   libs/seam-platform/src/threaded_audio_device.cpp
   libs/seam-platform/src/pulse_audio_device.cpp
   libs/seam-platform/src/system_audio_device_unavailable.cpp
+  libs/seam-platform/src/threaded_audio_input_device.cpp
+  libs/seam-platform/src/pulse_audio_input_device.cpp
+  libs/seam-platform/src/system_audio_input_device_unavailable.cpp
+  libs/seam-platform/src/recording_session.cpp
 )
 target_include_directories(seam_platform PUBLIC libs/seam-platform/include)
-target_link_libraries(seam_platform PUBLIC seam_core Threads::Threads ${CMAKE_DL_LIBS})
+target_link_libraries(seam_platform PUBLIC seam_voicebank seam_core Threads::Threads ${CMAKE_DL_LIBS})
 if(UNIX AND NOT APPLE)
   target_compile_definitions(seam_platform PRIVATE SEAM_AUDIO_PULSE=1)
 endif()
@@ -181,6 +193,8 @@ if(SEAM_BUILD_NATIVE_DESKTOP)
     libs/seam-native-ui/src/pixel_surface.cpp
     libs/seam-native-ui/src/editor_scene.cpp
     libs/seam-native-ui/src/editor_controller.cpp
+    libs/seam-native-ui/src/character_presentation.cpp
+    libs/seam-native-ui/src/voicebank_studio.cpp
     libs/seam-native-ui/src/native_window_unavailable.cpp)
 
   if(UNIX AND NOT APPLE)
@@ -195,7 +209,7 @@ if(SEAM_BUILD_NATIVE_DESKTOP)
   target_include_directories(seam_native_ui PUBLIC
     libs/seam-native-ui/include)
   target_link_libraries(seam_native_ui PUBLIC
-    seam_editor_ui seam_application seam_domain seam_core)
+    seam_character seam_editor_inspection seam_voicebank seam_editor_ui seam_phonemizer seam_application seam_domain seam_core)
   if(UNIX AND NOT APPLE AND X11_FOUND)
     target_compile_definitions(seam_native_ui PRIVATE SEAM_NATIVE_X11=1)
     target_include_directories(seam_native_ui PRIVATE ${X11_INCLUDE_DIR})
@@ -248,6 +262,12 @@ if(SEAM_BUILD_NATIVE_DESKTOP)
     seam_native_ui seam_playback_platform seam_platform seam_rendering
     seam_editor_ui seam_application seam_domain seam_core)
   seam_apply_compiler_options(seam_editor_native)
+
+  add_executable(seam_voicebank_studio_native apps/seam-voicebank-studio-native/main.cpp)
+  target_link_libraries(seam_voicebank_studio_native PRIVATE
+    seam_native_ui seam_editor_inspection seam_platform seam_voicebank
+    seam_formats seam_domain seam_core)
+  seam_apply_compiler_options(seam_voicebank_studio_native)
 endif()
 
 add_executable(seam_voicebank_cli apps/seam-voicebank-cli/main.cpp)
@@ -316,8 +336,18 @@ if(SEAM_BUILD_TESTS)
           COMMAND ${SEAM_XVFB_RUN_EXECUTABLE} -a
                   $<TARGET_FILE:seam_editor_native>
                   --force-threaded-audio
+                  --character-package ${CMAKE_CURRENT_SOURCE_DIR}/assets/character-01
                   --auto-close-ms 250
                   --screenshot ${CMAKE_BINARY_DIR}/phase5-native-window.ppm)
+        add_test(NAME seam_voicebank_studio_x11_smoke
+          COMMAND ${SEAM_XVFB_RUN_EXECUTABLE} -a
+                  $<TARGET_FILE:seam_voicebank_studio_native>
+                  --manifest ${CMAKE_BINARY_DIR}/phase2-smoke/synthetic-voicebank/manifest.json
+                  --force-synthetic-input
+                  --auto-close-ms 250
+                  --screenshot ${CMAKE_BINARY_DIR}/phase5-voicebank-studio.ppm)
+        set_tests_properties(seam_voicebank_studio_x11_smoke PROPERTIES
+          DEPENDS seam_phase2_demo_smoke)
       endif()
     endif()
   endif()
