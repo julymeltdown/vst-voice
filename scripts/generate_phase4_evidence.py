@@ -182,10 +182,17 @@ def main() -> int:
         root,
     )
 
-    benchmark_output = run(
-        [str(root / "build/dev/seam_phase4_benchmark")], root, capture=True
+    release_benchmark = root / "build/release/seam_phase4_benchmark"
+    benchmark_executable = (
+        release_benchmark
+        if release_benchmark.is_file()
+        else root / "build/dev/seam_phase4_benchmark"
     )
+    benchmark_output = run([str(benchmark_executable)], root, capture=True)
     benchmark = json.loads(benchmark_output)
+    benchmark["buildPreset"] = (
+        "release" if benchmark_executable == release_benchmark else "dev"
+    )
     (evidence / "phase4-benchmark.json").write_text(
         json.dumps(benchmark, indent=2) + "\n", encoding="utf-8"
     )
