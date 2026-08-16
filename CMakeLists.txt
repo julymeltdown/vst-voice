@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.25)
 
-project(ProjectSEAM VERSION 0.6.0 LANGUAGES CXX)
+project(ProjectSEAM VERSION 0.7.0 LANGUAGES CXX)
 
 option(SEAM_BUILD_TESTS "Build Project SEAM tests" ON)
 option(SEAM_BUILD_BENCHMARKS "Build Project SEAM benchmarks" ON)
@@ -19,6 +19,7 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 include(SeamCompilerOptions)
 
 find_package(Threads REQUIRED)
+find_package(OpenSSL 3.0 REQUIRED COMPONENTS Crypto)
 
 set(SEAM_RENDER_ABI_ID "seam-render-abi-4.1-r1")
 set(SEAM_PHONEMIZER_REVISION 1)
@@ -123,6 +124,17 @@ add_library(seam_voicebank
 target_include_directories(seam_voicebank PUBLIC libs/seam-voicebank/include)
 target_link_libraries(seam_voicebank PUBLIC seam_formats seam_domain seam_core)
 seam_apply_compiler_options(seam_voicebank)
+
+add_library(seam_distribution
+  libs/seam-distribution/src/signing.cpp
+  libs/seam-distribution/src/seambank.cpp
+  libs/seam-distribution/src/installer.cpp
+)
+target_include_directories(seam_distribution PUBLIC
+  libs/seam-distribution/include)
+target_link_libraries(seam_distribution PUBLIC
+  seam_voicebank seam_formats seam_domain seam_core OpenSSL::Crypto)
+seam_apply_compiler_options(seam_distribution)
 
 
 add_library(seam_synthesis
@@ -282,6 +294,14 @@ target_link_libraries(seam_phase6_demo PRIVATE
   seam_voicebank seam_domain seam_core)
 seam_apply_compiler_options(seam_phase6_demo)
 
+add_executable(seam_bank_tool apps/seam-bank-tool/main.cpp)
+target_link_libraries(seam_bank_tool PRIVATE seam_distribution seam_voicebank seam_core)
+seam_apply_compiler_options(seam_bank_tool)
+
+add_executable(seam_phase7_demo apps/seam-phase7-demo/main.cpp)
+target_link_libraries(seam_phase7_demo PRIVATE seam_distribution seam_voicebank seam_formats seam_core)
+seam_apply_compiler_options(seam_phase7_demo)
+
 add_executable(seam_voicebank_cli apps/seam-voicebank-cli/main.cpp)
 target_link_libraries(seam_voicebank_cli PRIVATE
   seam_voicebank seam_formats seam_domain seam_core)
@@ -310,6 +330,7 @@ if(SEAM_BUILD_TESTS)
     tests/test_inspection.cpp
     tests/test_stabilization.cpp
     tests/test_multichannel.cpp
+    tests/test_distribution.cpp
   )
   if(SEAM_BUILD_NATIVE_DESKTOP)
     list(APPEND SEAM_TEST_SOURCES
@@ -320,7 +341,7 @@ if(SEAM_BUILD_TESTS)
   add_executable(seam_tests ${SEAM_TEST_SOURCES})
   target_include_directories(seam_tests PRIVATE tests)
   target_link_libraries(seam_tests PRIVATE
-    seam_editor_inspection seam_rendering seam_synthesis seam_voicebank seam_editor_ui seam_phonemizer seam_formats
+    seam_distribution seam_editor_inspection seam_rendering seam_synthesis seam_voicebank seam_editor_ui seam_phonemizer seam_formats
     seam_playback_platform seam_platform seam_application seam_domain seam_core)
   if(SEAM_BUILD_NATIVE_DESKTOP)
     target_link_libraries(seam_tests PRIVATE seam_native_ui)
@@ -335,6 +356,9 @@ if(SEAM_BUILD_TESTS)
     COMMAND seam_phase4_demo --output ${CMAKE_BINARY_DIR}/phase4-smoke)
   add_test(NAME seam_phase6_demo_smoke
     COMMAND seam_phase6_demo --output ${CMAKE_BINARY_DIR}/phase6-smoke)
+  add_test(NAME seam_phase7_demo_smoke
+    COMMAND seam_phase7_demo --output ${CMAKE_BINARY_DIR}/phase7-smoke)
+  add_test(NAME seam_bank_tool_help COMMAND seam_bank_tool --help)
   add_test(NAME seam_voicebank_cli_help COMMAND seam_voicebank_cli --help)
   add_test(NAME seam_voicebank_cli_validate
     COMMAND seam_voicebank_cli validate

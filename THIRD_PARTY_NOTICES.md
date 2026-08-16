@@ -2,7 +2,7 @@
 
 ## Distributed source and binary code
 
-No third-party source code or binary library is copied into the Project SEAM Phase 5 repository build. The implementation uses the C++ standard library and first-party Project SEAM source.
+Project SEAM does not vendor third-party source or shared libraries. Phase 7 links the system OpenSSL 3 Crypto library for Ed25519 signing and verification; OpenSSL 3 is available under the Apache License 2.0. The repository archive does not redistribute libcrypto.
 
 Projects listed under `plannedOrReferenceOnly` in `third_party/manifest.yml` were studied or selected as future candidates but are not included in the build or archive as dependencies.
 

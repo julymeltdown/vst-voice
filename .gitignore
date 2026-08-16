@@ -6,3 +6,5 @@
 .DS_Store
 Thumbs.db
 compile_commands.json
+*.seam-private-key.json
+*.seambank.tmp-*

@@ -1,4 +1,4 @@
-# Project SEAM — Phase 6 multichannel routing
+# Project SEAM — Phase 7 signed voicebank distribution
 
 Project SEAM is a C++20 sample-concatenative singing-voice editor. Phoneme boundaries, source-unit changes, pitch-shift artifacts, and sample seams are editable musical material rather than defects that must always be hidden.
 
@@ -11,9 +11,41 @@ This repository contains:
 - Phase 4.1 correctness, durability, security, and concurrency stabilization;
 - Phase 5 native standalone/runtime vertical slice;
 - completed **Phase 5.1 native product surfaces, Character 01 integration, graphical Voicebank Studio, and recording transport**;
-- completed **Phase 6 persisted multichannel project routing and callback delivery for 1–8 output channels**.
+- completed **Phase 6 persisted multichannel project routing and callback delivery for 1–8 output channels**;
+- completed **Phase 7 signed, verifiable, and transactional `.seambank` packaging and installation**.
 
 Development uses the **`master` branch only**.
+
+
+## Phase 7 implementation
+
+### Signed data-only voicebank packages
+
+- `.seambank` v1 stores a canonical entry table, contiguous payloads, an embedded Ed25519 public key, and an Ed25519 signature.
+- The signature binds the header, table, payload, and embedded public key through a SHA-256 package digest.
+- Every asset has an independent SHA-256 checksum.
+- Packages reject path traversal, hidden paths, symbolic links, scripts, executables, duplicate entries, overlapping extents, and configured resource-limit violations.
+- `manifest.json` and all audio assets referenced by the voicebank manifest are verified.
+
+### Explicit trust and transactional installation
+
+- A cryptographically valid package is not automatically trusted. Installation requires an independently supplied trusted public key.
+- Installation extracts into a staging directory, validates the installed manifest, writes a receipt, rechecks the package digest, and atomically publishes `<root>/<voicebank-id>/<version>`.
+- Existing versions are preserved unless `--replace` is explicitly supplied.
+- Private signing keys are never included in a package or repository.
+
+### Distribution tools
+
+```text
+seam_bank_tool keygen
+seam_bank_tool pack
+seam_bank_tool verify
+seam_bank_tool list
+seam_bank_tool install
+seam_phase7_demo
+```
+
+See [`docs/formats/SEAMBANK_V1.md`](docs/formats/SEAMBANK_V1.md), [`docs/phase7/SIGNING_AND_INSTALLATION.md`](docs/phase7/SIGNING_AND_INSTALLATION.md), and [`docs/phase7/ACCEPTANCE.md`](docs/phase7/ACCEPTANCE.md).
 
 
 ## Phase 6 implementation
@@ -348,6 +380,10 @@ git config core.hooksPath .githooks
 
 ## Documentation
 
+- [`PHASE7_IMPLEMENTATION_REPORT.md`](PHASE7_IMPLEMENTATION_REPORT.md)
+- [`docs/phase7/SIGNING_AND_INSTALLATION.md`](docs/phase7/SIGNING_AND_INSTALLATION.md)
+- [`docs/phase7/ACCEPTANCE.md`](docs/phase7/ACCEPTANCE.md)
+- [`docs/formats/SEAMBANK_V1.md`](docs/formats/SEAMBANK_V1.md)
 - [`docs/phase6/IMPLEMENTATION_REPORT.md`](docs/phase6/IMPLEMENTATION_REPORT.md)
 - [`docs/phase6/ACCEPTANCE.md`](docs/phase6/ACCEPTANCE.md)
 - [`docs/formats/PROJECT_JSON_V4.md`](docs/formats/PROJECT_JSON_V4.md)

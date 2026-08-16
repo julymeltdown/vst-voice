@@ -43,6 +43,13 @@
       "status": "runtime-loaded-system-library-not-distributed",
       "purpose": "Linux physical audio output",
       "verifiedBehavior": "explicit open error when no server is available"
+    },
+    {
+      "name": "OpenSSL 3 Crypto",
+      "status": "system-library-linked-not-redistributed",
+      "license": "Apache-2.0",
+      "purpose": "Ed25519 signing and verification for .seambank packages",
+      "verifiedOn": "OpenSSL library 3.5.5 / pkg-config 3.5.6"
     }
   ]
 }
