@@ -1,0 +1,5 @@
+platform=Linux
+window=X11
+text=XIM/XIC
+output=PulseAudio Simple
+input=PulseAudio Simple Capture

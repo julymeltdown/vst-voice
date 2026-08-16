@@ -1,0 +1,12 @@
+{
+  "operatingSystem": "Linux",
+  "nativeWindowBackend": "X11",
+  "textInputBackend": "XIM/XIC",
+  "audioOutputBackend": "PulseAudio Simple",
+  "audioInputBackend": "PulseAudio Simple Capture",
+  "maximumOutputChannels": 8,
+  "nativeWindowImplemented": true,
+  "compositionInputImplemented": true,
+  "physicalOutputImplemented": true,
+  "physicalInputImplemented": true
+}

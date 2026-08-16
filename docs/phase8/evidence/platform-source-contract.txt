@@ -1,0 +1,3 @@
+[phase8-platform-source] Windows Win32/TSF/WASAPI source contract=PASS
+[phase8-platform-source] macOS AppKit/NSTextInputClient/CoreAudio source contract=PASS
+[phase8-platform-source] runtime verification remains platform-specific

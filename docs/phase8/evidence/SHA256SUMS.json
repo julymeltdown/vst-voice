@@ -1,0 +1,15 @@
+{
+  "branch-policy.txt": "346a02a4fdc58def7de6ec7784ba9088ce4ba4ec15ee51e04497b41916f712c3",
+  "ctest-dev.txt": "6d5044d2dbcac98c597fa892e11d84b0a89dc2cb74872ed88b92ff2d477efa96",
+  "ctest-release.txt": "ef25af21b78226211184f465dbdec4419db087dbca5627c506e2e83ed878fd61",
+  "ctest-sanitize.txt": "f942c475d132f1bd6e28219712ddc1fec4ff2bc6a97b4ad3850fabae7d5050c8",
+  "direct-tests.txt": "d9f92a9ad768636dffa45fc61bdacee30aa3de3764126030186317eeab2d4ee5",
+  "git-diff-check.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "git-fsck.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "git-history.txt": "f1dd66dc1753c656398f28bf30655ae2be898df06f5af092c818648f947910da",
+  "license-audit.txt": "d7c17548fb929b233db61e18f8c45d0cdb23709fc12f9237637c2848a23fa39d",
+  "phase8-demo.txt": "7ff1809567ead43e92cd5feba07e4a49444a9d8c97f739c9054ec4230e639d7d",
+  "phase8-platform-capabilities.json": "5bea40dbd742b34acc428dbc4b9a470263a6cdd5d97123e51f0a571359c62f17",
+  "platform-source-contract.txt": "230c8aa69589e8f4a44c10d60eadb83b5f99916ac60f56efaf648524f281f669",
+  "verification-matrix.json": "cc6b3e8659245c8e848a3a0f8599e414d1fdd2e7e4b49c87b8fce981575f4fdb"
+}

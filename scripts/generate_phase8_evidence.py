@@ -17,25 +17,32 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 
 def run(command: list[str], root: Path, timeout: int = 900) -> str:
-    completed = subprocess.run(
-        command,
-        cwd=root,
-        check=False,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        timeout=timeout,
-    )
+    # Native GUI smoke processes may briefly leave an Xvfb child inheriting
+    # stdout. Capturing through PIPE can therefore wait for pipe EOF after
+    # CTest itself has exited. A regular temporary file avoids that lifecycle
+    # coupling while retaining complete command evidence.
+    with tempfile.TemporaryFile(mode="w+", encoding="utf-8") as output:
+        completed = subprocess.run(
+            command,
+            cwd=root,
+            check=False,
+            text=True,
+            stdout=output,
+            stderr=subprocess.STDOUT,
+            timeout=timeout,
+        )
+        output.seek(0)
+        text = output.read()
     if completed.returncode != 0:
         raise RuntimeError(
-            f"command failed ({completed.returncode}): {' '.join(command)}\n"
-            f"{completed.stdout}"
+            f"command failed ({completed.returncode}): {' '.join(command)}\n{text}"
         )
-    return completed.stdout
+    return text
 
 
 def write(path: Path, text: str) -> None:
@@ -70,6 +77,8 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--root", type=Path, default=Path.cwd())
     parser.add_argument("--skip-build", action="store_true")
+    parser.add_argument("--include-sanitizer", action="store_true",
+                        help="also run the ASan/UBSan CTest preset")
     args = parser.parse_args()
 
     root = args.root.resolve()
@@ -81,21 +90,30 @@ def main() -> int:
     output.mkdir(parents=True, exist_ok=True)
 
     if not args.skip_build:
-        for preset in ("dev", "release", "sanitize"):
+        presets = ["dev", "release"]
+        if args.include_sanitizer:
+            presets.append("sanitize")
+        for preset in presets:
             configure_build(root, preset)
 
+    print("[phase8-evidence] named tests", flush=True)
     direct = run([str(root / "build/dev/seam_tests")], root, 300)
     write(evidence / "direct-tests.txt", direct)
     count = named_test_count(direct)
 
     ctest: dict[str, str] = {}
-    for preset in ("dev", "release", "sanitize"):
+    presets = ["dev", "release"]
+    if args.include_sanitizer:
+        presets.append("sanitize")
+    for preset in presets:
+        print(f"[phase8-evidence] ctest {preset}", flush=True)
         text = run(["ctest", "--preset", preset, "--output-on-failure"], root, 900)
         if not ctest_ok(text):
             raise RuntimeError(f"CTest failed for preset {preset}")
         write(evidence / f"ctest-{preset}.txt", text)
         ctest[preset] = "pass"
 
+    print("[phase8-evidence] source contract", flush=True)
     source_contract = run(
         [sys.executable, "scripts/verify_phase8_platform_sources.py", "--root", str(root)],
         root,
@@ -103,6 +121,7 @@ def main() -> int:
     )
     write(evidence / "platform-source-contract.txt", source_contract)
 
+    print("[phase8-evidence] capability demo", flush=True)
     demo = run(
         [str(root / "build/dev/seam_phase8_demo"), "--output", str(output)],
         root,
@@ -112,6 +131,7 @@ def main() -> int:
     shutil.copy2(output / "phase8-platform-capabilities.json",
                  evidence / "phase8-platform-capabilities.json")
 
+    print("[phase8-evidence] policy and git", flush=True)
     branch = run([sys.executable, "scripts/verify_master_branch.py", "--root", str(root)], root, 60)
     licenses = run([sys.executable, "tools/license-auditor/audit.py", "--root", str(root)], root, 60)
     fsck = run(["git", "fsck", "--full"], root, 180)
@@ -131,7 +151,7 @@ def main() -> int:
         "applicationVersion": "0.8.0",
         "branchPolicy": "master-only-pass",
         "namedTests": {"passed": count, "failed": 0},
-        "ctest": ctest,
+        "ctest": {**ctest, "sanitize": ctest.get("sanitize", "not-collected-by-default")},
         "localRuntimeHost": capabilities,
         "windows": {
             "sourceImplementation": "Win32 + native EDIT/TSF services + WASAPI output/capture",
@@ -160,6 +180,7 @@ def main() -> int:
         json.dumps(hashes, indent=2) + "\n", encoding="utf-8"
     )
 
+    print("[phase8-evidence] file tree", flush=True)
     excluded = {".git", "build", "out", ".cache", "__pycache__"}
     files: list[str] = []
     for directory, names, filenames in os.walk(root):

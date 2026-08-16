@@ -1,0 +1,41 @@
+{
+  "phase": "8.0",
+  "applicationVersion": "0.8.0",
+  "branchPolicy": "master-only-pass",
+  "namedTests": {
+    "passed": 114,
+    "failed": 0
+  },
+  "ctest": {
+    "dev": "pass",
+    "release": "pass",
+    "sanitize": "pass"
+  },
+  "localRuntimeHost": {
+    "operatingSystem": "Linux",
+    "nativeWindowBackend": "X11",
+    "textInputBackend": "XIM/XIC",
+    "audioOutputBackend": "PulseAudio Simple",
+    "audioInputBackend": "PulseAudio Simple Capture",
+    "maximumOutputChannels": 8,
+    "nativeWindowImplemented": true,
+    "compositionInputImplemented": true,
+    "physicalOutputImplemented": true,
+    "physicalInputImplemented": true
+  },
+  "windows": {
+    "sourceImplementation": "Win32 + native EDIT/TSF services + WASAPI output/capture",
+    "sourceContract": "pass",
+    "targetHostWorkflow": "configured",
+    "targetNativeGuiSmoke": "configured",
+    "runtimeCertifiedInThisLinuxContainer": false
+  },
+  "macOS": {
+    "sourceImplementation": "AppKit + NSTextInputClient + CoreAudio output/HAL capture",
+    "sourceContract": "pass",
+    "targetHostWorkflow": "configured",
+    "targetNativeGuiSmoke": "configured",
+    "runtimeCertifiedInThisLinuxContainer": false
+  },
+  "characterBoundary": "presentation-only; unchanged across native backends"
+}
