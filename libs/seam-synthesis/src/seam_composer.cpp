@@ -217,8 +217,14 @@ core::Result<PhraseAudio> SeamComposer::compose(
       const auto destination = localStart + index;
       if (destination >= result.samples.size()) break;
       const auto originalIncoming = placed->unit.samples[index];
+      const auto alignedIncoming = shiftedSample(incomingSamples, index, alignedOffset);
+      // Keep the chosen phase basis for the complete incoming unit. Reverting to
+      // the original index immediately after the overlap creates a second hidden
+      // discontinuity at the overlap tail.
+      auto incoming = alignedIncoming * (1.0F - phaseReset) +
+                      originalIncoming * phaseReset;
       if (!occupied[destination]) {
-        result.samples[destination] = originalIncoming;
+        result.samples[destination] = incoming;
         occupied[destination] = true;
         continue;
       }
@@ -226,17 +232,22 @@ core::Result<PhraseAudio> SeamComposer::compose(
                          ? 1.0F
                          : static_cast<float>(std::min(index, overlapLength - 1U)) /
                                static_cast<float>(overlapLength - 1U);
-      const auto alignedIncoming = shiftedSample(
-          incomingSamples, index, alignedOffset);
-      auto incoming = alignedIncoming * (1.0F - phaseReset) +
-                      originalIncoming * phaseReset;
       const auto gain = 1.0F + (matchedGain - 1.0F) * envelopeBlend * (1.0F - t);
       incoming *= gain;
+      const auto outgoing = result.samples[destination];
       const auto smooth = t * t * (3.0F - 2.0F * t);
-      const auto character = characterCurve(t, effectiveCurve);
-      const auto mix = smooth * (1.0F - seam) + character * seam;
-      result.samples[destination] = result.samples[destination] * (1.0F - mix) +
-                                    incoming * mix;
+      const auto smoothValue = outgoing * (1.0F - smooth) + incoming * smooth;
+      if (effectiveCurve == domain::SeamCurve::EqualPower) {
+        const auto angle = t * 1.57079632679489661923F;
+        const auto equalPowerValue = outgoing * std::cos(angle) +
+                                     incoming * std::sin(angle);
+        result.samples[destination] = smoothValue * (1.0F - seam) +
+                                      equalPowerValue * seam;
+      } else {
+        const auto character = characterCurve(t, effectiveCurve);
+        const auto mix = smooth * (1.0F - seam) + character * seam;
+        result.samples[destination] = outgoing * (1.0F - mix) + incoming * mix;
+      }
     }
   }
 

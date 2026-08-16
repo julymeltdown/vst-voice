@@ -33,7 +33,23 @@ std::size_t SpscAudioRingBuffer::write(std::span<const float> input) noexcept {
   return count;
 }
 
+bool SpscAudioRingBuffer::consumeResetRequest(std::span<float> output) noexcept {
+  const auto requested = requestedResetEpoch_.load(std::memory_order_acquire);
+  const auto acknowledged = acknowledgedResetEpoch_.load(std::memory_order_relaxed);
+  if (requested == acknowledged) return false;
+
+  // The consumer owns readIndex_. Discard everything published before this
+  // reset and acknowledge only after the new read position is visible.
+  const auto write = writeIndex_.load(std::memory_order_acquire);
+  readIndex_.store(write, std::memory_order_release);
+  acknowledgedResetEpoch_.store(requested, std::memory_order_release);
+  std::fill(output.begin(), output.end(), 0.0F);
+  return true;
+}
+
 std::size_t SpscAudioRingBuffer::read(std::span<float> output) noexcept {
+  if (consumeResetRequest(output)) return 0U;
+
   const auto count = std::min(output.size(), availableRead());
   auto read = readIndex_.load(std::memory_order_relaxed);
   for (std::size_t index = 0; index < count; ++index) {
@@ -45,9 +61,16 @@ std::size_t SpscAudioRingBuffer::read(std::span<float> output) noexcept {
   return count;
 }
 
-void SpscAudioRingBuffer::clear() noexcept {
-  const auto write = writeIndex_.load(std::memory_order_acquire);
-  readIndex_.store(write, std::memory_order_release);
+std::uint64_t SpscAudioRingBuffer::requestConsumerReset() noexcept {
+  return requestedResetEpoch_.fetch_add(1U, std::memory_order_acq_rel) + 1U;
+}
+
+bool SpscAudioRingBuffer::resetAcknowledged(std::uint64_t epoch) const noexcept {
+  return acknowledgedResetEpoch_.load(std::memory_order_acquire) >= epoch;
+}
+
+std::uint64_t SpscAudioRingBuffer::acknowledgedResetEpoch() const noexcept {
+  return acknowledgedResetEpoch_.load(std::memory_order_acquire);
 }
 
 }  // namespace seam::rendering

@@ -22,7 +22,6 @@ class PhraseRenderPipeline final {
 public:
   [[nodiscard]] core::Result<PhrasePipelineResult> render(
       const RenderSnapshot& snapshot,
-      const synthesis::PhraseRenderOptions& options = {},
       std::stop_token stopToken = {}) const;
 };
 

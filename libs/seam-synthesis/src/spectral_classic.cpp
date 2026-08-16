@@ -166,10 +166,16 @@ core::Result<RenderedUnit> SpectralClassicRenderer::render(
                                        unit.id);
   }
 
-  const auto preFrames = std::clamp<time::SampleFrame>(
+  const auto vowelOnsetFrames = std::clamp<time::SampleFrame>(
       static_cast<time::SampleFrame>(std::llround(
           static_cast<double>(markers.vowelOnset - offset) / sourcePerOutput)),
       0, outputFrames - 1);
+  // Preserve the complete recorded vowel transition. Spectral processing starts
+  // at stableStart, not vowelOnset, so the singer's physical onset remains audible.
+  const auto preFrames = std::clamp<time::SampleFrame>(
+      static_cast<time::SampleFrame>(std::llround(
+          static_cast<double>(markers.stableStart - offset) / sourcePerOutput)),
+      vowelOnsetFrames, outputFrames - 1);
   const auto sourceReleaseFrames = std::max<time::SampleFrame>(0, audioEnd - releaseStart);
   const auto releaseFrames = std::clamp<time::SampleFrame>(
       static_cast<time::SampleFrame>(std::llround(
@@ -180,7 +186,7 @@ core::Result<RenderedUnit> SpectralClassicRenderer::render(
   RenderedUnit result{
       .unitId = unit.id,
       .samples = std::vector<float>(static_cast<std::size_t>(outputFrames), 0.0F),
-      .vowelOnsetOffset = preFrames,
+      .vowelOnsetOffset = vowelOnsetFrames,
   };
 
   // Preserve consonant/transition and release directly from the source. Only the

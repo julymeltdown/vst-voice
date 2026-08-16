@@ -10,6 +10,8 @@
 
 namespace seam::application {
 
+enum class SessionHealth { Ready, RecoveryRequired };
+
 class EditorSession final {
 public:
   explicit EditorSession(domain::Project project, core::ILogger* logger = nullptr);
@@ -19,6 +21,7 @@ public:
   [[nodiscard]] SelectionModel& selection() noexcept { return selection_; }
   [[nodiscard]] const SelectionModel& selection() const noexcept { return selection_; }
   [[nodiscard]] std::uint64_t revision() const noexcept { return revision_; }
+  [[nodiscard]] SessionHealth health() const noexcept { return health_; }
 
   [[nodiscard]] core::Result<void> execute(std::unique_ptr<ICommand> command);
   [[nodiscard]] core::Result<void> undo();
@@ -40,6 +43,7 @@ private:
   std::vector<std::unique_ptr<ICommand>> undo_;
   std::vector<std::unique_ptr<ICommand>> redo_;
   std::uint64_t revision_{0};
+  SessionHealth health_{SessionHealth::Ready};
   core::NullLogger fallbackLogger_;
   core::ILogger* logger_;
 };

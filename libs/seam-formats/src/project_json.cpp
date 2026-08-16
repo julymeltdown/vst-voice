@@ -1,8 +1,9 @@
 #include "seam/formats/project_json.hpp"
 
+#include "seam/core/file_io.hpp"
+
 #include <charconv>
 #include <cmath>
-#include <fstream>
 #include <sstream>
 #include <system_error>
 
@@ -780,7 +781,13 @@ core::Result<std::string> ProjectJsonCodec::encode(const domain::Project& projec
 }
 
 core::Result<domain::Project> ProjectJsonCodec::decode(std::string_view json) const {
-  auto parsed = parseJson(json);
+  auto parsed = parseJson(json, JsonParseLimits{
+      .maximumInputBytes = 64U * 1024U * 1024U,
+      .maximumDepth = 64U,
+      .maximumNodes = 1'000'000U,
+      .maximumStringBytes = 4U * 1024U * 1024U,
+      .maximumCollectionEntries = 250'000U,
+  });
   if (!parsed) {
     return core::Result<domain::Project>{parsed.error()};
   }
@@ -796,57 +803,22 @@ core::Result<domain::Project> ProjectJsonCodec::decode(std::string_view json) co
 core::Result<void> ProjectJsonCodec::save(
     const domain::Project& project, const std::filesystem::path& path) const {
   auto encoded = encode(project);
-  if (!encoded) {
-    return core::Result<void>{encoded.error()};
-  }
-
-  std::error_code error;
-  if (path.has_parent_path()) {
-    std::filesystem::create_directories(path.parent_path(), error);
-    if (error) {
-      return core::failure(core::ErrorCode::IoError,
-                           "Unable to create the project directory", error.message());
-    }
-  }
-  const auto temporary = path.string() + ".tmp";
-  {
-    std::ofstream stream(temporary, std::ios::binary | std::ios::trunc);
-    if (!stream) {
-      return core::failure(core::ErrorCode::IoError,
-                           "Unable to create the temporary project file", temporary);
-    }
-    stream.write(encoded.value().data(), static_cast<std::streamsize>(encoded.value().size()));
-    stream.flush();
-    if (!stream) {
-      return core::failure(core::ErrorCode::IoError,
-                           "Unable to write the temporary project file", temporary);
-    }
-  }
-
-  std::filesystem::remove(path, error);
-  error.clear();
-  std::filesystem::rename(temporary, path, error);
-  if (error) {
-    std::filesystem::remove(temporary);
-    return core::failure(core::ErrorCode::IoError,
-                         "Unable to replace the project file", error.message());
-  }
-  return core::success();
+  if (!encoded) return core::Result<void>{encoded.error()};
+  auto backup = path;
+  backup += ".bak";
+  return core::durableAtomicWriteText(
+      path, encoded.value(), core::AtomicWriteOptions{
+          .backupPath = std::move(backup),
+          .maximumBackupBytes = 64ULL * 1024ULL * 1024ULL,
+          .faultInjector = {},
+      });
 }
 
-core::Result<domain::Project> ProjectJsonCodec::load(const std::filesystem::path& path) const {
-  std::ifstream stream(path, std::ios::binary);
-  if (!stream) {
-    return core::failure<domain::Project>(core::ErrorCode::IoError,
-                                          "Unable to open the project file", path.string());
-  }
-  std::ostringstream buffer;
-  buffer << stream.rdbuf();
-  if (!stream.good() && !stream.eof()) {
-    return core::failure<domain::Project>(core::ErrorCode::IoError,
-                                          "Unable to read the project file", path.string());
-  }
-  return decode(buffer.str());
+core::Result<domain::Project> ProjectJsonCodec::load(
+    const std::filesystem::path& path) const {
+  auto content = core::readTextFileLimited(path, 64ULL * 1024ULL * 1024ULL);
+  if (!content) return core::Result<domain::Project>{content.error()};
+  return decode(content.value());
 }
 
 }  // namespace seam::formats

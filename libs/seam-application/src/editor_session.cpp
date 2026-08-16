@@ -10,17 +10,24 @@ void EditorSession::log(core::LogLevel level, std::string_view message) {
 }
 
 core::Result<void> EditorSession::execute(std::unique_ptr<ICommand> command) {
+  if (health_ == SessionHealth::RecoveryRequired) {
+    return core::failure(core::ErrorCode::Conflict,
+                         "Editor session requires explicit history recovery");
+  }
   if (!command) {
     return core::failure(core::ErrorCode::InvalidArgument, "Command must not be null");
   }
+
+  const auto transactionSnapshot = project_;
   const auto result = command->apply(project_);
   if (!result) {
+    project_ = transactionSnapshot;
     log(core::LogLevel::Error, result.error().message);
     return result;
   }
   const auto validation = project_.validate();
   if (!validation) {
-    static_cast<void>(command->revert(project_));
+    project_ = transactionSnapshot;
     log(core::LogLevel::Error, validation.error().message);
     return validation;
   }
@@ -35,20 +42,31 @@ core::Result<void> EditorSession::undo() {
   if (undo_.empty()) {
     return core::failure(core::ErrorCode::Conflict, "There is no command to undo");
   }
-  auto command = std::move(undo_.back());
-  undo_.pop_back();
-  const auto result = command->revert(project_);
+
+  const auto transactionSnapshot = project_;
+  const auto result = undo_.back()->revert(project_);
   if (!result) {
-    undo_.push_back(std::move(command));
+    project_ = transactionSnapshot;
+    undo_.clear();
+    redo_.clear();
+    health_ = SessionHealth::RecoveryRequired;
+    log(core::LogLevel::Error,
+        "Undo failed; project was restored and command history was invalidated");
     return result;
   }
   const auto validation = project_.validate();
   if (!validation) {
-    static_cast<void>(command->apply(project_));
-    undo_.push_back(std::move(command));
-    log(core::LogLevel::Error, validation.error().message);
+    project_ = transactionSnapshot;
+    undo_.clear();
+    redo_.clear();
+    health_ = SessionHealth::RecoveryRequired;
+    log(core::LogLevel::Error,
+        "Undo validation failed; project was restored and command history was invalidated");
     return validation;
   }
+
+  auto command = std::move(undo_.back());
+  undo_.pop_back();
   redo_.push_back(std::move(command));
   incrementRevision();
   return core::success();
@@ -58,20 +76,31 @@ core::Result<void> EditorSession::redo() {
   if (redo_.empty()) {
     return core::failure(core::ErrorCode::Conflict, "There is no command to redo");
   }
-  auto command = std::move(redo_.back());
-  redo_.pop_back();
-  const auto result = command->apply(project_);
+
+  const auto transactionSnapshot = project_;
+  const auto result = redo_.back()->apply(project_);
   if (!result) {
-    redo_.push_back(std::move(command));
+    project_ = transactionSnapshot;
+    undo_.clear();
+    redo_.clear();
+    health_ = SessionHealth::RecoveryRequired;
+    log(core::LogLevel::Error,
+        "Redo failed; project was restored and command history was invalidated");
     return result;
   }
   const auto validation = project_.validate();
   if (!validation) {
-    static_cast<void>(command->revert(project_));
-    redo_.push_back(std::move(command));
-    log(core::LogLevel::Error, validation.error().message);
+    project_ = transactionSnapshot;
+    undo_.clear();
+    redo_.clear();
+    health_ = SessionHealth::RecoveryRequired;
+    log(core::LogLevel::Error,
+        "Redo validation failed; project was restored and command history was invalidated");
     return validation;
   }
+
+  auto command = std::move(redo_.back());
+  redo_.pop_back();
   undo_.push_back(std::move(command));
   incrementRevision();
   return core::success();
@@ -88,6 +117,7 @@ std::string_view EditorSession::redoName() const noexcept {
 void EditorSession::clearHistory() noexcept {
   undo_.clear();
   redo_.clear();
+  health_ = SessionHealth::Ready;
 }
 
 }  // namespace seam::application

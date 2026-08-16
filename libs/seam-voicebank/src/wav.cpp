@@ -1,5 +1,7 @@
 #include "seam/voicebank/wav.hpp"
 
+#include "seam/core/file_io.hpp"
+
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -9,8 +11,6 @@
 
 namespace seam::voicebank {
 namespace {
-
-constexpr std::uint64_t kMaximumWavBytes = 512ULL * 1024ULL * 1024ULL;
 
 std::uint16_t readU16(const std::byte* data) noexcept {
   return static_cast<std::uint16_t>(
@@ -79,37 +79,19 @@ std::vector<float> AudioBuffer::monoMix() const {
   return result;
 }
 
-core::Result<AudioBuffer> readWav(const std::filesystem::path& path) {
-  std::error_code fileError;
-  const auto fileSize = std::filesystem::file_size(path, fileError);
-  if (fileError) {
-    return core::failure<AudioBuffer>(core::ErrorCode::IoError,
-                                      "Unable to inspect WAV file",
-                                      fileError.message());
-  }
-  if (fileSize < 44 || fileSize > kMaximumWavBytes) {
+core::Result<AudioBuffer> readWav(std::span<const std::byte> bytes,
+                                  std::string_view sourceLabel) {
+  const auto source = sourceLabel.empty() ? std::string{"<memory>"}
+                                          : std::string{sourceLabel};
+  if (bytes.size() < 44U || bytes.size() > kMaximumSupportedWavBytes) {
     return core::failure<AudioBuffer>(core::ErrorCode::Unsupported,
-                                      "WAV file size is outside supported limits",
-                                      path.string());
-  }
-  std::ifstream stream(path, std::ios::binary);
-  if (!stream) {
-    return core::failure<AudioBuffer>(core::ErrorCode::IoError,
-                                      "Unable to open WAV file",
-                                      path.string());
-  }
-  std::vector<std::byte> bytes(static_cast<std::size_t>(fileSize));
-  stream.read(reinterpret_cast<char*>(bytes.data()),
-              static_cast<std::streamsize>(bytes.size()));
-  if (!stream) {
-    return core::failure<AudioBuffer>(core::ErrorCode::IoError,
-                                      "Unable to read WAV file",
-                                      path.string());
+                                      "WAV payload size is outside supported limits",
+                                      source);
   }
   if (!fourcc(bytes.data(), "RIFF") || !fourcc(bytes.data() + 8, "WAVE")) {
     return core::failure<AudioBuffer>(core::ErrorCode::ParseError,
                                       "File is not a RIFF/WAVE container",
-                                      path.string());
+                                      source);
   }
 
   std::uint16_t formatCode = 0;
@@ -120,21 +102,21 @@ core::Result<AudioBuffer> readWav(const std::filesystem::path& path) {
   const std::byte* audioData = nullptr;
   std::size_t audioBytes = 0;
 
-  std::size_t position = 12;
-  while (position + 8 <= bytes.size()) {
+  std::size_t position = 12U;
+  while (position + 8U <= bytes.size()) {
     const auto* chunk = bytes.data() + position;
     const auto chunkSize = static_cast<std::size_t>(readU32(chunk + 4));
-    position += 8;
+    position += 8U;
     if (chunkSize > bytes.size() - position) {
       return core::failure<AudioBuffer>(core::ErrorCode::ParseError,
                                         "WAV chunk exceeds file bounds",
-                                        path.string());
+                                        source);
     }
     if (fourcc(chunk, "fmt ")) {
-      if (chunkSize < 16) {
+      if (chunkSize < 16U) {
         return core::failure<AudioBuffer>(core::ErrorCode::ParseError,
                                           "WAV fmt chunk is truncated",
-                                          path.string());
+                                          source);
       }
       const auto* fmt = bytes.data() + position;
       formatCode = readU16(fmt);
@@ -142,38 +124,45 @@ core::Result<AudioBuffer> readWav(const std::filesystem::path& path) {
       sampleRate = readU32(fmt + 4);
       blockAlign = readU16(fmt + 12);
       bitsPerSample = readU16(fmt + 14);
-      if (formatCode == 0xFFFEU && chunkSize >= 40) {
+      if (formatCode == 0xFFFEU && chunkSize >= 40U) {
         formatCode = readU16(fmt + 24);
       }
     } else if (fourcc(chunk, "data")) {
       audioData = bytes.data() + position;
       audioBytes = chunkSize;
     }
-    position += chunkSize + (chunkSize & 1U);
+    const auto padded = chunkSize + (chunkSize & 1U);
+    if (padded > bytes.size() - position) {
+      return core::failure<AudioBuffer>(core::ErrorCode::ParseError,
+                                        "WAV padded chunk exceeds file bounds",
+                                        source);
+    }
+    position += padded;
   }
 
-  if (audioData == nullptr || channels == 0 || channels > 8 || sampleRate < 8000 ||
-      sampleRate > 384000 || blockAlign == 0 || audioBytes < blockAlign) {
+  if (audioData == nullptr || channels == 0U || channels > 8U ||
+      sampleRate < 8000U || sampleRate > 384000U || blockAlign == 0U ||
+      audioBytes < blockAlign) {
     return core::failure<AudioBuffer>(core::ErrorCode::ParseError,
                                       "WAV format or data chunk is invalid",
-                                      path.string());
+                                      source);
   }
-  const bool integerPcm = formatCode == 1;
-  const bool floatPcm = formatCode == 3;
+  const bool integerPcm = formatCode == 1U;
+  const bool floatPcm = formatCode == 3U;
   if ((!integerPcm && !floatPcm) ||
-      (integerPcm && bitsPerSample != 8 && bitsPerSample != 16 &&
-       bitsPerSample != 24 && bitsPerSample != 32) ||
-      (floatPcm && bitsPerSample != 32)) {
+      (integerPcm && bitsPerSample != 8U && bitsPerSample != 16U &&
+       bitsPerSample != 24U && bitsPerSample != 32U) ||
+      (floatPcm && bitsPerSample != 32U)) {
     return core::failure<AudioBuffer>(core::ErrorCode::Unsupported,
                                       "WAV encoding is not supported",
-                                      path.string());
+                                      source);
   }
   const auto bytesPerSample = static_cast<std::size_t>(bitsPerSample / 8U);
   const auto expectedAlign = bytesPerSample * static_cast<std::size_t>(channels);
-  if (expectedAlign != blockAlign || audioBytes % blockAlign != 0) {
+  if (expectedAlign != blockAlign || audioBytes % blockAlign != 0U) {
     return core::failure<AudioBuffer>(core::ErrorCode::ParseError,
                                       "WAV block alignment is inconsistent",
-                                      path.string());
+                                      source);
   }
 
   const auto frameCount = audioBytes / blockAlign;
@@ -181,7 +170,7 @@ core::Result<AudioBuffer> readWav(const std::filesystem::path& path) {
                        static_cast<std::size_t>(channels)) {
     return core::failure<AudioBuffer>(core::ErrorCode::Unsupported,
                                       "WAV sample count is too large",
-                                      path.string());
+                                      source);
   }
   AudioBuffer result;
   result.sampleRate = sampleRate;
@@ -189,19 +178,20 @@ core::Result<AudioBuffer> readWav(const std::filesystem::path& path) {
   result.interleaved.resize(frameCount * static_cast<std::size_t>(channels));
 
   const auto sampleCount = result.interleaved.size();
-  for (std::size_t index = 0; index < sampleCount; ++index) {
+  for (std::size_t index = 0U; index < sampleCount; ++index) {
     const auto* sample = audioData + index * bytesPerSample;
     float value = 0.0F;
     if (floatPcm) {
-      std::uint32_t raw = readU32(sample);
+      const std::uint32_t raw = readU32(sample);
       std::memcpy(&value, &raw, sizeof(value));
       if (!std::isfinite(value)) value = 0.0F;
-    } else if (bitsPerSample == 8) {
-      value = (static_cast<float>(std::to_integer<std::uint8_t>(*sample)) - 128.0F) / 128.0F;
-    } else if (bitsPerSample == 16) {
+    } else if (bitsPerSample == 8U) {
+      value = (static_cast<float>(std::to_integer<std::uint8_t>(*sample)) - 128.0F) /
+              128.0F;
+    } else if (bitsPerSample == 16U) {
       const auto raw = static_cast<std::int16_t>(readU16(sample));
       value = static_cast<float>(raw) / 32768.0F;
-    } else if (bitsPerSample == 24) {
+    } else if (bitsPerSample == 24U) {
       value = static_cast<float>(readI24(sample)) / 8388608.0F;
     } else {
       const auto raw = static_cast<std::int32_t>(readU32(sample));
@@ -210,6 +200,12 @@ core::Result<AudioBuffer> readWav(const std::filesystem::path& path) {
     result.interleaved[index] = value;
   }
   return result;
+}
+
+core::Result<AudioBuffer> readWav(const std::filesystem::path& path) {
+  auto bytes = core::readFileBytesLimited(path, kMaximumSupportedWavBytes);
+  if (!bytes) return core::Result<AudioBuffer>{bytes.error()};
+  return readWav(bytes.value(), path.string());
 }
 
 core::Result<void> writePcm16Wav(const std::filesystem::path& path,

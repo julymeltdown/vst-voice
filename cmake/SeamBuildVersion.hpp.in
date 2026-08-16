@@ -1,0 +1,20 @@
+#pragma once
+
+#include <cstdint>
+#include <string_view>
+
+namespace seam::build {
+
+inline constexpr std::string_view kApplicationVersion{"@PROJECT_VERSION@"};
+inline constexpr std::string_view kRenderAbiId{"@SEAM_RENDER_ABI_ID@"};
+inline constexpr std::uint32_t kPhonemizerRevision{@SEAM_PHONEMIZER_REVISION@U};
+inline constexpr std::uint32_t kUnitSelectorRevision{@SEAM_UNIT_SELECTOR_REVISION@U};
+inline constexpr std::uint32_t kTimingSolverRevision{@SEAM_TIMING_SOLVER_REVISION@U};
+inline constexpr std::uint32_t kRawRendererRevision{@SEAM_RAW_RENDERER_REVISION@U};
+inline constexpr std::uint32_t kPsolaRendererRevision{@SEAM_PSOLA_RENDERER_REVISION@U};
+inline constexpr std::uint32_t kSpectralRendererRevision{@SEAM_SPECTRAL_RENDERER_REVISION@U};
+inline constexpr std::uint32_t kStretchRendererRevision{@SEAM_STRETCH_RENDERER_REVISION@U};
+inline constexpr std::uint32_t kSeamComposerRevision{@SEAM_SEAM_COMPOSER_REVISION@U};
+inline constexpr std::uint32_t kPcmCacheFormatRevision{@SEAM_PCM_CACHE_FORMAT_REVISION@U};
+
+}  // namespace seam::build

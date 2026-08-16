@@ -6,8 +6,9 @@
 namespace seam::rendering {
 
 BackgroundRenderScheduler::BackgroundRenderScheduler(PcmCache& cache,
-                                                       std::size_t workerCount)
-    : cache_(cache) {
+                                                       std::size_t workerCount,
+                                                       RenderSchedulerHooks hooks)
+    : cache_(cache), hooks_(std::move(hooks)) {
   workerCount = std::clamp<std::size_t>(workerCount, 1U, 16U);
   workers_.reserve(workerCount);
   for (std::size_t index = 0; index < workerCount; ++index) {
@@ -223,6 +224,24 @@ void BackgroundRenderScheduler::workerLoop(std::stop_token token) {
                                        "Render task threw an unknown exception", {}};
       }
     }
+    if ((completion.status == RenderCompletionStatus::Completed ||
+         completion.status == RenderCompletionStatus::CacheHit) &&
+        hooks_.beforeFinalPublish) {
+      hooks_.beforeFinalPublish();
+    }
+    if (completion.status == RenderCompletionStatus::Completed ||
+        completion.status == RenderCompletionStatus::CacheHit) {
+      std::scoped_lock lock{mutex_};
+      const auto latest = latestRevision_.find(job.request.phraseId);
+      if (latest != latestRevision_.end() &&
+          job.request.revision < latest->second) {
+        completion.status = RenderCompletionStatus::Stale;
+        completion.pcm.reset();
+      } else if (job.control->stop.stop_requested()) {
+        completion.status = RenderCompletionStatus::Cancelled;
+        completion.pcm.reset();
+      }
+    }
     pushCompletion(std::move(completion));
     {
       std::scoped_lock lock{mutex_};
@@ -238,6 +257,15 @@ void BackgroundRenderScheduler::workerLoop(std::stop_token token) {
 
 void BackgroundRenderScheduler::pushCompletion(RenderCompletion completion) {
   std::scoped_lock lock{mutex_};
+  if (completion.status == RenderCompletionStatus::Completed ||
+      completion.status == RenderCompletionStatus::CacheHit) {
+    const auto latest = latestRevision_.find(completion.phraseId);
+    if (latest != latestRevision_.end() && completion.revision < latest->second) {
+      completion.status = RenderCompletionStatus::Stale;
+      completion.pcm.reset();
+      completion.error = {};
+    }
+  }
   switch (completion.status) {
     case RenderCompletionStatus::Completed: ++stats_.completed; break;
     case RenderCompletionStatus::CacheHit: ++stats_.cacheHits; break;

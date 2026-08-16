@@ -1,5 +1,7 @@
 #include "seam/voicebank/manifest_json.hpp"
 
+#include "seam/core/file_io.hpp"
+
 #include "seam/formats/json_value.hpp"
 
 #include <fstream>
@@ -307,7 +309,13 @@ core::Result<std::string> ManifestJsonCodec::encode(const Manifest& manifest) co
 }
 
 core::Result<Manifest> ManifestJsonCodec::decode(std::string_view json) const {
-  auto parsed = seam::formats::parseJson(json);
+  auto parsed = seam::formats::parseJson(json, seam::formats::JsonParseLimits{
+      .maximumInputBytes = 32U * 1024U * 1024U,
+      .maximumDepth = 64U,
+      .maximumNodes = 1'000'000U,
+      .maximumStringBytes = 2U * 1024U * 1024U,
+      .maximumCollectionEntries = 250'000U,
+  });
   if (!parsed) return core::Result<Manifest>{parsed.error()};
   try {
     return decodeManifest(parsed.value());
@@ -318,62 +326,25 @@ core::Result<Manifest> ManifestJsonCodec::decode(std::string_view json) const {
   }
 }
 
-core::Result<void> ManifestJsonCodec::save(const Manifest& manifest,
-                                           const std::filesystem::path& path) const {
+core::Result<void> ManifestJsonCodec::save(
+    const Manifest& manifest, const std::filesystem::path& path) const {
   auto encoded = encode(manifest);
   if (!encoded) return core::Result<void>{encoded.error()};
-  std::error_code error;
-  if (path.has_parent_path()) {
-    std::filesystem::create_directories(path.parent_path(), error);
-    if (error) {
-      return core::failure(core::ErrorCode::IoError,
-                           "Unable to create voicebank directory",
-                           error.message());
-    }
-  }
-  const auto temporary = path.string() + ".tmp";
-  {
-    std::ofstream stream(temporary, std::ios::binary | std::ios::trunc);
-    if (!stream) {
-      return core::failure(core::ErrorCode::IoError,
-                           "Unable to create voicebank manifest",
-                           temporary);
-    }
-    stream << encoded.value();
-    stream.flush();
-    if (!stream) {
-      return core::failure(core::ErrorCode::IoError,
-                           "Unable to write voicebank manifest",
-                           temporary);
-    }
-  }
-  std::filesystem::remove(path, error);
-  error.clear();
-  std::filesystem::rename(temporary, path, error);
-  if (error) {
-    std::filesystem::remove(temporary);
-    return core::failure(core::ErrorCode::IoError,
-                         "Unable to replace voicebank manifest",
-                         error.message());
-  }
-  return core::success();
+  auto backup = path;
+  backup += ".bak";
+  return core::durableAtomicWriteText(
+      path, encoded.value(), core::AtomicWriteOptions{
+          .backupPath = std::move(backup),
+          .maximumBackupBytes = 32ULL * 1024ULL * 1024ULL,
+          .faultInjector = {},
+      });
 }
 
-core::Result<Manifest> ManifestJsonCodec::load(const std::filesystem::path& path) const {
-  std::ifstream stream(path, std::ios::binary);
-  if (!stream) {
-    return core::failure<Manifest>(core::ErrorCode::IoError,
-                                   "Unable to open voicebank manifest",
-                                   path.string());
-  }
-  std::ostringstream content;
-  content << stream.rdbuf();
-  if (!stream.good() && !stream.eof()) {
-    return core::failure<Manifest>(core::ErrorCode::IoError,
-                                   "Unable to read voicebank manifest",
-                                   path.string());
-  }
-  return decode(content.str());
+core::Result<Manifest> ManifestJsonCodec::load(
+    const std::filesystem::path& path) const {
+  auto content = core::readTextFileLimited(path, 32ULL * 1024ULL * 1024ULL);
+  if (!content) return core::Result<Manifest>{content.error()};
+  return decode(content.value());
 }
 
 }  // namespace seam::voicebank

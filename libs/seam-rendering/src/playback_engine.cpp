@@ -116,12 +116,45 @@ void PlaybackTimeline::mix(time::SampleFrame startFrame,
   }
 }
 
+PlaybackFeeder::ControlQueue::ControlQueue(std::size_t capacity)
+    : slots_(std::max<std::size_t>(2U, capacity) + 1U) {}
+
+bool PlaybackFeeder::ControlQueue::push(ControlCommand command) noexcept {
+  const auto write = writeIndex_.load(std::memory_order_relaxed);
+  const auto next = (write + 1U) % slots_.size();
+  if (next == readIndex_.load(std::memory_order_acquire)) return false;
+  slots_[write].emplace(std::move(command));
+  writeIndex_.store(next, std::memory_order_release);
+  return true;
+}
+
+std::optional<PlaybackFeeder::ControlCommand>
+PlaybackFeeder::ControlQueue::pop() noexcept {
+  const auto read = readIndex_.load(std::memory_order_relaxed);
+  if (read == writeIndex_.load(std::memory_order_acquire)) return std::nullopt;
+  auto command = std::move(slots_[read]);
+  slots_[read].reset();
+  readIndex_.store((read + 1U) % slots_.size(), std::memory_order_release);
+  return command;
+}
+
 PlaybackFeeder::PlaybackFeeder(SpscAudioRingBuffer& ring,
                                std::uint32_t sampleRate,
-                               std::size_t blockFrames)
+                               std::size_t blockFrames,
+                               std::size_t controlQueueCapacity)
     : ring_(ring),
       sampleRate_(sampleRate),
-      scratch_(std::max<std::size_t>(1U, blockFrames), 0.0F) {}
+      scratch_(std::max<std::size_t>(1U, blockFrames), 0.0F),
+      controls_(controlQueueCapacity) {}
+
+core::Result<void> PlaybackFeeder::enqueue(ControlCommand command) {
+  if (!controls_.push(std::move(command))) {
+    stats_.rejectedCommands.fetch_add(1U, std::memory_order_relaxed);
+    return core::failure(core::ErrorCode::Conflict,
+                         "Playback control queue is full");
+  }
+  return core::success();
+}
 
 core::Result<void> PlaybackFeeder::setTimeline(
     std::shared_ptr<const PlaybackTimeline> timeline) {
@@ -129,8 +162,13 @@ core::Result<void> PlaybackFeeder::setTimeline(
     return core::failure(core::ErrorCode::InvalidArgument,
                          "Playback timeline does not match feeder sample rate");
   }
-  timeline_ = std::move(timeline);
-  return core::success();
+  return enqueue(ControlCommand{
+      .kind = ControlKind::Timeline,
+      .timeline = std::move(timeline),
+      .loop = {},
+      .frame = 0,
+      .playing = false,
+  });
 }
 
 core::Result<void> PlaybackFeeder::setLoop(PlaybackLoop loop) {
@@ -138,15 +176,84 @@ core::Result<void> PlaybackFeeder::setLoop(PlaybackLoop loop) {
     return core::failure(core::ErrorCode::InvalidArgument,
                          "Playback loop end must be after loop start");
   }
-  loop_ = loop;
-  if (loop_.enabled && playhead_ >= loop_.endFrame) playhead_ = loop_.startFrame;
-  return core::success();
+  return enqueue(ControlCommand{
+      .kind = ControlKind::Loop,
+      .timeline = {},
+      .loop = loop,
+      .frame = 0,
+      .playing = false,
+  });
 }
 
-void PlaybackFeeder::seek(time::SampleFrame frame) noexcept {
-  playhead_ = frame;
-  ring_.clear();
-  ++stats_.seeks;
+core::Result<void> PlaybackFeeder::setPlaying(bool playing) {
+  return enqueue(ControlCommand{
+      .kind = ControlKind::Playing,
+      .timeline = {},
+      .loop = {},
+      .frame = 0,
+      .playing = playing,
+  });
+}
+
+core::Result<void> PlaybackFeeder::seek(time::SampleFrame frame) {
+  return enqueue(ControlCommand{
+      .kind = ControlKind::Seek,
+      .timeline = {},
+      .loop = {},
+      .frame = frame,
+      .playing = false,
+  });
+}
+
+void PlaybackFeeder::publishState() noexcept {
+  publishedPlayhead_.store(playhead_, std::memory_order_release);
+  publishedPlaying_.store(playing_, std::memory_order_release);
+}
+
+bool PlaybackFeeder::processControls() noexcept {
+  bool resetNeeded = false;
+  while (auto command = controls_.pop()) {
+    stats_.controlCommands.fetch_add(1U, std::memory_order_relaxed);
+    switch (command->kind) {
+      case ControlKind::Timeline:
+        timeline_ = std::move(command->timeline);
+        resetNeeded = true;
+        break;
+      case ControlKind::Loop:
+        loop_ = command->loop;
+        if (loop_.enabled && playhead_ >= loop_.endFrame) {
+          playhead_ = loop_.startFrame;
+          resetNeeded = true;
+        }
+        break;
+      case ControlKind::Playing:
+        if (playing_ && !command->playing) resetNeeded = true;
+        playing_ = command->playing;
+        break;
+      case ControlKind::Seek:
+        playhead_ = command->frame;
+        stats_.seeks.fetch_add(1U, std::memory_order_relaxed);
+        resetNeeded = true;
+        break;
+    }
+  }
+
+  // An empty ring has no stale audio to discard. This also allows initial
+  // timeline/seek/play commands to be applied before a callback is running.
+  if (resetNeeded && ring_.availableRead() > 0U) {
+    pendingResetEpoch_ = ring_.requestConsumerReset();
+    stats_.resetRequests.fetch_add(1U, std::memory_order_relaxed);
+  }
+  publishState();
+
+  if (pendingResetEpoch_ != 0U) {
+    if (!ring_.resetAcknowledged(pendingResetEpoch_)) {
+      stats_.resetWaits.fetch_add(1U, std::memory_order_relaxed);
+      return false;
+    }
+    pendingResetEpoch_ = 0U;
+  }
+  return true;
 }
 
 void PlaybackFeeder::mixWithLoop(std::span<float> output) noexcept {
@@ -156,7 +263,7 @@ void PlaybackFeeder::mixWithLoop(std::span<float> output) noexcept {
   while (cursor < output.size()) {
     if (loop_.enabled && playhead_ >= loop_.endFrame) {
       playhead_ = loop_.startFrame;
-      ++stats_.loopWraps;
+      stats_.loopWraps.fetch_add(1U, std::memory_order_relaxed);
     }
     auto count = output.size() - cursor;
     if (loop_.enabled) {
@@ -176,21 +283,25 @@ void PlaybackFeeder::mixWithLoop(std::span<float> output) noexcept {
       break;
     }
   }
+  publishState();
 }
 
 std::size_t PlaybackFeeder::feedOnce() noexcept {
-  ++stats_.feedCalls;
+  stats_.feedCalls.fetch_add(1U, std::memory_order_relaxed);
+  if (!processControls()) return 0U;
   if (ring_.availableWrite() == 0U) {
-    ++stats_.ringFullEvents;
+    stats_.ringFullEvents.fetch_add(1U, std::memory_order_relaxed);
     return 0U;
   }
   const auto requested = std::min(scratch_.size(), ring_.availableWrite());
   auto block = std::span<float>{scratch_}.first(requested);
   mixWithLoop(block);
-  stats_.framesMixed += requested;
+  stats_.framesMixed.fetch_add(requested, std::memory_order_relaxed);
   const auto written = ring_.write(block);
-  stats_.framesWritten += written;
-  if (written < requested) ++stats_.ringFullEvents;
+  stats_.framesWritten.fetch_add(written, std::memory_order_relaxed);
+  if (written < requested) {
+    stats_.ringFullEvents.fetch_add(1U, std::memory_order_relaxed);
+  }
   return written;
 }
 
@@ -203,6 +314,21 @@ std::size_t PlaybackFeeder::feedToWatermark(std::size_t targetFrames) noexcept {
     if (written == 0U) break;
   }
   return total;
+}
+
+PlaybackFeederStats PlaybackFeeder::stats() const noexcept {
+  return PlaybackFeederStats{
+      .feedCalls = stats_.feedCalls.load(std::memory_order_relaxed),
+      .framesMixed = stats_.framesMixed.load(std::memory_order_relaxed),
+      .framesWritten = stats_.framesWritten.load(std::memory_order_relaxed),
+      .ringFullEvents = stats_.ringFullEvents.load(std::memory_order_relaxed),
+      .loopWraps = stats_.loopWraps.load(std::memory_order_relaxed),
+      .seeks = stats_.seeks.load(std::memory_order_relaxed),
+      .controlCommands = stats_.controlCommands.load(std::memory_order_relaxed),
+      .resetRequests = stats_.resetRequests.load(std::memory_order_relaxed),
+      .resetWaits = stats_.resetWaits.load(std::memory_order_relaxed),
+      .rejectedCommands = stats_.rejectedCommands.load(std::memory_order_relaxed),
+  };
 }
 
 }  // namespace seam::rendering

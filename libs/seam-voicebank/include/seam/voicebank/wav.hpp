@@ -2,12 +2,17 @@
 
 #include "seam/core/result.hpp"
 
+#include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <span>
+#include <string_view>
 #include <vector>
 
 namespace seam::voicebank {
+
+inline constexpr std::uint64_t kMaximumSupportedWavBytes =
+    512ULL * 1024ULL * 1024ULL;
 
 struct AudioBuffer final {
   std::uint32_t sampleRate{0};
@@ -27,6 +32,9 @@ struct AudioStatistics final {
   std::size_t clippedSamples{0};
 };
 
+[[nodiscard]] core::Result<AudioBuffer> readWav(
+    std::span<const std::byte> bytes,
+    std::string_view sourceLabel = {});
 [[nodiscard]] core::Result<AudioBuffer> readWav(const std::filesystem::path& path);
 [[nodiscard]] core::Result<void> writePcm16Wav(
     const std::filesystem::path& path,

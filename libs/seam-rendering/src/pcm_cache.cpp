@@ -1,5 +1,7 @@
 #include "seam/rendering/pcm_cache.hpp"
 
+#include "seam/build/version.hpp"
+#include "seam/core/file_io.hpp"
 #include "seam/core/stable_hash.hpp"
 
 #include <algorithm>
@@ -14,17 +16,19 @@
 namespace seam::rendering {
 namespace {
 
-constexpr std::array<char, 8> kMagic{'S', 'E', 'A', 'M', 'P', 'C', 'M', '3'};
-constexpr std::uint32_t kVersion = 2;
+constexpr std::array<char, 8> kMagic{'S', 'E', 'A', 'M', 'P', 'C', 'M', '4'};
+constexpr std::uint32_t kVersion = build::kPcmCacheFormatRevision;
 constexpr std::uint64_t kMaximumFrames = 200'000'000ULL;
+constexpr std::uint64_t kHeaderBytes = 8U + 4U + 4U + 8U + 8U + 8U;
 
 template <typename T>
-void writeLittle(std::ostream& stream, T value) {
+void writeLittleAt(std::span<std::byte> output, std::size_t& offset, T value) {
   using Unsigned = std::make_unsigned_t<T>;
-  auto bits = static_cast<Unsigned>(value);
+  const auto bits = static_cast<Unsigned>(value);
   for (std::size_t index = 0; index < sizeof(T); ++index) {
-    stream.put(static_cast<char>((bits >> (index * 8U)) &
-                                 static_cast<Unsigned>(0xffU)));
+    output[offset] = static_cast<std::byte>(
+        (bits >> (index * 8U)) & static_cast<Unsigned>(0xffU));
+    ++offset;
   }
 }
 
@@ -75,6 +79,8 @@ PcmCache::PcmCache(std::filesystem::path root, PcmCacheLimits limits)
       limits_.maximumMemoryBytes, 16ULL * 1024ULL * 1024ULL * 1024ULL);
   limits_.maximumDiskBytes = std::min<std::uint64_t>(
       limits_.maximumDiskBytes, 64ULL * 1024ULL * 1024ULL * 1024ULL);
+  limits_.maximumEntryBytes = std::min<std::uint64_t>(
+      limits_.maximumEntryBytes, 4ULL * 1024ULL * 1024ULL * 1024ULL);
   limits_.maximumDiskEntries = std::min<std::size_t>(
       limits_.maximumDiskEntries, 1'000'000U);
 }
@@ -138,6 +144,37 @@ core::Result<std::shared_ptr<const CachedPcm>> PcmCache::load(
   std::shared_ptr<CachedPcm> pcm;
   {
     std::scoped_lock ioLock{ioMutex_};
+    std::error_code sizeError;
+    const bool exists = std::filesystem::exists(pathResult.value(), sizeError);
+    if (sizeError) {
+      std::scoped_lock lock{mutex_};
+      ++stats_.corruptEntries;
+      return core::failure<std::shared_ptr<const CachedPcm>>(
+          core::ErrorCode::ParseError, "Unable to inspect PCM cache entry",
+          sizeError.message());
+    }
+    if (!exists) {
+      std::scoped_lock lock{mutex_};
+      ++stats_.misses;
+      return core::failure<std::shared_ptr<const CachedPcm>>(
+          core::ErrorCode::NotFound, "PCM cache entry was not found",
+          std::string{key});
+    }
+    const auto fileBytes = std::filesystem::file_size(pathResult.value(), sizeError);
+    if (sizeError) {
+      std::scoped_lock lock{mutex_};
+      ++stats_.corruptEntries;
+      return core::failure<std::shared_ptr<const CachedPcm>>(
+          core::ErrorCode::ParseError, "Unable to inspect PCM cache entry",
+          sizeError.message());
+    }
+    if (fileBytes < kHeaderBytes || fileBytes > kHeaderBytes + limits_.maximumEntryBytes) {
+      std::scoped_lock lock{mutex_};
+      ++stats_.corruptEntries;
+      return core::failure<std::shared_ptr<const CachedPcm>>(
+          core::ErrorCode::ParseError, "PCM cache file size is outside configured limits",
+          std::string{key});
+    }
     std::ifstream stream(pathResult.value(), std::ios::binary);
     if (!stream) {
       std::scoped_lock lock{mutex_};
@@ -163,6 +200,15 @@ core::Result<std::shared_ptr<const CachedPcm>> PcmCache::load(
       ++stats_.corruptEntries;
       return core::failure<std::shared_ptr<const CachedPcm>>(
           core::ErrorCode::ParseError, "PCM cache header is invalid",
+          std::string{key});
+    }
+    const auto payload = frameCount * static_cast<std::uint64_t>(sizeof(float));
+    if (payload > limits_.maximumEntryBytes || fileBytes != kHeaderBytes + payload) {
+      std::scoped_lock lock{mutex_};
+      ++stats_.corruptEntries;
+      return core::failure<std::shared_ptr<const CachedPcm>>(
+          core::ErrorCode::ParseError,
+          "PCM cache payload size does not match its header",
           std::string{key});
     }
     pcm = std::make_shared<CachedPcm>();
@@ -214,6 +260,9 @@ core::Result<void> PcmCache::store(std::string_view key, const CachedPcm& pcm) {
   if (!pathResult) return core::Result<void>{pathResult.error()};
   if (pcm.sampleRate < 8000U || pcm.sampleRate > 384000U ||
       pcm.samples.empty() || pcm.samples.size() > kMaximumFrames ||
+      payloadBytes(pcm) > limits_.maximumEntryBytes ||
+      (limits_.maximumDiskBytes > 0U &&
+       kHeaderBytes + payloadBytes(pcm) > limits_.maximumDiskBytes) ||
       std::any_of(pcm.samples.begin(), pcm.samples.end(),
                   [](float sample) { return !std::isfinite(sample); })) {
     return core::failure(core::ErrorCode::InvalidArgument,
@@ -221,49 +270,30 @@ core::Result<void> PcmCache::store(std::string_view key, const CachedPcm& pcm) {
   }
   {
     std::scoped_lock ioLock{ioMutex_};
-    std::error_code error;
-    std::filesystem::create_directories(root_, error);
-    if (error) {
-      return core::failure(core::ErrorCode::IoError,
-                           "Unable to create PCM cache directory", error.message());
+    const auto encodedSize = static_cast<std::size_t>(
+        kHeaderBytes + payloadBytes(pcm));
+    std::vector<std::byte> encoded(encodedSize);
+    std::size_t offset = 0U;
+    for (const auto value : kMagic) {
+      encoded[offset] = static_cast<std::byte>(value);
+      ++offset;
     }
-    std::filesystem::path temporary;
-    {
-      std::scoped_lock lock{mutex_};
-      temporary = pathResult.value().string() + ".tmp." +
-                  std::to_string(++temporaryCounter_);
+    writeLittleAt(encoded, offset, kVersion);
+    writeLittleAt(encoded, offset, pcm.sampleRate);
+    writeLittleAt(encoded, offset, pcm.startFrame);
+    writeLittleAt(encoded, offset,
+                  static_cast<std::uint64_t>(pcm.samples.size()));
+    writeLittleAt(encoded, offset, pcmChecksum(pcm.samples));
+    for (const auto sample : pcm.samples) {
+      writeLittleAt(encoded, offset, std::bit_cast<std::uint32_t>(sample));
     }
-    {
-      std::ofstream stream(temporary, std::ios::binary | std::ios::trunc);
-      if (!stream) {
-        return core::failure(core::ErrorCode::IoError,
-                             "Unable to create PCM cache entry", temporary.string());
-      }
-      stream.write(kMagic.data(), static_cast<std::streamsize>(kMagic.size()));
-      writeLittle(stream, kVersion);
-      writeLittle(stream, pcm.sampleRate);
-      writeLittle(stream, pcm.startFrame);
-      writeLittle(stream, static_cast<std::uint64_t>(pcm.samples.size()));
-      writeLittle(stream, pcmChecksum(pcm.samples));
-      for (const auto sample : pcm.samples) {
-        writeLittle(stream, std::bit_cast<std::uint32_t>(sample));
-      }
-      stream.flush();
-      if (!stream) {
-        std::filesystem::remove(temporary, error);
-        return core::failure(core::ErrorCode::IoError,
-                             "Unable to write PCM cache entry", temporary.string());
-      }
+    if (offset != encoded.size()) {
+      return core::failure(core::ErrorCode::Internal,
+                           "PCM cache encoder size mismatch",
+                           std::string{key});
     }
-    std::filesystem::remove(pathResult.value(), error);
-    error.clear();
-    std::filesystem::rename(temporary, pathResult.value(), error);
-    if (error) {
-      std::filesystem::remove(temporary);
-      return core::failure(core::ErrorCode::IoError,
-                           "Unable to atomically replace PCM cache entry",
-                           error.message());
-    }
+    const auto written = core::durableAtomicWrite(pathResult.value(), encoded);
+    if (!written) return written;
   }
 
   auto immutable = std::make_shared<const CachedPcm>(pcm);

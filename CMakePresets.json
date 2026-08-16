@@ -42,28 +42,67 @@
         "SEAM_ENABLE_SANITIZERS": "ON",
         "SEAM_WARNINGS_AS_ERRORS": "ON"
       }
+    },
+    {
+      "name": "thread-sanitize",
+      "displayName": "ThreadSanitizer",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/thread-sanitize",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "SEAM_BUILD_TESTS": "ON",
+        "SEAM_BUILD_BENCHMARKS": "OFF",
+        "SEAM_ENABLE_THREAD_SANITIZER": "ON",
+        "SEAM_WARNINGS_AS_ERRORS": "ON"
+      }
     }
   ],
   "buildPresets": [
-    { "name": "dev", "configurePreset": "dev" },
-    { "name": "release", "configurePreset": "release" },
-    { "name": "sanitize", "configurePreset": "sanitize" }
+    {
+      "name": "dev",
+      "configurePreset": "dev"
+    },
+    {
+      "name": "release",
+      "configurePreset": "release"
+    },
+    {
+      "name": "sanitize",
+      "configurePreset": "sanitize"
+    },
+    {
+      "name": "thread-sanitize",
+      "configurePreset": "thread-sanitize"
+    }
   ],
   "testPresets": [
     {
       "name": "dev",
       "configurePreset": "dev",
-      "output": { "outputOnFailure": true }
+      "output": {
+        "outputOnFailure": true
+      }
     },
     {
       "name": "release",
       "configurePreset": "release",
-      "output": { "outputOnFailure": true }
+      "output": {
+        "outputOnFailure": true
+      }
     },
     {
       "name": "sanitize",
       "configurePreset": "sanitize",
-      "output": { "outputOnFailure": true }
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "thread-sanitize",
+      "configurePreset": "thread-sanitize",
+      "output": {
+        "outputOnFailure": true
+      }
     }
   ]
 }

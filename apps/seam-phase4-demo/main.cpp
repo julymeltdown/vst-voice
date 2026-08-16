@@ -818,8 +818,11 @@ int main(int argc, char** argv) {
     std::cerr << "Unable to configure Phase 4 playback feeder\n";
     return 23;
   }
-  feeder.seek(playbackTimeline->startFrame());
-  feeder.setPlaying(true);
+  if (!feeder.seek(playbackTimeline->startFrame()) ||
+      !feeder.setPlaying(true)) {
+    std::cerr << "Unable to queue playback transport controls\n";
+    return 29;
+  }
   seam::platform::RingBufferAudioProcessor callbackProcessor{callbackRing};
   callbackProcessor.setGain(0.92F);
   constexpr std::size_t callbackFrames = 256U;
@@ -899,7 +902,7 @@ int main(int argc, char** argv) {
   auto snapshot = snapshotFactory.create(
       session.project(), manifest, trackId, segments.value().front(),
       session.revision() + 2U, seam::rendering::RenderQuality::Preview,
-      bankRoot, kSampleRate, "original");
+      bankRoot, kSampleRate, "original", options);
   if (!snapshot) {
     printError(snapshot.error());
     return 15;
@@ -947,10 +950,10 @@ int main(int argc, char** argv) {
           .revision = snapshot.value().revision,
           .sampleRate = kSampleRate,
           .priority = seam::rendering::RenderPriority::Playhead,
-          .task = [renderSnapshot, options](std::stop_token token)
+          .task = [renderSnapshot](std::stop_token token)
               -> seam::core::Result<seam::synthesis::PhraseAudio> {
             seam::rendering::PhraseRenderPipeline pipeline;
-            auto pipelineResult = pipeline.render(renderSnapshot, options, token);
+            auto pipelineResult = pipeline.render(renderSnapshot, token);
             if (!pipelineResult) {
               return seam::core::Result<seam::synthesis::PhraseAudio>{
                   pipelineResult.error()};
@@ -967,7 +970,8 @@ int main(int argc, char** argv) {
   }
   auto completions = scheduler.drainCompleted();
   for (const auto& completion : completions) {
-    if (completion.status == seam::rendering::RenderCompletionStatus::Completed &&
+    if ((completion.status == seam::rendering::RenderCompletionStatus::Completed ||
+         completion.status == seam::rendering::RenderCompletionStatus::CacheHit) &&
         completion.pcm != nullptr) {
       static_cast<void>(staleStore.publish(completion.phraseId, completion.revision, completion.pcm));
     }

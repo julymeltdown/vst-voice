@@ -1,5 +1,6 @@
 #include "seam/synthesis/phrase_renderer.hpp"
 
+#include "seam/voicebank/asset_path.hpp"
 #include "seam/voicebank/wav.hpp"
 
 #include <algorithm>
@@ -34,7 +35,9 @@ core::Result<PhraseRenderResult> RawPhraseRenderer::render(
                                                "Timing plan references a missing unit",
                                                placement.unitId);
     }
-    const auto path = bankRoot / unit->audioPath;
+    auto resolved = voicebank::resolveBankAsset(bankRoot, unit->audioPath);
+    if (!resolved) return core::Result<PhraseRenderResult>{resolved.error()};
+    const auto& path = resolved.value();
     auto iterator = audioCache.find(path);
     if (iterator == audioCache.end()) {
       auto loaded = voicebank::readWav(path);
@@ -89,12 +92,53 @@ core::Result<PhraseRenderResult> ConcatenativePhraseRenderer::render(
     std::uint32_t outputSampleRate,
     const PhraseRenderOptions& options,
     std::stop_token stopToken) const {
+  std::map<std::filesystem::path, std::shared_ptr<const voicebank::AudioBuffer>>
+      audioByPath;
+  std::vector<FrozenUnitAudio> frozenAudio;
+  frozenAudio.reserve(unitPlan.entries.size());
+  for (const auto& entry : unitPlan.entries) {
+    const auto* unit = manifest.findUnit(entry.unitId);
+    if (unit == nullptr) {
+      return core::failure<PhraseRenderResult>(
+          core::ErrorCode::NotFound,
+          "Unit plan references a missing voicebank Unit",
+          entry.unitId);
+    }
+    auto resolved = voicebank::resolveBankAsset(bankRoot, unit->audioPath);
+    if (!resolved) return core::Result<PhraseRenderResult>{resolved.error()};
+    auto iterator = audioByPath.find(resolved.value());
+    if (iterator == audioByPath.end()) {
+      auto loaded = voicebank::readWav(resolved.value());
+      if (!loaded) return core::Result<PhraseRenderResult>{loaded.error()};
+      iterator = audioByPath.emplace(
+          resolved.value(),
+          std::make_shared<const voicebank::AudioBuffer>(
+              std::move(loaded).value())).first;
+    }
+    frozenAudio.push_back(FrozenUnitAudio{
+        .unitId = entry.unitId,
+        .audio = iterator->second,
+    });
+  }
+  return render(manifest, project, region, unitPlan, timing, outputSampleRate,
+                options, frozenAudio, stopToken);
+}
+
+core::Result<PhraseRenderResult> ConcatenativePhraseRenderer::render(
+    const voicebank::Manifest& manifest,
+    const domain::Project& project,
+    const domain::VocalRegion& region,
+    const UnitPlan& unitPlan,
+    const TimingPlan& timing,
+    std::uint32_t outputSampleRate,
+    const PhraseRenderOptions& options,
+    std::span<const FrozenUnitAudio> frozenAudio,
+    std::stop_token stopToken) const {
   if (timing.placements.empty() || unitPlan.entries.size() != timing.placements.size()) {
     return core::failure<PhraseRenderResult>(
         core::ErrorCode::InvalidArgument,
         "Production phrase renderer requires aligned unit and timing plans");
   }
-  std::map<std::filesystem::path, voicebank::AudioBuffer> audioCache;
   std::vector<PlacedRenderedUnit> rendered;
   PhraseRenderResult result;
   rendered.reserve(timing.placements.size());
@@ -126,12 +170,16 @@ core::Result<PhraseRenderResult> ConcatenativePhraseRenderer::render(
                                                "Timing plan references a missing unit",
                                                placement.unitId);
     }
-    const auto path = bankRoot / unit->audioPath;
-    auto iterator = audioCache.find(path);
-    if (iterator == audioCache.end()) {
-      auto loaded = voicebank::readWav(path);
-      if (!loaded) return core::Result<PhraseRenderResult>{loaded.error()};
-      iterator = audioCache.emplace(path, std::move(loaded).value()).first;
+    const auto frozen = std::find_if(
+        frozenAudio.begin(), frozenAudio.end(),
+        [&placement](const FrozenUnitAudio& candidate) {
+          return candidate.unitId == placement.unitId;
+        });
+    if (frozen == frozenAudio.end() || frozen->audio == nullptr) {
+      return core::failure<PhraseRenderResult>(
+          core::ErrorCode::NotFound,
+          "Frozen render snapshot is missing selected Unit audio",
+          placement.unitId);
     }
     const auto requestedFrames = std::max<time::SampleFrame>(
         1, placement.destinationEnd - placement.destinationStart);
@@ -184,7 +232,7 @@ core::Result<PhraseRenderResult> ConcatenativePhraseRenderer::render(
     }
 
     auto renderedUnit = dispatcher.render(
-        *unit, iterator->second, outputSampleRate, requestedFrames,
+        *unit, *frozen->audio, outputSampleRate, requestedFrames,
         placement.targetMidi, dispatchParameters, stopToken);
     if (!renderedUnit) {
       return core::Result<PhraseRenderResult>{renderedUnit.error()};

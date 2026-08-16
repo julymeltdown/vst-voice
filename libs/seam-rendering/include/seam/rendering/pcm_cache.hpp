@@ -25,6 +25,7 @@ struct CachedPcm final {
 struct PcmCacheLimits final {
   std::uint64_t maximumMemoryBytes{128ULL * 1024ULL * 1024ULL};
   std::uint64_t maximumDiskBytes{2ULL * 1024ULL * 1024ULL * 1024ULL};
+  std::uint64_t maximumEntryBytes{256ULL * 1024ULL * 1024ULL};
   std::size_t maximumDiskEntries{4096U};
 };
 
@@ -84,7 +85,6 @@ private:
   std::uint64_t memoryBytes_{0};
   std::uint64_t accessCounter_{0};
   PcmCacheStats stats_;
-  std::uint64_t temporaryCounter_{0};
 };
 
 [[nodiscard]] std::uint64_t pcmChecksum(std::span<const float> samples) noexcept;

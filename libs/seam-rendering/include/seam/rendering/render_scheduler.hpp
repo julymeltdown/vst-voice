@@ -57,6 +57,12 @@ struct RenderCompletion final {
   core::Error error;
 };
 
+struct RenderSchedulerHooks final {
+  // Test/diagnostic hook executed after cache publication but before the final
+  // revision gate. It is intentionally outside the scheduler mutex.
+  std::function<void()> beforeFinalPublish;
+};
+
 struct RenderSchedulerStats final {
   std::uint64_t submitted{0};
   std::uint64_t completed{0};
@@ -69,7 +75,8 @@ struct RenderSchedulerStats final {
 class BackgroundRenderScheduler final {
 public:
   explicit BackgroundRenderScheduler(PcmCache& cache,
-                                     std::size_t workerCount = 2U);
+                                     std::size_t workerCount = 2U,
+                                     RenderSchedulerHooks hooks = {});
   ~BackgroundRenderScheduler();
 
   BackgroundRenderScheduler(const BackgroundRenderScheduler&) = delete;
@@ -102,6 +109,7 @@ private:
   void pushCompletion(RenderCompletion completion);
 
   PcmCache& cache_;
+  RenderSchedulerHooks hooks_;
   mutable std::mutex mutex_;
   std::condition_variable condition_;
   std::condition_variable idleCondition_;

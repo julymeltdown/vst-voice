@@ -111,10 +111,16 @@ core::Result<RenderedUnit> StretchUnitRenderer::render(
                                        unit.id);
   }
 
-  const auto preFrames = std::clamp<time::SampleFrame>(
+  const auto vowelOnsetFrames = std::clamp<time::SampleFrame>(
       static_cast<time::SampleFrame>(std::llround(
           static_cast<double>(markers.vowelOnset - markers.audioOffset) /
           sourcePerOutput)), 0, outputFrames - 1);
+  // Granular processing is restricted to the stable vowel. The recorded onset
+  // and vowel transition are copied verbatim to preserve the unit's character.
+  const auto preFrames = std::clamp<time::SampleFrame>(
+      static_cast<time::SampleFrame>(std::llround(
+          static_cast<double>(markers.stableStart - markers.audioOffset) /
+          sourcePerOutput)), vowelOnsetFrames, outputFrames - 1);
   const auto releaseFrames = std::clamp<time::SampleFrame>(
       static_cast<time::SampleFrame>(std::llround(
           static_cast<double>(markers.audioEnd - releaseStart) / sourcePerOutput)),
@@ -124,7 +130,7 @@ core::Result<RenderedUnit> StretchUnitRenderer::render(
   RenderedUnit result{
       .unitId = unit.id,
       .samples = std::vector<float>(static_cast<std::size_t>(outputFrames), 0.0F),
-      .vowelOnsetOffset = preFrames,
+      .vowelOnsetOffset = vowelOnsetFrames,
   };
 
   for (time::SampleFrame frame = 0; frame < preFrames; ++frame) {

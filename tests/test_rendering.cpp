@@ -27,6 +27,22 @@
 
 namespace {
 
+std::filesystem::path materializeSnapshotBank(
+    const seam::voicebank::Manifest& bank, std::string_view name) {
+  const auto root = seam::test::support::temporaryDirectory(name);
+  for (const auto& unit : bank.units) {
+    const auto path = root / unit.audioPath;
+    std::filesystem::create_directories(path.parent_path());
+    const auto frames = static_cast<std::size_t>(unit.markers.audioEnd);
+    auto samples = seam::test::support::sineWave(
+        bank.expectedSampleRate, 440.0,
+        static_cast<double>(frames) / static_cast<double>(bank.expectedSampleRate));
+    CHECK(seam::voicebank::writeMonoPcm16Wav(
+        path, bank.expectedSampleRate, samples));
+  }
+  return root;
+}
+
 struct RenderFixture final {
   seam::application::ProjectFactory factory{900};
   seam::domain::Project project{factory.createProject("Render fixture")};
@@ -92,10 +108,11 @@ TEST_CASE("render snapshot content hash changes with canonical edit") {
       "a", {"a"}, "audio/a.wav", 69,
       seam::voicebank::UnitKind::Sustain, 24000);
   const auto bank = seam::test::support::makeManifest({unit});
+  const auto bankRoot = materializeSnapshotBank(bank, "snapshot-canonical");
   seam::rendering::RenderSnapshotFactory factory;
   const auto first = factory.create(
       fixture.project, bank, fixture.trackId, segments.value().front(), 1,
-      seam::rendering::RenderQuality::Preview);
+      seam::rendering::RenderQuality::Preview, bankRoot);
   CHECK(first);
   CHECK(first.value().project != nullptr);
   CHECK(first.value().voicebank != nullptr);
@@ -103,7 +120,7 @@ TEST_CASE("render snapshot content hash changes with canonical edit") {
   fixture.project.findNote(noteId)->midiKey = 72;
   const auto second = factory.create(
       fixture.project, bank, fixture.trackId, segments.value().front(), 2,
-      seam::rendering::RenderQuality::Preview);
+      seam::rendering::RenderQuality::Preview, bankRoot);
   CHECK(second);
   CHECK(first.value().contentHash != second.value().contentHash);
   CHECK(first.value().project->findNote(noteId)->midiKey == 69);
@@ -127,23 +144,24 @@ TEST_CASE("phrase snapshot cache key ignores unrelated phrase edits") {
       "a", {"a"}, "audio/a.wav", 69,
       seam::voicebank::UnitKind::Sustain, 24000);
   const auto bank = seam::test::support::makeManifest({unit});
+  const auto bankRoot = materializeSnapshotBank(bank, "snapshot-unrelated");
   seam::rendering::RenderSnapshotFactory factory;
   const auto before = factory.create(
       fixture.project, bank, fixture.trackId, segments.value().front(), 1,
-      seam::rendering::RenderQuality::Preview);
+      seam::rendering::RenderQuality::Preview, bankRoot);
   CHECK(before);
 
   fixture.project.findNote(secondNote)->midiKey = 76;
   const auto unrelated = factory.create(
       fixture.project, bank, fixture.trackId, segments.value().front(), 2,
-      seam::rendering::RenderQuality::Preview);
+      seam::rendering::RenderQuality::Preview, bankRoot);
   CHECK(unrelated);
   CHECK(before.value().contentHash == unrelated.value().contentHash);
 
   fixture.project.findNote(firstNote)->midiKey = 72;
   const auto related = factory.create(
       fixture.project, bank, fixture.trackId, segments.value().front(), 3,
-      seam::rendering::RenderQuality::Preview);
+      seam::rendering::RenderQuality::Preview, bankRoot);
   CHECK(related);
   CHECK(before.value().contentHash != related.value().contentHash);
   CHECK(related.value().project->noteCount() == 1);
@@ -162,10 +180,11 @@ TEST_CASE("phrase snapshot ignores presentation changes and future tempo events"
       "a", {"a"}, "audio/a.wav", 69,
       seam::voicebank::UnitKind::Sustain, 24000);
   const auto bank = seam::test::support::makeManifest({unit});
+  const auto bankRoot = materializeSnapshotBank(bank, "snapshot-presentation");
   seam::rendering::RenderSnapshotFactory factory;
   const auto baseline = factory.create(
       fixture.project, bank, fixture.trackId, segments.value().front(), 1,
-      seam::rendering::RenderQuality::Preview);
+      seam::rendering::RenderQuality::Preview, bankRoot);
   CHECK(baseline);
 
   fixture.project.setName("Renamed project");
@@ -180,14 +199,14 @@ TEST_CASE("phrase snapshot ignores presentation changes and future tempo events"
 
   const auto presentationOnly = factory.create(
       fixture.project, bank, fixture.trackId, segments.value().front(), 2,
-      seam::rendering::RenderQuality::Preview);
+      seam::rendering::RenderQuality::Preview, bankRoot);
   CHECK(presentationOnly);
   CHECK(baseline.value().contentHash == presentationOnly.value().contentHash);
 
   CHECK(fixture.project.tempoMap().addOrReplace(seam::time::Tick{480}, 90.0));
   const auto tempoInsidePhrase = factory.create(
       fixture.project, bank, fixture.trackId, segments.value().front(), 3,
-      seam::rendering::RenderQuality::Preview);
+      seam::rendering::RenderQuality::Preview, bankRoot);
   CHECK(tempoInsidePhrase);
   CHECK(baseline.value().contentHash != tempoInsidePhrase.value().contentHash);
 }
@@ -713,7 +732,7 @@ TEST_CASE("playback feeder loops into the preallocated callback path") {
       .startFrame = 0,
       .endFrame = 4,
   }));
-  feeder.setPlaying(true);
+  CHECK(feeder.setPlaying(true));
   CHECK(feeder.feedToWatermark(16) >= 16);
 
   seam::platform::RingBufferAudioProcessor processor{ring};
@@ -795,7 +814,7 @@ TEST_CASE("playback feeder loops and fills a preallocated ring buffer") {
   CHECK(feeder.setTimeline(timeline));
   CHECK(feeder.setLoop(seam::rendering::PlaybackLoop{
       .enabled = true, .startFrame = 0, .endFrame = 4}));
-  feeder.setPlaying(true);
+  CHECK(feeder.setPlaying(true));
   CHECK(feeder.feedToWatermark(12) >= 12);
   std::array<float, 12> output{};
   CHECK(ring.read(output) == output.size());

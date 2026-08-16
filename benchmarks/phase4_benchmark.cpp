@@ -205,7 +205,7 @@ int main() {
     std::cerr << "Unable to configure Phase 4 playback benchmark\n";
     return 5;
   }
-  feeder.setPlaying(true);
+  if (!feeder.setPlaying(true)) return 1;
   seam::platform::RingBufferAudioProcessor processor{ring};
   seam::platform::AudioCallbackSimulator callback{48000.0, 256U};
   constexpr std::size_t callbackIterations = 2400U;

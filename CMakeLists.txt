@@ -1,11 +1,12 @@
 cmake_minimum_required(VERSION 3.25)
 
-project(ProjectSEAM VERSION 0.4.0 LANGUAGES CXX)
+project(ProjectSEAM VERSION 0.4.1 LANGUAGES CXX)
 
 option(SEAM_BUILD_TESTS "Build Project SEAM tests" ON)
 option(SEAM_BUILD_BENCHMARKS "Build Project SEAM benchmarks" ON)
 option(SEAM_WARNINGS_AS_ERRORS "Treat compiler warnings as errors" ON)
 option(SEAM_ENABLE_SANITIZERS "Enable AddressSanitizer and UndefinedBehaviorSanitizer" OFF)
+option(SEAM_ENABLE_THREAD_SANITIZER "Enable ThreadSanitizer" OFF)
 option(SEAM_ENABLE_IPLUG2_SKIA "Enable the production iPlug2 + Skia shell adapter" OFF)
 
 set(CMAKE_CXX_STANDARD 20)
@@ -18,10 +19,29 @@ include(SeamCompilerOptions)
 
 find_package(Threads REQUIRED)
 
+set(SEAM_RENDER_ABI_ID "seam-render-abi-4.1-r1")
+set(SEAM_PHONEMIZER_REVISION 1)
+set(SEAM_UNIT_SELECTOR_REVISION 1)
+set(SEAM_TIMING_SOLVER_REVISION 1)
+set(SEAM_RAW_RENDERER_REVISION 2)
+set(SEAM_PSOLA_RENDERER_REVISION 2)
+set(SEAM_SPECTRAL_RENDERER_REVISION 2)
+set(SEAM_STRETCH_RENDERER_REVISION 2)
+set(SEAM_SEAM_COMPOSER_REVISION 2)
+set(SEAM_PCM_CACHE_FORMAT_REVISION 3)
+configure_file(
+  cmake/SeamBuildVersion.hpp.in
+  ${CMAKE_CURRENT_BINARY_DIR}/generated/seam/build/version.hpp
+  @ONLY)
+
 add_library(seam_core
   libs/seam-core/src/logger.cpp
+  libs/seam-core/src/sha256.cpp
+  libs/seam-core/src/file_io.cpp
 )
-target_include_directories(seam_core PUBLIC libs/seam-core/include)
+target_include_directories(seam_core PUBLIC
+  libs/seam-core/include
+  ${CMAKE_CURRENT_BINARY_DIR}/generated)
 seam_apply_compiler_options(seam_core)
 
 add_library(seam_domain
@@ -80,6 +100,7 @@ seam_apply_compiler_options(seam_formats)
 
 add_library(seam_voicebank
   libs/seam-voicebank/src/voicebank.cpp
+  libs/seam-voicebank/src/asset_path.cpp
   libs/seam-voicebank/src/wav.cpp
   libs/seam-voicebank/src/waveform.cpp
   libs/seam-voicebank/src/spectrogram.cpp
@@ -204,6 +225,7 @@ if(SEAM_BUILD_TESTS)
     tests/test_synthesis.cpp
     tests/test_rendering.cpp
     tests/test_inspection.cpp
+    tests/test_stabilization.cpp
   )
   target_include_directories(seam_tests PRIVATE tests)
   target_link_libraries(seam_tests PRIVATE
@@ -290,5 +312,13 @@ if(Python3_Interpreter_FOUND)
       DEPENDS seam_tests seam_phase4_demo seam_voicebank_cli seam_phase4_benchmark
       WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
       COMMENT "Generating Phase 4 verification evidence")
+
+    add_custom_target(seam_phase4_1_evidence
+      COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/generate_phase4_1_evidence.py
+              --root ${CMAKE_CURRENT_SOURCE_DIR} --skip-build
+      DEPENDS seam_tests seam_phase2_demo seam_phase3_demo seam_phase4_demo
+              seam_voicebank_cli seam_phase4_benchmark
+      WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+      COMMENT "Generating Phase 4.1 stabilization evidence")
   endif()
 endif()

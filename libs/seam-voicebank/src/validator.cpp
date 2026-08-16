@@ -1,5 +1,6 @@
 #include "seam/voicebank/validator.hpp"
 
+#include "seam/voicebank/asset_path.hpp"
 #include "seam/voicebank/pitch.hpp"
 #include "seam/voicebank/wav.hpp"
 
@@ -63,12 +64,13 @@ ValidationReport BankValidator::validate(const Manifest& manifest,
     ++aliasCounts[unit.alias];
     hasSustain = hasSustain || unit.kind == UnitKind::Sustain;
     ++report.unitsChecked;
-    const auto audioPath = bankRoot / unit.audioPath;
-    if (!std::filesystem::is_regular_file(audioPath)) {
+    auto resolved = resolveBankAsset(bankRoot, unit.audioPath);
+    if (!resolved) {
       add(report, IssueSeverity::Error, IssueCode::MissingAudio, unit.id,
-          "Audio file does not exist: " + unit.audioPath.generic_string());
+          resolved.error().message + ": " + unit.audioPath.generic_string());
       continue;
     }
+    const auto& audioPath = resolved.value();
     auto audio = readWav(audioPath);
     if (!audio) {
       add(report, IssueSeverity::Error, IssueCode::AudioUnreadable, unit.id,

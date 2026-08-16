@@ -8,7 +8,10 @@
 #include "seam/voicebank/voicebank.hpp"
 
 #include <filesystem>
+#include <memory>
+#include <span>
 #include <stop_token>
+#include <string>
 #include <vector>
 
 namespace seam::synthesis {
@@ -49,6 +52,11 @@ struct PhraseRenderOptions final {
   SeamSettings defaultSeam{};
 };
 
+struct FrozenUnitAudio final {
+  std::string unitId;
+  std::shared_ptr<const voicebank::AudioBuffer> audio;
+};
+
 class ConcatenativePhraseRenderer final {
 public:
   [[nodiscard]] core::Result<PhraseRenderResult> render(
@@ -60,6 +68,19 @@ public:
       const TimingPlan& timing,
       std::uint32_t outputSampleRate,
       const PhraseRenderOptions& options = {},
+      std::stop_token stopToken = {}) const;
+
+  // Snapshot-safe overload. Every selected Unit must have a frozen decoded
+  // audio buffer produced from the exact bytes used by the render identity.
+  [[nodiscard]] core::Result<PhraseRenderResult> render(
+      const voicebank::Manifest& manifest,
+      const domain::Project& project,
+      const domain::VocalRegion& region,
+      const UnitPlan& unitPlan,
+      const TimingPlan& timing,
+      std::uint32_t outputSampleRate,
+      const PhraseRenderOptions& options,
+      std::span<const FrozenUnitAudio> frozenAudio,
       std::stop_token stopToken = {}) const;
 };
 
