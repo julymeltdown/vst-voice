@@ -8,6 +8,13 @@
 #include <cstdint>
 #include <filesystem>
 #include <numbers>
+
+#ifdef _WIN32
+#define NOMINMAX
+#include <windows.h>
+#else
+#include <unistd.h>
+#endif
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -15,10 +22,19 @@
 
 namespace seam::test::support {
 
+inline std::uint64_t currentProcessId() noexcept {
+#ifdef _WIN32
+  return static_cast<std::uint64_t>(GetCurrentProcessId());
+#else
+  return static_cast<std::uint64_t>(::getpid());
+#endif
+}
+
 inline std::filesystem::path temporaryDirectory(std::string_view name) {
   static std::atomic<std::uint64_t> counter{0};
   const auto path = std::filesystem::temp_directory_path() /
                     ("project-seam-" + std::string{name} + "-" +
+                     std::to_string(currentProcessId()) + "-" +
                      std::to_string(counter.fetch_add(1)));
   std::error_code error;
   std::filesystem::remove_all(path, error);
