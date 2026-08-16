@@ -95,6 +95,18 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+def read_generated_identity(root: Path) -> tuple[str, str]:
+    header = root / "build/dev/generated/seam/build/version.hpp"
+    if not header.is_file():
+        raise RuntimeError(f"generated build identity is missing: {header}")
+    text = header.read_text(encoding="utf-8")
+    version_match = re.search(r'kApplicationVersion\{"([^"]+)"\}', text)
+    abi_match = re.search(r'kRenderAbiId\{"([^"]+)"\}', text)
+    if version_match is None or abi_match is None:
+        raise RuntimeError("unable to parse generated application/render identity")
+    return version_match.group(1), abi_match.group(1)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--root", type=Path, default=Path.cwd())
@@ -107,6 +119,7 @@ def main() -> int:
     args = parser.parse_args()
 
     root = args.root.resolve()
+    application_version, render_abi = read_generated_identity(root)
     evidence = root / "docs/phase4_1/evidence"
     out = root / "out/phase4_1"
     shutil.rmtree(evidence, ignore_errors=True)
@@ -294,8 +307,8 @@ def main() -> int:
 
     verification: dict[str, Any] = {
         "phase": "4.1",
-        "applicationVersion": "0.4.1",
-        "renderAbi": "seam-render-abi-4.1-r1",
+        "applicationVersion": application_version,
+        "renderAbi": render_abi,
         "gitHeadAtEvidenceGeneration": git_head,
         "branchPolicy": "master-only-pass",
         "warningsAsErrors": True,
@@ -332,6 +345,36 @@ def main() -> int:
         json.dumps(verification, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
+
+    required_evidence = {
+        "direct-tests.txt",
+        "ctest-dev.txt",
+        "ctest-release.txt",
+        "ctest-sanitize.txt",
+        "phase2-demo.txt",
+        "phase3-demo.txt",
+        "phase4-demo.txt",
+        "phase4-summary.json",
+        "phase4-benchmark.json",
+        "branch-policy.txt",
+        "license-audit.txt",
+        "git-diff-check.txt",
+        "git-fsck.txt",
+        "git-history.txt",
+        "verification-matrix.json",
+    }
+    if not args.skip_thread_sanitizer:
+        required_evidence.update({
+            "thread-sanitizer-direct-tests.txt",
+            "ctest-thread-sanitize.txt",
+        })
+    missing_evidence = sorted(
+        name for name in required_evidence if not (evidence / name).is_file()
+    )
+    if missing_evidence:
+        raise RuntimeError(
+            "required Phase 4.1 evidence is missing: " + ", ".join(missing_evidence)
+        )
 
     excluded = {".git", "build", "out", ".cache"}
     file_tree: list[str] = []
