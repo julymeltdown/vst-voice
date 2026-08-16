@@ -126,7 +126,7 @@ seam_apply_compiler_options(seam_voicebank_cli)
 
 if(SEAM_ENABLE_IPLUG2_SKIA)
   message(FATAL_ERROR
-    "The iPlug2 + Skia adapter is intentionally dependency-gated in Phase 1. "
+    "The iPlug2 + Skia adapter is intentionally dependency-gated until its exact source closure is approved. "
     "Set IPLUG2_ROOT and SKIA_ROOT only after the exact source revisions pass "
     "the repository license audit. See docs/architecture/IPLUG2_SKIA_ADAPTER.md.")
 endif()
