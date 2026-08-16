@@ -20,6 +20,11 @@
 namespace seam::rendering {
 namespace {
 
+constexpr std::uint64_t kMaximumFrozenPhraseEncodedBytes =
+    256ULL * 1024ULL * 1024ULL;
+constexpr std::uint64_t kMaximumFrozenPhraseDecodedBytes =
+    512ULL * 1024ULL * 1024ULL;
+
 domain::VocalRegion extractPhraseRegion(const domain::VocalRegion& source,
                                          const PhraseSegment& segment) {
   std::unordered_set<domain::NoteId> noteIds;
@@ -397,6 +402,8 @@ core::Result<RenderSnapshot> RenderSnapshotFactory::create(
     std::shared_ptr<const voicebank::AudioBuffer> audio;
   };
   std::map<std::filesystem::path, FrozenAsset> frozenByPath;
+  std::uint64_t frozenEncodedBytes = 0U;
+  std::uint64_t frozenDecodedBytes = 0U;
   std::vector<SelectedUnitIdentity> selectedUnits;
   std::vector<synthesis::FrozenUnitAudio> frozenAudio;
   selectedUnits.reserve(plan.value().entries.size());
@@ -412,11 +419,26 @@ core::Result<RenderSnapshot> RenderSnapshotFactory::create(
     if (!resolved) return core::Result<RenderSnapshot>{resolved.error()};
     auto asset = frozenByPath.find(resolved.value());
     if (asset == frozenByPath.end()) {
+      const auto remainingEncoded =
+          kMaximumFrozenPhraseEncodedBytes - frozenEncodedBytes;
       auto bytes = core::readFileBytesLimited(
-          resolved.value(), voicebank::kMaximumSupportedWavBytes);
+          resolved.value(),
+          std::min<std::uint64_t>(voicebank::kMaximumSupportedWavBytes,
+                                  remainingEncoded));
       if (!bytes) return core::Result<RenderSnapshot>{bytes.error()};
       auto decoded = voicebank::readWav(bytes.value(), resolved.value().string());
       if (!decoded) return core::Result<RenderSnapshot>{decoded.error()};
+      const auto decodedBytes =
+          static_cast<std::uint64_t>(decoded.value().interleaved.size()) *
+          static_cast<std::uint64_t>(sizeof(float));
+      if (decodedBytes > kMaximumFrozenPhraseDecodedBytes - frozenDecodedBytes) {
+        return core::failure<RenderSnapshot>(
+            core::ErrorCode::Unsupported,
+            "Selected Phrase audio exceeds the frozen decode budget",
+            resolved.value().string());
+      }
+      frozenEncodedBytes += static_cast<std::uint64_t>(bytes.value().size());
+      frozenDecodedBytes += decodedBytes;
       asset = frozenByPath.emplace(
           resolved.value(),
           FrozenAsset{

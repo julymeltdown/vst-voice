@@ -1,5 +1,7 @@
 # Project SEAM Phase 4 Implementation Report
 
+> **Superseded stability note:** Phase 4 feature delivery remains historically accurate, but its cache identity, persistence, playback ownership, and DSP-boundary contracts were hardened by Phase 4.1. See [`PHASE4_1_IMPLEMENTATION_REPORT.md`](PHASE4_1_IMPLEMENTATION_REPORT.md).
+
 **Implementation status:** Complete for the Phase 4 scope defined in this repository
 **Branch policy:** `master` only
 **Repository version:** `0.4.0`
@@ -415,3 +417,17 @@ Phase 4 does not include:
 - optimized real-time SpectralClassic preview rendering.
 
 The callback architecture and UI models are production-shaped and tested, but the supplied images remain deterministic evidence renders, and the supplied voice is synthetic technical test data.
+
+---
+
+## Phase 4.1 stabilization follow-up
+
+The Phase 4 feature implementation was subsequently reviewed for cache correctness, persistence durability, DSP boundary behavior, and concurrency. Those findings are closed by repository version `0.4.1`.
+
+See:
+
+- [`PHASE4_1_IMPLEMENTATION_REPORT.md`](PHASE4_1_IMPLEMENTATION_REPORT.md)
+- [`docs/architecture/PHASE4_1_STABILIZATION.md`](docs/architecture/PHASE4_1_STABILIZATION.md)
+- [`docs/phase4_1/ACCEPTANCE.md`](docs/phase4_1/ACCEPTANCE.md)
+
+Phase 4 audiovisual evidence remains valid as feature evidence. Phase 4.1 changes correctness and infrastructure below that feature surface.

@@ -567,6 +567,32 @@ TEST_CASE("playback transport uses command queue and consumer-owned reset epoch"
   CHECK(feeder.stats().resetWaits >= 1U);
 }
 
+TEST_CASE("loop and play-state changes discard already buffered future audio") {
+  seam::rendering::SpscAudioRingBuffer ring{64U};
+  seam::rendering::PlaybackFeeder feeder{ring, 48000U, 16U};
+  CHECK(feeder.setTimeline(constantTimeline(0.25F, 256U)));
+  CHECK(feeder.setPlaying(true));
+  CHECK(feeder.feedToWatermark(32U) >= 32U);
+
+  CHECK(feeder.setLoop(seam::rendering::PlaybackLoop{
+      .enabled = true, .startFrame = 4, .endFrame = 12}));
+  CHECK(feeder.feedOnce() == 0U);
+  std::array<float, 16> resetBlock{};
+  CHECK(ring.read(resetBlock) == 0U);
+  CHECK(std::all_of(resetBlock.begin(), resetBlock.end(),
+                    [](float value) { return value == 0.0F; }));
+  CHECK(feeder.feedToWatermark(16U) >= 16U);
+
+  CHECK(feeder.setPlaying(false));
+  CHECK(feeder.feedOnce() == 0U);
+  CHECK(ring.read(resetBlock) == 0U);
+  CHECK(feeder.feedOnce() == 0U);
+  CHECK(ring.availableRead() == 0U);
+
+  CHECK(feeder.setPlaying(true));
+  CHECK(feeder.feedToWatermark(16U) >= 16U);
+}
+
 TEST_CASE("playback feeder remains race-free under threaded transport changes") {
   seam::rendering::SpscAudioRingBuffer ring{512U};
   seam::rendering::PlaybackFeeder feeder{ring, 48000U, 64U, 512U};

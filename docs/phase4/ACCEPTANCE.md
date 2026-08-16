@@ -1,5 +1,7 @@
 # Phase 4 Acceptance Criteria
 
+> Phase 4 feature acceptance is retained for historical traceability. Phase 4.1 supersedes the cache-format, persistence, DSP-transition, scheduler-publication, and playback-reset assumptions. See [`../phase4_1/ACCEPTANCE.md`](../phase4_1/ACCEPTANCE.md).
+
 ## Multi-renderer synthesis
 
 - [x] `SpectralClassicRenderer` is a concrete backend, not a metadata placeholder.
@@ -64,3 +66,20 @@
 - [ ] Official human-recorded voicebank.
 - [ ] Signed `.seambank` distribution package.
 - [ ] CLAP, VST3, or AU targets.
+
+## Phase 4.1 stabilization closure
+
+The following post-Phase-4 review findings are closed in Phase 4.1:
+
+- selected-WAV and effective-option render identity;
+- generated render ABI and component revisions;
+- durable Project/Manifest replacement;
+- bounded JSON and PCM input handling;
+- canonical voicebank asset containment;
+- Spectral/Stretch vowel-transition preservation;
+- Seam phase-alignment continuity;
+- feeder control queue and consumer-owned reset epochs;
+- final scheduler revision gating;
+- transaction-safe command failure recovery.
+
+See `docs/phase4_1/ACCEPTANCE.md`. The features listed under “Explicitly outside Phase 4” remain outside Phase 4.1 as well.

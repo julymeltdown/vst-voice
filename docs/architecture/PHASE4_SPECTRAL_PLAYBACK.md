@@ -1,5 +1,7 @@
 # Phase 4 Architecture: Multi-renderer synthesis, inspection, and callback-ready playback
 
+> **Current architecture note:** Phase 4.1 replaces the Phase 4 cache-format, transport-reset, scheduler-publication, and stable-vowel transition details. This document remains the renderer/playback feature history; current stabilization rules are in [`PHASE4_1_STABILIZATION.md`](PHASE4_1_STABILIZATION.md).
+
 ## 1. Scope
 
 Phase 4 completes the renderer identifiers already present in project and voicebank data, adds production-shaped playback handoff, bounds disposable PCM storage, and exposes render/voicebank information through UI-facing models.

@@ -1,0 +1,78 @@
+{
+  "applicationVersion": "0.4.1",
+  "benchmark": {
+    "buildPreset": "release",
+    "cacheDiskEntries": 1,
+    "cacheDiskEvictions": 15,
+    "cacheEntriesStored": 16,
+    "cacheMemoryEntries": 0,
+    "cacheMemoryEvictions": 16,
+    "cacheStoreMs": 41.548,
+    "callbackAudioSeconds": 12.8,
+    "callbackIterations": 2400,
+    "callbackUnderflowFrames": 0,
+    "playbackMs": 4.935,
+    "playbackThroughputMultiple": 2593.824,
+    "spectralIterations": 18,
+    "spectralMs": 7353.633,
+    "spectralRealTimeMultiple": 2.448,
+    "spectralRenderedSamples": 864000,
+    "stretchIterations": 80,
+    "stretchMs": 364.225,
+    "stretchRealTimeMultiple": 236.118,
+    "stretchRenderedSamples": 4128000
+  },
+  "branchPolicy": "master-only-pass",
+  "ctest": {
+    "dev": "pass",
+    "release": "pass",
+    "sanitize": "pass"
+  },
+  "directTests": {
+    "failed": 0,
+    "passed": 83
+  },
+  "gitDiffCheck": "pass",
+  "gitFsck": "pass",
+  "gitHeadAtEvidenceGeneration": "4e906158a237361589b3d49609d8728b503b187b",
+  "licenseAudit": "pass",
+  "phase": "4.1",
+  "phase4Regression": {
+    "callbackUnderflowFrames": 0,
+    "projectRoundTrip": true,
+    "rendererFallbacks": 0,
+    "renderers": {
+      "classic-psola": 1,
+      "raw": 1,
+      "spectral-classic": 1,
+      "stretch": 1
+    }
+  },
+  "renderAbi": "seam-render-abi-4.1-r1",
+  "smokeDemos": {
+    "phase2": "pass",
+    "phase3": "pass",
+    "phase4": "pass"
+  },
+  "stabilizationProofs": {
+    "boundedJsonAndPcmParsing": "pass",
+    "commandTransactionRecovery": "pass",
+    "consumerOwnedRingReset": "pass",
+    "durableAtomicWriteFaultInjection": "pass",
+    "effectiveRendererOptionsIdentity": "pass",
+    "generatedRenderAbi": "pass",
+    "schedulerFinalRevisionGate": "pass",
+    "seamOverlapTailContinuity": "pass",
+    "selectedWavIdentity": "pass",
+    "spectralStretchTransitionPreservation": "pass",
+    "unrelatedUnitIdentityStability": "pass",
+    "voicebankPathContainment": "pass"
+  },
+  "threadSanitizer": {
+    "configured": true,
+    "directSuite": "pass",
+    "directTestCount": 83,
+    "fullCtest": "pass"
+  },
+  "warningsAsErrors": true
+}

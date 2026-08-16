@@ -220,14 +220,17 @@ bool PlaybackFeeder::processControls() noexcept {
         resetNeeded = true;
         break;
       case ControlKind::Loop:
+        // Already-buffered PCM was mixed against the previous loop policy.
+        // Any loop mutation therefore invalidates the queued future, even when
+        // the current playhead remains within the new range.
         loop_ = command->loop;
         if (loop_.enabled && playhead_ >= loop_.endFrame) {
           playhead_ = loop_.startFrame;
-          resetNeeded = true;
         }
+        resetNeeded = true;
         break;
       case ControlKind::Playing:
-        if (playing_ && !command->playing) resetNeeded = true;
+        if (playing_ != command->playing) resetNeeded = true;
         playing_ = command->playing;
         break;
       case ControlKind::Seek:
@@ -289,6 +292,9 @@ void PlaybackFeeder::mixWithLoop(std::span<float> output) noexcept {
 std::size_t PlaybackFeeder::feedOnce() noexcept {
   stats_.feedCalls.fetch_add(1U, std::memory_order_relaxed);
   if (!processControls()) return 0U;
+  // Paused transport must not pre-buffer silence. A subsequent play command
+  // can then begin at the published playhead without draining stale zeroes.
+  if (!playing_) return 0U;
   if (ring_.availableWrite() == 0U) {
     stats_.ringFullEvents.fetch_add(1U, std::memory_order_relaxed);
     return 0U;

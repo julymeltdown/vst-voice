@@ -1,0 +1,15 @@
+Project SEAM Phase 4 demo completed
+  project schema: 3
+  voicebank schema: 2
+  persistent unit overrides: 4
+  editable seam overrides: 1
+  raw placements: 1
+  PSOLA placements: 1
+  spectral placements: 1
+  stretch placements: 1
+  unit lane visuals: 4
+  callback underflows: 0
+  bounded cache evictions: 7
+  scheduler completed: 1
+  scheduler cache hits: 1
+  output: "/mnt/data/project-seam-phase4_1-work/project-seam-phase4/out/phase4_1/phase4"
