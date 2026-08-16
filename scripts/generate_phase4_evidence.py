@@ -113,40 +113,65 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--root", type=Path, default=Path.cwd())
     parser.add_argument("--skip-build", action="store_true")
+    parser.add_argument(
+        "--reuse-verification",
+        action="store_true",
+        help="Reuse existing direct-test and CTest logs in the evidence directory",
+    )
+    parser.add_argument(
+        "--skip-image-conversion",
+        action="store_true",
+        help="Keep SVG/PGM evidence without producing optional PNG derivatives",
+    )
     args = parser.parse_args()
 
     root = args.root.resolve()
     out = root / "out/phase4"
     evidence = root / "docs/phase4/evidence"
     shutil.rmtree(out, ignore_errors=True)
-    shutil.rmtree(evidence, ignore_errors=True)
+    if not args.reuse_verification:
+        shutil.rmtree(evidence, ignore_errors=True)
     evidence.mkdir(parents=True, exist_ok=True)
 
     if not args.skip_build:
         run(["cmake", "--preset", "dev"], root)
         run(["cmake", "--build", "--preset", "dev", "-j2"], root)
 
-    test_output = run([str(root / "build/dev/seam_tests")], root, capture=True)
-    (evidence / "test-output.txt").write_text(test_output, encoding="utf-8")
+    if args.reuse_verification:
+        test_log = evidence / "test-output.txt"
+        if not test_log.is_file():
+            raise RuntimeError("reuse-verification requires test-output.txt")
+        test_output = test_log.read_text(encoding="utf-8")
+    else:
+        test_output = run([str(root / "build/dev/seam_tests")], root, capture=True)
+        (evidence / "test-output.txt").write_text(test_output, encoding="utf-8")
     match = re.search(r"(\d+) passed,\s*(\d+) failed", test_output)
     if match is None or int(match.group(2)) != 0:
         raise RuntimeError("unable to confirm a zero-failure direct test run")
     passed_tests = int(match.group(1))
 
-    ctest_output = run(
-        ["ctest", "--preset", "dev", "--output-on-failure"], root, capture=True
-    )
-    (evidence / "ctest-dev.txt").write_text(ctest_output, encoding="utf-8")
-    ctest_presets: dict[str, str] = {"dev": "pass"}
-    for preset in ("release", "sanitize"):
-        if (root / "build" / preset / "CTestTestfile.cmake").is_file():
+    ctest_presets: dict[str, str] = {}
+    for preset in ("dev", "release", "sanitize"):
+        configured = (root / "build" / preset / "CTestTestfile.cmake").is_file()
+        if not configured:
+            continue
+        log_path = evidence / f"ctest-{preset}.txt"
+        if args.reuse_verification:
+            if not log_path.is_file():
+                raise RuntimeError(
+                    f"reuse-verification requires {log_path.name}"
+                )
+            output = log_path.read_text(encoding="utf-8")
+            if "100% tests passed" not in output:
+                raise RuntimeError(f"{log_path.name} does not record a passing CTest run")
+        else:
             output = run(
                 ["ctest", "--preset", preset, "--output-on-failure"],
                 root,
                 capture=True,
             )
-            (evidence / f"ctest-{preset}.txt").write_text(output, encoding="utf-8")
-            ctest_presets[preset] = "pass"
+            log_path.write_text(output, encoding="utf-8")
+        ctest_presets[preset] = "pass"
 
     demo_output = run(
         [str(root / "build/dev/seam_phase4_demo"), "--output", str(out)],
@@ -240,17 +265,18 @@ def main() -> int:
     for relative in copied:
         copy_evidence(out, evidence, relative)
 
-    editor_png = out / "phase4-editor.png"
-    if convert_svg(out / "phase4-editor.svg", editor_png, root):
-        shutil.copy2(editor_png, evidence / "phase4-editor.png")
+    if not args.skip_image_conversion:
+        editor_png = out / "phase4-editor.png"
+        if convert_svg(out / "phase4-editor.svg", editor_png, root):
+            shutil.copy2(editor_png, evidence / "phase4-editor.png")
 
-    microscope_png = out / "phase4-microscope.png"
-    if convert_svg(out / "phase4-microscope.svg", microscope_png, root):
-        shutil.copy2(microscope_png, evidence / "phase4-microscope.png")
+        microscope_png = out / "phase4-microscope.png"
+        if convert_svg(out / "phase4-microscope.svg", microscope_png, root):
+            shutil.copy2(microscope_png, evidence / "phase4-microscope.png")
 
-    spectrogram_png = out / "phase4-spectrogram.png"
-    if convert_pgm(out / "phase4-spectrogram.pgm", spectrogram_png, root):
-        shutil.copy2(spectrogram_png, evidence / "phase4-spectrogram.png")
+        spectrogram_png = out / "phase4-spectrogram.png"
+        if convert_pgm(out / "phase4-spectrogram.pgm", spectrogram_png, root):
+            shutil.copy2(spectrogram_png, evidence / "phase4-spectrogram.png")
 
     audio_metadata = {
         "mixedRender": wav_metadata(out / "phase4-mixed-render.wav"),
