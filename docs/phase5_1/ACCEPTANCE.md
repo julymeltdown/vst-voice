@@ -48,7 +48,7 @@
 - [x] Release CTest refreshed after final Phase 5.1 changes.
 - [x] ASan + UBSan CTest refreshed after final Phase 5.1 changes.
 - [x] ThreadSanitizer suite refreshed after final Phase 5.1 changes.
-- [ ] Final ZIP clean extraction/rebuild/retest completed after the Phase 5.1 commit.
+- [x] Clean clone configure/build/retest completed after the Phase 5.1 implementation and evidence commits.
 
 ## Explicitly not claimed complete in Phase 5.1
 
