@@ -52,7 +52,7 @@
 - [x] Branch policy reports only `master`.
 - [x] License audit passes.
 - [x] Release and sanitizer results are recorded after the final source commit.
-- [ ] Delivered ZIP is extracted, rebuilt, and retested after final packaging.
+- [x] Delivered ZIP is extracted, rebuilt, and retested after final packaging.
 
 ## Explicitly outside Phase 4
 
