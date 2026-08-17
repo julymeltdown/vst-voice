@@ -1,0 +1,7 @@
+{
+  "warmupIterations": 2,
+  "iterations": 8,
+  "stateBytes": 768123,
+  "encodeTotalMs": 28.8035,
+  "decodeTotalMs": 30.5687
+}

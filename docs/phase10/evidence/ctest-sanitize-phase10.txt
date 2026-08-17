@@ -1,0 +1,21 @@
+Script started on 2026-08-17 04:03:11+00:00 [COMMAND="ctest --test-dir build/sanitize -R '^(seam_tests|seam_phase10_demo_smoke|seam_clap_state_pack_smoke|seam_clap_state_inspect_smoke|seam_clap_state_extract_smoke|seam_clap_plugin_host_smoke)$' --output-on-failure --timeout 60" <not executed on terminal>]
+Internal ctest changing into directory: /mnt/data/project-seam-phase10-work/project-seam-phase9-master/build/sanitize
+Test project /mnt/data/project-seam-phase10-work/project-seam-phase9-master/build/sanitize
+    Start  1: seam_tests
+1/6 Test  #1: seam_tests .......................   Passed   19.20 sec
+    Start 10: seam_phase10_demo_smoke
+2/6 Test #10: seam_phase10_demo_smoke ..........   Passed    0.63 sec
+    Start 11: seam_clap_state_pack_smoke
+3/6 Test #11: seam_clap_state_pack_smoke .......   Passed    0.32 sec
+    Start 12: seam_clap_state_inspect_smoke
+4/6 Test #12: seam_clap_state_inspect_smoke ....   Passed    0.30 sec
+    Start 13: seam_clap_state_extract_smoke
+5/6 Test #13: seam_clap_state_extract_smoke ....   Passed    0.33 sec
+    Start 14: seam_clap_plugin_host_smoke
+6/6 Test #14: seam_clap_plugin_host_smoke ......   Passed    2.03 sec
+
+100% tests passed, 0 tests failed out of 6
+
+Total Test time (real) =  22.80 sec
+
+Script done on 2026-08-17 04:03:34+00:00 [COMMAND_EXIT_CODE="0"]

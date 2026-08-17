@@ -1,0 +1,48 @@
+{
+  "phase": "10.0",
+  "applicationVersion": "0.10.0",
+  "branchPolicy": "master-only-pass",
+  "namedTests": {
+    "passed": 128,
+    "failed": 0
+  },
+  "phase10Ctest": {
+    "passed": 5,
+    "failed": 0
+  },
+  "plugin": {
+    "file": "ProjectSEAM.clap",
+    "sha256": "ca6d80c194483e79d5e67d67c92a3edf9bed0f9400d051a5209320072b6c1408",
+    "clapVersion": "1.2.10",
+    "id": "com.project-seam.render-player",
+    "channels": 4,
+    "dynamicLoad": "pass",
+    "stateRoundTrip": true,
+    "activeLoadRejected": true,
+    "restartRequests": 1,
+    "sampleAccurateAutomation": {
+      "status": "pass",
+      "minus6DbRatio": 0.501187
+    },
+    "transportPauseSilence": true
+  },
+  "state": {
+    "format": "SEAMCLP1",
+    "wavPackInspectExtract": "pass",
+    "maximumBytes": 268435456,
+    "maximumChannels": 8,
+    "sha256Protected": true
+  },
+  "dependency": {
+    "name": "CLAP ABI subset",
+    "revision": "195b42a004144fab0b3cf95e9c067187d15365b7",
+    "license": "MIT"
+  },
+  "deferred": [
+    "CLAP GUI extension and embedded editor",
+    "asynchronous host-side singing render",
+    "live note-event synthesis",
+    "VST3 and AU",
+    "broad third-party host certification"
+  ]
+}

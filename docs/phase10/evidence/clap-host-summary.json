@@ -1,0 +1,10 @@
+{
+  "pluginId": "com.project-seam.render-player",
+  "channels": 4,
+  "framesProcessed": 256,
+  "automationRatio": 0.501187,
+  "stateRoundTrip": true,
+  "activeLoadRejected": true,
+  "restartRequests": 1,
+  "transportPauseSilence": true
+}

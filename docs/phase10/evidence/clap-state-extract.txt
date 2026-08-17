@@ -1,0 +1,4 @@
+wav=/mnt/data/project-seam-phase10-work/project-seam-phase9-master/out/phase10-evidence/phase10-from-state.wav
+sampleRate=48000
+channels=4
+frames=96000

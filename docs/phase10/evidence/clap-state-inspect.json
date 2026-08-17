@@ -1,0 +1,9 @@
+{
+  "format": "SEAMCLP1",
+  "sampleRate": 48000,
+  "channels": 4,
+  "frames": 96000,
+  "masterGainDb": 0,
+  "titleBytes": 26,
+  "finitePcm": true
+}

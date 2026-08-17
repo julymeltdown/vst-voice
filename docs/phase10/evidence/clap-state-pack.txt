@@ -1,0 +1,6 @@
+state=/mnt/data/project-seam-phase10-work/project-seam-phase9-master/out/phase10-evidence/phase10-from-wav.seamclapstate
+sampleRate=48000
+channels=4
+frames=96000
+masterGainDb=0
+title=Project SEAM packed render

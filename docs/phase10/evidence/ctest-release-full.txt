@@ -1,0 +1,45 @@
+Test project /mnt/data/project-seam-phase10-work/project-seam-phase9-master/build/release
+      Start  1: seam_tests
+ 1/20 Test  #1: seam_tests .............................   Passed    1.44 sec
+      Start  2: seam_phase2_demo_smoke
+ 2/20 Test  #2: seam_phase2_demo_smoke .................   Passed    0.28 sec
+      Start  3: seam_phase3_demo_smoke
+ 3/20 Test  #3: seam_phase3_demo_smoke .................   Passed    0.36 sec
+      Start  4: seam_phase4_demo_smoke
+ 4/20 Test  #4: seam_phase4_demo_smoke .................   Passed    0.46 sec
+      Start  5: seam_phase6_demo_smoke
+ 5/20 Test  #5: seam_phase6_demo_smoke .................   Passed    0.02 sec
+      Start  6: seam_phase7_demo_smoke
+ 6/20 Test  #6: seam_phase7_demo_smoke .................   Passed    0.02 sec
+      Start  7: seam_phase8_demo_smoke
+ 7/20 Test  #7: seam_phase8_demo_smoke .................   Passed    0.00 sec
+      Start  8: seam_phase9_demo_smoke
+ 8/20 Test  #8: seam_phase9_demo_smoke .................   Passed    0.18 sec
+      Start  9: seam_phase8_platform_source_contract
+ 9/20 Test  #9: seam_phase8_platform_source_contract ...   Passed    0.65 sec
+      Start 10: seam_phase10_demo_smoke
+10/20 Test #10: seam_phase10_demo_smoke ................   Passed    0.03 sec
+      Start 11: seam_clap_state_pack_smoke
+11/20 Test #11: seam_clap_state_pack_smoke .............   Passed    0.02 sec
+      Start 12: seam_clap_state_inspect_smoke
+12/20 Test #12: seam_clap_state_inspect_smoke ..........   Passed    0.01 sec
+      Start 13: seam_clap_state_extract_smoke
+13/20 Test #13: seam_clap_state_extract_smoke ..........   Passed    0.02 sec
+      Start 14: seam_clap_plugin_host_smoke
+14/20 Test #14: seam_clap_plugin_host_smoke ............   Passed    0.06 sec
+      Start 15: seam_bank_tool_help
+15/20 Test #15: seam_bank_tool_help ....................   Passed    0.00 sec
+      Start 16: seam_voicebank_cli_help
+16/20 Test #16: seam_voicebank_cli_help ................   Passed    0.00 sec
+      Start 17: seam_voicebank_cli_validate
+17/20 Test #17: seam_voicebank_cli_validate ............   Passed    0.23 sec
+      Start 18: seam_phase5_demo_smoke
+18/20 Test #18: seam_phase5_demo_smoke .................   Passed    0.51 sec
+      Start 19: seam_native_editor_x11_smoke
+19/20 Test #19: seam_native_editor_x11_smoke ...........   Passed    0.50 sec
+      Start 20: seam_voicebank_studio_x11_smoke
+20/20 Test #20: seam_voicebank_studio_x11_smoke ........   Passed    0.52 sec
+
+100% tests passed, 0 tests failed out of 20
+
+Total Test time (real) =   5.32 sec

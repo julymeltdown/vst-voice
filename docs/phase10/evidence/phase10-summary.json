@@ -1,0 +1,7 @@
+{
+  "phase": "10",
+  "sampleRate": 48000,
+  "channels": 4,
+  "frames": 96000,
+  "stateRoundTrip": true
+}

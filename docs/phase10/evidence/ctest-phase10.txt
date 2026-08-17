@@ -1,0 +1,16 @@
+Internal ctest changing into directory: /mnt/data/project-seam-phase10-work/project-seam-phase9-master/build/dev
+Test project /mnt/data/project-seam-phase10-work/project-seam-phase9-master/build/dev
+    Start 10: seam_phase10_demo_smoke
+1/5 Test #10: seam_phase10_demo_smoke ..........   Passed    0.24 sec
+    Start 11: seam_clap_state_pack_smoke
+2/5 Test #11: seam_clap_state_pack_smoke .......   Passed    0.11 sec
+    Start 12: seam_clap_state_inspect_smoke
+3/5 Test #12: seam_clap_state_inspect_smoke ....   Passed    0.12 sec
+    Start 13: seam_clap_state_extract_smoke
+4/5 Test #13: seam_clap_state_extract_smoke ....   Passed    0.13 sec
+    Start 14: seam_clap_plugin_host_smoke
+5/5 Test #14: seam_clap_plugin_host_smoke ......   Passed    0.84 sec
+
+100% tests passed, 0 tests failed out of 5
+
+Total Test time (real) =   1.45 sec
