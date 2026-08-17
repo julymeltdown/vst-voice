@@ -56,5 +56,6 @@
     "rightsBasis": "upstream public-domain dedication",
     "sourceSha256": "26c3ceacfb31a7300824a3841904f077856bdba41dafba0310c603cabb86d07f",
     "derivedSha256": "caf8ceb04b864c7501371a2adae46697495e617b9ade178560ba2ea1aa6b8cb9"
-  }
+  },
+  "implementationCommit": "d93a4ca8d053aa1bb980d9b1c4d5bdf10a7e2b06"
 }

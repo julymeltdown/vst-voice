@@ -177,6 +177,12 @@ void AsyncPreviewRenderService::submit(domain::Project project,
   condition_.notify_all();
 }
 
+void AsyncPreviewRenderService::setCompletionCallback(
+    std::function<void()> callback) {
+  std::lock_guard lock(callbackMutex_);
+  completionCallback_ = std::move(callback);
+}
+
 std::shared_ptr<const RenderedPreview> AsyncPreviewRenderService::latest() const {
   auto handle = published_.acquire();
   return handle ? std::make_shared<RenderedPreview>(*handle)
@@ -215,6 +221,12 @@ void AsyncPreviewRenderService::workerLoop(std::stop_token stopToken) {
       continue;
     }
     completed_.fetch_add(1U, std::memory_order_relaxed);
+    std::function<void()> callback;
+    {
+      std::lock_guard lock(callbackMutex_);
+      callback = completionCallback_;
+    }
+    if (callback) callback();
   }
 }
 
@@ -264,6 +276,13 @@ std::shared_ptr<RenderedPreview> AsyncPreviewRenderService::render(
     double sourcePosition = 0.0;
     for (std::size_t offset = 0U;
          offset < duration && begin + offset < frameCount; ++offset) {
+      if ((offset & 4095U) == 0U &&
+          (stopToken.stop_requested() ||
+           request.revision !=
+               latestSubmittedRevision_.load(std::memory_order_acquire))) {
+        cancelled_.fetch_add(1U, std::memory_order_relaxed);
+        return {};
+      }
       auto envelope = 1.0F;
       if (offset < attackFrames) {
         envelope *= static_cast<float>(offset) /
@@ -335,6 +354,17 @@ void LiveSampleInstrument::noteOff(std::int32_t noteId,
     if ((noteId >= 0 && voice.noteId == noteId) ||
         (noteId < 0 && voice.key == key)) {
       voice.releasing = true;
+    }
+  }
+}
+
+void LiveSampleInstrument::choke(std::int32_t noteId,
+                                 std::int16_t key) noexcept {
+  for (auto& voice : voices_) {
+    if (!voice.active) continue;
+    if ((noteId >= 0 && voice.noteId == noteId) ||
+        (noteId < 0 && voice.key == key)) {
+      voice = LiveVoice{};
     }
   }
 }
@@ -486,6 +516,10 @@ void EditorRuntime::setRepaintCallback(std::function<void()> callback) {
   repaintCallback_ = std::move(callback);
 }
 
+void EditorRuntime::setRenderReadyCallback(std::function<void()> callback) {
+  renderService_.setCompletionCallback(std::move(callback));
+}
+
 void EditorRuntime::setTextInputCallbacks(
     std::function<void(const native_ui::TextInputRequest&)> begin,
     std::function<void()> end) {
@@ -600,6 +634,28 @@ domain::Project EditorRuntime::projectCopy() const {
   return session_.project();
 }
 
+core::Result<void> EditorRuntime::replaceProject(domain::Project project) {
+  std::lock_guard lock(mutex_);
+  const auto replacementRegion = firstRegionId(project);
+  if (!replacementRegion.valid()) {
+    return core::failure(core::ErrorCode::InvalidArgument,
+                         "CLAP editor state contains no vocal region");
+  }
+  const auto replaced = session_.replaceProject(std::move(project));
+  if (!replaced) return replaced;
+  regionId_ = replacementRegion;
+  factory_.synchronizeWith(session_.project());
+  rebuildController();
+  controller_->setCharacterMetadata(character_.displayName(),
+                                    character_.styleName());
+  controller_->setDirty(false);
+  dirty_ = false;
+  renderService_.submit(session_.project(), regionId_, session_.revision(),
+                        renderSampleRate_);
+  requestRepaint();
+  return core::success();
+}
+
 std::uint64_t EditorRuntime::revision() const noexcept {
   std::lock_guard lock(mutex_);
   return session_.revision();
@@ -643,6 +699,7 @@ core::Result<void> EditorRuntime::setPrimarySeamAmount(float value) {
 }
 
 float EditorRuntime::primarySeamAmount() const noexcept {
+  std::lock_guard lock(mutex_);
   const auto* region = session_.project().findRegion(regionId_);
   if (region == nullptr || region->notes.empty()) return 0.55F;
   const auto key = primaryPhonemeKey(session_, regionId_);
