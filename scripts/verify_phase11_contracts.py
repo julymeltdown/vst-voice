@@ -27,9 +27,9 @@ def main() -> int:
                  ['XCreateSimpleWindow','XMapWindow','XNextEvent'],errors)
     require_text(root/'libs/seam-clap-editor/src/plugin_entry.cpp',
                  ['CLAP_EXT_GUI','CLAP_EXT_NOTE_PORTS','acquireRenderedPreview'],errors)
-    require_text(root/'scripts/phase11/sign_notarize_macos.sh',
+    require_text(root/'scripts/sign_notarize_macos.sh',
                  ['codesign','notarytool','stapler'],errors)
-    require_text(root/'scripts/phase11/build_clap_wrappers.sh',
+    require_text(root/'scripts/build_clap_wrappers.sh',
                  ['CLAP_WRAPPER_ROOT','VST3_SDK_ROOT','CLAP_WRAPPER_BUILD_AUV2'],errors)
     manifest_path=root/'assets/demo-human-voicebank-public-domain/manifest.json'
     provenance_path=root/'assets/demo-human-voicebank-public-domain/provenance.json'

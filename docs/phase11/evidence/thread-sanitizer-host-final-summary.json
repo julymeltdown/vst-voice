@@ -10,6 +10,6 @@
   "inactiveGuiLoadAccepted": true,
   "stateRoundTrip": true,
   "restartRequests": 1,
-  "processRequests": 3,
+  "processRequests": 4,
   "result": "PASS"
 }

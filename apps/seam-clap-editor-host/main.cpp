@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <chrono>
 #include <cmath>
 #include <cstddef>
@@ -56,8 +57,8 @@ private:
 struct HostContext final {
   clap_id timerId{CLAP_INVALID_ID};
   std::uint32_t timerPeriod{0U};
-  std::uint32_t restartRequests{0U};
-  std::uint32_t processRequests{0U};
+  std::atomic<std::uint32_t> restartRequests{0U};
+  std::atomic<std::uint32_t> processRequests{0U};
 };
 
 bool CLAP_ABI registerTimer(const clap_host_t* host, std::uint32_t period,
@@ -85,10 +86,12 @@ const void* CLAP_ABI hostGetExtension(const clap_host_t*, const char* id) {
 }
 
 void CLAP_ABI hostRequestRestart(const clap_host_t* host) {
-  ++static_cast<HostContext*>(host->host_data)->restartRequests;
+  static_cast<HostContext*>(host->host_data)->restartRequests.fetch_add(
+      1U, std::memory_order_relaxed);
 }
 void CLAP_ABI hostRequestProcess(const clap_host_t* host) {
-  ++static_cast<HostContext*>(host->host_data)->processRequests;
+  static_cast<HostContext*>(host->host_data)->processRequests.fetch_add(
+      1U, std::memory_order_relaxed);
 }
 void CLAP_ABI hostRequestCallback(const clap_host_t*) {}
 
@@ -309,6 +312,17 @@ int main(int argc, char** argv) {
   WriteStream saved;
   if (!state->save(plugin, &saved.stream) || saved.bytes.empty()) return 1;
 
+  ReadStream inactiveGuiLoad{saved.bytes};
+  const auto inactiveGuiLoadAccepted =
+      state->load(plugin, &inactiveGuiLoad.stream);
+  if (!inactiveGuiLoadAccepted) return 1;
+  for (int frame = 0; frame < 12; ++frame) {
+    if (context.timerId != CLAP_INVALID_ID) {
+      timer->on_timer(plugin, context.timerId);
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds{4});
+  }
+
   constexpr std::uint32_t frames = 512U;
   if (!plugin->activate(plugin, 48000.0, 32U, frames) ||
       !plugin->start_processing(plugin)) {
@@ -360,7 +374,8 @@ int main(int argc, char** argv) {
 
   ReadStream activeLoad{saved.bytes};
   const auto activeLoadRejected = !state->load(plugin, &activeLoad.stream) &&
-                                  context.restartRequests == 1U;
+                                  context.restartRequests.load(
+                                      std::memory_order_relaxed) == 1U;
   plugin->stop_processing(plugin);
   plugin->deactivate(plugin);
 
@@ -387,7 +402,10 @@ int main(int argc, char** argv) {
   entry->deinit();
 
   const auto passed = guiCreated && guiVisible && livePass &&
-                      activeLoadRejected && stateRoundTrip &&
+                      inactiveGuiLoadAccepted && activeLoadRejected &&
+                      stateRoundTrip &&
+                      context.processRequests.load(
+                          std::memory_order_relaxed) > 0U &&
                       (screenshotPath.empty() || screenshotWritten);
   if (!summaryPath.empty()) {
     std::filesystem::create_directories(summaryPath.parent_path());
@@ -403,9 +421,14 @@ int main(int argc, char** argv) {
             << "  \"audioWritten\": " << (audioWritten ? "true" : "false") << ",\n"
             << "  \"activeLoadRejected\": "
             << (activeLoadRejected ? "true" : "false") << ",\n"
+            << "  \"inactiveGuiLoadAccepted\": "
+            << (inactiveGuiLoadAccepted ? "true" : "false") << ",\n"
             << "  \"stateRoundTrip\": "
             << (stateRoundTrip ? "true" : "false") << ",\n"
-            << "  \"restartRequests\": " << context.restartRequests << ",\n"
+            << "  \"restartRequests\": "
+            << context.restartRequests.load(std::memory_order_relaxed) << ",\n"
+            << "  \"processRequests\": "
+            << context.processRequests.load(std::memory_order_relaxed) << ",\n"
             << "  \"result\": \"" << (passed ? "PASS" : "FAIL") << "\"\n"
             << "}\n";
   }

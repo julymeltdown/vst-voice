@@ -39,25 +39,55 @@ int main() {
   if (!encoded || encoded.value().empty()) return 6;
   const auto decoded = seam::clap_editor::decodeEditorState(encoded.value());
   if (!decoded || decoded.value().noteCount() != initial.noteCount()) return 7;
+  auto replacement = decoded.value();
+  replacement.setName("Phase 11 restored while GUI survives");
+  const auto replacementResult = runtime.replaceProject(std::move(replacement));
+  if (!replacementResult ||
+      runtime.projectCopy().name() != "Phase 11 restored while GUI survives") {
+    return 8;
+  }
   auto corrupted = encoded.value();
   corrupted.back() ^= std::byte{0x01};
-  if (seam::clap_editor::decodeEditorState(corrupted)) return 8;
+  if (seam::clap_editor::decodeEditorState(corrupted)) return 9;
+
+  seam::clap_editor::LiveSampleInstrument semantics;
+  semantics.setOutputSampleRate(48000.0);
+  semantics.noteOn(101, 67, 0.0F);
+  if (semantics.activeVoiceCount() != 1U) return 10;
+  semantics.noteOn(102, 69, 0.8F);
+  if (semantics.activeVoiceCount() != 2U) return 11;
+  semantics.choke(102, 69);
+  if (semantics.activeVoiceCount() != 1U) return 12;
+  semantics.choke(101, 67);
+  if (semantics.activeVoiceCount() != 0U) return 13;
 
   runtime.noteOn(1, 67, 0.9F);
   double liveEnergy = 0.0;
   for (int frame = 0; frame < 4000; ++frame) {
     const auto sample = runtime.renderLiveSample();
-    if (!std::isfinite(sample)) return 9;
+    if (!std::isfinite(sample)) return 14;
     liveEnergy += std::abs(static_cast<double>(sample));
   }
   runtime.noteOff(1, 67);
   for (int frame = 0; frame < 4000; ++frame) {
     liveEnergy += std::abs(static_cast<double>(runtime.renderLiveSample()));
   }
-  if (liveEnergy <= 1.0) return 10;
+  if (liveEnergy <= 1.0) return 15;
 
   const auto stats = runtime.renderStats();
-  if (stats.submitted == 0U || stats.completed == 0U) return 11;
+  if (stats.submitted == 0U || stats.completed == 0U) return 16;
+
+  std::atomic<std::uint32_t> completionCallbacks{0U};
+  runtime.setRenderReadyCallback([&] {
+    completionCallbacks.fetch_add(1U, std::memory_order_relaxed);
+  });
+  runtime.requestRender(48000U);
+  for (int attempt = 0; attempt < 200 &&
+       completionCallbacks.load(std::memory_order_relaxed) == 0U; ++attempt) {
+    std::this_thread::sleep_for(std::chrono::milliseconds{5});
+  }
+  runtime.setRenderReadyCallback({});
+  if (completionCallbacks.load(std::memory_order_relaxed) == 0U) return 17;
 
   seam::clap_editor::RealtimePreviewPublication publication;
   std::atomic<bool> publicationOk{true};
@@ -91,7 +121,7 @@ int main() {
   }
   reader.request_stop();
   reader.join();
-  if (!publicationOk.load(std::memory_order_relaxed)) return 12;
+  if (!publicationOk.load(std::memory_order_relaxed)) return 18;
 
   std::cout << "Phase 11 tests PASS: notes=" << initial.noteCount()
             << " previewEnergy=" << energy

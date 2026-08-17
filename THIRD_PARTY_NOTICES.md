@@ -79,11 +79,6 @@ at `third_party/clap/README.md` and is distributed under the upstream MIT
 License at `third_party/clap/LICENSE`.
 
 
-### Public-domain human voice technical fixture
-
-`assets/demo-human-voicebank-public-domain` contains `talking.wav` from the Sonic sample repository and a short derived vowel-like segment. The upstream `samples/README` states that all sound samples are in the public domain and describes `talking.wav` as the repository author's father talking. Source and derived SHA-256 values, retrieval date and processing are retained in `provenance.json`. The fixture is not Official Voicebank 01 and is not a contracted-singer product.
-
-
 ### Sonic public-domain human voice fixture
 
 Phase 11 retains `talking.wav` from the Sonic sample repository and a derived

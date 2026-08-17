@@ -587,10 +587,3 @@ git config core.hooksPath .githooks
 Project source and first-party concept assets are currently proprietary and all rights are reserved. No production third-party source is vendored. Reference projects are documented for behavioral study only.
 
 See [`LICENSE`](LICENSE), [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md), and [`third_party/manifest.yml`](third_party/manifest.yml).
-
-
-## Phase 11 — embedded CLAP editor
-
-Phase 11 adds a real CLAP GUI child view with the piano roll, phoneme/unit/seam/pitch lanes, a cancellable asynchronous phrase-preview renderer and CLAP note-event live human-sample playback. The included public-domain human recording is a provenance-preserved technical fixture, not Official Voicebank 01.
-
-macOS bundle, signing/notarization and Windows package/signing scripts are checked in. VST3/AU use the pinned official clap-wrapper pipeline. Commercial DAW certification, signing credentials and the contracted human voicebank remain evidence-gated and are never reported as complete without their external artifacts.

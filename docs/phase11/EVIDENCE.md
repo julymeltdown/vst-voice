@@ -4,8 +4,8 @@
 
 - `ctest-release-phase11.txt`: release Phase 11 tests, 3/3 PASS.
 - `ctest-sanitize-phase11.txt`: ASan+UBSan Phase 11 tests, 3/3 PASS.
-- `thread-sanitizer-tests.txt`: async renderer and live instrument TSan PASS.
-- `thread-sanitizer-host.txt`: dynamic CLAP GUI/live-note host TSan PASS.
+- `thread-sanitizer-tests-final.txt`: async renderer and live instrument TSan PASS.
+- `thread-sanitizer-host-final.txt`: dynamic CLAP GUI/live-note host TSan PASS.
 - `existing-named-tests.txt`: preceding 128 tests, 128 PASS / 0 FAIL.
 - `host-summary.json`: dynamic module, GUI, note input, state and restart result.
 - `clap-editor.png`: actual X11 child-view capture under Xvfb.

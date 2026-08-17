@@ -450,6 +450,8 @@ if(SEAM_BUILD_CLAP_EDITOR_PLUGIN)
     libs/seam-clap-editor/src/plugin_entry.cpp)
   target_include_directories(seam_clap_editor_plugin PRIVATE
     third_party/clap/include)
+  target_compile_definitions(seam_clap_editor_plugin PRIVATE
+    SEAM_SOURCE_CHARACTER_PACKAGE="${CMAKE_CURRENT_SOURCE_DIR}/assets/character-01")
   target_link_libraries(seam_clap_editor_plugin PRIVATE
     seam_clap_editor seam_core)
   set_target_properties(seam_clap_editor_plugin PROPERTIES
@@ -484,6 +486,10 @@ if(SEAM_BUILD_CLAP_EDITOR_PLUGIN)
     RUNTIME DESTINATION "CLAP"
     LIBRARY DESTINATION "CLAP"
     BUNDLE DESTINATION "CLAP")
+  if(NOT APPLE)
+    install(DIRECTORY assets/character-01
+      DESTINATION "CLAP/ProjectSEAMEditor.resources")
+  endif()
 
   add_executable(seam_clap_editor_host
     apps/seam-clap-editor-host/main.cpp)

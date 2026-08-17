@@ -1,4 +1,4 @@
-f120c6e24aa87c2e46c1afa592e5a9ab48f9a7feaee2f620ae870514bd78ab70  build/phase11-release/ProjectSEAMEditor.clap
+6ed8568b6e0b43cb47c702274040033c9dfa8a0bc5e2a86a399f959e4cb06266  build/phase11-release/ProjectSEAMEditor.clap
 5c21c2d94b6fb5fefdb0fbd747c16ee86ee623455b1521f6ea13f5655e66a1c1  docs/phase11/evidence/clap-editor.png
 b49dca7c0582fe96d7983d0233241e5b10e2a5a03414b0d817239e69abdb6b1e  docs/phase11/evidence/live-human-sample.wav
 26c3ceacfb31a7300824a3841904f077856bdba41dafba0310c603cabb86d07f  assets/demo-human-voicebank-public-domain/source/talking.wav

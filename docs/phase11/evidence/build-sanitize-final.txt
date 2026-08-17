@@ -1,0 +1,21 @@
+[1/21] Building CXX object CMakeFiles/seam_editor_ui.dir/libs/seam-editor-ui/src/piano_roll_model.cpp.o
+[2/21] Building CXX object CMakeFiles/seam_application.dir/libs/seam-application/src/editor_session.cpp.o
+[3/21] Building CXX object CMakeFiles/seam_editor_ui.dir/libs/seam-editor-ui/src/phoneme_lane_model.cpp.o
+[4/21] Linking CXX static library libseam_application.a
+[5/21] Building CXX object CMakeFiles/seam_native_ui.dir/libs/seam-native-ui/src/editor_scene.cpp.o
+[6/21] Building CXX object CMakeFiles/seam_editor_ui.dir/libs/seam-editor-ui/src/svg_renderer.cpp.o
+[7/21] Linking CXX static library libseam_editor_ui.a
+[8/21] Building CXX object CMakeFiles/seam_native_ui.dir/libs/seam-native-ui/src/voicebank_studio.cpp.o
+[9/21] Building CXX object CMakeFiles/seam_native_ui.dir/libs/seam-native-ui/src/editor_controller.cpp.o
+[10/21] Building CXX object CMakeFiles/seam_native_ui.dir/libs/seam-native-ui/src/native_window_unavailable.cpp.o
+[11/21] Building CXX object CMakeFiles/seam_native_ui.dir/libs/seam-native-ui/src/native_window_x11.cpp.o
+[12/21] Linking CXX static library libseam_native_ui.a
+[13/21] Building CXX object CMakeFiles/seam_clap_editor.dir/libs/seam-clap-editor/src/embedded_view_x11.cpp.o
+[14/21] Building CXX object CMakeFiles/seam_clap_editor.dir/libs/seam-clap-editor/src/editor_runtime.cpp.o
+[15/21] Linking CXX static library libseam_clap_editor.a
+[16/21] Building CXX object CMakeFiles/seam_clap_editor_host.dir/apps/seam-clap-editor-host/main.cpp.o
+[17/21] Building CXX object CMakeFiles/seam_clap_editor_plugin.dir/libs/seam-clap-editor/src/plugin_entry.cpp.o
+[18/21] Linking CXX shared module ProjectSEAMEditor.clap
+[19/21] Linking CXX executable seam_clap_editor_host
+[20/21] Building CXX object CMakeFiles/seam_phase11_tests.dir/tests/test_phase11_clap_editor.cpp.o
+[21/21] Linking CXX executable seam_phase11_tests

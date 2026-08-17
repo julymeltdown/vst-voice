@@ -10,4 +10,4 @@ Required source inputs:
 - Apple AudioUnitSDK, Apache-2.0, for AUv2;
 - macOS system frameworks for AUv3 if later enabled.
 
-Use `scripts/phase11/build_clap_wrappers.sh` on the target platform with immutable SDK checkouts. VST3 output must pass the Steinberg validator. AU output must pass `auval -v`. Until those target binaries and validator logs exist, the status is `SOURCE_READY`, not `HOST_VERIFIED`.
+Use `scripts/build_clap_wrappers.sh` on the target platform with immutable SDK checkouts. VST3 output must pass the Steinberg validator. AU output must pass `auval -v`. Until those target binaries and validator logs exist, the status is `SOURCE_READY`, not `HOST_VERIFIED`.

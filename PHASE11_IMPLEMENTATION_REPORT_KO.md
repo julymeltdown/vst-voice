@@ -135,8 +135,10 @@ Dynamic Host 결과:
   "capturedFrames": 24576,
   "audioWritten": true,
   "activeLoadRejected": true,
+  "inactiveGuiLoadAccepted": true,
   "stateRoundTrip": true,
   "restartRequests": 1,
+  "processRequests": 3,
   "result": "PASS"
 }
 ```

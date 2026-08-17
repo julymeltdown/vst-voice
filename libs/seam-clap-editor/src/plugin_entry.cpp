@@ -10,10 +10,12 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <filesystem>
 #include <limits>
 #include <memory>
 #include <mutex>
 #include <span>
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -27,6 +29,38 @@ constexpr std::uint32_t kMinimumWidth = 720U;
 constexpr std::uint32_t kMinimumHeight = 480U;
 constexpr std::size_t kMaximumStateBytes = 16U * 1024U * 1024U + 128U;
 
+std::mutex entryMutex;
+std::uint32_t entryReferenceCount = 0U;
+std::filesystem::path entryPluginPath;
+
+std::filesystem::path resolveCharacterPackage() {
+  std::filesystem::path pluginPath;
+  {
+    std::scoped_lock lock(entryMutex);
+    pluginPath = entryPluginPath;
+  }
+  if (!pluginPath.empty()) {
+    std::error_code error;
+    const auto bundleCandidate =
+        pluginPath / "Contents" / "Resources" / "character-01";
+    if (std::filesystem::is_directory(bundleCandidate, error)) {
+      return bundleCandidate;
+    }
+    const auto sidecarCandidate =
+        pluginPath.parent_path() / "ProjectSEAMEditor.resources" /
+        "character-01";
+    error.clear();
+    if (std::filesystem::is_directory(sidecarCandidate, error)) {
+      return sidecarCandidate;
+    }
+  }
+#if defined(SEAM_SOURCE_CHARACTER_PACKAGE)
+  return std::filesystem::path{SEAM_SOURCE_CHARACTER_PACKAGE};
+#else
+  return std::filesystem::path{"assets/character-01"};
+#endif
+}
+
 const std::array<const char*, 4> kFeatures{
     CLAP_PLUGIN_FEATURE_INSTRUMENT,
     CLAP_PLUGIN_FEATURE_SYNTHESIZER,
@@ -39,7 +73,7 @@ const clap_plugin_descriptor_t kDescriptor{
     .id = "com.project-seam.editor",
     .name = "Project SEAM Editor",
     .vendor = "Project SEAM",
-    .url = "https://example.invalid/project-seam",
+    .url = "",
     .manual_url = "",
     .support_url = "",
     .version = "0.11.0",
@@ -51,7 +85,14 @@ const clap_plugin_descriptor_t kDescriptor{
 class PluginInstance final {
 public:
   explicit PluginInstance(const clap_host_t* host)
-      : host_(host), runtime_(std::make_unique<EditorRuntime>()) {
+      : host_(host),
+        runtime_(std::make_unique<EditorRuntime>(
+            std::nullopt, resolveCharacterPackage())) {
+    runtime_->setRenderReadyCallback([this] {
+      if (host_ != nullptr && host_->request_process != nullptr) {
+        host_->request_process(host_);
+      }
+    });
     plugin_ = clap_plugin_t{
         .desc = &kDescriptor,
         .plugin_data = this,
@@ -66,6 +107,12 @@ public:
         .get_extension = &pluginGetExtension,
         .on_main_thread = &pluginOnMainThread,
     };
+  }
+
+  ~PluginInstance() {
+    if (runtime_) runtime_->setRenderReadyCallback({});
+    unregisterTimer(*this);
+    view_.reset();
   }
 
   [[nodiscard]] const clap_plugin_t* plugin() const noexcept { return &plugin_; }
@@ -208,13 +255,18 @@ private:
       return;
     }
     const auto& note = reinterpret_cast<const clap_event_note_t&>(header);
-    if (note.port_index != 0 || note.key < 0 || note.key > 127) return;
-    if (header.type == CLAP_EVENT_NOTE_ON && note.velocity > 0.0) {
+    if (note.port_index != 0) return;
+    if (header.type == CLAP_EVENT_NOTE_ON) {
+      if (note.key < 0 || note.key > 127) return;
       instance.runtime_->noteOn(
           note.note_id, note.key,
           static_cast<float>(std::clamp(note.velocity, 0.0, 1.0)));
-    } else {
+    } else if (header.type == CLAP_EVENT_NOTE_OFF) {
+      if (note.note_id < 0 && (note.key < 0 || note.key > 127)) return;
       instance.runtime_->noteOff(note.note_id, note.key);
+    } else {
+      if (note.note_id < 0 && (note.key < 0 || note.key > 127)) return;
+      instance.runtime_->choke(note.note_id, note.key);
     }
   }
 
@@ -347,7 +399,7 @@ private:
     if (instance == nullptr || stream == nullptr || stream->read == nullptr) {
       return false;
     }
-    if (instance->active_ || instance->guiCreated_) {
+    if (instance->active_) {
       if (instance->host_ != nullptr &&
           instance->host_->request_restart != nullptr) {
         instance->host_->request_restart(instance->host_);
@@ -368,9 +420,8 @@ private:
     }
     const auto decoded = decodeEditorState(bytes);
     if (!decoded) return false;
-    instance->runtime_ =
-        std::make_unique<EditorRuntime>(std::move(decoded.value()));
-    instance->runtime_->requestRender(48000U);
+    const auto replaced = instance->runtime_->replaceProject(decoded.value());
+    if (!replaced) return false;
     instance->freeRunFrame_ = 0U;
     return true;
   }
@@ -650,11 +701,11 @@ private:
   bool guiCreated_{false};
 };
 
-std::mutex entryMutex;
-std::uint32_t entryReferenceCount = 0U;
-
-bool CLAP_ABI entryInit(const char*) {
+bool CLAP_ABI entryInit(const char* pluginPath) {
   std::scoped_lock lock(entryMutex);
+  if (entryReferenceCount == 0U && pluginPath != nullptr) {
+    entryPluginPath = std::filesystem::path{pluginPath};
+  }
   ++entryReferenceCount;
   return true;
 }
@@ -662,6 +713,7 @@ bool CLAP_ABI entryInit(const char*) {
 void CLAP_ABI entryDeinit() {
   std::scoped_lock lock(entryMutex);
   if (entryReferenceCount > 0U) --entryReferenceCount;
+  if (entryReferenceCount == 0U) entryPluginPath.clear();
 }
 
 std::uint32_t CLAP_ABI factoryCount(const clap_plugin_factory_t*) {
