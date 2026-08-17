@@ -1,4 +1,4 @@
-# Project SEAM — Phase 12A production plug-in render integration
+# Project SEAM — Phase 12B technical editing and host routing
 
 Project SEAM is a C++20 sample-concatenative singing-voice editor. Phoneme boundaries, source-unit changes, pitch-shift artifacts, and sample seams are editable musical material rather than defects that must always be hidden.
 
@@ -21,9 +21,18 @@ This repository contains:
 
 Development uses the **`master` branch only**.
 
-> **Current maturity: Feature Alpha, not Release Candidate.** Phase 12A now routes CLAP preview rendering through the production Voicebank/Phonemizer/Unit/Timing/four-Renderer/Seam/Cache pipeline and resolves exact trusted Voicebank identities. Phoneme, Unit and Pitch lanes are still not fully direct-manipulation editors, and host timeline/routing plus target-platform release gates remain. See [`docs/STATUS_KO.md`](docs/STATUS_KO.md), [`docs/REMAINING_TASKS_KO.md`](docs/REMAINING_TASKS_KO.md), and [`docs/RELEASE_READINESS_KO.md`](docs/RELEASE_READINESS_KO.md).
+> **Current maturity: Feature Alpha, not Release Candidate.** Phase 12B now adds direct Phoneme/Unit/Pitch editing, host timeline authority, complete multi-track/multi-region production rendering and Phase 6 1–8-channel CLAP routing. Official validation, target-OS runtime evidence, VST3/AU, signed installers and Official Voicebank 01 remain. See [`docs/STATUS_KO.md`](docs/STATUS_KO.md), [`docs/REMAINING_TASKS_KO.md`](docs/REMAINING_TASKS_KO.md), and [`docs/RELEASE_READINESS_KO.md`](docs/RELEASE_READINESS_KO.md).
 
 
+
+
+## Phase 12B implementation
+
+- Direct Phoneme boundary, Unit variant/renderer and Pitch point editing is stored in canonical project state and participates in Undo/Redo.
+- The embedded Sample Microscope can inspect the selected installed Unit without mutating signed Voicebank content.
+- `ProductionProjectRenderer` renders every audible track and region, then applies Phase 6 bus/matrix routing to 1–8 output channels.
+- Project JSON schema 5 persists `hostStartOffsetTick`; host seconds are preferred, beats+tempo are the fallback, and loop/seek/offline render mode are explicit.
+- The CLAP editor exposes mono through eight-channel audio-port configurations with host rescan notifications.
 
 ## Phase 12A implementation
 

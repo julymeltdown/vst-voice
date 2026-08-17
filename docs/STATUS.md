@@ -4,13 +4,14 @@
 **Branch policy:** `master` only  
 **Product maturity:** **G1 Feature Alpha**
 
-Phase 12A is complete: the embedded CLAP preview now uses the shared production
-phrase-render pipeline, and Voicebanks are resolved by exact ID, version and
-synthesis content hash with trust-aware installed receipts and no silent
-substitution.
+Phase 12B is complete. The embedded CLAP editor now performs direct
+Phoneme/Unit/Pitch edits, renders every audible track and region through the
+shared production pipeline, applies the Phase 6 project bus/matrix graph and
+publishes 1–8-channel PCM. Host seconds or beats+tempo, loop, seek, project
+start offset and offline render mode are mapped explicitly.
 
-The product is not Feature Complete. Direct phoneme/unit/pitch editing, host
-timeline authority, multi-track/multichannel plug-in routing, target-platform
-certification, VST3/AU, signed installers and Official Voicebank 01 remain.
+This is not Feature Complete. Voicebank-driven live articulation, official
+CLAP validation, target-OS runtime certification, long-running realtime stress,
+VST3/AU, signed installers and Official Voicebank 01 remain.
 
-See `docs/phase12a/`, `REMAINING_TASKS.md` and `RELEASE_READINESS.md`.
+See `docs/phase12b/`, `REMAINING_TASKS.md` and `RELEASE_READINESS.md`.

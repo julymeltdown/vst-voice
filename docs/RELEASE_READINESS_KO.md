@@ -1,18 +1,19 @@
 # Project SEAM 출시 준비 Gate
 
-현재 판정은 **G1 FEATURE_ALPHA**다. Phase 12A의 생산 Preview와 정확한
-Voicebank Resolution은 완료됐지만 G2 전체 조건은 아직 충족하지 않는다.
+현재 판정은 **G1 FEATURE_ALPHA**다. Phase 12A와 Phase 12B의 생산 Preview,
+정확한 Voicebank Resolution, 직접 기술 편집, Host Timeline과 Multichannel
+Project Routing은 완료됐지만 G2 전체 조건은 아직 충족하지 않는다.
 
 ## G2 Feature Complete Gate
 
 - [x] CLAP가 production PhraseRenderPipeline 사용
 - [x] `.seambank` ID/version/content hash resolve와 relink/select 기반
-- [ ] Phoneme/Unit/Pitch 직접 편집
-- [ ] Host tempo/loop/seek 계약
-- [ ] Multi-track/region
-- [ ] 1–8채널 plugin routing
-- [ ] Live voicebank note input 범위 확정
-- [ ] 모든 제품 UI의 state round trip
+- [x] Phoneme/Unit/Pitch 직접 편집
+- [x] Host tempo/loop/seek/start-offset 계약
+- [x] Multi-track/region production render
+- [x] 1–8채널 plugin routing
+- [ ] Voicebank-driven live note articulation 범위 확정
+- [x] Project technical state round trip
 
 ## G3 Beta Gate
 

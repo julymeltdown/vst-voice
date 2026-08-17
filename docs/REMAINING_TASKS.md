@@ -1,16 +1,18 @@
 # Project SEAM Remaining Tasks
 
-Phase 12A is complete:
+Phase 12A and 12B are complete:
 
 - production phrase rendering is shared by the CLAP preview and engine;
-- exact Voicebank ID/version/content-hash discovery, trust resolution,
-  persistence and relink/select APIs are implemented;
-- missing or altered banks never silently substitute audio.
+- exact Voicebank ID/version/content-hash resolution is enforced;
+- Phoneme boundaries, Unit variants/renderers and Pitch points are directly editable;
+- the embedded Sample Microscope is reachable;
+- host seconds/beats/tempo/loop/seek/project offset are mapped;
+- all audible tracks and regions render through Phase 6 1–8-channel routing;
+- CLAP audio-port configurations and realtime/offline quality are implemented.
 
-Remaining P0 work is Phase 12B/12C: direct technical-lane editing, host
-tempo/loop/seek authority, multi-track/multichannel plug-in routing,
-voicebank-driven live note behavior, official CLAP validation, target-OS
-runtime certification and long-running real-time stress tests.
+Remaining P0 work is Phase 12C: voicebank-driven live articulation, official
+CLAP validation, Windows/macOS runtime certification and the long-running
+realtime/soak matrix.
 
 P1 remains VST3/AU target binaries and validators, signed/notarized installers,
 commercial host certification, Official Voicebank 01 and final Character 01
