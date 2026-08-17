@@ -1,4 +1,4 @@
-# Project SEAM — Phase 9 production CJK text rendering
+# Project SEAM — Phase 10 CLAP render-player vertical slice
 
 Project SEAM is a C++20 sample-concatenative singing-voice editor. Phoneme boundaries, source-unit changes, pitch-shift artifacts, and sample seams are editable musical material rather than defects that must always be hidden.
 
@@ -14,9 +14,33 @@ This repository contains:
 - completed **Phase 6 persisted multichannel project routing and callback delivery for 1–8 output channels**;
 - completed **Phase 7 signed, verifiable, and transactional `.seambank` packaging and installation**;
 - integrated **Phase 8 Windows Win32/TSF/WASAPI and macOS AppKit/NSTextInputClient/CoreAudio platform adapters**;
-- completed **Phase 9 trusted system-font Unicode/CJK rasterization for Korean, Japanese, Chinese, and Latin native UI text**.
+- completed **Phase 9 trusted system-font Unicode/CJK rasterization for Korean, Japanese, Chinese, and Latin native UI text**;
+- completed **Phase 10 loadable CLAP 1.2.10 render-player module with bounded multichannel state, host transport, and sample-accurate Master Gain automation**.
 
 Development uses the **`master` branch only**.
+
+
+## Phase 10 implementation
+
+### Real loadable CLAP module
+
+- `ProjectSEAM.clap` exports `clap_entry` and a stable one-plugin factory.
+- The plug-in has no audio input and one main output carrying one through eight channels.
+- A bounded `SEAMCLP1` state stores a pre-rendered Project SEAM multichannel result and Master Gain.
+- Host seconds transport, beat/tempo fallback, pause silence, and free-running operation are implemented.
+- Master Gain (`-60..+6 dB`) is sample-accurately automatable and persisted in state.
+- Audio processing performs no project parsing, voicebank access, filesystem I/O, resampling, allocation, or character work.
+- `seam_clap_state_tool` packs an existing one-to-eight-channel WAV export into `SEAMCLP1`, inspects it, and extracts it back to WAV.
+
+### Dynamic ABI verification
+
+`seam_clap_host` loads the built module through the operating-system dynamic loader, scans its descriptor and extensions, feeds deliberately partial state streams, activates four-channel output, verifies sample-offset automation and stopped-transport silence, saves state, and performs complete teardown.
+
+### Accurate limitation
+
+Phase 10 is a headless **render player**, not the complete Piano Roll editor inside a DAW. Authoring and sample-concatenative synthesis remain in the standalone editor. CLAP GUI embedding, asynchronous host-side rendering, live note-event synthesis, VST3, AU, and broad third-party-host certification are later phases. Character 01 remains optional product identity and does not enter plug-in PCM or state.
+
+See [`docs/phase10/IMPLEMENTATION_REPORT.md`](docs/phase10/IMPLEMENTATION_REPORT.md), [`docs/phase10/ACCEPTANCE.md`](docs/phase10/ACCEPTANCE.md), [`docs/architecture/CLAP_PLUGIN_RUNTIME.md`](docs/architecture/CLAP_PLUGIN_RUNTIME.md), and [`docs/formats/CLAP_STATE_V1.md`](docs/formats/CLAP_STATE_V1.md).
 
 
 ## Phase 9 implementation
@@ -287,23 +311,24 @@ seam_phase5_benchmark   software paint and callback regression benchmark
 
 ## Verification
 
-Phase 9 extends the named suite with strict UTF-8, system-font trust, CJK rasterization, wrapping, ellipsis, cache, and native-canvas integration tests while retaining every prior domain, synthesis, routing, distribution, recording, native editor, and Voicebank Studio test.
+Phase 10 retains every prior domain, synthesis, routing, distribution, recording, Unicode, native editor, and Voicebank Studio test while adding CLAP state, WAV conversion, dynamic module loading, host transport, and automation coverage.
 
 ```text
-Named tests                            122 PASS / 0 FAIL
-Linux Debug CTest                       15/15 PASS
-Linux Release CTest                     15/15 PASS
-ASan + UBSan core CTest                 13/13 PASS
-ASan + UBSan X11 editor smoke           PASS
-ASan + UBSan Voicebank Studio smoke     PASS
-Linux X11 editor CJK screenshot         PASS
+Named tests                            128 PASS / 0 FAIL
+Linux Debug CTest                       20/20 PASS
+Linux Release CTest                     20/20 PASS
+ASan + UBSan named tests               128 PASS / 0 FAIL
+ASan + UBSan Phase 10 CTest              6/6 PASS
+Dynamic ProjectSEAM.clap load           PASS
+WAV pack / inspect / extract            PASS
+clap_entry export                       PASS
 Phase 8 platform source contract        PASS
 Master-only policy                      PASS
 Dependency-license audit                PASS
 Git object integrity                    PASS
 ```
 
-The two X11 sanitizer smokes are executed explicitly outside the aggregate sanitizer CTest invocation because some Xvfb wrappers retain CTest's process handles under ASan. Both binaries terminate normally and produce non-empty screenshots. Windows/macOS runtime evidence must still be collected on those operating systems.
+The aggregate Linux Debug/Release suites include the existing X11 editor and Voicebank Studio smokes. Phase 10 sanitizer evidence directly covers the entire named suite plus the demo, WAV/state bridge, and dynamic CLAP host path. Windows/macOS runtime evidence must still be collected on those operating systems.
 
 All configured builds use warnings as errors.
 
@@ -350,6 +375,41 @@ cmake --build --preset thread-sanitize
 ctest --preset thread-sanitize --output-on-failure
 ```
 
+
+## Run the Phase 10 CLAP vertical slice
+
+Build and generate the diagnostic render/state:
+
+```bash
+./build/dev/seam_phase10_demo --output out/phase10
+```
+
+Pack an existing multichannel WAV, inspect the state, and extract it again:
+
+```bash
+./build/dev/seam_clap_state_tool pack \
+  out/phase10/phase10-diagnostic-4ch.wav \
+  out/phase10/render.seamclapstate \
+  --title "Project SEAM render" --gain-db 0
+./build/dev/seam_clap_state_tool inspect out/phase10/render.seamclapstate
+./build/dev/seam_clap_state_tool extract \
+  out/phase10/render.seamclapstate out/phase10/recovered.wav
+```
+
+Load the actual module through the first-party smoke host:
+
+```bash
+./build/dev/seam_clap_host \
+  --plugin ./build/dev/ProjectSEAM.clap \
+  --state out/phase10/render.seamclapstate \
+  --summary out/phase10/clap-host-summary.json
+```
+
+Generate reproducible Phase 10 evidence:
+
+```bash
+python3 scripts/generate_phase10_evidence.py --root . --skip-build
+```
 
 ## Run the Phase 8 capability evidence
 
@@ -459,6 +519,7 @@ python3 scripts/generate_phase4_evidence.py --root .
 ./build/release/seam_phase3_benchmark
 ./build/release/seam_phase4_benchmark
 ./build/release/seam_phase5_benchmark
+./build/release/seam_phase10_benchmark
 ```
 
 Benchmark values are machine- and build-specific regression evidence, not universal performance guarantees. SpectralClassic remains a correctness-first quality renderer and is not presented as a guaranteed real-time preview path.
@@ -473,6 +534,11 @@ git config core.hooksPath .githooks
 
 ## Documentation
 
+- [`PHASE10_IMPLEMENTATION_REPORT.md`](PHASE10_IMPLEMENTATION_REPORT.md)
+- [`PHASE10_IMPLEMENTATION_REPORT_KO.md`](PHASE10_IMPLEMENTATION_REPORT_KO.md)
+- [`docs/phase10/ACCEPTANCE.md`](docs/phase10/ACCEPTANCE.md)
+- [`docs/architecture/CLAP_PLUGIN_RUNTIME.md`](docs/architecture/CLAP_PLUGIN_RUNTIME.md)
+- [`docs/formats/CLAP_STATE_V1.md`](docs/formats/CLAP_STATE_V1.md)
 - [`PHASE8_IMPLEMENTATION_REPORT.md`](PHASE8_IMPLEMENTATION_REPORT.md)
 - [`docs/phase8/ACCEPTANCE.md`](docs/phase8/ACCEPTANCE.md)
 - [`docs/phase8/PLATFORM_MATRIX.md`](docs/phase8/PLATFORM_MATRIX.md)
