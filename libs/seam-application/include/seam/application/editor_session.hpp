@@ -26,6 +26,7 @@ public:
   [[nodiscard]] core::Result<void> execute(std::unique_ptr<ICommand> command);
   [[nodiscard]] core::Result<void> undo();
   [[nodiscard]] core::Result<void> redo();
+  [[nodiscard]] core::Result<void> replaceProject(domain::Project project);
 
   [[nodiscard]] bool canUndo() const noexcept { return !undo_.empty(); }
   [[nodiscard]] bool canRedo() const noexcept { return !redo_.empty(); }

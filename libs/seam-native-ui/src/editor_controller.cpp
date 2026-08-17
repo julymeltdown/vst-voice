@@ -1,6 +1,7 @@
 #include "seam/native_ui/editor_controller.hpp"
 
 #include "seam/application/lyric_commands.hpp"
+#include "seam/application/render_commands.hpp"
 #include "seam/phonemizer/japanese_phonemizer.hpp"
 
 #include <algorithm>
@@ -36,6 +37,7 @@ EditorSceneState NativeEditorController::sceneState() const {
       .playheadPixel = playheadPixel_,
       .phonemes = {},
       .unitOverrides = {},
+      .seamOverrides = {},
       .pitchAutomation = {},
       .characterMode = session_.project().settings().characterDisplay,
       .characterState = playing_ ? character::State::Focused
@@ -70,6 +72,7 @@ EditorSceneState NativeEditorController::sceneState() const {
     phonemizer::JapaneseKanaPhonemizer phonemizer;
     state.phonemes = phonemizer.phonemize(*region);
     state.unitOverrides = region->unitSelectionOverrides;
+    state.seamOverrides = region->seamOverrides;
     state.pitchAutomation = region->pitchAutomation.points();
   }
   return state;
@@ -106,6 +109,37 @@ core::Result<void> NativeEditorController::pointerDown(
     const PointerEvent& event) {
   if (event.button != PointerButton::Left) return core::success();
   const auto pianoBottom = logicalHeight_ - layout_.statusHeight - layout_.lanesHeight();
+  const auto seamTop = pianoBottom + layout_.phonemeLaneHeight + layout_.unitLaneHeight;
+  if (event.position.y >= seamTop &&
+      event.position.y < seamTop + layout_.seamLaneHeight) {
+    auto* region = session_.project().findRegion(regionId_);
+    if (region == nullptr || region->notes.empty()) return core::success();
+    const auto localX = event.position.x - layout_.keyboardWidth;
+    const auto tick = pianoRoll_.timeline().pixelToTick(localX);
+    const auto nearest = std::min_element(
+        region->notes.begin(), region->notes.end(),
+        [tick](const domain::Note& lhs, const domain::Note& rhs) {
+          return std::abs(lhs.startTick.value() - tick.value()) <
+                 std::abs(rhs.startTick.value() - tick.value());
+        });
+    if (nearest == region->notes.end()) return core::success();
+    const auto normalized = std::clamp(
+        1.0 - (event.position.y - seamTop) / layout_.seamLaneHeight, 0.0, 1.0);
+    domain::SeamOverride value{
+        .incomingStartKey = domain::PhonemeKey{.noteId = nearest->id, .ordinal = 0U},
+        .seamAmount = static_cast<float>(normalized),
+        .overlap = std::nullopt,
+        .phaseReset = std::nullopt,
+        .envelopeBlend = std::nullopt,
+        .curve = domain::SeamCurve::Smooth,
+        .locked = true,
+    };
+    const auto updated = session_.execute(
+        std::make_unique<application::UpsertSeamOverrideCommand>(regionId_, value));
+    if (updated) dirty_ = true;
+    repaint();
+    return updated;
+  }
   if (event.position.y < layout_.contentTop() ||
       event.position.y >= pianoBottom) {
     return core::success();

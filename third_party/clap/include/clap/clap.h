@@ -292,6 +292,102 @@ typedef struct clap_plugin_render {
 } clap_plugin_render_t;
 static const CLAP_CONSTEXPR char CLAP_EXT_RENDER[] = "clap.render";
 
+
+// Phase 11 additions from the unchanged CLAP 1.2.10 public ABI.
+typedef struct clap_event_note {
+  clap_event_header_t header;
+  int32_t note_id;
+  int16_t port_index;
+  int16_t channel;
+  int16_t key;
+  double velocity;
+} clap_event_note_t;
+
+enum {
+  CLAP_NOTE_DIALECT_CLAP = 1 << 0,
+  CLAP_NOTE_DIALECT_MIDI = 1 << 1,
+  CLAP_NOTE_DIALECT_MIDI_MPE = 1 << 2,
+  CLAP_NOTE_DIALECT_MIDI2 = 1 << 3
+};
+typedef struct clap_note_port_info {
+  clap_id id;
+  uint32_t supported_dialects;
+  uint32_t preferred_dialect;
+  char name[CLAP_NAME_SIZE];
+} clap_note_port_info_t;
+typedef struct clap_plugin_note_ports {
+  uint32_t (CLAP_ABI *count)(const clap_plugin_t *plugin, bool is_input);
+  bool (CLAP_ABI *get)(const clap_plugin_t *plugin, uint32_t index,
+                       bool is_input, clap_note_port_info_t *info);
+} clap_plugin_note_ports_t;
+static const CLAP_CONSTEXPR char CLAP_EXT_NOTE_PORTS[] = "clap.note-ports";
+
+typedef void *clap_hwnd;
+typedef void *clap_nsview;
+typedef void *clap_uiview;
+typedef unsigned long clap_xwnd;
+typedef struct clap_window {
+  const char *api;
+  union {
+    clap_nsview cocoa;
+    clap_uiview uikit;
+    clap_xwnd x11;
+    clap_hwnd win32;
+    void *ptr;
+  };
+} clap_window_t;
+typedef struct clap_gui_resize_hints {
+  bool can_resize_horizontally;
+  bool can_resize_vertically;
+  bool preserve_aspect_ratio;
+  uint32_t aspect_ratio_width;
+  uint32_t aspect_ratio_height;
+} clap_gui_resize_hints_t;
+typedef struct clap_plugin_gui {
+  bool (CLAP_ABI *is_api_supported)(const clap_plugin_t *plugin,
+                                     const char *api, bool is_floating);
+  bool (CLAP_ABI *get_preferred_api)(const clap_plugin_t *plugin,
+                                      const char **api, bool *is_floating);
+  bool (CLAP_ABI *create)(const clap_plugin_t *plugin, const char *api,
+                           bool is_floating);
+  void (CLAP_ABI *destroy)(const clap_plugin_t *plugin);
+  bool (CLAP_ABI *set_scale)(const clap_plugin_t *plugin, double scale);
+  bool (CLAP_ABI *get_size)(const clap_plugin_t *plugin,
+                             uint32_t *width, uint32_t *height);
+  bool (CLAP_ABI *can_resize)(const clap_plugin_t *plugin);
+  bool (CLAP_ABI *get_resize_hints)(const clap_plugin_t *plugin,
+                                     clap_gui_resize_hints_t *hints);
+  bool (CLAP_ABI *adjust_size)(const clap_plugin_t *plugin,
+                                uint32_t *width, uint32_t *height);
+  bool (CLAP_ABI *set_size)(const clap_plugin_t *plugin,
+                             uint32_t width, uint32_t height);
+  bool (CLAP_ABI *set_parent)(const clap_plugin_t *plugin,
+                               const clap_window_t *window);
+  bool (CLAP_ABI *set_transient)(const clap_plugin_t *plugin,
+                                  const clap_window_t *window);
+  void (CLAP_ABI *suggest_title)(const clap_plugin_t *plugin,
+                                  const char *title);
+  bool (CLAP_ABI *show)(const clap_plugin_t *plugin);
+  bool (CLAP_ABI *hide)(const clap_plugin_t *plugin);
+} clap_plugin_gui_t;
+static const CLAP_CONSTEXPR char CLAP_EXT_GUI[] = "clap.gui";
+static const CLAP_CONSTEXPR char CLAP_WINDOW_API_WIN32[] = "win32";
+static const CLAP_CONSTEXPR char CLAP_WINDOW_API_COCOA[] = "cocoa";
+static const CLAP_CONSTEXPR char CLAP_WINDOW_API_UIKIT[] = "uikit";
+static const CLAP_CONSTEXPR char CLAP_WINDOW_API_X11[] = "x11";
+static const CLAP_CONSTEXPR char CLAP_WINDOW_API_WAYLAND[] = "wayland";
+
+typedef struct clap_plugin_timer_support {
+  void (CLAP_ABI *on_timer)(const clap_plugin_t *plugin, clap_id timer_id);
+} clap_plugin_timer_support_t;
+typedef struct clap_host_timer_support {
+  bool (CLAP_ABI *register_timer)(const clap_host_t *host,
+                                   uint32_t period_ms, clap_id *timer_id);
+  bool (CLAP_ABI *unregister_timer)(const clap_host_t *host,
+                                     clap_id timer_id);
+} clap_host_timer_support_t;
+static const CLAP_CONSTEXPR char CLAP_EXT_TIMER_SUPPORT[] = "clap.timer-support";
+
 #define CLAP_PLUGIN_FEATURE_INSTRUMENT "instrument"
 #define CLAP_PLUGIN_FEATURE_SYNTHESIZER "synthesizer"
 #define CLAP_PLUGIN_FEATURE_SAMPLER "sampler"

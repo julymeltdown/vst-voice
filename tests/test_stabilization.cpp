@@ -141,7 +141,7 @@ TEST_CASE("SHA-256 implementation matches published vectors") {
 }
 
 TEST_CASE("generated build identity owns the current application and render ABI") {
-  CHECK(seam::build::kApplicationVersion == "0.10.0");
+  CHECK(seam::build::kApplicationVersion == "0.11.0");
   CHECK(!seam::build::kRenderAbiId.empty());
   CHECK(seam::build::kRenderAbiId.find("4.1") != std::string_view::npos);
   CHECK(seam::build::kPcmCacheFormatRevision >= 3U);

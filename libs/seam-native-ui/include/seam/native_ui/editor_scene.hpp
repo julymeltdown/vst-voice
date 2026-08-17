@@ -52,6 +52,7 @@ struct EditorSceneState final {
 
   phonemizer::Result phonemes;
   std::vector<domain::UnitSelectionOverride> unitOverrides;
+  std::vector<domain::SeamOverride> seamOverrides;
   std::vector<domain::PitchAutomationPoint> pitchAutomation;
 
   domain::CharacterDisplayMode characterMode{domain::CharacterDisplayMode::Minimal};
@@ -68,6 +69,7 @@ struct EditorSceneLayout final {
   double keyboardWidth{76.0};
   double phonemeLaneHeight{42.0};
   double unitLaneHeight{52.0};
+  double seamLaneHeight{46.0};
   double automationLaneHeight{72.0};
   double characterDockWidth{238.0};
 
@@ -75,7 +77,7 @@ struct EditorSceneLayout final {
     return toolbarHeight + rulerHeight;
   }
   [[nodiscard]] double lanesHeight() const noexcept {
-    return phonemeLaneHeight + unitLaneHeight + automationLaneHeight;
+    return phonemeLaneHeight + unitLaneHeight + seamLaneHeight + automationLaneHeight;
   }
 };
 

@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-08-17",
+  "hosts": [
+    {
+      "name": "Project SEAM dynamic CLAP host",
+      "platform": "Linux/X11",
+      "status": "PASS"
+    },
+    {
+      "name": "official clap-validator",
+      "platform": "Linux",
+      "status": "NOT_RUN"
+    },
+    {
+      "name": "REAPER",
+      "platform": "Linux/Windows/macOS",
+      "status": "NOT_RUN"
+    },
+    {
+      "name": "Bitwig Studio",
+      "platform": "Linux/Windows/macOS",
+      "status": "NOT_RUN"
+    },
+    {
+      "name": "Cubase",
+      "platform": "Windows/macOS",
+      "status": "NOT_RUN"
+    },
+    {
+      "name": "Ableton Live",
+      "platform": "Windows/macOS",
+      "status": "NOT_RUN"
+    },
+    {
+      "name": "Studio One",
+      "platform": "Windows/macOS",
+      "status": "NOT_RUN"
+    },
+    {
+      "name": "FL Studio",
+      "platform": "Windows/macOS",
+      "status": "NOT_RUN"
+    },
+    {
+      "name": "Logic Pro / auval",
+      "platform": "macOS",
+      "status": "NOT_RUN"
+    }
+  ]
+}

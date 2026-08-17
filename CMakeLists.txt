@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.25)
 
-project(ProjectSEAM VERSION 0.10.0 LANGUAGES CXX)
+project(ProjectSEAM VERSION 0.11.0 LANGUAGES CXX)
 
 option(SEAM_BUILD_TESTS "Build Project SEAM tests" ON)
 option(SEAM_BUILD_BENCHMARKS "Build Project SEAM benchmarks" ON)
@@ -10,6 +10,7 @@ option(SEAM_ENABLE_THREAD_SANITIZER "Enable ThreadSanitizer" OFF)
 option(SEAM_ENABLE_IPLUG2_SKIA "Enable the optional iPlug2 + Skia shell adapter" OFF)
 option(SEAM_BUILD_NATIVE_DESKTOP "Build the first-party native desktop editor" ON)
 option(SEAM_BUILD_CLAP_PLUGIN "Build the Project SEAM CLAP render-player plug-in" ON)
+option(SEAM_BUILD_CLAP_EDITOR_PLUGIN "Build the Project SEAM embedded-editor CLAP plug-in" ON)
 option(SEAM_RUN_NATIVE_GUI_TESTS
   "Run target-host native editor and Voicebank Studio smoke tests" OFF)
 
@@ -24,6 +25,7 @@ include(SeamCompilerOptions)
 
 find_package(Threads REQUIRED)
 find_package(OpenSSL 3.0 REQUIRED COMPONENTS Crypto)
+find_package(Python3 COMPONENTS Interpreter)
 
 set(SEAM_RENDER_ABI_ID "seam-render-abi-4.1-r1")
 set(SEAM_PHONEMIZER_REVISION 1)
@@ -392,6 +394,110 @@ if(SEAM_BUILD_CLAP_PLUGIN)
   seam_apply_compiler_options(seam_clap_host)
 endif()
 
+
+if(SEAM_BUILD_CLAP_EDITOR_PLUGIN)
+  if(NOT SEAM_BUILD_NATIVE_DESKTOP)
+    message(FATAL_ERROR "The Phase 11 CLAP editor requires SEAM_BUILD_NATIVE_DESKTOP=ON")
+  endif()
+
+  set(SEAM_CLAP_EDITOR_VIEW_SOURCE)
+  if(WIN32)
+    set(SEAM_CLAP_EDITOR_VIEW_SOURCE
+      libs/seam-clap-editor/src/embedded_view_win32.cpp)
+  elseif(APPLE)
+    enable_language(OBJCXX)
+    set(SEAM_CLAP_EDITOR_VIEW_SOURCE
+      libs/seam-clap-editor/src/embedded_view_appkit.mm)
+    set_source_files_properties(
+      libs/seam-clap-editor/src/embedded_view_appkit.mm
+      PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
+  elseif(UNIX AND X11_FOUND)
+    set(SEAM_CLAP_EDITOR_VIEW_SOURCE
+      libs/seam-clap-editor/src/embedded_view_x11.cpp)
+  else()
+    set(SEAM_CLAP_EDITOR_VIEW_SOURCE
+      libs/seam-clap-editor/src/embedded_view_unavailable.cpp)
+  endif()
+
+  add_library(seam_clap_editor
+    libs/seam-clap-editor/src/editor_runtime.cpp
+    ${SEAM_CLAP_EDITOR_VIEW_SOURCE})
+  target_include_directories(seam_clap_editor PUBLIC
+    libs/seam-clap-editor/include)
+  target_include_directories(seam_clap_editor PRIVATE
+    third_party/clap/include
+    libs/seam-clap-editor/generated)
+  target_link_libraries(seam_clap_editor PUBLIC
+    seam_native_ui seam_editor_inspection seam_rendering seam_synthesis
+    seam_voicebank seam_editor_ui seam_phonemizer seam_formats
+    seam_application seam_domain seam_text seam_core Threads::Threads)
+  if(WIN32)
+    target_compile_definitions(seam_clap_editor PRIVATE
+      SEAM_CLAP_EDITOR_WIN32=1 WIN32_LEAN_AND_MEAN NOMINMAX _WIN32_WINNT=0x0A00)
+    target_link_libraries(seam_clap_editor PRIVATE user32 gdi32 imm32 ole32 uuid)
+  elseif(APPLE)
+    target_compile_definitions(seam_clap_editor PRIVATE SEAM_CLAP_EDITOR_COCOA=1)
+    target_link_libraries(seam_clap_editor PRIVATE
+      "-framework AppKit" "-framework CoreGraphics" "-framework Foundation")
+  elseif(UNIX AND X11_FOUND)
+    target_compile_definitions(seam_clap_editor PRIVATE SEAM_CLAP_EDITOR_X11=1)
+    target_include_directories(seam_clap_editor PRIVATE ${X11_INCLUDE_DIR})
+    target_link_libraries(seam_clap_editor PRIVATE ${X11_LIBRARIES})
+  endif()
+  seam_apply_compiler_options(seam_clap_editor)
+
+  add_library(seam_clap_editor_plugin MODULE
+    libs/seam-clap-editor/src/plugin_entry.cpp)
+  target_include_directories(seam_clap_editor_plugin PRIVATE
+    third_party/clap/include)
+  target_link_libraries(seam_clap_editor_plugin PRIVATE
+    seam_clap_editor seam_core)
+  set_target_properties(seam_clap_editor_plugin PROPERTIES
+    PREFIX ""
+    OUTPUT_NAME "ProjectSEAMEditor"
+    CXX_VISIBILITY_PRESET hidden
+    VISIBILITY_INLINES_HIDDEN YES)
+  if(APPLE)
+    set_target_properties(seam_clap_editor_plugin PROPERTIES
+      BUNDLE TRUE
+      BUNDLE_EXTENSION "clap"
+      MACOSX_BUNDLE_INFO_PLIST
+        "${CMAKE_CURRENT_SOURCE_DIR}/packaging/macos/ProjectSEAMEditor-Info.plist.in")
+  else()
+    set_target_properties(seam_clap_editor_plugin PROPERTIES SUFFIX ".clap")
+  endif()
+  if(WIN32)
+    target_compile_definitions(seam_clap_editor_plugin PRIVATE
+      SEAM_CLAP_EDITOR_WIN32=1 WIN32_LEAN_AND_MEAN NOMINMAX _WIN32_WINNT=0x0A00)
+  elseif(APPLE)
+    target_compile_definitions(seam_clap_editor_plugin PRIVATE
+      SEAM_CLAP_EDITOR_COCOA=1)
+  elseif(UNIX AND X11_FOUND)
+    target_compile_definitions(seam_clap_editor_plugin PRIVATE
+      SEAM_CLAP_EDITOR_X11=1)
+    target_link_options(seam_clap_editor_plugin PRIVATE
+      "LINKER:--exclude-libs,ALL")
+  endif()
+  seam_apply_compiler_options(seam_clap_editor_plugin)
+
+  install(TARGETS seam_clap_editor_plugin
+    RUNTIME DESTINATION "CLAP"
+    LIBRARY DESTINATION "CLAP"
+    BUNDLE DESTINATION "CLAP")
+
+  add_executable(seam_clap_editor_host
+    apps/seam-clap-editor-host/main.cpp)
+  target_include_directories(seam_clap_editor_host PRIVATE
+    third_party/clap/include)
+  target_link_libraries(seam_clap_editor_host PRIVATE
+    seam_voicebank seam_core ${CMAKE_DL_LIBS})
+  if(UNIX AND X11_FOUND)
+    target_include_directories(seam_clap_editor_host PRIVATE ${X11_INCLUDE_DIR})
+    target_link_libraries(seam_clap_editor_host PRIVATE ${X11_LIBRARIES})
+  endif()
+  seam_apply_compiler_options(seam_clap_editor_host)
+endif()
+
 add_executable(seam_phase10_demo apps/seam-phase10-demo/main.cpp)
 target_link_libraries(seam_phase10_demo PRIVATE seam_clap seam_voicebank seam_core)
 seam_apply_compiler_options(seam_phase10_demo)
@@ -405,7 +511,39 @@ target_link_libraries(seam_voicebank_cli PRIVATE
   seam_voicebank seam_formats seam_domain seam_core)
 seam_apply_compiler_options(seam_voicebank_cli)
 
-find_package(Python3 COMPONENTS Interpreter)
+
+if(SEAM_BUILD_TESTS AND SEAM_BUILD_CLAP_EDITOR_PLUGIN)
+  add_executable(seam_phase11_tests tests/test_phase11_clap_editor.cpp)
+  target_include_directories(seam_phase11_tests PRIVATE tests)
+  target_link_libraries(seam_phase11_tests PRIVATE
+    seam_clap_editor seam_formats seam_application seam_domain seam_core)
+  seam_apply_compiler_options(seam_phase11_tests)
+  add_test(NAME seam_phase11_tests COMMAND seam_phase11_tests)
+
+  if(UNIX AND NOT APPLE AND X11_FOUND)
+    find_program(SEAM_PHASE11_XVFB_RUN_EXECUTABLE xvfb-run)
+    if(SEAM_PHASE11_XVFB_RUN_EXECUTABLE)
+      add_test(NAME seam_phase11_clap_editor_host_smoke
+        COMMAND ${SEAM_PHASE11_XVFB_RUN_EXECUTABLE} -a
+          $<TARGET_FILE:seam_clap_editor_host>
+          --plugin $<TARGET_FILE:seam_clap_editor_plugin>
+          --screenshot ${CMAKE_BINARY_DIR}/phase11-clap-editor.ppm
+          --summary ${CMAKE_BINARY_DIR}/phase11-clap-editor-summary.json
+          --audio ${CMAKE_BINARY_DIR}/phase11-clap-editor-live.wav)
+      set_tests_properties(seam_phase11_clap_editor_host_smoke PROPERTIES
+        TIMEOUT 45)
+    endif()
+  endif()
+  if(Python3_Interpreter_FOUND)
+    add_test(NAME seam_phase11_source_and_voice_contract
+      COMMAND ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/scripts/verify_phase11_contracts.py
+        --root ${CMAKE_CURRENT_SOURCE_DIR})
+    set_tests_properties(seam_phase11_source_and_voice_contract PROPERTIES
+      TIMEOUT 30)
+  endif()
+endif()
+
 
 if(SEAM_ENABLE_IPLUG2_SKIA)
   message(FATAL_ERROR

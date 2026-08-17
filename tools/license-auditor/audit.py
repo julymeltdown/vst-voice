@@ -139,6 +139,29 @@ def audit(root: Path) -> tuple[list[str], list[str]]:
         if path.suffix.lower() in FORBIDDEN_DISTRIBUTED_EXTENSIONS:
             errors.append(f"binary/model requires explicit review: third_party/{relative}")
 
+
+    asset_manifest = root / "assets/demo-human-voicebank-public-domain/manifest.json"
+    asset_provenance = root / "assets/demo-human-voicebank-public-domain/provenance.json"
+    try:
+        human_manifest = json.loads(asset_manifest.read_text(encoding="utf-8"))
+        human_provenance = json.loads(asset_provenance.read_text(encoding="utf-8"))
+        if human_manifest.get("official") is not False:
+            errors.append("public-domain human fixture must retain official=false")
+        if human_manifest.get("contractedSinger") is not False:
+            errors.append("public-domain human fixture must retain contractedSinger=false")
+        import hashlib
+        for relative, field in (("source/talking.wav", "sourceSha256"),
+                                ("audio/human-vowel-demo.wav", "derivedSha256")):
+            path = asset_manifest.parent / relative
+            if not path.is_file():
+                errors.append(f"public-domain human fixture missing: {path.relative_to(root)}")
+                continue
+            actual = hashlib.sha256(path.read_bytes()).hexdigest()
+            if actual != human_provenance.get(field):
+                errors.append(f"public-domain human fixture hash mismatch: {relative}")
+    except (OSError, json.JSONDecodeError) as error:
+        errors.append(f"invalid public-domain human fixture metadata: {error}")
+
     errors.extend(branch_policy(root))
 
     concept_manifest = root / "assets/character-01/concepts/manifest.json"
@@ -170,6 +193,7 @@ def main() -> int:
     print(f"[license-audit] distributedDependencies={len(load_json_yaml(root / 'third_party/manifest.yml').get('distributedDependencies', []))}")
     print("[license-audit] branchPolicy=master-only")
     print("[license-audit] characterDirections=3")
+    print("[license-audit] publicDomainHumanFixture=verified-nonofficial")
     print("[license-audit] status=PASS")
     return 0
 

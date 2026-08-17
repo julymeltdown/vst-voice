@@ -1,0 +1,3 @@
+NOT_RUN: clap-validator is not installed in this execution environment.
+
+returnCode=3

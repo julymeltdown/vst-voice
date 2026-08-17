@@ -1,0 +1,8 @@
+Internal ctest changing into directory: /mnt/data/project-seam-phase11-work/project-seam-phase10-master/build/phase11-release
+Test project /mnt/data/project-seam-phase11-work/project-seam-phase10-master/build/phase11-release
+    Start 4: seam_tests
+1/1 Test #4: seam_tests .......................   Passed    1.54 sec
+
+100% tests passed, 0 tests failed out of 1
+
+Total Test time (real) =   1.54 sec

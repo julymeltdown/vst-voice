@@ -1,0 +1,104 @@
+name: phase11-plugin-formats
+on:
+  workflow_dispatch:
+  push:
+    branches: [master]
+
+jobs:
+  clap-editor:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.x'}
+      - name: Linux packages
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libssl-dev libx11-dev xvfb fonts-noto-cjk
+      - name: Windows OpenSSL
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: choco install openssl --no-progress -y
+      - name: macOS OpenSSL
+        if: runner.os == 'macOS'
+        run: brew install openssl@3
+      - name: Configure Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $root = @('C:\Program Files\OpenSSL-Win64','C:\Program Files\OpenSSL') | Where-Object { Test-Path $_ } | Select-Object -First 1
+          cmake -S . -B build/phase11 -DSEAM_BUILD_BENCHMARKS=OFF -DSEAM_WARNINGS_AS_ERRORS=ON -DOPENSSL_ROOT_DIR="$root"
+      - name: Configure macOS
+        if: runner.os == 'macOS'
+        run: cmake -S . -B build/phase11 -DSEAM_BUILD_BENCHMARKS=OFF -DSEAM_WARNINGS_AS_ERRORS=ON -DOPENSSL_ROOT_DIR="$(brew --prefix openssl@3)"
+      - name: Configure Linux
+        if: runner.os == 'Linux'
+        run: cmake -S . -B build/phase11 -DSEAM_BUILD_BENCHMARKS=OFF -DSEAM_WARNINGS_AS_ERRORS=ON
+      - name: Build
+        run: cmake --build build/phase11 --config Debug --parallel 2
+      - name: Core tests
+        run: ctest --test-dir build/phase11 -C Debug -R 'seam_phase11_tests' --output-on-failure
+      - name: Linux dynamic GUI host
+        if: runner.os == 'Linux'
+        run: xvfb-run -a ctest --test-dir build/phase11 -R 'seam_phase11_clap_editor_host_smoke' --output-on-failure
+      - name: Source and rights boundary
+        run: python scripts/verify_phase11_sources.py --root .
+      - name: Package macOS CLAP
+        if: runner.os == 'macOS'
+        run: |
+          binary=$(find build/phase11 -type f -name 'ProjectSEAMEditor.clap' | head -1)
+          bash scripts/package_macos_clap.sh "$binary" out/ProjectSEAMEditor.clap
+      - name: Package Windows CLAP
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $binary = Get-ChildItem build/phase11 -Recurse -Filter ProjectSEAMEditor.clap | Select-Object -First 1
+          scripts/package_windows_plugin.ps1 -ClapBinary $binary.FullName -OutputZip out/ProjectSEAMEditor-windows.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ProjectSEAMEditor-${{ matrix.os }}
+          path: out
+
+  clap-validator:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y libssl-dev libx11-dev xvfb
+      - uses: dtolnay/rust-toolchain@1.95.0
+      - run: cmake -S . -B build/validator -DCMAKE_BUILD_TYPE=Release -DSEAM_BUILD_BENCHMARKS=OFF
+      - run: cmake --build build/validator --target seam_clap_editor_plugin --parallel 2
+      - uses: actions/checkout@v4
+        with:
+          repository: free-audio/clap-validator
+          ref: 0.4.1
+          path: external/clap-validator
+      - run: cargo build --release --manifest-path external/clap-validator/Cargo.toml
+      - name: Validate
+        run: |
+          plugin=$(find build/validator -type f -name 'ProjectSEAMEditor.clap' | head -1)
+          external/clap-validator/target/release/clap-validator validate "$plugin" --only-failed | tee clap-validator.txt
+      - uses: actions/upload-artifact@v4
+        with: {name: clap-validator, path: clap-validator.txt}
+
+  wrapper-source-contract:
+    strategy:
+      matrix: {os: [windows-latest, macos-latest]}
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch clap-wrapper source contract
+        shell: bash
+        run: |
+          git clone https://github.com/free-audio/clap-wrapper.git external/clap-wrapper
+          git -C external/clap-wrapper checkout f2bb98c
+          git -C external/clap-wrapper rev-parse HEAD | tee clap-wrapper-revision.txt
+          test -f external/clap-wrapper/LICENSE
+          grep -q 'CLAP_WRAPPER_OUTPUT_NAME' external/clap-wrapper/CMakeLists.txt
+          grep -q 'CLAP_WRAPPER_BUILD_AUV2' external/clap-wrapper/CMakeLists.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wrapper-source-contract-${{ matrix.os }}
+          path: clap-wrapper-revision.txt

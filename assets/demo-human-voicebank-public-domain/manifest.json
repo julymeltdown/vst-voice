@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "voicebankId": "demo.public-domain.human-vowel",
+  "version": "0.11.0",
+  "official": false,
+  "contractedSinger": false,
+  "language": "und",
+  "sampleRate": 44100,
+  "units": [
+    {
+      "id": "demo.vowel.a.01",
+      "phones": [
+        "a"
+      ],
+      "audio": "audio/human-vowel-demo.wav",
+      "rootMidi": 67,
+      "loopStartFrame": 5292,
+      "loopEndFrame": 21609
+    }
+  ],
+  "provenance": "provenance.json",
+  "rightsNotice": "license/PUBLIC_DOMAIN_NOTICE.md"
+}

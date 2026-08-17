@@ -69,12 +69,27 @@ logos, voicebanks, or release-ready commercial character assets. Their
 production replacement and rights review remain required before a public
 product release.
 
-### CLAP 1.2.10 public ABI subset
+### CLAP 1.2.10 public ABI editor subset
 
 Project SEAM vendors a mechanically consolidated subset of the official CLAP
 1.2.10 public C ABI from the `free-audio/clap` repository at immutable revision
-`195b42a004144fab0b3cf95e9c067187d15365b7`. Only declarations required by the
-Phase 10 render-player plug-in are included; the included structure layouts and
+`195b42a004144fab0b3cf95e9c067187d15365b7`. Declarations required by the Phase 10 render player and Phase 11 embedded editor are included; the included structure layouts and
 function signatures preserve the upstream ABI. The consolidation is documented
 at `third_party/clap/README.md` and is distributed under the upstream MIT
 License at `third_party/clap/LICENSE`.
+
+
+### Public-domain human voice technical fixture
+
+`assets/demo-human-voicebank-public-domain` contains `talking.wav` from the Sonic sample repository and a short derived vowel-like segment. The upstream `samples/README` states that all sound samples are in the public domain and describes `talking.wav` as the repository author's father talking. Source and derived SHA-256 values, retrieval date and processing are retained in `provenance.json`. The fixture is not Official Voicebank 01 and is not a contracted-singer product.
+
+
+### Sonic public-domain human voice fixture
+
+Phase 11 retains `talking.wav` from the Sonic sample repository and a derived
+550 ms vowel-like engineering sample. The upstream sample README states that
+all samples in that directory are public domain and identifies `talking.wav`
+as the repository author's father speaking. Exact source/derived SHA-256 values,
+retrieval date and processing are stored in
+`assets/demo-human-voicebank-public-domain/provenance.json`. The fixture is not
+Official Voicebank 01 and is not described as a contracted-singer product.

@@ -106,6 +106,22 @@ core::Result<void> EditorSession::redo() {
   return core::success();
 }
 
+core::Result<void> EditorSession::replaceProject(domain::Project project) {
+  const auto validation = project.validate();
+  if (!validation) {
+    log(core::LogLevel::Error, validation.error().message);
+    return validation;
+  }
+
+  project_ = std::move(project);
+  selection_.clear();
+  undo_.clear();
+  redo_.clear();
+  health_ = SessionHealth::Ready;
+  incrementRevision();
+  return core::success();
+}
+
 std::string_view EditorSession::undoName() const noexcept {
   return undo_.empty() ? std::string_view{} : undo_.back()->name();
 }

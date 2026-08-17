@@ -1,4 +1,4 @@
-# Project SEAM — Phase 10 CLAP render-player vertical slice
+# Project SEAM — Phase 11 embedded CLAP editor and live sample instrument
 
 Project SEAM is a C++20 sample-concatenative singing-voice editor. Phoneme boundaries, source-unit changes, pitch-shift artifacts, and sample seams are editable musical material rather than defects that must always be hidden.
 
@@ -15,9 +15,28 @@ This repository contains:
 - completed **Phase 7 signed, verifiable, and transactional `.seambank` packaging and installation**;
 - integrated **Phase 8 Windows Win32/TSF/WASAPI and macOS AppKit/NSTextInputClient/CoreAudio platform adapters**;
 - completed **Phase 9 trusted system-font Unicode/CJK rasterization for Korean, Japanese, Chinese, and Latin native UI text**;
-- completed **Phase 10 loadable CLAP 1.2.10 render-player module with bounded multichannel state, host transport, and sample-accurate Master Gain automation**.
+- completed **Phase 10 loadable CLAP 1.2.10 render-player module with bounded multichannel state, host transport, and sample-accurate Master Gain automation**;
+- completed **Phase 11 CLAP GUI, DAW-embedded Piano Roll/Phoneme/Unit/Seam editor, asynchronous preview renderer, and live human-sample note input**.
 
 Development uses the **`master` branch only**.
+
+
+## Phase 11 implementation
+
+### Embedded CLAP authoring surface
+
+- `ProjectSEAMEditor.clap` exposes CLAP GUI, note-input, state, audio-port and timer-support extensions.
+- The child view embeds the existing Project SEAM controller and renders Piano Roll, Lyrics, Phoneme, Unit, Seam, Pitch and optional Character 01 surfaces.
+- Edits submit immutable Project copies to a cancellable worker. Completed PCM is published through a bounded reader-counted triple buffer; the audio thread performs no project parsing, voicebank file access or render work.
+- A 16-voice live sampler handles sample-accurate CLAP note-on/off events using the public-domain human technical fixture.
+
+### Rights and release boundary
+
+- `assets/demo-human-voicebank-public-domain` records the upstream public-domain statement, original and derived hashes, retrieval date and processing. It explicitly declares `official=false` and `contractedSinger=false`.
+- Official Voicebank 01 remains blocked by the real performer-contract and directed-recording acceptance gates under `docs/legal` and `docs/voicebank`.
+- macOS bundle, signing/notarization, PKG, Windows packaging/signing, official CLAP validation and VST3/AU wrapper pipelines are source-integrated. They are not labelled signed, notarized or DAW-certified until target jobs produce that evidence.
+
+See [`docs/phase11/IMPLEMENTATION_REPORT.md`](docs/phase11/IMPLEMENTATION_REPORT.md), [`docs/phase11/ACCEPTANCE.md`](docs/phase11/ACCEPTANCE.md), and [`docs/phase11/HOST_CERTIFICATION_MATRIX.md`](docs/phase11/HOST_CERTIFICATION_MATRIX.md).
 
 
 ## Phase 10 implementation
@@ -568,3 +587,10 @@ git config core.hooksPath .githooks
 Project source and first-party concept assets are currently proprietary and all rights are reserved. No production third-party source is vendored. Reference projects are documented for behavioral study only.
 
 See [`LICENSE`](LICENSE), [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md), and [`third_party/manifest.yml`](third_party/manifest.yml).
+
+
+## Phase 11 — embedded CLAP editor
+
+Phase 11 adds a real CLAP GUI child view with the piano roll, phoneme/unit/seam/pitch lanes, a cancellable asynchronous phrase-preview renderer and CLAP note-event live human-sample playback. The included public-domain human recording is a provenance-preserved technical fixture, not Official Voicebank 01.
+
+macOS bundle, signing/notarization and Windows package/signing scripts are checked in. VST3/AU use the pinned official clap-wrapper pipeline. Commercial DAW certification, signing credentials and the contracted human voicebank remain evidence-gated and are never reported as complete without their external artifacts.

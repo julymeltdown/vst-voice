@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "https://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>CFBundleIdentifier</key><string>com.project-seam.editor.clap</string>
+  <key>CFBundleName</key><string>Project SEAM Editor</string>
+  <key>CFBundleDisplayName</key><string>Project SEAM Editor</string>
+  <key>CFBundleExecutable</key><string>ProjectSEAMEditor</string>
+  <key>CFBundlePackageType</key><string>BNDL</string>
+  <key>CFBundleVersion</key><string>0.11.0</string>
+  <key>CFBundleShortVersionString</key><string>0.11.0</string>
+  <key>NSHighResolutionCapable</key><true/>
+</dict></plist>

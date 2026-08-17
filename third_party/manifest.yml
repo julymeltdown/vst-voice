@@ -14,16 +14,16 @@
       "purpose": "bounded TrueType/TTC glyph rasterization for trusted system CJK fonts"
     },
     {
-      "name": "CLAP ABI 1.2.10 subset",
+      "name": "CLAP ABI 1.2.10 editor subset",
       "source": "https://github.com/free-audio/clap",
       "revision": "195b42a004144fab0b3cf95e9c067187d15365b7",
-      "sourceSha256": "f388cfa5a8d33ba39c8bd26077b6c0c7e5c70b6795aa4418526f04e615dd21f0",
+      "sourceSha256": "208423e7dadaa5104c260f6d12fc04ea92c211a91903a85a0342bb470afd7045",
       "license": "MIT",
       "licenseFile": "third_party/clap/LICENSE",
       "usage": "source",
       "distribution": "vendored-consolidated-header-subset",
       "modified": true,
-      "purpose": "CLAP 1.2.10 plug-in entry, factory, processing, state, audio-port, parameter, latency, tail, and render ABI declarations"
+      "purpose": "CLAP 1.2.10 entry, factory, processing, state, audio, note-port/event, GUI, timer, parameter, latency, tail, and render ABI declarations"
     }
   ],
   "plannedOrReferenceOnly": [
@@ -87,6 +87,19 @@
       "status": "operating-system-framework-not-distributed",
       "purpose": "macOS native window, composition input, multichannel output, and microphone capture",
       "verification": "source-integrated and native CI matrix configured; physical runtime acceptance requires macOS hardware"
+    }
+  ],
+  "distributedAssets": [
+    {
+      "name": "Sonic talking.wav human demo fixture",
+      "source": "https://github.com/waywardgeek/sonic/tree/master/samples",
+      "sourceSha256": "26c3ceacfb31a7300824a3841904f077856bdba41dafba0310c603cabb86d07f",
+      "derivedSha256": "caf8ceb04b864c7501371a2adae46697495e617b9ade178560ba2ea1aa6b8cb9",
+      "license": "LicenseRef-Public-Domain",
+      "rightsFile": "assets/demo-human-voicebank-public-domain/license/PUBLIC_DOMAIN_NOTICE.md",
+      "purpose": "human-sample live note and asynchronous phrase-render technical fixture",
+      "officialVoicebank": false,
+      "contractedSinger": false
     }
   ]
 }

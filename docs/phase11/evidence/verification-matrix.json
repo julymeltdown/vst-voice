@@ -1,0 +1,60 @@
+{
+  "phase": "11",
+  "baselineCommit": "f7c08654456015040ed06d8ae0831473d3a02b52",
+  "implemented": {
+    "clapGuiExtension": true,
+    "embeddedPianoRoll": true,
+    "phonemeUnitSeamPitchLanes": true,
+    "asynchronousPreviewRender": true,
+    "boundedRealtimePublication": true,
+    "clapNoteInput": true,
+    "liveHumanSampleInstrument": true,
+    "editorStateRoundTrip": true,
+    "activeStateLoadRestartPolicy": true,
+    "x11ChildViewRuntime": true,
+    "win32ChildViewSource": true,
+    "cocoaChildViewSource": true,
+    "macosBundlePackagingSource": true,
+    "windowsPackagingSource": true,
+    "signingNotarizationPipelines": true,
+    "vst3AuWrapperPipelineSource": true,
+    "publicDomainHumanFixture": true
+  },
+  "executedEvidence": {
+    "phase11ReleaseCTest": "3/3 PASS",
+    "phase11AsanUbsanCTest": "3/3 PASS",
+    "threadSanitizerCore": "PASS",
+    "threadSanitizerDynamicHost": "PASS",
+    "existingNamedTests": "128 PASS / 0 FAIL",
+    "dynamicHostResult": "PASS",
+    "guiCreated": true,
+    "guiVisible": true,
+    "screenshotWritten": true,
+    "liveNoteEnergy": 389.93,
+    "stateRoundTrip": true,
+    "pluginExports": [
+      "clap_entry"
+    ],
+    "licenseAudit": "PASS",
+    "sourceContract": "PASS",
+    "branchPolicy": "master only"
+  },
+  "notExecutedOrExternal": {
+    "officialClapValidator": "NOT_RUN: binary unavailable in this execution environment",
+    "thirdPartyDawCertification": "NOT_RUN",
+    "windowsRuntimeCertification": "NOT_RUN on Linux",
+    "macosRuntimeCertification": "NOT_RUN on Linux",
+    "vst3Binary": "NOT_BUILT",
+    "auBinary": "NOT_BUILT",
+    "codeSigning": "PIPELINE_READY, credentials absent",
+    "appleNotarization": "PIPELINE_READY, credentials absent",
+    "officialContractedVoicebank": "NOT_COMPLETED: performer contract and directed recording required"
+  },
+  "humanFixture": {
+    "official": false,
+    "contractedSinger": false,
+    "rightsBasis": "upstream public-domain dedication",
+    "sourceSha256": "26c3ceacfb31a7300824a3841904f077856bdba41dafba0310c603cabb86d07f",
+    "derivedSha256": "caf8ceb04b864c7501371a2adae46697495e617b9ade178560ba2ea1aa6b8cb9"
+  }
+}

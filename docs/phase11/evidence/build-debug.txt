@@ -1,0 +1,55 @@
+-- Configuring done (3.9s)
+-- Generating done (0.1s)
+-- Build files have been written to: /mnt/data/project-seam-phase11-work/project-seam-phase10-master/build/phase11-baseline
+[  2%] Built target seam_core
+[  4%] Built target seam_clap
+[  5%] Built target seam_text
+[  6%] Built target seam_clap_plugin
+[ 10%] Built target seam_domain
+[ 12%] Built target seam_clap_host
+[ 12%] Built target seam_phase9_benchmark
+[ 13%] Built target seam_phase10_benchmark
+[ 16%] Built target seam_phonemizer
+[ 19%] Built target seam_application
+[ 20%] Built target seam_formats
+[ 21%] Built target seam_character
+[ 25%] Built target seam_editor_ui
+[ 26%] Built target seam_phase1_benchmark
+[ 32%] Built target seam_voicebank
+[ 34%] Built target seam_distribution
+[ 40%] Built target seam_synthesis
+[ 41%] Built target seam_bank_tool
+[ 47%] Built target seam_platform
+[ 48%] Built target seam_phase7_demo
+[ 49%] Built target seam_clap_editor_host
+[ 50%] Built target seam_phase10_demo
+[ 51%] Built target seam_clap_state_tool
+[ 52%] Built target seam_voicebank_cli
+[ 53%] Built target seam_phase2_benchmark
+[ 55%] Built target seam_editor_inspection
+[ 62%] Built target seam_rendering
+[ 63%] Built target seam_phase1_demo
+[ 64%] Built target seam_phase2_demo
+[ 65%] Built target seam_phase3_demo
+[ 66%] Built target seam_phase8_demo
+[ 67%] Built target seam_phase3_benchmark
+[ 72%] Built target seam_native_ui
+[ 74%] Built target seam_playback_platform
+[ 76%] Built target seam_voicebank_studio_native
+[ 77%] Built target seam_phase9_demo
+[ 78%] Building CXX object CMakeFiles/seam_clap_editor.dir/libs/seam-clap-editor/src/editor_runtime.cpp.o
+[ 90%] Built target seam_tests
+[ 91%] Built target seam_phase4_benchmark
+[ 92%] Built target seam_phase5_benchmark
+[ 93%] Built target seam_phase4_demo
+[ 94%] Built target seam_phase5_demo
+[ 95%] Built target seam_editor_native
+[ 96%] Built target seam_phase6_demo
+[ 97%] Linking CXX static library libseam_clap_editor.a
+[ 97%] Built target seam_clap_editor
+[ 97%] Building CXX object CMakeFiles/seam_clap_editor_plugin.dir/libs/seam-clap-editor/src/plugin_entry.cpp.o
+[ 97%] Building CXX object CMakeFiles/seam_phase11_tests.dir/tests/test_phase11_clap_editor.cpp.o
+[ 98%] Linking CXX shared module ProjectSEAMEditor.clap
+[100%] Linking CXX executable seam_phase11_tests
+[100%] Built target seam_clap_editor_plugin
+[100%] Built target seam_phase11_tests

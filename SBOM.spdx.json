@@ -2,8 +2,8 @@
   "spdxVersion": "SPDX-2.3",
   "dataLicense": "CC0-1.0",
   "SPDXID": "SPDXRef-DOCUMENT",
-  "name": "Project-SEAM-Phase10-SBOM",
-  "documentNamespace": "https://example.invalid/project-seam/sbom/phase10/0.10.0",
+  "name": "Project-SEAM-Phase11-SBOM",
+  "documentNamespace": "https://example.invalid/project-seam/sbom/phase11/0.11.0",
   "creationInfo": {
     "created": "2026-08-17T00:00:00Z",
     "creators": [
@@ -12,9 +12,9 @@
   },
   "packages": [
     {
-      "name": "Project SEAM Phase 10",
+      "name": "Project SEAM Phase 11",
       "SPDXID": "SPDXRef-Package-ProjectSEAM",
-      "versionInfo": "0.10.0",
+      "versionInfo": "0.11.0",
       "downloadLocation": "NOASSERTION",
       "filesAnalyzed": false,
       "licenseConcluded": "NOASSERTION",
@@ -66,7 +66,7 @@
       "comment": "Vendored single-header TrueType/TTC rasterizer; Project SEAM redistributes no fonts."
     },
     {
-      "name": "CLAP ABI subset",
+      "name": "CLAP ABI editor subset",
       "SPDXID": "SPDXRef-Package-CLAP-ABI",
       "versionInfo": "1.2.10 / 195b42a004144fab0b3cf95e9c067187d15365b7",
       "downloadLocation": "https://github.com/free-audio/clap",
@@ -74,7 +74,18 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "copyrightText": "Copyright (c) 2014...2022 Alexandre BIQUE",
-      "comment": "Mechanically consolidated public C ABI subset for the Project SEAM CLAP plug-in."
+      "comment": "Consolidated public C ABI subset for Project SEAM CLAP render-player and editor plug-ins."
+    },
+    {
+      "name": "Sonic talking.wav public-domain fixture",
+      "SPDXID": "SPDXRef-Package-Sonic-Human-Fixture",
+      "versionInfo": "retrieved-2026-08-17",
+      "downloadLocation": "https://github.com/waywardgeek/sonic/tree/master/samples",
+      "filesAnalyzed": true,
+      "licenseConcluded": "LicenseRef-Public-Domain",
+      "licenseDeclared": "LicenseRef-Public-Domain",
+      "copyrightText": "Public domain per upstream sample README",
+      "comment": "Technical human voice fixture only; official=false, contractedSinger=false."
     }
   ],
   "relationships": [
@@ -107,6 +118,19 @@
       "spdxElementId": "SPDXRef-Package-ProjectSEAM",
       "relationshipType": "DEPENDS_ON",
       "relatedSpdxElement": "SPDXRef-Package-CLAP-ABI"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-ProjectSEAM",
+      "relationshipType": "CONTAINS",
+      "relatedSpdxElement": "SPDXRef-Package-Sonic-Human-Fixture"
+    }
+  ],
+  "hasExtractedLicensingInfos": [
+    {
+      "licenseId": "LicenseRef-Public-Domain",
+      "name": "Sonic samples public-domain dedication",
+      "extractedText": "The upstream samples README states: “All sound samples are in the public domain.”",
+      "comment": "The original source URL and hashes are recorded in assets/demo-human-voicebank-public-domain/provenance.json."
     }
   ]
 }

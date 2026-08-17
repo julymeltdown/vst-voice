@@ -209,23 +209,29 @@ void EditorScenePainter::paintTechnicalLanes(
   const auto left = layout_.keyboardWidth;
   const auto phonemeTop = pianoBottom;
   const auto unitTop = phonemeTop + layout_.phonemeLaneHeight;
-  const auto automationTop = unitTop + layout_.unitLaneHeight;
+  const auto seamTop = unitTop + layout_.unitLaneHeight;
+  const auto automationTop = seamTop + layout_.seamLaneHeight;
   const auto laneWidth = std::max(0.0, editorRight - left);
 
   canvas.fillRect(ui::Rect{0.0, phonemeTop, editorRight, layout_.phonemeLaneHeight},
                   Color{22, 20, 26, 255});
   canvas.fillRect(ui::Rect{0.0, unitTop, editorRight, layout_.unitLaneHeight},
                   Color{20, 23, 27, 255});
+  canvas.fillRect(ui::Rect{0.0, seamTop, editorRight,
+                           layout_.seamLaneHeight}, Color{27, 21, 25, 255});
   canvas.fillRect(ui::Rect{0.0, automationTop, editorRight,
                            layout_.automationLaneHeight}, Color{25, 21, 27, 255});
   canvas.line(ui::Point{0.0, phonemeTop}, ui::Point{editorRight, phonemeTop},
               theme_.gridStrong, 1.0);
   canvas.line(ui::Point{0.0, unitTop}, ui::Point{editorRight, unitTop},
               theme_.gridStrong, 1.0);
+  canvas.line(ui::Point{0.0, seamTop}, ui::Point{editorRight, seamTop},
+              theme_.gridStrong, 1.0);
   canvas.line(ui::Point{0.0, automationTop}, ui::Point{editorRight, automationTop},
               theme_.gridStrong, 1.0);
   canvas.drawText(ui::Point{8.0, phonemeTop + 12.0}, "PHONEME", theme_.secondaryText, 8.0);
   canvas.drawText(ui::Point{8.0, unitTop + 12.0}, "UNIT", theme_.secondaryText, 8.0);
+  canvas.drawText(ui::Point{8.0, seamTop + 12.0}, "SEAM", theme_.secondaryText, 8.0);
   canvas.drawText(ui::Point{8.0, automationTop + 12.0}, "PITCH", theme_.secondaryText, 8.0);
 
   ui::PhonemeLaneModel phonemeLane;
@@ -269,6 +275,32 @@ void EditorScenePainter::paintTechnicalLanes(
                     theme_.primaryText, 7.0);
     canvas.drawText(ui::Point{bounds.x + 5.0, bounds.y + 22.0},
                     rendererLabel(override.renderer), theme_.secondaryText, 7.0);
+  }
+
+  for (const auto& seam : state.seamOverrides) {
+    const auto visual = std::find_if(
+        phonemeVisuals.begin(), phonemeVisuals.end(),
+        [&seam](const ui::PhonemeVisual& candidate) {
+          return candidate.key == seam.incomingStartKey;
+        });
+    if (visual == phonemeVisuals.end()) continue;
+    const auto x = left + visual->bounds.x;
+    if (x < left || x > editorRight) continue;
+    const auto amount = std::clamp(
+        static_cast<double>(seam.seamAmount.value_or(0.5F)), 0.0, 1.0);
+    const auto barHeight = (layout_.seamLaneHeight - 12.0) * amount;
+    const ui::Rect rail{x - 5.0, seamTop + 5.0, 10.0,
+                        layout_.seamLaneHeight - 10.0};
+    canvas.fillRect(rail, Color{49, 39, 47, 255});
+    canvas.fillRect(ui::Rect{x - 5.0, rail.bottom() - barHeight,
+                             10.0, barHeight}, theme_.accent);
+    canvas.strokeRect(rail, seam.locked ? theme_.noteSelectedStroke
+                                       : theme_.gridStrong, 1.0);
+  }
+  if (state.seamOverrides.empty()) {
+    canvas.drawText(ui::Point{left + 8.0, seamTop + 19.0},
+                    "CLICK LANE TO SET BOUNDARY CHARACTER",
+                    theme_.secondaryText, 7.0);
   }
 
   const auto centerY = automationTop + layout_.automationLaneHeight * 0.5;
