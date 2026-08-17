@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "phase": "12A",
+  "productGate": "G1_FEATURE_ALPHA",
+  "productionPreviewIntegration": "PASS",
+  "exactVoicebankResolution": "PASS",
+  "directVsPluginPcmParity": "PASS",
+  "phraseCacheReuse": "PASS",
+  "noSilentFallback": "PASS",
+  "debugCtest": {
+    "passed": 26,
+    "failed": 0
+  },
+  "releaseFocusedCtest": {
+    "passed": 6,
+    "failed": 0
+  },
+  "namedTests": {
+    "passed": 128,
+    "failed": 0
+  },
+  "asanUbsan": "PASS",
+  "threadSanitizer": "PASS",
+  "voicebankValidation": {
+    "errors": 0,
+    "warnings": 16,
+    "technicalFixture": true
+  },
+  "licenseAudit": "PASS",
+  "masterOnly": "PASS",
+  "clapExport": [
+    "clap_entry"
+  ],
+  "remainingPhase": "12B"
+}
