@@ -74,5 +74,6 @@
     "releaseCommit": "35f524b",
     "status": "SOURCE_READY / TARGET_CI_REQUIRED"
   },
-  "hardeningCommit": "e2f8a02"
+  "hardeningCommit": "e2f8a02",
+  "finalizationCommit": "54b26e6"
 }

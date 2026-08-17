@@ -19,7 +19,7 @@
 - macOS `.clap` bundle metadata and packaging.
 - Windows package and Authenticode scripts.
 - macOS codesign, notarization, stapling and PKG scripts.
-- VST3 and AUv2 wrapper build entry through pinned clap-wrapper 0.16.0.
+- VST3 and AUv2 wrapper build entry through pinned clap-wrapper v0.15.1.
 
 ## External validation gates—not reported as PASS without evidence
 
