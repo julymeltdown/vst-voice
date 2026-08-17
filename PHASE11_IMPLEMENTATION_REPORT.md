@@ -1,5 +1,7 @@
 # Project SEAM Phase 11 implementation report
 
+> Release-readiness note: Phase 11 is a Feature Alpha. The CLAP preview uses a single embedded human-vowel fixture, and complete direct Phoneme/Unit/Pitch editing remains. See `docs/STATUS_KO.md` and `docs/REMAINING_TASKS_KO.md`.
+
 Phase 11 adds a real CLAP GUI editor surface, embedded piano-roll and phoneme/unit/seam/pitch lanes, asynchronous revision-aware preview rendering, bounded realtime PCM publication, and sample-accurate CLAP note input driving a 16-voice human-sample loop instrument.
 
 ## Implemented

@@ -33,9 +33,18 @@ She is not permanently sad, hostile, fragile, or elitist. She does not police ot
 - asymmetry represents sample branching;
 - visibly different dark fabric values represent different source units.
 
-## Phase 1 status
+## Current status after Phase 11
 
-Three directions remain under evaluation. Character name, final face, production topology, voice-provider relationship, and commercial key art are intentionally not locked.
+The violet low-poly direction under `assets/character-01/source/canonical-lowpoly.jpeg` is the current canonical runtime direction. The product binding and Full/Minimal/Off policy are implemented. The following are still not locked for commercial release:
+
+- final public character name;
+- production-quality front/side/back turnaround and topology;
+- final facial model, expressions, LODs and animation;
+- complete IP ownership/assignment review;
+- trademark, domain and social-account clearance;
+- commercial key art and merchandise rules;
+- final relationship statement between Character 01 and the eventual voice provider.
+
 
 ## Product integration rule (Phase 5.1)
 

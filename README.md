@@ -16,9 +16,11 @@ This repository contains:
 - integrated **Phase 8 Windows Win32/TSF/WASAPI and macOS AppKit/NSTextInputClient/CoreAudio platform adapters**;
 - completed **Phase 9 trusted system-font Unicode/CJK rasterization for Korean, Japanese, Chinese, and Latin native UI text**;
 - completed **Phase 10 loadable CLAP 1.2.10 render-player module with bounded multichannel state, host transport, and sample-accurate Master Gain automation**;
-- completed **Phase 11 CLAP GUI, DAW-embedded Piano Roll/Phoneme/Unit/Seam editor, asynchronous preview renderer, and live human-sample note input**.
+- implemented **Phase 11 CLAP GUI Feature Alpha** with DAW-embedded Piano Roll, technical Phoneme/Unit/Pitch lanes, direct Note/Lyric/Seam editing, asynchronous demo preview, and live human-sample note input.
 
 Development uses the **`master` branch only**.
+
+> **Current maturity: Feature Alpha, not Release Candidate.** The CLAP editor preview still uses a single embedded public-domain vowel sample rather than the complete production voicebank pipeline. Phoneme, Unit and Pitch lanes are visible, but their full direct-manipulation editing is unfinished. See [`docs/STATUS_KO.md`](docs/STATUS_KO.md), [`docs/REMAINING_TASKS_KO.md`](docs/REMAINING_TASKS_KO.md), and [`docs/RELEASE_READINESS_KO.md`](docs/RELEASE_READINESS_KO.md).
 
 
 ## Phase 11 implementation
@@ -26,8 +28,8 @@ Development uses the **`master` branch only**.
 ### Embedded CLAP authoring surface
 
 - `ProjectSEAMEditor.clap` exposes CLAP GUI, note-input, state, audio-port and timer-support extensions.
-- The child view embeds the existing Project SEAM controller and renders Piano Roll, Lyrics, Phoneme, Unit, Seam, Pitch and optional Character 01 surfaces.
-- Edits submit immutable Project copies to a cancellable worker. Completed PCM is published through a bounded reader-counted triple buffer; the audio thread performs no project parsing, voicebank file access or render work.
+- The child view embeds the existing Project SEAM controller and renders Piano Roll, Lyrics, Phoneme, Unit, Seam, Pitch and optional Character 01 surfaces. Note, lyric and seam amount are directly editable; complete direct editing for phoneme timing, unit selection/renderer and pitch points remains.
+- Edits submit immutable Project copies to a cancellable worker. Completed PCM is published through a bounded reader-counted triple buffer; the audio thread performs no project parsing, voicebank file access or render work. The current worker is a single-sample demo renderer and must still be replaced with the production PhraseRenderPipeline.
 - A 16-voice live sampler handles sample-accurate CLAP note-on/off events using the public-domain human technical fixture.
 
 ### Rights and release boundary

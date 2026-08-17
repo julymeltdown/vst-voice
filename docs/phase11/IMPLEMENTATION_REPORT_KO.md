@@ -35,15 +35,19 @@ Standalone에서 사용하던 first-party 도메인·Command·Editor Controller�
 - Piano Roll
 - Note 선택과 drag
 - Unicode lyric 편집 경로
-- Phoneme Lane
-- Unit Lane
-- 개별 Seam 편집
-- Pitch Automation Lane
+- Phoneme Lane 표시
+- Unit Lane 표시
+- 개별 Seam 직접 편집
+- Pitch Automation Lane 표시
+
+현재 Phoneme timing, Unit variant/renderer, Pitch point의 완전한 직접 조작 편집은 미구현이다.
 - Character 01의 비침해형 compact dock
 
 캐릭터 표시 상태는 합성 결과, PCM identity, state checksum에 관여하지 않는다.
 
 ### 2.3 비동기 Preview Render Service
+
+현재 worker는 공개 도메인 단일 모음 fixture를 음표별로 pitch-shift/loop하는 전용 Preview 경로다. Standalone의 전체 생산 `PhraseRenderPipeline`은 아직 연결되지 않았다.
 
 - 편집 시 immutable Project snapshot 제출
 - revision 기반 최신 요청 식별
@@ -52,7 +56,7 @@ Standalone에서 사용하던 first-party 도메인·Command·Editor Controller�
 - 3-slot bounded publication
 - Audio callback에서 lock·allocation·파일 I/O 없이 읽기
 
-### 2.4 Live Note-event Singing
+### 2.4 Live Note-event Human-vowel Sampler
 
 - CLAP note input port 1개
 - CLAP dialect note-on / note-off
@@ -161,3 +165,15 @@ Dynamic Host 결과:
 ## 6. 제품 상태
 
 현재 상태는 **Linux/X11에서 실제 동작하는 CLAP Embedded Editor Feature Alpha**다. DAW 내부 편집기, 비동기 preview render, note-event live sample instrument와 state 경계는 구현·검증됐다. 상용 배포 인증과 공식 보이스뱅크 제작은 별도 외부 Gate다.
+
+## 7. 출시 준비 리뷰 정정
+
+Phase 11은 완성형 DAW 가창합성기가 아니라 Feature Alpha다. 다음이 남아 있다.
+
+- production voicebank render pipeline 연결
+- `.seambank` 선택과 relink
+- Phoneme/Unit/Pitch 직접 편집
+- Host tempo/loop/seek 계약
+- multi-track/multichannel plugin 통합
+
+상세 내용은 `docs/REMAINING_TASKS_KO.md`를 따른다.

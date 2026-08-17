@@ -23,3 +23,8 @@
 - macOS notarization and Windows Authenticode require real credentials.
 - commercial DAW certification requires the actual host binaries and versions.
 - the included public-domain voice is a technical fixture, not Official Voicebank 01.
+
+## Independent release-readiness review
+
+- `../reviews/PHASE11_RELEASE_READINESS_REVIEW_2026-08-17_KO.md` records the product-claim review and remaining internal product work.
+- `../reviews/phase11-release-readiness-verification.txt` records a clean Phase 11 target build/test, the 128-test core suite, branch policy, license audit, source/rights contracts and Git integrity check.

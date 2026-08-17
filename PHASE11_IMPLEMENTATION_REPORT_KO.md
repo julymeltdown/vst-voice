@@ -1,5 +1,7 @@
 # Project SEAM Phase 11 구현 보고서
 
+> Release-readiness note: Phase 11 is a Feature Alpha. The CLAP preview uses a single embedded human-vowel fixture, and complete direct Phoneme/Unit/Pitch editing remains. See `docs/STATUS_KO.md` and `docs/REMAINING_TASKS_KO.md`.
+
 ## 1. 단계 목표
 
 Phase 11은 Phase 10의 headless CLAP render player 위에 다음 실제 편집·합성 경로를 추가한다.
