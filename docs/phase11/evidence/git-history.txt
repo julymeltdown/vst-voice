@@ -1,12 +1,8 @@
-d93a4ca (HEAD -> master) feat: implement Phase 11 embedded CLAP editor
-f7c0865 chore: add Phase 10 verification evidence
-16def61 docs: define Phase 10 CLAP contracts and boundaries
-52f72d3 feat: implement Phase 10 CLAP render player
-7429533 chore: add Phase 9 verification evidence
-8c62290 feat: implement Phase 9 production CJK text rendering
-7a8cea8 chore: record Phase 8 verification evidence
-43ec1d8 chore: add Phase 8 verification evidence
-a6cd87e feat: implement Phase 8 Windows and macOS native adapters
-512a401 fix: harden Phase 7 package trust and character binding
-cb8a909 feat: implement Phase 7 signed seambank distribution
-76fbc63 feat: implement Phase 6 multichannel routing
+610091e7f07fbc331b3bb2c2b4d51835ae4fc844 julymeltdown <quintuplets2000@gmail.com> docs: align Phase 11 wrapper and finalization evidence
+54b26e6c61f88b06820adfd6f5e0cbc707fad5f2 julymeltdown <quintuplets2000@gmail.com> fix: finalize Phase 11 lifecycle and verification contracts
+e2f8a02f3f5de2f8d1eb381b2b63ec4840eda1b2 julymeltdown <quintuplets2000@gmail.com> fix: harden Phase 11 host and state lifecycle
+5634774f289c42ca0f3a8e69c138d17ec641e23c julymeltdown <quintuplets2000@gmail.com> docs: record Phase 11 verification evidence
+d93a4ca8d053aa1bb980d9b1c4d5bdf10a7e2b06 julymeltdown <quintuplets2000@gmail.com> feat: implement Phase 11 embedded CLAP editor
+f7c08654456015040ed06d8ae0831473d3a02b52 julymeltdown <quintuplets2000@gmail.com> chore: add Phase 10 verification evidence
+16def6194ded50a6a61febaf3665be012a04346d julymeltdown <quintuplets2000@gmail.com> docs: define Phase 10 CLAP contracts and boundaries
+52f72d31d9d7b552b1675147b9a43a6aed43123c julymeltdown <quintuplets2000@gmail.com> feat: implement Phase 10 CLAP render player
