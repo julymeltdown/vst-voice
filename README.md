@@ -1,4 +1,4 @@
-# Project SEAM — Phase 11 embedded CLAP editor and live sample instrument
+# Project SEAM — Phase 12A production plug-in render integration
 
 Project SEAM is a C++20 sample-concatenative singing-voice editor. Phoneme boundaries, source-unit changes, pitch-shift artifacts, and sample seams are editable musical material rather than defects that must always be hidden.
 
@@ -16,12 +16,25 @@ This repository contains:
 - integrated **Phase 8 Windows Win32/TSF/WASAPI and macOS AppKit/NSTextInputClient/CoreAudio platform adapters**;
 - completed **Phase 9 trusted system-font Unicode/CJK rasterization for Korean, Japanese, Chinese, and Latin native UI text**;
 - completed **Phase 10 loadable CLAP 1.2.10 render-player module with bounded multichannel state, host transport, and sample-accurate Master Gain automation**;
-- implemented **Phase 11 CLAP GUI Feature Alpha** with DAW-embedded Piano Roll, technical Phoneme/Unit/Pitch lanes, direct Note/Lyric/Seam editing, asynchronous demo preview, and live human-sample note input.
+- implemented **Phase 11 CLAP GUI Feature Alpha** with DAW-embedded Piano Roll, technical Phoneme/Unit/Pitch lanes, direct Note/Lyric/Seam editing, asynchronous preview, and live human-sample note input;
+- completed **Phase 12A production preview integration** with exact Voicebank ID/version/content-hash resolution, trust-aware installed receipts, relink/select APIs, shared four-renderer Phrase rendering, and PCM parity tests.
 
 Development uses the **`master` branch only**.
 
-> **Current maturity: Feature Alpha, not Release Candidate.** The CLAP editor preview still uses a single embedded public-domain vowel sample rather than the complete production voicebank pipeline. Phoneme, Unit and Pitch lanes are visible, but their full direct-manipulation editing is unfinished. See [`docs/STATUS_KO.md`](docs/STATUS_KO.md), [`docs/REMAINING_TASKS_KO.md`](docs/REMAINING_TASKS_KO.md), and [`docs/RELEASE_READINESS_KO.md`](docs/RELEASE_READINESS_KO.md).
+> **Current maturity: Feature Alpha, not Release Candidate.** Phase 12A now routes CLAP preview rendering through the production Voicebank/Phonemizer/Unit/Timing/four-Renderer/Seam/Cache pipeline and resolves exact trusted Voicebank identities. Phoneme, Unit and Pitch lanes are still not fully direct-manipulation editors, and host timeline/routing plus target-platform release gates remain. See [`docs/STATUS_KO.md`](docs/STATUS_KO.md), [`docs/REMAINING_TASKS_KO.md`](docs/REMAINING_TASKS_KO.md), and [`docs/RELEASE_READINESS_KO.md`](docs/RELEASE_READINESS_KO.md).
 
+
+
+## Phase 12A implementation
+
+- `VoicebankCatalog` discovers standard installed roots, explicit relink roots, bundle/sidecar resources and development fixtures.
+- Each track persists exact Voicebank ID, version and synthesis content SHA-256.
+- Signed installation receipts distinguish trusted installed banks from untrusted or development candidates.
+- Missing/version/hash/trust failures publish silence and explicit diagnostics; no other bank is silently substituted.
+- `ProductionRegionRenderer` is shared by direct engine rendering and CLAP async preview, with sample-identical parity tests and Phrase cache reuse.
+- The public-domain production bank remains a nonofficial technical fixture.
+
+See [`docs/phase12a/`](docs/phase12a/) for acceptance, architecture and known limitations.
 
 ## Phase 11 implementation
 
@@ -29,7 +42,7 @@ Development uses the **`master` branch only**.
 
 - `ProjectSEAMEditor.clap` exposes CLAP GUI, note-input, state, audio-port and timer-support extensions.
 - The child view embeds the existing Project SEAM controller and renders Piano Roll, Lyrics, Phoneme, Unit, Seam, Pitch and optional Character 01 surfaces. Note, lyric and seam amount are directly editable; complete direct editing for phoneme timing, unit selection/renderer and pitch points remains.
-- Edits submit immutable Project copies to a cancellable worker. Completed PCM is published through a bounded reader-counted triple buffer; the audio thread performs no project parsing, voicebank file access or render work. The current worker is a single-sample demo renderer and must still be replaced with the production PhraseRenderPipeline.
+- Edits submit immutable Project copies and an exact resolved Voicebank candidate to a cancellable worker. Phase 12A calls the shared production PhraseRenderPipeline and content-addressed Phrase cache; completed PCM is published through a bounded reader-counted triple buffer. The audio thread performs no project parsing, Voicebank resolution, file access or render work.
 - A 16-voice live sampler handles sample-accurate CLAP note-on/off events using the public-domain human technical fixture.
 
 ### Rights and release boundary

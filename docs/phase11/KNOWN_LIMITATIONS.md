@@ -1,21 +1,34 @@
-# Phase 11 Known Limitations
+# Phase 11 / Phase 12A Known Limitations
 
-## Product behavior
+## Resolved by Phase 12A
 
-1. The asynchronous CLAP preview is a dedicated single-human-vowel sample loop. It does not yet call the production voicebank/phonemizer/unit-selection/timing/renderer pipeline.
-2. Notes, lyrics and seam amount are directly editable. Phoneme timing, unit selection/renderer and pitch automation are displayed but do not yet have complete direct-manipulation editing.
-3. The embedded editor operates on the first vocal region and stereo output. Multi-track, multi-region and Phase 6 routing are not integrated into this plug-in.
-4. Host beat/tempo conversion does not rerender the project when host tempo differs from the internal project TempoMap.
-5. Live note input is a 16-voice vowel sampler, not complete lyric-driven singing synthesis.
-6. Note input advertises the CLAP note dialect only; broad MIDI-host compatibility remains to be validated and extended.
-7. The plug-in uses the embedded public-domain demo sample and does not select an installed trusted `.seambank`.
+- The CLAP asynchronous preview no longer uses the dedicated single-vowel
+  phrase loop. It now calls the shared production Phonemizer, Unit Selector,
+  Timing Solver, four Renderer, SeamComposer and Phrase cache path.
+- Voicebank ID, version and content hash are persisted and resolved exactly.
+  Missing, changed or untrusted installed banks produce explicit silence and a
+  diagnostic rather than a hidden fallback.
+
+## Remaining product behavior
+
+1. Notes, lyrics and seam amount are directly editable. Phoneme timing, Unit
+   variant/renderer and Pitch automation still lack full direct manipulation.
+2. The embedded editor operates on the first vocal track/region and stereo
+   preview. Phase 6 bus/matrix routing is not yet connected to the plug-in.
+3. Host tempo changes do not yet become authoritative project rerender events.
+4. Live note input remains a single-vowel sampler rather than lyric-driven
+   Voicebank transitions.
+5. Exact bank refresh/relink/select APIs exist, but a polished graphical bank
+   browser remains.
+6. Source builds may bind the development production fixture only for a newly
+   created project. Release products must install and resolve trusted banks.
 
 ## Platform and release evidence
 
-- Linux/X11 child GUI is runtime verified.
-- Win32 and Cocoa are source-ready, not certified here.
-- Official `clap-validator`, commercial DAWs, VST3 validator and `auval` have not produced local PASS evidence.
-- Signing, notarization and installer scripts require release credentials and clean-system testing.
+- Linux/X11 child GUI and production preview are runtime verified.
+- Win32/Cocoa remain source-ready in this environment.
+- Official `clap-validator`, commercial DAWs, VST3 validator and `auval` have
+  not produced local PASS evidence.
+- Signing, notarization and installers require release credentials and clean
+  target-system tests.
 - Official Voicebank 01 requires a contracted performer and directed recording.
-
-These limitations are release-planning inputs, not hidden fallback behavior.

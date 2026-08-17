@@ -2,6 +2,9 @@
 
 Current gate: **G1 — Feature Alpha**.
 
-Commercial release requires production plug-in synthesis integration, complete technical-lane editing, host timeline/routing correctness, target-platform runtime validation, plug-in format validators, signed installers, an accepted official voicebank and final Character 01 rights/assets.
-
-See [`RELEASE_READINESS_KO.md`](RELEASE_READINESS_KO.md) for the complete checklist.
+Phase 12A completes the production CLAP preview and exact Voicebank resolution
+parts of the G2 checklist. G2 is still blocked by direct technical-lane
+editing, host timeline authority, multi-track/region and 1–8-channel plug-in
+routing, complete live Voicebank behavior and full state/UI integration.
+Target-platform validators, signed installers, Official Voicebank 01 and final
+Character 01 rights/assets remain later gates.

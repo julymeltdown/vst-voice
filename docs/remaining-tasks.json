@@ -3,23 +3,114 @@
   "generatedAt": "2026-08-17",
   "currentGate": "G1_FEATURE_ALPHA",
   "tasks": [
-    {"id":"SEAM-P12-001","priority":"P0","status":"NOT_STARTED","title":"Integrate production phrase render pipeline into CLAP editor"},
-    {"id":"SEAM-P12-002","priority":"P0","status":"NOT_STARTED","title":"Resolve and persist installed trusted voicebanks in plug-in state"},
-    {"id":"SEAM-P12-003","priority":"P0","status":"PARTIAL","title":"Complete direct phoneme, unit and pitch editing"},
-    {"id":"SEAM-P12-004","priority":"P0","status":"PARTIAL","title":"Implement authoritative host tempo, loop and seek synchronization"},
-    {"id":"SEAM-P12-005","priority":"P0","status":"PARTIAL","title":"Integrate multi-track, multi-region and multichannel routing"},
-    {"id":"SEAM-P12-006","priority":"P0","status":"PARTIAL","title":"Expand live note input into voicebank-driven singing"},
-    {"id":"SEAM-P12-007","priority":"P0","status":"EXTERNAL_GATE","title":"Run official CLAP validator and retain evidence"},
-    {"id":"SEAM-P12-008","priority":"P0","status":"SOURCE_READY","title":"Certify Windows and macOS runtime paths"},
-    {"id":"SEAM-P12-009","priority":"P0","status":"PARTIAL","title":"Complete realtime and soak test matrix"},
-    {"id":"SEAM-P13-001","priority":"P1","status":"SOURCE_READY","title":"Build and validate VST3"},
-    {"id":"SEAM-P13-002","priority":"P1","status":"SOURCE_READY","title":"Build and validate AUv2"},
-    {"id":"SEAM-P13-003","priority":"P1","status":"EXTERNAL_GATE","title":"Sign, notarize and install on clean systems"},
-    {"id":"SEAM-P13-004","priority":"P1","status":"NOT_RUN","title":"Execute commercial DAW certification matrix"},
-    {"id":"SEAM-P13-005","priority":"P1","status":"EXTERNAL_GATE","title":"Produce contracted Official Voicebank 01"},
-    {"id":"SEAM-P13-006","priority":"P1","status":"PARTIAL","title":"Finalize Character 01 identity, production assets and rights"},
-    {"id":"SEAM-P14-001","priority":"P2","status":"DECISION_REQUIRED","title":"Choose production UI rendering architecture"},
-    {"id":"SEAM-P14-002","priority":"P2","status":"NOT_STARTED","title":"Complete accessibility, localization and UX polish"},
-    {"id":"SEAM-P14-003","priority":"P2","status":"PARTIAL","title":"Complete user documentation, onboarding and support material"}
-  ]
+    {
+      "id": "SEAM-P12-001",
+      "priority": "P0",
+      "status": "DONE",
+      "title": "Integrate production phrase render pipeline into CLAP editor"
+    },
+    {
+      "id": "SEAM-P12-002",
+      "priority": "P0",
+      "status": "DONE",
+      "title": "Resolve and persist installed trusted voicebanks in plug-in state"
+    },
+    {
+      "id": "SEAM-P12-003",
+      "priority": "P0",
+      "status": "PARTIAL",
+      "title": "Complete direct phoneme, unit and pitch editing"
+    },
+    {
+      "id": "SEAM-P12-004",
+      "priority": "P0",
+      "status": "PARTIAL",
+      "title": "Implement authoritative host tempo, loop and seek synchronization"
+    },
+    {
+      "id": "SEAM-P12-005",
+      "priority": "P0",
+      "status": "PARTIAL",
+      "title": "Integrate multi-track, multi-region and multichannel routing"
+    },
+    {
+      "id": "SEAM-P12-006",
+      "priority": "P0",
+      "status": "PARTIAL",
+      "title": "Expand live note input into voicebank-driven singing"
+    },
+    {
+      "id": "SEAM-P12-007",
+      "priority": "P0",
+      "status": "EXTERNAL_GATE",
+      "title": "Run official CLAP validator and retain evidence"
+    },
+    {
+      "id": "SEAM-P12-008",
+      "priority": "P0",
+      "status": "SOURCE_READY",
+      "title": "Certify Windows and macOS runtime paths"
+    },
+    {
+      "id": "SEAM-P12-009",
+      "priority": "P0",
+      "status": "PARTIAL",
+      "title": "Complete realtime and soak test matrix"
+    },
+    {
+      "id": "SEAM-P13-001",
+      "priority": "P1",
+      "status": "SOURCE_READY",
+      "title": "Build and validate VST3"
+    },
+    {
+      "id": "SEAM-P13-002",
+      "priority": "P1",
+      "status": "SOURCE_READY",
+      "title": "Build and validate AUv2"
+    },
+    {
+      "id": "SEAM-P13-003",
+      "priority": "P1",
+      "status": "EXTERNAL_GATE",
+      "title": "Sign, notarize and install on clean systems"
+    },
+    {
+      "id": "SEAM-P13-004",
+      "priority": "P1",
+      "status": "NOT_RUN",
+      "title": "Execute commercial DAW certification matrix"
+    },
+    {
+      "id": "SEAM-P13-005",
+      "priority": "P1",
+      "status": "EXTERNAL_GATE",
+      "title": "Produce contracted Official Voicebank 01"
+    },
+    {
+      "id": "SEAM-P13-006",
+      "priority": "P1",
+      "status": "PARTIAL",
+      "title": "Finalize Character 01 identity, production assets and rights"
+    },
+    {
+      "id": "SEAM-P14-001",
+      "priority": "P2",
+      "status": "DECISION_REQUIRED",
+      "title": "Choose production UI rendering architecture"
+    },
+    {
+      "id": "SEAM-P14-002",
+      "priority": "P2",
+      "status": "NOT_STARTED",
+      "title": "Complete accessibility, localization and UX polish"
+    },
+    {
+      "id": "SEAM-P14-003",
+      "priority": "P2",
+      "status": "PARTIAL",
+      "title": "Complete user documentation, onboarding and support material"
+    }
+  ],
+  "nextPhase": "PHASE_12B"
 }
