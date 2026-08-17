@@ -5,7 +5,7 @@
 | Project SEAM dynamic CLAP host | Linux/X11 | PASS | lifecycle, GUI, note input, state, transport and screenshot |
 | Project SEAM dynamic CLAP host | Windows | SOURCE_READY | Win32 CI runner required |
 | Project SEAM dynamic CLAP host | macOS | SOURCE_READY | Cocoa CI runner required |
-| official clap-validator | Linux | NOT_RUN | run `scripts/run_clap_validator.sh` when binary is installed |
+| official clap-validator 0.4.1 | Linux | LOCAL_NOT_RUN / CI_CONFIGURED | local binary unavailable; pinned official CI job is configured |
 | REAPER | Linux/Windows/macOS | NOT_RUN | actual host binary and version required |
 | Bitwig Studio | Linux/Windows/macOS | NOT_RUN | actual host binary and version required |
 | Cubase | Windows/macOS | NOT_RUN | actual host binary and version required |

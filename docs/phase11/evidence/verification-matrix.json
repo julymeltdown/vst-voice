@@ -43,7 +43,7 @@
     "processRequests": 3
   },
   "notExecutedOrExternal": {
-    "officialClapValidator": "NOT_RUN: binary unavailable in this execution environment",
+    "officialClapValidator": "LOCAL_NOT_RUN: official 0.4.1 binary unavailable; pinned CI job configured",
     "thirdPartyDawCertification": "NOT_RUN",
     "windowsRuntimeCertification": "NOT_RUN on Linux",
     "macosRuntimeCertification": "NOT_RUN on Linux",
@@ -68,5 +68,11 @@
     "noteChokeSemantics": true,
     "characterResourceResolutionFromPluginPath": true,
     "hostCountersAtomic": true
-  }
+  },
+  "wrapperPipeline": {
+    "clapWrapperRelease": "v0.15.1",
+    "releaseCommit": "35f524b",
+    "status": "SOURCE_READY / TARGET_CI_REQUIRED"
+  },
+  "hardeningCommit": "e2f8a02"
 }

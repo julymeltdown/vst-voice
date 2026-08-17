@@ -88,9 +88,9 @@ public:
       : host_(host),
         runtime_(std::make_unique<EditorRuntime>(
             std::nullopt, resolveCharacterPackage())) {
-    runtime_->setRenderReadyCallback([this] {
-      if (host_ != nullptr && host_->request_process != nullptr) {
-        host_->request_process(host_);
+    runtime_->setRenderReadyCallback([host] {
+      if (host != nullptr && host->request_process != nullptr) {
+        host->request_process(host);
       }
     });
     plugin_ = clap_plugin_t{

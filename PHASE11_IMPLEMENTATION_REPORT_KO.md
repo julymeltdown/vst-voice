@@ -25,7 +25,8 @@ CLAP Host
 - Cocoa `NSView` child view 소스 구현
 - create / parent / resize / scale / show / hide / destroy
 - Host timer-support를 통한 UI tick
-- plugin state load 중 활성 GUI가 존재하면 restart 요청 후 거부
+- 활성화된 plugin의 state load는 restart 요청 후 거부
+- 비활성 plugin은 GUI가 열린 상태에서도 Project를 교체하고 GUI를 유지
 
 ### 2.2 DAW 내부 편집기
 
@@ -71,9 +72,9 @@ Standalone에서 사용하던 first-party 도메인·Command·Editor Controller�
 - partial stream read/write
 - checksum 검증
 - 손상된 state 거부
-- 활성 plugin 또는 열린 GUI에서 state load 거부
-- Host restart 요청
-- 비활성 instance의 round trip 검증
+- 활성 plugin의 state load 거부와 Host restart 요청
+- 비활성 instance의 GUI 유지 state load
+- partial stream round trip 검증
 
 ### 2.6 Human Voice Demo Fixture
 
@@ -147,7 +148,7 @@ Dynamic Host 결과:
 
 다음은 완료로 표시하지 않는다.
 
-- 공식 `clap-validator`: 현재 실행 환경에 binary가 없어 `NOT_RUN`
+- 공식 `clap-validator` 0.4.1: 로컬 binary가 없어 `LOCAL_NOT_RUN`; pinned CI 검증 Job은 구성됨
 - 실제 REAPER / Bitwig / Cubase / Ableton / Studio One / FL Studio / Logic 인증
 - Windows 실제 runtime 인증
 - macOS 실제 runtime 인증

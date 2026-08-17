@@ -93,9 +93,10 @@ jobs:
         shell: bash
         run: |
           git clone https://github.com/free-audio/clap-wrapper.git external/clap-wrapper
-          git -C external/clap-wrapper checkout f2bb98c
+          git -C external/clap-wrapper checkout v0.15.1
           git -C external/clap-wrapper rev-parse HEAD | tee clap-wrapper-revision.txt
           test -f external/clap-wrapper/LICENSE
+          test "$(git -C external/clap-wrapper rev-parse --short=7 HEAD)" = "35f524b"
           grep -q 'CLAP_WRAPPER_OUTPUT_NAME' external/clap-wrapper/CMakeLists.txt
           grep -q 'CLAP_WRAPPER_BUILD_AUV2' external/clap-wrapper/CMakeLists.txt
       - uses: actions/upload-artifact@v4

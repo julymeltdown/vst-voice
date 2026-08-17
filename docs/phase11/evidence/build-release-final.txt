@@ -1,0 +1,27 @@
+[0/1] Re-running CMake...
+-- Configuring done (3.6s)
+-- Generating done (0.0s)
+-- Build files have been written to: /mnt/data/project-seam-phase11-work/project-seam-phase10-master/build/phase11-release
+[1/24] Building CXX object CMakeFiles/seam_phase1_demo.dir/apps/seam-phase1-demo/main.cpp.o
+[2/24] Building CXX object CMakeFiles/seam_phase2_demo.dir/apps/seam-phase2-demo/main.cpp.o
+[3/24] Building CXX object CMakeFiles/seam_phase3_demo.dir/apps/seam-phase3-demo/main.cpp.o
+[4/24] Building CXX object CMakeFiles/seam_phase5_demo.dir/apps/seam-phase5-demo/main.cpp.o
+[5/24] Building CXX object CMakeFiles/seam_phase4_demo.dir/apps/seam-phase4-demo/main.cpp.o
+[6/24] Building CXX object CMakeFiles/seam_voicebank_studio_native.dir/apps/seam-voicebank-studio-native/main.cpp.o
+[7/24] Building CXX object CMakeFiles/seam_editor_native.dir/apps/seam-editor-native/main.cpp.o
+[8/24] Building CXX object CMakeFiles/seam_clap_editor_plugin.dir/libs/seam-clap-editor/src/plugin_entry.cpp.o
+[9/24] Building CXX object CMakeFiles/seam_tests.dir/tests/test_commands.cpp.o
+[10/24] Building CXX object CMakeFiles/seam_tests.dir/tests/test_ui.cpp.o
+[11/24] Building CXX object CMakeFiles/seam_tests.dir/tests/test_inspection.cpp.o
+[12/24] Building CXX object CMakeFiles/seam_tests.dir/tests/test_native_ui.cpp.o
+[13/24] Building CXX object CMakeFiles/seam_tests.dir/tests/test_stabilization.cpp.o
+[14/24] Linking CXX executable seam_phase1_demo
+[15/24] Linking CXX executable seam_phase2_demo
+[16/24] Linking CXX executable seam_phase3_demo
+[17/24] Linking CXX executable seam_phase4_demo
+[18/24] Linking CXX executable seam_phase5_demo
+[19/24] Linking CXX executable seam_editor_native
+[20/24] Linking CXX executable seam_voicebank_studio_native
+[21/24] Linking CXX executable seam_phase9_demo
+[22/24] Linking CXX shared module ProjectSEAMEditor.clap
+[23/24] Linking CXX executable seam_tests

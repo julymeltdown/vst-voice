@@ -1,10 +1,10 @@
 # VST3 and Audio Unit wrapper strategy
 
-The canonical plug-in implementation is CLAP. VST3 and AUv2 are generated through `free-audio/clap-wrapper` v0.16.0 so state, GUI, note-event and render behavior are not reimplemented in a second DSP core.
+The canonical plug-in implementation is CLAP. VST3 and AUv2 are generated through `free-audio/clap-wrapper` v0.15.1 so state, GUI, note-event and render behavior are not reimplemented in a second DSP core.
 
 Required source inputs:
 
-- clap-wrapper v0.16.0 / release commit `1cca996`;
+- clap-wrapper v0.15.1 / release commit `35f524b`;
 - official CLAP SDK, MIT;
 - Steinberg VST3 SDK, MIT;
 - Apple AudioUnitSDK, Apache-2.0, for AUv2;

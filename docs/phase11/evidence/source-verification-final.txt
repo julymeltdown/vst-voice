@@ -1,0 +1,6 @@
+[phase11-source] clapGui=present
+[phase11-source] noteInput=present
+[phase11-source] asyncRender=present
+[phase11-source] publicDomainDemo=non-official
+[phase11-source] packagingPipelines=present
+[phase11-source] status=PASS

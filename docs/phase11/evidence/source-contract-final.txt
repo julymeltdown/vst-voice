@@ -1,0 +1,3 @@
+[phase11-contract] platformSources=PASS
+[phase11-contract] humanDemoProvenance=PASS
+[phase11-contract] officialVoicebankClaim=false
