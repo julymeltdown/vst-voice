@@ -3,6 +3,7 @@
 #include "seam/core/file_io.hpp"
 #include "seam/core/sha256.hpp"
 #include "seam/formats/json_value.hpp"
+#include "seam/voicebank/content_identity.hpp"
 #include "seam/voicebank/manifest_json.hpp"
 
 #include <algorithm>
@@ -155,10 +156,17 @@ core::Result<InstalledSeambank> installSeambank(
     return core::failure<InstalledSeambank>(core::ErrorCode::Conflict,
                                             "Installed voicebank manifest differs from signed manifest");
   }
+  auto installedContentHash =
+      voicebank::computeVoicebankContentHash(installedManifest.value(), staging);
+  if (!installedContentHash) {
+    std::filesystem::remove_all(staging, error);
+    return core::Result<InstalledSeambank>{installedContentHash.error()};
+  }
   formats::JsonValue::Object receipt;
-  receipt.emplace("schemaVersion", static_cast<std::int64_t>(1));
+  receipt.emplace("schemaVersion", static_cast<std::int64_t>(2));
   receipt.emplace("voicebankId", manifest.id);
   receipt.emplace("voicebankVersion", manifest.version);
+  receipt.emplace("contentHash", installedContentHash.value());
   receipt.emplace("packageDigest", package.value().packageDigest);
   receipt.emplace("signerKeyId", package.value().signerKeyId);
   receipt.emplace("signatureValid", package.value().signatureValid);

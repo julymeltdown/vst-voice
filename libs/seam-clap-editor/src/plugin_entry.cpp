@@ -61,6 +61,29 @@ std::filesystem::path resolveCharacterPackage() {
 #endif
 }
 
+std::vector<voicebank::VoicebankSearchRoot> resolveVoicebankRoots() {
+  std::vector<voicebank::VoicebankSearchRoot> roots;
+  std::filesystem::path pluginPath;
+  {
+    std::scoped_lock lock(entryMutex);
+    pluginPath = entryPluginPath;
+  }
+  if (!pluginPath.empty()) {
+    std::error_code error;
+    const auto bundleRoot = pluginPath / "Contents" / "Resources" / "voicebanks";
+    if (std::filesystem::is_directory(bundleRoot, error)) {
+      roots.push_back({bundleRoot, voicebank::VoicebankRootKind::Development});
+    }
+    error.clear();
+    const auto sidecarRoot = pluginPath.parent_path() /
+                             "ProjectSEAMEditor.resources" / "voicebanks";
+    if (std::filesystem::is_directory(sidecarRoot, error)) {
+      roots.push_back({sidecarRoot, voicebank::VoicebankRootKind::Development});
+    }
+  }
+  return roots;
+}
+
 const std::array<const char*, 4> kFeatures{
     CLAP_PLUGIN_FEATURE_INSTRUMENT,
     CLAP_PLUGIN_FEATURE_SYNTHESIZER,
@@ -76,9 +99,9 @@ const clap_plugin_descriptor_t kDescriptor{
     .url = "",
     .manual_url = "",
     .support_url = "",
-    .version = "0.11.0",
+    .version = "0.12.0",
     .description =
-        "Sample-concatenative singing editor with embedded piano roll and live note input",
+        "Sample-concatenative singing editor with production-pipeline preview and live note input",
     .features = kFeatures.data(),
 };
 
@@ -87,7 +110,7 @@ public:
   explicit PluginInstance(const clap_host_t* host)
       : host_(host),
         runtime_(std::make_unique<EditorRuntime>(
-            std::nullopt, resolveCharacterPackage())) {
+            std::nullopt, resolveCharacterPackage(), resolveVoicebankRoots())) {
     runtime_->setRenderReadyCallback([host] {
       if (host != nullptr && host->request_process != nullptr) {
         host->request_process(host);

@@ -303,4 +303,36 @@ core::Result<void> RemovePitchAutomationPointCommand::revert(
   return region->pitchAutomation.upsert(*removed_);
 }
 
+
+core::Result<void> SetTrackVoicebankCommand::apply(domain::Project& project) {
+  auto* track = project.findVocalTrack(trackId_);
+  if (track == nullptr) {
+    return core::failure(core::ErrorCode::NotFound,
+                         "Track for Voicebank selection was not found",
+                         trackId_.toString());
+  }
+  if (after_.id.empty() || after_.version.empty() || after_.contentHash.empty()) {
+    return core::failure(core::ErrorCode::InvalidArgument,
+                         "Voicebank selection requires ID, version, and content hash");
+  }
+  if (!before_.has_value()) before_ = track->voicebank;
+  track->voicebank = after_;
+  return core::success();
+}
+
+core::Result<void> SetTrackVoicebankCommand::revert(domain::Project& project) {
+  if (!before_.has_value()) {
+    return core::failure(core::ErrorCode::Conflict,
+                         "Voicebank command has no captured state");
+  }
+  auto* track = project.findVocalTrack(trackId_);
+  if (track == nullptr) {
+    return core::failure(core::ErrorCode::NotFound,
+                         "Track for Voicebank selection was not found during undo",
+                         trackId_.toString());
+  }
+  track->voicebank = *before_;
+  return core::success();
+}
+
 }  // namespace seam::application

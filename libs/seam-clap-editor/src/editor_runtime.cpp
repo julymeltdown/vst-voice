@@ -5,12 +5,15 @@
 #include "seam/application/render_commands.hpp"
 #include "seam/core/sha256.hpp"
 #include "seam/formats/project_json.hpp"
+#include "seam/rendering/region_renderer.hpp"
 
 #include <algorithm>
 #include <array>
 #include <bit>
 #include <cmath>
 #include <cstring>
+#include <cstdlib>
+#include <filesystem>
 #include <limits>
 #include <utility>
 
@@ -24,6 +27,87 @@ constexpr std::array<char, 8> kStateMagic{'S', 'E', 'A', 'M', 'E', 'D', '1', '1'
 constexpr std::uint32_t kStateVersion = 1U;
 constexpr std::size_t kDigestBytes = 32U;
 constexpr std::size_t kMaximumStateBytes = 16U * 1024U * 1024U;
+
+
+std::filesystem::path previewCacheRoot() {
+  if (const auto* configured = std::getenv("SEAM_PREVIEW_CACHE_ROOT");
+      configured != nullptr && *configured != '\0') {
+    return std::filesystem::path{configured};
+  }
+#if defined(_WIN32)
+  if (const auto* local = std::getenv("LOCALAPPDATA");
+      local != nullptr && *local != '\0') {
+    return std::filesystem::path{local} / "ProjectSEAM" / "Cache" /
+           "PluginPreview";
+  }
+#elif defined(__APPLE__)
+  if (const auto* home = std::getenv("HOME");
+      home != nullptr && *home != '\0') {
+    return std::filesystem::path{home} / "Library" / "Caches" /
+           "ProjectSEAM" / "PluginPreview";
+  }
+#else
+  if (const auto* xdg = std::getenv("XDG_CACHE_HOME");
+      xdg != nullptr && *xdg != '\0') {
+    return std::filesystem::path{xdg} / "project-seam" / "plugin-preview";
+  }
+  if (const auto* home = std::getenv("HOME");
+      home != nullptr && *home != '\0') {
+    return std::filesystem::path{home} / ".cache" / "project-seam" /
+           "plugin-preview";
+  }
+#endif
+  std::error_code error;
+  auto root = std::filesystem::temp_directory_path(error);
+  if (error) root = std::filesystem::current_path(error);
+  return root / "project-seam" / "plugin-preview";
+}
+
+PreviewStatus previewStatusFor(
+    voicebank::VoicebankResolveStatus status) noexcept {
+  switch (status) {
+    case voicebank::VoicebankResolveStatus::Resolved:
+      return PreviewStatus::Ready;
+    case voicebank::VoicebankResolveStatus::VersionMismatch:
+      return PreviewStatus::VoicebankVersionMismatch;
+    case voicebank::VoicebankResolveStatus::ContentHashMissing:
+      return PreviewStatus::VoicebankContentHashMissing;
+    case voicebank::VoicebankResolveStatus::ContentMismatch:
+      return PreviewStatus::VoicebankContentMismatch;
+    case voicebank::VoicebankResolveStatus::Untrusted:
+      return PreviewStatus::VoicebankUntrusted;
+    case voicebank::VoicebankResolveStatus::Missing:
+    case voicebank::VoicebankResolveStatus::InvalidReference:
+      return PreviewStatus::VoicebankMissing;
+  }
+  return PreviewStatus::Failed;
+}
+
+std::vector<voicebank::VoicebankSearchRoot> runtimeVoicebankRoots(
+    std::vector<voicebank::VoicebankSearchRoot> roots) {
+  auto defaults = voicebank::defaultVoicebankSearchRoots();
+  roots.insert(roots.end(), defaults.begin(), defaults.end());
+#ifdef SEAM_SOURCE_PRODUCTION_VOICEBANK
+  const auto sourceFixture = std::filesystem::path{SEAM_SOURCE_PRODUCTION_VOICEBANK};
+  if (!sourceFixture.empty()) {
+    roots.push_back(voicebank::VoicebankSearchRoot{
+        .path = sourceFixture,
+        .kind = voicebank::VoicebankRootKind::Development,
+    });
+  }
+#endif
+  std::vector<voicebank::VoicebankSearchRoot> unique;
+  for (auto& root : roots) {
+    if (root.path.empty()) continue;
+    root.path = root.path.lexically_normal();
+    const auto duplicate = std::find_if(
+        unique.begin(), unique.end(), [&root](const auto& candidate) {
+          return candidate.path == root.path && candidate.kind == root.kind;
+        });
+    if (duplicate == unique.end()) unique.push_back(std::move(root));
+  }
+  return unique;
+}
 
 float sampleAt(double position) noexcept {
   if (asset::kFrameCount < 2U) return 0.0F;
@@ -45,20 +129,6 @@ float sampleAt(double position) noexcept {
   return left + (right - left) * fraction;
 }
 
-float noteSeam(const domain::VocalRegion& region,
-               domain::NoteId noteId) noexcept {
-  const auto iterator = std::find_if(
-      region.seamOverrides.begin(), region.seamOverrides.end(),
-      [noteId](const domain::SeamOverride& value) {
-        return value.incomingStartKey.noteId == noteId;
-      });
-  if (iterator == region.seamOverrides.end() ||
-      !iterator->seamAmount.has_value()) {
-    return 0.55F;
-  }
-  return std::clamp(*iterator->seamAmount, 0.0F, 1.0F);
-}
-
 bool readU32(std::span<const std::byte> bytes, std::size_t& cursor,
              std::uint32_t& value) noexcept {
   if (cursor > bytes.size() || bytes.size() - cursor < 4U) return false;
@@ -72,6 +142,16 @@ bool readU32(std::span<const std::byte> bytes, std::size_t& cursor,
   return true;
 }
 
+std::string voicebankStatusLabel(
+    const voicebank::VoicebankResolution& resolution) {
+  if (resolution.resolved() && resolution.candidate.has_value()) {
+    return "BANK " + resolution.candidate->manifest.displayName + " [" +
+           std::string{voicebank::voicebankTrustName(
+               resolution.candidate->trust)} + "]";
+  }
+  return "BANK " + resolution.diagnostic;
+}
+
 std::optional<domain::PhonemeKey> primaryPhonemeKey(
     const application::EditorSession& session,
     domain::RegionId regionId) {
@@ -83,6 +163,21 @@ std::optional<domain::PhonemeKey> primaryPhonemeKey(
 }
 
 }  // namespace
+
+
+std::string_view previewStatusName(PreviewStatus status) noexcept {
+  switch (status) {
+    case PreviewStatus::Empty: return "empty";
+    case PreviewStatus::Ready: return "ready";
+    case PreviewStatus::VoicebankMissing: return "voicebank-missing";
+    case PreviewStatus::VoicebankVersionMismatch: return "voicebank-version-mismatch";
+    case PreviewStatus::VoicebankContentHashMissing: return "voicebank-content-hash-missing";
+    case PreviewStatus::VoicebankContentMismatch: return "voicebank-content-mismatch";
+    case PreviewStatus::VoicebankUntrusted: return "voicebank-untrusted";
+    case PreviewStatus::Failed: return "failed";
+  }
+  return "unknown";
+}
 
 
 RealtimePreviewPublication::ReadHandle::ReadHandle(
@@ -150,26 +245,34 @@ bool RealtimePreviewPublication::publish(RenderedPreview preview) {
 }
 
 AsyncPreviewRenderService::AsyncPreviewRenderService()
-    : worker_([this](std::stop_token stopToken) { workerLoop(stopToken); }) {}
+    : cache_(std::make_unique<rendering::PcmCache>(previewCacheRoot())),
+      worker_([this](std::stop_token stopToken) { workerLoop(stopToken); }) {}
 
 AsyncPreviewRenderService::~AsyncPreviewRenderService() {
+  {
+    std::lock_guard lock(mutex_);
+    activeStopSource_.request_stop();
+  }
   worker_.request_stop();
   condition_.notify_all();
 }
 
-void AsyncPreviewRenderService::submit(domain::Project project,
-                                       domain::RegionId regionId,
-                                       std::uint64_t revision,
-                                       std::uint32_t sampleRate) {
+void AsyncPreviewRenderService::submit(
+    domain::Project project, domain::TrackId trackId,
+    domain::RegionId regionId, voicebank::VoicebankResolution resolution,
+    std::uint64_t revision, std::uint32_t sampleRate) {
   sampleRate = std::clamp(sampleRate, 8000U, 192000U);
   latestSubmittedRevision_.store(revision, std::memory_order_release);
   {
     std::lock_guard lock(mutex_);
+    activeStopSource_.request_stop();
     if (pending_.has_value()) {
       cancelled_.fetch_add(1U, std::memory_order_relaxed);
     }
     pending_ = Request{.project = std::move(project),
+                       .trackId = trackId,
                        .regionId = regionId,
+                       .resolution = std::move(resolution),
                        .revision = revision,
                        .sampleRate = sampleRate};
   }
@@ -201,6 +304,7 @@ RenderServiceStats AsyncPreviewRenderService::stats() const noexcept {
 void AsyncPreviewRenderService::workerLoop(std::stop_token stopToken) {
   while (!stopToken.stop_requested()) {
     Request request;
+    std::stop_token requestToken;
     {
       std::unique_lock lock(mutex_);
       condition_.wait(lock, stopToken,
@@ -208,9 +312,16 @@ void AsyncPreviewRenderService::workerLoop(std::stop_token stopToken) {
       if (stopToken.stop_requested()) break;
       request = std::move(*pending_);
       pending_.reset();
+      activeStopSource_ = std::stop_source{};
+      requestToken = activeStopSource_.get_token();
     }
-    auto rendered = render(request, stopToken);
-    if (!rendered || stopToken.stop_requested()) continue;
+    auto rendered = render(request, requestToken);
+    if (!rendered || stopToken.stop_requested()) {
+      if (requestToken.stop_requested()) {
+        cancelled_.fetch_add(1U, std::memory_order_relaxed);
+      }
+      continue;
+    }
     if (request.revision !=
         latestSubmittedRevision_.load(std::memory_order_acquire)) {
       stale_.fetch_add(1U, std::memory_order_relaxed);
@@ -232,77 +343,55 @@ void AsyncPreviewRenderService::workerLoop(std::stop_token stopToken) {
 
 std::shared_ptr<RenderedPreview> AsyncPreviewRenderService::render(
     const Request& request, std::stop_token stopToken) {
-  const auto* region = request.project.findRegion(request.regionId);
-  if (region == nullptr) return {};
   auto output = std::make_shared<RenderedPreview>();
   output->sampleRate = request.sampleRate;
   output->revision = request.revision;
+  output->status = previewStatusFor(request.resolution.status);
+  output->diagnostic = request.resolution.diagnostic;
+  if (!request.resolution.resolved()) return output;
 
-  time::Tick phraseEnd{0};
-  for (const auto& note : region->notes) {
-    phraseEnd = std::max(phraseEnd, note.startTick + note.durationTick);
-  }
-  const auto endFrame = request.project.tempoMap().sampleFrameAt(
-      region->startTick + phraseEnd, static_cast<double>(request.sampleRate));
-  const auto tailFrames = static_cast<time::SampleFrame>(request.sampleRate / 5U);
-  if (endFrame < 0 || endFrame > static_cast<time::SampleFrame>(request.sampleRate) * 600) {
-    return {};
-  }
-  const auto frameCount = static_cast<std::size_t>(endFrame + tailFrames);
-  output->stereo.assign(frameCount * 2U, 0.0F);
+  const auto& candidate = *request.resolution.candidate;
+  output->voicebankId = candidate.manifest.id;
+  output->voicebankVersion = candidate.manifest.version;
+  output->voicebankContentHash = candidate.contentHash;
 
-  for (const auto& note : region->notes) {
-    if (stopToken.stop_requested() ||
-        request.revision !=
-            latestSubmittedRevision_.load(std::memory_order_acquire)) {
-      cancelled_.fetch_add(1U, std::memory_order_relaxed);
+  rendering::ProductionRegionRenderer renderer;
+  auto rendered = renderer.render(
+      request.project, candidate.manifest, candidate.bankRoot,
+      request.trackId, request.regionId, request.revision,
+      request.sampleRate, rendering::RenderQuality::Preview,
+      candidate.manifest.styles.empty() ? std::string{}
+                                        : candidate.manifest.styles.front(),
+      synthesis::PhraseRenderOptions{}, cache_.get(), stopToken);
+  if (!rendered) {
+    if (rendered.error().code == core::ErrorCode::Conflict &&
+        stopToken.stop_requested()) {
       return {};
     }
-    const auto absoluteStart = region->startTick + note.startTick;
-    const auto absoluteEnd = absoluteStart + note.durationTick;
-    const auto startFrame = request.project.tempoMap().sampleFrameAt(
-        absoluteStart, static_cast<double>(request.sampleRate));
-    const auto noteEndFrame = request.project.tempoMap().sampleFrameAt(
-        absoluteEnd, static_cast<double>(request.sampleRate));
-    if (startFrame < 0 || noteEndFrame <= startFrame) continue;
-    const auto begin = static_cast<std::size_t>(startFrame);
-    const auto duration = static_cast<std::size_t>(noteEndFrame - startFrame);
-    const auto ratio = std::pow(2.0, (static_cast<double>(note.midiKey) - kSourceRootMidi) / 12.0) *
-                       static_cast<double>(kSourceSampleRate) /
-                       static_cast<double>(request.sampleRate);
-    const auto seam = noteSeam(*region, note.id);
-    const auto attackFrames = std::max<std::size_t>(1U, request.sampleRate / 100U);
-    const auto releaseFrames = std::max<std::size_t>(1U, request.sampleRate / 80U);
-    double sourcePosition = 0.0;
-    for (std::size_t offset = 0U;
-         offset < duration && begin + offset < frameCount; ++offset) {
-      if ((offset & 4095U) == 0U &&
-          (stopToken.stop_requested() ||
-           request.revision !=
-               latestSubmittedRevision_.load(std::memory_order_acquire))) {
-        cancelled_.fetch_add(1U, std::memory_order_relaxed);
-        return {};
-      }
-      auto envelope = 1.0F;
-      if (offset < attackFrames) {
-        envelope *= static_cast<float>(offset) /
-                    static_cast<float>(attackFrames);
-      }
-      const auto remaining = duration - offset;
-      if (remaining < releaseFrames) {
-        envelope *= static_cast<float>(remaining) /
-                    static_cast<float>(releaseFrames);
-      }
-      const auto boundaryCharacter = 0.92F + seam * 0.08F;
-      const auto value = sampleAt(sourcePosition) * envelope *
-                         boundaryCharacter * 0.60F;
-      sourcePosition += ratio;
-      const auto destination = (begin + offset) * 2U;
-      output->stereo[destination] = std::clamp(
-          output->stereo[destination] + value, -1.0F, 1.0F);
-      output->stereo[destination + 1U] = std::clamp(
-          output->stereo[destination + 1U] + value, -1.0F, 1.0F);
+    output->status = PreviewStatus::Failed;
+    output->diagnostic = rendered.error().message;
+    if (!rendered.error().context.empty()) {
+      output->diagnostic += ": " + rendered.error().context;
     }
+    return output;
+  }
+
+  output->status = PreviewStatus::Ready;
+  output->diagnostic = "Production pipeline render completed";
+  output->phraseCount = rendered.value().phrases.size();
+  output->unitPlan = rendered.value().unitPlan;
+  output->unitCount = rendered.value().unitCount;
+  output->fallbackCount = rendered.value().fallbackCount;
+  output->cacheHits = rendered.value().cacheHits;
+  output->phraseContentHashes.reserve(rendered.value().phrases.size());
+  for (const auto& phrase : rendered.value().phrases) {
+    output->phraseContentHashes.push_back(phrase.contentHash);
+  }
+  output->stereo.resize(rendered.value().mono.size() * 2U);
+  for (std::size_t index = 0U; index < rendered.value().mono.size(); ++index) {
+    const auto sample = rendered.value().mono[index];
+    output->stereo[index * 2U] = sample;
+    output->stereo[index * 2U + 1U] = sample;
   }
   return output;
 }
@@ -426,15 +515,26 @@ domain::Project EditorRuntime::makeDefaultProject(
     region->notes.push_back(std::move(note));
   }
   region->sortNotes();
+  const std::array<std::tuple<std::uint16_t, const char*,
+                              domain::UnitRendererKind>, 8>
+      unitOverrides{{
+          {2U, "demo.ja.g4.k-o.01", domain::UnitRendererKind::ClassicPsola},
+          {1U, "demo.ja.g4.e.01", domain::UnitRendererKind::Raw},
+          {1U, "demo.ja.g4.o.01", domain::UnitRendererKind::SpectralClassic},
+          {2U, "demo.ja.g4.ts-u.01", domain::UnitRendererKind::Stretch},
+          {2U, "demo.ja.g4.n-a.01", domain::UnitRendererKind::ClassicPsola},
+          {2U, "demo.ja.g4.g-u.01", domain::UnitRendererKind::Raw},
+          {2U, "demo.ja.g4.m-a.01", domain::UnitRendererKind::SpectralClassic},
+          {2U, "demo.ja.g4.d-e.01", domain::UnitRendererKind::Stretch},
+      }};
   for (std::size_t index = 0U; index < region->notes.size(); ++index) {
+    const auto& [tokenCount, unitId, renderer] = unitOverrides[index];
     region->unitSelectionOverrides.push_back(domain::UnitSelectionOverride{
         .startKey = domain::PhonemeKey{
             .noteId = region->notes[index].id, .ordinal = 0U},
-        .tokenCount = 1U,
-        .unitId = "demo.sample.vowel.a." + std::to_string(index + 1U),
-        .renderer = index % 2U == 0U
-                        ? domain::UnitRendererKind::ClassicPsola
-                        : domain::UnitRendererKind::Raw,
+        .tokenCount = tokenCount,
+        .unitId = unitId,
+        .renderer = renderer,
         .locked = true,
     });
   }
@@ -471,23 +571,175 @@ domain::RegionId EditorRuntime::firstRegionId(
   return {};
 }
 
-EditorRuntime::EditorRuntime(std::optional<domain::Project> project,
-                             const std::filesystem::path& characterPackage)
-    : session_([&] {
+domain::TrackId EditorRuntime::firstTrackId(
+    const domain::Project& project) noexcept {
+  return project.vocalTracks().empty() ? domain::TrackId{}
+                                       : project.vocalTracks().front().id;
+}
+
+EditorRuntime::EditorRuntime(
+    std::optional<domain::Project> project,
+    const std::filesystem::path& characterPackage,
+    std::vector<voicebank::VoicebankSearchRoot> voicebankRoots)
+    : createdDefault_(!project.has_value()),
+      session_([&] {
         if (project.has_value()) {
+          trackId_ = firstTrackId(*project);
           regionId_ = firstRegionId(*project);
           factory_.synchronizeWith(*project);
           return std::move(*project);
         }
-        return makeDefaultProject(factory_, regionId_);
-      }()) {
+        auto created = makeDefaultProject(factory_, regionId_);
+        trackId_ = firstTrackId(created);
+        return created;
+      }()),
+      voicebankRoots_(runtimeVoicebankRoots(std::move(voicebankRoots))) {
+  auto scanned = voicebankCatalog_.scan(voicebankRoots_);
+  if (scanned) {
+    voicebanks_ = std::move(scanned).value();
+  } else {
+    voicebankResolution_.status = voicebank::VoicebankResolveStatus::Missing;
+    voicebankResolution_.diagnostic = scanned.error().message;
+  }
+  if (createdDefault_) {
+    const auto demo = std::find_if(
+        voicebanks_.begin(), voicebanks_.end(), [](const auto& candidate) {
+          return candidate.manifest.id == "demo.public-domain.human.production" &&
+                 candidate.manifest.version == "0.12.0";
+        });
+    if (demo != voicebanks_.end()) {
+      static_cast<void>(bindVoicebankLocked(*demo));
+    }
+  }
+  refreshVoicebankResolutionLocked();
   rebuildController();
   const auto loaded = character_.load(characterPackage);
   if (loaded && controller_) {
     controller_->setCharacterMetadata(character_.displayName(),
                                       character_.styleName());
   }
+  controller_->setDirty(false);
+  dirty_ = false;
   requestRender(renderSampleRate_);
+}
+
+
+core::Result<void> EditorRuntime::bindVoicebankLocked(
+    const voicebank::VoicebankCandidate& candidate) {
+  if (!trackId_.valid()) {
+    return core::failure(core::ErrorCode::NotFound,
+                         "CLAP editor contains no vocal track for Voicebank binding");
+  }
+  return session_.execute(
+      std::make_unique<application::SetTrackVoicebankCommand>(
+          trackId_, domain::VoicebankReference{
+                        .id = candidate.manifest.id,
+                        .version = candidate.manifest.version,
+                        .contentHash = candidate.contentHash,
+                    }));
+}
+
+void EditorRuntime::refreshVoicebankResolutionLocked() {
+  const auto* track = session_.project().findVocalTrack(trackId_);
+  if (track == nullptr) {
+    voicebankResolution_ = {};
+    voicebankResolution_.status = voicebank::VoicebankResolveStatus::InvalidReference;
+    voicebankResolution_.diagnostic = "CLAP editor contains no vocal track";
+    return;
+  }
+  voicebankResolution_ = voicebankCatalog_.resolve(
+      track->voicebank, voicebanks_,
+      voicebank::VoicebankResolveOptions{
+          .requireTrustedInstalled = true,
+          .allowDevelopmentFixtures = true,
+      });
+}
+
+core::Result<void> EditorRuntime::refreshVoicebanks() {
+  std::lock_guard lock(mutex_);
+  auto scanned = voicebankCatalog_.scan(voicebankRoots_);
+  if (!scanned) return core::Result<void>{scanned.error()};
+  voicebanks_ = std::move(scanned).value();
+  refreshVoicebankResolutionLocked();
+  if (controller_) {
+    const auto ready = voicebankResolution_.resolved();
+    controller_->setAudioState(ready, voicebankStatusLabel(voicebankResolution_));
+  }
+  requestRender(renderSampleRate_);
+  requestRepaint();
+  return core::success();
+}
+
+core::Result<void> EditorRuntime::addVoicebankSearchRoot(
+    voicebank::VoicebankSearchRoot root) {
+  std::lock_guard lock(mutex_);
+  if (root.path.empty()) {
+    return core::failure(core::ErrorCode::InvalidArgument,
+                         "Voicebank relink root cannot be empty");
+  }
+  root.path = root.path.lexically_normal();
+  const auto existing = std::find_if(
+      voicebankRoots_.begin(), voicebankRoots_.end(), [&root](const auto& value) {
+        return value.path == root.path && value.kind == root.kind;
+      });
+  if (existing == voicebankRoots_.end()) voicebankRoots_.push_back(std::move(root));
+  auto scanned = voicebankCatalog_.scan(voicebankRoots_);
+  if (!scanned) return core::Result<void>{scanned.error()};
+  voicebanks_ = std::move(scanned).value();
+  refreshVoicebankResolutionLocked();
+  if (controller_) {
+    const auto ready = voicebankResolution_.resolved();
+    controller_->setAudioState(ready, voicebankStatusLabel(voicebankResolution_));
+  }
+  requestRender(renderSampleRate_);
+  requestRepaint();
+  return core::success();
+}
+
+core::Result<void> EditorRuntime::selectVoicebank(
+    std::string_view id, std::string_view version,
+    std::optional<std::string_view> contentHash) {
+  std::lock_guard lock(mutex_);
+  const auto candidate = std::find_if(
+      voicebanks_.begin(), voicebanks_.end(),
+      [id, version, contentHash](const auto& value) {
+        return value.manifest.id == id && value.manifest.version == version &&
+               (!contentHash.has_value() || value.contentHash == *contentHash);
+      });
+  if (candidate == voicebanks_.end()) {
+    return core::failure(
+        contentHash.has_value() ? core::ErrorCode::Conflict : core::ErrorCode::NotFound,
+        contentHash.has_value()
+            ? "Requested Voicebank content hash is unavailable for that ID and version"
+            : "Requested Voicebank ID and version are unavailable",
+        std::string{id} + " " + std::string{version});
+  }
+  if (contentHash.has_value() && *contentHash != candidate->contentHash) {
+    return core::failure(core::ErrorCode::Conflict,
+                         "Requested Voicebank content hash does not match",
+                         candidate->contentHash);
+  }
+  const auto bound = bindVoicebankLocked(*candidate);
+  if (!bound) return bound;
+  refreshVoicebankResolutionLocked();
+  if (controller_) {
+    controller_->setAudioState(
+        true, "BANK " + candidate->manifest.displayName + " [" +
+                  std::string{voicebank::voicebankTrustName(candidate->trust)} + "]");
+  }
+  requestRenderAfterEdit();
+  return core::success();
+}
+
+voicebank::VoicebankResolution EditorRuntime::voicebankResolution() const {
+  std::lock_guard lock(mutex_);
+  return voicebankResolution_;
+}
+
+std::vector<voicebank::VoicebankCandidate>
+EditorRuntime::availableVoicebanks() const {
+  std::lock_guard lock(mutex_);
+  return voicebanks_;
 }
 
 void EditorRuntime::configureControllerCallbacks() {
@@ -504,7 +756,8 @@ void EditorRuntime::configureControllerCallbacks() {
   controller_ = std::make_unique<native_ui::NativeEditorController>(
       session_, factory_, regionId_, std::move(callbacks));
   controller_->resize(logicalWidth_, logicalHeight_);
-  controller_->setAudioState(true, "CLAP HOST");
+  const auto ready = voicebankResolution_.resolved();
+  controller_->setAudioState(ready, voicebankStatusLabel(voicebankResolution_));
 }
 
 void EditorRuntime::rebuildController() {
@@ -559,10 +812,15 @@ void EditorRuntime::paint(native_ui::RasterCanvas& canvas) noexcept {
   canvas.fillRect(ui::Rect{left + 112.0, 20.0, 190.0 * seam, 10.0},
                   native_ui::Color{168, 82, 120, 255});
   const auto stats = renderService_.stats();
-  const auto label = "ASYNC " + std::to_string(stats.completed) + "/" +
+  const auto preview = renderService_.latest();
+  const auto label = "PROD " + std::string{previewStatusName(preview->status)} +
+                     " " + std::to_string(stats.completed) + "/" +
                      std::to_string(stats.submitted);
   canvas.drawText(ui::Point{left + 112.0, 34.0}, label,
-                  native_ui::Color{153, 178, 169, 255}, 7.0);
+                  preview->status == PreviewStatus::Ready
+                      ? native_ui::Color{153, 178, 169, 255}
+                      : native_ui::Color{205, 126, 126, 255},
+                  7.0);
 }
 
 void EditorRuntime::requestRenderAfterEdit() {
@@ -636,21 +894,27 @@ domain::Project EditorRuntime::projectCopy() const {
 
 core::Result<void> EditorRuntime::replaceProject(domain::Project project) {
   std::lock_guard lock(mutex_);
+  const auto replacementTrack = firstTrackId(project);
   const auto replacementRegion = firstRegionId(project);
-  if (!replacementRegion.valid()) {
+  if (!replacementTrack.valid() || !replacementRegion.valid()) {
     return core::failure(core::ErrorCode::InvalidArgument,
-                         "CLAP editor state contains no vocal region");
+                         "CLAP editor state contains no vocal track and region");
   }
   const auto replaced = session_.replaceProject(std::move(project));
   if (!replaced) return replaced;
+  trackId_ = replacementTrack;
   regionId_ = replacementRegion;
   factory_.synchronizeWith(session_.project());
+  auto scanned = voicebankCatalog_.scan(voicebankRoots_);
+  if (scanned) voicebanks_ = std::move(scanned).value();
+  refreshVoicebankResolutionLocked();
   rebuildController();
   controller_->setCharacterMetadata(character_.displayName(),
                                     character_.styleName());
   controller_->setDirty(false);
   dirty_ = false;
-  renderService_.submit(session_.project(), regionId_, session_.revision(),
+  renderService_.submit(session_.project(), trackId_, regionId_,
+                        voicebankResolution_, session_.revision(),
                         renderSampleRate_);
   requestRepaint();
   return core::success();
@@ -664,7 +928,8 @@ std::uint64_t EditorRuntime::revision() const noexcept {
 void EditorRuntime::requestRender(std::uint32_t sampleRate) {
   std::lock_guard lock(mutex_);
   renderSampleRate_ = std::clamp(sampleRate, 8000U, 192000U);
-  renderService_.submit(session_.project(), regionId_, session_.revision(),
+  renderService_.submit(session_.project(), trackId_, regionId_,
+                        voicebankResolution_, session_.revision(),
                         renderSampleRate_);
 }
 

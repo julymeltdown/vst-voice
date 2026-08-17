@@ -116,4 +116,23 @@ private:
   std::optional<domain::PitchAutomationPoint> removed_;
 };
 
+
+class SetTrackVoicebankCommand final : public ICommand {
+public:
+  SetTrackVoicebankCommand(domain::TrackId trackId,
+                           domain::VoicebankReference voicebank)
+      : trackId_(trackId), after_(std::move(voicebank)) {}
+
+  [[nodiscard]] std::string_view name() const noexcept override {
+    return "Set track voicebank";
+  }
+  [[nodiscard]] core::Result<void> apply(domain::Project& project) override;
+  [[nodiscard]] core::Result<void> revert(domain::Project& project) override;
+
+private:
+  domain::TrackId trackId_;
+  domain::VoicebankReference after_;
+  std::optional<domain::VoicebankReference> before_;
+};
+
 }  // namespace seam::application

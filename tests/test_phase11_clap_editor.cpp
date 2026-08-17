@@ -3,11 +3,21 @@
 #include <atomic>
 #include <chrono>
 #include <cmath>
+#include <filesystem>
 #include <iostream>
 #include <thread>
 
+#ifndef SEAM_SOURCE_PRODUCTION_VOICEBANK
+#error SEAM_SOURCE_PRODUCTION_VOICEBANK is required for Phase 11 regression tests
+#endif
+
 int main() {
-  seam::clap_editor::EditorRuntime runtime;
+  const std::vector roots{seam::voicebank::VoicebankSearchRoot{
+      .path = std::filesystem::path{SEAM_SOURCE_PRODUCTION_VOICEBANK},
+      .kind = seam::voicebank::VoicebankRootKind::Development,
+  }};
+  seam::clap_editor::EditorRuntime runtime(
+      std::nullopt, std::filesystem::path{"assets/character-01"}, roots);
   const auto initial = runtime.projectCopy();
   if (initial.noteCount() < 4U || !initial.validate()) return 1;
 

@@ -8,6 +8,9 @@
 #include "seam/native_ui/editor_controller.hpp"
 #include "seam/native_ui/editor_scene.hpp"
 #include "seam/native_ui/pixel_surface.hpp"
+#include "seam/rendering/pcm_cache.hpp"
+#include "seam/synthesis/unit_selection.hpp"
+#include "seam/voicebank/catalog.hpp"
 
 #include <array>
 #include <atomic>
@@ -22,16 +25,41 @@
 #include <span>
 #include <stop_token>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <vector>
 
 namespace seam::clap_editor {
 
+enum class PreviewStatus {
+  Empty,
+  Ready,
+  VoicebankMissing,
+  VoicebankVersionMismatch,
+  VoicebankContentHashMissing,
+  VoicebankContentMismatch,
+  VoicebankUntrusted,
+  Failed,
+};
+
 struct RenderedPreview final {
   std::uint32_t sampleRate{48000U};
   std::uint64_t revision{0U};
+  PreviewStatus status{PreviewStatus::Empty};
   std::vector<float> stereo;
+  std::string diagnostic;
+  std::string voicebankId;
+  std::string voicebankVersion;
+  std::string voicebankContentHash;
+  std::vector<std::string> phraseContentHashes;
+  std::vector<synthesis::UnitPlanEntry> unitPlan;
+  std::size_t phraseCount{0U};
+  std::size_t unitCount{0U};
+  std::size_t fallbackCount{0U};
+  std::size_t cacheHits{0U};
 };
+
+[[nodiscard]] std::string_view previewStatusName(PreviewStatus status) noexcept;
 
 
 class RealtimePreviewPublication final {
@@ -92,7 +120,9 @@ public:
   AsyncPreviewRenderService(const AsyncPreviewRenderService&) = delete;
   AsyncPreviewRenderService& operator=(const AsyncPreviewRenderService&) = delete;
 
-  void submit(domain::Project project, domain::RegionId regionId,
+  void submit(domain::Project project, domain::TrackId trackId,
+              domain::RegionId regionId,
+              voicebank::VoicebankResolution resolution,
               std::uint64_t revision, std::uint32_t sampleRate);
   void setCompletionCallback(std::function<void()> callback);
   [[nodiscard]] RealtimePreviewPublication::ReadHandle acquire() const noexcept {
@@ -104,7 +134,9 @@ public:
 private:
   struct Request final {
     domain::Project project;
+    domain::TrackId trackId;
     domain::RegionId regionId;
+    voicebank::VoicebankResolution resolution;
     std::uint64_t revision{0U};
     std::uint32_t sampleRate{48000U};
   };
@@ -116,7 +148,9 @@ private:
   mutable std::mutex mutex_;
   std::condition_variable_any condition_;
   std::optional<Request> pending_;
+  std::stop_source activeStopSource_;
   std::atomic<std::uint64_t> latestSubmittedRevision_{0U};
+  std::unique_ptr<rendering::PcmCache> cache_;
   std::jthread worker_;
   mutable RealtimePreviewPublication published_;
   std::atomic<std::uint64_t> submitted_{0U};
@@ -158,9 +192,11 @@ private:
 
 class EditorRuntime final {
 public:
-  explicit EditorRuntime(std::optional<domain::Project> project = std::nullopt,
-                         const std::filesystem::path& characterPackage =
-                             std::filesystem::path{"assets/character-01"});
+  explicit EditorRuntime(
+      std::optional<domain::Project> project = std::nullopt,
+      const std::filesystem::path& characterPackage =
+          std::filesystem::path{"assets/character-01"},
+      std::vector<voicebank::VoicebankSearchRoot> voicebankRoots = {});
   ~EditorRuntime() = default;
 
   EditorRuntime(const EditorRuntime&) = delete;
@@ -201,6 +237,15 @@ public:
   [[nodiscard]] domain::RegionId regionId() const noexcept { return regionId_; }
   [[nodiscard]] std::uint64_t revision() const noexcept;
 
+  [[nodiscard]] core::Result<void> refreshVoicebanks();
+  [[nodiscard]] core::Result<void> addVoicebankSearchRoot(
+      voicebank::VoicebankSearchRoot root);
+  [[nodiscard]] core::Result<void> selectVoicebank(
+      std::string_view id, std::string_view version,
+      std::optional<std::string_view> contentHash = std::nullopt);
+  [[nodiscard]] voicebank::VoicebankResolution voicebankResolution() const;
+  [[nodiscard]] std::vector<voicebank::VoicebankCandidate> availableVoicebanks() const;
+
   void requestRender(std::uint32_t sampleRate);
   [[nodiscard]] std::shared_ptr<const RenderedPreview> renderedPreview() const;
   [[nodiscard]] RealtimePreviewPublication::ReadHandle
@@ -235,14 +280,21 @@ private:
       application::ProjectFactory& factory, domain::RegionId& regionId);
   [[nodiscard]] static domain::RegionId firstRegionId(
       const domain::Project& project) noexcept;
+  [[nodiscard]] static domain::TrackId firstTrackId(
+      const domain::Project& project) noexcept;
   void rebuildController();
   void configureControllerCallbacks();
   void requestRepaint() const;
   void requestRenderAfterEdit();
   [[nodiscard]] native_ui::EditorSceneState sceneState() const;
+  void refreshVoicebankResolutionLocked();
+  [[nodiscard]] core::Result<void> bindVoicebankLocked(
+      const voicebank::VoicebankCandidate& candidate);
 
   mutable std::recursive_mutex mutex_;
+  bool createdDefault_{false};
   application::ProjectFactory factory_{1000U};
+  domain::TrackId trackId_{};
   domain::RegionId regionId_{};
   application::EditorSession session_;
   std::unique_ptr<native_ui::NativeEditorController> controller_;
@@ -250,6 +302,10 @@ private:
   native_ui::CharacterPresentation character_;
   AsyncPreviewRenderService renderService_;
   LiveSampleInstrument live_;
+  voicebank::VoicebankCatalog voicebankCatalog_;
+  std::vector<voicebank::VoicebankSearchRoot> voicebankRoots_;
+  std::vector<voicebank::VoicebankCandidate> voicebanks_;
+  voicebank::VoicebankResolution voicebankResolution_;
   std::function<void()> repaintCallback_;
   std::function<void(const native_ui::TextInputRequest&)> beginTextInput_;
   std::function<void()> endTextInput_;

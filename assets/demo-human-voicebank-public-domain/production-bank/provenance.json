@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "assetId": "demo.public-domain.human-vowel",
+  "displayName": "Public-domain human vowel technical fixture",
+  "officialVoicebank": false,
+  "contractedSinger": false,
+  "sourceRepository": "https://github.com/waywardgeek/sonic",
+  "sourceFilePage": "https://github.com/waywardgeek/sonic/blob/master/samples/talking.wav",
+  "sourceReadme": "https://github.com/waywardgeek/sonic/blob/master/samples/README",
+  "sourceMirror": "https://android.googlesource.com/platform/external/sonic/+/refs/tags/android-cts-7.0_r12/samples/talking.wav",
+  "rightsStatement": "The upstream samples README states that all sound samples are in the public domain.",
+  "speakerDescription": "The upstream README describes talking.wav as the repository author's father talking.",
+  "retrievedAt": "2026-08-17",
+  "sourceSha256": "26c3ceacfb31a7300824a3841904f077856bdba41dafba0310c603cabb86d07f",
+  "derivedSha256": "caf8ceb04b864c7501371a2adae46697495e617b9ade178560ba2ea1aa6b8cb9",
+  "processing": {
+    "sourceFormat": "PCM16 mono 44100 Hz",
+    "selection": "0.55 second high-RMS, high-periodicity window beginning near 21.84 seconds",
+    "operations": [
+      "DC removal",
+      "peak normalization to 0.78",
+      "20 ms fade in/out"
+    ],
+    "purpose": "live note-event and asynchronous phrase-render technical validation"
+  }
+}
