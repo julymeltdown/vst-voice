@@ -12,6 +12,18 @@
       "distribution": "vendored-single-header",
       "modified": false,
       "purpose": "bounded TrueType/TTC glyph rasterization for trusted system CJK fonts"
+    },
+    {
+      "name": "CLAP ABI 1.2.10 subset",
+      "source": "https://github.com/free-audio/clap",
+      "revision": "195b42a004144fab0b3cf95e9c067187d15365b7",
+      "sourceSha256": "f388cfa5a8d33ba39c8bd26077b6c0c7e5c70b6795aa4418526f04e615dd21f0",
+      "license": "MIT",
+      "licenseFile": "third_party/clap/LICENSE",
+      "usage": "source",
+      "distribution": "vendored-consolidated-header-subset",
+      "modified": true,
+      "purpose": "CLAP 1.2.10 plug-in entry, factory, processing, state, audio-port, parameter, latency, tail, and render ABI declarations"
     }
   ],
   "plannedOrReferenceOnly": [

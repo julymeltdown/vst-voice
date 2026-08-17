@@ -68,3 +68,13 @@ generated for this project. They are not third-party band artwork, merchandise,
 logos, voicebanks, or release-ready commercial character assets. Their
 production replacement and rights review remain required before a public
 product release.
+
+### CLAP 1.2.10 public ABI subset
+
+Project SEAM vendors a mechanically consolidated subset of the official CLAP
+1.2.10 public C ABI from the `free-audio/clap` repository at immutable revision
+`195b42a004144fab0b3cf95e9c067187d15365b7`. Only declarations required by the
+Phase 10 render-player plug-in are included; the included structure layouts and
+function signatures preserve the upstream ABI. The consolidation is documented
+at `third_party/clap/README.md` and is distributed under the upstream MIT
+License at `third_party/clap/LICENSE`.

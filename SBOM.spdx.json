@@ -2,8 +2,8 @@
   "spdxVersion": "SPDX-2.3",
   "dataLicense": "CC0-1.0",
   "SPDXID": "SPDXRef-DOCUMENT",
-  "name": "Project-SEAM-Phase9-SBOM",
-  "documentNamespace": "https://example.invalid/project-seam/sbom/phase9/0.9.0",
+  "name": "Project-SEAM-Phase10-SBOM",
+  "documentNamespace": "https://example.invalid/project-seam/sbom/phase10/0.10.0",
   "creationInfo": {
     "created": "2026-08-17T00:00:00Z",
     "creators": [
@@ -12,9 +12,9 @@
   },
   "packages": [
     {
-      "name": "Project SEAM Phase 9",
+      "name": "Project SEAM Phase 10",
       "SPDXID": "SPDXRef-Package-ProjectSEAM",
-      "versionInfo": "0.9.0",
+      "versionInfo": "0.10.0",
       "downloadLocation": "NOASSERTION",
       "filesAnalyzed": false,
       "licenseConcluded": "NOASSERTION",
@@ -64,6 +64,17 @@
       "licenseDeclared": "MIT",
       "copyrightText": "Copyright (c) 2017 Sean Barrett",
       "comment": "Vendored single-header TrueType/TTC rasterizer; Project SEAM redistributes no fonts."
+    },
+    {
+      "name": "CLAP ABI subset",
+      "SPDXID": "SPDXRef-Package-CLAP-ABI",
+      "versionInfo": "1.2.10 / 195b42a004144fab0b3cf95e9c067187d15365b7",
+      "downloadLocation": "https://github.com/free-audio/clap",
+      "filesAnalyzed": false,
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
+      "copyrightText": "Copyright (c) 2014...2022 Alexandre BIQUE",
+      "comment": "Mechanically consolidated public C ABI subset for the Project SEAM CLAP plug-in."
     }
   ],
   "relationships": [
@@ -91,6 +102,11 @@
       "spdxElementId": "SPDXRef-Package-ProjectSEAM",
       "relationshipType": "DEPENDS_ON",
       "relatedSpdxElement": "SPDXRef-Package-stb-truetype"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-ProjectSEAM",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-CLAP-ABI"
     }
   ]
 }

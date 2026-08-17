@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.25)
 
-project(ProjectSEAM VERSION 0.9.0 LANGUAGES CXX)
+project(ProjectSEAM VERSION 0.10.0 LANGUAGES CXX)
 
 option(SEAM_BUILD_TESTS "Build Project SEAM tests" ON)
 option(SEAM_BUILD_BENCHMARKS "Build Project SEAM benchmarks" ON)
@@ -9,6 +9,7 @@ option(SEAM_ENABLE_SANITIZERS "Enable AddressSanitizer and UndefinedBehaviorSani
 option(SEAM_ENABLE_THREAD_SANITIZER "Enable ThreadSanitizer" OFF)
 option(SEAM_ENABLE_IPLUG2_SKIA "Enable the optional iPlug2 + Skia shell adapter" OFF)
 option(SEAM_BUILD_NATIVE_DESKTOP "Build the first-party native desktop editor" ON)
+option(SEAM_BUILD_CLAP_PLUGIN "Build the Project SEAM CLAP render-player plug-in" ON)
 option(SEAM_RUN_NATIVE_GUI_TESTS
   "Run target-host native editor and Voicebank Studio smoke tests" OFF)
 
@@ -16,6 +17,7 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 include(SeamCompilerOptions)
@@ -47,6 +49,14 @@ target_include_directories(seam_core PUBLIC
   libs/seam-core/include
   ${CMAKE_CURRENT_BINARY_DIR}/generated)
 seam_apply_compiler_options(seam_core)
+
+add_library(seam_clap
+  libs/seam-clap/src/session.cpp
+  libs/seam-clap/src/state_codec.cpp
+)
+target_include_directories(seam_clap PUBLIC libs/seam-clap/include)
+target_link_libraries(seam_clap PUBLIC seam_core)
+seam_apply_compiler_options(seam_clap)
 
 add_library(seam_text
   libs/seam-text/src/unicode.cpp
@@ -366,6 +376,30 @@ if(SEAM_BUILD_NATIVE_DESKTOP)
   seam_apply_compiler_options(seam_phase9_demo)
 endif()
 
+if(SEAM_BUILD_CLAP_PLUGIN)
+  add_library(seam_clap_plugin MODULE libs/seam-clap/src/plugin_entry.cpp)
+  target_include_directories(seam_clap_plugin PRIVATE third_party/clap/include)
+  target_link_libraries(seam_clap_plugin PRIVATE seam_clap seam_core)
+  set_target_properties(seam_clap_plugin PROPERTIES
+    PREFIX ""
+    OUTPUT_NAME "ProjectSEAM"
+    SUFFIX ".clap")
+  seam_apply_compiler_options(seam_clap_plugin)
+
+  add_executable(seam_clap_host apps/seam-clap-host/main.cpp)
+  target_include_directories(seam_clap_host PRIVATE third_party/clap/include)
+  target_link_libraries(seam_clap_host PRIVATE seam_clap seam_core ${CMAKE_DL_LIBS})
+  seam_apply_compiler_options(seam_clap_host)
+endif()
+
+add_executable(seam_phase10_demo apps/seam-phase10-demo/main.cpp)
+target_link_libraries(seam_phase10_demo PRIVATE seam_clap seam_voicebank seam_core)
+seam_apply_compiler_options(seam_phase10_demo)
+
+add_executable(seam_clap_state_tool apps/seam-clap-state-tool/main.cpp)
+target_link_libraries(seam_clap_state_tool PRIVATE seam_clap seam_voicebank seam_core)
+seam_apply_compiler_options(seam_clap_state_tool)
+
 add_executable(seam_voicebank_cli apps/seam-voicebank-cli/main.cpp)
 target_link_libraries(seam_voicebank_cli PRIVATE
   seam_voicebank seam_formats seam_domain seam_core)
@@ -399,6 +433,7 @@ if(SEAM_BUILD_TESTS)
     tests/test_distribution.cpp
     tests/test_platform_capabilities.cpp
     tests/test_text.cpp
+    tests/test_clap.cpp
   )
   if(SEAM_BUILD_NATIVE_DESKTOP)
     list(APPEND SEAM_TEST_SOURCES
@@ -410,7 +445,7 @@ if(SEAM_BUILD_TESTS)
   target_include_directories(seam_tests PRIVATE tests)
   target_link_libraries(seam_tests PRIVATE
     seam_distribution seam_editor_inspection seam_rendering seam_synthesis seam_voicebank seam_editor_ui seam_phonemizer seam_formats
-    seam_playback_platform seam_platform seam_application seam_domain seam_text seam_core)
+    seam_playback_platform seam_platform seam_application seam_domain seam_text seam_clap seam_core)
   if(SEAM_BUILD_NATIVE_DESKTOP)
     target_link_libraries(seam_tests PRIVATE seam_native_ui)
   endif()
@@ -437,6 +472,36 @@ if(SEAM_BUILD_TESTS)
       COMMAND ${Python3_EXECUTABLE}
               ${CMAKE_CURRENT_SOURCE_DIR}/scripts/verify_phase8_platform_sources.py
               --root ${CMAKE_CURRENT_SOURCE_DIR})
+  endif()
+  add_test(NAME seam_phase10_demo_smoke
+    COMMAND seam_phase10_demo --output ${CMAKE_BINARY_DIR}/phase10-smoke)
+  add_test(NAME seam_clap_state_pack_smoke
+    COMMAND seam_clap_state_tool pack
+            ${CMAKE_BINARY_DIR}/phase10-smoke/phase10-diagnostic-4ch.wav
+            ${CMAKE_BINARY_DIR}/phase10-smoke/from-wav.seamclapstate
+            --title "Project SEAM packed render"
+            --gain-db 0.0)
+  set_tests_properties(seam_clap_state_pack_smoke PROPERTIES
+    DEPENDS seam_phase10_demo_smoke TIMEOUT 30)
+  add_test(NAME seam_clap_state_inspect_smoke
+    COMMAND seam_clap_state_tool inspect
+            ${CMAKE_BINARY_DIR}/phase10-smoke/from-wav.seamclapstate)
+  set_tests_properties(seam_clap_state_inspect_smoke PROPERTIES
+    DEPENDS seam_clap_state_pack_smoke TIMEOUT 30)
+  add_test(NAME seam_clap_state_extract_smoke
+    COMMAND seam_clap_state_tool extract
+            ${CMAKE_BINARY_DIR}/phase10-smoke/from-wav.seamclapstate
+            ${CMAKE_BINARY_DIR}/phase10-smoke/from-state.wav)
+  set_tests_properties(seam_clap_state_extract_smoke PROPERTIES
+    DEPENDS seam_clap_state_pack_smoke TIMEOUT 30)
+  if(SEAM_BUILD_CLAP_PLUGIN)
+    add_test(NAME seam_clap_plugin_host_smoke
+      COMMAND seam_clap_host
+              --plugin $<TARGET_FILE:seam_clap_plugin>
+              --state ${CMAKE_BINARY_DIR}/phase10-smoke/from-wav.seamclapstate
+              --summary ${CMAKE_BINARY_DIR}/phase10-smoke/clap-host-summary.json)
+    set_tests_properties(seam_clap_plugin_host_smoke PROPERTIES
+      DEPENDS seam_clap_state_pack_smoke TIMEOUT 30)
   endif()
   add_test(NAME seam_bank_tool_help COMMAND seam_bank_tool --help)
   add_test(NAME seam_voicebank_cli_help COMMAND seam_voicebank_cli --help)
@@ -523,6 +588,10 @@ if(SEAM_BUILD_BENCHMARKS)
     seam_apply_compiler_options(seam_phase9_benchmark)
   endif()
 
+  add_executable(seam_phase10_benchmark benchmarks/phase10_benchmark.cpp)
+  target_link_libraries(seam_phase10_benchmark PRIVATE seam_clap seam_core)
+  seam_apply_compiler_options(seam_phase10_benchmark)
+
 endif()
 
 if(Python3_Interpreter_FOUND)
@@ -595,5 +664,13 @@ if(Python3_Interpreter_FOUND)
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
         COMMENT "Generating Phase 9 Unicode/CJK rendering evidence")
     endif()
+    add_custom_target(seam_phase10_evidence
+      COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/generate_phase10_evidence.py
+              --root ${CMAKE_CURRENT_SOURCE_DIR} --skip-build
+      DEPENDS seam_tests seam_phase10_demo seam_clap_state_tool seam_phase10_benchmark
+              $<$<BOOL:${SEAM_BUILD_CLAP_PLUGIN}>:seam_clap_plugin>
+              $<$<BOOL:${SEAM_BUILD_CLAP_PLUGIN}>:seam_clap_host>
+      WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+      COMMENT "Generating Phase 10 CLAP plug-in evidence")
   endif()
 endif()
