@@ -1,9 +1,11 @@
 #include "seam/clap_editor/editor_runtime.hpp"
 #include "seam/clap_editor/embedded_view.hpp"
+#include "seam/clap_editor/host_timeline.hpp"
 
 #include <clap/clap.h>
 
 #include <algorithm>
+#include <atomic>
 #include <array>
 #include <cmath>
 #include <cstddef>
@@ -99,7 +101,7 @@ const clap_plugin_descriptor_t kDescriptor{
     .url = "",
     .manual_url = "",
     .support_url = "",
-    .version = "0.12.0",
+    .version = "0.12.1",
     .description =
         "Sample-concatenative singing editor with production-pipeline preview and live note input",
     .features = kFeatures.data(),
@@ -111,11 +113,18 @@ public:
       : host_(host),
         runtime_(std::make_unique<EditorRuntime>(
             std::nullopt, resolveCharacterPackage(), resolveVoicebankRoots())) {
-    runtime_->setRenderReadyCallback([host] {
-      if (host != nullptr && host->request_process != nullptr) {
-        host->request_process(host);
+    runtime_->setRenderReadyCallback([this] {
+      refreshRuntimeMetadata();
+      if (host_ != nullptr && host_->request_process != nullptr) {
+        host_->request_process(host_);
+      }
+      if (desiredOutputChannels_.load(std::memory_order_acquire) !=
+              outputChannels_.load(std::memory_order_acquire) &&
+          host_ != nullptr && host_->request_callback != nullptr) {
+        host_->request_callback(host_);
       }
     });
+    refreshRuntimeMetadata();
     plugin_ = clap_plugin_t{
         .desc = &kDescriptor,
         .plugin_data = this,
@@ -151,6 +160,50 @@ private:
                : nullptr;
   }
 
+  void refreshRuntimeMetadata() {
+    const auto project = runtime_->projectCopy();
+    projectOffsetSeconds_.store(
+        project.tempoMap().secondsAt(project.settings().hostStartOffsetTick),
+        std::memory_order_release);
+    defaultTempo_.store(project.tempoMap().bpmAt(time::Tick{0}),
+                        std::memory_order_release);
+    desiredOutputChannels_.store(project.routing().deviceOutputChannels,
+                                 std::memory_order_release);
+  }
+
+  void notifyAudioPortChange() noexcept {
+    if (host_ == nullptr || host_->get_extension == nullptr) return;
+    const auto* ports = static_cast<const clap_host_audio_ports_t*>(
+        host_->get_extension(host_, CLAP_EXT_AUDIO_PORTS));
+    if (ports != nullptr && ports->rescan != nullptr) {
+      ports->rescan(host_, CLAP_AUDIO_PORTS_RESCAN_CHANNEL_COUNT |
+                              CLAP_AUDIO_PORTS_RESCAN_PORT_TYPE |
+                              CLAP_AUDIO_PORTS_RESCAN_LIST);
+    }
+    const auto* configs = static_cast<const clap_host_audio_ports_config_t*>(
+        host_->get_extension(host_, CLAP_EXT_AUDIO_PORTS_CONFIG));
+    if (configs != nullptr && configs->rescan != nullptr) {
+      configs->rescan(host_);
+    }
+  }
+
+  void synchronizeAudioPortConfiguration() noexcept {
+    const auto desired = desiredOutputChannels_.load(std::memory_order_acquire);
+    const auto current = outputChannels_.load(std::memory_order_acquire);
+    if (desired == current || desired < 1U || desired > 8U) return;
+    if (active_) {
+      if (!routingRestartRequested_ && host_ != nullptr &&
+          host_->request_restart != nullptr) {
+        routingRestartRequested_ = true;
+        host_->request_restart(host_);
+      }
+      return;
+    }
+    outputChannels_.store(desired, std::memory_order_release);
+    routingRestartRequested_ = false;
+    notifyAudioPortChange();
+  }
+
   static bool CLAP_ABI pluginInit(const clap_plugin_t* plugin) {
     auto* instance = self(plugin);
     if (instance == nullptr || instance->initialized_) return false;
@@ -174,6 +227,11 @@ private:
         maximumFrames > 1U << 20U) {
       return false;
     }
+    instance->refreshRuntimeMetadata();
+    instance->outputChannels_.store(
+        instance->desiredOutputChannels_.load(std::memory_order_acquire),
+        std::memory_order_release);
+    instance->routingRestartRequested_ = false;
     instance->sampleRate_ = sampleRate;
     instance->maximumFrames_ = maximumFrames;
     instance->freeRunFrame_ = 0U;
@@ -191,6 +249,7 @@ private:
     instance->processing_ = false;
     instance->active_ = false;
     instance->runtime_->resetLive();
+    instance->synchronizeAudioPortConfiguration();
   }
 
   static bool CLAP_ABI pluginStartProcessing(const clap_plugin_t* plugin) {
@@ -214,30 +273,59 @@ private:
     instance->runtime_->resetLive();
   }
 
-  [[nodiscard]] static std::uint64_t transportFrame(
+  [[nodiscard]] static HostTimelineState hostTimelineState(
       const PluginInstance& instance,
       const clap_event_transport_t* transport) noexcept {
-    if (transport == nullptr) return instance.freeRunFrame_;
-    if ((transport->flags & CLAP_TRANSPORT_HAS_SECONDS_TIMELINE) != 0U) {
-      const auto seconds = std::max<std::int64_t>(0, transport->song_pos_seconds);
-      return static_cast<std::uint64_t>(
-          static_cast<long double>(seconds) * instance.sampleRate_ /
-          static_cast<long double>(CLAP_SECTIME_FACTOR));
+    HostTimelineState state;
+    if (transport == nullptr) {
+      state.playing = true;
+      state.hasSeconds = true;
+      state.seconds = static_cast<double>(instance.freeRunFrame_) /
+                      instance.sampleRate_;
+      return state;
     }
-    if ((transport->flags & CLAP_TRANSPORT_HAS_BEATS_TIMELINE) != 0U) {
-      const auto beats = static_cast<long double>(
-          std::max<std::int64_t>(0, transport->song_pos_beats)) /
-          static_cast<long double>(CLAP_BEATTIME_FACTOR);
-      const auto tempo = (transport->flags & CLAP_TRANSPORT_HAS_TEMPO) != 0U &&
-                                 std::isfinite(transport->tempo) &&
-                                 transport->tempo > 0.0
-                             ? transport->tempo
-                             : 154.0;
-      return static_cast<std::uint64_t>(
-          beats * 60.0L / static_cast<long double>(tempo) *
-          instance.sampleRate_);
+    state.playing = (transport->flags & CLAP_TRANSPORT_IS_PLAYING) != 0U;
+    state.hasSeconds =
+        (transport->flags & CLAP_TRANSPORT_HAS_SECONDS_TIMELINE) != 0U;
+    state.seconds = static_cast<double>(transport->song_pos_seconds) /
+                    static_cast<double>(CLAP_SECTIME_FACTOR);
+    state.hasBeats =
+        (transport->flags & CLAP_TRANSPORT_HAS_BEATS_TIMELINE) != 0U;
+    state.beats = static_cast<double>(transport->song_pos_beats) /
+                  static_cast<double>(CLAP_BEATTIME_FACTOR);
+    state.hasTempo = (transport->flags & CLAP_TRANSPORT_HAS_TEMPO) != 0U &&
+                     std::isfinite(transport->tempo) && transport->tempo > 0.0;
+    state.tempo = state.hasTempo ? transport->tempo : 120.0;
+    state.loopActive =
+        (transport->flags & CLAP_TRANSPORT_IS_LOOP_ACTIVE) != 0U;
+    if (state.loopActive && state.hasSeconds) {
+      state.loopStartSeconds =
+          static_cast<double>(transport->loop_start_seconds) /
+          static_cast<double>(CLAP_SECTIME_FACTOR);
+      state.loopEndSeconds =
+          static_cast<double>(transport->loop_end_seconds) /
+          static_cast<double>(CLAP_SECTIME_FACTOR);
+      state.loopHasSeconds = std::isfinite(state.loopStartSeconds) &&
+                             std::isfinite(state.loopEndSeconds) &&
+                             state.loopEndSeconds > state.loopStartSeconds;
     }
-    return instance.freeRunFrame_;
+    if (state.loopActive && state.hasBeats) {
+      state.loopStartBeats =
+          static_cast<double>(transport->loop_start_beats) /
+          static_cast<double>(CLAP_BEATTIME_FACTOR);
+      state.loopEndBeats =
+          static_cast<double>(transport->loop_end_beats) /
+          static_cast<double>(CLAP_BEATTIME_FACTOR);
+      state.loopHasBeats = std::isfinite(state.loopStartBeats) &&
+                           std::isfinite(state.loopEndBeats) &&
+                           state.loopEndBeats > state.loopStartBeats;
+    }
+    state.hasTimeSignature =
+        (transport->flags & CLAP_TRANSPORT_HAS_TIME_SIGNATURE) != 0U &&
+        transport->tsig_num > 0U && transport->tsig_denom > 0U;
+    state.numerator = state.hasTimeSignature ? transport->tsig_num : 4U;
+    state.denominator = state.hasTimeSignature ? transport->tsig_denom : 4U;
+    return state;
   }
 
   static void clearOutput(clap_audio_buffer_t& output,
@@ -252,11 +340,40 @@ private:
     }
   }
 
+  [[nodiscard]] static float previewValue(
+      const RenderedPreview& preview, std::uint64_t sourceFrame,
+      std::uint32_t outputChannel, std::uint32_t outputChannels) noexcept {
+    const auto sourceChannels = static_cast<std::size_t>(preview.channelCount);
+    if (sourceChannels == 0U || preview.interleaved.empty() ||
+        sourceFrame > std::numeric_limits<std::size_t>::max() / sourceChannels) {
+      return 0.0F;
+    }
+    const auto base = static_cast<std::size_t>(sourceFrame) * sourceChannels;
+    if (base + sourceChannels > preview.interleaved.size()) return 0.0F;
+    if (outputChannels == 1U && sourceChannels > 1U) {
+      float sum = 0.0F;
+      for (std::size_t channel = 0U; channel < sourceChannels; ++channel) {
+        sum += preview.interleaved[base + channel];
+      }
+      return sum / static_cast<float>(sourceChannels);
+    }
+    if (sourceChannels == 1U) return preview.interleaved[base];
+    return outputChannel < sourceChannels
+               ? preview.interleaved[base + outputChannel]
+               : 0.0F;
+  }
+
   static void writeOutput(clap_audio_buffer_t& output,
-                          std::uint32_t frame, float left,
-                          float right) noexcept {
+                          std::uint32_t frame,
+                          const RenderedPreview* preview,
+                          std::optional<std::uint64_t> sourceFrame,
+                          float live) noexcept {
     for (std::uint32_t channel = 0U; channel < output.channel_count; ++channel) {
-      const auto value = channel == 0U ? left : channel == 1U ? right : 0.0F;
+      float value = sourceFrame.has_value() && preview != nullptr
+                        ? previewValue(*preview, *sourceFrame, channel,
+                                       output.channel_count)
+                        : 0.0F;
+      value = std::clamp(value + live, -1.0F, 1.0F);
       if (output.data32 != nullptr && output.data32[channel] != nullptr) {
         output.data32[channel][frame] = value;
       }
@@ -302,17 +419,20 @@ private:
       return CLAP_PROCESS_ERROR;
     }
     auto& output = process->audio_outputs[0];
-    if (output.channel_count < 2U ||
+    const auto configuredChannels =
+        instance->outputChannels_.load(std::memory_order_acquire);
+    if (output.channel_count != configuredChannels ||
         (output.data32 == nullptr && output.data64 == nullptr)) {
       return CLAP_PROCESS_ERROR;
     }
     clearOutput(output, process->frames_count);
 
     auto preview = instance->runtime_->acquireRenderedPreview();
-    const auto baseFrame = transportFrame(*instance, process->transport);
-    const auto transportPlaying = process->transport == nullptr ||
-                                  (process->transport->flags &
-                                   CLAP_TRANSPORT_IS_PLAYING) != 0U;
+    const auto timeline = hostTimelineState(*instance, process->transport);
+    const auto projectOffset =
+        instance->projectOffsetSeconds_.load(std::memory_order_acquire);
+    const auto defaultTempo =
+        instance->defaultTempo_.load(std::memory_order_acquire);
     std::uint32_t eventIndex = 0U;
     const auto eventCount = process->in_events != nullptr &&
                                     process->in_events->size != nullptr
@@ -332,26 +452,26 @@ private:
                     ? process->in_events->get(process->in_events, eventIndex)
                     : nullptr;
       }
-      float left = 0.0F;
-      float right = 0.0F;
-      if (transportPlaying && static_cast<bool>(preview) &&
+      std::optional<std::uint64_t> sourceFrame;
+      if (static_cast<bool>(preview) &&
           preview->sampleRate ==
               static_cast<std::uint32_t>(std::llround(instance->sampleRate_))) {
-        const auto sourceFrame = baseFrame + frame;
-        if (sourceFrame <= std::numeric_limits<std::size_t>::max() / 2U) {
-          const auto source = static_cast<std::size_t>(sourceFrame) * 2U;
-          if (source + 1U < preview->stereo.size()) {
-            left = preview->stereo[source];
-            right = preview->stereo[source + 1U];
+        const auto mapped = HostTimelineMapper::map(
+            timeline, projectOffset, defaultTempo, instance->sampleRate_, frame);
+        if (mapped.audible) sourceFrame = mapped.sourceFrame;
+      }
+      const auto live = instance->runtime_->renderLiveSample();
+      if (std::abs(live) > 1.0e-7F) produced = true;
+      if (sourceFrame.has_value() && static_cast<bool>(preview)) {
+        for (std::uint32_t channel = 0U; channel < output.channel_count; ++channel) {
+          if (std::abs(previewValue(*preview, *sourceFrame, channel,
+                                    output.channel_count)) > 1.0e-7F) {
+            produced = true;
+            break;
           }
         }
       }
-      const auto live = instance->runtime_->renderLiveSample();
-      left = std::clamp(left + live, -1.0F, 1.0F);
-      right = std::clamp(right + live, -1.0F, 1.0F);
-      produced = produced || std::abs(left) > 1.0e-7F ||
-                 std::abs(right) > 1.0e-7F;
-      writeOutput(output, frame, left, right);
+      writeOutput(output, frame, preview.get(), sourceFrame, live);
     }
     if (process->transport == nullptr) {
       instance->freeRunFrame_ += process->frames_count;
@@ -364,17 +484,87 @@ private:
     return isInput ? 0U : 1U;
   }
 
-  static bool CLAP_ABI audioPortsGet(const clap_plugin_t*,
+  static const char* portType(std::uint8_t channels) noexcept {
+    return channels == 1U ? CLAP_PORT_MONO
+                          : channels == 2U ? CLAP_PORT_STEREO : nullptr;
+  }
+
+  static bool CLAP_ABI audioPortsGet(const clap_plugin_t* plugin,
                                      std::uint32_t index, bool isInput,
                                      clap_audio_port_info_t* info) {
-    if (isInput || index != 0U || info == nullptr) return false;
+    const auto* instance = self(plugin);
+    if (instance == nullptr || isInput || index != 0U || info == nullptr) {
+      return false;
+    }
+    const auto channels =
+        instance->outputChannels_.load(std::memory_order_acquire);
     std::memset(info, 0, sizeof(*info));
     info->id = 0U;
     std::snprintf(info->name, sizeof(info->name), "%s", "SEAM Editor Output");
     info->flags = CLAP_AUDIO_PORT_IS_MAIN | CLAP_AUDIO_PORT_SUPPORTS_64BITS;
-    info->channel_count = 2U;
-    info->port_type = CLAP_PORT_STEREO;
+    info->channel_count = channels;
+    info->port_type = portType(channels);
     info->in_place_pair = CLAP_INVALID_ID;
+    return true;
+  }
+
+  static void fillAudioConfig(clap_audio_ports_config_t& config,
+                              std::uint8_t channels) noexcept {
+    std::memset(&config, 0, sizeof(config));
+    config.id = channels;
+    std::snprintf(config.name, sizeof(config.name), "SEAM %u channel",
+                  static_cast<unsigned>(channels));
+    config.input_port_count = 0U;
+    config.output_port_count = 1U;
+    config.has_main_input = false;
+    config.main_input_channel_count = 0U;
+    config.main_input_port_type = nullptr;
+    config.has_main_output = true;
+    config.main_output_channel_count = channels;
+    config.main_output_port_type = portType(channels);
+  }
+
+  static std::uint32_t CLAP_ABI audioConfigCount(const clap_plugin_t*) {
+    return 8U;
+  }
+
+  static bool CLAP_ABI audioConfigGet(const clap_plugin_t*,
+                                      std::uint32_t index,
+                                      clap_audio_ports_config_t* config) {
+    if (index >= 8U || config == nullptr) return false;
+    fillAudioConfig(*config, static_cast<std::uint8_t>(index + 1U));
+    return true;
+  }
+
+  static bool CLAP_ABI audioConfigSelect(const clap_plugin_t* plugin,
+                                         clap_id configId) {
+    auto* instance = self(plugin);
+    if (instance == nullptr || instance->active_ || configId < 1U ||
+        configId > 8U) {
+      return false;
+    }
+    const auto channels = static_cast<std::uint8_t>(configId);
+    const auto configured = instance->runtime_->configureOutputChannels(channels);
+    if (!configured) return false;
+    instance->desiredOutputChannels_.store(channels, std::memory_order_release);
+    instance->outputChannels_.store(channels, std::memory_order_release);
+    instance->notifyAudioPortChange();
+    return true;
+  }
+
+  static clap_id CLAP_ABI audioConfigCurrent(const clap_plugin_t* plugin) {
+    const auto* instance = self(plugin);
+    return instance == nullptr
+               ? CLAP_INVALID_ID
+               : instance->outputChannels_.load(std::memory_order_acquire);
+  }
+
+  static bool CLAP_ABI audioConfigInfoGet(
+      const clap_plugin_t* plugin, clap_audio_ports_config_t* config) {
+    const auto* instance = self(plugin);
+    if (instance == nullptr || config == nullptr) return false;
+    fillAudioConfig(*config,
+                    instance->outputChannels_.load(std::memory_order_acquire));
     return true;
   }
 
@@ -445,7 +635,28 @@ private:
     if (!decoded) return false;
     const auto replaced = instance->runtime_->replaceProject(decoded.value());
     if (!replaced) return false;
+    instance->refreshRuntimeMetadata();
+    instance->synchronizeAudioPortConfiguration();
     instance->freeRunFrame_ = 0U;
+    return true;
+  }
+
+  static bool CLAP_ABI renderHasHardRealtimeRequirement(
+      const clap_plugin_t*) {
+    return false;
+  }
+
+  static bool CLAP_ABI renderSet(const clap_plugin_t* plugin,
+                                 clap_plugin_render_mode mode) {
+    auto* instance = self(plugin);
+    if (instance == nullptr ||
+        (mode != CLAP_RENDER_REALTIME && mode != CLAP_RENDER_OFFLINE)) {
+      return false;
+    }
+    instance->renderMode_.store(mode, std::memory_order_release);
+    instance->runtime_->setRenderQuality(
+        mode == CLAP_RENDER_OFFLINE ? rendering::RenderQuality::Final
+                                    : rendering::RenderQuality::Preview);
     return true;
   }
 
@@ -645,6 +856,7 @@ private:
     if (instance != nullptr && instance->view_ != nullptr &&
         timerId == instance->timerId_) {
       instance->view_->onTimer();
+      instance->synchronizeAudioPortConfiguration();
     }
   }
 
@@ -653,6 +865,12 @@ private:
     if (identifier == nullptr) return nullptr;
     if (std::strcmp(identifier, CLAP_EXT_AUDIO_PORTS) == 0) {
       return &audioPortsExtension();
+    }
+    if (std::strcmp(identifier, CLAP_EXT_AUDIO_PORTS_CONFIG) == 0) {
+      return &audioPortsConfigExtension();
+    }
+    if (std::strcmp(identifier, CLAP_EXT_AUDIO_PORTS_CONFIG_INFO) == 0) {
+      return &audioPortsConfigInfoExtension();
     }
     if (std::strcmp(identifier, CLAP_EXT_NOTE_PORTS) == 0) {
       return &notePortsExtension();
@@ -666,12 +884,17 @@ private:
     if (std::strcmp(identifier, CLAP_EXT_TIMER_SUPPORT) == 0) {
       return &timerExtension();
     }
+    if (std::strcmp(identifier, CLAP_EXT_RENDER) == 0) {
+      return &renderExtension();
+    }
     return nullptr;
   }
 
   static void CLAP_ABI pluginOnMainThread(const clap_plugin_t* plugin) {
     auto* instance = self(plugin);
-    if (instance != nullptr && instance->view_ != nullptr &&
+    if (instance == nullptr) return;
+    instance->synchronizeAudioPortConfiguration();
+    if (instance->view_ != nullptr &&
         instance->timerId_ == CLAP_INVALID_ID) {
       instance->view_->onTimer();
     }
@@ -680,6 +903,19 @@ private:
   static const clap_plugin_audio_ports_t& audioPortsExtension() {
     static const clap_plugin_audio_ports_t value{
         &audioPortsCount, &audioPortsGet};
+    return value;
+  }
+
+  static const clap_plugin_audio_ports_config_t& audioPortsConfigExtension() {
+    static const clap_plugin_audio_ports_config_t value{
+        &audioConfigCount, &audioConfigGet, &audioConfigSelect};
+    return value;
+  }
+
+  static const clap_plugin_audio_ports_config_info_t&
+  audioPortsConfigInfoExtension() {
+    static const clap_plugin_audio_ports_config_info_t value{
+        &audioConfigCurrent, &audioConfigInfoGet};
     return value;
   }
 
@@ -708,6 +944,12 @@ private:
     return value;
   }
 
+  static const clap_plugin_render_t& renderExtension() {
+    static const clap_plugin_render_t value{
+        &renderHasHardRealtimeRequirement, &renderSet};
+    return value;
+  }
+
   clap_plugin_t plugin_{};
   const clap_host_t* host_{nullptr};
   std::unique_ptr<EditorRuntime> runtime_;
@@ -715,6 +957,11 @@ private:
   double sampleRate_{48000.0};
   std::uint32_t maximumFrames_{0U};
   std::uint64_t freeRunFrame_{0U};
+  std::atomic<double> projectOffsetSeconds_{0.0};
+  std::atomic<double> defaultTempo_{120.0};
+  std::atomic<std::uint8_t> outputChannels_{2U};
+  std::atomic<std::uint8_t> desiredOutputChannels_{2U};
+  std::atomic<clap_plugin_render_mode> renderMode_{CLAP_RENDER_REALTIME};
   std::uint32_t guiWidth_{kDefaultWidth};
   std::uint32_t guiHeight_{kDefaultHeight};
   clap_id timerId_{CLAP_INVALID_ID};
@@ -722,6 +969,7 @@ private:
   bool active_{false};
   bool processing_{false};
   bool guiCreated_{false};
+  bool routingRestartRequested_{false};
 };
 
 bool CLAP_ABI entryInit(const char* pluginPath) {

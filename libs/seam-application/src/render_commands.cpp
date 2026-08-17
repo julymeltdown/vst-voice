@@ -1,6 +1,7 @@
 #include "seam/application/render_commands.hpp"
 
 #include <algorithm>
+#include <cmath>
 
 namespace seam::application {
 
@@ -332,6 +333,159 @@ core::Result<void> SetTrackVoicebankCommand::revert(domain::Project& project) {
                          trackId_.toString());
   }
   track->voicebank = *before_;
+  return core::success();
+}
+
+}  // namespace seam::application
+
+namespace seam::application {
+
+core::Result<void> SetVocalTrackMixCommand::apply(domain::Project& project) {
+  auto* track = project.findVocalTrack(trackId_);
+  if (track == nullptr) {
+    return core::failure(core::ErrorCode::NotFound,
+                         "Vocal track mix target is missing");
+  }
+  if (!std::isfinite(afterGainDb_) || !std::isfinite(afterPan_) ||
+      afterGainDb_ < -120.0F || afterGainDb_ > 24.0F ||
+      afterPan_ < -1.0F || afterPan_ > 1.0F) {
+    return core::failure(core::ErrorCode::InvalidArgument,
+                         "Vocal track mix values are invalid");
+  }
+  if (!captured_) {
+    beforeGainDb_ = track->gainDb;
+    beforePan_ = track->pan;
+    beforeMuted_ = track->muted;
+    beforeSolo_ = track->solo;
+    captured_ = true;
+  }
+  track->gainDb = afterGainDb_;
+  track->pan = afterPan_;
+  track->muted = afterMuted_;
+  track->solo = afterSolo_;
+  if (track->outputRoute.matrix.sourceChannels == 1U &&
+      track->outputRoute.matrix.destinationChannels == 2U) {
+    track->outputRoute.matrix = domain::RoutingMatrix::monoToStereo(afterPan_);
+  }
+  return core::success();
+}
+
+core::Result<void> SetVocalTrackMixCommand::revert(domain::Project& project) {
+  if (!captured_) {
+    return core::failure(core::ErrorCode::Conflict,
+                         "Vocal track mix command has no captured state");
+  }
+  auto* track = project.findVocalTrack(trackId_);
+  if (track == nullptr) {
+    return core::failure(core::ErrorCode::NotFound,
+                         "Vocal track mix target is missing");
+  }
+  track->gainDb = beforeGainDb_;
+  track->pan = beforePan_;
+  track->muted = beforeMuted_;
+  track->solo = beforeSolo_;
+  if (track->outputRoute.matrix.sourceChannels == 1U &&
+      track->outputRoute.matrix.destinationChannels == 2U) {
+    track->outputRoute.matrix = domain::RoutingMatrix::monoToStereo(beforePan_);
+  }
+  return core::success();
+}
+
+core::Result<void> SetProjectRoutingCommand::apply(domain::Project& project) {
+  const auto validation = after_.validate();
+  if (!validation) return validation;
+  if (!before_.has_value()) before_ = project.routing();
+  project.routing() = after_;
+  return core::success();
+}
+
+core::Result<void> SetProjectRoutingCommand::revert(domain::Project& project) {
+  if (!before_.has_value()) {
+    return core::failure(core::ErrorCode::Conflict,
+                         "Project routing command has no captured state");
+  }
+  project.routing() = *before_;
+  return core::success();
+}
+
+core::Result<void> SetHostStartOffsetCommand::apply(domain::Project& project) {
+  if (after_ < time::Tick{0}) {
+    return core::failure(core::ErrorCode::InvalidArgument,
+                         "Host start offset tick cannot be negative");
+  }
+  if (!captured_) {
+    before_ = project.settings().hostStartOffsetTick;
+    captured_ = true;
+  }
+  project.settings().hostStartOffsetTick = after_;
+  return core::success();
+}
+
+core::Result<void> SetHostStartOffsetCommand::revert(domain::Project& project) {
+  if (!captured_) {
+    return core::failure(core::ErrorCode::Conflict,
+                         "Host start offset command has no captured state");
+  }
+  project.settings().hostStartOffsetTick = before_;
+  return core::success();
+}
+
+core::Result<void> ConfigureProjectOutputCommand::apply(domain::Project& project) {
+  if (channels_ == 0U || channels_ > domain::kMaximumAudioChannels) {
+    return core::failure(core::ErrorCode::InvalidArgument,
+                         "Project output channel count must be between one and eight");
+  }
+  if (!beforeRouting_.has_value()) {
+    beforeRouting_ = project.routing();
+    beforeRoutes_.clear();
+    beforeRoutes_.reserve(project.vocalTracks().size());
+    for (const auto& track : project.vocalTracks()) {
+      beforeRoutes_.push_back({track.id, track.outputRoute});
+    }
+  }
+  domain::ProjectRouting routing;
+  routing.deviceOutputChannels = channels_;
+  routing.masterBus = domain::BusId{1U};
+  routing.buses = {domain::AudioBus{.id = domain::BusId{1U},
+                                    .name = "Master",
+                                    .channelCount = channels_}};
+  routing.sends.clear();
+  routing.deviceRoutes = {domain::DeviceOutputRoute{
+      .sourceBus = domain::BusId{1U},
+      .matrix = domain::RoutingMatrix::identity(channels_),
+      .gainDb = 0.0F,
+      .enabled = true}};
+  project.routing() = routing;
+  for (auto& track : project.vocalTracks()) {
+    domain::RoutingMatrix matrix;
+    matrix.sourceChannels = 1U;
+    matrix.destinationChannels = channels_;
+    matrix.gains.assign(channels_, 0.0F);
+    if (channels_ == 1U) {
+      matrix.gains[0] = 1.0F;
+    } else {
+      const auto stereo = domain::RoutingMatrix::monoToStereo(track.pan);
+      matrix.gains[0] = stereo.gain(0U, 0U);
+      matrix.gains[1] = stereo.gain(1U, 0U);
+      for (std::uint8_t channel = 2U; channel < channels_; ++channel) {
+        matrix.gains[channel] = 0.35F;
+      }
+    }
+    track.outputRoute = domain::TrackOutputRoute{
+        .bus = routing.masterBus, .matrix = std::move(matrix)};
+  }
+  return core::success();
+}
+
+core::Result<void> ConfigureProjectOutputCommand::revert(domain::Project& project) {
+  if (!beforeRouting_.has_value()) {
+    return core::failure(core::ErrorCode::Conflict,
+                         "Project output command has no captured state");
+  }
+  project.routing() = *beforeRouting_;
+  for (const auto& [trackId, route] : beforeRoutes_) {
+    if (auto* track = project.findVocalTrack(trackId)) track->outputRoute = route;
+  }
   return core::success();
 }
 

@@ -4,12 +4,17 @@
 #include "seam/application/project_factory.hpp"
 #include "seam/core/result.hpp"
 #include "seam/domain/project.hpp"
+#include "seam/clap_editor/host_timeline.hpp"
 #include "seam/native_ui/character_presentation.hpp"
 #include "seam/native_ui/editor_controller.hpp"
 #include "seam/native_ui/editor_scene.hpp"
 #include "seam/native_ui/pixel_surface.hpp"
 #include "seam/rendering/pcm_cache.hpp"
+#include "seam/rendering/project_renderer.hpp"
 #include "seam/synthesis/unit_selection.hpp"
+#include "seam/ui/phoneme_lane_model.hpp"
+#include "seam/ui/sample_microscope_model.hpp"
+#include "seam/ui/unit_lane_model.hpp"
 #include "seam/voicebank/catalog.hpp"
 
 #include <array>
@@ -47,6 +52,8 @@ struct RenderedPreview final {
   std::uint64_t revision{0U};
   PreviewStatus status{PreviewStatus::Empty};
   std::vector<float> stereo;
+  std::uint8_t channelCount{2U};
+  std::vector<float> interleaved;
   std::string diagnostic;
   std::string voicebankId;
   std::string voicebankVersion;
@@ -57,6 +64,8 @@ struct RenderedPreview final {
   std::size_t unitCount{0U};
   std::size_t fallbackCount{0U};
   std::size_t cacheHits{0U};
+  std::size_t trackCount{0U};
+  std::size_t regionCount{0U};
 };
 
 [[nodiscard]] std::string_view previewStatusName(PreviewStatus status) noexcept;
@@ -112,6 +121,11 @@ struct RenderServiceStats final {
 
 class AsyncPreviewRenderService;
 
+struct TrackVoicebankResolution final {
+  domain::TrackId trackId;
+  voicebank::VoicebankResolution resolution;
+};
+
 class AsyncPreviewRenderService final {
 public:
   AsyncPreviewRenderService();
@@ -120,10 +134,11 @@ public:
   AsyncPreviewRenderService(const AsyncPreviewRenderService&) = delete;
   AsyncPreviewRenderService& operator=(const AsyncPreviewRenderService&) = delete;
 
-  void submit(domain::Project project, domain::TrackId trackId,
-              domain::RegionId regionId,
-              voicebank::VoicebankResolution resolution,
-              std::uint64_t revision, std::uint32_t sampleRate);
+  void submit(domain::Project project, domain::TrackId activeTrackId,
+              domain::RegionId activeRegionId,
+              std::vector<TrackVoicebankResolution> resolutions,
+              std::uint64_t revision, std::uint32_t sampleRate,
+              rendering::RenderQuality quality = rendering::RenderQuality::Preview);
   void setCompletionCallback(std::function<void()> callback);
   [[nodiscard]] RealtimePreviewPublication::ReadHandle acquire() const noexcept {
     return published_.acquire();
@@ -134,11 +149,12 @@ public:
 private:
   struct Request final {
     domain::Project project;
-    domain::TrackId trackId;
-    domain::RegionId regionId;
-    voicebank::VoicebankResolution resolution;
+    domain::TrackId activeTrackId;
+    domain::RegionId activeRegionId;
+    std::vector<TrackVoicebankResolution> resolutions;
     std::uint64_t revision{0U};
     std::uint32_t sampleRate{48000U};
+    rendering::RenderQuality quality{rendering::RenderQuality::Preview};
   };
 
   void workerLoop(std::stop_token stopToken);
@@ -235,7 +251,19 @@ public:
   [[nodiscard]] domain::Project projectCopy() const;
   [[nodiscard]] core::Result<void> replaceProject(domain::Project project);
   [[nodiscard]] domain::RegionId regionId() const noexcept { return regionId_; }
+  [[nodiscard]] domain::TrackId trackId() const noexcept { return trackId_; }
   [[nodiscard]] std::uint64_t revision() const noexcept;
+
+  [[nodiscard]] std::vector<domain::TrackId> vocalTrackIds() const;
+  [[nodiscard]] std::vector<domain::RegionId> regionIds(
+      domain::TrackId trackId) const;
+  [[nodiscard]] core::Result<void> selectTrack(domain::TrackId trackId);
+  [[nodiscard]] core::Result<void> selectRegion(domain::RegionId regionId);
+  [[nodiscard]] core::Result<void> setTrackMix(
+      domain::TrackId trackId, float gainDb, float pan, bool muted, bool solo);
+  [[nodiscard]] core::Result<void> configureOutputChannels(
+      std::uint8_t channels);
+  [[nodiscard]] core::Result<void> setHostStartOffset(time::Tick tick);
 
   [[nodiscard]] core::Result<void> refreshVoicebanks();
   [[nodiscard]] core::Result<void> addVoicebankSearchRoot(
@@ -247,12 +275,38 @@ public:
   [[nodiscard]] std::vector<voicebank::VoicebankCandidate> availableVoicebanks() const;
 
   void requestRender(std::uint32_t sampleRate);
+  void setRenderQuality(rendering::RenderQuality quality);
+  [[nodiscard]] rendering::RenderQuality renderQuality() const noexcept;
   [[nodiscard]] std::shared_ptr<const RenderedPreview> renderedPreview() const;
   [[nodiscard]] RealtimePreviewPublication::ReadHandle
   acquireRenderedPreview() const noexcept {
     return renderService_.acquire();
   }
   [[nodiscard]] RenderServiceStats renderStats() const noexcept;
+
+  [[nodiscard]] core::Result<void> movePhonemeBoundary(
+      domain::PhonemeKey key, bool startBoundary,
+      time::Microseconds offset);
+  [[nodiscard]] core::Result<void> selectUnitVariant(
+      domain::PhonemeKey key, std::string unitId,
+      domain::UnitRendererKind renderer);
+  [[nodiscard]] core::Result<void> cycleUnitVariant(domain::PhonemeKey key);
+  [[nodiscard]] core::Result<void> cycleUnitRenderer(domain::PhonemeKey key);
+  [[nodiscard]] core::Result<void> upsertPitchPoint(
+      domain::PitchAutomationPoint point);
+  [[nodiscard]] core::Result<void> movePitchPoint(
+      time::Tick from, domain::PitchAutomationPoint point);
+  [[nodiscard]] core::Result<void> removePitchPoint(time::Tick tick);
+  [[nodiscard]] core::Result<void> cyclePitchInterpolation(time::Tick tick);
+  [[nodiscard]] core::Result<void> openSampleMicroscope(
+      domain::PhonemeKey key);
+  void closeSampleMicroscope() noexcept;
+  [[nodiscard]] bool sampleMicroscopeOpen() const noexcept;
+  [[nodiscard]] const ui::SampleMicroscopeModel* sampleMicroscope() const noexcept;
+  [[nodiscard]] std::optional<std::string> selectedUnitId() const;
+
+  void setHostTimelineState(HostTimelineState state) noexcept;
+  [[nodiscard]] HostTimelineState hostTimelineState() const noexcept;
 
   void setLiveSampleRate(double sampleRate) noexcept {
     live_.setOutputSampleRate(sampleRate);
@@ -288,6 +342,21 @@ private:
   void requestRenderAfterEdit();
   [[nodiscard]] native_ui::EditorSceneState sceneState() const;
   void refreshVoicebankResolutionLocked();
+  void refreshAllVoicebankResolutionsLocked();
+  [[nodiscard]] std::vector<TrackVoicebankResolution>
+  renderVoicebankResolutionsLocked() const;
+  void rebuildTechnicalModelsLocked();
+  [[nodiscard]] phonemizer::Result phonemesLocked() const;
+  [[nodiscard]] const ui::PhonemeVisual* phonemeVisualAt(
+      ui::Point point) const noexcept;
+  [[nodiscard]] const ui::UnitLaneVisual* unitVisualAt(
+      ui::Point point) const noexcept;
+  [[nodiscard]] std::optional<time::Tick> pitchPointAt(
+      ui::Point point, double tolerance = 8.0) const noexcept;
+  [[nodiscard]] time::Microseconds microsecondOffsetAt(
+      domain::NoteId noteId, double x) const noexcept;
+  void paintPhase12BOverlay(native_ui::RasterCanvas& canvas) noexcept;
+  void paintSampleMicroscope(native_ui::RasterCanvas& canvas) noexcept;
   [[nodiscard]] core::Result<void> bindVoicebankLocked(
       const voicebank::VoicebankCandidate& candidate);
 
@@ -306,13 +375,25 @@ private:
   std::vector<voicebank::VoicebankSearchRoot> voicebankRoots_;
   std::vector<voicebank::VoicebankCandidate> voicebanks_;
   voicebank::VoicebankResolution voicebankResolution_;
+  std::vector<TrackVoicebankResolution> trackVoicebankResolutions_;
   std::function<void()> repaintCallback_;
   std::function<void(const native_ui::TextInputRequest&)> beginTextInput_;
   std::function<void()> endTextInput_;
   double logicalWidth_{1100.0};
   double logicalHeight_{720.0};
   std::uint32_t renderSampleRate_{48000U};
+  rendering::RenderQuality renderQuality_{rendering::RenderQuality::Preview};
   bool dirty_{false};
+  ui::PhonemeLaneModel phonemeLane_;
+  ui::UnitLaneModel unitLane_;
+  ui::SampleMicroscopeModel microscope_;
+  voicebank::AudioBuffer microscopeAudio_;
+  std::optional<std::string> microscopeUnitId_;
+  std::optional<domain::PhonemeKey> selectedUnitKey_;
+  std::optional<domain::PhonemeKey> draggingPhonemeKey_;
+  bool draggingPhonemeStart_{false};
+  std::optional<time::Tick> draggingPitchTick_;
+  HostTimelineState hostTimelineState_{};
 };
 
 [[nodiscard]] core::Result<std::vector<std::byte>> encodeEditorState(

@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.25)
 
-project(ProjectSEAM VERSION 0.12.0 LANGUAGES CXX)
+project(ProjectSEAM VERSION 0.12.1 LANGUAGES CXX)
 
 option(SEAM_BUILD_TESTS "Build Project SEAM tests" ON)
 option(SEAM_BUILD_BENCHMARKS "Build Project SEAM benchmarks" ON)
@@ -193,6 +193,7 @@ add_library(seam_rendering
   libs/seam-rendering/src/render_snapshot.cpp
   libs/seam-rendering/src/render_pipeline.cpp
   libs/seam-rendering/src/region_renderer.cpp
+  libs/seam-rendering/src/project_renderer.cpp
   libs/seam-rendering/src/pcm_cache.cpp
   libs/seam-rendering/src/audio_ring_buffer.cpp
   libs/seam-rendering/src/interleaved_audio_ring_buffer.cpp
@@ -424,6 +425,7 @@ if(SEAM_BUILD_CLAP_EDITOR_PLUGIN)
 
   add_library(seam_clap_editor
     libs/seam-clap-editor/src/editor_runtime.cpp
+    libs/seam-clap-editor/src/host_timeline.cpp
     ${SEAM_CLAP_EDITOR_VIEW_SOURCE})
   target_include_directories(seam_clap_editor PUBLIC
     libs/seam-clap-editor/include)
@@ -554,6 +556,14 @@ if(SEAM_BUILD_CLAP_EDITOR_PLUGIN)
   target_link_libraries(seam_phase12a_demo PRIVATE
     seam_clap_editor seam_rendering seam_voicebank seam_formats seam_domain seam_core)
   seam_apply_compiler_options(seam_phase12a_demo)
+
+  add_executable(seam_phase12b_demo apps/seam-phase12b-demo/main.cpp)
+  target_compile_definitions(seam_phase12b_demo PRIVATE
+    SEAM_SOURCE_PRODUCTION_VOICEBANK="${CMAKE_CURRENT_SOURCE_DIR}/assets/demo-human-voicebank-public-domain/production-bank")
+  target_link_libraries(seam_phase12b_demo PRIVATE
+    seam_clap_editor seam_rendering seam_voicebank seam_formats
+    seam_application seam_domain seam_core)
+  seam_apply_compiler_options(seam_phase12b_demo)
 endif()
 
 
@@ -580,6 +590,20 @@ if(SEAM_BUILD_TESTS AND SEAM_BUILD_CLAP_EDITOR_PLUGIN)
   add_test(NAME seam_phase12a_demo_smoke
     COMMAND seam_phase12a_demo --output ${CMAKE_BINARY_DIR}/phase12a-smoke)
   set_tests_properties(seam_phase12a_demo_smoke PROPERTIES TIMEOUT 60)
+
+  add_executable(seam_phase12b_tests tests/test_phase12b.cpp)
+  target_include_directories(seam_phase12b_tests PRIVATE tests)
+  target_compile_definitions(seam_phase12b_tests PRIVATE
+    SEAM_SOURCE_PRODUCTION_VOICEBANK="${CMAKE_CURRENT_SOURCE_DIR}/assets/demo-human-voicebank-public-domain/production-bank")
+  target_link_libraries(seam_phase12b_tests PRIVATE
+    seam_clap_editor seam_rendering seam_voicebank seam_formats
+    seam_phonemizer seam_application seam_domain seam_core)
+  seam_apply_compiler_options(seam_phase12b_tests)
+  add_test(NAME seam_phase12b_tests COMMAND seam_phase12b_tests)
+  add_test(NAME seam_phase12b_demo_smoke
+    COMMAND seam_phase12b_demo --output ${CMAKE_BINARY_DIR}/phase12b-smoke)
+  set_tests_properties(seam_phase12b_tests seam_phase12b_demo_smoke
+    PROPERTIES TIMEOUT 120)
 
   if(UNIX AND NOT APPLE AND X11_FOUND)
     find_program(SEAM_PHASE11_XVFB_RUN_EXECUTABLE xvfb-run)
@@ -608,6 +632,11 @@ if(SEAM_BUILD_TESTS AND SEAM_BUILD_CLAP_EDITOR_PLUGIN)
         --root ${CMAKE_CURRENT_SOURCE_DIR})
     set_tests_properties(seam_phase12a_production_contract PROPERTIES
       TIMEOUT 30)
+    add_test(NAME seam_phase12b_contract
+      COMMAND ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/scripts/verify_phase12b_contracts.py
+        --root ${CMAKE_CURRENT_SOURCE_DIR})
+    set_tests_properties(seam_phase12b_contract PROPERTIES TIMEOUT 30)
   endif()
 endif()
 

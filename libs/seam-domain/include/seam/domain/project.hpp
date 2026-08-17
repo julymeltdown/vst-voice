@@ -23,6 +23,9 @@ struct ProjectSettings final {
   CharacterDisplayMode characterDisplay{CharacterDisplayMode::Minimal};
   bool snapEnabled{true};
   time::Tick snapGrid{time::Tick{time::kDefaultPpq / 4}};
+  // Host position at this musical tick maps to source frame zero. This keeps
+  // plug-in pre-roll and project-offset semantics in the canonical state.
+  time::Tick hostStartOffsetTick{time::Tick{0}};
 
   friend bool operator==(const ProjectSettings&, const ProjectSettings&) = default;
 };

@@ -97,9 +97,9 @@ TEST_CASE("project decoder migrates schema one regions without phoneme overrides
   const auto encoded = codec.encode(project);
   CHECK(encoded);
   auto legacy = encoded.value();
-  const auto schemaPosition = legacy.find("\"schemaVersion\": 4");
+  const auto schemaPosition = legacy.find("\"schemaVersion\": 5");
   CHECK(schemaPosition != std::string::npos);
-  legacy.replace(schemaPosition, std::string{"\"schemaVersion\": 4"}.size(),
+  legacy.replace(schemaPosition, std::string{"\"schemaVersion\": 5"}.size(),
                  "\"schemaVersion\": 1");
   for (const auto field : {"phonemeOverrides", "unitSelectionOverrides",
                            "seamOverrides", "pitchAutomation"}) {
@@ -108,6 +108,10 @@ TEST_CASE("project decoder migrates schema one regions without phoneme overrides
     CHECK(position != std::string::npos);
     legacy.erase(position, fragment.size());
   }
+  const auto hostOffsetFragment = std::string{",\n    \"hostStartOffsetTick\": 0"};
+  const auto hostOffsetPosition = legacy.find(hostOffsetFragment);
+  CHECK(hostOffsetPosition != std::string::npos);
+  legacy.erase(hostOffsetPosition, hostOffsetFragment.size());
   const auto decoded = codec.decode(legacy);
   CHECK(decoded);
   CHECK(decoded.value() == project);

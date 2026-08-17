@@ -37,7 +37,7 @@ def main() -> int:
     require_text(
         root / "libs/seam-clap-editor/src/editor_runtime.cpp",
         [
-            "ProductionRegionRenderer",
+            "ProductionProjectRenderer",
             "voicebankResolution_",
             "VoicebankContentHashMissing",
             "VoicebankContentMismatch",

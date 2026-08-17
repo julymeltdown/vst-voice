@@ -262,6 +262,10 @@ core::Result<void> Project::validate() const {
   if (!id_.valid()) {
     return core::failure(core::ErrorCode::InvariantViolation, "Project ID must be valid");
   }
+  if (settings_.hostStartOffsetTick < time::Tick{0}) {
+    return core::failure(core::ErrorCode::InvariantViolation,
+                         "Host start offset tick cannot be negative");
+  }
   if (name_.empty()) {
     return core::failure(core::ErrorCode::InvariantViolation, "Project name must not be empty");
   }

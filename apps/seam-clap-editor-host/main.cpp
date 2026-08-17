@@ -59,6 +59,8 @@ struct HostContext final {
   std::uint32_t timerPeriod{0U};
   std::atomic<std::uint32_t> restartRequests{0U};
   std::atomic<std::uint32_t> processRequests{0U};
+  std::atomic<std::uint32_t> audioPortRescans{0U};
+  std::atomic<std::uint32_t> audioConfigRescans{0U};
 };
 
 bool CLAP_ABI registerTimer(const clap_host_t* host, std::uint32_t period,
@@ -79,10 +81,26 @@ bool CLAP_ABI unregisterTimer(const clap_host_t* host, clap_id identifier) {
 
 const clap_host_timer_support_t kTimerHost{&registerTimer, &unregisterTimer};
 
+bool CLAP_ABI audioRescanSupported(const clap_host_t*, std::uint32_t) {
+  return true;
+}
+void CLAP_ABI audioRescan(const clap_host_t* host, std::uint32_t) {
+  static_cast<HostContext*>(host->host_data)->audioPortRescans.fetch_add(
+      1U, std::memory_order_relaxed);
+}
+void CLAP_ABI audioConfigRescan(const clap_host_t* host) {
+  static_cast<HostContext*>(host->host_data)->audioConfigRescans.fetch_add(
+      1U, std::memory_order_relaxed);
+}
+const clap_host_audio_ports_t kAudioPortsHost{&audioRescanSupported, &audioRescan};
+const clap_host_audio_ports_config_t kAudioConfigHost{&audioConfigRescan};
+
 const void* CLAP_ABI hostGetExtension(const clap_host_t*, const char* id) {
-  return id != nullptr && std::strcmp(id, CLAP_EXT_TIMER_SUPPORT) == 0
-             ? &kTimerHost
-             : nullptr;
+  if (id == nullptr) return nullptr;
+  if (std::strcmp(id, CLAP_EXT_TIMER_SUPPORT) == 0) return &kTimerHost;
+  if (std::strcmp(id, CLAP_EXT_AUDIO_PORTS) == 0) return &kAudioPortsHost;
+  if (std::strcmp(id, CLAP_EXT_AUDIO_PORTS_CONFIG) == 0) return &kAudioConfigHost;
+  return nullptr;
 }
 
 void CLAP_ABI hostRequestRestart(const clap_host_t* host) {
@@ -113,17 +131,18 @@ struct EventList final {
 };
 
 struct Output final {
-  std::array<std::vector<float>, 2> planes;
-  std::array<float*, 2> pointers{};
+  std::vector<std::vector<float>> planes;
+  std::vector<float*> pointers;
   clap_audio_buffer_t buffer{};
-  explicit Output(std::uint32_t frames)
-      : planes{std::vector<float>(frames, 0.0F),
-               std::vector<float>(frames, 0.0F)} {
-    pointers[0] = planes[0].data();
-    pointers[1] = planes[1].data();
+  Output(std::uint32_t frames, std::uint32_t channels)
+      : planes(channels, std::vector<float>(frames, 0.0F)),
+        pointers(channels, nullptr) {
+    for (std::size_t channel = 0U; channel < planes.size(); ++channel) {
+      pointers[channel] = planes[channel].data();
+    }
     buffer.data32 = pointers.data();
     buffer.data64 = nullptr;
-    buffer.channel_count = 2U;
+    buffer.channel_count = channels;
   }
 };
 
@@ -251,6 +270,14 @@ int main(int argc, char** argv) {
 
   const auto* audioPorts = static_cast<const clap_plugin_audio_ports_t*>(
       plugin->get_extension(plugin, CLAP_EXT_AUDIO_PORTS));
+  const auto* audioConfigs =
+      static_cast<const clap_plugin_audio_ports_config_t*>(
+          plugin->get_extension(plugin, CLAP_EXT_AUDIO_PORTS_CONFIG));
+  const auto* audioConfigInfo =
+      static_cast<const clap_plugin_audio_ports_config_info_t*>(
+          plugin->get_extension(plugin, CLAP_EXT_AUDIO_PORTS_CONFIG_INFO));
+  const auto* render = static_cast<const clap_plugin_render_t*>(
+      plugin->get_extension(plugin, CLAP_EXT_RENDER));
   const auto* notePorts = static_cast<const clap_plugin_note_ports_t*>(
       plugin->get_extension(plugin, CLAP_EXT_NOTE_PORTS));
   const auto* state = static_cast<const clap_plugin_state_t*>(
@@ -259,8 +286,9 @@ int main(int argc, char** argv) {
       plugin->get_extension(plugin, CLAP_EXT_GUI));
   const auto* timer = static_cast<const clap_plugin_timer_support_t*>(
       plugin->get_extension(plugin, CLAP_EXT_TIMER_SUPPORT));
-  if (audioPorts == nullptr || notePorts == nullptr || state == nullptr ||
-      gui == nullptr || timer == nullptr ||
+  if (audioPorts == nullptr || audioConfigs == nullptr ||
+      audioConfigInfo == nullptr || render == nullptr || notePorts == nullptr ||
+      state == nullptr || gui == nullptr || timer == nullptr ||
       audioPorts->count(plugin, true) != 0U ||
       audioPorts->count(plugin, false) != 1U ||
       notePorts->count(plugin, true) != 1U) {
@@ -323,7 +351,19 @@ int main(int argc, char** argv) {
     std::this_thread::sleep_for(std::chrono::milliseconds{4});
   }
 
+  if (audioConfigs->count(plugin) != 8U ||
+      !audioConfigs->select(plugin, 4U)) return 1;
+  clap_audio_ports_config_t selectedConfig{};
+  if (!audioConfigInfo->get(plugin, &selectedConfig) ||
+      selectedConfig.main_output_channel_count != 4U ||
+      audioConfigInfo->current_config(plugin) != 4U) return 1;
+  clap_audio_port_info_t selectedPort{};
+  if (!audioPorts->get(plugin, 0U, false, &selectedPort) ||
+      selectedPort.channel_count != 4U) return 1;
+  const auto offlineRenderAccepted = render->set(plugin, CLAP_RENDER_OFFLINE);
+
   constexpr std::uint32_t frames = 512U;
+  constexpr std::uint32_t outputChannels = 4U;
   if (!plugin->activate(plugin, 48000.0, 32U, frames) ||
       !plugin->start_processing(plugin)) {
     return 1;
@@ -342,13 +382,34 @@ int main(int argc, char** argv) {
   clap_event_note_t noteOff = noteOn;
   noteOff.header.type = CLAP_EVENT_NOTE_OFF;
   noteOff.velocity = 0.0;
-  Output output{frames};
+  Output output{frames, outputChannels};
+  clap_event_transport_t transport{};
+  transport.header = clap_event_header_t{
+      .size = sizeof(transport), .time = 0U,
+      .space_id = CLAP_CORE_EVENT_SPACE_ID,
+      .type = CLAP_EVENT_TRANSPORT, .flags = 0U};
+  transport.flags = CLAP_TRANSPORT_HAS_SECONDS_TIMELINE |
+                    CLAP_TRANSPORT_HAS_BEATS_TIMELINE |
+                    CLAP_TRANSPORT_HAS_TEMPO |
+                    CLAP_TRANSPORT_HAS_TIME_SIGNATURE |
+                    CLAP_TRANSPORT_IS_PLAYING |
+                    CLAP_TRANSPORT_IS_LOOP_ACTIVE;
+  transport.tempo = 154.0;
+  transport.tsig_num = 4U;
+  transport.tsig_denom = 4U;
+  transport.loop_start_seconds = 0;
+  transport.loop_end_seconds = static_cast<clap_sectime>(
+      std::llround(1.0 * static_cast<double>(CLAP_SECTIME_FACTOR)));
+  transport.loop_start_beats = 0;
+  transport.loop_end_beats = static_cast<clap_beattime>(
+      std::llround((154.0 / 60.0) * static_cast<double>(CLAP_BEATTIME_FACTOR)));
   clap_process_t process{};
   process.frames_count = frames;
   process.audio_outputs = &output.buffer;
   process.audio_outputs_count = 1U;
+  process.transport = &transport;
   std::vector<float> captured;
-  captured.reserve(static_cast<std::size_t>(frames) * 48U * 2U);
+  captured.reserve(static_cast<std::size_t>(frames) * 48U * outputChannels);
   double liveEnergy = 0.0;
   bool processOk = true;
   for (std::uint32_t block = 0U; block < 48U; ++block) {
@@ -356,19 +417,26 @@ int main(int argc, char** argv) {
     if (block == 0U) events.events = {&noteOn.header};
     if (block == 30U) events.events = {&noteOff.header};
     process.in_events = &events.input;
+    const auto seconds = static_cast<double>(block * frames) / 48000.0;
+    transport.song_pos_seconds = static_cast<clap_sectime>(
+        std::llround(seconds * static_cast<double>(CLAP_SECTIME_FACTOR)));
+    transport.song_pos_beats = static_cast<clap_beattime>(
+        std::llround(seconds * 154.0 / 60.0 *
+                     static_cast<double>(CLAP_BEATTIME_FACTOR)));
     const auto processResult = plugin->process(plugin, &process);
     processOk = processOk && processResult != CLAP_PROCESS_ERROR;
     liveEnergy += energy(output.planes[0]);
     for (std::uint32_t frame = 0U; frame < frames; ++frame) {
-      captured.push_back(output.planes[0][frame]);
-      captured.push_back(output.planes[1][frame]);
+      for (std::uint32_t channel = 0U; channel < outputChannels; ++channel) {
+        captured.push_back(output.planes[channel][frame]);
+      }
     }
   }
   bool audioWritten = audioPath.empty();
   if (!audioPath.empty()) {
     std::filesystem::create_directories(audioPath.parent_path());
     audioWritten = static_cast<bool>(seam::voicebank::writePcm16Wav(
-        audioPath, 48000U, 2U, captured));
+        audioPath, 48000U, static_cast<std::uint16_t>(outputChannels), captured));
   }
   const auto livePass = processOk && liveEnergy > 0.01 && audioWritten;
 
@@ -402,6 +470,7 @@ int main(int argc, char** argv) {
   entry->deinit();
 
   const auto passed = guiCreated && guiVisible && livePass &&
+                      offlineRenderAccepted && selectedPort.channel_count == 4U &&
                       inactiveGuiLoadAccepted && activeLoadRejected &&
                       stateRoundTrip &&
                       context.processRequests.load(
@@ -417,7 +486,14 @@ int main(int argc, char** argv) {
             << "  \"screenshotWritten\": "
             << (screenshotWritten ? "true" : "false") << ",\n"
             << "  \"noteInputEnergy\": " << liveEnergy << ",\n"
-            << "  \"capturedFrames\": " << (captured.size() / 2U) << ",\n"
+            << "  \"capturedFrames\": " << (captured.size() / outputChannels) << ",\n"
+            << "  \"outputChannels\": " << outputChannels << ",\n"
+            << "  \"audioPortRescans\": "
+            << context.audioPortRescans.load(std::memory_order_relaxed) << ",\n"
+            << "  \"audioConfigRescans\": "
+            << context.audioConfigRescans.load(std::memory_order_relaxed) << ",\n"
+            << "  \"offlineRenderAccepted\": "
+            << (offlineRenderAccepted ? "true" : "false") << ",\n"
             << "  \"audioWritten\": " << (audioWritten ? "true" : "false") << ",\n"
             << "  \"activeLoadRejected\": "
             << (activeLoadRejected ? "true" : "false") << ",\n"

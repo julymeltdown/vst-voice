@@ -3,6 +3,8 @@
 #include "seam/application/command.hpp"
 
 #include <optional>
+#include <vector>
+#include <utility>
 
 namespace seam::application {
 
@@ -133,6 +135,77 @@ private:
   domain::TrackId trackId_;
   domain::VoicebankReference after_;
   std::optional<domain::VoicebankReference> before_;
+};
+
+}  // namespace seam::application
+
+namespace seam::application {
+
+class SetVocalTrackMixCommand final : public ICommand {
+public:
+  SetVocalTrackMixCommand(domain::TrackId trackId, float gainDb, float pan,
+                          bool muted, bool solo)
+      : trackId_(trackId), afterGainDb_(gainDb), afterPan_(pan),
+        afterMuted_(muted), afterSolo_(solo) {}
+  [[nodiscard]] std::string_view name() const noexcept override {
+    return "Edit vocal track mix";
+  }
+  [[nodiscard]] core::Result<void> apply(domain::Project& project) override;
+  [[nodiscard]] core::Result<void> revert(domain::Project& project) override;
+private:
+  domain::TrackId trackId_;
+  float afterGainDb_{0.0F};
+  float afterPan_{0.0F};
+  bool afterMuted_{false};
+  bool afterSolo_{false};
+  float beforeGainDb_{0.0F};
+  float beforePan_{0.0F};
+  bool beforeMuted_{false};
+  bool beforeSolo_{false};
+  bool captured_{false};
+};
+
+class SetProjectRoutingCommand final : public ICommand {
+public:
+  explicit SetProjectRoutingCommand(domain::ProjectRouting routing)
+      : after_(std::move(routing)) {}
+  [[nodiscard]] std::string_view name() const noexcept override {
+    return "Change project audio routing";
+  }
+  [[nodiscard]] core::Result<void> apply(domain::Project& project) override;
+  [[nodiscard]] core::Result<void> revert(domain::Project& project) override;
+private:
+  domain::ProjectRouting after_;
+  std::optional<domain::ProjectRouting> before_;
+};
+
+class SetHostStartOffsetCommand final : public ICommand {
+public:
+  explicit SetHostStartOffsetCommand(time::Tick tick) : after_(tick) {}
+  [[nodiscard]] std::string_view name() const noexcept override {
+    return "Set host project start offset";
+  }
+  [[nodiscard]] core::Result<void> apply(domain::Project& project) override;
+  [[nodiscard]] core::Result<void> revert(domain::Project& project) override;
+private:
+  time::Tick after_;
+  time::Tick before_{};
+  bool captured_{false};
+};
+
+class ConfigureProjectOutputCommand final : public ICommand {
+public:
+  explicit ConfigureProjectOutputCommand(std::uint8_t channels)
+      : channels_(channels) {}
+  [[nodiscard]] std::string_view name() const noexcept override {
+    return "Configure project output channels";
+  }
+  [[nodiscard]] core::Result<void> apply(domain::Project& project) override;
+  [[nodiscard]] core::Result<void> revert(domain::Project& project) override;
+private:
+  std::uint8_t channels_{2U};
+  std::optional<domain::ProjectRouting> beforeRouting_;
+  std::vector<std::pair<domain::TrackId, domain::TrackOutputRoute>> beforeRoutes_;
 };
 
 }  // namespace seam::application

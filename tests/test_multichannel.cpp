@@ -187,7 +187,7 @@ TEST_CASE("multichannel feeder ring and callback preserve channel order") {
   CHECK(channels[3][100] > 0.29F);
 }
 
-TEST_CASE("project schema four persists buses sends and track output matrix") {
+TEST_CASE("project schema five persists buses sends and track output matrix") {
   seam::domain::Project project{seam::domain::ProjectId{44U}, "Routing project"};
   project.routing() = fourChannelRouting();
   project.vocalTracks().push_back(seam::domain::VocalTrack{
@@ -208,7 +208,7 @@ TEST_CASE("project schema four persists buses sends and track output matrix") {
   seam::formats::ProjectJsonCodec codec;
   const auto encoded = codec.encode(project);
   CHECK(encoded);
-  CHECK(encoded.value().find("\"schemaVersion\": 4") != std::string::npos);
+  CHECK(encoded.value().find("\"schemaVersion\": 5") != std::string::npos);
   const auto decoded = codec.decode(encoded.value());
   CHECK(decoded);
   CHECK(decoded.value() == project);

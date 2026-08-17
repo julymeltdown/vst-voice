@@ -120,6 +120,14 @@ core::Result<domain::Project> extractPhraseProject(
   track.character = {};
   track.muted = false;
   track.solo = false;
+  // Phrase snapshots are renderer-local mono sources. Project routing is
+  // applied later by ProductionProjectRenderer, so the extracted snapshot
+  // must use its own canonical stereo routing rather than retaining the
+  // source project's potentially 1-8 channel track matrix.
+  track.outputRoute = domain::TrackOutputRoute{
+      .bus = domain::BusId{1U},
+      .matrix = domain::RoutingMatrix::monoToStereo(track.pan),
+  };
   track.regions.clear();
   auto phraseRegion = extractPhraseRegion(*sourceRegion, segment);
   phraseRegion.name = "Render phrase";

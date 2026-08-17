@@ -532,7 +532,9 @@ JsonValue encodeProject(const domain::Project& project) {
           {"sampleRate", JsonValue{project.settings().sampleRate}},
           {"characterDisplay", JsonValue{characterModeName(project.settings().characterDisplay)}},
           {"snapEnabled", JsonValue{project.settings().snapEnabled}},
-          {"snapGrid", JsonValue{project.settings().snapGrid.value()}}}}},
+          {"snapGrid", JsonValue{project.settings().snapGrid.value()}},
+          {"hostStartOffsetTick",
+           JsonValue{project.settings().hostStartOffsetTick.value()}}}}},
       {"routing", encodeRouting(project.routing())},
       {"vocalTracks", JsonValue{std::move(vocalTracks)}},
       {"audioTracks", JsonValue{std::move(audioTracks)}}}};
@@ -624,16 +626,30 @@ core::Result<domain::Project> decodeProject(const JsonValue& root) {
   const auto* characterDisplay = settings.value()->find("characterDisplay");
   const auto* snapEnabled = settings.value()->find("snapEnabled");
   const auto* snapGrid = settings.value()->find("snapGrid");
+  const auto* hostStartOffsetTick = settings.value()->find("hostStartOffsetTick");
   if (sampleRate == nullptr || characterDisplay == nullptr || snapEnabled == nullptr || snapGrid == nullptr ||
       !sampleRate->isNumber() || !characterDisplay->isString() || !snapEnabled->isBool() ||
       !snapGrid->isNumber()) {
     return core::failure<domain::Project>(core::ErrorCode::ParseError,
                                           "Project settings are invalid");
   }
+  if (schemaVersion >= 5 &&
+      (hostStartOffsetTick == nullptr || !hostStartOffsetTick->isNumber())) {
+    return core::failure<domain::Project>(
+        core::ErrorCode::ParseError,
+        "Schema 5 project is missing hostStartOffsetTick");
+  }
   project.settings().sampleRate = sampleRate->asNumber();
   project.settings().characterDisplay = parseCharacterMode(characterDisplay->asString());
   project.settings().snapEnabled = snapEnabled->asBool();
   project.settings().snapGrid = time::Tick{snapGrid->asInt64()};
+  project.settings().hostStartOffsetTick =
+      schemaVersion >= 5
+          ? time::Tick{hostStartOffsetTick != nullptr &&
+                                hostStartOffsetTick->isNumber()
+                            ? hostStartOffsetTick->asInt64()
+                            : 0}
+          : time::Tick{0};
   if (schemaVersion >= 4) {
     if (routingValue == nullptr) {
       return core::failure<domain::Project>(core::ErrorCode::ParseError,

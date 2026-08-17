@@ -1,5 +1,6 @@
 #include "seam/clap_editor/editor_runtime.hpp"
 #include "seam/rendering/pcm_cache.hpp"
+#include "seam/rendering/project_renderer.hpp"
 #include "seam/rendering/region_renderer.hpp"
 #include "seam/voicebank/catalog.hpp"
 #include "seam/voicebank/content_identity.hpp"
@@ -170,28 +171,29 @@ int main() {
   std::error_code error;
   std::filesystem::remove_all(cacheRoot, error);
   rendering::PcmCache cache{cacheRoot};
-  rendering::ProductionRegionRenderer renderer;
+  rendering::ProductionProjectRenderer renderer;
   const auto trackId = project.vocalTracks().front().id;
   const auto regionId = project.vocalTracks().front().regions.front().id;
-  auto direct = renderer.render(project, candidate.manifest, candidate.bankRoot,
-                                trackId, regionId, runtime.revision(), 48000U,
-                                rendering::RenderQuality::Preview, "original",
+  const std::array sources{rendering::TrackVoicebankSource{
+      .trackId = trackId,
+      .manifest = candidate.manifest,
+      .bankRoot = candidate.bankRoot,
+      .contentHash = candidate.contentHash,
+  }};
+  auto direct = renderer.render(project, sources, trackId, regionId,
+                                runtime.revision(), 48000U,
+                                rendering::RenderQuality::Preview,
                                 synthesis::PhraseRenderOptions{}, &cache);
-  if (!direct || direct.value().mono.size() * 2U != preview->stereo.size() ||
+  if (!direct || direct.value().channelCount != preview->channelCount ||
+      direct.value().interleaved != preview->interleaved ||
       direct.value().unitCount != preview->unitCount ||
-      direct.value().unitPlan != preview->unitPlan) return 10;
-  for (std::size_t index = 0; index < direct.value().mono.size(); ++index) {
-    if (direct.value().mono[index] != preview->stereo[index * 2U] ||
-        direct.value().mono[index] != preview->stereo[index * 2U + 1U]) {
-      return 11;
-    }
-  }
-  auto cached = renderer.render(project, candidate.manifest, candidate.bankRoot,
-                                trackId, regionId, runtime.revision(), 48000U,
-                                rendering::RenderQuality::Preview, "original",
+      direct.value().activeUnitPlan != preview->unitPlan) return 10;
+  auto cached = renderer.render(project, sources, trackId, regionId,
+                                runtime.revision(), 48000U,
+                                rendering::RenderQuality::Preview,
                                 synthesis::PhraseRenderOptions{}, &cache);
-  if (!cached || cached.value().cacheHits != cached.value().phrases.size() ||
-      cached.value().mono != direct.value().mono) return 12;
+  if (!cached || cached.value().cacheHits != cached.value().phraseCount ||
+      cached.value().interleaved != direct.value().interleaved) return 12;
 
   auto missingProject = project;
   missingProject.vocalTracks().front().voicebank = domain::VoicebankReference{

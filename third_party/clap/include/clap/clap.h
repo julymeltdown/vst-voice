@@ -242,6 +242,52 @@ typedef struct clap_plugin_audio_ports {
   bool (CLAP_ABI *get)(const clap_plugin_t *plugin, uint32_t index, bool is_input, clap_audio_port_info_t *info);
 } clap_plugin_audio_ports_t;
 
+
+enum clap_audio_ports_rescan_flags {
+  CLAP_AUDIO_PORTS_RESCAN_NAMES = 1 << 0,
+  CLAP_AUDIO_PORTS_RESCAN_FLAGS = 1 << 1,
+  CLAP_AUDIO_PORTS_RESCAN_CHANNEL_COUNT = 1 << 2,
+  CLAP_AUDIO_PORTS_RESCAN_PORT_TYPE = 1 << 3,
+  CLAP_AUDIO_PORTS_RESCAN_IN_PLACE_PAIR = 1 << 4,
+  CLAP_AUDIO_PORTS_RESCAN_LIST = 1 << 5
+};
+typedef struct clap_host_audio_ports {
+  bool (CLAP_ABI *is_rescan_flag_supported)(const clap_host_t *host,
+                                             uint32_t flag);
+  void (CLAP_ABI *rescan)(const clap_host_t *host, uint32_t flags);
+} clap_host_audio_ports_t;
+
+static const CLAP_CONSTEXPR char CLAP_EXT_AUDIO_PORTS_CONFIG[] =
+    "clap.audio-ports-config";
+static const CLAP_CONSTEXPR char CLAP_EXT_AUDIO_PORTS_CONFIG_INFO[] =
+    "clap.audio-ports-config-info/1";
+typedef struct clap_audio_ports_config {
+  clap_id id;
+  char name[CLAP_NAME_SIZE];
+  uint32_t input_port_count;
+  uint32_t output_port_count;
+  bool has_main_input;
+  uint32_t main_input_channel_count;
+  const char *main_input_port_type;
+  bool has_main_output;
+  uint32_t main_output_channel_count;
+  const char *main_output_port_type;
+} clap_audio_ports_config_t;
+typedef struct clap_plugin_audio_ports_config {
+  uint32_t (CLAP_ABI *count)(const clap_plugin_t *plugin);
+  bool (CLAP_ABI *get)(const clap_plugin_t *plugin, uint32_t index,
+                       clap_audio_ports_config_t *config);
+  bool (CLAP_ABI *select)(const clap_plugin_t *plugin, clap_id config_id);
+} clap_plugin_audio_ports_config_t;
+typedef struct clap_plugin_audio_ports_config_info {
+  clap_id (CLAP_ABI *current_config)(const clap_plugin_t *plugin);
+  bool (CLAP_ABI *get)(const clap_plugin_t *plugin,
+                       clap_audio_ports_config_t *config);
+} clap_plugin_audio_ports_config_info_t;
+typedef struct clap_host_audio_ports_config {
+  void (CLAP_ABI *rescan)(const clap_host_t *host);
+} clap_host_audio_ports_config_t;
+
 enum { CLAP_PARAM_IS_STEPPED = 1 << 0, CLAP_PARAM_IS_PERIODIC = 1 << 1,
        CLAP_PARAM_IS_HIDDEN = 1 << 2, CLAP_PARAM_IS_READONLY = 1 << 3,
        CLAP_PARAM_IS_BYPASS = 1 << 4, CLAP_PARAM_IS_AUTOMATABLE = 1 << 5,
