@@ -1,37 +1,596 @@
 #include "seam/phase12c/live_voice.hpp"
 #include "human_fixture.hpp"
+
 #include <algorithm>
 #include <cmath>
-#include <cstring>
 #include <limits>
+
 namespace seam::phase12c {
-namespace { constexpr double kPi=3.14159265358979323846;
-float at(const LiveVoicebankResource&r,double p,const UnitSpan&u){
- if(r.mono.empty())return 0; const auto lb=std::min<std::uint32_t>(u.loopBegin,u.end-1), le=std::max(lb+1,std::min(u.loopEnd,u.end));
- if(p>=le)p=lb+std::fmod(p-lb,double(le-lb)); if(p<0)p=0; auto i=std::min<std::size_t>(std::size_t(p),r.mono.size()-1);auto j=std::min(i+1,r.mono.size()-1);float t=float(p-i);return r.mono[i]+(r.mono[j]-r.mono[i])*t;
-}}
-std::size_t LiveVoicebankResource::bytes()const noexcept{return mono.size()*sizeof(float)+units.size()*sizeof(UnitSpan)+contentHash.size();}
-bool LiveVoicebankResource::valid()const noexcept{if(!trusted||sampleRate<8000||sampleRate>192000||mono.empty()||bytes()>kMaxResourceBytes)return false;for(auto&u:units)if(u.begin>=u.end||u.end>mono.size()||u.loopBegin<u.begin||u.loopEnd>u.end||u.loopBegin>=u.loopEnd)return false;return true;}
-std::shared_ptr<const LiveVoicebankResource> makeEmbeddedHumanResource(){auto r=std::make_shared<LiveVoicebankResource>();r->sampleRate=fixture::kSampleRate;r->trusted=true;r->contentHash=fixture::kDerivedPcmSha256;r->mono.reserve(fixture::kPcm.size());for(auto v:fixture::kPcm)r->mono.push_back(float(v)/32768.f);const auto n=std::uint32_t(r->mono.size());const auto a=std::max(2u,n*15u/100u),s=std::max(a+2,n*28u/100u),e=std::max(s+2,n*82u/100u);r->units={{UnitKind::Attack,0,s,a,s,60,-1,-1},{UnitKind::Sustain,s,e,s,e,60,-1,-1},{UnitKind::Transition,a,e,s,e,60,60,62},{UnitKind::Release,e,n,e,n,60,-1,-1}};return r;}
-bool ResourcePublisher::publish(std::shared_ptr<const LiveVoicebankResource>r)noexcept{if(!r||!r->valid())return false;int p=published_.load(std::memory_order_acquire),a=audio_.load(std::memory_order_acquire),slot=0;for(int i=0;i<3;++i)if(i!=p&&i!=a){slot=i;break;}slots_[slot]=std::move(r);published_.store(slot,std::memory_order_release);generation_.fetch_add(1,std::memory_order_release);return true;}
-const LiveVoicebankResource*ResourcePublisher::acquireForAudio()noexcept{int p=published_.load(std::memory_order_acquire);if(p<0)return nullptr;audio_.store(p,std::memory_order_release);return slots_[p].get();}
-void ResourcePublisher::releaseFromAudio()noexcept{audio_.store(-1,std::memory_order_release);}std::uint64_t ResourcePublisher::generation()const noexcept{return generation_.load(std::memory_order_acquire);}
-LiveVoiceEngine::LiveVoiceEngine(){publishResource(makeEmbeddedHumanResource());configure(48000,2);}
-void LiveVoiceEngine::configure(std::uint32_t sr,std::uint32_t ch)noexcept{sampleRate_=std::clamp(sr,8000u,192000u);outputChannels_=std::clamp(ch,1u,8u);}
-bool LiveVoiceEngine::publishResource(std::shared_ptr<const LiveVoicebankResource>r)noexcept{return publisher_.publish(std::move(r));}
-void LiveVoiceEngine::reset()noexcept{for(auto&v:voices_)v={};channelBend_.fill(0);stats_={};resource_=nullptr;}
-LiveStats LiveVoiceEngine::stats()const noexcept{return stats_;}
-const UnitSpan*LiveVoiceEngine::choose(UnitKind kind,int key,int from)const noexcept{if(!resource_)return nullptr;const UnitSpan*best=nullptr;int score=9999;for(auto&u:resource_->units){if(u.kind!=kind)continue;if(kind==UnitKind::Transition&&from>=0&&u.fromKey>=0&&u.fromKey!=from)continue;int d=std::abs(int(u.rootKey)-key);if(d<score){score=d;best=&u;}}return best;}
-LiveVoiceEngine::Voice*LiveVoiceEngine::allocateVoice()noexcept{for(auto&v:voices_)if(!v.active)return &v;auto*best=&voices_[0];for(auto&v:voices_)if(v.envelope<best->envelope||(v.envelope==best->envelope&&v.age<best->age))best=&v;best->tailSample=best->lastSample;best->tailLength=best->tailRemaining=std::max(64u,std::uint32_t(std::ceil(sampleRate_*.0015)));++stats_.steals;return best;}
-void LiveVoiceEngine::applyEvent(const LiveEvent&e,const LiveVoicebankResource*r)noexcept{resource_=r;if(!r)return;int ch=std::clamp<int>(e.channel,0,15);if(e.type==EventType::Midi1){++stats_.midiEvents;auto st=e.midi[0]&0xF0,mc=e.midi[0]&0x0F;if(st==0x90&&e.midi[2]){LiveEvent x=e;x.type=EventType::NoteOn;x.channel=mc;x.key=e.midi[1];x.value=e.midi[2]/127.f;applyEvent(x,r);}else if(st==0x80||(st==0x90&&e.midi[2]==0)){LiveEvent x=e;x.type=EventType::NoteOff;x.channel=mc;x.key=e.midi[1];applyEvent(x,r);}else if(st==0xE0){int v=int(e.midi[1])|(int(e.midi[2])<<7);channelBend_[mc]=float(v-8192)/8192.f*2.f;}else if(st==0xD0){for(auto&v:voices_)if(v.active&&v.channel==mc)v.pressure=e.midi[1]/127.f;}else if(st==0xB0&&e.midi[1]==74){for(auto&v:voices_)if(v.active&&v.channel==mc)v.timbre=e.midi[2]/127.f;}return;}
- if(e.type==EventType::PitchBend){channelBend_[ch]=std::clamp(e.value,-48.f,48.f);++stats_.expressionEvents;return;}if(e.type==EventType::Pressure||e.type==EventType::Timbre||e.type==EventType::Brightness){for(auto&v:voices_)if(v.active&&(e.noteId<0||v.noteId==e.noteId)){if(e.type==EventType::Pressure)v.pressure=std::clamp(e.value,0.f,1.f);if(e.type==EventType::Timbre)v.timbre=std::clamp(e.value,0.f,1.f);if(e.type==EventType::Brightness)v.brightness=std::clamp(e.value,0.f,1.f);}++stats_.expressionEvents;return;}
- if(e.type==EventType::NoteOn&&e.value>0){int from=-1;for(auto&v:voices_)if(v.active&&!v.releasing&&v.channel==ch){from=v.key;break;}auto*v=allocateVoice();float tail=v->tailSample;auto tr=v->tailRemaining,tl=v->tailLength;*v={};v->tailSample=tail;v->tailRemaining=tr;v->tailLength=tl;v->active=true;v->noteId=e.noteId;v->channel=ch;v->key=e.key;v->velocity=std::clamp(e.value,0.f,1.f);v->age=++ageCounter_;v->sustain=choose(UnitKind::Sustain,e.key);v->release=choose(UnitKind::Release,e.key);auto*attack=choose(UnitKind::Attack,e.key);auto*transition=from>=0?choose(UnitKind::Transition,e.key,from):nullptr;if(transition){v->sustain=transition;v->position=transition->begin;++stats_.transitionHits;}else{v->position=attack?attack->begin:(v->sustain?v->sustain->begin:0);if(from>=0)++stats_.transitionFallbacks;}v->increment=std::pow(2.0,(double(e.key)-double(v->sustain?v->sustain->rootKey:60)+channelBend_[ch])/12.0)*double(r->sampleRate)/sampleRate_;++stats_.noteOns;return;}
- if(e.type==EventType::NoteOff||e.type==EventType::NoteChoke||(e.type==EventType::NoteOn&&e.value<=0)){for(auto&v:voices_)if(v.active&&(e.noteId>=0?v.noteId==e.noteId:(v.channel==ch&&v.key==e.key))){if(e.type==EventType::NoteChoke){v.tailSample=v.lastSample;v.tailLength=v.tailRemaining=std::max(64u,std::uint32_t(std::ceil(sampleRate_*.0015)));v.envelope=0;v.releasing=true;}else v.releasing=true;}++stats_.noteOffs;}
+namespace {
+constexpr double kPi = 3.14159265358979323846;
+
+float interpolate(const LiveVoicebankResource& resource,
+                  double position,
+                  bool loop,
+                  const UnitSpan& unit) noexcept {
+  if (resource.mono.empty() || unit.end <= unit.begin) {
+    return 0.0F;
+  }
+
+  if (loop) {
+    const auto loopBegin = std::clamp(unit.loopBegin, unit.begin, unit.end - 1);
+    const auto loopEnd = std::clamp(unit.loopEnd, loopBegin + 1, unit.end);
+    if (position >= static_cast<double>(loopEnd)) {
+      position = static_cast<double>(loopBegin) +
+                 std::fmod(position - static_cast<double>(loopBegin),
+                           static_cast<double>(loopEnd - loopBegin));
+    }
+  }
+
+  if (position < static_cast<double>(unit.begin)) {
+    position = static_cast<double>(unit.begin);
+  }
+  if (position >= static_cast<double>(unit.end)) {
+    position = static_cast<double>(unit.end - 1);
+  }
+
+  const auto first = std::min<std::size_t>(
+      static_cast<std::size_t>(position), resource.mono.size() - 1);
+  const auto second = std::min(first + 1, resource.mono.size() - 1);
+  const auto fraction = static_cast<float>(position - static_cast<double>(first));
+  return resource.mono[first] +
+         (resource.mono[second] - resource.mono[first]) * fraction;
 }
-float LiveVoiceEngine::renderVoice(Voice&v,const LiveVoicebankResource&r)noexcept{if(!v.active||!v.sustain)return 0;v.increment=std::pow(2.0,(double(v.key)-double(v.sustain->rootKey)+channelBend_[std::clamp<int>(v.channel,0,15)])/12.0)*double(r.sampleRate)/sampleRate_;if(v.releasing)v.envelope=std::max(0.f,v.envelope-1.f/std::max(64.f,float(sampleRate_)*.025f));else v.envelope=std::min(1.f,v.envelope+1.f/std::max(64.f,float(sampleRate_)*.008f));if(v.releasing&&v.envelope<=0){v.active=false;return 0;}float x=at(r,v.position,*v.sustain);v.position+=v.increment;float color=.75f+.25f*v.pressure;float y=x*v.envelope*v.velocity*color;if(v.tailRemaining){float t=float(v.tailRemaining)/std::max(1u,v.tailLength);y+=v.tailSample*std::sin(t*float(kPi)*.5f);--v.tailRemaining;}v.lastSample=y;return y;}
-void LiveVoiceEngine::renderRange(float*const*out,std::uint32_t ch,std::uint32_t b,std::uint32_t e,const LiveVoicebankResource*r)noexcept{for(std::uint32_t i=b;i<e;++i){float x=0;if(r)for(auto&v:voices_)x+=renderVoice(v,*r);x=std::clamp(x,-1.f,1.f);for(std::uint32_t c=0;c<ch;++c)out[c][i]=x;++stats_.renderedFrames;}}
-void LiveVoiceEngine::process(std::span<const LiveEvent>events,float*const*out,std::uint32_t ch,std::uint32_t frames)noexcept{ch=std::clamp(ch,1u,8u);for(std::uint32_t c=0;c<ch;++c)if(out[c])std::fill(out[c],out[c]+frames,0.f);resource_=publisher_.acquireForAudio();if(!resource_||!resource_->valid()){publisher_.releaseFromAudio();return;}std::uint32_t cur=0;for(auto&e:events){auto off=std::min(e.sampleOffset,frames);renderRange(out,ch,cur,off,resource_);applyEvent(e,resource_);cur=off;}renderRange(out,ch,cur,frames,resource_);publisher_.releaseFromAudio();}
-void LiveVoiceEngine::noteOn(std::int32_t id,std::int32_t key,float vel)noexcept{resource_=publisher_.acquireForAudio();applyEvent({0,EventType::NoteOn,id,0,std::int16_t(key),vel,{}},resource_);publisher_.releaseFromAudio();}
-void LiveVoiceEngine::noteOff(std::int32_t id,std::int32_t key)noexcept{resource_=publisher_.acquireForAudio();applyEvent({0,EventType::NoteOff,id,0,std::int16_t(key),0,{}},resource_);publisher_.releaseFromAudio();}
-float LiveVoiceEngine::renderSample()noexcept{resource_=publisher_.acquireForAudio();float x=0;if(resource_&&resource_->valid())for(auto&v:voices_)x+=renderVoice(v,*resource_);publisher_.releaseFromAudio();return std::clamp(x,-1.f,1.f);}
-} // namespace seam::phase12c
+}  // namespace
+
+std::size_t LiveVoicebankResource::bytes() const noexcept {
+  return mono.size() * sizeof(float) + units.size() * sizeof(UnitSpan) +
+         contentHash.size();
+}
+
+bool LiveVoicebankResource::valid() const noexcept {
+  if (!trusted || sampleRate < 8000 || sampleRate > 192000 || mono.empty() ||
+      bytes() > kMaxResourceBytes) {
+    return false;
+  }
+  for (const auto& unit : units) {
+    if (unit.begin >= unit.end || unit.end > mono.size() ||
+        unit.loopBegin < unit.begin || unit.loopEnd > unit.end ||
+        unit.loopBegin >= unit.loopEnd) {
+      return false;
+    }
+  }
+  return true;
+}
+
+std::shared_ptr<const LiveVoicebankResource> makeEmbeddedHumanResource() {
+  auto resource = std::make_shared<LiveVoicebankResource>();
+  resource->sampleRate = fixture::kSampleRate;
+  resource->trusted = true;
+  resource->contentHash = fixture::kDerivedPcmSha256;
+  resource->mono.reserve(fixture::kPcm.size());
+  for (const auto sample : fixture::kPcm) {
+    resource->mono.push_back(static_cast<float>(sample) / 32768.0F);
+  }
+
+  const auto frameCount = static_cast<std::uint32_t>(resource->mono.size());
+  const auto attackEnd = std::max(2u, frameCount * 15u / 100u);
+  const auto sustainStart = std::max(attackEnd + 2u, frameCount * 28u / 100u);
+  const auto releaseStart = std::max(sustainStart + 2u, frameCount * 82u / 100u);
+
+  resource->units = {
+      {UnitKind::Attack, 0, sustainStart, attackEnd, sustainStart, 60, -1, -1},
+      {UnitKind::Sustain, sustainStart, releaseStart, sustainStart,
+       releaseStart, 60, -1, -1},
+      {UnitKind::Transition, attackEnd, releaseStart, sustainStart,
+       releaseStart, 60, 60, 62},
+      {UnitKind::Release, releaseStart, frameCount, releaseStart, frameCount,
+       60, -1, -1},
+  };
+  return resource;
+}
+
+bool ResourcePublisher::publish(
+    std::shared_ptr<const LiveVoicebankResource> resource) noexcept {
+  if (!resource || !resource->valid()) {
+    clear();
+    return false;
+  }
+
+  const auto current = published_.load(std::memory_order_acquire);
+  const auto audio = audio_.load(std::memory_order_acquire);
+  int slot = -1;
+  for (int candidate = 0; candidate < 3; ++candidate) {
+    if (candidate != current && candidate != audio) {
+      slot = candidate;
+      break;
+    }
+  }
+  if (slot < 0) {
+    return false;
+  }
+
+  slots_[slot] = std::move(resource);
+  published_.store(slot, std::memory_order_release);
+  generation_.fetch_add(1, std::memory_order_release);
+  return true;
+}
+
+void ResourcePublisher::clear() noexcept {
+  published_.store(-1, std::memory_order_release);
+  generation_.fetch_add(1, std::memory_order_release);
+}
+
+const LiveVoicebankResource* ResourcePublisher::acquireForAudio() noexcept {
+  const auto slot = published_.load(std::memory_order_acquire);
+  if (slot < 0) {
+    return nullptr;
+  }
+  audio_.store(slot, std::memory_order_release);
+  return slots_[slot].get();
+}
+
+void ResourcePublisher::releaseFromAudio() noexcept {
+  audio_.store(-1, std::memory_order_release);
+}
+
+std::uint64_t ResourcePublisher::generation() const noexcept {
+  return generation_.load(std::memory_order_acquire);
+}
+
+LiveVoiceEngine::LiveVoiceEngine() {
+  publishResource(makeEmbeddedHumanResource());
+  configure(48000, 2);
+}
+
+void LiveVoiceEngine::configure(std::uint32_t sampleRate,
+                                std::uint32_t outputChannels) noexcept {
+  sampleRate_ = std::clamp(sampleRate, 8000u, 192000u);
+  outputChannels_ = std::clamp(outputChannels, 1u, 8u);
+}
+
+bool LiveVoiceEngine::publishResource(
+    std::shared_ptr<const LiveVoicebankResource> resource) noexcept {
+  const auto result = publisher_.publish(std::move(resource));
+  if (!result) {
+    resource_ = nullptr;
+  }
+  return result;
+}
+
+void LiveVoiceEngine::clearResource() noexcept {
+  publisher_.clear();
+  resource_ = nullptr;
+  for (auto& voice : voices_) {
+    voice = {};
+  }
+}
+
+void LiveVoiceEngine::reset() noexcept {
+  for (auto& voice : voices_) {
+    voice = {};
+  }
+  channelBend_.fill(0.0F);
+  stats_ = {};
+  resource_ = nullptr;
+}
+
+LiveStats LiveVoiceEngine::stats() const noexcept { return stats_; }
+
+const UnitSpan* LiveVoiceEngine::choose(UnitKind kind,
+                                        int key,
+                                        int from,
+                                        int to) const noexcept {
+  if (!resource_) {
+    return nullptr;
+  }
+  const UnitSpan* best = nullptr;
+  auto bestDistance = std::numeric_limits<int>::max();
+  for (const auto& unit : resource_->units) {
+    if (unit.kind != kind) {
+      continue;
+    }
+    if (kind == UnitKind::Transition) {
+      if (from >= 0 && unit.fromKey >= 0 && unit.fromKey != from) {
+        continue;
+      }
+      if (to >= 0 && unit.toKey >= 0 && unit.toKey != to) {
+        continue;
+      }
+    }
+    const auto distance = std::abs(static_cast<int>(unit.rootKey) - key);
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      best = &unit;
+    }
+  }
+  return best;
+}
+
+LiveVoiceEngine::Voice* LiveVoiceEngine::findLegatoSource(
+    std::int16_t channel) noexcept {
+  Voice* latest = nullptr;
+  for (auto& voice : voices_) {
+    if (voice.active && !voice.releasing && voice.channel == channel &&
+        (!latest || voice.age > latest->age)) {
+      latest = &voice;
+    }
+  }
+  return latest;
+}
+
+LiveVoiceEngine::Voice* LiveVoiceEngine::allocateVoice() noexcept {
+  for (auto& voice : voices_) {
+    if (!voice.active) {
+      return &voice;
+    }
+  }
+
+  auto* candidate = &voices_.front();
+  for (auto& voice : voices_) {
+    if (voice.envelope < candidate->envelope ||
+        (voice.envelope == candidate->envelope && voice.age < candidate->age)) {
+      candidate = &voice;
+    }
+  }
+
+  candidate->tailSample = candidate->lastSample;
+  candidate->tailLength = std::max(
+      64u, static_cast<std::uint32_t>(std::ceil(sampleRate_ * 0.0015)));
+  candidate->tailRemaining = candidate->tailLength;
+  ++stats_.steals;
+  return candidate;
+}
+
+void LiveVoiceEngine::beginRelease(Voice& voice, bool choke) noexcept {
+  voice.releasing = true;
+  if (choke) {
+    voice.tailSample = voice.lastSample;
+    voice.tailLength = std::max(
+        64u, static_cast<std::uint32_t>(std::ceil(sampleRate_ * 0.0015)));
+    voice.tailRemaining = voice.tailLength;
+    voice.envelope = 0.0F;
+    voice.active = false;
+    voice.stage = VoiceStage::Inactive;
+    return;
+  }
+
+  if (voice.release) {
+    voice.current = voice.release;
+    voice.position = voice.release->begin;
+    voice.stage = VoiceStage::Release;
+  } else {
+    voice.stage = VoiceStage::Release;
+  }
+}
+
+void LiveVoiceEngine::applyEvent(
+    const LiveEvent& event,
+    const LiveVoicebankResource* resource) noexcept {
+  resource_ = resource;
+  if (!resource) {
+    return;
+  }
+
+  const auto channel = static_cast<std::int16_t>(
+      std::clamp<int>(event.channel, 0, 15));
+
+  if (event.type == EventType::Midi1) {
+    ++stats_.midiEvents;
+    const auto status = event.midi[0] & 0xF0u;
+    const auto midiChannel = static_cast<std::int16_t>(event.midi[0] & 0x0Fu);
+    if (status == 0x90u && event.midi[2] != 0) {
+      auto translated = event;
+      translated.type = EventType::NoteOn;
+      translated.channel = midiChannel;
+      translated.key = event.midi[1];
+      translated.value = static_cast<float>(event.midi[2]) / 127.0F;
+      applyEvent(translated, resource);
+    } else if (status == 0x80u ||
+               (status == 0x90u && event.midi[2] == 0)) {
+      auto translated = event;
+      translated.type = EventType::NoteOff;
+      translated.channel = midiChannel;
+      translated.key = event.midi[1];
+      applyEvent(translated, resource);
+    } else if (status == 0xE0u) {
+      const auto value = static_cast<int>(event.midi[1]) |
+                         (static_cast<int>(event.midi[2]) << 7);
+      channelBend_[midiChannel] =
+          static_cast<float>(value - 8192) / 8192.0F * 2.0F;
+    } else if (status == 0xD0u) {
+      for (auto& voice : voices_) {
+        if (voice.active && voice.channel == midiChannel) {
+          voice.pressure = static_cast<float>(event.midi[1]) / 127.0F;
+        }
+      }
+    } else if (status == 0xB0u && event.midi[1] == 74) {
+      for (auto& voice : voices_) {
+        if (voice.active && voice.channel == midiChannel) {
+          voice.timbre = static_cast<float>(event.midi[2]) / 127.0F;
+        }
+      }
+    }
+    return;
+  }
+
+  if (event.type == EventType::PitchBend) {
+    channelBend_[channel] = std::clamp(event.value, -48.0F, 48.0F);
+    ++stats_.expressionEvents;
+    return;
+  }
+
+  if (event.type == EventType::Pressure || event.type == EventType::Timbre ||
+      event.type == EventType::Brightness) {
+    for (auto& voice : voices_) {
+      if (!voice.active ||
+          (event.noteId >= 0 && voice.noteId != event.noteId)) {
+        continue;
+      }
+      if (event.type == EventType::Pressure) {
+        voice.pressure = std::clamp(event.value, 0.0F, 1.0F);
+      } else if (event.type == EventType::Timbre) {
+        voice.timbre = std::clamp(event.value, 0.0F, 1.0F);
+      } else {
+        voice.brightness = std::clamp(event.value, 0.0F, 1.0F);
+      }
+    }
+    ++stats_.expressionEvents;
+    return;
+  }
+
+  if (event.type == EventType::NoteOn && event.value > 0.0F) {
+    auto* legatoSource = findLegatoSource(channel);
+    const auto fromKey = legatoSource ? legatoSource->key : -1;
+    auto* voice = allocateVoice();
+
+    const auto savedTail = voice->tailSample;
+    const auto savedTailRemaining = voice->tailRemaining;
+    const auto savedTailLength = voice->tailLength;
+    *voice = {};
+    voice->tailSample = savedTail;
+    voice->tailRemaining = savedTailRemaining;
+    voice->tailLength = savedTailLength;
+    voice->active = true;
+    voice->noteId = event.noteId;
+    voice->channel = channel;
+    voice->key = event.key;
+    voice->velocity = std::clamp(event.value, 0.0F, 1.0F);
+    voice->age = ++ageCounter_;
+    voice->attack = choose(UnitKind::Attack, event.key);
+    voice->sustain = choose(UnitKind::Sustain, event.key);
+    voice->release = choose(UnitKind::Release, event.key);
+    voice->transition = legatoSource
+                            ? choose(UnitKind::Transition, event.key,
+                                     legatoSource->key, event.key)
+                            : nullptr;
+
+    if (voice->transition) {
+      voice->current = voice->transition;
+      voice->position = voice->transition->begin;
+      voice->stage = VoiceStage::Transition;
+      ++stats_.transitionHits;
+    } else if (voice->attack) {
+      voice->current = voice->attack;
+      voice->position = voice->attack->begin;
+      voice->stage = VoiceStage::Attack;
+    } else {
+      voice->current = voice->sustain;
+      voice->position = voice->sustain ? voice->sustain->begin : 0.0;
+      voice->stage = VoiceStage::Sustain;
+    }
+
+    if (legatoSource && legatoSource != voice) {
+      const auto crossfade = std::max(
+          64u, static_cast<std::uint32_t>(std::ceil(sampleRate_ * 0.0015)));
+      legatoSource->legatoFadeLength = crossfade;
+      legatoSource->legatoFadeOutRemaining = crossfade;
+      voice->legatoFadeLength = crossfade;
+      voice->legatoFadeInRemaining = crossfade;
+      if (!voice->transition) {
+        ++stats_.transitionFallbacks;
+      }
+    }
+
+    ++stats_.noteOns;
+    return;
+  }
+
+  if (event.type == EventType::NoteOff ||
+      event.type == EventType::NoteChoke ||
+      (event.type == EventType::NoteOn && event.value <= 0.0F)) {
+    for (auto& voice : voices_) {
+      if (!voice.active) {
+        continue;
+      }
+      const auto match = event.noteId >= 0
+                             ? voice.noteId == event.noteId
+                             : (voice.channel == channel && voice.key == event.key);
+      if (match) {
+        beginRelease(voice, event.type == EventType::NoteChoke);
+      }
+    }
+    ++stats_.noteOffs;
+  }
+}
+
+void LiveVoiceEngine::advanceStage(Voice& voice) noexcept {
+  if (voice.stage == VoiceStage::Attack ||
+      voice.stage == VoiceStage::Transition) {
+    if (voice.sustain) {
+      voice.current = voice.sustain;
+      voice.position = voice.sustain->begin;
+      voice.stage = VoiceStage::Sustain;
+    } else {
+      beginRelease(voice, false);
+    }
+  } else if (voice.stage == VoiceStage::Release) {
+    voice.active = false;
+    voice.stage = VoiceStage::Inactive;
+  }
+}
+
+float LiveVoiceEngine::renderVoice(
+    Voice& voice,
+    const LiveVoicebankResource& resource) noexcept {
+  if (!voice.active || !voice.current) {
+    return 0.0F;
+  }
+
+  if (voice.position >= static_cast<double>(voice.current->end)) {
+    advanceStage(voice);
+    if (!voice.active || !voice.current) {
+      return 0.0F;
+    }
+  }
+
+  const auto bend = channelBend_[std::clamp<int>(voice.channel, 0, 15)];
+  voice.increment =
+      std::pow(2.0,
+               (static_cast<double>(voice.key) - voice.current->rootKey + bend) /
+                   12.0) *
+      static_cast<double>(resource.sampleRate) / sampleRate_;
+
+  if (voice.stage == VoiceStage::Release || voice.releasing) {
+    voice.envelope = std::max(
+        0.0F, voice.envelope -
+                  1.0F / std::max(64.0F, static_cast<float>(sampleRate_) * 0.025F));
+  } else {
+    voice.envelope = std::min(
+        1.0F, voice.envelope +
+                  1.0F / std::max(64.0F, static_cast<float>(sampleRate_) * 0.008F));
+  }
+
+  if (voice.envelope <= 0.0F &&
+      (voice.stage == VoiceStage::Release || voice.releasing)) {
+    voice.active = false;
+    voice.stage = VoiceStage::Inactive;
+    return 0.0F;
+  }
+
+  const auto shouldLoop = voice.stage == VoiceStage::Sustain;
+  auto sample = interpolate(resource, voice.position, shouldLoop, *voice.current);
+  voice.position += voice.increment;
+
+  const auto pressureGain = 0.75F + 0.25F * voice.pressure;
+  const auto timbreGain = 0.9F + 0.1F * voice.timbre;
+  const auto brightnessGain = 0.9F + 0.1F * voice.brightness;
+  auto result = sample * voice.envelope * voice.velocity * pressureGain *
+                timbreGain * brightnessGain;
+
+  if (voice.legatoFadeInRemaining && voice.legatoFadeLength) {
+    const auto progress = 1.0F -
+                          static_cast<float>(voice.legatoFadeInRemaining) /
+                              voice.legatoFadeLength;
+    result *= std::sin(progress * static_cast<float>(kPi) * 0.5F);
+    --voice.legatoFadeInRemaining;
+  }
+
+  if (voice.legatoFadeOutRemaining && voice.legatoFadeLength) {
+    const auto progress = 1.0F -
+                          static_cast<float>(voice.legatoFadeOutRemaining) /
+                              voice.legatoFadeLength;
+    result *= std::cos(progress * static_cast<float>(kPi) * 0.5F);
+    --voice.legatoFadeOutRemaining;
+    if (!voice.legatoFadeOutRemaining) {
+      beginRelease(voice, false);
+    }
+  }
+
+  if (voice.tailRemaining && voice.tailLength) {
+    const auto ratio = static_cast<float>(voice.tailRemaining) /
+                       voice.tailLength;
+    result += voice.tailSample *
+              std::sin(ratio * static_cast<float>(kPi) * 0.5F);
+    --voice.tailRemaining;
+  }
+
+  voice.lastSample = result;
+  return result;
+}
+
+void LiveVoiceEngine::renderRange(
+    float* const* outputs,
+    std::uint32_t channels,
+    std::uint32_t begin,
+    std::uint32_t end,
+    const LiveVoicebankResource* resource) noexcept {
+  for (auto frame = begin; frame < end; ++frame) {
+    auto mixed = 0.0F;
+    if (resource) {
+      for (auto& voice : voices_) {
+        mixed += renderVoice(voice, *resource);
+      }
+    }
+    mixed = std::clamp(mixed, -1.0F, 1.0F);
+    for (std::uint32_t channel = 0; channel < channels; ++channel) {
+      if (outputs[channel]) {
+        outputs[channel][frame] = mixed;
+      }
+    }
+    ++stats_.renderedFrames;
+  }
+}
+
+void LiveVoiceEngine::process(
+    std::span<const LiveEvent> events,
+    float* const* outputs,
+    std::uint32_t channels,
+    std::uint32_t frames) noexcept {
+  channels = std::clamp(channels, 1u, 8u);
+  for (std::uint32_t channel = 0; channel < channels; ++channel) {
+    if (outputs[channel]) {
+      std::fill(outputs[channel], outputs[channel] + frames, 0.0F);
+    }
+  }
+
+  resource_ = publisher_.acquireForAudio();
+  if (!resource_ || !resource_->valid()) {
+    stats_.silentFramesNoResource += frames;
+    publisher_.releaseFromAudio();
+    return;
+  }
+
+  auto current = 0u;
+  for (const auto& event : events) {
+    const auto offset = std::clamp(event.sampleOffset, current, frames);
+    renderRange(outputs, channels, current, offset, resource_);
+    applyEvent(event, resource_);
+    current = offset;
+  }
+  renderRange(outputs, channels, current, frames, resource_);
+  publisher_.releaseFromAudio();
+}
+
+void LiveVoiceEngine::noteOn(std::int32_t noteId,
+                             std::int32_t key,
+                             float velocity) noexcept {
+  resource_ = publisher_.acquireForAudio();
+  applyEvent({0, EventType::NoteOn, noteId, 0,
+              static_cast<std::int16_t>(key), velocity, {}},
+             resource_);
+  publisher_.releaseFromAudio();
+}
+
+void LiveVoiceEngine::noteOff(std::int32_t noteId,
+                              std::int32_t key) noexcept {
+  resource_ = publisher_.acquireForAudio();
+  applyEvent({0, EventType::NoteOff, noteId, 0,
+              static_cast<std::int16_t>(key), 0.0F, {}},
+             resource_);
+  publisher_.releaseFromAudio();
+}
+
+float LiveVoiceEngine::renderSample() noexcept {
+  resource_ = publisher_.acquireForAudio();
+  auto mixed = 0.0F;
+  if (resource_ && resource_->valid()) {
+    for (auto& voice : voices_) {
+      mixed += renderVoice(voice, *resource_);
+    }
+  }
+  publisher_.releaseFromAudio();
+  return std::clamp(mixed, -1.0F, 1.0F);
+}
+
+}  // namespace seam::phase12c
