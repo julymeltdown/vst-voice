@@ -250,8 +250,12 @@ void LiveVoiceEngine::beginRelease(Voice& voice, bool choke) noexcept {
         64u, static_cast<std::uint32_t>(std::ceil(sampleRate_ * 0.0015)));
     voice.tailRemaining = voice.tailLength;
     voice.envelope = 0.0F;
-    voice.active = false;
-    voice.stage = VoiceStage::Inactive;
+    voice.releasing = true;
+    voice.stage = VoiceStage::Release;
+    if (!voice.current) {
+      voice.current = voice.sustain;
+      voice.position = voice.current ? voice.current->begin : 0.0;
+    }
     return;
   }
 
@@ -462,7 +466,8 @@ float LiveVoiceEngine::renderVoice(
   }
 
   if (voice.envelope <= 0.0F &&
-      (voice.stage == VoiceStage::Release || voice.releasing)) {
+      (voice.stage == VoiceStage::Release || voice.releasing) &&
+      voice.tailRemaining == 0) {
     voice.active = false;
     voice.stage = VoiceStage::Inactive;
     return 0.0F;

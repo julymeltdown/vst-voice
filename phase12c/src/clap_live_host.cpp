@@ -34,6 +34,8 @@ struct InputEvents {
   std::vector<const clap_event_header_t*> events;
   clap_input_events_t iface{};
   InputEvents() {
+    storage.reserve(16);
+    events.reserve(16);
     iface.ctx = this;
     iface.size = [](const clap_input_events_t* x) {
       return static_cast<std::uint32_t>(static_cast<const InputEvents*>(x->ctx)->events.size());
