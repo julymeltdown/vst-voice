@@ -1,51 +1,34 @@
-# Project SEAM Phase 13B implementation report
+# Project SEAM Phase 13B Implementation Report
 
-## Purpose
+Phase 13B implements the fail-closed release-engineering layer for Official
+Voicebank 01 and Character 01. It verifies bounded, non-empty, hash-matched
+evidence; audits voicebank inventories and character assets; produces
+deterministic development-only content archives; and blocks G5 unless the
+voicebank, character, prior mandatory matrices, final EULA, and voicebank
+licence all carry verifiable PASS evidence.
 
-Phase 13B implements a fail-closed content, rights and product-readiness layer
-for Official Voicebank 01 and Character 01. It validates evidence formats,
-asset inventories, hashes and release gates. It does not fabricate performer
-contracts, recording sessions, trademark clearance, IP assignments or legal
-approval.
+Engineering surfaces implemented:
 
-```text
-Engineering implementation  PASS after verification
-Official Voicebank 01       BLOCKED
-Character 01                BLOCKED
-G5 product acceptance       BLOCKED
-```
+- bounded JSON and evidence-file validation;
+- safe component-root resolution and symlink/root-escape rejection;
+- Official Voicebank 01 dossier and inventory gate;
+- Character 01 commercial-release dossier and asset gate;
+- verified external-target evidence in the combined product gate;
+- deterministic Character 01 development image derivation;
+- deterministic development and blocked-review ZIP generation;
+- contract, recording, QA, naming, IP, and legal evidence templates;
+- CMake/CTest and repository source-contract integration;
+- portable checked-in evidence paths.
 
-## Implemented surfaces
-
-- safe evidence paths, regular-file checks, symlink/root-escape rejection;
-- per-file 64 MiB bounds and SHA-256 verification;
-- Official Voicebank 01 inventory and evidence dossier;
-- Character 01 production-asset and rights dossier;
-- four-renderer listening-QA requirement;
-- deterministic Character 01 development derivatives;
-- deterministic development-only content bundle;
-- fail-closed G5 aggregation across Phase 12C, Phase 13A and Phase 13B;
-- verification of both simple evidence records and Phase 13A host logs;
-- deterministic blocked candidate package;
-- contract, recording, retake, listening-QA, clearance and approval templates;
-- CMake/CTest and source-contract integration.
-
-## Release boundary
-
-The public-domain human voice remains a technical fixture with
-`official=false` and `contractedSinger=false`. Current Character 01 images and
-blockouts remain `developmentOnly=true` and cannot satisfy the production
-turnaround/model/rig/animation or clearance gates.
-
-G5 requires accepted voicebank and character dossiers, actual mandatory target
-runtime evidence, final EULA and voicebank licence evidence, and zero unresolved
-mandatory items. Evidence paths and hashes are revalidated; a text-only PASS
-claim is insufficient.
-
-Mandatory future validation is defined in:
+Current verdict:
 
 ```text
-docs/phase13b/MANDATORY_FUTURE_VALIDATION.md
-docs/phase13b/MANDATORY_OFFICIAL_VOICEBANK_AND_CHARACTER_VALIDATION.md
-docs/phase13b/mandatory-validation-matrix.json
+Phase 13B engineering  PASS after fresh verification
+Official Voicebank 01  BLOCKED
+Character 01           BLOCKED
+G5 product release     BLOCKED
 ```
+
+The blocked state is intentional. Software cannot fabricate a performer
+contract, completed directed recording, trademark clearance, artist IP
+assignment, production 3D assets, final licences, or legal approval.
