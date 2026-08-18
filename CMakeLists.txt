@@ -111,6 +111,16 @@ target_include_directories(seam_application PUBLIC libs/seam-application/include
 target_link_libraries(seam_application PUBLIC seam_domain seam_core)
 seam_apply_compiler_options(seam_application)
 
+add_library(seam_authoring_runtime
+  libs/seam-authoring-runtime/src/project_document.cpp
+)
+target_include_directories(seam_authoring_runtime PUBLIC
+  libs/seam-authoring-runtime/include)
+target_link_libraries(seam_authoring_runtime PUBLIC
+  seam_application seam_domain seam_core)
+seam_apply_compiler_options(seam_authoring_runtime)
+
+
 add_library(seam_editor_ui
   libs/seam-editor-ui/src/timeline_transform.cpp
   libs/seam-editor-ui/src/note_spatial_index.cpp
@@ -668,6 +678,7 @@ if(SEAM_BUILD_TESTS)
     tests/test_platform_capabilities.cpp
     tests/test_text.cpp
     tests/test_clap.cpp
+    tests/test_project_document.cpp
   )
   if(SEAM_BUILD_CLAP_EDITOR_PLUGIN)
     list(APPEND SEAM_TEST_SOURCES
@@ -683,7 +694,7 @@ if(SEAM_BUILD_TESTS)
   target_include_directories(seam_tests PRIVATE tests)
   target_link_libraries(seam_tests PRIVATE
     seam_distribution seam_editor_inspection seam_rendering seam_synthesis seam_voicebank seam_editor_ui seam_phonemizer seam_formats
-    seam_playback_platform seam_platform seam_application seam_domain seam_text seam_clap seam_core)
+    seam_playback_platform seam_platform seam_authoring_runtime seam_application seam_domain seam_text seam_clap seam_core)
   if(SEAM_BUILD_NATIVE_DESKTOP)
     target_link_libraries(seam_tests PRIVATE seam_native_ui)
   endif()
