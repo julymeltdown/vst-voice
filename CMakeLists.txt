@@ -113,11 +113,12 @@ seam_apply_compiler_options(seam_application)
 
 add_library(seam_authoring_runtime
   libs/seam-authoring-runtime/src/project_document.cpp
+  libs/seam-authoring-runtime/src/voicebank_session.cpp
 )
 target_include_directories(seam_authoring_runtime PUBLIC
   libs/seam-authoring-runtime/include)
 target_link_libraries(seam_authoring_runtime PUBLIC
-  seam_application seam_domain seam_core)
+  seam_voicebank seam_application seam_domain seam_core)
 seam_apply_compiler_options(seam_authoring_runtime)
 
 
@@ -444,7 +445,7 @@ if(SEAM_BUILD_CLAP_EDITOR_PLUGIN)
     libs/seam-clap-editor/generated)
   target_link_libraries(seam_clap_editor PUBLIC
     seam_native_ui seam_editor_inspection seam_rendering seam_synthesis
-    seam_voicebank seam_editor_ui seam_phonemizer seam_formats
+    seam_authoring_runtime seam_voicebank seam_editor_ui seam_phonemizer seam_formats
     seam_application seam_domain seam_text seam_core Threads::Threads)
   if(WIN32)
     target_compile_definitions(seam_clap_editor PRIVATE
@@ -679,6 +680,7 @@ if(SEAM_BUILD_TESTS)
     tests/test_text.cpp
     tests/test_clap.cpp
     tests/test_project_document.cpp
+    tests/test_authoring_voicebank_session.cpp
   )
   if(SEAM_BUILD_CLAP_EDITOR_PLUGIN)
     list(APPEND SEAM_TEST_SOURCES

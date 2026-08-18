@@ -636,21 +636,20 @@ EditorRuntime::EditorRuntime(
         trackId_ = firstTrackId(created);
         return created;
       }()),
-      voicebankRoots_(runtimeVoicebankRoots(std::move(voicebankRoots))) {
-  auto scanned = voicebankCatalog_.scan(voicebankRoots_);
-  if (scanned) {
-    voicebanks_ = std::move(scanned).value();
-  } else {
+      voicebankSession_(runtimeVoicebankRoots(std::move(voicebankRoots))) {
+  const auto refreshed = voicebankSession_.refresh();
+  if (!refreshed) {
     voicebankResolution_.status = voicebank::VoicebankResolveStatus::Missing;
-    voicebankResolution_.diagnostic = scanned.error().message;
+    voicebankResolution_.diagnostic = refreshed.error().message;
   }
   if (createdDefault_) {
+    const auto candidates = voicebankSession_.candidates();
     const auto demo = std::find_if(
-        voicebanks_.begin(), voicebanks_.end(), [](const auto& candidate) {
+        candidates.begin(), candidates.end(), [](const auto& candidate) {
           return candidate.manifest.id == "demo.public-domain.human.production" &&
                  candidate.manifest.version == "0.12.0";
         });
-    if (demo != voicebanks_.end()) {
+    if (demo != candidates.end()) {
       static_cast<void>(bindVoicebankLocked(*demo));
     }
   }
@@ -673,13 +672,7 @@ core::Result<void> EditorRuntime::bindVoicebankLocked(
     return core::failure(core::ErrorCode::NotFound,
                          "CLAP editor contains no vocal track for Voicebank binding");
   }
-  return session_.execute(
-      std::make_unique<application::SetTrackVoicebankCommand>(
-          trackId_, domain::VoicebankReference{
-                        .id = candidate.manifest.id,
-                        .version = candidate.manifest.version,
-                        .contentHash = candidate.contentHash,
-                    }));
+  return voicebankSession_.bindTrack(session_, trackId_, candidate);
 }
 
 void EditorRuntime::refreshVoicebankResolutionLocked() {
@@ -690,26 +683,18 @@ void EditorRuntime::refreshVoicebankResolutionLocked() {
     voicebankResolution_.diagnostic = "CLAP editor contains no vocal track";
     return;
   }
-  voicebankResolution_ = voicebankCatalog_.resolve(
-      track->voicebank, voicebanks_,
-      voicebank::VoicebankResolveOptions{
-          .requireTrustedInstalled = true,
-          .allowDevelopmentFixtures = true,
-      });
+  voicebankResolution_ =
+      voicebankSession_.resolveTrack(session_.project(), trackId_);
 }
 
 void EditorRuntime::refreshAllVoicebankResolutionsLocked() {
   trackVoicebankResolutions_.clear();
-  trackVoicebankResolutions_.reserve(session_.project().vocalTracks().size());
-  for (const auto& track : session_.project().vocalTracks()) {
+  const auto states = voicebankSession_.resolveAll(session_.project());
+  trackVoicebankResolutions_.reserve(states.size());
+  for (const auto& state : states) {
     trackVoicebankResolutions_.push_back(TrackVoicebankResolution{
-        .trackId = track.id,
-        .resolution = voicebankCatalog_.resolve(
-            track.voicebank, voicebanks_,
-            voicebank::VoicebankResolveOptions{
-                .requireTrustedInstalled = true,
-                .allowDevelopmentFixtures = true,
-            }),
+        .trackId = state.trackId,
+        .resolution = state.resolution,
     });
   }
   const auto active = std::find_if(
@@ -729,9 +714,8 @@ EditorRuntime::renderVoicebankResolutionsLocked() const {
 
 core::Result<void> EditorRuntime::refreshVoicebanks() {
   std::lock_guard lock(mutex_);
-  auto scanned = voicebankCatalog_.scan(voicebankRoots_);
-  if (!scanned) return core::Result<void>{scanned.error()};
-  voicebanks_ = std::move(scanned).value();
+  const auto refreshed = voicebankSession_.refresh();
+  if (!refreshed) return refreshed;
   refreshAllVoicebankResolutionsLocked();
   if (controller_) {
     const auto ready = voicebankResolution_.resolved();
@@ -745,19 +729,8 @@ core::Result<void> EditorRuntime::refreshVoicebanks() {
 core::Result<void> EditorRuntime::addVoicebankSearchRoot(
     voicebank::VoicebankSearchRoot root) {
   std::lock_guard lock(mutex_);
-  if (root.path.empty()) {
-    return core::failure(core::ErrorCode::InvalidArgument,
-                         "Voicebank relink root cannot be empty");
-  }
-  root.path = root.path.lexically_normal();
-  const auto existing = std::find_if(
-      voicebankRoots_.begin(), voicebankRoots_.end(), [&root](const auto& value) {
-        return value.path == root.path && value.kind == root.kind;
-      });
-  if (existing == voicebankRoots_.end()) voicebankRoots_.push_back(std::move(root));
-  auto scanned = voicebankCatalog_.scan(voicebankRoots_);
-  if (!scanned) return core::Result<void>{scanned.error()};
-  voicebanks_ = std::move(scanned).value();
+  const auto added = voicebankSession_.addSearchRoot(std::move(root));
+  if (!added) return added;
   refreshAllVoicebankResolutionsLocked();
   if (controller_) {
     const auto ready = voicebankResolution_.resolved();
@@ -772,13 +745,14 @@ core::Result<void> EditorRuntime::selectVoicebank(
     std::string_view id, std::string_view version,
     std::optional<std::string_view> contentHash) {
   std::lock_guard lock(mutex_);
+  const auto candidates = voicebankSession_.candidates();
   const auto candidate = std::find_if(
-      voicebanks_.begin(), voicebanks_.end(),
+      candidates.begin(), candidates.end(),
       [id, version, contentHash](const auto& value) {
         return value.manifest.id == id && value.manifest.version == version &&
                (!contentHash.has_value() || value.contentHash == *contentHash);
       });
-  if (candidate == voicebanks_.end()) {
+  if (candidate == candidates.end()) {
     return core::failure(
         contentHash.has_value() ? core::ErrorCode::Conflict : core::ErrorCode::NotFound,
         contentHash.has_value()
@@ -811,7 +785,7 @@ voicebank::VoicebankResolution EditorRuntime::voicebankResolution() const {
 std::vector<voicebank::VoicebankCandidate>
 EditorRuntime::availableVoicebanks() const {
   std::lock_guard lock(mutex_);
-  return voicebanks_;
+  return voicebankSession_.candidates();
 }
 
 void EditorRuntime::configureControllerCallbacks() {
@@ -1377,8 +1351,7 @@ core::Result<void> EditorRuntime::replaceProject(domain::Project project) {
   trackId_ = replacementTrack;
   regionId_ = replacementRegion;
   factory_.synchronizeWith(session_.project());
-  auto scanned = voicebankCatalog_.scan(voicebankRoots_);
-  if (scanned) voicebanks_ = std::move(scanned).value();
+  static_cast<void>(voicebankSession_.refresh());
   refreshAllVoicebankResolutionsLocked();
   rebuildController();
   controller_->setCharacterMetadata(character_.displayName(),

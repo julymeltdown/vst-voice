@@ -2,6 +2,7 @@
 
 #include "seam/application/editor_session.hpp"
 #include "seam/application/project_factory.hpp"
+#include "seam/authoring/voicebank_session.hpp"
 #include "seam/core/result.hpp"
 #include "seam/domain/project.hpp"
 #include "seam/clap_editor/host_timeline.hpp"
@@ -371,9 +372,7 @@ private:
   native_ui::CharacterPresentation character_;
   AsyncPreviewRenderService renderService_;
   LiveSampleInstrument live_;
-  voicebank::VoicebankCatalog voicebankCatalog_;
-  std::vector<voicebank::VoicebankSearchRoot> voicebankRoots_;
-  std::vector<voicebank::VoicebankCandidate> voicebanks_;
+  authoring::VoicebankSession voicebankSession_;
   voicebank::VoicebankResolution voicebankResolution_;
   std::vector<TrackVoicebankResolution> trackVoicebankResolutions_;
   std::function<void()> repaintCallback_;
