@@ -608,6 +608,35 @@ git config core.hooksPath .githooks
 
 ## Ownership and licensing
 
-Project source and first-party concept assets are currently proprietary and all rights are reserved. No production third-party source is vendored. Reference projects are documented for behavioral study only.
+Project source and first-party concept assets are currently proprietary and all rights are reserved. Distributed third-party source and assets are limited to the audited permissive/public-domain entries in `third_party/manifest.yml`; behavioral references are not vendored.
 
 See [`LICENSE`](LICENSE), [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md), and [`third_party/manifest.yml`](third_party/manifest.yml).
+
+## Phase 13A — VST3/AUv2 distribution and mandatory validation gates
+
+Phase 13A keeps CLAP canonical and projects it to VST3 and AUv2 through exact pinned, permissively licensed SDK checkouts. It adds fail-closed validator, signing, notarization, installer, and commercial-host evidence pipelines.
+
+```bash
+python3 -m unittest discover -s tests/phase13a -v
+python3 scripts/verify_phase13a_contracts.py --root .
+python3 tools/phase13a/release_gate.py check \
+  --matrix docs/phase13a/mandatory-validation-matrix.json --gate G4
+```
+
+The release-gate command is expected to report `passed=false` until actual target evidence exists. VST3 validators, `auval`, Windows Authenticode, Apple notarization, clean-OS installer tests, and commercial DAWs are mandatory and remain `NOT_RUN`; source or CI configuration never substitutes for execution.
+
+Local unsigned developer-package evidence:
+
+```bash
+python3 scripts/generate_phase13a_evidence.py \
+  --build-root build/phase13a-evidence \
+  --output out/phase13a
+```
+
+See:
+
+- `docs/phase13a/IMPLEMENTATION_REPORT_KO.md`
+- `docs/phase13a/MANDATORY_VALIDATION_KO.md`
+- `docs/phase13a/mandatory-validation-matrix.json`
+- `docs/phase13a/HOST_CERTIFICATION_MATRIX_KO.md`
+- `docs/phase13a/MANDATORY_FUTURE_VALIDATION_KO.md`

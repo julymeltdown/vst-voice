@@ -1,0 +1,268 @@
+{
+  "schemaVersion": 1,
+  "policy": "MANDATORY",
+  "implementationStateValues": [
+    "NOT_STARTED",
+    "SOURCE_READY",
+    "CI_CONFIGURED",
+    "TARGET_BUILD_PASS"
+  ],
+  "runtimeResultValues": [
+    "NOT_RUN",
+    "BLOCKED",
+    "FAIL",
+    "PASS"
+  ],
+  "targets": [
+    {
+      "id": "phase12c-linux-clap-validator",
+      "category": "validator",
+      "name": "Official CLAP Validator on Linux",
+      "platform": "linux",
+      "implementationState": "CI_CONFIGURED",
+      "runtimeResult": "NOT_RUN",
+      "mandatoryFor": ["G2", "G3", "G4", "G5"],
+      "evidence": []
+    },
+    {
+      "id": "phase12c-full-soak-7200s",
+      "category": "soak",
+      "name": "Exact 7,200-second Linux Full Soak",
+      "platform": "linux",
+      "implementationState": "SOURCE_READY",
+      "runtimeResult": "NOT_RUN",
+      "mandatoryFor": ["G2", "G3", "G4", "G5"],
+      "evidence": []
+    },
+    {
+      "id": "windows-clap-runtime",
+      "category": "runtime",
+      "name": "Windows CLAP Runtime",
+      "platform": "windows",
+      "implementationState": "CI_CONFIGURED",
+      "runtimeResult": "NOT_RUN",
+      "mandatoryFor": ["G3", "G4", "G5"],
+      "evidence": []
+    },
+    {
+      "id": "macos-clap-runtime",
+      "category": "runtime",
+      "name": "macOS CLAP Runtime",
+      "platform": "macos",
+      "implementationState": "CI_CONFIGURED",
+      "runtimeResult": "NOT_RUN",
+      "mandatoryFor": ["G3", "G4", "G5"],
+      "evidence": []
+    },
+    {
+      "id": "linux-vst3-build",
+      "category": "format",
+      "name": "Linux VST3 Build",
+      "platform": "linux",
+      "implementationState": "CI_CONFIGURED",
+      "runtimeResult": "NOT_RUN",
+      "mandatoryFor": ["G4", "G5"],
+      "evidence": []
+    },
+    {
+      "id": "windows-vst3-build",
+      "category": "format",
+      "name": "Windows VST3 Build",
+      "platform": "windows",
+      "implementationState": "CI_CONFIGURED",
+      "runtimeResult": "NOT_RUN",
+      "mandatoryFor": ["G4", "G5"],
+      "evidence": []
+    },
+    {
+      "id": "macos-vst3-build",
+      "category": "format",
+      "name": "macOS VST3 Build",
+      "platform": "macos",
+      "implementationState": "CI_CONFIGURED",
+      "runtimeResult": "NOT_RUN",
+      "mandatoryFor": ["G4", "G5"],
+      "evidence": []
+    },
+    {
+      "id": "linux-vst3-validator",
+      "category": "validator",
+      "name": "Steinberg VST3 Validator on Linux",
+      "platform": "linux",
+      "implementationState": "CI_CONFIGURED",
+      "runtimeResult": "NOT_RUN",
+      "mandatoryFor": ["G4", "G5"],
+      "evidence": []
+    },
+    {
+      "id": "windows-vst3-validator",
+      "category": "validator",
+      "name": "Steinberg VST3 Validator on Windows",
+      "platform": "windows",
+      "implementationState": "CI_CONFIGURED",
+      "runtimeResult": "NOT_RUN",
+      "mandatoryFor": ["G4", "G5"],
+      "evidence": []
+    },
+    {
+      "id": "macos-vst3-validator",
+      "category": "validator",
+      "name": "Steinberg VST3 Validator on macOS",
+      "platform": "macos",
+      "implementationState": "CI_CONFIGURED",
+      "runtimeResult": "NOT_RUN",
+      "mandatoryFor": ["G4", "G5"],
+      "evidence": []
+    },
+    {
+      "id": "macos-auv2-build",
+      "category": "format",
+      "name": "macOS AUv2 Build",
+      "platform": "macos",
+      "implementationState": "CI_CONFIGURED",
+      "runtimeResult": "NOT_RUN",
+      "mandatoryFor": ["G4", "G5"],
+      "evidence": []
+    },
+    {
+      "id": "macos-auval",
+      "category": "validator",
+      "name": "Apple auval",
+      "platform": "macos",
+      "implementationState": "CI_CONFIGURED",
+      "runtimeResult": "NOT_RUN",
+      "mandatoryFor": ["G4", "G5"],
+      "evidence": []
+    },
+    {
+      "id": "windows-authenticode",
+      "category": "signing",
+      "name": "Windows Authenticode Signing and Timestamp",
+      "platform": "windows",
+      "implementationState": "SOURCE_READY",
+      "runtimeResult": "NOT_RUN",
+      "mandatoryFor": ["G4", "G5"],
+      "evidence": []
+    },
+    {
+      "id": "macos-notarization",
+      "category": "signing",
+      "name": "macOS Developer ID, Notarization and Stapling",
+      "platform": "macos",
+      "implementationState": "SOURCE_READY",
+      "runtimeResult": "NOT_RUN",
+      "mandatoryFor": ["G4", "G5"],
+      "evidence": []
+    },
+    {
+      "id": "windows-installer-clean-os",
+      "category": "installer",
+      "name": "Windows Clean OS Install, Update and Uninstall",
+      "platform": "windows",
+      "implementationState": "CI_CONFIGURED",
+      "runtimeResult": "NOT_RUN",
+      "mandatoryFor": ["G4", "G5"],
+      "evidence": []
+    },
+    {
+      "id": "macos-installer-clean-os",
+      "category": "installer",
+      "name": "macOS Clean OS Install, Update and Uninstall",
+      "platform": "macos",
+      "implementationState": "CI_CONFIGURED",
+      "runtimeResult": "NOT_RUN",
+      "mandatoryFor": ["G4", "G5"],
+      "evidence": []
+    },
+    {
+      "id": "reaper",
+      "category": "commercial-daw",
+      "name": "REAPER",
+      "platform": "windows-macos-linux",
+      "implementationState": "SOURCE_READY",
+      "runtimeResult": "NOT_RUN",
+      "mandatoryFor": ["G3", "G4", "G5"],
+      "evidence": []
+    },
+    {
+      "id": "bitwig-studio",
+      "category": "commercial-daw",
+      "name": "Bitwig Studio",
+      "platform": "windows-macos-linux",
+      "implementationState": "SOURCE_READY",
+      "runtimeResult": "NOT_RUN",
+      "mandatoryFor": ["G3", "G4", "G5"],
+      "evidence": []
+    },
+    {
+      "id": "logic-pro",
+      "category": "commercial-daw",
+      "name": "Logic Pro",
+      "platform": "macos",
+      "implementationState": "SOURCE_READY",
+      "runtimeResult": "NOT_RUN",
+      "mandatoryFor": ["G3", "G4", "G5"],
+      "evidence": []
+    },
+    {
+      "id": "cubase",
+      "category": "commercial-daw",
+      "name": "Cubase",
+      "platform": "windows-macos",
+      "implementationState": "SOURCE_READY",
+      "runtimeResult": "NOT_RUN",
+      "mandatoryFor": ["G4", "G5"],
+      "evidence": []
+    },
+    {
+      "id": "ableton-live",
+      "category": "commercial-daw",
+      "name": "Ableton Live",
+      "platform": "windows-macos",
+      "implementationState": "SOURCE_READY",
+      "runtimeResult": "NOT_RUN",
+      "mandatoryFor": ["G4", "G5"],
+      "evidence": []
+    },
+    {
+      "id": "studio-one",
+      "category": "commercial-daw",
+      "name": "Studio One",
+      "platform": "windows-macos",
+      "implementationState": "SOURCE_READY",
+      "runtimeResult": "NOT_RUN",
+      "mandatoryFor": ["G4", "G5"],
+      "evidence": []
+    },
+    {
+      "id": "fl-studio",
+      "category": "commercial-daw",
+      "name": "FL Studio",
+      "platform": "windows-macos",
+      "implementationState": "SOURCE_READY",
+      "runtimeResult": "NOT_RUN",
+      "mandatoryFor": ["G4", "G5"],
+      "evidence": []
+    },
+    {
+      "id": "garageband",
+      "category": "commercial-daw",
+      "name": "GarageBand",
+      "platform": "macos",
+      "implementationState": "SOURCE_READY",
+      "runtimeResult": "NOT_RUN",
+      "mandatoryFor": ["G4", "G5"],
+      "evidence": []
+    },
+    {
+      "id": "official-voicebank-01",
+      "category": "content",
+      "name": "Official Voicebank 01 Contract, Recording and Acceptance",
+      "platform": "content",
+      "implementationState": "NOT_STARTED",
+      "runtimeResult": "NOT_RUN",
+      "mandatoryFor": ["G5"],
+      "evidence": []
+    }
+  ]
+}

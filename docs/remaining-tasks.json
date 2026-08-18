@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-08-17",
+  "generatedAt": "2026-08-18",
   "currentGate": "G1_FEATURE_ALPHA",
   "tasks": [
     {
@@ -36,19 +36,19 @@
     {
       "id": "SEAM-P12-006",
       "priority": "P0",
-      "status": "PARTIAL",
+      "status": "DONE",
       "title": "Expand live note input into voicebank-driven singing"
     },
     {
       "id": "SEAM-P12-007",
       "priority": "P0",
-      "status": "EXTERNAL_GATE",
+      "status": "NOT_RUN",
       "title": "Run official CLAP validator and retain evidence"
     },
     {
       "id": "SEAM-P12-008",
       "priority": "P0",
-      "status": "SOURCE_READY",
+      "status": "NOT_RUN",
       "title": "Certify Windows and macOS runtime paths"
     },
     {
@@ -60,13 +60,13 @@
     {
       "id": "SEAM-P13-001",
       "priority": "P1",
-      "status": "SOURCE_READY",
+      "status": "CI_CONFIGURED",
       "title": "Build and validate VST3"
     },
     {
       "id": "SEAM-P13-002",
       "priority": "P1",
-      "status": "SOURCE_READY",
+      "status": "CI_CONFIGURED",
       "title": "Build and validate AUv2"
     },
     {
@@ -112,5 +112,5 @@
       "title": "Complete user documentation, onboarding and support material"
     }
   ],
-  "nextPhase": "PHASE_12C"
+  "nextPhase": "PHASE_13B"
 }

@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "targetId": "reaper",
+  "runtimeResult": "NOT_RUN",
+  "osVersion": "",
+  "hostVersion": "",
+  "pluginFormat": "",
+  "pluginSha256": "",
+  "executedAt": "",
+  "executor": "",
+  "checks": {},
+  "evidence": [],
+  "evidenceSha256": {}
+}
