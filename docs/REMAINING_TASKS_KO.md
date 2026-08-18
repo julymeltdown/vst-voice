@@ -116,3 +116,21 @@ Phase 13A  VST3/AU + installers + host matrix
 Phase 13B  Official Voicebank + Character/IP release assets
 Phase 14   UX polish, documentation, RC, release
 ```
+
+## Phase 12C 승인 설계 및 강제 후속 검증
+
+승인된 설계:
+
+```text
+docs/superpowers/specs/2026-08-18-phase12c-runtime-validation-design.md
+```
+
+Windows, macOS 및 상용 DAW 실제 테스트는 다음 문서와 JSON Matrix에서 강제한다.
+
+```text
+docs/phase12c/MANDATORY_TARGET_OS_AND_DAW_VALIDATION_KO.md
+docs/phase12c/MANDATORY_TARGET_OS_AND_DAW_VALIDATION.md
+docs/phase12c/mandatory-validation-matrix.json
+```
+
+이 항목들은 Phase 12C 소스 구현과 별개이며, 실제 대상에서 `PASS`가 되기 전에는 Beta·RC·GA Gate를 통과할 수 없다.

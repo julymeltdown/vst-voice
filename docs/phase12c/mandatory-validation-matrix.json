@@ -1,0 +1,107 @@
+{
+  "schemaVersion": 1,
+  "policy": {
+    "mandatory": true,
+    "implementationStates": [
+      "NOT_STARTED",
+      "SOURCE_READY",
+      "CI_CONFIGURED",
+      "TARGET_BUILD_PASS"
+    ],
+    "testResults": ["NOT_RUN", "BLOCKED", "FAIL", "PASS"],
+    "sourceReadyDoesNotImplyPass": true
+  },
+  "targetOperatingSystems": [
+    {
+      "id": "windows-11-x64",
+      "implementationState": "SOURCE_READY",
+      "testResult": "NOT_RUN",
+      "requiredForBeta": true,
+      "requiredForReleaseCandidate": true
+    },
+    {
+      "id": "macos-apple-silicon",
+      "implementationState": "SOURCE_READY",
+      "testResult": "NOT_RUN",
+      "requiredForBeta": true,
+      "requiredForReleaseCandidate": true
+    }
+  ],
+  "hosts": [
+    {
+      "id": "reaper",
+      "operatingSystems": ["windows-11-x64", "macos-apple-silicon"],
+      "testResult": "NOT_RUN",
+      "requiredForBeta": true,
+      "requiredForReleaseCandidate": true
+    },
+    {
+      "id": "bitwig-studio",
+      "operatingSystems": ["windows-11-x64", "macos-apple-silicon"],
+      "testResult": "NOT_RUN",
+      "requiredForBeta": true,
+      "requiredForReleaseCandidate": true
+    },
+    {
+      "id": "logic-pro",
+      "operatingSystems": ["macos-apple-silicon"],
+      "testResult": "NOT_RUN",
+      "requiredForBeta": true,
+      "requiredForReleaseCandidate": true
+    },
+    {
+      "id": "cubase",
+      "operatingSystems": ["windows-11-x64", "macos-apple-silicon"],
+      "testResult": "NOT_RUN",
+      "requiredForBeta": false,
+      "requiredForReleaseCandidate": true
+    },
+    {
+      "id": "ableton-live",
+      "operatingSystems": ["windows-11-x64", "macos-apple-silicon"],
+      "testResult": "NOT_RUN",
+      "requiredForBeta": false,
+      "requiredForReleaseCandidate": true
+    },
+    {
+      "id": "studio-one",
+      "operatingSystems": ["windows-11-x64", "macos-apple-silicon"],
+      "testResult": "NOT_RUN",
+      "requiredForBeta": false,
+      "requiredForReleaseCandidate": true
+    },
+    {
+      "id": "fl-studio",
+      "operatingSystems": ["windows-11-x64", "macos-apple-silicon"],
+      "testResult": "NOT_RUN",
+      "requiredForBeta": false,
+      "requiredForReleaseCandidate": true
+    },
+    {
+      "id": "garageband",
+      "operatingSystems": ["macos-apple-silicon"],
+      "testResult": "NOT_RUN",
+      "requiredForBeta": false,
+      "requiredForReleaseCandidate": true
+    }
+  ],
+  "releaseGates": {
+    "G2_FEATURE_COMPLETE": {
+      "requiresPhase12cLinuxValidation": true
+    },
+    "G3_BETA": {
+      "requiredOperatingSystems": ["windows-11-x64", "macos-apple-silicon"],
+      "requiredHosts": ["reaper", "bitwig-studio", "logic-pro"]
+    },
+    "G4_RELEASE_CANDIDATE": {
+      "allDeclaredSupportedHostsMustPass": true,
+      "signingAndNotarizationMustPass": true,
+      "cleanOsInstallerMustPass": true,
+      "declaredFormatValidatorsMustPass": true
+    },
+    "G5_GENERAL_AVAILABILITY": {
+      "officialVoicebankAcceptanceMustPass": true,
+      "unresolvedMandatoryValidationCount": 0
+    }
+  }
+}
