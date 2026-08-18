@@ -2,19 +2,19 @@
   "spdxVersion": "SPDX-2.3",
   "dataLicense": "CC0-1.0",
   "SPDXID": "SPDXRef-DOCUMENT",
-  "name": "Project-SEAM-Phase11-SBOM",
-  "documentNamespace": "https://example.invalid/project-seam/sbom/phase11/0.11.0",
+  "name": "Project-SEAM-Phase13A-SBOM",
+  "documentNamespace": "https://example.invalid/project-seam/sbom/phase13a/0.13.0",
   "creationInfo": {
-    "created": "2026-08-17T00:00:00Z",
+    "created": "2026-08-18T00:00:00Z",
     "creators": [
       "Tool: Project-SEAM-license-auditor-0.1"
     ]
   },
   "packages": [
     {
-      "name": "Project SEAM Phase 11",
+      "name": "Project SEAM Phase 13A",
       "SPDXID": "SPDXRef-Package-ProjectSEAM",
-      "versionInfo": "0.11.0",
+      "versionInfo": "0.13.0",
       "downloadLocation": "NOASSERTION",
       "filesAnalyzed": false,
       "licenseConcluded": "NOASSERTION",
@@ -86,6 +86,50 @@
       "licenseDeclared": "LicenseRef-Public-Domain",
       "copyrightText": "Public domain per upstream sample README",
       "comment": "Technical human voice fixture only; official=false, contractedSinger=false."
+    },
+    {
+      "name": "clap-wrapper",
+      "SPDXID": "SPDXRef-BuildDependency-clap-wrapper",
+      "versionInfo": "0.15.1 / 35f524b771ec09f54c164720bb90f271273b37d3",
+      "downloadLocation": "https://github.com/free-audio/clap-wrapper",
+      "filesAnalyzed": false,
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
+      "copyrightText": "NOASSERTION",
+      "comment": "Build-only exact checkout; wrapper source is not included in Project SEAM source or developer package."
+    },
+    {
+      "name": "Steinberg VST3 SDK",
+      "SPDXID": "SPDXRef-BuildDependency-VST3SDK",
+      "versionInfo": "3.8.1 / 3cdf9ca5d1f5b1b21e0a86832aa4abe55607bd96",
+      "downloadLocation": "https://github.com/steinbergmedia/vst3sdk",
+      "filesAnalyzed": false,
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
+      "copyrightText": "Copyright Steinberg Media Technologies GmbH",
+      "comment": "Build-only recursive exact checkout; used for VST3 wrapper and validator."
+    },
+    {
+      "name": "Apple AudioUnitSDK",
+      "SPDXID": "SPDXRef-BuildDependency-AudioUnitSDK",
+      "versionInfo": "1.4.0 / bd98b31feff57a15989fcfab4cd86dc63382b1ac",
+      "downloadLocation": "https://github.com/apple/AudioUnitSDK",
+      "filesAnalyzed": false,
+      "licenseConcluded": "Apache-2.0",
+      "licenseDeclared": "Apache-2.0",
+      "copyrightText": "Copyright Apple Inc.",
+      "comment": "Build-only exact checkout on macOS; used for AUv2 wrapper."
+    },
+    {
+      "name": "NSIS",
+      "SPDXID": "SPDXRef-BuildTool-NSIS",
+      "versionInfo": "3.12",
+      "downloadLocation": "https://nsis.sourceforge.io/",
+      "filesAnalyzed": false,
+      "licenseConcluded": "Zlib",
+      "licenseDeclared": "Zlib",
+      "copyrightText": "NOASSERTION",
+      "comment": "Build-only Windows installer compiler; not redistributed by Project SEAM."
     }
   ],
   "relationships": [
@@ -123,6 +167,26 @@
       "spdxElementId": "SPDXRef-Package-ProjectSEAM",
       "relationshipType": "CONTAINS",
       "relatedSpdxElement": "SPDXRef-Package-Sonic-Human-Fixture"
+    },
+    {
+      "spdxElementId": "SPDXRef-BuildDependency-clap-wrapper",
+      "relationshipType": "BUILD_DEPENDENCY_OF",
+      "relatedSpdxElement": "SPDXRef-Package-ProjectSEAM"
+    },
+    {
+      "spdxElementId": "SPDXRef-BuildDependency-VST3SDK",
+      "relationshipType": "BUILD_DEPENDENCY_OF",
+      "relatedSpdxElement": "SPDXRef-Package-ProjectSEAM"
+    },
+    {
+      "spdxElementId": "SPDXRef-BuildDependency-AudioUnitSDK",
+      "relationshipType": "BUILD_DEPENDENCY_OF",
+      "relatedSpdxElement": "SPDXRef-Package-ProjectSEAM"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-ProjectSEAM",
+      "relationshipType": "BUILD_TOOL_OF",
+      "relatedSpdxElement": "SPDXRef-BuildTool-NSIS"
     }
   ],
   "hasExtractedLicensingInfos": [

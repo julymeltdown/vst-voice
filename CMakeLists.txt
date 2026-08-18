@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.25)
 
-project(ProjectSEAM VERSION 0.12.1 LANGUAGES CXX)
+project(ProjectSEAM VERSION 0.13.0 LANGUAGES CXX)
 
 option(SEAM_BUILD_TESTS "Build Project SEAM tests" ON)
 option(SEAM_BUILD_BENCHMARKS "Build Project SEAM benchmarks" ON)
@@ -912,6 +912,9 @@ endif()
 # Phase 12C: live articulation and runtime validation
 add_subdirectory(phase12c)
 
-if(TARGET ProjectSEAMEditor)
-  target_link_libraries(ProjectSEAMEditor PRIVATE seam_live_voice)
+# Phase 13A: VST3/AUv2, installer, signing, and mandatory release gates
+add_subdirectory(phase13a)
+
+if(TARGET seam_clap_editor_plugin)
+  target_link_libraries(seam_clap_editor_plugin PRIVATE seam_live_voice)
 endif()

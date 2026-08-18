@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-08-18",
+  "policy": "PERMISSIVE_ONLY",
+  "dependencies": [
+    {
+      "name": "clap",
+      "repository": "https://github.com/free-audio/clap.git",
+      "tag": "1.2.10",
+      "commit": "195b42a004144fab0b3cf95e9c067187d15365b7",
+      "license": "MIT",
+      "purpose": "Canonical CLAP SDK for wrapper builds"
+    },
+    {
+      "name": "clap-wrapper",
+      "repository": "https://github.com/free-audio/clap-wrapper.git",
+      "tag": "v0.15.1",
+      "commit": "35f524b771ec09f54c164720bb90f271273b37d3",
+      "license": "MIT",
+      "purpose": "Project canonical CLAP implementation into VST3 and AUv2"
+    },
+    {
+      "name": "vst3sdk",
+      "repository": "https://github.com/steinbergmedia/vst3sdk.git",
+      "tag": "VST3_SDK_3.8.1",
+      "commit": "3cdf9ca5d1f5b1b21e0a86832aa4abe55607bd96",
+      "license": "MIT",
+      "recursiveSubmodules": true,
+      "purpose": "VST3 SDK, validator and test host"
+    },
+    {
+      "name": "AudioUnitSDK",
+      "repository": "https://github.com/apple/AudioUnitSDK.git",
+      "tag": "AudioUnitSDK-1.4.0",
+      "commit": "bd98b31feff57a15989fcfab4cd86dc63382b1ac",
+      "license": "Apache-2.0",
+      "purpose": "AUv2 wrapper SDK on macOS"
+    }
+  ]
+}

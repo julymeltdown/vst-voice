@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-08-18",
+  "tools": [
+    {
+      "name": "NSIS",
+      "version": "3.12",
+      "license": "Zlib",
+      "purpose": "Windows installer compiler; Project SEAM forces the zlib compressor and does not ship LZMA output"
+    },
+    {
+      "name": "WiX",
+      "status": "NOT_USED",
+      "reason": "Avoided to preserve the Project SEAM permissive-only commercial build policy"
+    }
+  ]
+}

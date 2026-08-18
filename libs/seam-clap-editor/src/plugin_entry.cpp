@@ -101,7 +101,7 @@ const clap_plugin_descriptor_t kDescriptor{
     .url = "",
     .manual_url = "",
     .support_url = "",
-    .version = "0.12.1",
+    .version = "0.13.0",
     .description =
         "Sample-concatenative singing editor with production-pipeline preview and live note input",
     .features = kFeatures.data(),

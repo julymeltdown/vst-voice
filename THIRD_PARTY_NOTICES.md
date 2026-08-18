@@ -88,3 +88,22 @@ as the repository author's father speaking. Exact source/derived SHA-256 values,
 retrieval date and processing are stored in
 `assets/demo-human-voicebank-public-domain/provenance.json`. The fixture is not
 Official Voicebank 01 and is not described as a contracted-singer product.
+
+## Phase 13A build-only plug-in format dependencies
+
+The following exact checkouts are used only on target build/validation runners and are not vendored in this repository or included in the unsigned Linux developer package:
+
+- **CLAP SDK 1.2.10**, commit `195b42a004144fab0b3cf95e9c067187d15365b7`, MIT.
+- **clap-wrapper 0.15.1**, commit `35f524b771ec09f54c164720bb90f271273b37d3`, MIT.
+- **Steinberg VST3 SDK 3.8.1**, commit `3cdf9ca5d1f5b1b21e0a86832aa4abe55607bd96` with locked recursive submodules, MIT.
+- **Apple AudioUnitSDK 1.4.0**, commit `bd98b31feff57a15989fcfab4cd86dc63382b1ac`, Apache-2.0.
+
+The acquisition script verifies exact revisions and licence files and forbids wrapper-time network dependency resolution. VST3 and AUv2 distributables must carry the notices required by their actual resolved source closure.
+
+
+## NSIS 3.12 (build-only)
+
+The Windows installer pipeline uses NSIS 3.12 as a build tool under the zlib
+license. NSIS is not bundled in Project SEAM installers or source archives.
+The Project SEAM script explicitly selects the zlib compressor rather than
+shipping an LZMA-compressed installer payload.

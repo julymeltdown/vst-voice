@@ -122,7 +122,7 @@ def main() -> int:
     require_text(
         root / "CMakeLists.txt",
         [
-            "project(ProjectSEAM VERSION 0.12.1",
+            "project(ProjectSEAM VERSION 0.13.0",
             "seam_phase12b_tests",
             "seam_phase12b_demo",
             "seam_phase12b_contract",
@@ -150,8 +150,11 @@ def main() -> int:
         for task_id in ("SEAM-P12-003", "SEAM-P12-004", "SEAM-P12-005"):
             if status_by_id.get(task_id) != "DONE":
                 errors.append(f"{task_id} must be DONE after Phase 12B")
-        if backlog.get("nextPhase") != "PHASE_12C":
-            errors.append("remaining-tasks.json nextPhase must be PHASE_12C")
+        valid_successor_phases = {"PHASE_12C", "PHASE_13A", "PHASE_13B", "PHASE_14"}
+        if backlog.get("nextPhase") not in valid_successor_phases:
+            errors.append(
+                "remaining-tasks.json nextPhase must be Phase 12C or a later approved phase"
+            )
     except Exception as exc:  # noqa: BLE001 - audit reports the complete error
         errors.append(f"invalid remaining task metadata: {exc}")
 

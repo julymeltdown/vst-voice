@@ -1,0 +1,50 @@
+name: Phase 13A mandatory commercial DAW validation
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_id:
+        description: Matrix target id (reaper, bitwig-studio, cubase, ableton-live, studio-one, fl-studio, logic-pro, garageband)
+        required: true
+      result_record:
+        description: Absolute path to the evidence-backed validation record on the self-hosted runner
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  record-real-host-result:
+    runs-on: [self-hosted, project-seam-daw-certification]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate actual host evidence and update an output matrix
+        shell: bash
+        env:
+          RESULT_RECORD: ${{ inputs.result_record }}
+          TARGET_ID: ${{ inputs.target_id }}
+        run: |
+          test -f "$RESULT_RECORD"
+          python3 - <<'PY'
+          import json, os
+          record=json.load(open(os.environ['RESULT_RECORD'], encoding='utf-8'))
+          assert record['targetId'] == os.environ['TARGET_ID']
+          assert record['runtimeResult'] in {'PASS','FAIL','BLOCKED'}
+          PY
+          python3 tools/phase13a/host_certification.py \
+            --matrix docs/phase13a/mandatory-validation-matrix.json \
+            --record "$RESULT_RECORD" \
+            --evidence-root "$(dirname "$RESULT_RECORD")" \
+            --output out/phase13a/updated-validation-matrix.json
+      - name: Evaluate target release gates without fabricating success
+        shell: bash
+        run: |
+          python3 tools/phase13a/release_gate.py check --matrix out/phase13a/updated-validation-matrix.json --gate G3 || test $? -eq 3
+          python3 tools/phase13a/release_gate.py check --matrix out/phase13a/updated-validation-matrix.json --gate G4 || test $? -eq 3
+      - uses: actions/upload-artifact@v4
+        with:
+          name: phase13a-host-evidence-${{ inputs.target_id }}
+          path: |
+            out/phase13a/updated-validation-matrix.json
+            ${{ inputs.result_record }}
+            ${{ inputs.result_record }}.evidence/**

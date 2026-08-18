@@ -1,0 +1,216 @@
+name: Phase 13A plug-in formats, validators, and installer smoke
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [master]
+    paths:
+      - 'apps/**'
+      - 'libs/**'
+      - 'phase13a/**'
+      - 'packaging/**'
+      - 'scripts/build_phase13a_formats.py'
+      - 'scripts/fetch_phase13a_dependencies.py'
+      - 'scripts/build_windows_installer.ps1'
+      - 'scripts/package_macos_plugins.sh'
+      - 'tools/phase13a/**'
+      - 'tests/phase13a/**'
+      - '.github/workflows/phase13a-plugin-formats.yml'
+
+permissions:
+  contents: read
+
+env:
+  CLAP_COMMIT: 195b42a004144fab0b3cf95e9c067187d15365b7
+  CLAP_WRAPPER_COMMIT: 35f524b771ec09f54c164720bb90f271273b37d3
+  VST3SDK_COMMIT: 3cdf9ca5d1f5b1b21e0a86832aa4abe55607bd96
+  AUDIOUNITSDK_COMMIT: bd98b31feff57a15989fcfab4cd86dc63382b1ac
+  NSIS_VERSION: '3.12'
+
+jobs:
+  source-contract:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 -m unittest discover -s tests/phase13a -v
+      - run: python3 scripts/verify_phase13a_contracts.py --root .
+      - run: python3 tools/phase13a/release_gate.py check --matrix docs/phase13a/mandatory-validation-matrix.json --gate G4 --expect-blocked
+
+  linux-development-package:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install native build dependencies
+        run: sudo apt-get update && sudo apt-get install -y libx11-dev libsqlite3-dev libssl-dev
+      - name: Build canonical CLAP
+        run: |
+          cmake -S . -B build/linux-development -DCMAKE_BUILD_TYPE=Release -DSEAM_BUILD_BENCHMARKS=OFF
+          cmake --build build/linux-development --target seam_clap_editor_plugin --parallel 2
+      - name: Create deterministic unsigned developer package
+        run: >-
+          python3 tools/phase13a/developer_package.py
+          --clap build/linux-development/ProjectSEAMEditor.clap
+          --resources build/linux-development/ProjectSEAMEditor.resources
+          --output out/ProjectSEAM-0.13.0-unsigned-development.zip
+          --version 0.13.0
+      - name: Install and uninstall in isolated sandbox
+        run: >-
+          python3 tools/phase13a/linux_package_smoke.py
+          --package out/ProjectSEAM-0.13.0-unsigned-development.zip
+          --sandbox out/linux-install-sandbox
+          --output out/linux-install-smoke.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: phase13a-linux-development-package
+          path: out
+
+  vst3:
+    name: ${{ matrix.os }} VST3 build and vst3-validator
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025, macos-15]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libx11-dev libxext-dev libxinerama-dev libxcursor-dev libxrandr-dev libgtk-3-dev libsqlite3-dev libssl-dev
+      - name: Acquire exact audited SDK checkouts
+        shell: bash
+        run: python3 scripts/fetch_phase13a_dependencies.py --output "$RUNNER_TEMP/phase13a-deps"
+      - name: Verify exact dependency revisions
+        shell: bash
+        run: python3 scripts/fetch_phase13a_dependencies.py --output "$RUNNER_TEMP/phase13a-deps" --verify-only
+      - name: Build canonical CLAP and VST3 wrapper
+        shell: bash
+        run: >-
+          python3 scripts/build_phase13a_formats.py
+          --source-root "$GITHUB_WORKSPACE"
+          --dependencies "$RUNNER_TEMP/phase13a-deps"
+          --build-root "$RUNNER_TEMP/phase13a-build"
+          --configuration Release
+      - name: Build Steinberg vst3-validator
+        shell: bash
+        run: |
+          cmake -S "$RUNNER_TEMP/phase13a-deps/vst3sdk" -B "$RUNNER_TEMP/vst3sdk-build" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DSMTG_ADD_VST3_PLUGINS_SAMPLES=OFF \
+            -DSMTG_ADD_VST3_HOSTING_SAMPLES=ON \
+            -DSMTG_CREATE_PLUGIN_LINK=OFF
+          cmake --build "$RUNNER_TEMP/vst3sdk-build" --config Release --target validator --parallel 2
+      - name: Run vst3-validator and preserve raw log
+        shell: bash
+        run: |
+          validator="$(find "$RUNNER_TEMP/vst3sdk-build" -type f \( -name validator -o -name validator.exe \) | head -1)"
+          plugin="$(find "$RUNNER_TEMP/phase13a-build/artifacts" -maxdepth 7 -name '*.vst3' | head -1)"
+          test -n "$validator" && test -n "$plugin"
+          python3 scripts/run_vst3_validator.py --validator "$validator" --plugin "$plugin" --clap-path "$RUNNER_TEMP/phase13a-build/artifacts/CLAP" --output "out/phase13a/${{ runner.os }}/vst3-validator"
+      - name: Stage stable artifact layout
+        if: always()
+        shell: bash
+        run: |
+          rm -rf out/phase13a/payload
+          mkdir -p out/phase13a/payload
+          if test -d "$RUNNER_TEMP/phase13a-build/artifacts"; then cp -R "$RUNNER_TEMP/phase13a-build/artifacts/." out/phase13a/payload/; fi
+          if test -f "$RUNNER_TEMP/phase13a-build/phase13a-build-result.json"; then cp "$RUNNER_TEMP/phase13a-build/phase13a-build-result.json" out/phase13a/; fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: phase13a-vst3-${{ runner.os }}
+          path: |
+            out/phase13a/payload
+            out/phase13a/${{ runner.os }}/vst3-validator
+            out/phase13a/phase13a-build-result.json
+
+  auv2:
+    name: macOS AUv2 build and auval
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Acquire exact audited SDK checkouts
+        run: python3 scripts/fetch_phase13a_dependencies.py --output "$RUNNER_TEMP/phase13a-deps"
+      - name: Build canonical CLAP and AUv2 wrapper
+        run: >-
+          python3 scripts/build_phase13a_formats.py
+          --source-root "$GITHUB_WORKSPACE"
+          --dependencies "$RUNNER_TEMP/phase13a-deps"
+          --build-root "$RUNNER_TEMP/phase13a-build"
+          --configuration Release
+          --auv2
+      - name: Install AUv2 into isolated user component location
+        run: |
+          component="$(find "$RUNNER_TEMP/phase13a-build/artifacts" -maxdepth 7 -name '*.component' -type d | head -1)"
+          test -n "$component"
+          mkdir -p "$HOME/Library/Audio/Plug-Ins/Components"
+          rm -rf "$HOME/Library/Audio/Plug-Ins/Components/ProjectSEAMEditor.component"
+          ditto "$component" "$HOME/Library/Audio/Plug-Ins/Components/ProjectSEAMEditor.component"
+          killall -9 AudioComponentRegistrar 2>/dev/null || true
+      - name: Run auval and preserve raw log
+        run: python3 scripts/run_auval.py --type aumu --subtype SEAM --manufacturer PSEM --output out/phase13a/macos/auval
+      - name: Stage stable macOS artifact layout
+        if: always()
+        run: |
+          rm -rf out/phase13a/payload
+          mkdir -p out/phase13a/payload
+          if test -d "$RUNNER_TEMP/phase13a-build/artifacts"; then cp -R "$RUNNER_TEMP/phase13a-build/artifacts/." out/phase13a/payload/; fi
+          if test -f "$RUNNER_TEMP/phase13a-build/phase13a-build-result.json"; then cp "$RUNNER_TEMP/phase13a-build/phase13a-build-result.json" out/phase13a/; fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: phase13a-auv2-macos
+          path: |
+            out/phase13a/payload
+            out/phase13a/macos/auval
+            out/phase13a/phase13a-build-result.json
+
+  windows-installer-smoke:
+    needs: vst3
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: phase13a-vst3-Windows
+          path: ${{ runner.temp }}\phase13a-payload
+      - name: Install exact NSIS build tool
+        shell: powershell
+        run: choco install nsis --version $env:NSIS_VERSION --no-progress -y
+      - name: Locate downloaded payload and build unsigned installer
+        shell: powershell
+        run: |
+          $payload = Get-ChildItem "$env:RUNNER_TEMP\phase13a-payload" -Directory -Recurse | Where-Object { Test-Path (Join-Path $_.FullName 'CLAP\ProjectSEAMEditor.clap') } | Select-Object -First 1
+          if (-not $payload) { throw 'Downloaded Windows payload root was not found' }
+          ./scripts/build_windows_installer.ps1 -PayloadRoot $payload.FullName -OutputInstaller "$env:RUNNER_TEMP\ProjectSEAM-0.13.0-unsigned.exe"
+      - name: Clean install, same-version reinstall, and uninstall
+        shell: powershell
+        run: ./scripts/test_windows_installer.ps1 -Installer "$env:RUNNER_TEMP\ProjectSEAM-0.13.0-unsigned.exe" -EvidenceDirectory out\phase13a\windows\installer-clean
+      - uses: actions/upload-artifact@v4
+        with:
+          name: phase13a-windows-unsigned-installer-smoke
+          path: |
+            ${{ runner.temp }}\ProjectSEAM-0.13.0-unsigned.exe
+            out/phase13a/windows/installer-clean
+
+  macos-installer-smoke:
+    needs: auv2
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: phase13a-auv2-macos
+          path: ${{ runner.temp }}/phase13a-payload
+      - name: Locate downloaded payload and build unsigned PKG
+        run: |
+          payload="$(find "$RUNNER_TEMP/phase13a-payload" -type d -name CLAP -print | head -1 | xargs dirname)"
+          test -n "$payload" && test -e "$payload/CLAP/ProjectSEAMEditor.clap"
+          bash scripts/package_macos_plugins.sh "$payload" "$RUNNER_TEMP/ProjectSEAM-0.13.0-unsigned.pkg" --unsigned
+      - name: Clean install, same-version reinstall, and uninstall
+        run: bash scripts/test_macos_installer.sh "$RUNNER_TEMP/ProjectSEAM-0.13.0-unsigned.pkg" out/phase13a/macos/installer-clean
+      - uses: actions/upload-artifact@v4
+        with:
+          name: phase13a-macos-unsigned-installer-smoke
+          path: |
+            ${{ runner.temp }}/ProjectSEAM-0.13.0-unsigned.pkg
+            out/phase13a/macos/installer-clean

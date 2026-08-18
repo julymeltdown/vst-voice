@@ -1,0 +1,120 @@
+name: Phase 13A signed distribution and clean-install validation
+
+on:
+  workflow_dispatch:
+    inputs:
+      mandatory-release-gate:
+        description: 'Type RUN_MANDATORY_VALIDATION to execute signing, notarization and clean-install gates'
+        required: true
+
+permissions:
+  contents: read
+
+env:
+  CLAP_WRAPPER_COMMIT: 35f524b771ec09f54c164720bb90f271273b37d3
+  VST3SDK_COMMIT: 3cdf9ca5d1f5b1b21e0a86832aa4abe55607bd96
+  AUDIOUNITSDK_COMMIT: bd98b31feff57a15989fcfab4cd86dc63382b1ac
+
+jobs:
+  validate-dispatch:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Refuse an accidental pseudo-release
+        run: test '${{ inputs.mandatory-release-gate }}' = RUN_MANDATORY_VALIDATION
+
+  windows-signed-installer:
+    needs: validate-dispatch
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+      - name: Require real Windows signing credentials
+        shell: pwsh
+        run: |
+          if (-not '${{ secrets.WINDOWS_SIGN_PFX_BASE64 }}' -or -not '${{ secrets.WINDOWS_SIGN_PFX_PASSWORD }}') { throw 'Windows signing credentials are mandatory' }
+          [IO.File]::WriteAllBytes("$env:RUNNER_TEMP\project-seam-signing.pfx", [Convert]::FromBase64String('${{ secrets.WINDOWS_SIGN_PFX_BASE64 }}'))
+          $cert = Import-PfxCertificate -FilePath "$env:RUNNER_TEMP\project-seam-signing.pfx" -CertStoreLocation Cert:\CurrentUser\My -Password (ConvertTo-SecureString '${{ secrets.WINDOWS_SIGN_PFX_PASSWORD }}' -AsPlainText -Force)
+          "WINDOWS_SIGN_CERT_SHA1=$($cert.Thumbprint)" | Out-File -FilePath $env:GITHUB_ENV -Append
+      - name: Install exact NSIS 3.12 build tool
+        run: choco install nsis --version 3.12 --no-progress -y
+      - name: Acquire exact audited SDKs
+        run: python scripts/fetch_phase13a_dependencies.py --output "$env:RUNNER_TEMP\phase13a-deps"
+      - name: Build VST3/CLAP
+        run: python scripts/build_phase13a_formats.py --dependencies "$env:RUNNER_TEMP\phase13a-deps" --build-root "$env:RUNNER_TEMP\phase13a-build" --output "$env:RUNNER_TEMP\payload"
+      - name: Sign plug-in payload and verify timestamp
+        run: pwsh scripts/sign_windows_payload.ps1 -PayloadRoot "$env:RUNNER_TEMP\payload" -EvidenceDirectory out\phase13a\windows\payload-signing
+      - name: Build and sign NSIS installer
+        run: |
+          pwsh scripts/build_windows_installer.ps1 -PayloadRoot "$env:RUNNER_TEMP\payload" -OutputInstaller "$env:RUNNER_TEMP\ProjectSEAM-0.13.0.exe"
+          pwsh scripts/sign_windows_installer.ps1 -Installer "$env:RUNNER_TEMP\ProjectSEAM-0.13.0.exe" -EvidenceDirectory out\phase13a\windows\installer-signing
+      - name: Mandatory clean-install, same-version update and uninstall
+        run: pwsh scripts/test_windows_installer.ps1 -Installer "$env:RUNNER_TEMP\ProjectSEAM-0.13.0.exe" -EvidenceDirectory out\phase13a\windows\installer-clean
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: phase13a-windows-signed-installer
+          path: |
+            ${{ runner.temp }}/ProjectSEAM-0.13.0.exe
+            out/phase13a/windows
+
+  macos-signed-notarized-installer:
+    needs: validate-dispatch
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Require and import real Apple certificates
+        env:
+          APP_CERT: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION_P12 }}
+          INSTALLER_CERT: ${{ secrets.APPLE_DEVELOPER_ID_INSTALLER_P12 }}
+          CERT_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          test -n "$APP_CERT" && test -n "$INSTALLER_CERT" && test -n "$CERT_PASSWORD"
+          KEYCHAIN="$RUNNER_TEMP/project-seam.keychain-db"
+          security create-keychain -p actions "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p actions "$KEYCHAIN"
+          echo "$APP_CERT" | base64 --decode > "$RUNNER_TEMP/app.p12"
+          echo "$INSTALLER_CERT" | base64 --decode > "$RUNNER_TEMP/installer.p12"
+          security import "$RUNNER_TEMP/app.p12" -k "$KEYCHAIN" -P "$CERT_PASSWORD" -T /usr/bin/codesign
+          security import "$RUNNER_TEMP/installer.p12" -k "$KEYCHAIN" -P "$CERT_PASSWORD" -T /usr/bin/productbuild
+          security list-keychains -d user -s "$KEYCHAIN"
+          security set-key-partition-list -S apple-tool:,apple: -s -k actions "$KEYCHAIN"
+          echo "APPLE_DEVELOPER_ID_APPLICATION=$(security find-identity -v -p codesigning "$KEYCHAIN" | sed -n '1s/.*"\(.*\)"/\1/p')" >> "$GITHUB_ENV"
+          echo "APPLE_DEVELOPER_ID_INSTALLER=$(security find-identity -v "$KEYCHAIN" | grep 'Developer ID Installer' | sed -n '1s/.*"\(.*\)"/\1/p')" >> "$GITHUB_ENV"
+      - name: Configure notarytool credentials
+        env:
+          APPLE_NOTARY_KEY: ${{ secrets.APPLE_NOTARY_KEY }}
+          APPLE_NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
+          APPLE_NOTARY_ISSUER: ${{ secrets.APPLE_NOTARY_ISSUER }}
+        run: |
+          test -n "$APPLE_NOTARY_KEY" && test -n "$APPLE_NOTARY_KEY_ID" && test -n "$APPLE_NOTARY_ISSUER"
+          echo "$APPLE_NOTARY_KEY" > "$RUNNER_TEMP/AuthKey.p8"
+          xcrun notarytool store-credentials ProjectSEAM-CI --key "$RUNNER_TEMP/AuthKey.p8" --key-id "$APPLE_NOTARY_KEY_ID" --issuer "$APPLE_NOTARY_ISSUER"
+          echo 'APPLE_NOTARY_PROFILE=ProjectSEAM-CI' >> "$GITHUB_ENV"
+      - name: Acquire exact audited SDKs
+        run: python3 scripts/fetch_phase13a_dependencies.py --output "$RUNNER_TEMP/phase13a-deps"
+      - name: Build CLAP, VST3 and AUv2
+        run: python3 scripts/build_phase13a_formats.py --dependencies "$RUNNER_TEMP/phase13a-deps" --build-root "$RUNNER_TEMP/phase13a-build" --output "$RUNNER_TEMP/payload" --auv2
+      - name: Run vst3-validator and auval before packaging
+        run: |
+          cmake -S "$RUNNER_TEMP/phase13a-deps/vst3sdk" -B "$RUNNER_TEMP/vst3sdk-build" -DCMAKE_BUILD_TYPE=Release -DSMTG_ADD_VST3_PLUGINS_SAMPLES=OFF -DSMTG_CREATE_PLUGIN_LINK=OFF
+          cmake --build "$RUNNER_TEMP/vst3sdk-build" --target validator --parallel 2
+          validator="$(find "$RUNNER_TEMP/vst3sdk-build" -type f -name validator | head -1)"
+          python3 scripts/run_vst3_validator.py --validator "$validator" --plugin "$RUNNER_TEMP/payload/VST3/ProjectSEAMEditor.vst3" --clap-path "$RUNNER_TEMP/payload/CLAP" --output out/phase13a/macos/vst3-validator
+          mkdir -p "$HOME/Library/Audio/Plug-Ins/Components"
+          ditto "$RUNNER_TEMP/payload/AU/ProjectSEAMEditor.component" "$HOME/Library/Audio/Plug-Ins/Components/ProjectSEAMEditor.component"
+          killall -9 AudioComponentRegistrar 2>/dev/null || true
+          python3 scripts/run_auval.py --type aumu --subtype SEAM --manufacturer PSEM --output out/phase13a/macos/auval
+      - name: Nested sign, build signed PKG, notarize and staple
+        run: |
+          scripts/sign_macos_plugin_payload.sh "$RUNNER_TEMP/payload" out/phase13a/macos/payload-signing
+          scripts/package_macos_plugins.sh "$RUNNER_TEMP/payload" "$RUNNER_TEMP/ProjectSEAM-0.13.0.pkg"
+          scripts/notarize_macos_installer.sh "$RUNNER_TEMP/ProjectSEAM-0.13.0.pkg" out/phase13a/macos/notarization
+      - name: Mandatory clean-install, update and uninstall
+        run: scripts/test_macos_installer.sh "$RUNNER_TEMP/ProjectSEAM-0.13.0.pkg" out/phase13a/macos/installer-clean
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: phase13a-macos-signed-notarized-installer
+          path: |
+            ${{ runner.temp }}/ProjectSEAM-0.13.0.pkg
+            out/phase13a/macos
