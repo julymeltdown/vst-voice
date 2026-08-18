@@ -63,10 +63,13 @@ class ReleaseGateTests(unittest.TestCase):
         evidence = {
             'osVersion': 'actual-os-version',
             'hostVersion': 'actual-host-or-validator-version',
+            'pluginFormat': 'VST3',
             'pluginSha256': 'a' * 64,
             'executedAt': '2026-08-18T10:00:00Z',
             'executor': 'release-engineer',
+            'checks': {'validator': 'PASS'},
             'logs': ['evidence/log.txt'],
+            'evidenceSha256': {'evidence/log.txt': 'b' * 64},
         }
         for target in matrix['targets']:
             target['runtimeResult'] = 'PASS'

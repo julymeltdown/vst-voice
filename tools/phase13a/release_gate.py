@@ -13,10 +13,13 @@ GATES = {"G2", "G3", "G4", "G5"}
 REQUIRED_EVIDENCE_FIELDS = {
     "osVersion",
     "hostVersion",
+    "pluginFormat",
     "pluginSha256",
     "executedAt",
     "executor",
+    "checks",
     "logs",
+    "evidenceSha256",
 }
 
 
@@ -50,8 +53,23 @@ def _validate_evidence(target_id: str, evidence: Any) -> list[str]:
                 f"{target_id}: evidence[{index}] missing required fields: {', '.join(missing)}"
             )
             continue
-        if not isinstance(record["logs"], list) or not record["logs"]:
-            errors.append(f"{target_id}: evidence[{index}].logs must contain at least one path")
+        logs = record["logs"]
+        if not isinstance(logs, list) or not logs or not all(isinstance(path, str) and path for path in logs):
+            errors.append(f"{target_id}: evidence[{index}].logs must contain non-empty paths")
+        checks = record["checks"]
+        if not isinstance(checks, dict) or not checks:
+            errors.append(f"{target_id}: evidence[{index}].checks must contain executed checks")
+        elif any(value != "PASS" for value in checks.values()):
+            errors.append(f"{target_id}: evidence[{index}] requires every check to equal PASS")
+        hashes = record["evidenceSha256"]
+        if not isinstance(hashes, dict) or not hashes:
+            errors.append(f"{target_id}: evidence[{index}].evidenceSha256 must be a non-empty object")
+        elif isinstance(logs, list) and set(hashes) != set(logs):
+            errors.append(f"{target_id}: evidence[{index}].evidenceSha256 keys must match logs")
+        else:
+            for path, digest in hashes.items():
+                if not isinstance(path, str) or not isinstance(digest, str) or len(digest) != 64 or any(ch not in "0123456789abcdefABCDEF" for ch in digest):
+                    errors.append(f"{target_id}: evidence[{index}] has invalid evidence SHA-256 for {path!r}")
         sha = record["pluginSha256"]
         if not isinstance(sha, str) or len(sha) != 64 or any(ch not in "0123456789abcdefABCDEF" for ch in sha):
             errors.append(f"{target_id}: evidence[{index}].pluginSha256 must be 64 hexadecimal characters")
