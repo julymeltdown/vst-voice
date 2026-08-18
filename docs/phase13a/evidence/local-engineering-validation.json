@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "phase": "13A",
+  "recordClass": "LOCAL_ENGINEERING_EVIDENCE",
+  "releaseEligible": false,
+  "executedAt": "2026-08-18T09:14:01.990086+00:00",
+  "platform": "Linux-6.18.35-x86_64-with-glibc2.41",
+  "projectVersion": "0.13.0",
+  "checks": {
+    "releaseFullBuild": "PASS",
+    "fullCTest": "39/39 PASS",
+    "namedCppTests": "128/128 PASS",
+    "phase13aPythonTests": "33/33 PASS",
+    "phase13aSourceContract": "PASS",
+    "workflowYamlParse": "PASS",
+    "shellSyntax": "PASS",
+    "masterOnlyPolicy": "PASS",
+    "licenseAudit": "PASS",
+    "linuxUnsignedDeveloperPackage": "PASS",
+    "linuxSandboxInstallUninstall": "PASS"
+  },
+  "artifacts": {
+    "clap": {
+      "path": "build/phase13a-release-verify/ProjectSEAMEditor.clap",
+      "sha256": "c8fb56cfc33cf9bc16c1881dabf3aa8fbe97cc8bd4326c12f9b1ea87c06a029c"
+    },
+    "linuxUnsignedDeveloperPackage": {
+      "path": "out/phase13a-local/ProjectSEAM-0.13.0-linux-unsigned-development.zip",
+      "sha256": "9ef90d7314de73fa6ce0e3fa8d36ee6ad7555afecd77c2d918296fb42dee6e0a"
+    }
+  },
+  "mandatoryExternal": {
+    "phase12cOfficialClapValidator": "NOT_RUN",
+    "phase12cExact7200SecondSoak": "NOT_RUN",
+    "vst3TargetBuildsAndValidators": "NOT_RUN",
+    "auv2AndAuval": "NOT_RUN",
+    "windowsAuthenticode": "NOT_RUN",
+    "macosNotarization": "NOT_RUN",
+    "cleanOsInstallers": "NOT_RUN",
+    "commercialDawMatrix": "NOT_RUN",
+    "officialVoicebank01": "NOT_RUN"
+  },
+  "acceptanceStatus": "BLOCKED"
+}
