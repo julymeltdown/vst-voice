@@ -672,16 +672,32 @@ Handle only `CLAP_EVENT_NOTE_EXPRESSION`. Map event addresses using note ID/port
 
 Handle only `CLAP_EVENT_MIDI` on input port 0. Decode its three bytes with `Midi1Decoder`; reject invalid data by incrementing diagnostics and continue rendering.
 
-- [ ] **Step 5: Render live audio blockwise**
+- [ ] **Step 5: Render live audio in event-bounded slices**
 
-Replace per-sample `renderLiveSample()` calls with one fixed-cost call:
+Replace per-sample `renderLiveSample()` calls with fixed-cost ranges split at CLAP event offsets:
 
 ```cpp
-runtime_->renderLive(liveScratchPointers.data(), output.channel_count,
-                     process->frames_count);
+std::uint32_t cursor = 0U;
+for (const auto* event : orderedEvents) {
+  const auto boundary = std::min(event->time, process->frames_count);
+  runtime_->renderLiveRange(liveScratchPointers.data(),
+                            output.channel_count, cursor, boundary);
+  applyLiveEvent(*instance, *event);
+  cursor = boundary;
+}
+runtime_->renderLiveRange(liveScratchPointers.data(),
+                          output.channel_count, cursor, process->frames_count);
 ```
 
-Use preallocated activation-time scratch buffers sized to `maximumFrames_ × maximumChannels` and add preview PCM after live rendering. Do not allocate inside `pluginProcess()`.
+Add this runtime interface:
+
+```cpp
+void renderLiveRange(float* const* output, std::uint32_t channels,
+                     std::uint32_t beginFrame,
+                     std::uint32_t endFrame) noexcept;
+```
+
+Use activation-time preallocated scratch buffers sized to `maximumFrames_ × maximumChannels`, then mix preview PCM over the rendered live ranges. Do not allocate inside `pluginProcess()`.
 
 - [ ] **Step 6: Run dynamic host and sanitizer tests**
 
