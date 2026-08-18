@@ -37,13 +37,23 @@ def main() -> int:
     require_text(
         root / "libs/seam-clap-editor/src/editor_runtime.cpp",
         [
-            "ProductionProjectRenderer",
+            "AuthoringRenderCoordinator",
             "voicebankResolution_",
             "VoicebankContentHashMissing",
             "VoicebankContentMismatch",
             "bindVoicebankLocked",
             "selectVoicebank",
             "previewCacheRoot",
+        ],
+        errors,
+    )
+    require_text(
+        root / "libs/seam-authoring-runtime/src/render_coordinator.cpp",
+        [
+            "ProductionProjectRenderer",
+            "PcmCache",
+            "latestSubmittedRevision_",
+            "RealtimeProjectAudioPublication",
         ],
         errors,
     )

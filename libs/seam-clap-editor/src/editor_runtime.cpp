@@ -251,16 +251,17 @@ bool RealtimePreviewPublication::publish(RenderedPreview preview) {
 }
 
 AsyncPreviewRenderService::AsyncPreviewRenderService()
-    : cache_(std::make_unique<rendering::PcmCache>(previewCacheRoot())),
-      worker_([this](std::stop_token stopToken) { workerLoop(stopToken); }) {}
+    : coordinator_(std::make_unique<authoring::AuthoringRenderCoordinator>(
+          previewCacheRoot())) {
+  coordinator_->setCompletionCallback([this] { publishFromCoordinator(); });
+}
 
 AsyncPreviewRenderService::~AsyncPreviewRenderService() {
-  {
-    std::lock_guard lock(mutex_);
-    activeStopSource_.request_stop();
+  if (coordinator_ != nullptr) {
+    coordinator_->setCompletionCallback({});
+    coordinator_->shutdown();
+    coordinator_.reset();
   }
-  worker_.request_stop();
-  condition_.notify_all();
 }
 
 void AsyncPreviewRenderService::submit(
@@ -269,24 +270,38 @@ void AsyncPreviewRenderService::submit(
     std::vector<TrackVoicebankResolution> resolutions,
     std::uint64_t revision, std::uint32_t sampleRate,
     rendering::RenderQuality quality) {
-  sampleRate = std::clamp(sampleRate, 8000U, 192000U);
-  latestSubmittedRevision_.store(revision, std::memory_order_release);
-  {
-    std::lock_guard lock(mutex_);
-    activeStopSource_.request_stop();
-    if (pending_.has_value()) {
-      cancelled_.fetch_add(1U, std::memory_order_relaxed);
+  std::vector<rendering::TrackVoicebankSource> sources;
+  sources.reserve(resolutions.size());
+  ResolutionOverride resolutionOverride{
+      .revision = revision,
+      .status = std::nullopt,
+      .diagnostic = {},
+  };
+  for (const auto& item : resolutions) {
+    if (!item.resolution.resolved()) {
+      const auto* track = project.findVocalTrack(item.trackId);
+      if (track != nullptr && !track->muted &&
+          !resolutionOverride.status.has_value()) {
+        resolutionOverride.status = previewStatusFor(item.resolution.status);
+        resolutionOverride.diagnostic = item.resolution.diagnostic;
+      }
+      continue;
     }
-    pending_ = Request{.project = std::move(project),
-                       .activeTrackId = activeTrackId,
-                       .activeRegionId = activeRegionId,
-                       .resolutions = std::move(resolutions),
-                       .revision = revision,
-                       .sampleRate = sampleRate,
-                       .quality = quality};
+    const auto& candidate = *item.resolution.candidate;
+    sources.push_back(rendering::TrackVoicebankSource{
+        .trackId = item.trackId,
+        .manifest = candidate.manifest,
+        .bankRoot = candidate.bankRoot,
+        .contentHash = candidate.contentHash,
+        .trust = candidate.trust,
+    });
   }
-  submitted_.fetch_add(1U, std::memory_order_relaxed);
-  condition_.notify_all();
+  {
+    std::lock_guard lock(adapterMutex_);
+    resolutionOverride_ = std::move(resolutionOverride);
+  }
+  coordinator_->submit(std::move(project), std::move(sources), activeTrackId,
+                       activeRegionId, revision, sampleRate, quality);
 }
 
 void AsyncPreviewRenderService::setCompletionCallback(
@@ -302,141 +317,105 @@ std::shared_ptr<const RenderedPreview> AsyncPreviewRenderService::latest() const
 }
 
 RenderServiceStats AsyncPreviewRenderService::stats() const noexcept {
+  const auto stats = coordinator_->stats();
   return RenderServiceStats{
-      .submitted = submitted_.load(std::memory_order_relaxed),
-      .completed = completed_.load(std::memory_order_relaxed),
-      .cancelled = cancelled_.load(std::memory_order_relaxed),
-      .stale = stale_.load(std::memory_order_relaxed),
+      .submitted = stats.submitted,
+      .completed = stats.completed,
+      .cancelled = stats.cancelled,
+      .stale = stats.stale,
   };
 }
 
-void AsyncPreviewRenderService::workerLoop(std::stop_token stopToken) {
-  while (!stopToken.stop_requested()) {
-    Request request;
-    std::stop_token requestToken;
-    {
-      std::unique_lock lock(mutex_);
-      condition_.wait(lock, stopToken,
-                      [this] { return pending_.has_value(); });
-      if (stopToken.stop_requested()) break;
-      request = std::move(*pending_);
-      pending_.reset();
-      activeStopSource_ = std::stop_source{};
-      requestToken = activeStopSource_.get_token();
-    }
-    auto rendered = render(request, requestToken);
-    if (!rendered || stopToken.stop_requested()) {
-      if (requestToken.stop_requested()) {
-        cancelled_.fetch_add(1U, std::memory_order_relaxed);
-      }
-      continue;
-    }
-    if (request.revision !=
-        latestSubmittedRevision_.load(std::memory_order_acquire)) {
-      stale_.fetch_add(1U, std::memory_order_relaxed);
-      continue;
-    }
-    if (!published_.publish(std::move(*rendered))) {
-      stale_.fetch_add(1U, std::memory_order_relaxed);
-      continue;
-    }
-    completed_.fetch_add(1U, std::memory_order_relaxed);
+PreviewStatus AsyncPreviewRenderService::statusFor(
+    authoring::RenderFailureKind failure) noexcept {
+  switch (failure) {
+    case authoring::RenderFailureKind::None: return PreviewStatus::Ready;
+    case authoring::RenderFailureKind::VoicebankMissing:
+      return PreviewStatus::VoicebankMissing;
+    case authoring::RenderFailureKind::VoicebankVersionMismatch:
+      return PreviewStatus::VoicebankVersionMismatch;
+    case authoring::RenderFailureKind::VoicebankContentHashMissing:
+      return PreviewStatus::VoicebankContentHashMissing;
+    case authoring::RenderFailureKind::VoicebankContentMismatch:
+      return PreviewStatus::VoicebankContentMismatch;
+    case authoring::RenderFailureKind::VoicebankUntrusted:
+      return PreviewStatus::VoicebankUntrusted;
+    case authoring::RenderFailureKind::InvalidProject:
+    case authoring::RenderFailureKind::RenderFailed:
+    case authoring::RenderFailureKind::PublicationBusy:
+      return PreviewStatus::Failed;
+  }
+  return PreviewStatus::Failed;
+}
+
+void AsyncPreviewRenderService::publishFromCoordinator() {
+  auto shared = coordinator_->acquire();
+  const auto progress = coordinator_->progress();
+  if (!shared || shared->state == authoring::RenderState::Idle ||
+      progress.publishedRevision != shared->projectRevision) {
     std::function<void()> callback;
     {
       std::lock_guard lock(callbackMutex_);
       callback = completionCallback_;
     }
     if (callback) callback();
-  }
-}
-
-std::shared_ptr<RenderedPreview> AsyncPreviewRenderService::render(
-    const Request& request, std::stop_token stopToken) {
-  auto output = std::make_shared<RenderedPreview>();
-  output->sampleRate = request.sampleRate;
-  output->revision = request.revision;
-
-  std::vector<rendering::TrackVoicebankSource> sources;
-  sources.reserve(request.resolutions.size());
-  for (const auto& item : request.resolutions) {
-    if (!item.resolution.resolved()) {
-      const auto* track = request.project.findVocalTrack(item.trackId);
-      if (track != nullptr && !track->muted) {
-        output->status = previewStatusFor(item.resolution.status);
-        output->diagnostic = item.resolution.diagnostic;
-        return output;
-      }
-      continue;
-    }
-    const auto& candidate = *item.resolution.candidate;
-    sources.push_back(rendering::TrackVoicebankSource{
-        .trackId = item.trackId,
-        .manifest = candidate.manifest,
-        .bankRoot = candidate.bankRoot,
-        .contentHash = candidate.contentHash,
-    });
-    if (item.trackId == request.activeTrackId) {
-      output->voicebankId = candidate.manifest.id;
-      output->voicebankVersion = candidate.manifest.version;
-      output->voicebankContentHash = candidate.contentHash;
-    }
-  }
-  if (sources.empty()) {
-    output->status = PreviewStatus::VoicebankMissing;
-    output->diagnostic = "No resolved Voicebank is available for project preview";
-    return output;
+    return;
   }
 
-  rendering::ProductionProjectRenderer renderer;
-  auto rendered = renderer.render(
-      request.project, sources, request.activeTrackId, request.activeRegionId,
-      request.revision, request.sampleRate, request.quality,
-      synthesis::PhraseRenderOptions{}, cache_.get(), stopToken);
-  if (!rendered) {
-    if (rendered.error().code == core::ErrorCode::Conflict &&
-        stopToken.stop_requested()) {
-      return {};
+  RenderedPreview output;
+  output.sampleRate = shared->result.sampleRate;
+  output.revision = shared->projectRevision;
+  output.status = shared->state == authoring::RenderState::Ready
+                      ? PreviewStatus::Ready
+                      : statusFor(shared->failure);
+  output.diagnostic = shared->diagnostic;
+  {
+    std::lock_guard lock(adapterMutex_);
+    if (resolutionOverride_.revision == output.revision &&
+        resolutionOverride_.status.has_value() &&
+        shared->state == authoring::RenderState::Failed) {
+      output.status = *resolutionOverride_.status;
+      output.diagnostic = resolutionOverride_.diagnostic;
     }
-    output->status = PreviewStatus::Failed;
-    output->diagnostic = rendered.error().message;
-    if (!rendered.error().context.empty()) {
-      output->diagnostic += ": " + rendered.error().context;
-    }
-    return output;
   }
+  output.voicebankId = shared->activeVoicebankId;
+  output.voicebankVersion = shared->activeVoicebankVersion;
+  output.voicebankContentHash = shared->activeVoicebankContentHash;
+  output.phraseCount = shared->result.phraseCount;
+  output.unitPlan = shared->result.activeUnitPlan;
+  output.unitCount = shared->result.unitCount;
+  output.fallbackCount = shared->result.fallbackCount;
+  output.cacheHits = shared->result.cacheHits;
+  output.trackCount = shared->result.trackCount;
+  output.regionCount = shared->result.regionCount;
+  output.channelCount = shared->result.channelCount;
+  output.phraseContentHashes = shared->result.phraseContentHashes;
+  output.interleaved = shared->result.interleaved;
 
-  output->status = PreviewStatus::Ready;
-  output->diagnostic = "Production multi-track routing render completed";
-  output->phraseCount = rendered.value().phraseCount;
-  output->unitPlan = rendered.value().activeUnitPlan;
-  output->unitCount = rendered.value().unitCount;
-  output->fallbackCount = rendered.value().fallbackCount;
-  output->cacheHits = rendered.value().cacheHits;
-  output->trackCount = rendered.value().trackCount;
-  output->regionCount = rendered.value().regionCount;
-  output->channelCount = rendered.value().channelCount;
-  output->phraseContentHashes = rendered.value().phraseContentHashes;
-  output->interleaved = std::move(rendered.value().interleaved);
-
-  // Compatibility view for Phase 11/12A tests and stereo hosts. The actual
-  // plug-in process path consumes the full interleaved 1-8 channel buffer.
-  const auto frames = output->channelCount == 0U
+  const auto frames = output.channelCount == 0U
                           ? 0U
-                          : output->interleaved.size() / output->channelCount;
-  output->stereo.assign(frames * 2U, 0.0F);
+                          : output.interleaved.size() / output.channelCount;
+  output.stereo.assign(frames * 2U, 0.0F);
   for (std::size_t frame = 0U; frame < frames; ++frame) {
-    if (output->channelCount == 1U) {
-      const auto value = output->interleaved[frame];
-      output->stereo[frame * 2U] = value;
-      output->stereo[frame * 2U + 1U] = value;
+    if (output.channelCount == 1U) {
+      const auto value = output.interleaved[frame];
+      output.stereo[frame * 2U] = value;
+      output.stereo[frame * 2U + 1U] = value;
     } else {
-      output->stereo[frame * 2U] =
-          output->interleaved[frame * output->channelCount];
-      output->stereo[frame * 2U + 1U] =
-          output->interleaved[frame * output->channelCount + 1U];
+      output.stereo[frame * 2U] =
+          output.interleaved[frame * output.channelCount];
+      output.stereo[frame * 2U + 1U] =
+          output.interleaved[frame * output.channelCount + 1U];
     }
   }
-  return output;
+  static_cast<void>(published_.publish(std::move(output)));
+
+  std::function<void()> callback;
+  {
+    std::lock_guard lock(callbackMutex_);
+    callback = completionCallback_;
+  }
+  if (callback) callback();
 }
 
 void LiveSampleInstrument::reset() noexcept {

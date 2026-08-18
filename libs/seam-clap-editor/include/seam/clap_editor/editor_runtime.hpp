@@ -2,6 +2,7 @@
 
 #include "seam/application/editor_session.hpp"
 #include "seam/application/project_factory.hpp"
+#include "seam/authoring/render_coordinator.hpp"
 #include "seam/authoring/voicebank_session.hpp"
 #include "seam/core/result.hpp"
 #include "seam/domain/project.hpp"
@@ -148,32 +149,20 @@ public:
   [[nodiscard]] RenderServiceStats stats() const noexcept;
 
 private:
-  struct Request final {
-    domain::Project project;
-    domain::TrackId activeTrackId;
-    domain::RegionId activeRegionId;
-    std::vector<TrackVoicebankResolution> resolutions;
+  struct ResolutionOverride final {
     std::uint64_t revision{0U};
-    std::uint32_t sampleRate{48000U};
-    rendering::RenderQuality quality{rendering::RenderQuality::Preview};
+    std::optional<PreviewStatus> status;
+    std::string diagnostic;
   };
 
-  void workerLoop(std::stop_token stopToken);
-  [[nodiscard]] std::shared_ptr<RenderedPreview> render(
-      const Request& request, std::stop_token stopToken);
+  void publishFromCoordinator();
+  [[nodiscard]] static PreviewStatus statusFor(
+      authoring::RenderFailureKind failure) noexcept;
 
-  mutable std::mutex mutex_;
-  std::condition_variable_any condition_;
-  std::optional<Request> pending_;
-  std::stop_source activeStopSource_;
-  std::atomic<std::uint64_t> latestSubmittedRevision_{0U};
-  std::unique_ptr<rendering::PcmCache> cache_;
-  std::jthread worker_;
+  std::unique_ptr<authoring::AuthoringRenderCoordinator> coordinator_;
   mutable RealtimePreviewPublication published_;
-  std::atomic<std::uint64_t> submitted_{0U};
-  std::atomic<std::uint64_t> completed_{0U};
-  std::atomic<std::uint64_t> cancelled_{0U};
-  std::atomic<std::uint64_t> stale_{0U};
+  mutable std::mutex adapterMutex_;
+  ResolutionOverride resolutionOverride_;
   mutable std::mutex callbackMutex_;
   std::function<void()> completionCallback_;
 };

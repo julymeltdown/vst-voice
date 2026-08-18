@@ -544,15 +544,15 @@ public:
 
 **Checklist**
 
-- [ ] Write a failing parity test: shared coordinator PCM equals direct `ProductionProjectRenderer` PCM.
-- [ ] Write a failing test that a newer revision prevents an older revision from publishing.
-- [ ] Write a failing test that cancellation produces `Cancelled`, not `Failed`.
-- [ ] Write a failing test that missing/mismatched voicebanks publish explicit silence and diagnostic state.
-- [ ] Write a failing test that Preview and Final quality generate distinct cache identities.
-- [ ] Write a failing test that character display changes do not invalidate audio.
-- [ ] Reuse the existing content-addressed `PcmCache`; do not add a second cache implementation.
-- [ ] Move `AsyncPreviewRenderService` behavior into the shared coordinator.
-- [ ] Keep the existing reader-counted bounded publication contract.
+- [x] Write a failing parity test: shared coordinator PCM equals direct `ProductionProjectRenderer` PCM.
+- [x] Write a failing test that a newer revision prevents an older revision from publishing.
+- [x] Write a failing test that cancellation produces `Cancelled`, not `Failed`.
+- [x] Write a failing test that missing/mismatched voicebanks publish explicit silence and diagnostic state.
+- [x] Write a failing test that Preview and Final quality generate distinct cache identities.
+- [x] Write a failing test that character display changes do not invalidate audio.
+- [x] Reuse the existing content-addressed `PcmCache`; do not add a second cache implementation.
+- [x] Move `AsyncPreviewRenderService` behavior into the shared coordinator.
+- [x] Keep the existing reader-counted bounded publication contract.
 
 **Verification**
 

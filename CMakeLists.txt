@@ -114,11 +114,12 @@ seam_apply_compiler_options(seam_application)
 add_library(seam_authoring_runtime
   libs/seam-authoring-runtime/src/project_document.cpp
   libs/seam-authoring-runtime/src/voicebank_session.cpp
+  libs/seam-authoring-runtime/src/render_coordinator.cpp
 )
 target_include_directories(seam_authoring_runtime PUBLIC
   libs/seam-authoring-runtime/include)
 target_link_libraries(seam_authoring_runtime PUBLIC
-  seam_voicebank seam_application seam_domain seam_core)
+  seam_rendering seam_voicebank seam_application seam_domain seam_core)
 seam_apply_compiler_options(seam_authoring_runtime)
 
 
@@ -681,6 +682,7 @@ if(SEAM_BUILD_TESTS)
     tests/test_clap.cpp
     tests/test_project_document.cpp
     tests/test_authoring_voicebank_session.cpp
+    tests/test_authoring_render_coordinator.cpp
   )
   if(SEAM_BUILD_CLAP_EDITOR_PLUGIN)
     list(APPEND SEAM_TEST_SOURCES
@@ -692,8 +694,39 @@ if(SEAM_BUILD_TESTS)
       tests/test_native_runtime.cpp)
   endif()
 
+  if(SEAM_BUILD_CLAP_EDITOR_PLUGIN)
+    add_executable(seam_authoring_characterization_tests
+      tests/test_main.cpp
+      tests/test_authoring_characterization.cpp)
+    target_include_directories(seam_authoring_characterization_tests PRIVATE tests)
+    target_compile_definitions(seam_authoring_characterization_tests PRIVATE
+      SEAM_SOURCE_PRODUCTION_VOICEBANK="${CMAKE_CURRENT_SOURCE_DIR}/assets/demo-human-voicebank-public-domain/production-bank")
+    target_link_libraries(seam_authoring_characterization_tests PRIVATE
+      seam_clap_editor seam_authoring_runtime seam_rendering seam_synthesis
+      seam_voicebank seam_native_ui seam_editor_ui seam_application
+      seam_domain seam_core)
+    seam_apply_compiler_options(seam_authoring_characterization_tests)
+    add_test(NAME seam_authoring_characterization_tests
+      COMMAND seam_authoring_characterization_tests)
+  endif()
+
+  add_executable(seam_authoring_render_coordinator_tests
+    tests/test_main.cpp
+    tests/test_authoring_render_coordinator.cpp)
+  target_include_directories(seam_authoring_render_coordinator_tests PRIVATE tests)
+  target_compile_definitions(seam_authoring_render_coordinator_tests PRIVATE
+    SEAM_SOURCE_PRODUCTION_VOICEBANK="${CMAKE_CURRENT_SOURCE_DIR}/assets/demo-human-voicebank-public-domain/production-bank")
+  target_link_libraries(seam_authoring_render_coordinator_tests PRIVATE
+    seam_authoring_runtime seam_rendering seam_synthesis seam_voicebank
+    seam_application seam_domain seam_core)
+  seam_apply_compiler_options(seam_authoring_render_coordinator_tests)
+  add_test(NAME seam_authoring_render_coordinator_tests
+    COMMAND seam_authoring_render_coordinator_tests)
+
   add_executable(seam_tests ${SEAM_TEST_SOURCES})
   target_include_directories(seam_tests PRIVATE tests)
+  target_compile_definitions(seam_tests PRIVATE
+    SEAM_SOURCE_PRODUCTION_VOICEBANK="${CMAKE_CURRENT_SOURCE_DIR}/assets/demo-human-voicebank-public-domain/production-bank")
   target_link_libraries(seam_tests PRIVATE
     seam_distribution seam_editor_inspection seam_rendering seam_synthesis seam_voicebank seam_editor_ui seam_phonemizer seam_formats
     seam_playback_platform seam_platform seam_authoring_runtime seam_application seam_domain seam_text seam_clap seam_core)
@@ -701,8 +734,6 @@ if(SEAM_BUILD_TESTS)
     target_link_libraries(seam_tests PRIVATE seam_native_ui)
   endif()
   if(SEAM_BUILD_CLAP_EDITOR_PLUGIN)
-    target_compile_definitions(seam_tests PRIVATE
-      SEAM_SOURCE_PRODUCTION_VOICEBANK="${CMAKE_CURRENT_SOURCE_DIR}/assets/demo-human-voicebank-public-domain/production-bank")
     target_link_libraries(seam_tests PRIVATE seam_clap_editor)
   endif()
   seam_apply_compiler_options(seam_tests)

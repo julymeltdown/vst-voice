@@ -262,3 +262,22 @@ TEST_CASE("authoring_characterization_character_display_does_not_change_render")
   CHECK(hiddenPreview->channelCount == minimalPreview->channelCount);
   CHECK(hiddenPreview->interleaved == minimalPreview->interleaved);
 }
+
+TEST_CASE("authoring_characterization_revision_zero_preview_is_published") {
+  EditorRuntime seeded(std::nullopt, std::filesystem::path{"assets/character-01"},
+                       fixtureRoots());
+  const auto seededPreview = waitReady(seeded);
+  CHECK(seededPreview != nullptr);
+  CHECK(seededPreview->status == PreviewStatus::Ready);
+
+  auto project = seeded.projectCopy();
+  EditorRuntime runtime(std::move(project),
+                        std::filesystem::path{"assets/character-01"},
+                        fixtureRoots());
+  CHECK(runtime.revision() == 0U);
+  const auto preview = waitReady(runtime);
+  CHECK(preview != nullptr);
+  CHECK(preview->revision == 0U);
+  CHECK(preview->status == PreviewStatus::Ready);
+  CHECK(!preview->interleaved.empty());
+}

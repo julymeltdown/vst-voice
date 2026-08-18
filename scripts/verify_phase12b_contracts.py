@@ -77,11 +77,20 @@ def main() -> int:
     require_text(
         root / "libs/seam-clap-editor/src/editor_runtime.cpp",
         [
-            "ProductionProjectRenderer",
+            "AuthoringRenderCoordinator",
             "ConfigureProjectOutputCommand",
             "SetHostStartOffsetCommand",
             "paintSampleMicroscope",
             "setRenderQuality",
+        ],
+        errors,
+    )
+    require_text(
+        root / "libs/seam-authoring-runtime/src/render_coordinator.cpp",
+        [
+            "ProductionProjectRenderer",
+            "RealtimeProjectAudioPublication",
+            "RenderQuality",
         ],
         errors,
     )

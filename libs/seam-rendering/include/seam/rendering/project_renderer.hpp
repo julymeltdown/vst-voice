@@ -6,6 +6,7 @@
 #include "seam/rendering/pcm_cache.hpp"
 #include "seam/rendering/region_renderer.hpp"
 #include "seam/synthesis/unit_selection.hpp"
+#include "seam/voicebank/catalog.hpp"
 #include "seam/voicebank/voicebank.hpp"
 
 #include <cstddef>
@@ -22,6 +23,7 @@ struct TrackVoicebankSource final {
   voicebank::Manifest manifest;
   std::filesystem::path bankRoot;
   std::string contentHash;
+  voicebank::VoicebankTrust trust{voicebank::VoicebankTrust::UntrustedInstalled};
 };
 
 struct ProjectRenderResult final {
