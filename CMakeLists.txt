@@ -669,6 +669,10 @@ if(SEAM_BUILD_TESTS)
     tests/test_text.cpp
     tests/test_clap.cpp
   )
+  if(SEAM_BUILD_CLAP_EDITOR_PLUGIN)
+    list(APPEND SEAM_TEST_SOURCES
+      tests/test_authoring_characterization.cpp)
+  endif()
   if(SEAM_BUILD_NATIVE_DESKTOP)
     list(APPEND SEAM_TEST_SOURCES
       tests/test_native_ui.cpp
@@ -682,6 +686,11 @@ if(SEAM_BUILD_TESTS)
     seam_playback_platform seam_platform seam_application seam_domain seam_text seam_clap seam_core)
   if(SEAM_BUILD_NATIVE_DESKTOP)
     target_link_libraries(seam_tests PRIVATE seam_native_ui)
+  endif()
+  if(SEAM_BUILD_CLAP_EDITOR_PLUGIN)
+    target_compile_definitions(seam_tests PRIVATE
+      SEAM_SOURCE_PRODUCTION_VOICEBANK="${CMAKE_CURRENT_SOURCE_DIR}/assets/demo-human-voicebank-public-domain/production-bank")
+    target_link_libraries(seam_tests PRIVATE seam_clap_editor)
   endif()
   seam_apply_compiler_options(seam_tests)
   add_test(NAME seam_tests COMMAND seam_tests)
