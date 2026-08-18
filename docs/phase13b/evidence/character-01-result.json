@@ -1,0 +1,38 @@
+{
+  "blockedTargets": [
+    "public-name",
+    "trademark-clearance",
+    "domain-clearance",
+    "social-handle-clearance",
+    "ip-assignment",
+    "source-provenance",
+    "front-side-back-turnaround",
+    "production-low-poly-model",
+    "lod-set",
+    "expression-set",
+    "animation-set",
+    "runtime-state-assets",
+    "key-art",
+    "merchandise-policy",
+    "voice-character-separation",
+    "product-owner-approval",
+    "legal-approval"
+  ],
+  "errors": [
+    "commercialRelease must be true",
+    "finalPublicName must be non-placeholder",
+    "character asset is missing: turnaround/front.png",
+    "character asset is missing: turnaround/side.png",
+    "character asset is missing: turnaround/back.png",
+    "character asset is missing: model/production.obj",
+    "character asset is missing: model/production.mtl",
+    "character asset is missing: model/uv.png",
+    "character asset is missing: lod/lod0.obj",
+    "character asset is missing: lod/lod1.obj",
+    "character asset is missing: animation/idle.anim",
+    "character asset is missing: key-art/key-art.png",
+    "minimumLods requires 2, found 0",
+    "character dossier version does not match manifest"
+  ],
+  "passed": false
+}

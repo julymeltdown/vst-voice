@@ -56,6 +56,88 @@ class ReleaseGateTests(unittest.TestCase):
             self.assertTrue(result['passed'], result)
             self.assertEqual(0, result['unresolvedMandatoryCount'])
 
+    def test_g5_rejects_tampered_external_evidence(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            runtime = evidence(root, 'runtime')
+            (root / runtime['path']).write_text('tampered', encoding='utf-8')
+            result = evaluate_g5(
+                {'releaseStatus': 'ACCEPTED', 'errors': [], 'unresolved': []},
+                {'releaseStatus': 'ACCEPTED', 'errors': [], 'unresolved': []},
+                [{'targets': [{'id': 'windows-runtime', 'mandatoryFor': ['G5'], 'runtimeResult': 'PASS', 'evidence': [runtime]}]}],
+                {'requirements': {
+                    'final-eula': {'result': 'PASS', 'evidence': [evidence(root, 'eula')]},
+                    'voicebank-license': {'result': 'PASS', 'evidence': [evidence(root, 'license')]},
+                }},
+                root,
+            )
+            self.assertFalse(result['passed'])
+            self.assertTrue(any('sha256' in error for error in result['errors']))
+
+    def test_g5_accepts_verified_phase13a_evidence_record(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            log = root / 'evidence' / 'host.log'
+            log.parent.mkdir(exist_ok=True)
+            log.write_text('host validation pass', encoding='utf-8')
+            relative = str(log.relative_to(root))
+            record = {
+                'osVersion': 'Windows 11 24H2',
+                'hostVersion': 'REAPER 7.0',
+                'pluginFormat': 'CLAP',
+                'pluginSha256': 'a' * 64,
+                'executedAt': '2026-08-18T00:00:00Z',
+                'executor': 'release-owner',
+                'checks': {'scan': 'PASS', 'transport': 'PASS'},
+                'logs': [relative],
+                'evidenceSha256': {relative: hashlib.sha256(log.read_bytes()).hexdigest()},
+            }
+            result = evaluate_g5(
+                {'releaseStatus': 'ACCEPTED', 'errors': [], 'unresolved': []},
+                {'releaseStatus': 'ACCEPTED', 'errors': [], 'unresolved': []},
+                [{'targets': [{'id': 'reaper', 'mandatoryFor': ['G5'], 'runtimeResult': 'PASS', 'evidence': [record]}]}],
+                {'requirements': {
+                    'final-eula': {'result': 'PASS', 'evidence': [evidence(root, 'eula')]},
+                    'voicebank-license': {'result': 'PASS', 'evidence': [evidence(root, 'license')]},
+                }},
+                root,
+            )
+            self.assertTrue(result['passed'], result)
+
+    def test_g5_rejects_tampered_phase13a_log(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            log = root / 'evidence' / 'host.log'
+            log.parent.mkdir(exist_ok=True)
+            log.write_text('host validation pass', encoding='utf-8')
+            relative = str(log.relative_to(root))
+            digest = hashlib.sha256(log.read_bytes()).hexdigest()
+            log.write_text('tampered', encoding='utf-8')
+            record = {
+                'osVersion': 'macOS 26',
+                'hostVersion': 'Logic Pro',
+                'pluginFormat': 'AUv2',
+                'pluginSha256': 'b' * 64,
+                'executedAt': '2026-08-18T00:00:00Z',
+                'executor': 'release-owner',
+                'checks': {'scan': 'PASS', 'transport': 'PASS'},
+                'logs': [relative],
+                'evidenceSha256': {relative: digest},
+            }
+            result = evaluate_g5(
+                {'releaseStatus': 'ACCEPTED', 'errors': [], 'unresolved': []},
+                {'releaseStatus': 'ACCEPTED', 'errors': [], 'unresolved': []},
+                [{'targets': [{'id': 'logic-pro', 'mandatoryFor': ['G5'], 'runtimeResult': 'PASS', 'evidence': [record]}]}],
+                {'requirements': {
+                    'final-eula': {'result': 'PASS', 'evidence': [evidence(root, 'eula')]},
+                    'voicebank-license': {'result': 'PASS', 'evidence': [evidence(root, 'license')]},
+                }},
+                root,
+            )
+            self.assertFalse(result['passed'])
+            self.assertIn('logic-pro', result['blockedTargets'])
+            self.assertTrue(any('sha256' in error for error in result['errors']))
+
 
 if __name__ == '__main__':
     unittest.main()

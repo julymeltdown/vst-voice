@@ -1,0 +1,15 @@
+{
+  "characterId": "official.character.01",
+  "colors": [
+    "#F0EBE7",
+    "#242120",
+    "#F0EBE8",
+    "#EFEBE7",
+    "#F0EBE6",
+    "#DBD5D1",
+    "#F1ECE8",
+    "#F1EBE8"
+  ],
+  "developmentOnly": true,
+  "schemaVersion": 1
+}

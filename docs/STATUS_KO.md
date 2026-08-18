@@ -20,8 +20,8 @@ Phase 12C의 Live Voicebank Articulation과 Linux 검증 도구가 구현됐고,
 | AUv2 | **SOURCE_READY / CI_CONFIGURED** | macOS build와 `auval` workflow가 존재한다. 실제 result는 NOT_RUN이다. |
 | Signing·Installer | **PIPELINE_READY / EXTERNAL_GATE** | NSIS(zlib), codesign, Authenticode, notarytool, PKG source는 있으나 실제 인증서 실행은 NOT_RUN이다. |
 | Commercial DAW Matrix | recorder 구현·NOT_RUN | 실제 DAW 실행 증적이 없다. |
-| Character 01 | 통합됨·미확정 | runtime asset은 있으나 최종 명칭·3D·상표/IP 확정이 남아 있다. |
-| Official Voicebank 01 | 미완료 | 공개 도메인 기술 Fixture는 계약 기반 정식 상품이 아니다. |
+| Character 01 | 개발 자산·Gate 구현 / 외부 승인 미완료 | deterministic key art·portrait·thumbnail·silhouette와 권리/자산 Gate가 있으나 공개 이름·상표·생산 모델·IP 승인이 남아 있다. |
+| Official Voicebank 01 | Release Gate 구현 / 외부 계약·녹음 미완료 | 계약·녹음·QA·서명 패키지 증적 검증 도구는 있으나 실제 실연자 계약과 녹음은 없다. |
 
 ## 현재 가능한 범위
 
@@ -43,4 +43,4 @@ Phase 12C의 Live Voicebank Articulation과 Linux 검증 도구가 구현됐고,
 - Official Voicebank 01
 - Beta·Release Candidate·General Availability
 
-다음 개발 축은 **Phase 13B — Official Voicebank 01과 Character/IP Release Assets**다. 다만 Phase 12C/13A의 mandatory validation은 병렬로 실제 대상 환경에서 반드시 수행해야 한다.
+Phase 13B 엔지니어링 도구는 구현됐지만 제품 Acceptance는 BLOCKED다. 다음 개발 축은 **Phase 14 — Production UI·접근성·i18n·온보딩·RC 문서화**이며, Phase 12C/13A/13B mandatory validation은 병렬로 실제 대상 환경에서 반드시 수행해야 한다.

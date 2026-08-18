@@ -9,3 +9,8 @@ blocked by official validators, target-OS runtime evidence, soak tests, signed
 installers, commercial host certification and Official Voicebank 01.
 
 See `RELEASE_READINESS_KO.md` for the canonical checklist.
+
+
+## Phase 13B content/IP gate
+
+G5 remains blocked until the Official Voicebank and Character dossiers are accepted, the final EULA and voicebank licence are approved, and every mandatory Phase 12C/13A/13B row has real evidence.

@@ -1,0 +1,14 @@
+{
+  "template": true,
+  "status": "NOT_RUN",
+  "voicebankId": "official.voice.01",
+  "renderers": {
+    "raw": "NOT_RUN",
+    "classic-psola": "NOT_RUN",
+    "spectral-classic": "NOT_RUN",
+    "stretch": "NOT_RUN"
+  },
+  "testPhrases": [],
+  "reviewers": [],
+  "evidence": []
+}

@@ -1,0 +1,9 @@
+{
+  "template": true,
+  "language": "",
+  "minimumEnabledUnits": 0,
+  "minimumPitchLayers": 3,
+  "requiredKinds": {},
+  "requiredStyles": ["original"],
+  "requiredPhones": []
+}

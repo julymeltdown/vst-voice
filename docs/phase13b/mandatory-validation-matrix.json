@@ -1,0 +1,381 @@
+{
+  "schemaVersion": 1,
+  "policy": "MANDATORY",
+  "status": "BLOCKED",
+  "targets": [
+    {
+      "id": "official-voicebank-01-performer-contract",
+      "category": "official-voicebank",
+      "implementationState": "SOURCE_READY",
+      "runtimeResult": "NOT_RUN",
+      "mandatory": true,
+      "mandatoryFor": [
+        "G5"
+      ],
+      "evidence": []
+    },
+    {
+      "id": "official-voicebank-01-rights-review",
+      "category": "official-voicebank",
+      "implementationState": "SOURCE_READY",
+      "runtimeResult": "NOT_RUN",
+      "mandatory": true,
+      "mandatoryFor": [
+        "G5"
+      ],
+      "evidence": []
+    },
+    {
+      "id": "official-voicebank-01-recording-session-logs",
+      "category": "official-voicebank",
+      "implementationState": "SOURCE_READY",
+      "runtimeResult": "NOT_RUN",
+      "mandatory": true,
+      "mandatoryFor": [
+        "G5"
+      ],
+      "evidence": []
+    },
+    {
+      "id": "official-voicebank-01-microphone-chain-calibration",
+      "category": "official-voicebank",
+      "implementationState": "SOURCE_READY",
+      "runtimeResult": "NOT_RUN",
+      "mandatory": true,
+      "mandatoryFor": [
+        "G5"
+      ],
+      "evidence": []
+    },
+    {
+      "id": "official-voicebank-01-complete-unit-inventory",
+      "category": "official-voicebank",
+      "implementationState": "SOURCE_READY",
+      "runtimeResult": "NOT_RUN",
+      "mandatory": true,
+      "mandatoryFor": [
+        "G5"
+      ],
+      "evidence": []
+    },
+    {
+      "id": "official-voicebank-01-retake-closure",
+      "category": "official-voicebank",
+      "implementationState": "SOURCE_READY",
+      "runtimeResult": "NOT_RUN",
+      "mandatory": true,
+      "mandatoryFor": [
+        "G5"
+      ],
+      "evidence": []
+    },
+    {
+      "id": "official-voicebank-01-marker-pitch-loop-qa",
+      "category": "official-voicebank",
+      "implementationState": "SOURCE_READY",
+      "runtimeResult": "NOT_RUN",
+      "mandatory": true,
+      "mandatoryFor": [
+        "G5"
+      ],
+      "evidence": []
+    },
+    {
+      "id": "official-voicebank-01-renderer-listening-qa",
+      "category": "official-voicebank",
+      "implementationState": "SOURCE_READY",
+      "runtimeResult": "NOT_RUN",
+      "mandatory": true,
+      "mandatoryFor": [
+        "G5"
+      ],
+      "evidence": []
+    },
+    {
+      "id": "official-voicebank-01-signed-seambank",
+      "category": "official-voicebank",
+      "implementationState": "SOURCE_READY",
+      "runtimeResult": "NOT_RUN",
+      "mandatory": true,
+      "mandatoryFor": [
+        "G5"
+      ],
+      "evidence": []
+    },
+    {
+      "id": "official-voicebank-01-installation-receipt",
+      "category": "official-voicebank",
+      "implementationState": "SOURCE_READY",
+      "runtimeResult": "NOT_RUN",
+      "mandatory": true,
+      "mandatoryFor": [
+        "G5"
+      ],
+      "evidence": []
+    },
+    {
+      "id": "official-voicebank-01-character-marketing-rights",
+      "category": "official-voicebank",
+      "implementationState": "SOURCE_READY",
+      "runtimeResult": "NOT_RUN",
+      "mandatory": true,
+      "mandatoryFor": [
+        "G5"
+      ],
+      "evidence": []
+    },
+    {
+      "id": "official-voicebank-01-performer-character-separation",
+      "category": "official-voicebank",
+      "implementationState": "SOURCE_READY",
+      "runtimeResult": "NOT_RUN",
+      "mandatory": true,
+      "mandatoryFor": [
+        "G5"
+      ],
+      "evidence": []
+    },
+    {
+      "id": "official-voicebank-01-commercial-user-output-eula",
+      "category": "official-voicebank",
+      "implementationState": "SOURCE_READY",
+      "runtimeResult": "NOT_RUN",
+      "mandatory": true,
+      "mandatoryFor": [
+        "G5"
+      ],
+      "evidence": []
+    },
+    {
+      "id": "official-voicebank-01-product-owner-approval",
+      "category": "official-voicebank",
+      "implementationState": "SOURCE_READY",
+      "runtimeResult": "NOT_RUN",
+      "mandatory": true,
+      "mandatoryFor": [
+        "G5"
+      ],
+      "evidence": []
+    },
+    {
+      "id": "official-voicebank-01-legal-approval",
+      "category": "official-voicebank",
+      "implementationState": "SOURCE_READY",
+      "runtimeResult": "NOT_RUN",
+      "mandatory": true,
+      "mandatoryFor": [
+        "G5"
+      ],
+      "evidence": []
+    },
+    {
+      "id": "character-01-public-name",
+      "category": "character-ip",
+      "implementationState": "SOURCE_READY",
+      "runtimeResult": "NOT_RUN",
+      "mandatory": true,
+      "mandatoryFor": [
+        "G5"
+      ],
+      "evidence": []
+    },
+    {
+      "id": "character-01-trademark-clearance",
+      "category": "character-ip",
+      "implementationState": "SOURCE_READY",
+      "runtimeResult": "NOT_RUN",
+      "mandatory": true,
+      "mandatoryFor": [
+        "G5"
+      ],
+      "evidence": []
+    },
+    {
+      "id": "character-01-domain-clearance",
+      "category": "character-ip",
+      "implementationState": "SOURCE_READY",
+      "runtimeResult": "NOT_RUN",
+      "mandatory": true,
+      "mandatoryFor": [
+        "G5"
+      ],
+      "evidence": []
+    },
+    {
+      "id": "character-01-social-handle-clearance",
+      "category": "character-ip",
+      "implementationState": "SOURCE_READY",
+      "runtimeResult": "NOT_RUN",
+      "mandatory": true,
+      "mandatoryFor": [
+        "G5"
+      ],
+      "evidence": []
+    },
+    {
+      "id": "character-01-ip-assignment",
+      "category": "character-ip",
+      "implementationState": "SOURCE_READY",
+      "runtimeResult": "NOT_RUN",
+      "mandatory": true,
+      "mandatoryFor": [
+        "G5"
+      ],
+      "evidence": []
+    },
+    {
+      "id": "character-01-source-provenance",
+      "category": "character-ip",
+      "implementationState": "SOURCE_READY",
+      "runtimeResult": "NOT_RUN",
+      "mandatory": true,
+      "mandatoryFor": [
+        "G5"
+      ],
+      "evidence": []
+    },
+    {
+      "id": "character-01-front-side-back-turnaround",
+      "category": "character-ip",
+      "implementationState": "SOURCE_READY",
+      "runtimeResult": "NOT_RUN",
+      "mandatory": true,
+      "mandatoryFor": [
+        "G5"
+      ],
+      "evidence": []
+    },
+    {
+      "id": "character-01-production-low-poly-model",
+      "category": "character-ip",
+      "implementationState": "SOURCE_READY",
+      "runtimeResult": "NOT_RUN",
+      "mandatory": true,
+      "mandatoryFor": [
+        "G5"
+      ],
+      "evidence": []
+    },
+    {
+      "id": "character-01-lod-set",
+      "category": "character-ip",
+      "implementationState": "SOURCE_READY",
+      "runtimeResult": "NOT_RUN",
+      "mandatory": true,
+      "mandatoryFor": [
+        "G5"
+      ],
+      "evidence": []
+    },
+    {
+      "id": "character-01-expression-set",
+      "category": "character-ip",
+      "implementationState": "SOURCE_READY",
+      "runtimeResult": "NOT_RUN",
+      "mandatory": true,
+      "mandatoryFor": [
+        "G5"
+      ],
+      "evidence": []
+    },
+    {
+      "id": "character-01-animation-set",
+      "category": "character-ip",
+      "implementationState": "SOURCE_READY",
+      "runtimeResult": "NOT_RUN",
+      "mandatory": true,
+      "mandatoryFor": [
+        "G5"
+      ],
+      "evidence": []
+    },
+    {
+      "id": "character-01-runtime-state-assets",
+      "category": "character-ip",
+      "implementationState": "SOURCE_READY",
+      "runtimeResult": "NOT_RUN",
+      "mandatory": true,
+      "mandatoryFor": [
+        "G5"
+      ],
+      "evidence": []
+    },
+    {
+      "id": "character-01-key-art",
+      "category": "character-ip",
+      "implementationState": "SOURCE_READY",
+      "runtimeResult": "NOT_RUN",
+      "mandatory": true,
+      "mandatoryFor": [
+        "G5"
+      ],
+      "evidence": []
+    },
+    {
+      "id": "character-01-merchandise-policy",
+      "category": "character-ip",
+      "implementationState": "SOURCE_READY",
+      "runtimeResult": "NOT_RUN",
+      "mandatory": true,
+      "mandatoryFor": [
+        "G5"
+      ],
+      "evidence": []
+    },
+    {
+      "id": "character-01-voice-character-separation",
+      "category": "character-ip",
+      "implementationState": "SOURCE_READY",
+      "runtimeResult": "NOT_RUN",
+      "mandatory": true,
+      "mandatoryFor": [
+        "G5"
+      ],
+      "evidence": []
+    },
+    {
+      "id": "character-01-product-owner-approval",
+      "category": "character-ip",
+      "implementationState": "SOURCE_READY",
+      "runtimeResult": "NOT_RUN",
+      "mandatory": true,
+      "mandatoryFor": [
+        "G5"
+      ],
+      "evidence": []
+    },
+    {
+      "id": "character-01-legal-approval",
+      "category": "character-ip",
+      "implementationState": "SOURCE_READY",
+      "runtimeResult": "NOT_RUN",
+      "mandatory": true,
+      "mandatoryFor": [
+        "G5"
+      ],
+      "evidence": []
+    },
+    {
+      "id": "final-eula",
+      "category": "legal-product",
+      "implementationState": "SOURCE_READY",
+      "runtimeResult": "NOT_RUN",
+      "mandatory": true,
+      "mandatoryFor": [
+        "G5"
+      ],
+      "evidence": []
+    },
+    {
+      "id": "voicebank-license",
+      "category": "legal-product",
+      "implementationState": "SOURCE_READY",
+      "runtimeResult": "NOT_RUN",
+      "mandatory": true,
+      "mandatoryFor": [
+        "G5"
+      ],
+      "evidence": []
+    }
+  ]
+}

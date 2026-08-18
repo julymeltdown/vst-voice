@@ -21,7 +21,7 @@ This repository contains:
 
 Development uses the **`master` branch only**.
 
-> **Current maturity: Feature Alpha, not Release Candidate.** Phase 12B now adds direct Phoneme/Unit/Pitch editing, host timeline authority, complete multi-track/multi-region production rendering and Phase 6 1–8-channel CLAP routing. Official validation, target-OS runtime evidence, VST3/AU, signed installers and Official Voicebank 01 remain. See [`docs/STATUS_KO.md`](docs/STATUS_KO.md), [`docs/REMAINING_TASKS_KO.md`](docs/REMAINING_TASKS_KO.md), and [`docs/RELEASE_READINESS_KO.md`](docs/RELEASE_READINESS_KO.md).
+> **Current maturity: Feature Alpha, not Release Candidate.** Phase 13B now adds evidence-backed Official Voicebank 01 and Character 01 release dossiers, deterministic Character 01 development assets, a development-only content bundle and a fail-closed G5 gate. Actual performer contract/recording, public-name and trademark clearance, production 3D assets, official validators, target-OS runtime evidence, signed installers and commercial DAW certification remain mandatory. See [`docs/STATUS_KO.md`](docs/STATUS_KO.md), [`docs/REMAINING_TASKS_KO.md`](docs/REMAINING_TASKS_KO.md), and [`docs/RELEASE_READINESS_KO.md`](docs/RELEASE_READINESS_KO.md).
 
 
 
@@ -640,3 +640,15 @@ See:
 - `docs/phase13a/mandatory-validation-matrix.json`
 - `docs/phase13a/HOST_CERTIFICATION_MATRIX_KO.md`
 - `docs/phase13a/MANDATORY_FUTURE_VALIDATION_KO.md`
+
+
+## Phase 13B — Content/IP release engineering
+
+- validates every PASS evidence file by safe path, regular-file status, size and SHA-256;
+- keeps the public-domain human fixture non-official and uncontracted;
+- generates deterministic Character 01 key art, portrait, thumbnail, silhouette and palette as development assets;
+- creates a deterministic development-only content ZIP;
+- refuses an official content bundle unless Voicebank, Character, licences and all mandatory external matrices are PASS;
+- records real performer contract/recording, character name/trademark/IP and legal approvals as external gates rather than invented completion.
+
+See `docs/phase13b/`.

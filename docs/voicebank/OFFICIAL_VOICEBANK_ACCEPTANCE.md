@@ -12,3 +12,6 @@ Release is blocked until all items are approved:
 8. product owner and legal approval.
 
 The Phase 11 public-domain fixture is technically useful but cannot satisfy these gates.
+
+
+Phase 13B implements the dossier and evidence validator for this gate. The checked-in baseline intentionally remains blocked and contains no signed performer, recording or legal evidence.

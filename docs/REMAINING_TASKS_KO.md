@@ -67,13 +67,18 @@ Attack·Transition·Sustain·Release, legato, CLAP Note Expression, MIDI 1, 32 v
 - 사용자 상업 이용 EULA
 
 ### SEAM-P13-006 — Character 01 제품 확정
-**상태: PARTIAL**
+**상태: EXTERNAL_GATE**
 
 - 정식 이름·상표·도메인
 - 최종 face/turnaround
 - 생산용 low-poly model·LOD·표정·animation
 - IP 양도/소유권
 - key art와 공식 voice/character 구분 문구
+
+### SEAM-P13-007 — Content/IP Release Tooling
+**상태: DONE**
+
+증적 Hash, Voicebank/Character Dossier, deterministic 개발 패키지와 fail-closed G5 Gate가 구현됐다. 실제 계약·녹음·상표·IP 승인을 대체하지 않는다.
 
 ## Phase 14
 
@@ -88,6 +93,8 @@ Attack·Transition·Sustain·Release, legato, CLAP Note Expression, MIDI 1, 32 v
 docs/phase12c/MANDATORY_TARGET_OS_AND_DAW_VALIDATION_KO.md
 docs/phase13a/MANDATORY_VALIDATION_KO.md
 docs/phase13a/mandatory-validation-matrix.json
+docs/phase13b/MANDATORY_OFFICIAL_VOICEBANK_AND_CHARACTER_VALIDATION_KO.md
+docs/phase13b/mandatory-validation-matrix.json
 ```
 
 이 항목들은 선택 사항이 아니며 실제 PASS 전에는 Beta·RC·GA로 승격할 수 없다.

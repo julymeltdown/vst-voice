@@ -66,3 +66,8 @@ The canonical low-poly visual source for Character 01 is maintained under `asset
 Character 01 is not re-authored per operating system. X11, Win32, and AppKit shells all render the shared pre-rendered Character Package and respect the same Full/Minimal/Off state. OS-specific code owns only the window, display, input, and device boundary.
 
 Windows/macOS platform work must not turn Character 01 into a desktop assistant, talking mascot, singer overlay, or mandatory always-visible panel. The main editor remains a professional technical workspace; the optional dedicated dock is the maximum persistent presentation surface.
+
+
+## Phase 13B release status
+
+Deterministic development key art, portrait, thumbnail, silhouette and palette now exist under `assets/character-01/production-development/`. They are not a front/side/back turnaround and are explicitly blocked from commercial-release acceptance. `Character 01` remains an internal name pending trademark, domain, social-handle and legal clearance.

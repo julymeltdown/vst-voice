@@ -1,0 +1,19 @@
+{
+  "template": true,
+  "status": "NOT_RUN",
+  "performerId": "",
+  "contractId": "",
+  "executedAt": "",
+  "territory": "",
+  "term": "",
+  "rights": {
+    "recording": false,
+    "phonemeSegmentation": false,
+    "pitchDurationFormantProcessing": false,
+    "voicebankDistribution": false,
+    "commercialUserOutputs": false,
+    "characterLinkedMarketing": false,
+    "aiTraining": "UNDECIDED"
+  },
+  "evidence": []
+}

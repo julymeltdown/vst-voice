@@ -30,9 +30,18 @@
 - [ ] Windows Authenticode와 timestamp PASS
 - [ ] Apple codesign·notarization·stapling PASS
 - [ ] Windows/macOS clean install·update·uninstall PASS
-- [ ] Official Voicebank 01 acceptance
-- [ ] Character 01 IP/상표/최종 asset 승인
+- [ ] Official Voicebank 01 실제 계약·녹음·QA·서명 패키지 Acceptance
+- [ ] Character 01 공개 이름·상표·IP 양도·생산 asset 승인
 - [ ] SBOM·third-party notice 최종 감사
+
+## Phase 13B 제품 Content/IP
+
+- [x] 증적 Hash와 Dossier 검증 도구
+- [x] Character 01 deterministic 개발 자산
+- [x] Development-only content bundle
+- [x] G5 fail-closed release gate
+- [ ] 실제 Voice Provider 계약·녹음
+- [ ] Character 공개 이름·상표·IP·생산 3D 승인
 
 ## G5 General Availability
 

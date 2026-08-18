@@ -90,8 +90,14 @@
     {
       "id": "SEAM-P13-006",
       "priority": "P1",
-      "status": "PARTIAL",
+      "status": "EXTERNAL_GATE",
       "title": "Finalize Character 01 identity, production assets and rights"
+    },
+    {
+      "id": "SEAM-P13-007",
+      "priority": "P1",
+      "status": "DONE",
+      "title": "Implement evidence-backed Phase 13B content/IP release tooling"
     },
     {
       "id": "SEAM-P14-001",
@@ -112,5 +118,5 @@
       "title": "Complete user documentation, onboarding and support material"
     }
   ],
-  "nextPhase": "PHASE_13B"
+  "nextPhase": "PHASE_14"
 }

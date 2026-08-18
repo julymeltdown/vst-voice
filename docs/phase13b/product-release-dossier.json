@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "component": "project-seam-product",
+  "version": "0.13.1-development",
+  "requirements": {
+    "final-eula": {"result": "NOT_RUN", "evidence": []},
+    "voicebank-license": {"result": "NOT_RUN", "evidence": []}
+  },
+  "notes": [
+    "This dossier intentionally blocks G5 until final legal documents exist.",
+    "Development templates and draft text are not approval evidence."
+  ]
+}

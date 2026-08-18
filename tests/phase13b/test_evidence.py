@@ -59,6 +59,33 @@ class EvidenceTests(unittest.TestCase):
             errors = evidence.validate_evidence_record(record, root, maximum_bytes=3)
             self.assertTrue(any("maximum" in item for item in errors))
 
+    def test_empty_evidence_file_is_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path = root / "empty.txt"
+            path.write_bytes(b"")
+            record = {
+                "path": "empty.txt",
+                "sha256": hashlib.sha256(b"").hexdigest(),
+                "kind": "empty-log",
+                "executedAt": "2026-08-18T12:00:00Z",
+                "reviewer": "qa",
+            }
+            errors = evidence.validate_evidence_record(record, root)
+            self.assertTrue(any("empty" in item for item in errors))
+
+    def test_bounded_json_loader_rejects_large_non_object_payloads(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            large = root / "large.json"
+            large.write_text('{"value":"' + ('x' * 64) + '"}', encoding="utf-8")
+            with self.assertRaises(ValueError):
+                evidence.load_json(large, maximum_bytes=16)
+            array = root / "array.json"
+            array.write_text('[]', encoding="utf-8")
+            with self.assertRaises(ValueError):
+                evidence.load_json(array)
+
 
 if __name__ == "__main__":
     unittest.main()

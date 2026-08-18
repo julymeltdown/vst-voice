@@ -1,0 +1,17 @@
+{
+  "template": true,
+  "status": "NOT_RUN",
+  "sessionId": "",
+  "performerId": "",
+  "startedAt": "",
+  "endedAt": "",
+  "sampleRate": 48000,
+  "bitDepth": 24,
+  "microphone": "",
+  "preamp": "",
+  "distanceCm": 0,
+  "roomCalibration": "",
+  "scriptVersion": "",
+  "takes": [],
+  "evidence": []
+}

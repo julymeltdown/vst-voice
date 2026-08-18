@@ -122,7 +122,7 @@ def main() -> int:
     require_text(
         root / "CMakeLists.txt",
         [
-            "project(ProjectSEAM VERSION 0.13.0",
+            "project(ProjectSEAM VERSION 0.13.1",
             "seam_phase12b_tests",
             "seam_phase12b_demo",
             "seam_phase12b_contract",

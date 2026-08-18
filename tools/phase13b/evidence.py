@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from common import MAX_EVIDENCE_BYTES, validate_evidence
+from common import MAX_EVIDENCE_BYTES, load_json, validate_evidence
 
 
 def validate_evidence_record(

@@ -1,0 +1,182 @@
+{
+  "schemaVersion": 1,
+  "component": "official-voicebank",
+  "voicebankId": "official.voice.01",
+  "version": "1.0.0",
+  "official": false,
+  "contractedSinger": false,
+  "technicalFixture": true,
+  "bankRoot": "assets/demo-human-voicebank-public-domain/production-bank",
+  "inventoryProfile": {
+    "minimumEnabledUnits": 500,
+    "minimumPitchLayers": 4,
+    "requiredKinds": {
+      "cv": 100,
+      "vcv": 100,
+      "vc": 50,
+      "vv": 25,
+      "cc": 10,
+      "sustain": 10,
+      "release": 10,
+      "breath": 5,
+      "glottal": 5
+    },
+    "requiredStyles": [
+      "original"
+    ],
+    "requiredPhones": [
+      "a",
+      "i",
+      "u",
+      "e",
+      "o",
+      "k",
+      "s",
+      "t",
+      "n",
+      "h",
+      "m",
+      "y",
+      "r",
+      "w",
+      "N",
+      "cl",
+      "R"
+    ]
+  },
+  "requirements": {
+    "performer-contract": {
+      "result": "NOT_RUN",
+      "evidence": []
+    },
+    "rights-review": {
+      "result": "NOT_RUN",
+      "evidence": []
+    },
+    "recording-session-logs": {
+      "result": "NOT_RUN",
+      "evidence": []
+    },
+    "microphone-chain-calibration": {
+      "result": "NOT_RUN",
+      "evidence": []
+    },
+    "complete-unit-inventory": {
+      "result": "NOT_RUN",
+      "evidence": []
+    },
+    "retake-closure": {
+      "result": "NOT_RUN",
+      "evidence": []
+    },
+    "marker-pitch-loop-qa": {
+      "result": "NOT_RUN",
+      "evidence": []
+    },
+    "renderer-listening-qa": {
+      "result": "NOT_RUN",
+      "evidence": []
+    },
+    "signed-seambank": {
+      "result": "NOT_RUN",
+      "evidence": []
+    },
+    "installation-receipt": {
+      "result": "NOT_RUN",
+      "evidence": []
+    },
+    "character-marketing-rights": {
+      "result": "NOT_RUN",
+      "evidence": []
+    },
+    "performer-character-separation": {
+      "result": "NOT_RUN",
+      "evidence": []
+    },
+    "commercial-user-output-eula": {
+      "result": "NOT_RUN",
+      "evidence": []
+    },
+    "product-owner-approval": {
+      "result": "NOT_RUN",
+      "evidence": []
+    },
+    "legal-approval": {
+      "result": "NOT_RUN",
+      "evidence": []
+    }
+  },
+  "gates": {
+    "performer-contract": {
+      "status": "NOT_RUN",
+      "evidence": []
+    },
+    "rights-review": {
+      "status": "NOT_RUN",
+      "evidence": []
+    },
+    "recording-session-logs": {
+      "status": "NOT_RUN",
+      "evidence": []
+    },
+    "microphone-chain-calibration": {
+      "status": "NOT_RUN",
+      "evidence": []
+    },
+    "complete-unit-inventory": {
+      "status": "NOT_RUN",
+      "evidence": []
+    },
+    "retake-closure": {
+      "status": "NOT_RUN",
+      "evidence": []
+    },
+    "marker-pitch-loop-qa": {
+      "status": "NOT_RUN",
+      "evidence": []
+    },
+    "renderer-listening-qa": {
+      "status": "NOT_RUN",
+      "evidence": [],
+      "rendererResults": {
+        "raw": "NOT_RUN",
+        "classic-psola": "NOT_RUN",
+        "spectral-classic": "NOT_RUN",
+        "stretch": "NOT_RUN"
+      }
+    },
+    "signed-seambank": {
+      "status": "NOT_RUN",
+      "evidence": []
+    },
+    "installation-receipt": {
+      "status": "NOT_RUN",
+      "evidence": []
+    },
+    "character-marketing-rights": {
+      "status": "NOT_RUN",
+      "evidence": []
+    },
+    "performer-character-separation": {
+      "status": "NOT_RUN",
+      "evidence": []
+    },
+    "commercial-user-output-eula": {
+      "status": "NOT_RUN",
+      "evidence": []
+    },
+    "product-owner-approval": {
+      "status": "NOT_RUN",
+      "evidence": []
+    },
+    "legal-approval": {
+      "status": "NOT_RUN",
+      "evidence": []
+    }
+  },
+  "releaseStatus": "BLOCKED",
+  "notes": [
+    "The public-domain human sample is a technical fixture, not Official Voicebank 01.",
+    "A real performer contract and directed recording are mandatory."
+  ]
+}

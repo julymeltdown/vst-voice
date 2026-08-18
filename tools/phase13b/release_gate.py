@@ -35,7 +35,7 @@ def evaluate_g5(voicebank, character, matrices: list[dict], product_dossier: dic
             copied = dict(target)
             copied["mandatory"] = mandatory
             merged["targets"].append(copied)
-    result = evaluate_product(voice, char, merged)
+    result = evaluate_product(voice, char, merged, Path(root or "."))
     if product_dossier is not None:
         errors, blocked = validate_requirement_map(
             product_dossier.get("requirements"), PRODUCT_REQUIREMENTS, Path(root or ".")

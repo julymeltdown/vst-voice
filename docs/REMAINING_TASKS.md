@@ -17,3 +17,13 @@ realtime/soak matrix.
 P1 remains VST3/AU target binaries and validators, signed/notarized installers,
 commercial host certification, Official Voicebank 01 and final Character 01
 rights/assets. See `REMAINING_TASKS_KO.md` for the canonical detailed backlog.
+
+
+## Phase 13B external gates
+
+- Contract, record, label and accept Official Voicebank 01.
+- Clear the Character 01 public name, trademark, domains and social handles.
+- Obtain character-source IP assignment and production turnaround/model/LOD/expression/animation assets.
+- Approve final EULA, voicebank licence and performer/character separation statement.
+
+The evidence and packaging tools are implemented; the external work is not.

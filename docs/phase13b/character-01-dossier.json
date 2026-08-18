@@ -1,0 +1,185 @@
+{
+  "schemaVersion": 1,
+  "component": "official-character",
+  "characterId": "official.character.01",
+  "version": "1.0.0",
+  "commercialRelease": false,
+  "developmentOnly": true,
+  "finalPublicName": "",
+  "publicName": "Character 01",
+  "characterRoot": "assets/character-01",
+  "assetProfile": {
+    "requiredPaths": [
+      "turnaround/front.png",
+      "turnaround/side.png",
+      "turnaround/back.png",
+      "model/production.obj",
+      "model/production.mtl",
+      "model/uv.png",
+      "lod/lod0.obj",
+      "lod/lod1.obj",
+      "animation/idle.anim",
+      "key-art/key-art.png",
+      "runtime/neutral.ppm",
+      "runtime/focused.ppm",
+      "runtime/rendering.ppm",
+      "runtime/complete.ppm",
+      "runtime/warning.ppm",
+      "runtime/error.ppm"
+    ],
+    "requiredStates": [
+      "neutral",
+      "focused",
+      "rendering",
+      "complete",
+      "warning",
+      "error"
+    ],
+    "minimumLods": 2
+  },
+  "requirements": {
+    "public-name": {
+      "result": "NOT_RUN",
+      "evidence": []
+    },
+    "trademark-clearance": {
+      "result": "NOT_RUN",
+      "evidence": []
+    },
+    "domain-clearance": {
+      "result": "NOT_RUN",
+      "evidence": []
+    },
+    "social-handle-clearance": {
+      "result": "NOT_RUN",
+      "evidence": []
+    },
+    "ip-assignment": {
+      "result": "NOT_RUN",
+      "evidence": []
+    },
+    "source-provenance": {
+      "result": "NOT_RUN",
+      "evidence": []
+    },
+    "front-side-back-turnaround": {
+      "result": "NOT_RUN",
+      "evidence": []
+    },
+    "production-low-poly-model": {
+      "result": "NOT_RUN",
+      "evidence": []
+    },
+    "lod-set": {
+      "result": "NOT_RUN",
+      "evidence": []
+    },
+    "expression-set": {
+      "result": "NOT_RUN",
+      "evidence": []
+    },
+    "animation-set": {
+      "result": "NOT_RUN",
+      "evidence": []
+    },
+    "runtime-state-assets": {
+      "result": "NOT_RUN",
+      "evidence": []
+    },
+    "key-art": {
+      "result": "NOT_RUN",
+      "evidence": []
+    },
+    "merchandise-policy": {
+      "result": "NOT_RUN",
+      "evidence": []
+    },
+    "voice-character-separation": {
+      "result": "NOT_RUN",
+      "evidence": []
+    },
+    "product-owner-approval": {
+      "result": "NOT_RUN",
+      "evidence": []
+    },
+    "legal-approval": {
+      "result": "NOT_RUN",
+      "evidence": []
+    }
+  },
+  "gates": {
+    "public-name": {
+      "status": "NOT_RUN",
+      "evidence": []
+    },
+    "trademark-clearance": {
+      "status": "NOT_RUN",
+      "evidence": []
+    },
+    "domain-clearance": {
+      "status": "NOT_RUN",
+      "evidence": []
+    },
+    "social-handle-clearance": {
+      "status": "NOT_RUN",
+      "evidence": []
+    },
+    "ip-assignment": {
+      "status": "NOT_RUN",
+      "evidence": []
+    },
+    "source-provenance": {
+      "status": "NOT_RUN",
+      "evidence": []
+    },
+    "front-side-back-turnaround": {
+      "status": "NOT_RUN",
+      "evidence": []
+    },
+    "production-low-poly-model": {
+      "status": "NOT_RUN",
+      "evidence": []
+    },
+    "lod-set": {
+      "status": "NOT_RUN",
+      "evidence": []
+    },
+    "expression-set": {
+      "status": "NOT_RUN",
+      "evidence": []
+    },
+    "animation-set": {
+      "status": "NOT_RUN",
+      "evidence": []
+    },
+    "runtime-state-assets": {
+      "status": "NOT_RUN",
+      "evidence": []
+    },
+    "key-art": {
+      "status": "NOT_RUN",
+      "evidence": []
+    },
+    "merchandise-policy": {
+      "status": "NOT_RUN",
+      "evidence": []
+    },
+    "voice-character-separation": {
+      "status": "NOT_RUN",
+      "evidence": []
+    },
+    "product-owner-approval": {
+      "status": "NOT_RUN",
+      "evidence": []
+    },
+    "legal-approval": {
+      "status": "NOT_RUN",
+      "evidence": []
+    }
+  },
+  "releaseStatus": "BLOCKED",
+  "notes": [
+    "Current source, blockout, and runtime portraits are development assets.",
+    "Final name, IP assignment, clearance, production model, turnaround, LOD, animation, and key art remain mandatory."
+  ]
+}

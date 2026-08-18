@@ -1,0 +1,261 @@
+{
+  "blockedTargets": [
+    "character-01-release",
+    "official-voicebank-01"
+  ],
+  "contentSha256": "94c8175a3cab24aab0ef1fbd67bd88c6b38fb285e2000e53ac608cc6079b854f",
+  "developmentOnly": true,
+  "entries": [
+    {
+      "path": "character-01-development/LICENSE.md",
+      "sha256": "91486eb7f09312408376fdc07e3da902fd0b09955a567298ada9db069ba5f318",
+      "size": 251
+    },
+    {
+      "path": "character-01-development/PROVENANCE.md",
+      "sha256": "1f82ab43865c9aa1cb8075e1d73ab51aa956a7116814e0334eadb848f812ce53",
+      "size": 774
+    },
+    {
+      "path": "character-01-development/README.md",
+      "sha256": "f01f90cc1217baaaf1b4a1d85d40ecb9b33f8f495cfe790bfb2ca6671ef8077d",
+      "size": 658
+    },
+    {
+      "path": "character-01-development/blockouts/README.md",
+      "sha256": "fdf880fc9d1d2368be5f0725029c7944e9961fecfeec59bd2231af31232e8820",
+      "size": 248
+    },
+    {
+      "path": "character-01-development/blockouts/phase1-burgundy-blockout.mtl",
+      "sha256": "4c46d8d118d7d18213151fffb515678d9de904d1beb80abbb8a1755df81d87e9",
+      "size": 426
+    },
+    {
+      "path": "character-01-development/blockouts/phase1-burgundy-blockout.obj",
+      "sha256": "eb024d839a70e1dea4748809d5052b6a4873791491ef86d0eec46214b7ec73da",
+      "size": 9232
+    },
+    {
+      "path": "character-01-development/blockouts/phase1-burgundy-blockout.png",
+      "sha256": "d7980a97705344b4013e79ff197ba7aaa3227105d6e2b959eedd8a100902161f",
+      "size": 33509
+    },
+    {
+      "path": "character-01-development/blockouts/phase1-teal-blockout.mtl",
+      "sha256": "b9c2993d697948fbc37a44b8a9dafe26c750d026cc38458600646c06914e6cf6",
+      "size": 426
+    },
+    {
+      "path": "character-01-development/blockouts/phase1-teal-blockout.obj",
+      "sha256": "7d1d7af236f630297bd584a1d010a7b80d13a9eede8847d383da5808bfc53475",
+      "size": 9224
+    },
+    {
+      "path": "character-01-development/blockouts/phase1-teal-blockout.png",
+      "sha256": "da23e0ab4e429f8d4dbb87a7143fbae3e5ddf18597d183ae8edc9adfcff46734",
+      "size": 32201
+    },
+    {
+      "path": "character-01-development/blockouts/phase1-violet-blockout.mtl",
+      "sha256": "fdef256b9b09864f8a93c488d50c19546c2224b5b614947ce61ec649e4701977",
+      "size": 426
+    },
+    {
+      "path": "character-01-development/blockouts/phase1-violet-blockout.obj",
+      "sha256": "3c5fb9cd89f48824682fa9095bdf952fbfb699314f5478e04b4bc655e73c3275",
+      "size": 9225
+    },
+    {
+      "path": "character-01-development/blockouts/phase1-violet-blockout.png",
+      "sha256": "173dcf1a5153b1544b927d3c168a44935f51dfb2ead127ef38d4cd3af382726e",
+      "size": 33112
+    },
+    {
+      "path": "character-01-development/concepts/concept-a-burgundy-silhouette-128.png",
+      "sha256": "fad525032088846e20c0e176dfeb8385c3f3781f90afe15f8b2fd3b9d80c4e34",
+      "size": 526
+    },
+    {
+      "path": "character-01-development/concepts/concept-a-burgundy-thumb-128.png",
+      "sha256": "c8f1d6972d02b0ec2a02845451327cf38c78fa974abbcfc5fdee2a9967d462b4",
+      "size": 10418
+    },
+    {
+      "path": "character-01-development/concepts/concept-a-burgundy.png",
+      "sha256": "03a8ca56061de59401607a188d3ec6b3764c882cc0326712aae6ea60a4e3ca99",
+      "size": 1681678
+    },
+    {
+      "path": "character-01-development/concepts/concept-b-violet-silhouette-128.png",
+      "sha256": "552c22491a3321b6bab898e378e3dcf966c901b43db3937a7e6a927d861d4bd9",
+      "size": 534
+    },
+    {
+      "path": "character-01-development/concepts/concept-b-violet-thumb-128.png",
+      "sha256": "4920835da92d97938c7bbe85efb04fddd18f07aa33dd5e5337026d426d6331bf",
+      "size": 10082
+    },
+    {
+      "path": "character-01-development/concepts/concept-b-violet.png",
+      "sha256": "d3a8e7d0e22e30209a8fe274fcf1ba03d3ca4849fd05c9dd1a5fa130478a3272",
+      "size": 1286810
+    },
+    {
+      "path": "character-01-development/concepts/concept-c-teal-silhouette-128.png",
+      "sha256": "ffb37c97d25ac65f854b1d4f45e586197ed24f491a48ce02c5f088f2fcd1b78b",
+      "size": 522
+    },
+    {
+      "path": "character-01-development/concepts/concept-c-teal-thumb-128.png",
+      "sha256": "9ea3bfebb192d96c6fce48c1a2900da822df718f73ef283a09cfc48df306d1a5",
+      "size": 10086
+    },
+    {
+      "path": "character-01-development/concepts/concept-c-teal.png",
+      "sha256": "ac7959e499078889fb5826d9b04922267f543bec5cbd6b938f468f5ddbf04211",
+      "size": 1791238
+    },
+    {
+      "path": "character-01-development/concepts/manifest.json",
+      "sha256": "0f1f677bbf836400711424230df7f1400f02b3a84b8d37572126232f0139dfa7",
+      "size": 1405
+    },
+    {
+      "path": "character-01-development/license.json",
+      "sha256": "71638aa482cf45227589b8f6c0cc691d98a4cc638b7f4edf39205c03b4a261aa",
+      "size": 382
+    },
+    {
+      "path": "character-01-development/manifest.json",
+      "sha256": "76fd0dd2d7f1948f78a8165dfd0d16492f9a6acf827dad41e62f0d097503aa3f",
+      "size": 548
+    },
+    {
+      "path": "character-01-development/production-development/asset-manifest.json",
+      "sha256": "549cf775a224ac47476cfd34be4d7138c653384ef22f36e3b964a95bf44d1281",
+      "size": 764
+    },
+    {
+      "path": "character-01-development/production-development/key-art-1024.png",
+      "sha256": "18c43477ee4d626645ad0ec3d746e4f8d3545e5f95cb8dc016489f39568b504f",
+      "size": 477952
+    },
+    {
+      "path": "character-01-development/production-development/palette.json",
+      "sha256": "c68a2356b88c120595464b3f7d09ba411a99e2bc44a79c7606ecccbbad22472e",
+      "size": 232
+    },
+    {
+      "path": "character-01-development/production-development/portrait-512.png",
+      "sha256": "f61ae1aca7bc10041328225b3dbf132bd7de19b441266f1017fb687192f6a758",
+      "size": 289202
+    },
+    {
+      "path": "character-01-development/production-development/silhouette-256.png",
+      "sha256": "824bb521e6c0df2af2995a0713be1ea6aca6c3e2f20d3f90fabe13a6633efee3",
+      "size": 3395
+    },
+    {
+      "path": "character-01-development/production-development/thumbnail-256.png",
+      "sha256": "f1aa1e821e56cc16395f0ac7bb1af44a6c2c6c543e5733940b39d2f356cb5dd8",
+      "size": 45153
+    },
+    {
+      "path": "character-01-development/runtime/complete.ppm",
+      "sha256": "6fad172e2b6138aa16fa2a64648176536c3b1ca00ab2fe30fe2b5cae97f0a4da",
+      "size": 460815
+    },
+    {
+      "path": "character-01-development/runtime/error.ppm",
+      "sha256": "6fad172e2b6138aa16fa2a64648176536c3b1ca00ab2fe30fe2b5cae97f0a4da",
+      "size": 460815
+    },
+    {
+      "path": "character-01-development/runtime/focused.ppm",
+      "sha256": "6fad172e2b6138aa16fa2a64648176536c3b1ca00ab2fe30fe2b5cae97f0a4da",
+      "size": 460815
+    },
+    {
+      "path": "character-01-development/runtime/neutral.ppm",
+      "sha256": "6fad172e2b6138aa16fa2a64648176536c3b1ca00ab2fe30fe2b5cae97f0a4da",
+      "size": 460815
+    },
+    {
+      "path": "character-01-development/runtime/rendering.ppm",
+      "sha256": "6fad172e2b6138aa16fa2a64648176536c3b1ca00ab2fe30fe2b5cae97f0a4da",
+      "size": 460815
+    },
+    {
+      "path": "character-01-development/runtime/warning.ppm",
+      "sha256": "6fad172e2b6138aa16fa2a64648176536c3b1ca00ab2fe30fe2b5cae97f0a4da",
+      "size": 460815
+    },
+    {
+      "path": "character-01-development/source/canonical-lowpoly.jpeg",
+      "sha256": "40789aaa617b7954aa93a472a118be2957c0ed49303799df2788e451a1a7e919",
+      "size": 220623
+    },
+    {
+      "path": "demo-human-voicebank-public-domain/README.md",
+      "sha256": "256a304fb64bc9a4c1998c8d92d50823592b97627d666585bd85e16dd84068fc",
+      "size": 313
+    },
+    {
+      "path": "demo-human-voicebank-public-domain/audio/human-vowel-demo.wav",
+      "sha256": "caf8ceb04b864c7501371a2adae46697495e617b9ade178560ba2ea1aa6b8cb9",
+      "size": 48554
+    },
+    {
+      "path": "demo-human-voicebank-public-domain/license/PUBLIC_DOMAIN_NOTICE.md",
+      "sha256": "2420260ba4330eaacbfae5d341765e9ee62784401a315f12587b215db0ec0362",
+      "size": 604
+    },
+    {
+      "path": "demo-human-voicebank-public-domain/manifest.json",
+      "sha256": "f2cf4c80209465259c4baa6d474dab238fb7f0d7c9c41d989495158e3e51890f",
+      "size": 506
+    },
+    {
+      "path": "demo-human-voicebank-public-domain/production-bank/PUBLIC_DOMAIN_NOTICE.md",
+      "sha256": "2420260ba4330eaacbfae5d341765e9ee62784401a315f12587b215db0ec0362",
+      "size": 604
+    },
+    {
+      "path": "demo-human-voicebank-public-domain/production-bank/README.md",
+      "sha256": "1a05d28df0117e4969002172c4d09a611e8310850dadca1dd2df26b31aeec488",
+      "size": 415
+    },
+    {
+      "path": "demo-human-voicebank-public-domain/production-bank/audio/human-vowel-demo.wav",
+      "sha256": "caf8ceb04b864c7501371a2adae46697495e617b9ade178560ba2ea1aa6b8cb9",
+      "size": 48554
+    },
+    {
+      "path": "demo-human-voicebank-public-domain/production-bank/manifest.json",
+      "sha256": "ea199788012edc818459a00504a6043829560b22abe46efd4572fe886df973a5",
+      "size": 35733
+    },
+    {
+      "path": "demo-human-voicebank-public-domain/production-bank/provenance.json",
+      "sha256": "cd45f404f8fe4957d027baf525cb2e80596c0e8815b7b07c1378599d61d13788",
+      "size": 1343
+    },
+    {
+      "path": "demo-human-voicebank-public-domain/provenance.json",
+      "sha256": "cd45f404f8fe4957d027baf525cb2e80596c0e8815b7b07c1378599d61d13788",
+      "size": 1343
+    },
+    {
+      "path": "demo-human-voicebank-public-domain/source/talking.wav",
+      "sha256": "26c3ceacfb31a7300824a3841904f077856bdba41dafba0310c603cabb86d07f",
+      "size": 2045402
+    }
+  ],
+  "packageSha256": "162796aabda53922e1db54ed254b374fd9180714e6202ddc31f434515feda89c",
+  "path": "ProjectSEAM-0.13.1-content-development.zip",
+  "productVersion": "0.13.1",
+  "releaseEligible": false,
+  "schemaVersion": 1,
+  "sha256": "162796aabda53922e1db54ed254b374fd9180714e6202ddc31f434515feda89c"
+}

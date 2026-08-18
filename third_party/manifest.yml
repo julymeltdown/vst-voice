@@ -148,6 +148,14 @@
       "license": "Zlib",
       "status": "build-tool-not-redistributed",
       "purpose": "compile the signed Windows plug-in installer using the zlib compressor"
+    },
+    {
+      "name": "Pillow",
+      "version": "12.3.0",
+      "source": "https://python-pillow.org/",
+      "license": "MIT-CMU",
+      "status": "build-tool-not-redistributed",
+      "purpose": "deterministic Character 01 development PNG derivation and palette extraction"
     }
   ]
 }
