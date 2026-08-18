@@ -272,19 +272,19 @@ Expected elapsed time:
 
 **Checklist**
 
-- [ ] Copy the complete acceptance contract from Section 2 into both language documents.
-- [ ] State that the current standalone is a demo shell because it uses `makeDemoProject()` and `makeDemoTimeline()`.
-- [ ] State that Phase 12C, 13A, and 13B engineering gates do not prove standalone usability.
-- [ ] Change the README title from its outdated phase-specific title to `Project SEAM`.
-- [ ] Make `docs/product/USABLE_ALPHA_ACCEPTANCE.md` the canonical English product gate.
-- [ ] Add a JSON mirror at `docs/product/usable-alpha-acceptance.json` with stable requirement IDs `UA-001` through `UA-020`.
-- [ ] Add a verification script that rejects a `PASS` row without an evidence path and SHA-256.
+- [x] Copy the complete acceptance contract from Section 2 into both language documents.
+- [x] State that the current standalone is a demo shell because it uses `makeDemoProject()` and `makeDemoTimeline()`.
+- [x] State that Phase 12C, 13A, and 13B engineering gates do not prove standalone usability.
+- [x] Change the README title from its outdated phase-specific title to `Project SEAM`.
+- [x] Make `docs/product/USABLE_ALPHA_ACCEPTANCE.md` the canonical English product gate.
+- [x] Add a JSON mirror at `docs/product/usable-alpha-acceptance.json` with stable requirement IDs `UA-001` through `UA-020`.
+- [x] Add a verification script that rejects a `PASS` row without an evidence path and SHA-256.
 
 **Tests to write first**
 
-- [ ] Add `scripts/test_usable_alpha_contract.py` that fails when the README does not link the contract.
-- [ ] Add a test that fails when a `PASS` item lacks evidence.
-- [ ] Add a test that fails when the gate claims `PASSED` while any mandatory item is not `PASS`.
+- [x] Add `scripts/test_usable_alpha_contract.py` that fails when the README does not link the contract.
+- [x] Add a test that fails when a `PASS` item lacks evidence.
+- [x] Add a test that fails when the gate claims `PASSED` while any mandatory item is not `PASS`.
 
 **Verification**
 
@@ -312,19 +312,19 @@ git commit -m "docs: define the usable standalone alpha gate"
 
 **Checklist**
 
-- [ ] Capture default-project construction behavior used by CLAP.
-- [ ] Capture voicebank scan and exact-resolution behavior.
-- [ ] Capture render submission after Note, lyric, phoneme, unit, pitch, seam, mix, routing, and voicebank commands.
-- [ ] Capture state encoding/decoding parity.
-- [ ] Capture preview publication rejection for stale revisions.
-- [ ] Capture that character display changes do not change PCM or render identity.
-- [ ] Capture the current `EditorRuntime` public interface used by plugin and UI adapters.
+- [x] Capture default-project construction behavior used by CLAP.
+- [x] Capture voicebank scan and exact-resolution behavior.
+- [x] Capture render submission after Note, lyric, phoneme, unit, pitch, seam, mix, routing, and voicebank commands.
+- [x] Capture state encoding/decoding parity.
+- [x] Capture preview publication rejection for stale revisions.
+- [x] Capture that character display changes do not change PCM or render identity.
+- [x] Capture the current `EditorRuntime` public interface used by plugin and UI adapters.
 
 **Tests to write first**
 
-- [ ] Write the new characterization tests and run them against the unchanged code.
-- [ ] Each test must assert user-visible behavior, not private member layout.
-- [ ] Record the current output hashes only for deterministic fixture inputs; do not use broad snapshot files for UI layout.
+- [x] Write the new characterization tests and run them against the unchanged code.
+- [x] Each test must assert user-visible behavior, not private member layout.
+- [x] Record the current output hashes only for deterministic fixture inputs; do not use broad snapshot files for UI layout.
 
 **Verification**
 
@@ -344,9 +344,9 @@ git commit -m "test: characterize authoring runtime behavior"
 
 ### U0 exit gate
 
-- [ ] Product status documents describe the real standalone limitation.
-- [ ] Characterization tests pass before any extraction begins.
-- [ ] `master` is clean.
+- [x] Product status documents describe the real standalone limitation.
+- [x] Characterization tests pass before any extraction begins.
+- [x] `master` is clean.
 
 ---
 
@@ -400,13 +400,13 @@ public:
 
 **Checklist**
 
-- [ ] Write a failing test that a successful command makes the document dirty.
-- [ ] Write a failing test that `markSaved()` clears dirty state at the current revision.
-- [ ] Write a failing test that Undo after save makes the document dirty again.
-- [ ] Write a failing test that replacing a project synchronizes `ProjectFactory` IDs.
-- [ ] Write a failing test that a failed command does not change dirty state.
-- [ ] Implement the smallest wrapper over `EditorSession` that passes the tests.
-- [ ] Keep project path and autosave path out of the canonical Project JSON.
+- [x] Write a failing test that a successful command makes the document dirty.
+- [x] Write a failing test that `markSaved()` clears dirty state at the current revision.
+- [x] Write a failing test that Undo after save makes the document dirty again.
+- [x] Write a failing test that replacing a project synchronizes `ProjectFactory` IDs.
+- [x] Write a failing test that a failed command does not change dirty state.
+- [x] Implement the smallest wrapper over `EditorSession` that passes the tests.
+- [x] Keep project path and autosave path out of the canonical Project JSON.
 
 **Verification**
 
@@ -465,13 +465,13 @@ public:
 
 **Checklist**
 
-- [ ] Write a failing test for exact ID/version/content-hash resolution.
-- [ ] Write a failing test for missing, version mismatch, content mismatch, and untrusted states.
-- [ ] Write a failing test that `bindTrack()` uses `SetTrackVoicebankCommand` and participates in Undo.
-- [ ] Write a failing test that adding the same canonical search root twice is idempotent.
-- [ ] Write a failing test that no candidate is selected silently when resolution fails.
-- [ ] Move catalog roots, candidates, track resolutions, and binding logic out of `EditorRuntime`.
-- [ ] Leave CLAP public methods as delegating facade methods until U1.6.
+- [x] Write a failing test for exact ID/version/content-hash resolution.
+- [x] Write a failing test for missing, version mismatch, content mismatch, and untrusted states.
+- [x] Write a failing test that `bindTrack()` uses `SetTrackVoicebankCommand` and participates in Undo.
+- [x] Write a failing test that adding the same canonical search root twice is idempotent.
+- [x] Write a failing test that no candidate is selected silently when resolution fails.
+- [x] Move catalog roots, candidates, track resolutions, and binding logic out of `EditorRuntime`.
+- [x] Leave CLAP public methods as delegating facade methods until U1.6.
 
 **Verification**
 
