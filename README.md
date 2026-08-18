@@ -1,6 +1,8 @@
-# Project SEAM — Phase 12B technical editing and host routing
+# Project SEAM
 
-Project SEAM is a C++20 sample-concatenative singing-voice editor. Phoneme boundaries, source-unit changes, pitch-shift artifacts, and sample seams are editable musical material rather than defects that must always be hidden.
+Project SEAM is a C++20 sample-concatenative singing-voice editor.
+> **Usable Alpha gate:** [`docs/product/USABLE_ALPHA_ACCEPTANCE.md`](docs/product/USABLE_ALPHA_ACCEPTANCE.md) is the canonical product-usability contract. The current standalone is still a demo shell because `makeDemoProject()` and `makeDemoTimeline()` do not yet connect visible notes to production voicebank rendering.
+ Phoneme boundaries, source-unit changes, pitch-shift artifacts, and sample seams are editable musical material rather than defects that must always be hidden.
 
 This repository contains:
 

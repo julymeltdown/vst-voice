@@ -27,3 +27,16 @@ rights/assets. See `REMAINING_TASKS_KO.md` for the canonical detailed backlog.
 - Approve final EULA, voicebank licence and performer/character separation statement.
 
 The evidence and packaging tools are implemented; the external work is not.
+
+## Immediate product-critical milestone — Usable Standalone Alpha
+
+Before adding more plugin formats or release-policy phases, the project must:
+
+1. extract a shared `seam-authoring-runtime` from the CLAP editor;
+2. replace standalone `makeDemoProject()` and `makeDemoTimeline()` with user projects and `ProductionProjectRenderer` output;
+3. expose New/Open/Save/Save As/Autosave Recovery/Recent Projects;
+4. expose installed voicebank selection, installation, diagnostics, and exact relink;
+5. expose final master and stem WAV export;
+6. ship a legally distributable voicebank with real phonetic coverage;
+7. build and validate an Apple Silicon `.app`;
+8. pass the canonical `docs/product/USABLE_ALPHA_ACCEPTANCE.md` gate.

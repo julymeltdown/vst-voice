@@ -98,3 +98,16 @@ docs/phase13b/mandatory-validation-matrix.json
 ```
 
 이 항목들은 선택 사항이 아니며 실제 PASS 전에는 Beta·RC·GA로 승격할 수 없다.
+
+## 즉시 수행할 제품 핵심 Milestone — Usable Standalone Alpha
+
+추가 Plugin Format이나 Release Policy Phase보다 먼저 다음을 완료해야 한다.
+
+1. CLAP Editor에서 공통 `seam-authoring-runtime`을 추출한다.
+2. Standalone의 `makeDemoProject()`와 `makeDemoTimeline()`을 사용자 Project와 `ProductionProjectRenderer` 출력으로 교체한다.
+3. New/Open/Save/Save As/Autosave Recovery/Recent Projects를 UI에 연결한다.
+4. 설치 Voicebank 선택·설치·진단·정확한 Relink를 제공한다.
+5. Final Master와 Stem WAV Export를 제공한다.
+6. 실제 발음 Coverage가 있고 재배포 가능한 Demo Voicebank를 준비한다.
+7. Apple Silicon `.app`을 빌드하고 실제 Mac에서 검증한다.
+8. `docs/product/USABLE_ALPHA_ACCEPTANCE.md`의 전체 Gate를 통과한다.

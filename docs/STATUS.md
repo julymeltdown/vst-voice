@@ -12,3 +12,7 @@ No source file, workflow, unsigned artifact, or checklist is treated as a valida
 ## Phase 13B
 
 Content/IP release tooling is implemented. Official Voicebank 01 and Character 01 commercial acceptance remain blocked by real performer, recording, naming, trademark, production-asset, IP and legal evidence.
+
+## Usable standalone product gate
+
+The canonical product-usability gate is `docs/product/USABLE_ALPHA_ACCEPTANCE.md`. The current native standalone remains a demo shell: it constructs a hard-coded project through `makeDemoProject()` and plays a sine-wave timeline through `makeDemoTimeline()` instead of publishing `ProductionProjectRenderer` output. Phase 12C, Phase 13A, and Phase 13B engineering gates do not prove standalone usability. The immediate product milestone is the shared authoring runtime and Usable Apple Silicon Standalone Alpha described by that contract.

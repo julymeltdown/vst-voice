@@ -44,3 +44,7 @@ Phase 12C의 Live Voicebank Articulation과 Linux 검증 도구가 구현됐고,
 - Beta·Release Candidate·General Availability
 
 Phase 13B 엔지니어링 도구는 구현됐지만 제품 Acceptance는 BLOCKED다. 다음 개발 축은 **Phase 14 — Production UI·접근성·i18n·온보딩·RC 문서화**이며, Phase 12C/13A/13B mandatory validation은 병렬로 실제 대상 환경에서 반드시 수행해야 한다.
+
+## 사용 가능한 Standalone 제품 Gate
+
+정식 제품 사용성 Gate는 `docs/product/USABLE_ALPHA_ACCEPTANCE_KO.md`와 canonical 영문 문서 `docs/product/USABLE_ALPHA_ACCEPTANCE.md`다. 현재 네이티브 Standalone은 `makeDemoProject()`로 하드코딩된 Project를 만들고 `makeDemoTimeline()`의 사인파를 재생하는 데모 셸이다. Phase 12C·13A·13B의 엔지니어링 Gate는 Standalone 실사용성을 증명하지 않는다. 최우선 제품 목표는 공통 Authoring Runtime과 Apple Silicon Usable Standalone Alpha다.

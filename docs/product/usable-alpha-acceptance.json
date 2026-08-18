@@ -1,0 +1,150 @@
+{
+  "schemaVersion": 1,
+  "gate": {
+    "name": "Usable Alpha",
+    "status": "BLOCKED"
+  },
+  "canonicalDocument": "docs/product/USABLE_ALPHA_ACCEPTANCE.md",
+  "requirements": [
+    {
+      "id": "UA-001",
+      "description": "Launch the Apple Silicon standalone from Finder.",
+      "mandatory": true,
+      "status": "NOT_RUN",
+      "evidence": []
+    },
+    {
+      "id": "UA-002",
+      "description": "Create a project with name, tempo, sample rate, channels, and exact voicebank.",
+      "mandatory": true,
+      "status": "NOT_RUN",
+      "evidence": []
+    },
+    {
+      "id": "UA-003",
+      "description": "Add at least one vocal track and vocal region.",
+      "mandatory": true,
+      "status": "NOT_RUN",
+      "evidence": []
+    },
+    {
+      "id": "UA-004",
+      "description": "Enter at least 30 seconds of notes and Japanese lyrics.",
+      "mandatory": true,
+      "status": "NOT_RUN",
+      "evidence": []
+    },
+    {
+      "id": "UA-005",
+      "description": "Display generated phonemes and selected source units.",
+      "mandatory": true,
+      "status": "NOT_RUN",
+      "evidence": []
+    },
+    {
+      "id": "UA-006",
+      "description": "Move and persist a phoneme boundary override.",
+      "mandatory": true,
+      "status": "NOT_RUN",
+      "evidence": []
+    },
+    {
+      "id": "UA-007",
+      "description": "Select a different unit variant or renderer.",
+      "mandatory": true,
+      "status": "NOT_RUN",
+      "evidence": []
+    },
+    {
+      "id": "UA-008",
+      "description": "Add, move, and delete a pitch point.",
+      "mandatory": true,
+      "status": "NOT_RUN",
+      "evidence": []
+    },
+    {
+      "id": "UA-009",
+      "description": "Edit at least one seam parameter.",
+      "mandatory": true,
+      "status": "NOT_RUN",
+      "evidence": []
+    },
+    {
+      "id": "UA-010",
+      "description": "Hear production sample-concatenative audio for the visible project.",
+      "mandatory": true,
+      "status": "NOT_RUN",
+      "evidence": []
+    },
+    {
+      "id": "UA-011",
+      "description": "Play, pause, stop, seek, and loop without stale audio.",
+      "mandatory": true,
+      "status": "NOT_RUN",
+      "evidence": []
+    },
+    {
+      "id": "UA-012",
+      "description": "Save the project to a user-selected path.",
+      "mandatory": true,
+      "status": "NOT_RUN",
+      "evidence": []
+    },
+    {
+      "id": "UA-013",
+      "description": "Quit and reopen the saved project.",
+      "mandatory": true,
+      "status": "NOT_RUN",
+      "evidence": []
+    },
+    {
+      "id": "UA-014",
+      "description": "Hear materially identical audio after reopening.",
+      "mandatory": true,
+      "status": "NOT_RUN",
+      "evidence": []
+    },
+    {
+      "id": "UA-015",
+      "description": "Recover a dirty project after forced termination.",
+      "mandatory": true,
+      "status": "NOT_RUN",
+      "evidence": []
+    },
+    {
+      "id": "UA-016",
+      "description": "Detect and exactly relink a missing voicebank without substitution.",
+      "mandatory": true,
+      "status": "NOT_RUN",
+      "evidence": []
+    },
+    {
+      "id": "UA-017",
+      "description": "Export a final-quality master WAV.",
+      "mandatory": true,
+      "status": "NOT_RUN",
+      "evidence": []
+    },
+    {
+      "id": "UA-018",
+      "description": "Export at least one vocal stem WAV.",
+      "mandatory": true,
+      "status": "NOT_RUN",
+      "evidence": []
+    },
+    {
+      "id": "UA-019",
+      "description": "Verify exported duration, channels, and audible content externally.",
+      "mandatory": true,
+      "status": "NOT_RUN",
+      "evidence": []
+    },
+    {
+      "id": "UA-020",
+      "description": "Complete a stable 30-minute authoring session.",
+      "mandatory": true,
+      "status": "NOT_RUN",
+      "evidence": []
+    }
+  ]
+}
