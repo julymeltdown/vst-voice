@@ -908,3 +908,10 @@ if(Python3_Interpreter_FOUND)
       COMMENT "Generating Phase 10 CLAP plug-in evidence")
   endif()
 endif()
+
+# Phase 12C: live articulation and runtime validation
+add_subdirectory(phase12c)
+
+if(TARGET ProjectSEAMEditor)
+  target_link_libraries(ProjectSEAMEditor PRIVATE seam_live_voice)
+endif()

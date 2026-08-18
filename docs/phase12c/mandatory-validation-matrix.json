@@ -1,107 +1,98 @@
 {
   "schemaVersion": 1,
-  "policy": {
-    "mandatory": true,
-    "implementationStates": [
-      "NOT_STARTED",
-      "SOURCE_READY",
-      "CI_CONFIGURED",
-      "TARGET_BUILD_PASS"
-    ],
-    "testResults": ["NOT_RUN", "BLOCKED", "FAIL", "PASS"],
-    "sourceReadyDoesNotImplyPass": true
-  },
-  "targetOperatingSystems": [
-    {
-      "id": "windows-11-x64",
-      "implementationState": "SOURCE_READY",
-      "testResult": "NOT_RUN",
-      "requiredForBeta": true,
-      "requiredForReleaseCandidate": true
-    },
-    {
-      "id": "macos-apple-silicon",
-      "implementationState": "SOURCE_READY",
-      "testResult": "NOT_RUN",
-      "requiredForBeta": true,
-      "requiredForReleaseCandidate": true
-    }
+  "policy": "MANDATORY",
+  "runtimeResultValues": [
+    "NOT_RUN",
+    "BLOCKED",
+    "FAIL",
+    "PASS"
   ],
-  "hosts": [
-    {
-      "id": "reaper",
-      "operatingSystems": ["windows-11-x64", "macos-apple-silicon"],
-      "testResult": "NOT_RUN",
-      "requiredForBeta": true,
-      "requiredForReleaseCandidate": true
-    },
-    {
-      "id": "bitwig-studio",
-      "operatingSystems": ["windows-11-x64", "macos-apple-silicon"],
-      "testResult": "NOT_RUN",
-      "requiredForBeta": true,
-      "requiredForReleaseCandidate": true
-    },
-    {
-      "id": "logic-pro",
-      "operatingSystems": ["macos-apple-silicon"],
-      "testResult": "NOT_RUN",
-      "requiredForBeta": true,
-      "requiredForReleaseCandidate": true
-    },
-    {
-      "id": "cubase",
-      "operatingSystems": ["windows-11-x64", "macos-apple-silicon"],
-      "testResult": "NOT_RUN",
-      "requiredForBeta": false,
-      "requiredForReleaseCandidate": true
-    },
-    {
-      "id": "ableton-live",
-      "operatingSystems": ["windows-11-x64", "macos-apple-silicon"],
-      "testResult": "NOT_RUN",
-      "requiredForBeta": false,
-      "requiredForReleaseCandidate": true
-    },
-    {
-      "id": "studio-one",
-      "operatingSystems": ["windows-11-x64", "macos-apple-silicon"],
-      "testResult": "NOT_RUN",
-      "requiredForBeta": false,
-      "requiredForReleaseCandidate": true
-    },
-    {
-      "id": "fl-studio",
-      "operatingSystems": ["windows-11-x64", "macos-apple-silicon"],
-      "testResult": "NOT_RUN",
-      "requiredForBeta": false,
-      "requiredForReleaseCandidate": true
-    },
-    {
-      "id": "garageband",
-      "operatingSystems": ["macos-apple-silicon"],
-      "testResult": "NOT_RUN",
-      "requiredForBeta": false,
-      "requiredForReleaseCandidate": true
-    }
+  "implementationStateValues": [
+    "NOT_STARTED",
+    "SOURCE_READY",
+    "CI_CONFIGURED",
+    "TARGET_BUILD_PASS"
   ],
-  "releaseGates": {
-    "G2_FEATURE_COMPLETE": {
-      "requiresPhase12cLinuxValidation": true
+  "targets": [
+    {
+      "name": "Windows Runtime",
+      "platform": "windows",
+      "implementationState": "CI_CONFIGURED",
+      "runtimeResult": "NOT_RUN",
+      "evidence": [],
+      "mandatory": true
     },
-    "G3_BETA": {
-      "requiredOperatingSystems": ["windows-11-x64", "macos-apple-silicon"],
-      "requiredHosts": ["reaper", "bitwig-studio", "logic-pro"]
+    {
+      "name": "macOS Runtime",
+      "platform": "macos",
+      "implementationState": "CI_CONFIGURED",
+      "runtimeResult": "NOT_RUN",
+      "evidence": [],
+      "mandatory": true
     },
-    "G4_RELEASE_CANDIDATE": {
-      "allDeclaredSupportedHostsMustPass": true,
-      "signingAndNotarizationMustPass": true,
-      "cleanOsInstallerMustPass": true,
-      "declaredFormatValidatorsMustPass": true
+    {
+      "name": "REAPER",
+      "platform": "commercial-daw",
+      "implementationState": "SOURCE_READY",
+      "runtimeResult": "NOT_RUN",
+      "evidence": [],
+      "mandatory": true
     },
-    "G5_GENERAL_AVAILABILITY": {
-      "officialVoicebankAcceptanceMustPass": true,
-      "unresolvedMandatoryValidationCount": 0
+    {
+      "name": "Bitwig Studio",
+      "platform": "commercial-daw",
+      "implementationState": "SOURCE_READY",
+      "runtimeResult": "NOT_RUN",
+      "evidence": [],
+      "mandatory": true
+    },
+    {
+      "name": "Cubase",
+      "platform": "commercial-daw",
+      "implementationState": "SOURCE_READY",
+      "runtimeResult": "NOT_RUN",
+      "evidence": [],
+      "mandatory": true
+    },
+    {
+      "name": "Ableton Live",
+      "platform": "commercial-daw",
+      "implementationState": "SOURCE_READY",
+      "runtimeResult": "NOT_RUN",
+      "evidence": [],
+      "mandatory": true
+    },
+    {
+      "name": "Studio One",
+      "platform": "commercial-daw",
+      "implementationState": "SOURCE_READY",
+      "runtimeResult": "NOT_RUN",
+      "evidence": [],
+      "mandatory": true
+    },
+    {
+      "name": "FL Studio",
+      "platform": "commercial-daw",
+      "implementationState": "SOURCE_READY",
+      "runtimeResult": "NOT_RUN",
+      "evidence": [],
+      "mandatory": true
+    },
+    {
+      "name": "Logic Pro",
+      "platform": "commercial-daw",
+      "implementationState": "SOURCE_READY",
+      "runtimeResult": "NOT_RUN",
+      "evidence": [],
+      "mandatory": true
+    },
+    {
+      "name": "GarageBand",
+      "platform": "commercial-daw",
+      "implementationState": "SOURCE_READY",
+      "runtimeResult": "NOT_RUN",
+      "evidence": [],
+      "mandatory": true
     }
-  }
+  ]
 }

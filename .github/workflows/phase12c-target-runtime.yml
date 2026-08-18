@@ -1,0 +1,19 @@
+name: Phase 12C target runtime contracts
+on: [workflow_dispatch]
+jobs:
+  target-runtime:
+    strategy:
+      matrix: {os: [windows-latest, macos-latest]}
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: cmake --preset dev
+      - run: cmake --build --preset dev --config Release
+      - run: ctest --preset dev --output-on-failure
+      - name: Record mandatory runtime result
+        shell: bash
+        run: |
+          mkdir -p out/phase12c
+          echo '{"implementationState":"TARGET_BUILD_PASS","runtimeResult":"NOT_RUN","reason":"actual DAW-host evidence must be attached separately"}' > out/phase12c/${{ matrix.os }}-runtime.json
+      - uses: actions/upload-artifact@v4
+        with: {name: phase12c-${{ matrix.os }}, path: out/phase12c}
