@@ -263,7 +263,13 @@ core::Result<void> MultichannelPlaybackFeederService::start() {
     worker_ = std::jthread([this](std::stop_token stopToken) {
       while (!stopToken.stop_requested()) {
         const auto fed = feeder_.feedToWatermark(watermarkFrames_);
-        if (fed == 0U) std::this_thread::sleep_for(std::chrono::milliseconds{1});
+        // Control commands must still be consumed while the ring is already
+        // above the watermark. Otherwise pause/seek/stop can remain queued
+        // indefinitely until the audio callback drains more data.
+        if (fed == 0U) {
+          static_cast<void>(feeder_.feedOnce());
+          std::this_thread::sleep_for(std::chrono::milliseconds{1});
+        }
       }
       running_.store(false, std::memory_order_release);
     });
