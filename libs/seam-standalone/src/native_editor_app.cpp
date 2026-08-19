@@ -1,5 +1,8 @@
 #include "seam/standalone/native_editor_app.hpp"
 
+#include "seam/platform/application_paths.hpp"
+#include "seam/platform/file_dialog.hpp"
+
 #include <algorithm>
 #include <iostream>
 #include <utility>
@@ -18,6 +21,8 @@ core::Result<std::unique_ptr<NativeEditorApp>> NativeEditorApp::create(
 }
 
 NativeEditorApp::~NativeEditorApp() {
+  if (applicationMenu_ != nullptr) applicationMenu_->uninstall();
+  applicationController_.reset();
   shutdownAudio();
   authoring_.reset();
 }
@@ -37,6 +42,9 @@ core::Result<void> NativeEditorApp::initialize() {
         if (window_ != nullptr) window_->requestRepaint();
       },
       .documentChanged = [this] {
+        if (applicationController_ != nullptr) {
+          record(applicationController_->onDocumentChanged());
+        }
         if (window_ != nullptr) window_->requestRepaint();
       },
   };
@@ -46,6 +54,41 @@ core::Result<void> NativeEditorApp::initialize() {
     return core::Result<void>{created.error()};
   }
   authoring_ = std::move(created).value();
+
+  auto supportRoot = config_.applicationSupportRoot;
+  if (supportRoot.empty()) {
+    auto resolved = platform::applicationSupportDirectory();
+    if (!resolved) return core::Result<void>{resolved.error()};
+    supportRoot = std::move(resolved).value();
+  }
+  auto application = StandaloneApplicationController::create(
+      *authoring_, platform::createNativeFileDialog(),
+      platform::createNativeUnsavedChangesPrompt(),
+      StandaloneApplicationControllerConfig{
+          .autosaveRoot = supportRoot / "Autosaves",
+          .recentProjectsPath = supportRoot / "recent-projects.json",
+          .defaultNewProject = authoring::NewProjectRequest{
+              .name = "Untitled",
+              .tempoBpm = 120.0,
+              .sampleRate = config_.authoring.sampleRate,
+              .outputChannels = config_.authoring.outputChannels,
+              .initialVoicebank = std::nullopt,
+          },
+          .stateChanged = [this] {
+            if (applicationMenu_ != nullptr) applicationMenu_->refresh();
+            if (window_ != nullptr) window_->requestRepaint();
+          },
+      },
+      [this] { closeRequested_.store(true, std::memory_order_release); });
+  if (!application) return core::Result<void>{application.error()};
+  applicationController_ = std::move(application).value();
+  applicationMenu_ = platform::createNativeApplicationMenu();
+  if (applicationMenu_ != nullptr) {
+    auto installed = applicationMenu_->install(*applicationController_);
+    if (!installed && installed.error().code != core::ErrorCode::Unsupported) {
+      return installed;
+    }
+  }
 
   const auto character = character_.load(config_.characterPackage);
   if (character) {
@@ -130,6 +173,9 @@ void NativeEditorApp::shutdownAudio() noexcept {
 
 void NativeEditorApp::paint(native_ui::RasterCanvas& canvas) noexcept {
   if (authoring_ == nullptr) return;
+  if (applicationController_ != nullptr) {
+    record(applicationController_->tickAutosave());
+  }
   const auto transport = authoring_->runtime().transport().state();
   const auto& project = authoring_->runtime().document().session().project();
   const auto tick = project.tempoMap().tickAtSampleFrame(
@@ -167,6 +213,26 @@ void NativeEditorApp::scroll(double deltaX, double deltaY, ui::Point anchor,
   authoring_->controller().scroll(deltaX, deltaY, anchor, modifiers);
 }
 void NativeEditorApp::keyDown(const native_ui::KeyEvent& event) noexcept {
+  if (applicationController_ != nullptr && event.modifiers.primaryShortcut()) {
+    std::optional<platform::ApplicationCommand> command;
+    if (event.key == native_ui::NativeKey::N) {
+      command = platform::ApplicationCommand::NewProject;
+    } else if (event.key == native_ui::NativeKey::O) {
+      command = platform::ApplicationCommand::OpenProject;
+    } else if (event.key == native_ui::NativeKey::S) {
+      command = event.modifiers.shift
+                    ? platform::ApplicationCommand::SaveProjectAs
+                    : platform::ApplicationCommand::SaveProject;
+    } else if (event.key == native_ui::NativeKey::E) {
+      command = platform::ApplicationCommand::ExportAudio;
+    } else if (event.key == native_ui::NativeKey::Q) {
+      command = platform::ApplicationCommand::Quit;
+    }
+    if (command.has_value()) {
+      record(applicationController_->dispatch(*command));
+      return;
+    }
+  }
   record(authoring_->controller().keyDown(event));
 }
 void NativeEditorApp::textComposition(
@@ -181,6 +247,16 @@ void NativeEditorApp::textCommit(std::u32string text) noexcept {
 void NativeEditorApp::textCancel() noexcept {
   authoring_->controller().cancelTextComposition();
 }
+bool NativeEditorApp::requestClose() noexcept {
+  if (applicationController_ == nullptr) return true;
+  auto requested = applicationController_->requestClose();
+  if (!requested) {
+    record(core::Result<void>{requested.error()});
+    return false;
+  }
+  return requested.value();
+}
+
 bool NativeEditorApp::wantsClose() const noexcept {
   return closeRequested_.load(std::memory_order_acquire);
 }

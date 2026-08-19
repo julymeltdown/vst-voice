@@ -53,7 +53,15 @@ void ProjectDocument::markSaved(std::filesystem::path path) noexcept {
 
 void ProjectDocument::markRecovered(
     std::filesystem::path autosavePath) noexcept {
+  markRecovered(std::move(autosavePath), identity_.projectPath);
+}
+
+void ProjectDocument::markRecovered(
+    std::filesystem::path autosavePath,
+    std::optional<std::filesystem::path> originalProjectPath) noexcept {
+  identity_.projectPath = std::move(originalProjectPath);
   identity_.autosavePath = std::move(autosavePath);
+  identity_.lastSavedRevision = session_.revision();
   identity_.dirty = true;
 }
 

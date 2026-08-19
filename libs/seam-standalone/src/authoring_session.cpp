@@ -175,6 +175,88 @@ void AuthoringSession::onRenderCompleted() {
   if (externalCallbacks_.requestRepaint) externalCallbacks_.requestRepaint();
 }
 
+
+core::Result<void> AuthoringSession::createNewProject(
+    authoring::NewProjectRequest request) {
+  if (!request.initialVoicebank.has_value()) {
+    const auto candidates = runtime_->voicebanks().candidates();
+    if (const auto* candidate = preferredCandidate(candidates);
+        candidate != nullptr) {
+      request.initialVoicebank = *candidate;
+    }
+  }
+  authoring::ProjectLifecycleService lifecycle{&runtime_->voicebanks()};
+  auto created = lifecycle.createNew(runtime_->document(), request);
+  if (!created) return created;
+  return rebindAfterProjectReplacement();
+}
+
+core::Result<authoring::OpenProjectResult> AuthoringSession::openProject(
+    const std::filesystem::path& path) {
+  authoring::ProjectLifecycleService lifecycle{&runtime_->voicebanks()};
+  auto opened = lifecycle.open(runtime_->document(), path);
+  if (!opened) {
+    return core::Result<authoring::OpenProjectResult>{opened.error()};
+  }
+  auto rebound = rebindAfterProjectReplacement();
+  if (!rebound) {
+    return core::Result<authoring::OpenProjectResult>{rebound.error()};
+  }
+  return opened;
+}
+
+core::Result<void> AuthoringSession::saveProject() {
+  authoring::ProjectLifecycleService lifecycle{&runtime_->voicebanks()};
+  auto saved = lifecycle.save(runtime_->document());
+  if (saved && controller_) controller_->setDirty(false);
+  return saved;
+}
+
+core::Result<void> AuthoringSession::saveProjectAs(
+    const std::filesystem::path& path) {
+  authoring::ProjectLifecycleService lifecycle{&runtime_->voicebanks()};
+  auto saved = lifecycle.saveAs(runtime_->document(), path);
+  if (saved && controller_) controller_->setDirty(false);
+  return saved;
+}
+
+core::Result<void> AuthoringSession::recoverProject(
+    authoring::AutosaveService& autosave,
+    const authoring::RecoveryCandidate& candidate) {
+  auto recovered = autosave.recover(runtime_->document(), candidate);
+  if (!recovered) return recovered;
+  return rebindAfterProjectReplacement();
+}
+
+core::Result<void> AuthoringSession::rebindAfterProjectReplacement() {
+  const auto& project = runtime_->document().session().project();
+  const domain::VocalTrack* selectedTrack = nullptr;
+  const domain::VocalRegion* selectedRegion = nullptr;
+  for (const auto& track : project.vocalTracks()) {
+    if (!track.regions.empty()) {
+      selectedTrack = &track;
+      selectedRegion = &track.regions.front();
+      break;
+    }
+  }
+  if (selectedTrack == nullptr || selectedRegion == nullptr) {
+    return core::failure(
+        core::ErrorCode::InvalidState,
+        "A standalone project must contain at least one vocal region");
+  }
+  trackId_ = selectedTrack->id;
+  regionId_ = selectedRegion->id;
+  auto track = runtime_->selectTrack(trackId_);
+  if (!track) return track;
+  auto region = runtime_->selectRegion(regionId_);
+  if (!region) return region;
+  static_cast<void>(runtime_->transport().stop());
+  configureController();
+  runtime_->handleDocumentChanged();
+  if (controller_) controller_->setDirty(runtime_->document().dirty());
+  return core::success();
+}
+
 voicebank::VoicebankResolution AuthoringSession::voicebankResolution() const {
   return runtime_->voicebanks().resolveTrack(
       runtime_->document().session().project(), trackId_);

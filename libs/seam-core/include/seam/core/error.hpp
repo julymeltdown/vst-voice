@@ -7,6 +7,7 @@ namespace seam::core {
 
 enum class ErrorCode {
   InvalidArgument,
+  InvalidState,
   InvariantViolation,
   NotFound,
   Conflict,

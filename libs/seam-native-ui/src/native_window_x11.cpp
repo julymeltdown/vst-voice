@@ -61,6 +61,14 @@ NativeKey nativeKey(KeySym key) noexcept {
     case XK_Y: return NativeKey::Y;
     case XK_c:
     case XK_C: return NativeKey::C;
+    case XK_e:
+    case XK_E: return NativeKey::E;
+    case XK_n:
+    case XK_N: return NativeKey::N;
+    case XK_o:
+    case XK_O: return NativeKey::O;
+    case XK_q:
+    case XK_Q: return NativeKey::Q;
     case XK_s:
     case XK_S: return NativeKey::S;
     case XK_r:
@@ -336,7 +344,7 @@ private:
       case ClientMessage:
         if (wmDelete_ != None &&
             static_cast<Atom>(event.xclient.data.l[0]) == wmDelete_) {
-          closeRequested = true;
+          closeRequested = client_ == nullptr || client_->requestClose();
         }
         break;
       default:

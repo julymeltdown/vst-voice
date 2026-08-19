@@ -1,6 +1,8 @@
 #pragma once
 
 #include "seam/authoring/authoring_runtime.hpp"
+#include "seam/authoring/autosave_service.hpp"
+#include "seam/authoring/project_lifecycle.hpp"
 #include "seam/core/result.hpp"
 #include "seam/native_ui/editor_controller.hpp"
 #include "seam/voicebank/catalog.hpp"
@@ -46,6 +48,17 @@ public:
   [[nodiscard]] domain::RegionId regionId() const noexcept { return regionId_; }
   [[nodiscard]] voicebank::VoicebankResolution voicebankResolution() const;
 
+  [[nodiscard]] core::Result<void> createNewProject(
+      authoring::NewProjectRequest request);
+  [[nodiscard]] core::Result<authoring::OpenProjectResult> openProject(
+      const std::filesystem::path& path);
+  [[nodiscard]] core::Result<void> saveProject();
+  [[nodiscard]] core::Result<void> saveProjectAs(
+      const std::filesystem::path& path);
+  [[nodiscard]] core::Result<void> recoverProject(
+      authoring::AutosaveService& autosave,
+      const authoring::RecoveryCandidate& candidate);
+
 private:
   AuthoringSession(std::unique_ptr<authoring::AuthoringRuntime> runtime,
                    domain::TrackId trackId,
@@ -60,6 +73,7 @@ private:
       std::uint8_t outputChannels);
   core::Result<void> initialize(bool bindFirstAvailableVoicebank);
   core::Result<void> bindInitialVoicebank();
+  [[nodiscard]] core::Result<void> rebindAfterProjectReplacement();
   void configureController();
   void onDocumentChanged();
   void onRenderCompleted();

@@ -50,6 +50,9 @@ public:
 
   void markSaved(std::filesystem::path path) noexcept;
   void markRecovered(std::filesystem::path autosavePath) noexcept;
+  void markRecovered(
+      std::filesystem::path autosavePath,
+      std::optional<std::filesystem::path> originalProjectPath) noexcept;
   void synchronizeDirtyState() noexcept { updateDirtyFromRevision(); }
   [[nodiscard]] bool dirty() const noexcept { return identity_.dirty; }
 

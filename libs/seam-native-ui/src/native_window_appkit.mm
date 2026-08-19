@@ -30,6 +30,10 @@ class AppKitNativeWindow;
                         owner:(seam::native_ui::AppKitNativeWindow*)owner;
 @end
 
+@interface SeamNativeWindowDelegate : NSObject <NSWindowDelegate>
+@property(nonatomic, assign) seam::native_ui::AppKitNativeWindow* owner;
+@end
+
 namespace seam::native_ui {
 namespace {
 
@@ -89,6 +93,10 @@ NativeKey nativeKey(NSEvent* event) noexcept {
     case 'Z': return NativeKey::Z;
     case 'Y': return NativeKey::Y;
     case 'C': return NativeKey::C;
+    case 'E': return NativeKey::E;
+    case 'N': return NativeKey::N;
+    case 'O': return NativeKey::O;
+    case 'Q': return NativeKey::Q;
     case 'S': return NativeKey::S;
     case 'R': return NativeKey::R;
     case '+':
@@ -148,6 +156,9 @@ public:
     window_.title = title == nil ? @"Project SEAM" : title;
     window_.releasedWhenClosed = NO;
     window_.acceptsMouseMovedEvents = YES;
+    delegate_ = [[SeamNativeWindowDelegate alloc] init];
+    delegate_.owner = this;
+    window_.delegate = delegate_;
     view_ = [[SeamNativeEditorView alloc] initWithFrame:frame owner:this];
     window_.contentView = view_;
     [window_ center];
@@ -184,7 +195,9 @@ public:
       if (config_.autoCloseAfter.count() > 0 &&
           std::chrono::steady_clock::now() - openedAt_ >=
               config_.autoCloseAfter) {
+        programmaticClose_ = true;
         [window_ close];
+        programmaticClose_ = false;
       }
     }
     drawNow();
@@ -455,6 +468,10 @@ public:
     return selectedRange_.location == NSNotFound ? 0U : selectedRange_.location;
   }
 
+  bool requestCloseFromWindow() noexcept {
+    return programmaticClose_ || client_ == nullptr || client_->requestClose();
+  }
+
 private:
   NSRange replacementRange(NSRange requested) const noexcept {
     NSRange candidate = requested;
@@ -542,9 +559,12 @@ private:
 
   void close() noexcept {
     if (window_ != nil) {
+      window_.delegate = nil;
       [window_ orderOut:nil];
       [window_ close];
     }
+    if (delegate_ != nil) delegate_.owner = nullptr;
+    delegate_ = nil;
     view_ = nil;
     window_ = nil;
     application_ = nil;
@@ -555,6 +575,7 @@ private:
   INativeWindowClient* client_{nullptr};
   NSApplication* __strong application_{nil};
   NSWindow* __strong window_{nil};
+  SeamNativeWindowDelegate* __strong delegate_{nil};
   SeamNativeEditorView* __strong view_{nil};
   NSMutableString* __strong textStorage_{nil};
   PixelSurface surface_;
@@ -566,6 +587,7 @@ private:
   NSRange selectedRange_{NSMakeRange(NSNotFound, 0U)};
   NSRange markedRange_{NSMakeRange(NSNotFound, 0U)};
   bool textInputActive_{false};
+  bool programmaticClose_{false};
 };
 
 std::unique_ptr<INativeWindow> createNativeWindow() {
@@ -573,6 +595,13 @@ std::unique_ptr<INativeWindow> createNativeWindow() {
 }
 
 }  // namespace seam::native_ui
+
+@implementation SeamNativeWindowDelegate
+- (BOOL)windowShouldClose:(id)sender {
+  (void)sender;
+  return _owner == nullptr || _owner->requestCloseFromWindow();
+}
+@end
 
 @implementation SeamNativeEditorView {
   seam::native_ui::AppKitNativeWindow* _owner;

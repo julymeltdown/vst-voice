@@ -100,6 +100,10 @@ NativeKey nativeKey(WPARAM key) noexcept {
     case 'Z': return NativeKey::Z;
     case 'Y': return NativeKey::Y;
     case 'C': return NativeKey::C;
+    case 'E': return NativeKey::E;
+    case 'N': return NativeKey::N;
+    case 'O': return NativeKey::O;
+    case 'Q': return NativeKey::Q;
     case 'S': return NativeKey::S;
     case 'R': return NativeKey::R;
     case VK_ADD:
@@ -442,7 +446,9 @@ private:
         }
         return 0;
       case WM_CLOSE:
-        DestroyWindow(window);
+        if (client_ == nullptr || client_->requestClose()) {
+          DestroyWindow(window);
+        }
         return 0;
       case WM_DESTROY:
         destroyed_ = true;

@@ -4,8 +4,10 @@
 #include "seam/native_ui/character_presentation.hpp"
 #include "seam/native_ui/editor_scene.hpp"
 #include "seam/native_ui/native_window.hpp"
+#include "seam/platform/application_menu.hpp"
 #include "seam/platform/audio_device.hpp"
 #include "seam/platform/multichannel_ring_buffer_processor.hpp"
+#include "seam/standalone/application_controller.hpp"
 #include "seam/standalone/authoring_session.hpp"
 
 #include <atomic>
@@ -18,6 +20,7 @@ namespace seam::standalone {
 struct NativeEditorAppConfig final {
   AuthoringSessionConfig authoring;
   std::filesystem::path characterPackage{"assets/character-01"};
+  std::filesystem::path applicationSupportRoot;
   std::size_t audioBlockFrames{256U};
   bool forceThreadedAudio{false};
   bool startPaused{false};
@@ -57,6 +60,7 @@ public:
                        ui::CompositionSelection selection) noexcept override;
   void textCommit(std::u32string text) noexcept override;
   void textCancel() noexcept override;
+  [[nodiscard]] bool requestClose() noexcept override;
   [[nodiscard]] bool wantsClose() const noexcept override;
 
 private:
@@ -68,6 +72,8 @@ private:
 
   NativeEditorAppConfig config_;
   std::unique_ptr<AuthoringSession> authoring_;
+  std::unique_ptr<StandaloneApplicationController> applicationController_;
+  std::unique_ptr<platform::IApplicationMenu> applicationMenu_;
   native_ui::CharacterPresentation character_;
   native_ui::EditorScenePainter painter_;
   std::unique_ptr<platform::MultichannelRingBufferAudioProcessor> processor_;

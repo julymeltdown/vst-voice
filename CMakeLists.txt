@@ -113,6 +113,9 @@ seam_apply_compiler_options(seam_application)
 
 add_library(seam_authoring_runtime
   libs/seam-authoring-runtime/src/project_document.cpp
+  libs/seam-authoring-runtime/src/project_lifecycle.cpp
+  libs/seam-authoring-runtime/src/autosave_service.cpp
+  libs/seam-authoring-runtime/src/recent_projects.cpp
   libs/seam-authoring-runtime/src/voicebank_session.cpp
   libs/seam-authoring-runtime/src/render_coordinator.cpp
   libs/seam-authoring-runtime/src/technical_edit_controller.cpp
@@ -122,7 +125,7 @@ add_library(seam_authoring_runtime
 target_include_directories(seam_authoring_runtime PUBLIC
   libs/seam-authoring-runtime/include)
 target_link_libraries(seam_authoring_runtime PUBLIC
-  seam_rendering seam_voicebank seam_application seam_domain seam_core)
+  seam_rendering seam_voicebank seam_formats seam_application seam_domain seam_core)
 seam_apply_compiler_options(seam_authoring_runtime)
 
 
@@ -246,25 +249,38 @@ add_library(seam_platform
   libs/seam-platform/src/pulse_audio_input_device.cpp
   libs/seam-platform/src/system_audio_input_device_unavailable.cpp
   libs/seam-platform/src/recording_session.cpp
+  libs/seam-platform/src/application_paths.cpp
 )
 target_include_directories(seam_platform PUBLIC libs/seam-platform/include)
 target_link_libraries(seam_platform PUBLIC seam_voicebank seam_core Threads::Threads ${CMAKE_DL_LIBS})
 if(WIN32)
   target_sources(seam_platform PRIVATE
     libs/seam-platform/src/wasapi_audio_device.cpp
-    libs/seam-platform/src/wasapi_audio_input_device.cpp)
+    libs/seam-platform/src/wasapi_audio_input_device.cpp
+    libs/seam-platform/src/file_dialog_win32.cpp
+    libs/seam-platform/src/application_menu_win32.cpp)
   target_compile_definitions(seam_platform PRIVATE
     SEAM_AUDIO_WASAPI=1 WIN32_LEAN_AND_MEAN NOMINMAX _WIN32_WINNT=0x0A00)
-  target_link_libraries(seam_platform PRIVATE ole32 uuid avrt)
+  target_link_libraries(seam_platform PRIVATE ole32 uuid avrt shell32)
 elseif(APPLE)
   enable_language(OBJCXX)
   target_sources(seam_platform PRIVATE
     libs/seam-platform/src/coreaudio_audio_device.mm
-    libs/seam-platform/src/coreaudio_audio_input_device.mm)
+    libs/seam-platform/src/coreaudio_audio_input_device.mm
+    libs/seam-platform/src/file_dialog_appkit.mm
+    libs/seam-platform/src/application_menu_appkit.mm)
+  set_source_files_properties(
+    libs/seam-platform/src/file_dialog_appkit.mm
+    libs/seam-platform/src/application_menu_appkit.mm
+    PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
   target_compile_definitions(seam_platform PRIVATE SEAM_AUDIO_COREAUDIO=1)
   target_link_libraries(seam_platform PRIVATE
-    "-framework AudioToolbox" "-framework CoreAudio" "-framework CoreFoundation")
+    "-framework AudioToolbox" "-framework CoreAudio" "-framework CoreFoundation"
+    "-framework Cocoa" "-framework UniformTypeIdentifiers")
 elseif(UNIX)
+  target_sources(seam_platform PRIVATE
+    libs/seam-platform/src/file_dialog_unavailable.cpp
+    libs/seam-platform/src/application_menu_unavailable.cpp)
   target_compile_definitions(seam_platform PRIVATE SEAM_AUDIO_PULSE=1)
 endif()
 seam_apply_compiler_options(seam_platform)
@@ -354,6 +370,7 @@ seam_apply_compiler_options(seam_phase4_demo)
 if(SEAM_BUILD_NATIVE_DESKTOP)
   add_library(seam_standalone_authoring STATIC
     libs/seam-standalone/src/authoring_session.cpp
+    libs/seam-standalone/src/application_controller.cpp
     libs/seam-standalone/src/native_editor_app.cpp)
   target_include_directories(seam_standalone_authoring PUBLIC
     libs/seam-standalone/include)
@@ -701,6 +718,10 @@ if(SEAM_BUILD_TESTS)
     tests/test_text.cpp
     tests/test_clap.cpp
     tests/test_project_document.cpp
+    tests/test_project_lifecycle.cpp
+    tests/test_autosave_service.cpp
+    tests/test_recent_projects.cpp
+    tests/test_file_dialog_contract.cpp
     tests/test_authoring_voicebank_session.cpp
     tests/test_authoring_render_coordinator.cpp
     tests/test_technical_edit_controller.cpp
@@ -715,7 +736,8 @@ if(SEAM_BUILD_TESTS)
     list(APPEND SEAM_TEST_SOURCES
       tests/test_native_ui.cpp
       tests/test_native_runtime.cpp
-      tests/test_standalone_authoring_integration.cpp)
+      tests/test_standalone_authoring_integration.cpp
+      tests/test_standalone_project_lifecycle.cpp)
   endif()
 
   if(SEAM_BUILD_CLAP_EDITOR_PLUGIN)
@@ -746,6 +768,24 @@ if(SEAM_BUILD_TESTS)
   seam_apply_compiler_options(seam_authoring_render_coordinator_tests)
   add_test(NAME seam_authoring_render_coordinator_tests
     COMMAND seam_authoring_render_coordinator_tests)
+
+  add_executable(seam_u2_tests
+    tests/test_main.cpp
+    tests/test_project_lifecycle.cpp
+    tests/test_autosave_service.cpp
+    tests/test_recent_projects.cpp
+    tests/test_file_dialog_contract.cpp
+    tests/test_standalone_project_lifecycle.cpp)
+  target_include_directories(seam_u2_tests PRIVATE tests)
+  target_compile_definitions(seam_u2_tests PRIVATE
+    SEAM_SOURCE_PRODUCTION_VOICEBANK="${CMAKE_CURRENT_SOURCE_DIR}/assets/demo-human-voicebank-public-domain/production-bank")
+  target_link_libraries(seam_u2_tests PRIVATE
+    seam_standalone_authoring seam_native_ui seam_authoring_runtime
+    seam_playback_platform seam_platform seam_rendering seam_synthesis
+    seam_voicebank seam_editor_ui seam_phonemizer seam_formats
+    seam_application seam_domain seam_text seam_core)
+  seam_apply_compiler_options(seam_u2_tests)
+  add_test(NAME seam_u2_tests COMMAND seam_u2_tests)
 
   add_executable(seam_tests ${SEAM_TEST_SOURCES})
   target_include_directories(seam_tests PRIVATE tests)
@@ -786,6 +826,10 @@ if(SEAM_BUILD_TESTS)
     add_test(NAME seam_standalone_production_path_contract
       COMMAND ${Python3_EXECUTABLE}
               ${CMAKE_CURRENT_SOURCE_DIR}/scripts/verify_standalone_production_path.py)
+    add_test(NAME seam_u2_project_lifecycle_contract
+      COMMAND ${Python3_EXECUTABLE}
+              ${CMAKE_CURRENT_SOURCE_DIR}/scripts/verify_u2_project_lifecycle.py
+              --root ${CMAKE_CURRENT_SOURCE_DIR})
   endif()
   add_test(NAME seam_phase10_demo_smoke
     COMMAND seam_phase10_demo --output ${CMAKE_BINARY_DIR}/phase10-smoke)

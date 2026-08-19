@@ -37,6 +37,7 @@ public:
                                ui::CompositionSelection selection) noexcept = 0;
   virtual void textCommit(std::u32string text) noexcept = 0;
   virtual void textCancel() noexcept = 0;
+  [[nodiscard]] virtual bool requestClose() noexcept { return true; }
   [[nodiscard]] virtual bool wantsClose() const noexcept = 0;
 };
 

@@ -137,6 +137,7 @@ int main(int argc, char** argv) {
               .bindFirstAvailableVoicebank = true,
           },
           .characterPackage = commandLine->characterPackage,
+          .applicationSupportRoot = {},
           .audioBlockFrames = 256U,
           .forceThreadedAudio = commandLine->forceThreadedAudio,
           .startPaused = commandLine->startPaused,
