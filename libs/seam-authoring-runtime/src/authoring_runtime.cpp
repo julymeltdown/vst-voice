@@ -37,7 +37,8 @@ AuthoringRuntime::AuthoringRuntime(std::unique_ptr<ProjectDocument> document,
       technicalEdits_(
           *document_, domain::RegionId{},
           [this] { return currentTechnicalRenderView(); },
-          [this] { handleDocumentChanged(); }) {
+          [this] { handleDocumentChanged(); }),
+      previewSampleRate_(config_.previewSampleRate) {
   renderer_.setCompletionCallback([this] { publishCompletedAudio(); });
 }
 
@@ -54,8 +55,10 @@ core::Result<void> AuthoringRuntime::initialize() {
   }
   auto refreshed = voicebanks_.refresh();
   if (!refreshed) return refreshed;
-  auto started = transport_.start();
-  if (!started) return started;
+  if (config_.enableTransport) {
+    auto started = transport_.start();
+    if (!started) return started;
+  }
 
   const auto states = voicebanks_.resolveAll(document_->session().project());
   const auto [trackId, regionId] = firstRenderableSelection(
@@ -70,9 +73,10 @@ core::Result<void> AuthoringRuntime::initialize() {
 
 void AuthoringRuntime::shutdown() noexcept {
   if (!document_) return;
+  setCompletionCallback({});
   renderer_.setCompletionCallback({});
   renderer_.shutdown();
-  transport_.shutdown();
+  if (config_.enableTransport) transport_.shutdown();
   initialized_ = false;
 }
 
@@ -132,7 +136,31 @@ core::Result<void> AuthoringRuntime::redo() {
   return result;
 }
 
-void AuthoringRuntime::handleDocumentChanged() { requestPreview(); }
+core::Result<void> AuthoringRuntime::setPreviewSampleRate(
+    std::uint32_t sampleRate) {
+  if (sampleRate < 8000U || sampleRate > 192000U) {
+    return core::failure(core::ErrorCode::InvalidArgument,
+                         "Preview sample rate must be between 8000 and 192000 Hz");
+  }
+  previewSampleRate_ = sampleRate;
+  return core::success();
+}
+
+void AuthoringRuntime::setRenderQuality(
+    rendering::RenderQuality quality) noexcept {
+  renderQuality_ = quality;
+}
+
+void AuthoringRuntime::setCompletionCallback(
+    std::function<void()> callback) {
+  std::lock_guard lock(callbackMutex_);
+  completionCallback_ = std::move(callback);
+}
+
+void AuthoringRuntime::handleDocumentChanged() {
+  document_->synchronizeDirtyState();
+  requestPreview();
+}
 
 void AuthoringRuntime::requestPreview() {
   if (!initialized_ || document_ == nullptr) return;
@@ -165,8 +193,7 @@ void AuthoringRuntime::requestPreview() {
 
   renderer_.submit(std::move(project), std::move(sources), activeTrack,
                    activeRegion, document_->session().revision(),
-                   config_.previewSampleRate,
-                   rendering::RenderQuality::Preview);
+                   previewSampleRate_, renderQuality_);
 }
 
 TechnicalRenderView AuthoringRuntime::currentTechnicalRenderView() const {
@@ -207,7 +234,15 @@ void AuthoringRuntime::publishCompletedAudio() {
   if (progress.state != RenderState::Ready) return;
   auto handle = renderer_.acquire();
   if (!handle || handle->state != RenderState::Ready) return;
-  static_cast<void>(transport_.publishAudio(std::move(handle)));
+  if (config_.enableTransport) {
+    static_cast<void>(transport_.publishAudio(std::move(handle)));
+  }
+  std::function<void()> callback;
+  {
+    std::lock_guard lock(callbackMutex_);
+    callback = completionCallback_;
+  }
+  if (callback) callback();
 }
 
 }  // namespace seam::authoring

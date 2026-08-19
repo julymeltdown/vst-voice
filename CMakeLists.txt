@@ -439,7 +439,12 @@ if(SEAM_BUILD_CLAP_EDITOR_PLUGIN)
   endif()
 
   add_library(seam_clap_editor
-    libs/seam-clap-editor/src/editor_runtime.cpp
+    libs/seam-clap-editor/src/editor_runtime_adapter.cpp
+  libs/seam-clap-editor/src/editor_runtime_paint.cpp
+  libs/seam-clap-editor/src/editor_runtime_input.cpp
+  libs/seam-clap-editor/src/editor_runtime_project.cpp
+  libs/seam-clap-editor/src/editor_runtime_preview.cpp
+  libs/seam-clap-editor/src/editor_runtime_state.cpp
     libs/seam-clap-editor/src/host_timeline.cpp
     ${SEAM_CLAP_EDITOR_VIEW_SOURCE})
   target_include_directories(seam_clap_editor PUBLIC

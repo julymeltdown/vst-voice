@@ -9,7 +9,9 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <memory>
+#include <mutex>
 #include <vector>
 
 namespace seam::authoring {
@@ -20,6 +22,7 @@ struct AuthoringRuntimeConfig final {
   std::uint32_t previewSampleRate{48000U};
   std::uint8_t outputChannels{2U};
   bool allowDevelopmentVoicebanks{false};
+  bool enableTransport{true};
 };
 
 class AuthoringRuntime final {
@@ -73,6 +76,12 @@ public:
   [[nodiscard]] core::Result<void> undo();
   [[nodiscard]] core::Result<void> redo();
 
+  [[nodiscard]] core::Result<void> setPreviewSampleRate(std::uint32_t sampleRate);
+  void setRenderQuality(rendering::RenderQuality quality) noexcept;
+  [[nodiscard]] rendering::RenderQuality renderQuality() const noexcept {
+    return renderQuality_;
+  }
+  void setCompletionCallback(std::function<void()> callback);
   void requestPreview();
   void handleDocumentChanged();
 
@@ -91,6 +100,10 @@ private:
   domain::TrackId selectedTrack_{};
   domain::RegionId selectedRegion_{};
   TechnicalEditController technicalEdits_;
+  std::uint32_t previewSampleRate_{48000U};
+  rendering::RenderQuality renderQuality_{rendering::RenderQuality::Preview};
+  mutable std::mutex callbackMutex_;
+  std::function<void()> completionCallback_;
   bool initialized_{false};
 };
 

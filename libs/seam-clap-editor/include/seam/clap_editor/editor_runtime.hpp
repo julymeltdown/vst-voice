@@ -2,8 +2,7 @@
 
 #include "seam/application/editor_session.hpp"
 #include "seam/application/project_factory.hpp"
-#include "seam/authoring/render_coordinator.hpp"
-#include "seam/authoring/voicebank_session.hpp"
+#include "seam/authoring/authoring_runtime.hpp"
 #include "seam/core/result.hpp"
 #include "seam/domain/project.hpp"
 #include "seam/clap_editor/host_timeline.hpp"
@@ -121,52 +120,6 @@ struct RenderServiceStats final {
   std::uint64_t stale{0U};
 };
 
-class AsyncPreviewRenderService;
-
-struct TrackVoicebankResolution final {
-  domain::TrackId trackId;
-  voicebank::VoicebankResolution resolution;
-};
-
-class AsyncPreviewRenderService final {
-public:
-  AsyncPreviewRenderService();
-  ~AsyncPreviewRenderService();
-
-  AsyncPreviewRenderService(const AsyncPreviewRenderService&) = delete;
-  AsyncPreviewRenderService& operator=(const AsyncPreviewRenderService&) = delete;
-
-  void submit(domain::Project project, domain::TrackId activeTrackId,
-              domain::RegionId activeRegionId,
-              std::vector<TrackVoicebankResolution> resolutions,
-              std::uint64_t revision, std::uint32_t sampleRate,
-              rendering::RenderQuality quality = rendering::RenderQuality::Preview);
-  void setCompletionCallback(std::function<void()> callback);
-  [[nodiscard]] RealtimePreviewPublication::ReadHandle acquire() const noexcept {
-    return published_.acquire();
-  }
-  [[nodiscard]] std::shared_ptr<const RenderedPreview> latest() const;
-  [[nodiscard]] RenderServiceStats stats() const noexcept;
-
-private:
-  struct ResolutionOverride final {
-    std::uint64_t revision{0U};
-    std::optional<PreviewStatus> status;
-    std::string diagnostic;
-  };
-
-  void publishFromCoordinator();
-  [[nodiscard]] static PreviewStatus statusFor(
-      authoring::RenderFailureKind failure) noexcept;
-
-  std::unique_ptr<authoring::AuthoringRenderCoordinator> coordinator_;
-  mutable RealtimePreviewPublication published_;
-  mutable std::mutex adapterMutex_;
-  ResolutionOverride resolutionOverride_;
-  mutable std::mutex callbackMutex_;
-  std::function<void()> completionCallback_;
-};
-
 struct LiveVoice final {
   bool active{false};
   bool releasing{false};
@@ -203,7 +156,7 @@ public:
       const std::filesystem::path& characterPackage =
           std::filesystem::path{"assets/character-01"},
       std::vector<voicebank::VoicebankSearchRoot> voicebankRoots = {});
-  ~EditorRuntime() = default;
+  ~EditorRuntime();
 
   EditorRuntime(const EditorRuntime&) = delete;
   EditorRuntime& operator=(const EditorRuntime&) = delete;
@@ -270,7 +223,7 @@ public:
   [[nodiscard]] std::shared_ptr<const RenderedPreview> renderedPreview() const;
   [[nodiscard]] RealtimePreviewPublication::ReadHandle
   acquireRenderedPreview() const noexcept {
-    return renderService_.acquire();
+    return previewPublication_.acquire();
   }
   [[nodiscard]] RenderServiceStats renderStats() const noexcept;
 
@@ -333,8 +286,6 @@ private:
   [[nodiscard]] native_ui::EditorSceneState sceneState() const;
   void refreshVoicebankResolutionLocked();
   void refreshAllVoicebankResolutionsLocked();
-  [[nodiscard]] std::vector<TrackVoicebankResolution>
-  renderVoicebankResolutionsLocked() const;
   void rebuildTechnicalModelsLocked();
   [[nodiscard]] phonemizer::Result phonemesLocked() const;
   [[nodiscard]] const ui::PhonemeVisual* phonemeVisualAt(
@@ -349,22 +300,26 @@ private:
   void paintSampleMicroscope(native_ui::RasterCanvas& canvas) noexcept;
   [[nodiscard]] core::Result<void> bindVoicebankLocked(
       const voicebank::VoicebankCandidate& candidate);
+  void publishPreviewFromAuthoring();
+  [[nodiscard]] static RenderedPreview makeRenderedPreview(
+      const authoring::PublishedProjectAudio& audio);
 
   mutable std::recursive_mutex mutex_;
   bool createdDefault_{false};
-  application::ProjectFactory factory_{1000U};
   domain::TrackId trackId_{};
   domain::RegionId regionId_{};
-  application::EditorSession session_;
+  std::unique_ptr<authoring::AuthoringRuntime> authoring_;
+  application::ProjectFactory& factory_;
+  application::EditorSession& session_;
+  authoring::VoicebankSession& voicebankSession_;
   std::unique_ptr<native_ui::NativeEditorController> controller_;
   native_ui::EditorScenePainter painter_;
   native_ui::CharacterPresentation character_;
-  AsyncPreviewRenderService renderService_;
+  mutable RealtimePreviewPublication previewPublication_;
   LiveSampleInstrument live_;
-  authoring::VoicebankSession voicebankSession_;
   voicebank::VoicebankResolution voicebankResolution_;
-  std::vector<TrackVoicebankResolution> trackVoicebankResolutions_;
   std::function<void()> repaintCallback_;
+  std::function<void()> renderReadyCallback_;
   std::function<void(const native_ui::TextInputRequest&)> beginTextInput_;
   std::function<void()> endTextInput_;
   double logicalWidth_{1100.0};

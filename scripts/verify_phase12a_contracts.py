@@ -35,14 +35,20 @@ def main() -> int:
     errors: list[str] = []
 
     require_text(
-        root / "libs/seam-clap-editor/src/editor_runtime.cpp",
+        root / "libs/seam-clap-editor/src/editor_runtime_adapter.cpp",
         [
-            "AuthoringRenderCoordinator",
+            "authoring_",
             "voicebankResolution_",
-            "VoicebankContentHashMissing",
-            "VoicebankContentMismatch",
             "bindVoicebankLocked",
             "selectVoicebank",
+        ],
+        errors,
+    )
+    require_text(
+        root / "libs/seam-clap-editor/src/editor_runtime_internal.hpp",
+        [
+            "VoicebankContentHashMissing",
+            "VoicebankContentMismatch",
             "previewCacheRoot",
         ],
         errors,

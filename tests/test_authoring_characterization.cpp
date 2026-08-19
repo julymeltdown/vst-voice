@@ -209,36 +209,31 @@ TEST_CASE("authoring_characterization_state_codec_round_trips_canonical_project"
 TEST_CASE("authoring_characterization_newer_preview_revision_wins") {
   EditorRuntime runtime(std::nullopt, std::filesystem::path{"assets/character-01"},
                         fixtureRoots());
-  const auto resolution = runtime.voicebankResolution();
-  CHECK(resolution.resolved());
+  const auto initial = waitReady(runtime);
+  CHECK(initial != nullptr);
+  CHECK(initial->status == PreviewStatus::Ready);
 
-  seam::clap_editor::AsyncPreviewRenderService service;
-  std::vector<seam::clap_editor::TrackVoicebankResolution> resolutions{
-      seam::clap_editor::TrackVoicebankResolution{
-          .trackId = runtime.trackId(),
-          .resolution = resolution,
-      }};
-  auto project = runtime.projectCopy();
-  service.submit(project, runtime.trackId(), runtime.regionId(), resolutions,
-                 101U, 48000U);
-  service.submit(std::move(project), runtime.trackId(), runtime.regionId(),
-                 std::move(resolutions), 102U, 48000U);
+  auto first = runtime.projectCopy();
+  auto* firstRegion = first.findRegion(runtime.regionId());
+  CHECK(firstRegion != nullptr);
+  CHECK(!firstRegion->notes.empty());
+  firstRegion->notes.front().midiKey = 65U;
+  CHECK(runtime.replaceProject(std::move(first)));
 
-  std::shared_ptr<const RenderedPreview> preview;
-  for (int attempt = 0; attempt < 1200; ++attempt) {
-    preview = service.latest();
-    if (preview != nullptr && preview->revision == 102U &&
-        preview->status == PreviewStatus::Ready) {
-      break;
-    }
-    std::this_thread::sleep_for(std::chrono::milliseconds{5});
-  }
+  auto second = runtime.projectCopy();
+  auto* secondRegion = second.findRegion(runtime.regionId());
+  CHECK(secondRegion != nullptr);
+  CHECK(!secondRegion->notes.empty());
+  secondRegion->notes.front().midiKey = 68U;
+  CHECK(runtime.replaceProject(std::move(second)));
+
+  const auto preview = waitReady(runtime);
   CHECK(preview != nullptr);
-  CHECK(preview->revision == 102U);
+  CHECK(preview->revision == runtime.revision());
   CHECK(preview->status == PreviewStatus::Ready);
-  const auto stats = service.stats();
-  CHECK(stats.submitted == 2U);
-  CHECK(stats.completed == 1U);
+  const auto stats = runtime.renderStats();
+  CHECK(stats.submitted >= 3U);
+  CHECK(stats.completed >= 1U);
   CHECK(stats.cancelled + stats.stale >= 1U);
 }
 

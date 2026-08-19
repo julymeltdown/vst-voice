@@ -75,14 +75,17 @@ def main() -> int:
         errors,
     )
     require_text(
-        root / "libs/seam-clap-editor/src/editor_runtime.cpp",
+        root / "libs/seam-clap-editor/src/editor_runtime_project.cpp",
         [
-            "AuthoringRenderCoordinator",
             "ConfigureProjectOutputCommand",
             "SetHostStartOffsetCommand",
-            "paintSampleMicroscope",
             "setRenderQuality",
         ],
+        errors,
+    )
+    require_text(
+        root / "libs/seam-clap-editor/src/editor_runtime_paint.cpp",
+        ["paintSampleMicroscope"],
         errors,
     )
     require_text(
