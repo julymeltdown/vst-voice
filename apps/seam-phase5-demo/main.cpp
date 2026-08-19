@@ -161,6 +161,7 @@ int main(int argc, char** argv) {
           .beginTextInput = [&textRequests](const auto&) { ++textRequests; },
           .endTextInput = [] {},
           .setPlaying = [](bool) {},
+          .documentChanged = {},
       }};
   controller.resize(1440.0, 900.0);
 

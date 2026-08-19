@@ -105,6 +105,11 @@ void NativeEditorController::finishTextInput() const {
   if (callbacks_.endTextInput) callbacks_.endTextInput();
 }
 
+void NativeEditorController::markDocumentChanged() {
+  dirty_ = true;
+  if (callbacks_.documentChanged) callbacks_.documentChanged();
+}
+
 core::Result<void> NativeEditorController::pointerDown(
     const PointerEvent& event) {
   if (event.button != PointerButton::Left) return core::success();
@@ -136,7 +141,7 @@ core::Result<void> NativeEditorController::pointerDown(
     };
     const auto updated = session_.execute(
         std::make_unique<application::UpsertSeamOverrideCommand>(regionId_, value));
-    if (updated) dirty_ = true;
+    if (updated) markDocumentChanged();
     repaint();
     return updated;
   }
@@ -164,7 +169,7 @@ core::Result<void> NativeEditorController::pointerDown(
     const auto drawn = pianoRoll_.drawNote(point, session_.project().settings().snapGrid,
                                            U"a");
     if (!drawn) return core::Result<void>{drawn.error()};
-    dirty_ = true;
+    markDocumentChanged();
     repaint();
     return core::success();
   }
@@ -202,7 +207,7 @@ core::Result<void> NativeEditorController::pointerUp(
         std::lround(deltaY / pianoRoll_.pitch().rowHeight()));
     if (deltaTick != time::Tick{0} || semitone != 0) {
       result = pianoRoll_.moveSelection(deltaTick, semitone);
-      if (result) dirty_ = true;
+      if (result) markDocumentChanged();
     }
   } else {
     const auto left = std::min(dragStart_.x, dragCurrent_.x);
@@ -233,18 +238,18 @@ core::Result<void> NativeEditorController::keyDown(const KeyEvent& event) {
     result = event.modifiers.shift ? session_.redo() : session_.undo();
     if (result) {
       pianoRoll_.rebuildIndex();
-      dirty_ = true;
+      markDocumentChanged();
     }
   } else if (event.modifiers.primaryShortcut() && event.key == NativeKey::Y) {
     result = session_.redo();
     if (result) {
       pianoRoll_.rebuildIndex();
-      dirty_ = true;
+      markDocumentChanged();
     }
   } else if (event.key == NativeKey::Delete || event.key == NativeKey::Backspace) {
     if (!session_.selection().empty()) {
       result = pianoRoll_.deleteSelection();
-      if (result) dirty_ = true;
+      if (result) markDocumentChanged();
     }
   } else if (event.key == NativeKey::Space) {
     playing_ = !playing_;
@@ -261,7 +266,7 @@ core::Result<void> NativeEditorController::keyDown(const KeyEvent& event) {
     } else {
       mode = domain::CharacterDisplayMode::Full;
     }
-    dirty_ = true;
+    markDocumentChanged();
   } else if (event.key == NativeKey::Plus || event.key == NativeKey::Minus) {
     pianoRoll_.timeline().zoomAround(
         (logicalWidth_ - layout_.keyboardWidth) * 0.5,
@@ -278,7 +283,7 @@ core::Result<void> NativeEditorController::keyDown(const KeyEvent& event) {
                               : event.key == NativeKey::Down ? -1 : 0;
     if (!session_.selection().empty()) {
       result = pianoRoll_.moveSelection(tick, semitone);
-      if (result) dirty_ = true;
+      if (result) markDocumentChanged();
     }
   }
   repaint();
@@ -367,7 +372,7 @@ core::Result<void> NativeEditorController::commitTextComposition(
       std::make_unique<application::SetLyricCommand>(
           commit.value().lyricId, std::move(commit.value().text), language));
   if (result) {
-    dirty_ = true;
+    markDocumentChanged();
     pianoRoll_.rebuildIndex();
   }
   finishTextInput();

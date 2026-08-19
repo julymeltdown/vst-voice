@@ -352,6 +352,16 @@ target_link_libraries(seam_phase4_demo PRIVATE
 seam_apply_compiler_options(seam_phase4_demo)
 
 if(SEAM_BUILD_NATIVE_DESKTOP)
+  add_library(seam_standalone_authoring STATIC
+    libs/seam-standalone/src/authoring_session.cpp
+    libs/seam-standalone/src/native_editor_app.cpp)
+  target_include_directories(seam_standalone_authoring PUBLIC
+    libs/seam-standalone/include)
+  target_link_libraries(seam_standalone_authoring PUBLIC
+    seam_authoring_runtime seam_native_ui seam_playback_platform seam_platform
+    seam_application seam_domain seam_voicebank seam_core)
+  seam_apply_compiler_options(seam_standalone_authoring)
+
   add_executable(seam_phase5_demo apps/seam-phase5-demo/main.cpp)
   target_link_libraries(seam_phase5_demo PRIVATE
     seam_native_ui seam_playback_platform seam_platform seam_rendering
@@ -359,9 +369,11 @@ if(SEAM_BUILD_NATIVE_DESKTOP)
   seam_apply_compiler_options(seam_phase5_demo)
 
   add_executable(seam_editor_native apps/seam-editor-native/main.cpp)
+  target_compile_definitions(seam_editor_native PRIVATE
+    SEAM_SOURCE_PRODUCTION_VOICEBANK="${CMAKE_CURRENT_SOURCE_DIR}/assets/demo-human-voicebank-public-domain/production-bank")
   target_link_libraries(seam_editor_native PRIVATE
-    seam_native_ui seam_playback_platform seam_platform seam_rendering
-    seam_editor_ui seam_application seam_domain seam_core)
+    seam_standalone_authoring seam_native_ui seam_playback_platform seam_platform
+    seam_rendering seam_editor_ui seam_application seam_domain seam_core)
   seam_apply_compiler_options(seam_editor_native)
 
   add_executable(seam_voicebank_studio_native apps/seam-voicebank-studio-native/main.cpp)
@@ -702,7 +714,8 @@ if(SEAM_BUILD_TESTS)
   if(SEAM_BUILD_NATIVE_DESKTOP)
     list(APPEND SEAM_TEST_SOURCES
       tests/test_native_ui.cpp
-      tests/test_native_runtime.cpp)
+      tests/test_native_runtime.cpp
+      tests/test_standalone_authoring_integration.cpp)
   endif()
 
   if(SEAM_BUILD_CLAP_EDITOR_PLUGIN)
@@ -742,7 +755,7 @@ if(SEAM_BUILD_TESTS)
     seam_distribution seam_editor_inspection seam_rendering seam_synthesis seam_voicebank seam_editor_ui seam_phonemizer seam_formats
     seam_playback_platform seam_platform seam_authoring_runtime seam_application seam_domain seam_text seam_clap seam_core)
   if(SEAM_BUILD_NATIVE_DESKTOP)
-    target_link_libraries(seam_tests PRIVATE seam_native_ui)
+    target_link_libraries(seam_tests PRIVATE seam_native_ui seam_standalone_authoring)
   endif()
   if(SEAM_BUILD_CLAP_EDITOR_PLUGIN)
     target_link_libraries(seam_tests PRIVATE seam_clap_editor)
@@ -770,6 +783,9 @@ if(SEAM_BUILD_TESTS)
       COMMAND ${Python3_EXECUTABLE}
               ${CMAKE_CURRENT_SOURCE_DIR}/scripts/verify_phase8_platform_sources.py
               --root ${CMAKE_CURRENT_SOURCE_DIR})
+    add_test(NAME seam_standalone_production_path_contract
+      COMMAND ${Python3_EXECUTABLE}
+              ${CMAKE_CURRENT_SOURCE_DIR}/scripts/verify_standalone_production_path.py)
   endif()
   add_test(NAME seam_phase10_demo_smoke
     COMMAND seam_phase10_demo --output ${CMAKE_BINARY_DIR}/phase10-smoke)

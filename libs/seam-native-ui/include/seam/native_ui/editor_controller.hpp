@@ -69,6 +69,7 @@ struct EditorHostCallbacks final {
   std::function<void(const TextInputRequest&)> beginTextInput;
   std::function<void()> endTextInput;
   std::function<void(bool)> setPlaying;
+  std::function<void()> documentChanged;
 };
 
 class NativeEditorController final {
@@ -115,6 +116,7 @@ private:
   [[nodiscard]] std::optional<ui::Rect> noteWindowBounds(domain::NoteId noteId) const;
   void repaint() const;
   void finishTextInput() const;
+  void markDocumentChanged();
 
   application::EditorSession& session_;
   application::ProjectFactory& factory_;

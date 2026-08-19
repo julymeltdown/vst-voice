@@ -101,6 +101,7 @@ TEST_CASE("editor scene remains logically identical at one and two times scale")
 TEST_CASE("native controller commits one move command at pointer release") {
   NativeUiFixture fixture;
   std::size_t repaints = 0U;
+  std::size_t documentChanges = 0U;
   seam::native_ui::NativeEditorController controller{
       fixture.session, fixture.factory, fixture.regionId,
       seam::native_ui::EditorHostCallbacks{
@@ -108,6 +109,7 @@ TEST_CASE("native controller commits one move command at pointer release") {
           .beginTextInput = {},
           .endTextInput = {},
           .setPlaying = {},
+          .documentChanged = [&documentChanges] { ++documentChanges; },
       }};
   controller.resize(1280.0, 720.0);
   const auto visual = controller.pianoRoll().visibleNotes().front();
@@ -140,6 +142,7 @@ TEST_CASE("native controller commits one move command at pointer release") {
   CHECK(moved->midiKey == 65U);
   CHECK(moved->startTick == seam::time::Tick{1920});
   CHECK(repaints > 0U);
+  CHECK(documentChanges == 1U);
   CHECK(fixture.session.undo());
   CHECK(fixture.session.project().findNote(fixture.noteId)->midiKey == 64U);
 }
@@ -155,6 +158,7 @@ TEST_CASE("native text input commits Unicode lyric through undoable command") {
           .beginTextInput = [&begins](const auto&) { ++begins; },
           .endTextInput = [&ends] { ++ends; },
           .setPlaying = {},
+          .documentChanged = {},
       }};
   controller.resize(1280.0, 720.0);
   CHECK(controller.beginLyricEdit(fixture.noteId));

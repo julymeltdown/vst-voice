@@ -355,6 +355,7 @@ void EditorRuntime::configureControllerCallbacks() {
         if (endTextInput_) endTextInput_();
       },
       .setPlaying = [this](bool) { requestRepaint(); },
+      .documentChanged = {},
   };
   controller_ = std::make_unique<native_ui::NativeEditorController>(
       session_, factory_, regionId_, std::move(callbacks));
