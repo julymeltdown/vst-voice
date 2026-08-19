@@ -117,6 +117,7 @@ add_library(seam_authoring_runtime
   libs/seam-authoring-runtime/src/render_coordinator.cpp
   libs/seam-authoring-runtime/src/technical_edit_controller.cpp
   libs/seam-authoring-runtime/src/transport_controller.cpp
+  libs/seam-authoring-runtime/src/authoring_runtime.cpp
 )
 target_include_directories(seam_authoring_runtime PUBLIC
   libs/seam-authoring-runtime/include)
@@ -687,6 +688,7 @@ if(SEAM_BUILD_TESTS)
     tests/test_authoring_render_coordinator.cpp
     tests/test_technical_edit_controller.cpp
     tests/test_transport_controller.cpp
+    tests/test_authoring_runtime.cpp
   )
   if(SEAM_BUILD_CLAP_EDITOR_PLUGIN)
     list(APPEND SEAM_TEST_SOURCES
