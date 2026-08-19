@@ -28,7 +28,8 @@ AuthoringRuntime::AuthoringRuntime(std::unique_ptr<ProjectDocument> document,
                                    AuthoringRuntimeConfig config)
     : document_(std::move(document)),
       config_(std::move(config)),
-      voicebanks_(config_.voicebankRoots),
+      voicebanks_(config_.voicebankRoots,
+                  config_.allowDevelopmentVoicebanks),
       renderer_(config_.cacheRoot),
       transport_(TransportConfig{
           .sampleRate = config_.previewSampleRate,

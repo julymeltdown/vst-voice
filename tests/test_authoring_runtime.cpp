@@ -180,6 +180,22 @@ TEST_CASE("authoring_runtime_note_edit_renders_and_publishes_transport_audio") {
   CHECK(runtime.transport().state().publishedRevision == revision);
 }
 
+TEST_CASE("authoring_runtime_development_voicebank_policy_is_enforced") {
+  auto fixture = makeFixture();
+  auto config = configFor(
+      std::filesystem::temp_directory_path() / "seam-runtime-dev-policy");
+  config.allowDevelopmentVoicebanks = false;
+  seam::authoring::AuthoringRuntime runtime{std::move(fixture.document),
+                                             std::move(config)};
+  CHECK(runtime.initialize());
+
+  const auto resolution = runtime.voicebanks().resolveTrack(
+      runtime.document().session().project(), fixture.resolvedTrack);
+  CHECK(resolution.status ==
+        seam::voicebank::VoicebankResolveStatus::Untrusted);
+  CHECK(!resolution.candidate.has_value());
+}
+
 TEST_CASE("authoring_runtime_selection_does_not_mutate_project") {
   auto fixture = makeFixture();
   seam::authoring::AuthoringRuntime runtime{

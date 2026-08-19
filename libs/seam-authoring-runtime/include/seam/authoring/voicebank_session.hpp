@@ -18,7 +18,8 @@ struct TrackVoicebankState final {
 class VoicebankSession final {
 public:
   explicit VoicebankSession(
-      std::vector<voicebank::VoicebankSearchRoot> roots);
+      std::vector<voicebank::VoicebankSearchRoot> roots,
+      bool allowDevelopmentFixtures = true);
 
   [[nodiscard]] core::Result<void> refresh();
   [[nodiscard]] core::Result<void> addSearchRoot(

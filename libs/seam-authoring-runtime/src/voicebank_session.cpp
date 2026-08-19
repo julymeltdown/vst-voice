@@ -32,7 +32,9 @@ voicebank::VoicebankResolution invalidTrackResolution(
 }  // namespace
 
 VoicebankSession::VoicebankSession(
-    std::vector<voicebank::VoicebankSearchRoot> roots) {
+    std::vector<voicebank::VoicebankSearchRoot> roots,
+    bool allowDevelopmentFixtures) {
+  resolveOptions_.allowDevelopmentFixtures = allowDevelopmentFixtures;
   roots_.reserve(roots.size());
   for (auto& root : roots) {
     auto normalized = normalizeRoot(std::move(root));
