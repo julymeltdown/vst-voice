@@ -6,6 +6,7 @@
 #include "seam/domain/project.hpp"
 #include "seam/voicebank/catalog.hpp"
 
+#include <string_view>
 #include <vector>
 
 namespace seam::authoring {
@@ -27,6 +28,16 @@ public:
   [[nodiscard]] core::Result<void> bindTrack(
       ProjectDocument& document, domain::TrackId trackId,
       const voicebank::VoicebankCandidate& candidate);
+  [[nodiscard]] core::Result<void> selectTrackExact(
+      ProjectDocument& document, domain::TrackId trackId,
+      std::string_view id, std::string_view version,
+      std::string_view contentHash);
+  [[nodiscard]] core::Result<void> replaceTrackVoicebank(
+      ProjectDocument& document, domain::TrackId trackId,
+      const voicebank::VoicebankCandidate& candidate);
+  [[nodiscard]] core::Result<voicebank::VoicebankResolution> relinkTrack(
+      const domain::Project& project, domain::TrackId trackId,
+      voicebank::VoicebankSearchRoot root);
 
   // Transitional facade for adapters that have not yet adopted ProjectDocument.
   // Remove after EditorRuntime is converted to AuthoringRuntime in U1.7.

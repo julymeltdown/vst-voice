@@ -67,6 +67,10 @@ core::Result<void> NativeEditorApp::initialize() {
       StandaloneApplicationControllerConfig{
           .autosaveRoot = supportRoot / "Autosaves",
           .recentProjectsPath = supportRoot / "recent-projects.json",
+          .voicebankInstallRoot = supportRoot / "Voicebanks",
+          .trustedVoicebankKeys = config_.trustedVoicebankKeys,
+          .developmentTrustRoot = config_.developmentTrustRoot,
+          .allowDevelopmentVoicebanks = config_.allowDevelopmentVoicebanks,
           .defaultNewProject = authoring::NewProjectRequest{
               .name = "Untitled",
               .tempoBpm = 120.0,

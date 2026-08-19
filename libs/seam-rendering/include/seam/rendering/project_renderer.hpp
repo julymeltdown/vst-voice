@@ -26,12 +26,22 @@ struct TrackVoicebankSource final {
   voicebank::VoicebankTrust trust{voicebank::VoicebankTrust::UntrustedInstalled};
 };
 
+struct ProjectRenderDiagnostic final {
+  domain::TrackId trackId;
+  domain::RegionId regionId;
+  std::string phraseId;
+  core::ErrorCode code{core::ErrorCode::Internal};
+  std::string message;
+  std::string context;
+};
+
 struct ProjectRenderResult final {
   std::uint32_t sampleRate{48000U};
   std::uint8_t channelCount{2U};
   std::vector<float> interleaved;
   std::vector<std::string> phraseContentHashes;
   std::vector<synthesis::UnitPlanEntry> activeUnitPlan;
+  std::vector<ProjectRenderDiagnostic> diagnostics;
   std::size_t trackCount{0U};
   std::size_t regionCount{0U};
   std::size_t phraseCount{0U};

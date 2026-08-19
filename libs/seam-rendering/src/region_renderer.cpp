@@ -58,7 +58,8 @@ core::Result<RegionRenderResult> ProductionRegionRenderer::render(
     std::string style,
     const synthesis::PhraseRenderOptions& options,
     PcmCache* cache,
-    std::stop_token stopToken) const {
+    std::stop_token stopToken,
+    bool continueOnPhraseFailure) const {
   if (sampleRate < 8000U || sampleRate > 192000U) {
     return core::failure<RegionRenderResult>(core::ErrorCode::InvalidArgument,
                                              "Region render sample rate is unsupported");
@@ -89,7 +90,20 @@ core::Result<RegionRenderResult> ProductionRegionRenderer::render(
     auto snapshot = snapshots.create(project, manifest, trackId, segment,
                                      revision, quality, bankRoot, sampleRate,
                                      style, options);
-    if (!snapshot) return core::Result<RegionRenderResult>{snapshot.error()};
+    if (!snapshot) {
+      if (!continueOnPhraseFailure ||
+          (snapshot.error().code != core::ErrorCode::NotFound &&
+           snapshot.error().code != core::ErrorCode::Conflict)) {
+        return core::Result<RegionRenderResult>{snapshot.error()};
+      }
+      output.failures.push_back(RegionRenderPhraseFailure{
+          .phraseId = segment.id,
+          .code = snapshot.error().code,
+          .message = snapshot.error().message,
+          .context = snapshot.error().context,
+      });
+      continue;
+    }
 
     std::shared_ptr<const CachedPcm> cached;
     if (cache != nullptr) {
@@ -126,7 +140,20 @@ core::Result<RegionRenderResult> ProductionRegionRenderer::render(
     }
 
     auto rendered = pipeline.render(snapshot.value(), stopToken);
-    if (!rendered) return core::Result<RegionRenderResult>{rendered.error()};
+    if (!rendered) {
+      if (!continueOnPhraseFailure ||
+          (rendered.error().code != core::ErrorCode::NotFound &&
+           rendered.error().code != core::ErrorCode::Conflict)) {
+        return core::Result<RegionRenderResult>{rendered.error()};
+      }
+      output.failures.push_back(RegionRenderPhraseFailure{
+          .phraseId = segment.id,
+          .code = rendered.error().code,
+          .message = rendered.error().message,
+          .context = rendered.error().context,
+      });
+      continue;
+    }
     info.fallbackCount = static_cast<std::size_t>(std::count_if(
         rendered.value().rendered.placements.begin(),
         rendered.value().rendered.placements.end(),
@@ -145,6 +172,7 @@ core::Result<RegionRenderResult> ProductionRegionRenderer::render(
     output.phrases.push_back(std::move(info));
   }
   if (output.mono.empty()) {
+    if (continueOnPhraseFailure && !output.failures.empty()) return output;
     return core::failure<RegionRenderResult>(core::ErrorCode::NotFound,
                                              "Production region render produced no PCM");
   }

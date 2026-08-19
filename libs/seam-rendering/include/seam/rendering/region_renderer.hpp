@@ -24,11 +24,19 @@ struct RegionRenderPhraseInfo final {
   bool cacheHit{false};
 };
 
+struct RegionRenderPhraseFailure final {
+  std::string phraseId;
+  core::ErrorCode code{core::ErrorCode::Internal};
+  std::string message;
+  std::string context;
+};
+
 struct RegionRenderResult final {
   std::uint32_t sampleRate{48000U};
   std::vector<float> mono;
   std::vector<RegionRenderPhraseInfo> phrases;
   std::vector<synthesis::UnitPlanEntry> unitPlan;
+  std::vector<RegionRenderPhraseFailure> failures;
   std::size_t unitCount{0U};
   std::size_t fallbackCount{0U};
   std::size_t cacheHits{0U};
@@ -48,7 +56,8 @@ public:
       std::string style = {},
       const synthesis::PhraseRenderOptions& options = {},
       PcmCache* cache = nullptr,
-      std::stop_token stopToken = {}) const;
+      std::stop_token stopToken = {},
+      bool continueOnPhraseFailure = false) const;
 };
 
 }  // namespace seam::rendering

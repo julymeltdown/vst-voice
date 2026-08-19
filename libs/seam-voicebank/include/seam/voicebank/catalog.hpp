@@ -55,6 +55,8 @@ struct VoicebankResolution final {
   VoicebankResolveStatus status{VoicebankResolveStatus::Missing};
   std::optional<VoicebankCandidate> candidate;
   std::vector<std::string> availableVersions;
+  std::string expectedContentHash;
+  std::vector<std::string> actualContentHashes;
   std::string diagnostic;
 
   [[nodiscard]] bool resolved() const noexcept {

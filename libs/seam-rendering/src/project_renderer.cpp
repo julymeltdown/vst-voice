@@ -73,8 +73,21 @@ core::Result<ProjectRenderResult> ProductionProjectRenderer::render(
           revision, sampleRate, quality,
           source->manifest.styles.empty() ? std::string{}
                                           : source->manifest.styles.front(),
-          options, cache, stopToken);
+          options, cache, stopToken, true);
       if (!rendered) return core::Result<ProjectRenderResult>{rendered.error()};
+      for (const auto& failure : rendered.value().failures) {
+        output.diagnostics.push_back(ProjectRenderDiagnostic{
+            .trackId = track.id,
+            .regionId = region.id,
+            .phraseId = failure.phraseId,
+            .code = failure.code,
+            .message = failure.message,
+            .context = failure.context,
+        });
+      }
+      if (rendered.value().mono.empty()) {
+        continue;
+      }
 
       auto pcm = std::make_shared<RoutedPcm>();
       pcm->sampleRate = sampleRate;
@@ -109,6 +122,13 @@ core::Result<ProjectRenderResult> ProductionProjectRenderer::render(
     }
   }
   if (clips.empty()) {
+    if (!output.diagnostics.empty()) {
+      const auto& first = output.diagnostics.front();
+      return core::failure<ProjectRenderResult>(
+          first.code,
+          "Project has no audible phrase because voicebank coverage failed",
+          first.phraseId + ": " + first.message);
+    }
     return core::failure<ProjectRenderResult>(core::ErrorCode::NotFound,
                                               "Project has no audible rendered vocal region");
   }

@@ -245,7 +245,17 @@ VoicebankResolution VoicebankCatalog::resolve(
   }
   if (contentMatches.empty()) {
     result.status = VoicebankResolveStatus::ContentMismatch;
-    result.diagnostic = "Voicebank content hash does not match the saved project state";
+    result.expectedContentHash = reference.contentHash;
+    for (const auto* candidate : versionMatches) {
+      result.actualContentHashes.push_back(candidate->contentHash);
+    }
+    std::sort(result.actualContentHashes.begin(), result.actualContentHashes.end());
+    result.actualContentHashes.erase(
+        std::unique(result.actualContentHashes.begin(),
+                    result.actualContentHashes.end()),
+        result.actualContentHashes.end());
+    result.diagnostic =
+        "Voicebank content hash does not match the saved project state";
     return result;
   }
 

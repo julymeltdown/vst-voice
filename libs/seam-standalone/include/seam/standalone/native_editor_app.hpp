@@ -9,10 +9,13 @@
 #include "seam/platform/multichannel_ring_buffer_processor.hpp"
 #include "seam/standalone/application_controller.hpp"
 #include "seam/standalone/authoring_session.hpp"
+#include "seam/distribution/signing.hpp"
 
 #include <atomic>
 #include <filesystem>
 #include <memory>
+#include <optional>
+#include <vector>
 #include <string>
 
 namespace seam::standalone {
@@ -21,6 +24,9 @@ struct NativeEditorAppConfig final {
   AuthoringSessionConfig authoring;
   std::filesystem::path characterPackage{"assets/character-01"};
   std::filesystem::path applicationSupportRoot;
+  std::vector<distribution::Ed25519PublicKey> trustedVoicebankKeys;
+  std::optional<distribution::Ed25519PublicKey> developmentTrustRoot;
+  bool allowDevelopmentVoicebanks{false};
   std::size_t audioBlockFrames{256U};
   bool forceThreadedAudio{false};
   bool startPaused{false};

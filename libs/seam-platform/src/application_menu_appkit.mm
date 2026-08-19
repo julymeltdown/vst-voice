@@ -15,6 +15,8 @@ namespace {
 - (void)openRecentProject:(id)sender;
 - (void)saveProject:(id)sender;
 - (void)saveProjectAs:(id)sender;
+- (void)installVoicebank:(id)sender;
+- (void)selectVoicebank:(id)sender;
 - (void)exportAudio:(id)sender;
 - (void)quitApplication:(id)sender;
 - (void)undoAction:(id)sender;
@@ -51,6 +53,18 @@ namespace {
 }
 - (void)saveProject:(id)sender { (void)sender; [self send:ApplicationCommand::SaveProject]; }
 - (void)saveProjectAs:(id)sender { (void)sender; [self send:ApplicationCommand::SaveProjectAs]; }
+- (void)installVoicebank:(id)sender { (void)sender; [self send:ApplicationCommand::InstallVoicebank]; }
+- (void)selectVoicebank:(id)sender {
+  if (_dispatcher == nullptr || ![sender isKindOfClass:[NSMenuItem class]]) return;
+  NSDictionary* value = ((NSMenuItem*)sender).representedObject;
+  if (![value isKindOfClass:[NSDictionary class]]) return;
+  NSString* identifier = value[@"id"];
+  NSString* version = value[@"version"];
+  NSString* contentHash = value[@"contentHash"];
+  if (identifier == nil || version == nil || contentHash == nil) return;
+  static_cast<void>(_dispatcher->selectVoicebank(
+      identifier.UTF8String, version.UTF8String, contentHash.UTF8String));
+}
 - (void)exportAudio:(id)sender { (void)sender; [self send:ApplicationCommand::ExportAudio]; }
 - (void)quitApplication:(id)sender { (void)sender; [self send:ApplicationCommand::Quit]; }
 - (void)undoAction:(id)sender { (void)sender; [self send:ApplicationCommand::Undo]; }
@@ -117,9 +131,14 @@ public:
                                 NSEventModifierFlagShift,
                             target_)];
     [fileMenu_ addItem:[NSMenuItem separatorItem]];
+    [fileMenu_ addItem:item(@"Install Voicebank…", @selector(installVoicebank:), @"",
+                            0, target_)];
     [fileMenu_ addItem:item(@"Export Audio…", @selector(exportAudio:), @"e",
                             NSEventModifierFlagCommand, target_)];
     addSubmenu(root_, @"File", fileMenu_);
+
+    voicebankMenu_ = [[NSMenu alloc] initWithTitle:@"Voicebank"];
+    addSubmenu(root_, @"Voicebank", voicebankMenu_);
 
     auto* edit = [[NSMenu alloc] initWithTitle:@"Edit"];
     [edit addItem:item(@"Undo", @selector(undoAction:), @"z",
@@ -163,6 +182,36 @@ public:
       }
     }
 
+    if (voicebankMenu_ != nil) {
+      [voicebankMenu_ removeAllItems];
+      const auto banks = dispatcher_->voicebanks();
+      if (banks.empty()) {
+        auto* empty = [[NSMenuItem alloc] initWithTitle:@"No Voicebanks Found"
+                                                  action:nil keyEquivalent:@""];
+        empty.enabled = NO;
+        [voicebankMenu_ addItem:empty];
+      } else {
+        for (const auto& bank : banks) {
+          NSString* display = [NSString stringWithUTF8String:bank.displayName.c_str()];
+          NSString* version = [NSString stringWithUTF8String:bank.version.c_str()];
+          NSString* trust = [NSString stringWithUTF8String:bank.trustLabel.c_str()];
+          NSString* title = [NSString stringWithFormat:@"%@ — %@ [%@]",
+              display == nil ? @"Voicebank" : display,
+              version == nil ? @"?" : version,
+              trust == nil ? @"unknown" : trust];
+          auto* menuItem = item(title, @selector(selectVoicebank:), @"", 0, target_);
+          menuItem.enabled = bank.selectable;
+          menuItem.state = bank.selected ? NSControlStateValueOn : NSControlStateValueOff;
+          menuItem.representedObject = @{
+            @"id": [NSString stringWithUTF8String:bank.id.c_str()],
+            @"version": [NSString stringWithUTF8String:bank.version.c_str()],
+            @"contentHash": [NSString stringWithUTF8String:bank.contentHash.c_str()]
+          };
+          [voicebankMenu_ addItem:menuItem];
+        }
+      }
+    }
+
     if (recoveryMenu_ != nil) {
       [recoveryMenu_ removeAllItems];
       const auto recovery = dispatcher_->recoveryItems();
@@ -197,6 +246,7 @@ public:
     recentMenu_ = nil;
     recentHolder_ = nil;
     fileMenu_ = nil;
+    voicebankMenu_ = nil;
     root_ = nil;
     previous_ = nil;
     target_ = nil;
@@ -208,6 +258,7 @@ private:
   NSMenu* root_{nil};
   NSMenu* previous_{nil};
   NSMenu* fileMenu_{nil};
+  NSMenu* voicebankMenu_{nil};
   NSMenuItem* recentHolder_{nil};
   NSMenu* recentMenu_{nil};
   NSMenuItem* recoveryHolder_{nil};

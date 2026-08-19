@@ -100,6 +100,45 @@ core::Result<void> VoicebankSession::bindTrack(
           trackId, referenceFor(candidate)));
 }
 
+
+core::Result<void> VoicebankSession::selectTrackExact(
+    ProjectDocument& document, domain::TrackId trackId,
+    std::string_view id, std::string_view version,
+    std::string_view contentHash) {
+  const domain::VoicebankReference reference{
+      .id = std::string{id},
+      .version = std::string{version},
+      .contentHash = std::string{contentHash},
+  };
+  const auto resolution = catalog_.resolve(reference, candidates_, resolveOptions_);
+  if (!resolution.resolved()) {
+    return core::failure(resolution.status ==
+                                 voicebank::VoicebankResolveStatus::Untrusted
+                             ? core::ErrorCode::Conflict
+                             : core::ErrorCode::NotFound,
+                         resolution.diagnostic,
+                         std::string{voicebank::voicebankResolveStatusName(
+                             resolution.status)});
+  }
+  return bindTrack(document, trackId, *resolution.candidate);
+}
+
+core::Result<void> VoicebankSession::replaceTrackVoicebank(
+    ProjectDocument& document, domain::TrackId trackId,
+    const voicebank::VoicebankCandidate& candidate) {
+  return bindTrack(document, trackId, candidate);
+}
+
+core::Result<voicebank::VoicebankResolution> VoicebankSession::relinkTrack(
+    const domain::Project& project, domain::TrackId trackId,
+    voicebank::VoicebankSearchRoot root) {
+  auto added = addSearchRoot(std::move(root));
+  if (!added) {
+    return core::Result<voicebank::VoicebankResolution>{added.error()};
+  }
+  return resolveTrack(project, trackId);
+}
+
 core::Result<void> VoicebankSession::bindTrack(
     application::EditorSession& session, domain::TrackId trackId,
     const voicebank::VoicebankCandidate& candidate) {

@@ -1,5 +1,6 @@
 #include "seam/standalone/native_editor_app.hpp"
 #include "seam/voicebank/catalog.hpp"
+#include "seam/distribution/signing.hpp"
 
 #include <chrono>
 #include <clocale>
@@ -21,6 +22,9 @@ struct CommandLine final {
   bool startPaused{false};
   std::filesystem::path characterPackage{"assets/character-01"};
   std::vector<std::filesystem::path> voicebankRoots;
+  std::vector<std::filesystem::path> trustedVoicebankKeyFiles;
+  std::optional<std::filesystem::path> developmentTrustKeyFile;
+  bool allowDevelopmentVoicebanks{true};
 };
 
 void printUsage() {
@@ -32,7 +36,10 @@ void printUsage() {
       << "  --force-threaded-audio  skip physical system audio\n"
       << "  --paused                do not start transport automatically\n"
       << "  --character-package P   character package root\n"
-      << "  --voicebank-root P      add an exact voicebank search root\n";
+      << "  --voicebank-root P      add an exact voicebank search root\n"
+      << "  --trusted-voicebank-key P  trust an Ed25519 public key for installs\n"
+      << "  --development-trust-key P  built-in development signing key\n"
+      << "  --deny-development-voicebanks  hide development fixtures\n";
 }
 
 std::optional<CommandLine> parseArguments(int argc, char** argv) {
@@ -57,6 +64,18 @@ std::optional<CommandLine> parseArguments(int argc, char** argv) {
     }
     if (argument == "--voicebank-root" && index + 1 < argc) {
       result.voicebankRoots.emplace_back(argv[++index]);
+      continue;
+    }
+    if (argument == "--trusted-voicebank-key" && index + 1 < argc) {
+      result.trustedVoicebankKeyFiles.emplace_back(argv[++index]);
+      continue;
+    }
+    if (argument == "--development-trust-key" && index + 1 < argc) {
+      result.developmentTrustKeyFile = std::filesystem::path{argv[++index]};
+      continue;
+    }
+    if (argument == "--deny-development-voicebanks") {
+      result.allowDevelopmentVoicebanks = false;
       continue;
     }
     if (argument == "--auto-close-ms" && index + 1 < argc) {
@@ -109,6 +128,36 @@ std::vector<seam::voicebank::VoicebankSearchRoot> voicebankRoots(
   return roots;
 }
 
+std::optional<std::vector<seam::distribution::Ed25519PublicKey>>
+trustedVoicebankKeys(const CommandLine& commandLine) {
+  std::vector<seam::distribution::Ed25519PublicKey> result;
+  for (const auto& path : commandLine.trustedVoicebankKeyFiles) {
+    auto loaded = seam::distribution::loadPublicKey(path);
+    if (!loaded) {
+      std::cerr << "Unable to load trusted voicebank key: "
+                << loaded.error().message << " (" << path << ")\n";
+      return std::nullopt;
+    }
+    result.push_back(loaded.value());
+  }
+  return result;
+}
+
+std::optional<seam::distribution::Ed25519PublicKey>
+developmentTrustRoot(const CommandLine& commandLine, bool& valid) {
+  valid = true;
+  if (!commandLine.developmentTrustKeyFile.has_value()) return std::nullopt;
+  auto loaded = seam::distribution::loadPublicKey(
+      *commandLine.developmentTrustKeyFile);
+  if (!loaded) {
+    std::cerr << "Unable to load development voicebank key: "
+              << loaded.error().message << "\n";
+    valid = false;
+    return std::nullopt;
+  }
+  return loaded.value();
+}
+
 std::filesystem::path previewCacheRoot() {
   std::error_code error;
   auto root = std::filesystem::temp_directory_path(error);
@@ -127,6 +176,13 @@ int main(int argc, char** argv) {
     return 2;
   }
 
+  const auto trustedKeys = trustedVoicebankKeys(*commandLine);
+  if (!trustedKeys.has_value()) return 3;
+  bool developmentKeyValid = true;
+  const auto developmentKey =
+      developmentTrustRoot(*commandLine, developmentKeyValid);
+  if (!developmentKeyValid) return 3;
+
   auto created = seam::standalone::NativeEditorApp::create(
       seam::standalone::NativeEditorAppConfig{
           .authoring = seam::standalone::AuthoringSessionConfig{
@@ -138,6 +194,10 @@ int main(int argc, char** argv) {
           },
           .characterPackage = commandLine->characterPackage,
           .applicationSupportRoot = {},
+          .trustedVoicebankKeys = *trustedKeys,
+          .developmentTrustRoot = developmentKey,
+          .allowDevelopmentVoicebanks =
+              commandLine->allowDevelopmentVoicebanks,
           .audioBlockFrames = 256U,
           .forceThreadedAudio = commandLine->forceThreadedAudio,
           .startPaused = commandLine->startPaused,

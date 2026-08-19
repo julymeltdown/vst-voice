@@ -16,6 +16,7 @@ enum class ApplicationCommand {
   RecoverLatestAutosave,
   SaveProject,
   SaveProjectAs,
+  InstallVoicebank,
   ExportAudio,
   Quit,
   Undo,
@@ -32,6 +33,16 @@ struct RecentProjectMenuItem final {
 struct RecoveryMenuItem final {
   std::filesystem::path metadataPath;
   std::string displayName;
+};
+
+struct VoicebankMenuItem final {
+  std::string id;
+  std::string version;
+  std::string contentHash;
+  std::string displayName;
+  std::string trustLabel;
+  bool selectable{false};
+  bool selected{false};
 };
 
 class IApplicationCommandDispatcher {
@@ -53,6 +64,14 @@ public:
       const std::filesystem::path&) {
     return core::failure(core::ErrorCode::Unsupported,
                          "Autosave recovery is not supported");
+  }
+  [[nodiscard]] virtual std::vector<VoicebankMenuItem> voicebanks() const {
+    return {};
+  }
+  [[nodiscard]] virtual core::Result<void> selectVoicebank(
+      std::string_view, std::string_view, std::string_view) {
+    return core::failure(core::ErrorCode::Unsupported,
+                         "Voicebank selection is not supported");
   }
 };
 

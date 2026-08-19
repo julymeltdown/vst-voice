@@ -117,6 +117,8 @@ add_library(seam_authoring_runtime
   libs/seam-authoring-runtime/src/autosave_service.cpp
   libs/seam-authoring-runtime/src/recent_projects.cpp
   libs/seam-authoring-runtime/src/voicebank_session.cpp
+  libs/seam-authoring-runtime/src/voicebank_browser.cpp
+  libs/seam-authoring-runtime/src/voicebank_installer_service.cpp
   libs/seam-authoring-runtime/src/render_coordinator.cpp
   libs/seam-authoring-runtime/src/technical_edit_controller.cpp
   libs/seam-authoring-runtime/src/transport_controller.cpp
@@ -125,7 +127,7 @@ add_library(seam_authoring_runtime
 target_include_directories(seam_authoring_runtime PUBLIC
   libs/seam-authoring-runtime/include)
 target_link_libraries(seam_authoring_runtime PUBLIC
-  seam_rendering seam_voicebank seam_formats seam_application seam_domain seam_core)
+  seam_rendering seam_distribution seam_voicebank seam_formats seam_application seam_domain seam_core)
 seam_apply_compiler_options(seam_authoring_runtime)
 
 
@@ -171,6 +173,7 @@ add_library(seam_voicebank
   libs/seam-voicebank/src/manifest_json.cpp
   libs/seam-voicebank/src/content_identity.cpp
   libs/seam-voicebank/src/catalog.cpp
+  libs/seam-voicebank/src/coverage.cpp
 )
 target_include_directories(seam_voicebank PUBLIC libs/seam-voicebank/include)
 target_link_libraries(seam_voicebank PUBLIC seam_formats seam_domain seam_core)
@@ -727,6 +730,10 @@ if(SEAM_BUILD_TESTS)
     tests/test_technical_edit_controller.cpp
     tests/test_transport_controller.cpp
     tests/test_authoring_runtime.cpp
+    tests/test_voicebank_browser.cpp
+    tests/test_voicebank_installer_service.cpp
+    tests/test_voicebank_relink.cpp
+    tests/test_voicebank_coverage.cpp
   )
   if(SEAM_BUILD_CLAP_EDITOR_PLUGIN)
     list(APPEND SEAM_TEST_SOURCES
@@ -737,7 +744,8 @@ if(SEAM_BUILD_TESTS)
       tests/test_native_ui.cpp
       tests/test_native_runtime.cpp
       tests/test_standalone_authoring_integration.cpp
-      tests/test_standalone_project_lifecycle.cpp)
+      tests/test_standalone_project_lifecycle.cpp
+      tests/test_standalone_voicebank_workflow.cpp)
   endif()
 
   if(SEAM_BUILD_CLAP_EDITOR_PLUGIN)
@@ -787,6 +795,33 @@ if(SEAM_BUILD_TESTS)
   seam_apply_compiler_options(seam_u2_tests)
   add_test(NAME seam_u2_tests COMMAND seam_u2_tests)
 
+  add_executable(seam_u3_tests
+    tests/test_main.cpp
+    tests/test_voicebank_browser.cpp
+    tests/test_voicebank_installer_service.cpp
+    tests/test_voicebank_relink.cpp
+    tests/test_voicebank_coverage.cpp)
+  target_include_directories(seam_u3_tests PRIVATE tests)
+  target_link_libraries(seam_u3_tests PRIVATE
+    seam_authoring_runtime seam_distribution seam_rendering seam_synthesis
+    seam_phonemizer seam_voicebank seam_formats seam_application seam_domain
+    seam_core)
+  seam_apply_compiler_options(seam_u3_tests)
+  add_test(NAME seam_u3_tests COMMAND seam_u3_tests)
+
+  if(SEAM_BUILD_NATIVE_DESKTOP)
+    add_executable(seam_u3_standalone_tests
+      tests/test_main.cpp
+      tests/test_standalone_voicebank_workflow.cpp)
+    target_include_directories(seam_u3_standalone_tests PRIVATE tests)
+    target_link_libraries(seam_u3_standalone_tests PRIVATE
+      seam_standalone_authoring seam_native_ui seam_authoring_runtime
+      seam_distribution seam_rendering seam_synthesis seam_phonemizer
+      seam_voicebank seam_formats seam_application seam_domain seam_core)
+    seam_apply_compiler_options(seam_u3_standalone_tests)
+    add_test(NAME seam_u3_standalone_tests COMMAND seam_u3_standalone_tests)
+  endif()
+
   add_executable(seam_tests ${SEAM_TEST_SOURCES})
   target_include_directories(seam_tests PRIVATE tests)
   target_compile_definitions(seam_tests PRIVATE
@@ -829,6 +864,10 @@ if(SEAM_BUILD_TESTS)
     add_test(NAME seam_u2_project_lifecycle_contract
       COMMAND ${Python3_EXECUTABLE}
               ${CMAKE_CURRENT_SOURCE_DIR}/scripts/verify_u2_project_lifecycle.py
+              --root ${CMAKE_CURRENT_SOURCE_DIR})
+    add_test(NAME seam_u3_voicebank_workflow_contract
+      COMMAND ${Python3_EXECUTABLE}
+              ${CMAKE_CURRENT_SOURCE_DIR}/scripts/verify_u3_voicebank_workflow.py
               --root ${CMAKE_CURRENT_SOURCE_DIR})
   endif()
   add_test(NAME seam_phase10_demo_smoke

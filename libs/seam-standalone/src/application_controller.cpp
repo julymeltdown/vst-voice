@@ -1,5 +1,7 @@
 #include "seam/standalone/application_controller.hpp"
 
+#include "seam/phonemizer/japanese_phonemizer.hpp"
+
 #include <algorithm>
 #include <utility>
 
@@ -65,7 +67,14 @@ StandaloneApplicationController::StandaloneApplicationController(
           .faultInjector = {},
           .wallClock = {},
       }),
-      recentProjects_(config_.recentProjectsPath) {}
+      recentProjects_(config_.recentProjectsPath),
+      voicebankBrowser_(config_.allowDevelopmentVoicebanks) {
+  if (!config_.voicebankInstallRoot.empty()) {
+    voicebankInstaller_ = std::make_unique<authoring::VoicebankInstallerService>(
+        session_.runtime().voicebanks(), config_.voicebankInstallRoot,
+        config_.developmentTrustRoot);
+  }
+}
 
 StandaloneApplicationController::~StandaloneApplicationController() {
   static_cast<void>(autosave_.flush());
@@ -73,7 +82,33 @@ StandaloneApplicationController::~StandaloneApplicationController() {
 }
 
 core::Result<void> StandaloneApplicationController::initialize() {
-  return recentProjects_.load();
+  auto recent = recentProjects_.load();
+  if (!recent) return recent;
+  return refreshVoicebankBrowser();
+}
+
+core::Result<void> StandaloneApplicationController::refreshVoicebankBrowser() {
+  auto refreshed = session_.runtime().voicebanks().refresh();
+  if (!refreshed) return refreshed;
+  const auto candidates = session_.runtime().voicebanks().candidates();
+  voicebankBrowser_.rebuild(candidates);
+  return core::success();
+}
+
+std::optional<voicebank::VoicebankCandidate>
+StandaloneApplicationController::findCandidate(
+    std::string_view id, std::string_view version,
+    std::string_view contentHash) const {
+  const auto candidates = session_.runtime().voicebanks().candidates();
+  const auto iterator = std::find_if(
+      candidates.begin(), candidates.end(),
+      [id, version, contentHash](const auto& candidate) {
+        return candidate.manifest.id == id &&
+               candidate.manifest.version == version &&
+               candidate.contentHash == contentHash;
+      });
+  if (iterator == candidates.end()) return std::nullopt;
+  return *iterator;
 }
 
 authoring::NewProjectRequest
@@ -208,6 +243,24 @@ core::Result<void> StandaloneApplicationController::dispatch(
       if (!saved) return core::Result<void>{saved.error()};
       return core::success();
     }
+    case platform::ApplicationCommand::InstallVoicebank: {
+      if (voicebankInstaller_ == nullptr) {
+        return core::failure(core::ErrorCode::InvalidState,
+                             "Voicebank installation root is not configured");
+      }
+      const auto selected = fileDialog_->choose(platform::FileDialogRequest{
+          .purpose = platform::FileDialogPurpose::InstallVoicebank,
+          .title = "Install Voicebank",
+          .initialDirectory = {},
+          .suggestedName = {},
+          .extensions = {"seambank"},
+      });
+      if (!selected) return core::Result<void>{selected.error()};
+      if (!selected.value().has_value()) return core::success();
+      auto installed = installVoicebank(*selected.value());
+      if (!installed) return core::Result<void>{installed.error()};
+      return core::success();
+    }
     case platform::ApplicationCommand::ExportAudio:
       return core::failure(core::ErrorCode::Unsupported,
                            "Audio export is scheduled for milestone U6");
@@ -240,6 +293,137 @@ core::Result<void> StandaloneApplicationController::dispatch(
   }
   return core::failure(core::ErrorCode::Unsupported,
                        "Unknown application command");
+}
+
+std::vector<platform::VoicebankMenuItem>
+StandaloneApplicationController::voicebanks() const {
+  std::vector<platform::VoicebankMenuItem> result;
+  const auto& cards = voicebankBrowser_.cards();
+  result.reserve(cards.size());
+  const auto* track = session_.runtime().document().session().project()
+                          .findVocalTrack(session_.runtime().selectedTrack());
+  for (const auto& card : cards) {
+    const bool selected = track != nullptr && track->voicebank.id == card.id &&
+                          track->voicebank.version == card.version &&
+                          track->voicebank.contentHash == card.contentHash;
+    result.push_back(platform::VoicebankMenuItem{
+        .id = card.id,
+        .version = card.version,
+        .contentHash = card.contentHash,
+        .displayName = card.displayName,
+        .trustLabel = card.trustLabel,
+        .selectable = card.selectable,
+        .selected = selected,
+    });
+  }
+  return result;
+}
+
+core::Result<void> StandaloneApplicationController::selectVoicebank(
+    std::string_view id, std::string_view version,
+    std::string_view contentHash) {
+  auto selected = session_.runtime().voicebanks().selectTrackExact(
+      session_.runtime().document(), session_.runtime().selectedTrack(), id,
+      version, contentHash);
+  if (!selected) return selected;
+  session_.runtime().handleDocumentChanged();
+  static_cast<void>(onDocumentChanged());
+  notifyStateChanged();
+  return core::success();
+}
+
+core::Result<authoring::VoicebankInstallResult>
+StandaloneApplicationController::installVoicebank(
+    const std::filesystem::path& packagePath,
+    authoring::ExistingVoicebankDecision decision) {
+  if (voicebankInstaller_ == nullptr) {
+    return core::failure<authoring::VoicebankInstallResult>(
+        core::ErrorCode::InvalidState,
+        "Voicebank installation root is not configured");
+  }
+  auto result = voicebankInstaller_->install(authoring::VoicebankInstallRequest{
+      .packagePath = packagePath,
+      .trustedPublicKeys = config_.trustedVoicebankKeys,
+      .useDevelopmentTrustRoot = config_.developmentTrustRoot.has_value(),
+      .existingDecision = decision,
+  });
+  if (!result) return result;
+  auto refreshed = refreshVoicebankBrowser();
+  if (!refreshed) {
+    return core::Result<authoring::VoicebankInstallResult>{refreshed.error()};
+  }
+  notifyStateChanged();
+  return result;
+}
+
+core::Result<voicebank::VoicebankResolution>
+StandaloneApplicationController::relinkVoicebank(
+    domain::TrackId trackId, voicebank::VoicebankSearchRoot root) {
+  auto result = session_.runtime().voicebanks().relinkTrack(
+      session_.runtime().document().session().project(), trackId,
+      std::move(root));
+  if (!result) return result;
+  auto refreshed = refreshVoicebankBrowser();
+  if (!refreshed) {
+    return core::Result<voicebank::VoicebankResolution>{refreshed.error()};
+  }
+  notifyStateChanged();
+  return result;
+}
+
+core::Result<void> StandaloneApplicationController::replaceVoicebank(
+    domain::TrackId trackId, std::string_view id, std::string_view version,
+    std::string_view contentHash) {
+  const auto candidate = findCandidate(id, version, contentHash);
+  if (!candidate.has_value()) {
+    return core::failure(core::ErrorCode::NotFound,
+                         "Replacement voicebank candidate is not available");
+  }
+  if (candidate->trust == voicebank::VoicebankTrust::UntrustedInstalled ||
+      (candidate->trust == voicebank::VoicebankTrust::DevelopmentFixture &&
+       !config_.allowDevelopmentVoicebanks)) {
+    return core::failure(core::ErrorCode::Conflict,
+                         "Replacement voicebank is not accepted by the trust policy");
+  }
+  auto replaced = session_.runtime().voicebanks().replaceTrackVoicebank(
+      session_.runtime().document(), trackId, *candidate);
+  if (!replaced) return replaced;
+  session_.runtime().handleDocumentChanged();
+  static_cast<void>(onDocumentChanged());
+  notifyStateChanged();
+  return core::success();
+}
+
+core::Result<voicebank::VoicebankCoverageReport>
+StandaloneApplicationController::selectedRegionCoverage() const {
+  const auto& runtime = session_.runtime();
+  const auto& project = runtime.document().session().project();
+  const auto* track = project.findVocalTrack(runtime.selectedTrack());
+  const auto* region = project.findRegion(runtime.selectedRegion());
+  if (track == nullptr || region == nullptr) {
+    return core::failure<voicebank::VoicebankCoverageReport>(
+        core::ErrorCode::NotFound,
+        "Coverage analysis requires a selected vocal track and region");
+  }
+  const auto resolution = runtime.voicebanks().resolveTrack(
+      project, track->id);
+  if (!resolution.resolved()) {
+    return core::failure<voicebank::VoicebankCoverageReport>(
+        core::ErrorCode::NotFound, resolution.diagnostic);
+  }
+  if (resolution.candidate->manifest.language != domain::Language::Japanese) {
+    return core::failure<voicebank::VoicebankCoverageReport>(
+        core::ErrorCode::Unsupported,
+        "Coverage analysis currently supports the Japanese phonemizer");
+  }
+  phonemizer::JapaneseKanaPhonemizer phonemizer;
+  const auto phonemes = phonemizer.phonemize(*region);
+  const auto style = resolution.candidate->manifest.styles.empty()
+                         ? std::string{}
+                         : resolution.candidate->manifest.styles.front();
+  return voicebank::VoicebankCoverageAnalyzer::analyzeRegion(
+      resolution.candidate->manifest, track->id, *region, phonemes.tokens,
+      style);
 }
 
 std::vector<platform::RecentProjectMenuItem>
