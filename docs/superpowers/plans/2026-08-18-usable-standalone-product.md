@@ -817,15 +817,15 @@ struct NewProjectRequest final {
 
 **Checklist**
 
-- [ ] Validate project name as non-empty UTF-8 after trimming.
-- [ ] Allow tempo from 20.0 through 400.0 BPM.
-- [ ] Allow sample rates 44,100, 48,000, and 96,000 in the first alpha UI.
-- [ ] Allow 1, 2, 4, or 8 output channels.
-- [ ] Create one vocal track and one empty region spanning 16 bars.
-- [ ] Bind the chosen exact voicebank identity when provided.
-- [ ] Create canonical routing for the requested channel count.
-- [ ] Set Character 01 display to `Minimal`, not `Full`, by default.
-- [ ] Write tests for every invalid bound and resulting canonical project.
+- [x] Validate project name as non-empty UTF-8 after trimming.
+- [x] Allow tempo from 20.0 through 400.0 BPM.
+- [x] Allow sample rates 44,100, 48,000, and 96,000 in the first alpha UI.
+- [x] Allow 1, 2, 4, or 8 output channels.
+- [x] Create one vocal track and one empty region spanning 16 bars.
+- [x] Bind the chosen exact voicebank identity when provided.
+- [x] Create canonical routing for the requested channel count.
+- [x] Set Character 01 display to `Minimal`, not `Full`, by default.
+- [x] Write tests for every invalid bound and resulting canonical project.
 
 **Commit**
 
@@ -844,14 +844,14 @@ git commit -m "feat: add validated new-project workflow"
 
 **Checklist**
 
-- [ ] `open(path)` uses `ProjectJsonCodec::load()` and synchronizes IDs.
-- [ ] `save(document)` fails with `InvalidState` when no path is assigned.
-- [ ] `saveAs(document, path)` writes a temporary file, performs durable atomic replacement, then updates the document identity.
-- [ ] Save clears dirty state only after durable write succeeds.
-- [ ] A failed save leaves the original file and dirty state intact.
-- [ ] Open rejects unsupported future schema and preserves the currently open document.
-- [ ] Open verifies every exact voicebank reference after load and records resolution diagnostics without rewriting the project.
-- [ ] Add round-trip tests with Unicode project names, Japanese lyrics, routing, all technical overrides, and Character mode.
+- [x] `open(path)` uses `ProjectJsonCodec::load()` and synchronizes IDs.
+- [x] `save(document)` fails with `InvalidState` when no path is assigned.
+- [x] `saveAs(document, path)` writes a temporary file, performs durable atomic replacement, then updates the document identity.
+- [x] Save clears dirty state only after durable write succeeds.
+- [x] A failed save leaves the original file and dirty state intact.
+- [x] Open rejects unsupported future schema and preserves the currently open document.
+- [x] Open verifies every exact voicebank reference after load and records resolution diagnostics without rewriting the project.
+- [x] Add round-trip tests with Unicode project names, Japanese lyrics, routing, all technical overrides, and Character mode.
 
 **Commit**
 
@@ -870,16 +870,16 @@ git commit -m "feat: add project open save and save-as services"
 
 **Checklist**
 
-- [ ] Generate a stable autosave ID from project ID and explicit project path when available.
-- [ ] Store autosaves outside the project file under the platform application-support directory.
-- [ ] Default interval: 60 seconds while dirty.
-- [ ] Also request autosave after 25 successful commands if 15 seconds elapsed since the last autosave.
-- [ ] Snapshot the Project on the UI thread; serialize and write on a worker thread.
-- [ ] Bound autosave generations to the newest 5 per project.
-- [ ] Never replace the explicit project path with the autosave path.
-- [ ] On startup, list autosaves newer than their explicit saved project.
-- [ ] Recovery opens a copy marked dirty and preserves the original file.
-- [ ] Write fault-injection tests for write failure, process termination between temporary write and rename, and corrupt autosave.
+- [x] Generate a stable autosave ID from project ID and explicit project path when available.
+- [x] Store autosaves outside the project file under the platform application-support directory.
+- [x] Default interval: 60 seconds while dirty.
+- [x] Also request autosave after 25 successful commands if 15 seconds elapsed since the last autosave.
+- [x] Snapshot the Project on the UI thread; serialize and write on a worker thread.
+- [x] Bound autosave generations to the newest 5 per project.
+- [x] Never replace the explicit project path with the autosave path.
+- [x] On startup, list autosaves newer than their explicit saved project.
+- [x] Recovery opens a copy marked dirty and preserves the original file.
+- [x] Write fault-injection tests for write failure, process termination between temporary write and rename, and corrupt autosave.
 
 **Commit**
 
@@ -898,13 +898,13 @@ git commit -m "feat: add bounded autosave and recovery"
 
 **Checklist**
 
-- [ ] Store at most 10 entries.
-- [ ] Canonicalize paths before de-duplication.
-- [ ] Record last-opened UTC timestamp and display name.
-- [ ] Remove entries whose path no longer exists only after explicit refresh; do not remove them during parsing.
-- [ ] Define close choices: `Save`, `Discard`, `Cancel`.
-- [ ] A failed Save returns to the open document and does not close it.
-- [ ] `Discard` never deletes autosave evidence until successful app shutdown.
+- [x] Store at most 10 entries.
+- [x] Canonicalize paths before de-duplication.
+- [x] Record last-opened UTC timestamp and display name.
+- [x] Remove entries whose path no longer exists only after explicit refresh; do not remove them during parsing.
+- [x] Define close choices: `Save`, `Discard`, `Cancel`.
+- [x] A failed Save returns to the open document and does not close it.
+- [x] `Discard` never deletes autosave evidence until successful app shutdown.
 
 **Commit**
 
@@ -927,13 +927,13 @@ git commit -m "feat: add recent projects and unsaved-close policy"
 
 **Checklist**
 
-- [ ] Define `OpenProject`, `SaveProject`, `ImportAudio`, `InstallVoicebank`, and `ExportAudio` dialog purposes.
-- [ ] AppKit uses `NSOpenPanel` and `NSSavePanel` on the main thread.
-- [ ] Win32 uses `IFileOpenDialog` and `IFileSaveDialog`.
-- [ ] Linux unsupported backend returns a structured error in headless tests; X11 support may use an injected path for alpha tests.
-- [ ] Add native macOS File/Edit/Transport/View/Help menus with Command-N/O/S/Shift-S/E/Q/Z/Shift-Z/Space.
-- [ ] Route menu commands through an application command dispatcher, not directly into the window implementation.
-- [ ] Write contract tests with a fake dialog service.
+- [x] Define `OpenProject`, `SaveProject`, `ImportAudio`, `InstallVoicebank`, and `ExportAudio` dialog purposes.
+- [x] AppKit uses `NSOpenPanel` and `NSSavePanel` on the main thread.
+- [x] Win32 uses `IFileOpenDialog` and `IFileSaveDialog`.
+- [x] Linux unsupported backend returns a structured error in headless tests; X11 support may use an injected path for alpha tests.
+- [x] Add native macOS File/Edit/Transport/View/Help menus with Command-N/O/S/Shift-S/E/Q/Z/Shift-Z/Space.
+- [x] Route menu commands through an application command dispatcher, not directly into the window implementation.
+- [x] Write contract tests with a fake dialog service.
 
 **Commit**
 
@@ -944,9 +944,9 @@ git commit -m "feat: add native project file-dialog and menu ports"
 
 ### U2 exit gate
 
-- [ ] New, Open, Save, Save As, Recent, Autosave Recovery, and Unsaved Close are executable without a CLI.
-- [ ] No data-loss defect remains in fault-injection tests.
-- [ ] The active project path is never stored in canonical Project JSON.
+- [x] New, Open, Save, Save As, Recent, Autosave Recovery, and Unsaved Close are executable without a CLI.
+- [x] No data-loss defect remains in fault-injection tests.
+- [x] The active project path is never stored in canonical Project JSON.
 
 ---
 

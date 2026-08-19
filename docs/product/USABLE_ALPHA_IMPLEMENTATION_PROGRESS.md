@@ -113,15 +113,53 @@ Standalone sine-wave production helper absent       PASS
 Named C++ tests                                      170 / 170 PASS
 ```
 
+### U2 — Complete project lifecycle
+
+- Validated New Project with bounded tempo, sample rate, channels, routing,
+  initial exact voicebank, one vocal track, and one 16-bar region.
+- Open, Save, and Save As through the canonical Project codec and durable
+  atomic persistence.
+- Active project and autosave paths remain outside canonical Project JSON.
+- Bounded worker-thread autosave with newest-five pruning and recoverable
+  metadata.
+- Recovery opens a dirty copy while preserving the original explicit path.
+- Recent-project storage is canonicalized, de-duplicated, bounded, and durable.
+- Unsaved close uses Save, Discard, or Cancel and remains open after a save or
+  autosave-flush failure.
+- AppKit and Win32 native file-dialog ports, AppKit application menus, and a
+  structured Linux/headless backend are integrated through application ports.
+- Native close and keyboard/menu commands route through
+  `StandaloneApplicationController`.
+- A dedicated U2 sanitizer target detected and closed an autosave-worker
+  construction race.
+
+Commit: `49cc235 feat: implement usable standalone project lifecycle`
+
+## U2 exit-gate evidence
+
+```text
+New / Open / Save / Save As without CLI                  PASS
+Recent Projects                                           PASS
+Autosave discovery and recovery                           PASS
+Unsaved Save / Discard / Cancel                           PASS
+Failed pending autosave blocks close                      PASS
+Active path excluded from canonical Project JSON          PASS
+Named C++ tests                                           192 / 192 PASS
+Dedicated U2 tests                                         22 / 22 PASS
+ThreadSanitizer U2 tests                                   22 / 22 PASS
+```
+
 ## Current product boundary
 
-U1 is complete, but Project SEAM is **not yet Usable Alpha**. The standalone
-now plays the canonical project through the production sample-concatenative
-pipeline, but it still lacks the complete New/Open/Save/Recovery lifecycle,
-voicebank browser and install UI, final export workflow, a genuinely usable
-rights-cleared demo voicebank, and target Apple Silicon acceptance evidence.
+U1 and U2 are complete, but Project SEAM is **not yet Usable Alpha**. The
+standalone now uses the production sample-concatenative renderer and has a
+complete application-level project lifecycle. It still lacks the end-user
+voicebank browser/install/relink workflow, final export, a genuinely usable
+rights-cleared demo bank, target Apple Silicon `.app` acceptance, and a
+real-song end-to-end run.
 
 ## Next implementation task
 
-The next priority is **U2.1 — New Project**, followed by Open, Save, Save As,
-autosave recovery, recent projects, and unsaved-close handling.
+The next priority is **U3.1 — Voicebank Browser model**, followed by secure
+`.seambank` installation, exact track selection, exact relink versus explicit
+replacement, and coverage diagnostics.
