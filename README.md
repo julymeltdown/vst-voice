@@ -1,7 +1,7 @@
 # Project SEAM
 
 Project SEAM is a C++20 sample-concatenative singing-voice editor.
-> **Usable Alpha gate:** [`docs/product/USABLE_ALPHA_ACCEPTANCE.md`](docs/product/USABLE_ALPHA_ACCEPTANCE.md) is the canonical product-usability contract. U1 now connects the visible standalone project to the production voicebank renderer, and U2 adds New/Open/Save/Save As, autosave recovery, recent projects, native file-dialog/menu ports, and unsaved-close handling. The product is still below Usable Alpha because the end-user voicebank browser/install/relink workflow, final export, a genuinely usable rights-cleared demo bank, Apple Silicon `.app` acceptance, and real-song E2E evidence remain incomplete.
+> **Usable Alpha gate:** [`docs/product/USABLE_ALPHA_ACCEPTANCE.md`](docs/product/USABLE_ALPHA_ACCEPTANCE.md) is the canonical product-usability contract. U1 connects the visible standalone project to the production voicebank renderer, U2 adds the complete project lifecycle, and U3 adds signed voicebank installation, trust-aware browsing, exact selection/relink/replacement, and coverage diagnostics. The product is still below Usable Alpha because production playback/status UI, final export, a genuinely usable rights-cleared demo bank, Apple Silicon `.app` acceptance, and real-song E2E evidence remain incomplete.
  Phoneme boundaries, source-unit changes, pitch-shift artifacts, and sample seams are editable musical material rather than defects that must always be hidden.
 
 This repository contains:
@@ -26,6 +26,17 @@ Development uses the **`master` branch only**.
 > **Current maturity: Feature Alpha, not Release Candidate.** Phase 13B now adds evidence-backed Official Voicebank 01 and Character 01 release dossiers, deterministic Character 01 development assets, a development-only content bundle and a fail-closed G5 gate. Actual performer contract/recording, public-name and trademark clearance, production 3D assets, official validators, target-OS runtime evidence, signed installers and commercial DAW certification remain mandatory. See [`docs/STATUS_KO.md`](docs/STATUS_KO.md), [`docs/REMAINING_TASKS_KO.md`](docs/REMAINING_TASKS_KO.md), and [`docs/RELEASE_READINESS_KO.md`](docs/RELEASE_READINESS_KO.md).
 
 
+
+
+
+## Usable Alpha U3 implementation
+
+- The standalone application can verify and transactionally install a signed `.seambank` through an authoring service.
+- Voicebank candidates are presented with exact ID, version, synthesis content hash, language, styles, unit inventory, signer/trust status, and Character availability.
+- Trusted installed banks are selectable; untrusted banks remain visible but disabled; development fixtures require an explicit development policy.
+- Track binding, exact relink, and intentional replacement are separate operations. Relink never rewrites the requested identity, and replacement participates in Undo/Redo.
+- Coverage diagnostics distinguish missing, disabled, wrong-style, and unsupported-pitch units before rendering.
+- Production rendering reports failed phrases while allowing unaffected tracks and regions to continue; no other voicebank is silently substituted.
 
 
 ## Phase 12B implementation

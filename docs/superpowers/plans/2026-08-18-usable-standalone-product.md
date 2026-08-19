@@ -981,11 +981,11 @@ struct VoicebankCard final {
 
 **Checklist**
 
-- [ ] Derive cards from `VoicebankCandidate`, not directly from files in the UI.
-- [ ] Sort trusted installed banks before development fixtures, then display name, version, and content hash.
-- [ ] Show ID, version, language, style, unit count, signer/trust, and content hash abbreviation.
-- [ ] Mark an untrusted installed bank visible but not selectable unless the alpha is launched with an explicit development override.
-- [ ] Keep Character availability informational; it must not affect selectability.
+- [x] Derive cards from `VoicebankCandidate`, not directly from files in the UI.
+- [x] Sort trusted installed banks before development fixtures, then display name, version, and content hash.
+- [x] Show ID, version, language, style, unit count, signer/trust, and content hash abbreviation.
+- [x] Mark an untrusted installed bank visible but not selectable unless the alpha is launched with an explicit development override.
+- [x] Keep Character availability informational; it must not affect selectability.
 
 **Commit**
 
@@ -1004,14 +1004,14 @@ git commit -m "feat: add voicebank browser model"
 
 **Checklist**
 
-- [ ] Wrap `seam_distribution::Installer` behind an authoring service.
-- [ ] Require explicit trusted public key selection or a built-in development trust root for the alpha demo bank.
-- [ ] Verify package signature, package digest, file hashes, manifest, content hash, and receipt before exposing the bank as installed.
-- [ ] Install into the platform application-support voicebank root.
-- [ ] Do not overwrite the same ID/version unless the user confirms Replace and the new content hash differs.
-- [ ] Roll back on any failure.
-- [ ] Refresh the catalog after successful installation.
-- [ ] Add tests for tamper, traversal, symlink, untrusted signer, replace, rollback, and receipt mismatch.
+- [x] Wrap `seam_distribution::Installer` behind an authoring service.
+- [x] Require explicit trusted public key selection or a built-in development trust root for the alpha demo bank.
+- [x] Verify package signature, package digest, file hashes, manifest, content hash, and receipt before exposing the bank as installed.
+- [x] Install into the platform application-support voicebank root.
+- [x] Do not overwrite the same ID/version unless the user confirms Replace and the new content hash differs.
+- [x] Roll back on any failure.
+- [x] Refresh the catalog after successful installation.
+- [x] Add tests for tamper, traversal, symlink, untrusted signer, replace, rollback, and receipt mismatch.
 
 **Commit**
 
@@ -1030,13 +1030,13 @@ git commit -m "feat: integrate signed voicebank installation"
 
 **Checklist**
 
-- [ ] Select an exact candidate by ID, version, and content hash.
-- [ ] Persist selection through `SetTrackVoicebankCommand`.
-- [ ] Relink accepts a new search root but never rewrites the requested identity.
-- [ ] Relink succeeds only when the exact identity resolves.
-- [ ] Show available versions when the version is missing.
-- [ ] Show expected and actual content hashes on mismatch.
-- [ ] Add a deliberate `Replace Voicebank` action that changes the canonical identity and is Undoable; do not conflate it with Relink.
+- [x] Select an exact candidate by ID, version, and content hash.
+- [x] Persist selection through `SetTrackVoicebankCommand`.
+- [x] Relink accepts a new search root but never rewrites the requested identity.
+- [x] Relink succeeds only when the exact identity resolves.
+- [x] Show available versions when the version is missing.
+- [x] Show expected and actual content hashes on mismatch.
+- [x] Add a deliberate `Replace Voicebank` action that changes the canonical identity and is Undoable; do not conflate it with Relink.
 
 **Commit**
 
@@ -1055,11 +1055,11 @@ git commit -m "feat: add exact voicebank selection and relink"
 
 **Checklist**
 
-- [ ] Compute inventory by language, style, root-pitch layer, unit kind, phone sequence, release, breath, and sustain.
-- [ ] Given a Project/Track/Region, list every phoneme span for which no valid candidate exists.
-- [ ] Distinguish missing unit, disabled unit, unsupported pitch range, and unsupported style.
-- [ ] Expose summary counts to the Voicebank Browser and render-status panel.
-- [ ] Rendering must fail the affected phrase with an explicit diagnostic; unaffected phrases and tracks may continue.
+- [x] Compute inventory by language, style, root-pitch layer, unit kind, phone sequence, release, breath, and sustain.
+- [x] Given a Project/Track/Region, list every phoneme span for which no valid candidate exists.
+- [x] Distinguish missing unit, disabled unit, unsupported pitch range, and unsupported style.
+- [x] Expose summary counts to the Voicebank Browser and render-status panel.
+- [x] Rendering must fail the affected phrase with an explicit diagnostic; unaffected phrases and tracks may continue.
 
 **Commit**
 
@@ -1070,10 +1070,10 @@ git commit -m "feat: add voicebank coverage diagnostics"
 
 ### U3 exit gate
 
-- [ ] A user can install, browse, select, replace, and relink a bank from the app.
-- [ ] The exact identity is preserved.
-- [ ] Missing units are visible before and during rendering.
-- [ ] No silent fallback exists.
+- [x] A user can install, browse, select, replace, and relink a bank from the app.
+- [x] The exact identity is preserved.
+- [x] Missing units are visible before and during rendering.
+- [x] No silent fallback exists.
 
 ---
 

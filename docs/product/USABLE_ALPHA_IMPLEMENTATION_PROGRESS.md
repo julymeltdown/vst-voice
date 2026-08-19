@@ -149,17 +149,45 @@ Dedicated U2 tests                                         22 / 22 PASS
 ThreadSanitizer U2 tests                                   22 / 22 PASS
 ```
 
+
+### U3 — Voicebank browser, installation, selection, relink, and coverage
+
+- Browser cards are derived from catalog candidates rather than filesystem UI code.
+- Trusted installed, development, and untrusted candidates have explicit ordering and selectability.
+- Voicebank ID, version, language, style, unit inventory, signer/trust, character availability, and synthesis content hash are visible to the application layer.
+- Signed `.seambank` installation requires an explicit trusted Ed25519 public key or configured development trust root.
+- Signature, package digest, entry hashes, manifest, synthesis content hash, and installation receipt are validated before a candidate is exposed as trusted.
+- Existing ID/version replacement requires an explicit Replace decision and different synthesis content.
+- Track selection stores exact ID/version/content hash through an Undoable command.
+- Relink adds a search root without rewriting the requested identity and succeeds only for the exact candidate.
+- Intentional replacement is separate from relink and remains Undoable.
+- Coverage inventory and diagnostics distinguish missing, disabled, wrong-style, and out-of-range units.
+- Production project rendering continues unaffected phrases and reports failed phrase diagnostics rather than silently substituting another bank.
+- The standalone application controller exposes install, browse, select, relink, replace, and selected-region coverage operations.
+
+Commit: `f05e63e feat: implement usable standalone voicebank workflow`
+
+## U3 exit-gate evidence
+
+```text
+Signed install through application service                    PASS
+Trusted/untrusted/development browser policy                   PASS
+Exact selection and Undo                                      PASS
+Exact relink without identity rewrite                          PASS
+Explicit replacement and Undo                                 PASS
+Coverage diagnostics                                           PASS
+Unaffected phrase rendering with failed-phrase diagnostics    PASS
+No silent voicebank fallback                                  PASS
+Named C++ tests                                               205 / 205 PASS
+Dedicated U3 CTest                                              3 / 3 PASS
+```
+
 ## Current product boundary
 
 U1 and U2 are complete, but Project SEAM is **not yet Usable Alpha**. The
 standalone now uses the production sample-concatenative renderer and has a
-complete application-level project lifecycle. It still lacks the end-user
-voicebank browser/install/relink workflow, final export, a genuinely usable
-rights-cleared demo bank, target Apple Silicon `.app` acceptance, and a
-real-song end-to-end run.
+complete application-level project lifecycle. It now includes the end-user voicebank application services and native macOS menu integration, but still lacks complete production playback/status UI, final export, a genuinely usable rights-cleared demo bank, target Apple Silicon `.app` acceptance, and a real-song end-to-end run.
 
 ## Next implementation task
 
-The next priority is **U3.1 — Voicebank Browser model**, followed by secure
-`.seambank` installation, exact track selection, exact relink versus explicit
-replacement, and coverage diagnostics.
+The next priority is **U4.1 — bind standalone document changes to production rendering**, followed by render progress/cancellation UI, complete transport behavior, audio-device settings, backing audio, and realtime-safety instrumentation.
