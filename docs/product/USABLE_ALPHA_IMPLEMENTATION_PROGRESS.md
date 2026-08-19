@@ -4,18 +4,14 @@ This document records implementation progress against
 `docs/superpowers/plans/2026-08-18-usable-standalone-product.md`.
 It is not a Usable Alpha completion claim.
 
-## Completed implementation batch
+## Completed milestones
 
 ### U0 — Baseline and product contract
 
-- The canonical Usable Alpha acceptance contract exists in English and Korean.
-- Stable requirement IDs `UA-001` through `UA-020` are machine-verifiable.
-- PASS rows without evidence path and SHA-256 are rejected.
-- Product documentation now states that the standalone executable is still a
-  demo shell until the production authoring path replaces the hard-coded
-  project and sine-wave playback source.
-- Characterization tests preserve current CLAP project, voicebank, render,
-  state, stale-publication, and Character/PCM-separation behavior.
+- Canonical English and Korean Usable Alpha acceptance contracts.
+- Stable requirement IDs `UA-001` through `UA-020`.
+- Fail-closed evidence-path and SHA-256 validation.
+- Characterization tests for the pre-refactor CLAP authoring behavior.
 
 Commits:
 
@@ -24,100 +20,102 @@ Commits:
 9e7a9a0 test: characterize authoring runtime behavior
 ```
 
-### U1.1 — Shared `ProjectDocument`
+### U1 — Shared authoring runtime and production Standalone path
 
-Implemented a shared document owner around `EditorSession` and
-`ProjectFactory` with:
+#### U1.1 — `ProjectDocument`
 
-- path-independent canonical project state;
-- dirty-state tracking by revision;
-- save and recovery identity;
-- command execution, Undo, and Redo;
-- project replacement with ID synchronization;
-- failed-command transaction preservation.
+- Shared `EditorSession` and `ProjectFactory` ownership.
+- Revision-based dirty state.
+- Save and recovery identity.
+- Undo, Redo, replacement, and ID synchronization.
 
-Commit:
+Commit: `4af04e6 refactor: add shared project document state`
+
+#### U1.2 — `VoicebankSession`
+
+- Exact ID/version/content-hash resolution.
+- Canonical search roots and catalog refresh.
+- Explicit missing, mismatch, untrusted, and invalid states.
+- Undoable track binding without silent fallback.
+
+Commit: `9faed3a refactor: extract shared voicebank session`
+
+#### U1.3 — `AuthoringRenderCoordinator`
+
+- Immutable production render requests.
+- Revision cancellation and stale-result rejection.
+- Existing content-addressed PCM cache reuse.
+- Reader-counted realtime publication.
+- Progress, diagnostics, Preview/Final separation, and safe shutdown.
+
+Commit: `4d38442 refactor: extract shared production render coordinator`
+
+#### U1.4 — `TechnicalEditController`
+
+- Shared phoneme, unit, renderer, pitch, and seam edits.
+- Undo/Redo and one successful edit to one render request.
+- Unit fallback diagnostics kept outside CLAP-specific business logic.
+
+Commit: `247cf23 refactor: extract shared technical edit controller`
+
+#### U1.5 — `TransportController`
+
+- Shared multichannel feeder, ring buffer, play/pause/stop/seek/loop.
+- Consumer-owned reset epoch and stale revision rejection.
+- Bounded render-replacement crossfade.
+
+Commit: `7017aa8 refactor: add shared authoring transport controller`
+
+#### U1.6 — `AuthoringRuntime`
+
+- One shared facade over document, voicebank, render, technical-edit, and transport state.
+- One canonical edit to one project revision and one production render request.
+- Unresolved tracks remain explicit and silent in the render copy.
+
+Commit: `c57e1a9 refactor: compose shared authoring runtime`
+
+#### U1.7 — CLAP thin adapter
+
+- The 1,889-line CLAP runtime was split into focused adapter files under 600 lines.
+- CLAP keeps host lifecycle, timeline, GUI, event conversion, and state streaming.
+- Project, voicebank, render, and technical-edit ownership delegates to `AuthoringRuntime`.
+- Explicit shutdown prevents render callbacks from outliving adapter state.
+
+Commit: `6e3be9e refactor: convert CLAP editor to shared authoring adapter`
+
+#### U1.8 — Production Standalone path
+
+- Removed `makeDemoTimeline()`, sine-wave playback, fake `official.voice.01`, and `contentHash = "demo"` from the production standalone target.
+- Added `seam-standalone` composition code around the same shared `AuthoringRuntime` used by CLAP.
+- Production startup creates an empty `Untitled` project with one vocal track and region.
+- The exact discovered voicebank is bound by ID/version/content hash.
+- Native Note and lyric edits notify the shared runtime and trigger production rendering.
+- Production multichannel PCM feeds `TransportController`, the interleaved ring buffer, and the physical or explicit threaded audio adapter.
+- Integration tests prove that moving a visible Note changes the phrase content hash and that transport emits non-zero voicebank PCM.
+- A source contract rejects reintroduction of the sine demo and fake voicebank identity.
+
+Commit: `c92ecc9 feat: connect standalone editing to production rendering`
+
+## U1 exit-gate evidence
 
 ```text
-4af04e6 refactor: add shared project document state
+CLAP and Standalone use seam-authoring-runtime       PASS
+CLAP Phase 11/12A/12B regression suite              PASS
+Standalone visible Note edit changes production hash PASS
+CLAP runtime split files remain under 600 lines      PASS
+Standalone sine-wave production helper absent       PASS
+Named C++ tests                                      169 / 169 PASS
 ```
 
-### U1.2 — Shared `VoicebankSession`
+## Current product boundary
 
-Implemented and integrated a shared voicebank session with:
-
-- canonicalized, idempotent search roots;
-- catalog refresh and candidate ownership;
-- exact ID/version/content-hash resolution;
-- explicit missing, version-mismatch, content-mismatch, content-hash-missing,
-  untrusted, and invalid-reference results;
-- ordered per-track resolution;
-- undoable `SetTrackVoicebankCommand` binding;
-- no silent candidate replacement;
-- CLAP `EditorRuntime` delegation for scan, relink, binding, and resolution.
-
-Commit:
-
-```text
-9faed3a refactor: extract shared voicebank session
-```
-
-### U1.3 — Shared `AuthoringRenderCoordinator`
-
-Implemented and integrated a shared production render coordinator with:
-
-- immutable whole-project render requests;
-- `ProductionProjectRenderer` parity with the former CLAP-specific service;
-- latest-revision cancellation and stale-result rejection;
-- explicit missing, version-mismatch, content-hash-missing, content-mismatch,
-  untrusted, invalid-project, render-failed, and publication-busy diagnostics;
-- bounded reader-counted realtime publication;
-- reuse of the existing content-addressed `PcmCache`;
-- Preview/Final quality separation in phrase content identities;
-- character-display independence from render identity and PCM;
-- progress, statistics, and completion callbacks;
-- deterministic shutdown that stops and joins the render worker before
-  callback, publication, cache, or progress state can be destroyed.
-
-The CLAP `AsyncPreviewRenderService` remains source-compatible for existing
-callers but delegates production rendering to the shared coordinator. The
-Phase 12A and Phase 12B source-contract checks now verify that the production
-renderer lives in `seam-authoring-runtime` rather than requiring it to remain
-in the CLAP adapter.
-
-Regression coverage includes valid project revision zero, active-worker
-shutdown, direct-render PCM parity, cancellation, stale revisions, explicit
-Voicebank failures, quality-sensitive cache identity, and Character/PCM
-separation.
-
-## Fresh verification for this batch
-
-The implementation batch must not be interpreted as complete until the
-packaged repository independently passes the following checks:
-
-```text
-Usable Alpha contract tests
-Usable Alpha contract verifier
-Warnings-as-errors build
-Named C++ tests
-Phase 11/12A/12B regression CTest
-Master-only branch policy
-Dependency/license audit
-Git diff check
-Git object integrity
-Clean extraction rebuild and retest
-```
-
-The package-verification report distributed with the ZIP is the evidence for
-those checks.
+U1 is complete, but Project SEAM is **not yet Usable Alpha**. The standalone
+now plays the canonical project through the production sample-concatenative
+pipeline, but it still lacks the complete New/Open/Save/Recovery lifecycle,
+voicebank browser and install UI, final export workflow, a genuinely usable
+rights-cleared demo voicebank, and target Apple Silicon acceptance evidence.
 
 ## Next implementation task
 
-The next plan task is **U1.4 — `TechnicalEditController`**. It will move
-phoneme-boundary, unit-variant, renderer, pitch-automation, and seam-edit
-operations out of the CLAP adapter and into the shared authoring layer while
-preserving Undo/Redo and one-render-request-per-edit behavior.
-
-The remaining plan items stay unchecked. In particular, the current package
-is not yet a usable standalone application and still does not satisfy the
-Apple Silicon Usable Alpha acceptance contract.
+The next priority is **U2.1 — New Project**, followed by Open, Save, Save As,
+autosave recovery, recent projects, and unsaved-close handling.

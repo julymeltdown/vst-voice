@@ -581,13 +581,13 @@ git commit -m "refactor: extract shared production render coordinator"
 
 **Checklist**
 
-- [ ] Move phoneme-boundary commands behind `movePhonemeBoundary()`.
-- [ ] Move unit variant and renderer selection behind `selectUnitVariant()`, `cycleUnitVariant()`, and `cycleUnitRenderer()`.
-- [ ] Move pitch point add/move/delete/interpolation behavior.
-- [ ] Move seam editing behavior.
-- [ ] Keep Sample Microscope model construction in inspection/UI code; expose only the selected Unit and immutable sample data from the controller.
-- [ ] Write failing tests for each operation, Undo, Redo, invalid key, invalid unit, and renderer fallback diagnostics.
-- [ ] Ensure every successful edit increments the document revision exactly once and submits exactly one render request.
+- [x] Move phoneme-boundary commands behind `movePhonemeBoundary()`.
+- [x] Move unit variant and renderer selection behind `selectUnitVariant()`, `cycleUnitVariant()`, and `cycleUnitRenderer()`.
+- [x] Move pitch point add/move/delete/interpolation behavior.
+- [x] Move seam editing behavior.
+- [x] Keep Sample Microscope model construction in inspection/UI code; expose only the selected Unit and immutable sample data from the controller.
+- [x] Write failing tests for each operation, Undo, Redo, invalid key, invalid unit, and renderer fallback diagnostics.
+- [x] Ensure every successful edit increments the document revision exactly once and submits exactly one render request.
 
 **Verification**
 
@@ -630,12 +630,12 @@ public:
 
 **Checklist**
 
-- [ ] Wrap existing `PlaybackFeederService`, multichannel ring buffer, and callback processor.
-- [ ] Write a failing test that Stop resets to project start and clears stale buffered audio through the consumer-owned reset epoch.
-- [ ] Write a failing test that Seek cannot replay frames from the previous position.
-- [ ] Write a failing test that Loop boundaries are sample accurate within one frame.
-- [ ] Write a failing test that publishing a new render switches through a bounded crossfade and never publishes an older revision.
-- [ ] Write a failing test that Pause emits silence without queuing a long zero clip.
+- [x] Wrap existing `PlaybackFeederService`, multichannel ring buffer, and callback processor.
+- [x] Write a failing test that Stop resets to project start and clears stale buffered audio through the consumer-owned reset epoch.
+- [x] Write a failing test that Seek cannot replay frames from the previous position.
+- [x] Write a failing test that Loop boundaries are sample accurate within one frame.
+- [x] Write a failing test that publishing a new render switches through a bounded crossfade and never publishes an older revision.
+- [x] Write a failing test that Pause emits silence without queuing a long zero clip.
 
 **Verification**
 
@@ -688,11 +688,11 @@ public:
 
 **Checklist**
 
-- [ ] Write a failing test for a complete Note edit → production render → transport publication cycle.
-- [ ] Write a failing test that selecting a different region does not mutate project content.
-- [ ] Write a failing test that a track with unresolved voicebank is silent while resolved tracks still render.
-- [ ] Write a failing test that one edit produces one document revision and one render submission.
-- [ ] Implement the facade without UI painting, native-window types, or CLAP types.
+- [x] Write a failing test for a complete Note edit → production render → transport publication cycle.
+- [x] Write a failing test that selecting a different region does not mutate project content.
+- [x] Write a failing test that a track with unresolved voicebank is silent while resolved tracks still render.
+- [x] Write a failing test that one edit produces one document revision and one render submission.
+- [x] Implement the facade without UI painting, native-window types, or CLAP types.
 
 **Verification**
 
@@ -722,14 +722,14 @@ git commit -m "refactor: add shared authoring runtime facade"
 
 **Checklist**
 
-- [ ] Replace owned project/voicebank/render/technical-edit state with one `authoring::AuthoringRuntime` member.
-- [ ] Keep CLAP host timeline mapping and plugin lifecycle in `seam-clap-editor`.
-- [ ] Keep painting, hit-testing, text input callbacks, and Character presentation in the adapter.
-- [ ] Remove `AsyncPreviewRenderService` after parity tests pass.
-- [ ] Remove duplicate voicebank resolution logic after parity tests pass.
-- [ ] Keep `LiveSampleInstrument` isolated; do not mix the Phase 12C live-engine work into this milestone.
-- [ ] Keep each new `.cpp` under 600 lines.
-- [ ] Run the existing dynamic CLAP host test and PCM parity tests.
+- [x] Replace owned project/voicebank/render/technical-edit state with one `authoring::AuthoringRuntime` member.
+- [x] Keep CLAP host timeline mapping and plugin lifecycle in `seam-clap-editor`.
+- [x] Keep painting, hit-testing, text input callbacks, and Character presentation in the adapter.
+- [x] Remove `AsyncPreviewRenderService` after parity tests pass.
+- [x] Remove duplicate voicebank resolution logic after parity tests pass.
+- [x] Keep `LiveSampleInstrument` isolated; do not mix the Phase 12C live-engine work into this milestone.
+- [x] Keep each new `.cpp` under 600 lines.
+- [x] Run the existing dynamic CLAP host test and PCM parity tests.
 
 **Verification**
 
@@ -757,14 +757,14 @@ git commit -m "refactor: make the CLAP editor a shared-runtime adapter"
 
 **Checklist**
 
-- [ ] Delete `makeDemoTimeline()`.
-- [ ] Move demo-project creation to a test fixture; production startup must create an empty untitled project or open the requested project path.
-- [ ] Construct `AuthoringRuntime` in the standalone composition root.
-- [ ] Feed the latest production render to `TransportController` and the physical audio adapter.
-- [ ] Bind native pointer, key, IME, paint, and text callbacks to the same shared project session used by CLAP.
-- [ ] Write a failing integration test that moving a visible Note changes the production PCM hash.
-- [ ] Write a failing integration test that no sine-wave helper is referenced by the standalone target.
-- [ ] Add a source-contract script that rejects `makeDemoTimeline` and hard-coded `official.voice.01` in `apps/seam-editor-native`.
+- [x] Delete `makeDemoTimeline()`.
+- [x] Move demo-project creation to a test fixture; production startup must create an empty untitled project or open the requested project path.
+- [x] Construct `AuthoringRuntime` in the standalone composition root.
+- [x] Feed the latest production render to `TransportController` and the physical audio adapter.
+- [x] Bind native pointer, key, IME, paint, and text callbacks to the same shared project session used by CLAP.
+- [x] Write a failing integration test that moving a visible Note changes the production PCM hash.
+- [x] Write a failing integration test that no sine-wave helper is referenced by the standalone target.
+- [x] Add a source-contract script that rejects `makeDemoTimeline` and hard-coded `official.voice.01` in `apps/seam-editor-native`.
 
 **Verification**
 
@@ -783,11 +783,11 @@ git commit -m "feat: connect standalone editing to production rendering"
 
 ### U1 exit gate
 
-- [ ] CLAP and Standalone use `seam-authoring-runtime`.
-- [ ] CLAP regression suite passes.
-- [ ] Standalone Note edits change actual voicebank PCM.
-- [ ] `editor_runtime.cpp` no longer owns business logic and no replacement file exceeds 600 lines.
-- [ ] No sine-wave playback helper remains in the production standalone path.
+- [x] CLAP and Standalone use `seam-authoring-runtime`.
+- [x] CLAP regression suite passes.
+- [x] Standalone Note edits change actual voicebank PCM.
+- [x] `editor_runtime.cpp` no longer owns business logic and no replacement file exceeds 600 lines.
+- [x] No sine-wave playback helper remains in the production standalone path.
 
 ---
 
