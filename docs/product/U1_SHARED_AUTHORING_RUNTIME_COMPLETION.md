@@ -25,6 +25,7 @@ AuthoringRuntime
 
 - Both adapters mutate the same canonical project model.
 - Exact voicebank identity is ID + version + synthesis content hash.
+- Development fixtures are accepted only when explicitly enabled by runtime configuration.
 - Every audio-affecting standalone edit submits production rendering.
 - Older render revisions cannot replace newer edits.
 - The latest production PCM is published to the shared transport.

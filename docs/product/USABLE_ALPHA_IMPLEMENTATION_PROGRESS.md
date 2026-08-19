@@ -93,8 +93,14 @@ Commit: `6e3be9e refactor: convert CLAP editor to shared authoring adapter`
 - Production multichannel PCM feeds `TransportController`, the interleaved ring buffer, and the physical or explicit threaded audio adapter.
 - Integration tests prove that moving a visible Note changes the phrase content hash and that transport emits non-zero voicebank PCM.
 - A source contract rejects reintroduction of the sine demo and fake voicebank identity.
+- Development voicebank acceptance follows the runtime configuration rather than an unconditional catalog default.
 
-Commit: `c92ecc9 feat: connect standalone editing to production rendering`
+Commits:
+
+```text
+c92ecc9 feat: connect standalone editing to production rendering
+7bd8923 fix: honor development voicebank trust policy
+```
 
 ## U1 exit-gate evidence
 
@@ -104,7 +110,7 @@ CLAP Phase 11/12A/12B regression suite              PASS
 Standalone visible Note edit changes production hash PASS
 CLAP runtime split files remain under 600 lines      PASS
 Standalone sine-wave production helper absent       PASS
-Named C++ tests                                      169 / 169 PASS
+Named C++ tests                                      170 / 170 PASS
 ```
 
 ## Current product boundary
