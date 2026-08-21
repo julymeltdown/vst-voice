@@ -3,6 +3,8 @@
 #include "seam/application/command.hpp"
 
 #include <optional>
+#include <string>
+#include <vector>
 
 namespace seam::application {
 
@@ -25,6 +27,27 @@ private:
   std::u32string beforeSurface_;
   domain::Language beforeLanguage_{domain::Language::Unspecified};
   bool captured_{false};
+};
+
+struct BatchLyricEdit final {
+  domain::LyricTokenId lyricId;
+  std::u32string before;
+  std::u32string after;
+  domain::Language language{domain::Language::Unspecified};
+};
+
+class BatchSetLyricsCommand final : public ICommand {
+public:
+  explicit BatchSetLyricsCommand(std::vector<BatchLyricEdit> edits)
+      : edits_(std::move(edits)) {}
+  [[nodiscard]] std::string_view name() const noexcept override {
+    return "Batch edit lyrics";
+  }
+  [[nodiscard]] core::Result<void> apply(domain::Project& project) override;
+  [[nodiscard]] core::Result<void> revert(domain::Project& project) override;
+
+private:
+  std::vector<BatchLyricEdit> edits_;
 };
 
 class UpsertPhonemeOverrideCommand final : public ICommand {

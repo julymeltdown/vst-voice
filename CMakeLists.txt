@@ -147,6 +147,7 @@ add_library(seam_authoring_runtime
   libs/seam-authoring-runtime/src/diagnostic.cpp
   libs/seam-authoring-runtime/src/bank_reference_registry.cpp
   libs/seam-authoring-runtime/src/export_service.cpp
+  libs/seam-authoring-runtime/src/audio_settings.cpp
 )
 target_include_directories(seam_authoring_runtime PUBLIC
   libs/seam-authoring-runtime/include)
@@ -764,6 +765,7 @@ if(SEAM_BUILD_TESTS)
     tests/test_arrangement_commands.cpp
     tests/test_editor_semantics.cpp
     tests/test_export_service.cpp
+    tests/test_audio_settings.cpp
     tests/test_bank_reference_registry.cpp
     tests/test_diagnostic_registry.cpp
     tests/test_log_export_policy.cpp

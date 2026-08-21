@@ -11,6 +11,61 @@ SetLyricCommand::SetLyricCommand(domain::LyricTokenId lyricId,
       afterSurface_(std::move(surface)),
       afterLanguage_(language) {}
 
+namespace {
+
+domain::LyricToken* findLyric(domain::Project& project,
+                              domain::LyricTokenId lyricId) noexcept {
+  for (auto& track : project.vocalTracks()) {
+    for (auto& region : track.regions) {
+      if (auto* lyric = region.findLyric(lyricId)) return lyric;
+    }
+  }
+  return nullptr;
+}
+
+}
+
+core::Result<void> BatchSetLyricsCommand::apply(domain::Project& project) {
+  if (edits_.empty()) {
+    return core::failure(core::ErrorCode::InvalidArgument,
+                         "Batch lyric edit requires at least one lyric");
+  }
+  for (const auto& edit : edits_) {
+    if (edit.after.empty()) {
+      return core::failure(core::ErrorCode::InvalidArgument,
+                           "Batch lyric text must not be empty");
+    }
+    auto* lyric = findLyric(project, edit.lyricId);
+    if (lyric == nullptr) {
+      return core::failure(core::ErrorCode::NotFound,
+                           "Batch lyric target was not found",
+                           edit.lyricId.toString());
+    }
+  }
+  for (auto& edit : edits_) {
+    auto* lyric = findLyric(project, edit.lyricId);
+    lyric->surface = edit.after;
+    lyric->language = edit.language;
+  }
+  return core::success();
+}
+
+core::Result<void> BatchSetLyricsCommand::revert(domain::Project& project) {
+  for (const auto& edit : edits_) {
+    auto* lyric = findLyric(project, edit.lyricId);
+    if (lyric == nullptr) {
+      return core::failure(core::ErrorCode::NotFound,
+                           "Batch lyric undo target was not found",
+                           edit.lyricId.toString());
+    }
+  }
+  for (const auto& edit : edits_) {
+    auto* lyric = findLyric(project, edit.lyricId);
+    lyric->surface = edit.before;
+  }
+  return core::success();
+}
+
 domain::LyricToken* SetLyricCommand::find(domain::Project& project) const noexcept {
   for (auto& track : project.vocalTracks()) {
     for (auto& region : track.regions) {
