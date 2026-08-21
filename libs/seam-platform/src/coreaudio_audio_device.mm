@@ -36,8 +36,9 @@ AudioStreamBasicDescription streamDescription(
   AudioStreamBasicDescription format{};
   format.mSampleRate = static_cast<Float64>(config.sampleRate);
   format.mFormatID = kAudioFormatLinearPCM;
-  format.mFormatFlags = kAudioFormatFlagsNativeFloatPacked |
-                        kAudioFormatFlagIsNonInterleaved;
+  format.mFormatFlags =
+      static_cast<AudioFormatFlags>(kAudioFormatFlagsNativeFloatPacked) |
+      static_cast<AudioFormatFlags>(kAudioFormatFlagIsNonInterleaved);
   format.mBytesPerPacket = sizeof(Float32);
   format.mFramesPerPacket = 1U;
   format.mBytesPerFrame = sizeof(Float32);

@@ -256,7 +256,8 @@ public:
       return;
     }
     const auto bitmapInfo = static_cast<CGBitmapInfo>(
-        kCGImageAlphaPremultipliedFirst | kCGBitmapByteOrder32Little);
+        static_cast<std::uint32_t>(kCGImageAlphaPremultipliedFirst) |
+        static_cast<std::uint32_t>(kCGBitmapByteOrder32Little));
     CGImageRef image = CGImageCreate(
         surface_.width(), surface_.height(), 8U, 32U, surface_.strideBytes(),
         colorSpace, bitmapInfo, provider, nullptr, false,

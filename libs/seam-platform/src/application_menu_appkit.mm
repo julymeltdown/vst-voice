@@ -3,9 +3,6 @@
 #if defined(__APPLE__)
 #import <Cocoa/Cocoa.h>
 
-namespace seam::platform {
-namespace {
-
 @interface SEAMMenuTarget : NSObject
 @property(nonatomic, assign) seam::platform::IApplicationCommandDispatcher* dispatcher;
 - (void)newProject:(id)sender;
@@ -28,12 +25,12 @@ namespace {
 - (void)send:(seam::platform::ApplicationCommand)command {
   if (_dispatcher != nullptr) static_cast<void>(_dispatcher->dispatch(command));
 }
-- (void)newProject:(id)sender { (void)sender; [self send:ApplicationCommand::NewProject]; }
-- (void)openProject:(id)sender { (void)sender; [self send:ApplicationCommand::OpenProject]; }
-- (void)recoverLatestAutosave:(id)sender { (void)sender; [self send:ApplicationCommand::RecoverLatestAutosave]; }
+- (void)newProject:(id)sender { (void)sender; [self send:seam::platform::ApplicationCommand::NewProject]; }
+- (void)openProject:(id)sender { (void)sender; [self send:seam::platform::ApplicationCommand::OpenProject]; }
+- (void)recoverLatestAutosave:(id)sender { (void)sender; [self send:seam::platform::ApplicationCommand::RecoverLatestAutosave]; }
 - (void)recoverAutosave:(id)sender {
   if (_dispatcher == nullptr || ![sender isKindOfClass:[NSMenuItem class]]) return;
-  NSMenuItem* menuItem = (NSMenuItem*)sender;
+  NSMenuItem* menuItem = static_cast<NSMenuItem*>(sender);
   NSString* represented = menuItem.representedObject;
   if (represented == nil) return;
   const char* path = represented.fileSystemRepresentation;
@@ -43,7 +40,7 @@ namespace {
 }
 - (void)openRecentProject:(id)sender {
   if (_dispatcher == nullptr || ![sender isKindOfClass:[NSMenuItem class]]) return;
-  NSMenuItem* menuItem = (NSMenuItem*)sender;
+  NSMenuItem* menuItem = static_cast<NSMenuItem*>(sender);
   NSString* represented = menuItem.representedObject;
   if (represented == nil) return;
   const char* path = represented.fileSystemRepresentation;
@@ -51,12 +48,12 @@ namespace {
     static_cast<void>(_dispatcher->openRecentProject(std::filesystem::path{path}));
   }
 }
-- (void)saveProject:(id)sender { (void)sender; [self send:ApplicationCommand::SaveProject]; }
-- (void)saveProjectAs:(id)sender { (void)sender; [self send:ApplicationCommand::SaveProjectAs]; }
-- (void)installVoicebank:(id)sender { (void)sender; [self send:ApplicationCommand::InstallVoicebank]; }
+- (void)saveProject:(id)sender { (void)sender; [self send:seam::platform::ApplicationCommand::SaveProject]; }
+- (void)saveProjectAs:(id)sender { (void)sender; [self send:seam::platform::ApplicationCommand::SaveProjectAs]; }
+- (void)installVoicebank:(id)sender { (void)sender; [self send:seam::platform::ApplicationCommand::InstallVoicebank]; }
 - (void)selectVoicebank:(id)sender {
   if (_dispatcher == nullptr || ![sender isKindOfClass:[NSMenuItem class]]) return;
-  NSDictionary* value = ((NSMenuItem*)sender).representedObject;
+  NSDictionary* value = static_cast<NSMenuItem*>(sender).representedObject;
   if (![value isKindOfClass:[NSDictionary class]]) return;
   NSString* identifier = value[@"id"];
   NSString* version = value[@"version"];
@@ -65,12 +62,15 @@ namespace {
   static_cast<void>(_dispatcher->selectVoicebank(
       identifier.UTF8String, version.UTF8String, contentHash.UTF8String));
 }
-- (void)exportAudio:(id)sender { (void)sender; [self send:ApplicationCommand::ExportAudio]; }
-- (void)quitApplication:(id)sender { (void)sender; [self send:ApplicationCommand::Quit]; }
-- (void)undoAction:(id)sender { (void)sender; [self send:ApplicationCommand::Undo]; }
-- (void)redoAction:(id)sender { (void)sender; [self send:ApplicationCommand::Redo]; }
-- (void)togglePlayback:(id)sender { (void)sender; [self send:ApplicationCommand::TogglePlayback]; }
+- (void)exportAudio:(id)sender { (void)sender; [self send:seam::platform::ApplicationCommand::ExportAudio]; }
+- (void)quitApplication:(id)sender { (void)sender; [self send:seam::platform::ApplicationCommand::Quit]; }
+- (void)undoAction:(id)sender { (void)sender; [self send:seam::platform::ApplicationCommand::Undo]; }
+- (void)redoAction:(id)sender { (void)sender; [self send:seam::platform::ApplicationCommand::Redo]; }
+- (void)togglePlayback:(id)sender { (void)sender; [self send:seam::platform::ApplicationCommand::TogglePlayback]; }
 @end
+
+namespace seam::platform {
+namespace {
 
 NSMenuItem* item(NSString* title, SEL action, NSString* key,
                  NSEventModifierFlags modifiers, id target) {

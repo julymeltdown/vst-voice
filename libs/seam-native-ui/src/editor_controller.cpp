@@ -16,7 +16,6 @@ NativeEditorController::NativeEditorController(
     domain::RegionId regionId,
     EditorHostCallbacks callbacks)
     : session_(session),
-      factory_(factory),
       regionId_(regionId),
       pianoRoll_(session, factory, regionId),
       callbacks_(std::move(callbacks)) {

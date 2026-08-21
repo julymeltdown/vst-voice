@@ -123,7 +123,6 @@ private:
   void markDocumentChanged();
 
   application::EditorSession& session_;
-  application::ProjectFactory& factory_;
   domain::RegionId regionId_;
   ui::PianoRollModel pianoRoll_;
   ui::TextCompositionModel composition_;

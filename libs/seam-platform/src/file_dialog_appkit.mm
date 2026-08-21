@@ -54,7 +54,7 @@ public:
       const auto types = allowedTypes(request.extensions);
       if (types.count > 0U) panel.allowedContentTypes = types;
       if (!save) {
-        NSOpenPanel* openPanel = (NSOpenPanel*)panel;
+        NSOpenPanel* openPanel = static_cast<NSOpenPanel*>(panel);
         openPanel.canChooseFiles = YES;
         openPanel.canChooseDirectories = NO;
         openPanel.allowsMultipleSelection = NO;
