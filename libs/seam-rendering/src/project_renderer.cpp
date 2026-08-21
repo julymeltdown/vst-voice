@@ -1,9 +1,12 @@
 #include "seam/rendering/project_renderer.hpp"
 
+#include "seam/voicebank/wav.hpp"
+
 #include <algorithm>
 #include <cmath>
 #include <limits>
 #include <memory>
+#include <span>
 
 namespace seam::rendering {
 namespace {
@@ -18,6 +21,26 @@ const TrackVoicebankSource* sourceFor(
         return value.trackId == trackId;
       });
   return iterator == sources.end() ? nullptr : &*iterator;
+}
+
+std::vector<float> resampleLinear(std::span<const float> source,
+                                  std::uint32_t sourceRate,
+                                  std::uint32_t targetRate) {
+  if (sourceRate == targetRate || source.empty()) {
+    return std::vector<float>{source.begin(), source.end()};
+  }
+  const auto outputSize = static_cast<std::size_t>(std::llround(
+      static_cast<double>(source.size()) * targetRate / sourceRate));
+  std::vector<float> output(outputSize, 0.0F);
+  for (std::size_t index = 0U; index < output.size(); ++index) {
+    const auto sourcePosition = static_cast<double>(index) * sourceRate /
+                                static_cast<double>(targetRate);
+    const auto left = static_cast<std::size_t>(sourcePosition);
+    const auto right = std::min(left + 1U, source.size() - 1U);
+    const auto fraction = static_cast<float>(sourcePosition - left);
+    output[index] = source[left] + (source[right] - source[left]) * fraction;
+  }
+  return output;
 }
 
 }  // namespace
@@ -45,7 +68,11 @@ core::Result<ProjectRenderResult> ProductionProjectRenderer::render(
 
   const auto anySolo = std::any_of(
       project.vocalTracks().begin(), project.vocalTracks().end(),
-      [](const domain::VocalTrack& track) { return track.solo && !track.muted; });
+      [](const domain::VocalTrack& track) { return track.solo && !track.muted; }) ||
+      std::any_of(project.audioTracks().begin(), project.audioTracks().end(),
+                  [](const domain::AudioTrack& track) {
+                    return track.solo && !track.muted;
+                  });
   std::vector<RoutedPlaybackClip> clips;
   ProjectRenderResult output;
   output.sampleRate = sampleRate;
@@ -120,6 +147,43 @@ core::Result<ProjectRenderResult> ProductionProjectRenderer::render(
         output.activeUnitPlan = rendered.value().unitPlan;
       }
     }
+  }
+
+  for (const auto& track : project.audioTracks()) {
+    if (stopToken.stop_requested()) {
+      return core::failure<ProjectRenderResult>(core::ErrorCode::Conflict,
+                                                "Project render was cancelled");
+    }
+    if (track.muted || (anySolo && !track.solo)) continue;
+    if (track.mediaPath.empty()) {
+      return core::failure<ProjectRenderResult>(
+          core::ErrorCode::NotFound, "Audio track has no backing media",
+          track.id.toString());
+    }
+    auto decoded = voicebank::readWav(std::filesystem::path{track.mediaPath});
+    if (!decoded) return core::Result<ProjectRenderResult>{decoded.error()};
+    auto mono = decoded.value().monoMix();
+    auto samples = resampleLinear(mono, decoded.value().sampleRate, sampleRate);
+    if (samples.empty()) continue;
+    auto pcm = std::make_shared<RoutedPcm>();
+    pcm->sampleRate = sampleRate;
+    pcm->startFrame = project.tempoMap().sampleFrameAt(track.startTick,
+                                                       sampleRate);
+    pcm->channelCount = 1U;
+    pcm->interleavedSamples = std::move(samples);
+    const auto pcmValidation = pcm->validate();
+    if (!pcmValidation) return core::Result<ProjectRenderResult>{pcmValidation.error()};
+    clips.push_back(RoutedPlaybackClip{
+        .id = track.id.toString() + ":media",
+        .pcm = std::move(pcm),
+        .outputRoute = track.outputRoute,
+        .gain = domain::decibelsToLinear(track.gainDb),
+        .fadeInFrames = 0,
+        .fadeOutFrames = 0,
+        .enabled = true,
+        .solo = track.solo,
+    });
+    ++output.trackCount;
   }
   if (clips.empty()) {
     if (!output.diagnostics.empty()) {
