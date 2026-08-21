@@ -82,7 +82,7 @@ public:
     return renderQuality_;
   }
   void setCompletionCallback(std::function<void()> callback);
-  void requestPreview();
+  void requestPreview(bool immediate = false);
   void handleDocumentChanged();
 
 private:

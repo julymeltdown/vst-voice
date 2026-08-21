@@ -68,7 +68,7 @@ core::Result<void> AuthoringRuntime::initialize() {
   selectedRegion_ = regionId;
   technicalEdits_.setRegion(regionId);
   initialized_ = true;
-  requestPreview();
+  requestPreview(true);
   return core::success();
 }
 
@@ -120,8 +120,15 @@ core::Result<void> AuthoringRuntime::selectRegion(domain::RegionId regionId) {
 
 core::Result<void> AuthoringRuntime::execute(
     std::unique_ptr<application::ICommand> command) {
+  const auto impact = command == nullptr
+                          ? application::CommandAudioImpact::ViewOnly
+                          : command->audioImpact();
   auto result = document_->execute(std::move(command));
-  if (result) handleDocumentChanged();
+  document_->synchronizeDirtyState();
+  if (result && impact != application::CommandAudioImpact::ViewOnly &&
+      impact != application::CommandAudioImpact::MetadataOnly) {
+    requestPreview();
+  }
   return result;
 }
 
@@ -163,7 +170,7 @@ void AuthoringRuntime::handleDocumentChanged() {
   requestPreview();
 }
 
-void AuthoringRuntime::requestPreview() {
+void AuthoringRuntime::requestPreview(bool immediate) {
   if (!initialized_ || document_ == nullptr) return;
 
   auto project = document_->session().project();
@@ -194,7 +201,7 @@ void AuthoringRuntime::requestPreview() {
 
   renderer_.submit(std::move(project), std::move(sources), activeTrack,
                    activeRegion, document_->session().revision(),
-                   previewSampleRate_, renderQuality_);
+                   previewSampleRate_, renderQuality_, immediate);
 }
 
 TechnicalRenderView AuthoringRuntime::currentTechnicalRenderView() const {

@@ -26,6 +26,7 @@ enum class RenderState {
   Queued,
   Rendering,
   Ready,
+  Stale,
   Cancelled,
   Failed,
 };
@@ -145,7 +146,8 @@ public:
               domain::RegionId activeRegion,
               std::uint64_t revision,
               std::uint32_t sampleRate,
-              rendering::RenderQuality quality);
+              rendering::RenderQuality quality,
+              bool immediate = false);
   void cancel() noexcept;
   void shutdown() noexcept;
 
@@ -167,6 +169,7 @@ private:
     std::uint64_t revision{0U};
     std::uint32_t sampleRate{48000U};
     rendering::RenderQuality quality{rendering::RenderQuality::Preview};
+    bool immediate{false};
   };
 
   struct PreflightResult final {

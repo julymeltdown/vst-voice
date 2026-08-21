@@ -8,6 +8,16 @@ void CompositeCommand::add(std::unique_ptr<ICommand> command) {
   if (command) commands_.push_back(std::move(command));
 }
 
+CommandAudioImpact CompositeCommand::audioImpact() const noexcept {
+  auto impact = CommandAudioImpact::ViewOnly;
+  for (const auto& command : commands_) {
+    if (command == nullptr) continue;
+    const auto current = command->audioImpact();
+    if (static_cast<int>(current) > static_cast<int>(impact)) impact = current;
+  }
+  return impact;
+}
+
 core::Result<void> CompositeCommand::apply(domain::Project& project) {
   const auto transactionSnapshot = project;
   for (auto& command : commands_) {

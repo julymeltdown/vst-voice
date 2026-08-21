@@ -3,6 +3,7 @@
 #include "seam/rendering/phrase_segmenter.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <span>
 #include <utility>
@@ -33,6 +34,7 @@ std::string_view renderStateName(RenderState state) noexcept {
     case RenderState::Queued: return "queued";
     case RenderState::Rendering: return "rendering";
     case RenderState::Ready: return "ready";
+    case RenderState::Stale: return "stale";
     case RenderState::Cancelled: return "cancelled";
     case RenderState::Failed: return "failed";
   }
@@ -177,7 +179,8 @@ void AuthoringRenderCoordinator::submit(
     domain::RegionId activeRegion,
     std::uint64_t revision,
     std::uint32_t sampleRate,
-    rendering::RenderQuality quality) {
+    rendering::RenderQuality quality,
+    bool immediate) {
   if (shutdown_.load(std::memory_order_acquire)) return;
   sampleRate = std::clamp(sampleRate, 8000U, 192000U);
   {
@@ -196,9 +199,23 @@ void AuthoringRenderCoordinator::submit(
         .revision = revision,
         .sampleRate = sampleRate,
         .quality = quality,
+        .immediate = immediate,
     };
   }
   submitted_.fetch_add(1U, std::memory_order_relaxed);
+  const auto previous = progress();
+  if (previous.state == RenderState::Ready &&
+      previous.publishedRevision != revision) {
+    updateProgress(RenderProgress{
+        .state = RenderState::Stale,
+        .requestedRevision = revision,
+        .publishedRevision = previous.publishedRevision,
+        .completedPhrases = previous.completedPhrases,
+        .totalPhrases = previous.totalPhrases,
+        .fraction = previous.fraction,
+        .diagnostic = "Previous audio is stale while the new revision renders",
+    });
+  }
   updateProgress(RenderProgress{
       .state = RenderState::Queued,
       .requestedRevision = revision,
@@ -272,6 +289,16 @@ void AuthoringRenderCoordinator::workerLoop(std::stop_token stopToken) {
       std::unique_lock lock(mutex_);
       condition_.wait(lock, stopToken, [this] { return pending_.has_value(); });
       if (stopToken.stop_requested()) break;
+      if (!pending_->immediate) {
+        const auto deadline = std::chrono::steady_clock::now() +
+                              std::chrono::milliseconds{20};
+        static_cast<void>(condition_.wait_until(
+            lock, deadline, [this, &stopToken] {
+              return stopToken.stop_requested() ||
+                     (pending_.has_value() && pending_->immediate);
+            }));
+        if (stopToken.stop_requested()) break;
+      }
       request = std::move(*pending_);
       pending_.reset();
       activeStopSource_ = std::stop_source{};
