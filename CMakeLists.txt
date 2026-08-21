@@ -144,6 +144,7 @@ add_library(seam_authoring_runtime
   libs/seam-authoring-runtime/src/transport_controller.cpp
   libs/seam-authoring-runtime/src/authoring_runtime.cpp
   libs/seam-authoring-runtime/src/diagnostic.cpp
+  libs/seam-authoring-runtime/src/bank_reference_registry.cpp
 )
 target_include_directories(seam_authoring_runtime PUBLIC
   libs/seam-authoring-runtime/include)
@@ -755,6 +756,7 @@ if(SEAM_BUILD_TESTS)
     tests/test_voicebank_relink.cpp
     tests/test_voicebank_coverage.cpp
     tests/test_wav_export_formats.cpp
+    tests/test_bank_reference_registry.cpp
     tests/test_diagnostic_registry.cpp
     tests/test_log_export_policy.cpp
     tests/test_production_configuration.cpp

@@ -72,7 +72,13 @@ core::Result<voicebank::VoicebankSearchRoot> VoicebankSession::normalizeRoot(
 core::Result<void> VoicebankSession::refresh() {
   auto scanned = catalog_.scan(roots_);
   if (!scanned) return core::Result<void>{scanned.error()};
-  candidates_ = std::move(scanned).value();
+  auto candidates = std::move(scanned).value();
+  registry_.clear();
+  for (const auto& candidate : candidates) {
+    auto registered = registry_.registerCandidate(candidate);
+    static_cast<void>(registered);
+  }
+  candidates_ = std::move(candidates);
   return core::success();
 }
 

@@ -120,9 +120,15 @@ core::Result<VoicebankInstallResult> VoicebankInstallerService::install(
       });
   if (existing != before.end()) {
     if (existing->contentHash == incomingHash.value()) {
-      return core::failure<VoicebankInstallResult>(
-          core::ErrorCode::Conflict,
-          "Identical voicebank synthesis content is already installed");
+      return VoicebankInstallResult{
+          .voicebankId = existing->manifest.id,
+          .voicebankVersion = existing->manifest.version,
+          .contentHash = existing->contentHash,
+          .packageDigest = existing->packageDigest,
+          .signerKeyId = existing->signerKeyId,
+          .installDirectory = existing->bankRoot,
+          .candidate = *existing,
+      };
     }
     if (request.existingDecision != ExistingVoicebankDecision::Replace) {
       return core::failure<VoicebankInstallResult>(

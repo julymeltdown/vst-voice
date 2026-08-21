@@ -1,6 +1,7 @@
 #pragma once
 
 #include "seam/authoring/project_document.hpp"
+#include "seam/authoring/bank_reference_registry.hpp"
 #include "seam/application/editor_session.hpp"
 #include "seam/core/result.hpp"
 #include "seam/domain/project.hpp"
@@ -56,6 +57,7 @@ private:
   normalizeRoot(voicebank::VoicebankSearchRoot root);
 
   voicebank::VoicebankCatalog catalog_;
+  BankReferenceRegistry registry_;
   std::vector<voicebank::VoicebankSearchRoot> roots_;
   std::vector<voicebank::VoicebankCandidate> candidates_;
   voicebank::VoicebankResolveOptions resolveOptions_{

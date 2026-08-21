@@ -31,6 +31,12 @@ std::filesystem::path createSource(const std::filesystem::path& root,
   return source;
 }
 
+std::string readText(const std::filesystem::path& path) {
+  std::ifstream stream(path);
+  return {std::istreambuf_iterator<char>{stream},
+          std::istreambuf_iterator<char>{}};
+}
+
 seam::authoring::VoicebankInstallRequest request(
     const std::filesystem::path& package,
     const seam::distribution::Ed25519PublicKey& key,
@@ -70,6 +76,35 @@ TEST_CASE("voicebank_installer_service_installs_and_exposes_trusted_candidate") 
   CHECK(session.candidates().size() == 1U);
 }
 
+TEST_CASE("voicebank_installer_service_exact_reinstall_is_idempotent") {
+  const auto root = seam::test::support::temporaryDirectory("u6-idempotent-install");
+  auto key = seam::distribution::generateSigningKeyPair();
+  CHECK(key);
+  const auto package = root / "bank.seambank";
+  CHECK(seam::distribution::packSeambank(createSource(root, 220.0), package,
+                                         key.value()));
+
+  seam::authoring::VoicebankSession session({
+      {.path = root / "installed",
+       .kind = seam::voicebank::VoicebankRootKind::Installed}}, false);
+  seam::authoring::VoicebankInstallerService installer(session,
+                                                        root / "installed");
+
+  const auto first = installer.install(request(package, key.value().publicKey));
+  CHECK(first);
+  const auto firstReceipt = readText(
+      first.value().installDirectory / "install-receipt.json");
+
+  const auto second = installer.install(request(package, key.value().publicKey));
+  CHECK(second);
+  CHECK(second.value().voicebankId == first.value().voicebankId);
+  CHECK(second.value().voicebankVersion == first.value().voicebankVersion);
+  CHECK(second.value().contentHash == first.value().contentHash);
+  CHECK(second.value().installDirectory == first.value().installDirectory);
+  CHECK(readText(second.value().installDirectory / "install-receipt.json") ==
+        firstReceipt);
+}
+
 TEST_CASE("voicebank_installer_service_requires_replace_and_different_content") {
   const auto root = seam::test::support::temporaryDirectory("u3-replace");
   auto key = seam::distribution::generateSigningKeyPair();
@@ -88,8 +123,11 @@ TEST_CASE("voicebank_installer_service_requires_replace_and_different_content") 
                                                         root / "installed");
   const auto first = installer.install(request(packageA, key.value().publicKey));
   CHECK(first);
-  CHECK(!installer.install(request(packageA, key.value().publicKey,
-                                   seam::authoring::ExistingVoicebankDecision::Replace)));
+  const auto identicalReplace = installer.install(
+      request(packageA, key.value().publicKey,
+              seam::authoring::ExistingVoicebankDecision::Replace));
+  CHECK(identicalReplace);
+  CHECK(identicalReplace.value().contentHash == first.value().contentHash);
   CHECK(!installer.install(request(packageB, key.value().publicKey)));
   const auto replaced = installer.install(request(
       packageB, key.value().publicKey,
