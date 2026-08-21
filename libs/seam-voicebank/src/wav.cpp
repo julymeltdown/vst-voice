@@ -8,6 +8,7 @@
 #include <cstring>
 #include <fstream>
 #include <limits>
+#include <memory>
 
 namespace seam::voicebank {
 namespace {
@@ -208,67 +209,195 @@ core::Result<AudioBuffer> readWav(const std::filesystem::path& path) {
   return readWav(bytes.value(), path.string());
 }
 
-core::Result<void> writePcm16Wav(const std::filesystem::path& path,
-                                 std::uint32_t sampleRate,
-                                 std::uint16_t channels,
-                                 std::span<const float> interleaved) {
-  if (sampleRate < 8000 || sampleRate > 384000 || channels == 0 || channels > 8 ||
-      interleaved.empty() || interleaved.size() % channels != 0) {
-    return core::failure(core::ErrorCode::InvalidArgument,
-                         "WAV output format is invalid");
+WavStreamWriter::WavStreamWriter(std::filesystem::path path,
+                                 WavOutputFormat format)
+    : path_(std::move(path)), format_(format) {}
+
+WavStreamWriter::~WavStreamWriter() {
+  if (ownedStream_ != nullptr && ownedStream_->is_open()) {
+    ownedStream_->close();
   }
-  const auto channelCount = static_cast<std::uint32_t>(channels);
-  if (sampleRate > std::numeric_limits<std::uint32_t>::max() /
-                       (channelCount * 2U) ||
-      interleaved.size() > (std::numeric_limits<std::uint32_t>::max() - 36U) / 2U) {
-    return core::failure(core::ErrorCode::Unsupported,
-                         "WAV output is too large for RIFF");
+}
+
+core::Result<std::unique_ptr<WavStreamWriter>> WavStreamWriter::create(
+    const std::filesystem::path& path, WavOutputFormat format) {
+  if (format.sampleRate < 8000U || format.sampleRate > 384000U ||
+      format.channels == 0U || format.channels > 8U) {
+    return core::failure<std::unique_ptr<WavStreamWriter>>(
+        core::ErrorCode::InvalidArgument, "WAV output format is invalid");
   }
   std::error_code error;
   if (path.has_parent_path()) {
     std::filesystem::create_directories(path.parent_path(), error);
     if (error) {
-      return core::failure(core::ErrorCode::IoError,
-                           "Unable to create WAV output directory",
-                           error.message());
+      return core::failure<std::unique_ptr<WavStreamWriter>>(
+          core::ErrorCode::IoError, "Unable to create WAV output directory",
+          error.message());
     }
   }
-  std::ofstream stream(path, std::ios::binary | std::ios::trunc);
-  if (!stream) {
-    return core::failure(core::ErrorCode::IoError,
-                         "Unable to create WAV output",
-                         path.string());
+  auto writer = std::unique_ptr<WavStreamWriter>{
+      new WavStreamWriter(path, format)};
+  writer->ownedStream_ = std::make_unique<std::ofstream>(
+      path, std::ios::binary | std::ios::trunc);
+  if (!writer->ownedStream_ || !writer->ownedStream_->is_open()) {
+    return core::failure<std::unique_ptr<WavStreamWriter>>(
+        core::ErrorCode::IoError, "Unable to create WAV output", path.string());
   }
+  writer->stream_ = writer->ownedStream_.get();
+  auto header = writer->writeHeader();
+  if (!header) return core::Result<std::unique_ptr<WavStreamWriter>>{header.error()};
+  return writer;
+}
 
-  const auto dataBytes = static_cast<std::uint32_t>(interleaved.size() * 2U);
-  const auto blockAlign = static_cast<std::uint16_t>(channels * 2U);
-  stream.write("RIFF", 4);
-  writeU32(stream, 36U + dataBytes);
-  stream.write("WAVE", 4);
-  stream.write("fmt ", 4);
-  writeU32(stream, 16);
-  writeU16(stream, 1);
-  writeU16(stream, channels);
-  writeU32(stream, sampleRate);
-  writeU32(stream, sampleRate * channelCount * 2U);
-  writeU16(stream, blockAlign);
-  writeU16(stream, 16);
-  stream.write("data", 4);
-  writeU32(stream, dataBytes);
-  for (const auto sample : interleaved) {
-    const auto finite = std::isfinite(sample) ? sample : 0.0F;
-    const auto clamped = std::clamp(finite, -1.0F, 1.0F);
-    const auto scaled = static_cast<std::int32_t>(std::lround(
-        static_cast<double>(clamped) * (clamped < 0.0F ? 32768.0 : 32767.0)));
-    writeU16(stream, static_cast<std::uint16_t>(static_cast<std::int16_t>(scaled)));
+core::Result<void> WavStreamWriter::writeHeader() {
+  if (stream_ == nullptr) {
+    return core::failure(core::ErrorCode::InvalidState,
+                         "WAV writer stream is not open");
   }
-  stream.flush();
-  if (!stream) {
+  const auto bytesPerSample = format_.sampleFormat == WavSampleFormat::Pcm16
+                                  ? 2U
+                                  : (format_.sampleFormat == WavSampleFormat::Pcm24
+                                         ? 3U
+                                         : 4U);
+  const auto formatCode = format_.sampleFormat == WavSampleFormat::Float32 ? 3U : 1U;
+  const auto bitsPerSample = static_cast<std::uint16_t>(bytesPerSample * 8U);
+  const auto blockAlign = static_cast<std::uint16_t>(
+      static_cast<std::uint32_t>(format_.channels) * bytesPerSample);
+  const auto byteRate = static_cast<std::uint32_t>(format_.sampleRate) *
+                        static_cast<std::uint32_t>(blockAlign);
+  stream_->write("RIFF", 4);
+  writeU32(*stream_, 0U);
+  stream_->write("WAVEfmt ", 8);
+  writeU32(*stream_, 16U);
+  writeU16(*stream_, static_cast<std::uint16_t>(formatCode));
+  writeU16(*stream_, format_.channels);
+  writeU32(*stream_, format_.sampleRate);
+  writeU32(*stream_, byteRate);
+  writeU16(*stream_, blockAlign);
+  writeU16(*stream_, bitsPerSample);
+  stream_->write("data", 4);
+  writeU32(*stream_, 0U);
+  if (!*stream_) {
     return core::failure(core::ErrorCode::IoError,
-                         "Unable to write WAV output",
-                         path.string());
+                         "Unable to write WAV header", path_.string());
   }
   return core::success();
+}
+
+core::Result<void> WavStreamWriter::writeSample(float sample) {
+  if (stream_ == nullptr || finalized_) {
+    return core::failure(core::ErrorCode::InvalidState,
+                         "WAV writer is not writable");
+  }
+  if (format_.sampleFormat == WavSampleFormat::Float32) {
+    if (!std::isfinite(sample)) {
+      return core::failure(core::ErrorCode::InvalidArgument,
+                           "Float32 WAV samples must be finite");
+    }
+    std::uint32_t raw = 0U;
+    static_assert(sizeof(raw) == sizeof(sample));
+    std::memcpy(&raw, &sample, sizeof(raw));
+    writeU32(*stream_, raw);
+  } else {
+    const auto finite = std::isfinite(sample) ? sample : 0.0F;
+    const auto clamped = std::clamp(finite, -1.0F, 1.0F);
+    if (format_.sampleFormat == WavSampleFormat::Pcm16) {
+      const auto scaled = static_cast<std::int32_t>(std::lround(
+          static_cast<double>(clamped) *
+          (clamped < 0.0F ? 32768.0 : 32767.0)));
+      writeU16(*stream_, static_cast<std::uint16_t>(
+                             static_cast<std::int16_t>(scaled)));
+    } else {
+      const auto scaled = static_cast<std::int32_t>(std::lround(
+          static_cast<double>(clamped) *
+          (clamped < 0.0F ? 8388608.0 : 8388607.0)));
+      const auto raw = static_cast<std::uint32_t>(scaled);
+      const std::array<char, 3> bytes{
+          static_cast<char>(raw & 0xFFU),
+          static_cast<char>((raw >> 8U) & 0xFFU),
+          static_cast<char>((raw >> 16U) & 0xFFU)};
+      stream_->write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
+    }
+  }
+  if (!*stream_) {
+    return core::failure(core::ErrorCode::IoError,
+                         "Unable to write WAV sample", path_.string());
+  }
+  return core::success();
+}
+
+core::Result<void> WavStreamWriter::writeFrames(
+    std::span<const float> interleaved) {
+  if (stream_ == nullptr || finalized_ ||
+      interleaved.size() % static_cast<std::size_t>(format_.channels) != 0U) {
+    return core::failure(core::ErrorCode::InvalidArgument,
+                         "WAV frame block is invalid");
+  }
+  const auto bytesPerSample = format_.sampleFormat == WavSampleFormat::Pcm16
+                                  ? 2U
+                                  : (format_.sampleFormat == WavSampleFormat::Pcm24
+                                         ? 3U
+                                         : 4U);
+  const auto bytesPerFrame = static_cast<std::uint64_t>(format_.channels) *
+                             bytesPerSample;
+  const auto frameCount = static_cast<std::uint64_t>(
+      interleaved.size() / static_cast<std::size_t>(format_.channels));
+  if (frameCount > (std::numeric_limits<std::uint32_t>::max() - 36ULL -
+                    dataBytes_) /
+                       bytesPerFrame) {
+    return core::failure(core::ErrorCode::Unsupported,
+                         "WAV output is too large for RIFF");
+  }
+  for (const auto sample : interleaved) {
+    auto written = writeSample(sample);
+    if (!written) return written;
+  }
+  dataBytes_ += frameCount * bytesPerFrame;
+  framesWritten_ += frameCount;
+  return core::success();
+}
+
+core::Result<void> WavStreamWriter::finalize() {
+  if (finalized_) return core::success();
+  if (stream_ == nullptr || dataBytes_ > std::numeric_limits<std::uint32_t>::max() - 36ULL) {
+    return core::failure(core::ErrorCode::InvalidState,
+                         "WAV writer cannot be finalized");
+  }
+  stream_->seekp(4, std::ios::beg);
+  writeU32(*stream_, static_cast<std::uint32_t>(36ULL + dataBytes_));
+  stream_->seekp(40, std::ios::beg);
+  writeU32(*stream_, static_cast<std::uint32_t>(dataBytes_));
+  stream_->flush();
+  if (!*stream_) {
+    return core::failure(core::ErrorCode::IoError,
+                         "Unable to finalize WAV output", path_.string());
+  }
+  stream_->close();
+  finalized_ = true;
+  return core::success();
+}
+
+core::Result<void> writeWav(const std::filesystem::path& path,
+                            WavOutputFormat format,
+                            std::span<const float> interleaved) {
+  auto writer = WavStreamWriter::create(path, format);
+  if (!writer) return core::Result<void>{writer.error()};
+  auto written = writer.value()->writeFrames(interleaved);
+  if (!written) return written;
+  return writer.value()->finalize();
+}
+
+core::Result<void> writePcm16Wav(const std::filesystem::path& path,
+                                 std::uint32_t sampleRate,
+                                 std::uint16_t channels,
+                                 std::span<const float> interleaved) {
+  if (interleaved.empty()) {
+    return core::failure(core::ErrorCode::InvalidArgument,
+                         "WAV output cannot be empty");
+  }
+  return writeWav(path, WavOutputFormat{sampleRate, channels,
+                                        WavSampleFormat::Pcm16},
+                  interleaved);
 }
 
 core::Result<void> writeMonoPcm16Wav(const std::filesystem::path& path,

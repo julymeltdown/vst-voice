@@ -754,6 +754,7 @@ if(SEAM_BUILD_TESTS)
     tests/test_voicebank_installer_service.cpp
     tests/test_voicebank_relink.cpp
     tests/test_voicebank_coverage.cpp
+    tests/test_wav_export_formats.cpp
     tests/test_diagnostic_registry.cpp
     tests/test_log_export_policy.cpp
     tests/test_production_configuration.cpp

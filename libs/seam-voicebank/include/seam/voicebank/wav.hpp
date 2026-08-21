@@ -5,7 +5,10 @@
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <fstream>
+#include <memory>
 #include <span>
+#include <cstdint>
 #include <string_view>
 #include <vector>
 
@@ -31,6 +34,48 @@ struct AudioStatistics final {
   double dcOffset{0.0};
   std::size_t clippedSamples{0};
 };
+
+enum class WavSampleFormat { Pcm16, Pcm24, Float32 };
+
+struct WavOutputFormat final {
+  std::uint32_t sampleRate{48000U};
+  std::uint16_t channels{2U};
+  WavSampleFormat sampleFormat{WavSampleFormat::Pcm16};
+};
+
+class WavStreamWriter final {
+public:
+  static core::Result<std::unique_ptr<WavStreamWriter>> create(
+      const std::filesystem::path& path, WavOutputFormat format);
+  ~WavStreamWriter();
+
+  WavStreamWriter(const WavStreamWriter&) = delete;
+  WavStreamWriter& operator=(const WavStreamWriter&) = delete;
+
+  [[nodiscard]] core::Result<void> writeFrames(
+      std::span<const float> interleaved);
+  [[nodiscard]] core::Result<void> finalize();
+  [[nodiscard]] std::uint64_t framesWritten() const noexcept {
+    return framesWritten_;
+  }
+
+private:
+  WavStreamWriter(std::filesystem::path path, WavOutputFormat format);
+  core::Result<void> writeHeader();
+  core::Result<void> writeSample(float sample);
+
+  std::filesystem::path path_;
+  WavOutputFormat format_;
+  std::ofstream* stream_{nullptr};
+  std::unique_ptr<std::ofstream> ownedStream_;
+  std::uint64_t dataBytes_{0U};
+  std::uint64_t framesWritten_{0U};
+  bool finalized_{false};
+};
+
+[[nodiscard]] core::Result<void> writeWav(
+    const std::filesystem::path& path, WavOutputFormat format,
+    std::span<const float> interleaved);
 
 [[nodiscard]] core::Result<AudioBuffer> readWav(
     std::span<const std::byte> bytes,
