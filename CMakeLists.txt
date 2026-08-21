@@ -146,6 +146,7 @@ add_library(seam_authoring_runtime
   libs/seam-authoring-runtime/src/authoring_runtime.cpp
   libs/seam-authoring-runtime/src/diagnostic.cpp
   libs/seam-authoring-runtime/src/bank_reference_registry.cpp
+  libs/seam-authoring-runtime/src/export_service.cpp
 )
 target_include_directories(seam_authoring_runtime PUBLIC
   libs/seam-authoring-runtime/include)
@@ -759,6 +760,7 @@ if(SEAM_BUILD_TESTS)
     tests/test_wav_export_formats.cpp
     tests/test_media_rendering.cpp
     tests/test_arrangement_commands.cpp
+    tests/test_export_service.cpp
     tests/test_bank_reference_registry.cpp
     tests/test_diagnostic_registry.cpp
     tests/test_log_export_policy.cpp
@@ -805,6 +807,16 @@ if(SEAM_BUILD_TESTS)
   seam_apply_compiler_options(seam_authoring_render_coordinator_tests)
   add_test(NAME seam_authoring_render_coordinator_tests
     COMMAND seam_authoring_render_coordinator_tests)
+
+  add_executable(seam_export_tests
+    tests/test_main.cpp
+    tests/test_export_service.cpp)
+  target_include_directories(seam_export_tests PRIVATE tests)
+  target_link_libraries(seam_export_tests PRIVATE
+    seam_authoring_runtime seam_rendering seam_synthesis seam_voicebank
+    seam_formats seam_application seam_domain seam_core)
+  seam_apply_compiler_options(seam_export_tests)
+  add_test(NAME seam_export_tests COMMAND seam_export_tests)
 
   add_executable(seam_u2_tests
     tests/test_main.cpp

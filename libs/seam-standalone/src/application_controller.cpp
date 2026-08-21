@@ -262,8 +262,7 @@ core::Result<void> StandaloneApplicationController::dispatch(
       return core::success();
     }
     case platform::ApplicationCommand::ExportAudio:
-      return core::failure(core::ErrorCode::Unsupported,
-                           "Audio export is scheduled for milestone U6");
+      return exportAudio();
     case platform::ApplicationCommand::Quit: {
       auto close = requestClose();
       if (!close) return core::Result<void>{close.error()};
@@ -293,6 +292,47 @@ core::Result<void> StandaloneApplicationController::dispatch(
   }
   return core::failure(core::ErrorCode::Unsupported,
                        "Unknown application command");
+}
+
+core::Result<void> StandaloneApplicationController::exportAudio() {
+  const auto& document = session_.runtime().document();
+  const auto selected = fileDialog_->choose(platform::FileDialogRequest{
+      .purpose = platform::FileDialogPurpose::ExportAudio,
+      .title = "Export Audio",
+      .initialDirectory = initialDirectory(document),
+      .suggestedName = document.session().project().name() + ".wav",
+      .extensions = {"wav"},
+  });
+  if (!selected) return core::Result<void>{selected.error()};
+  if (!selected.value().has_value()) return core::success();
+
+  const auto project = document.session().project();
+  const auto states = session_.runtime().voicebanks().resolveAll(project);
+  std::vector<rendering::TrackVoicebankSource> sources;
+  sources.reserve(states.size());
+  for (const auto& state : states) {
+    if (!state.resolution.resolved()) continue;
+    sources.push_back(rendering::TrackVoicebankSource{
+        .trackId = state.trackId,
+        .manifest = state.resolution.candidate->manifest,
+        .bankRoot = state.resolution.candidate->bankRoot,
+        .contentHash = state.resolution.candidate->contentHash,
+        .trust = state.resolution.candidate->trust,
+    });
+  }
+  const auto exported = exportService_.exportProject(
+      project, sources, session_.runtime().selectedTrack(),
+      session_.runtime().selectedRegion(), document.session().revision(),
+      *selected.value());
+  if (!exported) return core::Result<void>{exported.error()};
+  if (exported.value().state != authoring::ExportState::Committed) {
+    return core::failure(core::ErrorCode::Conflict,
+                         exported.value().diagnostic.empty()
+                             ? "Audio export did not commit"
+                             : exported.value().diagnostic);
+  }
+  notifyStateChanged();
+  return core::success();
 }
 
 std::vector<platform::VoicebankMenuItem>

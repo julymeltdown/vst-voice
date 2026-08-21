@@ -1,6 +1,7 @@
 #pragma once
 
 #include "seam/authoring/autosave_service.hpp"
+#include "seam/authoring/export_service.hpp"
 #include "seam/authoring/project_lifecycle.hpp"
 #include "seam/authoring/recent_projects.hpp"
 #include "seam/authoring/voicebank_browser.hpp"
@@ -117,6 +118,7 @@ private:
   [[nodiscard]] core::Result<void> openPath(
       const std::filesystem::path& path);
   [[nodiscard]] core::Result<void> recordCurrentProject();
+  [[nodiscard]] core::Result<void> exportAudio();
   [[nodiscard]] core::Result<void> refreshVoicebankBrowser();
   [[nodiscard]] std::optional<voicebank::VoicebankCandidate> findCandidate(
       std::string_view id, std::string_view version,
@@ -130,6 +132,7 @@ private:
   StandaloneApplicationControllerConfig config_;
   std::function<void()> requestQuit_;
   authoring::AutosaveService autosave_;
+  authoring::ExportService exportService_;
   authoring::RecentProjectsStore recentProjects_;
   authoring::VoicebankBrowserModel voicebankBrowser_;
   std::unique_ptr<authoring::VoicebankInstallerService> voicebankInstaller_;
