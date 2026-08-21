@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "schemaVersion": 1,
+  "contractId": "project-seam.external-beta.acceptance",
+  "contractVersion": "1.0.0",
+  "product": "Project SEAM",
+  "gate": {
+    "ready": "EXTERNAL_BETA_READY",
+    "closed": "EXTERNAL_BETA_CLOSED",
+    "operationalStates": [
+      "CohortActive",
+      "DistributionPaused",
+      "Revoked"
+    ],
+    "forbiddenAliases": ["G3", "G4", "G5"]
+  },
+  "targetPlatforms": [
+    {"platform": "macos", "architecture": "arm64", "label": "Apple Silicon macOS"},
+    {"platform": "windows", "architecture": "x86_64", "label": "Windows x64"}
+  ],
+  "requirements": [
+    {"id": "EB-001-contract", "title": "Contract and semantic gate", "mandatoryFor": ["EXTERNAL_BETA_READY", "EXTERNAL_BETA_CLOSED"]},
+    {"id": "EB-002-identity", "title": "Single generated release identity", "mandatoryFor": ["EXTERNAL_BETA_READY", "EXTERNAL_BETA_CLOSED"]},
+    {"id": "EB-003-beta-bank", "title": "Rights-cleared Beta bank and exact identity", "mandatoryFor": ["EXTERNAL_BETA_READY", "EXTERNAL_BETA_CLOSED"]},
+    {"id": "EB-004-signed-install", "title": "Signed deliverables and independent clean installation", "mandatoryFor": ["EXTERNAL_BETA_READY", "EXTERNAL_BETA_CLOSED"]},
+    {"id": "EB-005-standalone-soak", "title": "Final signed-installed standalone journeys and workloads", "mandatoryFor": ["EXTERNAL_BETA_READY", "EXTERNAL_BETA_CLOSED"]},
+    {"id": "EB-006-host-matrix", "title": "Minimum installed REAPER, Bitwig Studio, and Logic Pro matrix", "mandatoryFor": ["EXTERNAL_BETA_READY", "EXTERNAL_BETA_CLOSED"]},
+    {"id": "EB-007-provenance-archive", "title": "Stage lineage and role-appropriate provenance archive", "mandatoryFor": ["EXTERNAL_BETA_READY", "EXTERNAL_BETA_CLOSED"]},
+    {"id": "EB-008-defect-review", "title": "Defect, waiver, and release-role review", "mandatoryFor": ["EXTERNAL_BETA_READY", "EXTERNAL_BETA_CLOSED"]}
+  ],
+  "closure": {
+    "requiredFlows": ["F1", "F2", "F5"],
+    "requiredPlatforms": ["macos", "windows"],
+    "terminalAssignmentStates": ["COMPLETED", "WITHDRAWN", "DISQUALIFIED"],
+    "requiredApprovals": ["A3", "A4-or-A6"],
+    "unresolvedSeverities": ["Blocker", "Critical"]
+  },
+  "status": "BLOCKED",
+  "evidence": []
+}

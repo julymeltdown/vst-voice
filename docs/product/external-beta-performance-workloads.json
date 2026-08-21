@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "schemaVersion": 1,
+  "contractId": "project-seam.external-beta.performance-workloads",
+  "hashAlgorithm": "SHA-256",
+  "machineProfiles": [
+    {
+      "id": "eb.macos.arm64.reference.v1",
+      "platform": "macos",
+      "architecture": "arm64",
+      "os": "macOS 26",
+      "sha256": "9a2388e3254c2120e4e09b83c670ceb0715562bd64a1bd0a30508f3906e53954"
+    },
+    {
+      "id": "eb.windows.x64.reference.v1",
+      "platform": "windows",
+      "architecture": "x86_64",
+      "os": "Windows 11 x64",
+      "sha256": "99e6945bb80e2911dcdd2ae26949c449d8c71f4a5b7b2501088326d90a11036d"
+    },
+    {
+      "id": "eb.linux.regression.v1",
+      "platform": "linux",
+      "architecture": "x86_64/arm64",
+      "os": "Linux regression",
+      "sha256": "b43c2debf4fe45d4011ea80516ba32efc7f7066288a04cc2c0bb43751f3c7f60"
+    }
+  ],
+  "workloads": [
+    {
+      "id": "eb.render.preview.v1",
+      "purpose": "interactive-render",
+      "profileIds": ["eb.macos.arm64.reference.v1", "eb.windows.x64.reference.v1"],
+      "input": {"sampleRate": 48000, "phraseSeconds": 2, "burstMilliseconds": 20},
+      "thresholds": {"medianMilliseconds": 150, "p95Milliseconds": 400},
+      "sha256": "af2409367f9d726536e27fc8c1ca55e8100a7fc06d2e7c04206462ff0987f3ae"
+    },
+    {
+      "id": "eb.media.import.v1",
+      "purpose": "media-import",
+      "profileIds": ["eb.macos.arm64.reference.v1", "eb.windows.x64.reference.v1"],
+      "input": {"sampleRate": 48000, "channels": 2, "durationSeconds": 300},
+      "thresholds": {"maxMemoryBytes": 536870912, "maxCopyBytes": 2147483648},
+      "sha256": "af629fd2a717ffea586cc80b695887d00cabbd20f4d805b3b919920d3c26e16e"
+    },
+    {
+      "id": "eb.export.wav.v1",
+      "purpose": "export",
+      "profileIds": ["eb.macos.arm64.reference.v1", "eb.windows.x64.reference.v1"],
+      "input": {"sampleRate": 48000, "channels": 2, "durationSeconds": 300},
+      "thresholds": {"maxRiffBytes": 4294967295, "committedSet": true},
+      "sha256": "141dbfdf00a85d24b8f935e7abcc57883169be14528d2bbfc0d409e642ed4a31"
+    },
+    {
+      "id": "eb.live.realtime.v1",
+      "purpose": "realtime",
+      "profileIds": ["eb.macos.arm64.reference.v1", "eb.windows.x64.reference.v1", "eb.linux.regression.v1"],
+      "input": {"sampleRate": 48000, "blockFrames": 128, "voices": 32, "eventsPerBlock": 1024},
+      "thresholds": {"callbackAllocations": 0, "callbackLocks": 0, "underrunFrames": 0},
+      "sha256": "726ae97bc9e6bf4fc890d0b0e02b354d7514561c75b12c3923e3ce13b318d056"
+    },
+    {
+      "id": "eb.host.session.v1",
+      "purpose": "host-matrix",
+      "profileIds": ["eb.macos.arm64.reference.v1", "eb.windows.x64.reference.v1"],
+      "input": {"sessionMinutes": 30, "formats": ["CLAP", "VST3", "AUv2"]},
+      "thresholds": {"dataLoss": 0, "scanFailures": 0},
+      "sha256": "7292978b80e7794f9bc625070caa26348588c124cd81efa51539b8519e43e05d"
+    },
+    {
+      "id": "eb.standalone.soak.v1",
+      "purpose": "standalone-soak",
+      "profileIds": ["eb.macos.arm64.reference.v1", "eb.windows.x64.reference.v1"],
+      "input": {"sessionMinutes": 120, "sampleRate": 48000, "blockFrames": 128},
+      "thresholds": {"underrunFrames": 0, "dataLoss": 0, "memoryGrowthBytes": 104857600},
+      "sha256": "e83f610e379fdb9f2607274d2dcea6996cb72a1e2792ccf00f39ddb034ef7dbd"
+    }
+  ]
+}

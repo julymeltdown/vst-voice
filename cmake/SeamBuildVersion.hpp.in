@@ -6,6 +6,9 @@
 namespace seam::build {
 
 inline constexpr std::string_view kApplicationVersion{"@PROJECT_VERSION@"};
+inline constexpr std::string_view kBuildId{"@SEAM_BUILD_ID@"};
+inline constexpr std::string_view kSourceCommit{"@SEAM_SOURCE_COMMIT@"};
+inline constexpr std::uint64_t kBuildEpoch{@SEAM_BUILD_EPOCH@ULL};
 inline constexpr std::string_view kRenderAbiId{"@SEAM_RENDER_ABI_ID@"};
 inline constexpr std::uint32_t kPhonemizerRevision{@SEAM_PHONEMIZER_REVISION@U};
 inline constexpr std::uint32_t kUnitSelectorRevision{@SEAM_UNIT_SELECTOR_REVISION@U};

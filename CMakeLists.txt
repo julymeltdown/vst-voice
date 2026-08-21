@@ -2,6 +2,25 @@ cmake_minimum_required(VERSION 3.25)
 
 project(ProjectSEAM VERSION 0.13.1 LANGUAGES CXX)
 
+# Release identity is a single generated contract shared by native binaries,
+# plug-in descriptors, package metadata, and evidence producers.  Release
+# automation supplies source/build values explicitly; deterministic defaults
+# keep local development reproducible without pretending to be a release.
+set(SEAM_BUILD_ID "${PROJECT_VERSION}-local" CACHE STRING
+    "Project SEAM candidate/build identity")
+set(SEAM_SOURCE_COMMIT "0000000000000000000000000000000000000000" CACHE STRING
+    "40-character source commit for the generated release identity")
+set(SEAM_BUILD_EPOCH "0" CACHE STRING
+    "UTC build epoch for the generated release identity")
+string(LENGTH "${SEAM_SOURCE_COMMIT}" SEAM_SOURCE_COMMIT_LENGTH)
+if(NOT SEAM_SOURCE_COMMIT_LENGTH EQUAL 40 OR
+   NOT SEAM_SOURCE_COMMIT MATCHES "^[0-9a-fA-F]+$")
+  message(FATAL_ERROR "SEAM_SOURCE_COMMIT must be a 40-character hexadecimal commit")
+endif()
+if(NOT SEAM_BUILD_EPOCH MATCHES "^[0-9]+$")
+  message(FATAL_ERROR "SEAM_BUILD_EPOCH must be a non-negative integer")
+endif()
+
 option(SEAM_BUILD_TESTS "Build Project SEAM tests" ON)
 option(SEAM_BUILD_BENCHMARKS "Build Project SEAM benchmarks" ON)
 option(SEAM_WARNINGS_AS_ERRORS "Treat compiler warnings as errors" ON)

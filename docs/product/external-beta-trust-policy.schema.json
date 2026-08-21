@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://project-seam.invalid/schemas/external-beta-trust-policy.schema.json",
+  "title": "Project SEAM External Beta trust policy",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "policyId", "root", "epoch", "validFrom", "validUntil", "compromiseCutoff", "delegatedKeys"],
+  "properties": {
+    "schemaVersion": {"const": 1},
+    "policyId": {"const": "project-seam.external-beta.trust"},
+    "root": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["keyId", "fingerprint", "algorithm", "offline"],
+      "properties": {
+        "keyId": {"type": "string", "minLength": 1},
+        "fingerprint": {"type": "string", "pattern": "^[0-9A-Fa-f]{64}$"},
+        "algorithm": {"enum": ["ed25519", "ecdsa-p256-sha256"]},
+        "offline": {"const": true}
+      }
+    },
+    "epoch": {"type": "integer", "minimum": 1},
+    "validFrom": {"type": "string", "format": "date-time"},
+    "validUntil": {"type": "string", "format": "date-time"},
+    "compromiseCutoff": {"type": "string", "format": "date-time"},
+    "delegatedKeys": {
+      "type": "array",
+      "minItems": 4,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["keyId", "fingerprint", "purpose", "algorithm", "channel", "platform", "validFrom", "validUntil", "revoked"],
+        "properties": {
+          "keyId": {"type": "string", "minLength": 1},
+          "fingerprint": {"type": "string", "pattern": "^[0-9A-Fa-f]{64}$"},
+          "purpose": {"enum": ["BANK_PACKAGE", "UPDATE_METADATA", "CANDIDATE_ATTESTATION", "PLATFORM_SIGNING"]},
+          "algorithm": {"enum": ["ed25519", "ecdsa-p256-sha256", "rsa-pss-sha256"]},
+          "channel": {"const": "external-beta"},
+          "platform": {"enum": ["macos", "windows", "cross-platform"]},
+          "validFrom": {"type": "string", "format": "date-time"},
+          "validUntil": {"type": "string", "format": "date-time"},
+          "revoked": {"type": "boolean"}
+        }
+      }
+    }
+  }
+}

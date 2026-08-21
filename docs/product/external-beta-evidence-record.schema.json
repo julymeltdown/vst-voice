@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://project-seam.invalid/schemas/external-beta-evidence-record.schema.json",
+  "title": "Project SEAM External Beta evidence record",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "recordId", "requirementId", "candidateRootId", "stageNodeId", "parentEdgeId", "sourceCommit", "platform", "architecture", "surface", "finalDeliverableSha256", "installedTreeSha256", "artifactSha256", "toolIdentity", "workloadId", "workloadSha256", "machineProfileId", "machineProfileSha256", "privacyClass", "roles", "trustedTime", "rawArchive", "status", "blockingReason"],
+  "properties": {
+    "schemaVersion": {"const": 1},
+    "recordId": {"type": "string", "minLength": 1},
+    "requirementId": {"type": "string", "pattern": "^EB-[0-9]{3}-[a-z0-9-]+$"},
+    "candidateRootId": {"type": "string", "minLength": 1},
+    "stageNodeId": {"type": "string", "minLength": 1},
+    "parentEdgeId": {"type": "string", "minLength": 1},
+    "sourceCommit": {"type": "string", "pattern": "^[0-9a-fA-F]{40}$"},
+    "platform": {"enum": ["macos", "windows", "linux"]},
+    "architecture": {"type": "string", "minLength": 1},
+    "surface": {"enum": ["standalone", "clap", "vst3", "auv2", "installer", "validator", "host", "bank", "support"]},
+    "host": {"type": ["string", "null"]},
+    "finalDeliverableSha256": {"type": "string", "pattern": "^[0-9a-fA-F]{64}$"},
+    "installedTreeSha256": {"type": "string", "pattern": "^[0-9a-fA-F]{64}$"},
+    "artifactSha256": {"type": "string", "pattern": "^[0-9a-fA-F]{64}$"},
+    "toolIdentity": {"type": "object", "minProperties": 2, "additionalProperties": {"type": "string"}},
+    "workloadId": {"type": "string", "pattern": "^eb\\.[a-z0-9.-]+\\.v[0-9]+$"},
+    "workloadSha256": {"type": "string", "pattern": "^[0-9a-fA-F]{64}$"},
+    "machineProfileId": {"type": "string", "pattern": "^eb\\.[a-z0-9.-]+\\.v[0-9]+$"},
+    "machineProfileSha256": {"type": "string", "pattern": "^[0-9a-fA-F]{64}$"},
+    "privacyClass": {"enum": ["PUBLIC_TECHNICAL", "RESTRICTED_SUPPORT", "PRIVATE_LOCAL"]},
+    "roles": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["producer", "reviewer", "approver"],
+      "properties": {
+        "producer": {"enum": ["A3", "A4", "A5", "A6"]},
+        "reviewer": {"enum": ["A3", "A4", "A5", "A6"]},
+        "approver": {"enum": ["A3", "A4", "A5", "A6"]}
+      }
+    },
+    "trustedTime": {"type": "string", "format": "date-time"},
+    "rawArchive": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["locator", "sha256"],
+      "properties": {
+        "locator": {"type": "string", "minLength": 1},
+        "sha256": {"type": "string", "pattern": "^[0-9a-fA-F]{64}$"}
+      }
+    },
+    "status": {"enum": ["NOT_RUN", "BLOCKED", "FAIL", "PASS"]},
+    "blockingReason": {"type": ["string", "null"]}
+  }
+}
