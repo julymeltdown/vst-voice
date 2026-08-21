@@ -79,6 +79,7 @@ TEST_CASE("standalone_voicebank_workflow_installs_browses_selects_and_reports_co
           .sampleRate = 48000U,
           .outputChannels = 2U,
           .bindFirstAvailableVoicebank = false,
+          .allowDevelopmentVoicebanks = true,
       });
   CHECK(session);
   auto dialog = std::make_unique<FakeDialog>();

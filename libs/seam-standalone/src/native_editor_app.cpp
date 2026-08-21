@@ -28,6 +28,44 @@ NativeEditorApp::~NativeEditorApp() {
 }
 
 core::Result<void> NativeEditorApp::initialize() {
+  const auto paths = config_.applicationSupportRoot.empty()
+                         ? platform::applicationPaths()
+                         : core::success(platform::ApplicationPaths::forTestRoot(
+                               config_.applicationSupportRoot));
+  if (!paths) return core::Result<void>{paths.error()};
+  auto production = makeProductionConfiguration(
+      ProductionConfigurationInput{
+          .mode = config_.runtimeMode,
+          .paths = paths.value(),
+          .voicebankRoots = config_.authoring.voicebankRoots,
+          .trustedVoicebankKeys = config_.trustedVoicebankKeys,
+          .developmentTrustRoot = config_.developmentTrustRoot,
+          .allowDevelopmentVoicebanks = config_.allowDevelopmentVoicebanks,
+          .forceThreadedAudio = config_.forceThreadedAudio,
+          .bindFirstAvailableVoicebank =
+              config_.authoring.bindFirstAvailableVoicebank,
+          .startPaused = config_.startPaused,
+          .sampleRate = config_.authoring.sampleRate,
+          .outputChannels = config_.authoring.outputChannels,
+          .audioBlockFrames = config_.audioBlockFrames,
+          .characterPackage = config_.characterPackage,
+      });
+  if (!production) return core::Result<void>{production.error()};
+  const auto& effective = production.value();
+  config_.authoring.cacheRoot = effective.cacheRoot;
+  config_.authoring.voicebankRoots = effective.voicebankRoots;
+  config_.authoring.bindFirstAvailableVoicebank =
+      effective.bindFirstAvailableVoicebank;
+  config_.authoring.allowDevelopmentVoicebanks =
+      effective.allowDevelopmentVoicebanks;
+  config_.characterPackage = effective.characterPackage;
+  config_.applicationSupportRoot = effective.applicationSupportRoot;
+  config_.trustedVoicebankKeys = effective.trustedVoicebankKeys;
+  config_.developmentTrustRoot = effective.developmentTrustRoot;
+  config_.allowDevelopmentVoicebanks = effective.allowDevelopmentVoicebanks;
+  config_.forceThreadedAudio = effective.forceThreadedAudio;
+  config_.startPaused = effective.startPaused;
+
   native_ui::EditorHostCallbacks callbacks{
       .requestRepaint = [this] {
         if (window_ != nullptr) window_->requestRepaint();
@@ -55,12 +93,7 @@ core::Result<void> NativeEditorApp::initialize() {
   }
   authoring_ = std::move(created).value();
 
-  auto supportRoot = config_.applicationSupportRoot;
-  if (supportRoot.empty()) {
-    auto resolved = platform::applicationSupportDirectory();
-    if (!resolved) return core::Result<void>{resolved.error()};
-    supportRoot = std::move(resolved).value();
-  }
+  const auto supportRoot = config_.applicationSupportRoot;
   auto application = StandaloneApplicationController::create(
       *authoring_, platform::createNativeFileDialog(),
       platform::createNativeUnsavedChangesPrompt(),

@@ -63,6 +63,7 @@ configure_file(
 
 add_library(seam_core
   libs/seam-core/src/logger.cpp
+  libs/seam-core/src/log_event.cpp
   libs/seam-core/src/sha256.cpp
   libs/seam-core/src/file_io.cpp
 )
@@ -142,6 +143,7 @@ add_library(seam_authoring_runtime
   libs/seam-authoring-runtime/src/technical_edit_controller.cpp
   libs/seam-authoring-runtime/src/transport_controller.cpp
   libs/seam-authoring-runtime/src/authoring_runtime.cpp
+  libs/seam-authoring-runtime/src/diagnostic.cpp
 )
 target_include_directories(seam_authoring_runtime PUBLIC
   libs/seam-authoring-runtime/include)
@@ -391,6 +393,7 @@ seam_apply_compiler_options(seam_phase4_demo)
 
 if(SEAM_BUILD_NATIVE_DESKTOP)
   add_library(seam_standalone_authoring STATIC
+    libs/seam-standalone/src/production_configuration.cpp
     libs/seam-standalone/src/authoring_session.cpp
     libs/seam-standalone/src/application_controller.cpp
     libs/seam-standalone/src/native_editor_app.cpp)
@@ -408,8 +411,6 @@ if(SEAM_BUILD_NATIVE_DESKTOP)
   seam_apply_compiler_options(seam_phase5_demo)
 
   add_executable(seam_editor_native apps/seam-editor-native/main.cpp)
-  target_compile_definitions(seam_editor_native PRIVATE
-    SEAM_SOURCE_PRODUCTION_VOICEBANK="${CMAKE_CURRENT_SOURCE_DIR}/assets/demo-human-voicebank-public-domain/production-bank")
   target_link_libraries(seam_editor_native PRIVATE
     seam_standalone_authoring seam_native_ui seam_playback_platform seam_platform
     seam_rendering seam_editor_ui seam_application seam_domain seam_core)
@@ -450,7 +451,7 @@ endif()
 
 if(SEAM_BUILD_CLAP_PLUGIN)
   add_library(seam_clap_plugin MODULE libs/seam-clap/src/plugin_entry.cpp)
-  target_include_directories(seam_clap_plugin PRIVATE third_party/clap/include)
+  target_include_directories(seam_clap_plugin SYSTEM PRIVATE third_party/clap/include)
   target_link_libraries(seam_clap_plugin PRIVATE seam_clap seam_core)
   set_target_properties(seam_clap_plugin PROPERTIES
     PREFIX ""
@@ -459,7 +460,7 @@ if(SEAM_BUILD_CLAP_PLUGIN)
   seam_apply_compiler_options(seam_clap_plugin)
 
   add_executable(seam_clap_host apps/seam-clap-host/main.cpp)
-  target_include_directories(seam_clap_host PRIVATE third_party/clap/include)
+  target_include_directories(seam_clap_host SYSTEM PRIVATE third_party/clap/include)
   target_link_libraries(seam_clap_host PRIVATE seam_clap seam_core ${CMAKE_DL_LIBS})
   seam_apply_compiler_options(seam_clap_host)
 endif()
@@ -500,7 +501,7 @@ if(SEAM_BUILD_CLAP_EDITOR_PLUGIN)
     ${SEAM_CLAP_EDITOR_VIEW_SOURCE})
   target_include_directories(seam_clap_editor PUBLIC
     libs/seam-clap-editor/include)
-  target_include_directories(seam_clap_editor PRIVATE
+  target_include_directories(seam_clap_editor SYSTEM PRIVATE
     third_party/clap/include
     libs/seam-clap-editor/generated)
   target_link_libraries(seam_clap_editor PUBLIC
@@ -524,7 +525,7 @@ if(SEAM_BUILD_CLAP_EDITOR_PLUGIN)
 
   add_library(seam_clap_editor_plugin MODULE
     libs/seam-clap-editor/src/plugin_entry.cpp)
-  target_include_directories(seam_clap_editor_plugin PRIVATE
+  target_include_directories(seam_clap_editor_plugin SYSTEM PRIVATE
     third_party/clap/include)
   target_compile_definitions(seam_clap_editor_plugin PRIVATE
     SEAM_SOURCE_CHARACTER_PACKAGE="${CMAKE_CURRENT_SOURCE_DIR}/assets/character-01")
@@ -595,7 +596,7 @@ if(SEAM_BUILD_CLAP_EDITOR_PLUGIN)
 
   add_executable(seam_clap_editor_host
     apps/seam-clap-editor-host/main.cpp)
-  target_include_directories(seam_clap_editor_host PRIVATE
+  target_include_directories(seam_clap_editor_host SYSTEM PRIVATE
     third_party/clap/include)
   target_link_libraries(seam_clap_editor_host PRIVATE
     seam_voicebank seam_core ${CMAKE_DL_LIBS})
@@ -753,6 +754,9 @@ if(SEAM_BUILD_TESTS)
     tests/test_voicebank_installer_service.cpp
     tests/test_voicebank_relink.cpp
     tests/test_voicebank_coverage.cpp
+    tests/test_diagnostic_registry.cpp
+    tests/test_log_export_policy.cpp
+    tests/test_production_configuration.cpp
   )
   if(SEAM_BUILD_CLAP_EDITOR_PLUGIN)
     list(APPEND SEAM_TEST_SOURCES

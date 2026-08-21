@@ -32,4 +32,8 @@ void StreamLogger::write(LogLevel level, std::string_view category, std::string_
           << "] [" << category << "] " << message << '\n';
 }
 
+void StreamLogger::writeEvent(const LogEvent& event) {
+  write(event.level, event.category, exportSafeProjection(event));
+}
+
 }  // namespace seam::core

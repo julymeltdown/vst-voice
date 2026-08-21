@@ -28,6 +28,7 @@ std::unique_ptr<seam::standalone::AuthoringSession> makeSession() {
           .sampleRate = 48000U,
           .outputChannels = 2U,
           .bindFirstAvailableVoicebank = true,
+          .allowDevelopmentVoicebanks = true,
       });
   CHECK(created);
   return std::move(created).value();

@@ -1,6 +1,7 @@
 #include "seam/standalone/native_editor_app.hpp"
-#include "seam/voicebank/catalog.hpp"
 #include "seam/distribution/signing.hpp"
+#include "seam/platform/application_paths.hpp"
+#include "seam/standalone/production_configuration.hpp"
 
 #include <chrono>
 #include <clocale>
@@ -18,13 +19,15 @@ struct CommandLine final {
   std::chrono::milliseconds autoClose{0};
   std::optional<std::filesystem::path> screenshot;
   double scale{1.0};
+  seam::standalone::ProductionRuntimeMode mode{
+      seam::standalone::ProductionRuntimeMode::Release};
   bool forceThreadedAudio{false};
-  bool startPaused{false};
-  std::filesystem::path characterPackage{"assets/character-01"};
+  bool startPaused{true};
+  std::filesystem::path characterPackage;
   std::vector<std::filesystem::path> voicebankRoots;
   std::vector<std::filesystem::path> trustedVoicebankKeyFiles;
   std::optional<std::filesystem::path> developmentTrustKeyFile;
-  bool allowDevelopmentVoicebanks{true};
+  bool allowDevelopmentVoicebanks{false};
 };
 
 void printUsage() {
@@ -35,6 +38,8 @@ void printUsage() {
       << "  --scale N               logical UI scale from 0.5 to 4.0\n"
       << "  --force-threaded-audio  skip physical system audio\n"
       << "  --paused                do not start transport automatically\n"
+      << "  --development           opt into development runtime behavior\n"
+      << "  --deterministic-test    opt into nonphysical deterministic audio\n"
       << "  --character-package P   character package root\n"
       << "  --voicebank-root P      add an exact voicebank search root\n"
       << "  --trusted-voicebank-key P  trust an Ed25519 public key for installs\n"
@@ -55,6 +60,18 @@ std::optional<CommandLine> parseArguments(int argc, char** argv) {
       continue;
     }
     if (argument == "--paused") {
+      result.startPaused = true;
+      continue;
+    }
+    if (argument == "--development") {
+      result.mode = seam::standalone::ProductionRuntimeMode::Development;
+      result.allowDevelopmentVoicebanks = true;
+      continue;
+    }
+    if (argument == "--deterministic-test") {
+      result.mode = seam::standalone::ProductionRuntimeMode::DeterministicTest;
+      result.allowDevelopmentVoicebanks = true;
+      result.forceThreadedAudio = true;
       result.startPaused = true;
       continue;
     }
@@ -110,24 +127,6 @@ std::optional<CommandLine> parseArguments(int argc, char** argv) {
   return result;
 }
 
-std::vector<seam::voicebank::VoicebankSearchRoot> voicebankRoots(
-    const CommandLine& commandLine) {
-  auto roots = seam::voicebank::defaultVoicebankSearchRoots();
-  for (const auto& path : commandLine.voicebankRoots) {
-    roots.push_back(seam::voicebank::VoicebankSearchRoot{
-        .path = path,
-        .kind = seam::voicebank::VoicebankRootKind::Installed,
-    });
-  }
-#ifdef SEAM_SOURCE_PRODUCTION_VOICEBANK
-  roots.push_back(seam::voicebank::VoicebankSearchRoot{
-      .path = std::filesystem::path{SEAM_SOURCE_PRODUCTION_VOICEBANK},
-      .kind = seam::voicebank::VoicebankRootKind::Development,
-  });
-#endif
-  return roots;
-}
-
 std::optional<std::vector<seam::distribution::Ed25519PublicKey>>
 trustedVoicebankKeys(const CommandLine& commandLine) {
   std::vector<seam::distribution::Ed25519PublicKey> result;
@@ -158,13 +157,6 @@ developmentTrustRoot(const CommandLine& commandLine, bool& valid) {
   return loaded.value();
 }
 
-std::filesystem::path previewCacheRoot() {
-  std::error_code error;
-  auto root = std::filesystem::temp_directory_path(error);
-  if (error) root = std::filesystem::current_path(error);
-  return root / "project-seam" / "standalone-preview-cache";
-}
-
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -183,24 +175,66 @@ int main(int argc, char** argv) {
       developmentTrustRoot(*commandLine, developmentKeyValid);
   if (!developmentKeyValid) return 3;
 
-  auto created = seam::standalone::NativeEditorApp::create(
-      seam::standalone::NativeEditorAppConfig{
-          .authoring = seam::standalone::AuthoringSessionConfig{
-              .cacheRoot = previewCacheRoot(),
-              .voicebankRoots = voicebankRoots(*commandLine),
-              .sampleRate = 48000U,
-              .outputChannels = 2U,
-              .bindFirstAvailableVoicebank = true,
-          },
-          .characterPackage = commandLine->characterPackage,
-          .applicationSupportRoot = {},
+  const auto paths = seam::platform::applicationPaths(
+      std::filesystem::path{argv[0]});
+  if (!paths) {
+    std::cerr << "Unable to resolve application paths: "
+              << paths.error().message << '\n';
+    return 3;
+  }
+  std::vector<seam::voicebank::VoicebankSearchRoot> requestedRoots;
+  requestedRoots.reserve(commandLine->voicebankRoots.size());
+  for (const auto& path : commandLine->voicebankRoots) {
+    requestedRoots.push_back(seam::voicebank::VoicebankSearchRoot{
+        .path = path,
+        .kind = seam::voicebank::VoicebankRootKind::Installed,
+    });
+  }
+  const auto production = seam::standalone::makeProductionConfiguration(
+      seam::standalone::ProductionConfigurationInput{
+          .mode = commandLine->mode,
+          .paths = paths.value(),
+          .voicebankRoots = std::move(requestedRoots),
           .trustedVoicebankKeys = *trustedKeys,
           .developmentTrustRoot = developmentKey,
           .allowDevelopmentVoicebanks =
               commandLine->allowDevelopmentVoicebanks,
-          .audioBlockFrames = 256U,
           .forceThreadedAudio = commandLine->forceThreadedAudio,
+          .bindFirstAvailableVoicebank = false,
           .startPaused = commandLine->startPaused,
+          .sampleRate = 48000U,
+          .outputChannels = 2U,
+          .audioBlockFrames = 256U,
+          .characterPackage = commandLine->characterPackage,
+      });
+  if (!production) {
+    std::cerr << "Invalid production runtime configuration: "
+              << production.error().message << '\n';
+    return 3;
+  }
+  const auto& runtime = production.value();
+
+  auto created = seam::standalone::NativeEditorApp::create(
+      seam::standalone::NativeEditorAppConfig{
+          .authoring = seam::standalone::AuthoringSessionConfig{
+              .cacheRoot = runtime.cacheRoot,
+              .voicebankRoots = runtime.voicebankRoots,
+              .sampleRate = runtime.sampleRate,
+              .outputChannels = runtime.outputChannels,
+              .bindFirstAvailableVoicebank =
+                  runtime.bindFirstAvailableVoicebank,
+              .allowDevelopmentVoicebanks =
+                  runtime.allowDevelopmentVoicebanks,
+          },
+          .runtimeMode = runtime.mode,
+          .characterPackage = runtime.characterPackage,
+          .applicationSupportRoot = runtime.applicationSupportRoot,
+          .trustedVoicebankKeys = runtime.trustedVoicebankKeys,
+          .developmentTrustRoot = runtime.developmentTrustRoot,
+          .allowDevelopmentVoicebanks = runtime.allowDevelopmentVoicebanks,
+          .audioBlockFrames = runtime.audioBlockFrames,
+          .forceThreadedAudio = runtime.forceThreadedAudio,
+          .startPaused = runtime.startPaused,
       });
   if (!created) {
     std::cerr << "Standalone initialization failed: "

@@ -10,13 +10,19 @@ text = "\n".join(
     if p.suffix in {".cpp", ".hpp"}
 )
 errors=[]
-for token in ("makeDemoTimeline", "std::sin", "official.voice.01", 'contentHash = "demo"'):
+for token in ("makeDemoTimeline", "std::sin", "official.voice.01", 'contentHash = "demo"',
+              "SEAM_SOURCE_PRODUCTION_VOICEBANK", "previewCacheRoot"):
     if token in text:
         errors.append(f"standalone retains demo audio or fake bank token: {token}")
 required=("AuthoringRuntime", "MultichannelRingBufferAudioProcessor")
 for token in required:
     if token not in text:
         errors.append(f"standalone production path missing token: {token}")
+for token in ("ProductionRuntimeMode", "makeProductionConfiguration",
+              "ApplicationPaths", "bindFirstAvailableVoicebank = false",
+              "allowDevelopmentVoicebanks = config.allowDevelopmentVoicebanks"):
+    if token not in text:
+        errors.append(f"standalone production path missing release-policy token: {token}")
 if errors:
     print("\n".join(errors), file=sys.stderr)
     raise SystemExit(1)

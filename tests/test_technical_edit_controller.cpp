@@ -26,7 +26,7 @@ struct TechnicalFixture final {
                                .id,
                  .ordinal = 0U},
         controller(document, regionId,
-                   [this] {
+                   [] {
                      seam::authoring::TechnicalRenderView view;
                      view.units.push_back(seam::authoring::TechnicalUnitView{
                          .entry = seam::synthesis::UnitPlanEntry{

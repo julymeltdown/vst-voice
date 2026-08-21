@@ -59,7 +59,7 @@ core::Result<std::unique_ptr<AuthoringSession>> AuthoringSession::create(
                                .voicebankRoots = std::move(config.voicebankRoots),
                                .previewSampleRate = config.sampleRate,
                                .outputChannels = config.outputChannels,
-                               .allowDevelopmentVoicebanks = true,
+                               .allowDevelopmentVoicebanks = config.allowDevelopmentVoicebanks,
                                .enableTransport = true,
                            });
   auto result = std::unique_ptr<AuthoringSession>{new AuthoringSession(

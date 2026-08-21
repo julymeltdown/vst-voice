@@ -19,7 +19,8 @@ struct AuthoringSessionConfig final {
   std::vector<voicebank::VoicebankSearchRoot> voicebankRoots;
   std::uint32_t sampleRate{48000U};
   std::uint8_t outputChannels{2U};
-  bool bindFirstAvailableVoicebank{true};
+  bool bindFirstAvailableVoicebank{false};
+  bool allowDevelopmentVoicebanks{false};
 };
 
 class AuthoringSession final {
