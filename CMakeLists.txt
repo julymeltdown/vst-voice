@@ -121,6 +121,7 @@ seam_apply_compiler_options(seam_phonemizer)
 
 add_library(seam_application
   libs/seam-application/src/command.cpp
+  libs/seam-application/src/arrangement_commands.cpp
   libs/seam-application/src/note_commands.cpp
   libs/seam-application/src/lyric_commands.cpp
   libs/seam-application/src/render_commands.cpp
@@ -757,6 +758,7 @@ if(SEAM_BUILD_TESTS)
     tests/test_voicebank_coverage.cpp
     tests/test_wav_export_formats.cpp
     tests/test_media_rendering.cpp
+    tests/test_arrangement_commands.cpp
     tests/test_bank_reference_registry.cpp
     tests/test_diagnostic_registry.cpp
     tests/test_log_export_policy.cpp
