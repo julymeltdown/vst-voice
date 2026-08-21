@@ -341,6 +341,8 @@ if(SEAM_BUILD_NATIVE_DESKTOP)
   endif()
 
   add_library(seam_native_ui ${SEAM_NATIVE_UI_SOURCES})
+  target_sources(seam_native_ui PRIVATE
+    libs/seam-native-ui/src/editor_semantics.cpp)
   target_include_directories(seam_native_ui PUBLIC
     libs/seam-native-ui/include)
   target_link_libraries(seam_native_ui PUBLIC
@@ -760,6 +762,7 @@ if(SEAM_BUILD_TESTS)
     tests/test_wav_export_formats.cpp
     tests/test_media_rendering.cpp
     tests/test_arrangement_commands.cpp
+    tests/test_editor_semantics.cpp
     tests/test_export_service.cpp
     tests/test_bank_reference_registry.cpp
     tests/test_diagnostic_registry.cpp
