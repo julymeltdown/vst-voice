@@ -1,8 +1,21 @@
 #include "seam/authoring/project_document.hpp"
 
+#include "seam/formats/project_json.hpp"
+#include "seam/core/sha256.hpp"
+
 #include <utility>
 
 namespace seam::authoring {
+
+namespace {
+
+std::string projectHash(const domain::Project& project) {
+  formats::ProjectJsonCodec codec;
+  const auto encoded = codec.encode(project);
+  return encoded ? core::sha256Hex(encoded.value()) : std::string{};
+}
+
+}
 
 ProjectDocument::ProjectDocument(domain::Project project,
                                  application::ProjectFactory factory,
@@ -11,6 +24,7 @@ ProjectDocument::ProjectDocument(domain::Project project,
       session_(std::move(project), logger) {
   factory_.synchronizeWith(session_.project());
   identity_.lastSavedRevision = session_.revision();
+  identity_.baseProjectHash = projectHash(session_.project());
   identity_.dirty = false;
 }
 
@@ -48,6 +62,7 @@ void ProjectDocument::markSaved(std::filesystem::path path) noexcept {
   identity_.projectPath = std::move(path);
   identity_.autosavePath.reset();
   identity_.lastSavedRevision = session_.revision();
+  identity_.baseProjectHash = projectHash(session_.project());
   identity_.dirty = false;
 }
 

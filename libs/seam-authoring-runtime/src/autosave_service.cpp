@@ -55,6 +55,7 @@ formats::JsonValue metadataValue(const AutosaveService::Snapshot& snapshot,
       {"format", formats::JsonValue{std::string{kFormat}}},
       {"schemaVersion", formats::JsonValue{kSchemaVersion}},
       {"projectId", formats::JsonValue{snapshot.project.id().toString()}},
+      {"baseProjectHash", formats::JsonValue{snapshot.baseProjectHash}},
       {"revision", formats::JsonValue{static_cast<std::int64_t>(snapshot.revision)}},
       {"createdAtUnixMs", formats::JsonValue{snapshot.createdAtUnixMs}},
       {"projectFile", formats::JsonValue{std::move(projectFileName)}},
@@ -85,6 +86,7 @@ core::Result<RecoveryCandidate> parseMetadata(
   const auto* format = parsed.value().find("format");
   const auto* schema = parsed.value().find("schemaVersion");
   const auto* projectId = parsed.value().find("projectId");
+  const auto* baseProjectHash = parsed.value().find("baseProjectHash");
   const auto* revision = parsed.value().find("revision");
   const auto* created = parsed.value().find("createdAtUnixMs");
   const auto* projectFile = parsed.value().find("projectFile");
@@ -110,6 +112,9 @@ core::Result<RecoveryCandidate> parseMetadata(
       .metadataPath = metadataPath,
       .originalProjectPath = std::nullopt,
       .projectId = projectId->asString(),
+      .baseProjectHash = baseProjectHash != nullptr && baseProjectHash->isString()
+                             ? baseProjectHash->asString()
+                             : std::string{},
       .revision = static_cast<std::uint64_t>(revision->asInt64()),
       .createdAtUnixMs = created->asInt64(),
       .recoverable = false,
@@ -162,6 +167,7 @@ AutosaveService::Snapshot AutosaveService::snapshot(
       .explicitProjectPath = explicitPath,
       .revision = document.session().revision(),
       .stableId = stableAutosaveId(document.session().project(), explicitPath),
+      .baseProjectHash = document.identity().baseProjectHash,
       .createdAtUnixMs = unixMilliseconds(config_.wallClock()),
       .sequence = ++sequence_,
   };
@@ -258,22 +264,30 @@ core::Result<std::vector<RecoveryCandidate>> AutosaveService::discover() const {
       candidate.recoverable = false;
       candidate.diagnostic = "Autosave project ID does not match metadata";
     } else {
-      bool newer = true;
+      bool recoverable = true;
       if (candidate.originalProjectPath.has_value() &&
-          std::filesystem::exists(*candidate.originalProjectPath, error) && !error) {
-        const auto autosaveTime =
-            std::filesystem::last_write_time(candidate.autosavePath, error);
-        if (!error) {
-          const auto originalTime =
-              std::filesystem::last_write_time(*candidate.originalProjectPath,
-                                               error);
-          if (!error) newer = autosaveTime >= originalTime;
+          !candidate.baseProjectHash.empty() &&
+          std::filesystem::exists(*candidate.originalProjectPath, error) &&
+          !error) {
+        auto original = core::readFileBytesLimited(
+            *candidate.originalProjectPath, 64ULL * 1024ULL * 1024ULL);
+        if (!original) {
+          recoverable = false;
+          candidate.diagnostic = original.error().message;
+        } else {
+          const auto currentHash = core::sha256Hex(original.value());
+          recoverable = currentHash == candidate.baseProjectHash;
+          if (!recoverable) {
+            candidate.diagnostic =
+                "Saved project changed externally after this autosave lineage";
+          }
         }
         error.clear();
       }
-      candidate.recoverable = newer;
-      candidate.diagnostic = newer ? std::string{}
-                                   : "Autosave is not newer than the saved project";
+      candidate.recoverable = recoverable;
+      if (candidate.recoverable && candidate.diagnostic.empty()) {
+        candidate.diagnostic.clear();
+      }
     }
     result.push_back(std::move(candidate));
   }

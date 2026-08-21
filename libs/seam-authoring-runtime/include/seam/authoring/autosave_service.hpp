@@ -34,6 +34,7 @@ struct RecoveryCandidate final {
   std::filesystem::path metadataPath;
   std::optional<std::filesystem::path> originalProjectPath;
   std::string projectId;
+  std::string baseProjectHash;
   std::uint64_t revision{0U};
   std::int64_t createdAtUnixMs{0};
   bool recoverable{false};
@@ -70,6 +71,7 @@ public:
     std::optional<std::filesystem::path> explicitProjectPath;
     std::uint64_t revision{0U};
     std::string stableId;
+    std::string baseProjectHash;
     std::int64_t createdAtUnixMs{0};
     std::uint64_t sequence{0U};
   };

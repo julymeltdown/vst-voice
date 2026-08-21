@@ -17,6 +17,7 @@ struct DocumentIdentity final {
   std::optional<std::filesystem::path> projectPath;
   std::optional<std::filesystem::path> autosavePath;
   std::uint64_t lastSavedRevision{0U};
+  std::string baseProjectHash;
   bool dirty{false};
 };
 

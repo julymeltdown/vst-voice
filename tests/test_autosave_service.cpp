@@ -198,3 +198,28 @@ TEST_CASE("autosave_service_write_failure_and_corruption_do_not_mutate_document"
   CHECK(!recovered);
   CHECK(fixture.document.session().project() == before);
 }
+
+TEST_CASE("autosave_service_detects_external_project_change_by_base_hash") {
+  const auto root = seam::test::support::temporaryDirectory("autosave-external-change");
+  const auto projectPath = root / "song.seam";
+  auto fixture = makeFixture();
+  seam::authoring::ProjectLifecycleService lifecycle;
+  CHECK(lifecycle.saveAs(fixture.document, projectPath));
+  CHECK(fixture.document.execute(move(fixture.noteId, seam::time::Tick{0},
+                                      seam::time::Tick{240})));
+  seam::authoring::AutosaveService service({
+      .root = root / "autosaves",
+      .maximumGenerations = 5U,
+      .faultInjector = {},
+      .wallClock = {},
+  });
+  CHECK(service.request(fixture.document));
+  CHECK(service.flush());
+  CHECK(seam::core::durableAtomicWriteText(projectPath, "external edit"));
+  const auto candidates = service.discover();
+  CHECK(candidates);
+  CHECK(candidates.value().size() == 1U);
+  CHECK(!candidates.value().front().recoverable);
+  CHECK(candidates.value().front().diagnostic.find("externally") !=
+        std::string::npos);
+}
