@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "status": "BLOCKED",
+  "lockId": "beta-voicebank-01-external-input",
+  "voicebankId": "beta.voice.01",
+  "version": "0.1.0",
+  "packageSha256": "",
+  "entryManifestSha256": "",
+  "candidateSha256": "",
+  "inventorySha256": "625b40349ab702a38419bb482dea7b50aad26c4040fd37aefe010d9072b3e4e0",
+  "sourceDerivedTreeSha256": "",
+  "canonicalSong": {"projectSha256": "", "mediaSha256": ""},
+  "generatedAt": "",
+  "blockedReason": "Awaiting rights-approved signed external .seambank, clean-install receipt, and canonical-song evidence."
+}

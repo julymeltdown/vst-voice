@@ -26,6 +26,24 @@ TEST_CASE("strict UTF-8 codec rejects overlong surrogate and out-of-range input"
       std::u32string{static_cast<char32_t>(0xD800U)}));
 }
 
+TEST_CASE("Unicode display width preserves combining marks and wide scalars") {
+  CHECK(seam::text::utf8DisplayWidth("Á") == 1U);
+  CHECK(seam::text::utf8DisplayWidth("かな") == 4U);
+  CHECK(seam::text::utf8DisplayWidth("中文") == 4U);
+  CHECK(seam::text::utf8DisplayWidth("🖤") == 2U);
+  CHECK(seam::text::utf8DisplayWidth("👩‍🎤") == 2U);
+  CHECK(seam::text::utf8DisplayWidth("🇯🇵") == 2U);
+  CHECK(seam::text::utf8DisplayWidth("Ａ") == 2U);
+
+  const std::string mixed = "Á日本語";
+  CHECK(seam::text::truncateUtf8ToDisplayWidth(mixed, 1U) == "Á");
+  CHECK(seam::text::truncateUtf8ToDisplayWidth(mixed, 3U) == "Á日");
+  CHECK(seam::text::truncateUtf8ToDisplayWidth(mixed, 5U) == "Á日本");
+  const std::string emoji = "A👩‍🎤B";
+  CHECK(seam::text::truncateUtf8ToDisplayWidth(emoji, 2U) == "A");
+  CHECK(seam::text::truncateUtf8ToDisplayWidth(emoji, 3U) == "A👩‍🎤");
+}
+
 TEST_CASE("system text engine resolves a trusted Unicode font") {
   const auto engine = seam::text::TextEngine::createSystem();
   CHECK(engine);

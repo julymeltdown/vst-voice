@@ -32,7 +32,9 @@ targetId
 OS version
 DAW name and exact version
 plug-in format
-plug-in SHA-256
+candidate build ID and exact candidate manifest
+absolute installed plug-in path and its system install root
+host tool name, version, and SHA-256
 execution timestamp
 executor
 raw logs/screenshots/project files
@@ -46,11 +48,15 @@ python3 tools/phase13a/host_certification.py \
   --matrix docs/phase13a/mandatory-validation-matrix.json \
   --record evidence/reaper/result-record.json \
   --evidence-root evidence/reaper \
+  --candidate-manifest evidence/candidate/phase13a-build-result.json \
+  --installed-root "/Library/Audio/Plug-Ins/VST3" \
   --output evidence/reaper/updated-validation-matrix.json
 ```
 
-도구는 증거 파일의 SHA-256을 다시 계산한다. 경로 탈출, 빈 증거 파일,
-누락된 검사, 잘못된 플러그인 SHA 또는 허위 PASS record는 거부한다.
+도구는 설치 루트의 직접 자식인 실제 plug-in을 열고 symlink가 없는 tree
+SHA-256을 계산한 뒤 candidate manifest의 동일 format digest와 비교한다.
+호출자가 적은 digest는 신뢰하지 않으며, 경로 탈출, build-tree 경로, 빈 증거
+파일, 누락된 검사, candidate 불일치 또는 허위 PASS record는 거부한다.
 
 ## Release Gate 연결
 

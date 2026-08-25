@@ -116,6 +116,8 @@ bool MultichannelPlaybackFeeder::processControls() noexcept {
         if (!prepared) {
           timeline_.reset();
           stats_.mixFailures.fetch_add(1U, std::memory_order_relaxed);
+        } else if (playhead_ > timeline_->endFrame()) {
+          playhead_ = timeline_->endFrame();
         }
         resetNeeded = true;
         break;

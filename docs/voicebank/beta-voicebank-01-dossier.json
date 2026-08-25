@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 1,
+  "component": "beta-voicebank",
+  "status": "BLOCKED",
+  "voicebankId": "beta.voice.01",
+  "version": "0.1.0",
+  "displayName": "External Beta Voicebank 01",
+  "official": false,
+  "characterAssociated": false,
+  "characterId": null,
+  "evidenceRoot": "evidence",
+  "installedProvenanceTreeSha256": "",
+  "package": {
+    "id": "beta.voice.01",
+    "version": "0.1.0",
+    "contentSha256": "",
+    "entryManifestSha256": "",
+    "file": {"path": "packages/beta-voicebank-01.seambank", "sha256": ""},
+    "signature": {"purpose": "BANK_PACKAGE", "delegatedKeyId": "", "delegatedKeyFingerprint": "", "algorithm": "ed25519", "signedAt": "", "trustEpoch": 0, "signatureSha256": ""}
+  },
+  "trust": {
+    "rootPolicyVersion": "",
+    "rootKeyId": "",
+    "rootKeyFingerprint": "",
+    "epoch": 0,
+    "validFrom": "",
+    "validUntil": "",
+    "compromiseCutoff": "",
+    "delegatedKeyId": "",
+    "delegatedKeyFingerprint": "",
+    "delegatedKeyPurpose": "BANK_PACKAGE",
+    "rootSignedDelegation": false,
+    "rootSignedDelegationSha256": "",
+    "delegatedKeyRevoked": true,
+    "revalidation": {"result": "NOT_RUN", "trustEpoch": 0, "signedEntryManifestSha256": "", "installedProvenanceTreeSha256": "", "installedTreeLinkCount": 0}
+  },
+  "inventory": {
+    "language": "ja",
+    "profileId": "beta-ja-cvvc-v1",
+    "supportedStyles": ["original"],
+    "requiredUnits": [],
+    "pitchLayers": [60, 72],
+    "supportedRange": {"minMidi": 60, "maxMidi": 72, "method": "comfortable-range-test-v1", "result": "NOT_RUN"},
+    "coverageResult": "NOT_RUN"
+  },
+  "rights": {
+    "providerIdentityDisclosure": "WITHHELD",
+    "approval": {"reviewer": "", "reviewedAt": "", "scope": [], "territory": [], "status": "NOT_RUN", "redactedApprovalSha256": ""},
+    "permissions": {"recordingSourceUse": false, "transformation": false, "redistribution": false, "endUserRenderedAudio": false},
+    "publicLicenseSummary": {"status": "NOT_RUN", "spdx": "", "summary": ""}
+  },
+  "sourceAssets": [],
+  "derivedAssets": [],
+  "referenceSong": {"projectSha256": "", "mediaSha256": "", "renderReceipt": {"kind": "reference-song-render", "path": "reference-song/render.json", "sha256": "", "executedAt": "", "reviewer": "", "result": "NOT_RUN"}},
+  "gates": {}
+}

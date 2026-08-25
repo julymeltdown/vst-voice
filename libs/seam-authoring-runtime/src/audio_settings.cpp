@@ -1,4 +1,5 @@
 #include "seam/authoring/audio_settings.hpp"
+#include "seam/authoring/audio_settings_controller.hpp"
 
 #include "seam/core/file_io.hpp"
 #include "seam/formats/json_value.hpp"
@@ -37,10 +38,7 @@ core::Result<AudioSettings> AudioSettingsStore::load() const {
       .outputChannels = static_cast<std::uint8_t>(channels->asInt64()),
       .revision = static_cast<std::uint64_t>(revision->asInt64()),
   };
-  if (result.sampleRate < 8000U || result.sampleRate > 384000U ||
-      result.blockFrames == 0U || result.blockFrames > 16384U ||
-      result.outputChannels == 0U || result.outputChannels > 8U ||
-      result.revision == 0U) {
+  if (!isBetaAudioSettings(result)) {
     return core::failure<AudioSettings>(core::ErrorCode::InvalidArgument,
                                         "Audio settings values are out of range");
   }
@@ -48,10 +46,7 @@ core::Result<AudioSettings> AudioSettingsStore::load() const {
 }
 
 core::Result<void> AudioSettingsStore::save(const AudioSettings& settings) const {
-  if (path_.empty() || settings.sampleRate < 8000U ||
-      settings.sampleRate > 384000U || settings.blockFrames == 0U ||
-      settings.blockFrames > 16384U || settings.outputChannels == 0U ||
-      settings.outputChannels > 8U || settings.revision == 0U) {
+  if (path_.empty() || !isBetaAudioSettings(settings)) {
     return core::failure(core::ErrorCode::InvalidArgument,
                          "Audio settings values are out of range");
   }

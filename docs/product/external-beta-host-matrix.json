@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "schemaVersion": 1,
+  "matrixId": "project-seam.external-beta.host.v1",
+  "purpose": "external-host-certification",
+  "targetPlatforms": [
+    {"platform": "macos", "architecture": "arm64", "label": "Apple Silicon macOS"},
+    {"platform": "windows", "architecture": "x86_64", "label": "Windows x64"}
+  ],
+  "targets": [
+    {"id": "HOST-001", "platform": "macos", "architecture": "arm64", "host": "reaper", "format": "CLAP", "evidenceKinds": ["scan", "session-log", "bounce", "screenshot"]},
+    {"id": "HOST-002", "platform": "macos", "architecture": "arm64", "host": "reaper", "format": "VST3", "evidenceKinds": ["scan", "session-log", "bounce", "screenshot"]},
+    {"id": "HOST-003", "platform": "windows", "architecture": "x86_64", "host": "reaper", "format": "CLAP", "evidenceKinds": ["scan", "session-log", "bounce", "screenshot"]},
+    {"id": "HOST-004", "platform": "windows", "architecture": "x86_64", "host": "reaper", "format": "VST3", "evidenceKinds": ["scan", "session-log", "bounce", "screenshot"]},
+    {"id": "HOST-005", "platform": "macos", "architecture": "arm64", "host": "bitwig", "format": "CLAP", "evidenceKinds": ["scan", "session-log", "bounce", "screenshot"]},
+    {"id": "HOST-006", "platform": "macos", "architecture": "arm64", "host": "bitwig", "format": "VST3", "evidenceKinds": ["scan", "session-log", "bounce", "screenshot"]},
+    {"id": "HOST-007", "platform": "windows", "architecture": "x86_64", "host": "bitwig", "format": "CLAP", "evidenceKinds": ["scan", "session-log", "bounce", "screenshot"]},
+    {"id": "HOST-008", "platform": "windows", "architecture": "x86_64", "host": "bitwig", "format": "VST3", "evidenceKinds": ["scan", "session-log", "bounce", "screenshot"]},
+    {"id": "HOST-009", "platform": "macos", "architecture": "arm64", "host": "logic-pro", "format": "AUv2", "evidenceKinds": ["scan", "session-log", "bounce", "screenshot"]}
+  ]
+}

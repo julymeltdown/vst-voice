@@ -10,6 +10,7 @@
 #include "seam/ui/phoneme_lane_model.hpp"
 #include "seam/ui/piano_roll_model.hpp"
 #include "seam/voicebank/manifest_json.hpp"
+#include "seam/voicebank/content_identity.hpp"
 #include "seam/voicebank/pitch.hpp"
 #include "seam/voicebank/spectrogram.hpp"
 #include "seam/voicebank/validator.hpp"
@@ -398,6 +399,12 @@ int main(int argc, char** argv) {
     std::cerr << "Synthetic voicebank did not pass validation\n";
     return 4;
   }
+  const auto contentHash =
+      seam::voicebank::computeVoicebankContentHash(manifest, bankRoot);
+  if (!contentHash) {
+    printError(contentHash.error());
+    return 5;
+  }
 
   seam::application::ProjectFactory factory{1000};
   auto project = factory.createProject("Project SEAM — Phase 2 Raw Voice Vertical Slice");
@@ -407,7 +414,7 @@ int main(int argc, char** argv) {
   static_cast<void>(project.tempoMap().addOrReplace(seam::time::Tick{0}, kBpm));
   const auto trackId = factory.addVocalTrack(project, "Voicebank 01 / Original");
   auto* track = project.findVocalTrack(trackId);
-  track->voicebank = {manifest.id, manifest.version, "phase2-synthetic-content"};
+  track->voicebank = {manifest.id, manifest.version, contentHash.value()};
   track->character = {"official.character.01", "0.2.0-dev"};
   const auto regionId = factory.addRegion(
       project, trackId, "Demo phrase", seam::time::Tick{0}, seam::time::Tick{15360});

@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "status": "BLOCKED",
+  "projectId": "external-beta-song-01",
+  "mediaSetId": "external-beta-song-01-media",
+  "mediaOwnership": "project-copy",
+  "mediaPath": "external-beta-song.seam.media/backing.wav",
+  "sourceSha256": "",
+  "ownedMediaSha256": "",
+  "sourceSampleRate": 48000,
+  "sourceChannels": 2,
+  "blockedReason": "Awaiting rights-cleared backing source and copied media hash."
+}

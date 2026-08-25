@@ -6,7 +6,7 @@
   <key>CFBundleDisplayName</key><string>Project SEAM Editor</string>
   <key>CFBundleExecutable</key><string>ProjectSEAMEditor</string>
   <key>CFBundlePackageType</key><string>BNDL</string>
-  <key>CFBundleVersion</key><string>0.11.0</string>
-  <key>CFBundleShortVersionString</key><string>0.11.0</string>
+  <key>CFBundleVersion</key><string>@PROJECT_VERSION@</string>
+  <key>CFBundleShortVersionString</key><string>@PROJECT_VERSION@</string>
   <key>NSHighResolutionCapable</key><true/>
 </dict></plist>

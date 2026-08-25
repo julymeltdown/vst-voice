@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://project-seam.invalid/schemas/external-beta-update-manifest-1.json",
+  "title": "Project SEAM External Beta update manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "purpose", "channel", "manifestId", "manifestEpoch", "platform", "targetBuild", "targetVersion", "minimumVersion", "issuedAt", "expiresAt", "readRanges", "writeRanges", "downgradePolicy", "package", "releaseNotesSha256", "signature"],
+  "properties": {
+    "schemaVersion": {"const": 1},
+    "purpose": {"const": "update-manifest"},
+    "channel": {"const": "external-beta"},
+    "manifestId": {"type": "string", "minLength": 1},
+    "manifestEpoch": {"type": "integer", "minimum": 0},
+    "platform": {"enum": ["macos-arm64", "windows-x64", "linux-x64"]},
+    "targetBuild": {"type": "string", "minLength": 1},
+    "targetVersion": {"type": "string", "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?$"},
+    "minimumVersion": {"type": "string", "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?$"},
+    "issuedAt": {"type": "string", "format": "date-time"},
+    "expiresAt": {"type": "string", "format": "date-time"},
+    "readRanges": {"$ref": "#/$defs/ranges"},
+    "writeRanges": {"$ref": "#/$defs/ranges"},
+    "downgradePolicy": {"const": "REJECT"},
+    "releaseNotesSha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "package": {"$ref": "#/$defs/package"},
+    "recoveryAuthorization": {"type": "object"},
+    "signature": {"$ref": "#/$defs/signature"}
+  },
+  "$defs": {
+    "package": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fileName", "url", "size", "sha256"],
+      "properties": {
+        "fileName": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"},
+        "url": {"type": "string", "pattern": "^https://[^\\s]+$"},
+        "size": {"type": "integer", "minimum": 1, "maximum": 8589934592},
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      }
+    },
+    "ranges": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["min", "max"],
+        "properties": {"min": {"type": "integer", "minimum": 0}, "max": {"type": "integer", "minimum": 0}}
+      },
+      "propertyNames": {"enum": ["project", "media", "bank", "settings", "autosave", "clap-state", "host-state"]}
+    },
+    "signature": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["algorithm", "keyId", "payloadSha256", "value"],
+      "properties": {
+        "algorithm": {"const": "Ed25519"},
+        "keyId": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,95}$"},
+        "payloadSha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "value": {"type": "string", "contentEncoding": "base64", "minLength": 88, "maxLength": 88}
+      }
+    }
+  }
+}

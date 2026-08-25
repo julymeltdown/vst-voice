@@ -12,6 +12,7 @@
 namespace seam::phase12c {
 
 constexpr std::size_t kMaxVoices = 32;
+constexpr std::size_t kMaxEventsPerBlock = 1024;
 constexpr std::size_t kMaxResourceBytes = 256u * 1024u * 1024u;
 
 enum class UnitKind : std::uint8_t { Attack, Sustain, Transition, Release };
@@ -94,11 +95,12 @@ struct LiveStats {
   std::uint64_t expressionEvents{0};
   std::uint64_t renderedFrames{0};
   std::uint64_t silentFramesNoResource{0};
+  std::uint64_t eventOverflows{0};
 };
 
 class LiveVoiceEngine {
  public:
-  LiveVoiceEngine();
+  explicit LiveVoiceEngine(bool enableEmbeddedFixture = true);
 
   void configure(std::uint32_t sampleRate,
                  std::uint32_t outputChannels) noexcept;
@@ -110,7 +112,9 @@ class LiveVoiceEngine {
                float* const* outputs,
                std::uint32_t channels,
                std::uint32_t frames) noexcept;
+  void dispatch(const LiveEvent& event) noexcept;
   void reset() noexcept;
+  [[nodiscard]] std::size_t activeVoiceCount() const noexcept;
   [[nodiscard]] LiveStats stats() const noexcept;
 
   // Compatibility surface used by the pre-12C CLAP editor adapter.
@@ -118,6 +122,7 @@ class LiveVoiceEngine {
               std::int32_t key,
               float velocity) noexcept;
   void noteOff(std::int32_t noteId, std::int32_t key) noexcept;
+  void choke(std::int32_t noteId, std::int32_t key) noexcept;
   float renderSample() noexcept;
 
  private:
@@ -175,6 +180,7 @@ class LiveVoiceEngine {
   std::uint32_t sampleRate_{48000};
   std::uint32_t outputChannels_{2};
   std::uint64_t ageCounter_{0};
+  std::uint64_t resourceGeneration_{0};
   LiveStats stats_{};
 };
 

@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "platform": "windows-x64",
+  "ownedPaths": [
+    "ProgramFiles/ProjectSEAM/ProjectSEAM.exe",
+    "ProgramFiles/ProjectSEAM/Resources",
+    "CommonFiles/CLAP/ProjectSEAMEditor.clap",
+    "CommonFiles/CLAP/ProjectSEAMEditor.resources",
+    "CommonFiles/VST3/ProjectSEAMEditor.vst3",
+    "CommonAppData/ProjectSEAM/Documentation",
+    "ProgramFiles/ProjectSEAM/Uninstall.exe"
+  ],
+  "preservedUserRoots": [
+    "LOCALAPPDATA/ProjectSEAM/Projects",
+    "LOCALAPPDATA/ProjectSEAM/Voicebanks",
+    "LOCALAPPDATA/ProjectSEAM/Settings",
+    "LOCALAPPDATA/ProjectSEAM/Autosaves",
+    "LOCALAPPDATA/ProjectSEAM/Recovery",
+    "LOCALAPPDATA/ProjectSEAM/CrashReports"
+  ],
+  "destructiveDataRemoval": "separate-explicit-action"
+}

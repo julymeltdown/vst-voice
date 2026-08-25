@@ -1,6 +1,7 @@
 #include "seam/rendering/project_renderer.hpp"
 
-#include "seam/voicebank/wav.hpp"
+#include "seam/rendering/sample_rate_converter.hpp"
+#include "seam/rendering/streaming_pcm_source.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -23,24 +24,14 @@ const TrackVoicebankSource* sourceFor(
   return iterator == sources.end() ? nullptr : &*iterator;
 }
 
-std::vector<float> resampleLinear(std::span<const float> source,
-                                  std::uint32_t sourceRate,
-                                  std::uint32_t targetRate) {
-  if (sourceRate == targetRate || source.empty()) {
-    return std::vector<float>{source.begin(), source.end()};
+domain::TrackOutputRoute routeForTrack(const domain::TrackOutputRoute& route,
+                                       float pan) {
+  auto result = route;
+  if (result.matrix.sourceChannels == 1U &&
+      result.matrix.destinationChannels == 2U) {
+    result.matrix = domain::RoutingMatrix::monoToStereo(pan);
   }
-  const auto outputSize = static_cast<std::size_t>(std::llround(
-      static_cast<double>(source.size()) * targetRate / sourceRate));
-  std::vector<float> output(outputSize, 0.0F);
-  for (std::size_t index = 0U; index < output.size(); ++index) {
-    const auto sourcePosition = static_cast<double>(index) * sourceRate /
-                                static_cast<double>(targetRate);
-    const auto left = static_cast<std::size_t>(sourcePosition);
-    const auto right = std::min(left + 1U, source.size() - 1U);
-    const auto fraction = static_cast<float>(sourcePosition - left);
-    output[index] = source[left] + (source[right] - source[left]) * fraction;
-  }
-  return output;
+  return result;
 }
 
 }  // namespace
@@ -128,7 +119,7 @@ core::Result<ProjectRenderResult> ProductionProjectRenderer::render(
       clips.push_back(RoutedPlaybackClip{
           .id = track.id.toString() + ":" + region.id.toString(),
           .pcm = std::move(pcm),
-          .outputRoute = track.outputRoute,
+          .outputRoute = routeForTrack(track.outputRoute, track.pan),
           .gain = domain::decibelsToLinear(track.gainDb),
           .fadeInFrames = 0,
           .fadeOutFrames = 0,
@@ -156,14 +147,166 @@ core::Result<ProjectRenderResult> ProductionProjectRenderer::render(
     }
     if (track.muted || (anySolo && !track.solo)) continue;
     if (track.mediaPath.empty()) {
-      return core::failure<ProjectRenderResult>(
-          core::ErrorCode::NotFound, "Audio track has no backing media",
-          track.id.toString());
+      output.diagnostics.push_back(ProjectRenderDiagnostic{
+          .trackId = track.id,
+          .regionId = domain::RegionId{},
+          .phraseId = {},
+          .code = core::ErrorCode::NotFound,
+          .message = "Audio track has no backing media",
+          .context = track.id.toString(),
+      });
+      continue;
     }
-    auto decoded = voicebank::readWav(std::filesystem::path{track.mediaPath});
-    if (!decoded) return core::Result<ProjectRenderResult>{decoded.error()};
-    auto mono = decoded.value().monoMix();
-    auto samples = resampleLinear(mono, decoded.value().sampleRate, sampleRate);
+    auto source = StreamingPcmSource::open(
+        std::filesystem::path{track.mediaPath}, kMixBlockFrames);
+    if (!source) {
+      output.diagnostics.push_back(ProjectRenderDiagnostic{
+          .trackId = track.id,
+          .regionId = domain::RegionId{},
+          .phraseId = {},
+          .code = source.error().code,
+          .message = source.error().message,
+          .context = source.error().context,
+      });
+      continue;
+    }
+    if (!track.mediaHash.empty() &&
+        source.value()->info().contentHash != track.mediaHash) {
+      output.diagnostics.push_back(ProjectRenderDiagnostic{
+          .trackId = track.id,
+          .regionId = domain::RegionId{},
+          .phraseId = {},
+          .code = core::ErrorCode::Conflict,
+          .message = "Backing media content hash does not match the project identity",
+          .context = track.mediaHash,
+      });
+      continue;
+    }
+    const auto sourceFrameCount = source.value()->info().frameCount;
+    const auto trimStart = track.trimStartFrame;
+    const auto trimEnd = track.trimEndFrame.value_or(sourceFrameCount);
+    if (trimStart >= trimEnd || trimEnd > sourceFrameCount ||
+        (track.sourceFrameCount != 0U &&
+         track.sourceFrameCount != sourceFrameCount)) {
+      output.diagnostics.push_back(ProjectRenderDiagnostic{
+          .trackId = track.id,
+          .regionId = domain::RegionId{},
+          .phraseId = {},
+          .code = core::ErrorCode::Conflict,
+          .message = "Backing media trim or source identity is invalid",
+          .context = track.id.toString(),
+      });
+      continue;
+    }
+    if (source.value()->info().frameCount >
+            std::numeric_limits<std::size_t>::max() ||
+        source.value()->info().frameCount > kMaximumOutputBytes / sizeof(float)) {
+      output.diagnostics.push_back(ProjectRenderDiagnostic{
+          .trackId = track.id,
+          .regionId = domain::RegionId{},
+          .phraseId = {},
+          .code = core::ErrorCode::Unsupported,
+          .message = "Backing media exceeds the bounded preview PCM limit",
+          .context = track.id.toString(),
+      });
+      continue;
+    }
+    const auto qualityMode = quality == RenderQuality::Final
+                                 ? SampleRateQuality::Final
+                                 : SampleRateQuality::Preview;
+    StreamingSampleRateConverter converter(source.value()->info().sampleRate,
+                                           sampleRate, qualityMode);
+    std::vector<float> samples;
+    const auto estimatedFrames = static_cast<std::uint64_t>(std::llround(
+        static_cast<long double>(trimEnd - trimStart) * sampleRate /
+        source.value()->info().sampleRate));
+    if (estimatedFrames > kMaximumOutputBytes / sizeof(float)) {
+      output.diagnostics.push_back(ProjectRenderDiagnostic{
+          .trackId = track.id,
+          .regionId = domain::RegionId{},
+          .phraseId = {},
+          .code = core::ErrorCode::Unsupported,
+          .message = "Resampled backing media exceeds the bounded preview limit",
+          .context = track.id.toString(),
+      });
+      continue;
+    }
+    samples.reserve(static_cast<std::size_t>(estimatedFrames));
+    bool readFailed = false;
+    const auto firstChunk = static_cast<std::size_t>(
+        trimStart / source.value()->chunkFrames());
+    const auto lastChunk = static_cast<std::size_t>(
+        (trimEnd - 1U) / source.value()->chunkFrames());
+    for (std::size_t chunkIndex = firstChunk; chunkIndex <= lastChunk;
+         ++chunkIndex) {
+      if (stopToken.stop_requested()) {
+        return core::failure<ProjectRenderResult>(core::ErrorCode::Conflict,
+                                                  "Project render was cancelled");
+      }
+      auto chunk = source.value()->readChunk(chunkIndex);
+      if (!chunk) {
+        output.diagnostics.push_back(ProjectRenderDiagnostic{
+            .trackId = track.id,
+            .regionId = domain::RegionId{},
+            .phraseId = {},
+            .code = chunk.error().code,
+            .message = chunk.error().message,
+            .context = chunk.error().context,
+        });
+        samples.clear();
+        readFailed = true;
+        break;
+      }
+      const auto channels = static_cast<std::size_t>(source.value()->info().channels);
+      const auto chunkFirstFrame = static_cast<std::uint64_t>(chunkIndex) *
+                                   source.value()->chunkFrames();
+      const auto chunkFrameCount = chunk.value().size() / channels;
+      const auto selectedStart = std::max(trimStart, chunkFirstFrame);
+      const auto selectedEnd = std::min(
+          trimEnd, chunkFirstFrame + static_cast<std::uint64_t>(chunkFrameCount));
+      if (selectedStart >= selectedEnd) continue;
+      std::vector<float> mono;
+      const auto localStart = static_cast<std::size_t>(selectedStart - chunkFirstFrame);
+      const auto localEnd = static_cast<std::size_t>(selectedEnd - chunkFirstFrame);
+      mono.reserve(localEnd - localStart);
+      for (std::size_t frame = localStart; frame < localEnd; ++frame) {
+        double sum = 0.0;
+        for (std::size_t channel = 0U; channel < channels; ++channel) {
+          sum += chunk.value()[frame * channels + channel];
+        }
+        mono.push_back(static_cast<float>(sum / static_cast<double>(channels)));
+      }
+      auto convertedChunk = converter.append(mono);
+      if (!convertedChunk) {
+        output.diagnostics.push_back(ProjectRenderDiagnostic{
+            .trackId = track.id,
+            .regionId = domain::RegionId{},
+            .phraseId = {},
+            .code = convertedChunk.error().code,
+            .message = convertedChunk.error().message,
+            .context = convertedChunk.error().context,
+        });
+        samples.clear();
+        readFailed = true;
+        break;
+      }
+      samples.insert(samples.end(), convertedChunk.value().begin(),
+                     convertedChunk.value().end());
+    }
+    if (readFailed) continue;
+    auto tail = converter.finish();
+    if (!tail) {
+      output.diagnostics.push_back(ProjectRenderDiagnostic{
+          .trackId = track.id,
+          .regionId = domain::RegionId{},
+          .phraseId = {},
+          .code = tail.error().code,
+          .message = tail.error().message,
+          .context = tail.error().context,
+      });
+      continue;
+    }
+    samples.insert(samples.end(), tail.value().begin(), tail.value().end());
     if (samples.empty()) continue;
     auto pcm = std::make_shared<RoutedPcm>();
     pcm->sampleRate = sampleRate;
@@ -176,7 +319,7 @@ core::Result<ProjectRenderResult> ProductionProjectRenderer::render(
     clips.push_back(RoutedPlaybackClip{
         .id = track.id.toString() + ":media",
         .pcm = std::move(pcm),
-        .outputRoute = track.outputRoute,
+        .outputRoute = routeForTrack(track.outputRoute, track.pan),
         .gain = domain::decibelsToLinear(track.gainDb),
         .fadeInFrames = 0,
         .fadeOutFrames = 0,
@@ -189,9 +332,9 @@ core::Result<ProjectRenderResult> ProductionProjectRenderer::render(
     if (!output.diagnostics.empty()) {
       const auto& first = output.diagnostics.front();
       return core::failure<ProjectRenderResult>(
-          first.code,
-          "Project has no audible phrase because voicebank coverage failed",
-          first.phraseId + ": " + first.message);
+          first.code, "Project has no audible rendered tracks",
+          first.context.empty() ? first.message
+                                : first.context + ": " + first.message);
     }
     return core::failure<ProjectRenderResult>(core::ErrorCode::NotFound,
                                               "Project has no audible rendered vocal region");

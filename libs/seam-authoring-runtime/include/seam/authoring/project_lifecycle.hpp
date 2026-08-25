@@ -18,9 +18,13 @@ namespace seam::authoring {
 struct NewProjectRequest final {
   std::string name;
   double tempoBpm{120.0};
+  std::uint8_t meterNumerator{4U};
+  std::uint8_t meterDenominator{4U};
   std::uint32_t sampleRate{48000U};
   std::uint8_t outputChannels{2U};
+  bool createInitialVocalTrack{true};
   std::optional<voicebank::VoicebankCandidate> initialVoicebank;
+  std::optional<std::filesystem::path> projectPath;
 };
 
 struct ProjectSaveOptions final {
@@ -48,7 +52,7 @@ public:
       const ProjectSaveOptions& options = {}) const;
 
 private:
-  [[nodiscard]] core::Result<void> write(
+  [[nodiscard]] core::Result<std::string> write(
       const domain::Project& project, const std::filesystem::path& path,
       const ProjectSaveOptions& options) const;
 

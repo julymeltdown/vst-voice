@@ -10,6 +10,7 @@ from typing import Any
 
 ALLOWED_LICENSES = {"MIT", "Apache-2.0", "BSD-2-Clause", "BSD-3-Clause", "ISC", "Zlib"}
 COMMIT_PATTERN = re.compile(r"^[0-9a-f]{40}$")
+DIGEST_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 
 
 def validate_lock(lock: dict[str, Any]) -> list[str]:
@@ -43,6 +44,17 @@ def validate_lock(lock: dict[str, Any]) -> list[str]:
         license_name = dep.get("license")
         if license_name not in ALLOWED_LICENSES:
             errors.append(f"{name}: license {license_name!r} is not allowed")
+        if "recursiveSubmodules" in dep and not isinstance(dep["recursiveSubmodules"], bool):
+            errors.append(f"{name}: recursiveSubmodules must be boolean")
+        for digest_name in ("sourceSha256", "archiveSha256"):
+            digest = dep.get(digest_name)
+            if digest is not None and (not isinstance(digest, str) or not DIGEST_PATTERN.fullmatch(digest)):
+                errors.append(f"{name}: {digest_name} must be a lowercase SHA-256")
+        license_files = dep.get("licenseFiles")
+        if license_files is not None and (not isinstance(license_files, list) or not license_files or any(not isinstance(item, str) or not item for item in license_files)):
+            errors.append(f"{name}: licenseFiles must be a non-empty string array")
+        if dep.get("networkFallback") not in (None, False):
+            errors.append(f"{name}: networkFallback must be false when declared")
     return errors
 
 
@@ -70,6 +82,8 @@ def validate_checkout(dep: dict[str, Any], checkout: Path) -> list[str]:
     if head != dep["commit"]:
         errors.append(f"{dep['name']}: checkout revision {head!r} differs from locked {dep['commit']}")
     license_candidates = [checkout / "LICENSE", checkout / "LICENSE.txt", checkout / "COPYING"]
+    if isinstance(dep.get("licenseFiles"), list):
+        license_candidates = [checkout / str(item) for item in dep["licenseFiles"]]
     if not any(path.is_file() and path.stat().st_size > 0 for path in license_candidates):
         errors.append(f"{dep['name']}: checkout is missing a non-empty license file")
     if dep.get("recursiveSubmodules") and (checkout / ".git").exists():
@@ -82,6 +96,12 @@ def validate_checkout(dep: dict[str, Any], checkout: Path) -> list[str]:
         )
         if completed.returncode != 0 or any(line.startswith(("-", "+", "U")) for line in completed.stdout.splitlines()):
             errors.append(f"{dep['name']}: recursive submodules are not initialized at locked revisions")
+    expected_source = dep.get("sourceSha256")
+    if expected_source is not None:
+        marker = checkout / ".phase13a-source-sha256"
+        actual_source = marker.read_text(encoding="utf-8").strip() if marker.is_file() else ""
+        if actual_source != expected_source:
+            errors.append(f"{dep['name']}: source digest {actual_source!r} differs from locked {expected_source}")
     return errors
 
 

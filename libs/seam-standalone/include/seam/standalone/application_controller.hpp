@@ -11,13 +11,17 @@
 #include "seam/platform/application_menu.hpp"
 #include "seam/platform/file_dialog.hpp"
 #include "seam/standalone/authoring_session.hpp"
+#include "seam/native_ui/export_progress_panel.hpp"
 
 #include <chrono>
 #include <filesystem>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <string_view>
+#include <stop_token>
+#include <thread>
 #include <vector>
 
 namespace seam::standalone {
@@ -26,9 +30,11 @@ struct StandaloneApplicationControllerConfig final {
   std::filesystem::path autosaveRoot;
   std::filesystem::path recentProjectsPath;
   std::filesystem::path voicebankInstallRoot{};
+  std::filesystem::path manualsRoot{};
   std::vector<distribution::Ed25519PublicKey> trustedVoicebankKeys{};
   std::optional<distribution::Ed25519PublicKey> developmentTrustRoot{};
   bool allowDevelopmentVoicebanks{false};
+  std::function<core::Result<std::optional<authoring::NewProjectRequest>>()> requestNewProject;
   authoring::NewProjectRequest defaultNewProject{
       .name = "Untitled",
       .tempoBpm = 120.0,
@@ -37,6 +43,8 @@ struct StandaloneApplicationControllerConfig final {
       .initialVoicebank = std::nullopt,
   };
   std::function<void()> stateChanged;
+  std::function<void()> progressChanged;
+  std::function<core::Result<void>()> openAudioSettings;
 };
 
 class StandaloneApplicationController final
@@ -56,6 +64,25 @@ public:
 
   [[nodiscard]] core::Result<void> dispatch(
       platform::ApplicationCommand command) override;
+  [[nodiscard]] core::Result<void> createNewProject(
+      authoring::NewProjectRequest request);
+  [[nodiscard]] core::Result<authoring::ExportResult> exportSet(
+      const std::filesystem::path& destination,
+      authoring::ExportSettings settings = {});
+  [[nodiscard]] core::Result<void> startExportSet(
+      const std::filesystem::path& destination,
+      authoring::ExportSettings settings = {});
+  void cancelExport() noexcept;
+  [[nodiscard]] bool exportInProgress() const noexcept;
+  [[nodiscard]] const native_ui::ExportProgressPanelModel& exportProgress()
+      const noexcept {
+    return exportProgress_;
+  }
+  [[nodiscard]] std::optional<authoring::ExportResult> lastExport()
+      const noexcept {
+    std::lock_guard lock(exportMutex_);
+    return lastExport_;
+  }
   [[nodiscard]] core::Result<bool> requestClose();
   [[nodiscard]] std::vector<platform::RecentProjectMenuItem> recentProjects()
       const override;
@@ -78,9 +105,15 @@ public:
           authoring::ExistingVoicebankDecision::Reject);
   [[nodiscard]] core::Result<voicebank::VoicebankResolution> relinkVoicebank(
       domain::TrackId trackId, voicebank::VoicebankSearchRoot root);
+  [[nodiscard]] core::Result<void> relinkVoicebankFromDialog();
+  [[nodiscard]] core::Result<void> relinkBackingMediaFromDialog();
   [[nodiscard]] core::Result<void> replaceVoicebank(
       domain::TrackId trackId, std::string_view id, std::string_view version,
       std::string_view contentHash);
+  [[nodiscard]] std::vector<platform::DocumentationMenuItem> documentation()
+      const override;
+  [[nodiscard]] core::Result<void> openDocumentation(
+      std::string_view id) override;
   [[nodiscard]] core::Result<voicebank::VoicebankCoverageReport>
   selectedRegionCoverage() const;
   [[nodiscard]] core::Result<void> onDocumentChanged(
@@ -119,11 +152,27 @@ private:
       const std::filesystem::path& path);
   [[nodiscard]] core::Result<void> recordCurrentProject();
   [[nodiscard]] core::Result<void> exportAudio();
+  [[nodiscard]] core::Result<void> exportSetFromDialog();
+  struct ExportRequest final {
+    domain::Project project;
+    std::vector<rendering::TrackVoicebankSource> voicebanks;
+    domain::TrackId activeTrack;
+    domain::RegionId activeRegion;
+    std::uint64_t revision{0U};
+    std::filesystem::path destination;
+    authoring::ExportSettings settings;
+  };
+  [[nodiscard]] core::Result<ExportRequest> makeExportRequest(
+      const std::filesystem::path& destination,
+      authoring::ExportSettings settings) const;
+  [[nodiscard]] core::Result<authoring::ExportResult> runExport(
+      ExportRequest request, std::stop_token stopToken);
   [[nodiscard]] core::Result<void> refreshVoicebankBrowser();
   [[nodiscard]] std::optional<voicebank::VoicebankCandidate> findCandidate(
       std::string_view id, std::string_view version,
       std::string_view contentHash) const;
   void notifyStateChanged() const;
+  void notifyProgressChanged() const;
   [[nodiscard]] authoring::NewProjectRequest defaultNewProject() const;
 
   AuthoringSession& session_;
@@ -136,6 +185,12 @@ private:
   authoring::RecentProjectsStore recentProjects_;
   authoring::VoicebankBrowserModel voicebankBrowser_;
   std::unique_ptr<authoring::VoicebankInstallerService> voicebankInstaller_;
+  native_ui::ExportProgressPanelModel exportProgress_;
+  std::optional<authoring::ExportResult> lastExport_;
+  std::stop_source exportStopSource_;
+  mutable std::mutex exportMutex_;
+  std::jthread exportWorker_;
+  bool exportRunning_{false};
 };
 
 }  // namespace seam::standalone

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import hashlib
 import json
 import tempfile
 import unittest
@@ -53,6 +54,31 @@ class UsableAlphaContractVerificationTests(unittest.TestCase):
         )
         errors = verify_repository(root)
         self.assertTrue(any("gate" in error.lower() and "mandatory" in error.lower() for error in errors), errors)
+
+    def test_rejects_evidence_symlink_even_when_target_is_inside_repository(self) -> None:
+        root = self.make_repo(
+            readme="[Usable Alpha](docs/product/USABLE_ALPHA_ACCEPTANCE.md)\n",
+        )
+        (root / "docs/product/USABLE_ALPHA_ACCEPTANCE.md").write_text("# Contract\n", encoding="utf-8")
+        target = root / "actual-evidence.txt"
+        target.write_text("target\n", encoding="utf-8")
+        link = root / "evidence.txt"
+        try:
+            link.symlink_to(target)
+        except OSError as error:
+            self.skipTest(f"symlink creation unavailable: {error}")
+        payload_path = root / "docs/product/usable-alpha-acceptance.json"
+        payload = json.loads(payload_path.read_text(encoding="utf-8"))
+        payload["requirements"][0]["status"] = "PASS"
+        payload["requirements"][0]["evidence"] = [{
+            "path": "evidence.txt",
+            "sha256": hashlib.sha256(target.read_bytes()).hexdigest(),
+        }]
+        payload_path.write_text(json.dumps(payload), encoding="utf-8")
+
+        errors = verify_repository(root)
+
+        self.assertTrue(any("symbolic link" in error for error in errors), errors)
 
 
 class RepositoryUsableAlphaContractTests(unittest.TestCase):

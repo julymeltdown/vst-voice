@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://project-seam.invalid/schemas/external-beta-cohort.schema.json",
+  "title": "Project SEAM External Beta cohort record",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "recordType", "status", "decision", "candidateRootId", "evaluationWindow", "consent", "assignments", "externalSessions", "claimedHostTuples", "hostSessions", "checkIns", "checkpoints", "incidents", "approvals"],
+  "properties": {
+    "schemaVersion": {"const": 1},
+    "recordType": {"const": "external-beta-cohort"},
+    "status": {"enum": ["NOT_RUN", "BLOCKED", "PASS"]},
+    "decision": {"enum": ["READY", "CLOSED"]},
+    "candidateRootId": {"type": "string", "minLength": 1},
+    "evaluationWindow": {"type": "object", "required": ["status", "startedAt"], "properties": {"status": {"enum": ["OPEN", "ENDED"]}, "startedAt": {"type": "string", "format": "date-time"}, "endedAt": {"type": "string", "format": "date-time"}}},
+    "consent": {"type": "object", "required": ["version", "scope", "retention", "registrySha256"], "properties": {"version": {"type": "string"}, "scope": {"type": "string"}, "retention": {"type": "string"}, "registrySha256": {"$ref": "#/$defs/sha256"}}},
+    "assignments": {"type": "array", "minItems": 1, "items": {"type": "object", "required": ["participantId", "platform", "status", "reason"], "properties": {"participantId": {"pattern": "^participant-[a-z0-9-]+$"}, "platform": {"enum": ["macos", "windows"]}, "status": {"enum": ["COMPLETED", "WITHDRAWN", "DISQUALIFIED"]}, "reason": {"type": "string"}}}},
+    "externalSessions": {"type": "array", "items": {"type": "object", "required": ["participantId", "platform", "status", "flows"], "properties": {"participantId": {"type": "string"}, "platform": {"enum": ["macos", "windows"]}, "status": {"const": "COMPLETED"}, "flows": {"type": "array", "contains": {"const": "F1"}, "minItems": 3}}}},
+    "claimedHostTuples": {"type": "array", "items": {"type": "string"}},
+    "hostSessions": {"type": "array", "items": {"type": "object", "required": ["tuple", "participantId", "status"], "properties": {"tuple": {"type": "string"}, "participantId": {"type": "string"}, "status": {"const": "COMPLETED"}}}},
+    "checkIns": {"type": "array", "items": {"type": "object", "required": ["id", "participantId", "kind", "status", "at", "evidenceRecordId"], "properties": {"id": {"type": "string"}, "participantId": {"type": "string"}, "kind": {"enum": ["INITIAL", "PLUS_1_HOUR", "PLUS_24_HOURS", "CLOSURE"]}, "status": {"const": "RECORDED"}, "at": {"type": "string", "format": "date-time"}, "evidenceRecordId": {"type": "string"}}}},
+    "checkpoints": {"type": "array", "items": {"type": "object", "required": ["id", "status"], "properties": {"id": {"type": "string"}, "status": {"enum": ["RESOLVED", "COMPLETED"]}}}},
+    "incidents": {"type": "array", "items": {"type": "object", "required": ["id", "severity", "status"], "properties": {"id": {"type": "string"}, "severity": {"type": "string"}, "status": {"enum": ["RESOLVED", "CLOSED"]}}}},
+    "approvals": {"type": "array", "items": {"type": "object", "required": ["role", "status"], "properties": {"role": {"enum": ["A3", "A4", "A5", "A6"]}, "status": {"const": "APPROVED"}}}}
+  },
+  "$defs": {"sha256": {"type": "string", "pattern": "^[0-9a-fA-F]{64}$"}}
+}

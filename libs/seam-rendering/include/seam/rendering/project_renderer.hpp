@@ -5,6 +5,7 @@
 #include "seam/rendering/multichannel_routing.hpp"
 #include "seam/rendering/pcm_cache.hpp"
 #include "seam/rendering/region_renderer.hpp"
+#include "seam/rendering/shared_pcm_buffer.hpp"
 #include "seam/synthesis/unit_selection.hpp"
 #include "seam/voicebank/catalog.hpp"
 #include "seam/voicebank/voicebank.hpp"
@@ -38,7 +39,7 @@ struct ProjectRenderDiagnostic final {
 struct ProjectRenderResult final {
   std::uint32_t sampleRate{48000U};
   std::uint8_t channelCount{2U};
-  std::vector<float> interleaved;
+  SharedPcmBuffer interleaved;
   std::vector<std::string> phraseContentHashes;
   std::vector<synthesis::UnitPlanEntry> activeUnitPlan;
   std::vector<ProjectRenderDiagnostic> diagnostics;

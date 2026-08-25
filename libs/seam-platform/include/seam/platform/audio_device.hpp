@@ -12,6 +12,7 @@
 namespace seam::platform {
 
 struct AudioDeviceConfig final {
+  std::string deviceId;
   std::uint32_t sampleRate{48000U};
   std::size_t blockFrames{256U};
   std::uint8_t outputChannels{2U};
@@ -21,6 +22,7 @@ struct AudioDeviceConfig final {
 
 struct AudioDeviceInfo final {
   std::string backend{"unopened"};
+  std::string deviceId{"unknown"};
   std::string deviceName{"default"};
   std::uint32_t sampleRate{0U};
   std::size_t blockFrames{0U};

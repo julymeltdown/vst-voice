@@ -15,6 +15,10 @@ public:
                   domain::Language language);
 
   [[nodiscard]] std::string_view name() const noexcept override { return "Edit lyric"; }
+  [[nodiscard]] CommandAudioImpact audioImpact() const noexcept override {
+    return CommandAudioImpact::PhraseAudio;
+  }
+  [[nodiscard]] CommandImpact impact() const override;
   [[nodiscard]] core::Result<void> apply(domain::Project& project) override;
   [[nodiscard]] core::Result<void> revert(domain::Project& project) override;
 
@@ -34,6 +38,7 @@ struct BatchLyricEdit final {
   std::u32string before;
   std::u32string after;
   domain::Language language{domain::Language::Unspecified};
+  domain::Language beforeLanguage{domain::Language::Unspecified};
 };
 
 class BatchSetLyricsCommand final : public ICommand {
@@ -43,6 +48,10 @@ public:
   [[nodiscard]] std::string_view name() const noexcept override {
     return "Batch edit lyrics";
   }
+  [[nodiscard]] CommandAudioImpact audioImpact() const noexcept override {
+    return CommandAudioImpact::PhraseAudio;
+  }
+  [[nodiscard]] CommandImpact impact() const override;
   [[nodiscard]] core::Result<void> apply(domain::Project& project) override;
   [[nodiscard]] core::Result<void> revert(domain::Project& project) override;
 
@@ -58,6 +67,10 @@ public:
   [[nodiscard]] std::string_view name() const noexcept override {
     return "Edit phoneme override";
   }
+  [[nodiscard]] CommandAudioImpact audioImpact() const noexcept override {
+    return CommandAudioImpact::PhraseAudio;
+  }
+  [[nodiscard]] CommandImpact impact() const override;
   [[nodiscard]] core::Result<void> apply(domain::Project& project) override;
   [[nodiscard]] core::Result<void> revert(domain::Project& project) override;
 
@@ -76,6 +89,10 @@ public:
   [[nodiscard]] std::string_view name() const noexcept override {
     return "Reset phoneme override";
   }
+  [[nodiscard]] CommandAudioImpact audioImpact() const noexcept override {
+    return CommandAudioImpact::PhraseAudio;
+  }
+  [[nodiscard]] CommandImpact impact() const override;
   [[nodiscard]] core::Result<void> apply(domain::Project& project) override;
   [[nodiscard]] core::Result<void> revert(domain::Project& project) override;
 

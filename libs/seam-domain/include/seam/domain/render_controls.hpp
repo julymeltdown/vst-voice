@@ -28,6 +28,8 @@ struct UnitSelectionOverride final {
   std::uint16_t tokenCount{1};
   std::string unitId;
   UnitRendererKind renderer{UnitRendererKind::Inherit};
+  std::optional<float> loopPrint;
+  std::optional<float> sourcePitchResidual;
   bool locked{true};
 
   [[nodiscard]] core::Result<void> validate() const;

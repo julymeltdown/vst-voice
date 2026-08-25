@@ -1,5 +1,4 @@
 #include "seam/phase12c/live_voice.hpp"
-#include "human_fixture.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -63,33 +62,6 @@ bool LiveVoicebankResource::valid() const noexcept {
   return true;
 }
 
-std::shared_ptr<const LiveVoicebankResource> makeEmbeddedHumanResource() {
-  auto resource = std::make_shared<LiveVoicebankResource>();
-  resource->sampleRate = fixture::kSampleRate;
-  resource->trusted = true;
-  resource->contentHash = fixture::kDerivedPcmSha256;
-  resource->mono.reserve(fixture::kPcm.size());
-  for (const auto sample : fixture::kPcm) {
-    resource->mono.push_back(static_cast<float>(sample) / 32768.0F);
-  }
-
-  const auto frameCount = static_cast<std::uint32_t>(resource->mono.size());
-  const auto attackEnd = std::max(2u, frameCount * 15u / 100u);
-  const auto sustainStart = std::max(attackEnd + 2u, frameCount * 28u / 100u);
-  const auto releaseStart = std::max(sustainStart + 2u, frameCount * 82u / 100u);
-
-  resource->units = {
-      {UnitKind::Attack, 0, sustainStart, attackEnd, sustainStart, 60, -1, -1},
-      {UnitKind::Sustain, sustainStart, releaseStart, sustainStart,
-       releaseStart, 60, -1, -1},
-      {UnitKind::Transition, attackEnd, releaseStart, sustainStart,
-       releaseStart, 60, 60, 62},
-      {UnitKind::Release, releaseStart, frameCount, releaseStart, frameCount,
-       60, -1, -1},
-  };
-  return resource;
-}
-
 bool ResourcePublisher::publish(
     std::shared_ptr<const LiveVoicebankResource> resource) noexcept {
   if (!resource || !resource->valid()) {
@@ -110,7 +82,7 @@ bool ResourcePublisher::publish(
     return false;
   }
 
-  slots_[slot] = std::move(resource);
+  slots_[static_cast<std::size_t>(slot)] = std::move(resource);
   published_.store(slot, std::memory_order_release);
   generation_.fetch_add(1, std::memory_order_release);
   return true;
@@ -127,7 +99,7 @@ const LiveVoicebankResource* ResourcePublisher::acquireForAudio() noexcept {
     return nullptr;
   }
   audio_.store(slot, std::memory_order_release);
-  return slots_[slot].get();
+  return slots_[static_cast<std::size_t>(slot)].get();
 }
 
 void ResourcePublisher::releaseFromAudio() noexcept {
@@ -138,8 +110,8 @@ std::uint64_t ResourcePublisher::generation() const noexcept {
   return generation_.load(std::memory_order_acquire);
 }
 
-LiveVoiceEngine::LiveVoiceEngine() {
-  publishResource(makeEmbeddedHumanResource());
+LiveVoiceEngine::LiveVoiceEngine(bool enableEmbeddedFixture) {
+  static_cast<void>(enableEmbeddedFixture);
   configure(48000, 2);
 }
 
@@ -151,19 +123,11 @@ void LiveVoiceEngine::configure(std::uint32_t sampleRate,
 
 bool LiveVoiceEngine::publishResource(
     std::shared_ptr<const LiveVoicebankResource> resource) noexcept {
-  const auto result = publisher_.publish(std::move(resource));
-  if (!result) {
-    resource_ = nullptr;
-  }
-  return result;
+  return publisher_.publish(std::move(resource));
 }
 
 void LiveVoiceEngine::clearResource() noexcept {
   publisher_.clear();
-  resource_ = nullptr;
-  for (auto& voice : voices_) {
-    voice = {};
-  }
 }
 
 void LiveVoiceEngine::reset() noexcept {
@@ -173,6 +137,13 @@ void LiveVoiceEngine::reset() noexcept {
   channelBend_.fill(0.0F);
   stats_ = {};
   resource_ = nullptr;
+  resourceGeneration_ = 0;
+}
+
+std::size_t LiveVoiceEngine::activeVoiceCount() const noexcept {
+  return static_cast<std::size_t>(std::count_if(
+      voices_.begin(), voices_.end(),
+      [](const Voice& voice) { return voice.active; }));
 }
 
 LiveStats LiveVoiceEngine::stats() const noexcept { return stats_; }
@@ -300,7 +271,7 @@ void LiveVoiceEngine::applyEvent(
     } else if (status == 0xE0u) {
       const auto value = static_cast<int>(event.midi[1]) |
                          (static_cast<int>(event.midi[2]) << 7);
-      channelBend_[midiChannel] =
+      channelBend_[static_cast<std::size_t>(midiChannel)] =
           static_cast<float>(value - 8192) / 8192.0F * 2.0F;
     } else if (status == 0xD0u) {
       for (auto& voice : voices_) {
@@ -319,7 +290,8 @@ void LiveVoiceEngine::applyEvent(
   }
 
   if (event.type == EventType::PitchBend) {
-    channelBend_[channel] = std::clamp(event.value, -48.0F, 48.0F);
+    channelBend_[static_cast<std::size_t>(channel)] =
+        std::clamp(event.value, -48.0F, 48.0F);
     ++stats_.expressionEvents;
     return;
   }
@@ -345,7 +317,6 @@ void LiveVoiceEngine::applyEvent(
 
   if (event.type == EventType::NoteOn && event.value > 0.0F) {
     auto* legatoSource = findLegatoSource(channel);
-    const auto fromKey = legatoSource ? legatoSource->key : -1;
     auto* voice = allocateVoice();
 
     const auto savedTail = voice->tailSample;
@@ -448,7 +419,8 @@ float LiveVoiceEngine::renderVoice(
     }
   }
 
-  const auto bend = channelBend_[std::clamp<int>(voice.channel, 0, 15)];
+  const auto bend = channelBend_[static_cast<std::size_t>(
+      std::clamp<int>(voice.channel, 0, 15))];
   voice.increment =
       std::pow(2.0,
                (static_cast<double>(voice.key) - voice.current->rootKey + bend) /
@@ -550,10 +522,21 @@ void LiveVoiceEngine::process(
   }
 
   resource_ = publisher_.acquireForAudio();
+  const auto generation = publisher_.generation();
+  if (generation != resourceGeneration_) {
+    for (auto& voice : voices_) voice = {};
+    resourceGeneration_ = generation;
+  }
   if (!resource_ || !resource_->valid()) {
     stats_.silentFramesNoResource += frames;
     publisher_.releaseFromAudio();
     return;
+  }
+
+  if (events.size() > kMaxEventsPerBlock) {
+    ++stats_.eventOverflows;
+    for (auto& voice : voices_) voice = {};
+    events = events.first(kMaxEventsPerBlock);
   }
 
   auto current = 0u;
@@ -567,12 +550,30 @@ void LiveVoiceEngine::process(
   publisher_.releaseFromAudio();
 }
 
+void LiveVoiceEngine::dispatch(const LiveEvent& event) noexcept {
+  resource_ = publisher_.acquireForAudio();
+  const auto generation = publisher_.generation();
+  if (generation != resourceGeneration_) {
+    for (auto& voice : voices_) voice = {};
+    resourceGeneration_ = generation;
+  }
+  applyEvent(event, resource_);
+  publisher_.releaseFromAudio();
+}
+
 void LiveVoiceEngine::noteOn(std::int32_t noteId,
                              std::int32_t key,
                              float velocity) noexcept {
   resource_ = publisher_.acquireForAudio();
+  const auto generation = publisher_.generation();
+  if (generation != resourceGeneration_) {
+    for (auto& voice : voices_) voice = {};
+    resourceGeneration_ = generation;
+  }
+  const auto compatibilityVelocity =
+      std::clamp(velocity, 0.001F, 1.0F);
   applyEvent({0, EventType::NoteOn, noteId, 0,
-              static_cast<std::int16_t>(key), velocity, {}},
+              static_cast<std::int16_t>(key), compatibilityVelocity, {}},
              resource_);
   publisher_.releaseFromAudio();
 }
@@ -580,14 +581,43 @@ void LiveVoiceEngine::noteOn(std::int32_t noteId,
 void LiveVoiceEngine::noteOff(std::int32_t noteId,
                               std::int32_t key) noexcept {
   resource_ = publisher_.acquireForAudio();
+  const auto generation = publisher_.generation();
+  if (generation != resourceGeneration_) {
+    for (auto& voice : voices_) voice = {};
+    resourceGeneration_ = generation;
+  }
   applyEvent({0, EventType::NoteOff, noteId, 0,
               static_cast<std::int16_t>(key), 0.0F, {}},
              resource_);
   publisher_.releaseFromAudio();
 }
 
+void LiveVoiceEngine::choke(std::int32_t noteId,
+                            std::int32_t key) noexcept {
+  resource_ = publisher_.acquireForAudio();
+  const auto generation = publisher_.generation();
+  if (generation != resourceGeneration_) {
+    for (auto& voice : voices_) voice = {};
+    resourceGeneration_ = generation;
+  }
+  applyEvent({0U, EventType::NoteChoke, noteId, 0,
+              static_cast<std::int16_t>(key), 0.0F, {}},
+             resource_);
+  for (auto& voice : voices_) {
+    if (voice.active && voice.noteId == noteId && voice.key == key) {
+      voice = {};
+    }
+  }
+  publisher_.releaseFromAudio();
+}
+
 float LiveVoiceEngine::renderSample() noexcept {
   resource_ = publisher_.acquireForAudio();
+  const auto generation = publisher_.generation();
+  if (generation != resourceGeneration_) {
+    for (auto& voice : voices_) voice = {};
+    resourceGeneration_ = generation;
+  }
   auto mixed = 0.0F;
   if (resource_ && resource_->valid()) {
     for (auto& voice : voices_) {

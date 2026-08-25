@@ -6,6 +6,7 @@ namespace seam::ui {
 
 void NoteSpatialIndex::rebuild(const domain::Project& project) {
   notes_.clear();
+  prefixMaximumEnd_.clear();
   notes_.reserve(project.noteCount());
   for (const auto& track : project.vocalTracks()) {
     for (const auto& region : track.regions) {
@@ -26,6 +27,14 @@ void NoteSpatialIndex::rebuild(const domain::Project& project) {
     }
     return lhs.absoluteStart < rhs.absoluteStart;
   });
+
+  prefixMaximumEnd_.resize(notes_.size());
+  for (std::size_t index = 0; index < notes_.size(); ++index) {
+    const auto& absoluteEnd = notes_[index].absoluteEnd;
+    prefixMaximumEnd_[index] = index == 0
+        ? absoluteEnd
+        : std::max(prefixMaximumEnd_[index - 1], absoluteEnd);
+  }
 }
 
 std::vector<IndexedNote> NoteSpatialIndex::query(
@@ -44,9 +53,13 @@ std::vector<IndexedNote> NoteSpatialIndex::query(
 
   const auto limit = std::lower_bound(notes_.begin(), notes_.end(), end,
       [](const IndexedNote& note, time::Tick tick) { return note.absoluteStart < tick; });
+  const auto limitOffset = std::distance(notes_.begin(), limit);
+  const auto first = std::upper_bound(
+      prefixMaximumEnd_.begin(), prefixMaximumEnd_.begin() + limitOffset, start);
+  const auto firstOffset = std::distance(prefixMaximumEnd_.begin(), first);
   std::vector<IndexedNote> result;
-  result.reserve(static_cast<std::size_t>(std::distance(notes_.begin(), limit)));
-  for (auto iterator = notes_.begin(); iterator != limit; ++iterator) {
+  result.reserve(static_cast<std::size_t>(limitOffset - firstOffset));
+  for (auto iterator = notes_.begin() + firstOffset; iterator != limit; ++iterator) {
     if (iterator->absoluteEnd <= start) {
       continue;
     }

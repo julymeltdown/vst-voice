@@ -13,6 +13,7 @@
 #include <cstdint>
 #include <span>
 #include <string>
+#include <vector>
 
 namespace seam::platform {
 namespace {
@@ -47,6 +48,75 @@ AudioStreamBasicDescription streamDescription(
   return format;
 }
 
+AudioDeviceID resolveDevice(const std::string& requested) {
+  AudioDeviceID defaultDevice = kAudioObjectUnknown;
+  AudioObjectPropertyAddress defaultAddress{
+      kAudioHardwarePropertyDefaultOutputDevice,
+      kAudioObjectPropertyScopeGlobal,
+      kAudioObjectPropertyElementMain,
+  };
+  UInt32 defaultSize = sizeof(defaultDevice);
+  if (AudioObjectGetPropertyData(kAudioObjectSystemObject, &defaultAddress, 0U,
+                                 nullptr, &defaultSize,
+                                 &defaultDevice) != noErr) {
+    return kAudioObjectUnknown;
+  }
+  if (requested.empty()) return defaultDevice;
+
+  AudioObjectPropertyAddress address{
+      kAudioHardwarePropertyDevices,
+      kAudioObjectPropertyScopeGlobal,
+      kAudioObjectPropertyElementMain,
+  };
+  UInt32 size = 0U;
+  if (AudioObjectGetPropertyDataSize(kAudioObjectSystemObject, &address, 0U,
+                                     nullptr, &size) != noErr ||
+      size == 0U || size % sizeof(AudioDeviceID) != 0U) {
+    return kAudioObjectUnknown;
+  }
+  std::vector<AudioDeviceID> devices(size / sizeof(AudioDeviceID));
+  if (AudioObjectGetPropertyData(kAudioObjectSystemObject, &address, 0U,
+                                 nullptr, &size, devices.data()) != noErr) {
+    return kAudioObjectUnknown;
+  }
+  for (const auto device : devices) {
+    CFStringRef value = nullptr;
+    AudioObjectPropertyAddress uidAddress{
+        kAudioDevicePropertyDeviceUID,
+        kAudioObjectPropertyScopeGlobal,
+        kAudioObjectPropertyElementMain,
+    };
+    UInt32 uidSize = sizeof(value);
+    if (AudioObjectGetPropertyData(device, &uidAddress, 0U, nullptr, &uidSize,
+                                   &value) == noErr) {
+      std::array<char, 1024> buffer{};
+      const auto matches = value != nullptr &&
+                           CFStringGetCString(value, buffer.data(),
+                                              buffer.size(),
+                                              kCFStringEncodingUTF8) &&
+                           requested == buffer.data();
+      if (value != nullptr) CFRelease(value);
+      if (matches) return device;
+    }
+    if (requested == "coreaudio:" + std::to_string(device)) return device;
+  }
+  return kAudioObjectUnknown;
+}
+
+UInt32 deviceBufferFrameSize(AudioDeviceID device,
+                             UInt32 fallback) noexcept {
+  AudioObjectPropertyAddress address{
+      kAudioDevicePropertyBufferFrameSize,
+      kAudioObjectPropertyScopeGlobal,
+      kAudioObjectPropertyElementMain,
+  };
+  UInt32 frames = 0U;
+  UInt32 size = sizeof(frames);
+  const auto status = AudioObjectGetPropertyData(
+      device, &address, 0U, nullptr, &size, &frames);
+  return status == noErr && frames != 0U ? frames : fallback;
+}
+
 class CoreAudioDevice final : public IAudioDevice {
 public:
   ~CoreAudioDevice() override {
@@ -68,6 +138,23 @@ public:
                            "CoreAudio output configuration is outside supported bounds");
     }
     close();
+    const auto device = resolveDevice(config.deviceId);
+    if (device == kAudioObjectUnknown) {
+      return core::failure(
+          core::ErrorCode::NotFound,
+          config.deviceId.empty()
+              ? "Default CoreAudio output device is unavailable"
+              : "Requested CoreAudio output device is unavailable");
+    }
+    auto maximumFrames = std::max(
+        static_cast<UInt32>(config.blockFrames),
+        deviceBufferFrameSize(device,
+                              static_cast<UInt32>(config.blockFrames)));
+    if (maximumFrames > 16384U) {
+      return core::failure(
+          core::ErrorCode::Unsupported,
+          "CoreAudio device callback slice exceeds the supported maximum");
+    }
     AudioComponentDescription description{
         .componentType = kAudioUnitType_Output,
         .componentSubType = kAudioUnitSubType_DefaultOutput,
@@ -87,12 +174,17 @@ public:
                            "Unable to create CoreAudio output unit",
                            statusText(status));
     }
+    status = AudioUnitSetProperty(unit_, kAudioOutputUnitProperty_CurrentDevice,
+                                  kAudioUnitScope_Global, 0U, &device,
+                                  sizeof(device));
+    if (status != noErr) {
+      return failOpen("Unable to select CoreAudio output device", status);
+    }
     auto format = streamDescription(config);
     status = AudioUnitSetProperty(unit_, kAudioUnitProperty_StreamFormat,
                                   kAudioUnitScope_Input, 0U, &format,
                                   sizeof(format));
     if (status != noErr) return failOpen("Unable to set CoreAudio output format", status);
-    auto maximumFrames = static_cast<UInt32>(config.blockFrames);
     status = AudioUnitSetProperty(unit_, kAudioUnitProperty_MaximumFramesPerSlice,
                                   kAudioUnitScope_Global, 0U, &maximumFrames,
                                   sizeof(maximumFrames));
@@ -108,6 +200,10 @@ public:
     status = AudioUnitInitialize(unit_);
     if (status != noErr) return failOpen("Unable to initialize CoreAudio output", status);
     config_ = config;
+    maximumFramesPerSlice_ = maximumFrames;
+    if (config_.deviceId.empty()) {
+      config_.deviceId = "coreaudio:" + std::to_string(device);
+    }
     processor_ = &processor;
     opened_ = true;
     return core::success();
@@ -148,6 +244,7 @@ public:
   AudioDeviceInfo info() const override {
     return AudioDeviceInfo{
         .backend = "CoreAudio DefaultOutput AudioUnit",
+        .deviceId = config_.deviceId,
         .deviceName = "default-output-device",
         .sampleRate = config_.sampleRate,
         .blockFrames = config_.blockFrames,
@@ -176,7 +273,7 @@ private:
       return kAudio_ParamError;
     }
     const auto channels = static_cast<std::size_t>(self->config_.outputChannels);
-    if (frameCount > self->config_.blockFrames ||
+    if (frameCount > self->maximumFramesPerSlice_ ||
         output->mNumberBuffers < channels) {
       for (UInt32 index = 0U; index < output->mNumberBuffers; ++index) {
         if (output->mBuffers[index].mData != nullptr) {
@@ -226,11 +323,13 @@ private:
     }
     opened_ = false;
     processor_ = nullptr;
+    maximumFramesPerSlice_ = 0U;
   }
 
   AudioDeviceConfig config_;
   IAudioProcessor* processor_{nullptr};
   AudioUnit unit_{nullptr};
+  UInt32 maximumFramesPerSlice_{0U};
   std::array<std::span<float>, domain::kMaximumAudioChannels> views_{};
   std::atomic<bool> running_{false};
   std::atomic<std::uint64_t> callbacks_{0U};

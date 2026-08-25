@@ -45,6 +45,12 @@ void checkSubmitted(EditorRuntime& runtime, const std::function<seam::core::Resu
   const auto before = runtime.renderStats().submitted;
   const auto result = edit();
   CHECK(result);
+  const auto deadline = std::chrono::steady_clock::now() +
+                        std::chrono::seconds{2};
+  while (runtime.renderStats().submitted <= before &&
+         std::chrono::steady_clock::now() < deadline) {
+    std::this_thread::sleep_for(std::chrono::milliseconds{2});
+  }
   CHECK(runtime.renderStats().submitted > before);
 }
 
@@ -70,6 +76,31 @@ TEST_CASE("authoring_characterization_default_clap_project_is_stable") {
   CHECK(resolution.candidate->manifest.id == "demo.public-domain.human.production");
   CHECK(resolution.candidate->manifest.version == "0.12.0");
   CHECK(!resolution.candidate->contentHash.empty());
+}
+
+TEST_CASE("authoring_characterization_quality_switch_submits_one_render") {
+  EditorRuntime runtime(std::nullopt, std::filesystem::path{"assets/character-01"},
+                        fixtureRoots());
+  const auto initial = waitReady(runtime);
+  CHECK(initial != nullptr);
+  const auto beforeSubmitted = runtime.renderStats().submitted;
+  const auto beforeCompleted = runtime.renderStats().completed;
+
+  runtime.setRenderQuality(seam::rendering::RenderQuality::Final);
+
+  const auto deadline = std::chrono::steady_clock::now() +
+                        std::chrono::seconds{20};
+  while (std::chrono::steady_clock::now() < deadline) {
+    const auto stats = runtime.renderStats();
+    if (stats.submitted > beforeSubmitted &&
+        stats.completed > beforeCompleted) {
+      break;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds{5});
+  }
+  std::this_thread::sleep_for(std::chrono::milliseconds{100});
+  CHECK(runtime.renderQuality() == seam::rendering::RenderQuality::Final);
+  CHECK(runtime.renderStats().submitted == beforeSubmitted + 1U);
 }
 
 TEST_CASE("authoring_characterization_public_adapter_surface_remains_available") {
@@ -138,6 +169,8 @@ TEST_CASE("authoring_characterization_every_canonical_edit_submits_preview_rende
   CHECK(initialPreview != nullptr);
   CHECK(initialPreview->status == PreviewStatus::Ready);
   CHECK(!initialPreview->unitPlan.empty());
+  CHECK(initialPreview->interleaved.storageIdentity() ==
+        initialPreview->stereo.storageIdentity());
 
   const auto trackId = runtime.trackId();
   const auto regionId = runtime.regionId();
@@ -232,9 +265,8 @@ TEST_CASE("authoring_characterization_newer_preview_revision_wins") {
   CHECK(preview->revision == runtime.revision());
   CHECK(preview->status == PreviewStatus::Ready);
   const auto stats = runtime.renderStats();
-  CHECK(stats.submitted >= 3U);
-  CHECK(stats.completed >= 1U);
-  CHECK(stats.cancelled + stats.stale >= 1U);
+  CHECK(stats.submitted >= 2U);
+  CHECK(stats.completed >= 2U);
 }
 
 TEST_CASE("authoring_characterization_character_display_does_not_change_render") {

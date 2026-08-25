@@ -108,6 +108,24 @@ TEST_CASE("technical_edit_controller_rejects_invalid_targets_without_render") {
   CHECK(fixture.renderRequests == 0U);
 }
 
+TEST_CASE("technical_edit_controller locks and resets phoneme overrides") {
+  TechnicalFixture fixture;
+  CHECK(fixture.controller.movePhonemeBoundary(
+      fixture.firstKey, true, seam::time::Microseconds{12000}));
+  auto* region = fixture.document.session().project().findRegion(fixture.regionId);
+  CHECK(region != nullptr);
+  const auto* overrideValue = region->findPhonemeOverride(fixture.firstKey);
+  CHECK(overrideValue != nullptr);
+  CHECK(overrideValue->locked);
+  CHECK(fixture.controller.setPhonemeLocked(fixture.firstKey, false));
+  overrideValue = region->findPhonemeOverride(fixture.firstKey);
+  CHECK(overrideValue != nullptr);
+  CHECK(!overrideValue->locked);
+  CHECK(fixture.controller.resetPhonemeOverride(fixture.firstKey));
+  CHECK(region->findPhonemeOverride(fixture.firstKey) == nullptr);
+  CHECK(fixture.controller.resetPhonemeOverride(fixture.firstKey));
+}
+
 TEST_CASE("technical_edit_controller_cycles_unit_variant_and_renderer") {
   TechnicalFixture fixture;
   CHECK(fixture.controller.cycleUnitVariant(fixture.firstKey));
@@ -128,6 +146,38 @@ TEST_CASE("technical_edit_controller_cycles_unit_variant_and_renderer") {
   CHECK(diagnostic.has_value());
   CHECK(diagnostic->usedFallback);
   CHECK(diagnostic->diagnostic == "spectral fallback");
+}
+
+TEST_CASE("technical_edit_controller_maps_unit edits from covered nonstart phonemes") {
+  TechnicalFixture fixture;
+  const seam::domain::PhonemeKey coveredKey{
+      .noteId = fixture.firstKey.noteId, .ordinal = 1U};
+
+  CHECK(fixture.controller.cycleUnitVariant(coveredKey));
+  const auto* region = fixture.document.session().project().findRegion(
+      fixture.regionId);
+  CHECK(region != nullptr);
+  const auto* selected = region->findUnitSelectionOverride(fixture.firstKey);
+  CHECK(selected != nullptr);
+  CHECK(selected->unitId == "unit-b");
+  CHECK(fixture.renderRequests == 1U);
+
+  CHECK(fixture.controller.cycleUnitRenderer(coveredKey));
+  selected = region->findUnitSelectionOverride(fixture.firstKey);
+  CHECK(selected != nullptr);
+  CHECK(selected->renderer == seam::domain::UnitRendererKind::ClassicPsola);
+  CHECK(fixture.renderRequests == 2U);
+}
+
+TEST_CASE("technical_edit_controller resets a selected voice unit") {
+  TechnicalFixture fixture;
+  CHECK(fixture.controller.cycleUnitVariant(fixture.firstKey));
+  auto* region = fixture.document.session().project().findRegion(fixture.regionId);
+  CHECK(region != nullptr);
+  CHECK(region->findUnitSelectionOverride(fixture.firstKey) != nullptr);
+  CHECK(fixture.controller.resetUnitSelection(fixture.firstKey));
+  CHECK(region->findUnitSelectionOverride(fixture.firstKey) == nullptr);
+  CHECK(fixture.controller.resetUnitSelection(fixture.firstKey));
 }
 
 TEST_CASE("technical_edit_controller_edits_pitch_and_seam_with_undo") {
@@ -168,4 +218,43 @@ TEST_CASE("technical_edit_controller_edits_pitch_and_seam_with_undo") {
   CHECK(fixture.controller.removePitchPoint(seam::time::Tick{720}));
   CHECK(region->pitchAutomation.points().empty());
   CHECK(fixture.renderRequests == 5U);
+}
+
+TEST_CASE("technical_edit_controller resets selected technical ranges as one edit") {
+  TechnicalFixture fixture;
+  CHECK(fixture.controller.movePhonemeBoundary(
+      fixture.firstKey, true, seam::time::Microseconds{12000}));
+  CHECK(fixture.controller.cycleUnitVariant(fixture.firstKey));
+  CHECK(fixture.controller.upsertPitchPoint(
+      seam::domain::PitchAutomationPoint{
+          .tick = seam::time::Tick{480},
+          .cents = 12.0F,
+          .interpolation = seam::domain::CurveInterpolation::Linear,
+      }));
+  CHECK(fixture.controller.resetPhonemeRegion());
+  CHECK(fixture.controller.resetUnitRegion());
+  CHECK(fixture.controller.resetPitchSegment(seam::time::Tick{0},
+                                             seam::time::Tick{960}));
+  const auto* region = fixture.document.session().project().findRegion(
+      fixture.regionId);
+  CHECK(region != nullptr);
+  CHECK(region->phonemeOverrides.empty());
+  CHECK(region->unitSelectionOverrides.empty());
+  CHECK(region->pitchAutomation.points().empty());
+}
+
+TEST_CASE("technical_edit_controller clamps pitch points") {
+  TechnicalFixture fixture;
+  CHECK(fixture.controller.upsertPitchPoint(
+      seam::domain::PitchAutomationPoint{
+          .tick = seam::time::Tick{101},
+          .cents = 9000.0F,
+          .interpolation = seam::domain::CurveInterpolation::Linear,
+      }));
+  const auto* region = fixture.document.session().project().findRegion(
+      fixture.regionId);
+  CHECK(region != nullptr);
+  CHECK(region->pitchAutomation.points().size() == 1U);
+  CHECK(region->pitchAutomation.points().front().tick == seam::time::Tick{101});
+  CHECK_NEAR(region->pitchAutomation.points().front().cents, 4800.0, 1e-6);
 }

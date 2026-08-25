@@ -3,6 +3,7 @@
 
 #include "seam/application/render_commands.hpp"
 #include "seam/application/lyric_commands.hpp"
+#include "seam/live_voice/live_resources.hpp"
 #include "seam/phonemizer/japanese_phonemizer.hpp"
 #include "seam/rendering/region_renderer.hpp"
 #include "seam/synthesis/timing_solver.hpp"
@@ -123,6 +124,15 @@ EditorRuntime::EditorRuntime(
     const std::filesystem::path& characterPackage,
     std::vector<voicebank::VoicebankSearchRoot> voicebankRoots)
     : createdDefault_(!project.has_value()),
+#ifdef SEAM_SOURCE_PRODUCTION_VOICEBANK
+      allowDevelopmentVoicebanks_(true ||
+#else
+      allowDevelopmentVoicebanks_(detail::targetRuntimeFixtureEnabled() ||
+#endif
+                                   std::any_of(
+          voicebankRoots.begin(), voicebankRoots.end(), [](const auto& root) {
+            return root.kind == voicebank::VoicebankRootKind::Development;
+          })),
       authoring_([&] {
         application::ProjectFactory seedFactory{1000U};
         domain::Project initial;
@@ -148,7 +158,7 @@ EditorRuntime::EditorRuntime(
                     std::move(voicebankRoots)),
                 .previewSampleRate = 48000U,
                 .outputChannels = channels,
-                .allowDevelopmentVoicebanks = true,
+                .allowDevelopmentVoicebanks = allowDevelopmentVoicebanks_,
                 .enableTransport = false,
             });
       }()),
@@ -165,7 +175,7 @@ EditorRuntime::EditorRuntime(
   if (trackId_.valid()) static_cast<void>(authoring_->selectTrack(trackId_));
   if (regionId_.valid()) static_cast<void>(authoring_->selectRegion(regionId_));
 
-  if (createdDefault_) {
+  if (createdDefault_ && allowDevelopmentVoicebanks_) {
     const auto candidates = voicebankSession_.candidates();
     const auto demo = std::find_if(
         candidates.begin(), candidates.end(), [](const auto& candidate) {
@@ -184,6 +194,8 @@ EditorRuntime::EditorRuntime(
   if (loaded && controller_) {
     controller_->setCharacterMetadata(character_.displayName(),
                                       character_.styleName());
+    controller_->setCharacterPortrait(
+        character_.portrait(character::State::Neutral));
   }
   controller_->setDirty(authoring_->document().dirty());
   dirty_ = authoring_->document().dirty();
@@ -212,6 +224,10 @@ RenderedPreview EditorRuntime::makeRenderedPreview(
   output.channelCount = shared.result.channelCount;
   output.phraseContentHashes = shared.result.phraseContentHashes;
   output.interleaved = shared.result.interleaved;
+  if (output.channelCount == 2U) {
+    output.stereo = output.interleaved;
+    return output;
+  }
   const auto frames = output.channelCount == 0U
                           ? 0U
                           : output.interleaved.size() / output.channelCount;
@@ -267,6 +283,26 @@ void EditorRuntime::refreshVoicebankResolutionLocked() {
 
 void EditorRuntime::refreshAllVoicebankResolutionsLocked() {
   refreshVoicebankResolutionLocked();
+  refreshLiveResourceLocked();
+}
+
+void EditorRuntime::refreshLiveResourceLocked() {
+  if (!voicebankResolution_.resolved() ||
+      !voicebankResolution_.candidate.has_value()) {
+    live_.clearVoicebankResource();
+    return;
+  }
+  live_voice::ResourceBuildOptions options;
+  options.requireRelease =
+      voicebankResolution_.candidate->trust ==
+      voicebank::VoicebankTrust::TrustedInstalled;
+  live_voice::LiveResourceBuildOptions resourceOptions;
+  resourceOptions.requireRelease = options.requireRelease;
+  const auto resource = live_voice::LiveResourceBuilder{}.build(
+      *voicebankResolution_.candidate, resourceOptions);
+  if (!resource || !live_.publishResources(resource.value())) {
+    live_.clearVoicebankResource();
+  }
 }
 
 core::Result<void> EditorRuntime::refreshVoicebanks() {
@@ -286,6 +322,10 @@ core::Result<void> EditorRuntime::refreshVoicebanks() {
 core::Result<void> EditorRuntime::addVoicebankSearchRoot(
     voicebank::VoicebankSearchRoot root) {
   std::lock_guard lock(mutex_);
+  if (root.kind == voicebank::VoicebankRootKind::Development) {
+    allowDevelopmentVoicebanks_ = true;
+    voicebankSession_.setAllowDevelopmentFixtures(true);
+  }
   const auto added = voicebankSession_.addSearchRoot(std::move(root));
   if (!added) return added;
   refreshAllVoicebankResolutionsLocked();
@@ -354,8 +394,16 @@ void EditorRuntime::configureControllerCallbacks() {
       .endTextInput = [this] {
         if (endTextInput_) endTextInput_();
       },
-      .setPlaying = [this](bool) { requestRepaint(); },
-      .documentChanged = {},
+      .setPlaying = [this](bool) {
+        requestRepaint();
+        return core::success();
+      },
+      .documentChanged = [this] {
+        authoring_->handleDocumentChanged();
+        dirty_ = authoring_->document().dirty();
+        if (controller_) controller_->setDirty(dirty_);
+        requestRepaint();
+      },
   };
   controller_ = std::make_unique<native_ui::NativeEditorController>(
       session_, factory_, regionId_, std::move(callbacks));

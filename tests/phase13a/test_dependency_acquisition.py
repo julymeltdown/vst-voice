@@ -58,6 +58,19 @@ class DependencyAcquisitionTests(unittest.TestCase):
             self.assertNotEqual(0, completed.returncode)
             self.assertIn("checkout directory does not exist", completed.stderr)
 
+    def test_offline_acquisition_does_not_replace_invalid_checkout(self):
+        with tempfile.TemporaryDirectory() as directory:
+            checkout_root = Path(directory) / "deps"
+            dependency = json.loads((ROOT / "phase13a" / "dependency-lock.json").read_text())["dependencies"][0]
+            checkout = checkout_root / dependency["name"]
+            checkout.mkdir(parents=True)
+            (checkout / ".phase13a-revision").write_text("0" * 40, encoding="utf-8")
+            (checkout / "LICENSE").write_text("license\n", encoding="utf-8")
+            completed = subprocess.run([sys.executable, str(ROOT / "scripts" / "fetch_phase13a_dependencies.py"), "--output", str(checkout_root), "--offline", "--refresh"], cwd=ROOT, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
+            self.assertNotEqual(0, completed.returncode)
+            self.assertIn("offline acquisition", completed.stderr)
+            self.assertEqual("0" * 40, (checkout / ".phase13a-revision").read_text(encoding="utf-8"))
+
 
 if __name__ == "__main__":
     unittest.main()

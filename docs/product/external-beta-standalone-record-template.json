@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "recordType": "engineering-standalone-journey",
+  "status": "BLOCKED",
+  "engineeringQualification": true,
+  "recordId": "standalone-macos-arm64-YYYYMMDD-001",
+  "platform": "macos",
+  "architecture": "arm64",
+  "osBuild": "",
+  "appIdentity": {
+    "version": "",
+    "buildId": "",
+    "sourceCommit": "",
+    "installedTreeSha256": ""
+  },
+  "bankIdentity": {
+    "id": "beta.voice.01",
+    "version": "",
+    "contentSha256": "",
+    "installedProvenanceTreeSha256": ""
+  },
+  "projectIdentity": {"projectSha256": "", "mediaSha256": ""},
+  "workloadId": "eb.standalone.ua.v1",
+  "workloadSha256": "",
+  "machineProfileId": "eb.macos.arm64.reference.v1",
+  "machineProfileSha256": "",
+  "device": {"deviceId": "", "sampleRate": 48000, "blockSize": 128, "channels": 2, "authority": "physical"},
+  "clockAuthority": "physical-device-clock",
+  "comparisonPolicy": {"crossPlatformByteIdentity": false, "crossPlatformTolerance": "duration/channels/finiteness/alignment/listening tolerances"},
+  "operator": "",
+  "startedAt": "",
+  "endedAt": "",
+  "rows": []
+}

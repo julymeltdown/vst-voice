@@ -29,6 +29,20 @@ std::string statusText(OSStatus status) {
   return printable ? std::string{text} : std::to_string(status);
 }
 
+UInt32 deviceBufferFrameSize(AudioDeviceID device,
+                             UInt32 fallback) noexcept {
+  AudioObjectPropertyAddress address{
+      kAudioDevicePropertyBufferFrameSize,
+      kAudioObjectPropertyScopeGlobal,
+      kAudioObjectPropertyElementMain,
+  };
+  UInt32 frames = 0U;
+  UInt32 size = sizeof(frames);
+  const auto status = AudioObjectGetPropertyData(
+      device, &address, 0U, nullptr, &size, &frames);
+  return status == noErr && frames != 0U ? frames : fallback;
+}
+
 class CoreAudioInputDevice final : public IAudioInputDevice {
 public:
   ~CoreAudioInputDevice() override {
@@ -96,6 +110,17 @@ public:
                                   sizeof(device));
     if (status != noErr) return failOpen("Unable to assign CoreAudio input device", status);
 
+    auto maximumFrames = std::max(
+        static_cast<UInt32>(config.blockFrames),
+        deviceBufferFrameSize(device,
+                              static_cast<UInt32>(config.blockFrames)));
+    if (maximumFrames > 16384U) {
+      close();
+      return core::failure(
+          core::ErrorCode::Unsupported,
+          "CoreAudio input callback slice exceeds the supported maximum");
+    }
+
     AudioStreamBasicDescription format{};
     format.mSampleRate = static_cast<Float64>(config.sampleRate);
     format.mFormatID = kAudioFormatLinearPCM;
@@ -112,7 +137,6 @@ public:
                                   sizeof(format));
     if (status != noErr) return failOpen("Unable to set CoreAudio capture format", status);
 
-    auto maximumFrames = static_cast<UInt32>(config.blockFrames);
     status = AudioUnitSetProperty(unit_, kAudioUnitProperty_MaximumFramesPerSlice,
                                   kAudioUnitScope_Global, 0U, &maximumFrames,
                                   sizeof(maximumFrames));
@@ -130,7 +154,7 @@ public:
 
     config_ = config;
     processor_ = &processor;
-    mono_.assign(config.blockFrames, 0.0F);
+    mono_.assign(maximumFrames, 0.0F);
     opened_ = true;
     return core::success();
   }

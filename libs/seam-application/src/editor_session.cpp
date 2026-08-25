@@ -18,6 +18,8 @@ core::Result<void> EditorSession::execute(std::unique_ptr<ICommand> command) {
     return core::failure(core::ErrorCode::InvalidArgument, "Command must not be null");
   }
 
+  const auto impact = command->impact();
+
   const auto transactionSnapshot = project_;
   const auto result = command->apply(project_);
   if (!result) {
@@ -34,6 +36,7 @@ core::Result<void> EditorSession::execute(std::unique_ptr<ICommand> command) {
 
   undo_.push_back(std::move(command));
   redo_.clear();
+  lastImpact_ = impact;
   incrementRevision();
   return core::success();
 }
@@ -44,6 +47,7 @@ core::Result<void> EditorSession::undo() {
   }
 
   const auto transactionSnapshot = project_;
+  const auto impact = undo_.back()->impact();
   const auto result = undo_.back()->revert(project_);
   if (!result) {
     project_ = transactionSnapshot;
@@ -68,6 +72,7 @@ core::Result<void> EditorSession::undo() {
   auto command = std::move(undo_.back());
   undo_.pop_back();
   redo_.push_back(std::move(command));
+  lastImpact_ = impact;
   incrementRevision();
   return core::success();
 }
@@ -78,6 +83,7 @@ core::Result<void> EditorSession::redo() {
   }
 
   const auto transactionSnapshot = project_;
+  const auto impact = redo_.back()->impact();
   const auto result = redo_.back()->apply(project_);
   if (!result) {
     project_ = transactionSnapshot;
@@ -102,6 +108,7 @@ core::Result<void> EditorSession::redo() {
   auto command = std::move(redo_.back());
   redo_.pop_back();
   undo_.push_back(std::move(command));
+  lastImpact_ = impact;
   incrementRevision();
   return core::success();
 }
@@ -118,6 +125,14 @@ core::Result<void> EditorSession::replaceProject(domain::Project project) {
   undo_.clear();
   redo_.clear();
   health_ = SessionHealth::Ready;
+  lastImpact_ = CommandImpact{
+      .scope = CommandAudioImpact::ProjectAudio,
+      .projectWide = true,
+      .trackIds = {},
+      .regionIds = {},
+      .noteIds = {},
+      .lyricIds = {},
+  };
   incrementRevision();
   return core::success();
 }

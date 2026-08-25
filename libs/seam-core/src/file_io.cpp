@@ -1,4 +1,5 @@
 #include "seam/core/file_io.hpp"
+#include "seam/core/realtime_audit.hpp"
 
 #include <algorithm>
 #include <array>
@@ -56,6 +57,34 @@ Result<void> createParent(const std::filesystem::path& path) {
   if (error) {
     return failure(ErrorCode::IoError, "Unable to create output directory",
                    error.message());
+  }
+  return success();
+}
+
+Result<void> validateAtomicTarget(const std::filesystem::path& path) {
+  if (path.empty()) {
+    return failure(ErrorCode::InvalidArgument,
+                   "Atomic write target is empty");
+  }
+  std::error_code error;
+  const auto status = std::filesystem::symlink_status(path, error);
+  if (error == std::errc::no_such_file_or_directory ||
+      status.type() == std::filesystem::file_type::not_found) {
+    return success();
+  }
+  if (error) {
+    return failure(ErrorCode::IoError,
+                   "Unable to inspect atomic write target", error.message());
+  }
+  if (status.type() == std::filesystem::file_type::symlink) {
+    return failure(ErrorCode::Conflict,
+                   "Atomic write target cannot be a symbolic link",
+                   path.string());
+  }
+  if (!std::filesystem::is_regular_file(status)) {
+    return failure(ErrorCode::IoError,
+                   "Atomic write target is not a regular file",
+                   path.string());
   }
   return success();
 }
@@ -217,6 +246,12 @@ Result<void> writeImpl(const std::filesystem::path& path,
   }
   const auto parent = createParent(path);
   if (!parent) return parent;
+  const auto target = validateAtomicTarget(path);
+  if (!target) return target;
+  if (createBackup && !options.backupPath.empty()) {
+    const auto backupTarget = validateAtomicTarget(options.backupPath);
+    if (!backupTarget) return backupTarget;
+  }
 
   if (createBackup && !options.backupPath.empty()) {
     std::error_code existsError;
@@ -269,7 +304,17 @@ Result<void> writeImpl(const std::filesystem::path& path,
 Result<std::vector<std::byte>> readFileBytesLimited(
     const std::filesystem::path& path,
     std::uint64_t maximumBytes) {
+  recordRealtimeFileIo();
   std::error_code error;
+  const auto status = std::filesystem::symlink_status(path, error);
+  if (status.type() == std::filesystem::file_type::symlink) {
+    return failure<std::vector<std::byte>>(
+        ErrorCode::Conflict, "Unable to read a symbolic link", path.string());
+  }
+  if (error || !std::filesystem::is_regular_file(status)) {
+    return failure<std::vector<std::byte>>(
+        ErrorCode::IoError, "Unable to read a non-regular file", path.string());
+  }
   const auto size = std::filesystem::file_size(path, error);
   if (error) {
     return failure<std::vector<std::byte>>(ErrorCode::IoError,
@@ -303,6 +348,7 @@ Result<std::vector<std::byte>> readFileBytesLimited(
 
 Result<std::string> readTextFileLimited(const std::filesystem::path& path,
                                         std::uint64_t maximumBytes) {
+  recordRealtimeFileIo();
   auto bytes = readFileBytesLimited(path, maximumBytes);
   if (!bytes) return Result<std::string>{bytes.error()};
   std::string text(bytes.value().size(), '\0');
@@ -315,12 +361,14 @@ Result<std::string> readTextFileLimited(const std::filesystem::path& path,
 Result<void> durableAtomicWrite(const std::filesystem::path& path,
                                 std::span<const std::byte> bytes,
                                 const AtomicWriteOptions& options) {
+  recordRealtimeFileIo();
   return writeImpl(path, bytes, options, true);
 }
 
 Result<void> durableAtomicWriteText(const std::filesystem::path& path,
                                     std::string_view text,
                                     const AtomicWriteOptions& options) {
+  recordRealtimeFileIo();
   return durableAtomicWrite(path,
       std::as_bytes(std::span{text.data(), text.size()}), options);
 }

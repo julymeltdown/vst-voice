@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <memory>
 #include <utility>
 #include <vector>
 
@@ -47,27 +48,142 @@ core::Result<domain::RoutingMatrix> outputMatrix(std::uint8_t sourceChannels,
   return core::success(std::move(matrix));
 }
 
+core::Result<void> validateTransportConfig(const TransportConfig& config) {
+  if (config.sampleRate < 8000U || config.sampleRate > 192000U) {
+    return core::failure(core::ErrorCode::InvalidArgument,
+                         "Transport sample rate is outside supported bounds");
+  }
+  if (config.outputChannels == 0U ||
+      config.outputChannels > domain::kMaximumAudioChannels) {
+    return core::failure(core::ErrorCode::InvalidArgument,
+                         "Transport output channel count is outside supported bounds");
+  }
+  if (config.ringCapacityFrames < 2U || config.blockFrames == 0U ||
+      config.watermarkFrames == 0U ||
+      config.watermarkFrames >= config.ringCapacityFrames) {
+    return core::failure(core::ErrorCode::InvalidArgument,
+                         "Transport ring capacity, block, and watermark are invalid");
+  }
+  return core::success();
+}
+
+rendering::PlaybackLoop remapLoop(rendering::PlaybackLoop loop,
+                                  time::SampleFrame timelineEnd) noexcept {
+  if (!loop.enabled || timelineEnd <= 0) return {};
+  loop.startFrame = std::clamp<time::SampleFrame>(
+      loop.startFrame, 0, timelineEnd - 1);
+  loop.endFrame = std::clamp<time::SampleFrame>(
+      loop.endFrame, loop.startFrame + 1, timelineEnd);
+  if (loop.endFrame <= loop.startFrame) return {};
+  return loop;
+}
+
 }  // namespace
 
 TransportController::TransportController(TransportConfig config)
     : config_(config),
-      ring_(config.ringCapacityFrames, config.outputChannels),
-      feeder_(ring_, config.sampleRate, config.outputChannels,
-              config.blockFrames),
-      service_(feeder_, config.watermarkFrames) {}
+      ring_(std::make_unique<rendering::SpscInterleavedAudioRingBuffer>(
+          config.ringCapacityFrames, config.outputChannels)),
+      feeder_(std::make_unique<rendering::MultichannelPlaybackFeeder>(
+          *ring_, config.sampleRate, config.outputChannels, config.blockFrames)),
+      service_(std::make_unique<rendering::MultichannelPlaybackFeederService>(
+          *feeder_, config.watermarkFrames)) {}
 
 TransportController::~TransportController() { shutdown(); }
 
 core::Result<void> TransportController::start() {
+  std::lock_guard lifecycleLock(lifecycleMutex_);
   if (started_) return core::success();
-  const auto result = service_.start();
+  const auto result = service_->start();
   if (result) started_ = true;
   return result;
 }
 
 void TransportController::shutdown() noexcept {
-  service_.stop();
+  std::lock_guard lifecycleLock(lifecycleMutex_);
+  service_->stop();
   started_ = false;
+}
+
+core::Result<void> TransportController::reconfigure(TransportConfig config) {
+  std::lock_guard lifecycleLock(lifecycleMutex_);
+  const auto valid = validateTransportConfig(config);
+  if (!valid) return valid;
+  if (config_.sampleRate == config.sampleRate &&
+      config_.outputChannels == config.outputChannels &&
+      config_.ringCapacityFrames == config.ringCapacityFrames &&
+      config_.blockFrames == config.blockFrames &&
+      config_.watermarkFrames == config.watermarkFrames) {
+    return core::success();
+  }
+
+  const bool wasStarted = started_;
+  const bool wasPlaying = feeder_->playing();
+  const auto previousSampleRate = config_.sampleRate;
+  const auto scaleFrame = [previousSampleRate, &config](
+                               time::SampleFrame frame) {
+    if (frame <= 0) return time::SampleFrame{0};
+    return static_cast<time::SampleFrame>(std::llround(
+        static_cast<long double>(frame) * config.sampleRate /
+        previousSampleRate));
+  };
+  auto remappedLoop = loop_;
+  if (remappedLoop.enabled) {
+    remappedLoop.startFrame = scaleFrame(remappedLoop.startFrame);
+    remappedLoop.endFrame = scaleFrame(remappedLoop.endFrame);
+    if (remappedLoop.endFrame <= remappedLoop.startFrame) remappedLoop = {};
+  }
+  const auto remappedPlayhead = scaleFrame(feeder_->playhead());
+  service_->stop();
+  started_ = false;
+
+  std::unique_ptr<rendering::SpscInterleavedAudioRingBuffer> nextRing;
+  std::unique_ptr<rendering::MultichannelPlaybackFeeder> nextFeeder;
+  std::unique_ptr<rendering::MultichannelPlaybackFeederService> nextService;
+  try {
+    nextRing = std::make_unique<rendering::SpscInterleavedAudioRingBuffer>(
+        config.ringCapacityFrames, config.outputChannels);
+    nextFeeder = std::make_unique<rendering::MultichannelPlaybackFeeder>(
+        *nextRing, config.sampleRate, config.outputChannels, config.blockFrames);
+    nextService = std::make_unique<rendering::MultichannelPlaybackFeederService>(
+        *nextFeeder, config.watermarkFrames);
+  } catch (...) {
+    const auto restored = wasStarted ? service_->start() : core::success();
+    started_ = wasStarted && static_cast<bool>(restored);
+    return core::failure(core::ErrorCode::Internal,
+                         "Unable to allocate the requested transport format",
+                         restored ? std::string{} : restored.error().message);
+  }
+
+  if (wasStarted) {
+    const auto started = nextService->start();
+    if (!started) {
+      const auto restored = service_->start();
+      started_ = static_cast<bool>(restored);
+      return core::failure(
+          core::ErrorCode::IoError,
+          "Unable to start the requested transport format",
+          started.error().message +
+              (restored ? std::string{} : "; previous transport restart failed: " +
+                                           restored.error().message));
+    }
+  }
+
+  ring_ = std::move(nextRing);
+  feeder_ = std::move(nextFeeder);
+  service_ = std::move(nextService);
+  config_ = config;
+  {
+    std::lock_guard lock(stateMutex_);
+    loop_ = remappedLoop;
+    publishedRevision_ = 0U;
+    timelineEnd_ = 0;
+    pendingPlayhead_ = remappedPlayhead;
+    pendingPlayheadValid_ = true;
+    resumeAfterReconfigure_ = wasPlaying;
+  }
+  started_ = wasStarted;
+  return core::success();
 }
 
 core::Result<std::shared_ptr<const rendering::RoutedPlaybackTimeline>>
@@ -163,68 +279,121 @@ TransportController::makeTimeline(const PublishedProjectAudio& audio,
 
 core::Result<void> TransportController::publishAudio(
     RealtimeProjectAudioPublication::ReadHandle audio) {
+  std::lock_guard lifecycleLock(lifecycleMutex_);
   if (!audio) {
     return core::failure(core::ErrorCode::InvalidArgument,
                          "Published authoring audio handle is empty");
   }
+  bool crossfade = false;
   {
     std::lock_guard lock(stateMutex_);
     if (audio->projectRevision < publishedRevision_) {
       return core::failure(core::ErrorCode::Conflict,
                            "An older render revision cannot replace current audio");
     }
-  }
-  bool crossfade = false;
-  {
-    std::lock_guard lock(stateMutex_);
-    crossfade = publishedRevision_ != 0U;
+    crossfade = timelineEnd_ > 0;
   }
   auto timeline = makeTimeline(*audio, crossfade);
   if (!timeline) return core::Result<void>{timeline.error()};
-  const auto result = feeder_.setTimeline(timeline.value());
-  if (!result) return result;
+  rendering::PlaybackLoop remappedLoop;
+  time::SampleFrame remappedPlayhead{0};
+  bool resumeAfterReconfigure = false;
   {
     std::lock_guard lock(stateMutex_);
+    remappedLoop = remapLoop(loop_, timeline.value()->endFrame());
+    remappedPlayhead = std::clamp<time::SampleFrame>(
+        pendingPlayheadValid_ ? pendingPlayhead_ : feeder_->playhead(), 0,
+        timeline.value()->endFrame());
+    resumeAfterReconfigure = resumeAfterReconfigure_;
+  }
+  const auto result = feeder_->setTimeline(timeline.value());
+  if (!result) return result;
+  const auto loopResult = feeder_->setLoop(remappedLoop);
+  if (!loopResult) return loopResult;
+  const auto seekResult = feeder_->seek(remappedPlayhead);
+  if (!seekResult) return seekResult;
+  if (resumeAfterReconfigure) {
+    const auto resumeResult = feeder_->setPlaying(true);
+    if (!resumeResult) return resumeResult;
+  }
+  {
+    std::lock_guard lock(stateMutex_);
+    loop_ = remappedLoop;
     publishedRevision_ = audio->projectRevision;
     timelineEnd_ = timeline.value()->endFrame();
+    pendingPlayheadValid_ = false;
+    resumeAfterReconfigure_ = false;
   }
   return core::success();
 }
 
 core::Result<void> TransportController::play() {
+  std::lock_guard lifecycleLock(lifecycleMutex_);
   if (!started_) {
-    const auto started = start();
+    const auto started = service_->start();
     if (!started) return started;
+    started_ = true;
   }
-  return feeder_.setPlaying(true);
+  {
+    std::lock_guard lock(stateMutex_);
+    resumeAfterReconfigure_ = true;
+  }
+  return feeder_->setPlaying(true);
 }
 
 core::Result<void> TransportController::pause() {
-  return feeder_.setPlaying(false);
+  std::lock_guard lifecycleLock(lifecycleMutex_);
+  {
+    std::lock_guard lock(stateMutex_);
+    resumeAfterReconfigure_ = false;
+  }
+  return feeder_->setPlaying(false);
 }
 
 core::Result<void> TransportController::stop() {
-  auto result = feeder_.setPlaying(false);
+  std::lock_guard lifecycleLock(lifecycleMutex_);
+  {
+    std::lock_guard lock(stateMutex_);
+    resumeAfterReconfigure_ = false;
+  }
+  auto result = feeder_->setPlaying(false);
   if (!result) return result;
-  return feeder_.seek(0);
+  return feeder_->seek(0);
 }
 
 core::Result<void> TransportController::seek(time::SampleFrame frame) {
+  std::lock_guard lifecycleLock(lifecycleMutex_);
   if (frame < 0) {
     return core::failure(core::ErrorCode::InvalidArgument,
                          "Transport seek frame cannot be negative");
   }
-  return feeder_.seek(frame);
+  {
+    std::lock_guard lock(stateMutex_);
+    if (timelineEnd_ == 0 || frame > timelineEnd_) {
+      return core::failure(core::ErrorCode::InvalidArgument,
+                           "Transport seek is outside the published audio timeline");
+    }
+  }
+  return feeder_->seek(frame);
 }
 
 core::Result<void> TransportController::setLoop(
     rendering::PlaybackLoop range) {
+  std::lock_guard lifecycleLock(lifecycleMutex_);
   if (range.enabled &&
       (range.startFrame < 0 || range.endFrame <= range.startFrame)) {
     return core::failure(core::ErrorCode::InvalidArgument,
                          "Loop range must have a non-negative start and positive length");
   }
-  const auto result = feeder_.setLoop(range);
+  {
+    std::lock_guard lock(stateMutex_);
+    if (range.enabled &&
+        (timelineEnd_ == 0 || range.endFrame > timelineEnd_)) {
+      return core::failure(core::ErrorCode::InvalidArgument,
+                           "Playback loop is outside the published audio timeline");
+    }
+  }
+  const auto result = feeder_->setLoop(range);
   if (result) {
     std::lock_guard lock(stateMutex_);
     loop_ = range;
@@ -233,10 +402,15 @@ core::Result<void> TransportController::setLoop(
 }
 
 TransportState TransportController::state() const noexcept {
+  std::lock_guard lifecycleLock(lifecycleMutex_);
   std::lock_guard lock(stateMutex_);
   return TransportState{
-      .playing = feeder_.playing(),
-      .playhead = feeder_.playhead(),
+      .playing = feeder_->playing(),
+      .available = timelineEnd_ > time::SampleFrame{0},
+      .availabilityDiagnostic = timelineEnd_ == time::SampleFrame{0}
+                                    ? "Render audio before starting transport"
+                                    : std::string{},
+      .playhead = feeder_->playhead(),
       .loop = loop_,
       .publishedRevision = publishedRevision_,
       .timelineEnd = timelineEnd_,

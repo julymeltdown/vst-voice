@@ -6,6 +6,27 @@
 
 namespace seam::domain {
 
+namespace {
+
+bool isSha256(std::string_view value) noexcept {
+  if (value.size() != 64U) return false;
+  return std::all_of(value.begin(), value.end(), [](unsigned char character) {
+    return (character >= '0' && character <= '9') ||
+           (character >= 'a' && character <= 'f') ||
+           (character >= 'A' && character <= 'F');
+  });
+}
+
+}
+
+std::string_view mediaOwnershipName(MediaOwnership ownership) noexcept {
+  switch (ownership) {
+    case MediaOwnership::ExternalReference: return "external-reference";
+    case MediaOwnership::ProjectCopy: return "project-copy";
+  }
+  return "unknown";
+}
+
 Note* VocalRegion::findNote(NoteId noteId) noexcept {
   const auto iterator = std::find_if(notes.begin(), notes.end(),
       [noteId](const Note& note) { return note.id == noteId; });
@@ -336,6 +357,28 @@ core::Result<void> Project::validate() const {
         track.pan < -1.0F || track.pan > 1.0F) {
       return core::failure(core::ErrorCode::InvariantViolation,
                            "Audio track mix settings are invalid", track.id.toString());
+    }
+    if (track.mediaOwnership == MediaOwnership::ProjectCopy &&
+        (!isSha256(track.mediaHash) || track.mediaPath.empty() ||
+         track.sourceSampleRate == 0U || track.sourceChannels == 0U ||
+         track.sourceChannels > kMaximumAudioChannels)) {
+      return core::failure(core::ErrorCode::InvariantViolation,
+                           "Project-owned audio track identity is incomplete",
+                           track.id.toString());
+    }
+    if (track.trimEndFrame.has_value() &&
+        *track.trimEndFrame <= track.trimStartFrame) {
+      return core::failure(core::ErrorCode::InvariantViolation,
+                           "Audio track trim end must be after trim start",
+                           track.id.toString());
+    }
+    if (track.sourceFrameCount != 0U &&
+        (track.trimStartFrame >= track.sourceFrameCount ||
+         (track.trimEndFrame.has_value() &&
+          *track.trimEndFrame > track.sourceFrameCount))) {
+      return core::failure(core::ErrorCode::InvariantViolation,
+                           "Audio track trim exceeds source frame count",
+                           track.id.toString());
     }
     const auto routeValidation = validateTrackRoute(track.outputRoute, track.id);
     if (!routeValidation) return routeValidation;

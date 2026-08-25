@@ -3,6 +3,7 @@
 #include "seam/core/result.hpp"
 #include "seam/domain/routing.hpp"
 #include "seam/rendering/playback_engine.hpp"
+#include "seam/rendering/shared_pcm_buffer.hpp"
 
 #include <cstddef>
 #include <cstdint>
@@ -18,7 +19,7 @@ struct RoutedPcm final {
   std::uint32_t sampleRate{48000U};
   time::SampleFrame startFrame{0};
   std::uint8_t channelCount{1U};
-  std::vector<float> interleavedSamples;
+  SharedPcmBuffer interleavedSamples;
 
   [[nodiscard]] time::SampleFrame frameCount() const noexcept {
     return channelCount == 0U

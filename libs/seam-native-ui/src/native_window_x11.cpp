@@ -61,18 +61,26 @@ NativeKey nativeKey(KeySym key) noexcept {
     case XK_Y: return NativeKey::Y;
     case XK_c:
     case XK_C: return NativeKey::C;
+    case XK_B: return NativeKey::B;
     case XK_e:
     case XK_E: return NativeKey::E;
     case XK_n:
     case XK_N: return NativeKey::N;
     case XK_o:
     case XK_O: return NativeKey::O;
+    case XK_P: return NativeKey::P;
     case XK_q:
     case XK_Q: return NativeKey::Q;
     case XK_s:
     case XK_S: return NativeKey::S;
     case XK_r:
     case XK_R: return NativeKey::R;
+    case XK_v:
+    case XK_V: return NativeKey::V;
+    case XK_i:
+    case XK_I: return NativeKey::I;
+    case XK_l:
+    case XK_L: return NativeKey::L;
     case XK_plus:
     case XK_equal:
     case XK_KP_Add: return NativeKey::Plus;
@@ -92,10 +100,7 @@ public:
       return core::failure(core::ErrorCode::Conflict,
                            "X11 window is already open");
     }
-    if (config.width < 320U || config.height < 240U ||
-        config.width > 8192U || config.height > 8192U ||
-        !std::isfinite(config.scale) || config.scale < 0.5 ||
-        config.scale > 4.0) {
+    if (!nativeWindowConfigSizeIsValid(config)) {
       return core::failure(core::ErrorCode::InvalidArgument,
                            "Native window dimensions or scale are invalid");
     }
@@ -125,6 +130,13 @@ public:
                            "Unable to create the X11 window");
     }
     XStoreName(display_, window_, config.title.c_str());
+    XSizeHints sizeHints{};
+    sizeHints.flags = PMinSize;
+    sizeHints.min_width = static_cast<int>(
+        nativeWindowMinimumPhysicalWidth(config));
+    sizeHints.min_height = static_cast<int>(
+        nativeWindowMinimumPhysicalHeight(config));
+    XSetWMNormalHints(display_, window_, &sizeHints);
     XSelectInput(display_, window_, ExposureMask | StructureNotifyMask |
                                       KeyPressMask | ButtonPressMask |
                                       ButtonReleaseMask | PointerMotionMask |

@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "status": "NOT_RUN",
+  "voicebankId": "beta.voice.01",
+  "version": "0.1.0",
+  "generatorVersion": "seam-beta-inventory-1.0.0",
+  "inventorySha256": "",
+  "openRetakes": [],
+  "closedRetakes": [],
+  "approvedAt": "",
+  "reviewer": "",
+  "evidence": []
+}

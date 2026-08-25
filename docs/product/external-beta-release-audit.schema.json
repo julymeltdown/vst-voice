@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://project-seam.invalid/schemas/external-beta-release-audit.schema.json",
+  "title": "Project SEAM External Beta restored release audit result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["passed", "state", "errors", "blocked"],
+  "properties": {
+    "passed": {"type": "boolean"},
+    "state": {"enum": ["READY", "CLOSED"]},
+    "errors": {"type": "array", "items": {"type": "string"}},
+    "blocked": {"type": "array", "items": {"type": "string"}}
+  }
+}

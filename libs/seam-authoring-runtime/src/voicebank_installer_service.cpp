@@ -130,19 +130,16 @@ core::Result<VoicebankInstallResult> VoicebankInstallerService::install(
           .candidate = *existing,
       };
     }
-    if (request.existingDecision != ExistingVoicebankDecision::Replace) {
-      return core::failure<VoicebankInstallResult>(
-          core::ErrorCode::Conflict,
-          "Voicebank ID and version are already installed; explicit Replace is required");
-    }
+    return core::failure<VoicebankInstallResult>(
+        core::ErrorCode::Conflict,
+        "Voicebank ID and version are already bound to different synthesis content; install a new version");
   }
 
   auto installed = distribution::installSeambank(
       request.packagePath, installRoot_,
       distribution::InstallSeambankOptions{
           .verification = verification,
-          .replaceExisting =
-              request.existingDecision == ExistingVoicebankDecision::Replace,
+          .replaceExisting = false,
       });
   if (!installed) return core::Result<VoicebankInstallResult>{installed.error()};
 

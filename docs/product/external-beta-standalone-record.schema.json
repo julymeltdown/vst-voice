@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://project-seam.invalid/schemas/external-beta-standalone-record.schema.json",
+  "title": "Project SEAM External Beta engineering standalone journey record",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "recordType", "status", "engineeringQualification", "recordId", "platform", "architecture", "osBuild", "appIdentity", "bankIdentity", "projectIdentity", "workloadId", "workloadSha256", "machineProfileId", "machineProfileSha256", "device", "clockAuthority", "comparisonPolicy", "operator", "startedAt", "endedAt", "rows"],
+  "properties": {
+    "schemaVersion": {"const": 1},
+    "recordType": {"const": "engineering-standalone-journey"},
+    "status": {"enum": ["NOT_RUN", "BLOCKED", "FAIL", "PASS"]},
+    "engineeringQualification": {"const": true},
+    "recordId": {"type": "string", "minLength": 1},
+    "platform": {"enum": ["macos", "windows"]},
+    "architecture": {"enum": ["arm64", "x86_64"]},
+    "osBuild": {"type": "string", "minLength": 1},
+    "appIdentity": {"$ref": "#/$defs/appIdentity"},
+    "bankIdentity": {"$ref": "#/$defs/bankIdentity"},
+    "projectIdentity": {
+      "type": "object", "additionalProperties": false, "required": ["projectSha256", "mediaSha256"],
+      "properties": {"projectSha256": {"$ref": "#/$defs/sha256"}, "mediaSha256": {"$ref": "#/$defs/sha256"}}
+    },
+    "workloadId": {"type": "string", "minLength": 1},
+    "workloadSha256": {"$ref": "#/$defs/sha256"},
+    "machineProfileId": {"type": "string", "minLength": 1},
+    "machineProfileSha256": {"$ref": "#/$defs/sha256"},
+    "device": {"$ref": "#/$defs/device"},
+    "clockAuthority": {"const": "physical-device-clock"},
+    "comparisonPolicy": {
+      "type": "object", "additionalProperties": false, "required": ["crossPlatformByteIdentity", "crossPlatformTolerance"],
+      "properties": {"crossPlatformByteIdentity": {"const": false}, "crossPlatformTolerance": {"type": "string", "minLength": 1}}
+    },
+    "operator": {"type": "string", "minLength": 1},
+    "startedAt": {"type": "string", "format": "date-time"},
+    "endedAt": {"type": "string", "format": "date-time"},
+    "rows": {"type": "array", "minItems": 20, "items": {"$ref": "#/$defs/row"}}
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-fA-F]{64}$"},
+    "commit": {"type": "string", "pattern": "^[0-9a-fA-F]{40}$"},
+    "appIdentity": {
+      "type": "object", "additionalProperties": false, "required": ["version", "buildId", "sourceCommit", "installedTreeSha256"],
+      "properties": {"version": {"type": "string", "minLength": 1}, "buildId": {"type": "string", "minLength": 1}, "sourceCommit": {"$ref": "#/$defs/commit"}, "installedTreeSha256": {"$ref": "#/$defs/sha256"}}
+    },
+    "bankIdentity": {
+      "type": "object", "additionalProperties": false, "required": ["id", "version", "contentSha256", "installedProvenanceTreeSha256"],
+      "properties": {"id": {"type": "string", "pattern": "^beta\\."}, "version": {"type": "string", "minLength": 1}, "contentSha256": {"$ref": "#/$defs/sha256"}, "installedProvenanceTreeSha256": {"$ref": "#/$defs/sha256"}}
+    },
+    "device": {
+      "type": "object", "additionalProperties": false, "required": ["deviceId", "sampleRate", "blockSize", "channels", "authority"],
+      "properties": {"deviceId": {"type": "string", "minLength": 1}, "sampleRate": {"type": "integer", "enum": [44100, 48000, 96000]}, "blockSize": {"type": "integer", "minimum": 1}, "channels": {"const": 2}, "authority": {"const": "physical"}}
+    },
+    "evidence": {
+      "type": "object", "additionalProperties": false, "required": ["kind", "path", "sha256", "capturedAt", "reviewer"],
+      "properties": {"kind": {"type": "string", "minLength": 1}, "path": {"type": "string", "minLength": 1}, "sha256": {"$ref": "#/$defs/sha256"}, "capturedAt": {"type": "string", "format": "date-time"}, "reviewer": {"type": "string", "minLength": 1}}
+    },
+    "row": {
+      "type": "object", "additionalProperties": false, "required": ["id", "status", "evidence"],
+      "properties": {"id": {"type": "string", "pattern": "^UA-[0-9]{3}$"}, "status": {"const": "PASS"}, "evidence": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/evidence"}}}
+    }
+  }
+}

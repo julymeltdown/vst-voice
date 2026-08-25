@@ -13,6 +13,7 @@ struct RingBufferProcessorStats final {
   std::size_t requestedFrames{0};
   std::size_t deliveredFrames{0};
   std::size_t underflowFrames{0};
+  std::size_t intentionalResetFrames{0};
 };
 
 class RingBufferAudioProcessor final : public IAudioProcessor {
@@ -31,6 +32,7 @@ private:
   std::atomic<std::size_t> requestedFrames_{0};
   std::atomic<std::size_t> deliveredFrames_{0};
   std::atomic<std::size_t> underflowFrames_{0};
+  std::atomic<std::size_t> intentionalResetFrames_{0};
 };
 
 }  // namespace seam::platform

@@ -2,6 +2,8 @@
 
 #include "seam/authoring/diagnostic.hpp"
 
+#include <algorithm>
+
 TEST_CASE("diagnostic registry validates registered codes and actions") {
   CHECK(seam::authoring::DiagnosticRegistry::isRegistered("BANK_UNTRUSTED"));
   const auto actions = seam::authoring::DiagnosticRegistry::actions("BANK_UNTRUSTED");
@@ -33,4 +35,29 @@ TEST_CASE("diagnostic registry rejects unknown or unregistered actions") {
       .actions = {seam::authoring::DiagnosticAction::Retry},
   };
   CHECK(!seam::authoring::DiagnosticRegistry::validate(wrongAction));
+}
+
+TEST_CASE("diagnostic registry preserves mapped severity and actions from errors") {
+  const auto diagnostic = seam::authoring::DiagnosticRegistry::fromError(
+      seam::core::Error{seam::core::ErrorCode::NotFound, "missing project"});
+  CHECK(diagnostic.code == "PROJECT_NOT_FOUND");
+  CHECK(diagnostic.severity == seam::authoring::DiagnosticSeverity::Error);
+  CHECK(!diagnostic.actions.empty());
+  CHECK(diagnostic.actions.front() == seam::authoring::DiagnosticAction::OpenSupport);
+}
+
+TEST_CASE("diagnostic registry exposes bounded recovery and copy actions") {
+  const auto actions = seam::authoring::DiagnosticRegistry::actions(
+      "PERSISTENCE_FAILED");
+  CHECK(std::find(actions.begin(), actions.end(),
+                  seam::authoring::DiagnosticAction::SaveAs) != actions.end());
+  CHECK(std::find(actions.begin(), actions.end(),
+                  seam::authoring::DiagnosticAction::OpenRecoveryFolder) !=
+        actions.end());
+  CHECK(std::find(actions.begin(), actions.end(),
+                  seam::authoring::DiagnosticAction::CopyDiagnostic) !=
+        actions.end());
+  CHECK(seam::authoring::toString(
+            seam::authoring::DiagnosticAction::CopyDiagnostic) ==
+        "COPY_DIAGNOSTIC");
 }

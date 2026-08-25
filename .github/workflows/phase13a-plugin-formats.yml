@@ -10,6 +10,8 @@ on:
       - 'phase13a/**'
       - 'packaging/**'
       - 'scripts/build_phase13a_formats.py'
+      - 'scripts/attach_phase13a_validation.py'
+      - 'scripts/verify_phase13a_vst3_packet.py'
       - 'scripts/fetch_phase13a_dependencies.py'
       - 'scripts/build_windows_installer.ps1'
       - 'scripts/package_macos_plugins.sh'
@@ -47,18 +49,20 @@ jobs:
           cmake -S . -B build/linux-development -DCMAKE_BUILD_TYPE=Release -DSEAM_BUILD_BENCHMARKS=OFF
           cmake --build build/linux-development --target seam_clap_editor_plugin --parallel 2
       - name: Create deterministic unsigned developer package
-        run: >-
-          python3 tools/phase13a/developer_package.py
-          --clap build/linux-development/ProjectSEAMEditor.clap
-          --resources build/linux-development/ProjectSEAMEditor.resources
-          --output out/ProjectSEAM-0.13.0-unsigned-development.zip
-          --version 0.13.0
+        run: |
+          version="$(python3 tools/phase13a/release_identity.py --source-root . --field version)"
+          python3 tools/phase13a/developer_package.py \
+            --clap build/linux-development/ProjectSEAMEditor.clap \
+            --resources build/linux-development/ProjectSEAMEditor.resources \
+            --output "out/ProjectSEAM-${version}-unsigned-development.zip" \
+            --version "$version"
       - name: Install and uninstall in isolated sandbox
-        run: >-
-          python3 tools/phase13a/linux_package_smoke.py
-          --package out/ProjectSEAM-0.13.0-unsigned-development.zip
-          --sandbox out/linux-install-sandbox
-          --output out/linux-install-smoke.json
+        run: |
+          version="$(python3 tools/phase13a/release_identity.py --source-root . --field version)"
+          python3 tools/phase13a/linux_package_smoke.py \
+            --package "out/ProjectSEAM-${version}-unsigned-development.zip" \
+            --sandbox out/linux-install-sandbox \
+            --output out/linux-install-smoke.json
       - uses: actions/upload-artifact@v4
         with:
           name: phase13a-linux-development-package
@@ -75,7 +79,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install Linux build dependencies
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libx11-dev libxext-dev libxinerama-dev libxcursor-dev libxrandr-dev libgtk-3-dev libsqlite3-dev libssl-dev
+        run: sudo apt-get update && sudo apt-get install -y libx11-dev libxext-dev libxinerama-dev libxcursor-dev libxrandr-dev libxcb-util-dev libxcb-cursor-dev libxcb-keysyms1-dev libxcb-xkb-dev libxkbcommon-dev libxkbcommon-x11-dev libgtk-3-dev libgtkmm-3.0-dev libsqlite3-dev libssl-dev
       - name: Acquire exact audited SDK checkouts
         shell: bash
         run: python3 scripts/fetch_phase13a_dependencies.py --output "$RUNNER_TEMP/phase13a-deps"
@@ -105,7 +109,16 @@ jobs:
           validator="$(find "$RUNNER_TEMP/vst3sdk-build" -type f \( -name validator -o -name validator.exe \) | head -1)"
           plugin="$(find "$RUNNER_TEMP/phase13a-build/artifacts" -maxdepth 7 -name '*.vst3' | head -1)"
           test -n "$validator" && test -n "$plugin"
-          python3 scripts/run_vst3_validator.py --validator "$validator" --plugin "$plugin" --clap-path "$RUNNER_TEMP/phase13a-build/artifacts/CLAP" --output "out/phase13a/${{ runner.os }}/vst3-validator"
+          clap_sha="$(PYTHONPATH="$GITHUB_WORKSPACE/tools/phase13a" python3 -c 'import sys; from pathlib import Path; from distribution_manifest import tree_sha256; print(tree_sha256(Path(sys.argv[1])))' "$RUNNER_TEMP/phase13a-build/artifacts/CLAP/ProjectSEAMEditor.clap")"
+          python3 scripts/run_vst3_validator.py --validator "$validator" --plugin "$plugin" --clap-path "$RUNNER_TEMP/phase13a-build/artifacts/CLAP" --canonical-clap-sha256 "$clap_sha" --output "out/phase13a/${{ runner.os }}/vst3-validator"
+      - name: Attach validator result to the existing build manifest
+        if: always()
+        shell: bash
+        run: |
+          test -f "$RUNNER_TEMP/phase13a-build/phase13a-build-result.json"
+          python3 scripts/attach_phase13a_validation.py \
+            --build-result "$RUNNER_TEMP/phase13a-build/phase13a-build-result.json" \
+            --vst3-validation-result "out/phase13a/${{ runner.os }}/vst3-validator/result.json"
       - name: Stage stable artifact layout
         if: always()
         shell: bash
@@ -114,6 +127,39 @@ jobs:
           mkdir -p out/phase13a/payload
           if test -d "$RUNNER_TEMP/phase13a-build/artifacts"; then cp -R "$RUNNER_TEMP/phase13a-build/artifacts/." out/phase13a/payload/; fi
           if test -f "$RUNNER_TEMP/phase13a-build/phase13a-build-result.json"; then cp "$RUNNER_TEMP/phase13a-build/phase13a-build-result.json" out/phase13a/; fi
+          mkdir -p "out/phase13a/${{ runner.os }}/vst3-validator"
+          validator="$(find "$RUNNER_TEMP/vst3sdk-build" -type f \( -name validator -o -name validator.exe \) | head -1)"
+          test -n "$validator"
+          cp "$validator" "out/phase13a/${{ runner.os }}/vst3-validator/validator"
+          python3 - <<'PY'
+          import json
+          import os
+          import platform
+
+          payload = {
+              "runnerOs": platform.system(),
+              "runnerRelease": platform.release(),
+              "runnerArchitecture": platform.machine(),
+              "githubRunnerImage": os.environ.get("ImageOS", ""),
+          }
+          with open("out/phase13a/${{ runner.os }}/runner.json", "w", encoding="utf-8") as handle:
+              json.dump(payload, handle, indent=2, sort_keys=True)
+              handle.write("\n")
+          PY
+          plugin="$(find out/phase13a/payload -maxdepth 7 -name '*.vst3' -print -quit)"
+          test -n "$plugin"
+          python3 scripts/verify_phase13a_vst3_packet.py \
+            --create \
+            --root out/phase13a \
+            --packet "out/phase13a/${{ runner.os }}/vst3-validator/packet.json" \
+            --result "out/phase13a/${{ runner.os }}/vst3-validator/result.json" \
+            --stdout-log "out/phase13a/${{ runner.os }}/vst3-validator/validator.log" \
+            --stderr-log "out/phase13a/${{ runner.os }}/vst3-validator/validator.stderr.log" \
+            --plugin "$plugin" \
+            --clap out/phase13a/payload/CLAP/ProjectSEAMEditor.clap \
+            --validator "out/phase13a/${{ runner.os }}/vst3-validator/validator" \
+            --runner-metadata "out/phase13a/${{ runner.os }}/runner.json" \
+            --build-result out/phase13a/phase13a-build-result.json
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -121,6 +167,7 @@ jobs:
           path: |
             out/phase13a/payload
             out/phase13a/${{ runner.os }}/vst3-validator
+            out/phase13a/${{ runner.os }}/runner.json
             out/phase13a/phase13a-build-result.json
 
   auv2:
@@ -148,6 +195,13 @@ jobs:
           killall -9 AudioComponentRegistrar 2>/dev/null || true
       - name: Run auval and preserve raw log
         run: python3 scripts/run_auval.py --type aumu --subtype SEAM --manufacturer PSEM --output out/phase13a/macos/auval
+      - name: Attach auval result to the existing build manifest
+        if: always()
+        run: |
+          test -f "$RUNNER_TEMP/phase13a-build/phase13a-build-result.json"
+          python3 scripts/attach_phase13a_validation.py \
+            --build-result "$RUNNER_TEMP/phase13a-build/phase13a-build-result.json" \
+            --auval-validation-result out/phase13a/macos/auval/result.json
       - name: Stage stable macOS artifact layout
         if: always()
         run: |
@@ -181,15 +235,18 @@ jobs:
         run: |
           $payload = Get-ChildItem "$env:RUNNER_TEMP\phase13a-payload" -Directory -Recurse | Where-Object { Test-Path (Join-Path $_.FullName 'CLAP\ProjectSEAMEditor.clap') } | Select-Object -First 1
           if (-not $payload) { throw 'Downloaded Windows payload root was not found' }
-          ./scripts/build_windows_installer.ps1 -PayloadRoot $payload.FullName -OutputInstaller "$env:RUNNER_TEMP\ProjectSEAM-0.13.0-unsigned.exe"
+          $version = (& python tools/phase13a/release_identity.py --source-root . --field version).Trim()
+          ./scripts/build_windows_installer.ps1 -PayloadRoot $payload.FullName -OutputInstaller "$env:RUNNER_TEMP\ProjectSEAM-$version-unsigned.exe"
       - name: Clean install, same-version reinstall, and uninstall
         shell: powershell
-        run: ./scripts/test_windows_installer.ps1 -Installer "$env:RUNNER_TEMP\ProjectSEAM-0.13.0-unsigned.exe" -EvidenceDirectory out\phase13a\windows\installer-clean
+        run: |
+          $version = (& python tools/phase13a/release_identity.py --source-root . --field version).Trim()
+          ./scripts/test_windows_installer.ps1 -Installer "$env:RUNNER_TEMP\ProjectSEAM-$version-unsigned.exe" -EvidenceDirectory out\phase13a\windows\installer-clean
       - uses: actions/upload-artifact@v4
         with:
           name: phase13a-windows-unsigned-installer-smoke
           path: |
-            ${{ runner.temp }}\ProjectSEAM-0.13.0-unsigned.exe
+            ${{ runner.temp }}\ProjectSEAM-*-unsigned.exe
             out/phase13a/windows/installer-clean
 
   macos-installer-smoke:
@@ -205,12 +262,15 @@ jobs:
         run: |
           payload="$(find "$RUNNER_TEMP/phase13a-payload" -type d -name CLAP -print | head -1 | xargs dirname)"
           test -n "$payload" && test -e "$payload/CLAP/ProjectSEAMEditor.clap"
-          bash scripts/package_macos_plugins.sh "$payload" "$RUNNER_TEMP/ProjectSEAM-0.13.0-unsigned.pkg" --unsigned
+          version="$(python3 tools/phase13a/release_identity.py --source-root . --field version)"
+          bash scripts/package_macos_plugins.sh "$payload" "$RUNNER_TEMP/ProjectSEAM-${version}-unsigned.pkg" --unsigned
       - name: Clean install, same-version reinstall, and uninstall
-        run: bash scripts/test_macos_installer.sh "$RUNNER_TEMP/ProjectSEAM-0.13.0-unsigned.pkg" out/phase13a/macos/installer-clean
+        run: |
+          version="$(python3 tools/phase13a/release_identity.py --source-root . --field version)"
+          bash scripts/test_macos_installer.sh "$RUNNER_TEMP/ProjectSEAM-${version}-unsigned.pkg" out/phase13a/macos/installer-clean
       - uses: actions/upload-artifact@v4
         with:
           name: phase13a-macos-unsigned-installer-smoke
           path: |
-            ${{ runner.temp }}/ProjectSEAM-0.13.0-unsigned.pkg
+            ${{ runner.temp }}/ProjectSEAM-*-unsigned.pkg
             out/phase13a/macos/installer-clean

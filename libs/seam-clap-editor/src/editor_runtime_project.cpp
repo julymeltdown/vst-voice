@@ -33,6 +33,12 @@ core::Result<void> EditorRuntime::replaceProject(domain::Project project) {
   }
   const auto replaced = authoring_->document().replaceProject(std::move(project));
   if (!replaced) return replaced;
+  microscopeUnitId_.reset();
+  microscopeFocusedId_.clear();
+  microscopeAudio_ = {};
+  selectedUnitKey_.reset();
+  draggingPhonemeKey_.reset();
+  draggingPitchTick_.reset();
   trackId_ = replacementTrack;
   regionId_ = replacementRegion;
   static_cast<void>(voicebankSession_.refresh());
@@ -42,6 +48,8 @@ core::Result<void> EditorRuntime::replaceProject(domain::Project project) {
   rebuildController();
   controller_->setCharacterMetadata(character_.displayName(),
                                     character_.styleName());
+  controller_->setCharacterPortrait(
+      character_.portrait(character::State::Neutral));
   dirty_ = authoring_->document().dirty();
   controller_->setDirty(dirty_);
   authoring_->handleDocumentChanged();
@@ -67,7 +75,6 @@ void EditorRuntime::setRenderQuality(rendering::RenderQuality quality) {
   if (renderQuality_ == quality) return;
   renderQuality_ = quality;
   authoring_->setRenderQuality(quality);
-  authoring_->requestPreview();
 }
 
 rendering::RenderQuality EditorRuntime::renderQuality() const noexcept {

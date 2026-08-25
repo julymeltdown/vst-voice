@@ -16,6 +16,7 @@ namespace seam::authoring {
 struct DocumentIdentity final {
   std::optional<std::filesystem::path> projectPath;
   std::optional<std::filesystem::path> autosavePath;
+  std::optional<std::filesystem::path> recoveryOriginPath;
   std::uint64_t lastSavedRevision{0U};
   std::string baseProjectHash;
   bool dirty{false};
@@ -42,6 +43,9 @@ public:
   [[nodiscard]] const DocumentIdentity& identity() const noexcept {
     return identity_;
   }
+  [[nodiscard]] const application::CommandImpact& lastImpact() const noexcept {
+    return session_.lastImpact();
+  }
 
   [[nodiscard]] core::Result<void> execute(
       std::unique_ptr<application::ICommand> command);
@@ -49,11 +53,13 @@ public:
   [[nodiscard]] core::Result<void> redo();
   [[nodiscard]] core::Result<void> replaceProject(domain::Project project);
 
-  void markSaved(std::filesystem::path path) noexcept;
+  void markSaved(std::filesystem::path path,
+                 std::string durableProjectHash) noexcept;
   void markRecovered(std::filesystem::path autosavePath) noexcept;
   void markRecovered(
       std::filesystem::path autosavePath,
-      std::optional<std::filesystem::path> originalProjectPath) noexcept;
+      std::optional<std::filesystem::path> originalProjectPath,
+      std::string durableProjectHash) noexcept;
   void synchronizeDirtyState() noexcept { updateDirtyFromRevision(); }
   [[nodiscard]] bool dirty() const noexcept { return identity_.dirty; }
 

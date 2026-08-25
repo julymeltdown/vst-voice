@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "recordType": "external-beta-install-lifecycle",
+  "status": "NOT_RUN",
+  "recordId": "install-macos-arm64-candidate-0001",
+  "platform": "macos",
+  "architecture": "arm64",
+  "osBuild": "",
+  "imageId": "",
+  "accountAuthority": "clean-verifier-snapshot",
+  "candidateRootId": "",
+  "deliverableSha256": "",
+  "installerSha256": "",
+  "installedTreeSha256": "",
+  "bankIdentity": {
+    "id": "beta.voice.01",
+    "version": "",
+    "contentSha256": "",
+    "installedProvenanceTreeSha256": ""
+  },
+  "acquisition": {
+    "channel": "",
+    "envelopeManifestSha256": "",
+    "networkDisabledAfterAcquisition": false
+  },
+  "clockAuthority": "physical-device-clock",
+  "operator": "",
+  "verifier": "",
+  "startedAt": "",
+  "endedAt": "",
+  "inventory": {
+    "preInstallSha256": "",
+    "postInstallSha256": "",
+    "postUninstallSha256": "",
+    "preservedUserDataCanaries": true,
+    "residualOwnedCode": false
+  },
+  "rows": []
+}

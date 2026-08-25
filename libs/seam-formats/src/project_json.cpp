@@ -4,6 +4,7 @@
 
 #include <charconv>
 #include <cmath>
+#include <optional>
 #include <sstream>
 #include <system_error>
 
@@ -12,6 +13,37 @@ namespace {
 
 using Object = JsonValue::Object;
 using Array = JsonValue::Array;
+
+core::Result<void> validateProjectPath(const std::filesystem::path& path,
+                                       bool allowMissing) {
+  if (path.empty()) {
+    return core::failure(core::ErrorCode::InvalidArgument,
+                         "Project path is empty");
+  }
+  std::error_code error;
+  const auto status = std::filesystem::symlink_status(path, error);
+  if (error == std::errc::no_such_file_or_directory ||
+      status.type() == std::filesystem::file_type::not_found) {
+    return allowMissing
+               ? core::success()
+               : core::failure(core::ErrorCode::NotFound,
+                               "Project file does not exist", path.string());
+  }
+  if (error) {
+    return core::failure(core::ErrorCode::IoError,
+                         "Unable to inspect project path", error.message());
+  }
+  if (status.type() == std::filesystem::file_type::symlink) {
+    return core::failure(core::ErrorCode::Conflict,
+                         "Project path cannot be a symbolic link",
+                         path.string());
+  }
+  if (!std::filesystem::is_regular_file(status)) {
+    return core::failure(core::ErrorCode::IoError,
+                         "Project path is not a regular file", path.string());
+  }
+  return core::success();
+}
 
 JsonValue idValue(std::uint64_t value) {
   std::ostringstream stream;
@@ -115,6 +147,15 @@ domain::CharacterDisplayMode parseCharacterMode(std::string_view value) {
   if (value == "full") return domain::CharacterDisplayMode::Full;
   if (value == "off") return domain::CharacterDisplayMode::Off;
   return domain::CharacterDisplayMode::Minimal;
+}
+
+domain::MediaOwnership parseMediaOwnership(std::string_view value) {
+  return value == "project-copy" ? domain::MediaOwnership::ProjectCopy
+                                  : domain::MediaOwnership::ExternalReference;
+}
+
+bool validMediaOwnership(std::string_view value) {
+  return value == "project-copy" || value == "external-reference";
 }
 
 JsonValue encodeRoutingMatrix(const domain::RoutingMatrix& matrix) {
@@ -432,7 +473,7 @@ JsonValue encodeProject(const domain::Project& project) {
       }
       Array unitSelectionOverrides;
       for (const auto& overrideValue : region.unitSelectionOverrides) {
-        unitSelectionOverrides.emplace_back(Object{
+        Object overrideObject{
             {"noteId", idValue(overrideValue.startKey.noteId)},
             {"ordinal", JsonValue{static_cast<std::int64_t>(
                 overrideValue.startKey.ordinal)}},
@@ -442,7 +483,15 @@ JsonValue encodeProject(const domain::Project& project) {
             {"renderer", JsonValue{std::string(
                 domain::unitRendererKindName(overrideValue.renderer))}},
             {"locked", JsonValue{overrideValue.locked}},
-        });
+        };
+        if (overrideValue.loopPrint.has_value()) {
+          overrideObject.emplace("loopPrint", JsonValue{*overrideValue.loopPrint});
+        }
+        if (overrideValue.sourcePitchResidual.has_value()) {
+          overrideObject.emplace("sourcePitchResidual",
+                                 JsonValue{*overrideValue.sourcePitchResidual});
+        }
+        unitSelectionOverrides.emplace_back(std::move(overrideObject));
       }
       Array seamOverrides;
       for (const auto& overrideValue : region.seamOverrides) {
@@ -512,6 +561,21 @@ JsonValue encodeProject(const domain::Project& project) {
     audioTracks.emplace_back(Object{{"id", idValue(track.id)},
                                     {"name", JsonValue{track.name}},
                                     {"mediaPath", JsonValue{track.mediaPath}},
+                                    {"mediaHash", JsonValue{track.mediaHash}},
+                                    {"mediaOwnership", JsonValue{std::string(
+                                        domain::mediaOwnershipName(track.mediaOwnership))}},
+                                    {"originalFilename", JsonValue{track.originalFilename}},
+                                    {"sourceSampleRate", JsonValue{static_cast<std::int64_t>(
+                                        track.sourceSampleRate)}},
+                                    {"sourceChannels", JsonValue{static_cast<std::int64_t>(
+                                        track.sourceChannels)}},
+                                    {"sourceFrameCount", JsonValue{static_cast<std::int64_t>(
+                                        track.sourceFrameCount)}},
+                                    {"trimStartFrame", JsonValue{static_cast<std::int64_t>(
+                                        track.trimStartFrame)}},
+                                    {"trimEndFrame", track.trimEndFrame.has_value()
+                                                         ? JsonValue{static_cast<std::int64_t>(*track.trimEndFrame)}
+                                                         : JsonValue{nullptr}},
                                     {"startTick", JsonValue{track.startTick.value()}},
                                     {"gainDb", JsonValue{static_cast<double>(track.gainDb)}},
                                     {"pan", JsonValue{static_cast<double>(track.pan)}},
@@ -897,11 +961,16 @@ core::Result<domain::Project> decodeProject(const JsonValue& root) {
           const auto* tokenCount = overrideJson.find("tokenCount");
           const auto* unitId = overrideJson.find("unitId");
           const auto* renderer = overrideJson.find("renderer");
+          const auto* loopPrint = overrideJson.find("loopPrint");
+          const auto* sourcePitchResidual = overrideJson.find("sourcePitchResidual");
           const auto* locked = overrideJson.find("locked");
           if (overrideNoteId == nullptr || ordinal == nullptr || tokenCount == nullptr ||
               unitId == nullptr || locked == nullptr || !overrideNoteId->isString() ||
               !ordinal->isNumber() || !tokenCount->isNumber() || !unitId->isString() ||
-              (renderer != nullptr && !renderer->isString()) || !locked->isBool()) {
+              (renderer != nullptr && !renderer->isString()) ||
+              (loopPrint != nullptr && !loopPrint->isNumber()) ||
+              (sourcePitchResidual != nullptr && !sourcePitchResidual->isNumber()) ||
+              !locked->isBool()) {
             return core::failure<domain::Project>(core::ErrorCode::ParseError,
                 "Unit selection override fields are invalid");
           }
@@ -915,6 +984,30 @@ core::Result<domain::Project> decodeProject(const JsonValue& root) {
             return core::failure<domain::Project>(core::ErrorCode::ParseError,
                 "Unit selection override range is invalid");
           }
+          const auto parseNormalized = [](const JsonValue* value,
+                                          std::string_view field)
+              -> core::Result<std::optional<float>> {
+            if (value == nullptr) {
+              return core::success(std::optional<float>{});
+            }
+            const auto parsed = value->asNumber();
+            if (!std::isfinite(parsed) || parsed < 0.0 || parsed > 1.0) {
+              return core::failure<std::optional<float>>(
+                  core::ErrorCode::ParseError,
+                  std::string(field) + " must be finite and within [0, 1]");
+            }
+            return core::success(std::optional<float>{static_cast<float>(parsed)});
+          };
+          auto parsedLoopPrint = parseNormalized(loopPrint, "loopPrint");
+          if (!parsedLoopPrint) {
+            return core::Result<domain::Project>{parsedLoopPrint.error()};
+          }
+          auto parsedSourcePitchResidual = parseNormalized(
+              sourcePitchResidual, "sourcePitchResidual");
+          if (!parsedSourcePitchResidual) {
+            return core::Result<domain::Project>{
+                parsedSourcePitchResidual.error()};
+          }
           region.unitSelectionOverrides.push_back(domain::UnitSelectionOverride{
               .startKey = domain::PhonemeKey{
                   parsedNoteId.value(), static_cast<std::uint16_t>(ordinalValue)},
@@ -923,6 +1016,8 @@ core::Result<domain::Project> decodeProject(const JsonValue& root) {
               .renderer = renderer == nullptr
                   ? domain::UnitRendererKind::Inherit
                   : domain::parseUnitRendererKind(renderer->asString()),
+              .loopPrint = parsedLoopPrint.value(),
+              .sourcePitchResidual = parsedSourcePitchResidual.value(),
               .locked = locked->asBool(),
           });
         }
@@ -1039,6 +1134,14 @@ core::Result<domain::Project> decodeProject(const JsonValue& root) {
     const auto* idJson = trackValue.find("id");
     const auto* trackName = trackValue.find("name");
     const auto* mediaPath = trackValue.find("mediaPath");
+    const auto* mediaHash = trackValue.find("mediaHash");
+    const auto* mediaOwnership = trackValue.find("mediaOwnership");
+    const auto* originalFilename = trackValue.find("originalFilename");
+    const auto* sourceSampleRate = trackValue.find("sourceSampleRate");
+    const auto* sourceChannels = trackValue.find("sourceChannels");
+    const auto* sourceFrameCount = trackValue.find("sourceFrameCount");
+    const auto* trimStartFrame = trackValue.find("trimStartFrame");
+    const auto* trimEndFrame = trackValue.find("trimEndFrame");
     const auto* startTick = trackValue.find("startTick");
     const auto* gainDb = trackValue.find("gainDb");
     const auto* pan = trackValue.find("pan");
@@ -1049,9 +1152,26 @@ core::Result<domain::Project> decodeProject(const JsonValue& root) {
         gainDb == nullptr || muted == nullptr || !idJson->isString() || !trackName->isString() ||
         !mediaPath->isString() || !startTick->isNumber() || !gainDb->isNumber() || !muted->isBool() ||
         (schemaVersion >= 4 && (pan == nullptr || solo == nullptr || outputRoute == nullptr ||
-         !pan->isNumber() || !solo->isBool()))) {
+         !pan->isNumber() || !solo->isBool())) ||
+        (schemaVersion >= 6 &&
+         (mediaHash == nullptr || mediaOwnership == nullptr || originalFilename == nullptr ||
+          sourceSampleRate == nullptr || sourceChannels == nullptr || sourceFrameCount == nullptr ||
+          !mediaHash->isString() || !mediaOwnership->isString() ||
+          !originalFilename->isString() || !sourceSampleRate->isNumber() ||
+          !sourceChannels->isNumber() || !sourceFrameCount->isNumber() ||
+          !validMediaOwnership(mediaOwnership->asString())))) {
       return core::failure<domain::Project>(core::ErrorCode::ParseError,
                                             "Audio track fields are invalid");
+    }
+    if (schemaVersion >= 6 &&
+        (sourceSampleRate->asInt64() < 0 || sourceChannels->asInt64() < 0 ||
+         sourceChannels->asInt64() > domain::kMaximumAudioChannels ||
+         sourceFrameCount->asInt64() < 0 ||
+         (trimStartFrame != nullptr && !trimStartFrame->isInteger()) ||
+         (trimEndFrame != nullptr && !trimEndFrame->isNull() &&
+          !trimEndFrame->isInteger()))) {
+      return core::failure<domain::Project>(core::ErrorCode::ParseError,
+                                            "Audio track media identity is invalid");
     }
     auto trackId = parseId<domain::TrackTag>(*idJson, "audioTrack.id");
     if (!trackId) return core::Result<domain::Project>{trackId.error()};
@@ -1059,6 +1179,32 @@ core::Result<domain::Project> decodeProject(const JsonValue& root) {
         .id = trackId.value(),
         .name = trackName->asString(),
         .mediaPath = mediaPath->asString(),
+        .mediaHash = mediaHash != nullptr && mediaHash->isString()
+                         ? mediaHash->asString()
+                         : std::string{},
+        .mediaOwnership = mediaOwnership != nullptr && mediaOwnership->isString()
+                              ? parseMediaOwnership(mediaOwnership->asString())
+                              : domain::MediaOwnership::ExternalReference,
+        .originalFilename = originalFilename != nullptr && originalFilename->isString()
+                                ? originalFilename->asString()
+                                : std::string{},
+        .sourceSampleRate = sourceSampleRate != nullptr && sourceSampleRate->isNumber()
+                                ? static_cast<std::uint32_t>(sourceSampleRate->asInt64())
+                                : 0U,
+        .sourceChannels = static_cast<std::uint16_t>(
+            sourceChannels != nullptr && sourceChannels->isNumber()
+                ? sourceChannels->asInt64()
+                : 0),
+        .sourceFrameCount = sourceFrameCount != nullptr && sourceFrameCount->isNumber()
+                                ? static_cast<std::uint64_t>(sourceFrameCount->asInt64())
+                                : 0U,
+        .trimStartFrame = trimStartFrame != nullptr && trimStartFrame->isInteger()
+                              ? static_cast<std::uint64_t>(trimStartFrame->asInt64())
+                              : 0U,
+        .trimEndFrame = trimEndFrame != nullptr && trimEndFrame->isInteger()
+                            ? std::optional<std::uint64_t>{
+                                  static_cast<std::uint64_t>(trimEndFrame->asInt64())}
+                            : std::nullopt,
         .startTick = time::Tick{startTick->asInt64()},
         .gainDb = static_cast<float>(gainDb->asNumber()),
         .pan = pan == nullptr ? 0.0F : static_cast<float>(pan->asNumber()),
@@ -1119,8 +1265,12 @@ core::Result<void> ProjectJsonCodec::save(
     const domain::Project& project, const std::filesystem::path& path) const {
   auto encoded = encode(project);
   if (!encoded) return core::Result<void>{encoded.error()};
+  const auto target = validateProjectPath(path, true);
+  if (!target) return target;
   auto backup = path;
   backup += ".bak";
+  const auto backupTarget = validateProjectPath(backup, true);
+  if (!backupTarget) return backupTarget;
   return core::durableAtomicWriteText(
       path, encoded.value(), core::AtomicWriteOptions{
           .backupPath = std::move(backup),
@@ -1131,6 +1281,8 @@ core::Result<void> ProjectJsonCodec::save(
 
 core::Result<domain::Project> ProjectJsonCodec::load(
     const std::filesystem::path& path) const {
+  const auto target = validateProjectPath(path, false);
+  if (!target) return core::Result<domain::Project>{target.error()};
   auto content = core::readTextFileLimited(path, 64ULL * 1024ULL * 1024ULL);
   if (!content) return core::Result<domain::Project>{content.error()};
   return decode(content.value());

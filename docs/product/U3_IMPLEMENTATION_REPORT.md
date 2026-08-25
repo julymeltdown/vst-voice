@@ -11,13 +11,15 @@
 - Phrase-local render failure diagnostics with unaffected-project continuation.
 - Standalone install/select/relink/replace/coverage operations.
 - AppKit install and dynamic voicebank menus.
+- AppKit exact voicebank relink-folder menu entry routed through the shared
+  controller and exact ID/version/content-hash resolution.
 - U3 contract verification and dedicated tests.
 
 ## Explicit limitations
 
-- The full card-based browser panel is not yet painted in the cross-platform
-  native editor; AppKit currently exposes the workflow through menus and the
-  application model is ready for the U5 product panel.
+- The native editor now paints the card-based browser and exposes exact-card
+  selection through pointer and accessibility actions. AppKit menus remain a
+  second entry point for the same application controller.
 - Target macOS and Windows runtime execution remains mandatory before external
   Beta.
 - The included public-domain production fixture is a technical bank, not a
@@ -41,7 +43,7 @@ U3 source contract                        PASS
 ```
 
 The Linux screenshot confirms that the production standalone still launches
-with the exact development fixture when explicitly allowed. The complete
-card browser visual surface remains a later native-editor task; U3 completes
-the application model, secure installer flow, AppKit menu integration, exact
-identity operations, and coverage diagnostics required by the approved plan.
+with the exact development fixture when explicitly allowed. The card browser
+and exact selection path are now shared by the native editor and application
+controller; target runtime execution and a rights-cleared production bank
+remain mandatory external gates.

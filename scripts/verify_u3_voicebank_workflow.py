@@ -40,7 +40,7 @@ def main() -> int:
     require(root / required[1], "allowDevelopmentFixtures_")
     require(root / required[2], "ExistingVoicebankDecision")
     require(root / required[3], "requireTrustedSigner = true")
-    require(root / required[3], "explicit Replace is required")
+    require(root / required[3], "already bound to different synthesis content")
     require(root / "libs/seam-authoring-runtime/src/voicebank_session.cpp", "selectTrackExact")
     require(root / "libs/seam-authoring-runtime/src/voicebank_session.cpp", "relinkTrack")
     require(root / "libs/seam-authoring-runtime/src/voicebank_session.cpp", "replaceTrackVoicebank")

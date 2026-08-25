@@ -10,7 +10,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools" / "phase13a"))
 
-from sdk_lock import load_lock, validate_checkout, validate_lock
+from sdk_lock import load_lock, validate_checkout, validate_lock  # noqa: E402
 
 
 def run(command: list[str], cwd: Path | None = None) -> None:
@@ -27,7 +27,7 @@ def _safe_checkout_root(path: Path) -> Path:
     return resolved
 
 
-def acquire_dependency(dependency: dict[str, object], checkout: Path, refresh: bool) -> None:
+def acquire_dependency(dependency: dict[str, object], checkout: Path, refresh: bool, offline: bool) -> None:
     expected = str(dependency["commit"])
     repository = str(dependency["repository"])
     if checkout.exists():
@@ -40,6 +40,8 @@ def acquire_dependency(dependency: dict[str, object], checkout: Path, refresh: b
                 f"{dependency['name']}: existing checkout is invalid; pass --refresh to replace it: "
                 + "; ".join(errors)
             )
+        if offline:
+            raise ValueError(f"{dependency['name']}: offline acquisition cannot replace an invalid checkout")
         if checkout.is_symlink():
             raise ValueError(f"{dependency['name']}: refusing to remove a symbolic-link checkout")
         shutil.rmtree(checkout)
@@ -77,6 +79,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--verify-only", action="store_true")
     parser.add_argument("--refresh", action="store_true")
+    parser.add_argument("--offline", action="store_true")
     args = parser.parse_args(argv)
 
     try:
@@ -101,6 +104,7 @@ def main(argv: list[str] | None = None) -> int:
                 dependency,
                 output / str(dependency["name"]),
                 args.refresh,
+                args.offline,
             )
         print("PHASE13A_DEPENDENCY_ACQUISITION=PASS")
         return 0

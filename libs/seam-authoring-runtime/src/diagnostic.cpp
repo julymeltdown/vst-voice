@@ -15,21 +15,42 @@ struct Definition final {
   std::span<const DiagnosticAction> actions;
 };
 
-constexpr DiagnosticAction kOpenSupport[]{DiagnosticAction::OpenSupport};
+constexpr DiagnosticAction kOpenSupport[]{DiagnosticAction::OpenSupport,
+                                           DiagnosticAction::CopyDiagnostic};
 constexpr DiagnosticAction kChooseBankSupport[]{DiagnosticAction::ChooseVoicebank,
+                                                 DiagnosticAction::CopyDiagnostic,
                                                  DiagnosticAction::OpenSupport};
-constexpr DiagnosticAction kChooseBank[]{DiagnosticAction::ChooseVoicebank};
-constexpr DiagnosticAction kRetrySupport[]{DiagnosticAction::Retry,
+constexpr DiagnosticAction kChooseBank[]{DiagnosticAction::ChooseVoicebank,
+                                          DiagnosticAction::CopyDiagnostic};
+constexpr DiagnosticAction kBankRecovery[]{DiagnosticAction::InstallVoicebank,
+                                            DiagnosticAction::RelinkVoicebank,
+                                            DiagnosticAction::ChooseVoicebank,
+                                            DiagnosticAction::CopyDiagnostic,
                                             DiagnosticAction::OpenSupport};
-constexpr DiagnosticAction kRetry[]{DiagnosticAction::Retry};
+constexpr DiagnosticAction kRetrySupport[]{DiagnosticAction::Retry,
+                                            DiagnosticAction::CopyDiagnostic,
+                                            DiagnosticAction::OpenSupport};
+constexpr DiagnosticAction kRetry[]{DiagnosticAction::Retry,
+                                    DiagnosticAction::CopyDiagnostic};
 constexpr DiagnosticAction kRelinkSupport[]{DiagnosticAction::RelinkMedia,
+                                             DiagnosticAction::CopyDiagnostic,
                                              DiagnosticAction::OpenSupport};
-constexpr DiagnosticAction kOpenSettings[]{DiagnosticAction::OpenSettings};
+constexpr DiagnosticAction kOpenSettings[]{DiagnosticAction::OpenSettings,
+                                            DiagnosticAction::CopyDiagnostic};
 constexpr DiagnosticAction kRecoverSupport[]{DiagnosticAction::RecoverAutosave,
+                                              DiagnosticAction::SaveAs,
+                                              DiagnosticAction::OpenRecoveryFolder,
+                                              DiagnosticAction::CopyDiagnostic,
                                               DiagnosticAction::OpenSupport};
+constexpr DiagnosticAction kCrashSupport[]{DiagnosticAction::RecoverAutosave,
+                                            DiagnosticAction::OpenRecoveryFolder,
+                                            DiagnosticAction::CopyDiagnostic,
+                                            DiagnosticAction::OpenSupport,
+                                            DiagnosticAction::Dismiss};
 
 constexpr std::array definitions{
     Definition{"PROJECT_NOT_FOUND", DiagnosticSeverity::Error, kOpenSupport},
+    Definition{"BANK_MISSING", DiagnosticSeverity::Error, kBankRecovery},
     Definition{"BANK_UNTRUSTED", DiagnosticSeverity::Error, kChooseBankSupport},
     Definition{"BANK_COVERAGE_MISSING", DiagnosticSeverity::Warning, kChooseBank},
     Definition{"RENDER_FAILED", DiagnosticSeverity::Error, kRetrySupport},
@@ -42,6 +63,7 @@ constexpr std::array definitions{
     Definition{"PLUGIN_STATE_INVALID", DiagnosticSeverity::Error, kRetrySupport},
     Definition{"UPDATE_UNTRUSTED", DiagnosticSeverity::Error, kOpenSupport},
     Definition{"INSTALL_FAILED", DiagnosticSeverity::Error, kRetrySupport},
+    Definition{"CRASH_RECOVERY_AVAILABLE", DiagnosticSeverity::Warning, kCrashSupport},
 };
 
 const Definition* find(std::string_view code) noexcept {
@@ -69,7 +91,12 @@ std::string_view toString(DiagnosticAction action) noexcept {
     case DiagnosticAction::Retry: return "RETRY";
     case DiagnosticAction::OpenSettings: return "OPEN_SETTINGS";
     case DiagnosticAction::ChooseVoicebank: return "CHOOSE_VOICEBANK";
+    case DiagnosticAction::RelinkVoicebank: return "RELINK_VOICEBANK";
+    case DiagnosticAction::InstallVoicebank: return "INSTALL_VOICEBANK";
     case DiagnosticAction::RelinkMedia: return "RELINK_MEDIA";
+    case DiagnosticAction::SaveAs: return "SAVE_AS";
+    case DiagnosticAction::OpenRecoveryFolder: return "OPEN_RECOVERY_FOLDER";
+    case DiagnosticAction::CopyDiagnostic: return "COPY_DIAGNOSTIC";
     case DiagnosticAction::RecoverAutosave: return "RECOVER_AUTOSAVE";
     case DiagnosticAction::OpenSupport: return "OPEN_SUPPORT";
   }
@@ -124,11 +151,13 @@ Diagnostic DiagnosticRegistry::fromError(const core::Error& error) {
     case core::ErrorCode::ParseError:
     case core::ErrorCode::Internal: break;
   }
+  const auto diagnosticSeverity = severity(code);
+  const auto diagnosticActions = actions(code);
   return Diagnostic{.code = std::move(code),
-                    .severity = severity(code),
+                    .severity = diagnosticSeverity,
                     .messageKey = "generic.failure",
                     .affectedIds = {},
-                    .actions = actions(code),
+                    .actions = diagnosticActions,
                     .occurrenceCount = 1U};
 }
 

@@ -101,13 +101,11 @@ docs/phase13b/mandatory-validation-matrix.json
 
 ## 즉시 수행할 제품 핵심 Milestone — Usable Standalone Alpha
 
-추가 Plugin Format이나 Release Policy Phase보다 먼저 다음을 완료해야 한다.
+코드 소유 Standalone milestone은 구현됐다. canonical Usable Alpha Gate를 통과하려면 이제 다음을 완료해야 한다.
 
-1. CLAP Editor에서 공통 `seam-authoring-runtime`을 추출한다.
-2. Standalone의 `makeDemoProject()`와 `makeDemoTimeline()`을 사용자 Project와 `ProductionProjectRenderer` 출력으로 교체한다.
-3. New/Open/Save/Save As/Autosave Recovery/Recent Projects를 UI에 연결한다.
-4. 설치 Voicebank 선택·설치·진단·정확한 Relink를 제공한다.
-5. Final Master와 Stem WAV Export를 제공한다.
-6. 실제 발음 Coverage가 있고 재배포 가능한 Demo Voicebank를 준비한다.
-7. Apple Silicon `.app`을 빌드하고 실제 Mac에서 검증한다.
-8. `docs/product/USABLE_ALPHA_ACCEPTANCE.md`의 전체 Gate를 통과한다.
+1. 실제 발음 Coverage가 있고 재배포 가능한 Voicebank를 준비한다.
+2. 그 bank로 Finder에서 실행한 Apple Silicon UI 여정을 완료한다.
+3. reopen, autosave recovery, master/stem export 실제 청취 증적을 기록한다.
+4. 외부 player로 export한 WAV를 검증한다.
+5. 실제 곡으로 30분 안정성 세션을 완료한다.
+6. `docs/product/USABLE_ALPHA_ACCEPTANCE.md`의 20개 행 모두에 hash-bound 증적을 첨부한다.

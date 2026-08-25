@@ -1,5 +1,4 @@
 import json
-import os
 import subprocess
 import sys
 import tempfile
@@ -7,9 +6,33 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / "tools" / "phase13a"))
+import distribution_manifest  # noqa: E402
 
 
 class Vst3ValidatorRunnerTests(unittest.TestCase):
+    def test_preflight_failure_preserves_empty_stderr_log(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            output = root / "evidence"
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(ROOT / "scripts/run_vst3_validator.py"),
+                    "--validator", str(root / "missing-validator"),
+                    "--plugin", str(root / "missing-plugin.vst3"),
+                    "--output", str(output),
+                    "--platform", "linux",
+                ],
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                check=False,
+            )
+            self.assertNotEqual(0, result.returncode)
+            self.assertTrue((output / "validator.stderr.log").is_file())
+            self.assertEqual("", (output / "validator.stderr.log").read_text(encoding="utf-8"))
+
     def test_clap_path_is_forwarded_to_validator_process(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -17,6 +40,10 @@ class Vst3ValidatorRunnerTests(unittest.TestCase):
             binary = plugin / 'Contents' / 'x86_64-linux' / 'ProjectSEAMEditor.so'
             binary.parent.mkdir(parents=True)
             binary.write_bytes(b'not-empty')
+            wrapper_manifest = distribution_manifest.build_wrapper_manifest(
+                'VST3', 'linux', 'x86_64', '0.14.0', 'com.project-seam.editor.vst3', 'a' * 64, plugin
+            )
+            (plugin / 'wrapper-manifest.json').write_text(json.dumps(wrapper_manifest), encoding='utf-8')
             clap_path = root / 'CLAP'
             clap_path.mkdir()
             validator = root / 'validator'
@@ -37,6 +64,7 @@ class Vst3ValidatorRunnerTests(unittest.TestCase):
                     '--plugin', str(plugin),
                     '--output', str(output),
                     '--clap-path', str(clap_path),
+                    '--platform', 'linux',
                 ],
                 text=True,
                 stdout=subprocess.PIPE,

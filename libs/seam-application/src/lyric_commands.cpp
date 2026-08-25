@@ -4,6 +4,53 @@
 
 namespace seam::application {
 
+CommandImpact SetLyricCommand::impact() const {
+  return CommandImpact{
+      .scope = CommandAudioImpact::PhraseAudio,
+      .projectWide = false,
+      .trackIds = {},
+      .regionIds = {},
+      .noteIds = {},
+      .lyricIds = {lyricId_},
+  };
+}
+
+CommandImpact BatchSetLyricsCommand::impact() const {
+  CommandImpact result{
+      .scope = CommandAudioImpact::PhraseAudio,
+      .projectWide = false,
+      .trackIds = {},
+      .regionIds = {},
+      .noteIds = {},
+      .lyricIds = {},
+  };
+  result.lyricIds.reserve(edits_.size());
+  for (const auto& edit : edits_) result.lyricIds.push_back(edit.lyricId);
+  return result;
+}
+
+CommandImpact UpsertPhonemeOverrideCommand::impact() const {
+  return CommandImpact{
+      .scope = CommandAudioImpact::PhraseAudio,
+      .projectWide = false,
+      .trackIds = {},
+      .regionIds = {regionId_},
+      .noteIds = {after_.key.noteId},
+      .lyricIds = {},
+  };
+}
+
+CommandImpact RemovePhonemeOverrideCommand::impact() const {
+  return CommandImpact{
+      .scope = CommandAudioImpact::PhraseAudio,
+      .projectWide = false,
+      .trackIds = {},
+      .regionIds = {regionId_},
+      .noteIds = {key_.noteId},
+      .lyricIds = {},
+  };
+}
+
 SetLyricCommand::SetLyricCommand(domain::LyricTokenId lyricId,
                                  std::u32string surface,
                                  domain::Language language)
@@ -62,6 +109,7 @@ core::Result<void> BatchSetLyricsCommand::revert(domain::Project& project) {
   for (const auto& edit : edits_) {
     auto* lyric = findLyric(project, edit.lyricId);
     lyric->surface = edit.before;
+    lyric->language = edit.beforeLanguage;
   }
   return core::success();
 }

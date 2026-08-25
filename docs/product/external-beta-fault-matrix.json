@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "matrixId": "project-seam.external-beta.faults.v1",
+  "rows": [
+    {"id": "device-loss-reconnect", "requiredDecision": "stop, reconnect, and explicitly resume"},
+    {"id": "sleep-wake", "requiredDecision": "stop until device is renegotiated"},
+    {"id": "bank-disappearance", "requiredDecision": "show relink/recovery without deleting project"},
+    {"id": "media-disappearance", "requiredDecision": "show relink/recovery without silent substitution"},
+    {"id": "cache-preferences-corruption", "requiredDecision": "quarantine cache/preferences only"},
+    {"id": "save-export-interruption", "requiredDecision": "retain last durable project and no partial requested output"},
+    {"id": "disk-full", "requiredDecision": "surface actionable storage error and preserve source"},
+    {"id": "kill-during-autosave", "requiredDecision": "recover newest durable autosave"},
+    {"id": "safe-mode-startup", "requiredDecision": "disable automatic reopen/scan and expose recovery/support"}
+  ]
+}

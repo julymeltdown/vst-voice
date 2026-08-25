@@ -120,7 +120,17 @@ def verify_repository(root: Path) -> list[str]:
             if not isinstance(expected_hash, str) or not SHA256_RE.fullmatch(expected_hash):
                 errors.append(f"{prefix} sha256 must be 64 lowercase hexadecimal characters")
                 continue
-            resolved = (root / evidence_path).resolve()
+            candidate = root
+            contains_symlink = False
+            for part in evidence_path.parts:
+                candidate /= part
+                if candidate.is_symlink():
+                    contains_symlink = True
+                    break
+            if contains_symlink:
+                errors.append(f"{prefix} path contains a symbolic link: {relative_path}")
+                continue
+            resolved = candidate.resolve()
             try:
                 resolved.relative_to(root)
             except ValueError:

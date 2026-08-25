@@ -36,23 +36,39 @@ void EditorRuntime::pointerDown(const native_ui::PointerEvent& event) noexcept {
   }
 
   const auto layout = painter_.layout();
-  const auto statusTop = logicalHeight_ - layout.statusHeight;
-  const auto pianoBottom = std::max(layout.contentTop() + 100.0,
-                                    statusTop - layout.lanesHeight());
-  const auto unitTop = pianoBottom + layout.phonemeLaneHeight;
-  const auto seamTop = unitTop + layout.unitLaneHeight;
-  const auto automationTop = seamTop + layout.seamLaneHeight;
+  const auto geometry = layout.technicalLaneGeometry(logicalHeight_);
+  const auto pianoBottom = geometry.phonemeTop;
+  const auto unitTop = geometry.unitTop;
+  const auto seamTop = geometry.seamTop;
+  const auto automationTop = geometry.pitchTop;
 
-  if (event.button == native_ui::PointerButton::Left && event.position.y <= 50.0 &&
-      event.position.x >= 565.0 && event.position.x <= 925.0) {
+  const auto phase12BOverlay =
+      layout.phase12BOverlayBoundsForWidth(logicalWidth_);
+  const auto phase12BScale =
+      layout.phase12BOverlayScaleForWidth(logicalWidth_);
+  const auto phase12BLeft = phase12BOverlay.x;
+  const auto phase12BTop = phase12BOverlay.y;
+  const auto phase12BRight = phase12BOverlay.right();
+  const auto phase12BBottom = phase12BOverlay.bottom();
+  if (event.button == native_ui::PointerButton::Left &&
+      event.position.y >= phase12BTop && event.position.y <= phase12BBottom &&
+      event.position.x >= phase12BLeft && event.position.x <= phase12BRight) {
+    const auto trackRight = phase12BLeft +
+                            layout.phase12BTrackControlWidth * phase12BScale;
+    const auto regionRight = trackRight +
+                             layout.phase12BRegionControlWidth * phase12BScale;
+    const auto muteRight = regionRight +
+                           layout.phase12BMuteControlWidth * phase12BScale;
+    const auto soloRight = muteRight +
+                           layout.phase12BSoloControlWidth * phase12BScale;
     const auto tracks = vocalTrackIds();
-    if (event.position.x < 650.0 && !tracks.empty()) {
+    if (event.position.x < trackRight && !tracks.empty()) {
       const auto it = std::find(tracks.begin(), tracks.end(), trackId_);
       const auto next = it == tracks.end() || std::next(it) == tracks.end()
                             ? tracks.front()
                             : *std::next(it);
       static_cast<void>(selectTrack(next));
-    } else if (event.position.x < 735.0) {
+    } else if (event.position.x < regionRight) {
       const auto regions = regionIds(trackId_);
       if (!regions.empty()) {
         const auto it = std::find(regions.begin(), regions.end(), regionId_);
@@ -62,10 +78,10 @@ void EditorRuntime::pointerDown(const native_ui::PointerEvent& event) noexcept {
         static_cast<void>(selectRegion(next));
       }
     } else if (const auto* track = session_.project().findVocalTrack(trackId_)) {
-      if (event.position.x < 800.0) {
+      if (event.position.x < muteRight) {
         static_cast<void>(setTrackMix(trackId_, track->gainDb, track->pan,
                                       !track->muted, track->solo));
-      } else if (event.position.x < 865.0) {
+      } else if (event.position.x < soloRight) {
         static_cast<void>(setTrackMix(trackId_, track->gainDb, track->pan,
                                       track->muted, !track->solo));
       } else {
@@ -109,7 +125,7 @@ void EditorRuntime::pointerDown(const native_ui::PointerEvent& event) noexcept {
   }
 
   if (event.position.y >= automationTop &&
-      event.position.y < automationTop + layout.automationLaneHeight) {
+      event.position.y < automationTop + geometry.pitchHeight) {
     const auto existing = pitchPointAt(event.position);
     if (event.button == native_ui::PointerButton::Right && existing.has_value()) {
       static_cast<void>(removePitchPoint(*existing));
@@ -129,10 +145,12 @@ void EditorRuntime::pointerDown(const native_ui::PointerEvent& event) noexcept {
       auto tick = controller_->pianoRoll().timeline().pixelToTick(
           event.position.x - layout.keyboardWidth);
       tick = std::clamp(tick, time::Tick{0}, region->durationTick);
-      const auto centerY = automationTop + layout.automationLaneHeight * 0.5;
+      const auto centerY = automationTop +
+                           geometry.pitchHeight * layout.automationCenterFraction;
       const auto cents = static_cast<float>(std::clamp(
           (centerY - event.position.y) /
-              (layout.automationLaneHeight * 0.38) * 600.0,
+              (geometry.pitchHeight * layout.pitchAutomationVerticalScale) *
+                  layout.pitchAutomationCentsRange,
           -1200.0, 1200.0));
       static_cast<void>(upsertPitchPoint(domain::PitchAutomationPoint{
           .tick = tick,
@@ -142,12 +160,19 @@ void EditorRuntime::pointerDown(const native_ui::PointerEvent& event) noexcept {
     }
   }
 
-  const auto seamLeft = std::max(520.0, logicalWidth_ - 248.0);
+  const auto seamMeter =
+      layout.runtimeOverlayMeterBoundsForWidth(logicalWidth_);
+  const auto seamLeft = seamMeter.x;
+  const auto seamMeterTop = seamMeter.y;
+  const auto seamRight = seamMeter.right();
+  const auto seamMeterBottom = seamMeter.bottom();
   if (event.button == native_ui::PointerButton::Left &&
-      event.position.y >= 16.0 && event.position.y <= 42.0 &&
-      event.position.x >= seamLeft && event.position.x <= seamLeft + 190.0) {
+      event.position.y >= seamMeterTop && event.position.y <= seamMeterBottom &&
+      event.position.x >= seamLeft && event.position.x <= seamRight) {
     const auto value = static_cast<float>(
-        std::clamp((event.position.x - seamLeft) / 190.0, 0.0, 1.0));
+        std::clamp((event.position.x - seamLeft) /
+                       std::max(1.0, seamMeter.width),
+                   0.0, 1.0));
     static_cast<void>(setPrimarySeamAmount(value));
     return;
   }
@@ -177,12 +202,10 @@ void EditorRuntime::pointerUp(const native_ui::PointerEvent& event) noexcept {
     const auto from = *draggingPitchTick_;
     draggingPitchTick_.reset();
     const auto layout = painter_.layout();
-    const auto statusTop = logicalHeight_ - layout.statusHeight;
-    const auto pianoBottom = std::max(layout.contentTop() + 100.0,
-                                      statusTop - layout.lanesHeight());
-    const auto automationTop = pianoBottom + layout.phonemeLaneHeight +
-                               layout.unitLaneHeight + layout.seamLaneHeight;
-    const auto centerY = automationTop + layout.automationLaneHeight * 0.5;
+    const auto geometry = layout.technicalLaneGeometry(logicalHeight_);
+    const auto automationTop = geometry.pitchTop;
+    const auto centerY = automationTop +
+                         geometry.pitchHeight * layout.automationCenterFraction;
     const auto* region = session_.project().findRegion(regionId_);
     if (region != nullptr) {
       auto tick = controller_->pianoRoll().timeline().pixelToTick(
@@ -190,7 +213,8 @@ void EditorRuntime::pointerUp(const native_ui::PointerEvent& event) noexcept {
       tick = std::clamp(tick, time::Tick{0}, region->durationTick);
       const auto cents = static_cast<float>(std::clamp(
           (centerY - event.position.y) /
-              (layout.automationLaneHeight * 0.38) * 600.0,
+              (geometry.pitchHeight * layout.pitchAutomationVerticalScale) *
+                  layout.pitchAutomationCentsRange,
           -1200.0, 1200.0));
       const auto old = std::find_if(
           region->pitchAutomation.points().begin(),
@@ -391,14 +415,14 @@ core::Result<void> EditorRuntime::openSampleMicroscope(
   auto audio = voicebank::readWav(bank.bankRoot / unit->audioPath);
   if (!audio) return core::Result<void>{audio.error()};
   microscopeAudio_ = std::move(audio.value());
-  const auto width = std::max(520.0, logicalWidth_ - 180.0);
-  const auto height = std::max(300.0, logicalHeight_ - 180.0);
+  const auto layout = painter_.layout();
   auto rebuilt = microscope_.rebuild(
       *unit, microscopeAudio_,
-      ui::Rect{90.0, 118.0, width - 180.0, height * 0.38},
-      ui::Rect{90.0, 130.0 + height * 0.38, width - 180.0, height * 0.38});
+      layout.microscopeWaveformBounds(logicalWidth_, logicalHeight_),
+      layout.microscopeSpectrogramBounds(logicalWidth_, logicalHeight_));
   if (!rebuilt) return rebuilt;
   microscopeUnitId_ = entry->unitId;
+  microscopeFocusedId_ = "microscope.panel";
   selectedUnitKey_ = key;
   requestRepaint();
   return core::success();
@@ -407,6 +431,8 @@ core::Result<void> EditorRuntime::openSampleMicroscope(
 void EditorRuntime::closeSampleMicroscope() noexcept {
   std::lock_guard lock(mutex_);
   microscopeUnitId_.reset();
+  microscopeFocusedId_.clear();
+  microscopeAudio_ = {};
   requestRepaint();
 }
 

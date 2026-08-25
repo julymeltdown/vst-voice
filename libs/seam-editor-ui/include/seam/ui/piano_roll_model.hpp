@@ -23,6 +23,15 @@ struct NoteVisual final {
   std::string lyric;
 };
 
+struct LyricDistributionReport final {
+  std::size_t requestedSyllables{0U};
+  std::size_t targetNotes{0U};
+  std::size_t appliedSyllables{0U};
+  std::size_t missingSyllables{0U};
+  std::size_t leftoverSyllables{0U};
+  bool committed{false};
+};
+
 struct PianoRollViewport final {
   Rect bounds;
   double keyboardWidth{72.0};
@@ -39,6 +48,8 @@ public:
   [[nodiscard]] const TimelineTransform& timeline() const noexcept { return timeline_; }
   [[nodiscard]] const PitchTransform& pitch() const noexcept { return pitch_; }
 
+  void setRegionId(domain::RegionId regionId) noexcept { regionId_ = regionId; }
+
   void setViewport(PianoRollViewport viewport) noexcept { viewport_ = viewport; }
   [[nodiscard]] const PianoRollViewport& viewport() const noexcept { return viewport_; }
   [[nodiscard]] const domain::Project& project() const noexcept { return session_.project(); }
@@ -48,6 +59,9 @@ public:
 
   void rebuildIndex();
   [[nodiscard]] std::vector<NoteVisual> visibleNotes() const;
+  [[nodiscard]] std::vector<NoteVisual> allNotes() const;
+  [[nodiscard]] std::size_t noteCount() const noexcept;
+  [[nodiscard]] std::optional<NoteVisual> noteAt(std::size_t index) const;
   [[nodiscard]] std::optional<domain::NoteId> hitTest(Point point) const;
   [[nodiscard]] std::vector<domain::NoteId> notesInBox(Rect box) const;
   void selectInBox(Rect box, bool additive = false);
@@ -55,19 +69,27 @@ public:
   [[nodiscard]] core::Result<domain::NoteId> drawNote(
       Point point,
       time::Tick duration,
-      std::u32string lyric = U"a");
+      std::u32string lyric = U"あ");
   [[nodiscard]] core::Result<void> moveSelection(
       time::Tick deltaTick,
       std::int32_t deltaSemitones);
   [[nodiscard]] core::Result<void> resizeSelection(
       time::Tick deltaStart,
       time::Tick deltaEnd);
+  [[nodiscard]] core::Result<void> quantizeSelection(time::Tick grid);
+  [[nodiscard]] core::Result<void> setSelectionSlur(bool enabled);
+  [[nodiscard]] core::Result<void> setSelectionMelisma();
   [[nodiscard]] core::Result<void> deleteSelection();
+  [[nodiscard]] core::Result<domain::NoteId> duplicateSelection();
+  [[nodiscard]] core::Result<LyricDistributionReport> distributeSelectedLyrics(
+      std::u32string text,
+      domain::Language language = domain::Language::Unspecified);
 
 private:
   [[nodiscard]] const domain::VocalRegion* region() const noexcept;
   [[nodiscard]] domain::VocalRegion* region() noexcept;
   [[nodiscard]] Rect noteBounds(const IndexedNote& indexed) const noexcept;
+  [[nodiscard]] NoteVisual makeNoteVisual(const IndexedNote& indexed) const;
 
   application::EditorSession& session_;
   application::ProjectFactory& factory_;

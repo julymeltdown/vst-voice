@@ -7,5 +7,5 @@
   <choices-outline><line choice="default"><line choice="plugins" /></line></choices-outline>
   <choice id="default" />
   <choice id="plugins" visible="false"><pkg-ref id="com.project-seam.plugins" /></choice>
-  <pkg-ref id="com.project-seam.plugins" version="0.13.0" onConclusion="none">ProjectSEAM-plugins.pkg</pkg-ref>
+  <pkg-ref id="com.project-seam.plugins" version="@PROJECT_SEAM_VERSION@" onConclusion="none">ProjectSEAM-plugins.pkg</pkg-ref>
 </installer-gui-script>

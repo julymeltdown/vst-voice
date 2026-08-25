@@ -26,6 +26,9 @@ public:
   [[nodiscard]] core::Result<void> refresh();
   [[nodiscard]] core::Result<void> addSearchRoot(
       voicebank::VoicebankSearchRoot root);
+  void setAllowDevelopmentFixtures(bool allow) noexcept {
+    resolveOptions_.allowDevelopmentFixtures = allow;
+  }
   [[nodiscard]] core::Result<void> bindTrack(
       ProjectDocument& document, domain::TrackId trackId,
       const voicebank::VoicebankCandidate& candidate);

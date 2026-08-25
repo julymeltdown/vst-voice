@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-08-18",
+  "generatedAt": "2026-08-22",
   "currentGate": "G1_FEATURE_ALPHA",
   "tasks": [
     {
@@ -42,13 +42,13 @@
     {
       "id": "SEAM-P12-007",
       "priority": "P0",
-      "status": "NOT_RUN",
+      "status": "DONE",
       "title": "Run official CLAP validator and retain evidence"
     },
     {
       "id": "SEAM-P12-008",
       "priority": "P0",
-      "status": "NOT_RUN",
+      "status": "PARTIAL",
       "title": "Certify Windows and macOS runtime paths"
     },
     {
@@ -102,19 +102,19 @@
     {
       "id": "SEAM-P14-001",
       "priority": "P2",
-      "status": "DECISION_REQUIRED",
+      "status": "DONE",
       "title": "Choose production UI rendering architecture"
     },
     {
       "id": "SEAM-P14-002",
       "priority": "P2",
-      "status": "NOT_STARTED",
+      "status": "PARTIAL",
       "title": "Complete accessibility, localization and UX polish"
     },
     {
       "id": "SEAM-P14-003",
       "priority": "P2",
-      "status": "PARTIAL",
+      "status": "DONE",
       "title": "Complete user documentation, onboarding and support material"
     }
   ],

@@ -2,6 +2,7 @@
 
 #if defined(SEAM_NATIVE_WIN32)
 
+#include "seam/native_ui/accessibility_win32.hpp"
 #include "seam/domain/note.hpp"
 #include "seam/text/text_engine.hpp"
 
@@ -14,6 +15,7 @@
 #include <windows.h>
 #include <windowsx.h>
 #include <msctf.h>
+#include <shellapi.h>
 
 #include <algorithm>
 #include <atomic>
@@ -90,6 +92,7 @@ NativeKey nativeKey(WPARAM key) noexcept {
   switch (key) {
     case VK_SPACE: return NativeKey::Space;
     case VK_RETURN: return NativeKey::Enter;
+    case VK_TAB: return NativeKey::Tab;
     case VK_ESCAPE: return NativeKey::Escape;
     case VK_DELETE: return NativeKey::Delete;
     case VK_BACK: return NativeKey::Backspace;
@@ -100,12 +103,19 @@ NativeKey nativeKey(WPARAM key) noexcept {
     case 'Z': return NativeKey::Z;
     case 'Y': return NativeKey::Y;
     case 'C': return NativeKey::C;
+    case 'B': return NativeKey::B;
+    case 'D': return NativeKey::D;
     case 'E': return NativeKey::E;
     case 'N': return NativeKey::N;
     case 'O': return NativeKey::O;
+    case 'P': return NativeKey::P;
     case 'Q': return NativeKey::Q;
     case 'S': return NativeKey::S;
     case 'R': return NativeKey::R;
+    case 'X': return NativeKey::X;
+    case 'V': return NativeKey::V;
+    case 'I': return NativeKey::I;
+    case 'L': return NativeKey::L;
     case VK_ADD:
     case VK_OEM_PLUS: return NativeKey::Plus;
     case VK_SUBTRACT:
@@ -139,10 +149,7 @@ public:
       return core::failure(core::ErrorCode::Conflict,
                            "Win32 window is already open");
     }
-    if (config.width < 320U || config.height < 240U ||
-        config.width > 8192U || config.height > 8192U ||
-        !std::isfinite(config.scale) || config.scale < 0.5 ||
-        config.scale > 4.0) {
+    if (!nativeWindowConfigSizeIsValid(config)) {
       return core::failure(core::ErrorCode::InvalidArgument,
                            "Native window dimensions or scale are invalid");
     }
@@ -193,6 +200,15 @@ public:
       return core::failure(core::ErrorCode::IoError,
                            "Unable to create the Win32 editor window");
     }
+
+    const auto accessibility = installAccessibilityBridge(
+        static_cast<void*>(window_));
+    if (!accessibility) {
+      close();
+      return accessibility;
+    }
+    accessibilityBridge_ =
+        std::make_unique<Win32AccessibilityBridge>(window_, client);
 
     const auto dpi = GetDpiForWindow(window_);
     scale_ = config.scale * static_cast<double>(dpi == 0U ? 96U : dpi) / 96.0;
@@ -314,6 +330,16 @@ private:
         self->endTextInput();
         return 0;
       }
+      if (message == WM_KEYDOWN && wParam == VK_TAB) {
+        if (self->client_ != nullptr) {
+          self->client_->keyDown(KeyEvent{
+              .key = NativeKey::Tab,
+              .modifiers = modifiersFromKeyboard(),
+              .repeat = false,
+          });
+        }
+        return 0;
+      }
     }
     const auto previous = self == nullptr ? nullptr : self->oldEditProcedure_;
     return previous == nullptr ? DefWindowProcW(window, message, wParam, lParam)
@@ -324,6 +350,33 @@ private:
   LRESULT handleMessage(HWND window, UINT message, WPARAM wParam,
                         LPARAM lParam) noexcept {
     switch (message) {
+      case WM_COPYDATA: {
+        const auto* data = reinterpret_cast<const COPYDATASTRUCT*>(lParam);
+        if (data == nullptr || data->dwData != 1U || data->lpData == nullptr ||
+            data->cbData == 0U || data->cbData > 1024U * 1024U ||
+            data->cbData % sizeof(wchar_t) != 0U) {
+          return FALSE;
+        }
+        int argumentCount = 0;
+        auto* arguments = CommandLineToArgvW(
+            static_cast<LPCWSTR>(data->lpData), &argumentCount);
+        if (arguments == nullptr) return FALSE;
+        for (int index = 1; index < argumentCount; ++index) {
+          if (client_ != nullptr) {
+            client_->openProjectPath(std::filesystem::path{arguments[index]});
+          }
+        }
+        LocalFree(arguments);
+        return TRUE;
+      }
+      case WM_GETOBJECT:
+        if (accessibilityBridge_ != nullptr) {
+          const auto result = accessibilityBridge_->handleGetObject(
+              static_cast<std::uintptr_t>(wParam),
+              static_cast<std::intptr_t>(lParam));
+          if (result != 0) return static_cast<LRESULT>(result);
+        }
+        break;
       case WM_APP + 1U:
         InvalidateRect(window, nullptr, FALSE);
         return 0;
@@ -331,6 +384,7 @@ private:
         PAINTSTRUCT paint{};
         const auto device = BeginPaint(window, &paint);
         paintAndPresent(device);
+        if (accessibilityBridge_ != nullptr) accessibilityBridge_->invalidate();
         EndPaint(window, &paint);
         return 0;
       }
@@ -347,6 +401,23 @@ private:
                        SWP_NOACTIVATE | SWP_NOZORDER);
         }
         requestRepaint();
+        return 0;
+      }
+      case WM_GETMINMAXINFO: {
+        auto* limits = reinterpret_cast<MINMAXINFO*>(lParam);
+        if (limits != nullptr) {
+          RECT clientBounds{
+              0,
+              0,
+              static_cast<LONG>(std::ceil(
+                  static_cast<double>(config_.minimumWidth) * scale_)),
+              static_cast<LONG>(std::ceil(
+                  static_cast<double>(config_.minimumHeight) * scale_))};
+          static_cast<void>(AdjustWindowRectEx(
+              &clientBounds, WS_OVERLAPPEDWINDOW, FALSE, 0));
+          limits->ptMinTrackSize.x = clientBounds.right - clientBounds.left;
+          limits->ptMinTrackSize.y = clientBounds.bottom - clientBounds.top;
+        }
         return 0;
       }
       case WM_SIZE: {
@@ -567,6 +638,7 @@ private:
   }
 
   void close() noexcept {
+    accessibilityBridge_.reset();
     if (edit_ != nullptr && IsWindow(edit_) != FALSE) {
       if (oldEditProcedure_ != nullptr) {
         SetWindowLongPtrW(edit_, GWLP_WNDPROC,
@@ -609,6 +681,7 @@ private:
   TfClientId tfClientId_{TF_CLIENTID_NULL};
   PixelSurface surface_;
   std::unique_ptr<text::TextEngine> textEngine_;
+  std::unique_ptr<Win32AccessibilityBridge> accessibilityBridge_;
   double scale_{1.0};
   std::atomic<bool> repaintRequested_{false};
   std::chrono::steady_clock::time_point openedAt_{};

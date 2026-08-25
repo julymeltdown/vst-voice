@@ -25,6 +25,17 @@ const rendering::TrackVoicebankSource* sourceFor(
   return iterator == sources.end() ? nullptr : &*iterator;
 }
 
+std::string rendererContext(
+    std::span<const synthesis::UnitPlanEntry> entries) {
+  if (entries.empty()) return {};
+  const auto first = domain::unitRendererKindName(entries.front().renderer);
+  const auto allSame = std::all_of(
+      entries.begin(), entries.end(), [first](const auto& entry) {
+        return domain::unitRendererKindName(entry.renderer) == first;
+      });
+  return allSame ? std::string{first} : std::string{"mixed"};
+}
+
 
 }  // namespace
 
@@ -149,6 +160,7 @@ void AuthoringRenderCoordinator::shutdown() noexcept {
     hadPending = pending_.has_value();
     wasActive = active_;
     pending_.reset();
+    latestSubmittedRequestId_.store(0U, std::memory_order_release);
   }
   worker_.request_stop();
   condition_.notify_all();
@@ -164,9 +176,12 @@ void AuthoringRenderCoordinator::shutdown() noexcept {
         .state = RenderState::Cancelled,
         .requestedRevision = revision,
         .publishedRevision = current.publishedRevision,
+        .requestedQuality = current.requestedQuality,
+        .publishedQuality = current.publishedQuality,
         .completedPhrases = current.completedPhrases,
         .totalPhrases = current.totalPhrases,
         .fraction = current.fraction,
+        .audibleAudioStale = current.audibleAudioStale,
         .diagnostic = "Production render coordinator shut down",
     });
   }
@@ -180,18 +195,32 @@ void AuthoringRenderCoordinator::submit(
     std::uint64_t revision,
     std::uint32_t sampleRate,
     rendering::RenderQuality quality,
-    bool immediate) {
+    bool immediate,
+    application::CommandImpact impact) {
   if (shutdown_.load(std::memory_order_acquire)) return;
   sampleRate = std::clamp(sampleRate, 8000U, 192000U);
+  std::string activeVoicebankId;
+  std::string activeVoicebankVersion;
+  if (const auto* source = sourceFor(voicebanks, activeTrack);
+      source != nullptr) {
+    activeVoicebankId = source->manifest.id;
+    activeVoicebankVersion = source->manifest.version;
+  }
   {
     std::lock_guard lock(mutex_);
     if (shutdown_.load(std::memory_order_acquire)) return;
+    if (revision < latestSubmittedRevision_.load(std::memory_order_acquire)) {
+      return;
+    }
+    const auto requestId = ++nextRequestId_;
     latestSubmittedRevision_.store(revision, std::memory_order_release);
+    latestSubmittedRequestId_.store(requestId, std::memory_order_release);
     activeStopSource_.request_stop();
     if (pending_.has_value()) {
       cancelled_.fetch_add(1U, std::memory_order_relaxed);
     }
     pending_ = Request{
+        .requestId = requestId,
         .project = std::move(project),
         .voicebanks = std::move(voicebanks),
         .activeTrack = activeTrack,
@@ -200,30 +229,29 @@ void AuthoringRenderCoordinator::submit(
         .sampleRate = sampleRate,
         .quality = quality,
         .immediate = immediate,
+        .impact = std::move(impact),
     };
   }
   submitted_.fetch_add(1U, std::memory_order_relaxed);
   const auto previous = progress();
-  if (previous.state == RenderState::Ready &&
-      previous.publishedRevision != revision) {
-    updateProgress(RenderProgress{
-        .state = RenderState::Stale,
-        .requestedRevision = revision,
-        .publishedRevision = previous.publishedRevision,
-        .completedPhrases = previous.completedPhrases,
-        .totalPhrases = previous.totalPhrases,
-        .fraction = previous.fraction,
-        .diagnostic = "Previous audio is stale while the new revision renders",
-    });
-  }
+  const auto audible = publication_.acquire();
+  const auto audibleAudioStale =
+      audible && audible->state == RenderState::Ready &&
+      (audible->projectRevision != revision || audible->quality != quality);
   updateProgress(RenderProgress{
       .state = RenderState::Queued,
       .requestedRevision = revision,
       .publishedRevision = progress().publishedRevision,
+      .requestedQuality = quality,
+      .publishedQuality = previous.publishedQuality,
       .completedPhrases = 0U,
       .totalPhrases = 0U,
       .fraction = 0.0,
+      .audibleAudioStale = audibleAudioStale,
       .diagnostic = "Production render request queued",
+      .activeVoicebankId = activeVoicebankId,
+      .activeVoicebankVersion = activeVoicebankVersion,
+      .activeRenderer = previous.activeRenderer,
   });
   condition_.notify_all();
 }
@@ -236,6 +264,7 @@ void AuthoringRenderCoordinator::cancel() noexcept {
     activeStopSource_.request_stop();
     cancelledPending = pending_.has_value();
     pending_.reset();
+    latestSubmittedRequestId_.store(0U, std::memory_order_release);
   }
   if (cancelledPending) {
     cancelled_.fetch_add(1U, std::memory_order_relaxed);
@@ -245,9 +274,12 @@ void AuthoringRenderCoordinator::cancel() noexcept {
       .state = RenderState::Cancelled,
       .requestedRevision = revision,
       .publishedRevision = current.publishedRevision,
+      .requestedQuality = current.requestedQuality,
+      .publishedQuality = current.publishedQuality,
       .completedPhrases = current.completedPhrases,
       .totalPhrases = current.totalPhrases,
       .fraction = current.fraction,
+      .audibleAudioStale = current.audibleAudioStale,
       .diagnostic = "Production render request cancelled",
   });
   notifyCompletion();
@@ -307,14 +339,24 @@ void AuthoringRenderCoordinator::workerLoop(std::stop_token stopToken) {
     }
 
     const auto totalPhrases = countPhrases(request.project);
+    const auto* activeSource =
+        sourceFor(request.voicebanks, request.activeTrack);
     updateProgress(RenderProgress{
         .state = RenderState::Rendering,
         .requestedRevision = request.revision,
         .publishedRevision = progress().publishedRevision,
+        .requestedQuality = request.quality,
+        .publishedQuality = progress().publishedQuality,
         .completedPhrases = 0U,
         .totalPhrases = totalPhrases,
         .fraction = 0.0,
+        .audibleAudioStale = progress().audibleAudioStale,
         .diagnostic = "Production render in progress",
+        .activeVoicebankId = activeSource == nullptr ? std::string{}
+                                                     : activeSource->manifest.id,
+        .activeVoicebankVersion = activeSource == nullptr
+                                      ? std::string{}
+                                      : activeSource->manifest.version,
     });
 
     if (hooks_.beforeRender) {
@@ -324,6 +366,10 @@ void AuthoringRenderCoordinator::workerLoop(std::stop_token stopToken) {
                      ? std::optional<PublishedProjectAudio>{}
                      : render(request, requestToken);
 
+    if (audio.has_value() && hooks_.beforePublication) {
+      hooks_.beforePublication(request.revision, requestToken);
+    }
+
     {
       std::lock_guard lock(mutex_);
       active_ = false;
@@ -331,16 +377,19 @@ void AuthoringRenderCoordinator::workerLoop(std::stop_token stopToken) {
     if (stopToken.stop_requested()) break;
     if (!audio.has_value()) {
       cancelled_.fetch_add(1U, std::memory_order_relaxed);
-      if (request.revision ==
-          latestSubmittedRevision_.load(std::memory_order_acquire)) {
+      if (request.requestId ==
+          latestSubmittedRequestId_.load(std::memory_order_acquire)) {
         const auto current = progress();
         updateProgress(RenderProgress{
             .state = RenderState::Cancelled,
             .requestedRevision = request.revision,
             .publishedRevision = current.publishedRevision,
+            .requestedQuality = request.quality,
+            .publishedQuality = current.publishedQuality,
             .completedPhrases = current.completedPhrases,
             .totalPhrases = current.totalPhrases,
             .fraction = current.fraction,
+            .audibleAudioStale = current.audibleAudioStale,
             .diagnostic = "Production render cancelled",
         });
         notifyCompletion();
@@ -348,24 +397,59 @@ void AuthoringRenderCoordinator::workerLoop(std::stop_token stopToken) {
       continue;
     }
 
-    if (request.revision !=
-        latestSubmittedRevision_.load(std::memory_order_acquire)) {
+    if (request.requestId !=
+        latestSubmittedRequestId_.load(std::memory_order_acquire)) {
       stale_.fetch_add(1U, std::memory_order_relaxed);
       continue;
+    }
+    if (audio->state == RenderState::Failed) {
+      const auto previous = publication_.acquire();
+      if (previous && previous->state == RenderState::Ready) {
+        failed_.fetch_add(1U, std::memory_order_relaxed);
+        updateProgress(RenderProgress{
+            .state = RenderState::Failed,
+            .requestedRevision = request.revision,
+            .publishedRevision = previous->projectRevision,
+            .requestedQuality = request.quality,
+            .publishedQuality = previous->quality,
+            .completedPhrases = 0U,
+            .totalPhrases = totalPhrases,
+            .fraction = 0.0,
+            .audibleAudioStale = true,
+            .diagnostic = audio->diagnostic,
+            .activeVoicebankId = audio->activeVoicebankId,
+            .activeVoicebankVersion = audio->activeVoicebankVersion,
+            .activeRenderer = audio->activeRenderer,
+            .failure = audio->failure,
+        });
+        notifyCompletion();
+        continue;
+      }
     }
     const auto state = audio->state;
     const auto completedPhrases = audio->result.phraseCount;
     const auto diagnostic = audio->diagnostic;
+    const auto failure = audio->failure;
+    const auto activeVoicebankId = audio->activeVoicebankId;
+    const auto activeVoicebankVersion = audio->activeVoicebankVersion;
+    const auto activeRenderer = audio->activeRenderer;
     if (!publication_.publish(std::move(*audio))) {
       failed_.fetch_add(1U, std::memory_order_relaxed);
       updateProgress(RenderProgress{
           .state = RenderState::Failed,
           .requestedRevision = request.revision,
           .publishedRevision = progress().publishedRevision,
+          .requestedQuality = request.quality,
+          .publishedQuality = progress().publishedQuality,
           .completedPhrases = 0U,
           .totalPhrases = totalPhrases,
           .fraction = 0.0,
+          .audibleAudioStale = progress().audibleAudioStale,
           .diagnostic = "Realtime render publication has no free slot",
+          .activeVoicebankId = activeVoicebankId,
+          .activeVoicebankVersion = activeVoicebankVersion,
+          .activeRenderer = activeRenderer,
+          .failure = RenderFailureKind::PublicationBusy,
       });
       notifyCompletion();
       continue;
@@ -380,10 +464,16 @@ void AuthoringRenderCoordinator::workerLoop(std::stop_token stopToken) {
         .state = state,
         .requestedRevision = request.revision,
         .publishedRevision = request.revision,
+        .requestedQuality = request.quality,
+        .publishedQuality = request.quality,
         .completedPhrases = completedPhrases,
         .totalPhrases = totalPhrases,
         .fraction = state == RenderState::Ready ? 1.0 : 0.0,
         .diagnostic = diagnostic,
+        .activeVoicebankId = activeVoicebankId,
+        .activeVoicebankVersion = activeVoicebankVersion,
+        .activeRenderer = activeRenderer,
+        .failure = failure,
     });
     notifyCompletion();
   }
@@ -423,14 +513,24 @@ std::optional<PublishedProjectAudio> AuthoringRenderCoordinator::render(
 
   PublishedProjectAudio audio;
   audio.projectRevision = request.revision;
+  audio.impact = request.impact;
   audio.quality = request.quality;
   audio.state = RenderState::Ready;
   audio.failure = RenderFailureKind::None;
   audio.result = std::move(rendered).value();
-  audio.diagnostic = "Production multi-track routing render completed";
+  if (audio.result.diagnostics.empty()) {
+    audio.diagnostic = "Production multi-track routing render completed";
+  } else {
+    const auto& first = audio.result.diagnostics.front();
+    audio.diagnostic = "Render completed with " +
+                       std::to_string(audio.result.diagnostics.size()) +
+                       " diagnostic(s): " + first.message;
+    if (!first.context.empty()) audio.diagnostic += " (" + first.context + ")";
+  }
   audio.activeVoicebankId = checked.activeVoicebankId;
   audio.activeVoicebankVersion = checked.activeVoicebankVersion;
   audio.activeVoicebankContentHash = checked.activeVoicebankContentHash;
+  audio.activeRenderer = rendererContext(audio.result.activeUnitPlan);
   return audio;
 }
 
@@ -506,7 +606,18 @@ AuthoringRenderCoordinator::preflight(const Request& request) {
       result.activeVoicebankContentHash = source->contentHash;
     }
   }
-  if (!foundAudible) {
+  const auto anyAudioSolo = std::any_of(
+      request.project.audioTracks().begin(), request.project.audioTracks().end(),
+      [](const domain::AudioTrack& track) {
+        return track.solo && !track.muted;
+      });
+  const auto foundAudibleBacking = std::any_of(
+      request.project.audioTracks().begin(), request.project.audioTracks().end(),
+      [anyAudioSolo](const domain::AudioTrack& track) {
+        return !track.muted && (!anyAudioSolo || track.solo) &&
+               !track.mediaPath.empty();
+      });
+  if (!foundAudible && !foundAudibleBacking) {
     result.failure = RenderFailureKind::InvalidProject;
     result.diagnostic = "Project contains no audible vocal track";
   }
@@ -518,6 +629,7 @@ PublishedProjectAudio AuthoringRenderCoordinator::makeFailureAudio(
     const Request& request, const PreflightResult& preflight) {
   PublishedProjectAudio audio;
   audio.projectRevision = request.revision;
+  audio.impact = request.impact;
   audio.quality = request.quality;
   audio.state = RenderState::Failed;
   audio.failure = preflight.failure;

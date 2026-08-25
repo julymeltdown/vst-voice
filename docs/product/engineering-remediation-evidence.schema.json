@@ -1,0 +1,198 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://project-seam.invalid/schemas/engineering-remediation-evidence.schema.json",
+  "title": "Project SEAM engineering remediation evidence",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "recordKind",
+    "recordStatus",
+    "reviewBaseSha",
+    "candidateSha",
+    "candidateTreeState",
+    "attestationCommitSha",
+    "generatedAt",
+    "environment",
+    "gates",
+    "manualQa",
+    "review",
+    "evidenceArchive",
+    "externalReleaseState"
+  ],
+  "properties": {
+    "schemaVersion": {"const": 1},
+    "recordKind": {"const": "ENGINEERING_REMEDIATION_EVIDENCE"},
+    "recordStatus": {"enum": ["TEMPLATE", "SEALED"]},
+    "reviewBaseSha": {"$ref": "#/$defs/sha40"},
+    "candidateSha": {"$ref": "#/$defs/sha40"},
+    "candidateTreeState": {"enum": ["CLEAN", "DIRTY"]},
+    "attestationCommitSha": {
+      "oneOf": [{"type": "null"}, {"$ref": "#/$defs/sha40"}]
+    },
+    "generatedAt": {"type": "string", "format": "date-time"},
+    "environment": {"$ref": "#/$defs/environment"},
+    "gates": {
+      "type": "array",
+      "minItems": 14,
+      "maxItems": 14,
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/gate"}
+    },
+    "manualQa": {
+      "type": "array",
+      "minItems": 7,
+      "maxItems": 7,
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/manualQa"}
+    },
+    "review": {"$ref": "#/$defs/review"},
+    "evidenceArchive": {"$ref": "#/$defs/archive"},
+    "externalReleaseState": {"const": "BLOCKED"}
+  },
+  "$defs": {
+    "sha40": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["locator", "sha256"],
+      "properties": {
+        "locator": {"type": "string"},
+        "sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "environment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "platform",
+        "architecture",
+        "compiler",
+        "cmake",
+        "python",
+        "generator",
+        "redactedEnvironmentId"
+      ],
+      "properties": {
+        "platform": {"type": "string"},
+        "architecture": {"type": "string"},
+        "compiler": {"type": "string"},
+        "cmake": {"type": "string"},
+        "python": {"type": "string"},
+        "generator": {"type": "string"},
+        "redactedEnvironmentId": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "gate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "candidateSha",
+        "status",
+        "command",
+        "startedAt",
+        "endedAt",
+        "exitStatus",
+        "rawLog"
+      ],
+      "properties": {
+        "id": {
+          "enum": [
+            "tracked-source-closure",
+            "debug-suite",
+            "release-suite",
+            "external-beta-contracts",
+            "phase13a-contracts",
+            "asan-ubsan",
+            "thread-sanitizer",
+            "realtime-callback",
+            "source-contracts",
+            "built-identity",
+            "installed-byte-certification",
+            "export-crash-recovery",
+            "whitespace-python-lint",
+            "fresh-review"
+          ]
+        },
+        "candidateSha": {"$ref": "#/$defs/sha40"},
+        "status": {"enum": ["PASS", "FAIL", "BLOCKED", "NOT_RUN"]},
+        "command": {"type": "string"},
+        "startedAt": {"type": "string", "format": "date-time"},
+        "endedAt": {"type": "string", "format": "date-time"},
+        "exitStatus": {"type": ["integer", "null"]},
+        "rawLog": {"$ref": "#/$defs/artifact"}
+      }
+    },
+    "manualQa": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "status", "evidenceGate"],
+      "properties": {
+        "id": {
+          "enum": [
+            "backing-only-preview",
+            "audio-unavailable",
+            "recovery-save-as",
+            "export-process-restart",
+            "clap-runtime-identity",
+            "installed-byte-mutation",
+            "voicebank-path-safety"
+          ]
+        },
+        "status": {"enum": ["PASS", "FAIL", "BLOCKED", "NOT_RUN"]},
+        "evidenceGate": {"type": "string"}
+      }
+    },
+    "reviewLane": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "candidateSha", "verdict", "report"],
+      "properties": {
+        "id": {
+          "enum": [
+            "correctness",
+            "testing",
+            "maintainability",
+            "security",
+            "performance",
+            "api-contract",
+            "reliability"
+          ]
+        },
+        "candidateSha": {"$ref": "#/$defs/sha40"},
+        "verdict": {"enum": ["PASS", "FAIL", "BLOCKED", "NOT_RUN"]},
+        "report": {"$ref": "#/$defs/artifact"}
+      }
+    },
+    "review": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["baseSha", "candidateSha", "lanes", "p0Count", "p1Count"],
+      "properties": {
+        "baseSha": {"$ref": "#/$defs/sha40"},
+        "candidateSha": {"$ref": "#/$defs/sha40"},
+        "lanes": {
+          "type": "array",
+          "minItems": 7,
+          "maxItems": 7,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/reviewLane"}
+        },
+        "p0Count": {"type": "integer", "minimum": 0},
+        "p1Count": {"type": "integer", "minimum": 0}
+      }
+    },
+    "archive": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sealed", "locator", "sha256"],
+      "properties": {
+        "sealed": {"type": "boolean"},
+        "locator": {"type": "string"},
+        "sha256": {"$ref": "#/$defs/sha256"}
+      }
+    }
+  }
+}

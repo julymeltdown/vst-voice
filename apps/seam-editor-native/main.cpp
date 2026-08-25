@@ -2,6 +2,9 @@
 #include "seam/distribution/signing.hpp"
 #include "seam/platform/application_paths.hpp"
 #include "seam/standalone/production_configuration.hpp"
+#if defined(__APPLE__)
+#include "macos_application_delegate.hpp"
+#endif
 
 #include <chrono>
 #include <clocale>
@@ -11,6 +14,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <vector>
 
 namespace {
@@ -18,6 +22,8 @@ namespace {
 struct CommandLine final {
   std::chrono::milliseconds autoClose{0};
   std::optional<std::filesystem::path> screenshot;
+  std::uint32_t windowWidth{1440U};
+  std::uint32_t windowHeight{900U};
   double scale{1.0};
   seam::standalone::ProductionRuntimeMode mode{
       seam::standalone::ProductionRuntimeMode::Release};
@@ -28,6 +34,7 @@ struct CommandLine final {
   std::vector<std::filesystem::path> trustedVoicebankKeyFiles;
   std::optional<std::filesystem::path> developmentTrustKeyFile;
   bool allowDevelopmentVoicebanks{false};
+  std::vector<std::filesystem::path> openProjects;
 };
 
 void printUsage() {
@@ -35,13 +42,16 @@ void printUsage() {
       << "Usage: seam_editor_native [options]\n"
       << "  --auto-close-ms N       close automatically after N milliseconds\n"
       << "  --screenshot PATH       write the final software-raster frame as PPM\n"
+      << "  --window-width N        physical window width from 320 to 8192\n"
+      << "  --window-height N       physical window height from 240 to 8192\n"
       << "  --scale N               logical UI scale from 0.5 to 4.0\n"
       << "  --force-threaded-audio  skip physical system audio\n"
+      << "  --play                  start transport in development mode\n"
       << "  --paused                do not start transport automatically\n"
       << "  --development           opt into development runtime behavior\n"
       << "  --deterministic-test    opt into nonphysical deterministic audio\n"
       << "  --character-package P   character package root\n"
-      << "  --voicebank-root P      add an exact voicebank search root\n"
+      << "  --voicebank-root P      add an exact search root (development in non-release modes)\n"
       << "  --trusted-voicebank-key P  trust an Ed25519 public key for installs\n"
       << "  --development-trust-key P  built-in development signing key\n"
       << "  --deny-development-voicebanks  hide development fixtures\n";
@@ -57,10 +67,18 @@ std::optional<CommandLine> parseArguments(int argc, char** argv) {
     }
     if (argument == "--force-threaded-audio") {
       result.forceThreadedAudio = true;
+      if (result.mode == seam::standalone::ProductionRuntimeMode::Release) {
+        result.mode = seam::standalone::ProductionRuntimeMode::DeterministicTest;
+        result.startPaused = true;
+      }
       continue;
     }
     if (argument == "--paused") {
       result.startPaused = true;
+      continue;
+    }
+    if (argument == "--play") {
+      result.startPaused = false;
       continue;
     }
     if (argument == "--development") {
@@ -109,6 +127,24 @@ std::optional<CommandLine> parseArguments(int argc, char** argv) {
       result.screenshot = std::filesystem::path{argv[++index]};
       continue;
     }
+    if ((argument == "--window-width" || argument == "--window-height") &&
+        index + 1 < argc) {
+      try {
+        const auto value = std::stoul(argv[++index]);
+        if (value < (argument == "--window-width" ? 320U : 240U) ||
+            value > 8192U) {
+          return std::nullopt;
+        }
+        if (argument == "--window-width") {
+          result.windowWidth = static_cast<std::uint32_t>(value);
+        } else {
+          result.windowHeight = static_cast<std::uint32_t>(value);
+        }
+      } catch (...) {
+        return std::nullopt;
+      }
+      continue;
+    }
     if (argument == "--scale" && index + 1 < argc) {
       try {
         result.scale = std::stod(argv[++index]);
@@ -119,6 +155,10 @@ std::optional<CommandLine> parseArguments(int argc, char** argv) {
           result.scale > 4.0) {
         return std::nullopt;
       }
+      continue;
+    }
+    if (!argument.empty() && argument.front() != '-') {
+      result.openProjects.emplace_back(argument);
       continue;
     }
     std::cerr << "Unknown argument: " << argument << '\n';
@@ -157,9 +197,31 @@ developmentTrustRoot(const CommandLine& commandLine, bool& valid) {
   return loaded.value();
 }
 
+seam::core::Result<void> startTransportWhenReady(
+    seam::standalone::NativeEditorApp& app,
+    std::chrono::milliseconds timeout) {
+  auto& transport = app.authoring().runtime().transport();
+  const auto deadline = std::chrono::steady_clock::now() + timeout;
+  while (!transport.state().available &&
+         std::chrono::steady_clock::now() < deadline) {
+    std::this_thread::sleep_for(std::chrono::milliseconds{5});
+  }
+  const auto state = transport.state();
+  if (!state.available) {
+    return seam::core::failure(
+        seam::core::ErrorCode::Conflict,
+        "Requested playback did not receive a rendered timeline before timeout");
+  }
+  if (!state.playing) {
+    const auto played = transport.play();
+    if (!played) return played;
+  }
+  return app.startAudioForPlayback();
+}
+
 }  // namespace
 
-int main(int argc, char** argv) {
+int seam_editor_native_main(int argc, char** argv) {
   static_cast<void>(std::setlocale(LC_ALL, ""));
   const auto commandLine = parseArguments(argc, argv);
   if (!commandLine.has_value()) {
@@ -187,7 +249,10 @@ int main(int argc, char** argv) {
   for (const auto& path : commandLine->voicebankRoots) {
     requestedRoots.push_back(seam::voicebank::VoicebankSearchRoot{
         .path = path,
-        .kind = seam::voicebank::VoicebankRootKind::Installed,
+        .kind = commandLine->mode ==
+                        seam::standalone::ProductionRuntimeMode::Release
+                    ? seam::voicebank::VoicebankRootKind::Installed
+                    : seam::voicebank::VoicebankRootKind::Development,
     });
   }
   const auto production = seam::standalone::makeProductionConfiguration(
@@ -228,13 +293,13 @@ int main(int argc, char** argv) {
           },
           .runtimeMode = runtime.mode,
           .characterPackage = runtime.characterPackage,
-          .applicationSupportRoot = runtime.applicationSupportRoot,
           .trustedVoicebankKeys = runtime.trustedVoicebankKeys,
           .developmentTrustRoot = runtime.developmentTrustRoot,
           .allowDevelopmentVoicebanks = runtime.allowDevelopmentVoicebanks,
           .audioBlockFrames = runtime.audioBlockFrames,
           .forceThreadedAudio = runtime.forceThreadedAudio,
           .startPaused = runtime.startPaused,
+          .manualsRoot = paths.value().manualsRoot,
       });
   if (!created) {
     std::cerr << "Standalone initialization failed: "
@@ -246,14 +311,24 @@ int main(int argc, char** argv) {
     return 3;
   }
   auto app = std::move(created).value();
+#if defined(__APPLE__)
+  auto macosDelegate =
+      seam::standalone::macos::ApplicationDelegateHandle::install(*app);
+  if (!macosDelegate) {
+    std::cerr << "Unable to install the macOS application delegate: "
+              << macosDelegate.error().message << '\n';
+    return 4;
+  }
+#endif
   auto window = seam::native_ui::createNativeWindow();
   app->setWindow(*window);
   const auto opened = window->open(
       seam::native_ui::NativeWindowConfig{
           .title = "Project SEAM / Production Standalone",
-          .width = 1440U,
-          .height = 900U,
+          .width = commandLine->windowWidth,
+          .height = commandLine->windowHeight,
           .scale = commandLine->scale,
+          .restoreLastDocument = commandLine->openProjects.empty(),
           .autoCloseAfter = commandLine->autoClose,
           .screenshotPath = commandLine->screenshot,
       },
@@ -263,22 +338,66 @@ int main(int argc, char** argv) {
     return 4;
   }
 
+  for (const auto& path : commandLine->openProjects) {
+    const auto startupProject = app->openProject(path);
+    if (!startupProject) {
+      std::cerr << "Unable to open startup project: "
+                << startupProject.error().message;
+      if (!startupProject.error().context.empty()) {
+        std::cerr << " (" << startupProject.error().context << ')';
+      }
+      std::cerr << '\n';
+      return 5;
+    }
+  }
+  if (!runtime.startPaused) {
+    const auto started =
+        startTransportWhenReady(*app, std::chrono::seconds{10});
+    if (!started) {
+      std::cerr << "Unable to start requested playback: "
+                << started.error().message << '\n';
+      return 5;
+    }
+  }
+
   const auto result = window->run();
   app->shutdownAudio();
   const auto info = app->audioInfo();
   const auto audio = app->audioStats();
   const auto processor = app->processorStats();
   const auto resolution = app->authoring().voicebankResolution();
+  const auto render = app->authoring().runtime().renderer().progress();
+  const auto transport = app->authoring().runtime().transport().state();
   std::cout << "window_backend=" << window->backendName() << '\n'
             << "audio_backend=" << info.backend << '\n'
             << "audio_physical=" << (info.physical ? "true" : "false") << '\n'
             << "audio_callbacks=" << audio.callbacks << '\n'
+            << "audio_frames=" << audio.frames << '\n'
+            << "audio_write_failures=" << audio.writeFailures << '\n'
+            << "audio_xruns=" << audio.xruns << '\n'
             << "callback_delivered=" << processor.deliveredFrames << '\n'
             << "callback_underflow=" << processor.underflowFrames << '\n'
+            << "callback_intentional_reset="
+            << processor.intentionalResetFrames << '\n'
             << "voicebank_resolved="
-            << (resolution.resolved() ? "true" : "false") << '\n';
+            << (resolution.resolved() ? "true" : "false") << '\n'
+            << "render_state=" << seam::authoring::renderStateName(render.state)
+            << '\n'
+            << "render_requested_revision=" << render.requestedRevision << '\n'
+            << "render_published_revision=" << render.publishedRevision << '\n'
+            << "render_diagnostic=" << render.diagnostic << '\n'
+            << "transport_playing=" << (transport.playing ? "true" : "false")
+            << '\n'
+            << "transport_available="
+            << (transport.available ? "true" : "false") << '\n'
+            << "transport_published_revision=" << transport.publishedRevision
+            << '\n';
   if (!app->lastError().empty()) {
     std::cerr << "last_editor_error=" << app->lastError() << '\n';
   }
   return result;
 }
+
+#if !defined(_WIN32)
+int main(int argc, char** argv) { return seam_editor_native_main(argc, argv); }
+#endif

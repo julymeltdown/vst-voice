@@ -1,6 +1,7 @@
 #pragma once
 
 #include "seam/core/log_event.hpp"
+#include "seam/core/realtime_audit.hpp"
 
 #include <mutex>
 #include <ostream>
@@ -19,7 +20,9 @@ public:
 
 class NullLogger final : public ILogger {
 public:
-  void write(LogLevel, std::string_view, std::string_view) override {}
+  void write(LogLevel, std::string_view, std::string_view) override {
+    recordRealtimeLogger();
+  }
 };
 
 class StreamLogger final : public ILogger {

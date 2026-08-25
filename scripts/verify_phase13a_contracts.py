@@ -6,6 +6,9 @@ import json
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools" / "phase13a"))
+from documentation_contract import validate_documentation  # noqa: E402
+
 EXPECTED_COMMITS = {
     "clap": "195b42a004144fab0b3cf95e9c067187d15365b7",
     "clap-wrapper": "35f524b771ec09f54c164720bb90f271273b37d3",
@@ -53,7 +56,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     require_tokens(
         root / "packaging" / "windows" / "ProjectSEAM.nsi",
-        ("ProjectSEAMEditor.clap", "ProjectSEAMEditor.vst3", "SetCompressor zlib"),
+        ("ProjectSEAMEditor.clap", "ProjectSEAMEditor.vst3", "Documentation", "SetCompressor zlib"),
         errors,
     )
     require_tokens(
@@ -117,6 +120,39 @@ def main(argv: list[str] | None = None) -> int:
         ("signtool.exe", "WINDOWS_SIGN_CERT_SHA1", "timestamp.digicert.com"),
         errors,
     )
+    require_tokens(
+        root / "packaging" / "phase13a" / "wrapper-project" / "CMakeLists.txt",
+        ("CLAP_WRAPPER_DOWNLOAD_DEPENDENCIES OFF", "CLAP_WRAPPER_WINDOWS_SINGLE_FILE OFF", "WINDOWS_FOLDER_VST3 TRUE", "SEAM_WRAPPER_CXX_STANDARD 23", "CMAKE_OSX_DEPLOYMENT_TARGET \"12.0\""),
+        errors,
+    )
+    require_tokens(
+        root / "scripts" / "build_phase13a_formats.py",
+        ("clap-wrapper-vst3-editor-compatibility.patch", "dependencyPatches"),
+        errors,
+    )
+    require_tokens(
+        root / "libs" / "seam-clap-editor" / "src" / "plugin_entry.cpp",
+        ("static auto* mutex = new std::mutex", "static auto* path = new std::filesystem::path", "entryMutex()"),
+        errors,
+    )
+    for relative, tokens in {
+        "tools/phase13a/update_contract.py": ("verify_sealed_handoff", "verify_update_manifest", "ed25519_verify"),
+        "tools/phase13a/support_bundle.py": ("ExportSafe", "write_export_bundle", "delete_owned_report"),
+        "tools/phase13a/wrapper_preflight.py": ("validate_preflight", "networkDownloads", "windowsFolderVst3"),
+        "tools/phase13a/wrapper_state.py": ("canonicalStateSha256", "validate_projected_state", "future or unsupported"),
+        "scripts/run_vst3_test_host.py": ("repeatLifecycle", "installed", "test-host-nonzero"),
+        "scripts/verify_update_manifest.py": ("sealed installer handoff", "trusted root"),
+    }.items():
+        require_tokens(root / relative, tokens, errors)
+    if not (root / "docs/product/external-beta-sealed-handoff.schema.json").is_file():
+        errors.append("missing sealed installer handoff schema")
+    documentation_manifest_path = root / "docs/product/external-beta-documentation.json"
+    try:
+        documentation_manifest = json.loads(documentation_manifest_path.read_text(encoding="utf-8"))
+        documentation_errors, _ = validate_documentation(root, documentation_manifest)
+        errors.extend(documentation_errors)
+    except (OSError, json.JSONDecodeError, ValueError) as exc:
+        errors.append(f"offline documentation contract is invalid: {exc}")
     if errors:
         for error in errors:
             print("[phase13a-contract] ERROR", error, file=sys.stderr)

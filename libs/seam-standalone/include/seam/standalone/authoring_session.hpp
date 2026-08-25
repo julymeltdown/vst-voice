@@ -2,6 +2,7 @@
 
 #include "seam/authoring/authoring_runtime.hpp"
 #include "seam/authoring/autosave_service.hpp"
+#include "seam/authoring/media_import_service.hpp"
 #include "seam/authoring/project_lifecycle.hpp"
 #include "seam/core/result.hpp"
 #include "seam/native_ui/editor_controller.hpp"
@@ -59,6 +60,11 @@ public:
   [[nodiscard]] core::Result<void> recoverProject(
       authoring::AutosaveService& autosave,
       const authoring::RecoveryCandidate& candidate);
+  [[nodiscard]] core::Result<authoring::MediaImportResult> importBackingMedia(
+      const std::filesystem::path& sourcePath, authoring::MediaImportMode mode,
+      std::string trackName, time::Tick startTick);
+  [[nodiscard]] core::Result<void> relinkBackingMedia(
+      domain::TrackId trackId, const std::filesystem::path& sourcePath);
 
 private:
   AuthoringSession(std::unique_ptr<authoring::AuthoringRuntime> runtime,

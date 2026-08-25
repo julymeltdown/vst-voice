@@ -42,7 +42,7 @@ def main() -> int:
     cmake = (root / "CMakeLists.txt").read_text()
 
     require(lifecycle_hpp, "class ProjectLifecycleService", "shared lifecycle service", failures)
-    require(lifecycle_cpp, "codec_.load", "canonical project codec load", failures)
+    require(lifecycle_cpp, "codec_.decode", "canonical project codec decode", failures)
     require(lifecycle_cpp, "codec_.encode", "canonical project codec encode", failures)
     require(lifecycle_cpp, "durableAtomicWriteText", "durable project persistence", failures)
     require(document_hpp, "std::optional<std::filesystem::path> projectPath", "external document path", failures)

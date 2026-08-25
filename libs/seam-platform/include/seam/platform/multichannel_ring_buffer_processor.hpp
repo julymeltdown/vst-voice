@@ -15,6 +15,7 @@ struct MultichannelRingProcessorStats final {
   std::uint64_t requestedFrames{0U};
   std::uint64_t deliveredFrames{0U};
   std::uint64_t underflowFrames{0U};
+  std::uint64_t intentionalResetFrames{0U};
   std::uint64_t channelMismatchCallbacks{0U};
 };
 
@@ -36,6 +37,7 @@ private:
   std::atomic<std::uint64_t> requestedFrames_{0U};
   std::atomic<std::uint64_t> deliveredFrames_{0U};
   std::atomic<std::uint64_t> underflowFrames_{0U};
+  std::atomic<std::uint64_t> intentionalResetFrames_{0U};
   std::atomic<std::uint64_t> channelMismatchCallbacks_{0U};
 };
 

@@ -9,6 +9,12 @@ on:
       result_record:
         description: Absolute path to the evidence-backed validation record on the self-hosted runner
         required: true
+      candidate_manifest:
+        description: Absolute path to the exact candidate build manifest on the self-hosted runner
+        required: true
+      installed_root:
+        description: Absolute system plug-in directory containing the tested installed artifact
+        required: true
 
 permissions:
   contents: read
@@ -22,9 +28,13 @@ jobs:
         shell: bash
         env:
           RESULT_RECORD: ${{ inputs.result_record }}
+          CANDIDATE_MANIFEST: ${{ inputs.candidate_manifest }}
+          INSTALLED_ROOT: ${{ inputs.installed_root }}
           TARGET_ID: ${{ inputs.target_id }}
         run: |
           test -f "$RESULT_RECORD"
+          test -f "$CANDIDATE_MANIFEST"
+          test -d "$INSTALLED_ROOT"
           python3 - <<'PY'
           import json, os
           record=json.load(open(os.environ['RESULT_RECORD'], encoding='utf-8'))
@@ -35,6 +45,8 @@ jobs:
             --matrix docs/phase13a/mandatory-validation-matrix.json \
             --record "$RESULT_RECORD" \
             --evidence-root "$(dirname "$RESULT_RECORD")" \
+            --candidate-manifest "$CANDIDATE_MANIFEST" \
+            --installed-root "$INSTALLED_ROOT" \
             --output out/phase13a/updated-validation-matrix.json
       - name: Evaluate target release gates without fabricating success
         shell: bash
@@ -47,4 +59,5 @@ jobs:
           path: |
             out/phase13a/updated-validation-matrix.json
             ${{ inputs.result_record }}
+            ${{ inputs.candidate_manifest }}
             ${{ inputs.result_record }}.evidence/**

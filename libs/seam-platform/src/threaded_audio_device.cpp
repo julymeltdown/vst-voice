@@ -115,6 +115,7 @@ public:
   AudioDeviceInfo info() const override {
     return AudioDeviceInfo{
         .backend = "threaded-callback-clock",
+        .deviceId = "threaded-callback-clock",
         .deviceName = "no physical output",
         .sampleRate = config_.sampleRate,
         .blockFrames = config_.blockFrames,

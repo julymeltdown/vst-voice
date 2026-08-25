@@ -15,3 +15,8 @@ The Phase 11 public-domain fixture is technically useful but cannot satisfy thes
 
 
 Phase 13B implements the dossier and evidence validator for this gate. The checked-in baseline intentionally remains blocked and contains no signed performer, recording or legal evidence.
+
+The closed External Beta uses a separate non-official gate in
+`BETA_VOICEBANK_ACCEPTANCE.md`. A Beta bank must not use `official.voice.01`,
+`official=true`, or Character 01 evidence, and neither gate can substitute for
+the other.

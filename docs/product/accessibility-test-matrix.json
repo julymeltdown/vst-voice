@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "surfaces": [
+    {"surface": "native-editor", "platform": "macOS", "tool": "VoiceOver", "status": "NOT_RUN"},
+    {"surface": "native-editor", "platform": "Windows", "tool": "Narrator/UIA Verify", "status": "NOT_RUN"},
+    {"surface": "native-editor", "platform": "macOS", "tool": "Accessibility Inspector", "status": "NOT_RUN"},
+    {"surface": "native-editor", "platform": "Windows", "tool": "Inspect", "status": "NOT_RUN"}
+  ],
+  "sharedSemanticContract": {
+    "implementation": "libs/seam-native-ui/src/accessibility_tree.cpp",
+    "platformAdapters": {
+      "macOS": "libs/seam-native-ui/src/native_window_appkit.mm",
+      "Windows": "libs/seam-native-ui/src/accessibility_win32.cpp"
+    },
+    "maximumMaterializedNotes": 512,
+    "status": "ENGINEERING_READY_TARGET_BUILD_AND_EXTERNAL_RUN_REQUIRED"
+  }
+}

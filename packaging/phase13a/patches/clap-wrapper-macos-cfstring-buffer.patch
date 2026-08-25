@@ -1,0 +1,16 @@
+diff --git a/src/detail/clap/mac_helpers.mm b/src/detail/clap/mac_helpers.mm
+--- a/src/detail/clap/mac_helpers.mm
++++ b/src/detail/clap/mac_helpers.mm
+@@ -105,9 +105,10 @@ std::string toString(const CFStringRef aString)
+ 
+   CFIndex length = CFStringGetLength(aString);
+   CFIndex maxSize = CFStringGetMaximumSizeForEncoding(length, kCFStringEncodingUTF8) + 1;
+-  result.reserve(maxSize);
++  result.resize(static_cast<std::size_t>(maxSize));
+ 
+-  if (CFStringGetCString(aString, result.data(), maxSize, kCFStringEncodingUTF8))
++  if (CFStringGetCString(aString, &result[0], maxSize, kCFStringEncodingUTF8))
+   {
++    result.resize(std::char_traits<char>::length(result.c_str()));
+     return result;
+   }

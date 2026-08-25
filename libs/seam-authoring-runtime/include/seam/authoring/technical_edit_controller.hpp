@@ -39,17 +39,30 @@ public:
   [[nodiscard]] core::Result<void> movePhonemeBoundary(
       domain::PhonemeKey key, bool startBoundary,
       time::Microseconds offset);
+  [[nodiscard]] core::Result<void> setPhonemeLocked(
+      domain::PhonemeKey key, bool locked);
+  [[nodiscard]] core::Result<void> resetPhonemeOverride(
+      domain::PhonemeKey key);
+  [[nodiscard]] core::Result<void> resetPhonemeOverrides(
+      const std::vector<domain::PhonemeKey>& keys);
+  [[nodiscard]] core::Result<void> resetPhonemeRegion();
   [[nodiscard]] core::Result<void> selectUnitVariant(
       domain::PhonemeKey key, std::string unitId,
       domain::UnitRendererKind renderer);
   [[nodiscard]] core::Result<void> cycleUnitVariant(domain::PhonemeKey key);
   [[nodiscard]] core::Result<void> cycleUnitRenderer(domain::PhonemeKey key);
+  [[nodiscard]] core::Result<void> resetUnitSelection(domain::PhonemeKey key);
+  [[nodiscard]] core::Result<void> resetUnitSelections(
+      const std::vector<domain::PhonemeKey>& keys);
+  [[nodiscard]] core::Result<void> resetUnitRegion();
 
   [[nodiscard]] core::Result<void> upsertPitchPoint(
       domain::PitchAutomationPoint point);
   [[nodiscard]] core::Result<void> movePitchPoint(
       time::Tick from, domain::PitchAutomationPoint point);
   [[nodiscard]] core::Result<void> removePitchPoint(time::Tick tick);
+  [[nodiscard]] core::Result<void> resetPitchSegment(time::Tick start,
+                                                     time::Tick end);
   [[nodiscard]] core::Result<void> cyclePitchInterpolation(time::Tick tick);
 
   [[nodiscard]] core::Result<void> upsertSeam(domain::SeamOverride seam);

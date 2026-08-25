@@ -90,6 +90,7 @@ std::vector<std::filesystem::path> systemFontCandidates(
   }
   paths.emplace_back("/System/Library/Fonts/AppleSDGothicNeo.ttc");
   paths.emplace_back("/System/Library/Fonts/PingFang.ttc");
+  paths.emplace_back("/System/Library/Fonts/Apple Symbols.ttf");
   paths.emplace_back("/System/Library/Fonts/Helvetica.ttc");
   paths.emplace_back("/Library/Fonts/Arial Unicode.ttf");
 #else

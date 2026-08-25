@@ -5,6 +5,7 @@ evidence="${2:?evidence directory required}"
 identity="${APPLE_DEVELOPER_ID_APPLICATION:?APPLE_DEVELOPER_ID_APPLICATION is required; signing fails closed}"
 [[ "$(uname -s)" == Darwin ]] || { echo 'macOS signing must run on macOS' >&2; exit 2; }
 mkdir -p "$evidence"
+script_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 items=(
   "$payload/CLAP/ProjectSEAMEditor.clap"
   "$payload/VST3/ProjectSEAMEditor.vst3"
@@ -15,6 +16,10 @@ for item in "${items[@]}"; do
   find "$item" -type f -perm -111 -print0 | while IFS= read -r -d '' binary; do
     codesign --force --options runtime --timestamp --sign "$identity" "$binary"
   done
+  codesign --force --deep --options runtime --timestamp --sign "$identity" "$item"
+done
+python3 "$script_root/scripts/refresh_phase13a_wrapper_manifests.py" "$payload"
+for item in "${items[@]:1}"; do
   codesign --force --deep --options runtime --timestamp --sign "$identity" "$item"
   codesign --verify --deep --strict --verbose=4 "$item" 2>&1 | tee "$evidence/$(basename "$item").codesign.log"
 done

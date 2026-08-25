@@ -123,7 +123,12 @@ public:
     auto result = CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr,
                                    CLSCTX_ALL, IID_PPV_ARGS(&enumerator));
     if (FAILED(result)) return failOpen("Unable to create WASAPI device enumerator", result);
-    result = enumerator->GetDefaultAudioEndpoint(eRender, eConsole, &device_);
+    if (config.deviceId.empty()) {
+      result = enumerator->GetDefaultAudioEndpoint(eRender, eConsole, &device_);
+    } else {
+      const std::wstring requested{config.deviceId.begin(), config.deviceId.end()};
+      result = enumerator->GetDevice(requested.c_str(), &device_);
+    }
     if (FAILED(result)) return failOpen("Unable to obtain default WASAPI output", result);
     result = device_->Activate(__uuidof(IAudioClient), CLSCTX_ALL, nullptr,
                                reinterpret_cast<void**>(client_.ReleaseAndGetAddressOf()));
@@ -153,6 +158,13 @@ public:
     if (FAILED(result)) return failOpen("Unable to obtain WASAPI render client", result);
 
     config_ = config;
+    if (config_.deviceId.empty()) {
+      LPWSTR rawId = nullptr;
+      if (SUCCEEDED(device_->GetId(&rawId)) && rawId != nullptr) {
+        config_.deviceId = std::string{rawId, rawId + wcslen(rawId)};
+        CoTaskMemFree(rawId);
+      }
+    }
     processor_ = &processor;
     channels_.assign(config.outputChannels,
                      std::vector<float>(bufferFrames_, 0.0F));
@@ -272,6 +284,7 @@ public:
   AudioDeviceInfo info() const override {
     return AudioDeviceInfo{
         .backend = "WASAPI shared event-driven",
+        .deviceId = config_.deviceId,
         .deviceName = "default-render-endpoint",
         .sampleRate = config_.sampleRate,
         .blockFrames = config_.blockFrames,

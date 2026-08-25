@@ -160,7 +160,7 @@ int main(int argc, char** argv) {
           .requestRepaint = [&repaintRequests] { ++repaintRequests; },
           .beginTextInput = [&textRequests](const auto&) { ++textRequests; },
           .endTextInput = [] {},
-          .setPlaying = [](bool) {},
+          .setPlaying = [](bool) { return seam::core::success(); },
           .documentChanged = {},
       }};
   controller.resize(1440.0, 900.0);

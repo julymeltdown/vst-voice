@@ -51,6 +51,8 @@ TEST_CASE("project_lifecycle_new_project_creates_valid_canonical_document") {
       seam::authoring::NewProjectRequest{
           .name = "  新しい曲  ",
           .tempoBpm = 150.0,
+          .meterNumerator = 7U,
+          .meterDenominator = 8U,
           .sampleRate = 44100U,
           .outputChannels = 4U,
           .initialVoicebank = voice,
@@ -60,6 +62,8 @@ TEST_CASE("project_lifecycle_new_project_creates_valid_canonical_document") {
   const auto& project = document.session().project();
   CHECK(project.name() == "新しい曲");
   CHECK_NEAR(project.tempoMap().bpmAt(seam::time::Tick{0}), 150.0, 1e-9);
+  CHECK(project.meterMap().meterAt(seam::time::Tick{0}).numerator == 7U);
+  CHECK(project.meterMap().meterAt(seam::time::Tick{0}).denominator == 8U);
   CHECK_NEAR(project.settings().sampleRate, 44100.0, 1e-9);
   CHECK(project.settings().characterDisplay ==
         seam::domain::CharacterDisplayMode::Minimal);
@@ -88,6 +92,14 @@ TEST_CASE("project_lifecycle_new_project_rejects_invalid_bounds_without_mutation
        .outputChannels = 2U, .initialVoicebank = std::nullopt},
       {.name = "Tempo high", .tempoBpm = 400.01, .sampleRate = 48000U,
        .outputChannels = 2U, .initialVoicebank = std::nullopt},
+      {.name = "Meter numerator", .tempoBpm = 120.0,
+       .meterNumerator = 0U, .meterDenominator = 4U,
+       .sampleRate = 48000U, .outputChannels = 2U,
+       .initialVoicebank = std::nullopt},
+      {.name = "Meter denominator", .tempoBpm = 120.0,
+       .meterNumerator = 4U, .meterDenominator = 3U,
+       .sampleRate = 48000U, .outputChannels = 2U,
+       .initialVoicebank = std::nullopt},
       {.name = "Sample rate", .tempoBpm = 120.0, .sampleRate = 88200U,
        .outputChannels = 2U, .initialVoicebank = std::nullopt},
       {.name = "Channels", .tempoBpm = 120.0, .sampleRate = 48000U,
@@ -203,6 +215,35 @@ TEST_CASE("project_lifecycle_save_requires_path_and_failure_preserves_dirty_stat
   CHECK(document.dirty());
   CHECK(!document.identity().projectPath.has_value());
   CHECK(!std::filesystem::exists(path));
+}
+
+TEST_CASE("project_lifecycle_reopens_a_saved_trackless_project") {
+  const auto root = seam::test::support::temporaryDirectory(
+      "lifecycle-trackless-reopen");
+  const auto path = root / "empty.seam";
+  auto source = makeDocument();
+  seam::authoring::ProjectLifecycleService lifecycle;
+  CHECK(lifecycle.createNew(
+      source,
+      seam::authoring::NewProjectRequest{
+          .name = "Empty arrangement",
+          .tempoBpm = 120.0,
+          .sampleRate = 48000U,
+          .outputChannels = 2U,
+          .createInitialVocalTrack = false,
+          .initialVoicebank = std::nullopt,
+          .projectPath = path,
+      }));
+  CHECK(source.session().project().vocalTracks().empty());
+  CHECK(source.session().project().audioTracks().empty());
+
+  auto target = makeDocument();
+  const auto opened = lifecycle.open(target, path);
+  CHECK(opened);
+  CHECK(target.session().project().vocalTracks().empty());
+  CHECK(target.session().project().audioTracks().empty());
+  CHECK(target.identity().projectPath == path);
+  CHECK(!target.dirty());
 }
 
 TEST_CASE("project_lifecycle_failed_open_preserves_current_document") {

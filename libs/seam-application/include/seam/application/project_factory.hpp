@@ -15,6 +15,12 @@ public:
   void synchronizeWith(const domain::Project& project) noexcept;
   [[nodiscard]] std::uint64_t nextIdValue() const noexcept { return ids_.nextValue(); }
   [[nodiscard]] domain::TrackId addVocalTrack(domain::Project& project, std::string name);
+  [[nodiscard]] domain::TrackId nextTrackId() noexcept {
+    return ids_.next<domain::TrackTag>();
+  }
+  [[nodiscard]] domain::RegionId nextRegionId() noexcept {
+    return ids_.next<domain::RegionTag>();
+  }
   [[nodiscard]] domain::RegionId addRegion(domain::Project& project,
                                             domain::TrackId trackId,
                                             std::string name,

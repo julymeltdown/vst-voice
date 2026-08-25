@@ -185,6 +185,17 @@ core::Result<PhraseRenderResult> ConcatenativePhraseRenderer::render(
         1, placement.destinationEnd - placement.destinationStart);
     auto dispatchParameters = options.renderer;
     dispatchParameters.rendererOverride = planEntry.renderer;
+    if (const auto* overrideValue =
+            region.findUnitSelectionOverride(placement.startKey);
+        overrideValue != nullptr) {
+      if (overrideValue->loopPrint.has_value()) {
+        dispatchParameters.raw.loopPrint = *overrideValue->loopPrint;
+      }
+      if (overrideValue->sourcePitchResidual.has_value()) {
+        dispatchParameters.psola.sourcePitchResidual =
+            *overrideValue->sourcePitchResidual;
+      }
+    }
 
     std::vector<PitchPoint> pitchPoints;
     if (!region.pitchAutomation.points().empty()) {

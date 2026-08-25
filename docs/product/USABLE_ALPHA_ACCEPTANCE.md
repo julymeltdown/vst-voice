@@ -8,9 +8,17 @@ Project SEAM reaches **Usable Alpha** only when one person can complete every ma
 
 ## Current limitation
 
-The current native standalone is a demo shell. `apps/seam-editor-native/main.cpp` constructs a hard-coded project through `makeDemoProject()` and a sine-wave playback source through `makeDemoTimeline()`. The visible notes therefore do not yet drive the production sample-concatenative renderer in the standalone application.
+The native standalone now uses `AuthoringSession` and the shared
+`ProductionProjectRenderer` path for project-owned notes, voicebank resolution,
+transport, backing media, and export. The deterministic test mode may still use
+threaded fallback audio and development fixtures; that is not physical-device
+acceptance. The contract remains blocked until a rights-cleared production bank,
+target Apple Silicon runtime evidence, reopen/recovery/export listening evidence,
+and the real-song stability session are recorded through the UI.
 
-Phase 12C, Phase 13A, and Phase 13B provide engineering, validation, distribution, and content/IP gates. They do **not** prove standalone usability and cannot mark this contract as passed.
+Phase 12C, Phase 13A, and Phase 13B provide engineering, validation,
+distribution, and content/IP gates. Their source readiness and blocked reports
+do **not** substitute for those target-environment acceptance records.
 
 ## Mandatory requirements
 

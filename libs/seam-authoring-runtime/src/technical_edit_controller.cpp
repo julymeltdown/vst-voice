@@ -6,6 +6,7 @@
 #include "seam/phonemizer/japanese_phonemizer.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <iterator>
 #include <memory>
 #include <utility>
@@ -33,6 +34,23 @@ void TechnicalEditController::notifyEdit() const {
   if (editCommitted_) editCommitted_();
 }
 
+namespace {
+
+core::Result<domain::PitchAutomationPoint> normalizePitchPoint(
+    const domain::VocalRegion& region, domain::PitchAutomationPoint point) {
+  if (!std::isfinite(point.cents)) {
+    return core::failure<domain::PitchAutomationPoint>(
+        core::ErrorCode::InvalidArgument,
+        "Pitch automation cents must be finite");
+  }
+  point.cents = std::clamp(point.cents, -4800.0F, 4800.0F);
+  point.tick = std::max(time::Tick{0}, point.tick);
+  point.tick = std::min(region.durationTick, point.tick);
+  return core::success(point);
+}
+
+}
+
 core::Result<void> TechnicalEditController::commit(
     std::unique_ptr<application::ICommand> command) {
   const auto result = document_->execute(std::move(command));
@@ -54,7 +72,13 @@ std::optional<TechnicalUnitView> TechnicalEditController::unitView(
   const auto view = renderViewProvider_();
   for (const auto& unit : view.units) {
     if (unit.entry.tokenStart >= tokens.tokens.size()) continue;
-    if (tokens.tokens[unit.entry.tokenStart].key == key) return unit;
+    const auto remaining = tokens.tokens.size() - unit.entry.tokenStart;
+    const auto count = std::min(unit.entry.tokenCount, remaining);
+    for (std::size_t offset = 0U; offset < count; ++offset) {
+      if (tokens.tokens[unit.entry.tokenStart + offset].key == key) {
+        return unit;
+      }
+    }
   }
   return std::nullopt;
 }
@@ -97,6 +121,77 @@ core::Result<void> TechnicalEditController::movePhonemeBoundary(
       regionId_, std::move(value)));
 }
 
+core::Result<void> TechnicalEditController::setPhonemeLocked(
+    domain::PhonemeKey key, bool locked) {
+  auto* current = region();
+  if (current == nullptr || current->findNote(key.noteId) == nullptr) {
+    return core::failure(core::ErrorCode::NotFound,
+                         "Phoneme lock target is missing");
+  }
+  const auto generated = phonemes();
+  const auto token = std::find_if(
+      generated.tokens.begin(), generated.tokens.end(),
+      [key](const auto& value) { return value.key == key; });
+  if (token == generated.tokens.end()) {
+    return core::failure(core::ErrorCode::NotFound,
+                         "Phoneme lock key is unavailable");
+  }
+  const auto* existing = current->findPhonemeOverride(key);
+  if (existing == nullptr && !locked) return core::success();
+  domain::PhonemeOverride value = existing != nullptr
+                                      ? *existing
+                                      : domain::PhonemeOverride{.key = key};
+  value.locked = locked;
+  return commit(std::make_unique<application::UpsertPhonemeOverrideCommand>(
+      regionId_, std::move(value)));
+}
+
+core::Result<void> TechnicalEditController::resetPhonemeOverride(
+    domain::PhonemeKey key) {
+  auto* current = region();
+  if (current == nullptr || current->findNote(key.noteId) == nullptr) {
+    return core::failure(core::ErrorCode::NotFound,
+                         "Phoneme reset target is missing");
+  }
+  if (current->findPhonemeOverride(key) == nullptr) return core::success();
+  return commit(std::make_unique<application::RemovePhonemeOverrideCommand>(
+      regionId_, key));
+}
+
+core::Result<void> TechnicalEditController::resetPhonemeOverrides(
+    const std::vector<domain::PhonemeKey>& keys) {
+  auto* current = region();
+  if (current == nullptr) {
+    return core::failure(core::ErrorCode::NotFound,
+                         "Phoneme reset region is missing");
+  }
+  auto command = std::make_unique<application::CompositeCommand>(
+      "Reset phoneme overrides");
+  std::vector<domain::PhonemeKey> seen;
+  for (const auto key : keys) {
+    if (std::find(seen.begin(), seen.end(), key) != seen.end()) continue;
+    seen.push_back(key);
+    if (current->findPhonemeOverride(key) != nullptr) {
+      command->add(std::make_unique<application::RemovePhonemeOverrideCommand>(
+          regionId_, key));
+    }
+  }
+  if (seen.empty() || command->impact().noteIds.empty()) return core::success();
+  return commit(std::move(command));
+}
+
+core::Result<void> TechnicalEditController::resetPhonemeRegion() {
+  const auto* current = region();
+  if (current == nullptr) {
+    return core::failure(core::ErrorCode::NotFound,
+                         "Phoneme reset region is missing");
+  }
+  std::vector<domain::PhonemeKey> keys;
+  keys.reserve(current->phonemeOverrides.size());
+  for (const auto& value : current->phonemeOverrides) keys.push_back(value.key);
+  return resetPhonemeOverrides(keys);
+}
+
 core::Result<void> TechnicalEditController::selectUnitVariant(
     domain::PhonemeKey key, std::string unitId,
     domain::UnitRendererKind rendererKind) {
@@ -109,6 +204,12 @@ core::Result<void> TechnicalEditController::selectUnitVariant(
     return core::failure(core::ErrorCode::NotFound,
                          "Unit plan entry is unavailable for this phoneme");
   }
+  const auto tokens = phonemes();
+  if (selectedView->entry.tokenStart >= tokens.tokens.size()) {
+    return core::failure(core::ErrorCode::NotFound,
+                         "Selected Unit start phoneme is unavailable");
+  }
+  const auto startKey = tokens.tokens[selectedView->entry.tokenStart].key;
   std::vector<std::string> allowed{selectedView->entry.unitId};
   allowed.insert(allowed.end(), selectedView->entry.alternatives.begin(),
                  selectedView->entry.alternatives.end());
@@ -118,16 +219,10 @@ core::Result<void> TechnicalEditController::selectUnitVariant(
     return core::failure(core::ErrorCode::InvalidArgument,
                          "Selected Unit is not an available variant", unitId);
   }
-  const auto tokens = phonemes();
-  if (selectedView->entry.tokenStart >= tokens.tokens.size() ||
-      tokens.tokens[selectedView->entry.tokenStart].key != key) {
-    return core::failure(core::ErrorCode::NotFound,
-                         "Selected Unit start phoneme is unavailable");
-  }
   const auto tokenCount = static_cast<std::uint16_t>(
       std::clamp<std::size_t>(selectedView->entry.tokenCount, 1U, 65535U));
   domain::UnitSelectionOverride value{
-      .startKey = key,
+      .startKey = startKey,
       .tokenCount = tokenCount,
       .unitId = std::move(unitId),
       .renderer = rendererKind,
@@ -145,6 +240,12 @@ core::Result<void> TechnicalEditController::cycleUnitVariant(
     return core::failure(core::ErrorCode::NotFound,
                          "Unit plan entry is unavailable for this phoneme");
   }
+  const auto tokens = phonemes();
+  if (selectedView->entry.tokenStart >= tokens.tokens.size()) {
+    return core::failure(core::ErrorCode::NotFound,
+                         "Selected Unit start phoneme is unavailable");
+  }
+  const auto startKey = tokens.tokens[selectedView->entry.tokenStart].key;
   std::vector<std::string> choices{selectedView->entry.unitId};
   choices.insert(choices.end(), selectedView->entry.alternatives.begin(),
                  selectedView->entry.alternatives.end());
@@ -158,7 +259,7 @@ core::Result<void> TechnicalEditController::cycleUnitVariant(
   std::string currentId = selectedView->entry.unitId;
   auto rendererKind = selectedView->entry.renderer;
   if (const auto* currentRegion = region(); currentRegion != nullptr) {
-    if (const auto* value = currentRegion->findUnitSelectionOverride(key)) {
+    if (const auto* value = currentRegion->findUnitSelectionOverride(startKey)) {
       currentId = value->unitId;
       rendererKind = value->renderer;
     }
@@ -167,7 +268,7 @@ core::Result<void> TechnicalEditController::cycleUnitVariant(
   const auto next = current == choices.end() || std::next(current) == choices.end()
                         ? choices.begin()
                         : std::next(current);
-  return selectUnitVariant(key, *next, rendererKind);
+  return selectUnitVariant(startKey, *next, rendererKind);
 }
 
 core::Result<void> TechnicalEditController::cycleUnitRenderer(
@@ -177,10 +278,16 @@ core::Result<void> TechnicalEditController::cycleUnitRenderer(
     return core::failure(core::ErrorCode::NotFound,
                          "Unit plan entry is unavailable for renderer cycling");
   }
+  const auto tokens = phonemes();
+  if (selectedView->entry.tokenStart >= tokens.tokens.size()) {
+    return core::failure(core::ErrorCode::NotFound,
+                         "Selected Unit start phoneme is unavailable");
+  }
+  const auto startKey = tokens.tokens[selectedView->entry.tokenStart].key;
   std::string currentId = selectedView->entry.unitId;
   auto currentRenderer = selectedView->entry.renderer;
   if (const auto* currentRegion = region(); currentRegion != nullptr) {
-    if (const auto* value = currentRegion->findUnitSelectionOverride(key)) {
+    if (const auto* value = currentRegion->findUnitSelectionOverride(startKey)) {
       currentId = value->unitId;
       currentRenderer = value->renderer;
     }
@@ -201,18 +308,90 @@ core::Result<void> TechnicalEditController::cycleUnitRenderer(
       next = domain::UnitRendererKind::Raw;
       break;
   }
-  return selectUnitVariant(key, std::move(currentId), next);
+  return selectUnitVariant(startKey, std::move(currentId), next);
+}
+
+core::Result<void> TechnicalEditController::resetUnitSelection(
+    domain::PhonemeKey key) {
+  auto* current = region();
+  if (current == nullptr || current->findNote(key.noteId) == nullptr) {
+    return core::failure(core::ErrorCode::NotFound,
+                         "Unit reset target is missing");
+  }
+  auto selectedView = unitView(key);
+  if (selectedView.has_value()) {
+    const auto tokens = phonemes();
+    if (selectedView->entry.tokenStart < tokens.tokens.size()) {
+      key = tokens.tokens[selectedView->entry.tokenStart].key;
+    }
+  }
+  if (current->findUnitSelectionOverride(key) == nullptr) {
+    return core::success();
+  }
+  return commit(std::make_unique<application::RemoveUnitSelectionOverrideCommand>(
+      regionId_, key));
+}
+
+core::Result<void> TechnicalEditController::resetUnitSelections(
+    const std::vector<domain::PhonemeKey>& keys) {
+  auto* current = region();
+  if (current == nullptr) {
+    return core::failure(core::ErrorCode::NotFound,
+                         "Unit reset region is missing");
+  }
+  auto command = std::make_unique<application::CompositeCommand>(
+      "Reset unit selections");
+  std::vector<domain::PhonemeKey> seen;
+  for (const auto key : keys) {
+    if (std::find(seen.begin(), seen.end(), key) != seen.end()) continue;
+    seen.push_back(key);
+    if (current->findUnitSelectionOverride(key) != nullptr) {
+      command->add(
+          std::make_unique<application::RemoveUnitSelectionOverrideCommand>(
+              regionId_, key));
+    }
+  }
+  if (seen.empty() || command->impact().noteIds.empty()) return core::success();
+  return commit(std::move(command));
+}
+
+core::Result<void> TechnicalEditController::resetUnitRegion() {
+  const auto* current = region();
+  if (current == nullptr) {
+    return core::failure(core::ErrorCode::NotFound,
+                         "Unit reset region is missing");
+  }
+  std::vector<domain::PhonemeKey> keys;
+  keys.reserve(current->unitSelectionOverrides.size());
+  for (const auto& value : current->unitSelectionOverrides) {
+    keys.push_back(value.startKey);
+  }
+  return resetUnitSelections(keys);
 }
 
 core::Result<void> TechnicalEditController::upsertPitchPoint(
     domain::PitchAutomationPoint point) {
+  const auto* current = region();
+  if (current == nullptr) {
+    return core::failure(core::ErrorCode::NotFound,
+                         "Pitch automation region is missing");
+  }
+  auto normalized = normalizePitchPoint(*current, point);
+  if (!normalized) return core::Result<void>{normalized.error()};
   return commit(
       std::make_unique<application::UpsertPitchAutomationPointCommand>(
-          regionId_, point));
+          regionId_, normalized.value()));
 }
 
 core::Result<void> TechnicalEditController::movePitchPoint(
     time::Tick from, domain::PitchAutomationPoint point) {
+  const auto* current = region();
+  if (current == nullptr) {
+    return core::failure(core::ErrorCode::NotFound,
+                         "Pitch automation region is missing");
+  }
+  auto normalized = normalizePitchPoint(*current, point);
+  if (!normalized) return core::Result<void>{normalized.error()};
   auto command = std::make_unique<application::CompositeCommand>(
       "Move pitch automation point");
   command->add(
@@ -220,7 +399,7 @@ core::Result<void> TechnicalEditController::movePitchPoint(
           regionId_, from));
   command->add(
       std::make_unique<application::UpsertPitchAutomationPointCommand>(
-          regionId_, point));
+          regionId_, normalized.value()));
   return commit(std::move(command));
 }
 
@@ -228,6 +407,31 @@ core::Result<void> TechnicalEditController::removePitchPoint(time::Tick tick) {
   return commit(
       std::make_unique<application::RemovePitchAutomationPointCommand>(
           regionId_, tick));
+}
+
+core::Result<void> TechnicalEditController::resetPitchSegment(
+    time::Tick start, time::Tick end) {
+  if (start > end) {
+    return core::failure(core::ErrorCode::InvalidArgument,
+                         "Pitch reset segment is reversed");
+  }
+  const auto* current = region();
+  if (current == nullptr) {
+    return core::failure(core::ErrorCode::NotFound,
+                         "Pitch reset region is missing");
+  }
+  auto command = std::make_unique<application::CompositeCommand>(
+      "Reset pitch segment");
+  std::size_t count = 0U;
+  for (const auto& point : current->pitchAutomation.points()) {
+    if (point.tick < start || point.tick > end) continue;
+    command->add(
+        std::make_unique<application::RemovePitchAutomationPointCommand>(
+            regionId_, point.tick));
+    ++count;
+  }
+  if (count == 0U) return core::success();
+  return commit(std::move(command));
 }
 
 core::Result<void> TechnicalEditController::cyclePitchInterpolation(

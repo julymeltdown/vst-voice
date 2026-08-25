@@ -39,9 +39,12 @@ public:
           "AppKit file dialogs must run on the main thread");
     }
     @autoreleasepool {
+      const bool directory = request.purpose == FileDialogPurpose::RelinkVoicebank;
       const bool save = request.purpose == FileDialogPurpose::SaveProject ||
-                        request.purpose == FileDialogPurpose::ExportAudio;
-      NSSavePanel* panel = save ? [NSSavePanel savePanel] : [NSOpenPanel openPanel];
+                        request.purpose == FileDialogPurpose::ExportAudio ||
+                        request.purpose == FileDialogPurpose::ExportSet;
+      NSOpenPanel* openPanel = save ? nil : [NSOpenPanel openPanel];
+      NSSavePanel* panel = save ? [NSSavePanel savePanel] : openPanel;
       panel.title = nsString(request.title);
       if (!request.initialDirectory.empty()) {
         panel.directoryURL = [NSURL fileURLWithPath:
@@ -53,10 +56,15 @@ public:
       }
       const auto types = allowedTypes(request.extensions);
       if (types.count > 0U) panel.allowedContentTypes = types;
-      if (!save) {
-        NSOpenPanel* openPanel = static_cast<NSOpenPanel*>(panel);
-        openPanel.canChooseFiles = YES;
-        openPanel.canChooseDirectories = NO;
+      if (save) {
+        panel.canCreateDirectories =
+            request.purpose == FileDialogPurpose::SaveProject ||
+            request.purpose == FileDialogPurpose::ExportSet;
+      }
+      if (openPanel != nil) {
+        openPanel.canChooseFiles = !directory;
+        openPanel.canChooseDirectories = directory;
+        openPanel.canCreateDirectories = directory;
         openPanel.allowsMultipleSelection = NO;
       }
       if ([panel runModal] != NSModalResponseOK || panel.URL == nil) {

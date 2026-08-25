@@ -48,7 +48,11 @@ bool SpscAudioRingBuffer::consumeResetRequest(std::span<float> output) noexcept 
 }
 
 std::size_t SpscAudioRingBuffer::read(std::span<float> output) noexcept {
-  if (consumeResetRequest(output)) return 0U;
+  lastReadWasReset_.store(false, std::memory_order_relaxed);
+  if (consumeResetRequest(output)) {
+    lastReadWasReset_.store(true, std::memory_order_release);
+    return 0U;
+  }
 
   const auto count = std::min(output.size(), availableRead());
   auto read = readIndex_.load(std::memory_order_relaxed);

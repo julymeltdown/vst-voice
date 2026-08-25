@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://project-seam.invalid/schemas/external-beta-release-authorization.schema.json",
+  "title": "Project SEAM External Beta release authorization V-1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "status", "candidateSeed", "sourceCommit", "bankSha256", "trustPolicySha256", "documentationSha256", "sbomSha256", "predecessorSha256", "archiveSha256", "acceptanceContractSha256", "archiveRestored", "signingCredentialsExcluded", "approvals", "buildManifests", "releaseIdentity"],
+  "properties": {
+    "schemaVersion": {"const": 1},
+    "status": {"enum": ["NOT_RUN", "BLOCKED", "GO"]},
+    "candidateSeed": {"type": "string", "minLength": 1},
+    "sourceCommit": {"$ref": "#/$defs/commit"},
+    "bankSha256": {"$ref": "#/$defs/sha256"},
+    "trustPolicySha256": {"$ref": "#/$defs/sha256"},
+    "documentationSha256": {"$ref": "#/$defs/sha256"},
+    "sbomSha256": {"$ref": "#/$defs/sha256"},
+    "predecessorSha256": {"$ref": "#/$defs/sha256"},
+    "archiveSha256": {"$ref": "#/$defs/sha256"},
+    "acceptanceContractSha256": {"$ref": "#/$defs/sha256"},
+    "archiveRestored": {"const": true},
+    "signingCredentialsExcluded": {"const": true},
+    "approvals": {"type": "array", "minItems": 4, "items": {"type": "object", "required": ["role", "status"], "properties": {"role": {"enum": ["A3", "A4", "A5", "A6"]}, "status": {"const": "APPROVED"}}}},
+    "buildManifests": {"type": "array", "minItems": 4, "items": {"$ref": "external-beta-build-manifest.schema.json"}},
+    "releaseIdentity": {"type": "object", "required": ["version", "buildId"], "properties": {"version": {"type": "string", "minLength": 1}, "buildId": {"type": "string", "minLength": 1}, "sourceCommit": {"$ref": "#/$defs/commit"}}}
+  },
+  "$defs": {"sha256": {"type": "string", "pattern": "^[0-9a-fA-F]{64}$"}, "commit": {"type": "string", "pattern": "^[0-9a-fA-F]{40}$"}}
+}

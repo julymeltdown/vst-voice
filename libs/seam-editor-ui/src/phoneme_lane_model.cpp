@@ -84,4 +84,31 @@ std::optional<domain::PhonemeKey> PhonemeLaneModel::hitTest(Point point) const {
   return std::nullopt;
 }
 
+std::optional<std::pair<domain::PhonemeKey, bool>>
+PhonemeLaneModel::hitTestBoundary(Point point, double tolerance) const {
+  if (!std::isfinite(tolerance) || tolerance <= 0.0) return std::nullopt;
+  const auto limit = tolerance * tolerance;
+  std::optional<std::pair<domain::PhonemeKey, bool>> result;
+  double best = limit;
+  for (const auto& visual : visuals_) {
+    const auto left = visual.bounds.x;
+    const auto right = visual.bounds.right();
+    const auto leftDistance = (point.x - left) * (point.x - left);
+    const auto rightDistance = (point.x - right) * (point.x - right);
+    if (point.y < visual.bounds.y - tolerance ||
+        point.y > visual.bounds.bottom() + tolerance) {
+      continue;
+    }
+    if (leftDistance <= best) {
+      best = leftDistance;
+      result = std::pair{visual.key, true};
+    }
+    if (rightDistance <= best) {
+      best = rightDistance;
+      result = std::pair{visual.key, false};
+    }
+  }
+  return result;
+}
+
 }  // namespace seam::ui

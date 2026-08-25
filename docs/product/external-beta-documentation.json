@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "purpose": "offline-beta-documentation",
+  "product": "Project SEAM",
+  "channel": "external-beta",
+  "requiredDocuments": [
+    {"id": "eula", "path": "docs/manual/EULA.md", "version": "external-beta-eula-1.0"},
+    {"id": "privacy", "path": "docs/manual/PRIVACY.md", "version": "external-beta-privacy-1.0"},
+    {"id": "manual", "path": "docs/manual/USER_MANUAL.md", "version": "external-beta-manual-1.0"},
+    {"id": "limitations", "path": "docs/manual/KNOWN_LIMITATIONS.md", "version": "external-beta-limitations-1.0"},
+    {"id": "update", "path": "docs/manual/UPDATE_AND_ROLLBACK.md", "version": "external-beta-update-rollback-1.0"},
+    {"id": "checklist", "path": "docs/manual/BETA_TESTER_CHECKLIST.md", "version": "external-beta-checklist-1.0"},
+    {"id": "support", "path": "docs/support/SUPPORT.md", "version": "external-beta-support-1.0"},
+    {"id": "security", "path": "docs/support/SECURITY_RESPONSE.md", "version": "external-beta-security-response-1.0"}
+  ],
+  "acceptance": {
+    "eulaAcceptanceStores": ["documentVersion", "documentSha256", "acceptedAtUtc"],
+    "optionalChoicesAreSeparate": true,
+    "networkRequired": false,
+    "officialVoicebankIncluded": false,
+    "commercialGaClaim": false
+  }
+}

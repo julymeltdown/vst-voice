@@ -46,6 +46,11 @@ inline std::filesystem::path previewCacheRoot() {
   return root / "project-seam" / "plugin-preview";
 }
 
+inline bool targetRuntimeFixtureEnabled() noexcept {
+  const auto* configured = std::getenv("SEAM_TARGET_RUNTIME_FIXTURE_ROOT");
+  return configured != nullptr && configured[0] != '\0';
+}
+
 inline PreviewStatus previewStatusFor(
     authoring::RenderFailureKind failure) noexcept {
   switch (failure) {
@@ -82,6 +87,14 @@ inline std::vector<voicebank::VoicebankSearchRoot> runtimeVoicebankRoots(
     });
   }
 #endif
+  if (const auto* targetFixture =
+          std::getenv("SEAM_TARGET_RUNTIME_FIXTURE_ROOT");
+      targetFixture != nullptr && targetFixture[0] != '\0') {
+    roots.push_back(voicebank::VoicebankSearchRoot{
+        .path = std::filesystem::path{targetFixture},
+        .kind = voicebank::VoicebankRootKind::Development,
+    });
+  }
   std::vector<voicebank::VoicebankSearchRoot> unique;
   for (auto& root : roots) {
     if (root.path.empty()) continue;

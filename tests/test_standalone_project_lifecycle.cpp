@@ -1,11 +1,13 @@
 #include "test_framework.hpp"
 #include "test_support.hpp"
+#include "test_support.hpp"
 
 #include "seam/application/note_commands.hpp"
 #include "seam/platform/application_menu.hpp"
 #include "seam/platform/file_dialog.hpp"
 #include "seam/standalone/application_controller.hpp"
 #include "seam/standalone/authoring_session.hpp"
+#include "seam/voicebank/wav.hpp"
 
 #include <chrono>
 #include <filesystem>
@@ -13,6 +15,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -92,6 +95,7 @@ TEST_CASE("standalone_application_controller_executes_new_open_save_and_save_as_
   dialogPtr->responses = {firstPath, secondPath, firstPath};
 
   bool quit = false;
+  bool openedAudioSettings = false;
   auto controller = seam::standalone::StandaloneApplicationController::create(
       *session, std::move(dialog), std::move(prompt),
       seam::standalone::StandaloneApplicationControllerConfig{
@@ -105,6 +109,10 @@ TEST_CASE("standalone_application_controller_executes_new_open_save_and_save_as_
               .initialVoicebank = std::nullopt,
           },
           .stateChanged = {},
+          .openAudioSettings = [&openedAudioSettings] {
+            openedAudioSettings = true;
+            return seam::core::success();
+          },
       },
       [&quit] { quit = true; });
   CHECK(controller);
@@ -132,6 +140,249 @@ TEST_CASE("standalone_application_controller_executes_new_open_save_and_save_as_
   CHECK(!session->runtime().document().dirty());
   CHECK(controller.value()->recentProjectStore().entries().size() == 2U);
   CHECK(!quit);
+  CHECK(controller.value()->dispatch(
+      seam::platform::ApplicationCommand::OpenAudioSettings));
+  CHECK(openedAudioSettings);
+}
+
+TEST_CASE("standalone_new_project_request_can_commit_an_explicit_native_path") {
+  const auto root = seam::test::support::temporaryDirectory("standalone-new-project-path");
+  auto session = makeSession(root);
+  const auto path = root / "new-song.seam";
+  CHECK(session->createNewProject(seam::authoring::NewProjectRequest{
+      .name = "New Song",
+      .tempoBpm = 128.0,
+      .sampleRate = 48000U,
+      .outputChannels = 2U,
+      .createInitialVocalTrack = false,
+      .initialVoicebank = std::nullopt,
+      .projectPath = path,
+  }));
+  CHECK(std::filesystem::exists(path));
+  CHECK(session->runtime().document().identity().projectPath == path);
+  CHECK(!session->runtime().document().dirty());
+  CHECK(session->runtime().document().session().project().vocalTracks().empty());
+}
+
+TEST_CASE("startup open-file replaces the provisional Untitled document") {
+  const auto root = seam::test::support::temporaryDirectory("standalone-startup-open");
+  const auto target = root / "startup-target.seam";
+  {
+    auto source = makeSession(root);
+    addNote(*source);
+    CHECK(source->saveProjectAs(target));
+  }
+
+  auto session = makeSession(root);
+  auto dialog = std::make_unique<FakeDialog>();
+  auto prompt = std::make_unique<FakePrompt>();
+  auto* promptPtr = prompt.get();
+  auto controller = seam::standalone::StandaloneApplicationController::create(
+      *session, std::move(dialog), std::move(prompt),
+      seam::standalone::StandaloneApplicationControllerConfig{
+          .autosaveRoot = root / "autosaves",
+          .recentProjectsPath = root / "recent.json",
+          .defaultNewProject = {},
+          .stateChanged = {},
+      });
+  CHECK(controller);
+  CHECK(controller.value()->openRecent(target));
+  CHECK(promptPtr->names.empty());
+  CHECK(session->runtime().document().identity().projectPath == target);
+}
+
+TEST_CASE("standalone_application_controller_imports_project_owned_backing_audio") {
+  const auto root = seam::test::support::temporaryDirectory("standalone-import-audio");
+  auto session = makeSession(root);
+  auto dialog = std::make_unique<FakeDialog>();
+  auto* dialogPtr = dialog.get();
+  auto prompt = std::make_unique<FakePrompt>();
+  const auto projectPath = root / "song.seam";
+  const auto mediaPath = root / "backing.wav";
+  CHECK(seam::voicebank::writeMonoPcm16Wav(
+      mediaPath, 48000U, seam::test::support::sineWave(48000U, 220.0, 0.1)));
+  dialogPtr->responses = {projectPath, mediaPath};
+  auto controller = seam::standalone::StandaloneApplicationController::create(
+      *session, std::move(dialog), std::move(prompt),
+      seam::standalone::StandaloneApplicationControllerConfig{
+          .autosaveRoot = root / "autosaves",
+          .recentProjectsPath = root / "recent.json",
+          .defaultNewProject = {},
+          .stateChanged = {},
+      });
+  CHECK(controller);
+  CHECK(controller.value()->dispatch(
+      seam::platform::ApplicationCommand::SaveProjectAs));
+  CHECK(controller.value()->dispatch(
+      seam::platform::ApplicationCommand::ImportAudio));
+  const auto& audio = session->runtime().document().session().project().audioTracks();
+  CHECK(audio.size() == 1U);
+  CHECK(audio.front().mediaOwnership == seam::domain::MediaOwnership::ProjectCopy);
+  CHECK(!audio.front().mediaHash.empty());
+  CHECK(std::filesystem::exists(root / "song.seam.media"));
+
+  const auto originalHash = audio.front().mediaHash;
+  const auto relinkPath = root / "relinked-backing.wav";
+  std::filesystem::copy_file(mediaPath, relinkPath,
+                              std::filesystem::copy_options::overwrite_existing);
+  dialogPtr->responses.push_back(relinkPath);
+  CHECK(controller.value()->dispatch(
+      seam::platform::ApplicationCommand::RelinkBackingAudio));
+  CHECK(dialogPtr->requests.size() == 3U);
+  CHECK(dialogPtr->requests.back().purpose ==
+        seam::platform::FileDialogPurpose::RelinkMedia);
+  CHECK(audio.front().mediaHash == originalHash);
+  CHECK(audio.front().mediaOwnership == seam::domain::MediaOwnership::ProjectCopy);
+  CHECK(std::filesystem::path{audio.front().mediaPath}.is_relative());
+  CHECK(std::filesystem::exists(
+      projectPath.parent_path() / std::filesystem::path{audio.front().mediaPath}));
+}
+
+TEST_CASE("standalone_application_controller_export_set_cancel_is_side_effect_free") {
+  const auto root = seam::test::support::temporaryDirectory("standalone-export-cancel");
+  auto session = makeSession(root);
+  auto dialog = std::make_unique<FakeDialog>();
+  auto* dialogPtr = dialog.get();
+  dialogPtr->responses = {std::nullopt};
+  auto prompt = std::make_unique<FakePrompt>();
+  auto controller = seam::standalone::StandaloneApplicationController::create(
+      *session, std::move(dialog), std::move(prompt),
+      seam::standalone::StandaloneApplicationControllerConfig{
+          .autosaveRoot = root / "autosaves",
+          .recentProjectsPath = root / "recent.json",
+          .defaultNewProject = {},
+          .stateChanged = {},
+      });
+  CHECK(controller);
+  CHECK(controller.value()->dispatch(
+      seam::platform::ApplicationCommand::ExportSet));
+  CHECK(dialogPtr->requests.size() == 1U);
+  CHECK(dialogPtr->requests.front().purpose ==
+        seam::platform::FileDialogPurpose::ExportSet);
+  for (const auto& entry : std::filesystem::directory_iterator(root)) {
+    CHECK(entry.path().filename().string().find("staging") ==
+          std::string::npos);
+  }
+}
+
+TEST_CASE("standalone export failure retains an actionable progress diagnostic") {
+  const auto root = seam::test::support::temporaryDirectory(
+      "standalone-export-failure-diagnostic");
+  auto session = makeSession(root);
+  addNote(*session);
+  auto dialog = std::make_unique<FakeDialog>();
+  auto prompt = std::make_unique<FakePrompt>();
+  auto controller = seam::standalone::StandaloneApplicationController::create(
+      *session, std::move(dialog), std::move(prompt),
+      seam::standalone::StandaloneApplicationControllerConfig{
+          .autosaveRoot = root / "autosaves",
+          .recentProjectsPath = root / "recent.json",
+          .defaultNewProject = {},
+          .stateChanged = {},
+          .progressChanged = {},
+      });
+  CHECK(controller);
+
+  const auto settings = seam::authoring::ExportSettings{
+      .sampleRate = 48000U,
+      .channels = 2U,
+      .format = seam::voicebank::WavSampleFormat::Pcm24,
+      .includeMaster = true,
+      .includeStems = false,
+      .replaceExisting = false,
+  };
+  CHECK(controller.value()->exportSet(root / "successful-export", settings));
+  CHECK(controller.value()->lastExport().has_value());
+
+  const auto destination = root / "existing-export";
+  CHECK(std::filesystem::create_directories(destination));
+  const auto result = controller.value()->exportSet(destination, settings);
+  CHECK(!result);
+  CHECK(!controller.value()->lastExport().has_value());
+  const auto progress = controller.value()->exportProgress().progress();
+  CHECK(progress.state == seam::authoring::ExportState::Failed);
+  CHECK(progress.currentOutput.rfind(
+            "Export destination already contains an export set", 0U) == 0U);
+  CHECK(progress.currentOutput.find(destination.string()) != std::string::npos);
+}
+
+TEST_CASE("standalone_application_controller_exports_off_thread_and_protects_quit") {
+  const auto root = seam::test::support::temporaryDirectory("standalone-export-async");
+  auto session = makeSession(root);
+  addNote(*session);
+  auto dialog = std::make_unique<FakeDialog>();
+  auto prompt = std::make_unique<FakePrompt>();
+  bool quit = false;
+  auto controller = seam::standalone::StandaloneApplicationController::create(
+      *session, std::move(dialog), std::move(prompt),
+      seam::standalone::StandaloneApplicationControllerConfig{
+          .autosaveRoot = root / "autosaves",
+          .recentProjectsPath = root / "recent.json",
+          .defaultNewProject = {},
+          .stateChanged = {},
+          .progressChanged = {},
+      },
+      [&quit] { quit = true; });
+  CHECK(controller);
+
+  const auto destination = root / "async-export";
+  CHECK(controller.value()->startExportSet(
+      destination,
+      seam::authoring::ExportSettings{
+          .sampleRate = 48000U,
+          .channels = 2U,
+          .format = seam::voicebank::WavSampleFormat::Pcm24,
+          .includeMaster = true,
+          .includeStems = false,
+          .replaceExisting = false,
+      }));
+  const auto closeWhileRunning = controller.value()->requestClose();
+  if (controller.value()->exportInProgress()) {
+    CHECK(!closeWhileRunning);
+    CHECK(!quit);
+    controller.value()->cancelExport();
+  }
+  for (std::size_t attempt = 0U;
+       attempt < 500U && controller.value()->exportInProgress(); ++attempt) {
+    std::this_thread::sleep_for(std::chrono::milliseconds{10});
+  }
+  CHECK(!controller.value()->exportInProgress());
+  CHECK(controller.value()->lastExport().has_value());
+}
+
+TEST_CASE("standalone single-file export publishes its committed result") {
+  const auto root = seam::test::support::temporaryDirectory("standalone-export-audio-result");
+  auto session = makeSession(root);
+  addNote(*session);
+  auto dialog = std::make_unique<FakeDialog>();
+  auto* dialogPtr = dialog.get();
+  const auto destination = root / "master.wav";
+  dialogPtr->responses = {destination};
+  auto prompt = std::make_unique<FakePrompt>();
+  auto controller = seam::standalone::StandaloneApplicationController::create(
+      *session, std::move(dialog), std::move(prompt),
+      seam::standalone::StandaloneApplicationControllerConfig{
+          .autosaveRoot = root / "autosaves",
+          .recentProjectsPath = root / "recent.json",
+          .defaultNewProject = {},
+          .stateChanged = {},
+      });
+  CHECK(controller);
+  CHECK(controller.value()->dispatch(
+      seam::platform::ApplicationCommand::ExportAudio));
+  CHECK(dialogPtr->requests.size() == 1U);
+  CHECK(dialogPtr->requests.front().purpose ==
+        seam::platform::FileDialogPurpose::ExportAudio);
+  const auto result = controller.value()->lastExport();
+  CHECK(result.has_value());
+  CHECK(result->state == seam::authoring::ExportState::Committed);
+  CHECK(result->masterPath == destination);
+  CHECK(std::filesystem::exists(destination));
+  CHECK(std::filesystem::exists(result->receiptPath));
+  const auto progress = controller.value()->exportProgress().progress();
+  CHECK(progress.state == seam::authoring::ExportState::Committed);
+  CHECK(progress.completedFiles == 1U);
+  CHECK(progress.totalFiles == 1U);
 }
 
 TEST_CASE("standalone_application_controller_respects_unsaved_cancel_and_discard") {

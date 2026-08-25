@@ -69,8 +69,10 @@ public:
     const auto initialized = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED |
                                                         COINIT_DISABLE_OLE1DDE);
     const bool uninitialize = SUCCEEDED(initialized);
+    const bool directory = request.purpose == FileDialogPurpose::RelinkVoicebank;
     const bool save = request.purpose == FileDialogPurpose::SaveProject ||
-                      request.purpose == FileDialogPurpose::ExportAudio;
+                      request.purpose == FileDialogPurpose::ExportAudio ||
+                      request.purpose == FileDialogPurpose::ExportSet;
     ComPtr<IFileDialog> dialog;
     const auto created = save
         ? CoCreateInstance(CLSID_FileSaveDialog, nullptr, CLSCTX_INPROC_SERVER,
@@ -82,6 +84,12 @@ public:
       return core::failure<std::optional<std::filesystem::path>>(
           core::ErrorCode::Unsupported,
           "Unable to create the native Windows file dialog");
+    }
+    if (directory) {
+      DWORD options = 0;
+      if (SUCCEEDED(dialog->GetOptions(&options))) {
+        static_cast<void>(dialog->SetOptions(options | FOS_PICKFOLDERS));
+      }
     }
     const auto title = wide(request.title);
     if (!title.empty()) static_cast<void>(dialog->SetTitle(title.c_str()));

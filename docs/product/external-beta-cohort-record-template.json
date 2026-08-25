@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "recordType": "external-beta-cohort",
+  "status": "NOT_RUN",
+  "decision": "CLOSED",
+  "candidateRootId": "",
+  "evaluationWindow": {"status": "OPEN", "startedAt": "", "endedAt": ""},
+  "consent": {"version": "", "scope": "external-beta", "retention": "", "registrySha256": ""},
+  "assignments": [],
+  "externalSessions": [],
+  "claimedHostTuples": [],
+  "hostSessions": [],
+  "checkIns": [],
+  "checkpoints": [],
+  "incidents": [],
+  "approvals": []
+}

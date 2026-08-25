@@ -23,6 +23,27 @@ class AppKitEmbeddedView;
  @public seam::clap_editor::AppKitEmbeddedView* owner_;
 }
 @property(nonatomic, strong) NSTextField* editField;
+- (id)accessibilityFocusedUIElement;
+@end
+
+@interface SeamClapAccessibilityElement : NSAccessibilityElement
+- (instancetype)initWithOwner:(seam::clap_editor::AppKitEmbeddedView*)owner
+                           node:(const seam::native_ui::SemanticNode&)node
+                         parent:(id)parent
+                          frame:(NSRect)frame;
+- (void)setChildren:(NSArray*)children;
+- (void)seamApplyAccessibilityValue:(id)value;
+@end
+
+@interface SeamClapNotesPage : NSAccessibilityElement
+- (instancetype)initWithOwner:(seam::clap_editor::AppKitEmbeddedView*)owner
+                         parent:(id)parent
+                          frame:(NSRect)frame
+                         offset:(std::size_t)offset
+                          limit:(std::size_t)limit
+                     identifier:(NSString*)identifier
+                           title:(NSString*)title
+                          value:(NSString*)value;
 @end
 
 namespace seam::clap_editor {
@@ -104,6 +125,8 @@ public:
     view_ = nil;
     parent_ = nil;
     textEngine_.reset();
+    accessibilitySnapshot_ = nil;
+    accessibilitySnapshotDirty_.store(true, std::memory_order_release);
     created_ = false;
     visible_ = false;
   }
@@ -171,6 +194,8 @@ public:
 
   void requestRepaint() noexcept override {
     repaint_.store(true, std::memory_order_release);
+    accessibilityAnnouncementPending_.store(true, std::memory_order_release);
+    accessibilitySnapshotDirty_.store(true, std::memory_order_release);
     if (view_ != nil) {
       dispatch_async(dispatch_get_main_queue(), ^{
         if (view_ != nil) [view_ setNeedsDisplay:YES];
@@ -188,6 +213,11 @@ public:
     if (surface_.pixels().empty()) return;
     native_ui::RasterCanvas canvas{surface_, scale_, textEngine_.get()};
     runtime_.paint(canvas);
+    if (accessibilityAnnouncementPending_.exchange(
+            false, std::memory_order_acq_rel)) {
+      NSAccessibilityPostNotification(
+          view_, NSAccessibilityValueChangedNotification);
+    }
     CGColorSpaceRef colorSpace = CGColorSpaceCreateDeviceRGB();
     if (colorSpace == nullptr) return;
     CGDataProviderRef provider = CGDataProviderCreateWithData(
@@ -213,6 +243,95 @@ public:
     }
     CGDataProviderRelease(provider);
     CGColorSpaceRelease(colorSpace);
+  }
+
+  NSArray* accessibilityChildren() {
+    if (view_ == nil || view_.window == nil) return @[];
+    if (accessibilitySnapshot_ != nil &&
+        !accessibilitySnapshotDirty_.exchange(false, std::memory_order_acq_rel)) {
+      return accessibilitySnapshot_;
+    }
+    const auto snapshot = runtime_.accessibilitySnapshot();
+    std::size_t visibleNotes = 0U;
+    for (const auto& node : snapshot.children) {
+      if (node.role == native_ui::SemanticRole::Note) ++visibleNotes;
+    }
+    const auto pageSize = std::size_t{512U};
+    const auto pageCount = snapshot.virtualizedNoteCount > visibleNotes
+                               ? (snapshot.virtualizedNoteCount - visibleNotes +
+                                  pageSize - 1U) /
+                                     pageSize
+                               : 0U;
+    NSMutableArray* result = [NSMutableArray arrayWithCapacity:
+        snapshot.children.size() + pageCount];
+    for (const auto& node : snapshot.children) {
+      [result addObject:makeAccessibilityElement(node, view_)];
+    }
+    const auto pageFrame = screenFrame(ui::Rect{0.0, 0.0,
+                                                view_.bounds.size.width,
+                                                view_.bounds.size.height});
+    for (std::size_t offset = visibleNotes;
+         offset < snapshot.virtualizedNoteCount; offset += pageSize) {
+      const auto limit = std::min(pageSize,
+                                  snapshot.virtualizedNoteCount - offset);
+      NSString* identifier = [NSString stringWithFormat:
+          @"timeline.notes.page.%lu", static_cast<unsigned long>(offset)];
+      NSString* title = [NSString stringWithFormat:
+          @"Notes %lu-%lu", static_cast<unsigned long>(offset + 1U),
+          static_cast<unsigned long>(offset + limit)];
+      NSString* value = [NSString stringWithFormat:
+          @"%lu notes", static_cast<unsigned long>(limit)];
+      [result addObject:[[SeamClapNotesPage alloc]
+                            initWithOwner:this
+                                   parent:view_
+                                    frame:pageFrame
+                                   offset:offset
+                                    limit:limit
+                               identifier:identifier
+                                     title:title
+                                    value:value]];
+    }
+    accessibilitySnapshot_ = [result copy];
+    return accessibilitySnapshot_;
+  }
+
+  NSArray* accessibilityNotes(std::size_t offset, std::size_t limit,
+                              id parent) {
+    NSMutableArray* result = [NSMutableArray arrayWithCapacity:limit];
+    for (const auto& node : runtime_.accessibilityNotes(offset, limit)) {
+      [result addObject:makeAccessibilityElement(node, parent)];
+    }
+    return result;
+  }
+
+  NSRect screenFrame(ui::Rect bounds) const {
+    if (view_ == nil || view_.window == nil) return NSZeroRect;
+    const NSRect logical = NSMakeRect(bounds.x, bounds.y, bounds.width,
+                                      bounds.height);
+    return [view_.window convertRectToScreen:
+                [view_ convertRect:logical toView:nil]];
+  }
+
+  core::Result<void> dispatchAccessibility(std::string_view id,
+                                           native_ui::SemanticAction action) {
+    const auto result = runtime_.dispatchAccessibility(id, action);
+    if (result && action == native_ui::SemanticAction::SetFocus && view_ != nil) {
+      NSAccessibilityPostNotification(
+          view_, NSAccessibilityFocusedUIElementChangedNotification);
+    }
+    return result;
+  }
+
+  core::Result<void> setAccessibilityValue(std::string_view id,
+                                            std::string_view value) {
+    return runtime_.setAccessibilityValue(id, value);
+  }
+
+  id accessibilityFocusedElement() {
+    if (view_ == nil) return nil;
+    const auto focused = runtime_.accessibilityFocusedNode();
+    return focused.has_value() ? makeAccessibilityElement(*focused, view_)
+                                : nil;
   }
 
   void resized() noexcept {
@@ -287,6 +406,22 @@ public:
   }
 
 private:
+  SeamClapAccessibilityElement* makeAccessibilityElement(
+      const native_ui::SemanticNode& node, id parent) {
+    auto* element = [[SeamClapAccessibilityElement alloc]
+        initWithOwner:this
+                  node:node
+                parent:parent
+                 frame:screenFrame(node.bounds)];
+    NSMutableArray* children = [NSMutableArray arrayWithCapacity:
+        node.children.size()];
+    for (const auto& child : node.children) {
+      [children addObject:makeAccessibilityElement(child, element)];
+    }
+    [element setChildren:children];
+    return element;
+  }
+
   void updateSurface() noexcept {
     if (view_ == nil) return;
     const auto backing = view_.window.backingScaleFactor;
@@ -337,13 +472,249 @@ private:
   bool created_{false};
   bool visible_{false};
   std::atomic<bool> repaint_{true};
+  std::atomic<bool> accessibilityAnnouncementPending_{true};
+  std::atomic<bool> accessibilitySnapshotDirty_{true};
+  NSArray* __strong accessibilitySnapshot_{nil};
 };
 
 }  // namespace seam::clap_editor
 
+@implementation SeamClapAccessibilityElement {
+  seam::clap_editor::AppKitEmbeddedView* _owner;
+  __weak id _parent;
+  NSArray* __strong _children;
+  NSString* __strong _identifier;
+  NSString* __strong _role;
+  NSString* __strong _title;
+  NSString* __strong _value;
+  NSString* __strong _description;
+  NSRect _frame;
+  BOOL _enabled;
+  BOOL _focused;
+  BOOL _selected;
+  BOOL _editable;
+  BOOL _hasActivate;
+  BOOL _hasToggle;
+  BOOL _hasEditText;
+}
+
+- (instancetype)initWithOwner:(seam::clap_editor::AppKitEmbeddedView*)owner
+                           node:(const seam::native_ui::SemanticNode&)node
+                         parent:(id)parent
+                          frame:(NSRect)frame {
+  self = [super init];
+  if (self != nil) {
+    _owner = owner;
+    _parent = parent;
+    _identifier = [[NSString alloc]
+        initWithBytes:node.id.data()
+               length:node.id.size()
+             encoding:NSUTF8StringEncoding];
+    _title = [[NSString alloc]
+        initWithBytes:node.name.data()
+               length:node.name.size()
+             encoding:NSUTF8StringEncoding];
+    const auto editable = std::find(node.actions.begin(), node.actions.end(),
+                                    seam::native_ui::SemanticAction::EditText) !=
+                          node.actions.end();
+    const auto& accessibleValue = editable ? node.editableValue : node.value;
+    _value = [[NSString alloc]
+        initWithBytes:accessibleValue.data()
+               length:accessibleValue.size()
+             encoding:NSUTF8StringEncoding];
+    _description = [[NSString alloc]
+        initWithBytes:node.description.data()
+               length:node.description.size()
+             encoding:NSUTF8StringEncoding];
+    switch (node.role) {
+      case seam::native_ui::SemanticRole::Window:
+        _role = NSAccessibilityWindowRole; break;
+      case seam::native_ui::SemanticRole::Toolbar:
+        _role = NSAccessibilityToolbarRole; break;
+      case seam::native_ui::SemanticRole::Button:
+        _role = NSAccessibilityButtonRole; break;
+      case seam::native_ui::SemanticRole::TextField:
+        _role = NSAccessibilityTextFieldRole; break;
+      case seam::native_ui::SemanticRole::Note:
+        _role = editable ? NSAccessibilityTextFieldRole
+                         : NSAccessibilityGroupRole;
+        break;
+      default:
+        _role = NSAccessibilityGroupRole; break;
+    }
+    _frame = frame;
+    _enabled = node.enabled;
+    _focused = node.focused;
+    _selected = node.selected;
+    _editable = editable;
+    _hasActivate = std::find(node.actions.begin(), node.actions.end(),
+                             seam::native_ui::SemanticAction::Activate) !=
+                   node.actions.end();
+    _hasToggle = std::find(node.actions.begin(), node.actions.end(),
+                           seam::native_ui::SemanticAction::Toggle) !=
+                 node.actions.end();
+    _hasEditText = editable;
+    _children = @[];
+  }
+  return self;
+}
+
+- (void)setChildren:(NSArray*)children { _children = [children copy]; }
+- (BOOL)isAccessibilityElement { return YES; }
+- (BOOL)accessibilityIsIgnored { return NO; }
+- (id)accessibilityRole { return _role; }
+- (id)accessibilityRoleDescription {
+  return NSAccessibilityRoleDescription(_role, nil);
+}
+- (NSString*)accessibilityIdentifier { return _identifier; }
+- (id)accessibilityTitle { return _title; }
+- (id)accessibilityValue { return _value.length == 0U ? nil : _value; }
+- (void)setAccessibilityValue:(id)value {
+  [self seamApplyAccessibilityValue:value];
+}
+- (id)accessibilityHelp {
+  return _description.length == 0U ? nil : _description;
+}
+- (id)accessibilityParent { return _parent; }
+- (NSArray*)accessibilityChildren { return _children; }
+- (NSRect)accessibilityFrame { return _frame; }
+- (BOOL)isAccessibilityEnabled { return _enabled; }
+- (BOOL)accessibilityFocused { return _focused; }
+- (BOOL)accessibilitySelected { return _selected; }
+- (BOOL)accessibilityIsAttributeSettable:(NSString*)attribute {
+  return _editable && [attribute isEqualToString:NSAccessibilityValueAttribute];
+}
+
+- (void)seamApplyAccessibilityValue:(id)value {
+  if (!_editable || _owner == nullptr) return;
+  NSString* string = [value isKindOfClass:[NSAttributedString class]]
+                         ? [value string]
+                         : [value isKindOfClass:[NSString class]]
+                               ? static_cast<NSString*>(value)
+                               : nil;
+  const char* bytes = string.UTF8String;
+  const char* identifier = _identifier.UTF8String;
+  if (bytes == nullptr || identifier == nullptr) return;
+  static_cast<void>(_owner->setAccessibilityValue(identifier, bytes));
+}
+
+- (void)accessibilitySetValue:(id)value forAttribute:(NSString*)attribute {
+  if (![attribute isEqualToString:NSAccessibilityValueAttribute]) return;
+  [self seamApplyAccessibilityValue:value];
+}
+
+- (NSArray*)accessibilityActionNames {
+  NSMutableArray* result = [NSMutableArray array];
+  if (_hasActivate || _hasToggle) [result addObject:NSAccessibilityPressAction];
+  if (_hasEditText) [result addObject:NSAccessibilityConfirmAction];
+  return result;
+}
+
+- (void)accessibilityPerformAction:(NSString*)action {
+  if ([action isEqualToString:NSAccessibilityPressAction]) {
+    static_cast<void>([self accessibilityPerformPress]);
+  } else if ([action isEqualToString:NSAccessibilityConfirmAction]) {
+    static_cast<void>([self accessibilityPerformConfirm]);
+  }
+}
+
+- (BOOL)accessibilityPerformPress {
+  if (_owner == nullptr || _identifier == nil) return NO;
+  seam::native_ui::SemanticAction requested;
+  if (_hasActivate) {
+    requested = seam::native_ui::SemanticAction::Activate;
+  } else if (_hasToggle) {
+    requested = seam::native_ui::SemanticAction::Toggle;
+  } else {
+    return NO;
+  }
+  const char* bytes = _identifier.UTF8String;
+  if (bytes == nullptr) return NO;
+  return static_cast<bool>(_owner->dispatchAccessibility(bytes, requested));
+}
+
+- (BOOL)accessibilityPerformConfirm {
+  if (_owner == nullptr || _identifier == nil || !_hasEditText) return NO;
+  const char* bytes = _identifier.UTF8String;
+  if (bytes == nullptr) return NO;
+  return static_cast<bool>(_owner->dispatchAccessibility(
+      bytes, seam::native_ui::SemanticAction::EditText));
+}
+
+- (void)setAccessibilityFocused:(BOOL)focused {
+  if (!focused || _owner == nullptr || _identifier == nil) return;
+  const char* bytes = _identifier.UTF8String;
+  if (bytes != nullptr) {
+    static_cast<void>(_owner->dispatchAccessibility(
+        bytes, seam::native_ui::SemanticAction::SetFocus));
+  }
+}
+@end
+
+@implementation SeamClapNotesPage {
+  seam::clap_editor::AppKitEmbeddedView* _owner;
+  __weak id _parent;
+  NSRect _frame;
+  std::size_t _offset;
+  std::size_t _limit;
+  NSString* __strong _identifier;
+  NSString* __strong _title;
+  NSString* __strong _value;
+}
+
+- (instancetype)initWithOwner:(seam::clap_editor::AppKitEmbeddedView*)owner
+                         parent:(id)parent
+                          frame:(NSRect)frame
+                         offset:(std::size_t)offset
+                          limit:(std::size_t)limit
+                     identifier:(NSString*)identifier
+                           title:(NSString*)title
+                          value:(NSString*)value {
+  self = [super init];
+  if (self != nil) {
+    _owner = owner;
+    _parent = parent;
+    _frame = frame;
+    _offset = offset;
+    _limit = limit;
+    _identifier = [identifier copy];
+    _title = [title copy];
+    _value = [value copy];
+  }
+  return self;
+}
+
+- (BOOL)isAccessibilityElement { return YES; }
+- (BOOL)accessibilityIsIgnored { return NO; }
+- (id)accessibilityRole { return NSAccessibilityGroupRole; }
+- (id)accessibilityRoleDescription {
+  return NSAccessibilityRoleDescription(NSAccessibilityGroupRole, nil);
+}
+- (NSString*)accessibilityIdentifier { return _identifier; }
+- (id)accessibilityTitle { return _title; }
+- (id)accessibilityValue { return _value; }
+- (id)accessibilityParent { return _parent; }
+- (NSRect)accessibilityFrame { return _frame; }
+- (BOOL)isAccessibilityEnabled { return YES; }
+- (NSArray*)accessibilityChildren {
+  return _owner == nullptr ? @[] : _owner->accessibilityNotes(_offset, _limit, self);
+}
+@end
+
 @implementation SeamClapChildView
 - (BOOL)isFlipped { return YES; }
 - (BOOL)acceptsFirstResponder { return YES; }
+- (BOOL)isAccessibilityElement { return YES; }
+- (BOOL)isAccessibilityEnabled { return YES; }
+- (BOOL)accessibilityIsIgnored { return NO; }
+- (id)accessibilityRole { return NSAccessibilityGroupRole; }
+- (id)accessibilityTitle { return @"Project SEAM CLAP editor"; }
+- (id)accessibilityFocusedUIElement {
+  return owner_ == nullptr ? nil : owner_->accessibilityFocusedElement();
+}
+- (NSArray*)accessibilityChildren {
+  return owner_ == nullptr ? @[] : owner_->accessibilityChildren();
+}
 - (void)drawRect:(NSRect)dirtyRect {
   (void)dirtyRect;
   if (owner_ != nullptr) owner_->draw(self);

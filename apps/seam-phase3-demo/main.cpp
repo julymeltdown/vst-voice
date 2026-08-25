@@ -15,6 +15,7 @@
 #include "seam/synthesis/timing_solver.hpp"
 #include "seam/synthesis/unit_selection.hpp"
 #include "seam/voicebank/manifest_json.hpp"
+#include "seam/voicebank/content_identity.hpp"
 #include "seam/voicebank/spectrogram.hpp"
 #include "seam/voicebank/validator.hpp"
 #include "seam/voicebank/wav.hpp"
@@ -351,6 +352,12 @@ int main(int argc, char** argv) {
     std::cerr << "Synthetic voicebank has validation errors\n";
     return 4;
   }
+  const auto contentHash =
+      seam::voicebank::computeVoicebankContentHash(manifest, bankRoot);
+  if (!contentHash) {
+    printError(contentHash.error());
+    return 5;
+  }
 
   seam::application::ProjectFactory factory{3000};
   auto project = factory.createProject(
@@ -360,7 +367,7 @@ int main(int argc, char** argv) {
   static_cast<void>(project.tempoMap().addOrReplace(seam::time::Tick{0}, kBpm));
   const auto trackId = factory.addVocalTrack(project, "Voicebank 01 / Original");
   auto* track = project.findVocalTrack(trackId);
-  track->voicebank = {manifest.id, manifest.version, "phase3-synthetic-content"};
+  track->voicebank = {manifest.id, manifest.version, contentHash.value()};
   track->character = {"official.character.01", "0.3.0-dev"};
   const auto regionId = factory.addRegion(
       project, trackId, "Controlled discontinuity", seam::time::Tick{0},

@@ -248,7 +248,9 @@ core::Result<std::vector<RecoveryCandidate>> AutosaveService::discover() const {
       error.clear();
       continue;
     }
-    if (!iterator->is_regular_file(error) || error ||
+    const auto metadataStatus = iterator->symlink_status(error);
+    if (error || std::filesystem::is_symlink(metadataStatus) ||
+        !std::filesystem::is_regular_file(metadataStatus) ||
         !metadataFile(iterator->path())) {
       error.clear();
       continue;
@@ -256,6 +258,17 @@ core::Result<std::vector<RecoveryCandidate>> AutosaveService::discover() const {
     auto metadata = parseMetadata(iterator->path());
     if (!metadata) continue;
     auto candidate = std::move(metadata).value();
+    std::error_code payloadError;
+    const auto payloadStatus =
+        std::filesystem::symlink_status(candidate.autosavePath, payloadError);
+    if (payloadError || std::filesystem::is_symlink(payloadStatus) ||
+        !std::filesystem::is_regular_file(payloadStatus)) {
+      candidate.recoverable = false;
+      candidate.diagnostic =
+          "Autosave project file must be a regular non-symlink file";
+      result.push_back(std::move(candidate));
+      continue;
+    }
     auto loaded = codec_.load(candidate.autosavePath);
     if (!loaded) {
       candidate.recoverable = false;
@@ -307,6 +320,15 @@ core::Result<void> AutosaveService::recover(
     return core::failure(core::ErrorCode::InvalidState,
                          "Autosave is not recoverable", candidate.diagnostic);
   }
+  std::error_code payloadError;
+  const auto payloadStatus =
+      std::filesystem::symlink_status(candidate.autosavePath, payloadError);
+  if (payloadError || std::filesystem::is_symlink(payloadStatus) ||
+      !std::filesystem::is_regular_file(payloadStatus)) {
+    return core::failure(core::ErrorCode::InvalidState,
+                         "Autosave project file must be a regular non-symlink file",
+                         candidate.autosavePath.string());
+  }
   auto loaded = codec_.load(candidate.autosavePath);
   if (!loaded) return core::Result<void>{loaded.error()};
   if (loaded.value().id().toString() != candidate.projectId) {
@@ -316,7 +338,8 @@ core::Result<void> AutosaveService::recover(
   auto replaced = document.replaceProject(std::move(loaded).value());
   if (!replaced) return replaced;
   document.markRecovered(candidate.autosavePath,
-                         candidate.originalProjectPath);
+                         candidate.originalProjectPath,
+                         candidate.baseProjectHash);
   return core::success();
 }
 

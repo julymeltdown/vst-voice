@@ -1,6 +1,8 @@
+#include "seam/build/version.hpp"
 #include "seam/clap_editor/editor_runtime.hpp"
 #include "seam/clap_editor/embedded_view.hpp"
 #include "seam/clap_editor/host_timeline.hpp"
+#include "seam/live_voice/midi1_decoder.hpp"
 
 #include <clap/clap.h>
 
@@ -31,15 +33,24 @@ constexpr std::uint32_t kMinimumWidth = 720U;
 constexpr std::uint32_t kMinimumHeight = 480U;
 constexpr std::size_t kMaximumStateBytes = 16U * 1024U * 1024U + 128U;
 
-std::mutex entryMutex;
+// CLAP deinit can run after CFBundle static teardown on macOS. Keep these
+// synchronization objects alive until process exit so a late callback cannot
+// lock a destroyed mutex.
+std::mutex& entryMutex() {
+  static auto* mutex = new std::mutex;
+  return *mutex;
+}
 std::uint32_t entryReferenceCount = 0U;
-std::filesystem::path entryPluginPath;
+std::filesystem::path& entryPluginPath() {
+  static auto* path = new std::filesystem::path;
+  return *path;
+}
 
 std::filesystem::path resolveCharacterPackage() {
   std::filesystem::path pluginPath;
   {
-    std::scoped_lock lock(entryMutex);
-    pluginPath = entryPluginPath;
+    std::scoped_lock lock(entryMutex());
+    pluginPath = entryPluginPath();
   }
   if (!pluginPath.empty()) {
     std::error_code error;
@@ -67,20 +78,20 @@ std::vector<voicebank::VoicebankSearchRoot> resolveVoicebankRoots() {
   std::vector<voicebank::VoicebankSearchRoot> roots;
   std::filesystem::path pluginPath;
   {
-    std::scoped_lock lock(entryMutex);
-    pluginPath = entryPluginPath;
+    std::scoped_lock lock(entryMutex());
+    pluginPath = entryPluginPath();
   }
   if (!pluginPath.empty()) {
     std::error_code error;
     const auto bundleRoot = pluginPath / "Contents" / "Resources" / "voicebanks";
     if (std::filesystem::is_directory(bundleRoot, error)) {
-      roots.push_back({bundleRoot, voicebank::VoicebankRootKind::Development});
+      roots.push_back({bundleRoot, voicebank::VoicebankRootKind::Installed});
     }
     error.clear();
     const auto sidecarRoot = pluginPath.parent_path() /
                              "ProjectSEAMEditor.resources" / "voicebanks";
     if (std::filesystem::is_directory(sidecarRoot, error)) {
-      roots.push_back({sidecarRoot, voicebank::VoicebankRootKind::Development});
+      roots.push_back({sidecarRoot, voicebank::VoicebankRootKind::Installed});
     }
   }
   return roots;
@@ -101,7 +112,7 @@ const clap_plugin_descriptor_t kDescriptor{
     .url = "",
     .manual_url = "",
     .support_url = "",
-    .version = "0.13.0",
+    .version = build::kApplicationVersion.data(),
     .description =
         "Sample-concatenative singing editor with production-pipeline preview and live note input",
     .features = kFeatures.data(),
@@ -222,7 +233,7 @@ private:
                                       std::uint32_t maximumFrames) {
     auto* instance = self(plugin);
     if (instance == nullptr || instance->active_ || !std::isfinite(sampleRate) ||
-        sampleRate < 8000.0 || sampleRate > 192000.0 ||
+        sampleRate <= 0.0 || sampleRate > 768000.0 ||
         minimumFrames == 0U || maximumFrames < minimumFrames ||
         maximumFrames > 1U << 20U) {
       return false;
@@ -234,6 +245,13 @@ private:
     instance->routingRestartRequested_ = false;
     instance->sampleRate_ = sampleRate;
     instance->maximumFrames_ = maximumFrames;
+    try {
+      instance->liveScratch_.assign(
+          static_cast<std::size_t>(8U) * instance->maximumFrames_, 0.0F);
+    } catch (...) {
+      instance->maximumFrames_ = 0U;
+      return false;
+    }
     instance->freeRunFrame_ = 0U;
     instance->runtime_->resetLive();
     instance->runtime_->setLiveSampleRate(sampleRate);
@@ -248,6 +266,7 @@ private:
     if (instance == nullptr) return;
     instance->processing_ = false;
     instance->active_ = false;
+    instance->liveScratch_.clear();
     instance->runtime_->resetLive();
     instance->synchronizeAudioPortConfiguration();
   }
@@ -385,10 +404,57 @@ private:
 
   static void applyNoteEvent(PluginInstance& instance,
                              const clap_event_header_t& header) noexcept {
-    if (header.space_id != CLAP_CORE_EVENT_SPACE_ID ||
-        header.size < sizeof(clap_event_note_t)) {
+    if (header.space_id != CLAP_CORE_EVENT_SPACE_ID) {
       return;
     }
+    if (header.type == CLAP_EVENT_NOTE_EXPRESSION) {
+      if (header.size < sizeof(clap_event_note_expression_t)) return;
+      const auto& expression =
+          reinterpret_cast<const clap_event_note_expression_t&>(header);
+      if (expression.port_index != 0) return;
+      live_voice::LiveEvent event{
+          .sampleOffset = header.time,
+          .type = live_voice::EventType::Pressure,
+          .noteId = expression.note_id,
+          .channel = expression.channel,
+          .key = expression.key,
+          .value = static_cast<float>(expression.value),
+      };
+      switch (expression.expression_id) {
+        case CLAP_NOTE_EXPRESSION_TUNING:
+          event.type = live_voice::EventType::PitchBend;
+          break;
+        case CLAP_NOTE_EXPRESSION_PRESSURE:
+          event.type = live_voice::EventType::Pressure;
+          break;
+        case CLAP_NOTE_EXPRESSION_VIBRATO:
+        case CLAP_NOTE_EXPRESSION_PAN:
+          event.type = live_voice::EventType::Timbre;
+          break;
+        case CLAP_NOTE_EXPRESSION_BRIGHTNESS:
+          event.type = live_voice::EventType::Brightness;
+          break;
+        default:
+          return;
+      }
+      instance.runtime_->dispatchLiveEvent(event);
+      return;
+    }
+    if (header.type == CLAP_EVENT_MIDI) {
+      if (header.size < sizeof(clap_event_midi_t)) return;
+      const auto& midi = reinterpret_cast<const clap_event_midi_t&>(header);
+      if (midi.port_index != 0) return;
+      const auto decoded = live_voice::Midi1Decoder::decode(
+          {midi.data[0], midi.data[1], midi.data[2]});
+      if (decoded.type == live_voice::Midi1ActionType::None) return;
+      instance.runtime_->dispatchLiveEvent(live_voice::LiveEvent{
+          .sampleOffset = header.time,
+          .type = live_voice::EventType::Midi1,
+          .midi = {midi.data[0], midi.data[1], midi.data[2]},
+      });
+      return;
+    }
+    if (header.size < sizeof(clap_event_note_t)) return;
     if (header.type != CLAP_EVENT_NOTE_ON &&
         header.type != CLAP_EVENT_NOTE_OFF &&
         header.type != CLAP_EVENT_NOTE_CHOKE) {
@@ -443,15 +509,31 @@ private:
             ? process->in_events->get(process->in_events, eventIndex)
             : nullptr;
 
+    std::array<float*, 8> liveOutputs{};
+    for (std::uint32_t channel = 0U; channel < 8U; ++channel) {
+      liveOutputs[channel] =
+          instance->liveScratch_.data() +
+          static_cast<std::size_t>(channel) * instance->maximumFrames_;
+    }
+    std::uint32_t liveCursor = 0U;
+    while (event != nullptr && event->time < process->frames_count) {
+      const auto boundary = std::clamp(event->time, liveCursor,
+                                       process->frames_count);
+      instance->runtime_->renderLiveRange(
+          liveOutputs.data(), output.channel_count, liveCursor, boundary);
+      applyNoteEvent(*instance, *event);
+      liveCursor = boundary;
+      ++eventIndex;
+      event = eventIndex < eventCount && process->in_events->get != nullptr
+                  ? process->in_events->get(process->in_events, eventIndex)
+                  : nullptr;
+    }
+    instance->runtime_->renderLiveRange(
+        liveOutputs.data(), output.channel_count, liveCursor,
+        process->frames_count);
+
     bool produced = false;
     for (std::uint32_t frame = 0U; frame < process->frames_count; ++frame) {
-      while (event != nullptr && event->time <= frame) {
-        applyNoteEvent(*instance, *event);
-        ++eventIndex;
-        event = eventIndex < eventCount && process->in_events->get != nullptr
-                    ? process->in_events->get(process->in_events, eventIndex)
-                    : nullptr;
-      }
       std::optional<std::uint64_t> sourceFrame;
       if (static_cast<bool>(preview) &&
           preview->sampleRate ==
@@ -460,7 +542,9 @@ private:
             timeline, projectOffset, defaultTempo, instance->sampleRate_, frame);
         if (mapped.audible) sourceFrame = mapped.sourceFrame;
       }
-      const auto live = instance->runtime_->renderLiveSample();
+      const auto live = output.channel_count == 0U
+                            ? 0.0F
+                            : liveOutputs[0][frame];
       if (std::abs(live) > 1.0e-7F) produced = true;
       if (sourceFrame.has_value() && static_cast<bool>(preview)) {
         for (std::uint32_t channel = 0U; channel < output.channel_count; ++channel) {
@@ -498,13 +582,19 @@ private:
     }
     const auto channels =
         instance->outputChannels_.load(std::memory_order_acquire);
-    std::memset(info, 0, sizeof(*info));
-    info->id = 0U;
-    std::snprintf(info->name, sizeof(info->name), "%s", "SEAM Editor Output");
-    info->flags = CLAP_AUDIO_PORT_IS_MAIN | CLAP_AUDIO_PORT_SUPPORTS_64BITS;
-    info->channel_count = channels;
-    info->port_type = portType(channels);
-    info->in_place_pair = CLAP_INVALID_ID;
+    return fillAudioPortInfo(*info, channels);
+  }
+
+  static bool fillAudioPortInfo(clap_audio_port_info_t& info,
+                                std::uint8_t channels) noexcept {
+    if (channels < 1U || channels > 8U) return false;
+    std::memset(&info, 0, sizeof(info));
+    info.id = 0U;
+    std::snprintf(info.name, sizeof(info.name), "%s", "SEAM Editor Output");
+    info.flags = CLAP_AUDIO_PORT_IS_MAIN | CLAP_AUDIO_PORT_SUPPORTS_64BITS;
+    info.channel_count = channels;
+    info.port_type = portType(channels);
+    info.in_place_pair = CLAP_INVALID_ID;
     return true;
   }
 
@@ -548,7 +638,6 @@ private:
     if (!configured) return false;
     instance->desiredOutputChannels_.store(channels, std::memory_order_release);
     instance->outputChannels_.store(channels, std::memory_order_release);
-    instance->notifyAudioPortChange();
     return true;
   }
 
@@ -560,12 +649,14 @@ private:
   }
 
   static bool CLAP_ABI audioConfigInfoGet(
-      const clap_plugin_t* plugin, clap_audio_ports_config_t* config) {
+      const clap_plugin_t* plugin, clap_id configId, std::uint32_t portIndex,
+      bool isInput, clap_audio_port_info_t* info) {
     const auto* instance = self(plugin);
-    if (instance == nullptr || config == nullptr) return false;
-    fillAudioConfig(*config,
-                    instance->outputChannels_.load(std::memory_order_acquire));
-    return true;
+    if (instance == nullptr || isInput || portIndex != 0U || info == nullptr ||
+        configId < 1U || configId > 8U) {
+      return false;
+    }
+    return fillAudioPortInfo(*info, static_cast<std::uint8_t>(configId));
   }
 
   static std::uint32_t CLAP_ABI notePortsCount(const clap_plugin_t*,
@@ -579,7 +670,7 @@ private:
     if (!isInput || index != 0U || info == nullptr) return false;
     std::memset(info, 0, sizeof(*info));
     info->id = 0U;
-    info->supported_dialects = CLAP_NOTE_DIALECT_CLAP;
+    info->supported_dialects = CLAP_NOTE_DIALECT_CLAP | CLAP_NOTE_DIALECT_MIDI;
     info->preferred_dialect = CLAP_NOTE_DIALECT_CLAP;
     std::snprintf(info->name, sizeof(info->name), "%s", "Live Singing Notes");
     return true;
@@ -956,6 +1047,7 @@ private:
   std::unique_ptr<IEmbeddedView> view_;
   double sampleRate_{48000.0};
   std::uint32_t maximumFrames_{0U};
+  std::vector<float> liveScratch_;
   std::uint64_t freeRunFrame_{0U};
   std::atomic<double> projectOffsetSeconds_{0.0};
   std::atomic<double> defaultTempo_{120.0};
@@ -973,18 +1065,18 @@ private:
 };
 
 bool CLAP_ABI entryInit(const char* pluginPath) {
-  std::scoped_lock lock(entryMutex);
+  std::scoped_lock lock(entryMutex());
   if (entryReferenceCount == 0U && pluginPath != nullptr) {
-    entryPluginPath = std::filesystem::path{pluginPath};
+    entryPluginPath() = std::filesystem::path{pluginPath};
   }
   ++entryReferenceCount;
   return true;
 }
 
 void CLAP_ABI entryDeinit() {
-  std::scoped_lock lock(entryMutex);
+  std::scoped_lock lock(entryMutex());
   if (entryReferenceCount > 0U) --entryReferenceCount;
-  if (entryReferenceCount == 0U) entryPluginPath.clear();
+  if (entryReferenceCount == 0U) entryPluginPath().clear();
 }
 
 std::uint32_t CLAP_ABI factoryCount(const clap_plugin_factory_t*) {

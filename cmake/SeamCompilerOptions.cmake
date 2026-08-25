@@ -14,6 +14,11 @@ function(seam_apply_compiler_options target)
     if(SEAM_WARNINGS_AS_ERRORS)
       target_compile_options(${target} PRIVATE -Werror)
     endif()
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+      # Designated aggregates intentionally rely on default member initializers;
+      # GCC promotes this benign pattern through -Wextra as missing-field warnings.
+      target_compile_options(${target} PRIVATE -Wno-missing-field-initializers)
+    endif()
     if(SEAM_ENABLE_SANITIZERS AND CMAKE_BUILD_TYPE MATCHES "Debug|RelWithDebInfo")
       target_compile_options(${target} PRIVATE -fsanitize=address,undefined -fno-omit-frame-pointer)
       target_link_options(${target} PRIVATE -fsanitize=address,undefined)

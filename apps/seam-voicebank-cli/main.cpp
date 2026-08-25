@@ -6,6 +6,8 @@
 #include "seam/voicebank/wav.hpp"
 #include "seam/voicebank/waveform.hpp"
 
+#include <algorithm>
+#include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -194,12 +196,44 @@ int analyzeCommand(const std::filesystem::path& wavPath,
   return 0;
 }
 
+int inspectWavCommand(const std::filesystem::path& wavPath) {
+  const auto audio = seam::voicebank::readWav(wavPath);
+  if (!audio) {
+    printError(audio.error());
+    return 2;
+  }
+  const auto mono = audio.value().monoMix();
+  const auto stats = seam::voicebank::analyzeAudio(mono);
+  const auto finite = std::all_of(
+      audio.value().interleaved.begin(), audio.value().interleaved.end(),
+      [](const float value) { return std::isfinite(value); });
+  const auto audible = stats.peak > 1.0e-5F && stats.rms > 1.0e-6;
+  const auto frames = audio.value().frameCount();
+  const seam::formats::JsonValue result{seam::formats::JsonValue::Object{
+      {"source", wavPath.generic_string()},
+      {"sampleRate", static_cast<std::int64_t>(audio.value().sampleRate)},
+      {"channels", static_cast<std::int64_t>(audio.value().channels)},
+      {"frames", static_cast<std::int64_t>(frames)},
+      {"durationSeconds", static_cast<double>(frames) /
+                              static_cast<double>(audio.value().sampleRate)},
+      {"peak", static_cast<double>(stats.peak)},
+      {"rms", stats.rms},
+      {"dcOffset", stats.dcOffset},
+      {"clippedSamples", static_cast<std::int64_t>(stats.clippedSamples)},
+      {"finiteDecodedSamples", finite},
+      {"nonSilent", audible},
+  }};
+  std::cout << seam::formats::stringifyJson(result, true) << '\n';
+  return finite && audible ? 0 : 3;
+}
+
 void printUsage() {
   std::cout
       << "SEAM Voicebank CLI\n\n"
       << "Usage:\n"
       << "  seam_voicebank_cli validate MANIFEST [BANK_ROOT]\n"
       << "  seam_voicebank_cli inspect MANIFEST\n"
+      << "  seam_voicebank_cli inspect-wav WAV\n"
       << "  seam_voicebank_cli analyze WAV OUTPUT_DIRECTORY\n";
 }
 
@@ -236,6 +270,13 @@ int main(int argc, char** argv) {
       return 1;
     }
     return analyzeCommand(argv[2], argv[3]);
+  }
+  if (command == "inspect-wav") {
+    if (argc != 3) {
+      printUsage();
+      return 1;
+    }
+    return inspectWavCommand(argv[2]);
   }
   std::cerr << "unknown command: " << command << '\n';
   printUsage();

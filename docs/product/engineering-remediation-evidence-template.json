@@ -1,0 +1,65 @@
+{
+  "schemaVersion": 1,
+  "recordKind": "ENGINEERING_REMEDIATION_EVIDENCE",
+  "recordStatus": "TEMPLATE",
+  "reviewBaseSha": "0000000000000000000000000000000000000000",
+  "candidateSha": "0000000000000000000000000000000000000000",
+  "candidateTreeState": "DIRTY",
+  "attestationCommitSha": null,
+  "generatedAt": "1970-01-01T00:00:00Z",
+  "environment": {
+    "platform": "TEMPLATE",
+    "architecture": "TEMPLATE",
+    "compiler": "TEMPLATE",
+    "cmake": "TEMPLATE",
+    "python": "TEMPLATE",
+    "generator": "TEMPLATE",
+    "redactedEnvironmentId": "0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "gates": [
+    {"id": "tracked-source-closure", "candidateSha": "0000000000000000000000000000000000000000", "status": "NOT_RUN", "command": "", "startedAt": "1970-01-01T00:00:00Z", "endedAt": "1970-01-01T00:00:00Z", "exitStatus": null, "rawLog": {"locator": "logs/tracked-source-closure.txt", "sha256": "0000000000000000000000000000000000000000000000000000000000000000"}},
+    {"id": "debug-suite", "candidateSha": "0000000000000000000000000000000000000000", "status": "NOT_RUN", "command": "", "startedAt": "1970-01-01T00:00:00Z", "endedAt": "1970-01-01T00:00:00Z", "exitStatus": null, "rawLog": {"locator": "logs/debug-suite.txt", "sha256": "0000000000000000000000000000000000000000000000000000000000000000"}},
+    {"id": "release-suite", "candidateSha": "0000000000000000000000000000000000000000", "status": "NOT_RUN", "command": "", "startedAt": "1970-01-01T00:00:00Z", "endedAt": "1970-01-01T00:00:00Z", "exitStatus": null, "rawLog": {"locator": "logs/release-suite.txt", "sha256": "0000000000000000000000000000000000000000000000000000000000000000"}},
+    {"id": "external-beta-contracts", "candidateSha": "0000000000000000000000000000000000000000", "status": "NOT_RUN", "command": "", "startedAt": "1970-01-01T00:00:00Z", "endedAt": "1970-01-01T00:00:00Z", "exitStatus": null, "rawLog": {"locator": "logs/external-beta-contracts.txt", "sha256": "0000000000000000000000000000000000000000000000000000000000000000"}},
+    {"id": "phase13a-contracts", "candidateSha": "0000000000000000000000000000000000000000", "status": "NOT_RUN", "command": "", "startedAt": "1970-01-01T00:00:00Z", "endedAt": "1970-01-01T00:00:00Z", "exitStatus": null, "rawLog": {"locator": "logs/phase13a-contracts.txt", "sha256": "0000000000000000000000000000000000000000000000000000000000000000"}},
+    {"id": "asan-ubsan", "candidateSha": "0000000000000000000000000000000000000000", "status": "NOT_RUN", "command": "", "startedAt": "1970-01-01T00:00:00Z", "endedAt": "1970-01-01T00:00:00Z", "exitStatus": null, "rawLog": {"locator": "logs/asan-ubsan.txt", "sha256": "0000000000000000000000000000000000000000000000000000000000000000"}},
+    {"id": "thread-sanitizer", "candidateSha": "0000000000000000000000000000000000000000", "status": "NOT_RUN", "command": "", "startedAt": "1970-01-01T00:00:00Z", "endedAt": "1970-01-01T00:00:00Z", "exitStatus": null, "rawLog": {"locator": "logs/thread-sanitizer.txt", "sha256": "0000000000000000000000000000000000000000000000000000000000000000"}},
+    {"id": "realtime-callback", "candidateSha": "0000000000000000000000000000000000000000", "status": "NOT_RUN", "command": "", "startedAt": "1970-01-01T00:00:00Z", "endedAt": "1970-01-01T00:00:00Z", "exitStatus": null, "rawLog": {"locator": "logs/realtime-callback.txt", "sha256": "0000000000000000000000000000000000000000000000000000000000000000"}},
+    {"id": "source-contracts", "candidateSha": "0000000000000000000000000000000000000000", "status": "NOT_RUN", "command": "", "startedAt": "1970-01-01T00:00:00Z", "endedAt": "1970-01-01T00:00:00Z", "exitStatus": null, "rawLog": {"locator": "logs/source-contracts.txt", "sha256": "0000000000000000000000000000000000000000000000000000000000000000"}},
+    {"id": "built-identity", "candidateSha": "0000000000000000000000000000000000000000", "status": "NOT_RUN", "command": "", "startedAt": "1970-01-01T00:00:00Z", "endedAt": "1970-01-01T00:00:00Z", "exitStatus": null, "rawLog": {"locator": "logs/built-identity.txt", "sha256": "0000000000000000000000000000000000000000000000000000000000000000"}},
+    {"id": "installed-byte-certification", "candidateSha": "0000000000000000000000000000000000000000", "status": "NOT_RUN", "command": "", "startedAt": "1970-01-01T00:00:00Z", "endedAt": "1970-01-01T00:00:00Z", "exitStatus": null, "rawLog": {"locator": "logs/installed-byte-certification.txt", "sha256": "0000000000000000000000000000000000000000000000000000000000000000"}},
+    {"id": "export-crash-recovery", "candidateSha": "0000000000000000000000000000000000000000", "status": "NOT_RUN", "command": "", "startedAt": "1970-01-01T00:00:00Z", "endedAt": "1970-01-01T00:00:00Z", "exitStatus": null, "rawLog": {"locator": "logs/export-crash-recovery.txt", "sha256": "0000000000000000000000000000000000000000000000000000000000000000"}},
+    {"id": "whitespace-python-lint", "candidateSha": "0000000000000000000000000000000000000000", "status": "NOT_RUN", "command": "", "startedAt": "1970-01-01T00:00:00Z", "endedAt": "1970-01-01T00:00:00Z", "exitStatus": null, "rawLog": {"locator": "logs/whitespace-python-lint.txt", "sha256": "0000000000000000000000000000000000000000000000000000000000000000"}},
+    {"id": "fresh-review", "candidateSha": "0000000000000000000000000000000000000000", "status": "NOT_RUN", "command": "", "startedAt": "1970-01-01T00:00:00Z", "endedAt": "1970-01-01T00:00:00Z", "exitStatus": null, "rawLog": {"locator": "logs/fresh-review.txt", "sha256": "0000000000000000000000000000000000000000000000000000000000000000"}}
+  ],
+  "manualQa": [
+    {"id": "backing-only-preview", "status": "NOT_RUN", "evidenceGate": "release-suite"},
+    {"id": "audio-unavailable", "status": "NOT_RUN", "evidenceGate": "release-suite"},
+    {"id": "recovery-save-as", "status": "NOT_RUN", "evidenceGate": "debug-suite"},
+    {"id": "export-process-restart", "status": "NOT_RUN", "evidenceGate": "export-crash-recovery"},
+    {"id": "clap-runtime-identity", "status": "NOT_RUN", "evidenceGate": "built-identity"},
+    {"id": "installed-byte-mutation", "status": "NOT_RUN", "evidenceGate": "installed-byte-certification"},
+    {"id": "voicebank-path-safety", "status": "NOT_RUN", "evidenceGate": "release-suite"}
+  ],
+  "review": {
+    "baseSha": "0000000000000000000000000000000000000000",
+    "candidateSha": "0000000000000000000000000000000000000000",
+    "lanes": [
+      {"id": "correctness", "candidateSha": "0000000000000000000000000000000000000000", "verdict": "NOT_RUN", "report": {"locator": "reviews/correctness.txt", "sha256": "0000000000000000000000000000000000000000000000000000000000000000"}},
+      {"id": "testing", "candidateSha": "0000000000000000000000000000000000000000", "verdict": "NOT_RUN", "report": {"locator": "reviews/testing.txt", "sha256": "0000000000000000000000000000000000000000000000000000000000000000"}},
+      {"id": "maintainability", "candidateSha": "0000000000000000000000000000000000000000", "verdict": "NOT_RUN", "report": {"locator": "reviews/maintainability.txt", "sha256": "0000000000000000000000000000000000000000000000000000000000000000"}},
+      {"id": "security", "candidateSha": "0000000000000000000000000000000000000000", "verdict": "NOT_RUN", "report": {"locator": "reviews/security.txt", "sha256": "0000000000000000000000000000000000000000000000000000000000000000"}},
+      {"id": "performance", "candidateSha": "0000000000000000000000000000000000000000", "verdict": "NOT_RUN", "report": {"locator": "reviews/performance.txt", "sha256": "0000000000000000000000000000000000000000000000000000000000000000"}},
+      {"id": "api-contract", "candidateSha": "0000000000000000000000000000000000000000", "verdict": "NOT_RUN", "report": {"locator": "reviews/api-contract.txt", "sha256": "0000000000000000000000000000000000000000000000000000000000000000"}},
+      {"id": "reliability", "candidateSha": "0000000000000000000000000000000000000000", "verdict": "NOT_RUN", "report": {"locator": "reviews/reliability.txt", "sha256": "0000000000000000000000000000000000000000000000000000000000000000"}}
+    ],
+    "p0Count": 0,
+    "p1Count": 0
+  },
+  "evidenceArchive": {
+    "sealed": false,
+    "locator": "archive/engineering-remediation.tar.zst",
+    "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "externalReleaseState": "BLOCKED"
+}

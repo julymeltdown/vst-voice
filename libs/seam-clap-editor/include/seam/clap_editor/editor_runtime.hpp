@@ -10,6 +10,7 @@
 #include "seam/native_ui/editor_controller.hpp"
 #include "seam/native_ui/editor_scene.hpp"
 #include "seam/native_ui/pixel_surface.hpp"
+#include "seam/live_voice/voice_engine.hpp"
 #include "seam/rendering/pcm_cache.hpp"
 #include "seam/rendering/project_renderer.hpp"
 #include "seam/synthesis/unit_selection.hpp"
@@ -52,9 +53,9 @@ struct RenderedPreview final {
   std::uint32_t sampleRate{48000U};
   std::uint64_t revision{0U};
   PreviewStatus status{PreviewStatus::Empty};
-  std::vector<float> stereo;
+  rendering::SharedPcmBuffer stereo;
   std::uint8_t channelCount{2U};
-  std::vector<float> interleaved;
+  rendering::SharedPcmBuffer interleaved;
   std::string diagnostic;
   std::string voicebankId;
   std::string voicebankVersion;
@@ -131,24 +132,6 @@ struct LiveVoice final {
   float velocity{0.0F};
 };
 
-class LiveSampleInstrument final {
-public:
-  static constexpr std::size_t kVoiceCount = 16U;
-
-  void reset() noexcept;
-  void setOutputSampleRate(double sampleRate) noexcept;
-  void noteOn(std::int32_t noteId, std::int16_t key, float velocity) noexcept;
-  void noteOff(std::int32_t noteId, std::int16_t key) noexcept;
-  void choke(std::int32_t noteId, std::int16_t key) noexcept;
-  [[nodiscard]] float renderSample() noexcept;
-  [[nodiscard]] std::size_t activeVoiceCount() const noexcept;
-
-private:
-  [[nodiscard]] LiveVoice* allocateVoice() noexcept;
-  std::array<LiveVoice, kVoiceCount> voices_{};
-  double outputSampleRate_{48000.0};
-};
-
 class EditorRuntime final {
 public:
   explicit EditorRuntime(
@@ -167,6 +150,21 @@ public:
   [[nodiscard]] const native_ui::NativeEditorController& controller() const noexcept {
     return *controller_;
   }
+
+  struct AccessibilitySnapshot final {
+    std::vector<native_ui::SemanticNode> children;
+    std::size_t virtualizedNoteCount{0U};
+  };
+
+  [[nodiscard]] AccessibilitySnapshot accessibilitySnapshot();
+  [[nodiscard]] std::optional<native_ui::SemanticNode>
+  accessibilityFocusedNode();
+  [[nodiscard]] std::vector<native_ui::SemanticNode> accessibilityNotes(
+      std::size_t offset, std::size_t limit) const;
+  [[nodiscard]] core::Result<void> dispatchAccessibility(
+      std::string_view id, native_ui::SemanticAction action);
+  [[nodiscard]] core::Result<void> setAccessibilityValue(
+      std::string_view id, std::string_view value);
 
   void setRepaintCallback(std::function<void()> callback);
   void setRenderReadyCallback(std::function<void()> callback);
@@ -263,6 +261,14 @@ public:
   void choke(std::int32_t noteId, std::int16_t key) noexcept {
     live_.choke(noteId, key);
   }
+  void dispatchLiveEvent(const live_voice::LiveEvent& event) noexcept {
+    live_.dispatchLiveEvent(event);
+  }
+  void renderLiveRange(float* const* outputs, std::uint32_t channels,
+                       std::uint32_t beginFrame,
+                       std::uint32_t endFrame) noexcept {
+    live_.renderLiveRange(outputs, channels, beginFrame, endFrame);
+  }
   [[nodiscard]] float renderLiveSample() noexcept { return live_.renderSample(); }
   void resetLive() noexcept { live_.reset(); }
   [[nodiscard]] std::size_t activeLiveVoiceCount() const noexcept {
@@ -286,6 +292,7 @@ private:
   [[nodiscard]] native_ui::EditorSceneState sceneState() const;
   void refreshVoicebankResolutionLocked();
   void refreshAllVoicebankResolutionsLocked();
+  void refreshLiveResourceLocked();
   void rebuildTechnicalModelsLocked();
   [[nodiscard]] phonemizer::Result phonemesLocked() const;
   [[nodiscard]] const ui::PhonemeVisual* phonemeVisualAt(
@@ -297,7 +304,6 @@ private:
   [[nodiscard]] time::Microseconds microsecondOffsetAt(
       domain::NoteId noteId, double x) const noexcept;
   void paintPhase12BOverlay(native_ui::RasterCanvas& canvas) noexcept;
-  void paintSampleMicroscope(native_ui::RasterCanvas& canvas) noexcept;
   [[nodiscard]] core::Result<void> bindVoicebankLocked(
       const voicebank::VoicebankCandidate& candidate);
   void publishPreviewFromAuthoring();
@@ -306,6 +312,7 @@ private:
 
   mutable std::recursive_mutex mutex_;
   bool createdDefault_{false};
+  bool allowDevelopmentVoicebanks_{false};
   domain::TrackId trackId_{};
   domain::RegionId regionId_{};
   std::unique_ptr<authoring::AuthoringRuntime> authoring_;
@@ -316,7 +323,7 @@ private:
   native_ui::EditorScenePainter painter_;
   native_ui::CharacterPresentation character_;
   mutable RealtimePreviewPublication previewPublication_;
-  LiveSampleInstrument live_;
+  live_voice::VoiceEngine live_;
   voicebank::VoicebankResolution voicebankResolution_;
   std::function<void()> repaintCallback_;
   std::function<void()> renderReadyCallback_;
@@ -332,6 +339,7 @@ private:
   ui::SampleMicroscopeModel microscope_;
   voicebank::AudioBuffer microscopeAudio_;
   std::optional<std::string> microscopeUnitId_;
+  std::string microscopeFocusedId_;
   std::optional<domain::PhonemeKey> selectedUnitKey_;
   std::optional<domain::PhonemeKey> draggingPhonemeKey_;
   bool draggingPhonemeStart_{false};

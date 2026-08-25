@@ -17,8 +17,8 @@ constexpr std::size_t kMaximumFieldValueBytes = 512U;
 
 bool boundedUtf8(std::string_view value, std::size_t maximum) noexcept {
   if (value.empty() || value.size() > maximum) return false;
-  return std::all_of(value.begin(), value.end(), [](unsigned char value) {
-    return value >= 0x20U && value != 0x7FU;
+  return std::all_of(value.begin(), value.end(), [](unsigned char byte) {
+    return byte >= 0x20U && byte != 0x7FU;
   });
 }
 

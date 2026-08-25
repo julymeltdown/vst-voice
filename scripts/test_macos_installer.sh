@@ -13,6 +13,7 @@ test -e /Library/Audio/Plug-Ins/CLAP/ProjectSEAMEditor.clap
 test -e /Library/Audio/Plug-Ins/VST3/ProjectSEAMEditor.vst3
 test -e /Library/Audio/Plug-Ins/Components/ProjectSEAMEditor.component
 test -f "/Library/Application Support/ProjectSEAM/THIRD_PARTY_NOTICES.md"
+test -f "/Library/Application Support/ProjectSEAM/Documentation/external-beta-documentation.json"
 pkgutil --pkg-info com.project-seam.plugins > "$evidence/pkgutil.log"
 pluginkit -a /Library/Audio/Plug-Ins/Components/ProjectSEAMEditor.component > "$evidence/pluginkit.log" 2>&1 || true
 sudo "/Library/Application Support/ProjectSEAM/uninstall_macos_plugins.sh" 2>&1 | tee "$evidence/uninstall.log"

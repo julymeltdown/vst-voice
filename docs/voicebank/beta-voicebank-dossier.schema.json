@@ -1,0 +1,187 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://project-seam.invalid/schemas/beta-voicebank-dossier.schema.json",
+  "title": "Project SEAM External Beta Voicebank dossier",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "component", "status", "voicebankId", "version",
+    "official", "characterAssociated", "evidenceRoot", "package", "trust",
+    "inventory", "rights", "sourceAssets", "derivedAssets", "installedProvenanceTreeSha256",
+    "referenceSong", "gates"
+  ],
+  "properties": {
+    "schemaVersion": {"const": 1},
+    "component": {"const": "beta-voicebank"},
+    "status": {"enum": ["BLOCKED", "FAIL", "ACCEPTED"]},
+    "voicebankId": {"type": "string", "pattern": "^beta\\.[a-z0-9.-]+$"},
+    "version": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z.-]+)?$"},
+    "displayName": {"type": "string", "minLength": 1},
+    "official": {"const": false},
+    "characterAssociated": {"const": false},
+    "characterId": {"type": ["string", "null"]},
+    "evidenceRoot": {"type": "string", "pattern": "^[^/\\\\.][^\\\\]*$"},
+    "installedProvenanceTreeSha256": {"$ref": "#/$defs/sha256"},
+    "package": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "version", "contentSha256", "entryManifestSha256", "file", "signature"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "version": {"type": "string", "minLength": 1},
+        "contentSha256": {"$ref": "#/$defs/sha256"},
+        "entryManifestSha256": {"$ref": "#/$defs/sha256"},
+        "file": {"$ref": "#/$defs/fileHash"},
+        "signature": {
+          "type": "object", "additionalProperties": false,
+          "required": ["purpose", "delegatedKeyId", "delegatedKeyFingerprint", "algorithm", "signedAt", "trustEpoch", "signatureSha256"],
+          "properties": {
+            "purpose": {"const": "BANK_PACKAGE"},
+            "delegatedKeyId": {"type": "string", "minLength": 1},
+            "delegatedKeyFingerprint": {"$ref": "#/$defs/sha256"},
+            "algorithm": {"enum": ["ed25519", "ecdsa-p256-sha256"]},
+            "signedAt": {"type": "string", "format": "date-time"},
+            "trustEpoch": {"type": "integer", "minimum": 1},
+            "signatureSha256": {"$ref": "#/$defs/sha256"}
+          }
+        }
+      }
+    },
+    "trust": {
+      "type": "object", "additionalProperties": false,
+      "required": ["rootPolicyVersion", "rootKeyId", "rootKeyFingerprint", "epoch", "validFrom", "validUntil", "compromiseCutoff", "delegatedKeyId", "delegatedKeyFingerprint", "delegatedKeyPurpose", "rootSignedDelegation", "rootSignedDelegationSha256", "delegatedKeyRevoked", "revalidation"],
+      "properties": {
+        "rootPolicyVersion": {"type": "string", "minLength": 1},
+        "rootKeyId": {"type": "string", "minLength": 1},
+        "rootKeyFingerprint": {"$ref": "#/$defs/sha256"},
+        "epoch": {"type": "integer", "minimum": 1},
+        "validFrom": {"type": "string", "format": "date-time"},
+        "validUntil": {"type": "string", "format": "date-time"},
+        "compromiseCutoff": {"type": "string", "format": "date-time"},
+        "delegatedKeyId": {"type": "string", "minLength": 1},
+        "delegatedKeyFingerprint": {"$ref": "#/$defs/sha256"},
+        "delegatedKeyPurpose": {"const": "BANK_PACKAGE"},
+        "rootSignedDelegation": {"const": true},
+        "rootSignedDelegationSha256": {"$ref": "#/$defs/sha256"},
+        "delegatedKeyRevoked": {"const": false},
+        "revalidation": {
+          "type": "object", "additionalProperties": false,
+          "required": ["result", "trustEpoch", "signedEntryManifestSha256", "installedProvenanceTreeSha256", "installedTreeLinkCount"],
+          "properties": {
+            "result": {"const": "PASS"},
+            "trustEpoch": {"type": "integer", "minimum": 1},
+            "signedEntryManifestSha256": {"$ref": "#/$defs/sha256"},
+            "installedProvenanceTreeSha256": {"$ref": "#/$defs/sha256"},
+            "installedTreeLinkCount": {"const": 0}
+          }
+        }
+      }
+    },
+    "inventory": {"$ref": "#/$defs/inventory"},
+    "rights": {
+      "type": "object", "additionalProperties": false,
+      "required": ["providerIdentityDisclosure", "approval", "permissions", "publicLicenseSummary"],
+      "properties": {
+        "providerIdentityDisclosure": {"enum": ["DISCLOSED", "WITHHELD"]},
+        "approval": {
+          "type": "object", "additionalProperties": false,
+          "required": ["reviewer", "reviewedAt", "scope", "territory", "status", "redactedApprovalSha256"],
+          "properties": {
+            "reviewer": {"type": "string", "minLength": 1},
+            "reviewedAt": {"type": "string", "format": "date-time"},
+            "scope": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+            "territory": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+            "status": {"const": "APPROVED"},
+            "redactedApprovalSha256": {"$ref": "#/$defs/sha256"}
+          }
+        },
+        "permissions": {
+          "type": "object", "additionalProperties": false,
+          "required": ["recordingSourceUse", "transformation", "redistribution", "endUserRenderedAudio"],
+          "properties": {
+            "recordingSourceUse": {"const": true},
+            "transformation": {"const": true},
+            "redistribution": {"const": true},
+            "endUserRenderedAudio": {"const": true}
+          }
+        },
+        "publicLicenseSummary": {
+          "type": "object", "additionalProperties": false,
+          "required": ["status", "spdx", "summary"],
+          "properties": {
+            "status": {"const": "APPROVED"},
+            "spdx": {"type": "string", "minLength": 1},
+            "summary": {"type": "string", "minLength": 1}
+          }
+        }
+      }
+    },
+    "sourceAssets": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/fileHash"}},
+    "derivedAssets": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/fileHash"}},
+    "referenceSong": {
+      "type": "object", "additionalProperties": false,
+      "required": ["projectSha256", "mediaSha256", "renderReceipt"],
+      "properties": {
+        "projectSha256": {"$ref": "#/$defs/sha256"},
+        "mediaSha256": {"$ref": "#/$defs/sha256"},
+        "renderReceipt": {"$ref": "#/$defs/evidence"}
+      }
+    },
+    "gates": {
+      "type": "object",
+      "additionalProperties": {"$ref": "#/$defs/gate"}
+    }
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-fA-F]{64}$"},
+    "fileHash": {
+      "type": "object", "additionalProperties": false,
+      "required": ["path", "sha256"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "evidence": {
+      "type": "object", "additionalProperties": false,
+      "required": ["kind", "path", "sha256", "executedAt", "reviewer", "result"],
+      "properties": {
+        "kind": {"type": "string", "minLength": 1},
+        "path": {"type": "string", "minLength": 1},
+        "sha256": {"$ref": "#/$defs/sha256"},
+        "executedAt": {"type": "string", "format": "date-time"},
+        "reviewer": {"type": "string", "minLength": 1},
+        "result": {"const": "PASS"}
+      }
+    },
+    "gate": {
+      "type": "object", "additionalProperties": false,
+      "required": ["status", "evidence"],
+      "properties": {
+        "status": {"enum": ["NOT_RUN", "BLOCKED", "FAIL", "PASS"]},
+        "evidence": {"type": "array", "items": {"$ref": "#/$defs/evidence"}}
+      }
+    },
+    "inventory": {
+      "type": "object", "additionalProperties": false,
+      "required": ["language", "profileId", "supportedStyles", "requiredUnits", "pitchLayers", "supportedRange", "coverageResult"],
+      "properties": {
+        "language": {"const": "ja"},
+        "profileId": {"type": "string", "minLength": 1},
+        "supportedStyles": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+        "requiredUnits": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+        "pitchLayers": {"type": "array", "minItems": 2, "maxItems": 3, "items": {"type": "integer"}},
+        "supportedRange": {
+          "type": "object", "additionalProperties": false,
+          "required": ["minMidi", "maxMidi", "method", "result"],
+          "properties": {
+            "minMidi": {"type": "integer"},
+            "maxMidi": {"type": "integer"},
+            "method": {"type": "string", "minLength": 1},
+            "result": {"const": "PASS"}
+          }
+        },
+        "coverageResult": {"const": "PASS"}
+      }
+    }
+  }
+}

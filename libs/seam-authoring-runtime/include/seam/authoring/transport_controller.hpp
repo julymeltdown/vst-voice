@@ -10,6 +10,7 @@
 #include <cstdint>
 #include <memory>
 #include <mutex>
+#include <string>
 
 namespace seam::authoring {
 
@@ -23,6 +24,8 @@ struct TransportConfig final {
 
 struct TransportState final {
   bool playing{false};
+  bool available{false};
+  std::string availabilityDiagnostic;
   time::SampleFrame playhead{0};
   rendering::PlaybackLoop loop;
   std::uint64_t publishedRevision{0U};
@@ -47,15 +50,20 @@ public:
   [[nodiscard]] core::Result<void> stop();
   [[nodiscard]] core::Result<void> seek(time::SampleFrame frame);
   [[nodiscard]] core::Result<void> setLoop(rendering::PlaybackLoop range);
+  [[nodiscard]] core::Result<void> reconfigure(TransportConfig config);
 
   [[nodiscard]] TransportState state() const noexcept;
+  [[nodiscard]] TransportConfig config() const noexcept {
+    std::lock_guard lock(lifecycleMutex_);
+    return config_;
+  }
   [[nodiscard]] rendering::SpscInterleavedAudioRingBuffer& ringBuffer()
       noexcept {
-    return ring_;
+    return *ring_;
   }
   [[nodiscard]] const rendering::SpscInterleavedAudioRingBuffer& ringBuffer()
       const noexcept {
-    return ring_;
+    return *ring_;
   }
   [[nodiscard]] std::uint8_t outputChannels() const noexcept {
     return config_.outputChannels;
@@ -64,7 +72,7 @@ public:
     return config_.sampleRate;
   }
   [[nodiscard]] rendering::MultichannelFeederStats feederStats() const noexcept {
-    return feeder_.stats();
+    return feeder_->stats();
   }
 
 private:
@@ -72,13 +80,17 @@ private:
   makeTimeline(const PublishedProjectAudio& audio, bool crossfade) const;
 
   TransportConfig config_;
-  rendering::SpscInterleavedAudioRingBuffer ring_;
-  rendering::MultichannelPlaybackFeeder feeder_;
-  rendering::MultichannelPlaybackFeederService service_;
+  std::unique_ptr<rendering::SpscInterleavedAudioRingBuffer> ring_;
+  std::unique_ptr<rendering::MultichannelPlaybackFeeder> feeder_;
+  std::unique_ptr<rendering::MultichannelPlaybackFeederService> service_;
+  mutable std::mutex lifecycleMutex_;
   mutable std::mutex stateMutex_;
   rendering::PlaybackLoop loop_;
   std::uint64_t publishedRevision_{0U};
   time::SampleFrame timelineEnd_{0};
+  time::SampleFrame pendingPlayhead_{0};
+  bool pendingPlayheadValid_{false};
+  bool resumeAfterReconfigure_{false};
   bool started_{false};
 };
 

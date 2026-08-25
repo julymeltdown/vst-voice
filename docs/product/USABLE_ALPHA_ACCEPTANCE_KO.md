@@ -8,7 +8,7 @@ Project SEAM은 한 사람이 Apple Silicon Mac에서 CLI와 DAW 없이 아래 �
 
 ## 현재의 정확한 제한
 
-현재 네이티브 Standalone은 데모 셸이다. `apps/seam-editor-native/main.cpp`는 `makeDemoProject()`로 하드코딩된 프로젝트를 만들고, `makeDemoTimeline()`으로 사인파 재생 데이터를 만든다. 따라서 Standalone 화면의 Note가 아직 실제 sample-concatenative production renderer를 구동하지 않는다.
+네이티브 Standalone은 이제 `AuthoringSession`과 공유 `ProductionProjectRenderer`로 프로젝트 소유 Note, Voicebank 해석, Transport, backing media, export를 처리한다. 결정론적 테스트 모드는 threaded fallback audio와 development fixture를 사용할 수 있지만, 이는 실제 장치 acceptance가 아니다. 권리 정리된 production bank, 대상 Apple Silicon runtime 증적, reopen/recovery/export 청취 증적, 실제 곡 안정성 세션이 UI를 통해 기록될 때까지 계약은 blocked 상태다.
 
 Phase 12C·13A·13B는 합성 검증, 배포, 인증, 콘텐츠/IP Gate를 제공하지만 Standalone 실사용성을 증명하지 않는다.
 

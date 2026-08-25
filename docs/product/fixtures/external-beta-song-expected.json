@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "status": "BLOCKED",
+  "fixtureId": "external-beta-song-01",
+  "voicebankId": "beta.voice.01",
+  "requiredBankVersion": "0.1.0",
+  "requiredProjectSha256": "",
+  "requiredMediaSha256": "",
+  "requiredRender": {"durationSeconds": 45, "channels": 2, "finite": true, "noFixtureAudio": true},
+  "requiredPhrases": ["sustain", "release", "transition", "technical-override", "tempo-change", "loop-change", "backing-audio"],
+  "blockedReason": "Expected hashes and listening receipt are populated only after U29 external bank and reference-song acceptance."
+}

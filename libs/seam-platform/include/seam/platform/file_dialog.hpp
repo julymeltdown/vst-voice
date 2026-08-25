@@ -15,6 +15,9 @@ enum class FileDialogPurpose {
   SaveProject,
   ImportAudio,
   InstallVoicebank,
+  RelinkVoicebank,
+  RelinkMedia,
+  ExportSet,
   ExportAudio,
 };
 

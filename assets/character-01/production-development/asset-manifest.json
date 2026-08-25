@@ -1,10 +1,10 @@
 {
   "assetSha256": {
-    "key-art-1024.png": "18c43477ee4d626645ad0ec3d746e4f8d3545e5f95cb8dc016489f39568b504f",
+    "key-art-1024.png": "285555ab7be338aa060b597ef2a03cb93a5dff762c93dc6c6b48f29488b46e5e",
     "palette.json": "c68a2356b88c120595464b3f7d09ba411a99e2bc44a79c7606ecccbbad22472e",
-    "portrait-512.png": "f61ae1aca7bc10041328225b3dbf132bd7de19b441266f1017fb687192f6a758",
-    "silhouette-256.png": "824bb521e6c0df2af2995a0713be1ea6aca6c3e2f20d3f90fabe13a6633efee3",
-    "thumbnail-256.png": "f1aa1e821e56cc16395f0ac7bb1af44a6c2c6c543e5733940b39d2f356cb5dd8"
+    "portrait-512.png": "0013fea6c899a8d8406974839547a65a2458fb3224498fc23f81f90b7f726b8f",
+    "silhouette-256.png": "9fd37f1c035e512280d79e9e3c109b6615cad023565d8640880a333766f9b2fb",
+    "thumbnail-256.png": "6e3dc323c6d20056ada8ca34a26b606b8f69c8269bcdcc87d5612fc8fc8b3bf1"
   },
   "characterId": "official.character.01",
   "developmentOnly": true,

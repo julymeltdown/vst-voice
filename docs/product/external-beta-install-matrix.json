@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "schemaVersion": 1,
+  "matrixId": "project-seam.external-beta.install.v1",
+  "purpose": "clean-installed-lifecycle",
+  "targetPlatforms": [
+    {"platform": "macos", "architecture": "arm64", "label": "Apple Silicon macOS"},
+    {"platform": "windows", "architecture": "x86_64", "label": "Windows x64"}
+  ],
+  "rows": [
+    {"id": "INSTALL-001", "flow": "fresh-install", "title": "Fresh install from the acquired signed package"},
+    {"id": "INSTALL-002", "flow": "same-version-reinstall", "title": "Same-version reinstall or repair"},
+    {"id": "INSTALL-003", "flow": "upgrade", "title": "Verified N to N+1 update"},
+    {"id": "INSTALL-004", "flow": "cancel", "title": "Cancelled update leaves a coherent prior version"},
+    {"id": "INSTALL-005", "flow": "failure-recovery", "title": "Interrupted update recovers without mixed bytes"},
+    {"id": "INSTALL-006", "flow": "downgrade-rejection", "title": "Unsafe downgrade is rejected before mutation"},
+    {"id": "INSTALL-007", "flow": "uninstall", "title": "Uninstall removes owned code and registrations"},
+    {"id": "INSTALL-008", "flow": "reinstall", "title": "Reinstall after uninstall restores the exact candidate"},
+    {"id": "INSTALL-009", "flow": "offline-launch", "title": "Offline launch and core flow after acquisition"},
+    {"id": "INSTALL-010", "flow": "offline-documentation", "title": "Offline help and support documentation"},
+    {"id": "INSTALL-011", "flow": "support-privacy", "title": "Export-safe support bundle and deletion"},
+    {"id": "INSTALL-012", "flow": "installed-validation", "title": "Installed validator and host scan on exact bytes"}
+  ]
+}

@@ -1,0 +1,79 @@
+name: Phase 12C exact full soak
+
+on:
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: "The required long-running soak profile"
+        required: true
+        default: full
+        type: choice
+        options:
+          - full
+
+jobs:
+  full-soak:
+    runs-on: ubuntu-latest
+    timeout-minutes: 130
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev libx11-dev fonts-noto-cjk
+      - name: Configure
+        run: cmake -S . -B build/phase12c-soak -DSEAM_BUILD_TESTS=ON -DSEAM_BUILD_BENCHMARKS=OFF -DSEAM_RUN_NATIVE_GUI_TESTS=OFF
+      - name: Record Linux runner identity
+        shell: bash
+        run: |
+          mkdir -p out/phase12c
+          {
+            printf '{\n'
+            printf '  "runnerOs": "%s",\n' "${RUNNER_OS}"
+            printf '  "architecture": "%s",\n' "$(uname -m)"
+            printf '  "kernel": "%s",\n' "$(uname -sr)"
+            printf '  "compiler": "%s",\n' "$(c++ --version | head -n 1)"
+            printf '  "cmake": "%s",\n' "$(cmake --version | head -n 1)"
+            printf '  "commit": "%s"\n' "${GITHUB_SHA:-unknown}"
+            printf '}\n'
+          } > out/phase12c/runner.json
+      - name: Build soak and live articulation targets
+        run: cmake --build build/phase12c-soak --target seam_phase12c_soak seam_phase12c_live_demo --parallel 2
+      - name: Run live articulation baseline
+        shell: bash
+        run: |
+          live="$(find build/phase12c-soak -type f -name seam_phase12c_live_demo -perm -111 -print -quit)"
+          test -n "$live"
+          "$live" --output out/phase12c/live
+      - name: Run exact full soak
+        shell: bash
+        run: |
+          soak="$(find build/phase12c-soak -type f -name seam_phase12c_soak -perm -111 -print -quit)"
+          test -n "$soak"
+          mkdir -p out/phase12c
+          "$soak" --profile "${{ inputs.profile }}" --output out/phase12c/soak.json
+          cp "$soak" out/phase12c/soak-binary
+      - name: Validate full soak evidence
+        run: |
+          python scripts/verify_phase12c_evidence.py \
+            --summary out/phase12c/live/phase12c-live-articulation-summary.json \
+            --soak-result out/phase12c/soak.json \
+            --require-full
+      - name: Create and verify self-authenticating packet
+        run: |
+          python scripts/verify_phase12c_soak_packet.py \
+            --create \
+            --root out/phase12c \
+            --packet out/phase12c/packet.json \
+            --summary out/phase12c/live/phase12c-live-articulation-summary.json \
+            --audio out/phase12c/live/phase12c-live-articulation.wav \
+            --soak out/phase12c/soak.json \
+            --runner-metadata out/phase12c/runner.json \
+            --soak-binary out/phase12c/soak-binary
+      - uses: actions/upload-artifact@v4
+        with:
+          name: phase12c-full-soak-${{ runner.os }}
+          path: out/phase12c

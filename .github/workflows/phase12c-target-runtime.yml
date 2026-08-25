@@ -7,13 +7,61 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-      - run: cmake --preset dev
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - run: cmake --preset dev -DSEAM_RUN_NATIVE_GUI_TESTS=ON
       - run: cmake --build --preset dev --config Release
-      - run: ctest --preset dev --output-on-failure
-      - name: Record mandatory runtime result
+      - name: Run target-host CTest and native CLAP editor host
+        run: ctest --test-dir build/dev --output-on-failure
+      - name: Capture canonical target-host evidence
         shell: bash
         run: |
-          mkdir -p out/phase12c
-          echo '{"implementationState":"TARGET_BUILD_PASS","runtimeResult":"NOT_RUN","reason":"actual DAW-host evidence must be attached separately"}' > out/phase12c/${{ matrix.os }}-runtime.json
+          plugin="$(find build/dev -name ProjectSEAMEditor.clap -print -quit)"
+          host="$(find build/dev -type f -name 'seam_clap_editor_host*' -print -quit)"
+          test -n "$plugin" && test -n "$host"
+          "$host" \
+            --plugin "$plugin" \
+            --target-runtime-fixture-root assets/demo-human-voicebank-public-domain/production-bank \
+            --screenshot build/dev/phase11-clap-editor.ppm \
+            --summary build/dev/phase11-clap-editor-summary.json \
+            --audio build/dev/phase11-clap-editor-live.wav \
+            > build/dev/phase11-clap-editor-host.log 2>&1
+      - name: Record target runtime evidence
+        shell: bash
+        run: |
+          packet_dir="out/phase12c/${{ matrix.os }}"
+          mkdir -p "$packet_dir"
+          python - <<'PY'
+          import json
+          import os
+          import platform
+
+          payload = {
+              "runnerOs": platform.system(),
+              "runnerRelease": platform.release(),
+              "runnerArchitecture": platform.machine(),
+              "githubRunnerImage": os.environ.get("ImageOS", ""),
+          }
+          with open("build/dev/phase12c-runner.json", "w", encoding="utf-8") as handle:
+              json.dump(payload, handle, indent=2, sort_keys=True)
+              handle.write("\n")
+          PY
+          python scripts/record_phase12c_target_runtime.py \
+            --platform "${{ matrix.os == 'macos-latest' && 'macos' || 'windows' }}" \
+            --build-root build/dev \
+            --host-log build/dev/phase11-clap-editor-host.log \
+            --runner-metadata build/dev/phase12c-runner.json \
+            --output "$packet_dir/${{ matrix.os }}-runtime.json"
+          cp build/dev/phase11-clap-editor-summary.json "$packet_dir/"
+          cp build/dev/phase11-clap-editor.ppm "$packet_dir/"
+          cp build/dev/phase11-clap-editor-live.wav "$packet_dir/"
+          cp build/dev/phase11-clap-editor-host.log "$packet_dir/"
+          cp build/dev/phase12c-runner.json "$packet_dir/"
+          python scripts/verify_phase12c_target_runtime_packet.py \
+            --record "$packet_dir/${{ matrix.os }}-runtime.json" \
+            --root "$packet_dir"
       - uses: actions/upload-artifact@v4
-        with: {name: phase12c-${{ matrix.os }}, path: out/phase12c}
+        with:
+          name: phase12c-${{ matrix.os }}
+          path: out/phase12c

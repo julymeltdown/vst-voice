@@ -15,7 +15,8 @@ $clap="$env:CommonProgramFiles\CLAP\ProjectSEAMEditor.clap"
 $resources="$env:CommonProgramFiles\CLAP\ProjectSEAMEditor.resources"
 $vst3="$env:CommonProgramFiles\VST3\ProjectSEAMEditor.vst3"
 $uninstaller="$env:ProgramData\ProjectSEAM\Uninstall.exe"
-foreach($path in @($clap,$resources,$vst3,$uninstaller)){if(-not(Test-Path $path)){throw "Install missing: $path"}}
+$documentation="$env:ProgramData\ProjectSEAM\Documentation\external-beta-documentation.json"
+foreach($path in @($clap,$resources,$vst3,$uninstaller,$documentation)){if(-not(Test-Path $path)){throw "Install missing: $path"}}
 & $uninstaller /S
 if($LASTEXITCODE -ne 0){throw "Uninstaller failed: $LASTEXITCODE"}
 foreach($path in @($clap,$resources,$vst3)){if(Test-Path $path){throw "Uninstall left: $path"}}

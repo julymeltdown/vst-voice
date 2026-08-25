@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "schemaVersion": 1,
+  "matrixId": "project-seam.external-beta.standalone.v1",
+  "purpose": "engineering-qualification",
+  "targetPlatforms": [
+    {"platform": "macos", "architecture": "arm64", "label": "Apple Silicon macOS"},
+    {"platform": "windows", "architecture": "x86_64", "label": "Windows x64"}
+  ],
+  "rows": [
+    {"id": "UA-001", "flow": "startup", "title": "Clean-profile first launch", "evidenceKinds": ["screenshot", "app-log"]},
+    {"id": "UA-002", "flow": "startup", "title": "Missing bank reaches recoverable installer", "evidenceKinds": ["screenshot", "app-log"]},
+    {"id": "UA-003", "flow": "device", "title": "Physical device setup and negotiated format", "evidenceKinds": ["device-log", "counter-snapshot"]},
+    {"id": "UA-004", "flow": "project", "title": "Create and name a new project", "evidenceKinds": ["project-hash", "screenshot"]},
+    {"id": "UA-005", "flow": "bank", "title": "Install and select exact Beta bank", "evidenceKinds": ["bank-receipt", "screenshot"]},
+    {"id": "UA-006", "flow": "arrangement", "title": "Create vocal track and regions", "evidenceKinds": ["project-hash", "screenshot"]},
+    {"id": "UA-007", "flow": "media", "title": "Import and place backing media", "evidenceKinds": ["media-hash", "screenshot"]},
+    {"id": "UA-008", "flow": "authoring", "title": "Enter and edit notes", "evidenceKinds": ["project-hash", "screenshot"]},
+    {"id": "UA-009", "flow": "authoring", "title": "Enter lyrics and inspect phonemes", "evidenceKinds": ["project-hash", "screenshot"]},
+    {"id": "UA-010", "flow": "authoring", "title": "Apply technical pitch and timing overrides", "evidenceKinds": ["project-hash", "screenshot"]},
+    {"id": "UA-011", "flow": "render", "title": "Render a bounded production preview", "evidenceKinds": ["render-receipt", "wav-inspection"]},
+    {"id": "UA-012", "flow": "transport", "title": "Play pause stop seek and loop", "evidenceKinds": ["transport-log", "screenshot"]},
+    {"id": "UA-013", "flow": "save", "title": "Save and Save As preserve lineage", "evidenceKinds": ["project-hash", "screenshot"]},
+    {"id": "UA-014", "flow": "recovery", "title": "Forced crash and autosave recovery", "evidenceKinds": ["recovery-receipt", "app-log"]},
+    {"id": "UA-015", "flow": "reopen", "title": "Reopen preserves musical and technical state", "evidenceKinds": ["project-hash", "screenshot"]},
+    {"id": "UA-016", "flow": "export", "title": "Export recoverable master WAV", "evidenceKinds": ["export-receipt", "wav-inspection"]},
+    {"id": "UA-017", "flow": "export", "title": "Export stems and inspect format", "evidenceKinds": ["export-receipt", "wav-inspection"]},
+    {"id": "UA-018", "flow": "accessibility", "title": "Keyboard-only critical path", "evidenceKinds": ["accessibility-log", "screenshot"]},
+    {"id": "UA-019", "flow": "accessibility", "title": "Assistive technology and 200 percent scaling", "evidenceKinds": ["accessibility-artifact", "screenshot"]},
+    {"id": "UA-020", "flow": "fault", "title": "Missing media and device recovery actions", "evidenceKinds": ["fault-receipt", "app-log"]}
+  ]
+}

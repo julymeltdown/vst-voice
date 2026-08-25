@@ -16,12 +16,19 @@ enum class ApplicationCommand {
   RecoverLatestAutosave,
   SaveProject,
   SaveProjectAs,
+  ImportAudio,
   InstallVoicebank,
+  RelinkVoicebank,
+  RelinkBackingAudio,
+  OpenAudioSettings,
+  ExportSet,
   ExportAudio,
   Quit,
   Undo,
   Redo,
   TogglePlayback,
+  StopPlayback,
+  ToggleLoop,
 };
 
 struct RecentProjectMenuItem final {
@@ -43,6 +50,12 @@ struct VoicebankMenuItem final {
   std::string trustLabel;
   bool selectable{false};
   bool selected{false};
+};
+
+struct DocumentationMenuItem final {
+  std::string id;
+  std::string displayName;
+  std::filesystem::path path;
 };
 
 class IApplicationCommandDispatcher {
@@ -73,6 +86,15 @@ public:
     return core::failure(core::ErrorCode::Unsupported,
                          "Voicebank selection is not supported");
   }
+  [[nodiscard]] virtual std::vector<DocumentationMenuItem> documentation()
+      const {
+    return {};
+  }
+  [[nodiscard]] virtual core::Result<void> openDocumentation(
+      std::string_view) {
+    return core::failure(core::ErrorCode::Unsupported,
+                         "Offline documentation is not supported");
+  }
 };
 
 class IApplicationMenu {
@@ -96,5 +118,12 @@ public:
 [[nodiscard]] std::unique_ptr<IApplicationMenu> createNativeApplicationMenu();
 [[nodiscard]] std::unique_ptr<IUnsavedChangesPrompt>
 createNativeUnsavedChangesPrompt();
+[[nodiscard]] core::Result<void> openDocumentationPath(
+    const std::filesystem::path& path);
+[[nodiscard]] core::Result<void> openExternalPath(
+    const std::filesystem::path& path);
+[[nodiscard]] core::Result<void> copyTextToClipboard(std::string_view text);
+[[nodiscard]] core::Result<bool> requestEulaAcceptance(
+    const std::filesystem::path& path);
 
 }  // namespace seam::platform

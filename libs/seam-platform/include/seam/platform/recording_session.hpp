@@ -2,6 +2,7 @@
 
 #include "seam/core/result.hpp"
 #include "seam/platform/audio_input_device.hpp"
+#include "seam/voicebank/wav.hpp"
 
 #include <atomic>
 #include <cstddef>
@@ -34,7 +35,9 @@ public:
   }
   [[nodiscard]] std::span<const float> samples() const noexcept;
   [[nodiscard]] core::Result<void> exportWav(
-      const std::filesystem::path& path) const;
+      const std::filesystem::path& path,
+      voicebank::WavSampleFormat format = voicebank::WavSampleFormat::Pcm16,
+      bool replaceExisting = true) const;
 
 private:
   std::uint32_t sampleRate_{48000U};

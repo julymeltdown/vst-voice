@@ -131,6 +131,86 @@ TEST_CASE("voicebank manifest persists and validator checks real audio") {
   CHECK(report.ok());
 }
 
+TEST_CASE("voicebank manifest codec rejects symlink and non-file paths") {
+  const auto root = seam::test::support::temporaryDirectory("manifest-paths");
+  const auto outside = root / "outside.json";
+  const auto link = root / "manifest-link.json";
+  const auto directory = root / "manifest-directory";
+  std::filesystem::create_directories(directory);
+  auto unit = seam::test::support::makeUnit(
+      "a", {"a"}, "audio/a.wav", 69,
+      seam::voicebank::UnitKind::Sustain, 24000);
+  const auto manifest = seam::test::support::makeManifest({unit});
+  seam::voicebank::ManifestJsonCodec codec;
+  CHECK(codec.save(manifest, outside));
+  std::error_code error;
+  std::filesystem::create_symlink(outside, link, error);
+  CHECK(!error);
+
+  CHECK(!codec.load(link));
+  CHECK(!codec.save(manifest, link));
+  CHECK(codec.load(outside));
+  CHECK(!codec.load(directory));
+  CHECK(!codec.save(manifest, directory));
+
+  const auto target = root / "target.json";
+  CHECK(codec.save(manifest, target));
+  const auto backupSource = root / "backup-outside.json";
+  CHECK(codec.save(manifest, backupSource));
+  const auto backupLink = target.string() + ".bak";
+  std::filesystem::create_symlink(backupSource, backupLink, error);
+  CHECK(!error);
+  CHECK(!codec.save(manifest, target));
+  CHECK(std::filesystem::is_symlink(backupLink));
+  CHECK(codec.load(backupSource));
+}
+
+TEST_CASE("dry take inspection enforces format and acoustic quality") {
+  const auto root = seam::test::support::temporaryDirectory("dry-take-inspection");
+  const auto acceptedPath = root / "accepted.wav";
+  auto acceptedWriter = seam::voicebank::WavStreamWriter::create(
+      acceptedPath, seam::voicebank::WavOutputFormat{
+                        48000U, 1U, seam::voicebank::WavSampleFormat::Pcm24});
+  CHECK(acceptedWriter);
+  CHECK(acceptedWriter.value()->writeFrames(
+      seam::test::support::sineWave(48000U, 440.0, 0.4)));
+  CHECK(acceptedWriter.value()->finalize());
+  const auto accepted = seam::voicebank::inspectDryTake(acceptedPath, 69);
+  CHECK(accepted);
+  CHECK(!accepted.value().sourceSha256.empty());
+  CHECK(accepted.value().formatValid);
+  CHECK(accepted.value().finite);
+  CHECK(accepted.value().clippingFree);
+  CHECK(accepted.value().silenceFree);
+  CHECK(accepted.value().dcOffsetFree);
+  CHECK(accepted.value().rootPitchValid);
+  CHECK(accepted.value().accepted());
+  CHECK(accepted.value().bitsPerSample == 24U);
+  CHECK(accepted.value().analyzedRootMidi.has_value());
+
+  const auto wrongFormat = root / "wrong-format.wav";
+  CHECK(seam::voicebank::writeMonoPcm16Wav(
+      wrongFormat, 48000U,
+      seam::test::support::sineWave(48000U, 440.0, 0.4)));
+  const auto wrongFormatReport = seam::voicebank::inspectDryTake(wrongFormat, 69);
+  CHECK(wrongFormatReport);
+  CHECK(!wrongFormatReport.value().formatValid);
+  CHECK(!wrongFormatReport.value().accepted());
+
+  const auto silentPath = root / "silent.wav";
+  auto silentWriter = seam::voicebank::WavStreamWriter::create(
+      silentPath, seam::voicebank::WavOutputFormat{
+                     48000U, 1U, seam::voicebank::WavSampleFormat::Pcm24});
+  CHECK(silentWriter);
+  CHECK(silentWriter.value()->writeFrames(
+      std::vector<float>(48000U / 4U, 0.0F)));
+  CHECK(silentWriter.value()->finalize());
+  const auto silent = seam::voicebank::inspectDryTake(silentPath, 69);
+  CHECK(silent);
+  CHECK(!silent.value().silenceFree);
+  CHECK(!silent.value().accepted());
+}
+
 
 TEST_CASE("pitch marks are generated validated and edited deterministically") {
   constexpr std::uint32_t sampleRate = 48000;

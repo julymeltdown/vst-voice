@@ -13,8 +13,10 @@
 
 #include <filesystem>
 #include <fstream>
+#include <chrono>
 #include <memory>
 #include <optional>
+#include <thread>
 #include <vector>
 
 namespace {
@@ -133,6 +135,18 @@ TEST_CASE("standalone_voicebank_workflow_installs_browses_selects_and_reports_co
   CHECK(session.value()->runtime().execute(
       std::make_unique<seam::application::AddNoteCommand>(
           session.value()->regionId(), std::move(lyric), std::move(note))));
+  const auto submittedBeforeRelink =
+      session.value()->runtime().renderer().stats().submitted;
+
+  dialogPtr->responses.push_back(root / "voicebanks");
+  CHECK(controller.value()->dispatch(
+      seam::platform::ApplicationCommand::RelinkVoicebank));
+  CHECK(dialogPtr->requests.size() == 2U);
+  CHECK(dialogPtr->requests.back().purpose ==
+        seam::platform::FileDialogPurpose::RelinkVoicebank);
+  std::this_thread::sleep_for(std::chrono::milliseconds{50});
+  CHECK(session.value()->runtime().renderer().stats().submitted >
+        submittedBeforeRelink);
   const auto coverage = controller.value()->selectedRegionCoverage();
   CHECK(coverage);
   CHECK(!coverage.value().complete());

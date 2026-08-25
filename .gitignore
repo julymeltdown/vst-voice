@@ -1,6 +1,9 @@
 /build/
+/build-*/
 /out/
+/.omo/
 /.cache/
+/realtime-allocation-probe.json
 *.tmp
 *.swp
 .DS_Store

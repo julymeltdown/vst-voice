@@ -28,6 +28,9 @@ public:
 
   [[nodiscard]] std::uint64_t requestConsumerReset() noexcept;
   [[nodiscard]] bool resetAcknowledged(std::uint64_t epoch) const noexcept;
+  [[nodiscard]] bool lastReadWasReset() const noexcept {
+    return lastReadWasReset_.load(std::memory_order_acquire);
+  }
 
 private:
   [[nodiscard]] bool consumeResetRequest(
@@ -41,6 +44,7 @@ private:
   alignas(64) std::atomic<std::size_t> writeFrame_{0U};
   alignas(64) std::atomic<std::uint64_t> requestedResetEpoch_{0U};
   alignas(64) std::atomic<std::uint64_t> acknowledgedResetEpoch_{0U};
+  alignas(64) std::atomic<bool> lastReadWasReset_{false};
 };
 
 }  // namespace seam::rendering

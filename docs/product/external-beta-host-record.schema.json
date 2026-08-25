@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://project-seam.invalid/schemas/external-beta-host-record.schema.json",
+  "title": "Project SEAM External Beta host session record",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "recordType", "status", "recordId", "targetId", "platform", "architecture", "host", "hostVersion", "hostBuild", "pluginFormat", "osBuild", "candidateRootId", "pluginSha256", "installedTreeSha256", "artifactPath", "bankIdentity", "projectIdentity", "workloadId", "workloadSha256", "machineProfileId", "machineProfileSha256", "clockAuthority", "operator", "verifier", "startedAt", "endedAt", "checks", "evidence"],
+  "properties": {
+    "schemaVersion": {"const": 1},
+    "recordType": {"const": "external-beta-host-session"},
+    "status": {"enum": ["NOT_RUN", "BLOCKED", "FAIL", "PASS"]},
+    "recordId": {"type": "string", "minLength": 1},
+    "targetId": {"pattern": "^HOST-[0-9]{3}$"},
+    "platform": {"enum": ["macos", "windows"]},
+    "architecture": {"enum": ["arm64", "x86_64"]},
+    "host": {"enum": ["reaper", "bitwig", "logic-pro"]},
+    "hostVersion": {"type": "string", "minLength": 1},
+    "hostBuild": {"type": "string", "minLength": 1},
+    "pluginFormat": {"enum": ["CLAP", "VST3", "AUv2"]},
+    "osBuild": {"type": "string", "minLength": 1},
+    "candidateRootId": {"type": "string", "minLength": 1},
+    "pluginSha256": {"$ref": "#/$defs/sha256"},
+    "installedTreeSha256": {"$ref": "#/$defs/sha256"},
+    "artifactPath": {"type": "string", "minLength": 1},
+    "bankIdentity": {"type": "object", "required": ["id", "version", "contentSha256", "installedProvenanceTreeSha256"], "properties": {"id": {"pattern": "^beta\\."}, "version": {"type": "string"}, "contentSha256": {"$ref": "#/$defs/sha256"}, "installedProvenanceTreeSha256": {"$ref": "#/$defs/sha256"}}},
+    "projectIdentity": {"type": "object", "required": ["projectSha256", "mediaSha256"], "properties": {"projectSha256": {"$ref": "#/$defs/sha256"}, "mediaSha256": {"$ref": "#/$defs/sha256"}}},
+    "workloadId": {"type": "string", "minLength": 1},
+    "workloadSha256": {"$ref": "#/$defs/sha256"},
+    "machineProfileId": {"type": "string", "minLength": 1},
+    "machineProfileSha256": {"$ref": "#/$defs/sha256"},
+    "clockAuthority": {"const": "physical-device-clock"},
+    "operator": {"type": "string", "minLength": 1},
+    "verifier": {"type": "string", "minLength": 1},
+    "startedAt": {"type": "string", "format": "date-time"},
+    "endedAt": {"type": "string", "format": "date-time"},
+    "checks": {"type": "object", "minProperties": 1, "additionalProperties": {"const": "PASS"}},
+    "evidence": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/evidence"}}
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-fA-F]{64}$"},
+    "evidence": {"type": "object", "additionalProperties": false, "required": ["kind", "path", "sha256", "capturedAt", "reviewer"], "properties": {"kind": {"type": "string"}, "path": {"type": "string"}, "sha256": {"$ref": "#/$defs/sha256"}, "capturedAt": {"type": "string", "format": "date-time"}, "reviewer": {"type": "string"}}}
+  }
+}

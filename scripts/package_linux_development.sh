@@ -13,6 +13,6 @@ cp -R "$resources" "$stage/ProjectSEAM/CLAP/ProjectSEAMEditor.resources"
 cp "$root/THIRD_PARTY_NOTICES.md" "$root/SBOM.spdx.json" "$stage/ProjectSEAM/"
 cp "$root/packaging/linux/install.sh" "$root/packaging/linux/uninstall.sh" "$stage/ProjectSEAM/"
 printf '%s\n' 'UNSIGNED DEVELOPMENT BUILD — not validator-certified or release eligible.' > "$stage/ProjectSEAM/UNSIGNED-DEVELOPMENT-BUILD.txt"
-python3 "$root/scripts/write_release_manifest.py" --payload "$stage/ProjectSEAM" --output "$stage/ProjectSEAM/release-manifest.json" --status DEVELOPMENT_CLAP_ONLY
+python3 "$root/scripts/write_release_manifest.py" --payload "$stage/ProjectSEAM" --output "$stage/ProjectSEAM/release-manifest.json" --status DEVELOPMENT_CLAP_ONLY --version "${SEAM_VERSION:-0.13.1-local}"
 GZIP=-n tar --sort=name --mtime='UTC 1980-01-01' --owner=0 --group=0 --numeric-owner -C "$stage" -czf "$out" ProjectSEAM
 echo "LINUX_DEVELOPMENT_PACKAGE=$out"

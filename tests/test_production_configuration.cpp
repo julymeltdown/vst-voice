@@ -102,3 +102,28 @@ TEST_CASE("deterministic test configuration is an explicit nonphysical opt in") 
   CHECK(value.voicebankRoots.back().kind ==
         seam::voicebank::VoicebankRootKind::Development);
 }
+
+TEST_CASE("development configuration binds an explicit fixture by default") {
+  const auto paths = testPaths();
+  const auto configuration = seam::standalone::makeProductionConfiguration(
+      seam::standalone::ProductionConfigurationInput{
+          .mode = seam::standalone::ProductionRuntimeMode::Development,
+          .paths = paths,
+          .voicebankRoots = {seam::voicebank::VoicebankSearchRoot{
+              .path = paths.userDataRoot / "fixture-bank",
+              .kind = seam::voicebank::VoicebankRootKind::Development,
+          }},
+          .allowDevelopmentVoicebanks = true,
+          .forceThreadedAudio = false,
+          .bindFirstAvailableVoicebank = false,
+          .startPaused = true,
+      });
+  CHECK(configuration);
+  const auto& value = configuration.value();
+  CHECK(value.mode == seam::standalone::ProductionRuntimeMode::Development);
+  CHECK(value.allowDevelopmentVoicebanks);
+  CHECK(value.bindFirstAvailableVoicebank);
+  CHECK(value.voicebankRoots.size() == 2U);
+  CHECK(value.voicebankRoots.back().kind ==
+        seam::voicebank::VoicebankRootKind::Development);
+}

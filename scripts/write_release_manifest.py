@@ -1,16 +1,53 @@
 #!/usr/bin/env python3
 from __future__ import annotations
-import argparse,hashlib,json
+
+import argparse
+import hashlib
+import json
+import os
 from pathlib import Path
 
-def sha(p):
- h=hashlib.sha256();
- with p.open('rb') as f:
-  for b in iter(lambda:f.read(1024*1024),b''):h.update(b)
- return h.hexdigest()
-def main():
- ap=argparse.ArgumentParser();ap.add_argument('--payload',type=Path,required=True);ap.add_argument('--output',type=Path,required=True);ap.add_argument('--status',required=True);a=ap.parse_args();base=a.payload.resolve();files=[]
- for p in sorted(base.rglob('*')):
-  if p.is_file() and p.resolve()!=a.output.resolve():files.append({'path':p.relative_to(base).as_posix(),'size':p.stat().st_size,'sha256':sha(p)})
- a.output.write_text(json.dumps({'schemaVersion':1,'version':'0.13.0','status':a.status,'files':files},indent=2)+"\n");return 0
-if __name__=='__main__':raise SystemExit(main())
+
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for block in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--payload", type=Path, required=True)
+    parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--status", required=True)
+    parser.add_argument("--version", default=os.environ.get("SEAM_VERSION", ""))
+    args = parser.parse_args()
+    if not args.version:
+        parser.error("--version or SEAM_VERSION is required")
+    base = args.payload.resolve()
+    output = args.output.resolve()
+    files = []
+    for path in sorted(base.rglob("*")):
+        if path.is_file() and path.resolve() != output:
+            files.append(
+                {
+                    "path": path.relative_to(base).as_posix(),
+                    "size": path.stat().st_size,
+                    "sha256": sha256_file(path),
+                }
+            )
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(
+        json.dumps(
+            {"schemaVersion": 1, "version": args.version, "status": args.status, "files": files},
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

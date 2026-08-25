@@ -10,8 +10,10 @@
 #include "seam/time/tempo_map.hpp"
 
 #include <algorithm>
+#include <cstdint>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace seam::domain {
@@ -44,6 +46,10 @@ struct CharacterReference final {
 
   friend bool operator==(const CharacterReference&, const CharacterReference&) = default;
 };
+
+enum class MediaOwnership { ExternalReference, ProjectCopy };
+
+[[nodiscard]] std::string_view mediaOwnershipName(MediaOwnership ownership) noexcept;
 
 struct VocalRegion final {
   RegionId id;
@@ -97,6 +103,14 @@ struct AudioTrack final {
   TrackId id;
   std::string name;
   std::string mediaPath;
+  std::string mediaHash;
+  MediaOwnership mediaOwnership{MediaOwnership::ExternalReference};
+  std::string originalFilename;
+  std::uint32_t sourceSampleRate{0U};
+  std::uint16_t sourceChannels{0U};
+  std::uint64_t sourceFrameCount{0U};
+  std::uint64_t trimStartFrame{0U};
+  std::optional<std::uint64_t> trimEndFrame;
   time::Tick startTick;
   float gainDb{0.0F};
   float pan{0.0F};

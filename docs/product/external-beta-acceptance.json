@@ -19,14 +19,127 @@
     {"platform": "windows", "architecture": "x86_64", "label": "Windows x64"}
   ],
   "requirements": [
-    {"id": "EB-001-contract", "title": "Contract and semantic gate", "mandatoryFor": ["EXTERNAL_BETA_READY", "EXTERNAL_BETA_CLOSED"]},
-    {"id": "EB-002-identity", "title": "Single generated release identity", "mandatoryFor": ["EXTERNAL_BETA_READY", "EXTERNAL_BETA_CLOSED"]},
-    {"id": "EB-003-beta-bank", "title": "Rights-cleared Beta bank and exact identity", "mandatoryFor": ["EXTERNAL_BETA_READY", "EXTERNAL_BETA_CLOSED"]},
-    {"id": "EB-004-signed-install", "title": "Signed deliverables and independent clean installation", "mandatoryFor": ["EXTERNAL_BETA_READY", "EXTERNAL_BETA_CLOSED"]},
-    {"id": "EB-005-standalone-soak", "title": "Final signed-installed standalone journeys and workloads", "mandatoryFor": ["EXTERNAL_BETA_READY", "EXTERNAL_BETA_CLOSED"]},
-    {"id": "EB-006-host-matrix", "title": "Minimum installed REAPER, Bitwig Studio, and Logic Pro matrix", "mandatoryFor": ["EXTERNAL_BETA_READY", "EXTERNAL_BETA_CLOSED"]},
-    {"id": "EB-007-provenance-archive", "title": "Stage lineage and role-appropriate provenance archive", "mandatoryFor": ["EXTERNAL_BETA_READY", "EXTERNAL_BETA_CLOSED"]},
-    {"id": "EB-008-defect-review", "title": "Defect, waiver, and release-role review", "mandatoryFor": ["EXTERNAL_BETA_READY", "EXTERNAL_BETA_CLOSED"]}
+    {
+      "id": "EB-001-contract",
+      "title": "Contract and semantic gate",
+      "gate": "docs/product/external-beta-release-authorization.schema.json",
+      "mandatoryFor": ["EXTERNAL_BETA_READY", "EXTERNAL_BETA_CLOSED"],
+      "evidencePolicy": {
+        "stageKinds": ["UNSIGNED_PAYLOAD"],
+        "transformations": ["BUILD"],
+        "minimumRecords": 1,
+        "requiredTargets": [
+          {"platform": "platform-independent", "architecture": "any", "surface": "contract", "host": null}
+        ]
+      }
+    },
+    {
+      "id": "EB-002-identity",
+      "title": "Single generated release identity",
+      "gate": "docs/product/external-beta-build-manifest.schema.json",
+      "mandatoryFor": ["EXTERNAL_BETA_READY", "EXTERNAL_BETA_CLOSED"],
+      "evidencePolicy": {
+        "stageKinds": ["UNSIGNED_PAYLOAD"],
+        "transformations": ["BUILD"],
+        "minimumRecords": 1,
+        "requiredTargets": [
+          {"platform": "platform-independent", "architecture": "any", "surface": "identity", "host": null}
+        ]
+      }
+    },
+    {
+      "id": "EB-003-beta-bank",
+      "title": "Rights-cleared non-official Beta bank and exact identity",
+      "gate": "docs/voicebank/beta-voicebank-dossier.schema.json",
+      "mandatoryFor": ["EXTERNAL_BETA_READY", "EXTERNAL_BETA_CLOSED"],
+      "evidencePolicy": {
+        "stageKinds": ["SIGNED_DELIVERABLE"],
+        "transformations": ["SIGN"],
+        "minimumRecords": 1,
+        "requiredTargets": [
+          {"platform": "platform-independent", "architecture": "any", "surface": "bank", "host": null}
+        ]
+      }
+    },
+    {
+      "id": "EB-004-signed-install",
+      "title": "Signed deliverables and independent clean installation",
+      "gate": "docs/product/external-beta-install-matrix.json",
+      "mandatoryFor": ["EXTERNAL_BETA_READY", "EXTERNAL_BETA_CLOSED"],
+      "evidencePolicy": {
+        "stageKinds": ["INSTALLED_TREE"],
+        "transformations": ["INSTALL"],
+        "minimumRecords": 2,
+        "requiredTargets": [
+          {"platform": "macos", "architecture": "arm64", "surface": "installer", "host": null},
+          {"platform": "windows", "architecture": "x86_64", "surface": "installer", "host": null}
+        ]
+      }
+    },
+    {
+      "id": "EB-005-standalone-soak",
+      "title": "Final signed-installed standalone journeys and workloads",
+      "mandatoryFor": ["EXTERNAL_BETA_READY", "EXTERNAL_BETA_CLOSED"],
+      "evidencePolicy": {
+        "stageKinds": ["INSTALLED_TREE"],
+        "transformations": ["INSTALL"],
+        "minimumRecords": 2,
+        "requiredTargets": [
+          {"platform": "macos", "architecture": "arm64", "surface": "standalone", "host": null},
+          {"platform": "windows", "architecture": "x86_64", "surface": "standalone", "host": null}
+        ]
+      }
+    },
+    {
+      "id": "EB-006-host-matrix",
+      "title": "Minimum installed REAPER, Bitwig Studio, and Logic Pro matrix",
+      "gate": "docs/product/external-beta-host-matrix.json",
+      "mandatoryFor": ["EXTERNAL_BETA_READY", "EXTERNAL_BETA_CLOSED"],
+      "evidencePolicy": {
+        "stageKinds": ["INSTALLED_TREE"],
+        "transformations": ["INSTALL"],
+        "minimumRecords": 9,
+        "requiredTargets": [
+          {"platform": "macos", "architecture": "arm64", "surface": "host", "host": "reaper/CLAP"},
+          {"platform": "macos", "architecture": "arm64", "surface": "host", "host": "reaper/VST3"},
+          {"platform": "windows", "architecture": "x86_64", "surface": "host", "host": "reaper/CLAP"},
+          {"platform": "windows", "architecture": "x86_64", "surface": "host", "host": "reaper/VST3"},
+          {"platform": "macos", "architecture": "arm64", "surface": "host", "host": "bitwig/CLAP"},
+          {"platform": "macos", "architecture": "arm64", "surface": "host", "host": "bitwig/VST3"},
+          {"platform": "windows", "architecture": "x86_64", "surface": "host", "host": "bitwig/CLAP"},
+          {"platform": "windows", "architecture": "x86_64", "surface": "host", "host": "bitwig/VST3"},
+          {"platform": "macos", "architecture": "arm64", "surface": "host", "host": "logic-pro/AUv2"}
+        ]
+      }
+    },
+    {
+      "id": "EB-007-provenance-archive",
+      "title": "Stage lineage and role-appropriate provenance archive",
+      "gate": "docs/product/external-beta-evidence-archive.schema.json",
+      "mandatoryFor": ["EXTERNAL_BETA_READY", "EXTERNAL_BETA_CLOSED"],
+      "evidencePolicy": {
+        "stageKinds": ["SEALED_ARCHIVE"],
+        "transformations": ["ARCHIVE"],
+        "minimumRecords": 1,
+        "requiredTargets": [
+          {"platform": "platform-independent", "architecture": "any", "surface": "archive", "host": null}
+        ]
+      }
+    },
+    {
+      "id": "EB-008-defect-review",
+      "title": "Defect, waiver, and release-role review",
+      "gate": "docs/product/external-beta-cohort.schema.json",
+      "mandatoryFor": ["EXTERNAL_BETA_READY", "EXTERNAL_BETA_CLOSED"],
+      "evidencePolicy": {
+        "stageKinds": ["SEALED_ARCHIVE"],
+        "transformations": ["ARCHIVE"],
+        "minimumRecords": 1,
+        "requiredTargets": [
+          {"platform": "platform-independent", "architecture": "any", "surface": "review", "host": null}
+        ]
+      }
+    }
   ],
   "closure": {
     "requiredFlows": ["F1", "F2", "F5"],

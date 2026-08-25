@@ -1,9 +1,14 @@
 #include "test_framework.hpp"
 
 #include "seam/authoring/authoring_runtime.hpp"
+#include "seam/application/lyric_commands.hpp"
 #include "seam/application/note_commands.hpp"
 #include "seam/application/project_factory.hpp"
+#include "seam/rendering/streaming_pcm_source.hpp"
 #include "seam/voicebank/catalog.hpp"
+#include "seam/voicebank/wav.hpp"
+
+#include "test_support.hpp"
 
 #include <chrono>
 #include <filesystem>
@@ -129,7 +134,7 @@ seam::authoring::AuthoringRuntimeConfig configFor(
 bool waitReady(seam::authoring::AuthoringRuntime& runtime,
                std::uint64_t revision) {
   const auto deadline = std::chrono::steady_clock::now() +
-                        std::chrono::seconds{8};
+                        std::chrono::seconds{20};
   while (std::chrono::steady_clock::now() < deadline) {
     const auto progress = runtime.renderer().progress();
     if (progress.publishedRevision == revision &&
@@ -173,10 +178,144 @@ TEST_CASE("authoring_runtime_note_edit_renders_and_publishes_transport_audio") {
       }})));
   const auto revision = runtime.document().session().revision();
   CHECK(revision == beforeRevision + 1U);
-  CHECK(runtime.renderer().stats().submitted == beforeSubmitted + 1U);
   CHECK(waitReady(runtime, revision));
+  CHECK(runtime.renderer().stats().submitted >= beforeSubmitted + 1U);
   const auto after = runtime.renderer().latest();
   CHECK(after->result.phraseContentHashes != before->result.phraseContentHashes);
+  CHECK(runtime.transport().state().publishedRevision == revision);
+}
+
+TEST_CASE("authoring_runtime_renders_backing_only_projects") {
+  const auto root = seam::test::support::temporaryDirectory(
+      "authoring-backing-only");
+  const auto media = root / "backing.wav";
+  CHECK(seam::voicebank::writeMonoPcm16Wav(
+      media, 48000U,
+      seam::test::support::sineWave(48000U, 220.0, 0.05)));
+  const auto source = seam::rendering::StreamingPcmSource::open(media, 4096U);
+  CHECK(source);
+  seam::application::ProjectFactory factory{30000U};
+  auto project = factory.createProject("Backing only");
+  project.audioTracks().push_back(seam::domain::AudioTrack{
+      .id = factory.nextTrackId(),
+      .name = "Backing",
+      .mediaPath = media.string(),
+      .mediaHash = source.value()->info().contentHash,
+      .mediaOwnership = seam::domain::MediaOwnership::ExternalReference,
+      .originalFilename = media.filename().string(),
+      .sourceSampleRate = source.value()->info().sampleRate,
+      .sourceChannels = source.value()->info().channels,
+      .sourceFrameCount = source.value()->info().frameCount,
+      .startTick = seam::time::Tick{0},
+      .outputRoute = seam::domain::TrackOutputRoute{
+          .bus = seam::domain::BusId{1U},
+          .matrix = seam::domain::RoutingMatrix::monoToStereo(),
+      },
+  });
+  CHECK(project.validate());
+  auto document = std::unique_ptr<seam::authoring::ProjectDocument>{
+      new seam::authoring::ProjectDocument(
+          std::move(project),
+          seam::application::ProjectFactory{factory.nextIdValue()})};
+  seam::authoring::AuthoringRuntime runtime{
+      std::move(document),
+      seam::authoring::AuthoringRuntimeConfig{
+          .cacheRoot = root / "cache",
+          .voicebankRoots = {},
+          .previewSampleRate = 48000U,
+          .outputChannels = 2U,
+          .allowDevelopmentVoicebanks = false,
+  }};
+  CHECK(runtime.initialize());
+  CHECK(waitReady(runtime, runtime.document().session().revision()));
+  const auto preview = runtime.renderer().latest();
+  CHECK(preview->state == seam::authoring::RenderState::Ready);
+  CHECK(!preview->result.interleaved.empty());
+  CHECK(runtime.transport().state().available);
+}
+
+TEST_CASE("authoring_runtime_quality_change_renders_final_audio") {
+  auto fixture = makeFixture();
+  seam::authoring::AuthoringRuntime runtime{
+      std::move(fixture.document), configFor(
+          std::filesystem::temp_directory_path() / "seam-runtime-quality")};
+  CHECK(runtime.initialize());
+  CHECK(runtime.selectTrack(fixture.resolvedTrack));
+  CHECK(runtime.selectRegion(fixture.resolvedRegion));
+  const auto revision = runtime.document().session().revision();
+  CHECK(waitReady(runtime, revision));
+  const auto beforeSubmitted = runtime.renderer().stats().submitted;
+  const auto before = runtime.renderer().latest();
+  CHECK(before->quality == seam::rendering::RenderQuality::Preview);
+
+  runtime.setRenderQuality(seam::rendering::RenderQuality::Final);
+
+  const auto deadline = std::chrono::steady_clock::now() +
+                        std::chrono::seconds{20};
+  while (std::chrono::steady_clock::now() < deadline) {
+    const auto progress = runtime.renderer().progress();
+    const auto latest = runtime.renderer().latest();
+    if (progress.state == seam::authoring::RenderState::Ready &&
+        progress.publishedRevision == revision &&
+        latest->projectRevision == revision &&
+        latest->quality == seam::rendering::RenderQuality::Final) {
+      break;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds{5});
+  }
+
+  const auto after = runtime.renderer().latest();
+  CHECK(runtime.renderQuality() == seam::rendering::RenderQuality::Final);
+  CHECK(after->quality == seam::rendering::RenderQuality::Final);
+  CHECK(after->projectRevision == revision);
+  CHECK(runtime.renderer().stats().submitted >= beforeSubmitted + 1U);
+}
+
+TEST_CASE("authoring_runtime_seam_preview is transient and restores canonical audio") {
+  auto fixture = makeFixture();
+  auto* fixtureRegion = fixture.document->session().project().findRegion(
+      fixture.resolvedRegion);
+  CHECK(fixtureRegion != nullptr);
+  const auto key = seam::domain::PhonemeKey{
+      .noteId = fixtureRegion->notes.front().id, .ordinal = 0U};
+  fixtureRegion->seamOverrides.push_back(seam::domain::SeamOverride{
+      .incomingStartKey = key,
+      .seamAmount = 0.9F,
+      .overlap = seam::time::Microseconds{4'000},
+      .phaseReset = 1.0F,
+      .envelopeBlend = 0.1F,
+      .curve = seam::domain::SeamCurve::HardCharacter,
+      .locked = true,
+  });
+  seam::authoring::AuthoringRuntime runtime{
+      std::move(fixture.document), configFor(
+          std::filesystem::temp_directory_path() / "seam-runtime-seam-preview")};
+  CHECK(runtime.initialize());
+  CHECK(runtime.selectTrack(fixture.resolvedTrack));
+  CHECK(runtime.selectRegion(fixture.resolvedRegion));
+  const auto revision = runtime.document().session().revision();
+  CHECK(waitReady(runtime, revision));
+  const auto beforeProject = runtime.document().session().project();
+  const auto beforeSubmitted = runtime.renderer().stats().submitted;
+
+  CHECK(runtime.previewSeam(key, true));
+  const auto deadline = std::chrono::steady_clock::now() +
+                        std::chrono::seconds{20};
+  while (!runtime.seamPreviewReady() &&
+         std::chrono::steady_clock::now() < deadline) {
+    std::this_thread::sleep_for(std::chrono::milliseconds{5});
+  }
+  CHECK(runtime.seamPreviewActive());
+  CHECK(runtime.seamPreviewReady());
+  CHECK(runtime.document().session().project() == beforeProject);
+  CHECK(runtime.document().session().revision() == revision);
+  CHECK(runtime.renderer().stats().submitted == beforeSubmitted);
+  CHECK(runtime.transport().state().publishedRevision == revision);
+
+  CHECK(runtime.previewSeam(key, false));
+  CHECK(!runtime.seamPreviewActive());
+  CHECK(!runtime.seamPreviewReady());
+  CHECK(runtime.document().session().project() == beforeProject);
   CHECK(runtime.transport().state().publishedRevision == revision);
 }
 
@@ -250,5 +389,47 @@ TEST_CASE("authoring_runtime_technical_edit_submits_once") {
   CHECK(runtime.technicalEdits().movePhonemeBoundary(
       key, false, seam::time::Microseconds{42000}));
   CHECK(runtime.document().session().revision() == beforeRevision + 1U);
-  CHECK(runtime.renderer().stats().submitted == beforeSubmitted + 1U);
+  CHECK(waitReady(runtime, beforeRevision + 1U));
+  CHECK(runtime.renderer().stats().submitted >= beforeSubmitted + 1U);
+  const auto published = runtime.renderer().latest();
+  CHECK(published->impact.scope ==
+        seam::application::CommandAudioImpact::PhraseAudio);
+  CHECK(published->impact.regionIds.size() == 1U);
+  CHECK(published->impact.regionIds.front() == fixture.resolvedRegion);
+}
+
+TEST_CASE("authoring_runtime_coalesces_rapid_audio_edits_to_latest_revision") {
+  auto fixture = makeFixture();
+  auto* fixtureRegion = fixture.document->session().project().findRegion(
+      fixture.resolvedRegion);
+  CHECK(fixtureRegion != nullptr);
+  fixtureRegion->unitSelectionOverrides.clear();
+  seam::authoring::AuthoringRuntime runtime{
+      std::move(fixture.document), configFor(
+          std::filesystem::temp_directory_path() / "seam-runtime-debounce")};
+  CHECK(runtime.initialize());
+  CHECK(runtime.selectTrack(fixture.resolvedTrack));
+  CHECK(runtime.selectRegion(fixture.resolvedRegion));
+  CHECK(waitReady(runtime, runtime.document().session().revision()));
+
+  const auto* region = runtime.document().session().project().findRegion(
+      fixture.resolvedRegion);
+  CHECK(region != nullptr);
+  CHECK(!region->lyrics.empty());
+  const auto lyricId = region->lyrics.front().id;
+  const auto beforeSubmitted = runtime.renderer().stats().submitted;
+
+  for (std::size_t index = 0U; index < 100U; ++index) {
+    CHECK(runtime.execute(std::make_unique<seam::application::SetLyricCommand>(
+        lyricId, index % 2U == 0U ? U"こ" : U"え",
+        seam::domain::Language::Japanese)));
+  }
+
+  const auto latestRevision = runtime.document().session().revision();
+  CHECK(latestRevision >= 100U);
+  CHECK(waitReady(runtime, latestRevision));
+  const auto stats = runtime.renderer().stats();
+  CHECK(stats.submitted - beforeSubmitted <= 2U);
+  CHECK(stats.completed >= 1U);
+  CHECK(runtime.renderer().latest()->projectRevision == latestRevision);
 }

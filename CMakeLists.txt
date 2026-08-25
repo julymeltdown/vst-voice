@@ -122,6 +122,8 @@ seam_apply_compiler_options(seam_phonemizer)
 add_library(seam_application
   libs/seam-application/src/command.cpp
   libs/seam-application/src/arrangement_commands.cpp
+  libs/seam-application/src/track_commands.cpp
+  libs/seam-application/src/region_commands.cpp
   libs/seam-application/src/note_commands.cpp
   libs/seam-application/src/lyric_commands.cpp
   libs/seam-application/src/render_commands.cpp
@@ -148,6 +150,9 @@ add_library(seam_authoring_runtime
   libs/seam-authoring-runtime/src/bank_reference_registry.cpp
   libs/seam-authoring-runtime/src/export_service.cpp
   libs/seam-authoring-runtime/src/audio_settings.cpp
+  libs/seam-authoring-runtime/src/audio_settings_controller.cpp
+  libs/seam-authoring-runtime/src/media_import_service.cpp
+  libs/seam-authoring-runtime/src/support_bundle.cpp
 )
 target_include_directories(seam_authoring_runtime PUBLIC
   libs/seam-authoring-runtime/include)
@@ -208,6 +213,9 @@ add_library(seam_distribution
   libs/seam-distribution/src/signing.cpp
   libs/seam-distribution/src/seambank.cpp
   libs/seam-distribution/src/installer.cpp
+  libs/seam-distribution/src/trust_policy.cpp
+  libs/seam-distribution/src/update_manifest.cpp
+  libs/seam-distribution/src/sealed_handoff.cpp
 )
 target_include_directories(seam_distribution PUBLIC
   libs/seam-distribution/include)
@@ -240,6 +248,8 @@ add_library(seam_rendering
   libs/seam-rendering/src/render_pipeline.cpp
   libs/seam-rendering/src/region_renderer.cpp
   libs/seam-rendering/src/project_renderer.cpp
+  libs/seam-rendering/src/sample_rate_converter.cpp
+  libs/seam-rendering/src/streaming_pcm_source.cpp
   libs/seam-rendering/src/pcm_cache.cpp
   libs/seam-rendering/src/audio_ring_buffer.cpp
   libs/seam-rendering/src/interleaved_audio_ring_buffer.cpp
@@ -278,15 +288,19 @@ add_library(seam_platform
   libs/seam-platform/src/system_audio_input_device_unavailable.cpp
   libs/seam-platform/src/recording_session.cpp
   libs/seam-platform/src/application_paths.cpp
+  libs/seam-platform/src/crash_capture.cpp
+  libs/seam-platform/src/audio_device_catalog_unavailable.cpp
 )
 target_include_directories(seam_platform PUBLIC libs/seam-platform/include)
-target_link_libraries(seam_platform PUBLIC seam_voicebank seam_core Threads::Threads ${CMAKE_DL_LIBS})
+target_link_libraries(seam_platform PUBLIC seam_voicebank seam_formats seam_core Threads::Threads ${CMAKE_DL_LIBS})
 if(WIN32)
   target_sources(seam_platform PRIVATE
     libs/seam-platform/src/wasapi_audio_device.cpp
+    libs/seam-platform/src/audio_device_catalog_win32.cpp
     libs/seam-platform/src/wasapi_audio_input_device.cpp
     libs/seam-platform/src/file_dialog_win32.cpp
-    libs/seam-platform/src/application_menu_win32.cpp)
+    libs/seam-platform/src/application_menu_win32.cpp
+    libs/seam-platform/src/crash_capture_win32.cpp)
   target_compile_definitions(seam_platform PRIVATE
     SEAM_AUDIO_WASAPI=1 WIN32_LEAN_AND_MEAN NOMINMAX _WIN32_WINNT=0x0A00)
   target_link_libraries(seam_platform PRIVATE ole32 uuid avrt shell32)
@@ -294,9 +308,11 @@ elseif(APPLE)
   enable_language(OBJCXX)
   target_sources(seam_platform PRIVATE
     libs/seam-platform/src/coreaudio_audio_device.mm
+    libs/seam-platform/src/audio_device_catalog_appkit.mm
     libs/seam-platform/src/coreaudio_audio_input_device.mm
     libs/seam-platform/src/file_dialog_appkit.mm
-    libs/seam-platform/src/application_menu_appkit.mm)
+    libs/seam-platform/src/application_menu_appkit.mm
+    libs/seam-platform/src/crash_capture_appkit.mm)
   set_source_files_properties(
     libs/seam-platform/src/file_dialog_appkit.mm
     libs/seam-platform/src/application_menu_appkit.mm
@@ -308,7 +324,8 @@ elseif(APPLE)
 elseif(UNIX)
   target_sources(seam_platform PRIVATE
     libs/seam-platform/src/file_dialog_unavailable.cpp
-    libs/seam-platform/src/application_menu_unavailable.cpp)
+    libs/seam-platform/src/application_menu_unavailable.cpp
+    libs/seam-platform/src/crash_capture_unavailable.cpp)
   target_compile_definitions(seam_platform PRIVATE SEAM_AUDIO_PULSE=1)
 endif()
 seam_apply_compiler_options(seam_platform)
@@ -321,6 +338,11 @@ if(SEAM_BUILD_NATIVE_DESKTOP)
     libs/seam-native-ui/src/editor_controller.cpp
     libs/seam-native-ui/src/character_presentation.cpp
     libs/seam-native-ui/src/voicebank_studio.cpp
+    libs/seam-native-ui/src/new_project_dialog.cpp
+    libs/seam-native-ui/src/arrangement_panel.cpp
+    libs/seam-native-ui/src/track_inspector.cpp
+    libs/seam-native-ui/src/export_dialog.cpp
+    libs/seam-native-ui/src/export_progress_panel.cpp
     libs/seam-native-ui/src/native_window_unavailable.cpp)
 
   if(WIN32)
@@ -343,16 +365,32 @@ if(SEAM_BUILD_NATIVE_DESKTOP)
 
   add_library(seam_native_ui ${SEAM_NATIVE_UI_SOURCES})
   target_sources(seam_native_ui PRIVATE
-    libs/seam-native-ui/src/editor_semantics.cpp)
+  libs/seam-native-ui/src/editor_semantics.cpp
+    libs/seam-native-ui/src/render_status_panel.cpp
+    libs/seam-native-ui/src/diagnostic_panel.cpp
+    libs/seam-native-ui/src/recovery_support_panel.cpp
+    libs/seam-native-ui/src/update_panel.cpp
+    libs/seam-native-ui/src/accessibility_tree.cpp)
   target_include_directories(seam_native_ui PUBLIC
-    libs/seam-native-ui/include)
+    libs/seam-native-ui/include
+    libs/seam-authoring-runtime/include
+    libs/seam-rendering/include
+    libs/seam-voicebank/include)
   target_link_libraries(seam_native_ui PUBLIC
-    seam_character seam_editor_inspection seam_voicebank seam_editor_ui seam_phonemizer seam_application seam_domain seam_text seam_core)
+    seam_authoring_runtime seam_character seam_editor_inspection seam_voicebank seam_editor_ui seam_phonemizer seam_application seam_domain seam_text seam_core)
   if(WIN32)
+    target_sources(seam_native_ui PRIVATE
+      libs/seam-native-ui/src/accessibility_win32.cpp)
     target_compile_definitions(seam_native_ui PRIVATE
       SEAM_NATIVE_WIN32=1 WIN32_LEAN_AND_MEAN NOMINMAX _WIN32_WINNT=0x0A00)
-    target_link_libraries(seam_native_ui PRIVATE user32 gdi32 imm32 ole32 uuid)
+    target_link_libraries(seam_native_ui PRIVATE
+      user32 gdi32 imm32 ole32 oleacc uiautomationcore uuid)
   elseif(APPLE)
+    target_sources(seam_native_ui PRIVATE
+      libs/seam-native-ui/src/accessibility_appkit.mm)
+    set_source_files_properties(
+      libs/seam-native-ui/src/accessibility_appkit.mm
+      PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
     target_compile_definitions(seam_native_ui PRIVATE SEAM_NATIVE_APPKIT=1)
     target_link_libraries(seam_native_ui PRIVATE
       "-framework AppKit" "-framework CoreGraphics" "-framework CoreFoundation" "-framework Foundation")
@@ -360,6 +398,9 @@ if(SEAM_BUILD_NATIVE_DESKTOP)
     target_compile_definitions(seam_native_ui PRIVATE SEAM_NATIVE_X11=1)
     target_include_directories(seam_native_ui PRIVATE ${X11_INCLUDE_DIR})
     target_link_libraries(seam_native_ui PRIVATE ${X11_LIBRARIES})
+  else()
+    target_sources(seam_native_ui PRIVATE
+      libs/seam-native-ui/src/accessibility_unavailable.cpp)
   endif()
   seam_apply_compiler_options(seam_native_ui)
 endif()
@@ -372,6 +413,12 @@ target_include_directories(seam_playback_platform PUBLIC libs/seam-platform/incl
 target_link_libraries(seam_playback_platform PUBLIC
   seam_platform seam_rendering seam_core)
 seam_apply_compiler_options(seam_playback_platform)
+
+add_executable(seam_realtime_allocation_probe
+  tools/realtime-allocation-probe/main.cpp)
+target_link_libraries(seam_realtime_allocation_probe PRIVATE
+  seam_playback_platform seam_platform seam_core)
+seam_apply_compiler_options(seam_realtime_allocation_probe)
 
 add_executable(seam_phase1_demo apps/seam-phase1-demo/main.cpp)
 target_link_libraries(seam_phase1_demo PRIVATE
@@ -402,12 +449,32 @@ if(SEAM_BUILD_NATIVE_DESKTOP)
     libs/seam-standalone/src/production_configuration.cpp
     libs/seam-standalone/src/authoring_session.cpp
     libs/seam-standalone/src/application_controller.cpp
+    libs/seam-standalone/src/eula_acceptance.cpp
     libs/seam-standalone/src/native_editor_app.cpp)
+  target_sources(seam_standalone_authoring PRIVATE
+    libs/seam-standalone/src/update_controller.cpp)
   target_include_directories(seam_standalone_authoring PUBLIC
     libs/seam-standalone/include)
   target_link_libraries(seam_standalone_authoring PUBLIC
     seam_authoring_runtime seam_native_ui seam_playback_platform seam_platform
     seam_application seam_domain seam_voicebank seam_core)
+  if(APPLE)
+    enable_language(OBJCXX)
+    target_sources(seam_standalone_authoring PRIVATE
+      libs/seam-standalone/src/native_project_dialog_appkit.mm)
+    set_source_files_properties(
+      libs/seam-standalone/src/native_project_dialog_appkit.mm
+      PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
+    target_link_libraries(seam_standalone_authoring PRIVATE
+      "-framework AppKit" "-framework Foundation")
+  elseif(WIN32)
+    target_sources(seam_standalone_authoring PRIVATE
+      libs/seam-standalone/src/native_project_dialog_win32.cpp)
+    target_link_libraries(seam_standalone_authoring PRIVATE comdlg32)
+  else()
+    target_sources(seam_standalone_authoring PRIVATE
+      libs/seam-standalone/src/native_project_dialog_unavailable.cpp)
+  endif()
   seam_apply_compiler_options(seam_standalone_authoring)
 
   add_executable(seam_phase5_demo apps/seam-phase5-demo/main.cpp)
@@ -420,6 +487,74 @@ if(SEAM_BUILD_NATIVE_DESKTOP)
   target_link_libraries(seam_editor_native PRIVATE
     seam_standalone_authoring seam_native_ui seam_playback_platform seam_platform
     seam_rendering seam_editor_ui seam_application seam_domain seam_core)
+  if(APPLE)
+    enable_language(OBJCXX)
+    target_sources(seam_editor_native PRIVATE
+      apps/seam-editor-native/macos_application_delegate.mm)
+    set_source_files_properties(
+      apps/seam-editor-native/macos_application_delegate.mm
+      PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
+    set_target_properties(seam_editor_native PROPERTIES
+      MACOSX_BUNDLE TRUE
+      OUTPUT_NAME "Project SEAM"
+      MACOSX_BUNDLE_BUNDLE_NAME "Project SEAM"
+      MACOSX_BUNDLE_INFO_PLIST
+        "${CMAKE_CURRENT_SOURCE_DIR}/packaging/macos/ProjectSEAM-App-Info.plist.in")
+    target_link_libraries(seam_editor_native PRIVATE
+      "-framework AppKit" "-framework Foundation")
+    add_custom_command(TARGET seam_editor_native POST_BUILD
+      COMMAND ${CMAKE_COMMAND} -E make_directory
+        "$<TARGET_BUNDLE_DIR:seam_editor_native>/Contents/Resources/Manual"
+      COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets/character-01"
+        "$<TARGET_BUNDLE_DIR:seam_editor_native>/Contents/Resources/character-01"
+      COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_CURRENT_SOURCE_DIR}/docs/product/EXTERNAL_BETA_ACCEPTANCE.md"
+        "$<TARGET_BUNDLE_DIR:seam_editor_native>/Contents/Resources/Manual/ExternalBetaAcceptance.md"
+      COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_CURRENT_SOURCE_DIR}/docs/manual"
+        "$<TARGET_BUNDLE_DIR:seam_editor_native>/Contents/Resources/Manual"
+      COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_CURRENT_SOURCE_DIR}/docs/support"
+        "$<TARGET_BUNDLE_DIR:seam_editor_native>/Contents/Resources/Manual/Support"
+      COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_CURRENT_SOURCE_DIR}/docs/product/external-beta-documentation.json"
+        "$<TARGET_BUNDLE_DIR:seam_editor_native>/Contents/Resources/Manual/external-beta-documentation.json"
+      COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_CURRENT_SOURCE_DIR}/THIRD_PARTY_NOTICES.md"
+        "$<TARGET_BUNDLE_DIR:seam_editor_native>/Contents/Resources/THIRD_PARTY_NOTICES.md"
+      COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_CURRENT_SOURCE_DIR}/SBOM.spdx.json"
+        "$<TARGET_BUNDLE_DIR:seam_editor_native>/Contents/Resources/SBOM.spdx.json"
+      VERBATIM)
+    install(TARGETS seam_editor_native BUNDLE DESTINATION ".")
+  elseif(WIN32)
+    configure_file(
+      packaging/windows/ProjectSEAM.rc.in
+      ${CMAKE_CURRENT_BINARY_DIR}/generated/ProjectSEAM.rc
+      @ONLY)
+    target_sources(seam_editor_native PRIVATE
+      apps/seam-editor-native/windows_application.cpp
+      ${CMAKE_CURRENT_BINARY_DIR}/generated/ProjectSEAM.rc)
+    set_target_properties(seam_editor_native PROPERTIES WIN32_EXECUTABLE TRUE)
+    target_link_libraries(seam_editor_native PRIVATE shell32)
+    add_custom_command(TARGET seam_editor_native POST_BUILD
+      COMMAND ${CMAKE_COMMAND} -E make_directory
+        "$<TARGET_FILE_DIR:seam_editor_native>/Resources/Manual"
+      COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets/character-01"
+        "$<TARGET_FILE_DIR:seam_editor_native>/Resources/character-01"
+      COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_CURRENT_SOURCE_DIR}/docs/manual"
+        "$<TARGET_FILE_DIR:seam_editor_native>/Resources/Manual"
+      COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_CURRENT_SOURCE_DIR}/docs/support"
+        "$<TARGET_FILE_DIR:seam_editor_native>/Resources/Manual/Support"
+      COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_CURRENT_SOURCE_DIR}/docs/product/external-beta-documentation.json"
+        "$<TARGET_FILE_DIR:seam_editor_native>/Resources/Manual/external-beta-documentation.json"
+      VERBATIM)
+  endif()
   seam_apply_compiler_options(seam_editor_native)
 
   add_executable(seam_voicebank_studio_native apps/seam-voicebank-studio-native/main.cpp)
@@ -498,7 +633,8 @@ if(SEAM_BUILD_CLAP_EDITOR_PLUGIN)
 
   add_library(seam_clap_editor
     libs/seam-clap-editor/src/editor_runtime_adapter.cpp
-  libs/seam-clap-editor/src/editor_runtime_paint.cpp
+    libs/seam-clap-editor/src/editor_runtime_accessibility.cpp
+    libs/seam-clap-editor/src/editor_runtime_paint.cpp
   libs/seam-clap-editor/src/editor_runtime_input.cpp
   libs/seam-clap-editor/src/editor_runtime_project.cpp
   libs/seam-clap-editor/src/editor_runtime_preview.cpp
@@ -604,11 +740,31 @@ if(SEAM_BUILD_CLAP_EDITOR_PLUGIN)
     apps/seam-clap-editor-host/main.cpp)
   target_include_directories(seam_clap_editor_host SYSTEM PRIVATE
     third_party/clap/include)
+  target_include_directories(seam_clap_editor_host PRIVATE
+    apps/seam-clap-editor-host)
   target_link_libraries(seam_clap_editor_host PRIVATE
     seam_voicebank seam_core ${CMAKE_DL_LIBS})
-  if(UNIX AND X11_FOUND)
+  if(WIN32)
+    target_sources(seam_clap_editor_host PRIVATE
+      apps/seam-clap-editor-host/platform_host_win32.cpp)
+    target_link_libraries(seam_clap_editor_host PRIVATE user32 gdi32)
+  elseif(APPLE)
+    enable_language(OBJCXX)
+    target_sources(seam_clap_editor_host PRIVATE
+      apps/seam-clap-editor-host/platform_host_appkit.mm)
+    set_source_files_properties(
+      apps/seam-clap-editor-host/platform_host_appkit.mm
+      PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
+    target_link_libraries(seam_clap_editor_host PRIVATE
+      "-framework AppKit" "-framework Foundation")
+  elseif(UNIX AND X11_FOUND)
+    target_sources(seam_clap_editor_host PRIVATE
+      apps/seam-clap-editor-host/platform_host_x11.cpp)
     target_include_directories(seam_clap_editor_host PRIVATE ${X11_INCLUDE_DIR})
     target_link_libraries(seam_clap_editor_host PRIVATE ${X11_LIBRARIES})
+  else()
+    target_sources(seam_clap_editor_host PRIVATE
+      apps/seam-clap-editor-host/platform_host_unavailable.cpp)
   endif()
   seam_apply_compiler_options(seam_clap_editor_host)
 endif()
@@ -646,8 +802,10 @@ endif()
 
 
 if(SEAM_BUILD_TESTS AND SEAM_BUILD_CLAP_EDITOR_PLUGIN)
-  add_executable(seam_phase11_tests tests/test_phase11_clap_editor.cpp)
+  add_executable(seam_phase11_tests
+    tests/test_phase11_clap_editor.cpp phase12c/src/live_fixture.cpp)
   target_include_directories(seam_phase11_tests PRIVATE tests)
+  target_include_directories(seam_phase11_tests PRIVATE phase12c/generated)
   target_compile_definitions(seam_phase11_tests PRIVATE
     SEAM_SOURCE_PRODUCTION_VOICEBANK="${CMAKE_CURRENT_SOURCE_DIR}/assets/demo-human-voicebank-public-domain/production-bank")
   target_link_libraries(seam_phase11_tests PRIVATE
@@ -667,6 +825,11 @@ if(SEAM_BUILD_TESTS AND SEAM_BUILD_CLAP_EDITOR_PLUGIN)
   add_test(NAME seam_phase12a_tests COMMAND seam_phase12a_tests)
   add_test(NAME seam_phase12a_demo_smoke
     COMMAND seam_phase12a_demo --output ${CMAKE_BINARY_DIR}/phase12a-smoke)
+  set_tests_properties(seam_phase11_tests seam_phase12a_tests
+    seam_phase12a_demo_smoke
+    PROPERTIES
+      WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+      ENVIRONMENT "SEAM_PREVIEW_CACHE_ROOT=${CMAKE_BINARY_DIR}/ctest-preview-cache")
   set_tests_properties(seam_phase12a_demo_smoke PROPERTIES TIMEOUT 60)
 
   add_executable(seam_phase12b_tests tests/test_phase12b.cpp)
@@ -681,21 +844,38 @@ if(SEAM_BUILD_TESTS AND SEAM_BUILD_CLAP_EDITOR_PLUGIN)
   add_test(NAME seam_phase12b_demo_smoke
     COMMAND seam_phase12b_demo --output ${CMAKE_BINARY_DIR}/phase12b-smoke)
   set_tests_properties(seam_phase12b_tests seam_phase12b_demo_smoke
-    PROPERTIES TIMEOUT 120)
+    PROPERTIES
+      TIMEOUT 120
+      WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+      ENVIRONMENT "SEAM_PREVIEW_CACHE_ROOT=${CMAKE_BINARY_DIR}/ctest-preview-cache")
 
-  if(UNIX AND NOT APPLE AND X11_FOUND)
+  if(SEAM_RUN_NATIVE_GUI_TESTS AND UNIX AND NOT APPLE AND X11_FOUND)
     find_program(SEAM_PHASE11_XVFB_RUN_EXECUTABLE xvfb-run)
     if(SEAM_PHASE11_XVFB_RUN_EXECUTABLE)
       add_test(NAME seam_phase11_clap_editor_host_smoke
         COMMAND ${SEAM_PHASE11_XVFB_RUN_EXECUTABLE} -a
           $<TARGET_FILE:seam_clap_editor_host>
           --plugin $<TARGET_FILE:seam_clap_editor_plugin>
+          --target-runtime-fixture-root
+          ${CMAKE_CURRENT_SOURCE_DIR}/assets/demo-human-voicebank-public-domain/production-bank
           --screenshot ${CMAKE_BINARY_DIR}/phase11-clap-editor.ppm
           --summary ${CMAKE_BINARY_DIR}/phase11-clap-editor-summary.json
           --audio ${CMAKE_BINARY_DIR}/phase11-clap-editor-live.wav)
       set_tests_properties(seam_phase11_clap_editor_host_smoke PROPERTIES
         TIMEOUT 45)
     endif()
+  endif()
+  if(SEAM_RUN_NATIVE_GUI_TESTS AND (WIN32 OR APPLE))
+    add_test(NAME seam_phase11_clap_editor_host_smoke
+      COMMAND $<TARGET_FILE:seam_clap_editor_host>
+              --plugin $<TARGET_FILE:seam_clap_editor_plugin>
+              --target-runtime-fixture-root
+              ${CMAKE_CURRENT_SOURCE_DIR}/assets/demo-human-voicebank-public-domain/production-bank
+              --screenshot ${CMAKE_BINARY_DIR}/phase11-clap-editor.ppm
+              --summary ${CMAKE_BINARY_DIR}/phase11-clap-editor-summary.json
+              --audio ${CMAKE_BINARY_DIR}/phase11-clap-editor-live.wav)
+    set_tests_properties(seam_phase11_clap_editor_host_smoke PROPERTIES
+      TIMEOUT 45)
   endif()
   if(Python3_Interpreter_FOUND)
     add_test(NAME seam_phase11_source_and_voice_contract
@@ -743,10 +923,16 @@ if(SEAM_BUILD_TESTS)
     tests/test_stabilization.cpp
     tests/test_multichannel.cpp
     tests/test_distribution.cpp
+    tests/test_update_manifest.cpp
+    tests/test_trust_policy.cpp
+    tests/test_crash_recovery.cpp
+    tests/test_support_bundle.cpp
+    tests/test_update_controller.cpp
     tests/test_platform_capabilities.cpp
     tests/test_text.cpp
     tests/test_clap.cpp
     tests/test_project_document.cpp
+    tests/test_command_impact.cpp
     tests/test_project_lifecycle.cpp
     tests/test_autosave_service.cpp
     tests/test_recent_projects.cpp
@@ -763,25 +949,49 @@ if(SEAM_BUILD_TESTS)
     tests/test_wav_export_formats.cpp
     tests/test_media_rendering.cpp
     tests/test_arrangement_commands.cpp
+    tests/test_arrangement_panel.cpp
+    tests/test_note_lyric_workflow.cpp
+    tests/test_accessibility_tree.cpp
+    tests/test_export_dialog.cpp
     tests/test_editor_semantics.cpp
     tests/test_export_service.cpp
     tests/test_audio_settings.cpp
+    tests/test_media_import_service.cpp
     tests/test_bank_reference_registry.cpp
     tests/test_diagnostic_registry.cpp
+    tests/test_render_status_panel.cpp
     tests/test_log_export_policy.cpp
     tests/test_production_configuration.cpp
+    tests/test_standalone_realtime_contract.cpp
+    tests/test_audio_device_catalog.cpp
+    tests/test_sample_rate_converter.cpp
+    tests/test_streaming_pcm_source.cpp
+    tests/test_phase12c_live_resources.cpp
+    tests/test_phase12c_articulation.cpp
+    tests/test_phase12c_midi1.cpp
+    tests/test_phase12c_live_publication.cpp
   )
   if(SEAM_BUILD_CLAP_EDITOR_PLUGIN)
     list(APPEND SEAM_TEST_SOURCES
-      tests/test_authoring_characterization.cpp)
+      tests/test_authoring_characterization.cpp
+      tests/test_phase12c_clap_events.cpp
+      phase12c/src/live_fixture.cpp)
   endif()
   if(SEAM_BUILD_NATIVE_DESKTOP)
     list(APPEND SEAM_TEST_SOURCES
+      tests/test_eula_acceptance.cpp
       tests/test_native_ui.cpp
       tests/test_native_runtime.cpp
+      tests/test_diagnostic_panel.cpp
       tests/test_standalone_authoring_integration.cpp
       tests/test_standalone_project_lifecycle.cpp
       tests/test_standalone_voicebank_workflow.cpp)
+  endif()
+  if(APPLE AND SEAM_RUN_NATIVE_GUI_TESTS)
+    list(APPEND SEAM_TEST_SOURCES tests/test_accessibility_appkit.mm)
+    set_source_files_properties(
+      tests/test_accessibility_appkit.mm
+      PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
   endif()
 
   if(SEAM_BUILD_CLAP_EDITOR_PLUGIN)
@@ -798,6 +1008,9 @@ if(SEAM_BUILD_TESTS)
     seam_apply_compiler_options(seam_authoring_characterization_tests)
     add_test(NAME seam_authoring_characterization_tests
       COMMAND seam_authoring_characterization_tests)
+    set_tests_properties(seam_authoring_characterization_tests PROPERTIES
+      WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+      ENVIRONMENT "SEAM_PREVIEW_CACHE_ROOT=${CMAKE_BINARY_DIR}/ctest-preview-cache")
   endif()
 
   add_executable(seam_authoring_render_coordinator_tests
@@ -822,6 +1035,37 @@ if(SEAM_BUILD_TESTS)
     seam_formats seam_application seam_domain seam_core)
   seam_apply_compiler_options(seam_export_tests)
   add_test(NAME seam_export_tests COMMAND seam_export_tests)
+
+  add_executable(seam_export_transaction_probe
+    tests/helpers/export_transaction_probe.cpp)
+  target_link_libraries(seam_export_transaction_probe PRIVATE
+    seam_authoring_runtime seam_rendering seam_synthesis seam_voicebank
+    seam_formats seam_application seam_domain seam_core)
+  seam_apply_compiler_options(seam_export_transaction_probe)
+  add_test(NAME seam_export_transaction_process_recovery
+    COMMAND ${CMAKE_COMMAND}
+      "-DPROBE=$<TARGET_FILE:seam_export_transaction_probe>"
+      "-DWORK_ROOT=${CMAKE_CURRENT_BINARY_DIR}/export-transaction-process"
+      -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/helpers/run_export_transaction_probe.cmake)
+  set_tests_properties(seam_export_transaction_process_recovery PROPERTIES
+    TIMEOUT 120)
+
+  if(Python3_Interpreter_FOUND)
+    add_test(NAME seam_tracked_source_closure_unit
+      COMMAND ${Python3_EXECUTABLE} -m unittest
+        tests/test_tracked_source_closure.py)
+    add_test(NAME seam_tracked_source_closure
+      COMMAND ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/scripts/verify_tracked_source_closure.py
+        --root ${CMAKE_CURRENT_SOURCE_DIR})
+    add_test(NAME seam_engineering_remediation_evidence_unit
+      COMMAND ${Python3_EXECUTABLE} -m unittest
+        tests/test_engineering_remediation_evidence.py)
+    set_tests_properties(
+      seam_tracked_source_closure_unit seam_tracked_source_closure
+      seam_engineering_remediation_evidence_unit
+      PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+  endif()
 
   add_executable(seam_u2_tests
     tests/test_main.cpp
@@ -855,6 +1099,47 @@ if(SEAM_BUILD_TESTS)
   seam_apply_compiler_options(seam_u3_tests)
   add_test(NAME seam_u3_tests COMMAND seam_u3_tests)
 
+  add_executable(seam_update_manifest_tests
+    tests/test_main.cpp
+    tests/test_update_manifest.cpp
+    tests/test_trust_policy.cpp)
+  target_include_directories(seam_update_manifest_tests PRIVATE tests)
+  target_link_libraries(seam_update_manifest_tests PRIVATE
+    seam_distribution seam_formats seam_core)
+  seam_apply_compiler_options(seam_update_manifest_tests)
+  add_test(NAME seam_update_manifest_tests COMMAND seam_update_manifest_tests)
+
+  add_executable(seam_recovery_support_tests
+    tests/test_main.cpp
+    tests/test_crash_recovery.cpp
+    tests/test_support_bundle.cpp)
+  target_include_directories(seam_recovery_support_tests PRIVATE tests)
+  target_link_libraries(seam_recovery_support_tests PRIVATE
+    seam_authoring_runtime seam_platform seam_formats seam_core)
+  seam_apply_compiler_options(seam_recovery_support_tests)
+  add_test(NAME seam_recovery_support_tests COMMAND seam_recovery_support_tests)
+
+  if(SEAM_BUILD_NATIVE_DESKTOP)
+    add_executable(seam_update_controller_tests
+      tests/test_main.cpp
+      tests/test_update_controller.cpp)
+    target_include_directories(seam_update_controller_tests PRIVATE tests)
+    target_link_libraries(seam_update_controller_tests PRIVATE
+      seam_standalone_authoring seam_native_ui seam_authoring_runtime
+      seam_distribution seam_platform seam_formats seam_core)
+    seam_apply_compiler_options(seam_update_controller_tests)
+    add_test(NAME seam_update_controller_tests COMMAND seam_update_controller_tests)
+
+    add_executable(seam_eula_acceptance_tests
+      tests/test_main.cpp
+      tests/test_eula_acceptance.cpp)
+    target_include_directories(seam_eula_acceptance_tests PRIVATE tests)
+    target_link_libraries(seam_eula_acceptance_tests PRIVATE
+      seam_standalone_authoring seam_formats seam_core)
+    seam_apply_compiler_options(seam_eula_acceptance_tests)
+    add_test(NAME seam_eula_acceptance_tests COMMAND seam_eula_acceptance_tests)
+  endif()
+
   if(SEAM_BUILD_NATIVE_DESKTOP)
     add_executable(seam_u3_standalone_tests
       tests/test_main.cpp
@@ -870,6 +1155,7 @@ if(SEAM_BUILD_TESTS)
 
   add_executable(seam_tests ${SEAM_TEST_SOURCES})
   target_include_directories(seam_tests PRIVATE tests)
+  target_include_directories(seam_tests PRIVATE phase12c/generated)
   target_compile_definitions(seam_tests PRIVATE
     SEAM_SOURCE_PRODUCTION_VOICEBANK="${CMAKE_CURRENT_SOURCE_DIR}/assets/demo-human-voicebank-public-domain/production-bank")
   target_link_libraries(seam_tests PRIVATE
@@ -879,10 +1165,16 @@ if(SEAM_BUILD_TESTS)
     target_link_libraries(seam_tests PRIVATE seam_native_ui seam_standalone_authoring)
   endif()
   if(SEAM_BUILD_CLAP_EDITOR_PLUGIN)
-    target_link_libraries(seam_tests PRIVATE seam_clap_editor)
+    target_link_libraries(seam_tests PRIVATE seam_clap_editor seam_live_voice)
   endif()
   seam_apply_compiler_options(seam_tests)
   add_test(NAME seam_tests COMMAND seam_tests)
+  set_tests_properties(seam_tests PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    ENVIRONMENT "SEAM_PREVIEW_CACHE_ROOT=${CMAKE_BINARY_DIR}/ctest-preview-cache")
+  add_test(NAME seam_realtime_allocation_probe
+    COMMAND seam_realtime_allocation_probe
+            ${CMAKE_BINARY_DIR}/realtime-allocation-probe.json)
   add_test(NAME seam_phase2_demo_smoke
     COMMAND seam_phase2_demo --output ${CMAKE_BINARY_DIR}/phase2-smoke)
   add_test(NAME seam_phase3_demo_smoke
@@ -915,6 +1207,28 @@ if(SEAM_BUILD_TESTS)
       COMMAND ${Python3_EXECUTABLE}
               ${CMAKE_CURRENT_SOURCE_DIR}/scripts/verify_u3_voicebank_workflow.py
               --root ${CMAKE_CURRENT_SOURCE_DIR})
+    add_test(NAME seam_macos_source_contract
+      COMMAND ${Python3_EXECUTABLE} -m unittest
+              tests.test_macos_source_contract -v)
+    set_tests_properties(seam_macos_source_contract PROPERTIES
+      WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} TIMEOUT 30)
+    add_test(NAME seam_windows_source_contract
+      COMMAND ${Python3_EXECUTABLE} -m unittest
+              tests.test_windows_source_contract -v)
+    set_tests_properties(seam_windows_source_contract PROPERTIES
+      WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} TIMEOUT 30)
+    add_test(NAME seam_phase12c_target_runtime_contract
+      COMMAND ${Python3_EXECUTABLE} -m unittest
+              tests.test_phase12c_target_runtime
+              tests.test_phase12c_target_runtime_packet
+              tests.test_phase12c_target_runtime_record -v)
+    set_tests_properties(seam_phase12c_target_runtime_contract PROPERTIES
+      WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} TIMEOUT 30)
+    add_test(NAME seam_phase12c_soak_workflow_contract
+      COMMAND ${Python3_EXECUTABLE} -m unittest
+              tests.test_phase12c_soak_workflow -v)
+    set_tests_properties(seam_phase12c_soak_workflow_contract PROPERTIES
+      WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} TIMEOUT 30)
   endif()
   add_test(NAME seam_phase10_demo_smoke
     COMMAND seam_phase10_demo --output ${CMAKE_BINARY_DIR}/phase10-smoke)
@@ -953,6 +1267,9 @@ if(SEAM_BUILD_TESTS)
             ${CMAKE_BINARY_DIR}/phase2-smoke/synthetic-voicebank/manifest.json)
   set_tests_properties(seam_voicebank_cli_validate PROPERTIES
     DEPENDS seam_phase2_demo_smoke)
+  add_test(NAME seam_voicebank_cli_inspect_wav
+    COMMAND seam_voicebank_cli inspect-wav
+            ${CMAKE_CURRENT_SOURCE_DIR}/assets/demo-human-voicebank-public-domain/production-bank/audio/human-vowel-demo.wav)
   if(SEAM_BUILD_NATIVE_DESKTOP)
     add_test(NAME seam_phase5_demo_smoke
       COMMAND seam_phase5_demo --output ${CMAKE_BINARY_DIR}/phase5-smoke)
@@ -1119,12 +1436,32 @@ if(Python3_Interpreter_FOUND)
 endif()
 
 # Phase 12C: live articulation and runtime validation
+add_library(seam_live_voice STATIC
+  phase12c/src/live_voice.cpp
+  libs/seam-live-voice/src/live_resources.cpp
+  libs/seam-live-voice/src/articulation.cpp
+  libs/seam-live-voice/src/voice_engine.cpp
+  libs/seam-live-voice/src/midi1_decoder.cpp
+  libs/seam-live-voice/src/realtime_publication.cpp
+  libs/seam-live-voice/src/diagnostics.cpp)
+target_include_directories(seam_live_voice PUBLIC
+  phase12c/include
+  libs/seam-live-voice/include)
+target_include_directories(seam_live_voice PRIVATE phase12c/generated)
+target_compile_features(seam_live_voice PUBLIC cxx_std_20)
+target_link_libraries(seam_live_voice PUBLIC seam_voicebank seam_core)
+set_target_properties(seam_live_voice PROPERTIES POSITION_INDEPENDENT_CODE ON)
+seam_apply_compiler_options(seam_live_voice)
 add_subdirectory(phase12c)
 
 # Phase 13A: VST3/AUv2, installer, signing, and mandatory release gates
 add_subdirectory(phase13a)
 
 if(TARGET seam_clap_editor_plugin)
+  target_include_directories(seam_clap_editor PUBLIC
+    "${CMAKE_CURRENT_SOURCE_DIR}/phase12c/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/libs/seam-live-voice/include")
+  target_link_libraries(seam_clap_editor PUBLIC seam_live_voice)
   target_link_libraries(seam_clap_editor_plugin PRIVATE seam_live_voice)
 endif()
 

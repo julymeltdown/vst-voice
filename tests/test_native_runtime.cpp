@@ -1,19 +1,31 @@
 #include "test_framework.hpp"
+#include "seam/application/note_commands.hpp"
 
 #include "seam/platform/audio_device.hpp"
+#include "seam/platform/application_paths.hpp"
+#include "seam/platform/crash_capture.hpp"
 #include "seam/platform/ring_buffer_processor.hpp"
+#include "seam/native_ui/pixel_surface.hpp"
+#include "seam/standalone/native_editor_app.hpp"
 #include "seam/rendering/audio_ring_buffer.hpp"
 #include "seam/rendering/pcm_cache.hpp"
 #include "seam/rendering/playback_engine.hpp"
 #include "seam/rendering/playback_feeder_service.hpp"
 
 #include <chrono>
+#include <algorithm>
 #include <cstdlib>
 #include <cmath>
 #include <memory>
 #include <string>
 #include <thread>
 #include <vector>
+
+#include "test_support.hpp"
+
+#ifndef SEAM_SOURCE_PRODUCTION_VOICEBANK
+#error SEAM_SOURCE_PRODUCTION_VOICEBANK is required
+#endif
 
 namespace {
 
@@ -40,6 +52,55 @@ std::shared_ptr<const seam::rendering::PlaybackTimeline> testTimeline(
   if (!added) throw std::runtime_error(added.error().message);
   return timeline;
 }
+
+class ScriptedAudioDevice final : public seam::platform::IAudioDevice {
+public:
+  ScriptedAudioDevice(bool failOpen, bool physical, std::string backend,
+                      std::string failure = {})
+      : failOpen_(failOpen),
+        failure_(std::move(failure)),
+        info_{.backend = std::move(backend),
+              .deviceId = physical ? "physical-test-device"
+                                   : "threaded-callback-clock",
+              .deviceName = "Scripted device",
+              .sampleRate = 48000U,
+              .blockFrames = 256U,
+              .outputChannels = 2U,
+              .physical = physical} {}
+
+  seam::core::Result<void> open(
+      const seam::platform::AudioDeviceConfig& config,
+      seam::platform::IAudioProcessor&) override {
+    if (failOpen_) {
+      return seam::core::failure(seam::core::ErrorCode::IoError, failure_);
+    }
+    info_.deviceId = config.deviceId.empty() ? info_.deviceId : config.deviceId;
+    info_.sampleRate = config.sampleRate;
+    info_.blockFrames = config.blockFrames;
+    info_.outputChannels = config.outputChannels;
+    opened_ = true;
+    return seam::core::success();
+  }
+  seam::core::Result<void> start() override {
+    if (!opened_) {
+      return seam::core::failure(seam::core::ErrorCode::InvalidState,
+                                 "scripted device is not open");
+    }
+    running_ = true;
+    return seam::core::success();
+  }
+  void stop() noexcept override { running_ = false; }
+  bool running() const noexcept override { return running_; }
+  seam::platform::AudioDeviceInfo info() const override { return info_; }
+  seam::platform::AudioDeviceStats stats() const noexcept override { return {}; }
+
+private:
+  bool failOpen_{false};
+  std::string failure_;
+  seam::platform::AudioDeviceInfo info_;
+  bool opened_{false};
+  bool running_{false};
+};
 
 }  // namespace
 
@@ -185,4 +246,288 @@ TEST_CASE("system audio adapter reports an explicit bounded open result") {
   } else {
     CHECK(!opened.error().message.empty());
   }
+}
+
+TEST_CASE("native editor audio settings restart the live deterministic transport transactionally") {
+  const auto root = seam::test::support::temporaryDirectory("native-audio-settings");
+  seam::standalone::NativeEditorAppConfig config;
+  config.runtimeMode = seam::standalone::ProductionRuntimeMode::DeterministicTest;
+  config.applicationSupportRoot = root;
+  config.forceThreadedAudio = true;
+  config.authoring.sampleRate = 48000U;
+  config.authoring.outputChannels = 2U;
+  config.audioBlockFrames = 256U;
+  auto app = seam::standalone::NativeEditorApp::create(std::move(config));
+  CHECK(app);
+
+  const auto current = app.value()->audioSettings();
+  CHECK(current);
+  CHECK(current.value().deviceId == "threaded-callback-clock");
+  auto requested = current.value();
+  requested.sampleRate = 44100U;
+  requested.blockFrames = 128U;
+  requested.outputChannels = 1U;
+  const auto applied = app.value()->applyAudioSettings(requested);
+  CHECK(applied);
+  CHECK(applied.value().sampleRate == 44100U);
+  CHECK(app.value()->authoring().runtime().transport().sampleRate() == 44100U);
+  CHECK(app.value()->authoring().runtime().transport().outputChannels() == 1U);
+  seam::authoring::AudioSettingsStore store{
+      root / "Data" / "Settings" / "audio-settings.json"};
+  const auto persisted = store.load();
+  CHECK(persisted);
+  CHECK(persisted.value().sampleRate == 44100U);
+
+  requested.sampleRate = 88200U;
+  CHECK(!app.value()->applyAudioSettings(requested));
+  const auto afterFailure = app.value()->audioSettings();
+  CHECK(afterFailure);
+  CHECK(afterFailure.value().sampleRate == 44100U);
+}
+
+TEST_CASE("production audio failure never creates a callback clock fallback") {
+  const auto root = seam::test::support::temporaryDirectory(
+      "native-release-audio-failure");
+  auto threadedCreations = std::make_shared<std::size_t>(0U);
+  seam::standalone::NativeEditorAppConfig config;
+  config.runtimeMode = seam::standalone::ProductionRuntimeMode::Development;
+  config.applicationSupportRoot = root;
+  config.systemAudioDeviceFactory = [] {
+    return std::make_unique<ScriptedAudioDevice>(
+        true, true, "physical-test", "physical-open-failure");
+  };
+  config.threadedAudioDeviceFactory = [threadedCreations] {
+    ++*threadedCreations;
+    return std::make_unique<ScriptedAudioDevice>(
+        false, false, "threaded-callback-clock");
+  };
+  auto app = seam::standalone::NativeEditorApp::create(std::move(config));
+  CHECK(app);
+  CHECK(*threadedCreations == 0U);
+  CHECK(!app.value()->authoring().controller().sceneState().audioDeviceOnline);
+  const auto& diagnostics =
+      app.value()->authoring().controller().diagnosticPanel().entries();
+  CHECK(std::any_of(diagnostics.begin(), diagnostics.end(), [](const auto& entry) {
+    return entry.diagnostic.code == "AUDIO_UNAVAILABLE";
+  }));
+}
+
+TEST_CASE("audio rollback preserves the requested device open error") {
+  const auto root = seam::test::support::temporaryDirectory(
+      "native-audio-open-rollback");
+  auto creations = std::make_shared<std::size_t>(0U);
+  seam::standalone::NativeEditorAppConfig config;
+  config.runtimeMode = seam::standalone::ProductionRuntimeMode::Development;
+  config.applicationSupportRoot = root;
+  config.systemAudioDeviceFactory = [creations] {
+    const auto fail = (*creations)++ == 1U;
+    return std::make_unique<ScriptedAudioDevice>(
+        fail, true, "physical-test", "requested-open-failure");
+  };
+  auto app = seam::standalone::NativeEditorApp::create(std::move(config));
+  CHECK(app);
+  const auto before = app.value()->audioSettings();
+  CHECK(before);
+  auto requested = before.value();
+  requested.sampleRate = 44100U;
+  requested.blockFrames = 128U;
+  const auto applied = app.value()->applyAudioSettings(requested);
+  CHECK(!applied);
+  CHECK(applied.error().message == "requested-open-failure");
+  const auto after = app.value()->audioSettings();
+  CHECK(after);
+  CHECK(after.value().sampleRate == before.value().sampleRate);
+  CHECK(after.value().blockFrames == before.value().blockFrames);
+  CHECK(app.value()->audioInfo().physical);
+}
+
+TEST_CASE("native editor defers audio callbacks until playable audio is ready") {
+  const auto root = seam::test::support::temporaryDirectory(
+      "native-audio-startup-gate");
+  seam::standalone::NativeEditorAppConfig config;
+  config.runtimeMode = seam::standalone::ProductionRuntimeMode::Development;
+  config.applicationSupportRoot = root;
+  config.forceThreadedAudio = false;
+  config.systemAudioDeviceFactory = [] {
+    return std::make_unique<ScriptedAudioDevice>(
+        false, true, "physical-test");
+  };
+  config.startPaused = false;
+  auto app = seam::standalone::NativeEditorApp::create(std::move(config));
+  CHECK(app);
+
+  std::this_thread::sleep_for(25ms);
+  const auto transport = app.value()->authoring().runtime().transport().state();
+  CHECK(!transport.available);
+  CHECK(app.value()->audioStats().callbacks == 0U);
+  CHECK(app.value()->processorStats().underflowFrames == 0U);
+}
+
+TEST_CASE("native editor projects completed render audio state during paint") {
+  const auto root = seam::test::support::temporaryDirectory(
+      "native-render-status-projection");
+  seam::standalone::NativeEditorAppConfig config;
+  config.runtimeMode = seam::standalone::ProductionRuntimeMode::DeterministicTest;
+  config.applicationSupportRoot = root;
+  config.forceThreadedAudio = true;
+  config.allowDevelopmentVoicebanks = true;
+  config.authoring.bindFirstAvailableVoicebank = true;
+  config.authoring.allowDevelopmentVoicebanks = true;
+  config.authoring.voicebankRoots = {
+      seam::voicebank::VoicebankSearchRoot{
+          .path = std::filesystem::path{SEAM_SOURCE_PRODUCTION_VOICEBANK},
+          .kind = seam::voicebank::VoicebankRootKind::Development,
+      }};
+  auto app = seam::standalone::NativeEditorApp::create(std::move(config));
+  CHECK(app);
+
+  auto [lyric, note] = app.value()->authoring().runtime().document().factory().makeNote(
+      seam::time::Tick{0}, seam::time::Tick{1920}, 64U, U"こ",
+      seam::domain::Language::Japanese);
+  CHECK(app.value()->authoring().runtime().execute(
+      std::make_unique<seam::application::AddNoteCommand>(
+          app.value()->authoring().regionId(), std::move(lyric),
+          std::move(note))));
+
+  const auto deadline = std::chrono::steady_clock::now() + 2s;
+  while (!app.value()->authoring().runtime().transport().state().available &&
+         std::chrono::steady_clock::now() < deadline) {
+    std::this_thread::sleep_for(2ms);
+  }
+  CHECK(app.value()->authoring().runtime().transport().state().available);
+
+  seam::native_ui::PixelSurface surface{1280U, 720U};
+  seam::native_ui::RasterCanvas canvas{surface, 1.0};
+  app.value()->paint(canvas);
+  const auto state = app.value()->authoring().controller().sceneState();
+  CHECK(!state.audioDeviceOnline);
+  CHECK(state.audioBackend == "threaded-callback-clock");
+}
+
+TEST_CASE("native editor audio settings resume a playing transport after restart") {
+  const auto root = seam::test::support::temporaryDirectory("native-audio-settings-resume");
+  seam::standalone::NativeEditorAppConfig config;
+  config.runtimeMode = seam::standalone::ProductionRuntimeMode::Development;
+  config.applicationSupportRoot = root;
+  config.forceThreadedAudio = false;
+  config.systemAudioDeviceFactory = [] {
+    return std::make_unique<ScriptedAudioDevice>(
+        false, true, "physical-test");
+  };
+  config.startPaused = false;
+  auto app = seam::standalone::NativeEditorApp::create(std::move(config));
+  CHECK(app);
+  const auto initialDeadline = std::chrono::steady_clock::now() + 1s;
+  while (!app.value()->authoring().runtime().transport().state().playing &&
+         std::chrono::steady_clock::now() < initialDeadline) {
+    std::this_thread::sleep_for(1ms);
+  }
+  CHECK(app.value()->authoring().runtime().transport().state().playing);
+
+  auto requested = app.value()->audioSettings();
+  CHECK(requested);
+  requested.value().sampleRate = 44100U;
+  requested.value().blockFrames = 128U;
+  CHECK(app.value()->applyAudioSettings(requested.value()));
+  const auto resumedDeadline = std::chrono::steady_clock::now() + 1s;
+  while (!app.value()->authoring().runtime().transport().state().playing &&
+         std::chrono::steady_clock::now() < resumedDeadline) {
+    std::this_thread::sleep_for(1ms);
+  }
+  CHECK(app.value()->authoring().runtime().transport().state().playing);
+}
+
+TEST_CASE("native startup surfaces a persisted crash marker as a separate diagnostic") {
+  const auto root = seam::test::support::temporaryDirectory("native-crash-recovery");
+  const auto paths = seam::platform::ApplicationPaths::forTestRoot(root);
+  {
+    auto capture = seam::platform::CrashCapture::install(
+        seam::platform::CrashCaptureConfig{.root = paths.crashReportsRoot});
+    CHECK(capture);
+    CHECK(capture.value()->writeMarker("RENDER_FAILED"));
+  }
+
+  seam::standalone::NativeEditorAppConfig config;
+  config.runtimeMode = seam::standalone::ProductionRuntimeMode::DeterministicTest;
+  config.applicationSupportRoot = root;
+  config.forceThreadedAudio = true;
+  auto app = seam::standalone::NativeEditorApp::create(std::move(config));
+  CHECK(app);
+  CHECK(app.value()->startupCrashMarker().has_value());
+  CHECK(app.value()->startupCrashMarker()->code == "RENDER_FAILED");
+  const auto& entries = app.value()->authoring().controller().diagnosticPanel().entries();
+  CHECK(!entries.empty());
+  CHECK(entries.front().diagnostic.code == "CRASH_RECOVERY_AVAILABLE");
+  CHECK(app.value()->authoring().controller().activateDiagnostic(
+      0U, seam::authoring::DiagnosticAction::Dismiss));
+  auto cleared = seam::platform::CrashCapture::install(
+      seam::platform::CrashCaptureConfig{.root = paths.crashReportsRoot});
+  CHECK(cleared);
+  auto marker = cleared.value()->readMarker();
+  CHECK(marker);
+  CHECK(!marker.value().has_value());
+}
+
+TEST_CASE("native voicebank diagnostic opens the exact-card browser") {
+  const auto root = seam::test::support::temporaryDirectory("native-voicebank-diagnostic");
+  seam::standalone::NativeEditorAppConfig config;
+  config.runtimeMode = seam::standalone::ProductionRuntimeMode::DeterministicTest;
+  config.applicationSupportRoot = root;
+  config.forceThreadedAudio = true;
+  auto app = seam::standalone::NativeEditorApp::create(std::move(config));
+  CHECK(app);
+  app.value()->authoring().controller().setDiagnostics({seam::authoring::Diagnostic{
+      .code = "BANK_COVERAGE_MISSING",
+      .severity = seam::authoring::DiagnosticSeverity::Warning,
+      .messageKey = "voicebank.coverage_missing",
+      .affectedIds = {},
+      .actions = seam::authoring::DiagnosticRegistry::actions(
+          "BANK_COVERAGE_MISSING"),
+      .occurrenceCount = 1U}});
+  CHECK(app.value()->authoring().controller().activateDiagnostic(
+      0U, seam::authoring::DiagnosticAction::ChooseVoicebank));
+  CHECK(app.value()->authoring().controller().voicebankBrowserVisible());
+}
+
+TEST_CASE("native audio-unavailable diagnostic opens live audio settings") {
+  const auto root = seam::test::support::temporaryDirectory(
+      "native-audio-unavailable-diagnostic");
+  seam::standalone::NativeEditorAppConfig config;
+  config.runtimeMode = seam::standalone::ProductionRuntimeMode::DeterministicTest;
+  config.applicationSupportRoot = root;
+  config.forceThreadedAudio = true;
+  auto app = seam::standalone::NativeEditorApp::create(std::move(config));
+  CHECK(app);
+  app.value()->authoring().controller().setDiagnostics({seam::authoring::Diagnostic{
+      .code = "AUDIO_UNAVAILABLE",
+      .severity = seam::authoring::DiagnosticSeverity::Error,
+      .messageKey = "audio.unavailable",
+      .affectedIds = {},
+      .actions = seam::authoring::DiagnosticRegistry::actions(
+          "AUDIO_UNAVAILABLE"),
+      .occurrenceCount = 1U}});
+  CHECK(app.value()->authoring().controller().activateDiagnostic(
+      0U, seam::authoring::DiagnosticAction::OpenSettings));
+  CHECK(app.value()->authoring().controller().audioSettingsVisible());
+}
+
+TEST_CASE("native startup promotes missing voicebank into an actionable diagnostic") {
+  const auto root = seam::test::support::temporaryDirectory(
+      "native-startup-bank-diagnostic");
+  seam::standalone::NativeEditorAppConfig config;
+  config.runtimeMode = seam::standalone::ProductionRuntimeMode::DeterministicTest;
+  config.applicationSupportRoot = root;
+  config.forceThreadedAudio = true;
+  auto app = seam::standalone::NativeEditorApp::create(std::move(config));
+  CHECK(app);
+  CHECK(app.value()->authoring().runtime().selectedTrack().valid());
+  const auto diagnostics = app.value()->authoring().runtime().diagnostics();
+  const auto missing = std::find_if(
+      diagnostics.begin(), diagnostics.end(), [](const auto& diagnostic) {
+        return diagnostic.code == "BANK_MISSING";
+      });
+  CHECK(missing != diagnostics.end());
+  CHECK(!missing->actions.empty());
+  CHECK(missing->actions.front() ==
+        seam::authoring::DiagnosticAction::InstallVoicebank);
 }

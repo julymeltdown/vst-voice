@@ -17,10 +17,29 @@ enum class CommandAudioImpact {
   ProjectAudio,
 };
 
+struct CommandImpact final {
+  CommandAudioImpact scope{CommandAudioImpact::ViewOnly};
+  bool projectWide{false};
+  std::vector<domain::TrackId> trackIds;
+  std::vector<domain::RegionId> regionIds;
+  std::vector<domain::NoteId> noteIds;
+  std::vector<domain::LyricTokenId> lyricIds;
+};
+
 class ICommand {
 public:
   virtual ~ICommand() = default;
   [[nodiscard]] virtual std::string_view name() const noexcept = 0;
+  [[nodiscard]] virtual CommandImpact impact() const {
+    return CommandImpact{
+        .scope = audioImpact(),
+        .projectWide = false,
+        .trackIds = {},
+        .regionIds = {},
+        .noteIds = {},
+        .lyricIds = {},
+    };
+  }
   [[nodiscard]] virtual CommandAudioImpact audioImpact() const noexcept {
     return CommandAudioImpact::ProjectAudio;
   }
@@ -34,6 +53,7 @@ public:
   void add(std::unique_ptr<ICommand> command);
 
   [[nodiscard]] std::string_view name() const noexcept override { return name_; }
+  [[nodiscard]] CommandImpact impact() const override;
   [[nodiscard]] CommandAudioImpact audioImpact() const noexcept override;
   [[nodiscard]] core::Result<void> apply(domain::Project& project) override;
   [[nodiscard]] core::Result<void> revert(domain::Project& project) override;

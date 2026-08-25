@@ -1,8 +1,10 @@
 #include "seam/standalone/application_controller.hpp"
 
 #include "seam/phonemizer/japanese_phonemizer.hpp"
+#include "seam/native_ui/export_dialog.hpp"
 
 #include <algorithm>
+#include <array>
 #include <utility>
 
 namespace seam::standalone {
@@ -15,6 +17,29 @@ std::filesystem::path initialDirectory(
   }
   return {};
 }
+
+std::string errorDescription(const core::Error& error) {
+  if (error.context.empty()) return error.message;
+  return error.message + " (" + error.context + ")";
+}
+
+struct DocumentationSpec final {
+  std::string_view id;
+  std::string_view title;
+  std::string_view relativePath;
+};
+
+constexpr std::array kDocumentation{
+    DocumentationSpec{"eula", "EULA", "EULA.md"},
+    DocumentationSpec{"privacy", "Privacy Notice", "PRIVACY.md"},
+    DocumentationSpec{"quick-start", "Quick Start", "QUICK_START.md"},
+    DocumentationSpec{"manual", "User Manual", "USER_MANUAL.md"},
+    DocumentationSpec{"limitations", "Known Limitations", "KNOWN_LIMITATIONS.md"},
+    DocumentationSpec{"update", "Update and Rollback", "UPDATE_AND_ROLLBACK.md"},
+    DocumentationSpec{"checklist", "Beta Tester Checklist", "BETA_TESTER_CHECKLIST.md"},
+    DocumentationSpec{"support", "Support", "Support/SUPPORT.md"},
+    DocumentationSpec{"security", "Security Response", "Support/SECURITY_RESPONSE.md"},
+};
 
 }  // namespace
 
@@ -77,6 +102,8 @@ StandaloneApplicationController::StandaloneApplicationController(
 }
 
 StandaloneApplicationController::~StandaloneApplicationController() {
+  cancelExport();
+  if (exportWorker_.joinable()) exportWorker_.join();
   static_cast<void>(autosave_.flush());
   autosave_.shutdown();
 }
@@ -113,12 +140,7 @@ StandaloneApplicationController::findCandidate(
 
 authoring::NewProjectRequest
 StandaloneApplicationController::defaultNewProject() const {
-  auto request = config_.defaultNewProject;
-  if (!request.initialVoicebank.has_value()) {
-    const auto candidates = session_.runtime().voicebanks().candidates();
-    if (!candidates.empty()) request.initialVoicebank = candidates.front();
-  }
-  return request;
+  return config_.defaultNewProject;
 }
 
 core::Result<bool>
@@ -182,7 +204,17 @@ core::Result<void> StandaloneApplicationController::openPath(
 
 core::Result<void> StandaloneApplicationController::openRecent(
     const std::filesystem::path& path) {
-  auto allowed = confirmDestructiveAction();
+  const auto& document = session_.runtime().document();
+  const auto& project = document.session().project();
+  const auto provisionalUntitled =
+      !document.identity().projectPath.has_value() &&
+      project.name() == "Untitled" && document.session().revision() <= 1U &&
+      project.audioTracks().empty() && project.vocalTracks().size() == 1U &&
+      project.vocalTracks().front().regions.size() == 1U &&
+      project.vocalTracks().front().regions.front().notes.empty();
+  auto allowed = provisionalUntitled
+                     ? core::Result<bool>{true}
+                     : confirmDestructiveAction();
   if (!allowed) return core::Result<void>{allowed.error()};
   if (!allowed.value()) return core::success();
   return openPath(path);
@@ -195,9 +227,14 @@ core::Result<void> StandaloneApplicationController::dispatch(
       auto allowed = confirmDestructiveAction();
       if (!allowed) return core::Result<void>{allowed.error()};
       if (!allowed.value()) return core::success();
-      auto created = session_.createNewProject(defaultNewProject());
-      if (created) notifyStateChanged();
-      return created;
+      auto request = defaultNewProject();
+      if (config_.requestNewProject) {
+        auto chosen = config_.requestNewProject();
+        if (!chosen) return core::Result<void>{chosen.error()};
+        if (!chosen.value().has_value()) return core::success();
+        request = std::move(*chosen.value());
+      }
+      return createNewProject(std::move(request));
     }
     case platform::ApplicationCommand::OpenProject: {
       auto allowed = confirmDestructiveAction();
@@ -243,6 +280,27 @@ core::Result<void> StandaloneApplicationController::dispatch(
       if (!saved) return core::Result<void>{saved.error()};
       return core::success();
     }
+    case platform::ApplicationCommand::ImportAudio: {
+      const auto selected = fileDialog_->choose(platform::FileDialogRequest{
+          .purpose = platform::FileDialogPurpose::ImportAudio,
+          .title = "Import Backing Audio",
+          .initialDirectory = initialDirectory(session_.runtime().document()),
+          .suggestedName = {},
+          .extensions = {"wav"},
+      });
+      if (!selected) return core::Result<void>{selected.error()};
+      if (!selected.value().has_value()) return core::success();
+      const auto mode = session_.runtime().document().identity().projectPath
+                            .has_value()
+                        ? authoring::MediaImportMode::Copy
+                        : authoring::MediaImportMode::Reference;
+      auto imported = session_.importBackingMedia(
+          *selected.value(), mode, selected.value()->stem().string(),
+          time::Tick{0});
+      if (!imported) return core::Result<void>{imported.error()};
+      notifyStateChanged();
+      return core::success();
+    }
     case platform::ApplicationCommand::InstallVoicebank: {
       if (voicebankInstaller_ == nullptr) {
         return core::failure(core::ErrorCode::InvalidState,
@@ -261,8 +319,20 @@ core::Result<void> StandaloneApplicationController::dispatch(
       if (!installed) return core::Result<void>{installed.error()};
       return core::success();
     }
+    case platform::ApplicationCommand::RelinkVoicebank:
+      return relinkVoicebankFromDialog();
+    case platform::ApplicationCommand::RelinkBackingAudio:
+      return relinkBackingMediaFromDialog();
+    case platform::ApplicationCommand::OpenAudioSettings:
+      if (!config_.openAudioSettings) {
+        return core::failure(core::ErrorCode::Unsupported,
+                             "Audio settings surface is not connected");
+      }
+      return config_.openAudioSettings();
     case platform::ApplicationCommand::ExportAudio:
       return exportAudio();
+    case platform::ApplicationCommand::ExportSet:
+      return exportSetFromDialog();
     case platform::ApplicationCommand::Quit: {
       auto close = requestClose();
       if (!close) return core::Result<void>{close.error()};
@@ -289,9 +359,238 @@ core::Result<void> StandaloneApplicationController::dispatch(
       return state.playing ? session_.runtime().transport().pause()
                            : session_.runtime().transport().play();
     }
+    case platform::ApplicationCommand::StopPlayback:
+      return session_.runtime().transport().stop();
+    case platform::ApplicationCommand::ToggleLoop: {
+      const auto state = session_.runtime().transport().state();
+      if (state.loop.enabled) {
+        return session_.runtime().transport().setLoop(
+            rendering::PlaybackLoop{.enabled = false});
+      }
+      if (state.timelineEnd <= time::SampleFrame{0}) {
+        return core::failure(core::ErrorCode::Conflict,
+                             "Loop requires a published audio timeline");
+      }
+      return session_.runtime().transport().setLoop(
+          rendering::PlaybackLoop{.enabled = true,
+                                  .startFrame = 0,
+                                  .endFrame = state.timelineEnd});
+    }
   }
   return core::failure(core::ErrorCode::Unsupported,
                        "Unknown application command");
+}
+
+core::Result<void> StandaloneApplicationController::createNewProject(
+    authoring::NewProjectRequest request) {
+  auto created = session_.createNewProject(std::move(request));
+  if (created) notifyStateChanged();
+  return created;
+}
+
+core::Result<StandaloneApplicationController::ExportRequest>
+StandaloneApplicationController::makeExportRequest(
+    const std::filesystem::path& destination,
+    authoring::ExportSettings settings) const {
+  auto project = session_.runtime().document().session().project();
+  if (session_.runtime().document().identity().projectPath.has_value()) {
+    const auto projectRoot = session_.runtime().document().identity().projectPath
+                                 ->parent_path();
+    for (auto& track : project.audioTracks()) {
+      if (track.mediaOwnership == domain::MediaOwnership::ProjectCopy &&
+          !track.mediaPath.empty() &&
+          std::filesystem::path{track.mediaPath}.is_relative()) {
+        track.mediaPath = (projectRoot / std::filesystem::path{track.mediaPath})
+                              .lexically_normal()
+                              .string();
+      }
+    }
+  }
+  const auto states = session_.runtime().voicebanks().resolveAll(project);
+  std::vector<rendering::TrackVoicebankSource> sources;
+  sources.reserve(states.size());
+  for (const auto& state : states) {
+    if (!state.resolution.resolved()) continue;
+    sources.push_back(rendering::TrackVoicebankSource{
+        .trackId = state.trackId,
+        .manifest = state.resolution.candidate->manifest,
+        .bankRoot = state.resolution.candidate->bankRoot,
+        .contentHash = state.resolution.candidate->contentHash,
+        .trust = state.resolution.candidate->trust,
+    });
+  }
+  return ExportRequest{
+      .project = std::move(project),
+      .voicebanks = std::move(sources),
+      .activeTrack = session_.runtime().selectedTrack(),
+      .activeRegion = session_.runtime().selectedRegion(),
+      .revision = session_.runtime().document().session().revision(),
+      .destination = destination,
+      .settings = settings,
+  };
+}
+
+core::Result<authoring::ExportResult>
+StandaloneApplicationController::runExport(ExportRequest request,
+                                            std::stop_token stopToken) {
+  auto exported = exportService_.exportSet(
+      request.project, request.voicebanks, request.activeTrack,
+      request.activeRegion, request.revision, request.destination,
+      request.settings,
+      [this](const authoring::ExportProgress& progress) {
+        if (exportProgress_.cancelRequested()) {
+          exportStopSource_.request_stop();
+        }
+        exportProgress_.update(progress);
+        notifyProgressChanged();
+      },
+      stopToken);
+  if (!exported) {
+    exportProgress_.update(authoring::ExportProgress{
+        .state = authoring::ExportState::Failed,
+        .currentOutput = errorDescription(exported.error()),
+        .completedFiles = 0U,
+        .totalFiles = 0U,
+    });
+    notifyProgressChanged();
+  }
+  return exported;
+}
+
+core::Result<authoring::ExportResult>
+StandaloneApplicationController::exportSet(
+    const std::filesystem::path& destination,
+    authoring::ExportSettings settings) {
+  auto request = makeExportRequest(destination, settings);
+  if (!request) {
+    {
+      std::lock_guard lock(exportMutex_);
+      lastExport_.reset();
+    }
+    exportProgress_.reset();
+    exportProgress_.update(authoring::ExportProgress{
+        .state = authoring::ExportState::Failed,
+        .currentOutput = errorDescription(request.error()),
+    });
+    notifyProgressChanged();
+    return core::Result<authoring::ExportResult>{request.error()};
+  }
+  {
+    std::lock_guard lock(exportMutex_);
+    if (exportRunning_) {
+      return core::failure<authoring::ExportResult>(
+          core::ErrorCode::Conflict, "Another export is already in progress");
+    }
+    exportRunning_ = true;
+    lastExport_.reset();
+    exportStopSource_ = std::stop_source{};
+  }
+  exportProgress_.reset();
+  auto exported = runExport(std::move(request.value()),
+                            exportStopSource_.get_token());
+  {
+    std::lock_guard lock(exportMutex_);
+    if (exported) lastExport_ = exported.value();
+    exportRunning_ = false;
+  }
+  notifyProgressChanged();
+  notifyStateChanged();
+  return exported;
+}
+
+core::Result<void> StandaloneApplicationController::startExportSet(
+    const std::filesystem::path& destination,
+    authoring::ExportSettings settings) {
+  auto request = makeExportRequest(destination, settings);
+  if (!request) {
+    {
+      std::lock_guard lock(exportMutex_);
+      lastExport_.reset();
+    }
+    exportProgress_.reset();
+    exportProgress_.update(authoring::ExportProgress{
+        .state = authoring::ExportState::Failed,
+        .currentOutput = errorDescription(request.error()),
+    });
+    notifyProgressChanged();
+    return core::Result<void>{request.error()};
+  }
+  {
+    std::lock_guard lock(exportMutex_);
+    if (exportRunning_) {
+      return core::failure(core::ErrorCode::Conflict,
+                           "Another export is already in progress");
+    }
+    exportRunning_ = true;
+    lastExport_.reset();
+    exportStopSource_ = std::stop_source{};
+  }
+  exportProgress_.reset();
+  const auto stopToken = exportStopSource_.get_token();
+  exportWorker_ = std::jthread(
+      [this, request = std::move(request.value()), stopToken](
+          std::stop_token workerToken) mutable {
+        std::stop_callback forwardStop(workerToken, [this] {
+          exportStopSource_.request_stop();
+        });
+        auto exported = runExport(std::move(request), stopToken);
+        {
+          std::lock_guard lock(exportMutex_);
+          if (exported) lastExport_ = exported.value();
+          exportRunning_ = false;
+        }
+        notifyProgressChanged();
+      });
+  notifyProgressChanged();
+  return core::success();
+}
+
+bool StandaloneApplicationController::exportInProgress() const noexcept {
+  std::lock_guard lock(exportMutex_);
+  return exportRunning_;
+}
+
+void StandaloneApplicationController::cancelExport() noexcept {
+  exportProgress_.requestCancel();
+  {
+    std::lock_guard lock(exportMutex_);
+    exportWorker_.request_stop();
+  }
+  exportStopSource_.request_stop();
+}
+
+core::Result<void> StandaloneApplicationController::exportSetFromDialog() {
+  const auto& document = session_.runtime().document();
+  const auto selected = fileDialog_->choose(platform::FileDialogRequest{
+      .purpose = platform::FileDialogPurpose::ExportSet,
+      .title = "Choose Export Set Destination",
+      .initialDirectory = initialDirectory(document),
+      .suggestedName = document.session().project().name() + " Export",
+      .extensions = {},
+  });
+  if (!selected) return core::Result<void>{selected.error()};
+  if (!selected.value().has_value()) return core::success();
+
+  const auto& project = document.session().project();
+  authoring::ExportSettings settings{
+      .sampleRate = session_.runtime().transport().sampleRate(),
+      .channels = project.routing().deviceOutputChannels,
+      .format = voicebank::WavSampleFormat::Pcm24,
+      .includeMaster = true,
+      .includeStems = !project.vocalTracks().empty() ||
+                      !project.audioTracks().empty(),
+      .replaceExisting = false,
+  };
+  native_ui::ExportDialogModel dialog;
+  dialog.setDestination(*selected.value());
+  dialog.setSettings(settings);
+  if (!dialog.preflight(project)) {
+    return core::failure(core::ErrorCode::InvalidArgument,
+                         dialog.issues().empty()
+                             ? "Export preflight rejected the project"
+                             : dialog.issues().front().message);
+  }
+  return startExportSet(*selected.value(), settings);
 }
 
 core::Result<void> StandaloneApplicationController::exportAudio() {
@@ -306,7 +605,33 @@ core::Result<void> StandaloneApplicationController::exportAudio() {
   if (!selected) return core::Result<void>{selected.error()};
   if (!selected.value().has_value()) return core::success();
 
-  const auto project = document.session().project();
+  {
+    std::lock_guard lock(exportMutex_);
+    lastExport_.reset();
+  }
+  exportProgress_.reset();
+  exportProgress_.update(authoring::ExportProgress{
+      .state = authoring::ExportState::Preflight,
+      .currentOutput = selected.value()->string(),
+      .completedFiles = 0U,
+      .totalFiles = 1U,
+  });
+  notifyProgressChanged();
+
+  auto project = document.session().project();
+  if (document.identity().projectPath.has_value()) {
+    const auto projectRoot = document.identity().projectPath->parent_path();
+    for (auto& track : project.audioTracks()) {
+      if (track.mediaOwnership == domain::MediaOwnership::ProjectCopy &&
+          !track.mediaPath.empty() &&
+          std::filesystem::path{track.mediaPath}.is_relative()) {
+        track.mediaPath =
+            (projectRoot / std::filesystem::path{track.mediaPath})
+                .lexically_normal()
+                .string();
+      }
+    }
+  }
   const auto states = session_.runtime().voicebanks().resolveAll(project);
   std::vector<rendering::TrackVoicebankSource> sources;
   sources.reserve(states.size());
@@ -324,13 +649,42 @@ core::Result<void> StandaloneApplicationController::exportAudio() {
       project, sources, session_.runtime().selectedTrack(),
       session_.runtime().selectedRegion(), document.session().revision(),
       *selected.value());
-  if (!exported) return core::Result<void>{exported.error()};
+  if (!exported) {
+    exportProgress_.update(authoring::ExportProgress{
+        .state = authoring::ExportState::Failed,
+        .currentOutput = errorDescription(exported.error()),
+        .completedFiles = 0U,
+        .totalFiles = 1U,
+    });
+    notifyProgressChanged();
+    return core::Result<void>{exported.error()};
+  }
   if (exported.value().state != authoring::ExportState::Committed) {
+    exportProgress_.update(authoring::ExportProgress{
+        .state = exported.value().state,
+        .currentOutput = exported.value().diagnostic.empty()
+                             ? selected.value()->string()
+                             : exported.value().diagnostic,
+        .completedFiles = 0U,
+        .totalFiles = 1U,
+    });
+    notifyProgressChanged();
     return core::failure(core::ErrorCode::Conflict,
                          exported.value().diagnostic.empty()
                              ? "Audio export did not commit"
                              : exported.value().diagnostic);
   }
+  {
+    std::lock_guard lock(exportMutex_);
+    lastExport_ = exported.value();
+  }
+  exportProgress_.update(authoring::ExportProgress{
+      .state = authoring::ExportState::Committed,
+      .currentOutput = exported.value().masterPath.string(),
+      .completedFiles = 1U,
+      .totalFiles = 1U,
+  });
+  notifyProgressChanged();
   notifyStateChanged();
   return core::success();
 }
@@ -407,8 +761,68 @@ StandaloneApplicationController::relinkVoicebank(
   if (!refreshed) {
     return core::Result<voicebank::VoicebankResolution>{refreshed.error()};
   }
+  session_.runtime().handleDocumentChanged();
+  static_cast<void>(onDocumentChanged());
   notifyStateChanged();
   return result;
+}
+
+core::Result<void> StandaloneApplicationController::relinkVoicebankFromDialog() {
+  const auto& project = session_.runtime().document().session().project();
+  const auto* track = project.findVocalTrack(session_.runtime().selectedTrack());
+  if (track == nullptr) {
+    return core::failure(core::ErrorCode::Conflict,
+                         "Voicebank relink requires a selected vocal track");
+  }
+  const auto selected = fileDialog_->choose(platform::FileDialogRequest{
+      .purpose = platform::FileDialogPurpose::RelinkVoicebank,
+      .title = "Relink Voicebank Search Folder",
+      .initialDirectory = {},
+      .suggestedName = {},
+      .extensions = {},
+  });
+  if (!selected) return core::Result<void>{selected.error()};
+  if (!selected.value().has_value()) return core::success();
+  const auto relinked = relinkVoicebank(
+      track->id,
+      voicebank::VoicebankSearchRoot{
+          .path = *selected.value(),
+          .kind = config_.allowDevelopmentVoicebanks
+                      ? voicebank::VoicebankRootKind::Development
+                      : voicebank::VoicebankRootKind::Installed,
+      });
+  if (!relinked) return core::Result<void>{relinked.error()};
+  return core::success();
+}
+
+core::Result<void> StandaloneApplicationController::relinkBackingMediaFromDialog() {
+  const auto& project = session_.runtime().document().session().project();
+  domain::TrackId targetTrack = session_.runtime().selectedTrack();
+  const auto isAudioTrack = [&project](domain::TrackId id) {
+    return std::find_if(project.audioTracks().begin(), project.audioTracks().end(),
+                        [id](const auto& track) { return track.id == id; }) !=
+           project.audioTracks().end();
+  };
+  if (!isAudioTrack(targetTrack)) {
+    if (project.audioTracks().empty()) {
+      return core::failure(core::ErrorCode::NotFound,
+                           "Backing media relink requires an audio track");
+    }
+    targetTrack = project.audioTracks().front().id;
+  }
+  const auto selected = fileDialog_->choose(platform::FileDialogRequest{
+      .purpose = platform::FileDialogPurpose::RelinkMedia,
+      .title = "Relink Backing Audio",
+      .initialDirectory = initialDirectory(session_.runtime().document()),
+      .suggestedName = {},
+      .extensions = {"wav"},
+  });
+  if (!selected) return core::Result<void>{selected.error()};
+  if (!selected.value().has_value()) return core::success();
+  auto relinked = session_.relinkBackingMedia(targetTrack, *selected.value());
+  if (!relinked) return relinked;
+  notifyStateChanged();
+  return core::success();
 }
 
 core::Result<void> StandaloneApplicationController::replaceVoicebank(
@@ -480,6 +894,47 @@ StandaloneApplicationController::recentProjects() const {
   return result;
 }
 
+std::vector<platform::DocumentationMenuItem>
+StandaloneApplicationController::documentation() const {
+  std::vector<platform::DocumentationMenuItem> result;
+  if (config_.manualsRoot.empty()) return result;
+  for (const auto& spec : kDocumentation) {
+    const auto path = config_.manualsRoot / std::filesystem::path{spec.relativePath};
+    std::error_code error;
+    if (std::filesystem::is_regular_file(
+            std::filesystem::symlink_status(path, error)) && !error) {
+      result.push_back(platform::DocumentationMenuItem{
+          .id = std::string{spec.id},
+          .displayName = std::string{spec.title},
+          .path = path});
+    }
+  }
+  return result;
+}
+
+core::Result<void> StandaloneApplicationController::openDocumentation(
+    std::string_view id) {
+  if (config_.manualsRoot.empty()) {
+    return core::failure(core::ErrorCode::NotFound,
+                         "Offline documentation root is unavailable");
+  }
+  const auto iterator = std::find_if(
+      kDocumentation.begin(), kDocumentation.end(),
+      [id](const DocumentationSpec& spec) { return spec.id == id; });
+  if (iterator == kDocumentation.end()) {
+    return core::failure(core::ErrorCode::NotFound,
+                         "Requested offline document is unknown");
+  }
+  const auto path = config_.manualsRoot / std::filesystem::path{iterator->relativePath};
+  std::error_code error;
+  if (!std::filesystem::is_regular_file(std::filesystem::symlink_status(path, error)) ||
+      error) {
+    return core::failure(core::ErrorCode::NotFound,
+                         "Requested offline document is unavailable", path.string());
+  }
+  return platform::openDocumentationPath(path);
+}
+
 core::Result<void> StandaloneApplicationController::openRecentProject(
     const std::filesystem::path& path) {
   return openRecent(path);
@@ -522,7 +977,16 @@ void StandaloneApplicationController::notifyStateChanged() const {
   if (config_.stateChanged) config_.stateChanged();
 }
 
+void StandaloneApplicationController::notifyProgressChanged() const {
+  if (config_.progressChanged) config_.progressChanged();
+}
+
 core::Result<bool> StandaloneApplicationController::requestClose() {
+  if (exportInProgress()) {
+    return core::failure<bool>(
+        core::ErrorCode::Conflict,
+        "An export is in progress; cancel it before quitting");
+  }
   auto allowed = confirmDestructiveAction();
   if (!allowed) return allowed;
   if (!allowed.value()) return false;

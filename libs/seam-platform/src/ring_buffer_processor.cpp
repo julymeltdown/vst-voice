@@ -10,6 +10,7 @@ void RingBufferAudioProcessor::process(AudioProcessContext context) noexcept {
                                context.right.size()});
   auto left = context.left.first(count);
   const auto delivered = ring_.read(left);
+  const auto intentionalReset = ring_.lastReadWasReset();
   const auto gain = gain_.load(std::memory_order_relaxed);
   for (std::size_t index = 0U; index < count; ++index) {
     const auto sample = left[index] * gain;
@@ -27,7 +28,12 @@ void RingBufferAudioProcessor::process(AudioProcessContext context) noexcept {
   callbacks_.fetch_add(1U, std::memory_order_relaxed);
   requestedFrames_.fetch_add(count, std::memory_order_relaxed);
   deliveredFrames_.fetch_add(delivered, std::memory_order_relaxed);
-  underflowFrames_.fetch_add(count - delivered, std::memory_order_relaxed);
+  const auto missing = count - delivered;
+  if (intentionalReset) {
+    intentionalResetFrames_.fetch_add(missing, std::memory_order_relaxed);
+  } else {
+    underflowFrames_.fetch_add(missing, std::memory_order_relaxed);
+  }
 }
 
 void RingBufferAudioProcessor::setGain(float gain) noexcept {
@@ -41,6 +47,8 @@ RingBufferProcessorStats RingBufferAudioProcessor::stats() const noexcept {
       .requestedFrames = requestedFrames_.load(std::memory_order_relaxed),
       .deliveredFrames = deliveredFrames_.load(std::memory_order_relaxed),
       .underflowFrames = underflowFrames_.load(std::memory_order_relaxed),
+      .intentionalResetFrames =
+          intentionalResetFrames_.load(std::memory_order_relaxed),
   };
 }
 

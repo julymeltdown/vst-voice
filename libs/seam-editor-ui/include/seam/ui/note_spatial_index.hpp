@@ -31,6 +31,7 @@ public:
 
 private:
   std::vector<IndexedNote> notes_;
+  std::vector<time::Tick> prefixMaximumEnd_;
 };
 
 }  // namespace seam::ui

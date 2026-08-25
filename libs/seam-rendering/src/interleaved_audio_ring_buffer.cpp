@@ -64,11 +64,15 @@ bool SpscInterleavedAudioRingBuffer::consumeResetRequest(
 
 std::size_t SpscInterleavedAudioRingBuffer::readFrames(
     std::span<float> output) noexcept {
+  lastReadWasReset_.store(false, std::memory_order_relaxed);
   if (output.empty() || output.size() % channelCount_ != 0U) {
     std::fill(output.begin(), output.end(), 0.0F);
     return 0U;
   }
-  if (consumeResetRequest(output)) return 0U;
+  if (consumeResetRequest(output)) {
+    lastReadWasReset_.store(true, std::memory_order_release);
+    return 0U;
+  }
   const auto requestedFrames = output.size() / channelCount_;
   const auto frameCount = std::min(requestedFrames, availableReadFrames());
   auto read = readFrame_.load(std::memory_order_relaxed);

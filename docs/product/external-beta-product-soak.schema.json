@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://project-seam.invalid/schemas/external-beta-product-soak.schema.json",
+  "title": "Project SEAM External Beta product soak record",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "recordType", "status", "recordId", "phase", "durationSeconds", "platform", "architecture", "osBuild", "appIdentity", "bankIdentity", "projectIdentity", "workloadId", "workloadSha256", "machineProfileId", "machineProfileSha256", "clockAuthority", "deviceAuthority", "thresholds", "samples", "summary", "faults", "evidence", "startedAt", "endedAt"],
+  "properties": {
+    "schemaVersion": {"const": 1},
+    "recordType": {"const": "external-beta-product-soak"},
+    "status": {"enum": ["NOT_RUN", "BLOCKED", "FAIL", "PASS"]},
+    "recordId": {"type": "string", "minLength": 1},
+    "phase": {"enum": ["usable-alpha-30m", "external-beta-120m"]},
+    "durationSeconds": {"enum": [1800, 7200]},
+    "platform": {"enum": ["macos", "windows"]},
+    "architecture": {"enum": ["arm64", "x86_64"]},
+    "osBuild": {"type": "string", "minLength": 1},
+    "appIdentity": {"type": "object", "additionalProperties": false, "required": ["version", "buildId", "installedTreeSha256"], "properties": {"version": {"type": "string", "minLength": 1}, "buildId": {"type": "string", "minLength": 1}, "installedTreeSha256": {"$ref": "#/$defs/sha256"}}},
+    "bankIdentity": {"type": "object", "additionalProperties": false, "required": ["id", "version", "contentSha256", "installedProvenanceTreeSha256"], "properties": {"id": {"type": "string", "pattern": "^beta\\."}, "version": {"type": "string", "minLength": 1}, "contentSha256": {"$ref": "#/$defs/sha256"}, "installedProvenanceTreeSha256": {"$ref": "#/$defs/sha256"}}},
+    "projectIdentity": {"type": "object", "additionalProperties": false, "required": ["projectSha256", "mediaSha256"], "properties": {"projectSha256": {"$ref": "#/$defs/sha256"}, "mediaSha256": {"$ref": "#/$defs/sha256"}}},
+    "workloadId": {"type": "string", "minLength": 1},
+    "workloadSha256": {"$ref": "#/$defs/sha256"},
+    "machineProfileId": {"type": "string", "minLength": 1},
+    "machineProfileSha256": {"$ref": "#/$defs/sha256"},
+    "clockAuthority": {"const": "physical-device-clock"},
+    "deviceAuthority": {"const": "physical"},
+    "thresholds": {"type": "object", "additionalProperties": {"type": ["integer", "number"]}},
+    "samples": {"type": "array", "minItems": 2, "items": {"$ref": "#/$defs/sample"}},
+    "summary": {"type": "object", "additionalProperties": true},
+    "faults": {"type": "array", "minItems": 9, "items": {"$ref": "#/$defs/fault"}},
+    "evidence": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/evidence"}},
+    "startedAt": {"type": "string", "format": "date-time"},
+    "endedAt": {"type": "string", "format": "date-time"}
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-fA-F]{64}$"},
+    "sample": {"type": "object", "additionalProperties": false, "required": ["elapsedSeconds", "rssBytes", "handles", "threads", "cpuPercent", "renderLatencyMs", "callbackLatencyUs", "queueDepth", "queueAgeMs", "cacheEvictionStallMs", "mediaBudgetHighWaterBytes", "underflows", "xruns", "controlQueueOverflow"], "properties": {"elapsedSeconds": {"type": "number", "minimum": 0}, "rssBytes": {"type": "integer", "minimum": 0}, "handles": {"type": "integer", "minimum": 0}, "threads": {"type": "integer", "minimum": 0}, "cpuPercent": {"type": "number", "minimum": 0}, "renderLatencyMs": {"type": "number", "minimum": 0}, "callbackLatencyUs": {"type": "number", "minimum": 0}, "queueDepth": {"type": "integer", "minimum": 0}, "queueAgeMs": {"type": "number", "minimum": 0}, "cacheEvictionStallMs": {"type": "number", "minimum": 0}, "mediaBudgetHighWaterBytes": {"type": "integer", "minimum": 0}, "underflows": {"type": "integer", "minimum": 0}, "xruns": {"type": "integer", "minimum": 0}, "controlQueueOverflow": {"type": "integer", "minimum": 0}}},
+    "fault": {"type": "object", "additionalProperties": false, "required": ["id", "result", "userDecision", "evidenceRecordId", "dataLoss"], "properties": {"id": {"type": "string", "minLength": 1}, "result": {"const": "RECOVERED"}, "userDecision": {"type": "string", "minLength": 1}, "evidenceRecordId": {"type": "string", "minLength": 1}, "dataLoss": {"const": false}}},
+    "evidence": {"type": "object", "additionalProperties": false, "required": ["kind", "path", "sha256", "capturedAt", "reviewer"], "properties": {"kind": {"type": "string", "minLength": 1}, "path": {"type": "string", "minLength": 1}, "sha256": {"$ref": "#/$defs/sha256"}, "capturedAt": {"type": "string", "format": "date-time"}, "reviewer": {"type": "string", "minLength": 1}}}
+  }
+}

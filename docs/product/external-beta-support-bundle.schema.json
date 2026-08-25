@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://project-seam.invalid/schemas/external-beta-support-bundle-1.json",
+  "title": "Project SEAM External Beta export-safe support bundle",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "purpose", "privacyClass", "createdAt", "consent", "entries"],
+  "properties": {
+    "schemaVersion": {"const": 1},
+    "purpose": {"const": "export-safe-support-bundle"},
+    "privacyClass": {"const": "ExportSafe"},
+    "createdAt": {"type": "string", "format": "date-time"},
+    "consent": {"type": "boolean"},
+    "entries": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["path", "size", "sha256"], "properties": {"path": {"type": "string"}, "size": {"type": "integer", "minimum": 0}, "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}}}
+  }
+}

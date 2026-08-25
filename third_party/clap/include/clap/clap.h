@@ -281,8 +281,9 @@ typedef struct clap_plugin_audio_ports_config {
 } clap_plugin_audio_ports_config_t;
 typedef struct clap_plugin_audio_ports_config_info {
   clap_id (CLAP_ABI *current_config)(const clap_plugin_t *plugin);
-  bool (CLAP_ABI *get)(const clap_plugin_t *plugin,
-                       clap_audio_ports_config_t *config);
+  bool (CLAP_ABI *get)(const clap_plugin_t *plugin, clap_id config_id,
+                       uint32_t port_index, bool is_input,
+                       clap_audio_port_info_t *info);
 } clap_plugin_audio_ports_config_info_t;
 typedef struct clap_host_audio_ports_config {
   void (CLAP_ABI *rescan)(const clap_host_t *host);
@@ -348,6 +349,32 @@ typedef struct clap_event_note {
   int16_t key;
   double velocity;
 } clap_event_note_t;
+
+typedef struct clap_event_note_expression {
+  clap_event_header_t header;
+  int32_t note_id;
+  int16_t port_index;
+  int16_t channel;
+  int16_t key;
+  int32_t expression_id;
+  double value;
+} clap_event_note_expression_t;
+
+enum {
+  CLAP_NOTE_EXPRESSION_VOLUME = 0,
+  CLAP_NOTE_EXPRESSION_PAN = 1,
+  CLAP_NOTE_EXPRESSION_TUNING = 2,
+  CLAP_NOTE_EXPRESSION_PRESSURE = 3,
+  CLAP_NOTE_EXPRESSION_VIBRATO = 4,
+  CLAP_NOTE_EXPRESSION_EXPRESSION = 5,
+  CLAP_NOTE_EXPRESSION_BRIGHTNESS = 6,
+};
+
+typedef struct clap_event_midi {
+  clap_event_header_t header;
+  uint16_t port_index;
+  uint8_t data[3];
+} clap_event_midi_t;
 
 enum {
   CLAP_NOTE_DIALECT_CLAP = 1 << 0,

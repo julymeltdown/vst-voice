@@ -18,6 +18,7 @@ std::string_view toString(LogLevel level) noexcept {
 }
 
 void StreamLogger::write(LogLevel level, std::string_view category, std::string_view message) {
+  recordRealtimeLogger();
   const auto now = std::chrono::system_clock::now();
   const auto time = std::chrono::system_clock::to_time_t(now);
   std::tm local{};
@@ -27,6 +28,7 @@ void StreamLogger::write(LogLevel level, std::string_view category, std::string_
   localtime_r(&time, &local);
 #endif
 
+  recordRealtimeLockAttempt();
   const std::lock_guard lock(mutex_);
   stream_ << std::put_time(&local, "%Y-%m-%d %H:%M:%S") << " [" << toString(level)
           << "] [" << category << "] " << message << '\n';

@@ -24,6 +24,7 @@ void MultichannelRingBufferAudioProcessor::process(
 
   auto interleaved = std::span<float>{scratch_}.first(frames * channelCount);
   const auto delivered = ring_.readFrames(interleaved);
+  const auto intentionalReset = ring_.lastReadWasReset();
   const auto gain = gain_.load(std::memory_order_relaxed);
   for (std::size_t channel = 0U; channel < providedChannels; ++channel) {
     auto output = context.output(channel);
@@ -44,7 +45,12 @@ void MultichannelRingBufferAudioProcessor::process(
   callbacks_.fetch_add(1U, std::memory_order_relaxed);
   requestedFrames_.fetch_add(frames, std::memory_order_relaxed);
   deliveredFrames_.fetch_add(delivered, std::memory_order_relaxed);
-  underflowFrames_.fetch_add(frames - delivered, std::memory_order_relaxed);
+  const auto missing = frames - delivered;
+  if (intentionalReset) {
+    intentionalResetFrames_.fetch_add(missing, std::memory_order_relaxed);
+  } else {
+    underflowFrames_.fetch_add(missing, std::memory_order_relaxed);
+  }
 }
 
 void MultichannelRingBufferAudioProcessor::setGain(float gain) noexcept {
@@ -59,6 +65,8 @@ MultichannelRingBufferAudioProcessor::stats() const noexcept {
       .requestedFrames = requestedFrames_.load(std::memory_order_relaxed),
       .deliveredFrames = deliveredFrames_.load(std::memory_order_relaxed),
       .underflowFrames = underflowFrames_.load(std::memory_order_relaxed),
+      .intentionalResetFrames =
+          intentionalResetFrames_.load(std::memory_order_relaxed),
       .channelMismatchCallbacks =
           channelMismatchCallbacks_.load(std::memory_order_relaxed),
   };

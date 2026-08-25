@@ -3,8 +3,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
-import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -15,6 +13,11 @@ import developer_package  # noqa: E402
 import linux_package_smoke  # noqa: E402
 import release_gate  # noqa: E402
 import sdk_lock  # noqa: E402
+from release_identity import read_project_version  # noqa: E402
+
+
+class Phase13AEvidenceError(RuntimeError):
+    pass
 
 
 def run(command: list[str], cwd: Path) -> None:
@@ -48,26 +51,31 @@ def main(argv: list[str] | None = None) -> int:
     build_root = args.build_root.resolve()
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=True)
+    version = read_project_version(root)
 
     run([sys.executable, "-m", "unittest", "discover", "-s", "tests/phase13a", "-v"], root)
     run([sys.executable, "scripts/verify_phase13a_contracts.py", "--root", str(root)], root)
     lock = sdk_lock.load_lock(root / "phase13a" / "dependency-lock.json")
     lock_errors = sdk_lock.validate_lock(lock)
     if lock_errors:
-        raise RuntimeError("\n".join(lock_errors))
+        raise Phase13AEvidenceError("\n".join(lock_errors))
 
     if not args.skip_build:
         run(["cmake", "-S", str(root), "-B", str(build_root), "-DCMAKE_BUILD_TYPE=Release"], root)
         run(["cmake", "--build", str(build_root), "--target", "seam_clap_editor_plugin", "--parallel", "2"], root)
     clap, resources = find_clap(build_root)
 
-    package = output / "ProjectSEAM-0.13.0-linux-unsigned-development.zip"
-    package_manifest = developer_package.create_developer_package(clap, resources, package, "0.13.0")
+    package = output / f"ProjectSEAM-{version}-linux-unsigned-development.zip"
+    package_manifest = developer_package.create_developer_package(
+        clap, resources, package, version
+    )
     smoke = linux_package_smoke.run_smoke(package, output / "linux-install-sandbox")
     (output / "linux-developer-package-smoke.json").write_text(
         json.dumps(smoke, indent=2) + "\n", encoding="utf-8")
     if smoke["status"] != "PASS":
-        raise RuntimeError("Linux developer package install/uninstall smoke failed")
+        raise Phase13AEvidenceError(
+            "Linux developer package install/uninstall smoke failed"
+        )
 
     matrix = release_gate.load_matrix(root / "docs" / "phase13a" / "mandatory-validation-matrix.json")
     gate_results = {gate: release_gate.evaluate_matrix(matrix, gate).as_dict() for gate in ("G2", "G3", "G4", "G5")}

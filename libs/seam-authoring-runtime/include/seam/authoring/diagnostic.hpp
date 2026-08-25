@@ -17,7 +17,12 @@ enum class DiagnosticAction {
   Retry,
   OpenSettings,
   ChooseVoicebank,
+  RelinkVoicebank,
+  InstallVoicebank,
   RelinkMedia,
+  SaveAs,
+  OpenRecoveryFolder,
+  CopyDiagnostic,
   RecoverAutosave,
   OpenSupport,
 };

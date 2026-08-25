@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://project-seam.invalid/schemas/external-beta-operation-decision.schema.json",
+  "title": "Project SEAM External Beta append-only operation decision",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["schemaVersion", "decisionId", "action", "candidateRootId", "actorRole", "createdAt"],
+  "properties": {
+    "schemaVersion": {"const": 1},
+    "decisionId": {"type": "string", "minLength": 1},
+    "action": {"enum": ["PROMOTE_READY", "START_COHORT", "PAUSE", "RESUME", "REVOKE", "CLOSE"]},
+    "candidateRootId": {"type": "string", "minLength": 1},
+    "actorRole": {"enum": ["A3", "A4", "A5", "A6"]},
+    "createdAt": {"type": "string", "format": "date-time"}
+  }
+}

@@ -1,8 +1,10 @@
 #include "seam/ui/piano_roll_model.hpp"
 
 #include "seam/application/note_commands.hpp"
+#include "seam/application/lyric_commands.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <memory>
 
 namespace seam::ui {
@@ -43,7 +45,65 @@ Rect PianoRollModel::noteBounds(const IndexedNote& indexed) const noexcept {
   const auto x = contentX + timeline_.tickToPixel(indexed.absoluteStart);
   const auto width = std::max(2.0, timeline_.durationToPixels(indexed.absoluteEnd - indexed.absoluteStart));
   const auto y = viewport_.bounds.y + pitch_.midiToPixel(indexed.midiKey);
-  return Rect{x + 1.0, y + 1.0, width - 2.0, pitch_.rowHeight() - 2.0};
+  return Rect{x + 1.0, y + 1.0, std::max(1.0, width - 2.0),
+              pitch_.rowHeight() - 2.0};
+}
+
+NoteVisual PianoRollModel::makeNoteVisual(const IndexedNote& indexed) const {
+  const auto* note = session_.project().findNote(indexed.noteId);
+  const auto* targetRegion = session_.project().findRegion(indexed.regionId);
+  std::string lyric;
+  if (note != nullptr && targetRegion != nullptr) {
+    if (const auto* token = targetRegion->findLyric(note->lyricTokenId)) {
+      lyric = domain::toUtf8(token->surface);
+    }
+  }
+  return NoteVisual{
+      .noteId = indexed.noteId,
+      .bounds = noteBounds(indexed),
+      .midiKey = indexed.midiKey,
+      .absoluteStart = indexed.absoluteStart,
+      .duration = indexed.absoluteEnd - indexed.absoluteStart,
+      .selected = session_.selection().contains(indexed.noteId),
+      .lyric = std::move(lyric),
+  };
+}
+
+std::vector<NoteVisual> PianoRollModel::allNotes() const {
+  const auto* targetRegion = region();
+  if (targetRegion == nullptr) return {};
+  std::vector<NoteVisual> visuals;
+  visuals.reserve(targetRegion->notes.size());
+  for (const auto& note : targetRegion->notes) {
+    visuals.push_back(makeNoteVisual(IndexedNote{
+        .noteId = note.id,
+        .regionId = targetRegion->id,
+        .absoluteStart = targetRegion->startTick + note.startTick,
+        .absoluteEnd = targetRegion->startTick + note.endTick(),
+        .midiKey = note.midiKey,
+    }));
+  }
+  return visuals;
+}
+
+std::size_t PianoRollModel::noteCount() const noexcept {
+  const auto* targetRegion = region();
+  return targetRegion == nullptr ? 0U : targetRegion->notes.size();
+}
+
+std::optional<NoteVisual> PianoRollModel::noteAt(std::size_t index) const {
+  const auto* targetRegion = region();
+  if (targetRegion == nullptr || index >= targetRegion->notes.size()) {
+    return std::nullopt;
+  }
+  const auto& note = targetRegion->notes[index];
+  return makeNoteVisual(IndexedNote{
+      .noteId = note.id,
+      .regionId = targetRegion->id,
+      .absoluteStart = targetRegion->startTick + note.startTick,
+      .absoluteEnd = targetRegion->startTick + note.endTick(),
+      .midiKey = note.midiKey,
+  });
 }
 
 std::vector<NoteVisual> PianoRollModel::visibleNotes() const {
@@ -57,23 +117,8 @@ std::vector<NoteVisual> PianoRollModel::visibleNotes() const {
   std::vector<NoteVisual> visuals;
   visuals.reserve(visible.size());
   for (const auto& indexed : visible) {
-    const auto* note = session_.project().findNote(indexed.noteId);
-    const auto* targetRegion = session_.project().findRegion(indexed.regionId);
-    std::string lyric;
-    if (note != nullptr && targetRegion != nullptr) {
-      if (const auto* token = targetRegion->findLyric(note->lyricTokenId)) {
-        lyric = domain::toUtf8(token->surface);
-      }
-    }
-    visuals.push_back(NoteVisual{
-        .noteId = indexed.noteId,
-        .bounds = noteBounds(indexed),
-        .midiKey = indexed.midiKey,
-        .absoluteStart = indexed.absoluteStart,
-        .duration = indexed.absoluteEnd - indexed.absoluteStart,
-        .selected = session_.selection().contains(indexed.noteId),
-        .lyric = std::move(lyric),
-    });
+    if (indexed.regionId != regionId_) continue;
+    visuals.push_back(makeNoteVisual(indexed));
   }
   return visuals;
 }
@@ -204,6 +249,152 @@ core::Result<void> PianoRollModel::resizeSelection(
   return result;
 }
 
+core::Result<void> PianoRollModel::quantizeSelection(time::Tick grid) {
+  auto* targetRegion = region();
+  if (targetRegion == nullptr) {
+    return core::failure(core::ErrorCode::NotFound,
+                         "Piano-roll region was not found");
+  }
+  if (grid <= time::Tick{0}) {
+    return core::failure(core::ErrorCode::InvalidArgument,
+                         "Quantize grid must be positive");
+  }
+  const time::Quantizer quantizer(grid);
+  std::vector<application::NoteResize> resizes;
+  for (const auto noteId : session_.selection().noteIds()) {
+    const auto* note = targetRegion->findNote(noteId);
+    if (note == nullptr) continue;
+    auto start = quantizer.snap(note->startTick);
+    start = std::max(time::Tick{0}, start);
+    if (start >= targetRegion->durationTick) {
+      start = std::max(time::Tick{0}, targetRegion->durationTick - grid);
+    }
+    auto end = quantizer.snap(note->endTick());
+    end = std::min(targetRegion->durationTick, end);
+    if (end <= start) end = std::min(targetRegion->durationTick, start + grid);
+    if (end <= start) {
+      return core::failure(core::ErrorCode::InvalidArgument,
+                           "Quantize grid cannot represent a selected note",
+                           noteId.toString());
+    }
+    resizes.push_back(application::NoteResize{
+        .noteId = noteId,
+        .beforeStart = note->startTick,
+        .beforeDuration = note->durationTick,
+        .afterStart = start,
+        .afterDuration = end - start,
+    });
+  }
+  if (resizes.empty()) {
+    return core::failure(core::ErrorCode::Conflict,
+                         "No selected notes can be quantized");
+  }
+  const auto result = session_.execute(
+      std::make_unique<application::ResizeNotesCommand>(std::move(resizes)));
+  if (result) rebuildIndex();
+  return result;
+}
+
+core::Result<void> PianoRollModel::setSelectionSlur(bool enabled) {
+  auto* targetRegion = region();
+  if (targetRegion == nullptr) {
+    return core::failure(core::ErrorCode::NotFound,
+                         "Piano-roll region was not found");
+  }
+  std::vector<const domain::Note*> selected;
+  for (const auto noteId : session_.selection().noteIds()) {
+    if (const auto* note = targetRegion->findNote(noteId); note != nullptr) {
+      selected.push_back(note);
+    }
+  }
+  if (selected.empty()) {
+    return core::failure(core::ErrorCode::Conflict,
+                         "No selected notes can receive a slur");
+  }
+  std::stable_sort(selected.begin(), selected.end(), [](const auto* lhs,
+                                                        const auto* rhs) {
+    if (lhs->startTick == rhs->startTick) return lhs->id < rhs->id;
+    return lhs->startTick < rhs->startTick;
+  });
+  std::optional<std::uint64_t> group;
+  if (enabled) {
+    for (const auto* note : selected) {
+      if (note->slurGroup.has_value()) {
+        group = note->slurGroup;
+        break;
+      }
+    }
+    if (!group.has_value()) {
+      std::uint64_t maximum = 0U;
+      for (const auto& note : targetRegion->notes) {
+        if (note.slurGroup.has_value()) maximum = std::max(maximum, *note.slurGroup);
+      }
+      group = maximum + 1U;
+    }
+  }
+  std::vector<application::NotePerformanceEdit> edits;
+  edits.reserve(selected.size());
+  for (const auto* note : selected) {
+    edits.push_back(application::NotePerformanceEdit{
+        .noteId = note->id,
+        .beforeArticulation = note->articulation,
+        .afterArticulation = domain::NoteArticulation::Legato,
+        .beforeSlurGroup = note->slurGroup,
+        .afterSlurGroup = group,
+        .beforeLyricTokenId = note->lyricTokenId,
+        .afterLyricTokenId = note->lyricTokenId,
+    });
+  }
+  return session_.execute(std::make_unique<application::SetNotePerformanceCommand>(
+      std::move(edits)));
+}
+
+core::Result<void> PianoRollModel::setSelectionMelisma() {
+  auto* targetRegion = region();
+  if (targetRegion == nullptr) {
+    return core::failure(core::ErrorCode::NotFound,
+                         "Piano-roll region was not found");
+  }
+  std::vector<const domain::Note*> selected;
+  for (const auto noteId : session_.selection().noteIds()) {
+    if (const auto* note = targetRegion->findNote(noteId); note != nullptr) {
+      selected.push_back(note);
+    }
+  }
+  if (selected.size() < 2U) {
+    return core::failure(core::ErrorCode::Conflict,
+                         "A melisma requires at least two selected notes");
+  }
+  std::stable_sort(selected.begin(), selected.end(), [](const auto* lhs,
+                                                        const auto* rhs) {
+    if (lhs->startTick == rhs->startTick) return lhs->id < rhs->id;
+    return lhs->startTick < rhs->startTick;
+  });
+  const auto lyricId = selected.front()->lyricTokenId;
+  if (targetRegion->findLyric(lyricId) == nullptr) {
+    return core::failure(core::ErrorCode::InvariantViolation,
+                         "Melisma source note references a missing lyric");
+  }
+  std::vector<application::NotePerformanceEdit> edits;
+  edits.reserve(selected.size());
+  for (const auto* note : selected) {
+    edits.push_back(application::NotePerformanceEdit{
+        .noteId = note->id,
+        .beforeArticulation = note->articulation,
+        .afterArticulation = domain::NoteArticulation::Legato,
+        .beforeSlurGroup = note->slurGroup,
+        .afterSlurGroup = note->slurGroup,
+        .beforeLyricTokenId = note->lyricTokenId,
+        .afterLyricTokenId = lyricId,
+    });
+  }
+  const auto result = session_.execute(
+      std::make_unique<application::SetNotePerformanceCommand>(
+          std::move(edits)));
+  if (result) rebuildIndex();
+  return result;
+}
+
 core::Result<void> PianoRollModel::deleteSelection() {
   const auto selected = session_.selection().noteIds();
   if (selected.empty()) {
@@ -217,6 +408,137 @@ core::Result<void> PianoRollModel::deleteSelection() {
     rebuildIndex();
   }
   return result;
+}
+
+core::Result<domain::NoteId> PianoRollModel::duplicateSelection() {
+  auto* targetRegion = region();
+  if (targetRegion == nullptr) {
+    return core::failure<domain::NoteId>(core::ErrorCode::NotFound,
+                                         "Piano-roll region was not found");
+  }
+  std::vector<const domain::Note*> selected;
+  for (const auto noteId : session_.selection().noteIds()) {
+    const auto* note = targetRegion->findNote(noteId);
+    if (note != nullptr) selected.push_back(note);
+  }
+  if (selected.empty()) {
+    return core::failure<domain::NoteId>(core::ErrorCode::Conflict,
+                                         "No selected notes can be duplicated");
+  }
+  std::stable_sort(selected.begin(), selected.end(),
+                   [](const auto* lhs, const auto* rhs) {
+                     if (lhs->startTick == rhs->startTick) return lhs->id < rhs->id;
+                     return lhs->startTick < rhs->startTick;
+                   });
+  auto composite = std::make_unique<application::CompositeCommand>(
+      "Duplicate notes");
+  std::vector<domain::NoteId> duplicatedIds;
+  duplicatedIds.reserve(selected.size());
+  const auto offset = session_.project().settings().snapGrid;
+  for (const auto* source : selected) {
+    const auto* lyric = targetRegion->findLyric(source->lyricTokenId);
+    if (lyric == nullptr) {
+      return core::failure<domain::NoteId>(
+          core::ErrorCode::InvariantViolation,
+          "Selected note references a missing lyric", source->id.toString());
+    }
+    auto [token, note] = factory_.makeNote(
+        source->startTick + source->durationTick + offset,
+        source->durationTick, source->midiKey, lyric->surface, lyric->language);
+    note.articulation = source->articulation;
+    note.slurGroup = source->slurGroup;
+    duplicatedIds.push_back(note.id);
+    composite->add(std::make_unique<application::AddNoteCommand>(
+        regionId_, std::move(token), std::move(note)));
+  }
+  const auto result = session_.execute(std::move(composite));
+  if (!result) return core::Result<domain::NoteId>{result.error()};
+  session_.selection().replace(duplicatedIds);
+  rebuildIndex();
+  return core::success(duplicatedIds.front());
+}
+
+core::Result<LyricDistributionReport>
+PianoRollModel::distributeSelectedLyrics(std::u32string text,
+                                         domain::Language language) {
+  auto* targetRegion = region();
+  if (targetRegion == nullptr) {
+    return core::failure<LyricDistributionReport>(
+        core::ErrorCode::NotFound, "Piano-roll region was not found");
+  }
+  std::vector<const domain::Note*> selected;
+  for (const auto noteId : session_.selection().noteIds()) {
+    if (const auto* note = targetRegion->findNote(noteId); note != nullptr) {
+      selected.push_back(note);
+    }
+  }
+  if (selected.empty()) {
+    return core::failure<LyricDistributionReport>(
+        core::ErrorCode::Conflict, "No selected notes can receive lyrics");
+  }
+  std::stable_sort(selected.begin(), selected.end(),
+                   [](const auto* lhs, const auto* rhs) {
+                     if (lhs->startTick == rhs->startTick) return lhs->id < rhs->id;
+                     return lhs->startTick < rhs->startTick;
+                   });
+  std::vector<std::u32string> syllables;
+  std::u32string current;
+  const auto isWhitespace = [](char32_t value) noexcept {
+    return value == U' ' || value == U'\t' || value == U'\r' ||
+           value == U'\n' || value == U'\u3000';
+  };
+  for (const auto value : text) {
+    if (isWhitespace(value)) {
+      if (!current.empty()) {
+        syllables.push_back(std::move(current));
+        current.clear();
+      }
+    } else {
+      current.push_back(value);
+    }
+  }
+  if (!current.empty()) syllables.push_back(std::move(current));
+
+  LyricDistributionReport report{
+      .requestedSyllables = syllables.size(),
+      .targetNotes = selected.size(),
+      .appliedSyllables = 0U,
+      .missingSyllables = syllables.size() < selected.size()
+                              ? selected.size() - syllables.size()
+                              : 0U,
+      .leftoverSyllables = syllables.size() > selected.size()
+                               ? syllables.size() - selected.size()
+                               : 0U,
+      .committed = false,
+  };
+  if (report.missingSyllables != 0U || report.leftoverSyllables != 0U) {
+    return report;
+  }
+  std::vector<application::BatchLyricEdit> edits;
+  edits.reserve(selected.size());
+  for (std::size_t index = 0U; index < selected.size(); ++index) {
+    const auto* lyric = targetRegion->findLyric(selected[index]->lyricTokenId);
+    if (lyric == nullptr) {
+      return core::failure<LyricDistributionReport>(
+          core::ErrorCode::InvariantViolation,
+          "Selected note references a missing lyric",
+          selected[index]->id.toString());
+    }
+    edits.push_back(application::BatchLyricEdit{
+        .lyricId = lyric->id,
+        .before = lyric->surface,
+        .after = syllables[index],
+        .language = language,
+        .beforeLanguage = lyric->language,
+    });
+  }
+  const auto result = session_.execute(
+      std::make_unique<application::BatchSetLyricsCommand>(std::move(edits)));
+  if (!result) return core::Result<LyricDistributionReport>{result.error()};
+  report.appliedSyllables = selected.size();
+  report.committed = true;
+  rebuildIndex();
+  return report;
 }
 
 }  // namespace seam::ui

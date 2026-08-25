@@ -7,6 +7,8 @@
 #include <fstream>
 #include <limits>
 #include <sstream>
+#include <system_error>
+#include <vector>
 
 namespace seam::voicebank {
 namespace {
@@ -14,6 +16,46 @@ namespace {
 using seam::formats::JsonValue;
 using Object = JsonValue::Object;
 using Array = JsonValue::Array;
+
+core::Result<void> validateManifestPath(const std::filesystem::path& path,
+                                        bool allowMissing) {
+  if (path.empty()) {
+    return core::failure(core::ErrorCode::InvalidArgument,
+                         "Voicebank manifest path is empty");
+  }
+  std::error_code error;
+  const auto status = std::filesystem::symlink_status(path, error);
+  if (error) {
+    if (error == std::errc::no_such_file_or_directory) {
+      return allowMissing
+                 ? core::success()
+                 : core::failure(core::ErrorCode::NotFound,
+                                 "Voicebank manifest does not exist",
+                                 path.string());
+    }
+    return core::failure(core::ErrorCode::IoError,
+                         "Unable to inspect voicebank manifest path",
+                         error.message());
+  }
+  if (status.type() == std::filesystem::file_type::not_found) {
+    return allowMissing
+               ? core::success()
+               : core::failure(core::ErrorCode::NotFound,
+                               "Voicebank manifest does not exist",
+                               path.string());
+  }
+  if (status.type() == std::filesystem::file_type::symlink) {
+    return core::failure(core::ErrorCode::Conflict,
+                         "Voicebank manifest path cannot be a symbolic link",
+                         path.string());
+  }
+  if (!std::filesystem::is_regular_file(status)) {
+    return core::failure(core::ErrorCode::IoError,
+                         "Voicebank manifest path is not a regular file",
+                         path.string());
+  }
+  return core::success();
+}
 
 std::string languageName(domain::Language language) {
   switch (language) {
@@ -216,14 +258,16 @@ core::Result<Manifest> decodeManifest(const JsonValue& root) {
   }
   manifest.language = parseLanguage(language->asString());
   manifest.expectedSampleRate = static_cast<std::uint32_t>(sampleRateValue);
-  manifest.styles.clear();
+  std::vector<std::string> parsedStyles;
+  parsedStyles.reserve(styles->asArray().size());
   for (const auto& style : styles->asArray()) {
     if (!style.isString()) {
       return core::failure<Manifest>(core::ErrorCode::ParseError,
                                      "Voicebank style must be a string");
     }
-    manifest.styles.push_back(style.asString());
+    parsedStyles.push_back(style.asString());
   }
+  manifest.styles = std::move(parsedStyles);
 
   for (const auto& unitJson : units->asArray()) {
     if (!unitJson.isObject()) {
@@ -343,8 +387,12 @@ core::Result<void> ManifestJsonCodec::save(
     const Manifest& manifest, const std::filesystem::path& path) const {
   auto encoded = encode(manifest);
   if (!encoded) return core::Result<void>{encoded.error()};
+  const auto target = validateManifestPath(path, true);
+  if (!target) return target;
   auto backup = path;
   backup += ".bak";
+  const auto backupTarget = validateManifestPath(backup, true);
+  if (!backupTarget) return backupTarget;
   return core::durableAtomicWriteText(
       path, encoded.value(), core::AtomicWriteOptions{
           .backupPath = std::move(backup),
@@ -355,6 +403,8 @@ core::Result<void> ManifestJsonCodec::save(
 
 core::Result<Manifest> ManifestJsonCodec::load(
     const std::filesystem::path& path) const {
+  const auto target = validateManifestPath(path, false);
+  if (!target) return core::Result<Manifest>{target.error()};
   auto content = core::readTextFileLimited(path, 32ULL * 1024ULL * 1024ULL);
   if (!content) return core::Result<Manifest>{content.error()};
   return decode(content.value());

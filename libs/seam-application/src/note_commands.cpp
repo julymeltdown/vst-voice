@@ -11,6 +11,17 @@ AddNoteCommand::AddNoteCommand(
     domain::RegionId regionId, domain::LyricToken lyric, domain::Note note)
     : regionId_(regionId), lyric_(std::move(lyric)), note_(std::move(note)) {}
 
+CommandImpact AddNoteCommand::impact() const {
+  return CommandImpact{
+      .scope = CommandAudioImpact::PhraseAudio,
+      .projectWide = false,
+      .trackIds = {},
+      .regionIds = {regionId_},
+      .noteIds = {note_.id},
+      .lyricIds = {lyric_.id},
+  };
+}
+
 core::Result<void> AddNoteCommand::apply(domain::Project& project) {
   auto* region = project.findRegion(regionId_);
   if (region == nullptr) {
@@ -76,6 +87,23 @@ NoteLocation findNoteLocation(const domain::Project& project, domain::NoteId not
         if (region.notes[index].id == noteId) {
           return NoteLocation{&region, index};
         }
+      }
+    }
+  }
+  return {};
+}
+
+struct MutableNoteLocation final {
+  domain::VocalRegion* region{nullptr};
+  domain::Note* note{nullptr};
+};
+
+MutableNoteLocation findMutableNoteLocation(domain::Project& project,
+                                            domain::NoteId noteId) {
+  for (auto& track : project.vocalTracks()) {
+    for (auto& region : track.regions) {
+      if (auto* note = region.findNote(noteId)) {
+        return MutableNoteLocation{&region, note};
       }
     }
   }
@@ -196,6 +224,33 @@ core::Result<void> RemoveNotesCommand::capture(const domain::Project& project) {
   noteIds_ = std::move(uniqueIds);
   captured_ = true;
   return core::success();
+}
+
+CommandImpact MoveNotesCommand::impact() const {
+  CommandImpact result;
+  result.scope = CommandAudioImpact::PhraseAudio;
+  result.noteIds.reserve(moves_.size());
+  for (const auto& move : moves_) result.noteIds.push_back(move.noteId);
+  return result;
+}
+
+CommandImpact RemoveNotesCommand::impact() const {
+  return CommandImpact{
+      .scope = CommandAudioImpact::PhraseAudio,
+      .projectWide = false,
+      .trackIds = {},
+      .regionIds = {},
+      .noteIds = noteIds_,
+      .lyricIds = {},
+  };
+}
+
+CommandImpact ResizeNotesCommand::impact() const {
+  CommandImpact result;
+  result.scope = CommandAudioImpact::PhraseAudio;
+  result.noteIds.reserve(resizes_.size());
+  for (const auto& resize : resizes_) result.noteIds.push_back(resize.noteId);
+  return result;
 }
 
 core::Result<void> RemoveNotesCommand::removeCaptured(domain::Project& project) const {
@@ -474,6 +529,74 @@ core::Result<void> ResizeNotesCommand::apply(domain::Project& project) {
 }
 
 core::Result<void> ResizeNotesCommand::revert(domain::Project& project) {
+  return set(project, false);
+}
+
+CommandImpact SetNotePerformanceCommand::impact() const {
+  CommandImpact result;
+  result.scope = CommandAudioImpact::PhraseAudio;
+  result.noteIds.reserve(edits_.size());
+  for (const auto& edit : edits_) {
+    result.noteIds.push_back(edit.noteId);
+    if (edit.beforeLyricTokenId.valid()) {
+      result.lyricIds.push_back(edit.beforeLyricTokenId);
+    }
+    if (edit.afterLyricTokenId.valid()) {
+      result.lyricIds.push_back(edit.afterLyricTokenId);
+    }
+  }
+  std::sort(result.lyricIds.begin(), result.lyricIds.end());
+  result.lyricIds.erase(std::unique(result.lyricIds.begin(), result.lyricIds.end()),
+                        result.lyricIds.end());
+  return result;
+}
+
+core::Result<void> SetNotePerformanceCommand::set(domain::Project& project,
+                                                  bool after) {
+  if (edits_.empty()) {
+    return core::failure(core::ErrorCode::InvalidArgument,
+                         "At least one note performance edit is required");
+  }
+  std::unordered_set<domain::NoteId> seen;
+  seen.reserve(edits_.size());
+  for (const auto& edit : edits_) {
+    if (!edit.noteId.valid() || !seen.insert(edit.noteId).second) {
+      return core::failure(core::ErrorCode::InvalidArgument,
+                           "Note performance edit IDs must be valid and unique");
+    }
+    const auto location = findMutableNoteLocation(project, edit.noteId);
+    if (location.note == nullptr || location.region == nullptr) {
+      return core::failure(core::ErrorCode::NotFound,
+                           "Note performance target was not found",
+                           edit.noteId.toString());
+    }
+    const auto lyricId = after ? edit.afterLyricTokenId
+                               : edit.beforeLyricTokenId;
+    if (!lyricId.valid() || location.region->findLyric(lyricId) == nullptr) {
+      return core::failure(core::ErrorCode::InvariantViolation,
+                           "Note performance edit references a missing lyric",
+                           edit.noteId.toString());
+    }
+  }
+  for (const auto& edit : edits_) {
+    const auto location = findMutableNoteLocation(project, edit.noteId);
+    const auto articulation = after ? edit.afterArticulation
+                                    : edit.beforeArticulation;
+    const auto slur = after ? edit.afterSlurGroup : edit.beforeSlurGroup;
+    const auto lyricId = after ? edit.afterLyricTokenId
+                               : edit.beforeLyricTokenId;
+    location.note->articulation = articulation;
+    location.note->slurGroup = slur;
+    location.note->lyricTokenId = lyricId;
+  }
+  return core::success();
+}
+
+core::Result<void> SetNotePerformanceCommand::apply(domain::Project& project) {
+  return set(project, true);
+}
+
+core::Result<void> SetNotePerformanceCommand::revert(domain::Project& project) {
   return set(project, false);
 }
 

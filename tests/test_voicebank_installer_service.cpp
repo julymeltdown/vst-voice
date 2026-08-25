@@ -105,7 +105,7 @@ TEST_CASE("voicebank_installer_service_exact_reinstall_is_idempotent") {
         firstReceipt);
 }
 
-TEST_CASE("voicebank_installer_service_requires_replace_and_different_content") {
+TEST_CASE("voicebank_installer_service_rejects_same_version_content_collision") {
   const auto root = seam::test::support::temporaryDirectory("u3-replace");
   auto key = seam::distribution::generateSigningKeyPair();
   CHECK(key);
@@ -132,10 +132,10 @@ TEST_CASE("voicebank_installer_service_requires_replace_and_different_content") 
   const auto replaced = installer.install(request(
       packageB, key.value().publicKey,
       seam::authoring::ExistingVoicebankDecision::Replace));
-  CHECK(replaced);
-  CHECK(replaced.value().contentHash != first.value().contentHash);
+  CHECK(!replaced);
+  CHECK(replaced.error().code == seam::core::ErrorCode::Conflict);
   CHECK(session.candidates().size() == 1U);
-  CHECK(session.candidates().front().contentHash == replaced.value().contentHash);
+  CHECK(session.candidates().front().contentHash == first.value().contentHash);
 }
 
 TEST_CASE("voicebank_installer_service_rejects_untrusted_and_tampered_packages") {

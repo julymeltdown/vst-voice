@@ -30,13 +30,12 @@ The evidence and packaging tools are implemented; the external work is not.
 
 ## Immediate product-critical milestone — Usable Standalone Alpha
 
-Before adding more plugin formats or release-policy phases, the project must:
+The code-owned standalone milestone is implemented. Before the canonical
+Usable Alpha gate can pass, the project must now:
 
-1. extract a shared `seam-authoring-runtime` from the CLAP editor;
-2. replace standalone `makeDemoProject()` and `makeDemoTimeline()` with user projects and `ProductionProjectRenderer` output;
-3. expose New/Open/Save/Save As/Autosave Recovery/Recent Projects;
-4. expose installed voicebank selection, installation, diagnostics, and exact relink;
-5. expose final master and stem WAV export;
-6. ship a legally distributable voicebank with real phonetic coverage;
-7. build and validate an Apple Silicon `.app`;
-8. pass the canonical `docs/product/USABLE_ALPHA_ACCEPTANCE.md` gate.
+1. ship a legally distributable voicebank with real phonetic coverage;
+2. complete the Finder-launched Apple Silicon UI journey against that bank;
+3. record reopen, autosave recovery, and master/stem export listening evidence;
+4. verify exported WAVs in an external player;
+5. complete the 30-minute real-song stability session; and
+6. attach hash-bound evidence for all twenty rows in `docs/product/USABLE_ALPHA_ACCEPTANCE.md`.

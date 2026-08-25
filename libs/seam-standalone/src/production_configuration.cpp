@@ -104,9 +104,14 @@ core::Result<ProductionConfiguration> makeProductionConfiguration(
     result.physicalAudio = true;
     result.developmentTrustRoot.reset();
   } else if (input.mode == ProductionRuntimeMode::DeterministicTest) {
+    result.bindFirstAvailableVoicebank = input.allowDevelopmentVoicebanks;
     result.forceThreadedAudio = true;
     result.startPaused = true;
     result.physicalAudio = false;
+  } else {
+    result.bindFirstAvailableVoicebank = input.allowDevelopmentVoicebanks;
+    result.forceThreadedAudio = false;
+    result.physicalAudio = true;
   }
   return result;
 }

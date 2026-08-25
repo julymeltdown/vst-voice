@@ -183,6 +183,30 @@ TEST_CASE("authoring_render_coordinator_matches_direct_production_renderer") {
   CHECK(published->result.activeUnitPlan == direct.value().activeUnitPlan);
 }
 
+TEST_CASE("authoring_render_coordinator_publishes_command_impact") {
+  auto fixture = makeRenderFixture();
+  seam::authoring::AuthoringRenderCoordinator coordinator{
+      uniqueTempRoot("render-coordinator-impact")};
+  seam::application::CommandImpact impact{
+      .scope = seam::application::CommandAudioImpact::PhraseAudio,
+      .regionIds = {fixture.regionId},
+  };
+
+  coordinator.submit(fixture.project, {fixture.source}, fixture.trackId,
+                     fixture.regionId, 43U, 48000U,
+                     seam::rendering::RenderQuality::Preview, false, impact);
+  const auto progress = waitForTerminal(coordinator, 43U);
+  CHECK(progress.state == seam::authoring::RenderState::Ready);
+  CHECK(progress.activeVoicebankId == fixture.source.manifest.id);
+  CHECK(progress.activeVoicebankVersion == fixture.source.manifest.version);
+  const auto published = coordinator.acquire();
+  CHECK(published);
+  CHECK(published->impact.scope ==
+        seam::application::CommandAudioImpact::PhraseAudio);
+  CHECK(published->impact.regionIds.size() == 1U);
+  CHECK(published->impact.regionIds.front() == fixture.regionId);
+}
+
 TEST_CASE("authoring_render_coordinator_newer_revision_prevents_old_publication") {
   auto fixture = makeRenderFixture();
   std::mutex gateMutex;
@@ -222,6 +246,226 @@ TEST_CASE("authoring_render_coordinator_newer_revision_prevents_old_publication"
   CHECK(stats.submitted == 2U);
   CHECK(stats.completed == 1U);
   CHECK(stats.cancelled + stats.stale >= 1U);
+}
+
+TEST_CASE("authoring_render_coordinator_keeps_stale_audibility_while_rendering") {
+  auto fixture = makeRenderFixture();
+  std::mutex gateMutex;
+  std::condition_variable_any gateCondition;
+  bool entered = false;
+  bool release = false;
+  seam::authoring::RenderCoordinatorHooks hooks;
+  hooks.beforeRender = [&](std::uint64_t revision, std::stop_token token) {
+    if (revision != 91U) return;
+    std::unique_lock lock(gateMutex);
+    entered = true;
+    gateCondition.notify_all();
+    static_cast<void>(
+        gateCondition.wait(lock, token, [&] { return release; }));
+  };
+  seam::authoring::AuthoringRenderCoordinator coordinator{
+      uniqueTempRoot("render-coordinator-stale-audibility"), std::move(hooks)};
+  coordinator.submit(fixture.project, {fixture.source}, fixture.trackId,
+                     fixture.regionId, 90U, 48000U,
+                     seam::rendering::RenderQuality::Preview, true);
+  CHECK(waitForTerminal(coordinator, 90U).state ==
+        seam::authoring::RenderState::Ready);
+  coordinator.submit(fixture.project, {fixture.source}, fixture.trackId,
+                     fixture.regionId, 91U, 48000U,
+                     seam::rendering::RenderQuality::Preview, true);
+  {
+    std::unique_lock lock(gateMutex);
+    CHECK(gateCondition.wait_for(lock, std::chrono::seconds{2},
+                                 [&] { return entered; }));
+  }
+  const auto rendering = coordinator.progress();
+  CHECK(rendering.state == seam::authoring::RenderState::Rendering);
+  CHECK(rendering.audibleAudioStale);
+  CHECK(rendering.requestedRevision == 91U);
+  CHECK(rendering.publishedRevision == 90U);
+  {
+    std::lock_guard lock(gateMutex);
+    release = true;
+    gateCondition.notify_all();
+  }
+  const auto ready = waitForTerminal(coordinator, 91U);
+  CHECK(ready.state == seam::authoring::RenderState::Ready);
+  CHECK(!ready.audibleAudioStale);
+}
+
+TEST_CASE("five_minute_stereo_pcm_copies_share_one_allocation") {
+  constexpr std::size_t sampleCount = 5U * 60U * 48000U * 2U;
+  seam::rendering::SharedPcmBuffer pcm;
+  pcm.assign(sampleCount, 0.0F);
+  const auto first = pcm;
+  const auto second = first;
+  CHECK(pcm.size() == sampleCount);
+  CHECK(pcm.allocatedBytes() == sampleCount * sizeof(float));
+  CHECK(first.storageIdentity() == pcm.storageIdentity());
+  CHECK(second.storageIdentity() == pcm.storageIdentity());
+}
+
+TEST_CASE("authoring_render_coordinator_orders_same_revision_publications") {
+  auto fixture = makeRenderFixture();
+  std::mutex gateMutex;
+  std::condition_variable_any gateCondition;
+  bool firstEntered = false;
+  bool release = false;
+  std::size_t publicationCalls = 0U;
+
+  seam::authoring::RenderCoordinatorHooks hooks;
+  hooks.beforePublication = [&](std::uint64_t revision, std::stop_token) {
+    if (revision != 301U) return;
+    std::unique_lock lock(gateMutex);
+    ++publicationCalls;
+    if (publicationCalls != 1U) return;
+    firstEntered = true;
+    gateCondition.notify_all();
+    static_cast<void>(gateCondition.wait(lock, [&] { return release; }));
+  };
+  seam::authoring::AuthoringRenderCoordinator coordinator{
+      uniqueTempRoot("render-coordinator-same-revision"), std::move(hooks)};
+
+  coordinator.submit(fixture.project, {fixture.source}, fixture.trackId,
+                     fixture.regionId, 301U, 48000U,
+                     seam::rendering::RenderQuality::Preview, true);
+  {
+    std::unique_lock lock(gateMutex);
+    CHECK(gateCondition.wait_for(lock, std::chrono::seconds{2},
+                                 [&] { return firstEntered; }));
+  }
+  coordinator.submit(fixture.project, {fixture.source}, fixture.trackId,
+                     fixture.regionId, 301U, 48000U,
+                     seam::rendering::RenderQuality::Final, true);
+  const auto replacementProgress = coordinator.progress();
+  CHECK(replacementProgress.requestedQuality ==
+        seam::rendering::RenderQuality::Final);
+  CHECK(replacementProgress.publishedQuality ==
+        seam::rendering::RenderQuality::Preview);
+  {
+    std::lock_guard lock(gateMutex);
+    release = true;
+    gateCondition.notify_all();
+  }
+
+  const auto deadline = std::chrono::steady_clock::now() +
+                        std::chrono::seconds{20};
+  while (std::chrono::steady_clock::now() < deadline) {
+    const auto progress = coordinator.progress();
+    std::lock_guard lock(gateMutex);
+    if (publicationCalls >= 2U && progress.state == seam::authoring::RenderState::Ready &&
+        coordinator.stats().completed >= 1U) {
+      break;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds{5});
+  }
+
+  const auto published = coordinator.acquire();
+  CHECK(published);
+  CHECK(published->quality == seam::rendering::RenderQuality::Final);
+  const auto stats = coordinator.stats();
+  CHECK(stats.completed == 1U);
+  CHECK(stats.stale >= 1U);
+}
+
+TEST_CASE("authoring_render_coordinator_cancel_invalidates_unpublished_audio") {
+  auto fixture = makeRenderFixture();
+  std::mutex gateMutex;
+  std::condition_variable_any gateCondition;
+  bool entered = false;
+  bool release = false;
+  bool exited = false;
+
+  seam::authoring::RenderCoordinatorHooks hooks;
+  hooks.beforePublication = [&](std::uint64_t revision, std::stop_token) {
+    if (revision != 302U) return;
+    std::unique_lock lock(gateMutex);
+    entered = true;
+    gateCondition.notify_all();
+    static_cast<void>(gateCondition.wait(lock, [&] { return release; }));
+    exited = true;
+    gateCondition.notify_all();
+  };
+  seam::authoring::AuthoringRenderCoordinator coordinator{
+      uniqueTempRoot("render-coordinator-cancel-publication"),
+      std::move(hooks)};
+  coordinator.submit(fixture.project, {fixture.source}, fixture.trackId,
+                     fixture.regionId, 302U, 48000U,
+                     seam::rendering::RenderQuality::Preview, true);
+  {
+    std::unique_lock lock(gateMutex);
+    CHECK(gateCondition.wait_for(lock, std::chrono::seconds{2},
+                                 [&] { return entered; }));
+  }
+  coordinator.cancel();
+  {
+    std::lock_guard lock(gateMutex);
+    release = true;
+    gateCondition.notify_all();
+  }
+  const auto deadline = std::chrono::steady_clock::now() +
+                        std::chrono::seconds{20};
+  while (std::chrono::steady_clock::now() < deadline) {
+    bool finished = false;
+    {
+      std::lock_guard lock(gateMutex);
+      finished = exited;
+    }
+    if (finished) {
+      break;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds{5});
+  }
+  const auto published = coordinator.acquire();
+  CHECK(published);
+  CHECK(published->state == seam::authoring::RenderState::Idle);
+  CHECK(coordinator.stats().completed == 0U);
+  CHECK(coordinator.progress().state == seam::authoring::RenderState::Cancelled);
+}
+
+TEST_CASE("authoring_render_coordinator_ignores_lower_revision_submission") {
+  auto fixture = makeRenderFixture();
+  std::mutex gateMutex;
+  std::condition_variable_any gateCondition;
+  bool entered = false;
+  bool release = false;
+
+  seam::authoring::RenderCoordinatorHooks hooks;
+  hooks.beforeRender = [&](std::uint64_t revision, std::stop_token token) {
+    if (revision != 202U) return;
+    std::unique_lock lock(gateMutex);
+    entered = true;
+    gateCondition.notify_all();
+    static_cast<void>(gateCondition.wait(lock, token, [&] { return release; }));
+  };
+  seam::authoring::AuthoringRenderCoordinator coordinator{
+      uniqueTempRoot("render-coordinator-revision-order"), std::move(hooks)};
+
+  coordinator.submit(fixture.project, {fixture.source}, fixture.trackId,
+                     fixture.regionId, 202U, 48000U,
+                     seam::rendering::RenderQuality::Preview, true);
+  {
+    std::unique_lock lock(gateMutex);
+    CHECK(gateCondition.wait_for(lock, std::chrono::seconds{2},
+                                 [&] { return entered; }));
+  }
+  const auto submitted = coordinator.stats().submitted;
+  coordinator.submit(fixture.project, {fixture.source}, fixture.trackId,
+                     fixture.regionId, 201U, 48000U,
+                     seam::rendering::RenderQuality::Preview, true);
+  CHECK(coordinator.stats().submitted == submitted);
+  {
+    std::lock_guard lock(gateMutex);
+    release = true;
+    gateCondition.notify_all();
+  }
+
+  const auto progress = waitForTerminal(coordinator, 202U);
+  CHECK(progress.state == seam::authoring::RenderState::Ready);
+  CHECK(progress.publishedRevision == 202U);
+  const auto published = coordinator.acquire();
+  CHECK(published);
+  CHECK(published->projectRevision == 202U);
 }
 
 TEST_CASE("authoring_render_coordinator_cancellation_is_not_failure") {
@@ -283,6 +527,63 @@ TEST_CASE("authoring_render_coordinator_publishes_voicebank_failures_as_silence"
   CHECK(mismatched->failure ==
         seam::authoring::RenderFailureKind::VoicebankContentMismatch);
   CHECK(mismatched->result.interleaved.empty());
+}
+
+TEST_CASE("authoring_render_coordinator_failed_render_preserves_previous_audio") {
+  auto fixture = makeRenderFixture();
+  seam::authoring::AuthoringRenderCoordinator coordinator{
+      uniqueTempRoot("render-coordinator-failed-previous")};
+
+  coordinator.submit(fixture.project, {fixture.source}, fixture.trackId,
+                     fixture.regionId, 85U, 48000U,
+                     seam::rendering::RenderQuality::Preview);
+  CHECK(waitForTerminal(coordinator, 85U).state ==
+        seam::authoring::RenderState::Ready);
+  auto previous = coordinator.acquire();
+  CHECK(previous);
+  const auto previousRevision = previous->projectRevision;
+  const auto previousPcm = previous->result.interleaved;
+  previous = {};
+
+  coordinator.submit(fixture.project, {}, fixture.trackId, fixture.regionId,
+                     86U, 48000U,
+                     seam::rendering::RenderQuality::Preview);
+  CHECK(waitForTerminal(coordinator, 86U).state ==
+        seam::authoring::RenderState::Failed);
+  const auto current = coordinator.acquire();
+  CHECK(current);
+  CHECK(current->state == seam::authoring::RenderState::Ready);
+  CHECK(current->projectRevision == previousRevision);
+  CHECK(current->result.interleaved == previousPcm);
+}
+
+TEST_CASE("authoring_render_coordinator_publication_busy_keeps_context") {
+  auto fixture = makeRenderFixture();
+  seam::authoring::AuthoringRenderCoordinator coordinator{
+      uniqueTempRoot("render-coordinator-publication-busy")};
+  std::vector<seam::authoring::RealtimeProjectAudioPublication::ReadHandle>
+      heldReaders;
+  heldReaders.push_back(coordinator.acquire());
+  CHECK(heldReaders.front());
+
+  for (const auto revision : {131U, 132U}) {
+    coordinator.submit(fixture.project, {fixture.source}, fixture.trackId,
+                       fixture.regionId, revision, 48000U,
+                       seam::rendering::RenderQuality::Preview, true);
+    CHECK(waitForTerminal(coordinator, revision).state ==
+          seam::authoring::RenderState::Ready);
+    heldReaders.push_back(coordinator.acquire());
+    CHECK(heldReaders.back());
+  }
+
+  coordinator.submit(fixture.project, {fixture.source}, fixture.trackId,
+                     fixture.regionId, 133U, 48000U,
+                     seam::rendering::RenderQuality::Preview, true);
+  const auto progress = waitForTerminal(coordinator, 133U);
+  CHECK(progress.state == seam::authoring::RenderState::Failed);
+  CHECK(progress.failure == seam::authoring::RenderFailureKind::PublicationBusy);
+  CHECK(progress.activeVoicebankId == fixture.source.manifest.id);
+  CHECK(progress.activeVoicebankVersion == fixture.source.manifest.version);
 }
 
 TEST_CASE("authoring_render_coordinator_quality_changes_cache_identity") {

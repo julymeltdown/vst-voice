@@ -54,3 +54,24 @@ handles and fingerprints, never raw private-key paths or serialized secrets.
 The checked-in contract is intentionally blocked until target machines,
 signing/notarization credentials, rights evidence, host licenses, and raw
 archive records exist. No synthetic PASS record is included here.
+
+The engineering evidence surfaces are intentionally separate from release
+truth: `tools/external_beta/voicebank_gate.py` validates the non-official Beta
+bank dossier, `tools/voicebank-script-generator/main.py` generates the pinned
+recording inventory and operator CSV, `tools/external_beta/voicebank_production.py`
+validates immutable takes, QA, retakes, candidate exports, and bank locks,
+`tools/external_beta/install_evidence.py` validates clean-snapshot lifecycle
+records and exact installed-byte inventories; `scripts/run_external_beta_install_evidence.py`
+provides the fail-closed command surface,
+`scripts/run_external_beta_standalone_journey.py` validates the twenty-row
+standalone matrix, and `scripts/run_external_beta_product_soak.py` validates
+the 30-minute/120-minute resource and fault records. `tools/external_beta/host_evidence.py`
+and `scripts/run_external_beta_host_evidence.py` validate the nine required
+REAPER, Bitwig Studio, and Logic Pro installed-byte tuples. The checked-in templates
+remain BLOCKED until real target-machine, rights, signing, and raw evidence
+exists.
+
+`tools/external_beta/evidence_archive.py` and
+`tools/external_beta/evidence_audit.py` rehash a restored governed archive and
+verify candidate-root lineage before any READY decision. The operational order
+is documented in `docs/product/EXTERNAL_BETA_RUNBOOK.md`.

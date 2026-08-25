@@ -5,8 +5,10 @@ import argparse
 import json
 from pathlib import Path
 import sys
+from typing import Protocol, TypedDict
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "tools" / "phase13b"))
 
 from candidate_builder import build_candidate  # noqa: E402
@@ -15,14 +17,27 @@ from character_gate import evaluate_character_dossier  # noqa: E402
 from content_bundle import create_development_bundle  # noqa: E402
 from release_gate import evaluate_g5  # noqa: E402
 from voicebank_gate import evaluate_voicebank_dossier  # noqa: E402
+from tools.phase13a.release_identity import read_project_version  # noqa: E402
 
 
-def gate_payload(result) -> dict:
-    return {
-        "passed": result.passed,
-        "errors": result.errors,
-        "blockedTargets": result.blocked_targets,
-    }
+class GateEvaluation(Protocol):
+    passed: bool
+    errors: list[str]
+    blocked_targets: list[str]
+
+
+class GatePayload(TypedDict):
+    passed: bool
+    errors: list[str]
+    blockedTargets: list[str]
+
+
+def gate_payload(result: GateEvaluation) -> GatePayload:
+    return GatePayload(
+        passed=result.passed,
+        errors=result.errors,
+        blockedTargets=result.blocked_targets,
+    )
 
 
 def write_json(path: Path, payload: dict) -> None:
@@ -38,6 +53,7 @@ def main(argv=None) -> int:
     root = args.root.resolve()
     output = (args.output or (root / "out/phase13b")).resolve()
     output.mkdir(parents=True, exist_ok=True)
+    version = read_project_version(root)
 
     character_assets = generate_character_assets(
         root / "assets/character-01/source/canonical-lowpoly.jpeg",
@@ -65,19 +81,19 @@ def main(argv=None) -> int:
     write_json(release_path, release)
     write_json(output / "character-development-assets.json", character_assets)
 
-    bundle_path = output / "ProjectSEAM-0.13.1-content-development.zip"
+    bundle_path = output / f"ProjectSEAM-{version}-content-development.zip"
     bundle = create_development_bundle(
         bundle_path,
         {
             "demo-human-voicebank-public-domain": root / "assets/demo-human-voicebank-public-domain",
             "character-01-development": root / "assets/character-01",
         },
-        "0.13.1",
+        version,
     )
     bundle = {**bundle, "path": bundle_path.name}
     write_json(output / "development-content-bundle.json", bundle)
     candidate = build_candidate(
-        output=output / "ProjectSEAM-0.13.1-release-candidate-BLOCKED.zip",
+        output=output / f"ProjectSEAM-{version}-release-candidate-BLOCKED.zip",
         component_files={
             "voicebank-dossier.json": root / "docs/phase13b/official-voicebank-01-dossier.json",
             "character-dossier.json": root / "docs/phase13b/character-01-dossier.json",
@@ -85,7 +101,7 @@ def main(argv=None) -> int:
             "release-report.json": release_path,
         },
         release_result=release,
-        product_version="0.13.1",
+        product_version=version,
     )
     candidate = {**candidate, "path": Path(candidate["path"]).name}
     write_json(output / "blocked-release-candidate.json", candidate)

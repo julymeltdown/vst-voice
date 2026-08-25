@@ -81,7 +81,7 @@ TEST_CASE("project_document_mark_saved_clears_dirty_at_current_revision") {
   CHECK(document.execute(moveNote(fixture.noteId, seam::time::Tick{0},
                                   seam::time::Tick{240})));
   const auto path = std::filesystem::path{"/tmp/document-test.seam"};
-  document.markSaved(path);
+  document.markSaved(path, "durable-hash");
   CHECK(!document.dirty());
   CHECK(document.identity().projectPath == path);
   CHECK(document.identity().lastSavedRevision == document.session().revision());
@@ -94,7 +94,7 @@ TEST_CASE("project_document_undo_after_save_is_dirty_again") {
       std::move(fixture.project), seam::application::ProjectFactory{1000U});
   CHECK(document.execute(moveNote(fixture.noteId, seam::time::Tick{0},
                                   seam::time::Tick{240})));
-  document.markSaved("/tmp/document-test.seam");
+  document.markSaved("/tmp/document-test.seam", "durable-hash");
   CHECK(document.undo());
   CHECK(document.dirty());
   CHECK(document.session().project().findNote(fixture.noteId)->startTick ==

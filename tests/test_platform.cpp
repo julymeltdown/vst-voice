@@ -50,6 +50,27 @@ TEST_CASE("ring buffer audio processor delivers callback audio and accounts unde
   CHECK(stats.underflowFrames == 4);
 }
 
+TEST_CASE("ring buffer audio processor does not count reset zero-fill as underflow") {
+  seam::rendering::SpscAudioRingBuffer ring{16};
+  const std::array<float, 4> source{0.2F, -0.4F, 0.6F, -0.8F};
+  CHECK(ring.write(source) == source.size());
+  const auto resetEpoch = ring.requestConsumerReset();
+  seam::platform::RingBufferAudioProcessor processor{ring};
+  seam::platform::AudioCallbackSimulator simulator{48000.0, 4};
+
+  simulator.run(processor, 1);
+  CHECK(ring.resetAcknowledged(resetEpoch));
+  auto stats = processor.stats();
+  CHECK(stats.deliveredFrames == 0U);
+  CHECK(stats.underflowFrames == 0U);
+  CHECK(stats.intentionalResetFrames == 4U);
+
+  simulator.run(processor, 1);
+  stats = processor.stats();
+  CHECK(stats.underflowFrames == 4U);
+  CHECK(stats.intentionalResetFrames == 4U);
+}
+
 TEST_CASE("threaded audio input feeds recording session without allocation-sensitive overflow") {
   seam::platform::RecordingSession recording{48000U, 1U};
   auto input = seam::platform::createThreadedSilenceInputDevice();
@@ -81,5 +102,18 @@ TEST_CASE("threaded audio input feeds recording session without allocation-sensi
   CHECK(loaded);
   CHECK(loaded.value().sampleRate == 48000U);
   CHECK(loaded.value().channels == 1U);
+  CHECK(loaded.value().bitsPerSample == 16U);
   CHECK(loaded.value().frameCount() == recording.recordedFrames());
+
+  const auto productionPath = directory / "take-24bit.wav";
+  CHECK(recording.exportWav(
+      productionPath, seam::voicebank::WavSampleFormat::Pcm24));
+  const auto production = seam::voicebank::readWav(productionPath);
+  CHECK(production);
+  CHECK(production.value().bitsPerSample == 24U);
+  CHECK(!recording.exportWav(
+      productionPath, seam::voicebank::WavSampleFormat::Pcm24, false));
+  const auto preserved = seam::voicebank::readWav(productionPath);
+  CHECK(preserved);
+  CHECK(preserved.value().bitsPerSample == 24U);
 }

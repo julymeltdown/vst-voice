@@ -5,6 +5,7 @@
 #include "seam/ui/piano_roll_model.hpp"
 
 #include <optional>
+#include <utility>
 #include <string>
 #include <vector>
 
@@ -30,6 +31,8 @@ public:
     return visuals_;
   }
   [[nodiscard]] std::optional<domain::PhonemeKey> hitTest(Point point) const;
+  [[nodiscard]] std::optional<std::pair<domain::PhonemeKey, bool>>
+  hitTestBoundary(Point point, double tolerance = 8.0) const;
 
 private:
   std::vector<PhonemeVisual> visuals_;

@@ -5,7 +5,6 @@
 
 #include <atomic>
 #include <memory>
-#include <algorithm>
 #include <chrono>
 #include <clocale>
 #include <filesystem>
@@ -20,6 +19,9 @@ struct Options final {
   std::filesystem::path manifest;
   std::optional<std::filesystem::path> screenshot;
   std::chrono::milliseconds autoClose{0};
+  std::chrono::milliseconds recordDuration{0};
+  std::uint32_t windowWidth{1440U};
+  std::uint32_t windowHeight{900U};
   bool forceSyntheticInput{false};
 };
 
@@ -27,6 +29,9 @@ void usage() {
   std::cout << "Usage: seam_voicebank_studio_native --manifest PATH [options]\n"
             << "  --screenshot PATH        write final PPM screenshot\n"
             << "  --auto-close-ms N        close after N milliseconds\n"
+            << "  --record-ms N            record input and close after N milliseconds\n"
+            << "  --window-width N         physical window width from 320 to 8192\n"
+            << "  --window-height N        physical window height from 240 to 8192\n"
             << "  --force-synthetic-input  skip physical microphone capture\n";
 }
 
@@ -46,8 +51,36 @@ std::optional<Options> parse(int argc, char** argv) {
       options.screenshot = std::filesystem::path{argv[++index]};
       continue;
     }
+    if ((arg == "--window-width" || arg == "--window-height") &&
+        index + 1 < argc) {
+      try {
+        const auto value = std::stoul(argv[++index]);
+        if (value < (arg == "--window-width" ? 320U : 240U) ||
+            value > 8192U) {
+          return std::nullopt;
+        }
+        if (arg == "--window-width") {
+          options.windowWidth = static_cast<std::uint32_t>(value);
+        } else {
+          options.windowHeight = static_cast<std::uint32_t>(value);
+        }
+      } catch (...) {
+        return std::nullopt;
+      }
+      continue;
+    }
     if (arg == "--force-synthetic-input") {
       options.forceSyntheticInput = true;
+      continue;
+    }
+    if (arg == "--record-ms" && index + 1 < argc) {
+      try {
+        const auto value = std::stoll(argv[++index]);
+        if (value < 50 || value > 300000) return std::nullopt;
+        options.recordDuration = std::chrono::milliseconds{value};
+      } catch (...) {
+        return std::nullopt;
+      }
       continue;
     }
     if (arg == "--auto-close-ms" && index + 1 < argc) {
@@ -63,7 +96,11 @@ std::optional<Options> parse(int argc, char** argv) {
     std::cerr << "Unknown argument: " << arg << '\n';
     return std::nullopt;
   }
-  if (options.manifest.empty()) return std::nullopt;
+  if (options.manifest.empty() ||
+      (options.recordDuration.count() > 0 &&
+       options.autoClose.count() > 0)) {
+    return std::nullopt;
+  }
   return options;
 }
 
@@ -72,7 +109,9 @@ public:
   explicit VoicebankStudioApp(bool forceSyntheticInput)
       : forceSyntheticInput_(forceSyntheticInput), recording_(48000U, 300U) {}
 
-  ~VoicebankStudioApp() override { stopRecording(); }
+  ~VoicebankStudioApp() override {
+    static_cast<void>(stopRecording());
+  }
 
   seam::core::Result<void> open(const std::filesystem::path& manifest) {
     auto loaded = controller_.openManifest(manifest);
@@ -142,7 +181,9 @@ public:
                event.modifiers.primaryShortcut()) {
       record(controller_.save());
     } else if (event.key == seam::native_ui::NativeKey::R) {
-      if (recording_.armed()) stopRecording(); else startRecording();
+      record(recording_.armed() || recording_.recordedFrames() > 0U
+                 ? stopRecording()
+                 : startRecording());
     }
     repaint();
   }
@@ -155,6 +196,80 @@ public:
   [[nodiscard]] const std::string& lastError() const noexcept { return lastError_; }
   [[nodiscard]] const std::filesystem::path& lastRecording() const noexcept {
     return lastRecording_;
+  }
+  [[nodiscard]] std::size_t lastRecordedFrames() const noexcept {
+    return lastRecordedFrames_;
+  }
+  [[nodiscard]] seam::platform::AudioInputDeviceInfo inputInfo() const {
+    return input_ == nullptr ? seam::platform::AudioInputDeviceInfo{}
+                             : input_->info();
+  }
+  [[nodiscard]] seam::platform::AudioInputDeviceStats inputStats() const noexcept {
+    return input_ == nullptr ? seam::platform::AudioInputDeviceStats{}
+                             : input_->stats();
+  }
+
+  seam::core::Result<void> startRecording() {
+    if (input_ == nullptr) {
+      return seam::core::failure(seam::core::ErrorCode::InvalidState,
+                                 "Voicebank Studio input is unavailable");
+    }
+    const auto armed = recording_.arm();
+    if (!armed) return armed;
+    lastRecordedFrames_ = 0U;
+    lastRecording_.clear();
+    const auto started = input_->start();
+    if (!started) {
+      recording_.stop();
+      return started;
+    }
+    return seam::core::success();
+  }
+
+  seam::core::Result<void> stopRecording() {
+    if (input_ != nullptr) input_->stop();
+    if (!recording_.armed() && recording_.recordedFrames() == 0U) {
+      return seam::core::success();
+    }
+    recording_.stop();
+    const auto frames = recording_.recordedFrames();
+    if (frames == 0U) return seam::core::success();
+    lastRecordedFrames_ = frames;
+    std::error_code error;
+    auto directory = controller_.manifestPath().parent_path() / "recordings";
+    std::filesystem::create_directories(directory, error);
+    if (error) {
+      return seam::core::failure(seam::core::ErrorCode::IoError,
+                                 "Unable to create recording directory",
+                                 error.message());
+    }
+    const auto directoryStatus = std::filesystem::symlink_status(directory, error);
+    if (error || std::filesystem::is_symlink(directoryStatus) ||
+        !std::filesystem::is_directory(directoryStatus)) {
+      return seam::core::failure(
+          seam::core::ErrorCode::Conflict,
+          "Recording directory is not a real directory", directory.string());
+    }
+    auto name = controller_.selectedUnit() == nullptr
+                    ? std::string{"take"}
+                    : controller_.selectedUnit()->id;
+    const auto destination = seam::native_ui::nextVoicebankRecordingPath(
+        directory, name);
+    if (!destination) return seam::core::Result<void>{destination.error()};
+    lastRecording_ = destination.value();
+    const auto saved = recording_.exportWav(
+        lastRecording_, seam::voicebank::WavSampleFormat::Pcm24, false);
+    if (!saved) return saved;
+    const auto expectedRootMidi = controller_.selectedUnit() == nullptr
+                                      ? 60
+                                      : controller_.selectedUnit()->rootMidi;
+    const auto inspected = controller_.inspectTake(
+        lastRecording_, expectedRootMidi);
+    if (!inspected) return inspected;
+    const auto persisted = controller_.persistTakeInspection(lastRecording_);
+    if (!persisted) return seam::core::Result<void>{persisted.error()};
+    recording_.clear();
+    return seam::core::success();
   }
 
 private:
@@ -181,43 +296,6 @@ private:
     return seam::core::success();
   }
 
-  void startRecording() noexcept {
-    if (input_ == nullptr) return;
-    const auto armed = recording_.arm();
-    if (!armed) {
-      lastError_ = armed.error().message;
-      return;
-    }
-    const auto started = input_->start();
-    if (!started) {
-      recording_.stop();
-      lastError_ = started.error().message;
-    }
-  }
-
-  void stopRecording() noexcept {
-    if (input_ != nullptr) input_->stop();
-    if (!recording_.armed() && recording_.recordedFrames() == 0U) return;
-    recording_.stop();
-    if (recording_.recordedFrames() == 0U) return;
-    std::error_code error;
-    auto directory = controller_.manifestPath().parent_path() / "recordings";
-    std::filesystem::create_directories(directory, error);
-    if (error) {
-      lastError_ = error.message();
-      return;
-    }
-    auto name = controller_.selectedUnit() == nullptr
-                    ? std::string{"take"}
-                    : controller_.selectedUnit()->id;
-    std::replace(name.begin(), name.end(), '/', '_');
-    std::replace(name.begin(), name.end(), ':', '_');
-    lastRecording_ = directory / (name + "-recorded.wav");
-    const auto saved = recording_.exportWav(lastRecording_);
-    if (!saved) lastError_ = saved.error().message;
-    recording_.clear();
-  }
-
   void repaint() noexcept {
     if (window_ != nullptr) window_->requestRepaint();
   }
@@ -236,6 +314,7 @@ private:
   seam::native_ui::INativeWindow* window_{nullptr};
   std::string lastError_;
   std::filesystem::path lastRecording_;
+  std::size_t lastRecordedFrames_{0U};
 };
 
 }  // namespace
@@ -261,15 +340,46 @@ int main(int argc, char** argv) {
   app.setWindow(*window);
   const auto opened = window->open(seam::native_ui::NativeWindowConfig{
       .title = "Project SEAM / Voicebank Studio",
-      .width = 1440U,
-      .height = 900U,
+      .width = options->windowWidth,
+      .height = options->windowHeight,
       .scale = 1.0,
-      .autoCloseAfter = options->autoClose,
+      .minimumWidth = 720U,
+      .minimumHeight = 520U,
+      .autoCloseAfter = options->recordDuration.count() > 0
+                            ? options->recordDuration
+                            : options->autoClose,
       .screenshotPath = options->screenshot,
   }, app);
   if (!opened) {
     std::cerr << "Native Voicebank Studio unavailable: " << opened.error().message << '\n';
     return 4;
   }
-  return window->run();
+  if (options->recordDuration.count() > 0) {
+    const auto started = app.startRecording();
+    if (!started) {
+      std::cerr << "Voicebank Studio recording failed: "
+                << started.error().message << '\n';
+      return 5;
+    }
+  }
+  const auto result = window->run();
+  const auto stopped = app.stopRecording();
+  const auto info = app.inputInfo();
+  const auto stats = app.inputStats();
+  std::cout << "input_backend=" << info.backend << '\n'
+            << "input_physical=" << (info.physical ? "true" : "false") << '\n'
+            << "input_callbacks=" << stats.callbacks << '\n'
+            << "input_frames=" << stats.frames << '\n'
+            << "input_read_failures=" << stats.readFailures << '\n'
+            << "recorded_frames=" << app.lastRecordedFrames() << '\n'
+            << "recorded_wav=" << app.lastRecording().string() << '\n';
+  if (!stopped) {
+    std::cerr << "Voicebank Studio recording failed: "
+              << stopped.error().message << '\n';
+    return 5;
+  }
+  if (!app.lastError().empty()) {
+    std::cerr << "last_studio_error=" << app.lastError() << '\n';
+  }
+  return result;
 }

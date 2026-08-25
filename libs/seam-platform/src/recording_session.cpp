@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <limits>
+#include <system_error>
 
 namespace seam::platform {
 
@@ -64,13 +65,29 @@ std::span<const float> RecordingSession::samples() const noexcept {
 }
 
 core::Result<void> RecordingSession::exportWav(
-    const std::filesystem::path& path) const {
+    const std::filesystem::path& path,
+    voicebank::WavSampleFormat format, bool replaceExisting) const {
   const auto data = samples();
   if (data.empty()) {
     return core::failure(core::ErrorCode::Conflict,
                          "Recording session contains no audio");
   }
-  return voicebank::writeMonoPcm16Wav(path, sampleRate_, data);
+  if (!replaceExisting) {
+    std::error_code error;
+    const auto status = std::filesystem::symlink_status(path, error);
+    if (error != std::errc::no_such_file_or_directory && error) {
+      return core::failure(core::ErrorCode::IoError,
+                           "Unable to inspect recording destination",
+                           error.message());
+    }
+    if (!error && status.type() != std::filesystem::file_type::not_found) {
+      return core::failure(core::ErrorCode::Conflict,
+                           "Recording destination already exists",
+                           path.string());
+    }
+  }
+  return voicebank::writeWav(
+      path, voicebank::WavOutputFormat{sampleRate_, 1U, format}, data);
 }
 
 }  // namespace seam::platform

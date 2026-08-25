@@ -1,6 +1,6 @@
 # Project SEAM Development Status
 
-**Date:** 2026-08-18
+**Date:** 2026-08-25
 **Branch policy:** `master` only
 **Current product gate:** **G1 Feature Alpha**
 
@@ -15,4 +15,4 @@ Content/IP release tooling is implemented. Official Voicebank 01 and Character 0
 
 ## Usable standalone product gate
 
-The canonical product-usability gate is `docs/product/USABLE_ALPHA_ACCEPTANCE.md`. The current native standalone remains a demo shell: it constructs a hard-coded project through `makeDemoProject()` and plays a sine-wave timeline through `makeDemoTimeline()` instead of publishing `ProductionProjectRenderer` output. Phase 12C, Phase 13A, and Phase 13B engineering gates do not prove standalone usability. The immediate product milestone is the shared authoring runtime and Usable Apple Silicon Standalone Alpha described by that contract.
+The canonical product-usability gate is `docs/product/USABLE_ALPHA_ACCEPTANCE.md`. The native standalone now uses the shared `AuthoringRuntime` and `ProductionProjectRenderer` for user-owned project content, exact voicebank resolution, transport, recovery, and WAV export; it is no longer a sine-wave demo shell. The gate remains `BLOCKED`: a rights-cleared production bank, Finder/Apple Silicon evidence, physical listening and external-player checks, and the real-song stability session must still be completed through the UI. Phase 12C, Phase 13A, and Phase 13B engineering gates do not substitute for that user journey.

@@ -20,6 +20,7 @@ inline constexpr std::uint64_t kMaximumSupportedWavBytes =
 struct AudioBuffer final {
   std::uint32_t sampleRate{0};
   std::uint16_t channels{0};
+  std::uint16_t bitsPerSample{0};
   std::vector<float> interleaved;
 
   [[nodiscard]] std::size_t frameCount() const noexcept {

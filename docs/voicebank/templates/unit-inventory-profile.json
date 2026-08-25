@@ -1,9 +1,17 @@
 {
   "template": true,
-  "language": "",
+  "language": "ja",
+  "profileId": "beta-ja-cvvc-v1",
+  "vowels": ["a", "i", "u", "e", "o"],
+  "consonantFamilies": ["k", "s", "t"],
+  "specialPhones": ["N", "R", "pau", "br", "cl", "glottal"],
+  "includeKinds": ["sustain", "release", "breath", "glottal-attack", "special", "cv", "vc", "vv"],
   "minimumEnabledUnits": 0,
   "minimumPitchLayers": 3,
   "requiredKinds": {},
   "requiredStyles": ["original"],
-  "requiredPhones": []
+  "requiredPhones": [],
+  "generatorVersion": "seam-beta-inventory-1.0.0",
+  "requiredCoverage": [],
+  "rangeTest": {"method": "", "result": "NOT_RUN"}
 }

@@ -59,6 +59,9 @@ TEST_CASE("autosave_service_writes_snapshot_off_document_path_and_recovers_dirty
   auto fixture = makeFixture();
   seam::authoring::ProjectLifecycleService lifecycle;
   CHECK(lifecycle.saveAs(fixture.document, explicitPath));
+  const auto originalBytes =
+      seam::core::readTextFileLimited(explicitPath, 64ULL * 1024ULL * 1024ULL);
+  CHECK(originalBytes);
   CHECK(fixture.document.execute(move(fixture.noteId, seam::time::Tick{0},
                                       seam::time::Tick{240})));
 
@@ -85,10 +88,49 @@ TEST_CASE("autosave_service_writes_snapshot_off_document_path_and_recovers_dirty
   auto target = makeFixture();
   CHECK(service.recover(target.document, candidate));
   CHECK(target.document.dirty());
-  CHECK(target.document.identity().projectPath == explicitPath);
+  CHECK(!target.document.identity().projectPath.has_value());
+  CHECK(target.document.identity().recoveryOriginPath == explicitPath);
   CHECK(target.document.identity().autosavePath == candidate.autosavePath);
   CHECK(target.document.session().project() == fixture.document.session().project());
+  const auto ordinarySave = lifecycle.save(target.document);
+  CHECK(!ordinarySave);
+  CHECK(ordinarySave.error().code == seam::core::ErrorCode::InvalidState);
+  const auto preservedBytes =
+      seam::core::readTextFileLimited(explicitPath, 64ULL * 1024ULL * 1024ULL);
+  CHECK(preservedBytes);
+  CHECK(preservedBytes.value() == originalBytes.value());
   CHECK(std::filesystem::exists(explicitPath));
+}
+
+TEST_CASE("autosave_service_binds_lineage_to_noncanonical_durable_bytes") {
+  const auto root = seam::test::support::temporaryDirectory(
+      "autosave-noncanonical-lineage");
+  const auto projectPath = root / "song.seam";
+  auto source = makeFixture();
+  seam::authoring::ProjectLifecycleService lifecycle;
+  CHECK(lifecycle.saveAs(source.document, projectPath));
+  const auto canonical =
+      seam::core::readTextFileLimited(projectPath, 64ULL * 1024ULL * 1024ULL);
+  CHECK(canonical);
+  CHECK(seam::core::durableAtomicWriteText(
+      projectPath, "\n  " + canonical.value() + "\n"));
+
+  auto opened = makeFixture();
+  CHECK(lifecycle.open(opened.document, projectPath));
+  CHECK(opened.document.execute(
+      move(source.noteId, seam::time::Tick{0}, seam::time::Tick{240})));
+  seam::authoring::AutosaveService service({
+      .root = root / "autosaves",
+      .maximumGenerations = 5U,
+      .faultInjector = {},
+      .wallClock = {},
+  });
+  CHECK(service.request(opened.document));
+  CHECK(service.flush());
+  const auto candidates = service.discover();
+  CHECK(candidates);
+  CHECK(candidates.value().size() == 1U);
+  CHECK(candidates.value().front().recoverable);
 }
 
 TEST_CASE("autosave_service_triggers_at_command_and_interval_thresholds") {
@@ -222,4 +264,43 @@ TEST_CASE("autosave_service_detects_external_project_change_by_base_hash") {
   CHECK(!candidates.value().front().recoverable);
   CHECK(candidates.value().front().diagnostic.find("externally") !=
         std::string::npos);
+}
+
+TEST_CASE("autosave_service_rejects_symlinked_payloads") {
+  const auto root = seam::test::support::temporaryDirectory("autosave-symlink");
+  auto fixture = makeFixture();
+  CHECK(fixture.document.execute(move(fixture.noteId, seam::time::Tick{0},
+                                      seam::time::Tick{240})));
+  seam::authoring::AutosaveService service({
+      .root = root / "autosaves",
+      .maximumGenerations = 5U,
+      .faultInjector = {},
+      .wallClock = {},
+  });
+  CHECK(service.request(fixture.document));
+  CHECK(service.flush());
+  const auto before = service.discover();
+  CHECK(before);
+  CHECK(before.value().size() == 1U);
+  const auto payload = before.value().front().autosavePath;
+  const auto external = root / "external.seam.autosave";
+  std::error_code error;
+  std::filesystem::copy_file(
+      payload, external, std::filesystem::copy_options::overwrite_existing,
+      error);
+  CHECK(!error);
+  std::filesystem::remove(payload, error);
+  CHECK(!error);
+  std::filesystem::create_symlink(external, payload, error);
+  if (error) return;
+
+  const auto candidates = service.discover();
+  CHECK(candidates);
+  CHECK(candidates.value().size() == 1U);
+  CHECK(!candidates.value().front().recoverable);
+  CHECK(candidates.value().front().diagnostic.find("non-symlink") !=
+        std::string::npos);
+  const auto recovered = service.recover(fixture.document,
+                                         candidates.value().front());
+  CHECK(!recovered);
 }

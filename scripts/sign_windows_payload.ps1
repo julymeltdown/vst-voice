@@ -19,5 +19,7 @@ foreach ($target in $targets) {
   & signtool.exe verify /pa /all /v $target 2>&1 | Tee-Object -FilePath (Join-Path $EvidenceDirectory ((Split-Path $target -Leaf)+'.verify.log'))
   if ($LASTEXITCODE -ne 0) { throw "Signature verification failed: $target" }
 }
+python (Join-Path $PSScriptRoot 'refresh_phase13a_wrapper_manifests.py') $PayloadRoot --platform windows
+if ($LASTEXITCODE -ne 0) { throw 'Signed Windows wrapper manifest refresh failed' }
 @{schemaVersion=1;status='PASS';signedFiles=$targets;timestamped=$true} |
   ConvertTo-Json -Depth 5 | Set-Content (Join-Path $EvidenceDirectory 'result.json') -Encoding UTF8

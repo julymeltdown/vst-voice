@@ -5,6 +5,138 @@
 
 namespace seam::application {
 
+CommandImpact UpsertUnitSelectionOverrideCommand::impact() const {
+  return CommandImpact{
+      .scope = CommandAudioImpact::PhraseAudio,
+      .projectWide = false,
+      .trackIds = {},
+      .regionIds = {regionId_},
+      .noteIds = {after_.startKey.noteId},
+      .lyricIds = {},
+  };
+}
+
+CommandImpact RemoveUnitSelectionOverrideCommand::impact() const {
+  return CommandImpact{
+      .scope = CommandAudioImpact::PhraseAudio,
+      .projectWide = false,
+      .trackIds = {},
+      .regionIds = {regionId_},
+      .noteIds = {startKey_.noteId},
+      .lyricIds = {},
+  };
+}
+
+CommandImpact UpsertSeamOverrideCommand::impact() const {
+  return CommandImpact{
+      .scope = CommandAudioImpact::PhraseAudio,
+      .projectWide = false,
+      .trackIds = {},
+      .regionIds = {regionId_},
+      .noteIds = {after_.incomingStartKey.noteId},
+      .lyricIds = {},
+  };
+}
+
+CommandImpact RemoveSeamOverrideCommand::impact() const {
+  return CommandImpact{
+      .scope = CommandAudioImpact::PhraseAudio,
+      .projectWide = false,
+      .trackIds = {},
+      .regionIds = {regionId_},
+      .noteIds = {incomingStartKey_.noteId},
+      .lyricIds = {},
+  };
+}
+
+CommandImpact UpsertPitchAutomationPointCommand::impact() const {
+  return CommandImpact{
+      .scope = CommandAudioImpact::PhraseAudio,
+      .projectWide = false,
+      .trackIds = {},
+      .regionIds = {regionId_},
+      .noteIds = {},
+      .lyricIds = {},
+  };
+}
+
+CommandImpact RemovePitchAutomationPointCommand::impact() const {
+  return CommandImpact{
+      .scope = CommandAudioImpact::PhraseAudio,
+      .projectWide = false,
+      .trackIds = {},
+      .regionIds = {regionId_},
+      .noteIds = {},
+      .lyricIds = {},
+  };
+}
+
+CommandImpact SetTrackVoicebankCommand::impact() const {
+  return CommandImpact{
+      .scope = CommandAudioImpact::ProjectAudio,
+      .projectWide = false,
+      .trackIds = {trackId_},
+      .regionIds = {},
+      .noteIds = {},
+      .lyricIds = {},
+  };
+}
+
+CommandImpact SetTrackOutputRouteCommand::impact() const {
+  return CommandImpact{
+      .scope = CommandAudioImpact::TrackMix,
+      .projectWide = false,
+      .trackIds = {trackId_},
+      .regionIds = {},
+      .noteIds = {},
+      .lyricIds = {},
+  };
+}
+
+CommandImpact SetVocalTrackMixCommand::impact() const {
+  return CommandImpact{
+      .scope = CommandAudioImpact::TrackMix,
+      .projectWide = false,
+      .trackIds = {trackId_},
+      .regionIds = {},
+      .noteIds = {},
+      .lyricIds = {},
+  };
+}
+
+CommandImpact SetProjectRoutingCommand::impact() const {
+  return CommandImpact{
+      .scope = CommandAudioImpact::TrackMix,
+      .projectWide = true,
+      .trackIds = {},
+      .regionIds = {},
+      .noteIds = {},
+      .lyricIds = {},
+  };
+}
+
+CommandImpact SetHostStartOffsetCommand::impact() const {
+  return CommandImpact{
+      .scope = CommandAudioImpact::ProjectAudio,
+      .projectWide = true,
+      .trackIds = {},
+      .regionIds = {},
+      .noteIds = {},
+      .lyricIds = {},
+  };
+}
+
+CommandImpact ConfigureProjectOutputCommand::impact() const {
+  return CommandImpact{
+      .scope = CommandAudioImpact::TrackMix,
+      .projectWide = true,
+      .trackIds = {},
+      .regionIds = {},
+      .noteIds = {},
+      .lyricIds = {},
+  };
+}
+
 UpsertUnitSelectionOverrideCommand::UpsertUnitSelectionOverrideCommand(
     domain::RegionId regionId,
     domain::UnitSelectionOverride overrideValue)
@@ -336,6 +468,57 @@ core::Result<void> SetTrackVoicebankCommand::revert(domain::Project& project) {
   return core::success();
 }
 
+core::Result<void> SetTrackOutputRouteCommand::apply(domain::Project& project) {
+  const auto validation = after_.validate();
+  if (!validation) return validation;
+  const auto* bus = project.routing().findBus(after_.bus);
+  if (bus == nullptr || after_.matrix.sourceChannels != 1U ||
+      after_.matrix.destinationChannels != bus->channelCount) {
+    return core::failure(core::ErrorCode::InvalidArgument,
+                         "Track output route does not match its destination bus");
+  }
+  domain::TrackOutputRoute* route = nullptr;
+  if (auto* track = project.findVocalTrack(trackId_); track != nullptr) {
+    route = &track->outputRoute;
+  } else {
+    const auto iterator = std::find_if(
+        project.audioTracks().begin(), project.audioTracks().end(),
+        [this](const auto& candidate) { return candidate.id == trackId_; });
+    if (iterator != project.audioTracks().end()) route = &iterator->outputRoute;
+  }
+  if (route == nullptr) {
+    return core::failure(core::ErrorCode::NotFound,
+                         "Track output route target is missing",
+                         trackId_.toString());
+  }
+  if (!before_.has_value()) before_ = *route;
+  *route = after_;
+  return core::success();
+}
+
+core::Result<void> SetTrackOutputRouteCommand::revert(domain::Project& project) {
+  if (!before_.has_value()) {
+    return core::failure(core::ErrorCode::Conflict,
+                         "Track output route command has no captured state");
+  }
+  domain::TrackOutputRoute* route = nullptr;
+  if (auto* track = project.findVocalTrack(trackId_); track != nullptr) {
+    route = &track->outputRoute;
+  } else {
+    const auto iterator = std::find_if(
+        project.audioTracks().begin(), project.audioTracks().end(),
+        [this](const auto& candidate) { return candidate.id == trackId_; });
+    if (iterator != project.audioTracks().end()) route = &iterator->outputRoute;
+  }
+  if (route == nullptr) {
+    return core::failure(core::ErrorCode::NotFound,
+                         "Track output route target is missing",
+                         trackId_.toString());
+  }
+  *route = *before_;
+  return core::success();
+}
+
 }  // namespace seam::application
 
 namespace seam::application {
@@ -387,6 +570,72 @@ core::Result<void> SetVocalTrackMixCommand::revert(domain::Project& project) {
   if (track->outputRoute.matrix.sourceChannels == 1U &&
       track->outputRoute.matrix.destinationChannels == 2U) {
     track->outputRoute.matrix = domain::RoutingMatrix::monoToStereo(beforePan_);
+  }
+  return core::success();
+}
+
+CommandImpact SetAudioTrackMixCommand::impact() const {
+  return CommandImpact{
+      .scope = CommandAudioImpact::TrackMix,
+      .projectWide = false,
+      .trackIds = {trackId_},
+      .regionIds = {},
+      .noteIds = {},
+      .lyricIds = {},
+  };
+}
+
+core::Result<void> SetAudioTrackMixCommand::apply(domain::Project& project) {
+  const auto iterator = std::find_if(
+      project.audioTracks().begin(), project.audioTracks().end(),
+      [this](const auto& value) { return value.id == trackId_; });
+  if (iterator == project.audioTracks().end()) {
+    return core::failure(core::ErrorCode::NotFound,
+                         "Audio track mix target is missing");
+  }
+  if (!std::isfinite(afterGainDb_) || !std::isfinite(afterPan_) ||
+      afterGainDb_ < -120.0F || afterGainDb_ > 24.0F ||
+      afterPan_ < -1.0F || afterPan_ > 1.0F) {
+    return core::failure(core::ErrorCode::InvalidArgument,
+                         "Audio track mix values are invalid");
+  }
+  if (!captured_) {
+    beforeGainDb_ = iterator->gainDb;
+    beforePan_ = iterator->pan;
+    beforeMuted_ = iterator->muted;
+    beforeSolo_ = iterator->solo;
+    captured_ = true;
+  }
+  iterator->gainDb = afterGainDb_;
+  iterator->pan = afterPan_;
+  iterator->muted = afterMuted_;
+  iterator->solo = afterSolo_;
+  if (iterator->outputRoute.matrix.sourceChannels == 1U &&
+      iterator->outputRoute.matrix.destinationChannels == 2U) {
+    iterator->outputRoute.matrix = domain::RoutingMatrix::monoToStereo(afterPan_);
+  }
+  return core::success();
+}
+
+core::Result<void> SetAudioTrackMixCommand::revert(domain::Project& project) {
+  if (!captured_) {
+    return core::failure(core::ErrorCode::Conflict,
+                         "Audio track mix command has no captured state");
+  }
+  const auto iterator = std::find_if(
+      project.audioTracks().begin(), project.audioTracks().end(),
+      [this](const auto& value) { return value.id == trackId_; });
+  if (iterator == project.audioTracks().end()) {
+    return core::failure(core::ErrorCode::NotFound,
+                         "Audio track mix target is missing");
+  }
+  iterator->gainDb = beforeGainDb_;
+  iterator->pan = beforePan_;
+  iterator->muted = beforeMuted_;
+  iterator->solo = beforeSolo_;
+  if (iterator->outputRoute.matrix.sourceChannels == 1U &&
+      iterator->outputRoute.matrix.destinationChannels == 2U) {
+    iterator->outputRoute.matrix = domain::RoutingMatrix::monoToStereo(beforePan_);
   }
   return core::success();
 }

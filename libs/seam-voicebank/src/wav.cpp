@@ -9,6 +9,7 @@
 #include <fstream>
 #include <limits>
 #include <memory>
+#include <system_error>
 
 namespace seam::voicebank {
 namespace {
@@ -60,6 +61,36 @@ bool fourcc(const std::byte* data, std::string_view value) noexcept {
          std::to_integer<char>(data[1]) == value[1] &&
          std::to_integer<char>(data[2]) == value[2] &&
          std::to_integer<char>(data[3]) == value[3];
+}
+
+core::Result<void> validateWavPath(const std::filesystem::path& path,
+                                   bool allowMissing) {
+  if (path.empty()) {
+    return core::failure(core::ErrorCode::InvalidArgument,
+                         "WAV path is empty");
+  }
+  std::error_code error;
+  const auto status = std::filesystem::symlink_status(path, error);
+  if (error == std::errc::no_such_file_or_directory ||
+      status.type() == std::filesystem::file_type::not_found) {
+    return allowMissing
+               ? core::success()
+               : core::failure(core::ErrorCode::NotFound,
+                               "WAV file does not exist", path.string());
+  }
+  if (error) {
+    return core::failure(core::ErrorCode::IoError,
+                         "Unable to inspect WAV path", error.message());
+  }
+  if (status.type() == std::filesystem::file_type::symlink) {
+    return core::failure(core::ErrorCode::Conflict,
+                         "WAV path cannot be a symbolic link", path.string());
+  }
+  if (!std::filesystem::is_regular_file(status)) {
+    return core::failure(core::ErrorCode::IoError,
+                         "WAV path is not a regular file", path.string());
+  }
+  return core::success();
 }
 
 }  // namespace
@@ -176,6 +207,7 @@ core::Result<AudioBuffer> readWav(std::span<const std::byte> bytes,
   AudioBuffer result;
   result.sampleRate = sampleRate;
   result.channels = channels;
+  result.bitsPerSample = bitsPerSample;
   result.interleaved.resize(frameCount * static_cast<std::size_t>(channels));
 
   const auto sampleCount = result.interleaved.size();
@@ -185,7 +217,11 @@ core::Result<AudioBuffer> readWav(std::span<const std::byte> bytes,
     if (floatPcm) {
       const std::uint32_t raw = readU32(sample);
       std::memcpy(&value, &raw, sizeof(value));
-      if (!std::isfinite(value)) value = 0.0F;
+      if (!std::isfinite(value)) {
+        return core::failure<AudioBuffer>(
+            core::ErrorCode::ParseError,
+            "WAV Float32 payload contains a non-finite sample", source);
+      }
     } else if (bitsPerSample == 8U) {
       value = (static_cast<float>(std::to_integer<std::uint8_t>(*sample)) - 128.0F) /
               128.0F;
@@ -204,6 +240,8 @@ core::Result<AudioBuffer> readWav(std::span<const std::byte> bytes,
 }
 
 core::Result<AudioBuffer> readWav(const std::filesystem::path& path) {
+  const auto target = validateWavPath(path, false);
+  if (!target) return core::Result<AudioBuffer>{target.error()};
   auto bytes = core::readFileBytesLimited(path, kMaximumSupportedWavBytes);
   if (!bytes) return core::Result<AudioBuffer>{bytes.error()};
   return readWav(bytes.value(), path.string());
@@ -225,6 +263,10 @@ core::Result<std::unique_ptr<WavStreamWriter>> WavStreamWriter::create(
       format.channels == 0U || format.channels > 8U) {
     return core::failure<std::unique_ptr<WavStreamWriter>>(
         core::ErrorCode::InvalidArgument, "WAV output format is invalid");
+  }
+  const auto target = validateWavPath(path, true);
+  if (!target) {
+    return core::Result<std::unique_ptr<WavStreamWriter>>{target.error()};
   }
   std::error_code error;
   if (path.has_parent_path()) {
@@ -342,9 +384,10 @@ core::Result<void> WavStreamWriter::writeFrames(
                              bytesPerSample;
   const auto frameCount = static_cast<std::uint64_t>(
       interleaved.size() / static_cast<std::size_t>(format_.channels));
-  if (frameCount > (std::numeric_limits<std::uint32_t>::max() - 36ULL -
-                    dataBytes_) /
-                       bytesPerFrame) {
+  if (dataBytes_ > std::numeric_limits<std::uint32_t>::max() - 36ULL ||
+      frameCount >
+          (std::numeric_limits<std::uint32_t>::max() - 36ULL - dataBytes_) /
+              bytesPerFrame) {
     return core::failure(core::ErrorCode::Unsupported,
                          "WAV output is too large for RIFF");
   }
@@ -359,9 +402,11 @@ core::Result<void> WavStreamWriter::writeFrames(
 
 core::Result<void> WavStreamWriter::finalize() {
   if (finalized_) return core::success();
-  if (stream_ == nullptr || dataBytes_ > std::numeric_limits<std::uint32_t>::max() - 36ULL) {
+  if (stream_ == nullptr || framesWritten_ == 0U ||
+      dataBytes_ > std::numeric_limits<std::uint32_t>::max() - 36ULL) {
     return core::failure(core::ErrorCode::InvalidState,
-                         "WAV writer cannot be finalized");
+                         framesWritten_ == 0U ? "WAV writer cannot finalize an empty output"
+                                             : "WAV writer cannot be finalized");
   }
   stream_->seekp(4, std::ios::beg);
   writeU32(*stream_, static_cast<std::uint32_t>(36ULL + dataBytes_));

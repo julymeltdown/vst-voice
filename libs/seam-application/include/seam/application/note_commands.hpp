@@ -2,6 +2,7 @@
 
 #include "seam/application/command.hpp"
 
+#include <optional>
 #include <vector>
 
 namespace seam::application {
@@ -27,6 +28,10 @@ public:
   AddNoteCommand(domain::RegionId regionId, domain::LyricToken lyric, domain::Note note);
 
   [[nodiscard]] std::string_view name() const noexcept override { return "Add note"; }
+  [[nodiscard]] CommandAudioImpact audioImpact() const noexcept override {
+    return CommandAudioImpact::PhraseAudio;
+  }
+  [[nodiscard]] CommandImpact impact() const override;
   [[nodiscard]] core::Result<void> apply(domain::Project& project) override;
   [[nodiscard]] core::Result<void> revert(domain::Project& project) override;
 
@@ -42,6 +47,10 @@ public:
       : noteIds_(std::move(noteIds)) {}
 
   [[nodiscard]] std::string_view name() const noexcept override { return "Delete notes"; }
+  [[nodiscard]] CommandAudioImpact audioImpact() const noexcept override {
+    return CommandAudioImpact::PhraseAudio;
+  }
+  [[nodiscard]] CommandImpact impact() const override;
   [[nodiscard]] core::Result<void> apply(domain::Project& project) override;
   [[nodiscard]] core::Result<void> revert(domain::Project& project) override;
 
@@ -93,6 +102,10 @@ public:
   explicit MoveNotesCommand(std::vector<NoteMove> moves) : moves_(std::move(moves)) {}
 
   [[nodiscard]] std::string_view name() const noexcept override { return "Move notes"; }
+  [[nodiscard]] CommandAudioImpact audioImpact() const noexcept override {
+    return CommandAudioImpact::PhraseAudio;
+  }
+  [[nodiscard]] CommandImpact impact() const override;
   [[nodiscard]] core::Result<void> apply(domain::Project& project) override;
   [[nodiscard]] core::Result<void> revert(domain::Project& project) override;
 
@@ -107,12 +120,46 @@ public:
       : resizes_(std::move(resizes)) {}
 
   [[nodiscard]] std::string_view name() const noexcept override { return "Resize notes"; }
+  [[nodiscard]] CommandAudioImpact audioImpact() const noexcept override {
+    return CommandAudioImpact::PhraseAudio;
+  }
+  [[nodiscard]] CommandImpact impact() const override;
   [[nodiscard]] core::Result<void> apply(domain::Project& project) override;
   [[nodiscard]] core::Result<void> revert(domain::Project& project) override;
 
 private:
   [[nodiscard]] core::Result<void> set(domain::Project& project, bool after);
   std::vector<NoteResize> resizes_;
+};
+
+struct NotePerformanceEdit final {
+  domain::NoteId noteId;
+  domain::NoteArticulation beforeArticulation{domain::NoteArticulation::Normal};
+  domain::NoteArticulation afterArticulation{domain::NoteArticulation::Normal};
+  std::optional<std::uint64_t> beforeSlurGroup;
+  std::optional<std::uint64_t> afterSlurGroup;
+  domain::LyricTokenId beforeLyricTokenId;
+  domain::LyricTokenId afterLyricTokenId;
+};
+
+class SetNotePerformanceCommand final : public ICommand {
+public:
+  explicit SetNotePerformanceCommand(std::vector<NotePerformanceEdit> edits)
+      : edits_(std::move(edits)) {}
+
+  [[nodiscard]] std::string_view name() const noexcept override {
+    return "Edit note articulation";
+  }
+  [[nodiscard]] CommandAudioImpact audioImpact() const noexcept override {
+    return CommandAudioImpact::PhraseAudio;
+  }
+  [[nodiscard]] CommandImpact impact() const override;
+  [[nodiscard]] core::Result<void> apply(domain::Project& project) override;
+  [[nodiscard]] core::Result<void> revert(domain::Project& project) override;
+
+private:
+  [[nodiscard]] core::Result<void> set(domain::Project& project, bool after);
+  std::vector<NotePerformanceEdit> edits_;
 };
 
 }  // namespace seam::application

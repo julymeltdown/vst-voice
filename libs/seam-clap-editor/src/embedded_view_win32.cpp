@@ -3,6 +3,8 @@
 #if defined(_WIN32)
 
 #include "seam/domain/note.hpp"
+#include "seam/native_ui/native_window.hpp"
+#include "seam/native_ui/accessibility_win32.hpp"
 #include "seam/text/text_engine.hpp"
 
 #ifndef NOMINMAX
@@ -86,9 +88,50 @@ std::u32string utf32FromWindowText(HWND edit) {
   return decoded ? decoded.value() : std::u32string{};
 }
 
+class Win32AccessibilityClient final : public native_ui::INativeWindowClient {
+public:
+  explicit Win32AccessibilityClient(EditorRuntime& runtime) : runtime_(runtime) {}
+
+  void paint(native_ui::RasterCanvas&) noexcept override {}
+  void resized(double, double, double) noexcept override {}
+  void pointerDown(const native_ui::PointerEvent&) noexcept override {}
+  void pointerMove(const native_ui::PointerEvent&) noexcept override {}
+  void pointerUp(const native_ui::PointerEvent&) noexcept override {}
+  void scroll(double, double, ui::Point,
+              native_ui::InputModifiers) noexcept override {}
+  void keyDown(const native_ui::KeyEvent&) noexcept override {}
+  void textComposition(std::u32string,
+                       ui::CompositionSelection) noexcept override {}
+  void textCommit(std::u32string) noexcept override {}
+  void textCancel() noexcept override {}
+
+  [[nodiscard]] const native_ui::AccessibilityTree* accessibilityTree()
+      const noexcept override {
+    auto& runtime = const_cast<EditorRuntime&>(runtime_);
+    static_cast<void>(runtime.accessibilitySnapshot());
+    return &runtime.controller().accessibilityTree();
+  }
+
+  [[nodiscard]] core::Result<void> dispatchAccessibility(
+      std::string_view id, native_ui::SemanticAction action) noexcept override {
+    return runtime_.dispatchAccessibility(id, action);
+  }
+
+  [[nodiscard]] core::Result<void> setAccessibilityValue(
+      std::string_view id, std::string_view value) override {
+    return runtime_.setAccessibilityValue(id, value);
+  }
+
+  [[nodiscard]] bool wantsClose() const noexcept override { return false; }
+
+private:
+  EditorRuntime& runtime_;
+};
+
 class Win32EmbeddedView final : public IEmbeddedView {
 public:
-  explicit Win32EmbeddedView(EditorRuntime& runtime) : runtime_(runtime) {
+  explicit Win32EmbeddedView(EditorRuntime& runtime)
+      : runtime_(runtime), accessibilityClient_(runtime) {
     runtime_.setRepaintCallback([this] { requestRepaint(); });
     runtime_.setTextInputCallbacks(
         [this](const native_ui::TextInputRequest& request) {
@@ -128,6 +171,7 @@ public:
     if (edit_ != nullptr && IsWindow(edit_) != FALSE) DestroyWindow(edit_);
     edit_ = nullptr;
     if (window_ != nullptr && IsWindow(window_) != FALSE) DestroyWindow(window_);
+    accessibilityBridge_.reset();
     window_ = nullptr;
     parent_ = nullptr;
     if (classAtom_ != 0U && instance_ != nullptr) {
@@ -180,6 +224,8 @@ public:
       destroy();
       return false;
     }
+    accessibilityBridge_ = std::make_unique<native_ui::Win32AccessibilityBridge>(
+        window_, accessibilityClient_);
     edit_ = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
                             WS_CHILD | ES_AUTOHSCROLL, 0, 0, 160, 26, window_,
                             nullptr, instance_, nullptr);
@@ -245,8 +291,16 @@ private:
         auto dc = BeginPaint(window, &paint);
         paintAndPresent(dc);
         EndPaint(window, &paint);
+        if (accessibilityBridge_ != nullptr) accessibilityBridge_->invalidate();
         return 0;
       }
+      case WM_GETOBJECT:
+        if (accessibilityBridge_ != nullptr) {
+          return static_cast<LRESULT>(accessibilityBridge_->handleGetObject(
+              static_cast<std::uintptr_t>(wParam),
+              static_cast<std::intptr_t>(lParam)));
+        }
+        break;
       case WM_SIZE: {
         const auto width = static_cast<std::uint32_t>(LOWORD(lParam));
         const auto height = static_cast<std::uint32_t>(HIWORD(lParam));
@@ -378,6 +432,8 @@ private:
   }
 
   EditorRuntime& runtime_;
+  Win32AccessibilityClient accessibilityClient_;
+  std::unique_ptr<native_ui::Win32AccessibilityBridge> accessibilityBridge_;
   HINSTANCE instance_{nullptr};
   HWND parent_{nullptr};
   HWND window_{nullptr};

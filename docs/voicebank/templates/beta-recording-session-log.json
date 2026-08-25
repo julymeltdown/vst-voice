@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "status": "NOT_RUN",
+  "sessionId": "",
+  "generatorVersion": "",
+  "inventorySha256": "",
+  "scriptSha256": "",
+  "performerRef": "redacted-provider-reference",
+  "startedAt": "",
+  "endedAt": "",
+  "sampleRate": 48000,
+  "bitDepth": 24,
+  "channels": 1,
+  "microphoneChainRef": "",
+  "roomCalibrationRef": "",
+  "roomToneRef": "",
+  "takes": [],
+  "retakes": [],
+  "operatorNotes": [],
+  "evidence": []
+}

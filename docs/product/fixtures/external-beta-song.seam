@@ -1,0 +1,34 @@
+{
+  "formatId": "com.project-seam.project",
+  "schemaVersion": 6,
+  "projectId": "external-beta-song-01",
+  "name": "Project SEAM External Beta Reference Song",
+  "ppq": 960,
+  "tempoMap": [{"tick": 0, "bpm": 120}, {"tick": 7680, "bpm": 96}],
+  "meterMap": [{"tick": 0, "numerator": 4, "denominator": 4}],
+  "settings": {"sampleRate": 48000, "characterDisplay": "minimal", "snapEnabled": true, "snapGrid": 240, "hostStartOffsetTick": 0},
+  "routing": {"deviceOutputChannels": 2, "masterBus": "1", "buses": [{"id": "1", "name": "Master", "channelCount": 2, "gainDb": 0, "muted": false, "solo": false}], "sends": [], "deviceRoutes": [{"sourceBus": "1", "matrix": {"sourceChannels": 2, "destinationChannels": 2, "gains": [1, 0, 0, 1]}, "gainDb": 0, "enabled": true}]},
+  "vocalTracks": [{
+    "id": "2",
+    "name": "Beta Voicebank Original",
+    "voicebank": {"id": "beta.voice.01", "version": "0.1.0", "contentHash": "LOCKED_EXTERNAL_INPUT"},
+    "character": {"id": "beta.none", "version": "0.0.0"},
+    "gainDb": 0,
+    "pan": 0,
+    "muted": false,
+    "solo": false,
+    "regions": [{
+      "id": "3",
+      "name": "Japanese reference phrase",
+      "startTick": 0,
+      "durationTick": 11520,
+      "lyrics": [{"id": "4", "language": "ja", "surface": "あ"}, {"id": "5", "language": "ja", "surface": "い"}, {"id": "6", "language": "ja", "surface": "う"}, {"id": "7", "language": "ja", "surface": "ー"}],
+      "notes": [{"id": "8", "lyricId": "4", "startTick": 960, "durationTick": 960, "midiKey": 60, "articulation": "normal"}, {"id": "9", "lyricId": "5", "startTick": 1920, "durationTick": 960, "midiKey": 64, "articulation": "legato"}, {"id": "a", "lyricId": "6", "startTick": 2880, "durationTick": 1920, "midiKey": 67, "articulation": "normal"}, {"id": "b", "lyricId": "7", "startTick": 4800, "durationTick": 2880, "midiKey": 67, "articulation": "legato"}],
+      "phonemeOverrides": [],
+      "pitchAutomation": [{"tick": 960, "cents": 0, "interpolation": "linear"}, {"tick": 4800, "cents": 18, "interpolation": "smooth"}],
+      "seamOverrides": [],
+      "unitSelectionOverrides": []
+    }]
+  }],
+  "audioTracks": [{"id": "c", "name": "Rights-cleared backing", "mediaPath": "external-beta-song.seam.media/backing.wav", "mediaHash": "LOCKED_EXTERNAL_INPUT", "mediaOwnership": "project-copy", "originalFilename": "backing.wav", "sourceSampleRate": 48000, "sourceChannels": 2, "sourceFrameCount": 2160000, "startTick": 0, "gainDb": -6, "pan": 0, "muted": false, "solo": false, "outputRoute": {"busId": "1", "matrix": {"sourceChannels": 1, "destinationChannels": 2, "gains": [1, 1]}}}]
+}

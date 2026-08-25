@@ -12,13 +12,21 @@
 - (void)openRecentProject:(id)sender;
 - (void)saveProject:(id)sender;
 - (void)saveProjectAs:(id)sender;
+- (void)importAudio:(id)sender;
 - (void)installVoicebank:(id)sender;
+- (void)relinkVoicebank:(id)sender;
+- (void)relinkBackingAudio:(id)sender;
+- (void)openAudioSettings:(id)sender;
 - (void)selectVoicebank:(id)sender;
+- (void)openDocumentation:(id)sender;
 - (void)exportAudio:(id)sender;
+- (void)exportSet:(id)sender;
 - (void)quitApplication:(id)sender;
 - (void)undoAction:(id)sender;
 - (void)redoAction:(id)sender;
 - (void)togglePlayback:(id)sender;
+- (void)stopPlayback:(id)sender;
+- (void)toggleLoop:(id)sender;
 @end
 
 @implementation SEAMMenuTarget
@@ -50,7 +58,11 @@
 }
 - (void)saveProject:(id)sender { (void)sender; [self send:seam::platform::ApplicationCommand::SaveProject]; }
 - (void)saveProjectAs:(id)sender { (void)sender; [self send:seam::platform::ApplicationCommand::SaveProjectAs]; }
+- (void)importAudio:(id)sender { (void)sender; [self send:seam::platform::ApplicationCommand::ImportAudio]; }
 - (void)installVoicebank:(id)sender { (void)sender; [self send:seam::platform::ApplicationCommand::InstallVoicebank]; }
+- (void)relinkVoicebank:(id)sender { (void)sender; [self send:seam::platform::ApplicationCommand::RelinkVoicebank]; }
+- (void)relinkBackingAudio:(id)sender { (void)sender; [self send:seam::platform::ApplicationCommand::RelinkBackingAudio]; }
+- (void)openAudioSettings:(id)sender { (void)sender; [self send:seam::platform::ApplicationCommand::OpenAudioSettings]; }
 - (void)selectVoicebank:(id)sender {
   if (_dispatcher == nullptr || ![sender isKindOfClass:[NSMenuItem class]]) return;
   NSDictionary* value = static_cast<NSMenuItem*>(sender).representedObject;
@@ -63,10 +75,19 @@
       identifier.UTF8String, version.UTF8String, contentHash.UTF8String));
 }
 - (void)exportAudio:(id)sender { (void)sender; [self send:seam::platform::ApplicationCommand::ExportAudio]; }
+- (void)exportSet:(id)sender { (void)sender; [self send:seam::platform::ApplicationCommand::ExportSet]; }
 - (void)quitApplication:(id)sender { (void)sender; [self send:seam::platform::ApplicationCommand::Quit]; }
 - (void)undoAction:(id)sender { (void)sender; [self send:seam::platform::ApplicationCommand::Undo]; }
 - (void)redoAction:(id)sender { (void)sender; [self send:seam::platform::ApplicationCommand::Redo]; }
 - (void)togglePlayback:(id)sender { (void)sender; [self send:seam::platform::ApplicationCommand::TogglePlayback]; }
+- (void)stopPlayback:(id)sender { (void)sender; [self send:seam::platform::ApplicationCommand::StopPlayback]; }
+- (void)toggleLoop:(id)sender { (void)sender; [self send:seam::platform::ApplicationCommand::ToggleLoop]; }
+- (void)openDocumentation:(id)sender {
+  if (_dispatcher == nullptr || ![sender isKindOfClass:[NSMenuItem class]]) return;
+  NSString* identifier = static_cast<NSMenuItem*>(sender).representedObject;
+  if (identifier != nil) static_cast<void>(_dispatcher->openDocumentation(
+      identifier.UTF8String));
+}
 @end
 
 namespace seam::platform {
@@ -131,9 +152,17 @@ public:
                                 NSEventModifierFlagShift,
                             target_)];
     [fileMenu_ addItem:[NSMenuItem separatorItem]];
+    [fileMenu_ addItem:item(@"Import Backing Audio…", @selector(importAudio:), @"",
+                            0, target_)];
+    [fileMenu_ addItem:item(@"Relink Backing Audio…", @selector(relinkBackingAudio:), @"",
+                            0, target_)];
+    [fileMenu_ addItem:item(@"Audio Settings…", @selector(openAudioSettings:), @"",
+                            0, target_)];
     [fileMenu_ addItem:item(@"Install Voicebank…", @selector(installVoicebank:), @"",
                             0, target_)];
     [fileMenu_ addItem:item(@"Export Audio…", @selector(exportAudio:), @"e",
+                            0, target_)];
+    [fileMenu_ addItem:item(@"Export Set…", @selector(exportSet:), @"e",
                             NSEventModifierFlagCommand, target_)];
     addSubmenu(root_, @"File", fileMenu_);
 
@@ -151,9 +180,14 @@ public:
     auto* transport = [[NSMenu alloc] initWithTitle:@"Transport"];
     [transport addItem:item(@"Play / Pause", @selector(togglePlayback:), @" ",
                             0, target_)];
+    [transport addItem:item(@"Stop", @selector(stopPlayback:), @".",
+                            NSEventModifierFlagCommand, target_)];
+    [transport addItem:item(@"Toggle Loop", @selector(toggleLoop:), @"l",
+                            0, target_)];
     addSubmenu(root_, @"Transport", transport);
     addSubmenu(root_, @"View", [[NSMenu alloc] initWithTitle:@"View"]);
-    addSubmenu(root_, @"Help", [[NSMenu alloc] initWithTitle:@"Help"]);
+    helpMenu_ = [[NSMenu alloc] initWithTitle:@"Help"];
+    addSubmenu(root_, @"Help", helpMenu_);
     application.mainMenu = root_;
     refresh();
     return core::success();
@@ -184,6 +218,10 @@ public:
 
     if (voicebankMenu_ != nil) {
       [voicebankMenu_ removeAllItems];
+      [voicebankMenu_ addItem:item(@"Relink Voicebank Search Folder…",
+                                   @selector(relinkVoicebank:), @"", 0,
+                                   target_)];
+      [voicebankMenu_ addItem:[NSMenuItem separatorItem]];
       const auto banks = dispatcher_->voicebanks();
       if (banks.empty()) {
         auto* empty = [[NSMenuItem alloc] initWithTitle:@"No Voicebanks Found"
@@ -232,6 +270,26 @@ public:
         }
       }
     }
+
+    if (helpMenu_ != nil) {
+      [helpMenu_ removeAllItems];
+      const auto documents = dispatcher_->documentation();
+      if (documents.empty()) {
+        auto* empty = [[NSMenuItem alloc] initWithTitle:@"Documentation unavailable"
+                                                  action:nil keyEquivalent:@""];
+        empty.enabled = NO;
+        [helpMenu_ addItem:empty];
+      } else {
+        for (const auto& document : documents) {
+          NSString* title = [NSString stringWithUTF8String:document.displayName.c_str()];
+          NSString* identifier = [NSString stringWithUTF8String:document.id.c_str()];
+          auto* menuItem = item(title == nil ? @"Documentation" : title,
+                                @selector(openDocumentation:), @"", 0, target_);
+          menuItem.representedObject = identifier;
+          [helpMenu_ addItem:menuItem];
+        }
+      }
+    }
   }
 
   void uninstall() noexcept override {
@@ -246,6 +304,7 @@ public:
     recentMenu_ = nil;
     recentHolder_ = nil;
     fileMenu_ = nil;
+    helpMenu_ = nil;
     voicebankMenu_ = nil;
     root_ = nil;
     previous_ = nil;
@@ -258,6 +317,7 @@ private:
   NSMenu* root_{nil};
   NSMenu* previous_{nil};
   NSMenu* fileMenu_{nil};
+  NSMenu* helpMenu_{nil};
   NSMenu* voicebankMenu_{nil};
   NSMenuItem* recentHolder_{nil};
   NSMenu* recentMenu_{nil};
@@ -301,6 +361,77 @@ std::unique_ptr<IApplicationMenu> createNativeApplicationMenu() {
 
 std::unique_ptr<IUnsavedChangesPrompt> createNativeUnsavedChangesPrompt() {
   return std::make_unique<AppKitUnsavedPrompt>();
+}
+
+core::Result<void> openDocumentationPath(const std::filesystem::path& path) {
+  if (path.empty()) {
+    return core::failure(core::ErrorCode::InvalidArgument,
+                         "Documentation path is empty");
+  }
+  NSString* value = [NSString stringWithUTF8String:path.string().c_str()];
+  NSURL* url = value == nil ? nil : [NSURL fileURLWithPath:value];
+  if (url == nil || ![[NSWorkspace sharedWorkspace] openURL:url]) {
+    return core::failure(core::ErrorCode::IoError,
+                         "Unable to open offline documentation", path.string());
+  }
+  return core::success();
+}
+
+core::Result<void> openExternalPath(const std::filesystem::path& path) {
+  if (path.empty()) {
+    return core::failure(core::ErrorCode::InvalidArgument,
+                         "External path is empty");
+  }
+  NSString* value = [NSString stringWithUTF8String:path.string().c_str()];
+  NSURL* url = value == nil ? nil : [NSURL fileURLWithPath:value];
+  if (url == nil || ![[NSWorkspace sharedWorkspace] openURL:url]) {
+    return core::failure(core::ErrorCode::IoError,
+                         "Unable to open external path", path.string());
+  }
+  return core::success();
+}
+
+core::Result<void> copyTextToClipboard(std::string_view text) {
+  NSString* value = [NSString stringWithUTF8String:
+                                     std::string{text}.c_str()];
+  if (value == nil) {
+    return core::failure(core::ErrorCode::InvalidArgument,
+                         "Diagnostic text is not valid UTF-8");
+  }
+  NSPasteboard* pasteboard = [NSPasteboard generalPasteboard];
+  [pasteboard clearContents];
+  if (![pasteboard setString:value forType:NSPasteboardTypeString]) {
+    return core::failure(core::ErrorCode::IoError,
+                         "Unable to copy diagnostic text");
+  }
+  return core::success();
+}
+
+core::Result<bool> requestEulaAcceptance(const std::filesystem::path& path) {
+  if (path.empty()) {
+    return core::failure<bool>(core::ErrorCode::InvalidArgument,
+                               "EULA path is empty");
+  }
+  if (![NSThread isMainThread]) {
+    return core::failure<bool>(core::ErrorCode::InvalidState,
+                               "EULA acceptance prompt must run on the main thread");
+  }
+  @autoreleasepool {
+    NSString* pathText = [NSString stringWithUTF8String:path.string().c_str()];
+    NSURL* url = pathText == nil ? nil : [NSURL fileURLWithPath:pathText];
+    if (url == nil || ![[NSWorkspace sharedWorkspace] openURL:url]) {
+      return core::failure<bool>(core::ErrorCode::IoError,
+                                 "Unable to open the bundled EULA",
+                                 path.string());
+    }
+    auto* alert = [[NSAlert alloc] init];
+    alert.messageText = @"Project SEAM External Beta EULA";
+    alert.informativeText =
+        @"Review the bundled EULA that just opened, then choose Accept to continue. Acceptance is stored locally as the document version, SHA-256 digest, and UTC timestamp.";
+    [alert addButtonWithTitle:@"Accept"];
+    [alert addButtonWithTitle:@"Decline"];
+    return [alert runModal] == NSAlertFirstButtonReturn;
+  }
 }
 
 }  // namespace seam::platform

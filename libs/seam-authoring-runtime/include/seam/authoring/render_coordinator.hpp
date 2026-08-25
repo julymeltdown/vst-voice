@@ -1,5 +1,6 @@
 #pragma once
 
+#include "seam/application/command.hpp"
 #include "seam/domain/project.hpp"
 #include "seam/rendering/pcm_cache.hpp"
 #include "seam/rendering/project_renderer.hpp"
@@ -45,6 +46,7 @@ enum class RenderFailureKind {
 
 struct PublishedProjectAudio final {
   std::uint64_t projectRevision{0U};
+  application::CommandImpact impact;
   rendering::RenderQuality quality{rendering::RenderQuality::Preview};
   RenderState state{RenderState::Idle};
   RenderFailureKind failure{RenderFailureKind::None};
@@ -53,6 +55,7 @@ struct PublishedProjectAudio final {
   std::string activeVoicebankId;
   std::string activeVoicebankVersion;
   std::string activeVoicebankContentHash;
+  std::string activeRenderer;
 };
 
 class RealtimeProjectAudioPublication final {
@@ -111,10 +114,17 @@ struct RenderProgress final {
   RenderState state{RenderState::Idle};
   std::uint64_t requestedRevision{0U};
   std::uint64_t publishedRevision{0U};
+  rendering::RenderQuality requestedQuality{rendering::RenderQuality::Preview};
+  rendering::RenderQuality publishedQuality{rendering::RenderQuality::Preview};
   std::size_t completedPhrases{0U};
   std::size_t totalPhrases{0U};
   double fraction{0.0};
+  bool audibleAudioStale{false};
   std::string diagnostic;
+  std::string activeVoicebankId;
+  std::string activeVoicebankVersion;
+  std::string activeRenderer;
+  RenderFailureKind failure{RenderFailureKind::None};
 };
 
 struct RenderCoordinatorStats final {
@@ -127,6 +137,7 @@ struct RenderCoordinatorStats final {
 
 struct RenderCoordinatorHooks final {
   std::function<void(std::uint64_t, std::stop_token)> beforeRender;
+  std::function<void(std::uint64_t, std::stop_token)> beforePublication;
 };
 
 class AuthoringRenderCoordinator final {
@@ -147,7 +158,10 @@ public:
               std::uint64_t revision,
               std::uint32_t sampleRate,
               rendering::RenderQuality quality,
-              bool immediate = false);
+              bool immediate = false,
+              application::CommandImpact impact = application::CommandImpact{
+                  .scope = application::CommandAudioImpact::ProjectAudio,
+                  .projectWide = true});
   void cancel() noexcept;
   void shutdown() noexcept;
 
@@ -162,6 +176,7 @@ public:
 
 private:
   struct Request final {
+    std::uint64_t requestId{0U};
     domain::Project project;
     std::vector<rendering::TrackVoicebankSource> voicebanks;
     domain::TrackId activeTrack;
@@ -170,6 +185,7 @@ private:
     std::uint32_t sampleRate{48000U};
     rendering::RenderQuality quality{rendering::RenderQuality::Preview};
     bool immediate{false};
+    application::CommandImpact impact;
   };
 
   struct PreflightResult final {
@@ -201,6 +217,8 @@ private:
   std::stop_source activeStopSource_;
   bool active_{false};
   std::atomic<std::uint64_t> latestSubmittedRevision_{0U};
+  std::atomic<std::uint64_t> latestSubmittedRequestId_{0U};
+  std::uint64_t nextRequestId_{0U};
   std::unique_ptr<rendering::PcmCache> cache_;
   RenderCoordinatorHooks hooks_;
   mutable RealtimeProjectAudioPublication publication_;

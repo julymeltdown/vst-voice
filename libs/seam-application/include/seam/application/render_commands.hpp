@@ -17,6 +17,10 @@ public:
   [[nodiscard]] std::string_view name() const noexcept override {
     return "Select voice unit";
   }
+  [[nodiscard]] CommandAudioImpact audioImpact() const noexcept override {
+    return CommandAudioImpact::PhraseAudio;
+  }
+  [[nodiscard]] CommandImpact impact() const override;
   [[nodiscard]] core::Result<void> apply(domain::Project& project) override;
   [[nodiscard]] core::Result<void> revert(domain::Project& project) override;
 
@@ -36,6 +40,10 @@ public:
   [[nodiscard]] std::string_view name() const noexcept override {
     return "Reset voice unit selection";
   }
+  [[nodiscard]] CommandAudioImpact audioImpact() const noexcept override {
+    return CommandAudioImpact::PhraseAudio;
+  }
+  [[nodiscard]] CommandImpact impact() const override;
   [[nodiscard]] core::Result<void> apply(domain::Project& project) override;
   [[nodiscard]] core::Result<void> revert(domain::Project& project) override;
 
@@ -53,6 +61,10 @@ public:
   [[nodiscard]] std::string_view name() const noexcept override {
     return "Edit sample seam";
   }
+  [[nodiscard]] CommandAudioImpact audioImpact() const noexcept override {
+    return CommandAudioImpact::PhraseAudio;
+  }
+  [[nodiscard]] CommandImpact impact() const override;
   [[nodiscard]] core::Result<void> apply(domain::Project& project) override;
   [[nodiscard]] core::Result<void> revert(domain::Project& project) override;
 
@@ -72,6 +84,10 @@ public:
   [[nodiscard]] std::string_view name() const noexcept override {
     return "Reset sample seam";
   }
+  [[nodiscard]] CommandAudioImpact audioImpact() const noexcept override {
+    return CommandAudioImpact::PhraseAudio;
+  }
+  [[nodiscard]] CommandImpact impact() const override;
   [[nodiscard]] core::Result<void> apply(domain::Project& project) override;
   [[nodiscard]] core::Result<void> revert(domain::Project& project) override;
 
@@ -91,6 +107,10 @@ public:
   [[nodiscard]] std::string_view name() const noexcept override {
     return "Edit pitch automation";
   }
+  [[nodiscard]] CommandAudioImpact audioImpact() const noexcept override {
+    return CommandAudioImpact::PhraseAudio;
+  }
+  [[nodiscard]] CommandImpact impact() const override;
   [[nodiscard]] core::Result<void> apply(domain::Project& project) override;
   [[nodiscard]] core::Result<void> revert(domain::Project& project) override;
 
@@ -109,6 +129,10 @@ public:
   [[nodiscard]] std::string_view name() const noexcept override {
     return "Reset pitch automation";
   }
+  [[nodiscard]] CommandAudioImpact audioImpact() const noexcept override {
+    return CommandAudioImpact::PhraseAudio;
+  }
+  [[nodiscard]] CommandImpact impact() const override;
   [[nodiscard]] core::Result<void> apply(domain::Project& project) override;
   [[nodiscard]] core::Result<void> revert(domain::Project& project) override;
 
@@ -128,6 +152,10 @@ public:
   [[nodiscard]] std::string_view name() const noexcept override {
     return "Set track voicebank";
   }
+  [[nodiscard]] CommandAudioImpact audioImpact() const noexcept override {
+    return CommandAudioImpact::ProjectAudio;
+  }
+  [[nodiscard]] CommandImpact impact() const override;
   [[nodiscard]] core::Result<void> apply(domain::Project& project) override;
   [[nodiscard]] core::Result<void> revert(domain::Project& project) override;
 
@@ -135,6 +163,28 @@ private:
   domain::TrackId trackId_;
   domain::VoicebankReference after_;
   std::optional<domain::VoicebankReference> before_;
+};
+
+class SetTrackOutputRouteCommand final : public ICommand {
+public:
+  SetTrackOutputRouteCommand(domain::TrackId trackId,
+                             domain::TrackOutputRoute route)
+      : trackId_(trackId), after_(std::move(route)) {}
+
+  [[nodiscard]] std::string_view name() const noexcept override {
+    return "Route track output";
+  }
+  [[nodiscard]] CommandAudioImpact audioImpact() const noexcept override {
+    return CommandAudioImpact::TrackMix;
+  }
+  [[nodiscard]] CommandImpact impact() const override;
+  [[nodiscard]] core::Result<void> apply(domain::Project& project) override;
+  [[nodiscard]] core::Result<void> revert(domain::Project& project) override;
+
+private:
+  domain::TrackId trackId_;
+  domain::TrackOutputRoute after_;
+  std::optional<domain::TrackOutputRoute> before_;
 };
 
 }  // namespace seam::application
@@ -150,8 +200,41 @@ public:
   [[nodiscard]] std::string_view name() const noexcept override {
     return "Edit vocal track mix";
   }
+  [[nodiscard]] CommandAudioImpact audioImpact() const noexcept override {
+    return CommandAudioImpact::TrackMix;
+  }
+  [[nodiscard]] CommandImpact impact() const override;
   [[nodiscard]] core::Result<void> apply(domain::Project& project) override;
   [[nodiscard]] core::Result<void> revert(domain::Project& project) override;
+private:
+  domain::TrackId trackId_;
+  float afterGainDb_{0.0F};
+  float afterPan_{0.0F};
+  bool afterMuted_{false};
+  bool afterSolo_{false};
+  float beforeGainDb_{0.0F};
+  float beforePan_{0.0F};
+  bool beforeMuted_{false};
+  bool beforeSolo_{false};
+  bool captured_{false};
+};
+
+class SetAudioTrackMixCommand final : public ICommand {
+public:
+  SetAudioTrackMixCommand(domain::TrackId trackId, float gainDb, float pan,
+                          bool muted, bool solo)
+      : trackId_(trackId), afterGainDb_(gainDb), afterPan_(pan),
+        afterMuted_(muted), afterSolo_(solo) {}
+  [[nodiscard]] std::string_view name() const noexcept override {
+    return "Edit audio track mix";
+  }
+  [[nodiscard]] CommandAudioImpact audioImpact() const noexcept override {
+    return CommandAudioImpact::TrackMix;
+  }
+  [[nodiscard]] CommandImpact impact() const override;
+  [[nodiscard]] core::Result<void> apply(domain::Project& project) override;
+  [[nodiscard]] core::Result<void> revert(domain::Project& project) override;
+
 private:
   domain::TrackId trackId_;
   float afterGainDb_{0.0F};
@@ -172,6 +255,10 @@ public:
   [[nodiscard]] std::string_view name() const noexcept override {
     return "Change project audio routing";
   }
+  [[nodiscard]] CommandAudioImpact audioImpact() const noexcept override {
+    return CommandAudioImpact::TrackMix;
+  }
+  [[nodiscard]] CommandImpact impact() const override;
   [[nodiscard]] core::Result<void> apply(domain::Project& project) override;
   [[nodiscard]] core::Result<void> revert(domain::Project& project) override;
 private:
@@ -185,6 +272,10 @@ public:
   [[nodiscard]] std::string_view name() const noexcept override {
     return "Set host project start offset";
   }
+  [[nodiscard]] CommandAudioImpact audioImpact() const noexcept override {
+    return CommandAudioImpact::ProjectAudio;
+  }
+  [[nodiscard]] CommandImpact impact() const override;
   [[nodiscard]] core::Result<void> apply(domain::Project& project) override;
   [[nodiscard]] core::Result<void> revert(domain::Project& project) override;
 private:
@@ -200,6 +291,10 @@ public:
   [[nodiscard]] std::string_view name() const noexcept override {
     return "Configure project output channels";
   }
+  [[nodiscard]] CommandAudioImpact audioImpact() const noexcept override {
+    return CommandAudioImpact::TrackMix;
+  }
+  [[nodiscard]] CommandImpact impact() const override;
   [[nodiscard]] core::Result<void> apply(domain::Project& project) override;
   [[nodiscard]] core::Result<void> revert(domain::Project& project) override;
 private:

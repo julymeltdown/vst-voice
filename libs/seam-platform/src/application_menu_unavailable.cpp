@@ -34,5 +34,25 @@ std::unique_ptr<IUnsavedChangesPrompt> createNativeUnsavedChangesPrompt() {
   return std::make_unique<ConservativeUnsavedPrompt>();
 }
 
+core::Result<void> openDocumentationPath(const std::filesystem::path&) {
+  return core::failure(core::ErrorCode::Unsupported,
+                       "Offline documentation opening is unavailable");
+}
+
+core::Result<void> openExternalPath(const std::filesystem::path&) {
+  return core::failure(core::ErrorCode::Unsupported,
+                       "External path opening is unavailable");
+}
+
+core::Result<void> copyTextToClipboard(std::string_view) {
+  return core::failure(core::ErrorCode::Unsupported,
+                       "Clipboard access is unavailable");
+}
+
+core::Result<bool> requestEulaAcceptance(const std::filesystem::path&) {
+  return core::failure<bool>(core::ErrorCode::Unsupported,
+                             "EULA acceptance prompt is unavailable");
+}
+
 }  // namespace seam::platform
 #endif

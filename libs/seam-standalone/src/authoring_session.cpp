@@ -1,10 +1,14 @@
 #include "seam/standalone/authoring_session.hpp"
 
 #include "seam/application/project_factory.hpp"
+#include "seam/application/arrangement_commands.hpp"
 #include "seam/application/render_commands.hpp"
+#include "seam/rendering/streaming_pcm_source.hpp"
+#include "seam/voicebank/wav.hpp"
 
 #include <algorithm>
 #include <memory>
+#include <system_error>
 #include <utility>
 
 namespace seam::standalone {
@@ -118,6 +122,7 @@ core::Result<void> AuthoringSession::initialize(
   if (bindFirstAvailableVoicebank) {
     auto bound = bindInitialVoicebank();
     if (!bound && bound.error().code != core::ErrorCode::NotFound) return bound;
+    if (bound) runtime_->clearDiagnostics();
   }
   static_cast<void>(runtime_->selectTrack(trackId_));
   static_cast<void>(runtime_->selectRegion(regionId_));
@@ -147,10 +152,142 @@ void AuthoringSession::configureController() {
         const auto result = playing ? runtime_->transport().play()
                                     : runtime_->transport().pause();
         if (externalCallbacks_.setPlaying) {
-          externalCallbacks_.setPlaying(result && playing);
+          static_cast<void>(externalCallbacks_.setPlaying(result && playing));
         }
+        return result;
       },
       .documentChanged = [this] { onDocumentChanged(); },
+      .stopPlaying = [this] {
+        const auto result = runtime_->transport().stop();
+        if (externalCallbacks_.requestRepaint) {
+          externalCallbacks_.requestRepaint();
+        }
+        return result;
+      },
+      .seekTick = [this](time::Tick tick) {
+        const auto frame = runtime_->document().session().project().tempoMap()
+                               .sampleFrameAt(tick, runtime_->transport().sampleRate());
+        const auto result = runtime_->transport().seek(frame);
+        if (externalCallbacks_.requestRepaint) {
+          externalCallbacks_.requestRepaint();
+        }
+        return result;
+      },
+      .setLoopTicks = [this](time::Tick start, time::Tick end) {
+        const auto& project = runtime_->document().session().project();
+        const auto& tempo = project.tempoMap();
+        const auto loop = rendering::PlaybackLoop{
+            .enabled = true,
+            .startFrame = tempo.sampleFrameAt(start, runtime_->transport().sampleRate()),
+            .endFrame = tempo.sampleFrameAt(end, runtime_->transport().sampleRate()),
+        };
+        const auto result = runtime_->transport().setLoop(loop);
+        if (externalCallbacks_.requestRepaint) {
+          externalCallbacks_.requestRepaint();
+        }
+        return result;
+      },
+      .toggleLoop = [this] {
+        const auto state = runtime_->transport().state();
+        core::Result<void> result = core::success();
+        if (state.loop.enabled) {
+          result = runtime_->transport().setLoop(
+              rendering::PlaybackLoop{.enabled = false});
+        } else if (state.timelineEnd > time::SampleFrame{0}) {
+          result = runtime_->transport().setLoop(
+              rendering::PlaybackLoop{.enabled = true,
+                                      .startFrame = 0,
+                                      .endFrame = state.timelineEnd});
+        }
+        if (externalCallbacks_.requestRepaint) {
+          externalCallbacks_.requestRepaint();
+        }
+        return result;
+      },
+      .cancelRender = [this] {
+        runtime_->renderer().cancel();
+        if (externalCallbacks_.requestRepaint) {
+          externalCallbacks_.requestRepaint();
+        }
+      },
+      .retryRender = [this] {
+        runtime_->requestPreview(true);
+        if (externalCallbacks_.requestRepaint) {
+          externalCallbacks_.requestRepaint();
+        }
+      },
+      .cycleUnitVariant = [this](domain::PhonemeKey key) {
+        return runtime_->technicalEdits().cycleUnitVariant(key);
+      },
+      .cycleUnitRenderer = [this](domain::PhonemeKey key) {
+        return runtime_->technicalEdits().cycleUnitRenderer(key);
+      },
+      .upsertPitchPoint = [this](domain::PitchAutomationPoint point) {
+        return runtime_->technicalEdits().upsertPitchPoint(point);
+      },
+      .movePitchPoint = [this](time::Tick from,
+                               domain::PitchAutomationPoint point) {
+        return runtime_->technicalEdits().movePitchPoint(from, point);
+      },
+      .removePitchPoint = [this](time::Tick tick) {
+        return runtime_->technicalEdits().removePitchPoint(tick);
+      },
+      .cyclePitchInterpolation = [this](time::Tick tick) {
+        return runtime_->technicalEdits().cyclePitchInterpolation(tick);
+      },
+      .movePhonemeBoundary = [this](domain::PhonemeKey key, bool start,
+                                    time::Microseconds offset) {
+        return runtime_->technicalEdits().movePhonemeBoundary(key, start, offset);
+      },
+      .previewSeam = externalCallbacks_.previewSeam,
+      .loadSampleMicroscope = [this](domain::PhonemeKey key)
+          -> core::Result<native_ui::SampleMicroscopeData> {
+        const auto view = runtime_->technicalEdits().unitDiagnostic(key);
+        if (!view.has_value()) {
+          return core::failure<native_ui::SampleMicroscopeData>(
+              core::ErrorCode::NotFound,
+              "Rendered Unit is unavailable for sample inspection");
+        }
+        const auto resolution = runtime_->voicebanks().resolveTrack(
+            runtime_->document().session().project(), trackId_);
+        if (!resolution.resolved()) {
+          return core::failure<native_ui::SampleMicroscopeData>(
+              core::ErrorCode::NotFound,
+              "Selected track Voicebank is unavailable for sample inspection",
+              resolution.diagnostic);
+        }
+        const auto* unit = resolution.candidate->manifest.findUnit(
+            view->entry.unitId);
+        if (unit == nullptr) {
+          return core::failure<native_ui::SampleMicroscopeData>(
+              core::ErrorCode::NotFound,
+              "Rendered Voicebank Unit is missing", view->entry.unitId);
+        }
+        auto audio = voicebank::readWav(
+            resolution.candidate->bankRoot / unit->audioPath);
+        if (!audio) {
+          return core::Result<native_ui::SampleMicroscopeData>{audio.error()};
+        }
+        const auto* track = runtime_->document().session().project()
+                                .findVocalTrack(trackId_);
+        const auto* region = runtime_->document().session().project()
+                                .findRegion(regionId_);
+        std::string context = "DESTINATION";
+        if (track != nullptr) context += " / " + track->name;
+        if (region != nullptr) context += " / " + region->name;
+        context += " / MIDI " + std::to_string(view->entry.targetMidi);
+        return native_ui::SampleMicroscopeData{
+            .unit = *unit,
+            .audio = std::move(audio).value(),
+            .destinationContext = std::move(context),
+        };
+      },
+      .microscopeUnitChanged = externalCallbacks_.microscopeUnitChanged,
+      .playMicroscopeSample = externalCallbacks_.playMicroscopeSample,
+      .selectVoicebank = externalCallbacks_.selectVoicebank,
+      .diagnosticAction = externalCallbacks_.diagnosticAction,
+      .viewChanged = externalCallbacks_.viewChanged,
+      .applyAudioSettings = externalCallbacks_.applyAudioSettings,
   };
   controller_ = std::make_unique<native_ui::NativeEditorController>(
       runtime_->document().session(), runtime_->document().factory(),
@@ -165,26 +302,12 @@ void AuthoringSession::onDocumentChanged() {
 }
 
 void AuthoringSession::onRenderCompleted() {
-  if (controller_) {
-    const auto latest = runtime_->renderer().latest();
-    const auto ready = latest != nullptr &&
-                       latest->state == authoring::RenderState::Ready &&
-                       !latest->result.interleaved.empty();
-    controller_->setAudioState(ready, ready ? "PRODUCTION" : "OFFLINE");
-  }
   if (externalCallbacks_.requestRepaint) externalCallbacks_.requestRepaint();
 }
 
 
 core::Result<void> AuthoringSession::createNewProject(
     authoring::NewProjectRequest request) {
-  if (!request.initialVoicebank.has_value()) {
-    const auto candidates = runtime_->voicebanks().candidates();
-    if (const auto* candidate = preferredCandidate(candidates);
-        candidate != nullptr) {
-      request.initialVoicebank = *candidate;
-    }
-  }
   authoring::ProjectLifecycleService lifecycle{&runtime_->voicebanks()};
   auto created = lifecycle.createNew(runtime_->document(), request);
   if (!created) return created;
@@ -228,6 +351,133 @@ core::Result<void> AuthoringSession::recoverProject(
   return rebindAfterProjectReplacement();
 }
 
+core::Result<authoring::MediaImportResult> AuthoringSession::importBackingMedia(
+    const std::filesystem::path& sourcePath, authoring::MediaImportMode mode,
+    std::string trackName, time::Tick startTick) {
+  if (runtime_ == nullptr) {
+    return core::failure<authoring::MediaImportResult>(
+        core::ErrorCode::InvalidState,
+        "Backing media import requires an initialized authoring session");
+  }
+  const auto projectPath = runtime_->document().identity().projectPath.value_or(
+      std::filesystem::path{});
+  auto imported = authoring::MediaImportService::import(
+      authoring::MediaImportRequest{
+          .trackId = runtime_->document().factory().nextTrackId(),
+          .trackName = std::move(trackName),
+          .sourcePath = sourcePath,
+          .projectPath = projectPath,
+          .startTick = startTick,
+          .mode = mode,
+      });
+  if (!imported) return imported;
+
+  auto& track = imported.value().track;
+  const auto outputChannels = runtime_->document().session().project()
+                                  .routing()
+                                  .deviceOutputChannels;
+  if (outputChannels == 1U) {
+    track.outputRoute = domain::TrackOutputRoute{
+        .bus = runtime_->document().session().project().routing().masterBus,
+        .matrix = domain::RoutingMatrix::identity(1U),
+    };
+  } else {
+    domain::RoutingMatrix matrix{
+        .sourceChannels = 1U,
+        .destinationChannels = outputChannels,
+        .gains = std::vector<float>(outputChannels, 1.0F),
+    };
+    track.outputRoute = domain::TrackOutputRoute{
+        .bus = runtime_->document().session().project().routing().masterBus,
+        .matrix = std::move(matrix),
+    };
+  }
+
+  const auto executed = runtime_->execute(
+      std::make_unique<application::AddAudioTrackCommand>(track));
+  if (!executed) {
+    if (!imported.value().ownedPath.empty()) {
+      std::error_code error;
+      std::filesystem::remove(imported.value().ownedPath, error);
+    }
+    return core::Result<authoring::MediaImportResult>{executed.error()};
+  }
+  if (controller_) controller_->setDirty(runtime_->document().dirty());
+  if (externalCallbacks_.documentChanged) externalCallbacks_.documentChanged();
+  return imported;
+}
+
+core::Result<void> AuthoringSession::relinkBackingMedia(
+    domain::TrackId trackId, const std::filesystem::path& sourcePath) {
+  if (runtime_ == nullptr) {
+    return core::failure(core::ErrorCode::InvalidState,
+                         "Backing media relink requires an initialized session");
+  }
+  const auto& project = runtime_->document().session().project();
+  const auto existing = std::find_if(
+      project.audioTracks().begin(), project.audioTracks().end(),
+      [trackId](const auto& track) { return track.id == trackId; });
+  if (existing == project.audioTracks().end()) {
+    return core::failure(core::ErrorCode::NotFound,
+                         "Backing media track was not found", trackId.toString());
+  }
+  if (existing->mediaHash.empty()) {
+    return core::failure(core::ErrorCode::Conflict,
+                         "Backing media has no exact content identity",
+                         trackId.toString());
+  }
+  std::error_code error;
+  const auto canonical = std::filesystem::weakly_canonical(sourcePath, error);
+  if (error || !std::filesystem::is_regular_file(canonical, error)) {
+    return core::failure(core::ErrorCode::NotFound,
+                         "Backing media relink source is not a regular file",
+                         sourcePath.string());
+  }
+  auto source = rendering::StreamingPcmSource::open(canonical, 4096U);
+  if (!source) return core::Result<void>{source.error()};
+  if (source.value()->info().contentHash != existing->mediaHash) {
+    return core::failure(core::ErrorCode::Conflict,
+                         "Exact backing media relink requires a matching content hash",
+                         existing->mediaHash + " != " +
+                             source.value()->info().contentHash);
+  }
+  auto replacement = *existing;
+  if (existing->mediaOwnership == domain::MediaOwnership::ProjectCopy) {
+    const auto projectPath = runtime_->document().identity().projectPath;
+    if (!projectPath.has_value()) {
+      return core::failure(core::ErrorCode::InvalidState,
+                           "Project-owned backing media relink requires a saved project");
+    }
+    auto imported = authoring::MediaImportService::import(
+        authoring::MediaImportRequest{
+            .trackId = trackId,
+            .trackName = existing->name,
+            .sourcePath = canonical,
+            .projectPath = *projectPath,
+            .startTick = existing->startTick,
+            .mode = authoring::MediaImportMode::Copy,
+        });
+    if (!imported) return core::Result<void>{imported.error()};
+    replacement.mediaPath = imported.value().track.mediaPath;
+    replacement.mediaOwnership = domain::MediaOwnership::ProjectCopy;
+  } else {
+    replacement.mediaPath = canonical.string();
+    replacement.mediaOwnership = domain::MediaOwnership::ExternalReference;
+  }
+  replacement.mediaHash = source.value()->info().contentHash;
+  replacement.originalFilename = canonical.filename().string();
+  replacement.sourceSampleRate = source.value()->info().sampleRate;
+  replacement.sourceChannels = source.value()->info().channels;
+  replacement.sourceFrameCount = source.value()->info().frameCount;
+  const auto executed = runtime_->execute(
+      std::make_unique<application::ReplaceAudioTrackCommand>(
+          trackId, std::move(replacement)));
+  if (!executed) return executed;
+  if (controller_) controller_->setDirty(runtime_->document().dirty());
+  if (externalCallbacks_.documentChanged) externalCallbacks_.documentChanged();
+  return core::success();
+}
+
 core::Result<void> AuthoringSession::rebindAfterProjectReplacement() {
   const auto& project = runtime_->document().session().project();
   const domain::VocalTrack* selectedTrack = nullptr;
@@ -239,17 +489,16 @@ core::Result<void> AuthoringSession::rebindAfterProjectReplacement() {
       break;
     }
   }
-  if (selectedTrack == nullptr || selectedRegion == nullptr) {
-    return core::failure(
-        core::ErrorCode::InvalidState,
-        "A standalone project must contain at least one vocal region");
+  trackId_ = selectedTrack == nullptr ? domain::TrackId{} : selectedTrack->id;
+  regionId_ = selectedRegion == nullptr ? domain::RegionId{} : selectedRegion->id;
+  if (selectedTrack != nullptr) {
+    auto track = runtime_->selectTrack(trackId_);
+    if (!track) return track;
   }
-  trackId_ = selectedTrack->id;
-  regionId_ = selectedRegion->id;
-  auto track = runtime_->selectTrack(trackId_);
-  if (!track) return track;
-  auto region = runtime_->selectRegion(regionId_);
-  if (!region) return region;
+  if (selectedRegion != nullptr) {
+    auto region = runtime_->selectRegion(regionId_);
+    if (!region) return region;
+  }
   static_cast<void>(runtime_->transport().stop());
   configureController();
   runtime_->handleDocumentChanged();

@@ -1,4 +1,3 @@
-import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -71,6 +70,19 @@ class SdkLockTests(unittest.TestCase):
             self.assertEqual([], sdk_lock.validate_checkout(dep, checkout))
             (checkout / '.phase13a-revision').write_text('0' * 40, encoding='utf-8')
             self.assertTrue(sdk_lock.validate_checkout(dep, checkout))
+
+    def test_optional_source_digest_requires_attested_checkout_marker(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            checkout = root / 'clap-wrapper'
+            checkout.mkdir()
+            (checkout / '.phase13a-revision').write_text('35f524b771ec09f54c164720bb90f271273b37d3\n', encoding='utf-8')
+            (checkout / '.phase13a-source-sha256').write_text('a' * 64, encoding='utf-8')
+            (checkout / 'LICENSE').write_text('MIT License\n', encoding='utf-8')
+            dependency = dict(self.valid_lock()['dependencies'][1], sourceSha256='a' * 64)
+            self.assertEqual([], sdk_lock.validate_checkout(dependency, checkout))
+            (checkout / '.phase13a-source-sha256').write_text('b' * 64, encoding='utf-8')
+            self.assertTrue(any('source digest' in error for error in sdk_lock.validate_checkout(dependency, checkout)))
 
 
 if __name__ == '__main__':

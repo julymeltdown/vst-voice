@@ -22,6 +22,9 @@ public:
   [[nodiscard]] const SelectionModel& selection() const noexcept { return selection_; }
   [[nodiscard]] std::uint64_t revision() const noexcept { return revision_; }
   [[nodiscard]] SessionHealth health() const noexcept { return health_; }
+  [[nodiscard]] const CommandImpact& lastImpact() const noexcept {
+    return lastImpact_;
+  }
 
   [[nodiscard]] core::Result<void> execute(std::unique_ptr<ICommand> command);
   [[nodiscard]] core::Result<void> undo();
@@ -45,6 +48,14 @@ private:
   std::vector<std::unique_ptr<ICommand>> redo_;
   std::uint64_t revision_{0};
   SessionHealth health_{SessionHealth::Ready};
+  CommandImpact lastImpact_{
+      .scope = CommandAudioImpact::ViewOnly,
+      .projectWide = false,
+      .trackIds = {},
+      .regionIds = {},
+      .noteIds = {},
+      .lyricIds = {},
+  };
   core::NullLogger fallbackLogger_;
   core::ILogger* logger_;
 };

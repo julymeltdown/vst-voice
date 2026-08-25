@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "status": "BLOCKED",
+  "recordType": "external-beta-predecessor-state-fixture-catalog",
+  "requiredFamilies": [
+    {"family": "project", "status": "NOT_RUN", "requiredTransition": "save-open-migrate-reopen"},
+    {"family": "media", "status": "NOT_RUN", "requiredTransition": "import-reference-resolve-reopen"},
+    {"family": "settings", "status": "NOT_RUN", "requiredTransition": "read-write-compatibility"},
+    {"family": "autosave", "status": "NOT_RUN", "requiredTransition": "crash-recover-newest-durable"},
+    {"family": "catalog", "status": "NOT_RUN", "requiredTransition": "install-select-relink"},
+    {"family": "clap", "status": "NOT_RUN", "requiredTransition": "state-save-restore-host-rescan"},
+    {"family": "host", "status": "NOT_RUN", "requiredTransition": "scan-load-update-uninstall-rescan"}
+  ],
+  "evidence": [],
+  "blockingReason": "No signed coherent predecessor package and restored fixture archive are available in this environment."
+}

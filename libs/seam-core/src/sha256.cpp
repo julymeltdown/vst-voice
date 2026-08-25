@@ -188,7 +188,12 @@ std::string sha256Hex(std::string_view text) {
 core::Result<std::string> sha256File(const std::filesystem::path& path,
                                      std::uint64_t maximumBytes) {
   std::error_code error;
-  const auto status = std::filesystem::status(path, error);
+  const auto status = std::filesystem::symlink_status(path, error);
+  if (status.type() == std::filesystem::file_type::symlink) {
+    return core::failure<std::string>(
+        core::ErrorCode::Conflict, "Unable to hash a symbolic link",
+        path.string());
+  }
   if (error || !std::filesystem::is_regular_file(status)) {
     return core::failure<std::string>(core::ErrorCode::IoError,
                                       "Unable to hash a non-regular file",

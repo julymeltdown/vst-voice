@@ -1,8 +1,11 @@
 #include "test_framework.hpp"
+#include "test_support.hpp"
 
 #include "seam/application/project_factory.hpp"
 #include "seam/formats/json_value.hpp"
 #include "seam/formats/project_json.hpp"
+
+#include <filesystem>
 
 TEST_CASE("internal JSON parser handles nested UTF-8 data") {
   const auto parsed = seam::formats::parseJson(
@@ -47,6 +50,8 @@ TEST_CASE("project JSON round trip preserves the canonical model") {
           .tokenCount = 1,
           .unitId = "unit.alt.02",
           .renderer = seam::domain::UnitRendererKind::ClassicPsola,
+          .loopPrint = 0.35F,
+          .sourcePitchResidual = 0.72F,
           .locked = true,
       });
   project.findRegion(regionId)->seamOverrides.push_back(
@@ -97,9 +102,9 @@ TEST_CASE("project decoder migrates schema one regions without phoneme overrides
   const auto encoded = codec.encode(project);
   CHECK(encoded);
   auto legacy = encoded.value();
-  const auto schemaPosition = legacy.find("\"schemaVersion\": 5");
+  const auto schemaPosition = legacy.find("\"schemaVersion\": 6");
   CHECK(schemaPosition != std::string::npos);
-  legacy.replace(schemaPosition, std::string{"\"schemaVersion\": 5"}.size(),
+  legacy.replace(schemaPosition, std::string{"\"schemaVersion\": 6"}.size(),
                  "\"schemaVersion\": 1");
   for (const auto field : {"phonemeOverrides", "unitSelectionOverrides",
                            "seamOverrides", "pitchAutomation"}) {
@@ -115,4 +120,40 @@ TEST_CASE("project decoder migrates schema one regions without phoneme overrides
   const auto decoded = codec.decode(legacy);
   CHECK(decoded);
   CHECK(decoded.value() == project);
+}
+
+TEST_CASE("project JSON path I/O rejects symlink and non-file targets") {
+  const auto root = seam::test::support::temporaryDirectory("project-paths");
+  seam::application::ProjectFactory factory{700U};
+  auto project = factory.createProject("Project path boundary");
+  const auto track = factory.addVocalTrack(project, "Voice");
+  static_cast<void>(factory.addRegion(project, track, "Region",
+                                      seam::time::Tick{0},
+                                      seam::time::Tick{3840}));
+  seam::formats::ProjectJsonCodec codec;
+  const auto outside = root / "outside.seam";
+  CHECK(codec.save(project, outside));
+  const auto link = root / "project-link.seam";
+  std::error_code error;
+  std::filesystem::create_symlink(outside, link, error);
+  CHECK(!error);
+  CHECK(!codec.load(link));
+  CHECK(!codec.save(project, link));
+  CHECK(codec.load(outside));
+
+  const auto directory = root / "project-directory";
+  std::filesystem::create_directories(directory);
+  CHECK(!codec.load(directory));
+  CHECK(!codec.save(project, directory));
+
+  const auto target = root / "target.seam";
+  CHECK(codec.save(project, target));
+  const auto backupSource = root / "backup-outside.seam";
+  CHECK(codec.save(project, backupSource));
+  const auto backupLink = target.string() + ".bak";
+  std::filesystem::create_symlink(backupSource, backupLink, error);
+  CHECK(!error);
+  CHECK(!codec.save(project, target));
+  CHECK(std::filesystem::is_symlink(backupLink));
+  CHECK(codec.load(backupSource));
 }

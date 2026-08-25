@@ -1,0 +1,13 @@
+{
+  "formatId": "com.project-seam.project",
+  "schemaVersion": 5,
+  "projectId": "1",
+  "name": "Schema 5 Audio Fixture",
+  "ppq": 960,
+  "tempoMap": [{"tick": 0, "bpm": 120}],
+  "meterMap": [{"tick": 0, "numerator": 4, "denominator": 4}],
+  "settings": {"sampleRate": 48000, "characterDisplay": "minimal", "snapEnabled": true, "snapGrid": 240, "hostStartOffsetTick": 0},
+  "routing": {"deviceOutputChannels": 2, "masterBus": "1", "buses": [{"id": "1", "name": "Master", "channelCount": 2, "gainDb": 0, "muted": false, "solo": false}], "sends": [], "deviceRoutes": [{"sourceBus": "1", "matrix": {"sourceChannels": 2, "destinationChannels": 2, "gains": [1, 0, 0, 1]}, "gainDb": 0, "enabled": true}]},
+  "vocalTracks": [],
+  "audioTracks": [{"id": "2", "name": "Backing", "mediaPath": "backing.wav", "startTick": 0, "gainDb": 0, "pan": 0, "muted": false, "solo": false, "outputRoute": {"busId": "1", "matrix": {"sourceChannels": 1, "destinationChannels": 2, "gains": [1, 1]}}}]
+}

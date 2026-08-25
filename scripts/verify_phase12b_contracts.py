@@ -85,7 +85,16 @@ def main() -> int:
     )
     require_text(
         root / "libs/seam-clap-editor/src/editor_runtime_paint.cpp",
-        ["paintSampleMicroscope"],
+        [
+            "state.sampleMicroscope",
+            "EditorSceneState::SampleMicroscopeView",
+            "painter_.paint(canvas, controller_->pianoRoll(), state)",
+        ],
+        errors,
+    )
+    require_text(
+        root / "libs/seam-clap-editor/src/editor_runtime_input.cpp",
+        ["microscopeWaveformBounds", "microscopeSpectrogramBounds"],
         errors,
     )
     require_text(

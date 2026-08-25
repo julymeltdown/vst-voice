@@ -5,12 +5,16 @@
 #include "seam/native_ui/pixel_surface.hpp"
 #include "seam/ui/sample_microscope_model.hpp"
 #include "seam/voicebank/manifest_json.hpp"
+#include "seam/voicebank/validator.hpp"
 #include "seam/voicebank/voicebank.hpp"
 #include "seam/voicebank/wav.hpp"
 
+#include <cstdint>
 #include <filesystem>
 #include <optional>
+#include <span>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace seam::native_ui {
@@ -28,6 +32,13 @@ struct VoicebankStudioTheme final {
   Color selected{72, 52, 76, 255};
 };
 
+[[nodiscard]] std::vector<ui::Rect> voicebankStudioMarkerLabelBounds(
+    std::span<const ui::AcousticMarkerVisual> markers,
+    ui::Rect waveformBounds);
+
+[[nodiscard]] core::Result<std::filesystem::path> nextVoicebankRecordingPath(
+    const std::filesystem::path& directory, std::string_view unitId);
+
 class VoicebankStudioController final {
 public:
   [[nodiscard]] core::Result<void> openManifest(
@@ -39,6 +50,10 @@ public:
                                                        double x);
   [[nodiscard]] core::Result<void> moveSelectedPitchMark(std::size_t index,
                                                           double x);
+  [[nodiscard]] core::Result<void> inspectTake(
+      const std::filesystem::path& path, std::int32_t expectedRootMidi);
+  [[nodiscard]] core::Result<std::filesystem::path> persistTakeInspection(
+      const std::filesystem::path& takePath) const;
   void resize(double logicalWidth, double logicalHeight);
 
   [[nodiscard]] const voicebank::Manifest& manifest() const noexcept { return manifest_; }
@@ -54,6 +69,10 @@ public:
     return manifestPath_;
   }
   [[nodiscard]] const std::string& status() const noexcept { return status_; }
+  [[nodiscard]] const std::optional<voicebank::DryTakeInspection>&
+  takeInspection() const noexcept {
+    return takeInspection_;
+  }
 
 private:
   [[nodiscard]] core::Result<void> rebuildSelected();
@@ -68,6 +87,7 @@ private:
   std::size_t selectedIndex_{0U};
   bool dirty_{false};
   std::string status_{"NO BANK"};
+  std::optional<voicebank::DryTakeInspection> takeInspection_;
   double logicalWidth_{1440.0};
   double logicalHeight_{900.0};
 };

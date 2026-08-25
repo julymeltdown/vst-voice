@@ -16,6 +16,8 @@ struct AudioSettings final {
   std::size_t blockFrames{256U};
   std::uint8_t outputChannels{2U};
   std::uint64_t revision{1U};
+
+  friend bool operator==(const AudioSettings&, const AudioSettings&) = default;
 };
 
 class AudioSettingsStore final {

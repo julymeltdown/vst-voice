@@ -1,6 +1,6 @@
 # Project SEAM 현재 개발 상태
 
-**기준일:** 2026-08-18
+**기준일:** 2026-08-25
 **브랜치 정책:** `master` 단일 브랜치
 **현재 제품 단계:** **G1 Feature Alpha**
 
@@ -47,4 +47,4 @@ Phase 13B 엔지니어링 도구는 구현됐지만 제품 Acceptance는 BLOCKED
 
 ## 사용 가능한 Standalone 제품 Gate
 
-정식 제품 사용성 Gate는 `docs/product/USABLE_ALPHA_ACCEPTANCE_KO.md`와 canonical 영문 문서 `docs/product/USABLE_ALPHA_ACCEPTANCE.md`다. 현재 네이티브 Standalone은 `makeDemoProject()`로 하드코딩된 Project를 만들고 `makeDemoTimeline()`의 사인파를 재생하는 데모 셸이다. Phase 12C·13A·13B의 엔지니어링 Gate는 Standalone 실사용성을 증명하지 않는다. 최우선 제품 목표는 공통 Authoring Runtime과 Apple Silicon Usable Standalone Alpha다.
+정식 제품 사용성 Gate는 `docs/product/USABLE_ALPHA_ACCEPTANCE_KO.md`와 canonical 영문 문서 `docs/product/USABLE_ALPHA_ACCEPTANCE.md`다. 네이티브 Standalone은 이제 공통 `AuthoringRuntime`과 `ProductionProjectRenderer`로 사용자 Project, 정확한 Voicebank 해석, Transport, 복구, WAV Export를 처리하며 사인파 데모 셸이 아니다. 다만 Gate는 여전히 `BLOCKED`다. 권리 정리된 production bank, Finder/Apple Silicon 증적, 실제 청취와 외부 플레이어 확인, 실제 곡 안정성 세션은 UI를 통해 완료되어야 한다. Phase 12C·13A·13B의 엔지니어링 Gate는 그 사용자 여정을 대체하지 않는다.

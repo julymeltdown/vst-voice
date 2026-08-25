@@ -1,5 +1,9 @@
 #include <clap/clap.h>
 
+#include "platform_host.hpp"
+#include "seam/build/version.hpp"
+#include "seam/core/sha256.hpp"
+#include "seam/voicebank/catalog.hpp"
 #include "seam/voicebank/wav.hpp"
 
 #include <algorithm>
@@ -10,17 +14,22 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <optional>
 #include <span>
 #include <string>
 #include <thread>
 #include <vector>
 
-#if defined(__linux__)
-#include <X11/Xlib.h>
-#include <X11/Xutil.h>
+#if defined(_WIN32)
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#elif defined(__unix__) || defined(__APPLE__)
 #include <dlfcn.h>
 #endif
 
@@ -29,8 +38,18 @@ namespace {
 class Module final {
 public:
   bool open(const std::filesystem::path& path) {
-#if defined(__linux__)
-    handle_ = dlopen(path.c_str(), RTLD_NOW | RTLD_LOCAL);
+#if defined(_WIN32)
+    handle_ = LoadLibraryW(path.wstring().c_str());
+    return handle_ != nullptr;
+#elif defined(__unix__) || defined(__APPLE__)
+    auto libraryPath = path;
+#if defined(__APPLE__)
+    std::error_code error;
+    if (std::filesystem::is_directory(libraryPath, error)) {
+      libraryPath /= "Contents/MacOS/ProjectSEAMEditor";
+    }
+#endif
+    handle_ = dlopen(libraryPath.c_str(), RTLD_NOW | RTLD_LOCAL);
     return handle_ != nullptr;
 #else
     static_cast<void>(path);
@@ -38,7 +57,10 @@ public:
 #endif
   }
   void* symbol(const char* name) const {
-#if defined(__linux__)
+#if defined(_WIN32)
+    return handle_ != nullptr ? reinterpret_cast<void*>(GetProcAddress(handle_, name))
+                              : nullptr;
+#elif defined(__unix__) || defined(__APPLE__)
     return handle_ != nullptr ? dlsym(handle_, name) : nullptr;
 #else
     static_cast<void>(name);
@@ -46,12 +68,18 @@ public:
 #endif
   }
   ~Module() {
-#if defined(__linux__)
+#if defined(_WIN32)
+    if (handle_ != nullptr) FreeLibrary(handle_);
+#elif defined(__unix__) || defined(__APPLE__)
     if (handle_ != nullptr) dlclose(handle_);
 #endif
   }
 private:
+#if defined(_WIN32)
+  HMODULE handle_{nullptr};
+#elif defined(__unix__) || defined(__APPLE__)
   void* handle_{nullptr};
+#endif
 };
 
 struct HostContext final {
@@ -184,35 +212,6 @@ struct ReadStream final {
   }
 };
 
-#if defined(__linux__)
-bool writePpm(Display* display, Window window,
-              const std::filesystem::path& path) {
-  XWindowAttributes attributes{};
-  if (XGetWindowAttributes(display, window, &attributes) == 0) return false;
-  auto* image = XGetImage(display, window, 0, 0,
-                          static_cast<unsigned int>(attributes.width),
-                          static_cast<unsigned int>(attributes.height),
-                          AllPlanes, ZPixmap);
-  if (image == nullptr) return false;
-  std::ofstream output(path, std::ios::binary | std::ios::trunc);
-  output << "P6\n" << attributes.width << ' ' << attributes.height
-         << "\n255\n";
-  for (int y = 0; y < attributes.height; ++y) {
-    for (int x = 0; x < attributes.width; ++x) {
-      const auto pixel = XGetPixel(image, x, y);
-      const std::array<char, 3> rgb{
-          static_cast<char>((pixel >> 16U) & 0xffU),
-          static_cast<char>((pixel >> 8U) & 0xffU),
-          static_cast<char>(pixel & 0xffU),
-      };
-      output.write(rgb.data(), static_cast<std::streamsize>(rgb.size()));
-    }
-  }
-  XDestroyImage(image);
-  return static_cast<bool>(output);
-}
-#endif
-
 double energy(std::span<const float> values) {
   double result = 0.0;
   for (const auto value : values) result += std::abs(static_cast<double>(value));
@@ -226,6 +225,7 @@ int main(int argc, char** argv) {
   std::filesystem::path screenshotPath;
   std::filesystem::path summaryPath;
   std::filesystem::path audioPath;
+  std::filesystem::path targetRuntimeFixtureRoot;
   for (int index = 1; index < argc; ++index) {
     const std::string argument = argv[index];
     if (argument == "--plugin" && index + 1 < argc) {
@@ -236,13 +236,44 @@ int main(int argc, char** argv) {
       summaryPath = argv[++index];
     } else if (argument == "--audio" && index + 1 < argc) {
       audioPath = argv[++index];
+    } else if (argument == "--target-runtime-fixture-root" &&
+               index + 1 < argc) {
+      targetRuntimeFixtureRoot = argv[++index];
     }
   }
   if (pluginPath.empty()) {
     std::cerr << "Usage: seam_clap_editor_host --plugin FILE.clap "
                  "[--screenshot FILE.ppm] [--summary FILE.json] "
-                 "[--audio FILE.wav]\n";
+                 "[--audio FILE.wav] "
+                 "[--target-runtime-fixture-root DIR]\n";
     return 2;
+  }
+
+  if (!targetRuntimeFixtureRoot.empty()) {
+#if defined(_WIN32)
+    if (_putenv_s("SEAM_TARGET_RUNTIME_FIXTURE_ROOT",
+                  targetRuntimeFixtureRoot.string().c_str()) != 0) {
+      return 1;
+    }
+#else
+    if (setenv("SEAM_TARGET_RUNTIME_FIXTURE_ROOT",
+               targetRuntimeFixtureRoot.string().c_str(), 1) != 0) {
+      return 1;
+    }
+#endif
+  }
+
+  std::optional<seam::voicebank::VoicebankCandidate> fixtureCandidate;
+  if (!targetRuntimeFixtureRoot.empty()) {
+    seam::voicebank::VoicebankCatalog catalog;
+    const auto roots = std::vector<seam::voicebank::VoicebankSearchRoot>{
+        seam::voicebank::VoicebankSearchRoot{
+            .path = targetRuntimeFixtureRoot,
+            .kind = seam::voicebank::VoicebankRootKind::Development,
+        }};
+    const auto scanned = catalog.scan(roots);
+    if (!scanned || scanned.value().empty()) return 1;
+    fixtureCandidate = scanned.value().front();
   }
 
   Module module;
@@ -258,12 +289,18 @@ int main(int argc, char** argv) {
   if (factory == nullptr || factory->get_plugin_count(factory) != 1U) return 1;
   const auto* descriptor = factory->get_plugin_descriptor(factory, 0U);
   if (descriptor == nullptr ||
-      std::strcmp(descriptor->id, "com.project-seam.editor") != 0) return 1;
+      std::strcmp(descriptor->id, "com.project-seam.editor") != 0 ||
+      descriptor->version == nullptr ||
+      std::strcmp(descriptor->version,
+                  seam::build::kApplicationVersion.data()) != 0) {
+    std::cerr << "CLAP descriptor identity does not match this host build\n";
+    return 1;
+  }
 
   HostContext context;
   const clap_host_t host{
       CLAP_VERSION, &context, "SEAM Phase 11 Host", "Project SEAM", "",
-      "0.11.0", &hostGetExtension, &hostRequestRestart,
+      seam::build::kApplicationVersion.data(), &hostGetExtension, &hostRequestRestart,
       &hostRequestProcess, &hostRequestCallback};
   const auto* plugin = factory->create_plugin(factory, &host, descriptor->id);
   if (plugin == nullptr || !plugin->init(plugin)) return 1;
@@ -298,44 +335,27 @@ int main(int argc, char** argv) {
   bool guiCreated = false;
   bool guiVisible = false;
   bool screenshotWritten = false;
-#if defined(__linux__)
-  Display* display = XOpenDisplay(nullptr);
-  Window parent = 0U;
-  if (display != nullptr &&
-      gui->is_api_supported(plugin, CLAP_WINDOW_API_X11, false) &&
-      gui->create(plugin, CLAP_WINDOW_API_X11, false)) {
+  seam::clap_host::HostWindow hostWindow;
+  if (hostWindow.create(1100U, 720U) &&
+      gui->is_api_supported(plugin, hostWindow.api(), false) &&
+      gui->create(plugin, hostWindow.api(), false)) {
     guiCreated = true;
-    parent = XCreateSimpleWindow(display, DefaultRootWindow(display),
-                                 0, 0, 1100U, 720U, 0U, 0U, 0x101015U);
-    XMapWindow(display, parent);
-    XFlush(display);
     clap_window_t parentWindow{};
-    parentWindow.api = CLAP_WINDOW_API_X11;
-    parentWindow.x11 = parent;
-    guiVisible = gui->set_parent(plugin, &parentWindow) &&
+    guiVisible = hostWindow.attach(parentWindow) &&
+                 gui->set_parent(plugin, &parentWindow) &&
                  gui->set_size(plugin, 1100U, 720U) &&
                  gui->show(plugin);
     for (int frame = 0; frame < 45; ++frame) {
       if (context.timerId != CLAP_INVALID_ID) {
         timer->on_timer(plugin, context.timerId);
       }
-      XSync(display, False);
+      if (!hostWindow.pump()) break;
       std::this_thread::sleep_for(std::chrono::milliseconds{8});
     }
-    Window root = 0U;
-    Window parentResult = 0U;
-    Window* children = nullptr;
-    unsigned int childCount = 0U;
-    if (guiVisible && !screenshotPath.empty() &&
-        XQueryTree(display, parent, &root, &parentResult, &children,
-                   &childCount) != 0 && childCount > 0U) {
-      screenshotWritten = writePpm(display, children[0], screenshotPath);
+    if (guiVisible && !screenshotPath.empty()) {
+      screenshotWritten = hostWindow.capture(screenshotPath);
     }
-    if (children != nullptr) XFree(children);
   }
-#else
-  static_cast<void>(screenshotPath);
-#endif
 
   WriteStream saved;
   if (!state->save(plugin, &saved.stream) || saved.bytes.empty()) return 1;
@@ -353,12 +373,11 @@ int main(int argc, char** argv) {
 
   if (audioConfigs->count(plugin) != 8U ||
       !audioConfigs->select(plugin, 4U)) return 1;
-  clap_audio_ports_config_t selectedConfig{};
-  if (!audioConfigInfo->get(plugin, &selectedConfig) ||
-      selectedConfig.main_output_channel_count != 4U ||
-      audioConfigInfo->current_config(plugin) != 4U) return 1;
   clap_audio_port_info_t selectedPort{};
-  if (!audioPorts->get(plugin, 0U, false, &selectedPort) ||
+  if (!audioConfigInfo->get(plugin, 4U, 0U, false, &selectedPort) ||
+      selectedPort.channel_count != 4U ||
+      audioConfigInfo->current_config(plugin) != 4U ||
+      !audioPorts->get(plugin, 0U, false, &selectedPort) ||
       selectedPort.channel_count != 4U) return 1;
   const auto offlineRenderAccepted = render->set(plugin, CLAP_RENDER_OFFLINE);
 
@@ -444,6 +463,8 @@ int main(int argc, char** argv) {
   const auto activeLoadRejected = !state->load(plugin, &activeLoad.stream) &&
                                   context.restartRequests.load(
                                       std::memory_order_relaxed) == 1U;
+  const auto stateSha256 = seam::core::sha256Hex(
+      std::span<const std::byte>{saved.bytes});
   plugin->stop_processing(plugin);
   plugin->deactivate(plugin);
 
@@ -452,20 +473,22 @@ int main(int argc, char** argv) {
   const auto* restoredState = static_cast<const clap_plugin_state_t*>(
       restored->get_extension(restored, CLAP_EXT_STATE));
   ReadStream stateRead{saved.bytes};
-  const auto stateRoundTrip = restoredState != nullptr &&
-                              restoredState->load(restored, &stateRead.stream);
+  const auto restoredStateLoadAccepted =
+      restoredState != nullptr && restoredState->load(restored, &stateRead.stream);
+  WriteStream restoredSaved;
+  const auto restoredStateSaved =
+      restoredState != nullptr && restoredState->save(restored, &restoredSaved.stream);
+  const auto restoredStateSha256 = seam::core::sha256Hex(
+      std::span<const std::byte>{restoredSaved.bytes});
+  const auto stateRoundTrip = restoredStateLoadAccepted && restoredStateSaved &&
+                              restoredSaved.bytes == saved.bytes;
   restored->destroy(restored);
 
   if (guiCreated) {
     if (guiVisible) static_cast<void>(gui->hide(plugin));
     gui->destroy(plugin);
   }
-#if defined(__linux__)
-  if (display != nullptr) {
-    if (parent != 0U) XDestroyWindow(display, parent);
-    XCloseDisplay(display);
-  }
-#endif
+  hostWindow.destroy();
   plugin->destroy(plugin);
   entry->deinit();
 
@@ -481,6 +504,21 @@ int main(int argc, char** argv) {
     std::ofstream summary(summaryPath, std::ios::binary | std::ios::trunc);
     summary << "{\n"
             << "  \"pluginId\": \"com.project-seam.editor\",\n"
+            << "  \"hostApi\": \"" << hostWindow.api() << "\",\n"
+            << "  \"fixtureId\": \""
+            << (fixtureCandidate.has_value()
+                    ? fixtureCandidate->manifest.id
+                    : std::string{})
+            << "\",\n"
+            << "  \"fixtureVersion\": \""
+            << (fixtureCandidate.has_value()
+                    ? fixtureCandidate->manifest.version
+                    : std::string{})
+            << "\",\n"
+            << "  \"fixtureContentHash\": \""
+            << (fixtureCandidate.has_value() ? fixtureCandidate->contentHash
+                                              : std::string{})
+            << "\",\n"
             << "  \"guiCreated\": " << (guiCreated ? "true" : "false") << ",\n"
             << "  \"guiVisible\": " << (guiVisible ? "true" : "false") << ",\n"
             << "  \"screenshotWritten\": "
@@ -501,6 +539,15 @@ int main(int argc, char** argv) {
             << (inactiveGuiLoadAccepted ? "true" : "false") << ",\n"
             << "  \"stateRoundTrip\": "
             << (stateRoundTrip ? "true" : "false") << ",\n"
+            << "  \"stateBytes\": " << saved.bytes.size() << ",\n"
+            << "  \"restoredStateBytes\": " << restoredSaved.bytes.size()
+            << ",\n"
+            << "  \"stateSha256\": \"" << stateSha256 << "\",\n"
+            << "  \"restoredStateSha256\": \"" << restoredStateSha256
+            << "\",\n"
+            << "  \"stateBytesEqual\": "
+            << (restoredSaved.bytes == saved.bytes ? "true" : "false")
+            << ",\n"
             << "  \"restartRequests\": "
             << context.restartRequests.load(std::memory_order_relaxed) << ",\n"
             << "  \"processRequests\": "

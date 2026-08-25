@@ -52,6 +52,15 @@ core::Result<void> UnitSelectionOverride::validate() const {
                          "Unit selection override must identify a voicebank unit",
                          startKey.toString());
   }
+  const auto validNormalized = [](const std::optional<float>& value) {
+    return !value.has_value() ||
+           (std::isfinite(*value) && *value >= 0.0F && *value <= 1.0F);
+  };
+  if (!validNormalized(loopPrint) || !validNormalized(sourcePitchResidual)) {
+    return core::failure(core::ErrorCode::InvariantViolation,
+                         "Unit renderer controls must be in [0, 1]",
+                         startKey.toString());
+  }
   return core::success();
 }
 

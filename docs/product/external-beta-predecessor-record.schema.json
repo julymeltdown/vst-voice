@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Project SEAM External Beta signed predecessor record",
+  "type": "object",
+  "required": ["schemaVersion", "status", "releaseIdentity", "packages", "stateFixtures"],
+  "properties": {
+    "schemaVersion": {"const": 1},
+    "status": {"const": "SIGNED_COHERENT"},
+    "releaseIdentity": {"type": "object"},
+    "packages": {"type": "object", "required": ["macos", "windows"]},
+    "stateFixtures": {"type": "array", "minItems": 7}
+  }
+}

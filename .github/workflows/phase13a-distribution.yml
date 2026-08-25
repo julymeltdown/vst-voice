@@ -42,18 +42,62 @@ jobs:
         run: python scripts/build_phase13a_formats.py --dependencies "$env:RUNNER_TEMP\phase13a-deps" --build-root "$env:RUNNER_TEMP\phase13a-build" --output "$env:RUNNER_TEMP\payload"
       - name: Sign plug-in payload and verify timestamp
         run: pwsh scripts/sign_windows_payload.ps1 -PayloadRoot "$env:RUNNER_TEMP\payload" -EvidenceDirectory out\phase13a\windows\payload-signing
+      - name: Build official Windows VST3 validator
+        shell: pwsh
+        run: |
+          cmake -S "$env:RUNNER_TEMP\phase13a-deps\vst3sdk" -B "$env:RUNNER_TEMP\vst3sdk-build" -DCMAKE_BUILD_TYPE=Release -DSMTG_ADD_VST3_PLUGINS_SAMPLES=OFF -DSMTG_CREATE_PLUGIN_LINK=OFF
+          cmake --build "$env:RUNNER_TEMP\vst3sdk-build" --config Release --target validator --parallel 2
+      - name: Validate signed Windows VST3 payload
+        shell: pwsh
+        run: |
+          $validator = Get-ChildItem "$env:RUNNER_TEMP\vst3sdk-build" -Recurse -File | Where-Object { $_.Name -eq 'validator.exe' } | Select-Object -First 1
+          if (-not $validator) { throw 'Windows VST3 validator was not built' }
+          $moduleRoot = Join-Path $env:GITHUB_WORKSPACE 'tools\phase13a'
+          $hashScript = 'import sys; sys.path.insert(0, sys.argv[1]); from pathlib import Path; from distribution_manifest import tree_sha256; print(tree_sha256(Path(sys.argv[2])))'
+          $clap = Join-Path $env:RUNNER_TEMP 'payload\CLAP\ProjectSEAMEditor.clap'
+          $vst3 = Join-Path $env:RUNNER_TEMP 'payload\VST3\ProjectSEAMEditor.vst3'
+          $clapSha = (& python -c $hashScript $moduleRoot $clap).Trim()
+          $vst3Sha = (& python -c $hashScript $moduleRoot $vst3).Trim()
+          python scripts/run_vst3_validator.py --validator $validator.FullName --plugin $vst3 --clap-path (Join-Path $env:RUNNER_TEMP 'payload\CLAP') --platform windows --expected-sha256 $vst3Sha --canonical-clap-sha256 $clapSha --output out\phase13a\windows\vst3-validator
+          if ($LASTEXITCODE -ne 0) { throw 'Signed Windows VST3 validator failed' }
+      - name: Attach signed Windows validator evidence
+        shell: pwsh
+        run: |
+          python scripts/attach_phase13a_validation.py --build-result "$env:RUNNER_TEMP\phase13a-build\phase13a-build-result.json" --vst3-validation-result out\phase13a\windows\vst3-validator\result.json
+          if ($LASTEXITCODE -ne 0) { throw 'Signed Windows validator evidence attachment failed' }
+      - name: Preserve signed Windows VST3 validator packet
+        if: always()
+        shell: pwsh
+        run: |
+          $packetRoot = 'out\phase13a\windows'
+          New-Item -ItemType Directory -Force "$packetRoot\payload\CLAP", "$packetRoot\payload\VST3", "$packetRoot\vst3-validator" | Out-Null
+          Copy-Item "$env:RUNNER_TEMP\payload\CLAP\*" "$packetRoot\payload\CLAP" -Recurse -Force
+          Copy-Item "$env:RUNNER_TEMP\payload\VST3\*" "$packetRoot\payload\VST3" -Recurse -Force
+          Copy-Item "$env:RUNNER_TEMP\phase13a-build\phase13a-build-result.json" "$packetRoot\phase13a-build-result.json" -Force
+          $validator = Get-ChildItem "$env:RUNNER_TEMP\vst3sdk-build" -Recurse -File | Where-Object { $_.Name -eq 'validator.exe' } | Select-Object -First 1
+          if (-not $validator) { throw 'Windows VST3 validator was not built' }
+          Copy-Item $validator.FullName "$packetRoot\vst3-validator\validator" -Force
+          @{runnerOs='Windows'; runnerRelease=[Environment]::OSVersion.Version.ToString(); runnerArchitecture=$env:PROCESSOR_ARCHITECTURE} |
+            ConvertTo-Json | Set-Content "$packetRoot\runner.json" -Encoding UTF8
+          $plugin = Join-Path $packetRoot 'payload\VST3\ProjectSEAMEditor.vst3'
+          python scripts/verify_phase13a_vst3_packet.py --create --root $packetRoot --packet "$packetRoot\vst3-validator\packet.json" --result "$packetRoot\vst3-validator\result.json" --stdout-log "$packetRoot\vst3-validator\validator.log" --stderr-log "$packetRoot\vst3-validator\validator.stderr.log" --plugin $plugin --clap (Join-Path $packetRoot 'payload\CLAP\ProjectSEAMEditor.clap') --validator "$packetRoot\vst3-validator\validator" --runner-metadata "$packetRoot\runner.json" --build-result "$packetRoot\phase13a-build-result.json"
+          if ($LASTEXITCODE -ne 0) { throw 'Signed Windows VST3 validator packet verification failed' }
       - name: Build and sign NSIS installer
         run: |
-          pwsh scripts/build_windows_installer.ps1 -PayloadRoot "$env:RUNNER_TEMP\payload" -OutputInstaller "$env:RUNNER_TEMP\ProjectSEAM-0.13.0.exe"
-          pwsh scripts/sign_windows_installer.ps1 -Installer "$env:RUNNER_TEMP\ProjectSEAM-0.13.0.exe" -EvidenceDirectory out\phase13a\windows\installer-signing
+          $version = (& python tools/phase13a/release_identity.py --source-root . --field version).Trim()
+          $installer = "$env:RUNNER_TEMP\ProjectSEAM-$version.exe"
+          pwsh scripts/build_windows_installer.ps1 -PayloadRoot "$env:RUNNER_TEMP\payload" -OutputInstaller $installer
+          pwsh scripts/sign_windows_installer.ps1 -Installer $installer -EvidenceDirectory out\phase13a\windows\installer-signing
       - name: Mandatory clean-install, same-version update and uninstall
-        run: pwsh scripts/test_windows_installer.ps1 -Installer "$env:RUNNER_TEMP\ProjectSEAM-0.13.0.exe" -EvidenceDirectory out\phase13a\windows\installer-clean
+        run: |
+          $version = (& python tools/phase13a/release_identity.py --source-root . --field version).Trim()
+          pwsh scripts/test_windows_installer.ps1 -Installer "$env:RUNNER_TEMP\ProjectSEAM-$version.exe" -EvidenceDirectory out\phase13a\windows\installer-clean
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: phase13a-windows-signed-installer
           path: |
-            ${{ runner.temp }}/ProjectSEAM-0.13.0.exe
+            ${{ runner.temp }}/ProjectSEAM-*.exe
             out/phase13a/windows
 
   macos-signed-notarized-installer:
@@ -94,27 +138,70 @@ jobs:
         run: python3 scripts/fetch_phase13a_dependencies.py --output "$RUNNER_TEMP/phase13a-deps"
       - name: Build CLAP, VST3 and AUv2
         run: python3 scripts/build_phase13a_formats.py --dependencies "$RUNNER_TEMP/phase13a-deps" --build-root "$RUNNER_TEMP/phase13a-build" --output "$RUNNER_TEMP/payload" --auv2
-      - name: Run vst3-validator and auval before packaging
+      - name: Sign the exact payload before runtime validation
+        run: scripts/sign_macos_plugin_payload.sh "$RUNNER_TEMP/payload" out/phase13a/macos/payload-signing
+      - name: Run validators against the signed payload
         run: |
           cmake -S "$RUNNER_TEMP/phase13a-deps/vst3sdk" -B "$RUNNER_TEMP/vst3sdk-build" -DCMAKE_BUILD_TYPE=Release -DSMTG_ADD_VST3_PLUGINS_SAMPLES=OFF -DSMTG_CREATE_PLUGIN_LINK=OFF
           cmake --build "$RUNNER_TEMP/vst3sdk-build" --target validator --parallel 2
           validator="$(find "$RUNNER_TEMP/vst3sdk-build" -type f -name validator | head -1)"
-          python3 scripts/run_vst3_validator.py --validator "$validator" --plugin "$RUNNER_TEMP/payload/VST3/ProjectSEAMEditor.vst3" --clap-path "$RUNNER_TEMP/payload/CLAP" --output out/phase13a/macos/vst3-validator
-          mkdir -p "$HOME/Library/Audio/Plug-Ins/Components"
-          ditto "$RUNNER_TEMP/payload/AU/ProjectSEAMEditor.component" "$HOME/Library/Audio/Plug-Ins/Components/ProjectSEAMEditor.component"
+          clap_sha="$(PYTHONPATH="$GITHUB_WORKSPACE/tools/phase13a" python3 -c 'import sys; from pathlib import Path; from distribution_manifest import tree_sha256; print(tree_sha256(Path(sys.argv[1])))' "$RUNNER_TEMP/payload/CLAP/ProjectSEAMEditor.clap")"
+          vst3_sha="$(PYTHONPATH="$GITHUB_WORKSPACE/tools/phase13a" python3 -c 'import sys; from pathlib import Path; from distribution_manifest import tree_sha256; print(tree_sha256(Path(sys.argv[1])))' "$RUNNER_TEMP/payload/VST3/ProjectSEAMEditor.vst3")"
+          au_sha="$(PYTHONPATH="$GITHUB_WORKSPACE/tools/phase13a" python3 -c 'import sys; from pathlib import Path; from distribution_manifest import tree_sha256; print(tree_sha256(Path(sys.argv[1])))' "$RUNNER_TEMP/payload/AU/ProjectSEAMEditor.component")"
+          python3 scripts/run_vst3_validator.py --validator "$validator" --plugin "$RUNNER_TEMP/payload/VST3/ProjectSEAMEditor.vst3" --clap-path "$RUNNER_TEMP/payload/CLAP" --platform macos --expected-sha256 "$vst3_sha" --canonical-clap-sha256 "$clap_sha" --output out/phase13a/macos/vst3-validator
+          target="$HOME/Library/Audio/Plug-Ins/Components/ProjectSEAMEditor.component"
+          test ! -e "$target"
+          cleanup() { rm -rf "$target"; killall -9 AudioComponentRegistrar 2>/dev/null || true; }
+          trap cleanup EXIT
+          mkdir -p "$(dirname "$target")"
+          ditto "$RUNNER_TEMP/payload/AU/ProjectSEAMEditor.component" "$target"
           killall -9 AudioComponentRegistrar 2>/dev/null || true
-          python3 scripts/run_auval.py --type aumu --subtype SEAM --manufacturer PSEM --output out/phase13a/macos/auval
-      - name: Nested sign, build signed PKG, notarize and staple
+          python3 scripts/run_auval.py --component "$target" --installed-root "$HOME/Library/Audio/Plug-Ins/Components" --type aumu --subtype SEAM --manufacturer PSEM --expected-sha256 "$au_sha" --output out/phase13a/macos/auval
+      - name: Attach signed validator evidence to the build manifest
         run: |
-          scripts/sign_macos_plugin_payload.sh "$RUNNER_TEMP/payload" out/phase13a/macos/payload-signing
-          scripts/package_macos_plugins.sh "$RUNNER_TEMP/payload" "$RUNNER_TEMP/ProjectSEAM-0.13.0.pkg"
-          scripts/notarize_macos_installer.sh "$RUNNER_TEMP/ProjectSEAM-0.13.0.pkg" out/phase13a/macos/notarization
+          python3 scripts/attach_phase13a_validation.py \
+            --build-result "$RUNNER_TEMP/phase13a-build/phase13a-build-result.json" \
+            --vst3-validation-result out/phase13a/macos/vst3-validator/result.json \
+            --auval-validation-result out/phase13a/macos/auval/result.json
+      - name: Preserve signed macOS VST3 validator packet
+        if: always()
+        run: |
+          packet_root="out/phase13a/macos"
+          mkdir -p "$packet_root/payload/CLAP" "$packet_root/payload/VST3" "$packet_root/vst3-validator"
+          ditto "$RUNNER_TEMP/payload/CLAP/." "$packet_root/payload/CLAP/"
+          ditto "$RUNNER_TEMP/payload/VST3/." "$packet_root/payload/VST3/"
+          cp "$RUNNER_TEMP/phase13a-build/phase13a-build-result.json" "$packet_root/phase13a-build-result.json"
+          validator="$(find "$RUNNER_TEMP/vst3sdk-build" -type f -name validator | head -1)"
+          test -n "$validator"
+          cp "$validator" "$packet_root/vst3-validator/validator"
+          python3 - <<'PY'
+          import json
+          import platform
+
+          with open("out/phase13a/macos/runner.json", "w", encoding="utf-8") as handle:
+              json.dump({
+                  "runnerOs": platform.system(),
+                  "runnerRelease": platform.release(),
+                  "runnerArchitecture": platform.machine(),
+              }, handle, indent=2, sort_keys=True)
+              handle.write("\n")
+          PY
+          plugin="$packet_root/payload/VST3/ProjectSEAMEditor.vst3"
+          python3 scripts/verify_phase13a_vst3_packet.py --create --root "$packet_root" --packet "$packet_root/vst3-validator/packet.json" --result "$packet_root/vst3-validator/result.json" --stdout-log "$packet_root/vst3-validator/validator.log" --stderr-log "$packet_root/vst3-validator/validator.stderr.log" --plugin "$plugin" --clap "$packet_root/payload/CLAP/ProjectSEAMEditor.clap" --validator "$packet_root/vst3-validator/validator" --runner-metadata "$packet_root/runner.json" --build-result "$packet_root/phase13a-build-result.json"
+      - name: Build signed PKG, notarize and staple
+        run: |
+          version="$(python3 tools/phase13a/release_identity.py --source-root . --field version)"
+          installer="$RUNNER_TEMP/ProjectSEAM-${version}.pkg"
+          scripts/package_macos_plugins.sh "$RUNNER_TEMP/payload" "$installer"
+          scripts/notarize_macos_installer.sh "$installer" out/phase13a/macos/notarization
       - name: Mandatory clean-install, update and uninstall
-        run: scripts/test_macos_installer.sh "$RUNNER_TEMP/ProjectSEAM-0.13.0.pkg" out/phase13a/macos/installer-clean
+        run: |
+          version="$(python3 tools/phase13a/release_identity.py --source-root . --field version)"
+          scripts/test_macos_installer.sh "$RUNNER_TEMP/ProjectSEAM-${version}.pkg" out/phase13a/macos/installer-clean
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: phase13a-macos-signed-notarized-installer
           path: |
-            ${{ runner.temp }}/ProjectSEAM-0.13.0.pkg
+            ${{ runner.temp }}/ProjectSEAM-*.pkg
             out/phase13a/macos

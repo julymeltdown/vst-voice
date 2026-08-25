@@ -1,7 +1,17 @@
 #include "seam/native_ui/voicebank_studio.hpp"
 
+#include "seam/core/file_io.hpp"
+#include "seam/core/sha256.hpp"
+#include "seam/formats/json_value.hpp"
+#include "seam/text/unicode.hpp"
+
 #include <algorithm>
+#include <cctype>
 #include <cmath>
+#include <iomanip>
+#include <sstream>
+#include <system_error>
+#include <utility>
 
 namespace seam::native_ui {
 namespace {
@@ -21,6 +31,108 @@ ui::Rect spectrogramRect(double width, double height) {
 
 }  // namespace
 
+std::vector<ui::Rect> voicebankStudioMarkerLabelBounds(
+    std::span<const ui::AcousticMarkerVisual> markers,
+    ui::Rect waveformBounds) {
+  std::vector<ui::Rect> result;
+  result.reserve(markers.size());
+  std::vector<double> rowRights;
+  for (const auto& marker : markers) {
+    const auto displayWidth =
+        static_cast<double>(text::utf8DisplayWidth(marker.label));
+    const auto estimatedWidth = std::max(
+        12.0, displayWidth * 3.8 + 4.0);
+    const auto width = std::min(
+        estimatedWidth, std::max(1.0, waveformBounds.width - 4.0));
+    const auto leftLimit = waveformBounds.x + 2.0;
+    const auto rightLimit = waveformBounds.right() - width - 2.0;
+    const auto x = std::clamp(marker.x + 3.0, leftLimit, rightLimit);
+    std::size_t row = 0U;
+    while (row < rowRights.size() && x < rowRights[row] + 2.0) ++row;
+    if (row == rowRights.size()) {
+      rowRights.push_back(x + width);
+    } else {
+      rowRights[row] = x + width;
+    }
+    result.push_back(ui::Rect{x, waveformBounds.y + 2.0 +
+                                      static_cast<double>(row) * 9.0,
+                              width, 7.0});
+  }
+  return result;
+}
+
+core::Result<std::filesystem::path> nextVoicebankRecordingPath(
+    const std::filesystem::path& directory, std::string_view unitId) {
+  std::error_code error;
+  const auto directoryStatus = std::filesystem::symlink_status(directory, error);
+  if (error || std::filesystem::is_symlink(directoryStatus) ||
+      !std::filesystem::is_directory(directoryStatus)) {
+    return core::failure<std::filesystem::path>(
+        core::ErrorCode::Conflict,
+        "Recording directory must be a real directory", directory.string());
+  }
+  std::string stem;
+  stem.reserve(std::min<std::size_t>(unitId.size(), 80U));
+  for (const auto character : unitId) {
+    if (stem.size() == 80U) break;
+    const auto byte = static_cast<unsigned char>(character);
+    stem.push_back((byte < 128U && (std::isalnum(byte) != 0 || character == '-' ||
+                                   character == '_'))
+                       ? character
+                       : '_');
+  }
+  if (stem.empty()) stem = "take";
+  auto upper = stem;
+  std::transform(upper.begin(), upper.end(), upper.begin(), [](char value) {
+    return static_cast<char>(std::toupper(static_cast<unsigned char>(value)));
+  });
+  const auto reserved = upper == "CON" || upper == "PRN" || upper == "AUX" ||
+                        upper == "NUL" ||
+                        (upper.size() == 4U &&
+                         (upper.starts_with("COM") || upper.starts_with("LPT")) &&
+                         upper.back() >= '1' && upper.back() <= '9');
+  if (reserved) stem.insert(stem.begin(), '_');
+  const auto resolvedDirectory = std::filesystem::canonical(directory, error);
+  if (error) {
+    return core::failure<std::filesystem::path>(
+        core::ErrorCode::IoError,
+        "Unable to resolve recording directory", error.message());
+  }
+  for (std::size_t index = 1U; index <= 10000U; ++index) {
+    std::ostringstream name;
+    name << stem << "-take-" << std::setw(4) << std::setfill('0') << index
+         << ".wav";
+    const auto candidate = directory / name.str();
+    if (candidate.parent_path() != directory ||
+        std::filesystem::canonical(candidate.parent_path(), error) !=
+            resolvedDirectory ||
+        error) {
+      return core::failure<std::filesystem::path>(
+          core::ErrorCode::Conflict,
+          "Recording destination is not a direct child", candidate.string());
+    }
+    const auto status = std::filesystem::symlink_status(candidate, error);
+    if (error == std::errc::no_such_file_or_directory ||
+        status.type() == std::filesystem::file_type::not_found) {
+      return candidate;
+    }
+    if (error) {
+      return core::failure<std::filesystem::path>(
+          core::ErrorCode::IoError,
+          "Unable to inspect recording destination", error.message());
+    }
+    if (std::filesystem::is_symlink(status) ||
+        !std::filesystem::is_regular_file(status)) {
+      return core::failure<std::filesystem::path>(
+          core::ErrorCode::Conflict,
+          "Recording destination is not a regular file", candidate.string());
+    }
+  }
+  return core::failure<std::filesystem::path>(
+      core::ErrorCode::Conflict,
+      "Voicebank Studio has no available take filename");
+}
+
 core::Result<void> VoicebankStudioController::openManifest(
     const std::filesystem::path& manifestPath, double logicalWidth,
     double logicalHeight) {
@@ -37,6 +149,7 @@ core::Result<void> VoicebankStudioController::openManifest(
   }
   selectedIndex_ = 0U;
   dirty_ = false;
+  takeInspection_.reset();
   status_ = "LOADED";
   return rebuildSelected();
 }
@@ -62,6 +175,7 @@ core::Result<void> VoicebankStudioController::selectUnit(std::size_t index) {
                          "Voicebank unit index is outside the manifest");
   }
   selectedIndex_ = index;
+  takeInspection_.reset();
   status_ = "UNIT " + std::to_string(index + 1U);
   return rebuildSelected();
 }
@@ -74,6 +188,89 @@ const voicebank::Unit* VoicebankStudioController::selectedUnit() const noexcept 
 voicebank::Unit* VoicebankStudioController::selectedUnit() noexcept {
   return selectedIndex_ < manifest_.units.size() ? &manifest_.units[selectedIndex_]
                                                  : nullptr;
+}
+
+core::Result<void> VoicebankStudioController::inspectTake(
+    const std::filesystem::path& path, std::int32_t expectedRootMidi) {
+  auto inspected = voicebank::inspectDryTake(path, expectedRootMidi);
+  if (!inspected) {
+    takeInspection_.reset();
+    status_ = "TAKE ERROR";
+    return core::Result<void>{inspected.error()};
+  }
+  takeInspection_ = std::move(inspected.value());
+  status_ = takeInspection_->accepted() ? "TAKE ACCEPTED" : "TAKE REVIEW";
+  return core::success();
+}
+
+core::Result<std::filesystem::path>
+VoicebankStudioController::persistTakeInspection(
+    const std::filesystem::path& takePath) const {
+  if (!takeInspection_.has_value()) {
+    return core::failure<std::filesystem::path>(
+        core::ErrorCode::InvalidState,
+        "Voicebank Studio has no take inspection to persist");
+  }
+  const auto digest = core::sha256File(
+      takePath, voicebank::kMaximumSupportedWavBytes);
+  if (!digest) return core::Result<std::filesystem::path>{digest.error()};
+  const auto& inspection = *takeInspection_;
+  if (inspection.sourceSha256.empty() ||
+      digest.value() != inspection.sourceSha256) {
+    return core::failure<std::filesystem::path>(
+        core::ErrorCode::Conflict,
+        "Recorded take changed after inspection");
+  }
+  auto sidecar = takePath;
+  sidecar += ".inspection.json";
+  std::error_code error;
+  const auto status = std::filesystem::symlink_status(sidecar, error);
+  if (error != std::errc::no_such_file_or_directory && error) {
+    return core::failure<std::filesystem::path>(
+        core::ErrorCode::IoError,
+        "Unable to inspect take inspection destination", error.message());
+  }
+  if (!error && status.type() != std::filesystem::file_type::not_found) {
+    return core::failure<std::filesystem::path>(
+        core::ErrorCode::Conflict,
+        "Take inspection destination already exists", sidecar.string());
+  }
+  formats::JsonValue::Object quality{
+      {"formatValid", formats::JsonValue{inspection.formatValid}},
+      {"finite", formats::JsonValue{inspection.finite}},
+      {"clippingFree", formats::JsonValue{inspection.clippingFree}},
+      {"silenceFree", formats::JsonValue{inspection.silenceFree}},
+      {"dcOffsetFree", formats::JsonValue{inspection.dcOffsetFree}},
+      {"rootPitchValid", formats::JsonValue{inspection.rootPitchValid}},
+      {"peak", formats::JsonValue{static_cast<double>(inspection.peak)}},
+      {"rms", formats::JsonValue{inspection.rms}},
+      {"dcOffset", formats::JsonValue{inspection.dcOffset}},
+  };
+  if (inspection.analyzedRootMidi.has_value()) {
+    quality.emplace("analyzedRootMidi", formats::JsonValue{
+        static_cast<std::int64_t>(*inspection.analyzedRootMidi)});
+  }
+  formats::JsonValue::Object record{
+      {"schemaVersion", formats::JsonValue{std::int64_t{1}}},
+      {"takeFile", formats::JsonValue{takePath.filename().generic_string()}},
+      {"takeSha256", formats::JsonValue{inspection.sourceSha256}},
+      {"status", formats::JsonValue{
+          inspection.accepted() ? "ACCEPTED" : "REVIEW"}},
+      {"sampleRate", formats::JsonValue{
+          static_cast<std::int64_t>(inspection.sampleRate)}},
+      {"channels", formats::JsonValue{
+          static_cast<std::int64_t>(inspection.channels)}},
+      {"bitsPerSample", formats::JsonValue{
+          static_cast<std::int64_t>(inspection.bitsPerSample)}},
+      {"expectedRootMidi", formats::JsonValue{
+          static_cast<std::int64_t>(inspection.expectedRootMidi)}},
+      {"quality", formats::JsonValue{std::move(quality)}},
+  };
+  const auto written = core::durableAtomicWriteText(
+      sidecar, formats::stringifyJson(
+                   formats::JsonValue{std::move(record)}, true));
+  if (!written) return core::Result<std::filesystem::path>{written.error()};
+  return sidecar;
 }
 
 std::filesystem::path VoicebankStudioController::selectedAudioPath() const {
@@ -217,11 +414,15 @@ void VoicebankStudioScenePainter::paint(
     }
   }
 
-  for (const auto& marker : microscope.markers()) {
+  const auto labelBounds = voicebankStudioMarkerLabelBounds(
+      microscope.markers(), wave);
+  for (std::size_t index = 0U; index < microscope.markers().size(); ++index) {
+    const auto& marker = microscope.markers()[index];
     canvas.line(ui::Point{marker.x, wave.y}, ui::Point{marker.x, spec.bottom()},
                 marker.kind == ui::AcousticMarkerKind::VowelOnset ? theme_.accent
                                                                   : theme_.grid, 1.0);
-    canvas.drawText(ui::Point{marker.x + 3.0, wave.y + 5.0}, marker.label,
+    canvas.drawText(ui::Point{labelBounds[index].x, labelBounds[index].y + 5.0},
+                    marker.label,
                     theme_.secondaryText, 6.0);
   }
   for (const auto& mark : microscope.pitchMarks()) {

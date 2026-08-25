@@ -1,111 +1,55 @@
 from __future__ import annotations
 
 import hashlib
-import sys
-import tempfile
 import unittest
-from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT))
-
-from tools.external_beta import release_gate
-
-
-def _record(
-    *,
-    requirement_id: str,
-    candidate_root_id: str = "candidate-root-001",
-    stage_node_id: str = "installed-macos-001",
-    parent_edge_id: str = "edge-signed-to-installed-001",
-    status: str = "PASS",
-) -> dict[str, object]:
-    return {
-        "recordId": f"record-{requirement_id}",
-        "requirementId": requirement_id,
-        "candidateRootId": candidate_root_id,
-        "stageNodeId": stage_node_id,
-        "parentEdgeId": parent_edge_id,
-        "sourceCommit": "a" * 40,
-        "platform": "macos",
-        "architecture": "arm64",
-        "surface": "standalone",
-        "host": None,
-        "finalDeliverableSha256": "b" * 64,
-        "installedTreeSha256": "c" * 64,
-        "artifactSha256": "d" * 64,
-        "toolIdentity": {"name": "validator", "version": "1.0"},
-        "workloadId": "eb.render.preview.v1",
-        "workloadSha256": release_gate.stable_workload_sha256("eb.render.preview.v1"),
-        "machineProfileId": "eb.macos.arm64.reference.v1",
-        "machineProfileSha256": release_gate.stable_machine_sha256("eb.macos.arm64.reference.v1"),
-        "privacyClass": "PUBLIC_TECHNICAL",
-        "roles": {"producer": "A3", "reviewer": "A6", "approver": "A3"},
-        "trustedTime": "2026-08-21T12:00:00Z",
-        "rawArchive": {
-            "locator": f"archive/{requirement_id}.json",
-            "sha256": "1" * 64,
-        },
-        "status": status,
-        "blockingReason": None if status == "PASS" else "target not run",
-    }
-
-
-def _candidate() -> dict[str, object]:
-    requirement_ids = tuple(release_gate.READY_REQUIREMENT_IDS)
-    records = [_record(requirement_id=item) for item in requirement_ids]
-    return {
-        "schemaVersion": 1,
-        "gate": "EXTERNAL_BETA_READY",
-        "releaseIdentity": {
-            "product": "Project SEAM",
-            "version": "0.13.1",
-            "buildId": "candidate-build-001",
-            "sourceCommit": "a" * 40,
-            "buildEpoch": 1_755_768_000,
-        },
-        "candidateRoot": {
-            "id": "candidate-root-001",
-            "sha256": "2" * 64,
-            "status": "SEALED",
-        },
-        "stageNodes": [
-            {"id": "unsigned-001", "kind": "UNSIGNED_PAYLOAD", "sha256": "3" * 64},
-            {"id": "signed-001", "kind": "SIGNED_DELIVERABLE", "sha256": "4" * 64},
-            {"id": "installed-macos-001", "kind": "INSTALLED_TREE", "sha256": "c" * 64},
-        ],
-        "stageEdges": [
-            {"id": "edge-unsigned-to-signed-001", "parent": "unsigned-001", "child": "signed-001", "transformation": "SIGN"},
-            {"id": "edge-signed-to-installed-001", "parent": "signed-001", "child": "installed-macos-001", "transformation": "INSTALL"},
-        ],
-        "requirements": {
-            item: {"status": "PASS", "evidenceRecordIds": [f"record-{item}"]}
-            for item in requirement_ids
-        },
-        "evidence": records,
-        "workloadCatalog": {
-            "eb.render.preview.v1": {
-                "sha256": release_gate.stable_workload_sha256("eb.render.preview.v1"),
-                "identityMode": "stable-id-v1",
-            },
-        },
-        "machineProfiles": {
-            "eb.macos.arm64.reference.v1": {
-                "sha256": release_gate.stable_machine_sha256("eb.macos.arm64.reference.v1"),
-                "identityMode": "stable-id-v1",
-            },
-        },
-        "archive": {
-            "locator": "archive/candidate-root-001",
-            "sha256": "5" * 64,
-            "anchored": True,
-            "immutable": True,
-        },
-        "issues": [],
-    }
+from tools.external_beta import release_gate  # noqa: E402
+from tests.external_beta.cohort_fixtures import closed_cohort as _closed_cohort
+from tests.external_beta.release_gate_fixtures import candidate as _candidate
 
 
 class ExternalBetaReleaseGateTests(unittest.TestCase):
+    def test_ready_passes_when_every_requirement_references_matching_pass_evidence(self) -> None:
+        result = release_gate.evaluate_ready(_candidate())
+        self.assertTrue(result.passed, result.errors)
+
+    def test_ready_rejects_referenced_evidence_without_matching_pass_status(self) -> None:
+        cases = (
+            ("not-run", "status", "NOT_RUN"),
+            ("blocked", "status", "BLOCKED"),
+            ("failed", "status", "FAIL"),
+            ("other-requirement", "requirementId", "EB-002-identity"),
+        )
+        for label, field, value in cases:
+            with self.subTest(label=label):
+                candidate = _candidate()
+                evidence = candidate["evidence"]
+                assert isinstance(evidence, list)
+                record = evidence[0]
+                assert isinstance(record, dict)
+                record[field] = value
+                if field == "status":
+                    record["blockingReason"] = "evidence did not pass"
+                result = release_gate.evaluate_ready(candidate)
+                self.assertFalse(result.passed)
+                self.assertTrue(any("PASS evidence for itself" in error for error in result.errors))
+
+    def test_ready_rejects_referenced_pass_evidence_from_another_candidate_or_release(self) -> None:
+        cases = (
+            ("candidate", "candidateRootId", "candidate-root-002"),
+            ("release", "sourceCommit", "b" * 40),
+        )
+        for label, field, value in cases:
+            with self.subTest(label=label):
+                candidate = _candidate()
+                evidence = candidate["evidence"]
+                assert isinstance(evidence, list)
+                record = evidence[0]
+                assert isinstance(record, dict)
+                record[field] = value
+                result = release_gate.evaluate_ready(candidate)
+                self.assertFalse(result.passed)
+
     def test_complete_g3_like_matrix_does_not_promote_without_external_beta_evidence(self) -> None:
         candidate = _candidate()
         candidate["requirements"] = {}
@@ -140,30 +84,18 @@ class ExternalBetaReleaseGateTests(unittest.TestCase):
 
     def test_close_requires_terminal_assignments_and_all_claimed_hosts(self) -> None:
         candidate = _candidate()
-        candidate["cohort"] = {
-            "evaluationWindow": {"status": "ENDED", "endedAt": "2026-08-21T18:00:00Z"},
-            "externalSessions": [
-                {"participantId": "p1", "platform": "macos", "status": "COMPLETED", "flows": ["F1", "F2", "F5"]},
-                {"participantId": "p2", "platform": "windows", "status": "COMPLETED", "flows": ["F1", "F2", "F5"]},
-            ],
-            "claimedHostTuples": ["macos/reaper/7.0/CLAP", "windows/reaper/7.0/CLAP"],
-            "hostSessions": [
-                {"tuple": "macos/reaper/7.0/CLAP", "participantId": "p1", "status": "COMPLETED"},
-                {"tuple": "windows/reaper/7.0/CLAP", "participantId": "p2", "status": "COMPLETED"},
-            ],
-            "assignments": [
-                {"participantId": "p1", "status": "COMPLETED", "reason": "finished"},
-                {"participantId": "p2", "status": "COMPLETED", "reason": "finished"},
-            ],
-            "checkpoints": [{"id": "cp1", "status": "RESOLVED"}],
-            "incidents": [],
-            "approvals": [
-                {"role": "A3", "status": "APPROVED"},
-                {"role": "A4", "status": "APPROVED"},
-            ],
-        }
+        candidate["cohort"] = _closed_cohort()
         result = release_gate.evaluate_closed(candidate)
         self.assertTrue(result.passed, result.errors)
+
+    def test_closed_gate_delegates_to_strict_cohort_contract(self) -> None:
+        candidate = _candidate()
+        cohort = _closed_cohort()
+        cohort["assignments"][0]["email"] = "person@example.com"
+        candidate["cohort"] = cohort
+        result = release_gate.evaluate_closed(candidate)
+        self.assertFalse(result.passed)
+        self.assertTrue(any("PII" in error for error in result.errors))
 
     def test_canonical_json_is_stable_and_hashable(self) -> None:
         value = {"z": 1, "a": [True, "한글"]}

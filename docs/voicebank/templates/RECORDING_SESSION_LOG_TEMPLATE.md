@@ -15,3 +15,9 @@
 - Source-file hashes:
 
 A blank template is not recording-session evidence.
+
+For the External Beta, pin `generatorVersion`, `inventorySha256`, and
+`scriptSha256` from `tools/voicebank-script-generator/main.py` in every
+session. Every take must retain its prompt/take ID, pitch layer, safe derived
+filename, source-file SHA-256, and retake group; raw recordings remain
+immutable and outside the public dossier.

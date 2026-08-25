@@ -140,6 +140,44 @@ TEST_CASE("SHA-256 implementation matches published vectors") {
         "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
 }
 
+TEST_CASE("SHA-256 file hashing rejects symlink and non-file targets") {
+  const auto root = seam::test::support::temporaryDirectory("sha-paths");
+  const auto outside = root / "outside.bin";
+  std::ofstream(outside, std::ios::binary) << "hash me";
+  CHECK(seam::core::sha256File(outside));
+
+  const auto link = root / "link.bin";
+  std::error_code error;
+  std::filesystem::create_symlink(outside, link, error);
+  CHECK(!error);
+  CHECK(!seam::core::sha256File(link));
+  CHECK(seam::core::sha256File(outside));
+
+  const auto directory = root / "directory";
+  std::filesystem::create_directories(directory);
+  CHECK(!seam::core::sha256File(directory));
+}
+
+TEST_CASE("bounded file reads reject symlink and non-file targets") {
+  const auto root = seam::test::support::temporaryDirectory("read-paths");
+  const auto outside = root / "outside.bin";
+  std::ofstream(outside, std::ios::binary) << "read me";
+  const auto bytes = seam::core::readFileBytesLimited(outside, 1024U);
+  CHECK(bytes);
+  CHECK(bytes.value().size() == 7U);
+
+  const auto link = root / "link.bin";
+  std::error_code error;
+  std::filesystem::create_symlink(outside, link, error);
+  CHECK(!error);
+  CHECK(!seam::core::readFileBytesLimited(link, 1024U));
+  CHECK(seam::core::readTextFileLimited(outside, 1024U));
+
+  const auto directory = root / "directory";
+  std::filesystem::create_directories(directory);
+  CHECK(!seam::core::readFileBytesLimited(directory, 1024U));
+}
+
 TEST_CASE("generated build identity owns the current application and render ABI") {
   CHECK(seam::build::kApplicationVersion == "0.13.1");
   CHECK(!seam::build::kRenderAbiId.empty());
@@ -235,6 +273,39 @@ TEST_CASE("durable atomic write preserves old data across injected faults") {
   const auto oldBackup = seam::core::readTextFileLimited(backup, 1024U);
   CHECK(newAfterFault && newAfterFault.value() == "new-after");
   CHECK(oldBackup && oldBackup.value() == "old");
+}
+
+TEST_CASE("durable atomic write rejects symlink and non-file targets") {
+  const auto directory = seam::test::support::temporaryDirectory("atomic-paths");
+  const auto outside = directory / "outside.txt";
+  CHECK(seam::core::durableAtomicWriteText(outside, "outside"));
+
+  const auto targetLink = directory / "target-link.txt";
+  std::error_code error;
+  std::filesystem::create_symlink(outside, targetLink, error);
+  CHECK(!error);
+  CHECK(!seam::core::durableAtomicWriteText(targetLink, "replacement"));
+  const auto outsideAfterTarget = seam::core::readTextFileLimited(outside, 1024U);
+  CHECK(outsideAfterTarget && outsideAfterTarget.value() == "outside");
+
+  const auto target = directory / "target.txt";
+  CHECK(seam::core::durableAtomicWriteText(target, "target"));
+  const auto backupSource = directory / "backup-outside.txt";
+  CHECK(seam::core::durableAtomicWriteText(backupSource, "backup"));
+  const auto backupLink = target.string() + ".bak";
+  std::filesystem::create_symlink(backupSource, backupLink, error);
+  CHECK(!error);
+  CHECK(!seam::core::durableAtomicWriteText(
+      target, "replacement", seam::core::AtomicWriteOptions{
+          .backupPath = backupLink,
+      }));
+  const auto targetAfterBackup = seam::core::readTextFileLimited(target, 1024U);
+  CHECK(targetAfterBackup && targetAfterBackup.value() == "target");
+  CHECK(std::filesystem::is_symlink(backupLink));
+
+  const auto nonFile = directory / "directory";
+  std::filesystem::create_directories(nonFile);
+  CHECK(!seam::core::durableAtomicWriteText(nonFile, "invalid"));
 }
 
 TEST_CASE("render identity binds selected WAV bytes and effective render options") {
