@@ -384,8 +384,20 @@ core::Result<ExportResult> ExportService::commitRendered(
     }
   }
   const auto staging = stagingPath(destination, revision);
-  auto cleaned = removeTree(staging);
-  if (!cleaned) return core::Result<ExportResult>{cleaned.error()};
+  if (std::filesystem::exists(staging, error)) {
+    if (error) {
+      return core::failure<ExportResult>(core::ErrorCode::IoError,
+                                         "Unable to inspect export staging",
+                                         error.message());
+    }
+    return core::failure<ExportResult>(core::ErrorCode::InvalidArgument,
+                                       "Export staging path already exists");
+  }
+  if (error) {
+    return core::failure<ExportResult>(core::ErrorCode::IoError,
+                                       "Unable to inspect export staging",
+                                       error.message());
+  }
   std::filesystem::create_directories(staging, error);
   if (error) {
     return core::failure<ExportResult>(core::ErrorCode::IoError,

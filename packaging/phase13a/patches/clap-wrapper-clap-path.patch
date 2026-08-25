@@ -2,12 +2,6 @@ diff --git a/src/detail/clap/fsutil.cpp b/src/detail/clap/fsutil.cpp
 index c012fe1..99027b3 100644
 --- a/src/detail/clap/fsutil.cpp
 +++ b/src/detail/clap/fsutil.cpp
-@@ -109,7 +109,7 @@ std::vector<fs::path> getValidCLAPSearchPaths()
-   }
-   auto sep = ':';
- 
+@@ -112 +112 @@ std::vector<fs::path> getValidCLAPSearchPaths()
 -  if (cp.empty())
 +  if (!cp.empty())
-   {
-     size_t pos;
-     while ((pos = cp.find(sep)) != std::string::npos)

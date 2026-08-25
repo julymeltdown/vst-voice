@@ -2,24 +2,12 @@ diff --git a/src/wrapasvst3.cpp b/src/wrapasvst3.cpp
 index 12a6493..4635022 100644
 --- a/src/wrapasvst3.cpp
 +++ b/src/wrapasvst3.cpp
-@@ -317,6 +317,11 @@ tresult PLUGIN_API ClapAsVst3::setupProcessing(Vst::ProcessSetup &newSetup)
-   {
-     return kResultFalse;
-   }
+@@ -319,0 +320,5 @@ tresult PLUGIN_API ClapAsVst3::setupProcessing(Vst::ProcessSetup &newSetup)
 +  if (!(newSetup.sampleRate == newSetup.sampleRate) || newSetup.sampleRate < 8000.0 ||
 +      newSetup.sampleRate > 192000.0 || newSetup.maxSamplesPerBlock == 0)
 +  {
 +    return kResultFalse;
 +  }
-   if (_plugin->_ext._render)
-   {
-     if (_plugin->_ext._render->has_hard_realtime_requirement(_plugin->_plugin) &&
-@@ -936,7 +941,7 @@ Vst::UnitID ClapAsVst3::getOrCreateUnitInfo(const char *modulename)
- 
- void ClapAsVst3::setupWrapperSpecifics(const clap_plugin_t *plugin)
- {
+@@ -939 +944 @@ void ClapAsVst3::setupWrapperSpecifics(const clap_plugin_t *plugin)
 -  _useIMidiMapping = checkMIDIDialectSupport();
 +  _useIMidiMapping = (_plugin->_ext._params != nullptr) && checkMIDIDialectSupport();
- 
-   _vst3specifics = (clap_plugin_as_vst3_t *)plugin->get_extension(plugin, CLAP_PLUGIN_AS_VST3);
-   if (_vst3specifics)

@@ -75,9 +75,13 @@ def resolve_release_identity(
             f"configured release version {configured_version} does not match source version {version}"
         )
 
-    source_commit = values.get("SEAM_SOURCE_COMMIT") or _git_value(
-        root, ("rev-parse", "HEAD")
-    )
+    head_commit = _git_value(root, ("rev-parse", "HEAD"))
+    configured_commit = values.get("SEAM_SOURCE_COMMIT")
+    if configured_commit is not None and head_commit and configured_commit.lower() != head_commit.lower():
+        raise ReleaseIdentityInputError(
+            "SEAM_SOURCE_COMMIT must match the checked-out Git HEAD"
+        )
+    source_commit = configured_commit or head_commit
     if HEX40.fullmatch(source_commit) is None:
         raise ReleaseIdentityInputError(
             "SEAM_SOURCE_COMMIT or the source checkout must provide a 40-character commit"

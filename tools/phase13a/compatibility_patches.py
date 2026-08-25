@@ -26,7 +26,7 @@ def apply_patch_once(checkout: Path, patch: Path) -> str:
     if entry in entries:
         return entry
     check = subprocess.run(
-        ["git", "-C", str(checkout), "apply", "--check", str(patch)],
+        ["git", "-C", str(checkout), "apply", "--unidiff-zero", "--check", str(patch)],
         check=False,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -34,7 +34,7 @@ def apply_patch_once(checkout: Path, patch: Path) -> str:
     )
     if check.returncode == 0:
         subprocess.run(
-            ["git", "-C", str(checkout), "apply", str(patch)], check=True
+            ["git", "-C", str(checkout), "apply", "--unidiff-zero", str(patch)], check=True
         )
     else:
         reverse = subprocess.run(
@@ -43,6 +43,7 @@ def apply_patch_once(checkout: Path, patch: Path) -> str:
                 "-C",
                 str(checkout),
                 "apply",
+                "--unidiff-zero",
                 "--reverse",
                 "--check",
                 str(patch),
