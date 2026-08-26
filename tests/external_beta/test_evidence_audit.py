@@ -41,11 +41,39 @@ def _candidate(root: Path) -> tuple[dict, dict]:
 
 
 class EvidenceAuditTests(unittest.TestCase):
-    def test_candidate_audit_passes_from_restored_archive_bytes(self) -> None:
+    def test_candidate_audit_rejects_opaque_archived_bytes(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             candidate, manifest = _candidate(root)
             result = audit_candidate(candidate, manifest, root)
+            self.assertFalse(result.passed)
+            self.assertTrue(any("serialized" in error.lower() for error in result.errors))
+
+    def test_candidate_audit_accepts_bound_serialized_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            candidate, _ = _candidate(root)
+            record = candidate["evidence"][0]
+            raw = root / "archive" / "record.json"
+            raw.write_text(
+                json.dumps(
+                    {
+                        "recordId": record["recordId"],
+                        "candidateRootId": record["candidateRootId"],
+                        "status": record["status"],
+                    },
+                    sort_keys=True,
+                ),
+                encoding="utf-8",
+            )
+            manifest = create_archive_manifest(
+                "candidate-root-001", root, ["archive/record.json"], "archive-001"
+            )
+            candidate["archive"]["sha256"] = manifest["manifestSha256"]
+            record["rawArchive"]["sha256"] = manifest["entries"][0]["sha256"]
+
+            result = audit_candidate(candidate, manifest, root)
+
             self.assertTrue(result.passed, result.errors)
 
     def test_raw_archive_hash_or_role_mismatch_blocks_audit(self) -> None:

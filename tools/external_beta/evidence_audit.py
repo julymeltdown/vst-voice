@@ -96,6 +96,18 @@ def audit_candidate(candidate: dict[str, Any], manifest: dict[str, Any], root: P
             errors.append(f"{label}.raw archive hash does not match restored entry")
         if entry.get("candidateRootId") not in {None, candidate_root_id}:
             errors.append(f"{label}.archive entry belongs to another candidate")
+        archive_path = root / raw["locator"]
+        try:
+            archived_record = json.loads(archive_path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+            errors.append(f"{label}.raw archive must be a serialized evidence record: {exc}")
+            continue
+        if not isinstance(archived_record, dict):
+            errors.append(f"{label}.raw archive must be a serialized evidence object")
+            continue
+        for key in ("recordId", "candidateRootId", "status"):
+            if archived_record.get(key) != record.get(key):
+                errors.append(f"{label}.raw archive {key} does not match candidate evidence")
     if errors:
         blocked.append("archive-audit")
     return EvidenceAuditResult(not errors and not blocked, tuple(errors), tuple(sorted(set(blocked))))
