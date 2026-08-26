@@ -15,7 +15,7 @@ class EvidenceArchiveTests(unittest.TestCase):
             path = root / "archive" / "record.json"
             path.parent.mkdir(parents=True)
             path.write_bytes(b"raw-record")
-            manifest = create_archive_manifest("candidate-root-001", root, ["archive/record.json"], "archive-001")
+            manifest = create_archive_manifest("candidate-root-001", root, ["archive/record.json"], "archive-001", anchor_locator="https://evidence.example/archive-001")
             self.assertEqual([], validate_archive_manifest(manifest, root))
             self.assertEqual(hashlib.sha256(path.read_bytes()).hexdigest(), manifest["entries"][0]["sha256"])
 
@@ -25,7 +25,7 @@ class EvidenceArchiveTests(unittest.TestCase):
             path = root / "archive" / "record.json"
             path.parent.mkdir(parents=True)
             path.write_bytes(b"raw-record")
-            manifest = create_archive_manifest("candidate-root-001", root, ["archive/record.json"], "archive-001")
+            manifest = create_archive_manifest("candidate-root-001", root, ["archive/record.json"], "archive-001", anchor_locator="https://evidence.example/archive-001")
             path.write_bytes(b"tampered")
             self.assertTrue(any("sha256" in error for error in validate_archive_manifest(manifest, root)))
             path.write_bytes(b"raw-record")

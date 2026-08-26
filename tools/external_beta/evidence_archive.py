@@ -61,17 +61,21 @@ def _time(value: Any) -> bool:
     return True
 
 
+def _anchor_sha256(candidate_root_id: str, archive_id: str, locator: str, entries: list[dict[str, Any]]) -> str:
+    return sha256_json({"archiveId": archive_id, "candidateRootId": candidate_root_id, "entries": entries, "locator": locator})
+
+
 def create_archive_manifest(
     candidate_root_id: str,
     root: Path,
     relative_paths: list[str],
     archive_id: str,
     *,
-    anchor_locator: str = "archive://local",
+    anchor_locator: str | None = None,
     producer: str = "A6",
     reviewer: str = "A4",
 ) -> dict[str, Any]:
-    if not candidate_root_id or not archive_id:
+    if not candidate_root_id or not archive_id or not isinstance(anchor_locator, str) or not anchor_locator or anchor_locator.startswith("archive://"):
         raise ValueError("candidate root and archive identifiers are required")
     entries: list[dict[str, Any]] = []
     seen: set[str] = set()
@@ -99,7 +103,7 @@ def create_archive_manifest(
         "status": "SEALED",
         "anchored": True,
         "immutable": True,
-        "anchor": {"kind": "external-immutable-anchor", "locator": anchor_locator, "sha256": sha256_json({"archiveId": archive_id, "locator": anchor_locator})},
+        "anchor": {"kind": "external-immutable-anchor", "locator": anchor_locator, "sha256": _anchor_sha256(candidate_root_id, archive_id, anchor_locator, entries)},
         "createdAt": datetime.now().astimezone().isoformat(),
         "roles": {"producer": producer, "reviewer": reviewer},
         "entries": entries,
@@ -128,6 +132,8 @@ def validate_archive_manifest(manifest: dict[str, Any], root: Path) -> list[str]
     anchor = manifest.get("anchor")
     if not isinstance(anchor, dict) or not anchor.get("kind") or not anchor.get("locator") or not _hex(anchor.get("sha256")):
         errors.append("manifest.anchor must include kind, locator, and SHA-256")
+    elif anchor.get("locator", "").startswith("archive://") or anchor.get("sha256") != _anchor_sha256(manifest.get("candidateRootId", ""), manifest.get("archiveId", ""), anchor["locator"], manifest.get("entries", [])):
+        errors.append("manifest.anchor must bind a non-local immutable archive commitment")
     roles = manifest.get("roles")
     if not isinstance(roles, dict) or roles.get("producer") not in ROLES or roles.get("reviewer") not in ROLES:
         errors.append("manifest.roles must identify valid producer and reviewer roles")

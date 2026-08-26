@@ -17,7 +17,7 @@ def _candidate(root: Path) -> tuple[dict, dict]:
     raw = root / "archive" / "cohort.json"
     raw.parent.mkdir(parents=True)
     raw.write_bytes(b"cohort")
-    manifest = create_archive_manifest("candidate-root-001", root, ["archive/cohort.json"], "archive-001")
+    manifest = create_archive_manifest("candidate-root-001", root, ["archive/cohort.json"], "archive-001", anchor_locator="https://evidence.example/archive-001")
     return {
         "schemaVersion": 1,
         "gate": "EXTERNAL_BETA_CLOSED",
