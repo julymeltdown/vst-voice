@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import ipaddress
 import json
 import re
 from dataclasses import dataclass
@@ -64,7 +65,12 @@ def _time(value: Any) -> bool:
 
 def _immutable_remote_locator(value: Any) -> bool:
     parsed = urlparse(value) if isinstance(value, str) else None
-    return parsed is not None and parsed.scheme == "https" and bool(parsed.netloc)
+    if parsed is None or parsed.scheme != "https" or not parsed.hostname or parsed.hostname.lower() == "localhost":
+        return False
+    try:
+        return ipaddress.ip_address(parsed.hostname).is_global
+    except ValueError:
+        return True
 
 
 def _anchor_sha256(candidate_root_id: str, archive_id: str, locator: str, entries: list[dict[str, Any]], created_at: str, roles: dict[str, str]) -> str:

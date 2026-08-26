@@ -17,6 +17,10 @@ class EvidenceArchiveTests(unittest.TestCase):
             path.write_text("record", encoding="utf-8")
             with self.assertRaises(ValueError):
                 create_archive_manifest("candidate-root-001", root, ["archive/record.json"], "archive-001", anchor_locator="file:///tmp/self-authored-anchor")
+            for locator in ("https://localhost/archive", "https://127.0.0.1/archive"):
+                with self.subTest(locator=locator):
+                    with self.assertRaises(ValueError):
+                        create_archive_manifest("candidate-root-001", root, ["archive/record.json"], "archive-001", anchor_locator=locator)
 
     def test_sealed_archive_manifest_binds_every_raw_file(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
