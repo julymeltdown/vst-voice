@@ -4,6 +4,7 @@ import hashlib
 import ipaddress
 import json
 import re
+import socket
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path, PurePosixPath
@@ -68,9 +69,10 @@ def _immutable_remote_locator(value: Any) -> bool:
     if parsed is None or parsed.scheme != "https" or not parsed.hostname or parsed.hostname.lower() == "localhost":
         return False
     try:
-        return ipaddress.ip_address(parsed.hostname).is_global
-    except ValueError:
-        return True
+        addresses = {entry[4][0] for entry in socket.getaddrinfo(parsed.hostname, 443, type=socket.SOCK_STREAM)}
+    except socket.gaierror:
+        return False
+    return bool(addresses) and all(ipaddress.ip_address(address).is_global for address in addresses)
 
 
 def _anchor_sha256(candidate_root_id: str, archive_id: str, locator: str, entries: list[dict[str, Any]], created_at: str, roles: dict[str, str]) -> str:

@@ -21,7 +21,7 @@ def _candidate(root: Path) -> tuple[dict, dict]:
     raw.parent.mkdir(parents=True)
     raw.write_bytes(b"raw-record")
     digest = hashlib.sha256(raw.read_bytes()).hexdigest()
-    manifest = create_archive_manifest("candidate-root-001", root, ["archive/record.json"], "archive-001", anchor_locator="https://evidence.example/archive-001")
+    manifest = create_archive_manifest("candidate-root-001", root, ["archive/record.json"], "archive-001", anchor_locator="https://8.8.8.8/archive-001")
     candidate = {
         "schemaVersion": 1,
         "gate": "EXTERNAL_BETA_READY",
@@ -65,7 +65,7 @@ class EvidenceAuditTests(unittest.TestCase):
                 encoding="utf-8",
             )
             manifest = create_archive_manifest(
-                "candidate-root-001", root, ["archive/record.json"], "archive-001", anchor_locator="https://evidence.example/archive-001"
+                "candidate-root-001", root, ["archive/record.json"], "archive-001", anchor_locator="https://8.8.8.8/archive-001"
             )
             candidate["archive"]["sha256"] = manifest["manifestSha256"]
             record["rawArchive"]["sha256"] = manifest["entries"][0]["sha256"]
@@ -85,7 +85,7 @@ class EvidenceAuditTests(unittest.TestCase):
             archived["roles"] = {"producer": "A3", "reviewer": "A3", "approver": "A3"}
             raw.write_text(json.dumps(archived, sort_keys=True), encoding="utf-8")
             manifest = create_archive_manifest(
-                "candidate-root-001", root, ["archive/record.json"], "archive-001", anchor_locator="https://evidence.example/archive-001"
+                "candidate-root-001", root, ["archive/record.json"], "archive-001", anchor_locator="https://8.8.8.8/archive-001"
             )
             candidate["archive"]["sha256"] = manifest["manifestSha256"]
             record["rawArchive"]["sha256"] = manifest["entries"][0]["sha256"]
@@ -116,7 +116,7 @@ class EvidenceAuditTests(unittest.TestCase):
             record = candidate["evidence"][0]
             raw = root / "archive" / "record.json"
             raw.write_text(json.dumps({key: value for key, value in record.items() if key != "rawArchive"}, sort_keys=True), encoding="utf-8")
-            manifest = create_archive_manifest("candidate-root-001", root, ["archive/record.json"], "archive-001", anchor_locator="https://evidence.example/archive-001")
+            manifest = create_archive_manifest("candidate-root-001", root, ["archive/record.json"], "archive-001", anchor_locator="https://8.8.8.8/archive-001")
             candidate["archive"]["sha256"] = manifest["manifestSha256"]
             record["rawArchive"]["sha256"] = manifest["entries"][0]["sha256"]
             result = audit_candidate(candidate, manifest, root)
@@ -130,7 +130,7 @@ class EvidenceAuditTests(unittest.TestCase):
             record = candidate["evidence"][0]
             raw = root / "archive" / "record.json"
             raw.write_text(json.dumps({key: value for key, value in record.items() if key != "rawArchive"}, sort_keys=True), encoding="utf-8")
-            manifest = create_archive_manifest("candidate-root-001", root, ["archive/record.json"], "archive-001", anchor_locator="https://evidence.example/archive-001")
+            manifest = create_archive_manifest("candidate-root-001", root, ["archive/record.json"], "archive-001", anchor_locator="https://8.8.8.8/archive-001")
             candidate["archive"]["sha256"] = manifest["manifestSha256"]
             record["rawArchive"]["sha256"] = manifest["entries"][0]["sha256"]
             trusted_anchor = manifest["anchor"]["sha256"]
@@ -152,7 +152,7 @@ class EvidenceAuditTests(unittest.TestCase):
             record = candidate["evidence"][0]
             raw = root / "archive" / "record.json"
             raw.write_text(json.dumps({key: value for key, value in record.items() if key != "rawArchive"}, sort_keys=True), encoding="utf-8")
-            manifest = create_archive_manifest("candidate-root-001", root, ["archive/record.json"], "archive-001", anchor_locator="https://evidence.example/archive-001")
+            manifest = create_archive_manifest("candidate-root-001", root, ["archive/record.json"], "archive-001", anchor_locator="https://8.8.8.8/archive-001")
             candidate["archive"]["sha256"] = manifest["manifestSha256"]
             record["rawArchive"]["sha256"] = manifest["entries"][0]["sha256"]
             trusted_anchor = manifest["anchor"]["sha256"]
