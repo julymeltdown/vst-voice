@@ -9,9 +9,10 @@ from tests.external_beta.release_gate_fixtures import candidate as _candidate
 
 
 class ExternalBetaReleaseGateTests(unittest.TestCase):
-    def test_ready_passes_when_every_requirement_references_matching_pass_evidence(self) -> None:
+    def test_ready_requires_a_verified_restored_archive(self) -> None:
         result = release_gate.evaluate_ready(_candidate())
-        self.assertTrue(result.passed, result.errors)
+        self.assertFalse(result.passed)
+        self.assertTrue(any("archive audit" in error.lower() for error in result.errors))
 
     def test_ready_rejects_referenced_evidence_without_matching_pass_status(self) -> None:
         cases = (
@@ -120,7 +121,7 @@ class ExternalBetaReleaseGateTests(unittest.TestCase):
     def test_close_requires_terminal_assignments_and_all_claimed_hosts(self) -> None:
         candidate = _candidate()
         candidate["cohort"] = _closed_cohort()
-        result = release_gate.evaluate_closed(candidate)
+        result = release_gate.evaluate_closed(candidate, archive_verified=True)
         self.assertTrue(result.passed, result.errors)
 
     def test_closed_gate_delegates_to_strict_cohort_contract(self) -> None:

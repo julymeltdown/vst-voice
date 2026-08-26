@@ -28,7 +28,9 @@ def audit_release(candidate: dict[str, Any], manifest: dict[str, Any], root: Pat
         return ReleaseAuditResult(False, normalized, (f"unsupported release audit state: {state}",), ("state",))
     archive_result = audit_candidate(candidate, manifest, root)
     gate_state = "EXTERNAL_BETA_CLOSED" if normalized == "CLOSED" else "EXTERNAL_BETA_READY"
-    gate_result = evaluate_gate(candidate, gate_state)
+    gate_result = evaluate_gate(
+        candidate, gate_state, archive_verified=archive_result.passed
+    )
     errors = [f"archive: {error}" for error in archive_result.errors]
     errors.extend(f"gate: {error}" for error in gate_result.errors)
     blocked = list(archive_result.blocked)

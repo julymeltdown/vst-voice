@@ -98,6 +98,8 @@ def sha256_json(value: JsonValue) -> str:
 def evaluate_ready(
     candidate: JsonObject,
     acceptance_contract: JsonObject | None = None,
+    *,
+    archive_verified: bool = False,
 ) -> GateResult:
     contract = (
         acceptance_contract
@@ -108,6 +110,8 @@ def evaluate_ready(
         )
     )
     errors = _base_errors(candidate)
+    if not archive_verified:
+        errors.append("verified restored archive audit is required for READY")
     errors.extend(requirement_policy_errors(candidate, READY_REQUIREMENT_IDS, contract))
     requirement_errors, blocked = _requirement_errors(candidate, READY_REQUIREMENT_IDS)
     errors.extend(requirement_errors)
@@ -124,8 +128,12 @@ def _cohort_errors(candidate: JsonObject) -> list[str]:
 def evaluate_closed(
     candidate: JsonObject,
     acceptance_contract: JsonObject | None = None,
+    *,
+    archive_verified: bool = False,
 ) -> GateResult:
-    ready = evaluate_ready(candidate, acceptance_contract)
+    ready = evaluate_ready(
+        candidate, acceptance_contract, archive_verified=archive_verified
+    )
     errors = list(ready.errors)
     errors.extend(_cohort_errors(candidate))
     return GateResult("EXTERNAL_BETA_CLOSED", not errors, tuple(errors), ready.blocked_ids)
@@ -135,12 +143,18 @@ def evaluate_gate(
     candidate: JsonObject,
     state: str = "EXTERNAL_BETA_READY",
     acceptance_contract: JsonObject | None = None,
+    *,
+    archive_verified: bool = False,
 ) -> GateResult:
     normalized = state.upper().replace(" ", "_")
     if normalized == "EXTERNAL_BETA_CLOSED":
-        return evaluate_closed(candidate, acceptance_contract)
+        return evaluate_closed(
+            candidate, acceptance_contract, archive_verified=archive_verified
+        )
     if normalized == "EXTERNAL_BETA_READY":
-        return evaluate_ready(candidate, acceptance_contract)
+        return evaluate_ready(
+            candidate, acceptance_contract, archive_verified=archive_verified
+        )
     return GateResult(normalized, False, (f"unsupported External Beta state: {state}",))
 
 

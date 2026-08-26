@@ -61,7 +61,9 @@ def _bound_candidate(contract: release_gate.JsonObject) -> release_gate.JsonObje
 class ExternalBetaReleasePolicyTests(unittest.TestCase):
     def test_matching_requirement_policy_passes(self) -> None:
         contract = _contract()
-        result = release_gate.evaluate_ready(_bound_candidate(contract), contract)
+        result = release_gate.evaluate_ready(
+            _bound_candidate(contract), contract, archive_verified=True
+        )
         self.assertTrue(result.passed, result.errors)
 
     def test_policy_rejects_wrong_stage_transformation_platform_and_surface(self) -> None:
