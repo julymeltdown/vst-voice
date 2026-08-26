@@ -112,6 +112,24 @@ class ExternalBetaReleaseGateTests(unittest.TestCase):
         self.assertFalse(result.passed)
         self.assertTrue(any("signed deliverable" in error.lower() for error in result.errors))
 
+    def test_ready_rejects_ambiguous_stage_parentage(self) -> None:
+        candidate = _candidate()
+        edges = candidate["stageEdges"]
+        assert isinstance(edges, list)
+        edges.append(
+            {
+                "id": "edge-shadow-to-installed-macos",
+                "parent": "signed-001",
+                "child": "installed-macos-001",
+                "transformation": "INSTALL",
+            }
+        )
+
+        result = release_gate.evaluate_ready(candidate, archive_verified=True)
+
+        self.assertFalse(result.passed)
+        self.assertTrue(any("ambiguous" in error.lower() for error in result.errors))
+
     def test_ready_candidate_cannot_close_without_external_cohort_coverage(self) -> None:
         result = release_gate.evaluate_closed(_candidate())
         self.assertFalse(result.passed)

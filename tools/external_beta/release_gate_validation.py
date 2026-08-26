@@ -109,7 +109,7 @@ def _evidence_errors(candidate: JsonObject) -> list[str]:
             if isinstance(node, dict) and isinstance(node.get("id"), str):
                 stage_nodes[node["id"]] = node
     edges_value = candidate.get("stageEdges")
-    parent_by_child: dict[str, str] = {}
+    parents_by_child: dict[str, list[str]] = {}
     if isinstance(edges_value, list):
         for edge in edges_value:
             if (
@@ -117,7 +117,7 @@ def _evidence_errors(candidate: JsonObject) -> list[str]:
                 and isinstance(edge.get("parent"), str)
                 and isinstance(edge.get("child"), str)
             ):
-                parent_by_child[edge["child"]] = edge["parent"]
+                parents_by_child.setdefault(edge["child"], []).append(edge["parent"])
     if not isinstance(records, list):
         return ["evidence must be an array"]
     record_ids: set[str] = set()
@@ -156,6 +156,8 @@ def _evidence_errors(candidate: JsonObject) -> list[str]:
             ):
                 errors.append(f"{record_id}: installed tree digest differs from declared stage node")
             stage_id = record.get("stageNodeId")
+            if isinstance(stage_id, str) and len(parents_by_child.get(stage_id, [])) > 1:
+                errors.append(f"{record_id}: stage lineage has ambiguous parentage")
             signed_sha256: JsonValue = None
             visited: set[str] = set()
             while isinstance(stage_id, str) and stage_id not in visited:
@@ -164,7 +166,8 @@ def _evidence_errors(candidate: JsonObject) -> list[str]:
                 if isinstance(node, dict) and node.get("kind") == "SIGNED_DELIVERABLE":
                     signed_sha256 = node.get("sha256")
                     break
-                stage_id = parent_by_child.get(stage_id)
+                parents = parents_by_child.get(stage_id, [])
+                stage_id = parents[0] if len(parents) == 1 else None
             if signed_sha256 is not None and (
                 record.get("finalDeliverableSha256") != signed_sha256
                 or record.get("artifactSha256") != signed_sha256
