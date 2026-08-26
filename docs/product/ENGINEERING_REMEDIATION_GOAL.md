@@ -1,6 +1,6 @@
 # Project SEAM Engineering Remediation Goal
 
-**Status:** ACTIVE
+**Status:** COMPLETE - ENGINEERING CANDIDATE ONLY
 
 **Baseline:** `master` through the current
 `codex/external-beta-completion` working tree
@@ -145,35 +145,35 @@ is executed against the exact candidate.
 
 The goal is complete only when all criteria below have current evidence:
 
-- [ ] **E1 - Tracked reproducibility:** a clean checkout or fresh isolated
+- [x] **E1 - Tracked reproducibility:** a clean checkout or fresh isolated
       worktree configures, builds, and runs the complete registered suite with
       no dependency on untracked files.
-- [ ] **E2 - Release-gate fidelity:** tests reject `NOT_RUN`, `BLOCKED`, `FAIL`,
+- [x] **E2 - Release-gate fidelity:** tests reject `NOT_RUN`, `BLOCKED`, `FAIL`,
       cross-requirement, cross-platform, cross-stage, and cross-candidate
       evidence reuse.
-- [ ] **E3 - Single release identity:** built application and plug-in
+- [x] **E3 - Single release identity:** built application and plug-in
       descriptors, wrappers, installers, manifests, and evidence all report the
       same generated version, build ID, and source commit.
-- [ ] **E4 - Installed-byte certification:** host PASS fails for nonexistent,
+- [x] **E4 - Installed-byte certification:** host PASS fails for nonexistent,
       symlinked, build-tree, mismatched, or self-reported artifacts and passes
       only for the matching installed tree.
-- [ ] **E5 - Project durability:** exact-byte lineage, noncanonical JSON,
+- [x] **E5 - Project durability:** exact-byte lineage, noncanonical JSON,
       recovery Save As, external-change detection, empty project reopen, and
       original-byte preservation tests pass.
-- [ ] **E6 - Export durability:** removed-stem, unrelated-canary, unowned
+- [x] **E6 - Export durability:** removed-stem, unrelated-canary, unowned
       `.previous`, and process-interruption tests pass for every journal phase.
-- [ ] **E7 - Runtime audio truth:** backing-only playback, stale publication,
+- [x] **E7 - Runtime audio truth:** backing-only playback, stale publication,
       Release device failure, device rollback, and no-test-fallback tests pass.
-- [ ] **E8 - Bounded preview memory:** the five-minute 48 kHz stereo workload
+- [x] **E8 - Bounded preview memory:** the five-minute 48 kHz stereo workload
       stays within the declared memory and copy-byte limits without full-result
       duplication.
-- [ ] **E9 - Voicebank safety:** same-version hash collision and Windows/POSIX
+- [x] **E9 - Voicebank safety:** same-version hash collision and Windows/POSIX
       recording-name traversal, reserved-name, and containment tests pass.
-- [ ] **E10 - Regression gates:** release CTest, ASan/UBSan, TSan, realtime
+- [x] **E10 - Regression gates:** release CTest, ASan/UBSan, TSan, realtime
       allocation probes, contract verifiers, and `git diff --check` pass.
-- [ ] **E11 - Review closure:** a fresh full-depth review finds zero current P0
+- [x] **E11 - Review closure:** a fresh full-depth review finds zero current P0
       or P1 code defects in the remediation diff.
-- [ ] **E12 - Truthful status:** acceptance JSON and status documents still
+- [x] **E12 - Truthful status:** acceptance JSON and status documents still
       report external requirements as `NOT_RUN` or `BLOCKED` unless exact
       hash-bound target evidence has actually been added.
 
@@ -209,14 +209,16 @@ until every mandatory external row has valid evidence.
 
 ## Current working-tree checkpoint
 
-**Engineering remediation progress:** **9 / 12 exit criteria (75.0%)**.
+**Engineering remediation progress:** **12 / 12 exit criteria (100.0%)**.
 
-Candidate `da88b1c3030d7b521e49c3a70f4fbdca102a1709` has a clean isolated
-checkout proof: source closure passed; Debug and Release each configured, built,
-and passed 62 registered CTests; the External Beta, Phase13A, and root Python
-suites passed 102, 92, and 68 tests respectively. E1 is therefore satisfied.
-E3, E10, and E11 remain open until exact-SHA release-identity inspection,
-sanitizer/regression evidence, and the fresh full-depth review are sealed.
+Candidate `6867a8f6c8b3214dac658b07d84104cb7c2b4ff2` has clean isolated
+checkout proof: source closure passed; the full Release CTest suite passed
+63/63; External Beta, Phase13A, and root Python suites passed 116, 92, and 68
+tests. ASan/UBSan and TSan each passed 63/63 on the identical native C++/CMake
+surface; the candidate delta after that run is Python evidence validation and
+tests only. The exact source-stamped build reports version `0.13.1`, build ID
+`0.13.1-local`, and source commit `6867a8f6c8b3214dac658b07d84104cb7c2b4ff2`.
+Fresh code and goal-gate reviews found zero P0/P1 findings.
 
 This checkpoint is not an attestation. It records verified local behavior only;
 it does not change Usable Alpha or External Beta acceptance. External Beta
