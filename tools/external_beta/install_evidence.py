@@ -55,6 +55,17 @@ def _digest(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _artifact_digest(root: Path, relative: Any, label: str, errors: list[str]) -> str | None:
+    if not _safe_relative(relative):
+        errors.append(f"record.{label} must be a safe relative path")
+        return None
+    candidate = root / relative
+    if candidate.is_symlink() or not candidate.is_file():
+        errors.append(f"record.{label} must identify a regular archived artifact")
+        return None
+    return _digest(candidate)
+
+
 def validate_install_matrix(matrix: dict[str, Any]) -> InstallEvidenceResult:
     errors: list[str] = []
     if not isinstance(matrix, dict):
@@ -158,6 +169,14 @@ def validate_install_record(record: dict[str, Any], matrix: dict[str, Any], root
     for key in ("deliverableSha256", "installerSha256", "installedTreeSha256"):
         if not _hex(record.get(key)):
             errors.append(f"record.{key} must be a 64-character digest")
+    for path_key, digest_key in (
+        ("deliverablePath", "deliverableSha256"),
+        ("installerPath", "installerSha256"),
+        ("installedPath", "installedTreeSha256"),
+    ):
+        actual_digest = _artifact_digest(root, record.get(path_key), path_key, errors)
+        if actual_digest is not None and record.get(digest_key) != actual_digest:
+            errors.append(f"record.{digest_key} does not match {path_key} bytes")
     bank = record.get("bankIdentity")
     if not isinstance(bank, dict) or not isinstance(bank.get("id"), str) or not bank["id"].startswith("beta."):
         errors.append("bankIdentity must name a non-official beta bank")

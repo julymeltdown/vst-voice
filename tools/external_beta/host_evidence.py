@@ -55,6 +55,24 @@ def _digest(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _installed_digest(path: Path) -> str:
+    if path.is_symlink():
+        raise ValueError("installed artifact is symbolic")
+    if path.is_file():
+        return _digest(path)
+    if not path.is_dir():
+        raise ValueError("installed artifact is not a regular file or directory")
+    digest = hashlib.sha256()
+    for child in sorted(path.rglob("*")):
+        if child.is_symlink():
+            raise ValueError("installed artifact tree contains a symbolic link")
+        if child.is_file():
+            digest.update(child.relative_to(path).as_posix().encode("utf-8"))
+            digest.update(b"\0")
+            digest.update(bytes.fromhex(_digest(child)))
+    return digest.hexdigest()
+
+
 def _safe_relative(value: Any) -> bool:
     if not isinstance(value, str) or not value or "\\" in value:
         return False
@@ -183,6 +201,16 @@ def validate_host_record(record: dict[str, Any], matrix: dict[str, Any], root: P
         errors.append("record startedAt and endedAt must be ISO-8601 timestamps")
     if "build" in str(record.get("artifactPath", "")).lower() or "source" in str(record.get("artifactPath", "")).lower():
         errors.append("artifactPath must identify an installed artifact, not source/build material")
+    artifact_value = record.get("artifactPath")
+    if isinstance(artifact_value, str) and artifact_value:
+        artifact = Path(artifact_value)
+        try:
+            actual_artifact_digest = _installed_digest(artifact)
+            for key in ("pluginSha256", "installedTreeSha256"):
+                if record.get(key) != actual_artifact_digest:
+                    errors.append(f"record.{key} does not match installed artifact bytes")
+        except (OSError, ValueError) as exc:
+            errors.append(f"installed artifact cannot be hashed: {exc}")
     for key in ("pluginSha256", "installedTreeSha256", "workloadSha256", "machineProfileSha256"):
         if not _hex(record.get(key)):
             errors.append(f"record.{key} must be a 64-character digest")

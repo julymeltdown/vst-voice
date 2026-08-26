@@ -36,6 +36,11 @@ def _record(root: Path, platform: str = "macos") -> dict:
                 "reviewer": "A6",
             }],
         })
+    artifacts = {}
+    for name in ("deliverable.pkg", "installer.pkg", "installed-tree"):
+        path = root / name
+        path.write_bytes(name.encode("utf-8"))
+        artifacts[name] = hashlib.sha256(path.read_bytes()).hexdigest()
     return {
         "schemaVersion": 1,
         "recordType": "external-beta-install-lifecycle",
@@ -47,9 +52,12 @@ def _record(root: Path, platform: str = "macos") -> dict:
         "imageId": "clean-snapshot-001",
         "accountAuthority": "clean-verifier-snapshot",
         "candidateRootId": "candidate-root-001",
-        "deliverableSha256": "3" * 64,
-        "installerSha256": "4" * 64,
-        "installedTreeSha256": "5" * 64,
+        "deliverablePath": "deliverable.pkg",
+        "deliverableSha256": artifacts["deliverable.pkg"],
+        "installerPath": "installer.pkg",
+        "installerSha256": artifacts["installer.pkg"],
+        "installedPath": "installed-tree",
+        "installedTreeSha256": artifacts["installed-tree"],
         "bankIdentity": {"id": "beta.voice.01", "version": "0.1.0", "contentSha256": "6" * 64, "installedProvenanceTreeSha256": "7" * 64},
         "acquisition": {"channel": "governed-envelope", "envelopeManifestSha256": "8" * 64, "networkDisabledAfterAcquisition": True},
         "clockAuthority": "physical-device-clock",
@@ -97,6 +105,24 @@ class InstallEvidenceTests(unittest.TestCase):
             self.assertTrue(any("does not match" in error for error in result.errors))
             self.assertTrue(any("source/build" in error for error in result.errors))
             self.assertEqual(original["recordId"], record["recordId"])
+
+    def test_artifact_byte_paths_are_required_and_rehashed(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            record = _record(root)
+            for name in ("deliverable.pkg", "installer.pkg", "installed-tree"):
+                (root / name).write_bytes(name.encode("utf-8"))
+            record["deliverablePath"] = "deliverable.pkg"
+            record["installerPath"] = "installer.pkg"
+            record["installedPath"] = "installed-tree"
+            record["deliverableSha256"] = "0" * 64
+            record["installerSha256"] = "0" * 64
+            record["installedTreeSha256"] = "0" * 64
+
+            result = validate_install_record(record, MATRIX, root)
+
+            self.assertFalse(result.passed)
+            self.assertTrue(any("deliverablesha" in error.lower() for error in result.errors))
 
     def test_wrong_platform_and_nonclean_authority_fail(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

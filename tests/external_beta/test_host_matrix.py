@@ -23,6 +23,10 @@ def _record(root: Path, target_id: str = "HOST-001") -> dict:
         content = f"{name}-evidence".encode("utf-8")
         path.write_bytes(content)
         evidence.append({"kind": name, "path": str(path.relative_to(root)), "sha256": hashlib.sha256(content).hexdigest(), "capturedAt": "2026-08-22T12:00:00Z", "reviewer": "A4"})
+    artifact = root / "installed" / "ProjectSEAMEditor.clap"
+    artifact.parent.mkdir()
+    artifact.write_bytes(b"installed-plugin-bytes")
+    artifact_sha256 = hashlib.sha256(artifact.read_bytes()).hexdigest()
     return {
         "schemaVersion": 1,
         "recordType": "external-beta-host-session",
@@ -37,9 +41,9 @@ def _record(root: Path, target_id: str = "HOST-001") -> dict:
         "pluginFormat": "CLAP",
         "osBuild": "macOS-26.2",
         "candidateRootId": "candidate-root-001",
-        "pluginSha256": "1" * 64,
-        "installedTreeSha256": "2" * 64,
-        "artifactPath": "/Library/Audio/Plug-Ins/CLAP/ProjectSEAMEditor.clap",
+        "pluginSha256": artifact_sha256,
+        "installedTreeSha256": artifact_sha256,
+        "artifactPath": str(artifact),
         "bankIdentity": {"id": "beta.voice.01", "version": "0.1.0", "contentSha256": "3" * 64, "installedProvenanceTreeSha256": "4" * 64},
         "projectIdentity": {"projectSha256": "5" * 64, "mediaSha256": "6" * 64},
         "workloadId": "eb.host.session.v1",
@@ -89,6 +93,22 @@ class HostMatrixTests(unittest.TestCase):
             self.assertTrue(any("missing checks" in error for error in result.errors))
             self.assertTrue(any("does not match" in error for error in result.errors))
             self.assertEqual(original["recordId"], record["recordId"])
+
+    def test_installed_artifact_bytes_must_match_claimed_hashes(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            record = _record(root)
+            artifact = root / "installed" / "ProjectSEAMEditor.clap"
+            artifact.parent.mkdir(exist_ok=True)
+            artifact.write_bytes(b"installed-plugin-bytes")
+            record["artifactPath"] = str(artifact)
+            record["pluginSha256"] = "0" * 64
+            record["installedTreeSha256"] = "0" * 64
+
+            result = validate_host_record(record, MATRIX, root)
+
+            self.assertFalse(result.passed)
+            self.assertTrue(any("installed artifact" in error.lower() for error in result.errors))
 
     def test_cli_expect_blocked_is_observable(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

@@ -9,8 +9,11 @@
   "imageId": "",
   "accountAuthority": "clean-verifier-snapshot",
   "candidateRootId": "",
+  "deliverablePath": "",
   "deliverableSha256": "",
+  "installerPath": "",
   "installerSha256": "",
+  "installedPath": "",
   "installedTreeSha256": "",
   "bankIdentity": {
     "id": "beta.voice.01",
