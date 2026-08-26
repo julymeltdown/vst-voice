@@ -145,6 +145,27 @@ class EvidenceAuditTests(unittest.TestCase):
             self.assertFalse(result.passed)
             self.assertTrue(any("anchor" in error.lower() for error in result.errors))
 
+    def test_anchor_rejects_rewritten_archive_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            candidate, _ = _candidate(root)
+            record = candidate["evidence"][0]
+            raw = root / "archive" / "record.json"
+            raw.write_text(json.dumps({key: value for key, value in record.items() if key != "rawArchive"}, sort_keys=True), encoding="utf-8")
+            manifest = create_archive_manifest("candidate-root-001", root, ["archive/record.json"], "archive-001", anchor_locator="https://evidence.example/archive-001")
+            candidate["archive"]["sha256"] = manifest["manifestSha256"]
+            record["rawArchive"]["sha256"] = manifest["entries"][0]["sha256"]
+            trusted_anchor = manifest["anchor"]["sha256"]
+            manifest["createdAt"] = "2030-01-01T00:00:00Z"
+            manifest["roles"] = {"producer": "A4", "reviewer": "A6"}
+            unsigned = {key: value for key, value in manifest.items() if key != "manifestSha256"}
+            manifest["manifestSha256"] = hashlib.sha256(json.dumps(unsigned, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
+            candidate["archive"]["sha256"] = manifest["manifestSha256"]
+            with patch.dict("os.environ", {"SEAM_EXTERNAL_BETA_TRUSTED_ANCHOR_SHA256": trusted_anchor}):
+                result = audit_candidate(candidate, manifest, root)
+            self.assertFalse(result.passed)
+            self.assertTrue(any("anchor" in error.lower() for error in result.errors))
+
     def test_cli_expect_blocked_accepts_incomplete_candidate(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

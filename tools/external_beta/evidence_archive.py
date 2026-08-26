@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path, PurePosixPath
 from typing import Any
+from urllib.parse import urlparse
 
 
 HEX64 = re.compile(r"^[0-9a-fA-F]{64}$")
@@ -61,8 +62,13 @@ def _time(value: Any) -> bool:
     return True
 
 
-def _anchor_sha256(candidate_root_id: str, archive_id: str, locator: str, entries: list[dict[str, Any]]) -> str:
-    return sha256_json({"archiveId": archive_id, "candidateRootId": candidate_root_id, "entries": entries, "locator": locator})
+def _immutable_remote_locator(value: Any) -> bool:
+    parsed = urlparse(value) if isinstance(value, str) else None
+    return parsed is not None and parsed.scheme == "https" and bool(parsed.netloc)
+
+
+def _anchor_sha256(candidate_root_id: str, archive_id: str, locator: str, entries: list[dict[str, Any]], created_at: str, roles: dict[str, str]) -> str:
+    return sha256_json({"archiveId": archive_id, "candidateRootId": candidate_root_id, "createdAt": created_at, "entries": entries, "immutable": True, "locator": locator, "recordType": "external-beta-evidence-archive", "roles": roles, "schemaVersion": 1, "status": "SEALED"})
 
 
 def create_archive_manifest(
@@ -75,7 +81,7 @@ def create_archive_manifest(
     producer: str = "A6",
     reviewer: str = "A4",
 ) -> dict[str, Any]:
-    if not candidate_root_id or not archive_id or not isinstance(anchor_locator, str) or not anchor_locator or anchor_locator.startswith("archive://"):
+    if not candidate_root_id or not archive_id or not _immutable_remote_locator(anchor_locator):
         raise ValueError("candidate root and archive identifiers are required")
     entries: list[dict[str, Any]] = []
     seen: set[str] = set()
@@ -95,6 +101,8 @@ def create_archive_manifest(
             "sha256": _digest(path),
             "size": path.stat().st_size,
         })
+    created_at = datetime.now().astimezone().isoformat()
+    roles = {"producer": producer, "reviewer": reviewer}
     manifest: dict[str, Any] = {
         "schemaVersion": 1,
         "recordType": "external-beta-evidence-archive",
@@ -103,9 +111,9 @@ def create_archive_manifest(
         "status": "SEALED",
         "anchored": True,
         "immutable": True,
-        "anchor": {"kind": "external-immutable-anchor", "locator": anchor_locator, "sha256": _anchor_sha256(candidate_root_id, archive_id, anchor_locator, entries)},
-        "createdAt": datetime.now().astimezone().isoformat(),
-        "roles": {"producer": producer, "reviewer": reviewer},
+        "anchor": {"kind": "external-immutable-anchor", "locator": anchor_locator, "sha256": _anchor_sha256(candidate_root_id, archive_id, anchor_locator, entries, created_at, roles)},
+        "createdAt": created_at,
+        "roles": roles,
         "entries": entries,
     }
     manifest["manifestSha256"] = sha256_json(manifest)
@@ -132,7 +140,7 @@ def validate_archive_manifest(manifest: dict[str, Any], root: Path) -> list[str]
     anchor = manifest.get("anchor")
     if not isinstance(anchor, dict) or not anchor.get("kind") or not anchor.get("locator") or not _hex(anchor.get("sha256")):
         errors.append("manifest.anchor must include kind, locator, and SHA-256")
-    elif anchor.get("locator", "").startswith("archive://") or anchor.get("sha256") != _anchor_sha256(manifest.get("candidateRootId", ""), manifest.get("archiveId", ""), anchor["locator"], manifest.get("entries", [])):
+    elif not _immutable_remote_locator(anchor.get("locator")) or anchor.get("sha256") != _anchor_sha256(manifest.get("candidateRootId", ""), manifest.get("archiveId", ""), anchor["locator"], manifest.get("entries", []), manifest.get("createdAt", ""), manifest.get("roles", {})):
         errors.append("manifest.anchor must bind a non-local immutable archive commitment")
     roles = manifest.get("roles")
     if not isinstance(roles, dict) or roles.get("producer") not in ROLES or roles.get("reviewer") not in ROLES:

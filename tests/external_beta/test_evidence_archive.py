@@ -9,6 +9,15 @@ from tools.external_beta.evidence_archive import create_archive_manifest, valida
 
 
 class EvidenceArchiveTests(unittest.TestCase):
+    def test_archive_rejects_local_anchor_locators(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path = root / "archive" / "record.json"
+            path.parent.mkdir()
+            path.write_text("record", encoding="utf-8")
+            with self.assertRaises(ValueError):
+                create_archive_manifest("candidate-root-001", root, ["archive/record.json"], "archive-001", anchor_locator="file:///tmp/self-authored-anchor")
+
     def test_sealed_archive_manifest_binds_every_raw_file(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
