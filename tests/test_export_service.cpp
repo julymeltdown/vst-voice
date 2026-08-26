@@ -116,6 +116,31 @@ TEST_CASE("single-file export removes rollback backups after a successful replac
   CHECK(third.value().projectRevision == 3U);
 }
 
+TEST_CASE("single-file export preserves an unowned backup collision") {
+  const auto root = seam::test::support::temporaryDirectory("export-backup-canary");
+  const auto destination = root / "master.wav";
+  seam::rendering::ProjectRenderResult rendered{
+      .sampleRate = 48000U,
+      .channelCount = 1U,
+      .interleaved = {0.1F, 0.2F, 0.3F, 0.4F},
+  };
+  seam::authoring::ExportService service;
+  CHECK(service.commitRendered(
+      rendered, 1U, destination, seam::voicebank::WavSampleFormat::Pcm16));
+  const auto unownedBackup = std::filesystem::path{destination.string() + ".previous"};
+  std::ofstream{unownedBackup} << "unrelated-canary";
+
+  const auto replacement = service.commitRendered(
+      rendered, 2U, destination, seam::voicebank::WavSampleFormat::Pcm16);
+
+  CHECK(!replacement);
+  std::ifstream input{unownedBackup, std::ios::binary};
+  const std::string backupText{std::istreambuf_iterator<char>{input},
+                               std::istreambuf_iterator<char>{}};
+  CHECK(backupText == "unrelated-canary");
+  CHECK(std::filesystem::exists(destination));
+}
+
 TEST_CASE("single-file export rolls back the master when receipt rotation fails") {
   const auto root = seam::test::support::temporaryDirectory(
       "export-receipt-rollback");

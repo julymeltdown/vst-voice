@@ -505,6 +505,25 @@ core::Result<ExportResult> ExportService::commitRendered(
                                        "Unable to inspect previous export",
                                        error.message());
   }
+  const auto masterBackupExists = std::filesystem::exists(backup, error);
+  if (error) {
+    static_cast<void>(removeTree(staging));
+    return core::failure<ExportResult>(core::ErrorCode::IoError,
+                                       "Unable to inspect master backup path",
+                                       error.message());
+  }
+  const auto receiptBackupExists = std::filesystem::exists(receiptBackup, error);
+  if (error) {
+    static_cast<void>(removeTree(staging));
+    return core::failure<ExportResult>(core::ErrorCode::IoError,
+                                       "Unable to inspect receipt backup path",
+                                       error.message());
+  }
+  if (masterBackupExists || receiptBackupExists) {
+    static_cast<void>(removeTree(staging));
+    return core::failure<ExportResult>(core::ErrorCode::Conflict,
+                                       "Export rollback backup path already exists");
+  }
   if (previousMasterExists) {
     std::filesystem::rename(destination, backup, error);
     if (error) {
