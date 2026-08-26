@@ -105,8 +105,10 @@ def audit_candidate(candidate: dict[str, Any], manifest: dict[str, Any], root: P
         if not isinstance(archived_record, dict):
             errors.append(f"{label}.raw archive must be a serialized evidence object")
             continue
-        for key in ("recordId", "candidateRootId", "status"):
-            if archived_record.get(key) != record.get(key):
+        for key, value in record.items():
+            if key == "rawArchive":
+                continue
+            if archived_record.get(key) != value:
                 errors.append(f"{label}.raw archive {key} does not match candidate evidence")
     if errors:
         blocked.append("archive-audit")

@@ -57,11 +57,7 @@ class EvidenceAuditTests(unittest.TestCase):
             raw = root / "archive" / "record.json"
             raw.write_text(
                 json.dumps(
-                    {
-                        "recordId": record["recordId"],
-                        "candidateRootId": record["candidateRootId"],
-                        "status": record["status"],
-                    },
+                    {key: value for key, value in record.items() if key != "rawArchive"},
                     sort_keys=True,
                 ),
                 encoding="utf-8",
@@ -75,6 +71,26 @@ class EvidenceAuditTests(unittest.TestCase):
             result = audit_candidate(candidate, manifest, root)
 
             self.assertTrue(result.passed, result.errors)
+
+    def test_candidate_audit_rejects_archived_provenance_mismatch(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            candidate, _ = _candidate(root)
+            record = candidate["evidence"][0]
+            raw = root / "archive" / "record.json"
+            archived = {key: value for key, value in record.items() if key != "rawArchive"}
+            archived["roles"] = {"producer": "A3", "reviewer": "A3", "approver": "A3"}
+            raw.write_text(json.dumps(archived, sort_keys=True), encoding="utf-8")
+            manifest = create_archive_manifest(
+                "candidate-root-001", root, ["archive/record.json"], "archive-001"
+            )
+            candidate["archive"]["sha256"] = manifest["manifestSha256"]
+            record["rawArchive"]["sha256"] = manifest["entries"][0]["sha256"]
+
+            result = audit_candidate(candidate, manifest, root)
+
+            self.assertFalse(result.passed)
+            self.assertTrue(any("roles" in error.lower() for error in result.errors))
 
     def test_raw_archive_hash_or_role_mismatch_blocks_audit(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
