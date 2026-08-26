@@ -209,14 +209,14 @@ until every mandatory external row has valid evidence.
 
 ## Current working-tree checkpoint
 
-**Engineering remediation progress:** **8 / 12 exit criteria (66.7%)**.
+**Engineering remediation progress:** **9 / 12 exit criteria (75.0%)**.
 
-Working-tree evidence currently satisfies E2 and E4 through E9, plus E12.
-E1 remains open because 291 required inputs are not present in the Git index.
-Without a clean candidate commit `C`, the single-identity candidate proof in E3,
-the complete commit-bound regression record in E10, and the exact-SHA review in
-E11 cannot be sealed. These are authorization and candidate-freeze boundaries,
-not permission to weaken or bypass the tracked-source gate.
+Candidate `da88b1c3030d7b521e49c3a70f4fbdca102a1709` has a clean isolated
+checkout proof: source closure passed; Debug and Release each configured, built,
+and passed 62 registered CTests; the External Beta, Phase13A, and root Python
+suites passed 102, 92, and 68 tests respectively. E1 is therefore satisfied.
+E3, E10, and E11 remain open until exact-SHA release-identity inspection,
+sanitizer/regression evidence, and the fresh full-depth review are sealed.
 
 This checkpoint is not an attestation. It records verified local behavior only;
 it does not change Usable Alpha or External Beta acceptance. External Beta

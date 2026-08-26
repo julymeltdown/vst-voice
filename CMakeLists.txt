@@ -1061,9 +1061,12 @@ if(SEAM_BUILD_TESTS)
     add_test(NAME seam_engineering_remediation_evidence_unit
       COMMAND ${Python3_EXECUTABLE} -m unittest
         tests/test_engineering_remediation_evidence.py)
+    add_test(NAME seam_external_beta_python_contract_tests
+      COMMAND ${Python3_EXECUTABLE} -m unittest discover
+        -s tests/external_beta -p test_*.py)
     set_tests_properties(
       seam_tracked_source_closure_unit seam_tracked_source_closure
-      seam_engineering_remediation_evidence_unit
+      seam_engineering_remediation_evidence_unit seam_external_beta_python_contract_tests
       PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
   endif()
 

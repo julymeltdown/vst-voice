@@ -19,6 +19,8 @@ jobs:
           python-version: "3.x"
       - name: Verify tracked source closure
         run: python scripts/verify_tracked_source_closure.py --root .
+      - name: External Beta contract suite
+        run: python -m unittest discover -s tests/external_beta -p 'test_*.py'
       - name: Install native build dependencies on Linux
         if: runner.os == 'Linux'
         run: |
@@ -73,6 +75,8 @@ jobs:
           sudo apt-get install -y libssl-dev libx11-dev xvfb fonts-noto-cjk ninja-build
       - name: Verify tracked source closure
         run: python scripts/verify_tracked_source_closure.py --root .
+      - name: External Beta contract suite
+        run: python -m unittest discover -s tests/external_beta -p 'test_*.py'
       - name: Configure isolated release candidate
         run: cmake --preset release
       - name: Build isolated release candidate
