@@ -94,6 +94,8 @@ def candidate() -> release_gate.JsonObject:
                 stage_node_id=stage_node_id,
                 parent_edge_id=parent_edge_id,
             )
+            if stage_node_id == "installed-windows-001":
+                value["installedTreeSha256"] = "d" * 64
             record_id = f"record-{requirement_id}-{index + 1}"
             value.update(
                 {

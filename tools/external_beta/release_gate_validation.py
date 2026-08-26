@@ -102,6 +102,12 @@ def _evidence_errors(candidate: JsonObject) -> list[str]:
     records = candidate.get("evidence")
     workloads = candidate.get("workloadCatalog")
     machines = candidate.get("machineProfiles")
+    nodes_value = candidate.get("stageNodes")
+    stage_nodes: dict[str, JsonObject] = {}
+    if isinstance(nodes_value, list):
+        for node in nodes_value:
+            if isinstance(node, dict) and isinstance(node.get("id"), str):
+                stage_nodes[node["id"]] = node
     if not isinstance(records, list):
         return ["evidence must be an array"]
     record_ids: set[str] = set()
@@ -132,6 +138,13 @@ def _evidence_errors(candidate: JsonObject) -> list[str]:
                 _digest(archive.get("sha256"), f"{record_id}.rawArchive.sha256", errors)
             if isinstance(identity, dict) and record.get("sourceCommit") != identity.get("sourceCommit"):
                 errors.append(f"{record_id}: sourceCommit differs from release identity")
+            stage = stage_nodes.get(record.get("stageNodeId"))
+            if (
+                isinstance(stage, dict)
+                and stage.get("kind") == "INSTALLED_TREE"
+                and record.get("installedTreeSha256") != stage.get("sha256")
+            ):
+                errors.append(f"{record_id}: installed tree digest differs from declared stage node")
             if isinstance(workloads, dict) and isinstance(record.get("workloadId"), str):
                 workload = workloads.get(record["workloadId"])
                 if not isinstance(workload, dict) or workload.get("sha256") != record.get("workloadSha256"):

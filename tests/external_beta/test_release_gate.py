@@ -76,6 +76,23 @@ class ExternalBetaReleaseGateTests(unittest.TestCase):
         self.assertFalse(result.passed)
         self.assertTrue(any("workload" in error.lower() for error in result.errors))
 
+    def test_ready_rejects_evidence_hashes_not_bound_to_the_stage_graph(self) -> None:
+        candidate = _candidate()
+        evidence = candidate["evidence"]
+        assert isinstance(evidence, list)
+        installed = next(
+            record
+            for record in evidence
+            if isinstance(record, dict)
+            and record.get("stageNodeId") == "installed-macos-001"
+        )
+        installed["installedTreeSha256"] = "f" * 64
+
+        result = release_gate.evaluate_ready(candidate)
+
+        self.assertFalse(result.passed)
+        self.assertTrue(any("installed tree" in error.lower() for error in result.errors))
+
     def test_ready_candidate_cannot_close_without_external_cohort_coverage(self) -> None:
         result = release_gate.evaluate_closed(_candidate())
         self.assertFalse(result.passed)

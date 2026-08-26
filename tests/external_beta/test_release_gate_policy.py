@@ -52,6 +52,7 @@ def _bound_candidate(contract: release_gate.JsonObject) -> release_gate.JsonObje
                 "architecture": "arm64",
                 "surface": "standalone",
                 "host": None,
+                "installedTreeSha256": "c" * 64,
             }
         )
     return candidate
