@@ -543,6 +543,22 @@ core::Result<ExportResult> ExportService::commitRendered(
                                error.message());
   }
   newReceiptPublished = true;
+  if (previousMasterMoved) {
+    error.clear();
+    std::filesystem::remove(backup, error);
+    if (error) {
+      result.diagnostic = "Published export but could not remove owned master backup: " +
+                          error.message();
+    }
+  }
+  if (previousReceiptMoved) {
+    error.clear();
+    std::filesystem::remove(receiptBackup, error);
+    if (error && result.diagnostic.empty()) {
+      result.diagnostic = "Published export but could not remove owned receipt backup: " +
+                          error.message();
+    }
+  }
   static_cast<void>(removeTree(staging));
   result.state = ExportState::Committed;
   result.receiptPath = receiptPath;

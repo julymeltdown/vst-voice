@@ -95,6 +95,27 @@ TEST_CASE("export service publishes a committed master and receipt atomically") 
   CHECK(decoded.value().frameCount() == 3U);
 }
 
+TEST_CASE("single-file export removes rollback backups after a successful replacement") {
+  const auto root = seam::test::support::temporaryDirectory("export-repeat");
+  const auto destination = root / "master.wav";
+  seam::rendering::ProjectRenderResult rendered{
+      .sampleRate = 48000U,
+      .channelCount = 1U,
+      .interleaved = {0.1F, 0.2F, 0.3F, 0.4F},
+  };
+  seam::authoring::ExportService service;
+  CHECK(service.commitRendered(
+      rendered, 1U, destination, seam::voicebank::WavSampleFormat::Pcm16));
+  CHECK(service.commitRendered(
+      rendered, 2U, destination, seam::voicebank::WavSampleFormat::Pcm16));
+  CHECK(!std::filesystem::exists(destination.string() + ".previous"));
+  CHECK(!std::filesystem::exists(destination.string() + ".receipt.json.previous"));
+  const auto third = service.commitRendered(
+      rendered, 3U, destination, seam::voicebank::WavSampleFormat::Pcm16);
+  CHECK(third);
+  CHECK(third.value().projectRevision == 3U);
+}
+
 TEST_CASE("single-file export rolls back the master when receipt rotation fails") {
   const auto root = seam::test::support::temporaryDirectory(
       "export-receipt-rollback");
