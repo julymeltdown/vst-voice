@@ -1,5 +1,6 @@
 import hashlib
 import json
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -46,6 +47,35 @@ class CharacterAssetTests(unittest.TestCase):
             self.assertEqual('official.character.01', manifest['characterId'])
             self.assertTrue(manifest['developmentOnly'])
             self.assertEqual('NOT_A_PRODUCTION_TURNAROUND', manifest['productionStatus'])
+
+    def test_evidence_generator_does_not_rewrite_tracked_character_assets(self):
+        assets = ROOT / 'assets/character-01/production-development'
+        before = {
+            path.name: (hashlib.sha256(path.read_bytes()).hexdigest(), path.stat().st_mtime_ns)
+            for path in assets.iterdir()
+            if path.is_file()
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(ROOT / 'scripts/generate_phase13b_evidence.py'),
+                    '--root',
+                    str(ROOT),
+                    '--output',
+                    directory,
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+        self.assertEqual(0, result.returncode, result.stderr)
+        after = {
+            path.name: (hashlib.sha256(path.read_bytes()).hexdigest(), path.stat().st_mtime_ns)
+            for path in assets.iterdir()
+            if path.is_file()
+        }
+        self.assertEqual(before, after)
 
 
 if __name__ == '__main__':

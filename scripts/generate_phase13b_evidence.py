@@ -57,7 +57,7 @@ def main(argv=None) -> int:
 
     character_assets = generate_character_assets(
         root / "assets/character-01/source/canonical-lowpoly.jpeg",
-        root / "assets/character-01/production-development",
+        output / "character-development-assets",
     )
     voice_dossier = json.loads((root / "docs/phase13b/official-voicebank-01-dossier.json").read_text(encoding="utf-8"))
     character_dossier = json.loads((root / "docs/phase13b/character-01-dossier.json").read_text(encoding="utf-8"))
