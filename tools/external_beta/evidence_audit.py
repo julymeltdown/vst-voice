@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -30,7 +31,7 @@ def _time(value: Any) -> datetime | None:
     return parsed
 
 
-def audit_candidate(candidate: dict[str, Any], manifest: dict[str, Any], root: Path, *, trusted_anchor_sha256: str | None = None) -> EvidenceAuditResult:
+def audit_candidate(candidate: dict[str, Any], manifest: dict[str, Any], root: Path) -> EvidenceAuditResult:
     errors = list(validate_archive_manifest(manifest, root))
     blocked: list[str] = []
     if not isinstance(candidate, dict):
@@ -50,6 +51,7 @@ def audit_candidate(candidate: dict[str, Any], manifest: dict[str, Any], root: P
     elif archive.get("sha256") != manifest.get("manifestSha256"):
         errors.append("candidate archive hash does not match restored archive manifest")
     anchor = manifest.get("anchor")
+    trusted_anchor_sha256 = os.environ.get("SEAM_EXTERNAL_BETA_TRUSTED_ANCHOR_SHA256")
     if not isinstance(trusted_anchor_sha256, str) or anchor is None or not isinstance(anchor, dict) or anchor.get("sha256") != trusted_anchor_sha256:
         errors.append("trusted archive anchor digest is required and must match the restored manifest")
     entries = {entry.get("path"): entry for entry in manifest.get("entries", []) if isinstance(entry, dict)}

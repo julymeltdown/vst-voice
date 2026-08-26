@@ -158,6 +158,19 @@ class InstallEvidenceTests(unittest.TestCase):
             result = validate_install_record(record, MATRIX, root)
             self.assertTrue(result.passed, result.errors)
 
+    def test_installed_directory_tree_rejects_symlinked_directories(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            installed = root / "installed-tree"
+            installed.mkdir()
+            outside = root / "outside"
+            outside.mkdir()
+            (installed / "linked-dir").symlink_to(outside, target_is_directory=True)
+            errors: list[str] = []
+            digest = _tree_digest(installed, errors, "installedPath")
+            self.assertIsNone(digest)
+            self.assertTrue(errors)
+
     def test_wrong_platform_and_nonclean_authority_fail(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

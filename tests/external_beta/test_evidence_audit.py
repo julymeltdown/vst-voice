@@ -8,6 +8,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from tools.external_beta.evidence_archive import create_archive_manifest
 from tools.external_beta.evidence_audit import audit_candidate
@@ -45,7 +46,8 @@ class EvidenceAuditTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             candidate, manifest = _candidate(root)
-            result = audit_candidate(candidate, manifest, root, trusted_anchor_sha256=manifest["anchor"]["sha256"])
+            with patch.dict("os.environ", {"SEAM_EXTERNAL_BETA_TRUSTED_ANCHOR_SHA256": manifest["anchor"]["sha256"]}):
+                result = audit_candidate(candidate, manifest, root)
             self.assertFalse(result.passed)
             self.assertTrue(any("serialized" in error.lower() for error in result.errors))
 
@@ -68,7 +70,8 @@ class EvidenceAuditTests(unittest.TestCase):
             candidate["archive"]["sha256"] = manifest["manifestSha256"]
             record["rawArchive"]["sha256"] = manifest["entries"][0]["sha256"]
 
-            result = audit_candidate(candidate, manifest, root, trusted_anchor_sha256=manifest["anchor"]["sha256"])
+            with patch.dict("os.environ", {"SEAM_EXTERNAL_BETA_TRUSTED_ANCHOR_SHA256": manifest["anchor"]["sha256"]}):
+                result = audit_candidate(candidate, manifest, root)
 
             self.assertTrue(result.passed, result.errors)
 
@@ -87,7 +90,8 @@ class EvidenceAuditTests(unittest.TestCase):
             candidate["archive"]["sha256"] = manifest["manifestSha256"]
             record["rawArchive"]["sha256"] = manifest["entries"][0]["sha256"]
 
-            result = audit_candidate(candidate, manifest, root, trusted_anchor_sha256=manifest["anchor"]["sha256"])
+            with patch.dict("os.environ", {"SEAM_EXTERNAL_BETA_TRUSTED_ANCHOR_SHA256": manifest["anchor"]["sha256"]}):
+                result = audit_candidate(candidate, manifest, root)
 
             self.assertFalse(result.passed)
             self.assertTrue(any("roles" in error.lower() for error in result.errors))
@@ -99,7 +103,8 @@ class EvidenceAuditTests(unittest.TestCase):
             changed = copy.deepcopy(candidate)
             changed["evidence"][0]["rawArchive"]["sha256"] = "f" * 64
             changed["evidence"][0]["roles"]["reviewer"] = "A3"
-            result = audit_candidate(changed, manifest, root, trusted_anchor_sha256=manifest["anchor"]["sha256"])
+            with patch.dict("os.environ", {"SEAM_EXTERNAL_BETA_TRUSTED_ANCHOR_SHA256": manifest["anchor"]["sha256"]}):
+                result = audit_candidate(changed, manifest, root)
             self.assertFalse(result.passed)
             self.assertTrue(any("raw archive" in error.lower() for error in result.errors))
             self.assertTrue(any("independent" in error.lower() for error in result.errors))

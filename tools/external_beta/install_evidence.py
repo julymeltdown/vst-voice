@@ -58,9 +58,12 @@ def _digest(path: Path) -> str:
 def _tree_digest(path: Path, errors: list[str], label: str) -> str | None:
     digest = hashlib.sha256()
     for entry in sorted(path.rglob("*"), key=lambda item: item.as_posix()):
+        if entry.is_symlink():
+            errors.append(f"record.{label} directory contains a non-regular entry")
+            return None
         if entry.is_dir():
             continue
-        if entry.is_symlink() or not entry.is_file():
+        if not entry.is_file():
             errors.append(f"record.{label} directory contains a non-regular entry")
             return None
         relative = entry.relative_to(path).as_posix().encode("utf-8")
