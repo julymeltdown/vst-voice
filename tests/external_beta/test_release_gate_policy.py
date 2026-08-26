@@ -40,6 +40,7 @@ def _bound_candidate(contract: release_gate.JsonObject) -> release_gate.JsonObje
     candidate_root = candidate["candidateRoot"]
     assert isinstance(candidate_root, dict)
     candidate_root["acceptanceContractSha256"] = digest
+    candidate_root["sha256"] = release_gate.candidate_root_sha256(candidate_root)
     evidence = candidate["evidence"]
     assert isinstance(evidence, list)
     for record in evidence:

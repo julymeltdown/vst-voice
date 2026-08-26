@@ -94,6 +94,17 @@ class ExternalBetaReleaseGateTests(unittest.TestCase):
         self.assertFalse(result.passed)
         self.assertTrue(any("installed tree" in error.lower() for error in result.errors))
 
+    def test_ready_rejects_a_candidate_root_digest_that_is_not_its_canonical_commitment(self) -> None:
+        candidate = _candidate()
+        root = candidate["candidateRoot"]
+        assert isinstance(root, dict)
+        root["sha256"] = "f" * 64
+
+        result = release_gate.evaluate_ready(candidate, archive_verified=True)
+
+        self.assertFalse(result.passed)
+        self.assertTrue(any("canonical root" in error.lower() for error in result.errors))
+
     def test_ready_rejects_final_artifact_hashes_not_bound_to_signed_stage(self) -> None:
         candidate = _candidate()
         evidence = candidate["evidence"]

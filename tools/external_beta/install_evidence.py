@@ -55,13 +55,28 @@ def _digest(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _artifact_digest(root: Path, relative: Any, label: str, errors: list[str]) -> str | None:
+def _tree_digest(path: Path, errors: list[str], label: str) -> str | None:
+    digest = hashlib.sha256()
+    for entry in sorted(path.rglob("*"), key=lambda item: item.as_posix()):
+        if entry.is_dir():
+            continue
+        if entry.is_symlink() or not entry.is_file():
+            errors.append(f"record.{label} directory contains a non-regular entry")
+            return None
+        relative = entry.relative_to(path).as_posix().encode("utf-8")
+        digest.update(len(relative).to_bytes(8, "big"))
+        digest.update(relative)
+        digest.update(bytes.fromhex(_digest(entry)))
+    return digest.hexdigest()
+
+
+def _artifact_digest(root: Path, relative: Any, label: str, errors: list[str], *, allow_directory: bool = False) -> str | None:
     if not _safe_relative(relative):
         errors.append(f"record.{label} must be a safe relative path")
         return None
     candidate = root / relative
-    if candidate.is_symlink() or not candidate.is_file():
-        errors.append(f"record.{label} must identify a regular archived artifact")
+    if candidate.is_symlink() or (not candidate.is_file() and not (allow_directory and candidate.is_dir())):
+        errors.append(f"record.{label} must identify a regular archived artifact or installed directory tree")
         return None
     try:
         resolved_root = root.resolve(strict=True)
@@ -72,7 +87,7 @@ def _artifact_digest(root: Path, relative: Any, label: str, errors: list[str]) -
     if resolved_root != resolved_candidate and resolved_root not in resolved_candidate.parents:
         errors.append(f"record.{label} escapes the evidence root")
         return None
-    return _digest(resolved_candidate)
+    return _tree_digest(resolved_candidate, errors, label) if resolved_candidate.is_dir() else _digest(resolved_candidate)
 
 
 def validate_install_matrix(matrix: dict[str, Any]) -> InstallEvidenceResult:
@@ -183,7 +198,7 @@ def validate_install_record(record: dict[str, Any], matrix: dict[str, Any], root
         ("installerPath", "installerSha256"),
         ("installedPath", "installedTreeSha256"),
     ):
-        actual_digest = _artifact_digest(root, record.get(path_key), path_key, errors)
+        actual_digest = _artifact_digest(root, record.get(path_key), path_key, errors, allow_directory=path_key == "installedPath")
         if actual_digest is not None and record.get(digest_key) != actual_digest:
             errors.append(f"record.{digest_key} does not match {path_key} bytes")
     bank = record.get("bankIdentity")

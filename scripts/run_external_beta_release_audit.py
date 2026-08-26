@@ -20,9 +20,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--state", choices=("READY", "CLOSED"), default="READY")
     parser.add_argument("--output", type=Path)
     parser.add_argument("--expect-blocked", action="store_true")
+    parser.add_argument("--trusted-anchor-sha256")
     args = parser.parse_args(argv)
     try:
-        result = audit_release(load_json(args.candidate), load_json(args.archive_manifest), args.archive_root, args.state)
+        result = audit_release(load_json(args.candidate), load_json(args.archive_manifest), args.archive_root, args.state, trusted_anchor_sha256=args.trusted_anchor_sha256)
     except (OSError, UnicodeError, ValueError, json.JSONDecodeError) as exc:
         payload = {"passed": False, "state": args.state, "errors": [str(exc)], "blocked": []}
         print(json.dumps(payload, sort_keys=True))

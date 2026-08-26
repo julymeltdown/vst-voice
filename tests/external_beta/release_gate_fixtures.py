@@ -14,7 +14,7 @@ def record(
     parent_edge_id: str = "edge-signed-to-installed-001",
     status: str = "PASS",
 ) -> release_gate.JsonObject:
-    return {
+    result = {
         "recordId": f"record-{requirement_id}",
         "requirementId": requirement_id,
         "candidateRootId": candidate_root_id,
@@ -47,6 +47,7 @@ def record(
         "status": status,
         "blockingReason": None if status == "PASS" else "target not run",
     }
+    return result
 
 
 def candidate() -> release_gate.JsonObject:
@@ -112,7 +113,7 @@ def candidate() -> release_gate.JsonObject:
             )
             records.append(value)
             references[requirement_id].append(record_id)
-    return {
+    result = {
         "schemaVersion": 1,
         "gate": "EXTERNAL_BETA_READY",
         "acceptanceContractSha256": acceptance_contract_sha256,
@@ -225,3 +226,8 @@ def candidate() -> release_gate.JsonObject:
         },
         "issues": [],
     }
+    root = result["candidateRoot"]
+    assert isinstance(root, dict)
+    root["stageGraphSha256"] = release_gate.stage_graph_sha256(result["stageNodes"], result["stageEdges"])
+    root["sha256"] = release_gate.candidate_root_sha256(root)
+    return result

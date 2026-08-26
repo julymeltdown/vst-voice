@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 
 JsonValue = str | int | float | bool | None | list["JsonValue"] | dict[str, "JsonValue"]
@@ -16,6 +17,23 @@ def stable_workload_sha256(identifier: str) -> str:
 
 def stable_machine_sha256(identifier: str) -> str:
     return hashlib.sha256(f"machine:{identifier}:v1".encode("utf-8")).hexdigest()
+
+
+def stage_graph_sha256(nodes: JsonValue, edges: JsonValue) -> str:
+    payload: JsonObject = {"stageEdges": edges, "stageNodes": nodes}
+    encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
+def candidate_root_sha256(root: JsonObject) -> str:
+    unsigned: JsonObject = {
+        "acceptanceContractSha256": root.get("acceptanceContractSha256"),
+        "id": root.get("id"),
+        "stageGraphSha256": root.get("stageGraphSha256"),
+        "status": root.get("status"),
+    }
+    encoded = json.dumps(unsigned, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
 def _digest(value: JsonValue, label: str, errors: list[str]) -> None:
@@ -51,6 +69,10 @@ def _lineage_errors(candidate: JsonObject) -> list[str]:
         return errors + ["stageNodes must be a non-empty array"]
     if not isinstance(edges_value, list) or not edges_value:
         return errors + ["stageEdges must be a non-empty array"]
+    if root.get("stageGraphSha256") != stage_graph_sha256(nodes_value, edges_value):
+        errors.append("candidateRoot.stageGraphSha256 does not match stage graph bytes")
+    if root.get("sha256") != candidate_root_sha256(root):
+        errors.append("candidateRoot.sha256 does not match canonical root bytes")
     nodes: dict[str, JsonObject] = {}
     for node in nodes_value:
         if not isinstance(node, dict) or not isinstance(node.get("id"), str) or not node["id"]:

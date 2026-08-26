@@ -30,7 +30,7 @@ def _time(value: Any) -> datetime | None:
     return parsed
 
 
-def audit_candidate(candidate: dict[str, Any], manifest: dict[str, Any], root: Path) -> EvidenceAuditResult:
+def audit_candidate(candidate: dict[str, Any], manifest: dict[str, Any], root: Path, *, trusted_anchor_sha256: str | None = None) -> EvidenceAuditResult:
     errors = list(validate_archive_manifest(manifest, root))
     blocked: list[str] = []
     if not isinstance(candidate, dict):
@@ -49,6 +49,9 @@ def audit_candidate(candidate: dict[str, Any], manifest: dict[str, Any], root: P
         errors.append("candidate archive must be anchored and immutable")
     elif archive.get("sha256") != manifest.get("manifestSha256"):
         errors.append("candidate archive hash does not match restored archive manifest")
+    anchor = manifest.get("anchor")
+    if not isinstance(trusted_anchor_sha256, str) or anchor is None or not isinstance(anchor, dict) or anchor.get("sha256") != trusted_anchor_sha256:
+        errors.append("trusted archive anchor digest is required and must match the restored manifest")
     entries = {entry.get("path"): entry for entry in manifest.get("entries", []) if isinstance(entry, dict)}
     created_at = _time(manifest.get("createdAt"))
     records = candidate.get("evidence")

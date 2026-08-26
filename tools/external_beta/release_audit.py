@@ -22,11 +22,11 @@ class ReleaseAuditResult:
         return {"passed": self.passed, "state": self.state, "errors": list(self.errors), "blocked": list(self.blocked)}
 
 
-def audit_release(candidate: dict[str, Any], manifest: dict[str, Any], root: Path, state: str = "READY") -> ReleaseAuditResult:
+def audit_release(candidate: dict[str, Any], manifest: dict[str, Any], root: Path, state: str = "READY", *, trusted_anchor_sha256: str | None = None) -> ReleaseAuditResult:
     normalized = state.upper()
     if normalized not in {"READY", "CLOSED"}:
         return ReleaseAuditResult(False, normalized, (f"unsupported release audit state: {state}",), ("state",))
-    archive_result = audit_candidate(candidate, manifest, root)
+    archive_result = audit_candidate(candidate, manifest, root, trusted_anchor_sha256=trusted_anchor_sha256)
     gate_state = "EXTERNAL_BETA_CLOSED" if normalized == "CLOSED" else "EXTERNAL_BETA_READY"
     gate_result = evaluate_gate(
         candidate, gate_state, archive_verified=archive_result.passed
@@ -61,9 +61,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--state", choices=("READY", "CLOSED"), default="READY")
     parser.add_argument("--output", type=Path)
     parser.add_argument("--expect-blocked", action="store_true")
+    parser.add_argument("--trusted-anchor-sha256")
     args = parser.parse_args(argv)
     try:
-        result = audit_release(load_json(args.candidate), load_json(args.archive_manifest), args.archive_root, args.state)
+        result = audit_release(load_json(args.candidate), load_json(args.archive_manifest), args.archive_root, args.state, trusted_anchor_sha256=args.trusted_anchor_sha256)
     except (OSError, UnicodeError, ValueError, json.JSONDecodeError) as exc:
         payload = {"passed": False, "state": args.state, "errors": [str(exc)], "blocked": []}
         print(json.dumps(payload, sort_keys=True))

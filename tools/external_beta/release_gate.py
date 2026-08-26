@@ -20,6 +20,8 @@ try:
         _identity_errors as _identity_errors,
         _lineage_errors as _lineage_errors,
         _requirement_errors as _requirement_errors,
+        candidate_root_sha256 as candidate_root_sha256,
+        stage_graph_sha256 as stage_graph_sha256,
         stable_machine_sha256 as stable_machine_sha256,
         stable_workload_sha256 as stable_workload_sha256,
     )
@@ -37,6 +39,8 @@ except ImportError:
         _identity_errors as _identity_errors,
         _lineage_errors as _lineage_errors,
         _requirement_errors as _requirement_errors,
+        candidate_root_sha256 as candidate_root_sha256,
+        stage_graph_sha256 as stage_graph_sha256,
         stable_machine_sha256 as stable_machine_sha256,
         stable_workload_sha256 as stable_workload_sha256,
     )

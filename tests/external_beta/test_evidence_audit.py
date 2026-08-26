@@ -45,7 +45,7 @@ class EvidenceAuditTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             candidate, manifest = _candidate(root)
-            result = audit_candidate(candidate, manifest, root)
+            result = audit_candidate(candidate, manifest, root, trusted_anchor_sha256=manifest["anchor"]["sha256"])
             self.assertFalse(result.passed)
             self.assertTrue(any("serialized" in error.lower() for error in result.errors))
 
@@ -68,7 +68,7 @@ class EvidenceAuditTests(unittest.TestCase):
             candidate["archive"]["sha256"] = manifest["manifestSha256"]
             record["rawArchive"]["sha256"] = manifest["entries"][0]["sha256"]
 
-            result = audit_candidate(candidate, manifest, root)
+            result = audit_candidate(candidate, manifest, root, trusted_anchor_sha256=manifest["anchor"]["sha256"])
 
             self.assertTrue(result.passed, result.errors)
 
@@ -87,7 +87,7 @@ class EvidenceAuditTests(unittest.TestCase):
             candidate["archive"]["sha256"] = manifest["manifestSha256"]
             record["rawArchive"]["sha256"] = manifest["entries"][0]["sha256"]
 
-            result = audit_candidate(candidate, manifest, root)
+            result = audit_candidate(candidate, manifest, root, trusted_anchor_sha256=manifest["anchor"]["sha256"])
 
             self.assertFalse(result.passed)
             self.assertTrue(any("roles" in error.lower() for error in result.errors))
@@ -99,10 +99,24 @@ class EvidenceAuditTests(unittest.TestCase):
             changed = copy.deepcopy(candidate)
             changed["evidence"][0]["rawArchive"]["sha256"] = "f" * 64
             changed["evidence"][0]["roles"]["reviewer"] = "A3"
-            result = audit_candidate(changed, manifest, root)
+            result = audit_candidate(changed, manifest, root, trusted_anchor_sha256=manifest["anchor"]["sha256"])
             self.assertFalse(result.passed)
             self.assertTrue(any("raw archive" in error.lower() for error in result.errors))
             self.assertTrue(any("independent" in error.lower() for error in result.errors))
+
+    def test_candidate_audit_requires_an_out_of_band_anchor_digest(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            candidate, _ = _candidate(root)
+            record = candidate["evidence"][0]
+            raw = root / "archive" / "record.json"
+            raw.write_text(json.dumps({key: value for key, value in record.items() if key != "rawArchive"}, sort_keys=True), encoding="utf-8")
+            manifest = create_archive_manifest("candidate-root-001", root, ["archive/record.json"], "archive-001")
+            candidate["archive"]["sha256"] = manifest["manifestSha256"]
+            record["rawArchive"]["sha256"] = manifest["entries"][0]["sha256"]
+            result = audit_candidate(candidate, manifest, root)
+            self.assertFalse(result.passed)
+            self.assertTrue(any("trusted archive anchor" in error for error in result.errors))
 
     def test_cli_expect_blocked_accepts_incomplete_candidate(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

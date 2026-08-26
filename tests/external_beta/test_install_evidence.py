@@ -9,7 +9,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from tools.external_beta.install_evidence import INSTALL_ROW_IDS, validate_install_matrix, validate_install_record
+from tools.external_beta.install_evidence import INSTALL_ROW_IDS, _tree_digest, validate_install_matrix, validate_install_record
 
 ROOT = Path(__file__).resolve().parents[2]
 MATRIX = json.loads((ROOT / "docs/product/external-beta-install-matrix.json").read_text(encoding="utf-8"))
@@ -140,6 +140,23 @@ class InstallEvidenceTests(unittest.TestCase):
 
             self.assertFalse(result.passed)
             self.assertTrue(any("escapes" in error.lower() for error in result.errors))
+
+    def test_installed_directory_tree_is_hashed_and_accepted(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            record = _record(root)
+            installed = root / "installed-tree"
+            installed.unlink()
+            binary = installed / "ProjectSEAM.app" / "Contents" / "MacOS" / "ProjectSEAM"
+            binary.parent.mkdir(parents=True)
+            binary.write_bytes(b"installed-binary")
+            errors: list[str] = []
+            digest = _tree_digest(installed, errors, "installedPath")
+            self.assertEqual([], errors)
+            self.assertIsNotNone(digest)
+            record["installedTreeSha256"] = digest
+            result = validate_install_record(record, MATRIX, root)
+            self.assertTrue(result.passed, result.errors)
 
     def test_wrong_platform_and_nonclean_authority_fail(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
