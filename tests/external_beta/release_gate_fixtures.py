@@ -25,9 +25,9 @@ def record(
         "architecture": "arm64",
         "surface": "standalone",
         "host": None,
-        "finalDeliverableSha256": "b" * 64,
+        "finalDeliverableSha256": "4" * 64,
         "installedTreeSha256": "c" * 64,
-        "artifactSha256": "d" * 64,
+        "artifactSha256": "4" * 64,
         "toolIdentity": {"name": "validator", "version": "1.0"},
         "workloadId": "eb.render.preview.v1",
         "workloadSha256": release_gate.stable_workload_sha256(

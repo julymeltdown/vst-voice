@@ -108,6 +108,16 @@ def _evidence_errors(candidate: JsonObject) -> list[str]:
         for node in nodes_value:
             if isinstance(node, dict) and isinstance(node.get("id"), str):
                 stage_nodes[node["id"]] = node
+    edges_value = candidate.get("stageEdges")
+    parent_by_child: dict[str, str] = {}
+    if isinstance(edges_value, list):
+        for edge in edges_value:
+            if (
+                isinstance(edge, dict)
+                and isinstance(edge.get("parent"), str)
+                and isinstance(edge.get("child"), str)
+            ):
+                parent_by_child[edge["child"]] = edge["parent"]
     if not isinstance(records, list):
         return ["evidence must be an array"]
     record_ids: set[str] = set()
@@ -145,6 +155,21 @@ def _evidence_errors(candidate: JsonObject) -> list[str]:
                 and record.get("installedTreeSha256") != stage.get("sha256")
             ):
                 errors.append(f"{record_id}: installed tree digest differs from declared stage node")
+            stage_id = record.get("stageNodeId")
+            signed_sha256: JsonValue = None
+            visited: set[str] = set()
+            while isinstance(stage_id, str) and stage_id not in visited:
+                visited.add(stage_id)
+                node = stage_nodes.get(stage_id)
+                if isinstance(node, dict) and node.get("kind") == "SIGNED_DELIVERABLE":
+                    signed_sha256 = node.get("sha256")
+                    break
+                stage_id = parent_by_child.get(stage_id)
+            if signed_sha256 is not None and (
+                record.get("finalDeliverableSha256") != signed_sha256
+                or record.get("artifactSha256") != signed_sha256
+            ):
+                errors.append(f"{record_id}: final artifact digests differ from signed deliverable stage")
             if isinstance(workloads, dict) and isinstance(record.get("workloadId"), str):
                 workload = workloads.get(record["workloadId"])
                 if not isinstance(workload, dict) or workload.get("sha256") != record.get("workloadSha256"):
