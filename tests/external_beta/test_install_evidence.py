@@ -124,6 +124,23 @@ class InstallEvidenceTests(unittest.TestCase):
             self.assertFalse(result.passed)
             self.assertTrue(any("deliverablesha" in error.lower() for error in result.errors))
 
+    def test_artifact_path_cannot_escape_through_a_symlinked_parent(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            record = _record(root)
+            outside = root.parent / f"{root.name}-outside"
+            outside.mkdir()
+            artifact = outside / "deliverable.pkg"
+            artifact.write_bytes(b"outside-deliverable")
+            (root / "escape").symlink_to(outside, target_is_directory=True)
+            record["deliverablePath"] = "escape/deliverable.pkg"
+            record["deliverableSha256"] = hashlib.sha256(artifact.read_bytes()).hexdigest()
+
+            result = validate_install_record(record, MATRIX, root)
+
+            self.assertFalse(result.passed)
+            self.assertTrue(any("escapes" in error.lower() for error in result.errors))
+
     def test_wrong_platform_and_nonclean_authority_fail(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

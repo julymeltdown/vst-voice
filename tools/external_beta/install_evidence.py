@@ -63,7 +63,16 @@ def _artifact_digest(root: Path, relative: Any, label: str, errors: list[str]) -
     if candidate.is_symlink() or not candidate.is_file():
         errors.append(f"record.{label} must identify a regular archived artifact")
         return None
-    return _digest(candidate)
+    try:
+        resolved_root = root.resolve(strict=True)
+        resolved_candidate = candidate.resolve(strict=True)
+    except OSError as exc:
+        errors.append(f"record.{label} cannot be resolved: {exc}")
+        return None
+    if resolved_root != resolved_candidate and resolved_root not in resolved_candidate.parents:
+        errors.append(f"record.{label} escapes the evidence root")
+        return None
+    return _digest(resolved_candidate)
 
 
 def validate_install_matrix(matrix: dict[str, Any]) -> InstallEvidenceResult:

@@ -130,6 +130,23 @@ class ExternalBetaReleaseGateTests(unittest.TestCase):
         self.assertFalse(result.passed)
         self.assertTrue(any("ambiguous" in error.lower() for error in result.errors))
 
+    def test_ready_rejects_installed_evidence_without_signed_ancestor(self) -> None:
+        candidate = _candidate()
+        edges = candidate["stageEdges"]
+        assert isinstance(edges, list)
+        edge = next(
+            item
+            for item in edges
+            if isinstance(item, dict)
+            and item.get("id") == "edge-signed-to-installed-macos-001"
+        )
+        edge["parent"] = "unsigned-001"
+
+        result = release_gate.evaluate_ready(candidate, archive_verified=True)
+
+        self.assertFalse(result.passed)
+        self.assertTrue(any("signed deliverable ancestor" in error.lower() for error in result.errors))
+
     def test_ready_candidate_cannot_close_without_external_cohort_coverage(self) -> None:
         result = release_gate.evaluate_closed(_candidate())
         self.assertFalse(result.passed)

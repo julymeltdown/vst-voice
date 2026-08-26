@@ -168,6 +168,12 @@ def _evidence_errors(candidate: JsonObject) -> list[str]:
                     break
                 parents = parents_by_child.get(stage_id, [])
                 stage_id = parents[0] if len(parents) == 1 else None
+            if (
+                isinstance(stage, dict)
+                and stage.get("kind") == "INSTALLED_TREE"
+                and signed_sha256 is None
+            ):
+                errors.append(f"{record_id}: installed evidence lacks a signed deliverable ancestor")
             if signed_sha256 is not None and (
                 record.get("finalDeliverableSha256") != signed_sha256
                 or record.get("artifactSha256") != signed_sha256
