@@ -369,6 +369,30 @@ SemanticNode EditorSemanticTree::build(const EditorSceneState& state,
     }
     root.children.push_back(noteNode(note, layout));
   }
+  if (state.detail.has_value() && state.hoveredNote.has_value() &&
+      state.detail->kind == EditorDetailKind::Note) {
+    const auto visibleNotes = model.visibleNotes();
+    const auto hovered = std::find_if(
+        visibleNotes.begin(), visibleNotes.end(), [&state](const ui::NoteVisual& note) {
+          return note.noteId == *state.hoveredNote;
+        });
+    if (hovered != visibleNotes.end()) {
+      auto noteBounds = hovered->bounds;
+      noteBounds.y += layout.contentTop();
+      root.children.push_back(SemanticNode{
+          .id = "detail.note." + state.detail->stableId,
+          .role = SemanticRole::Status,
+          .name = "Note detail",
+          .value = state.detail->value,
+          .bounds = layout.noteDetailBounds(noteBounds, editorRight),
+          .enabled = true,
+          .focused = false,
+          .actions = {SemanticAction::SetFocus},
+          .children = {},
+          .description = "Full note lyric",
+      });
+    }
+  }
   auto laneTop = laneGeometry.phonemeTop;
   const auto statusTop = root.bounds.bottom() - layout.statusHeight;
   const auto laneBottom = statusTop - overlayInset;

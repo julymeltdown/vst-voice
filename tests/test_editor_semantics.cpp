@@ -220,6 +220,42 @@ TEST_CASE("editor semantic tree exposes stable accessible controls") {
   CHECK(!seam::native_ui::EditorSemanticTree::containsId(
       minimalPortraitTree, "character.portrait"));
 
+  seam::application::ProjectFactory detailFactory{740U};
+  auto detailProject = detailFactory.createProject("Detail");
+  const auto detailTrack = detailFactory.addVocalTrack(detailProject, "Voice");
+  const auto detailRegion = detailFactory.addRegion(
+      detailProject, detailTrack, "Region", seam::time::Tick{0},
+      seam::time::Tick{3840});
+  auto [detailLyric, detailNote] = detailFactory.makeNote(
+      seam::time::Tick{480}, seam::time::Tick{960}, 64U, U"こんにちは");
+  const auto detailNoteId = detailNote.id;
+  auto* detailRegionModel = detailProject.findRegion(detailRegion);
+  CHECK(detailRegionModel != nullptr);
+  detailRegionModel->lyrics.push_back(std::move(detailLyric));
+  detailRegionModel->notes.push_back(std::move(detailNote));
+  detailRegionModel->sortNotes();
+  seam::application::EditorSession detailSession{std::move(detailProject)};
+  seam::native_ui::NativeEditorController detailController{
+      detailSession, detailFactory, detailRegion};
+  detailController.resize(1280.0, 720.0);
+  auto detailState = detailController.sceneState();
+  detailState.hoveredNote = detailNoteId;
+  detailState.detail = seam::native_ui::EditorDetail{
+      .kind = seam::native_ui::EditorDetailKind::Note,
+      .stableId = detailState.hoveredNote->toString(),
+      .value = "こんにちは 안녕 你好",
+  };
+  const auto detailTree = seam::native_ui::EditorSemanticTree::build(
+      detailState, detailController.pianoRoll());
+  const auto detailId = "detail.note." + detailState.detail->stableId;
+  const auto* detailNode = findNode(detailTree, detailId, findNode);
+  CHECK(detailNode != nullptr);
+  if (detailNode != nullptr) {
+    CHECK(detailNode->value == detailState.detail->value);
+    CHECK(detailNode->bounds.width > 0.0);
+    CHECK(detailNode->bounds.height > 0.0);
+  }
+
   auto unavailableState = controller.sceneState();
   unavailableState.renderStatus.hasAudibleAudio = false;
   const auto unavailableTree = seam::native_ui::EditorSemanticTree::build(

@@ -466,11 +466,8 @@ void EditorScenePainter::paintNotes(RasterCanvas& canvas,
           state.detail->kind == EditorDetailKind::Note &&
           state.detail->stableId == note.noteId.toString() &&
           !state.detail->value.empty()) {
-        const auto width = std::min(220.0, std::max(96.0, bounds.width + 48.0));
-        const auto left = std::clamp(bounds.x, layout_.keyboardWidth,
-                                     canvas.logicalWidth() - width);
-        const auto top = std::max(layout_.contentTop(), bounds.y - 24.0);
-        const auto detailBounds = ui::Rect{left, top, width, 20.0};
+        const auto detailBounds = layout_.noteDetailBounds(
+            bounds, model.viewport().bounds.right());
         canvas.fillRect(detailBounds, theme_.panel);
         canvas.strokeRect(detailBounds, theme_.focusRing,
                           layout_.controlStrokeWidth);
