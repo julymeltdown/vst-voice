@@ -5,6 +5,7 @@
 #include <map>
 #include <optional>
 #include <string_view>
+#include <unordered_map>
 
 namespace seam::phonemizer {
 namespace {
@@ -189,6 +190,11 @@ void applyOverrides(const domain::VocalRegion& region,
 
 Result JapaneseKanaPhonemizer::phonemize(const domain::VocalRegion& region) const {
   Result result;
+  std::unordered_map<domain::LyricTokenId, const domain::LyricToken*> lyrics;
+  lyrics.reserve(region.lyrics.size());
+  for (const auto& lyric : region.lyrics) {
+    lyrics.emplace(lyric.id, &lyric);
+  }
   std::vector<const domain::Note*> notes;
   notes.reserve(region.notes.size());
   for (const auto& note : region.notes) {
@@ -201,7 +207,8 @@ Result JapaneseKanaPhonemizer::phonemize(const domain::VocalRegion& region) cons
 
   std::optional<std::string> previousVowel;
   for (const auto* note : notes) {
-    const auto* lyric = region.findLyric(note->lyricTokenId);
+    const auto lyricEntry = lyrics.find(note->lyricTokenId);
+    const auto* lyric = lyricEntry == lyrics.end() ? nullptr : lyricEntry->second;
     std::vector<domain::PhonemeToken> noteTokens;
     std::uint16_t ordinal = 0;
     if (lyric == nullptr || lyric->surface.empty()) {
