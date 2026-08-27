@@ -297,6 +297,7 @@ target_include_directories(seam_platform PUBLIC libs/seam-platform/include)
 target_link_libraries(seam_platform PUBLIC seam_voicebank seam_formats seam_core Threads::Threads ${CMAKE_DL_LIBS})
 if(WIN32)
   target_sources(seam_platform PRIVATE
+    libs/seam-platform/src/accessibility_preferences_unavailable.cpp
     libs/seam-platform/src/wasapi_audio_device.cpp
     libs/seam-platform/src/audio_device_catalog_win32.cpp
     libs/seam-platform/src/wasapi_audio_input_device.cpp
@@ -309,6 +310,7 @@ if(WIN32)
 elseif(APPLE)
   enable_language(OBJCXX)
   target_sources(seam_platform PRIVATE
+    libs/seam-platform/src/accessibility_preferences_appkit.mm
     libs/seam-platform/src/coreaudio_audio_device.mm
     libs/seam-platform/src/audio_device_catalog_appkit.mm
     libs/seam-platform/src/coreaudio_audio_input_device.mm
@@ -316,6 +318,7 @@ elseif(APPLE)
     libs/seam-platform/src/application_menu_appkit.mm
     libs/seam-platform/src/crash_capture_appkit.mm)
   set_source_files_properties(
+    libs/seam-platform/src/accessibility_preferences_appkit.mm
     libs/seam-platform/src/file_dialog_appkit.mm
     libs/seam-platform/src/application_menu_appkit.mm
     PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
@@ -325,10 +328,14 @@ elseif(APPLE)
     "-framework Cocoa" "-framework UniformTypeIdentifiers")
 elseif(UNIX)
   target_sources(seam_platform PRIVATE
+    libs/seam-platform/src/accessibility_preferences_unavailable.cpp
     libs/seam-platform/src/file_dialog_unavailable.cpp
     libs/seam-platform/src/application_menu_unavailable.cpp
     libs/seam-platform/src/crash_capture_unavailable.cpp)
   target_compile_definitions(seam_platform PRIVATE SEAM_AUDIO_PULSE=1)
+else()
+  target_sources(seam_platform PRIVATE
+    libs/seam-platform/src/accessibility_preferences_unavailable.cpp)
 endif()
 seam_apply_compiler_options(seam_platform)
 
