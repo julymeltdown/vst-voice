@@ -392,7 +392,7 @@ void RasterCanvas::drawText(ui::Rect bounds, std::string_view text,
   if (textEngine_ != nullptr && !text.empty() && std::isfinite(size) &&
       size > 0.0) {
     try {
-      const auto rendered = textEngine_->render(
+      const auto rendered = textEngine_->renderShared(
           text, text::TextStyle{
                     .pixelHeight = static_cast<float>(size * scale_),
                     .letterSpacing = 0.0F,
@@ -402,7 +402,7 @@ void RasterCanvas::drawText(ui::Rect bounds, std::string_view text,
                     .ellipsize = true,
                 });
       if (rendered) {
-        const auto& bitmap = rendered.value().bitmap;
+        const auto& bitmap = rendered.value()->bitmap;
         for (std::uint32_t row = 0U; row < bitmap.height; ++row) {
           for (std::uint32_t column = 0U; column < bitmap.width; ++column) {
             const auto coverage = bitmap.alpha[

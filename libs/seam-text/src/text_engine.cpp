@@ -192,7 +192,7 @@ public:
   };
 
   struct CacheEntry final {
-    RenderedText value;
+    std::shared_ptr<const RenderedText> value;
     std::uint64_t lastAccess{0U};
     std::uint64_t bytes{0U};
   };
@@ -694,9 +694,16 @@ core::Result<std::unique_ptr<TextEngine>> TextEngine::createFromTrustedFiles(
 
 core::Result<RenderedText> TextEngine::render(std::string_view utf8,
                                               const TextStyle& style) {
+  auto rendered = renderShared(utf8, style);
+  if (!rendered) return core::Result<RenderedText>{rendered.error()};
+  return *rendered.value();
+}
+
+core::Result<std::shared_ptr<const RenderedText>> TextEngine::renderShared(
+    std::string_view utf8, const TextStyle& style) {
   if (implementation_ == nullptr) {
-    return core::failure<RenderedText>(core::ErrorCode::Internal,
-                                       "Text engine is not initialized");
+    return core::failure<std::shared_ptr<const RenderedText>>(
+        core::ErrorCode::Internal, "Text engine is not initialized");
   }
   const auto key = cacheKey(utf8, style);
   {
@@ -714,28 +721,37 @@ core::Result<RenderedText> TextEngine::render(std::string_view utf8,
   try {
     rendered = implementation_->renderUncached(utf8, style);
   } catch (const std::bad_alloc&) {
-    return core::failure<RenderedText>(core::ErrorCode::Unsupported,
-                                       "Text rendering exceeded memory limits");
+    return core::failure<std::shared_ptr<const RenderedText>>(
+        core::ErrorCode::Unsupported, "Text rendering exceeded memory limits");
   } catch (const std::exception& exception) {
-    return core::failure<RenderedText>(core::ErrorCode::Internal,
-                                       "Unexpected text rendering failure",
-                                       exception.what());
+    return core::failure<std::shared_ptr<const RenderedText>>(
+        core::ErrorCode::Internal, "Unexpected text rendering failure",
+        exception.what());
   }
-  if (!rendered) return rendered;
+  if (!rendered) {
+    return core::Result<std::shared_ptr<const RenderedText>>{rendered.error()};
+  }
+  std::shared_ptr<const RenderedText> shared;
+  try {
+    shared = std::make_shared<const RenderedText>(std::move(rendered.value()));
+  } catch (const std::bad_alloc&) {
+    return core::failure<std::shared_ptr<const RenderedText>>(
+        core::ErrorCode::Unsupported, "Text rendering exceeded memory limits");
+  }
   const auto byteCount = static_cast<std::uint64_t>(
-      rendered.value().bitmap.alpha.size() + key.size() + sizeof(Impl::CacheEntry));
+      shared->bitmap.alpha.size() + key.size() + sizeof(Impl::CacheEntry));
   {
     std::scoped_lock lock{implementation_->cacheMutex};
     auto [iterator, inserted] = implementation_->cache.emplace(
         key, Impl::CacheEntry{
-                 .value = rendered.value(),
+                 .value = shared,
                  .lastAccess = ++implementation_->accessCounter,
                  .bytes = byteCount,
              });
     if (!inserted) {
       implementation_->cacheBytes -= iterator->second.bytes;
       iterator->second = Impl::CacheEntry{
-          .value = rendered.value(),
+          .value = shared,
           .lastAccess = implementation_->accessCounter,
           .bytes = byteCount,
       };
@@ -743,14 +759,14 @@ core::Result<RenderedText> TextEngine::render(std::string_view utf8,
     implementation_->cacheBytes += byteCount;
     implementation_->evictIfNeeded();
   }
-  return rendered;
+  return shared;
 }
 
 core::Result<TextMetrics> TextEngine::measure(std::string_view utf8,
                                               const TextStyle& style) {
-  auto rendered = render(utf8, style);
+  auto rendered = renderShared(utf8, style);
   if (!rendered) return core::Result<TextMetrics>{rendered.error()};
-  return rendered.value().metrics;
+  return rendered.value()->metrics;
 }
 
 std::span<const FontInfo> TextEngine::fonts() const noexcept {

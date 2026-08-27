@@ -110,6 +110,25 @@ TEST_CASE("text render cache reports repeat hits and can be cleared") {
   CHECK(engine.value()->cacheStats().entries == 0U);
 }
 
+TEST_CASE("text render cache shares immutable bitmap storage on repeat hits") {
+  auto engine = seam::text::TextEngine::createSystem();
+  CHECK(engine);
+  const seam::text::TextStyle style{
+      .pixelHeight = 14.0F,
+      .maximumWidth = 240U,
+      .maximumLines = 1U,
+      .ellipsize = true,
+  };
+  const auto first = engine.value()->renderShared("こんにちは 안녕 你好", style);
+  const auto second = engine.value()->renderShared("こんにちは 안녕 你好", style);
+  CHECK(first);
+  CHECK(second);
+  if (first && second) {
+    CHECK(first.value().get() == second.value().get());
+    CHECK(!first.value()->bitmap.alpha.empty());
+  }
+}
+
 TEST_CASE("trusted font API rejects relative paths") {
   seam::text::FontSearchOptions options;
   options.additionalCandidates.emplace_back("relative-font.ttf");

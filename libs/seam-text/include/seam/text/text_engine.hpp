@@ -92,6 +92,8 @@ public:
 
   [[nodiscard]] core::Result<RenderedText> render(
       std::string_view utf8, const TextStyle& style);
+  [[nodiscard]] core::Result<std::shared_ptr<const RenderedText>> renderShared(
+      std::string_view utf8, const TextStyle& style);
   [[nodiscard]] core::Result<TextMetrics> measure(
       std::string_view utf8, const TextStyle& style);
 
