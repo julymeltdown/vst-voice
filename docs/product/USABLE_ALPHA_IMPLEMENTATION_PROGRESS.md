@@ -4,6 +4,18 @@ This document records implementation progress against
 `docs/superpowers/plans/2026-08-18-usable-standalone-product.md`.
 It is not a Usable Alpha completion claim.
 
+## 2026-08-27 native-editor design remediation
+
+Commit `d7af125b` adds bounded Unicode text, overlap-aware note layout and
+cycling, persistent adaptive technical lanes, exact voice/character gating,
+human recovery controls, deterministic design captures, and shared native/CLAP
+geometry. Local release, sanitizer, TSan, benchmark, and native-window evidence
+is recorded in `docs/design/NATIVE_EDITOR_DESIGN_SYSTEM.md` and
+`.omo/evidence/native-editor-design-completion.md`.
+
+This is an implementation-progress update only. The separate Usable Alpha and
+External Beta acceptance gates remain fail-closed.
+
 ## Completed milestones
 
 ### U0 — Baseline and product contract
