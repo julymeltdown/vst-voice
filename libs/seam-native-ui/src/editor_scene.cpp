@@ -462,7 +462,10 @@ void EditorScenePainter::paintNotes(RasterCanvas& canvas,
     if (state.hoveredNote == note.noteId) {
       canvas.strokeRect(bounds, theme_.focusRing,
                         layout_.noteStrokeWidth + 1.0);
-      if (!note.lyric.empty()) {
+      if (state.detail.has_value() &&
+          state.detail->kind == EditorDetailKind::Note &&
+          state.detail->stableId == note.noteId.toString() &&
+          !state.detail->value.empty()) {
         const auto width = std::min(220.0, std::max(96.0, bounds.width + 48.0));
         const auto left = std::clamp(bounds.x, layout_.keyboardWidth,
                                      canvas.logicalWidth() - width);
@@ -471,7 +474,7 @@ void EditorScenePainter::paintNotes(RasterCanvas& canvas,
         canvas.fillRect(detailBounds, theme_.panel);
         canvas.strokeRect(detailBounds, theme_.focusRing,
                           layout_.controlStrokeWidth);
-        canvas.drawText(detailBounds, note.lyric, theme_.primaryText,
+        canvas.drawText(detailBounds, state.detail->value, theme_.primaryText,
                         layout_.noteFontSize);
       }
     }

@@ -9,6 +9,7 @@
 #include "seam/native_ui/character_presentation.hpp"
 #include "seam/native_ui/editor_controller.hpp"
 #include "seam/native_ui/editor_frame_layout.hpp"
+#include "seam/native_ui/editor_interaction_state.hpp"
 #include "seam/native_ui/editor_scene.hpp"
 #include "seam/native_ui/native_window.hpp"
 #include "seam/native_ui/pixel_surface.hpp"
@@ -164,6 +165,24 @@ TEST_CASE("diagnostic presentation keeps recovery copy separate from stable code
   CHECK(presentation.primaryActionKinds[1U] ==
         seam::authoring::DiagnosticAction::RelinkVoicebank);
   CHECK(presentation.technicalDetail == "BANK_MISSING / voicebank.missing");
+}
+
+TEST_CASE("editor interaction state owns hovered note detail independently") {
+  seam::native_ui::EditorInteractionState interaction;
+  const seam::domain::NoteId noteId{42U};
+  CHECK(!interaction.hoveredNote().has_value());
+  CHECK(!interaction.detail().has_value());
+  CHECK(interaction.updateHoveredNote(noteId, "こんにちは 안녕 你好"));
+  CHECK(interaction.hoveredNote() == noteId);
+  CHECK(interaction.detail().has_value());
+  CHECK(interaction.detail()->kind == seam::native_ui::EditorDetailKind::Note);
+  CHECK(interaction.detail()->stableId == noteId.toString());
+  CHECK(interaction.detail()->value == "こんにちは 안녕 你好");
+  CHECK(!interaction.updateHoveredNote(noteId, "こんにちは 안녕 你好"));
+  CHECK(interaction.clearHover());
+  CHECK(!interaction.hoveredNote().has_value());
+  CHECK(!interaction.detail().has_value());
+  CHECK(!interaction.clearHover());
 }
 
 TEST_CASE("technical lane geometry scales one shared frame") {

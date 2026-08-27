@@ -4,6 +4,7 @@
 #include "seam/domain/project.hpp"
 #include "seam/native_ui/pixel_surface.hpp"
 #include "seam/native_ui/voice_identity.hpp"
+#include "seam/native_ui/editor_interaction_state.hpp"
 #include "seam/native_ui/render_status_panel.hpp"
 #include "seam/native_ui/arrangement_panel.hpp"
 #include "seam/native_ui/track_inspector.hpp"
@@ -146,6 +147,7 @@ struct EditorSceneState final {
   } audioSettings;
   std::size_t selectedNoteCount{0U};
   std::optional<domain::NoteId> hoveredNote;
+  std::optional<EditorDetail> detail;
   VoiceIdentityView voiceIdentity;
 };
 

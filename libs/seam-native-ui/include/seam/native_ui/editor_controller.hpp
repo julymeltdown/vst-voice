@@ -4,6 +4,7 @@
 #include "seam/application/project_factory.hpp"
 #include "seam/core/result.hpp"
 #include "seam/native_ui/editor_scene.hpp"
+#include "seam/native_ui/editor_interaction_state.hpp"
 #include "seam/native_ui/arrangement_panel.hpp"
 #include "seam/native_ui/accessibility_tree.hpp"
 #include "seam/native_ui/diagnostic_panel.hpp"
@@ -395,7 +396,7 @@ private:
   std::string microscopeUnitId_;
   std::string microscopeDestinationContext_;
   std::optional<domain::PhonemeKey> microscopeKey_;
-  std::optional<domain::NoteId> hoveredNote_;
+  EditorInteractionState interaction_;
 };
 
 }  // namespace seam::native_ui

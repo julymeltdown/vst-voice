@@ -345,6 +345,7 @@ if(SEAM_BUILD_NATIVE_DESKTOP)
     libs/seam-native-ui/src/pixel_surface.cpp
     libs/seam-native-ui/src/editor_label_policy.cpp
     libs/seam-native-ui/src/editor_frame_layout.cpp
+    libs/seam-native-ui/src/editor_interaction_state.cpp
     libs/seam-native-ui/src/voice_identity.cpp
     libs/seam-native-ui/src/diagnostic_presentation.cpp
     libs/seam-native-ui/src/editor_scene.cpp

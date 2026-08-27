@@ -98,7 +98,8 @@ EditorSceneState NativeEditorController::sceneState() const {
       .characterPortrait = characterPortrait_,
   };
   state.selectedNoteCount = session_.selection().noteIds().size();
-  state.hoveredNote = hoveredNote_;
+  state.hoveredNote = interaction_.hoveredNote();
+  state.detail = interaction_.detail();
   state.arrangementTracks = arrangementPanel_.tracks();
   state.inspector = TrackInspectorModel::snapshot(session_.project(),
                                                    selectedTrackId_);
@@ -2052,8 +2053,19 @@ core::Result<void> NativeEditorController::pointerMove(
   if (dragMode_ == DragMode::None) {
     const auto point = modelPoint(event.position);
     const auto hovered = pianoRoll_.hitTest(point);
-    if (hovered != hoveredNote_) {
-      hoveredNote_ = hovered;
+    bool changed = false;
+    if (hovered.has_value()) {
+      const auto visuals = pianoRoll_.visibleNotes();
+      const auto visual = std::find_if(
+          visuals.begin(), visuals.end(), [hovered](const ui::NoteVisual& note) {
+            return note.noteId == *hovered;
+          });
+      changed = interaction_.updateHoveredNote(
+          *hovered, visual == visuals.end() ? std::string{} : visual->lyric);
+    } else {
+      changed = interaction_.clearHover();
+    }
+    if (changed) {
       repaint();
     }
     return core::success();
