@@ -79,15 +79,8 @@ SemanticNode EditorSemanticTree::build(const EditorSceneState& state,
   const auto exportInset =
       layout.exportHeight(state.exportProgress.totalFiles != 0U);
   const auto overlayInset = diagnosticInset + exportInset;
-  const auto technical = resolveTechnicalLaneHeights(TechnicalLaneLayoutInput{
-      .presentation = state.technicalLanes,
-      .populated = { !state.phonemes.tokens.empty(), !state.unitOverrides.empty(),
-                     !state.seamOverrides.empty(), !state.pitchAutomation.empty() },
-      .previewHeights = { layout.phonemeLaneHeight, layout.unitLaneHeight,
-                          layout.seamLaneHeight, layout.automationLaneHeight },
-      .contentTop = layout.contentTop(),
-      .contentBottom = state.logicalHeight - layout.statusHeight - overlayInset,
-  });
+  const auto technical = resolveEditorTechnicalLaneHeights(
+      state, layout, state.logicalHeight - layout.statusHeight - overlayInset);
   const auto contentHeight = std::max(1.0, technical.pianoBottom - layout.contentTop());
   const auto laneGeometry = EditorSceneLayout::TechnicalLaneGeometry{
       .pianoBottom = technical.pianoBottom,
@@ -102,9 +95,10 @@ SemanticNode EditorSemanticTree::build(const EditorSceneState& state,
       .bottom = state.logicalHeight - layout.statusHeight - overlayInset,
   };
   const auto characterFull =
-      state.characterMode == domain::CharacterDisplayMode::Full &&
-      state.voiceIdentity.characterActive &&
-      state.characterPortrait != nullptr;
+      state.voiceIdentity.characterActive && state.characterPortrait != nullptr &&
+      (state.characterMode == domain::CharacterDisplayMode::Full ||
+       (state.characterMode == domain::CharacterDisplayMode::Minimal &&
+        state.dockWidthOverride.value_or(0.0) > 0.0));
   const auto portraitVisible =
       !layout.compactToolbar(state.logicalWidth) &&
       state.characterMode == domain::CharacterDisplayMode::Minimal &&
@@ -116,13 +110,13 @@ SemanticNode EditorSemanticTree::build(const EditorSceneState& state,
       !audioSettingsVisible &&
       state.characterMode == domain::CharacterDisplayMode::Off &&
       !state.arrangementTracks.empty();
-  const auto dockVisible = audioSettingsVisible || characterFull || arrangementVisible ||
-                           state.voicebankBrowserVisible;
+  const auto dockWidth = resolveEditorDockWidth(state, layout);
+  const auto dockVisible = dockWidth > 0.0;
   const auto editorRight = std::max(
       layout.keyboardWidth,
       std::max(layout.keyboardWidth + layout.minimumTimelineWidth,
                state.logicalWidth -
-                   (dockVisible ? layout.characterDockWidth : 0.0)));
+                   (dockVisible ? dockWidth : 0.0)));
   SemanticNode root{
       .id = "editor",
       .role = SemanticRole::Window,

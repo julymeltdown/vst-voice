@@ -21,6 +21,7 @@
 #include "seam/voicebank/wav.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <cstdlib>
 #include <cmath>
 #include <filesystem>
@@ -1951,6 +1952,142 @@ TEST_CASE("character display cycling does not submit an audio document change") 
       .key = seam::native_ui::NativeKey::C, .modifiers = {}, .repeat = false}));
   CHECK(documentChanges == 0U);
   CHECK(viewChanges == 1U);
+}
+
+TEST_CASE("lane transitions publish deterministic shared geometry within 150 milliseconds") {
+  NativeUiFixture fixture;
+  auto now = std::chrono::steady_clock::time_point{};
+  std::size_t repaintCount = 0U;
+  seam::native_ui::NativeEditorController controller{
+      fixture.session, fixture.factory, fixture.regionId,
+      seam::native_ui::EditorHostCallbacks{
+          .requestRepaint = [&repaintCount] { ++repaintCount; },
+          .uiClock = [&now] { return now; },
+          .reduceMotionEnabled = [] { return false; },
+      }};
+  controller.resize(1280.0, 720.0);
+  const seam::native_ui::EditorSceneLayout layout;
+  const auto beforeState = controller.sceneState();
+  const auto before = seam::native_ui::resolveEditorTechnicalLaneHeights(
+      beforeState, layout, 720.0 - layout.statusHeight);
+
+  controller.rebuildAccessibilityTree();
+  CHECK(controller.dispatchAccessibility(
+      "lane.pitch", seam::native_ui::SemanticAction::Toggle));
+  const auto start = controller.sceneState();
+  CHECK(start.technicalLaneHeightsOverride.has_value());
+  CHECK_NEAR(start.technicalLaneHeightsOverride->at(3U), before.values[3U],
+             1e-9);
+
+  now += std::chrono::milliseconds{75};
+  const auto midpoint = controller.sceneState();
+  CHECK(midpoint.technicalLaneHeightsOverride.has_value());
+  now += std::chrono::milliseconds{75};
+  const auto finalState = controller.sceneState();
+  CHECK(!finalState.technicalLaneHeightsOverride.has_value());
+  const auto final = seam::native_ui::resolveEditorTechnicalLaneHeights(
+      finalState, layout, 720.0 - layout.statusHeight);
+  CHECK_NEAR(midpoint.technicalLaneHeightsOverride->at(3U),
+             (before.values[3U] + final.values[3U]) * 0.5, 1e-9);
+  CHECK(final.values[3U] > before.values[3U]);
+
+  const auto midpointTree = seam::native_ui::EditorSemanticTree::build(
+      midpoint, controller.pianoRoll());
+  const auto pitchLane = std::find_if(
+      midpointTree.children.begin(), midpointTree.children.end(),
+      [](const auto& node) { return node.id == "lane.pitch"; });
+  CHECK(pitchLane != midpointTree.children.end());
+  if (pitchLane != midpointTree.children.end()) {
+    CHECK_NEAR(pitchLane->bounds.height,
+               midpoint.technicalLaneHeightsOverride->at(3U), 1e-9);
+  }
+  CHECK(repaintCount > 0U);
+}
+
+TEST_CASE("reduced motion commits lane geometry without an intermediate frame") {
+  NativeUiFixture fixture;
+  auto now = std::chrono::steady_clock::time_point{};
+  seam::native_ui::NativeEditorController controller{
+      fixture.session, fixture.factory, fixture.regionId,
+      seam::native_ui::EditorHostCallbacks{
+          .uiClock = [&now] { return now; },
+          .reduceMotionEnabled = [] { return true; },
+      }};
+  controller.resize(1280.0, 720.0);
+  const seam::native_ui::EditorSceneLayout layout;
+  const auto beforeState = controller.sceneState();
+  const auto before = seam::native_ui::resolveEditorTechnicalLaneHeights(
+      beforeState, layout, 720.0 - layout.statusHeight);
+  controller.rebuildAccessibilityTree();
+  CHECK(controller.dispatchAccessibility(
+      "lane.pitch", seam::native_ui::SemanticAction::Toggle));
+  const auto afterState = controller.sceneState();
+  CHECK(!afterState.technicalLaneHeightsOverride.has_value());
+  CHECK(!afterState.dockWidthOverride.has_value());
+  const auto after = seam::native_ui::resolveEditorTechnicalLaneHeights(
+      afterState, layout, 720.0 - layout.statusHeight);
+  CHECK(after.values[3U] > before.values[3U]);
+}
+
+TEST_CASE("character identity dock follows the injected transition clock") {
+  NativeUiFixture fixture;
+  auto& track = fixture.session.project().vocalTracks().front();
+  track.voicebank = seam::domain::VoicebankReference{
+      .id = "voice.motion",
+      .version = "1.0.0",
+      .contentHash = std::string(64U, 'a'),
+  };
+  fixture.session.project().settings().characterDisplay =
+      seam::domain::CharacterDisplayMode::Full;
+  auto now = std::chrono::steady_clock::time_point{};
+  seam::native_ui::NativeEditorController controller{
+      fixture.session, fixture.factory, fixture.regionId,
+      seam::native_ui::EditorHostCallbacks{
+          .uiClock = [&now] { return now; },
+          .reduceMotionEnabled = [] { return false; },
+      }};
+  seam::native_ui::PixelSurface portrait{24U, 36U};
+  portrait.clear(seam::native_ui::Color{64U, 48U, 72U, 255U});
+  seam::authoring::VoicebankCard card{
+      .id = track.voicebank.id,
+      .version = track.voicebank.version,
+      .displayName = "Motion Voice",
+      .contentHash = track.voicebank.contentHash,
+      .selectable = true,
+      .characterAvailable = true,
+      .characterId = "character.motion",
+      .characterVersion = "1.0.0",
+  };
+  controller.setVoicebankCards({card});
+  controller.setCharacterBinding({
+      .id = "character.motion",
+      .version = "1.0.0",
+      .voicebankId = track.voicebank.id,
+  });
+  controller.setCharacterPortrait(&portrait);
+  const seam::native_ui::EditorSceneLayout layout;
+  CHECK_NEAR(seam::native_ui::resolveEditorDockWidth(controller.sceneState(), layout),
+             layout.characterDockWidth, 1e-9);
+
+  CHECK(controller.keyDown(seam::native_ui::KeyEvent{
+      .key = seam::native_ui::NativeKey::C}));
+  const auto start = controller.sceneState();
+  CHECK(start.dockWidthOverride.has_value());
+  CHECK_NEAR(*start.dockWidthOverride, layout.characterDockWidth, 1e-9);
+  now += std::chrono::milliseconds{75};
+  const auto midpoint = controller.sceneState();
+  CHECK(midpoint.dockWidthOverride.has_value());
+  CHECK_NEAR(*midpoint.dockWidthOverride, layout.characterDockWidth * 0.5,
+             1e-9);
+  const auto midpointTree = seam::native_ui::EditorSemanticTree::build(
+      midpoint, controller.pianoRoll());
+  CHECK(seam::native_ui::EditorSemanticTree::containsId(
+      midpointTree, "character.dock"));
+  now += std::chrono::milliseconds{75};
+  const auto finalState = controller.sceneState();
+  CHECK(!finalState.dockWidthOverride.has_value());
+  CHECK_NEAR(seam::native_ui::resolveEditorDockWidth(finalState, layout), 0.0,
+             1e-9);
 }
 
 TEST_CASE("toolbar project metadata avoids the portrait at compact scale width") {

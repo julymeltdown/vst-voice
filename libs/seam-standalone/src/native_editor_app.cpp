@@ -1,6 +1,7 @@
 #include "seam/standalone/native_editor_app.hpp"
 
 #include "seam/core/sha256.hpp"
+#include "seam/platform/accessibility_preferences.hpp"
 #include "seam/platform/application_paths.hpp"
 #include "seam/platform/file_dialog.hpp"
 #include "seam/standalone/eula_acceptance.hpp"
@@ -255,6 +256,9 @@ core::Result<void> NativeEditorApp::initialize() {
         if (!applied) return core::Result<void>{applied.error()};
         if (window_ != nullptr) window_->requestRepaint();
         return core::success();
+      },
+      .reduceMotionEnabled = [] {
+        return platform::currentAccessibilityPreferences().reduceMotion;
       },
   };
   auto created = AuthoringSession::create(config_.authoring,

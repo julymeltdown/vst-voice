@@ -5,6 +5,7 @@
 #include "seam/application/lyric_commands.hpp"
 #include "seam/live_voice/live_resources.hpp"
 #include "seam/phonemizer/japanese_phonemizer.hpp"
+#include "seam/platform/accessibility_preferences.hpp"
 #include "seam/rendering/region_renderer.hpp"
 #include "seam/synthesis/timing_solver.hpp"
 #include "seam/voicebank/wav.hpp"
@@ -413,6 +414,9 @@ void EditorRuntime::configureControllerCallbacks() {
         dirty_ = authoring_->document().dirty();
         if (controller_) controller_->setDirty(dirty_);
         requestRepaint();
+      },
+      .reduceMotionEnabled = [] {
+        return platform::currentAccessibilityPreferences().reduceMotion;
       },
   };
   controller_ = std::make_unique<native_ui::NativeEditorController>(

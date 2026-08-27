@@ -11,6 +11,7 @@
 #include <array>
 #include <algorithm>
 #include <cmath>
+#include <numeric>
 #include <sstream>
 #include <string_view>
 #include <utility>
@@ -120,32 +121,70 @@ double overlayHeight(const EditorSceneState& state,
 
 }  // namespace
 
+TechnicalLaneHeights resolveEditorTechnicalLaneHeights(
+    const EditorSceneState& state, const EditorSceneLayout& layout,
+    double contentBottom) noexcept {
+  auto technical = resolveTechnicalLaneHeights(TechnicalLaneLayoutInput{
+      .presentation = state.technicalLanes,
+      .populated = {
+          !state.phonemes.tokens.empty() || state.technicalLaneAvailable[0U],
+          !state.unitOverrides.empty() || state.technicalLaneAvailable[1U],
+          !state.seamOverrides.empty() || state.technicalLaneAvailable[2U],
+          !state.pitchAutomation.empty() || state.technicalLaneAvailable[3U],
+      },
+      .previewHeights = { layout.phonemeLaneHeight, layout.unitLaneHeight,
+                          layout.seamLaneHeight, layout.automationLaneHeight },
+      .contentTop = layout.contentTop(),
+      .contentBottom = contentBottom,
+  });
+  if (!state.technicalLaneHeightsOverride.has_value()) return technical;
+  technical.values = *state.technicalLaneHeightsOverride;
+  const auto used = std::accumulate(technical.values.begin(),
+                                    technical.values.end(), 0.0);
+  technical.pianoBottom = std::max(layout.contentTop(), contentBottom - used);
+  return technical;
+}
+
+bool editorDockVisible(const EditorSceneState& state) noexcept {
+  const auto characterFull =
+      state.characterMode == domain::CharacterDisplayMode::Full &&
+      state.voiceIdentity.characterActive && state.characterPortrait != nullptr;
+  const auto arrangementVisible =
+      !state.voicebankBrowserVisible && !state.audioSettings.visible &&
+      state.characterMode == domain::CharacterDisplayMode::Off &&
+      !state.arrangementTracks.empty();
+  return state.audioSettings.visible || characterFull || arrangementVisible ||
+         state.voicebankBrowserVisible;
+}
+
+double resolveEditorDockWidth(const EditorSceneState& state,
+                              const EditorSceneLayout& layout) noexcept {
+  if (state.dockWidthOverride.has_value()) {
+    return std::clamp(*state.dockWidthOverride, 0.0, layout.characterDockWidth);
+  }
+  return editorDockVisible(state) ? layout.characterDockWidth : 0.0;
+}
+
 void EditorScenePainter::paint(RasterCanvas& canvas, ui::PianoRollModel& model,
                                const EditorSceneState& state) const noexcept {
   const auto width = canvas.logicalWidth();
   const auto height = canvas.logicalHeight();
-  const auto characterFull = state.characterMode == domain::CharacterDisplayMode::Full &&
-                             state.voiceIdentity.characterActive &&
-                             state.characterPortrait != nullptr;
+  const auto characterFull =
+      state.voiceIdentity.characterActive && state.characterPortrait != nullptr &&
+      (state.characterMode == domain::CharacterDisplayMode::Full ||
+       (state.characterMode == domain::CharacterDisplayMode::Minimal &&
+        state.dockWidthOverride.value_or(0.0) > 0.0));
   const auto audioSettingsVisible = state.audioSettings.visible;
   const auto arrangementVisible =
-      !state.voicebankBrowserVisible &&
-      !audioSettingsVisible &&
+      !state.voicebankBrowserVisible && !audioSettingsVisible &&
       state.characterMode == domain::CharacterDisplayMode::Off &&
       !state.arrangementTracks.empty();
-  const auto dockVisible = audioSettingsVisible || characterFull || arrangementVisible ||
-                           state.voicebankBrowserVisible;
+  const auto dockWidth = resolveEditorDockWidth(state, layout_);
+  const auto dockVisible = dockWidth > 0.0;
   const auto statusTop = height - layout_.statusHeight;
   const auto overlayInset = overlayHeight(state, layout_);
-  const auto technical = resolveTechnicalLaneHeights(TechnicalLaneLayoutInput{
-      .presentation = state.technicalLanes,
-      .populated = { !state.phonemes.tokens.empty(), !state.unitOverrides.empty(),
-                     !state.seamOverrides.empty(), !state.pitchAutomation.empty() },
-      .previewHeights = { layout_.phonemeLaneHeight, layout_.unitLaneHeight,
-                          layout_.seamLaneHeight, layout_.automationLaneHeight },
-      .contentTop = layout_.contentTop(),
-      .contentBottom = height - layout_.statusHeight - overlayInset,
-  });
+  const auto technical = resolveEditorTechnicalLaneHeights(
+      state, layout_, height - layout_.statusHeight - overlayInset);
   const auto pianoBottom = technical.pianoBottom;
   const auto contentHeight = std::max(1.0, pianoBottom - layout_.contentTop());
   const auto laneGeometry = EditorSceneLayout::TechnicalLaneGeometry{
@@ -169,7 +208,7 @@ void EditorScenePainter::paint(RasterCanvas& canvas, ui::PianoRollModel& model,
       .statusHeight = layout_.statusHeight,
       .keyboardWidth = layout_.keyboardWidth,
       .minimumTimelineWidth = layout_.minimumTimelineWidth,
-      .dockWidth = layout_.characterDockWidth,
+      .dockWidth = dockWidth,
       .bottomInset = overlayHeight(state, layout_),
       .pianoBottom = pianoBottom,
       .phonemeHeight = laneGeometry.phonemeHeight,
@@ -517,15 +556,8 @@ void EditorScenePainter::paintTechnicalLanes(
     const EditorSceneState& state, double editorRight) const noexcept {
   const auto left = layout_.keyboardWidth;
   const auto inset = overlayHeight(state, layout_);
-  const auto technical = resolveTechnicalLaneHeights(TechnicalLaneLayoutInput{
-      .presentation = state.technicalLanes,
-      .populated = { !state.phonemes.tokens.empty(), !state.unitOverrides.empty(),
-                     !state.seamOverrides.empty(), !state.pitchAutomation.empty() },
-      .previewHeights = { layout_.phonemeLaneHeight, layout_.unitLaneHeight,
-                          layout_.seamLaneHeight, layout_.automationLaneHeight },
-      .contentTop = layout_.contentTop(),
-      .contentBottom = canvas.logicalHeight() - layout_.statusHeight - inset,
-  });
+  const auto technical = resolveEditorTechnicalLaneHeights(
+      state, layout_, canvas.logicalHeight() - layout_.statusHeight - inset);
   const auto geometry = EditorSceneLayout::TechnicalLaneGeometry{
       .pianoBottom = technical.pianoBottom,
       .phonemeTop = technical.pianoBottom,

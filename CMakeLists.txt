@@ -663,7 +663,7 @@ if(SEAM_BUILD_CLAP_EDITOR_PLUGIN)
   target_link_libraries(seam_clap_editor PUBLIC
     seam_native_ui seam_editor_inspection seam_rendering seam_synthesis
     seam_authoring_runtime seam_voicebank seam_editor_ui seam_phonemizer seam_formats
-    seam_application seam_domain seam_text seam_core Threads::Threads)
+    seam_platform seam_application seam_domain seam_text seam_core Threads::Threads)
   if(WIN32)
     target_compile_definitions(seam_clap_editor PRIVATE
       SEAM_CLAP_EDITOR_WIN32=1 WIN32_LEAN_AND_MEAN NOMINMAX _WIN32_WINNT=0x0A00)

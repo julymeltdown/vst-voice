@@ -134,6 +134,8 @@ struct EditorHostCallbacks final {
   std::function<void()> viewChanged;
   std::function<core::Result<void>(authoring::AudioSettings)>
       applyAudioSettings;
+  std::function<std::chrono::steady_clock::time_point()> uiClock;
+  std::function<bool()> reduceMotionEnabled;
 };
 
 class NativeEditorController final {
@@ -343,6 +345,16 @@ private:
   [[nodiscard]] core::Result<void> cycleAudioSettings(
       AudioSettingsField field, int direction);
   [[nodiscard]] core::Result<void> selectAudioDevice(std::size_t index);
+  [[nodiscard]] std::chrono::steady_clock::time_point uiNow() const noexcept;
+  [[nodiscard]] bool reduceMotionEnabled() const noexcept;
+  void beginLayoutTransition(const EditorSceneState& fromState);
+  void applyLayoutTransition(EditorSceneState& state) const;
+
+  struct LayoutTransitionState final {
+    std::array<double, 4U> fromLaneHeights{};
+    double fromDockWidth{0.0};
+    std::chrono::steady_clock::time_point startedAt{};
+  };
 
   application::EditorSession& session_;
   application::ProjectFactory& factory_;
@@ -397,6 +409,7 @@ private:
   std::string microscopeDestinationContext_;
   std::optional<domain::PhonemeKey> microscopeKey_;
   EditorInteractionState interaction_;
+  std::optional<LayoutTransitionState> layoutTransition_;
 };
 
 }  // namespace seam::native_ui

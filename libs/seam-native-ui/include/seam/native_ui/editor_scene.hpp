@@ -3,6 +3,7 @@
 #include "seam/character/character.hpp"
 #include "seam/domain/project.hpp"
 #include "seam/native_ui/pixel_surface.hpp"
+#include "seam/native_ui/editor_frame_layout.hpp"
 #include "seam/native_ui/voice_identity.hpp"
 #include "seam/native_ui/editor_interaction_state.hpp"
 #include "seam/native_ui/render_status_panel.hpp"
@@ -111,6 +112,8 @@ struct EditorSceneState final {
   bool seamPreviewAlternate{false};
   std::vector<domain::PitchAutomationPoint> pitchAutomation;
   std::array<domain::TechnicalLanePresentation, 4U> technicalLanes{};
+  std::array<bool, 4U> technicalLaneAvailable{};
+  std::optional<std::array<double, 4U>> technicalLaneHeightsOverride;
 
   domain::CharacterDisplayMode characterMode{domain::CharacterDisplayMode::Minimal};
   character::State characterState{character::State::Neutral};
@@ -150,6 +153,7 @@ struct EditorSceneState final {
   std::optional<domain::NoteId> focusedNote;
   std::optional<EditorDetail> detail;
   VoiceIdentityView voiceIdentity;
+  std::optional<double> dockWidthOverride;
 };
 
 struct EditorSceneLayout final {
@@ -859,6 +863,13 @@ struct EditorSceneLayout final {
                     microscopeCloseHeight};
   }
 };
+
+[[nodiscard]] TechnicalLaneHeights resolveEditorTechnicalLaneHeights(
+    const EditorSceneState& state, const EditorSceneLayout& layout,
+    double contentBottom) noexcept;
+[[nodiscard]] bool editorDockVisible(const EditorSceneState& state) noexcept;
+[[nodiscard]] double resolveEditorDockWidth(
+    const EditorSceneState& state, const EditorSceneLayout& layout) noexcept;
 
 class EditorScenePainter final {
 public:

@@ -87,6 +87,76 @@ NativeEditorController::NativeEditorController(
   resize(logicalWidth_, logicalHeight_);
 }
 
+std::chrono::steady_clock::time_point NativeEditorController::uiNow() const noexcept {
+  if (callbacks_.uiClock) {
+    try {
+      return callbacks_.uiClock();
+    } catch (...) {
+    }
+  }
+  return std::chrono::steady_clock::now();
+}
+
+bool NativeEditorController::reduceMotionEnabled() const noexcept {
+  if (callbacks_.reduceMotionEnabled) {
+    try {
+      return callbacks_.reduceMotionEnabled();
+    } catch (...) {
+      return true;
+    }
+  }
+  return true;
+}
+
+void NativeEditorController::beginLayoutTransition(
+    const EditorSceneState& fromState) {
+  if (reduceMotionEnabled()) {
+    layoutTransition_.reset();
+    return;
+  }
+  const auto overlayInset =
+      layout_.diagnosticHeight(!fromState.diagnostics.empty()) +
+      layout_.exportHeight(fromState.exportProgress.totalFiles != 0U);
+  const auto technical = resolveEditorTechnicalLaneHeights(
+      fromState, layout_,
+      fromState.logicalHeight - layout_.statusHeight - overlayInset);
+  layoutTransition_ = LayoutTransitionState{
+      .fromLaneHeights = technical.values,
+      .fromDockWidth = resolveEditorDockWidth(fromState, layout_),
+      .startedAt = uiNow(),
+  };
+}
+
+void NativeEditorController::applyLayoutTransition(
+    EditorSceneState& state) const {
+  if (!layoutTransition_.has_value() || reduceMotionEnabled()) return;
+  constexpr auto duration = std::chrono::milliseconds{150};
+  const auto elapsed = uiNow() - layoutTransition_->startedAt;
+  if (elapsed >= duration) return;
+  const auto linear = std::clamp(
+      std::chrono::duration<double>(std::max(elapsed, decltype(elapsed)::zero())) /
+          duration,
+      0.0, 1.0);
+  const auto progress = linear * linear * (3.0 - 2.0 * linear);
+  const auto overlayInset = layout_.diagnosticHeight(!state.diagnostics.empty()) +
+                           layout_.exportHeight(state.exportProgress.totalFiles != 0U);
+  const auto target = resolveEditorTechnicalLaneHeights(
+      state, layout_, state.logicalHeight - layout_.statusHeight - overlayInset);
+  std::array<double, 4U> laneHeights{};
+  for (std::size_t index = 0U; index < laneHeights.size(); ++index) {
+    laneHeights[index] = layoutTransition_->fromLaneHeights[index] +
+                         (target.values[index] -
+                          layoutTransition_->fromLaneHeights[index]) *
+                             progress;
+  }
+  state.technicalLaneHeightsOverride = laneHeights;
+  const auto targetDockWidth = resolveEditorDockWidth(state, layout_);
+  state.dockWidthOverride =
+      layoutTransition_->fromDockWidth +
+      (targetDockWidth - layoutTransition_->fromDockWidth) * progress;
+  if (callbacks_.requestRepaint) callbacks_.requestRepaint();
+}
+
 EditorSceneState NativeEditorController::sceneState() const {
   EditorSceneState state{
       .projectName = session_.project().name(),
@@ -112,6 +182,13 @@ EditorSceneState NativeEditorController::sceneState() const {
       .seamPreviewAlternate = seamPreviewAlternate_,
       .pitchAutomation = {},
       .technicalLanes = session_.project().settings().technicalLanes,
+      .technicalLaneAvailable = {
+          false,
+          static_cast<bool>(callbacks_.cycleUnitVariant) ||
+              static_cast<bool>(callbacks_.loadSampleMicroscope),
+          false,
+          false,
+      },
       .characterMode = session_.project().settings().characterDisplay,
       .characterState = playing_ ? character::State::Focused
                                  : (dirty_ ? character::State::Warning
@@ -201,6 +278,7 @@ EditorSceneState NativeEditorController::sceneState() const {
   if (const auto* focused = accessibilityTree_.focusedNode(); focused != nullptr) {
     state.focusedElementBounds = focused->bounds;
   }
+  applyLayoutTransition(state);
   return state;
 }
 
@@ -477,6 +555,7 @@ core::Result<void> NativeEditorController::dispatchAccessibility(
             return core::failure(core::ErrorCode::Unsupported,
                                  "Technical lane only supports toggle");
           }
+          const auto fromState = sceneState();
           auto presentation =
               session_.project().settings().technicalLanes[lane->second];
           presentation.mode =
@@ -487,6 +566,7 @@ core::Result<void> NativeEditorController::dispatchAccessibility(
               application::SetTechnicalLanePresentationCommand>(
               lane->first, presentation));
           if (changed) {
+            beginLayoutTransition(fromState);
             if (callbacks_.viewChanged) callbacks_.viewChanged();
             repaint();
           }
@@ -1943,16 +2023,8 @@ core::Result<void> NativeEditorController::pointerDown(
   const auto state = sceneState();
   const auto overlayInset = layout_.diagnosticHeight(!state.diagnostics.empty()) +
                            layout_.exportHeight(state.exportProgress.totalFiles != 0U);
-  const auto technical = resolveTechnicalLaneHeights(TechnicalLaneLayoutInput{
-      .presentation = state.technicalLanes,
-      .populated = { !state.phonemes.tokens.empty(), !state.unitOverrides.empty() ||
-                         callbacks_.cycleUnitVariant || callbacks_.loadSampleMicroscope,
-                     !state.seamOverrides.empty(), !state.pitchAutomation.empty() },
-      .previewHeights = { layout_.phonemeLaneHeight, layout_.unitLaneHeight,
-                          layout_.seamLaneHeight, layout_.automationLaneHeight },
-      .contentTop = layout_.contentTop(),
-      .contentBottom = logicalHeight_ - layout_.statusHeight - overlayInset,
-  });
+  const auto technical = resolveEditorTechnicalLaneHeights(
+      state, layout_, logicalHeight_ - layout_.statusHeight - overlayInset);
   const auto pianoBottom = technical.pianoBottom;
   const auto phonemeHeight = technical.values[0U];
   const auto unitHeight = technical.values[1U];
@@ -2624,6 +2696,7 @@ core::Result<void> NativeEditorController::keyDown(const KeyEvent& event) {
     const auto selected = session_.selection().noteIds();
     if (!selected.empty()) result = beginLyricEdit(selected.front());
   } else if (event.key == NativeKey::C) {
+    const auto fromState = sceneState();
     auto& mode = session_.project().settings().characterDisplay;
     if (mode == domain::CharacterDisplayMode::Full) {
       mode = domain::CharacterDisplayMode::Minimal;
@@ -2632,6 +2705,7 @@ core::Result<void> NativeEditorController::keyDown(const KeyEvent& event) {
     } else {
       mode = domain::CharacterDisplayMode::Full;
     }
+    beginLayoutTransition(fromState);
     if (callbacks_.viewChanged) {
       callbacks_.viewChanged();
     } else {

@@ -288,6 +288,8 @@ void AuthoringSession::configureController() {
       .diagnosticAction = externalCallbacks_.diagnosticAction,
       .viewChanged = externalCallbacks_.viewChanged,
       .applyAudioSettings = externalCallbacks_.applyAudioSettings,
+      .uiClock = externalCallbacks_.uiClock,
+      .reduceMotionEnabled = externalCallbacks_.reduceMotionEnabled,
   };
   controller_ = std::make_unique<native_ui::NativeEditorController>(
       runtime_->document().session(), runtime_->document().factory(),
