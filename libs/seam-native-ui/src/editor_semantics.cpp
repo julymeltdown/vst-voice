@@ -418,6 +418,50 @@ SemanticNode EditorSemanticTree::build(const EditorSceneState& state,
         .description = "Activate to select the next overlapping note",
     });
   }
+  if (state.overlapDetail.has_value()) {
+    const auto group = std::find_if(
+        overlapGroups.begin(), overlapGroups.end(), [&state](const auto& value) {
+          return value.index == state.overlapDetail->groupIndex;
+        });
+    if (group != overlapGroups.end() && group->initialized) {
+      const auto detailBounds = layout.overlapDetailBounds(
+          group->bounds, editorRight, state.overlapDetail->members.size());
+      SemanticNode detail{
+          .id = "detail.overlap-group." +
+                std::to_string(state.overlapDetail->groupIndex),
+          .role = SemanticRole::Panel,
+          .name = "Overlapping note detail",
+          .value = std::to_string(state.overlapDetail->members.size()) + " notes",
+          .bounds = detailBounds,
+          .enabled = true,
+          .focused = false,
+          .actions = {SemanticAction::SetFocus},
+          .description = "All notes in stable overlap order",
+      };
+      detail.children.reserve(state.overlapDetail->members.size());
+      for (std::size_t index = 0U;
+           index < state.overlapDetail->members.size(); ++index) {
+        const auto& member = state.overlapDetail->members[index];
+        detail.children.push_back(SemanticNode{
+            .id = "detail.overlap-group." +
+                  std::to_string(state.overlapDetail->groupIndex) + ".note." +
+                  member.noteId.toString(),
+            .role = SemanticRole::Status,
+            .name = "Overlap note " + std::to_string(index + 1U),
+            .value = member.lyric + " / MIDI " +
+                     std::to_string(member.midiKey),
+            .bounds = layout.overlapDetailRowBounds(detailBounds, index),
+            .enabled = true,
+            .focused = false,
+            .selected = member.selected,
+            .actions = {},
+            .description = member.selected ? "Currently selected note"
+                                           : "Overlapping note",
+        });
+      }
+      root.children.push_back(std::move(detail));
+    }
+  }
   const auto detailNote = state.hoveredNote.has_value() ? state.hoveredNote
                                                         : state.focusedNote;
   if (state.detail.has_value() && detailNote.has_value() &&

@@ -23,7 +23,9 @@ ZOOMS = (25, 50, 100, 200)
 SCALES = (1, 2)
 JOURNEY_CAPTURES = (
     "note-detail-focus.ppm",
-    "overlap-cycled-detail.ppm",
+    "overlap-cycle-before.ppm",
+    "overlap-cycle-1.ppm",
+    "overlap-cycle-2.ppm",
     "character-ready-matched.ppm",
     "character-ready-mismatched.ppm",
     "lane-transition-start.ppm",

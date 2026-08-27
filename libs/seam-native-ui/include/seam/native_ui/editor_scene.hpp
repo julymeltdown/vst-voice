@@ -87,6 +87,17 @@ struct EditorSceneTheme final {
 };
 
 struct EditorSceneState final {
+  struct OverlapDetailMember final {
+    domain::NoteId noteId;
+    std::string lyric;
+    std::uint8_t midiKey{0U};
+    bool selected{false};
+  };
+  struct OverlapDetail final {
+    std::size_t groupIndex{0U};
+    std::vector<OverlapDetailMember> members;
+  };
+
   std::string projectName{"Project SEAM"};
   std::uint64_t revision{0};
   bool playing{false};
@@ -152,6 +163,7 @@ struct EditorSceneState final {
   std::optional<domain::NoteId> hoveredNote;
   std::optional<domain::NoteId> focusedNote;
   std::optional<EditorDetail> detail;
+  std::optional<OverlapDetail> overlapDetail;
   VoiceIdentityView voiceIdentity;
   std::optional<double> dockWidthOverride;
 };
@@ -250,6 +262,13 @@ struct EditorSceneLayout final {
   double noteTextCharacterWidth{5.0};
   double noteFontSize{12.0};
   double noteStrokeWidth{1.0};
+  double overlapBadgeWidth{30.0};
+  double overlapBadgeHeight{18.0};
+  double overlapBadgeGap{3.0};
+  double overlapDetailWidth{360.0};
+  double overlapDetailTitleHeight{20.0};
+  double overlapDetailRowHeight{16.0};
+  double overlapDetailGap{6.0};
   double boxSelectionStrokeWidth{1.0};
   double playheadStrokeWidth{1.0};
   double lyricEditorInsetX{8.0};
@@ -768,6 +787,40 @@ struct EditorSceneLayout final {
                                  std::max(keyboardWidth, contentRight - width));
     const auto top = std::max(contentTop(), noteBounds.y - 24.0);
     return ui::Rect{left, top, width, 20.0};
+  }
+  [[nodiscard]] ui::Rect overlapBadgeBounds(
+      const ui::Rect& groupBounds, double contentRight) const noexcept {
+    const auto width = std::min(overlapBadgeWidth,
+                                std::max(1.0, contentRight - keyboardWidth));
+    const auto left = std::clamp(groupBounds.right() - width, keyboardWidth,
+                                 std::max(keyboardWidth, contentRight - width));
+    const auto above = groupBounds.y - overlapBadgeHeight - overlapBadgeGap;
+    const auto top = above >= contentTop()
+                         ? above
+                         : groupBounds.bottom() + overlapBadgeGap;
+    return ui::Rect{left, top, width, overlapBadgeHeight};
+  }
+  [[nodiscard]] ui::Rect overlapDetailBounds(
+      const ui::Rect& groupBounds, double contentRight,
+      std::size_t memberCount) const noexcept {
+    const auto available = std::max(1.0, contentRight - keyboardWidth);
+    const auto width = std::min(available, overlapDetailWidth);
+    const auto height = overlapDetailTitleHeight +
+                        static_cast<double>(memberCount) * overlapDetailRowHeight;
+    const auto left = std::clamp(groupBounds.x, keyboardWidth,
+                                 std::max(keyboardWidth, contentRight - width));
+    const auto above = groupBounds.y - height - overlapDetailGap;
+    const auto top = above >= contentTop()
+                         ? above
+                         : groupBounds.bottom() + overlapDetailGap;
+    return ui::Rect{left, top, width, height};
+  }
+  [[nodiscard]] ui::Rect overlapDetailRowBounds(
+      const ui::Rect& detailBounds, std::size_t index) const noexcept {
+    return ui::Rect{detailBounds.x,
+                    detailBounds.y + overlapDetailTitleHeight +
+                        static_cast<double>(index) * overlapDetailRowHeight,
+                    detailBounds.width, overlapDetailRowHeight};
   }
   [[nodiscard]] ui::Rect arrangementActionBoundsForWidth(
       double logicalWidth, std::size_t index) const noexcept {

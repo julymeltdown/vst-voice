@@ -410,6 +410,7 @@ private:
   std::string microscopeDestinationContext_;
   std::optional<domain::PhonemeKey> microscopeKey_;
   EditorInteractionState interaction_;
+  std::optional<EditorSceneState::OverlapDetail> overlapDetail_;
   std::optional<LayoutTransitionState> layoutTransition_;
 };
 

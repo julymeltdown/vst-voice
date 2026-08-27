@@ -488,7 +488,39 @@ void EditorScenePainter::paintNotes(RasterCanvas& canvas,
                                     const ui::PianoRollModel& model,
                                     const EditorSceneState& state) const noexcept {
   const auto notes = model.visibleNotes();
+  struct OverlapGroup final {
+    std::size_t index{0U};
+    std::size_t hiddenMembers{0U};
+    ui::Rect bounds;
+    bool initialized{false};
+  };
+  std::vector<OverlapGroup> overlapGroups;
   for (const auto& note : notes) {
+    if (note.overlapMemberCount > 1U) {
+      auto group = std::find_if(
+          overlapGroups.begin(), overlapGroups.end(), [&note](const auto& value) {
+            return value.index == note.overlapGroup;
+          });
+      if (group == overlapGroups.end()) {
+        overlapGroups.push_back(OverlapGroup{
+            .index = note.overlapGroup,
+            .hiddenMembers = note.hiddenOverlapMembers,
+        });
+        group = std::prev(overlapGroups.end());
+      }
+      auto memberBounds = note.bounds;
+      memberBounds.y += layout_.contentTop();
+      if (!group->initialized) {
+        group->bounds = memberBounds;
+        group->initialized = true;
+      } else {
+        const auto left = std::min(group->bounds.x, memberBounds.x);
+        const auto top = std::min(group->bounds.y, memberBounds.y);
+        const auto right = std::max(group->bounds.right(), memberBounds.right());
+        const auto bottom = std::max(group->bounds.bottom(), memberBounds.bottom());
+        group->bounds = ui::Rect{left, top, right - left, bottom - top};
+      }
+    }
     if (note.hiddenByOverlapDensity) continue;
     auto bounds = note.bounds;
     bounds.y += layout_.contentTop();
@@ -509,16 +541,18 @@ void EditorScenePainter::paintNotes(RasterCanvas& canvas,
       }
     }
   }
-  for (const auto& note : notes) {
-    if (note.hiddenByOverlapDensity || !note.drawsOverlapIndicator) continue;
-    auto bounds = note.bounds;
-    bounds.y += layout_.contentTop();
-    const auto indicator = "+" + std::to_string(note.hiddenOverlapMembers);
-    const auto indicatorWidth = std::min(18.0, bounds.width);
-    canvas.drawText(
-        ui::Rect{bounds.right() - indicatorWidth, bounds.y,
-                 indicatorWidth, bounds.height},
-        indicator, theme_.focusRing, layout_.noteFontSize);
+  for (const auto& group : overlapGroups) {
+    if (!group.initialized || group.hiddenMembers == 0U) continue;
+    if (state.overlapDetail.has_value() &&
+        state.overlapDetail->groupIndex == group.index) {
+      continue;
+    }
+    const auto badge = layout_.overlapBadgeBounds(
+        group.bounds, model.viewport().bounds.right());
+    canvas.fillRect(badge, theme_.panel);
+    canvas.strokeRect(badge, theme_.focusRing, layout_.controlStrokeWidth);
+    canvas.drawText(badge, "+" + std::to_string(group.hiddenMembers),
+                    theme_.focusRing, layout_.noteFontSize);
   }
   for (const auto& note : notes) {
     const auto revealsDetail = state.hoveredNote == note.noteId ||
@@ -542,6 +576,42 @@ void EditorScenePainter::paintNotes(RasterCanvas& canvas,
                         layout_.controlStrokeWidth);
       canvas.drawText(detailBounds, state.detail->value, theme_.primaryText,
                       layout_.noteFontSize);
+    }
+  }
+  if (state.overlapDetail.has_value()) {
+    const auto group = std::find_if(
+        overlapGroups.begin(), overlapGroups.end(), [&state](const auto& value) {
+          return value.index == state.overlapDetail->groupIndex;
+        });
+    if (group != overlapGroups.end() && group->initialized) {
+      const auto detailBounds = layout_.overlapDetailBounds(
+          group->bounds, model.viewport().bounds.right(),
+          state.overlapDetail->members.size());
+      canvas.fillRect(detailBounds, theme_.panel);
+      canvas.strokeRect(detailBounds, theme_.focusRing,
+                        layout_.controlStrokeWidth);
+      canvas.drawText(
+          ui::Rect{detailBounds.x + 6.0, detailBounds.y,
+                   std::max(1.0, detailBounds.width - 12.0),
+                   layout_.overlapDetailTitleHeight},
+          std::to_string(state.overlapDetail->members.size()) +
+              " OVERLAPPING NOTES",
+          theme_.focusRing, layout_.noteFontSize);
+      for (std::size_t index = 0U;
+           index < state.overlapDetail->members.size(); ++index) {
+        const auto& member = state.overlapDetail->members[index];
+        auto row = layout_.overlapDetailRowBounds(detailBounds, index);
+        if (member.selected) canvas.fillRect(row, theme_.noteSelected);
+        row.x += 6.0;
+        row.width = std::max(1.0, row.width - 12.0);
+        const auto prefix = member.selected ? "> " : "  ";
+        canvas.drawText(row,
+                        prefix + member.lyric + " / MIDI " +
+                            std::to_string(member.midiKey),
+                        member.selected ? theme_.primaryText
+                                        : theme_.secondaryText,
+                        layout_.noteFontSize);
+      }
     }
   }
 }

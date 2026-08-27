@@ -58,9 +58,32 @@ TEST_CASE("overlap group semantics cycle every hidden note member") {
   CHECK(controller.dispatchAccessibility(
       "overlap-group.0", seam::native_ui::SemanticAction::Activate));
   CHECK(fixture.session.selection().contains(fixture.noteIds[1U]));
+  auto detailState = controller.sceneState();
+  CHECK(detailState.overlapDetail.has_value());
+  if (detailState.overlapDetail.has_value()) {
+    CHECK(detailState.overlapDetail->members.size() == 5U);
+    CHECK(detailState.overlapDetail->members[0U].lyric == "가나다라마바사");
+    CHECK(detailState.overlapDetail->members[1U].lyric == "こんにちは世界");
+    CHECK(detailState.overlapDetail->members[1U].selected);
+  }
+  controller.rebuildAccessibilityTree();
+  const auto* detail = findNode(controller.accessibilityTree().root(),
+                                "detail.overlap-group.0", findNode);
+  CHECK(detail != nullptr);
+  if (detail != nullptr) {
+    CHECK(detail->children.size() == 5U);
+    CHECK(detail->children[1U].selected);
+    CHECK(detail->children[4U].value.find("long lyric") != std::string::npos);
+  }
   CHECK(controller.dispatchAccessibility(
       "overlap-group.0", seam::native_ui::SemanticAction::Activate));
   CHECK(fixture.session.selection().contains(fixture.noteIds[2U]));
+  detailState = controller.sceneState();
+  CHECK(detailState.overlapDetail.has_value());
+  if (detailState.overlapDetail.has_value()) {
+    CHECK(detailState.overlapDetail->members[2U].selected);
+    CHECK(!detailState.overlapDetail->members[1U].selected);
+  }
 }
 
 TEST_CASE("editor semantic tree exposes stable accessible controls") {

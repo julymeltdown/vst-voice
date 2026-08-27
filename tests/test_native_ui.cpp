@@ -575,20 +575,29 @@ TEST_CASE("native design journey fixtures cover detail identity and motion state
       overlapRoot.children.begin(), overlapRoot.children.end(),
       [](const auto& node) { return node.id.starts_with("overlap-group."); });
   CHECK(overlapGroup != overlapRoot.children.end());
+  capture(overlapController, "overlap-cycle-before.ppm");
   if (overlapGroup != overlapRoot.children.end()) {
     CHECK(overlapController.dispatchAccessibility(
         overlapGroup->id, seam::native_ui::SemanticAction::Activate));
   }
-  const auto selectedOverlap =
-      overlapFixture.session.selection().noteIds();
-  CHECK(!selectedOverlap.empty());
-  if (!selectedOverlap.empty()) {
-    overlapController.rebuildAccessibilityTree();
-    CHECK(overlapController.dispatchAccessibility(
-        "note." + selectedOverlap.front().toString(),
-        seam::native_ui::SemanticAction::SetFocus));
+  const auto firstOverlap = overlapController.sceneState().overlapDetail;
+  CHECK(firstOverlap.has_value());
+  if (firstOverlap.has_value()) {
+    CHECK(firstOverlap->members.size() == 5U);
+    CHECK(firstOverlap->members[0U].selected);
   }
-  capture(overlapController, "overlap-cycled-detail.ppm");
+  capture(overlapController, "overlap-cycle-1.ppm");
+  if (overlapGroup != overlapRoot.children.end()) {
+    CHECK(overlapController.dispatchAccessibility(
+        overlapGroup->id, seam::native_ui::SemanticAction::Activate));
+  }
+  const auto secondOverlap = overlapController.sceneState().overlapDetail;
+  CHECK(secondOverlap.has_value());
+  if (secondOverlap.has_value()) {
+    CHECK(secondOverlap->members.size() == 5U);
+    CHECK(secondOverlap->members[1U].selected);
+  }
+  capture(overlapController, "overlap-cycle-2.ppm");
 
   NativeUiFixture characterFixture;
   auto& characterTrack =
@@ -609,8 +618,11 @@ TEST_CASE("native design journey fixtures cover detail identity and motion state
           .reduceMotionEnabled = [] { return false; },
       }};
   characterController.resize(960.0, 600.0);
-  seam::native_ui::PixelSurface portrait{96U, 144U};
-  portrait.clear(seam::native_ui::Color{92U, 58U, 86U, 255U});
+  auto portraitResult = seam::native_ui::PixelSurface::loadPpm(
+      "assets/character-01/runtime/neutral.ppm");
+  CHECK(portraitResult);
+  if (!portraitResult) return;
+  auto portrait = std::move(portraitResult).value();
   const seam::authoring::VoicebankCard characterCard{
       .id = characterTrack.voicebank.id,
       .version = characterTrack.voicebank.version,

@@ -224,6 +224,7 @@ EditorSceneState NativeEditorController::sceneState() const {
   state.hoveredNote = interaction_.hoveredNote();
   state.focusedNote = interaction_.focusedNote();
   state.detail = interaction_.detail();
+  state.overlapDetail = overlapDetail_;
   state.arrangementTracks = arrangementPanel_.tracks();
   state.inspector = TrackInspectorModel::snapshot(session_.project(),
                                                    selectedTrackId_);
@@ -627,6 +628,24 @@ core::Result<void> NativeEditorController::dispatchAccessibility(
                                               1U) %
                                              candidates.size()];
           session_.selection().selectOnly(next);
+          EditorSceneState::OverlapDetail detail{.groupIndex = groupIndex};
+          detail.members.reserve(candidates.size());
+          const auto* region = session_.project().findRegion(regionId_);
+          for (const auto candidate : candidates) {
+            const auto* note = region == nullptr ? nullptr : region->findNote(candidate);
+            const auto* lyric = note == nullptr || region == nullptr
+                                    ? nullptr
+                                    : region->findLyric(note->lyricTokenId);
+            detail.members.push_back(EditorSceneState::OverlapDetailMember{
+                .noteId = candidate,
+                .lyric = lyric == nullptr ? std::string{}
+                                          : domain::toUtf8(lyric->surface),
+                .midiKey = static_cast<std::uint8_t>(
+                    note == nullptr ? 0U : note->midiKey),
+                .selected = candidate == next,
+            });
+          }
+          overlapDetail_ = std::move(detail);
           repaint();
           return core::success();
         }
