@@ -13,12 +13,10 @@
 #include <exception>
 #include <filesystem>
 #include <limits>
-#include <locale>
 #include <memory>
 #include <new>
 #include <mutex>
 #include <optional>
-#include <sstream>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -149,14 +147,23 @@ core::Result<void> validateStyle(const TextStyle& style) {
 }
 
 std::string cacheKey(std::string_view text, const TextStyle& style) {
-  std::ostringstream stream;
-  stream.imbue(std::locale::classic());
-  stream.precision(std::numeric_limits<float>::max_digits10);
-  stream << style.pixelHeight << '|' << style.letterSpacing << '|'
-         << style.lineSpacing << '|' << style.maximumWidth << '|'
-         << style.maximumLines << '|' << (style.ellipsize ? 1 : 0) << '|'
-         << text.size() << ':';
-  auto key = stream.str();
+  constexpr std::size_t kStyleBytes =
+      sizeof(style.pixelHeight) + sizeof(style.letterSpacing) +
+      sizeof(style.lineSpacing) + sizeof(style.maximumWidth) +
+      sizeof(style.maximumLines) + sizeof(std::uint8_t);
+  std::string key;
+  key.reserve(kStyleBytes + text.size());
+  const auto appendField = [&key](const auto& value) {
+    key.append(reinterpret_cast<const char*>(std::addressof(value)),
+               sizeof(value));
+  };
+  appendField(style.pixelHeight);
+  appendField(style.letterSpacing);
+  appendField(style.lineSpacing);
+  appendField(style.maximumWidth);
+  appendField(style.maximumLines);
+  const auto ellipsize = static_cast<std::uint8_t>(style.ellipsize);
+  appendField(ellipsize);
   key.append(text.data(), text.size());
   return key;
 }

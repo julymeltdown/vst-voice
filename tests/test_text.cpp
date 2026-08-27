@@ -129,6 +129,27 @@ TEST_CASE("text render cache shares immutable bitmap storage on repeat hits") {
   }
 }
 
+TEST_CASE("text render cache keeps distinct styles isolated") {
+  auto engine = seam::text::TextEngine::createSystem();
+  CHECK(engine);
+  const seam::text::TextStyle compact{
+      .pixelHeight = 14.0F,
+      .maximumWidth = 240U,
+      .maximumLines = 1U,
+      .ellipsize = true,
+  };
+  auto spacious = compact;
+  spacious.letterSpacing = 1.5F;
+  const auto first = engine.value()->renderShared("same text", compact);
+  const auto second = engine.value()->renderShared("same text", spacious);
+  CHECK(first);
+  CHECK(second);
+  if (first && second) {
+    CHECK(first.value().get() != second.value().get());
+    CHECK(engine.value()->cacheStats().entries == 2U);
+  }
+}
+
 TEST_CASE("trusted font API rejects relative paths") {
   seam::text::FontSearchOptions options;
   options.additionalCandidates.emplace_back("relative-font.ttf");
