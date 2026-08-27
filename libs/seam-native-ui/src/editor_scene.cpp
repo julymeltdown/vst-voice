@@ -462,6 +462,18 @@ void EditorScenePainter::paintNotes(RasterCanvas& canvas,
     if (state.hoveredNote == note.noteId) {
       canvas.strokeRect(bounds, theme_.focusRing,
                         layout_.noteStrokeWidth + 1.0);
+      if (!note.lyric.empty()) {
+        const auto width = std::min(220.0, std::max(96.0, bounds.width + 48.0));
+        const auto left = std::clamp(bounds.x, layout_.keyboardWidth,
+                                     canvas.logicalWidth() - width);
+        const auto top = std::max(layout_.contentTop(), bounds.y - 24.0);
+        const auto detailBounds = ui::Rect{left, top, width, 20.0};
+        canvas.fillRect(detailBounds, theme_.panel);
+        canvas.strokeRect(detailBounds, theme_.focusRing,
+                          layout_.controlStrokeWidth);
+        canvas.drawText(detailBounds, note.lyric, theme_.primaryText,
+                        layout_.noteFontSize);
+      }
     }
     if (!note.lyric.empty() && note.overlapMemberCount == 1U) {
       const auto labelBounds = layout_.noteLabelBounds(bounds);
