@@ -557,13 +557,27 @@ struct EditorSceneLayout final {
   [[nodiscard]] bool compactToolbar(double width) const noexcept {
     return width < projectVisibilityThreshold;
   }
+  [[nodiscard]] std::optional<ui::Rect> voiceIdentityBoundsForWidth(
+      double width) const noexcept {
+    if (compactToolbar(width)) return std::nullopt;
+    const auto left = width - voiceIdentityRightInset - voiceIdentityWidth;
+    if (left < bpmBoundsForWidth(width).right() + compactToolbarGap) {
+      return std::nullopt;
+    }
+    return ui::Rect{left, voiceIdentityTitleTop, voiceIdentityWidth,
+                    voiceIdentityTitleHeight};
+  }
   [[nodiscard]] std::optional<ui::Rect> projectHeaderBoundsForWidth(
       double width, bool portraitVisible) const noexcept {
     if (width < projectVisibilityThreshold) return std::nullopt;
     const auto left = std::max(projectMinimumX, width - projectRightInset);
-    const auto right = portraitVisible
-                           ? width - portraitRightInset - compactToolbarGap
-                           : width - toolbarTitleX;
+    auto right = portraitVisible
+                     ? width - portraitRightInset - compactToolbarGap
+                     : width - toolbarTitleX;
+    if (const auto identity = voiceIdentityBoundsForWidth(width);
+        identity.has_value()) {
+      right = std::min(right, identity->x - compactToolbarGap);
+    }
     if (right - left < projectMinimumTextWidth) return std::nullopt;
     return ui::Rect{left, projectTitleBaseline, right - left,
                     projectRevisionBaseline - projectTitleBaseline +
@@ -619,7 +633,11 @@ struct EditorSceneLayout final {
                                    project->x) {
       return ui::Rect{};
     }
-    if (left + batchLyricsWidth > width - compactToolbarRightInset) {
+    const auto identity = voiceIdentityBoundsForWidth(width);
+    const auto rightLimit = identity.has_value()
+                                ? identity->x - compactToolbarGap
+                                : width - compactToolbarRightInset;
+    if (left + batchLyricsWidth > rightLimit) {
       return ui::Rect{};
     }
     return ui::Rect{left, toolbarControlTop, batchLyricsWidth,
@@ -635,7 +653,11 @@ struct EditorSceneLayout final {
     if (project.has_value() && left + loopWidth + compactToolbarGap > project->x) {
       return ui::Rect{};
     }
-    if (left + loopWidth > width - compactToolbarRightInset) {
+    const auto identity = voiceIdentityBoundsForWidth(width);
+    const auto rightLimit = identity.has_value()
+                                ? identity->x - compactToolbarGap
+                                : width - compactToolbarRightInset;
+    if (left + loopWidth > rightLimit) {
       return ui::Rect{};
     }
     return ui::Rect{left, toolbarControlTop, loopWidth, toolbarControlHeight};

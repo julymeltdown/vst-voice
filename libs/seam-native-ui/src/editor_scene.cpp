@@ -381,20 +381,17 @@ void EditorScenePainter::paintToolbar(RasterCanvas& canvas,
                     formatRevision(state.revision), theme_.secondaryText,
                     layout_.projectRevisionFontSize);
   }
-  if (!layout_.compactToolbar(width)) {
-    const auto identityBounds = ui::Rect{
-        std::max(0.0, width - layout_.voiceIdentityRightInset -
-                          layout_.voiceIdentityWidth),
-        layout_.voiceIdentityTitleTop, layout_.voiceIdentityWidth,
-        layout_.voiceIdentityTitleHeight};
-    canvas.drawText(identityBounds, state.voiceIdentity.name,
+  if (const auto identityBounds = layout_.voiceIdentityBoundsForWidth(width);
+      identityBounds.has_value()) {
+    canvas.drawText(*identityBounds, state.voiceIdentity.name,
                     state.voiceIdentity.state == VoiceIdentityState::Missing ||
                             state.voiceIdentity.state == VoiceIdentityState::Error
                         ? theme_.diagnosticWarning
                         : theme_.secondaryText,
                     layout_.voiceIdentityTitleFontSize);
-    canvas.drawText(ui::Rect{identityBounds.x, layout_.voiceIdentityStateTop,
-                             identityBounds.width, layout_.voiceIdentityStateHeight},
+    canvas.drawText(ui::Rect{identityBounds->x, layout_.voiceIdentityStateTop,
+                             identityBounds->width,
+                             layout_.voiceIdentityStateHeight},
                     std::string{voiceIdentityStateName(state.voiceIdentity.state)},
                     theme_.secondaryText, layout_.voiceIdentityStateFontSize);
   }

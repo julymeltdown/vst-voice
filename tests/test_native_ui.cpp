@@ -2309,6 +2309,34 @@ TEST_CASE("toolbar project metadata avoids the portrait at compact scale width")
   CHECK(normal.has_value());
   CHECK(normal->right() <= 1440.0 - layout.portraitRightInset -
                               layout.compactToolbarGap);
+  const auto normalIdentity = layout.voiceIdentityBoundsForWidth(1440.0);
+  CHECK(normalIdentity.has_value());
+  if (normalIdentity.has_value()) {
+    CHECK(normal->right() <= normalIdentity->x - layout.compactToolbarGap);
+  }
+}
+
+TEST_CASE("toolbar identity reserves a collision-free responsive region") {
+  const seam::native_ui::EditorSceneLayout layout;
+  CHECK(!layout.voiceIdentityBoundsForWidth(720.0).has_value());
+
+  const auto mediumIdentity = layout.voiceIdentityBoundsForWidth(960.0);
+  CHECK(mediumIdentity.has_value());
+  if (mediumIdentity.has_value()) {
+    CHECK(mediumIdentity->x >=
+          layout.bpmBoundsForWidth(960.0).right() + layout.compactToolbarGap);
+    CHECK(layout.batchLyricsBoundsForWidth(960.0, false).width == 0.0);
+    CHECK(layout.loopBoundsForWidth(960.0, false).width == 0.0);
+  }
+  CHECK(!layout.projectHeaderBoundsForWidth(960.0, false).has_value());
+
+  const auto wideIdentity = layout.voiceIdentityBoundsForWidth(1188.0);
+  const auto wideProject = layout.projectHeaderBoundsForWidth(1188.0, false);
+  CHECK(wideIdentity.has_value());
+  CHECK(wideProject.has_value());
+  if (wideIdentity.has_value() && wideProject.has_value()) {
+    CHECK(wideProject->right() <= wideIdentity->x - layout.compactToolbarGap);
+  }
 }
 
 TEST_CASE("compact toolbar reserves a project identity subtitle") {
