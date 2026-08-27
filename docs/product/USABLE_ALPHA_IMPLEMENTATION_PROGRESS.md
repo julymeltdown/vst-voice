@@ -6,15 +6,22 @@ It is not a Usable Alpha completion claim.
 
 ## 2026-08-27 native-editor design remediation
 
-Commit `d7af125b` adds bounded Unicode text, overlap-aware note layout and
-cycling, persistent adaptive technical lanes, exact voice/character gating,
-human recovery controls, deterministic design captures, and shared native/CLAP
-geometry. Local release, sanitizer, TSan, benchmark, and native-window evidence
-is recorded in `docs/design/NATIVE_EDITOR_DESIGN_SYSTEM.md` and
+Implementation candidate `af5a1d8f95fad33f03b5ae56ccf8158c7574c6dc`
+closes the native-editor design rubric at 100%. It adds bounded Unicode text,
+inspectable overlap stacks with stable cycling, persistent adaptive technical
+lanes, exact voice/character gating, deterministic reduced-motion transitions,
+responsive toolbar containment, human recovery controls, deterministic design
+captures, and shared native/CLAP geometry.
+
+The same candidate passed Release 66/66, ASan/UBSan 63/63, TSan 63/63, the
+10,000-note 16.7 ms paint budget at 2.19 ms p95, a fresh 64-image visual packet,
+an actual isolated AppKit edit/focus journey, and two independent fresh visual
+reviews with no blockers. Reproducible details are recorded in
+`docs/design/NATIVE_EDITOR_DESIGN_SYSTEM.md` and
 `.omo/evidence/native-editor-design-completion.md`.
 
-This is an implementation-progress update only. The separate Usable Alpha and
-External Beta acceptance gates remain fail-closed.
+This is a native-editor design-completion claim only. The separate Usable Alpha,
+External Beta, RC, and GA acceptance gates remain fail-closed.
 
 ## Completed milestones
 

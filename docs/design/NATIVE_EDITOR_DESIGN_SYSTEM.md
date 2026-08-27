@@ -3,7 +3,8 @@
 ## Scope
 
 This document owns the code-level visual contract for the native Project SEAM
-editor. It describes the implementation at commit `d7af125b`; it is not a
+editor. It describes the implementation at commit
+`af5a1d8f95fad33f03b5ae56ccf8158c7574c6dc`; it is not a
 release, accessibility-certification, or Usable Alpha acceptance claim.
 
 ## Frame and hierarchy
@@ -29,13 +30,18 @@ inputs rather than maintaining independent constants.
   shared Unicode display-width utilities.
 - Empty technical lanes collapse to 20 px; expanded lanes persist a bounded
   user-selected height without changing render identity.
+- Toolbar metadata is assigned collision-free responsive regions: compact
+  widths suppress voice identity, medium widths reserve identity ahead of
+  project/lyrics controls, and wide widths bound project text before identity.
 
 ## Notes and interaction
 
 `note_visual_layout` preserves a note's truthful timeline range while allocating
 up to three visible overlap bands. Higher-density members are represented by a
-`+N` indicator and remain addressable through stable overlap-candidate cycling.
-Paint, hit, and semantic bounds are separately explicit.
+`+N` badge whose 30 x 18 px geometry does not inherit a thin note band.
+Activating the group opens a bounded five-row detail panel containing every
+member in stable order; repeated activation advances the selected row. Paint,
+hit, detail, and semantic bounds share explicit layout helpers.
 
 ## Voice identity and character assets
 
@@ -44,6 +50,10 @@ render readiness, recovery state, and optional character activation. A portrait
 is rendered or exposed only when the selected card, content hash, character ID,
 character version, and voicebank binding all match. Character presentation is
 therefore optional UI state and never render identity.
+
+Lane and identity changes use one 150 ms smoothstep transition driven by an
+injectable UI clock. The platform Reduce Motion capability bypasses the
+intermediate frame and commits the same final geometry immediately.
 
 ## Recovery and accessibility
 
@@ -54,22 +64,30 @@ body is not an invisible primary action.
 
 ## Current evidence
 
-At `d7af125b`, the following local evidence has been observed:
+At `af5a1d8f95fad33f03b5ae56ccf8158c7574c6dc`, the following
+local evidence was observed:
 
-- Release native test executable: 414 passed, 0 failed.
-- Phase 11 CLAP editor test: passed.
-- Release CTest re-run passed its formerly failing Phase 12b and tracked-source
-  closure targets after the commit.
-- ASan/UBSan and TSan suites reported no sanitizer finding; both only had the
-  pre-commit tracked-source-closure failure, which the committed target now
-  passes.
-- Native paint benchmark: p95 5.12 ms for the dense reference fixture.
-- Deterministic capture matrix: 48 non-empty captures at six viewports, four
-  zoom levels, and two backing scales.
+- Release CTest: 66/66 passed, including native, Phase 11 CLAP host, platform,
+  source-contract, and fail-closed external-gate tests.
+- Native test executable: 425 passed, 0 failed.
+- ASan/UBSan: 63/63 passed with no sanitizer finding.
+- ThreadSanitizer: 63/63 passed with no race finding.
+- Phase 11 explicit tests and source/voice contract: 3/3 passed.
+- Native paint benchmark at 10,000 notes: 2.19 ms p95 against a 16.7 ms budget,
+  with 1,416 text-cache hits, 24 misses, and zero underflow frames.
+- Deterministic visual packet: 48 viewport/scale/zoom captures plus 13 journey
+  frames, reproduced twice with identical hashes.
+- Actual AppKit journey: exact Release bundle, isolated support root, native
+  note creation, writable multilingual lyric, Tab focus, full detail value, and
+  discard-on-quit.
+- Two fresh independent reviewers inspected all 64 images and returned PASS
+  with no blocking product or evidence finding.
 
 ## Boundaries
 
-The remaining product-level release evidence is intentionally not implied by
-this document: independent visual review closure, VoiceOver/Accessibility
-Inspector observation, physical listening, distribution signing/notarization,
-and the separate External Beta and Usable Alpha contracts remain fail-closed.
+This closes the local native-editor design rubric, not the product release
+program. Physical Narrator observation, independent accessibility
+certification, rights-cleared production character art, physical listening,
+distribution signing/notarization, commercial-host certification, external
+musician evidence, and the separate Usable Alpha and External Beta contracts
+remain fail-closed.
