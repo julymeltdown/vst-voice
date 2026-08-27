@@ -456,7 +456,7 @@ SemanticNode EditorSemanticTree::build(const EditorSceneState& state,
         .bounds = laneBounds,
         .enabled = true,
         .focused = false,
-        .actions = {SemanticAction::SetFocus},
+        .actions = {SemanticAction::SetFocus, SemanticAction::Toggle},
         .description = laneDescription(lane.first),
     });
     laneTop += lane.second;

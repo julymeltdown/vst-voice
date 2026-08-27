@@ -88,6 +88,17 @@ TEST_CASE("editor semantic tree exposes stable accessible controls") {
         "4 automation points");
   CHECK(findChild(technicalTree, "lane.pitch")->description ==
         "Pitch automation points and interpolation");
+  const auto* phonemeLane = findChild(technicalTree, "lane.phoneme");
+  CHECK(std::find(phonemeLane->actions.begin(), phonemeLane->actions.end(),
+                  seam::native_ui::SemanticAction::Toggle) !=
+        phonemeLane->actions.end());
+  controller.rebuildAccessibilityTree();
+  CHECK(controller.dispatchAccessibility(
+      "lane.phoneme", seam::native_ui::SemanticAction::Toggle));
+  CHECK(session.project().settings().technicalLanes[0U].mode ==
+        seam::domain::TechnicalLaneMode::Expanded);
+  CHECK(session.lastImpact().scope ==
+        seam::application::CommandAudioImpact::ViewOnly);
 
   auto exportState = state;
   exportState.exportProgress.state = seam::authoring::ExportState::Staging;

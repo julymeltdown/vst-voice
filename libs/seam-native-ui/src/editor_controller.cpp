@@ -6,6 +6,7 @@
 #include "seam/application/lyric_commands.hpp"
 #include "seam/application/arrangement_commands.hpp"
 #include "seam/application/render_commands.hpp"
+#include "seam/application/view_commands.hpp"
 #include "seam/phonemizer/japanese_phonemizer.hpp"
 #include "seam/ui/phoneme_lane_model.hpp"
 
@@ -28,6 +29,15 @@ bool exportCancellable(authoring::ExportState state) noexcept {
   return state == authoring::ExportState::Preflight ||
          state == authoring::ExportState::Staging ||
          state == authoring::ExportState::Prepared;
+}
+
+std::optional<std::pair<domain::TechnicalLane, std::size_t>> technicalLaneForId(
+    std::string_view id) noexcept {
+  if (id == "lane.phoneme") return std::pair{domain::TechnicalLane::Phoneme, 0U};
+  if (id == "lane.unit") return std::pair{domain::TechnicalLane::Unit, 1U};
+  if (id == "lane.seam") return std::pair{domain::TechnicalLane::Seam, 2U};
+  if (id == "lane.pitch") return std::pair{domain::TechnicalLane::Pitch, 3U};
+  return std::nullopt;
 }
 
 }
@@ -434,6 +444,27 @@ core::Result<void> NativeEditorController::dispatchAccessibility(
             repaint();
             return core::success();
           }
+        }
+        if (const auto lane = technicalLaneForId(element); lane.has_value()) {
+          if (requested == SemanticAction::SetFocus) return core::success();
+          if (requested != SemanticAction::Toggle) {
+            return core::failure(core::ErrorCode::Unsupported,
+                                 "Technical lane only supports toggle");
+          }
+          auto presentation =
+              session_.project().settings().technicalLanes[lane->second];
+          presentation.mode =
+              presentation.mode == domain::TechnicalLaneMode::Expanded
+                  ? domain::TechnicalLaneMode::Collapsed
+                  : domain::TechnicalLaneMode::Expanded;
+          const auto changed = session_.execute(std::make_unique<
+              application::SetTechnicalLanePresentationCommand>(
+              lane->first, presentation));
+          if (changed) {
+            if (callbacks_.viewChanged) callbacks_.viewChanged();
+            repaint();
+          }
+          return changed;
         }
         if ((element == "diagnostics.panel" || element == "export.progress") &&
             requested == SemanticAction::SetFocus) {
