@@ -28,6 +28,41 @@ TEST_CASE("semantic selection is distinct from keyboard focus") {
   CHECK(node.editableValue == "あ");
 }
 
+TEST_CASE("overlap group semantics cycle every hidden note member") {
+  seam::test::native_ui_design::Fixture fixture;
+  seam::native_ui::NativeEditorController controller{
+      fixture.session, fixture.factory, fixture.regionId};
+  controller.resize(960.0, 600.0);
+  controller.pianoRoll().pitch().setTopMidiKey(72U);
+  controller.pianoRoll().rebuildIndex();
+  controller.rebuildAccessibilityTree();
+  const auto findNode = [](const seam::native_ui::SemanticNode& root,
+                           std::string_view id,
+                           const auto& self) -> const seam::native_ui::SemanticNode* {
+    if (root.id == id) return &root;
+    for (const auto& child : root.children) {
+      if (const auto* found = self(child, id, self); found != nullptr) return found;
+    }
+    return nullptr;
+  };
+  const auto* group = findNode(controller.accessibilityTree().root(),
+                               "overlap-group.0", findNode);
+  CHECK(group != nullptr);
+  if (group != nullptr) {
+    CHECK(group->value == "5 notes");
+    CHECK(std::find(group->actions.begin(), group->actions.end(),
+                    seam::native_ui::SemanticAction::Activate) !=
+          group->actions.end());
+  }
+  fixture.session.selection().selectOnly(fixture.noteIds[0U]);
+  CHECK(controller.dispatchAccessibility(
+      "overlap-group.0", seam::native_ui::SemanticAction::Activate));
+  CHECK(fixture.session.selection().contains(fixture.noteIds[1U]));
+  CHECK(controller.dispatchAccessibility(
+      "overlap-group.0", seam::native_ui::SemanticAction::Activate));
+  CHECK(fixture.session.selection().contains(fixture.noteIds[2U]));
+}
+
 TEST_CASE("editor semantic tree exposes stable accessible controls") {
   const auto findNode = [](const seam::native_ui::SemanticNode& root,
                            std::string_view id,

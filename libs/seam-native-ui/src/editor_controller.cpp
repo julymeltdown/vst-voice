@@ -466,6 +466,52 @@ core::Result<void> NativeEditorController::dispatchAccessibility(
           }
           return changed;
         }
+        constexpr auto overlapGroupPrefix = std::string_view{"overlap-group."};
+        if (element.starts_with(overlapGroupPrefix)) {
+          if (requested == SemanticAction::SetFocus) return core::success();
+          if (requested != SemanticAction::Activate) {
+            return core::failure(core::ErrorCode::Unsupported,
+                                 "Overlap group only supports activation");
+          }
+          std::size_t groupIndex = 0U;
+          const auto suffix = element.substr(overlapGroupPrefix.size());
+          const auto parsed = std::from_chars(
+              suffix.data(), suffix.data() + suffix.size(), groupIndex);
+          if (parsed.ec != std::errc{} ||
+              parsed.ptr != suffix.data() + suffix.size()) {
+            return core::failure(core::ErrorCode::InvalidArgument,
+                                 "Overlap group accessibility id is invalid");
+          }
+          const auto visuals = pianoRoll_.visibleNotes();
+          const auto member = std::find_if(
+              visuals.begin(), visuals.end(), [groupIndex](const ui::NoteVisual& note) {
+                return note.overlapGroup == groupIndex &&
+                       note.overlapMemberCount > 1U;
+              });
+          if (member == visuals.end()) {
+            return core::failure(core::ErrorCode::NotFound,
+                                 "Overlap group is no longer visible");
+          }
+          const auto candidates = pianoRoll_.overlapCandidatesAt(ui::Point{
+              member->bounds.x + member->bounds.width * 0.5,
+              member->bounds.y + member->bounds.height * 0.5});
+          if (candidates.empty()) {
+            return core::failure(core::ErrorCode::NotFound,
+                                 "Overlap group has no selectable notes");
+          }
+          const auto selected = session_.selection().noteIds();
+          const auto current = std::find_first_of(
+              candidates.begin(), candidates.end(), selected.begin(), selected.end());
+          const auto next = current == candidates.end()
+                                ? candidates.front()
+                                : candidates[(static_cast<std::size_t>(
+                                                  std::distance(candidates.begin(), current)) +
+                                              1U) %
+                                             candidates.size()];
+          session_.selection().selectOnly(next);
+          repaint();
+          return core::success();
+        }
         if ((element == "diagnostics.panel" || element == "export.progress") &&
             requested == SemanticAction::SetFocus) {
           return core::success();

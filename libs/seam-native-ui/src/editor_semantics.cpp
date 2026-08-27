@@ -369,6 +369,61 @@ SemanticNode EditorSemanticTree::build(const EditorSceneState& state,
     }
     root.children.push_back(noteNode(note, layout));
   }
+  struct OverlapGroup final {
+    std::size_t index{0U};
+    std::size_t memberCount{0U};
+    ui::Rect bounds;
+    bool initialized{false};
+  };
+  std::vector<OverlapGroup> overlapGroups;
+  const auto overlapVisuals = noteVisuals.empty() ? model.allNotes()
+                                                   : noteVisuals;
+  for (const auto& note : overlapVisuals) {
+    if (note.overlapMemberCount <= 1U) continue;
+    auto group = std::find_if(
+        overlapGroups.begin(), overlapGroups.end(), [&note](const OverlapGroup& value) {
+          return value.index == note.overlapGroup;
+        });
+    if (group == overlapGroups.end()) {
+      overlapGroups.push_back(OverlapGroup{.index = note.overlapGroup,
+                                           .memberCount = note.overlapMemberCount});
+      group = std::prev(overlapGroups.end());
+    }
+    auto bounds = note.bounds;
+    bounds.y += layout.contentTop();
+    if (!group->initialized) {
+      group->bounds = bounds;
+      group->initialized = true;
+    } else {
+      const auto left = std::min(group->bounds.x, bounds.x);
+      const auto top = std::min(group->bounds.y, bounds.y);
+      const auto right = std::max(group->bounds.right(), bounds.right());
+      const auto bottom = std::max(group->bounds.bottom(), bounds.bottom());
+      group->bounds = ui::Rect{left, top, right - left, bottom - top};
+    }
+  }
+  for (const auto& group : overlapGroups) {
+    if (!group.initialized) continue;
+    const auto clip = ui::Rect{0.0, layout.contentTop(), editorRight,
+                               contentHeight};
+    const auto left = std::max(group.bounds.x, clip.x);
+    const auto top = std::max(group.bounds.y, clip.y);
+    const auto right = std::min(group.bounds.right(), clip.right());
+    const auto bottom = std::min(group.bounds.bottom(), clip.bottom());
+    if (right <= left || bottom <= top) continue;
+    root.children.push_back(SemanticNode{
+        .id = "overlap-group." + std::to_string(group.index),
+        .role = SemanticRole::Panel,
+        .name = "Overlapping notes",
+        .value = std::to_string(group.memberCount) + " notes",
+        .bounds = ui::Rect{left, top, right - left, bottom - top},
+        .enabled = true,
+        .focused = false,
+        .actions = {SemanticAction::Activate, SemanticAction::SetFocus},
+        .children = {},
+        .description = "Activate to select the next overlapping note",
+    });
+  }
   if (state.detail.has_value() && state.hoveredNote.has_value() &&
       state.detail->kind == EditorDetailKind::Note) {
     const auto visibleNotes = model.visibleNotes();
