@@ -9,8 +9,10 @@
 #include "seam/rendering/pcm_cache.hpp"
 #include "seam/rendering/playback_engine.hpp"
 #include "seam/rendering/playback_feeder_service.hpp"
+#include "seam/text/text_engine.hpp"
 
 #include <chrono>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <iostream>
@@ -31,9 +33,9 @@ seam::domain::Project makeProject(seam::application::ProjectFactory& factory,
   regionId = factory.addRegion(project, track, "Dense",
                                seam::time::Tick{0}, seam::time::Tick{1200000});
   auto* region = project.findRegion(regionId);
-  region->lyrics.reserve(5000U);
-  region->notes.reserve(5000U);
-  for (std::size_t index = 0U; index < 5000U; ++index) {
+  region->lyrics.reserve(10000U);
+  region->notes.reserve(10000U);
+  for (std::size_t index = 0U; index < 10000U; ++index) {
     auto [lyric, note] = factory.makeNote(
         seam::time::Tick{static_cast<std::int64_t>(index) * 120},
         seam::time::Tick{96},
@@ -70,7 +72,9 @@ int main() {
   controller.resize(1280.0, 720.0);
   seam::native_ui::EditorScenePainter painter;
   seam::native_ui::PixelSurface surface{1280U, 720U};
-  seam::native_ui::RasterCanvas canvas{surface, 1.0};
+  auto textEngineResult = seam::text::TextEngine::createSystem();
+  auto* textEngine = textEngineResult ? textEngineResult.value().get() : nullptr;
+  seam::native_ui::RasterCanvas canvas{surface, 1.0, textEngine};
 
   constexpr std::size_t paintIterations = 60U;
   std::vector<double> paintSamples;
@@ -122,22 +126,39 @@ int main() {
       paintSamples.size() - 1U,
       static_cast<std::size_t>(std::ceil(
           static_cast<double>(paintSamples.size()) * 0.95)) - 1U);
+  const auto p50Index = std::min(
+      paintSamples.size() - 1U,
+      static_cast<std::size_t>(std::ceil(
+          static_cast<double>(paintSamples.size()) * 0.50)) - 1U);
   const auto averagePaintMs = totalPaintMs / static_cast<double>(paintIterations);
+  const auto textCache = textEngine != nullptr
+                             ? textEngine->cacheStats()
+                             : seam::text::TextCacheStats{};
+  constexpr double paintBudgetMs = 16.7;
+  const auto paintBudgetPass = paintSamples[p95Index] < paintBudgetMs;
   const auto audio = device->stats();
   const auto feederStats = service.stats();
   const auto callback = processor.stats();
   std::cout << "{\n"
             << "  \"phase\": \"5.0\",\n"
+            << "  \"projectNotes\": 10000,\n"
             << "  \"visibleNotes\": "
             << controller.pianoRoll().visibleNotes().size() << ",\n"
             << "  \"paintIterations\": " << paintIterations << ",\n"
             << "  \"averagePaintMs\": " << averagePaintMs << ",\n"
+            << "  \"p50PaintMs\": " << paintSamples[p50Index] << ",\n"
             << "  \"p95PaintMs\": " << paintSamples[p95Index] << ",\n"
+            << "  \"paintBudgetMs\": " << paintBudgetMs << ",\n"
+            << "  \"paintBudgetPass\": "
+            << (paintBudgetPass ? "true" : "false") << ",\n"
+            << "  \"textCacheEntries\": " << textCache.entries << ",\n"
+            << "  \"textCacheHits\": " << textCache.hits << ",\n"
+            << "  \"textCacheMisses\": " << textCache.misses << ",\n"
             << "  \"surfaceChecksum\": " << surface.checksum() << ",\n"
             << "  \"audioCallbacks\": " << audio.callbacks << ",\n"
             << "  \"feederFrames\": " << feederStats.framesFed << ",\n"
             << "  \"deliveredFrames\": " << callback.deliveredFrames << ",\n"
             << "  \"underflowFrames\": " << callback.underflowFrames << "\n"
             << "}\n";
-  return callback.deliveredFrames > 0U ? 0 : 1;
+  return callback.deliveredFrames > 0U && paintBudgetPass ? 0 : 1;
 }
