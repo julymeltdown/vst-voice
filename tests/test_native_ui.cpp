@@ -519,6 +519,176 @@ TEST_CASE("native design fixture matrix is deterministic across target viewports
   }
 }
 
+TEST_CASE("native design journey fixtures cover detail identity and motion states") {
+  const auto* captureRoot =
+      std::getenv("SEAM_NATIVE_UI_JOURNEY_CAPTURE_DIR");
+  const auto captureDirectory = captureRoot == nullptr
+                                    ? std::filesystem::path{}
+                                    : std::filesystem::path{captureRoot};
+  if (!captureDirectory.empty()) {
+    std::error_code error;
+    std::filesystem::create_directories(captureDirectory, error);
+    CHECK(!error);
+  }
+  const auto textEngine = seam::text::TextEngine::createSystem();
+  CHECK(textEngine);
+  seam::native_ui::EditorScenePainter painter;
+  const auto capture = [&](seam::native_ui::NativeEditorController& controller,
+                           std::string_view name) {
+    seam::native_ui::PixelSurface surface{960U, 600U};
+    seam::native_ui::RasterCanvas canvas{surface, 1.0,
+                                          textEngine.value().get()};
+    painter.paint(canvas, controller.pianoRoll(), controller.sceneState());
+    CHECK(surface.checksum() != 0U);
+    if (!captureDirectory.empty()) {
+      CHECK(surface.writePpm(captureDirectory / std::string{name}));
+    }
+  };
+
+  NativeUiFixture detailFixture;
+  auto* detailRegion =
+      detailFixture.session.project().findRegion(detailFixture.regionId);
+  CHECK(detailRegion != nullptr);
+  detailRegion->findLyric(detailFixture.lyricId)->surface =
+      U"가나다라마바사 こんにちは世界 中文歌词";
+  detailRegion->findNote(detailFixture.noteId)->durationTick =
+      seam::time::Tick{240};
+  seam::native_ui::NativeEditorController detailController{
+      detailFixture.session, detailFixture.factory, detailFixture.regionId};
+  detailController.resize(960.0, 600.0);
+  detailController.pianoRoll().pitch().setTopMidiKey(72);
+  detailController.rebuildAccessibilityTree();
+  CHECK(detailController.dispatchAccessibility(
+      "note." + detailFixture.noteId.toString(),
+      seam::native_ui::SemanticAction::SetFocus));
+  CHECK(detailController.sceneState().detail.has_value());
+  capture(detailController, "note-detail-focus.ppm");
+
+  seam::test::native_ui_design::Fixture overlapFixture;
+  seam::native_ui::NativeEditorController overlapController{
+      overlapFixture.session, overlapFixture.factory, overlapFixture.regionId};
+  overlapController.resize(960.0, 600.0);
+  overlapController.pianoRoll().pitch().setTopMidiKey(72);
+  overlapController.rebuildAccessibilityTree();
+  const auto& overlapRoot = overlapController.accessibilityTree().root();
+  const auto overlapGroup = std::find_if(
+      overlapRoot.children.begin(), overlapRoot.children.end(),
+      [](const auto& node) { return node.id.starts_with("overlap-group."); });
+  CHECK(overlapGroup != overlapRoot.children.end());
+  if (overlapGroup != overlapRoot.children.end()) {
+    CHECK(overlapController.dispatchAccessibility(
+        overlapGroup->id, seam::native_ui::SemanticAction::Activate));
+  }
+  const auto selectedOverlap =
+      overlapFixture.session.selection().noteIds();
+  CHECK(!selectedOverlap.empty());
+  if (!selectedOverlap.empty()) {
+    overlapController.rebuildAccessibilityTree();
+    CHECK(overlapController.dispatchAccessibility(
+        "note." + selectedOverlap.front().toString(),
+        seam::native_ui::SemanticAction::SetFocus));
+  }
+  capture(overlapController, "overlap-cycled-detail.ppm");
+
+  NativeUiFixture characterFixture;
+  auto& characterTrack =
+      characterFixture.session.project().vocalTracks().front();
+  characterTrack.voicebank = seam::domain::VoicebankReference{
+      .id = "voice.journey",
+      .version = "1.0.0",
+      .contentHash = std::string(64U, 'a'),
+  };
+  characterFixture.session.project().settings().characterDisplay =
+      seam::domain::CharacterDisplayMode::Full;
+  auto now = std::chrono::steady_clock::time_point{};
+  seam::native_ui::NativeEditorController characterController{
+      characterFixture.session, characterFixture.factory,
+      characterFixture.regionId,
+      seam::native_ui::EditorHostCallbacks{
+          .uiClock = [&now] { return now; },
+          .reduceMotionEnabled = [] { return false; },
+      }};
+  characterController.resize(960.0, 600.0);
+  seam::native_ui::PixelSurface portrait{96U, 144U};
+  portrait.clear(seam::native_ui::Color{92U, 58U, 86U, 255U});
+  const seam::authoring::VoicebankCard characterCard{
+      .id = characterTrack.voicebank.id,
+      .version = characterTrack.voicebank.version,
+      .displayName = "Journey Voice",
+      .contentHash = characterTrack.voicebank.contentHash,
+      .selectable = true,
+      .characterAvailable = true,
+      .characterId = "character.journey",
+      .characterVersion = "1.0.0",
+  };
+  characterController.setVoicebankCards({characterCard});
+  characterController.setCharacterBinding({
+      .id = "character.journey",
+      .version = "1.0.0",
+      .voicebankId = characterTrack.voicebank.id,
+  });
+  characterController.setCharacterMetadata("Character 01", "emo-low-poly");
+  characterController.setCharacterPortrait(&portrait);
+  CHECK(characterController.sceneState().voiceIdentity.characterActive);
+  capture(characterController, "character-ready-matched.ppm");
+  CHECK(characterController.keyDown(
+      seam::native_ui::KeyEvent{.key = seam::native_ui::NativeKey::C}));
+  capture(characterController, "identity-transition-start.ppm");
+  now += std::chrono::milliseconds{75};
+  capture(characterController, "identity-transition-mid.ppm");
+  now += std::chrono::milliseconds{75};
+  capture(characterController, "identity-transition-end.ppm");
+
+  NativeUiFixture mismatchFixture;
+  auto& mismatchTrack = mismatchFixture.session.project().vocalTracks().front();
+  mismatchTrack.voicebank = characterTrack.voicebank;
+  mismatchFixture.session.project().settings().characterDisplay =
+      seam::domain::CharacterDisplayMode::Full;
+  seam::native_ui::NativeEditorController mismatchController{
+      mismatchFixture.session, mismatchFixture.factory, mismatchFixture.regionId};
+  mismatchController.resize(960.0, 600.0);
+  mismatchController.setVoicebankCards({characterCard});
+  mismatchController.setCharacterBinding({
+      .id = "character.journey",
+      .version = "1.0.0",
+      .voicebankId = "different.voice",
+  });
+  mismatchController.setCharacterPortrait(&portrait);
+  CHECK(!mismatchController.sceneState().voiceIdentity.characterActive);
+  capture(mismatchController, "character-ready-mismatched.ppm");
+
+  NativeUiFixture laneFixture;
+  auto laneNow = std::chrono::steady_clock::time_point{};
+  seam::native_ui::NativeEditorController laneController{
+      laneFixture.session, laneFixture.factory, laneFixture.regionId,
+      seam::native_ui::EditorHostCallbacks{
+          .uiClock = [&laneNow] { return laneNow; },
+          .reduceMotionEnabled = [] { return false; },
+      }};
+  laneController.resize(960.0, 600.0);
+  laneController.rebuildAccessibilityTree();
+  CHECK(laneController.dispatchAccessibility(
+      "lane.pitch", seam::native_ui::SemanticAction::Toggle));
+  capture(laneController, "lane-transition-start.ppm");
+  laneNow += std::chrono::milliseconds{75};
+  capture(laneController, "lane-transition-mid.ppm");
+  laneNow += std::chrono::milliseconds{75};
+  capture(laneController, "lane-transition-end.ppm");
+
+  NativeUiFixture reducedFixture;
+  seam::native_ui::NativeEditorController reducedController{
+      reducedFixture.session, reducedFixture.factory, reducedFixture.regionId,
+      seam::native_ui::EditorHostCallbacks{
+          .reduceMotionEnabled = [] { return true; },
+      }};
+  reducedController.resize(960.0, 600.0);
+  reducedController.rebuildAccessibilityTree();
+  CHECK(reducedController.dispatchAccessibility(
+      "lane.pitch", seam::native_ui::SemanticAction::Toggle));
+  CHECK(!reducedController.sceneState().technicalLaneHeightsOverride.has_value());
+  capture(reducedController, "lane-reduced-motion-final.ppm");
+}
+
 TEST_CASE("native scene captures a subpixel-duration note without collapsing it") {
   NativeUiFixture fixture;
   auto* region = fixture.session.project().findRegion(fixture.regionId);
@@ -1643,6 +1813,34 @@ TEST_CASE("native semantic focus does not mutate note or arrangement selection")
       "note." + fixture.noteId.toString(),
       seam::native_ui::SemanticAction::SetFocus));
   CHECK(fixture.session.selection().noteIds() == noteSelection);
+}
+
+TEST_CASE("native keyboard focus reveals full detail for a bounded note") {
+  NativeUiFixture fixture;
+  auto* region = fixture.session.project().findRegion(fixture.regionId);
+  CHECK(region != nullptr);
+  region->findLyric(fixture.lyricId)->surface =
+      U"가나다라마바사 こんにちは世界 中文歌词 👩‍🎤";
+  seam::native_ui::NativeEditorController controller{
+      fixture.session, fixture.factory, fixture.regionId};
+  controller.resize(1280.0, 720.0);
+
+  for (std::size_t attempt = 0U; attempt < 32U; ++attempt) {
+    CHECK(controller.keyDown(seam::native_ui::KeyEvent{
+        .key = seam::native_ui::NativeKey::Tab}));
+    const auto* focused = controller.accessibilityTree().focusedNode();
+    if (focused != nullptr &&
+        focused->id == "note." + fixture.noteId.toString()) {
+      break;
+    }
+  }
+  const auto state = controller.sceneState();
+  CHECK(state.focusedNote == fixture.noteId);
+  CHECK(state.detail.has_value());
+  if (state.detail.has_value()) {
+    CHECK(state.detail->value ==
+          "가나다라마바사 こんにちは世界 中文歌词 👩‍🎤");
+  }
 }
 
 TEST_CASE("native arrangement and diagnostics surfaces capture current layout") {

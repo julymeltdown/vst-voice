@@ -21,6 +21,19 @@ VIEWPORTS = (
 )
 ZOOMS = (25, 50, 100, 200)
 SCALES = (1, 2)
+JOURNEY_CAPTURES = (
+    "note-detail-focus.ppm",
+    "overlap-cycled-detail.ppm",
+    "character-ready-matched.ppm",
+    "character-ready-mismatched.ppm",
+    "lane-transition-start.ppm",
+    "lane-transition-mid.ppm",
+    "lane-transition-end.ppm",
+    "lane-reduced-motion-final.ppm",
+    "identity-transition-start.ppm",
+    "identity-transition-mid.ppm",
+    "identity-transition-end.ppm",
+)
 
 
 class EvidenceError(RuntimeError):
@@ -44,8 +57,7 @@ def sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def capture_snapshot(captures: Path) -> dict[str, str]:
-    expected = expected_capture_names()
+def capture_snapshot(captures: Path, expected: tuple[str, ...]) -> dict[str, str]:
     found = {path.name for path in captures.glob("*.ppm")}
     if found != set(expected):
         missing = sorted(set(expected) - found)
@@ -104,9 +116,12 @@ def git_commit(root: Path) -> str:
     return commit
 
 
-def run_capture(test_binary: Path, root: Path, captures: Path) -> None:
+def run_capture(
+    test_binary: Path, root: Path, captures: Path, journeys: Path
+) -> None:
     environment = os.environ.copy()
     environment["SEAM_NATIVE_UI_DESIGN_CAPTURE_DIR"] = str(captures)
+    environment["SEAM_NATIVE_UI_JOURNEY_CAPTURE_DIR"] = str(journeys)
     completed = subprocess.run(
         [str(test_binary)], cwd=root, env=environment, check=False
     )
@@ -131,13 +146,22 @@ def main() -> int:
     output.mkdir(parents=True, exist_ok=True)
     captures = output / "captures"
     captures.mkdir(exist_ok=False)
+    journeys = output / "journeys"
+    journeys.mkdir(exist_ok=False)
 
-    run_capture(test_binary, root, captures)
-    first = capture_snapshot(captures)
-    run_capture(test_binary, root, captures)
-    second = capture_snapshot(captures)
-    if first != second:
+    run_capture(test_binary, root, captures, journeys)
+    first = capture_snapshot(captures, expected_capture_names())
+    first_journeys = capture_snapshot(journeys, JOURNEY_CAPTURES)
+    run_capture(test_binary, root, captures, journeys)
+    second = capture_snapshot(captures, expected_capture_names())
+    second_journeys = capture_snapshot(journeys, JOURNEY_CAPTURES)
+    if first != second or first_journeys != second_journeys:
         changed = sorted(name for name in first if first[name] != second[name])
+        changed += sorted(
+            name
+            for name in first_journeys
+            if first_journeys[name] != second_journeys[name]
+        )
         raise EvidenceError(f"non-deterministic captures: {changed}")
 
     metadata = environment_metadata()
@@ -159,6 +183,14 @@ def main() -> int:
                 "bytes": (captures / name).stat().st_size,
             }
             for name in expected_capture_names()
+        ],
+        "journeyCaptures": [
+            {
+                "path": f"journeys/{name}",
+                "sha256": first_journeys[name],
+                "bytes": (journeys / name).stat().st_size,
+            }
+            for name in JOURNEY_CAPTURES
         ],
     }
     (output / "manifest.json").write_text(

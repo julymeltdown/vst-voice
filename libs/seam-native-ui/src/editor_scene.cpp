@@ -487,7 +487,8 @@ void EditorScenePainter::paintKeyboard(RasterCanvas& canvas,
 void EditorScenePainter::paintNotes(RasterCanvas& canvas,
                                     const ui::PianoRollModel& model,
                                     const EditorSceneState& state) const noexcept {
-  for (const auto& note : model.visibleNotes()) {
+  const auto notes = model.visibleNotes();
+  for (const auto& note : notes) {
     if (note.hiddenByOverlapDensity) continue;
     auto bounds = note.bounds;
     bounds.y += layout_.contentTop();
@@ -498,25 +499,6 @@ void EditorScenePainter::paintNotes(RasterCanvas& canvas,
     canvas.strokeRect(bounds, note.selected ? theme_.noteSelectedStroke
                                             : theme_.noteStroke,
                       layout_.noteStrokeWidth);
-    const auto revealsDetail = state.hoveredNote == note.noteId ||
-                               (!state.hoveredNote.has_value() &&
-                                state.focusedNote == note.noteId);
-    if (revealsDetail) {
-      canvas.strokeRect(bounds, theme_.focusRing,
-                        layout_.noteStrokeWidth + 1.0);
-      if (state.detail.has_value() &&
-          state.detail->kind == EditorDetailKind::Note &&
-          state.detail->stableId == note.noteId.toString() &&
-          !state.detail->value.empty()) {
-        const auto detailBounds = layout_.noteDetailBounds(
-            bounds, model.viewport().bounds.right());
-        canvas.fillRect(detailBounds, theme_.panel);
-        canvas.strokeRect(detailBounds, theme_.focusRing,
-                          layout_.controlStrokeWidth);
-        canvas.drawText(detailBounds, state.detail->value, theme_.primaryText,
-                        layout_.noteFontSize);
-      }
-    }
     if (!note.lyric.empty() && note.overlapMemberCount == 1U) {
       const auto labelBounds = layout_.noteLabelBounds(bounds);
       if (!labelBounds.has_value()) continue;
@@ -526,13 +508,40 @@ void EditorScenePainter::paintNotes(RasterCanvas& canvas,
                         layout_.noteFontSize);
       }
     }
-    if (note.drawsOverlapIndicator) {
-      const auto indicator = "+" + std::to_string(note.hiddenOverlapMembers);
-      const auto indicatorWidth = std::min(18.0, bounds.width);
-      canvas.drawText(
-          ui::Rect{bounds.right() - indicatorWidth, bounds.y,
-                   indicatorWidth, bounds.height},
-          indicator, theme_.focusRing, layout_.noteFontSize);
+  }
+  for (const auto& note : notes) {
+    if (note.hiddenByOverlapDensity || !note.drawsOverlapIndicator) continue;
+    auto bounds = note.bounds;
+    bounds.y += layout_.contentTop();
+    const auto indicator = "+" + std::to_string(note.hiddenOverlapMembers);
+    const auto indicatorWidth = std::min(18.0, bounds.width);
+    canvas.drawText(
+        ui::Rect{bounds.right() - indicatorWidth, bounds.y,
+                 indicatorWidth, bounds.height},
+        indicator, theme_.focusRing, layout_.noteFontSize);
+  }
+  for (const auto& note : notes) {
+    const auto revealsDetail = state.hoveredNote == note.noteId ||
+                               (!state.hoveredNote.has_value() &&
+                                state.focusedNote == note.noteId);
+    if (!revealsDetail) continue;
+    auto bounds = note.bounds;
+    bounds.y += layout_.contentTop();
+    if (!note.hiddenByOverlapDensity) {
+      canvas.strokeRect(bounds, theme_.focusRing,
+                        layout_.noteStrokeWidth + 1.0);
+    }
+    if (state.detail.has_value() &&
+        state.detail->kind == EditorDetailKind::Note &&
+        state.detail->stableId == note.noteId.toString() &&
+        !state.detail->value.empty()) {
+      const auto detailBounds = layout_.noteDetailBounds(
+          bounds, model.viewport().bounds.right());
+      canvas.fillRect(detailBounds, theme_.panel);
+      canvas.strokeRect(detailBounds, theme_.focusRing,
+                        layout_.controlStrokeWidth);
+      canvas.drawText(detailBounds, state.detail->value, theme_.primaryText,
+                      layout_.noteFontSize);
     }
   }
 }
@@ -599,13 +608,19 @@ void EditorScenePainter::paintTechnicalLanes(
               theme_.gridStrong, layout_.technicalLaneDividerStrokeWidth);
   const auto laneLabel = [this](RasterCanvas& target, double top, double height,
                                 std::string_view label) {
+    if (height < layout_.laneLabelFontSize +
+                     layout_.laneLabelBottomPadding) {
+      return;
+    }
+    const auto textTop = top +
+                         std::max(1.0,
+                                  (height - layout_.laneLabelFontSize) * 0.5);
     target.drawText(
-        ui::Point{layout_.laneLabelX,
-                  top + std::max(
-                            1.0,
-                            std::min(layout_.laneLabelBaselineOffset,
-                                     std::max(1.0, height -
-                                                        layout_.laneLabelBottomPadding)))},
+        ui::Rect{layout_.laneLabelX, textTop,
+                 std::max(1.0, layout_.keyboardWidth -
+                                   layout_.laneLabelX -
+                                   layout_.laneLabelBottomPadding),
+                 std::max(1.0, top + height - textTop)},
         label, theme_.secondaryText, layout_.laneLabelFontSize);
   };
   laneLabel(canvas, phonemeTop, phonemeHeight, "PHONEME");

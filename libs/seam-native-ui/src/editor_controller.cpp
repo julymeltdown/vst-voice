@@ -157,6 +157,29 @@ void NativeEditorController::applyLayoutTransition(
   if (callbacks_.requestRepaint) callbacks_.requestRepaint();
 }
 
+void NativeEditorController::syncInteractionToAccessibilityFocus() {
+  const auto* focused = accessibilityTree_.focusedNode();
+  if (focused == nullptr) {
+    static_cast<void>(interaction_.clearFocus());
+    return;
+  }
+  if (const auto noteId = noteIdForSemanticId(focused->id);
+      noteId.has_value()) {
+    const auto* region = session_.project().findRegion(regionId_);
+    const auto* note = region == nullptr ? nullptr : region->findNote(*noteId);
+    const auto* lyric = note == nullptr || region == nullptr
+                            ? nullptr
+                            : region->findLyric(note->lyricTokenId);
+    static_cast<void>(interaction_.updateFocusedNote(
+        *noteId,
+        lyric == nullptr ? std::string{} : domain::toUtf8(lyric->surface)));
+    return;
+  }
+  if (!focused->id.starts_with("detail.note.")) {
+    static_cast<void>(interaction_.clearFocus());
+  }
+}
+
 EditorSceneState NativeEditorController::sceneState() const {
   EditorSceneState state{
       .projectName = session_.project().name(),
@@ -306,18 +329,7 @@ core::Result<void> NativeEditorController::dispatchAccessibility(
         if (requested == SemanticAction::SetFocus) {
           const auto focused = accessibilityTree_.setFocus(element);
           if (!focused) return focused;
-          if (const auto noteId = noteIdForSemanticId(element);
-              noteId.has_value()) {
-            const auto* region = session_.project().findRegion(regionId_);
-            const auto* note = region == nullptr ? nullptr : region->findNote(*noteId);
-            const auto* lyric = note == nullptr || region == nullptr
-                                    ? nullptr
-                                    : region->findLyric(note->lyricTokenId);
-            static_cast<void>(interaction_.updateFocusedNote(
-                *noteId, lyric == nullptr ? std::string{} : domain::toUtf8(lyric->surface)));
-          } else if (!element.starts_with("detail.note.")) {
-            static_cast<void>(interaction_.clearFocus());
-          }
+          syncInteractionToAccessibilityFocus();
           repaint();
         }
         if (element == "microscope.close" &&
@@ -2473,7 +2485,10 @@ core::Result<void> NativeEditorController::keyDown(const KeyEvent& event) {
   if (event.key == NativeKey::Tab) {
     rebuildAccessibilityTree();
     const auto focused = accessibilityTree_.focusNext(event.modifiers.shift);
-    if (focused) repaint();
+    if (focused) {
+      syncInteractionToAccessibilityFocus();
+      repaint();
+    }
     return focused;
   }
 

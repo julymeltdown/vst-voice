@@ -763,9 +763,7 @@ struct EditorSceneLayout final {
   [[nodiscard]] ui::Rect noteDetailBounds(
       const ui::Rect& noteBounds, double contentRight) const noexcept {
     const auto available = std::max(1.0, contentRight - keyboardWidth);
-    const auto width = std::min(available,
-                                std::min(220.0, std::max(96.0,
-                                                         noteBounds.width + 48.0)));
+    const auto width = std::min(available, 360.0);
     const auto left = std::clamp(noteBounds.x, keyboardWidth,
                                  std::max(keyboardWidth, contentRight - width));
     const auto top = std::max(contentTop(), noteBounds.y - 24.0);

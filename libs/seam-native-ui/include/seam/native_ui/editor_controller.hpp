@@ -349,6 +349,7 @@ private:
   [[nodiscard]] bool reduceMotionEnabled() const noexcept;
   void beginLayoutTransition(const EditorSceneState& fromState);
   void applyLayoutTransition(EditorSceneState& state) const;
+  void syncInteractionToAccessibilityFocus();
 
   struct LayoutTransitionState final {
     std::array<double, 4U> fromLaneHeights{};

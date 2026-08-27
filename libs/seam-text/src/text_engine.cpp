@@ -34,6 +34,11 @@ constexpr std::uint64_t kMaximumBitmapPixels = 64ULL * 1024ULL * 1024ULL;
 constexpr std::array<char32_t, 6U> kCoverageProbes{
     U'A', U'가', U'あ', U'中', U'…', U'ß'};
 
+bool isEmojiCodePoint(char32_t value) noexcept {
+  return (value >= 0x1F000 && value <= 0x1FAFF) ||
+         (value >= 0x2600 && value <= 0x27BF);
+}
+
 PreferredScript inferredScript() {
   const char* locale = std::getenv("LC_ALL");
   if (locale == nullptr || *locale == '\0') locale = std::getenv("LC_CTYPE");
@@ -217,6 +222,7 @@ public:
 
   [[nodiscard]] std::optional<GlyphChoice> chooseGlyph(
       char32_t codePoint) const noexcept {
+    if (isEmojiCodePoint(codePoint)) return std::nullopt;
     const auto value = static_cast<int>(codePoint);
     for (std::size_t index = 0U; index < faces.size(); ++index) {
       const auto glyph = stbtt_FindGlyphIndex(&faces[index]->font, value);

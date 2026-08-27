@@ -96,6 +96,17 @@ TEST_CASE("text engine wraps and ellipsizes within explicit bounds") {
   CHECK(rendered.value().metrics.width <= 190.0);
 }
 
+TEST_CASE("unsupported emoji does not render a misleading replacement glyph") {
+  auto engine = seam::text::TextEngine::createSystem();
+  CHECK(engine);
+  const auto rendered = engine.value()->render(
+      "🎤", seam::text::TextStyle{.pixelHeight = 18.0F});
+  CHECK(rendered);
+  CHECK(std::none_of(rendered.value().bitmap.alpha.begin(),
+                     rendered.value().bitmap.alpha.end(),
+                     [](std::uint8_t value) { return value != 0U; }));
+}
+
 TEST_CASE("text render cache reports repeat hits and can be cleared") {
   auto engine = seam::text::TextEngine::createSystem();
   CHECK(engine);
