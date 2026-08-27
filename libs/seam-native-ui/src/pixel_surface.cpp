@@ -403,20 +403,48 @@ void RasterCanvas::drawText(ui::Rect bounds, std::string_view text,
                 });
       if (rendered) {
         const auto& bitmap = rendered.value()->bitmap;
-        for (std::uint32_t row = 0U; row < bitmap.height; ++row) {
-          for (std::uint32_t column = 0U; column < bitmap.width; ++column) {
+        const auto rowStart = static_cast<std::uint32_t>(std::max(0, -top));
+        const auto rowEnd = static_cast<std::uint32_t>(std::max(
+            0, std::min({static_cast<std::int32_t>(bitmap.height), bottom - top,
+                         static_cast<std::int32_t>(surface_.height()) - top})));
+        const auto columnStart = static_cast<std::uint32_t>(std::max(0, -left));
+        const auto columnEnd = static_cast<std::uint32_t>(std::max(
+            0, std::min({static_cast<std::int32_t>(bitmap.width), right - left,
+                         static_cast<std::int32_t>(surface_.width()) - left})));
+        const auto sourceOpaque = Color{color.red, color.green, color.blue, 255U}.bgra();
+        for (auto row = rowStart; row < rowEnd; ++row) {
+          auto destinationIndex =
+              static_cast<std::size_t>(top + static_cast<std::int32_t>(row)) *
+                  surface_.width() +
+              static_cast<std::size_t>(left +
+                                       static_cast<std::int32_t>(columnStart));
+          for (auto column = columnStart; column < columnEnd;
+               ++column, ++destinationIndex) {
             const auto coverage = bitmap.alpha[
                 static_cast<std::size_t>(row) * bitmap.width + column];
             if (coverage == 0U) continue;
-            const auto x = left + static_cast<std::int32_t>(column);
-            const auto y = top + static_cast<std::int32_t>(row);
-            if (x < left || x >= right || y < top || y >= bottom) continue;
-            const auto combinedAlpha = static_cast<std::uint8_t>(
+            const auto alpha = static_cast<std::uint32_t>(
                 (static_cast<std::uint32_t>(coverage) * color.alpha + 127U) /
                 255U);
-            blendPixel(x, y,
-                       Color{color.red, color.green, color.blue,
-                             combinedAlpha});
+            auto& destination = surface_.pixels()[destinationIndex];
+            if (alpha == 255U) {
+              destination = sourceOpaque;
+              continue;
+            }
+            const auto inverse = 255U - alpha;
+            const auto blue =
+                (static_cast<std::uint32_t>(color.blue) * alpha +
+                 (destination & 0xFFU) * inverse + 127U) /
+                255U;
+            const auto green =
+                (static_cast<std::uint32_t>(color.green) * alpha +
+                 ((destination >> 8U) & 0xFFU) * inverse + 127U) /
+                255U;
+            const auto red =
+                (static_cast<std::uint32_t>(color.red) * alpha +
+                 ((destination >> 16U) & 0xFFU) * inverse + 127U) /
+                255U;
+            destination = blue | (green << 8U) | (red << 16U) | 0xFF000000U;
           }
         }
         return;
