@@ -145,6 +145,7 @@ struct EditorSceneState final {
     std::string diagnostic;
   } audioSettings;
   std::size_t selectedNoteCount{0U};
+  std::optional<domain::NoteId> hoveredNote;
   VoiceIdentityView voiceIdentity;
 };
 
@@ -862,7 +863,8 @@ private:
   void paintKeyboard(RasterCanvas& canvas, const ui::PianoRollModel& model,
                      double contentBottom) const noexcept;
   void paintNotes(RasterCanvas& canvas,
-                  const ui::PianoRollModel& model) const noexcept;
+                  const ui::PianoRollModel& model,
+                  const EditorSceneState& state) const noexcept;
   void paintEmptyPianoRoll(RasterCanvas& canvas, double editorRight,
                            double pianoBottom) const noexcept;
   void paintTechnicalLanes(RasterCanvas& canvas, const ui::PianoRollModel& model,

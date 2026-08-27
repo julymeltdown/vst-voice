@@ -395,6 +395,7 @@ private:
   std::string microscopeUnitId_;
   std::string microscopeDestinationContext_;
   std::optional<domain::PhonemeKey> microscopeKey_;
+  std::optional<domain::NoteId> hoveredNote_;
 };
 
 }  // namespace seam::native_ui

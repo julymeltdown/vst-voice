@@ -98,6 +98,7 @@ EditorSceneState NativeEditorController::sceneState() const {
       .characterPortrait = characterPortrait_,
   };
   state.selectedNoteCount = session_.selection().noteIds().size();
+  state.hoveredNote = hoveredNote_;
   state.arrangementTracks = arrangementPanel_.tracks();
   state.inspector = TrackInspectorModel::snapshot(session_.project(),
                                                    selectedTrackId_);
@@ -2048,6 +2049,15 @@ core::Result<void> NativeEditorController::pointerDown(
 
 core::Result<void> NativeEditorController::pointerMove(
     const PointerEvent& event) {
+  if (dragMode_ == DragMode::None) {
+    const auto point = modelPoint(event.position);
+    const auto hovered = pianoRoll_.hitTest(point);
+    if (hovered != hoveredNote_) {
+      hoveredNote_ = hovered;
+      repaint();
+    }
+    return core::success();
+  }
   if (dragMode_ == DragMode::RulerSeek) {
     const auto tick = pianoRoll_.timeline().pixelToTick(
         std::max(0.0, event.position.x - layout_.keyboardWidth));

@@ -193,7 +193,7 @@ void EditorScenePainter::paint(RasterCanvas& canvas, ui::PianoRollModel& model,
                   theme_.background);
   paintGrid(canvas, model, frame.editorRight, pianoBottom);
   paintKeyboard(canvas, model, pianoBottom);
-  paintNotes(canvas, model);
+  paintNotes(canvas, model, state);
   if (model.visibleNotes().empty()) {
     paintEmptyPianoRoll(canvas, frame.editorRight, pianoBottom);
   }
@@ -446,7 +446,8 @@ void EditorScenePainter::paintKeyboard(RasterCanvas& canvas,
 }
 
 void EditorScenePainter::paintNotes(RasterCanvas& canvas,
-                                    const ui::PianoRollModel& model) const noexcept {
+                                    const ui::PianoRollModel& model,
+                                    const EditorSceneState& state) const noexcept {
   for (const auto& note : model.visibleNotes()) {
     if (note.hiddenByOverlapDensity) continue;
     auto bounds = note.bounds;
@@ -458,6 +459,10 @@ void EditorScenePainter::paintNotes(RasterCanvas& canvas,
     canvas.strokeRect(bounds, note.selected ? theme_.noteSelectedStroke
                                             : theme_.noteStroke,
                       layout_.noteStrokeWidth);
+    if (state.hoveredNote == note.noteId) {
+      canvas.strokeRect(bounds, theme_.focusRing,
+                        layout_.noteStrokeWidth + 1.0);
+    }
     if (!note.lyric.empty() && note.overlapMemberCount == 1U) {
       const auto labelBounds = layout_.noteLabelBounds(bounds);
       if (!labelBounds.has_value()) continue;
