@@ -147,6 +147,7 @@ struct EditorSceneState final {
   } audioSettings;
   std::size_t selectedNoteCount{0U};
   std::optional<domain::NoteId> hoveredNote;
+  std::optional<domain::NoteId> focusedNote;
   std::optional<EditorDetail> detail;
   VoiceIdentityView voiceIdentity;
 };

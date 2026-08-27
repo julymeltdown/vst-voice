@@ -40,6 +40,19 @@ std::optional<std::pair<domain::TechnicalLane, std::size_t>> technicalLaneForId(
   return std::nullopt;
 }
 
+std::optional<domain::NoteId> noteIdForSemanticId(std::string_view id) noexcept {
+  constexpr auto prefix = std::string_view{"note."};
+  if (!id.starts_with(prefix)) return std::nullopt;
+  const auto suffix = id.substr(prefix.size());
+  std::uint64_t rawId = 0U;
+  const auto parsed = std::from_chars(
+      suffix.data(), suffix.data() + suffix.size(), rawId, 16);
+  if (parsed.ec != std::errc{} || parsed.ptr != suffix.data() + suffix.size()) {
+    return std::nullopt;
+  }
+  return domain::NoteId{rawId};
+}
+
 }
 
 NativeEditorController::NativeEditorController(
@@ -109,6 +122,7 @@ EditorSceneState NativeEditorController::sceneState() const {
   };
   state.selectedNoteCount = session_.selection().noteIds().size();
   state.hoveredNote = interaction_.hoveredNote();
+  state.focusedNote = interaction_.focusedNote();
   state.detail = interaction_.detail();
   state.arrangementTracks = arrangementPanel_.tracks();
   state.inspector = TrackInspectorModel::snapshot(session_.project(),
@@ -214,6 +228,18 @@ core::Result<void> NativeEditorController::dispatchAccessibility(
         if (requested == SemanticAction::SetFocus) {
           const auto focused = accessibilityTree_.setFocus(element);
           if (!focused) return focused;
+          if (const auto noteId = noteIdForSemanticId(element);
+              noteId.has_value()) {
+            const auto* region = session_.project().findRegion(regionId_);
+            const auto* note = region == nullptr ? nullptr : region->findNote(*noteId);
+            const auto* lyric = note == nullptr || region == nullptr
+                                    ? nullptr
+                                    : region->findLyric(note->lyricTokenId);
+            static_cast<void>(interaction_.updateFocusedNote(
+                *noteId, lyric == nullptr ? std::string{} : domain::toUtf8(lyric->surface)));
+          } else if (!element.starts_with("detail.note.")) {
+            static_cast<void>(interaction_.clearFocus());
+          }
           repaint();
         }
         if (element == "microscope.close" &&

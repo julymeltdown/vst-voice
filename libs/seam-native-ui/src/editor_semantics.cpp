@@ -424,12 +424,14 @@ SemanticNode EditorSemanticTree::build(const EditorSceneState& state,
         .description = "Activate to select the next overlapping note",
     });
   }
-  if (state.detail.has_value() && state.hoveredNote.has_value() &&
+  const auto detailNote = state.hoveredNote.has_value() ? state.hoveredNote
+                                                        : state.focusedNote;
+  if (state.detail.has_value() && detailNote.has_value() &&
       state.detail->kind == EditorDetailKind::Note) {
     const auto visibleNotes = model.visibleNotes();
     const auto hovered = std::find_if(
-        visibleNotes.begin(), visibleNotes.end(), [&state](const ui::NoteVisual& note) {
-          return note.noteId == *state.hoveredNote;
+        visibleNotes.begin(), visibleNotes.end(), [detailNote](const ui::NoteVisual& note) {
+          return note.noteId == *detailNote;
         });
     if (hovered != visibleNotes.end()) {
       auto noteBounds = hovered->bounds;

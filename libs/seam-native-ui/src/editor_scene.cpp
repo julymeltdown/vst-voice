@@ -459,7 +459,10 @@ void EditorScenePainter::paintNotes(RasterCanvas& canvas,
     canvas.strokeRect(bounds, note.selected ? theme_.noteSelectedStroke
                                             : theme_.noteStroke,
                       layout_.noteStrokeWidth);
-    if (state.hoveredNote == note.noteId) {
+    const auto revealsDetail = state.hoveredNote == note.noteId ||
+                               (!state.hoveredNote.has_value() &&
+                                state.focusedNote == note.noteId);
+    if (revealsDetail) {
       canvas.strokeRect(bounds, theme_.focusRing,
                         layout_.noteStrokeWidth + 1.0);
       if (state.detail.has_value() &&

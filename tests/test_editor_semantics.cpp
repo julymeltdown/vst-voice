@@ -301,6 +301,14 @@ TEST_CASE("editor semantic tree exposes stable accessible controls") {
     CHECK(detailNode->bounds.width > 0.0);
     CHECK(detailNode->bounds.height > 0.0);
   }
+  detailController.rebuildAccessibilityTree();
+  CHECK(detailController.dispatchAccessibility(
+      "note." + detailNoteId.toString(),
+      seam::native_ui::SemanticAction::SetFocus));
+  const auto focusedDetailState = detailController.sceneState();
+  CHECK(focusedDetailState.focusedNote == detailNoteId);
+  CHECK(focusedDetailState.detail.has_value());
+  CHECK(focusedDetailState.detail->value == "こんにちは");
 
   auto unavailableState = controller.sceneState();
   unavailableState.renderStatus.hasAudibleAudio = false;

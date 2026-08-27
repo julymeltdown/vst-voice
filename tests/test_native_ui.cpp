@@ -179,10 +179,19 @@ TEST_CASE("editor interaction state owns hovered note detail independently") {
   CHECK(interaction.detail()->stableId == noteId.toString());
   CHECK(interaction.detail()->value == "こんにちは 안녕 你好");
   CHECK(!interaction.updateHoveredNote(noteId, "こんにちは 안녕 你好"));
+  const seam::domain::NoteId focusedNoteId{84U};
+  CHECK(interaction.updateFocusedNote(focusedNoteId, "focused lyric"));
+  CHECK(interaction.focusedNote() == focusedNoteId);
+  CHECK(interaction.detail()->stableId == noteId.toString());
   CHECK(interaction.clearHover());
   CHECK(!interaction.hoveredNote().has_value());
-  CHECK(!interaction.detail().has_value());
+  CHECK(interaction.detail().has_value());
+  CHECK(interaction.detail()->stableId == focusedNoteId.toString());
   CHECK(!interaction.clearHover());
+  CHECK(interaction.clearFocus());
+  CHECK(!interaction.focusedNote().has_value());
+  CHECK(!interaction.detail().has_value());
+  CHECK(!interaction.clearFocus());
 }
 
 TEST_CASE("technical lane geometry scales one shared frame") {
