@@ -2,9 +2,12 @@
 
 #include "seam/application/note_commands.hpp"
 #include "seam/application/lyric_commands.hpp"
+#include "seam/ui/note_visual_layout.hpp"
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
+#include <limits>
 #include <memory>
 
 namespace seam::ui {
@@ -61,12 +64,45 @@ NoteVisual PianoRollModel::makeNoteVisual(const IndexedNote& indexed) const {
   return NoteVisual{
       .noteId = indexed.noteId,
       .bounds = noteBounds(indexed),
+      .timelineBounds = noteBounds(indexed),
+      .hitBounds = noteBounds(indexed),
       .midiKey = indexed.midiKey,
       .absoluteStart = indexed.absoluteStart,
       .duration = indexed.absoluteEnd - indexed.absoluteStart,
       .selected = session_.selection().contains(indexed.noteId),
       .lyric = std::move(lyric),
   };
+}
+
+namespace {
+
+void applyVisualLayout(std::vector<NoteVisual>& visuals) {
+  std::vector<NoteVisualLayoutItem> items;
+  items.reserve(visuals.size());
+  for (const auto& visual : visuals) {
+    items.push_back(NoteVisualLayoutItem{
+        .noteId = visual.noteId,
+        .midiKey = visual.midiKey,
+        .start = visual.absoluteStart,
+        .end = visual.absoluteStart + visual.duration,
+        .timelineBounds = visual.timelineBounds,
+    });
+  }
+  const auto layouts = layoutNoteVisuals(items);
+  for (std::size_t index = 0U; index < visuals.size(); ++index) {
+    const auto& layout = layouts[index];
+    visuals[index].bounds = layout.paintBounds;
+    visuals[index].hitBounds = layout.hitBounds;
+    visuals[index].overlapGroup = layout.groupIndex;
+    visuals[index].overlapMemberCount = layout.groupMemberCount;
+    visuals[index].overlapBand = layout.bandIndex;
+    visuals[index].visibleOverlapBands = layout.visibleBandCount;
+    visuals[index].hiddenOverlapMembers = layout.hiddenMemberCount;
+    visuals[index].hiddenByOverlapDensity = layout.hiddenByDensity;
+    visuals[index].drawsOverlapIndicator = layout.drawsOverflowIndicator;
+  }
+}
+
 }
 
 std::vector<NoteVisual> PianoRollModel::allNotes() const {
@@ -83,6 +119,7 @@ std::vector<NoteVisual> PianoRollModel::allNotes() const {
         .midiKey = note.midiKey,
     }));
   }
+  applyVisualLayout(visuals);
   return visuals;
 }
 
@@ -120,6 +157,7 @@ std::vector<NoteVisual> PianoRollModel::visibleNotes() const {
     if (indexed.regionId != regionId_) continue;
     visuals.push_back(makeNoteVisual(indexed));
   }
+  applyVisualLayout(visuals);
   return visuals;
 }
 
@@ -130,7 +168,51 @@ std::optional<domain::NoteId> PianoRollModel::hitTest(Point point) const {
       return iterator->noteId;
     }
   }
+  const NoteVisual* closest = nullptr;
+  auto closestDistance = std::numeric_limits<double>::infinity();
+  for (const auto& visual : visuals) {
+    if (!visual.hitBounds.contains(point)) continue;
+    const auto center = visual.hitBounds.x + visual.hitBounds.width * 0.5;
+    const auto distance = std::abs(point.x - center);
+    if (closest == nullptr || distance < closestDistance ||
+        (distance == closestDistance && visual.noteId < closest->noteId)) {
+      closest = &visual;
+      closestDistance = distance;
+    }
+  }
+  if (closest != nullptr) return closest->noteId;
   return std::nullopt;
+}
+
+std::vector<domain::NoteId> PianoRollModel::overlapCandidatesAt(Point point) const {
+  const auto hit = hitTest(point);
+  if (!hit.has_value()) return {};
+  const auto visuals = visibleNotes();
+  const auto target = std::find_if(
+      visuals.begin(), visuals.end(), [hit](const NoteVisual& visual) {
+        return visual.noteId == *hit;
+      });
+  if (target == visuals.end()) return {*hit};
+  std::vector<const NoteVisual*> group;
+  for (const auto& visual : visuals) {
+    if (visual.overlapGroup == target->overlapGroup &&
+        visual.overlapMemberCount > 1U) {
+      group.push_back(&visual);
+    }
+  }
+  if (group.empty()) return {*hit};
+  std::sort(group.begin(), group.end(), [](const NoteVisual* lhs,
+                                           const NoteVisual* rhs) {
+    if (lhs->absoluteStart != rhs->absoluteStart) {
+      return lhs->absoluteStart < rhs->absoluteStart;
+    }
+    if (lhs->duration != rhs->duration) return lhs->duration < rhs->duration;
+    return lhs->noteId < rhs->noteId;
+  });
+  std::vector<domain::NoteId> result;
+  result.reserve(group.size());
+  for (const auto* visual : group) result.push_back(visual->noteId);
+  return result;
 }
 
 std::vector<domain::NoteId> PianoRollModel::notesInBox(Rect box) const {

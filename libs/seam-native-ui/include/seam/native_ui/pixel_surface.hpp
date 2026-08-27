@@ -82,6 +82,8 @@ public:
             double thickness = 1.0) noexcept;
   void drawText(ui::Point origin, std::string_view text, Color color,
                 double size = 12.0) noexcept;
+  void drawText(ui::Rect bounds, std::string_view text, Color color,
+                double size = 12.0) noexcept;
   void drawVerticalGradient(ui::Rect rect, Color top, Color bottom) noexcept;
   void drawImageNearest(ui::Rect destination, const PixelSurface& image,
                         double opacity = 1.0) noexcept;

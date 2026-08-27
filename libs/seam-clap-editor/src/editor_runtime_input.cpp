@@ -36,7 +36,10 @@ void EditorRuntime::pointerDown(const native_ui::PointerEvent& event) noexcept {
   }
 
   const auto layout = painter_.layout();
-  const auto geometry = layout.technicalLaneGeometry(logicalHeight_);
+  const auto* technicalRegion = session_.project().findRegion(regionId_);
+  if (technicalRegion == nullptr) return;
+  const auto geometry = adaptiveTechnicalLaneGeometry(
+      layout, session_.project(), *technicalRegion, phonemesLocked().tokens.size(), logicalHeight_);
   const auto pianoBottom = geometry.phonemeTop;
   const auto unitTop = geometry.unitTop;
   const auto seamTop = geometry.seamTop;
@@ -202,7 +205,11 @@ void EditorRuntime::pointerUp(const native_ui::PointerEvent& event) noexcept {
     const auto from = *draggingPitchTick_;
     draggingPitchTick_.reset();
     const auto layout = painter_.layout();
-    const auto geometry = layout.technicalLaneGeometry(logicalHeight_);
+    const auto* technicalRegion = session_.project().findRegion(regionId_);
+    if (technicalRegion == nullptr) return;
+    const auto geometry = adaptiveTechnicalLaneGeometry(
+        layout, session_.project(), *technicalRegion,
+        phonemesLocked().tokens.size(), logicalHeight_);
     const auto automationTop = geometry.pitchTop;
     const auto centerY = automationTop +
                          geometry.pitchHeight * layout.automationCenterFraction;

@@ -34,6 +34,7 @@ struct CommandLine final {
   std::vector<std::filesystem::path> trustedVoicebankKeyFiles;
   std::optional<std::filesystem::path> developmentTrustKeyFile;
   bool allowDevelopmentVoicebanks{false};
+  std::optional<std::filesystem::path> applicationSupportRoot;
   std::vector<std::filesystem::path> openProjects;
 };
 
@@ -54,7 +55,8 @@ void printUsage() {
       << "  --voicebank-root P      add an exact search root (development in non-release modes)\n"
       << "  --trusted-voicebank-key P  trust an Ed25519 public key for installs\n"
       << "  --development-trust-key P  built-in development signing key\n"
-      << "  --deny-development-voicebanks  hide development fixtures\n";
+      << "  --deny-development-voicebanks  hide development fixtures\n"
+      << "  --application-support-root P  override application support root\n";
 }
 
 std::optional<CommandLine> parseArguments(int argc, char** argv) {
@@ -111,6 +113,10 @@ std::optional<CommandLine> parseArguments(int argc, char** argv) {
     }
     if (argument == "--deny-development-voicebanks") {
       result.allowDevelopmentVoicebanks = false;
+      continue;
+    }
+    if (argument == "--application-support-root" && index + 1 < argc) {
+      result.applicationSupportRoot = std::filesystem::path{argv[++index]};
       continue;
     }
     if (argument == "--auto-close-ms" && index + 1 < argc) {
@@ -300,6 +306,8 @@ int seam_editor_native_main(int argc, char** argv) {
           .forceThreadedAudio = runtime.forceThreadedAudio,
           .startPaused = runtime.startPaused,
           .manualsRoot = paths.value().manualsRoot,
+          .applicationSupportRoot = commandLine->applicationSupportRoot.value_or(
+              runtime.applicationSupportRoot),
       });
   if (!created) {
     std::cerr << "Standalone initialization failed: "

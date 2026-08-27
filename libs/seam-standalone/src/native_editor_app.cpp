@@ -347,6 +347,16 @@ core::Result<void> NativeEditorApp::initialize() {
     if (character) {
       authoring_->controller().setCharacterMetadata(
           character_.displayName(), character_.styleName());
+      const auto* package = character_.package();
+      if (package != nullptr) {
+        authoring_->controller().setCharacterBinding({
+            .id = package->manifest.characterId,
+            .version = package->manifest.version,
+            .voicebankId = package->manifest.voicebankId,
+            .accentPrimary = package->manifest.accent.primary,
+            .accentSecondary = package->manifest.accent.secondary,
+        });
+      }
       authoring_->controller().setCharacterPortrait(
           character_.portrait(character::State::Neutral));
     } else {

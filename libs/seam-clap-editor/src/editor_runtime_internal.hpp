@@ -1,6 +1,7 @@
 #pragma once
 
 #include "seam/clap_editor/editor_runtime.hpp"
+#include "seam/native_ui/editor_frame_layout.hpp"
 
 #include <algorithm>
 #include <cstdlib>
@@ -128,6 +129,37 @@ inline std::optional<domain::PhonemeKey> primaryPhonemeKey(
   const auto noteId = selected.empty() ? region->notes.front().id
                                        : selected.front();
   return domain::PhonemeKey{.noteId = noteId, .ordinal = 0U};
+}
+
+inline native_ui::EditorSceneLayout::TechnicalLaneGeometry
+adaptiveTechnicalLaneGeometry(const native_ui::EditorSceneLayout& layout,
+                              const domain::Project& project,
+                              const domain::VocalRegion& region,
+                              std::size_t phonemeCount,
+                              double logicalHeight) noexcept {
+  const auto technical = native_ui::resolveTechnicalLaneHeights(
+      native_ui::TechnicalLaneLayoutInput{
+          .presentation = project.settings().technicalLanes,
+          .populated = {phonemeCount != 0U, !region.unitSelectionOverrides.empty(),
+                        !region.seamOverrides.empty(),
+                        !region.pitchAutomation.points().empty()},
+          .previewHeights = {layout.phonemeLaneHeight, layout.unitLaneHeight,
+                             layout.seamLaneHeight, layout.automationLaneHeight},
+          .contentTop = layout.contentTop(),
+          .contentBottom = logicalHeight - layout.statusHeight,
+      });
+  return native_ui::EditorSceneLayout::TechnicalLaneGeometry{
+      .pianoBottom = technical.pianoBottom,
+      .phonemeTop = technical.pianoBottom,
+      .phonemeHeight = technical.values[0U],
+      .unitTop = technical.pianoBottom + technical.values[0U],
+      .unitHeight = technical.values[1U],
+      .seamTop = technical.pianoBottom + technical.values[0U] + technical.values[1U],
+      .seamHeight = technical.values[2U],
+      .pitchTop = technical.pianoBottom + technical.values[0U] + technical.values[1U] + technical.values[2U],
+      .pitchHeight = technical.values[3U],
+      .bottom = logicalHeight - layout.statusHeight,
+  };
 }
 
 }  // namespace seam::clap_editor::detail

@@ -167,7 +167,7 @@ int main() {
   auto persisted = runtime.projectCopy();
   formats::ProjectJsonCodec codec;
   const auto encoded = codec.encode(persisted);
-  if (!encoded || encoded.value().find("\"schemaVersion\": 6") ==
+  if (!encoded || encoded.value().find("\"schemaVersion\": 7") ==
                       std::string::npos ||
       encoded.value().find("\"hostStartOffsetTick\": 960") ==
                       std::string::npos) {
@@ -177,10 +177,10 @@ int main() {
   if (!decoded || decoded.value() != persisted) return 23;
 
   auto legacy = encoded.value();
-  const auto schema = legacy.find("\"schemaVersion\": 6");
+  const auto schema = legacy.find("\"schemaVersion\": 7");
   const auto hostOffset = legacy.find(",\n    \"hostStartOffsetTick\": 960");
   if (schema == std::string::npos || hostOffset == std::string::npos) return 24;
-  legacy.replace(schema, std::string{"\"schemaVersion\": 6"}.size(),
+  legacy.replace(schema, std::string{"\"schemaVersion\": 7"}.size(),
                  "\"schemaVersion\": 4");
   legacy.erase(hostOffset, std::string{",\n    \"hostStartOffsetTick\": 960"}.size());
   const auto migrated = codec.decode(legacy);

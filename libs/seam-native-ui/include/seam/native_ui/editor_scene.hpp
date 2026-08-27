@@ -3,6 +3,7 @@
 #include "seam/character/character.hpp"
 #include "seam/domain/project.hpp"
 #include "seam/native_ui/pixel_surface.hpp"
+#include "seam/native_ui/voice_identity.hpp"
 #include "seam/native_ui/render_status_panel.hpp"
 #include "seam/native_ui/arrangement_panel.hpp"
 #include "seam/native_ui/track_inspector.hpp"
@@ -16,6 +17,7 @@
 
 #include <cstdint>
 #include <algorithm>
+#include <array>
 #include <cstddef>
 #include <optional>
 #include <string>
@@ -107,6 +109,7 @@ struct EditorSceneState final {
   std::optional<domain::PhonemeKey> selectedSeam;
   bool seamPreviewAlternate{false};
   std::vector<domain::PitchAutomationPoint> pitchAutomation;
+  std::array<domain::TechnicalLanePresentation, 4U> technicalLanes{};
 
   domain::CharacterDisplayMode characterMode{domain::CharacterDisplayMode::Minimal};
   character::State characterState{character::State::Neutral};
@@ -142,6 +145,7 @@ struct EditorSceneState final {
     std::string diagnostic;
   } audioSettings;
   std::size_t selectedNoteCount{0U};
+  VoiceIdentityView voiceIdentity;
 };
 
 struct EditorSceneLayout final {
@@ -184,7 +188,7 @@ struct EditorSceneLayout final {
   double characterDockPortraitBorderWidth{1.0};
   double laneLabelX{8.0};
   double laneLabelBaselineOffset{12.0};
-  double laneLabelFontSize{9.0};
+  double laneLabelFontSize{11.0};
   double laneInstructionInsetX{8.0};
   double laneInstructionBottomPadding{10.0};
   double laneInstructionFontSize{10.0};
@@ -195,11 +199,11 @@ struct EditorSceneLayout final {
   double technicalLaneItemStrokeWidth{1.0};
   double phonemeTextInsetX{5.0};
   double phonemeTextBaselineOffset{9.0};
-  double phonemeTextFontSize{9.0};
+  double phonemeTextFontSize{11.0};
   double unitTextInsetX{5.0};
   double unitLabelBaselineOffset{7.0};
   double unitRendererBaselineOffset{22.0};
-  double unitTextFontSize{8.5};
+  double unitTextFontSize{11.0};
   double unitCardTopPadding{5.0};
   double unitCardBottomPadding{20.0};
   double unitCardMinimumWidth{3.0};
@@ -236,7 +240,7 @@ struct EditorSceneLayout final {
   double noteLabelBaselineOffset{5.0};
   double noteLabelHorizontalPadding{12.0};
   double noteTextCharacterWidth{5.0};
-  double noteFontSize{8.0};
+  double noteFontSize{12.0};
   double noteStrokeWidth{1.0};
   double boxSelectionStrokeWidth{1.0};
   double playheadStrokeWidth{1.0};
@@ -250,15 +254,15 @@ struct EditorSceneLayout final {
   double toolbarTitleX{20.0};
   double toolbarTitleBaseline{17.0};
   double toolbarSubtitleBaseline{40.0};
-  double toolbarTitleFontSize{15.0};
-  double toolbarSubtitleFontSize{9.0};
+  double toolbarTitleFontSize{18.0};
+  double toolbarSubtitleFontSize{12.0};
   double toolbarControlTop{14.0};
   double toolbarControlHeight{36.0};
   double transportX{330.0};
   double transportWidth{102.0};
   double transportTextInsetX{15.0};
   double transportTextBaseline{25.0};
-  double transportFontSize{10.0};
+  double transportFontSize{11.0};
   double controlStrokeWidth{1.0};
   double controlVisibilityPadding{20.0};
   double stopX{448.0};
@@ -365,13 +369,26 @@ struct EditorSceneLayout final {
   double statusRenderFraction{0.52};
   double statusRenderMaxWidth{320.0};
   double statusTextBaseline{8.0};
-  double statusFontSize{8.0};
-  double diagnosticStripHeight{24.0};
+  double statusFontSize{11.0};
+  double diagnosticStripHeight{64.0};
   double diagnosticTextInsetX{14.0};
-  double diagnosticTextBaseline{8.0};
-  double diagnosticFontSize{8.0};
+  double diagnosticTitleTop{8.0};
+  double diagnosticImpactTop{32.0};
+  double diagnosticTitleFontSize{13.0};
+  double diagnosticImpactFontSize{11.0};
+  double diagnosticActionWidth{112.0};
+  double diagnosticActionHeight{28.0};
+  double diagnosticActionGap{8.0};
   double diagnosticMoreRightInset{90.0};
-  double diagnosticMoreFontSize{7.0};
+  double diagnosticMoreFontSize{11.0};
+  double voiceIdentityWidth{148.0};
+  double voiceIdentityRightInset{74.0};
+  double voiceIdentityTitleTop{6.0};
+  double voiceIdentityTitleHeight{16.0};
+  double voiceIdentityStateTop{25.0};
+  double voiceIdentityStateHeight{12.0};
+  double voiceIdentityTitleFontSize{12.0};
+  double voiceIdentityStateFontSize{10.0};
   double exportStripHeight{28.0};
   double exportProgressBarHeight{4.0};
   double exportTextInsetX{14.0};
@@ -599,6 +616,38 @@ struct EditorSceneLayout final {
   [[nodiscard]] double diagnosticHeight(bool visible) const noexcept {
     return visible ? diagnosticStripHeight : 0.0;
   }
+  [[nodiscard]] ui::Rect diagnosticBounds(double width, double height,
+                                          bool exportVisible) const noexcept {
+    return ui::Rect{0.0,
+                    height - statusHeight - exportHeight(exportVisible) -
+                        diagnosticStripHeight,
+                    std::max(0.0, width), diagnosticStripHeight};
+  }
+  [[nodiscard]] ui::Rect diagnosticActionBounds(double width, double height,
+                                                bool exportVisible,
+                                                std::size_t actionCount,
+                                                std::size_t actionIndex) const noexcept {
+    if (actionCount == 0U || actionIndex >= actionCount) return {};
+    const auto panel = diagnosticBounds(width, height, exportVisible);
+    const auto actionsWidth = static_cast<double>(actionCount) *
+                                  diagnosticActionWidth +
+                              static_cast<double>(actionCount - 1U) *
+                                  diagnosticActionGap;
+    return ui::Rect{
+        std::max(diagnosticTextInsetX,
+                 width - diagnosticTextInsetX - actionsWidth +
+                     static_cast<double>(actionIndex) *
+                         (diagnosticActionWidth + diagnosticActionGap)),
+        panel.y + std::max(0.0, (panel.height - diagnosticActionHeight) * 0.5),
+        std::max(0.0, std::min(diagnosticActionWidth,
+                               width - diagnosticTextInsetX -
+                                   std::max(diagnosticTextInsetX,
+                                            width - diagnosticTextInsetX - actionsWidth +
+                                                static_cast<double>(actionIndex) *
+                                                    (diagnosticActionWidth +
+                                                     diagnosticActionGap)))),
+        std::min(diagnosticActionHeight, panel.height)};
+  }
   [[nodiscard]] double exportHeight(bool visible) const noexcept {
     return visible ? exportStripHeight : 0.0;
   }
@@ -814,6 +863,8 @@ private:
                      double contentBottom) const noexcept;
   void paintNotes(RasterCanvas& canvas,
                   const ui::PianoRollModel& model) const noexcept;
+  void paintEmptyPianoRoll(RasterCanvas& canvas, double editorRight,
+                           double pianoBottom) const noexcept;
   void paintTechnicalLanes(RasterCanvas& canvas, const ui::PianoRollModel& model,
                            const EditorSceneState& state,
                            double editorRight) const noexcept;

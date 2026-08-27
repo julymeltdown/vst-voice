@@ -10,6 +10,7 @@
 #include "seam/time/tempo_map.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -20,9 +21,21 @@ namespace seam::domain {
 
 enum class CharacterDisplayMode { Full, Minimal, Off };
 
+enum class TechnicalLane { Phoneme, Unit, Seam, Pitch };
+enum class TechnicalLaneMode { Auto, Collapsed, Preview, Expanded };
+
+struct TechnicalLanePresentation final {
+  TechnicalLaneMode mode{TechnicalLaneMode::Auto};
+  double expandedHeight{120.0};
+
+  friend bool operator==(const TechnicalLanePresentation&,
+                         const TechnicalLanePresentation&) = default;
+};
+
 struct ProjectSettings final {
   double sampleRate{48000.0};
   CharacterDisplayMode characterDisplay{CharacterDisplayMode::Minimal};
+  std::array<TechnicalLanePresentation, 4U> technicalLanes{};
   bool snapEnabled{true};
   time::Tick snapGrid{time::Tick{time::kDefaultPpq / 4}};
   // Host position at this musical tick maps to source frame zero. This keeps

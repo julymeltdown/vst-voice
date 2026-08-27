@@ -24,6 +24,8 @@ struct VoicebankCard final {
   bool installed{false};
   bool selectable{false};
   bool characterAvailable{false};
+  std::string characterId;
+  std::string characterVersion;
   std::size_t enabledUnitCount{0U};
   std::size_t disabledUnitCount{0U};
   std::vector<std::int32_t> rootPitchLayers;

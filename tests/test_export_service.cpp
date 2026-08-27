@@ -503,7 +503,7 @@ TEST_CASE("export receipt records canonical project and render identities") {
                           std::istreambuf_iterator<char>{}};
   CHECK(text.find("\"projectId\": \"" + project.id().toString()) !=
         std::string::npos);
-  CHECK(text.find("\"projectSchema\": 6") != std::string::npos);
+  CHECK(text.find("\"projectSchema\": 7") != std::string::npos);
   CHECK(text.find("\"renderQuality\": \"Final\"") != std::string::npos);
   CHECK(text.find("\"renderAbi\": \"") != std::string::npos);
   CHECK(text.find("\"applicationBuildSha\": \"") != std::string::npos);

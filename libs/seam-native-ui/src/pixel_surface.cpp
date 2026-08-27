@@ -2,6 +2,7 @@
 
 #include "seam/core/file_io.hpp"
 #include "seam/text/text_engine.hpp"
+#include "seam/text/unicode.hpp"
 
 #include <algorithm>
 #include <array>
@@ -370,6 +371,24 @@ void RasterCanvas::drawGlyph(std::int32_t x, std::int32_t y, char character,
 
 void RasterCanvas::drawText(ui::Point origin, std::string_view text,
                             Color color, double size) noexcept {
+  drawText(ui::Rect{origin.x, origin.y,
+                    std::max(0.0, logicalWidth() - origin.x),
+                    std::max(0.0, logicalHeight() - origin.y)},
+           text, color, size);
+}
+
+void RasterCanvas::drawText(ui::Rect bounds, std::string_view text,
+                            Color color, double size) noexcept {
+  if (bounds.width <= 0.0 || bounds.height <= 0.0 || text.empty() ||
+      !std::isfinite(size) || size <= 0.0) {
+    return;
+  }
+  const auto left = static_cast<std::int32_t>(std::floor(bounds.x * scale_));
+  const auto top = static_cast<std::int32_t>(std::floor(bounds.y * scale_));
+  const auto right = static_cast<std::int32_t>(std::ceil(bounds.right() * scale_));
+  const auto bottom = static_cast<std::int32_t>(std::ceil(bounds.bottom() * scale_));
+  const auto maximumWidth = static_cast<std::uint32_t>(std::max(
+      1, right - left));
   if (textEngine_ != nullptr && !text.empty() && std::isfinite(size) &&
       size > 0.0) {
     try {
@@ -378,26 +397,24 @@ void RasterCanvas::drawText(ui::Point origin, std::string_view text,
                     .pixelHeight = static_cast<float>(size * scale_),
                     .letterSpacing = 0.0F,
                     .lineSpacing = 1.20F,
-                    .maximumWidth = 0U,
-                    .maximumLines = 32U,
-                    .ellipsize = false,
+                    .maximumWidth = maximumWidth,
+                    .maximumLines = 1U,
+                    .ellipsize = true,
                 });
       if (rendered) {
         const auto& bitmap = rendered.value().bitmap;
-        const auto startX = static_cast<std::int32_t>(
-            std::lround(origin.x * scale_));
-        const auto startY = static_cast<std::int32_t>(
-            std::lround(origin.y * scale_));
         for (std::uint32_t row = 0U; row < bitmap.height; ++row) {
           for (std::uint32_t column = 0U; column < bitmap.width; ++column) {
             const auto coverage = bitmap.alpha[
                 static_cast<std::size_t>(row) * bitmap.width + column];
             if (coverage == 0U) continue;
+            const auto x = left + static_cast<std::int32_t>(column);
+            const auto y = top + static_cast<std::int32_t>(row);
+            if (x < left || x >= right || y < top || y >= bottom) continue;
             const auto combinedAlpha = static_cast<std::uint8_t>(
                 (static_cast<std::uint32_t>(coverage) * color.alpha + 127U) /
                 255U);
-            blendPixel(startX + static_cast<std::int32_t>(column),
-                       startY + static_cast<std::int32_t>(row),
+            blendPixel(x, y,
                        Color{color.red, color.green, color.blue,
                              combinedAlpha});
           }
@@ -405,23 +422,19 @@ void RasterCanvas::drawText(ui::Point origin, std::string_view text,
         return;
       }
     } catch (...) {
-      // The deterministic ASCII rasterizer remains the fail-safe path for
-      // low-memory and unavailable-font conditions.
     }
   }
 
   const auto glyphPixel = std::max(1, static_cast<std::int32_t>(
       std::lround(size * scale_ / 7.0)));
-  auto x = static_cast<std::int32_t>(std::lround(origin.x * scale_));
-  auto y = static_cast<std::int32_t>(std::lround(origin.y * scale_));
+  if (top + glyphPixel * 7 > bottom) return;
   const auto advance = glyphPixel * 6;
-  for (const auto character : text) {
-    if (character == '\n') {
-      x = static_cast<std::int32_t>(std::lround(origin.x * scale_));
-      y += glyphPixel * 9;
-      continue;
-    }
-    drawGlyph(x, y, character, glyphPixel, color);
+  const auto safe = text::truncateUtf8ToDisplayWidth(
+      text, static_cast<std::size_t>(std::max(0, right - left) / advance));
+  auto x = left;
+  for (const auto character : safe) {
+    if (x + advance > right) break;
+    drawGlyph(x, top, character, glyphPixel, color);
     x += advance;
   }
 }

@@ -5,6 +5,7 @@
 #include "seam/application/lyric_commands.hpp"
 #include "seam/application/project_factory.hpp"
 #include "seam/application/render_commands.hpp"
+#include "seam/application/view_commands.hpp"
 
 #include <memory>
 
@@ -37,6 +38,22 @@ TEST_CASE("add note command is undoable and redoable") {
   CHECK(session.redo());
   CHECK(session.project().findNote(noteId) != nullptr);
   CHECK(session.revision() == 3);
+}
+
+TEST_CASE("technical lane presentation is undoable without audio impact") {
+  Fixture fixture;
+  seam::application::EditorSession session{std::move(fixture.project)};
+  const auto before = session.project().settings().technicalLanes[3U];
+  CHECK(session.execute(std::make_unique<
+                        seam::application::SetTechnicalLanePresentationCommand>(
+      seam::domain::TechnicalLane::Pitch,
+      seam::domain::TechnicalLanePresentation{
+          .mode = seam::domain::TechnicalLaneMode::Expanded,
+          .expandedHeight = 144.0})));
+  CHECK(session.lastImpact().scope == seam::application::CommandAudioImpact::ViewOnly);
+  CHECK(session.project().settings().technicalLanes[3U].expandedHeight == 144.0);
+  CHECK(session.undo());
+  CHECK(session.project().settings().technicalLanes[3U] == before);
 }
 
 TEST_CASE("moving notes changes time and pitch as one transaction") {

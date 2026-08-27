@@ -194,6 +194,16 @@ EditorRuntime::EditorRuntime(
   if (loaded && controller_) {
     controller_->setCharacterMetadata(character_.displayName(),
                                       character_.styleName());
+    const auto* package = character_.package();
+    if (package != nullptr) {
+      controller_->setCharacterBinding({
+          .id = package->manifest.characterId,
+          .version = package->manifest.version,
+          .voicebankId = package->manifest.voicebankId,
+          .accentPrimary = package->manifest.accent.primary,
+          .accentSecondary = package->manifest.accent.secondary,
+      });
+    }
     controller_->setCharacterPortrait(
         character_.portrait(character::State::Neutral));
   }

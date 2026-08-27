@@ -1,8 +1,10 @@
 #include "test_framework.hpp"
+#include "native_ui_design_fixture.hpp"
 
 #include "seam/application/editor_session.hpp"
 #include "seam/application/project_factory.hpp"
 #include "seam/native_ui/editor_controller.hpp"
+#include "seam/native_ui/editor_frame_layout.hpp"
 #include "seam/native_ui/editor_semantics.hpp"
 
 #include <algorithm>
@@ -140,8 +142,19 @@ TEST_CASE("editor semantic tree exposes stable accessible controls") {
       });
   CHECK(narrowPhonemeLane != narrowTree.children.end());
   const seam::native_ui::EditorSceneLayout narrowLayout;
+  const auto narrowTechnical = seam::native_ui::resolveTechnicalLaneHeights(
+      seam::native_ui::TechnicalLaneLayoutInput{
+          .presentation = narrowState.technicalLanes,
+          .populated = {false, false, false, false},
+          .previewHeights = {narrowLayout.phonemeLaneHeight,
+                             narrowLayout.unitLaneHeight,
+                             narrowLayout.seamLaneHeight,
+                             narrowLayout.automationLaneHeight},
+          .contentTop = narrowLayout.contentTop(),
+          .contentBottom = 320.0 - narrowLayout.statusHeight,
+      });
   CHECK_NEAR(narrowPhonemeLane->bounds.y,
-             narrowLayout.pianoBottom(320.0), 1e-9);
+             narrowTechnical.pianoBottom, 1e-9);
   const auto narrowSeamLane = std::find_if(
       narrowTree.children.begin(), narrowTree.children.end(), [](const auto& child) {
         return child.id == "lane.seam";
@@ -192,14 +205,20 @@ TEST_CASE("editor semantic tree exposes stable accessible controls") {
         return child.id == "timeline";
       });
   CHECK(dockTimeline != dockTree.children.end());
-  CHECK(dockTimeline->bounds.width == 1042.0);
+  CHECK(dockTimeline->bounds.width == 1280.0);
   const auto dock = std::find_if(
       dockTree.children.begin(), dockTree.children.end(), [](const auto& child) {
         return child.id == "character.dock";
       });
-  CHECK(dock != dockTree.children.end());
-  CHECK(dock->bounds.x == 1042.0);
-  CHECK(dock->bounds.right() == 1280.0);
+  CHECK(dock == dockTree.children.end());
+
+  auto minimalPortraitState = controller.sceneState();
+  minimalPortraitState.characterMode = seam::domain::CharacterDisplayMode::Minimal;
+  minimalPortraitState.characterPortrait = &portrait;
+  const auto minimalPortraitTree = seam::native_ui::EditorSemanticTree::build(
+      minimalPortraitState, controller.pianoRoll());
+  CHECK(!seam::native_ui::EditorSemanticTree::containsId(
+      minimalPortraitTree, "character.portrait"));
 
   auto unavailableState = controller.sceneState();
   unavailableState.renderStatus.hasAudibleAudio = false;
@@ -253,16 +272,13 @@ TEST_CASE("editor semantic tree exposes stable accessible controls") {
       diagnosticTree.children.begin(), diagnosticTree.children.end(),
       [](const auto& child) { return child.id == "diagnostics.panel"; });
   CHECK(diagnostics != diagnosticTree.children.end());
-  CHECK(diagnostics->children.size() ==
-        1U + arrangementState.diagnostics.front().actions.size());
+  CHECK(diagnostics->children.size() == 2U);
   CHECK(diagnostics->children.front().bounds.width > 0.0);
   CHECK(diagnostics->children.front().bounds.height > 0.0);
   CHECK(diagnostics->children.front().value.find("render.stale") !=
         std::string::npos);
   CHECK(seam::native_ui::EditorSemanticTree::containsId(
       *diagnostics, "diagnostic-action.0.RETRY"));
-  CHECK(seam::native_ui::EditorSemanticTree::containsId(
-      *diagnostics, "diagnostic-action.0.COPY_DIAGNOSTIC"));
 
   bool diagnosticActionInvoked = false;
   seam::native_ui::NativeEditorController actionController{
@@ -280,14 +296,9 @@ TEST_CASE("editor semantic tree exposes stable accessible controls") {
   actionController.setDiagnostics(arrangementState.diagnostics);
   actionController.rebuildAccessibilityTree();
   CHECK(actionController.dispatchAccessibility(
-      "diagnostic.0.RENDER_STALE",
+      "diagnostic-action.0.RETRY",
       seam::native_ui::SemanticAction::Activate));
   CHECK(diagnosticActionInvoked);
-  diagnosticActionInvoked = false;
-  CHECK(actionController.dispatchAccessibility(
-      "diagnostic-action.0.COPY_DIAGNOSTIC",
-      seam::native_ui::SemanticAction::Activate));
-  CHECK(!diagnosticActionInvoked);
 
   seam::authoring::VoicebankCard card;
   card.id = "demo.voice";
@@ -470,4 +481,34 @@ TEST_CASE("native accessibility accepts focus on every semantic node") {
   }));
   CHECK(controller.accessibilityTree().focusedNode() != nullptr);
   CHECK(controller.accessibilityTree().focusedNode()->id == firstTabStopId);
+}
+
+TEST_CASE("design fixture semantic bounds remain contained at every target viewport") {
+  seam::test::native_ui_design::Fixture fixture;
+  seam::native_ui::NativeEditorController controller{
+      fixture.session, fixture.factory, fixture.regionId};
+  const auto contained = [](const seam::native_ui::SemanticNode& node,
+                            const seam::ui::Rect& root,
+                            const auto& self) -> bool {
+    const auto valid = node.bounds.x >= root.x && node.bounds.y >= root.y &&
+                       node.bounds.right() <= root.right() &&
+                       node.bounds.bottom() <= root.bottom() &&
+                       node.bounds.width > 0.0 && node.bounds.height > 0.0;
+    if (node.id != "editor" && !valid) return false;
+    return std::all_of(node.children.begin(), node.children.end(),
+                       [&root, &self](const auto& child) {
+                         return self(child, root, self);
+                       });
+  };
+
+  for (const auto& viewport : seam::test::native_ui_design::kTargetViewports) {
+    controller.resize(static_cast<double>(viewport.width),
+                      static_cast<double>(viewport.height));
+    const auto state = controller.sceneState();
+    const auto tree = seam::native_ui::EditorSemanticTree::build(
+        state, controller.pianoRoll());
+    CHECK(tree.bounds.width == static_cast<double>(viewport.width));
+    CHECK(tree.bounds.height == static_cast<double>(viewport.height));
+    CHECK(contained(tree, tree.bounds, contained));
+  }
 }

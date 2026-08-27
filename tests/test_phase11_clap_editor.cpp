@@ -1,4 +1,5 @@
 #include "seam/clap_editor/editor_runtime.hpp"
+#include "seam/native_ui/editor_frame_layout.hpp"
 
 #include <atomic>
 #include <algorithm>
@@ -102,7 +103,6 @@ int main() {
 
   runtime.resize(480.0, 320.0);
   const seam::native_ui::EditorSceneLayout compactLayout;
-  const auto compactGeometry = compactLayout.technicalLaneGeometry(320.0);
   const auto compactTick = seam::time::Tick{480};
   if (!runtime.upsertPitchPoint(seam::domain::PitchAutomationPoint{
           .tick = compactTick,
@@ -110,11 +110,30 @@ int main() {
           .interpolation = seam::domain::CurveInterpolation::Linear})) {
     return 30;
   }
+  const auto compactProject = runtime.projectCopy();
+  const auto* compactLayoutRegion = compactProject.findRegion(runtime.regionId());
+  if (compactLayoutRegion == nullptr) return 31;
+  const auto compactTechnical = seam::native_ui::resolveTechnicalLaneHeights(
+      seam::native_ui::TechnicalLaneLayoutInput{
+          .presentation = compactProject.settings().technicalLanes,
+          .populated = {true, !compactLayoutRegion->unitSelectionOverrides.empty(),
+                        !compactLayoutRegion->seamOverrides.empty(), true},
+          .previewHeights = {compactLayout.phonemeLaneHeight,
+                             compactLayout.unitLaneHeight,
+                             compactLayout.seamLaneHeight,
+                             compactLayout.automationLaneHeight},
+          .contentTop = compactLayout.contentTop(),
+          .contentBottom = 320.0 - compactLayout.statusHeight,
+      });
   const auto compactX = compactLayout.keyboardWidth +
                         runtime.controller().pianoRoll().timeline().tickToPixel(
                             compactTick);
-  const auto compactY = compactGeometry.pitchTop +
-                        compactGeometry.pitchHeight *
+  const auto compactPitchTop = compactTechnical.pianoBottom +
+                               compactTechnical.values[0U] +
+                               compactTechnical.values[1U] +
+                               compactTechnical.values[2U];
+  const auto compactY = compactPitchTop +
+                        compactTechnical.values[3U] *
                             compactLayout.automationCenterFraction;
   runtime.pointerDown(seam::native_ui::PointerEvent{
       .position = seam::ui::Point{compactX, compactY},

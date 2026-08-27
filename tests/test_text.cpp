@@ -138,3 +138,37 @@ TEST_CASE("RasterCanvas uses Unicode engine instead of byte-glyph fallback") {
   CHECK(unicode.checksum() != fallback.checksum());
   CHECK(unicode.checksum() != 0U);
 }
+
+TEST_CASE("RasterCanvas keeps bounded Unicode text inside its owning rectangle") {
+  const auto engine = seam::text::TextEngine::createSystem();
+  CHECK(engine);
+  const auto background = seam::native_ui::Color{16U, 15U, 19U, 255U};
+  const auto text = seam::native_ui::Color{240U, 235U, 242U, 255U};
+  const auto bounds = seam::ui::Rect{40.0, 20.0, 84.0, 26.0};
+  const std::array<std::string, 6U> samples{{
+      "long Latin label that must ellipsize",
+      "가나다라마바사라마바사",
+      "こんにちは世界こんにちは世界",
+      "中文歌词需要保持在边界内",
+      "Á emoji 👨‍👩‍👧‍👦",
+      std::string{"bad\xFFutf8", 8U},
+  }};
+  for (const auto unicode : {false, true}) {
+    seam::native_ui::PixelSurface surface{160U, 80U};
+    surface.clear(background);
+    seam::native_ui::RasterCanvas canvas{
+        surface, 1.0, unicode ? engine.value().get() : nullptr};
+    for (const auto& sample : samples) {
+      canvas.drawText(bounds, sample, text, 16.0);
+    }
+    for (std::uint32_t y = 0U; y < surface.height(); ++y) {
+      for (std::uint32_t x = 0U; x < surface.width(); ++x) {
+        const auto inside = x >= 40U && x < 124U && y >= 20U && y < 46U;
+        if (!inside) {
+          CHECK(surface.pixels()[static_cast<std::size_t>(y) * surface.width() + x] ==
+                background.bgra());
+        }
+      }
+    }
+  }
+}

@@ -16,10 +16,19 @@ namespace seam::ui {
 struct NoteVisual final {
   domain::NoteId noteId;
   Rect bounds;
+  Rect timelineBounds;
+  Rect hitBounds;
   std::uint8_t midiKey{60};
   time::Tick absoluteStart;
   time::Tick duration;
   bool selected{false};
+  std::size_t overlapGroup{0U};
+  std::size_t overlapMemberCount{1U};
+  std::size_t overlapBand{0U};
+  std::size_t visibleOverlapBands{1U};
+  std::size_t hiddenOverlapMembers{0U};
+  bool hiddenByOverlapDensity{false};
+  bool drawsOverlapIndicator{false};
   std::string lyric;
 };
 
@@ -63,6 +72,8 @@ public:
   [[nodiscard]] std::size_t noteCount() const noexcept;
   [[nodiscard]] std::optional<NoteVisual> noteAt(std::size_t index) const;
   [[nodiscard]] std::optional<domain::NoteId> hitTest(Point point) const;
+  [[nodiscard]] std::vector<domain::NoteId> overlapCandidatesAt(
+      Point point) const;
   [[nodiscard]] std::vector<domain::NoteId> notesInBox(Rect box) const;
   void selectInBox(Rect box, bool additive = false);
 

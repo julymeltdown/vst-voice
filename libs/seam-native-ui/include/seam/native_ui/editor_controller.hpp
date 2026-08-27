@@ -12,6 +12,7 @@
 #include "seam/ui/sample_microscope_model.hpp"
 
 #include <functional>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <optional>
@@ -255,9 +256,7 @@ public:
   void setAudioState(bool online, std::string backend);
   void setPlaying(bool playing) noexcept { playing_ = playing; }
   void setLoopEnabled(bool enabled) noexcept { loopEnabled_ = enabled; }
-  void setRenderStatus(RenderStatusView status) noexcept {
-    renderStatus_.update(std::move(status));
-  }
+  void setRenderStatus(RenderStatusView status) noexcept;
   void setExportProgress(authoring::ExportProgress progress) noexcept {
     exportProgress_ = std::move(progress);
   }
@@ -275,6 +274,9 @@ public:
   }
   void setCharacterPortrait(const PixelSurface* portrait) noexcept {
     characterPortrait_ = portrait;
+  }
+  void setCharacterBinding(VoiceIdentityInput::CharacterBinding binding) {
+    characterBinding_ = std::move(binding);
   }
   void setVoicebankCards(std::vector<authoring::VoicebankCard> cards) {
     voicebankCards_ = std::move(cards);
@@ -371,6 +373,7 @@ private:
   bool audioOnline_{false};
   std::string audioBackend_{"OFFLINE"};
   RenderStatusPanelModel renderStatus_;
+  std::chrono::steady_clock::time_point voiceCompleteUntil_{};
   authoring::ExportProgress exportProgress_;
   std::optional<authoring::ExportResult> lastExport_;
   double logicalWidth_{1440.0};
@@ -379,6 +382,7 @@ private:
   std::string characterName_;
   std::string characterStyle_;
   const PixelSurface* characterPortrait_{nullptr};
+  std::optional<VoiceIdentityInput::CharacterBinding> characterBinding_;
   bool voicebankBrowserVisible_{false};
   std::vector<authoring::VoicebankCard> voicebankCards_;
   EditorSceneState::AudioSettingsView audioSettings_;

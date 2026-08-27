@@ -10,7 +10,7 @@ namespace seam::formats {
 
 class ProjectJsonCodec final {
 public:
-  static constexpr std::int32_t kSchemaVersion = 6;
+  static constexpr std::int32_t kSchemaVersion = 7;
 
   [[nodiscard]] core::Result<std::string> encode(const domain::Project& project) const;
   [[nodiscard]] core::Result<domain::Project> decode(std::string_view json) const;

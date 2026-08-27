@@ -1,5 +1,8 @@
 #include "seam/native_ui/editor_controller.hpp"
 
+#include "seam/native_ui/editor_frame_layout.hpp"
+#include "seam/native_ui/diagnostic_presentation.hpp"
+
 #include "seam/application/lyric_commands.hpp"
 #include "seam/application/arrangement_commands.hpp"
 #include "seam/application/render_commands.hpp"
@@ -85,6 +88,7 @@ EditorSceneState NativeEditorController::sceneState() const {
       .selectedSeam = seamTarget_,
       .seamPreviewAlternate = seamPreviewAlternate_,
       .pitchAutomation = {},
+      .technicalLanes = session_.project().settings().technicalLanes,
       .characterMode = session_.project().settings().characterDisplay,
       .characterState = playing_ ? character::State::Focused
                                  : (dirty_ ? character::State::Warning
@@ -105,6 +109,24 @@ EditorSceneState NativeEditorController::sceneState() const {
   state.diagnostics.reserve(diagnosticPanel_.entries().size());
   for (const auto& entry : diagnosticPanel_.entries()) {
     state.diagnostics.push_back(entry.diagnostic);
+  }
+  if (const auto* track = session_.project().findVocalTrack(selectedTrackId_);
+      track != nullptr) {
+    const auto card = std::find_if(voicebankCards_.begin(), voicebankCards_.end(),
+                                   [&track](const auto& candidate) {
+      return candidate.id == track->voicebank.id &&
+             candidate.version == track->voicebank.version &&
+             candidate.contentHash == track->voicebank.contentHash;
+    });
+    state.voiceIdentity = resolveVoiceIdentity(VoiceIdentityInput{
+        .reference = track->voicebank,
+        .card = card == voicebankCards_.end() ? nullptr : &*card,
+        .character = characterBinding_.has_value() ? &*characterBinding_ : nullptr,
+        .renderStatus = state.renderStatus,
+        .diagnostics = state.diagnostics,
+        .focused = playing_,
+        .completeDwell = std::chrono::steady_clock::now() < voiceCompleteUntil_,
+    });
   }
   if (microscopeUnit_.has_value()) {
     state.sampleMicroscope = EditorSceneState::SampleMicroscopeView{
@@ -154,6 +176,18 @@ EditorSceneState NativeEditorController::sceneState() const {
     state.focusedElementBounds = focused->bounds;
   }
   return state;
+}
+
+void NativeEditorController::setRenderStatus(RenderStatusView status) noexcept {
+  const auto previous = renderStatus_.view().state;
+  const auto completes = status.state == RenderStatusState::Ready &&
+                         (previous == RenderStatusState::Queued ||
+                          previous == RenderStatusState::Rendering);
+  renderStatus_.update(std::move(status));
+  voiceCompleteUntil_ = completes
+                            ? std::chrono::steady_clock::now() +
+                                  std::chrono::milliseconds{1200}
+                            : std::chrono::steady_clock::time_point{};
 }
 
 void NativeEditorController::rebuildAccessibilityTree() {
@@ -1502,18 +1536,22 @@ core::Result<void> NativeEditorController::pointerDown(
     return core::success();
   }
   if (event.button != PointerButton::Left) return core::success();
-  const auto diagnosticsTop =
-      logicalHeight_ - layout_.statusHeight -
-      layout_.exportHeight(exportProgress_.totalFiles != 0U) -
-      layout_.diagnosticStripHeight;
-  if (event.position.y >= diagnosticsTop &&
-      event.position.y < diagnosticsTop + layout_.diagnosticStripHeight &&
+  const auto diagnosticsBounds = layout_.diagnosticBounds(
+      logicalWidth_, logicalHeight_, exportProgress_.totalFiles != 0U);
+  if (diagnosticsBounds.contains(event.position) &&
       !diagnosticPanel_.entries().empty()) {
     const auto& diagnostic = diagnosticPanel_.entries().front().diagnostic;
-    if (!diagnostic.actions.empty()) {
-      return activateDiagnostic(0U, diagnostic.actions.front());
+    const auto presentation = presentDiagnostic(diagnostic);
+    const auto actionCount = std::min<std::size_t>(
+        2U, presentation.primaryActionKinds.size());
+    for (std::size_t index = 0U; index < actionCount; ++index) {
+      const auto bounds = layout_.diagnosticActionBounds(
+          logicalWidth_, logicalHeight_, exportProgress_.totalFiles != 0U,
+          actionCount, index);
+      if (bounds.contains(event.position)) {
+        return activateDiagnostic(0U, presentation.primaryActionKinds[index]);
+      }
     }
-    dismissDiagnostic(0U);
     return core::success();
   }
   if (exportCancellable(exportProgress_.state) &&
@@ -1740,6 +1778,7 @@ core::Result<void> NativeEditorController::pointerDown(
         !layout_.compactToolbar(logicalWidth_) &&
         session_.project().settings().characterDisplay ==
             domain::CharacterDisplayMode::Minimal &&
+        sceneState().voiceIdentity.characterActive &&
         characterPortrait_ != nullptr;
     const auto batchLyricsBounds =
         layout_.batchLyricsBoundsForWidth(logicalWidth_, portraitVisible);
@@ -1796,18 +1835,24 @@ core::Result<void> NativeEditorController::pointerDown(
     repaint();
     return core::success();
   }
-  const auto overlayInset =
-      layout_.diagnosticHeight(!diagnosticPanel_.entries().empty()) +
-      layout_.exportHeight(exportProgress_.totalFiles != 0U);
-  const auto pianoBottom = layout_.pianoBottom(logicalHeight_, overlayInset);
-  const auto phonemeHeight =
-      layout_.phonemeLaneHeightForHeight(logicalHeight_, overlayInset);
-  const auto unitHeight =
-      layout_.unitLaneHeightForHeight(logicalHeight_, overlayInset);
-  const auto seamHeight =
-      layout_.seamLaneHeightForHeight(logicalHeight_, overlayInset);
-  const auto automationHeight =
-      layout_.automationLaneHeightForHeight(logicalHeight_, overlayInset);
+  const auto state = sceneState();
+  const auto overlayInset = layout_.diagnosticHeight(!state.diagnostics.empty()) +
+                           layout_.exportHeight(state.exportProgress.totalFiles != 0U);
+  const auto technical = resolveTechnicalLaneHeights(TechnicalLaneLayoutInput{
+      .presentation = state.technicalLanes,
+      .populated = { !state.phonemes.tokens.empty(), !state.unitOverrides.empty() ||
+                         callbacks_.cycleUnitVariant || callbacks_.loadSampleMicroscope,
+                     !state.seamOverrides.empty(), !state.pitchAutomation.empty() },
+      .previewHeights = { layout_.phonemeLaneHeight, layout_.unitLaneHeight,
+                          layout_.seamLaneHeight, layout_.automationLaneHeight },
+      .contentTop = layout_.contentTop(),
+      .contentBottom = logicalHeight_ - layout_.statusHeight - overlayInset,
+  });
+  const auto pianoBottom = technical.pianoBottom;
+  const auto phonemeHeight = technical.values[0U];
+  const auto unitHeight = technical.values[1U];
+  const auto seamHeight = technical.values[2U];
+  const auto automationHeight = technical.values[3U];
   const auto phonemeTop = pianoBottom;
   const auto unitTop = phonemeTop + phonemeHeight;
   const auto seamTop = unitTop + unitHeight;
@@ -1950,19 +1995,32 @@ core::Result<void> NativeEditorController::pointerDown(
   }
   const auto point = modelPoint(event.position);
   if (const auto hit = pianoRoll_.hitTest(point); hit.has_value()) {
+    const auto overlapCandidates = pianoRoll_.overlapCandidatesAt(point);
+    auto selectedHit = *hit;
+    if (!event.modifiers.shift && overlapCandidates.size() > 1U) {
+      const auto selected = session_.selection().noteIds();
+      const auto current = std::find_first_of(
+          overlapCandidates.begin(), overlapCandidates.end(), selected.begin(),
+          selected.end());
+      if (current != overlapCandidates.end()) {
+        selectedHit = overlapCandidates[(static_cast<std::size_t>(
+            std::distance(overlapCandidates.begin(), current)) + 1U) %
+                                        overlapCandidates.size()];
+      }
+    }
     if (event.clickCount >= 2) {
-      return beginLyricEdit(*hit);
+      return beginLyricEdit(selectedHit);
     }
     if (event.modifiers.shift) {
-      session_.selection().toggle(*hit);
-    } else if (!session_.selection().contains(*hit)) {
-      session_.selection().selectOnly(*hit);
+      session_.selection().toggle(selectedHit);
+    } else if (!session_.selection().contains(selectedHit)) {
+      session_.selection().selectOnly(selectedHit);
     }
     const auto visuals = pianoRoll_.visibleNotes();
     const auto resizeHandle = std::any_of(
         visuals.begin(), visuals.end(),
-        [hit, event](const auto& visual) {
-          return visual.noteId == *hit &&
+        [selectedHit, event](const auto& visual) {
+          return visual.noteId == selectedHit &&
                  event.position.x >= visual.bounds.right() - 8.0;
         });
     dragMode_ = resizeHandle ? DragMode::ResizeNotes : DragMode::MoveNotes;

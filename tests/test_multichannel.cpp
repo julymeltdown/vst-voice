@@ -208,7 +208,7 @@ TEST_CASE("project schema six persists buses sends and track output matrix") {
   seam::formats::ProjectJsonCodec codec;
   const auto encoded = codec.encode(project);
   CHECK(encoded);
-  CHECK(encoded.value().find("\"schemaVersion\": 6") != std::string::npos);
+  CHECK(encoded.value().find("\"schemaVersion\": 7") != std::string::npos);
   const auto decoded = codec.decode(encoded.value());
   CHECK(decoded);
   CHECK(decoded.value() == project);

@@ -3,6 +3,7 @@
 #include "seam/application/editor_session.hpp"
 #include "seam/application/project_factory.hpp"
 #include "seam/ui/note_spatial_index.hpp"
+#include "seam/ui/note_visual_layout.hpp"
 #include "seam/ui/phoneme_lane_model.hpp"
 #include "seam/ui/text_composition_model.hpp"
 #include "seam/phonemizer/japanese_phonemizer.hpp"
@@ -17,6 +18,65 @@ TEST_CASE("timeline zoom keeps the anchor tick stable") {
   transform.zoomAround(320.0, 2.0);
   const auto after = transform.pixelToTick(320.0);
   CHECK(before == after);
+}
+
+TEST_CASE("note visual layout preserves timeline truth while exposing overlaps") {
+  std::vector<seam::ui::NoteVisualLayoutItem> items;
+  for (std::size_t index = 0U; index < 5U; ++index) {
+    items.push_back(seam::ui::NoteVisualLayoutItem{
+        .noteId = seam::domain::NoteId{100U + index},
+        .midiKey = 64U,
+        .start = seam::time::Tick{960},
+        .end = seam::time::Tick{1920},
+        .timelineBounds = seam::ui::Rect{100.0, 40.0, 120.0, 18.0},
+    });
+  }
+  const auto first = seam::ui::layoutNoteVisuals(items);
+  const auto second = seam::ui::layoutNoteVisuals(items);
+  CHECK(first.size() == 5U);
+  CHECK(first[0].paintBounds.y == second[0].paintBounds.y);
+  CHECK(first[4].bandIndex == second[4].bandIndex);
+  CHECK(first[0].groupMemberCount == 5U);
+  CHECK(first[0].visibleBandCount == 3U);
+  CHECK(first[0].hiddenMemberCount == 2U);
+  CHECK(first[0].drawsOverflowIndicator);
+  CHECK(first[3].hiddenByDensity);
+  CHECK(first[4].hiddenByDensity);
+  CHECK(first[0].paintBounds.y != first[1].paintBounds.y);
+  CHECK(first[1].paintBounds.y != first[2].paintBounds.y);
+  for (const auto& layout : first) {
+    CHECK(layout.paintBounds.x == 100.0);
+    CHECK(layout.paintBounds.width == 120.0);
+    CHECK(layout.hitBounds.width >= layout.paintBounds.width);
+  }
+}
+
+TEST_CASE("piano roll returns every overlapping note in stable cycle order") {
+  seam::application::ProjectFactory factory{220U};
+  auto project = factory.createProject("Overlaps");
+  const auto trackId = factory.addVocalTrack(project, "Track");
+  const auto regionId = factory.addRegion(
+      project, trackId, "Region", seam::time::Tick{0}, seam::time::Tick{3840});
+  auto* region = project.findRegion(regionId);
+  std::vector<seam::domain::NoteId> expected;
+  for (std::size_t index = 0U; index < 5U; ++index) {
+    auto [lyric, note] = factory.makeNote(seam::time::Tick{960},
+                                          seam::time::Tick{480}, 64U, U"あ");
+    expected.push_back(note.id);
+    region->lyrics.push_back(std::move(lyric));
+    region->notes.push_back(std::move(note));
+  }
+  region->sortNotes();
+  std::sort(expected.begin(), expected.end());
+  seam::application::EditorSession session{std::move(project)};
+  seam::ui::PianoRollModel model{session, factory, regionId};
+  model.setViewport({{0.0, 0.0, 1280.0, 720.0}, 72.0});
+  model.pitch().setTopMidiKey(84U);
+  const auto visuals = model.visibleNotes();
+  CHECK(visuals.size() == 5U);
+  const auto candidates = model.overlapCandidatesAt(
+      {visuals.front().bounds.x + 2.0, visuals.front().bounds.y + 2.0});
+  CHECK(candidates == expected);
 }
 
 TEST_CASE("spatial index virtualizes a ten-thousand-note project") {
@@ -110,6 +170,9 @@ TEST_CASE("piano roll draws, selects, moves, and hit-tests notes") {
   CHECK(visuals.size() == 1);
   CHECK(model.hitTest({visuals.front().bounds.x + 2.0, visuals.front().bounds.y + 2.0}) ==
         added.value());
+  CHECK(model.overlapCandidatesAt(
+            {visuals.front().bounds.x + 2.0, visuals.front().bounds.y + 2.0}) ==
+        std::vector<seam::domain::NoteId>{added.value()});
   CHECK(model.moveSelection(seam::time::Tick{240}, 2));
   CHECK(session.project().findNote(added.value())->midiKey == 62);
   CHECK(session.undo());

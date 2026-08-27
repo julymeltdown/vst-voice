@@ -30,7 +30,8 @@ void EditorRuntime::rebuildTechnicalModelsLocked() {
   const auto editorRight = std::max(
       layout.keyboardWidth + layout.minimumTimelineWidth,
       logicalWidth_ - (characterFull ? layout.characterDockWidth : 0.0));
-  const auto geometry = layout.technicalLaneGeometry(logicalHeight_);
+  const auto geometry = adaptiveTechnicalLaneGeometry(
+      layout, session_.project(), *region, phonemes.tokens.size(), logicalHeight_);
   phonemeLane_.rebuild(controller_->pianoRoll(), phonemes,
                        layout.phonemeContentTop(geometry.phonemeTop),
                        layout.phonemeContentHeight(geometry.phonemeHeight));
@@ -89,7 +90,8 @@ std::optional<time::Tick> EditorRuntime::pitchPointAt(
   const auto* region = session_.project().findRegion(regionId_);
   if (region == nullptr || controller_ == nullptr) return std::nullopt;
   const auto layout = painter_.layout();
-  const auto geometry = layout.technicalLaneGeometry(logicalHeight_);
+  const auto geometry = adaptiveTechnicalLaneGeometry(
+      layout, session_.project(), *region, phonemesLocked().tokens.size(), logicalHeight_);
   const auto centerY = geometry.pitchTop +
                        geometry.pitchHeight * layout.automationCenterFraction;
   for (const auto& value : region->pitchAutomation.points()) {

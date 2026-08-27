@@ -127,6 +127,7 @@ add_library(seam_application
   libs/seam-application/src/note_commands.cpp
   libs/seam-application/src/lyric_commands.cpp
   libs/seam-application/src/render_commands.cpp
+  libs/seam-application/src/view_commands.cpp
   libs/seam-application/src/editor_session.cpp
   libs/seam-application/src/project_factory.cpp
 )
@@ -164,6 +165,7 @@ seam_apply_compiler_options(seam_authoring_runtime)
 add_library(seam_editor_ui
   libs/seam-editor-ui/src/timeline_transform.cpp
   libs/seam-editor-ui/src/note_spatial_index.cpp
+  libs/seam-editor-ui/src/note_visual_layout.cpp
   libs/seam-editor-ui/src/piano_roll_model.cpp
   libs/seam-editor-ui/src/phoneme_lane_model.cpp
   libs/seam-editor-ui/src/text_composition_model.cpp
@@ -334,6 +336,10 @@ seam_apply_compiler_options(seam_platform)
 if(SEAM_BUILD_NATIVE_DESKTOP)
   set(SEAM_NATIVE_UI_SOURCES
     libs/seam-native-ui/src/pixel_surface.cpp
+    libs/seam-native-ui/src/editor_label_policy.cpp
+    libs/seam-native-ui/src/editor_frame_layout.cpp
+    libs/seam-native-ui/src/voice_identity.cpp
+    libs/seam-native-ui/src/diagnostic_presentation.cpp
     libs/seam-native-ui/src/editor_scene.cpp
     libs/seam-native-ui/src/editor_controller.cpp
     libs/seam-native-ui/src/character_presentation.cpp
@@ -1408,6 +1414,14 @@ if(Python3_Interpreter_FOUND)
       COMMENT "Generating Phase 4.1 stabilization evidence")
 
     if(SEAM_BUILD_NATIVE_DESKTOP)
+      add_custom_target(seam_native_ui_design_matrix
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/scripts/capture_native_ui_design_matrix.py
+                --build-dir ${CMAKE_BINARY_DIR}
+                --output ${CMAKE_BINARY_DIR}/native-editor-design
+        DEPENDS seam_tests
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        COMMENT "Capturing deterministic native editor design fixtures")
       add_custom_target(seam_phase5_evidence
         COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/generate_phase5_evidence.py
                 --root ${CMAKE_CURRENT_SOURCE_DIR} --skip-build

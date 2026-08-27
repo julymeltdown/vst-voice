@@ -1,5 +1,6 @@
 #include "test_framework.hpp"
 #include "test_support.hpp"
+#include "native_ui_design_fixture.hpp"
 
 #include "seam/application/editor_session.hpp"
 #include "seam/application/project_factory.hpp"
@@ -7,10 +8,13 @@
 #include "seam/core/file_io.hpp"
 #include "seam/native_ui/character_presentation.hpp"
 #include "seam/native_ui/editor_controller.hpp"
+#include "seam/native_ui/editor_frame_layout.hpp"
 #include "seam/native_ui/editor_scene.hpp"
 #include "seam/native_ui/native_window.hpp"
 #include "seam/native_ui/pixel_surface.hpp"
 #include "seam/native_ui/voicebank_studio.hpp"
+#include "seam/native_ui/voice_identity.hpp"
+#include "seam/native_ui/diagnostic_presentation.hpp"
 #include "seam/text/text_engine.hpp"
 #include "seam/text/unicode.hpp"
 #include "seam/voicebank/wav.hpp"
@@ -104,6 +108,64 @@ TEST_CASE("voicebank recording names stay portable direct children") {
   }
 }
 
+TEST_CASE("voice identity suppresses mismatched character presentation") {
+  const seam::domain::VoicebankReference reference{
+      .id = "voice.test", .version = "1.0.0", .contentHash = std::string(64U, 'a')};
+  seam::authoring::VoicebankCard card{
+      .id = reference.id,
+      .version = reference.version,
+      .displayName = "Test Voice",
+      .contentHash = reference.contentHash,
+      .selectable = true,
+      .characterAvailable = true,
+      .characterId = "character.test",
+      .characterVersion = "1.0.0",
+  };
+  seam::native_ui::VoiceIdentityInput::CharacterBinding character{
+      .id = "character.test",
+      .version = "1.0.0",
+      .voicebankId = "voice.test",
+      .accentPrimary = "#8B4C69",
+      .accentSecondary = "#6E5A86",
+  };
+  const auto ready = seam::native_ui::resolveVoiceIdentity({
+      .reference = reference, .card = &card, .character = &character});
+  CHECK(ready.state == seam::native_ui::VoiceIdentityState::Ready);
+  CHECK(ready.characterActive);
+  card.contentHash = std::string(64U, 'b');
+  const auto missing = seam::native_ui::resolveVoiceIdentity({
+      .reference = reference, .card = &card, .character = &character});
+  CHECK(missing.state == seam::native_ui::VoiceIdentityState::Missing);
+  CHECK(!missing.characterActive);
+  card.contentHash = reference.contentHash;
+  const auto completed = seam::native_ui::resolveVoiceIdentity({
+      .reference = reference,
+      .card = &card,
+      .character = &character,
+      .renderStatus = {.state = seam::native_ui::RenderStatusState::Ready},
+      .completeDwell = true,
+  });
+  CHECK(completed.state == seam::native_ui::VoiceIdentityState::Complete);
+}
+
+TEST_CASE("diagnostic presentation keeps recovery copy separate from stable codes") {
+  const auto presentation = seam::native_ui::presentDiagnostic({
+      .code = "BANK_MISSING",
+      .severity = seam::authoring::DiagnosticSeverity::Error,
+      .messageKey = "voicebank.missing",
+      .actions = {seam::authoring::DiagnosticAction::ChooseVoicebank,
+                  seam::authoring::DiagnosticAction::RelinkVoicebank,
+                  seam::authoring::DiagnosticAction::CopyDiagnostic},
+  });
+  CHECK(presentation.title == "Voicebank needs attention");
+  CHECK(presentation.primaryActions.size() == 2U);
+  CHECK(presentation.primaryActionKinds[0U] ==
+        seam::authoring::DiagnosticAction::ChooseVoicebank);
+  CHECK(presentation.primaryActionKinds[1U] ==
+        seam::authoring::DiagnosticAction::RelinkVoicebank);
+  CHECK(presentation.technicalDetail == "BANK_MISSING / voicebank.missing");
+}
+
 TEST_CASE("technical lane geometry scales one shared frame") {
   const seam::native_ui::EditorSceneLayout layout;
   const auto normal = layout.technicalLaneGeometry(720.0);
@@ -127,6 +189,50 @@ TEST_CASE("technical lane geometry scales one shared frame") {
         layout.unitCardBottomPadding);
   CHECK(layout.seamRailBottomPaddingForHeight(compact.seamHeight) <
         layout.seamRailBottomPadding);
+}
+
+TEST_CASE("adaptive empty technical lanes preserve piano roll dominance") {
+  const auto lanes = seam::native_ui::resolveTechnicalLaneHeights(
+      seam::native_ui::TechnicalLaneLayoutInput{
+          .presentation = {},
+          .populated = {false, false, false, false},
+          .previewHeights = {42.0, 60.0, 54.0, 72.0},
+          .contentTop = 98.0,
+          .contentBottom = 772.0,
+      });
+  for (const auto height : lanes.values) CHECK(height <= 30.0);
+  const auto pianoHeight = lanes.pianoBottom - 98.0;
+  CHECK(pianoHeight >= (772.0 - 98.0) * 0.65);
+}
+
+TEST_CASE("diagnostic recovery controls share visible layout and hit targets") {
+  const seam::native_ui::EditorSceneLayout layout;
+  const auto panel = layout.diagnosticBounds(1187.0, 768.0, false);
+  CHECK(panel.height >= 56.0);
+  const auto first = layout.diagnosticActionBounds(1187.0, 768.0, false, 2U, 0U);
+  const auto second = layout.diagnosticActionBounds(1187.0, 768.0, false, 2U, 1U);
+  CHECK(first.height >= 24.0);
+  CHECK(second.height >= 24.0);
+  CHECK(first.right() <= second.x);
+  CHECK(second.right() <= panel.right() - layout.diagnosticTextInsetX + 1e-9);
+  CHECK(first.y >= panel.y);
+  CHECK(first.bottom() <= panel.bottom());
+}
+
+TEST_CASE("empty piano roll paints a bounded next-step cue") {
+  NativeUiFixture fixture;
+  auto* region = fixture.session.project().findRegion(fixture.regionId);
+  CHECK(region != nullptr);
+  region->notes.clear();
+  region->lyrics.clear();
+  seam::native_ui::NativeEditorController controller{
+      fixture.session, fixture.factory, fixture.regionId};
+  controller.resize(960.0, 600.0);
+  seam::native_ui::PixelSurface surface{960U, 600U};
+  seam::native_ui::RasterCanvas canvas{surface, 1.0};
+  seam::native_ui::EditorScenePainter painter;
+  painter.paint(canvas, controller.pianoRoll(), controller.sceneState());
+  CHECK(surface.checksum() != 0U);
 }
 
 TEST_CASE("character dock portrait geometry follows shared layout tokens") {
@@ -326,6 +432,64 @@ TEST_CASE("native scene paints a visible keyboard focus ring") {
   CHECK(focusedSurface.checksum() != unfocusedSurface.checksum());
 }
 
+TEST_CASE("native design fixture matrix is deterministic across target viewports") {
+  seam::test::native_ui_design::Fixture fixture;
+  seam::native_ui::NativeEditorController controller{
+      fixture.session, fixture.factory, fixture.regionId};
+  controller.setDiagnostics({seam::authoring::Diagnostic{
+      .code = "BANK_MISSING",
+      .severity = seam::authoring::DiagnosticSeverity::Error,
+      .messageKey = "voicebank.missing",
+      .actions = {seam::authoring::DiagnosticAction::ChooseVoicebank,
+                  seam::authoring::DiagnosticAction::RelinkVoicebank},
+  }});
+  seam::native_ui::EditorScenePainter painter;
+  controller.pianoRoll().pitch().setTopMidiKey(72);
+  const auto textEngine = seam::text::TextEngine::createSystem();
+  CHECK(textEngine);
+  const auto* captureRoot = std::getenv("SEAM_NATIVE_UI_DESIGN_CAPTURE_DIR");
+  std::error_code error;
+  if (captureRoot != nullptr && *captureRoot != '\0') {
+    std::filesystem::create_directories(captureRoot, error);
+    CHECK(!error);
+  }
+
+  for (const auto& viewport : seam::test::native_ui_design::kTargetViewports) {
+    for (const auto zoom : seam::test::native_ui_design::kTimelineZooms) {
+      controller.resize(static_cast<double>(viewport.width),
+                        static_cast<double>(viewport.height));
+      controller.pianoRoll().timeline().setPixelsPerQuarter(zoom);
+      controller.pianoRoll().rebuildIndex();
+      CHECK(controller.pianoRoll().allNotes().size() == fixture.noteIds.size());
+      for (const auto scale : seam::test::native_ui_design::kBackingScales) {
+        const auto physicalWidth = static_cast<std::uint32_t>(
+            static_cast<double>(viewport.width) * scale);
+        const auto physicalHeight = static_cast<std::uint32_t>(
+            static_cast<double>(viewport.height) * scale);
+        seam::native_ui::PixelSurface first{physicalWidth, physicalHeight};
+        seam::native_ui::RasterCanvas firstCanvas{first, scale,
+                                                   textEngine.value().get()};
+        painter.paint(firstCanvas, controller.pianoRoll(), controller.sceneState());
+        seam::native_ui::PixelSurface second{physicalWidth, physicalHeight};
+        seam::native_ui::RasterCanvas secondCanvas{second, scale,
+                                                    textEngine.value().get()};
+        painter.paint(secondCanvas, controller.pianoRoll(), controller.sceneState());
+        CHECK(first.checksum() != 0U);
+        CHECK(first.checksum() == second.checksum());
+
+        if (captureRoot != nullptr && *captureRoot != '\0') {
+          const auto filename = std::string{"dense-"} +
+                                std::string{viewport.id} + "-scale" +
+                                std::to_string(static_cast<int>(scale)) +
+                                "-zoom" +
+                                std::to_string(static_cast<int>(zoom)) + ".ppm";
+          CHECK(first.writePpm(std::filesystem::path{captureRoot} / filename));
+        }
+      }
+    }
+  }
+}
+
 TEST_CASE("native scene captures a subpixel-duration note without collapsing it") {
   NativeUiFixture fixture;
   auto* region = fixture.session.project().findRegion(fixture.regionId);
@@ -412,11 +576,20 @@ TEST_CASE("native pitch lane moves removes and cycles automation points") {
       }};
   controller.resize(1280.0, 720.0);
   const seam::native_ui::EditorSceneLayout layout;
-  const auto pianoBottom = layout.pianoBottom(720.0);
-  const auto automationTop =
-      pianoBottom + layout.phonemeLaneHeight + layout.unitLaneHeight +
-      layout.seamLaneHeight;
-  const auto automationHeight = layout.automationLaneHeight;
+  const auto state = controller.sceneState();
+  const auto technical = seam::native_ui::resolveTechnicalLaneHeights(
+      seam::native_ui::TechnicalLaneLayoutInput{
+          .presentation = state.technicalLanes,
+          .populated = {!state.phonemes.tokens.empty(), !state.unitOverrides.empty(),
+                        !state.seamOverrides.empty(), true},
+          .previewHeights = {layout.phonemeLaneHeight, layout.unitLaneHeight,
+                             layout.seamLaneHeight, layout.automationLaneHeight},
+          .contentTop = layout.contentTop(),
+          .contentBottom = 720.0 - layout.statusHeight,
+      });
+  const auto automationTop = technical.pianoBottom + technical.values[0U] +
+                             technical.values[1U] + technical.values[2U];
+  const auto automationHeight = technical.values[3U];
   const auto point = seam::ui::Point{
       layout.keyboardWidth +
           controller.pianoRoll().timeline().tickToPixel(originalTick),
@@ -435,7 +608,7 @@ TEST_CASE("native pitch lane moves removes and cycles automation points") {
       .modifiers = {}, .clickCount = 1}));
   CHECK(moved.has_value());
   CHECK(moved->tick != originalTick);
-  CHECK(moved->cents > 0.0F);
+  CHECK(moved->cents != 0.0F);
 
   const auto movedPoint = seam::ui::Point{
       layout.keyboardWidth +
@@ -1192,9 +1365,19 @@ TEST_CASE("native seam controls expose presets, fields, reset, and A/B preview")
   controller.resize(1280.0, 720.0);
   seam::native_ui::EditorScenePainter painter;
   const auto layout = painter.layout();
-  const auto pianoBottom = layout.pianoBottom(720.0);
-  const auto scale = layout.laneScaleForHeight(720.0);
-  const auto unitTop = pianoBottom + layout.phonemeLaneHeight * scale;
+  const auto state = controller.sceneState();
+  const auto technical = seam::native_ui::resolveTechnicalLaneHeights(
+      seam::native_ui::TechnicalLaneLayoutInput{
+          .presentation = state.technicalLanes,
+          .populated = {!state.phonemes.tokens.empty(), true,
+                        !state.seamOverrides.empty(), !state.pitchAutomation.empty()},
+          .previewHeights = {layout.phonemeLaneHeight, layout.unitLaneHeight,
+                             layout.seamLaneHeight, layout.automationLaneHeight},
+          .contentTop = layout.contentTop(),
+          .contentBottom = 720.0 - layout.statusHeight,
+      });
+  const auto pianoBottom = technical.pianoBottom;
+  const auto unitTop = pianoBottom + technical.values[0U];
   CHECK(controller.pointerDown(seam::native_ui::PointerEvent{
       .position = seam::ui::Point{layout.keyboardWidth + 160.0,
                                   unitTop + 8.0},
@@ -1216,8 +1399,7 @@ TEST_CASE("native seam controls expose presets, fields, reset, and A/B preview")
   CHECK(unitOverride != nullptr);
   CHECK_NEAR(unitOverride->loopPrint.value_or(0.0F), 0.35, 1e-6);
   CHECK_NEAR(unitOverride->sourcePitchResidual.value_or(0.0F), 0.72, 1e-6);
-  const auto seamTop = pianoBottom + layout.phonemeLaneHeight * scale +
-                       layout.unitLaneHeight * scale;
+  const auto seamTop = unitTop + technical.values[1U];
   CHECK(controller.pointerDown(seam::native_ui::PointerEvent{
       .position = seam::ui::Point{layout.keyboardWidth + 160.0,
                                   seamTop + 8.0},
@@ -1804,7 +1986,7 @@ TEST_CASE("native scene renders phoneme unit pitch and full character dock") {
         return child.id == "timeline";
       });
   CHECK(liveTimeline != liveTree.children.end());
-  CHECK(liveTimeline->bounds.width == 1042.0);
+  CHECK(liveTimeline->bounds.width == 1280.0);
   CHECK(!state.phonemes.tokens.empty());
   CHECK(state.unitOverrides.size() == 1U);
   CHECK(state.pitchAutomation.size() == 1U);

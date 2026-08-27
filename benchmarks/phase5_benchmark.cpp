@@ -15,6 +15,8 @@
 #include <cstdint>
 #include <iostream>
 #include <memory>
+#include <algorithm>
+#include <numeric>
 #include <thread>
 #include <utility>
 #include <vector>
@@ -71,12 +73,14 @@ int main() {
   seam::native_ui::RasterCanvas canvas{surface, 1.0};
 
   constexpr std::size_t paintIterations = 60U;
-  const auto paintStart = std::chrono::steady_clock::now();
+  std::vector<double> paintSamples;
+  paintSamples.reserve(paintIterations);
   for (std::size_t iteration = 0U; iteration < paintIterations; ++iteration) {
+    const auto paintStart = std::chrono::steady_clock::now();
     painter.paint(canvas, controller.pianoRoll(), controller.sceneState());
+    paintSamples.push_back(std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - paintStart).count());
   }
-  const auto paintElapsed = std::chrono::duration<double, std::milli>(
-      std::chrono::steady_clock::now() - paintStart);
 
   seam::rendering::SpscAudioRingBuffer ring{32768U};
   seam::rendering::PlaybackFeeder feeder{ring, 48000U, 512U, 64U};
@@ -112,8 +116,13 @@ int main() {
   device->stop();
   service.stop();
 
-  const auto averagePaintMs = paintElapsed.count() /
-                              static_cast<double>(paintIterations);
+  const auto totalPaintMs = std::accumulate(paintSamples.begin(), paintSamples.end(), 0.0);
+  std::sort(paintSamples.begin(), paintSamples.end());
+  const auto p95Index = std::min(
+      paintSamples.size() - 1U,
+      static_cast<std::size_t>(std::ceil(
+          static_cast<double>(paintSamples.size()) * 0.95)) - 1U);
+  const auto averagePaintMs = totalPaintMs / static_cast<double>(paintIterations);
   const auto audio = device->stats();
   const auto feederStats = service.stats();
   const auto callback = processor.stats();
@@ -123,6 +132,7 @@ int main() {
             << controller.pianoRoll().visibleNotes().size() << ",\n"
             << "  \"paintIterations\": " << paintIterations << ",\n"
             << "  \"averagePaintMs\": " << averagePaintMs << ",\n"
+            << "  \"p95PaintMs\": " << paintSamples[p95Index] << ",\n"
             << "  \"surfaceChecksum\": " << surface.checksum() << ",\n"
             << "  \"audioCallbacks\": " << audio.callbacks << ",\n"
             << "  \"feederFrames\": " << feederStats.framesFed << ",\n"

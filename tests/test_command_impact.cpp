@@ -4,6 +4,7 @@
 #include "seam/application/command.hpp"
 #include "seam/application/note_commands.hpp"
 #include "seam/application/render_commands.hpp"
+#include "seam/application/view_commands.hpp"
 #include "seam/application/editor_session.hpp"
 #include "seam/application/project_factory.hpp"
 #include <memory>
@@ -29,6 +30,12 @@ TEST_CASE("command impact classifies audio scope instead of defaulting to projec
         seam::application::CommandAudioImpact::PhraseAudio);
   CHECK(bank.audioImpact() ==
         seam::application::CommandAudioImpact::ProjectAudio);
+  seam::application::SetTechnicalLanePresentationCommand lane{
+      seam::domain::TechnicalLane::Pitch,
+      seam::domain::TechnicalLanePresentation{
+          .mode = seam::domain::TechnicalLaneMode::Expanded,
+          .expandedHeight = 144.0}};
+  CHECK(lane.audioImpact() == seam::application::CommandAudioImpact::ViewOnly);
 }
 
 TEST_CASE("command impact carries affected identity through editor history") {

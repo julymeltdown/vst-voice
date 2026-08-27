@@ -149,6 +149,26 @@ domain::CharacterDisplayMode parseCharacterMode(std::string_view value) {
   return domain::CharacterDisplayMode::Minimal;
 }
 
+std::string technicalLaneModeName(domain::TechnicalLaneMode mode) {
+  switch (mode) {
+    case domain::TechnicalLaneMode::Auto: return "auto";
+    case domain::TechnicalLaneMode::Collapsed: return "collapsed";
+    case domain::TechnicalLaneMode::Preview: return "preview";
+    case domain::TechnicalLaneMode::Expanded: return "expanded";
+  }
+  return "auto";
+}
+
+core::Result<domain::TechnicalLaneMode> parseTechnicalLaneMode(
+    std::string_view value) {
+  if (value == "auto") return core::success(domain::TechnicalLaneMode::Auto);
+  if (value == "collapsed") return core::success(domain::TechnicalLaneMode::Collapsed);
+  if (value == "preview") return core::success(domain::TechnicalLaneMode::Preview);
+  if (value == "expanded") return core::success(domain::TechnicalLaneMode::Expanded);
+  return core::failure<domain::TechnicalLaneMode>(core::ErrorCode::ParseError,
+                                                  "Technical lane mode is invalid");
+}
+
 domain::MediaOwnership parseMediaOwnership(std::string_view value) {
   return value == "project-copy" ? domain::MediaOwnership::ProjectCopy
                                   : domain::MediaOwnership::ExternalReference;
@@ -584,6 +604,14 @@ JsonValue encodeProject(const domain::Project& project) {
                                     {"outputRoute", encodeTrackOutputRoute(track.outputRoute)}});
   }
 
+  Array technicalLanes;
+  technicalLanes.reserve(project.settings().technicalLanes.size());
+  for (const auto& lane : project.settings().technicalLanes) {
+    technicalLanes.push_back(JsonValue{Object{
+        {"mode", JsonValue{technicalLaneModeName(lane.mode)}},
+        {"expandedHeight", JsonValue{lane.expandedHeight}},
+    }});
+  }
   return JsonValue{Object{
       {"formatId", JsonValue{"com.project-seam.project"}},
       {"schemaVersion", JsonValue{static_cast<std::int64_t>(ProjectJsonCodec::kSchemaVersion)}},
@@ -598,7 +626,8 @@ JsonValue encodeProject(const domain::Project& project) {
           {"snapEnabled", JsonValue{project.settings().snapEnabled}},
           {"snapGrid", JsonValue{project.settings().snapGrid.value()}},
           {"hostStartOffsetTick",
-           JsonValue{project.settings().hostStartOffsetTick.value()}}}}},
+           JsonValue{project.settings().hostStartOffsetTick.value()}},
+          {"technicalLanes", JsonValue{std::move(technicalLanes)}}}}},
       {"routing", encodeRouting(project.routing())},
       {"vocalTracks", JsonValue{std::move(vocalTracks)}},
       {"audioTracks", JsonValue{std::move(audioTracks)}}}};
@@ -691,6 +720,7 @@ core::Result<domain::Project> decodeProject(const JsonValue& root) {
   const auto* snapEnabled = settings.value()->find("snapEnabled");
   const auto* snapGrid = settings.value()->find("snapGrid");
   const auto* hostStartOffsetTick = settings.value()->find("hostStartOffsetTick");
+  const auto* technicalLanes = settings.value()->find("technicalLanes");
   if (sampleRate == nullptr || characterDisplay == nullptr || snapEnabled == nullptr || snapGrid == nullptr ||
       !sampleRate->isNumber() || !characterDisplay->isString() || !snapEnabled->isBool() ||
       !snapGrid->isNumber()) {
@@ -714,6 +744,32 @@ core::Result<domain::Project> decodeProject(const JsonValue& root) {
                             ? hostStartOffsetTick->asInt64()
                             : 0}
           : time::Tick{0};
+  if (schemaVersion >= 7) {
+    if (technicalLanes == nullptr || !technicalLanes->isArray() ||
+        technicalLanes->asArray().size() != project.settings().technicalLanes.size()) {
+      return core::failure<domain::Project>(core::ErrorCode::ParseError,
+                                            "Technical lane settings are invalid");
+    }
+    for (std::size_t index = 0U; index < technicalLanes->asArray().size(); ++index) {
+      const auto& value = technicalLanes->asArray()[index];
+      if (!value.isObject()) {
+        return core::failure<domain::Project>(core::ErrorCode::ParseError,
+                                              "Technical lane setting must be an object");
+      }
+      const auto* mode = value.find("mode");
+      const auto* height = value.find("expandedHeight");
+      if (mode == nullptr || height == nullptr || !mode->isString() ||
+          !height->isNumber() || !std::isfinite(height->asNumber()) ||
+          height->asNumber() < 96.0 || height->asNumber() > 640.0) {
+        return core::failure<domain::Project>(core::ErrorCode::ParseError,
+                                              "Technical lane presentation is invalid");
+      }
+      auto parsedMode = parseTechnicalLaneMode(mode->asString());
+      if (!parsedMode) return core::Result<domain::Project>{parsedMode.error()};
+      project.settings().technicalLanes[index] = domain::TechnicalLanePresentation{
+          .mode = parsedMode.value(), .expandedHeight = height->asNumber()};
+    }
+  }
   if (schemaVersion >= 4) {
     if (routingValue == nullptr) {
       return core::failure<domain::Project>(core::ErrorCode::ParseError,

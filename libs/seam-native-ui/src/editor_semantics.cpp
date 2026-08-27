@@ -1,5 +1,8 @@
 #include "seam/native_ui/editor_semantics.hpp"
 
+#include "seam/native_ui/editor_frame_layout.hpp"
+#include "seam/native_ui/diagnostic_presentation.hpp"
+
 #include <array>
 #include <algorithm>
 #include <cmath>
@@ -76,16 +79,36 @@ SemanticNode EditorSemanticTree::build(const EditorSceneState& state,
   const auto exportInset =
       layout.exportHeight(state.exportProgress.totalFiles != 0U);
   const auto overlayInset = diagnosticInset + exportInset;
-  const auto contentHeight =
-      layout.pianoContentHeight(state.logicalHeight, overlayInset);
-  const auto laneGeometry =
-      layout.technicalLaneGeometry(state.logicalHeight, overlayInset);
+  const auto technical = resolveTechnicalLaneHeights(TechnicalLaneLayoutInput{
+      .presentation = state.technicalLanes,
+      .populated = { !state.phonemes.tokens.empty(), !state.unitOverrides.empty(),
+                     !state.seamOverrides.empty(), !state.pitchAutomation.empty() },
+      .previewHeights = { layout.phonemeLaneHeight, layout.unitLaneHeight,
+                          layout.seamLaneHeight, layout.automationLaneHeight },
+      .contentTop = layout.contentTop(),
+      .contentBottom = state.logicalHeight - layout.statusHeight - overlayInset,
+  });
+  const auto contentHeight = std::max(1.0, technical.pianoBottom - layout.contentTop());
+  const auto laneGeometry = EditorSceneLayout::TechnicalLaneGeometry{
+      .pianoBottom = technical.pianoBottom,
+      .phonemeTop = technical.pianoBottom,
+      .phonemeHeight = technical.values[0U],
+      .unitTop = technical.pianoBottom + technical.values[0U],
+      .unitHeight = technical.values[1U],
+      .seamTop = technical.pianoBottom + technical.values[0U] + technical.values[1U],
+      .seamHeight = technical.values[2U],
+      .pitchTop = technical.pianoBottom + technical.values[0U] + technical.values[1U] + technical.values[2U],
+      .pitchHeight = technical.values[3U],
+      .bottom = state.logicalHeight - layout.statusHeight - overlayInset,
+  };
   const auto characterFull =
       state.characterMode == domain::CharacterDisplayMode::Full &&
+      state.voiceIdentity.characterActive &&
       state.characterPortrait != nullptr;
   const auto portraitVisible =
       !layout.compactToolbar(state.logicalWidth) &&
       state.characterMode == domain::CharacterDisplayMode::Minimal &&
+      state.voiceIdentity.characterActive &&
       state.characterPortrait != nullptr;
   const auto audioSettingsVisible = state.audioSettings.visible;
   const auto arrangementVisible =
@@ -252,6 +275,23 @@ SemanticNode EditorSemanticTree::build(const EditorSceneState& state,
       .focused = false,
       .actions = {SemanticAction::SetFocus},
       .children = {},
+  });
+  transportToolbar.children.push_back(SemanticNode{
+      .id = "voice.identity",
+      .role = SemanticRole::Status,
+      .name = "Active voice identity",
+      .value = state.voiceIdentity.name + " / " +
+               std::string{voiceIdentityStateName(state.voiceIdentity.state)},
+      .bounds = ui::Rect{std::max(0.0, state.logicalWidth - 206.0), 4.0,
+                         132.0, 34.0},
+      .enabled = true,
+      .focused = false,
+      .actions = {SemanticAction::SetFocus},
+      .children = {},
+      .description = state.voiceIdentity.identity +
+                     (state.voiceIdentity.recovery.empty()
+                          ? ""
+                          : " / " + state.voiceIdentity.recovery),
   });
   root.children.push_back(std::move(transportToolbar));
   const auto batchLyricsBounds =
@@ -750,9 +790,8 @@ SemanticNode EditorSemanticTree::build(const EditorSceneState& state,
         .role = SemanticRole::Panel,
         .name = "Diagnostics",
         .value = std::to_string(state.diagnostics.size()) + " active issues",
-        .bounds = ui::Rect{0.0, root.bounds.height - layout.statusHeight -
-                                      exportInset - layout.diagnosticStripHeight,
-                           root.bounds.width, layout.diagnosticStripHeight},
+        .bounds = layout.diagnosticBounds(root.bounds.width, root.bounds.height,
+                                          state.exportProgress.totalFiles != 0U),
         .enabled = true,
         .focused = false,
         .actions = {SemanticAction::SetFocus},
@@ -760,34 +799,33 @@ SemanticNode EditorSemanticTree::build(const EditorSceneState& state,
     };
     for (std::size_t index = 0U; index < state.diagnostics.size(); ++index) {
       const auto& diagnostic = state.diagnostics[index];
+      const auto presentation = presentDiagnostic(diagnostic);
       diagnostics.children.push_back(SemanticNode{
           .id = "diagnostic." + std::to_string(index) + "." + diagnostic.code,
           .role = SemanticRole::Status,
-          .name = diagnostic.code,
-          .value = std::string{authoring::toString(diagnostic.severity)} +
-                   (diagnostic.messageKey.empty()
-                        ? std::string{}
-                        : " / " + diagnostic.messageKey),
+          .name = presentation.title,
+          .value = presentation.impact,
           .bounds = ui::Rect{0.0, diagnostics.bounds.y,
                              root.bounds.width, diagnostics.bounds.height},
           .enabled = true,
           .focused = false,
-          .actions = {SemanticAction::Activate, SemanticAction::SetFocus},
+          .actions = {SemanticAction::SetFocus},
           .children = {},
-          .description = "Diagnostic " + diagnostic.code +
-                         (diagnostic.messageKey.empty()
-                              ? std::string{}
-                              : ": " + diagnostic.messageKey),
+          .description = presentation.technicalDetail,
       });
-      for (const auto action : diagnostic.actions) {
+      const auto actionCount = presentation.primaryActionKinds.size();
+      for (std::size_t actionIndex = 0U; actionIndex < actionCount; ++actionIndex) {
+        const auto action = presentation.primaryActionKinds[actionIndex];
         const auto actionName = std::string{authoring::toString(action)};
         diagnostics.children.push_back(SemanticNode{
             .id = "diagnostic-action." + std::to_string(index) + "." +
                  actionName,
             .role = SemanticRole::Button,
-            .name = diagnostic.code + " " + actionName,
-            .value = actionName,
-            .bounds = diagnostics.bounds,
+            .name = diagnosticActionLabel(action),
+            .value = diagnosticActionLabel(action),
+            .bounds = layout.diagnosticActionBounds(
+                root.bounds.width, root.bounds.height,
+                state.exportProgress.totalFiles != 0U, actionCount, actionIndex),
             .enabled = true,
             .focused = false,
             .actions = {SemanticAction::Activate, SemanticAction::SetFocus},

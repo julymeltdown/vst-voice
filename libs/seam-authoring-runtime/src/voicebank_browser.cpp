@@ -65,6 +65,8 @@ void VoicebankBrowserModel::rebuild(
         .selectable = selectable,
         .characterAvailable = !candidate.manifest.characterId.empty() &&
                               !candidate.manifest.characterVersion.empty(),
+        .characterId = candidate.manifest.characterId,
+        .characterVersion = candidate.manifest.characterVersion,
         .enabledUnitCount = inventory.enabledUnitCount,
         .disabledUnitCount = inventory.disabledUnitCount,
         .rootPitchLayers = inventory.rootPitchLayers,

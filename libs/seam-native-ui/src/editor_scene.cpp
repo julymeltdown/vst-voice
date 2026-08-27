@@ -1,5 +1,9 @@
 #include "seam/native_ui/editor_scene.hpp"
 
+#include "seam/native_ui/editor_frame_layout.hpp"
+#include "seam/native_ui/editor_label_policy.hpp"
+#include "seam/native_ui/diagnostic_presentation.hpp"
+
 #include "seam/time/tick.hpp"
 #include "seam/text/unicode.hpp"
 #include "seam/ui/phoneme_lane_model.hpp"
@@ -121,6 +125,7 @@ void EditorScenePainter::paint(RasterCanvas& canvas, ui::PianoRollModel& model,
   const auto width = canvas.logicalWidth();
   const auto height = canvas.logicalHeight();
   const auto characterFull = state.characterMode == domain::CharacterDisplayMode::Full &&
+                             state.voiceIdentity.characterActive &&
                              state.characterPortrait != nullptr;
   const auto audioSettingsVisible = state.audioSettings.visible;
   const auto arrangementVisible =
@@ -130,30 +135,69 @@ void EditorScenePainter::paint(RasterCanvas& canvas, ui::PianoRollModel& model,
       !state.arrangementTracks.empty();
   const auto dockVisible = audioSettingsVisible || characterFull || arrangementVisible ||
                            state.voicebankBrowserVisible;
-  const auto editorRight = std::max(
-      layout_.keyboardWidth + layout_.minimumTimelineWidth,
-      width - (dockVisible ? layout_.characterDockWidth : 0.0));
   const auto statusTop = height - layout_.statusHeight;
-  const auto pianoBottom = layout_.pianoBottom(height, overlayHeight(state, layout_));
-  const auto contentHeight =
-      layout_.pianoContentHeight(height, overlayHeight(state, layout_));
+  const auto overlayInset = overlayHeight(state, layout_);
+  const auto technical = resolveTechnicalLaneHeights(TechnicalLaneLayoutInput{
+      .presentation = state.technicalLanes,
+      .populated = { !state.phonemes.tokens.empty(), !state.unitOverrides.empty(),
+                     !state.seamOverrides.empty(), !state.pitchAutomation.empty() },
+      .previewHeights = { layout_.phonemeLaneHeight, layout_.unitLaneHeight,
+                          layout_.seamLaneHeight, layout_.automationLaneHeight },
+      .contentTop = layout_.contentTop(),
+      .contentBottom = height - layout_.statusHeight - overlayInset,
+  });
+  const auto pianoBottom = technical.pianoBottom;
+  const auto contentHeight = std::max(1.0, pianoBottom - layout_.contentTop());
+  const auto laneGeometry = EditorSceneLayout::TechnicalLaneGeometry{
+      .pianoBottom = pianoBottom,
+      .phonemeTop = pianoBottom,
+      .phonemeHeight = technical.values[0U],
+      .unitTop = pianoBottom + technical.values[0U],
+      .unitHeight = technical.values[1U],
+      .seamTop = pianoBottom + technical.values[0U] + technical.values[1U],
+      .seamHeight = technical.values[2U],
+      .pitchTop = pianoBottom + technical.values[0U] + technical.values[1U] +
+                  technical.values[2U],
+      .pitchHeight = technical.values[3U],
+      .bottom = height - layout_.statusHeight - overlayInset,
+  };
+  const auto frame = buildEditorFrameLayout(EditorFrameLayoutInput{
+      .logicalWidth = width,
+      .logicalHeight = height,
+      .toolbarHeight = layout_.toolbarHeight,
+      .rulerHeight = layout_.rulerHeight,
+      .statusHeight = layout_.statusHeight,
+      .keyboardWidth = layout_.keyboardWidth,
+      .minimumTimelineWidth = layout_.minimumTimelineWidth,
+      .dockWidth = layout_.characterDockWidth,
+      .bottomInset = overlayHeight(state, layout_),
+      .pianoBottom = pianoBottom,
+      .phonemeHeight = laneGeometry.phonemeHeight,
+      .unitHeight = laneGeometry.unitHeight,
+      .seamHeight = laneGeometry.seamHeight,
+      .pitchHeight = laneGeometry.pitchHeight,
+      .dockVisible = dockVisible,
+  });
   model.setViewport(ui::PianoRollViewport{
-      .bounds = ui::Rect{0.0, 0.0, editorRight, contentHeight},
+      .bounds = ui::Rect{0.0, 0.0, frame.editorRight, contentHeight},
       .keyboardWidth = layout_.keyboardWidth,
   });
   model.rebuildIndex();
 
   canvas.clear(theme_.background);
   paintToolbar(canvas, state);
-  canvas.fillRect(ui::Rect{0.0, layout_.toolbarHeight, editorRight,
+  canvas.fillRect(ui::Rect{0.0, layout_.toolbarHeight, frame.editorRight,
                            layout_.rulerHeight}, theme_.panel);
-  canvas.fillRect(ui::Rect{0.0, layout_.contentTop(), editorRight,
+  canvas.fillRect(ui::Rect{0.0, layout_.contentTop(), frame.editorRight,
                            std::max(0.0, pianoBottom - layout_.contentTop())},
                   theme_.background);
-  paintGrid(canvas, model, editorRight, pianoBottom);
+  paintGrid(canvas, model, frame.editorRight, pianoBottom);
   paintKeyboard(canvas, model, pianoBottom);
   paintNotes(canvas, model);
-  paintTechnicalLanes(canvas, model, state, editorRight);
+  if (model.visibleNotes().empty()) {
+    paintEmptyPianoRoll(canvas, frame.editorRight, pianoBottom);
+  }
+  paintTechnicalLanes(canvas, model, state, frame.editorRight);
 
   if (state.boxSelection.has_value()) {
     const auto box = *state.boxSelection;
@@ -179,16 +223,16 @@ void EditorScenePainter::paint(RasterCanvas& canvas, ui::PianoRollModel& model,
     }
   }
   if (audioSettingsVisible) {
-    paintAudioSettings(canvas, state, editorRight,
+    paintAudioSettings(canvas, state, frame.editorRight,
                        statusTop - overlayHeight(state, layout_));
   } else if (state.voicebankBrowserVisible) {
-    paintVoicebankBrowser(canvas, state, editorRight,
+    paintVoicebankBrowser(canvas, state, frame.editorRight,
                           statusTop - overlayHeight(state, layout_));
   } else if (characterFull) {
-    paintCharacter(canvas, state, editorRight,
+    paintCharacter(canvas, state, frame.editorRight,
                    statusTop - overlayHeight(state, layout_));
   } else if (arrangementVisible) {
-    paintArrangement(canvas, state, editorRight,
+    paintArrangement(canvas, state, frame.editorRight,
                      statusTop - overlayHeight(state, layout_));
   }
   paintExportProgress(canvas, state);
@@ -260,6 +304,7 @@ void EditorScenePainter::paintToolbar(RasterCanvas& canvas,
   const auto portraitVisible =
       !layout_.compactToolbar(width) &&
       state.characterMode == domain::CharacterDisplayMode::Minimal &&
+      state.voiceIdentity.characterActive &&
       state.characterPortrait != nullptr;
   const auto batchLyricsBounds =
       layout_.batchLyricsBoundsForWidth(width, portraitVisible);
@@ -296,6 +341,23 @@ void EditorScenePainter::paintToolbar(RasterCanvas& canvas,
                               layout_.projectRevisionBaseline},
                     formatRevision(state.revision), theme_.secondaryText,
                     layout_.projectRevisionFontSize);
+  }
+  if (!layout_.compactToolbar(width)) {
+    const auto identityBounds = ui::Rect{
+        std::max(0.0, width - layout_.voiceIdentityRightInset -
+                          layout_.voiceIdentityWidth),
+        layout_.voiceIdentityTitleTop, layout_.voiceIdentityWidth,
+        layout_.voiceIdentityTitleHeight};
+    canvas.drawText(identityBounds, state.voiceIdentity.name,
+                    state.voiceIdentity.state == VoiceIdentityState::Missing ||
+                            state.voiceIdentity.state == VoiceIdentityState::Error
+                        ? theme_.diagnosticWarning
+                        : theme_.secondaryText,
+                    layout_.voiceIdentityTitleFontSize);
+    canvas.drawText(ui::Rect{identityBounds.x, layout_.voiceIdentityStateTop,
+                             identityBounds.width, layout_.voiceIdentityStateHeight},
+                    std::string{voiceIdentityStateName(state.voiceIdentity.state)},
+                    theme_.secondaryText, layout_.voiceIdentityStateFontSize);
   }
   if (portraitVisible) {
     const auto side = layout_.portraitSide;
@@ -386,6 +448,7 @@ void EditorScenePainter::paintKeyboard(RasterCanvas& canvas,
 void EditorScenePainter::paintNotes(RasterCanvas& canvas,
                                     const ui::PianoRollModel& model) const noexcept {
   for (const auto& note : model.visibleNotes()) {
+    if (note.hiddenByOverlapDensity) continue;
     auto bounds = note.bounds;
     bounds.y += layout_.contentTop();
     const auto fill = note.selected ? theme_.noteSelected
@@ -395,16 +458,38 @@ void EditorScenePainter::paintNotes(RasterCanvas& canvas,
     canvas.strokeRect(bounds, note.selected ? theme_.noteSelectedStroke
                                             : theme_.noteStroke,
                       layout_.noteStrokeWidth);
-    if (!note.lyric.empty()) {
+    if (!note.lyric.empty() && note.overlapMemberCount == 1U) {
       const auto labelBounds = layout_.noteLabelBounds(bounds);
       if (!labelBounds.has_value()) continue;
+      const auto label = EditorLabelPolicy::note(note.lyric, labelBounds->width);
+      if (label.mode != EditorLabelMode::Hidden) {
+        canvas.drawText(*labelBounds, label.text, theme_.primaryText,
+                        layout_.noteFontSize);
+      }
+    }
+    if (note.drawsOverlapIndicator) {
+      const auto indicator = "+" + std::to_string(note.hiddenOverlapMembers);
+      const auto indicatorWidth = std::min(18.0, bounds.width);
       canvas.drawText(
-          ui::Point{labelBounds->x, labelBounds->y},
-          fitUtf8Text(note.lyric, labelBounds->width,
-                      layout_.noteTextCharacterWidth),
-          theme_.primaryText, layout_.noteFontSize);
+          ui::Rect{bounds.right() - indicatorWidth, bounds.y,
+                   indicatorWidth, bounds.height},
+          indicator, theme_.focusRing, layout_.noteFontSize);
     }
   }
+}
+
+void EditorScenePainter::paintEmptyPianoRoll(RasterCanvas& canvas,
+                                             double editorRight,
+                                             double pianoBottom) const noexcept {
+  const auto availableWidth = std::max(0.0, editorRight - layout_.keyboardWidth);
+  const auto centerX = layout_.keyboardWidth + availableWidth * 0.5;
+  const auto centerY = layout_.contentTop() +
+                       std::max(0.0, pianoBottom - layout_.contentTop()) * 0.42;
+  const auto titleBounds = ui::Rect{centerX - 96.0, centerY - 18.0, 192.0, 18.0};
+  const auto detailBounds = ui::Rect{centerX - 150.0, centerY + 10.0, 300.0, 14.0};
+  canvas.drawText(titleBounds, "No notes yet", theme_.primaryText, 16.0);
+  canvas.drawText(detailBounds, "Double-click the grid to add a note",
+                  theme_.secondaryText, 11.0);
 }
 
 void EditorScenePainter::paintTechnicalLanes(
@@ -412,8 +497,28 @@ void EditorScenePainter::paintTechnicalLanes(
     const EditorSceneState& state, double editorRight) const noexcept {
   const auto left = layout_.keyboardWidth;
   const auto inset = overlayHeight(state, layout_);
-  const auto geometry =
-      layout_.technicalLaneGeometry(canvas.logicalHeight(), inset);
+  const auto technical = resolveTechnicalLaneHeights(TechnicalLaneLayoutInput{
+      .presentation = state.technicalLanes,
+      .populated = { !state.phonemes.tokens.empty(), !state.unitOverrides.empty(),
+                     !state.seamOverrides.empty(), !state.pitchAutomation.empty() },
+      .previewHeights = { layout_.phonemeLaneHeight, layout_.unitLaneHeight,
+                          layout_.seamLaneHeight, layout_.automationLaneHeight },
+      .contentTop = layout_.contentTop(),
+      .contentBottom = canvas.logicalHeight() - layout_.statusHeight - inset,
+  });
+  const auto geometry = EditorSceneLayout::TechnicalLaneGeometry{
+      .pianoBottom = technical.pianoBottom,
+      .phonemeTop = technical.pianoBottom,
+      .phonemeHeight = technical.values[0U],
+      .unitTop = technical.pianoBottom + technical.values[0U],
+      .unitHeight = technical.values[1U],
+      .seamTop = technical.pianoBottom + technical.values[0U] + technical.values[1U],
+      .seamHeight = technical.values[2U],
+      .pitchTop = technical.pianoBottom + technical.values[0U] + technical.values[1U] +
+                  technical.values[2U],
+      .pitchHeight = technical.values[3U],
+      .bottom = canvas.logicalHeight() - layout_.statusHeight - inset,
+  };
   const auto phonemeHeight = geometry.phonemeHeight;
   const auto unitHeight = geometry.unitHeight;
   const auto seamHeight = geometry.seamHeight;
@@ -494,10 +599,18 @@ void EditorScenePainter::paintTechnicalLanes(
                       visual.timingOverridden ? theme_.accent
                                                : theme_.gridStrong,
                       layout_.technicalLaneItemStrokeWidth);
-    canvas.drawText(ui::Point{bounds.x + layout_.phonemeTextInsetX,
-                              bounds.y + layout_.phonemeTextBaselineOffset},
-                    visual.symbol, theme_.primaryText,
-                    layout_.phonemeTextFontSize);
+    const ui::Rect textBounds{
+        bounds.x + layout_.phonemeTextInsetX,
+        bounds.y + layout_.phonemeTextBaselineOffset,
+        std::max(0.0, bounds.width - layout_.phonemeTextInsetX * 2.0),
+        std::max(0.0, bounds.bottom() -
+                          (bounds.y + layout_.phonemeTextBaselineOffset))};
+    const auto label = EditorLabelPolicy::technical(
+        visual.symbol, textBounds.width, 10.0, 42.0);
+    if (label.mode != EditorLabelMode::Hidden) {
+      canvas.drawText(textBounds, label.text, theme_.primaryText,
+                      layout_.phonemeTextFontSize);
+    }
   }
 
   for (const auto& override : state.unitOverrides) {
@@ -525,27 +638,30 @@ void EditorScenePainter::paintTechnicalLanes(
                       layout_.technicalLaneItemStrokeWidth);
     const auto textWidth = bounds.width - layout_.unitTextInsetX * 2.0;
     if (textWidth >= layout_.panelTextCharacterWidth) {
-      const auto label = fitUtf8Text(override.unitId, textWidth,
-                                     layout_.panelTextCharacterWidth);
-      const auto renderer = fitUtf8Text(rendererLabel(override.renderer),
-                                        textWidth,
-                                        layout_.panelTextCharacterWidth);
-      if (!label.empty()) {
-        canvas.drawText(ui::Point{bounds.x + layout_.unitTextInsetX,
-                                  bounds.y + std::min(
-                                                layout_.unitLabelBaselineOffset,
-                                                std::max(1.0, bounds.height -
-                                                                  layout_.unitTextFontSize -
-                                                                  layout_.unitTextBottomPadding))},
-                        label, theme_.primaryText, layout_.unitTextFontSize);
+      const auto label = EditorLabelPolicy::technical(
+          override.unitId, textWidth, layout_.panelTextCharacterWidth, 96.0);
+      const auto renderer = EditorLabelPolicy::technical(
+          rendererLabel(override.renderer), textWidth,
+          layout_.panelTextCharacterWidth, 42.0);
+      if (label.mode != EditorLabelMode::Hidden) {
+        canvas.drawText(
+            ui::Rect{bounds.x + layout_.unitTextInsetX,
+                     bounds.y + std::min(
+                                    layout_.unitLabelBaselineOffset,
+                                    std::max(1.0, bounds.height -
+                                                      layout_.unitTextFontSize -
+                                                      layout_.unitTextBottomPadding)),
+                     textWidth, layout_.unitTextFontSize},
+            label.text, theme_.primaryText, layout_.unitTextFontSize);
       }
-      if (!renderer.empty() &&
+      if (renderer.mode != EditorLabelMode::Hidden &&
           bounds.height >= layout_.unitRendererBaselineOffset +
                                layout_.unitTextFontSize) {
         canvas.drawText(
-            ui::Point{bounds.x + layout_.unitTextInsetX,
-                      bounds.y + layout_.unitRendererBaselineOffset},
-            renderer, theme_.secondaryText, layout_.unitTextFontSize);
+            ui::Rect{bounds.x + layout_.unitTextInsetX,
+                     bounds.y + layout_.unitRendererBaselineOffset,
+                     textWidth, layout_.unitTextFontSize},
+            renderer.text, theme_.secondaryText, layout_.unitTextFontSize);
       }
     }
   }
@@ -659,7 +775,8 @@ void EditorScenePainter::paintCharacter(RasterCanvas& canvas,
                                         double editorRight,
                                         double contentBottom) const noexcept {
   if (state.characterMode != domain::CharacterDisplayMode::Full ||
-      state.characterPortrait == nullptr || editorRight >= canvas.logicalWidth()) {
+      !state.voiceIdentity.characterActive || state.characterPortrait == nullptr ||
+      editorRight >= canvas.logicalWidth()) {
     return;
   }
   const auto width = canvas.logicalWidth() - editorRight;
@@ -1055,34 +1172,50 @@ void EditorScenePainter::paintDiagnostics(
   if (state.diagnostics.empty()) return;
   const auto width = canvas.logicalWidth();
   const auto height = canvas.logicalHeight();
-  const auto top = height - layout_.statusHeight -
-                   exportHeight(state, layout_) - layout_.diagnosticStripHeight;
+  const auto panelBounds = layout_.diagnosticBounds(
+      width, height, state.exportProgress.totalFiles != 0U);
+  const auto top = panelBounds.y;
   const auto& diagnostic = state.diagnostics.front();
   const auto color = diagnostic.severity == authoring::DiagnosticSeverity::Critical
                          ? theme_.diagnosticCritical
                          : diagnostic.severity == authoring::DiagnosticSeverity::Warning
                                ? theme_.diagnosticWarning
                                : theme_.diagnosticInfo;
-  canvas.fillRect(ui::Rect{0.0, top, width, layout_.diagnosticStripHeight}, color);
-  auto label = std::string{diagnostic.code};
-  if (!diagnostic.messageKey.empty()) {
-    label += " / " + diagnostic.messageKey;
+  canvas.fillRect(panelBounds, color);
+  const auto presentation = presentDiagnostic(diagnostic);
+  auto label = presentation.title + " / " + presentation.impact;
+  auto title = presentation.title;
+  if (state.diagnostics.size() > 1U) {
+    title += " +" + std::to_string(state.diagnostics.size() - 1U) + " more";
   }
   if (diagnostic.occurrenceCount > 1U) {
     label += " (" + std::to_string(diagnostic.occurrenceCount) + ")";
   }
-  canvas.drawText(ui::Point{layout_.diagnosticTextInsetX,
-                            top + layout_.diagnosticTextBaseline},
-                  fitUtf8Text(label,
-                              width - layout_.diagnosticTextInsetX * 2.0,
+  const auto actionCount = std::min<std::size_t>(2U, presentation.primaryActions.size());
+  const auto actionsWidth = actionCount == 0U
+                                ? 0.0
+                                : actionCount * layout_.diagnosticActionWidth +
+                                      (actionCount - 1U) * layout_.diagnosticActionGap;
+  const auto textWidth = std::max(
+      1.0, width - layout_.diagnosticTextInsetX * 2.0 - actionsWidth);
+  canvas.drawText(ui::Rect{layout_.diagnosticTextInsetX,
+                           top + layout_.diagnosticTitleTop, textWidth,
+                           layout_.diagnosticTitleFontSize},
+                  title, theme_.primaryText,
+                  layout_.diagnosticTitleFontSize);
+  canvas.drawText(ui::Rect{layout_.diagnosticTextInsetX,
+                           top + layout_.diagnosticImpactTop, textWidth,
+                           layout_.diagnosticImpactFontSize},
+                  fitUtf8Text(label, textWidth,
                               layout_.secondaryTextCharacterWidth),
-                  theme_.primaryText, layout_.diagnosticFontSize);
-  if (state.diagnostics.size() > 1U) {
-    canvas.drawText(ui::Point{width - layout_.diagnosticMoreRightInset,
-                              top + layout_.diagnosticTextBaseline},
-                    "+" + std::to_string(state.diagnostics.size() - 1U) +
-                        " MORE",
-                    theme_.secondaryText, layout_.diagnosticMoreFontSize);
+                  theme_.primaryText, layout_.diagnosticImpactFontSize);
+  for (std::size_t index = 0U; index < actionCount; ++index) {
+    const auto actionBounds = layout_.diagnosticActionBounds(
+        width, height, state.exportProgress.totalFiles != 0U, actionCount, index);
+    canvas.fillRect(actionBounds, theme_.panel);
+    canvas.strokeRect(actionBounds, theme_.primaryText, layout_.controlStrokeWidth);
+    canvas.drawText(actionBounds, presentation.primaryActions[index],
+                    theme_.primaryText, layout_.diagnosticMoreFontSize);
   }
 }
 
