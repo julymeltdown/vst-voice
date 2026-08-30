@@ -4,10 +4,19 @@
   "ownedPaths": [
     "ProgramFiles/ProjectSEAM/ProjectSEAM.exe",
     "ProgramFiles/ProjectSEAM/Resources",
+    "ProgramFiles/ProjectSEAM/RELEASE_IDENTITY.json",
+    "ProgramFiles/ProjectSEAM/release-payload-manifest.json",
+    "ProgramFiles/ProjectSEAM/release-dependency-closure.json",
+    "ProgramFiles/ProjectSEAM/seam_installer_verifier.exe",
     "CommonFiles/CLAP/ProjectSEAMEditor.clap",
     "CommonFiles/CLAP/ProjectSEAMEditor.resources",
     "CommonFiles/VST3/ProjectSEAMEditor.vst3",
     "CommonAppData/ProjectSEAM/Documentation",
+    "CommonAppData/ProjectSEAM/THIRD_PARTY_NOTICES.md",
+    "CommonAppData/ProjectSEAM/SBOM.spdx.json",
+    "CommonAppData/ProjectSEAM/Trust",
+    "CommonAppData/ProjectSEAM/Ownership",
+    "CommonAppData/ProjectSEAM/Notices",
     "ProgramFiles/ProjectSEAM/Uninstall.exe"
   ],
   "preservedUserRoots": [
@@ -17,6 +26,16 @@
     "LOCALAPPDATA/ProjectSEAM/Autosaves",
     "LOCALAPPDATA/ProjectSEAM/Recovery",
     "LOCALAPPDATA/ProjectSEAM/CrashReports"
+  ],
+  "preservedSystemRoots": [
+    "ProgramFiles/ProjectSEAM/InstallerReplay"
+  ],
+  "ownedShortcuts": [
+    "CommonStartMenu/Project SEAM/Project SEAM.lnk",
+    "CommonDesktop/Project SEAM.lnk"
+  ],
+  "ownedRegistryKeys": [
+    "HKLM/Software/Microsoft/Windows/CurrentVersion/Uninstall/ProjectSEAM"
   ],
   "destructiveDataRemoval": "separate-explicit-action"
 }

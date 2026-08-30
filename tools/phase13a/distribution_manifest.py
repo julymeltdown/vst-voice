@@ -176,6 +176,12 @@ def _validate_wrapper_manifest(
         errors.append("wrapper manifest schema/product is invalid")
     if manifest.get("format") not in {"VST3", "AUv2"}:
         errors.append("wrapper manifest format is invalid")
+    release_identity = manifest.get("releaseIdentity")
+    if release_identity is not None and (
+        not isinstance(release_identity, dict)
+        or release_identity.get("version") != manifest.get("version")
+    ):
+        errors.append("wrapper manifest release identity is invalid")
     digest = manifest.get("canonicalClapSha256")
     if not isinstance(digest, str) or len(digest) != 64:
         errors.append("wrapper manifest canonicalClapSha256 is invalid")
@@ -240,7 +246,7 @@ def validate_wrapper_bundle(kind: str, path: Path, platform: str, canonical_clap
     return errors
 
 
-def build_wrapper_manifest(format_name: str, platform: str, architecture: str, version: str, bundle_identifier: str, canonical_clap_sha256: str, wrapper_path: Path) -> dict[str, Any]:
+def build_wrapper_manifest(format_name: str, platform: str, architecture: str, version: str, bundle_identifier: str, canonical_clap_sha256: str, wrapper_path: Path, release_identity: dict[str, str | int] | None = None) -> dict[str, Any]:
     wrapper_path = Path(wrapper_path)
     normalized_format = "AUv2" if format_name.lower() in {"au", "auv2"} else "VST3"
     normalized_platform = "macos" if platform.lower() in {"darwin", "macos"} else platform.lower()
@@ -254,7 +260,7 @@ def build_wrapper_manifest(format_name: str, platform: str, architecture: str, v
             continue
         files.append({"path": relative, "size": item.stat().st_size, "sha256": sha256_file(item)})
     shape = {("VST3", "windows"): "windows-vst3-folder", ("VST3", "win32"): "windows-vst3-folder", ("VST3", "darwin"): "macos-vst3-bundle", ("VST3", "macos"): "macos-vst3-bundle", ("VST3", "linux"): "linux-vst3-bundle", ("AUv2", "darwin"): "macos-auv2-component", ("AUv2", "macos"): "macos-auv2-component"}.get((normalized_format, platform.lower()), "")
-    return {
+    manifest: dict[str, Any] = {
         "schemaVersion": 1,
         "product": "Project SEAM",
         "format": normalized_format,
@@ -268,6 +274,9 @@ def build_wrapper_manifest(format_name: str, platform: str, architecture: str, v
         "mutableSignaturePaths": sorted(exclusions - {"wrapper-manifest.json", "Contents/Resources/wrapper-manifest.json"}),
         "files": files,
     }
+    if release_identity is not None:
+        manifest["releaseIdentity"] = release_identity
+    return manifest
 
 
 def build_release_manifest(

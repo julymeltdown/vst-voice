@@ -3,9 +3,12 @@ param(
   [Parameter(Mandatory=$true)][string]$OutputInstaller,
   [string]$ProductVersion = $env:PROJECT_SEAM_VERSION,
   [string]$BuildId = $env:SEAM_BUILD_ID,
-  [string]$SourceCommit = $env:SEAM_SOURCE_COMMIT
+  [string]$SourceCommit = $env:SEAM_SOURCE_COMMIT,
+  [switch]$SignUninstaller,
+  [switch]$DevelopmentSignUninstaller
 )
 $ErrorActionPreference='Stop'
+if ($SignUninstaller -and $DevelopmentSignUninstaller) { throw 'Choose exactly one uninstaller signing mode' }
 if (-not (Get-Command makensis.exe -ErrorAction SilentlyContinue)) { throw 'NSIS 3.12 makensis.exe is required' }
 $root=Resolve-Path (Join-Path $PSScriptRoot '..')
 $required=@(
@@ -22,6 +25,13 @@ $required=@(
   'Standalone\Resources\Manual\Support\SUPPORT.md',
   'Standalone\Resources\Manual\Support\SECURITY_RESPONSE.md',
   'Standalone\Resources\Manual\external-beta-documentation.json',
+  'Tools\seam_installer_verifier.exe',
+  'release-payload-manifest.json',
+  'release-dependency-closure.json',
+  'Trust\release-trust-roots.json',
+  'Trust\update-root-public-key.json',
+  'Ownership\installer-ownership.json',
+  'Notices\openssl-LICENSE.txt',
   'RELEASE_IDENTITY.json',
   'CLAP\ProjectSEAMEditor.clap',
   'CLAP\ProjectSEAMEditor.resources',
@@ -32,7 +42,12 @@ $required=@(
   'Documentation\external-beta-documentation.json'
 )
 foreach($item in $required){if(-not(Test-Path(Join-Path $PayloadRoot $item))){throw "Missing payload: $item"}}
-$identity = Get-Content (Join-Path $PayloadRoot 'RELEASE_IDENTITY.json') -Raw | ConvertFrom-Json
+$verifyScript = Join-Path $root 'scripts\verify_release_payload_manifest.py'
+$verifiedPayloadRoot = & python $verifyScript --payload $PayloadRoot --platform windows-x64 --field root
+if ($LASTEXITCODE -ne 0) { throw 'Sealed Windows payload verification failed' }
+$PayloadRoot = $verifiedPayloadRoot.Trim()
+$manifest = Get-Content (Join-Path $PayloadRoot 'release-payload-manifest.json') -Raw | ConvertFrom-Json
+$identity = $manifest.releaseIdentity
 $payloadVersion = [string]$identity.version
 $payloadBuildId = [string]$identity.buildId
 $payloadSourceCommit = [string]$identity.sourceCommit
@@ -52,6 +67,26 @@ if ($LASTEXITCODE -ne 0 -or $versionOutput -notmatch '^v?3\.12') { throw "NSIS 3
 $escapedPayload=(Resolve-Path $PayloadRoot).Path
 $outputPath=[System.IO.Path]::GetFullPath($OutputInstaller)
 New-Item -ItemType Directory -Force ([System.IO.Path]::GetDirectoryName($outputPath)) | Out-Null
-& makensis.exe /V4 "/DPAYLOAD_ROOT=$escapedPayload" "/DOUTPUT_EXE=$outputPath" "/DPRODUCT_VERSION=$ProductVersion" "/DBUILD_ID=$BuildId" "/DSOURCE_COMMIT=$SourceCommit" (Join-Path $root 'packaging\windows\ProjectSEAM.nsi')
+$arguments = @(
+  '/V4',
+  "/DPAYLOAD_ROOT=$escapedPayload",
+  "/DOUTPUT_EXE=$outputPath",
+  "/DPRODUCT_VERSION=$ProductVersion",
+  "/DBUILD_ID=$BuildId",
+  "/DSOURCE_COMMIT=$SourceCommit"
+)
+if ($SignUninstaller -or $DevelopmentSignUninstaller) {
+  $developmentArgument = ''
+  if ($DevelopmentSignUninstaller) { $developmentArgument = ' -DevelopmentOnly' }
+  if ($SignUninstaller) {
+    & python (Join-Path $root 'scripts\verify_production_signing_input.py') --payload $PayloadRoot
+    if ($LASTEXITCODE -ne 0) { throw 'Uninstaller signing input is not production-eligible' }
+  }
+  $signer = Join-Path $root 'scripts\sign_windows_file.ps1'
+  $command = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$signer`" -PayloadRoot `"$escapedPayload`"$developmentArgument -FilePath"
+  $arguments += "/DUNINSTALLER_SIGN_COMMAND=$command"
+}
+$arguments += (Join-Path $root 'packaging\windows\ProjectSEAM.nsi')
+& makensis.exe @arguments
 if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
 if(-not(Test-Path $outputPath -PathType Leaf)){throw 'NSIS did not create the installer'}

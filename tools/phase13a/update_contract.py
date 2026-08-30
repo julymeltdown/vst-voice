@@ -16,6 +16,7 @@ from typing import Any, Mapping
 
 
 SCHEMA_VERSION = 1
+HANDOFF_SCHEMA_VERSION = 2
 HEX64 = re.compile(r"^[0-9a-f]{64}$")
 KEY_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,95}$")
 SAFE_FILENAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
@@ -288,7 +289,15 @@ def _validate_ranges(value: Any, label: str, errors: list[str]) -> None:
             number = range_value.get(field)
             if not isinstance(number, int) or isinstance(number, bool) or number < 0:
                 errors.append(f"{label}.{name}.{field} must be a non-negative integer")
-        if isinstance(range_value.get("min"), int) and isinstance(range_value.get("max"), int) and range_value["min"] > range_value["max"]:
+        minimum = range_value.get("min")
+        maximum = range_value.get("max")
+        if (
+            isinstance(minimum, int)
+            and not isinstance(minimum, bool)
+            and isinstance(maximum, int)
+            and not isinstance(maximum, bool)
+            and minimum > maximum
+        ):
             errors.append(f"{label}.{name}.min cannot exceed max")
 
 
@@ -456,9 +465,11 @@ def stage_verified_package(package: Path, manifest: Mapping[str, Any], staging_r
     _copy_nofollow(package, destination)
     copied_stat = destination.stat()
     handoff = {
-        "schemaVersion": SCHEMA_VERSION,
+        "schemaVersion": HANDOFF_SCHEMA_VERSION,
         "purpose": "sealed-installer-handoff",
         "candidateId": candidate_root.name,
+        "platform": manifest.get("platform"),
+        "publisherKeyId": manifest.get("signature", {}).get("keyId"),
         "manifestSha256": manifest_identity(manifest),
         "package": {
             "fileName": filename,
@@ -470,7 +481,8 @@ def stage_verified_package(package: Path, manifest: Mapping[str, Any], staging_r
         },
         "requiresExplicitUserAction": True,
         "requiresInstallerRevalidation": True,
-        "createdAt": _now().isoformat().replace("+00:00", "Z"),
+        "createdAt": manifest.get("issuedAt"),
+        "expiresAt": manifest.get("expiresAt"),
     }
     handoff_path = candidate_root / "handoff.json"
     handoff_path.write_bytes(canonical_json(handoff, include_signature=True) + b"\n")
@@ -480,12 +492,18 @@ def stage_verified_package(package: Path, manifest: Mapping[str, Any], staging_r
 
 def verify_sealed_handoff(handoff: Mapping[str, Any], manifest: Mapping[str, Any], staging_root: Path) -> list[str]:
     errors: list[str] = []
-    if handoff.get("schemaVersion") != SCHEMA_VERSION or handoff.get("purpose") != "sealed-installer-handoff":
+    if handoff.get("schemaVersion") != HANDOFF_SCHEMA_VERSION or handoff.get("purpose") != "sealed-installer-handoff":
         errors.append("handoff schema or purpose is invalid")
     if not handoff.get("requiresExplicitUserAction") or not handoff.get("requiresInstallerRevalidation"):
         errors.append("handoff must require explicit user action and installer revalidation")
     if handoff.get("manifestSha256") != manifest_identity(manifest):
         errors.append("handoff is bound to a different manifest")
+    if handoff.get("platform") != manifest.get("platform"):
+        errors.append("handoff platform differs from signed manifest")
+    if handoff.get("publisherKeyId") != manifest.get("signature", {}).get("keyId"):
+        errors.append("handoff publisher differs from signed manifest")
+    if handoff.get("createdAt") != manifest.get("issuedAt") or handoff.get("expiresAt") != manifest.get("expiresAt"):
+        errors.append("handoff freshness window differs from signed manifest")
     package = handoff.get("package")
     if not isinstance(package, Mapping):
         return errors + ["handoff.package must be an object"]

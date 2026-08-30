@@ -2,6 +2,9 @@ Unicode true
 RequestExecutionLevel admin
 SetCompressor zlib
 
+!include "FileFunc.nsh"
+!include "LogicLib.nsh"
+
 !ifndef PAYLOAD_ROOT
   !error "PAYLOAD_ROOT is required"
 !endif
@@ -16,6 +19,10 @@ SetCompressor zlib
 !endif
 !ifndef SOURCE_COMMIT
   !error "SOURCE_COMMIT is required"
+!endif
+
+!ifdef UNINSTALLER_SIGN_COMMAND
+  !uninstfinalize '${UNINSTALLER_SIGN_COMMAND} "%1"'
 !endif
 
 Name "Project SEAM"
@@ -35,12 +42,44 @@ VIAddVersionKey "BuildId" "${BUILD_ID}"
 VIAddVersionKey "SourceCommit" "${SOURCE_COMMIT}"
 VIAddVersionKey "LegalCopyright" "Project SEAM"
 
+Function .onInit
+  InitPluginsDir
+  SetOutPath "$PLUGINSDIR"
+  File /oname=seam_installer_verifier.exe "${PAYLOAD_ROOT}\Tools\seam_installer_verifier.exe"
+  ${GetParameters} $0
+  ${GetOptions} $0 "/HANDOFF=" $1
+  ${GetOptions} $0 "/MANIFEST=" $2
+  ${GetOptions} $0 "/POLICY=" $3
+  ${GetOptions} $0 "/HANDOFFSHA256=" $4
+  ${GetOptions} $0 "/STAGINGROOT=" $5
+  ${GetOptions} $0 "/CANDIDATE=" $7
+  ${If} $1 == ""
+  ${OrIf} $2 == ""
+  ${OrIf} $3 == ""
+  ${OrIf} $4 == ""
+  ${OrIf} $5 == ""
+  ${OrIf} $7 == ""
+    MessageBox MB_OK|MB_ICONSTOP "Project SEAM installer trust inputs are incomplete." /SD IDOK
+    Abort
+  ${EndIf}
+  nsExec::ExecToStack '"$PLUGINSDIR\seam_installer_verifier.exe" --handoff "$1" --manifest "$2" --policy "$3" --staging-root "$5" --expected-candidate "$7" --expected-handoff-sha256 "$4"'
+  Pop $R0
+  Pop $R1
+  ${If} $R0 != 0
+    MessageBox MB_OK|MB_ICONSTOP "Project SEAM installer handoff verification failed: $R1" /SD IDOK
+    Abort
+  ${EndIf}
+FunctionEnd
+
 Section "Project SEAM" SEC_MAIN
   SetShellVarContext all
 
   SetOutPath "$INSTDIR"
   File /oname=ProjectSEAM.exe "${PAYLOAD_ROOT}\Standalone\seam_editor_native.exe"
   File "${PAYLOAD_ROOT}\RELEASE_IDENTITY.json"
+  File "${PAYLOAD_ROOT}\release-payload-manifest.json"
+  File "${PAYLOAD_ROOT}\release-dependency-closure.json"
+  File "${PAYLOAD_ROOT}\Tools\seam_installer_verifier.exe"
   WriteUninstaller "$INSTDIR\Uninstall.exe"
 
   SetOutPath "$INSTDIR\Resources"
@@ -57,10 +96,16 @@ Section "Project SEAM" SEC_MAIN
   SetOutPath "$COMMONFILES64\VST3\ProjectSEAMEditor.vst3"
   File /r "${PAYLOAD_ROOT}\VST3\ProjectSEAMEditor.vst3\*.*"
 
-  SetOutPath "$COMMONAPPDATA\ProjectSEAM"
+  SetOutPath "$APPDATA\ProjectSEAM"
   File "${PAYLOAD_ROOT}\THIRD_PARTY_NOTICES.md"
   File "${PAYLOAD_ROOT}\SBOM.spdx.json"
-  SetOutPath "$COMMONAPPDATA\ProjectSEAM\Documentation"
+  SetOutPath "$APPDATA\ProjectSEAM\Trust"
+  File /r "${PAYLOAD_ROOT}\Trust\*.*"
+  SetOutPath "$APPDATA\ProjectSEAM\Ownership"
+  File /r "${PAYLOAD_ROOT}\Ownership\*.*"
+  SetOutPath "$APPDATA\ProjectSEAM\Notices"
+  File /r "${PAYLOAD_ROOT}\Notices\*.*"
+  SetOutPath "$APPDATA\ProjectSEAM\Documentation"
   File /r "${PAYLOAD_ROOT}\Documentation\*.*"
 
   CreateDirectory "$SMPROGRAMS\Project SEAM"
@@ -85,12 +130,18 @@ Section "Uninstall"
   Delete "$COMMONFILES64\CLAP\ProjectSEAMEditor.clap"
   RMDir /r "$COMMONFILES64\CLAP\ProjectSEAMEditor.resources"
   RMDir /r "$COMMONFILES64\VST3\ProjectSEAMEditor.vst3"
-  Delete "$COMMONAPPDATA\ProjectSEAM\THIRD_PARTY_NOTICES.md"
-  Delete "$COMMONAPPDATA\ProjectSEAM\SBOM.spdx.json"
-  RMDir /r "$COMMONAPPDATA\ProjectSEAM\Documentation"
-  RMDir "$COMMONAPPDATA\ProjectSEAM"
+  Delete "$APPDATA\ProjectSEAM\THIRD_PARTY_NOTICES.md"
+  Delete "$APPDATA\ProjectSEAM\SBOM.spdx.json"
+  RMDir /r "$APPDATA\ProjectSEAM\Documentation"
+  RMDir /r "$APPDATA\ProjectSEAM\Trust"
+  RMDir /r "$APPDATA\ProjectSEAM\Ownership"
+  RMDir /r "$APPDATA\ProjectSEAM\Notices"
+  RMDir "$APPDATA\ProjectSEAM"
   Delete "$INSTDIR\ProjectSEAM.exe"
   Delete "$INSTDIR\RELEASE_IDENTITY.json"
+  Delete "$INSTDIR\release-payload-manifest.json"
+  Delete "$INSTDIR\release-dependency-closure.json"
+  Delete "$INSTDIR\seam_installer_verifier.exe"
   RMDir /r "$INSTDIR\Resources"
   Delete "$INSTDIR\Uninstall.exe"
   RMDir "$INSTDIR"

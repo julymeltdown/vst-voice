@@ -3,9 +3,11 @@
   <title>Project SEAM</title>
   <organization>com.project-seam</organization>
   <domains enable_localSystem="true" />
-  <options customize="never" require-scripts="false" />
-  <choices-outline><line choice="default"><line choice="plugins" /></line></choices-outline>
+  <options customize="never" require-scripts="true" />
+  <choices-outline><line choice="default"><line choice="standalone" /><line choice="plugins" /></line></choices-outline>
   <choice id="default" />
+  <choice id="standalone" visible="false"><pkg-ref id="com.project-seam.standalone" /></choice>
   <choice id="plugins" visible="false"><pkg-ref id="com.project-seam.plugins" /></choice>
+  <pkg-ref id="com.project-seam.standalone" version="@PROJECT_SEAM_VERSION@" onConclusion="none">ProjectSEAM-standalone.pkg</pkg-ref>
   <pkg-ref id="com.project-seam.plugins" version="@PROJECT_SEAM_VERSION@" onConclusion="none">ProjectSEAM-plugins.pkg</pkg-ref>
 </installer-gui-script>

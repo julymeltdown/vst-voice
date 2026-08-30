@@ -13,6 +13,10 @@ on:
       - 'scripts/attach_phase13a_validation.py'
       - 'scripts/verify_phase13a_vst3_packet.py'
       - 'scripts/fetch_phase13a_dependencies.py'
+      - 'scripts/assemble_release_payload.py'
+      - 'scripts/verify_release_dependency_closure.py'
+      - 'scripts/verify_release_payload_manifest.py'
+      - 'scripts/create_development_installer_handoff.py'
       - 'scripts/build_windows_installer.ps1'
       - 'scripts/package_macos_plugins.sh'
       - 'tools/phase13a/**'
@@ -27,6 +31,7 @@ env:
   CLAP_WRAPPER_COMMIT: 35f524b771ec09f54c164720bb90f271273b37d3
   VST3SDK_COMMIT: 3cdf9ca5d1f5b1b21e0a86832aa4abe55607bd96
   AUDIOUNITSDK_COMMIT: bd98b31feff57a15989fcfab4cd86dc63382b1ac
+  OPENSSL_COMMIT: 8cf17aaeb4599f8af87fefd810b5b5fee90fe69e
   NSIS_VERSION: '3.12'
 
 jobs:
@@ -83,6 +88,8 @@ jobs:
       - name: Acquire exact audited SDK checkouts
         shell: bash
         run: python3 scripts/fetch_phase13a_dependencies.py --output "$RUNNER_TEMP/phase13a-deps"
+      - uses: ilammy/msvc-dev-cmd@v1
+        if: runner.os == 'Windows'
       - name: Verify exact dependency revisions
         shell: bash
         run: python3 scripts/fetch_phase13a_dependencies.py --output "$RUNNER_TEMP/phase13a-deps" --verify-only
@@ -207,14 +214,17 @@ jobs:
         run: |
           rm -rf out/phase13a/payload
           mkdir -p out/phase13a/payload
-          if test -d "$RUNNER_TEMP/phase13a-build/artifacts"; then cp -R "$RUNNER_TEMP/phase13a-build/artifacts/." out/phase13a/payload/; fi
+          if test -d "$RUNNER_TEMP/phase13a-build/artifacts"; then
+            cp -R "$RUNNER_TEMP/phase13a-build/artifacts/." out/phase13a/payload/
+            tar -C out/phase13a -czf out/phase13a/payload-macos.tar.gz payload
+          fi
           if test -f "$RUNNER_TEMP/phase13a-build/phase13a-build-result.json"; then cp "$RUNNER_TEMP/phase13a-build/phase13a-build-result.json" out/phase13a/; fi
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: phase13a-auv2-macos
           path: |
-            out/phase13a/payload
+            out/phase13a/payload-macos.tar.gz
             out/phase13a/macos/auval
             out/phase13a/phase13a-build-result.json
 
@@ -223,6 +233,7 @@ jobs:
     runs-on: windows-2025
     steps:
       - uses: actions/checkout@v4
+      - uses: ilammy/msvc-dev-cmd@v1
       - uses: actions/download-artifact@v4
         with:
           name: phase13a-vst3-Windows
@@ -230,18 +241,27 @@ jobs:
       - name: Install exact NSIS build tool
         shell: powershell
         run: choco install nsis --version $env:NSIS_VERSION --no-progress -y
+      - name: Create development-only uninstaller signing identity
+        shell: powershell
+        run: |
+          $cert = New-SelfSignedCertificate -Type CodeSigningCert -Subject 'CN=Project SEAM Development Test' -CertStoreLocation Cert:\CurrentUser\My
+          Export-Certificate -Cert $cert -FilePath "$env:RUNNER_TEMP\project-seam-development.cer" | Out-Null
+          Import-Certificate -FilePath "$env:RUNNER_TEMP\project-seam-development.cer" -CertStoreLocation Cert:\CurrentUser\Root | Out-Null
+          "WINDOWS_DEVELOPMENT_SIGN_CERT_SHA1=$($cert.Thumbprint)" | Out-File -FilePath $env:GITHUB_ENV -Append
       - name: Locate downloaded payload and build unsigned installer
         shell: powershell
         run: |
           $payload = Get-ChildItem "$env:RUNNER_TEMP\phase13a-payload" -Directory -Recurse | Where-Object { Test-Path (Join-Path $_.FullName 'CLAP\ProjectSEAMEditor.clap') } | Select-Object -First 1
           if (-not $payload) { throw 'Downloaded Windows payload root was not found' }
           $version = (& python tools/phase13a/release_identity.py --source-root . --field version).Trim()
-          ./scripts/build_windows_installer.ps1 -PayloadRoot $payload.FullName -OutputInstaller "$env:RUNNER_TEMP\ProjectSEAM-$version-unsigned.exe"
+          ./scripts/build_windows_installer.ps1 -PayloadRoot $payload.FullName -OutputInstaller "$env:RUNNER_TEMP\ProjectSEAM-$version-unsigned.exe" -DevelopmentSignUninstaller
       - name: Clean install, same-version reinstall, and uninstall
         shell: powershell
         run: |
           $version = (& python tools/phase13a/release_identity.py --source-root . --field version).Trim()
-          ./scripts/test_windows_installer.ps1 -Installer "$env:RUNNER_TEMP\ProjectSEAM-$version-unsigned.exe" -EvidenceDirectory out\phase13a\windows\installer-clean
+          $payload = Get-ChildItem "$env:RUNNER_TEMP\phase13a-payload" -Directory -Recurse | Where-Object { Test-Path (Join-Path $_.FullName 'Tools\seam_installer_verifier.exe') } | Select-Object -First 1
+          if (-not $payload) { throw 'Downloaded Windows verifier payload root was not found' }
+          ./scripts/test_windows_installer.ps1 -Installer "$env:RUNNER_TEMP\ProjectSEAM-$version-unsigned.exe" -EvidenceDirectory out\phase13a\windows\installer-clean -Verifier (Join-Path $payload.FullName 'Tools\seam_installer_verifier.exe')
       - uses: actions/upload-artifact@v4
         with:
           name: phase13a-windows-unsigned-installer-smoke
@@ -258,16 +278,31 @@ jobs:
         with:
           name: phase13a-auv2-macos
           path: ${{ runner.temp }}/phase13a-payload
+      - name: Extract mode-preserving macOS payload
+        run: |
+          archive="$(find "$RUNNER_TEMP/phase13a-payload" -type f -name payload-macos.tar.gz -print -quit)"
+          test -n "$archive"
+          tar -xzf "$archive" -C "$RUNNER_TEMP/phase13a-payload"
       - name: Locate downloaded payload and build unsigned PKG
         run: |
           payload="$(find "$RUNNER_TEMP/phase13a-payload" -type d -name CLAP -print | head -1 | xargs dirname)"
           test -n "$payload" && test -e "$payload/CLAP/ProjectSEAMEditor.clap"
+          mach_o_count=0
+          while IFS= read -r -d '' binary; do
+            if file "$binary" | grep -q 'Mach-O'; then
+              test -x "$binary"
+              mach_o_count=$((mach_o_count + 1))
+            fi
+          done < <(find "$payload/Standalone" "$payload/CLAP" "$payload/VST3" "$payload/AU" "$payload/Tools" -type f -print0)
+          test "$mach_o_count" -ge 5
           version="$(python3 tools/phase13a/release_identity.py --source-root . --field version)"
           bash scripts/package_macos_plugins.sh "$payload" "$RUNNER_TEMP/ProjectSEAM-${version}-unsigned.pkg" --unsigned
       - name: Clean install, same-version reinstall, and uninstall
         run: |
+          payload="$(find "$RUNNER_TEMP/phase13a-payload" -type d -name CLAP -print | head -1 | xargs dirname)"
+          test -x "$payload/Tools/seam_installer_verifier"
           version="$(python3 tools/phase13a/release_identity.py --source-root . --field version)"
-          bash scripts/test_macos_installer.sh "$RUNNER_TEMP/ProjectSEAM-${version}-unsigned.pkg" out/phase13a/macos/installer-clean
+          bash scripts/test_macos_installer.sh "$RUNNER_TEMP/ProjectSEAM-${version}-unsigned.pkg" out/phase13a/macos/installer-clean "$payload/Tools/seam_installer_verifier"
       - uses: actions/upload-artifact@v4
         with:
           name: phase13a-macos-unsigned-installer-smoke

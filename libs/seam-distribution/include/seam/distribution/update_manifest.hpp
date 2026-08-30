@@ -5,6 +5,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <filesystem>
 #include <map>
 #include <optional>
 #include <span>
@@ -83,11 +84,23 @@ struct SealedInstallerHandoff final {
   std::int64_t schemaVersion{0};
   std::string purpose;
   std::string candidateId;
+  std::string platform;
+  std::string publisherKeyId;
   std::string manifestSha256;
   SealedUpdatePackage package;
   bool requiresExplicitUserAction{false};
   bool requiresInstallerRevalidation{false};
   std::string createdAt;
+  std::string expiresAt;
+};
+
+struct InstallerHandoffVerificationOptions final {
+  std::string_view expectedCandidateId;
+  std::string_view expectedPlatform;
+  std::string_view expectedPublisherKeyId;
+  std::string_view now;
+  std::filesystem::path replayStateRoot;
+  bool consume{false};
 };
 
 [[nodiscard]] core::Result<UpdateManifest> parseUpdateManifest(
@@ -113,6 +126,7 @@ struct SealedInstallerHandoff final {
     std::string_view json);
 [[nodiscard]] core::Result<void> verifySealedInstallerHandoff(
     const SealedInstallerHandoff& handoff, const UpdateManifest& manifest,
-    const std::filesystem::path& stagingRoot);
+    const std::filesystem::path& stagingRoot,
+    const InstallerHandoffVerificationOptions& options = {});
 
 }

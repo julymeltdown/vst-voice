@@ -2,10 +2,20 @@
   "schemaVersion": 1,
   "platform": "macos-arm64",
   "ownedPaths": [
+    "Applications/Project SEAM.app",
     "Library/Audio/Plug-Ins/CLAP/ProjectSEAMEditor.clap",
     "Library/Audio/Plug-Ins/VST3/ProjectSEAMEditor.vst3",
     "Library/Audio/Plug-Ins/Components/ProjectSEAMEditor.component",
     "Library/Application Support/ProjectSEAM/Documentation",
+    "Library/Application Support/ProjectSEAM/Trust",
+    "Library/Application Support/ProjectSEAM/Ownership",
+    "Library/Application Support/ProjectSEAM/Notices",
+    "Library/Application Support/ProjectSEAM/Tools/seam_installer_verifier",
+    "Library/Application Support/ProjectSEAM/RELEASE_IDENTITY.json",
+    "Library/Application Support/ProjectSEAM/release-payload-manifest.json",
+    "Library/Application Support/ProjectSEAM/release-dependency-closure.json",
+    "Library/Application Support/ProjectSEAM/THIRD_PARTY_NOTICES.md",
+    "Library/Application Support/ProjectSEAM/SBOM.spdx.json",
     "Library/Application Support/ProjectSEAM/uninstall_macos_plugins.sh"
   ],
   "preservedUserRoots": [
@@ -15,6 +25,13 @@
     "UserLibrary/Application Support/ProjectSEAM/Autosaves",
     "UserLibrary/Application Support/ProjectSEAM/Recovery",
     "UserLibrary/Application Support/ProjectSEAM/CrashReports"
+  ],
+  "preservedSystemRoots": [
+    "Library/Application Support/ProjectSEAM/InstallerReplay"
+  ],
+  "ownedPackageReceipts": [
+    "com.project-seam.plugins",
+    "com.project-seam.standalone"
   ],
   "destructiveDataRemoval": "separate-explicit-action"
 }

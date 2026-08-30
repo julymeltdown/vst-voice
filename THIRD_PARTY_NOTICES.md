@@ -17,13 +17,16 @@ font files and does not accept fonts embedded in projects, voicebanks, or
 Project SEAM selects the MIT License. The complete upstream license text is
 included at `third_party/stb/LICENSE`.
 
-## System libraries and APIs
-
 ### OpenSSL 3 Crypto
 
-Phase 7 and later builds link the system OpenSSL 3 Crypto library for Ed25519
-signing and verification. OpenSSL 3 is available under the Apache License 2.0.
-The repository archive does not redistribute libcrypto.
+Project SEAM distribution builds statically link OpenSSL 3.5.7 Crypto from the
+official `openssl/openssl` repository at immutable revision
+`8cf17aaeb4599f8af87fefd810b5b5fee90fe69e` for Ed25519 signing and
+verification. OpenSSL is available under the Apache License 2.0. The exact
+upstream `LICENSE.txt` is copied into each assembled distribution payload.
+Project SEAM does not ship a dynamically loaded OpenSSL runtime.
+
+## System libraries and APIs
 
 ### Linux
 
@@ -97,6 +100,7 @@ The following exact checkouts are used only on target build/validation runners a
 - **clap-wrapper 0.15.1**, commit `35f524b771ec09f54c164720bb90f271273b37d3`, MIT.
 - **Steinberg VST3 SDK 3.8.1**, commit `3cdf9ca5d1f5b1b21e0a86832aa4abe55607bd96` with locked recursive submodules, MIT.
 - **Apple AudioUnitSDK 1.4.0**, commit `bd98b31feff57a15989fcfab4cd86dc63382b1ac`, Apache-2.0.
+- **OpenSSL 3.5.7**, commit `8cf17aaeb4599f8af87fefd810b5b5fee90fe69e`, Apache-2.0; compiled as a static Crypto archive and linked into shipping binaries.
 
 The acquisition script verifies exact revisions and licence files and forbids wrapper-time network dependency resolution. VST3 and AUv2 distributables must carry the notices required by their actual resolved source closure.
 

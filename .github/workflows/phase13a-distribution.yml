@@ -14,6 +14,7 @@ env:
   CLAP_WRAPPER_COMMIT: 35f524b771ec09f54c164720bb90f271273b37d3
   VST3SDK_COMMIT: 3cdf9ca5d1f5b1b21e0a86832aa4abe55607bd96
   AUDIOUNITSDK_COMMIT: bd98b31feff57a15989fcfab4cd86dc63382b1ac
+  OPENSSL_COMMIT: 8cf17aaeb4599f8af87fefd810b5b5fee90fe69e
 
 jobs:
   validate-dispatch:
@@ -27,6 +28,8 @@ jobs:
     runs-on: windows-2025
     steps:
       - uses: actions/checkout@v4
+      - name: Refuse development trust before loading release credentials
+        run: python scripts/verify_production_signing_input.py --source-root .
       - name: Require real Windows signing credentials
         shell: pwsh
         run: |
@@ -36,6 +39,7 @@ jobs:
           "WINDOWS_SIGN_CERT_SHA1=$($cert.Thumbprint)" | Out-File -FilePath $env:GITHUB_ENV -Append
       - name: Install exact NSIS 3.12 build tool
         run: choco install nsis --version 3.12 --no-progress -y
+      - uses: ilammy/msvc-dev-cmd@v1
       - name: Acquire exact audited SDKs
         run: python scripts/fetch_phase13a_dependencies.py --output "$env:RUNNER_TEMP\phase13a-deps"
       - name: Build VST3/CLAP
@@ -86,12 +90,12 @@ jobs:
         run: |
           $version = (& python tools/phase13a/release_identity.py --source-root . --field version).Trim()
           $installer = "$env:RUNNER_TEMP\ProjectSEAM-$version.exe"
-          pwsh scripts/build_windows_installer.ps1 -PayloadRoot "$env:RUNNER_TEMP\payload" -OutputInstaller $installer
-          pwsh scripts/sign_windows_installer.ps1 -Installer $installer -EvidenceDirectory out\phase13a\windows\installer-signing
+          pwsh scripts/build_windows_installer.ps1 -PayloadRoot "$env:RUNNER_TEMP\payload" -OutputInstaller $installer -SignUninstaller
+          pwsh scripts/sign_windows_installer.ps1 -PayloadRoot "$env:RUNNER_TEMP\payload" -Installer $installer -EvidenceDirectory out\phase13a\windows\installer-signing
       - name: Mandatory clean-install, same-version update and uninstall
         run: |
           $version = (& python tools/phase13a/release_identity.py --source-root . --field version).Trim()
-          pwsh scripts/test_windows_installer.ps1 -Installer "$env:RUNNER_TEMP\ProjectSEAM-$version.exe" -EvidenceDirectory out\phase13a\windows\installer-clean
+          pwsh scripts/test_windows_installer.ps1 -Installer "$env:RUNNER_TEMP\ProjectSEAM-$version.exe" -EvidenceDirectory out\phase13a\windows\installer-clean -Verifier "$env:RUNNER_TEMP\payload\Tools\seam_installer_verifier.exe"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -105,6 +109,8 @@ jobs:
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
+      - name: Refuse development trust before loading release credentials
+        run: python3 scripts/verify_production_signing_input.py --source-root .
       - name: Require and import real Apple certificates
         env:
           APP_CERT: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION_P12 }}
@@ -197,7 +203,7 @@ jobs:
       - name: Mandatory clean-install, update and uninstall
         run: |
           version="$(python3 tools/phase13a/release_identity.py --source-root . --field version)"
-          scripts/test_macos_installer.sh "$RUNNER_TEMP/ProjectSEAM-${version}.pkg" out/phase13a/macos/installer-clean
+          scripts/test_macos_installer.sh "$RUNNER_TEMP/ProjectSEAM-${version}.pkg" out/phase13a/macos/installer-clean "$RUNNER_TEMP/payload/Tools/seam_installer_verifier"
       - uses: actions/upload-artifact@v4
         if: always()
         with:

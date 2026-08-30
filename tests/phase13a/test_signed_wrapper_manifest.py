@@ -7,9 +7,10 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from tools.phase13a import distribution_manifest
+
+
 ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT / "tools" / "phase13a"))
-import distribution_manifest  # noqa: E402
 
 
 class SignedWrapperManifestTests(unittest.TestCase):
@@ -44,6 +45,13 @@ class SignedWrapperManifestTests(unittest.TestCase):
                             identifier,
                             "0" * 64,
                             path,
+                            {
+                                "product": "Project SEAM",
+                                "version": "0.13.1",
+                                "buildId": "signed-test",
+                                "sourceCommit": "a" * 40,
+                                "buildEpoch": 1,
+                            },
                         )
                     ),
                     encoding="utf-8",
@@ -60,6 +68,7 @@ class SignedWrapperManifestTests(unittest.TestCase):
                 manifest_path = path / "Contents" / "Resources" / "wrapper-manifest.json"
                 manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
                 self.assertEqual(clap_sha, manifest["canonicalClapSha256"])
+                self.assertEqual("signed-test", manifest["releaseIdentity"]["buildId"])
                 (path / "Contents" / "MacOS" / "module").write_bytes(b"post-signature")
                 (path / "Contents" / "_CodeSignature").mkdir(parents=True)
                 (path / "Contents" / "_CodeSignature" / "CodeResources").write_bytes(b"codesign")

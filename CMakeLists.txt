@@ -30,6 +30,32 @@ option(SEAM_ENABLE_IPLUG2_SKIA "Enable the optional iPlug2 + Skia shell adapter"
 option(SEAM_BUILD_NATIVE_DESKTOP "Build the first-party native desktop editor" ON)
 option(SEAM_BUILD_CLAP_PLUGIN "Build the Project SEAM CLAP render-player plug-in" ON)
 option(SEAM_BUILD_CLAP_EDITOR_PLUGIN "Build the Project SEAM embedded-editor CLAP plug-in" ON)
+option(SEAM_REQUIRE_STATIC_OPENSSL
+  "Require a pinned static OpenSSL Crypto archive for distribution builds" OFF)
+set(SEAM_OPENSSL_SOURCE_COMMIT "" CACHE STRING
+    "Pinned OpenSSL source commit used by distribution builds")
+set(SEAM_INSTALLER_ROOT_PUBLIC_KEY_FILE
+    "${CMAKE_CURRENT_SOURCE_DIR}/packaging/trust/update-root-public-key.json")
+file(READ "${SEAM_INSTALLER_ROOT_PUBLIC_KEY_FILE}"
+  SEAM_INSTALLER_ROOT_PUBLIC_KEY_JSON)
+string(JSON SEAM_INSTALLER_ROOT_PUBLIC_KEY_HEX GET
+  "${SEAM_INSTALLER_ROOT_PUBLIC_KEY_JSON}" publicKey)
+if(WIN32 AND CMAKE_SIZEOF_VOID_P EQUAL 8)
+  set(SEAM_INSTALLER_PLATFORM_DEFAULT "windows-x64")
+elseif(APPLE AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(arm64|aarch64)$")
+  set(SEAM_INSTALLER_PLATFORM_DEFAULT "macos-arm64")
+else()
+  set(SEAM_INSTALLER_PLATFORM_DEFAULT "unsupported")
+endif()
+set(SEAM_INSTALLER_PLATFORM "${SEAM_INSTALLER_PLATFORM_DEFAULT}" CACHE STRING
+    "Platform identity embedded in the installer verifier")
+string(LENGTH "${SEAM_INSTALLER_ROOT_PUBLIC_KEY_HEX}"
+  SEAM_INSTALLER_ROOT_PUBLIC_KEY_HEX_LENGTH)
+if(NOT SEAM_INSTALLER_ROOT_PUBLIC_KEY_HEX_LENGTH EQUAL 64 OR
+   NOT SEAM_INSTALLER_ROOT_PUBLIC_KEY_HEX MATCHES "^[0-9a-f]+$")
+  message(FATAL_ERROR
+    "SEAM_INSTALLER_ROOT_PUBLIC_KEY_HEX must be a lowercase 32-byte hexadecimal key")
+endif()
 option(SEAM_RUN_NATIVE_GUI_TESTS
   "Run target-host native editor and Voicebank Studio smoke tests" OFF)
 
@@ -46,7 +72,28 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 include(SeamCompilerOptions)
 
 find_package(Threads REQUIRED)
+if(SEAM_REQUIRE_STATIC_OPENSSL)
+  set(OPENSSL_USE_STATIC_LIBS TRUE)
+endif()
 find_package(OpenSSL 3.0 REQUIRED COMPONENTS Crypto)
+if(SEAM_REQUIRE_STATIC_OPENSSL)
+  string(LENGTH "${SEAM_OPENSSL_SOURCE_COMMIT}"
+    SEAM_OPENSSL_SOURCE_COMMIT_LENGTH)
+  if(NOT SEAM_OPENSSL_SOURCE_COMMIT_LENGTH EQUAL 40 OR
+     NOT SEAM_OPENSSL_SOURCE_COMMIT MATCHES "^[0-9a-f]+$")
+    message(FATAL_ERROR
+      "SEAM_OPENSSL_SOURCE_COMMIT must identify the pinned 40-character source commit")
+  endif()
+  if(WIN32)
+    if(NOT OPENSSL_CRYPTO_LIBRARY MATCHES "[\\/]libcrypto\\.lib$")
+      message(FATAL_ERROR
+        "Distribution builds require the pinned static libcrypto.lib archive; found ${OPENSSL_CRYPTO_LIBRARY}")
+    endif()
+  elseif(NOT OPENSSL_CRYPTO_LIBRARY MATCHES "[\\/]libcrypto\\.a$")
+    message(FATAL_ERROR
+      "Distribution builds require the pinned static libcrypto.a archive; found ${OPENSSL_CRYPTO_LIBRARY}")
+  endif()
+endif()
 find_package(Python3 COMPONENTS Interpreter)
 
 set(SEAM_RENDER_ABI_ID "seam-render-abi-4.1-r1")
@@ -600,6 +647,17 @@ add_executable(seam_bank_tool apps/seam-bank-tool/main.cpp)
 target_link_libraries(seam_bank_tool PRIVATE seam_distribution seam_voicebank seam_core)
 seam_apply_compiler_options(seam_bank_tool)
 
+add_executable(seam_installer_verifier apps/seam-installer-verifier/main.cpp)
+target_link_libraries(seam_installer_verifier PRIVATE
+  seam_distribution seam_formats seam_core)
+target_compile_definitions(seam_installer_verifier PRIVATE
+  SEAM_INSTALLER_PLATFORM="${SEAM_INSTALLER_PLATFORM}"
+  SEAM_INSTALLER_ROOT_PUBLIC_KEY_HEX="${SEAM_INSTALLER_ROOT_PUBLIC_KEY_HEX}")
+if(WIN32)
+  target_link_libraries(seam_installer_verifier PRIVATE shell32 ole32)
+endif()
+seam_apply_compiler_options(seam_installer_verifier)
+
 add_executable(seam_phase7_demo apps/seam-phase7-demo/main.cpp)
 target_link_libraries(seam_phase7_demo PRIVATE seam_distribution seam_voicebank seam_formats seam_core)
 seam_apply_compiler_options(seam_phase7_demo)
@@ -1144,6 +1202,7 @@ if(SEAM_BUILD_TESTS)
 
   add_executable(seam_update_manifest_tests
     tests/test_main.cpp
+    tests/test_installer_verifier.cpp
     tests/test_update_manifest.cpp
     tests/test_trust_policy.cpp)
   target_include_directories(seam_update_manifest_tests PRIVATE tests)

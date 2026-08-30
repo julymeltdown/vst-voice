@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-08-18",
+  "generatedAt": "2026-08-31",
   "policy": "PERMISSIVE_ONLY",
   "dependencies": [
     {
@@ -35,6 +35,14 @@
       "commit": "bd98b31feff57a15989fcfab4cd86dc63382b1ac",
       "license": "Apache-2.0",
       "purpose": "AUv2 wrapper SDK on macOS"
+    },
+    {
+      "name": "openssl",
+      "repository": "https://github.com/openssl/openssl.git",
+      "tag": "openssl-3.5.7",
+      "commit": "8cf17aaeb4599f8af87fefd810b5b5fee90fe69e",
+      "license": "Apache-2.0",
+      "purpose": "Pinned static OpenSSL 3 Crypto for shipping artifacts"
     }
   ]
 }

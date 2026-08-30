@@ -1,26 +1,30 @@
 import base64
 import hashlib
+import json
+import re
 import tempfile
 import unittest
 from datetime import datetime, timezone
 from pathlib import Path
-import sys
+from typing import Any
+
+from tools.phase13a import update_contract as contract
+
 
 ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT / "tools" / "phase13a"))
-
-import update_contract as contract  # noqa: E402
 
 
 class UpdateContractTests(unittest.TestCase):
     now = datetime(2026, 8, 21, 12, tzinfo=timezone.utc)
 
-    def policy_and_manifest(self):
+    def policy_and_manifest(
+        self,
+    ) -> tuple[bytes, dict[str, Any], dict[str, Any], bytes]:
         root_seed = bytes.fromhex("00" * 31 + "01")
         update_seed = bytes.fromhex("11" * 32)
         root_public = contract.ed25519_public_key(root_seed)
         update_public = contract.ed25519_public_key(update_seed)
-        policy = {
+        policy: dict[str, Any] = {
             "schemaVersion": 1,
             "purpose": "update-trust-policy",
             "channel": "external-beta",
@@ -49,7 +53,7 @@ class UpdateContractTests(unittest.TestCase):
             "value": base64.b64encode(contract.ed25519_sign(policy_payload, root_seed)).decode(),
         }
         package_bytes = b"signed candidate bytes"
-        manifest = {
+        manifest: dict[str, Any] = {
             "schemaVersion": 1,
             "purpose": "update-manifest",
             "channel": "external-beta",
@@ -102,10 +106,28 @@ class UpdateContractTests(unittest.TestCase):
             source.write_bytes(package_bytes)
             staging = root / "staging"
             handoff = contract.stage_verified_package(source, manifest, staging)
+            self.assertEqual(2, handoff["schemaVersion"])
+            self.assertEqual(manifest["platform"], handoff["platform"])
+            self.assertEqual(
+                manifest["signature"]["keyId"], handoff["publisherKeyId"]
+            )
+            self.assertEqual(manifest["expiresAt"], handoff["expiresAt"])
             self.assertEqual([], contract.verify_sealed_handoff(handoff, manifest, staging))
             candidate = staging / handoff["package"]["relativePath"]
             candidate.write_bytes(b"replacement")
             self.assertTrue(contract.verify_sealed_handoff(handoff, manifest, staging))
+
+    def test_handoff_schema_uses_the_native_canonical_utc_shape(self):
+        schema = json.loads(
+            (ROOT / "docs/product/external-beta-sealed-handoff.schema.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        for field in ("createdAt", "expiresAt"):
+            pattern = schema["properties"][field]["pattern"]
+            self.assertIsNotNone(re.fullmatch(pattern, "2026-08-31T12:34:56Z"))
+            self.assertIsNone(re.fullmatch(pattern, "2026-08-31T12:34:56.000Z"))
+            self.assertIsNone(re.fullmatch(pattern, "2026-08-31T21:34:56+09:00"))
 
 
 if __name__ == "__main__":

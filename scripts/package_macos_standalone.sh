@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-app="${1:?built ProjectSEAM.app is required}"
+payload="${1:?sealed macOS payload root is required}"
 output="${2:?output .app or .zip is required}"
 mode="${3:-}"
 root="$(cd "$(dirname "$0")/.." && pwd)"
+payload="$(python3 "$root/scripts/verify_release_payload_manifest.py" \
+  --payload "$payload" --platform macos-arm64 --field root)"
+app="$payload/Standalone/Project SEAM.app"
 
 [[ "$(uname -s)" == "Darwin" ]] || {
   echo 'macOS is required for standalone bundle packaging' >&2
@@ -62,6 +65,7 @@ fi
 if [[ "$mode" == "--unsigned" ]]; then
   echo 'MACOS_UNSIGNED_STANDALONE=PASS'
 else
+  python3 "$root/scripts/verify_production_signing_input.py" --payload "$payload"
   identity="${APPLE_DEVELOPER_ID_APPLICATION:?APPLE_DEVELOPER_ID_APPLICATION is required for signed standalone packaging}"
   codesign --force --options runtime --timestamp \
     --entitlements "$root/packaging/macos/ProjectSEAM.entitlements" \

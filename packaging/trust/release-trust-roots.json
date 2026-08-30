@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "purpose": "project-seam-release-trust-roots",
+  "testOnly": true,
+  "roots": [
+    {
+      "purpose": "update-root",
+      "keyId": "4a67330b803d5c88757afb9328615344a89c49839a07f1f76887ad62d06a1f57",
+      "publicKeyFile": "update-root-public-key.json"
+    }
+  ]
+}

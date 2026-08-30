@@ -7,9 +7,12 @@ from pathlib import Path
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "tools" / "phase13a"))
+sys.path.insert(0, str(ROOT))
 
-from distribution_manifest import build_wrapper_manifest, tree_sha256  # noqa: E402
+from tools.phase13a.distribution_manifest import (  # noqa: E402
+    build_wrapper_manifest,
+    tree_sha256,
+)
 
 
 def _read_manifest(path: Path) -> dict[str, object]:
@@ -31,6 +34,17 @@ def _manifest_path(path: Path) -> Path:
     raise ValueError(f"wrapper manifest is missing: {path}")
 
 
+def _release_identity(value: object) -> dict[str, str | int] | None:
+    if not isinstance(value, dict):
+        return None
+    identity: dict[str, str | int] = {}
+    for key, item in value.items():
+        if not isinstance(key, str) or not isinstance(item, (str, int)):
+            return None
+        identity[key] = item
+    return identity
+
+
 def _refresh(path: Path, clap_sha256: str, platform: str) -> None:
     manifest_path = _manifest_path(path)
     manifest = _read_manifest(manifest_path)
@@ -38,7 +52,17 @@ def _refresh(path: Path, clap_sha256: str, platform: str) -> None:
     architecture = manifest.get("architecture")
     version = manifest.get("version")
     bundle_identifier = manifest.get("bundleIdentifier")
-    if not all(isinstance(value, str) and value for value in (format_name, architecture, version, bundle_identifier)):
+    release_identity = manifest.get("releaseIdentity")
+    if (
+        not isinstance(format_name, str)
+        or not format_name
+        or not isinstance(architecture, str)
+        or not architecture
+        or not isinstance(version, str)
+        or not version
+        or not isinstance(bundle_identifier, str)
+        or not bundle_identifier
+    ):
         raise ValueError(f"wrapper manifest identity is incomplete: {manifest_path}")
     refreshed = build_wrapper_manifest(
         format_name,
@@ -48,6 +72,7 @@ def _refresh(path: Path, clap_sha256: str, platform: str) -> None:
         bundle_identifier,
         clap_sha256,
         path,
+        _release_identity(release_identity),
     )
     manifest_path.write_text(
         json.dumps(refreshed, indent=2, sort_keys=True) + "\n",

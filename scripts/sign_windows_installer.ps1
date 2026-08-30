@@ -1,8 +1,15 @@
 param(
+  [Parameter(Mandatory=$true)][string]$PayloadRoot,
   [Parameter(Mandatory=$true)][string]$Installer,
   [Parameter(Mandatory=$true)][string]$EvidenceDirectory
 )
 $ErrorActionPreference='Stop'
+$root=Resolve-Path (Join-Path $PSScriptRoot '..')
+$verifiedPayloadRoot = & python (Join-Path $root 'scripts\verify_release_payload_manifest.py') --payload $PayloadRoot --platform windows-x64 --field root
+if ($LASTEXITCODE -ne 0) { throw 'Sealed Windows payload verification failed' }
+$PayloadRoot = $verifiedPayloadRoot.Trim()
+& python (Join-Path $root 'scripts\verify_production_signing_input.py') --payload $PayloadRoot
+if ($LASTEXITCODE -ne 0) { throw 'Installer signing input is not production-eligible' }
 if (-not $env:WINDOWS_SIGN_CERT_SHA1) { throw 'WINDOWS_SIGN_CERT_SHA1 is required; installer signing fails closed' }
 if (-not (Get-Command signtool.exe -ErrorAction SilentlyContinue)) { throw 'signtool.exe is required' }
 if (-not (Test-Path $Installer -PathType Leaf)) { throw "Installer does not exist: $Installer" }

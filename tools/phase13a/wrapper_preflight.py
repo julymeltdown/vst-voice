@@ -12,12 +12,22 @@ from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(ROOT))
 
-from sdk_lock import load_lock, validate_checkout, validate_lock  # noqa: E402
+from tools.phase13a.sdk_lock import (  # noqa: E402
+    load_lock,
+    validate_checkout,
+    validate_lock,
+)
 
 
-EXPECTED_DEPENDENCIES = {"clap", "clap-wrapper", "vst3sdk", "AudioUnitSDK"}
+EXPECTED_DEPENDENCIES = {
+    "clap",
+    "clap-wrapper",
+    "vst3sdk",
+    "AudioUnitSDK",
+    "openssl",
+}
 ARCHITECTURES = {"arm64", "x86_64", "x64", "aarch64"}
 
 
@@ -45,7 +55,7 @@ def validate_preflight(*, lock: dict[str, Any], dependencies: Path, wrapper_proj
     errors = validate_lock(lock)
     dependency_names = {str(item.get("name")) for item in lock.get("dependencies", [])}
     if dependency_names != EXPECTED_DEPENDENCIES:
-        errors.append("dependency lock must contain exactly the four approved wrapper dependencies")
+        errors.append("dependency lock must contain exactly the five approved build dependencies")
     for dependency in lock.get("dependencies", []):
         if dependency.get("name") == "AudioUnitSDK" and not auv2:
             continue

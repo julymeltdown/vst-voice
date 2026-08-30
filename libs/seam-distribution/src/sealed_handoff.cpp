@@ -13,8 +13,14 @@
 #include <span>
 #include <system_error>
 
-#ifndef _WIN32
+#ifdef _WIN32
+#define NOMINMAX
+#include <windows.h>
+#else
+#include <cerrno>
+#include <fcntl.h>
 #include <sys/stat.h>
+#include <unistd.h>
 #endif
 
 namespace seam::distribution {
@@ -54,6 +60,23 @@ bool hex64(std::string_view value) noexcept {
   });
 }
 
+bool utcTimestamp(std::string_view value) noexcept {
+  if (value.size() != 20U || value.back() != 'Z') return false;
+  constexpr std::array<std::size_t, 5U> separators{4U, 7U, 10U, 13U, 16U};
+  constexpr std::array<char, 5U> expected{'-', '-', 'T', ':', ':'};
+  for (std::size_t index = 0; index < separators.size(); ++index) {
+    if (value[separators[index]] != expected[index]) return false;
+  }
+  for (std::size_t index = 0; index < value.size() - 1U; ++index) {
+    if (std::find(separators.begin(), separators.end(), index) !=
+        separators.end()) {
+      continue;
+    }
+    if (value[index] < '0' || value[index] > '9') return false;
+  }
+  return true;
+}
+
 core::Result<void> ensureRoot(const std::filesystem::path& root) {
   if (root.empty() || root == root.root_path()) {
     return core::failure(core::ErrorCode::InvalidArgument,
@@ -84,17 +107,226 @@ core::Result<void> ensureRoot(const std::filesystem::path& root) {
   return core::success();
 }
 
-std::pair<std::uint64_t, std::uint64_t> fileIdentity(
-    const std::filesystem::path& path) noexcept {
-#ifdef _WIN32
-  static_cast<void>(path);
-  return {0U, 0U};
-#else
+core::Result<void> validateExistingRoot(const std::filesystem::path& root) {
+  if (root.empty() || root == root.root_path()) {
+    return core::failure(core::ErrorCode::InvalidArgument,
+                         "Update staging root is invalid");
+  }
+  std::error_code error;
+  const auto status = std::filesystem::symlink_status(root, error);
+  if (error || std::filesystem::is_symlink(status) ||
+      !std::filesystem::is_directory(status)) {
+    return core::failure(core::ErrorCode::Conflict,
+                         "Update staging root must already be a real directory",
+                         root.string());
+  }
+#ifndef _WIN32
   struct stat info{};
-  if (::stat(path.c_str(), &info) != 0) return {0U, 0U};
-  return {static_cast<std::uint64_t>(info.st_dev),
-          static_cast<std::uint64_t>(info.st_ino)};
+  if (::stat(root.c_str(), &info) != 0 ||
+      (info.st_mode & (S_IWGRP | S_IWOTH)) != 0) {
+    return core::failure(core::ErrorCode::Conflict,
+                         "Update staging root permissions are unsafe",
+                         root.string());
+  }
 #endif
+  return core::success();
+}
+
+struct StableFileSnapshot final {
+  std::uint64_t size{0};
+  std::uint64_t device{0};
+  std::uint64_t inode{0};
+  std::string sha256;
+};
+
+core::Result<StableFileSnapshot> inspectStableRegularFile(
+    const std::filesystem::path& path, std::uint64_t maximumBytes) {
+#ifdef _WIN32
+  const HANDLE file = ::CreateFileW(
+      path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING,
+      FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
+  if (file == INVALID_HANDLE_VALUE) {
+    return core::failure<StableFileSnapshot>(
+        core::ErrorCode::IoError, "Unable to open sealed update package",
+        std::to_string(::GetLastError()));
+  }
+  BY_HANDLE_FILE_INFORMATION before{};
+  if (::GetFileInformationByHandle(file, &before) == 0 ||
+      (before.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0U) {
+    const auto error = ::GetLastError();
+    ::CloseHandle(file);
+    return core::failure<StableFileSnapshot>(
+        core::ErrorCode::Conflict, "Sealed update package handle is unsafe",
+        std::to_string(error));
+  }
+  const auto size = (static_cast<std::uint64_t>(before.nFileSizeHigh) << 32U) |
+                    before.nFileSizeLow;
+  if (size > maximumBytes) {
+    ::CloseHandle(file);
+    return core::failure<StableFileSnapshot>(
+        core::ErrorCode::Conflict, "Sealed update package is too large");
+  }
+  core::Sha256 hasher;
+  std::array<std::byte, 1024U * 1024U> buffer{};
+  std::uint64_t total = 0U;
+  while (true) {
+    DWORD count = 0U;
+    if (::ReadFile(file, buffer.data(), static_cast<DWORD>(buffer.size()),
+                   &count, nullptr) == 0) {
+      const auto error = ::GetLastError();
+      ::CloseHandle(file);
+      return core::failure<StableFileSnapshot>(
+          core::ErrorCode::IoError, "Unable to read sealed update package",
+          std::to_string(error));
+    }
+    if (count == 0U) break;
+    total += count;
+    if (total > maximumBytes) {
+      ::CloseHandle(file);
+      return core::failure<StableFileSnapshot>(
+          core::ErrorCode::Conflict, "Sealed update package is too large");
+    }
+    hasher.update(std::span{buffer.data(), static_cast<std::size_t>(count)});
+  }
+  BY_HANDLE_FILE_INFORMATION after{};
+  const bool stable = ::GetFileInformationByHandle(file, &after) != 0 &&
+                      before.dwVolumeSerialNumber == after.dwVolumeSerialNumber &&
+                      before.nFileIndexHigh == after.nFileIndexHigh &&
+                      before.nFileIndexLow == after.nFileIndexLow &&
+                      before.nFileSizeHigh == after.nFileSizeHigh &&
+                      before.nFileSizeLow == after.nFileSizeLow;
+  ::CloseHandle(file);
+  if (!stable || total != size) {
+    return core::failure<StableFileSnapshot>(
+        core::ErrorCode::Conflict, "Sealed update package changed while open");
+  }
+  return StableFileSnapshot{
+      .size = size,
+      .device = before.dwVolumeSerialNumber,
+      .inode = (static_cast<std::uint64_t>(before.nFileIndexHigh) << 32U) |
+               before.nFileIndexLow,
+      .sha256 = hasher.hexDigest()};
+#else
+  const int file = ::open(path.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
+  if (file < 0) {
+    return core::failure<StableFileSnapshot>(
+        core::ErrorCode::IoError, "Unable to open sealed update package",
+        std::to_string(errno));
+  }
+  struct stat before{};
+  if (::fstat(file, &before) != 0 || !S_ISREG(before.st_mode) ||
+      before.st_size < 0) {
+    const auto error = errno;
+    ::close(file);
+    return core::failure<StableFileSnapshot>(
+        core::ErrorCode::Conflict, "Sealed update package handle is unsafe",
+        std::to_string(error));
+  }
+  const auto size = static_cast<std::uint64_t>(before.st_size);
+  if (size > maximumBytes) {
+    ::close(file);
+    return core::failure<StableFileSnapshot>(
+        core::ErrorCode::Conflict, "Sealed update package is too large");
+  }
+  core::Sha256 hasher;
+  std::array<std::byte, 1024U * 1024U> buffer{};
+  std::uint64_t total = 0U;
+  while (true) {
+    const auto count = ::read(file, buffer.data(), buffer.size());
+    if (count < 0) {
+      if (errno == EINTR) continue;
+      const auto error = errno;
+      ::close(file);
+      return core::failure<StableFileSnapshot>(
+          core::ErrorCode::IoError, "Unable to read sealed update package",
+          std::to_string(error));
+    }
+    if (count == 0) break;
+    total += static_cast<std::uint64_t>(count);
+    if (total > maximumBytes) {
+      ::close(file);
+      return core::failure<StableFileSnapshot>(
+          core::ErrorCode::Conflict, "Sealed update package is too large");
+    }
+    hasher.update(std::span{buffer.data(), static_cast<std::size_t>(count)});
+  }
+  struct stat after{};
+  const bool stable = ::fstat(file, &after) == 0 &&
+                      before.st_dev == after.st_dev &&
+                      before.st_ino == after.st_ino &&
+                      before.st_size == after.st_size;
+  ::close(file);
+  if (!stable || total != size) {
+    return core::failure<StableFileSnapshot>(
+        core::ErrorCode::Conflict, "Sealed update package changed while open");
+  }
+  return StableFileSnapshot{
+      .size = size,
+      .device = static_cast<std::uint64_t>(before.st_dev),
+      .inode = static_cast<std::uint64_t>(before.st_ino),
+      .sha256 = hasher.hexDigest()};
+#endif
+}
+
+core::Result<void> consumeHandoff(
+    const SealedInstallerHandoff& handoff,
+    const InstallerHandoffVerificationOptions& options) {
+  if (!options.consume) return core::success();
+  if (options.replayStateRoot.empty()) {
+    return core::failure(core::ErrorCode::InvalidArgument,
+                         "Replay state root is required when consuming a handoff");
+  }
+  auto root = ensureRoot(options.replayStateRoot);
+  if (!root) return root;
+  const auto marker = options.replayStateRoot /
+                      (handoff.manifestSha256 + ".used");
+  const auto payload = handoff.manifestSha256 + "\n";
+#ifdef _WIN32
+  const HANDLE file = ::CreateFileW(marker.c_str(), GENERIC_WRITE, 0U, nullptr,
+                                    CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr);
+  if (file == INVALID_HANDLE_VALUE) {
+    return core::failure(core::ErrorCode::Conflict,
+                         "Sealed update handoff was already consumed");
+  }
+  DWORD written = 0U;
+  const bool complete = ::WriteFile(file, payload.data(),
+                                    static_cast<DWORD>(payload.size()), &written,
+                                    nullptr) != 0 &&
+                        written == static_cast<DWORD>(payload.size()) &&
+                        ::FlushFileBuffers(file) != 0;
+  ::CloseHandle(file);
+  if (!complete) {
+    return core::failure(core::ErrorCode::IoError,
+                         "Unable to persist sealed handoff replay state");
+  }
+#else
+  const int file = ::open(marker.c_str(),
+                          O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC | O_NOFOLLOW,
+                          S_IRUSR | S_IWUSR);
+  if (file < 0) {
+    return core::failure(core::ErrorCode::Conflict,
+                         "Sealed update handoff was already consumed");
+  }
+  std::size_t offset = 0U;
+  while (offset < payload.size()) {
+    const auto count = ::write(file, payload.data() + offset,
+                               payload.size() - offset);
+    if (count < 0 && errno == EINTR) continue;
+    if (count <= 0) {
+      ::close(file);
+      return core::failure(core::ErrorCode::IoError,
+                           "Unable to persist sealed handoff replay state");
+    }
+    offset += static_cast<std::size_t>(count);
+  }
+  const bool synced = ::fsync(file) == 0;
+  ::close(file);
+  if (!synced) {
+    return core::failure(core::ErrorCode::IoError,
+                         "Unable to sync sealed handoff replay state");
+  }
+#endif
+  return core::success();
 }
 
 core::Result<void> copyRegularFile(const std::filesystem::path& source,
@@ -133,11 +365,14 @@ JsonValue handoffJson(const SealedInstallerHandoff& handoff) {
   root.emplace("schemaVersion", handoff.schemaVersion);
   root.emplace("purpose", handoff.purpose);
   root.emplace("candidateId", handoff.candidateId);
+  root.emplace("platform", handoff.platform);
+  root.emplace("publisherKeyId", handoff.publisherKeyId);
   root.emplace("manifestSha256", handoff.manifestSha256);
   root.emplace("package", std::move(package));
   root.emplace("requiresExplicitUserAction", handoff.requiresExplicitUserAction);
   root.emplace("requiresInstallerRevalidation", handoff.requiresInstallerRevalidation);
   root.emplace("createdAt", handoff.createdAt);
+  root.emplace("expiresAt", handoff.expiresAt);
   return JsonValue{std::move(root)};
 }
 
@@ -194,28 +429,37 @@ core::Result<void> rejectUnknown(const JsonValue& value,
 core::Result<SealedInstallerHandoff> parseRoot(const JsonValue& root) {
   auto keys = rejectUnknown(root,
                             {"schemaVersion", "purpose", "candidateId",
+                             "platform", "publisherKeyId",
                              "manifestSha256", "package",
                              "requiresExplicitUserAction",
-                             "requiresInstallerRevalidation", "createdAt"},
+                             "requiresInstallerRevalidation", "createdAt",
+                             "expiresAt"},
                             "handoff");
   if (!keys) return core::Result<SealedInstallerHandoff>{keys.error()};
   auto schema = requiredInteger(root, "schemaVersion");
   auto purpose = requiredString(root, "purpose");
   auto candidate = requiredString(root, "candidateId");
+  auto platform = requiredString(root, "platform");
+  auto publisher = requiredString(root, "publisherKeyId");
   auto manifest = requiredString(root, "manifestSha256");
   auto explicitAction = requiredBool(root, "requiresExplicitUserAction");
   auto revalidation = requiredBool(root, "requiresInstallerRevalidation");
   auto createdAt = requiredString(root, "createdAt");
+  auto expiresAt = requiredString(root, "expiresAt");
   const auto* package = root.find("package");
-  if (!schema || !purpose || !candidate || !manifest || !explicitAction ||
-      !revalidation || !createdAt || package == nullptr) {
+  if (!schema || !purpose || !candidate || !platform || !publisher || !manifest ||
+      !explicitAction || !revalidation || !createdAt || !expiresAt ||
+      package == nullptr) {
     if (!schema) return core::Result<SealedInstallerHandoff>{schema.error()};
     if (!purpose) return core::Result<SealedInstallerHandoff>{purpose.error()};
     if (!candidate) return core::Result<SealedInstallerHandoff>{candidate.error()};
+    if (!platform) return core::Result<SealedInstallerHandoff>{platform.error()};
+    if (!publisher) return core::Result<SealedInstallerHandoff>{publisher.error()};
     if (!manifest) return core::Result<SealedInstallerHandoff>{manifest.error()};
     if (!explicitAction) return core::Result<SealedInstallerHandoff>{explicitAction.error()};
     if (!revalidation) return core::Result<SealedInstallerHandoff>{revalidation.error()};
     if (!createdAt) return core::Result<SealedInstallerHandoff>{createdAt.error()};
+    if (!expiresAt) return core::Result<SealedInstallerHandoff>{expiresAt.error()};
     return core::failure<SealedInstallerHandoff>(core::ErrorCode::ParseError,
                                                  "Handoff package is required");
   }
@@ -236,12 +480,14 @@ core::Result<SealedInstallerHandoff> parseRoot(const JsonValue& root) {
   if (!sha256) return core::Result<SealedInstallerHandoff>{sha256.error()};
   if (!device) return core::Result<SealedInstallerHandoff>{device.error()};
   if (!inode) return core::Result<SealedInstallerHandoff>{inode.error()};
-  if (schema.value() != 1 || purpose.value() != "sealed-installer-handoff" ||
+  if (schema.value() != 2 || purpose.value() != "sealed-installer-handoff" ||
       !safeFilename(fileName.value()) || fileName.value() !=
           std::filesystem::path{relativePath.value()}.filename().string() ||
       size.value() <= 0 || device.value() < 0 || inode.value() < 0 ||
       !hex64(sha256.value()) || !hex64(manifest.value()) ||
-      !safeCandidateId(candidate.value())) {
+      !safeCandidateId(candidate.value()) || !safeFilename(platform.value()) ||
+      !safeFilename(publisher.value()) || !utcTimestamp(createdAt.value()) ||
+      !utcTimestamp(expiresAt.value()) || createdAt.value() >= expiresAt.value()) {
     return core::failure<SealedInstallerHandoff>(core::ErrorCode::ParseError,
                                                  "Handoff fields are invalid");
   }
@@ -249,6 +495,8 @@ core::Result<SealedInstallerHandoff> parseRoot(const JsonValue& root) {
       .schemaVersion = schema.value(),
       .purpose = std::move(purpose).value(),
       .candidateId = std::move(candidate).value(),
+      .platform = std::move(platform).value(),
+      .publisherKeyId = std::move(publisher).value(),
       .manifestSha256 = std::move(manifest).value(),
       .package = SealedUpdatePackage{
           .fileName = std::move(fileName).value(),
@@ -259,7 +507,8 @@ core::Result<SealedInstallerHandoff> parseRoot(const JsonValue& root) {
           .inode = static_cast<std::uint64_t>(inode.value())},
       .requiresExplicitUserAction = explicitAction.value(),
       .requiresInstallerRevalidation = revalidation.value(),
-      .createdAt = std::move(createdAt).value()};
+      .createdAt = std::move(createdAt).value(),
+      .expiresAt = std::move(expiresAt).value()};
 }
 
 }
@@ -329,30 +578,37 @@ core::Result<SealedInstallerHandoff> stageVerifiedUpdatePackage(
     std::filesystem::remove_all(candidateRoot, error);
     return core::Result<SealedInstallerHandoff>{copied.error()};
   }
-  const auto copiedSize = std::filesystem::file_size(destination, error);
-  auto copiedDigest = core::sha256File(destination, manifest.package.size);
-  if (error || !copiedDigest || copiedSize != manifest.package.size ||
-      copiedDigest.value() != manifest.package.sha256) {
+  auto snapshot = inspectStableRegularFile(destination, manifest.package.size);
+  if (!snapshot) {
+    std::filesystem::remove_all(candidateRoot, error);
+    return core::failure<SealedInstallerHandoff>(
+        core::ErrorCode::Conflict,
+        "Staged update package failed stable-handle verification");
+  }
+  if (snapshot.value().size != manifest.package.size ||
+      snapshot.value().sha256 != manifest.package.sha256) {
     std::filesystem::remove_all(candidateRoot, error);
     return core::failure<SealedInstallerHandoff>(
         core::ErrorCode::Conflict, "Staged update package failed byte verification");
   }
-  const auto identity = fileIdentity(destination);
   const SealedInstallerHandoff handoff{
-      .schemaVersion = 1,
+      .schemaVersion = 2,
       .purpose = "sealed-installer-handoff",
       .candidateId = candidateId,
+      .platform = manifest.platform,
+      .publisherKeyId = manifest.signature.keyId,
       .manifestSha256 = updateManifestIdentity(manifest),
       .package = SealedUpdatePackage{
           .fileName = manifest.package.fileName,
           .relativePath = candidateId + "/" + manifest.package.fileName,
-          .size = copiedSize,
-          .sha256 = copiedDigest.value(),
-          .device = identity.first,
-          .inode = identity.second},
+          .size = snapshot.value().size,
+          .sha256 = snapshot.value().sha256,
+          .device = snapshot.value().device,
+          .inode = snapshot.value().inode},
       .requiresExplicitUserAction = true,
       .requiresInstallerRevalidation = true,
-      .createdAt = "1970-01-01T00:00:00Z"};
+      .createdAt = manifest.issuedAt,
+      .expiresAt = manifest.expiresAt};
   const auto handoffPath = candidateRoot / "handoff.json";
   auto written = core::durableAtomicWriteText(
       handoffPath, serializeSealedInstallerHandoff(handoff));
@@ -368,10 +624,15 @@ core::Result<SealedInstallerHandoff> stageVerifiedUpdatePackage(
 
 core::Result<void> verifySealedInstallerHandoff(
     const SealedInstallerHandoff& handoff, const UpdateManifest& manifest,
-    const std::filesystem::path& stagingRoot) {
-  if (handoff.schemaVersion != 1 || handoff.purpose != "sealed-installer-handoff" ||
+    const std::filesystem::path& stagingRoot,
+    const InstallerHandoffVerificationOptions& options) {
+  if (handoff.schemaVersion != 2 || handoff.purpose != "sealed-installer-handoff" ||
       !handoff.requiresExplicitUserAction ||
       !handoff.requiresInstallerRevalidation ||
+      handoff.platform != manifest.platform ||
+      handoff.publisherKeyId != manifest.signature.keyId ||
+      handoff.createdAt != manifest.issuedAt ||
+      handoff.expiresAt != manifest.expiresAt ||
       handoff.manifestSha256 != updateManifestIdentity(manifest) ||
       handoff.package.fileName != manifest.package.fileName ||
       handoff.package.size != manifest.package.size ||
@@ -380,6 +641,21 @@ core::Result<void> verifySealedInstallerHandoff(
       !hex64(handoff.manifestSha256) || !hex64(handoff.package.sha256)) {
     return core::failure(core::ErrorCode::Conflict,
                          "Sealed update handoff identity is invalid");
+  }
+  if ((!options.expectedCandidateId.empty() &&
+       handoff.candidateId != options.expectedCandidateId) ||
+      (!options.expectedPlatform.empty() &&
+       handoff.platform != options.expectedPlatform) ||
+      (!options.expectedPublisherKeyId.empty() &&
+       handoff.publisherKeyId != options.expectedPublisherKeyId)) {
+    return core::failure(core::ErrorCode::Conflict,
+                         "Sealed update handoff expectation differs");
+  }
+  if (!options.now.empty() &&
+      (!utcTimestamp(options.now) || options.now < handoff.createdAt ||
+       options.now >= handoff.expiresAt)) {
+    return core::failure(core::ErrorCode::Conflict,
+                         "Sealed update handoff is not current");
   }
   const auto relativePath = std::filesystem::path{handoff.package.relativePath};
   const bool escapesRoot = std::find_if(
@@ -392,7 +668,7 @@ core::Result<void> verifySealedInstallerHandoff(
     return core::failure(core::ErrorCode::Conflict,
                          "Sealed update handoff path escapes staging root");
   }
-  auto root = ensureRoot(stagingRoot);
+  auto root = validateExistingRoot(stagingRoot);
   if (!root) return root;
   const auto candidateRoot = stagingRoot / handoff.candidateId;
   const auto candidateStatus = std::filesystem::symlink_status(candidateRoot);
@@ -402,28 +678,26 @@ core::Result<void> verifySealedInstallerHandoff(
                          "Sealed update candidate root is unsafe");
   }
   const auto packagePath = stagingRoot / handoff.package.relativePath;
-  std::error_code error;
-  const auto status = std::filesystem::symlink_status(packagePath, error);
-  if (error || std::filesystem::is_symlink(status) ||
-      !std::filesystem::is_regular_file(status) || packagePath.filename().string() !=
-          handoff.package.fileName) {
+  if (packagePath.filename().string() != handoff.package.fileName) {
     return core::failure(core::ErrorCode::Conflict,
                          "Sealed update package path is unsafe");
   }
-  const auto size = std::filesystem::file_size(packagePath, error);
-  auto digest = core::sha256File(packagePath, manifest.package.size);
-  if (error || !digest || size != manifest.package.size ||
-      digest.value() != manifest.package.sha256) {
+  auto snapshot = inspectStableRegularFile(packagePath, manifest.package.size);
+  if (!snapshot) {
+    return core::failure(core::ErrorCode::Conflict,
+                         "Sealed update package path is unsafe");
+  }
+  if (snapshot.value().size != manifest.package.size ||
+      snapshot.value().sha256 != manifest.package.sha256) {
     return core::failure(core::ErrorCode::Conflict,
                          "Sealed update package bytes changed");
   }
-  const auto identity = fileIdentity(packagePath);
-  if ((handoff.package.device != 0U && identity.first != handoff.package.device) ||
-      (handoff.package.inode != 0U && identity.second != handoff.package.inode)) {
+  if (snapshot.value().device != handoff.package.device ||
+      snapshot.value().inode != handoff.package.inode) {
     return core::failure(core::ErrorCode::Conflict,
                          "Sealed update package file identity changed");
   }
-  return core::success();
+  return consumeHandoff(handoff, options);
 }
 
 }

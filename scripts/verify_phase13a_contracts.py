@@ -6,14 +6,16 @@ import json
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools" / "phase13a"))
-from documentation_contract import validate_documentation  # noqa: E402
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+from tools.phase13a.documentation_contract import validate_documentation  # noqa: E402
 
 EXPECTED_COMMITS = {
     "clap": "195b42a004144fab0b3cf95e9c067187d15365b7",
     "clap-wrapper": "35f524b771ec09f54c164720bb90f271273b37d3",
     "vst3sdk": "3cdf9ca5d1f5b1b21e0a86832aa4abe55607bd96",
     "AudioUnitSDK": "bd98b31feff57a15989fcfab4cd86dc63382b1ac",
+    "openssl": "8cf17aaeb4599f8af87fefd810b5b5fee90fe69e",
 }
 
 
@@ -46,7 +48,7 @@ def main(argv: list[str] | None = None) -> int:
 
     require_tokens(
         root / ".github" / "workflows" / "phase13a-plugin-formats.yml",
-        ("vst3-validator", "auval", EXPECTED_COMMITS["clap-wrapper"], EXPECTED_COMMITS["vst3sdk"], EXPECTED_COMMITS["AudioUnitSDK"]),
+        ("vst3-validator", "auval", EXPECTED_COMMITS["clap-wrapper"], EXPECTED_COMMITS["vst3sdk"], EXPECTED_COMMITS["AudioUnitSDK"], EXPECTED_COMMITS["openssl"]),
         errors,
     )
     require_tokens(
@@ -71,6 +73,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     require_tokens(
         root / "scripts" / "sign_windows_payload.ps1",
+        ("sign_windows_file.ps1", "WINDOWS_SIGN_CERT_SHA1"),
+        errors,
+    )
+    require_tokens(
+        root / "scripts" / "sign_windows_file.ps1",
         ("signtool.exe", "WINDOWS_SIGN_CERT_SHA1", "timestamp.digicert.com"),
         errors,
     )
