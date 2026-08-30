@@ -25,17 +25,8 @@ executable="$app/Contents/MacOS/$bundle_executable"
 [[ -x "$executable" ]] || { echo "missing executable: $executable" >&2; exit 3; }
 lipo "$executable" -verify_arch arm64
 
-character_package="$app/Contents/Resources/character-01"
-if [[ ! -f "$character_package/manifest.json" ]]; then
-  mkdir -p "$character_package"
-  cp -R "$root/assets/character-01/." "$character_package/"
-fi
-[[ -f "$character_package/manifest.json" ]] || {
-  echo "missing bundled Character 01 package: $character_package" >&2
-  exit 3
-}
-
 for resource in \
+  "$app/Contents/Resources/release-resource-inventory.json" \
   "$app/Contents/Resources/Manual/EULA.md" \
   "$app/Contents/Resources/Manual/PRIVACY.md" \
   "$app/Contents/Resources/Manual/QUICK_START.md" \

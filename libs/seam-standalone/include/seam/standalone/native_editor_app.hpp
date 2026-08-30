@@ -29,7 +29,7 @@ namespace seam::standalone {
 struct NativeEditorAppConfig final {
   AuthoringSessionConfig authoring;
   ProductionRuntimeMode runtimeMode{ProductionRuntimeMode::Release};
-  std::filesystem::path characterPackage{"assets/character-01"};
+  std::filesystem::path characterPackage;
   std::filesystem::path applicationSupportRoot;
   std::vector<distribution::Ed25519PublicKey> trustedVoicebankKeys;
   std::optional<distribution::Ed25519PublicKey> developmentTrustRoot;

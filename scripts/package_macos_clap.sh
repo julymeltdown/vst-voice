@@ -17,8 +17,7 @@ cp "$binary" "$bundle/Contents/MacOS/ProjectSEAMEditor"
 sed -e "s/@PROJECT_VERSION@/$version/g" \
   "$root/packaging/macos/ProjectSEAMEditor-Info.plist.in" \
   > "$bundle/Contents/Info.plist"
-cp "$root/assets/demo-human-voicebank-public-domain/provenance.json" "$bundle/Contents/Resources/demo-voice-provenance.json"
-cp "$root/assets/demo-human-voicebank-public-domain/license/PUBLIC_DOMAIN_NOTICE.md" "$bundle/Contents/Resources/PUBLIC_DOMAIN_NOTICE.md"
-cp -R "$root/assets/character-01" "$bundle/Contents/Resources/character-01"
+cp "$root/packaging/release-resource-inventory.json" \
+  "$bundle/Contents/Resources/release-resource-inventory.json"
 chmod 755 "$bundle/Contents/MacOS/ProjectSEAMEditor"
 plutil -lint "$bundle/Contents/Info.plist"

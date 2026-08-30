@@ -3,6 +3,7 @@
 #include "seam/application/editor_session.hpp"
 #include "seam/application/project_factory.hpp"
 #include "seam/authoring/authoring_runtime.hpp"
+#include "seam/authoring/voicebank_browser.hpp"
 #include "seam/core/result.hpp"
 #include "seam/domain/project.hpp"
 #include "seam/clap_editor/host_timeline.hpp"
@@ -136,8 +137,7 @@ class EditorRuntime final {
 public:
   explicit EditorRuntime(
       std::optional<domain::Project> project = std::nullopt,
-      const std::filesystem::path& characterPackage =
-          std::filesystem::path{"assets/character-01"},
+      const std::filesystem::path& characterPackage = {},
       std::vector<voicebank::VoicebankSearchRoot> voicebankRoots = {});
   ~EditorRuntime();
 
@@ -171,6 +171,8 @@ public:
   void setTextInputCallbacks(
       std::function<void(const native_ui::TextInputRequest&)> begin,
       std::function<void()> end);
+  void setVoicebankInstallerHandoff(
+      std::function<core::Result<void>()> callback);
 
   void resize(double logicalWidth, double logicalHeight) noexcept;
   void paint(native_ui::RasterCanvas& canvas) noexcept;
@@ -292,6 +294,7 @@ private:
   [[nodiscard]] native_ui::EditorSceneState sceneState() const;
   void refreshVoicebankResolutionLocked();
   void refreshAllVoicebankResolutionsLocked();
+  void rebuildVoicebankCardsLocked();
   void refreshLiveResourceLocked();
   void rebuildTechnicalModelsLocked();
   [[nodiscard]] phonemizer::Result phonemesLocked() const;
@@ -319,6 +322,7 @@ private:
   application::ProjectFactory& factory_;
   application::EditorSession& session_;
   authoring::VoicebankSession& voicebankSession_;
+  authoring::VoicebankBrowserModel voicebankBrowser_;
   std::unique_ptr<native_ui::NativeEditorController> controller_;
   native_ui::EditorScenePainter painter_;
   native_ui::CharacterPresentation character_;
@@ -329,6 +333,7 @@ private:
   std::function<void()> renderReadyCallback_;
   std::function<void(const native_ui::TextInputRequest&)> beginTextInput_;
   std::function<void()> endTextInput_;
+  std::function<core::Result<void>()> voicebankInstallerHandoff_;
   double logicalWidth_{1100.0};
   double logicalHeight_{720.0};
   std::uint32_t renderSampleRate_{48000U};

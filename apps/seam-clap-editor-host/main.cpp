@@ -226,6 +226,7 @@ int main(int argc, char** argv) {
   std::filesystem::path summaryPath;
   std::filesystem::path audioPath;
   std::filesystem::path targetRuntimeFixtureRoot;
+  bool expectMissingBank = false;
   for (int index = 1; index < argc; ++index) {
     const std::string argument = argv[index];
     if (argument == "--plugin" && index + 1 < argc) {
@@ -239,13 +240,16 @@ int main(int argc, char** argv) {
     } else if (argument == "--target-runtime-fixture-root" &&
                index + 1 < argc) {
       targetRuntimeFixtureRoot = argv[++index];
+    } else if (argument == "--expect-missing-bank") {
+      expectMissingBank = true;
     }
   }
-  if (pluginPath.empty()) {
+  if (pluginPath.empty() ||
+      (expectMissingBank && !targetRuntimeFixtureRoot.empty())) {
     std::cerr << "Usage: seam_clap_editor_host --plugin FILE.clap "
                  "[--screenshot FILE.ppm] [--summary FILE.json] "
                  "[--audio FILE.wav] "
-                 "[--target-runtime-fixture-root DIR]\n";
+                 "[--target-runtime-fixture-root DIR | --expect-missing-bank]\n";
     return 2;
   }
 
@@ -258,6 +262,19 @@ int main(int argc, char** argv) {
 #else
     if (setenv("SEAM_TARGET_RUNTIME_FIXTURE_ROOT",
                targetRuntimeFixtureRoot.string().c_str(), 1) != 0) {
+      return 1;
+    }
+#endif
+  }
+  if (expectMissingBank) {
+#if defined(_WIN32)
+    if (_putenv_s("SEAM_TARGET_RUNTIME_FIXTURE_ROOT", "") != 0 ||
+        _putenv_s("SEAM_VOICEBANK_PATH", "") != 0) {
+      return 1;
+    }
+#else
+    if (unsetenv("SEAM_TARGET_RUNTIME_FIXTURE_ROOT") != 0 ||
+        unsetenv("SEAM_VOICEBANK_PATH") != 0) {
       return 1;
     }
 #endif
@@ -457,7 +474,10 @@ int main(int argc, char** argv) {
     audioWritten = static_cast<bool>(seam::voicebank::writePcm16Wav(
         audioPath, 48000U, static_cast<std::uint16_t>(outputChannels), captured));
   }
-  const auto livePass = processOk && liveEnergy > 0.01 && audioWritten;
+  const auto missingBankSilence = liveEnergy <= 1.0e-12;
+  const auto livePass = processOk && audioWritten &&
+                        (expectMissingBank ? missingBankSilence
+                                           : liveEnergy > 0.01);
 
   ReadStream activeLoad{saved.bytes};
   const auto activeLoadRejected = !state->load(plugin, &activeLoad.stream) &&
@@ -492,12 +512,13 @@ int main(int argc, char** argv) {
   plugin->destroy(plugin);
   entry->deinit();
 
+  const auto processRequestPass =
+      expectMissingBank ||
+      context.processRequests.load(std::memory_order_relaxed) > 0U;
   const auto passed = guiCreated && guiVisible && livePass &&
                       offlineRenderAccepted && selectedPort.channel_count == 4U &&
                       inactiveGuiLoadAccepted && activeLoadRejected &&
-                      stateRoundTrip &&
-                      context.processRequests.load(
-                          std::memory_order_relaxed) > 0U &&
+                      stateRoundTrip && processRequestPass &&
                       (screenshotPath.empty() || screenshotWritten);
   if (!summaryPath.empty()) {
     std::filesystem::create_directories(summaryPath.parent_path());
@@ -533,6 +554,10 @@ int main(int argc, char** argv) {
             << "  \"offlineRenderAccepted\": "
             << (offlineRenderAccepted ? "true" : "false") << ",\n"
             << "  \"audioWritten\": " << (audioWritten ? "true" : "false") << ",\n"
+            << "  \"expectedMissingBank\": "
+            << (expectMissingBank ? "true" : "false") << ",\n"
+            << "  \"missingBankSilence\": "
+            << (missingBankSilence ? "true" : "false") << ",\n"
             << "  \"activeLoadRejected\": "
             << (activeLoadRejected ? "true" : "false") << ",\n"
             << "  \"inactiveGuiLoadAccepted\": "

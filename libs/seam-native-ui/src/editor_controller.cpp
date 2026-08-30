@@ -2511,6 +2511,32 @@ core::Result<void> NativeEditorController::keyDown(const KeyEvent& event) {
     return focused;
   }
 
+  if (voicebankBrowserVisible_) {
+    if (event.key == NativeKey::Escape || event.key == NativeKey::V) {
+      voicebankBrowserVisible_ = false;
+      repaint();
+      return core::success();
+    }
+    if (event.key == NativeKey::R) {
+      if (!callbacks_.refreshVoicebanks) {
+        return core::failure(core::ErrorCode::Unsupported,
+                             "Voicebank refresh is not connected");
+      }
+      const auto refreshed = callbacks_.refreshVoicebanks();
+      repaint();
+      return refreshed;
+    }
+    if (event.key == NativeKey::O) {
+      if (!callbacks_.openVoicebankInstaller) {
+        return core::failure(core::ErrorCode::Unsupported,
+                             "Standalone voicebank installation is not connected");
+      }
+      const auto opened = callbacks_.openVoicebankInstaller();
+      repaint();
+      return opened;
+    }
+  }
+
   if (unitTarget_.has_value() && !seamTarget_.has_value() &&
       !event.modifiers.primaryShortcut() &&
       (event.key == NativeKey::S || event.key == NativeKey::R)) {

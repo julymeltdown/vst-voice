@@ -11,7 +11,7 @@ $root=Resolve-Path (Join-Path $PSScriptRoot '..')
 $required=@(
   'Standalone\seam_editor_native.exe',
   'Standalone\Resources',
-  'Standalone\Resources\character-01\manifest.json',
+  'Standalone\Resources\release-resource-inventory.json',
   'Standalone\Resources\Manual\EULA.md',
   'Standalone\Resources\Manual\PRIVACY.md',
   'Standalone\Resources\Manual\QUICK_START.md',
@@ -25,6 +25,7 @@ $required=@(
   'RELEASE_IDENTITY.json',
   'CLAP\ProjectSEAMEditor.clap',
   'CLAP\ProjectSEAMEditor.resources',
+  'CLAP\ProjectSEAMEditor.resources\release-resource-inventory.json',
   'VST3\ProjectSEAMEditor.vst3',
   'THIRD_PARTY_NOTICES.md',
   'SBOM.spdx.json',

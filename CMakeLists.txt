@@ -33,6 +33,9 @@ option(SEAM_BUILD_CLAP_EDITOR_PLUGIN "Build the Project SEAM embedded-editor CLA
 option(SEAM_RUN_NATIVE_GUI_TESTS
   "Run target-host native editor and Voicebank Studio smoke tests" OFF)
 
+set(SEAM_RELEASE_RESOURCE_INVENTORY
+  "${CMAKE_CURRENT_SOURCE_DIR}/packaging/release-resource-inventory.json")
+
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -517,11 +520,12 @@ if(SEAM_BUILD_NATIVE_DESKTOP)
     target_link_libraries(seam_editor_native PRIVATE
       "-framework AppKit" "-framework Foundation")
     add_custom_command(TARGET seam_editor_native POST_BUILD
+      COMMAND ${CMAKE_COMMAND} -E remove_directory
+        "$<TARGET_BUNDLE_DIR:seam_editor_native>/Contents/Resources/character-01"
+      COMMAND ${CMAKE_COMMAND} -E remove_directory
+        "$<TARGET_BUNDLE_DIR:seam_editor_native>/Contents/Resources/voicebanks"
       COMMAND ${CMAKE_COMMAND} -E make_directory
         "$<TARGET_BUNDLE_DIR:seam_editor_native>/Contents/Resources/Manual"
-      COMMAND ${CMAKE_COMMAND} -E copy_directory
-        "${CMAKE_CURRENT_SOURCE_DIR}/assets/character-01"
-        "$<TARGET_BUNDLE_DIR:seam_editor_native>/Contents/Resources/character-01"
       COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${CMAKE_CURRENT_SOURCE_DIR}/docs/product/EXTERNAL_BETA_ACCEPTANCE.md"
         "$<TARGET_BUNDLE_DIR:seam_editor_native>/Contents/Resources/Manual/ExternalBetaAcceptance.md"
@@ -540,6 +544,9 @@ if(SEAM_BUILD_NATIVE_DESKTOP)
       COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${CMAKE_CURRENT_SOURCE_DIR}/SBOM.spdx.json"
         "$<TARGET_BUNDLE_DIR:seam_editor_native>/Contents/Resources/SBOM.spdx.json"
+      COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${SEAM_RELEASE_RESOURCE_INVENTORY}"
+        "$<TARGET_BUNDLE_DIR:seam_editor_native>/Contents/Resources/release-resource-inventory.json"
       VERBATIM)
     install(TARGETS seam_editor_native BUNDLE DESTINATION ".")
   elseif(WIN32)
@@ -553,11 +560,12 @@ if(SEAM_BUILD_NATIVE_DESKTOP)
     set_target_properties(seam_editor_native PROPERTIES WIN32_EXECUTABLE TRUE)
     target_link_libraries(seam_editor_native PRIVATE shell32)
     add_custom_command(TARGET seam_editor_native POST_BUILD
+      COMMAND ${CMAKE_COMMAND} -E remove_directory
+        "$<TARGET_FILE_DIR:seam_editor_native>/Resources/character-01"
+      COMMAND ${CMAKE_COMMAND} -E remove_directory
+        "$<TARGET_FILE_DIR:seam_editor_native>/Resources/voicebanks"
       COMMAND ${CMAKE_COMMAND} -E make_directory
         "$<TARGET_FILE_DIR:seam_editor_native>/Resources/Manual"
-      COMMAND ${CMAKE_COMMAND} -E copy_directory
-        "${CMAKE_CURRENT_SOURCE_DIR}/assets/character-01"
-        "$<TARGET_FILE_DIR:seam_editor_native>/Resources/character-01"
       COMMAND ${CMAKE_COMMAND} -E copy_directory
         "${CMAKE_CURRENT_SOURCE_DIR}/docs/manual"
         "$<TARGET_FILE_DIR:seam_editor_native>/Resources/Manual"
@@ -567,6 +575,9 @@ if(SEAM_BUILD_NATIVE_DESKTOP)
       COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${CMAKE_CURRENT_SOURCE_DIR}/docs/product/external-beta-documentation.json"
         "$<TARGET_FILE_DIR:seam_editor_native>/Resources/Manual/external-beta-documentation.json"
+      COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${SEAM_RELEASE_RESOURCE_INVENTORY}"
+        "$<TARGET_FILE_DIR:seam_editor_native>/Resources/release-resource-inventory.json"
       VERBATIM)
   endif()
   seam_apply_compiler_options(seam_editor_native)
@@ -683,8 +694,6 @@ if(SEAM_BUILD_CLAP_EDITOR_PLUGIN)
     libs/seam-clap-editor/src/plugin_entry.cpp)
   target_include_directories(seam_clap_editor_plugin SYSTEM PRIVATE
     third_party/clap/include)
-  target_compile_definitions(seam_clap_editor_plugin PRIVATE
-    SEAM_SOURCE_CHARACTER_PACKAGE="${CMAKE_CURRENT_SOURCE_DIR}/assets/character-01")
   target_link_libraries(seam_clap_editor_plugin PRIVATE
     seam_clap_editor seam_core)
   set_target_properties(seam_clap_editor_plugin PROPERTIES
@@ -715,10 +724,6 @@ if(SEAM_BUILD_CLAP_EDITOR_PLUGIN)
   endif()
   seam_apply_compiler_options(seam_clap_editor_plugin)
 
-  set(SEAM_PRODUCTION_DEMO_BANK_SOURCE
-    "${CMAKE_CURRENT_SOURCE_DIR}/assets/demo-human-voicebank-public-domain/production-bank")
-  set(SEAM_PRODUCTION_DEMO_BANK_ID "demo.public-domain.human.production")
-  set(SEAM_PRODUCTION_DEMO_BANK_VERSION "0.12.0")
   if(APPLE)
     set(SEAM_EDITOR_RESOURCE_ROOT
       "$<TARGET_BUNDLE_DIR:seam_clap_editor_plugin>/Contents/Resources")
@@ -727,11 +732,15 @@ if(SEAM_BUILD_CLAP_EDITOR_PLUGIN)
       "$<TARGET_FILE_DIR:seam_clap_editor_plugin>/ProjectSEAMEditor.resources")
   endif()
   add_custom_command(TARGET seam_clap_editor_plugin POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E remove_directory
+      "${SEAM_EDITOR_RESOURCE_ROOT}/character-01"
+    COMMAND ${CMAKE_COMMAND} -E remove_directory
+      "${SEAM_EDITOR_RESOURCE_ROOT}/voicebanks"
     COMMAND ${CMAKE_COMMAND} -E make_directory
-      "${SEAM_EDITOR_RESOURCE_ROOT}/voicebanks/${SEAM_PRODUCTION_DEMO_BANK_ID}/${SEAM_PRODUCTION_DEMO_BANK_VERSION}"
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-      "${SEAM_PRODUCTION_DEMO_BANK_SOURCE}"
-      "${SEAM_EDITOR_RESOURCE_ROOT}/voicebanks/${SEAM_PRODUCTION_DEMO_BANK_ID}/${SEAM_PRODUCTION_DEMO_BANK_VERSION}"
+      "${SEAM_EDITOR_RESOURCE_ROOT}"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+      "${SEAM_RELEASE_RESOURCE_INVENTORY}"
+      "${SEAM_EDITOR_RESOURCE_ROOT}/release-resource-inventory.json"
     VERBATIM)
 
   install(TARGETS seam_clap_editor_plugin
@@ -739,15 +748,11 @@ if(SEAM_BUILD_CLAP_EDITOR_PLUGIN)
     LIBRARY DESTINATION "CLAP"
     BUNDLE DESTINATION "CLAP")
   if(APPLE)
-    install(DIRECTORY "${SEAM_PRODUCTION_DEMO_BANK_SOURCE}/"
-      DESTINATION
-        "CLAP/ProjectSEAMEditor.clap/Contents/Resources/voicebanks/${SEAM_PRODUCTION_DEMO_BANK_ID}/${SEAM_PRODUCTION_DEMO_BANK_VERSION}")
+    install(FILES "${SEAM_RELEASE_RESOURCE_INVENTORY}"
+      DESTINATION "CLAP/ProjectSEAMEditor.clap/Contents/Resources")
   else()
-    install(DIRECTORY assets/character-01
+    install(FILES "${SEAM_RELEASE_RESOURCE_INVENTORY}"
       DESTINATION "CLAP/ProjectSEAMEditor.resources")
-    install(DIRECTORY "${SEAM_PRODUCTION_DEMO_BANK_SOURCE}/"
-      DESTINATION
-        "CLAP/ProjectSEAMEditor.resources/voicebanks/${SEAM_PRODUCTION_DEMO_BANK_ID}/${SEAM_PRODUCTION_DEMO_BANK_VERSION}")
   endif()
 
   add_executable(seam_clap_editor_host
@@ -877,6 +882,17 @@ if(SEAM_BUILD_TESTS AND SEAM_BUILD_CLAP_EDITOR_PLUGIN)
           --audio ${CMAKE_BINARY_DIR}/phase11-clap-editor-live.wav)
       set_tests_properties(seam_phase11_clap_editor_host_smoke PROPERTIES
         TIMEOUT 45)
+      add_test(NAME seam_phase11_clap_editor_missing_bank_smoke
+        COMMAND ${SEAM_PHASE11_XVFB_RUN_EXECUTABLE} -a
+          $<TARGET_FILE:seam_clap_editor_host>
+          --plugin $<TARGET_FILE:seam_clap_editor_plugin>
+          --expect-missing-bank
+          --screenshot ${CMAKE_BINARY_DIR}/phase11-clap-editor-missing-bank.ppm
+          --summary ${CMAKE_BINARY_DIR}/phase11-clap-editor-missing-bank.json)
+      set_tests_properties(seam_phase11_clap_editor_missing_bank_smoke PROPERTIES
+        TIMEOUT 45
+        ENVIRONMENT
+          "HOME=${CMAKE_BINARY_DIR}/missing-bank-home;LOCALAPPDATA=${CMAKE_BINARY_DIR}/missing-bank-home;SEAM_PREVIEW_CACHE_ROOT=${CMAKE_BINARY_DIR}/missing-bank-preview-cache")
     endif()
   endif()
   if(SEAM_RUN_NATIVE_GUI_TESTS AND (WIN32 OR APPLE))
@@ -890,6 +906,16 @@ if(SEAM_BUILD_TESTS AND SEAM_BUILD_CLAP_EDITOR_PLUGIN)
               --audio ${CMAKE_BINARY_DIR}/phase11-clap-editor-live.wav)
     set_tests_properties(seam_phase11_clap_editor_host_smoke PROPERTIES
       TIMEOUT 45)
+    add_test(NAME seam_phase11_clap_editor_missing_bank_smoke
+      COMMAND $<TARGET_FILE:seam_clap_editor_host>
+              --plugin $<TARGET_FILE:seam_clap_editor_plugin>
+              --expect-missing-bank
+              --screenshot ${CMAKE_BINARY_DIR}/phase11-clap-editor-missing-bank.ppm
+              --summary ${CMAKE_BINARY_DIR}/phase11-clap-editor-missing-bank.json)
+    set_tests_properties(seam_phase11_clap_editor_missing_bank_smoke PROPERTIES
+      TIMEOUT 45
+      ENVIRONMENT
+        "HOME=${CMAKE_BINARY_DIR}/missing-bank-home;LOCALAPPDATA=${CMAKE_BINARY_DIR}/missing-bank-home;SEAM_PREVIEW_CACHE_ROOT=${CMAKE_BINARY_DIR}/missing-bank-preview-cache")
   endif()
   if(Python3_Interpreter_FOUND)
     add_test(NAME seam_phase11_source_and_voice_contract

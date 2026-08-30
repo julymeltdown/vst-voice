@@ -129,6 +129,8 @@ struct EditorHostCallbacks final {
   std::function<core::Result<void>(std::string_view, std::string_view,
                                    std::string_view)>
       selectVoicebank;
+  std::function<core::Result<void>()> refreshVoicebanks;
+  std::function<core::Result<void>()> openVoicebankInstaller;
   std::function<core::Result<void>(const authoring::Diagnostic&,
                                    authoring::DiagnosticAction)> diagnosticAction;
   std::function<void()> viewChanged;

@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "inventoryId": "project-seam.release-resources",
+  "inventoryVersion": "1.0.0",
+  "bundledVoicebanks": [],
+  "voicebankHandoff": "per-user-installed-catalog",
+  "installedVoicebankRoots": {
+    "macos": "~/Library/Application Support/ProjectSEAM/Voicebanks",
+    "windows": "%LOCALAPPDATA%/ProjectSEAM/Voicebanks"
+  },
+  "characterPackage": {
+    "required": false,
+    "bundled": false,
+    "fallback": "neutral-product"
+  },
+  "requiredPayloadResource": "release-resource-inventory.json",
+  "forbiddenPayloadEntries": [
+    "voicebanks/",
+    "*.seambank",
+    "character-01/",
+    "demo-voice-provenance.json",
+    "PUBLIC_DOMAIN_NOTICE.md"
+  ]
+}

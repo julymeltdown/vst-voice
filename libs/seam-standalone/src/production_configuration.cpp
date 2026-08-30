@@ -93,7 +93,11 @@ core::Result<ProductionConfiguration> makeProductionConfiguration(
       .audioBlockFrames = input.audioBlockFrames,
   };
   if (result.characterPackage.empty() && !result.paths.resourcesRoot.empty()) {
-    result.characterPackage = result.paths.resourcesRoot / "character-01";
+    const auto packagedCharacter = result.paths.resourcesRoot / "character-01";
+    std::error_code characterError;
+    if (std::filesystem::is_directory(packagedCharacter, characterError)) {
+      result.characterPackage = packagedCharacter;
+    }
   }
 
   if (input.mode == ProductionRuntimeMode::Release) {

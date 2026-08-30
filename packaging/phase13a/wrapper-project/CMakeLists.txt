@@ -21,7 +21,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
-foreach(required CLAP_WRAPPER_ROOT CLAP_SDK_ROOT VST3_SDK_ROOT SEAM_CLAP_MODULE SEAM_ARTIFACT_DIR)
+foreach(required CLAP_WRAPPER_ROOT CLAP_SDK_ROOT VST3_SDK_ROOT
+                 SEAM_CLAP_MODULE SEAM_RESOURCE_DIR SEAM_ARTIFACT_DIR)
   if(NOT DEFINED ${required} OR "${${required}}" STREQUAL "")
     message(FATAL_ERROR "${required} is required")
   endif()
@@ -33,6 +34,12 @@ foreach(path_var CLAP_WRAPPER_ROOT CLAP_SDK_ROOT VST3_SDK_ROOT)
 endforeach()
 if(NOT EXISTS "${SEAM_CLAP_MODULE}")
   message(FATAL_ERROR "SEAM_CLAP_MODULE does not exist: ${SEAM_CLAP_MODULE}")
+endif()
+set(SEAM_RELEASE_RESOURCE_INVENTORY
+  "${SEAM_RESOURCE_DIR}/release-resource-inventory.json")
+if(NOT EXISTS "${SEAM_RELEASE_RESOURCE_INVENTORY}")
+  message(FATAL_ERROR
+    "release-resource-inventory.json is required for every wrapper")
 endif()
 
 set(CLAP_SDK_ROOT "${CLAP_SDK_ROOT}" CACHE PATH "Pinned CLAP SDK" FORCE)
@@ -90,8 +97,13 @@ if(APPLE AND SEAM_BUILD_AUV2)
   set_target_properties(ProjectSEAMEditorAUv2 PROPERTIES
     LIBRARY_OUTPUT_DIRECTORY "${SEAM_ARTIFACT_DIR}")
   add_custom_command(TARGET ProjectSEAMEditorAUv2 POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory
+      "$<TARGET_BUNDLE_DIR:ProjectSEAMEditorAUv2>/Contents/Resources"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
       "${CMAKE_BINARY_DIR}/ProjectSEAMEditorAUv2-build-helper-output/auv2_Info.plist"
       "$<TARGET_BUNDLE_DIR:ProjectSEAMEditorAUv2>/Contents/Info.plist"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+      "${SEAM_RELEASE_RESOURCE_INVENTORY}"
+      "$<TARGET_BUNDLE_DIR:ProjectSEAMEditorAUv2>/Contents/Resources/release-resource-inventory.json"
     VERBATIM)
 endif()

@@ -1085,13 +1085,32 @@ void EditorScenePainter::paintVoicebankBrowser(
   canvas.drawText(ui::Point{editorRight + layout_.panelTitleInsetX,
                             layout_.toolbarHeight +
                                 layout_.panelInstructionBaselineOffset},
-                  "V TO CLOSE / EXACT CONTENT ID", theme_.secondaryText,
+                  fitUtf8Text("V CLOSE / R REFRESH / O OPEN APP",
+                              width - layout_.panelTitleInsetX * 2.0,
+                              layout_.secondaryTextCharacterWidth),
+                  theme_.secondaryText,
                   layout_.panelSecondaryInstructionFontSize);
   if (state.voicebankCards.empty()) {
     canvas.drawText(ui::Point{editorRight + layout_.panelTitleInsetX,
                               layout_.toolbarHeight + layout_.voicebankCardTop},
-                    "NO VOICEBANKS FOUND", theme_.secondaryText,
+                    "NO INSTALLED VOICEBANKS", theme_.secondaryText,
                     layout_.voicebankCardFontSize);
+    canvas.drawText(
+        ui::Point{editorRight + layout_.panelTitleInsetX,
+                  layout_.toolbarHeight + layout_.voicebankCardTop +
+                      layout_.voicebankCardDetailAdvance},
+        fitUtf8Text("PRESS O TO OPEN THE STANDALONE APP",
+                    width - layout_.panelTitleInsetX * 2.0,
+                    layout_.secondaryTextCharacterWidth),
+        theme_.secondaryText, layout_.voicebankCardFontSize);
+    canvas.drawText(
+        ui::Point{editorRight + layout_.panelTitleInsetX,
+                  layout_.toolbarHeight + layout_.voicebankCardTop +
+                      layout_.voicebankCardDetailAdvance * 2.0},
+        fitUtf8Text("INSTALL A BANK, THEN PRESS R",
+                    width - layout_.panelTitleInsetX * 2.0,
+                    layout_.secondaryTextCharacterWidth),
+        theme_.secondaryText, layout_.voicebankCardFontSize);
     return;
   }
   const auto cardX = editorRight + layout_.voicebankCardInsetX;

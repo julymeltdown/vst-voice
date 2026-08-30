@@ -47,6 +47,32 @@ int main() {
       std::nullopt, std::filesystem::path{"assets/character-01"}, roots);
   const auto initial = runtime.projectCopy();
   if (initial.noteCount() < 4U || !initial.validate()) return 1;
+  if (initial.vocalTracks().empty() ||
+      initial.vocalTracks().front().voicebank.contentHash.empty()) {
+    return 43;
+  }
+  const auto initialVoicebank = initial.vocalTracks().front().voicebank;
+  if (runtime.selectVoicebank(initialVoicebank.id, initialVoicebank.version,
+                              "wrong-content-hash") ||
+      runtime.projectCopy().vocalTracks().front().voicebank != initialVoicebank) {
+    return 44;
+  }
+  runtime.controller().showVoicebankBrowser();
+  if (runtime.controller().sceneState().voicebankCards.empty()) return 45;
+  std::size_t installerRequests = 0U;
+  runtime.setVoicebankInstallerHandoff([&installerRequests] {
+    ++installerRequests;
+    return seam::core::success();
+  });
+  runtime.keyDown(seam::native_ui::KeyEvent{
+      .key = seam::native_ui::NativeKey::O,
+      .modifiers = {},
+      .repeat = false,
+  });
+  if (installerRequests != 1U ||
+      !runtime.controller().voicebankBrowserVisible()) {
+    return 46;
+  }
   const auto accessibility = runtime.accessibilitySnapshot();
   const auto toolbar = std::find_if(
       accessibility.children.begin(), accessibility.children.end(),

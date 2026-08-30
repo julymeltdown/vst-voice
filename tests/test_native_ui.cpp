@@ -2444,6 +2444,50 @@ TEST_CASE("native scene paints exact voicebank browser cards") {
   }
 }
 
+TEST_CASE("native voicebank browser routes refresh and standalone recovery") {
+  NativeUiFixture fixture;
+  std::size_t refreshRequests = 0U;
+  std::size_t installerRequests = 0U;
+  seam::native_ui::NativeEditorController controller{
+      fixture.session, fixture.factory, fixture.regionId,
+      seam::native_ui::EditorHostCallbacks{
+          .refreshVoicebanks = [&refreshRequests] {
+            ++refreshRequests;
+            return seam::core::success();
+          },
+          .openVoicebankInstaller = [&installerRequests] {
+            ++installerRequests;
+            return seam::core::success();
+          },
+      }};
+
+  controller.showVoicebankBrowser();
+  CHECK(controller.keyDown(seam::native_ui::KeyEvent{
+      .key = seam::native_ui::NativeKey::R, .modifiers = {}, .repeat = false}));
+  CHECK(controller.voicebankBrowserVisible());
+  CHECK(refreshRequests == 1U);
+  CHECK(controller.keyDown(seam::native_ui::KeyEvent{
+      .key = seam::native_ui::NativeKey::O, .modifiers = {}, .repeat = false}));
+  CHECK(controller.voicebankBrowserVisible());
+  CHECK(installerRequests == 1U);
+
+  controller.resize(1280.0, 720.0);
+  seam::native_ui::EditorScenePainter painter;
+  seam::native_ui::PixelSurface surface{1280U, 720U};
+  seam::native_ui::RasterCanvas canvas{surface, 1.0};
+  painter.paint(canvas, controller.pianoRoll(), controller.sceneState());
+  CHECK(surface.checksum() != 0U);
+  if (const auto* captureRoot =
+          std::getenv("SEAM_NATIVE_UI_VOICEBANK_CAPTURE_DIR");
+      captureRoot != nullptr && *captureRoot != '\0') {
+    const std::filesystem::path directory{captureRoot};
+    std::error_code error;
+    std::filesystem::create_directories(directory, error);
+    CHECK(!error);
+    CHECK(surface.writePpm(directory / "voicebank-recovery-empty.ppm"));
+  }
+}
+
 TEST_CASE("native scene exposes transactional audio settings controls") {
   NativeUiFixture fixture;
   std::size_t applyCount = 0U;

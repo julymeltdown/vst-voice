@@ -165,7 +165,8 @@ EditorRuntime::EditorRuntime(
       }()),
       factory_(authoring_->document().factory()),
       session_(authoring_->document().session()),
-      voicebankSession_(authoring_->voicebanks()) {
+      voicebankSession_(authoring_->voicebanks()),
+      voicebankBrowser_(allowDevelopmentVoicebanks_) {
   authoring_->setCompletionCallback(
       [this] { publishPreviewFromAuthoring(); });
   const auto initialized = authoring_->initialize();
@@ -190,6 +191,7 @@ EditorRuntime::EditorRuntime(
     }
   }
   refreshAllVoicebankResolutionsLocked();
+  rebuildVoicebankCardsLocked();
   rebuildController();
   const auto loaded = character_.load(characterPackage);
   if (loaded && controller_) {
@@ -297,6 +299,14 @@ void EditorRuntime::refreshAllVoicebankResolutionsLocked() {
   refreshLiveResourceLocked();
 }
 
+void EditorRuntime::rebuildVoicebankCardsLocked() {
+  voicebankBrowser_ =
+      authoring::VoicebankBrowserModel{allowDevelopmentVoicebanks_};
+  const auto candidates = voicebankSession_.candidates();
+  voicebankBrowser_.rebuild(candidates);
+  if (controller_) controller_->setVoicebankCards(voicebankBrowser_.cards());
+}
+
 void EditorRuntime::refreshLiveResourceLocked() {
   if (!voicebankResolution_.resolved() ||
       !voicebankResolution_.candidate.has_value()) {
@@ -321,6 +331,7 @@ core::Result<void> EditorRuntime::refreshVoicebanks() {
   const auto refreshed = voicebankSession_.refresh();
   if (!refreshed) return refreshed;
   refreshAllVoicebankResolutionsLocked();
+  rebuildVoicebankCardsLocked();
   if (controller_) {
     const auto ready = voicebankResolution_.resolved();
     controller_->setAudioState(ready, voicebankStatusLabel(voicebankResolution_));
@@ -340,6 +351,7 @@ core::Result<void> EditorRuntime::addVoicebankSearchRoot(
   const auto added = voicebankSession_.addSearchRoot(std::move(root));
   if (!added) return added;
   refreshAllVoicebankResolutionsLocked();
+  rebuildVoicebankCardsLocked();
   if (controller_) {
     const auto ready = voicebankResolution_.resolved();
     controller_->setAudioState(ready, voicebankStatusLabel(voicebankResolution_));
@@ -353,33 +365,17 @@ core::Result<void> EditorRuntime::selectVoicebank(
     std::string_view id, std::string_view version,
     std::optional<std::string_view> contentHash) {
   std::lock_guard lock(mutex_);
-  const auto candidates = voicebankSession_.candidates();
-  const auto candidate = std::find_if(
-      candidates.begin(), candidates.end(),
-      [id, version, contentHash](const auto& value) {
-        return value.manifest.id == id && value.manifest.version == version &&
-               (!contentHash.has_value() || value.contentHash == *contentHash);
-      });
-  if (candidate == candidates.end()) {
-    return core::failure(
-        contentHash.has_value() ? core::ErrorCode::Conflict : core::ErrorCode::NotFound,
-        contentHash.has_value()
-            ? "Requested Voicebank content hash is unavailable for that ID and version"
-            : "Requested Voicebank ID and version are unavailable",
-        std::string{id} + " " + std::string{version});
+  if (!contentHash.has_value() || contentHash->empty()) {
+    return core::failure(core::ErrorCode::InvalidArgument,
+                         "Voicebank selection requires an exact content hash");
   }
-  if (contentHash.has_value() && *contentHash != candidate->contentHash) {
-    return core::failure(core::ErrorCode::Conflict,
-                         "Requested Voicebank content hash does not match",
-                         candidate->contentHash);
-  }
-  const auto bound = bindVoicebankLocked(*candidate);
-  if (!bound) return bound;
+  const auto selected = voicebankSession_.selectTrackExact(
+      authoring_->document(), trackId_, id, version, *contentHash);
+  if (!selected) return selected;
   refreshAllVoicebankResolutionsLocked();
   if (controller_) {
-    controller_->setAudioState(
-        true, "BANK " + candidate->manifest.displayName + " [" +
-                  std::string{voicebank::voicebankTrustName(candidate->trust)} + "]");
+    controller_->setAudioState(voicebankResolution_.resolved(),
+                               voicebankStatusLabel(voicebankResolution_));
   }
   requestRenderAfterEdit();
   return core::success();
@@ -415,6 +411,24 @@ void EditorRuntime::configureControllerCallbacks() {
         if (controller_) controller_->setDirty(dirty_);
         requestRepaint();
       },
+      .selectVoicebank = [this](std::string_view id, std::string_view version,
+                                std::string_view contentHash) {
+        return selectVoicebank(id, version, contentHash);
+      },
+      .refreshVoicebanks = [this] { return refreshVoicebanks(); },
+      .openVoicebankInstaller = [this] {
+        std::function<core::Result<void>()> callback;
+        {
+          std::lock_guard lock(mutex_);
+          callback = voicebankInstallerHandoff_;
+        }
+        if (!callback) {
+          return core::failure(
+              core::ErrorCode::Unsupported,
+              "Standalone voicebank installation is not available");
+        }
+        return callback();
+      },
       .reduceMotionEnabled = [] {
         return platform::currentAccessibilityPreferences().reduceMotion;
       },
@@ -424,6 +438,7 @@ void EditorRuntime::configureControllerCallbacks() {
   controller_->resize(logicalWidth_, logicalHeight_);
   const auto ready = voicebankResolution_.resolved();
   controller_->setAudioState(ready, voicebankStatusLabel(voicebankResolution_));
+  controller_->setVoicebankCards(voicebankBrowser_.cards());
 }
 
 void EditorRuntime::rebuildController() {
@@ -446,6 +461,12 @@ void EditorRuntime::setTextInputCallbacks(
   std::lock_guard lock(mutex_);
   beginTextInput_ = std::move(begin);
   endTextInput_ = std::move(end);
+}
+
+void EditorRuntime::setVoicebankInstallerHandoff(
+    std::function<core::Result<void>()> callback) {
+  std::lock_guard lock(mutex_);
+  voicebankInstallerHandoff_ = std::move(callback);
 }
 
 void EditorRuntime::resize(double logicalWidth, double logicalHeight) noexcept {

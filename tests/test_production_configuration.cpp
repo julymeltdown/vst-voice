@@ -66,6 +66,7 @@ TEST_CASE("release configuration removes development and fallback defaults") {
   CHECK(value.startPaused);
   CHECK(value.cacheRoot == paths.cacheRoot);
   CHECK(value.applicationSupportRoot == paths.userDataRoot);
+  CHECK(value.characterPackage.empty());
   CHECK(value.voicebankRoots.size() == 2U);
   CHECK(value.voicebankRoots.front().path == paths.voicebankRoot);
   CHECK(value.voicebankRoots.front().kind ==

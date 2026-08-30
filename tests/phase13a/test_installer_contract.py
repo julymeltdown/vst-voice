@@ -17,6 +17,9 @@ class InstallerContractTests(unittest.TestCase):
         self.assertIn("moduleinfo.json", builder)
         self.assertIn("ConvertFrom-Json", builder)
         self.assertIn("RELEASE_IDENTITY.json", builder)
+        self.assertIn("release-resource-inventory.json", builder)
+        self.assertNotIn("character-01", builder)
+        self.assertNotIn("demo-human-voicebank-public-domain", builder)
         self.assertNotIn("$LOCALAPPDATA", nsi)
         self.assertNotIn("0.13.0", nsi + builder)
 
@@ -29,6 +32,12 @@ class InstallerContractTests(unittest.TestCase):
         self.assertIn("--norsrc", script)
         self.assertIn("@PROJECT_SEAM_VERSION@", distribution)
         self.assertIn("RELEASE_IDENTITY.json", script)
+        standalone = (ROOT / "scripts/package_macos_standalone.sh").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("release-resource-inventory.json", standalone)
+        self.assertNotIn("character-01", standalone)
+        self.assertNotIn("demo-human-voicebank-public-domain", standalone)
         self.assertNotIn("PROJECT_SEAM_VERSION is required", script)
         self.assertNotIn("0.13.0", script + distribution)
 

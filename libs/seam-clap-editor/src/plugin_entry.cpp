@@ -3,6 +3,7 @@
 #include "seam/clap_editor/embedded_view.hpp"
 #include "seam/clap_editor/host_timeline.hpp"
 #include "seam/live_voice/midi1_decoder.hpp"
+#include "seam/platform/application_menu.hpp"
 
 #include <clap/clap.h>
 
@@ -12,6 +13,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
@@ -67,11 +69,38 @@ std::filesystem::path resolveCharacterPackage() {
       return sidecarCandidate;
     }
   }
-#if defined(SEAM_SOURCE_CHARACTER_PACKAGE)
-  return std::filesystem::path{SEAM_SOURCE_CHARACTER_PACKAGE};
-#else
-  return std::filesystem::path{"assets/character-01"};
+  return {};
+}
+
+core::Result<void> openStandaloneVoicebankInstaller() {
+  std::vector<std::filesystem::path> candidates;
+  if (const auto* configured = std::getenv("SEAM_STANDALONE_PATH");
+      configured != nullptr && *configured != '\0') {
+    candidates.emplace_back(configured);
+  }
+#if defined(__APPLE__)
+  candidates.emplace_back("/Applications/Project SEAM.app");
+  if (const auto* home = std::getenv("HOME");
+      home != nullptr && *home != '\0') {
+    candidates.emplace_back(std::filesystem::path{home} / "Applications" /
+                            "Project SEAM.app");
+  }
+#elif defined(_WIN32)
+  if (const auto* programFiles = std::getenv("ProgramFiles");
+      programFiles != nullptr && *programFiles != '\0') {
+    candidates.emplace_back(std::filesystem::path{programFiles} /
+                            "Project SEAM" / "Project SEAM.exe");
+  }
 #endif
+  for (const auto& candidate : candidates) {
+    std::error_code error;
+    if (std::filesystem::exists(candidate, error) && !error) {
+      return platform::openExternalPath(candidate);
+    }
+  }
+  return core::failure(
+      core::ErrorCode::NotFound,
+      "Install the Project SEAM standalone app to manage voicebanks");
 }
 
 std::vector<voicebank::VoicebankSearchRoot> resolveVoicebankRoots() {
@@ -124,6 +153,8 @@ public:
       : host_(host),
         runtime_(std::make_unique<EditorRuntime>(
             std::nullopt, resolveCharacterPackage(), resolveVoicebankRoots())) {
+    runtime_->setVoicebankInstallerHandoff(
+        [] { return openStandaloneVoicebankInstaller(); });
     runtime_->setRenderReadyCallback([this] {
       refreshRuntimeMetadata();
       if (host_ != nullptr && host_->request_process != nullptr) {
