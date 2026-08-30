@@ -14,3 +14,11 @@ See `RELEASE_READINESS_KO.md` for the canonical checklist.
 ## Phase 13B content/IP gate
 
 G5 remains blocked until the Official Voicebank and Character dossiers are accepted, the final EULA and voicebank licence are approved, and every mandatory Phase 12C/13A/13B row has real evidence.
+
+## Public Production
+
+The fail-closed public contract is present, but current status is `BLOCKED` and
+not `PUBLIC_ACTIVE`. External Beta closure, the exact signed/installed root
+chain, operated support/update/incident evidence, independent approvals, and
+Windows `PW-001` through `PW-020` target records are still required; all PW
+rows are `NOT_RUN`.

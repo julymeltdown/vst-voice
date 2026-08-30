@@ -2,6 +2,10 @@
 
 현재 판정은 **G1 FEATURE_ALPHA**다.
 
+Public Production 계약은 구현되었지만 현재 상태는 `BLOCKED`이며
+`PUBLIC_ACTIVE`가 아니다. Windows 독립 계약 `PW-001`부터 `PW-020`까지는
+모두 `NOT_RUN`이다.
+
 ## G2 Feature Complete
 
 - [x] production Phrase pipeline와 trusted Voicebank resolution

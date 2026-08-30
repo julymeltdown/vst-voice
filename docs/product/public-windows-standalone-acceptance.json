@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "contractId": "project-seam.public-windows-standalone.acceptance",
+  "contractVersion": "1.0.0",
+  "gate": {
+    "name": "Public Windows Standalone",
+    "status": "BLOCKED"
+  },
+  "canonicalDocument": "docs/product/PUBLIC_WINDOWS_STANDALONE_ACCEPTANCE.md",
+  "evidenceSchema": "docs/product/public-windows-standalone-evidence.schema.json",
+  "platform": "windows",
+  "architecture": "x86_64",
+  "surface": "standalone",
+  "candidateLineageId": null,
+  "artifactRootSha256": null,
+  "installedTreeSha256": null,
+  "requirements": [
+    {"id": "PW-001", "description": "Acquire the exact installer from the signed public channel.", "mandatory": true, "status": "NOT_RUN", "evidence": []},
+    {"id": "PW-002", "description": "Verify Authenticode, timestamp, installer hash, and lineage.", "mandatory": true, "status": "NOT_RUN", "evidence": []},
+    {"id": "PW-003", "description": "Install on a clean Windows x64 snapshot without developer dependencies.", "mandatory": true, "status": "NOT_RUN", "evidence": []},
+    {"id": "PW-004", "description": "Launch the installed standalone from the Start menu.", "mandatory": true, "status": "NOT_RUN", "evidence": []},
+    {"id": "PW-005", "description": "Accept exact public documents and expose operated destinations.", "mandatory": true, "status": "NOT_RUN", "evidence": []},
+    {"id": "PW-006", "description": "Install or resolve the exact production bank without fixtures or Character dependency.", "mandatory": true, "status": "NOT_RUN", "evidence": []},
+    {"id": "PW-007", "description": "Create a project with exact settings and bank identity.", "mandatory": true, "status": "NOT_RUN", "evidence": []},
+    {"id": "PW-008", "description": "Author at least 30 seconds of notes and Japanese lyrics.", "mandatory": true, "status": "NOT_RUN", "evidence": []},
+    {"id": "PW-009", "description": "Inspect and persist phoneme, unit, pitch, and seam edits.", "mandatory": true, "status": "NOT_RUN", "evidence": []},
+    {"id": "PW-010", "description": "Hear production sample-concatenative audio for the visible project.", "mandatory": true, "status": "NOT_RUN", "evidence": []},
+    {"id": "PW-011", "description": "Complete physical WASAPI transport and device-change behavior safely.", "mandatory": true, "status": "NOT_RUN", "evidence": []},
+    {"id": "PW-012", "description": "Save the project atomically to a selected path.", "mandatory": true, "status": "NOT_RUN", "evidence": []},
+    {"id": "PW-013", "description": "Reopen with exact bank and materially identical audio.", "mandatory": true, "status": "NOT_RUN", "evidence": []},
+    {"id": "PW-014", "description": "Recover a dirty project after forced termination without data loss.", "mandatory": true, "status": "NOT_RUN", "evidence": []},
+    {"id": "PW-015", "description": "Relink a missing or changed bank by exact identity without substitution.", "mandatory": true, "status": "NOT_RUN", "evidence": []},
+    {"id": "PW-016", "description": "Export a final-quality master WAV.", "mandatory": true, "status": "NOT_RUN", "evidence": []},
+    {"id": "PW-017", "description": "Export a vocal stem WAV without a partial destination.", "mandatory": true, "status": "NOT_RUN", "evidence": []},
+    {"id": "PW-018", "description": "Verify exported audio and hashes in an external Windows player.", "mandatory": true, "status": "NOT_RUN", "evidence": []},
+    {"id": "PW-019", "description": "Complete repair, interrupted update, rollback, uninstall, and reinstall.", "mandatory": true, "status": "NOT_RUN", "evidence": []},
+    {"id": "PW-020", "description": "Complete stable physical-audio and keyboard/Narrator acceptance.", "mandatory": true, "status": "NOT_RUN", "evidence": []}
+  ]
+}

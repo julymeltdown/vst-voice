@@ -1,0 +1,167 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "schemaVersion": 1,
+  "contractId": "project-seam.public-release.acceptance",
+  "contractVersion": "1.0.0",
+  "product": "Project SEAM",
+  "channel": "public-direct-download",
+  "states": [
+    "DRAFT",
+    "AUTHORIZED_FROZEN",
+    "SIGNED",
+    "CLEAN_INSTALLED",
+    "BANK_READY",
+    "EVIDENCE_PASSED",
+    "EXTERNAL_BETA_READY",
+    "EXTERNAL_BETA_CLOSED",
+    "PUBLIC_ACTIVE",
+    "DISTRIBUTION_PAUSED",
+    "SUPERSEDED",
+    "REVOKED"
+  ],
+  "transitions": [
+    {"from": "DRAFT", "action": "AUTHORIZE_FREEZE", "to": "AUTHORIZED_FROZEN"},
+    {"from": "AUTHORIZED_FROZEN", "action": "MARK_SIGNED", "to": "SIGNED"},
+    {"from": "SIGNED", "action": "MARK_CLEAN_INSTALLED", "to": "CLEAN_INSTALLED"},
+    {"from": "CLEAN_INSTALLED", "action": "MARK_BANK_READY", "to": "BANK_READY"},
+    {"from": "BANK_READY", "action": "MARK_EVIDENCE_PASSED", "to": "EVIDENCE_PASSED"},
+    {"from": "EVIDENCE_PASSED", "action": "MARK_EXTERNAL_BETA_READY", "to": "EXTERNAL_BETA_READY"},
+    {"from": "EXTERNAL_BETA_READY", "action": "MARK_EXTERNAL_BETA_CLOSED", "to": "EXTERNAL_BETA_CLOSED"},
+    {"from": "EXTERNAL_BETA_CLOSED", "action": "ACTIVATE", "to": "PUBLIC_ACTIVE"},
+    {"from": "PUBLIC_ACTIVE", "action": "PAUSE", "to": "DISTRIBUTION_PAUSED"},
+    {"from": "DISTRIBUTION_PAUSED", "action": "RESUME", "to": "PUBLIC_ACTIVE", "requiresFreshQuorum": true},
+    {"from": "PUBLIC_ACTIVE", "action": "SUPERSEDE", "to": "SUPERSEDED"},
+    {"from": "DISTRIBUTION_PAUSED", "action": "SUPERSEDE", "to": "SUPERSEDED"},
+    {"from": "DRAFT", "action": "REVOKE", "to": "REVOKED"},
+    {"from": "AUTHORIZED_FROZEN", "action": "REVOKE", "to": "REVOKED"},
+    {"from": "SIGNED", "action": "REVOKE", "to": "REVOKED"},
+    {"from": "CLEAN_INSTALLED", "action": "REVOKE", "to": "REVOKED"},
+    {"from": "BANK_READY", "action": "REVOKE", "to": "REVOKED"},
+    {"from": "EVIDENCE_PASSED", "action": "REVOKE", "to": "REVOKED"},
+    {"from": "EXTERNAL_BETA_READY", "action": "REVOKE", "to": "REVOKED"},
+    {"from": "EXTERNAL_BETA_CLOSED", "action": "REVOKE", "to": "REVOKED"},
+    {"from": "PUBLIC_ACTIVE", "action": "REVOKE", "to": "REVOKED"},
+    {"from": "DISTRIBUTION_PAUSED", "action": "REVOKE", "to": "REVOKED"},
+    {"from": "SUPERSEDED", "action": "REVOKE", "to": "REVOKED"}
+  ],
+  "terminalStates": ["REVOKED"],
+  "rootChain": {
+    "freezeRootBinds": [
+      "sourceTreeSha256",
+      "bankSourceSha256",
+      "publicDocumentsSha256",
+      "sbomSha256",
+      "trustPolicySha256",
+      "toolchainSha256",
+      "unsignedPayloadSha256"
+    ],
+    "artifactRootBinds": [
+      "freezeRootSha256",
+      "macosPackageSha256",
+      "windowsInstallerSha256",
+      "bankPackageSha256"
+    ],
+    "evidenceRootBinds": [
+      "artifactRootSha256",
+      "archiveManifestSha256",
+      "evidenceIndexSha256",
+      "macosInstalledTreeSha256",
+      "windowsInstalledTreeSha256",
+      "bankInstalledTreeSha256"
+    ],
+    "approvalEnvelopesOutsideRootDigests": true
+  },
+  "requirements": [
+    {"id": "PR-001-contract", "title": "Public contract and exact release identity", "gate": "docs/product/public-release-acceptance.json", "mandatoryFor": ["PUBLIC_ACTIVE"]},
+    {"id": "PR-002-root-chain", "title": "FreezeRoot, ArtifactRoot, and EvidenceRoot coherence", "gate": "tools/public_release/release_gate.py", "mandatoryFor": ["PUBLIC_ACTIVE"]},
+    {"id": "PR-003-external-beta-closed", "title": "Same-lineage External Beta closure", "gate": "docs/product/external-beta-acceptance.json", "mandatoryFor": ["PUBLIC_ACTIVE"]},
+    {"id": "PR-004-public-documents", "title": "Public document identity, digest, acceptance, and reacceptance", "gate": "docs/public", "mandatoryFor": ["PUBLIC_ACTIVE"]},
+    {"id": "PR-005-signed-artifacts", "title": "Signed macOS, Windows, and bank descendants", "gate": "tools/public_release/release_gate.py", "mandatoryFor": ["PUBLIC_ACTIVE"]},
+    {"id": "PR-006-clean-installed", "title": "Independent clean-installed trees", "gate": "tools/public_release/release_gate.py", "mandatoryFor": ["PUBLIC_ACTIVE"]},
+    {"id": "PR-007-bank-ready", "title": "Rights, musical, signed-package, and installed-bank identity", "gate": "tools/public_release/release_gate.py", "mandatoryFor": ["PUBLIC_ACTIVE"]},
+    {"id": "PR-008-target-matrices", "title": "Apple Silicon UA and separate Windows PW target matrices", "gate": "docs/product/public-windows-standalone-acceptance.json", "mandatoryFor": ["PUBLIC_ACTIVE"]},
+    {"id": "PR-009-update-channel", "title": "Signed public update, pause, repair, supersede, and revoke channel", "gate": "tools/public_release/release_gate.py", "mandatoryFor": ["PUBLIC_ACTIVE"]},
+    {"id": "PR-010-support-intake", "title": "Operated support intake through retention or deletion", "gate": "docs/public/SUPPORT.md", "mandatoryFor": ["PUBLIC_ACTIVE"]},
+    {"id": "PR-011-incident-drill", "title": "Candidate-bound public incident drill", "gate": "docs/public/SECURITY_RESPONSE.md", "mandatoryFor": ["PUBLIC_ACTIVE"]},
+    {"id": "PR-012-archive-restore", "title": "Restored immutable archive and raw evidence hashes", "gate": "scripts/run_public_release_audit.py", "mandatoryFor": ["PUBLIC_ACTIVE"]},
+    {"id": "PR-013-approvals", "title": "Ed25519 quorum and role separation outside EvidenceRoot", "gate": "tools/public_release/release_gate.py", "mandatoryFor": ["PUBLIC_ACTIVE"]},
+    {"id": "PR-014-rollback-revoke", "title": "Verified rollback and irreversible separate-candidate revoke rehearsal", "gate": "tools/public_release/release_gate.py", "mandatoryFor": ["PUBLIC_ACTIVE"]}
+  ],
+  "publicDocuments": [
+    {
+      "id": "project-seam.public.eula",
+      "version": "public-eula-1.0.0",
+      "path": "docs/public/EULA.md",
+      "sha256": "b01bcb727daa233fc03cdde8d9617cc19c09f2cd26a674f471cb88cd9fb5c60e",
+      "approvalStatus": "DRAFT",
+      "acceptanceMode": "EXPLICIT",
+      "reacceptOnDigestChange": true
+    },
+    {
+      "id": "project-seam.public.privacy",
+      "version": "public-privacy-1.0.0",
+      "path": "docs/public/PRIVACY.md",
+      "sha256": "4a7faa37bc98baa3385bc5c18b484418be8e0aa5e7c08787bb618e5c7dcabd89",
+      "approvalStatus": "DRAFT",
+      "acceptanceMode": "EXPLICIT",
+      "reacceptOnDigestChange": true
+    },
+    {
+      "id": "project-seam.public.support",
+      "version": "public-support-1.0.0",
+      "path": "docs/public/SUPPORT.md",
+      "sha256": "48f9aaa6a193b05d0dc7030730cd82fc429189b34e8ec3bcf77961833fc5c6a5",
+      "approvalStatus": "DRAFT",
+      "acceptanceMode": "PUBLISHED_VERSION",
+      "reacceptOnDigestChange": false
+    },
+    {
+      "id": "project-seam.public.security-response",
+      "version": "public-security-response-1.0.0",
+      "path": "docs/public/SECURITY_RESPONSE.md",
+      "sha256": "c426595b7cf0ca8c5dccfd0e18554ad1b7756a4cf3e13132bc9825b6a2eb2c22",
+      "approvalStatus": "DRAFT",
+      "acceptanceMode": "PUBLISHED_VERSION",
+      "reacceptOnDigestChange": false
+    }
+  ],
+  "publicDestinations": [
+    {"id": "project-seam.public.support-intake", "kind": "support", "candidateBound": true},
+    {"id": "project-seam.public.security-contact", "kind": "security", "candidateBound": true},
+    {"id": "project-seam.public.direct-download", "kind": "update-and-download", "candidateBound": true}
+  ],
+  "approvalPolicy": {
+    "policyVersion": "public-release-approval-1.0",
+    "requiredRoles": [
+      "independent-release-verifier",
+      "content-rights",
+      "security-privacy",
+      "macos-reviewer",
+      "windows-reviewer",
+      "musician-reviewer",
+      "accessibility-reviewer",
+      "archive-reviewer"
+    ],
+    "algorithm": "Ed25519",
+    "distinctSigners": true,
+    "trustedKeyFields": ["keyId", "role", "signerId", "publicKey"],
+    "signedFields": [
+      "evidenceRootSha256",
+      "role",
+      "decision",
+      "policyVersion",
+      "trustedTime",
+      "keyId"
+    ],
+    "trustedKeys": []
+  },
+  "operationPolicy": {
+    "policyVersion": "public-release-operation-1.0",
+    "publisherRole": "release-manager",
+    "algorithm": "Ed25519",
+    "trustedKeyFields": ["keyId", "role", "signerId", "publicKey"],
+    "trustedKeys": []
+  },
+  "status": "BLOCKED",
+  "evidence": []
+}

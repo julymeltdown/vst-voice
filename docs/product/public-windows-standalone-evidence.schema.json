@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://project-seam.invalid/schemas/public-windows-standalone-evidence.schema.json",
+  "title": "Project SEAM Public Windows Standalone Evidence",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "recordId",
+    "requirementId",
+    "candidateLineageId",
+    "artifactRootSha256",
+    "installedTreeSha256",
+    "platform",
+    "architecture",
+    "surface",
+    "status",
+    "operatorId",
+    "machineProfileId",
+    "trustedTime",
+    "path",
+    "sha256"
+  ],
+  "properties": {
+    "recordId": {"type": "string", "minLength": 1},
+    "requirementId": {"type": "string", "pattern": "^PW-(00[1-9]|01[0-9]|020)$"},
+    "candidateLineageId": {"type": "string", "minLength": 1},
+    "artifactRootSha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "installedTreeSha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "platform": {"const": "windows"},
+    "architecture": {"const": "x86_64"},
+    "surface": {"const": "standalone"},
+    "status": {"const": "PASS"},
+    "operatorId": {"type": "string", "minLength": 1},
+    "machineProfileId": {"type": "string", "minLength": 1},
+    "trustedTime": {"type": "string", "format": "date-time"},
+    "path": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*\\\\).+$"
+    },
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+  }
+}
