@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <iomanip>
 #include <limits>
+#include <locale>
 #include <sstream>
 
 namespace seam::formats {
@@ -277,10 +278,10 @@ private:
       return JsonValue{integer};
     }
     double number = 0.0;
-    const auto [end, error] = std::from_chars(
-        token.data(), token.data() + token.size(), number);
-    if (error != std::errc{} || end != token.data() + token.size() ||
-        !std::isfinite(number)) {
+    std::istringstream stream{std::string{token}};
+    stream.imbue(std::locale::classic());
+    stream >> std::noskipws >> number;
+    if (!stream.eof() || stream.fail() || !std::isfinite(number)) {
       return fail("JSON number is not representable");
     }
     return JsonValue{number};

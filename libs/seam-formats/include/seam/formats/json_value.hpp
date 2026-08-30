@@ -7,6 +7,7 @@
 #include <map>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <variant>
 #include <vector>
 
@@ -35,8 +36,8 @@ public:
   JsonValue(std::int64_t value) : storage_(value) {}
   JsonValue(std::string value) : storage_(std::move(value)) {}
   JsonValue(const char* value) : storage_(std::string(value)) {}
-  JsonValue(Array value) : storage_(std::move(value)) {}
-  JsonValue(Object value) : storage_(std::move(value)) {}
+  JsonValue(Array value);
+  JsonValue(Object value);
 
   [[nodiscard]] bool isNull() const noexcept {
     return std::holds_alternative<std::nullptr_t>(storage_);
@@ -75,11 +76,17 @@ public:
   [[nodiscard]] JsonValue* find(std::string_view key) noexcept;
 
   [[nodiscard]] const Storage& storage() const noexcept { return storage_; }
-  friend bool operator==(const JsonValue&, const JsonValue&) = default;
+  friend bool operator==(const JsonValue& left, const JsonValue& right);
 
 private:
   Storage storage_;
 };
+
+inline JsonValue::JsonValue(Array value) : storage_(std::move(value)) {}
+inline JsonValue::JsonValue(Object value) : storage_(std::move(value)) {}
+inline bool operator==(const JsonValue& left, const JsonValue& right) {
+  return left.storage_ == right.storage_;
+}
 
 [[nodiscard]] core::Result<JsonValue> parseJson(
     std::string_view input,

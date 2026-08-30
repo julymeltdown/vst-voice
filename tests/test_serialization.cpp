@@ -17,6 +17,32 @@ TEST_CASE("internal JSON parser handles nested UTF-8 data") {
   CHECK(!seam::formats::parseJson(R"({"broken": [1,})"));
 }
 
+TEST_CASE("internal JSON parser accepts finite decimal and exponent numbers") {
+  const auto decimal = seam::formats::parseJson("-0.125");
+  const auto exponent = seam::formats::parseJson("1.25e2");
+
+  CHECK(decimal);
+  CHECK(exponent);
+  CHECK_NEAR(decimal.value().asNumber(), -0.125, 1e-12);
+  CHECK_NEAR(exponent.value().asNumber(), 125.0, 1e-12);
+  CHECK(!seam::formats::parseJson("1e9999"));
+}
+
+TEST_CASE("JSON arrays relocate nested object values without dangling storage") {
+  seam::formats::JsonValue::Array values;
+  for (std::int64_t index = 0; index < 64; ++index) {
+    values.emplace_back(seam::formats::JsonValue::Object{
+        {"index", seam::formats::JsonValue{index}},
+        {"nested", seam::formats::JsonValue::Object{
+                       {"value", seam::formats::JsonValue{index + 1}}}},
+    });
+  }
+
+  const seam::formats::JsonValue root{values};
+  CHECK(root.asArray().size() == 64U);
+  CHECK(root.asArray().back().find("index")->asInt64() == 63);
+}
+
 TEST_CASE("project JSON round trip preserves the canonical model") {
   seam::application::ProjectFactory factory{100};
   auto project = factory.createProject("Serialization fixture");
