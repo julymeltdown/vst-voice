@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <span>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace seam::clap {
@@ -40,6 +41,7 @@ struct PluginSession final {
 [[nodiscard]] core::Result<PluginSession> makeDiagnosticSession(
     std::uint32_t sampleRate, std::uint8_t channels,
     double durationSeconds = 2.0);
+[[nodiscard]] core::Result<double> parseMasterGainDb(std::string_view text);
 [[nodiscard]] float gainFromDecibels(double decibels) noexcept;
 
 }  // namespace seam::clap

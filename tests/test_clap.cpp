@@ -59,6 +59,22 @@ TEST_CASE("CLAP master gain conversion follows decibel scale") {
   CHECK(seam::clap::gainFromDecibels(-100.0) == 0.0F);
 }
 
+TEST_CASE("CLAP master gain parser accepts exact classic-locale decimals") {
+  const auto zero = seam::clap::parseMasterGainDb("0.0");
+  CHECK(zero);
+  CHECK_NEAR(zero.value(), 0.0, 1.0e-12);
+  const auto exponent = seam::clap::parseMasterGainDb("-6.25e0");
+  CHECK(exponent);
+  CHECK_NEAR(exponent.value(), -6.25, 1.0e-12);
+}
+
+TEST_CASE("CLAP master gain parser rejects malformed or unsafe values") {
+  for (const auto value : {"1.0suffix", " nan", "nan", "inf", "1e999",
+                           "-60.1", "6.1", ""}) {
+    CHECK(!seam::clap::parseMasterGainDb(value));
+  }
+}
+
 TEST_CASE("CLAP state rejects overflowed declared frame counts before allocation") {
   auto session = seam::clap::makeDiagnosticSession(48000U, 2U, 0.01);
   CHECK(session);

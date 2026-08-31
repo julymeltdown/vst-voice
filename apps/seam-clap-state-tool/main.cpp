@@ -2,7 +2,6 @@
 #include "seam/clap/state_codec.hpp"
 #include "seam/voicebank/wav.hpp"
 
-#include <charconv>
 #include <filesystem>
 #include <iomanip>
 #include <iostream>
@@ -26,13 +25,6 @@ void printError(const seam::core::Error& error) {
   std::cerr << '\n';
 }
 
-bool parseDouble(std::string_view text, double& value) {
-  const auto* first = text.data();
-  const auto* last = first + text.size();
-  const auto result = std::from_chars(first, last, value);
-  return result.ec == std::errc{} && result.ptr == last;
-}
-
 int packState(int argc, char** argv) {
   if (argc < 4) {
     usage();
@@ -45,10 +37,12 @@ int packState(int argc, char** argv) {
     if (option == "--title" && index + 1 < argc) {
       title = argv[++index];
     } else if (option == "--gain-db" && index + 1 < argc) {
-      if (!parseDouble(argv[++index], gainDb)) {
-        std::cerr << "error: --gain-db requires a finite decimal value\n";
+      const auto parsed = seam::clap::parseMasterGainDb(argv[++index]);
+      if (!parsed) {
+        std::cerr << "error: " << parsed.error().message << '\n';
         return 2;
       }
+      gainDb = parsed.value();
     } else {
       std::cerr << "error: unknown or incomplete option: " << option << '\n';
       return 2;

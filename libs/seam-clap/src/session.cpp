@@ -2,8 +2,11 @@
 
 #include <algorithm>
 #include <cmath>
+#include <iomanip>
 #include <limits>
+#include <locale>
 #include <numbers>
+#include <sstream>
 
 namespace seam::clap {
 
@@ -123,6 +126,24 @@ core::Result<PluginSession> makeDiagnosticSession(std::uint32_t sampleRate,
     }
   }
   return session;
+}
+
+core::Result<double> parseMasterGainDb(std::string_view text) {
+  if (text.empty()) {
+    return core::failure<double>(core::ErrorCode::InvalidArgument,
+                                 "Master gain must be an exact finite decimal");
+  }
+  std::istringstream stream{std::string{text}};
+  stream.imbue(std::locale::classic());
+  double value = 0.0;
+  stream >> std::noskipws >> value;
+  if (!stream || !stream.eof() || !std::isfinite(value) ||
+      value < kMinimumMasterGainDb || value > kMaximumMasterGainDb) {
+    return core::failure<double>(
+        core::ErrorCode::InvalidArgument,
+        "Master gain must be an exact finite decimal between -60 and 6 dB");
+  }
+  return value;
 }
 
 float gainFromDecibels(double decibels) noexcept {
