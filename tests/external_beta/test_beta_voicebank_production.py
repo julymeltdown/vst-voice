@@ -13,6 +13,7 @@ from tools.external_beta.voicebank_production import (
     validate_candidate_export,
     validate_recording_session,
     validate_retake_closure,
+    validate_source_strategy_document,
 )
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -192,6 +193,33 @@ class BetaVoicebankProductionTests(unittest.TestCase):
             result = validate_candidate_export(candidate, inventory, [session], closure)
             self.assertFalse(result.passed)
             self.assertIn("candidate-export", result.blocked)
+
+    def test_selected_source_strategy_requires_all_four_rights(self) -> None:
+        strategies = {
+            "schemaVersion": 1,
+            "status": "READY_FOR_ACQUISITION",
+            "assetAdmissionStatus": "NOT_RUN",
+            "selectedStrategyId": "tts",
+            "strategies": [{
+                "id": "tts",
+                "kind": "TTS_DERIVED",
+                "rights": "PASS",
+                "coverage": "PASS",
+                "listening": "PASS",
+                "permissions": {
+                    "sourceUse": True,
+                    "transformation": True,
+                    "singingBankRedistribution": False,
+                    "commercialRenders": True,
+                },
+                "licenseLocator": "docs/legal/VOICE_PROVIDER_CONTRACT_REQUIREMENTS.md",
+                "licenseSha256": "0" * 64,
+                "evidenceState": "LICENSE_REVIEW_INCOMPLETE",
+            }],
+        }
+        result = validate_source_strategy_document(strategies, ROOT)
+        self.assertFalse(result.passed)
+        self.assertTrue(any("singingBankRedistribution" in error for error in result.errors))
 
 
 if __name__ == "__main__":

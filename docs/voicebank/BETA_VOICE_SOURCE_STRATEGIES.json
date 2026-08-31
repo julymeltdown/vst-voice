@@ -1,0 +1,69 @@
+{
+  "schemaVersion": 1,
+  "status": "READY_FOR_ACQUISITION",
+  "assetAdmissionStatus": "NOT_RUN",
+  "selectedStrategyId": "human-contract-recording",
+  "realAssetWarning": "No performer, recording, generated sample, or independently approved voicebank asset is represented by this assessment.",
+  "strategies": [
+    {
+      "id": "human-contract-recording",
+      "kind": "HUMAN_RECORDING",
+      "availability": "AVAILABLE_TO_CONTRACT",
+      "rights": "PASS",
+      "coverage": "PASS",
+      "listening": "PASS",
+      "permissions": {
+        "sourceUse": true,
+        "transformation": true,
+        "singingBankRedistribution": true,
+        "commercialRenders": true
+      },
+      "licenseLocator": "docs/legal/VOICE_PROVIDER_CONTRACT_REQUIREMENTS.md",
+      "licenseSha256": "57515fc5a06a3768bff402b39388e0722f50b038c87c668e7be64c790df07ea4",
+      "evidenceState": "CONTRACT_TEMPLATE_READY",
+      "estimatedEffort": "HIGH",
+      "coveragePlan": "Lock the music-reviewed complete Japanese inventory, then record every required pair in two approved pitch layers with explicit retake groups.",
+      "listeningPlan": "Run dry-take QA, marker and pitch review, renderer listening, and an independent musical review before admission."
+    },
+    {
+      "id": "self-authored-procedural-source",
+      "kind": "PROCEDURAL_SYNTHESIS",
+      "availability": "NOT_ASSESSED",
+      "rights": "NOT_ASSESSED",
+      "coverage": "NOT_ASSESSED",
+      "listening": "NOT_ASSESSED",
+      "permissions": {
+        "sourceUse": false,
+        "transformation": false,
+        "singingBankRedistribution": false,
+        "commercialRenders": false
+      },
+      "licenseLocator": "docs/legal/SYNTHETIC_VOICE_SOURCE_RIGHTS_REQUIREMENTS.md",
+      "licenseSha256": "6b690d0c380078989a5afdedb39b5a54ef0f7633c2694f30b0193fdc2e872929",
+      "evidenceState": "IMPLEMENTATION_AND_LISTENING_NOT_ASSESSED",
+      "estimatedEffort": "VERY_HIGH",
+      "coveragePlan": "Prove every required phoneme and pitch layer can be generated without restricted samples or learned voice identity.",
+      "listeningPlan": "Compare intelligibility, transitions, sustained tone, and renderer artifacts against the recorded-source acceptance gate."
+    },
+    {
+      "id": "commercial-output-tts-example",
+      "kind": "TTS_DERIVED",
+      "availability": "NO_ELIGIBLE_LICENSE_IDENTIFIED",
+      "rights": "BLOCKED",
+      "coverage": "NOT_ASSESSED",
+      "listening": "NOT_ASSESSED",
+      "permissions": {
+        "sourceUse": true,
+        "transformation": true,
+        "singingBankRedistribution": false,
+        "commercialRenders": true
+      },
+      "licenseLocator": "docs/legal/SYNTHETIC_VOICE_SOURCE_RIGHTS_REQUIREMENTS.md",
+      "licenseSha256": "6b690d0c380078989a5afdedb39b5a54ef0f7633c2694f30b0193fdc2e872929",
+      "evidenceState": "BANK_REDISTRIBUTION_RIGHT_MISSING",
+      "estimatedEffort": "UNKNOWN",
+      "coveragePlan": "Do not generate production samples until an exact model and voice licence passes all four rights scopes.",
+      "listeningPlan": "If rights pass later, run the same inventory coverage, dry-audio, renderer, and independent musical review as human recording."
+    }
+  ]
+}

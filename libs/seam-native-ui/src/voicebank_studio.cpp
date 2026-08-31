@@ -1,5 +1,7 @@
 #include "seam/native_ui/voicebank_studio.hpp"
 
+#include "voicebank_studio_production_view.hpp"
+
 #include "seam/core/file_io.hpp"
 #include "seam/core/sha256.hpp"
 #include "seam/formats/json_value.hpp"
@@ -59,6 +61,40 @@ std::vector<ui::Rect> voicebankStudioMarkerLabelBounds(
                               width, 7.0});
   }
   return result;
+}
+
+std::optional<std::size_t> voicebankStudioUnitRailIndexAt(
+    double y, std::size_t firstVisibleIndex, std::size_t unitCount,
+    double viewportHeight, bool productionLayout) noexcept {
+  constexpr auto top = 108.0;
+  const auto stride = productionLayout ? 36.0 : 32.0;
+  const auto rowHeight = productionLayout ? 32.0 : 28.0;
+  if (!std::isfinite(y) || y < top || firstVisibleIndex >= unitCount) {
+    return std::nullopt;
+  }
+  const auto relative = y - top;
+  const auto offset = static_cast<std::size_t>(std::floor(relative / stride));
+  const auto visibleRows =
+      voicebankStudioUnitRailVisibleRows(viewportHeight, productionLayout);
+  if (relative - static_cast<double>(offset) * stride >= rowHeight ||
+      offset >= visibleRows || offset >= unitCount - firstVisibleIndex) {
+    return std::nullopt;
+  }
+  return firstVisibleIndex + offset;
+}
+
+std::size_t voicebankStudioUnitRailVisibleRows(
+    double viewportHeight, bool productionLayout) noexcept {
+  constexpr auto top = 108.0;
+  const auto stride = productionLayout ? 36.0 : 32.0;
+  const auto rowHeight = productionLayout ? 32.0 : 28.0;
+  const std::size_t maximumRows = productionLayout ? 12U : 18U;
+  if (!std::isfinite(viewportHeight) || viewportHeight < top + rowHeight) {
+    return 0U;
+  }
+  const auto fittingRows = static_cast<std::size_t>(
+      std::floor((viewportHeight - top - rowHeight) / stride)) + 1U;
+  return std::min(maximumRows, fittingRows);
 }
 
 core::Result<std::filesystem::path> nextVoicebankRecordingPath(
@@ -156,28 +192,43 @@ core::Result<void> VoicebankStudioController::openManifest(
 
 core::Result<void> VoicebankStudioController::save() {
   if (manifestPath_.empty()) {
-    return core::failure(core::ErrorCode::Conflict,
-                         "Voicebank Studio has no manifest path");
+    return saveProductionProject();
   }
   const auto validation = manifest_.validate();
   if (!validation) return validation;
+  const auto productionMetadataDirty = dirty_ && productionProject_.has_value();
   auto result = codec_.save(manifest_, manifestPath_);
-  if (result) {
-    dirty_ = false;
-    status_ = "SAVED";
+  if (!result) return result;
+  if (productionMetadataDirty) {
+    auto productionSaved = persistProductionMetadata();
+    if (!productionSaved) return productionSaved;
   }
+  dirty_ = false;
+  status_ = "SAVED";
   return result;
 }
 
 core::Result<void> VoicebankStudioController::selectUnit(std::size_t index) {
-  if (index >= manifest_.units.size()) {
+  if (index >= selectableUnitCount()) {
     return core::failure(core::ErrorCode::InvalidArgument,
                          "Voicebank unit index is outside the manifest");
   }
   selectedIndex_ = index;
   takeInspection_.reset();
   status_ = "UNIT " + std::to_string(index + 1U);
-  return rebuildSelected();
+  return manifest_.units.empty() ? core::success() : rebuildSelected();
+}
+
+std::size_t VoicebankStudioController::selectableUnitCount() const noexcept {
+  if (!manifest_.units.empty()) return manifest_.units.size();
+  return productionProject_.has_value()
+             ? productionProject_->unitAssignments.size()
+             : 0U;
+}
+
+std::filesystem::path VoicebankStudioController::recordingDirectory() const {
+  if (!manifestPath_.empty()) return manifestPath_.parent_path() / "recordings";
+  return productionWorkspaceRoot_ / "recordings";
 }
 
 const voicebank::Unit* VoicebankStudioController::selectedUnit() const noexcept {
@@ -339,8 +390,14 @@ void VoicebankStudioScenePainter::paint(
   canvas.fillRect(ui::Rect{0.0, 0.0, width, 72.0}, theme_.panel);
   canvas.drawText(ui::Point{18.0, 16.0}, "SEAM VOICEBANK STUDIO",
                   theme_.primaryText, 14.0);
-  canvas.drawText(ui::Point{18.0, 42.0}, controller.manifest().displayName,
-                  theme_.secondaryText, 8.0);
+  const auto* productionProject = controller.productionProject();
+  const auto displayName = !controller.manifest().displayName.empty()
+                               ? controller.manifest().displayName
+                               : productionProject != nullptr
+                                     ? productionProject->projectId
+                                     : std::string{"NO PROJECT"};
+  canvas.drawText(ui::Rect{18.0, 34.0, std::max(0.0, width - 396.0), 16.0},
+                  displayName, theme_.secondaryText, 8.0);
   if (!controller.manifest().characterId.empty()) {
     canvas.drawText(ui::Point{18.0, 57.0},
                     "CHARACTER " + controller.manifest().characterId + " @ " +
@@ -356,21 +413,30 @@ void VoicebankStudioScenePainter::paint(
   canvas.fillRect(ui::Rect{0.0, 72.0, 252.0, height - 72.0}, theme_.panelAlternate);
   canvas.drawText(ui::Point{12.0, 86.0}, "UNITS", theme_.secondaryText, 8.0);
   const auto& units = controller.manifest().units;
-  const auto first = controller.selectedIndex() > 8U ? controller.selectedIndex() - 8U : 0U;
-  const auto last = std::min(units.size(), first + 18U);
-  for (std::size_t index = first; index < last; ++index) {
-    const auto y = 108.0 + static_cast<double>(index - first) * 32.0;
-    const ui::Rect row{8.0, y, 236.0, 28.0};
-    canvas.fillRect(row, index == controller.selectedIndex() ? theme_.selected
-                                                             : theme_.panelAlternate);
-    if (index == controller.selectedIndex()) canvas.strokeRect(row, theme_.accent, 1.0);
-    auto label = units[index].alias.empty() ? units[index].id : units[index].alias;
-    if (label.size() > 24U) label.resize(24U);
-    canvas.drawText(ui::Point{16.0, y + 7.0}, label, theme_.primaryText, 7.0);
+  if (units.empty()) {
+    paintProductionAssignmentRail(canvas, controller, theme_);
+  } else {
+    const auto first = controller.selectedIndex() > 8U ? controller.selectedIndex() - 8U : 0U;
+    const auto last = std::min(
+        units.size(), first + voicebankStudioUnitRailVisibleRows(height, false));
+    for (std::size_t index = first; index < last; ++index) {
+      const auto y = 108.0 + static_cast<double>(index - first) * 32.0;
+      const ui::Rect row{8.0, y, 236.0, 28.0};
+      canvas.fillRect(row, index == controller.selectedIndex() ? theme_.selected
+                                                               : theme_.panelAlternate);
+      if (index == controller.selectedIndex()) canvas.strokeRect(row, theme_.accent, 1.0);
+      auto label = units[index].alias.empty() ? units[index].id : units[index].alias;
+      if (label.size() > 24U) label.resize(24U);
+      canvas.drawText(ui::Point{16.0, y + 7.0}, label, theme_.primaryText, 7.0);
+    }
   }
 
   const auto* unit = controller.selectedUnit();
-  if (unit == nullptr) return;
+  if (unit == nullptr) {
+    paintProductionEmptyCanvas(canvas, controller, theme_);
+    paintProductionInspector(canvas, controller, theme_, nullptr);
+    return;
+  }
   const auto& microscope = controller.microscope();
   const auto wave = microscope.waveformBounds();
   const auto spec = microscope.spectrogramBounds();
@@ -449,6 +515,7 @@ void VoicebankStudioScenePainter::paint(
                   theme_.secondaryText, 7.0);
   canvas.drawText(ui::Point{inspectorX + 12.0, 233.0}, "R RECORD TAKE",
                   theme_.secondaryText, 7.0);
+  paintProductionInspector(canvas, controller, theme_, unit);
 }
 
 }  // namespace seam::native_ui

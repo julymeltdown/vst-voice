@@ -261,6 +261,26 @@ target_include_directories(seam_voicebank PUBLIC libs/seam-voicebank/include)
 target_link_libraries(seam_voicebank PUBLIC seam_formats seam_domain seam_core)
 seam_apply_compiler_options(seam_voicebank)
 
+add_library(seam_voicebank_production
+  libs/seam-voicebank-production/src/project.cpp
+  libs/seam-voicebank-production/src/operations.cpp
+  libs/seam-voicebank-production/src/asset_store.cpp
+  libs/seam-voicebank-production/src/project_codec_encode.cpp
+  libs/seam-voicebank-production/src/project_codec_decode.cpp
+  libs/seam-voicebank-production/src/project_codec_decode_records.cpp
+  libs/seam-voicebank-production/src/project_codec_validation.cpp
+  libs/seam-voicebank-production/src/repository.cpp
+  libs/seam-voicebank-production/src/repository_import.cpp
+  libs/seam-voicebank-production/src/repository_operations.cpp
+  libs/seam-voicebank-production/src/repository_verify.cpp
+  libs/seam-voicebank-production/src/repository_export.cpp
+)
+target_include_directories(seam_voicebank_production PUBLIC
+  libs/seam-voicebank-production/include)
+target_link_libraries(seam_voicebank_production PUBLIC
+  seam_voicebank seam_formats seam_core)
+seam_apply_compiler_options(seam_voicebank_production)
+
 add_library(seam_distribution
   libs/seam-distribution/src/signing.cpp
   libs/seam-distribution/src/seambank.cpp
@@ -402,6 +422,10 @@ if(SEAM_BUILD_NATIVE_DESKTOP)
     libs/seam-native-ui/src/editor_controller.cpp
     libs/seam-native-ui/src/character_presentation.cpp
     libs/seam-native-ui/src/voicebank_studio.cpp
+    libs/seam-native-ui/src/voicebank_studio_production_view.cpp
+    libs/seam-native-ui/src/voicebank_studio_production_support.cpp
+    libs/seam-native-ui/src/voicebank_studio_production_project.cpp
+    libs/seam-native-ui/src/voicebank_studio_production_edits.cpp
     libs/seam-native-ui/src/new_project_dialog.cpp
     libs/seam-native-ui/src/arrangement_panel.cpp
     libs/seam-native-ui/src/track_inspector.cpp
@@ -441,7 +465,7 @@ if(SEAM_BUILD_NATIVE_DESKTOP)
     libs/seam-rendering/include
     libs/seam-voicebank/include)
   target_link_libraries(seam_native_ui PUBLIC
-    seam_authoring_runtime seam_character seam_editor_inspection seam_voicebank seam_editor_ui seam_phonemizer seam_application seam_domain seam_text seam_core)
+    seam_authoring_runtime seam_character seam_editor_inspection seam_voicebank_production seam_voicebank seam_editor_ui seam_phonemizer seam_application seam_domain seam_text seam_core)
   if(WIN32)
     target_sources(seam_native_ui PRIVATE
       libs/seam-native-ui/src/accessibility_win32.cpp)
@@ -629,7 +653,9 @@ if(SEAM_BUILD_NATIVE_DESKTOP)
   endif()
   seam_apply_compiler_options(seam_editor_native)
 
-  add_executable(seam_voicebank_studio_native apps/seam-voicebank-studio-native/main.cpp)
+  add_executable(seam_voicebank_studio_native
+    apps/seam-voicebank-studio-native/main.cpp
+    apps/seam-voicebank-studio-native/options.cpp)
   target_link_libraries(seam_voicebank_studio_native PRIVATE
     seam_native_ui seam_editor_inspection seam_platform seam_voicebank
     seam_formats seam_domain seam_core)
@@ -1044,6 +1070,7 @@ if(SEAM_BUILD_TESTS)
     tests/test_voicebank_installer_service.cpp
     tests/test_voicebank_relink.cpp
     tests/test_voicebank_coverage.cpp
+    tests/test_voicebank_production_project.cpp
     tests/test_wav_export_formats.cpp
     tests/test_media_rendering.cpp
     tests/test_arrangement_commands.cpp
@@ -1077,9 +1104,11 @@ if(SEAM_BUILD_TESTS)
   endif()
   if(SEAM_BUILD_NATIVE_DESKTOP)
     list(APPEND SEAM_TEST_SOURCES
+      apps/seam-voicebank-studio-native/options.cpp
       tests/test_eula_acceptance.cpp
       tests/test_native_ui.cpp
       tests/test_native_runtime.cpp
+      tests/test_voicebank_studio_options.cpp
       tests/test_diagnostic_panel.cpp
       tests/test_standalone_authoring_integration.cpp
       tests/test_standalone_project_lifecycle.cpp
@@ -1162,9 +1191,13 @@ if(SEAM_BUILD_TESTS)
     add_test(NAME seam_external_beta_python_contract_tests
       COMMAND ${Python3_EXECUTABLE} -m unittest discover
         -s tests/external_beta -p test_*.py)
+    add_test(NAME seam_voice_source_admission_tests
+      COMMAND ${Python3_EXECUTABLE} -m unittest
+        tests/production/test_voice_source_admission.py)
     set_tests_properties(
       seam_tracked_source_closure_unit seam_tracked_source_closure
       seam_engineering_remediation_evidence_unit seam_external_beta_python_contract_tests
+      seam_voice_source_admission_tests
       PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
   endif()
 
@@ -1258,10 +1291,14 @@ if(SEAM_BUILD_TESTS)
   add_executable(seam_tests ${SEAM_TEST_SOURCES})
   target_include_directories(seam_tests PRIVATE tests)
   target_include_directories(seam_tests PRIVATE phase12c/generated)
+  if(SEAM_BUILD_NATIVE_DESKTOP)
+    target_include_directories(seam_tests PRIVATE
+      apps/seam-voicebank-studio-native)
+  endif()
   target_compile_definitions(seam_tests PRIVATE
     SEAM_SOURCE_PRODUCTION_VOICEBANK="${CMAKE_CURRENT_SOURCE_DIR}/assets/demo-human-voicebank-public-domain/production-bank")
   target_link_libraries(seam_tests PRIVATE
-    seam_distribution seam_editor_inspection seam_rendering seam_synthesis seam_voicebank seam_editor_ui seam_phonemizer seam_formats
+    seam_distribution seam_editor_inspection seam_rendering seam_synthesis seam_voicebank_production seam_voicebank seam_editor_ui seam_phonemizer seam_formats
     seam_playback_platform seam_platform seam_authoring_runtime seam_application seam_domain seam_text seam_clap seam_core)
   if(SEAM_BUILD_NATIVE_DESKTOP)
     target_link_libraries(seam_tests PRIVATE seam_native_ui seam_standalone_authoring)
@@ -1274,6 +1311,15 @@ if(SEAM_BUILD_TESTS)
   set_tests_properties(seam_tests PROPERTIES
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     ENVIRONMENT "SEAM_PREVIEW_CACHE_ROOT=${CMAKE_BINARY_DIR}/ctest-preview-cache")
+  add_executable(seam_voicebank_production_tests
+    tests/test_main.cpp
+    tests/test_voicebank_production_project.cpp)
+  target_include_directories(seam_voicebank_production_tests PRIVATE tests)
+  target_link_libraries(seam_voicebank_production_tests PRIVATE
+    seam_voicebank_production seam_voicebank seam_formats seam_core)
+  seam_apply_compiler_options(seam_voicebank_production_tests)
+  add_test(NAME seam_voicebank_production_tests
+    COMMAND seam_voicebank_production_tests)
   add_test(NAME seam_realtime_allocation_probe
     COMMAND seam_realtime_allocation_probe
             ${CMAKE_BINARY_DIR}/realtime-allocation-probe.json)

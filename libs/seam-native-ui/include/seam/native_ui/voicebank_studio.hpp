@@ -8,10 +8,12 @@
 #include "seam/voicebank/validator.hpp"
 #include "seam/voicebank/voicebank.hpp"
 #include "seam/voicebank/wav.hpp"
+#include "seam/voicebank_production/repository.hpp"
 
 #include <cstdint>
 #include <filesystem>
 #include <optional>
+#include <memory>
 #include <span>
 #include <string>
 #include <string_view>
@@ -36,6 +38,12 @@ struct VoicebankStudioTheme final {
     std::span<const ui::AcousticMarkerVisual> markers,
     ui::Rect waveformBounds);
 
+[[nodiscard]] std::optional<std::size_t> voicebankStudioUnitRailIndexAt(
+    double y, std::size_t firstVisibleIndex, std::size_t unitCount,
+    double viewportHeight, bool productionLayout) noexcept;
+[[nodiscard]] std::size_t voicebankStudioUnitRailVisibleRows(
+    double viewportHeight, bool productionLayout) noexcept;
+
 [[nodiscard]] core::Result<std::filesystem::path> nextVoicebankRecordingPath(
     const std::filesystem::path& directory, std::string_view unitId);
 
@@ -44,6 +52,10 @@ public:
   [[nodiscard]] core::Result<void> openManifest(
       const std::filesystem::path& manifestPath,
       double logicalWidth = 1440.0, double logicalHeight = 900.0);
+  [[nodiscard]] core::Result<void> openProductionProject(
+      const std::filesystem::path& workspaceRoot,
+      std::string_view expectedInventorySha256,
+      std::string operatorId);
   [[nodiscard]] core::Result<void> save();
   [[nodiscard]] core::Result<void> selectUnit(std::size_t index);
   [[nodiscard]] core::Result<void> moveSelectedMarker(ui::AcousticMarkerKind marker,
@@ -52,8 +64,20 @@ public:
                                                           double x);
   [[nodiscard]] core::Result<void> inspectTake(
       const std::filesystem::path& path, std::int32_t expectedRootMidi);
+  [[nodiscard]] core::Result<void> inspectSelectedProductionTake(
+      const std::filesystem::path& path);
   [[nodiscard]] core::Result<std::filesystem::path> persistTakeInspection(
       const std::filesystem::path& takePath) const;
+  [[nodiscard]] core::Result<void> importSelectedTake(
+      const std::filesystem::path& takePath,
+      std::string occurredAtUtc = {});
+  [[nodiscard]] core::Result<voicebank_production::DerivedRevision>
+  applySelectedProductionOperation(
+      const voicebank_production::OperationRequest& request,
+      std::string occurredAtUtc = {});
+  [[nodiscard]] core::Result<voicebank_production::ExportedU57Inputs>
+  exportProductionInputs(const std::filesystem::path& destination,
+                         std::string occurredAtUtc = {});
   void resize(double logicalWidth, double logicalHeight);
 
   [[nodiscard]] const voicebank::Manifest& manifest() const noexcept { return manifest_; }
@@ -64,23 +88,42 @@ public:
     return microscope_;
   }
   [[nodiscard]] std::size_t selectedIndex() const noexcept { return selectedIndex_; }
+  [[nodiscard]] double logicalHeight() const noexcept { return logicalHeight_; }
+  [[nodiscard]] std::size_t selectableUnitCount() const noexcept;
   [[nodiscard]] bool dirty() const noexcept { return dirty_; }
   [[nodiscard]] const std::filesystem::path& manifestPath() const noexcept {
     return manifestPath_;
   }
+  [[nodiscard]] std::filesystem::path recordingDirectory() const;
   [[nodiscard]] const std::string& status() const noexcept { return status_; }
   [[nodiscard]] const std::optional<voicebank::DryTakeInspection>&
   takeInspection() const noexcept {
     return takeInspection_;
   }
+  [[nodiscard]] const voicebank_production::VoicebankProductionProject*
+  productionProject() const noexcept {
+    return productionProject_ ? &*productionProject_ : nullptr;
+  }
+  [[nodiscard]] const voicebank_production::UnitAssignment*
+  selectedProductionAssignment() const noexcept;
+  [[nodiscard]] voicebank_production::ProductionQueueSummary
+  productionQueues() const noexcept;
+  [[nodiscard]] std::size_t stagedRecoveryCandidateCount() const noexcept {
+    return stagedRecoveryCandidateCount_;
+  }
+  [[nodiscard]] std::optional<voicebank_production::UnitQueueState>
+  productionStateForUnit(const voicebank::Unit& unit) const noexcept;
 
 private:
   [[nodiscard]] core::Result<void> rebuildSelected();
   [[nodiscard]] std::filesystem::path selectedAudioPath() const;
+  [[nodiscard]] core::Result<void> persistProductionMetadata();
+  [[nodiscard]] core::Result<void> saveProductionProject();
 
   voicebank::ManifestJsonCodec codec_;
   std::filesystem::path manifestPath_;
   std::filesystem::path root_;
+  std::filesystem::path productionWorkspaceRoot_;
   voicebank::Manifest manifest_;
   voicebank::AudioBuffer audio_;
   ui::SampleMicroscopeModel microscope_;
@@ -88,6 +131,12 @@ private:
   bool dirty_{false};
   std::string status_{"NO BANK"};
   std::optional<voicebank::DryTakeInspection> takeInspection_;
+  std::unique_ptr<voicebank_production::ProductionProjectRepository>
+      productionRepository_;
+  std::optional<voicebank_production::VoicebankProductionProject>
+      productionProject_;
+  std::string productionOperatorId_;
+  std::size_t stagedRecoveryCandidateCount_{0U};
   double logicalWidth_{1440.0};
   double logicalHeight_{900.0};
 };

@@ -116,6 +116,64 @@ class VoicebankScriptGeneratorTests(unittest.TestCase):
         inventory["units"][0]["retakeGroup"] = ""
         self.assertTrue(any("retakeGroup is required" in error for error in generator.validate_inventory(inventory)))
 
+    def test_production_assignments_choose_one_planned_take_per_required_unit(self) -> None:
+        inventory = generator.generate_inventory(
+            {
+                "profileId": "test-ja-v1",
+                "vowels": ["a", "i"],
+                "consonants": ["k"],
+                "specialPhones": ["br"],
+                "includeKinds": ["sustain", "cv"],
+                "pitchLayers": [60, 72],
+                "rangeTest": {"method": "test-range", "minMidi": 60, "maxMidi": 72, "result": "PASS"},
+                "alternateTakes": 2,
+            }
+        )
+        assignments = generator.production_assignments(inventory)
+        self.assertEqual(
+            len(inventory["requiredCoverage"]) * len(inventory["pitchLayers"]),
+            len(assignments),
+        )
+        self.assertEqual(len(assignments), len({(item["coverageKey"], item["pitchLayer"]) for item in assignments}))
+        self.assertTrue(all(item["promptId"] and item["plannedTakeId"] for item in assignments))
+        self.assertTrue(all(item["state"] == "MISSING" for item in assignments))
+
+    def test_inventory_validation_fails_closed_on_missing_pairs_and_bad_layers(self) -> None:
+        inventory = generator.generate_inventory(
+            {
+                "profileId": "test-ja-validation-v1",
+                "vowels": ["a"],
+                "consonants": ["k"],
+                "specialPhones": ["br"],
+                "includeKinds": ["sustain"],
+                "pitchLayers": [60, 72],
+                "rangeTest": {
+                    "method": "test-range",
+                    "minMidi": 60,
+                    "maxMidi": 72,
+                    "result": "PASS",
+                },
+                "alternateTakes": 1,
+            }
+        )
+        missing = copy.deepcopy(inventory)
+        missing["units"] = [
+            unit for unit in missing["units"] if unit["pitchLayer"] != 72
+        ]
+        self.assertTrue(
+            any(
+                "required coverage is missing: sustain:a at pitch layer 72"
+                in error
+                for error in generator.validate_inventory(missing)
+            )
+        )
+
+        malformed = copy.deepcopy(inventory)
+        malformed["pitchLayers"] = None
+        self.assertTrue(
+            any("pitchLayers" in error for error in generator.validate_inventory(malformed))
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

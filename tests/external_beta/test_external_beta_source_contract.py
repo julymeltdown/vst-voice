@@ -12,6 +12,9 @@ class ExternalBetaSourceContractTests(unittest.TestCase):
     def test_beta_contract_artifacts_and_checked_in_inputs_exist(self) -> None:
         required = (
             "docs/voicebank/BETA_VOICEBANK_ACCEPTANCE.md",
+            "docs/voicebank/BETA_VOICEBANK_PRODUCTION.md",
+            "docs/voicebank/BETA_VOICE_SOURCE_STRATEGIES.json",
+            "docs/legal/SYNTHETIC_VOICE_SOURCE_RIGHTS_REQUIREMENTS.md",
             "docs/voicebank/beta-voicebank-dossier.schema.json",
             "docs/voicebank/beta-voicebank-01-dossier.json",
             "docs/voicebank/BETA_JAPANESE_CVVC_INVENTORY.json",

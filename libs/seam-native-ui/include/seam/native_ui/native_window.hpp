@@ -62,6 +62,11 @@ struct NativeWindowConfig final {
          config.height >= nativeWindowMinimumPhysicalHeight(config);
 }
 
+[[nodiscard]] inline bool nativeWindowShouldRestoreSavedFrame(
+    const NativeWindowConfig& config) noexcept {
+  return !config.screenshotPath.has_value();
+}
+
 class INativeWindowClient {
 public:
   virtual ~INativeWindowClient() = default;

@@ -6,6 +6,7 @@
 #include "seam/application/project_factory.hpp"
 #include "seam/application/render_commands.hpp"
 #include "seam/core/file_io.hpp"
+#include "seam/core/sha256.hpp"
 #include "seam/native_ui/character_presentation.hpp"
 #include "seam/native_ui/editor_controller.hpp"
 #include "seam/native_ui/editor_frame_layout.hpp"
@@ -19,6 +20,7 @@
 #include "seam/text/text_engine.hpp"
 #include "seam/text/unicode.hpp"
 #include "seam/voicebank/wav.hpp"
+#include "seam/voicebank_production/repository.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -82,6 +84,38 @@ TEST_CASE("native window minimum stays logical at scaled surfaces") {
       .minimumHeight = 320U,
   };
   CHECK(!seam::native_ui::nativeWindowConfigSizeIsValid(tooNarrow));
+}
+
+TEST_CASE("native window screenshots honor the requested capture dimensions") {
+  const seam::native_ui::NativeWindowConfig interactive{};
+  CHECK(seam::native_ui::nativeWindowShouldRestoreSavedFrame(interactive));
+
+  const seam::native_ui::NativeWindowConfig capture{
+      .screenshotPath = std::filesystem::path{"capture.ppm"},
+  };
+  CHECK(!seam::native_ui::nativeWindowShouldRestoreSavedFrame(capture));
+}
+
+TEST_CASE("voicebank production rail hit testing follows painted row spacing") {
+  const auto production = seam::native_ui::voicebankStudioUnitRailIndexAt(
+      397.0, 0U, 144U, 520.0, true);
+  CHECK(production.has_value());
+  CHECK(*production == 8U);
+  CHECK(!seam::native_ui::voicebankStudioUnitRailIndexAt(
+      141.0, 0U, 144U, 520.0, true));
+  CHECK(!seam::native_ui::voicebankStudioUnitRailIndexAt(
+      108.0 + 11.0 * 36.0, 0U, 144U, 520.0, true));
+  CHECK(seam::native_ui::voicebankStudioUnitRailVisibleRows(520.0, true) ==
+        11U);
+
+  const auto manifest = seam::native_ui::voicebankStudioUnitRailIndexAt(
+      397.0, 0U, 144U, 520.0, false);
+  CHECK(manifest.has_value());
+  CHECK(*manifest == 9U);
+  CHECK(!seam::native_ui::voicebankStudioUnitRailIndexAt(
+      108.0 + 13.0 * 32.0, 0U, 144U, 520.0, false));
+  CHECK(seam::native_ui::voicebankStudioUnitRailVisibleRows(520.0, false) ==
+        13U);
 }
 
 TEST_CASE("voicebank recording names stay portable direct children") {
@@ -2597,6 +2631,62 @@ TEST_CASE("graphical voicebank studio loads audio and commits validated marker e
   CHECK(!controller.microscope().waveform().empty());
   CHECK(!controller.microscope().spectrogram().decibels.empty());
 
+  const auto licensePath = directory / "provider-agreement.txt";
+  CHECK(seam::core::durableAtomicWriteText(licensePath, "synthetic-ui-license"));
+  const auto licenseDigest = seam::core::sha256File(licensePath);
+  CHECK(licenseDigest);
+  seam::voicebank_production::VoicebankProductionProject productionProject{
+      .projectId = "native-studio-production",
+      .inventoryId = "native-studio-inventory",
+      .inventorySha256 = std::string(64U, 'a'),
+      .selectedSourceStrategyId = "human-contract-recording",
+      .licenseLocator = licensePath.string(),
+      .licenseSha256 = licenseDigest.value(),
+      .immutableAssetRoot = "assets",
+  };
+  productionProject.sourceStrategies.push_back(
+      seam::voicebank_production::SourceStrategyAssessment{
+          .id = "human-contract-recording",
+          .kind = seam::voicebank_production::SourceStrategyKind::HumanRecording,
+          .rights = seam::voicebank_production::Feasibility::Pass,
+          .coverage = seam::voicebank_production::Feasibility::Pass,
+          .listening = seam::voicebank_production::Feasibility::Pass,
+          .permissions = {.sourceUse = true, .transformation = true,
+                          .singingBankRedistribution = true,
+                          .commercialRenders = true},
+          .licenseLocator = licensePath.string(),
+          .licenseSha256 = licenseDigest.value(),
+          .evidenceState = "SYNTHETIC_TEST_ONLY",
+      });
+  productionProject.unitAssignments.push_back({
+      .coverageKey = "sustain:a", .pitchLayer = 57,
+      .promptId = "prompt-a3", .plannedTakeId = "take-a3",
+  });
+  productionProject.operators.push_back(
+      {.operatorId = "operator-a", .role = "PRODUCER"});
+  const auto workspace = directory / "production-workspace";
+  seam::voicebank_production::ProductionProjectRepository productionRepository{workspace};
+  CHECK(productionRepository.initialize(
+      productionProject,
+      {.action = "create", .subjectId = productionProject.projectId,
+       .operatorId = "operator-a", .occurredAtUtc = "2026-08-31T11:00:00Z"}));
+  seam::native_ui::VoicebankStudioController productionOnlyController;
+  CHECK(productionOnlyController.openProductionProject(
+      workspace, productionProject.inventorySha256, "operator-a"));
+  CHECK(productionOnlyController.selectableUnitCount() == 1U);
+  CHECK(productionOnlyController.selectedProductionAssignment() != nullptr);
+  CHECK(productionOnlyController.selectedProductionAssignment()->promptId ==
+        "prompt-a3");
+  seam::native_ui::PixelSurface productionOnlySurface{720U, 520U};
+  seam::native_ui::RasterCanvas productionOnlyCanvas{productionOnlySurface, 1.0};
+  seam::native_ui::VoicebankStudioScenePainter productionOnlyPainter;
+  productionOnlyPainter.paint(productionOnlyCanvas, productionOnlyController);
+  CHECK(productionOnlySurface.checksum() != 0U);
+  CHECK(controller.openProductionProject(
+      workspace, productionProject.inventorySha256, "operator-a"));
+  CHECK(controller.productionProject() != nullptr);
+  CHECK(controller.productionQueues().missing == 1U);
+
   const auto takePath = directory / "accepted-take.wav";
   auto takeWriter = seam::voicebank::WavStreamWriter::create(
       takePath, seam::voicebank::WavOutputFormat{
@@ -2604,6 +2694,9 @@ TEST_CASE("graphical voicebank studio loads audio and commits validated marker e
   CHECK(takeWriter);
   CHECK(takeWriter.value()->writeFrames(tone));
   CHECK(takeWriter.value()->finalize());
+  CHECK(productionOnlyController.inspectSelectedProductionTake(takePath));
+  CHECK(productionOnlyController.takeInspection().has_value());
+  CHECK(productionOnlyController.takeInspection()->accepted());
   CHECK(controller.inspectTake(takePath, 57));
   CHECK(controller.takeInspection().has_value());
   CHECK(controller.takeInspection()->accepted());
@@ -2617,6 +2710,20 @@ TEST_CASE("graphical voicebank studio loads audio and commits validated marker e
   CHECK(inspectionText.value().find("\"takeSha256\": ") !=
         std::string::npos);
   CHECK(!controller.persistTakeInspection(takePath));
+  CHECK(controller.importSelectedTake(takePath, "2026-08-31T11:01:00Z"));
+  CHECK(controller.productionProject()->takes.size() == 1U);
+  CHECK(controller.productionProject()->reviews.size() == 1U);
+  CHECK(controller.productionProject()->reviews.front().result == "PASS");
+  CHECK(controller.productionQueues().markerReview == 1U);
+  const auto productionRawHash =
+      controller.productionProject()->takes.front().rawAssetSha256;
+  const auto productionRevision = controller.applySelectedProductionOperation(
+      {.kind = seam::voicebank_production::OperationKind::NormalizeGain,
+       .targetPeak = 0.8F},
+      "2026-08-31T11:01:30Z");
+  CHECK(productionRevision);
+  CHECK(controller.productionProject()->derivedRevisions.size() == 1U);
+  CHECK(controller.productionProject()->lastDurableGeneration == 3U);
 
   const auto changedTakePath = directory / "changed-take.wav";
   auto changedTakeWriter = seam::voicebank::WavStreamWriter::create(
@@ -2642,6 +2749,30 @@ TEST_CASE("graphical voicebank studio loads audio and commits validated marker e
   CHECK(controller.selectedUnit()->markers.vowelOnset != oldOnset);
   CHECK(controller.save());
   CHECK(!controller.dirty());
+  CHECK(controller.productionProject()->takes.front().rawAssetSha256 ==
+        productionRawHash);
+  CHECK(controller.productionProject()->metadataRevisions.size() == 1U);
+  CHECK(controller.productionProject()->metadataRevisions.front().rawAssetSha256 ==
+        productionRawHash);
+  CHECK(controller.productionProject()->lastDurableGeneration == 4U);
+
+  const auto firstSavedOnset = controller.selectedUnit()->markers.vowelOnset;
+  const auto secondX = controller.microscope().frameToPixel(firstSavedOnset + 8);
+  CHECK(controller.moveSelectedMarker(
+      seam::ui::AcousticMarkerKind::VowelOnset, secondX));
+  CHECK(controller.save());
+  CHECK(controller.productionProject()->metadataRevisions.size() == 2U);
+  const auto revisitX = controller.microscope().frameToPixel(firstSavedOnset);
+  CHECK(controller.moveSelectedMarker(
+      seam::ui::AcousticMarkerKind::VowelOnset, revisitX));
+  CHECK(controller.save());
+  CHECK(controller.productionProject()->metadataRevisions.size() == 3U);
+  CHECK(controller.productionProject()->lastDurableGeneration == 6U);
+  const auto exportedProduction = controller.exportProductionInputs(
+      directory / "u57-inputs", "2026-08-31T11:02:00Z");
+  CHECK(exportedProduction);
+  CHECK(std::filesystem::is_regular_file(exportedProduction.value().briefPath));
+  CHECK(controller.productionProject()->lastDurableGeneration == 7U);
 
   seam::native_ui::PixelSurface surface{1200U, 800U};
   seam::native_ui::RasterCanvas canvas{surface, 1.0};

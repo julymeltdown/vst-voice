@@ -1,11 +1,11 @@
+#include "options.hpp"
+
 #include "seam/native_ui/native_window.hpp"
 #include "seam/native_ui/voicebank_studio.hpp"
 #include "seam/platform/audio_input_device.hpp"
 #include "seam/platform/recording_session.hpp"
 
-#include <atomic>
 #include <memory>
-#include <chrono>
 #include <clocale>
 #include <filesystem>
 #include <iostream>
@@ -15,94 +15,9 @@
 
 namespace {
 
-struct Options final {
-  std::filesystem::path manifest;
-  std::optional<std::filesystem::path> screenshot;
-  std::chrono::milliseconds autoClose{0};
-  std::chrono::milliseconds recordDuration{0};
-  std::uint32_t windowWidth{1440U};
-  std::uint32_t windowHeight{900U};
-  bool forceSyntheticInput{false};
-};
-
-void usage() {
-  std::cout << "Usage: seam_voicebank_studio_native --manifest PATH [options]\n"
-            << "  --screenshot PATH        write final PPM screenshot\n"
-            << "  --auto-close-ms N        close after N milliseconds\n"
-            << "  --record-ms N            record input and close after N milliseconds\n"
-            << "  --window-width N         physical window width from 320 to 8192\n"
-            << "  --window-height N        physical window height from 240 to 8192\n"
-            << "  --force-synthetic-input  skip physical microphone capture\n";
-}
-
-std::optional<Options> parse(int argc, char** argv) {
-  Options options;
-  for (int index = 1; index < argc; ++index) {
-    const std::string_view arg{argv[index]};
-    if (arg == "--help") {
-      usage();
-      return std::nullopt;
-    }
-    if (arg == "--manifest" && index + 1 < argc) {
-      options.manifest = std::filesystem::path{argv[++index]};
-      continue;
-    }
-    if (arg == "--screenshot" && index + 1 < argc) {
-      options.screenshot = std::filesystem::path{argv[++index]};
-      continue;
-    }
-    if ((arg == "--window-width" || arg == "--window-height") &&
-        index + 1 < argc) {
-      try {
-        const auto value = std::stoul(argv[++index]);
-        if (value < (arg == "--window-width" ? 320U : 240U) ||
-            value > 8192U) {
-          return std::nullopt;
-        }
-        if (arg == "--window-width") {
-          options.windowWidth = static_cast<std::uint32_t>(value);
-        } else {
-          options.windowHeight = static_cast<std::uint32_t>(value);
-        }
-      } catch (...) {
-        return std::nullopt;
-      }
-      continue;
-    }
-    if (arg == "--force-synthetic-input") {
-      options.forceSyntheticInput = true;
-      continue;
-    }
-    if (arg == "--record-ms" && index + 1 < argc) {
-      try {
-        const auto value = std::stoll(argv[++index]);
-        if (value < 50 || value > 300000) return std::nullopt;
-        options.recordDuration = std::chrono::milliseconds{value};
-      } catch (...) {
-        return std::nullopt;
-      }
-      continue;
-    }
-    if (arg == "--auto-close-ms" && index + 1 < argc) {
-      try {
-        const auto value = std::stoll(argv[++index]);
-        if (value < 0 || value > 600000) return std::nullopt;
-        options.autoClose = std::chrono::milliseconds{value};
-      } catch (...) {
-        return std::nullopt;
-      }
-      continue;
-    }
-    std::cerr << "Unknown argument: " << arg << '\n';
-    return std::nullopt;
-  }
-  if (options.manifest.empty() ||
-      (options.recordDuration.count() > 0 &&
-       options.autoClose.count() > 0)) {
-    return std::nullopt;
-  }
-  return options;
-}
+using seam::voicebank_studio_native::Options;
+using seam::voicebank_studio_native::parseOptions;
+using seam::voicebank_studio_native::printUsage;
 
 class VoicebankStudioApp final : public seam::native_ui::INativeWindowClient {
 public:
@@ -113,10 +28,39 @@ public:
     static_cast<void>(stopRecording());
   }
 
-  seam::core::Result<void> open(const std::filesystem::path& manifest) {
-    auto loaded = controller_.openManifest(manifest);
-    if (!loaded) return loaded;
+  seam::core::Result<void> open(const Options& options) {
+    if (!options.manifest.empty()) {
+      auto loaded = controller_.openManifest(options.manifest);
+      if (!loaded) return loaded;
+    }
+    if (options.productionProject.has_value()) {
+      auto production = controller_.openProductionProject(
+          *options.productionProject, options.inventorySha256,
+          options.operatorId);
+      if (!production) return production;
+    }
     return initializeInput();
+  }
+
+  seam::core::Result<seam::voicebank_production::ExportedU57Inputs>
+  exportProductionInputs(const std::filesystem::path& destination) {
+    return controller_.exportProductionInputs(destination);
+  }
+
+  seam::core::Result<void> selectProductionUnit(std::size_t index) {
+    return controller_.selectUnit(index);
+  }
+
+  seam::core::Result<seam::voicebank_production::DerivedRevision>
+  applyProductionOperation(const seam::voicebank_production::OperationRequest& request) {
+    return controller_.applySelectedProductionOperation(request);
+  }
+
+  seam::core::Result<void> importProductionTake(
+      const std::filesystem::path& path) {
+    auto inspected = controller_.inspectSelectedProductionTake(path);
+    if (!inspected) return inspected;
+    return controller_.importSelectedTake(path);
   }
 
   void setWindow(seam::native_ui::INativeWindow& window) noexcept { window_ = &window; }
@@ -142,15 +86,15 @@ public:
       markerDrag_.reset();
       return;
     }
-    // Unit-list rows are stable 32px entries in the current scene.
     if (event.position.x >= 8.0 && event.position.x < 244.0 &&
         event.position.y >= 108.0) {
-      const auto offset = static_cast<std::size_t>((event.position.y - 108.0) / 32.0);
       const auto first = controller_.selectedIndex() > 8U
                              ? controller_.selectedIndex() - 8U
                              : 0U;
-      const auto index = first + offset;
-      if (index < controller_.manifest().units.size()) record(controller_.selectUnit(index));
+      const auto index = seam::native_ui::voicebankStudioUnitRailIndexAt(
+          event.position.y, first, controller_.selectableUnitCount(),
+          controller_.logicalHeight(), controller_.manifest().units.empty());
+      if (index.has_value()) record(controller_.selectUnit(*index));
     }
   }
 
@@ -171,7 +115,7 @@ public:
               seam::native_ui::InputModifiers) noexcept override {}
 
   void keyDown(const seam::native_ui::KeyEvent& event) noexcept override {
-    const auto size = controller_.manifest().units.size();
+    const auto size = controller_.selectableUnitCount();
     if (event.key == seam::native_ui::NativeKey::Up && controller_.selectedIndex() > 0U) {
       record(controller_.selectUnit(controller_.selectedIndex() - 1U));
     } else if (event.key == seam::native_ui::NativeKey::Down &&
@@ -208,6 +152,17 @@ public:
     return input_ == nullptr ? seam::platform::AudioInputDeviceStats{}
                              : input_->stats();
   }
+  [[nodiscard]] const seam::voicebank_production::VoicebankProductionProject*
+  productionProject() const noexcept {
+    return controller_.productionProject();
+  }
+  [[nodiscard]] seam::voicebank_production::ProductionQueueSummary
+  productionQueues() const noexcept {
+    return controller_.productionQueues();
+  }
+  [[nodiscard]] std::size_t stagedRecoveryCandidateCount() const noexcept {
+    return controller_.stagedRecoveryCandidateCount();
+  }
 
   seam::core::Result<void> startRecording() {
     if (input_ == nullptr) {
@@ -236,7 +191,7 @@ public:
     if (frames == 0U) return seam::core::success();
     lastRecordedFrames_ = frames;
     std::error_code error;
-    auto directory = controller_.manifestPath().parent_path() / "recordings";
+    auto directory = controller_.recordingDirectory();
     std::filesystem::create_directories(directory, error);
     if (error) {
       return seam::core::failure(seam::core::ErrorCode::IoError,
@@ -250,9 +205,12 @@ public:
           seam::core::ErrorCode::Conflict,
           "Recording directory is not a real directory", directory.string());
     }
-    auto name = controller_.selectedUnit() == nullptr
-                    ? std::string{"take"}
-                    : controller_.selectedUnit()->id;
+    const auto* productionAssignment = controller_.selectedProductionAssignment();
+    auto name = controller_.selectedUnit() != nullptr
+                    ? controller_.selectedUnit()->id
+                    : productionAssignment != nullptr
+                          ? productionAssignment->plannedTakeId
+                          : std::string{"take"};
     const auto destination = seam::native_ui::nextVoicebankRecordingPath(
         directory, name);
     if (!destination) return seam::core::Result<void>{destination.error()};
@@ -260,14 +218,20 @@ public:
     const auto saved = recording_.exportWav(
         lastRecording_, seam::voicebank::WavSampleFormat::Pcm24, false);
     if (!saved) return saved;
-    const auto expectedRootMidi = controller_.selectedUnit() == nullptr
-                                      ? 60
-                                      : controller_.selectedUnit()->rootMidi;
+    const auto expectedRootMidi = controller_.selectedUnit() != nullptr
+                                      ? controller_.selectedUnit()->rootMidi
+                                      : productionAssignment != nullptr
+                                            ? productionAssignment->pitchLayer
+                                            : 60;
     const auto inspected = controller_.inspectTake(
         lastRecording_, expectedRootMidi);
     if (!inspected) return inspected;
     const auto persisted = controller_.persistTakeInspection(lastRecording_);
     if (!persisted) return seam::core::Result<void>{persisted.error()};
+    if (controller_.productionProject() != nullptr) {
+      auto imported = controller_.importSelectedTake(lastRecording_);
+      if (!imported) return imported;
+    }
     recording_.clear();
     return seam::core::success();
   }
@@ -321,20 +285,66 @@ private:
 
 int main(int argc, char** argv) {
   static_cast<void>(std::setlocale(LC_ALL, ""));
-  const auto options = parse(argc, argv);
+  const auto options = parseOptions(argc, argv);
   if (!options.has_value()) {
     if (argc > 1 && std::string_view{argv[1]} == "--help") return 0;
-    usage();
+    printUsage();
     return 2;
   }
 
   VoicebankStudioApp app{options->forceSyntheticInput};
-  const auto openedBank = app.open(options->manifest);
+  const auto openedBank = app.open(*options);
   if (!openedBank) {
     std::cerr << "Voicebank Studio load failed: " << openedBank.error().message;
     if (!openedBank.error().context.empty()) std::cerr << " (" << openedBank.error().context << ')';
     std::cerr << '\n';
     return 3;
+  }
+  if (options->productionUnitIndex.has_value()) {
+    const auto selected = app.selectProductionUnit(*options->productionUnitIndex);
+    if (!selected) {
+      std::cerr << "Voicebank production selection failed: "
+                << selected.error().message << '\n';
+      return 7;
+    }
+  }
+  if (options->importTake.has_value()) {
+    const auto imported = app.importProductionTake(*options->importTake);
+    if (!imported) {
+      std::cerr << "Voicebank production import failed: "
+                << imported.error().message << '\n';
+      return 7;
+    }
+    std::cout << "production_imported_take="
+              << options->importTake->string() << '\n';
+  }
+  if (options->operationKind.has_value()) {
+    const auto processed = app.applyProductionOperation(
+        {.kind = *options->operationKind,
+         .channelIndex = options->channelIndex,
+         .targetSampleRate = options->targetSampleRate,
+         .targetPeak = options->targetPeak,
+         .startFrame = options->startFrame,
+         .endFrame = options->endFrame});
+    if (!processed) {
+      std::cerr << "Voicebank production operation failed: "
+                << processed.error().message << '\n';
+      return 7;
+    }
+    std::cout << "production_revision=" << processed.value().revisionId << '\n'
+              << "production_output_sha256="
+              << processed.value().outputSha256 << '\n';
+  }
+  if (options->exportU57Inputs.has_value()) {
+    const auto exported = app.exportProductionInputs(*options->exportU57Inputs);
+    if (!exported) {
+      std::cerr << "Voicebank production export failed: "
+                << exported.error().message << '\n';
+      return 6;
+    }
+    std::cout << "production_brief=" << exported.value().briefPath.string() << '\n'
+              << "candidate_template="
+              << exported.value().candidateTemplatePath.string() << '\n';
   }
   auto window = seam::native_ui::createNativeWindow();
   app.setWindow(*window);
@@ -373,6 +383,20 @@ int main(int argc, char** argv) {
             << "input_read_failures=" << stats.readFailures << '\n'
             << "recorded_frames=" << app.lastRecordedFrames() << '\n'
             << "recorded_wav=" << app.lastRecording().string() << '\n';
+  if (const auto* production = app.productionProject(); production != nullptr) {
+    const auto queues = app.productionQueues();
+    std::cout << "production_project=" << production->projectId << '\n'
+              << "production_generation=" << production->lastDurableGeneration << '\n'
+              << "production_inventory_sha256=" << production->inventorySha256 << '\n'
+              << "production_missing=" << queues.missing << '\n'
+              << "production_rejected=" << queues.rejected << '\n'
+              << "production_retake=" << queues.retake << '\n'
+              << "production_marker_review=" << queues.markerReview << '\n'
+              << "production_pitch_review=" << queues.pitchReview << '\n'
+              << "production_approved=" << queues.approved << '\n'
+              << "production_staged_recovery="
+              << app.stagedRecoveryCandidateCount() << '\n';
+  }
   if (!stopped) {
     std::cerr << "Voicebank Studio recording failed: "
               << stopped.error().message << '\n';

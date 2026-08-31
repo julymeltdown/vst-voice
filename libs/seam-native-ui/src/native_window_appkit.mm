@@ -218,8 +218,11 @@ public:
     window_.contentMinSize = NSMakeSize(
         static_cast<CGFloat>(config.minimumWidth),
         static_cast<CGFloat>(config.minimumHeight));
-    window_.frameAutosaveName = @"ProjectSEAM.Editor";
-    if (![window_ setFrameUsingName:window_.frameAutosaveName]) {
+    if (nativeWindowShouldRestoreSavedFrame(config)) {
+      window_.frameAutosaveName = @"ProjectSEAM.Editor";
+    }
+    if (window_.frameAutosaveName.length == 0U ||
+        ![window_ setFrameUsingName:window_.frameAutosaveName]) {
       [window_ center];
     }
     window_.acceptsMouseMovedEvents = YES;

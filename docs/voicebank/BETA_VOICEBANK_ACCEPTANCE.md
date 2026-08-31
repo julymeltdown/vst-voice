@@ -30,3 +30,10 @@ The checked-in Beta dossier is intentionally `BLOCKED`: it is a contract and
 lock template, not a claim that a real performer, package, or release evidence
 exists. The real `.seambank` and private rights records are external release
 inputs.
+
+The recoverable acquisition and production workflow is specified in
+`BETA_VOICEBANK_PRODUCTION.md`. Its selected strategy and synthetic workflow
+do not satisfy this acceptance gate. In particular, `READY_FOR_ACQUISITION`
+means a lawful path is defined, while the checked-in asset-admission state
+remains `NOT_RUN` and the dossier remains `BLOCKED` until U57 supplies real
+assets and independent approval evidence.
