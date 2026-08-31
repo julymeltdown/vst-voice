@@ -181,7 +181,10 @@ class MacOSSourceContractTests(unittest.TestCase):
         source = (
             ROOT / "apps/seam-voicebank-studio-native/main.cpp"
         ).read_text()
-        self.assertIn('"  --record-ms N', source)
+        options_source = (
+            ROOT / "apps/seam-voicebank-studio-native/options.cpp"
+        ).read_text()
+        self.assertIn('"  --record-ms N', options_source)
         self.assertIn('"input_callbacks="', source)
         self.assertIn('"input_read_failures="', source)
         self.assertIn('"recorded_frames="', source)
