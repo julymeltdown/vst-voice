@@ -1,0 +1,240 @@
+{
+  "schemaVersion": 1,
+  "recordType": "creator-scope-ratification",
+  "recordId": "creator-scope-ratification-001",
+  "status": "NOT_RUN",
+  "decision": "PENDING",
+  "canonicalDocument": "docs/product/creator-beta/CREATOR_SCOPE_RATIFICATION.md",
+  "cohort": {
+    "segment": "Japanese sample-based UTAU or OpenUtau cover and original-song creators who finish arrangements in a DAW",
+    "recruitmentTarget": 5,
+    "minimumCompleted": 3,
+    "minimumContinue": 3,
+    "platforms": ["macos", "windows"],
+    "requiredTraits": [
+      "Uses UTAU or OpenUtau for cover or original-song work",
+      "Works on macOS or Windows",
+      "Finishes arrangements in a DAW"
+    ]
+  },
+  "prerequisites": {
+    "consentProtocol": {
+      "status": "NOT_RUN",
+      "locator": null,
+      "sha256": null,
+      "sourceCommit": null,
+      "notes": "Consent text, retention, withdrawal, and recording rules are not yet approved.",
+      "evidence": []
+    },
+    "seamCandidate": {
+      "status": "NOT_RUN",
+      "locator": null,
+      "sha256": null,
+      "sourceCommit": null,
+      "notes": "No exact installed SEAM study candidate is bound.",
+      "evidence": []
+    },
+    "openUtauReference": {
+      "status": "NOT_RUN",
+      "locator": null,
+      "sha256": null,
+      "sourceCommit": "8c0dc4007e6e8c8181f3a12c10205671800eeb8b",
+      "notes": "The source commit is pinned, but no hash-bound isolated executable profile is recorded.",
+      "evidence": []
+    },
+    "voicebank": {
+      "status": "NOT_RUN",
+      "locator": null,
+      "sha256": null,
+      "sourceCommit": null,
+      "notes": "No rights-cleared representative study bank is bound.",
+      "evidence": []
+    },
+    "ustxFixture": {
+      "status": "NOT_RUN",
+      "locator": null,
+      "sha256": null,
+      "sourceCommit": null,
+      "notes": "No representative creator-provided USTX fixture is bound.",
+      "evidence": []
+    },
+    "lowFidelityPrototype": {
+      "status": "NOT_RUN",
+      "locator": null,
+      "sha256": null,
+      "sourceCommit": null,
+      "notes": "The study-only bridge is implemented and locally validated against SEAM schema 7 and pinned OpenUtau loading, but it is not committed, hash-bound, or independently reviewed, so this prerequisite remains NOT_RUN.",
+      "evidence": []
+    }
+  },
+  "hypotheses": [
+    {
+      "id": "CSR-H01",
+      "requirementIds": ["R5"],
+      "statement": "OpenUtau creators need bounded USTX exchange to avoid manual song reconstruction and silent loss.",
+      "status": "NOT_RUN",
+      "observedSessionIds": [],
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "id": "CSR-H02",
+      "requirementIds": ["R1", "R2"],
+      "statement": "Creators need persisted note vibrato and typed dynamics to shape a usable performance.",
+      "status": "NOT_RUN",
+      "observedSessionIds": [],
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "id": "CSR-H03",
+      "requirementIds": ["R3"],
+      "statement": "Creators need bounded lyric, pronunciation, search, and note-cleanup operations to avoid repetitive repair work.",
+      "status": "NOT_RUN",
+      "observedSessionIds": [],
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "id": "CSR-H04",
+      "requirementIds": ["R4"],
+      "statement": "Dense overlaps and multilingual text prevent reliable editing without installed visual and accessibility acceptance.",
+      "status": "NOT_RUN",
+      "observedSessionIds": [],
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "id": "CSR-H05",
+      "requirementIds": ["R6"],
+      "statement": "Creators need explicit style selection and pitch-coverage diagnostics for multi-style or multipitch banks.",
+      "status": "NOT_RUN",
+      "observedSessionIds": [],
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "id": "CSR-H06",
+      "requirementIds": ["R7"],
+      "statement": "Creators accept explicit incompatibility reporting instead of executable imports, silent substitution, or unsafe extension loading.",
+      "status": "NOT_RUN",
+      "observedSessionIds": [],
+      "evidence": [],
+      "notes": ""
+    }
+  ],
+  "sessions": [
+    {
+      "slotId": "CSR-001",
+      "participantId": null,
+      "platform": null,
+      "status": "NOT_RUN",
+      "profile": {"targetSegmentMatch": null, "creatorType": null, "usesDaw": null, "openUtauExperienceYears": null},
+      "consent": {"status": "NOT_RUN", "version": null, "evidence": []},
+      "tasks": [
+        {"hypothesisId": "CSR-H01", "status": "NOT_RUN", "startedAt": null, "endedAt": null, "completionSeconds": null, "success": null, "blockerSeverity": "NOT_RUN", "observedPain": null, "workaround": "", "notes": "", "evidence": []},
+        {"hypothesisId": "CSR-H02", "status": "NOT_RUN", "startedAt": null, "endedAt": null, "completionSeconds": null, "success": null, "blockerSeverity": "NOT_RUN", "observedPain": null, "workaround": "", "notes": "", "evidence": []},
+        {"hypothesisId": "CSR-H03", "status": "NOT_RUN", "startedAt": null, "endedAt": null, "completionSeconds": null, "success": null, "blockerSeverity": "NOT_RUN", "observedPain": null, "workaround": "", "notes": "", "evidence": []},
+        {"hypothesisId": "CSR-H04", "status": "NOT_RUN", "startedAt": null, "endedAt": null, "completionSeconds": null, "success": null, "blockerSeverity": "NOT_RUN", "observedPain": null, "workaround": "", "notes": "", "evidence": []},
+        {"hypothesisId": "CSR-H05", "status": "NOT_RUN", "startedAt": null, "endedAt": null, "completionSeconds": null, "success": null, "blockerSeverity": "NOT_RUN", "observedPain": null, "workaround": "", "notes": "", "evidence": []},
+        {"hypothesisId": "CSR-H06", "status": "NOT_RUN", "startedAt": null, "endedAt": null, "completionSeconds": null, "success": null, "blockerSeverity": "NOT_RUN", "observedPain": null, "workaround": "", "notes": "", "evidence": []}
+      ],
+      "continuationDecision": "NOT_RUN",
+      "issues": [],
+      "evidence": []
+    },
+    {
+      "slotId": "CSR-002",
+      "participantId": null,
+      "platform": null,
+      "status": "NOT_RUN",
+      "profile": {"targetSegmentMatch": null, "creatorType": null, "usesDaw": null, "openUtauExperienceYears": null},
+      "consent": {"status": "NOT_RUN", "version": null, "evidence": []},
+      "tasks": [
+        {"hypothesisId": "CSR-H01", "status": "NOT_RUN", "startedAt": null, "endedAt": null, "completionSeconds": null, "success": null, "blockerSeverity": "NOT_RUN", "observedPain": null, "workaround": "", "notes": "", "evidence": []},
+        {"hypothesisId": "CSR-H02", "status": "NOT_RUN", "startedAt": null, "endedAt": null, "completionSeconds": null, "success": null, "blockerSeverity": "NOT_RUN", "observedPain": null, "workaround": "", "notes": "", "evidence": []},
+        {"hypothesisId": "CSR-H03", "status": "NOT_RUN", "startedAt": null, "endedAt": null, "completionSeconds": null, "success": null, "blockerSeverity": "NOT_RUN", "observedPain": null, "workaround": "", "notes": "", "evidence": []},
+        {"hypothesisId": "CSR-H04", "status": "NOT_RUN", "startedAt": null, "endedAt": null, "completionSeconds": null, "success": null, "blockerSeverity": "NOT_RUN", "observedPain": null, "workaround": "", "notes": "", "evidence": []},
+        {"hypothesisId": "CSR-H05", "status": "NOT_RUN", "startedAt": null, "endedAt": null, "completionSeconds": null, "success": null, "blockerSeverity": "NOT_RUN", "observedPain": null, "workaround": "", "notes": "", "evidence": []},
+        {"hypothesisId": "CSR-H06", "status": "NOT_RUN", "startedAt": null, "endedAt": null, "completionSeconds": null, "success": null, "blockerSeverity": "NOT_RUN", "observedPain": null, "workaround": "", "notes": "", "evidence": []}
+      ],
+      "continuationDecision": "NOT_RUN",
+      "issues": [],
+      "evidence": []
+    },
+    {
+      "slotId": "CSR-003",
+      "participantId": null,
+      "platform": null,
+      "status": "NOT_RUN",
+      "profile": {"targetSegmentMatch": null, "creatorType": null, "usesDaw": null, "openUtauExperienceYears": null},
+      "consent": {"status": "NOT_RUN", "version": null, "evidence": []},
+      "tasks": [
+        {"hypothesisId": "CSR-H01", "status": "NOT_RUN", "startedAt": null, "endedAt": null, "completionSeconds": null, "success": null, "blockerSeverity": "NOT_RUN", "observedPain": null, "workaround": "", "notes": "", "evidence": []},
+        {"hypothesisId": "CSR-H02", "status": "NOT_RUN", "startedAt": null, "endedAt": null, "completionSeconds": null, "success": null, "blockerSeverity": "NOT_RUN", "observedPain": null, "workaround": "", "notes": "", "evidence": []},
+        {"hypothesisId": "CSR-H03", "status": "NOT_RUN", "startedAt": null, "endedAt": null, "completionSeconds": null, "success": null, "blockerSeverity": "NOT_RUN", "observedPain": null, "workaround": "", "notes": "", "evidence": []},
+        {"hypothesisId": "CSR-H04", "status": "NOT_RUN", "startedAt": null, "endedAt": null, "completionSeconds": null, "success": null, "blockerSeverity": "NOT_RUN", "observedPain": null, "workaround": "", "notes": "", "evidence": []},
+        {"hypothesisId": "CSR-H05", "status": "NOT_RUN", "startedAt": null, "endedAt": null, "completionSeconds": null, "success": null, "blockerSeverity": "NOT_RUN", "observedPain": null, "workaround": "", "notes": "", "evidence": []},
+        {"hypothesisId": "CSR-H06", "status": "NOT_RUN", "startedAt": null, "endedAt": null, "completionSeconds": null, "success": null, "blockerSeverity": "NOT_RUN", "observedPain": null, "workaround": "", "notes": "", "evidence": []}
+      ],
+      "continuationDecision": "NOT_RUN",
+      "issues": [],
+      "evidence": []
+    },
+    {
+      "slotId": "CSR-004",
+      "participantId": null,
+      "platform": null,
+      "status": "NOT_RUN",
+      "profile": {"targetSegmentMatch": null, "creatorType": null, "usesDaw": null, "openUtauExperienceYears": null},
+      "consent": {"status": "NOT_RUN", "version": null, "evidence": []},
+      "tasks": [
+        {"hypothesisId": "CSR-H01", "status": "NOT_RUN", "startedAt": null, "endedAt": null, "completionSeconds": null, "success": null, "blockerSeverity": "NOT_RUN", "observedPain": null, "workaround": "", "notes": "", "evidence": []},
+        {"hypothesisId": "CSR-H02", "status": "NOT_RUN", "startedAt": null, "endedAt": null, "completionSeconds": null, "success": null, "blockerSeverity": "NOT_RUN", "observedPain": null, "workaround": "", "notes": "", "evidence": []},
+        {"hypothesisId": "CSR-H03", "status": "NOT_RUN", "startedAt": null, "endedAt": null, "completionSeconds": null, "success": null, "blockerSeverity": "NOT_RUN", "observedPain": null, "workaround": "", "notes": "", "evidence": []},
+        {"hypothesisId": "CSR-H04", "status": "NOT_RUN", "startedAt": null, "endedAt": null, "completionSeconds": null, "success": null, "blockerSeverity": "NOT_RUN", "observedPain": null, "workaround": "", "notes": "", "evidence": []},
+        {"hypothesisId": "CSR-H05", "status": "NOT_RUN", "startedAt": null, "endedAt": null, "completionSeconds": null, "success": null, "blockerSeverity": "NOT_RUN", "observedPain": null, "workaround": "", "notes": "", "evidence": []},
+        {"hypothesisId": "CSR-H06", "status": "NOT_RUN", "startedAt": null, "endedAt": null, "completionSeconds": null, "success": null, "blockerSeverity": "NOT_RUN", "observedPain": null, "workaround": "", "notes": "", "evidence": []}
+      ],
+      "continuationDecision": "NOT_RUN",
+      "issues": [],
+      "evidence": []
+    },
+    {
+      "slotId": "CSR-005",
+      "participantId": null,
+      "platform": null,
+      "status": "NOT_RUN",
+      "profile": {"targetSegmentMatch": null, "creatorType": null, "usesDaw": null, "openUtauExperienceYears": null},
+      "consent": {"status": "NOT_RUN", "version": null, "evidence": []},
+      "tasks": [
+        {"hypothesisId": "CSR-H01", "status": "NOT_RUN", "startedAt": null, "endedAt": null, "completionSeconds": null, "success": null, "blockerSeverity": "NOT_RUN", "observedPain": null, "workaround": "", "notes": "", "evidence": []},
+        {"hypothesisId": "CSR-H02", "status": "NOT_RUN", "startedAt": null, "endedAt": null, "completionSeconds": null, "success": null, "blockerSeverity": "NOT_RUN", "observedPain": null, "workaround": "", "notes": "", "evidence": []},
+        {"hypothesisId": "CSR-H03", "status": "NOT_RUN", "startedAt": null, "endedAt": null, "completionSeconds": null, "success": null, "blockerSeverity": "NOT_RUN", "observedPain": null, "workaround": "", "notes": "", "evidence": []},
+        {"hypothesisId": "CSR-H04", "status": "NOT_RUN", "startedAt": null, "endedAt": null, "completionSeconds": null, "success": null, "blockerSeverity": "NOT_RUN", "observedPain": null, "workaround": "", "notes": "", "evidence": []},
+        {"hypothesisId": "CSR-H05", "status": "NOT_RUN", "startedAt": null, "endedAt": null, "completionSeconds": null, "success": null, "blockerSeverity": "NOT_RUN", "observedPain": null, "workaround": "", "notes": "", "evidence": []},
+        {"hypothesisId": "CSR-H06", "status": "NOT_RUN", "startedAt": null, "endedAt": null, "completionSeconds": null, "success": null, "blockerSeverity": "NOT_RUN", "observedPain": null, "workaround": "", "notes": "", "evidence": []}
+      ],
+      "continuationDecision": "NOT_RUN",
+      "issues": [],
+      "evidence": []
+    }
+  ],
+  "summary": {
+    "recruitedCount": 0,
+    "completedSessionCount": 0,
+    "continuationCount": 0,
+    "ratifiedHypothesisCount": 0,
+    "unresolvedP0Count": 0,
+    "unresolvedP1Count": 0,
+    "unresolvedP2Count": 0,
+    "planAmendmentRequired": false,
+    "planAmendmentLocator": null
+  },
+  "approvals": [
+    {"role": "PRODUCT_RESEARCH", "status": "NOT_RUN", "reviewerId": null, "decidedAt": null, "evidence": []},
+    {"role": "QA", "status": "NOT_RUN", "reviewerId": null, "decidedAt": null, "evidence": []},
+    {"role": "ENGINEERING", "status": "NOT_RUN", "reviewerId": null, "decidedAt": null, "evidence": []}
+  ],
+  "schema8Authorization": false
+}

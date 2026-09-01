@@ -27,15 +27,15 @@ execution: code
 
 ### Summary
 
-Project SEAM already contains most of the authoring and rendering implementation needed for a usable singing editor. Production readiness now depends on completing the shipping system around that implementation. The work must produce a lawful singing bank, a coherent signed product, real installed-runtime evidence, and an operated public release channel.
+Project SEAM contains a strong sample-concatenative authoring and rendering vertical slice, but the OpenUtau comparison shows that the creator product is not yet complete enough to treat shipping infrastructure as the only remaining delta. Production readiness now depends on both completing the shipping system and passing the separate creator-workflow contract in `docs/plans/2026-09-01-0303-feat-creator-workflow-parity-plan.md`. The work must produce expressive and interoperable authoring, a lawful singing bank, a coherent signed product, real installed-runtime evidence, and an operated public release channel.
 
-This is a delta plan. It does not repeat implementation units that are already complete in the External Beta plan. It repairs the remaining gaps, executes the unrun gates, and adds the public-distribution contract that the invite-only External Beta scope intentionally excluded.
+This remains a public-production delta plan. It does not renumber implementation units already complete in the External Beta or public-production plans. The companion creator plan owns scope ratification, vibrato, typed dynamics, bounded productivity, USTX interchange, style diagnostics, visual acceptance, and `CREATOR_PRE_FREEZE_READY`; this plan owns the cross-plan reproducibility dependency, the signed-installed replay, and final `CREATOR_BETA_READY` promotion.
 
 ### Problem Frame
 
 The repository has strong schemas, validators, build scripts, UI implementation, and release documentation. Those artifacts prove intent and internal consistency. They do not prove that a public user can install and use the product.
 
-The current canonical Usable Alpha matrix is `0/20`, External Beta has no accepted evidence records, and the Beta Voicebank dossier is blocked with zero source assets, derived assets, permissions, or package hashes. The local application is ad-hoc signed, and the macOS and Windows packaging graphs do not currently assemble the standalone app with all claimed plug-in formats into one coherent product. Several runtime defects also remain in bank trust, project overwrite protection, support export, physical-device recovery, public update delivery, and authorization integrity.
+The current canonical Usable Alpha matrix is `0/20`, External Beta has no accepted evidence records, and the Beta Voicebank dossier is blocked with zero source assets, derived assets, permissions, or package hashes. The local application is ad-hoc signed, and the macOS and Windows packaging graphs do not currently assemble the standalone app with all claimed plug-in formats into one coherent product. The canonical model also lacks persisted note vibrato, typed dynamics automation, USTX interchange, and explicit track style selection. Several runtime defects remain in bank trust, project overwrite protection, support export, physical-device recovery, public update delivery, and authorization integrity.
 
 Public production must therefore be treated as an evidence-bound release program, not as a final code-completion sprint.
 
@@ -45,13 +45,16 @@ The percentages below are risk-weighted planning estimates, not gate results. A 
 
 | Workstream | Current estimate | Verified basis |
 |---|---:|---|
-| Core standalone authoring and production runtime | 85-90% | Shared production runtime, editing, playback, save/recovery, export, Voicebank Studio, CLAP host, and native accessibility code exist; the repository progress report estimates about 88% code completion. |
+| Core standalone authoring and production runtime | 65-75% | Shared production runtime, editing, playback, save/recovery, export, Voicebank Studio, CLAP host, overlap handling, Unicode fitting, character binding, and native accessibility exist. Persisted vibrato, typed dynamics, USTX interchange, explicit style state, broader productivity, and installed creator proof remain. |
+| Competitive creator workflow | 40-50% | The OpenUtau audit confirms strong SEAM-specific technical editing but material gaps in vibrato, dynamics, USTX exchange, style selection, and workflow breadth. This is an engineering estimate, not parity scope or a promotion gate. |
 | Plug-in and release automation | 60-70% | CLAP/VST3/AUv2 build, validator, identity, installer, and evidence scaffolding exist, but payload assembly and installed-product proof are incomplete. |
 | Rights-cleared shipping voice content | 5-10% | Production tools and validators exist, but the Beta bank has no accepted assets, rights, package, signature, listening, or reference-song evidence. |
 | Trusted signed distribution | 10-20% | Fail-closed signing scripts exist, but the current app is ad-hoc signed and neither target installer is a complete, signed, accepted product. |
 | Physical, DAW, accessibility, soak, and musician proof | 0-10% | Usable Alpha is `0/20`; External Beta evidence is empty; target accessibility surfaces and host records are `NOT_RUN`. |
 | Public support, update, incident, and revocation operations | 15-25% | Policies and validators exist, but there is no public intake loop, installed update client, cryptographic approval authority, or rehearsed pause/revoke propagation. |
-| Overall public-production readiness | 35-45% | The codebase is advanced, but the highest-risk content, signing, installed-runtime, and operations gates are mostly unexecuted. |
+| Overall public-production readiness | 35-45% | The codebase is advanced, but creator completeness, content, signing, installed-runtime, and operations gates are mostly unexecuted. |
+
+The public-production delta remains 4/15 completed units, or 26.7%. Including the seven-unit creator companion changes the active implementation denominator to 4/22, or 18.2%. This denominator change records newly evidenced scope; it is not a loss of completed code. Formal promotion remains blocked until the acceptance gates pass.
 
 ### Actors
 
@@ -71,6 +74,7 @@ The percentages below are risk-weighted planning estimates, not gate results. A 
 - **Generated, procedural, or TTS-derived source audio is eligible only through the same rights and quality gate as recorded audio.** A free or commercial-use label alone is insufficient. Governs R37.
 - **Release claims are evidence-bound.** Source, CI, an internal validator, or deterministic fallback audio cannot substitute for target installed evidence. Governs R38, R40 through R51.
 - **External Beta remains a mandatory predecessor.** Public activation cannot bypass signed installed beta evidence, a closed cohort, or field-support rehearsal. Governs R50 and R51.
+- **Creator readiness is a two-stage release predecessor.** U63 requires exact unsigned installed creator evidence; public activation requires the later exact signed installed replay. Governs R40, R41, R47, R51, and R52.
 
 ### Requirements
 
@@ -103,11 +107,13 @@ The percentages below are risk-weighted planning estimates, not gate results. A 
 
 - R50. Candidate decisions, evidence, approvals, pause, resume, close, supersede, and revoke must be independently attributable, tamper-evident, and reproducible from a restored immutable archive.
 - R51. Public activation must remain fail-closed until the signed installed product, real bank, target matrices, support drill, update path, and rollback or revocation path all pass for the exact candidate.
+- R52. Production U63 cannot begin until the companion creator plan reaches `CREATOR_PRE_FREEZE_READY` for one `CreatorCandidateIdentity`: source commit, canonical unsigned app-payload hash, unsigned package hash, exact bank ID/version/content hash, project schema version, expressive-capability revision, USTX contract version, and fixture-corpus hash. U65 must replay the journey on exact signed installed bytes, preserve the canonical app-payload identity, replace only the stage-appropriate package hash, and reach `CREATOR_BETA_READY` before public activation.
 
 ### Success Criteria
 
 - The Apple Silicon Usable Alpha matrix records `PASS` for UA-001 through UA-020, and the separate public Windows matrix records `PASS` for PW-001 through PW-020, each with repository-relative evidence paths and matching SHA-256 values.
 - The External Beta gate reaches `EXTERNAL_BETA_READY`, its closed cohort reaches `EXTERNAL_BETA_CLOSED`, and the new Public Production gate reaches `PUBLIC_ACTIVE` for the same lineage.
+- The companion creator gate reaches `CREATOR_PRE_FREEZE_READY` before U63 and reaches the distinct `CREATOR_BETA_READY` state on the exact U64 installed candidate during U65.
 - Beta Voicebank 01 has non-empty source and derived inventories, complete rights approval, a trusted signature, clean-install receipt, listening approval, range and coverage results, and a canonical reference-song render.
 - Gatekeeper accepts the downloaded macOS package and installed app; Windows verifies Authenticode and timestamp trust for the installer and every shipped PE leaf.
 - All required official validator and nine host-tuple rows pass against hashes from the installed candidate.
@@ -189,6 +195,7 @@ No flow passes a cross-cutting requirement alone. The gate combines the flow evi
 - Public direct-download distribution for macOS Apple Silicon and Windows x64.
 - Standalone, CLAP, VST3, and AUv2 where the format is supported on the target OS.
 - One rights-cleared, characterless production singing bank.
+- The Beta-critical creator workflow, `CREATOR_PRE_FREEZE_READY`, and `CREATOR_BETA_READY` contracts in `docs/plans/2026-09-01-0303-feat-creator-workflow-parity-plan.md`.
 - Public documents, update metadata, support intake, security response, candidate operations, and evidence retention.
 - Closed External Beta as the mandatory predecessor to public activation.
 
@@ -220,7 +227,7 @@ No flow passes a cross-cutting requirement alone. The gate combines the flow evi
 - A public static update-metadata endpoint and public support/security destinations will exist and be evidenced before U64 freezes N+1. U61 owns endpoint integration and readiness proof.
 - Apple Developer ID and notarization credentials, a Windows Authenticode certificate and timestamp service, target machines, commercial DAW licenses, assistive-technology operators, music reviewers, and content-rights approval are external inputs.
 - `beta-voicebank-01` remains the immutable technical and evidence identity. U57 locks a neutral public display name before U64 without changing that identity.
-- The current repository baseline is the source of truth for implementation. This planning run did not execute builds or tests.
+- The current repository baseline is the source of truth for implementation. This OpenUtau amendment changes documentation only; the unchanged source had already passed Development and Release builds and 65/65 CTest in each preset during the preceding AppleClang repair verification.
 
 ### Ownership and External Inputs
 
@@ -257,6 +264,7 @@ No flow passes a cross-cutting requirement alone. The gate combines the flow evi
 - KTD36. **Verify sealed handoffs inside the privileged installer boundary.** A signed `seam_installer_verifier` runs before system mutation from the macOS preinstall hook and Windows NSIS initialization; it reopens the handoff and package, verifies publisher, candidate, hash, and stable file identity, and fails without installing.
 - KTD37. **Define reproducibility by artifact class.** Deterministic data, documents, banks, manifests, and archives require raw-byte equality. Unsigned binaries and bundles target raw-byte equality with pinned images and deterministic flags; an exception requires a documented canonical content-manifest comparator that excludes only audited nondeterministic fields.
 - KTD38. **Close the OpenSSL runtime dependency statically for release.** Release configurations build and link a pinned PIC-capable OpenSSL 3 Crypto archive into every dependent app, plug-in, tool, and installer verifier. Shipping payloads may not import Homebrew or another external `libcrypto`/OpenSSL runtime; the pinned source, license, notices, and SBOM entry remain candidate inputs.
+- KTD39. **Separate unsigned admission from signed acceptance.** Companion U1-U6 may execute beside U57-U62. Companion U7 consumes U62's evidence authority and the exact U58 trusted bank; its `CREATOR_PRE_FREEZE_READY` evidence must match the candidate lineage before U63. U65 repeats the installed creator journey after U64 signs the exact bytes and alone may reach `CREATOR_BETA_READY`. Governs R52.
 
 ### Output Structure
 
@@ -420,12 +428,12 @@ flowchart TB
 | 0. Truth and public contract | U53 | GitHub billing repair may occur independently | Public state schema and gate fail closed on the current checkout | 40-45% |
 | 1. Coherent product assembly | U54 then U55 | Public documents from U53 allow U55 to follow U54 without a cycle | Unsigned macOS and Windows payloads contain their exact declared surfaces and no fixture dependencies | 45-55% |
 | 2. Real content and trust | U56, U57, then U58 | U56 tooling precedes real production; the accepted unsigned bank then enters trust and signing hardening | One rights-cleared, signed, hostile-input-tested, clean-installed bank | 55-65% |
-| 3. Product and operational hardening | U59-U61 | U59 and U60 can run in parallel; U61 follows U55 and U60 | Failure journeys are implemented and locally characterized | 65-75% |
-| 4. Evidence authority and freeze | U62, U63, then U64 | Evidence authority settles before the final two-clean-build comparison and freeze | Reproducible unsigned N+1, signed descendants, and coherent predecessor | 75-82% |
-| 5. Target proof | U65-U66 | Standalone/accessibility and host matrices run on separate machines | All installed standalone, platform, validator, soak, and DAW rows pass | 82-92% |
+| 3. Creator, product, and operational hardening | U59-U61 plus companion U1-U7 | Runtime faults, support, updates, expressive authoring, USTX, style, and visual work can progress by owner; every creator unit converges at its U7 gate | Failure journeys are characterized and `CREATOR_PRE_FREEZE_READY` passes for the unsigned lineage | 60-75% |
+| 4. Evidence authority and freeze | U62, companion U7, U63, then U64 | Evidence authority and unsigned creator readiness settle before the final two-clean-build comparison and freeze | Reproducible unsigned N+1, signed descendants, coherent predecessor, and creator-ready source | 75-82% |
+| 5. Target proof | U65-U66 | Standalone/accessibility and host matrices run on separate machines; U65 replays creator evidence on signed bytes | `CREATOR_BETA_READY` plus all installed standalone, platform, validator, soak, and DAW rows pass | 82-92% |
 | 6. Operated promotion | U67 | Support and channel monitoring run throughout cohort | Closed cohort, public activation, and rollback/revoke drill pass | 100% by gate, not estimate |
 
-With two or three engineers plus dedicated QA, content, legal, and release support, the signed closed-beta critical path is approximately 16-28 weeks. Public production is approximately 24-36 weeks because the cohort, support drill, target matrices, and release operations cannot be compressed into code-only work. A solo effort should budget at least 8-12 months and remains dependent on outside rights, signing, machine, DAW, accessibility, and musician inputs.
+With two or three engineers plus dedicated QA, content, legal, and release support, the signed closed-beta critical path is approximately 20-32 weeks. Public production is approximately 28-42 weeks because creator closure, the cohort, support drill, target matrices, and release operations cannot be compressed into code-only work. A solo effort should budget at least 10-15 months and remains dependent on outside rights, signing, OpenUtau interoperability, machine, DAW, accessibility, and musician inputs.
 
 ### System-Wide Impact
 
@@ -487,7 +495,7 @@ With two or three engineers plus dedicated QA, content, legal, and release suppo
 | U60 | Deliver privacy-safe support and crash recovery | support bundle, crash capture, native recovery UI | U53 |
 | U61 | Integrate public update, repair, pause, and revoke | update controller and panel, public metadata, operations tooling | U53, U55, U60 |
 | U62 | Make evidence collection and authorization authoritative | External Beta collectors, public gate, operations and archive tooling | U55, U58-U61 |
-| U63 | Establish reproducible build and toolchain evidence | compiler options, build images, reproducibility verifier | U55, U57-U62 |
+| U63 | Establish reproducible build and toolchain evidence | compiler options, build images, reproducibility verifier | U55, U57-U62, `CREATOR_PRE_FREEZE_READY` |
 | U64 | Produce predecessor N and freeze/sign candidate N+1 | candidate manifests, platform signing, evidence roots | U63 |
 | U65 | Pass installed standalone, lifecycle, audio, accessibility, and soak gates | Usable Alpha, install, accessibility, fault, and soak evidence | U64 |
 | U66 | Pass official validators and all required DAW tuples | Phase 13A validators and External Beta host evidence | U64 |
@@ -946,11 +954,11 @@ With two or three engineers plus dedicated QA, content, legal, and release suppo
 
 **Goal:** Make unsigned candidate production repeatable across clean controlled workspaces and prevent unsupported sanitizer configurations from generating false PASS evidence.
 
-**Requirements:** R38, R45, R50, R51
+**Requirements:** R38, R45, R50, R51, R52
 
-**Technical decisions:** KTD37, KTD38
+**Technical decisions:** KTD37, KTD38, KTD39
 
-**Dependencies:** U55, U57, U58, U59, U60, U61, U62
+**Dependencies:** U55, U57, U58, U59, U60, U61, U62, and `CREATOR_PRE_FREEZE_READY` from `docs/plans/2026-09-01-0303-feat-creator-workflow-parity-plan.md`
 
 **Files:**
 
@@ -963,11 +971,12 @@ With two or three engineers plus dedicated QA, content, legal, and release suppo
 **Approach:**
 
 1. Pin compiler, linker, SDK, CMake, Python, dependency commits including the static OpenSSL source, build image, locale, timezone, and environment inputs per target platform.
-2. Wire `SOURCE_DATE_EPOCH`, path remapping, deterministic compiler and linker modes, stable archive ordering, normalized ownership and permissions, and normalized ZIP, plist, and package metadata where the toolchain supports them.
-3. Define artifact-class comparators per KTD37. Every exception identifies the nondeterministic field, why it cannot carry product content, and how the canonical manifest excludes only that field.
-4. Build unsigned candidate payloads twice in independent clean workspaces and compare raw bytes or the approved canonical representation before U64 can freeze.
-5. Make requested ASan, UBSan, or TSan configuration fail when the selected toolchain does not add real instrumentation. An unsupported target records `NOT_RUN`, never PASS.
-6. Add MSVC AddressSanitizer where supported. Record Windows TSan as unsupported and cover Windows concurrency with deterministic stress, fault injection, runtime counters, and a named native diagnostic tool rather than claiming TSan.
+2. Verify the creator gate names the same `CreatorCandidateIdentity`: source commit, canonical unsigned app-payload hash, unsigned package hash, exact bank ID/version/content hash, project schema version, expressive-capability revision, USTX contract version, and fixture-corpus hash. Verify its restored `EvidenceRoot` and refuse missing, stale, source-only, or mixed creator evidence.
+3. Wire `SOURCE_DATE_EPOCH`, path remapping, deterministic compiler and linker modes, stable archive ordering, normalized ownership and permissions, and normalized ZIP, plist, and package metadata where the toolchain supports them.
+4. Define artifact-class comparators per KTD37. Every exception identifies the nondeterministic field, why it cannot carry product content, and how the canonical manifest excludes only that field.
+5. Build unsigned candidate payloads twice in independent clean workspaces and compare raw bytes or the approved canonical representation before U64 can freeze.
+6. Make requested ASan, UBSan, or TSan configuration fail when the selected toolchain does not add real instrumentation. An unsupported target records `NOT_RUN`, never PASS.
+7. Add MSVC AddressSanitizer where supported. Record Windows TSan as unsupported and cover Windows concurrency with deterministic stress, fault injection, runtime counters, and a named native diagnostic tool rather than claiming TSan.
 
 **Test scenarios:**
 
@@ -975,6 +984,7 @@ With two or three engineers plus dedicated QA, content, legal, and release suppo
 - Different source, dependency, SDK, compiler, environment, or declared build epoch changes candidate identity and fails comparison.
 - Different workspace paths, locale, timezone, and filesystem enumeration order do not change the approved unsigned output identity.
 - An unaudited nondeterministic field or comparator exclusion fails the gate.
+- Missing, stale, mixed-lineage, or source-only creator evidence fails U63 admission.
 - A release binary that imports a developer-machine OpenSSL library or omits the OpenSSL SBOM and license record fails dependency closure.
 - Enabling a sanitizer on an unsupported compiler fails configuration or records `NOT_RUN`; it cannot run uninstrumented and report PASS.
 - Windows memory and concurrency evidence names the actual instrumentation or diagnostic tool and never claims unsupported TSan coverage.
@@ -1024,15 +1034,16 @@ With two or three engineers plus dedicated QA, content, legal, and release suppo
 
 **Goal:** Prove the complete musician journey and failure behavior on clean macOS and Windows systems using the exact U64 installed bytes.
 
-**Requirements:** R40, R42, R43, R45, R46, R47, R48, R51
+**Requirements:** R40, R42, R43, R45, R46, R47, R48, R51, R52
 
-**Technical decisions:** KTD30, KTD34
+**Technical decisions:** KTD30, KTD34, KTD39
 
 **Dependencies:** U64
 
 **Files:**
 
 - Populate `docs/product/usable-alpha-acceptance.json`, `docs/product/public-windows-standalone-acceptance.json`, install lifecycle records, `docs/product/accessibility-test-matrix.json`, fault records, product-soak records, and raw evidence paths.
+- Populate the companion creator-plan journey, visual, interchange, style, expressive-reopen, OpenUtau comparison, and independent approval records for the U64 installed bytes.
 - Use `scripts/collect_external_beta_install_evidence.py` and `scripts/collect_external_beta_standalone_journey.py` for raw observation, then pass their sealed packets to the corresponding `run_*` validators.
 - Modify application or collector code only when observed failures identify a root cause; add a regression test beside the owning component before rerunning the affected row.
 
@@ -1043,7 +1054,8 @@ With two or three engineers plus dedicated QA, content, legal, and release suppo
 3. Test N install, N to N+1 update, interrupted update, downgrade rejection, authorized rollback or repair, uninstall, reinstall, user-data preservation, and stale-binary removal.
 4. Run physical CoreAudio and WASAPI fault matrices with named devices, reconnect, default change, sleep/wake, and format changes.
 5. Run keyboard-only and all four required assistive-technology surfaces at supported scaling.
-6. Run the exact 7,200-second engineering soak and the 30-minute and 120-minute signed-installed product sessions. Open exports in an external player and perform independent listening.
+6. Replay the full creator journey from the companion plan: bounded USTX open, conversion review, style selection, lyric and phonetic edits, pitch, vibrato, dynamics, dense overlap, long multilingual text, character modes, save and reopen, USTX export, and hermetic pinned OpenUtau comparison. Re-run the exact viewport and scaling matrix and the target-creator continuation check on the signed package lineage.
+7. Run the exact 7,200-second engineering soak and the 30-minute and 120-minute signed-installed product sessions. Open exports in an external player and perform independent listening.
 
 **Test scenarios:**
 
@@ -1052,6 +1064,7 @@ With two or three engineers plus dedicated QA, content, legal, and release suppo
 - Device loss and sleep/wake stop safely and resume only after explicit user action.
 - VoiceOver and Narrator announce controls, values, focus, errors, progress, dialogs, and recovery actions in logical order.
 - At 200% scaling and keyboard-only input, no required action is clipped, hidden, unreachable, or dependent on pointer hover.
+- The installed candidate promotes the matching pre-freeze lineage to `CREATOR_BETA_READY`; supported USTX data opens in the network-disabled pinned OpenUtau profile with no unexplained difference, and unsupported fields appear in the conversion report.
 - Full soaks meet duration, memory, callback, underrun, crash, and data-loss thresholds from the owning acceptance contracts.
 
 **Verification:** Every row contains exact machine, OS, package, app, bank, device, operator, raw artifact, and hash identity; all UA, PW, install, fault, accessibility, and soak validators pass against a restored evidence root.
@@ -1158,6 +1171,7 @@ With two or three engineers plus dedicated QA, content, legal, and release suppo
 | Release dependency closure | `python3 scripts/verify_release_dependency_closure.py --payload <assembled-payload> --platform <target-platform>` | U55, U63, U64 | Every non-system dependency is declared, hashed, signed where applicable, licensed, and present or statically closed; no developer-machine OpenSSL path remains. |
 | External Beta contracts | `python3 -m unittest discover -s tests/external_beta -v` | U56-U63 | All contract tests pass; current evidence state remains truthful. |
 | Public Production contracts | `python3 -m unittest discover -s tests/production -v` | U53-U63 | Public release, trust, lifecycle, support, reproducibility, and authorization contracts pass. |
+| Creator Beta contract | `python3 scripts/verify_creator_beta_contract.py --root .` | Companion U7, U63, U65 | Contract structure passes locally; `CREATOR_PRE_FREEZE_READY` requires exact unsigned installed creator, USTX, style, visual, accessibility, target-creator, dependency, and hermetic OpenUtau evidence; `CREATOR_BETA_READY` requires the U65 signed-installed replay. |
 | Apple Silicon Usable Alpha contract | `python3 scripts/verify_usable_alpha_contract.py --root .` | U65 | Contract structure passes; final state passes only when all twenty macOS target records pass. |
 | Windows public standalone contract | `python3 scripts/verify_public_windows_standalone_contract.py --root .` | U65 | Contract structure passes; final state passes only when PW-001 through PW-020 have Windows target evidence and hashes. |
 | Phase 13A release gate | `python3 tools/phase13a/release_gate.py check --matrix docs/phase13a/mandatory-validation-matrix.json --gate G4` | U66 | G4 passes from target validator, signing, installer, and host evidence. |
@@ -1173,6 +1187,7 @@ Commands containing restored-candidate or restored-archive placeholders use path
 | macOS package | Download, Gatekeeper, install, launch, repair, update, interrupted update, rollback, uninstall, reinstall | Package and installed hashes, `codesign`, product signature, notarization, stapling, screenshots, logs, operator, clean snapshot |
 | Windows installer | Download, Authenticode, install, launch, repair, update, interrupted update, rollback, uninstall, reinstall | Installer and PE hashes, signature and timestamp chain, installed inventory, screenshots, logs, operator, clean snapshot |
 | Standalone | Apple Silicon UA-001-UA-020, Windows PW-001-PW-020, physical devices, save conflict, crash recovery, bank recovery, export, external listening | Project, WAVs, device and counter records, screenshots, session log, bank identity, independent listening |
+| Creator workflow | USTX open and review, style selection, lyric and phonetic edits, pitch, vibrato, dynamics, dense overlap, long multilingual text, character modes, save/reopen/recovery, USTX export, target-creator continuation, and hermetic pinned OpenUtau comparison | `CreatorCandidateIdentity`, restored evidence root, bank and style identity, input and output hashes, conversion reports, exact viewport matrix, accessibility output, audio, OpenUtau profile identity, creator records, and independent approvals |
 | Accessibility | Keyboard-only, VoiceOver, Accessibility Inspector, Narrator, UIA Verify, Inspect, 200% scaling | Tool output, screenshots or recordings, focus and announcement notes, defects and resolutions |
 | Performance and soak | Exact 7,200-second engineering run, 30-minute acceptance, 120-minute signed-installed run | Raw time series, memory, callback, underrun, crash, data-loss, CPU, device, build and bank identities |
 | Plug-in validators | Official CLAP and VST3 validators, `auval` | Tool version and hash, raw stdout and stderr, installed plug-in hash, result JSON |
@@ -1191,8 +1206,9 @@ When target QA exposes a product defect, fix the owning component and add a focu
 
 ### Global Completion
 
-- R37 through R51 are satisfied for one immutable candidate lineage.
+- R37 through R52 are satisfied for one immutable candidate lineage.
 - U53 through U67 meet their verification outcomes and have no unresolved P0 or P1 findings.
+- Companion creator units U1 through U7 meet their verification outcomes; the exact unsigned lineage reaches `CREATOR_PRE_FREEZE_READY` before U63, and the exact signed lineage reaches `CREATOR_BETA_READY` during U65.
 - The public gate reaches `PUBLIC_ACTIVE`; External Beta reaches `EXTERNAL_BETA_CLOSED`; Apple Silicon Usable Alpha and the Windows public standalone matrix each record all twenty rows `PASS`.
 - The shipping bank is lawful, musically accepted, signed, clean-installed, hostile-input-tested, and exact-identity locked.
 - macOS and Windows packages are complete, trusted by their platforms, reproducible from the frozen inputs, and validated through the full N to N+1 lifecycle.
@@ -1216,9 +1232,9 @@ When target QA exposes a product defect, fix the owning component and add a focu
 | U60 | Repeated support and forced-crash journeys produce useful, consented, privacy-reviewed, exact-candidate diagnostics. |
 | U61 | Installed clients complete signed update, failure, rollback, pause, repair, offline, and terminal revoke behavior. |
 | U62 | Collectors create raw candidate-bound evidence, validators remain read-only, and signed approvals survive independent archive restoration. |
-| U63 | Two clean controlled builds reproduce the unsigned candidate by the declared artifact-class rules, and every sanitizer result proves instrumentation. |
+| U63 | Matching `CREATOR_PRE_FREEZE_READY` evidence admits the source, two clean controlled builds reproduce the unsigned candidate by the declared artifact-class rules, and every sanitizer result proves instrumentation. |
 | U64 | Coherent signed N and frozen/signed N+1 exist with accepted platform trust and no rebuild after freeze. |
-| U65 | All standalone, installer, physical audio, accessibility, and soak rows pass on clean macOS and Windows systems. |
+| U65 | All creator, USTX, style, expressive, visual, standalone, installer, physical audio, accessibility, and soak rows pass on clean macOS and Windows systems, and the signed lineage reaches `CREATOR_BETA_READY`. |
 | U66 | Official validators and every required DAW tuple pass against installed candidate hashes. |
 | U67 | The closed cohort, real support loop, incident drill, public canary, and final authorization pass for the same lineage. |
 
@@ -1235,11 +1251,13 @@ Do not call the project production-ready because a percentage reaches 100, becau
 - `docs/plans/2026-08-21-1901-feat-project-seam-external-beta-plan.md` owns the inherited External Beta product and its U1-U52 content, standalone, update, support, wrapper, signing, install, host, archive, and cohort work.
 - `docs/plans/2026-08-26-0134-fix-engineering-candidate-completion-plan.md` owns prior engineering-candidate completion decisions.
 - `docs/plans/2026-08-27-0346-feat-native-editor-design-completion-plan.md` owns native editor design-completion work.
+- `docs/plans/2026-09-01-0303-feat-creator-workflow-parity-plan.md` owns the Beta-critical expressive, productivity, interchange, style, visual, and creator-gate work discovered through the OpenUtau comparison.
 
 ### Repository Sources
 
 - `BETA_READINESS_ISSUES.md`
 - `docs/reviews/PROJECT_SEAM_OPEN_BETA_READINESS_2026-08-30.md`
+- `docs/reviews/PROJECT_SEAM_OPENUTAU_COMPARATIVE_AUDIT_2026-09-01.md`
 - `docs/product/USABLE_ALPHA_ACCEPTANCE.md`
 - `docs/product/usable-alpha-acceptance.json`
 - `docs/product/EXTERNAL_BETA_ACCEPTANCE.md`

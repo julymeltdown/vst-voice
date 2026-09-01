@@ -1,0 +1,505 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://project-seam.invalid/schemas/creator-scope-ratification.schema.json",
+  "title": "Project SEAM creator scope ratification record",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "recordType",
+    "recordId",
+    "status",
+    "decision",
+    "canonicalDocument",
+    "cohort",
+    "prerequisites",
+    "hypotheses",
+    "sessions",
+    "summary",
+    "approvals",
+    "schema8Authorization"
+  ],
+  "properties": {
+    "schemaVersion": {"const": 1},
+    "recordType": {"const": "creator-scope-ratification"},
+    "recordId": {"type": "string", "pattern": "^creator-scope-ratification-[0-9]{3}$"},
+    "status": {"enum": ["NOT_RUN", "BLOCKED", "PASS"]},
+    "decision": {"enum": ["PENDING", "RATIFIED", "REVISE_PLAN"]},
+    "canonicalDocument": {"const": "docs/product/creator-beta/CREATOR_SCOPE_RATIFICATION.md"},
+    "cohort": {"$ref": "#/$defs/cohort"},
+    "prerequisites": {"$ref": "#/$defs/prerequisites"},
+    "hypotheses": {
+      "type": "array",
+      "minItems": 6,
+      "maxItems": 6,
+      "prefixItems": [
+        {"allOf": [{"$ref": "#/$defs/hypothesis"}, {"properties": {"id": {"const": "CSR-H01"}, "requirementIds": {"const": ["R5"]}}}]},
+        {"allOf": [{"$ref": "#/$defs/hypothesis"}, {"properties": {"id": {"const": "CSR-H02"}, "requirementIds": {"const": ["R1", "R2"]}}}]},
+        {"allOf": [{"$ref": "#/$defs/hypothesis"}, {"properties": {"id": {"const": "CSR-H03"}, "requirementIds": {"const": ["R3"]}}}]},
+        {"allOf": [{"$ref": "#/$defs/hypothesis"}, {"properties": {"id": {"const": "CSR-H04"}, "requirementIds": {"const": ["R4"]}}}]},
+        {"allOf": [{"$ref": "#/$defs/hypothesis"}, {"properties": {"id": {"const": "CSR-H05"}, "requirementIds": {"const": ["R6"]}}}]},
+        {"allOf": [{"$ref": "#/$defs/hypothesis"}, {"properties": {"id": {"const": "CSR-H06"}, "requirementIds": {"const": ["R7"]}}}]}
+      ],
+      "items": false
+    },
+    "sessions": {
+      "type": "array",
+      "minItems": 5,
+      "maxItems": 5,
+      "prefixItems": [
+        {"allOf": [{"$ref": "#/$defs/session"}, {"properties": {"slotId": {"const": "CSR-001"}}}]},
+        {"allOf": [{"$ref": "#/$defs/session"}, {"properties": {"slotId": {"const": "CSR-002"}}}]},
+        {"allOf": [{"$ref": "#/$defs/session"}, {"properties": {"slotId": {"const": "CSR-003"}}}]},
+        {"allOf": [{"$ref": "#/$defs/session"}, {"properties": {"slotId": {"const": "CSR-004"}}}]},
+        {"allOf": [{"$ref": "#/$defs/session"}, {"properties": {"slotId": {"const": "CSR-005"}}}]}
+      ],
+      "items": false
+    },
+    "summary": {"$ref": "#/$defs/summary"},
+    "approvals": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 3,
+      "prefixItems": [
+        {"allOf": [{"$ref": "#/$defs/approval"}, {"properties": {"role": {"const": "PRODUCT_RESEARCH"}}}]},
+        {"allOf": [{"$ref": "#/$defs/approval"}, {"properties": {"role": {"const": "QA"}}}]},
+        {"allOf": [{"$ref": "#/$defs/approval"}, {"properties": {"role": {"const": "ENGINEERING"}}}]}
+      ],
+      "items": false
+    },
+    "schema8Authorization": {"type": "boolean"}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"status": {"const": "NOT_RUN"}}, "required": ["status"]},
+      "then": {
+        "properties": {
+          "decision": {"const": "PENDING"},
+          "schema8Authorization": {"const": false},
+          "hypotheses": {"items": {"properties": {"status": {"const": "NOT_RUN"}}}},
+          "sessions": {"items": {"properties": {"status": {"const": "NOT_RUN"}}}},
+          "approvals": {"items": {"properties": {"status": {"const": "NOT_RUN"}}}},
+          "summary": {
+            "properties": {
+              "recruitedCount": {"const": 0},
+              "completedSessionCount": {"const": 0},
+              "continuationCount": {"const": 0},
+              "ratifiedHypothesisCount": {"const": 0},
+              "unresolvedP0Count": {"const": 0},
+              "unresolvedP1Count": {"const": 0},
+              "unresolvedP2Count": {"const": 0},
+              "planAmendmentRequired": {"const": false},
+              "planAmendmentLocator": {"type": "null"}
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {"properties": {"status": {"const": "PASS"}}, "required": ["status"]},
+      "then": {
+        "properties": {
+          "decision": {"const": "RATIFIED"},
+          "schema8Authorization": {"const": true},
+          "prerequisites": {
+            "properties": {
+              "consentProtocol": {"properties": {"status": {"const": "PASS"}}},
+              "seamCandidate": {"properties": {"status": {"const": "PASS"}}},
+              "openUtauReference": {"properties": {"status": {"const": "PASS"}}},
+              "voicebank": {"properties": {"status": {"const": "PASS"}}},
+              "ustxFixture": {"properties": {"status": {"const": "PASS"}}},
+              "lowFidelityPrototype": {"properties": {"status": {"const": "PASS"}}}
+            }
+          },
+          "hypotheses": {
+            "items": {
+              "properties": {
+                "status": {"const": "RATIFIED"},
+                "observedSessionIds": {"minItems": 2},
+                "evidence": {"minItems": 1}
+              }
+            }
+          },
+          "sessions": {
+            "allOf": [
+              {
+                "contains": {"properties": {"status": {"const": "COMPLETED"}}, "required": ["status"]},
+                "minContains": 3
+              },
+              {
+                "contains": {
+                  "properties": {
+                    "status": {"const": "COMPLETED"},
+                    "continuationDecision": {"const": "CONTINUE"}
+                  },
+                  "required": ["status", "continuationDecision"]
+                },
+                "minContains": 3
+              },
+              {
+                "items": {
+                  "properties": {
+                    "participantId": {"type": "string", "pattern": "^creator-0[1-5]$"},
+                    "platform": {"enum": ["macos", "windows"]},
+                    "status": {"enum": ["COMPLETED", "WITHDRAWN"]},
+                    "profile": {
+                      "properties": {
+                        "targetSegmentMatch": {"const": true},
+                        "creatorType": {"enum": ["COVER", "ORIGINAL", "BOTH"]},
+                        "usesDaw": {"const": true},
+                        "openUtauExperienceYears": {"type": "number", "minimum": 0}
+                      }
+                    },
+                    "consent": {
+                      "properties": {
+                        "status": {"enum": ["GRANTED", "WITHDRAWN"]},
+                        "version": {"type": "string", "minLength": 1},
+                        "evidence": {"minItems": 1}
+                      }
+                    },
+                    "issues": {
+                      "not": {
+                        "contains": {
+                          "properties": {
+                            "severity": {"enum": ["P0", "P1"]},
+                            "status": {"enum": ["OPEN", "ACCEPTED"]}
+                          },
+                          "required": ["severity", "status"]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            ],
+            "prefixItems": [
+              {"properties": {"participantId": {"const": "creator-01"}}},
+              {"properties": {"participantId": {"const": "creator-02"}}},
+              {"properties": {"participantId": {"const": "creator-03"}}},
+              {"properties": {"participantId": {"const": "creator-04"}}},
+              {"properties": {"participantId": {"const": "creator-05"}}}
+            ]
+          },
+          "summary": {
+            "properties": {
+              "recruitedCount": {"const": 5},
+              "completedSessionCount": {"minimum": 3},
+              "continuationCount": {"minimum": 3},
+              "ratifiedHypothesisCount": {"const": 6},
+              "unresolvedP0Count": {"const": 0},
+              "unresolvedP1Count": {"const": 0},
+              "planAmendmentRequired": {"const": false},
+              "planAmendmentLocator": {"type": "null"}
+            }
+          },
+          "approvals": {
+            "allOf": [
+              {"items": {"properties": {"status": {"const": "APPROVED"}, "evidence": {"minItems": 1}}}}
+            ],
+            "prefixItems": [
+              {"properties": {"reviewerId": {"type": "string", "pattern": "^research-reviewer-[a-z0-9-]+$"}}},
+              {"properties": {"reviewerId": {"type": "string", "pattern": "^qa-reviewer-[a-z0-9-]+$"}}},
+              {"properties": {"reviewerId": {"type": "string", "pattern": "^engineering-reviewer-[a-z0-9-]+$"}}}
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {"properties": {"decision": {"const": "REVISE_PLAN"}}, "required": ["decision"]},
+      "then": {
+        "properties": {
+          "status": {"const": "BLOCKED"},
+          "schema8Authorization": {"const": false},
+          "summary": {
+            "properties": {
+              "planAmendmentRequired": {"const": true},
+              "planAmendmentLocator": {"$ref": "#/$defs/repositoryPath"}
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {"properties": {"decision": {"const": "RATIFIED"}}, "required": ["decision"]},
+      "then": {
+        "properties": {
+          "status": {"const": "PASS"},
+          "schema8Authorization": {"const": true}
+        }
+      }
+    },
+    {
+      "if": {"properties": {"schema8Authorization": {"const": true}}, "required": ["schema8Authorization"]},
+      "then": {
+        "properties": {
+          "status": {"const": "PASS"},
+          "decision": {"const": "RATIFIED"}
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "sha40": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "repositoryPath": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))[^\\\\]+$"
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "path", "sha256", "capturedAt", "reviewerId"],
+      "properties": {
+        "kind": {"type": "string", "minLength": 1},
+        "path": {"$ref": "#/$defs/repositoryPath"},
+        "sha256": {"$ref": "#/$defs/sha256"},
+        "capturedAt": {"type": "string", "format": "date-time"},
+        "reviewerId": {"type": "string", "minLength": 1}
+      }
+    },
+    "cohort": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["segment", "recruitmentTarget", "minimumCompleted", "minimumContinue", "platforms", "requiredTraits"],
+      "properties": {
+        "segment": {"const": "Japanese sample-based UTAU or OpenUtau cover and original-song creators who finish arrangements in a DAW"},
+        "recruitmentTarget": {"const": 5},
+        "minimumCompleted": {"const": 3},
+        "minimumContinue": {"const": 3},
+        "platforms": {"const": ["macos", "windows"]},
+        "requiredTraits": {
+          "const": [
+            "Uses UTAU or OpenUtau for cover or original-song work",
+            "Works on macOS or Windows",
+            "Finishes arrangements in a DAW"
+          ]
+        }
+      }
+    },
+    "prerequisite": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "locator", "sha256", "sourceCommit", "notes", "evidence"],
+      "properties": {
+        "status": {"enum": ["NOT_RUN", "BLOCKED", "PASS"]},
+        "locator": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/repositoryPath"}]},
+        "sha256": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/sha256"}]},
+        "sourceCommit": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/sha40"}]},
+        "notes": {"type": "string"},
+        "evidence": {"type": "array", "items": {"$ref": "#/$defs/evidence"}}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"status": {"const": "PASS"}}, "required": ["status"]},
+          "then": {
+            "properties": {
+              "locator": {"$ref": "#/$defs/repositoryPath"},
+              "sha256": {"$ref": "#/$defs/sha256"},
+              "evidence": {"minItems": 1}
+            }
+          }
+        }
+      ]
+    },
+    "prerequisites": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["consentProtocol", "seamCandidate", "openUtauReference", "voicebank", "ustxFixture", "lowFidelityPrototype"],
+      "properties": {
+        "consentProtocol": {"$ref": "#/$defs/prerequisite"},
+        "seamCandidate": {"$ref": "#/$defs/prerequisite"},
+        "openUtauReference": {
+          "allOf": [
+            {"$ref": "#/$defs/prerequisite"},
+            {"properties": {"sourceCommit": {"const": "8c0dc4007e6e8c8181f3a12c10205671800eeb8b"}}}
+          ]
+        },
+        "voicebank": {"$ref": "#/$defs/prerequisite"},
+        "ustxFixture": {"$ref": "#/$defs/prerequisite"},
+        "lowFidelityPrototype": {"$ref": "#/$defs/prerequisite"}
+      }
+    },
+    "hypothesis": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "requirementIds", "statement", "status", "observedSessionIds", "evidence", "notes"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^CSR-H0[1-6]$"},
+        "requirementIds": {"type": "array", "minItems": 1, "items": {"pattern": "^R[1-7]$"}},
+        "statement": {"type": "string", "minLength": 1},
+        "status": {"enum": ["NOT_RUN", "RATIFIED", "REJECTED", "INCONCLUSIVE"]},
+        "observedSessionIds": {"type": "array", "uniqueItems": true, "items": {"pattern": "^CSR-00[1-5]$"}},
+        "evidence": {"type": "array", "items": {"$ref": "#/$defs/evidence"}},
+        "notes": {"type": "string"}
+      }
+    },
+    "task": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["hypothesisId", "status", "startedAt", "endedAt", "completionSeconds", "success", "blockerSeverity", "observedPain", "workaround", "notes", "evidence"],
+      "properties": {
+        "hypothesisId": {"pattern": "^CSR-H0[1-6]$"},
+        "status": {"enum": ["NOT_RUN", "BLOCKED", "COMPLETED"]},
+        "startedAt": {"type": ["string", "null"], "format": "date-time"},
+        "endedAt": {"type": ["string", "null"], "format": "date-time"},
+        "completionSeconds": {"type": ["number", "null"], "minimum": 0},
+        "success": {"type": ["boolean", "null"]},
+        "blockerSeverity": {"enum": ["NOT_RUN", "NONE", "P2", "P1", "P0"]},
+        "observedPain": {"type": ["boolean", "null"]},
+        "workaround": {"type": "string"},
+        "notes": {"type": "string"},
+        "evidence": {"type": "array", "items": {"$ref": "#/$defs/evidence"}}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"status": {"const": "COMPLETED"}}, "required": ["status"]},
+          "then": {
+            "properties": {
+              "startedAt": {"type": "string", "format": "date-time"},
+              "endedAt": {"type": "string", "format": "date-time"},
+              "completionSeconds": {"type": "number", "minimum": 0},
+              "success": {"type": "boolean"},
+              "blockerSeverity": {"enum": ["NONE", "P2", "P1", "P0"]},
+              "observedPain": {"type": "boolean"},
+              "evidence": {"minItems": 1}
+            }
+          }
+        }
+      ]
+    },
+    "session": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["slotId", "participantId", "platform", "status", "profile", "consent", "tasks", "continuationDecision", "issues", "evidence"],
+      "properties": {
+        "slotId": {"pattern": "^CSR-00[1-5]$"},
+        "participantId": {"oneOf": [{"type": "null"}, {"type": "string", "pattern": "^creator-[a-z0-9-]{2,32}$"}]},
+        "platform": {"enum": [null, "macos", "windows"]},
+        "status": {"enum": ["NOT_RUN", "BLOCKED", "COMPLETED", "WITHDRAWN", "DISQUALIFIED"]},
+        "profile": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["targetSegmentMatch", "creatorType", "usesDaw", "openUtauExperienceYears"],
+          "properties": {
+            "targetSegmentMatch": {"type": ["boolean", "null"]},
+            "creatorType": {"enum": [null, "COVER", "ORIGINAL", "BOTH"]},
+            "usesDaw": {"type": ["boolean", "null"]},
+            "openUtauExperienceYears": {"type": ["number", "null"], "minimum": 0}
+          }
+        },
+        "consent": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "version", "evidence"],
+          "properties": {
+            "status": {"enum": ["NOT_RUN", "GRANTED", "WITHDRAWN"]},
+            "version": {"type": ["string", "null"]},
+            "evidence": {"type": "array", "items": {"$ref": "#/$defs/evidence"}}
+          }
+        },
+        "tasks": {
+          "type": "array",
+          "minItems": 6,
+          "maxItems": 6,
+          "prefixItems": [
+            {"allOf": [{"$ref": "#/$defs/task"}, {"properties": {"hypothesisId": {"const": "CSR-H01"}}}]},
+            {"allOf": [{"$ref": "#/$defs/task"}, {"properties": {"hypothesisId": {"const": "CSR-H02"}}}]},
+            {"allOf": [{"$ref": "#/$defs/task"}, {"properties": {"hypothesisId": {"const": "CSR-H03"}}}]},
+            {"allOf": [{"$ref": "#/$defs/task"}, {"properties": {"hypothesisId": {"const": "CSR-H04"}}}]},
+            {"allOf": [{"$ref": "#/$defs/task"}, {"properties": {"hypothesisId": {"const": "CSR-H05"}}}]},
+            {"allOf": [{"$ref": "#/$defs/task"}, {"properties": {"hypothesisId": {"const": "CSR-H06"}}}]}
+          ],
+          "items": false
+        },
+        "continuationDecision": {"enum": ["NOT_RUN", "CONTINUE", "DO_NOT_CONTINUE", "WITHDRAWN"]},
+        "issues": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "severity", "status", "summary", "evidence"],
+            "properties": {
+              "id": {"pattern": "^CSR-I[0-9]{3}$"},
+              "severity": {"enum": ["P0", "P1", "P2", "P3"]},
+              "status": {"enum": ["OPEN", "RESOLVED", "ACCEPTED"]},
+              "summary": {"type": "string", "minLength": 1},
+              "evidence": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/evidence"}}
+            }
+          }
+        },
+        "evidence": {"type": "array", "items": {"$ref": "#/$defs/evidence"}}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"status": {"const": "COMPLETED"}}, "required": ["status"]},
+          "then": {
+            "properties": {
+              "participantId": {"type": "string", "pattern": "^creator-[a-z0-9-]{2,32}$"},
+              "platform": {"enum": ["macos", "windows"]},
+              "profile": {
+                "properties": {
+                  "targetSegmentMatch": {"const": true},
+                  "creatorType": {"enum": ["COVER", "ORIGINAL", "BOTH"]},
+                  "usesDaw": {"const": true},
+                  "openUtauExperienceYears": {"type": "number", "minimum": 0}
+                }
+              },
+              "consent": {
+                "properties": {
+                  "status": {"const": "GRANTED"},
+                  "version": {"type": "string", "minLength": 1},
+                  "evidence": {"minItems": 1}
+                }
+              },
+              "tasks": {"items": {"properties": {"status": {"const": "COMPLETED"}}}},
+              "continuationDecision": {"enum": ["CONTINUE", "DO_NOT_CONTINUE"]},
+              "evidence": {"minItems": 1}
+            }
+          }
+        }
+      ]
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["recruitedCount", "completedSessionCount", "continuationCount", "ratifiedHypothesisCount", "unresolvedP0Count", "unresolvedP1Count", "unresolvedP2Count", "planAmendmentRequired", "planAmendmentLocator"],
+      "properties": {
+        "recruitedCount": {"type": "integer", "minimum": 0, "maximum": 5},
+        "completedSessionCount": {"type": "integer", "minimum": 0, "maximum": 5},
+        "continuationCount": {"type": "integer", "minimum": 0, "maximum": 5},
+        "ratifiedHypothesisCount": {"type": "integer", "minimum": 0, "maximum": 6},
+        "unresolvedP0Count": {"type": "integer", "minimum": 0},
+        "unresolvedP1Count": {"type": "integer", "minimum": 0},
+        "unresolvedP2Count": {"type": "integer", "minimum": 0},
+        "planAmendmentRequired": {"type": "boolean"},
+        "planAmendmentLocator": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/repositoryPath"}]}
+      }
+    },
+    "approval": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["role", "status", "reviewerId", "decidedAt", "evidence"],
+      "properties": {
+        "role": {"enum": ["PRODUCT_RESEARCH", "QA", "ENGINEERING"]},
+        "status": {"enum": ["NOT_RUN", "APPROVED", "REJECTED"]},
+        "reviewerId": {"type": ["string", "null"]},
+        "decidedAt": {"type": ["string", "null"], "format": "date-time"},
+        "evidence": {"type": "array", "items": {"$ref": "#/$defs/evidence"}}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"status": {"const": "APPROVED"}}, "required": ["status"]},
+          "then": {
+            "properties": {
+              "reviewerId": {"type": "string", "minLength": 1},
+              "decidedAt": {"type": "string", "format": "date-time"},
+              "evidence": {"minItems": 1}
+            }
+          }
+        }
+      ]
+    }
+  }
+}
