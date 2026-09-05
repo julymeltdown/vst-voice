@@ -12,7 +12,7 @@ This ledger records implementation evidence for [the approved plan](../plans/202
 
 ## Active implementation
 
-U1's implementation and diagnostic-runtime criteria and U2's acceptance-contract implementation are verified. The source-index closure check remains an explicit repository-integration obligation, not a waived release gate. U3's isolated value-type foundation and migration-boundary repairs are verified; canonical schema integration remains pending. U3–U48 remain uncompleted. This does not certify any release-quality singer or Beta GO.
+U1's implementation and diagnostic-runtime criteria and U2's acceptance-contract implementation are verified. The source-index closure check passed during the user-requested checkpoint publication. U3's isolated value-type foundation and migration-boundary repairs are verified; canonical schema integration remains pending. U3–U48 remain uncompleted. This does not certify any release-quality singer or Beta GO.
 
 ### U1: reproducible build and auditory baseline
 
@@ -86,6 +86,10 @@ Executed focused-binary SHA-256 identities: Debug `ec20c61c7b6cf4370f8105d56f097
 
 The writer remains schema 7. No new saved-performance field or renderer behavior is claimed. Persistence, exact-bank style migration, pronunciation identity, proposed/accepted takes, coupled commands and plugin/recovery round trips remain required before U3 completes.
 
+After the requested push, continued U3 with typed `VoiceStyleSelection` provenance and a shared sample-bank style resolver. It requires exact ID/version/SHA-256 and trusted-installed status even when the general catalog permits a development fixture. Legacy unresolved intent remains unchanged for missing, mismatched, untrusted or opaque-hash resources. An exact trusted legacy bank preserves its declared first style; a new multi-style bank requires a deliberate choice, and an absent selected style remains missing without substitution. Invalid provenance, unbounded/malformed UTF-8 style IDs and malformed manifests are rejected.
+
+Five new scenarios first compiled against declarations and failed with missing implementations. After implementation the actual catalog/resolver driver passed all 19 performance tests in Debug and Release; Debug CTest also passed. A scoped independent reviewer found no actionable defect. These are library-level intent/resolution contracts, not completed project persistence or UI migration. The resolver still needs wiring into the coordinated schema-8 post-load/relink paths.
+
 ## Release status
 
 ### Requested checkpoint publication: 2026-09-05
@@ -95,5 +99,7 @@ The user explicitly requested committing and pushing the current project work, i
 Pre-publication review found a crash-handler lifetime race: native teardown drained writers before disabling handle acquisition. A shared lock-free `CrashWriterSlot` now invalidates acquisition before draining, with sequentially consistent ordering; both native destructors and macOS installation rollback close only afterward. A deterministic driver using the original order returned the old handle to a late writer for both descriptor/handle types (exit 1); the repaired order returned the invalid sentinel (exit 0). The root ran nine recovery/support tests successfully, including real macOS crash subprocesses. Independent recheck confirmed the ordering repair; Windows runtime integration remains unverified.
 
 The main checkout retains its existing development branches and another developer's worktree. The repository's master-only publishing audit runs in an isolated checkout of the exact committed source, which is fast-forwarded and re-audited before pushing to `origin/master`. No branch deletion, force push or history rewrite is authorized or used.
+
+Checkpoint commits `79d4faef` and `2f88761c8b43a893f1b4fcb1210d2b7aac036f7b` were pushed by fast-forward. `git ls-remote` independently confirmed the latter as `origin/master`. The isolated exact-commit checkout passed license/branch-policy and source-closure audits. The full Debug build, nine recovery/support tests in both configurations, and the core Debug suite passed after the race repair; the final three-entry core/recovery/closure CTest run took 97.34 seconds. This establishes source-checkpoint publication, not release qualification.
 
 No model was trained, no new production singer or commercially qualified voicebank was delivered, no independent listening/creator study ran, and no signed installed platform/host matrix was completed in this baseline work. Beta GO is not achieved. Continue independent implementation while keeping these acceptance obligations explicit.

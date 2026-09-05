@@ -154,6 +154,7 @@ add_library(seam_domain
   libs/seam-domain/src/note_vibrato.cpp
   libs/seam-domain/src/dynamics_automation.cpp
   libs/seam-domain/src/performance_intent.cpp
+  libs/seam-domain/src/voice_style_selection.cpp
   libs/seam-domain/src/phoneme.cpp
   libs/seam-domain/src/render_controls.cpp
   libs/seam-domain/src/routing.cpp
@@ -258,6 +259,7 @@ add_library(seam_voicebank
   libs/seam-voicebank/src/manifest_json.cpp
   libs/seam-voicebank/src/content_identity.cpp
   libs/seam-voicebank/src/catalog.cpp
+  libs/seam-voicebank/src/style_resolution.cpp
   libs/seam-voicebank/src/coverage.cpp
 )
 target_include_directories(seam_voicebank PUBLIC libs/seam-voicebank/include)
@@ -1058,9 +1060,10 @@ if(SEAM_BUILD_TESTS)
   add_test(NAME seam_synthesis_quality_tests COMMAND seam_synthesis_quality_tests)
 
   add_executable(seam_performance_contract_tests
-    tests/test_main.cpp tests/test_performance_contracts.cpp)
+    tests/test_main.cpp tests/test_performance_contracts.cpp
+    tests/test_voice_style_resolution.cpp)
   target_include_directories(seam_performance_contract_tests PRIVATE tests)
-  target_link_libraries(seam_performance_contract_tests PRIVATE seam_domain seam_formats)
+  target_link_libraries(seam_performance_contract_tests PRIVATE seam_domain seam_formats seam_voicebank)
   target_compile_definitions(seam_performance_contract_tests PRIVATE
     SEAM_PERFORMANCE_SOURCE_ROOT="${CMAKE_CURRENT_SOURCE_DIR}")
   seam_apply_compiler_options(seam_performance_contract_tests)
