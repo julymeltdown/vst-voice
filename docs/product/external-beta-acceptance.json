@@ -2,7 +2,11 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "schemaVersion": 1,
   "contractId": "project-seam.external-beta.acceptance",
-  "contractVersion": "1.0.0",
+  "contractVersion": "2.0.0",
+  "fullProductContract": {
+    "locator": "docs/product/full-product-beta-contract.json",
+    "sha256": "d97e07403fbdc11a866eeb4b79ce5e1b5725cdd7a6c418f342a7c580b79d633f"
+  },
   "product": "Project SEAM",
   "gate": {
     "ready": "EXTERNAL_BETA_READY",
@@ -137,6 +141,21 @@
         "minimumRecords": 1,
         "requiredTargets": [
           {"platform": "platform-independent", "architecture": "any", "surface": "review", "host": null}
+        ]
+      }
+    },
+    {
+      "id": "EB-009-full-product",
+      "title": "Complete original virtual singer and full-scope semantic acceptance",
+      "gate": "docs/product/full-product-beta-evidence.schema.json",
+      "mandatoryFor": ["EXTERNAL_BETA_READY", "EXTERNAL_BETA_CLOSED"],
+      "evidencePolicy": {
+        "stageKinds": ["INSTALLED_TREE"],
+        "transformations": ["INSTALL"],
+        "minimumRecords": 2,
+        "requiredTargets": [
+          {"platform": "macos", "architecture": "arm64", "surface": "standalone", "host": null},
+          {"platform": "windows", "architecture": "x86_64", "surface": "standalone", "host": null}
         ]
       }
     }

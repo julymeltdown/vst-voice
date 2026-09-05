@@ -3,8 +3,9 @@ from __future__ import annotations
 import copy
 import unittest
 
-from tests.external_beta.release_gate_fixtures import candidate as make_candidate
+from tests.external_beta.release_gate_fixtures import LEGACY_REQUIREMENT_IDS, candidate as make_candidate
 from tools.external_beta import release_gate
+from tools.external_beta.release_gate_policy import evidence_policy_errors
 
 
 def _contract() -> release_gate.JsonObject:
@@ -28,7 +29,7 @@ def _contract() -> release_gate.JsonObject:
                     ],
                 },
             }
-            for requirement_id in release_gate.READY_REQUIREMENT_IDS
+            for requirement_id in LEGACY_REQUIREMENT_IDS
         ],
     }
 
@@ -62,10 +63,13 @@ def _bound_candidate(contract: release_gate.JsonObject) -> release_gate.JsonObje
 class ExternalBetaReleasePolicyTests(unittest.TestCase):
     def test_matching_requirement_policy_passes(self) -> None:
         contract = _contract()
+        candidate = _bound_candidate(contract)
+        self.assertEqual([], evidence_policy_errors(candidate, LEGACY_REQUIREMENT_IDS, contract))
         result = release_gate.evaluate_ready(
-            _bound_candidate(contract), contract, archive_verified=True
+            candidate, contract, archive_verified=True
         )
-        self.assertTrue(result.passed, result.errors)
+        self.assertFalse(result.passed)
+        self.assertIn("EB-009-full-product", result.blocked_ids)
 
     def test_policy_rejects_wrong_stage_transformation_platform_and_surface(self) -> None:
         cases = (

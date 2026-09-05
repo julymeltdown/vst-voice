@@ -4,6 +4,11 @@ import hashlib
 import json
 from dataclasses import dataclass
 
+try:
+    from .full_product_contract import full_product_contract_errors
+except ImportError:
+    from full_product_contract import full_product_contract_errors
+
 
 JsonValue = (
     str | int | float | bool | None | list["JsonValue"] | dict[str, "JsonValue"]
@@ -169,7 +174,7 @@ def requirement_policy_errors(
     required_ids: tuple[str, ...],
     contract: JsonObject,
 ) -> list[str]:
-    errors: list[str] = []
+    errors = full_product_contract_errors(contract)
     expected_contract_sha256 = contract_sha256(contract)
     if candidate.get("acceptanceContractSha256") != expected_contract_sha256:
         errors.append("candidate acceptance contract digest does not match")
@@ -180,6 +185,16 @@ def requirement_policy_errors(
         != expected_contract_sha256
     ):
         errors.append("candidate root acceptance contract digest does not match")
+    errors.extend(evidence_policy_errors(candidate, required_ids, contract))
+    return errors
+
+
+def evidence_policy_errors(
+    candidate: JsonObject,
+    required_ids: tuple[str, ...],
+    contract: JsonObject,
+) -> list[str]:
+    errors: list[str] = []
     policies = _policies(contract, required_ids, errors)
     records_value = candidate.get("evidence")
     requirements = candidate.get("requirements")

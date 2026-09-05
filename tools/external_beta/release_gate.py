@@ -26,6 +26,7 @@ try:
         stable_workload_sha256 as stable_workload_sha256,
     )
     from .release_gate_policy import requirement_policy_errors
+    from .full_product_contract import full_product_report_reference_errors
 except ImportError:
     from cohort_gate import validate_cohort
     from release_gate_validation import (
@@ -45,6 +46,7 @@ except ImportError:
         stable_workload_sha256 as stable_workload_sha256,
     )
     from release_gate_policy import requirement_policy_errors
+    from full_product_contract import full_product_report_reference_errors
 
 READY_REQUIREMENT_IDS = (
     "EB-001-contract",
@@ -55,6 +57,7 @@ READY_REQUIREMENT_IDS = (
     "EB-006-host-matrix",
     "EB-007-provenance-archive",
     "EB-008-defect-review",
+    "EB-009-full-product",
 )
 
 
@@ -119,6 +122,9 @@ def evaluate_ready(
     errors.extend(requirement_policy_errors(candidate, READY_REQUIREMENT_IDS, contract))
     requirement_errors, blocked = _requirement_errors(candidate, READY_REQUIREMENT_IDS)
     errors.extend(requirement_errors)
+    errors.extend(full_product_report_reference_errors(candidate))
+    errors.append("EB-009-full-product: semantic validator unavailable until U45")
+    blocked = tuple(sorted(set(blocked) | {"EB-009-full-product"}))
     return GateResult("EXTERNAL_BETA_READY", not errors and not blocked, tuple(errors), blocked)
 
 

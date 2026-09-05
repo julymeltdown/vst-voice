@@ -5,6 +5,12 @@ from pathlib import Path
 
 from tools.external_beta import release_gate
 
+LEGACY_REQUIREMENT_IDS = (
+    "EB-001-contract", "EB-002-identity", "EB-003-beta-bank",
+    "EB-004-signed-install", "EB-005-standalone-soak", "EB-006-host-matrix",
+    "EB-007-provenance-archive", "EB-008-defect-review",
+)
+
 
 def record(
     *,
@@ -51,7 +57,7 @@ def record(
 
 
 def candidate() -> release_gate.JsonObject:
-    requirement_ids = tuple(release_gate.READY_REQUIREMENT_IDS)
+    requirement_ids = LEGACY_REQUIREMENT_IDS
     contract_path = (
         Path(__file__).resolve().parents[2]
         / "docs/product/external-beta-acceptance.json"
@@ -71,6 +77,8 @@ def candidate() -> release_gate.JsonObject:
     for requirement in requirement_values:
         assert isinstance(requirement, dict)
         requirement_id = requirement["id"]
+        if requirement_id not in requirement_ids:
+            continue
         policy = requirement["evidencePolicy"]
         assert isinstance(requirement_id, str)
         assert isinstance(policy, dict)

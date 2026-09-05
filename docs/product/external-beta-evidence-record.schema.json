@@ -46,7 +46,22 @@
         "sha256": {"type": "string", "pattern": "^[0-9a-fA-F]{64}$"}
       }
     },
+    "fullProductReport": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["locator", "sha256"],
+      "properties": {
+        "locator": {"type": "string", "minLength": 1},
+        "sha256": {"type": "string", "pattern": "^[0-9a-fA-F]{64}$"}
+      }
+    },
     "status": {"enum": ["NOT_RUN", "BLOCKED", "FAIL", "PASS"]},
     "blockingReason": {"type": ["string", "null"]}
-  }
+  },
+  "allOf": [
+    {
+      "if": {"required": ["requirementId"], "properties": {"requirementId": {"const": "EB-009-full-product"}}},
+      "then": {"required": ["fullProductReport"]}
+    }
+  ]
 }

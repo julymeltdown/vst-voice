@@ -13,7 +13,7 @@ missing row. A paused or revoked candidate cannot be distributed or closed.
 
 ## Ready contract
 
-`EXTERNAL_BETA_READY` requires every `EB-001` through `EB-008` requirement in
+`EXTERNAL_BETA_READY` requires every `EB-001` through `EB-009` requirement in
 the JSON mirror to be `PASS`. Each PASS row references an immutable evidence
 record whose candidate root, stage node, authorized parent edge, release
 identity, platform/architecture/surface, final and installed hashes, tool,
@@ -25,6 +25,29 @@ transformations, and its archive must be externally anchored and immutable.
 Missing signing, installation, bank, host, final-soak, or raw provenance
 evidence remains `NOT_RUN` or `BLOCKED`; it cannot be replaced by a G3/G4/G5
 result. Blocker and Critical issues remain blocking until explicitly resolved.
+
+`EB-009-full-product` adopts every mandatory R1–R20 and V01–V18 outcome from
+the user-settled full-scope report. The exact 83-case registry, required
+language/resource/backend/platform/host dimensions, workloads, independent
+review roles and fixed/empirical criteria are in
+[`full-product-beta-contract.json`](full-product-beta-contract.json).
+The acceptance JSON embeds its actual byte digest; the evaluator rehashes
+the referenced file and the candidate root transitively binds that digest.
+
+The [authority amendment](FULL_SCOPE_AUTHORITY_AMENDMENT.md) supersedes the
+old scope veto and deferrals while preserving historical NOT_RUN studies.
+Japanese, English and Korean, procedural voice design, real-input production,
+classical and qualified neural singing, all expressions and nine host tuples
+are mandatory. The explicit unresolved empirical criteria and resource matrix
+block final acceptance. The 500 ms classical small-edit target does not relax
+the separate existing 400 ms preview workload.
+
+The closed evidence envelope explicitly declares a hash-bound
+`fullProductReport` reference for EB-009. Its
+[typed schema](full-product-beta-evidence.schema.json) cannot certify musical
+or product completion. Until U45 implements semantic artifact validation,
+READY and CLOSED always report the explicit EB-009 unavailable-validator
+failure, including for fabricated PASS summaries.
 
 ## Closure contract
 

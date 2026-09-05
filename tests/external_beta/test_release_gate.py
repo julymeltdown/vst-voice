@@ -4,6 +4,7 @@ import hashlib
 import unittest
 
 from tools.external_beta import release_gate  # noqa: E402
+from tools.external_beta.cohort_gate import validate_cohort
 from tests.external_beta.cohort_fixtures import closed_cohort as _closed_cohort
 from tests.external_beta.release_gate_fixtures import candidate as _candidate
 
@@ -167,8 +168,11 @@ class ExternalBetaReleaseGateTests(unittest.TestCase):
     def test_close_requires_terminal_assignments_and_all_claimed_hosts(self) -> None:
         candidate = _candidate()
         candidate["cohort"] = _closed_cohort()
+        cohort_result = validate_cohort(candidate["cohort"])
+        self.assertTrue(cohort_result.passed, cohort_result.errors)
         result = release_gate.evaluate_closed(candidate, archive_verified=True)
-        self.assertTrue(result.passed, result.errors)
+        self.assertFalse(result.passed)
+        self.assertIn("EB-009-full-product", result.blocked_ids)
 
     def test_closed_gate_delegates_to_strict_cohort_contract(self) -> None:
         candidate = _candidate()

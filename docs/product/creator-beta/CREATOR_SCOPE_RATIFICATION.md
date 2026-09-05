@@ -1,6 +1,6 @@
 # Project SEAM Creator Scope Ratification Contract
 
-**Canonical gate:** This document controls the pre-schema creator study required by U1 of the Creator Workflow Parity plan.
+**Historical study gate:** This document retains the pre-schema creator study defined by U1 of the earlier Creator Workflow Parity plan. The later [full-scope authority amendment](../FULL_SCOPE_AUTHORITY_AMENDMENT.md) governs implementation and Beta scope.
 
 **Current result:** `NOT_RUN`
 
@@ -8,7 +8,7 @@
 
 **Schema:** [`creator-scope-ratification.schema.json`](creator-scope-ratification.schema.json)
 
-Project SEAM must not make schema 8 canonical merely because OpenUtau implements a feature. The proposed creator requirements become hard predecessors only after target creators expose the corresponding problem in observed work. Until this contract reaches `PASS`, `schema8Authorization` remains `false` and production changes for schema 8, persisted vibrato, typed dynamics, explicit style state, or the Dynamics lane must not begin.
+The historical study remains `NOT_RUN`, with pending hypotheses and `schema8Authorization: false`. No study result or participant approval is inferred. The user's later full-scope decision supersedes this study's implementation veto and authorizes the coordinated musical schema, complete expressions and all other R1–R20 requirements. The earlier Japanese-only boundary, MIDI deferral, limited expression scope and unchanged-Beta-validator restriction are superseded as recorded in the amendment. The study procedures and ratification rules below describe the earlier study only; they do not narrow or block the new mandatory scope.
 
 ## Initial creator segment
 
@@ -140,7 +140,7 @@ If a hypothesis is rejected or materially different from the plan, set `decision
 |---|---|
 | `NOT_RUN` | No valid study result exists. This is the repository's current state. |
 | `BLOCKED` | Prerequisites, sessions, evidence, issue closure, or plan alignment are incomplete or failed. |
-| `PASS` | The unchanged creator scope is ratified and schema-8 implementation may begin. |
+| `PASS` | The historical creator study has earned its original ratification result; new full-scope authority remains separate. |
 
 Changing `status` or editing summary counts does not create a pass. The JSON Schema requires completed session bodies, ratified hypotheses, prerequisite evidence, continuation decisions, zero unresolved P0/P1 findings, and three independent approvals.
 
@@ -165,4 +165,4 @@ Run the repository verifier to recompute session, continuation, hypothesis, seve
 python3 scripts/verify_creator_scope_ratification.py --root .
 ```
 
-Schema validation and the repository verifier prove record consistency only. They cannot perform creator sessions or authorize schema 8 while the canonical record remains `NOT_RUN`.
+Schema validation and the repository verifier prove historical record consistency only. They cannot perform creator sessions or create approval. New implementation authority comes from the full-scope user decision, while actual independent pre-GO creator acceptance remains mandatory under R16.
