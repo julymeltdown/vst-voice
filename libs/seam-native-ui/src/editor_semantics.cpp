@@ -105,8 +105,9 @@ SemanticNode EditorSemanticTree::build(const EditorSceneState& state,
       state.voiceIdentity.characterActive &&
       state.characterPortrait != nullptr;
   const auto audioSettingsVisible = state.audioSettings.visible;
+  const auto supportVisible = state.recoverySupport.visible;
   const auto arrangementVisible =
-      !state.voicebankBrowserVisible &&
+      !supportVisible && !state.voicebankBrowserVisible &&
       !audioSettingsVisible &&
       state.characterMode == domain::CharacterDisplayMode::Off &&
       !state.arrangementTracks.empty();
@@ -556,7 +557,7 @@ SemanticNode EditorSemanticTree::build(const EditorSceneState& state,
     });
     laneTop += lane.second;
   }
-  if (characterFull && editorRight < root.bounds.width) {
+  if (characterFull && !supportVisible && editorRight < root.bounds.width) {
     root.children.push_back(SemanticNode{
         .id = "character.dock",
         .role = SemanticRole::Panel,
@@ -571,7 +572,62 @@ SemanticNode EditorSemanticTree::build(const EditorSceneState& state,
       .actions = {SemanticAction::SetFocus},
     });
   }
-  if (state.voicebankBrowserVisible && editorRight < root.bounds.width) {
+  if (supportVisible && editorRight < root.bounds.width) {
+    const auto& support = state.recoverySupport;
+    SemanticNode panel{
+        .id = "support.panel",
+        .role = SemanticRole::Panel,
+        .name = support.mode == RecoverySupportMode::Preview
+                    ? "Support report preview"
+                    : "Local support reports",
+        .value = support.mode == RecoverySupportMode::Preview
+                     ? support.archiveSha256
+                     : std::to_string(support.reportCount) + " reports",
+        .bounds = ui::Rect{editorRight, layout.toolbarHeight,
+                           root.bounds.width - editorRight,
+                           std::max(0.0, laneBottom - layout.toolbarHeight)},
+        .enabled = true,
+        .focused = false,
+        .actions = {SemanticAction::SetFocus},
+        .children = {},
+        .description = support.status,
+    };
+    for (std::size_t index = 0U; index < support.items.size(); ++index) {
+      const auto visibleIndex = index >= support.firstVisibleItem
+                                    ? index - support.firstVisibleItem
+                                    : support.items.size();
+      auto bounds = layout.supportItemBounds(editorRight, root.bounds.width,
+                                             visibleIndex);
+      if (index < support.firstVisibleItem || bounds.y >= laneBottom) {
+        bounds = ui::Rect{panel.bounds.x, panel.bounds.y,
+                          std::max(1.0, panel.bounds.width), 1.0};
+      } else {
+        bounds.height = std::max(1.0, std::min(bounds.height,
+                                               laneBottom - bounds.y));
+      }
+      const auto& item = support.items[index];
+      const auto selectable = support.mode == RecoverySupportMode::Reports;
+      panel.children.push_back(SemanticNode{
+          .id = "support.item." + std::to_string(index),
+          .role = selectable ? SemanticRole::Button : SemanticRole::Status,
+          .name = item.name,
+          .value = item.detail,
+          .bounds = bounds,
+          .enabled = true,
+          .focused = false,
+          .selected = item.selected,
+          .actions = selectable
+                         ? std::vector<SemanticAction>{SemanticAction::Activate,
+                                                       SemanticAction::SetFocus}
+                         : std::vector<SemanticAction>{SemanticAction::SetFocus},
+          .children = {},
+          .description = "SHA-256 " + item.sha256,
+      });
+    }
+    root.children.push_back(std::move(panel));
+  }
+  if (!supportVisible && state.voicebankBrowserVisible &&
+      editorRight < root.bounds.width) {
     SemanticNode panel{
         .id = "voicebank.panel",
         .role = SemanticRole::Panel,
@@ -621,7 +677,8 @@ SemanticNode EditorSemanticTree::build(const EditorSceneState& state,
     }
     root.children.push_back(std::move(panel));
   }
-  if (audioSettingsVisible && editorRight < root.bounds.width) {
+  if (!supportVisible && audioSettingsVisible &&
+      editorRight < root.bounds.width) {
     SemanticNode panel{
         .id = "audio.settings",
         .role = SemanticRole::Panel,

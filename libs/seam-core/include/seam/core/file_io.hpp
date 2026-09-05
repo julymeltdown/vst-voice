@@ -49,4 +49,12 @@ struct AtomicWriteOptions final {
     std::string_view text,
     const AtomicWriteOptions& options = {});
 
+[[nodiscard]] Result<void> durableAtomicWriteNew(
+    const std::filesystem::path& path,
+    std::span<const std::byte> bytes);
+
+[[nodiscard]] Result<void> durableAtomicWriteTextNew(
+    const std::filesystem::path& path,
+    std::string_view text);
+
 }  // namespace seam::core

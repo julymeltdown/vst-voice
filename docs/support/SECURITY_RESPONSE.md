@@ -1,12 +1,15 @@
 # Project SEAM External Beta Security Response
 
-Document version: `external-beta-security-response-1.0`
+Document version: `external-beta-security-response-1.1`
 
 Report suspected package tampering, trust-policy misuse, key compromise,
 unexpected network submission, path/link traversal, or privacy-boundary escape
 as a security issue. Include only the exact public build/artifact identity,
 stable diagnostic code, and a previewed support-bundle hash. Do not include
 secrets, private keys, user media, lyrics, or bank bytes in an initial report.
+
+The acknowledgement and every later response record repeat the exact submitted
+bundle SHA-256. A replacement export starts a separate report identity.
 
 The response owner freezes the affected channel, records the candidate or key
 identity, verifies the raw evidence independently, and assigns a severity. A
@@ -18,5 +21,8 @@ replacing a nested plug-in file.
 The owner communicates a bounded workaround or signed repair, checks that the
 predecessor remains coherent, and records an expiry. Cohort distribution pauses
 while a Blocker/Critical incident is unresolved. Closure requires terminal
-disposition of affected assignments and independent verification of the
-replacement candidate.
+disposition of affected assignments, withdrawal or deletion of restricted
+payloads, and independent verification of the replacement candidate. Technical
+fields are capped at 180 days and restricted contact or attachment data at 30
+days unless a named security owner records a narrower preservation scope and
+expiry; only the minimal non-content audit record survives deletion.

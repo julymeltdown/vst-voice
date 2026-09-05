@@ -47,6 +47,13 @@ constexpr DiagnosticAction kCrashSupport[]{DiagnosticAction::RecoverAutosave,
                                             DiagnosticAction::CopyDiagnostic,
                                             DiagnosticAction::OpenSupport,
                                             DiagnosticAction::Dismiss};
+constexpr DiagnosticAction kSupportPreview[]{
+    DiagnosticAction::ExportSupportBundle,
+    DiagnosticAction::Dismiss};
+constexpr DiagnosticAction kSupportExported[]{
+    DiagnosticAction::OpenSupportFolder,
+    DiagnosticAction::DeleteSupportBundle,
+    DiagnosticAction::Dismiss};
 
 constexpr std::array definitions{
     Definition{"PROJECT_NOT_FOUND", DiagnosticSeverity::Error, kOpenSupport},
@@ -64,6 +71,10 @@ constexpr std::array definitions{
     Definition{"UPDATE_UNTRUSTED", DiagnosticSeverity::Error, kOpenSupport},
     Definition{"INSTALL_FAILED", DiagnosticSeverity::Error, kRetrySupport},
     Definition{"CRASH_RECOVERY_AVAILABLE", DiagnosticSeverity::Warning, kCrashSupport},
+    Definition{"SUPPORT_BUNDLE_PREVIEW_READY", DiagnosticSeverity::Info,
+               kSupportPreview},
+    Definition{"SUPPORT_BUNDLE_EXPORTED", DiagnosticSeverity::Info,
+               kSupportExported},
 };
 
 const Definition* find(std::string_view code) noexcept {
@@ -99,6 +110,9 @@ std::string_view toString(DiagnosticAction action) noexcept {
     case DiagnosticAction::CopyDiagnostic: return "COPY_DIAGNOSTIC";
     case DiagnosticAction::RecoverAutosave: return "RECOVER_AUTOSAVE";
     case DiagnosticAction::OpenSupport: return "OPEN_SUPPORT";
+    case DiagnosticAction::ExportSupportBundle: return "EXPORT_SUPPORT_BUNDLE";
+    case DiagnosticAction::OpenSupportFolder: return "OPEN_SUPPORT_FOLDER";
+    case DiagnosticAction::DeleteSupportBundle: return "DELETE_SUPPORT_BUNDLE";
   }
   return "UNKNOWN";
 }

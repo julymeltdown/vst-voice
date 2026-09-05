@@ -1,5 +1,6 @@
 #include "seam/standalone/native_editor_app.hpp"
 
+#include "seam/build/version.hpp"
 #include "seam/core/sha256.hpp"
 #include "seam/platform/accessibility_preferences.hpp"
 #include "seam/platform/application_paths.hpp"
@@ -55,6 +56,66 @@ std::string timestampNow() {
   std::ostringstream output;
   output << std::put_time(&utc, "%Y-%m-%dT%H:%M:%SZ");
   return output.str();
+}
+
+native_ui::RecoverySupportView supportPreviewView(
+    const authoring::PreparedSupportBundle& prepared,
+    bool crashMarkerAvailable) {
+  const auto& preview = prepared.preview();
+  native_ui::RecoverySupportView view{
+      .visible = true,
+      .mode = native_ui::RecoverySupportMode::Preview,
+      .crashMarkerAvailable = crashMarkerAvailable,
+      .candidateId = preview.candidateId,
+      .archiveBytes = preview.archiveBytes,
+      .archiveSha256 = preview.archiveSha256,
+      .status = "Review every entry before confirming export",
+  };
+  view.items.reserve(preview.entries.size());
+  for (const auto& entry : preview.entries) {
+    auto detail = std::string{entry.kind ==
+                                      authoring::SupportBundleEntryKind::Generated
+                                  ? "PUBLIC"
+                                  : "RESTRICTED"} +
+                  " / " + (entry.included ? "INCLUDED" : "EXCLUDED");
+    if (entry.requiresConsent) {
+      detail = std::string{"RESTRICTED / "} +
+               (entry.consented ? "CONSENTED" : "CONSENT NEEDED");
+    }
+    view.items.push_back(native_ui::RecoverySupportItemView{
+        .name = entry.path,
+        .detail = std::move(detail),
+        .bytes = entry.bytes,
+        .sha256 = entry.sha256,
+        .included = entry.included,
+    });
+  }
+  return view;
+}
+
+native_ui::RecoverySupportView supportReportsView(
+    const std::vector<authoring::SupportBundleRecord>& reports,
+    std::size_t selectedIndex, bool crashMarkerAvailable) {
+  native_ui::RecoverySupportView view{
+      .visible = !reports.empty(),
+      .mode = native_ui::RecoverySupportMode::Reports,
+      .crashMarkerAvailable = crashMarkerAvailable,
+      .reportCount = static_cast<std::uint32_t>(reports.size()),
+      .status = "Select a local report to reveal or delete",
+  };
+  view.items.reserve(reports.size());
+  for (std::size_t index = 0U; index < reports.size(); ++index) {
+    const auto& report = reports[index];
+    view.items.push_back(native_ui::RecoverySupportItemView{
+        .name = report.path.filename().string(),
+        .detail = "ZIP / " + std::to_string(report.bytes) + " B",
+        .bytes = report.bytes,
+        .sha256 = report.sha256,
+        .included = true,
+        .selected = index == selectedIndex,
+    });
+  }
+  return view;
 }
 
 }
@@ -160,19 +221,26 @@ core::Result<void> NativeEditorApp::initialize() {
     }
   }
 
-  auto crashCapture = platform::CrashCapture::install(
-      platform::CrashCaptureConfig{.root = paths.value().crashReportsRoot});
+  const platform::CrashCaptureConfig crashConfig{
+      .root = paths.value().crashReportsRoot,
+  };
+  auto recoveredCrash = platform::CrashCapture::recoverPending(crashConfig);
+  if (recoveredCrash) {
+    startupCrashMarker_ = std::move(recoveredCrash).value();
+  } else {
+    lastError_ = recoveredCrash.error().message;
+  }
+  auto crashCapture = platform::CrashCapture::install(crashConfig);
   if (crashCapture) {
     crashCapture_ = std::move(crashCapture).value();
-    auto marker = crashCapture_->readMarker();
-    if (marker && marker.value().has_value()) {
-      startupCrashMarker_ = std::move(marker).value();
-    }
   } else {
     lastError_ = crashCapture.error().message;
   }
   supportBundle_ = std::make_unique<authoring::SupportBundleService>(
       paths.value().recoveryRoot / "SupportReports");
+  supportExportRoot_ = config_.applicationSupportRoot.empty()
+                           ? paths.value().userDataRoot / "Support"
+                           : config_.applicationSupportRoot / "Support";
 
   audioSettingsStore_ = std::make_unique<authoring::AudioSettingsStore>(
       config_.applicationSupportRoot / "Settings" / "audio-settings.json");
@@ -232,10 +300,6 @@ core::Result<void> NativeEditorApp::initialize() {
         if (window_ != nullptr) window_->requestRepaint();
         return result;
       },
-      .diagnosticAction = [this](const authoring::Diagnostic& diagnostic,
-                                 authoring::DiagnosticAction action) {
-        return handleDiagnosticAction(diagnostic, action);
-      },
       .selectVoicebank = [this](std::string_view id, std::string_view version,
                                 std::string_view contentHash) {
         if (applicationController_ == nullptr) {
@@ -244,8 +308,16 @@ core::Result<void> NativeEditorApp::initialize() {
         }
         const auto selected = applicationController_->selectVoicebank(
             id, version, contentHash);
+        if (selected) refreshCrashRecoveryContext();
         if (window_ != nullptr) window_->requestRepaint();
         return selected;
+      },
+      .diagnosticAction = [this](const authoring::Diagnostic& diagnostic,
+                                 authoring::DiagnosticAction action) {
+        return handleDiagnosticAction(diagnostic, action);
+      },
+      .selectSupportReport = [this](std::size_t index) {
+        return selectSupportReport(index);
       },
       .viewChanged = [this] {
         if (window_ != nullptr) window_->requestRepaint();
@@ -254,6 +326,7 @@ core::Result<void> NativeEditorApp::initialize() {
           -> core::Result<void> {
         auto applied = applyAudioSettings(std::move(settings));
         if (!applied) return core::Result<void>{applied.error()};
+        refreshCrashRecoveryContext();
         if (window_ != nullptr) window_->requestRepaint();
         return core::success();
       },
@@ -319,6 +392,7 @@ core::Result<void> NativeEditorApp::initialize() {
               .initialVoicebank = std::nullopt,
           },
           .stateChanged = [this] {
+            refreshCrashRecoveryContext();
             if (applicationMenu_ != nullptr) applicationMenu_->refresh();
             if (window_ != nullptr) window_->requestRepaint();
           },
@@ -367,7 +441,10 @@ core::Result<void> NativeEditorApp::initialize() {
       lastError_ = character.error().message;
     }
   }
-  return initializeAudio();
+  auto audio = initializeAudio();
+  if (!audio) return audio;
+  refreshCrashRecoveryContext();
+  return core::success();
 }
 
 core::Result<void> NativeEditorApp::initializeAudio() {
@@ -676,6 +753,87 @@ void NativeEditorApp::clearAudioUnavailable() noexcept {
   audioDiagnostic_.reset();
 }
 
+core::Result<void> NativeEditorApp::refreshSupportReports(
+    const std::optional<std::filesystem::path>& preferred) {
+  if (supportBundle_ == nullptr || authoring_ == nullptr ||
+      supportExportRoot_.empty()) {
+    return core::failure(core::ErrorCode::InvalidState,
+                         "Support report storage is unavailable");
+  }
+  auto listed = supportBundle_->listExports(supportExportRoot_);
+  if (!listed) return core::Result<void>{listed.error()};
+  supportReports_ = std::move(listed).value();
+  if (supportReports_.empty()) {
+    selectedSupportReportIndex_ = 0U;
+    authoring_->controller().setRecoverySupportView({});
+    return core::success();
+  }
+  if (preferred.has_value()) {
+    const auto match = std::find_if(
+        supportReports_.begin(), supportReports_.end(),
+        [&preferred](const auto& report) { return report.path == *preferred; });
+    selectedSupportReportIndex_ =
+        match == supportReports_.end()
+            ? 0U
+            : static_cast<std::size_t>(
+                  std::distance(supportReports_.begin(), match));
+  } else {
+    selectedSupportReportIndex_ =
+        std::min(selectedSupportReportIndex_, supportReports_.size() - 1U);
+  }
+  authoring_->controller().setRecoverySupportView(supportReportsView(
+      supportReports_, selectedSupportReportIndex_,
+      startupCrashMarker_.has_value()));
+  return core::success();
+}
+
+core::Result<void> NativeEditorApp::selectSupportReport(std::size_t index) {
+  if (index >= supportReports_.size() || authoring_ == nullptr) {
+    return core::failure(core::ErrorCode::InvalidArgument,
+                         "Support report selection is invalid");
+  }
+  selectedSupportReportIndex_ = index;
+  authoring_->controller().setRecoverySupportView(supportReportsView(
+      supportReports_, selectedSupportReportIndex_,
+      startupCrashMarker_.has_value()));
+  return core::success();
+}
+
+void NativeEditorApp::refreshCrashRecoveryContext() {
+  if (crashCapture_ == nullptr || authoring_ == nullptr) return;
+  platform::CrashRecoveryContext context{
+      .candidateId = std::string{build::kBuildId},
+      .host = "standalone:" +
+              std::string{platform::crashCaptureBackendName()},
+      .audioUnderflowFrames = processorStats().underflowFrames,
+      .audioXruns = audioStats().xruns,
+  };
+  const auto& tracks = authoring_->runtime()
+                           .document()
+                           .session()
+                           .project()
+                           .vocalTracks();
+  const auto bank = std::find_if(tracks.begin(), tracks.end(), [](const auto& track) {
+    return !track.voicebank.id.empty() || !track.voicebank.version.empty() ||
+           !track.voicebank.contentHash.empty();
+  });
+  if (bank != tracks.end()) {
+    context.bankId = bank->voicebank.id;
+    context.bankVersion = bank->voicebank.version;
+    context.bankContentHash = bank->voicebank.contentHash;
+  }
+  if (crashRecoveryContext_.has_value() &&
+      *crashRecoveryContext_ == context) {
+    return;
+  }
+  const auto updated = crashCapture_->updateContext(context);
+  if (updated) {
+    crashRecoveryContext_ = std::move(context);
+  } else {
+    lastError_ = updated.error().message;
+  }
+}
+
 core::Result<void> NativeEditorApp::handleDiagnosticAction(
     const authoring::Diagnostic& diagnostic,
     authoring::DiagnosticAction action) {
@@ -684,6 +842,13 @@ core::Result<void> NativeEditorApp::handleDiagnosticAction(
       if (diagnostic.code == "CRASH_RECOVERY_AVAILABLE" && crashCapture_ != nullptr) {
         static_cast<void>(crashCapture_->clearMarker());
         startupCrashMarker_.reset();
+      }
+      if (diagnostic.code == "SUPPORT_BUNDLE_PREVIEW_READY") {
+        pendingSupportBundle_.reset();
+      }
+      if (diagnostic.code == "SUPPORT_BUNDLE_PREVIEW_READY" ||
+          diagnostic.code == "SUPPORT_BUNDLE_EXPORTED") {
+        authoring_->controller().setRecoverySupportView({});
       }
       authoring_->runtime().clearDiagnostics();
       authoring_->controller().setDiagnostics({});
@@ -701,34 +866,142 @@ core::Result<void> NativeEditorApp::handleDiagnosticAction(
       return applicationController_->dispatch(
           platform::ApplicationCommand::RecoverLatestAutosave);
     case authoring::DiagnosticAction::OpenSupport: {
-      if (config_.applicationSupportRoot.empty() || supportBundle_ == nullptr) {
+      if (supportExportRoot_.empty() || supportBundle_ == nullptr) {
         return core::failure(core::ErrorCode::InvalidState,
                              "Support export root is unavailable");
       }
-      const auto destination = config_.applicationSupportRoot / "Support" /
-                               "latest-diagnostic.zip";
+      refreshCrashRecoveryContext();
+      const auto crashReport = diagnostic.code == "CRASH_RECOVERY_AVAILABLE";
+      auto candidateId = std::string{build::kBuildId};
+      if (crashReport) {
+        if (!startupCrashMarker_.has_value() ||
+            !startupCrashMarker_->contextAvailable ||
+            startupCrashMarker_->context.candidateId.empty()) {
+          return core::failure(
+              core::ErrorCode::Conflict,
+              "Crash report cannot be exported without its exact candidate identity");
+        }
+        candidateId = startupCrashMarker_->context.candidateId;
+      }
       const auto level = diagnostic.severity == authoring::DiagnosticSeverity::Critical
                              ? core::LogLevel::Error
                              : diagnostic.severity == authoring::DiagnosticSeverity::Warning
                                    ? core::LogLevel::Warning
                                    : core::LogLevel::Error;
+      std::vector<core::LogField> fields{
+          {"messageKey", diagnostic.messageKey,
+           core::LogPrivacyClass::ExportSafe},
+      };
+      if (crashReport) {
+        const auto& marker = *startupCrashMarker_;
+        const auto add = [&fields](std::string key, std::string value) {
+          fields.push_back(core::LogField{
+              .key = std::move(key),
+              .value = std::move(value),
+              .privacy = core::LogPrivacyClass::PublicTechnical,
+          });
+        };
+        add("recoveryState", marker.code);
+        add("crashPlatformCode", std::to_string(marker.platformCode));
+        add("buildId", marker.context.candidateId);
+        add("bankId", marker.context.bankId);
+        add("bankVersion", marker.context.bankVersion);
+        add("bankContentHash", marker.context.bankContentHash);
+        add("hostFamily", marker.context.host);
+        add("underflowFrames",
+            std::to_string(marker.context.audioUnderflowFrames));
+        add("xrunCount", std::to_string(marker.context.audioXruns));
+      }
       const authoring::SupportBundleRequest request{
           .events = {core::LogEvent{
               .code = diagnostic.code,
               .level = level,
               .category = "diagnostic",
-              .message = {},
-              .fields = {{"messageKey", diagnostic.messageKey,
-                          core::LogPrivacyClass::ExportSafe}},
+              .message = diagnostic.messageKey,
+              .fields = std::move(fields),
               .occurrenceCount = diagnostic.occurrenceCount}},
           .attachments = {},
-          .attachmentConsent = false,
+          .candidateId = std::move(candidateId),
           .createdAt = {}};
-      auto exported = supportBundle_->exportBundle(request, destination);
-      if (!exported) return core::Result<void>{exported.error()};
-      lastError_ = exported.value().destination.string();
+      auto prepared = supportBundle_->prepare(request);
+      if (!prepared) return core::Result<void>{prepared.error()};
+      pendingSupportBundle_ = std::move(prepared).value();
+      authoring_->controller().setRecoverySupportView(supportPreviewView(
+          *pendingSupportBundle_, startupCrashMarker_.has_value()));
+      authoring_->controller().setDiagnostics({authoring::Diagnostic{
+          .code = "SUPPORT_BUNDLE_PREVIEW_READY",
+          .severity = authoring::DiagnosticSeverity::Info,
+          .messageKey = "support.preview-ready",
+          .affectedIds = {},
+          .actions = authoring::DiagnosticRegistry::actions(
+              "SUPPORT_BUNDLE_PREVIEW_READY"),
+          .occurrenceCount = 1U}});
+      if (window_ != nullptr) window_->requestRepaint();
       return core::success();
     }
+    case authoring::DiagnosticAction::ExportSupportBundle: {
+      if (supportBundle_ == nullptr || !pendingSupportBundle_.has_value()) {
+        return core::failure(core::ErrorCode::InvalidState,
+                             "No reviewed support report is ready to export");
+      }
+      auto exported = supportBundle_->exportPrepared(*pendingSupportBundle_,
+                                                     supportExportRoot_);
+      if (!exported) return core::Result<void>{exported.error()};
+      lastError_ = exported.value().destination.string();
+      pendingSupportBundle_.reset();
+      authoring_->controller().setRecoverySupportView({});
+      const auto reports = refreshSupportReports(exported.value().destination);
+      if (!reports) {
+        supportReports_ = {authoring::SupportBundleRecord{
+            .path = exported.value().destination,
+            .bytes = exported.value().preview.archiveBytes,
+            .sha256 = exported.value().preview.archiveSha256,
+        }};
+        selectedSupportReportIndex_ = 0U;
+        authoring_->controller().setRecoverySupportView(supportReportsView(
+            supportReports_, selectedSupportReportIndex_,
+            startupCrashMarker_.has_value()));
+        lastError_ = "Support report was exported, but the report directory "
+                     "could not be listed: " +
+                     reports.error().message;
+      }
+      authoring_->controller().setDiagnostics({authoring::Diagnostic{
+          .code = "SUPPORT_BUNDLE_EXPORTED",
+          .severity = authoring::DiagnosticSeverity::Info,
+          .messageKey = "support.exported-local-only",
+          .affectedIds = {},
+          .actions = authoring::DiagnosticRegistry::actions(
+              "SUPPORT_BUNDLE_EXPORTED"),
+          .occurrenceCount = 1U}});
+      if (window_ != nullptr) window_->requestRepaint();
+      return core::success();
+    }
+    case authoring::DiagnosticAction::OpenSupportFolder:
+      if (supportExportRoot_.empty()) {
+        return core::failure(core::ErrorCode::InvalidState,
+                             "Support export folder is unavailable");
+      }
+      return platform::openExternalPath(supportExportRoot_);
+    case authoring::DiagnosticAction::DeleteSupportBundle:
+      if (supportBundle_ == nullptr || supportReports_.empty() ||
+          selectedSupportReportIndex_ >= supportReports_.size()) {
+        return core::failure(core::ErrorCode::InvalidState,
+                             "No owned support report is available to delete");
+      }
+      {
+        const auto deleted = supportBundle_->deleteExport(
+            supportReports_[selectedSupportReportIndex_], supportExportRoot_);
+        if (!deleted) return deleted;
+      }
+      {
+        const auto reports = refreshSupportReports();
+        if (!reports) return reports;
+      }
+      if (supportReports_.empty()) {
+        authoring_->controller().setDiagnostics({});
+      }
+      if (window_ != nullptr) window_->requestRepaint();
+      return core::success();
     case authoring::DiagnosticAction::ChooseVoicebank:
       authoring_->controller().showVoicebankBrowser();
       return core::success();

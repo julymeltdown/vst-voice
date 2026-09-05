@@ -15,6 +15,7 @@ from tests.production.public_release_contract_fixtures import (
     sha256_json,
     sha256_root,
 )
+from tests.production.public_support_fixtures import support_intake_fixture
 
 
 @lru_cache(maxsize=8)
@@ -62,6 +63,8 @@ def _candidate_template(contract_json: str) -> JsonObject:
             "reviewerId": f"reviewer-{index:02d}",
             "trustedTime": "2026-08-31T00:30:00Z",
         }
+        if requirement_id == "PR-010-support-intake":
+            archived["supportBundleSha256"] = "f" * 64
         record = dict(archived)
         record["rawArchive"] = {
             "path": f"evidence/{record_id}.json",
@@ -193,22 +196,9 @@ def _candidate_template(contract_json: str) -> JsonObject:
             "signatureVerified": True,
             "evidenceRecordIds": references["PR-009-update-channel"],
         },
-        "supportIntake": {
-            "status": "PASS",
-            "destinationId": "project-seam.public.support-intake",
-            "securityContactId": "project-seam.public.security-contact",
-            "candidateLineageId": "public-lineage-001",
-            "lifecycleStages": [
-                "INTAKE",
-                "ACKNOWLEDGED",
-                "TRIAGED",
-                "REPRODUCED",
-                "RESOLVED_OR_ESCALATED",
-                "USER_COMMUNICATED",
-                "RETAINED_OR_DELETED",
-            ],
-            "evidenceRecordIds": references["PR-010-support-intake"],
-        },
+        "supportIntake": support_intake_fixture(
+            references["PR-010-support-intake"]
+        ),
         "incidentDrill": {
             "status": "PASS",
             "candidateLineageId": "public-lineage-001",

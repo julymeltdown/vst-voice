@@ -137,7 +137,7 @@ def _acceptance_contract_template() -> JsonObject:
         },
         {
             "id": "project-seam.public.privacy",
-            "version": "public-privacy-1.0.0",
+            "version": "public-privacy-1.1.0",
             "path": "docs/public/PRIVACY.md",
             "sha256": "2" * 64,
             "approvalStatus": "APPROVED",
@@ -146,7 +146,7 @@ def _acceptance_contract_template() -> JsonObject:
         },
         {
             "id": "project-seam.public.support",
-            "version": "public-support-1.0.0",
+            "version": "public-support-1.1.0",
             "path": "docs/public/SUPPORT.md",
             "sha256": "3" * 64,
             "approvalStatus": "APPROVED",
@@ -155,7 +155,7 @@ def _acceptance_contract_template() -> JsonObject:
         },
         {
             "id": "project-seam.public.security-response",
-            "version": "public-security-response-1.0.0",
+            "version": "public-security-response-1.1.0",
             "path": "docs/public/SECURITY_RESPONSE.md",
             "sha256": "4" * 64,
             "approvalStatus": "APPROVED",

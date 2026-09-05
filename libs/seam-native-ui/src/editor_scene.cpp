@@ -49,8 +49,9 @@ std::string fitUtf8Text(std::string_view value, double width,
   return text::truncateUtf8ToDisplayWidth(value, maxCharacters - 3U) + "...";
 }
 
-std::string fitStatusText(std::string text, double width) {
-  return fitUtf8Text(text, width);
+std::string fitStatusText(std::string text, double width,
+                          double characterWidth) {
+  return fitUtf8Text(text, width, characterWidth);
 }
 
 struct StatusBarColumns final {
@@ -150,11 +151,12 @@ bool editorDockVisible(const EditorSceneState& state) noexcept {
       state.characterMode == domain::CharacterDisplayMode::Full &&
       state.voiceIdentity.characterActive && state.characterPortrait != nullptr;
   const auto arrangementVisible =
-      !state.voicebankBrowserVisible && !state.audioSettings.visible &&
+      !state.recoverySupport.visible && !state.voicebankBrowserVisible &&
+      !state.audioSettings.visible &&
       state.characterMode == domain::CharacterDisplayMode::Off &&
       !state.arrangementTracks.empty();
-  return state.audioSettings.visible || characterFull || arrangementVisible ||
-         state.voicebankBrowserVisible;
+  return state.recoverySupport.visible || state.audioSettings.visible ||
+         characterFull || arrangementVisible || state.voicebankBrowserVisible;
 }
 
 double resolveEditorDockWidth(const EditorSceneState& state,
@@ -175,8 +177,10 @@ void EditorScenePainter::paint(RasterCanvas& canvas, ui::PianoRollModel& model,
        (state.characterMode == domain::CharacterDisplayMode::Minimal &&
         state.dockWidthOverride.value_or(0.0) > 0.0));
   const auto audioSettingsVisible = state.audioSettings.visible;
+  const auto supportVisible = state.recoverySupport.visible;
   const auto arrangementVisible =
-      !state.voicebankBrowserVisible && !audioSettingsVisible &&
+      !supportVisible && !state.voicebankBrowserVisible &&
+      !audioSettingsVisible &&
       state.characterMode == domain::CharacterDisplayMode::Off &&
       !state.arrangementTracks.empty();
   const auto dockWidth = resolveEditorDockWidth(state, layout_);
@@ -261,7 +265,10 @@ void EditorScenePainter::paint(RasterCanvas& canvas, ui::PianoRollModel& model,
           layout_.lyricEditorFontSize);
     }
   }
-  if (audioSettingsVisible) {
+  if (supportVisible) {
+    paintRecoverySupport(canvas, state, frame.editorRight,
+                         statusTop - overlayHeight(state, layout_));
+  } else if (audioSettingsVisible) {
     paintAudioSettings(canvas, state, frame.editorRight,
                        statusTop - overlayHeight(state, layout_));
   } else if (state.voicebankBrowserVisible) {
@@ -1184,6 +1191,109 @@ void EditorScenePainter::paintVoicebankBrowser(
   }
 }
 
+void EditorScenePainter::paintRecoverySupport(
+    RasterCanvas& canvas, const EditorSceneState& state, double editorRight,
+    double contentBottom) const noexcept {
+  const auto& support = state.recoverySupport;
+  if (!support.visible || editorRight >= canvas.logicalWidth()) return;
+  const auto width = canvas.logicalWidth() - editorRight;
+  canvas.fillRect(ui::Rect{editorRight, layout_.toolbarHeight, width,
+                           std::max(0.0, contentBottom - layout_.toolbarHeight)},
+                  theme_.panel);
+  canvas.line(ui::Point{editorRight, layout_.toolbarHeight},
+              ui::Point{editorRight, contentBottom}, theme_.accentSecondary,
+              layout_.panelDividerStrokeWidth);
+  const auto textX = editorRight + layout_.supportPanelInsetX;
+  const auto textWidth = std::max(
+      1.0, width - layout_.supportPanelInsetX * 2.0);
+  const auto preview = support.mode == RecoverySupportMode::Preview;
+  canvas.drawText(
+      ui::Point{textX,
+                layout_.toolbarHeight + layout_.supportPanelTitleBaseline},
+      preview ? "SUPPORT REPORT PREVIEW" : "LOCAL SUPPORT REPORTS",
+      theme_.primaryText, layout_.panelTitleFontSize);
+  std::string summary;
+  if (preview) {
+    summary = "CANDIDATE " + support.candidateId;
+  } else {
+    summary = std::to_string(support.reportCount) + " OWNED REPORT" +
+              (support.reportCount == 1U ? "" : "S");
+  }
+  canvas.drawText(
+      ui::Point{textX,
+                layout_.toolbarHeight + layout_.supportPanelSummaryBaseline},
+      fitUtf8Text(summary, textWidth, layout_.secondaryTextCharacterWidth),
+      theme_.secondaryText, layout_.supportPanelFontSize);
+  canvas.drawText(
+      ui::Point{textX,
+                layout_.toolbarHeight + layout_.supportPanelStatusBaseline},
+      fitUtf8Text(preview
+                      ? "ZIP " + std::to_string(support.archiveBytes) +
+                            " B / SHA256 " + support.archiveSha256.substr(
+                                0U, std::min<std::size_t>(12U,
+                                                         support.archiveSha256.size()))
+                      : support.status,
+                  textWidth,
+                  layout_.secondaryTextCharacterWidth),
+      theme_.secondaryText, layout_.supportPanelFontSize);
+
+  const auto firstItem = std::min(support.firstVisibleItem,
+                                  support.items.size());
+  std::size_t visibleItems = 0U;
+  for (std::size_t index = firstItem; index < support.items.size(); ++index) {
+    auto bounds = layout_.supportItemBounds(editorRight, canvas.logicalWidth(),
+                                            visibleItems);
+    if (bounds.y >= contentBottom) break;
+    bounds.height = std::min(bounds.height, contentBottom - bounds.y);
+    if (bounds.height <= 0.0) break;
+    const auto& item = support.items[index];
+    const auto fill = item.selected ? theme_.transportPlaying : theme_.background;
+    const auto stroke = item.included ? theme_.gridStrong
+                                      : theme_.diagnosticWarningText;
+    canvas.fillRect(bounds, fill);
+    canvas.strokeRect(bounds, stroke, layout_.panelDividerStrokeWidth);
+    const auto itemTextX = bounds.x + layout_.supportItemTextInsetX;
+    const auto itemTextWidth = std::max(
+        1.0, bounds.width - layout_.supportItemTextWidthInset);
+    canvas.drawText(
+        ui::Point{itemTextX, bounds.y + layout_.supportItemTitleBaseline},
+        fitUtf8Text(item.name, itemTextWidth,
+                    layout_.secondaryTextCharacterWidth),
+        theme_.primaryText, layout_.supportPanelFontSize);
+    canvas.drawText(
+        ui::Point{itemTextX, bounds.y + layout_.supportItemDetailBaseline},
+        fitUtf8Text(item.detail, itemTextWidth,
+                    layout_.secondaryTextCharacterWidth),
+        item.included ? theme_.secondaryText : theme_.diagnosticWarningText,
+        layout_.supportPanelFontSize);
+    const auto hash = item.sha256.substr(
+        0U, std::min<std::size_t>(16U, item.sha256.size()));
+    canvas.drawText(
+        ui::Point{itemTextX, bounds.y + layout_.supportItemHashBaseline},
+        fitUtf8Text("SHA256 " + hash, itemTextWidth,
+                    layout_.secondaryTextCharacterWidth),
+        theme_.secondaryText, layout_.supportPanelFontSize);
+    ++visibleItems;
+  }
+  if (visibleItems < support.items.size()) {
+    const auto remaining = support.items.size() - firstItem - visibleItems;
+    const auto hiddenBefore = firstItem;
+    auto overflow = std::string{};
+    if (hiddenBefore > 0U) {
+      overflow += std::to_string(hiddenBefore) + " ABOVE";
+    }
+    if (remaining > 0U) {
+      if (!overflow.empty()) overflow += " / ";
+      overflow += std::to_string(remaining) + " BELOW";
+    }
+    canvas.drawText(
+        ui::Point{textX, std::max(layout_.toolbarHeight,
+                                  contentBottom - layout_.supportPanelFontSize)},
+        overflow,
+        theme_.secondaryText, layout_.supportPanelFontSize);
+  }
+}
+
 void EditorScenePainter::paintAudioSettings(
     RasterCanvas& canvas, const EditorSceneState& state, double editorRight,
     double contentBottom) const noexcept {
@@ -1304,18 +1414,21 @@ void EditorScenePainter::paintStatus(RasterCanvas& canvas,
   const auto columns = statusBarColumns(width, layout_);
   canvas.drawText(ui::Point{columns.noteX, top + layout_.statusTextBaseline},
                   fitStatusText(visibleNoteLabel(model.visibleNotes().size()),
-                                columns.noteWidth),
+                                columns.noteWidth,
+                                layout_.statusTextCharacterWidth),
                   theme_.secondaryText, layout_.statusFontSize);
   RenderStatusPanelModel renderStatus;
   renderStatus.update(state.renderStatus);
   canvas.drawText(ui::Point{columns.renderX, top + layout_.statusTextBaseline},
-                  fitStatusText(renderStatus.label(), columns.renderWidth),
+                  fitStatusText(renderStatus.label(), columns.renderWidth,
+                                layout_.statusTextCharacterWidth),
                   renderStatus.isStale() ? theme_.automation
                                          : theme_.secondaryText,
                   layout_.statusFontSize);
   const auto audio = state.audioDeviceOnline ? "AUDIO " : "AUDIO FALLBACK ";
   canvas.drawText(ui::Point{columns.audioX, top + layout_.statusTextBaseline},
-                  fitStatusText(audio + state.audioBackend, columns.audioWidth),
+                  fitStatusText(audio + state.audioBackend, columns.audioWidth,
+                                layout_.statusTextCharacterWidth),
                   state.audioDeviceOnline ? theme_.playhead : theme_.secondaryText,
                   layout_.statusFontSize);
 }
@@ -1336,7 +1449,7 @@ void EditorScenePainter::paintDiagnostics(
                                : theme_.diagnosticInfo;
   canvas.fillRect(panelBounds, color);
   const auto presentation = presentDiagnostic(diagnostic);
-  auto label = presentation.title + " / " + presentation.impact;
+  auto label = presentation.impact;
   auto title = presentation.title;
   if (state.diagnostics.size() > 1U) {
     title += " +" + std::to_string(state.diagnostics.size() - 1U) + " more";
@@ -1347,18 +1460,18 @@ void EditorScenePainter::paintDiagnostics(
   const auto actionCount = std::min<std::size_t>(2U, presentation.primaryActions.size());
   const auto actionsWidth = actionCount == 0U
                                 ? 0.0
-                                : actionCount * layout_.diagnosticActionWidth +
-                                      (actionCount - 1U) * layout_.diagnosticActionGap;
+                                : static_cast<double>(actionCount) * layout_.diagnosticActionWidth +
+                                      static_cast<double>(actionCount - 1U) * layout_.diagnosticActionGap;
   const auto textWidth = std::max(
       1.0, width - layout_.diagnosticTextInsetX * 2.0 - actionsWidth);
   canvas.drawText(ui::Rect{layout_.diagnosticTextInsetX,
                            top + layout_.diagnosticTitleTop, textWidth,
-                           layout_.diagnosticTitleFontSize},
+                           layout_.diagnosticTitleFontSize * 1.5},
                   title, theme_.primaryText,
                   layout_.diagnosticTitleFontSize);
   canvas.drawText(ui::Rect{layout_.diagnosticTextInsetX,
                            top + layout_.diagnosticImpactTop, textWidth,
-                           layout_.diagnosticImpactFontSize},
+                           layout_.diagnosticImpactFontSize * 1.5},
                   fitUtf8Text(label, textWidth,
                               layout_.secondaryTextCharacterWidth),
                   theme_.primaryText, layout_.diagnosticImpactFontSize);

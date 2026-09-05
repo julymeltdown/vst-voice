@@ -1,6 +1,6 @@
 # Project SEAM External Beta Support
 
-Document version: `external-beta-support-1.0`
+Document version: `external-beta-support-1.1`
 
 ## Intake
 
@@ -9,6 +9,10 @@ OS/architecture/host/format tuple, stable diagnostic codes, and the previewed
 export-safe bundle hash. A user-selected attachment is optional and must be
 listed separately. Never send a project, lyrics, audio, bank bytes, raw logs,
 full paths, dumps, or environment values by default.
+
+The acknowledgement returns an opaque issue ID and repeats the exact bundle
+SHA-256. Triage, reproduction, disposition, communication, withdrawal, and
+deletion records use that same hash; a later export is a separate report.
 
 ## Severity
 
@@ -29,7 +33,10 @@ Keep the original project and autosave until support asks you to verify a copy.
 Use safe mode after repeated startup crashes. Delete local reports through the
 application; do not delete the project or bank root to clean up a report.
 Withdrawing an intake deletes restricted contact and attachment payloads while
-leaving only a non-identifying technical disposition where required.
+leaving only the issue ID, candidate identity, bundle SHA-256, lifecycle times,
+and non-identifying technical disposition where required. External Beta policy
+caps technical fields at 180 days and restricted contact or attachment data at
+30 days unless a scoped security preservation record names an owner and expiry.
 
 ## Update or revocation incident
 

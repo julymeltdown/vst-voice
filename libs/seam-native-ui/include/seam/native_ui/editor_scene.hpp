@@ -7,6 +7,7 @@
 #include "seam/native_ui/voice_identity.hpp"
 #include "seam/native_ui/editor_interaction_state.hpp"
 #include "seam/native_ui/render_status_panel.hpp"
+#include "seam/native_ui/recovery_support_panel.hpp"
 #include "seam/native_ui/arrangement_panel.hpp"
 #include "seam/native_ui/track_inspector.hpp"
 #include "seam/authoring/diagnostic.hpp"
@@ -63,6 +64,7 @@ struct EditorSceneTheme final {
   Color characterBackground{18, 16, 21, 255};
   Color diagnosticCritical{130, 42, 58, 255};
   Color diagnosticWarning{104, 76, 38, 255};
+  Color diagnosticWarningText{236, 181, 92, 255};
   Color diagnosticInfo{86, 45, 68, 255};
   Color microscopeOverlay{11, 10, 14, 248};
   Color microscopeBorder{182, 104, 145, 255};
@@ -159,6 +161,7 @@ struct EditorSceneState final {
     std::uint64_t xruns{0U};
     std::string diagnostic;
   } audioSettings;
+  RecoverySupportView recoverySupport;
   std::size_t selectedNoteCount{0U};
   std::optional<domain::NoteId> hoveredNote;
   std::optional<domain::NoteId> focusedNote;
@@ -389,6 +392,19 @@ struct EditorSceneLayout final {
   double voicebankCardDetailAdvance{13.0};
   double voicebankCardFontSize{7.0};
   double voicebankCardDiagnosticMinimumHeight{72.0};
+  double supportPanelInsetX{10.0};
+  double supportPanelTitleBaseline{16.0};
+  double supportPanelSummaryBaseline{30.0};
+  double supportPanelStatusBaseline{44.0};
+  double supportPanelFontSize{9.0};
+  double supportItemTop{54.0};
+  double supportItemHeight{58.0};
+  double supportItemGap{6.0};
+  double supportItemTextInsetX{8.0};
+  double supportItemTitleBaseline{14.0};
+  double supportItemDetailBaseline{30.0};
+  double supportItemHashBaseline{46.0};
+  double supportItemTextWidthInset{16.0};
 
   double statusHorizontalPadding{14.0};
   double statusGap{12.0};
@@ -397,6 +413,7 @@ struct EditorSceneLayout final {
   double statusRenderMaxWidth{320.0};
   double statusTextBaseline{8.0};
   double statusFontSize{11.0};
+  double statusTextCharacterWidth{8.0};
   double diagnosticStripHeight{64.0};
   double diagnosticTextInsetX{14.0};
   double diagnosticTitleTop{8.0};
@@ -697,6 +714,25 @@ struct EditorSceneLayout final {
                                                      diagnosticActionGap)))),
         std::min(diagnosticActionHeight, panel.height)};
   }
+  [[nodiscard]] ui::Rect supportItemBounds(double editorRight,
+                                           double logicalWidth,
+                                           std::size_t index) const noexcept {
+    const auto x = editorRight + supportPanelInsetX;
+    return ui::Rect{
+        x,
+        toolbarHeight + supportItemTop +
+            static_cast<double>(index) * (supportItemHeight + supportItemGap),
+        std::max(0.0, logicalWidth - x - supportPanelInsetX),
+        supportItemHeight,
+    };
+  }
+  [[nodiscard]] std::size_t supportVisibleItemCapacity(
+      double contentBottom) const noexcept {
+    const auto available = contentBottom - toolbarHeight - supportItemTop;
+    if (available <= 0.0) return 0U;
+    return static_cast<std::size_t>(
+        (available + supportItemGap) / (supportItemHeight + supportItemGap));
+  }
   [[nodiscard]] double exportHeight(bool visible) const noexcept {
     return visible ? exportStripHeight : 0.0;
   }
@@ -978,6 +1014,10 @@ private:
   void paintAudioSettings(RasterCanvas& canvas,
                           const EditorSceneState& state,
                           double editorRight, double contentBottom) const noexcept;
+  void paintRecoverySupport(RasterCanvas& canvas,
+                            const EditorSceneState& state,
+                            double editorRight,
+                            double contentBottom) const noexcept;
   void paintDiagnostics(RasterCanvas& canvas,
                         const EditorSceneState& state) const noexcept;
   void paintExportProgress(RasterCanvas& canvas,

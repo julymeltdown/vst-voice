@@ -27,7 +27,7 @@ core::Result<std::vector<float>> SampleRateConverter::convert(
     const auto left = std::min<std::size_t>(
         static_cast<std::size_t>(position), source.size() - 1U);
     const auto right = std::min(left + 1U, source.size() - 1U);
-    const auto fraction = static_cast<float>(position - left);
+    const auto fraction = static_cast<float>(position - static_cast<long double>(left));
     const auto interpolated = source[left] +
                                (source[right] - source[left]) * fraction;
     output[index] = quality == SampleRateQuality::Final
@@ -73,7 +73,7 @@ std::vector<float> StreamingSampleRateConverter::emit(bool final) {
     const auto left = static_cast<std::uint64_t>(position);
     if (left >= inputFrames_ || (!final && left + 1U >= inputFrames_)) break;
     const auto right = std::min(left + 1U, inputFrames_ - 1U);
-    const auto fraction = static_cast<float>(position - left);
+    const auto fraction = static_cast<float>(position - static_cast<long double>(left));
     const auto interpolated = sampleAt(left) +
                                (sampleAt(right) - sampleAt(left)) * fraction;
     output.push_back(quality_ == SampleRateQuality::Final

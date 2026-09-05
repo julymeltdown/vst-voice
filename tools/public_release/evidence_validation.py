@@ -110,6 +110,17 @@ def evidence_record_findings(candidate: JsonObject) -> tuple[ValidationFinding, 
             findings.append(_finding(requirement_id, f"{record_id} producer and reviewer must be distinct"))
         if parse_time(record.get("trustedTime")) is None:
             findings.append(_finding(requirement_id, f"{record_id} trustedTime is invalid"))
+        if requirement_id == "PR-010-support-intake":
+            support = candidate.get("supportIntake")
+            bundle_sha256 = (
+                support.get("bundleSha256") if isinstance(support, dict) else None
+            )
+            recorded_bundle = record.get("supportBundleSha256")
+            if not is_sha256(recorded_bundle) or recorded_bundle != bundle_sha256:
+                findings.append(_finding(
+                    requirement_id,
+                    f"{record_id} archived support bundle differs from intake",
+                ))
         raw = record.get("rawArchive")
         if not isinstance(raw, dict):
             findings.append(_finding(requirement_id, f"{record_id} raw archive is required"))
@@ -166,6 +177,37 @@ def operation_surface_findings(candidate: JsonObject) -> tuple[ValidationFinding
             findings.append(_finding("PR-010-support-intake", "public security contact differs"))
         if support.get("lifecycleStages") != list(SUPPORT_LIFECYCLE_STAGES):
             findings.append(_finding("PR-010-support-intake", "support lifecycle is incomplete"))
+        bundle_sha256 = support.get("bundleSha256")
+        if support.get("bundleSchemaId") != (
+            "https://project-seam.invalid/schemas/public-support-bundle-2.json"
+        ) or not is_sha256(bundle_sha256):
+            findings.append(_finding("PR-010-support-intake", "support bundle identity is invalid"))
+        for key in (
+            "acknowledgedBundleSha256",
+            "withdrawnBundleSha256",
+            "deletedBundleSha256",
+        ):
+            if support.get(key) != bundle_sha256:
+                findings.append(_finding("PR-010-support-intake", f"{key} differs from bundle"))
+        if support.get("retentionPolicyId") != "project-seam.public.support-retention-1":
+            findings.append(_finding("PR-010-support-intake", "support retention policy differs"))
+        if support.get("retentionWindows") != {
+            "publicTechnicalDays": 180,
+            "restrictedAttachmentDays": 30,
+        }:
+            findings.append(_finding("PR-010-support-intake", "support retention windows differ"))
+        acknowledgement_id = support.get("acknowledgementId")
+        if not isinstance(acknowledgement_id, str) or not acknowledgement_id:
+            findings.append(_finding("PR-010-support-intake", "support acknowledgement is missing"))
+        stage_owners = support.get("stageOwnerIds")
+        if not isinstance(stage_owners, dict) or set(stage_owners) != set(SUPPORT_LIFECYCLE_STAGES) or not all(
+            isinstance(owner, str) and owner for owner in stage_owners.values()
+        ):
+            findings.append(_finding("PR-010-support-intake", "support stage ownership is incomplete"))
+        if support.get("withdrawalVerified") is not True or support.get("deletionVerified") is not True:
+            findings.append(_finding("PR-010-support-intake", "withdrawal and deletion proof are required"))
+        if not is_sha256(support.get("minimalAuditRecordSha256")):
+            findings.append(_finding("PR-010-support-intake", "minimal audit record identity is invalid"))
     incident, incident_findings = _status_object(candidate, "incidentDrill", "PR-011-incident-drill")
     findings.extend(incident_findings)
     if incident is not None and incident.get("actions") != list(INCIDENT_ACTIONS):

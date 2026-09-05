@@ -1,0 +1,60 @@
+{
+  "schema_version": 1,
+  "id": "u1-public-domain-diagnostic",
+  "purpose": "diagnostic",
+  "bank_root": "assets/demo-human-voicebank-public-domain/production-bank",
+  "manifest": "assets/demo-human-voicebank-public-domain/production-bank/manifest.json",
+  "provenance": "assets/demo-human-voicebank-public-domain/production-bank/provenance.json",
+  "notice": "assets/demo-human-voicebank-public-domain/production-bank/PUBLIC_DOMAIN_NOTICE.md",
+  "bank_readme": "assets/demo-human-voicebank-public-domain/production-bank/README.md",
+  "source": "assets/demo-human-voicebank-public-domain/source/talking.wav",
+  "melody_notice": "tests/singing_quality/corpus/MELODY_NOTICE.md",
+  "cases": [
+    {
+      "id": "original-melody",
+      "project": "tests/singing_quality/corpus/original-melody.seam"
+    },
+    {
+      "id": "unequal-rests",
+      "project": "tests/singing_quality/corpus/unequal-rests.seam"
+    }
+  ],
+  "assets": [
+    {
+      "path": "assets/demo-human-voicebank-public-domain/production-bank/manifest.json",
+      "sha256": "ea199788012edc818459a00504a6043829560b22abe46efd4572fe886df973a5"
+    },
+    {
+      "path": "assets/demo-human-voicebank-public-domain/production-bank/audio/human-vowel-demo.wav",
+      "sha256": "caf8ceb04b864c7501371a2adae46697495e617b9ade178560ba2ea1aa6b8cb9"
+    },
+    {
+      "path": "assets/demo-human-voicebank-public-domain/production-bank/provenance.json",
+      "sha256": "cd45f404f8fe4957d027baf525cb2e80596c0e8815b7b07c1378599d61d13788"
+    },
+    {
+      "path": "assets/demo-human-voicebank-public-domain/production-bank/PUBLIC_DOMAIN_NOTICE.md",
+      "sha256": "2420260ba4330eaacbfae5d341765e9ee62784401a315f12587b215db0ec0362"
+    },
+    {
+      "path": "assets/demo-human-voicebank-public-domain/production-bank/README.md",
+      "sha256": "1a05d28df0117e4969002172c4d09a611e8310850dadca1dd2df26b31aeec488"
+    },
+    {
+      "path": "assets/demo-human-voicebank-public-domain/source/talking.wav",
+      "sha256": "26c3ceacfb31a7300824a3841904f077856bdba41dafba0310c603cabb86d07f"
+    },
+    {
+      "path": "tests/singing_quality/corpus/original-melody.seam",
+      "sha256": "af1bfe52851781bd88d123d002ae27ad835e4f5ee561d8f9af7ea63025d31713"
+    },
+    {
+      "path": "tests/singing_quality/corpus/unequal-rests.seam",
+      "sha256": "d96be39c2955991562140538993479a5320ea964a2c3d84dcb2e0b424748a152"
+    },
+    {
+      "path": "tests/singing_quality/corpus/MELODY_NOTICE.md",
+      "sha256": "7d9facd57244df0bb542ef8c7e034c1969a5df69153dc84a70001464051ca1dd"
+    }
+  ]
+}

@@ -12,6 +12,7 @@ from tests.production.public_release_fixtures import (
     sha256_json,
     sign_operation,
 )
+from tools.public_release.evidence_validation import operation_surface_findings
 
 
 class PublicReleaseGateTests(unittest.TestCase):
@@ -66,6 +67,80 @@ class PublicReleaseGateTests(unittest.TestCase):
         self.assertFalse(result.passed)
         self.assertIn("PR-004-public-documents", result.blocked_ids)
         self.assertIn("PR-009-update-channel", result.blocked_ids)
+
+    def test_support_intake_requires_bundle_hash_bound_disposition(self) -> None:
+        gate = self._gate()
+        contract = acceptance_contract()
+        value = candidate(contract)
+        support = value["supportIntake"]
+        assert isinstance(support, dict)
+        bundle_sha256 = "f" * 64
+        support.update(
+            {
+                "bundleSchemaId": (
+                    "https://project-seam.invalid/schemas/"
+                    "public-support-bundle-2.json"
+                ),
+                "bundleSha256": bundle_sha256,
+                "acknowledgedBundleSha256": bundle_sha256,
+                "retentionPolicyId": "project-seam.public.support-retention-1",
+                "withdrawnBundleSha256": bundle_sha256,
+                "withdrawalVerified": True,
+                "deletedBundleSha256": bundle_sha256,
+                "deletionVerified": True,
+                "minimalAuditRecordSha256": "a" * 64,
+            }
+        )
+        support["deletedBundleSha256"] = "e" * 64
+
+        findings = operation_surface_findings(value)
+
+        self.assertIn(
+            "PR-010-support-intake",
+            {finding.requirement_id for finding in findings},
+        )
+
+    def test_support_intake_requires_owned_stages_and_retention_windows(self) -> None:
+        gate = self._gate()
+        contract = acceptance_contract()
+        value = candidate(contract)
+        support = value["supportIntake"]
+        assert isinstance(support, dict)
+        support.pop("stageOwnerIds")
+
+        result = gate.evaluate_gate(
+            value,
+            "PUBLIC_ACTIVE",
+            acceptance_contract=contract,
+            archive_verified=True,
+        )
+
+        self.assertFalse(result.passed)
+        self.assertIn("PR-010-support-intake", result.blocked_ids)
+
+    def test_support_bundle_hash_must_match_archived_raw_evidence(self) -> None:
+        gate = self._gate()
+        contract = acceptance_contract()
+        value = candidate(contract)
+        evidence = value["evidence"]
+        assert isinstance(evidence, list)
+        support_record = next(
+            item
+            for item in evidence
+            if isinstance(item, dict)
+            and item["requirementId"] == "PR-010-support-intake"
+        )
+        support_record["supportBundleSha256"] = "e" * 64
+
+        result = gate.evaluate_gate(
+            value,
+            "PUBLIC_ACTIVE",
+            acceptance_contract=contract,
+            archive_verified=True,
+        )
+
+        self.assertFalse(result.passed)
+        self.assertIn("PR-010-support-intake", result.blocked_ids)
 
     def test_blocked_acceptance_contract_cannot_activate_complete_candidate(self) -> None:
         gate = self._gate()

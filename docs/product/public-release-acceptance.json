@@ -81,7 +81,7 @@
     {"id": "PR-007-bank-ready", "title": "Rights, musical, signed-package, and installed-bank identity", "gate": "tools/public_release/release_gate.py", "mandatoryFor": ["PUBLIC_ACTIVE"]},
     {"id": "PR-008-target-matrices", "title": "Apple Silicon UA and separate Windows PW target matrices", "gate": "docs/product/public-windows-standalone-acceptance.json", "mandatoryFor": ["PUBLIC_ACTIVE"]},
     {"id": "PR-009-update-channel", "title": "Signed public update, pause, repair, supersede, and revoke channel", "gate": "tools/public_release/release_gate.py", "mandatoryFor": ["PUBLIC_ACTIVE"]},
-    {"id": "PR-010-support-intake", "title": "Operated support intake through retention or deletion", "gate": "docs/public/SUPPORT.md", "mandatoryFor": ["PUBLIC_ACTIVE"]},
+    {"id": "PR-010-support-intake", "title": "Operated hash-bound support intake through withdrawal and deletion", "gate": "docs/public/SUPPORT.md", "mandatoryFor": ["PUBLIC_ACTIVE"]},
     {"id": "PR-011-incident-drill", "title": "Candidate-bound public incident drill", "gate": "docs/public/SECURITY_RESPONSE.md", "mandatoryFor": ["PUBLIC_ACTIVE"]},
     {"id": "PR-012-archive-restore", "title": "Restored immutable archive and raw evidence hashes", "gate": "scripts/run_public_release_audit.py", "mandatoryFor": ["PUBLIC_ACTIVE"]},
     {"id": "PR-013-approvals", "title": "Ed25519 quorum and role separation outside EvidenceRoot", "gate": "tools/public_release/release_gate.py", "mandatoryFor": ["PUBLIC_ACTIVE"]},
@@ -99,27 +99,27 @@
     },
     {
       "id": "project-seam.public.privacy",
-      "version": "public-privacy-1.0.0",
+      "version": "public-privacy-1.1.0",
       "path": "docs/public/PRIVACY.md",
-      "sha256": "4a7faa37bc98baa3385bc5c18b484418be8e0aa5e7c08787bb618e5c7dcabd89",
+      "sha256": "84fdbd687dd8fdcae04124b9d8b22fe6fb1837885063c62bde20a64f98a1906f",
       "approvalStatus": "DRAFT",
       "acceptanceMode": "EXPLICIT",
       "reacceptOnDigestChange": true
     },
     {
       "id": "project-seam.public.support",
-      "version": "public-support-1.0.0",
+      "version": "public-support-1.1.0",
       "path": "docs/public/SUPPORT.md",
-      "sha256": "48f9aaa6a193b05d0dc7030730cd82fc429189b34e8ec3bcf77961833fc5c6a5",
+      "sha256": "c0b5c36b3a8cf37377538b3ed62a90c0e7989e014b2bf70fc7ce33eb57f467f5",
       "approvalStatus": "DRAFT",
       "acceptanceMode": "PUBLISHED_VERSION",
       "reacceptOnDigestChange": false
     },
     {
       "id": "project-seam.public.security-response",
-      "version": "public-security-response-1.0.0",
+      "version": "public-security-response-1.1.0",
       "path": "docs/public/SECURITY_RESPONSE.md",
-      "sha256": "c426595b7cf0ca8c5dccfd0e18554ad1b7756a4cf3e13132bc9825b6a2eb2c22",
+      "sha256": "9422d54e26e24d0c250b2412a4972fe389a12a0e57d2818c48b9ad567b663cd5",
       "approvalStatus": "DRAFT",
       "acceptanceMode": "PUBLISHED_VERSION",
       "reacceptOnDigestChange": false

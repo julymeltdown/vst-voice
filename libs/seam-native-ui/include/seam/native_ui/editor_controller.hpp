@@ -133,6 +133,7 @@ struct EditorHostCallbacks final {
   std::function<core::Result<void>()> openVoicebankInstaller;
   std::function<core::Result<void>(const authoring::Diagnostic&,
                                    authoring::DiagnosticAction)> diagnosticAction;
+  std::function<core::Result<void>(std::size_t)> selectSupportReport;
   std::function<void()> viewChanged;
   std::function<core::Result<void>(authoring::AudioSettings)>
       applyAudioSettings;
@@ -174,6 +175,12 @@ public:
   [[nodiscard]] core::Result<void> activateDiagnostic(
       std::size_t index, authoring::DiagnosticAction action) const;
   void dismissDiagnostic(std::size_t index);
+  void setRecoverySupportView(RecoverySupportView view);
+  [[nodiscard]] const RecoverySupportPanelModel& recoverySupportPanel()
+      const noexcept {
+    return recoverySupportPanel_;
+  }
+  [[nodiscard]] core::Result<void> selectSupportReport(std::size_t index);
   [[nodiscard]] TrackInspectorSnapshot trackInspector() const noexcept {
     return TrackInspectorModel::snapshot(session_.project(), selectedTrackId_);
   }
@@ -405,6 +412,7 @@ private:
   ArrangementPanelModel arrangementPanel_;
   AccessibilityTree accessibilityTree_;
   DiagnosticPanelModel diagnosticPanel_;
+  RecoverySupportPanelModel recoverySupportPanel_;
   std::optional<voicebank::Unit> microscopeUnit_;
   voicebank::AudioBuffer microscopeAudio_;
   ui::SampleMicroscopeModel microscope_;

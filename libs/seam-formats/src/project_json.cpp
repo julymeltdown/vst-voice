@@ -921,11 +921,16 @@ core::Result<domain::Project> decodeProject(const JsonValue& root) {
         auto lyricId = parseId<domain::LyricTag>(*lyricIdJson, "note.lyricId");
         if (!noteId) return core::Result<domain::Project>{noteId.error()};
         if (!lyricId) return core::Result<domain::Project>{lyricId.error()};
+        const auto midiKeyValue = midiKey->asInt64();
+        if (midiKeyValue < 0 || midiKeyValue > 127) {
+          return core::failure<domain::Project>(core::ErrorCode::ParseError,
+                                                "Note MIDI key must be in the range 0..127");
+        }
         domain::Note note{
             .id = noteId.value(),
             .startTick = time::Tick{noteStart->asInt64()},
             .durationTick = time::Tick{noteDuration->asInt64()},
-            .midiKey = static_cast<std::uint8_t>(midiKey->asInt64()),
+            .midiKey = static_cast<std::uint8_t>(midiKeyValue),
             .lyricTokenId = lyricId.value(),
             .articulation = parseArticulation(articulation->asString()),
             .slurGroup = std::nullopt,

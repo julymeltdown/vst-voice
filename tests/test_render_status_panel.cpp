@@ -71,9 +71,9 @@ TEST_CASE("render status panel marks same-revision quality replacement stale") {
       .state = seam::native_ui::RenderStatusState::Stale,
       .requestedRevision = 7U,
       .audibleRevision = 7U,
-      .hasAudibleAudio = true,
       .requestedQuality = seam::rendering::RenderQuality::Final,
       .audibleQuality = seam::rendering::RenderQuality::Preview,
+      .hasAudibleAudio = true,
       .diagnostic = "Previous audio is stale while the final render runs",
   });
   CHECK(model.isStale());

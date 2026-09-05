@@ -1,5 +1,6 @@
 #include "test_framework.hpp"
 #include "seam/application/note_commands.hpp"
+#include "seam/core/file_io.hpp"
 
 #include "seam/platform/audio_device.hpp"
 #include "seam/platform/application_paths.hpp"
@@ -22,6 +23,7 @@
 #include <vector>
 
 #include "test_support.hpp"
+#include "crash_capture_test_support.hpp"
 
 #ifndef SEAM_SOURCE_PRODUCTION_VOICEBANK
 #error SEAM_SOURCE_PRODUCTION_VOICEBANK is required
@@ -438,14 +440,14 @@ TEST_CASE("native editor audio settings resume a playing transport after restart
 }
 
 TEST_CASE("native startup surfaces a persisted crash marker as a separate diagnostic") {
+  if (seam::platform::crashCaptureBackendName() == "unavailable") return;
   const auto root = seam::test::support::temporaryDirectory("native-crash-recovery");
   const auto paths = seam::platform::ApplicationPaths::forTestRoot(root);
-  {
-    auto capture = seam::platform::CrashCapture::install(
-        seam::platform::CrashCaptureConfig{.root = paths.crashReportsRoot});
-    CHECK(capture);
-    CHECK(capture.value()->writeMarker("RENDER_FAILED"));
-  }
+  const auto child = seam::test::support::runCrashCaptureProbe(
+      paths.crashReportsRoot, "terminate");
+  CHECK(child.launched);
+  CHECK(child.completed);
+  CHECK(child.abnormalExit);
 
   seam::standalone::NativeEditorAppConfig config;
   config.runtimeMode = seam::standalone::ProductionRuntimeMode::DeterministicTest;
@@ -454,18 +456,237 @@ TEST_CASE("native startup surfaces a persisted crash marker as a separate diagno
   auto app = seam::standalone::NativeEditorApp::create(std::move(config));
   CHECK(app);
   CHECK(app.value()->startupCrashMarker().has_value());
-  CHECK(app.value()->startupCrashMarker()->code == "RENDER_FAILED");
+  CHECK(app.value()->startupCrashMarker()->code == "TERMINATE");
+  CHECK(app.value()->startupCrashMarker()->context.candidateId ==
+        "candidate-crash-probe");
   const auto& entries = app.value()->authoring().controller().diagnosticPanel().entries();
   CHECK(!entries.empty());
   CHECK(entries.front().diagnostic.code == "CRASH_RECOVERY_AVAILABLE");
   CHECK(app.value()->authoring().controller().activateDiagnostic(
       0U, seam::authoring::DiagnosticAction::Dismiss));
-  auto cleared = seam::platform::CrashCapture::install(
+  CHECK(!app.value()->startupCrashMarker().has_value());
+  auto marker = seam::platform::CrashCapture::recoverPending(
       seam::platform::CrashCaptureConfig{.root = paths.crashReportsRoot});
-  CHECK(cleared);
-  auto marker = cleared.value()->readMarker();
   CHECK(marker);
   CHECK(!marker.value().has_value());
+}
+
+TEST_CASE("native crash support export contains recovered candidate context") {
+  if (seam::platform::crashCaptureBackendName() == "unavailable") return;
+  const auto root = seam::test::support::temporaryDirectory(
+      "native-crash-support-context");
+  const auto paths = seam::platform::ApplicationPaths::forTestRoot(root);
+  const auto child = seam::test::support::runCrashCaptureProbe(
+      paths.crashReportsRoot, "native");
+  CHECK(child.launched);
+  CHECK(child.completed);
+  CHECK(child.abnormalExit);
+
+  seam::standalone::NativeEditorAppConfig config;
+  config.runtimeMode = seam::standalone::ProductionRuntimeMode::DeterministicTest;
+  config.applicationSupportRoot = root;
+  config.forceThreadedAudio = true;
+  auto app = seam::standalone::NativeEditorApp::create(std::move(config));
+  CHECK(app);
+  CHECK(app.value()->authoring().controller().activateDiagnostic(
+      0U, seam::authoring::DiagnosticAction::OpenSupport));
+  const auto& preview =
+      app.value()->authoring().controller().recoverySupportPanel().view();
+  CHECK(preview.visible);
+  CHECK(preview.candidateId == "candidate-crash-probe");
+  CHECK(app.value()->authoring().controller().activateDiagnostic(
+      0U, seam::authoring::DiagnosticAction::ExportSupportBundle));
+
+  const auto supportRoot = root / "Data" / "Support";
+  std::vector<std::filesystem::path> reports;
+  for (const auto& entry : std::filesystem::directory_iterator{supportRoot}) {
+    if (entry.is_regular_file() && entry.path().extension() == ".zip") {
+      reports.push_back(entry.path());
+    }
+  }
+  CHECK(reports.size() == 1U);
+  CHECK(reports.front().filename().string().find("candidate-crash-probe") !=
+        std::string::npos);
+  auto bytes = seam::core::readFileBytesLimited(reports.front(), 8U * 1024U * 1024U);
+  CHECK(bytes);
+  const std::string payload(
+      reinterpret_cast<const char*>(bytes.value().data()), bytes.value().size());
+  CHECK(payload.find("\"buildId\":\"candidate-crash-probe\"") !=
+        std::string::npos);
+  CHECK(payload.find("\"bankId\":\"beta-bank\"") != std::string::npos);
+  CHECK(payload.find("\"underflowFrames\":\"17\"") != std::string::npos);
+  CHECK(payload.find("\"xrunCount\":\"3\"") != std::string::npos);
+  CHECK(payload.find(std::string{seam::platform::crashCaptureBackendName()}) !=
+        std::string::npos);
+  CHECK(app.value()->authoring().controller().activateDiagnostic(
+      0U, seam::authoring::DiagnosticAction::DeleteSupportBundle));
+}
+
+TEST_CASE("native crash support refuses an unbound candidate") {
+  if (seam::platform::crashCaptureBackendName() == "unavailable") return;
+  const auto root = seam::test::support::temporaryDirectory(
+      "native-crash-support-unbound");
+  const auto paths = seam::platform::ApplicationPaths::forTestRoot(root);
+  const auto child = seam::test::support::runCrashCaptureProbe(
+      paths.crashReportsRoot, "terminate-no-context");
+  CHECK(child.launched);
+  CHECK(child.completed);
+  CHECK(child.abnormalExit);
+
+  seam::standalone::NativeEditorAppConfig config;
+  config.runtimeMode = seam::standalone::ProductionRuntimeMode::DeterministicTest;
+  config.applicationSupportRoot = root;
+  config.forceThreadedAudio = true;
+  auto app = seam::standalone::NativeEditorApp::create(std::move(config));
+  CHECK(app);
+  CHECK(!app.value()->authoring().controller().activateDiagnostic(
+      0U, seam::authoring::DiagnosticAction::OpenSupport));
+  CHECK(!std::filesystem::exists(root / "Data" / "Support"));
+}
+
+TEST_CASE("native support flow previews exports and deletes exact prepared bytes") {
+  const auto root = seam::test::support::temporaryDirectory("native-support-flow");
+  seam::standalone::NativeEditorAppConfig config;
+  config.runtimeMode = seam::standalone::ProductionRuntimeMode::DeterministicTest;
+  config.applicationSupportRoot = root;
+  config.forceThreadedAudio = true;
+  auto app = seam::standalone::NativeEditorApp::create(std::move(config));
+  CHECK(app);
+  app.value()->authoring().controller().setDiagnostics({seam::authoring::Diagnostic{
+      .code = "PROJECT_NOT_FOUND",
+      .severity = seam::authoring::DiagnosticSeverity::Error,
+      .messageKey = "project.not-found",
+      .affectedIds = {},
+      .actions = seam::authoring::DiagnosticRegistry::actions(
+          "PROJECT_NOT_FOUND"),
+      .occurrenceCount = 1U}});
+
+  CHECK(app.value()->authoring().controller().activateDiagnostic(
+      0U, seam::authoring::DiagnosticAction::OpenSupport));
+  const auto supportRoot = root / "Data" / "Support";
+  CHECK(!std::filesystem::exists(supportRoot));
+  auto diagnostics = app.value()->authoring().controller().diagnosticPanel().entries();
+  CHECK(diagnostics.size() == 1U);
+  CHECK(diagnostics.front().diagnostic.code == "SUPPORT_BUNDLE_PREVIEW_READY");
+  auto supportView =
+      app.value()->authoring().controller().recoverySupportPanel().view();
+  CHECK(supportView.visible);
+  CHECK(supportView.mode == seam::native_ui::RecoverySupportMode::Preview);
+  CHECK(supportView.items.size() == 2U);
+  const auto firstPreviewHash = supportView.archiveSha256;
+  CHECK(app.value()->authoring().controller().keyDown(
+      seam::native_ui::KeyEvent{.key = seam::native_ui::NativeKey::Escape}));
+  CHECK(!app.value()
+             ->authoring()
+             .controller()
+             .recoverySupportPanel()
+             .view()
+             .visible);
+  CHECK(!std::filesystem::exists(supportRoot));
+  app.value()->authoring().controller().setDiagnostics({seam::authoring::Diagnostic{
+      .code = "PROJECT_NOT_FOUND",
+      .severity = seam::authoring::DiagnosticSeverity::Error,
+      .messageKey = "project.not-found",
+      .affectedIds = {},
+      .actions = seam::authoring::DiagnosticRegistry::actions(
+          "PROJECT_NOT_FOUND"),
+      .occurrenceCount = 1U}});
+  CHECK(app.value()->authoring().controller().activateDiagnostic(
+      0U, seam::authoring::DiagnosticAction::OpenSupport));
+  CHECK(app.value()
+            ->authoring()
+            .controller()
+            .recoverySupportPanel()
+            .view()
+            .archiveSha256 == firstPreviewHash);
+
+  CHECK(app.value()->authoring().controller().activateDiagnostic(
+      0U, seam::authoring::DiagnosticAction::ExportSupportBundle));
+  CHECK(!std::filesystem::is_empty(supportRoot));
+  diagnostics = app.value()->authoring().controller().diagnosticPanel().entries();
+  CHECK(diagnostics.size() == 1U);
+  CHECK(diagnostics.front().diagnostic.code == "SUPPORT_BUNDLE_EXPORTED");
+  supportView = app.value()->authoring().controller().recoverySupportPanel().view();
+  CHECK(supportView.mode == seam::native_ui::RecoverySupportMode::Reports);
+  CHECK(supportView.reportCount == 1U);
+  CHECK(supportView.items.front().sha256 == firstPreviewHash);
+
+  app.value()->authoring().controller().setDiagnostics({seam::authoring::Diagnostic{
+      .code = "PROJECT_NOT_FOUND",
+      .severity = seam::authoring::DiagnosticSeverity::Error,
+      .messageKey = "project.not-found",
+      .affectedIds = {},
+      .actions = seam::authoring::DiagnosticRegistry::actions(
+          "PROJECT_NOT_FOUND"),
+      .occurrenceCount = 1U}});
+  CHECK(app.value()->authoring().controller().activateDiagnostic(
+      0U, seam::authoring::DiagnosticAction::OpenSupport));
+  const auto secondPreviewHash = app.value()
+                                     ->authoring()
+                                     .controller()
+                                     .recoverySupportPanel()
+                                     .view()
+                                     .archiveSha256;
+  CHECK(app.value()->authoring().controller().activateDiagnostic(
+      0U, seam::authoring::DiagnosticAction::ExportSupportBundle));
+  supportView = app.value()->authoring().controller().recoverySupportPanel().view();
+  CHECK(supportView.reportCount == 2U);
+  CHECK(std::count_if(supportView.items.begin(), supportView.items.end(),
+                      [](const auto& item) { return item.selected; }) == 1);
+  const auto selected = std::find_if(
+      supportView.items.begin(), supportView.items.end(),
+      [](const auto& item) { return item.selected; });
+  CHECK(selected != supportView.items.end());
+  CHECK(selected->sha256 == secondPreviewHash);
+
+  CHECK(app.value()->authoring().controller().activateDiagnostic(
+      0U, seam::authoring::DiagnosticAction::DeleteSupportBundle));
+  supportView = app.value()->authoring().controller().recoverySupportPanel().view();
+  CHECK(supportView.reportCount == 1U);
+  CHECK(!std::filesystem::is_empty(supportRoot));
+  CHECK(app.value()->authoring().controller().activateDiagnostic(
+      0U, seam::authoring::DiagnosticAction::DeleteSupportBundle));
+  CHECK(std::filesystem::is_empty(supportRoot));
+  CHECK(!app.value()
+             ->authoring()
+             .controller()
+             .recoverySupportPanel()
+             .view()
+             .visible);
+}
+
+TEST_CASE("native support keeps a committed export when directory refresh fails") {
+  const auto root =
+      seam::test::support::temporaryDirectory("native-support-refresh-failure");
+  const auto supportRoot = root / "Data" / "Support";
+  std::filesystem::create_directories(
+      supportRoot / "project-seam-support-hostile.zip");
+  seam::standalone::NativeEditorAppConfig config;
+  config.runtimeMode = seam::standalone::ProductionRuntimeMode::DeterministicTest;
+  config.applicationSupportRoot = root;
+  config.forceThreadedAudio = true;
+  auto app = seam::standalone::NativeEditorApp::create(std::move(config));
+  CHECK(app);
+  app.value()->authoring().controller().setDiagnostics({seam::authoring::Diagnostic{
+      .code = "PROJECT_NOT_FOUND",
+      .severity = seam::authoring::DiagnosticSeverity::Error,
+      .messageKey = "project.not-found",
+      .actions = seam::authoring::DiagnosticRegistry::actions(
+          "PROJECT_NOT_FOUND"),
+  }});
+
+  CHECK(app.value()->authoring().controller().activateDiagnostic(
+      0U, seam::authoring::DiagnosticAction::OpenSupport));
+  CHECK(app.value()->authoring().controller().activateDiagnostic(
+      0U, seam::authoring::DiagnosticAction::ExportSupportBundle));
+
+  const auto& reports =
+      app.value()->authoring().controller().recoverySupportPanel().view();
+  CHECK(reports.visible);
+  CHECK(reports.mode == seam::native_ui::RecoverySupportMode::Reports);
+  CHECK(reports.items.size() == 1U);
+  CHECK(reports.items.front().name.starts_with("project-seam-support-"));
+  CHECK(app.value()->lastError().find("was exported") != std::string::npos);
 }
 
 TEST_CASE("native voicebank diagnostic opens the exact-card browser") {

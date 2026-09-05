@@ -202,6 +202,35 @@ TEST_CASE("diagnostic presentation keeps recovery copy separate from stable code
   CHECK(presentation.technicalDetail == "BANK_MISSING / voicebank.missing");
 }
 
+TEST_CASE("diagnostic presentation keeps support reachable when it is the recovery") {
+  const auto presentation = seam::native_ui::presentDiagnostic({
+      .code = "PROJECT_NOT_FOUND",
+      .severity = seam::authoring::DiagnosticSeverity::Error,
+      .messageKey = "project.not-found",
+      .actions = {seam::authoring::DiagnosticAction::OpenSupport,
+                  seam::authoring::DiagnosticAction::CopyDiagnostic},
+  });
+  CHECK(presentation.primaryActions.size() == 1U);
+  CHECK(presentation.primaryActionKinds.front() ==
+        seam::authoring::DiagnosticAction::OpenSupport);
+  CHECK(presentation.primaryActions.front() == "Get support");
+
+  const auto preview = seam::native_ui::presentDiagnostic({
+      .code = "SUPPORT_BUNDLE_PREVIEW_READY",
+      .severity = seam::authoring::DiagnosticSeverity::Info,
+      .messageKey = "support.preview-ready",
+      .actions = {seam::authoring::DiagnosticAction::ExportSupportBundle,
+                  seam::authoring::DiagnosticAction::Dismiss},
+  });
+  CHECK(preview.primaryActionKinds.size() == 2U);
+  CHECK(preview.primaryActionKinds[0U] ==
+        seam::authoring::DiagnosticAction::ExportSupportBundle);
+  CHECK(preview.primaryActionKinds[1U] ==
+        seam::authoring::DiagnosticAction::Dismiss);
+  CHECK(preview.primaryActions[0U] == "Export");
+  CHECK(preview.primaryActions[1U] == "Dismiss");
+}
+
 TEST_CASE("editor interaction state owns hovered note detail independently") {
   seam::native_ui::EditorInteractionState interaction;
   const seam::domain::NoteId noteId{42U};
@@ -280,6 +309,198 @@ TEST_CASE("diagnostic recovery controls share visible layout and hit targets") {
   CHECK(second.right() <= panel.right() - layout.diagnosticTextInsetX + 1e-9);
   CHECK(first.y >= panel.y);
   CHECK(first.bottom() <= panel.bottom());
+}
+
+TEST_CASE("support panel exposes exact preview and selectable report list") {
+  NativeUiFixture fixture;
+  std::optional<std::size_t> selectedReport;
+  seam::native_ui::NativeEditorController controller{
+      fixture.session, fixture.factory, fixture.regionId,
+      seam::native_ui::EditorHostCallbacks{
+          .selectSupportReport = [&selectedReport](std::size_t index) {
+            selectedReport = index;
+            return seam::core::success();
+          },
+      }};
+  controller.resize(960.0, 600.0);
+  controller.setDiagnostics({seam::authoring::Diagnostic{
+      .code = "SUPPORT_BUNDLE_PREVIEW_READY",
+      .severity = seam::authoring::DiagnosticSeverity::Info,
+      .messageKey = "support.preview-ready",
+      .actions = {seam::authoring::DiagnosticAction::ExportSupportBundle,
+                  seam::authoring::DiagnosticAction::Dismiss},
+  }});
+  controller.setRecoverySupportView(seam::native_ui::RecoverySupportView{
+      .visible = true,
+      .mode = seam::native_ui::RecoverySupportMode::Preview,
+      .candidateId = "build-17",
+      .archiveBytes = 2048U,
+      .archiveSha256 = std::string(64U, 'a'),
+      .items = {
+          seam::native_ui::RecoverySupportItemView{
+              .name = "진단-診断-诊断-manifest.json",
+              .detail = "PUBLIC / INCLUDED",
+              .bytes = 512U,
+              .sha256 = std::string(64U, 'b'),
+              .included = true,
+          },
+          seam::native_ui::RecoverySupportItemView{
+              .name = "attachments/세션-セッション-会话-project.seam",
+              .detail = "RESTRICTED / CONSENT NEEDED",
+              .bytes = 1536U,
+              .sha256 = std::string(64U, 'c'),
+              .included = false,
+          },
+      },
+      .status = "Nothing has been written yet",
+  });
+  auto state = controller.sceneState();
+  CHECK(state.recoverySupport.visible);
+  CHECK(state.recoverySupport.mode ==
+        seam::native_ui::RecoverySupportMode::Preview);
+  CHECK(state.recoverySupport.items.size() == 2U);
+  CHECK(state.recoverySupport.archiveSha256 == std::string(64U, 'a'));
+  CHECK(seam::native_ui::editorDockVisible(state));
+
+  seam::native_ui::EditorScenePainter painter;
+  seam::native_ui::PixelSurface surface{960U, 600U};
+  auto supportTextEngine = seam::text::TextEngine::createSystem();
+  seam::native_ui::RasterCanvas canvas{
+      surface, 1.0,
+      supportTextEngine ? supportTextEngine.value().get() : nullptr};
+  painter.paint(canvas, controller.pianoRoll(), state);
+  CHECK(surface.checksum() != 0U);
+  const auto* supportCaptureRoot =
+      std::getenv("SEAM_NATIVE_UI_SUPPORT_CAPTURE_DIR");
+  if (supportCaptureRoot != nullptr && *supportCaptureRoot != '\0') {
+    const std::filesystem::path directory{supportCaptureRoot};
+    std::error_code error;
+    std::filesystem::create_directories(directory, error);
+    CHECK(!error);
+    CHECK(surface.writePpm(directory / "support-preview-960x600.ppm"));
+  }
+  controller.rebuildAccessibilityTree();
+  CHECK(seam::native_ui::EditorSemanticTree::containsId(
+      controller.accessibilityTree().root(), "support.panel"));
+  CHECK(seam::native_ui::EditorSemanticTree::containsId(
+      controller.accessibilityTree().root(), "support.item.0"));
+
+  controller.setRecoverySupportView(seam::native_ui::RecoverySupportView{
+      .visible = true,
+      .mode = seam::native_ui::RecoverySupportMode::Reports,
+      .items = {
+          seam::native_ui::RecoverySupportItemView{
+              .name = "project-seam-support-one.zip",
+              .detail = "ZIP / 2048 B",
+              .bytes = 2048U,
+              .sha256 = std::string(64U, 'd'),
+              .included = true,
+              .selected = true,
+          },
+          seam::native_ui::RecoverySupportItemView{
+              .name = "project-seam-support-two.zip",
+              .detail = "ZIP / 2048 B",
+              .bytes = 2048U,
+              .sha256 = std::string(64U, 'e'),
+              .included = true,
+          },
+      },
+      .reportCount = 2U,
+      .status = "Select a report to reveal or delete",
+  });
+  controller.setDiagnostics({seam::authoring::Diagnostic{
+      .code = "SUPPORT_BUNDLE_EXPORTED",
+      .severity = seam::authoring::DiagnosticSeverity::Info,
+      .messageKey = "support.exported-local-only",
+      .actions = {seam::authoring::DiagnosticAction::OpenSupportFolder,
+                  seam::authoring::DiagnosticAction::DeleteSupportBundle,
+                  seam::authoring::DiagnosticAction::Dismiss},
+  }});
+  if (supportCaptureRoot != nullptr && *supportCaptureRoot != '\0') {
+    seam::native_ui::PixelSurface reportsSurface{960U, 600U};
+    seam::native_ui::RasterCanvas reportsCanvas{
+        reportsSurface, 1.0,
+        supportTextEngine ? supportTextEngine.value().get() : nullptr};
+    painter.paint(reportsCanvas, controller.pianoRoll(), controller.sceneState());
+    CHECK(reportsSurface.writePpm(
+        std::filesystem::path{supportCaptureRoot} /
+        "support-reports-960x600.ppm"));
+  }
+  controller.rebuildAccessibilityTree();
+  CHECK(controller.dispatchAccessibility(
+      "support.item.1", seam::native_ui::SemanticAction::Activate));
+  CHECK(selectedReport == 1U);
+
+  const auto supportState = controller.sceneState();
+  const auto editorRight = 960.0 - painter.layout().characterDockWidth;
+  const auto firstRow = painter.layout().supportItemBounds(
+      editorRight, 960.0, 0U);
+  CHECK(controller.pointerDown(seam::native_ui::PointerEvent{
+      .position = seam::ui::Point{firstRow.x + firstRow.width * 0.5,
+                                  firstRow.y + firstRow.height * 0.5},
+      .button = seam::native_ui::PointerButton::Left,
+      .modifiers = {},
+      .clickCount = 1,
+  }));
+  CHECK(selectedReport == 0U);
+  CHECK(supportState.recoverySupport.reportCount == 2U);
+
+  auto compactView = controller.recoverySupportPanel().view();
+  compactView.mode = seam::native_ui::RecoverySupportMode::Preview;
+  compactView.candidateId = "build-17";
+  compactView.archiveBytes = 2048U;
+  compactView.archiveSha256 = std::string(64U, 'a');
+  compactView.reportCount = 0U;
+  compactView.status = "Review every entry before confirming export";
+  for (auto& item : compactView.items) item.selected = false;
+  compactView.items.push_back(seam::native_ui::RecoverySupportItemView{
+      .name = "진단-診断-诊断-diagnostics.json",
+      .detail = "PUBLIC / INCLUDED",
+      .bytes = 512U,
+      .sha256 = std::string(64U, 'f'),
+      .included = true,
+  });
+  compactView.items.push_back(seam::native_ui::RecoverySupportItemView{
+      .name = "attachments/세션-セッション-会话.log",
+      .detail = "RESTRICTED / CONSENT NEEDED",
+      .bytes = 512U,
+      .sha256 = std::string(64U, '1'),
+      .included = false,
+  });
+  controller.resize(480.0, 320.0);
+  controller.setDiagnostics({seam::authoring::Diagnostic{
+      .code = "SUPPORT_BUNDLE_PREVIEW_READY",
+      .severity = seam::authoring::DiagnosticSeverity::Info,
+      .messageKey = "support.preview-ready",
+      .actions = {seam::authoring::DiagnosticAction::ExportSupportBundle,
+                  seam::authoring::DiagnosticAction::Dismiss},
+  }});
+  controller.setRecoverySupportView(std::move(compactView));
+  controller.rebuildAccessibilityTree();
+  CHECK(controller.dispatchAccessibility(
+      "support.item.3", seam::native_ui::SemanticAction::SetFocus));
+  CHECK(controller.recoverySupportPanel().view().firstVisibleItem == 3U);
+  const auto* focusedSupportItem = controller.accessibilityTree().focusedNode();
+  CHECK(focusedSupportItem != nullptr);
+  if (focusedSupportItem != nullptr) {
+    CHECK(focusedSupportItem->id == "support.item.3");
+    const auto expectedFocusedBounds = painter.layout().supportItemBounds(
+        focusedSupportItem->bounds.x - painter.layout().supportPanelInsetX,
+        480.0, 0U);
+    CHECK_NEAR(focusedSupportItem->bounds.y, expectedFocusedBounds.y, 0.001);
+    CHECK_NEAR(focusedSupportItem->bounds.height,
+               expectedFocusedBounds.height, 0.001);
+  }
+  if (supportCaptureRoot != nullptr && *supportCaptureRoot != '\0') {
+    seam::native_ui::PixelSurface compactSurface{480U, 320U};
+    seam::native_ui::RasterCanvas compactCanvas{
+        compactSurface, 1.0,
+        supportTextEngine ? supportTextEngine.value().get() : nullptr};
+    painter.paint(compactCanvas, controller.pianoRoll(), controller.sceneState());
+    CHECK(compactSurface.writePpm(
+        std::filesystem::path{supportCaptureRoot} /
+        "support-preview-480x320-scrolled.ppm"));
+  }
 }
 
 TEST_CASE("empty piano roll paints a bounded next-step cue") {
@@ -382,6 +603,9 @@ TEST_CASE("voicebank and audio panel text metrics stay bounded") {
         layout.audioSettingsStatsBottomInset);
   CHECK(layout.voicebankCardDiagnosticMinimumHeight >=
         layout.voicebankCardTitleBaseline);
+  CHECK(layout.supportPanelFontSize >= 9.0);
+  CHECK(layout.statusTextCharacterWidth >=
+        layout.secondaryTextCharacterWidth);
 }
 
 TEST_CASE("editor overlay metrics stay tokenized") {

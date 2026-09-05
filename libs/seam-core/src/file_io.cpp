@@ -25,6 +25,8 @@ namespace {
 
 std::atomic<std::uint64_t> gTemporarySequence{0U};
 
+enum class PublishMode { Replace, CreateNew };
+
 Result<void> inject(const AtomicWriteOptions& options, AtomicWriteStage stage) {
   return options.faultInjector ? options.faultInjector(stage) : success();
 }
@@ -146,6 +148,20 @@ Result<void> replaceFile(const std::filesystem::path& temporary,
   return success();
 }
 
+Result<void> publishNewFile(const std::filesystem::path& temporary,
+                            const std::filesystem::path& target) {
+  if (!MoveFileExW(temporary.c_str(), target.c_str(), MOVEFILE_WRITE_THROUGH)) {
+    const auto error = GetLastError();
+    if (error == ERROR_FILE_EXISTS || error == ERROR_ALREADY_EXISTS) {
+      return failure(ErrorCode::Conflict,
+                     "Atomic create-new target already exists", target.string());
+    }
+    return failure(ErrorCode::IoError, "Unable to atomically publish new file",
+                   std::to_string(error));
+  }
+  return success();
+}
+
 Result<void> syncParentDirectory(const std::filesystem::path&) {
   // MoveFileExW with MOVEFILE_WRITE_THROUGH provides the strongest portable
   // replacement guarantee available through the Win32 file API used here.
@@ -208,6 +224,24 @@ Result<void> replaceFile(const std::filesystem::path& temporary,
   return success();
 }
 
+Result<void> publishNewFile(const std::filesystem::path& temporary,
+                            const std::filesystem::path& target) {
+  if (::link(temporary.c_str(), target.c_str()) != 0) {
+    if (errno == EEXIST) {
+      return failure(ErrorCode::Conflict,
+                     "Atomic create-new target already exists", target.string());
+    }
+    return failure(ErrorCode::IoError, "Unable to atomically publish new file",
+                   std::strerror(errno));
+  }
+  if (::unlink(temporary.c_str()) != 0) {
+    return failure(ErrorCode::IoError,
+                   "Unable to remove published temporary file",
+                   std::strerror(errno));
+  }
+  return success();
+}
+
 Result<void> syncParentDirectory(const std::filesystem::path& path) {
   const auto directory = path.has_parent_path() ? path.parent_path()
                                                 : std::filesystem::path{"."};
@@ -235,7 +269,8 @@ Result<void> syncParentDirectory(const std::filesystem::path& path) {
 Result<void> writeImpl(const std::filesystem::path& path,
                        std::span<const std::byte> bytes,
                        const AtomicWriteOptions& options,
-                       bool createBackup) {
+                       bool createBackup,
+                       PublishMode publishMode) {
   if (path.empty()) {
     return failure(ErrorCode::InvalidArgument, "Atomic write target is empty");
   }
@@ -248,6 +283,18 @@ Result<void> writeImpl(const std::filesystem::path& path,
   if (!parent) return parent;
   const auto target = validateAtomicTarget(path);
   if (!target) return target;
+  if (publishMode == PublishMode::CreateNew) {
+    std::error_code existsError;
+    if (std::filesystem::exists(path, existsError)) {
+      return failure(ErrorCode::Conflict,
+                     "Atomic create-new target already exists", path.string());
+    }
+    if (existsError) {
+      return failure(ErrorCode::IoError,
+                     "Unable to inspect atomic create-new target",
+                     existsError.message());
+    }
+  }
   if (createBackup && !options.backupPath.empty()) {
     const auto backupTarget = validateAtomicTarget(options.backupPath);
     if (!backupTarget) return backupTarget;
@@ -265,7 +312,7 @@ Result<void> writeImpl(const std::filesystem::path& path,
       if (!oldBytes) return Result<void>{oldBytes.error()};
       AtomicWriteOptions backupOptions;
       const auto backup = writeImpl(options.backupPath, oldBytes.value(),
-                                    backupOptions, false);
+                                    backupOptions, false, PublishMode::Replace);
       if (!backup) return backup;
       const auto injected = inject(options, AtomicWriteStage::BackupCommitted);
       if (!injected) return injected;
@@ -287,7 +334,9 @@ Result<void> writeImpl(const std::filesystem::path& path,
     cleanup();
     return injected;
   }
-  const auto replaced = replaceFile(temporary, path);
+  const auto replaced = publishMode == PublishMode::CreateNew
+                            ? publishNewFile(temporary, path)
+                            : replaceFile(temporary, path);
   if (!replaced) {
     cleanup();
     return replaced;
@@ -362,7 +411,7 @@ Result<void> durableAtomicWrite(const std::filesystem::path& path,
                                 std::span<const std::byte> bytes,
                                 const AtomicWriteOptions& options) {
   recordRealtimeFileIo();
-  return writeImpl(path, bytes, options, true);
+  return writeImpl(path, bytes, options, true, PublishMode::Replace);
 }
 
 Result<void> durableAtomicWriteText(const std::filesystem::path& path,
@@ -371,6 +420,20 @@ Result<void> durableAtomicWriteText(const std::filesystem::path& path,
   recordRealtimeFileIo();
   return durableAtomicWrite(path,
       std::as_bytes(std::span{text.data(), text.size()}), options);
+}
+
+Result<void> durableAtomicWriteNew(const std::filesystem::path& path,
+                                   std::span<const std::byte> bytes) {
+  recordRealtimeFileIo();
+  return writeImpl(path, bytes, AtomicWriteOptions{}, false,
+                   PublishMode::CreateNew);
+}
+
+Result<void> durableAtomicWriteTextNew(const std::filesystem::path& path,
+                                       std::string_view text) {
+  recordRealtimeFileIo();
+  return durableAtomicWriteNew(
+      path, std::as_bytes(std::span{text.data(), text.size()}));
 }
 
 }  // namespace seam::core

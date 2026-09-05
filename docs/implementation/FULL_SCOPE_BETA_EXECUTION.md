@@ -88,4 +88,12 @@ The writer remains schema 7. No new saved-performance field or renderer behavior
 
 ## Release status
 
+### Requested checkpoint publication: 2026-09-05
+
+The user explicitly requested committing and pushing the current project work, including the preserved crash/support changes, then continuing implementation. U2 was committed as `79d4faef`. Staging the approved source/test/plan files made `verify_tracked_source_closure.py` pass; that prior integration obligation was satisfied without weakening its check. Build directories, local audio evidence, private temporary files and unrelated branches/worktrees are not included in the commits.
+
+Pre-publication review found a crash-handler lifetime race: native teardown drained writers before disabling handle acquisition. A shared lock-free `CrashWriterSlot` now invalidates acquisition before draining, with sequentially consistent ordering; both native destructors and macOS installation rollback close only afterward. A deterministic driver using the original order returned the old handle to a late writer for both descriptor/handle types (exit 1); the repaired order returned the invalid sentinel (exit 0). The root ran nine recovery/support tests successfully, including real macOS crash subprocesses. Independent recheck confirmed the ordering repair; Windows runtime integration remains unverified.
+
+The main checkout retains its existing development branches and another developer's worktree. The repository's master-only publishing audit runs in an isolated checkout of the exact committed source, which is fast-forwarded and re-audited before pushing to `origin/master`. No branch deletion, force push or history rewrite is authorized or used.
+
 No model was trained, no new production singer or commercially qualified voicebank was delivered, no independent listening/creator study ran, and no signed installed platform/host matrix was completed in this baseline work. Beta GO is not achieved. Continue independent implementation while keeping these acceptance obligations explicit.

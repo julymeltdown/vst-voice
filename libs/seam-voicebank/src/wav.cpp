@@ -467,8 +467,9 @@ AudioStatistics analyzeAudio(std::span<const float> samples) noexcept {
     sum += finite;
     if (std::abs(finite) >= 0.9999F) ++result.clippedSamples;
   }
-  result.rms = std::sqrt(static_cast<double>(squareSum / samples.size()));
-  result.dcOffset = static_cast<double>(sum / samples.size());
+  const auto sampleCount = static_cast<long double>(samples.size());
+  result.rms = std::sqrt(static_cast<double>(squareSum / sampleCount));
+  result.dcOffset = static_cast<double>(sum / sampleCount);
   return result;
 }
 

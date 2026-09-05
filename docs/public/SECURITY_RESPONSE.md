@@ -5,7 +5,7 @@
 **Required approval: the security-response owner and the named release authority.**
 
 Document ID: `project-seam.public.security-response`
-Version: `public-security-response-1.0.0`
+Version: `public-security-response-1.1.0`
 Contact ID: `project-seam.public.security-contact`
 
 ## Published contact
@@ -22,6 +22,11 @@ record identifies affected source, bank, package, installed-tree, update
 metadata, and evidence-root hashes when applicable. Reporter data is limited to
 what the reporter consents to share and is restricted to assigned responders.
 
+The initial acknowledgement repeats the exact submitted bundle SHA-256 and
+candidate lineage. Triage, containment, remediation, communication,
+withdrawal, deletion, and any preservation exception remain bound to those
+bytes. A replacement bundle begins a separate evidence identity.
+
 ## Distribution control
 
 A credible compromise can publish a signed `DISTRIBUTION_PAUSED` operation.
@@ -37,6 +42,13 @@ envelopes remain reproducible from the governed archive. Approval envelopes
 sign the terminal `EvidenceRoot` and remain outside its digest, preventing an
 approval digest cycle. Disclosure timing is chosen to protect users while a
 repair or revocation is distributed.
+
+Restricted attachments and contact data follow
+`project-seam.public.support-retention-1`: at most 30 days unless an assigned
+security owner records a narrower investigation scope and expiry. Public
+technical fields are capped at 180 days. Closure records the withdrawal or
+deletion result and preserves only the minimal non-content audit record allowed
+by the public privacy notice.
 
 ## Current availability
 

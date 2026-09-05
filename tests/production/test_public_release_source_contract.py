@@ -25,6 +25,8 @@ class PublicReleaseSourceContractTests(unittest.TestCase):
             "docs/product/PUBLIC_WINDOWS_STANDALONE_ACCEPTANCE.md",
             "docs/product/public-windows-standalone-acceptance.json",
             "docs/product/public-windows-standalone-evidence.schema.json",
+            "docs/product/public-support-bundle.schema.json",
+            "docs/product/public-support-report-lifecycle.schema.json",
             "docs/public/EULA.md",
             "docs/public/PRIVACY.md",
             "docs/public/SUPPORT.md",
@@ -64,6 +66,39 @@ class PublicReleaseSourceContractTests(unittest.TestCase):
             ["NOT_RUN"] * 20,
             [item["status"] for item in windows["requirements"]],
         )
+
+    def test_public_support_schemas_bind_bundle_and_lifecycle_hashes(self) -> None:
+        bundle = json.loads(
+            (ROOT / "docs/product/public-support-bundle.schema.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        lifecycle = json.loads(
+            (
+                ROOT
+                / "docs/product/public-support-report-lifecycle.schema.json"
+            ).read_text(encoding="utf-8")
+        )
+
+        self.assertEqual(2, bundle["properties"]["schemaVersion"]["const"])
+        self.assertEqual(
+            "https://project-seam.invalid/schemas/public-support-bundle-2.json",
+            lifecycle["properties"]["bundleSchemaId"]["const"],
+        )
+        self.assertEqual(
+            180,
+            lifecycle["properties"]["retentionWindows"]["properties"]
+            ["publicTechnicalDays"]["const"],
+        )
+        self.assertEqual(
+            30,
+            lifecycle["properties"]["retentionWindows"]["properties"]
+            ["restrictedAttachmentDays"]["const"],
+        )
+        self.assertTrue(
+            lifecycle["properties"]["withdrawalVerified"]["const"]
+        )
+        self.assertTrue(lifecycle["properties"]["deletionVerified"]["const"])
 
     def test_public_document_versions_and_digests_are_separate_from_beta(self) -> None:
         contract_path = ROOT / "docs/product/public-release-acceptance.json"
@@ -106,8 +141,8 @@ class PublicReleaseSourceContractTests(unittest.TestCase):
                 ("limitations", "external-beta-limitations-1.0"),
                 ("update", "external-beta-update-rollback-1.0"),
                 ("checklist", "external-beta-checklist-1.0"),
-                ("support", "external-beta-support-1.0"),
-                ("security", "external-beta-security-response-1.0"),
+                ("support", "external-beta-support-1.1"),
+                ("security", "external-beta-security-response-1.1"),
             ],
             [(item["id"], item["version"]) for item in beta["requiredDocuments"]],
         )

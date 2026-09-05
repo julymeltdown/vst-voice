@@ -225,6 +225,10 @@ void AuthoringSession::configureController() {
       .upsertPitchPoint = [this](domain::PitchAutomationPoint point) {
         return runtime_->technicalEdits().upsertPitchPoint(point);
       },
+      .movePhonemeBoundary = [this](domain::PhonemeKey key, bool start,
+                                    time::Microseconds offset) {
+        return runtime_->technicalEdits().movePhonemeBoundary(key, start, offset);
+      },
       .movePitchPoint = [this](time::Tick from,
                                domain::PitchAutomationPoint point) {
         return runtime_->technicalEdits().movePitchPoint(from, point);
@@ -234,10 +238,6 @@ void AuthoringSession::configureController() {
       },
       .cyclePitchInterpolation = [this](time::Tick tick) {
         return runtime_->technicalEdits().cyclePitchInterpolation(tick);
-      },
-      .movePhonemeBoundary = [this](domain::PhonemeKey key, bool start,
-                                    time::Microseconds offset) {
-        return runtime_->technicalEdits().movePhonemeBoundary(key, start, offset);
       },
       .previewSeam = externalCallbacks_.previewSeam,
       .loadSampleMicroscope = [this](domain::PhonemeKey key)

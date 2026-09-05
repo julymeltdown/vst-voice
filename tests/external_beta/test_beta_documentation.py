@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import re
 import unittest
 from pathlib import Path
 
@@ -26,6 +28,25 @@ class BetaDocumentationTests(unittest.TestCase):
             relative = Path(canonical).relative_to("docs").as_posix()
             self.assertIn(f"../{relative}", entry)
             self.assertTrue(target)
+
+    def test_support_document_versions_match_the_beta_manifest(self) -> None:
+        manifest = json.loads(
+            (ROOT / "docs/product/external-beta-documentation.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        selected = {
+            item["id"]: item
+            for item in manifest["requiredDocuments"]
+            if item["id"] in {"support", "security"}
+        }
+        self.assertEqual({"support", "security"}, set(selected))
+        for item in selected.values():
+            text = (ROOT / item["path"]).read_text(encoding="utf-8")
+            declared = re.search(r"Document version: `([^`]+)`", text)
+            self.assertIsNotNone(declared)
+            assert declared is not None
+            self.assertEqual(item["version"], declared.group(1))
 
 
 if __name__ == "__main__":

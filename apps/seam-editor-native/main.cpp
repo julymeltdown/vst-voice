@@ -299,6 +299,8 @@ int seam_editor_native_main(int argc, char** argv) {
           },
           .runtimeMode = runtime.mode,
           .characterPackage = runtime.characterPackage,
+          .applicationSupportRoot = commandLine->applicationSupportRoot.value_or(
+              runtime.applicationSupportRoot),
           .trustedVoicebankKeys = runtime.trustedVoicebankKeys,
           .developmentTrustRoot = runtime.developmentTrustRoot,
           .allowDevelopmentVoicebanks = runtime.allowDevelopmentVoicebanks,
@@ -306,8 +308,6 @@ int seam_editor_native_main(int argc, char** argv) {
           .forceThreadedAudio = runtime.forceThreadedAudio,
           .startPaused = runtime.startPaused,
           .manualsRoot = paths.value().manualsRoot,
-          .applicationSupportRoot = commandLine->applicationSupportRoot.value_or(
-              runtime.applicationSupportRoot),
       });
   if (!created) {
     std::cerr << "Standalone initialization failed: "

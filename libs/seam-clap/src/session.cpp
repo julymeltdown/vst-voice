@@ -65,7 +65,8 @@ core::Result<PluginSession> resampleSession(const PluginSession& source,
   const long double ratio = static_cast<long double>(targetSampleRate) /
                             static_cast<long double>(source.sampleRate);
   const auto targetFrames = std::max<std::uint64_t>(
-      1U, static_cast<std::uint64_t>(std::llround(sourceFrames * ratio)));
+      1U, static_cast<std::uint64_t>(std::llround(
+              static_cast<long double>(sourceFrames) * ratio)));
   if (targetFrames > static_cast<std::uint64_t>(targetSampleRate) *
                          kMaximumDurationSeconds) {
     return core::failure<PluginSession>(core::ErrorCode::InvalidArgument,
@@ -82,7 +83,7 @@ core::Result<PluginSession> resampleSession(const PluginSession& source,
     const auto left = std::min<std::uint64_t>(
         static_cast<std::uint64_t>(sourcePosition), sourceFrames - 1U);
     const auto right = std::min<std::uint64_t>(left + 1U, sourceFrames - 1U);
-    const auto fraction = static_cast<float>(sourcePosition - left);
+    const auto fraction = static_cast<float>(sourcePosition - static_cast<long double>(left));
     for (std::uint8_t channel = 0U; channel < source.channelCount; ++channel) {
       const auto leftSample = source.interleavedSamples[
           static_cast<std::size_t>(left) * source.channelCount + channel];

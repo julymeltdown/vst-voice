@@ -1,0 +1,96 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://project-seam.invalid/schemas/public-support-report-lifecycle-1.json",
+  "title": "Project SEAM public support report lifecycle",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "purpose",
+    "destinationId",
+    "securityContactId",
+    "candidateLineageId",
+    "bundleSchemaId",
+    "bundleSha256",
+    "acknowledgementId",
+    "acknowledgedBundleSha256",
+    "retentionPolicyId",
+    "retentionWindows",
+    "lifecycleStages",
+    "stageOwnerIds",
+    "withdrawnBundleSha256",
+    "withdrawalVerified",
+    "deletedBundleSha256",
+    "deletionVerified",
+    "minimalAuditRecordSha256"
+  ],
+  "properties": {
+    "schemaVersion": {"const": 1},
+    "purpose": {"const": "public-support-lifecycle"},
+    "destinationId": {"const": "project-seam.public.support-intake"},
+    "securityContactId": {"const": "project-seam.public.security-contact"},
+    "candidateLineageId": {"type": "string", "minLength": 1, "maxLength": 128},
+    "bundleSchemaId": {
+      "const": "https://project-seam.invalid/schemas/public-support-bundle-2.json"
+    },
+    "bundleSha256": {"$ref": "#/$defs/sha256"},
+    "acknowledgementId": {"type": "string", "minLength": 1, "maxLength": 128},
+    "acknowledgedBundleSha256": {"$ref": "#/$defs/sha256"},
+    "retentionPolicyId": {"const": "project-seam.public.support-retention-1"},
+    "retentionWindows": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["publicTechnicalDays", "restrictedAttachmentDays"],
+      "properties": {
+        "publicTechnicalDays": {"const": 180},
+        "restrictedAttachmentDays": {"const": 30}
+      }
+    },
+    "lifecycleStages": {
+      "type": "array",
+      "prefixItems": [
+        {"const": "INTAKE"},
+        {"const": "ACKNOWLEDGED"},
+        {"const": "TRIAGED"},
+        {"const": "REPRODUCED"},
+        {"const": "RESOLVED_OR_ESCALATED"},
+        {"const": "USER_COMMUNICATED"},
+        {"const": "RETAINED_OR_DELETED"}
+      ],
+      "items": false,
+      "minItems": 7,
+      "maxItems": 7
+    },
+    "stageOwnerIds": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "INTAKE",
+        "ACKNOWLEDGED",
+        "TRIAGED",
+        "REPRODUCED",
+        "RESOLVED_OR_ESCALATED",
+        "USER_COMMUNICATED",
+        "RETAINED_OR_DELETED"
+      ],
+      "properties": {
+        "INTAKE": {"$ref": "#/$defs/ownerId"},
+        "ACKNOWLEDGED": {"$ref": "#/$defs/ownerId"},
+        "TRIAGED": {"$ref": "#/$defs/ownerId"},
+        "REPRODUCED": {"$ref": "#/$defs/ownerId"},
+        "RESOLVED_OR_ESCALATED": {"$ref": "#/$defs/ownerId"},
+        "USER_COMMUNICATED": {"$ref": "#/$defs/ownerId"},
+        "RETAINED_OR_DELETED": {"$ref": "#/$defs/ownerId"}
+      }
+    },
+    "withdrawnBundleSha256": {"$ref": "#/$defs/sha256"},
+    "withdrawalVerified": {"const": true},
+    "deletedBundleSha256": {"$ref": "#/$defs/sha256"},
+    "deletionVerified": {"const": true},
+    "minimalAuditRecordSha256": {"$ref": "#/$defs/sha256"}
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "ownerId": {"type": "string", "minLength": 1, "maxLength": 128}
+  }
+}

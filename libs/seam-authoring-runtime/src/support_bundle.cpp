@@ -13,6 +13,7 @@
 #include <iomanip>
 #include <map>
 #include <optional>
+#include <set>
 #include <sstream>
 #include <span>
 #include <system_error>
@@ -22,6 +23,27 @@
 #endif
 
 namespace seam::authoring {
+
+std::string_view toString(SupportBundleEntryKind value) noexcept {
+  switch (value) {
+    case SupportBundleEntryKind::Generated:
+      return "Generated";
+    case SupportBundleEntryKind::Attachment:
+      return "Attachment";
+  }
+  return "Generated";
+}
+
+std::string_view toString(SupportBundlePrivacyClass value) noexcept {
+  switch (value) {
+    case SupportBundlePrivacyClass::PublicTechnical:
+      return "PublicTechnical";
+    case SupportBundlePrivacyClass::RestrictedSupportAttachment:
+      return "RestrictedSupportAttachment";
+  }
+  return "PublicTechnical";
+}
+
 namespace {
 
 using formats::JsonValue;
@@ -76,14 +98,15 @@ bool lowercaseHex(std::string_view value) noexcept {
 }
 
 bool exportField(std::string_view key) noexcept {
-  constexpr std::array<std::string_view, 21U> names{
+  constexpr std::array<std::string_view, 24U> names{
       "buildId",          "sourceCommit",       "artifactId",
       "artifactSha256",   "bankId",             "bankVersion",
       "bankContentHash",  "osFamily",           "osMajor",
       "hostFamily",       "hostMajor",          "deviceFamily",
       "sampleRate",       "bufferFrames",       "channels",
       "diagnosticCount",  "xrunCount",          "renderCount",
-      "recoveryState",    "manifestVersion",    "sanitizedStackSymbols"};
+      "recoveryState",    "manifestVersion",    "sanitizedStackSymbols",
+      "messageKey",       "crashPlatformCode",  "underflowFrames"};
   return std::find(names.begin(), names.end(), key) != names.end();
 }
 
@@ -143,12 +166,31 @@ JsonValue eventJson(const core::LogEvent& event, std::string_view createdAt) {
 struct BundleEntry final {
   std::string name;
   std::vector<std::byte> bytes;
+  SupportBundleEntryKind kind{SupportBundleEntryKind::Generated};
+  SupportBundlePrivacyClass privacy{
+      SupportBundlePrivacyClass::PublicTechnical};
+  bool requiresConsent{false};
+  bool consented{true};
 };
 
 struct BundleData final {
   std::vector<std::byte> archive;
   SupportBundlePreview preview;
 };
+
+SupportBundleEntryPreview previewEntry(const BundleEntry& entry,
+                                       bool included) {
+  return SupportBundleEntryPreview{
+      .path = entry.name,
+      .kind = entry.kind,
+      .privacy = entry.privacy,
+      .bytes = static_cast<std::uint64_t>(entry.bytes.size()),
+      .sha256 = core::sha256Hex(entry.bytes),
+      .requiresConsent = entry.requiresConsent,
+      .consented = entry.consented,
+      .included = included,
+  };
+}
 
 std::uint32_t crc32(std::span<const std::byte> bytes) noexcept {
   std::uint32_t crc = 0xffffffffU;
@@ -235,13 +277,15 @@ std::vector<std::byte> zipStored(const std::vector<BundleEntry>& entries) {
 
 core::Result<BundleData> buildBundle(const SupportBundleRequest& request) {
   if (request.events.size() > kMaximumEvents ||
-      (request.attachments.size() > 0U && !request.attachmentConsent) ||
-      request.attachments.size() > kMaximumAttachments) {
+      request.attachments.size() > kMaximumAttachments ||
+      !safeIdentifier(request.candidateId)) {
     return core::failure<BundleData>(core::ErrorCode::InvalidArgument,
-                                     "Support bundle request exceeds its consent or count policy");
+                                     "Support bundle request exceeds its identity or count policy");
   }
   const auto createdAt = request.createdAt.empty() ? timestampNow() : request.createdAt;
   std::vector<BundleEntry> entries;
+  std::vector<SupportBundleEntryPreview> previewEntries;
+  std::set<std::string> attachmentNames;
   JsonValue::Array events;
   events.reserve(request.events.size());
   for (const auto& event : request.events) {
@@ -259,135 +303,278 @@ core::Result<BundleData> buildBundle(const SupportBundleRequest& request) {
     return core::failure<BundleData>(core::ErrorCode::Unsupported,
                                      "Support diagnostics exceed the entry limit");
   }
-  entries.push_back(BundleEntry{
+  BundleEntry diagnosticsEntry{
       .name = "diagnostics.json",
       .bytes = std::vector<std::byte>(
           std::as_bytes(std::span{diagnosticsText.data(), diagnosticsText.size()}).begin(),
-          std::as_bytes(std::span{diagnosticsText.data(), diagnosticsText.size()}).end())});
+          std::as_bytes(std::span{diagnosticsText.data(), diagnosticsText.size()}).end()),
+      .kind = SupportBundleEntryKind::Generated,
+      .privacy = SupportBundlePrivacyClass::PublicTechnical,
+      .requiresConsent = false,
+      .consented = true};
+  previewEntries.push_back(previewEntry(diagnosticsEntry, true));
+  entries.push_back(std::move(diagnosticsEntry));
   for (const auto& attachment : request.attachments) {
-    const auto name = attachment.filename().string();
+    const auto name = attachment.path.filename().string();
     if (!safeIdentifier(name) || name.find('.') == std::string::npos) {
       return core::failure<BundleData>(core::ErrorCode::InvalidArgument,
                                        "Support attachment name is not portable", name);
     }
+    if (!attachmentNames.insert(name).second) {
+      return core::failure<BundleData>(core::ErrorCode::Conflict,
+                                       "Support attachment names must be unique", name);
+    }
     std::error_code error;
-    const auto status = std::filesystem::symlink_status(attachment, error);
+    const auto status = std::filesystem::symlink_status(attachment.path, error);
     if (error || std::filesystem::is_symlink(status) ||
         !std::filesystem::is_regular_file(status)) {
       return core::failure<BundleData>(core::ErrorCode::Conflict,
                                        "Support attachment must be a regular file", name);
     }
-    auto bytes = core::readFileBytesLimited(attachment, kMaximumEntryBytes);
+    auto bytes = core::readFileBytesLimited(attachment.path, kMaximumEntryBytes);
     if (!bytes) return core::Result<BundleData>{bytes.error()};
-    if (std::find_if(entries.begin(), entries.end(), [&](const BundleEntry& entry) {
-          return entry.name == "attachments/" + name;
-        }) != entries.end()) {
-      return core::failure<BundleData>(core::ErrorCode::Conflict,
-                                       "Support attachment names must be unique", name);
+    BundleEntry entry{
+        .name = "attachments/" + name,
+        .bytes = std::move(bytes).value(),
+        .kind = SupportBundleEntryKind::Attachment,
+        .privacy = SupportBundlePrivacyClass::RestrictedSupportAttachment,
+        .requiresConsent = true,
+        .consented = attachment.consented};
+    previewEntries.push_back(previewEntry(entry, attachment.consented));
+    if (attachment.consented) {
+      entries.push_back(std::move(entry));
     }
-    entries.push_back(BundleEntry{.name = "attachments/" + name,
-                                  .bytes = std::move(bytes).value()});
   }
+  const bool containsRestrictedAttachments =
+      std::any_of(entries.begin(), entries.end(), [](const BundleEntry& entry) {
+        return entry.privacy ==
+               SupportBundlePrivacyClass::RestrictedSupportAttachment;
+      });
   JsonValue::Array manifestEntries;
   for (const auto& entry : entries) {
     JsonValue::Object item;
     item.emplace("path", entry.name);
     item.emplace("size", static_cast<std::int64_t>(entry.bytes.size()));
     item.emplace("sha256", core::sha256Hex(entry.bytes));
+    item.emplace("kind", std::string{toString(entry.kind)});
+    item.emplace("privacyClass", std::string{toString(entry.privacy)});
+    item.emplace("requiresConsent", entry.requiresConsent);
+    item.emplace("consented", entry.consented);
     manifestEntries.emplace_back(std::move(item));
   }
   JsonValue::Object manifest;
-  manifest.emplace("schemaVersion", static_cast<std::int64_t>(1));
-  manifest.emplace("purpose", "export-safe-support-bundle");
-  manifest.emplace("privacyClass", "ExportSafe");
+  manifest.emplace("schemaVersion", static_cast<std::int64_t>(2));
+  manifest.emplace("purpose", "support-bundle");
+  manifest.emplace("privacyClass", containsRestrictedAttachments
+                                               ? "RestrictedSupportData"
+                                               : "PublicTechnical");
+  manifest.emplace("candidateId", request.candidateId);
   manifest.emplace("createdAt", createdAt);
-  manifest.emplace("consent", request.attachmentConsent);
   manifest.emplace("entries", std::move(manifestEntries));
   const auto manifestText = formats::stringifyJson(JsonValue{std::move(manifest)}, false);
-  entries.insert(entries.begin(), BundleEntry{
+  BundleEntry manifestEntry{
       .name = "manifest.json",
       .bytes = std::vector<std::byte>(
           std::as_bytes(std::span{manifestText.data(), manifestText.size()}).begin(),
-          std::as_bytes(std::span{manifestText.data(), manifestText.size()}).end())});
+          std::as_bytes(std::span{manifestText.data(), manifestText.size()}).end()),
+      .kind = SupportBundleEntryKind::Generated,
+      .privacy = SupportBundlePrivacyClass::PublicTechnical,
+      .requiresConsent = false,
+      .consented = true};
+  previewEntries.insert(previewEntries.begin(), previewEntry(manifestEntry, true));
+  entries.insert(entries.begin(), std::move(manifestEntry));
   auto archive = zipStored(entries);
   if (archive.size() > kMaximumArchiveBytes) {
     return core::failure<BundleData>(core::ErrorCode::Unsupported,
                                      "Support bundle exceeds the archive limit");
   }
   SupportBundlePreview preview{
-      .archiveBytes = archive.size(),
+      .archiveBytes = static_cast<std::uint64_t>(archive.size()),
       .archiveSha256 = core::sha256Hex(archive),
-      .entryNames = {},
-      .attachmentConsent = request.attachmentConsent};
-  preview.entryNames.reserve(entries.size());
-  for (const auto& entry : entries) preview.entryNames.push_back(entry.name);
+      .candidateId = request.candidateId,
+      .createdAt = createdAt,
+      .entries = std::move(previewEntries),
+      .containsRestrictedAttachments = containsRestrictedAttachments};
   return BundleData{.archive = std::move(archive), .preview = std::move(preview)};
 }
 
+std::string filenameToken(std::string_view value) {
+  std::string result;
+  result.reserve(value.size());
+  for (const auto character : value) {
+    const auto byte = static_cast<unsigned char>(character);
+    result.push_back(std::isalnum(byte) != 0 || character == '.' ||
+                             character == '-'
+                         ? character
+                         : '-');
+  }
+  return result;
 }
 
-core::Result<SupportBundlePreview> SupportBundleService::preview(
-    const SupportBundleRequest& request) const {
-  auto bundle = buildBundle(request);
-  if (!bundle) return core::Result<SupportBundlePreview>{bundle.error()};
-  return bundle.value().preview;
-}
-
-core::Result<SupportBundleExport> SupportBundleService::exportBundle(
-    const SupportBundleRequest& request,
-    const std::filesystem::path& destination) const {
-  auto bundle = buildBundle(request);
-  if (!bundle) return core::Result<SupportBundleExport>{bundle.error()};
-  if (destination.empty()) {
-    return core::failure<SupportBundleExport>(core::ErrorCode::InvalidArgument,
-                                              "Support bundle destination is empty");
+core::Result<void> ensureExportDirectory(const std::filesystem::path& directory) {
+  if (directory.empty() || directory == directory.root_path()) {
+    return core::failure(core::ErrorCode::InvalidArgument,
+                         "Support export directory is invalid");
   }
   std::error_code error;
-  const bool destinationExists = std::filesystem::exists(destination, error);
-  if (error && error != std::errc::no_such_file_or_directory) {
-    return core::failure<SupportBundleExport>(core::ErrorCode::IoError,
-                                              "Unable to inspect support bundle destination",
-                                              error.message());
-  }
-  error.clear();
-  const auto destinationStatus = std::filesystem::symlink_status(destination, error);
-  if (error == std::errc::no_such_file_or_directory) error.clear();
-  if (destinationExists || std::filesystem::is_symlink(destinationStatus)) {
-    return core::failure<SupportBundleExport>(core::ErrorCode::Conflict,
-                                              "Support bundle destination already exists",
-                                              destination.string());
-  }
+  std::filesystem::create_directories(directory, error);
   if (error) {
-    return core::failure<SupportBundleExport>(core::ErrorCode::IoError,
-                                              "Unable to inspect support bundle destination",
-                                              error.message());
+    return core::failure(core::ErrorCode::IoError,
+                         "Unable to create support export directory",
+                         error.message());
   }
-  const auto parent = destination.parent_path();
-  if (!parent.empty()) {
-    std::filesystem::create_directories(parent, error);
-    if (error) {
-      return core::failure<SupportBundleExport>(core::ErrorCode::IoError,
-                                                "Unable to create support bundle directory",
-                                                error.message());
-    }
-    const auto status = std::filesystem::symlink_status(parent, error);
-    if (error || std::filesystem::is_symlink(status) ||
-        !std::filesystem::is_directory(status)) {
-      return core::failure<SupportBundleExport>(core::ErrorCode::Conflict,
-                                                "Support bundle directory is unsafe",
-                                                parent.string());
-    }
+  const auto status = std::filesystem::symlink_status(directory, error);
+  if (error || std::filesystem::is_symlink(status) ||
+      !std::filesystem::is_directory(status)) {
+    return core::failure(core::ErrorCode::Conflict,
+                         "Support export directory is unsafe",
+                         directory.string());
   }
-  auto written = core::durableAtomicWrite(destination, bundle.value().archive);
-  if (!written) return core::Result<SupportBundleExport>{written.error()};
 #ifndef _WIN32
-  if (::chmod(destination.c_str(), S_IRUSR | S_IWUSR) != 0) {
-    return core::failure<SupportBundleExport>(core::ErrorCode::IoError,
-                                              "Unable to restrict support bundle permissions");
+  if (::chmod(directory.c_str(), S_IRWXU) != 0) {
+    return core::failure(core::ErrorCode::IoError,
+                         "Unable to restrict support export directory",
+                         directory.string());
   }
 #endif
-  return SupportBundleExport{.destination = destination,
-                             .preview = std::move(bundle.value().preview)};
+  return core::success();
+}
+
+std::filesystem::path exportPath(const std::filesystem::path& directory,
+                                 const SupportBundlePreview& preview,
+                                 std::uint32_t sequence) {
+  std::string name = "project-seam-support-" + filenameToken(preview.candidateId) +
+                     "-" + filenameToken(preview.createdAt) + "-" +
+                     preview.archiveSha256.substr(0U, 12U);
+  if (sequence > 1U) name += "-" + std::to_string(sequence);
+  return directory / (name + ".zip");
+}
+
+bool ownedExportName(const std::filesystem::path& path) {
+  const auto name = path.filename().string();
+  return name.starts_with("project-seam-support-") &&
+         path.extension() == ".zip" && name.find('/') == std::string::npos &&
+         name.find('\\') == std::string::npos;
+}
+
+}
+
+core::Result<PreparedSupportBundle> SupportBundleService::prepare(
+    const SupportBundleRequest& request) const {
+  auto bundle = buildBundle(request);
+  if (!bundle) return core::Result<PreparedSupportBundle>{bundle.error()};
+  auto data = std::move(bundle).value();
+  return PreparedSupportBundle{std::move(data.archive), std::move(data.preview)};
+}
+
+core::Result<SupportBundleExport> SupportBundleService::exportPrepared(
+    const PreparedSupportBundle& prepared,
+    const std::filesystem::path& directory) const {
+  const auto ready = ensureExportDirectory(directory);
+  if (!ready) return core::Result<SupportBundleExport>{ready.error()};
+  for (std::uint32_t sequence = 1U; sequence <= 1000U; ++sequence) {
+    const auto destination = exportPath(directory, prepared.preview_, sequence);
+    const auto written = core::durableAtomicWriteNew(destination, prepared.archive_);
+    if (!written && written.error().code == core::ErrorCode::Conflict) continue;
+    if (!written) return core::Result<SupportBundleExport>{written.error()};
+#ifndef _WIN32
+    if (::chmod(destination.c_str(), S_IRUSR | S_IWUSR) != 0) {
+      return core::failure<SupportBundleExport>(
+          core::ErrorCode::IoError,
+          "Unable to restrict support bundle permissions");
+    }
+#endif
+    return SupportBundleExport{.destination = destination,
+                               .preview = prepared.preview_};
+  }
+  return core::failure<SupportBundleExport>(
+      core::ErrorCode::Conflict,
+      "Support export directory exhausted collision-safe report names",
+      directory.string());
+}
+
+core::Result<std::vector<SupportBundleRecord>>
+SupportBundleService::listExports(
+    const std::filesystem::path& directory) const {
+  const auto ready = ensureExportDirectory(directory);
+  if (!ready) {
+    return core::Result<std::vector<SupportBundleRecord>>{ready.error()};
+  }
+  std::vector<SupportBundleRecord> result;
+  std::error_code error;
+  for (std::filesystem::directory_iterator iterator{directory, error}, end;
+       !error && iterator != end; iterator.increment(error)) {
+    const auto path = iterator->path();
+    if (!ownedExportName(path)) continue;
+    const auto status = std::filesystem::symlink_status(path, error);
+    if (error || std::filesystem::is_symlink(status) ||
+        !std::filesystem::is_regular_file(status)) {
+      return core::failure<std::vector<SupportBundleRecord>>(
+          core::ErrorCode::Conflict,
+          "Owned support report name is not a regular file", path.string());
+    }
+    auto bytes = core::readFileBytesLimited(path, kMaximumArchiveBytes);
+    if (!bytes) {
+      return core::Result<std::vector<SupportBundleRecord>>{bytes.error()};
+    }
+    result.push_back(SupportBundleRecord{
+        .path = path,
+        .bytes = static_cast<std::uint64_t>(bytes.value().size()),
+        .sha256 = core::sha256Hex(bytes.value()),
+    });
+  }
+  if (error) {
+    return core::failure<std::vector<SupportBundleRecord>>(
+        core::ErrorCode::IoError, "Unable to list support reports",
+        error.message());
+  }
+  std::sort(result.begin(), result.end(), [](const auto& left, const auto& right) {
+    return left.path.filename().string() > right.path.filename().string();
+  });
+  return result;
+}
+
+core::Result<void> SupportBundleService::deleteExport(
+    const SupportBundleRecord& record,
+    const std::filesystem::path& directory) const {
+  const auto ready = ensureExportDirectory(directory);
+  if (!ready) return ready;
+  std::error_code error;
+  const auto normalizedDirectory =
+      std::filesystem::absolute(directory, error).lexically_normal();
+  if (error) {
+    return core::failure(core::ErrorCode::IoError,
+                         "Unable to resolve support export directory",
+                         error.message());
+  }
+  const auto normalizedPath =
+      std::filesystem::absolute(record.path, error).lexically_normal();
+  if (error || normalizedPath.parent_path() != normalizedDirectory ||
+      !ownedExportName(normalizedPath)) {
+    return core::failure(core::ErrorCode::Conflict,
+                         "Support report is outside the owned export store",
+                         record.path.string());
+  }
+  const auto status = std::filesystem::symlink_status(normalizedPath, error);
+  if (error || std::filesystem::is_symlink(status) ||
+      !std::filesystem::is_regular_file(status)) {
+    return core::failure(core::ErrorCode::Conflict,
+                         "Support report is not an owned regular file",
+                         record.path.string());
+  }
+  auto bytes = core::readFileBytesLimited(normalizedPath, kMaximumArchiveBytes);
+  if (!bytes) return core::Result<void>{bytes.error()};
+  if (bytes.value().size() != record.bytes ||
+      core::sha256Hex(bytes.value()) != record.sha256) {
+    return core::failure(core::ErrorCode::Conflict,
+                         "Support report changed after it was listed",
+                         record.path.string());
+  }
+  if (!std::filesystem::remove(normalizedPath, error) || error) {
+    return core::failure(core::ErrorCode::IoError,
+                         "Unable to delete support report", error.message());
+  }
+  return core::success();
 }
 
 core::Result<std::filesystem::path> SupportBundleService::writePrivateReport(

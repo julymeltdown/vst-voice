@@ -1,6 +1,7 @@
 #include "seam/domain/project.hpp"
 
 #include <cmath>
+#include <limits>
 #include <unordered_set>
 #include <set>
 
@@ -118,6 +119,10 @@ core::Result<void> VocalRegion::validate() const {
   if (startTick < time::Tick{0} || durationTick <= time::Tick{0}) {
     return core::failure(core::ErrorCode::InvariantViolation,
                          "Region time range is invalid", id.toString());
+  }
+  if (startTick > time::Tick{std::numeric_limits<std::int64_t>::max()} - durationTick) {
+    return core::failure(core::ErrorCode::InvariantViolation,
+                         "Region end tick exceeds the supported range", id.toString());
   }
 
   std::unordered_set<LyricTokenId> lyricIds;

@@ -25,6 +25,9 @@ enum class DiagnosticAction {
   CopyDiagnostic,
   RecoverAutosave,
   OpenSupport,
+  ExportSupportBundle,
+  OpenSupportFolder,
+  DeleteSupportBundle,
 };
 
 struct Diagnostic final {

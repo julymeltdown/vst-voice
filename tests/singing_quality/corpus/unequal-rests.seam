@@ -1,0 +1,280 @@
+{
+  "formatId": "com.project-seam.project",
+  "schemaVersion": 7,
+  "projectId": "1",
+  "name": "U1 unequal notes and rests",
+  "ppq": 960,
+  "tempoMap": [
+    {
+      "tick": 0,
+      "bpm": 120
+    }
+  ],
+  "meterMap": [
+    {
+      "tick": 0,
+      "numerator": 4,
+      "denominator": 4
+    }
+  ],
+  "settings": {
+    "sampleRate": 48000,
+    "characterDisplay": "off",
+    "snapEnabled": true,
+    "snapGrid": 240,
+    "hostStartOffsetTick": 0,
+    "technicalLanes": [
+      {"mode": "auto", "expandedHeight": 120.0},
+      {"mode": "auto", "expandedHeight": 120.0},
+      {"mode": "auto", "expandedHeight": 120.0},
+      {"mode": "auto", "expandedHeight": 120.0}
+    ]
+  },
+  "routing": {
+    "deviceOutputChannels": 2,
+    "masterBus": "1",
+    "buses": [
+      {
+        "id": "1",
+        "name": "Master",
+        "channelCount": 2,
+        "gainDb": 0,
+        "muted": false,
+        "solo": false
+      }
+    ],
+    "sends": [],
+    "deviceRoutes": [
+      {
+        "sourceBus": "1",
+        "matrix": {
+          "sourceChannels": 2,
+          "destinationChannels": 2,
+          "gains": [
+            1,
+            0,
+            0,
+            1
+          ]
+        },
+        "gainDb": 0,
+        "enabled": true
+      }
+    ]
+  },
+  "vocalTracks": [
+    {
+      "id": "2",
+      "name": "Diagnostic dry vocal",
+      "voicebank": {
+        "id": "demo.public-domain.human.production",
+        "version": "0.12.0",
+        "contentHash": ""
+      },
+      "character": {
+        "id": "",
+        "version": ""
+      },
+      "gainDb": 0,
+      "pan": 0,
+      "muted": false,
+      "solo": false,
+      "outputRoute": {
+        "busId": "1",
+        "matrix": {
+          "sourceChannels": 1,
+          "destinationChannels": 2,
+          "gains": [
+            1,
+            1
+          ]
+        }
+      },
+      "regions": [
+        {
+          "id": "3",
+          "name": "U1 unequal notes and rests",
+          "startTick": 0,
+          "durationTick": 17520,
+          "lyrics": [
+            {
+              "id": "1",
+              "surface": "こ",
+              "language": "ja"
+            },
+            {
+              "id": "2",
+              "surface": "え",
+              "language": "ja"
+            },
+            {
+              "id": "3",
+              "surface": "お",
+              "language": "ja"
+            },
+            {
+              "id": "4",
+              "surface": "つ",
+              "language": "ja"
+            },
+            {
+              "id": "5",
+              "surface": "な",
+              "language": "ja"
+            },
+            {
+              "id": "6",
+              "surface": "ぐ",
+              "language": "ja"
+            },
+            {
+              "id": "7",
+              "surface": "ま",
+              "language": "ja"
+            },
+            {
+              "id": "8",
+              "surface": "で",
+              "language": "ja"
+            }
+          ],
+          "notes": [
+            {
+              "id": "100",
+              "startTick": 1920,
+              "durationTick": 120,
+              "midiKey": 67,
+              "lyricId": "1",
+              "articulation": "normal"
+            },
+            {
+              "id": "101",
+              "startTick": 2040,
+              "durationTick": 360,
+              "midiKey": 69,
+              "lyricId": "2",
+              "articulation": "normal"
+            },
+            {
+              "id": "102",
+              "startTick": 2400,
+              "durationTick": 840,
+              "midiKey": 66,
+              "lyricId": "3",
+              "articulation": "normal"
+            },
+            {
+              "id": "103",
+              "startTick": 3240,
+              "durationTick": 240,
+              "midiKey": 72,
+              "lyricId": "4",
+              "articulation": "normal"
+            },
+            {
+              "id": "104",
+              "startTick": 3480,
+              "durationTick": 1200,
+              "midiKey": 64,
+              "lyricId": "5",
+              "articulation": "normal"
+            },
+            {
+              "id": "105",
+              "startTick": 4680,
+              "durationTick": 480,
+              "midiKey": 71,
+              "lyricId": "6",
+              "articulation": "normal"
+            },
+            {
+              "id": "106",
+              "startTick": 5160,
+              "durationTick": 720,
+              "midiKey": 69,
+              "lyricId": "7",
+              "articulation": "normal"
+            },
+            {
+              "id": "107",
+              "startTick": 5880,
+              "durationTick": 1920,
+              "midiKey": 67,
+              "lyricId": "8",
+              "articulation": "normal"
+            },
+            {
+              "id": "108",
+              "startTick": 9720,
+              "durationTick": 120,
+              "midiKey": 72,
+              "lyricId": "1",
+              "articulation": "normal"
+            },
+            {
+              "id": "109",
+              "startTick": 9840,
+              "durationTick": 360,
+              "midiKey": 69,
+              "lyricId": "2",
+              "articulation": "normal"
+            },
+            {
+              "id": "10a",
+              "startTick": 10200,
+              "durationTick": 840,
+              "midiKey": 67,
+              "lyricId": "3",
+              "articulation": "normal"
+            },
+            {
+              "id": "10b",
+              "startTick": 11040,
+              "durationTick": 240,
+              "midiKey": 64,
+              "lyricId": "4",
+              "articulation": "normal"
+            },
+            {
+              "id": "10c",
+              "startTick": 11280,
+              "durationTick": 1200,
+              "midiKey": 66,
+              "lyricId": "5",
+              "articulation": "normal"
+            },
+            {
+              "id": "10d",
+              "startTick": 12480,
+              "durationTick": 480,
+              "midiKey": 71,
+              "lyricId": "6",
+              "articulation": "normal"
+            },
+            {
+              "id": "10e",
+              "startTick": 12960,
+              "durationTick": 720,
+              "midiKey": 69,
+              "lyricId": "7",
+              "articulation": "normal"
+            },
+            {
+              "id": "10f",
+              "startTick": 13680,
+              "durationTick": 1920,
+              "midiKey": 67,
+              "lyricId": "8",
+              "articulation": "normal"
+            }
+          ],
+          "phonemeOverrides": [],
+          "unitSelectionOverrides": [],
+          "seamOverrides": [],
+          "pitchAutomation": []
+        }
+      ]
+    }
+  ],
+  "audioTracks": []
+}

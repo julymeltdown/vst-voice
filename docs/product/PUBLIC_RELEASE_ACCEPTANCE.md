@@ -53,7 +53,7 @@ renewal cannot create a digest cycle.
 | `PR-007-bank-ready` | Rights, musical, package, and installed-bank identity |
 | `PR-008-target-matrices` | Apple Silicon `UA-001..UA-020` and separate Windows `PW-001..PW-020` |
 | `PR-009-update-channel` | Signed download, update, pause, repair, supersede, and revoke metadata |
-| `PR-010-support-intake` | Intake through acknowledgement, triage, reproduction, disposition, communication, and retention/deletion |
+| `PR-010-support-intake` | Bundle-hash-bound intake through acknowledgement, triage, reproduction, disposition, communication, withdrawal, and retention/deletion with a named owner per stage |
 | `PR-011-incident-drill` | Candidate-bound pause, repair, rollback, revoke rehearsal, and communication |
 | `PR-012-archive-restore` | Restored immutable archive and raw evidence hashes |
 | `PR-013-approvals` | Role-bound Ed25519 reviewer quorum plus separately signed release-manager operation |

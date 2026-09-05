@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://project-seam.invalid/schemas/public-support-bundle-2.json",
+  "title": "Project SEAM preview-bound public support bundle",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "purpose", "privacyClass", "candidateId", "createdAt", "entries"],
+  "properties": {
+    "schemaVersion": {"const": 2},
+    "purpose": {"const": "support-bundle"},
+    "privacyClass": {"enum": ["PublicTechnical", "RestrictedSupportData"]},
+    "candidateId": {"type": "string", "minLength": 1, "maxLength": 128},
+    "createdAt": {"type": "string", "format": "date-time"},
+    "entries": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "size", "sha256", "kind", "privacyClass", "requiresConsent", "consented"],
+        "properties": {
+          "path": {"type": "string", "minLength": 1},
+          "size": {"type": "integer", "minimum": 0},
+          "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+          "kind": {"enum": ["Generated", "Attachment"]},
+          "privacyClass": {"enum": ["PublicTechnical", "RestrictedSupportAttachment"]},
+          "requiresConsent": {"type": "boolean"},
+          "consented": {"type": "boolean"}
+        },
+        "allOf": [
+          {
+            "if": {"properties": {"kind": {"const": "Generated"}}, "required": ["kind"]},
+            "then": {
+              "properties": {
+                "privacyClass": {"const": "PublicTechnical"},
+                "requiresConsent": {"const": false},
+                "consented": {"const": true}
+              }
+            }
+          },
+          {
+            "if": {"properties": {"kind": {"const": "Attachment"}}, "required": ["kind"]},
+            "then": {
+              "properties": {
+                "privacyClass": {"const": "RestrictedSupportAttachment"},
+                "requiresConsent": {"const": true},
+                "consented": {"const": true}
+              }
+            }
+          }
+        ]
+      }
+    }
+  }
+}

@@ -16,6 +16,10 @@ core::Result<void> Note::validate() const {
     return core::failure(core::ErrorCode::InvariantViolation,
                          "Note duration must be positive", id.toString());
   }
+  if (startTick > time::Tick{std::numeric_limits<std::int64_t>::max()} - durationTick) {
+    return core::failure(core::ErrorCode::InvariantViolation,
+                         "Note end tick exceeds the supported range", id.toString());
+  }
   if (midiKey > 127) {
     return core::failure(core::ErrorCode::InvariantViolation,
                          "MIDI key must be in the range 0..127", id.toString());

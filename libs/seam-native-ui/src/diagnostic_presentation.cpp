@@ -18,6 +18,9 @@ std::string actionLabel(authoring::DiagnosticAction action) {
     case authoring::DiagnosticAction::RecoverAutosave: return "Recover autosave";
     case authoring::DiagnosticAction::OpenRecoveryFolder: return "Open recovery folder";
     case authoring::DiagnosticAction::OpenSupport: return "Get support";
+    case authoring::DiagnosticAction::ExportSupportBundle: return "Export";
+    case authoring::DiagnosticAction::OpenSupportFolder: return "Reveal";
+    case authoring::DiagnosticAction::DeleteSupportBundle: return "Delete";
     case authoring::DiagnosticAction::Dismiss: return "Dismiss";
     case authoring::DiagnosticAction::CopyDiagnostic: return "Copy details";
   }
@@ -37,6 +40,12 @@ DiagnosticPresentation presentDiagnostic(const authoring::Diagnostic& diagnostic
   } else if (diagnostic.code == "RENDER_FAILED") {
     result.title = "Render did not complete";
     result.impact = "Your project remains editable; retry after resolving the reported issue.";
+  } else if (diagnostic.code == "SUPPORT_BUNDLE_PREVIEW_READY") {
+    result.title = "Support report is ready to review";
+    result.impact = "Review listed files before export.";
+  } else if (diagnostic.code == "SUPPORT_BUNDLE_EXPORTED") {
+    result.title = "Support report exported";
+    result.impact = "Local only. Reveal or delete this report.";
   } else {
     result.title = "Project needs attention";
     result.impact = diagnostic.messageKey.empty() ? "Review the available recovery action."
@@ -52,6 +61,11 @@ DiagnosticPresentation presentDiagnostic(const authoring::Diagnostic& diagnostic
       authoring::DiagnosticAction::RecoverAutosave,
       authoring::DiagnosticAction::SaveAs,
       authoring::DiagnosticAction::OpenRecoveryFolder,
+      authoring::DiagnosticAction::ExportSupportBundle,
+      authoring::DiagnosticAction::OpenSupportFolder,
+      authoring::DiagnosticAction::DeleteSupportBundle,
+      authoring::DiagnosticAction::OpenSupport,
+      authoring::DiagnosticAction::Dismiss,
   };
   for (const auto action : priority) {
     if (result.primaryActions.size() == 2U) break;

@@ -458,7 +458,7 @@ float LiveVoiceEngine::renderVoice(
   if (voice.legatoFadeInRemaining && voice.legatoFadeLength) {
     const auto progress = 1.0F -
                           static_cast<float>(voice.legatoFadeInRemaining) /
-                              voice.legatoFadeLength;
+                              static_cast<float>(voice.legatoFadeLength);
     result *= std::sin(progress * static_cast<float>(kPi) * 0.5F);
     --voice.legatoFadeInRemaining;
   }
@@ -466,7 +466,7 @@ float LiveVoiceEngine::renderVoice(
   if (voice.legatoFadeOutRemaining && voice.legatoFadeLength) {
     const auto progress = 1.0F -
                           static_cast<float>(voice.legatoFadeOutRemaining) /
-                              voice.legatoFadeLength;
+                              static_cast<float>(voice.legatoFadeLength);
     result *= std::cos(progress * static_cast<float>(kPi) * 0.5F);
     --voice.legatoFadeOutRemaining;
     if (!voice.legatoFadeOutRemaining) {
@@ -476,7 +476,7 @@ float LiveVoiceEngine::renderVoice(
 
   if (voice.tailRemaining && voice.tailLength) {
     const auto ratio = static_cast<float>(voice.tailRemaining) /
-                       voice.tailLength;
+                       static_cast<float>(voice.tailLength);
     result += voice.tailSample *
               std::sin(ratio * static_cast<float>(kPi) * 0.5F);
     --voice.tailRemaining;

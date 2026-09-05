@@ -15,7 +15,7 @@ contracts remain evidence-free and `BLOCKED`.
    `ArtifactRoot` from `FreezeRoot` and delivered signed hashes.
 5. Collect clean-installed macOS and Windows trees, bank identity, the Apple
    Silicon UA matrix, the independent `PW-001` through `PW-020` Windows matrix,
-   update lifecycle, support intake, incident drill, rollback, and separate
+   update lifecycle, hash-bound support intake/withdrawal/deletion, incident drill, rollback, and separate
    terminal-revoke rehearsal evidence.
 6. Validate the Windows contract with
    [verify_public_windows_standalone_contract.py](../../scripts/verify_public_windows_standalone_contract.py).

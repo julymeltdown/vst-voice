@@ -5,7 +5,7 @@
 **Required approval: privacy/security review and the named release authority.**
 
 Document ID: `project-seam.public.privacy`
-Version: `public-privacy-1.0.0`
+Version: `public-privacy-1.1.0`
 Channel: `public-direct-download`
 
 ## Acceptance and scope
@@ -38,12 +38,28 @@ acknowledgement, triage, reproduction, resolution or escalation, user
 communication, and retention or deletion. Restricted attachments are shared
 only with people assigned to the report.
 
+The acknowledgement identifies the exact exported bundle SHA-256, candidate
+lineage, destination ID, and acknowledgement ID. Every later lifecycle record
+uses that same bundle hash. A filename, ticket title, email subject, or newly
+generated export cannot substitute for the acknowledged bytes.
+
 ## Retention, deletion, and withdrawal
 
-The active support destination must state its retention window. A user may
-withdraw optional attachments and request deletion of support material unless
-law or an active security investigation requires limited preservation. The
-ticket retains only the minimum audit record needed to explain the disposition.
+Retention policy `project-seam.public.support-retention-1` permits public
+technical fields for at most 180 days and restricted attachments or contact
+data for at most 30 days. Earlier deletion is allowed when the report no longer
+needs the material. A user may withdraw optional attachments or request
+deletion by supplying the acknowledgement ID or exact bundle SHA-256.
+
+Withdrawal and deletion records must repeat that bundle SHA-256 and identify
+the responsible owner. After deletion, the service may retain only a minimal
+audit record containing the opaque acknowledgement ID, candidate lineage,
+bundle SHA-256, lifecycle times, and disposition. It must not retain contact
+data, attachment bytes, projects, lyrics, audio, bank bytes, or raw logs.
+
+Law or an active security investigation may require narrower preservation.
+The assigned privacy or security owner records its basis, scope, and expiry;
+the exception does not convert restricted material into public technical data.
 
 ## Release status
 

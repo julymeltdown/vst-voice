@@ -231,6 +231,7 @@ EditorSceneState NativeEditorController::sceneState() const {
   state.voicebankBrowserVisible = voicebankBrowserVisible_;
   state.voicebankCards = voicebankCards_;
   state.audioSettings = audioSettings_;
+  state.recoverySupport = recoverySupportPanel_.view();
   state.exportProgress = exportProgress_;
   state.lastExport = lastExport_;
   state.diagnostics.reserve(diagnosticPanel_.entries().size());
@@ -408,6 +409,40 @@ core::Result<void> NativeEditorController::dispatchAccessibility(
              element.rfind("audio.device.", 0U) == 0U) &&
             requested == SemanticAction::SetFocus) {
           return core::success();
+        }
+        if (element == "support.panel" &&
+            requested == SemanticAction::SetFocus) {
+          return core::success();
+        }
+        constexpr auto supportItemPrefix = std::string_view{"support.item."};
+        if (element.starts_with(supportItemPrefix)) {
+          std::size_t index = 0U;
+          const auto suffix = element.substr(supportItemPrefix.size());
+          const auto parsed = std::from_chars(
+              suffix.data(), suffix.data() + suffix.size(), index);
+          if (parsed.ec != std::errc{} ||
+              parsed.ptr != suffix.data() + suffix.size()) {
+            return core::failure(core::ErrorCode::InvalidArgument,
+                                 "Support report accessibility index is invalid");
+          }
+          const auto& support = recoverySupportPanel_.view();
+          if (index >= support.items.size()) {
+            return core::failure(core::ErrorCode::InvalidArgument,
+                                 "Support report accessibility index is unavailable");
+          }
+          if (requested == SemanticAction::SetFocus) {
+            auto view = support;
+            view.firstVisibleItem = index;
+            recoverySupportPanel_.update(std::move(view));
+            rebuildAccessibilityTree();
+            repaint();
+            return core::success();
+          }
+          if (requested != SemanticAction::Activate) {
+            return core::failure(core::ErrorCode::Unsupported,
+                                 "Support report only supports activation");
+          }
+          return selectSupportReport(index);
         }
         if (element.rfind("audio.device.", 0U) == 0U &&
             requested == SemanticAction::Activate) {
@@ -841,6 +876,40 @@ core::Result<void> NativeEditorController::activateDiagnostic(
 void NativeEditorController::dismissDiagnostic(std::size_t index) {
   diagnosticPanel_.dismiss(index);
   repaint();
+}
+
+void NativeEditorController::setRecoverySupportView(RecoverySupportView view) {
+  if (view.visible) {
+    voicebankBrowserVisible_ = false;
+    audioSettings_.visible = false;
+  }
+  recoverySupportPanel_.update(std::move(view));
+  repaint();
+}
+
+core::Result<void> NativeEditorController::selectSupportReport(
+    std::size_t index) {
+  const auto& current = recoverySupportPanel_.view();
+  if (!current.visible || current.mode != RecoverySupportMode::Reports ||
+      index >= current.items.size()) {
+    return core::failure(core::ErrorCode::InvalidArgument,
+                         "Support report selection is unavailable");
+  }
+  if (!callbacks_.selectSupportReport) {
+    return core::failure(core::ErrorCode::Unsupported,
+                         "Support report selection is not connected");
+  }
+  const auto selected = callbacks_.selectSupportReport(index);
+  if (!selected) return selected;
+  auto view = recoverySupportPanel_.view();
+  if (index < view.items.size()) {
+    for (std::size_t item = 0U; item < view.items.size(); ++item) {
+      view.items[item].selected = item == index;
+    }
+    recoverySupportPanel_.update(std::move(view));
+  }
+  repaint();
+  return core::success();
 }
 
 void NativeEditorController::resize(double logicalWidth,
@@ -1782,7 +1851,30 @@ core::Result<void> NativeEditorController::pointerDown(
     repaint();
     return core::success();
   }
+  const auto& supportView = recoverySupportPanel_.view();
+  if (supportView.visible) {
+    const auto panelX = std::max(
+        layout_.keyboardWidth + layout_.minimumTimelineWidth,
+        logicalWidth_ - layout_.characterDockWidth);
+    if (event.position.x >= panelX &&
+        event.position.y >= layout_.toolbarHeight &&
+        event.position.y < layout_.pianoBottom(logicalHeight_)) {
+      const auto first = std::min(supportView.firstVisibleItem,
+                                  supportView.items.size());
+      for (std::size_t index = first; index < supportView.items.size(); ++index) {
+        const auto row = layout_.supportItemBounds(panelX, logicalWidth_,
+                                                   index - first);
+        if (row.y >= layout_.pianoBottom(logicalHeight_)) break;
+        if (!row.contains(event.position)) continue;
+        return supportView.mode == RecoverySupportMode::Reports
+                   ? selectSupportReport(index)
+                   : core::success();
+      }
+      return core::success();
+    }
+  }
   if (!voicebankBrowserVisible_ && !audioSettings_.visible &&
+      !supportView.visible &&
       session_.project().settings().characterDisplay ==
           domain::CharacterDisplayMode::Off &&
       !arrangementPanel_.tracks().empty()) {
@@ -2486,6 +2578,21 @@ core::Result<void> NativeEditorController::keyDown(const KeyEvent& event) {
     closeSampleMicroscope();
     return core::success();
   }
+  if (recoverySupportPanel_.view().visible &&
+      event.key == NativeKey::Escape) {
+    if (!diagnosticPanel_.entries().empty()) {
+      const auto& diagnostic = diagnosticPanel_.entries().front().diagnostic;
+      const auto dismiss = std::find(diagnostic.actions.begin(),
+                                     diagnostic.actions.end(),
+                                     authoring::DiagnosticAction::Dismiss);
+      if (dismiss != diagnostic.actions.end()) {
+        return activateDiagnostic(0U, *dismiss);
+      }
+    }
+    recoverySupportPanel_.update({});
+    repaint();
+    return core::success();
+  }
   if (composition_.active()) {
     if (event.key == NativeKey::Escape) {
       cancelTextComposition();
@@ -2772,16 +2879,22 @@ core::Result<void> NativeEditorController::keyDown(const KeyEvent& event) {
       repaint();
     }
   } else if (event.key == NativeKey::V) {
+    if (recoverySupportPanel_.view().visible) return core::success();
     voicebankBrowserVisible_ = !voicebankBrowserVisible_;
-    if (voicebankBrowserVisible_) audioSettings_.visible = false;
+    if (voicebankBrowserVisible_) {
+      audioSettings_.visible = false;
+    }
     if (callbacks_.viewChanged) {
       callbacks_.viewChanged();
     } else {
       repaint();
     }
   } else if (event.key == NativeKey::I) {
+    if (recoverySupportPanel_.view().visible) return core::success();
     audioSettings_.visible = !audioSettings_.visible;
-    if (audioSettings_.visible) voicebankBrowserVisible_ = false;
+    if (audioSettings_.visible) {
+      voicebankBrowserVisible_ = false;
+    }
     if (callbacks_.viewChanged) {
       callbacks_.viewChanged();
     } else {
@@ -2816,6 +2929,24 @@ core::Result<void> NativeEditorController::keyDown(const KeyEvent& event) {
 void NativeEditorController::scroll(double deltaX, double deltaY,
                                     ui::Point anchor,
                                     InputModifiers modifiers) noexcept {
+  const auto& support = recoverySupportPanel_.view();
+  if (support.visible && !support.items.empty()) {
+    const auto panelX = std::max(
+        layout_.keyboardWidth + layout_.minimumTimelineWidth,
+        logicalWidth_ - layout_.characterDockWidth);
+    if (anchor.x >= panelX) {
+      auto view = support;
+      if (deltaY < 0.0) {
+        view.firstVisibleItem = std::min(
+            view.firstVisibleItem + 1U, view.items.size() - 1U);
+      } else if (deltaY > 0.0 && view.firstVisibleItem > 0U) {
+        --view.firstVisibleItem;
+      }
+      recoverySupportPanel_.update(std::move(view));
+      repaint();
+      return;
+    }
+  }
   if (modifiers.control || modifiers.command) {
     pianoRoll_.timeline().zoomAround(
         std::max(0.0, anchor.x - layout_.keyboardWidth),

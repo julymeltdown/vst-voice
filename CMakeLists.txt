@@ -151,6 +151,9 @@ add_library(seam_domain
   libs/seam-domain/src/tempo_map.cpp
   libs/seam-domain/src/meter_map.cpp
   libs/seam-domain/src/note.cpp
+  libs/seam-domain/src/note_vibrato.cpp
+  libs/seam-domain/src/dynamics_automation.cpp
+  libs/seam-domain/src/performance_intent.cpp
   libs/seam-domain/src/phoneme.cpp
   libs/seam-domain/src/render_controls.cpp
   libs/seam-domain/src/routing.cpp
@@ -376,7 +379,7 @@ if(WIN32)
     libs/seam-platform/src/crash_capture_win32.cpp)
   target_compile_definitions(seam_platform PRIVATE
     SEAM_AUDIO_WASAPI=1 WIN32_LEAN_AND_MEAN NOMINMAX _WIN32_WINNT=0x0A00)
-  target_link_libraries(seam_platform PRIVATE ole32 uuid avrt shell32)
+  target_link_libraries(seam_platform PRIVATE ole32 uuid avrt shell32 advapi32)
 elseif(APPLE)
   enable_language(OBJCXX)
   target_sources(seam_platform PRIVATE
@@ -1032,6 +1035,42 @@ endif()
 
 if(SEAM_BUILD_TESTS)
   enable_testing()
+  add_executable(seam_singing_quality_render
+    tools/singing_quality/render_main.cpp
+    tools/singing_quality/render_inputs.cpp
+    tools/singing_quality/render_packet.cpp)
+  target_link_libraries(seam_singing_quality_render PRIVATE seam_rendering)
+  target_compile_definitions(seam_singing_quality_render PRIVATE
+    SEAM_SINGING_COMPILER_ID="${CMAKE_CXX_COMPILER_ID}"
+    SEAM_SINGING_COMPILER_VERSION="${CMAKE_CXX_COMPILER_VERSION}"
+    SEAM_SINGING_CONFIGURATION="$<CONFIG>")
+  seam_apply_compiler_options(seam_singing_quality_render)
+
+  add_executable(seam_synthesis_quality_tests
+    tests/test_main.cpp
+    tests/test_synthesis.cpp
+    tests/test_voicebank.cpp
+    tests/test_sample_rate_converter.cpp)
+  target_include_directories(seam_synthesis_quality_tests PRIVATE tests)
+  target_link_libraries(seam_synthesis_quality_tests PRIVATE
+    seam_rendering seam_application)
+  seam_apply_compiler_options(seam_synthesis_quality_tests)
+  add_test(NAME seam_synthesis_quality_tests COMMAND seam_synthesis_quality_tests)
+
+  add_executable(seam_performance_contract_tests
+    tests/test_main.cpp tests/test_performance_contracts.cpp)
+  target_include_directories(seam_performance_contract_tests PRIVATE tests)
+  target_link_libraries(seam_performance_contract_tests PRIVATE seam_domain seam_formats)
+  target_compile_definitions(seam_performance_contract_tests PRIVATE
+    SEAM_PERFORMANCE_SOURCE_ROOT="${CMAKE_CURRENT_SOURCE_DIR}")
+  seam_apply_compiler_options(seam_performance_contract_tests)
+  add_test(NAME seam_performance_contract_tests COMMAND seam_performance_contract_tests)
+
+  add_executable(seam_crash_capture_probe
+    tests/helpers/crash_capture_probe.cpp)
+  target_link_libraries(seam_crash_capture_probe PRIVATE seam_platform seam_core)
+  seam_apply_compiler_options(seam_crash_capture_probe)
+
   set(SEAM_TEST_SOURCES
     tests/test_main.cpp
     tests/test_time.cpp
@@ -1178,6 +1217,27 @@ if(SEAM_BUILD_TESTS)
     TIMEOUT 120)
 
   if(Python3_Interpreter_FOUND)
+    add_test(NAME seam_singing_quality_contract_tests
+      COMMAND ${Python3_EXECUTABLE} -m unittest discover
+        -s tests/singing_quality -p "test_*.py" -v)
+    set_tests_properties(seam_singing_quality_contract_tests PROPERTIES
+      WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+      ENVIRONMENT "PYTHONDONTWRITEBYTECODE=1")
+    add_test(NAME seam_singing_quality_workflow
+      COMMAND ${CMAKE_COMMAND} -E env
+        "PYTHONDONTWRITEBYTECODE=1"
+        "SEAM_SINGING_QUALITY_DRIVER=$<TARGET_FILE:seam_singing_quality_render>"
+        "SEAM_SINGING_QUALITY_ANALYZER=$<TARGET_FILE:seam_voicebank_cli>"
+        "SEAM_SINGING_QUALITY_BUILD_EVIDENCE=${CMAKE_CURRENT_BINARY_DIR}/CMakeCache.txt"
+        ${Python3_EXECUTABLE} -m unittest discover
+          -s tests/singing_quality -p test_driver_workflow.py -v)
+    set_tests_properties(seam_singing_quality_workflow PROPERTIES
+      WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} TIMEOUT 900)
+    add_test(NAME seam_public_release_python_tests
+      COMMAND ${Python3_EXECUTABLE} -m unittest discover
+        -s tests/production -p "test_*.py")
+    set_tests_properties(seam_public_release_python_tests PROPERTIES
+      WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} TIMEOUT 180)
     add_test(NAME seam_tracked_source_closure_unit
       COMMAND ${Python3_EXECUTABLE} -m unittest
         tests/test_tracked_source_closure.py)
@@ -1251,6 +1311,9 @@ if(SEAM_BUILD_TESTS)
   target_include_directories(seam_recovery_support_tests PRIVATE tests)
   target_link_libraries(seam_recovery_support_tests PRIVATE
     seam_authoring_runtime seam_platform seam_formats seam_core)
+  target_compile_definitions(seam_recovery_support_tests PRIVATE
+    SEAM_CRASH_CAPTURE_PROBE_PATH="$<TARGET_FILE:seam_crash_capture_probe>")
+  add_dependencies(seam_recovery_support_tests seam_crash_capture_probe)
   seam_apply_compiler_options(seam_recovery_support_tests)
   add_test(NAME seam_recovery_support_tests COMMAND seam_recovery_support_tests)
 
@@ -1296,7 +1359,8 @@ if(SEAM_BUILD_TESTS)
       apps/seam-voicebank-studio-native)
   endif()
   target_compile_definitions(seam_tests PRIVATE
-    SEAM_SOURCE_PRODUCTION_VOICEBANK="${CMAKE_CURRENT_SOURCE_DIR}/assets/demo-human-voicebank-public-domain/production-bank")
+    SEAM_SOURCE_PRODUCTION_VOICEBANK="${CMAKE_CURRENT_SOURCE_DIR}/assets/demo-human-voicebank-public-domain/production-bank"
+    SEAM_CRASH_CAPTURE_PROBE_PATH="$<TARGET_FILE:seam_crash_capture_probe>")
   target_link_libraries(seam_tests PRIVATE
     seam_distribution seam_editor_inspection seam_rendering seam_synthesis seam_voicebank_production seam_voicebank seam_editor_ui seam_phonemizer seam_formats
     seam_playback_platform seam_platform seam_authoring_runtime seam_application seam_domain seam_text seam_clap seam_core)
@@ -1307,6 +1371,7 @@ if(SEAM_BUILD_TESTS)
     target_link_libraries(seam_tests PRIVATE seam_clap_editor seam_live_voice)
   endif()
   seam_apply_compiler_options(seam_tests)
+  add_dependencies(seam_tests seam_crash_capture_probe)
   add_test(NAME seam_tests COMMAND seam_tests)
   set_tests_properties(seam_tests PROPERTIES
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}

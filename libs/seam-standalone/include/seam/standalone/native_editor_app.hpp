@@ -114,6 +114,10 @@ private:
   [[nodiscard]] core::Result<void> handleDiagnosticAction(
       const authoring::Diagnostic& diagnostic,
       authoring::DiagnosticAction action);
+  [[nodiscard]] core::Result<void> refreshSupportReports(
+      const std::optional<std::filesystem::path>& preferred = std::nullopt);
+  [[nodiscard]] core::Result<void> selectSupportReport(std::size_t index);
+  void refreshCrashRecoveryContext();
   void setAudioUnavailable(const core::Error& error) noexcept;
   void clearAudioUnavailable() noexcept;
   void record(const core::Result<void>& result) noexcept;
@@ -129,7 +133,12 @@ private:
   std::unique_ptr<platform::IAudioDeviceCatalog> audioDeviceCatalog_;
   std::unique_ptr<platform::CrashCapture> crashCapture_;
   std::optional<platform::CrashMarker> startupCrashMarker_;
+  std::optional<platform::CrashRecoveryContext> crashRecoveryContext_;
   std::unique_ptr<authoring::SupportBundleService> supportBundle_;
+  std::optional<authoring::PreparedSupportBundle> pendingSupportBundle_;
+  std::vector<authoring::SupportBundleRecord> supportReports_;
+  std::size_t selectedSupportReportIndex_{0U};
+  std::filesystem::path supportExportRoot_;
   std::unique_ptr<authoring::AudioSettingsController> audioSettings_;
   std::unique_ptr<authoring::AudioSettingsStore> audioSettingsStore_;
   std::filesystem::path recoveryRoot_;
