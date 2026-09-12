@@ -130,6 +130,49 @@ def _workspace(root: Path, recovered: bool = False) -> tuple[Path, dict]:
 
 
 class ProductionDraftParityTests(unittest.TestCase):
+    def test_style_inventory_creates_cpp_workspace_verified_by_python(self) -> None:
+        from tools.voicebank_script_generator.draft_inventory import generate_draft_inventory
+        from tools.external_beta._production_draft_validation import _project
+        cli = ROOT / "build/release/seam_voicebank_cli"
+        if not cli.is_file():
+            self.skipTest("C++ CLI is not built")
+        inventory = generate_draft_inventory({"profileId": "style-parity", "supportedStyles": ["neutral", "soft"],
+            "vowels": ["a"], "consonants": ["m"], "specialPhones": ["N"], "includeKinds": ["sustain"], "alternateTakes": 1})
+        definition = prepare_production_draft_definition(inventory, None, project_id="style-parity", operator_id="producer")
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path = root / "definition.json"
+            inventory_path = root / "inventory.json"
+            inventory_path.write_bytes(_text(inventory))
+            prepared = subprocess.run([sys.executable, "-m", "tools.external_beta.voicebank_production", "prepare-draft",
+                "--inventory", str(inventory_path), "--project-id", "style-parity", "--operator-id", "producer",
+                "--output", str(path)], cwd=ROOT, capture_output=True, text=True, timeout=20)
+            self.assertEqual(0, prepared.returncode, prepared.stderr)
+            self.assertEqual(definition, json.loads(path.read_text()))
+            workspace = root / "workspace"
+            result = subprocess.run([str(cli), "init-production", str(workspace), str(path),
+                hashlib.sha256(path.read_bytes()).hexdigest(), "producer", "2026-09-13T00:00:00Z"], capture_output=True, text=True, timeout=20)
+            self.assertEqual(0, result.returncode, result.stderr)
+            verified = validate_production_draft_workspace(workspace, inventory)
+            self.assertTrue(verified.passed, verified.errors)
+            stored = json.loads((workspace / "project.json").read_text())
+            self.assertEqual(6, len(stored["unitAssignments"]))
+            self.assertEqual({"neutral", "soft"}, {row["style"] for row in stored["unitAssignments"]})
+            for index, mutate in enumerate((
+                lambda v: v.pop("language"),
+                lambda v: v["unitAssignments"][0].pop("style"),
+                lambda v: v["unitAssignments"].append(copy.deepcopy(v["unitAssignments"][0])),
+                lambda v: v.update(schemaVersion=2),
+            )):
+                bad = copy.deepcopy(definition); mutate(bad)
+                errors = []; _project(workspace, bad, "test", errors)
+                self.assertTrue(errors)
+                path.write_bytes(_text(bad))
+                rejected = subprocess.run([str(cli), "init-production", str(root / f"bad-{index}"), str(path),
+                    hashlib.sha256(path.read_bytes()).hexdigest(), "producer", "2026-09-13T00:00:00Z"], capture_output=True, text=True, timeout=20)
+                self.assertNotEqual(0, rejected.returncode)
+                self.assertFalse((root / f"bad-{index}").exists())
+
     def test_actual_cli_registers_source_without_prefilled_policy_or_approval(self) -> None:
         cli = ROOT / "build/release/seam_voicebank_cli"
         if not cli.is_file():

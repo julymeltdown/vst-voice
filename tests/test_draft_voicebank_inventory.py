@@ -99,9 +99,11 @@ class DraftInventoryTests(unittest.TestCase):
         self.assertEqual(1, legacy["schemaVersion"])
         self.assertEqual([], validate_inventory(legacy))
         self.assertTrue(validate_inventory(generate_draft_inventory(self.profile())))
-        with self.assertRaisesRegex(ValueError, "invalid draft inventory"):
-            prepare_production_draft_definition(generate_draft_inventory(self.profile()), None,
-                                                project_id="pilot", operator_id="producer")
+        definition = prepare_production_draft_definition(generate_draft_inventory(self.profile()), None,
+                                                        project_id="pilot", operator_id="producer")
+        self.assertEqual(4, definition["schemaVersion"])
+        self.assertEqual("ja", definition["language"])
+        self.assertEqual({"neutral", "soft"}, {row["style"] for row in definition["unitAssignments"]})
 
     def test_malformed_inputs_return_errors(self):
         for value in (None, [], {}, {"profileId": []}):

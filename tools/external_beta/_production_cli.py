@@ -63,7 +63,7 @@ def _parser() -> argparse.ArgumentParser:
     validate.add_argument("--inventory", type=Path)
     validate.add_argument("--strategies", type=Path)
     validate.add_argument("--workspace", type=Path, required=True)
-    validate.add_argument("--draft", action="store_true", help="Verify source-aware schema-2/3 persistence/evidence, not release qualification")
+    validate.add_argument("--draft", action="store_true", help="Verify source-aware schema-2/3/4 persistence/evidence, not release qualification")
     return parser
 
 

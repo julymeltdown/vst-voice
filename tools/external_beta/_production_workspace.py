@@ -13,6 +13,7 @@ from tools.voicebank_script_generator import production_assignments, validate_in
 from ._production_common import ProductionResult, is_hex_digest, is_timestamp, sha256_file
 from ._source_admission import validate_source_strategy_document
 from ._source_admission import validate_source_strategy_draft
+from ._production_inventory import inventory_errors, producer_assignments, style_owned
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
@@ -52,13 +53,13 @@ def prepare_production_draft_definition(
     operator_id: str,
     repository_root: Path = REPOSITORY_ROOT,
 ) -> dict[str, Any]:
-    """Prepare schema-2 input for the C++ init-production writer; create no workspace."""
+    """Prepare versioned input for the C++ init-production writer; create no workspace."""
     if not isinstance(project_id, str) or not project_id or not isinstance(operator_id, str) or not operator_id:
         raise ValueError("project_id and operator_id are required")
     if inventory is not None:
-        inventory_errors = validate_inventory(inventory)
-        if inventory_errors:
-            raise ValueError("invalid draft inventory: " + "; ".join(inventory_errors))
+        errors = inventory_errors(inventory)
+        if errors:
+            raise ValueError("invalid draft inventory: " + "; ".join(errors))
     strategies = strategies if strategies is not None else {
         "schemaVersion": 2, "status": "DRAFT", "assetAdmissionStatus": "NOT_RUN", "selectedStrategyId": "", "strategies": [],
     }
@@ -66,8 +67,8 @@ def prepare_production_draft_definition(
     if not validation.passed:
         raise ValueError("invalid source draft: " + "; ".join(validation.errors))
     selected = next((item for item in strategies["strategies"] if item["id"] == strategies["selectedStrategyId"]), None)
-    return {
-        "format": "com.project-seam.voicebank-production", "schemaVersion": 2, "lifecycle": "DRAFT",
+    result = {
+        "format": "com.project-seam.voicebank-production", "schemaVersion": 4 if style_owned(inventory) else 2, "lifecycle": "DRAFT",
         "projectId": project_id, "inventoryId": inventory["profileId"] if inventory else "",
         "inventorySha256": inventory["inventorySha256"] if inventory else "",
         "selectedSourceStrategyId": selected["id"] if selected else "",
@@ -75,9 +76,12 @@ def prepare_production_draft_definition(
         "licenseSha256": selected["licenseSha256"] if selected else "",
         "immutableAssetRoot": "assets", "sourceStrategies": [_project_strategy(item, repository_root) for item in strategies["strategies"]],
         "assets": [], "takes": [], "derivedRevisions": [], "metadataRevisions": [], "reviews": [], "sourceBindings": [],
-        "unitAssignments": production_assignments(inventory) if inventory else [],
+        "unitAssignments": producer_assignments(inventory) if inventory else [],
         "operators": [{"operatorId": operator_id, "role": "PRODUCER"}], "lastDurableGeneration": 0,
     }
+    if style_owned(inventory):
+        result.update(language=inventory["language"], sourceQualityAssessments=[])
+    return result
 
 
 def validate_production_draft_workspace(

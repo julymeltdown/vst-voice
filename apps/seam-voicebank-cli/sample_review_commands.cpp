@@ -94,9 +94,9 @@ int initializeDraft(int argc, char** argv) {
   const auto definition=readCapturedText(argv[3],argv[4]); if (!definition) return fail(definition.error());
   auto project=production::decodeProductionProject(definition.value()); if (!project) return fail(project.error());
   const auto& state=project.value();
-  if (state.schemaVersion!=production::kProductionProjectSchemaVersion || state.lastDurableGeneration!=0U ||
+  if ((state.schemaVersion!=production::kProductionProjectSchemaVersion && state.schemaVersion!=production::kProductionStyleSchemaVersion) || state.lastDurableGeneration!=0U ||
       state.lifecycle!=production::ProductionLifecycle::Draft || !state.assets.empty() || !state.takes.empty() ||
-      !state.derivedRevisions.empty() || !state.metadataRevisions.empty() || !state.reviews.empty() || !state.sourceBindings.empty() ||
+      !state.derivedRevisions.empty() || !state.metadataRevisions.empty() || !state.reviews.empty() || !state.sourceBindings.empty() || !state.sourceQualityAssessments.empty() ||
       std::any_of(state.unitAssignments.begin(),state.unitAssignments.end(),[](const auto& assignment) {
         return assignment.state!=production::UnitQueueState::Missing || !assignment.takeId.empty() || assignment.markerReviewed || assignment.pitchReviewed;
       })) return fail({core::ErrorCode::InvalidArgument,"Initialization requires an empty current-schema Draft, not imported data or preapproved material",{}});
@@ -293,7 +293,7 @@ void printSampleReviewUsage() {
     << "  seam_voicebank_cli record-source-quality WORKSPACE STRATEGY PROJECT_SHA256 ID REVIEWER UTC COVERAGE LISTENING EVIDENCE EVIDENCE_SHA256\n"
     << "    Outcomes: pass|blocked|not-assessed. Records an independent supplied decision; never grants source rights or unit approval.\n"
     << "  seam_voicebank_cli init-production WORKSPACE DRAFT_DEFINITION FILE_SHA256 PRODUCER UTC\n"
-    << "    Creates a new empty Draft from a captured schema-2 definition, without musical approval.\n"
+    << "    Creates a new empty Draft from a captured schema-2 or style-owned schema-4 definition, without musical approval.\n"
     << "  seam_voicebank_cli create-sample-draft WORKSPACE BANK_ID VERSION NAME ja|en|ko STYLE OUTPUT_DIRECTORY\n"
     << "    Copies current takes into a new editable manifest with UNREVIEWED marker/pitch estimates; never approves.\n"
     << "  seam_voicebank_cli prepare-sample-review WORKSPACE MANIFEST OUTPUT_PACKET\n"

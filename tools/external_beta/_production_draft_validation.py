@@ -9,10 +9,9 @@ import stat
 from pathlib import Path
 from typing import Any
 
-from tools.voicebank_script_generator import production_assignments, validate_inventory
-
 from ._production_common import ProductionResult, is_hex_digest, is_timestamp, sha256_file
 from ._source_admission import FEASIBILITY, PERMISSIONS, STRATEGY_KINDS
+from ._production_inventory import inventory_errors, producer_assignments, style_owned
 
 MAX_JSON_BYTES = 64 * 1024 * 1024
 MAX_HISTORY_BYTES = 256 * 1024 * 1024
@@ -252,6 +251,8 @@ def _quality_material_identity(project: dict[str, Any], strategy: str) -> str:
             "coverageKey": assignment["coverageKey"], "pitchLayer": assignment["pitchLayer"],
             "promptId": assignment["promptId"], "rawSha256": take["rawAssetSha256"], "effectiveSha256": audio,
             "parentRevisionId": parent, "importerId": source["importerId"], "editors": editors}
+        if project["schemaVersion"] >= 4:
+            rows[take["takeId"]].update(language=project["language"], style=assignment["style"])
     if not rows:
         raise ValueError("assessment has no active source-owned material")
     return _quality_hash({"format": "seam-source-quality-material-v1", "projectId": project["projectId"],
@@ -295,9 +296,16 @@ def _quality_reviewer_independent(project: dict[str, Any], row: dict[str, Any]) 
 
 def _project(root: Path, project: dict[str, Any], label: str, errors: list[str]) -> tuple[dict[str, dict[str, Any]], dict[str, dict[str, Any]]]:
     schema = project.get("schemaVersion")
-    if type(schema) is not int or schema not in (1, 2, 3) or project.get("format") != "com.project-seam.voicebank-production":
+    if type(schema) is not int or schema not in (1, 2, 3, 4) or project.get("format") != "com.project-seam.voicebank-production":
         errors.append(f"{label} producer schema is invalid")
         return {}, {}
+    if (schema == 4 and project.get("language") not in ("ja", "en", "ko")) or (schema < 4 and "language" in project):
+        errors.append(f"{label} language ownership does not match its schema")
+    def valid_style(row):
+        if schema < 4:
+            return "style" not in row
+        value = row.get("style")
+        return isinstance(value, str) and 0 < len(value.encode("utf-8")) <= 128 and not any(ord(c) < 32 or ord(c) == 127 for c in value)
     if not isinstance(project.get("projectId"), str) or not project["projectId"]:
         errors.append(f"{label}.projectId is required")
     if not isinstance(project.get("immutableAssetRoot"), str) or not project["immutableAssetRoot"] or any(
@@ -317,7 +325,7 @@ def _project(root: Path, project: dict[str, Any], label: str, errors: list[str])
     strategies = _records(project, "sourceStrategies", "id", label, errors)
     for strategy in strategies.values():
         _strategy(strategy, f"{label}.sourceStrategies[{strategy['id']}]", errors)
-    assessments = _records(project,"sourceQualityAssessments","id",label,errors) if schema == 3 else {}
+    assessments = _records(project,"sourceQualityAssessments","id",label,errors) if schema >= 3 else {}
     if (schema < 3 and "sourceQualityAssessments" in project) or len(assessments) > 1024:
         errors.append(f"{label} source quality history schema/bounds are invalid")
         assessments = {}
@@ -387,6 +395,12 @@ def _project(root: Path, project: dict[str, Any], label: str, errors: list[str])
         _file(root, relative, digest, 4 * 1024 * 1024, f"{label}.sourceBindings[{binding['id']}]", errors)
     owned_revisions: set[str] = set()
     for take in takes.values():
+        if not valid_style(take) or (schema == 4 and not _integer(take.get("pitchLayer"), 24, 96)):
+            errors.append(f"{label} take style/pitch ownership is invalid")
+        if take.get("supersedesTakeId"):
+            parent = takes.get(take["supersedesTakeId"]) if isinstance(take["supersedesTakeId"], str) else None
+            if not parent or parent is take or any(parent.get(field) != take.get(field) for field in ("coverageKey", "pitchLayer", "promptId", "style")):
+                errors.append(f"{label} retake identity differs from its parent")
         if any(not isinstance(take.get(field), str) or not take[field] for field in ("promptId", "coverageKey")) or not isinstance(take.get("supersedesTakeId"), str):
             errors.append(f"{label} take prompt/coverage/supersedes fields are invalid")
         if take.get("rawAssetSha256") not in assets or not _integer(take.get("pitchLayer"), -(1 << 31), (1 << 31) - 1) or take.get("state") not in QUEUE_STATES:
@@ -423,22 +437,25 @@ def _project(root: Path, project: dict[str, Any], label: str, errors: list[str])
         assignments = []
     if assignments and not project.get("inventoryId"):
         errors.append(f"{label} assignments require an inventory identity")
-    seen: set[tuple[str, int]] = set()
+    seen: set[tuple] = set()
     active: set[str] = set()
     for assignment in assignments:
         if not isinstance(assignment, dict) or not isinstance(assignment.get("coverageKey"), str) or not _integer(assignment.get("pitchLayer"), -(1 << 31), (1 << 31) - 1):
             errors.append(f"{label} assignment identity is invalid")
             continue
+        if not valid_style(assignment) or (schema == 4 and not _integer(assignment.get("pitchLayer"), 24, 96)):
+            errors.append(f"{label} assignment style/pitch ownership is invalid")
+            continue
         if any(not isinstance(assignment.get(field), str) or not assignment[field] for field in ("coverageKey", "promptId", "plannedTakeId")) or not isinstance(assignment.get("takeId"), str) or not isinstance(assignment.get("state"), str) or assignment["state"] not in QUEUE_STATES or any(type(assignment.get(field)) is not bool for field in ("markerReviewed", "pitchReviewed")):
             errors.append(f"{label} assignment prompt/state/review fields are invalid")
-        key = assignment["coverageKey"], assignment["pitchLayer"]
+        key = assignment.get("style", ""), assignment["coverageKey"], assignment["pitchLayer"]
         if key in seen:
             errors.append(f"{label} assignment identity is duplicated")
         seen.add(key)
         if assignment.get("state") == "MISSING" and assignment.get("takeId") == "":
             continue
         take = takes.get(assignment.get("takeId")) if isinstance(assignment.get("takeId"), str) else None
-        if not take or any(assignment.get(field) != take.get(field) for field in ("coverageKey", "pitchLayer", "promptId", "state")):
+        if not take or any(assignment.get(field) != take.get(field) for field in ("coverageKey", "pitchLayer", "promptId", "state", "style")):
             errors.append(f"{label} active assignment differs from its take")
             continue
         active.add(take["takeId"])
@@ -460,7 +477,7 @@ def _project(root: Path, project: dict[str, Any], label: str, errors: list[str])
 def validate_draft_workspace(workspace: Path, inventory: dict[str, Any] | None = None) -> ProductionResult:
     errors: list[str] = []
     if inventory is not None:
-        errors.extend(validate_inventory(inventory))
+        errors.extend(inventory_errors(inventory))
     if workspace.is_symlink() or not workspace.is_dir():
         return ProductionResult(False, ("workspace must be a real directory",), ())
     for name in ("assets", "staging", "generations", "journal"):
@@ -533,6 +550,14 @@ def validate_draft_workspace(workspace: Path, inventory: dict[str, Any] | None =
             if not isinstance(operators, list) or not any(isinstance(item, dict) and item.get("operatorId") == journal.get("operatorId") for item in operators):
                 errors.append(f"{label} journal actor is not registered")
             schema = project.get("schemaVersion")
+            if previous_generation and previous_schema == 4:
+                if project.get("language") != latest.get("language"):
+                    errors.append(f"{label} rewrites immutable workspace language")
+                for identity, take in previous_takes.items():
+                    if identity not in takes or any(takes[identity].get(field) != take.get(field) for field in ("style", "coverageKey", "pitchLayer")):
+                        errors.append(f"{label} reassigns immutable take production identity")
+            if previous_generation and previous_schema < 4 and schema == 4:
+                errors.append(f"{label} legacy migration is not yet admitted")
             if type(schema) is int and schema < previous_schema:
                 errors.append(f"{label} downgrades source-aware history")
             if type(schema) is int:
@@ -565,10 +590,12 @@ def validate_draft_workspace(workspace: Path, inventory: dict[str, Any] | None =
             if latest.get("inventorySha256") != inventory.get("inventorySha256"):
                 errors.append("latest inventory identity differs from the requested inventory")
             actual = latest.get("unitAssignments")
-            expected = production_assignments(inventory)
+            expected = producer_assignments(inventory)
+            if style_owned(inventory) and latest.get("language") != inventory["language"]:
+                errors.append("latest language differs from the requested inventory")
             if not isinstance(actual, list) or len(actual) != len(expected) or sorted(
-                (item.get("coverageKey"), item.get("pitchLayer"), item.get("promptId"), item.get("plannedTakeId")) for item in actual if isinstance(item, dict)
-            ) != sorted((item["coverageKey"], item["pitchLayer"], item["promptId"], item["plannedTakeId"]) for item in expected):
+                (item.get("style", ""), item.get("coverageKey"), item.get("pitchLayer"), item.get("promptId"), item.get("plannedTakeId")) for item in actual if isinstance(item, dict)
+            ) != sorted((item.get("style", ""), item["coverageKey"], item["pitchLayer"], item["promptId"], item["plannedTakeId"]) for item in expected):
                 errors.append("latest assignments differ from the deterministic inventory")
     except (OSError, UnicodeError, ValueError, TypeError, RecursionError) as exc:
         errors.append(f"draft workspace evidence cannot be verified: {exc}")
