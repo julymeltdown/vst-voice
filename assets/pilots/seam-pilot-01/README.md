@@ -98,5 +98,17 @@ The draft command uses default aggregate/per-batch limits from the shared servic
 It preflights the entire selected subset and fails on unsupported phones/styles
 instead of silently reducing coverage. Selecting a subset is an experiment, not
 completion of the inventory. No take approval or source authorization is created.
-The `advance-generation-campaign` command is **not implemented yet**; these
-commands publish unprepared plans, not resumable execution.
+Advance one bounded batch at a time:
+
+```sh
+build/release/seam_voicebank_cli advance-generation-campaign WORKSPACE CAMPAIGN_JSON CAMPAIGN_SHA256 OPERATOR UTC
+```
+
+Each invocation verifies completed receipts against repository history and
+prepares/renders/collects at most one remaining batch. Repeat with the same plan
+and hash until `COLLECTED_UNREVIEWED`; that status is not voice approval or Beta GO.
+Retry uses original expectations and recognizes a commit whose receipt was not
+written. Unexpected producer changes return a conflict. Cancellation retains
+work. The initial intent-publication crash window, hard disk quotas, large-campaign
+performance and process-kill qualification still need hardening; use pilot-scale
+material until those checks are complete.

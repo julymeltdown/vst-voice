@@ -13,17 +13,30 @@ void printCampaignUsage() {
   std::cout << "  seam_voicebank_cli draft-generation-campaign WORKSPACE RECIPE_JSON NEW_PLAN_JSON TAKE_ID [TAKE_ID ...]\n"
             << "  seam_voicebank_cli plan-generation-campaign WORKSPACE PLAN_JSON PLAN_SHA256 NEW_OUTPUT_DIRECTORY\n"
             << "  seam_voicebank_cli inspect-generation-campaign CAMPAIGN_JSON CAMPAIGN_SHA256\n";
+  std::cout << "  seam_voicebank_cli advance-generation-campaign WORKSPACE CAMPAIGN_JSON CAMPAIGN_SHA256 OPERATOR UTC\n";
 }
 std::optional<int> runCampaignCommand(int argc, char** argv) {
   const std::string_view command{argv[1]};
-  if (command != "draft-generation-campaign" && command != "plan-generation-campaign" && command != "inspect-generation-campaign") return std::nullopt;
+  if (command != "draft-generation-campaign" && command != "plan-generation-campaign" && command != "inspect-generation-campaign" &&
+      command != "advance-generation-campaign") return std::nullopt;
   const auto error = [](std::string_view message) -> std::optional<int> { std::cerr << "error: " << message << '\n'; return 1; };
   const bool draft = command == "draft-generation-campaign", publish = command == "plan-generation-campaign";
-  if ((draft && (argc < 6 || argc > 16389)) || (publish && argc != 6) || (!draft && !publish && argc != 4)) {
+  const bool advance = command == "advance-generation-campaign";
+  if ((draft && (argc < 6 || argc > 16389)) || (publish && argc != 6) || (advance && argc != 7) || (!draft && !publish && !advance && argc != 4)) {
     printCampaignUsage(); return 1;
   }
   SignalCancellation cancellation;
   if (!cancellation.install()) return error("cannot install cancellation handlers");
+  if (advance) {
+    const auto result = authoring::advanceGenerationCampaign(voicebank_production::ProductionProjectRepository{argv[2]},
+        argv[3], argv[4], argv[5], argv[6], cancellation.token());
+    if (!result) return error(result.error().message);
+    std::cout << formats::stringifyJson(formats::JsonValue::Object{
+        {"status", result.value().complete ? "COLLECTED_UNREVIEWED" : "BATCH_COLLECTED"}, {"releaseEligible", false},
+        {"completedBatches", static_cast<std::int64_t>(result.value().completedBatches)},
+        {"totalBatches", static_cast<std::int64_t>(result.value().totalBatches)}, {"producerSha256", result.value().producerSha256}}) << '\n';
+    return 0;
+  }
   std::string definition;
   if (draft) {
     const auto producer = voicebank_production::ProductionProjectRepository{argv[2]}.recover();

@@ -33,4 +33,14 @@ struct PreparedCampaignBatch final {
     const std::filesystem::path& directory,
     std::optional<voicebank_production::ProductionCommitReceipt> predecessor = {},
     std::stop_token stop = {});
+struct CampaignAdvanceResult final {
+  std::size_t completedBatches{0U}, totalBatches{0U};
+  std::string producerSha256;
+  bool complete{false};
+};
+[[nodiscard]] core::Result<CampaignAdvanceResult> advanceGenerationCampaign(
+    const voicebank_production::ProductionProjectRepository& repository,
+    const std::filesystem::path& campaignPath, std::string_view campaignSha256,
+    std::string operatorId, std::string occurredAtUtc, std::stop_token stop = {},
+    std::function<bool()> interruptBeforeReceipt = {});
 }

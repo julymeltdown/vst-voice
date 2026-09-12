@@ -400,6 +400,40 @@ not a replacement product contract or a release approval.
 - Verification: affected Release build and focused export CTest passed (1/1,
   4.22 seconds). No fresh complete-suite run claimed.
 
+### Persisted campaign advancement loop and CLI
+
+- Added `advanceGenerationCampaign` and the planned CLI form:
+  `advance-generation-campaign WORKSPACE CAMPAIGN_JSON CAMPAIGN_SHA256 OPERATOR UTC`.
+  The immutable campaign and repository history are authoritative; there is no
+  mutable unchecked progress counter. A campaign lock serializes invocations.
+- The loop reconstructs completed batch state using verified historical receipts
+  and exact frozen templates. For the first incomplete batch it requires the
+  expected producer state, prepares/resumes original jobs, renders only if the
+  requests have not already been collected, and atomically collects with a durable
+  receipt. Each invocation advances at most one incomplete batch.
+- A producer one generation ahead is considered only when retained batch inputs
+  exist, and original-request recognition must prove every take before skipping
+  rendering. This handles commit-before-receipt interruption without rebinding
+  expectations. Partial collection and unrelated changes fail. A completed retry
+  verifies the whole chain and requires current producer equality.
+- CLI reports `BATCH_COLLECTED` or `COLLECTED_UNREVIEWED`, always with
+  `releaseEligible:false`. It does not manufacture source rights, independent
+  reviews, qualified singer resources or release approval.
+- Integration tests inject a post-commit/pre-receipt interruption in batch 0,
+  recover it with one take still present, advance batch 1 through the real CLI,
+  verify two takes, repeat without a generation change, then reject an external
+  producer save. Focused export CTest passed (1/1, 4.20 seconds).
+- Remaining hardening: directory-created/intent-not-yet-published recovery,
+  hard runtime disk quota accounting, process-kill/cancellation coverage and
+  large-campaign performance. Current completed-batch traversal revalidates plans
+  repeatedly; measure and eliminate redundant compilation before singer-scale
+  campaigns. This pilot-scale working loop does not close all M1.P2 obligations.
+- Full configured Release build passed. Full CTest run: 122 passed, one failed
+  (84.18 seconds); source closure correctly reported the new advancement source
+  was not yet indexed. After staging that exact file, the source-closure target
+  passed (1/1, 0.22 seconds). No code changed between those runs; all 123 targets
+  now have passing evidence, but no second all-green full invocation is claimed.
+
 Next concrete implementation owners: explicit evidence-backed legacy migration,
 then complete populated-workspace parity and candidate
 review/publication parity and the resumable inventory campaign. The generation

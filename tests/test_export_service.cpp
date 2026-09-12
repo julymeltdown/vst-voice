@@ -874,6 +874,35 @@ TEST_CASE("nasal and frication candidates bake and enter production with typed u
   }
   CHECK(!campaignRepository.recoverGeneration(firstCampaignReceipt.value().committedGeneration, std::string(64U, '0')));
   CHECK(!campaignRepository.recoverGeneration(999U, firstCampaignReceipt.value().committedProjectSha256));
+  auto advancedProducer = multiProducer; advancedProducer.projectId = "advanced-campaign"; advancedProducer.lastDurableGeneration = 0U;
+  production::ProductionProjectRepository advancedRepository{root / "advanced-producer"};
+  CHECK(advancedRepository.initialize(advancedProducer, {"create", advancedProducer.projectId, "producer", "2026-09-13T00:00:00Z"}));
+  const auto advancePlan = authoring::planGenerationCampaign(advancedProducer, campaignTakes, multiResource.value(),
+      {.batch = {.maximumJobs = 1U}}); CHECK(advancePlan);
+  CHECK(std::filesystem::create_directory(root / "advanced-campaign"));
+  const auto advancePath = root / "advanced-campaign/campaign.json";
+  CHECK(core::durableAtomicWriteTextNew(advancePath, advancePlan.value()));
+  const auto advanceHash = core::sha256Hex(advancePlan.value());
+  CHECK(!authoring::advanceGenerationCampaign(advancedRepository, advancePath, advanceHash, "producer", "2026-09-13T00:00:01Z",
+      {}, [] { return true; }));
+  CHECK(advancedRepository.recover().value().takes.size() == 1U);
+  CHECK(!std::filesystem::exists(root / "advanced-campaign/batch-0/collection.json"));
+  const auto recoveredAdvance = authoring::advanceGenerationCampaign(advancedRepository, advancePath, advanceHash,
+      "producer", "2026-09-13T00:00:01Z"); CHECK(recoveredAdvance);
+  CHECK(recoveredAdvance.value().completedBatches == 1U); CHECK(!recoveredAdvance.value().complete);
+  CHECK(advancedRepository.recover().value().takes.size() == 1U);
+#if defined(SEAM_TEST_VOICEBANK_CLI) && (defined(__APPLE__) || defined(__linux__))
+  const std::vector<std::string> advanceArgs{"advance-generation-campaign", (root / "advanced-producer").string(),
+      advancePath.string(), advanceHash, "producer", "2026-09-13T00:00:02Z"};
+  CHECK(runVoicebankCli(advanceArgs) == 0);
+  const auto finishedAdvance = production::encodeProductionProject(advancedRepository.recover().value());
+  CHECK(advancedRepository.recover().value().takes.size() == 2U);
+  CHECK(runVoicebankCli(advanceArgs) == 0);
+  CHECK(production::encodeProductionProject(advancedRepository.recover().value()) == finishedAdvance);
+  auto externalAfterAdvance = advancedRepository.recover().value();
+  CHECK(advancedRepository.save(externalAfterAdvance, {"save", "external", "producer", "2026-09-13T00:00:03Z"}));
+  CHECK(runVoicebankCli(advanceArgs) != 0);
+#endif
   CHECK(!authoring::prepareGenerationCampaignBatch(executablePlan.value(), executableHash, 0U,
       secondCampaignProducer.value(), root / "stale-campaign-preparation"));
   CHECK(!std::filesystem::exists(root / "stale-campaign-preparation"));

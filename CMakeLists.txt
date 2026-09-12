@@ -299,6 +299,7 @@ add_library(seam_authoring_runtime
   libs/seam-authoring-runtime/src/inventory_generation.cpp
   libs/seam-authoring-runtime/src/generation_campaign.cpp
   libs/seam-authoring-runtime/src/generation_campaign_preparation.cpp
+  libs/seam-authoring-runtime/src/generation_campaign_advance.cpp
   libs/seam-authoring-runtime/src/generation_batch.cpp
   libs/seam-authoring-runtime/src/generation_batch_collection.cpp
   libs/seam-authoring-runtime/src/audio_settings.cpp
