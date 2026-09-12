@@ -79,7 +79,7 @@ core::Result<PreparedGenerationJob> prepareGenerationJobFromScore(
   if (stopToken.stop_requested()) return cancelled();
   return prepareGenerationJob(directory, std::move(jobId), snapshot.value(), producer,
       {.takeId = std::string{plannedTakeId}, .promptId = assignment.promptId, .coverageKey = assignment.coverageKey,
-       .pitchLayer = assignment.pitchLayer, .supersedesTakeId = assignment.takeId});
+       .pitchLayer = assignment.pitchLayer, .supersedesTakeId = assignment.takeId, .style = assignment.style});
 }
 
 static core::Result<GenerationJobOutput> runGenerationJobImpl(const std::filesystem::path& directory,

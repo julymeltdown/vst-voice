@@ -111,6 +111,7 @@ core::Result<GenerationImportExpectation> captureGenerationImportExpectation(
   GenerationImportExpectation result{core::sha256Hex(encodeProductionProject(project)), take.takeId, take.promptId,
       take.coverageKey, take.supersedesTakeId, take.pitchLayer, recipe.identity.id, recipe.identity.version,
       recipe.identity.contentHash, std::move(style), std::move(renderContentHash), sampleRate, frameCount};
+  result.language = project.language;
   const auto encoded = encodeGenerationImportExpectation(result);
   if (!encoded) return core::Result<GenerationImportExpectation>{encoded.error()};
   return result;
@@ -138,7 +139,7 @@ core::Result<std::optional<CollectedGenerationResult>> ProductionProjectReposito
   const auto take = std::find_if(state.takes.begin(), state.takes.end(), [&](const auto& value) { return value.takeId == expectation.takeId; });
   if (take == state.takes.end()) return Output{};
   const auto mismatch = [] { return core::failure<Output>(core::ErrorCode::Conflict, "Existing take does not prove collection of this generation request"); };
-  if ((state.schemaVersion >= kProductionStyleSchemaVersion && take->style != expectation.style) ||
+  if (expectation.language != state.language || (state.schemaVersion >= kProductionStyleSchemaVersion && take->style != expectation.style) ||
       take->promptId != expectation.promptId || take->coverageKey != expectation.coverageKey || take->pitchLayer != expectation.pitchLayer ||
       take->supersedesTakeId != expectation.supersedesTakeId) return mismatch();
   const auto lineage = std::find_if(state.metadataRevisions.begin(), state.metadataRevisions.end(), [&](const auto& value) {
@@ -196,7 +197,7 @@ core::Result<CommittedImportBatch> ProductionProjectRepository::importGeneratedB
           (project.schemaVersion < kProductionStyleSchemaVersion || value.style == request.style) &&
           value.promptId == request.promptId && value.takeId == request.supersedesTakeId;
     });
-    if (request.projectStateSha256 != originalState || !takes.insert(request.takeId).second ||
+    if (request.language != project.language || request.projectStateSha256 != originalState || !takes.insert(request.takeId).second ||
         !assignments.insert({project.language, project.schemaVersion >= kProductionStyleSchemaVersion ? request.style : "", request.coverageKey, request.pitchLayer}).second || count > maximumFrames - frames ||
         assignment == project.unitAssignments.end() || std::any_of(project.takes.begin(), project.takes.end(), [&](const auto& value) { return value.takeId == request.takeId; }))
       return core::failure<Output>(core::ErrorCode::Conflict, "Batch collection is stale, duplicated or over its frame budget");
@@ -233,6 +234,7 @@ core::Result<AssetRecord> ProductionProjectRepository::importProceduralCandidate
     if (!valid) return core::Result<AssetRecord>{valid.error()};
   }
   if (expectation && (expectation->projectStateSha256 != originalState ||
+      expectation->language != project.language ||
       (project.schemaVersion >= kProductionStyleSchemaVersion && expectation->style != take.style) ||
       expectation->takeId != take.takeId || expectation->promptId != take.promptId ||
       expectation->coverageKey != take.coverageKey || expectation->pitchLayer != take.pitchLayer ||

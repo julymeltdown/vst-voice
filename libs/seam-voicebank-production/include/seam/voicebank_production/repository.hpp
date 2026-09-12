@@ -34,6 +34,9 @@ struct GenerationImportExpectation final {
   std::string recipeId, recipeVersion, recipeHash, style, renderContentHash;
   std::uint32_t sampleRate{0U};
   std::int64_t frameCount{0};
+  // Empty preserves the legacy expectation-v1 bytes. Style-owned workspaces
+  // capture an explicit language in expectation v2.
+  std::string language{};
   friend bool operator==(const GenerationImportExpectation&, const GenerationImportExpectation&) = default;
 };
 struct CollectedGenerationResult final {

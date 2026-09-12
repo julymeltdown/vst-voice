@@ -718,6 +718,68 @@ TEST_CASE("nasal and frication candidates bake and enter production with typed u
   CHECK(preparedScore.value().expectation.projectStateSha256 == core::sha256Hex(producerBeforePreparation));
   CHECK(authoring::loadGenerationJob(root / "shared-score-job", preparedScore.value().manifestSha256));
   CHECK(production::encodeProductionProject(producer) == producerBeforePreparation);
+  // Exercise the real score -> job -> render -> CLI collection route with
+  // explicit ownership, rather than only testing the producer record codec.
+  auto styleProducer = producer;
+  CHECK(styleProducer.takes.empty());
+  styleProducer.projectId = "style-owned-generation";
+  styleProducer.schemaVersion = production::kProductionStyleSchemaVersion;
+  styleProducer.language = "ja";
+  styleProducer.lastDurableGeneration = 0U;
+  for (auto& row : styleProducer.unitAssignments) row.style = "neutral";
+  production::ProductionProjectRepository styleRepository{root / "style-owned-generation"};
+  CHECK(styleRepository.initialize(styleProducer, {"create", styleProducer.projectId, "producer", "2026-09-13T00:00:00Z"}));
+  const auto styleJobDirectory = root / "style-owned-job";
+  const auto styleJob = authoring::prepareGenerationJobFromScore(styleJobDirectory, "style-owned-job",
+      root / "shared-score.seam", trackId, regionId, styleProducer, "take-sa");
+  CHECK(styleJob);
+  CHECK(styleJob.value().expectation.style == "neutral");
+  CHECK(styleJob.value().expectation.language == "ja");
+  const auto languageBoundJob = authoring::loadGenerationJob(styleJobDirectory, styleJob.value().manifestSha256);
+  CHECK(languageBoundJob);
+  CHECK(languageBoundJob.value().expectation == styleJob.value().expectation);
+  const auto languageJson = formats::parseJson(production::encodeGenerationImportExpectation(styleJob.value().expectation).value());
+  CHECK(languageJson);
+  for (unsigned scenario = 0; scenario < 4U; ++scenario) {
+    auto bad = languageJson.value();
+    if (scenario == 0U) bad.asObject().erase("language");
+    if (scenario == 1U) *bad.find("language") = formats::JsonValue{""};
+    if (scenario == 2U) *bad.find("language") = formats::JsonValue{"xx"};
+    if (scenario == 3U) *bad.find("schemaVersion") = formats::JsonValue{std::int64_t{1}};
+    const auto bytes = formats::stringifyJson(bad);
+    const auto path = root / ("bad-language-expectation-" + std::to_string(scenario) + ".json");
+    CHECK(core::durableAtomicWriteTextNew(path, bytes));
+    CHECK(!production::loadGenerationImportExpectation(path, core::sha256Hex(bytes)));
+  }
+  CHECK(authoring::loadGenerationJob(styleJobDirectory, styleJob.value().manifestSha256));
+  auto wrongStyleProducer = styleProducer;
+  for (auto& row : wrongStyleProducer.unitAssignments) row.style = "soft";
+  CHECK(!authoring::prepareGenerationJobFromScore(root / "wrong-style-job", "wrong-style-job",
+      root / "shared-score.seam", trackId, regionId, wrongStyleProducer, "take-sa"));
+  CHECK(!std::filesystem::exists(root / "wrong-style-job"));
+  CHECK(authoring::runGenerationJob(styleJobDirectory, styleJob.value().manifestSha256));
+#if defined(SEAM_TEST_VOICEBANK_CLI) && (defined(__APPLE__) || defined(__linux__))
+  const auto styleOutput = styleJobDirectory / "output/candidates" / (trackId.toString() + "-" + regionId.toString());
+  const auto styleExpectationHash = core::sha256File(styleJobDirectory / "expectation.json"); CHECK(styleExpectationHash);
+  const std::vector<std::string> styleCollectArgs{"import-generated", (root / "style-owned-generation").string(),
+      styleOutput.string() + ".json", styleOutput.string() + ".wav", (styleJobDirectory / "recipe.json").string(),
+      (styleJobDirectory / "expectation.json").string(), styleExpectationHash.value(), "producer", "2026-09-13T00:01:00Z"};
+  auto wrongLanguage = styleJob.value().expectation;
+  wrongLanguage.language = "en";
+  const auto wrongLanguagePath = root / "wrong-language-expectation.json";
+  const auto wrongLanguageHash = production::saveGenerationImportExpectation(wrongLanguagePath, wrongLanguage); CHECK(wrongLanguageHash);
+  auto wrongLanguageArgs = styleCollectArgs;
+  wrongLanguageArgs[5] = wrongLanguagePath.string(); wrongLanguageArgs[6] = wrongLanguageHash.value();
+  CHECK(runVoicebankCli(wrongLanguageArgs) != 0);
+  CHECK(styleRepository.recover().value().takes.empty());
+  CHECK(runVoicebankCli(styleCollectArgs) == 0);
+  const auto styleCollected = styleRepository.recover(); CHECK(styleCollected);
+  CHECK(styleCollected.value().takes.size() == 1U);
+  CHECK(styleCollected.value().takes.front().style == "neutral");
+  CHECK(styleCollected.value().takes.front().state == production::UnitQueueState::MarkerReview);
+  CHECK(runVoicebankCli(styleCollectArgs) == 0);
+  CHECK(production::encodeProductionProject(styleRepository.recover().value()) == production::encodeProductionProject(styleCollected.value()));
+#endif
   auto designerRecipe = recipe; designerRecipe.phonation.aspiration = 0.35;
   const auto designerResource = voice_design::freezeVoiceRecipeResource(designerRecipe); CHECK(designerResource);
   const auto scoreBeforeDesigner = core::readTextFileLimited(root / "shared-score.seam", 16U * 1024U * 1024U); CHECK(scoreBeforeDesigner);

@@ -8,7 +8,7 @@ not a replacement product contract or a release approval.
 
 | Package | Implementation | Demonstrated workflow | Qualification remaining | Next action |
 |---|---|---|---|---|
-| M1.P1 | In progress: inventory v2; producer v4 codec and raw import ownership; unassessed requested range; legacy readers retained | Pilot inventory CLI and C++ two-style workspace import/save/recovery tests | Explicit legacy migration, Python producer parity, generation-job/CLI wiring and multi-style publication incomplete | Connect the inventory to the canonical v4 writer, then finish generation and migration |
+| M1.P1 | In progress: inventory v2; producer v4; language-bound generation expectation v2; unassessed requested range; legacy readers retained | Pilot inventory CLI, two-style persistence, and schema-4 score→job→render→CLI collection regression | Explicit legacy migration, Python producer parity and multi-style publication incomplete | Connect the inventory to the canonical v4 writer, then complete migration/publication parity |
 | M1.P2/P3 | Not completed by this increment | Existing procedural/producer foundation retained | Connected articulation, campaign, actual bank and unfamiliar-song evidence | Continue after the necessary M1.P1 producer bindings |
 | M2–M6 | Remaining full scope retained | No new milestone qualification | As specified by the implementation plan | Independent neural process/data work remains available |
 
@@ -32,8 +32,17 @@ not a replacement product contract or a release approval.
   workspace, and reject cross-style retakes, missing styles, language changes,
   and relabeling existing takes without mutating saved state. Generic save cannot
   masquerade as legacy migration; the explicit migration operation is pending.
-- Rebuilt the complete configured Release tree and ran all **122 CTest targets:
+- At checkpoint `5291e652`, rebuilt the complete configured Release tree and ran all **122 CTest targets:
   122 passed, zero failed** (86.13 seconds). The producer target now has 49 cases.
+- Following that checkpoint, score-job preparation and CLI collection now carry
+  assignment style. Expectation v2 carries explicit language; legacy expectation
+  v1 retains its format. Tests prepare/load/render a schema-4 job, collect it via
+  the actual CLI, and repeat collection without creating another generation.
+  Wrong-style preparation and wrong-language collection fail without changing
+  producer state; malformed v2 language/version fields are rejected.
+- Rebuilt the complete Release tree after the generation integration. The three
+  focused CTest targets (export workflow, draft inventory, producer) passed.
+  The 122-target run above predates this latest integration, not a fresh claim.
 - Legacy producer readers intentionally do not admit schema-2 inventory yet;
   they must not discard style identity. The CLI assignment export declares its
   schema-4 producer requirement explicitly.
@@ -41,8 +50,7 @@ not a replacement product contract or a release approval.
   is claimed. The complete implementation goal remains active.
 
 Next concrete implementation owners: Python draft definition/validation parity,
-`generation_job.cpp` and the generation-collection CLI (currently reconstructing
-style-free raw inputs), explicit evidence-backed legacy migration, then complete
-candidate review/publication parity. Existing expectation state hashes bind the
-workspace language indirectly; its explicit versioned language contract remains
-to be added with the generation integration. No M1 completion is claimed.
+explicit evidence-backed legacy migration, then complete candidate
+review/publication parity and the resumable inventory campaign. The generation
+test uses synthetic diagnostic material, not a qualified singer. No M1 completion
+is claimed.

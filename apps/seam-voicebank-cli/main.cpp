@@ -470,7 +470,8 @@ int importGeneratedCommand(int argc, char** argv) {
   const auto& request = expectation.value();
   const auto imported = repository.importProceduralCandidate(project.value(), argv[3], argv[4], recipe.value(),
       {.takeId = request.takeId, .promptId = request.promptId, .coverageKey = request.coverageKey,
-       .pitchLayer = request.pitchLayer, .supersedesTakeId = request.supersedesTakeId},
+       .pitchLayer = request.pitchLayer, .supersedesTakeId = request.supersedesTakeId,
+       .style = project.value().schemaVersion >= production::kProductionStyleSchemaVersion ? request.style : ""},
       {.action = request.supersedesTakeId.empty() ? "import-procedural" : "retake", .subjectId = request.takeId,
        .operatorId = argv[8], .occurredAtUtc = argv[9]}, {}, &request);
   if (!imported) { printError(imported.error()); return 1; }
