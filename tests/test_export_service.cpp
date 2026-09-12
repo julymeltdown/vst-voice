@@ -8,6 +8,7 @@
 #include "seam/voicebank/manifest_json.hpp"
 #include "seam/authoring/generation_job.hpp"
 #include "seam/authoring/inventory_generation.hpp"
+#include "seam/authoring/generation_campaign.hpp"
 #include "seam/application/project_factory.hpp"
 #include "seam/formats/json_value.hpp"
 #include "seam/formats/project_json.hpp"
@@ -768,6 +769,37 @@ TEST_CASE("nasal and frication candidates bake and enter production with typed u
   auto softPose = recipe.poses.front(); softPose.style = "soft"; multiRecipe.poses.push_back(softPose);
   auto softNoise = recipe.frications.front(); softNoise.style = "soft"; multiRecipe.frications.push_back(softNoise);
   const auto multiResource = voice_design::freezeVoiceRecipeResource(multiRecipe); CHECK(multiResource);
+  const std::vector<std::string> campaignTakes{"take-sa", "take-sa-soft"};
+  const auto beforeCampaign = production::encodeProductionProject(multiProducer);
+  const auto campaign = authoring::planGenerationCampaign(multiProducer, campaignTakes, multiResource.value(),
+      {.batch = {.maximumJobs = 1U}}); CHECK(campaign);
+  const auto campaignJson = formats::parseJson(campaign.value()); CHECK(campaignJson);
+  CHECK(campaignJson.value().find("batchCount")->asInt64() == 2);
+  CHECK(campaignJson.value().find("totalFrames")->asInt64() == 48000);
+  CHECK(campaignJson.value().find("status")->asString() == "PLANNED_UNPREPARED");
+  CHECK(campaignJson.value().find("initialProducerSha256")->asString() == core::sha256Hex(beforeCampaign));
+  CHECK(campaign.value().find("expectation") == std::string::npos);
+  CHECK(authoring::verifyGenerationCampaign(campaign.value(), core::sha256Hex(campaign.value())));
+  CHECK(!authoring::verifyGenerationCampaign(campaign.value(), std::string(64U, '0')));
+  for (unsigned scenario = 0U; scenario < 4U; ++scenario) {
+    auto altered = campaignJson.value();
+    if (scenario == 0U) *altered.find("totalFrames") = formats::JsonValue{std::int64_t{1}};
+    if (scenario == 1U) *altered.find("jobs")->asArray().front().find("batchIndex") = formats::JsonValue{std::int64_t{1}};
+    if (scenario == 2U) altered.asObject().emplace("expectation", formats::JsonValue{"premature"});
+    if (scenario == 3U) *altered.find("maximumFrames") = formats::JsonValue{true};
+    const auto alteredBytes = formats::stringifyJson(altered, true);
+    CHECK(!authoring::verifyGenerationCampaign(alteredBytes, core::sha256Hex(alteredBytes)));
+  }
+  CHECK(production::encodeProductionProject(multiProducer) == beforeCampaign);
+  CHECK(authoring::planGenerationCampaign(multiProducer, std::vector<std::string>{"take-sa-soft", "take-sa"},
+      multiResource.value(), {.batch = {.maximumJobs = 1U}}).value() == campaign.value());
+  CHECK(!authoring::planGenerationCampaign(multiProducer, campaignTakes, multiResource.value(), {.maximumFrames = 47999U}));
+  CHECK(!authoring::planGenerationCampaign(multiProducer, campaignTakes, multiResource.value(), {.maximumEstimatedBytes = 1U}));
+  CHECK(!authoring::planGenerationCampaign(multiProducer, campaignTakes, multiResource.value(), {.batch = {.maximumFrames = 23999U}}));
+  CHECK(!authoring::planGenerationCampaign(multiProducer, std::vector<std::string>{"take-sa", "take-sa"}, multiResource.value()));
+  CHECK(!authoring::planGenerationCampaign(multiProducer, campaignTakes, resource.value()));
+  std::stop_source campaignStop; campaignStop.request_stop();
+  CHECK(!authoring::planGenerationCampaign(multiProducer, campaignTakes, multiResource.value(), {}, campaignStop.get_token()));
   const auto neutralJob = authoring::prepareInventoryGenerationJob(root / "multi-neutral.seam", root / "multi-neutral-job",
       multiProducer, "take-sa", {multiResource.value(), "neutral"}); CHECK(neutralJob);
   const auto softJob = authoring::prepareInventoryGenerationJob(root / "multi-soft.seam", root / "multi-soft-job",

@@ -229,6 +229,36 @@ not a replacement product contract or a release approval.
   and listening-pilot increments; it does not stand in for installed-host or
   independent musical acceptance.
 
+### Bounded immutable campaign planning
+
+- Added shared `generation_campaign.hpp/.cpp`. `planGenerationCampaign` accepts
+  explicit planned take IDs, validates the producer and frozen recipe, constructs
+  each inventory template and preflights it through the normal procedural snapshot
+  compiler. It keeps only one temporary compiled snapshot at a time. Unsupported
+  takes fail with the take ID; there is no truncation or substitute silence.
+- Definitions capture exact initial producer JSON/hash (including inventory and
+  source-policy evidence), recipe JSON/hash, score JSON/template identity, ordered
+  take/style/coverage/pitch rows, frame totals and deterministic batch membership.
+  Input order does not affect the canonical definition. Every job is UNPREPARED;
+  no generation expectation is captured or producer/filesystem state changed.
+- Admission retains the existing 64-job/32M-frame batch ceiling and applies
+  aggregate job/frame/estimated-byte limits. Disk numbers are conservative planning
+  allowances, not measured filesystem quotas. Definition serialization is bounded
+  to 32 MiB. Cancellation is checked before and between template compilation.
+- `verifyGenerationCampaign` requires the supplied digest, decodes frozen inputs,
+  reconstructs the canonical plan and compares exact bytes. Changed totals,
+  batch layouts, hidden expectation fields and numeric type spoofing fail even
+  with a recomputed outer digest. This proves internal consistency against the
+  selected digest, not authority to replace that digest or source approvals.
+- Focused Release build and export CTest passed (1/1, 4.44 seconds), covering
+  deterministic two-batch planning, resource mismatch, budgets, cancellation and
+  adversarial definitions alongside real two-style generation/collection. The
+  prior 123-target run predates this increment; no new full-suite run claimed.
+- Still open: create/inspect CLI publication, filesystem quota enforcement during
+  execution, just-in-time batch preparation, durable advancement/commit receipts,
+  external-edit detection and crash/restart integration. A valid plan is not a
+  completed or resumable campaign yet.
+
 Next concrete implementation owners: explicit evidence-backed legacy migration,
 then complete populated-workspace parity and candidate
 review/publication parity and the resumable inventory campaign. The generation
