@@ -186,6 +186,30 @@ not a replacement product contract or a release approval.
   by this diagnostic. Prioritize those gaps rather than treating marker coverage
   or steady vowel pitch as proof of an intelligible singer.
 
+### Inventory assignment to real generation job
+
+- Added shared `inventory_generation.hpp/.cpp`: deterministic template-v1 score
+  construction from a unique schema-4 Japanese producer assignment. The score
+  retains canonical coverage phones as an explicit phonetic hint, assignment
+  pitch/style, stable IDs and a template hash. It uses one 960-tick note at the
+  default 120 BPM; this is an initial timing template, not complete context design.
+- `prepareInventoryGenerationJob` writes a create-new score and delegates to
+  `prepareGenerationJobFromScore` with its exact hash and selected recipe. Job IDs
+  include take identity; expectations capture producer state at preparation time.
+  No producer mutation, automatic approval or alternate renderer is introduced.
+- The integration test uses a durably initialized synthetic producer, prepares
+  `cv:s:a`, renders the actual job, verifies ownership and unchanged producer
+  bytes, and rejects duplicate output, wrong style, duplicate assignment identity,
+  unsupported language and `release:a:R` (unsupported adapter phone). The initial
+  test accidentally used generation zero; its rejection was retained as a fixture
+  correction, not bypassed in production. Export CTest passed, 1/1 (4.45 seconds).
+- Still required: inventory-file admission/CLI, coverage-wide unsupported-context
+  reporting, additional timing templates and resumable campaign prepare/render/
+  collect receipts. Do not prepare an entire campaign's expectations up front.
+- Inspection also found `generation_batch.cpp` still deduplicates assignments by
+  coverage/pitch without language/style. Repair and test this before admitting
+  a multi-style campaign; this increment does not claim that path complete.
+
 Next concrete implementation owners: explicit evidence-backed legacy migration,
 then complete populated-workspace parity and candidate
 review/publication parity and the resumable inventory campaign. The generation

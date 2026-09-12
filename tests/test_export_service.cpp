@@ -7,6 +7,7 @@
 #include "seam/distribution/signing.hpp"
 #include "seam/voicebank/manifest_json.hpp"
 #include "seam/authoring/generation_job.hpp"
+#include "seam/authoring/inventory_generation.hpp"
 #include "seam/application/project_factory.hpp"
 #include "seam/formats/json_value.hpp"
 #include "seam/formats/project_json.hpp"
@@ -727,6 +728,35 @@ TEST_CASE("nasal and frication candidates bake and enter production with typed u
   styleProducer.language = "ja";
   styleProducer.lastDurableGeneration = 0U;
   for (auto& row : styleProducer.unitAssignments) row.style = "neutral";
+  auto inventoryProducer = styleProducer;
+  inventoryProducer.unitAssignments.front().coverageKey = "cv:s:a";
+  production::ProductionProjectRepository inventoryRepository{root / "inventory-producer"};
+  CHECK(inventoryRepository.initialize(inventoryProducer, {"create", inventoryProducer.projectId, "producer", "2026-09-13T00:00:00Z"}));
+  const auto inventoryBefore = production::encodeProductionProject(inventoryProducer);
+  const auto inventoryScore = authoring::buildInventoryGenerationScore(inventoryProducer, "take-sa");
+  CHECK(inventoryScore);
+  CHECK(inventoryScore.value().project.findRegion(inventoryScore.value().regionId)->notes.front().phoneticHint == "s a");
+  CHECK(authoring::buildInventoryGenerationScore(inventoryProducer, "take-sa").value().templateIdentity == inventoryScore.value().templateIdentity);
+  const auto inventoryJob = authoring::prepareInventoryGenerationJob(root / "inventory.seam", root / "inventory-job",
+      inventoryProducer, "take-sa", {resource.value(), "neutral"});
+  if (!inventoryJob) throw std::runtime_error(inventoryJob.error().message);
+  CHECK(inventoryJob.value().expectation.coverageKey == "cv:s:a");
+  CHECK(inventoryJob.value().expectation.language == "ja");
+  CHECK(authoring::runGenerationJob(root / "inventory-job", inventoryJob.value().manifestSha256));
+  CHECK(production::encodeProductionProject(inventoryProducer) == inventoryBefore);
+  CHECK(!authoring::prepareInventoryGenerationJob(root / "inventory.seam", root / "inventory-job-repeat",
+      inventoryProducer, "take-sa", {resource.value(), "neutral"}));
+  CHECK(!std::filesystem::exists(root / "inventory-job-repeat"));
+  CHECK(!authoring::prepareInventoryGenerationJob(root / "wrong-inventory.seam", root / "wrong-inventory-job",
+      inventoryProducer, "take-sa", {resource.value(), "soft"}));
+  CHECK(!std::filesystem::exists(root / "wrong-inventory.seam"));
+  auto invalidInventory = inventoryProducer;
+  invalidInventory.unitAssignments.front().coverageKey = "release:a:R";
+  CHECK(!authoring::buildInventoryGenerationScore(invalidInventory, "take-sa"));
+  invalidInventory = inventoryProducer; invalidInventory.language = "en";
+  CHECK(!authoring::buildInventoryGenerationScore(invalidInventory, "take-sa"));
+  invalidInventory = inventoryProducer; invalidInventory.unitAssignments.push_back(invalidInventory.unitAssignments.front());
+  CHECK(!authoring::buildInventoryGenerationScore(invalidInventory, "take-sa"));
   production::ProductionProjectRepository styleRepository{root / "style-owned-generation"};
   CHECK(styleRepository.initialize(styleProducer, {"create", styleProducer.projectId, "producer", "2026-09-13T00:00:00Z"}));
   const auto styleJobDirectory = root / "style-owned-job";
