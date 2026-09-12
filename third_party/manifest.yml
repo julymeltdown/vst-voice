@@ -41,6 +41,16 @@
   ],
   "plannedOrReferenceOnly": [
     {
+      "name": "OpenVPI DiffSinger acoustic and vocoder export contracts",
+      "source": "https://github.com/openvpi/DiffSinger",
+      "revision": "336cf01b57f2ad44c6b37a79cf33993043291759",
+      "sourceSha256": "034a9e612b2320f35ae7018cd5bf34ae24ce82c69aeb2310291312bd3db637ef",
+      "sourceHashFormat": "git archive --format=tar at the pinned commit",
+      "declaredLicense": "Apache-2.0",
+      "status": "development-interface-reference-not-vendored-or-shipped",
+      "purpose": "U35/U37 common ONNX acoustic input geometry and model-dependent export interface; no model weights or vocoder downloaded"
+    },
+    {
       "name": "Open JTalk MeCab and NAIST plus UniDic-CSJ dictionary intake",
       "source": "https://github.com/r9y9/open_jtalk",
       "revision": "462fc38e7520aa89e4d32b2611749208528c901e",

@@ -336,6 +336,7 @@ target_link_libraries(seam_formats PUBLIC seam_domain seam_core)
 seam_apply_compiler_options(seam_formats)
 
 add_library(seam_neural_synthesis
+  libs/seam-neural-synthesis/src/diffsinger_inputs.cpp
   libs/seam-neural-synthesis/src/deployment_descriptor.cpp
   libs/seam-neural-synthesis/src/worker_protocol.cpp
   libs/seam-neural-synthesis/src/model_contract.cpp

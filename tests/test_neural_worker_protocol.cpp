@@ -7,6 +7,7 @@
 #include "seam/neural_synthesis/model_contract.hpp"
 #include "seam/neural_synthesis/neural_phrase_backend.hpp"
 #include "seam/neural_synthesis/deployment_descriptor.hpp"
+#include "seam/neural_synthesis/diffsinger_inputs.hpp"
 #include "seam/core/sha256.hpp"
 
 #include <array>
@@ -473,4 +474,46 @@ TEST_CASE("signed neural deployment binds exact descriptor bytes and the loaded 
   rejectSigned("\"schemaVersion\":1","\"schemaVersion\":1,\"unexpected\":true");
   const std::string oversized(16U*1024U+1U,' '); const auto oversizedSignature=sign(oversized); CHECK(oversizedSignature);
   CHECK(!VerifiedNeuralDeployment::verify(oversized,oversizedSignature.value(),key.value().publicKey,target));
+}
+
+TEST_CASE("DiffSinger inputs conserve hop durations and retain phone ownership at rounded boundaries") {
+  using namespace seam; using namespace seam::neural_synthesis;
+  const std::string vocabularyJson=R"({"formatId":"com.project-seam.neural-vocabulary","schemaVersion":1,"tokens":["<PAD>","SP","a","z"]})";
+  auto input=request();
+  input.frameCount=11U;
+  input.f0Hz={0,0,440,440,440,440,0,0,0,0,0};
+  input.dynamics.assign(11U,1.0F);
+  input.vocabularySize=4U;
+  input.conditioning=PhoneticConditioning{core::sha256Hex(vocabularyJson),{{1U,0U,2U},{2U,2U,6U},{3U,6U,11U}}};
+  ModelContract model{.modelId=input.modelId,.modelVersion=input.modelVersion,.modelContentHash=input.modelContentHash,
+      .vocabularyHash=input.conditioning->vocabularyHash,.hopSize=4U};
+  const auto vocabulary=NeuralVocabulary::decode(vocabularyJson,model); CHECK(vocabulary);
+  const auto prepared=prepareDiffSingerAcousticInputs(input,model,vocabulary.value(),20); CHECK(prepared);
+  CHECK(prepared.value().tokens==(std::vector<std::int64_t>{1,2,3}));
+  CHECK(prepared.value().durations==(std::vector<std::int64_t>{1,1,1}));
+  CHECK(prepared.value().f0Hz==(std::vector<float>{0,440,0}));
+  CHECK(prepared.value().outputSampleFrames==11U); CHECK(prepared.value().paddedSampleFrames==12U);
+  CHECK(prepared.value().steps==20);
+  auto changed=input; changed.conditioning->spans[0].tokenId=0;
+  const auto padding=prepareDiffSingerAcousticInputs(changed,model,vocabulary.value(),20);
+  CHECK(!padding); CHECK(padding.error().code==core::ErrorCode::Unsupported);
+  changed=input; changed.conditioning->spans[0].endFrame=1; changed.conditioning->spans[1].startFrame=1;
+  const auto erased=prepareDiffSingerAcousticInputs(changed,model,vocabulary.value(),20);
+  CHECK(!erased); CHECK(erased.error().message.find("erase")!=std::string::npos);
+  changed=input; changed.conditioning.reset(); changed.vocabularySize=0;
+  CHECK(!prepareDiffSingerAcousticInputs(changed,model,vocabulary.value(),20));
+  for (const auto steps:{0,1001}) CHECK(!prepareDiffSingerAcousticInputs(input,model,vocabulary.value(),steps));
+  changed=input; changed.vocabularySize=5;
+  CHECK(!prepareDiffSingerAcousticInputs(changed,model,vocabulary.value(),20));
+  changed=input; changed.f0Hz[0]=std::numeric_limits<float>::quiet_NaN();
+  CHECK(!prepareDiffSingerAcousticInputs(changed,model,vocabulary.value(),20));
+  std::stop_source stop; stop.request_stop();
+  CHECK(!prepareDiffSingerAcousticInputs(input,model,vocabulary.value(),20,stop.get_token()));
+  // A long sequence retains the exact total: rounding each duration separately
+  // would drift when boundaries are not aligned to the acoustic hop.
+  input.frameCount=101U; input.f0Hz.assign(101U,220.0F); input.dynamics.assign(101U,1.0F);
+  input.conditioning->spans={{2U,0U,21U},{2U,21U,42U},{2U,42U,63U},{2U,63U,84U},{2U,84U,101U}};
+  const auto sequence=prepareDiffSingerAcousticInputs(input,model,vocabulary.value(),5); CHECK(sequence);
+  CHECK(sequence.value().durations==(std::vector<std::int64_t>{5,6,5,5,5}));
+  CHECK(sequence.value().f0Hz.size()==26U); CHECK(sequence.value().paddedSampleFrames==104U);
 }

@@ -12,6 +12,15 @@ This ledger records implementation evidence for [the approved plan](../plans/202
 
 ## Active implementation
 
+2026-09-12 — Direct inspection of the planned DiffSinger backend identified the
+sample-frame versus acoustic-hop mismatch and its reserved padding token. Added
+verified request-to-acoustic-input conversion with cumulative duration rounding,
+phone-owned F0 sampling, explicit padding trim dimensions, and rejection of erased
+phones or token 0. Upstream interface revision/archive digest recorded as a
+development reference. Release build/neural/core suites pass 2/2 (23.16 s).
+Actual native inference/model production remain missing; no unit acceptance.
+See `docs/formats/DIFFSINGER_ACOUSTIC_INPUTS_V1.md`.
+
 2026-09-12 — Added `VerifiedNeuralDeployment`, binding exact descriptor bytes via
 the existing Ed25519 verifier to a separately supplied release key and expected
 build/platform/surface. Private verified fields feed native manifest loading.
