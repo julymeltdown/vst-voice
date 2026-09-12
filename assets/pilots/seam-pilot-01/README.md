@@ -112,3 +112,17 @@ written. Unexpected producer changes return a conflict. Cancellation retains
 work. The initial intent-publication crash window, hard disk quotas, large-campaign
 performance and process-kill qualification still need hardening; use pilot-scale
 material until those checks are complete.
+
+### Reattack versus melisma listening fixture
+
+```sh
+build/release/seam_singer_pilot NEW_OUTPUT_DIRECTORY boundaries
+```
+
+This exports the same four-note melody twice: four separately articulated
+Japanese `a` vowels, then one `a` continued through three `ー` notes. Each note
+lasts 250 ms. Compare the first second with the second second in the baseline,
+higher-formants and breathier WAVs. The split at one second is a new attack.
+Projects and recipes are retained beside the audio for editing and replay.
+The CLI test verifies exported dry PCM boundaries and deterministic repeats;
+it does not establish intelligibility, naturalness or listener preference.

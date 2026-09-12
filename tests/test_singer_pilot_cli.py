@@ -3,6 +3,7 @@ import json
 import hashlib
 from pathlib import Path
 import subprocess
+import struct
 import sys
 import tempfile
 
@@ -70,6 +71,39 @@ def main():
                 assert len(pitch["notes"]) == 14
             articulation_hashes.append(hashes)
         assert articulation_hashes[0] == articulation_hashes[1]
+        boundary_hashes = []
+        for name in ("boundaries", "boundaries-repeat"):
+            subprocess.run([str(binary), str(root / name), "boundaries"],
+                           check=True, capture_output=True, timeout=60)
+            report = json.loads((root / name / "pilot.json").read_text())
+            assert report["releaseEligible"] is False
+            boundary_hashes.append([row["sha256"] for row in report["runs"]])
+            for row in report["runs"]:
+                audio = Path(row["wav"])
+                if audio.parent.name != "candidates":
+                    continue
+                metadata = json.loads(audio.with_suffix(".json").read_text())
+                assert [m["phone"] for m in metadata["markers"]] == ["a"] * 8
+                raw = audio.read_bytes()
+                assert hashlib.sha256(raw).hexdigest() == row["sha256"]
+                assert raw[:4] == b"RIFF" and raw[8:12] == b"WAVE"
+                chunks = {}
+                offset = 12
+                while offset + 8 <= len(raw):
+                    size = struct.unpack_from("<I", raw, offset + 4)[0]
+                    chunks[raw[offset:offset + 4]] = raw[offset + 8:offset + 8 + size]
+                    offset += 8 + size + (size % 2)
+                encoding, channels, rate = struct.unpack_from("<HHI", chunks[b"fmt "])
+                assert encoding == 3 and channels == 1
+                samples = struct.unpack("<" + "f" * (len(chunks[b"data"]) // 4), chunks[b"data"])
+                for note_index in range(1, 8):
+                    boundary = note_index * rate // 4
+                    energy = abs(samples[boundary - 1]) + abs(samples[boundary])
+                    if note_index <= 4:
+                        assert energy == 0, (row["variant"], note_index, energy)
+                    else:
+                        assert energy > 1e-6, (row["variant"], note_index, energy)
+        assert boundary_hashes[0] == boundary_hashes[1]
     print("Pilot repeatability, finite/nonzero PCM, variant identity and no-overwrite checks passed; quality unassessed.")
 
 

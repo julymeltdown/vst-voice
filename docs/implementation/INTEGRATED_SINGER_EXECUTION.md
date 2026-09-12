@@ -506,6 +506,25 @@ is claimed.
 
 ## Voiced reattack boundary repair
 
+### Vowel-only production-path follow-up
+
+The new `seam_singer_pilot NEW_DIRECTORY boundaries` fixture renders the same
+four-note melody as separate vowels and as a melisma, across three recipe
+variants. Its real exported dry-PCM assertion initially failed: the baseline
+first reattack boundary had summed adjacent absolute amplitude 0.01975246.
+Pure-vowel phrases select SustainedPoseStream, so the mixed renderer repair
+alone did not fix this production path. Sustained vowel scheduling now applies
+the existing 5 ms taper at compiled reattacks without tapering continuations.
+Its renderer revision increased from 12 to 13 to invalidate prior identities.
+
+The CLI regression checks eight vowel markers, hash-bound Float32 mono audio,
+zero boundary samples for separate attacks, nonzero continuation boundaries,
+and exact repeat hashes for all three variants. Targeted Release build and
+pilot/voice-design/export CTests passed (3/3, 8.38 seconds). No fresh full-suite
+run is claimed for this follow-up. Listening artifacts are retained in
+`build/release/seam-pilot-boundaries-02`; `-01` retains the pre-fix comparison.
+Neither fixture is a listening-quality acceptance result.
+
 - Source inspection found that PhonationSource restarts phase on compiled score
   reattacks, but ArticulatedStream previously joined all adjacent voiced gestures
   without an envelope taper. Optional authored attack/release controls do not

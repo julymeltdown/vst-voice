@@ -142,8 +142,14 @@ core::Result<void> SustainedPoseStream::configureVowels(const domain::VocalRegio
   std::vector<ActiveSpan> spans;
   for (std::size_t i = 0U; i < ordered.size(); ++i) {
     const auto& timed = ordered[i];
-    const bool fadeIn = i == 0U ? timed.explicitStart || timed.start > context_.start : ordered[i - 1U].end < timed.start;
-    const bool fadeOut = i + 1U == ordered.size() ? timed.explicitEnd || timed.end < context_.end : timed.end < ordered[i + 1U].start;
+    const auto reattacksAt = [&](time::SampleFrame frame) {
+      if (frame <= context_.start) return false;
+      const auto before = performance_->at(frame - 1);
+      const auto after = performance_->at(frame);
+      return after.noteId && before.noteId != after.noteId && after.reattack;
+    };
+    const bool fadeIn = reattacksAt(timed.start) || (i == 0U ? timed.explicitStart || timed.start > context_.start : ordered[i - 1U].end < timed.start);
+    const bool fadeOut = reattacksAt(timed.end) || (i + 1U == ordered.size() ? timed.explicitEnd || timed.end < context_.end : timed.end < ordered[i + 1U].start);
     spans.push_back({timed.start, timed.end, fadeIn, fadeOut, timed.key, timed.phone});
   }
   auto activity = std::make_shared<const std::vector<ActiveSpan>>(std::move(spans));

@@ -7,7 +7,7 @@
 #include "seam/voice_design/articulation_plan.hpp"
 
 namespace seam::voice_design {
-inline constexpr std::uint32_t kSustainedPoseRendererRevision = 12U;
+inline constexpr std::uint32_t kSustainedPoseRendererRevision = 13U;
 [[nodiscard]] bool requiresArticulation(std::span<const domain::PhonemeToken> phonemes) noexcept;
 [[nodiscard]] core::Result<void> validateProceduralPhrase(
     const domain::VocalRegion& region, std::span<const domain::PhonemeToken> phonemes);
