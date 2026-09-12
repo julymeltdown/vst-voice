@@ -8,6 +8,20 @@
 #include <thread>
 
 namespace {
+template <typename Poll>
+seam::core::Result<bool> waitForReadingJob(Poll poll) {
+  // The helper has a 10-second wall deadline; resource verification happens
+  // outside that interval. This tests lifecycle completion, not cold-start speed.
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{15};
+  for (;;) {
+    auto result = poll();
+    if (!result || result.value()) return result;
+    if (std::chrono::steady_clock::now() >= deadline)
+      throw seam::test::Failure{"Japanese reading job did not retire within 15 seconds"};
+    std::this_thread::sleep_for(std::chrono::milliseconds{2});
+  }
+}
+
 struct Fixture {
   seam::application::ProjectFactory factory{421000U};
   seam::domain::Project project{factory.createProject("Reading job")};
@@ -37,24 +51,20 @@ TEST_CASE("Japanese reading job runs staged helper off-thread and adopts only cu
   using namespace seam; Fixture f; application::EditorSession session{f.project}; const auto root = test::support::temporaryDirectory("reading-job");
   auto staged = resource(root); CHECK(staged); const auto identity = staged.value().resource().identity();
   authoring::JapaneseReadingJob job; CHECK(job.start(session, f.region, f.notes, std::move(staged.value()))); CHECK(job.state() == authoring::JapaneseReadingJob::State::Preparing); CHECK(job.requestId() == 1U);
-  for (int i = 0; i < 500 && job.preparing(); ++i) { auto polled = job.poll(session, f.region, identity); CHECK(polled); std::this_thread::sleep_for(std::chrono::milliseconds{2}); }
-  auto ready = job.poll(session, f.region, identity); CHECK(ready); CHECK(job.state() == authoring::JapaneseReadingJob::State::Ready);
+  const auto ready = waitForReadingJob([&] { return job.poll(session, f.region, identity); });
+  if (!ready) throw test::Failure{"Japanese reading failed: " + ready.error().message};
+  CHECK(ready.value()); CHECK(job.state() == authoring::JapaneseReadingJob::State::Ready);
   const auto* result = job.current(session, f.region, identity); CHECK(result); CHECK(result->reading.tokens.size() == 2U); CHECK(result->bindings[0].crossesLyrics);
   CHECK(result->bindings[0].notes.size() == 2U); CHECK(result->bindings[1].notes.size() == 1U); CHECK(session.project() == f.project); CHECK(!session.canUndo());
   auto restarted = resource(root); CHECK(restarted); CHECK(job.start(session, f.region, f.notes, std::move(restarted.value()))); // Retired workers can be restarted.
   CHECK(job.requestId() == 2U); job.cancel(); CHECK(job.state() == authoring::JapaneseReadingJob::State::Cancelled); CHECK(job.current(session, f.region, identity) == nullptr);
-  for (int i = 0; job.preparing() && i < 500; ++i) {
-    auto polled = job.pollCancelled(); CHECK(polled); if (polled.value()) break;
-    std::this_thread::sleep_for(std::chrono::milliseconds{2});
-  }
+  CHECK(waitForReadingJob([&] { return job.pollCancelled(); }));
   CHECK(job.pollCancelled()); CHECK(job.state() == authoring::JapaneseReadingJob::State::Cancelled); CHECK(!job.preparing());
   auto stale = resource(root); CHECK(stale); CHECK(job.start(session, f.region, f.notes, std::move(stale.value())));
   const auto replaced = session.replaceProject(f.project); CHECK(replaced); auto stalePoll = job.poll(session, f.region, identity);
-  if (stalePoll) CHECK(!stalePoll.value());
-  while (job.preparing()) {
-    auto polled = job.poll(session, f.region, identity);
-    if (!polled || polled.value()) break;
-    std::this_thread::sleep_for(std::chrono::milliseconds{2});
+  if (stalePoll) {
+    CHECK(!stalePoll.value());
+    CHECK(!waitForReadingJob([&] { return job.poll(session, f.region, identity); }));
   }
   CHECK(job.state() == authoring::JapaneseReadingJob::State::Failed); CHECK(job.current(session, f.region, identity) == nullptr);
 #endif
@@ -68,7 +78,7 @@ TEST_CASE("Japanese reading job rejects concurrent starts and preserves terminal
   auto second = resource(root); CHECK(second); const auto concurrent = job.start(session, f.region, f.notes, std::move(second.value()));
   CHECK(!concurrent); CHECK(concurrent.error().message.find("Retire") != std::string::npos); CHECK(job.requestId() == 1U);
   job.cancel();
-  while (job.preparing()) { auto polled = job.poll(session, f.region, identity); CHECK(polled); if (polled.value()) break; std::this_thread::sleep_for(std::chrono::milliseconds{2}); }
+  CHECK(waitForReadingJob([&] { return job.poll(session, f.region, identity); }));
   CHECK(job.poll(session, f.region, identity)); CHECK(job.state() == authoring::JapaneseReadingJob::State::Cancelled);
   auto missing = resource(root); CHECK(missing);
   const auto missingPath = missing.value().resource().spec().executable;
@@ -76,7 +86,7 @@ TEST_CASE("Japanese reading job rejects concurrent starts and preserves terminal
       std::filesystem::perm_options::add);
   CHECK(std::filesystem::remove(missingPath));
   CHECK(job.start(session, f.region, f.notes, std::move(missing.value())));
-  while (job.preparing()) { auto polled = job.poll(session, f.region, identity); if (!polled || polled.value()) break; std::this_thread::sleep_for(std::chrono::milliseconds{2}); }
+  CHECK(!waitForReadingJob([&] { return job.poll(session, f.region, identity); }));
   CHECK(job.state() == authoring::JapaneseReadingJob::State::Failed); CHECK(!job.error().empty());
   CHECK(job.poll(session, f.region, identity)); CHECK(job.state() == authoring::JapaneseReadingJob::State::Failed);
   CHECK(!job.current(session, f.region, identity));

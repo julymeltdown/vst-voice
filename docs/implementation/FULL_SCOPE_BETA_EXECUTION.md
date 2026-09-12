@@ -12,6 +12,17 @@ This ledger records implementation evidence for [the approved plan](../plans/202
 
 ## Active implementation
 
+2026-09-12 — Owner-requested publication completed to origin/master at
+`5e03d65e0f5e16f5f7f73eb3e31a9c5d48bac5f8`; remote hash was verified. Continued
+with the recurring Japanese-reading lifecycle regression: replaced the nominal
+one-second polling loop and unbounded terminal loops with a monotonic 15-second
+completion deadline, accounting for the helper's 10-second wall deadline plus
+resource checks. Worker failures remain failures with their diagnostic; Ready,
+cancellation, stale-result rejection and absent-helper outcomes remain asserted.
+Final Release rebuild and parallel Japanese-pronunciation/core suites pass 2/2
+(23.82 s). This repairs verification reliability, not a new roadmap unit; the
+full-scope implementation goal remains active.
+
 2026-09-12 — Publication verification: accumulated implementation committed as
 `fdd197005fad6b6b0fb33396854b4439be7ab18c`. Release build passed; the complete
 121-target CTest run passed 119 targets in 143.97 s. Source closure identified ten
