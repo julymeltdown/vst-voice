@@ -1,5 +1,6 @@
 """Exercise real pilot exports; this does not score musical intelligibility."""
 import json
+import hashlib
 from pathlib import Path
 import subprocess
 import sys
@@ -39,6 +40,36 @@ def main():
         rejected = subprocess.run([str(binary), str(root / "first")], capture_output=True, timeout=10)
         assert rejected.returncode != 0
         assert (root / "first" / "pilot.json").read_bytes() == before
+        articulation_hashes = []
+        expected_phones = [phone for onset, vowel in zip(
+            ["m"] * 5 + ["n"] * 5 + ["p", "t", "k", "s"],
+            list("aiueoaiueoaaaa")) for phone in (onset, vowel)]
+        for name in ("articulation", "articulation-repeat"):
+            subprocess.run([str(binary), str(root / name), "articulation"],
+                           check=True, capture_output=True, timeout=60)
+            report = json.loads((root / name / "pilot.json").read_text())
+            assert report["releaseEligible"] is False
+            hashes = []
+            for row in report["runs"]:
+                audio = Path(row["wav"])
+                assert hashlib.sha256(audio.read_bytes()).hexdigest() == row["sha256"]
+                hashes.append(row["sha256"])
+                if audio.parent.name != "candidates":
+                    continue
+                metadata = json.loads(audio.with_suffix(".json").read_text())
+                assert metadata["approval"] == "unapproved"
+                assert metadata["audioSha256"] == row["sha256"]
+                markers = metadata["markers"]
+                assert [m["phone"] for m in markers] == expected_phones
+                assert {m["kind"] for m in markers} == {"nasal", "plosive", "frication", "oral-vowel"}
+                assert markers[0]["startFrame"] == 0
+                assert markers[-1]["endFrame"] == metadata["frameCount"]
+                assert all(m["startFrame"] < m["endFrame"] for m in markers)
+                assert all(a["endFrame"] == b["startFrame"] for a, b in zip(markers, markers[1:]))
+                pitch = json.loads((root / name / (row["variant"] + "-pitch.json")).read_text())
+                assert len(pitch["notes"]) == 14
+            articulation_hashes.append(hashes)
+        assert articulation_hashes[0] == articulation_hashes[1]
     print("Pilot repeatability, finite/nonzero PCM, variant identity and no-overwrite checks passed; quality unassessed.")
 
 

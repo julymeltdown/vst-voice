@@ -168,6 +168,24 @@ not a replacement product contract or a release approval.
   is claimed. Next synthesis investigation should prioritize consonant/context
   transitions and articulation coverage over steady-pitch changes.
 
+### Expanded articulation listening fixture
+
+- Added an explicit `articulation` pilot mode: fourteen Japanese CV notes,
+  `ma mi mu me mo na ni nu ne no pa ta ka sa`, rendered through ordinary export
+  in the same three variants. Recipes explicitly bind nasal resonance and
+  antiresonance for m/n, separate released-stop bursts for p/t/k, and s noise.
+  This extends the diagnostic recipe, not the renderer's supported source types.
+- Complete local audio/scores/recipes/markers/pitch diagnostics are retained at
+  `build/release/seam-pilot-articulation-01/`. No auditory verdict is asserted.
+- The real CLI regression now repeats both fixtures and verifies exact 28-phone
+  coverage, four gesture classes, ordered contiguous planned boundaries, complete
+  candidate span, actual SHA256 binding and unapproved state. Rebuilt executable
+  and focused CTest passed (1/1, 2.85 seconds); no full-suite run claimed.
+- M1.P2 remains open: context/transition semantics, remaining consonant families,
+  held-out linguistic phrases and resumable inventory generation are not supplied
+  by this diagnostic. Prioritize those gaps rather than treating marker coverage
+  or steady vowel pitch as proof of an intelligible singer.
+
 Next concrete implementation owners: explicit evidence-backed legacy migration,
 then complete populated-workspace parity and candidate
 review/publication parity and the resumable inventory campaign. The generation

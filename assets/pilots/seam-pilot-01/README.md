@@ -23,6 +23,27 @@ attempt: metadata was incorrectly treated as WAV during measurement, then fixed.
 The registered `seam_singer_pilot_cli` test repeats the actual render, checks
 identical WAV hashes and nonzero finite levels, and checks no-overwrite behavior.
 
+For the expanded articulation probe:
+
+```sh
+build/release/seam_singer_pilot NEW_OUTPUT_DIRECTORY articulation
+```
+
+This renders `ま み む め も な に ぬ ね の ぱ た か さ` with explicit
+nasal resonance/antiresonance models for `m/n`, independent burst spectra for
+released `p/t/k`, and `s` frication. The recipe uses existing source semantics;
+the parameter choices are experimental, not phonetic qualification. All three
+variants retain 28 ordered owned gestures across 14 notes, plus score-bound
+steady-pitch diagnostics. Local output: `build/release/seam-pilot-articulation-01/`.
+The CLI regression checks the exact phone sequence, four gesture classes,
+contiguous planned boundaries, unapproved status, audio hashes and repeatability.
+Markers prove planned timing only, not perceptual onset accuracy.
+
+Still absent from this probe: voiced stops, affricates, liquids/glides,
+standalone nasal, pre-onset context, melisma, short-note failure cases and
+independent intelligibility judgments. Do not use these fourteen notes to claim
+complete Japanese coverage or generate a qualified full bank.
+
 Generate the proposed Japanese coverage, across three planned pitch layers:
 
 ```sh

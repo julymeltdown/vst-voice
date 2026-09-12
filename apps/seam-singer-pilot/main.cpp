@@ -26,16 +26,24 @@ template<class T> void require(const seam::core::Result<T>& value) {
 int main(int argc, char** argv) {
   using namespace seam;
   try {
-    if (argc != 2) throw std::runtime_error("Usage: seam_singer_pilot NEW_OUTPUT_DIRECTORY");
+    if (argc < 2 || argc > 3 || (argc == 3 && std::string_view(argv[2]) != "articulation"))
+      throw std::runtime_error("Usage: seam_singer_pilot NEW_OUTPUT_DIRECTORY [articulation]");
+    const bool articulation = argc == 3;
     const auto root = std::filesystem::absolute(argv[1]);
     if (!std::filesystem::create_directory(root)) throw std::runtime_error("Output directory must be new");
     application::ProjectFactory factory{91000U};
     auto project = factory.createProject("SEAM pilot: vowel and fricative ladder (unqualified)");
     const auto trackId = factory.addVocalTrack(project, "Original procedural pilot");
-    const auto regionId = factory.addRegion(project, trackId, "a i u e o sa", time::Tick{0}, time::Tick{2880});
+    const std::string phrase = articulation ? "ma mi mu me mo na ni nu ne no pa ta ka sa" : "a i u e o sa";
+    const std::vector<std::u32string> lyrics = articulation
+        ? std::vector<std::u32string>{U"ま", U"み", U"む", U"め", U"も", U"な", U"に", U"ぬ", U"ね", U"の", U"ぱ", U"た", U"か", U"さ"}
+        : std::vector<std::u32string>{U"あ", U"い", U"う", U"え", U"お", U"さ"};
+    const std::vector<std::uint8_t> pitches = articulation
+        ? std::vector<std::uint8_t>{60, 62, 64, 65, 67, 67, 65, 64, 62, 60, 60, 64, 67, 72}
+        : std::vector<std::uint8_t>{60, 62, 64, 65, 67, 72};
+    const auto regionId = factory.addRegion(project, trackId, phrase, time::Tick{0},
+        time::Tick{static_cast<std::int64_t>(lyrics.size()) * 480});
     auto* region = project.findRegion(regionId);
-    const std::array<std::u32string, 6> lyrics{U"あ", U"い", U"う", U"え", U"お", U"さ"};
-    const std::array<std::uint8_t, 6> pitches{60U, 62U, 64U, 65U, 67U, 72U};
     for (std::size_t index = 0; index < lyrics.size(); ++index) {
       auto [lyric, note] = factory.makeNote(time::Tick{static_cast<std::int64_t>(index) * 480}, time::Tick{480},
           pitches[index], lyrics[index], domain::Language::Japanese);
@@ -50,6 +58,15 @@ int main(int argc, char** argv) {
         {"e", "neutral", 0.0, {{500, 80, 0}, {1900, 110, -3}, {2900, 160, -6}}},
         {"o", "neutral", 0.0, {{500, 90, 0}, {900, 110, -3}, {2600, 160, -6}}}};
     base.frications = {{"s", "neutral", {.seed = 91000U, .centerHz = 5500, .bandwidthHz = 3000, .gain = 0.12}}};
+    if (articulation) {
+      base.id = "seam-pilot-01-articulation-diagnostic";
+      base.poses.push_back({"m", "neutral", 0.85, {{300, 80, 0}, {1100, 110, -6}, {2500, 160, -9}}, voice_design::NasalResonance{}});
+      base.poses.push_back({"n", "neutral", 0.75, {{300, 80, 0}, {1700, 110, -6}, {2800, 160, -9}}, voice_design::NasalResonance{300, 90, 1500, 120}});
+      base.plosives = {
+          {"p", "neutral", {.seed = 91001U, .centerHz = 1200, .bandwidthHz = 1800, .gain = 0.12}, 10},
+          {"t", "neutral", {.seed = 91002U, .centerHz = 4500, .bandwidthHz = 3000, .gain = 0.12}, 10},
+          {"k", "neutral", {.seed = 91003U, .centerHz = 2500, .bandwidthHz = 2200, .gain = 0.12}, 10}};
+    }
     formats::JsonValue::Array runs;
     for (const std::string name : {"baseline", "higher-formants", "breathier"}) {
       auto recipe = base;
@@ -126,7 +143,7 @@ int main(int argc, char** argv) {
       }
     }
     require(core::durableAtomicWriteTextNew(root / "pilot.json", formats::stringifyJson(formats::JsonValue::Object{
-        {"status", "UNQUALIFIED_LISTENING_PILOT"}, {"releaseEligible", false}, {"phrase", "a i u e o sa"},
+        {"status", "UNQUALIFIED_LISTENING_PILOT"}, {"releaseEligible", false}, {"phrase", phrase},
         {"runs", std::move(runs)}}, true)));
     return 0;
   } catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }
