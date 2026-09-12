@@ -36,7 +36,8 @@ core::Result<ArticulationPlan> ArticulationPlan::compileRecipe(
     nasals.push_back(pose.phone);
   const synthesis::PhraseFrameRange context{notes.front().startFrame, notes.back().endFrame};
   auto plan = compile(phones, performance.phonemeTiming(), bindings, performance.sampleRate(), context,nasals,plosives);
-  if (!plan) return plan;
+  if (!plan) return core::failure<ArticulationPlan>(plan.error().code,
+      "Recipe '" + recipe.value().id + "', style '" + std::string(style) + "': " + plan.error().message);
   std::map<domain::NoteId, const synthesis::ScoreNoteSpan*> scoreNotes;
   for (const auto& note : notes) scoreNotes.emplace(note.id, &note);
   std::set<domain::NoteId> covered;

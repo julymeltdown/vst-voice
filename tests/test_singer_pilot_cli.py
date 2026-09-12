@@ -148,6 +148,9 @@ def main():
         result = subprocess.run([str(binary), str(unsupported), "phrase", "ば:60"], capture_output=True, timeout=10)
         assert result.returncode != 0
         assert not (unsupported / "pilot.json").exists()
+        assert b"Phone 'b'" in result.stderr
+        assert b"style 'neutral'" in result.stderr
+        assert b"seam-pilot-01-articulation-diagnostic" in result.stderr
     print("Pilot repeatability, finite/nonzero PCM, variant identity and no-overwrite checks passed; quality unassessed.")
 
 

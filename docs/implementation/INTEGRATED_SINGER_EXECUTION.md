@@ -506,6 +506,16 @@ is claimed.
 
 ## Voiced reattack boundary repair
 
+### Actionable recipe coverage errors
+
+Recipe articulation failures now retain the original error code and identify
+the recipe ID and selected style alongside the existing phone/note diagnostic.
+Missing VocalTract poses identify phone, style and recipe rather than only
+reporting a missing pose. Tests verify missing phone/style and the stderr from
+an actual unsupported `ば:60` production pilot export. No source substitution,
+DSP change, approval or expanded phonetic support is implied. Targeted Release
+build and voice-design/pilot CTests passed (2/2, 7.78 seconds).
+
 ### Bounded user-authored pilot phrases
 
 The pilot CLI now accepts `phrase LYRIC:MIDI ...` rather than only fixed

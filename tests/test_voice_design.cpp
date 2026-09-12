@@ -68,6 +68,19 @@ TEST_CASE("voiced note reattacks taper boundaries while melisma remains continuo
   }
 }
 
+TEST_CASE("missing tract coverage identifies the requested phone style and recipe") {
+  const auto recipe=nasalFixture();
+  const auto missingPhone=seam::voice_design::VocalTract::create(recipe,"i","neutral",48000U);
+  CHECK(!missingPhone);
+  CHECK(missingPhone.error().code==seam::core::ErrorCode::NotFound);
+  CHECK(missingPhone.error().message.find("phone 'i'")!=std::string::npos);
+  CHECK(missingPhone.error().message.find("style 'neutral'")!=std::string::npos);
+  CHECK(missingPhone.error().message.find(recipe.id)!=std::string::npos);
+  const auto missingStyle=seam::voice_design::VocalTract::create(recipe,"a","soft",48000U);
+  CHECK(!missingStyle);
+  CHECK(missingStyle.error().message.find("style 'soft'")!=std::string::npos);
+}
+
 TEST_CASE("mixed voiced frication remains replayable across rates pitches and gain endpoints") {
   using namespace seam;
   for (const auto rate:{22050U,44100U,48000U,96000U}) for (const auto pitch:{36U,69U,96U})

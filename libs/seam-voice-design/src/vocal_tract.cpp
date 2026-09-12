@@ -13,7 +13,8 @@ core::Result<VocalTract> VocalTract::create(const VoiceRecipe& recipe,
       core::ErrorCode::InvalidArgument, "Vocal tract sample rate is unsupported");
   const auto pose = std::find_if(recipe.poses.begin(), recipe.poses.end(),
       [&](const auto& value) { return value.phone == phone && value.style == style; });
-  if (pose == recipe.poses.end()) return core::failure<VocalTract>(core::ErrorCode::NotFound, "Vocal tract pose is missing");
+  if (pose == recipe.poses.end()) return core::failure<VocalTract>(core::ErrorCode::NotFound,
+      "Vocal tract pose is missing for phone '" + std::string(phone) + "', style '" + std::string(style) + "' in recipe '" + recipe.id + "'");
   if (pose->nasalCoupling != 0.0 && !pose->nasal) return core::failure<VocalTract>(core::ErrorCode::Unsupported,
       "Legacy nasal coupling requires an explicit resonance and antiresonance model");
   VocalTract result;
