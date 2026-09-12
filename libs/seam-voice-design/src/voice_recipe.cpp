@@ -74,18 +74,24 @@ core::Result<void> VoiceRecipe::validate() const {
   if (plosives.size()>64U) return core::failure(core::ErrorCode::InvalidArgument,"Too many plosive poses");
   for (const auto& pose:plosives) {
     const auto& source=pose.source;
-    if ((pose.phone!="p" && pose.phone!="t" && pose.phone!="k") || !text(pose.style) ||
+    const bool validPhone=pose.voicedClosure ? (pose.phone=="b" || pose.phone=="d" || pose.phone=="g") :
+        (pose.phone=="p" || pose.phone=="t" || pose.phone=="k");
+    if (!validPhone || !text(pose.style) ||
         !identities.emplace(pose.phone,pose.style).second ||
         std::none_of(poses.begin(),poses.end(),[&](const auto& voice) { return voice.style==pose.style; }) ||
         !bounded(source.centerHz,80.0,16000.0) || !bounded(source.bandwidthHz,20.0,16000.0) ||
         !bounded(source.gain,0.0,0.25) || !bounded(source.centerHz/source.bandwidthHz,0.25,20.0) ||
         !bounded(pose.burstMilliseconds,1.0,100.0))
       return core::failure(core::ErrorCode::InvalidArgument,"Plosive identity, style, spectrum or duration is invalid or ambiguous with frication");
+    if (pose.voicedClosure && (!bounded(pose.voicedClosure->gain,0.0,0.5) || pose.voicedClosure->gain==0.0 ||
+        !bounded(pose.voicedClosure->lowpassHz,40.0,2000.0)))
+      return core::failure(core::ErrorCode::InvalidArgument,"Voiced closure gain or lowpass cutoff is invalid");
   }
   return core::success();
 }
 
 std::int64_t voiceRecipeSchemaVersion(const VoiceRecipe& recipe) noexcept {
+  if (std::any_of(recipe.plosives.begin(),recipe.plosives.end(),[](const auto& pose){return pose.voicedClosure.has_value();})) return 6;
   if (std::any_of(recipe.frications.begin(),recipe.frications.end(),[](const auto& pose){return pose.voicingGain.has_value();})) return 5;
   if (!recipe.plosives.empty()) return 4;
   return std::any_of(recipe.poses.begin(),recipe.poses.end(),[](const auto& pose) { return pose.nasal.has_value(); }) ? 3 : recipe.frications.empty() ? 1 : 2;
@@ -131,10 +137,15 @@ core::Result<std::string> encodeVoiceRecipe(const VoiceRecipe& recipe) {
   }
   if (version>=4) {
     J::Array plosives;
-    for (const auto& pose:recipe.plosives) plosives.emplace_back(J::Object{
+    for (const auto& pose:recipe.plosives) {
+      J row{J::Object{
         {"phone",pose.phone},{"style",pose.style},{"seed",std::to_string(pose.source.seed)},
         {"centerHz",pose.source.centerHz},{"bandwidthHz",pose.source.bandwidthHz},{"gain",pose.source.gain},
-        {"burstMilliseconds",pose.burstMilliseconds}});
+        {"burstMilliseconds",pose.burstMilliseconds}}};
+      if (version>=6) row.asObject().emplace("voicedClosure",pose.voicedClosure ?
+          J{J::Object{{"gain",pose.voicedClosure->gain},{"lowpassHz",pose.voicedClosure->lowpassHz}}} : J{});
+      plosives.push_back(std::move(row));
+    }
     root.asObject().emplace("plosives",std::move(plosives));
   }
   return formats::stringifyJson(root);
@@ -149,7 +160,7 @@ core::Result<VoiceRecipe> decodeVoiceRecipe(std::string_view json) {
       !root.find("formatId")->isString() || root.find("formatId")->asString() != "com.project-seam.voice-recipe" ||
       !root.find("schemaVersion")->isInteger()) return malformed();
   const auto version = root.find("schemaVersion")->asInt64();
-  if (version < 1 || version > 5) return core::failure<VoiceRecipe>(core::ErrorCode::Unsupported, "Voice recipe schema is unsupported");
+  if (version < 1 || version > 6) return core::failure<VoiceRecipe>(core::ErrorCode::Unsupported, "Voice recipe schema is unsupported");
   if (!(version == 1 ? fields(root, {"formatId", "schemaVersion", "id", "engineId", "seed", "phonation", "modulation", "poses"}) :
       version>=4 ? fields(root,{"formatId","schemaVersion","id","engineId","seed","phonation","modulation","poses","frications","plosives"}) :
       fields(root, {"formatId", "schemaVersion", "id", "engineId", "seed", "phonation", "modulation", "poses", "frications"}))) return malformed();
@@ -204,13 +215,19 @@ core::Result<VoiceRecipe> decodeVoiceRecipe(std::string_view json) {
     const auto& list=*root.find("plosives");
     if (!list.isArray() || (version==4 && list.asArray().empty())) return malformed();
     for (const auto& pose:list.asArray()) {
-      if (!fields(pose,{"phone","style","seed","centerHz","bandwidthHz","gain","burstMilliseconds"}) ||
+      if (!(version>=6 ? fields(pose,{"phone","style","seed","centerHz","bandwidthHz","gain","burstMilliseconds","voicedClosure"}) :
+          fields(pose,{"phone","style","seed","centerHz","bandwidthHz","gain","burstMilliseconds"})) ||
           !pose.find("phone")->isString() || !pose.find("style")->isString() ||
           !number(pose,"centerHz") || !number(pose,"bandwidthHz") || !number(pose,"gain") || !number(pose,"burstMilliseconds")) return malformed();
       FricationConfig source;
       if (!parseSeed(*pose.find("seed"),source.seed)) return malformed();
       source.centerHz=pose.find("centerHz")->asNumber(); source.bandwidthHz=pose.find("bandwidthHz")->asNumber(); source.gain=pose.find("gain")->asNumber();
       recipe.plosives.push_back({pose.find("phone")->asString(),pose.find("style")->asString(),source,pose.find("burstMilliseconds")->asNumber()});
+      if (version>=6 && !pose.find("voicedClosure")->isNull()) {
+        const auto& closure=*pose.find("voicedClosure");
+        if (!fields(closure,{"gain","lowpassHz"}) || !number(closure,"gain") || !number(closure,"lowpassHz")) return malformed();
+        recipe.plosives.back().voicedClosure=VoiceRecipe::VoicedClosure{closure.find("gain")->asNumber(),closure.find("lowpassHz")->asNumber()};
+      }
     }
   }
   const auto valid = recipe.validate();

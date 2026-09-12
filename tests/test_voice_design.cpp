@@ -119,6 +119,37 @@ TEST_CASE("voiced plosive primitive preserves score excitation closure and exact
   }
 }
 
+TEST_CASE("voiced closure recipes require explicit schema six without changing legacy stops") {
+  using namespace seam;
+  auto recipe=nasalFixture();
+  recipe.plosives={{"p","neutral",{},10.0}};
+  const auto legacy=voice_design::encodeVoiceRecipe(recipe); CHECK(legacy);
+  CHECK(voice_design::voiceRecipeSchemaVersion(recipe)==4);
+  const auto legacyResource=voice_design::freezeVoiceRecipeResource(recipe); CHECK(legacyResource);
+  recipe.plosives.push_back({"b","neutral",{},10.0,voice_design::VoiceRecipe::VoicedClosure{0.2,400.0}});
+  const auto encoded=voice_design::encodeVoiceRecipe(recipe); CHECK(encoded);
+  CHECK(voice_design::voiceRecipeSchemaVersion(recipe)==6);
+  const auto decoded=voice_design::decodeVoiceRecipe(encoded.value()); CHECK(decoded);
+  CHECK(decoded.value()==recipe);
+  const auto resource=voice_design::freezeVoiceRecipeResource(recipe); CHECK(resource);
+  CHECK(resource.value().identity.version=="6");
+  // Runtime admission stays closed until timing/render/marker integration exists.
+  CHECK(!voice_design::decodeVoiceRecipeResource(resource.value()));
+  auto downgraded=formats::parseJson(encoded.value()).value();
+  downgraded.asObject()["schemaVersion"]=formats::JsonValue{std::int64_t{5}};
+  CHECK(!voice_design::decodeVoiceRecipe(formats::stringifyJson(downgraded)));
+  auto missing=formats::parseJson(encoded.value()).value();
+  missing.asObject()["plosives"].asArray().back().asObject().erase("voicedClosure");
+  CHECK(!voice_design::decodeVoiceRecipe(formats::stringifyJson(missing)));
+  auto invalid=recipe; invalid.plosives.back().voicedClosure->gain=0.0; CHECK(!invalid.validate());
+  invalid=recipe; invalid.plosives.back().voicedClosure->lowpassHz=2001.0; CHECK(!invalid.validate());
+  invalid=recipe; invalid.plosives.back().phone="p"; CHECK(!invalid.validate());
+  invalid=recipe; invalid.plosives.back().voicedClosure.reset(); CHECK(!invalid.validate());
+  recipe.plosives.pop_back();
+  CHECK(voice_design::encodeVoiceRecipe(recipe).value()==legacy.value());
+  CHECK(voice_design::freezeVoiceRecipeResource(recipe).value().identity==legacyResource.value().identity);
+}
+
 TEST_CASE("mixed voiced frication remains replayable across rates pitches and gain endpoints") {
   using namespace seam;
   for (const auto rate:{22050U,44100U,48000U,96000U}) for (const auto pitch:{36U,69U,96U})

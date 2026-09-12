@@ -50,10 +50,16 @@ struct VoiceRecipe final {
     friend bool operator==(const FricationPose&, const FricationPose&) = default;
   };
   std::vector<FricationPose> frications;
+  struct VoicedClosure final {
+    double gain{0.15}, lowpassHz{500.0};
+    friend bool operator==(const VoicedClosure&,const VoicedClosure&)=default;
+  };
   struct PlosivePose final {
     std::string phone, style;
     FricationConfig source;
     double burstMilliseconds{10.0};
+    // Schema-six explicit opt-in. Absent retains unvoiced p/t/k semantics.
+    std::optional<VoicedClosure> voicedClosure{};
     friend bool operator==(const PlosivePose&,const PlosivePose&)=default;
   };
   std::vector<PlosivePose> plosives;

@@ -506,6 +506,24 @@ is claimed.
 
 ## Voiced reattack boundary repair
 
+### Explicit voiced-closure recipe contract
+
+Schema six adds optional `plosives[].voicedClosure` with explicit `gain` in
+(0, 0.5] and `lowpassHz` in [40, 2000]. Its presence admits b/d/g design-time
+bindings; its absence preserves p/t/k. Existing same-style source requirements
+and duplicate frication/plosive rejection remain. A schema-six mixed recipe
+encodes null closure fields for unvoiced entries. Strict decoding rejects
+missing/extra fields, invalid models and semantic downgrades; schemas 1–5 retain
+their prior canonical representation. Tests verify round trip, schema identity,
+downgrade/missing-field rejection, invalid gain/cutoff/phone combinations and
+byte/hash-identical legacy stop encoding after removing the new opt-in pose.
+
+Targeted Release build and voice-design CTest passed (1/1, 7.56 seconds).
+`decodeVoiceRecipeResource` deliberately still rejects schema six in rendering:
+normal song rendering must not silently ignore closure voicing. Timing, mixed
+source rendering and candidate marker integration are the next required work.
+No production voiced-stop support or acoustic quality qualification is claimed.
+
 ### Experimental voiced-closure source primitive
 
 Added `VoicedPlosiveSource` beside the existing unvoiced primitive. It accepts
