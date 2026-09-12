@@ -21,6 +21,18 @@ def main():
             for row in report["runs"]:
                 assert 0 < row["rms"] <= row["peak"] < 1
                 assert Path(row["wav"]).is_file()
+                if Path(row["wav"]).parent.name == "candidates":
+                    pitch = json.loads((root / name / (row["variant"] + "-pitch.json")).read_text())
+                    assert pitch["audioSha256"] == row["sha256"]
+                    assert pitch["status"] == "DIAGNOSTIC_NOT_QUALIFICATION"
+                    assert len(pitch["notes"]) == 6
+                    for note in pitch["notes"]:
+                        assert note["analysisFrames"] > 0
+                        assert 0 <= note["within50CentsFrames"] <= note["voicedFrames"] <= note["analysisFrames"]
+                    if row["variant"] == "baseline":
+                        # Fixed diagnostic fixture only, not full-singer qualification.
+                        assert all(n["medianAbsoluteCents"] < 30 for n in pitch["notes"])
+                        assert all(n["within50CentsFrames"] == n["analysisFrames"] for n in pitch["notes"])
             reports.append(report)
         assert [row["sha256"] for row in reports[0]["runs"]] == [row["sha256"] for row in reports[1]["runs"]]
         before = (root / "first" / "pilot.json").read_bytes()

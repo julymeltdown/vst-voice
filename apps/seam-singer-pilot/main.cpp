@@ -6,8 +6,10 @@
 #include "seam/formats/project_json.hpp"
 #include "seam/voice_design/recipe_resource.hpp"
 #include "seam/voicebank/wav.hpp"
+#include "seam/voicebank/pitch.hpp"
 
 #include <array>
+#include <algorithm>
 #include <cmath>
 #include <filesystem>
 #include <iostream>
@@ -75,6 +77,48 @@ int main(int argc, char** argv) {
         }
         if (energy == 0.0 || wav.value().interleaved.empty()) throw std::runtime_error("Pilot is silent");
         const auto hash = core::sha256File(file.path); require(hash);
+        // Analyze the dry mono candidate, avoiding master routing and tails.
+        // Broad-range estimation is deliberately not constrained to score F0:
+        // octave errors and missing voicing must remain observable.
+        if (file.path.parent_path().filename() == "candidates") {
+          const auto mono = wav.value().monoMix();
+          voicebank::PitchConfig config;
+          config.correlationMethod = voicebank::PitchCorrelationMethod::Fft;
+          const auto measured = voicebank::analyzePitch(mono, wav.value().sampleRate, config); require(measured);
+          formats::JsonValue::Array notes;
+          for (std::size_t index = 0; index < pitches.size(); ++index) {
+            // Fixed central half of each score note; no data-dependent exclusions.
+            const auto begin = static_cast<std::size_t>(std::llround(project.tempoMap().secondsAt(
+                time::Tick{static_cast<std::int64_t>(index) * 480 + 120}) * wav.value().sampleRate));
+            const auto end = static_cast<std::size_t>(std::llround(project.tempoMap().secondsAt(
+                time::Tick{static_cast<std::int64_t>(index) * 480 + 360}) * wav.value().sampleRate));
+            const auto expected = 440.0 * std::exp2((static_cast<double>(pitches[index]) - 69.0) / 12.0);
+            std::size_t total = 0U, voiced = 0U, within = 0U, octaves = 0U;
+            std::vector<double> errors;
+            for (const auto& frame : measured.value()) {
+              if (frame.sourceFrame < begin || frame.sourceFrame + config.frameSize > end) continue;
+              ++total;
+              if (!frame.voiced || frame.f0Hz <= 0.0) continue;
+              ++voiced;
+              const auto cents = std::abs(1200.0 * std::log2(frame.f0Hz / expected));
+              errors.push_back(cents);
+              if (cents <= 50.0) ++within;
+              if (cents >= 1150.0) ++octaves;
+            }
+            std::sort(errors.begin(), errors.end());
+            formats::JsonValue median;
+            if (!errors.empty()) median = (errors[(errors.size() - 1U) / 2U] + errors[errors.size() / 2U]) / 2.0;
+            notes.emplace_back(formats::JsonValue::Object{
+                {"noteIndex", static_cast<std::int64_t>(index)}, {"expectedHz", expected},
+                {"analysisFrames", static_cast<std::int64_t>(total)}, {"voicedFrames", static_cast<std::int64_t>(voiced)},
+                {"within50CentsFrames", static_cast<std::int64_t>(within)}, {"largePitchErrorFrames", static_cast<std::int64_t>(octaves)},
+                {"medianAbsoluteCents", median}});
+          }
+          require(core::durableAtomicWriteTextNew(root / (name + "-pitch.json"), formats::stringifyJson(formats::JsonValue::Object{
+              {"status", "DIAGNOSTIC_NOT_QUALIFICATION"}, {"audioSha256", hash.value()},
+              {"windowPolicy", "central-half-full-analysis-windows-no-data-dependent-exclusions"},
+              {"notes", std::move(notes)}}, true)));
+        }
         runs.emplace_back(formats::JsonValue::Object{{"variant", name}, {"wav", file.path.string()}, {"sha256", hash.value()},
             {"recipeHash", resource.value().identity.contentHash}, {"peak", peak},
             {"rms", std::sqrt(energy / static_cast<double>(wav.value().interleaved.size()))}});

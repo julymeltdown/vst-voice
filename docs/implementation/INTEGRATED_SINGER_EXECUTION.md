@@ -151,6 +151,23 @@ not a replacement product contract or a release approval.
   campaign generation. Explicit legacy migration remains unfinished but does not
   prevent the new-workspace pilot work.
 
+### Pilot steady-pitch measurement
+
+- The pilot now emits per-variant pitch diagnostics tied to the dry candidate's
+  SHA256. It uses the existing broad-range FFT pitch analyzer, with fixed central
+  half-note windows derived from the project tempo map. Full analysis windows
+  must fit inside those intervals. Unvoiced frames remain in the denominator;
+  missing voiced estimates produce null medians, not zero error.
+- Retained run `build/release/seam-pilot-listening-03/`: the baseline has 92
+  analyzed windows, all voiced and within 50 cents; per-note median absolute
+  errors range from 0.052 to 0.350 cents. This supports steady-pitch behavior for
+  this six-note fixture only, not transitions, timing-edit accuracy, language
+  intelligibility, singer identity or Beta qualification.
+- Rebuilt the pilot and passed its real-CLI regression (1/1), now checking
+  diagnostic hash binding, denominators and baseline pitch. No full-suite rerun
+  is claimed. Next synthesis investigation should prioritize consonant/context
+  transitions and articulation coverage over steady-pitch changes.
+
 Next concrete implementation owners: explicit evidence-backed legacy migration,
 then complete populated-workspace parity and candidate
 review/publication parity and the resumable inventory campaign. The generation
