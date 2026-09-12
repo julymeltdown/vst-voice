@@ -1,6 +1,13 @@
 #pragma once
 #include "seam/authoring/generation_job.hpp"
 namespace seam::authoring {
+// Historical verification only; never restores an old pointer or claims that
+// this historical state is still current. Used to traverse persisted campaigns.
+[[nodiscard]] core::Result<voicebank_production::VoicebankProductionProject> loadVerifiedGenerationBatchReceipt(
+    const voicebank_production::ProductionProjectRepository& repository,
+    const voicebank_production::VoicebankProductionProject& originalProducer,
+    std::span<const GenerationJobReference> jobs, const std::filesystem::path& receiptPath,
+    GenerationBatchLimits limits = {}, std::stop_token stop = {});
 // Retain the original producer and job references across retries. A failure may
 // follow a committed import; retry this operation, never reprepare expectations.
 // Recovered commits reconcile the exact current pointer under the repository

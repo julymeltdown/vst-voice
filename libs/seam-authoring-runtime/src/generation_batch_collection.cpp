@@ -7,6 +7,50 @@
 #include <limits>
 
 namespace seam::authoring {
+core::Result<voicebank_production::VoicebankProductionProject> loadVerifiedGenerationBatchReceipt(
+    const voicebank_production::ProductionProjectRepository& repository,
+    const voicebank_production::VoicebankProductionProject& originalProducer,
+    std::span<const GenerationJobReference> jobs, const std::filesystem::path& receiptPath,
+    GenerationBatchLimits limits, std::stop_token stop) {
+  using Output = voicebank_production::VoicebankProductionProject;
+  const auto fail = [] { return core::failure<Output>(core::ErrorCode::Conflict,
+      "Collection receipt does not match verified repository history"); };
+  if (originalProducer.lastDurableGeneration == std::numeric_limits<std::uint64_t>::max()) return fail();
+  const auto inputs = inspectGenerationBatch(jobs, limits, stop);
+  if (!inputs) return core::Result<Output>{inputs.error()};
+  const auto beforeHash = core::sha256Hex(voicebank_production::encodeProductionProject(originalProducer));
+  if (inputs.value().front().expectation.projectStateSha256 != beforeHash) return fail();
+  const auto before = repository.recoverGeneration(originalProducer.lastDurableGeneration, beforeHash);
+  if (!before) return core::Result<Output>{before.error()};
+  std::error_code error;
+  const auto status = std::filesystem::symlink_status(receiptPath, error);
+  if (error || !std::filesystem::is_regular_file(status) || std::filesystem::is_symlink(status)) return fail();
+  const auto bytes = core::readTextFileLimited(receiptPath, 1024U * 1024U);
+  if (!bytes) return core::Result<Output>{bytes.error()};
+  const auto parsed = formats::parseJson(bytes.value());
+  if (!parsed || !parsed.value().isObject() || !parsed.value().find("committedProducerSha256") ||
+      !parsed.value().find("committedProducerSha256")->isString()) return fail();
+  const auto& afterHash = parsed.value().find("committedProducerSha256")->asString();
+  const auto generation = originalProducer.lastDurableGeneration + 1U;
+  const auto after = repository.recoverGeneration(generation, afterHash);
+  if (!after) return core::Result<Output>{after.error()};
+  formats::JsonValue::Array takes;
+  for (const auto& input : inputs.value()) {
+    if (stop.stop_requested()) return core::failure<Output>(core::ErrorCode::Conflict, "Receipt verification cancelled");
+    const auto found = repository.findCollectedGeneration(input.expectation, generation, afterHash);
+    if (!found) return core::Result<Output>{found.error()};
+    if (!found.value() || !found.value()->active) return fail();
+    takes.emplace_back(formats::JsonValue::Object{{"takeId", found.value()->takeId}, {"audioSha256", found.value()->audioSha256},
+        {"expectationSha256", core::sha256Hex(voicebank_production::encodeGenerationImportExpectation(input.expectation).value())}});
+  }
+  const auto canonical = formats::stringifyJson(formats::JsonValue::Object{
+      {"formatId", "com.project-seam.generation-batch-collection"}, {"schemaVersion", std::int64_t{1}},
+      {"originalProducerSha256", beforeHash}, {"committedProducerSha256", afterHash},
+      {"committedGeneration", std::to_string(generation)}, {"takes", std::move(takes)}}, true);
+  if (canonical != bytes.value()) return fail();
+  return after.value();
+}
+
 core::Result<voicebank_production::ProductionCommitReceipt> collectGenerationBatchWithReceipt(
     const voicebank_production::ProductionProjectRepository& repository,
     const voicebank_production::VoicebankProductionProject& originalProducer,

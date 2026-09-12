@@ -309,6 +309,23 @@ core::Result<void> ProductionProjectRepository::reconcileCurrentPointer(
   return core::durableAtomicWriteText(root_ / "project.json", bytes);
 }
 
+core::Result<VoicebankProductionProject> ProductionProjectRepository::recoverGeneration(
+    std::uint64_t generation, std::string_view expectedProjectSha256) const {
+  const auto invalid = [] { return core::failure<VoicebankProductionProject>(core::ErrorCode::Conflict,
+      "Requested historical producer generation is missing, unsafe or hash-mismatched"); };
+  if (generation == 0U || expectedProjectSha256.size() != 64U) return invalid();
+  std::error_code error;
+  const auto status = std::filesystem::symlink_status(generationPath(generation), error);
+  if (error || !std::filesystem::is_regular_file(status) || std::filesystem::is_symlink(status)) return invalid();
+  const auto bytes = core::readTextFileLimited(generationPath(generation), 64U * 1024U * 1024U);
+  if (!bytes || core::sha256Hex(bytes.value()) != expectedProjectSha256) return invalid();
+  const auto project = decodeProductionProject(bytes.value());
+  if (!project || project.value().lastDurableGeneration != generation) return invalid();
+  const auto verified = verifyGeneration(project.value(), false);
+  if (!verified) return core::Result<VoicebankProductionProject>{verified.error()};
+  return project.value();
+}
+
 core::Result<VoicebankProductionProject>
 ProductionProjectRepository::recover() const {
   const auto directory = root_ / "generations";

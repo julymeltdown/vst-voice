@@ -129,11 +129,13 @@ core::Result<CommittedAssetRecord> ProductionProjectRepository::importRaw(
 }
 
 core::Result<std::optional<CollectedGenerationResult>> ProductionProjectRepository::findCollectedGeneration(
-    const GenerationImportExpectation& expectation) const {
+    const GenerationImportExpectation& expectation, std::uint64_t generation, std::string_view expectedProjectSha256) const {
   using Output = std::optional<CollectedGenerationResult>;
   const auto encoded = encodeGenerationImportExpectation(expectation);
   if (!encoded) return core::Result<Output>{encoded.error()};
-  const auto project = recover();
+  if (generation == 0U && !expectedProjectSha256.empty()) return core::failure<Output>(core::ErrorCode::InvalidArgument,
+      "Historical collection lookup requires a generation with its hash");
+  const auto project = generation == 0U ? recover() : recoverGeneration(generation, expectedProjectSha256);
   if (!project) return core::Result<Output>{project.error()};
   const auto& state = project.value();
   const auto take = std::find_if(state.takes.begin(), state.takes.end(), [&](const auto& value) { return value.takeId == expectation.takeId; });

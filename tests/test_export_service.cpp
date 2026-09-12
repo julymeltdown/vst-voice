@@ -855,6 +855,25 @@ TEST_CASE("nasal and frication candidates bake and enter production with typed u
   CHECK(authoring::collectGenerationBatchWithReceipt(campaignRepository, secondCampaignProducer.value(), secondCampaignBatch.value().jobs,
       root / "campaign-batch-1/collection.json", {"import-generated-batch", secondCampaignBatch.value().batchSha256, "producer", "2026-09-13T00:00:02Z"}));
   CHECK(campaignRepository.recover().value().takes.size() == 2U);
+  const auto latestCampaignPointer = core::sha256File(root / "two-batch-producer/project.json"); CHECK(latestCampaignPointer);
+  const auto historicalReceipt = authoring::loadVerifiedGenerationBatchReceipt(campaignRepository, campaignProducer,
+      firstCampaignBatch.value().jobs, root / "campaign-batch-0/collection.json"); CHECK(historicalReceipt);
+  CHECK(historicalReceipt.value().takes.size() == 1U);
+  CHECK(historicalReceipt.value().lastDurableGeneration == firstCampaignReceipt.value().committedGeneration);
+  CHECK(core::sha256File(root / "two-batch-producer/project.json").value() == latestCampaignPointer.value());
+  const auto receiptBytes = core::readTextFileLimited(root / "campaign-batch-0/collection.json", 1024U * 1024U); CHECK(receiptBytes);
+  const auto receiptJson = formats::parseJson(receiptBytes.value()); CHECK(receiptJson);
+  for (unsigned scenario = 0U; scenario < 3U; ++scenario) {
+    auto altered = receiptJson.value();
+    if (scenario == 0U) *altered.find("committedProducerSha256") = formats::JsonValue{latestCampaignPointer.value()};
+    if (scenario == 1U) *altered.find("takes")->asArray().front().find("audioSha256") = formats::JsonValue{std::string(64U, '0')};
+    if (scenario == 2U) altered.asObject().emplace("skipNextBatch", formats::JsonValue{true});
+    const auto alteredPath = root / ("altered-receipt-" + std::to_string(scenario) + ".json");
+    CHECK(core::durableAtomicWriteTextNew(alteredPath, formats::stringifyJson(altered, true)));
+    CHECK(!authoring::loadVerifiedGenerationBatchReceipt(campaignRepository, campaignProducer, firstCampaignBatch.value().jobs, alteredPath));
+  }
+  CHECK(!campaignRepository.recoverGeneration(firstCampaignReceipt.value().committedGeneration, std::string(64U, '0')));
+  CHECK(!campaignRepository.recoverGeneration(999U, firstCampaignReceipt.value().committedProjectSha256));
   CHECK(!authoring::prepareGenerationCampaignBatch(executablePlan.value(), executableHash, 0U,
       secondCampaignProducer.value(), root / "stale-campaign-preparation"));
   CHECK(!std::filesystem::exists(root / "stale-campaign-preparation"));

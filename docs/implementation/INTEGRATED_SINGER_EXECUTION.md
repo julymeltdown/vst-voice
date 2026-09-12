@@ -377,6 +377,29 @@ not a replacement product contract or a release approval.
   publication, and OS process-kill tests remain open. Do not label this a complete
   resumable campaign runner yet.
 
+### Repository-backed historical receipt verification
+
+- Added exact-hash `recoverGeneration` and optional historical generation/hash
+  arguments to `findCollectedGeneration`. Historical reads validate the requested
+  immutable generation and its normal repository evidence; they never move the
+  current pointer or silently substitute a newer/older recoverable snapshot.
+- Added `loadVerifiedGenerationBatchReceipt`. It verifies the original producer
+  against stored history, checks frozen job expectations, resolves the exact next
+  generation, validates take lineage/audio identities in that historical state,
+  and reconstructs canonical receipt bytes. Unknown fields, altered values or
+  a valid hash belonging to the wrong generation are rejected.
+- The two-batch test verifies batch 0's saved receipt after batch 1 has committed:
+  the returned historical state contains one take, while the current pointer and
+  two-take workspace remain untouched. Negative cases replace the committed state
+  hash with the latest generation hash, forge an audio hash, insert an unknown
+  field, or request a missing/wrong-hash historical generation.
+- This supplies authoritative persisted-receipt loading for the forthcoming
+  advancement loop. Historical verification alone does not assert currentness or
+  restore a pointer; the loop must compare its final state with the current
+  producer and use exact reconciliation before further mutations.
+- Verification: affected Release build and focused export CTest passed (1/1,
+  4.22 seconds). No fresh complete-suite run claimed.
+
 Next concrete implementation owners: explicit evidence-backed legacy migration,
 then complete populated-workspace parity and candidate
 review/publication parity and the resumable inventory campaign. The generation
