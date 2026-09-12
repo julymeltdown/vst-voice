@@ -204,9 +204,9 @@ core::Result<PreparedGenerationJob> loadGenerationJob(const std::filesystem::pat
   return PreparedGenerationJob{root.find("jobId")->asString(), std::string{expectedManifestSha256}, std::move(snapshot.value()), std::move(expectation.value())};
 }
 
-core::Result<PreparedGenerationJob> prepareGenerationJob(const std::filesystem::path& directory, std::string jobId,
+static core::Result<PreparedGenerationJob> prepareGenerationJobImpl(const std::filesystem::path& directory, std::string jobId,
     const rendering::RenderSnapshot& snapshot, const voicebank_production::VoicebankProductionProject& producer,
-    const voicebank_production::RawTakeInput& take) {
+    const voicebank_production::RawTakeInput& take, bool resume) {
   if (!validJobId(jobId) || snapshot.quality != rendering::RenderQuality::Final || snapshot.ownedFrames || !snapshot.sourceProjectId.valid()) return fail();
   const auto valid = rendering::validateProceduralSnapshot(snapshot);
   if (!valid) return core::Result<PreparedGenerationJob>{valid.error()};
@@ -218,30 +218,71 @@ core::Result<PreparedGenerationJob> prepareGenerationJob(const std::filesystem::
   if (!expectation) return core::Result<PreparedGenerationJob>{expectation.error()};
   const auto projectText = formats::ProjectJsonCodec{}.encode(*snapshot.project);
   if (!projectText || projectText.value().size() > 16U * 1024U * 1024U || resource.patch->bytes().size() > 1024U * 1024U) return fail();
-  std::error_code error;
-  if (!std::filesystem::create_directory(directory, error) || error) return core::failure<PreparedGenerationJob>(
-      core::ErrorCode::Conflict, "Generation job directory must be new with an existing parent");
-  const auto scoreWritten = core::durableAtomicWriteTextNew(directory / "project.json", projectText.value());
-  if (!scoreWritten) return core::Result<PreparedGenerationJob>{scoreWritten.error()};
   const auto bytes = resource.patch->bytes();
-  const auto recipeWritten = core::durableAtomicWriteTextNew(directory / "recipe.json", std::string_view{reinterpret_cast<const char*>(bytes.data()), bytes.size()});
-  if (!recipeWritten) return core::Result<PreparedGenerationJob>{recipeWritten.error()};
-  const auto expectationHash = voicebank_production::saveGenerationImportExpectation(directory / "expectation.json", expectation.value());
-  if (!expectationHash) return core::Result<PreparedGenerationJob>{expectationHash.error()};
+  const std::string recipeText{reinterpret_cast<const char*>(bytes.data()), bytes.size()};
+  const auto expectationText = voicebank_production::encodeGenerationImportExpectation(expectation.value());
+  if (!expectationText) return core::Result<PreparedGenerationJob>{expectationText.error()};
   using formats::JsonValue;
   const auto manifest = formats::stringifyJson(JsonValue{JsonValue::Object{
       {"formatId", JsonValue{"com.project-seam.generation-job"}}, {"schemaVersion", JsonValue{std::int64_t{1}}},
       {"jobId", JsonValue{jobId}}, {"projectSha256", JsonValue{core::sha256Hex(projectText.value())}},
-      {"recipeSha256", JsonValue{resource.identity.contentHash}}, {"expectationSha256", JsonValue{expectationHash.value()}},
+      {"recipeSha256", JsonValue{resource.identity.contentHash}}, {"expectationSha256", JsonValue{core::sha256Hex(expectationText.value())}},
       {"sourceProjectId", JsonValue{std::to_string(snapshot.sourceProjectId.value())}}}});
   const auto manifestHash = core::sha256Hex(manifest);
   const auto reference = formats::stringifyJson(JsonValue{JsonValue::Object{
       {"formatId", JsonValue{"com.project-seam.generation-job-reference"}}, {"schemaVersion", JsonValue{std::int64_t{1}}},
       {"directory", JsonValue{"."}}, {"manifestSha256", JsonValue{manifestHash}}}});
-  const auto referenceWritten = core::durableAtomicWriteTextNew(directory / "job.seamjob", reference);
-  if (!referenceWritten) return core::Result<PreparedGenerationJob>{referenceWritten.error()};
-  const auto published = core::durableAtomicWriteTextNew(directory / "job.json", manifest);
-  if (!published) return core::Result<PreparedGenerationJob>{published.error()};
+  std::error_code error;
+  if (!resume) {
+    if (!std::filesystem::create_directory(directory, error) || error) return core::failure<PreparedGenerationJob>(
+        core::ErrorCode::Conflict, "Generation job directory must be new with an existing parent");
+  } else {
+    const auto status = std::filesystem::symlink_status(directory, error);
+    if (error || !std::filesystem::is_directory(status) || std::filesystem::is_symlink(status)) return fail();
+    const auto intentStatus = std::filesystem::symlink_status(directory / "preparation.json", error);
+    if (error || !std::filesystem::is_regular_file(intentStatus) || std::filesystem::is_symlink(intentStatus)) return fail();
+    const auto intent = core::readTextFileLimited(directory / "preparation.json", 4096U);
+    if (!intent || intent.value() != manifest) return fail();
+  }
+  core::ExclusiveFileLock preparationLock;
+  const auto locked = preparationLock.acquire(directory / ".prepare.lock");
+  if (!locked) return core::Result<PreparedGenerationJob>{locked.error()};
+  if (!resume) {
+    const auto intent = core::durableAtomicWriteTextNew(directory / "preparation.json", manifest);
+    if (!intent) return core::Result<PreparedGenerationJob>{intent.error()};
+  }
+  const std::vector<std::pair<std::string, std::string>> files{
+      {"project.json", projectText.value()}, {"recipe.json", recipeText}, {"expectation.json", expectationText.value()},
+      {"job.seamjob", reference}, {"job.json", manifest}};
+  std::vector<bool> missing;
+  // Validate all existing bytes before repairing anything; intent is not license
+  // to erase a conflicting file. Publish job.json last, as in initial preparation.
+  for (const auto& [name, content] : files) {
+    error.clear();
+    const auto status = std::filesystem::symlink_status(directory / name, error);
+    if (error == std::errc::no_such_file_or_directory || (!error && status.type() == std::filesystem::file_type::not_found)) {
+      missing.push_back(true); continue;
+    }
+    if (error || !std::filesystem::is_regular_file(status) || std::filesystem::is_symlink(status)) return fail();
+    const auto existing = core::readTextFileLimited(directory / name, 16U * 1024U * 1024U);
+    if (!resume || !existing || existing.value() != content) return fail();
+    missing.push_back(false);
+  }
+  for (std::size_t index = 0U; index < files.size(); ++index) if (missing[index]) {
+    const auto written = core::durableAtomicWriteTextNew(directory / files[index].first, files[index].second);
+    if (!written) return core::Result<PreparedGenerationJob>{written.error()};
+  }
   return loadGenerationJob(directory, manifestHash);
+}
+
+core::Result<PreparedGenerationJob> prepareGenerationJob(const std::filesystem::path& directory, std::string jobId,
+    const rendering::RenderSnapshot& snapshot, const voicebank_production::VoicebankProductionProject& producer,
+    const voicebank_production::RawTakeInput& take) {
+  return prepareGenerationJobImpl(directory, std::move(jobId), snapshot, producer, take, false);
+}
+core::Result<PreparedGenerationJob> resumeGenerationJobPreparation(const std::filesystem::path& directory, std::string jobId,
+    const rendering::RenderSnapshot& snapshot, const voicebank_production::VoicebankProductionProject& producer,
+    const voicebank_production::RawTakeInput& take) {
+  return prepareGenerationJobImpl(directory, std::move(jobId), snapshot, producer, take, true);
 }
 }

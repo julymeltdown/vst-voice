@@ -328,6 +328,31 @@ not a replacement product contract or a release approval.
 - Affected Release targets rebuilt and focused export CTest passed (1/1, 3.89
   seconds). No fresh complete-suite or installed-host result claimed.
 
+### Explicit generation preparation recovery
+
+- Campaign integration exposed a prerequisite: existing job preparation required
+  a brand-new directory and could not resume partially written inputs. New job
+  preparation now publishes `preparation.json` first, containing the exact future
+  manifest and its score/recipe/expectation digests. It then publishes inputs,
+  reference and final `job.json` in that order under a preparation lock.
+- Added explicit `resumeGenerationJobPreparation` using the original snapshot,
+  producer and take. Recomputed intent must match exactly. All existing named
+  files are checked for regular-file status and exact bytes before any missing
+  file is written. Changed producer expectations, conflicting content, symlinks
+  and directories without intent are not adopted. No files are overwritten.
+- Existing prepare APIs retain create-new behavior. Existing complete jobs remain
+  readable without the new intent. An old partial job or interruption between
+  directory creation and intent publication remains unowned and is not silently
+  repaired; campaign-level recovery must preserve that artifact explicitly.
+- Tests retain a complete job, hide score/expectation/final manifest, reject a
+  changed producer and tampered recipe before filling any gaps, then restore the
+  exact inputs and recover the original manifest/expectation hashes. Repeating
+  explicit resume succeeds while ordinary prepare and unowned-directory resume
+  remain rejected. These are interruption-state fixtures, not OS process-kill tests.
+- This is the job-preparation building block, not yet campaign batch advancement.
+- Verification: affected Release build and focused export CTest passed (1/1,
+  4.36 seconds). No fresh complete-suite run claimed.
+
 Next concrete implementation owners: explicit evidence-backed legacy migration,
 then complete populated-workspace parity and candidate
 review/publication parity and the resumable inventory campaign. The generation

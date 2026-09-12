@@ -721,6 +721,31 @@ TEST_CASE("nasal and frication candidates bake and enter production with typed u
   CHECK(preparedScore.value().expectation.projectStateSha256 == core::sha256Hex(producerBeforePreparation));
   CHECK(authoring::loadGenerationJob(root / "shared-score-job", preparedScore.value().manifestSha256));
   CHECK(production::encodeProductionProject(producer) == producerBeforePreparation);
+  // Preparation restart retains the original expectation, not a newly captured
+  // producer state. Simulate interruption before final manifest publication.
+  const auto preparedDirectory = root / "shared-score-job";
+  std::filesystem::rename(preparedDirectory / "job.json", preparedDirectory / "held-job.json");
+  std::filesystem::rename(preparedDirectory / "project.json", preparedDirectory / "held-project.json");
+  std::filesystem::rename(preparedDirectory / "expectation.json", preparedDirectory / "held-expectation.json");
+  auto changedPreparationProducer = producer; ++changedPreparationProducer.lastDurableGeneration;
+  CHECK(!authoring::resumeGenerationJobPreparation(preparedDirectory, "shared-score", preparedScore.value().snapshot,
+      changedPreparationProducer, generatedTake));
+  CHECK(!std::filesystem::exists(preparedDirectory / "job.json"));
+  const auto originalRecipeBytes = core::readTextFileLimited(preparedDirectory / "recipe.json", 1024U * 1024U); CHECK(originalRecipeBytes);
+  CHECK(core::durableAtomicWriteText(preparedDirectory / "recipe.json", "{}"));
+  CHECK(!authoring::resumeGenerationJobPreparation(preparedDirectory, "shared-score", preparedScore.value().snapshot, producer, generatedTake));
+  CHECK(!std::filesystem::exists(preparedDirectory / "job.json"));
+  CHECK(!std::filesystem::exists(preparedDirectory / "project.json"));
+  CHECK(!std::filesystem::exists(preparedDirectory / "expectation.json"));
+  CHECK(core::durableAtomicWriteText(preparedDirectory / "recipe.json", originalRecipeBytes.value()));
+  const auto resumedPreparation = authoring::resumeGenerationJobPreparation(preparedDirectory, "shared-score",
+      preparedScore.value().snapshot, producer, generatedTake); CHECK(resumedPreparation);
+  CHECK(resumedPreparation.value().manifestSha256 == preparedScore.value().manifestSha256);
+  CHECK(resumedPreparation.value().expectation == preparedScore.value().expectation);
+  CHECK(authoring::resumeGenerationJobPreparation(preparedDirectory, "shared-score", preparedScore.value().snapshot, producer, generatedTake));
+  CHECK(!authoring::prepareGenerationJob(preparedDirectory, "shared-score", preparedScore.value().snapshot, producer, generatedTake));
+  CHECK(std::filesystem::create_directory(root / "unowned-job-directory"));
+  CHECK(!authoring::resumeGenerationJobPreparation(root / "unowned-job-directory", "shared-score", preparedScore.value().snapshot, producer, generatedTake));
   // Exercise the real score -> job -> render -> CLI collection route with
   // explicit ownership, rather than only testing the producer record codec.
   auto styleProducer = producer;

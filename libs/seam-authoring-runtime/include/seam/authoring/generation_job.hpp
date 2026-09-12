@@ -46,6 +46,13 @@ struct GenerationBatchLimits final {
     const rendering::RenderSnapshot& snapshot,
     const voicebank_production::VoicebankProductionProject& producer,
     const voicebank_production::RawTakeInput& take);
+// Explicit recovery only: requires the original snapshot/producer/take and a
+// matching retained preparation intent. Never adopts or overwrites mismatches.
+[[nodiscard]] core::Result<PreparedGenerationJob> resumeGenerationJobPreparation(
+    const std::filesystem::path& directory, std::string jobId,
+    const rendering::RenderSnapshot& snapshot,
+    const voicebank_production::VoicebankProductionProject& producer,
+    const voicebank_production::RawTakeInput& take);
 // Shared saved-score entry point for CLI and native producers. Does not mutate or
 // reserve a producer assignment; the frozen expectation governs later collection.
 struct GenerationRecipeSelection final {
