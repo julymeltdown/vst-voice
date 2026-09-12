@@ -280,6 +280,33 @@ not a replacement product contract or a release approval.
 - Verification: focused Release build and export CTest passed (1/1, 3.92 seconds).
   No fresh full-suite result or musical acceptance is claimed.
 
+### Recoverable batch collection checkpoint
+
+- Added `collectGenerationBatchWithReceipt`, a shared transaction building block
+  for campaign advancement. It requires the original producer snapshot and frozen
+  job references, uses a persistent exclusive receipt lock, validates ownership
+  and budgets, then delegates atomic collection to the existing repository.
+- Retry recognizes every original expectation through retained producer lineage.
+  Partial recognition, changed initial state, an extra producer generation, or a
+  conflicting receipt fails. Exact receipt retries neither collect nor generate
+  again. Receipt bytes bind original/committed producer hashes, generation, take
+  audio hashes and expectation hashes; they are create-new and never overwritten.
+- Tests inject an interruption after the real two-style commit but before receipt
+  publication, hide both temporary output directories, then recover the receipt
+  from producer-owned assets without regenerating audio or advancing generation.
+  Repeated recovery preserves receipt bytes; false receipts and an unrelated
+  later producer save are rejected.
+- Important remaining durability boundary: repository read-only recovery does not
+  re-fsync its mutable current pointer. Recovered results therefore deliberately
+  return `durabilityConfirmed=false` with a diagnostic, even though the receipt
+  file itself is durably written. Add locked exact-generation pointer
+  reconciliation before permitting the next campaign batch. Do not interpret
+  successful recognition as permission to skip this boundary.
+- This is not yet the complete campaign runner: batch preparation/resume, pointer
+  reconciliation, advancement CLI and broader process-crash tests remain open.
+- Verification: affected Release targets rebuilt and export CTest passed (1/1,
+  4.30 seconds). No new complete-suite run claimed.
+
 Next concrete implementation owners: explicit evidence-backed legacy migration,
 then complete populated-workspace parity and candidate
 review/publication parity and the resumable inventory campaign. The generation

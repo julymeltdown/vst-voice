@@ -9,6 +9,7 @@
 #include "seam/authoring/generation_job.hpp"
 #include "seam/authoring/inventory_generation.hpp"
 #include "seam/authoring/generation_campaign.hpp"
+#include "seam/authoring/generation_batch_collection.hpp"
 #include "seam/application/project_factory.hpp"
 #include "seam/formats/json_value.hpp"
 #include "seam/formats/project_json.hpp"
@@ -828,9 +829,29 @@ TEST_CASE("nasal and frication candidates bake and enter production with typed u
   CHECK(!authoring::inspectGenerationBatch(multiJobs, {.maximumFrames = 47999U}));
   CHECK(authoring::runGenerationBatch(multiJobs));
   const auto multiHash = authoring::saveGenerationBatch(root / "multi-batch.json", multiJobs); CHECK(multiHash);
-  const auto multiCollected = multiRepository.importGeneratedBatch(multiProducer, admittedStyles.value(),
-      {"import-generated-batch", multiHash.value(), "producer", "2026-09-13T00:00:01Z"});
+  const production::ProductionJournalEvent multiEvent{"import-generated-batch", multiHash.value(), "producer", "2026-09-13T00:00:01Z"};
+  const auto receiptPath = root / "multi-collection-receipt.json";
+  const auto interruptedCollection = authoring::collectGenerationBatchWithReceipt(multiRepository, multiProducer, multiJobs,
+      receiptPath, multiEvent, {}, {}, [] { return true; });
+  CHECK(!interruptedCollection);
+  CHECK(!std::filesystem::exists(receiptPath));
+  const auto committedBeforeReceipt = production::encodeProductionProject(multiRepository.recover().value());
+  CHECK(multiRepository.recover().value().takes.size() == 2U);
+  std::filesystem::rename(root / "multi-neutral-job/output", root / "multi-neutral-job/held-output");
+  std::filesystem::rename(root / "multi-soft-job/output", root / "multi-soft-job/held-output");
+  const auto multiCollected = authoring::collectGenerationBatchWithReceipt(multiRepository, multiProducer, multiJobs,
+      receiptPath, multiEvent);
   CHECK(multiCollected);
+  CHECK(!multiCollected.value().durabilityConfirmed);
+  CHECK(std::filesystem::is_regular_file(receiptPath));
+  CHECK(!std::filesystem::exists(root / "multi-neutral-job/output"));
+  CHECK(!std::filesystem::exists(root / "multi-soft-job/output"));
+  CHECK(production::encodeProductionProject(multiRepository.recover().value()) == committedBeforeReceipt);
+  const auto retainedReceiptHash = core::sha256File(receiptPath); CHECK(retainedReceiptHash);
+  CHECK(authoring::collectGenerationBatchWithReceipt(multiRepository, multiProducer, multiJobs, receiptPath, multiEvent));
+  CHECK(core::sha256File(receiptPath).value() == retainedReceiptHash.value());
+  CHECK(core::durableAtomicWriteTextNew(root / "false-receipt.json", "{}"));
+  CHECK(!authoring::collectGenerationBatchWithReceipt(multiRepository, multiProducer, multiJobs, root / "false-receipt.json", multiEvent));
   const auto multiRecovered = multiRepository.recover(); CHECK(multiRecovered);
   CHECK(multiRecovered.value().takes.size() == 2U);
   CHECK(multiRecovered.value().takes[0].style == "neutral");
@@ -843,6 +864,11 @@ TEST_CASE("nasal and frication candidates bake and enter production with typed u
 #endif
   CHECK(std::none_of(multiRecovered.value().unitAssignments.begin(), multiRecovered.value().unitAssignments.end(),
       [](const auto& row) { return row.markerReviewed || row.pitchReviewed; }));
+  auto externallyChanged = multiRecovered.value();
+  CHECK(multiRepository.save(externallyChanged, {"save", "unrelated-change", "producer", "2026-09-13T00:00:02Z"}));
+  CHECK(!authoring::collectGenerationBatchWithReceipt(multiRepository, multiProducer, multiJobs,
+      root / "after-external-change.json", multiEvent));
+  CHECK(!std::filesystem::exists(root / "after-external-change.json"));
   production::ProductionProjectRepository styleRepository{root / "style-owned-generation"};
   CHECK(styleRepository.initialize(styleProducer, {"create", styleProducer.projectId, "producer", "2026-09-13T00:00:00Z"}));
   const auto styleJobDirectory = root / "style-owned-job";
