@@ -6,21 +6,21 @@
 namespace seam::voice_design {
 core::Result<ArticulatedStream> ArticulatedStream::createFromRecipe(
     const synthesis::ProceduralSingerResource& resource, synthesis::CompiledScorePerformance performance,
-    std::span<const domain::PhonemeToken> phones, std::string style, std::size_t blockFrames, std::stop_token stop, bool allowVoicedFrication) {
-  auto plan = ArticulationPlan::compileRecipe(resource, performance, phones, style, stop, allowVoicedFrication);
+    std::span<const domain::PhonemeToken> phones, std::string style, std::size_t blockFrames, std::stop_token stop, bool allowVoicedFrication, bool allowVoicedStops) {
+  auto plan = ArticulationPlan::compileRecipe(resource, performance, phones, style, stop, allowVoicedFrication, allowVoicedStops);
   if (!plan) return core::Result<ArticulatedStream>{plan.error()};
-  auto stream = create(resource, std::move(performance), std::move(plan.value()), std::move(style), blockFrames,allowVoicedFrication);
+  auto stream = create(resource, std::move(performance), std::move(plan.value()), std::move(style), blockFrames,allowVoicedFrication,allowVoicedStops);
   if (stop.stop_requested()) return core::failure<ArticulatedStream>(core::ErrorCode::Conflict, "Articulated preparation cancelled");
   return stream;
 }
 
 core::Result<ArticulatedStream> ArticulatedStream::create(
     const synthesis::ProceduralSingerResource& resource, synthesis::CompiledScorePerformance performance,
-    ArticulationPlan plan, std::string style, std::size_t blockFrames, bool allowVoicedFrication) {
+    ArticulationPlan plan, std::string style, std::size_t blockFrames, bool allowVoicedFrication, bool allowVoicedStops) {
   if (performance.sampleRate() != plan.sampleRate() || blockFrames == 0U || blockFrames > 65536U ||
       performance.phonemeTiming().size() != plan.gestures().size()) return core::failure<ArticulatedStream>(
           core::ErrorCode::InvalidArgument, "Articulated stream clock or timing coverage differs");
-  auto recipe = decodeVoiceRecipeResource(resource,{},allowVoicedFrication);
+  auto recipe = decodeVoiceRecipeResource(resource,{},allowVoicedFrication,allowVoicedStops);
   if (!recipe) return core::Result<ArticulatedStream>{recipe.error()};
   std::map<domain::PhonemeKey, const synthesis::PhonemeTimingAnchor*> anchors;
   for (const auto& anchor : performance.phonemeTiming()) anchors.emplace(anchor.key, &anchor);
@@ -36,18 +36,24 @@ core::Result<ArticulatedStream> ArticulatedStream::create(
     const auto end = vowel || anchor.endExplicit || start>=anchor.nucleusFrame ? anchor.endFrame : anchor.nucleusFrame;
     if (start != gesture.span.start || end != gesture.span.end || anchor.voiced != std::optional{voiced})
       return core::failure<ArticulatedStream>(core::ErrorCode::Conflict, "Articulation span or voicing differs from compiled performance");
-    if (voiced) {
+    const bool voicedStop=gesture.kind==ArticulationGestureKind::VoicedPlosive;
+    if (voiced && !voicedStop) {
       const auto pose = VocalTract::create(recipe.value(), gesture.phone, style, plan.sampleRate());
       if (!pose) return core::Result<ArticulatedStream>{pose.error()};
       if (initialPhone.empty()) initialPhone = gesture.phone;
     }
-    if (gesture.kind == ArticulationGestureKind::Plosive) {
+    if (gesture.kind == ArticulationGestureKind::Plosive || voicedStop) {
       const auto binding = std::find_if(recipe.value().plosives.begin(), recipe.value().plosives.end(),
           [&](const auto& pose) { return pose.phone == gesture.phone && pose.style == style; });
-      if (binding == recipe.value().plosives.end() || !gesture.plosive ||
+      if (binding == recipe.value().plosives.end() || !gesture.plosive || binding->voicedClosure.has_value()!=voicedStop ||
           binding->source != gesture.plosive->burst ||
           static_cast<time::SampleFrame>(std::llround(binding->burstMilliseconds * plan.sampleRate() / 1000.0)) != gesture.plosive->burstFrames)
         return core::failure<ArticulatedStream>(core::ErrorCode::Conflict, "Plosive plan differs from the frozen recipe");
+      if (voicedStop && (!allowVoicedStops || !gesture.voicedPlosive ||
+          gesture.voicedPlosive->release!=*gesture.plosive ||
+          gesture.voicedPlosive->closureVoicingGain!=binding->voicedClosure->gain ||
+          gesture.voicedPlosive->closureLowpassHz!=binding->voicedClosure->lowpassHz))
+        return core::failure<ArticulatedStream>(core::ErrorCode::Conflict,"Voiced closure plan differs from the frozen recipe");
     } else if (isNoiseGesture(gesture.kind)) {
       const auto binding = std::find_if(recipe.value().frications.begin(), recipe.value().frications.end(),
           [&](const auto& pose) { return pose.phone == gesture.phone && pose.style == style; });
@@ -60,7 +66,7 @@ core::Result<ArticulatedStream> ArticulatedStream::create(
   if (initialPhone.empty()) return core::failure<ArticulatedStream>(core::ErrorCode::Unsupported, "Articulated stream requires a voiced pose");
   auto voice = PhonationSource::create(recipe.value(), performance, plan.context().start);
   auto tract = VocalTract::create(recipe.value(), initialPhone, style, plan.sampleRate());
-  auto noise = FricationGestureStream::create(plan, blockFrames);
+  auto noise = FricationGestureStream::create(plan, blockFrames, allowVoicedStops);
   if (!voice) return core::Result<ArticulatedStream>{voice.error()};
   if (!tract) return core::Result<ArticulatedStream>{tract.error()};
   if (!noise) return core::Result<ArticulatedStream>{noise.error()};
@@ -74,7 +80,7 @@ core::Result<ArticulatedStream> ArticulatedStream::create(
   return result;
 }
 void ArticulatedStream::reset() {
-  voice_->reset(); frication_->reset(); tract_ = initialTract_; next_ = 0U; currentPhone_ = initialPhone_;
+  voice_->reset(); frication_->reset(); voicedStop_.reset(); tract_ = initialTract_; next_ = 0U; currentPhone_ = initialPhone_;
 }
 core::Result<synthesis::PhraseAudio> ArticulatedStream::renderOwned(synthesis::PhraseFrameRange owned, std::stop_token stop) {
   using Output = synthesis::PhraseAudio;
@@ -88,10 +94,13 @@ core::Result<synthesis::PhraseAudio> ArticulatedStream::renderOwned(synthesis::P
   while (candidate.position() < owned.end) {
     if (stop.stop_requested()) return cancelled();
     const auto position = candidate.position();
-    while (candidate.next_ < gestures.size() && gestures[candidate.next_].span.end <= position) ++candidate.next_;
+    while (candidate.next_ < gestures.size() && gestures[candidate.next_].span.end <= position) {
+      ++candidate.next_; candidate.voicedStop_.reset();
+    }
     const auto* gesture = candidate.next_ < gestures.size() ? &gestures[candidate.next_] : nullptr;
     const bool active = gesture && gesture->span.start <= position;
-    const bool tonal = active && isVoicedGesture(gesture->kind);
+    const bool voicedStop=active && gesture->kind==ArticulationGestureKind::VoicedPlosive;
+    const bool tonal = active && isVoicedGesture(gesture->kind) && !voicedStop;
     // Source phase restarts on score reattacks, not on every phone change.
     // Keep intra-note articulation and shared-lyric continuations connected.
     const auto reattacksAt = [&](time::SampleFrame frame) {
@@ -113,6 +122,17 @@ core::Result<synthesis::PhraseAudio> ArticulatedStream::renderOwned(synthesis::P
     }
     auto excitation = candidate.voice_->render(count, stop);
     if (!excitation) return core::Result<Output>{excitation.error()};
+    std::optional<Output> stopAudio;
+    if (voicedStop) {
+      if (!candidate.voicedStop_) {
+        auto source=VoicedPlosiveSource::create(*gesture->voicedPlosive,plan_->sampleRate(),gesture->span.start);
+        if (!source) return core::Result<Output>{source.error()};
+        candidate.voicedStop_=std::move(source.value());
+      }
+      auto rendered=candidate.voicedStop_->render(excitation.value().samples,stop);
+      if (!rendered) return core::Result<Output>{rendered.error()};
+      stopAudio=std::move(rendered.value());
+    }
     if (!tonal) std::fill(excitation.value().samples.begin(), excitation.value().samples.end(), 0.0F);
     auto voiced = candidate.tract_->process(excitation.value().samples, stop);
     if (!voiced) return core::Result<Output>{voiced.error()};
@@ -123,8 +143,8 @@ core::Result<synthesis::PhraseAudio> ArticulatedStream::renderOwned(synthesis::P
       if (tonal) {
         const auto frame = position + static_cast<time::SampleFrame>(index);
         const auto fade = std::max<time::SampleFrame>(1, std::min<time::SampleFrame>(plan_->sampleRate() / 200U, (gesture->span.end - gesture->span.start) / 2));
-        const bool fadeIn = noteAttack || candidate.next_ == 0U || !isVoicedGesture(gestures[candidate.next_ - 1U].kind) || gestures[candidate.next_ - 1U].span.end != gesture->span.start;
-        const bool fadeOut = noteRelease || candidate.next_ + 1U == gestures.size() || !isVoicedGesture(gestures[candidate.next_ + 1U].kind) || gestures[candidate.next_ + 1U].span.start != gesture->span.end;
+        const bool fadeIn = noteAttack || candidate.next_ == 0U || !isVoicedGesture(gestures[candidate.next_ - 1U].kind) || gestures[candidate.next_ - 1U].kind==ArticulationGestureKind::VoicedPlosive || gestures[candidate.next_ - 1U].span.end != gesture->span.start;
+        const bool fadeOut = noteRelease || candidate.next_ + 1U == gestures.size() || !isVoicedGesture(gestures[candidate.next_ + 1U].kind) || gestures[candidate.next_ + 1U].kind==ArticulationGestureKind::VoicedPlosive || gestures[candidate.next_ + 1U].span.start != gesture->span.end;
         if (fadeIn) envelope = std::min(envelope, static_cast<double>(frame - gesture->span.start) / static_cast<double>(fade));
         if (fadeOut) envelope = std::min(envelope, static_cast<double>(gesture->span.end - 1 - frame) / static_cast<double>(fade));
         envelope = envelope * envelope * (3.0 - 2.0 * envelope);
@@ -139,7 +159,8 @@ core::Result<synthesis::PhraseAudio> ArticulatedStream::renderOwned(synthesis::P
           voicingGain=previous.voicingGain.value_or(1.0)+(voicingGain-previous.voicingGain.value_or(1.0))*t;
         }
       }
-      voiced.value()[index] = static_cast<float>(voiced.value()[index] * envelope * voicingGain) + noise.value().samples[index];
+      voiced.value()[index] = static_cast<float>(voiced.value()[index] * envelope * voicingGain) + noise.value().samples[index] +
+          (stopAudio ? stopAudio->samples[index] : 0.0F);
     }
     const auto gained = synthesis::applyCompiledPerformanceGain(voiced.value(), *performance_, position, stop);
     if (!gained) return core::Result<Output>{gained.error()};

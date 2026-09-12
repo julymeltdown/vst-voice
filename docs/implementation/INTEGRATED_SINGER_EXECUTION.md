@@ -506,6 +506,25 @@ is claimed.
 
 ## Voiced reattack boundary repair
 
+### Opt-in articulated voiced-stop rendering
+
+ArticulatedStream revision ten renders admitted VoicedPlosive gestures using
+the continuous score-driven PhonationSource as closure excitation. Its stateful
+VoicedPlosiveSource owns closure filtering and the release burst; the separate
+noise lane explicitly delegates that gesture instead of rendering the burst
+twice. Ordinary vowel-tract excitation is muted during the stop, and the vowel
+re-entry uses a bounded taper. Compiled dynamics/articulation gain applies after
+mixing, as for other sources. Stream copies/reset include the voiced-stop state.
+Preparation compares closure gain/cutoff and release configuration with the
+frozen recipe. Default schema-six admission remains disabled pending candidate
+metadata/export integration.
+
+The real Japanese ba timing fixture now exercises opt-in audio rendering,
+nonzero closure, exact release/vowel boundary silence, whole/chunk equality,
+checkpoint replay, cancellation rollback, reset replay and changed-recipe
+rejection. Targeted Release build and voice-design CTest passed (1/1, 8.01
+seconds). This is not yet normal song/export support or acoustic qualification.
+
 ### Voiced-stop compiled timing integration
 
 ArticulationPlan revision nine carries an explicit VoicedPlosive gesture with

@@ -2,8 +2,8 @@
 #include <algorithm>
 
 namespace seam::voice_design {
-core::Result<FricationGestureStream> FricationGestureStream::create(ArticulationPlan plan, std::size_t blockFrames) {
-  if (std::any_of(plan.gestures().begin(),plan.gestures().end(),[](const auto& gesture) {
+core::Result<FricationGestureStream> FricationGestureStream::create(ArticulationPlan plan, std::size_t blockFrames, bool voicedStopsRenderedSeparately) {
+  if (!voicedStopsRenderedSeparately && std::any_of(plan.gestures().begin(),plan.gestures().end(),[](const auto& gesture) {
         return gesture.kind==ArticulationGestureKind::VoicedPlosive;
       })) return core::failure<FricationGestureStream>(core::ErrorCode::Unsupported,
           "Voiced plosive gestures require score excitation and cannot use the noise-only renderer");

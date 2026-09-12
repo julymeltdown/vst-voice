@@ -175,6 +175,21 @@ TEST_CASE("voiced stop plans bind explicit closure and burst to compiled score t
   CHECK(stop.voicedPlosive->closureLowpassHz==400.0);
   CHECK(!voice_design::FricationGestureStream::create(plan.value()));
   CHECK(!voice_design::ArticulatedStream::create(resource.value(),performance.value(),plan.value(),"neutral"));
+  auto stream=voice_design::ArticulatedStream::create(resource.value(),performance.value(),plan.value(),"neutral",127U,true,true); CHECK(stream);
+  const auto audio=stream.value().renderOwned({0,24000}); CHECK(audio);
+  CHECK(std::any_of(audio.value().samples.begin()+100,audio.value().samples.begin()+2300,[](float value) { return std::abs(value)>0.00001F; }));
+  CHECK(audio.value().samples[2879]==0.0F); CHECK(audio.value().samples[2880]==0.0F);
+  auto chunks=voice_design::ArticulatedStream::createFromRecipe(resource.value(),performance.value(),phones.value().pronunciation.tokens,"neutral",257U,{},true,true); CHECK(chunks);
+  auto first=chunks.value().renderOwned({0,2399}); CHECK(first);
+  auto checkpoint=chunks.value();
+  std::stop_source cancel; cancel.request_stop(); CHECK(!chunks.value().renderOwned({2399,24000},cancel.get_token()));
+  const auto last=chunks.value().renderOwned({2399,24000}); CHECK(last);
+  CHECK(checkpoint.renderOwned({2399,24000}).value().samples==last.value().samples);
+  first.value().samples.insert(first.value().samples.end(),last.value().samples.begin(),last.value().samples.end());
+  CHECK(first.value().samples==audio.value().samples);
+  stream.value().reset(); CHECK(stream.value().renderOwned({0,24000}).value().samples==audio.value().samples);
+  auto altered=recipe; altered.plosives.front().voicedClosure->gain=0.3;
+  CHECK(!voice_design::ArticulatedStream::create(voice_design::freezeVoiceRecipeResource(altered).value(),performance.value(),plan.value(),"neutral",127U,true,true));
   CHECK(!voice_design::ArticulationPlan::compileRecipe(resource.value(),performance.value(),phones.value().pronunciation.tokens,"soft",{},true,true));
 }
 

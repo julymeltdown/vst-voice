@@ -8,7 +8,8 @@ namespace seam::voice_design {
 // Copies are independent checkpoints; owned-window seeks replay the prefix.
 class FricationGestureStream final {
 public:
-  [[nodiscard]] static core::Result<FricationGestureStream> create(ArticulationPlan plan, std::size_t blockFrames = 512U);
+  [[nodiscard]] static core::Result<FricationGestureStream> create(ArticulationPlan plan, std::size_t blockFrames = 512U,
+      bool voicedStopsRenderedSeparately = false);
   [[nodiscard]] core::Result<synthesis::PhraseAudio> renderOwned(synthesis::PhraseFrameRange owned, std::stop_token stop = {});
   void reset() noexcept { position_ = plan_->context().start; next_ = 0U; source_.reset(); plosive_.reset(); }
   [[nodiscard]] time::SampleFrame position() const noexcept { return position_; }
