@@ -2258,6 +2258,17 @@ add_subdirectory(phase13b)
 # transitive target links after all subdirectories have declared their targets.
 include(cmake/NeuralDependencyDirection.cmake)
 seam_check_neural_dependency_direction()
+set(SEAM_ONNXRUNTIME_ROOT "" CACHE PATH "Optional local ONNX Runtime SDK for the arithmetic inference probe")
+if(SEAM_ONNXRUNTIME_ROOT)
+  unset(SEAM_ONNXRUNTIME_INCLUDE CACHE)
+  unset(SEAM_ONNXRUNTIME_LIBRARY CACHE)
+  find_path(SEAM_ONNXRUNTIME_INCLUDE onnxruntime_cxx_api.h PATHS "${SEAM_ONNXRUNTIME_ROOT}/include" NO_DEFAULT_PATH REQUIRED)
+  find_library(SEAM_ONNXRUNTIME_LIBRARY onnxruntime PATHS "${SEAM_ONNXRUNTIME_ROOT}/lib" NO_DEFAULT_PATH REQUIRED)
+  add_executable(seam_onnx_runtime_probe tools/neural_runtime/runtime_probe.cpp)
+  target_include_directories(seam_onnx_runtime_probe SYSTEM PRIVATE "${SEAM_ONNXRUNTIME_INCLUDE}")
+  target_link_libraries(seam_onnx_runtime_probe PRIVATE "${SEAM_ONNXRUNTIME_LIBRARY}")
+  seam_apply_compiler_options(seam_onnx_runtime_probe)
+endif()
 if(SEAM_BUILD_TESTS)
   add_test(NAME seam_neural_dependency_direction
     COMMAND ${CMAKE_COMMAND}

@@ -508,6 +508,24 @@ is claimed.
 
 ### M2.P1 process-ownership extraction
 
+Native inference experiment: added an optional `seam_onnx_runtime_probe` C++
+target selected by an application-owned SDK root, and an isolated ONNX fixture
+generator/check. The official macOS-arm64 ONNX Runtime 1.30.0 archive was
+downloaded and its SHA-256 matched the release digest
+`6ebb5062a934537c352937821f9fe9718e7de1a2db1122a93dd363ffd53a7012` before
+extraction. The probe compiled and ran two real CPU inference sessions against
+generated arithmetic graphs. Repeated outputs passed; changed scale returned
+the exact output-mismatch exit code and swapped graph schemas returned the
+runtime-error code. SDK and fixture environment remain ignored under
+`build/neural-runtime`; requirements and reproduction steps are tracked under
+`tools/neural_runtime`. No global Python packages were installed.
+
+This is an actual runtime experiment, not neural singing: graphs contain no
+learned voice weights, model admission is not implemented, and the executable
+is not the first-party framed worker or an untrusted-bank sandbox. Signed
+deployment, bounded model loading, feature matching, worker integration and
+trained acoustic/vocoder assets remain required. No full-suite rerun claimed.
+
 Data-bundle follow-up: added a separate `FrozenNeuralBundle` in synthesis, not a
 reinterpretation of legacy NeuralSingerResource. It requires exactly one each
 of acoustic/vocoder/vocabulary/configuration, permits bounded variance/tensor
