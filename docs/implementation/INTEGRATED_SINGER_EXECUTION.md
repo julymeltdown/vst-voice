@@ -506,6 +506,23 @@ is claimed.
 
 ## Voiced reattack boundary repair
 
+### Voiced-stop compiled timing integration
+
+ArticulationPlan revision nine carries an explicit VoicedPlosive gesture with
+the closure source configuration, preserved PhonemeKey and ordered interval.
+An explicit experimental admission flag permits schema-six planning only;
+default resource decoding and song rendering remain closed. Recipe-selected
+stop bindings now include voiced phones and validate closure parameters and
+token voicing. A real Japanese `ば` score compiles a 2,880-frame onset into
+2,400 closure frames plus 480 burst frames at 48 kHz, with no timing invention
+outside the owning note. The following vowel retains its compiled nucleus.
+Noise-only rendering rejects the new gesture rather than omitting its voicing.
+Tests cover the actual resolved score, source parameters, default rejection,
+wrong-style rejection and downstream renderer gates. The source/filter mixer
+and candidate ABI remain required before normal rendering admission.
+Verification: targeted Release build and voice-design CTest passed (1/1,
+7.40 seconds). No full-suite or musical-quality result claimed.
+
 ### Explicit voiced-closure recipe contract
 
 Schema six adds optional `plosives[].voicedClosure` with explicit `gain` in

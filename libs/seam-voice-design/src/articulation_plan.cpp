@@ -10,24 +10,24 @@ namespace seam::voice_design {
 core::Result<ArticulationPlan> ArticulationPlan::compileRecipe(
     const synthesis::ProceduralSingerResource& resource,
     const synthesis::CompiledScorePerformance& performance,
-    std::span<const domain::PhonemeToken> phones, std::string_view style, std::stop_token stop, bool allowVoicedFrication) {
+    std::span<const domain::PhonemeToken> phones, std::string_view style, std::stop_token stop, bool allowVoicedFrication, bool allowVoicedStops) {
   const auto cancelled = [] { return core::failure<ArticulationPlan>(core::ErrorCode::Conflict, "Articulation preparation cancelled"); };
   if (stop.stop_requested()) return cancelled();
   if (performance.notes().empty() || performance.notes().size() > 4096U || phones.empty() || phones.size() > 16384U)
     return core::failure<ArticulationPlan>(core::ErrorCode::InvalidArgument, "Recipe articulation score coverage exceeds bounds");
-  const auto recipe = decodeVoiceRecipeResource(resource, stop, allowVoicedFrication);
+  const auto recipe = decodeVoiceRecipeResource(resource, stop, allowVoicedFrication, allowVoicedStops);
   if (!recipe) return core::Result<ArticulationPlan>{recipe.error()};
   std::set<std::string> requestedFrication;
   std::set<std::string> requestedStops;
   for (const auto& phone : phones) if (
       (phone.role==domain::PhonemeRole::Onset || phone.role==domain::PhonemeRole::Coda))
     requestedFrication.insert(phone.symbol);
-  for (const auto& phone : phones) if (!phone.voiced &&
+  for (const auto& phone : phones) if (
       (phone.role==domain::PhonemeRole::Onset || phone.role==domain::PhonemeRole::Coda)) requestedStops.insert(phone.symbol);
   std::vector<FricationBinding> bindings;
   std::vector<PlosiveBinding> plosives;
   for (const auto& pose : recipe.value().plosives) if (pose.style == style && requestedStops.contains(pose.phone))
-    plosives.push_back({pose.phone, pose.source, pose.burstMilliseconds});
+    plosives.push_back({pose.phone, pose.source, pose.burstMilliseconds, pose.voicedClosure});
   for (const auto& pose : recipe.value().frications) if (pose.style == style && requestedFrication.contains(pose.phone))
     bindings.push_back({pose.phone, pose.source, pose.voicingGain});
   const auto notes = performance.notes();
@@ -48,7 +48,7 @@ core::Result<ArticulationPlan> ArticulationPlan::compileRecipe(
     if (found == scoreNotes.end() || gesture.span.start < found->second->startFrame || gesture.span.end > found->second->endFrame)
       return core::failure<ArticulationPlan>(core::ErrorCode::Unsupported, "Articulation outside its score note requires extended phonation context");
     covered.insert(gesture.key.noteId);
-    if (isVoicedGesture(gesture.kind) && checkedVowels.insert(gesture.phone).second) {
+    if (isVoicedGesture(gesture.kind) && gesture.kind != ArticulationGestureKind::VoicedPlosive && checkedVowels.insert(gesture.phone).second) {
       const auto tract = VocalTract::create(recipe.value(), gesture.phone, style, performance.sampleRate());
       if (!tract) return core::Result<ArticulationPlan>{tract.error()};
     }
@@ -85,7 +85,11 @@ core::Result<ArticulationPlan> ArticulationPlan::compile(
   std::map<domain::PhonemeKey, const synthesis::PhonemeTimingAnchor*> anchors;
   std::map<std::string, PlosiveBinding, std::less<>> stops;
   for (const auto& binding : plosiveBindings) {
-    if ((binding.phone != "p" && binding.phone != "t" && binding.phone != "k") ||
+    const bool validPhone=binding.voicedClosure ? (binding.phone=="b" || binding.phone=="d" || binding.phone=="g") :
+        (binding.phone=="p" || binding.phone=="t" || binding.phone=="k");
+    if (!validPhone ||
+        (binding.voicedClosure && (!std::isfinite(binding.voicedClosure->gain) || binding.voicedClosure->gain<=0.0 || binding.voicedClosure->gain>0.5 ||
+            !std::isfinite(binding.voicedClosure->lowpassHz) || binding.voicedClosure->lowpassHz<40.0 || binding.voicedClosure->lowpassHz>2000.0)) ||
         !std::isfinite(binding.burstMilliseconds) || binding.burstMilliseconds < 1.0 || binding.burstMilliseconds > 100.0 ||
         sources.contains(binding.phone) || !stops.emplace(binding.phone, binding).second)
       return invalid("Plosive binding is unsupported, ambiguous or duplicated");
@@ -114,6 +118,7 @@ core::Result<ArticulationPlan> ArticulationPlan::compile(
     std::optional<FricationConfig> source;
     std::optional<PlosiveConfig> plosive;
     std::optional<double> voicingGain;
+    std::optional<VoicedPlosiveConfig> voicedPlosive;
     if (vowel) {
       if (anchor.nucleusKey != std::optional{phone.key}) return invalid("Oral vowel lacks its own nucleus anchor");
     } else if (nasal && phone.symbol=="N" && phone.role==domain::PhonemeRole::Coda &&
@@ -143,7 +148,9 @@ core::Result<ArticulationPlan> ArticulationPlan::compile(
       const auto stopBinding = stops.find(phone.symbol);
       const bool noiseCoda=phone.role==domain::PhonemeRole::Coda && (stopBinding!=stops.end() || binding!=sources.end());
       const auto phoneLabel="Phone '"+phone.symbol+"' on note "+phone.key.noteId.toString();
-      if (phone.voiced && (binding==sources.end() || !binding->second.voicingGain))
+      const bool voicedStop=stopBinding!=stops.end() && stopBinding->second.voicedClosure.has_value();
+      if (stopBinding!=stops.end() && voicedStop!=phone.voiced) return invalid("Plosive binding voicing differs from its token");
+      if (phone.voiced && !voicedStop && (binding==sources.end() || !binding->second.voicingGain))
         return core::failure<ArticulationPlan>(core::ErrorCode::Unsupported,phoneLabel+
             " requires a supported voiced articulation model; an unvoiced noise source cannot render it");
       if (!phone.voiced && binding!=sources.end() && binding->second.voicingGain)
@@ -178,12 +185,18 @@ core::Result<ArticulationPlan> ArticulationPlan::compile(
             static_cast<std::uint32_t>(burstFrames)};
         const auto checked = PlosiveSource::create(*plosive, sampleRate, start);
         if (!checked) return core::Result<ArticulationPlan>{checked.error()};
+        if (voicedStop) {
+          const auto& closure=*stopBinding->second.voicedClosure;
+          voicedPlosive=VoicedPlosiveConfig{*plosive,closure.gain,closure.lowpassHz};
+          const auto voiced=VoicedPlosiveSource::create(*voicedPlosive,sampleRate,start);
+          if (!voiced) return core::Result<ArticulationPlan>{voiced.error()};
+        }
       } else { source = binding->second.source; voicingGain=binding->second.voicingGain; }
     }
     if (start < context.start || end > context.end || end <= start) return invalid("Articulation gesture is outside its context or empty");
     result.gestures_.push_back({vowel ? ArticulationGestureKind::OralVowel : nasal ? ArticulationGestureKind::Nasal :
-        plosive ? ArticulationGestureKind::Plosive : voicingGain ? ArticulationGestureKind::VoicedFrication : ArticulationGestureKind::Frication,
-        phone.key, phone.symbol, {start, end}, source, plosive, voicingGain});
+        voicedPlosive ? ArticulationGestureKind::VoicedPlosive : plosive ? ArticulationGestureKind::Plosive : voicingGain ? ArticulationGestureKind::VoicedFrication : ArticulationGestureKind::Frication,
+        phone.key, phone.symbol, {start, end}, source, plosive, voicingGain, voicedPlosive});
   }
   std::sort(result.gestures_.begin(), result.gestures_.end(), [](const auto& a, const auto& b) { return a.span.start < b.span.start; });
   for (std::size_t index = 1U; index < result.gestures_.size(); ++index)

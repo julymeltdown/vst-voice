@@ -9,7 +9,7 @@ namespace seam::voice_design {
     const VoiceRecipe& recipe, std::stop_token stopToken = {});
 [[nodiscard]] core::Result<VoiceRecipe> decodeVoiceRecipeResource(
     const synthesis::ProceduralSingerResource& resource, std::stop_token stopToken = {},
-    bool allowVoicedFrication = true);
+    bool allowVoicedFrication = true, bool allowVoicedStops = false);
 // Explicit user-selected local recipe files. Loading never writes or upgrades
 // the file; identity is over canonical recipe bytes, not JSON whitespace.
 [[nodiscard]] core::Result<synthesis::ProceduralSingerResource> loadVoiceRecipeResource(

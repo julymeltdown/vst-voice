@@ -40,12 +40,13 @@ core::Result<synthesis::ProceduralSingerResource> freezeVoiceRecipeResource(
 }
 
 core::Result<VoiceRecipe> decodeVoiceRecipeResource(
-    const synthesis::ProceduralSingerResource& resource, std::stop_token stopToken, bool allowVoicedFrication) {
+    const synthesis::ProceduralSingerResource& resource, std::stop_token stopToken, bool allowVoicedFrication, bool allowVoicedStops) {
   if (stopToken.stop_requested()) return core::failure<VoiceRecipe>(core::ErrorCode::Conflict, "Recipe loading cancelled");
   const auto valid = resource.validate();
   if (!valid) return core::Result<VoiceRecipe>{valid.error()};
   if (resource.identity.version != "1" && resource.identity.version != "2" && resource.identity.version != "3" && resource.identity.version != "4" &&
-      !(allowVoicedFrication && resource.identity.version=="5")) return core::failure<VoiceRecipe>(
+      !(allowVoicedFrication && resource.identity.version=="5") &&
+      !(allowVoicedStops && allowVoicedFrication && resource.identity.version=="6")) return core::failure<VoiceRecipe>(
       core::ErrorCode::Unsupported, "Procedural recipe resource version is unsupported");
   const auto bytes = resource.patch->bytes();
   auto decoded = decodeVoiceRecipe(std::string_view{reinterpret_cast<const char*>(bytes.data()), bytes.size()});

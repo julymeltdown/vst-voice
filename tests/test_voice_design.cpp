@@ -150,6 +150,34 @@ TEST_CASE("voiced closure recipes require explicit schema six without changing l
   CHECK(voice_design::freezeVoiceRecipeResource(recipe).value().identity==legacyResource.value().identity);
 }
 
+TEST_CASE("voiced stop plans bind explicit closure and burst to compiled score timing") {
+  using namespace seam;
+  domain::Project project{domain::ProjectId{1U},"Voiced stop timing"};
+  domain::VocalRegion region{.id=domain::RegionId{3U},.durationTick=time::Tick{960},
+      .lyrics={{domain::LyricTokenId{4U},U"ば",domain::Language::Japanese}},
+      .notes={{.id=domain::NoteId{5U},.durationTick=time::Tick{960},.midiKey=60U,.lyricTokenId=domain::LyricTokenId{4U}}}};
+  const auto phones=phonemizer::resolveJapanesePronunciation(region); CHECK(phones);
+  const auto performance=synthesis::compileScorePerformance(project,region,48000U,phones.value().pronunciation.tokens,synthesis::PhonemeTimingPolicy::ProceduralInNote); CHECK(performance);
+  auto recipe=nasalFixture();
+  recipe.plosives={{"b","neutral",{},10.0,voice_design::VoiceRecipe::VoicedClosure{0.2,400.0}}};
+  const auto resource=voice_design::freezeVoiceRecipeResource(recipe); CHECK(resource);
+  CHECK(!voice_design::ArticulationPlan::compileRecipe(resource.value(),performance.value(),phones.value().pronunciation.tokens,"neutral"));
+  const auto plan=voice_design::ArticulationPlan::compileRecipe(resource.value(),performance.value(),phones.value().pronunciation.tokens,"neutral",{},true,true); CHECK(plan);
+  CHECK(plan.value().gestures().size()==2U);
+  const auto& stop=plan.value().gestures().front();
+  CHECK(stop.kind==voice_design::ArticulationGestureKind::VoicedPlosive);
+  CHECK(stop.key.noteId==domain::NoteId{5U}); CHECK(stop.phone=="b");
+  CHECK(stop.span.start==0); CHECK(stop.span.end==2880);
+  CHECK(stop.voicedPlosive.has_value());
+  CHECK(stop.voicedPlosive->release.closureFrames==2400U);
+  CHECK(stop.voicedPlosive->release.burstFrames==480U);
+  CHECK(stop.voicedPlosive->closureVoicingGain==0.2);
+  CHECK(stop.voicedPlosive->closureLowpassHz==400.0);
+  CHECK(!voice_design::FricationGestureStream::create(plan.value()));
+  CHECK(!voice_design::ArticulatedStream::create(resource.value(),performance.value(),plan.value(),"neutral"));
+  CHECK(!voice_design::ArticulationPlan::compileRecipe(resource.value(),performance.value(),phones.value().pronunciation.tokens,"soft",{},true,true));
+}
+
 TEST_CASE("mixed voiced frication remains replayable across rates pitches and gain endpoints") {
   using namespace seam;
   for (const auto rate:{22050U,44100U,48000U,96000U}) for (const auto pitch:{36U,69U,96U})

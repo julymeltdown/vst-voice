@@ -3,6 +3,10 @@
 
 namespace seam::voice_design {
 core::Result<FricationGestureStream> FricationGestureStream::create(ArticulationPlan plan, std::size_t blockFrames) {
+  if (std::any_of(plan.gestures().begin(),plan.gestures().end(),[](const auto& gesture) {
+        return gesture.kind==ArticulationGestureKind::VoicedPlosive;
+      })) return core::failure<FricationGestureStream>(core::ErrorCode::Unsupported,
+          "Voiced plosive gestures require score excitation and cannot use the noise-only renderer");
   if (blockFrames == 0U || blockFrames > 65536U) return core::failure<FricationGestureStream>(
       core::ErrorCode::InvalidArgument, "Frication stream block size is outside bounds");
   FricationGestureStream result;
