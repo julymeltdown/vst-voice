@@ -457,6 +457,24 @@ not a replacement product contract or a release approval.
 - Verification: affected Release build and export CTest passed (1/1, 4.55 seconds).
   No new complete-suite run claimed.
 
+### Real process termination at campaign commit boundary
+
+- Extended the existing generation test helper with a campaign mode that raises
+  SIGKILL after the producer commit and before collection-receipt publication.
+  The parent uses actual process wait status and requires termination by SIGKILL,
+  rather than accepting a generic failure or an injected Result error. The signal
+  path is enabled on macOS/Linux; this run was on macOS.
+- The fixture confirms one committed take and no receipt, moves the temporary
+  output directory aside, then retries through the normal advancement CLI. Retry
+  succeeds with exactly unchanged producer bytes and batch manifest hash and does
+  not recreate output. It then advances the second batch and retains the existing
+  completed-retry and external-edit rejection checks. This also exercises release
+  of campaign/receipt OS locks when destructors cannot run.
+- Focused Release build and export CTest passed (1/1, 4.40 seconds). This is real
+  process-death evidence for the post-commit/pre-receipt window only, not a machine
+  power-loss test or complete campaign crash matrix. Preparation-intent windows,
+  cancellation during rendering, storage bounds and Windows qualification remain.
+
 Next concrete implementation owners: explicit evidence-backed legacy migration,
 then complete populated-workspace parity and candidate
 review/publication parity and the resumable inventory campaign. The generation

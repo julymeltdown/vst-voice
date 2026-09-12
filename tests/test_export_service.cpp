@@ -35,6 +35,7 @@
 #include <array>
 #include <chrono>
 #include <cmath>
+#include <csignal>
 #include <thread>
 #include <limits>
 #if defined(SEAM_TEST_VOICEBANK_CLI) && (defined(__APPLE__) || defined(__linux__))
@@ -56,7 +57,9 @@ int runProcess(const char* executable, std::vector<std::string> arguments) {
   int status = 0;
   pid_t waited;
   do { waited = waitpid(process, &status, 0); } while (waited < 0 && errno == EINTR);
-  return waited == process && WIFEXITED(status) ? WEXITSTATUS(status) : -1;
+  if (waited != process) return -1;
+  if (WIFEXITED(status)) return WEXITSTATUS(status);
+  return WIFSIGNALED(status) ? 128 + WTERMSIG(status) : -1;
 }
 int runVoicebankCli(std::vector<std::string> arguments) {
   return runProcess(SEAM_TEST_VOICEBANK_CLI, std::move(arguments));
@@ -894,13 +897,31 @@ TEST_CASE("nasal and frication candidates bake and enter production with typed u
   const auto advancePath = root / "advanced-campaign/campaign.json";
   CHECK(core::durableAtomicWriteTextNew(advancePath, advancePlan.value()));
   const auto advanceHash = core::sha256Hex(advancePlan.value());
+#if defined(SEAM_TEST_GENERATION_PROBE) && (defined(__APPLE__) || defined(__linux__))
+  CHECK(runProcess(SEAM_TEST_GENERATION_PROBE, {"campaign-sigkill", (root / "advanced-producer").string(),
+      advancePath.string(), advanceHash, "producer", "2026-09-13T00:00:01Z"}) == 128 + SIGKILL);
+#else
   CHECK(!authoring::advanceGenerationCampaign(advancedRepository, advancePath, advanceHash, "producer", "2026-09-13T00:00:01Z",
       {}, [] { return true; }));
+#endif
   CHECK(advancedRepository.recover().value().takes.size() == 1U);
   CHECK(!std::filesystem::exists(root / "advanced-campaign/batch-0/collection.json"));
+  const auto killedBatchHash = core::sha256File(root / "advanced-campaign/batch-0/batch.json"); CHECK(killedBatchHash);
+  const auto killedBatch = authoring::loadGenerationBatch(root / "advanced-campaign/batch-0/batch.json", killedBatchHash.value()); CHECK(killedBatch);
+  const auto killedJobDirectory = killedBatch.value().front().directory;
+  std::filesystem::rename(killedJobDirectory / "output", killedJobDirectory / "held-output");
+  const auto killedProducerBytes = production::encodeProductionProject(advancedRepository.recover().value());
+#if defined(SEAM_TEST_VOICEBANK_CLI) && (defined(__APPLE__) || defined(__linux__))
+  CHECK(runVoicebankCli({"advance-generation-campaign", (root / "advanced-producer").string(), advancePath.string(),
+      advanceHash, "producer", "2026-09-13T00:00:01Z"}) == 0);
+#else
   const auto recoveredAdvance = authoring::advanceGenerationCampaign(advancedRepository, advancePath, advanceHash,
       "producer", "2026-09-13T00:00:01Z"); CHECK(recoveredAdvance);
   CHECK(recoveredAdvance.value().completedBatches == 1U); CHECK(!recoveredAdvance.value().complete);
+#endif
+  CHECK(production::encodeProductionProject(advancedRepository.recover().value()) == killedProducerBytes);
+  CHECK(!std::filesystem::exists(killedJobDirectory / "output"));
+  CHECK(core::sha256File(root / "advanced-campaign/batch-0/batch.json").value() == killedBatchHash.value());
   CHECK(advancedRepository.recover().value().takes.size() == 1U);
 #if defined(SEAM_TEST_VOICEBANK_CLI) && (defined(__APPLE__) || defined(__linux__))
   const std::vector<std::string> advanceArgs{"advance-generation-campaign", (root / "advanced-producer").string(),

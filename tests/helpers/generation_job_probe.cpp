@@ -1,10 +1,22 @@
 #include "seam/authoring/generation_job.hpp"
+#include "seam/authoring/generation_campaign.hpp"
 #include "signal_cancellation.hpp"
 #include <charconv>
 #include <cstdlib>
+#include <csignal>
 #include <string_view>
 
 int main(int argc, char** argv) {
+  if (argc == 7 && std::string_view{argv[1]} == "campaign-sigkill") {
+    const auto result = seam::authoring::advanceGenerationCampaign(
+        seam::voicebank_production::ProductionProjectRepository{argv[2]}, argv[3], argv[4], argv[5], argv[6], {}, []() -> bool {
+#if defined(__APPLE__) || defined(__linux__)
+          std::raise(SIGKILL);
+#endif
+          std::_Exit(87);
+        });
+    return result ? 0 : 1;
+  }
   if (argc != 4) return 1;
   const std::string_view value{argv[3]};
   if (value == "sigint" || value == "sigterm") {
