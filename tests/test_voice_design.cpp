@@ -29,6 +29,45 @@ seam::voice_design::VoiceRecipe nasalFixture() {
   return recipe;
 }
 
+TEST_CASE("voiced note reattacks taper boundaries while melisma remains continuous") {
+  using namespace seam;
+  for (const auto rate : {22050U, 44100U, 48000U, 96000U})
+  for (const auto pitch : {36U, 61U, 84U})
+  for (const bool continuation : {false, true}) {
+    const auto boundary=static_cast<time::SampleFrame>(rate/2U);
+    const auto end=static_cast<time::SampleFrame>(rate);
+    domain::Project project{domain::ProjectId{1U},"Voiced boundaries"};
+    domain::VocalRegion region{.id=domain::RegionId{3U},.durationTick=time::Tick{1920},
+        .lyrics={{domain::LyricTokenId{4U},U"あ",domain::Language::Japanese},
+                 {domain::LyricTokenId{6U},continuation ? U"ー" : U"あ",domain::Language::Japanese}},
+        .notes={{.id=domain::NoteId{5U},.durationTick=time::Tick{960},.midiKey=static_cast<std::uint8_t>(pitch),.lyricTokenId=domain::LyricTokenId{4U}},
+                {.id=domain::NoteId{7U},.startTick=time::Tick{960},.durationTick=time::Tick{960},.midiKey=static_cast<std::uint8_t>(pitch+4U),.lyricTokenId=domain::LyricTokenId{6U}}}};
+    const auto phones=phonemizer::resolveJapanesePronunciation(region); CHECK(phones);
+    const auto performance=synthesis::compileScorePerformance(project,region,rate,phones.value().pronunciation.tokens,synthesis::PhonemeTimingPolicy::ProceduralInNote); CHECK(performance);
+    CHECK(performance.value().at(boundary).reattack==!continuation);
+    const auto resource=voice_design::freezeVoiceRecipeResource(nasalFixture()); CHECK(resource);
+    auto whole=voice_design::ArticulatedStream::createFromRecipe(resource.value(),performance.value(),phones.value().pronunciation.tokens,"neutral",127U); CHECK(whole);
+    const auto audio=whole.value().renderOwned({0,end}); CHECK(audio);
+    if (!continuation) {
+      CHECK(audio.value().samples[static_cast<std::size_t>(boundary-1)]==0.0F);
+      CHECK(audio.value().samples[static_cast<std::size_t>(boundary)]==0.0F);
+    } else {
+      CHECK(std::abs(audio.value().samples[static_cast<std::size_t>(boundary-1)])+std::abs(audio.value().samples[static_cast<std::size_t>(boundary)])>0.000001F);
+    }
+    auto chunks=voice_design::ArticulatedStream::createFromRecipe(resource.value(),performance.value(),phones.value().pronunciation.tokens,"neutral",257U); CHECK(chunks);
+    auto first=chunks.value().renderOwned({0,boundary-1}); CHECK(first);
+    auto checkpoint=chunks.value();
+    std::stop_source stop; stop.request_stop();
+    CHECK(!chunks.value().renderOwned({boundary-1,end},stop.get_token()));
+    const auto last=chunks.value().renderOwned({boundary-1,end}); CHECK(last);
+    CHECK(checkpoint.renderOwned({boundary-1,end}).value().samples==last.value().samples);
+    first.value().samples.insert(first.value().samples.end(),last.value().samples.begin(),last.value().samples.end());
+    CHECK(first.value().samples==audio.value().samples);
+    whole.value().reset();
+    CHECK(whole.value().renderOwned({0,end}).value().samples==audio.value().samples);
+  }
+}
+
 TEST_CASE("mixed voiced frication remains replayable across rates pitches and gain endpoints") {
   using namespace seam;
   for (const auto rate:{22050U,44100U,48000U,96000U}) for (const auto pitch:{36U,69U,96U})

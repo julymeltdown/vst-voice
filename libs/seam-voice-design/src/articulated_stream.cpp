@@ -92,6 +92,16 @@ core::Result<synthesis::PhraseAudio> ArticulatedStream::renderOwned(synthesis::P
     const auto* gesture = candidate.next_ < gestures.size() ? &gestures[candidate.next_] : nullptr;
     const bool active = gesture && gesture->span.start <= position;
     const bool tonal = active && isVoicedGesture(gesture->kind);
+    // Source phase restarts on score reattacks, not on every phone change.
+    // Keep intra-note articulation and shared-lyric continuations connected.
+    const auto reattacksAt = [&](time::SampleFrame frame) {
+      if (frame <= plan_->context().start) return false;
+      const auto before = performance_->at(frame - 1);
+      const auto after = performance_->at(frame);
+      return after.noteId && before.noteId != after.noteId && after.reattack;
+    };
+    const bool noteAttack = tonal && reattacksAt(gesture->span.start);
+    const bool noteRelease = tonal && reattacksAt(gesture->span.end);
     auto boundary = owned.end;
     if (gesture) boundary = std::min(boundary, active ? gesture->span.end : gesture->span.start);
     const auto count = static_cast<std::size_t>(std::min<time::SampleFrame>(static_cast<time::SampleFrame>(blockFrames_), boundary - position));
@@ -113,8 +123,8 @@ core::Result<synthesis::PhraseAudio> ArticulatedStream::renderOwned(synthesis::P
       if (tonal) {
         const auto frame = position + static_cast<time::SampleFrame>(index);
         const auto fade = std::max<time::SampleFrame>(1, std::min<time::SampleFrame>(plan_->sampleRate() / 200U, (gesture->span.end - gesture->span.start) / 2));
-        const bool fadeIn = candidate.next_ == 0U || !isVoicedGesture(gestures[candidate.next_ - 1U].kind) || gestures[candidate.next_ - 1U].span.end != gesture->span.start;
-        const bool fadeOut = candidate.next_ + 1U == gestures.size() || !isVoicedGesture(gestures[candidate.next_ + 1U].kind) || gestures[candidate.next_ + 1U].span.start != gesture->span.end;
+        const bool fadeIn = noteAttack || candidate.next_ == 0U || !isVoicedGesture(gestures[candidate.next_ - 1U].kind) || gestures[candidate.next_ - 1U].span.end != gesture->span.start;
+        const bool fadeOut = noteRelease || candidate.next_ + 1U == gestures.size() || !isVoicedGesture(gestures[candidate.next_ + 1U].kind) || gestures[candidate.next_ + 1U].span.start != gesture->span.end;
         if (fadeIn) envelope = std::min(envelope, static_cast<double>(frame - gesture->span.start) / static_cast<double>(fade));
         if (fadeOut) envelope = std::min(envelope, static_cast<double>(gesture->span.end - 1 - frame) / static_cast<double>(fade));
         envelope = envelope * envelope * (3.0 - 2.0 * envelope);

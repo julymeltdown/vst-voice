@@ -503,3 +503,36 @@ then complete populated-workspace parity and candidate
 review/publication parity and the resumable inventory campaign. The generation
 test uses synthetic diagnostic material, not a qualified singer. No M1 completion
 is claimed.
+
+## Voiced reattack boundary repair
+
+- Source inspection found that PhonationSource restarts phase on compiled score
+  reattacks, but ArticulatedStream previously joined all adjacent voiced gestures
+  without an envelope taper. Optional authored attack/release controls do not
+  supply a default taper. A new adjacent-vowel regression failed before repair
+  at the final sample preceding the reattack.
+- The mixed renderer now applies its existing bounded 5 ms smoothstep taper at
+  gesture boundaries that coincide with a compiled note reattack. Intra-note
+  phone transitions and compiled melisma continuations remain connected. Filter
+  and source state are retained; this is not a filter reset or score mutation.
+- ArticulatedStream revision increased from 8 to 9. Existing snapshot/cache and
+  candidate metadata paths consume that constant. Recipe schemas are unchanged;
+  affected old render identities must not be treated as newly rendered evidence.
+- Regression covers separate Japanese vowel notes, a continuation vowel,
+  exact boundary silence only for reattack, and sample-identical whole/chunked
+  rendering with an owned-window split one frame before the boundary. The
+  expanded matrix exercises 22.05/44.1/48/96 kHz, starting MIDI pitches 36/61/84,
+  both reattack and continuation (24 combinations), cancellation rollback,
+  checkpoint replay and reset replay.
+- Verification: affected Release targets built; voice-design and export CTest
+  targets passed (2/2, 7.57 seconds). The new regression was observed failing
+  before the implementation change. No full-suite or listening-quality pass is
+  claimed. Voiced stops, expanded phonetic context, qualified singer assets and
+  the remaining six-milestone plan are still open.
+- Regenerated three articulation variants through the production ExportService
+  in `build/release/seam-pilot-articulation-reattack-01`. These are retained
+  unqualified listening artifacts, not phonetic or identity acceptance evidence.
+- Follow-up verification: complete Release build passed, followed by a fresh
+  full CTest invocation: 123/123 passed in 84.76 seconds, including the expanded
+  boundary matrix and production pilot CLI. This supersedes the earlier narrow
+  test boundary for this repair, but does not establish musical qualification.
