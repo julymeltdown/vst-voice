@@ -30,7 +30,7 @@ struct CandidateFixture final {
   seam::voicebank_production::SampleCandidateReviewPacket packet;
 };
 
-CandidateFixture reviewedCandidateFixture(bool withProcessing = true, std::string rawOperatorId = "producer", bool approve = true) {
+CandidateFixture reviewedCandidateFixture(bool withProcessing = true, std::string rawOperatorId = "producer", bool approve = true, bool styleOwned = false) {
   namespace production = seam::voicebank_production;
   CandidateFixture fixture;
   fixture.root = seam::test::support::temporaryDirectory("reviewed-sample-candidate");
@@ -44,6 +44,7 @@ CandidateFixture reviewedCandidateFixture(bool withProcessing = true, std::strin
       .licenseLocator = license.string(), .licenseSha256 = digest.value(), .immutableAssetRoot = "assets",
   };
   auto& project = fixture.project;
+  if (styleOwned) { project.schemaVersion = production::kProductionStyleSchemaVersion; project.language = "ja"; }
   project.sourceStrategies.push_back({
       .id = "test-synthesis", .kind = production::SourceStrategyKind::ProceduralSynthesis,
       .rights = production::Feasibility::Pass, .coverage = production::Feasibility::Pass,
@@ -54,6 +55,7 @@ CandidateFixture reviewedCandidateFixture(bool withProcessing = true, std::strin
   });
   project.operators = {{.operatorId = "producer", .role = "PRODUCER"}, {.operatorId = "reviewer", .role = "REVIEWER"}};
   project.unitAssignments = {{.coverageKey = "sustain:a", .pitchLayer = 69, .promptId = "prompt-a", .plannedTakeId = "take-a"}};
+  if (styleOwned) project.unitAssignments.front().style = "original";
   production::ProductionProjectRepository repository{fixture.root / "workspace"};
   CHECK(repository.initialize(project, {.action = "create", .subjectId = project.projectId,
       .operatorId = "producer", .occurredAtUtc = "2026-09-09T10:00:00Z"}));
@@ -61,7 +63,7 @@ CandidateFixture reviewedCandidateFixture(bool withProcessing = true, std::strin
   CHECK(seam::voicebank::writeWav(source, {.sampleRate = 48000U, .channels = 1U,
       .sampleFormat = seam::voicebank::WavSampleFormat::Pcm24}, seam::test::support::sineWave(48000U, 440.0, 0.12, 0.25F)));
   const auto raw = repository.importRaw(project, source,
-      {.takeId = "take-a", .promptId = "prompt-a", .coverageKey = "sustain:a", .pitchLayer = 69},
+      {.takeId = "take-a", .promptId = "prompt-a", .coverageKey = "sustain:a", .pitchLayer = 69, .style = styleOwned ? "original" : ""},
       {.action = "import", .subjectId = "take-a", .operatorId = rawOperatorId, .occurredAtUtc = "2026-09-09T10:01:00Z"});
   CHECK(raw);
   auto effectiveAudioSha256 = raw.value().sha256;
@@ -189,6 +191,53 @@ TEST_CASE("sample review packet roundtrips bounded material and rejects tamperin
   oversizedManifest.displayName = std::string(2U * 1024U * 1024U + 1U, 'x');
   CHECK(!production::prepareSampleCandidateReview(fixture.root / "workspace", fixture.project, oversizedManifest));
   CHECK(production::encodeProductionProject(fixture.project) == before);
+}
+
+TEST_CASE("style-owned review keeps approvals separate for identical PCM and pitch") {
+  namespace production = seam::voicebank_production;
+  auto legacy = reviewedCandidateFixture(false, "producer", false);
+  auto legacyManifest = legacy.request.manifest;
+  legacyManifest.styles.push_back("soft");
+  auto legacySoft = legacyManifest.units.front(); legacySoft.id = "a-soft-69"; legacySoft.style = "soft";
+  legacyManifest.units.push_back(legacySoft);
+  const auto legacyPacket = production::prepareSampleCandidateReview(legacy.root / "workspace", legacy.project, legacyManifest);
+  CHECK(!legacyPacket);
+  CHECK(legacyPacket.error().code == seam::core::ErrorCode::Unsupported);
+  auto fixture = reviewedCandidateFixture(false, "producer", false, true);
+  auto& project = fixture.project;
+  project.unitAssignments.push_back({.coverageKey = "sustain:a", .pitchLayer = 69,
+      .promptId = "prompt-soft", .plannedTakeId = "take-soft", .style = "soft"});
+  production::ProductionProjectRepository repository{fixture.root / "workspace"};
+  CHECK(repository.importRaw(project, fixture.root / "raw.wav",
+      {.takeId = "take-soft", .promptId = "prompt-soft", .coverageKey = "sustain:a", .pitchLayer = 69, .style = "soft"},
+      {"import", "take-soft", "producer", "2026-09-13T00:00:00Z"}));
+  auto manifest = fixture.request.manifest;
+  manifest.styles.push_back("soft");
+  auto soft = manifest.units.front(); soft.id = "a-soft-69"; soft.style = "soft";
+  manifest.units.push_back(soft);
+  const auto packet = production::prepareSampleCandidateReview(fixture.root / "workspace", project, manifest); CHECK(packet);
+  CHECK(packet.value().units.size() == 2U);
+  CHECK(packet.value().units[0].takeId != packet.value().units[1].takeId);
+  CHECK(packet.value().units[0].audioSha256 == packet.value().units[1].audioSha256);
+  const std::vector<std::string> originalSelection{"a-69"}, softSelection{"a-soft-69"};
+  const auto first = production::commitSampleCandidateReview(fixture.root / "workspace", project, packet.value(),
+      "reviewer", "2026-09-13T00:01:00Z", production::SampleCandidateReviewDecision::Accept, originalSelection); CHECK(first);
+  CHECK(project.unitAssignments[0].state == production::UnitQueueState::Approved);
+  CHECK(project.unitAssignments[1].state == production::UnitQueueState::MarkerReview);
+  CHECK(!first.value().candidate);
+  const auto firstReview = project.reviews.front().reviewId;
+  CHECK(!production::commitSampleCandidateReview(fixture.root / "workspace", project, packet.value(),
+      "reviewer", "2026-09-13T00:02:00Z", production::SampleCandidateReviewDecision::Accept, softSelection));
+  const auto refreshed = production::prepareSampleCandidateReview(fixture.root / "workspace", project, manifest); CHECK(refreshed);
+  CHECK(production::commitSampleCandidateReview(fixture.root / "workspace", project, refreshed.value(),
+      "reviewer", "2026-09-13T00:02:00Z", production::SampleCandidateReviewDecision::Accept, softSelection));
+  CHECK(project.reviews.front().reviewId == firstReview);
+  CHECK(project.reviews.size() == 2U);
+  CHECK(project.reviews[0].takeId != project.reviews[1].takeId);
+  CHECK(project.unitAssignments[1].state == production::UnitQueueState::Approved);
+  auto relabeled = manifest; relabeled.units[1].style = "original";
+  CHECK(!production::prepareSampleCandidateReview(fixture.root / "workspace", project, relabeled));
+  CHECK(production::encodeProductionProject(repository.recover().value()) == production::encodeProductionProject(project));
 }
 
 TEST_CASE("sample review decisions atomically accept reject and retain previous history") {

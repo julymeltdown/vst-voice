@@ -58,6 +58,22 @@ not a replacement product contract or a release approval.
 - No generated voice, musical review, qualified range, installed bank or Beta GO
   is claimed. The complete implementation goal remains active.
 
+## Multi-style review integration
+
+- Schema-4 workspaces can now prepare and apply a multi-style review packet
+  through the shared review service. Legacy style-free workspaces remain rejected.
+- A synthetic regression uses two takes with identical PCM, phone coverage and
+  pitch but different styles. Reviewing the first does not review the second;
+  the second requires a fresh packet and its own explicit decision. Stale packets
+  and relabeling into the other style fail, and durable recovery retains both
+  separate review records.
+- Producer, native Studio review and sample-review CLI targets rebuilt and all
+  three focused CTest targets passed. The producer target has 50 cases.
+- This admits review, not multi-style publication. Publication still needs its
+  complete per-style coverage checks and downstream candidate parity; the Python
+  legacy candidate contract still uses coverage/pitch pairs. No musical approval
+  outside the explicitly synthetic tests was created.
+
 Next concrete implementation owners: explicit evidence-backed legacy migration,
 then complete populated-workspace parity and candidate
 review/publication parity and the resumable inventory campaign. The generation

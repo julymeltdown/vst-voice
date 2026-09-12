@@ -168,7 +168,7 @@ core::Result<SampleCandidateReviewPacket> prepareSampleCandidateReview(
   // repository admission still owns its existing source-policy requirements.
   const auto validManifest = boundedManifest(manifest);
   if (!validManifest) return core::Result<Output>{validManifest.error()};
-  if (manifest.styles.size() != 1U)
+  if (manifest.styles.size() != 1U && project.schemaVersion < kProductionStyleSchemaVersion)
     return core::failure<Output>(core::ErrorCode::Unsupported, "Multi-style review requires style-owned producer assignments");
   if (project.schemaVersion >= kProductionStyleSchemaVersion && project.language !=
       (manifest.language == domain::Language::Japanese ? "ja" : manifest.language == domain::Language::English ? "en" : "ko"))
