@@ -84,8 +84,13 @@ core::Result<VoicebankProductionProject> decodeProductionProject(
     return core::failure<VoicebankProductionProject>(
         core::ErrorCode::ParseError, "Production project header is invalid");
   }
-  if (project.schemaVersion != 1 && project.schemaVersion != kProductionProjectSchemaVersion && project.schemaVersion != kProductionAssessmentSchemaVersion)
+  if (project.schemaVersion != 1 && project.schemaVersion != kProductionProjectSchemaVersion && project.schemaVersion != kProductionAssessmentSchemaVersion && project.schemaVersion != kProductionStyleSchemaVersion)
     return core::failure<VoicebankProductionProject>(core::ErrorCode::Unsupported, "Production project schema is unsupported");
+  if (project.schemaVersion >= kProductionStyleSchemaVersion) {
+    if (!codec_internal::readString(parsed.value(), "language", project.language))
+      return core::failure<VoicebankProductionProject>(core::ErrorCode::ParseError, "Style-owned workspace requires language");
+  } else if (parsed.value().find("language"))
+    return core::failure<VoicebankProductionProject>(core::ErrorCode::ParseError, "Legacy workspace cannot carry language ownership");
   if (project.schemaVersion == 1) {
     if (parsed.value().find("lifecycle") || parsed.value().find("sourceBindings"))
       return core::failure<VoicebankProductionProject>(core::ErrorCode::ParseError, "Legacy project cannot carry source-aware lifecycle fields");
@@ -113,7 +118,7 @@ core::Result<VoicebankProductionProject> decodeProductionProject(
   auto metadataRevisions = decodeArray<MetadataRevision>(
       parsed.value(), "metadataRevisions", codec_internal::decodeMetadataRevision);
   auto assignments = decodeArray<UnitAssignment>(
-      parsed.value(), "unitAssignments", codec_internal::decodeAssignment);
+      parsed.value(), "unitAssignments", [&](const auto& value) { return codec_internal::decodeAssignment(value, project.schemaVersion); });
   auto operators = decodeArray<OperatorRecord>(
       parsed.value(), "operators", decodeOperator);
   auto reviews = decodeArray<ReviewRecord>(
@@ -135,7 +140,7 @@ core::Result<VoicebankProductionProject> decodeProductionProject(
   project.operators = std::move(operators).value();
   project.reviews = std::move(reviews).value();
   project.lastDurableGeneration = static_cast<std::uint64_t>(generation);
-  if (project.schemaVersion == kProductionAssessmentSchemaVersion) {
+  if (project.schemaVersion >= kProductionAssessmentSchemaVersion) {
     const auto* rows = parsed.value().find("sourceQualityAssessments");
     if (!rows || !rows->isArray() || rows->asArray().size() > 1024U)
       return core::failure<VoicebankProductionProject>(core::ErrorCode::ParseError,"Source quality history exceeds its record bound");

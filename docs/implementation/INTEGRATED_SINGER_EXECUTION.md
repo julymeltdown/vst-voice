@@ -8,7 +8,7 @@ not a replacement product contract or a release approval.
 
 | Package | Implementation | Demonstrated workflow | Qualification remaining | Next action |
 |---|---|---|---|---|
-| M1.P1 | In progress: explicit draft inventory schema 2 and CLI; style/layer/take identity; unassessed requested range; legacy schema 1 retained | Pilot profile generates validated inventory through the actual CLI | Producer schema 4, migration, review/expectation and C++/Python parity still incomplete | Carry style identity into producer persistence and canonical mutation owners |
+| M1.P1 | In progress: inventory v2; producer v4 codec and raw import ownership; unassessed requested range; legacy readers retained | Pilot inventory CLI and C++ two-style workspace import/save/recovery tests | Explicit legacy migration, Python producer parity, generation-job/CLI wiring and multi-style publication incomplete | Connect the inventory to the canonical v4 writer, then finish generation and migration |
 | M1.P2/P3 | Not completed by this increment | Existing procedural/producer foundation retained | Connected articulation, campaign, actual bank and unfamiliar-song evidence | Continue after the necessary M1.P1 producer bindings |
 | M2–M6 | Remaining full scope retained | No new milestone qualification | As specified by the implementation plan | Independent neural process/data work remains available |
 
@@ -21,17 +21,28 @@ not a replacement product contract or a release approval.
 - The producer now defines `ProductionUnitIdentity` with exact language/style/
   coverage/layer equality and a canonical inventory-v2 SHA256. Python-generated
   rows and C++ agree on ASCII and quoted Japanese-label golden vectors; distinct
-  style slugs cannot merge assignments. This primitive is not yet connected to
-  schema-4 persistence or canonical mutation consumers.
-- Rebuilt `seam_voicebank_production_tests`; all 47 C++ cases passed. The two
-  focused registered CTest targets passed together. The whole Release suite has
-  not been rerun; its prior full regression remains dated baseline evidence.
+  style slugs cannot merge assignments.
+- Producer schema 4 now persists a workspace language and per-assignment/take
+  style, checks four-axis duplicate/retake ownership, and retains legacy 1–3
+  serialization. Raw and generated import matching use style; source assessment
+  retains v4 and includes language/style in its material identity. Review and
+  single-style manifest paths reject relabeling. Multi-style publication is
+  deliberately not enabled before all consumers are integrated.
+- Tests import identical PCM into two distinct styles, recover the durable
+  workspace, and reject cross-style retakes, missing styles, language changes,
+  and relabeling existing takes without mutating saved state. Generic save cannot
+  masquerade as legacy migration; the explicit migration operation is pending.
+- Rebuilt the complete configured Release tree and ran all **122 CTest targets:
+  122 passed, zero failed** (86.13 seconds). The producer target now has 49 cases.
 - Legacy producer readers intentionally do not admit schema-2 inventory yet;
   they must not discard style identity. The CLI assignment export declares its
   schema-4 producer requirement explicitly.
 - No generated voice, musical review, qualified range, installed bank or Beta GO
   is claimed. The complete implementation goal remains active.
 
-Next concrete implementation owner: production `project.hpp`, split project
-codecs, assignment/take validation and canonical repository operations, followed
-by generation expectations, candidate review/publication and Python parity.
+Next concrete implementation owners: Python draft definition/validation parity,
+`generation_job.cpp` and the generation-collection CLI (currently reconstructing
+style-free raw inputs), explicit evidence-backed legacy migration, then complete
+candidate review/publication parity. Existing expectation state hashes bind the
+workspace language indirectly; its explicit versioned language contract remains
+to be added with the generation integration. No M1 completion is claimed.

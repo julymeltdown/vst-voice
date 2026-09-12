@@ -222,6 +222,9 @@ core::Result<TakeRecord> decodeTake(const formats::JsonValue& value, std::int64_
     return parseFailure<TakeRecord>("Source-aware take must explicitly declare its source binding or unknown origin");
   if (schemaVersion == 1 && value.find("sourceBindingId"))
     return parseFailure<TakeRecord>("Legacy take cannot carry source-aware fields");
+  if (schemaVersion >= kProductionStyleSchemaVersion) {
+    if (!readString(value, "style", result.style)) return parseFailure<TakeRecord>("Style-owned take requires style");
+  } else if (value.find("style")) return parseFailure<TakeRecord>("Legacy take cannot carry style ownership");
   return result;
 }
 
@@ -239,7 +242,7 @@ core::Result<TakeSourceBinding> decodeSourceBinding(const formats::JsonValue& va
   return result;
 }
 
-core::Result<UnitAssignment> decodeAssignment(const formats::JsonValue& value) {
+core::Result<UnitAssignment> decodeAssignment(const formats::JsonValue& value, std::int64_t schemaVersion) {
   if (!value.isObject()) return parseFailure<UnitAssignment>("Unit assignment must be an object");
   UnitAssignment result;
   std::int64_t pitch = 0;
@@ -257,6 +260,9 @@ core::Result<UnitAssignment> decodeAssignment(const formats::JsonValue& value) {
   if (!parsedState) return parseFailure<UnitAssignment>("Unit assignment state is invalid");
   result.pitchLayer = static_cast<std::int32_t>(pitch);
   result.state = *parsedState;
+  if (schemaVersion >= kProductionStyleSchemaVersion) {
+    if (!readString(value, "style", result.style)) return parseFailure<UnitAssignment>("Style-owned assignment requires style");
+  } else if (value.find("style")) return parseFailure<UnitAssignment>("Legacy assignment cannot carry style ownership");
   return result;
 }
 

@@ -27,6 +27,6 @@ namespace seam::voicebank_production::codec_internal {
     const formats::JsonValue& value, std::int64_t schemaVersion);
 [[nodiscard]] core::Result<TakeSourceBinding> decodeSourceBinding(const formats::JsonValue& value);
 [[nodiscard]] core::Result<UnitAssignment> decodeAssignment(
-    const formats::JsonValue& value);
+    const formats::JsonValue& value, std::int64_t schemaVersion);
 
 }

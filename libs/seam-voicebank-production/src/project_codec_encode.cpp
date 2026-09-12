@@ -65,7 +65,7 @@ formats::JsonValue encodeMetadataRevision(const MetadataRevision& value) {
   };
 }
 
-formats::JsonValue encodeTake(const TakeRecord& value, bool sourceAware) {
+formats::JsonValue encodeTake(const TakeRecord& value, std::int64_t schema) {
   Array revisions;
   for (const auto& id : value.derivedRevisionIds) revisions.emplace_back(id);
   Object object{
@@ -78,7 +78,8 @@ formats::JsonValue encodeTake(const TakeRecord& value, bool sourceAware) {
       {"supersedesTakeId", value.supersedesTakeId},
       {"state", toString(value.state)},
   };
-  if (sourceAware) object.emplace("sourceBindingId", value.sourceBindingId);
+  if (schema >= 2) object.emplace("sourceBindingId", value.sourceBindingId);
+  if (schema >= kProductionStyleSchemaVersion) object.emplace("style", value.style);
   return object;
 }
 
@@ -88,8 +89,8 @@ formats::JsonValue encodeSourceBinding(const TakeSourceBinding& value) {
       {"importedAtUtc", value.importedAtUtc}, {"licenseSnapshotPath", value.licenseSnapshotPath}};
 }
 
-formats::JsonValue encodeAssignment(const UnitAssignment& value) {
-  return Object{
+formats::JsonValue encodeAssignment(const UnitAssignment& value, std::int64_t schema) {
+  Object object{
       {"coverageKey", value.coverageKey},
       {"pitchLayer", static_cast<std::int64_t>(value.pitchLayer)},
       {"promptId", value.promptId},
@@ -99,6 +100,8 @@ formats::JsonValue encodeAssignment(const UnitAssignment& value) {
       {"markerReviewed", value.markerReviewed},
       {"pitchReviewed", value.pitchReviewed},
   };
+  if (schema >= kProductionStyleSchemaVersion) object.emplace("style", value.style);
+  return object;
 }
 
 template <typename Value, typename Encoder>
@@ -135,14 +138,15 @@ std::string encodeProductionProject(
       {"immutableAssetRoot", project.immutableAssetRoot},
       {"sourceStrategies", encodeArray(project.sourceStrategies, encodeStrategy)},
       {"assets", encodeArray(project.assets, encodeAsset)},
-      {"takes", encodeArray(project.takes, [&](const auto& value) { return encodeTake(value, project.schemaVersion >= 2); })},
+      {"takes", encodeArray(project.takes, [&](const auto& value) { return encodeTake(value, project.schemaVersion); })},
       {"derivedRevisions", encodeArray(project.derivedRevisions, encodeRevision)},
       {"metadataRevisions", encodeArray(project.metadataRevisions, encodeMetadataRevision)},
-      {"unitAssignments", encodeArray(project.unitAssignments, encodeAssignment)},
+      {"unitAssignments", encodeArray(project.unitAssignments, [&](const auto& value) { return encodeAssignment(value, project.schemaVersion); })},
       {"operators", std::move(operators)},
       {"reviews", std::move(reviews)},
       {"lastDurableGeneration", static_cast<std::int64_t>(project.lastDurableGeneration)},
   };
+  if (project.schemaVersion >= kProductionStyleSchemaVersion) object.emplace("language", project.language);
   if (project.schemaVersion >= 2) {
     object.emplace("lifecycle", toString(project.lifecycle));
     object.emplace("sourceBindings", encodeArray(project.sourceBindings, encodeSourceBinding));

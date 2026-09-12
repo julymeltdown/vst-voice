@@ -95,14 +95,15 @@ core::Result<GenerationImportExpectation> captureGenerationImportExpectation(
   if (strategy == project.sourceStrategies.end() || strategy->kind != SourceStrategyKind::ProceduralSynthesis ||
       std::any_of(project.takes.begin(), project.takes.end(), [&](const auto& value) { return value.takeId == take.takeId; }))
     return core::failure<GenerationImportExpectation>(core::ErrorCode::Conflict, "Generation requires an authorized procedural strategy and a new take ID");
-  if (project.lastDurableGeneration == 0U || style.empty() || style.size() > 128U ||
+  if ((project.schemaVersion >= kProductionStyleSchemaVersion ? take.style != style : !take.style.empty()) ||
+      project.lastDurableGeneration == 0U || style.empty() || style.size() > 128U ||
       renderContentHash.size() != 64U || !std::all_of(renderContentHash.begin(), renderContentHash.end(), [](char c) {
         return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f');
       }) || sampleRate < 8000U || sampleRate > 384000U || frameCount <= 0 || frameCount > 32LL * 1024LL * 1024LL ||
       take.takeId.empty() || take.initialState != UnitQueueState::MarkerReview || take.review)
     return core::failure<GenerationImportExpectation>(core::ErrorCode::InvalidArgument, "Generation expectation is incomplete or exceeds bounds");
   const auto assignment = std::find_if(project.unitAssignments.begin(), project.unitAssignments.end(), [&](const auto& value) {
-    return value.coverageKey == take.coverageKey && value.pitchLayer == take.pitchLayer && value.promptId == take.promptId &&
+    return value.style == take.style && value.coverageKey == take.coverageKey && value.pitchLayer == take.pitchLayer && value.promptId == take.promptId &&
         value.takeId == take.supersedesTakeId;
   });
   if (assignment == project.unitAssignments.end()) return core::failure<GenerationImportExpectation>(
@@ -137,7 +138,8 @@ core::Result<std::optional<CollectedGenerationResult>> ProductionProjectReposito
   const auto take = std::find_if(state.takes.begin(), state.takes.end(), [&](const auto& value) { return value.takeId == expectation.takeId; });
   if (take == state.takes.end()) return Output{};
   const auto mismatch = [] { return core::failure<Output>(core::ErrorCode::Conflict, "Existing take does not prove collection of this generation request"); };
-  if (take->promptId != expectation.promptId || take->coverageKey != expectation.coverageKey || take->pitchLayer != expectation.pitchLayer ||
+  if ((state.schemaVersion >= kProductionStyleSchemaVersion && take->style != expectation.style) ||
+      take->promptId != expectation.promptId || take->coverageKey != expectation.coverageKey || take->pitchLayer != expectation.pitchLayer ||
       take->supersedesTakeId != expectation.supersedesTakeId) return mismatch();
   const auto lineage = std::find_if(state.metadataRevisions.begin(), state.metadataRevisions.end(), [&](const auto& value) {
     return value.takeId == take->takeId && value.kind == "procedural-lineage";
@@ -182,7 +184,7 @@ core::Result<CommittedImportBatch> ProductionProjectRepository::importGeneratedB
   if (!valid) return core::Result<Output>{valid.error()};
   const auto originalState = core::sha256Hex(encodeProductionProject(project));
   std::set<std::string> takes;
-  std::set<std::pair<std::string, std::int32_t>> assignments;
+  std::set<ProductionUnitIdentity> assignments;
   std::uint64_t frames = 0U;
   for (const auto& input : inputs) {
     const auto encoded = encodeGenerationImportExpectation(input.expectation);
@@ -191,10 +193,11 @@ core::Result<CommittedImportBatch> ProductionProjectRepository::importGeneratedB
     const auto count = static_cast<std::uint64_t>(request.frameCount);
     const auto assignment = std::find_if(project.unitAssignments.begin(), project.unitAssignments.end(), [&](const auto& value) {
       return value.coverageKey == request.coverageKey && value.pitchLayer == request.pitchLayer &&
+          (project.schemaVersion < kProductionStyleSchemaVersion || value.style == request.style) &&
           value.promptId == request.promptId && value.takeId == request.supersedesTakeId;
     });
     if (request.projectStateSha256 != originalState || !takes.insert(request.takeId).second ||
-        !assignments.emplace(request.coverageKey, request.pitchLayer).second || count > maximumFrames - frames ||
+        !assignments.insert({project.language, project.schemaVersion >= kProductionStyleSchemaVersion ? request.style : "", request.coverageKey, request.pitchLayer}).second || count > maximumFrames - frames ||
         assignment == project.unitAssignments.end() || std::any_of(project.takes.begin(), project.takes.end(), [&](const auto& value) { return value.takeId == request.takeId; }))
       return core::failure<Output>(core::ErrorCode::Conflict, "Batch collection is stale, duplicated or over its frame budget");
     frames += count;
@@ -206,7 +209,8 @@ core::Result<CommittedImportBatch> ProductionProjectRepository::importGeneratedB
     const auto& request = input.expectation;
     const auto imported = importProceduralCandidateBound(draft, input.metadataPath, input.audioPath, input.recipe,
         {.takeId = request.takeId, .promptId = request.promptId, .coverageKey = request.coverageKey,
-         .pitchLayer = request.pitchLayer, .supersedesTakeId = request.supersedesTakeId},
+         .pitchLayer = request.pitchLayer, .supersedesTakeId = request.supersedesTakeId,
+         .style = project.schemaVersion >= kProductionStyleSchemaVersion ? request.style : ""},
         {.action = request.supersedesTakeId.empty() ? "import-procedural" : "retake", .subjectId = request.takeId,
          .operatorId = event.operatorId, .occurredAtUtc = event.occurredAtUtc}, stopToken, &request, originalState);
     if (!imported) return core::Result<Output>{imported.error()};
@@ -229,6 +233,7 @@ core::Result<AssetRecord> ProductionProjectRepository::importProceduralCandidate
     if (!valid) return core::Result<AssetRecord>{valid.error()};
   }
   if (expectation && (expectation->projectStateSha256 != originalState ||
+      (project.schemaVersion >= kProductionStyleSchemaVersion && expectation->style != take.style) ||
       expectation->takeId != take.takeId || expectation->promptId != take.promptId ||
       expectation->coverageKey != take.coverageKey || expectation->pitchLayer != take.pitchLayer ||
       expectation->supersedesTakeId != take.supersedesTakeId || expectation->recipeId != recipe.identity.id ||
@@ -246,6 +251,8 @@ core::Result<AssetRecord> ProductionProjectRepository::importProceduralCandidate
   }
   const auto candidate = voice_design::loadProceduralCandidate(metadataPath, audioPath, recipe, stopToken);
   if (!candidate) return core::Result<AssetRecord>{candidate.error()};
+  if (project.schemaVersion >= kProductionStyleSchemaVersion && candidate.value().style != take.style)
+    return core::failure<AssetRecord>(core::ErrorCode::Conflict, "Generated candidate style differs from its producer assignment");
   if (expectation && (candidate.value().style != expectation->style ||
       candidate.value().renderContentHash != expectation->renderContentHash ||
       candidate.value().sampleRate != expectation->sampleRate || candidate.value().frameCount != expectation->frameCount))
@@ -284,7 +291,8 @@ core::Result<AssetRecord> ProductionProjectRepository::importRawBound(
   const auto selected = std::find_if(project.sourceStrategies.begin(), project.sourceStrategies.end(),
       [&](const auto& value) { return value.id == project.selectedSourceStrategyId; });
   const auto sourceStrategy = *selected;
-  if (take.takeId.empty() || take.promptId.empty() || take.coverageKey.empty()) {
+  if (take.takeId.empty() || take.promptId.empty() || take.coverageKey.empty() ||
+      (project.schemaVersion >= kProductionStyleSchemaVersion ? take.style.empty() : !take.style.empty())) {
     return core::failure<AssetRecord>(core::ErrorCode::InvalidArgument,
                                       "Raw take identity is incomplete");
   }
@@ -299,7 +307,7 @@ core::Result<AssetRecord> ProductionProjectRepository::importRawBound(
       project.unitAssignments.begin(), project.unitAssignments.end(),
       [&take](const UnitAssignment& value) {
         return value.coverageKey == take.coverageKey &&
-               value.pitchLayer == take.pitchLayer;
+               value.pitchLayer == take.pitchLayer && value.style == take.style;
       });
   if (assignment == project.unitAssignments.end()) {
     return core::failure<AssetRecord>(core::ErrorCode::InvalidArgument,
@@ -315,6 +323,7 @@ core::Result<AssetRecord> ProductionProjectRepository::importRawBound(
     if (superseded == project.takes.end() ||
         superseded->coverageKey != take.coverageKey ||
         superseded->pitchLayer != take.pitchLayer ||
+        superseded->style != take.style ||
         superseded->promptId != take.promptId || event.action != "retake") {
       return core::failure<AssetRecord>(
           core::ErrorCode::InvalidArgument,
@@ -372,6 +381,7 @@ core::Result<AssetRecord> ProductionProjectRepository::importRawBound(
       .supersedesTakeId = take.supersedesTakeId,
       .state = take.initialState,
       .sourceBindingId = bindingId,
+      .style = take.style,
   });
   if (take.review.has_value()) {
     project.reviews.push_back(*take.review);
@@ -380,7 +390,7 @@ core::Result<AssetRecord> ProductionProjectRepository::importRawBound(
       project.unitAssignments.begin(), project.unitAssignments.end(),
       [&take](const UnitAssignment& value) {
         return value.coverageKey == take.coverageKey &&
-               value.pitchLayer == take.pitchLayer;
+               value.pitchLayer == take.pitchLayer && value.style == take.style;
       });
   assignment->takeId = take.takeId;
   assignment->state = take.initialState;

@@ -125,6 +125,10 @@ core::Result<CreatedSampleManifestDraft> createSampleManifestDraft(
     const SampleManifestDraftIdentity& identity, const std::filesystem::path& destination,
     const SampleManifestDraftOptions& options, std::stop_token stop) {
   using Output = CreatedSampleManifestDraft;
+  if (project.schemaVersion >= kProductionStyleSchemaVersion &&
+      (project.language != (identity.language == domain::Language::Japanese ? "ja" : identity.language == domain::Language::English ? "en" : "ko") ||
+       std::any_of(project.unitAssignments.begin(), project.unitAssignments.end(), [&](const auto& row) { return row.style != identity.style; })))
+    return core::failure<Output>(core::ErrorCode::Conflict, "Single-style draft identity must match every producer assignment");
   if (!identifier(identity.id) || !identifier(identity.version) || !text(identity.displayName, 256U) || !text(identity.style, 128U) ||
       (identity.language != domain::Language::Japanese && identity.language != domain::Language::English && identity.language != domain::Language::Korean) ||
       project.unitAssignments.empty() || project.unitAssignments.size() > 4096U || project.takes.size() > 65536U ||

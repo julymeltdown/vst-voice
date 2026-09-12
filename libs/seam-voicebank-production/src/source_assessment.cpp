@@ -43,10 +43,15 @@ core::Result<std::string> sourceQualityMaterialIdentity(const VoicebankProductio
       const auto* revision = foundRevision->second;
       audio = revision->outputSha256; parent = revision->revisionId; editors.emplace_back(revision->operatorId);
     }
-    if (!rows.emplace(take->takeId,J::Object{{"takeId",take->takeId},{"sourceBindingId",binding->id},
+    J::Object materialRow{{"takeId",take->takeId},{"sourceBindingId",binding->id},
         {"coverageKey",assignment.coverageKey},{"pitchLayer",static_cast<std::int64_t>(assignment.pitchLayer)},
         {"promptId",assignment.promptId},{"rawSha256",take->rawAssetSha256},{"effectiveSha256",audio},
-        {"parentRevisionId",parent},{"importerId",binding->importerId},{"editors",std::move(editors)}}).second)
+        {"parentRevisionId",parent},{"importerId",binding->importerId},{"editors",std::move(editors)}};
+    if (project.schemaVersion >= kProductionStyleSchemaVersion) {
+      materialRow.emplace("language", project.language);
+      materialRow.emplace("style", assignment.style);
+    }
+    if (!rows.emplace(take->takeId, std::move(materialRow)).second)
       return core::failure<std::string>(core::ErrorCode::Conflict,"Assessed take appears in multiple assignments");
   }
   if (rows.empty()) return core::failure<std::string>(core::ErrorCode::InvalidState,"Source quality assessment requires active source-owned audio");
@@ -109,7 +114,7 @@ core::Result<ProductionCommitReceipt> ProductionProjectRepository::recordSourceQ
     return core::failure<Output>(core::ErrorCode::Conflict,"Source assessment ID is already recorded");
   const auto reviewer = validateSourceQualityReviewer(project,assessment); if (!reviewer) return core::Result<Output>{reviewer.error()};
   auto draft = project;
-  draft.schemaVersion = kProductionAssessmentSchemaVersion;
+  draft.schemaVersion = std::max(draft.schemaVersion, kProductionAssessmentSchemaVersion);
   draft.sourceQualityAssessments.push_back(assessment);
   auto& assessed = draft.sourceStrategies[static_cast<std::size_t>(source-project.sourceStrategies.begin())];
   assessed.coverage = assessment.coverage; assessed.listening = assessment.listening;

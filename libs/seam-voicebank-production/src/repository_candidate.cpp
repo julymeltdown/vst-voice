@@ -273,6 +273,10 @@ core::Result<void> validateReviewedBinding(const VoicebankProductionProject& pro
   const auto take = selectedTake(project, binding);
   if (!take) return core::Result<void>{take.error()};
   const auto* unit = manifest.findUnit(binding.unitId);
+  if (project.schemaVersion >= kProductionStyleSchemaVersion &&
+      (project.language != (manifest.language == domain::Language::Japanese ? "ja" : manifest.language == domain::Language::English ? "en" : "ko") ||
+       !unit || unit->style != take.value()->style))
+    return core::failure(core::ErrorCode::Conflict, "Candidate language or style differs from its producer take", binding.unitId);
   if (!unit || !unit->enabled || unit->rootMidi != take.value()->pitchLayer ||
       coverageKey(*unit) != take.value()->coverageKey ||
       unit->audioPath.generic_string() != "audio/" + binding.audioSha256 + ".wav")

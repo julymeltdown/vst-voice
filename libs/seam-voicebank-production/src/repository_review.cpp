@@ -170,6 +170,9 @@ core::Result<SampleCandidateReviewPacket> prepareSampleCandidateReview(
   if (!validManifest) return core::Result<Output>{validManifest.error()};
   if (manifest.styles.size() != 1U)
     return core::failure<Output>(core::ErrorCode::Unsupported, "Multi-style review requires style-owned producer assignments");
+  if (project.schemaVersion >= kProductionStyleSchemaVersion && project.language !=
+      (manifest.language == domain::Language::Japanese ? "ja" : manifest.language == domain::Language::English ? "en" : "ko"))
+    return core::failure<Output>(core::ErrorCode::Conflict, "Review language differs from the producer workspace");
   if (manifest.units.empty() || manifest.units.size() > kMaximumReviewUnits || manifest.units.size() > project.unitAssignments.size())
     return core::failure<Output>(core::ErrorCode::Conflict, "Review manifest must name a bounded subset of current producer assignments");
   Output packet{project.projectId, project.lastDurableGeneration, core::sha256Hex(encodeProductionProject(project)),
@@ -178,7 +181,8 @@ core::Result<SampleCandidateReviewPacket> prepareSampleCandidateReview(
   std::set<std::string> mappedTakes;
   for (auto& unit : packet.manifest.units) {
     const auto assignment = std::find_if(project.unitAssignments.begin(), project.unitAssignments.end(), [&](const auto& value) {
-      return value.coverageKey == coverageKey(unit) && value.pitchLayer == unit.rootMidi;
+      return value.coverageKey == coverageKey(unit) && value.pitchLayer == unit.rootMidi &&
+          (project.schemaVersion < kProductionStyleSchemaVersion || value.style == unit.style);
     });
     if (!unit.enabled || assignment == project.unitAssignments.end() || assignment->takeId.empty() ||
         !mappedTakes.insert(assignment->takeId).second)

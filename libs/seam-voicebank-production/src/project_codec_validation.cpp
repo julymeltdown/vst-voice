@@ -38,10 +38,17 @@ core::Result<void> invalid(std::string message) {
 core::Result<void> validateProductionProject(
     const VoicebankProductionProject& project) {
   const bool legacy = project.schemaVersion == 1;
-  if (!legacy && project.schemaVersion != kProductionProjectSchemaVersion && project.schemaVersion != kProductionAssessmentSchemaVersion) {
+  if (!legacy && project.schemaVersion != kProductionProjectSchemaVersion && project.schemaVersion != kProductionAssessmentSchemaVersion && project.schemaVersion != kProductionStyleSchemaVersion) {
     return core::failure(core::ErrorCode::Unsupported,
                          "Production project schema is unsupported");
   }
+  const bool styleOwned = project.schemaVersion >= kProductionStyleSchemaVersion;
+  if (styleOwned ? (project.language != "ja" && project.language != "en" && project.language != "ko") : !project.language.empty())
+    return invalid("Production language does not match its schema");
+  const auto validStyle = [styleOwned](const std::string& style) {
+    return styleOwned ? (!style.empty() && style.size() <= 128U &&
+        std::none_of(style.begin(), style.end(), [](unsigned char c) { return c < 32U || c == 127U; })) : style.empty();
+  };
   if (project.projectId.empty() || project.immutableAssetRoot.empty() ||
       (legacy && (project.inventoryId.empty() || project.selectedSourceStrategyId.empty()))) {
     return invalid("Production project identity is incomplete");
@@ -167,6 +174,7 @@ core::Result<void> validateProductionProject(
   std::set<std::string, std::less<>> ownedRevisions;
   for (const auto& take : project.takes) {
     if (take.promptId.empty() || take.coverageKey.empty() ||
+        !validStyle(take.style) || (styleOwned && (take.pitchLayer < 24 || take.pitchLayer > 96)) ||
         assetDigests.find(take.rawAssetSha256) == assetDigests.end()) {
       return invalid("Take binding is invalid");
     }
@@ -180,6 +188,7 @@ core::Result<void> validateProductionProject(
           superseded->takeId == take.takeId ||
           superseded->coverageKey != take.coverageKey ||
           superseded->pitchLayer != take.pitchLayer ||
+          superseded->style != take.style ||
           superseded->promptId != take.promptId) {
         return invalid("Retake chain is invalid");
       }
@@ -251,11 +260,12 @@ core::Result<void> validateProductionProject(
       return invalid("Review record is invalid or unbound");
     }
   }
-  std::set<std::pair<std::string, std::int32_t>> assignments;
+  std::set<ProductionUnitIdentity> assignments;
   for (const auto& assignment : project.unitAssignments) {
     if (assignment.coverageKey.empty() || assignment.promptId.empty() ||
+        !validStyle(assignment.style) || (styleOwned && (assignment.pitchLayer < 24 || assignment.pitchLayer > 96)) ||
         assignment.plannedTakeId.empty() ||
-        !assignments.emplace(assignment.coverageKey, assignment.pitchLayer).second) {
+        !assignments.insert({project.language, assignment.style, assignment.coverageKey, assignment.pitchLayer}).second) {
       return invalid("Unit assignment is missing or duplicated");
     }
     if (assignment.state == UnitQueueState::Missing) {
@@ -272,6 +282,7 @@ core::Result<void> validateProductionProject(
     if (take == project.takes.end() ||
         take->coverageKey != assignment.coverageKey ||
         take->pitchLayer != assignment.pitchLayer ||
+        take->style != assignment.style ||
         take->promptId != assignment.promptId ||
         take->state != assignment.state) {
       return invalid("Unit assignment take binding is invalid");

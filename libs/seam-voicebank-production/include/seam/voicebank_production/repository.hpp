@@ -22,6 +22,7 @@ struct RawTakeInput final {
   std::string supersedesTakeId;
   UnitQueueState initialState{UnitQueueState::MarkerReview};
   std::optional<ReviewRecord> review;
+  std::string style;
 };
 
 // Captured before worker generation. Integrity/staleness check, not a signature

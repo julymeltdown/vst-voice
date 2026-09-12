@@ -14,6 +14,7 @@ namespace seam::voicebank_production {
 
 inline constexpr std::int64_t kProductionProjectSchemaVersion = 2;
 inline constexpr std::int64_t kProductionAssessmentSchemaVersion = 3;
+inline constexpr std::int64_t kProductionStyleSchemaVersion = 4;
 inline constexpr const char* kProductionProjectFormat =
     "com.project-seam.voicebank-production";
 
@@ -139,6 +140,7 @@ struct TakeRecord final {
   // Empty means unknown legacy/unattributed origin, never implicit ownership
   // by the project's currently selected source strategy.
   std::string sourceBindingId;
+  std::string style;
 };
 
 struct UnitAssignment final {
@@ -150,6 +152,7 @@ struct UnitAssignment final {
   UnitQueueState state{UnitQueueState::Missing};
   bool markerReviewed{false};
   bool pitchReviewed{false};
+  std::string style;
 };
 
 struct OperatorRecord final {
@@ -193,6 +196,8 @@ struct VoicebankProductionProject final {
   ProductionLifecycle lifecycle{ProductionLifecycle::Draft};
   std::vector<TakeSourceBinding> sourceBindings;
   std::vector<SourceQualityAssessment> sourceQualityAssessments;
+  // Explicit only in schema 4. Empty legacy ownership is never inferred.
+  std::string language;
 };
 
 struct ProductionQueueSummary final {

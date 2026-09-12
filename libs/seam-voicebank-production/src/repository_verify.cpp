@@ -181,6 +181,17 @@ core::Result<void> verifySnapshots(const std::filesystem::path& root, const Voic
 }
 
 core::Result<void> preserveBindings(const VoicebankProductionProject& current, const VoicebankProductionProject& proposed) {
+  if (current.schemaVersion < kProductionStyleSchemaVersion && proposed.schemaVersion >= kProductionStyleSchemaVersion)
+    return core::failure(core::ErrorCode::Unsupported, "Legacy style ownership requires explicit evidence-backed migration, not generic save");
+  if (current.schemaVersion >= kProductionStyleSchemaVersion) {
+    if (current.language != proposed.language)
+      return core::failure(core::ErrorCode::Conflict, "Producer workspace language is immutable");
+    for (const auto& take : current.takes) {
+      const auto found = std::find_if(proposed.takes.begin(), proposed.takes.end(), [&](const auto& value) { return value.takeId == take.takeId; });
+      if (found == proposed.takes.end() || found->style != take.style || found->coverageKey != take.coverageKey || found->pitchLayer != take.pitchLayer)
+        return core::failure(core::ErrorCode::Conflict, "Existing take production identity cannot be reassigned", take.takeId);
+    }
+  }
   if (proposed.sourceQualityAssessments.size() < current.sourceQualityAssessments.size() ||
       !std::equal(current.sourceQualityAssessments.begin(),current.sourceQualityAssessments.end(),proposed.sourceQualityAssessments.begin()))
     return core::failure(core::ErrorCode::Conflict,"Source quality history is append-only and immutable");
