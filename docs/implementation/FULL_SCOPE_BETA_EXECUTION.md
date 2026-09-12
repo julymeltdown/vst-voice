@@ -12,6 +12,18 @@ This ledger records implementation evidence for [the approved plan](../plans/202
 
 ## Active implementation
 
+2026-09-12 — Publication verification: accumulated implementation committed as
+`fdd197005fad6b6b0fb33396854b4439be7ab18c`. Release build passed; the complete
+121-target CTest run passed 119 targets in 143.97 s. Source closure identified ten
+historical `test-details.log` evidence files excluded by the owner's global
+`test-*.log` ignore rule; these exact files were explicitly staged and closure
+then passed. The remaining failure was the Japanese-reading job test's short
+Ready wait, which passed on an unchanged-source focused rerun. Both failed
+targets passed on that rerun (1.99 s); the intermittent wait remains to repair.
+License audit passed in an exact-commit temporary clone containing only master,
+as required by the audit, without removing the owner's existing branches.
+This is development publication evidence, not full Beta GO acceptance.
+
 2026-09-12 — Resumed after interrupted sessions and recovered the completed native
 manifest-loader verification from the CTest log. Address-derived bounded loading
 now joins trusted expected metadata to package verification. A copied native
