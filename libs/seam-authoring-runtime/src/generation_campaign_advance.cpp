@@ -26,6 +26,10 @@ core::Result<CampaignAdvanceResult> advanceGenerationCampaign(
   if (!voicebank_production::isProductionUtcTimestamp(occurredAtUtc) || std::none_of(before.value().operators.begin(), before.value().operators.end(),
       [&](const auto& entry) { return entry.operatorId == operatorId; })) return fail("Campaign operator or timestamp is invalid");
   const auto root = std::filesystem::absolute(campaignPath).parent_path();
+  const auto storageLimit = static_cast<std::uint64_t>(plan.find("maximumEstimatedBytes")->asInt64());
+  const auto checkStorage = [&] { return inspectCampaignStorage(root, storageLimit, 262144U, stop); };
+  const auto initialStorage = checkStorage();
+  if (!initialStorage) return core::Result<Output>{initialStorage.error()};
   core::ExclusiveFileLock lock;
   const auto locked = lock.acquire(root / ".campaign-advance.lock");
   if (!locked) return core::Result<Output>{locked.error()};
@@ -56,6 +60,8 @@ core::Result<CampaignAdvanceResult> advanceGenerationCampaign(
     }
     const auto prepared = prepareGenerationCampaignBatch(verified.value(), index, before.value(), directory, predecessor, stop);
     if (!prepared) return core::Result<Output>{prepared.error()};
+    const auto preparedStorage = checkStorage();
+    if (!preparedStorage) return core::Result<Output>{preparedStorage.error()};
     if (hasReceipt) {
       const auto after = loadVerifiedGenerationBatchReceipt(repository, before.value(), prepared.value().jobs, receipt, limits, stop);
       if (!after) return core::Result<Output>{after.error()};
@@ -81,9 +87,13 @@ core::Result<CampaignAdvanceResult> advanceGenerationCampaign(
       const auto rendered = runGenerationBatch(prepared.value().jobs, limits, stop);
       if (!rendered) return core::Result<Output>{rendered.error()};
     }
+    const auto renderedStorage = checkStorage();
+    if (!renderedStorage) return core::Result<Output>{renderedStorage.error()};
     const auto collected = collectGenerationBatchWithReceipt(repository, before.value(), prepared.value().jobs, receipt,
         {"import-generated-batch", prepared.value().batchSha256, operatorId, occurredAtUtc}, limits, stop, interruptBeforeReceipt);
     if (!collected) return core::Result<Output>{collected.error()};
+    const auto collectedStorage = checkStorage();
+    if (!collectedStorage) return core::Result<Output>{collectedStorage.error()};
     return Output{index + 1U, total, collected.value().committedProjectSha256, index + 1U == total};
   }
   const auto current = repository.recover();

@@ -897,6 +897,25 @@ TEST_CASE("nasal and frication candidates bake and enter production with typed u
   const auto advancePath = root / "advanced-campaign/campaign.json";
   CHECK(core::durableAtomicWriteTextNew(advancePath, advancePlan.value()));
   const auto advanceHash = core::sha256Hex(advancePlan.value());
+  const auto storageCanary = root / "advanced-campaign/storage-canary";
+  CHECK(core::durableAtomicWriteTextNew(storageCanary, "x"));
+  std::filesystem::resize_file(storageCanary, 8ULL * 1024ULL * 1024ULL * 1024ULL + 1U);
+  CHECK(!authoring::advanceGenerationCampaign(advancedRepository, advancePath, advanceHash, "producer", "2026-09-13T00:00:01Z"));
+  CHECK(advancedRepository.recover().value().takes.empty());
+  CHECK(!std::filesystem::exists(root / "advanced-campaign/batch-0"));
+  std::filesystem::rename(storageCanary, root / "held-storage-canary");
+  CHECK(std::filesystem::create_directory(root / "storage-scan"));
+  CHECK(core::durableAtomicWriteTextNew(root / "storage-scan/a", "abc"));
+  CHECK(core::durableAtomicWriteTextNew(root / "storage-scan/b", "de"));
+  const auto storageUsage = authoring::inspectCampaignStorage(root / "storage-scan", 5U); CHECK(storageUsage);
+  CHECK(storageUsage.value().logicalBytes == 5U); CHECK(storageUsage.value().entries == 2U);
+  CHECK(!authoring::inspectCampaignStorage(root / "storage-scan", 4U));
+  CHECK(!authoring::inspectCampaignStorage(root / "storage-scan", 5U, 1U));
+  CHECK(!authoring::inspectCampaignStorage(root / "storage-scan", 5U, 2U, campaignStop.get_token()));
+#if defined(__APPLE__) || defined(__linux__)
+  std::filesystem::create_symlink(root / "storage-scan/a", root / "storage-scan/link");
+  CHECK(!authoring::inspectCampaignStorage(root / "storage-scan", 100U));
+#endif
 #if defined(SEAM_TEST_GENERATION_PROBE) && (defined(__APPLE__) || defined(__linux__))
   CHECK(runProcess(SEAM_TEST_GENERATION_PROBE, {"campaign-sigkill", (root / "advanced-producer").string(),
       advancePath.string(), advanceHash, "producer", "2026-09-13T00:00:01Z"}) == 128 + SIGKILL);

@@ -475,6 +475,29 @@ not a replacement product contract or a release approval.
   power-loss test or complete campaign crash matrix. Preparation-intent windows,
   cancellation during rendering, storage bounds and Windows qualification remain.
 
+### Bounded retained-storage inspection and phase guards
+
+- Added shared `inspectCampaignStorage`: counts logical file bytes (including
+  sparse files and duplicate/hard-linked paths conservatively), bounds entries
+  and nesting depth, checks cancellation, and rejects symbolic links, special
+  files or enumeration errors. It does not follow links, delete artifacts or
+  treat unreadable paths as empty. Only the campaign directory is counted.
+- Advancement applies the admitted byte allowance before its lock/write work and
+  checks retained storage after preparation, rendering and collection. Exceeding
+  a boundary returns an error and preserves evidence. The producer-owned asset
+  repository outside the campaign directory is not included by this scan.
+- Tests count a five-byte/two-file fixture exactly, reject four-byte and one-entry
+  allowances, cancellation and a symlink, then place an over-limit sparse canary
+  in a real campaign directory. Advancement rejects it before preparing batch 0
+  or collecting any take. Moving the canary aside allows the existing SIGKILL/
+  CLI-recovery scenario to proceed.
+- This is phase-boundary enforcement, not a hard per-write disk quota: a phase
+  can overshoot before its post-check, and external writers can race a scan.
+  Reservation/accounted writers and combined campaign/producer growth remain
+  necessary before declaring aggregate storage control complete.
+- Verification: affected Release build, export CTest (1/1, 4.41 seconds), and
+  staged-source closure (1/1, 0.25 seconds) passed. No new full-suite run claimed.
+
 Next concrete implementation owners: explicit evidence-backed legacy migration,
 then complete populated-workspace parity and candidate
 review/publication parity and the resumable inventory campaign. The generation

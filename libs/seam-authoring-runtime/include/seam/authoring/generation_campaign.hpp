@@ -61,6 +61,12 @@ struct CampaignAdvanceResult final {
   std::string producerSha256;
   bool complete{false};
 };
+struct CampaignStorageUsage final { std::uint64_t logicalBytes{0U}; std::size_t entries{0U}; };
+// Bounded, read-only scan. Counts logical sizes (including sparse files), not
+// allocated disk blocks. Rejects symlinks/special files and does not delete data.
+[[nodiscard]] core::Result<CampaignStorageUsage> inspectCampaignStorage(
+    const std::filesystem::path& root, std::uint64_t maximumBytes,
+    std::size_t maximumEntries = 262144U, std::stop_token stop = {});
 [[nodiscard]] core::Result<CampaignAdvanceResult> advanceGenerationCampaign(
     const voicebank_production::ProductionProjectRepository& repository,
     const std::filesystem::path& campaignPath, std::string_view campaignSha256,
