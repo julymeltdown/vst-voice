@@ -42,6 +42,10 @@ def _write_new_definition(path: Path, value: dict[str, Any]) -> str:
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Manage recoverable Project SEAM voicebank production workspaces")
     commands = parser.add_subparsers(dest="command", required=True)
+    migration = commands.add_parser("prepare-style-migration", help="Capture a read-only legacy ownership migration plan; does not apply it")
+    migration.add_argument("--workspace", type=Path, required=True)
+    migration.add_argument("--inventory", type=Path, required=True)
+    migration.add_argument("--output", type=Path, required=True)
     initialize = commands.add_parser("init-project")
     initialize.add_argument("--inventory", type=Path, required=True)
     initialize.add_argument("--strategies", type=Path, required=True)
@@ -73,6 +77,15 @@ def main(argv: list[str] | None = None) -> int:
     try:
         inventory = _read_object(args.inventory) if getattr(args, "inventory", None) else None
         strategies = _read_object(args.strategies) if getattr(args, "strategies", None) else None
+        if args.command == "prepare-style-migration":
+            from ._production_style_migration import prepare_style_migration
+            if args.output.resolve().is_relative_to(args.workspace.resolve()):
+                raise ValueError("migration plans must be written outside the source workspace")
+            plan = prepare_style_migration(args.workspace, inventory)
+            digest = _write_new_definition(args.output, plan)
+            print(json.dumps({"status": plan["status"], "plan": str(args.output.resolve()), "sha256": digest,
+                              "applied": False, "releaseEligible": False}, sort_keys=True))
+            return 0
         if args.command == "prepare-draft":
             project = prepare_production_draft_definition(inventory, strategies, project_id=args.project_id,
                 operator_id=args.operator_id, repository_root=args.repository_root)

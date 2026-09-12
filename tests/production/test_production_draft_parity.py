@@ -130,6 +130,54 @@ def _workspace(root: Path, recovered: bool = False) -> tuple[Path, dict]:
 
 
 class ProductionDraftParityTests(unittest.TestCase):
+    def test_legacy_style_migration_plan_preserves_history_and_invalidates_approval(self) -> None:
+        from tools.voicebank_script_generator import generate_inventory, production_assignments
+        from tools.external_beta._production_style_migration import prepare_style_migration
+        for styles in (["original"], ["original", "soft"]):
+            with self.subTest(styles=styles), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                workspace, project = _workspace(root)
+                inventory = generate_inventory({"vowels": ["a", "i"], "consonants": ["m"],
+                    "pitchLayers": [69, 72], "includeKinds": ["sustain"], "alternateTakes": 1, "supportedStyles": styles})
+                project.update(inventoryId=inventory["profileId"], inventorySha256=inventory["inventorySha256"])
+                project["unitAssignments"] = production_assignments(inventory)
+                for take in project["takes"]:
+                    row = next(row for row in project["unitAssignments"] if row["coverageKey"] == take["coverageKey"] and row["pitchLayer"] == take["pitchLayer"])
+                    take["promptId"] = row["promptId"]; take["state"] = "APPROVED"
+                    row.update(takeId=take["takeId"], state="APPROVED", markerReviewed=True, pitchReviewed=True)
+                    project["reviews"].append({"reviewId": "test-" + take["takeId"], "takeId": take["takeId"],
+                        "reviewerId": "other-producer", "result": "PASS", "reviewedAtUtc": "2026-09-09T10:00:00Z"})
+                _generation(workspace, project, project["lastDurableGeneration"] + 1, "save", project["projectId"])
+                before = {str(p.relative_to(workspace)): p.read_bytes() for p in workspace.rglob("*") if p.is_file()}
+                plan = prepare_style_migration(workspace, inventory)
+                inventory_file = root / "inventory.json"; inventory_file.write_bytes(_text(inventory))
+                output_file = root / "migration-plan.json"
+                arguments = [sys.executable, "-m", "tools.external_beta.voicebank_production", "prepare-style-migration",
+                    "--workspace", str(workspace), "--inventory", str(inventory_file), "--output", str(output_file)]
+                command = subprocess.run(arguments, cwd=ROOT, capture_output=True, text=True, timeout=20)
+                self.assertEqual(0, command.returncode, command.stderr)
+                self.assertEqual(plan, json.loads(output_file.read_text()))
+                self.assertFalse(json.loads(command.stdout)["applied"])
+                self.assertNotEqual(0, subprocess.run(arguments, cwd=ROOT, capture_output=True, timeout=20).returncode)
+                arguments[-1] = str(workspace / "new-plan.json")
+                self.assertNotEqual(0, subprocess.run(arguments, cwd=ROOT, capture_output=True, timeout=20).returncode)
+                self.assertEqual(before, {str(p.relative_to(workspace)): p.read_bytes() for p in workspace.rglob("*") if p.is_file()})
+                self.assertEqual(hashlib.sha256(before["project.json"]).hexdigest(), plan["sourceProjectSha256"])
+                if len(styles) > 1:
+                    self.assertEqual("UNRESOLVED", plan["status"])
+                    self.assertNotIn("proposedProject", plan)
+                    self.assertEqual(len(project["unitAssignments"]), len(plan["unresolved"]))
+                else:
+                    self.assertEqual("RESOLVED_NOT_APPLIED", plan["status"])
+                    proposed = plan["proposedProject"]
+                    self.assertEqual(project["reviews"], proposed["reviews"])
+                    self.assertEqual(project["sourceBindings"], proposed["sourceBindings"])
+                    self.assertEqual(project["lastDurableGeneration"], proposed["lastDurableGeneration"])
+                    self.assertEqual(4, proposed["schemaVersion"])
+                    self.assertTrue(all(not r["markerReviewed"] and not r["pitchReviewed"] for r in proposed["unitAssignments"]))
+                    self.assertTrue(all(t["state"] == "MARKER_REVIEW" and t["style"] == "original" for t in proposed["takes"]))
+                    self.assertEqual(plan, prepare_style_migration(workspace, inventory))
+
     def test_style_owned_source_cannot_inherit_unrecorded_quality(self) -> None:
         self.assertTrue(_quality_current({"schemaVersion": 2, "sourceQualityAssessments": []}, "source"))
         self.assertFalse(_quality_current({"schemaVersion": 4, "sourceQualityAssessments": []}, "source"))

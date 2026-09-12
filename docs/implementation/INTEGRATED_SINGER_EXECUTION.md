@@ -112,6 +112,26 @@ not a replacement product contract or a release approval.
   rebuilding affected targets. The prior 122-target run predates this increment;
   no fresh desktop visual QA or musical qualification is claimed.
 
+## Legacy migration preparation
+
+- Added `python3 -m tools.external_beta.voicebank_production prepare-style-migration
+  --workspace WORKSPACE --inventory LEGACY_INVENTORY --output NEW_PLAN_JSON`.
+  It verifies durable history and matching inventory, captures the source bytes'
+  SHA256/generation and inventory evidence, and writes only a new plan outside
+  the workspace. Existing output paths are not overwritten.
+- A singleton style in the validated legacy inventory can resolve ownership.
+  Multi-style legacy inventories produce `UNRESOLVED` with per-assignment reasons;
+  the planner does not guess a selected style. A resolved proposal retains old
+  reviews/source bindings but clears active marker/pitch approval and requires
+  source-quality reassessment. Its generation is not advanced by the planner.
+- All 18 production-draft parity tests passed, including actual CLI invocation,
+  deterministic proposal content, ambiguous styles, unchanged workspace bytes,
+  preservation of historical evidence and rejection of in-workspace/overwrite
+  destinations. The proposed state is validated against the target schema.
+- **Not yet applied:** the C++ durable migration operation, retained migration
+  receipt and history-transition verification remain to implement. Generic save
+  continues to reject a schema upgrade; this plan cannot bypass that boundary.
+
 Next concrete implementation owners: explicit evidence-backed legacy migration,
 then complete populated-workspace parity and candidate
 review/publication parity and the resumable inventory campaign. The generation
