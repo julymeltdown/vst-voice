@@ -77,3 +77,26 @@ workspace creation use new destinations so existing evidence is preserved.
 
 Next implementation work completes legacy migration and the generation planner,
 then measures articulation and the actual voice before generating a full bank.
+
+## Campaign planning CLI
+
+After creating a style-owned producer, select its exact planned take IDs:
+
+```sh
+build/release/seam_voicebank_cli draft-generation-campaign WORKSPACE RECIPE_JSON NEW_PLAN_JSON TAKE_ID [TAKE_ID ...]
+build/release/seam_voicebank_cli plan-generation-campaign WORKSPACE PLAN_JSON PLAN_SHA256 NEW_OUTPUT_DIRECTORY
+build/release/seam_voicebank_cli inspect-generation-campaign CAMPAIGN_JSON CAMPAIGN_SHA256
+```
+
+Use the hash printed by `draft` as `PLAN_SHA256`. Publication creates
+`NEW_OUTPUT_DIRECTORY/campaign.json` with the same hash. `inspect` verifies its
+canonical frozen inputs and batch layout; it does not verify current workspace
+state or assert that work has run. Publication rejects a stale initial producer
+state. Destinations must be new; failed partial output is preserved.
+
+The draft command uses default aggregate/per-batch limits from the shared service.
+It preflights the entire selected subset and fails on unsupported phones/styles
+instead of silently reducing coverage. Selecting a subset is an experiment, not
+completion of the inventory. No take approval or source authorization is created.
+The `advance-generation-campaign` command is **not implemented yet**; these
+commands publish unprepared plans, not resumable execution.

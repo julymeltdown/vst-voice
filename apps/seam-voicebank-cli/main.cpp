@@ -13,6 +13,7 @@
 #include "seam/authoring/generation_job.hpp"
 #include "signal_cancellation.hpp"
 #include "sample_review_commands.hpp"
+#include "campaign_commands.hpp"
 #include "seam/formats/project_json.hpp"
 #include <charconv>
 
@@ -540,6 +541,7 @@ void printUsage() {
       << "    Collects generated output only against its retained expectation; never refreshes a stale request.\n"
       << "    Imports into an existing procedural producer workspace as unapproved MarkerReview material.\n";
   seam::voicebank_cli::printSampleReviewUsage();
+  seam::voicebank_cli::printCampaignUsage();
 }
 
 }  // namespace
@@ -550,6 +552,7 @@ int main(int argc, char** argv) {
     return 1;
   }
   const std::string_view command{argv[1]};
+  if (const auto result = seam::voicebank_cli::runCampaignCommand(argc, argv)) return *result;
   if (const auto result=seam::voicebank_cli::runSampleReviewCommand(argc,argv)) return *result;
   if (command == "import-procedural") return importProceduralCommand(argc, argv);
   if (command == "import-generated") return importGeneratedCommand(argc, argv);

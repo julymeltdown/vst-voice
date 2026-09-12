@@ -259,6 +259,27 @@ not a replacement product contract or a release approval.
   external-edit detection and crash/restart integration. A valid plan is not a
   completed or resumable campaign yet.
 
+### Campaign CLI publication and inspection
+
+- Added separate CLI command module, using shared planning/verification services:
+  `draft-generation-campaign WORKSPACE RECIPE NEW_PLAN TAKE...`,
+  `plan-generation-campaign WORKSPACE PLAN HASH NEW_DIRECTORY`, and
+  `inspect-generation-campaign CAMPAIGN HASH`. Drafting uses default limits and
+  explicit selected take IDs; publication retains the exact caller-selected
+  plan bytes/hash, not regenerated expectations or a changed recipe.
+- Plan publication recovers the current producer and rejects a changed initial
+  state before creating output. The new directory's atomic `campaign.json` is the
+  publication boundary; partial directories are retained and never overwritten.
+  This is a point-in-time state check, not a workspace lock or authorization to
+  run later without rechecking. Inspection proves frozen-plan consistency only.
+- Real CLI tests draft, inspect and publish, reject repeated destinations and a
+  wrong hash, verify unchanged producer bytes, then collect real two-style output
+  and confirm stale publication fails before directory creation.
+- Advancement remains unimplemented: just-in-time preparation and durable
+  completion/recovery receipts must precede any resumable-execution claim.
+- Verification: focused Release build and export CTest passed (1/1, 3.92 seconds).
+  No fresh full-suite result or musical acceptance is claimed.
+
 Next concrete implementation owners: explicit evidence-backed legacy migration,
 then complete populated-workspace parity and candidate
 review/publication parity and the resumable inventory campaign. The generation

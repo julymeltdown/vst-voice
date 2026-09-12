@@ -800,6 +800,22 @@ TEST_CASE("nasal and frication candidates bake and enter production with typed u
   CHECK(!authoring::planGenerationCampaign(multiProducer, campaignTakes, resource.value()));
   std::stop_source campaignStop; campaignStop.request_stop();
   CHECK(!authoring::planGenerationCampaign(multiProducer, campaignTakes, multiResource.value(), {}, campaignStop.get_token()));
+#if defined(SEAM_TEST_VOICEBANK_CLI) && (defined(__APPLE__) || defined(__linux__))
+  CHECK(voice_design::saveVoiceRecipeFile(root / "campaign-recipe.json", multiRecipe));
+  const std::vector<std::string> draftCampaignArgs{"draft-generation-campaign", (root / "multi-style-inventory").string(),
+      (root / "campaign-recipe.json").string(), (root / "campaign-draft.json").string(), "take-sa", "take-sa-soft"};
+  CHECK(runVoicebankCli(draftCampaignArgs) == 0);
+  CHECK(runVoicebankCli(draftCampaignArgs) != 0);
+  const auto draftCampaignHash = core::sha256File(root / "campaign-draft.json"); CHECK(draftCampaignHash);
+  CHECK(runVoicebankCli({"inspect-generation-campaign", (root / "campaign-draft.json").string(), draftCampaignHash.value()}) == 0);
+  CHECK(runVoicebankCli({"inspect-generation-campaign", (root / "campaign-draft.json").string(), std::string(64U, '0')}) != 0);
+  const std::vector<std::string> publishCampaignArgs{"plan-generation-campaign", (root / "multi-style-inventory").string(),
+      (root / "campaign-draft.json").string(), draftCampaignHash.value(), (root / "published-campaign").string()};
+  CHECK(runVoicebankCli(publishCampaignArgs) == 0);
+  CHECK(core::sha256File(root / "published-campaign/campaign.json").value() == draftCampaignHash.value());
+  CHECK(runVoicebankCli(publishCampaignArgs) != 0);
+  CHECK(production::encodeProductionProject(multiRepository.recover().value()) == beforeCampaign);
+#endif
   const auto neutralJob = authoring::prepareInventoryGenerationJob(root / "multi-neutral.seam", root / "multi-neutral-job",
       multiProducer, "take-sa", {multiResource.value(), "neutral"}); CHECK(neutralJob);
   const auto softJob = authoring::prepareInventoryGenerationJob(root / "multi-soft.seam", root / "multi-soft-job",
@@ -819,6 +835,12 @@ TEST_CASE("nasal and frication candidates bake and enter production with typed u
   CHECK(multiRecovered.value().takes.size() == 2U);
   CHECK(multiRecovered.value().takes[0].style == "neutral");
   CHECK(multiRecovered.value().takes[1].style == "soft");
+#if defined(SEAM_TEST_VOICEBANK_CLI) && (defined(__APPLE__) || defined(__linux__))
+  auto staleCampaignArgs = publishCampaignArgs;
+  staleCampaignArgs.back() = (root / "stale-campaign").string();
+  CHECK(runVoicebankCli(staleCampaignArgs) != 0);
+  CHECK(!std::filesystem::exists(root / "stale-campaign"));
+#endif
   CHECK(std::none_of(multiRecovered.value().unitAssignments.begin(), multiRecovered.value().unitAssignments.end(),
       [](const auto& row) { return row.markerReviewed || row.pitchReviewed; }));
   production::ProductionProjectRepository styleRepository{root / "style-owned-generation"};

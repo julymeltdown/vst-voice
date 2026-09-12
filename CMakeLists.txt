@@ -1055,6 +1055,7 @@ target_link_libraries(seam_clap_state_tool PRIVATE seam_clap seam_voicebank seam
 seam_apply_compiler_options(seam_clap_state_tool)
 
 add_executable(seam_voicebank_cli apps/seam-voicebank-cli/main.cpp
+  apps/seam-voicebank-cli/campaign_commands.cpp
   apps/seam-voicebank-cli/sample_review_commands.cpp)
 target_link_libraries(seam_voicebank_cli PRIVATE
   seam_voicebank seam_formats seam_domain seam_core seam_voice_design seam_voicebank_production seam_authoring_runtime)
