@@ -441,6 +441,7 @@ seam_apply_compiler_options(seam_voice_design)
 
 add_library(seam_synthesis
   libs/seam-synthesis/src/singer_resource.cpp
+  libs/seam-synthesis/src/neural_bundle.cpp
   libs/seam-synthesis/src/phrase_backend.cpp
   libs/seam-synthesis/src/unit_selection.cpp
   libs/seam-synthesis/src/timing_solver.cpp

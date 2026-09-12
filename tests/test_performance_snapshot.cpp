@@ -1,4 +1,5 @@
 #include "test_framework.hpp"
+#include "seam/synthesis/neural_bundle.hpp"
 #include "test_support.hpp"
 
 #include "seam/application/project_factory.hpp"
@@ -2086,4 +2087,34 @@ TEST_CASE("snapshots exclude inert proposals but retain selected performance and
   proposal.seed = 999U;
   state.takes.push_back(proposal);
   CHECK(fixture.snapshot().contentHash == selected.contentHash);
+}
+
+TEST_CASE("data-only neural bundles own hash-bound assets without reinterpreting legacy models") {
+  using namespace seam;
+  using namespace synthesis;
+  std::vector<std::byte> bytes{std::byte{1},std::byte{2}};
+  const auto hash=core::sha256Hex(std::span<const std::byte>{bytes});
+  std::vector<NeuralBundleAssetInput> assets{{NeuralAssetRole::Acoustic,"acoustic",bytes,hash},
+      {NeuralAssetRole::Vocoder,"vocoder",bytes,hash},{NeuralAssetRole::Vocabulary,"vocabulary",bytes,hash},
+      {NeuralAssetRole::Configuration,"configuration",bytes,hash}};
+  const auto manifest=FrozenNeuralBundle::manifest(assets,8U); CHECK(manifest);
+  domain::SingerResourceIdentity identity{domain::SingerResourceKind::Neural,"test-bundle","1",core::sha256Hex(manifest.value())};
+  const auto frozen=FrozenNeuralBundle::freeze(identity,assets,8U); CHECK(frozen);
+  CHECK(frozen.value().assets().size()==4U);
+  auto shared=frozen.value();
+  CHECK(shared.assets().data()==frozen.value().assets().data());
+  CHECK(shared.assets()[0].data->bytes().data()!=bytes.data());
+  std::reverse(assets.begin(),assets.end());
+  CHECK(FrozenNeuralBundle::manifest(assets,8U).value()==manifest.value());
+  CHECK(!FrozenNeuralBundle::freeze(identity,assets,7U));
+  auto bad=assets; bad.front().name="../model"; CHECK(!FrozenNeuralBundle::manifest(bad,8U));
+  bad=assets; bad.front().name=bad.back().name; CHECK(!FrozenNeuralBundle::manifest(bad,8U));
+  bad=assets; bad.front().role=NeuralAssetRole::Acoustic; CHECK(!FrozenNeuralBundle::manifest(bad,8U));
+  bad=assets; bad.front().role=static_cast<NeuralAssetRole>(99); CHECK(!FrozenNeuralBundle::manifest(bad,8U));
+  auto wrong=identity; wrong.contentHash=std::string(64U,'0'); CHECK(!FrozenNeuralBundle::freeze(wrong,assets,8U));
+  std::stop_source stop; stop.request_stop(); CHECK(!FrozenNeuralBundle::freeze(identity,assets,8U,stop.get_token()));
+  bytes.front()=std::byte{9};
+  CHECK(frozen.value().assets()[0].data->bytes().front()==std::byte{1});
+  CHECK(!FrozenNeuralBundle::freeze(identity,assets,8U));
+  // Arbitrary fixture bytes prove ownership only, never graph validity.
 }

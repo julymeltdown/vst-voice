@@ -508,6 +508,21 @@ is claimed.
 
 ### M2.P1 process-ownership extraction
 
+Data-bundle follow-up: added a separate `FrozenNeuralBundle` in synthesis, not a
+reinterpretation of legacy NeuralSingerResource. It requires exactly one each
+of acoustic/vocoder/vocabulary/configuration, permits bounded variance/tensor
+assets, and owns deep-frozen hash-verified bytes behind shared immutable backing.
+The deterministic name-sorted manifest binds roles, names, lengths and digests.
+There are no executable/path/runtime-library fields or ONNX Runtime dependencies.
+Asset count is 4–32, payload total at most 512 MiB, each asset at most 256 MiB,
+vocabulary/configuration at most 4 MiB each, and manifest at most 32 KiB.
+Tests cover reorder-stable identity, shared backing, caller-buffer mutation,
+digest mismatch, aggregate overflow, invalid/duplicate names and roles, and
+cancellation. Targeted synthesis build and performance-snapshot CTest passed
+(1/1, 2.13 seconds). These arbitrary-byte fixtures do not prove graph validity:
+manifest import, acoustic/vocoder feature compatibility, vocabulary admission,
+render-resource integration and real inference remain required.
+
 Follow-up: moved the dependency check into a reusable CMake module and added
 six configure fixtures: allowed, harmless cycle, forbidden direct/transitive,
 LINK_ONLY and alias links. The guard resolves ALIASED_TARGET before checking
