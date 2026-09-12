@@ -17,10 +17,9 @@ core::Result<CampaignAdvanceResult> advanceGenerationCampaign(
   const auto fail = [](std::string message) { return core::failure<Output>(core::ErrorCode::Conflict, std::move(message)); };
   const auto bytes = core::readTextFileLimited(campaignPath, 32U * 1024U * 1024U);
   if (!bytes) return core::Result<Output>{bytes.error()};
-  const auto verified = verifyGenerationCampaign(bytes.value(), campaignSha256, stop);
+  const auto verified = VerifiedGenerationCampaign::admit(bytes.value(), campaignSha256, stop);
   if (!verified) return core::Result<Output>{verified.error()};
-  const auto parsed = formats::parseJson(bytes.value());
-  const auto& plan = parsed.value();
+  const auto& plan = verified.value().plan();
   const auto initial = voicebank_production::decodeProductionProject(plan.find("initialProducerJson")->asString());
   auto before = repository.recoverGeneration(initial.value().lastDurableGeneration, plan.find("initialProducerSha256")->asString());
   if (!before) return core::Result<Output>{before.error()};
@@ -55,7 +54,7 @@ core::Result<CampaignAdvanceResult> advanceGenerationCampaign(
           current.value().lastDurableGeneration - before.value().lastDurableGeneration != 1U))
         return fail("Producer changed outside the campaign's expected transition");
     }
-    const auto prepared = prepareGenerationCampaignBatch(bytes.value(), campaignSha256, index, before.value(), directory, predecessor, stop);
+    const auto prepared = prepareGenerationCampaignBatch(verified.value(), index, before.value(), directory, predecessor, stop);
     if (!prepared) return core::Result<Output>{prepared.error()};
     if (hasReceipt) {
       const auto after = loadVerifiedGenerationBatchReceipt(repository, before.value(), prepared.value().jobs, receipt, limits, stop);

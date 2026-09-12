@@ -832,12 +832,23 @@ TEST_CASE("nasal and frication candidates bake and enter production with typed u
   const auto executablePlan = authoring::planGenerationCampaign(campaignProducer, campaignTakes, multiResource.value(),
       {.batch = {.maximumJobs = 1U}}); CHECK(executablePlan);
   const auto executableHash = core::sha256Hex(executablePlan.value());
+  auto mutablePlanBytes = executablePlan.value();
+  auto admittedCampaign = authoring::VerifiedGenerationCampaign::admit(mutablePlanBytes, executableHash); CHECK(admittedCampaign);
+  mutablePlanBytes = "{}";
+  CHECK(admittedCampaign.value().sha256() == executableHash);
+  const auto sharedCampaign = admittedCampaign.value();
+  auto movedCampaign = std::move(admittedCampaign.value());
+  CHECK(!admittedCampaign.value().valid());
+  CHECK(&sharedCampaign.plan() == &movedCampaign.plan());
+  CHECK(!authoring::prepareGenerationCampaignBatch(admittedCampaign.value(), 0U, campaignProducer, root / "empty-admission"));
+  CHECK(!std::filesystem::exists(root / "empty-admission"));
+  CHECK(!authoring::VerifiedGenerationCampaign::admit(executablePlan.value(), std::string(64U, '0')));
   CHECK(!authoring::prepareGenerationCampaignBatch(executablePlan.value(), executableHash, 1U, campaignProducer, root / "premature-batch"));
   CHECK(!std::filesystem::exists(root / "premature-batch"));
-  const auto firstCampaignBatch = authoring::prepareGenerationCampaignBatch(executablePlan.value(), executableHash, 0U,
+  const auto firstCampaignBatch = authoring::prepareGenerationCampaignBatch(movedCampaign, 0U,
       campaignProducer, root / "campaign-batch-0"); CHECK(firstCampaignBatch);
   CHECK(firstCampaignBatch.value().jobs.size() == 1U);
-  const auto retriedCampaignBatch = authoring::prepareGenerationCampaignBatch(executablePlan.value(), executableHash, 0U,
+  const auto retriedCampaignBatch = authoring::prepareGenerationCampaignBatch(sharedCampaign, 0U,
       campaignProducer, root / "campaign-batch-0"); CHECK(retriedCampaignBatch);
   CHECK(retriedCampaignBatch.value().batchSha256 == firstCampaignBatch.value().batchSha256);
   CHECK(authoring::runGenerationBatch(firstCampaignBatch.value().jobs));

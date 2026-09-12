@@ -1,5 +1,7 @@
 #pragma once
 #include "seam/authoring/inventory_generation.hpp"
+#include "seam/formats/json_value.hpp"
+#include <memory>
 
 namespace seam::authoring {
 struct GenerationCampaignLimits final {
@@ -20,10 +22,31 @@ struct GenerationCampaignLimits final {
 // sufficient to admit altered templates, totals, batch layout or hidden fields.
 [[nodiscard]] core::Result<void> verifyGenerationCampaign(
     std::string_view definition, std::string_view expectedSha256, std::stop_token stop = {});
+// Immutable admission capability: no public constructor from unchecked JSON.
+// Copies share the owned parsed plan. Each advancement admits once, not per batch.
+class VerifiedGenerationCampaign final {
+public:
+  [[nodiscard]] static core::Result<VerifiedGenerationCampaign> admit(
+      std::string_view definition, std::string_view expectedSha256, std::stop_token stop = {});
+  [[nodiscard]] bool valid() const noexcept { return static_cast<bool>(data_); }
+  [[nodiscard]] const formats::JsonValue& plan() const { return data_->plan; }
+  [[nodiscard]] std::string_view sha256() const { return data_->sha256; }
+private:
+  struct Data { std::string sha256; formats::JsonValue plan; };
+  VerifiedGenerationCampaign(std::string sha256, formats::JsonValue plan)
+      : data_(std::make_shared<const Data>(Data{std::move(sha256), std::move(plan)})) {}
+  std::shared_ptr<const Data> data_;
+};
 struct PreparedCampaignBatch final {
   std::vector<GenerationJobReference> jobs;
   std::string batchSha256;
 };
+[[nodiscard]] core::Result<PreparedCampaignBatch> prepareGenerationCampaignBatch(
+    const VerifiedGenerationCampaign& campaign, std::size_t batchIndex,
+    const voicebank_production::VoicebankProductionProject& producer,
+    const std::filesystem::path& directory,
+    std::optional<voicebank_production::ProductionCommitReceipt> predecessor = {},
+    std::stop_token stop = {});
 // Internal orchestration primitive. For later batches the caller must provide
 // the preceding verified collection receipt, not an arbitrary decoded JSON value.
 // Retrying requires the same original producer snapshot and predecessor receipt.

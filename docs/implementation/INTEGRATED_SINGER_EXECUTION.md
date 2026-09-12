@@ -434,6 +434,29 @@ not a replacement product contract or a release approval.
   passed (1/1, 0.22 seconds). No code changed between those runs; all 123 targets
   now have passing evidence, but no second all-green full invocation is claimed.
 
+### Reuse immutable campaign admission during traversal
+
+- Added `VerifiedGenerationCampaign`: callers cannot construct it from unchecked
+  JSON. Admission performs the existing digest/canonical reconstruction checks and
+  owns an immutable parsed plan. Copies share that plan; changing the source text
+  after admission cannot change its content or digest. Moved-from handles are
+  rejected by preparation before filesystem writes.
+- Advancement now admits once and passes the handle through each visited batch.
+  Previously it performed a full-plan verification initially and again for every
+  batch; each verification compiled every campaign template. This change removes
+  those repeated whole-plan preflights without removing per-batch producer,
+  predecessor, frozen-score, prepared-job or repository-history checks. Existing
+  string-based preparation remains a wrapper that fully admits its input.
+- Tests exercise shared immutable ownership, source-buffer replacement, wrong
+  digest and moved-from rejection, then run the existing two-batch/CLI recovery
+  flow through the admitted-handle path. This is a structural reduction in repeated
+  work; no singer-scale wall-clock speedup is claimed without a benchmark.
+- Remaining scaling work includes indexing selected rows and reducing repeated
+  historical job loads. Runtime disk bounds and OS process-crash qualification
+  also remain open; this change does not complete M1.P2.
+- Verification: affected Release build and export CTest passed (1/1, 4.55 seconds).
+  No new complete-suite run claimed.
+
 Next concrete implementation owners: explicit evidence-backed legacy migration,
 then complete populated-workspace parity and candidate
 review/publication parity and the resumable inventory campaign. The generation

@@ -13,12 +13,20 @@ core::Result<PreparedCampaignBatch> prepareGenerationCampaignBatch(
     std::string_view definition, std::string_view campaignSha256, std::size_t batchIndex,
     const voicebank_production::VoicebankProductionProject& producer, const std::filesystem::path& directory,
     std::optional<voicebank_production::ProductionCommitReceipt> predecessor, std::stop_token stop) {
+  const auto campaign = VerifiedGenerationCampaign::admit(definition, campaignSha256, stop);
+  if (!campaign) return core::Result<PreparedCampaignBatch>{campaign.error()};
+  return prepareGenerationCampaignBatch(campaign.value(), batchIndex, producer, directory, std::move(predecessor), stop);
+}
+
+core::Result<PreparedCampaignBatch> prepareGenerationCampaignBatch(
+    const VerifiedGenerationCampaign& campaign, std::size_t batchIndex,
+    const voicebank_production::VoicebankProductionProject& producer, const std::filesystem::path& directory,
+    std::optional<voicebank_production::ProductionCommitReceipt> predecessor, std::stop_token stop) {
   using Output = PreparedCampaignBatch;
   const auto fail = [](std::string message) { return core::failure<Output>(core::ErrorCode::Conflict, std::move(message)); };
-  const auto valid = verifyGenerationCampaign(definition, campaignSha256, stop);
-  if (!valid) return core::Result<Output>{valid.error()};
-  const auto parsed = formats::parseJson(definition);
-  const auto& plan = parsed.value();
+  if (!campaign.valid() || stop.stop_requested()) return fail("Campaign admission is empty or preparation cancelled");
+  const auto& plan = campaign.plan();
+  const auto campaignSha256 = campaign.sha256();
   if (batchIndex >= static_cast<std::size_t>(plan.find("batchCount")->asInt64())) return fail("Campaign batch index is out of range");
   const auto producerJson = voicebank_production::encodeProductionProject(producer);
   const auto producerHash = core::sha256Hex(producerJson);

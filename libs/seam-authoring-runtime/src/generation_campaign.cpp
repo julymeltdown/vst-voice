@@ -8,6 +8,15 @@
 #include <set>
 
 namespace seam::authoring {
+core::Result<VerifiedGenerationCampaign> VerifiedGenerationCampaign::admit(
+    std::string_view definition, std::string_view expectedSha256, std::stop_token stop) {
+  const auto verified = verifyGenerationCampaign(definition, expectedSha256, stop);
+  if (!verified) return core::Result<VerifiedGenerationCampaign>{verified.error()};
+  auto parsed = formats::parseJson(definition);
+  if (!parsed) return core::Result<VerifiedGenerationCampaign>{parsed.error()};
+  return VerifiedGenerationCampaign{std::string{expectedSha256}, std::move(parsed.value())};
+}
+
 core::Result<std::string> planGenerationCampaign(
     const voicebank_production::VoicebankProductionProject& producer,
     std::span<const std::string> plannedTakeIds,
