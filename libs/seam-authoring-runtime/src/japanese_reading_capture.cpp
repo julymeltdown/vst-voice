@@ -1,5 +1,5 @@
 #include "seam/authoring/japanese_reading_capture.hpp"
-#include "seam/authoring/helper_process.hpp"
+#include "seam/platform/helper_process.hpp"
 #include "seam/authoring/japanese_reading_response.hpp"
 #include "seam/application/lyric_commands.hpp"
 #include "seam/core/sha256.hpp"
@@ -90,11 +90,11 @@ core::Result<JapaneseReadingReview> JapaneseReadingCapture::bind(phonemizer::Jap
 core::Result<JapaneseReadingReview> JapaneseReadingCapture::read(std::stop_token stop) const {
   const auto& resource = resource_.resource();
   const auto current = resource.revalidate(stop); if (!current) return core::Result<JapaneseReadingReview>{current.error()};
-  HelperProcessRequest request{resource.spec().executable, {"--read-stdin", resource.spec().dictionaryDirectory.string()}};
+  platform::HelperProcessRequest request{resource.spec().executable, {"--read-stdin", resource.spec().dictionaryDirectory.string()}};
   request.standardInput = source_;
   request.maximumResidentBytes = 512U * 1024U * 1024U;
   request.maximumCpuTime = std::chrono::milliseconds{5000};
-  const auto output = runBoundedHelperProcess(request, stop); if (!output) return core::Result<JapaneseReadingReview>{output.error()};
+  const auto output = platform::runBoundedHelperProcess(request, stop); if (!output) return core::Result<JapaneseReadingReview>{output.error()};
   const auto retained = resource.revalidate(stop); if (!retained) return core::Result<JapaneseReadingReview>{retained.error()};
   auto result = decodeJapaneseReadingResponse(source_, output.value().standardOutput, resource.identity(), stop);
   if (!result) return core::Result<JapaneseReadingReview>{result.error()};

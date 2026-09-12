@@ -1,6 +1,6 @@
 #include "seam/neural_synthesis/neural_phrase_backend.hpp"
 
-#include "seam/authoring/helper_process.hpp"
+#include "seam/platform/helper_process.hpp"
 #include "seam/core/sha256.hpp"
 #include "seam/core/file_io.hpp"
 #include "seam/formats/json_value.hpp"
@@ -250,7 +250,7 @@ core::Result<NeuralWorkerResult> runNeuralWorker(
   if (stop.stop_requested())
     return core::failure<Output>(core::ErrorCode::Conflict,"Neural worker execution cancelled");
   const auto input = std::string{reinterpret_cast<const char*>(encoded.value().data()), encoded.value().size()};
-  authoring::HelperProcessRequest helper{
+  platform::HelperProcessRequest helper{
       .executable = options.helper,
       .arguments = {"--seam-neural-worker-v1"},
       .timeout = options.timeout,
@@ -259,7 +259,7 @@ core::Result<NeuralWorkerResult> runNeuralWorker(
       .standardInput = input,
       .maximumStdinBytes = options.limits.maximumFrameBytes,
   };
-  const auto run = authoring::runBoundedHelperProcess(helper, stop);
+  const auto run = platform::runBoundedHelperProcess(helper, stop);
   if (!run) return core::Result<Output>{run.error()};
   const auto responseBytes = std::span<const std::byte>{reinterpret_cast<const std::byte*>(run.value().standardOutput.data()), run.value().standardOutput.size()};
   const auto response = decodeResponse(responseBytes, options.limits);

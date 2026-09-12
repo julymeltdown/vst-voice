@@ -279,7 +279,6 @@ add_library(seam_authoring_runtime
   libs/seam-authoring-runtime/src/japanese_reading_capture.cpp
   libs/seam-authoring-runtime/src/japanese_reading_stage.cpp
   libs/seam-authoring-runtime/src/japanese_reading_resource.cpp
-  libs/seam-authoring-runtime/src/helper_process.cpp
   libs/seam-authoring-runtime/src/japanese_reading_response.cpp
   libs/seam-authoring-runtime/src/project_document.cpp
   libs/seam-authoring-runtime/src/project_lifecycle.cpp
@@ -311,7 +310,7 @@ add_library(seam_authoring_runtime
 target_include_directories(seam_authoring_runtime PUBLIC
   libs/seam-authoring-runtime/include)
 target_link_libraries(seam_authoring_runtime PUBLIC
-  seam_rendering seam_distribution seam_voicebank seam_formats seam_application seam_interchange seam_domain seam_core seam_voicebank_production)
+  seam_rendering seam_distribution seam_voicebank seam_formats seam_application seam_interchange seam_domain seam_core seam_voicebank_production seam_platform)
 seam_apply_compiler_options(seam_authoring_runtime)
 
 
@@ -349,7 +348,7 @@ add_library(seam_neural_synthesis
   libs/seam-neural-synthesis/src/neural_phrase_backend.cpp)
 target_include_directories(seam_neural_synthesis PUBLIC
   libs/seam-neural-synthesis/include)
-target_link_libraries(seam_neural_synthesis PUBLIC seam_formats seam_core seam_authoring_runtime seam_platform seam_distribution)
+target_link_libraries(seam_neural_synthesis PUBLIC seam_synthesis seam_formats seam_core seam_platform seam_distribution)
 seam_apply_compiler_options(seam_neural_synthesis)
 
 
@@ -505,6 +504,7 @@ target_link_libraries(seam_editor_inspection PUBLIC
 seam_apply_compiler_options(seam_editor_inspection)
 
 add_library(seam_platform
+  libs/seam-platform/src/helper_process.cpp
   libs/seam-platform/src/audio_callback.cpp
   libs/seam-platform/src/platform_capabilities.cpp
   libs/seam-platform/src/threaded_audio_device.cpp
@@ -1319,7 +1319,7 @@ if(SEAM_BUILD_TESTS)
   add_executable(seam_helper_process_tests tests/test_main.cpp tests/test_helper_process.cpp)
   target_include_directories(seam_helper_process_tests PRIVATE tests)
   target_compile_definitions(seam_helper_process_tests PRIVATE SEAM_READING_PROCESS_PROBE="$<TARGET_FILE:seam_reading_process_probe>")
-  target_link_libraries(seam_helper_process_tests PRIVATE seam_authoring_runtime)
+  target_link_libraries(seam_helper_process_tests PRIVATE seam_platform)
   add_dependencies(seam_helper_process_tests seam_reading_process_probe)
   seam_apply_compiler_options(seam_helper_process_tests)
   add_test(NAME seam_helper_process_tests COMMAND seam_helper_process_tests)
@@ -2252,3 +2252,32 @@ endif()
 
 # Phase 13B: Official Voicebank 01 and Character 01 release engineering
 add_subdirectory(phase13b)
+
+# Neural preparation must remain usable below rendering and authoring. Check
+# transitive target links after all subdirectories have declared their targets.
+function(seam_check_neural_dependency_direction)
+  set(pending seam_neural_synthesis)
+  set(visited)
+  while(pending)
+    list(POP_FRONT pending current)
+    if(current IN_LIST visited)
+      continue()
+    endif()
+    list(APPEND visited "${current}")
+    if(current STREQUAL "seam_authoring_runtime" OR current STREQUAL "seam_rendering")
+      message(FATAL_ERROR "Neural dependency points upward to ${current}")
+    endif()
+    foreach(property LINK_LIBRARIES INTERFACE_LINK_LIBRARIES)
+      get_target_property(dependencies "${current}" "${property}")
+      foreach(dependency IN LISTS dependencies)
+        if(dependency MATCHES "^\\$<LINK_ONLY:([^>]+)>$")
+          set(dependency "${CMAKE_MATCH_1}")
+        endif()
+        if(TARGET "${dependency}")
+          list(APPEND pending "${dependency}")
+        endif()
+      endforeach()
+    endforeach()
+  endwhile()
+endfunction()
+seam_check_neural_dependency_direction()

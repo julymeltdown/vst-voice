@@ -1,7 +1,7 @@
 #if defined(__linux__) && !defined(_GNU_SOURCE)
 #define _GNU_SOURCE
 #endif
-#include "seam/authoring/helper_process.hpp"
+#include "seam/platform/helper_process.hpp"
 #include <array>
 #include <cerrno>
 #include <cstdint>
@@ -25,7 +25,7 @@
 #endif
 #endif
 
-namespace seam::authoring {
+namespace seam::platform {
 #if defined(__APPLE__) || defined(__linux__)
 namespace {
 struct Descriptor {

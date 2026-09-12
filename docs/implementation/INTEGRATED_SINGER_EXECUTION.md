@@ -506,6 +506,30 @@ is claimed.
 
 ## Voiced reattack boundary repair
 
+### M2.P1 process-ownership extraction
+
+Moved the bounded helper request/output API and sole process implementation
+to `libs/seam-platform`. Japanese reading and neural execution now call the
+platform API directly. The old authoring header contains only using-declaration
+aliases for source compatibility. A normalized source comparison confirmed
+that process implementation logic is unchanged apart from include/namespace;
+timeouts, bounded I/O, cancellation, process-group cleanup and existing POSIX
+limitations are preserved. Helper tests now link platform without authoring.
+
+Removed neural -> authoring-runtime and explicitly declared neural -> synthesis.
+A configure-time transitive target-link check rejects paths from neural to
+authoring or rendering (including LINK_ONLY-wrapped dependencies). Fresh CMake
+Graphviz output in `build/release/seam-dependencies.dot` shows neural's direct
+dependencies as core, distribution, formats, platform and synthesis. The fresh
+Ninja graph assigns helper_process.cpp to seam_platform only. Targeted helper,
+neural-worker and Japanese-reading CTests passed (3/3, 2.69 seconds).
+This completes the source-owner extraction, not M2.P1: Windows supervision,
+host qualification, data-only neural bundle admission and real inference remain
+open. The POSIX runner remains best-effort supervision, not a security sandbox.
+Full verification after extraction: complete Release build passed; fresh CTest
+passed 123/123 in 85.20 seconds, including source closure and compatibility-header
+callers. No Windows execution or installed-host supervision result is implied.
+
 ### Rhythmic custom phrase authoring
 
 Custom pilot input now accepts `LYRIC:MIDI[:TICKS]`, defaults to 480 ticks and

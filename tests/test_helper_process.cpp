@@ -1,5 +1,5 @@
 #include "test_framework.hpp"
-#include "seam/authoring/helper_process.hpp"
+#include "seam/platform/helper_process.hpp"
 #include <thread>
 #if defined(__APPLE__) || defined(__linux__)
 #include <fcntl.h>
@@ -8,7 +8,7 @@
 
 TEST_CASE("bounded helper captures separate streams and rejects failure overflow timeout and cancellation") {
 #if defined(__APPLE__) || defined(__linux__)
-  using namespace seam::authoring;
+  using namespace seam::platform;
   HelperProcessRequest request{SEAM_READING_PROCESS_PROBE, {"echo"}};
   const auto success = runBoundedHelperProcess(request); CHECK(success);
   CHECK(success.value().standardOutput == "ok\n"); CHECK(success.value().standardError == "diagnostic\n");
@@ -38,7 +38,7 @@ TEST_CASE("bounded helper captures separate streams and rejects failure overflow
 
 TEST_CASE("helper stdin delivers exact private binary input with EOF and simultaneous output") {
 #if defined(__APPLE__) || defined(__linux__)
-  using namespace seam::authoring;
+  using namespace seam::platform;
   HelperProcessRequest request{SEAM_READING_PROCESS_PROBE, {"input"}};
   request.standardInput = "私の歌\n"; request.standardInput.push_back('\0'); request.standardInput += "tail";
   auto result = runBoundedHelperProcess(request); CHECK(result); CHECK(result.value().standardOutput == request.standardInput);
@@ -57,7 +57,7 @@ TEST_CASE("helper stdin delivers exact private binary input with EOF and simulta
 
 TEST_CASE("helper resource ceilings terminate an over-budget child with a bounded diagnostic") {
 #if defined(__APPLE__) || defined(__linux__)
-  using namespace seam::authoring;
+  using namespace seam::platform;
   HelperProcessRequest request{SEAM_READING_PROCESS_PROBE, {"sleep"}};
   request.timeout = std::chrono::milliseconds{500};
   request.maximumResidentBytes = 1U;
