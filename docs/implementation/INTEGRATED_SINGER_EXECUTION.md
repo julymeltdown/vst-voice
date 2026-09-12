@@ -132,6 +132,25 @@ not a replacement product contract or a release approval.
   receipt and history-transition verification remain to implement. Generic save
   continues to reject a schema upgrade; this plan cannot bypass that boundary.
 
+## M1.P2 audible pilot started
+
+- Added a reproducible `seam_singer_pilot` executable using the existing production
+  export path, not a separate DSP implementation. It creates saved scores, editable
+  recipes, master WAVs and unapproved baked candidates for a six-note Japanese
+  vowel/fricative ladder and three phonation/formant variants.
+- Retained complete local outputs in `build/release/seam-pilot-listening-02/`.
+  Master peaks are about 0.0645; RMS spans 0.0126–0.0221. Distinct variant hashes
+  establish different PCM, not perceived improvement or female identity.
+- The first run exposed a harness metadata-as-WAV measurement error; fixed it
+  and preserved the partial directory. Registered a real-CLI test for repeated
+  identical audio hashes, finite/nonzero unclipped diagnostic output, distinct
+  recipe identities and refusal to overwrite an existing destination. It passed.
+- No listening verdict, complete articulation coverage, installed pilot bank or
+  unfamiliar-song acceptance is claimed. Next: analyze the retained phrase timing,
+  pitch and transitions, expand consonant/context probes, and connect inventory
+  campaign generation. Explicit legacy migration remains unfinished but does not
+  prevent the new-workspace pilot work.
+
 Next concrete implementation owners: explicit evidence-backed legacy migration,
 then complete populated-workspace parity and candidate
 review/publication parity and the resumable inventory campaign. The generation

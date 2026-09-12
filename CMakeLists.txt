@@ -1057,6 +1057,9 @@ add_executable(seam_voicebank_cli apps/seam-voicebank-cli/main.cpp
 target_link_libraries(seam_voicebank_cli PRIVATE
   seam_voicebank seam_formats seam_domain seam_core seam_voice_design seam_voicebank_production seam_authoring_runtime)
 seam_apply_compiler_options(seam_voicebank_cli)
+add_executable(seam_singer_pilot apps/seam-singer-pilot/main.cpp)
+target_link_libraries(seam_singer_pilot PRIVATE seam_authoring_runtime)
+seam_apply_compiler_options(seam_singer_pilot)
 
 
 if(SEAM_BUILD_CLAP_EDITOR_PLUGIN)
@@ -1695,6 +1698,9 @@ if(SEAM_BUILD_TESTS)
     add_test(NAME seam_draft_inventory_tests
       COMMAND ${Python3_EXECUTABLE} -m unittest tests.test_draft_voicebank_inventory
         tests.test_voicebank_script_generator)
+    add_test(NAME seam_singer_pilot_cli
+      COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_singer_pilot_cli.py $<TARGET_FILE:seam_singer_pilot>)
+    set_tests_properties(seam_singer_pilot_cli PROPERTIES TIMEOUT 150)
     set_tests_properties(seam_draft_inventory_tests PROPERTIES
       WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
       ENVIRONMENT "PYTHONDONTWRITEBYTECODE=1" TIMEOUT 60)

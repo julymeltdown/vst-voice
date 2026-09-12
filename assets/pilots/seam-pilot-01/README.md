@@ -3,6 +3,26 @@
 Development-only inventory profile. This is not a qualified singer, range,
 recipe, recording, model or release resource. No audio or approval is implied.
 
+## Reproducible listening experiment
+
+```sh
+cmake --build build/release --target seam_singer_pilot -j 6
+build/release/seam_singer_pilot NEW_OUTPUT_DIRECTORY
+```
+
+The executable renders Japanese `あ い う え お さ` across MIDI 60–72 using
+the normal production export pipeline. It retains three scores and editable
+recipes (baseline, 15% higher formants, breathier phonation), master WAVs,
+unapproved baked candidates and a hash/peak/RMS report. It requires a new output
+directory and preserves partial output on failure. These are listening probes,
+not a complete corpus or evidence of intelligibility, female identity or quality.
+
+The first complete retained local run is
+`build/release/seam-pilot-listening-02/`. Run 01 is retained as a failed harness
+attempt: metadata was incorrectly treated as WAV during measurement, then fixed.
+The registered `seam_singer_pilot_cli` test repeats the actual render, checks
+identical WAV hashes and nonzero finite levels, and checks no-overwrite behavior.
+
 Generate the proposed Japanese coverage, across three planned pitch layers:
 
 ```sh
