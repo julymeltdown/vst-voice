@@ -6,6 +6,7 @@
 #include "seam/neural_synthesis/worker_protocol.hpp"
 #include "seam/neural_synthesis/model_contract.hpp"
 #include "seam/neural_synthesis/neural_phrase_backend.hpp"
+#include "seam/neural_synthesis/deployment_descriptor.hpp"
 #include "seam/core/sha256.hpp"
 
 #include <array>
@@ -436,4 +437,40 @@ TEST_CASE("neural helper resolves from a loaded module address and executes its 
   const auto run=runNeuralWorker(input,model,options.value()); CHECK(run);
   CHECK(run.value().response.requestId==input.requestId);
 #endif
+}
+
+TEST_CASE("signed neural deployment binds exact descriptor bytes and the loaded surface identity") {
+  using namespace seam; using namespace seam::neural_synthesis;
+  const auto key=distribution::generateSigningKeyPair(); CHECK(key);
+  const auto stranger=distribution::generateSigningKeyPair(); CHECK(stranger);
+  const std::string json=R"({"formatId":"com.project-seam.neural-deployment","schemaVersion":1,"buildId":"signed-build","platform":"macos-arm64","surface":"clap","modulePath":"Contents/MacOS/SEAM","manifestPath":"Contents/Resources/neural-helper-package.json","manifestSha256":")"+
+      std::string(64U,'a')+"\"}";
+  const NeuralDeploymentTarget target{"signed-build","macos-arm64","clap"};
+  const auto sign=[&](const std::string& bytes) {
+    return distribution::signEd25519(std::as_bytes(std::span{bytes.data(),bytes.size()}),key.value().privateKey);
+  };
+  const auto signature=sign(json); CHECK(signature);
+  const auto verified=VerifiedNeuralDeployment::verify(json,signature.value(),key.value().publicKey,target); CHECK(verified);
+  CHECK(verified.value().contentHash()==core::sha256Hex(json));
+  CHECK(!verified.value().load(nullptr));
+  CHECK(!VerifiedNeuralDeployment::verify(json+" ",signature.value(),key.value().publicKey,target));
+  CHECK(!VerifiedNeuralDeployment::verify(json,signature.value(),stranger.value().publicKey,target));
+  for (const auto& wrong: {NeuralDeploymentTarget{"other-build","macos-arm64","clap"},
+      NeuralDeploymentTarget{"signed-build","windows-x64","clap"},
+      NeuralDeploymentTarget{"signed-build","macos-arm64","vst3"}})
+    CHECK(!VerifiedNeuralDeployment::verify(json,signature.value(),key.value().publicKey,wrong));
+  const auto rejectSigned=[&](std::string_view from,std::string_view to) {
+    auto changed=json; const auto at=changed.find(from); CHECK(at!=std::string::npos);
+    changed.replace(at,from.size(),to); const auto signedChange=sign(changed); CHECK(signedChange);
+    CHECK(!VerifiedNeuralDeployment::verify(changed,signedChange.value(),key.value().publicKey,target));
+  };
+  rejectSigned("\"schemaVersion\":1","\"schemaVersion\":2");
+  rejectSigned("Contents/MacOS/SEAM","../SEAM");
+  rejectSigned("Contents/MacOS/SEAM","C:SEAM");
+  rejectSigned("Contents/MacOS/SEAM","Contents//SEAM");
+  rejectSigned("Contents/MacOS/SEAM","Contents/\\u0000SEAM");
+  rejectSigned(std::string(64U,'a'),std::string(64U,'A'));
+  rejectSigned("\"schemaVersion\":1","\"schemaVersion\":1,\"unexpected\":true");
+  const std::string oversized(16U*1024U+1U,' '); const auto oversizedSignature=sign(oversized); CHECK(oversizedSignature);
+  CHECK(!VerifiedNeuralDeployment::verify(oversized,oversizedSignature.value(),key.value().publicKey,target));
 }

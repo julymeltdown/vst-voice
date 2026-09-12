@@ -1,6 +1,8 @@
 #include "seam/neural_synthesis/worker_protocol.hpp"
 #include "seam/core/sha256.hpp"
 #include "seam/neural_synthesis/neural_phrase_backend.hpp"
+#include "seam/neural_synthesis/deployment_descriptor.hpp"
+#include "seam/formats/json_value.hpp"
 
 #include <iostream>
 #include <iterator>
@@ -9,7 +11,20 @@
 int main(int argc, char** argv) {
   if (argc==6 && std::string_view{argv[1]}=="--seam-neural-package-load-probe") {
     static const char anchor=0;
-    const auto loaded=seam::neural_synthesis::loadNeuralHelperForModule(&anchor,argv[2],argv[3],argv[4],argv[5]);
+    // Ephemeral signing is fixture setup only. Production must receive its
+    // signed descriptor and pinned release key from the deployment trust owner.
+    const auto key=seam::distribution::generateSigningKeyPair(); if (!key) return 10;
+    const auto descriptor=seam::formats::stringifyJson(seam::formats::JsonValue::Object{
+        {"formatId","com.project-seam.neural-deployment"},{"schemaVersion",std::int64_t{1}},
+        {"buildId",argv[5]},{"platform","macos-arm64"},{"surface","standalone"},
+        {"modulePath",argv[2]},{"manifestPath",argv[3]},{"manifestSha256",argv[4]}});
+    const auto signature=seam::distribution::signEd25519(
+        std::as_bytes(std::span{descriptor.data(),descriptor.size()}),key.value().privateKey);
+    if (!signature) return 11;
+    const auto verified=seam::neural_synthesis::VerifiedNeuralDeployment::verify(descriptor,
+        signature.value(),key.value().publicKey,{argv[5],"macos-arm64","standalone"});
+    if (!verified) return 12;
+    const auto loaded=verified.value().load(&anchor);
     if (!loaded) {std::cerr<<loaded.error().message; return 9;}
     return 0;
   }

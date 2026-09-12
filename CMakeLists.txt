@@ -336,12 +336,13 @@ target_link_libraries(seam_formats PUBLIC seam_domain seam_core)
 seam_apply_compiler_options(seam_formats)
 
 add_library(seam_neural_synthesis
+  libs/seam-neural-synthesis/src/deployment_descriptor.cpp
   libs/seam-neural-synthesis/src/worker_protocol.cpp
   libs/seam-neural-synthesis/src/model_contract.cpp
   libs/seam-neural-synthesis/src/neural_phrase_backend.cpp)
 target_include_directories(seam_neural_synthesis PUBLIC
   libs/seam-neural-synthesis/include)
-target_link_libraries(seam_neural_synthesis PUBLIC seam_formats seam_core seam_authoring_runtime seam_platform)
+target_link_libraries(seam_neural_synthesis PUBLIC seam_formats seam_core seam_authoring_runtime seam_platform seam_distribution)
 seam_apply_compiler_options(seam_neural_synthesis)
 
 

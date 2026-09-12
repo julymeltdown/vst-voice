@@ -355,3 +355,35 @@ This completes a callable native loader path, not the delivery of authenticated
 surface descriptors or actual neural inference. Fixture executables and runtime
 bytes do not qualify installed plugin surfaces or a model/vocoder. Windows runtime
 verification, library-loader control and replacement-race boundaries remain open.
+
+## Signed deployment descriptors
+
+`VerifiedNeuralDeployment` is constructible only through verification of a detached
+Ed25519 signature over the exact descriptor bytes using the existing distribution
+signing implementation. The trusted release key and expected build/platform/surface
+are supplied independently by the deployment owner. Verification bounds input to
+16 KiB before signature verification and parsing, then accepts only schema 1 with
+eight fields: `formatId` (`com.project-seam.neural-deployment`), `schemaVersion`,
+`buildId`, `platform`, `surface`, `modulePath`, `manifestPath`, `manifestSha256`.
+
+The signed target must exactly match the expected target; only macOS arm64 and
+Windows x64 and their supported standalone/CLAP/VST3/AUv2 combinations are admitted.
+Paths are bounded portable relative paths, and the manifest digest is canonical
+SHA-256. The object retains its verified fields privately; its `load` method feeds
+them directly to the module-anchored native loader. Raw descriptor bytes, manifest
+digest and subsequently read package files therefore have distinct checks.
+
+Tests use ephemeral keys in memory to reject another signer, changed bytes,
+mismatched targets, signed malformed paths/schema/digests and oversized input.
+The copied-module subprocess fixture now signs and verifies a descriptor before
+loading its package. It still succeeds from an unrelated directory with PATH
+unavailable and rejects invalid manifest/dependency input. Release build and the
+neural/packaging/core suites passed 3/3 (22.62 s); after routing the subprocess
+fixture through signature verification, the two affected neural/packaging suites
+passed again (3.00 s).
+
+No production private key was generated or written. Fixture keys are test setup
+only. Pinned key provisioning/rotation/revocation policy, signed descriptor
+materialization, actual surface entrypoint wiring and neural inference remain
+unfinished. This verifier does not authenticate a caller-chosen arbitrary key
+as a release key, nor does it make an unsigned development payload release-ready.

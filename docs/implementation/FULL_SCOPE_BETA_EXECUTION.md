@@ -12,6 +12,16 @@ This ledger records implementation evidence for [the approved plan](../plans/202
 
 ## Active implementation
 
+2026-09-12 — Added `VerifiedNeuralDeployment`, binding exact descriptor bytes via
+the existing Ed25519 verifier to a separately supplied release key and expected
+build/platform/surface. Private verified fields feed native manifest loading.
+Tests reject signer/byte/target/schema substitution; copied-module loading now
+passes through signature verification with ephemeral fixture keys. Release build
+and neural/packaging/core suites pass 3/3 (22.62 s); final affected suites pass
+2/2 (3.00 s). Production key policy, signed materialization, surface wiring and
+actual inference remain required for U37/Beta GO. See
+`docs/formats/NEURAL_PHONETIC_CONDITIONING.md`.
+
 2026-09-12 — Owner-requested publication completed to origin/master at
 `5e03d65e0f5e16f5f7f73eb3e31a9c5d48bac5f8`; remote hash was verified. Continued
 with the recurring Japanese-reading lifecycle regression: replaced the nominal
