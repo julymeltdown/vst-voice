@@ -84,7 +84,9 @@ core::Result<void> VoicebankStudioController::beginSampleManifestDraftCreation(c
       return result;
     });
   } catch (const std::exception& error) { return core::failure(core::ErrorCode::Internal, "Cannot start editable draft creation", error.what()); }
-  sampleReviewStatus_ = status_ = "CREATING EDITABLE DRAFT / ALL MARKERS AND PITCH ESTIMATED / ESC CANCEL";
+  sampleReviewStatus_ = status_ = productionProject_->schemaVersion >= production::kProductionStyleSchemaVersion
+      ? "CREATING EDITABLE DRAFT / ALL ASSIGNED STYLES / MARKERS AND PITCH ESTIMATED / ESC CANCEL"
+      : "CREATING EDITABLE DRAFT / ALL MARKERS AND PITCH ESTIMATED / ESC CANCEL";
   return core::success();
 }
 } // namespace seam::native_ui

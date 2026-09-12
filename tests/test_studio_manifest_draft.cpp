@@ -35,7 +35,7 @@ struct Fixture final {
   production::VoicebankProductionProject project;
   production::SampleManifestDraftIdentity identity{"native.draft", "0.1.0", "Synthetic native draft", domain::Language::Korean, "warm"};
   Controller controller;
-  explicit Fixture(bool missing = false, bool redistributable = false, bool sourceFree = false) {
+  explicit Fixture(bool missing = false, bool redistributable = false, bool sourceFree = false, bool styleOwned = false) {
     const auto license = root / "synthetic-license.txt";
     CHECK(core::durableAtomicWriteTextNew(license, "SYNTHETIC NATIVE DRAFT TEST ONLY. No singer qualification."));
     const auto hash = core::sha256File(license); CHECK(hash);
@@ -47,14 +47,22 @@ struct Fixture final {
     project.operators = {{"producer", "PRODUCER"}, {"reviewer", "REVIEWER"}};
     project.unitAssignments = {{.coverageKey = "sustain:a", .pitchLayer = 69, .promptId = "a", .plannedTakeId = "take-a"}};
     if (missing) project.unitAssignments.push_back({.coverageKey = "sustain:i", .pitchLayer = 69, .promptId = "i", .plannedTakeId = "take-i"});
+    if (styleOwned) {
+      project.schemaVersion = production::kProductionStyleSchemaVersion; project.language = "ko";
+      for (auto& row : project.unitAssignments) row.style = "warm";
+      project.unitAssignments.push_back({.coverageKey = "sustain:a", .pitchLayer = 69, .promptId = "soft-a", .plannedTakeId = "soft-a", .style = "soft"});
+    }
     if (sourceFree) {
       project.sourceStrategies.clear(); project.selectedSourceStrategyId.clear(); project.licenseLocator.clear(); project.licenseSha256.clear();
     }
     CHECK(repository.initialize(project, {.action = "create", .subjectId = project.projectId, .operatorId = "producer", .occurredAtUtc = "2026-09-09T10:00:00Z"}));
     CHECK(voicebank::writeWav(root / "raw.wav", {.sampleRate = 48000U, .channels = 1U, .sampleFormat = voicebank::WavSampleFormat::Pcm24},
         test::support::sineWave(48000U,440.0,0.2,0.25F)));
-    if (!sourceFree) CHECK(repository.importRaw(project, root / "raw.wav", {.takeId = "take-a", .promptId = "a", .coverageKey = "sustain:a", .pitchLayer = 69},
+    if (!sourceFree) CHECK(repository.importRaw(project, root / "raw.wav", {.takeId = "take-a", .promptId = "a", .coverageKey = "sustain:a", .pitchLayer = 69, .style = styleOwned ? "warm" : ""},
         {.action = "import", .subjectId = "take-a", .operatorId = "producer", .occurredAtUtc = "2026-09-09T10:01:00Z"}));
+    if (styleOwned && !sourceFree) CHECK(repository.importRaw(project, root / "raw.wav",
+        {.takeId = "soft-a", .promptId = "soft-a", .coverageKey = "sustain:a", .pitchLayer = 69, .style = "soft"},
+        {"import", "soft-a", "producer", "2026-09-13T00:00:00Z"}));
     CHECK(controller.openProductionProject(root / "producer", project.inventorySha256, "producer"));
     CHECK(controller.manifest().units.empty());
   }
@@ -146,6 +154,16 @@ TEST_CASE("Studio interactive workspace opening requires the expected inventory 
   CHECK(f.controller.openProductionProject(f.root/"producer",f.project.inventorySha256,"producer",true));
   CHECK(f.controller.productionSessionEpoch()==epoch+1U);
   CHECK(production::encodeProductionProject(*f.controller.productionProject())==production::encodeProductionProject(original));
+}
+
+TEST_CASE("Studio asynchronously creates and opens every assignment-owned style") {
+  Fixture fixture{false, false, false, true};
+  fixture.createLoaded();
+  CHECK(fixture.controller.manifest().styles == (std::vector<std::string>{"soft", "warm"}));
+  CHECK(fixture.controller.manifest().units.size() == 2U);
+  CHECK(fixture.controller.manifest().units[0].style != fixture.controller.manifest().units[1].style);
+  CHECK(fixture.controller.createdSampleManifestDraft()->missingAssignments.empty());
+  fixture.sourceUnchanged();
 }
 
 TEST_CASE("Studio asynchronous workspace entry defers adoption and cancellation retains the empty context") {

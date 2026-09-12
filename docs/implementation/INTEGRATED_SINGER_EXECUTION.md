@@ -8,7 +8,7 @@ not a replacement product contract or a release approval.
 
 | Package | Implementation | Demonstrated workflow | Qualification remaining | Next action |
 |---|---|---|---|---|
-| M1.P1 | In progress: inventory v2→producer v4; language-bound generation; per-style review and canonical publication; legacy readers retained | Two-style initialization, generation collection, independent review and candidate reopen regressions | Explicit legacy migration, native multi-style draft creation and populated-history parity remain | Complete migration and authoring integration, then campaign/articulation |
+| M1.P1 | In progress: inventory v2→producer v4; language-bound generation; multi-style draft/review/publication; legacy readers retained | Two-style initialization, generation collection, native-controller draft creation, review and candidate reopen regressions | Explicit legacy migration and populated-history parity remain | Complete migration, then campaign/articulation |
 | M1.P2/P3 | Not completed by this increment | Existing procedural/producer foundation retained | Connected articulation, campaign, actual bank and unfamiliar-song evidence | Continue after the necessary M1.P1 producer bindings |
 | M2–M6 | Remaining full scope retained | No new milestone qualification | As specified by the implementation plan | Independent neural process/data work remains available |
 
@@ -96,6 +96,21 @@ not a replacement product contract or a release approval.
   real singer quality and the remaining M1–M6 obligations are still unfinished.
 - Verification after this integration: complete configured Release build passed;
   **122/122 registered CTest targets passed**, zero failures (82.22 seconds).
+
+## Native multi-style draft creation
+
+- The shared draft builder now derives all schema-4 styles from assignments and
+  generates style-distinct unit IDs. Missing takes retain style-qualified labels.
+  The selected identity style must belong to the workspace; it cannot relabel or
+  filter its other assignments. Legacy workspaces retain explicit single-style
+  behavior. CLI help and Studio's progress status explain the all-styles behavior.
+- Tests create a partial and complete two-style draft, prepare it for review,
+  reject an unknown style, and prove that selecting either existing style retains
+  identical manifest content. A native-controller test asynchronously creates and
+  opens both styles without changing producer state or creating reviews.
+- Shared manifest, Studio manifest and sample-review CLI targets passed after
+  rebuilding affected targets. The prior 122-target run predates this increment;
+  no fresh desktop visual QA or musical qualification is claimed.
 
 Next concrete implementation owners: explicit evidence-backed legacy migration,
 then complete populated-workspace parity and candidate

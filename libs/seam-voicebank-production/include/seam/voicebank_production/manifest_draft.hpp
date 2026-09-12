@@ -11,8 +11,9 @@ namespace seam::voicebank_production {
 struct SampleManifestDraftIdentity final {
   std::string id, version, displayName;
   domain::Language language{domain::Language::Unspecified};
-  // Explicit single-style declaration, never guessed from another bank. U10
-  // owns multi-style assignment identity; this builder cannot merge styles.
+  // Legacy workspaces use this explicit single style. Schema 4 requires this
+  // selected style to exist, then retains ALL assignment-owned styles; this
+  // field never relabels their units or filters out required assignments.
   std::string style;
 };
 enum class ManifestDraftStage { AudioStaged, BeforeCommit, AfterCommitBeforeParentSync };

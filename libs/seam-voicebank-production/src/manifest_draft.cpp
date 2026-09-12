@@ -46,12 +46,13 @@ core::Result<voicebank::Unit> unitFromAssignment(const UnitAssignment& assignmen
   if ((kind != voicebank::UnitKind::Glottal && voicebank::unitKindName(kind) != name) || name == "glottal")
     return core::failure<voicebank::Unit>(core::ErrorCode::Unsupported, "Assignment kind is not a supported canonical coverage key", name);
   voicebank::Unit unit;
+  const auto& style = project.schemaVersion >= kProductionStyleSchemaVersion ? assignment.style : identity.style;
   // Includes the explicit language/style and inventory, not row position or
   // shared audio digest. This does not migrate the producer's U10 identity.
   const auto key = formats::stringifyJson(J{J::Array{project.inventorySha256, static_cast<std::int64_t>(identity.language),
-      identity.style, assignment.coverageKey, static_cast<std::int64_t>(assignment.pitchLayer)}}, false);
+      style, assignment.coverageKey, static_cast<std::int64_t>(assignment.pitchLayer)}}, false);
   unit.id = "unit-" + core::sha256Hex(key);
-  unit.kind = kind; unit.rootMidi = assignment.pitchLayer; unit.style = identity.style;
+  unit.kind = kind; unit.rootMidi = assignment.pitchLayer; unit.style = style;
   std::size_t start = separator + 1U;
   while (start <= assignment.coverageKey.size()) {
     const auto end = assignment.coverageKey.find(':', start);
@@ -127,8 +128,8 @@ core::Result<CreatedSampleManifestDraft> createSampleManifestDraft(
   using Output = CreatedSampleManifestDraft;
   if (project.schemaVersion >= kProductionStyleSchemaVersion &&
       (project.language != (identity.language == domain::Language::Japanese ? "ja" : identity.language == domain::Language::English ? "en" : "ko") ||
-       std::any_of(project.unitAssignments.begin(), project.unitAssignments.end(), [&](const auto& row) { return row.style != identity.style; })))
-    return core::failure<Output>(core::ErrorCode::Conflict, "Single-style draft identity must match every producer assignment");
+       std::none_of(project.unitAssignments.begin(), project.unitAssignments.end(), [&](const auto& row) { return row.style == identity.style; })))
+    return core::failure<Output>(core::ErrorCode::Conflict, "Draft language and selected style must belong to the producer workspace");
   if (!identifier(identity.id) || !identifier(identity.version) || !text(identity.displayName, 256U) || !text(identity.style, 128U) ||
       (identity.language != domain::Language::Japanese && identity.language != domain::Language::English && identity.language != domain::Language::Korean) ||
       project.unitAssignments.empty() || project.unitAssignments.size() > 4096U || project.takes.size() > 65536U ||
@@ -166,12 +167,22 @@ core::Result<CreatedSampleManifestDraft> createSampleManifestDraft(
   voicebank::Manifest manifest{.id = identity.id, .version = identity.version, .displayName = identity.displayName,
       .characterId = {}, .characterVersion = {}, .language = identity.language, .expectedSampleRate = 48000U,
       .styles = {identity.style}, .units = {}};
+  if (project.schemaVersion >= kProductionStyleSchemaVersion) {
+    std::set<std::string> styles;
+    for (const auto& assignment : project.unitAssignments) styles.insert(assignment.style);
+    manifest.styles.assign(styles.begin(), styles.end());
+    result.diagnostics.push_back("All assignment-owned styles are retained; the selected style does not relabel or filter units.");
+  }
   std::map<std::string, const AssetRecord*> assets;
   J::Array bindings;
   std::set<std::string> selectedTakes, unitIds;
   for (const auto& assignment : project.unitAssignments) {
     checked = cancelled(stop); if (!checked) return core::Result<Output>{checked.error()};
-    if (assignment.takeId.empty()) { result.missingAssignments.push_back(assignment.coverageKey + "@" + std::to_string(assignment.pitchLayer)); continue; }
+    if (assignment.takeId.empty()) {
+      result.missingAssignments.push_back((project.schemaVersion >= kProductionStyleSchemaVersion ? assignment.style + ":" : "") +
+          assignment.coverageKey + "@" + std::to_string(assignment.pitchLayer));
+      continue;
+    }
     auto unit = unitFromAssignment(assignment, project, identity); if (!unit) return core::Result<Output>{unit.error()};
     if (!selectedTakes.insert(assignment.takeId).second || !unitIds.insert(unit.value().id).second)
       return core::failure<Output>(core::ErrorCode::Conflict, "Draft assignments are ambiguous or repeat an active take");

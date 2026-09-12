@@ -22,7 +22,7 @@ struct Fixture final {
   production::ProductionProjectRepository repository{root / "producer"};
   production::VoicebankProductionProject project;
   production::SampleManifestDraftIdentity identity{"test.original", "0.1.0", "Synthetic Original", domain::Language::Japanese, "original"};
-  explicit Fixture(bool qualified = false) {
+  explicit Fixture(bool qualified = false, bool styleOwned = false) {
     const auto license = root / "synthetic-license.txt";
     CHECK(core::durableAtomicWriteTextNew(license, "SYNTHETIC TEST ONLY. Not a singer or release qualification."));
     const auto hash = core::sha256File(license); CHECK(hash);
@@ -33,11 +33,13 @@ struct Fixture final {
         .listening = qualified ? production::Feasibility::Pass : production::Feasibility::NotAssessed,
         .permissions = {true, true, qualified, qualified}, .licenseLocator = license.string(), .licenseSha256 = hash.value(), .evidenceState = "SYNTHETIC_TEST_ONLY"}};
     project.operators = {{"producer", "PRODUCER"}, {"reviewer", "REVIEWER"}};
+    if (styleOwned) { project.schemaVersion = production::kProductionStyleSchemaVersion; project.language = "ja"; }
     project.unitAssignments = {{.coverageKey = "sustain:a", .pitchLayer = 69, .promptId = "a", .plannedTakeId = "take-a"}};
+    if (styleOwned) project.unitAssignments.front().style = "original";
     CHECK(repository.initialize(project, {.action = "create", .subjectId = project.projectId, .operatorId = "producer", .occurredAtUtc = "2026-09-09T10:00:00Z"}));
     CHECK(voicebank::writeWav(root / "raw.wav", {.sampleRate = 48000U, .channels = 1U, .sampleFormat = voicebank::WavSampleFormat::Pcm24},
         test::support::sineWave(48000U, 440.0, 0.2, 0.25F)));
-    CHECK(repository.importRaw(project, root / "raw.wav", {.takeId = "take-a", .promptId = "a", .coverageKey = "sustain:a", .pitchLayer = 69},
+    CHECK(repository.importRaw(project, root / "raw.wav", {.takeId = "take-a", .promptId = "a", .coverageKey = "sustain:a", .pitchLayer = 69, .style = styleOwned ? "original" : ""},
         {.action = "import", .subjectId = "take-a", .operatorId = "producer", .occurredAtUtc = "2026-09-09T10:01:00Z"}));
   }
   core::Result<production::CreatedSampleManifestDraft> create(std::string name = "editable",
@@ -53,6 +55,36 @@ std::filesystem::path privateStage(const std::filesystem::path& parent, std::str
   throw test::Failure{"Expected a private publication stage"};
 }
 } // namespace
+
+TEST_CASE("style-owned manifest drafts preserve all styles and distinguish missing assignments") {
+  Fixture fixture{false, true};
+  fixture.project.unitAssignments.push_back({.coverageKey = "sustain:a", .pitchLayer = 69,
+      .promptId = "soft-a", .plannedTakeId = "soft-a", .style = "soft"});
+  CHECK(fixture.repository.save(fixture.project, {"save", fixture.project.projectId, "producer", "2026-09-13T00:00:00Z"}));
+  const auto partial = fixture.create("partial"); CHECK(partial);
+  CHECK(partial.value().missingAssignments == std::vector<std::string>{"soft:sustain:a@69"});
+  CHECK(fixture.repository.importRaw(fixture.project, fixture.root / "raw.wav",
+      {.takeId = "soft-a", .promptId = "soft-a", .coverageKey = "sustain:a", .pitchLayer = 69, .style = "soft"},
+      {"import", "soft-a", "producer", "2026-09-13T00:01:00Z"}));
+  const auto before = production::encodeProductionProject(fixture.project);
+  const auto complete = fixture.create("complete"); CHECK(complete);
+  CHECK(complete.value().missingAssignments.empty());
+  const auto manifest = voicebank::ManifestJsonCodec{}.load(complete.value().root / "manifest.json"); CHECK(manifest);
+  CHECK(manifest.value().styles == (std::vector<std::string>{"original", "soft"}));
+  CHECK(manifest.value().units.size() == 2U);
+  CHECK(manifest.value().units[0].id != manifest.value().units[1].id);
+  CHECK(manifest.value().units[0].style != manifest.value().units[1].style);
+  CHECK(manifest.value().units[0].audioPath == manifest.value().units[1].audioPath);
+  CHECK(production::prepareSampleCandidateReview(fixture.root / "producer", fixture.project, manifest.value()));
+  fixture.identity.style = "soft";
+  const auto selectedSoft = fixture.create("selected-soft"); CHECK(selectedSoft);
+  CHECK(voicebank::ManifestJsonCodec{}.load(selectedSoft.value().root / "manifest.json").value() == manifest.value());
+  fixture.identity.style = "unknown";
+  CHECK(!fixture.create("unknown-style"));
+  CHECK(!std::filesystem::exists(fixture.root / "unknown-style"));
+  CHECK(production::encodeProductionProject(fixture.project) == before);
+  CHECK(fixture.project.reviews.empty());
+}
 
 TEST_CASE("editable manifest draft copies exact current audio and estimates unlocked markers without approving experimental sources") {
   Fixture fixture;

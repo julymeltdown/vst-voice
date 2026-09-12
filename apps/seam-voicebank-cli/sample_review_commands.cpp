@@ -296,6 +296,7 @@ void printSampleReviewUsage() {
     << "    Creates a new empty Draft from a captured schema-2 or style-owned schema-4 definition, without musical approval.\n"
     << "  seam_voicebank_cli create-sample-draft WORKSPACE BANK_ID VERSION NAME ja|en|ko STYLE OUTPUT_DIRECTORY\n"
     << "    Copies current takes into a new editable manifest with UNREVIEWED marker/pitch estimates; never approves.\n"
+    << "    Schema 4 preserves all assignment-owned styles; STYLE must name an existing style, not a replacement label.\n"
     << "  seam_voicebank_cli prepare-sample-review WORKSPACE MANIFEST OUTPUT_PACKET\n"
     << "  seam_voicebank_cli inspect-sample-review PACKET FILE_SHA256\n"
     << "  seam_voicebank_cli review-sample WORKSPACE PACKET FILE_SHA256 REVIEWER UTC accept|reject [UNIT ...]\n"
