@@ -837,12 +837,23 @@ TEST_CASE("nasal and frication candidates bake and enter production with typed u
   CHECK(!std::filesystem::exists(receiptPath));
   const auto committedBeforeReceipt = production::encodeProductionProject(multiRepository.recover().value());
   CHECK(multiRepository.recover().value().takes.size() == 2U);
+  const auto committedGeneration = multiRepository.recover().value().lastDurableGeneration;
+  CHECK(core::durableAtomicWriteText(root / "multi-style-inventory/project.json", "interrupted-pointer-fixture"));
+  CHECK(!multiRepository.reconcileCurrentPointer(committedGeneration, std::string(64U, '0')));
+  std::stop_source pointerStop; pointerStop.request_stop();
+  CHECK(!multiRepository.reconcileCurrentPointer(committedGeneration, core::sha256Hex(committedBeforeReceipt), pointerStop.get_token()));
+  {
+    core::ExclusiveFileLock competingWriter;
+    CHECK(competingWriter.acquire(root / "multi-style-inventory/.writer.lock"));
+    CHECK(!multiRepository.reconcileCurrentPointer(committedGeneration, core::sha256Hex(committedBeforeReceipt)));
+  }
   std::filesystem::rename(root / "multi-neutral-job/output", root / "multi-neutral-job/held-output");
   std::filesystem::rename(root / "multi-soft-job/output", root / "multi-soft-job/held-output");
   const auto multiCollected = authoring::collectGenerationBatchWithReceipt(multiRepository, multiProducer, multiJobs,
       receiptPath, multiEvent);
   CHECK(multiCollected);
-  CHECK(!multiCollected.value().durabilityConfirmed);
+  CHECK(multiCollected.value().durabilityConfirmed);
+  CHECK(core::sha256File(root / "multi-style-inventory/project.json").value() == core::sha256Hex(committedBeforeReceipt));
   CHECK(std::filesystem::is_regular_file(receiptPath));
   CHECK(!std::filesystem::exists(root / "multi-neutral-job/output"));
   CHECK(!std::filesystem::exists(root / "multi-soft-job/output"));

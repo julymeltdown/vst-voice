@@ -288,6 +288,27 @@ core::Result<void> ProductionProjectRepository::save(
   return core::success();
 }
 
+core::Result<void> ProductionProjectRepository::reconcileCurrentPointer(
+    std::uint64_t expectedGeneration, std::string_view expectedProjectSha256, std::stop_token stopToken) const {
+  if (stopToken.stop_requested()) return core::failure(core::ErrorCode::Conflict, "Pointer reconciliation cancelled");
+  if (expectedGeneration == 0U || expectedProjectSha256.size() != 64U)
+    return core::failure(core::ErrorCode::InvalidArgument, "Pointer reconciliation requires exact generation and hash");
+  WorkspaceWriter writer;
+  const auto locked = writer.acquire(root_ / ".writer.lock");
+  if (!locked) return locked;
+  // Recovery may fall back from a damaged latest generation. Never turn that
+  // fallback into an implicit rollback of a newer occupied journal/generation.
+  if (std::max(highestGeneration(root_ / "generations"), highestGeneration(root_ / "journal")) != expectedGeneration)
+    return core::failure(core::ErrorCode::Conflict, "Pointer reconciliation would replace newer or incomplete work");
+  const auto recovered = recover();
+  if (!recovered) return core::Result<void>{recovered.error()};
+  const auto bytes = encodeProductionProject(recovered.value());
+  if (recovered.value().lastDurableGeneration != expectedGeneration || core::sha256Hex(bytes) != expectedProjectSha256)
+    return core::failure(core::ErrorCode::Conflict, "Pointer reconciliation state is stale or mismatched");
+  if (stopToken.stop_requested()) return core::failure(core::ErrorCode::Conflict, "Pointer reconciliation cancelled before publication");
+  return core::durableAtomicWriteText(root_ / "project.json", bytes);
+}
+
 core::Result<VoicebankProductionProject>
 ProductionProjectRepository::recover() const {
   const auto directory = root_ / "generations";

@@ -59,6 +59,11 @@ core::Result<voicebank_production::ProductionCommitReceipt> collectGenerationBat
         {"expectationSha256", core::sha256Hex(voicebank_production::encodeGenerationImportExpectation(input.expectation).value())}});
   }
   const auto afterHash = core::sha256Hex(voicebank_production::encodeProductionProject(current.value()));
+  if (!pointerDurabilityConfirmed) {
+    const auto reconciled = repository.reconcileCurrentPointer(current.value().lastDurableGeneration, afterHash, stop);
+    if (!reconciled) return core::Result<Output>{reconciled.error()};
+    pointerDurabilityConfirmed = true;
+  }
   const auto text = formats::stringifyJson(formats::JsonValue::Object{
       {"formatId", "com.project-seam.generation-batch-collection"}, {"schemaVersion", std::int64_t{1}},
       {"originalProducerSha256", originalHash}, {"committedProducerSha256", afterHash},
@@ -73,7 +78,6 @@ core::Result<voicebank_production::ProductionCommitReceipt> collectGenerationBat
     const auto saved = core::durableAtomicWriteTextNew(receiptPath, text);
     if (!saved) return core::Result<Output>{saved.error()};
   }
-  return Output{current.value().lastDurableGeneration, afterHash, pointerDurabilityConfirmed,
-      pointerDurabilityConfirmed ? "" : "Committed generation recovered; producer pointer durability is not reattested by read-only recovery"};
+  return Output{current.value().lastDurableGeneration, afterHash, pointerDurabilityConfirmed, {}};
 }
 }

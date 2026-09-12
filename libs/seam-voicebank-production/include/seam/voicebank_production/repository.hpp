@@ -107,6 +107,11 @@ public:
       VoicebankProductionProject& project,
       const ProductionJournalEvent& event, std::stop_token stopToken = {});
   [[nodiscard]] core::Result<VoicebankProductionProject> recover() const;
+  // Under the normal writer lock, republish only the verified latest pointer.
+  // No generation/journal append or source/review changes. Exact state required.
+  [[nodiscard]] core::Result<void> reconcileCurrentPointer(
+      std::uint64_t expectedGeneration, std::string_view expectedProjectSha256,
+      std::stop_token stopToken = {}) const;
   // Read-only recognition of a previously committed original request.
   [[nodiscard]] core::Result<std::optional<CollectedGenerationResult>> findCollectedGeneration(
       const GenerationImportExpectation& expectation) const;

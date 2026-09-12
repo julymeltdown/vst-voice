@@ -307,6 +307,27 @@ not a replacement product contract or a release approval.
 - Verification: affected Release targets rebuilt and export CTest passed (1/1,
   4.30 seconds). No new complete-suite run claimed.
 
+### Exact current-pointer reconciliation
+
+- Added repository `reconcileCurrentPointer(expectedGeneration, expectedHash)`.
+  It takes the existing workspace writer lock, refuses newer occupied generation
+  or journal records, verifies recovered state against both supplied identities,
+  and durably republishes `project.json`. It does not append generations, alter
+  immutable record contents or change reviews/source policy. Cancellation is
+  checked before locking and at the last pre-publication boundary.
+- Batch receipt recovery now invokes this operation after recognizing the exact
+  committed requests. This supersedes the preceding temporary unconfirmed-pointer
+  result: recovery returns confirmed only after exact locked pointer publication
+  succeeds. An error still leaves the committed take recoverable, never reimports.
+- The integration fixture damages the pointer after the injected post-commit
+  interruption. Wrong hash, cancellation and a competing writer are rejected;
+  normal retry restores the exact pointer hash without adding a generation or
+  regenerating hidden output. The existing later-external-change rejection stays.
+- This verifies the pointer repair path, not arbitrary power-loss behavior across
+  filesystems/platforms. Campaign batch preparation and advancement are still open.
+- Affected Release targets rebuilt and focused export CTest passed (1/1, 3.89
+  seconds). No fresh complete-suite or installed-host result claimed.
+
 Next concrete implementation owners: explicit evidence-backed legacy migration,
 then complete populated-workspace parity and candidate
 review/publication parity and the resumable inventory campaign. The generation
