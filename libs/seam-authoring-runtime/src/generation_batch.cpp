@@ -80,7 +80,9 @@ core::Result<std::vector<voicebank_production::GeneratedCandidateInput>> inspect
     return core::failure<Output>(core::ErrorCode::InvalidArgument, "Generation batch reference exceeds bounds");
   const std::vector<GenerationJobReference> inputs(jobs.begin(), jobs.end());
   std::set<std::string> ids, takes;
-  std::set<std::pair<std::string, std::int32_t>> assignments;
+  // Version-2 expectations own language/style. Legacy expectations have no
+  // language and must retain their original style-free assignment identity.
+  std::set<voicebank_production::ProductionUnitIdentity> assignments;
   std::string producerState;
   std::uint64_t frames = 0U;
   Output prepared;
@@ -92,7 +94,8 @@ core::Result<std::vector<voicebank_production::GeneratedCandidateInput>> inspect
     if (producerState.empty()) producerState = expected.projectStateSha256;
     const auto count = static_cast<std::uint64_t>(expected.frameCount);
     if (expected.projectStateSha256 != producerState || !ids.insert(job.value().jobId).second || !takes.insert(expected.takeId).second ||
-        !assignments.emplace(expected.coverageKey, expected.pitchLayer).second || count > limits.maximumFrames - frames)
+        !assignments.insert({expected.language, expected.language.empty() ? std::string{} : expected.style,
+            expected.coverageKey, expected.pitchLayer}).second || count > limits.maximumFrames - frames)
       return core::failure<Output>(core::ErrorCode::Conflict, "Generation batch has duplicate targets, different producer states or excessive frame work");
     frames += count;
     const auto& snapshot = job.value().snapshot;

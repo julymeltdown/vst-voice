@@ -757,6 +757,38 @@ TEST_CASE("nasal and frication candidates bake and enter production with typed u
   CHECK(!authoring::buildInventoryGenerationScore(invalidInventory, "take-sa"));
   invalidInventory = inventoryProducer; invalidInventory.unitAssignments.push_back(invalidInventory.unitAssignments.front());
   CHECK(!authoring::buildInventoryGenerationScore(invalidInventory, "take-sa"));
+  auto multiProducer = inventoryProducer;
+  multiProducer.projectId = "multi-style-inventory"; multiProducer.lastDurableGeneration = 0U;
+  auto softAssignment = multiProducer.unitAssignments.front();
+  softAssignment.style = "soft"; softAssignment.plannedTakeId = "take-sa-soft"; softAssignment.promptId = "prompt-sa-soft";
+  multiProducer.unitAssignments.push_back(softAssignment);
+  production::ProductionProjectRepository multiRepository{root / "multi-style-inventory"};
+  CHECK(multiRepository.initialize(multiProducer, {"create", multiProducer.projectId, "producer", "2026-09-13T00:00:00Z"}));
+  auto multiRecipe = recipe;
+  auto softPose = recipe.poses.front(); softPose.style = "soft"; multiRecipe.poses.push_back(softPose);
+  auto softNoise = recipe.frications.front(); softNoise.style = "soft"; multiRecipe.frications.push_back(softNoise);
+  const auto multiResource = voice_design::freezeVoiceRecipeResource(multiRecipe); CHECK(multiResource);
+  const auto neutralJob = authoring::prepareInventoryGenerationJob(root / "multi-neutral.seam", root / "multi-neutral-job",
+      multiProducer, "take-sa", {multiResource.value(), "neutral"}); CHECK(neutralJob);
+  const auto softJob = authoring::prepareInventoryGenerationJob(root / "multi-soft.seam", root / "multi-soft-job",
+      multiProducer, "take-sa-soft", {multiResource.value(), "soft"}); CHECK(softJob);
+  const std::vector<authoring::GenerationJobReference> multiJobs{
+      {root / "multi-neutral-job", neutralJob.value().manifestSha256}, {root / "multi-soft-job", softJob.value().manifestSha256}};
+  const auto admittedStyles = authoring::inspectGenerationBatch(multiJobs); CHECK(admittedStyles);
+  CHECK(admittedStyles.value().size() == 2U);
+  CHECK(!authoring::inspectGenerationBatch(std::vector<authoring::GenerationJobReference>{multiJobs.front(), multiJobs.front()}));
+  CHECK(!authoring::inspectGenerationBatch(multiJobs, {.maximumFrames = 47999U}));
+  CHECK(authoring::runGenerationBatch(multiJobs));
+  const auto multiHash = authoring::saveGenerationBatch(root / "multi-batch.json", multiJobs); CHECK(multiHash);
+  const auto multiCollected = multiRepository.importGeneratedBatch(multiProducer, admittedStyles.value(),
+      {"import-generated-batch", multiHash.value(), "producer", "2026-09-13T00:00:01Z"});
+  CHECK(multiCollected);
+  const auto multiRecovered = multiRepository.recover(); CHECK(multiRecovered);
+  CHECK(multiRecovered.value().takes.size() == 2U);
+  CHECK(multiRecovered.value().takes[0].style == "neutral");
+  CHECK(multiRecovered.value().takes[1].style == "soft");
+  CHECK(std::none_of(multiRecovered.value().unitAssignments.begin(), multiRecovered.value().unitAssignments.end(),
+      [](const auto& row) { return row.markerReviewed || row.pitchReviewed; }));
   production::ProductionProjectRepository styleRepository{root / "style-owned-generation"};
   CHECK(styleRepository.initialize(styleProducer, {"create", styleProducer.projectId, "producer", "2026-09-13T00:00:00Z"}));
   const auto styleJobDirectory = root / "style-owned-job";

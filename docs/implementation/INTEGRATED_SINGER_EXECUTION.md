@@ -210,6 +210,25 @@ not a replacement product contract or a release approval.
   coverage/pitch without language/style. Repair and test this before admitting
   a multi-style campaign; this increment does not claim that path complete.
 
+### Multi-style generation batch repair
+
+- Repaired the preceding batch-admission gap: version-2 expectations now use
+  `ProductionUnitIdentity` (language/style/coverage/pitch). Legacy expectations
+  still use their original style-free identity; recipe style cannot create a
+  second legacy assignment. Duplicate job/take and frame-budget checks remain.
+- A real integration fixture initializes two same-phone/same-pitch assignments,
+  prepares each through the inventory score builder, admits/renders the batch,
+  saves its manifest, collects both atomically and reopens the durable producer.
+  Both styles survive; neither assignment gains marker/pitch approval. Repeated
+  job references and a budget one frame below the required total are rejected.
+- Focused export CTest passed (1/1, 3.96 seconds). Complete configured Release
+  build also passed. This closes the batch identity mismatch, not the campaign
+  scheduler, restart receipts or real singer qualification.
+- Full configured regression after this repair: **123/123 CTest targets passed**,
+  zero failures, 87.81 seconds. This also covers the intervening inventory-score
+  and listening-pilot increments; it does not stand in for installed-host or
+  independent musical acceptance.
+
 Next concrete implementation owners: explicit evidence-backed legacy migration,
 then complete populated-workspace parity and candidate
 review/publication parity and the resumable inventory campaign. The generation
