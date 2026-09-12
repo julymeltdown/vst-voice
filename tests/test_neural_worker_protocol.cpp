@@ -1,4 +1,6 @@
 #include "test_framework.hpp"
+#include "seam/neural_synthesis/bundle_metadata.hpp"
+#include "seam/formats/json_value.hpp"
 #include "test_support.hpp"
 #include "seam/core/file_io.hpp"
 #include "seam/platform/application_paths.hpp"
@@ -341,6 +343,19 @@ TEST_CASE("neural worker runner uses an explicit helper and validates the respon
       .helper=SEAM_NEURAL_WORKER_PROBE,.helperContentHash=helperHash.value(),.maximumHelperBytes=1U}));
   CHECK(!runNeuralWorker(input,contract,NeuralWorkerRunOptions{
       .helper=SEAM_NEURAL_WORKER_PROBE,.helperContentHash=helperHash.value(),.maximumHelperBytes=0U}));
+  auto memoryProbe=input; memoryProbe.requestId=46U;
+  const auto memoryRejected=runNeuralWorker(memoryProbe,contract,NeuralWorkerRunOptions{
+      .helper=SEAM_NEURAL_WORKER_PROBE,.helperContentHash=helperHash.value(),.maximumResidentBytes=1U});
+  CHECK(!memoryRejected);
+  CHECK(memoryRejected.error().message.find("resident-memory limit")!=std::string::npos);
+  auto cpuProbe=input; cpuProbe.requestId=47U;
+  const auto cpuRejected=runNeuralWorker(cpuProbe,contract,NeuralWorkerRunOptions{
+      .helper=SEAM_NEURAL_WORKER_PROBE,.helperContentHash=helperHash.value(),.maximumCpuTime=std::chrono::milliseconds{1}});
+  CHECK(!cpuRejected);
+  CHECK(cpuRejected.error().message.find("CPU-time limit")!=std::string::npos);
+  const auto invalidCpu=runNeuralWorker(input,contract,NeuralWorkerRunOptions{
+      .helper=SEAM_NEURAL_WORKER_PROBE,.helperContentHash=helperHash.value(),.maximumCpuTime=std::chrono::milliseconds{-1}});
+  CHECK(!invalidCpu);
   std::stop_source cancelled; cancelled.request_stop();
   CHECK(!runNeuralWorker(input,contract,NeuralWorkerRunOptions{
       .helper=SEAM_NEURAL_WORKER_PROBE,.helperContentHash=helperHash.value()},cancelled.get_token()));
@@ -516,4 +531,113 @@ TEST_CASE("DiffSinger inputs conserve hop durations and retain phone ownership a
   const auto sequence=prepareDiffSingerAcousticInputs(input,model,vocabulary.value(),5); CHECK(sequence);
   CHECK(sequence.value().durations==(std::vector<std::int64_t>{5,6,5,5,5}));
   CHECK(sequence.value().f0Hz.size()==26U); CHECK(sequence.value().paddedSampleFrames==104U);
+}
+
+TEST_CASE("DiffSinger finalization validates padded output before trimming and applying dynamics") {
+  using namespace seam::neural_synthesis;
+  auto input=request();
+  input.frameCount=5; input.f0Hz.assign(5,220.0F); input.dynamics={0.0F,0.5F,1.0F,2.0F,0.25F};
+  ModelContract model{.modelId=input.modelId,.modelVersion=input.modelVersion,.modelContentHash=input.modelContentHash,
+      .vocabularyHash=std::string(64,'a'),.hopSize=4};
+  std::vector<float> pcm(8,0.25F);
+  const auto result=finalizeDiffSingerAudio(input,model,pcm); CHECK(result);
+  CHECK(result.value()==(std::vector<float>{0.0F,0.125F,0.25F,0.5F,0.0625F}));
+  CHECK(pcm==std::vector<float>(8,0.25F));
+  const auto response=finalizeDiffSingerResponse(input,model,pcm,"test-vocoder"); CHECK(response);
+  CHECK(response.value().pcm==result.value());
+  CHECK(response.value().frameCount==input.frameCount);
+  const auto requestFrame=encodeRequest(input); CHECK(requestFrame);
+  CHECK(response.value().requestContentHash==seam::core::sha256Hex(std::span<const std::byte>{requestFrame.value()}));
+  const auto encodedResponse=encodeResponse(response.value()); CHECK(encodedResponse);
+  const auto decodedResponse=decodeResponse(encodedResponse.value()); CHECK(decodedResponse);
+  CHECK(decodedResponse.value()==response.value());
+  auto changedGain=input; changedGain.dynamics[1]=0.25F;
+  const auto changedResponse=finalizeDiffSingerResponse(changedGain,model,pcm,"test-vocoder"); CHECK(changedResponse);
+  CHECK(changedResponse.value().requestContentHash!=response.value().requestContentHash);
+  CHECK(changedResponse.value().pcm[1]==0.0625F);
+  CHECK(!finalizeDiffSingerResponse(input,model,pcm,""));
+  CHECK(!finalizeDiffSingerAudio(input,model,std::span{pcm}.first(5)));
+  for (const float bad:{std::numeric_limits<float>::quiet_NaN(),std::numeric_limits<float>::infinity(),1.1F,-1.1F}) {
+    auto invalid=pcm; invalid.back()=bad;
+    CHECK(!finalizeDiffSingerAudio(input,model,invalid));
+  }
+  auto clipping=pcm; clipping[3]=0.75F;
+  CHECK(!finalizeDiffSingerAudio(input,model,clipping));
+  auto wrong=input; wrong.modelContentHash=std::string(64,'b');
+  CHECK(!finalizeDiffSingerAudio(wrong,model,pcm));
+  std::stop_source cancel; cancel.request_stop();
+  CHECK(!finalizeDiffSingerAudio(input,model,pcm,cancel.get_token()));
+}
+
+TEST_CASE("frozen bundle metadata binds vocabulary and rejects incompatible acoustic vocoder declarations") {
+  using namespace seam;
+  using J=formats::JsonValue;
+  const J feature{J::Object{{"sampleRate",std::int64_t{48000}},{"hopSize",std::int64_t{256}},{"bins",std::int64_t{80}},
+      {"layout","BTF"},{"amplitudeScale","ln-amplitude"},{"multiplier",1.0},{"offset",0.0},{"minimumHz",40.0},{"maximumHz",16000.0}}};
+  J configuration{J::Object{{"formatId","com.project-seam.neural-bundle-configuration"},{"schemaVersion",std::int64_t{1}},
+      {"maximumFrames",std::int64_t{48000}},{"acousticFeatures",feature},{"vocoderFeatures",feature}}};
+  const std::string vocabulary=R"({"formatId":"com.project-seam.neural-vocabulary","schemaVersion":1,"tokens":["<PAD>","SP","a"]})";
+  const auto freeze=[&](const J& config,const std::string& tokens) {
+    const std::string json=formats::stringifyJson(config), graph="uninspected graph fixture";
+    const auto input=[](synthesis::NeuralAssetRole role,const char* name,const std::string& value) {
+      return synthesis::NeuralBundleAssetInput{role,name,std::as_bytes(std::span{value.data(),value.size()}),core::sha256Hex(value)};
+    };
+    const std::array assets{input(synthesis::NeuralAssetRole::Acoustic,"acoustic",graph),input(synthesis::NeuralAssetRole::Vocoder,"vocoder",graph),
+        input(synthesis::NeuralAssetRole::Vocabulary,"vocabulary",tokens),input(synthesis::NeuralAssetRole::Configuration,"configuration",json)};
+    const auto manifest=synthesis::FrozenNeuralBundle::manifest(assets,4096U); CHECK(manifest);
+    return synthesis::FrozenNeuralBundle::freeze({domain::SingerResourceKind::Neural,"bundle","1",core::sha256Hex(manifest.value())},assets,4096U);
+  };
+  const auto bundle=freeze(configuration,vocabulary); CHECK(bundle);
+  const auto metadata=neural_synthesis::inspectNeuralBundleMetadata(bundle.value()); CHECK(metadata);
+  CHECK(metadata.value().model.modelContentHash==bundle.value().identity().contentHash);
+  CHECK(metadata.value().model.vocabularyHash==core::sha256Hex(vocabulary));
+  CHECK(metadata.value().vocabulary.tokenId("a").value()==2U);
+  CHECK(metadata.value().features.bins==80U);
+  for (const auto* field:{"sampleRate","hopSize","bins","layout","amplitudeScale","multiplier","offset","minimumHz","maximumHz"}) {
+    auto mismatch=configuration;
+    auto& value=mismatch.asObject()["vocoderFeatures"].asObject()[field];
+    if (value.isString()) value=std::string(field)=="layout"?"BFT":"log10-amplitude";
+    else if (value.isInteger()) value=value.asInt64()+1;
+    else value=value.asNumber()+1.0;
+    const auto changed=freeze(mismatch,vocabulary); CHECK(changed);
+    CHECK(!neural_synthesis::inspectNeuralBundleMetadata(changed.value()));
+  }
+  auto extra=configuration; extra.asObject()["executable"]="helper";
+  CHECK(!neural_synthesis::inspectNeuralBundleMetadata(freeze(extra,vocabulary).value()));
+  // Matching declarations are insufficient: reject an invalid convention even
+  // when both graphs claim the same values.
+  const std::vector<std::pair<std::string,J>> invalidFeatures{
+      {"sampleRate",std::int64_t{7999}}, {"sampleRate",std::int64_t{384001}},
+      {"sampleRate",48000.5}, {"hopSize",std::int64_t{0}},
+      {"hopSize",std::int64_t{8193}}, {"bins",std::int64_t{0}},
+      {"bins",std::int64_t{513}}, {"layout","TF"},
+      {"amplitudeScale","unspecified"}, {"multiplier",0.0},
+      {"multiplier",1000.1}, {"offset",1000.1}, {"offset",-1000.1},
+      {"minimumHz",-1.0}, {"maximumHz",40.0}, {"maximumHz",24001.0}};
+  for (const auto& [field,value]:invalidFeatures) {
+    auto invalid=configuration;
+    for (const auto* role:{"acousticFeatures","vocoderFeatures"})
+      invalid.asObject()[role].asObject()[field]=value;
+    const auto changed=freeze(invalid,vocabulary); CHECK(changed);
+    CHECK(!neural_synthesis::inspectNeuralBundleMetadata(changed.value()));
+  }
+  for (const auto bound:{std::int64_t{0},std::int64_t{4194305}}) {
+    auto invalid=configuration; invalid.asObject()["maximumFrames"]=bound;
+    const auto changed=freeze(invalid,vocabulary); CHECK(changed);
+    CHECK(!neural_synthesis::inspectNeuralBundleMetadata(changed.value()));
+  }
+  const auto badVocabulary=freeze(configuration,"{}"); CHECK(badVocabulary);
+  CHECK(!neural_synthesis::inspectNeuralBundleMetadata(badVocabulary.value()));
+  for (const auto& token:std::vector<std::string>{std::string(129,'a'),"phone\n",std::string{"phone\x7f"},std::string(1,'\0')}) {
+    const auto json=formats::stringifyJson(J{J::Object{{"formatId","com.project-seam.neural-vocabulary"},
+        {"schemaVersion",std::int64_t{1}},{"tokens",J::Array{J{"<PAD>"},J{token}}}}});
+    const auto invalid=freeze(configuration,json); CHECK(invalid);
+    CHECK(!neural_synthesis::inspectNeuralBundleMetadata(invalid.value()));
+  }
+  const auto boundaryJson=formats::stringifyJson(J{J::Object{{"formatId","com.project-seam.neural-vocabulary"},
+      {"schemaVersion",std::int64_t{1}},{"tokens",J::Array{J{"<PAD>"},J{std::string(128,'a')}}}}});
+  const auto boundaryBundle=freeze(configuration,boundaryJson); CHECK(boundaryBundle);
+  CHECK(neural_synthesis::inspectNeuralBundleMetadata(boundaryBundle.value()));
+  std::stop_source cancel; cancel.request_stop();
+  CHECK(!neural_synthesis::inspectNeuralBundleMetadata(bundle.value(),cancel.get_token()));
 }

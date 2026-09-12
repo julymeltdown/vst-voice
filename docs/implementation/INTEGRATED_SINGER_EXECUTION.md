@@ -4,6 +4,155 @@ Authority: `SEAM_IMPLEMENTATION_PLAN_2026-09-13.md`, preserving the original
 R1–R20 and Full-Scope U1–U48 obligations. This is current execution status,
 not a replacement product contract or a release approval.
 
+## Neural bundle metadata compatibility follow-up
+
+Offline JSON-bound follow-up: added a quote/escape-aware container-depth check
+before recursive decoding and post-decode node, collection, finite-number and
+128-byte UTF-8 string checks. Configuration uses native 128-node/16-entry
+limits; vocabulary uses its separate larger limits. All 30 offline inspection
+tests passed, including 4000-level nesting rejection, braces within strings,
+numeric overflow and collection/node limits. Post-decode limits do not bound
+peak allocation, and no hard parser-process memory ceiling is claimed.
+
+Neural process-budget propagation: source inspection found the neural runner
+did not forward the platform helper's resident-memory/CPU limits. Added
+application-owned run options and forwarded both fields. Actual child probes
+verify resident-memory and CPU-time termination with their specific diagnostics;
+negative CPU limits are rejected. Rebuilt neural protocol CTest passed (1/1,
+2.63 seconds). Zero defaults retain legacy v1 behavior; production admission
+still must choose measured nonzero budgets. Sampling remains best-effort and
+is not an OS sandbox or Windows/installed-host qualification.
+
+Frozen-identity runtime integration: the paired native experiment now freezes
+its two loaded graphs plus fixture configuration/vocabulary through the actual
+`FrozenNeuralBundle` factory, inspects native metadata, and constructs ORT
+sessions from the frozen graph spans. Requests use the real manifest-derived
+model digest and frozen vocabulary, replacing the placeholder model hash.
+Release runtime target rebuilt and dynamic paired execution passed, including
+the wrong-hop rejection case. Fixture configuration remains application-authored
+and fixed to this experiment; this does not implement arbitrary bank import,
+production pre-session graph admission, signed worker launch or learned vocals.
+
+Vocabulary policy reconciliation: source comparison found offline intake had
+allowed 256-byte/control-character tokens while native decoding limits tokens
+to 128 UTF-8 bytes and excludes C0/DEL. Offline intake also incorrectly capped
+vocabulary entries at 4096 rather than native decoding's 65536 (phone-span limits
+are separate). Corrected those policies. All 26 offline tests passed, including
+UTF-8 byte boundaries and a 4097-entry vocabulary. Mirrored native boundary and
+control-character regression cases passed in the rebuilt neural protocol CTest
+(1/1, 7.54 seconds). This is targeted vocabulary-policy reconciliation, not a
+claim of complete differential parity for all metadata or graph admission.
+
+Offline bundle-binding follow-up: `inspect_bundle.py` accepts only immutable
+manifest/asset bytes and an expected manifest digest, verifies asset hash/size
+closure and required roles, then derives graph-pair parameters from the actual
+configuration bytes and checks the vocabulary. Six new tests cover success,
+changed bytes, wrong manifest identity, unlisted assets, duplicate JSON and a
+rehashed configuration that contradicts graph mel bins. All 23 offline
+inspection tests passed. This closes the caller-supplied-parameter gap in the
+offline tool only; runtime enforcement, cross-language parity and executable
+admission remain open. Optional variance/tensor roles are explicitly unsupported
+by this initial paired execution profile, not removed from the full plan.
+
+Response-path follow-up after the full-suite checkpoint below: shared
+`finalizeDiffSingerResponse` performs worker-side trim/gain finalization,
+constructs the normalized response and binds it to the canonical request hash.
+The native paired experiment now round-trips the actual response codec too,
+checking request binding and exactly-once gain. Tests verify changed dynamics
+change both returned PCM and the request digest, and reject an empty backend
+identity. Release neural/runtime targets built; neural protocol CTest passed
+(1/1, 0.94 seconds), followed by the dynamic native paired check. The existing
+receiving backend was inspected and does not apply another dynamics pass.
+No fresh full-suite claim for this follow-up, and no actual production helper
+launch, admitted learned model or normal song integration is established.
+
+Integrated verification checkpoint: complete Release build passed, followed by
+a fresh full CTest run: 124/124 passed in 293.51 seconds. Separately, all 17
+offline graph/pair inspection tests and both native runtime experiments passed
+again against the rebuilt binary. This supersedes the earlier focused-only
+regression boundary for this accumulated change set. It does not qualify a
+learned singer, production graph admission, Windows execution, actual installed
+host matrix, human listening or full Beta GO. Linker duplicate-library warnings
+were present; the build completed successfully.
+
+Request-conditioning integration follow-up: the native paired probe now links
+the real neural library, serializes/deserializes a sample-domain request and
+uses `prepareDiffSingerAcousticInputs` rather than handwritten tensors. Both
+runtime cases exercise a 37-sample partial-hop tail. New shared
+`finalizeDiffSingerAudio` validates the entire padded mono buffer, trims to
+the request count and applies sample-domain dynamics once, rejecting invalid
+raw/tail PCM or gain overflow instead of clipping. Release targets built;
+neural protocol CTest passed (1/1, 0.89 seconds), including finalizer shape,
+tail, gain, identity and cancellation cases; dynamic native paired check
+passed. This supersedes the earlier manual-tensor limitation, not the open
+production-worker, real model, graph admission or normal song integration.
+
+Native paired execution follow-up: the optional runtime probe now executes
+tokens/durations/f0/scalar-steps acoustic inputs, checks finite `[1,T,80]` mel,
+passes mel plus f0 into a second native session, and checks finite `[1,T*256]`
+audio with expected values. The generated dynamic arithmetic pair passed at
+T=3 and T=5 using the same sessions. A pair with identical declared interfaces
+but an actual 128-sample hop passed offline inspection and was correctly
+rejected at runtime for output shape. `check_paired_runtime.py` passed after
+the Release probe rebuild. This remains a controlled integration experiment:
+no learned singer, normal song request bridge or production worker is claimed.
+
+Paired-interface follow-up: `inspect_pair.py` directly inspects both graph byte
+strings against a proposed SEAM export profile matching the existing prepared
+acoustic inputs (tokens/durations/f0/steps) and a pitch-conditioned vocoder.
+It checks names, dtypes, ranks, intra-graph axis relationships, mel layout/bins
+and bounded maximum mel-buffer sizing; its contract digest binds graph hashes
+and supplied parameters. Eight structural tests passed. This is not universal
+DiffSinger compatibility or production execution admission. Constant graph
+fixtures do not prove actual output shapes, hop timing, learned conditioning,
+musical quality, or that the supplied parameters match frozen configuration.
+
+Offline pre-runtime intake now exists in `tools/neural_runtime/inspect_graph.py`.
+It parses bounded bytes without external-data resolution, recursively rejects
+external tensors/custom operators (including nested graphs and attributes),
+checks standard ONNX structure, and reports hash-bound actual interfaces.
+Nine focused Python tests passed, covering the trusted graph report, nested
+rejections, oversized dimension product, custom imports, empty input and
+truthful reporting of unresolved dynamic dimensions. This is not production
+admission: model-family bounds, execution budgets and child-side enforcement
+remain open. The positive arithmetic fixture runner now invokes intake before
+native inference; direct native invocation remains trusted-fixture-only.
+
+Native-runtime follow-up: the optional arithmetic probe now reads bounded owned
+graph bytes once (16 MiB each), creates sessions from memory and checks actual
+session tensor names, float32 dtype and exact fixture rank/dimensions before
+inference. The manual Python/native check passed with repeated correct output,
+wrong-scale rejection, swapped graph rejection, wrong shape/rank/dtype and
+dynamic-dimension rejection, plus empty/oversized input rejection. This is
+post-parse runtime introspection of trusted generated fixtures, not pre-session
+operator admission, external-tensor safety, DiffSinger execution or singing.
+The production pre-session graph inspection requirement remains open.
+
+Added `inspectNeuralBundleMetadata` over immutable frozen bundle bytes. It
+binds the vocabulary digest and model identity, parses bounded configuration,
+and requires acoustic/vocoder agreement on sample rate, hop, mel bins, layout,
+amplitude encoding, multiplier, offset and frequency range. Unknown fields and
+invalid numeric domains are rejected even when both declarations match.
+
+The configuration schema is `com.project-seam.neural-bundle-configuration`
+version 1. Its exact root fields are `formatId`, `schemaVersion`,
+`maximumFrames`, `acousticFeatures` and `vocoderFeatures`. Both feature objects
+contain `sampleRate`, `hopSize`, `bins`, `layout`, `amplitudeScale`,
+`multiplier`, `offset`, `minimumHz` and `maximumHz`. This internal declaration
+schema is not yet the complete production model/export contract.
+
+Verification: Release neural protocol target built; its CTest passed (1/1,
+3.39 seconds), including independent feature mismatches, matching invalid
+declarations, frame bounds, unknown executable field, invalid vocabulary and
+cancellation. No full-suite or graph admission result is claimed.
+
+This API deliberately returns metadata, not executable admission. The test
+uses non-ONNX graph placeholders: passing it proves no graph compatibility.
+Next: bounded actual graph inspection, immutable executable admission,
+application-selected bundle transport and child-side byte re-admission, then
+production acoustic/vocoder execution. Windows supervision, model training,
+rights and musical qualification remain open under the original plan.
+
 ## Active outcome: M1 original voice → bank → unfamiliar song
 
 | Package | Implementation | Demonstrated workflow | Qualification remaining | Next action |

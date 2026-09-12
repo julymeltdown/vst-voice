@@ -24,4 +24,17 @@ struct DiffSingerAcousticInputs final {
     const NeuralRequest& request,const ModelContract& model,
     const NeuralVocabulary& vocabulary,std::int64_t steps,std::stop_token stop = {});
 
+// Mono profile output: validate the entire padded vocoder buffer, trim only the
+// final partial hop, then apply sample-domain dynamics exactly once. Reject
+// nonfinite/out-of-range output instead of silently clipping it.
+[[nodiscard]] core::Result<std::vector<float>> finalizeDiffSingerAudio(
+    const NeuralRequest& request,const ModelContract& model,
+    std::span<const float> paddedAudio,std::stop_token stop = {});
+
+// Worker-side completion: produces final gained PCM and binds it to the exact
+// canonical request. The receiving backend must not apply dynamics again.
+[[nodiscard]] core::Result<NeuralResponse> finalizeDiffSingerResponse(
+    const NeuralRequest& request,const ModelContract& model,
+    std::span<const float> paddedAudio,std::string backendId,std::stop_token stop = {});
+
 }  // namespace seam::neural_synthesis

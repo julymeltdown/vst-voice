@@ -341,6 +341,7 @@ target_link_libraries(seam_formats PUBLIC seam_domain seam_core)
 seam_apply_compiler_options(seam_formats)
 
 add_library(seam_neural_synthesis
+  libs/seam-neural-synthesis/src/bundle_metadata.cpp
   libs/seam-neural-synthesis/src/diffsinger_inputs.cpp
   libs/seam-neural-synthesis/src/deployment_descriptor.cpp
   libs/seam-neural-synthesis/src/worker_protocol.cpp
@@ -2266,7 +2267,7 @@ if(SEAM_ONNXRUNTIME_ROOT)
   find_library(SEAM_ONNXRUNTIME_LIBRARY onnxruntime PATHS "${SEAM_ONNXRUNTIME_ROOT}/lib" NO_DEFAULT_PATH REQUIRED)
   add_executable(seam_onnx_runtime_probe tools/neural_runtime/runtime_probe.cpp)
   target_include_directories(seam_onnx_runtime_probe SYSTEM PRIVATE "${SEAM_ONNXRUNTIME_INCLUDE}")
-  target_link_libraries(seam_onnx_runtime_probe PRIVATE "${SEAM_ONNXRUNTIME_LIBRARY}")
+  target_link_libraries(seam_onnx_runtime_probe PRIVATE "${SEAM_ONNXRUNTIME_LIBRARY}" seam_neural_synthesis)
   seam_apply_compiler_options(seam_onnx_runtime_probe)
 endif()
 if(SEAM_BUILD_TESTS)

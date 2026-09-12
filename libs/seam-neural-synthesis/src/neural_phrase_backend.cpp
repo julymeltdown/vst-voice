@@ -258,6 +258,8 @@ core::Result<NeuralWorkerResult> runNeuralWorker(
       .maximumStderrBytes = options.limits.maximumMetadataBytes,
       .standardInput = input,
       .maximumStdinBytes = options.limits.maximumFrameBytes,
+      .maximumResidentBytes = options.maximumResidentBytes,
+      .maximumCpuTime = options.maximumCpuTime,
   };
   const auto run = platform::runBoundedHelperProcess(helper, stop);
   if (!run) return core::Result<Output>{run.error()};

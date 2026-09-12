@@ -7,6 +7,7 @@
 #include <iostream>
 #include <iterator>
 #include <vector>
+#include <thread>
 
 int main(int argc, char** argv) {
   if (argc==6 && std::string_view{argv[1]}=="--seam-neural-package-load-probe") {
@@ -43,6 +44,12 @@ int main(int argc, char** argv) {
   const auto request = seam::neural_synthesis::decodeRequest(
       std::span<const std::byte>{reinterpret_cast<const std::byte*>(input.data()), input.size()});
   if (!request) return 3;
+  // Remain observable long enough for the parent's memory-limit regression.
+  if (request.value().requestId==46U) std::this_thread::sleep_for(std::chrono::milliseconds{250});
+  if (request.value().requestId==47U) {
+    const auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds{1};
+    while (std::chrono::steady_clock::now()<deadline) {}
+  }
   seam::neural_synthesis::NeuralResponse response{
       .requestId = request.value().requestId,
       .backendId = "seam.test.neural.worker",

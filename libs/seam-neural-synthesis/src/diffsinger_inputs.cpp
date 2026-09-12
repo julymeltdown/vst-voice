@@ -1,6 +1,8 @@
 #include "seam/neural_synthesis/diffsinger_inputs.hpp"
 
 #include <algorithm>
+#include <cmath>
+#include "seam/core/sha256.hpp"
 
 namespace seam::neural_synthesis {
 
@@ -53,6 +55,53 @@ core::Result<DiffSingerAcousticInputs> prepareDiffSingerAcousticInputs(
   }
   if (stop.stop_requested()) return cancelled();
   return result;
+}
+
+core::Result<std::vector<float>> finalizeDiffSingerAudio(
+    const NeuralRequest& request,const ModelContract& model,
+    std::span<const float> paddedAudio,std::stop_token stop) {
+  using Output=std::vector<float>;
+  const auto cancelled=[] {return core::failure<Output>(core::ErrorCode::Conflict,
+      "DiffSinger output finalization cancelled");};
+  if (stop.stop_requested()) return cancelled();
+  const auto checked=model.validateRequest(request);
+  if (!checked) return core::Result<Output>{checked.error()};
+  const auto expected=((request.frameCount+model.hopSize-1U)/model.hopSize)*model.hopSize;
+  if (request.channels!=1U || paddedAudio.size()!=expected)
+    return core::failure<Output>(core::ErrorCode::InvalidArgument,"DiffSinger vocoder output shape differs from the mono hop contract");
+  Output output(static_cast<std::size_t>(request.frameCount));
+  for (std::size_t index=0;index<paddedAudio.size();++index) {
+    if ((index&4095U)==0U && stop.stop_requested()) return cancelled();
+    const float sample=paddedAudio[index];
+    if (!std::isfinite(sample) || std::abs(sample)>1.0F)
+      return core::failure<Output>(core::ErrorCode::InvalidArgument,"DiffSinger vocoder PCM is invalid, including padded tail");
+    if (index<output.size()) {
+      const auto gained=sample*request.dynamics[index];
+      if (!std::isfinite(gained) || std::abs(gained)>1.0F)
+        return core::failure<Output>(core::ErrorCode::InvalidArgument,"DiffSinger dynamics exceed normalized PCM range");
+      output[index]=gained;
+    }
+  }
+  if (stop.stop_requested()) return cancelled();
+  return output;
+}
+
+core::Result<NeuralResponse> finalizeDiffSingerResponse(
+    const NeuralRequest& request,const ModelContract& model,
+    std::span<const float> paddedAudio,std::string backendId,std::stop_token stop) {
+  auto audio=finalizeDiffSingerAudio(request,model,paddedAudio,stop);
+  if (!audio) return core::Result<NeuralResponse>{audio.error()};
+  const auto encoded=encodeRequest(request);
+  if (!encoded) return core::Result<NeuralResponse>{encoded.error()};
+  NeuralResponse response{.requestId=request.requestId,.backendId=std::move(backendId),
+      .modelContentHash=request.modelContentHash,.sampleRate=request.sampleRate,
+      .channels=request.channels,.frameCount=request.frameCount,.pcm=std::move(audio.value()),
+      .requestContentHash=core::sha256Hex(std::span<const std::byte>{encoded.value()})};
+  const auto valid=response.validate();
+  if (!valid) return core::Result<NeuralResponse>{valid.error()};
+  if (stop.stop_requested()) return core::failure<NeuralResponse>(core::ErrorCode::Conflict,
+      "DiffSinger response finalization cancelled");
+  return response;
 }
 
 }  // namespace seam::neural_synthesis

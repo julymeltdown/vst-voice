@@ -26,5 +26,119 @@ build/neural-runtime/fixture-env/bin/python tools/neural_runtime/check_runtime.p
 The check uses temporary generated graphs, verifies repeated native inference,
 and requires a changed vocoder scale to fail the expected-output check. The
 ordinary build does not require ONNX Runtime when its root option is empty.
+The native probe now reads each fixture once into bounded owned bytes (16 MiB
+per graph) and constructs sessions from those bytes. Before inference it checks
+actual session input/output names, float32 element types and exact `[1,4]`
+fixture shapes. The test also rejects swapped graphs, wrong rank/dimensions,
+dynamic dimensions, double tensors, empty files and oversized files. These are
+fixture-specific contracts, not the eventual DiffSinger tensor contract.
+
+Session introspection happens after ORT parses the graph; it does not provide
+the required pre-session protobuf/operator/resource admission. In-memory input
+alone does not prove external tensor references are safe or absent. Keep using
+only application-generated trusted fixtures with this experiment.
 Model feature/schema admission, external tensor restrictions, worker protocol
 integration, learned weights and installed distribution remain separate work.
+
+## Offline graph intake
+
+`inspect_graph.py GRAPH.onnx` parses bounded bytes directly, never resolves
+external tensor files, rejects external references throughout nested protobuf
+messages, and rejects custom domains, unknown operators, local functions and
+training graphs. It checks standard ONNX structural validity and reports the
+exact byte SHA-256, operator revision and actual tensor interfaces. Initial
+limits are 256 MiB input, 200,000 protobuf messages, depth 64, tensor rank 8 and
+64 million elements per initializer. Supported IR/opset ranges are explicit in
+the tool; unsupported exports require a reviewed extension, not a bypass.
+
+```sh
+build/neural-runtime/fixture-env/bin/python tools/neural_runtime/test_inspect_graph.py
+build/neural-runtime/fixture-env/bin/python tools/neural_runtime/inspect_graph.py GRAPH.onnx
+```
+
+This is an offline intake diagnostic, not an admission certificate. Standard
+operators can still be computationally expensive; symbolic interface dimensions
+are reported rather than bounded for execution. Model-family contracts,
+aggregate execution budgets, parser-process resource supervision, feature
+compatibility and production child-side re-admission remain required. The
+Python input byte cap is not a resident-memory ceiling. The native probe does
+not itself invoke this inspector; the fixture runner inspects its generated
+graphs before the positive inference runs.
+
+### Proposed paired export profile
+
+`inspect_pair.inspect_pair` consumes actual acoustic/vocoder bytes and explicit
+`bins`, `layout`, `hop_size`, and `maximum_sample_frames` parameters. It invokes
+graph inspection itself; caller-supplied inspection reports are not trusted.
+The proposed `seam-acoustic-vocoder-v1` profile requires:
+
+| Graph | Inputs | Output |
+|---|---|---|
+| Acoustic | int64 tokens/durations `[1,N]`; float32 f0 `[1,T]`; int64 scalar steps | float32 mel `[1,T,F]` or `[1,F,T]` |
+| Vocoder | float32 mel in the same layout; float32 f0 `[1,T]` | float32 audio `[1,S]` |
+
+Axis symbols must agree within each graph; their spellings need not match
+across files. Extra conditions are rejected rather than silently dropped.
+The result binds both graph hashes and supplied profile parameters, including
+the maximum mel-frame/element budget, but sets `executionAdmitted` to false.
+This is a proposed export adapter target, not a discovered universal DiffSinger
+interface. No export adapter or learned-model compatibility is claimed yet.
+
+Run `test_inspect_pair.py` with the pinned fixture interpreter. Its constant
+graphs are structural fixtures only. Actual graph outputs, hop-to-sample
+relationship, nonzero conditioning response, intermediate allocations, mel
+feature scale/range, vocabulary, speaker/style mappings and immutable bundle
+configuration binding still require production validation. Static declarations
+alone cannot establish these properties.
+
+### Native paired-profile execution experiment
+
+Offline `inspect_bundle.inspect_bundle` accepts manifest bytes, a name-to-bytes
+asset map and the expected manifest digest. It verifies immutable asset lengths
+and hashes, exact closure and the four required roles, validates configuration
+and vocabulary, and derives pair inspection parameters from those configuration
+bytes. Extra variance/tensor roles are explicitly unsupported in this initial
+paired profile, not silently ignored. No filesystem or executable is selected.
+Its result remains `executionAdmitted: false`: production C++/Python parity,
+bounded parser supervision and child-side enforcement are not established.
+JSON input is byte-capped, not a hard process-memory bound. Run all offline
+inspection tests with `python -m unittest discover -s tools/neural_runtime -p
+'test_inspect*.py'` using the pinned fixture interpreter.
+
+```sh
+cmake --build build/release --target seam_onnx_runtime_probe
+build/neural-runtime/fixture-env/bin/python tools/neural_runtime/check_paired_runtime.py build/release/seam_onnx_runtime_probe
+```
+
+The `--paired-profile` native mode runs four acoustic inputs through a real ORT
+session using graph bytes owned by an actual `FrozenNeuralBundle`. The probe
+freezes both graphs and its application-authored fixture configuration/vocabulary;
+native metadata inspection supplies the model/vocabulary and real manifest
+digest used in requests. This replaces the former placeholder model identity.
+It then transfers tensors between sessions as described below. This is still
+trusted-fixture execution, not pre-session admission of arbitrary banks.
+
+The acoustic
+session transfers its float32 `[1,T,80]` mel tensor to a second session alongside
+f0, and verifies finite audio of shape `[1,T*256]`. Two sequence lengths (3 and
+5 mel frames) run through the same sessions. Generated arithmetic graphs make
+output values depend on tokens, durations, steps, acoustic f0 and vocoder f0;
+the native expected-value check verifies this controlled computation.
+
+A negative fixture declares the same valid interfaces but expands by 128
+instead of the claimed 256 samples per frame. Static pair inspection passes;
+native output-length verification rejects it. This proves the runtime check
+for these fixtures, not general graph semantic correctness. The probe now
+constructs a sample-domain SEAM request, round-trips the actual request codec,
+and uses `prepareDiffSingerAcousticInputs` for tensor conditioning. Both cases
+have a 37-sample partial-hop tail; shared `finalizeDiffSingerAudio` validates
+all padded samples, trims to the requested count and applies dynamics once.
+The finalizer rejects nonfinite/out-of-range raw or gained PCM rather than
+clipping; even invalid samples in the discarded tail cause rejection.
+`finalizeDiffSingerResponse` wraps that final audio in a response bound to the
+canonical request hash. The native paired experiment also round-trips the
+response codec and verifies that this preserves the once-applied gain.
+This is not yet connected to the normal song backend or production worker.
+The graph weights are arithmetic constants, not
+learned voice weights. Production worker admission, cancellation, bounded
+runtime allocations, real model inference and musical evaluation remain open.

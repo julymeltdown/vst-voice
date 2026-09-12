@@ -39,6 +39,11 @@ struct NeuralWorkerRunOptions final {
   std::chrono::milliseconds timeout{10'000};
   WorkerProtocolLimits limits{};
   std::optional<NeuralVocabulary> vocabulary{};
+  // Application-selected best-effort process limits, never bank instructions.
+  // Zero retains legacy v1 behavior; production admission must select measured
+  // nonzero budgets. Sampling is not an OS security sandbox.
+  std::size_t maximumResidentBytes{0U};
+  std::chrono::milliseconds maximumCpuTime{0};
 };
 
 struct NeuralWorkerResult final {
