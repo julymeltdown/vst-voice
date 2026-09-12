@@ -508,6 +508,14 @@ is claimed.
 
 ### M2.P1 process-ownership extraction
 
+Follow-up: moved the dependency check into a reusable CMake module and added
+six configure fixtures: allowed, harmless cycle, forbidden direct/transitive,
+LINK_ONLY and alias links. The guard resolves ALIASED_TARGET before checking
+forbidden owners so aliases cannot bypass the rule. Negative fixtures require
+the specific dependency diagnostic, not merely any configure failure. The new
+CTest passed (1/1, 0.37 seconds); total registered tests are now 124. This does
+not assert support for arbitrary nested generator expressions.
+
 Moved the bounded helper request/output API and sole process implementation
 to `libs/seam-platform`. Japanese reading and neural execution now call the
 platform API directly. The old authoring header contains only using-declaration

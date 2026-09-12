@@ -2255,29 +2255,12 @@ add_subdirectory(phase13b)
 
 # Neural preparation must remain usable below rendering and authoring. Check
 # transitive target links after all subdirectories have declared their targets.
-function(seam_check_neural_dependency_direction)
-  set(pending seam_neural_synthesis)
-  set(visited)
-  while(pending)
-    list(POP_FRONT pending current)
-    if(current IN_LIST visited)
-      continue()
-    endif()
-    list(APPEND visited "${current}")
-    if(current STREQUAL "seam_authoring_runtime" OR current STREQUAL "seam_rendering")
-      message(FATAL_ERROR "Neural dependency points upward to ${current}")
-    endif()
-    foreach(property LINK_LIBRARIES INTERFACE_LINK_LIBRARIES)
-      get_target_property(dependencies "${current}" "${property}")
-      foreach(dependency IN LISTS dependencies)
-        if(dependency MATCHES "^\\$<LINK_ONLY:([^>]+)>$")
-          set(dependency "${CMAKE_MATCH_1}")
-        endif()
-        if(TARGET "${dependency}")
-          list(APPEND pending "${dependency}")
-        endif()
-      endforeach()
-    endforeach()
-  endwhile()
-endfunction()
+include(cmake/NeuralDependencyDirection.cmake)
 seam_check_neural_dependency_direction()
+if(SEAM_BUILD_TESTS)
+  add_test(NAME seam_neural_dependency_direction
+    COMMAND ${CMAKE_COMMAND}
+      -DSEAM_SOURCE=${CMAKE_CURRENT_SOURCE_DIR}
+      -DSEAM_BINARY=${CMAKE_CURRENT_BINARY_DIR}
+      -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/cmake/check_neural_dependencies.cmake)
+endif()
