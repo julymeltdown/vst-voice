@@ -353,6 +353,30 @@ not a replacement product contract or a release approval.
 - Verification: affected Release build and focused export CTest passed (1/1,
   4.36 seconds). No fresh complete-suite run claimed.
 
+### Just-in-time campaign batch preparation integration
+
+- Added shared `prepareGenerationCampaignBatch`. It verifies the immutable plan,
+  bounds the batch index, matches batch 0 to the exact initial producer, and
+  requires a confirmed predecessor receipt/current-producer hash and expected
+  generation offset for every later batch. This is an internal service: callers
+  must supply a verified collection result, not trust arbitrary receipt JSON.
+- Each batch retains its original producer JSON and campaign/index identity under
+  a preparation lock. Selected score templates must still exactly match frozen
+  plan bytes. Job creation/resume uses the retained-intent preparation service;
+  batch manifests are create-new or verified against the exact prepared job list.
+  No rendering, collection or approval happens during batch preparation.
+- A real two-batch integration now plans two styles, prepares/retries batch 0,
+  renders and collects it, recovers the producer, prepares batch 1 using the first
+  confirmed receipt, renders and collects batch 1, and reopens both takes. The
+  second job's expectation binds the first commit's hash, explicitly not the
+  initial hash. Premature batch 1 and stale batch 0 are rejected before creating
+  their directories. This demonstrates sequential preparation, not only planning.
+- Focused Release build and export CTest passed (1/1, 3.87 seconds). No new full
+  suite run is claimed. The persisted advancement controller/CLI, authoritative
+  receipt-chain loading, runtime disk quotas, crash-window handling before intent
+  publication, and OS process-kill tests remain open. Do not label this a complete
+  resumable campaign runner yet.
+
 Next concrete implementation owners: explicit evidence-backed legacy migration,
 then complete populated-workspace parity and candidate
 review/publication parity and the resumable inventory campaign. The generation

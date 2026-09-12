@@ -826,6 +826,38 @@ TEST_CASE("nasal and frication candidates bake and enter production with typed u
   CHECK(!authoring::planGenerationCampaign(multiProducer, campaignTakes, resource.value()));
   std::stop_source campaignStop; campaignStop.request_stop();
   CHECK(!authoring::planGenerationCampaign(multiProducer, campaignTakes, multiResource.value(), {}, campaignStop.get_token()));
+  auto campaignProducer = multiProducer; campaignProducer.projectId = "two-batch-campaign"; campaignProducer.lastDurableGeneration = 0U;
+  production::ProductionProjectRepository campaignRepository{root / "two-batch-producer"};
+  CHECK(campaignRepository.initialize(campaignProducer, {"create", campaignProducer.projectId, "producer", "2026-09-13T00:00:00Z"}));
+  const auto executablePlan = authoring::planGenerationCampaign(campaignProducer, campaignTakes, multiResource.value(),
+      {.batch = {.maximumJobs = 1U}}); CHECK(executablePlan);
+  const auto executableHash = core::sha256Hex(executablePlan.value());
+  CHECK(!authoring::prepareGenerationCampaignBatch(executablePlan.value(), executableHash, 1U, campaignProducer, root / "premature-batch"));
+  CHECK(!std::filesystem::exists(root / "premature-batch"));
+  const auto firstCampaignBatch = authoring::prepareGenerationCampaignBatch(executablePlan.value(), executableHash, 0U,
+      campaignProducer, root / "campaign-batch-0"); CHECK(firstCampaignBatch);
+  CHECK(firstCampaignBatch.value().jobs.size() == 1U);
+  const auto retriedCampaignBatch = authoring::prepareGenerationCampaignBatch(executablePlan.value(), executableHash, 0U,
+      campaignProducer, root / "campaign-batch-0"); CHECK(retriedCampaignBatch);
+  CHECK(retriedCampaignBatch.value().batchSha256 == firstCampaignBatch.value().batchSha256);
+  CHECK(authoring::runGenerationBatch(firstCampaignBatch.value().jobs));
+  const auto firstCampaignReceipt = authoring::collectGenerationBatchWithReceipt(campaignRepository, campaignProducer,
+      firstCampaignBatch.value().jobs, root / "campaign-batch-0/collection.json",
+      {"import-generated-batch", firstCampaignBatch.value().batchSha256, "producer", "2026-09-13T00:00:01Z"}); CHECK(firstCampaignReceipt);
+  const auto secondCampaignProducer = campaignRepository.recover(); CHECK(secondCampaignProducer);
+  const auto secondCampaignBatch = authoring::prepareGenerationCampaignBatch(executablePlan.value(), executableHash, 1U,
+      secondCampaignProducer.value(), root / "campaign-batch-1", firstCampaignReceipt.value()); CHECK(secondCampaignBatch);
+  const auto secondPreparedJob = authoring::loadGenerationJob(secondCampaignBatch.value().jobs.front().directory,
+      secondCampaignBatch.value().jobs.front().manifestSha256); CHECK(secondPreparedJob);
+  CHECK(secondPreparedJob.value().expectation.projectStateSha256 == firstCampaignReceipt.value().committedProjectSha256);
+  CHECK(secondPreparedJob.value().expectation.projectStateSha256 != core::sha256Hex(production::encodeProductionProject(campaignProducer)));
+  CHECK(authoring::runGenerationBatch(secondCampaignBatch.value().jobs));
+  CHECK(authoring::collectGenerationBatchWithReceipt(campaignRepository, secondCampaignProducer.value(), secondCampaignBatch.value().jobs,
+      root / "campaign-batch-1/collection.json", {"import-generated-batch", secondCampaignBatch.value().batchSha256, "producer", "2026-09-13T00:00:02Z"}));
+  CHECK(campaignRepository.recover().value().takes.size() == 2U);
+  CHECK(!authoring::prepareGenerationCampaignBatch(executablePlan.value(), executableHash, 0U,
+      secondCampaignProducer.value(), root / "stale-campaign-preparation"));
+  CHECK(!std::filesystem::exists(root / "stale-campaign-preparation"));
 #if defined(SEAM_TEST_VOICEBANK_CLI) && (defined(__APPLE__) || defined(__linux__))
   CHECK(voice_design::saveVoiceRecipeFile(root / "campaign-recipe.json", multiRecipe));
   const std::vector<std::string> draftCampaignArgs{"draft-generation-campaign", (root / "multi-style-inventory").string(),

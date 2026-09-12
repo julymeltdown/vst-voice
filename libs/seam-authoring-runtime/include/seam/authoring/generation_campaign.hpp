@@ -20,4 +20,17 @@ struct GenerationCampaignLimits final {
 // sufficient to admit altered templates, totals, batch layout or hidden fields.
 [[nodiscard]] core::Result<void> verifyGenerationCampaign(
     std::string_view definition, std::string_view expectedSha256, std::stop_token stop = {});
+struct PreparedCampaignBatch final {
+  std::vector<GenerationJobReference> jobs;
+  std::string batchSha256;
+};
+// Internal orchestration primitive. For later batches the caller must provide
+// the preceding verified collection receipt, not an arbitrary decoded JSON value.
+// Retrying requires the same original producer snapshot and predecessor receipt.
+[[nodiscard]] core::Result<PreparedCampaignBatch> prepareGenerationCampaignBatch(
+    std::string_view definition, std::string_view campaignSha256, std::size_t batchIndex,
+    const voicebank_production::VoicebankProductionProject& producer,
+    const std::filesystem::path& directory,
+    std::optional<voicebank_production::ProductionCommitReceipt> predecessor = {},
+    std::stop_token stop = {});
 }
