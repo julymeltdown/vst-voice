@@ -1,6 +1,7 @@
 #include "seam/voicebank_production/project.hpp"
 #include "seam/voicebank_production/source_assessment.hpp"
 #include "seam/core/sha256.hpp"
+#include "seam/formats/json_value.hpp"
 
 #include <algorithm>
 #include <array>
@@ -30,6 +31,12 @@ core::Result<const TakeSourceBinding*> sourceForTake(const VoicebankProductionPr
   return &*source;
 }
 }  // namespace
+
+std::string productionUnitIdentitySha256(const ProductionUnitIdentity& identity) {
+  return core::sha256Hex(formats::stringifyJson(formats::JsonValue::Array{
+      identity.language, identity.style, identity.coverageKey,
+      static_cast<std::int64_t>(identity.pitchLayer)}, false));
+}
 
 core::Result<void> requireSelectedSourceExecution(const VoicebankProductionProject& project) {
   const auto strategy = std::find_if(project.sourceStrategies.begin(), project.sourceStrategies.end(),

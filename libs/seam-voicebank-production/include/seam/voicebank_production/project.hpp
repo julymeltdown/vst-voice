@@ -4,6 +4,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <compare>
 #include <map>
 #include <string>
 #include <string_view>
@@ -15,6 +16,22 @@ inline constexpr std::int64_t kProductionProjectSchemaVersion = 2;
 inline constexpr std::int64_t kProductionAssessmentSchemaVersion = 3;
 inline constexpr const char* kProductionProjectFormat =
     "com.project-seam.voicebank-production";
+
+// Assignment identity is independent of the chosen take or its audio hash.
+// Keep exact labels: normalizing styles into slugs would merge distinct voices.
+// Legacy records have no implicit language/style; migration must supply them.
+struct ProductionUnitIdentity final {
+  std::string language;
+  std::string style;
+  std::string coverageKey;
+  std::int32_t pitchLayer{0};
+  auto operator<=>(const ProductionUnitIdentity&) const = default;
+};
+
+// Canonical inventory-v2 identity: SHA256 of compact UTF-8 JSON
+// [language, style, coverageKey, pitchLayer]. This is identity, not admission
+// or qualification; callers must validate their enclosing schema separately.
+[[nodiscard]] std::string productionUnitIdentitySha256(const ProductionUnitIdentity& identity);
 
 enum class SourceStrategyKind { HumanRecording, ProceduralSynthesis, TtsDerived };
 enum class ProductionLifecycle { LegacyUnclassified, Draft, Experimental, Qualified };

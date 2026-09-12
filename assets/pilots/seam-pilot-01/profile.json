@@ -1,0 +1,9 @@
+{
+  "profileId": "seam-pilot-01-ja-draft-v1",
+  "language": "ja",
+  "supportedStyles": ["neutral"],
+  "pitchLayers": [60, 66, 72],
+  "requestedRange": {"minMidi": 60, "maxMidi": 72},
+  "alternateTakes": 2,
+  "sessionBlockSize": 24
+}

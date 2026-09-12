@@ -1506,6 +1506,7 @@ if(SEAM_BUILD_TESTS)
     tests/test_voicebank_relink.cpp
     tests/test_voicebank_coverage.cpp
     tests/test_voicebank_production_project.cpp
+    tests/test_production_style_identity.cpp
     tests/test_production_edit_ownership.cpp
     tests/test_production_operation_staging.cpp
     tests/test_production_import_outcomes.cpp
@@ -1691,6 +1692,12 @@ if(SEAM_BUILD_TESTS)
           tests.phase13a.test_payload_materializer tests.phase13a.test_release_payload_assembly)
     set_tests_properties(seam_neural_package_materialization_tests PROPERTIES
       WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} TIMEOUT 60)
+    add_test(NAME seam_draft_inventory_tests
+      COMMAND ${Python3_EXECUTABLE} -m unittest tests.test_draft_voicebank_inventory
+        tests.test_voicebank_script_generator)
+    set_tests_properties(seam_draft_inventory_tests PROPERTIES
+      WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+      ENVIRONMENT "PYTHONDONTWRITEBYTECODE=1" TIMEOUT 60)
     add_test(NAME seam_singing_quality_contract_tests
       COMMAND ${Python3_EXECUTABLE} -m unittest discover
         -s tests/singing_quality -p "test_*.py" -v)
@@ -1859,6 +1866,7 @@ if(SEAM_BUILD_TESTS)
   add_executable(seam_voicebank_production_tests
     tests/test_main.cpp
     tests/test_voicebank_production_project.cpp
+    tests/test_production_style_identity.cpp
     tests/test_production_edit_ownership.cpp
     tests/test_production_draft.cpp)
   add_executable(seam_production_draft_tests tests/test_main.cpp tests/test_production_draft.cpp)
