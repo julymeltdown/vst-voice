@@ -130,6 +130,10 @@ def _workspace(root: Path, recovered: bool = False) -> tuple[Path, dict]:
 
 
 class ProductionDraftParityTests(unittest.TestCase):
+    def test_style_owned_source_cannot_inherit_unrecorded_quality(self) -> None:
+        self.assertTrue(_quality_current({"schemaVersion": 2, "sourceQualityAssessments": []}, "source"))
+        self.assertFalse(_quality_current({"schemaVersion": 4, "sourceQualityAssessments": []}, "source"))
+
     def test_style_inventory_creates_cpp_workspace_verified_by_python(self) -> None:
         from tools.voicebank_script_generator.draft_inventory import generate_draft_inventory
         from tools.external_beta._production_draft_validation import _project

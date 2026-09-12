@@ -8,7 +8,7 @@ not a replacement product contract or a release approval.
 
 | Package | Implementation | Demonstrated workflow | Qualification remaining | Next action |
 |---|---|---|---|---|
-| M1.P1 | In progress: inventory v2→producer v4; language-bound generation expectation v2; unassessed requested range; legacy readers retained | Python prepare-draft→C++ init-production→Python verification for two styles; schema-4 score→job→render→CLI collection regression | Explicit legacy migration and complete multi-style review/publication parity remain | Implement evidence-backed migration, then finish multi-style publication and campaign |
+| M1.P1 | In progress: inventory v2→producer v4; language-bound generation; per-style review and canonical publication; legacy readers retained | Two-style initialization, generation collection, independent review and candidate reopen regressions | Explicit legacy migration, native multi-style draft creation and populated-history parity remain | Complete migration and authoring integration, then campaign/articulation |
 | M1.P2/P3 | Not completed by this increment | Existing procedural/producer foundation retained | Connected articulation, campaign, actual bank and unfamiliar-song evidence | Continue after the necessary M1.P1 producer bindings |
 | M2–M6 | Remaining full scope retained | No new milestone qualification | As specified by the implementation plan | Independent neural process/data work remains available |
 
@@ -26,8 +26,8 @@ not a replacement product contract or a release approval.
   style, checks four-axis duplicate/retake ownership, and retains legacy 1–3
   serialization. Raw and generated import matching use style; source assessment
   retains v4 and includes language/style in its material identity. Review and
-  single-style manifest paths reject relabeling. Multi-style publication is
-  deliberately not enabled before all consumers are integrated.
+  single-style manifest paths reject relabeling. The later publication checkpoint
+  below admits complete schema-4 style matrices through the canonical publisher.
 - Tests import identical PCM into two distinct styles, recover the durable
   workspace, and reject cross-style retakes, missing styles, language changes,
   and relabeling existing takes without mutating saved state. Generic save cannot
@@ -69,10 +69,33 @@ not a replacement product contract or a release approval.
   separate review records.
 - Producer, native Studio review and sample-review CLI targets rebuilt and all
   three focused CTest targets passed. The producer target has 50 cases.
-- This admits review, not multi-style publication. Publication still needs its
-  complete per-style coverage checks and downstream candidate parity; the Python
-  legacy candidate contract still uses coverage/pitch pairs. No musical approval
-  outside the explicitly synthetic tests was created.
+- This review checkpoint alone did not admit publication. See the subsequent
+  publication integration below. No musical approval outside the explicitly
+  synthetic tests was created.
+
+## Multi-style candidate publication integration
+
+- The canonical publisher now admits schema-4 multi-style workspaces only when
+  declared styles exactly match assignment ownership, all styles have the same
+  required phone/pitch matrix, and every current assignment has its own valid
+  take and retained independent review. Legacy workspaces keep the single-style
+  restriction. No approval is inferred from shared PCM.
+- Regression coverage publishes and reopens a two-style candidate, verifies its
+  manifest and content hash, and rejects omitted styles, reused review evidence,
+  extra declared styles and asymmetric phone/pitch requirements.
+- Schema-4 source qualification now requires an explicit current source-quality
+  assessment. C++ and Python no longer allow the historical no-assessment fallback
+  for these workspaces. Source execution remains separate and does not need a
+  musical PASS. Test evidence is expressly synthetic, not a real evaluation.
+- Scope clarification from code inspection: Python `_production_candidate.py`
+  validates a separate legacy `READY`/`unitBindings` export contract, not the
+  canonical C++ `com.project-seam.resource-candidate` descriptor. Its pair-based
+  legacy contract is not being reinterpreted as authority for these candidates.
+- This remains an engineering candidate with `releaseEligible: false`. Native
+  multi-style draft authoring, explicit legacy migration, generation campaigns,
+  real singer quality and the remaining M1–M6 obligations are still unfinished.
+- Verification after this integration: complete configured Release build passed;
+  **122/122 registered CTest targets passed**, zero failures (82.22 seconds).
 
 Next concrete implementation owners: explicit evidence-backed legacy migration,
 then complete populated-workspace parity and candidate

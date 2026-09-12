@@ -266,7 +266,7 @@ def _quality_current(project: dict[str, Any], strategy: str) -> bool:
         return False
     row = next((row for row in reversed(history) if row.get("strategyId") == strategy), None)
     if row is None:
-        return True
+        return project.get("schemaVersion", 1) < 4
     try:
         source = next(row for row in project["sourceStrategies"] if row["id"] == strategy)
         return (row["policySha256"] == _quality_policy_identity(source) and

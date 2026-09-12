@@ -476,8 +476,21 @@ core::Result<PublishedSampleCandidate> publishSampleCandidate(
     return core::failure<Output>(core::ErrorCode::Conflict, "Candidate request does not match the current durable producer generation");
   const auto manifestJson = boundedManifest(request.manifest);
   if (!manifestJson) return core::Result<Output>{manifestJson.error()};
-  if (request.manifest.styles.size() != 1U)
+  if (request.manifest.styles.size() != 1U && project.schemaVersion < kProductionStyleSchemaVersion)
     return core::failure<Output>(core::ErrorCode::Unsupported, "Multi-style candidate publication requires style-owned producer assignments");
+  if (project.schemaVersion >= kProductionStyleSchemaVersion) {
+    std::map<std::string, std::set<std::pair<std::string, std::int32_t>>> coverageByStyle;
+    for (const auto& assignment : project.unitAssignments)
+      coverageByStyle[assignment.style].emplace(assignment.coverageKey, assignment.pitchLayer);
+    std::set<std::string> assignedStyles;
+    for (const auto& [style, coverage] : coverageByStyle) {
+      assignedStyles.insert(style);
+      if (coverage != coverageByStyle.begin()->second)
+        return core::failure<Output>(core::ErrorCode::Conflict, "Every published style must cover the same required phone and pitch matrix");
+    }
+    if (assignedStyles != std::set<std::string>{request.manifest.styles.begin(), request.manifest.styles.end()})
+      return core::failure<Output>(core::ErrorCode::Conflict, "Published styles must exactly match producer assignment ownership");
+  }
   if (request.units.empty() || request.units.size() > kMaximumUnits ||
       request.units.size() != request.manifest.units.size() || request.units.size() != project.unitAssignments.size())
     return core::failure<Output>(core::ErrorCode::Conflict, "Candidate must cover every producer assignment and manifest unit exactly once");

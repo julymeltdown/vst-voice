@@ -14,6 +14,7 @@
 #include "seam/voicebank_production/candidate_publication.hpp"
 #include "seam/voicebank_production/project_codec.hpp"
 #include "seam/voicebank_production/repository.hpp"
+#include "seam/voicebank_production/source_assessment.hpp"
 
 #include <algorithm>
 #include <barrier>
@@ -211,6 +212,18 @@ TEST_CASE("style-owned review keeps approvals separate for identical PCM and pit
   CHECK(repository.importRaw(project, fixture.root / "raw.wav",
       {.takeId = "take-soft", .promptId = "prompt-soft", .coverageKey = "sustain:a", .pitchLayer = 69, .style = "soft"},
       {"import", "take-soft", "producer", "2026-09-13T00:00:00Z"}));
+  CHECK(!production::requireTakeSourceQualification(project, "take-a"));
+  CHECK(!production::requireTakeSourceQualification(project, "take-soft"));
+  const auto qualityEvidence = fixture.root / "quality-test.txt";
+  CHECK(seam::core::durableAtomicWriteText(qualityEvidence, "SYNTHETIC TEST QUALITY DECISION; not real singer evaluation"));
+  const auto material = production::sourceQualityMaterialIdentity(project, project.selectedSourceStrategyId); CHECK(material);
+  const production::SourceQualityAssessment assessment{
+      "quality-test", project.selectedSourceStrategyId, production::sourceQualityPolicyIdentity(project.sourceStrategies.front()),
+      material.value(), seam::core::sha256File(qualityEvidence).value(), "reviewer", "2026-09-13T00:00:30Z",
+      production::Feasibility::Pass, production::Feasibility::Pass};
+  CHECK(repository.recordSourceQualityAssessment(project, assessment, qualityEvidence, seam::core::sha256Hex(production::encodeProductionProject(project))));
+  CHECK(project.schemaVersion == production::kProductionStyleSchemaVersion);
+  CHECK(production::requireTakeSourceQualification(project, "take-a"));
   auto manifest = fixture.request.manifest;
   manifest.styles.push_back("soft");
   auto soft = manifest.units.front(); soft.id = "a-soft-69"; soft.style = "soft";
@@ -238,6 +251,35 @@ TEST_CASE("style-owned review keeps approvals separate for identical PCM and pit
   auto relabeled = manifest; relabeled.units[1].style = "original";
   CHECK(!production::prepareSampleCandidateReview(fixture.root / "workspace", project, relabeled));
   CHECK(production::encodeProductionProject(repository.recover().value()) == production::encodeProductionProject(project));
+  const auto candidate = production::resolveReviewedSampleCandidate(fixture.root / "workspace", project, manifest); CHECK(candidate);
+  auto missingStyle = candidate.value(); missingStyle.units.pop_back(); missingStyle.manifest.units.pop_back(); missingStyle.manifest.styles.pop_back();
+  CHECK(!production::publishSampleCandidate(fixture.root / "workspace", project, missingStyle, fixture.root / "missing-style"));
+  CHECK(!std::filesystem::exists(fixture.root / "missing-style"));
+  auto reusedReview = candidate.value();
+  reusedReview.units[1].reviewId = reusedReview.units[0].reviewId;
+  reusedReview.units[1].reviewMetadataRevisionId = reusedReview.units[0].reviewMetadataRevisionId;
+  CHECK(!production::publishSampleCandidate(fixture.root / "workspace", project, reusedReview, fixture.root / "reused-review"));
+  CHECK(!std::filesystem::exists(fixture.root / "reused-review"));
+  auto undeclaredCoverage = candidate.value(); undeclaredCoverage.manifest.styles.push_back("bright");
+  CHECK(!production::publishSampleCandidate(fixture.root / "workspace", project, undeclaredCoverage, fixture.root / "empty-style"));
+  const auto published = production::publishSampleCandidate(fixture.root / "workspace", project, candidate.value(), fixture.root / "two-style-bank");
+  CHECK(published);
+  CHECK(!published.value().releaseEligible);
+  const auto reopened = seam::voicebank::ManifestJsonCodec{}.load(published.value().root / "manifest.json"); CHECK(reopened);
+  CHECK(reopened.value() == manifest);
+  CHECK(reopened.value().styles.size() == 2U);
+  CHECK(reopened.value().units[0].audioPath == reopened.value().units[1].audioPath);
+  CHECK(reopened.value().units[0].style != reopened.value().units[1].style);
+  CHECK(seam::voicebank::computeVoicebankContentHash(reopened.value(), published.value().root).value() == published.value().contentSha256);
+  project.unitAssignments.push_back({.coverageKey = "sustain:i", .pitchLayer = 69,
+      .promptId = "unpaired-i", .plannedTakeId = "unpaired-i", .style = "original"});
+  CHECK(repository.save(project, {"save", project.projectId, "producer", "2026-09-13T00:03:00Z"}));
+  auto asymmetric = candidate.value(); asymmetric.expectedGeneration = project.lastDurableGeneration;
+  asymmetric.expectedProjectSha256 = seam::core::sha256Hex(production::encodeProductionProject(project));
+  const auto rejectedMatrix = production::publishSampleCandidate(fixture.root / "workspace", project, asymmetric, fixture.root / "asymmetric-style");
+  CHECK(!rejectedMatrix);
+  CHECK(rejectedMatrix.error().message == "Every published style must cover the same required phone and pitch matrix");
+  CHECK(!std::filesystem::exists(fixture.root / "asymmetric-style"));
 }
 
 TEST_CASE("sample review decisions atomically accept reject and retain previous history") {

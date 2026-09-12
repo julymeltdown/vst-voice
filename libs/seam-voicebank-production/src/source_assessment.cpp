@@ -66,7 +66,11 @@ core::Result<void> requireCurrentSourceQualityAssessment(const VoicebankProducti
       [&](const auto& value) { return value.strategyId == strategyId; });
   // Historical schemas/policies retain their previous admission behavior; a
   // recorded assessment must never silently fall back to those assertions.
-  if (assessment == project.sourceQualityAssessments.rend()) return core::success();
+  if (assessment == project.sourceQualityAssessments.rend()) {
+    if (project.schemaVersion >= kProductionStyleSchemaVersion)
+      return core::failure(core::ErrorCode::Conflict, "Style-owned source requires an explicit current quality assessment");
+    return core::success();
+  }
   const auto source = std::find_if(project.sourceStrategies.begin(),project.sourceStrategies.end(),[&](const auto& value) { return value.id == strategyId; });
   const auto material = sourceQualityMaterialIdentity(project,strategyId);
   if (source == project.sourceStrategies.end() || !material || assessment->policySha256 != sourceQualityPolicyIdentity(*source) ||
