@@ -1,15 +1,20 @@
 #include "seam/application/note_commands.hpp"
+#include "seam/application/lyric_commands.hpp"
+#include "seam/phonemizer/language_resolver.hpp"
 
 #include <algorithm>
 #include <cstddef>
+#include <iterator>
+#include <limits>
 #include <set>
 #include <unordered_set>
+#include <variant>
 
 namespace seam::application {
 
 AddNoteCommand::AddNoteCommand(
-    domain::RegionId regionId, domain::LyricToken lyric, domain::Note note)
-    : regionId_(regionId), lyric_(std::move(lyric)), note_(std::move(note)) {}
+    domain::RegionId regionId, domain::LyricToken lyric, domain::Note note, LyricMode lyricMode)
+    : regionId_(regionId), lyric_(std::move(lyric)), note_(std::move(note)), lyricMode_(lyricMode) {}
 
 CommandImpact AddNoteCommand::impact() const {
   return CommandImpact{
@@ -27,8 +32,13 @@ core::Result<void> AddNoteCommand::apply(domain::Project& project) {
   if (region == nullptr) {
     return core::failure(core::ErrorCode::NotFound, "Target region was not found");
   }
-  if (region->findNote(note_.id) != nullptr || region->findLyric(lyric_.id) != nullptr) {
+  const auto* existingLyric = region->findLyric(lyric_.id);
+  if (region->findNote(note_.id) != nullptr ||
+      (lyricMode_ == LyricMode::Create && existingLyric != nullptr)) {
     return core::failure(core::ErrorCode::Conflict, "Note or lyric ID already exists");
+  }
+  if (lyricMode_ == LyricMode::ReuseExact && (!existingLyric || *existingLyric != lyric_)) {
+    return core::failure(core::ErrorCode::Conflict, "Shared lyric is missing or changed");
   }
   const auto noteResult = note_.validate();
   if (!noteResult) {
@@ -43,9 +53,50 @@ core::Result<void> AddNoteCommand::apply(domain::Project& project) {
                          "Added note extends beyond its region");
   }
 
-  region->lyrics.push_back(lyric_);
-  region->notes.push_back(note_);
-  region->sortNotes();
+  if (region->performance.revision.pronunciation == std::numeric_limits<std::uint64_t>::max()) {
+    return core::failure(core::ErrorCode::Conflict, "Pronunciation revision is exhausted");
+  }
+  auto candidate = *region;
+  if (lyricMode_ == LyricMode::Create) candidate.lyrics.push_back(lyric_);
+  candidate.notes.push_back(note_);
+  candidate.sortNotes();
+  if (!pronunciationCaptured_) {
+    beforePronunciation_ = region->performance.pronunciation;
+    beforePronunciationRevision_ = region->performance.revision.pronunciation;
+    beforePhonemes_ = region->phonemeOverrides;
+    beforeUnits_ = region->unitSelectionOverrides;
+    beforeSeams_ = region->seamOverrides;
+    reconcileRetainedNoteOverrides(*region, candidate);
+    afterPhonemes_ = candidate.phonemeOverrides;
+    afterUnits_ = candidate.unitSelectionOverrides;
+    afterSeams_ = candidate.seamOverrides;
+    const bool supported = std::all_of(candidate.notes.begin(), candidate.notes.end(), [&](const auto& note) {
+      const auto* lyric = candidate.findLyric(note.lyricTokenId);
+      return lyric && phonemizer::hasPronunciationService(lyric->language);
+    });
+    if (supported) {
+      const auto resolved = phonemizer::resolvePronunciation(candidate);
+      if (resolved && (resolved.value().identity.language == domain::Language::Japanese ||
+                       resolved.value().pronunciation.warnings.empty())) {
+        afterPronunciation_ = resolved.value().identity;
+      }
+    }
+    pronunciationCaptured_ = true;
+  }
+  candidate.performance.pronunciation = afterPronunciation_;
+  candidate.phonemeOverrides = afterPhonemes_;
+  candidate.unitSelectionOverrides = afterUnits_;
+  candidate.seamOverrides = afterSeams_;
+  candidate.performance.revision.pronunciation = beforePronunciationRevision_ + 1U;
+  const auto validation = candidate.validate();
+  if (!validation) return validation;
+  region->lyrics.swap(candidate.lyrics);
+  region->notes.swap(candidate.notes);
+  region->phonemeOverrides.swap(candidate.phonemeOverrides);
+  region->unitSelectionOverrides.swap(candidate.unitSelectionOverrides);
+  region->seamOverrides.swap(candidate.seamOverrides);
+  region->performance.pronunciation.swap(candidate.performance.pronunciation);
+  region->performance.revision.pronunciation = candidate.performance.revision.pronunciation;
   return core::success();
 }
 
@@ -63,13 +114,18 @@ core::Result<void> AddNoteCommand::revert(domain::Project& project) {
 
   const bool lyricInUse = std::any_of(region->notes.begin(), region->notes.end(),
       [this](const domain::Note& note) { return note.lyricTokenId == lyric_.id; });
-  if (!lyricInUse) {
+  if (!lyricInUse && lyricMode_ == LyricMode::Create) {
     const auto lyricIterator = std::find_if(region->lyrics.begin(), region->lyrics.end(),
         [this](const domain::LyricToken& lyric) { return lyric.id == lyric_.id; });
     if (lyricIterator != region->lyrics.end()) {
       region->lyrics.erase(lyricIterator);
     }
   }
+  region->performance.pronunciation = beforePronunciation_;
+  region->phonemeOverrides = beforePhonemes_;
+  region->unitSelectionOverrides = beforeUnits_;
+  region->seamOverrides = beforeSeams_;
+  region->performance.revision.pronunciation = beforePronunciationRevision_;
   return core::success();
 }
 
@@ -137,6 +193,7 @@ core::Result<void> RemoveNotesCommand::capture(const domain::Project& project) {
   removedOverrides_.clear();
   removedUnitOverrides_.clear();
   removedSeamOverrides_.clear();
+  performanceChanges_.clear();
   for (const auto noteId : uniqueIds) {
     const auto location = findNoteLocation(project, noteId);
     if (location.region == nullptr) {
@@ -188,6 +245,46 @@ core::Result<void> RemoveNotesCommand::capture(const domain::Project& project) {
 
   for (const auto& track : project.vocalTracks()) {
     for (const auto& region : track.regions) {
+      std::vector<domain::PerformanceNoteRemap> remaining;
+      for (const auto& note : region.notes) {
+        if (!selected.contains(note.id)) remaining.push_back({note.id, note.id});
+      }
+      if (remaining.size() != region.notes.size()) {
+        auto transformed = domain::transformRegionPerformance(region.performance,
+            region.notes, region.durationTick, remaining, {time::Tick{0}, region.durationTick});
+        if (!transformed) return core::Result<void>{transformed.error()};
+        if (region.performance.revision.pronunciation == std::numeric_limits<std::uint64_t>::max()) {
+          return core::failure(core::ErrorCode::Conflict, "Pronunciation revision is exhausted");
+        }
+        auto candidate = region;
+        std::erase_if(candidate.notes, [&](const auto& note) { return selected.contains(note.id); });
+        reconcileRetainedNoteOverrides(region, candidate);
+        std::erase_if(candidate.phonemeOverrides, [&](const auto& edit) { return selected.contains(edit.key.noteId); });
+        std::erase_if(candidate.unitSelectionOverrides, [&](const auto& edit) { return selected.contains(edit.startKey.noteId); });
+        std::erase_if(candidate.seamOverrides, [&](const auto& edit) { return selected.contains(edit.incomingStartKey.noteId); });
+        for (const auto& removed : removedLyrics_) {
+          if (removed.regionId == region.id) std::erase_if(candidate.lyrics, [&](const auto& lyric) { return lyric.id == removed.lyric.id; });
+        }
+        candidate.performance = std::move(transformed).value();
+        candidate.performance.revision.pronunciation = region.performance.revision.pronunciation + 1U;
+        candidate.performance.pronunciation.reset();
+        const bool supported = std::all_of(candidate.notes.begin(), candidate.notes.end(), [&](const auto& note) {
+          const auto* lyric = candidate.findLyric(note.lyricTokenId);
+          return lyric && phonemizer::hasPronunciationService(lyric->language);
+        });
+        if (supported) {
+          const auto resolved = phonemizer::resolvePronunciation(candidate);
+          if (resolved && (resolved.value().identity.language == domain::Language::Japanese ||
+                           resolved.value().pronunciation.warnings.empty())) {
+            candidate.performance.pronunciation = resolved.value().identity;
+          }
+        }
+        const auto valid = candidate.validate();
+        if (!valid) return valid;
+        performanceChanges_.push_back({region.id, region.performance, candidate.performance,
+            region.phonemeOverrides, candidate.phonemeOverrides, region.unitSelectionOverrides,
+            candidate.unitSelectionOverrides, region.seamOverrides, candidate.seamOverrides});
+      }
       for (std::size_t index = 0; index < region.phonemeOverrides.size(); ++index) {
         const auto& overrideValue = region.phonemeOverrides[index];
         if (selected.contains(overrideValue.key.noteId)) {
@@ -254,6 +351,11 @@ CommandImpact ResizeNotesCommand::impact() const {
 }
 
 core::Result<void> RemoveNotesCommand::removeCaptured(domain::Project& project) const {
+  for (const auto& change : performanceChanges_) {
+    if (project.findRegion(change.regionId) == nullptr) {
+      return core::failure(core::ErrorCode::NotFound, "Region for deleted-note performance was not found");
+    }
+  }
   for (const auto& removed : removedNotes_) {
     auto* region = project.findRegion(removed.regionId);
     if (region == nullptr || region->findNote(removed.note.id) == nullptr) {
@@ -319,6 +421,13 @@ core::Result<void> RemoveNotesCommand::removeCaptured(domain::Project& project) 
                       return lyric.id == removed.lyric.id;
                     });
     }
+  }
+  for (const auto& change : performanceChanges_) {
+    auto* region = project.findRegion(change.regionId);
+    region->performance = change.after;
+    region->phonemeOverrides = change.afterPhonemes;
+    region->unitSelectionOverrides = change.afterUnits;
+    region->seamOverrides = change.afterSeams;
   }
   return core::success();
 }
@@ -449,6 +558,16 @@ core::Result<void> RemoveNotesCommand::revert(domain::Project& project) {
     }
   }
 
+  for (const auto& change : performanceChanges_) {
+    auto* region = project.findRegion(change.regionId);
+    if (region == nullptr) {
+      return core::failure(core::ErrorCode::NotFound, "Region for restored-note performance was not found");
+    }
+    region->performance = change.before;
+    region->phonemeOverrides = change.beforePhonemes;
+    region->unitSelectionOverrides = change.beforeUnits;
+    region->seamOverrides = change.beforeSeams;
+  }
   for (auto& track : project.vocalTracks()) {
     for (auto& region : track.regions) {
       region.sortNotes();
@@ -457,7 +576,113 @@ core::Result<void> RemoveNotesCommand::revert(domain::Project& project) {
   return core::success();
 }
 
+namespace {
+
+// Stage all affected regions before publication. Note moves translate accepted
+// source mappings; edge resizing trims/extends in the existing source timeline.
+core::Result<void> replaceNoteGeometry(domain::Project& project,
+                                      const std::vector<domain::Note>& replacements,
+                                      bool translateSource,
+                                      std::vector<NotePronunciationChange>& pronunciationChanges,
+                                      bool& pronunciationCaptured, bool after) {
+  struct StagedRegion final {
+    domain::VocalRegion* target;
+    domain::VocalRegion value;
+  };
+  std::vector<StagedRegion> staged;
+  auto changes = pronunciationChanges;
+  std::unordered_set<domain::NoteId> seen;
+  for (const auto& replacement : replacements) {
+    if (!seen.insert(replacement.id).second) {
+      return core::failure(core::ErrorCode::InvalidArgument, "Repeated note geometry target");
+    }
+    const auto valid = replacement.validate();
+    if (!valid) return valid;
+    const auto location = findMutableNoteLocation(project, replacement.id);
+    if (location.region == nullptr) {
+      return core::failure(core::ErrorCode::NotFound, "Note geometry target was not found");
+    }
+    auto found = std::find_if(staged.begin(), staged.end(), [&](const auto& entry) {
+      return entry.target == location.region;
+    });
+    if (found == staged.end()) {
+      staged.push_back({location.region, *location.region});
+      found = std::prev(staged.end());
+    }
+    auto* note = found->value.findNote(replacement.id);
+    const auto oldValid = note->validate();
+    if (!oldValid) return oldValid;
+    if (translateSource) {
+      const auto delta = note->startTick.value() - replacement.startTick.value();
+      for (auto& selection : found->value.performance.accepted) {
+        const auto* id = std::get_if<domain::NoteId>(&selection.scope);
+        if (id == nullptr || *id != note->id) continue;
+        const auto offset = selection.sourceTickOffset.value();
+        if ((delta > 0 && offset > std::numeric_limits<std::int64_t>::max() - delta) ||
+            (delta < 0 && offset < std::numeric_limits<std::int64_t>::min() - delta)) {
+          return core::failure(core::ErrorCode::InvalidArgument,
+                               "Moved performance source offset overflows");
+        }
+        selection.sourceTickOffset = time::Tick{offset + delta};
+      }
+    }
+    *note = replacement;
+  }
+  for (auto& entry : staged) {
+    entry.value.sortNotes();
+    if (!pronunciationCaptured) {
+      const bool changed = std::any_of(entry.value.notes.begin(), entry.value.notes.end(), [&](const auto& note) {
+        const auto* original = entry.target->findNote(note.id);
+        return original && (original->startTick != note.startTick || original->lyricTokenId != note.lyricTokenId ||
+            original->durationTick != note.durationTick || original->articulation != note.articulation ||
+            original->phoneticHint != note.phoneticHint);
+      });
+      if (changed) {
+        const auto revision = entry.target->performance.revision.pronunciation;
+        if (revision == std::numeric_limits<std::uint64_t>::max()) {
+          return core::failure(core::ErrorCode::Conflict, "Pronunciation revision is exhausted");
+        }
+        std::optional<domain::PronunciationIdentity> identity;
+        reconcileRetainedNoteOverrides(*entry.target, entry.value);
+        const bool supported = std::all_of(entry.value.notes.begin(), entry.value.notes.end(), [&](const auto& note) {
+          const auto* lyric = entry.value.findLyric(note.lyricTokenId);
+          return lyric && phonemizer::hasPronunciationService(lyric->language);
+        });
+        if (supported) {
+          const auto resolved = phonemizer::resolvePronunciation(entry.value);
+          if (resolved && (resolved.value().identity.language == domain::Language::Japanese ||
+                           resolved.value().pronunciation.warnings.empty())) {
+            identity = resolved.value().identity;
+          }
+        }
+        changes.push_back({entry.value.id, entry.target->performance.pronunciation, std::move(identity), revision,
+            entry.target->phonemeOverrides, entry.value.phonemeOverrides,
+            entry.target->unitSelectionOverrides, entry.value.unitSelectionOverrides,
+            entry.target->seamOverrides, entry.value.seamOverrides});
+      }
+    }
+    const auto change = std::find_if(changes.begin(), changes.end(), [&](const auto& value) { return value.regionId == entry.value.id; });
+    if (change != changes.end()) {
+      entry.value.phonemeOverrides = after ? change->afterPhonemes : change->beforePhonemes;
+      entry.value.unitSelectionOverrides = after ? change->afterUnits : change->beforeUnits;
+      entry.value.seamOverrides = after ? change->afterSeams : change->beforeSeams;
+      entry.value.performance.pronunciation = after ? change->after : change->before;
+      entry.value.performance.revision.pronunciation = change->beforeRevision + (after ? 1U : 0U);
+    }
+    const auto valid = entry.value.validate();
+    if (!valid) return valid;
+  }
+  for (auto& entry : staged) std::swap(*entry.target, entry.value);
+  pronunciationChanges = std::move(changes);
+  pronunciationCaptured = true;
+  return core::success();
+}
+
+}  // namespace
+
 core::Result<void> MoveNotesCommand::set(domain::Project& project, bool after) {
+  std::vector<domain::Note> replacements;
+  replacements.reserve(moves_.size());
   for (const auto& move : moves_) {
     auto* note = project.findNote(move.noteId);
     if (note == nullptr) {
@@ -474,18 +699,47 @@ core::Result<void> MoveNotesCommand::set(domain::Project& project, bool after) {
       return core::failure(core::ErrorCode::InvalidArgument,
                            "A moved note must remain in the MIDI range", move.noteId.toString());
     }
+    auto replacement = *note;
+    replacement.startTick = value;
+    replacement.midiKey = key;
+    replacements.push_back(std::move(replacement));
   }
-  for (const auto& move : moves_) {
-    auto* note = project.findNote(move.noteId);
-    note->startTick = after ? move.after : move.before;
-    note->midiKey = after ? move.afterKey : move.beforeKey;
-  }
-  for (auto& track : project.vocalTracks()) {
-    for (auto& region : track.regions) {
-      region.sortNotes();
+  return replaceNoteGeometry(project, replacements, true, pronunciationChanges_, pronunciationCaptured_, after);
+}
+
+CommandImpact SetNoteHintsCommand::impact() const {
+  CommandImpact impact; impact.scope = CommandAudioImpact::PhraseAudio;
+  for (const auto& edit : edits_) impact.noteIds.push_back(edit.noteId);
+  return impact;
+}
+
+core::Result<void> SetNoteHintsCommand::set(domain::Project& project, bool after) {
+  if (edits_.empty() || edits_.size() > 10000U)
+    return core::failure(core::ErrorCode::InvalidArgument, "Hint editing requires 1 to 10000 notes");
+  std::vector<domain::Note> replacements; replacements.reserve(edits_.size());
+  std::unordered_set<domain::NoteId> ids;
+  for (const auto& edit : edits_) {
+    if (!ids.insert(edit.noteId).second) return core::failure(core::ErrorCode::InvalidArgument, "Repeated hint target");
+    const auto location = findMutableNoteLocation(project, edit.noteId);
+    if (!location.note || !location.region) return core::failure(core::ErrorCode::NotFound, "Hint note was not found");
+    if (location.note->phoneticHint != (after ? edit.before : edit.after))
+      return core::failure(core::ErrorCode::Conflict, "Pronunciation hint changed after the edit was prepared");
+    const auto& target = after ? edit.after : edit.before;
+    if (after && target) {
+      const auto* lyric = location.region->findLyric(location.note->lyricTokenId);
+      if (!lyric || !phonemizer::hasPronunciationService(lyric->language))
+        return core::failure(core::ErrorCode::Unsupported, "No registered hint validator for this note language");
+      const auto valid = phonemizer::validatePhoneHintForLanguage(lyric->language, *target);
+      if (!valid) return valid;
     }
+    auto note = *location.note; note.phoneticHint = target; replacements.push_back(std::move(note));
   }
-  return core::success();
+  return replaceNoteGeometry(project, replacements, false, pronunciationChanges_, pronunciationCaptured_, after);
+}
+core::Result<void> SetNoteHintsCommand::apply(domain::Project& project) { return set(project, true); }
+core::Result<void> SetNoteHintsCommand::revert(domain::Project& project) {
+  if (!pronunciationCaptured_) return core::failure(core::ErrorCode::Conflict, "Hint edit has no state to restore");
+  return set(project, false);
 }
 
 core::Result<void> MoveNotesCommand::apply(domain::Project& project) {
@@ -497,6 +751,8 @@ core::Result<void> MoveNotesCommand::revert(domain::Project& project) {
 }
 
 core::Result<void> ResizeNotesCommand::set(domain::Project& project, bool after) {
+  std::vector<domain::Note> replacements;
+  replacements.reserve(resizes_.size());
   for (const auto& resize : resizes_) {
     auto* note = project.findNote(resize.noteId);
     if (note == nullptr) {
@@ -510,18 +766,12 @@ core::Result<void> ResizeNotesCommand::set(domain::Project& project, bool after)
                            "A resized note must have a non-negative start and positive duration",
                            resize.noteId.toString());
     }
+    auto replacement = *note;
+    replacement.startTick = start;
+    replacement.durationTick = duration;
+    replacements.push_back(std::move(replacement));
   }
-  for (const auto& resize : resizes_) {
-    auto* note = project.findNote(resize.noteId);
-    note->startTick = after ? resize.afterStart : resize.beforeStart;
-    note->durationTick = after ? resize.afterDuration : resize.beforeDuration;
-  }
-  for (auto& track : project.vocalTracks()) {
-    for (auto& region : track.regions) {
-      region.sortNotes();
-    }
-  }
-  return core::success();
+  return replaceNoteGeometry(project, replacements, false, pronunciationChanges_, pronunciationCaptured_, after);
 }
 
 core::Result<void> ResizeNotesCommand::apply(domain::Project& project) {
@@ -578,6 +828,8 @@ core::Result<void> SetNotePerformanceCommand::set(domain::Project& project,
                            edit.noteId.toString());
     }
   }
+  std::vector<domain::Note> replacements;
+  replacements.reserve(edits_.size());
   for (const auto& edit : edits_) {
     const auto location = findMutableNoteLocation(project, edit.noteId);
     const auto articulation = after ? edit.afterArticulation
@@ -585,11 +837,13 @@ core::Result<void> SetNotePerformanceCommand::set(domain::Project& project,
     const auto slur = after ? edit.afterSlurGroup : edit.beforeSlurGroup;
     const auto lyricId = after ? edit.afterLyricTokenId
                                : edit.beforeLyricTokenId;
-    location.note->articulation = articulation;
-    location.note->slurGroup = slur;
-    location.note->lyricTokenId = lyricId;
+    auto replacement = *location.note;
+    replacement.articulation = articulation;
+    replacement.slurGroup = slur;
+    replacement.lyricTokenId = lyricId;
+    replacements.push_back(std::move(replacement));
   }
-  return core::success();
+  return replaceNoteGeometry(project, replacements, false, pronunciationChanges_, pronunciationCaptured_, after);
 }
 
 core::Result<void> SetNotePerformanceCommand::apply(domain::Project& project) {

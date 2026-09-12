@@ -1,7 +1,10 @@
 #include "seam/ui/phoneme_lane_model.hpp"
+#include "seam/synthesis/phoneme_timing_plan.hpp"
 
 #include <algorithm>
 #include <cmath>
+#include <map>
+#include <set>
 
 namespace seam::ui {
 namespace {
@@ -25,6 +28,20 @@ void PhonemeLaneModel::rebuild(const PianoRollModel& pianoRoll,
                                double laneTop,
                                double laneHeight) {
   visuals_.clear();
+  const auto* region = pianoRoll.project().findRegion(pianoRoll.regionId());
+  if (!region) return;
+  constexpr std::uint32_t displayRate = 48000U;
+  const auto& tracks = pianoRoll.project().vocalTracks();
+  const auto owner = std::find_if(tracks.begin(), tracks.end(), [&](const auto& track) { return track.findRegion(region->id) != nullptr; });
+  const bool procedural = owner != tracks.end() && owner->proceduralRecipe.has_value();
+  const auto timing = synthesis::compilePhonemeTimingPlan(pianoRoll.project(), *region, phonemes.tokens, displayRate,
+      procedural ? synthesis::PhonemeTimingPolicy::ProceduralInNote : synthesis::PhonemeTimingPolicy::SourceDependent);
+  std::map<domain::PhonemeKey, const synthesis::PhonemeTimingAnchor*> anchors;
+  std::set<domain::PhonemeKey> inferredNuclei;
+  if (timing) for (const auto& anchor : timing.value()) {
+    anchors.emplace(anchor.key, &anchor);
+    if (anchor.inferredStartFrame && anchor.nucleusKey) inferredNuclei.insert(*anchor.nucleusKey);
+  }
   const auto notes = pianoRoll.visibleNotes();
   for (const auto& note : notes) {
     const auto tokens = phonemes.tokensForNote(note.noteId);
@@ -44,31 +61,65 @@ void PhonemeLaneModel::rebuild(const PianoRollModel& pianoRoll,
       const auto& token = tokens[index];
       const auto defaultWidth = note.bounds.width * roleWeight(token.role) / totalWeight;
       double x = cursor;
-      double width = index + 1 == tokens.size()
-                         ? note.bounds.right() - cursor
-                         : defaultWidth;
+      double end = index + 1 == tokens.size()
+                       ? note.bounds.right()
+                       : cursor + defaultWidth;
+      const bool secondary = token.role == domain::PhonemeRole::Onset || token.role == domain::PhonemeRole::Coda || token.role == domain::PhonemeRole::Geminate;
+      bool estimated = false;
+      bool inferred = false;
+      bool conflict = !timing;
+      const auto found = anchors.find(token.key);
+      if (found != anchors.end()) {
+        const auto& anchor = *found->second;
+        const auto noteFrame = pianoRoll.project().tempoMap().sampleFrameAt(note.absoluteStart, static_cast<double>(displayRate));
+        const auto pixel = [&](time::SampleFrame frame) {
+          const auto offset = static_cast<time::Microseconds>(std::llround(
+              (static_cast<double>(frame) - static_cast<double>(noteFrame)) * 1000000.0 / static_cast<double>(displayRate)));
+          return pianoRoll.pixelAtMicrosecondOffset(note.absoluteStart, offset);
+        };
+        inferred = anchor.inferredStartFrame.has_value() || inferredNuclei.contains(token.key);
+        x = pixel(anchor.explicitStartFrame.value_or(anchor.inferredStartFrame.value_or(anchor.nucleusFrame)));
+        end = pixel(anchor.endFrame);
+        const bool syllabicN = token.symbol=="N" && token.role==domain::PhonemeRole::Coda &&
+            !anchor.nucleusKey && tokens.size()==1U;
+        if (procedural && (token.role==domain::PhonemeRole::Onset || token.role==domain::PhonemeRole::Coda) &&
+            (anchor.explicitStartFrame || anchor.inferredStartFrame || syllabicN)) {
+          if (token.role==domain::PhonemeRole::Onset && !anchor.endExplicit) end = pixel(anchor.nucleusFrame);
+        } else if (secondary) {
+          const auto boundary = token.role == domain::PhonemeRole::Coda ? end : pixel(anchor.nucleusFrame);
+          std::size_t remaining = 1U;
+          for (auto next = index + 1U; next < tokens.size() && tokens[next].role == token.role; ++next) ++remaining;
+          if (!token.timing.startOffset) x = boundary - 28.0 * static_cast<double>(remaining);
+          if (!token.timing.endOffset) end = boundary - 28.0 * static_cast<double>(remaining - 1U);
+          estimated = !token.timing.startOffset || !token.timing.endOffset;
+        }
+      }
 
       if (token.timing.startOffset.has_value()) {
         x = pianoRoll.pixelAtMicrosecondOffset(
             note.absoluteStart, *token.timing.startOffset);
       }
       if (token.timing.endOffset.has_value()) {
-        const auto end = pianoRoll.pixelAtMicrosecondOffset(
+        end = pianoRoll.pixelAtMicrosecondOffset(
             note.absoluteStart, *token.timing.endOffset);
-        width = end - x;
       }
+      double width = end - x;
       if (!std::isfinite(x) || !std::isfinite(width)) {
         continue;
       }
-      width = std::max(2.0, width);
+      conflict = conflict || width <= 0.0;
+      if (!procedural || conflict) width = std::max(2.0, width);
       visuals_.push_back(PhonemeVisual{
           .key = token.key,
           .symbol = token.symbol,
           .role = token.role,
-          .bounds = Rect{x, laneTop, width, laneHeight},
+          .bounds = Rect{x, laneTop + (secondary ? 0.0 : laneHeight * 0.5), width, laneHeight * 0.5},
           .locked = token.locked,
           .timingOverridden = token.timing.startOffset.has_value() ||
                               token.timing.endOffset.has_value(),
+          .timingEstimated = estimated,
+          .timingConflict = conflict,
+          .timingInferred = inferred,
       });
       cursor += defaultWidth;
     }

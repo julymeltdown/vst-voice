@@ -3,14 +3,23 @@
 #include "seam/authoring/authoring_runtime.hpp"
 #include "seam/application/lyric_commands.hpp"
 #include "seam/application/note_commands.hpp"
+#include "seam/application/render_commands.hpp"
 #include "seam/application/project_factory.hpp"
+#include "seam/application/performance_commands.hpp"
+#include "seam/phonemizer/pronunciation_resolver.hpp"
 #include "seam/rendering/streaming_pcm_source.hpp"
 #include "seam/voicebank/catalog.hpp"
 #include "seam/voicebank/wav.hpp"
+#include "seam/voice_design/recipe_resource.hpp"
+#include "seam/formats/project_json.hpp"
+#include "seam/core/sha256.hpp"
 
 #include "test_support.hpp"
 
 #include <chrono>
+#include <algorithm>
+#include <array>
+#include <cmath>
 #include <filesystem>
 #include <memory>
 #include <thread>
@@ -76,12 +85,14 @@ RuntimeFixture makeFixture(bool includeUnresolved = false) {
     const auto noteId = note.id;
     region->lyrics.push_back(std::move(lyric));
     region->notes.push_back(std::move(note));
+    const auto* unit = candidate.manifest.findUnit(unitIds[index]);
+    CHECK(unit);
     region->unitSelectionOverrides.push_back(
         seam::domain::UnitSelectionOverride{
             .startKey = seam::domain::PhonemeKey{.noteId = noteId, .ordinal = 0U},
             .tokenCount = static_cast<std::uint16_t>(index == 1U || index == 2U ? 1U : 2U),
             .unitId = unitIds[index],
-            .renderer = index % 2U == 0U
+            .renderer = index % 2U == 0U && unit->pitchMarks.size() >= 3U
                             ? seam::domain::UnitRendererKind::ClassicPsola
                             : seam::domain::UnitRendererKind::Raw,
             .locked = true,
@@ -137,6 +148,9 @@ bool waitReady(seam::authoring::AuthoringRuntime& runtime,
                         std::chrono::seconds{20};
   while (std::chrono::steady_clock::now() < deadline) {
     const auto progress = runtime.renderer().progress();
+    if (progress.state == seam::authoring::RenderState::Failed) {
+      throw seam::test::Failure{progress.diagnostic};
+    }
     if (progress.publishedRevision == revision &&
         progress.state == seam::authoring::RenderState::Ready &&
         runtime.transport().state().publishedRevision == revision) {
@@ -148,6 +162,93 @@ bool waitReady(seam::authoring::AuthoringRuntime& runtime,
 }
 
 }  // namespace
+
+TEST_CASE("authoring runtime reopens relative recipe references and rejects changed content") {
+  const auto root = seam::test::support::temporaryDirectory("runtime-recipe");
+  seam::voice_design::VoiceRecipe recipe;
+  recipe.id = "runtime-draft";
+  recipe.poses = {{"a", "neutral", 0.0, {{700.0, 80.0, 0.0}, {1200.0, 100.0, -3.0}, {2600.0, 140.0, -6.0}}}};
+  CHECK(seam::voice_design::saveVoiceRecipeFile(root / "singer.json", recipe));
+  const auto resource = seam::voice_design::freezeVoiceRecipeResource(recipe); CHECK(resource);
+  seam::application::ProjectFactory factory{73000U};
+  auto project = factory.createProject("Saved recipe");
+  const auto trackId = factory.addVocalTrack(project, "Singer");
+  const auto regionId = factory.addRegion(project, trackId, "Vowel", seam::time::Tick{0}, seam::time::Tick{960});
+  auto [lyric, note] = factory.makeNote(seam::time::Tick{0}, seam::time::Tick{960}, 69U, U"あ", seam::domain::Language::Japanese);
+  const auto noteId = note.id;
+  project.findRegion(regionId)->lyrics.push_back(std::move(lyric));
+  project.findRegion(regionId)->notes.push_back(std::move(note));
+  project.findVocalTrack(trackId)->proceduralRecipe = seam::domain::ProceduralRecipeReference{
+      resource.value().identity, "singer.json", "neutral"};
+  const std::vector<seam::rendering::TrackSingerSource> noBase{
+      seam::rendering::TrackRecipeFileSource{trackId, *project.findVocalTrack(trackId)->proceduralRecipe, {}}};
+  const auto unresolved = seam::rendering::ProductionProjectRenderer{}.renderWithSources(
+      project, noBase, trackId, regionId, 0U, 48000U);
+  CHECK(!unresolved); CHECK(unresolved.error().message.find("saved project directory") != std::string::npos);
+  const seam::formats::ProjectJsonCodec codec;
+  CHECK(codec.save(project, root / "song.seam"));
+  const auto reopened = codec.load(root / "song.seam"); CHECK(reopened);
+  auto document = std::unique_ptr<seam::authoring::ProjectDocument>{new seam::authoring::ProjectDocument{
+      reopened.value(), seam::application::ProjectFactory{factory.nextIdValue()}}};
+  document->markSaved(root / "song.seam", seam::core::sha256Hex(codec.encode(reopened.value()).value()));
+  auto config = configFor(root / "cache"); config.voicebankRoots.clear();
+  seam::authoring::AuthoringRuntime runtime{std::move(document), config};
+  CHECK(runtime.initialize()); CHECK(waitReady(runtime, runtime.document().session().revision()));
+  CHECK(runtime.selectedTrack() == trackId);
+  const auto original = runtime.renderer().latest(); CHECK(original);
+  CHECK(original->activeRenderer == "seam.source-filter.v1");
+  CHECK(original->activeVoicebankId.empty()); CHECK(!original->result.interleaved.empty());
+  CHECK(runtime.execute(std::make_unique<seam::application::MoveNotesCommand>(
+      std::vector<seam::application::NoteMove>{{.noteId = noteId, .before = seam::time::Tick{0},
+        .after = seam::time::Tick{0}, .beforeKey = 69U, .afterKey = 72U}})));
+  CHECK(waitReady(runtime, runtime.document().session().revision()));
+  CHECK(runtime.renderer().latest()->result.interleaved != original->result.interleaved);
+  CHECK(runtime.undo()); CHECK(waitReady(runtime, runtime.document().session().revision()));
+  CHECK(runtime.renderer().latest()->result.interleaved == original->result.interleaved);
+  auto changed = recipe; changed.seed = 123U;
+  CHECK(seam::voice_design::saveVoiceRecipeFile(root / "singer.json", changed));
+  runtime.requestPreview(true);
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{10};
+  while (runtime.renderer().progress().state != seam::authoring::RenderState::Failed && std::chrono::steady_clock::now() < deadline)
+    std::this_thread::sleep_for(std::chrono::milliseconds{5});
+  CHECK(runtime.renderer().progress().state == seam::authoring::RenderState::Failed);
+  CHECK(runtime.renderer().progress().diagnostic.find("identity") != std::string::npos);
+  CHECK(runtime.renderer().latest()->result.interleaved == original->result.interleaved);
+  CHECK(seam::voice_design::saveVoiceRecipeFile(root / "singer.json", recipe));
+  runtime.requestPreview(true); CHECK(waitReady(runtime, runtime.document().session().revision()));
+  CHECK(runtime.renderer().latest()->result.interleaved == original->result.interleaved);
+  CHECK(seam::voice_design::saveVoiceRecipeFile(root / "changed.json", changed));
+  const auto changedResource = seam::voice_design::freezeVoiceRecipeResource(changed); CHECK(changedResource);
+  const auto beforeSelection = runtime.document().session().project().findVocalTrack(trackId)->proceduralRecipe;
+  const seam::domain::ProceduralRecipeReference afterSelection{changedResource.value().identity, "changed.json", "neutral"};
+  CHECK(runtime.execute(std::make_unique<seam::application::SetTrackProceduralRecipeCommand>(trackId,
+      beforeSelection, afterSelection)));
+  CHECK(waitReady(runtime, runtime.document().session().revision()));
+  CHECK(runtime.document().dirty());
+  CHECK(runtime.renderer().latest()->result.interleaved != original->result.interleaved);
+  CHECK(runtime.undo()); CHECK(waitReady(runtime, runtime.document().session().revision()));
+  CHECK(runtime.renderer().latest()->result.interleaved == original->result.interleaved);
+  CHECK(runtime.redo()); CHECK(waitReady(runtime, runtime.document().session().revision()));
+  CHECK(runtime.renderer().latest()->result.interleaved != original->result.interleaved);
+}
+
+TEST_CASE("authoring runtime reports unsupported compiled PSOLA without raw publication") {
+  auto fixture = makeFixture();
+  auto* region = fixture.document->session().project().findRegion(fixture.resolvedRegion);
+  region->unitSelectionOverrides[2].renderer = seam::domain::UnitRendererKind::ClassicPsola;
+  seam::authoring::AuthoringRuntime runtime{std::move(fixture.document),
+      configFor(seam::test::support::temporaryDirectory("unsupported-compiled-psola"))};
+  CHECK(runtime.initialize());
+  runtime.requestPreview();
+  for (int attempt = 0; attempt < 400 && runtime.renderer().progress().state != seam::authoring::RenderState::Failed; ++attempt) {
+    std::this_thread::sleep_for(std::chrono::milliseconds{5});
+  }
+  const auto progress = runtime.renderer().progress();
+  CHECK(progress.state == seam::authoring::RenderState::Failed);
+  CHECK(progress.diagnostic.find("pitch marks") != std::string::npos);
+  CHECK(runtime.renderer().latest()->state != seam::authoring::RenderState::Ready);
+  CHECK(runtime.renderer().latest()->result.phraseContentHashes.empty());
+}
 
 TEST_CASE("authoring_runtime_note_edit_renders_and_publishes_transport_audio") {
   auto fixture = makeFixture();
@@ -183,6 +284,131 @@ TEST_CASE("authoring_runtime_note_edit_renders_and_publishes_transport_audio") {
   const auto after = runtime.renderer().latest();
   CHECK(after->result.phraseContentHashes != before->result.phraseContentHashes);
   CHECK(runtime.transport().state().publishedRevision == revision);
+}
+
+TEST_CASE("authoring runtime publishes overlapping voices with consistent progress and undo audio") {
+  auto fixture = makeFixture();
+  auto* region = fixture.document->session().project().findRegion(fixture.resolvedRegion);
+  region->notes.resize(2U);
+  region->unitSelectionOverrides.resize(2U);
+  region->notes[1].startTick = seam::time::Tick{0};
+  const auto editedNote = region->notes[1];
+  const auto originalProject = fixture.document->session().project();
+  seam::authoring::AuthoringRuntime runtime{std::move(fixture.document),
+      configFor(seam::test::support::temporaryDirectory("runtime-overlapping-voices"))};
+  CHECK(runtime.initialize());
+  CHECK(runtime.selectTrack(fixture.resolvedTrack));
+  CHECK(runtime.selectRegion(fixture.resolvedRegion));
+  runtime.requestPreview();
+  CHECK(waitReady(runtime, runtime.document().session().revision()));
+  const auto checkProgress = [&] {
+    const auto progress = runtime.renderer().progress();
+    CHECK(progress.totalPhrases == 2U);
+    CHECK(progress.completedPhrases == 2U);
+    CHECK(progress.fraction == 1.0);
+    CHECK(!progress.audibleAudioStale);
+    CHECK(runtime.transport().state().available);
+  };
+  checkProgress();
+  const auto initial = runtime.renderer().latest();
+  const auto initialHashes = initial->result.phraseContentHashes;
+  const std::vector<float> initialPcm(initial->result.interleaved.begin(), initial->result.interleaved.end());
+  CHECK(initialHashes.size() == 2U);
+  CHECK(!initialPcm.empty());
+  CHECK(runtime.execute(std::make_unique<seam::application::MoveNotesCommand>(
+      std::vector<seam::application::NoteMove>{{.noteId = editedNote.id,
+          .before = editedNote.startTick, .after = editedNote.startTick,
+          .beforeKey = editedNote.midiKey,
+          .afterKey = static_cast<std::uint8_t>(editedNote.midiKey + 2U)}})));
+  CHECK(waitReady(runtime, runtime.document().session().revision()));
+  checkProgress();
+  const auto changed = runtime.renderer().latest();
+  CHECK(changed->result.phraseContentHashes != initialHashes);
+  CHECK(std::vector<float>(changed->result.interleaved.begin(), changed->result.interleaved.end()) != initialPcm);
+  CHECK(runtime.undo());
+  CHECK(waitReady(runtime, runtime.document().session().revision()));
+  checkProgress();
+  const auto restored = runtime.renderer().latest();
+  CHECK(restored->result.phraseContentHashes == initialHashes);
+  CHECK(std::vector<float>(restored->result.interleaved.begin(), restored->result.interleaved.end()) == initialPcm);
+  CHECK(restored->result.cacheHits == 2U);
+  CHECK(runtime.document().session().project() == originalProject);
+  CHECK(runtime.transport().seek(0));
+  CHECK(runtime.transport().play());
+  std::array<float, 512U> block{};
+  bool receivedAudio = false;
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{2};
+  while (!receivedAudio && std::chrono::steady_clock::now() < deadline) {
+    const auto frames = runtime.transport().ringBuffer().readFrames(block);
+    CHECK(std::all_of(block.begin(), block.end(), [](float sample) { return std::isfinite(sample); }));
+    receivedAudio = frames > 0U && std::any_of(block.begin(), block.end(),
+        [](float sample) { return std::abs(sample) > 0.00001F; });
+    if (!receivedAudio) std::this_thread::sleep_for(std::chrono::milliseconds{5});
+  }
+  CHECK(receivedAudio);
+  CHECK(runtime.transport().pause());
+}
+
+TEST_CASE("live proposal delivery stays silent until acceptance and undo restores cached audio") {
+  using namespace seam::domain;
+  using seam::time::Tick;
+  auto fixture = makeFixture();
+  auto* prepared = fixture.document->session().project().findRegion(fixture.resolvedRegion);
+  prepared->notes.resize(1U);
+  prepared->unitSelectionOverrides.resize(1U);
+  seam::authoring::AuthoringRuntime runtime{std::move(fixture.document),
+      configFor(seam::test::support::temporaryDirectory("runtime-proposal-acceptance"))};
+  CHECK(runtime.initialize());
+  CHECK(waitReady(runtime, runtime.document().session().revision()));
+  const auto initial = runtime.renderer().latest();
+  const auto initialHashes = initial->result.phraseContentHashes;
+  const std::vector<float> initialPcm(initial->result.interleaved.begin(), initial->result.interleaved.end());
+  const auto submitted = runtime.renderer().stats().submitted;
+  const auto originalRevision = runtime.document().session().revision();
+  const auto original = runtime.document().session().project();
+  const auto& region = *original.findRegion(fixture.resolvedRegion);
+  const auto pronunciation = seam::phonemizer::resolveJapanesePronunciation(region);
+  CHECK(pronunciation);
+  const auto job = runtime.document().session().capturePerformanceJob();
+  CHECK(job);
+  PerformanceTake proposal{.id = "generated-attack", .sourceRegionId = region.id,
+      .capturedRevision = region.performance.revision,
+      .resource = {SingerResourceKind::Neural, "fixture", "1", std::string(64U, 'a')},
+      .pronunciation = pronunciation.value().identity,
+      .generatorId = "fixture", .generatorVersion = "1", .range = {Tick{0}, region.durationTick},
+      .lanes = {{PerformanceChannel::Attack, {{Tick{0}, 150.0}}}}};
+  CHECK(runtime.executePerformanceResult(job.value(),
+      std::make_unique<seam::application::AddPerformanceProposalCommand>(region.id, region.performance, proposal)));
+  CHECK(runtime.document().session().revision() == originalRevision + 1U);
+  CHECK(runtime.document().dirty());
+  // Observe beyond the runtime's 20 ms debounce deadline, not just before a
+  // mistakenly scheduled render would have had a chance to submit.
+  std::this_thread::sleep_for(std::chrono::milliseconds{80});
+  CHECK(runtime.renderer().stats().submitted == submitted);
+  CHECK(runtime.transport().state().publishedRevision == originalRevision);
+  CHECK(!runtime.renderer().progress().audibleAudioStale);
+  CHECK(runtime.renderer().latest()->result.phraseContentHashes == initialHashes);
+  const auto stored = runtime.document().session().project();
+  CHECK(runtime.execute(std::make_unique<seam::application::SetAcceptedPerformanceCommand>(
+      region.id, stored.findRegion(region.id)->performance,
+      std::vector<AcceptedPerformanceSelection>{{proposal.id, PerformanceChannel::Attack, region.notes[0].id, Tick{0}}})));
+  CHECK(waitReady(runtime, runtime.document().session().revision()));
+  CHECK(runtime.renderer().stats().submitted == submitted + 1U);
+  const auto accepted = runtime.renderer().latest();
+  CHECK(accepted->result.phraseContentHashes != initialHashes);
+  CHECK(std::vector<float>(accepted->result.interleaved.begin(), accepted->result.interleaved.end()) != initialPcm);
+  CHECK(runtime.undo());
+  CHECK(waitReady(runtime, runtime.document().session().revision()));
+  CHECK(runtime.document().session().project() == stored);
+  const auto restored = runtime.renderer().latest();
+  CHECK(restored->result.phraseContentHashes == initialHashes);
+  CHECK(restored->result.cacheHits == restored->result.phraseCount);
+  CHECK(std::vector<float>(restored->result.interleaved.begin(), restored->result.interleaved.end()) == initialPcm);
+  const auto afterUndoSubmissions = runtime.renderer().stats().submitted;
+  CHECK(runtime.undo()); // Remove only the inert proposal.
+  CHECK(runtime.document().session().project() == original);
+  std::this_thread::sleep_for(std::chrono::milliseconds{80});
+  CHECK(runtime.renderer().stats().submitted == afterUndoSubmissions);
 }
 
 TEST_CASE("authoring_runtime_renders_backing_only_projects") {
@@ -368,7 +594,7 @@ TEST_CASE("authoring_runtime_mutes_unresolved_tracks_in_render_copy") {
   CHECK(!unresolved->muted);
 }
 
-TEST_CASE("authoring_runtime_technical_edit_submits_once") {
+TEST_CASE("authoring_runtime_supported_technical_edit_submits_once") {
   auto fixture = makeFixture();
   seam::authoring::AuthoringRuntime runtime{
       std::move(fixture.document), configFor(
@@ -383,11 +609,11 @@ TEST_CASE("authoring_runtime_technical_edit_submits_once") {
       fixture.resolvedRegion);
   CHECK(region != nullptr);
   const seam::domain::PhonemeKey key{
-      .noteId = region->notes.front().id, .ordinal = 0U};
+      .noteId = region->notes.front().id, .ordinal = 1U};
   const auto beforeRevision = runtime.document().session().revision();
   const auto beforeSubmitted = runtime.renderer().stats().submitted;
   CHECK(runtime.technicalEdits().movePhonemeBoundary(
-      key, false, seam::time::Microseconds{42000}));
+      key, false, seam::time::Microseconds{200000}));
   CHECK(runtime.document().session().revision() == beforeRevision + 1U);
   CHECK(waitReady(runtime, beforeRevision + 1U));
   CHECK(runtime.renderer().stats().submitted >= beforeSubmitted + 1U);

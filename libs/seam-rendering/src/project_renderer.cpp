@@ -2,6 +2,7 @@
 
 #include "seam/rendering/sample_rate_converter.hpp"
 #include "seam/rendering/streaming_pcm_source.hpp"
+#include "seam/rendering/render_pipeline.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -14,12 +15,12 @@ namespace {
 constexpr std::uint64_t kMaximumOutputBytes = 512ULL * 1024ULL * 1024ULL;
 constexpr std::size_t kMixBlockFrames = 4096U;
 
-const TrackVoicebankSource* sourceFor(
-    std::span<const TrackVoicebankSource> sources,
+const TrackSingerSource* sourceFor(
+    std::span<const TrackSingerSource> sources,
     domain::TrackId trackId) noexcept {
   const auto iterator = std::find_if(
       sources.begin(), sources.end(), [trackId](const auto& value) {
-        return value.trackId == trackId;
+        return std::visit([trackId](const auto& source) { return source.trackId == trackId; }, value);
       });
   return iterator == sources.end() ? nullptr : &*iterator;
 }
@@ -47,6 +48,58 @@ core::Result<ProjectRenderResult> ProductionProjectRenderer::render(
     const synthesis::PhraseRenderOptions& options,
     PcmCache* cache,
     std::stop_token stopToken) const {
+  std::vector<TrackSingerSource> sources;
+  sources.reserve(voicebanks.size());
+  for (const auto& source : voicebanks) sources.emplace_back(source);
+  return renderWithSources(project, sources, activeTrack, activeRegion, revision,
+      sampleRate, quality, options, cache, stopToken);
+}
+
+core::Result<ProjectRenderResult> ProductionProjectRenderer::renderWithSources(
+    const domain::Project& project, std::span<const TrackSingerSource> sources,
+    domain::TrackId activeTrack, domain::RegionId activeRegion, std::uint64_t revision,
+    std::uint32_t sampleRate, RenderQuality quality,
+    const synthesis::PhraseRenderOptions& options, PcmCache* cache, std::stop_token stopToken) const {
+  if (sources.size() > project.vocalTracks().size()) return core::failure<ProjectRenderResult>(
+      core::ErrorCode::Conflict, "Singer source count exceeds project vocal tracks");
+  if (std::any_of(sources.begin(), sources.end(), [](const auto& source) {
+        return std::holds_alternative<TrackRecipeFileSource>(source);
+      })) {
+    std::vector<TrackSingerSource> resolved;
+    resolved.reserve(sources.size());
+    for (const auto& source : sources) {
+      if (stopToken.stop_requested()) return core::failure<ProjectRenderResult>(core::ErrorCode::Conflict, "Recipe resolution cancelled");
+      const auto* file = std::get_if<TrackRecipeFileSource>(&source);
+      if (!file) { resolved.push_back(source); continue; }
+      const auto* track = project.findVocalTrack(file->trackId);
+      if (!track) return core::failure<ProjectRenderResult>(core::ErrorCode::NotFound, "Recipe source track is missing");
+      const auto solo = std::any_of(project.vocalTracks().begin(), project.vocalTracks().end(),
+          [](const auto& value) { return value.solo && !value.muted; }) ||
+          std::any_of(project.audioTracks().begin(), project.audioTracks().end(),
+          [](const auto& value) { return value.solo && !value.muted; });
+      if (track->muted || (solo && !track->solo)) continue;
+      const auto valid = file->reference.validate();
+      if (!valid) return core::Result<ProjectRenderResult>{valid.error()};
+      auto path = std::filesystem::path{file->reference.path};
+      if (path.is_relative()) {
+        if (!file->projectDirectory || !file->projectDirectory->is_absolute()) return core::failure<ProjectRenderResult>(
+            core::ErrorCode::NotFound, "Relative recipe reference requires a saved project directory");
+        path = *file->projectDirectory / path;
+      }
+      const auto resource = voice_design::loadVoiceRecipeResource(path.lexically_normal(), file->reference.resource, stopToken);
+      if (!resource) return core::Result<ProjectRenderResult>{resource.error()};
+      resolved.emplace_back(TrackProceduralSource{file->trackId, resource.value(), file->reference.style});
+    }
+    return renderWithSources(project, resolved, activeTrack, activeRegion, revision, sampleRate, quality, options, cache, stopToken);
+  }
+  std::vector<domain::TrackId> sourceTracks;
+  for (const auto& source : sources) {
+    const auto id = std::visit([](const auto& value) { return value.trackId; }, source);
+    if (!project.findVocalTrack(id) || std::find(sourceTracks.begin(), sourceTracks.end(), id) != sourceTracks.end()) {
+      return core::failure<ProjectRenderResult>(core::ErrorCode::Conflict, "Singer sources contain an unknown or duplicate track");
+    }
+    sourceTracks.push_back(id);
+  }
   if (sampleRate < 8000U || sampleRate > 192000U) {
     return core::failure<ProjectRenderResult>(
         core::ErrorCode::InvalidArgument,
@@ -76,21 +129,49 @@ core::Result<ProjectRenderResult> ProductionProjectRenderer::render(
                                                 "Project render was cancelled");
     }
     if (track.muted || (anySolo && !track.solo)) continue;
-    const auto* source = sourceFor(voicebanks, track.id);
+    const auto* source = sourceFor(sources, track.id);
     if (source == nullptr) {
       return core::failure<ProjectRenderResult>(
           core::ErrorCode::NotFound,
-          "No resolved Voicebank is available for an audible vocal track",
+          "No resolved singer resource is available for an audible vocal track",
           track.id.toString());
     }
     ++output.trackCount;
+    if (track.proceduralRecipe) {
+      const auto* procedural = std::get_if<TrackProceduralSource>(source);
+      if (!procedural || procedural->resource.identity != track.proceduralRecipe->resource ||
+          procedural->style != track.proceduralRecipe->style) return core::failure<ProjectRenderResult>(
+          core::ErrorCode::Conflict, "Resolved singer differs from the saved procedural recipe selection");
+    }
     for (const auto& region : track.regions) {
       if (region.notes.empty()) continue;
+      if (const auto* procedural = std::get_if<TrackProceduralSource>(source)) {
+        const auto snapshot = RenderSnapshotFactory{}.createProcedural(project, procedural->resource,
+            track.id, region.id, revision, quality, sampleRate, procedural->style);
+        if (!snapshot) return core::Result<ProjectRenderResult>{snapshot.error()};
+        auto rendered = PhraseRenderPipeline{}.render(snapshot.value(), stopToken);
+        if (!rendered) return core::Result<ProjectRenderResult>{rendered.error()};
+        auto pcm = std::make_shared<RoutedPcm>();
+        pcm->sampleRate = sampleRate;
+        pcm->startFrame = rendered.value().rendered.audio.startFrame;
+        pcm->channelCount = 1U;
+        pcm->interleavedSamples = std::move(rendered.value().rendered.audio.samples);
+        const auto valid = pcm->validate();
+        if (!valid) return core::Result<ProjectRenderResult>{valid.error()};
+        clips.push_back(RoutedPlaybackClip{
+            .id = track.id.toString() + ":" + region.id.toString(), .pcm = std::move(pcm),
+            .outputRoute = routeForTrack(track.outputRoute, track.pan),
+            .gain = domain::decibelsToLinear(track.gainDb), .fadeInFrames = 0, .fadeOutFrames = 0,
+            .enabled = true, .solo = track.solo});
+        ++output.regionCount; ++output.phraseCount;
+        output.phraseContentHashes.push_back(snapshot.value().contentHash);
+        continue;
+      }
+      const auto& sample = std::get<TrackVoicebankSource>(*source);
       auto rendered = renderer.render(
-          project, source->manifest, source->bankRoot, track.id, region.id,
+          project, sample.manifest, sample.bankRoot, track.id, region.id,
           revision, sampleRate, quality,
-          source->manifest.styles.empty() ? std::string{}
-                                          : source->manifest.styles.front(),
+          std::string{},
           options, cache, stopToken, true);
       if (!rendered) return core::Result<ProjectRenderResult>{rendered.error()};
       for (const auto& failure : rendered.value().failures) {

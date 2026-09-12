@@ -42,6 +42,10 @@ struct NativeEditorAppConfig final {
   std::function<std::unique_ptr<platform::IAudioDevice>()>
       threadedAudioDeviceFactory;
   std::function<core::Result<std::optional<authoring::NewProjectRequest>>()> requestNewProject;
+  // Optional host-owned verified/staged Open JTalk resource. The app never
+  // discovers a reader through PATH or a working directory.
+  std::function<core::Result<authoring::StagedJapaneseReadingResource>()>
+      prepareJapaneseReadingResource;
   std::filesystem::path manualsRoot;
 };
 

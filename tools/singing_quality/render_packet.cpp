@@ -21,7 +21,7 @@ using Array = Json::Array;
 Json phraseDiagnostics(const rendering::RenderSnapshot& snapshot,
                        const rendering::PhrasePipelineResult& result) {
   Array resources;
-  for (const auto& unit : snapshot.selectedUnits) {
+  for (const auto& unit : snapshot.sample().selectedUnits) {
     resources.emplace_back(Object{{"unit_id", unit.unitId}, {"audio_sha256", unit.audioSha256}});
   }
   Array timing;

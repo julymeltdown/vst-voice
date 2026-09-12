@@ -84,12 +84,30 @@ core::Result<VoicebankProductionProject> decodeProductionProject(
     return core::failure<VoicebankProductionProject>(
         core::ErrorCode::ParseError, "Production project header is invalid");
   }
+  if (project.schemaVersion != 1 && project.schemaVersion != kProductionProjectSchemaVersion && project.schemaVersion != kProductionAssessmentSchemaVersion)
+    return core::failure<VoicebankProductionProject>(core::ErrorCode::Unsupported, "Production project schema is unsupported");
+  if (project.schemaVersion == 1) {
+    if (parsed.value().find("lifecycle") || parsed.value().find("sourceBindings"))
+      return core::failure<VoicebankProductionProject>(core::ErrorCode::ParseError, "Legacy project cannot carry source-aware lifecycle fields");
+    project.lifecycle = ProductionLifecycle::LegacyUnclassified;
+  } else {
+    std::string lifecycle;
+    if (!codec_internal::readString(parsed.value(), "lifecycle", lifecycle))
+      return core::failure<VoicebankProductionProject>(core::ErrorCode::ParseError, "Production draft lifecycle is required");
+    if (lifecycle == "DRAFT") project.lifecycle = ProductionLifecycle::Draft;
+    else if (lifecycle == "EXPERIMENTAL") project.lifecycle = ProductionLifecycle::Experimental;
+    else if (lifecycle == "QUALIFIED") project.lifecycle = ProductionLifecycle::Qualified;
+    else return core::failure<VoicebankProductionProject>(core::ErrorCode::ParseError, "Production draft lifecycle is invalid");
+    const auto bindings = decodeArray<TakeSourceBinding>(parsed.value(), "sourceBindings", codec_internal::decodeSourceBinding);
+    if (!bindings) return core::Result<VoicebankProductionProject>{bindings.error()};
+    project.sourceBindings = bindings.value();
+  }
   auto strategies = decodeArray<SourceStrategyAssessment>(
       parsed.value(), "sourceStrategies", codec_internal::decodeStrategy);
   auto assets = decodeArray<AssetRecord>(
       parsed.value(), "assets", codec_internal::decodeAsset);
   auto takes = decodeArray<TakeRecord>(
-      parsed.value(), "takes", codec_internal::decodeTake);
+      parsed.value(), "takes", [&](const auto& value) { return codec_internal::decodeTake(value, project.schemaVersion); });
   auto revisions = decodeArray<DerivedRevision>(
       parsed.value(), "derivedRevisions", codec_internal::decodeRevision);
   auto metadataRevisions = decodeArray<MetadataRevision>(
@@ -117,6 +135,16 @@ core::Result<VoicebankProductionProject> decodeProductionProject(
   project.operators = std::move(operators).value();
   project.reviews = std::move(reviews).value();
   project.lastDurableGeneration = static_cast<std::uint64_t>(generation);
+  if (project.schemaVersion == kProductionAssessmentSchemaVersion) {
+    const auto* rows = parsed.value().find("sourceQualityAssessments");
+    if (!rows || !rows->isArray() || rows->asArray().size() > 1024U)
+      return core::failure<VoicebankProductionProject>(core::ErrorCode::ParseError,"Source quality history exceeds its record bound");
+    auto assessments = decodeArray<SourceQualityAssessment>(parsed.value(),"sourceQualityAssessments",codec_internal::decodeSourceQualityAssessment);
+    if (!assessments) return core::Result<VoicebankProductionProject>{assessments.error()};
+    project.sourceQualityAssessments = std::move(assessments.value());
+  } else if (parsed.value().find("sourceQualityAssessments")) {
+    return core::failure<VoicebankProductionProject>(core::ErrorCode::ParseError,"Older producer schema cannot carry source quality assessments");
+  }
   auto valid = validateProductionProject(project);
   if (!valid) return core::Result<VoicebankProductionProject>{valid.error()};
   return project;

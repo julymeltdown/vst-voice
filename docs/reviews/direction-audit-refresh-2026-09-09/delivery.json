@@ -1,0 +1,34 @@
+{
+  "ok": true,
+  "stages": {
+    "validation": "passed",
+    "package": "passed",
+    "verification": "passed"
+  },
+  "counts": {
+    "blocks": 17,
+    "charts": 1,
+    "html": 0,
+    "metrics": 0,
+    "tables": 0
+  },
+  "sourceDialog": "passed",
+  "sourceInteraction": "keyboard_menu_semantic_click",
+  "viewports": [
+    1440,
+    390
+  ],
+  "timings": {
+    "validateAndPackageMs": 1483.7,
+    "staticChartExtractionMs": 1423.2,
+    "browserRunMs": 779.6,
+    "readerReadyMs": 122.9,
+    "contentChecksMs": 32.1,
+    "sourceDialogMs": 32,
+    "responsiveChecksMs": 32.1,
+    "verificationMs": 787.5,
+    "totalMs": 2277.2
+  },
+  "report": "report.html",
+  "notes": "Native table count excludes tables inside Markdown blocks. This is report-reader QA, not product GUI QA."
+}

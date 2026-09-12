@@ -253,7 +253,7 @@ void EditorScenePainter::paint(RasterCanvas& canvas, ui::PianoRollModel& model,
                 ui::Point{x, statusTop}, theme_.playhead,
                 layout_.playheadStrokeWidth);
   }
-  if (state.lyricEditor.has_value()) {
+  if (state.lyricEditor.has_value() && !state.timeMapInputActive) {
     canvas.fillRect(*state.lyricEditor, theme_.lyricEditorBackground);
     canvas.strokeRect(*state.lyricEditor, theme_.accent,
                       layout_.lyricEditorBorderWidth);
@@ -285,6 +285,98 @@ void EditorScenePainter::paint(RasterCanvas& canvas, ui::PianoRollModel& model,
   paintDiagnostics(canvas, state);
   paintStatus(canvas, model, state);
   paintSampleMicroscope(canvas, state);
+  paintPhonemeReview(canvas, state);
+  const auto eventsButton = layout_.timeMapOpenBounds();
+  canvas.fillRect(eventsButton, theme_.panel);
+  canvas.strokeRect(eventsButton, theme_.gridStrong, layout_.controlStrokeWidth);
+  canvas.drawText(ui::Point{eventsButton.x + 4.0, eventsButton.y + 13.0}, "TIME MAP", theme_.secondaryText, 8.0);
+  if (state.timeMapVisible) {
+    const auto panel = layout_.timeMapPanelBounds(width, height);
+    canvas.fillRect(panel, theme_.panel);
+    canvas.strokeRect(panel, theme_.accent, layout_.controlStrokeWidth);
+    canvas.drawText(ui::Point{panel.x + 12.0, panel.y + 18.0}, "TEMPO / METER EVENTS", theme_.primaryText, 11.0);
+    canvas.drawText(ui::Point{panel.x + 12.0, panel.y + 38.0},
+        !state.timeMapPrompt.empty() ? state.timeMapPrompt :
+        (state.timeMapStale ? "CHANGED: REFRESH BEFORE EDITING" : "ARROWS SELECT / ENTER EDIT / DEL REMOVE / R REFRESH / ESC CLOSE"),
+        theme_.secondaryText, 8.0);
+    for (std::size_t i = 0U; i < state.timeMapRows.size(); ++i) {
+      const auto row = layout_.timeMapRowBounds(width, height, i);
+      if (state.timeMapSelectedRow == i) canvas.fillRect(row, theme_.selection);
+      canvas.drawText(ui::Point{row.x + 4.0, row.y + 17.0}, state.timeMapRows[i], theme_.primaryText, 9.0);
+    }
+    constexpr std::array<const char*, 8> labels{"PREVIOUS", "NEXT", "EDIT", "REMOVE", "REFRESH", "CLOSE", "ADD TEMPO (N)", "ADD METER (SHIFT N)"};
+    for (std::size_t i = 0U; i < labels.size(); ++i) {
+      const auto button = layout_.timeMapActionBounds(width, height, i);
+      canvas.strokeRect(button, theme_.gridStrong, layout_.controlStrokeWidth);
+      canvas.drawText(ui::Point{button.x + 6.0, button.y + 17.0}, labels[i], theme_.primaryText, 9.0);
+    }
+  }
+  if (state.timeMapInputActive && state.lyricEditor) {
+    if (state.hintInputActive) {
+      const auto cancel = layout_.hintCancelBounds(width, height);
+      canvas.fillRect(cancel, theme_.panel);
+      canvas.strokeRect(cancel, theme_.accent, layout_.controlStrokeWidth);
+      canvas.drawText(cancel, "CANCEL", theme_.primaryText, 7.0);
+    }
+    const auto bounds = *state.lyricEditor;
+    canvas.fillRect(bounds, theme_.lyricEditorBackground);
+    canvas.strokeRect(bounds, theme_.accent, layout_.lyricEditorBorderWidth);
+    const auto labelHeight = state.boundedInputLabel.empty() ? 0.0 : 10.0;
+    if (labelHeight > 0.0) canvas.drawText(ui::Rect{bounds.x + 6.0, bounds.y + 1.0, std::max(0.0, bounds.width - 12.0), labelHeight},
+        state.boundedInputLabel, theme_.secondaryText, 7.0);
+    canvas.drawText(ui::Rect{bounds.x + 6.0, bounds.y + 4.0 + labelHeight, std::max(0.0, bounds.width - 12.0), bounds.height - 8.0 - labelHeight},
+        state.compositionPreview, theme_.primaryText, 12.0);
+  }
+  if (state.replacementReview.visible) {
+    const auto panel = layout_.reviewPanelBounds(width, height, state.replacementReview.dockedInspector);
+    canvas.fillRect(panel, theme_.panel); canvas.strokeRect(panel, theme_.accent, layout_.controlStrokeWidth);
+    canvas.drawText(ui::Rect{panel.x + 12.0, panel.y + 8.0, panel.width - 24.0, 18.0}, state.replacementReview.status, theme_.primaryText, 10.0);
+    canvas.drawText(ui::Rect{panel.x + 12.0, panel.y + 28.0, panel.width - 24.0, 18.0}, state.replacementReview.summary, theme_.secondaryText, 9.0);
+    for (std::size_t i = 0U; i < state.replacementReview.rows.size(); ++i) {
+      const auto row = layout_.reviewRowBounds(width, height, i, state.replacementReview.dockedInspector);
+      if (state.replacementReview.rowsInspectable) canvas.strokeRect(row, theme_.gridStrong, layout_.controlStrokeWidth);
+      // Detail rows retain newline bytes for exact reconstruction/accessibility.
+      // A line terminator is not clipped content and must not paint an ellipsis.
+      std::string_view rowText = state.replacementReview.rows[i];
+      while (!rowText.empty() && (rowText.back() == '\n' || rowText.back() == '\r')) rowText.remove_suffix(1U);
+      canvas.drawText(row, rowText, theme_.primaryText, 10.0);
+    }
+    for (std::size_t i = 0U; i < state.replacementReview.enabled.size(); ++i) {
+      const auto bounds = layout_.reviewButtonBounds(width, height, i, state.replacementReview.dockedInspector);
+      canvas.strokeRect(bounds, theme_.gridStrong, layout_.controlStrokeWidth);
+      canvas.drawText(bounds, state.replacementReview.labels[i], state.replacementReview.enabled[i] ? theme_.primaryText : theme_.secondaryText, 8.0);
+    }
+    if (state.replacementReview.dynamicsPlot) {
+      const auto& plot = *state.replacementReview.dynamicsPlot;
+      const std::array<const char*, 4U> navigation{"Zoom +", "Zoom -", "Fit region", "Measure"};
+      for (std::size_t i = 0U; i < 4U; ++i) {
+        canvas.strokeRect(plot.navigation[i], theme_.gridStrong, 1.0);
+        const auto label = i == 3U && plot.measuredMode ? "Ch " + std::to_string(plot.measuredChannel) : std::string{navigation[i]};
+        canvas.drawText(plot.navigation[i], label, plot.editable && (i != 3U || plot.measurementAvailable) ? theme_.primaryText : theme_.secondaryText, 9.0);
+      }
+      canvas.drawText(ui::Rect{plot.bounds.x, plot.bounds.y - 17.0, plot.bounds.width, 8.0},
+          plot.measuredMode ? plot.measurementLabel : "Score gray / Draft pink / Target cyan / Generated orange", theme_.secondaryText, 7.0);
+      canvas.drawText(ui::Rect{plot.bounds.x, plot.bounds.y - 9.0, plot.bounds.width, 8.0},
+          "Ticks " + std::to_string(plot.startTick) + ".." + std::to_string(plot.endTick) + (plot.measuredMode
+              ? " | dBFS -96.." + std::to_string(static_cast<int>(plot.measuredCeilingDb)) + " (silence at floor)" : " | gain 0..3.981"), theme_.secondaryText, 7.0);
+      canvas.strokeRect(plot.bounds, theme_.gridStrong, 1.0);
+      if (plot.measuredMode) {
+        for (const auto& point : plot.measured) canvas.fillRect({point.x, point.y, 1.5, 1.5}, Color{125, 225, 170, 255});
+      } else {
+      const auto unity = plot.bounds.y + plot.bounds.height * (1.0 - 1.0 / domain::kMaximumDynamicsGain);
+      canvas.line({plot.bounds.x, unity}, {plot.bounds.right(), unity}, theme_.gridStrong, 1.0);
+      const auto paintLine = [&](const std::vector<ui::Point>& points, Color color, double thickness) {
+        for (std::size_t i = 1U; i < points.size(); ++i) canvas.line(points[i - 1U], points[i], color, thickness);
+      };
+      paintLine(plot.score, theme_.secondaryText, 3.0); paintLine(plot.draft, theme_.accent, 1.0);
+      for (const auto& point : plot.selectedGenerated) canvas.strokeRect({point.x - 1.0, point.y - 1.0, 3.5, 3.5}, Color{245, 155, 80, 255}, 1.0);
+      for (const auto& point : plot.target) canvas.fillRect({point.x, point.y, 1.5, 1.5}, Color{100, 220, 240, 255});
+      for (const auto& handle : plot.handles)
+        canvas.fillRect({handle.position.x - 3.0, handle.position.y - 3.0, 6.0, 6.0}, plot.editable ? theme_.accent : theme_.secondaryText);
+      if (plot.candidate) canvas.strokeRect({plot.candidate->x - 4.0, plot.candidate->y - 4.0, 8.0, 8.0}, Color{255, 220, 100, 255}, 2.0);
+      }
+    }
+  }
   if (state.focusedElementBounds.has_value()) {
     auto focusBounds = *state.focusedElementBounds;
     focusBounds.x -= layout_.focusRingInset;
@@ -338,14 +430,21 @@ void EditorScenePainter::paintToolbar(RasterCanvas& canvas,
                             layout_.transportTextBaseline},
                   "STOP", theme_.secondaryText, layout_.stopFontSize);
 
-  const auto bpmBounds = layout_.bpmBoundsForWidth(width);
+  const auto bpmBounds = layout_.tempoInputBoundsForWidth(width);
   canvas.fillRect(bpmBounds, theme_.panel);
   canvas.strokeRect(bpmBounds, theme_.gridStrong, layout_.controlStrokeWidth);
   canvas.drawText(ui::Point{bpmBounds.x + layout_.transportTextInsetX,
                             layout_.transportTextBaseline},
-                  "BPM " + std::to_string(static_cast<int>(std::lround(
+                  std::to_string(static_cast<int>(std::lround(
                       state.tempoBpm))),
                   theme_.secondaryText, layout_.stopFontSize);
+
+  const auto meterBounds = layout_.meterInputBoundsForWidth(width);
+  canvas.fillRect(meterBounds, theme_.panel);
+  canvas.strokeRect(meterBounds, theme_.gridStrong, layout_.controlStrokeWidth);
+  canvas.drawText(ui::Point{meterBounds.x + 3.0, layout_.transportTextBaseline},
+      std::to_string(state.meter.numerator) + "/" + std::to_string(state.meter.denominator),
+      theme_.secondaryText, 8.0);
 
   const auto portraitVisible =
       !layout_.compactToolbar(width) &&
@@ -730,10 +829,11 @@ void EditorScenePainter::paintTechnicalLanes(
   const auto& phonemeVisuals = phonemeLane.visuals();
   for (const auto& visual : phonemeVisuals) {
     auto bounds = visual.bounds;
-    bounds.x += left;
+    const auto originalRight = bounds.right();
     bounds.x = std::max(left, bounds.x);
     if (bounds.x >= editorRight) continue;
-    bounds.width = std::min(bounds.width, editorRight - bounds.x);
+    bounds.width = std::min(originalRight, editorRight) - bounds.x;
+    if (bounds.width <= 0.0) continue;
     const auto fill = visual.locked ? theme_.accentSecondary : theme_.phoneme;
     canvas.fillRect(bounds, fill);
     canvas.strokeRect(bounds,
@@ -742,15 +842,14 @@ void EditorScenePainter::paintTechnicalLanes(
                       layout_.technicalLaneItemStrokeWidth);
     const ui::Rect textBounds{
         bounds.x + layout_.phonemeTextInsetX,
-        bounds.y + layout_.phonemeTextBaselineOffset,
+        bounds.y + 1.0,
         std::max(0.0, bounds.width - layout_.phonemeTextInsetX * 2.0),
-        std::max(0.0, bounds.bottom() -
-                          (bounds.y + layout_.phonemeTextBaselineOffset))};
+        std::max(0.0, bounds.height - 2.0)};
     const auto label = EditorLabelPolicy::technical(
-        visual.symbol, textBounds.width, 10.0, 42.0);
+        (visual.timingConflict ? "!" : visual.timingInferred ? "^" : visual.timingEstimated ? "~" : "") + visual.symbol,
+        textBounds.width, 10.0, 42.0);
     if (label.mode != EditorLabelMode::Hidden) {
-      canvas.drawText(textBounds, label.text, theme_.primaryText,
-                      layout_.phonemeTextFontSize);
+      canvas.drawText(textBounds, label.text, theme_.primaryText, 6.0);
     }
   }
 
@@ -764,8 +863,8 @@ void EditorScenePainter::paintTechnicalLanes(
     for (std::uint16_t count = 1U; count < override.tokenCount && end + 1 != phonemeVisuals.end(); ++count) {
       ++end;
     }
-    const auto x = left + start->bounds.x;
-    const auto right = left + end->bounds.right();
+    const auto x = start->bounds.x;
+    const auto right = end->bounds.right();
     if (x >= editorRight || right <= left) continue;
     const ui::Rect bounds{std::max(left, x),
                           layout_.unitContentTop(unitTop),
@@ -814,7 +913,7 @@ void EditorScenePainter::paintTechnicalLanes(
           return candidate.key == seam.incomingStartKey;
         });
     if (visual == phonemeVisuals.end()) continue;
-    const auto x = left + visual->bounds.x;
+    const auto x = visual->bounds.x;
     if (x < left || x > editorRight) continue;
     const auto amount = std::clamp(
         static_cast<double>(seam.seamAmount.value_or(0.5F)), 0.0, 1.0);
@@ -951,6 +1050,22 @@ void EditorScenePainter::paintCharacter(RasterCanvas& canvas,
                   layout_.characterDockDetailFontSize);
 }
 
+std::optional<double> resolveArrangementInspectorTop(const EditorSceneState& state,
+    const EditorSceneLayout& layout, double contentBottom) noexcept {
+  if (!state.inspector.valid) return std::nullopt;
+  double y = layout.toolbarHeight + layout.trackListTop;
+  for (const auto& track : state.arrangementTracks) {
+    if (y + layout.trackRowHeight > contentBottom) break;
+    y += layout.trackRowAdvance;
+    for (std::size_t i = 0U; i < track.regions.size(); ++i) {
+      if (y + layout.regionAdvance - layout.regionBottomPadding > contentBottom) break;
+      y += layout.regionAdvance;
+    }
+  }
+  if (y + layout.inspectorHeight + layout.inspectorDividerInset > contentBottom) return std::nullopt;
+  return contentBottom - layout.inspectorHeight;
+}
+
 void EditorScenePainter::paintArrangement(
     RasterCanvas& canvas, const EditorSceneState& state,
     double editorRight, double contentBottom) const noexcept {
@@ -1013,8 +1128,8 @@ void EditorScenePainter::paintArrangement(
       y += layout_.regionAdvance;
     }
   }
-  if (state.inspector.valid && y + layout_.inspectorHeight < contentBottom) {
-    const auto top = contentBottom - layout_.inspectorHeight;
+  if (const auto inspectorTop = resolveArrangementInspectorTop(state, layout_, contentBottom)) {
+    const auto top = *inspectorTop;
     canvas.line(ui::Point{editorRight + layout_.inspectorDividerInset,
                           top - layout_.inspectorDividerInset},
                 ui::Point{canvas.logicalWidth() - layout_.inspectorDividerInset,
@@ -1053,11 +1168,12 @@ void EditorScenePainter::paintArrangement(
                                ? "MEDIA PROJECT COPY"
                                : "MEDIA REFERENCE"),
                     theme_.accent, layout_.inspectorFontSize);
-    canvas.drawText(ui::Point{inspectorX,
-                              firstFieldBaseline + layout_.inspectorFieldAdvance * 3.0},
-                    std::string{"MUTE "} + (state.inspector.muted ? "ON" : "OFF") +
-                        " / SOLO " + (state.inspector.solo ? "ON" : "OFF"),
-                    theme_.primaryText, layout_.inspectorFontSize);
+    const auto toggleWidth = std::max(1.0, (width - layout_.inspectorTextInsetX * 2.0) * 0.5);
+    const auto toggleTop = firstFieldBaseline + layout_.inspectorFieldAdvance * 3.0;
+    canvas.drawText(ui::Rect{inspectorX, toggleTop, toggleWidth, layout_.inspectorFieldAdvance},
+                    std::string{"MUTE "} + (state.inspector.muted ? "ON" : "OFF"), theme_.primaryText, layout_.inspectorFontSize);
+    canvas.drawText(ui::Rect{inspectorX + toggleWidth, toggleTop, toggleWidth, layout_.inspectorFieldAdvance},
+                    std::string{"SOLO "} + (state.inspector.solo ? "ON" : "OFF"), theme_.primaryText, layout_.inspectorFontSize);
     canvas.drawText(ui::Point{inspectorX,
                               firstFieldBaseline + layout_.inspectorFieldAdvance * 4.0},
                     "BUS " + state.inspector.outputRoute.bus.toString(),
@@ -1069,6 +1185,19 @@ void EditorScenePainter::paintArrangement(
                                 firstFieldBaseline + layout_.inspectorFieldAdvance * 5.0},
                       "MEDIA " + hash,
                       theme_.primaryText, layout_.inspectorFontSize);
+    }
+    if (state.inspector.vocal) {
+      const ui::Rect edit{inspectorX, firstFieldBaseline + layout_.inspectorFieldAdvance * 5.0,
+          (width - layout_.inspectorTextInsetX * 2.0 - 8.0) / 3.0, 22.0};
+      canvas.strokeRect(edit, theme_.gridStrong, 1.0);
+      canvas.drawText(edit, "VIBRATO",
+          state.vibratoEditable ? theme_.accent : theme_.secondaryText, layout_.inspectorFontSize);
+      const ui::Rect dynamics{edit.x + edit.width + 4.0, edit.y, edit.width, edit.height};
+      canvas.strokeRect(dynamics, theme_.gridStrong, 1.0);
+      canvas.drawText(dynamics, "DYNAMICS", state.dynamicsEditable ? theme_.accent : theme_.secondaryText, layout_.inspectorFontSize);
+      const ui::Rect style{dynamics.x + dynamics.width + 4.0, dynamics.y, dynamics.width, dynamics.height};
+      canvas.strokeRect(style, theme_.gridStrong, 1.0);
+      canvas.drawText(style, "STYLE", state.styleEditable ? theme_.accent : theme_.secondaryText, layout_.inspectorFontSize);
     }
   }
 }
@@ -1692,6 +1821,37 @@ void EditorScenePainter::paintSampleMicroscope(
                 ui::Point{mark.x, wave.bottom()},
                 mark.locked ? theme_.microscopePitchMark : theme_.accentSecondary,
                 layout_.microscopePitchMarkWidth);
+  }
+}
+
+void EditorScenePainter::paintPhonemeReview(RasterCanvas& canvas, const EditorSceneState& state) const noexcept {
+  const auto& view = state.phonemeReview;
+  if (!view.available) return;
+  const auto width = canvas.logicalWidth();
+  const auto height = canvas.logicalHeight();
+  if (!view.visible) {
+    if (state.sampleMicroscope) return;
+    const auto button = layout_.phonemeReviewOpenBounds(width, height);
+    canvas.fillRect(button, theme_.microscopeWaveBackground);
+    canvas.strokeRect(button, theme_.gridStrong, 1.0);
+    canvas.drawText(ui::Point{button.x + 6.0, button.y + 14.0}, "Review retained edits", theme_.primaryText, 6.0);
+    return;
+  }
+  canvas.fillRect({0.0, 0.0, width, height}, {0, 0, 0, 180});
+  const auto panel = layout_.phonemeReviewPanelBounds(width, height);
+  canvas.fillRect(panel, theme_.microscopeOverlay);
+  canvas.strokeRect(panel, theme_.microscopeBorder, 1.0);
+  canvas.drawText(ui::Point{panel.x + 10.0, panel.y + 23.0}, "REVIEW RETAINED EDITS", theme_.primaryText, 8.0);
+  canvas.drawText(ui::Point{panel.x + 10.0, panel.y + 51.0}, fitUtf8Text(view.source, panel.width - 20.0, 6.0), theme_.primaryText, 6.0);
+  canvas.drawText(ui::Point{panel.x + 10.0, panel.y + 80.0}, fitUtf8Text(view.target, panel.width - 20.0, 6.0), theme_.primaryText, 6.0);
+  canvas.drawText(ui::Point{panel.x + 10.0, panel.y + 110.0}, fitUtf8Text(view.status, panel.width - 20.0, 5.0), theme_.secondaryText, 5.0);
+  for (std::size_t i = 0U; i < 6U; ++i) {
+    const auto button = layout_.phonemeReviewButtonBounds(width, height, i);
+    canvas.fillRect(button, theme_.microscopeWaveBackground);
+    canvas.strokeRect(button, view.enabled[i] ? theme_.microscopeBorder : theme_.gridStrong, 1.0);
+    canvas.drawText(ui::Point{button.x + 6.0, button.y + 18.0},
+        fitUtf8Text(kPhonemeReviewActions[i], button.width - 12.0, 6.0),
+        view.enabled[i] ? theme_.primaryText : theme_.secondaryText, 6.0);
   }
 }
 

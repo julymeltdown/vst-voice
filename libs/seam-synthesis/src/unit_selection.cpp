@@ -7,6 +7,35 @@
 #include <optional>
 
 namespace seam::synthesis {
+bool hasMultipleNuclei(std::span<const domain::PhonemeToken> tokens) {
+  return std::count_if(tokens.begin(), tokens.end(), [](const auto& token) {
+    return token.role == domain::PhonemeRole::Nucleus;
+  }) > 1;
+}
+bool supportsExplicitPhonemeTiming(std::span<const domain::PhonemeToken> tokens) {
+  if (tokens.empty()) return false;
+  auto nucleus = std::find_if(tokens.begin(), tokens.end(), [](const auto& token) { return token.role == domain::PhonemeRole::Nucleus; });
+  if (nucleus == tokens.end()) nucleus = tokens.begin();
+  for (auto token = tokens.begin(); token != tokens.end(); ++token) {
+    if (token->timing.startOffset && token != tokens.begin() && token != nucleus) return false;
+    if (token->timing.endOffset && token != std::prev(tokens.end())) return false;
+  }
+  return true;
+}
+
+bool supportsAlignedPhonemeTiming(
+    const voicebank::Unit& unit, std::span<const domain::PhonemeToken> tokens,
+    std::span<const SourceAlignmentEvidence> alignments) {
+  if (tokens.size() != unit.phones.size()) return false;
+  for (std::size_t i = 0; i < tokens.size(); ++i) {
+    if (tokens[i].symbol != unit.phones[i]) return false;
+  }
+  return std::any_of(alignments.begin(), alignments.end(), [&](const auto& evidence) {
+    return evidence.alignment && evidence.alignment->unitId == unit.id &&
+        evidence.alignment->validate(unit, evidence.verifiedAudioSha256, evidence.decodedFrames).hasValue();
+  });
+}
+
 namespace {
 
 const domain::Note* noteFor(const domain::VocalRegion& region,
@@ -39,7 +68,7 @@ const domain::UnitSelectionOverride* overrideFor(
     std::span<const domain::UnitSelectionOverride> overrides,
     domain::PhonemeKey startKey) noexcept {
   const auto iterator = std::find_if(overrides.begin(), overrides.end(),
-      [startKey](const auto& value) { return value.startKey == startKey; });
+      [startKey](const auto& value) { return !value.unresolved && value.startKey == startKey; });
   return iterator == overrides.end() ? nullptr : &*iterator;
 }
 
@@ -50,7 +79,9 @@ std::vector<UnitCandidate> UnitCandidateGenerator::generate(
     const domain::VocalRegion& region,
     std::span<const domain::PhonemeToken> tokens,
     std::string_view style,
-    std::span<const domain::UnitSelectionOverride> overrides) const {
+    std::span<const domain::UnitSelectionOverride> overrides,
+    std::span<const SourceAlignmentEvidence> alignments,
+    bool requireNucleusAlignment) const {
   std::vector<UnitCandidate> candidates;
   for (std::size_t start = 0; start < tokens.size(); ++start) {
     const auto* note = noteFor(region, tokens[start]);
@@ -58,6 +89,9 @@ std::vector<UnitCandidate> UnitCandidateGenerator::generate(
     const auto* explicitOverride = overrideFor(overrides, tokens[start].key);
     for (const auto& unit : manifest.units) {
       if (!unit.enabled || unit.style != style || !phonesMatch(unit, tokens, start)) continue;
+      const auto covered = tokens.subspan(start, unit.phones.size());
+      if ((!supportsExplicitPhonemeTiming(covered) || (requireNucleusAlignment && hasMultipleNuclei(covered))) &&
+          !supportsAlignedPhonemeTiming(unit, covered, alignments)) continue;
       if (explicitOverride != nullptr && unit.id != explicitOverride->unitId) continue;
       if (explicitOverride != nullptr &&
           unit.phones.size() != explicitOverride->tokenCount) {
@@ -92,7 +126,9 @@ core::Result<UnitPlan> DeterministicUnitSelector::select(
     const domain::VocalRegion& region,
     std::span<const domain::PhonemeToken> tokens,
     std::string_view style,
-    std::span<const domain::UnitSelectionOverride> overrides) const {
+    std::span<const domain::UnitSelectionOverride> overrides,
+    std::span<const SourceAlignmentEvidence> alignments,
+    bool requireNucleusAlignment) const {
   if (overrides.empty() && !region.unitSelectionOverrides.empty()) {
     overrides = region.unitSelectionOverrides;
   }
@@ -101,6 +137,7 @@ core::Result<UnitPlan> DeterministicUnitSelector::select(
                                    "Unit selection requires phoneme tokens");
   }
   for (const auto& overrideValue : overrides) {
+    if (overrideValue.unresolved) continue;
     const auto validation = overrideValue.validate();
     if (!validation) return core::Result<UnitPlan>{validation.error()};
     const auto token = std::find_if(tokens.begin(), tokens.end(),
@@ -113,6 +150,12 @@ core::Result<UnitPlan> DeterministicUnitSelector::select(
     }
     const auto* unit = manifest.findUnit(overrideValue.unitId);
     const auto start = static_cast<std::size_t>(std::distance(tokens.begin(), token));
+    if (unit && phonesMatch(*unit, tokens, start) && !supportsExplicitPhonemeTiming(tokens.subspan(start, unit->phones.size())) &&
+        !supportsAlignedPhonemeTiming(*unit, tokens.subspan(start, unit->phones.size()), alignments)) {
+      return core::failure<UnitPlan>(core::ErrorCode::Conflict,
+          "Forced unit cannot represent an interior phoneme timing edit; select smaller units",
+          overrideValue.startKey.toString() + " -> " + overrideValue.unitId);
+    }
     if (unit == nullptr || !unit->enabled || unit->style != style ||
         unit->phones.size() != overrideValue.tokenCount ||
         !phonesMatch(*unit, tokens, start)) {
@@ -121,10 +164,16 @@ core::Result<UnitPlan> DeterministicUnitSelector::select(
           "Explicit unit selection no longer matches the phoneme sequence",
           overrideValue.startKey.toString() + " -> " + overrideValue.unitId);
     }
+    const auto covered = tokens.subspan(start, unit->phones.size());
+    if (requireNucleusAlignment && hasMultipleNuclei(covered) &&
+        !supportsAlignedPhonemeTiming(*unit, covered, alignments)) {
+      return core::failure<UnitPlan>(core::ErrorCode::Conflict,
+          "Forced multi-nucleus unit requires source alignment; author landmarks or select smaller units", unit->id);
+    }
   }
 
   UnitCandidateGenerator generator;
-  const auto candidates = generator.generate(manifest, region, tokens, style, overrides);
+  const auto candidates = generator.generate(manifest, region, tokens, style, overrides, alignments, requireNucleusAlignment);
   std::vector<std::vector<UnitCandidate>> byStart(tokens.size());
   for (const auto& candidate : candidates) {
     byStart[candidate.tokenStart].push_back(candidate);

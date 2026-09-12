@@ -1,4 +1,5 @@
 #include "seam/authoring/autosave_service.hpp"
+#include "seam/authoring/voicebank_session.hpp"
 
 #include "seam/core/sha256.hpp"
 #include "seam/formats/json_value.hpp"
@@ -315,7 +316,8 @@ core::Result<std::vector<RecoveryCandidate>> AutosaveService::discover() const {
 }
 
 core::Result<void> AutosaveService::recover(
-    ProjectDocument& document, const RecoveryCandidate& candidate) const {
+    ProjectDocument& document, const RecoveryCandidate& candidate,
+    const VoicebankSession* voicebanks) const {
   if (!candidate.recoverable) {
     return core::failure(core::ErrorCode::InvalidState,
                          "Autosave is not recoverable", candidate.diagnostic);
@@ -334,6 +336,10 @@ core::Result<void> AutosaveService::recover(
   if (loaded.value().id().toString() != candidate.projectId) {
     return core::failure(core::ErrorCode::Conflict,
                          "Autosave project identity changed");
+  }
+  if (voicebanks != nullptr) {
+    const auto migrated = voicebanks->migrateLegacyStyles(loaded.value());
+    if (!migrated) return core::Result<void>{migrated.error()};
   }
   auto replaced = document.replaceProject(std::move(loaded).value());
   if (!replaced) return replaced;

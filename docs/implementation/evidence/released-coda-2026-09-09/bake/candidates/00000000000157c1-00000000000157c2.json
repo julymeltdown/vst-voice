@@ -1,0 +1,38 @@
+{
+  "approval": "unapproved",
+  "articulationPlanRevision": 6,
+  "audioSha256": "41cb6f5badf12734d2320cab5a8eb98d3b622258e258e4db3fe9842d9bea1924",
+  "compilerRevision": 9,
+  "formatId": "com.project-seam.procedural-candidate",
+  "frameCount": 24000,
+  "fricationRevision": 1,
+  "fricationStreamRevision": 2,
+  "markerSemantics": "planned-articulated-gestures",
+  "markers": [
+    {
+      "endFrame": 21120,
+      "key": "00000000000157c4:0",
+      "kind": "oral-vowel",
+      "phone": "aa1",
+      "startFrame": 0
+    },
+    {
+      "endFrame": 24000,
+      "key": "00000000000157c4:1",
+      "kind": "plosive",
+      "phone": "k",
+      "startFrame": 21120
+    }
+  ],
+  "plosiveRevision": 1,
+  "proceduralRevision": 6,
+  "recipeHash": "f2682bcd009806483bb125cfae7fe97c305b21f001d238d90bdbfef414bba088",
+  "recipeId": "released-coda",
+  "recipeVersion": "4",
+  "renderAbi": "seam-render-abi-4.1-r1",
+  "renderContentHash": "2e6830c4e028d56d7472a1d535720f7e5256500fcce5d28d8adcb56d8fdf9bcf",
+  "sampleRate": 48000,
+  "schemaVersion": 4,
+  "scoreOriginFrame": 0,
+  "style": "neutral"
+}

@@ -89,6 +89,23 @@ core::Result<void> SampleMicroscopeModel::rebuild(
   return core::success();
 }
 
+core::Result<void> SampleMicroscopeModel::relayout(const voicebank::Unit& unit,
+    Rect waveformBounds, Rect spectrogramBounds) {
+  const auto validBounds = [](Rect bounds) {
+    return std::isfinite(bounds.x) && std::isfinite(bounds.y) && std::isfinite(bounds.width) && std::isfinite(bounds.height) &&
+        bounds.width > 0.0 && bounds.height > 0.0;
+  };
+  if (totalFrames_ <= 0 || !validBounds(waveformBounds_) || !validBounds(waveformBounds) || !validBounds(spectrogramBounds))
+    return core::failure(core::ErrorCode::InvalidState, "Sample microscope has no pinned analysis or valid layout");
+  const auto markers = unit.markers.validate(totalFrames_); if (!markers) return markers;
+  const auto previous = waveformBounds_;
+  for (auto& column : waveform_)
+    column.x = waveformBounds.x + std::clamp((column.x - previous.x) / previous.width, 0.0, 1.0) * waveformBounds.width;
+  waveformBounds_ = waveformBounds; spectrogramBounds_ = spectrogramBounds; unit_ = &unit;
+  refreshMarkers(unit); refreshPitchMarks(unit);
+  return core::success();
+}
+
 double SampleMicroscopeModel::frameToPixel(time::SampleFrame frame) const noexcept {
   if (totalFrames_ <= 1) return waveformBounds_.x;
   const auto normalized = std::clamp(

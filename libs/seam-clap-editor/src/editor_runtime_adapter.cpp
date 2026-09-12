@@ -9,6 +9,7 @@
 #include "seam/rendering/region_renderer.hpp"
 #include "seam/synthesis/timing_solver.hpp"
 #include "seam/voicebank/wav.hpp"
+#include "seam/voicebank/style_resolution.hpp"
 
 #include <algorithm>
 #include <array>
@@ -245,16 +246,20 @@ RenderedPreview EditorRuntime::makeRenderedPreview(
                           ? 0U
                           : output.interleaved.size() / output.channelCount;
   output.stereo.assign(frames * 2U, 0.0F);
+  // Reading through the mutable COW overload would detach the captured Final
+  // PCM while constructing the auxiliary stereo preview. Keep the original
+  // publication storage pinned for all channel layouts.
+  const auto& sourceSamples = std::as_const(output.interleaved);
   for (std::size_t frame = 0U; frame < frames; ++frame) {
     if (output.channelCount == 1U) {
-      const auto value = output.interleaved[frame];
+      const auto value = sourceSamples[frame];
       output.stereo[frame * 2U] = value;
       output.stereo[frame * 2U + 1U] = value;
     } else {
       output.stereo[frame * 2U] =
-          output.interleaved[frame * output.channelCount];
+          sourceSamples[frame * output.channelCount];
       output.stereo[frame * 2U + 1U] =
-          output.interleaved[frame * output.channelCount + 1U];
+          sourceSamples[frame * output.channelCount + 1U];
     }
   }
   return output;
@@ -313,12 +318,32 @@ void EditorRuntime::refreshLiveResourceLocked() {
     live_.clearVoicebankResource();
     return;
   }
-  live_voice::ResourceBuildOptions options;
-  options.requireRelease =
-      voicebankResolution_.candidate->trust ==
-      voicebank::VoicebankTrust::TrustedInstalled;
+  const auto* track = session_.project().findVocalTrack(trackId_);
+  if (!track) { live_.clearVoicebankResource(); return; }
+  std::string selectedStyle;
+  const auto& candidate = *voicebankResolution_.candidate;
+  if (allowDevelopmentVoicebanks_ && candidate.trust == voicebank::VoicebankTrust::DevelopmentFixture) {
+    // Explicit engineering admission is not installed trust. Do not alter the
+    // production resolver or relabel this candidate TrustedInstalled.
+    if (!track->styleSelection.validate() || track->voicebank.id != candidate.manifest.id ||
+        track->voicebank.version != candidate.manifest.version || track->voicebank.contentHash != candidate.contentHash) {
+      live_.clearVoicebankResource(); return;
+    }
+    selectedStyle = track->styleSelection.styleId;
+    if (selectedStyle.empty() && candidate.manifest.styles.size() == 1U) selectedStyle = candidate.manifest.styles.front();
+    if (std::find(candidate.manifest.styles.begin(), candidate.manifest.styles.end(), selectedStyle) == candidate.manifest.styles.end()) {
+      live_.clearVoicebankResource(); return;
+    }
+  } else {
+    const auto style = voicebank::resolveVoiceStyle(track->voicebank, track->styleSelection, voicebankResolution_);
+    if (!style || style.value().status != voicebank::VoiceStyleStatus::Resolved) {
+      live_.clearVoicebankResource(); return;
+    }
+    selectedStyle = style.value().selection.styleId;
+  }
   live_voice::LiveResourceBuildOptions resourceOptions;
-  resourceOptions.requireRelease = options.requireRelease;
+  resourceOptions.style = std::move(selectedStyle);
+  resourceOptions.requireRelease = voicebankResolution_.candidate->trust == voicebank::VoicebankTrust::TrustedInstalled;
   const auto resource = live_voice::LiveResourceBuilder{}.build(
       *voicebankResolution_.candidate, resourceOptions);
   if (!resource || !live_.publishResources(resource.value())) {
@@ -432,9 +457,56 @@ void EditorRuntime::configureControllerCallbacks() {
       .reduceMotionEnabled = [] {
         return platform::currentAccessibilityPreferences().reduceMotion;
       },
+      .reviewPhonemeBindings = [this] { return authoring_->technicalEdits().reviewPhonemeBindings(); },
+      .rebindPhonemeOverride = [this](const domain::PhonemeOverride& edit, domain::PhonemeKey target, std::string_view context) {
+        const auto result = authoring_->technicalEdits().rebindPhonemeOverride(edit, target, context);
+        if (result) {
+          dirty_ = authoring_->document().dirty();
+          if (controller_) controller_->setDirty(dirty_);
+          requestRepaint();
+        }
+        return result;
+      },
+      .reviewRenderEdits = [this] { return authoring_->technicalEdits().reviewRetainedRenderEdits(); },
+      .rebindUnitOverride = [this](const auto& review, const auto& edit, auto target) {
+        const auto result = authoring_->technicalEdits().rebindUnitOverride(review, edit, target);
+        if (result) {
+          dirty_ = authoring_->document().dirty();
+          if (controller_) controller_->setDirty(dirty_);
+          requestRepaint();
+        }
+        return result;
+      },
+      .rebindSeamOverride = [this](const auto& review, const auto& edit, auto target) {
+        const auto result = authoring_->technicalEdits().rebindSeamOverride(review, edit, target);
+        if (result) {
+          dirty_ = authoring_->document().dirty();
+          if (controller_) controller_->setDirty(dirty_);
+          requestRepaint();
+        }
+        return result;
+      },
+      .prepareJapaneseReadingResource = [this]()
+          -> core::Result<authoring::StagedJapaneseReadingResource> {
+        std::function<core::Result<authoring::StagedJapaneseReadingResource>()> resolver;
+        {
+          std::lock_guard lock(mutex_);
+          resolver = japaneseReadingResourceResolver_;
+        }
+        if (!resolver) {
+          return core::failure<authoring::StagedJapaneseReadingResource>(
+              core::ErrorCode::Unsupported,
+              "Japanese reading resource is not connected");
+        }
+        return resolver();
+      },
   };
   controller_ = std::make_unique<native_ui::NativeEditorController>(
       session_, factory_, regionId_, std::move(callbacks));
+  controller_->setMeasurementCoordinator(authoring_->renderer());
+  controller_->setStyleBankSnapshotResolver([this](domain::TrackId track) {
+    return authoring_->voicebanks().resolveTrackSnapshot(authoring_->document().session().project(), track);
+  });
   controller_->resize(logicalWidth_, logicalHeight_);
   const auto ready = voicebankResolution_.resolved();
   controller_->setAudioState(ready, voicebankStatusLabel(voicebankResolution_));
@@ -467,6 +539,13 @@ void EditorRuntime::setVoicebankInstallerHandoff(
     std::function<core::Result<void>()> callback) {
   std::lock_guard lock(mutex_);
   voicebankInstallerHandoff_ = std::move(callback);
+}
+
+void EditorRuntime::setJapaneseReadingResourceResolver(
+    std::function<core::Result<authoring::StagedJapaneseReadingResource>()>
+        resolver) {
+  std::lock_guard lock(mutex_);
+  japaneseReadingResourceResolver_ = std::move(resolver);
 }
 
 void EditorRuntime::resize(double logicalWidth, double logicalHeight) noexcept {

@@ -1,12 +1,29 @@
 #include "test_framework.hpp"
 #include "test_support.hpp"
 #include "native_ui_design_fixture.hpp"
+#include "seam/native_ui/appkit_shortcut_key.hpp"
+
+TEST_CASE("AppKit non-Latin shortcuts preserve controls without overriding ASCII layouts") {
+  using namespace seam::native_ui;
+  CHECK(appKitNonLatinShortcutKey(0x00U, U'ㅁ') == NativeKey::A);
+  CHECK(appKitNonLatinShortcutKey(0x23U, U'ㅖ') == NativeKey::P);
+  CHECK(appKitNonLatinShortcutKey(0x22U, U'ㅑ') == NativeKey::I);
+  CHECK(appKitNonLatinShortcutKey(0x0BU, U'ㅠ') == NativeKey::B);
+  CHECK(appKitNonLatinShortcutKey(0x01U, U'ㄴ') == NativeKey::S);
+  CHECK(appKitNonLatinShortcutKey(0x06U, U'ㅋ') == NativeKey::Z);
+  CHECK(appKitNonLatinShortcutKey(0x23U, U'p') == NativeKey::Unknown);
+  CHECK(appKitNonLatinShortcutKey(0x23U, U'A') == NativeKey::Unknown);
+  CHECK(appKitNonLatinShortcutKey(0x23U, U'\0') == NativeKey::Unknown);
+  CHECK(appKitNonLatinShortcutKey(0xffffU, U'한') == NativeKey::Unknown);
+}
 
 #include "seam/application/editor_session.hpp"
 #include "seam/application/project_factory.hpp"
 #include "seam/application/render_commands.hpp"
 #include "seam/core/file_io.hpp"
 #include "seam/core/sha256.hpp"
+#include "seam/formats/project_json.hpp"
+#include "seam/clap_editor/editor_runtime.hpp"
 #include "seam/native_ui/character_presentation.hpp"
 #include "seam/native_ui/editor_controller.hpp"
 #include "seam/native_ui/editor_frame_layout.hpp"
@@ -17,6 +34,7 @@
 #include "seam/native_ui/voicebank_studio.hpp"
 #include "seam/native_ui/voice_identity.hpp"
 #include "seam/native_ui/diagnostic_presentation.hpp"
+#include "seam/phonemizer/pronunciation_resolver.hpp"
 #include "seam/text/text_engine.hpp"
 #include "seam/text/unicode.hpp"
 #include "seam/voicebank/wav.hpp"
@@ -32,6 +50,7 @@
 #include <optional>
 #include <string>
 #include <utility>
+#include <thread>
 
 namespace {
 
@@ -62,6 +81,18 @@ struct NativeUiFixture final {
   }
 };
 
+void applyReadyLyricReview(seam::native_ui::NativeEditorController& controller) {
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{5};
+  while (std::chrono::steady_clock::now() < deadline) {
+    controller.pollReplacementReview();
+    const auto view = controller.sceneState().replacementReview;
+    if (view.enabled[3]) { CHECK(controller.replacementReviewAction(3U)); return; }
+    CHECK(view.status.starts_with("Preparing"));
+    std::this_thread::sleep_for(std::chrono::milliseconds{1});
+  }
+  throw seam::test::Failure{"Lyric review did not become ready"};
+}
+
 }  // namespace
 
 TEST_CASE("native window minimum stays logical at scaled surfaces") {
@@ -86,6 +117,275 @@ TEST_CASE("native window minimum stays logical at scaled surfaces") {
   CHECK(!seam::native_ui::nativeWindowConfigSizeIsValid(tooNarrow));
 }
 
+TEST_CASE("native phoneme inspection shares resolver tokens and bounded failures") {
+  NativeUiFixture fixture;
+  auto* region = fixture.session.project().findRegion(fixture.regionId);
+  region->lyrics.front().surface = U"か";
+  region->lyrics.front().language = seam::domain::Language::Japanese;
+  region->phonemeOverrides = {{.key = {fixture.noteId, 1U},
+      .timing = {.startOffset = -1100}, .locked = true}};
+  seam::native_ui::NativeEditorController controller{
+      fixture.session, fixture.factory, fixture.regionId, {}};
+  const auto resolved = seam::phonemizer::resolveJapanesePronunciation(*region);
+  CHECK(resolved);
+  const auto scene = controller.sceneState();
+  CHECK(scene.phonemes.tokens == resolved.value().pronunciation.tokens);
+  CHECK(scene.phonemes.warnings == resolved.value().pronunciation.warnings);
+  if (const auto* output = std::getenv("SEAM_TIMING_LANE_CAPTURE")) {
+    controller.resize(960.0, 720.0);
+    seam::native_ui::PixelSurface surface{960U, 720U};
+    seam::native_ui::RasterCanvas canvas{surface, 1.0};
+    seam::native_ui::EditorScenePainter painter;
+    painter.paint(canvas, controller.pianoRoll(), controller.sceneState());
+    CHECK(surface.writePpm(output));
+  }
+  region->lyrics.front().surface = std::u32string(4097U, U'あ');
+  const auto bounded = controller.sceneState();
+  CHECK(bounded.phonemes.tokens.empty());
+  CHECK(bounded.phonemes.warnings.size() == 1U);
+  CHECK(bounded.phonemes.warnings.front().code == seam::phonemizer::WarningCode::ResolutionFailure);
+  CHECK(!bounded.phonemes.warnings.front().message.empty());
+}
+
+TEST_CASE("native retained phoneme review selects explicitly applies and closes accessibly") {
+  NativeUiFixture fixture;
+  auto project = fixture.session.project();
+  auto* region = project.findRegion(fixture.regionId);
+  region->lyrics.front().surface = U"こ";
+  region->lyrics.front().language = seam::domain::Language::Japanese;
+  region->phonemeOverrides = {{.key = {fixture.noteId, 0U}, .timing = {.startOffset = -2300},
+                               .locked = true, .unresolved = true}};
+  seam::authoring::ProjectDocument document{project, seam::application::ProjectFactory{9000U}};
+  std::size_t edits = 0U;
+  seam::authoring::TechnicalEditController technical{document, fixture.regionId, {}, [&] { ++edits; }};
+  seam::native_ui::NativeEditorController controller{document.session(), document.factory(), fixture.regionId,
+      {.reviewPhonemeBindings = [&] { return technical.reviewPhonemeBindings(); },
+       .rebindPhonemeOverride = [&](const auto& edit, auto target, auto context) {
+         return technical.rebindPhonemeOverride(edit, target, context);
+       }}};
+  controller.resize(480.0, 320.0);
+  const seam::native_ui::EditorSceneLayout layout;
+  const auto open = layout.phonemeReviewOpenBounds(480.0, 320.0);
+  CHECK(controller.pointerDown({.position = {open.x + 5.0, open.y + 5.0}, .button = seam::native_ui::PointerButton::Left}));
+  CHECK(controller.sceneState().phonemeReview.visible);
+  CHECK(!controller.sceneState().phonemeReview.enabled[5U]);
+  CHECK(controller.keyDown({.key = seam::native_ui::NativeKey::Tab}));
+  CHECK(controller.accessibilityTree().virtualizedNoteCount() == 0U);
+  CHECK(controller.accessibilityTree().materializeNotes(0U, 100U).empty());
+  CHECK(controller.accessibilityTree().focusedNode() != nullptr);
+  CHECK(controller.accessibilityTree().focusedNode()->enabled);
+  CHECK(controller.accessibilityTree().focusedNode()->id == "phoneme.review.action.2");
+  CHECK(!controller.dispatchAccessibility("editor", seam::native_ui::SemanticAction::Activate));
+  CHECK(edits == 0U);
+  const auto panel = layout.phonemeReviewPanelBounds(480.0, 320.0);
+  for (std::size_t i = 0U; i < 6U; ++i) {
+    const auto button = layout.phonemeReviewButtonBounds(480.0, 320.0, i);
+    CHECK(button.x >= panel.x);
+    CHECK(button.right() <= panel.right());
+    CHECK(button.bottom() <= panel.bottom());
+  }
+  CHECK(controller.dispatchAccessibility("phoneme.review.action.4", seam::native_ui::SemanticAction::Activate));
+  CHECK(controller.dispatchAccessibility("phoneme.review.action.4", seam::native_ui::SemanticAction::Activate));
+  CHECK(controller.sceneState().phonemeReview.enabled[5U]);
+  seam::native_ui::PixelSurface surface{480U, 320U};
+  seam::native_ui::RasterCanvas canvas{surface, 1.0};
+  seam::native_ui::EditorScenePainter painter;
+  painter.paint(canvas, controller.pianoRoll(), controller.sceneState());
+  if (const auto* output = std::getenv("SEAM_PHONEME_REVIEW_CAPTURE")) CHECK(surface.writePpm(output));
+  CHECK(controller.dispatchAccessibility("phoneme.review.action.5", seam::native_ui::SemanticAction::SetFocus));
+  CHECK(controller.keyDown({.key = seam::native_ui::NativeKey::Enter}));
+  CHECK(edits == 1U);
+  CHECK(document.session().revision() == 1U);
+  CHECK(document.session().project().findRegion(fixture.regionId)->findPhonemeOverride({fixture.noteId, 1U})->locked);
+  CHECK(controller.keyDown({.key = seam::native_ui::NativeKey::Escape}));
+  CHECK(!controller.sceneState().phonemeReview.visible);
+  CHECK(technical.undo());
+  CHECK(document.session().project() == project);
+  CHECK(controller.openPhonemeReview());
+  CHECK(controller.activatePhonemeReview(4U));
+  CHECK(controller.activatePhonemeReview(4U));
+  document.session().project().findRegion(fixture.regionId)->lyrics.front().surface = U"か";
+  const auto staleProject = document.session().project();
+  const auto staleRevision = document.session().revision();
+  CHECK(!controller.activatePhonemeReview(5U));
+  CHECK(controller.sceneState().phonemeReview.visible);
+  CHECK(controller.sceneState().phonemeReview.status.find("changed") != std::string::npos);
+  CHECK(document.session().project() == staleProject);
+  CHECK(document.session().revision() == staleRevision);
+  CHECK(edits == 2U);
+  CHECK(controller.activatePhonemeReview(2U));
+}
+
+TEST_CASE("embedded dynamics inspector receives complete drag gestures without leaking technical edits") {
+  using namespace seam; NativeUiFixture fixture;
+  auto project = fixture.session.project();
+  CHECK(project.findRegion(fixture.regionId)->dynamicsAutomation.upsert({time::Tick{0}, 1.0F}));
+  const auto root = test::support::temporaryDirectory("embedded-dynamics-curve");
+  clap_editor::EditorRuntime runtime{project, {}, {{root / "absent-bank", voicebank::VoicebankRootKind::Installed}}};
+  runtime.controller().resize(480.0, 320.0); CHECK(runtime.controller().openDynamicsInspector());
+  const auto before = runtime.projectCopy();
+  const auto originalState = clap_editor::encodeEditorState(before); CHECK(originalState);
+  const auto plot = runtime.controller().sceneState().replacementReview.dynamicsPlot; CHECK(plot);
+  runtime.pointerDown({.position = plot->handles[0].position, .button = native_ui::PointerButton::Left});
+  runtime.pointerMove({.position = {plot->bounds.x, plot->bounds.bottom()}, .button = native_ui::PointerButton::Left});
+  CHECK(runtime.controller().sceneState().replacementReview.rows[1] == "Linear gain: 0");
+  runtime.pointerUp({.position = {plot->bounds.x, plot->bounds.y}, .button = native_ui::PointerButton::Left});
+  CHECK(runtime.controller().sceneState().replacementReview.rows[1] != "Linear gain: 0");
+  CHECK(runtime.projectCopy() == before);
+  CHECK(runtime.controller().replacementReviewAction(3U)); CHECK(runtime.projectCopy() == before);
+  const auto stagedState = clap_editor::encodeEditorState(runtime.projectCopy()); CHECK(stagedState);
+  CHECK(stagedState.value() == originalState.value());
+  CHECK(runtime.controller().replacementReviewAction(3U));
+  auto expected = before;
+  CHECK(expected.findRegion(fixture.regionId)->dynamicsAutomation.upsert({time::Tick{0}, domain::kMaximumDynamicsGain}));
+  CHECK(runtime.projectCopy() == expected); CHECK(runtime.controller().sceneState().dirty);
+  const auto appliedState = clap_editor::encodeEditorState(runtime.projectCopy()); CHECK(appliedState);
+  CHECK(appliedState.value() != originalState.value());
+  const auto decoded = clap_editor::decodeEditorState(appliedState.value()); CHECK(decoded); CHECK(decoded.value() == expected);
+  clap_editor::EditorRuntime restored{decoded.value(), {}, {{root / "absent-bank", voicebank::VoicebankRootKind::Installed}}};
+  CHECK(restored.projectCopy() == expected); CHECK(restored.controller().openDynamicsInspector());
+  CHECK(restored.controller().sceneState().replacementReview.rows[0].find("3.981") != std::string::npos);
+}
+
+TEST_CASE("embedded editor review callback commits retained edits and dirty state") {
+  NativeUiFixture fixture;
+  auto project = fixture.session.project();
+  auto* region = project.findRegion(fixture.regionId);
+  region->lyrics.front().surface = U"こ";
+  region->lyrics.front().language = seam::domain::Language::Japanese;
+  region->phonemeOverrides = {{.key = {fixture.noteId, 0U}, .locked = true, .unresolved = true}};
+  const auto root = seam::test::support::temporaryDirectory("embedded-phoneme-review");
+  seam::clap_editor::EditorRuntime runtime{project, {},
+      {{root / "absent-bank", seam::voicebank::VoicebankRootKind::Installed}}};
+  CHECK(runtime.dispatchAccessibility("phoneme.review.open", seam::native_ui::SemanticAction::Activate));
+  CHECK(runtime.dispatchAccessibility("phoneme.review.action.4", seam::native_ui::SemanticAction::Activate));
+  CHECK(runtime.dispatchAccessibility("phoneme.review.action.4", seam::native_ui::SemanticAction::Activate));
+  CHECK(runtime.dispatchAccessibility("phoneme.review.action.5", seam::native_ui::SemanticAction::Activate));
+  const auto changed = runtime.projectCopy();
+  const auto* edit = changed.findRegion(fixture.regionId)->findPhonemeOverride({fixture.noteId, 1U});
+  CHECK(edit != nullptr);
+  CHECK(edit->sourceContextId.has_value());
+  CHECK(!edit->unresolved);
+  CHECK(runtime.controller().sceneState().dirty);
+}
+
+TEST_CASE("embedded retained review commits unit and seam callbacks") {
+  for (bool unit : {true, false}) {
+    NativeUiFixture fixture;
+    auto project = fixture.session.project();
+    auto* region = project.findRegion(fixture.regionId);
+    region->lyrics.front().surface = U"こ";
+    region->lyrics.front().language = seam::domain::Language::Japanese;
+    if (unit) region->unitSelectionOverrides = {{.startKey = {fixture.noteId, 0U}, .unitId = "saved", .unresolved = true}};
+    else region->seamOverrides = {{.incomingStartKey = {fixture.noteId, 0U}, .seamAmount = 0.5F, .unresolved = true}};
+    const auto root = seam::test::support::temporaryDirectory("embedded-render-review");
+    seam::clap_editor::EditorRuntime runtime{project, {},
+        {{root / "absent-bank", seam::voicebank::VoicebankRootKind::Installed}}};
+    CHECK(runtime.dispatchAccessibility("phoneme.review.open", seam::native_ui::SemanticAction::Activate));
+    CHECK(runtime.dispatchAccessibility("phoneme.review.action.4", seam::native_ui::SemanticAction::Activate));
+    CHECK(runtime.dispatchAccessibility("phoneme.review.action.4", seam::native_ui::SemanticAction::Activate));
+    CHECK(runtime.dispatchAccessibility("phoneme.review.action.5", seam::native_ui::SemanticAction::Activate));
+    const auto changed = runtime.projectCopy();
+    const auto* updated = changed.findRegion(fixture.regionId);
+    if (unit) {
+      CHECK(updated->findUnitSelectionOverride({fixture.noteId, 1U}) != nullptr);
+      CHECK(!updated->findUnitSelectionOverride({fixture.noteId, 1U})->unresolved);
+    } else {
+      CHECK(updated->findSeamOverride({fixture.noteId, 1U}) != nullptr);
+      CHECK(!updated->findSeamOverride({fixture.noteId, 1U})->unresolved);
+    }
+    CHECK(runtime.controller().sceneState().dirty);
+  }
+}
+
+TEST_CASE("native retained review applies unit and seam edits through the shared panel") {
+  NativeUiFixture fixture;
+  auto project = fixture.session.project();
+  auto* region = project.findRegion(fixture.regionId);
+  region->lyrics.front().surface = U"こ";
+  region->lyrics.front().language = seam::domain::Language::Japanese;
+  region->unitSelectionOverrides = {{.startKey = {fixture.noteId, 0U}, .unitId = "saved-unit", .unresolved = true}};
+  region->seamOverrides = {{.incomingStartKey = {fixture.noteId, 0U}, .seamAmount = 0.4F, .unresolved = true}};
+  seam::authoring::ProjectDocument document{project, seam::application::ProjectFactory{9000U}};
+  std::size_t edits = 0U;
+  seam::authoring::TechnicalEditController technical{document, fixture.regionId, {}, [&] { ++edits; }};
+  seam::native_ui::NativeEditorController controller{document.session(), document.factory(), fixture.regionId,
+      {.reviewPhonemeBindings = [&] { return technical.reviewPhonemeBindings(); },
+       .rebindPhonemeOverride = [&](const auto& edit, auto target, auto context) { return technical.rebindPhonemeOverride(edit, target, context); },
+       .reviewRenderEdits = [&] { return technical.reviewRetainedRenderEdits(); },
+       .rebindUnitOverride = [&](const auto& review, const auto& edit, auto target) { return technical.rebindUnitOverride(review, edit, target); },
+       .rebindSeamOverride = [&](const auto& review, const auto& edit, auto target) { return technical.rebindSeamOverride(review, edit, target); }}};
+  controller.resize(480.0, 320.0);
+  CHECK(controller.openPhonemeReview());
+  CHECK(controller.sceneState().phonemeReview.source.find("Unit saved-unit") != std::string::npos);
+  if (const auto* output = std::getenv("SEAM_RENDER_REVIEW_CAPTURE")) {
+    seam::native_ui::PixelSurface surface{480U, 320U};
+    seam::native_ui::RasterCanvas canvas{surface, 1.0};
+    seam::native_ui::EditorScenePainter painter;
+    painter.paint(canvas, controller.pianoRoll(), controller.sceneState());
+    CHECK(surface.writePpm(output));
+  }
+  CHECK(!controller.sceneState().phonemeReview.enabled[5U]);
+  CHECK(controller.activatePhonemeReview(1U));
+  CHECK(controller.sceneState().phonemeReview.source.starts_with("Seam"));
+  CHECK(controller.activatePhonemeReview(4U));
+  CHECK(controller.activatePhonemeReview(0U));
+  CHECK(!controller.sceneState().phonemeReview.enabled[5U]);
+  CHECK(controller.activatePhonemeReview(4U));
+  CHECK(controller.activatePhonemeReview(4U));
+  CHECK(controller.dispatchAccessibility("phoneme.review.action.5", seam::native_ui::SemanticAction::Activate));
+  CHECK(edits == 1U);
+  CHECK(controller.sceneState().phonemeReview.source.starts_with("Seam"));
+  CHECK(!controller.sceneState().phonemeReview.enabled[5U]);
+  CHECK(controller.activatePhonemeReview(4U));
+  CHECK(controller.activatePhonemeReview(4U));
+  CHECK(controller.activatePhonemeReview(5U));
+  CHECK(edits == 2U);
+  CHECK(controller.sceneState().phonemeReview.source == "No retained edits");
+  CHECK(controller.activatePhonemeReview(2U));
+  CHECK(technical.undo());
+  CHECK(technical.undo());
+  CHECK(document.session().project() == project);
+  CHECK(controller.openPhonemeReview());
+  CHECK(controller.activatePhonemeReview(4U));
+  document.session().project().findRegion(fixture.regionId)->lyrics.front().surface = U"さ";
+  const auto changed = document.session().project();
+  const auto revision = document.session().revision();
+  CHECK(!controller.activatePhonemeReview(5U));
+  CHECK(controller.sceneState().phonemeReview.status.find("changed") != std::string::npos);
+  CHECK(document.session().project() == changed);
+  CHECK(document.session().revision() == revision);
+}
+
+TEST_CASE("opening phoneme review preserves pending text composition") {
+  NativeUiFixture fixture;
+  std::size_t reviews = 0U;
+  seam::native_ui::NativeEditorController controller{fixture.session, fixture.factory, fixture.regionId,
+      {.reviewPhonemeBindings = [&] {
+         ++reviews;
+         return seam::core::success(seam::authoring::PhonemeBindingReview{.regionId = fixture.regionId});
+       },
+       .rebindPhonemeOverride = [](const auto&, auto, auto) { return seam::core::success(); }}};
+  CHECK(controller.beginLyricEdit(fixture.noteId));
+  CHECK(controller.updateTextComposition(U"pending lyric", {}));
+  const auto before = fixture.session.project();
+  const auto preview = controller.sceneState().compositionPreview;
+  CHECK(!controller.openPhonemeReview());
+  CHECK(reviews == 0U);
+  CHECK(controller.textInputActive());
+  CHECK(controller.sceneState().compositionPreview == preview);
+  CHECK(fixture.session.project() == before);
+  controller.cancelTextComposition();
+  CHECK(controller.openPhonemeReview());
+  CHECK(reviews == 1U);
+  const auto hovered = controller.sceneState().hoveredNote;
+  CHECK(controller.pointerMove({.position = {200.0, 160.0}}));
+  CHECK(controller.pointerUp({.position = {200.0, 160.0}, .button = seam::native_ui::PointerButton::Left}));
+  CHECK(controller.sceneState().hoveredNote == hovered);
+  CHECK(fixture.session.project() == before);
+  CHECK(fixture.session.revision() == 0U);
+}
+
 TEST_CASE("native window screenshots honor the requested capture dimensions") {
   const seam::native_ui::NativeWindowConfig interactive{};
   CHECK(seam::native_ui::nativeWindowShouldRestoreSavedFrame(interactive));
@@ -94,6 +394,8 @@ TEST_CASE("native window screenshots honor the requested capture dimensions") {
       .screenshotPath = std::filesystem::path{"capture.ppm"},
   };
   CHECK(!seam::native_ui::nativeWindowShouldRestoreSavedFrame(capture));
+  const seam::native_ui::NativeWindowConfig explicitSize{.restoreSavedFrame=false};
+  CHECK(!seam::native_ui::nativeWindowShouldRestoreSavedFrame(explicitSize));
 }
 
 TEST_CASE("voicebank production rail hit testing follows painted row spacing") {
@@ -900,6 +1202,11 @@ TEST_CASE("native design journey fixtures cover detail identity and motion state
   characterController.setCharacterMetadata("Character 01", "emo-low-poly");
   characterController.setCharacterPortrait(&portrait);
   CHECK(characterController.sceneState().voiceIdentity.characterActive);
+  characterController.setRenderStatus({.state = seam::native_ui::RenderStatusState::Rendering});
+  CHECK(characterController.sceneState().characterState == seam::character::State::Rendering);
+  characterController.setPlaying(true);
+  characterController.setRenderStatus({.state = seam::native_ui::RenderStatusState::Ready});
+  CHECK(characterController.sceneState().characterState == seam::character::State::Focused);
   capture(characterController, "character-ready-matched.ppm");
   CHECK(characterController.keyDown(
       seam::native_ui::KeyEvent{.key = seam::native_ui::NativeKey::C}));
@@ -1137,6 +1444,9 @@ TEST_CASE("native batch lyrics use IME composition and semantic activation") {
   CHECK(controller.commitTextComposition(U"きゃ ね"));
   CHECK(!controller.textInputActive());
   CHECK(endTextInputCalls == 1U);
+  CHECK(documentChanges == 0U);
+  CHECK(controller.sceneState().replacementReview.visible);
+  applyReadyLyricReview(controller);
   CHECK(documentChanges == 1U);
   const auto* first = region->findLyric(
       fixture.session.project().findNote(fixture.noteId)->lyricTokenId);
@@ -1216,6 +1526,52 @@ TEST_CASE("microscope close bounds stay inside the modal panel") {
     CHECK(close.bottom() <= panel.bottom());
     CHECK(close.height == layout.microscopeCloseHeight);
   }
+}
+
+TEST_CASE("accessibility dispatch rejects disabled controls and disabled ancestor surfaces") {
+  using namespace seam::native_ui;
+  AccessibilityTree tree;
+  const auto makeRoot=[] {
+    SemanticNode root{.id="root",.role=SemanticRole::Panel};
+    root.children.push_back({.id="action",.role=SemanticRole::Button,.enabled=false,.actions={SemanticAction::Activate,SemanticAction::SetFocus}});
+    root.children.push_back({.id="disabled-group",.role=SemanticRole::Panel,.enabled=false,
+        .children={{.id="nested",.role=SemanticRole::Button,.actions={SemanticAction::Activate,SemanticAction::SetFocus}}}});
+    return root;
+  };
+  bool called=false;
+  const auto handler=[&](std::string_view,SemanticAction){called=true;return seam::core::success();};
+  tree.rebuildCustom(makeRoot());
+  CHECK(!tree.dispatch("action",SemanticAction::Activate,handler));
+  CHECK(!tree.dispatch("nested",SemanticAction::Activate,handler)); CHECK(!called);
+  CHECK(tree.setFocus("action")); CHECK(tree.setFocus("nested"));
+  CHECK(tree.focusNext(false));
+  CHECK(tree.dispatch("action",SemanticAction::SetFocus,handler)); CHECK(called); called=false;
+  auto enabled=makeRoot(); enabled.children.front().enabled=true;
+  tree.rebuildCustom(enabled); CHECK(tree.dispatch("action",SemanticAction::Activate,handler)); CHECK(called);
+  CHECK(tree.setFocus("action"));
+  CHECK(tree.focusNext(false)); CHECK(tree.focusedNode()); CHECK(tree.focusedNode()->id=="nested");
+  called=false; enabled.enabled=false; tree.rebuildCustom(std::move(enabled));
+  CHECK(!tree.dispatch("action",SemanticAction::Activate,handler)); CHECK(!called);
+  CHECK(tree.setFocus("action")); CHECK(tree.focusNext(true));
+  CHECK(tree.dispatch("nested",SemanticAction::SetFocus,handler)); CHECK(called);
+}
+
+TEST_CASE("accessibility dispatch owns its target ID while the callback replaces the tree") {
+  using namespace seam::native_ui;
+  AccessibilityTree tree;
+  const std::string expected="designer."+std::string(256U,'x')+".action";
+  SemanticNode root{.id="root",.role=SemanticRole::Panel};
+  root.children.push_back({.id=expected,.role=SemanticRole::Button,.actions={SemanticAction::Activate}});
+  tree.rebuildCustom(std::move(root));
+  const auto* borrowed=tree.root().children.front().id.data();
+  CHECK(tree.dispatch(tree.root().children.front().id,SemanticAction::Activate,
+      [&](std::string_view id,SemanticAction action) {
+        CHECK(id.data()!=borrowed);
+        tree.rebuildCustom({.id="replacement",.role=SemanticRole::Panel});
+        CHECK(id==expected); CHECK(action==SemanticAction::Activate);
+        return seam::core::success();
+      }));
+  CHECK(tree.root().id=="replacement");
 }
 
 TEST_CASE("native accessibility dispatches notes outside the piano viewport") {
@@ -1925,6 +2281,1109 @@ TEST_CASE("native arrangement controller exposes undoable track and region editi
   CHECK(fixture.session.project().findVocalTrack(addedTrack.value()) != nullptr);
 }
 
+TEST_CASE("native tempo meter dispatch guards context and notifies document changes only on success") {
+  using namespace seam;
+  NativeUiFixture fixture;
+  unsigned changes = 0U;
+  native_ui::NativeEditorController controller{fixture.session, fixture.factory, fixture.regionId,
+      {.documentChanged = [&] { ++changes; }}};
+  const auto revision = fixture.session.revision();
+  CHECK(controller.editTempo(revision, time::Tick{960}, 90.0));
+  CHECK(changes == 1U); CHECK(fixture.session.lastImpact().projectWide);
+  CHECK(!controller.editMeter(revision, time::Tick{3840}, application::EditMeterCommand::Signature{3, 4}));
+  CHECK(changes == 1U);
+  CHECK(!controller.editTempo(fixture.session.revision(), time::Tick{960}, -1.0));
+  CHECK(changes == 1U);
+  CHECK(controller.editMeter(fixture.session.revision(), time::Tick{3840}, application::EditMeterCommand::Signature{3, 4}));
+  CHECK(changes == 2U);
+  CHECK(controller.beginLyricEdit(fixture.noteId));
+  CHECK(!controller.editTempo(fixture.session.revision(), time::Tick{0}, 80.0));
+  CHECK(controller.textInputActive()); CHECK(changes == 2U);
+  controller.cancelTextComposition();
+  CHECK(controller.editTempo(fixture.session.revision(), time::Tick{960}, std::nullopt));
+  CHECK(changes == 3U);
+  CHECK(fixture.session.undo()); CHECK(fixture.session.project().tempoMap().bpmAt(time::Tick{960}) == 90.0);
+}
+
+TEST_CASE("native phone hint input preserves lyrics and supports clear undo and no-op") {
+  using namespace seam;
+  NativeUiFixture fixture;
+  auto* lyric = fixture.session.project().findRegion(fixture.regionId)->findLyric(fixture.lyricId);
+  lyric->language = domain::Language::Japanese;
+  lyric->surface = U"き";
+  unsigned changed = 0U;
+  std::u32string input;
+  native_ui::NativeEditorController controller{fixture.session, fixture.factory, fixture.regionId,
+      {.beginTextInput = [&](const native_ui::TextInputRequest& request) { input = request.currentText; },
+       .documentChanged = [&] { ++changed; }}};
+  CHECK(!controller.keyDown({.key = native_ui::NativeKey::Enter, .modifiers = {.alt = true}}));
+  fixture.session.selection().selectOnly(fixture.noteId);
+  CHECK(controller.keyDown({.key = native_ui::NativeKey::Enter, .modifiers = {.alt = true}}));
+  CHECK(input.empty());
+  CHECK(controller.sceneState().boundedInputLabel == "PHONE HINT (EMPTY = CLEAR)");
+  CHECK(controller.sceneState().lyricEditor.has_value());
+  CHECK(controller.commitTextComposition(U"sh a"));
+  CHECK(fixture.session.project().findNote(fixture.noteId)->phoneticHint == "sh a");
+  CHECK(fixture.session.project().findRegion(fixture.regionId)->findLyric(fixture.lyricId)->surface == U"き");
+  CHECK(changed == 1U);
+  const auto revision = fixture.session.revision();
+  CHECK(controller.beginHintEdit(fixture.noteId)); CHECK(input == U"sh a");
+  CHECK(controller.commitTextComposition(U"sh a"));
+  CHECK(fixture.session.revision() == revision); CHECK(changed == 1U);
+  CHECK(controller.beginHintEdit(fixture.noteId));
+  CHECK(controller.commitTextComposition(U""));
+  CHECK(!fixture.session.project().findNote(fixture.noteId)->phoneticHint);
+  CHECK(fixture.session.undo());
+  CHECK(fixture.session.project().findNote(fixture.noteId)->phoneticHint == "sh a");
+  CHECK(fixture.session.redo());
+  CHECK(!fixture.session.project().findNote(fixture.noteId)->phoneticHint);
+  CHECK(!controller.textInputActive());
+}
+
+TEST_CASE("native phone hints reject invalid stale and unsupported edits without retargeting") {
+  using namespace seam;
+  NativeUiFixture fixture;
+  native_ui::NativeEditorController controller{fixture.session, fixture.factory, fixture.regionId,
+      {.beginTextInput = [](const native_ui::TextInputRequest&) {}}};
+  CHECK(!controller.beginHintEdit(fixture.noteId)); // English has no registered hint validator.
+  auto* lyric = fixture.session.project().findRegion(fixture.regionId)->findLyric(fixture.lyricId);
+  lyric->language = domain::Language::Japanese; lyric->surface = U"き";
+  CHECK(controller.beginHintEdit(fixture.noteId));
+  const auto revision = fixture.session.revision();
+  CHECK(!controller.commitTextComposition(U"not-a-phone"));
+  CHECK(fixture.session.revision() == revision);
+  CHECK(!fixture.session.project().findNote(fixture.noteId)->phoneticHint);
+  CHECK(controller.beginHintEdit(fixture.noteId));
+  CHECK(fixture.session.execute(std::make_unique<application::EditTempoCommand>(time::Tick{960}, 80.0)));
+  CHECK(!controller.commitTextComposition(U"sh a"));
+  CHECK(!fixture.session.project().findNote(fixture.noteId)->phoneticHint);
+  CHECK(controller.beginHintEdit(fixture.noteId));
+  controller.cancelTextComposition();
+  CHECK(!controller.textInputActive());
+  CHECK(controller.beginHintEdit(fixture.noteId));
+  CHECK(controller.beginLyricEdit(fixture.noteId));
+  CHECK(controller.commitTextComposition(U"あ"));
+  CHECK(fixture.session.project().findRegion(fixture.regionId)->findLyric(fixture.lyricId)->surface == U"あ");
+  CHECK(!fixture.session.project().findNote(fixture.noteId)->phoneticHint);
+  CHECK(controller.beginHintEdit(fixture.noteId));
+  CHECK(controller.updateTextComposition(U"k a", {}));
+  CHECK(controller.keyDown({.key = native_ui::NativeKey::Tab}));
+  CHECK(!controller.textInputActive()); // Auxiliary input must not open the next lyric.
+  CHECK(fixture.session.project().findNote(fixture.noteId)->phoneticHint == "k a");
+  CHECK(controller.beginHintEdit(fixture.noteId));
+  fixture.session.project().findNote(fixture.noteId)->phoneticHint = "sh a";
+  CHECK(!controller.commitTextComposition(U"k a")); // Even a no-op checks its captured source.
+  CHECK(fixture.session.project().findNote(fixture.noteId)->phoneticHint == "sh a");
+}
+
+TEST_CASE("phone hint semantics isolate active input and reject old interaction identities") {
+  using namespace seam;
+  NativeUiFixture fixture;
+  auto* lyric = fixture.session.project().findRegion(fixture.regionId)->findLyric(fixture.lyricId);
+  lyric->language = domain::Language::Japanese; lyric->surface = U"あ";
+  native_ui::NativeEditorController controller{fixture.session, fixture.factory, fixture.regionId,
+      {.beginTextInput = [](const native_ui::TextInputRequest&) {}}};
+  controller.resize(720.0, 520.0);
+  const auto inputId = [&] {
+    controller.rebuildAccessibilityTree();
+    CHECK(controller.accessibilityTree().virtualizedNoteCount() == 0U);
+    CHECK(controller.accessibilityTree().root().children.size() == 2U);
+    const auto& input = controller.accessibilityTree().root().children.front();
+    CHECK(input.role == native_ui::SemanticRole::TextField);
+    CHECK(!input.bounds.intersects(controller.accessibilityTree().root().children.back().bounds));
+    return input.id;
+  };
+  CHECK(controller.beginHintEdit(fixture.noteId));
+  const auto first = inputId();
+  CHECK(controller.updateTextComposition(U"sh a N cl k a", {}));
+  if (const auto* capture = std::getenv("SEAM_HINT_INPUT_CAPTURE")) {
+    native_ui::PixelSurface surface{720U, 520U}; native_ui::RasterCanvas canvas{surface, 1.0};
+    native_ui::EditorScenePainter{}.paint(canvas, controller.pianoRoll(), controller.sceneState());
+    CHECK(surface.writePpm(capture));
+  }
+  CHECK(!controller.dispatchAccessibility("toolbar.time-map", native_ui::SemanticAction::Activate));
+  CHECK(!controller.setAccessibilityValue("note." + fixture.noteId.toString(), "changed"));
+  CHECK(!controller.setAccessibilityValue(first, std::string(4097U, 'a')));
+  CHECK(!controller.setAccessibilityValue(first, std::string{"\xff"}));
+  CHECK(controller.textInputActive());
+  const auto cancel = controller.accessibilityTree().root().children.back().id;
+  CHECK(controller.dispatchAccessibility(cancel, native_ui::SemanticAction::Activate));
+  CHECK(!controller.setAccessibilityValue(first, "k a"));
+  CHECK(controller.beginHintEdit(fixture.noteId));
+  const auto second = inputId(); CHECK(second != first);
+  CHECK(!controller.setAccessibilityValue(first, "k a"));
+  CHECK(!controller.dispatchAccessibility(cancel, native_ui::SemanticAction::Activate));
+  CHECK(controller.setAccessibilityValue(second, "sh a"));
+  CHECK(fixture.session.project().findNote(fixture.noteId)->phoneticHint == "sh a");
+  CHECK(controller.beginHintEdit(fixture.noteId));
+  CHECK(controller.setAccessibilityValue(inputId(), ""));
+  CHECK(!fixture.session.project().findNote(fixture.noteId)->phoneticHint);
+  CHECK(controller.beginHintEdit(fixture.noteId));
+  const auto stale = inputId();
+  CHECK(fixture.session.execute(std::make_unique<application::EditTempoCommand>(time::Tick{960}, 80.0)));
+  CHECK(!controller.setAccessibilityValue(stale, "k a"));
+  CHECK(!controller.setAccessibilityValue(inputId(), "k a"));
+  CHECK(!fixture.session.project().findNote(fixture.noteId)->phoneticHint);
+  CHECK(controller.beginHintEdit(fixture.noteId));
+  const auto revision = fixture.session.revision();
+  CHECK(controller.keyDown({.key = native_ui::NativeKey::Delete}));
+  CHECK(fixture.session.revision() == revision);
+  const native_ui::EditorSceneLayout layout;
+  const auto bounds = layout.hintCancelBounds(controller.sceneState().logicalWidth, controller.sceneState().logicalHeight);
+  CHECK(controller.pointerDown({.position = {bounds.x + 2.0, bounds.y + 2.0}, .button = native_ui::PointerButton::Left}));
+  CHECK(!controller.textInputActive());
+}
+
+TEST_CASE("native replacement review pages isolates refreshes and applies one undo group") {
+  using namespace seam;
+  NativeUiFixture fixture;
+  for (int i = 0; i < 12; ++i) {
+    auto [lyric, note] = fixture.factory.makeNote(time::Tick{i * 480}, time::Tick{480}, 60U, U"edge", domain::Language::English);
+    auto* region = fixture.session.project().findRegion(fixture.regionId);
+    region->lyrics.push_back(lyric); region->notes.push_back(note);
+  }
+  fixture.session.project().findRegion(fixture.regionId)->sortNotes();
+  unsigned changes = 0U;
+  native_ui::NativeEditorController controller{fixture.session, fixture.factory, fixture.regionId,
+      {.documentChanged = [&] { ++changes; }}};
+  controller.resize(720.0, 520.0);
+  const auto waitReady = [&] {
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{5};
+    while (std::chrono::steady_clock::now() < deadline) {
+      controller.pollReplacementReview();
+      const auto view = controller.sceneState().replacementReview;
+      if (view.enabled[3]) return;
+      CHECK(view.status == "Preparing replacement review...");
+      std::this_thread::sleep_for(std::chrono::milliseconds{1});
+    }
+    throw test::Failure{"Native replacement review did not become ready"};
+  };
+  const auto id = [&](std::size_t action) {
+    controller.rebuildAccessibilityTree();
+    for (const auto& node : controller.accessibilityTree().root().children)
+      if (node.id.ends_with("action." + std::to_string(action))) return node.id;
+    throw test::Failure{"Missing replacement action"};
+  };
+  const auto before = fixture.session.project();
+  CHECK(controller.openReplacementReview("edge", "la"));
+  const auto preparingApply = id(3U);
+  CHECK(!controller.dispatchAccessibility(preparingApply, native_ui::SemanticAction::Activate));
+  CHECK(!controller.setAccessibilityValue("note." + fixture.noteId.toString(), "changed"));
+  CHECK(!controller.beginTempoEdit()); CHECK(!controller.beginLyricEdit(fixture.noteId));
+  CHECK(controller.keyDown({.key = native_ui::NativeKey::Delete})); CHECK(fixture.session.project() == before);
+  waitReady(); CHECK(changes == 0U);
+  CHECK(!controller.dispatchAccessibility(preparingApply, native_ui::SemanticAction::Activate));
+  CHECK(controller.accessibilityTree().virtualizedNoteCount() == 0U);
+  CHECK(controller.sceneState().replacementReview.rows.size() == 6U);
+  const auto oldNext = id(1U);
+  CHECK(controller.dispatchAccessibility(oldNext, native_ui::SemanticAction::Activate));
+  CHECK(!controller.dispatchAccessibility(oldNext, native_ui::SemanticAction::Activate));
+  CHECK(controller.replacementReviewAction(1U));
+  CHECK(controller.sceneState().replacementReview.rows.size() == 1U);
+  CHECK(!controller.replacementReviewAction(1U));
+  CHECK(controller.replacementReviewAction(2U));
+  CHECK(controller.sceneState().replacementReview.rows.front() == "No retained dependency records");
+  CHECK(controller.replacementReviewAction(2U));
+  if (const auto* capture = std::getenv("SEAM_REPLACEMENT_REVIEW_CAPTURE")) {
+    native_ui::PixelSurface surface{720U, 520U}; native_ui::RasterCanvas canvas{surface, 1.0};
+    native_ui::EditorScenePainter{}.paint(canvas, controller.pianoRoll(), controller.sceneState());
+    CHECK(surface.writePpm(capture));
+  }
+  const auto staleApply = id(3U);
+  CHECK(fixture.session.execute(std::make_unique<application::EditTempoCommand>(time::Tick{0}, 90.0)));
+  CHECK(!controller.sceneState().replacementReview.enabled[3]);
+  CHECK(!controller.dispatchAccessibility(staleApply, native_ui::SemanticAction::Activate));
+  CHECK(controller.replacementReviewAction(5U)); waitReady();
+  const auto refreshed = fixture.session.project();
+  CHECK(controller.dispatchAccessibility(id(3U), native_ui::SemanticAction::Activate));
+  CHECK(changes == 1U); CHECK(!controller.sceneState().replacementReview.visible);
+  for (const auto& lyric : fixture.session.project().findRegion(fixture.regionId)->lyrics) CHECK(lyric.surface == U"la");
+  CHECK(fixture.session.undo()); CHECK(fixture.session.project() == refreshed);
+  CHECK(controller.openReplacementReview("edge", "li"));
+  CHECK(controller.replacementReviewAction(4U));
+  CHECK(!controller.sceneState().replacementReview.visible); CHECK(changes == 1U);
+  CHECK(fixture.session.project() == refreshed);
+}
+
+static void waitForNativeFind(seam::native_ui::NativeEditorController& controller) {
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{5};
+  while (controller.findPreparing() && std::chrono::steady_clock::now() < deadline) {
+    controller.pollReplacementReview(); std::this_thread::sleep_for(std::chrono::milliseconds{1});
+  }
+  CHECK(!controller.findPreparing());
+}
+
+TEST_CASE("native diagnostic Find works without a vocal region and never runs recovery or selects notes") {
+  using namespace seam;
+  application::ProjectFactory factory{271000U}; application::EditorSession session{factory.createProject("Global diagnostic Find")};
+  unsigned changes = 0U, actions = 0U;
+  native_ui::NativeEditorController controller{session, factory, {},
+      {.beginTextInput = [](const native_ui::TextInputRequest&) {}, .documentChanged = [&] { ++changes; },
+       .diagnosticAction = [&](const authoring::Diagnostic&, authoring::DiagnosticAction) { ++actions; return core::success(); }}};
+  controller.resize(480.0, 320.0);
+  authoring::Diagnostic issue{.code = "MEDIA_MISSING", .messageKey = "media.missing",
+      .actions = {authoring::DiagnosticAction::RelinkMedia}};
+  issue.setDetail(std::string(300U, 'x') + " missing vocal sample 歌"); controller.setDiagnostics({issue});
+  const auto source = session.project();
+  CHECK(!controller.beginFindInput()); CHECK(controller.beginDiagnosticFindInput());
+  CHECK(controller.sceneState().boundedInputLabel == "FIND ACTIVE DIAGNOSTICS (LITERAL)");
+  controller.rebuildAccessibilityTree(); const auto field = controller.accessibilityTree().root().children.front().id;
+  CHECK(!controller.setAccessibilityValue(field, "")); CHECK(controller.commitTextComposition(U"MEDIA"));
+  CHECK(controller.findPreparing()); CHECK(!controller.sceneState().replacementReview.enabled[3]); waitForNativeFind(controller);
+  CHECK(controller.sceneState().replacementReview.status == "Find: Active diagnostics");
+  CHECK(!controller.sceneState().replacementReview.enabled[2]); // No lyric region is invented.
+  controller.rebuildAccessibilityTree(); const auto row = controller.accessibilityTree().root().children.front().id;
+  CHECK(controller.dispatchAccessibility(row, native_ui::SemanticAction::SetFocus));
+  CHECK(controller.keyDown({.key = native_ui::NativeKey::Enter})); CHECK(!controller.sceneState().replacementReview.enabled[3]);
+  if (const auto* capture = std::getenv("SEAM_DIAGNOSTIC_FIND_CAPTURE")) {
+    auto engine = text::TextEngine::createSystem(); CHECK(engine);
+    native_ui::PixelSurface surface{480U,320U}; native_ui::RasterCanvas canvas{surface,1.0,engine.value().get()};
+    native_ui::EditorScenePainter{}.paint(canvas, controller.pianoRoll(), controller.sceneState()); CHECK(surface.writePpm(capture));
+  }
+  std::string full;
+  for (unsigned page = 0U; page < 20U; ++page) {
+    const auto view = controller.sceneState().replacementReview;
+    for (const auto& line : view.rows) { CHECK(text::utf8DisplayWidth(line) <= 32U); full += line; }
+    if (!view.enabled[1]) break; CHECK(controller.replacementReviewAction(1U));
+  }
+  CHECK(full.find("Scope: global or unspecified; no note binding") != std::string::npos);
+  CHECK(full.find(issue.detail) != std::string::npos);
+  CHECK(full.find("Relink media") != std::string::npos); CHECK(!controller.replacementReviewAction(3U));
+  CHECK(controller.keyDown({.key = native_ui::NativeKey::Escape})); CHECK(controller.sceneState().replacementReview.rowsInspectable);
+  CHECK(controller.keyDown({.key = native_ui::NativeKey::Escape})); CHECK(!controller.replacementReviewOpen());
+  CHECK(actions == 0U); CHECK(changes == 0U); CHECK(session.selection().empty()); CHECK(session.project() == source);
+}
+
+TEST_CASE("native diagnostic Find pages opaque references and rejects changed diagnostics or documents") {
+  using namespace seam;
+  NativeUiFixture fixture;
+  native_ui::NativeEditorController controller{fixture.session, fixture.factory, fixture.regionId,
+      {.beginTextInput = [](const native_ui::TextInputRequest&) {}}};
+  std::vector<authoring::Diagnostic> diagnostics;
+  std::string longId; for (unsigned i = 0U; i < 200U; ++i) longId += "媒体";
+  for (unsigned i = 0U; i < 7U; ++i) diagnostics.push_back({.code = "MEDIA_MISSING", .messageKey = "media.missing",
+      .affectedIds = {i == 6U ? longId : "opaque-" + std::to_string(i)}, .actions = {authoring::DiagnosticAction::RelinkMedia}});
+  controller.setDiagnostics(diagnostics);
+  CHECK(controller.openDiagnosticFindReview("MEDIA")); waitForNativeFind(controller);
+  CHECK(controller.sceneState().replacementReview.rows.size() == 6U);
+  controller.rebuildAccessibilityTree(); const auto oldRow = controller.accessibilityTree().root().children.front().id;
+  CHECK(controller.replacementReviewAction(1U)); CHECK(!controller.dispatchAccessibility(oldRow, native_ui::SemanticAction::Activate));
+  CHECK(controller.openReplacementRow(0U));
+  std::string full;
+  for (unsigned page = 0U; page < 100U; ++page) {
+    const auto view = controller.sceneState().replacementReview; for (const auto& line : view.rows) full += line;
+    if (!view.enabled[1]) break; CHECK(controller.replacementReviewAction(1U));
+  }
+  CHECK(full.find(longId) != std::string::npos); CHECK(full.find("not note targets") != std::string::npos);
+  CHECK(controller.replacementReviewAction(4U));
+  diagnostics.back().occurrenceCount = 2U; controller.setDiagnostics(diagnostics);
+  CHECK(!controller.sceneState().replacementReview.rowsInspectable); CHECK(!controller.openReplacementRow(0U));
+  CHECK(controller.replacementReviewAction(5U)); waitForNativeFind(controller); CHECK(controller.sceneState().replacementReview.rowsInspectable);
+  const auto source = fixture.session.project(); CHECK(fixture.session.replaceProject(source));
+  CHECK(!controller.openReplacementRow(0U)); CHECK(controller.replacementReviewAction(4U));
+  CHECK(controller.openDiagnosticFindReview("MEDIA")); CHECK(controller.replacementReviewAction(4U));
+  waitForNativeFind(controller); CHECK(!controller.replacementReviewOpen()); CHECK(fixture.session.selection().empty());
+  CHECK(fixture.session.project() == source);
+}
+
+TEST_CASE("native derived Find searches 10000 Japanese notes and reveals the hinted final note") {
+  using namespace seam;
+  NativeUiFixture fixture;
+  auto* region = fixture.session.project().findRegion(fixture.regionId);
+  region->notes.clear(); region->lyrics.clear(); region->durationTick = time::Tick{20000};
+  domain::NoteId target;
+  for (int i = 0; i < 10000; ++i) {
+    auto [lyric, note] = fixture.factory.makeNote(time::Tick{i}, time::Tick{1}, 60U, U"か", domain::Language::Japanese);
+    if (i == 9999) { note.phoneticHint = "u"; target = note.id; }
+    region->lyrics.push_back(lyric); region->notes.push_back(note);
+  }
+  const auto source = fixture.session.project(); unsigned changes = 0U;
+  native_ui::NativeEditorController controller{fixture.session, fixture.factory, fixture.regionId,
+      {.documentChanged = [&] { ++changes; }}};
+  controller.resize(480.0, 320.0);
+  CHECK(controller.openFindReview("u", ui::NoteSearchField::GeneratedPhoneme)); waitForNativeFind(controller);
+  CHECK(controller.sceneState().replacementReview.summary.starts_with("1 matching notes"));
+  CHECK(controller.openReplacementRow(0U)); CHECK(controller.sceneState().replacementReview.rows.front() == "u");
+  CHECK(controller.replacementReviewAction(3U));
+  CHECK(fixture.session.selection().noteIds() == std::vector<domain::NoteId>{target});
+  CHECK(controller.pianoRoll().timeline().originTick() == time::Tick{9999});
+  CHECK(controller.accessibilityTree().focusedNode()->id == "note." + target.toString());
+  CHECK(fixture.session.project() == source); CHECK(fixture.session.revision() == 0U); CHECK(changes == 0U);
+}
+
+TEST_CASE("native Find preparation keeps Close available and never revives cancelled or stale results") {
+  using namespace seam;
+  NativeUiFixture fixture;
+  native_ui::NativeEditorController controller{fixture.session, fixture.factory, fixture.regionId, {}};
+  const auto source = fixture.session.project();
+  CHECK(controller.openFindReview("edge")); CHECK(controller.findPreparing());
+  auto view = controller.sceneState().replacementReview; CHECK(view.status == "Preparing Find results...");
+  CHECK(std::string_view{view.labels[3]} == "Inspect result");
+  CHECK(view.enabled[4]); CHECK(!view.enabled[2]); CHECK(!view.enabled[3]); CHECK(!view.enabled[5]);
+  if (const auto* capture = std::getenv("SEAM_FIND_PENDING_CAPTURE")) {
+    controller.resize(480.0, 320.0);
+    auto engine = text::TextEngine::createSystem(); CHECK(engine);
+    native_ui::PixelSurface surface{480U,320U}; native_ui::RasterCanvas canvas{surface,1.0,engine.value().get()};
+    native_ui::EditorScenePainter{}.paint(canvas, controller.pianoRoll(), controller.sceneState()); CHECK(surface.writePpm(capture));
+  }
+  controller.rebuildAccessibilityTree();
+  const auto pendingStatus = controller.accessibilityTree().root().children.back().id;
+  CHECK(controller.keyDown({.key = native_ui::NativeKey::Escape})); CHECK(!controller.replacementReviewOpen());
+  CHECK(!controller.openFindReview("edge")); // Retire this exact worker, do not restart over it.
+  waitForNativeFind(controller); CHECK(!controller.replacementReviewOpen()); CHECK(!controller.repeatFind());
+  CHECK(fixture.session.project() == source); CHECK(fixture.session.selection().empty());
+  CHECK(controller.openFindReview("edge"));
+  CHECK(fixture.session.execute(std::make_unique<application::EditTempoCommand>(time::Tick{0}, 90.0)));
+  waitForNativeFind(controller); view = controller.sceneState().replacementReview;
+  CHECK(view.status.find("source changed") != std::string::npos); CHECK(!view.enabled[3]); CHECK(view.enabled[5]);
+  CHECK(!controller.dispatchAccessibility(pendingStatus, native_ui::SemanticAction::SetFocus));
+  CHECK(controller.replacementReviewAction(5U)); waitForNativeFind(controller);
+  CHECK(controller.sceneState().replacementReview.enabled[3]); CHECK(controller.replacementReviewAction(4U));
+}
+
+TEST_CASE("native repeat Find wraps reveals and focuses matches while guarding composition and source drift") {
+  using namespace seam;
+  NativeUiFixture fixture; unsigned changes = 0U;
+  auto* region = fixture.session.project().findRegion(fixture.regionId);
+  auto [lyric, note] = fixture.factory.makeNote(time::Tick{4800}, time::Tick{480}, 30U, U"edge", domain::Language::English);
+  region->lyrics.push_back(lyric); region->notes.push_back(note);
+  native_ui::NativeEditorController controller{fixture.session, fixture.factory, fixture.regionId,
+      {.beginTextInput = [](const native_ui::TextInputRequest&) {}, .documentChanged = [&] { ++changes; }}};
+  controller.resize(480.0, 320.0);
+  CHECK(!controller.repeatFind());
+  CHECK(controller.openFindReview("edge")); CHECK(!controller.repeatFind()); waitForNativeFind(controller);
+  CHECK(controller.openReplacementRow(0U)); CHECK(controller.replacementReviewAction(3U));
+  const auto source = fixture.session.project();
+  const auto checkSelected = [&](domain::NoteId expected) {
+    CHECK(fixture.session.selection().noteIds() == std::vector<domain::NoteId>{expected});
+    CHECK(controller.accessibilityTree().focusedNode());
+    CHECK(controller.accessibilityTree().focusedNode()->id == "note." + expected.toString());
+    const auto visible = controller.pianoRoll().visibleNotes();
+    CHECK(std::any_of(visible.begin(), visible.end(), [&](const auto& visual) { return visual.noteId == expected; }));
+  };
+  checkSelected(fixture.noteId);
+  CHECK(controller.repeatFind()); checkSelected(note.id);
+  CHECK(controller.repeatFind()); checkSelected(fixture.noteId);
+  CHECK(controller.repeatFind(true)); checkSelected(note.id);
+  CHECK(controller.beginLyricEdit(note.id)); CHECK(!controller.repeatFind());
+  CHECK(fixture.session.selection().noteIds() == std::vector<domain::NoteId>{note.id});
+  controller.cancelTextComposition(); CHECK(controller.repeatFind()); checkSelected(fixture.noteId);
+  CHECK(fixture.session.project() == source); CHECK(fixture.session.revision() == 0U); CHECK(changes == 0U);
+  CHECK(fixture.session.execute(std::make_unique<application::EditTempoCommand>(time::Tick{0}, 90.0)));
+  CHECK(!controller.repeatFind()); checkSelected(fixture.noteId);
+  CHECK(controller.openFindReview("edge")); waitForNativeFind(controller); CHECK(controller.openReplacementRow(1U)); CHECK(controller.replacementReviewAction(3U));
+  const auto same = fixture.session.project(); CHECK(fixture.session.replaceProject(same));
+  const auto selection = fixture.session.selection().noteIds(); CHECK(!controller.repeatFind(true));
+  CHECK(fixture.session.selection().noteIds() == selection);
+  CHECK(controller.openFindReview("edge")); CHECK(controller.replacementReviewAction(4U)); CHECK(!controller.repeatFind());
+  CHECK(changes == 0U);
+}
+
+TEST_CASE("native Find input fields and complete result inspection select without changing the song") {
+  using namespace seam;
+  NativeUiFixture fixture; unsigned changes = 0U;
+  auto* region = fixture.session.project().findRegion(fixture.regionId);
+  region->lyrics.front().surface = std::u32string(400U, U'歌');
+  const auto source = fixture.session.project();
+  native_ui::NativeEditorController controller{fixture.session, fixture.factory, fixture.regionId,
+      {.beginTextInput = [](const native_ui::TextInputRequest&) {}, .documentChanged = [&] { ++changes; }}};
+  controller.resize(480.0, 320.0);
+  CHECK(controller.beginFindInput()); CHECK(controller.sceneState().boundedInputLabel.starts_with("FIND NOTES"));
+  CHECK(!controller.commitTextComposition(U"")); CHECK(controller.textInputActive());
+  CHECK(controller.commitTextComposition(U"歌")); CHECK(!controller.textInputActive());
+  waitForNativeFind(controller);
+  CHECK(controller.sceneState().replacementReview.rows.size() == 1U); CHECK(fixture.session.selection().empty());
+  controller.rebuildAccessibilityTree(); const auto row = controller.accessibilityTree().root().children.front();
+  CHECK(std::find(row.actions.begin(), row.actions.end(), native_ui::SemanticAction::SetFocus) != row.actions.end());
+  CHECK(controller.dispatchAccessibility(row.id, native_ui::SemanticAction::SetFocus));
+  CHECK(controller.keyDown({.key = native_ui::NativeKey::Enter}));
+  CHECK(!controller.sceneState().replacementReview.rowsInspectable);
+  CHECK(controller.accessibilityTree().focusedNode()->id.ends_with("action.4"));
+  std::string reconstructed;
+  for (unsigned page = 0U; page < 100U; ++page) {
+    const auto view = controller.sceneState().replacementReview;
+    for (const auto& line : view.rows) { CHECK(text::utf8DisplayWidth(line) <= 32U); reconstructed += line; }
+    if (!view.enabled[1]) break;
+    CHECK(controller.replacementReviewAction(1U));
+  }
+  CHECK(reconstructed == domain::toUtf8(region->lyrics.front().surface));
+  CHECK(controller.keyDown({.key = native_ui::NativeKey::Escape}));
+  CHECK(controller.sceneState().replacementReview.rowsInspectable); CHECK(fixture.session.selection().empty());
+  CHECK(controller.openReplacementRow(0U));
+  if (const auto* capture = std::getenv("SEAM_FIND_CAPTURE")) {
+    auto engine = text::TextEngine::createSystem(); CHECK(engine);
+    native_ui::PixelSurface surface{480U,320U}; native_ui::RasterCanvas canvas{surface,1.0,engine.value().get()};
+    native_ui::EditorScenePainter{}.paint(canvas, controller.pianoRoll(), controller.sceneState()); CHECK(surface.writePpm(capture));
+  }
+  CHECK(controller.replacementReviewAction(3U)); CHECK(!controller.replacementReviewOpen());
+  CHECK(fixture.session.selection().noteIds() == std::vector<domain::NoteId>{fixture.noteId});
+  CHECK(controller.pianoRoll().timeline().originTick() == region->notes.front().startTick);
+  CHECK(!controller.pianoRoll().visibleNotes().empty());
+  CHECK(controller.accessibilityTree().focusedNode());
+  CHECK(controller.accessibilityTree().focusedNode()->id == "note." + fixture.noteId.toString());
+  CHECK(fixture.session.project() == source); CHECK(fixture.session.revision() == 0U); CHECK(changes == 0U);
+  CHECK(!controller.dispatchAccessibility(row.id, native_ui::SemanticAction::Activate));
+  CHECK(controller.openFindReview(fixture.noteId.toString())); // Start in lyrics, then choose fields with the same query.
+  waitForNativeFind(controller);
+  CHECK(controller.replacementReviewAction(2U)); waitForNativeFind(controller); CHECK(controller.sceneState().replacementReview.status == "Find: Hints");
+  CHECK(controller.replacementReviewAction(2U)); waitForNativeFind(controller); CHECK(controller.sceneState().replacementReview.status == "Find: Note IDs");
+  CHECK(controller.sceneState().replacementReview.rows.size() == 1U);
+  CHECK(controller.replacementReviewAction(2U)); waitForNativeFind(controller); CHECK(controller.sceneState().replacementReview.status == "Find: Resolved phones (Japanese)");
+  CHECK(controller.replacementReviewAction(2U)); waitForNativeFind(controller); CHECK(controller.sceneState().replacementReview.status == "Find: Pronunciation warnings (Japanese)");
+  CHECK(controller.replacementReviewAction(2U)); waitForNativeFind(controller); CHECK(controller.sceneState().replacementReview.status == "Find: Active diagnostics");
+  CHECK(controller.replacementReviewAction(2U)); waitForNativeFind(controller); CHECK(controller.sceneState().replacementReview.status == "Find: Lyrics");
+  CHECK(controller.keyDown({.key = native_ui::NativeKey::Escape})); CHECK(!controller.replacementReviewOpen());
+}
+
+TEST_CASE("native Find pages rejects stale actions and keeps errors distinct from empty results") {
+  using namespace seam;
+  NativeUiFixture fixture;
+  auto* region = fixture.session.project().findRegion(fixture.regionId);
+  for (int i = 0; i < 7; ++i) {
+    auto [lyric, note] = fixture.factory.makeNote(time::Tick{2400 + i * 480}, time::Tick{240}, 64U, U"edge", domain::Language::English);
+    region->lyrics.push_back(lyric); region->notes.push_back(note);
+  }
+  native_ui::NativeEditorController controller{fixture.session, fixture.factory, fixture.regionId,
+      {.beginTextInput = [](const native_ui::TextInputRequest&) {}}};
+  CHECK(controller.openFindReview("edge")); waitForNativeFind(controller); CHECK(controller.sceneState().replacementReview.rows.size() == 6U);
+  controller.rebuildAccessibilityTree(); const auto old = controller.accessibilityTree().root().children.front().id;
+  CHECK(controller.replacementReviewAction(1U)); CHECK(controller.sceneState().replacementReview.rows.size() == 2U);
+  CHECK(!controller.dispatchAccessibility(old, native_ui::SemanticAction::Activate));
+  CHECK(controller.openReplacementRow(1U));
+  CHECK(fixture.session.execute(std::make_unique<application::EditTempoCommand>(time::Tick{0}, 90.0)));
+  CHECK(!controller.sceneState().replacementReview.enabled[3]); CHECK(!controller.replacementReviewAction(3U));
+  CHECK(controller.keyDown({.key = native_ui::NativeKey::Escape})); CHECK(fixture.session.selection().empty());
+  CHECK(controller.replacementReviewAction(5U)); waitForNativeFind(controller); CHECK(controller.sceneState().replacementReview.enabled[3]);
+  const auto source = fixture.session.project(); CHECK(controller.keyDown({.key = native_ui::NativeKey::Delete}));
+  CHECK(fixture.session.project() == source);
+  CHECK(controller.replacementReviewAction(4U)); CHECK(controller.beginFindInput());
+  CHECK(fixture.session.replaceProject(source)); CHECK(!controller.commitTextComposition(U"edge"));
+  CHECK(!controller.replacementReviewOpen());
+  CHECK(!controller.openFindReview("edge", static_cast<ui::NoteSearchField>(99)));
+  CHECK(controller.sceneState().replacementReview.status.find("Invalid") != std::string::npos);
+  CHECK(!controller.sceneState().replacementReview.enabled[3]);
+  CHECK(controller.replacementReviewAction(4U));
+  CHECK(controller.openFindReview("absent")); waitForNativeFind(controller); CHECK(controller.sceneState().replacementReview.rows.front() == "No matching notes in this field");
+  CHECK(controller.replacementReviewAction(4U));
+}
+
+TEST_CASE("native find replace input separates stages and requires reviewed application") {
+  using namespace seam;
+  NativeUiFixture fixture;
+  std::vector<std::u32string> opened;
+  unsigned changes = 0U;
+  native_ui::NativeEditorController controller{fixture.session, fixture.factory, fixture.regionId,
+      {.beginTextInput = [&](const native_ui::TextInputRequest& request) { opened.push_back(request.currentText); },
+       .documentChanged = [&] { ++changes; }}};
+  const auto field = [&] {
+    controller.rebuildAccessibilityTree(); return controller.accessibilityTree().root().children.front().id;
+  };
+  CHECK(controller.beginReplacementInput());
+  CHECK(controller.sceneState().boundedInputLabel == "FIND LYRIC (LITERAL)");
+  const auto query = field();
+  CHECK(!controller.setAccessibilityValue(query, "")); CHECK(controller.textInputActive());
+  CHECK(controller.sceneState().boundedInputLabel == "ENTER A NONEMPTY QUERY");
+  CHECK(controller.setAccessibilityValue(field(), "ed"));
+  CHECK(controller.textInputActive()); CHECK(opened.back().empty());
+  CHECK(controller.sceneState().boundedInputLabel == "REPLACE WITH (EMPTY ALLOWED)");
+  CHECK(!controller.setAccessibilityValue(query, "wrong stage"));
+  CHECK(controller.setAccessibilityValue(field(), ""));
+  CHECK(!controller.textInputActive()); CHECK(controller.sceneState().replacementReview.visible);
+  CHECK(changes == 0U); CHECK(fixture.session.revision() == 0U);
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{5};
+  while (!controller.sceneState().replacementReview.enabled[3] && std::chrono::steady_clock::now() < deadline) {
+    controller.pollReplacementReview(); std::this_thread::sleep_for(std::chrono::milliseconds{1});
+  }
+  CHECK(controller.replacementReviewAction(3U)); CHECK(changes == 1U);
+  CHECK(fixture.session.project().findRegion(fixture.regionId)->findLyric(fixture.lyricId)->surface == U"ge");
+  CHECK(fixture.session.undo());
+  CHECK(controller.beginReplacementInput()); const auto cancelled = field(); controller.cancelTextComposition();
+  CHECK(!controller.setAccessibilityValue(cancelled, "edge"));
+  CHECK(controller.beginReplacementInput()); CHECK(controller.commitTextComposition(U"ed"));
+  controller.cancelTextComposition(); CHECK(!controller.textInputActive()); CHECK(!controller.replacementReviewOpen());
+  CHECK(controller.beginReplacementInput());
+  CHECK(!controller.commitTextComposition(std::u32string(257U, U'x'))); CHECK(controller.textInputActive());
+  controller.cancelTextComposition();
+  CHECK(controller.beginReplacementInput()); CHECK(controller.commitTextComposition(U"ed"));
+  CHECK(fixture.session.execute(std::make_unique<application::EditTempoCommand>(time::Tick{0}, 90.0)));
+  CHECK(!controller.commitTextComposition(U"a")); CHECK(!controller.replacementReviewOpen());
+  CHECK(controller.beginReplacementInput()); CHECK(controller.beginLyricEdit(fixture.noteId));
+  CHECK(controller.commitTextComposition(U"word"));
+  CHECK(!controller.sceneState().replacementReview.visible);
+  CHECK(fixture.session.project().findRegion(fixture.regionId)->findLyric(fixture.lyricId)->surface == U"word");
+}
+
+TEST_CASE("replacement detail exposes every before and after byte and never applies from detail") {
+  using namespace seam;
+  NativeUiFixture fixture;
+  const std::u32string original(400U, U'a');
+  fixture.session.project().findRegion(fixture.regionId)->findLyric(fixture.lyricId)->surface = original;
+  native_ui::NativeEditorController controller{fixture.session, fixture.factory, fixture.regionId};
+  controller.resize(720.0, 520.0);
+  CHECK(controller.openReplacementReview("a", "日本"));
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{5};
+  while (!controller.sceneState().replacementReview.enabled[3] && std::chrono::steady_clock::now() < deadline) {
+    controller.pollReplacementReview(); std::this_thread::sleep_for(std::chrono::milliseconds{1});
+  }
+  CHECK(controller.sceneState().replacementReview.enabled[3]);
+  controller.rebuildAccessibilityTree();
+  const auto listPrefix = controller.accessibilityTree().root().id;
+  const auto rowId = controller.accessibilityTree().root().children.front().id;
+  std::string applyId;
+  for (const auto& node : controller.accessibilityTree().root().children) if (node.id.ends_with("action.3")) applyId = node.id;
+  CHECK(controller.dispatchAccessibility(rowId, native_ui::SemanticAction::Activate));
+  CHECK(!controller.dispatchAccessibility(applyId, native_ui::SemanticAction::Activate));
+  CHECK(!controller.sceneState().replacementReview.rowsInspectable);
+  const auto collect = [&] {
+    std::string value;
+    for (std::size_t pages = 0U; pages < 100U; ++pages) {
+      const auto view = controller.sceneState().replacementReview;
+      for (const auto& row : view.rows) { CHECK(text::utf8DisplayWidth(row) <= 32U); value += row; }
+      if (!view.enabled[1]) return value;
+      CHECK(controller.replacementReviewAction(1U));
+    }
+    throw test::Failure{"Replacement detail exceeded expected page count"};
+  };
+  CHECK(collect() == domain::toUtf8(original));
+  CHECK(controller.replacementReviewAction(2U));
+  CHECK(controller.sceneState().replacementReview.summary.find("AFTER") != std::string::npos);
+  if (const auto* capture = std::getenv("SEAM_REPLACEMENT_DETAIL_CAPTURE")) {
+    auto engine = text::TextEngine::createSystem(); CHECK(engine);
+    native_ui::PixelSurface surface{720U, 520U}; native_ui::RasterCanvas canvas{surface, 1.0, engine.value().get()};
+    native_ui::EditorScenePainter{}.paint(canvas, controller.pianoRoll(), controller.sceneState());
+    CHECK(surface.writePpm(capture));
+  }
+  std::string expected; for (int i = 0; i < 400; ++i) expected += "日本";
+  CHECK(collect() == expected); CHECK(fixture.session.revision() == 0U);
+  CHECK(controller.keyDown({.key = native_ui::NativeKey::Escape}));
+  CHECK(controller.sceneState().replacementReview.rowsInspectable);
+  CHECK(controller.replacementReviewAction(3U)); CHECK(fixture.session.revision() == 1U);
+  CHECK(domain::toUtf8(fixture.session.project().findRegion(fixture.regionId)->findLyric(fixture.lyricId)->surface) == expected);
+  CHECK(fixture.session.undo());
+  CHECK(fixture.session.project().findRegion(fixture.regionId)->findLyric(fixture.lyricId)->surface == original);
+  CHECK(!listPrefix.empty());
+}
+
+TEST_CASE("batch lyric input captures targets and rejects selection document and generation drift") {
+  using namespace seam;
+  NativeUiFixture fixture;
+  auto [lyric, note] = fixture.factory.makeNote(time::Tick{2160}, time::Tick{960}, 65U, U"old", domain::Language::English);
+  auto* region = fixture.session.project().findRegion(fixture.regionId);
+  region->lyrics.push_back(lyric); region->notes.push_back(note); region->sortNotes();
+  unsigned changes = 0U;
+  native_ui::NativeEditorController controller{fixture.session, fixture.factory, fixture.regionId,
+      {.beginTextInput = [](const native_ui::TextInputRequest&) {}, .documentChanged = [&] { ++changes; }}};
+  const auto begin = [&] {
+    fixture.session.selection().replace({fixture.noteId, note.id});
+    return controller.keyDown({.key = native_ui::NativeKey::L, .modifiers = {.shift = true}});
+  };
+  const auto before = fixture.session.project();
+  CHECK(begin());
+  CHECK(controller.keyDown({.key = native_ui::NativeKey::Delete}));
+  CHECK(fixture.session.project() == before);
+  fixture.session.selection().selectOnly(note.id);
+  CHECK(!controller.commitTextComposition(U"あ")); CHECK(!controller.textInputActive());
+  CHECK(fixture.session.project() == before); CHECK(changes == 0U); CHECK(!fixture.session.canUndo());
+  CHECK(begin());
+  CHECK(fixture.session.execute(std::make_unique<application::EditTempoCommand>(time::Tick{0}, 100.0)));
+  CHECK(!controller.commitTextComposition(U"あ い")); CHECK(changes == 0U);
+  CHECK(begin()); const auto identical = fixture.session.project();
+  CHECK(fixture.session.replaceProject(identical));
+  fixture.session.selection().replace({fixture.noteId, note.id});
+  CHECK(!controller.commitTextComposition(U"あ い")); CHECK(fixture.session.project() == identical);
+  CHECK(begin()); fixture.session.project().findNote(note.id)->phoneticHint = "old metadata";
+  CHECK(!controller.commitTextComposition(U"あ い")); CHECK(changes == 0U);
+  fixture.session.project().findNote(note.id)->phoneticHint.reset();
+  CHECK(begin()); fixture.session.selection().replace({note.id, fixture.noteId});
+  const auto priorCommit = fixture.session.project();
+  CHECK(controller.updateTextComposition(U"あ い", {}));
+  CHECK(controller.keyDown({.key = native_ui::NativeKey::Tab}));
+  CHECK(!controller.textInputActive()); CHECK(changes == 0U);
+  applyReadyLyricReview(controller); CHECK(changes == 1U);
+  CHECK(fixture.session.undo()); CHECK(fixture.session.project() == priorCommit);
+  CHECK(begin()); controller.cancelTextComposition(); CHECK(!controller.textInputActive());
+  fixture.session.selection().add(domain::NoteId{999999U});
+  CHECK(!controller.keyDown({.key = native_ui::NativeKey::L, .modifiers = {.shift = true}}));
+  CHECK(changes == 1U);
+}
+
+TEST_CASE("native distribution no-op preserves language revision and change notifications") {
+  using namespace seam;
+  NativeUiFixture fixture; fixture.session.selection().selectOnly(fixture.noteId);
+  unsigned changes = 0U;
+  native_ui::NativeEditorController controller{fixture.session, fixture.factory, fixture.regionId,
+      {.documentChanged = [&] { ++changes; }}};
+  const auto unchanged = controller.distributeSelectedLyrics(U"edge"); CHECK(unchanged);
+  CHECK(unchanged.value().committed); CHECK(unchanged.value().changedLyrics == 0U);
+  CHECK(fixture.session.revision() == 0U); CHECK(changes == 0U); CHECK(!fixture.session.canUndo());
+  CHECK(controller.distributeSelectedLyrics(U"new")); CHECK(changes == 1U);
+  CHECK(fixture.session.project().findRegion(fixture.regionId)->findLyric(fixture.lyricId)->language == domain::Language::English);
+  CHECK(fixture.session.undo());
+}
+
+TEST_CASE("distribution mismatch stays in review with visible counts and no apply") {
+  using namespace seam;
+  NativeUiFixture fixture; fixture.session.selection().selectOnly(fixture.noteId);
+  native_ui::NativeEditorController controller{fixture.session, fixture.factory, fixture.regionId,
+      {.beginTextInput = [](const native_ui::TextInputRequest&) {}}};
+  CHECK(controller.keyDown({.key = native_ui::NativeKey::L, .modifiers = {.shift = true}}));
+  CHECK(controller.commitTextComposition(U"too many"));
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{5};
+  while (controller.sceneState().replacementReview.status.starts_with("Preparing") && std::chrono::steady_clock::now() < deadline) {
+    controller.pollReplacementReview(); std::this_thread::sleep_for(std::chrono::milliseconds{1});
+  }
+  const auto view = controller.sceneState().replacementReview;
+  CHECK(view.visible); CHECK(!view.enabled[3]); CHECK(view.summary == "requested=2, target=1");
+  controller.rebuildAccessibilityTree();
+  const auto& status = controller.accessibilityTree().root().children.back();
+  CHECK(status.name == "Review status and counts"); CHECK(status.value.find("requested=2, target=1") != std::string::npos);
+  CHECK(fixture.session.revision() == 0U); CHECK(!fixture.session.canUndo());
+  CHECK(controller.replacementReviewAction(4U)); CHECK(!controller.replacementReviewOpen());
+}
+
+TEST_CASE("native clear vibrato review pages guards selection and commits only on Apply") {
+  using namespace seam;
+  NativeUiFixture fixture;
+  fixture.session.project().findNote(fixture.noteId)->vibrato.enabled = true;
+  fixture.session.selection().selectOnly(fixture.noteId);
+  for (int i = 0; i < 6; ++i) {
+    auto [lyric, note] = fixture.factory.makeNote(time::Tick{i * 480}, time::Tick{480}, 62U, U"la", domain::Language::English);
+    note.vibrato.enabled = true; fixture.session.selection().add(note.id);
+    auto* region = fixture.session.project().findRegion(fixture.regionId);
+    region->lyrics.push_back(lyric); region->notes.push_back(note);
+  }
+  fixture.session.project().findRegion(fixture.regionId)->sortNotes();
+  unsigned changes = 0U;
+  native_ui::NativeEditorController controller{fixture.session, fixture.factory, fixture.regionId,
+      {.documentChanged = [&] { ++changes; }}};
+  controller.resize(720.0, 520.0);
+  const auto before = fixture.session.project();
+  if (const auto* projectPath = std::getenv("SEAM_CLEAR_VIBRATO_PROJECT")) {
+    formats::ProjectJsonCodec codec; CHECK(codec.save(before, projectPath));
+  }
+  CHECK(controller.openClearVibratoReview()); CHECK(fixture.session.project() == before); CHECK(changes == 0U);
+  auto view = controller.sceneState().replacementReview;
+  CHECK(view.rows.size() == 6U); CHECK(view.enabled[3]); CHECK(std::string_view{view.labels[3]} == "Clear vibrato");
+  controller.rebuildAccessibilityTree();
+  std::string oldApply;
+  for (const auto& node : controller.accessibilityTree().root().children) if (node.id.ends_with("action.3")) oldApply = node.id;
+  CHECK(controller.replacementReviewAction(1U)); CHECK(controller.sceneState().replacementReview.rows.size() == 1U);
+  CHECK(!controller.dispatchAccessibility(oldApply, native_ui::SemanticAction::Activate));
+  fixture.session.selection().selectOnly(fixture.noteId);
+  CHECK(!controller.sceneState().replacementReview.enabled[3]); CHECK(!controller.replacementReviewAction(3U));
+  CHECK(controller.replacementReviewAction(5U));
+  if (const auto* capture = std::getenv("SEAM_CLEAR_VIBRATO_CAPTURE")) {
+    auto engine = text::TextEngine::createSystem(); CHECK(engine);
+    native_ui::PixelSurface surface{720U, 520U}; native_ui::RasterCanvas canvas{surface, 1.0, engine.value().get()};
+    native_ui::EditorScenePainter{}.paint(canvas, controller.pianoRoll(), controller.sceneState()); CHECK(surface.writePpm(capture));
+  }
+  CHECK(controller.replacementReviewAction(3U)); CHECK(changes == 1U); CHECK(!controller.replacementReviewOpen());
+  auto expected = before; expected.findNote(fixture.noteId)->vibrato.enabled = false;
+  CHECK(fixture.session.project() == expected); CHECK(fixture.session.undo()); CHECK(fixture.session.project() == before);
+  CHECK(controller.openClearVibratoReview()); CHECK(controller.replacementReviewAction(4U)); CHECK(fixture.session.project() == before);
+  fixture.session.project().findNote(fixture.noteId)->vibrato.enabled = false;
+  CHECK(controller.openClearVibratoReview()); CHECK(!controller.sceneState().replacementReview.enabled[3]);
+  CHECK(controller.replacementReviewAction(4U)); CHECK(changes == 1U);
+}
+
+TEST_CASE("native cleanup review shows outcomes guards grid changes and applies exactly once") {
+  using namespace seam;
+  for (const auto kind : {ui::NoteCleanupKind::RemoveOverlap, ui::NoteCleanupKind::CloseGap, ui::NoteCleanupKind::AutoLegato}) {
+    NativeUiFixture fixture;
+    fixture.session.project().settings().snapGrid = time::Tick{240};
+    fixture.session.project().findNote(fixture.noteId)->durationTick = kind == ui::NoteCleanupKind::RemoveOverlap ? time::Tick{1440} : time::Tick{960};
+    auto [lyric, note] = fixture.factory.makeNote(time::Tick{2160}, time::Tick{960}, 65U, U"la", domain::Language::English);
+    auto* region = fixture.session.project().findRegion(fixture.regionId);
+    region->lyrics.push_back(lyric); region->notes.push_back(note); region->sortNotes();
+    fixture.session.selection().replace({fixture.noteId, note.id});
+    unsigned changes = 0U;
+    native_ui::NativeEditorController controller{fixture.session, fixture.factory, fixture.regionId,
+        {.documentChanged = [&] { ++changes; }}};
+    controller.resize(720.0, 520.0); const auto before = fixture.session.project();
+    CHECK(controller.openNoteCleanupReview(kind)); CHECK(fixture.session.project() == before); CHECK(changes == 0U);
+    auto view = controller.sceneState().replacementReview;
+    CHECK(view.rows.size() == 2U); CHECK(view.rows.back().find("no successor") != std::string::npos);
+    CHECK(view.enabled[3]); CHECK(!controller.beginTempoEdit());
+    controller.rebuildAccessibilityTree(); std::string oldApply;
+    for (const auto& nodeValue : controller.accessibilityTree().root().children) if (nodeValue.id.ends_with("action.3")) oldApply = nodeValue.id;
+    fixture.session.project().settings().snapGrid = time::Tick{480};
+    CHECK(!controller.sceneState().replacementReview.enabled[3]);
+    CHECK(!controller.dispatchAccessibility(oldApply, native_ui::SemanticAction::Activate));
+    fixture.session.project().settings().snapGrid = time::Tick{240};
+    CHECK(controller.replacementReviewAction(5U));
+    CHECK(!controller.dispatchAccessibility(oldApply, native_ui::SemanticAction::Activate));
+    if (const auto* capture = std::getenv("SEAM_NOTE_CLEANUP_CAPTURE_DIR")) {
+      const auto name = kind == ui::NoteCleanupKind::RemoveOverlap ? "overlap" : (kind == ui::NoteCleanupKind::CloseGap ? "gap" : "legato");
+      const std::filesystem::path root{capture}; formats::ProjectJsonCodec codec;
+      CHECK(codec.save(before, root / (std::string{name} + ".seam")));
+      auto engine = text::TextEngine::createSystem(); CHECK(engine);
+      native_ui::PixelSurface surface{720U, 520U}; native_ui::RasterCanvas canvas{surface, 1.0, engine.value().get()};
+      native_ui::EditorScenePainter{}.paint(canvas, controller.pianoRoll(), controller.sceneState());
+      CHECK(surface.writePpm(root / (std::string{name} + ".ppm")));
+    }
+    CHECK(controller.replacementReviewAction(2U));
+    CHECK(controller.sceneState().replacementReview.rows.front() == "No retained dependency records");
+    CHECK(controller.replacementReviewAction(3U)); CHECK(changes == 1U); CHECK(!controller.replacementReviewOpen());
+    CHECK(fixture.session.project().findNote(fixture.noteId)->startTick == time::Tick{960});
+    CHECK(fixture.session.project().findNote(fixture.noteId)->durationTick == time::Tick{1200});
+    if (kind == ui::NoteCleanupKind::AutoLegato) {
+      CHECK(fixture.session.project().findNote(fixture.noteId)->articulation == domain::NoteArticulation::Legato);
+      CHECK(fixture.session.project().findNote(note.id)->articulation == domain::NoteArticulation::Legato);
+    }
+    CHECK(controller.openNoteCleanupReview(kind)); CHECK(!controller.sceneState().replacementReview.enabled[3]);
+    CHECK(controller.replacementReviewAction(4U));
+    CHECK(fixture.session.undo()); CHECK(fixture.session.project() == before);
+    CHECK(controller.openNoteCleanupReview(kind)); CHECK(controller.keyDown({.key = native_ui::NativeKey::Delete}));
+    CHECK(fixture.session.project() == before); CHECK(controller.replacementReviewAction(4U)); CHECK(changes == 1U);
+  }
+}
+
+TEST_CASE("shared review rows actions and text input fit supported short windows") {
+  using namespace seam;
+  const native_ui::EditorSceneLayout layout;
+  for (const auto size : std::vector<ui::Point>{{480.0,320.0},{640.0,360.0},{720.0,520.0},{960.0,640.0}}) {
+    const auto panel = layout.timeMapPanelBounds(size.x, size.y);
+    CHECK(panel.x >= 0.0); CHECK(panel.y >= 0.0); CHECK(panel.right() <= size.x); CHECK(panel.bottom() <= size.y);
+    std::vector<ui::Rect> controls;
+    for (std::size_t i = 0U; i < 6U; ++i) {
+      const auto row = layout.timeMapRowBounds(size.x, size.y, i);
+      CHECK(row.height >= 22.0); controls.push_back(row);
+    }
+    for (std::size_t i = 0U; i < 8U; ++i) controls.push_back(layout.timeMapActionBounds(size.x, size.y, i));
+    for (std::size_t i = 0U; i < controls.size(); ++i) {
+      const auto& bounds = controls[i]; CHECK(bounds.x >= panel.x); CHECK(bounds.y >= panel.y);
+      CHECK(bounds.right() <= panel.right()); CHECK(bounds.bottom() <= panel.bottom());
+      for (std::size_t j = i + 1U; j < controls.size(); ++j) CHECK(!bounds.intersects(controls[j]));
+    }
+    const auto input = layout.timeMapTextBounds(size.x, size.y, true);
+    CHECK(input.height >= 22.0); CHECK(input.bottom() <= controls[1].y);
+  }
+  NativeUiFixture fixture; fixture.session.selection().selectOnly(fixture.noteId);
+  fixture.session.project().findNote(fixture.noteId)->vibrato.enabled = true;
+  native_ui::NativeEditorController controller{fixture.session, fixture.factory, fixture.regionId};
+  controller.resize(480.0, 320.0); CHECK(controller.openClearVibratoReview());
+  controller.rebuildAccessibilityTree();
+  for (const auto& node : controller.accessibilityTree().root().children) {
+    CHECK(node.bounds.x >= 0.0); CHECK(node.bounds.y >= 0.0);
+    CHECK(node.bounds.right() <= 480.0); CHECK(node.bounds.bottom() <= 320.0);
+  }
+  if (const auto* capture = std::getenv("SEAM_SHORT_REVIEW_CAPTURE")) {
+    auto engine = text::TextEngine::createSystem(); CHECK(engine);
+    native_ui::PixelSurface surface{480U,320U}; native_ui::RasterCanvas canvas{surface,1.0,engine.value().get()};
+    native_ui::EditorScenePainter{}.paint(canvas, controller.pianoRoll(), controller.sceneState()); CHECK(surface.writePpm(capture));
+  }
+  const auto cancel = layout.timeMapActionBounds(480.0,320.0,4U);
+  CHECK(controller.pointerDown({.position={cancel.x + 2.0,cancel.y + 2.0},.button=native_ui::PointerButton::Left}));
+  CHECK(!controller.replacementReviewOpen()); CHECK(fixture.session.revision() == 0U);
+}
+
+TEST_CASE("native dynamics clear explicitly reviews the entire region and preserves other expressions") {
+  using namespace seam;
+  NativeUiFixture fixture;
+  auto* region = fixture.session.project().findRegion(fixture.regionId);
+  for (int i = 0; i < 7; ++i) CHECK(region->dynamicsAutomation.upsert({time::Tick{i * 240}, 0.2F + static_cast<float>(i) * 0.1F}));
+  region->notes.front().vibrato.enabled = true;
+  auto [lyric, note] = fixture.factory.makeNote(time::Tick{2160}, time::Tick{480}, 65U, U"la", domain::Language::English);
+  region->lyrics.push_back(lyric); region->notes.push_back(note); region->sortNotes();
+  const auto pronunciation = phonemizer::resolveJapanesePronunciation(*region); CHECK(pronunciation);
+  region->performance.pronunciation = pronunciation.value().identity;
+  region->performance.takes = {{.id = "retained-dynamics", .sourceRegionId = fixture.regionId,
+      .capturedRevision = region->performance.revision,
+      .resource = {domain::SingerResourceKind::Neural, "fixture", "1", std::string(64U, 'a')},
+      .pronunciation = pronunciation.value().identity, .generatorId = "fixture", .generatorVersion = "1",
+      .range = {time::Tick{960}, time::Tick{1920}},
+      .lanes = {{domain::PerformanceChannel::Dynamics, {{time::Tick{960}, 0.7}}}}}};
+  region->performance.accepted = {{"retained-dynamics", domain::PerformanceChannel::Dynamics, fixture.noteId, time::Tick{0}}};
+  fixture.session.selection().selectOnly(fixture.noteId);
+  unsigned changes = 0U;
+  native_ui::NativeEditorController controller{fixture.session, fixture.factory, fixture.regionId,
+      {.documentChanged = [&] { ++changes; }}};
+  controller.resize(480.0, 320.0); const auto before = fixture.session.project();
+  CHECK(controller.openClearDynamicsReview());
+  auto view = controller.sceneState().replacementReview;
+  CHECK(view.status.find("ENTIRE region") != std::string::npos); CHECK(view.summary.starts_with("2 region notes / 7 points"));
+  CHECK(view.status.find("generated dynamics may still apply") != std::string::npos);
+  CHECK(view.summary.find("1 generated selections retained") != std::string::npos);
+  CHECK(view.rows.size() == 6U); CHECK(view.enabled[3]); CHECK(fixture.session.project() == before);
+  CHECK(controller.replacementReviewAction(1U)); CHECK(controller.sceneState().replacementReview.rows.size() == 1U);
+  fixture.session.selection().clear(); CHECK(controller.sceneState().replacementReview.enabled[3]); // Explicit region scope.
+  CHECK(fixture.session.execute(std::make_unique<application::EditTempoCommand>(time::Tick{0}, 90.0)));
+  CHECK(!controller.sceneState().replacementReview.enabled[3]); CHECK(controller.replacementReviewAction(5U));
+  const auto source = fixture.session.project();
+  if (const auto* capture = std::getenv("SEAM_DYNAMICS_CLEAR_CAPTURE")) {
+    auto engine = text::TextEngine::createSystem(); CHECK(engine);
+    native_ui::PixelSurface surface{480U,320U}; native_ui::RasterCanvas canvas{surface,1.0,engine.value().get()};
+    native_ui::EditorScenePainter{}.paint(canvas, controller.pianoRoll(), controller.sceneState()); CHECK(surface.writePpm(capture));
+  }
+  CHECK(controller.replacementReviewAction(3U)); CHECK(changes == 1U);
+  auto expected = source; expected.findRegion(fixture.regionId)->dynamicsAutomation = {};
+  CHECK(fixture.session.project() == expected); CHECK(fixture.session.undo()); CHECK(fixture.session.project() == source);
+  CHECK(controller.openClearDynamicsReview()); CHECK(controller.replacementReviewAction(4U)); CHECK(fixture.session.project() == source);
+  fixture.session.project().findRegion(fixture.regionId)->dynamicsAutomation = {};
+  CHECK(controller.openClearDynamicsReview()); CHECK(!controller.sceneState().replacementReview.enabled[3]);
+  CHECK(controller.replacementReviewAction(4U)); CHECK(changes == 1U);
+}
+
+TEST_CASE("native tempo input commits cancels and rejects stale or malformed text") {
+  using namespace seam;
+  NativeUiFixture fixture;
+  unsigned opened = 0U, closed = 0U, changed = 0U;
+  native_ui::NativeEditorController controller{fixture.session, fixture.factory, fixture.regionId,
+      {.beginTextInput = [&](const native_ui::TextInputRequest&) { ++opened; },
+       .endTextInput = [&] { ++closed; }, .documentChanged = [&] { ++changed; }}};
+  CHECK(controller.beginTempoEdit()); CHECK(controller.textInputActive());
+  CHECK(controller.commitTextComposition(U"123.75"));
+  CHECK(fixture.session.project().tempoMap().bpmAt(time::Tick{0}) == 123.75);
+  CHECK(changed == 1U); CHECK(closed == 1U);
+  CHECK(controller.beginTempoEdit()); controller.cancelTextComposition();
+  CHECK(changed == 1U); CHECK(!controller.textInputActive());
+  CHECK(controller.setAccessibilityValue("toolbar.tempo", "99.5"));
+  CHECK(fixture.session.project().tempoMap().bpmAt(time::Tick{0}) == 99.5);
+  CHECK(!controller.setAccessibilityValue("toolbar.tempo", "100 BPM"));
+  CHECK(changed == 2U);
+  CHECK(controller.beginTempoEdit());
+  CHECK(fixture.session.execute(std::make_unique<application::EditTempoCommand>(time::Tick{960}, 80.0)));
+  CHECK(!controller.commitTextComposition(U"60"));
+  CHECK(fixture.session.project().tempoMap().bpmAt(time::Tick{0}) == 99.5);
+  CHECK(controller.beginTempoEdit()); CHECK(controller.beginLyricEdit(fixture.noteId));
+  CHECK(controller.commitTextComposition(U"lyric")); // Replacing the input clears tempo context.
+  CHECK(fixture.session.project().tempoMap().bpmAt(time::Tick{0}) == 99.5);
+  CHECK(opened > 0U); CHECK(closed > 0U); CHECK(!controller.textInputActive());
+}
+
+TEST_CASE("tempo text round trips precision and captured event ticks cannot retarget initial BPM") {
+  using namespace seam;
+  for (double value : {120.12345678901234, 0.00000000123456789, 999.9999999999999, 120.0}) {
+    const auto parsed = native_ui::parseTempoEditText(native_ui::tempoEditText(value));
+    CHECK(parsed); CHECK(parsed.value() == value);
+  }
+  for (const auto value : {"", "nan", "inf", "120x", " 120", "0", "1001"})
+    CHECK(!native_ui::parseTempoEditText(value));
+  NativeUiFixture fixture;
+  const double precise = 120.12345678901234;
+  CHECK(fixture.session.project().tempoMap().addOrReplace(time::Tick{0}, precise));
+  std::u32string field;
+  native_ui::NativeEditorController controller{fixture.session, fixture.factory, fixture.regionId,
+      {.beginTextInput = [&](const native_ui::TextInputRequest& input) { field = input.currentText; }}};
+  CHECK(controller.beginTempoEdit()); CHECK(controller.commitTextComposition(field));
+  CHECK(fixture.session.project().tempoMap().bpmAt(time::Tick{0}) == precise);
+  CHECK(!controller.beginTempoEdit(time::Tick{-1}));
+  CHECK(controller.beginTempoEdit(time::Tick{960}));
+  CHECK(!controller.setAccessibilityValue("toolbar.tempo", "80"));
+  CHECK(controller.textInputActive());
+  CHECK(controller.commitTextComposition(U"90.25"));
+  CHECK(fixture.session.project().tempoMap().bpmAt(time::Tick{0}) == precise);
+  CHECK(fixture.session.project().tempoMap().bpmAt(time::Tick{960}) == 90.25);
+  CHECK(fixture.session.undo()); CHECK(fixture.session.project().tempoMap().events().size() == 1U);
+  CHECK(fixture.session.redo()); CHECK(fixture.session.project().tempoMap().bpmAt(time::Tick{960}) == 90.25);
+}
+
+TEST_CASE("native meter field validates signature keeps tempo separate and restores through undo") {
+  using namespace seam;
+  for (auto text : {"", "0/4", "33/4", "4/3", "4/256", "4/4x", "4/4/4", "-1/4"})
+    CHECK(!native_ui::parseMeterEditText(text));
+  NativeUiFixture fixture;
+  native_ui::NativeEditorController controller{fixture.session, fixture.factory, fixture.regionId,
+      {.beginTextInput = [](const native_ui::TextInputRequest&) {}}};
+  CHECK(controller.setAccessibilityValue("toolbar.meter", "7/8"));
+  CHECK(fixture.session.project().meterMap().meterAt(time::Tick{0}).numerator == 7U);
+  CHECK(fixture.session.project().tempoMap().bpmAt(time::Tick{0}) == 120.0);
+  CHECK(fixture.session.undo()); CHECK(controller.sceneState().meter.numerator == 4U);
+  CHECK(controller.beginMeterEdit(time::Tick{3840}));
+  CHECK(!controller.setAccessibilityValue("toolbar.tempo", "90"));
+  CHECK(controller.commitTextComposition(U"3/4"));
+  CHECK(fixture.session.project().meterMap().meterAt(time::Tick{3840}).numerator == 3U);
+  CHECK(controller.beginMeterEdit()); controller.cancelTextComposition();
+  CHECK(!controller.setAccessibilityValue("toolbar.meter", "4/3"));
+  CHECK(controller.sceneState().meter.numerator == 4U);
+  native_ui::EditorSceneLayout layout;
+  for (double width : {640.0, 720.0, 1000.0, 1440.0}) {
+    const auto tempo = layout.tempoInputBoundsForWidth(width);
+    const auto meter = layout.meterInputBoundsForWidth(width);
+    CHECK(tempo.width > 0.0); CHECK(tempo.right() < meter.x);
+    CHECK(meter.right() == layout.bpmBoundsForWidth(width).right());
+  }
+}
+
+TEST_CASE("time-map list pages preserve identities and selected deletion rejects stale snapshots") {
+  using namespace seam;
+  NativeUiFixture fixture;
+  CHECK(fixture.session.project().tempoMap().addOrReplace(time::Tick{960}, 90.0));
+  CHECK(fixture.session.project().meterMap().addOrReplace(time::Tick{960}, 3U, 4U));
+  for (int i = 2; i < 20; ++i)
+    CHECK(fixture.session.project().tempoMap().addOrReplace(time::Tick{i * 960}, 120.0));
+  unsigned changes = 0U;
+  native_ui::NativeEditorController controller{fixture.session, fixture.factory, fixture.regionId,
+      {.beginTextInput = [](const native_ui::TextInputRequest&) {}, .documentChanged = [&] { ++changes; }}};
+  auto model = controller.timeMapEvents(); CHECK(model); CHECK(model.value().size() == 22U);
+  CHECK(!model.value().selected().removable());
+  CHECK(!controller.removeSelectedTimeMapEvent(model.value())); CHECK(changes == 0U);
+  CHECK(model.value().page(0U).size() == 6U); CHECK(model.value().page(3U).size() == 4U);
+  CHECK(model.value().page(std::numeric_limits<std::size_t>::max()).empty());
+  CHECK(model.value().select(2U)); CHECK(!model.value().selected().meter);
+  CHECK(model.value().selected().tick == time::Tick{960});
+  CHECK(!model.value().select(999U)); CHECK(model.value().selectedIndex() == 2U);
+  CHECK(controller.beginSelectedTimeMapEdit(model.value()));
+  CHECK(controller.commitTextComposition(U"95")); CHECK(changes == 1U);
+  CHECK(!controller.removeSelectedTimeMapEvent(model.value()));
+  auto fresh = controller.timeMapEvents(); CHECK(fresh); CHECK(fresh.value().select(3U));
+  CHECK(fresh.value().selected().meter); CHECK(controller.removeSelectedTimeMapEvent(fresh.value()));
+  CHECK(fixture.session.project().meterMap().events().size() == 1U);
+  CHECK(fixture.session.project().tempoMap().bpmAt(time::Tick{960}) == 95.0);
+  CHECK(changes == 2U); CHECK(fixture.session.undo());
+  CHECK(fixture.session.project().meterMap().events().size() == 2U);
+  CHECK(!controller.beginSelectedTimeMapEdit(fresh.value()));
+  fresh = controller.timeMapEvents(); CHECK(fresh);
+  CHECK(fixture.session.project().tempoMap().addOrReplace(time::Tick{0}, 121.0));
+  CHECK(!controller.beginSelectedTimeMapEdit(fresh.value())); // Map changes are checked even without a session revision bump.
+}
+
+TEST_CASE("native time-map panel opens selects edits refreshes removes and blocks background actions") {
+  using namespace seam;
+  NativeUiFixture fixture;
+  CHECK(fixture.session.project().tempoMap().addOrReplace(time::Tick{960}, 90.0));
+  native_ui::NativeEditorController controller{fixture.session, fixture.factory, fixture.regionId,
+      {.beginTextInput = [](const native_ui::TextInputRequest&) {}}};
+  native_ui::EditorSceneLayout layout;
+  const auto button = layout.timeMapOpenBounds();
+  CHECK(controller.pointerDown({.position = {button.x + 2.0, button.y + 2.0}, .button = native_ui::PointerButton::Left}));
+  CHECK(controller.sceneState().timeMapVisible); CHECK(controller.sceneState().timeMapRows.size() == 3U);
+  controller.resize(720.0, 520.0);
+  if (const auto* capture = std::getenv("SEAM_TIME_MAP_CAPTURE")) {
+    native_ui::PixelSurface surface{720U, 520U}; native_ui::RasterCanvas canvas{surface, 1.0};
+    native_ui::EditorScenePainter{}.paint(canvas, controller.pianoRoll(), controller.sceneState());
+    CHECK(surface.writePpm(capture));
+  }
+  CHECK(!controller.setAccessibilityValue("toolbar.tempo", "50"));
+  CHECK(!controller.timeMapPanelAction(3U)); // Initial row is protected.
+  CHECK(controller.keyDown({.key = native_ui::NativeKey::Down}));
+  CHECK(controller.keyDown({.key = native_ui::NativeKey::Down}));
+  CHECK(controller.keyDown({.key = native_ui::NativeKey::Enter}));
+  CHECK(controller.commitTextComposition(U"95"));
+  CHECK(controller.sceneState().timeMapStale);
+  CHECK(!controller.timeMapPanelAction(3U));
+  CHECK(controller.timeMapPanelAction(4U)); CHECK(!controller.sceneState().timeMapStale);
+  CHECK(controller.keyDown({.key = native_ui::NativeKey::Down}));
+  CHECK(controller.keyDown({.key = native_ui::NativeKey::Down}));
+  CHECK(controller.timeMapPanelAction(3U));
+  CHECK(fixture.session.project().tempoMap().events().size() == 1U);
+  CHECK(!controller.sceneState().timeMapStale);
+  CHECK(controller.keyDown({.key = native_ui::NativeKey::Escape}));
+  CHECK(!controller.sceneState().timeMapVisible);
+  CHECK(fixture.session.undo()); CHECK(fixture.session.project().tempoMap().bpmAt(time::Tick{960}) == 95.0);
+}
+
+TEST_CASE("time-map panel insertion is two-stage cancellable and never overwrites an existing event") {
+  using namespace seam;
+  NativeUiFixture fixture;
+  native_ui::NativeEditorController controller{fixture.session, fixture.factory, fixture.regionId,
+      {.beginTextInput = [](const native_ui::TextInputRequest&) {}}};
+  CHECK(controller.openTimeMapPanel());
+  CHECK(controller.timeMapPanelAction(6U));
+  CHECK(!controller.commitTextComposition(U"0")); // Existing initial event must use Edit.
+  CHECK(fixture.session.project().tempoMap().events().size() == 1U);
+  CHECK(controller.timeMapPanelAction(6U)); CHECK(controller.commitTextComposition(U"1920"));
+  CHECK(controller.textInputActive()); CHECK(fixture.session.project().tempoMap().events().size() == 1U);
+  CHECK(controller.commitTextComposition(U"90.5"));
+  CHECK(fixture.session.project().tempoMap().bpmAt(time::Tick{1920}) == 90.5);
+  CHECK(controller.sceneState().timeMapStale); CHECK(!controller.timeMapPanelAction(7U));
+  CHECK(controller.timeMapPanelAction(4U)); CHECK(controller.timeMapPanelAction(7U));
+  CHECK(controller.commitTextComposition(U"1920")); // Same tick, different event type is allowed.
+  controller.cancelTextComposition(); CHECK(fixture.session.project().meterMap().events().size() == 1U);
+  CHECK(controller.timeMapPanelAction(7U)); CHECK(controller.commitTextComposition(U"1920"));
+  CHECK(controller.commitTextComposition(U"7/8"));
+  CHECK(fixture.session.project().meterMap().meterAt(time::Tick{1920}).numerator == 7U);
+  CHECK(controller.timeMapPanelAction(4U)); CHECK(controller.timeMapPanelAction(6U));
+  CHECK(controller.commitTextComposition(U"3840"));
+  CHECK(fixture.session.execute(std::make_unique<application::EditTempoCommand>(time::Tick{3840}, 80.0)));
+  CHECK(!controller.commitTextComposition(U"70"));
+  CHECK(fixture.session.project().tempoMap().bpmAt(time::Tick{3840}) == 80.0);
+  for (auto input : {"-1", "1.5", "960ticks", "9223372036854775808"}) CHECK(!native_ui::parseTimeMapTick(input));
+  const auto maximum = native_ui::parseTimeMapTick("9223372036854775807"); CHECK(maximum);
+  CHECK(maximum.value().value() == std::numeric_limits<std::int64_t>::max());
+}
+
+TEST_CASE("time-map semantics expose modal actions and reject cancelled or previous-stage inputs") {
+  using namespace seam;
+  NativeUiFixture fixture;
+  native_ui::NativeEditorController controller{fixture.session, fixture.factory, fixture.regionId,
+      {.beginTextInput = [](const native_ui::TextInputRequest&) {}}};
+  controller.rebuildAccessibilityTree();
+  CHECK(controller.dispatchAccessibility("toolbar.time-map", native_ui::SemanticAction::Activate));
+  const auto id = [&](std::string_view suffix) {
+    controller.rebuildAccessibilityTree();
+    for (const auto& node : controller.accessibilityTree().root().children)
+      if (node.id.ends_with(suffix)) return node.id;
+    throw test::Failure{"Missing time-map semantic node"};
+  };
+  const auto add = id(".action.6");
+  CHECK(controller.accessibilityTree().virtualizedNoteCount() == 0U);
+  CHECK(!controller.dispatchAccessibility("toolbar.tempo", native_ui::SemanticAction::Activate));
+  CHECK(!controller.dispatchAccessibility(id(".action.3"), native_ui::SemanticAction::Activate));
+  CHECK(controller.dispatchAccessibility(add, native_ui::SemanticAction::Activate));
+  const auto cancelled = id(".input");
+  CHECK(controller.dispatchAccessibility(id(".cancel"), native_ui::SemanticAction::Activate));
+  CHECK(controller.dispatchAccessibility(id(".action.6"), native_ui::SemanticAction::Activate));
+  CHECK(!controller.setAccessibilityValue(cancelled, "960"));
+  const auto tickInput = id(".input"); CHECK(controller.setAccessibilityValue(tickInput, "1920"));
+  CHECK(!controller.setAccessibilityValue(tickInput, "80"));
+  CHECK(controller.setAccessibilityValue(id(".input"), "90"));
+  CHECK(fixture.session.project().tempoMap().bpmAt(time::Tick{1920}) == 90.0);
+  CHECK(!controller.dispatchAccessibility(id(".action.6"), native_ui::SemanticAction::Activate));
+  CHECK(controller.dispatchAccessibility(id(".action.4"), native_ui::SemanticAction::Activate));
+  CHECK(controller.keyDown({.key = native_ui::NativeKey::Tab}));
+  CHECK(controller.accessibilityTree().focusedNode()->id.starts_with("time-map."));
+  CHECK(controller.dispatchAccessibility(id(".action.5"), native_ui::SemanticAction::Activate));
+  controller.rebuildAccessibilityTree(); CHECK(!controller.accessibilityTree().root().id.starts_with("time-map."));
+}
+
+TEST_CASE("time-map composition has visible shared input geometry in toolbar and panel") {
+  using namespace seam;
+  NativeUiFixture fixture;
+  ui::Rect requested;
+  native_ui::NativeEditorController controller{fixture.session, fixture.factory, fixture.regionId,
+      {.beginTextInput = [&](const native_ui::TextInputRequest& input) { requested = input.logicalBounds; }}};
+  controller.resize(720.0, 520.0);
+  CHECK(controller.beginTempoEdit());
+  CHECK(controller.sceneState().timeMapInputActive); CHECK(controller.sceneState().lyricEditor);
+  CHECK(controller.sceneState().lyricEditor->x == requested.x);
+  CHECK(controller.sceneState().lyricEditor->width == requested.width);
+  CHECK(controller.sceneState().compositionPreview == "120");
+  controller.cancelTextComposition(); CHECK(!controller.sceneState().timeMapInputActive);
+  CHECK(controller.openTimeMapPanel()); CHECK(controller.timeMapPanelAction(6U));
+  CHECK(controller.updateTextComposition(U"9223372036854775807", {}));
+  const auto state = controller.sceneState(); CHECK(state.timeMapInputActive); CHECK(state.lyricEditor);
+  CHECK(state.lyricEditor->width == requested.width); CHECK(state.lyricEditor->width > 400.0);
+  CHECK(state.compositionPreview == "9223372036854775807");
+  if (const auto* capture = std::getenv("SEAM_TIME_MAP_INPUT_CAPTURE")) {
+    native_ui::PixelSurface surface{720U, 520U}; native_ui::RasterCanvas canvas{surface, 1.0};
+    native_ui::EditorScenePainter{}.paint(canvas, controller.pianoRoll(), state); CHECK(surface.writePpm(capture));
+  }
+  controller.cancelTextComposition(); CHECK(!controller.sceneState().lyricEditor);
+}
+
+TEST_CASE("time-map refresh retains selected event across index shifts and deletion selects successor") {
+  using namespace seam;
+  NativeUiFixture fixture;
+  for (int i = 1; i <= 12; ++i) CHECK(fixture.session.project().tempoMap().addOrReplace(time::Tick{i * 960}, 100.0));
+  native_ui::NativeEditorController controller{fixture.session, fixture.factory, fixture.regionId};
+  CHECK(controller.openTimeMapPanel());
+  for (int i = 0; i < 7; ++i) CHECK(controller.keyDown({.key = native_ui::NativeKey::Down}));
+  auto state = controller.sceneState(); CHECK(state.timeMapSelectedRow);
+  CHECK(state.timeMapRows[*state.timeMapSelectedRow].starts_with("5760 ticks   TEMPO"));
+  CHECK(fixture.session.execute(std::make_unique<application::EditTempoCommand>(time::Tick{480}, 90.0)));
+  CHECK(controller.timeMapPanelAction(4U));
+  state = controller.sceneState(); CHECK(state.timeMapSelectedRow);
+  CHECK(state.timeMapRows[*state.timeMapSelectedRow].starts_with("5760 ticks   TEMPO"));
+  CHECK(controller.timeMapPanelAction(3U));
+  state = controller.sceneState(); CHECK(state.timeMapSelectedRow);
+  CHECK(state.timeMapRows[*state.timeMapSelectedRow].starts_with("6720 ticks   TEMPO"));
+  auto model = controller.timeMapEvents(); CHECK(model);
+  model.value().selectNearest(time::Tick{0}, true); CHECK(model.value().selected().meter);
+  model.value().selectNearest(time::Tick{std::numeric_limits<std::int64_t>::max()}, false);
+  CHECK(model.value().selected().tick == time::Tick{11520});
+}
+
 TEST_CASE("native arrangement controller routes selected tracks through shared commands") {
   NativeUiFixture fixture;
   seam::native_ui::NativeEditorController controller{
@@ -2030,6 +3489,131 @@ TEST_CASE("native arrangement toolbar exposes pointer and accessibility actions"
   CHECK(controller.dispatchAccessibility(
       "arrangement.add-track", seam::native_ui::SemanticAction::Activate));
   CHECK(fixture.session.project().vocalTracks().size() == 3U);
+}
+
+
+TEST_CASE("native vibrato inspector edits drafts through fields and applies the selection once") {
+  using namespace seam;
+  NativeUiFixture fixture; fixture.session.project().settings().characterDisplay = domain::CharacterDisplayMode::Off;
+  auto* region = fixture.session.project().findRegion(fixture.regionId);
+  auto [lyric, note] = fixture.factory.makeNote(time::Tick{2400}, time::Tick{480}, 67U, U"la", domain::Language::English);
+  note.vibrato.enabled = true; note.vibrato.phaseTurns = 0.75F; note.vibrato.fadeOutFraction = 0.5F;
+  region->lyrics.push_back(lyric); region->notes.push_back(note);
+  fixture.session.selection().replace({fixture.noteId, note.id}); const auto source = fixture.session.project();
+  unsigned changes = 0U; std::u32string initial;
+  native_ui::NativeEditorController controller{fixture.session, fixture.factory, fixture.regionId,
+      {.beginTextInput = [&](const native_ui::TextInputRequest& request) { initial = request.currentText; }, .documentChanged = [&] { ++changes; }}};
+  controller.resize(960.0, 640.0); controller.rebuildAccessibilityTree();
+  CHECK(controller.dispatchAccessibility("inspector.vibrato", native_ui::SemanticAction::Activate));
+  controller.resize(480.0, 320.0);
+  auto view = controller.sceneState().replacementReview; CHECK(view.dockedInspector); CHECK(view.rows.size() == 6U); CHECK(!view.enabled[3]);
+  std::string oldApply;
+  const native_ui::EditorSceneLayout layout;
+  const auto row = layout.reviewRowBounds(480.0, 320.0, 0U, true);
+  CHECK(controller.pointerDown({.position = {row.x + 5.0, row.y + 5.0}, .button = native_ui::PointerButton::Left}));
+  CHECK(initial.empty()); CHECK(controller.sceneState().boundedInputLabel.starts_with("VIBRATO:"));
+  CHECK(controller.commitTextComposition(U"On")); CHECK(controller.sceneState().replacementReview.visible);
+  controller.rebuildAccessibilityTree();
+  for (const auto& control : controller.accessibilityTree().root().children) if (control.id.ends_with("action.3")) { CHECK(control.enabled); oldApply = control.id; }
+  CHECK(!oldApply.empty());
+  CHECK(controller.openReplacementRow(2U)); CHECK(!controller.commitTextComposition(U"0.6"));
+  CHECK(!controller.sceneState().replacementReview.enabled[3]); CHECK(fixture.session.project() == source);
+  CHECK(controller.openReplacementRow(3U)); CHECK(controller.commitTextComposition(U"0.3"));
+  controller.rebuildAccessibilityTree(); const auto depthField = controller.accessibilityTree().root().children.at(4U).id;
+  CHECK(depthField.ends_with("row.4"));
+  CHECK(controller.dispatchAccessibility(depthField, native_ui::SemanticAction::SetFocus));
+  CHECK(controller.keyDown({.key = native_ui::NativeKey::Enter})); CHECK(controller.commitTextComposition(U"75"));
+  CHECK(controller.replacementReviewAction(1U)); CHECK(controller.sceneState().replacementReview.rows.size() == 1U);
+  CHECK(controller.openReplacementRow(0U)); controller.cancelTextComposition(); CHECK(controller.replacementReviewOpen());
+  CHECK(controller.openReplacementRow(0U)); CHECK(controller.commitTextComposition(U"0.25"));
+  CHECK(controller.replacementReviewAction(2U)); // Reset only the phase patch.
+  CHECK(controller.sceneState().replacementReview.rows.front().find("Mixed") != std::string::npos);
+  CHECK(controller.replacementReviewAction(0U));
+  if (const auto* capture = std::getenv("SEAM_VIBRATO_INSPECTOR_CAPTURE")) {
+    auto engine = text::TextEngine::createSystem(); CHECK(engine);
+    native_ui::PixelSurface surface{480U,320U}; native_ui::RasterCanvas canvas{surface,1.0,engine.value().get()};
+    native_ui::EditorScenePainter{}.paint(canvas, controller.pianoRoll(), controller.sceneState()); CHECK(surface.writePpm(capture));
+  }
+  CHECK(fixture.session.project() == source); CHECK(changes == 0U);
+  CHECK(!controller.dispatchAccessibility(oldApply, native_ui::SemanticAction::Activate));
+  CHECK(controller.keyDown({.key = native_ui::NativeKey::Delete})); CHECK(fixture.session.project() == source);
+  CHECK(controller.replacementReviewAction(3U)); CHECK(changes == 1U); CHECK(!controller.replacementReviewOpen());
+  auto expected = source;
+  for (const auto id : {fixture.noteId, note.id}) {
+    auto& value = expected.findNote(id)->vibrato; value.enabled = true; value.fadeInFraction = 0.6F; value.fadeOutFraction = 0.3F; value.depthCents = 75.0F;
+  }
+  CHECK(fixture.session.project() == expected); CHECK(fixture.session.undo()); CHECK(fixture.session.project() == source);
+  CHECK(controller.openVibratoInspector()); CHECK(controller.replacementReviewAction(4U)); CHECK(fixture.session.project() == source);
+}
+
+TEST_CASE("native vibrato inspector rejects stale field input and keeps responsive controls in bounds") {
+  using namespace seam;
+  NativeUiFixture fixture; fixture.session.selection().selectOnly(fixture.noteId);
+  native_ui::NativeEditorController controller{fixture.session, fixture.factory, fixture.regionId,
+      {.beginTextInput = [](const native_ui::TextInputRequest&) {}}};
+  CHECK(controller.openVibratoInspector()); CHECK(controller.openReplacementRow(4U));
+  const auto source = fixture.session.project(); CHECK(fixture.session.replaceProject(source)); fixture.session.selection().selectOnly(fixture.noteId);
+  CHECK(!controller.commitTextComposition(U"75")); CHECK(controller.replacementReviewOpen()); CHECK(!controller.sceneState().replacementReview.enabled[3]);
+  CHECK(controller.replacementReviewAction(5U));
+  const native_ui::EditorSceneLayout layout;
+  for (const auto size : {ui::Point{480.0,320.0}, ui::Point{960.0,640.0}}) {
+    controller.resize(size.x, size.y); controller.rebuildAccessibilityTree(); const auto panel = layout.reviewPanelBounds(size.x,size.y,true);
+    CHECK(panel.x >= 0.0); CHECK(panel.y >= 0.0); CHECK(panel.right() <= size.x); CHECK(panel.bottom() <= size.y);
+    for (const auto& child : controller.accessibilityTree().root().children) {
+      CHECK(child.bounds.x >= panel.x); CHECK(child.bounds.y >= panel.y);
+      CHECK(child.bounds.right() <= panel.right()); CHECK(child.bounds.bottom() <= panel.bottom());
+    }
+  }
+  CHECK(controller.replacementReviewAction(4U)); CHECK(fixture.session.project() == source);
+}
+
+TEST_CASE("arrangement inspector visibility and pointer bounds agree with paint including overlays") {
+  using namespace seam;
+  for (const auto height : {320.0, 640.0}) for (const bool diagnostic : {false, true}) {
+    NativeUiFixture fixture; fixture.session.project().settings().characterDisplay = domain::CharacterDisplayMode::Off;
+    native_ui::NativeEditorController controller{fixture.session, fixture.factory, fixture.regionId}; controller.resize(960.0, height);
+    if (diagnostic) controller.setDiagnostics({{.code = "MEDIA_MISSING", .messageKey = "media.missing",
+        .actions = {authoring::DiagnosticAction::RelinkMedia}}});
+    const auto state = controller.sceneState(); const native_ui::EditorSceneLayout layout;
+    const auto bottom = height - layout.statusHeight - layout.diagnosticHeight(diagnostic);
+    const auto top = native_ui::resolveArrangementInspectorTop(state, layout, bottom);
+    controller.rebuildAccessibilityTree();
+    CHECK(native_ui::EditorSemanticTree::containsId(controller.accessibilityTree().root(), "inspector.mute") == top.has_value());
+    if (top) {
+      CHECK(controller.dispatchAccessibility("inspector.mute", native_ui::SemanticAction::SetFocus));
+      const auto bounds = controller.accessibilityTree().focusedNode()->bounds;
+      CHECK(bounds.y >= *top); CHECK(bounds.bottom() <= bottom);
+      CHECK(bounds.y == *top + layout.inspectorNameBaseline + layout.inspectorNameToFirstFieldAdvance + layout.inspectorFieldAdvance * 3.0);
+      const auto track = controller.selectedTrack(); const auto before = fixture.session.project();
+      CHECK(controller.pointerDown({.position = {bounds.x + bounds.width * 0.5, bounds.y + bounds.height * 0.5}, .button = native_ui::PointerButton::Left}));
+      CHECK(fixture.session.project().findVocalTrack(track)->muted); CHECK(fixture.session.undo()); CHECK(fixture.session.project() == before);
+      CHECK(controller.dispatchAccessibility("inspector.solo", native_ui::SemanticAction::SetFocus));
+      const auto solo = controller.accessibilityTree().focusedNode()->bounds; CHECK(solo.x == bounds.right()); CHECK(solo.y == bounds.y);
+      CHECK(controller.pointerDown({.position = {solo.x + solo.width * 0.5, solo.y + solo.height * 0.5}, .button = native_ui::PointerButton::Left}));
+      CHECK(fixture.session.project().findVocalTrack(track)->solo); CHECK(!fixture.session.project().findVocalTrack(track)->muted);
+      CHECK(fixture.session.undo()); CHECK(fixture.session.project() == before);
+      if (height == 640.0 && diagnostic) if (const auto* capture = std::getenv("SEAM_INSPECTOR_LAYOUT_CAPTURE")) {
+        auto engine = text::TextEngine::createSystem(); CHECK(engine);
+        native_ui::PixelSurface surface{960U,640U}; native_ui::RasterCanvas canvas{surface,1.0,engine.value().get()};
+        native_ui::EditorScenePainter{}.paint(canvas, controller.pianoRoll(), controller.sceneState()); CHECK(surface.writePpm(capture));
+      }
+    } else CHECK(!controller.dispatchAccessibility("inspector.mute", native_ui::SemanticAction::Activate));
+  }
+}
+
+TEST_CASE("crowded arrangement does not expose hidden inspector or offscreen track targets") {
+  using namespace seam;
+  NativeUiFixture fixture; fixture.session.project().settings().characterDisplay = domain::CharacterDisplayMode::Off;
+  for (unsigned i = 0U; i < 40U; ++i) static_cast<void>(fixture.factory.addVocalTrack(fixture.session.project(), "Track " + std::to_string(i)));
+  native_ui::NativeEditorController controller{fixture.session, fixture.factory, fixture.regionId}; controller.resize(960.0, 640.0);
+  const auto source = fixture.session.project(); const auto state = controller.sceneState(); const native_ui::EditorSceneLayout layout;
+  CHECK(!native_ui::resolveArrangementInspectorTop(state, layout, 640.0 - layout.statusHeight));
+  controller.rebuildAccessibilityTree(); const auto& root = controller.accessibilityTree().root();
+  CHECK(!native_ui::EditorSemanticTree::containsId(root, "inspector.mute"));
+  CHECK(!native_ui::EditorSemanticTree::containsId(root, "arrangement.track." + fixture.session.project().vocalTracks().back().id.toString()));
+  CHECK(!controller.dispatchAccessibility("inspector.mute", native_ui::SemanticAction::Activate));
+  CHECK(controller.pointerDown({.position = {900.0, 570.0}, .button = native_ui::PointerButton::Left}));
+  CHECK(fixture.session.project() == source);
 }
 
 TEST_CASE("native semantic focus does not mutate note or arrangement selection") {

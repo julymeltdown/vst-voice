@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://project-seam.invalid/schemas/public-release-replay.schema.json",
+  "title": "Exact restored public and External Beta replay inputs",
+  "oneOf": [{"$ref": "#/$defs/predecessor"}, {"$ref": "#/$defs/decision"}],
+  "$defs": {
+    "digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "reference": {
+      "type": "object", "additionalProperties": false, "required": ["locator", "sha256"],
+      "properties": {"locator": {"type": "string", "minLength": 1}, "sha256": {"$ref": "#/$defs/digest"}}
+    },
+    "audit": {
+      "type": "object", "additionalProperties": false, "required": ["candidate", "archiveManifest", "archiveRoot"],
+      "properties": {
+        "candidate": {"$ref": "#/$defs/reference"}, "archiveManifest": {"$ref": "#/$defs/reference"},
+        "archiveRoot": {"type": "string", "minLength": 1}
+      }
+    },
+    "predecessor": {
+      "type": "object", "additionalProperties": false,
+      "required": ["state", "candidateLineageId", "candidateRootId", "candidateRootSha256", "acceptanceContract", "releaseAudit"],
+      "properties": {
+        "state": {"enum": ["EXTERNAL_BETA_READY", "EXTERNAL_BETA_CLOSED"]},
+        "candidateLineageId": {"type": "string", "minLength": 1},
+        "candidateRootId": {"type": "string", "minLength": 1},
+        "candidateRootSha256": {"$ref": "#/$defs/digest"},
+        "acceptanceContract": {"$ref": "#/$defs/reference"},
+        "releaseAudit": {"$ref": "#/$defs/audit"},
+        "closedAt": {"type": "string", "format": "date-time"},
+        "archiveVerified": {"type": "boolean", "deprecated": true}
+      }
+    },
+    "decision": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schemaVersion", "decisionId", "action", "candidateLineageId", "evidenceRootSha256", "actorId", "actorRole", "createdAt", "keyId", "policyVersion", "algorithm", "signature", "decisionSha256"],
+      "properties": {
+        "schemaVersion": {"const": 1}, "decisionId": {"type": "string", "minLength": 1},
+        "action": {"enum": ["AUTHORIZE_FREEZE", "MARK_SIGNED", "MARK_CLEAN_INSTALLED", "MARK_BANK_READY", "MARK_EVIDENCE_PASSED", "MARK_EXTERNAL_BETA_READY", "MARK_EXTERNAL_BETA_CLOSED", "ACTIVATE", "PAUSE", "RESUME", "SUPERSEDE", "REVOKE"]},
+        "candidateLineageId": {"type": "string", "minLength": 1}, "evidenceRootSha256": {"$ref": "#/$defs/digest"},
+        "actorId": {"type": "string", "minLength": 1}, "actorRole": {"const": "release-manager"},
+        "createdAt": {"type": "string", "format": "date-time"}, "reason": {"type": "string", "minLength": 1},
+        "keyId": {"type": "string", "minLength": 1}, "policyVersion": {"const": "public-release-operation-1.0"},
+        "algorithm": {"const": "Ed25519"}, "signature": {"type": "string", "minLength": 1}, "decisionSha256": {"$ref": "#/$defs/digest"},
+        "gatePassed": {"type": "boolean", "deprecated": true},
+        "approvals": {"type": "array", "items": {"type": "object"}},
+        "acceptanceContractSha256": {"$ref": "#/$defs/digest"}, "releaseAudit": {"$ref": "#/$defs/audit"}
+      },
+      "allOf": [{
+        "if": {"properties": {"action": {"not": {"enum": ["PAUSE", "SUPERSEDE", "REVOKE"]}}}},
+        "then": {"required": ["acceptanceContractSha256", "releaseAudit"]}
+      }]
+    }
+  }
+}

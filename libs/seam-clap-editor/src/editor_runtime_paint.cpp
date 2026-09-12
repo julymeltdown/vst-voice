@@ -214,10 +214,11 @@ native_ui::EditorSceneState EditorRuntime::sceneState() const {
 
 void EditorRuntime::paint(native_ui::RasterCanvas& canvas) noexcept {
   std::lock_guard lock(mutex_);
+  controller_->pollReplacementReview();
   rebuildTechnicalModelsLocked();
   const auto state = sceneState();
   painter_.paint(canvas, controller_->pianoRoll(), state);
-  if (state.sampleMicroscope.has_value()) return;
+  if (state.sampleMicroscope.has_value() || state.replacementReview.visible) return;
   const auto seam = primarySeamAmount();
   const auto width = canvas.logicalWidth();
   const auto layout = painter_.layout();

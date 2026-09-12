@@ -22,6 +22,8 @@ struct RegionRenderPhraseInfo final {
   std::size_t unitCount{0U};
   std::size_t fallbackCount{0U};
   bool cacheHit{false};
+  std::string rendererIdentity{"unknown"};
+  std::string fallbackDiagnostic;
 };
 
 struct RegionRenderPhraseFailure final {

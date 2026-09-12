@@ -26,7 +26,8 @@ try:
         stable_workload_sha256 as stable_workload_sha256,
     )
     from .release_gate_policy import requirement_policy_errors
-    from .full_product_contract import full_product_report_reference_errors
+    from .full_product_contract import full_product_report_reference_errors, _read_contract, _parse_contract
+    from .full_product_report import validate_full_product_report_reference
 except ImportError:
     from cohort_gate import validate_cohort
     from release_gate_validation import (
@@ -46,7 +47,8 @@ except ImportError:
         stable_workload_sha256 as stable_workload_sha256,
     )
     from release_gate_policy import requirement_policy_errors
-    from full_product_contract import full_product_report_reference_errors
+    from full_product_contract import full_product_report_reference_errors, _read_contract, _parse_contract
+    from full_product_report import validate_full_product_report_reference
 
 READY_REQUIREMENT_IDS = (
     "EB-001-contract",
@@ -102,11 +104,41 @@ def sha256_json(value: JsonValue) -> str:
     return hashlib.sha256(canonical_json(value).encode("utf-8")).hexdigest()
 
 
+def _full_product_report_reference(candidate: JsonObject) -> JsonObject | None:
+    records = candidate.get("evidence")
+    if not isinstance(records, list):
+        return None
+    for record in records:
+        if not isinstance(record, dict) or record.get("requirementId") != "EB-009-full-product":
+            continue
+        reference = record.get("fullProductReport")
+        if isinstance(reference, dict):
+            return reference
+    return None
+
+
+def _load_full_product_contract(acceptance: JsonObject, base: Path | None = None) -> JsonObject | None:
+    reference = acceptance.get("fullProductContract")
+    if not isinstance(reference, dict) or not isinstance(reference.get("locator"), str):
+        return None
+    path = Path(reference["locator"])
+    if not path.is_absolute():
+        path = (base if base is not None else Path(__file__).resolve().parents[2]) / path
+    try:
+        if base is not None:
+            path.resolve().relative_to(base.resolve())
+        value = _parse_contract(_read_contract(path))
+    except (OSError, UnicodeError, ValueError):
+        return None
+    return value if isinstance(value, dict) else None
+
+
 def evaluate_ready(
     candidate: JsonObject,
     acceptance_contract: JsonObject | None = None,
     *,
     archive_verified: bool = False,
+    evidence_root: Path | None = None,
 ) -> GateResult:
     contract = (
         acceptance_contract
@@ -119,12 +151,29 @@ def evaluate_ready(
     errors = _base_errors(candidate)
     if not archive_verified:
         errors.append("verified restored archive audit is required for READY")
-    errors.extend(requirement_policy_errors(candidate, READY_REQUIREMENT_IDS, contract))
+    errors.extend(requirement_policy_errors(candidate, READY_REQUIREMENT_IDS, contract, contract_base=evidence_root))
     requirement_errors, blocked = _requirement_errors(candidate, READY_REQUIREMENT_IDS)
     errors.extend(requirement_errors)
     errors.extend(full_product_report_reference_errors(candidate))
-    errors.append("EB-009-full-product: semantic validator unavailable until U45")
-    blocked = tuple(sorted(set(blocked) | {"EB-009-full-product"}))
+    full_product_reference = _full_product_report_reference(candidate)
+    if full_product_reference is None:
+        # Keep the legacy diagnostic precise for candidates that do not even
+        # provide the mandatory U45 report reference.  A referenced report is
+        # validated below; malformed/stale content receives its own errors.
+        errors.append("EB-009-full-product: semantic validator unavailable until U45")
+        blocked = tuple(sorted(set(blocked) | {"EB-009-full-product"}))
+    else:
+        full_product_contract = _load_full_product_contract(contract, evidence_root)
+        semantic_errors = validate_full_product_report_reference(
+            full_product_reference,
+            candidate=candidate,
+            acceptance_contract=contract,
+            full_product_contract=full_product_contract,
+            evidence_root=evidence_root,
+        )
+        errors.extend(semantic_errors)
+        if semantic_errors:
+            blocked = tuple(sorted(set(blocked) | {"EB-009-full-product"}))
     return GateResult("EXTERNAL_BETA_READY", not errors and not blocked, tuple(errors), blocked)
 
 
@@ -140,9 +189,10 @@ def evaluate_closed(
     acceptance_contract: JsonObject | None = None,
     *,
     archive_verified: bool = False,
+    evidence_root: Path | None = None,
 ) -> GateResult:
     ready = evaluate_ready(
-        candidate, acceptance_contract, archive_verified=archive_verified
+        candidate, acceptance_contract, archive_verified=archive_verified, evidence_root=evidence_root
     )
     errors = list(ready.errors)
     errors.extend(_cohort_errors(candidate))
@@ -155,15 +205,16 @@ def evaluate_gate(
     acceptance_contract: JsonObject | None = None,
     *,
     archive_verified: bool = False,
+    evidence_root: Path | None = None,
 ) -> GateResult:
     normalized = state.upper().replace(" ", "_")
     if normalized == "EXTERNAL_BETA_CLOSED":
         return evaluate_closed(
-            candidate, acceptance_contract, archive_verified=archive_verified
+            candidate, acceptance_contract, archive_verified=archive_verified, evidence_root=evidence_root
         )
     if normalized == "EXTERNAL_BETA_READY":
         return evaluate_ready(
-            candidate, acceptance_contract, archive_verified=archive_verified
+            candidate, acceptance_contract, archive_verified=archive_verified, evidence_root=evidence_root
         )
     return GateResult(normalized, False, (f"unsupported External Beta state: {state}",))
 

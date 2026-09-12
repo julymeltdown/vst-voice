@@ -4,6 +4,7 @@
 #include "seam/authoring/project_lifecycle.hpp"
 #include "seam/application/render_commands.hpp"
 #include "seam/formats/project_json.hpp"
+#include "seam/voice_design/recipe_resource.hpp"
 
 #include <filesystem>
 #include <fstream>
@@ -181,6 +182,46 @@ TEST_CASE("project_lifecycle_save_as_round_trips_unicode_and_technical_state") {
   CHECK(target.session().project() == document.session().project());
   CHECK(target.identity().projectPath == path);
   CHECK(!target.dirty());
+}
+
+TEST_CASE("save as cannot silently retarget a relative procedural recipe") {
+  using namespace seam;
+  const auto root = test::support::temporaryDirectory("recipe-save-as");
+  std::filesystem::create_directories(root / "original");
+  std::filesystem::create_directories(root / "destination");
+  voice_design::VoiceRecipe recipe;
+  recipe.id = "relocation-draft";
+  recipe.poses = {{"a", "neutral", 0.0, {{700.0, 80.0, 0.0}, {1200.0, 100.0, -3.0}, {2600.0, 140.0, -6.0}}}};
+  CHECK(voice_design::saveVoiceRecipeFile(root / "original/singer.json", recipe));
+  const auto resource = voice_design::freezeVoiceRecipeResource(recipe); CHECK(resource);
+  auto document = makeDocument();
+  authoring::ProjectLifecycleService lifecycle;
+  CHECK(lifecycle.createNew(document, authoring::NewProjectRequest{.name = "Recipe", .tempoBpm = 120.0,
+      .sampleRate = 48000U, .outputChannels = 2U, .initialVoicebank = std::nullopt}));
+  const auto trackId = document.session().project().vocalTracks().front().id;
+  CHECK(document.execute(std::make_unique<application::SetTrackProceduralRecipeCommand>(trackId, std::nullopt,
+      domain::ProceduralRecipeReference{resource.value().identity, "singer.json", "neutral"})));
+  CHECK(lifecycle.saveAs(document, root / "original/song.seam"));
+  const auto before = document.session().project();
+  const auto revision = document.session().revision();
+  const auto hash = document.identity().baseProjectHash;
+  const auto destination = root / "destination/song.seam";
+  CHECK(core::durableAtomicWriteText(destination, "existing destination"));
+  CHECK(!lifecycle.saveAs(document, destination));
+  CHECK(core::readTextFileLimited(destination, 1024U).value() == "existing destination");
+  CHECK(document.identity().projectPath == root / "original/song.seam");
+  CHECK(document.identity().baseProjectHash == hash); CHECK(!document.dirty());
+  CHECK(document.session().revision() == revision); CHECK(document.session().project() == before);
+  auto changed = recipe; changed.seed = 123U;
+  CHECK(voice_design::saveVoiceRecipeFile(root / "destination/singer.json", changed));
+  CHECK(!lifecycle.saveAs(document, destination));
+  CHECK(core::readTextFileLimited(destination, 1024U).value() == "existing destination");
+  CHECK(voice_design::saveVoiceRecipeFile(root / "destination/singer.json", recipe));
+  CHECK(lifecycle.saveAs(document, destination));
+  CHECK(document.session().project() == before); CHECK(document.session().revision() == revision);
+  CHECK(document.identity().projectPath == destination);
+  const auto loaded = formats::ProjectJsonCodec{}.load(destination); CHECK(loaded); CHECK(loaded.value() == before);
+  CHECK(document.undo()); CHECK(!document.session().project().findVocalTrack(trackId)->proceduralRecipe);
 }
 
 TEST_CASE("project_lifecycle_save_requires_path_and_failure_preserves_dirty_state") {

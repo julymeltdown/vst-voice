@@ -1,0 +1,804 @@
+{
+  "audioTracks": [],
+  "formatId": "com.project-seam.project",
+  "meterMap": [
+    {
+      "denominator": 4,
+      "numerator": 4,
+      "tick": 0
+    }
+  ],
+  "name": "U1 Open Window - original diagnostic melody",
+  "ppq": 960,
+  "projectId": "1",
+  "routing": {
+    "buses": [
+      {
+        "channelCount": 2,
+        "gainDb": 0,
+        "id": "1",
+        "muted": false,
+        "name": "Master",
+        "solo": false
+      }
+    ],
+    "deviceOutputChannels": 2,
+    "deviceRoutes": [
+      {
+        "enabled": true,
+        "gainDb": 0,
+        "matrix": {
+          "destinationChannels": 2,
+          "gains": [
+            1,
+            0,
+            0,
+            1
+          ],
+          "sourceChannels": 2
+        },
+        "sourceBus": "1"
+      }
+    ],
+    "masterBus": "1",
+    "sends": []
+  },
+  "schemaVersion": 7,
+  "settings": {
+    "characterDisplay": "off",
+    "hostStartOffsetTick": 0,
+    "sampleRate": 48000,
+    "snapEnabled": true,
+    "snapGrid": 240,
+    "technicalLanes": [
+      {
+        "expandedHeight": 120,
+        "mode": "auto"
+      },
+      {
+        "expandedHeight": 120,
+        "mode": "auto"
+      },
+      {
+        "expandedHeight": 120,
+        "mode": "auto"
+      },
+      {
+        "expandedHeight": 120,
+        "mode": "auto"
+      }
+    ]
+  },
+  "tempoMap": [
+    {
+      "bpm": 120,
+      "tick": 0
+    }
+  ],
+  "vocalTracks": [
+    {
+      "character": {
+        "id": "",
+        "version": ""
+      },
+      "gainDb": 0,
+      "id": "2",
+      "muted": false,
+      "name": "Diagnostic dry vocal",
+      "outputRoute": {
+        "busId": "1",
+        "matrix": {
+          "destinationChannels": 2,
+          "gains": [
+            1,
+            1
+          ],
+          "sourceChannels": 1
+        }
+      },
+      "pan": 0,
+      "regions": [
+        {
+          "durationTick": 78720,
+          "id": "3",
+          "lyrics": [
+            {
+              "id": "1",
+              "language": "ja",
+              "surface": "こ"
+            },
+            {
+              "id": "2",
+              "language": "ja",
+              "surface": "え"
+            },
+            {
+              "id": "3",
+              "language": "ja",
+              "surface": "お"
+            },
+            {
+              "id": "4",
+              "language": "ja",
+              "surface": "つ"
+            },
+            {
+              "id": "5",
+              "language": "ja",
+              "surface": "な"
+            },
+            {
+              "id": "6",
+              "language": "ja",
+              "surface": "ぐ"
+            },
+            {
+              "id": "7",
+              "language": "ja",
+              "surface": "ま"
+            },
+            {
+              "id": "8",
+              "language": "ja",
+              "surface": "で"
+            }
+          ],
+          "name": "U1 Open Window - original diagnostic melody",
+          "notes": [
+            {
+              "articulation": "normal",
+              "durationTick": 480,
+              "id": "100",
+              "lyricId": "1",
+              "midiKey": 67,
+              "startTick": 1920
+            },
+            {
+              "articulation": "normal",
+              "durationTick": 720,
+              "id": "101",
+              "lyricId": "2",
+              "midiKey": 69,
+              "startTick": 2400
+            },
+            {
+              "articulation": "normal",
+              "durationTick": 240,
+              "id": "102",
+              "lyricId": "3",
+              "midiKey": 72,
+              "startTick": 3120
+            },
+            {
+              "articulation": "normal",
+              "durationTick": 960,
+              "id": "103",
+              "lyricId": "4",
+              "midiKey": 71,
+              "startTick": 3360
+            },
+            {
+              "articulation": "normal",
+              "durationTick": 480,
+              "id": "104",
+              "lyricId": "5",
+              "midiKey": 67,
+              "startTick": 4320
+            },
+            {
+              "articulation": "normal",
+              "durationTick": 240,
+              "id": "105",
+              "lyricId": "6",
+              "midiKey": 64,
+              "startTick": 4800
+            },
+            {
+              "articulation": "normal",
+              "durationTick": 720,
+              "id": "106",
+              "lyricId": "7",
+              "midiKey": 66,
+              "startTick": 5040
+            },
+            {
+              "articulation": "normal",
+              "durationTick": 1920,
+              "id": "107",
+              "lyricId": "8",
+              "midiKey": 67,
+              "startTick": 5760
+            },
+            {
+              "articulation": "normal",
+              "durationTick": 480,
+              "id": "108",
+              "lyricId": "1",
+              "midiKey": 69,
+              "startTick": 9600
+            },
+            {
+              "articulation": "normal",
+              "durationTick": 720,
+              "id": "109",
+              "lyricId": "2",
+              "midiKey": 67,
+              "startTick": 10080
+            },
+            {
+              "articulation": "normal",
+              "durationTick": 240,
+              "id": "10a",
+              "lyricId": "3",
+              "midiKey": 64,
+              "startTick": 10800
+            },
+            {
+              "articulation": "normal",
+              "durationTick": 960,
+              "id": "10b",
+              "lyricId": "4",
+              "midiKey": 66,
+              "startTick": 11040
+            },
+            {
+              "articulation": "normal",
+              "durationTick": 480,
+              "id": "10c",
+              "lyricId": "5",
+              "midiKey": 69,
+              "startTick": 12000
+            },
+            {
+              "articulation": "normal",
+              "durationTick": 240,
+              "id": "10d",
+              "lyricId": "6",
+              "midiKey": 71,
+              "startTick": 12480
+            },
+            {
+              "articulation": "normal",
+              "durationTick": 720,
+              "id": "10e",
+              "lyricId": "7",
+              "midiKey": 72,
+              "startTick": 12720
+            },
+            {
+              "articulation": "normal",
+              "durationTick": 1920,
+              "id": "10f",
+              "lyricId": "8",
+              "midiKey": 69,
+              "startTick": 13440
+            },
+            {
+              "articulation": "normal",
+              "durationTick": 480,
+              "id": "110",
+              "lyricId": "1",
+              "midiKey": 72,
+              "startTick": 17280
+            },
+            {
+              "articulation": "normal",
+              "durationTick": 720,
+              "id": "111",
+              "lyricId": "2",
+              "midiKey": 71,
+              "startTick": 17760
+            },
+            {
+              "articulation": "normal",
+              "durationTick": 240,
+              "id": "112",
+              "lyricId": "3",
+              "midiKey": 67,
+              "startTick": 18480
+            },
+            {
+              "articulation": "normal",
+              "durationTick": 960,
+              "id": "113",
+              "lyricId": "4",
+              "midiKey": 69,
+              "startTick": 18720
+            },
+            {
+              "articulation": "normal",
+              "durationTick": 480,
+              "id": "114",
+              "lyricId": "5",
+              "midiKey": 66,
+              "startTick": 19680
+            },
+            {
+              "articulation": "normal",
+              "durationTick": 240,
+              "id": "115",
+              "lyricId": "6",
+              "midiKey": 64,
+              "startTick": 20160
+            },
+            {
+              "articulation": "normal",
+              "durationTick": 720,
+              "id": "116",
+              "lyricId": "7",
+              "midiKey": 62,
+              "startTick": 20400
+            },
+            {
+              "articulation": "normal",
+              "durationTick": 1920,
+              "id": "117",
+              "lyricId": "8",
+              "midiKey": 67,
+              "startTick": 21120
+            },
+            {
+              "articulation": "normal",
+              "durationTick": 480,
+              "id": "118",
+              "lyricId": "1",
+              "midiKey": 64,
+              "startTick": 24960
+            },
+            {
+              "articulation": "normal",
+              "durationTick": 720,
+              "id": "119",
+              "lyricId": "2",
+              "midiKey": 67,
+              "startTick": 25440
+            },
+            {
+              "articulation": "normal",
+              "durationTick": 240,
+              "id": "11a",
+              "lyricId": "3",
+              "midiKey": 69,
+              "startTick": 26160
+            },
+            {
+              "articulation": "normal",
+              "durationTick": 960,
+              "id": "11b",
+              "lyricId": "4",
+              "midiKey": 72,
+              "startTick": 26400
+            },
+            {
+              "articulation": "normal",
+              "durationTick": 480,
+              "id": "11c",
+              "lyricId": "5",
+              "midiKey": 71,
+              "startTick": 27360
+            },
+            {
+              "articulation": "normal",
+              "durationTick": 240,
+              "id": "11d",
+              "lyricId": "6",
+              "midiKey": 69,
+              "startTick": 27840
+            },
+            {
+              "articulation": "normal",
+              "durationTick": 720,
+              "id": "11e",
+              "lyricId": "7",
+              "midiKey": 66,
+              "startTick": 28080
+            },
+            {
+              "articulation": "normal",
+              "durationTick": 1920,
+              "id": "11f",
+              "lyricId": "8",
+              "midiKey": 67,
+              "startTick": 28800
+            },
+            {
+              "articulation": "normal",
+              "durationTick": 480,
+              "id": "120",
+              "lyricId": "1",
+              "midiKey": 67,
+              "startTick": 32640
+            },
+            {
+              "articulation": "normal",
+              "durationTick": 720,
+              "id": "121",
+              "lyricId": "2",
+              "midiKey": 66,
+              "startTick": 33120
+            },
+            {
+              "articulation": "normal",
+              "durationTick": 240,
+              "id": "122",
+              "lyricId": "3",
+              "midiKey": 69,
+              "startTick": 33840
+            },
+            {
+              "articulation": "normal",
+              "durationTick": 960,
+              "id": "123",
+              "lyricId": "4",
+              "midiKey": 71,
+              "startTick": 34080
+            },
+            {
+              "articulation": "normal",
+              "durationTick": 480,
+              "id": "124",
+              "lyricId": "5",
+              "midiKey": 72,
+              "startTick": 35040
+            },
+            {
+              "articulation": "normal",
+              "durationTick": 240,
+              "id": "125",
+              "lyricId": "6",
+              "midiKey": 67,
+              "startTick": 35520
+            },
+            {
+              "articulation": "normal",
+              "durationTick": 720,
+              "id": "126",
+              "lyricId": "7",
+              "midiKey": 64,
+              "startTick": 35760
+            },
+            {
+              "articulation": "normal",
+              "durationTick": 1920,
+              "id": "127",
+              "lyricId": "8",
+              "midiKey": 66,
+              "startTick": 36480
+            },
+            {
+              "articulation": "normal",
+              "durationTick": 480,
+              "id": "128",
+              "lyricId": "1",
+              "midiKey": 69,
+              "startTick": 40320
+            },
+            {
+              "articulation": "normal",
+              "durationTick": 720,
+              "id": "129",
+              "lyricId": "2",
+              "midiKey": 72,
+              "startTick": 40800
+            },
+            {
+              "articulation": "normal",
+              "durationTick": 240,
+              "id": "12a",
+              "lyricId": "3",
+              "midiKey": 71,
+              "startTick": 41520
+            },
+            {
+              "articulation": "normal",
+              "durationTick": 960,
+              "id": "12b",
+              "lyricId": "4",
+              "midiKey": 67,
+              "startTick": 41760
+            },
+            {
+              "articulation": "normal",
+              "durationTick": 480,
+              "id": "12c",
+              "lyricId": "5",
+              "midiKey": 64,
+              "startTick": 42720
+            },
+            {
+              "articulation": "normal",
+              "durationTick": 240,
+              "id": "12d",
+              "lyricId": "6",
+              "midiKey": 66,
+              "startTick": 43200
+            },
+            {
+              "articulation": "normal",
+              "durationTick": 720,
+              "id": "12e",
+              "lyricId": "7",
+              "midiKey": 69,
+              "startTick": 43440
+            },
+            {
+              "articulation": "normal",
+              "durationTick": 1920,
+              "id": "12f",
+              "lyricId": "8",
+              "midiKey": 67,
+              "startTick": 44160
+            },
+            {
+              "articulation": "normal",
+              "durationTick": 480,
+              "id": "130",
+              "lyricId": "1",
+              "midiKey": 72,
+              "startTick": 48000
+            },
+            {
+              "articulation": "normal",
+              "durationTick": 720,
+              "id": "131",
+              "lyricId": "2",
+              "midiKey": 69,
+              "startTick": 48480
+            },
+            {
+              "articulation": "normal",
+              "durationTick": 240,
+              "id": "132",
+              "lyricId": "3",
+              "midiKey": 67,
+              "startTick": 49200
+            },
+            {
+              "articulation": "normal",
+              "durationTick": 960,
+              "id": "133",
+              "lyricId": "4",
+              "midiKey": 64,
+              "startTick": 49440
+            },
+            {
+              "articulation": "normal",
+              "durationTick": 480,
+              "id": "134",
+              "lyricId": "5",
+              "midiKey": 66,
+              "startTick": 50400
+            },
+            {
+              "articulation": "normal",
+              "durationTick": 240,
+              "id": "135",
+              "lyricId": "6",
+              "midiKey": 71,
+              "startTick": 50880
+            },
+            {
+              "articulation": "normal",
+              "durationTick": 720,
+              "id": "136",
+              "lyricId": "7",
+              "midiKey": 69,
+              "startTick": 51120
+            },
+            {
+              "articulation": "normal",
+              "durationTick": 1920,
+              "id": "137",
+              "lyricId": "8",
+              "midiKey": 67,
+              "startTick": 51840
+            },
+            {
+              "articulation": "normal",
+              "durationTick": 480,
+              "id": "138",
+              "lyricId": "1",
+              "midiKey": 66,
+              "startTick": 55680
+            },
+            {
+              "articulation": "normal",
+              "durationTick": 720,
+              "id": "139",
+              "lyricId": "2",
+              "midiKey": 64,
+              "startTick": 56160
+            },
+            {
+              "articulation": "normal",
+              "durationTick": 240,
+              "id": "13a",
+              "lyricId": "3",
+              "midiKey": 67,
+              "startTick": 56880
+            },
+            {
+              "articulation": "normal",
+              "durationTick": 960,
+              "id": "13b",
+              "lyricId": "4",
+              "midiKey": 69,
+              "startTick": 57120
+            },
+            {
+              "articulation": "normal",
+              "durationTick": 480,
+              "id": "13c",
+              "lyricId": "5",
+              "midiKey": 72,
+              "startTick": 58080
+            },
+            {
+              "articulation": "normal",
+              "durationTick": 240,
+              "id": "13d",
+              "lyricId": "6",
+              "midiKey": 71,
+              "startTick": 58560
+            },
+            {
+              "articulation": "normal",
+              "durationTick": 720,
+              "id": "13e",
+              "lyricId": "7",
+              "midiKey": 69,
+              "startTick": 58800
+            },
+            {
+              "articulation": "normal",
+              "durationTick": 1920,
+              "id": "13f",
+              "lyricId": "8",
+              "midiKey": 67,
+              "startTick": 59520
+            },
+            {
+              "articulation": "normal",
+              "durationTick": 480,
+              "id": "140",
+              "lyricId": "1",
+              "midiKey": 67,
+              "startTick": 63360
+            },
+            {
+              "articulation": "normal",
+              "durationTick": 720,
+              "id": "141",
+              "lyricId": "2",
+              "midiKey": 69,
+              "startTick": 63840
+            },
+            {
+              "articulation": "normal",
+              "durationTick": 240,
+              "id": "142",
+              "lyricId": "3",
+              "midiKey": 71,
+              "startTick": 64560
+            },
+            {
+              "articulation": "normal",
+              "durationTick": 960,
+              "id": "143",
+              "lyricId": "4",
+              "midiKey": 72,
+              "startTick": 64800
+            },
+            {
+              "articulation": "normal",
+              "durationTick": 480,
+              "id": "144",
+              "lyricId": "5",
+              "midiKey": 69,
+              "startTick": 65760
+            },
+            {
+              "articulation": "normal",
+              "durationTick": 240,
+              "id": "145",
+              "lyricId": "6",
+              "midiKey": 66,
+              "startTick": 66240
+            },
+            {
+              "articulation": "normal",
+              "durationTick": 720,
+              "id": "146",
+              "lyricId": "7",
+              "midiKey": 64,
+              "startTick": 66480
+            },
+            {
+              "articulation": "normal",
+              "durationTick": 1920,
+              "id": "147",
+              "lyricId": "8",
+              "midiKey": 67,
+              "startTick": 67200
+            },
+            {
+              "articulation": "normal",
+              "durationTick": 480,
+              "id": "148",
+              "lyricId": "1",
+              "midiKey": 72,
+              "startTick": 71040
+            },
+            {
+              "articulation": "normal",
+              "durationTick": 720,
+              "id": "149",
+              "lyricId": "2",
+              "midiKey": 71,
+              "startTick": 71520
+            },
+            {
+              "articulation": "normal",
+              "durationTick": 240,
+              "id": "14a",
+              "lyricId": "3",
+              "midiKey": 69,
+              "startTick": 72240
+            },
+            {
+              "articulation": "normal",
+              "durationTick": 960,
+              "id": "14b",
+              "lyricId": "4",
+              "midiKey": 67,
+              "startTick": 72480
+            },
+            {
+              "articulation": "normal",
+              "durationTick": 480,
+              "id": "14c",
+              "lyricId": "5",
+              "midiKey": 66,
+              "startTick": 73440
+            },
+            {
+              "articulation": "normal",
+              "durationTick": 240,
+              "id": "14d",
+              "lyricId": "6",
+              "midiKey": 64,
+              "startTick": 73920
+            },
+            {
+              "articulation": "normal",
+              "durationTick": 720,
+              "id": "14e",
+              "lyricId": "7",
+              "midiKey": 66,
+              "startTick": 74160
+            },
+            {
+              "articulation": "normal",
+              "durationTick": 1920,
+              "id": "14f",
+              "lyricId": "8",
+              "midiKey": 67,
+              "startTick": 74880
+            }
+          ],
+          "phonemeOverrides": [],
+          "pitchAutomation": [],
+          "seamOverrides": [],
+          "startTick": 0,
+          "unitSelectionOverrides": []
+        }
+      ],
+      "solo": false,
+      "voicebank": {
+        "contentHash": "",
+        "id": "demo.public-domain.human.production",
+        "version": "0.12.0"
+      }
+    }
+  ]
+}

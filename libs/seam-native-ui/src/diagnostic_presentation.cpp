@@ -76,6 +76,12 @@ DiagnosticPresentation presentDiagnostic(const authoring::Diagnostic& diagnostic
   }
   result.technicalDetail = diagnostic.code +
                            (diagnostic.messageKey.empty() ? "" : " / " + diagnostic.messageKey);
+  if (!diagnostic.detail.empty()) {
+    result.technicalDetail += "\nDetail";
+    if (diagnostic.detailTruncated) result.technicalDetail += " [truncated]";
+    if (diagnostic.detailEscaped) result.technicalDetail += " [escaped bytes]";
+    result.technicalDetail += ": " + diagnostic.detail;
+  }
   return result;
 }
 

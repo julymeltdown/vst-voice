@@ -1,6 +1,8 @@
 #include "seam/authoring/voicebank_session.hpp"
 
 #include "seam/application/render_commands.hpp"
+#include "seam/application/performance_commands.hpp"
+#include "seam/voicebank/style_resolution.hpp"
 
 #include <algorithm>
 #include <filesystem>
@@ -70,6 +72,7 @@ core::Result<voicebank::VoicebankSearchRoot> VoicebankSession::normalizeRoot(
 }
 
 core::Result<void> VoicebankSession::refresh() {
+  snapshot_.reset(); snapshotCatalogValid_ = false;
   auto scanned = catalog_.scan(roots_);
   if (!scanned) return core::Result<void>{scanned.error()};
   auto candidates = std::move(scanned).value();
@@ -79,6 +82,7 @@ core::Result<void> VoicebankSession::refresh() {
     static_cast<void>(registered);
   }
   candidates_ = std::move(candidates);
+  snapshotCatalogValid_ = true;
   return core::success();
 }
 
@@ -98,14 +102,53 @@ core::Result<void> VoicebankSession::addSearchRoot(
   return refresh();
 }
 
+core::Result<bool> VoicebankSession::migrateLegacyStyles(domain::Project& project) const {
+  std::vector<std::pair<std::size_t, domain::VoiceStyleSelection>> migrations;
+  for (std::size_t index = 0U; index < project.vocalTracks().size(); ++index) {
+    const auto& track = project.vocalTracks()[index];
+    if (track.styleSelection.origin != domain::VoiceStyleOrigin::LegacyNeedsExactBankResolution) {
+      continue;
+    }
+    const auto bank = catalog_.resolve(track.voicebank, candidates_, resolveOptions_);
+    auto style = voicebank::resolveVoiceStyle(track.voicebank, track.styleSelection, bank);
+    if (!style) return core::Result<bool>{style.error()};
+    if (style.value().status == voicebank::VoiceStyleStatus::Resolved) {
+      migrations.emplace_back(index, std::move(style.value().selection));
+    }
+  }
+  for (auto& [index, selection] : migrations) {
+    project.vocalTracks()[index].styleSelection = std::move(selection);
+  }
+  return !migrations.empty();
+}
+
 core::Result<void> VoicebankSession::bindTrack(
     ProjectDocument& document, domain::TrackId trackId,
     const voicebank::VoicebankCandidate& candidate) {
+  const auto style = replacementStyle(document.session().project(), trackId, candidate);
+  if (!style) return core::Result<void>{style.error()};
   return document.execute(
       std::make_unique<application::SetTrackVoicebankCommand>(
-          trackId, referenceFor(candidate)));
+          trackId, referenceFor(candidate), style.value()));
 }
 
+core::Result<domain::VoiceStyleSelection> VoicebankSession::replacementStyle(
+    const domain::Project& project, domain::TrackId trackId,
+    const voicebank::VoicebankCandidate& candidate) const {
+  const auto* track = project.findVocalTrack(trackId);
+  if (track == nullptr) {
+    return core::failure<domain::VoiceStyleSelection>(core::ErrorCode::NotFound,
+        "Track for voicebank replacement was not found", trackId.toString());
+  }
+  const auto reference = referenceFor(candidate);
+  const bool preserve = track->voicebank == reference ||
+      (track->voicebank.id == reference.id && !track->styleSelection.styleId.empty());
+  const auto selection = preserve ? track->styleSelection : domain::VoiceStyleSelection{};
+  const auto bank = catalog_.resolve(reference, candidates_, resolveOptions_);
+  const auto resolved = voicebank::resolveVoiceStyle(reference, selection, bank);
+  if (!resolved) return core::Result<domain::VoiceStyleSelection>{resolved.error()};
+  return resolved.value().selection;
+}
 
 core::Result<void> VoicebankSession::selectTrackExact(
     ProjectDocument& document, domain::TrackId trackId,
@@ -136,21 +179,41 @@ core::Result<void> VoicebankSession::replaceTrackVoicebank(
 }
 
 core::Result<voicebank::VoicebankResolution> VoicebankSession::relinkTrack(
-    const domain::Project& project, domain::TrackId trackId,
+    ProjectDocument& document, domain::TrackId trackId,
     voicebank::VoicebankSearchRoot root) {
   auto added = addSearchRoot(std::move(root));
   if (!added) {
     return core::Result<voicebank::VoicebankResolution>{added.error()};
   }
-  return resolveTrack(project, trackId);
+  const auto& project = document.session().project();
+  auto resolution = resolveTrack(project, trackId);
+  const auto* track = project.findVocalTrack(trackId);
+  if (track == nullptr || track->styleSelection.origin !=
+                              domain::VoiceStyleOrigin::LegacyNeedsExactBankResolution) {
+    return resolution;
+  }
+  const auto style = voicebank::resolveVoiceStyle(track->voicebank,
+                                                  track->styleSelection, resolution);
+  if (!style) return core::Result<voicebank::VoicebankResolution>{style.error()};
+  if (style.value().status == voicebank::VoiceStyleStatus::Resolved) {
+    const auto migrated = document.execute(
+        std::make_unique<application::EditPerformanceCommand>(
+            std::vector<application::NoteExpressionEdit>{},
+            std::vector<application::RegionDynamicsEdit>{},
+            std::vector<application::TrackStyleEdit>{{trackId, style.value().selection}}));
+    if (!migrated) return core::Result<voicebank::VoicebankResolution>{migrated.error()};
+  }
+  return resolution;
 }
 
 core::Result<void> VoicebankSession::bindTrack(
     application::EditorSession& session, domain::TrackId trackId,
     const voicebank::VoicebankCandidate& candidate) {
+  const auto style = replacementStyle(session.project(), trackId, candidate);
+  if (!style) return core::Result<void>{style.error()};
   return session.execute(
       std::make_unique<application::SetTrackVoicebankCommand>(
-          trackId, referenceFor(candidate)));
+          trackId, referenceFor(candidate), style.value()));
 }
 
 std::vector<voicebank::VoicebankCandidate> VoicebankSession::candidates() const {
@@ -176,6 +239,18 @@ voicebank::VoicebankResolution VoicebankSession::resolveTrack(
   const auto* track = project.findVocalTrack(trackId);
   if (track == nullptr) return invalidTrackResolution(trackId);
   return catalog_.resolve(track->voicebank, candidates_, resolveOptions_);
+}
+
+VoicebankSnapshotPtr VoicebankSession::resolveTrackSnapshot(
+    const domain::Project& project, domain::TrackId trackId) const {
+  const auto* track = project.findVocalTrack(trackId);
+  const auto reference = track ? std::optional{track->voicebank} : std::nullopt;
+  if (snapshot_ && snapshotTrack_ == trackId && snapshotReference_ == reference) return snapshot_;
+  auto resolution = snapshotCatalogValid_ ? resolveTrack(project, trackId) : voicebank::VoicebankResolution{};
+  if (!snapshotCatalogValid_) resolution.diagnostic = "Refresh the voicebank catalog successfully before editing styles";
+  auto snapshot = VoicebankSnapshotPtr{new VoicebankSnapshot{std::move(resolution)}};
+  snapshotTrack_ = trackId; snapshotReference_ = reference; snapshot_ = std::move(snapshot);
+  return snapshot_;
 }
 
 }  // namespace seam::authoring

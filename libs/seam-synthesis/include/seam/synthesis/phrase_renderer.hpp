@@ -2,6 +2,7 @@
 
 #include "seam/core/result.hpp"
 #include "seam/synthesis/raw_renderer.hpp"
+#include "seam/synthesis/source_phoneme_alignment.hpp"
 #include "seam/synthesis/renderer_dispatcher.hpp"
 #include "seam/synthesis/seam_composer.hpp"
 #include "seam/synthesis/timing_solver.hpp"
@@ -55,6 +56,8 @@ struct PhraseRenderOptions final {
 struct FrozenUnitAudio final {
   std::string unitId;
   std::shared_ptr<const voicebank::AudioBuffer> audio;
+  std::optional<SourcePhonemeAlignment> sourceAlignment{};
+  std::string verifiedAudioSha256{};
 };
 
 class ConcatenativePhraseRenderer final {

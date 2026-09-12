@@ -1,10 +1,14 @@
 #include "seam/standalone/application_controller.hpp"
 
-#include "seam/phonemizer/japanese_phonemizer.hpp"
+#include "seam/phonemizer/language_resolver.hpp"
 #include "seam/native_ui/export_dialog.hpp"
+#include "seam/voice_design/recipe_resource.hpp"
+#include "seam/application/render_commands.hpp"
+#include <set>
 
 #include <algorithm>
 #include <array>
+#include <cctype>
 #include <utility>
 
 namespace seam::standalone {
@@ -21,6 +25,15 @@ std::filesystem::path initialDirectory(
 std::string errorDescription(const core::Error& error) {
   if (error.context.empty()) return error.message;
   return error.message + " (" + error.context + ")";
+}
+
+std::string lowerExtension(const std::filesystem::path& path) {
+  auto extension = path.extension().string();
+  std::transform(extension.begin(), extension.end(), extension.begin(),
+                 [](unsigned char value) {
+                   return static_cast<char>(std::tolower(value));
+                 });
+  return extension;
 }
 
 struct DocumentationSpec final {
@@ -202,6 +215,58 @@ core::Result<void> StandaloneApplicationController::openPath(
   return recorded;
 }
 
+core::Result<void> StandaloneApplicationController::openInterchangePath(
+    const std::filesystem::path& path) {
+  const auto extension = lowerExtension(path);
+  const auto format = extension == ".ustx"
+                          ? authoring::InterchangeFormat::Ustx
+                          : authoring::InterchangeFormat::Smf;
+  auto draft = session_.prepareInterchangeImport(
+      path, authoring::InterchangeImportRequest{.format = format,
+                                                .projectName = path.stem().string()});
+  if (!draft) return core::Result<void>{draft.error()};
+  if (!config_.reviewInterchangeImport) {
+    return core::failure(core::ErrorCode::Unsupported,
+                         "Interchange conversion review is not connected");
+  }
+  auto accepted = config_.reviewInterchangeImport(draft.value());
+  if (!accepted) return core::Result<void>{accepted.error()};
+  if (!accepted.value()) return core::success();
+  auto replaced = session_.acceptInterchangeImport(std::move(draft).value());
+  if (!replaced) return replaced;
+  notifyStateChanged();
+  return core::success();
+}
+
+core::Result<void> StandaloneApplicationController::exportScoreFromDialog() {
+  const auto& document = session_.runtime().document();
+  const auto selected = fileDialog_->choose(platform::FileDialogRequest{
+      .purpose = platform::FileDialogPurpose::ExportScore,
+      .title = "Export USTX or MIDI",
+      .initialDirectory = initialDirectory(document),
+      .suggestedName = document.session().project().name() + ".ustx",
+      .extensions = {"ustx", "mid", "midi"},
+  });
+  if (!selected) return core::Result<void>{selected.error()};
+  if (!selected.value().has_value()) return core::success();
+  const auto extension = lowerExtension(*selected.value());
+  authoring::InterchangeFormat format;
+  if (extension == ".ustx") format = authoring::InterchangeFormat::Ustx;
+  else if (extension == ".mid" || extension == ".midi") format = authoring::InterchangeFormat::Smf;
+  else return core::failure(core::ErrorCode::Unsupported,
+                            "Score export requires a .ustx, .mid, or .midi destination");
+  authoring::InterchangeExportRequest request{
+      .format = format,
+      .destination = *selected.value(),
+  };
+  if (session_.trackId().valid()) request.trackId = session_.trackId();
+  if (session_.regionId().valid()) request.regionId = session_.regionId();
+  const auto exported = session_.exportInterchange(std::move(request));
+  if (!exported) return core::Result<void>{exported.error()};
+  notifyStateChanged();
+  return core::success();
+}
+
 core::Result<void> StandaloneApplicationController::openRecent(
     const std::filesystem::path& path) {
   const auto& document = session_.runtime().document();
@@ -223,6 +288,60 @@ core::Result<void> StandaloneApplicationController::openRecent(
 core::Result<void> StandaloneApplicationController::dispatch(
     platform::ApplicationCommand command) {
   switch (command) {
+    case platform::ApplicationCommand::ClearRegionDynamicsCurve:
+      if (!config_.clearRegionDynamicsCurve) return core::failure(core::ErrorCode::Unsupported, "Region dynamics review is not connected");
+      return config_.clearRegionDynamicsCurve();
+    case platform::ApplicationCommand::AutoLegatoSelectedNotes:
+      if (!config_.autoLegatoSelectedNotes) return core::failure(core::ErrorCode::Unsupported, "Auto-legato review is not connected");
+      return config_.autoLegatoSelectedNotes();
+    case platform::ApplicationCommand::RemoveSelectedOverlaps:
+      if (!config_.removeSelectedOverlaps) return core::failure(core::ErrorCode::Unsupported, "Overlap review is not connected");
+      return config_.removeSelectedOverlaps();
+    case platform::ApplicationCommand::CloseSelectedGaps:
+      if (!config_.closeSelectedGaps) return core::failure(core::ErrorCode::Unsupported, "Gap review is not connected");
+      return config_.closeSelectedGaps();
+    case platform::ApplicationCommand::ClearSelectedVibrato:
+      if (!config_.clearSelectedVibrato)
+        return core::failure(core::ErrorCode::Unsupported, "Clear-vibrato review is not connected");
+      return config_.clearSelectedVibrato();
+    case platform::ApplicationCommand::FindReplaceLyrics:
+      if (!config_.findReplaceLyrics)
+        return core::failure(core::ErrorCode::Unsupported, "Find/replace lyric input is not connected");
+      return config_.findReplaceLyrics();
+    case platform::ApplicationCommand::FindNotes:
+      if (!config_.findNotes) return core::failure(core::ErrorCode::Unsupported, "Native Find is not connected");
+      return config_.findNotes();
+    case platform::ApplicationCommand::EditSelectedVibrato:
+      if (!config_.editSelectedVibrato) return core::failure(core::ErrorCode::Unsupported, "Vibrato inspector is not connected");
+      return config_.editSelectedVibrato();
+    case platform::ApplicationCommand::EditRegionDynamics:
+      if (!config_.editRegionDynamics) return core::failure(core::ErrorCode::Unsupported, "Dynamics inspector is not connected");
+      return config_.editRegionDynamics();
+    case platform::ApplicationCommand::EditTrackStyle:
+      if (!config_.editTrackStyle) return core::failure(core::ErrorCode::Unsupported, "Style sheet is not connected");
+      return config_.editTrackStyle();
+    case platform::ApplicationCommand::EditJapaneseReading:
+      if (!config_.editJapaneseReading) return core::failure(core::ErrorCode::Unsupported, "Japanese reading review is not connected");
+      return config_.editJapaneseReading();
+    case platform::ApplicationCommand::FindActiveDiagnostics:
+      if (!config_.findActiveDiagnostics) return core::failure(core::ErrorCode::Unsupported, "Diagnostic Find is not connected");
+      return config_.findActiveDiagnostics();
+    case platform::ApplicationCommand::FindNextNote:
+      if (!config_.findNextNote) return core::failure(core::ErrorCode::Unsupported, "Find Next is not connected");
+      return config_.findNextNote();
+    case platform::ApplicationCommand::FindPreviousNote:
+      if (!config_.findPreviousNote) return core::failure(core::ErrorCode::Unsupported, "Find Previous is not connected");
+      return config_.findPreviousNote();
+    case platform::ApplicationCommand::EditPronunciationHint:
+      if (!config_.editPronunciationHint)
+        return core::failure(core::ErrorCode::Unsupported, "Pronunciation hint input is not connected");
+      return config_.editPronunciationHint();
+    case platform::ApplicationCommand::SelectProceduralRecipe:
+      return selectProceduralRecipeFromDialog(false);
+    case platform::ApplicationCommand::RelinkProceduralRecipe:
+      return selectProceduralRecipeFromDialog(true);
+    case platform::ApplicationCommand::BakeProceduralCandidates:
+      return exportSetFromDialog(true);
     case platform::ApplicationCommand::NewProject: {
       auto allowed = confirmDestructiveAction();
       if (!allowed) return core::Result<void>{allowed.error()};
@@ -250,6 +369,21 @@ core::Result<void> StandaloneApplicationController::dispatch(
       if (!selected) return core::Result<void>{selected.error()};
       if (!selected.value().has_value()) return core::success();
       return openPath(*selected.value());
+    }
+    case platform::ApplicationCommand::OpenExternalProject: {
+      auto allowed = confirmDestructiveAction();
+      if (!allowed) return core::Result<void>{allowed.error()};
+      if (!allowed.value()) return core::success();
+      const auto selected = fileDialog_->choose(platform::FileDialogRequest{
+          .purpose = platform::FileDialogPurpose::OpenScore,
+          .title = "Open USTX or MIDI",
+          .initialDirectory = initialDirectory(session_.runtime().document()),
+          .suggestedName = {},
+          .extensions = {"ustx", "mid", "midi"},
+      });
+      if (!selected) return core::Result<void>{selected.error()};
+      if (!selected.value().has_value()) return core::success();
+      return openInterchangePath(*selected.value());
     }
     case platform::ApplicationCommand::RecoverLatestAutosave: {
       auto candidates = recoveryCandidates();
@@ -331,6 +465,8 @@ core::Result<void> StandaloneApplicationController::dispatch(
       return config_.openAudioSettings();
     case platform::ApplicationCommand::ExportAudio:
       return exportAudio();
+    case platform::ApplicationCommand::ExportScore:
+      return exportScoreFromDialog();
     case platform::ApplicationCommand::ExportSet:
       return exportSetFromDialog();
     case platform::ApplicationCommand::Quit: {
@@ -407,9 +543,15 @@ StandaloneApplicationController::makeExportRequest(
     }
   }
   const auto states = session_.runtime().voicebanks().resolveAll(project);
-  std::vector<rendering::TrackVoicebankSource> sources;
+  std::vector<rendering::TrackSingerSource> sources;
   sources.reserve(states.size());
   for (const auto& state : states) {
+    if (const auto* track = project.findVocalTrack(state.trackId); track && track->proceduralRecipe) {
+      const auto& savedPath = session_.runtime().document().identity().projectPath;
+      sources.emplace_back(rendering::TrackRecipeFileSource{state.trackId, *track->proceduralRecipe,
+          savedPath ? std::optional<std::filesystem::path>{savedPath->parent_path()} : std::nullopt});
+      continue;
+    }
     if (!state.resolution.resolved()) continue;
     sources.push_back(rendering::TrackVoicebankSource{
         .trackId = state.trackId,
@@ -433,7 +575,7 @@ StandaloneApplicationController::makeExportRequest(
 core::Result<authoring::ExportResult>
 StandaloneApplicationController::runExport(ExportRequest request,
                                             std::stop_token stopToken) {
-  auto exported = exportService_.exportSet(
+  auto exported = exportService_.exportSetWithSources(
       request.project, request.voicebanks, request.activeTrack,
       request.activeRegion, request.revision, request.destination,
       request.settings,
@@ -559,27 +701,48 @@ void StandaloneApplicationController::cancelExport() noexcept {
   exportStopSource_.request_stop();
 }
 
-core::Result<void> StandaloneApplicationController::exportSetFromDialog() {
+core::Result<void> StandaloneApplicationController::exportSetFromDialog(bool bakeCandidates) {
   const auto& document = session_.runtime().document();
+  const auto context = document.session().capturePerformanceJob();
+  if (!context) return core::Result<void>{context.error()};
+  if (bakeCandidates && std::none_of(context.value().sourceProject().vocalTracks().begin(),
+      context.value().sourceProject().vocalTracks().end(), [](const auto& track) {
+        return track.proceduralRecipe && std::any_of(track.regions.begin(), track.regions.end(),
+            [](const auto& region) { return !region.notes.empty(); });
+      })) return core::failure(core::ErrorCode::InvalidArgument, "Baking requires a procedural track with score notes");
   const auto selected = fileDialog_->choose(platform::FileDialogRequest{
-      .purpose = platform::FileDialogPurpose::ExportSet,
-      .title = "Choose Export Set Destination",
+      .purpose = bakeCandidates ? platform::FileDialogPurpose::BakeProceduralCandidates : platform::FileDialogPurpose::ExportSet,
+      .title = bakeCandidates ? "Bake Unapproved Candidates and Source Recipes" : "Choose Export Set Destination",
       .initialDirectory = initialDirectory(document),
-      .suggestedName = document.session().project().name() + " Export",
+      .suggestedName = document.session().project().name() + (bakeCandidates ? " Candidates" : " Export"),
       .extensions = {},
   });
   if (!selected) return core::Result<void>{selected.error()};
   if (!selected.value().has_value()) return core::success();
 
-  const auto& project = document.session().project();
+  const auto current = session_.runtime().document().session().validatePerformanceJob(context.value());
+  if (!current) return current;
+  bool includeRecipes = false;
+  if (!bakeCandidates && std::any_of(context.value().sourceProject().vocalTracks().begin(), context.value().sourceProject().vocalTracks().end(),
+      [](const auto& track) { return track.proceduralRecipe.has_value(); })) {
+    const auto choice = fileDialog_->chooseRecipePackaging();
+    if (!choice) return core::Result<void>{choice.error()};
+    if (!choice.value()) return core::success();
+    includeRecipes = *choice.value();
+    const auto valid = session_.runtime().document().session().validatePerformanceJob(context.value());
+    if (!valid) return valid;
+  }
+  const auto& project = session_.runtime().document().session().project();
   authoring::ExportSettings settings{
       .sampleRate = session_.runtime().transport().sampleRate(),
       .channels = project.routing().deviceOutputChannels,
       .format = voicebank::WavSampleFormat::Pcm24,
-      .includeMaster = true,
-      .includeStems = !project.vocalTracks().empty() ||
-                      !project.audioTracks().empty(),
+      .includeMaster = !bakeCandidates,
+      .includeStems = !bakeCandidates && (!project.vocalTracks().empty() ||
+                      !project.audioTracks().empty()),
       .replaceExisting = false,
+      .includeProjectAndRecipes = includeRecipes || bakeCandidates,
+      .includeProceduralCandidates = bakeCandidates,
   };
   native_ui::ExportDialogModel dialog;
   dialog.setDestination(*selected.value());
@@ -633,7 +796,7 @@ core::Result<void> StandaloneApplicationController::exportAudio() {
     }
   }
   const auto states = session_.runtime().voicebanks().resolveAll(project);
-  std::vector<rendering::TrackVoicebankSource> sources;
+  std::vector<rendering::TrackSingerSource> sources;
   sources.reserve(states.size());
   for (const auto& state : states) {
     if (!state.resolution.resolved()) continue;
@@ -645,7 +808,16 @@ core::Result<void> StandaloneApplicationController::exportAudio() {
         .trust = state.resolution.candidate->trust,
     });
   }
-  const auto exported = exportService_.exportProject(
+  for (const auto& track : project.vocalTracks()) {
+    if (!track.proceduralRecipe) continue;
+    std::erase_if(sources, [&](const auto& source) {
+      return std::visit([&](const auto& value) { return value.trackId == track.id; }, source);
+    });
+    const auto& savedPath = document.identity().projectPath;
+    sources.emplace_back(rendering::TrackRecipeFileSource{track.id, *track.proceduralRecipe,
+        savedPath ? std::optional<std::filesystem::path>{savedPath->parent_path()} : std::nullopt});
+  }
+  const auto exported = exportService_.exportProjectWithSources(
       project, sources, session_.runtime().selectedTrack(),
       session_.runtime().selectedRegion(), document.session().revision(),
       *selected.value());
@@ -754,7 +926,7 @@ core::Result<voicebank::VoicebankResolution>
 StandaloneApplicationController::relinkVoicebank(
     domain::TrackId trackId, voicebank::VoicebankSearchRoot root) {
   auto result = session_.runtime().voicebanks().relinkTrack(
-      session_.runtime().document().session().project(), trackId,
+      session_.runtime().document(), trackId,
       std::move(root));
   if (!result) return result;
   auto refreshed = refreshVoicebankBrowser();
@@ -765,6 +937,54 @@ StandaloneApplicationController::relinkVoicebank(
   static_cast<void>(onDocumentChanged());
   notifyStateChanged();
   return result;
+}
+
+core::Result<void> StandaloneApplicationController::selectProceduralRecipeFromDialog(bool relink) {
+  const auto trackId = session_.runtime().selectedTrack();
+  const auto* track = session_.runtime().document().session().project().findVocalTrack(trackId);
+  if (!track) return core::failure(core::ErrorCode::Conflict, "Recipe selection requires a selected vocal track");
+  const auto before = track->proceduralRecipe;
+  if (relink && !before) return core::failure(core::ErrorCode::Conflict, "No procedural recipe is selected to relink");
+  const auto context = session_.runtime().document().session().capturePerformanceJob();
+  if (!context) return core::Result<void>{context.error()};
+  const auto selected = fileDialog_->choose(platform::FileDialogRequest{
+      .purpose = relink ? platform::FileDialogPurpose::RelinkProceduralRecipe : platform::FileDialogPurpose::SelectProceduralRecipe,
+      .title = relink ? "Relink Procedural Recipe" : "Select Procedural Recipe",
+      .initialDirectory = initialDirectory(session_.runtime().document()), .suggestedName = {}, .extensions = {"json"}});
+  if (!selected) return core::Result<void>{selected.error()};
+  if (!selected.value()) return core::success();
+  if (!selected.value()->is_absolute()) return core::failure(core::ErrorCode::InvalidArgument, "Recipe picker must return an absolute file path");
+  const auto current = session_.runtime().document().session().validatePerformanceJob(context.value());
+  if (!current) return current;
+  const auto path = selected.value()->lexically_normal();
+  const auto resource = voice_design::loadVoiceRecipeResource(path,
+      relink ? std::optional<domain::SingerResourceIdentity>{before->resource} : std::nullopt);
+  if (!resource) return core::Result<void>{resource.error()};
+  std::string style;
+  if (relink) style = before->style;
+  else {
+    const auto recipe = voice_design::decodeVoiceRecipeResource(resource.value());
+    if (!recipe) return core::Result<void>{recipe.error()};
+    std::set<std::string> styles;
+    for (const auto& pose : recipe.value().poses) styles.insert(pose.style);
+    if (styles.size() == 1U) style = *styles.begin();
+    else {
+      const auto choice = fileDialog_->chooseRecipeStyle(std::vector<std::string>{styles.begin(), styles.end()});
+      if (!choice) return core::Result<void>{choice.error()};
+      if (!choice.value()) return core::success();
+      if (!styles.contains(*choice.value())) return core::failure(core::ErrorCode::InvalidArgument,
+          "Selected recipe style is not present in the loaded recipe");
+      style = *choice.value();
+    }
+  }
+  const auto changed = session_.runtime().executePerformanceResult(context.value(),
+      std::make_unique<application::SetTrackProceduralRecipeCommand>(trackId, before,
+          domain::ProceduralRecipeReference{resource.value().identity, path.string(), style}));
+  if (!changed) return changed;
+  const auto recorded = onDocumentChanged();
+  if (!recorded) return recorded;
+  notifyStateChanged();
+  return core::success();
 }
 
 core::Result<void> StandaloneApplicationController::relinkVoicebankFromDialog() {
@@ -865,18 +1085,14 @@ StandaloneApplicationController::selectedRegionCoverage() const {
     return core::failure<voicebank::VoicebankCoverageReport>(
         core::ErrorCode::NotFound, resolution.diagnostic);
   }
-  if (resolution.candidate->manifest.language != domain::Language::Japanese) {
-    return core::failure<voicebank::VoicebankCoverageReport>(
-        core::ErrorCode::Unsupported,
-        "Coverage analysis currently supports the Japanese phonemizer");
-  }
-  phonemizer::JapaneseKanaPhonemizer phonemizer;
-  const auto phonemes = phonemizer.phonemize(*region);
+  const auto pronunciation = phonemizer::resolvePronunciationForLanguage(
+      *region, resolution.candidate->manifest.language);
+  if (!pronunciation) return core::Result<voicebank::VoicebankCoverageReport>{pronunciation.error()};
   const auto style = resolution.candidate->manifest.styles.empty()
                          ? std::string{}
                          : resolution.candidate->manifest.styles.front();
   return voicebank::VoicebankCoverageAnalyzer::analyzeRegion(
-      resolution.candidate->manifest, track->id, *region, phonemes.tokens,
+      resolution.candidate->manifest, track->id, *region, pronunciation.value().pronunciation.tokens,
       style);
 }
 

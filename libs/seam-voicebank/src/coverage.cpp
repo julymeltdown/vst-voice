@@ -5,6 +5,8 @@
 #include <cmath>
 #include <set>
 #include <sstream>
+#include <unordered_map>
+#include <optional>
 
 namespace seam::voicebank {
 namespace {
@@ -35,11 +37,6 @@ bool phonesMatch(const Unit& unit,
   return true;
 }
 
-const domain::Note* noteFor(const domain::VocalRegion& region,
-                            const domain::PhonemeToken& token) noexcept {
-  return region.findNote(token.key.noteId);
-}
-
 std::string diagnosticFor(CoverageIssueKind kind,
                           std::string_view symbol,
                           std::string_view style,
@@ -47,6 +44,9 @@ std::string diagnosticFor(CoverageIssueKind kind,
                           std::int32_t maximumPitchDistanceSemitones) {
   std::ostringstream stream;
   switch (kind) {
+    case CoverageIssueKind::SequenceConflict:
+      stream << "Matching units overlap; no non-overlapping unit sequence covers phoneme '" << symbol << "' in the selected cover";
+      break;
     case CoverageIssueKind::MissingUnit:
       stream << "No voicebank unit can cover phoneme '" << symbol << "'";
       break;
@@ -119,59 +119,83 @@ VoicebankCoverageReport VoicebankCoverageAnalyzer::analyzeRegion(
 
   const auto pitchLimit = std::max(0, maximumPitchDistanceSemitones);
   std::vector<bool> covered(tokens.size(), false);
-
-  for (std::size_t start = 0; start < tokens.size(); ++start) {
-    const auto* note = noteFor(region, tokens[start]);
-    if (note == nullptr) continue;
+  std::unordered_map<domain::NoteId, std::int32_t> notePitches;
+  for (const auto& note : region.notes) notePitches.emplace(note.id, note.midiKey);
+  std::vector<std::optional<std::int32_t>> pitches;
+  pitches.reserve(tokens.size());
+  for (const auto& token : tokens) {
+    const auto note = notePitches.find(token.key.noteId);
+    pitches.push_back(note == notePitches.end() ? std::nullopt : std::optional<std::int32_t>{note->second});
+  }
+  std::vector<std::size_t> best(tokens.size() + 1U, 0U), chosenLength(tokens.size(), 0U);
+  std::vector<const Unit*> witness(tokens.size(), nullptr), pitchWitness(tokens.size(), nullptr), orphanWitness(tokens.size(), nullptr);
+  std::vector<const Unit*> disabledWitness(tokens.size(), nullptr), styleWitness(tokens.size(), nullptr);
+  // Maximum non-overlapping coverage, allowing gaps for useful diagnostics.
+  // Prefer a longer unit at the earliest position on equal covered counts.
+  for (std::size_t start = tokens.size(); start-- > 0U;) {
+    best[start] = best[start + 1U];
     for (const auto& unit : manifest.units) {
-      if (!unit.enabled || unit.style != style ||
-          !phonesMatch(unit, tokens, start) ||
-          std::abs(unit.rootMidi - static_cast<std::int32_t>(note->midiKey)) >
-              pitchLimit) {
+      if (!phonesMatch(unit, tokens, start)) continue;
+      if (!unit.enabled || unit.style != style) {
+        auto& destination = !unit.enabled ? disabledWitness : styleWitness;
+        for (std::size_t offset = 0; offset < unit.phones.size(); ++offset)
+          if (!destination[start + offset]) destination[start + offset] = &unit;
         continue;
       }
+      bool owners = true, pitch = true;
       for (std::size_t offset = 0; offset < unit.phones.size(); ++offset) {
-        covered[start + offset] = true;
+        const auto value = pitches[start + offset];
+        owners = owners && value.has_value();
+        if (value && std::abs(static_cast<std::int64_t>(unit.rootMidi) - *value) > pitchLimit) pitch = false;
+      }
+      if (!owners) {
+        for (std::size_t offset = 0; offset < unit.phones.size(); ++offset)
+          if (!orphanWitness[start + offset]) orphanWitness[start + offset] = &unit;
+        continue;
+      }
+      if (!pitch) {
+        for (std::size_t offset = 0; offset < unit.phones.size(); ++offset)
+          if (!pitchWitness[start + offset]) pitchWitness[start + offset] = &unit;
+        continue;
+      }
+      for (std::size_t offset = 0; offset < unit.phones.size(); ++offset)
+        if (!witness[start + offset]) witness[start + offset] = &unit;
+      const auto score = unit.phones.size() + best[start + unit.phones.size()];
+      if (score > best[start] || (score == best[start] && unit.phones.size() > chosenLength[start])) {
+        best[start] = score; chosenLength[start] = unit.phones.size();
       }
     }
   }
-
+  for (std::size_t start = 0U; start < tokens.size();) {
+    if (chosenLength[start] == 0U) { ++start; continue; }
+    const auto end = start + chosenLength[start];
+    for (; start < end; ++start) covered[start] = true;
+  }
   report.summary.coveredPhonemes = static_cast<std::size_t>(
       std::count(covered.begin(), covered.end(), true));
   for (std::size_t index = 0; index < tokens.size(); ++index) {
     if (covered[index]) continue;
-    const auto* note = noteFor(region, tokens[index]);
-    const auto targetMidi = note == nullptr
-                                ? 60
-                                : static_cast<std::int32_t>(note->midiKey);
-    bool hasDisabled = false;
-    bool hasOtherStyle = false;
-    bool hasPitchMismatch = false;
+    const auto targetMidi = pitches[index].value_or(60);
     std::vector<std::string> related;
-    for (const auto& unit : manifest.units) {
-      if (!phonesMatch(unit, tokens, index)) continue;
-      related.push_back(unit.id);
-      if (!unit.enabled) {
-        hasDisabled = true;
-      } else if (unit.style != style) {
-        hasOtherStyle = true;
-      } else if (std::abs(unit.rootMidi - targetMidi) > pitchLimit) {
-        hasPitchMismatch = true;
-      }
-    }
-    std::sort(related.begin(), related.end());
-    related.erase(std::unique(related.begin(), related.end()), related.end());
 
     CoverageIssueKind kind = CoverageIssueKind::MissingUnit;
-    if (hasDisabled) {
+    if (witness[index]) {
+      kind = CoverageIssueKind::SequenceConflict; ++report.summary.sequenceConflictCount;
+      related = {witness[index]->id};
+    } else if (pitchWitness[index]) {
+      kind = CoverageIssueKind::UnsupportedPitchRange; ++report.summary.unsupportedPitchRangeCount;
+      related = {pitchWitness[index]->id};
+    } else if (orphanWitness[index] || !pitches[index]) {
+      ++report.summary.missingUnitCount;
+      if (orphanWitness[index]) related = {orphanWitness[index]->id};
+    } else if (disabledWitness[index]) {
       kind = CoverageIssueKind::DisabledUnit;
       ++report.summary.disabledUnitCount;
-    } else if (hasOtherStyle) {
+      related = {disabledWitness[index]->id};
+    } else if (styleWitness[index]) {
       kind = CoverageIssueKind::UnsupportedStyle;
       ++report.summary.unsupportedStyleCount;
-    } else if (hasPitchMismatch) {
-      kind = CoverageIssueKind::UnsupportedPitchRange;
-      ++report.summary.unsupportedPitchRangeCount;
+      related = {styleWitness[index]->id};
     } else {
       ++report.summary.missingUnitCount;
     }
@@ -184,8 +208,10 @@ VoicebankCoverageReport VoicebankCoverageAnalyzer::analyzeRegion(
         .targetMidi = targetMidi,
         .requestedStyle = std::string{style},
         .relatedUnitIds = std::move(related),
-        .diagnostic = diagnosticFor(kind, tokens[index].symbol, style,
-                                    targetMidi, pitchLimit),
+        .diagnostic = !pitches[index] ? "Phoneme references a missing note; coverage cannot be established" :
+            pitchWitness[index] && !witness[index] ? "Matching unit span includes a note outside the supported pitch distance" :
+            orphanWitness[index] && !witness[index] ? "Matching unit span references a missing note" :
+            diagnosticFor(kind, tokens[index].symbol, style, targetMidi, pitchLimit),
     });
   }
   return report;
@@ -193,6 +219,7 @@ VoicebankCoverageReport VoicebankCoverageAnalyzer::analyzeRegion(
 
 std::string_view coverageIssueKindName(CoverageIssueKind kind) noexcept {
   switch (kind) {
+    case CoverageIssueKind::SequenceConflict: return "sequence-conflict";
     case CoverageIssueKind::MissingUnit: return "missing-unit";
     case CoverageIssueKind::DisabledUnit: return "disabled-unit";
     case CoverageIssueKind::UnsupportedPitchRange:

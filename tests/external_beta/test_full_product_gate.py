@@ -211,6 +211,24 @@ class FullProductContractIntegrityTests(unittest.TestCase):
         reference.pop("sha256")
         self.assertFalse(validator.is_valid(record))
 
+    def test_multiple_full_product_records_cannot_bind_different_reports(self) -> None:
+        forged = candidate()
+        records = forged["evidence"]
+        assert isinstance(records, list)
+        first = copy.deepcopy(records[0])
+        second = copy.deepcopy(records[1])
+        assert isinstance(first, dict) and isinstance(second, dict)
+        for index, record in enumerate((first, second), 1):
+            record["recordId"] = f"full-product-{index}"
+            record["requirementId"] = "EB-009-full-product"
+            record["fullProductReport"] = {
+                "locator": f"archive/full-product-{index}.json",
+                "sha256": f"{index}" * 64,
+            }
+            records.append(record)
+        result = release_gate.evaluate_ready(forged, archive_verified=True)
+        self.assertTrue(any("same fullProductReport" in error for error in result.errors), result.errors)
+
     def test_typed_evidence_schema_is_valid_and_forbids_unknown_fields(self) -> None:
         from jsonschema import Draft202012Validator
 

@@ -1,0 +1,600 @@
+#include "seam/application/performance_commands.hpp"
+#include "seam/phonemizer/language_resolver.hpp"
+
+#include <cstddef>
+#include <algorithm>
+#include <limits>
+#include <unordered_set>
+#include <unordered_map>
+#include <utility>
+
+namespace seam::application {
+
+AddPerformanceProposalCommand::AddPerformanceProposalCommand(domain::RegionId regionId,
+    domain::RegionPerformanceState expected, domain::PerformanceTake proposal)
+    : regionId_(regionId), before_(std::move(expected)), proposal_(std::move(proposal)) {}
+
+CommandImpact AddPerformanceProposalCommand::impact() const {
+  return {.scope = CommandAudioImpact::MetadataOnly, .projectWide = false,
+          .trackIds = {}, .regionIds = {regionId_}, .noteIds = {}, .lyricIds = {}};
+}
+
+core::Result<void> AddPerformanceProposalCommand::apply(domain::Project& project) {
+  auto* region = project.findRegion(regionId_);
+  if (!region) return core::failure(core::ErrorCode::NotFound, "Performance region was not found");
+  if (region->performance != before_) return core::failure(core::ErrorCode::Conflict,
+      "Performance changed before proposal delivery");
+  const auto valid = region->validate();
+  if (!valid) return valid;
+  if (!after_) {
+    const auto proposalValid = proposal_.validate();
+    if (!proposalValid) return proposalValid;
+    if (before_.takes.size() >= domain::kMaximumPerformanceTakes ||
+        proposal_.state != domain::PerformanceProposalState::Proposed ||
+        proposal_.sourceRegionId != regionId_ || proposal_.range.endTick > region->durationTick ||
+        std::any_of(before_.takes.begin(), before_.takes.end(),
+            [&](const auto& take) { return take.id == proposal_.id; })) {
+      return core::failure(core::ErrorCode::Conflict, "Proposal identity, source or capacity is invalid", proposal_.id);
+    }
+    const auto current = domain::validatePerformanceAcceptanceRevision(proposal_.capturedRevision, before_.revision);
+    if (!current) return current;
+    const auto pronunciation = phonemizer::resolvePronunciation(*region);
+    if (!pronunciation) return core::Result<void>{pronunciation.error()};
+    if (proposal_.pronunciation != pronunciation.value().identity) return core::failure(core::ErrorCode::Conflict,
+        "Proposal pronunciation no longer matches the source", proposal_.id);
+    auto next = before_;
+    next.takes.push_back(proposal_);
+    const auto nextValid = next.validate(region->notes, region->durationTick);
+    if (!nextValid) return nextValid;
+    after_ = std::move(next);
+  }
+  const auto afterValid = after_->validate(region->notes, region->durationTick);
+  if (!afterValid) return afterValid;
+  region->performance = *after_;
+  return core::success();
+}
+
+core::Result<void> AddPerformanceProposalCommand::revert(domain::Project& project) {
+  auto* region = project.findRegion(regionId_);
+  if (!region) return core::failure(core::ErrorCode::NotFound, "Performance region was not found");
+  if (!after_ || region->performance != *after_) return core::failure(core::ErrorCode::Conflict,
+      "Cannot undo proposal delivery over changed state");
+  const auto valid = before_.validate(region->notes, region->durationTick);
+  if (!valid) return valid;
+  region->performance = before_;
+  return core::success();
+}
+
+SetAcceptedPerformanceCommand::SetAcceptedPerformanceCommand(domain::RegionId regionId,
+    domain::RegionPerformanceState expected,
+    std::vector<domain::AcceptedPerformanceSelection> selections)
+    : regionId_(regionId), before_(std::move(expected)), selections_(std::move(selections)) {}
+
+CommandImpact SetAcceptedPerformanceCommand::impact() const {
+  return {.scope = CommandAudioImpact::PhraseAudio, .projectWide = false,
+          .trackIds = {}, .regionIds = {regionId_}, .noteIds = {}, .lyricIds = {}};
+}
+
+core::Result<void> SetAcceptedPerformanceCommand::apply(domain::Project& project) {
+  auto* region = project.findRegion(regionId_);
+  if (!region) return core::failure(core::ErrorCode::NotFound, "Performance region was not found");
+  if (region->performance != before_) return core::failure(core::ErrorCode::Conflict,
+      "Performance changed since the take selection was prepared");
+  const auto valid = region->validate();
+  if (!valid) return valid;
+  if (!after_) {
+    if (selections_.size() > domain::kMaximumPerformanceSelections ||
+        before_.revision.ownership == std::numeric_limits<std::uint64_t>::max()) {
+      return core::failure(core::ErrorCode::InvalidArgument, "Performance selection exceeds bounds");
+    }
+    auto next = before_;
+    next.accepted = selections_;
+    ++next.revision.ownership;
+    const auto selectionValid = next.validate(region->notes, region->durationTick);
+    if (!selectionValid) return selectionValid;
+    std::optional<domain::PronunciationIdentity> pronunciation;
+    for (const auto& selection : selections_) {
+      if (std::find(before_.accepted.begin(), before_.accepted.end(), selection) != before_.accepted.end()) continue;
+      const auto take = std::find_if(before_.takes.begin(), before_.takes.end(),
+          [&](const auto& value) { return value.id == selection.takeId; });
+      const auto current = domain::validatePerformanceAcceptanceRevision(take->capturedRevision, before_.revision);
+      if (!current) return current;
+      if (!pronunciation) {
+        const auto resolved = phonemizer::resolvePronunciation(*region);
+        if (!resolved) return core::Result<void>{resolved.error()};
+        pronunciation = resolved.value().identity;
+      }
+      if (take->sourceRegionId != regionId_ || take->pronunciation != *pronunciation) {
+        return core::failure(core::ErrorCode::Conflict,
+            "Performance take no longer matches its source pronunciation", take->id);
+      }
+    }
+    after_ = std::move(next);
+  }
+  const auto afterValid = after_->validate(region->notes, region->durationTick);
+  if (!afterValid) return afterValid;
+  region->performance = *after_;
+  return core::success();
+}
+
+core::Result<void> SetAcceptedPerformanceCommand::revert(domain::Project& project) {
+  auto* region = project.findRegion(regionId_);
+  if (!region) return core::failure(core::ErrorCode::NotFound, "Performance region was not found");
+  if (!after_ || region->performance != *after_) return core::failure(core::ErrorCode::Conflict,
+      "Cannot undo a performance selection over changed state");
+  const auto valid = before_.validate(region->notes, region->durationTick);
+  if (!valid) return valid;
+  region->performance = before_;
+  return core::success();
+}
+
+CopyNotePerformanceCommand::CopyNotePerformanceCommand(
+    domain::RegionId regionId, std::vector<domain::PerformanceNoteRemap> mapping)
+    : regionId_(regionId), mapping_(std::move(mapping)) {}
+
+CommandImpact CopyNotePerformanceCommand::impact() const {
+  return {.scope = CommandAudioImpact::PhraseAudio, .projectWide = false,
+          .trackIds = {}, .regionIds = {regionId_}, .noteIds = {}, .lyricIds = {}};
+}
+
+core::Result<void> CopyNotePerformanceCommand::apply(domain::Project& project) {
+  auto* region = project.findRegion(regionId_);
+  if (region == nullptr) return core::failure(core::ErrorCode::NotFound, "Performance region was not found");
+  if (!after_) {
+    if (mapping_.empty() || mapping_.size() > 10'000U) {
+      return core::failure(core::ErrorCode::InvalidArgument, "Invalid performance copy count");
+    }
+    const auto valid = region->performance.validate(region->notes, region->durationTick);
+    if (!valid) return valid;
+    auto next = region->performance;
+    auto copiedPhonemes = region->phonemeOverrides;
+    std::vector<domain::UnitSelectionOverride> copiedUnits;
+    std::vector<domain::SeamOverride> copiedSeams;
+    std::unordered_set<domain::NoteId> sources;
+    std::unordered_set<domain::NoteId> targets;
+    for (const auto& map : mapping_) {
+      if (!sources.insert(map.source).second || !targets.insert(map.target).second) {
+        return core::failure(core::ErrorCode::InvalidArgument, "Repeated performance copy mapping");
+      }
+    }
+    for (const auto& map : mapping_) {
+      const auto* source = region->findNote(map.source);
+      const auto* target = region->findNote(map.target);
+      if (source == nullptr || target == nullptr || sources.contains(map.target) ||
+          source->durationTick != target->durationTick) {
+        return core::failure(core::ErrorCode::InvalidArgument, "Invalid performance copy notes");
+      }
+      const auto sourceValid = source->validate();
+      if (!sourceValid) return sourceValid;
+      const auto targetValid = target->validate();
+      if (!targetValid) return targetValid;
+      for (const auto& edit : region->phonemeOverrides) {
+        if (edit.key.noteId != map.source) continue;
+        if (copiedPhonemes.size() >= 4096U) {
+          return core::failure(core::ErrorCode::InvalidArgument, "Copied phoneme edits exceed bounds");
+        }
+        auto copy = edit;
+        copy.key.noteId = map.target;
+        copiedPhonemes.push_back(std::move(copy));
+      }
+      // Valid note starts are nonnegative, so their signed difference is bounded.
+      for (const auto& edit : region->unitSelectionOverrides) {
+        if (edit.startKey.noteId != map.source) continue;
+        if (region->unitSelectionOverrides.size() + copiedUnits.size() >= 4096U) {
+          return core::failure(core::ErrorCode::InvalidArgument, "Copied unit edits exceed bounds");
+        }
+        auto copy = edit;
+        copy.startKey.noteId = map.target;
+        if (region->findUnitSelectionOverride(copy.startKey)) return core::failure(core::ErrorCode::Conflict, "Copied unit target is occupied");
+        copiedUnits.push_back(std::move(copy));
+      }
+      for (const auto& edit : region->seamOverrides) {
+        if (edit.incomingStartKey.noteId != map.source) continue;
+        if (region->seamOverrides.size() + copiedSeams.size() >= 4096U) {
+          return core::failure(core::ErrorCode::InvalidArgument, "Copied seam edits exceed bounds");
+        }
+        auto copy = edit;
+        copy.incomingStartKey.noteId = map.target;
+        if (region->findSeamOverride(copy.incomingStartKey)) return core::failure(core::ErrorCode::Conflict, "Copied seam target is occupied");
+        copiedSeams.push_back(std::move(copy));
+      }
+      const auto delta = source->startTick.value() - target->startTick.value();
+      for (const auto& owner : region->performance.ownership) {
+        const auto* note = std::get_if<domain::NoteId>(&owner.scope);
+        if (note == nullptr || *note != map.source) continue;
+        if (next.ownership.size() >= domain::kMaximumPerformanceOwnership) {
+          return core::failure(core::ErrorCode::InvalidArgument, "Copied ownership exceeds limit");
+        }
+        auto copy = owner;
+        copy.scope = map.target;
+        next.ownership.push_back(std::move(copy));
+      }
+      for (const auto& selection : region->performance.accepted) {
+        const auto* note = std::get_if<domain::NoteId>(&selection.scope);
+        if (note == nullptr || *note != map.source) continue;
+        if (next.accepted.size() >= domain::kMaximumPerformanceSelections) {
+          return core::failure(core::ErrorCode::InvalidArgument, "Copied selections exceed limit");
+        }
+        const auto offset = selection.sourceTickOffset.value();
+        if ((delta > 0 && offset > std::numeric_limits<std::int64_t>::max() - delta) ||
+            (delta < 0 && offset < std::numeric_limits<std::int64_t>::min() - delta)) {
+          return core::failure(core::ErrorCode::InvalidArgument, "Copied performance offset overflows");
+        }
+        auto copy = selection;
+        copy.scope = map.target;
+        copy.sourceTickOffset = time::Tick{offset + delta};
+        next.accepted.push_back(std::move(copy));
+      }
+    }
+    next.pronunciation.reset();
+    const auto nextValid = next.validate(region->notes, region->durationTick);
+    if (!nextValid) return nextValid;
+    auto candidate = *region;
+    candidate.performance = next;
+    candidate.phonemeOverrides = std::move(copiedPhonemes);
+    if (std::any_of(candidate.phonemeOverrides.begin(), candidate.phonemeOverrides.end(),
+                    [](const auto& edit) { return edit.sourceContextId && !edit.unresolved; })) {
+      std::vector<domain::PerformanceNoteRemap> bindingMap = mapping_;
+      for (const auto& note : region->notes) {
+        if (!targets.contains(note.id)) bindingMap.push_back({note.id, note.id});
+      }
+      const auto rebound = phonemizer::rebindTransferredPhonemeContexts(*region, candidate, bindingMap);
+      if (!rebound) return rebound;
+    }
+    // Validate only copied records with only copied-note mappings. An uncopied
+    // neighbor must not accidentally complete a partially copied relationship.
+    candidate.unitSelectionOverrides = std::move(copiedUnits);
+    candidate.seamOverrides = std::move(copiedSeams);
+    const auto transferred = phonemizer::validateTransferredRenderEdits(*region, candidate, mapping_);
+    if (!transferred) return transferred;
+    candidate.unitSelectionOverrides.insert(candidate.unitSelectionOverrides.begin(), region->unitSelectionOverrides.begin(), region->unitSelectionOverrides.end());
+    candidate.seamOverrides.insert(candidate.seamOverrides.begin(), region->seamOverrides.begin(), region->seamOverrides.end());
+    const auto candidateValid = candidate.validate();
+    if (!candidateValid) return candidateValid;
+    before_ = region->performance;
+    after_ = std::move(next);
+    beforePhonemes_ = region->phonemeOverrides;
+    beforeUnits_ = region->unitSelectionOverrides;
+    beforeSeams_ = region->seamOverrides;
+    afterUnits_ = std::move(candidate.unitSelectionOverrides);
+    afterSeams_ = std::move(candidate.seamOverrides);
+    afterPhonemes_ = std::move(candidate.phonemeOverrides);
+  }
+  auto staged = *region;
+  staged.performance = *after_;
+  staged.phonemeOverrides = afterPhonemes_;
+  staged.unitSelectionOverrides = afterUnits_;
+  staged.seamOverrides = afterSeams_;
+  const auto valid = staged.validate();
+  if (!valid) return valid;
+  std::swap(region->performance, staged.performance);
+  region->phonemeOverrides.swap(staged.phonemeOverrides);
+  region->unitSelectionOverrides.swap(staged.unitSelectionOverrides);
+  region->seamOverrides.swap(staged.seamOverrides);
+  return core::success();
+}
+
+core::Result<void> CopyNotePerformanceCommand::revert(domain::Project& project) {
+  auto* region = project.findRegion(regionId_);
+  if (region == nullptr || !before_) {
+    return core::failure(core::ErrorCode::Conflict, "Performance copy has no state to restore");
+  }
+  auto staged = *region;
+  staged.performance = *before_;
+  staged.phonemeOverrides = beforePhonemes_;
+  staged.unitSelectionOverrides = beforeUnits_;
+  staged.seamOverrides = beforeSeams_;
+  const auto valid = staged.validate();
+  if (!valid) return valid;
+  std::swap(region->performance, staged.performance);
+  region->phonemeOverrides.swap(staged.phonemeOverrides);
+  region->unitSelectionOverrides.swap(staged.unitSelectionOverrides);
+  region->seamOverrides.swap(staged.seamOverrides);
+  return core::success();
+}
+
+namespace {
+
+constexpr std::size_t kMaximumEdits = 10'000U;
+
+template <typename Project>
+auto expressionNoteIndex(Project& project, const std::vector<NoteExpressionEdit>& edits)
+    -> core::Result<std::unordered_map<domain::NoteId, decltype(project.findNote(domain::NoteId{}))>> {
+  using Index = std::unordered_map<domain::NoteId, decltype(project.findNote(domain::NoteId{}))>;
+  if (edits.size() > kMaximumEdits) return core::failure<Index>(core::ErrorCode::InvalidArgument, "Too many performance note edits");
+  std::unordered_set<domain::NoteId> requested;
+  for (const auto& edit : edits) if (!requested.insert(edit.noteId).second)
+    return core::failure<Index>(core::ErrorCode::InvalidArgument, "Performance edit repeats a note", edit.noteId.toString());
+  Index index; index.reserve(requested.size());
+  if (requested.empty()) return index;
+  for (auto& track : project.vocalTracks()) for (auto& region : track.regions) for (auto& note : region.notes) {
+    if (requested.contains(note.id) && !index.emplace(note.id, &note).second)
+      return core::failure<Index>(core::ErrorCode::Conflict, "Performance note target is ambiguous", note.id.toString());
+  }
+  for (const auto& edit : edits) if (!index.contains(edit.noteId))
+    return core::failure<Index>(core::ErrorCode::NotFound, "Performance edit note was not found", edit.noteId.toString());
+  return index;
+}
+
+template <typename Index>
+core::Result<void> validateEdits(
+    const domain::Project& project,
+    const std::vector<NoteExpressionEdit>& notes,
+    const std::vector<RegionDynamicsEdit>& regions,
+    const std::vector<TrackStyleEdit>& tracks,
+    std::size_t ownershipCount, const Index& noteIndex) {
+  if ((notes.empty() && regions.empty() && tracks.empty() && ownershipCount == 0U) ||
+      notes.size() > kMaximumEdits || regions.size() > kMaximumEdits ||
+      tracks.size() > kMaximumEdits || ownershipCount > kMaximumEdits ||
+      notes.size() + regions.size() + tracks.size() + ownershipCount > kMaximumEdits) {
+    return core::failure(core::ErrorCode::InvalidArgument,
+                         "Performance edit target count is outside supported bounds");
+  }
+
+  std::unordered_set<domain::NoteId> noteIds;
+  for (const auto& edit : notes) {
+    if (!noteIds.insert(edit.noteId).second) {
+      return core::failure(core::ErrorCode::InvalidArgument,
+                           "Performance edit repeats a note", edit.noteId.toString());
+    }
+    const auto* note = noteIndex.at(edit.noteId);
+    if (note == nullptr) {
+      return core::failure(core::ErrorCode::NotFound,
+                           "Performance edit note was not found", edit.noteId.toString());
+    }
+    auto replacement = *note;
+    replacement.vibrato = edit.vibrato;
+    replacement.phoneticHint = edit.phoneticHint;
+    const auto validation = replacement.validate();
+    if (!validation) return validation;
+  }
+
+  std::unordered_set<domain::RegionId> regionIds;
+  for (const auto& edit : regions) {
+    if (!regionIds.insert(edit.regionId).second) {
+      return core::failure(core::ErrorCode::InvalidArgument,
+                           "Performance edit repeats a region", edit.regionId.toString());
+    }
+    const auto* region = project.findRegion(edit.regionId);
+    if (region == nullptr) {
+      return core::failure(core::ErrorCode::NotFound,
+                           "Performance edit region was not found", edit.regionId.toString());
+    }
+    const auto validation = edit.curve.validate();
+    if (!validation) return validation;
+    if (!edit.curve.points().empty() &&
+        edit.curve.points().back().tick > region->durationTick) {
+      return core::failure(core::ErrorCode::InvariantViolation,
+                           "Dynamics automation extends beyond the region",
+                           edit.regionId.toString());
+    }
+  }
+
+  std::unordered_set<domain::TrackId> trackIds;
+  for (const auto& edit : tracks) {
+    if (!trackIds.insert(edit.trackId).second) {
+      return core::failure(core::ErrorCode::InvalidArgument,
+                           "Performance edit repeats a track", edit.trackId.toString());
+    }
+    if (project.findVocalTrack(edit.trackId) == nullptr) {
+      return core::failure(core::ErrorCode::NotFound,
+                           "Performance edit track was not found", edit.trackId.toString());
+    }
+    const auto validation = edit.selection.validate();
+    if (!validation) return validation;
+  }
+  return core::success();
+}
+
+}
+
+EditPerformanceCommand::EditPerformanceCommand(
+    std::vector<NoteExpressionEdit> notes,
+    std::vector<RegionDynamicsEdit> regions,
+    std::vector<TrackStyleEdit> tracks,
+    std::vector<RegionOwnershipEdit> ownership)
+    : afterNotes_(std::move(notes)),
+      afterRegions_(std::move(regions)),
+      afterTracks_(std::move(tracks)),
+      ownershipEdits_(std::move(ownership)) {}
+
+std::string_view EditPerformanceCommand::name() const noexcept {
+  return "Edit performance";
+}
+
+CommandAudioImpact EditPerformanceCommand::audioImpact() const noexcept {
+  return afterTracks_.empty() ? CommandAudioImpact::PhraseAudio
+                              : CommandAudioImpact::ProjectAudio;
+}
+
+CommandImpact EditPerformanceCommand::impact() const {
+  CommandImpact result{
+      .scope = audioImpact(),
+      .projectWide = false,
+      .trackIds = {},
+      .regionIds = {},
+      .noteIds = {},
+      .lyricIds = {},
+  };
+  result.noteIds.reserve(afterNotes_.size());
+  result.regionIds.reserve(afterRegions_.size());
+  result.trackIds.reserve(afterTracks_.size());
+  for (const auto& edit : afterNotes_) result.noteIds.push_back(edit.noteId);
+  for (const auto& edit : afterRegions_) result.regionIds.push_back(edit.regionId);
+  for (const auto& edit : afterTracks_) result.trackIds.push_back(edit.trackId);
+  for (const auto& edit : ownershipEdits_) {
+    bool present = false;
+    for (const auto id : result.regionIds) present = present || id == edit.regionId;
+    if (!present) result.regionIds.push_back(edit.regionId);
+  }
+  return result;
+}
+
+core::Result<void> EditPerformanceCommand::apply(domain::Project& project) {
+  return set(project, true);
+}
+
+core::Result<void> EditPerformanceCommand::revert(domain::Project& project) {
+  if (!captured_) {
+    return core::failure(core::ErrorCode::Conflict,
+                         "Performance edit has no captured state to restore");
+  }
+  return set(project, false);
+}
+
+core::Result<void> EditPerformanceCommand::set(domain::Project& project,
+                                               bool after) {
+  std::vector<NoteHintEdit> hintEdits;
+  if (!captured_) {
+    const auto indexed = expressionNoteIndex(project, afterNotes_);
+    if (!indexed) return core::Result<void>{indexed.error()};
+    for (const auto& edit : afterNotes_) {
+      const auto* note = indexed.value().at(edit.noteId);
+      if (!note) return core::failure(core::ErrorCode::NotFound, "Expression hint note is missing");
+      if (note->phoneticHint != edit.phoneticHint) hintEdits.push_back({note->id, note->phoneticHint, edit.phoneticHint});
+    }
+  }
+  if (!hints_ && hintEdits.empty()) return setExpressions(project, after);
+
+  // Compose against a private project and command copy: an invalid hint must
+  // not publish vibrato/style/ownership edits or partially capture history.
+  auto staged = project;
+  auto command = *this;
+  if (!command.hints_) command.hints_.emplace(std::move(hintEdits));
+  if (after) {
+    const auto expressions = command.setExpressions(staged, true); if (!expressions) return expressions;
+    // The expression snapshot carries hints for backwards-compatible history.
+    // Restore their source values before the dedicated reconciliation command.
+    const auto sourceNotes = expressionNoteIndex(project, command.afterNotes_);
+    const auto stagedNotes = expressionNoteIndex(staged, command.afterNotes_);
+    if (!sourceNotes) return core::Result<void>{sourceNotes.error()};
+    if (!stagedNotes) return core::Result<void>{stagedNotes.error()};
+    for (const auto& edit : command.afterNotes_)
+      stagedNotes.value().at(edit.noteId)->phoneticHint = sourceNotes.value().at(edit.noteId)->phoneticHint;
+    const auto hints = command.hints_->apply(staged); if (!hints) return hints;
+    for (auto& ownership : command.afterOwnership_) {
+      const auto prior = std::find_if(command.beforeOwnership_.begin(), command.beforeOwnership_.end(),
+          [&](const auto& value) { return value.regionId == ownership.regionId; });
+      if (prior != command.beforeOwnership_.end() && prior->revision.ownership != ownership.revision.ownership) {
+        auto& state = staged.findRegion(ownership.regionId)->performance;
+        for (auto& owner : state.ownership) owner.revision = state.revision;
+        ownership.revision = state.revision; ownership.ownership = state.ownership;
+      }
+    }
+  } else {
+    const auto hints = command.hints_->revert(staged); if (!hints) return hints;
+    const auto expressions = command.setExpressions(staged, false); if (!expressions) return expressions;
+  }
+  const auto valid = staged.validate(); if (!valid) return valid;
+  project = std::move(staged); *this = std::move(command);
+  return core::success();
+}
+
+core::Result<void> EditPerformanceCommand::setExpressions(domain::Project& project,
+                                               bool after) {
+  const auto& notes = after ? afterNotes_ : beforeNotes_;
+  const auto& regions = after ? afterRegions_ : beforeRegions_;
+  const auto& tracks = after ? afterTracks_ : beforeTracks_;
+  const auto indexedNotes = expressionNoteIndex(project, notes);
+  if (!indexedNotes) return core::Result<void>{indexedNotes.error()};
+  const auto validation = validateEdits(project, notes, regions, tracks,
+                                       ownershipEdits_.size(), indexedNotes.value());
+  if (!validation) return validation;
+
+  std::vector<OwnershipState> priorOwnership;
+  std::vector<OwnershipState> nextOwnership;
+  if (!captured_) {
+    std::unordered_set<domain::RegionId> ids;
+    for (const auto& edit : ownershipEdits_) {
+      const auto* region = project.findRegion(edit.regionId);
+      if (!ids.insert(edit.regionId).second || region == nullptr) {
+        return core::failure(core::ErrorCode::InvalidArgument,
+                             "Ownership region is missing or repeated");
+      }
+      const auto& state = region->performance;
+      if (state.revision != edit.expectedRevision ||
+          state.ownership != edit.expectedOwnership) {
+        return core::failure(core::ErrorCode::Conflict,
+                             "Ownership changed since the edit was prepared");
+      }
+      auto replacement = state;
+      replacement.ownership = edit.ownership;
+      if (replacement.ownership != state.ownership) {
+        if (state.revision.ownership == std::numeric_limits<std::uint64_t>::max()) {
+          return core::failure(core::ErrorCode::Conflict,
+                               "Ownership revision is exhausted");
+        }
+        ++replacement.revision.ownership;
+        for (auto& owner : replacement.ownership) owner.revision = replacement.revision;
+      }
+      const auto valid = replacement.validate(region->notes, region->durationTick);
+      if (!valid) return valid;
+      priorOwnership.push_back({edit.regionId, state.revision, state.ownership});
+      nextOwnership.push_back({edit.regionId, replacement.revision,
+                               std::move(replacement.ownership)});
+    }
+  }
+  auto stagedOwnership = captured_ ? (after ? afterOwnership_ : beforeOwnership_)
+                                  : nextOwnership;
+  for (const auto& edit : stagedOwnership) {
+    const auto* region = project.findRegion(edit.regionId);
+    if (region == nullptr) {
+      return core::failure(core::ErrorCode::NotFound, "Ownership region was not found");
+    }
+    auto replacement = region->performance;
+    replacement.revision = edit.revision;
+    replacement.ownership = edit.ownership;
+    const auto valid = replacement.validate(region->notes, region->durationTick);
+    if (!valid) return valid;
+  }
+
+  auto stagedNotes = notes;
+  auto stagedRegions = regions;
+  auto stagedTracks = tracks;
+  if (!captured_) {
+    std::vector<NoteExpressionEdit> priorNotes;
+    std::vector<RegionDynamicsEdit> priorRegions;
+    std::vector<TrackStyleEdit> priorTracks;
+    priorNotes.reserve(notes.size());
+    priorRegions.reserve(regions.size());
+    priorTracks.reserve(tracks.size());
+    for (const auto& edit : notes) {
+      const auto* note = indexedNotes.value().at(edit.noteId);
+      priorNotes.push_back({note->id, note->vibrato, note->phoneticHint});
+    }
+    for (const auto& edit : regions) {
+      const auto* region = project.findRegion(edit.regionId);
+      priorRegions.push_back({region->id, region->dynamicsAutomation});
+    }
+    for (const auto& edit : tracks) {
+      const auto* track = project.findVocalTrack(edit.trackId);
+      priorTracks.push_back({track->id, track->styleSelection});
+    }
+    beforeNotes_ = std::move(priorNotes);
+    beforeRegions_ = std::move(priorRegions);
+    beforeTracks_ = std::move(priorTracks);
+    beforeOwnership_ = std::move(priorOwnership);
+    afterOwnership_ = std::move(nextOwnership);
+    captured_ = true;
+  }
+
+  for (auto& edit : stagedNotes) {
+    auto* note = indexedNotes.value().at(edit.noteId);
+    note->vibrato = edit.vibrato;
+    note->phoneticHint.swap(edit.phoneticHint);
+  }
+  for (auto& edit : stagedRegions) {
+    std::swap(project.findRegion(edit.regionId)->dynamicsAutomation, edit.curve);
+  }
+  for (auto& edit : stagedTracks) {
+    std::swap(project.findVocalTrack(edit.trackId)->styleSelection, edit.selection);
+  }
+  for (auto& edit : stagedOwnership) {
+    auto& state = project.findRegion(edit.regionId)->performance;
+    state.revision = edit.revision;
+    state.ownership.swap(edit.ownership);
+  }
+  return core::success();
+}
+
+}

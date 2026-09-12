@@ -1,6 +1,8 @@
 #include "seam/phonemizer/phonemizer.hpp"
 
 #include <algorithm>
+#include <array>
+#include <string_view>
 
 namespace seam::phonemizer {
 
@@ -15,16 +17,29 @@ std::vector<domain::PhonemeToken> Result::tokensForNote(domain::NoteId noteId) c
 }
 
 bool isVowelSymbol(std::string_view symbol) noexcept {
-  return symbol == "a" || symbol == "i" || symbol == "u" ||
-         symbol == "e" || symbol == "o";
+  static constexpr std::array<std::string_view, 24U> vowels{
+      "a", "i", "u", "e", "o", "aa", "ae", "ah", "ao", "aw",
+      "ay", "eh", "er", "ey", "ih", "iy", "ow", "oy", "uh", "uw",
+      "eo", "eu", "ax", "axr"};
+  if (symbol.empty()) return false;
+  auto base = symbol;
+  if (base.size() > 1U && (base.back() == '0' || base.back() == '1' || base.back() == '2'))
+    base.remove_suffix(1U);
+  return std::find(vowels.begin(), vowels.end(), base) != vowels.end();
+}
+
+bool isNasalSymbol(std::string_view symbol) noexcept {
+  return symbol=="m" || symbol=="n" || symbol=="ng" || symbol=="N";
 }
 
 bool isVoicedSymbol(std::string_view symbol) noexcept {
   return symbol != "pau" && symbol != "sil" && symbol != "cl" &&
-         symbol != "k" && symbol != "ky" && symbol != "s" &&
+         symbol != "k" && symbol != "ky" && symbol != "kk" && symbol != "s" &&
          symbol != "sh" && symbol != "t" && symbol != "ch" &&
-         symbol != "ts" && symbol != "h" && symbol != "hy" &&
-         symbol != "f" && symbol != "p" && symbol != "py";
+         symbol != "ts" && symbol != "h" && symbol != "hh" && symbol != "hy" &&
+         symbol != "f" && symbol != "p" && symbol != "py" && symbol != "pp" &&
+         symbol != "tt" && symbol != "th" && symbol != "ph" && symbol != "kh" &&
+         symbol != "ss" && symbol != "cch" && symbol != "chh";
 }
 
 domain::PhonemeRole inferRole(std::string_view symbol) noexcept {

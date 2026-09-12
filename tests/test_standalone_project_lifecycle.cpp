@@ -96,6 +96,10 @@ TEST_CASE("standalone_application_controller_executes_new_open_save_and_save_as_
 
   bool quit = false;
   bool openedAudioSettings = false;
+  unsigned hintRequests = 0U;
+  unsigned findRequests = 0U;
+  unsigned vibratoRequests = 0U;
+  unsigned cleanupRequests = 0U;
   auto controller = seam::standalone::StandaloneApplicationController::create(
       *session, std::move(dialog), std::move(prompt),
       seam::standalone::StandaloneApplicationControllerConfig{
@@ -113,6 +117,25 @@ TEST_CASE("standalone_application_controller_executes_new_open_save_and_save_as_
             openedAudioSettings = true;
             return seam::core::success();
           },
+          .editPronunciationHint = [&hintRequests] {
+            ++hintRequests;
+            return hintRequests == 1U ? seam::core::success() :
+                seam::core::failure(seam::core::ErrorCode::Conflict, "Select one note");
+          },
+          .findReplaceLyrics = [&findRequests] { ++findRequests; return seam::core::success(); },
+          .findNotes = [&findRequests] { findRequests += 10U; return seam::core::success(); },
+          .findActiveDiagnostics = [&findRequests] { findRequests += 10000U; return seam::core::success(); },
+          .findNextNote = [&findRequests] { findRequests += 100U; return seam::core::success(); },
+          .findPreviousNote = [&findRequests] { findRequests += 1000U; return seam::core::success(); },
+          .clearSelectedVibrato = [&vibratoRequests] { ++vibratoRequests; return seam::core::success(); },
+          .editSelectedVibrato = [&vibratoRequests] { vibratoRequests += 10U; return seam::core::success(); },
+          .editRegionDynamics = [&vibratoRequests] { vibratoRequests += 100U; return seam::core::success(); },
+          .editTrackStyle = [&vibratoRequests] { vibratoRequests += 1000U; return seam::core::success(); },
+          .editJapaneseReading = [&vibratoRequests] { vibratoRequests += 10000U; return seam::core::success(); },
+          .removeSelectedOverlaps = [&cleanupRequests] { ++cleanupRequests; return seam::core::success(); },
+          .closeSelectedGaps = [&cleanupRequests] { cleanupRequests += 10U; return seam::core::success(); },
+          .autoLegatoSelectedNotes = [&cleanupRequests] { cleanupRequests += 100U; return seam::core::success(); },
+          .clearRegionDynamicsCurve = [&cleanupRequests] { cleanupRequests += 1000U; return seam::core::success(); },
       },
       [&quit] { quit = true; });
   CHECK(controller);
@@ -143,6 +166,27 @@ TEST_CASE("standalone_application_controller_executes_new_open_save_and_save_as_
   CHECK(controller.value()->dispatch(
       seam::platform::ApplicationCommand::OpenAudioSettings));
   CHECK(openedAudioSettings);
+  const auto revision = session->runtime().document().session().revision();
+  CHECK(controller.value()->dispatch(seam::platform::ApplicationCommand::EditPronunciationHint));
+  CHECK(!controller.value()->dispatch(seam::platform::ApplicationCommand::EditPronunciationHint));
+  CHECK(hintRequests == 2U);
+  CHECK(controller.value()->dispatch(seam::platform::ApplicationCommand::FindReplaceLyrics));
+  CHECK(findRequests == 1U);
+  CHECK(controller.value()->dispatch(seam::platform::ApplicationCommand::FindNotes)); CHECK(findRequests == 11U);
+  CHECK(controller.value()->dispatch(seam::platform::ApplicationCommand::FindNextNote)); CHECK(findRequests == 111U);
+  CHECK(controller.value()->dispatch(seam::platform::ApplicationCommand::FindPreviousNote)); CHECK(findRequests == 1111U);
+  CHECK(controller.value()->dispatch(seam::platform::ApplicationCommand::FindActiveDiagnostics)); CHECK(findRequests == 11111U);
+  CHECK(controller.value()->dispatch(seam::platform::ApplicationCommand::ClearSelectedVibrato));
+  CHECK(vibratoRequests == 1U);
+  CHECK(controller.value()->dispatch(seam::platform::ApplicationCommand::EditSelectedVibrato)); CHECK(vibratoRequests == 11U);
+  CHECK(controller.value()->dispatch(seam::platform::ApplicationCommand::EditRegionDynamics)); CHECK(vibratoRequests == 111U);
+  CHECK(controller.value()->dispatch(seam::platform::ApplicationCommand::EditTrackStyle)); CHECK(vibratoRequests == 1111U);
+  CHECK(controller.value()->dispatch(seam::platform::ApplicationCommand::EditJapaneseReading)); CHECK(vibratoRequests == 11111U);
+  CHECK(controller.value()->dispatch(seam::platform::ApplicationCommand::RemoveSelectedOverlaps));
+  CHECK(controller.value()->dispatch(seam::platform::ApplicationCommand::CloseSelectedGaps)); CHECK(cleanupRequests == 11U);
+  CHECK(controller.value()->dispatch(seam::platform::ApplicationCommand::AutoLegatoSelectedNotes)); CHECK(cleanupRequests == 111U);
+  CHECK(controller.value()->dispatch(seam::platform::ApplicationCommand::ClearRegionDynamicsCurve)); CHECK(cleanupRequests == 1111U);
+  CHECK(session->runtime().document().session().revision() == revision);
 }
 
 TEST_CASE("standalone_new_project_request_can_commit_an_explicit_native_path") {

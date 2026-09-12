@@ -1,12 +1,17 @@
 #include "seam/rendering/render_snapshot.hpp"
+#include "seam/rendering/render_pipeline.hpp"
 
 #include "seam/build/version.hpp"
 #include "seam/core/file_io.hpp"
 #include "seam/core/sha256.hpp"
 #include "seam/core/stable_hash.hpp"
 #include "seam/formats/project_json.hpp"
-#include "seam/phonemizer/japanese_phonemizer.hpp"
+#include "seam/phonemizer/language_resolver.hpp"
+#include "seam/phonemizer/pronunciation_resolver.hpp"
+#include "seam/phonemizer/language_resolver.hpp"
 #include "seam/voicebank/asset_path.hpp"
+#include "seam/voice_design/procedural_renderer.hpp"
+#include "seam/voice_design/vocal_tract.hpp"
 
 #include <algorithm>
 #include <bit>
@@ -25,8 +30,8 @@ constexpr std::uint64_t kMaximumFrozenPhraseEncodedBytes =
 constexpr std::uint64_t kMaximumFrozenPhraseDecodedBytes =
     512ULL * 1024ULL * 1024ULL;
 
-domain::VocalRegion extractPhraseRegion(const domain::VocalRegion& source,
-                                         const PhraseSegment& segment) {
+core::Result<domain::VocalRegion> extractPhraseRegion(
+    const domain::VocalRegion& source, const PhraseSegment& segment) {
   std::unordered_set<domain::NoteId> noteIds;
   noteIds.reserve(segment.noteIds.size());
   for (const auto noteId : segment.noteIds) noteIds.insert(noteId);
@@ -78,6 +83,53 @@ domain::VocalRegion extractPhraseRegion(const domain::VocalRegion& source,
   }
   if (previous != nullptr) static_cast<void>(result.pitchAutomation.upsert(*previous));
   if (next != nullptr) static_cast<void>(result.pitchAutomation.upsert(*next));
+  const auto& dynamics = source.dynamicsAutomation.points();
+  const auto beforeTick = [](const domain::DynamicsAutomationPoint& point,
+                             time::Tick tick) { return point.tick < tick; };
+  auto first = std::lower_bound(dynamics.begin(), dynamics.end(),
+                                segment.startTick, beforeTick);
+  if (first != dynamics.begin() &&
+      (first == dynamics.end() || first->tick > segment.startTick)) {
+    --first;
+  }
+  auto last = std::lower_bound(first, dynamics.end(), segment.endTick, beforeTick);
+  if (last != dynamics.end()) ++last;
+  const auto copied = result.dynamicsAutomation.replacePoints(
+      std::vector<domain::DynamicsAutomationPoint>{first, last});
+  if (!copied) return core::Result<domain::VocalRegion>{copied.error()};
+  const auto effectiveScope = [&](const domain::PerformanceScope& scope)
+      -> std::optional<domain::PerformanceScope> {
+    if (const auto* note = std::get_if<domain::NoteId>(&scope)) {
+      if (noteIds.contains(*note)) return *note;
+      return std::nullopt;
+    }
+    const auto range = std::get<domain::PerformanceTimeRange>(scope);
+    const auto start = std::max(range.startTick, segment.startTick);
+    const auto end = std::min(range.endTick, segment.endTick);
+    if (start >= end) return std::nullopt;
+    return domain::PerformanceTimeRange{start, end};
+  };
+  result.performance.pronunciation = source.performance.pronunciation;
+  for (const auto& entry : source.performance.ownership) {
+    const auto scope = effectiveScope(entry.scope);
+    if (!scope.has_value()) continue;
+    auto selected = entry;
+    selected.scope = *scope;
+    selected.revision = {};
+    result.performance.ownership.push_back(std::move(selected));
+  }
+  std::unordered_set<std::string> selectedTakes;
+  for (const auto& entry : source.performance.accepted) {
+    const auto scope = effectiveScope(entry.scope);
+    if (!scope.has_value()) continue;
+    auto selected = entry;
+    selected.scope = *scope;
+    selectedTakes.insert(selected.takeId);
+    result.performance.accepted.push_back(std::move(selected));
+  }
+  for (const auto& take : source.performance.takes) {
+    if (selectedTakes.contains(take.id)) result.performance.takes.push_back(take);
+  }
   result.sortNotes();
   return result;
 }
@@ -130,8 +182,9 @@ core::Result<domain::Project> extractPhraseProject(
   };
   track.regions.clear();
   auto phraseRegion = extractPhraseRegion(*sourceRegion, segment);
-  phraseRegion.name = "Render phrase";
-  track.regions.push_back(std::move(phraseRegion));
+  if (!phraseRegion) return core::Result<domain::Project>{phraseRegion.error()};
+  phraseRegion.value().name = "Render phrase";
+  track.regions.push_back(std::move(phraseRegion).value());
   result.vocalTracks().push_back(std::move(track));
   return result;
 }
@@ -190,7 +243,7 @@ void addPitchCurve(IdentityWriter& writer, const synthesis::PitchCurve& curve) {
 
 void addRenderOptions(IdentityWriter& writer,
                       const synthesis::PhraseRenderOptions& options) {
-  writer.tag("render-options-v3");
+  writer.tag("render-options-v4");
   addEnum(writer, options.renderer.policy);
   writer.boolean(options.renderer.allowRawFallback);
   writer.boolean(options.renderer.rendererOverride.has_value());
@@ -199,6 +252,7 @@ void addRenderOptions(IdentityWriter& writer,
   }
   writer.floating(options.renderer.raw.loopPrint);
   writer.floating(options.renderer.raw.additionalGainDb);
+  addPitchCurve(writer, options.renderer.raw.pitchCurve);
   writer.floating(options.renderer.psola.sourcePitchResidual);
   writer.floating(options.renderer.psola.additionalGainDb);
   addPitchCurve(writer, options.renderer.psola.pitchCurve);
@@ -216,6 +270,11 @@ void addRenderOptions(IdentityWriter& writer,
   addPitchCurve(writer, options.renderer.stretch.pitchCurve);
   writer.floating(options.defaultSeam.seamAmount);
   addEnum(writer, options.defaultSeam.curve);
+  writer.tag("required-controls-v1");
+  for (const auto required : options.renderer.controls.required) {
+    writer.boolean(required);
+  }
+  writer.boolean(options.renderer.controls.requiresPitchPreservingTransient);
 }
 
 void addUnitMetadata(IdentityWriter& writer, const voicebank::Unit& unit) {
@@ -272,13 +331,18 @@ core::Result<std::string> buildIdentity(
     RenderQuality quality,
     std::uint32_t sampleRate,
     std::string_view style,
-    const synthesis::PhraseRenderOptions& renderOptions) {
+    const synthesis::PhraseRenderOptions& renderOptions,
+    std::optional<synthesis::PhraseFrameRange> ownedFrames) {
   formats::ProjectJsonCodec codec;
   auto projectJson = codec.encode(phraseProject);
   if (!projectJson) return core::Result<std::string>{projectJson.error()};
 
   IdentityWriter writer;
-  writer.tag("project-seam-render-identity-v3");
+  writer.tag("project-seam-render-identity-v7");
+  writer.integer(ownedFrames.has_value() ? 1U : 0U);
+  if (ownedFrames) { writer.integer(ownedFrames->start); writer.integer(ownedFrames->end); }
+  writer.tag("resource.sample.v1");
+  writer.integer(synthesis::kPerformanceCompilerRevision);
   addAlgorithmRevisions(writer);
   writer.tag(projectJson.value());
   addEnum(writer, quality);
@@ -306,8 +370,34 @@ core::Result<std::string> buildIdentity(
     addEnum(writer, entry.renderer);
     addUnitMetadata(writer, *unit);
     writer.tag(selectedUnits[index].audioSha256);
+    writer.tag(selectedUnits[index].sourceAlignmentSha256);
   }
   return writer.finish();
+}
+
+core::Result<std::string> buildProceduralIdentity(const domain::Project& project,
+    const synthesis::ProceduralSingerResource& resource, const domain::PronunciationIdentity& pronunciation,
+    std::string_view style, RenderQuality quality, std::uint32_t sampleRate,
+    std::optional<synthesis::PhraseFrameRange> ownedFrames) {
+  const auto json = formats::ProjectJsonCodec{}.encode(project);
+  if (!json) return core::Result<std::string>{json.error()};
+  IdentityWriter identity;
+  identity.tag("project-seam-procedural-articulation-v2");
+  identity.integer(voice_design::kSustainedPoseRendererRevision);
+  identity.integer(voice_design::ArticulatedStream::algorithmRevision);
+  identity.integer(voice_design::ArticulationPlan::algorithmRevision);
+  identity.integer(voice_design::FricationGestureStream::algorithmRevision);
+  identity.integer(voice_design::FricationSource::algorithmRevision);
+  identity.integer(voice_design::PlosiveSource::algorithmRevision);
+  identity.integer(synthesis::kPerformanceCompilerRevision);
+  identity.integer(synthesis::kProceduralTimingPolicyRevision);
+  identity.tag(build::kRenderAbiId); identity.tag(json.value());
+  identity.tag(resource.identity.id); identity.tag(resource.identity.version); identity.tag(resource.identity.contentHash);
+  identity.tag(pronunciation.resourceHash); identity.tag(pronunciation.sequenceHash);
+  identity.tag(style); identity.integer(sampleRate); addEnum(identity, quality);
+  identity.boolean(ownedFrames.has_value());
+  if (ownedFrames) { identity.integer(ownedFrames->start); identity.integer(ownedFrames->end); }
+  return identity.finish();
 }
 
 }  // namespace
@@ -316,6 +406,129 @@ std::string fnv1aHex(std::string_view value) {
   core::StableHash64 hash;
   hash.addString(value);
   return hash.hex();
+}
+
+core::Result<RenderSnapshot> RenderSnapshotFactory::createProcedural(
+    const domain::Project& project, const synthesis::ProceduralSingerResource& resource,
+    domain::TrackId trackId, domain::RegionId regionId, std::uint64_t revision,
+    RenderQuality quality, std::uint32_t sampleRate, std::string style,
+    std::optional<synthesis::PhraseFrameRange> ownedFrames) const {
+  const auto valid = project.validate();
+  if (!valid) return core::Result<RenderSnapshot>{valid.error()};
+  const auto* track = project.findVocalTrack(trackId);
+  const auto* region = track ? track->findRegion(regionId) : nullptr;
+  if (track && track->proceduralRecipe &&
+      (track->proceduralRecipe->resource != resource.identity || track->proceduralRecipe->style != style)) {
+    return core::failure<RenderSnapshot>(core::ErrorCode::Conflict, "Procedural snapshot differs from the saved recipe selection");
+  }
+  if (!region || region->notes.empty() || region->notes.size() > 4096U || sampleRate < 8000U || sampleRate > 384000U) {
+    return core::failure<RenderSnapshot>(core::ErrorCode::InvalidArgument, "Procedural snapshot region/rate is invalid");
+  }
+  const auto recipe = voice_design::decodeVoiceRecipeResource(resource);
+  if (!recipe) return core::Result<RenderSnapshot>{recipe.error()};
+  // Select the same explicit language service used by native inspection and
+  // sample snapshots. A recipe still has to advertise matching poses or
+  // frication bindings; language resolution alone must never invent a voice
+  // resource for symbols it cannot render.
+  const auto pronunciation = phonemizer::resolvePronunciation(*region);
+  if (!pronunciation) return core::Result<RenderSnapshot>{pronunciation.error()};
+  const auto phrase = voice_design::validateProceduralPhrase(*region, pronunciation.value().pronunciation.tokens);
+  if (!phrase) return core::Result<RenderSnapshot>{phrase.error()};
+  const bool articulated = voice_design::requiresArticulation(pronunciation.value().pronunciation.tokens);
+  if (!articulated) {
+    const auto tract = voice_design::validateVowelRecipePoses(recipe.value(), pronunciation.value().pronunciation.tokens, style, sampleRate);
+    if (!tract) return core::Result<RenderSnapshot>{tract.error()};
+  }
+  PhraseSegment segment{.id = regionId.toString() + ":procedural", .regionId = regionId,
+      .startTick = region->notes.front().startTick, .endTick = region->notes.front().endTick(), .noteIds = {}};
+  for (const auto& note : region->notes) {
+    segment.startTick = std::min(segment.startTick, note.startTick);
+    segment.endTick = std::max(segment.endTick, note.endTick());
+    segment.noteIds.push_back(note.id);
+  }
+  auto frozenProject = extractPhraseProject(project, trackId, segment);
+  if (!frozenProject) return core::Result<RenderSnapshot>{frozenProject.error()};
+  const auto* frozenRegion = frozenProject.value().findRegion(regionId);
+  const auto performance = synthesis::compileScorePerformance(frozenProject.value(), *frozenRegion, sampleRate,
+      pronunciation.value().pronunciation.tokens, synthesis::PhonemeTimingPolicy::ProceduralInNote);
+  if (!performance) return core::Result<RenderSnapshot>{performance.error()};
+  if (articulated) {
+    const auto plan = voice_design::ArticulationPlan::compileRecipe(resource, performance.value(),
+        pronunciation.value().pronunciation.tokens, style);
+    if (!plan) return core::Result<RenderSnapshot>{plan.error()};
+  } else {
+    const auto timing = voice_design::validateVowelTiming(performance.value());
+    if (!timing) return core::Result<RenderSnapshot>{timing.error()};
+  }
+  const synthesis::PhraseFrameRange context{performance.value().notes().front().startFrame, performance.value().notes().back().endFrame};
+  const auto outputValid = synthesis::PhraseOutputContract{sampleRate, context, ownedFrames.value_or(context)}.validate();
+  if (!outputValid) return core::Result<RenderSnapshot>{outputValid.error()};
+  const auto identity = buildProceduralIdentity(frozenProject.value(), resource, pronunciation.value().identity,
+      style, quality, sampleRate, ownedFrames);
+  if (!identity) return core::Result<RenderSnapshot>{identity.error()};
+  return RenderSnapshot{.revision = revision, .quality = quality, .renderAbiId = std::string{build::kRenderAbiId},
+      .contentHash = identity.value(), .segment = std::move(segment), .trackId = trackId, .sourceProjectId = project.id(),
+      .project = std::make_shared<const domain::Project>(std::move(frozenProject).value()),
+      .phonemes = std::make_shared<const phonemizer::Result>(pronunciation.value().pronunciation), .resource = resource,
+      .sampleRate = sampleRate, .style = std::move(style), .pronunciationIdentity = pronunciation.value().identity,
+      .compiledPerformance = std::make_shared<const synthesis::CompiledScorePerformance>(performance.value()), .ownedFrames = ownedFrames};
+}
+
+core::Result<std::vector<RenderSnapshot>> RenderSnapshotFactory::splitOwnedOutput(
+    const RenderSnapshot& source, synthesis::PhraseFrameRange output,
+    std::uint32_t maximumChunkFrames, std::size_t maximumChunks) const {
+  using Output = std::vector<RenderSnapshot>;
+  const auto windows = synthesis::planOwnedPhraseWindows(output, maximumChunkFrames, maximumChunks);
+  if (!windows) return core::Result<Output>{windows.error()};
+  if (const auto* procedural = std::get_if<synthesis::ProceduralSingerResource>(&source.resource)) {
+    if (!source.sourceProjectId.valid() || !source.pronunciationIdentity) return core::failure<Output>(
+        core::ErrorCode::InvalidArgument, "Procedural chunk source identity is missing");
+    if (source.ownedFrames && (output.start < source.ownedFrames->start || output.end > source.ownedFrames->end)) {
+      return core::failure<Output>(core::ErrorCode::Conflict, "Chunk subdivision cannot expand existing output ownership");
+    }
+    auto requested = source; requested.ownedFrames = output;
+    const auto valid = validateProceduralSnapshot(requested);
+    if (!valid) return core::Result<Output>{valid.error()};
+    if (source.segment.noteIds.size() > 65536U / windows.value().size()) return core::failure<Output>(
+        core::ErrorCode::Unsupported, "Procedural chunks exceed aggregate note metadata budget");
+    Output result;
+    result.reserve(windows.value().size());
+    for (const auto window : windows.value()) {
+      const auto identity = buildProceduralIdentity(*source.project, *procedural, *source.pronunciationIdentity,
+          source.style, source.quality, source.sampleRate, window);
+      if (!identity) return core::Result<Output>{identity.error()};
+      auto chunk = source; chunk.ownedFrames = window; chunk.contentHash = identity.value();
+      result.push_back(std::move(chunk));
+    }
+    return result;
+  }
+  if (!std::holds_alternative<synthesis::SampleSingerResource>(source.resource)) return core::failure<Output>(
+      core::ErrorCode::Unsupported, "Chunk snapshot factory has no adapter for this resource family");
+  const auto& sample = source.sample();
+  if (!source.project || !source.sourceProjectId.valid() || !source.phonemes || !source.pronunciationIdentity || !source.compiledPerformance ||
+      !sample.voicebank || !sample.unitPlan || sample.unitPlan->entries.empty() ||
+      sample.selectedUnits.size() != sample.unitPlan->entries.size() ||
+      sample.frozenAudio.size() != sample.unitPlan->entries.size() ||
+      source.sampleRate != source.compiledPerformance->sampleRate()) return core::failure<Output>(
+          core::ErrorCode::InvalidArgument, "Chunk source snapshot is incomplete");
+  if (source.ownedFrames && (output.start < source.ownedFrames->start || output.end > source.ownedFrames->end)) {
+    return core::failure<Output>(core::ErrorCode::Conflict, "Chunk subdivision cannot expand existing output ownership");
+  }
+  if (sample.frozenAudio.size() > 65536U / windows.value().size()) return core::failure<Output>(
+      core::ErrorCode::Unsupported, "Chunk snapshots exceed aggregate sample metadata budget");
+  Output result;
+  result.reserve(windows.value().size());
+  for (const auto window : windows.value()) {
+    const auto identity = buildIdentity(*source.project, *sample.voicebank, *sample.unitPlan,
+        sample.selectedUnits, source.quality, source.sampleRate, source.style, sample.renderOptions, window);
+    if (!identity) return core::Result<Output>{identity.error()};
+    auto chunk = source;
+    chunk.ownedFrames = window;
+    chunk.contentHash = core::sha256Hex(identity.value() + source.pronunciationIdentity->resourceHash +
+        phonemizer::pronunciationSequenceHash(source.phonemes->tokens));
+    result.push_back(std::move(chunk));
+  }
+  return result;
 }
 
 core::Result<RenderSnapshot> RenderSnapshotFactory::create(
@@ -328,9 +541,16 @@ core::Result<RenderSnapshot> RenderSnapshotFactory::create(
     std::filesystem::path bankRoot,
     std::uint32_t sampleRate,
     std::string style,
-    const synthesis::PhraseRenderOptions& renderOptions) const {
+    const synthesis::PhraseRenderOptions& renderOptions,
+    std::optional<synthesis::PhraseFrameRange> ownedFrames) const {
   const auto projectValidation = project.validate();
   if (!projectValidation) return core::Result<RenderSnapshot>{projectValidation.error()};
+  if (renderOptions.renderer.raw.performance || renderOptions.renderer.raw.performanceVowelFrame || renderOptions.renderer.psola.performance || renderOptions.renderer.psola.sourceMap ||
+      renderOptions.renderer.spectral.performance || renderOptions.renderer.spectral.sourceMap ||
+      renderOptions.renderer.stretch.performance || renderOptions.renderer.stretch.sourceMap) {
+    return core::failure<RenderSnapshot>(core::ErrorCode::Unsupported,
+        "Externally compiled performance cannot bypass snapshot-owned performance identity");
+  }
   const auto bankValidation = voicebankValue.validate();
   if (!bankValidation) return core::Result<RenderSnapshot>{bankValidation.error()};
   const auto* track = project.findVocalTrack(trackId);
@@ -340,6 +560,8 @@ core::Result<RenderSnapshot> RenderSnapshotFactory::create(
                                          trackId.toString());
   }
   const auto* region = track->findRegion(segment.regionId);
+  if (track->proceduralRecipe) return core::failure<RenderSnapshot>(core::ErrorCode::Conflict,
+      "A saved procedural singer cannot render through a sample-bank snapshot");
   if (region == nullptr) {
     return core::failure<RenderSnapshot>(core::ErrorCode::NotFound,
                                          "Render snapshot region was not found",
@@ -368,7 +590,25 @@ core::Result<RenderSnapshot> RenderSnapshotFactory::create(
     return core::failure<RenderSnapshot>(core::ErrorCode::InvalidArgument,
                                          "Render snapshot sample rate is unsupported");
   }
-  if (style.empty()) style = voicebankValue.styles.front();
+  if (ownedFrames) {
+    const auto valid = synthesis::PhraseOutputContract{sampleRate, *ownedFrames, *ownedFrames}.validate();
+    if (!valid) return core::Result<RenderSnapshot>{valid.error()};
+  }
+  if (style.empty()) {
+    const auto validStyle = track->styleSelection.validate();
+    if (!validStyle) return core::Result<RenderSnapshot>{validStyle.error()};
+    if (!track->styleSelection.styleId.empty()) {
+      style = track->styleSelection.styleId;
+    } else if (track->styleSelection.origin == domain::VoiceStyleOrigin::LegacyNeedsExactBankResolution) {
+      return core::failure<RenderSnapshot>(core::ErrorCode::Conflict,
+          "Legacy style requires exact-bank resolution before rendering");
+    } else if (voicebankValue.styles.size() == 1U) {
+      style = voicebankValue.styles.front();
+    } else {
+      return core::failure<RenderSnapshot>(core::ErrorCode::Conflict,
+          "Voicebank has multiple styles; select a style before rendering");
+    }
+  }
   if (std::find(voicebankValue.styles.begin(), voicebankValue.styles.end(), style) ==
       voicebankValue.styles.end()) {
     return core::failure<RenderSnapshot>(core::ErrorCode::NotFound,
@@ -388,43 +628,69 @@ core::Result<RenderSnapshot> RenderSnapshotFactory::create(
     return core::failure<RenderSnapshot>(core::ErrorCode::InvariantViolation,
                                          "Extracted phrase region is missing");
   }
-  if (voicebankValue.language != domain::Language::Japanese) {
-    return core::failure<RenderSnapshot>(
-        core::ErrorCode::Unsupported,
-        "Phase 4.1 render identity currently supports Japanese voicebanks only");
+  const auto pronunciation = phonemizer::resolvePronunciationForLanguage(*region, voicebankValue.language);
+  if (!pronunciation) return core::Result<RenderSnapshot>{pronunciation.error()};
+  auto phonemes = pronunciation.value().pronunciation;
+  const std::unordered_set<domain::NoteId> phraseNotes(segment.noteIds.begin(), segment.noteIds.end());
+  const auto completeRelationship = [&](domain::PhonemeKey key, std::size_t count, bool seam) {
+    const auto start = std::find_if(phonemes.tokens.begin(), phonemes.tokens.end(), [&](const auto& token) { return token.key == key; });
+    if (start == phonemes.tokens.end()) return false;
+    if (seam) return start == phonemes.tokens.begin() || phraseNotes.contains(std::prev(start)->key.noteId);
+    if (count == 0U || count > static_cast<std::size_t>(phonemes.tokens.end() - start)) return false;
+    return std::all_of(start, start + static_cast<std::ptrdiff_t>(count),
+        [&](const auto& token) { return phraseNotes.contains(token.key.noteId); });
+  };
+  for (const auto& edit : phraseRegion->unitSelectionOverrides) {
+    if (!edit.unresolved && !completeRelationship(edit.startKey, edit.tokenCount, false)) {
+      return core::failure<RenderSnapshot>(core::ErrorCode::Conflict,
+          "Phrase boundary splits an active unit span", edit.startKey.toString());
+    }
   }
-
-  phonemizer::JapaneseKanaPhonemizer japanese;
-  auto phonemes = japanese.phonemize(*phraseRegion);
+  for (const auto& edit : phraseRegion->seamOverrides) {
+    if (!edit.unresolved && !completeRelationship(edit.incomingStartKey, 1U, true)) {
+      return core::failure<RenderSnapshot>(core::ErrorCode::Conflict,
+          "Phrase boundary splits an active seam relationship", edit.incomingStartKey.toString());
+    }
+  }
+  std::vector<const domain::Note*> orderedNotes;
+  for (const auto& note : region->notes) orderedNotes.push_back(&note);
+  std::sort(orderedNotes.begin(), orderedNotes.end(), [](const auto* a, const auto* b) {
+    return a->startTick == b->startTick ? a->id < b->id : a->startTick < b->startTick;
+  });
+  for (std::size_t i = 1U; i < orderedNotes.size(); ++i) {
+    if (domain::continuesSharedLyric(*orderedNotes[i - 1U], *orderedNotes[i]) &&
+        phraseNotes.contains(orderedNotes[i - 1U]->id) != phraseNotes.contains(orderedNotes[i]->id)) {
+      return core::failure<RenderSnapshot>(core::ErrorCode::Conflict,
+          "Phrase boundary splits shared-lyric vowel continuation", orderedNotes[i]->id.toString());
+    }
+  }
+  std::erase_if(phonemes.tokens, [&](const auto& token) { return !phraseNotes.contains(token.key.noteId); });
+  std::erase_if(phonemes.warnings, [&](const auto& warning) { return !phraseNotes.contains(warning.noteId); });
   if (phonemes.tokens.empty()) {
     return core::failure<RenderSnapshot>(core::ErrorCode::NotFound,
                                          "Phonemizer produced no renderable tokens");
   }
-  synthesis::DeterministicUnitSelector selector;
-  auto plan = selector.select(voicebankValue, *phraseRegion, phonemes.tokens,
-                              style, phraseRegion->unitSelectionOverrides);
-  if (!plan) return core::Result<RenderSnapshot>{plan.error()};
-
   struct FrozenAsset final {
     std::string sha256;
     std::shared_ptr<const voicebank::AudioBuffer> audio;
   };
   std::map<std::filesystem::path, FrozenAsset> frozenByPath;
+  struct FrozenAlignment {
+    std::optional<synthesis::SourcePhonemeAlignment> value;
+    std::string sha256;
+  };
+  std::map<std::string, FrozenAlignment> alignments;
+  std::uint64_t alignmentBytes = 0U;
   std::uint64_t frozenEncodedBytes = 0U;
   std::uint64_t frozenDecodedBytes = 0U;
   std::vector<SelectedUnitIdentity> selectedUnits;
   std::vector<synthesis::FrozenUnitAudio> frozenAudio;
-  selectedUnits.reserve(plan.value().entries.size());
-  frozenAudio.reserve(plan.value().entries.size());
-  for (const auto& entry : plan.value().entries) {
-    const auto* unit = voicebankValue.findUnit(entry.unitId);
-    if (unit == nullptr) {
-      return core::failure<RenderSnapshot>(core::ErrorCode::NotFound,
-                                           "Selected unit is absent from voicebank",
-                                           entry.unitId);
-    }
+  std::map<std::string, synthesis::FrozenUnitAudio> frozenByUnit;
+  const auto freezeUnit = [&](const voicebank::Unit& value) -> core::Result<void> {
+    const auto* unit = &value;
+    if (frozenByUnit.contains(unit->id)) return {};
     auto resolved = voicebank::resolveBankAsset(bankRoot, unit->audioPath);
-    if (!resolved) return core::Result<RenderSnapshot>{resolved.error()};
+    if (!resolved) return core::Result<void>{resolved.error()};
     auto asset = frozenByPath.find(resolved.value());
     if (asset == frozenByPath.end()) {
       const auto remainingEncoded =
@@ -433,14 +699,14 @@ core::Result<RenderSnapshot> RenderSnapshotFactory::create(
           resolved.value(),
           std::min<std::uint64_t>(voicebank::kMaximumSupportedWavBytes,
                                   remainingEncoded));
-      if (!bytes) return core::Result<RenderSnapshot>{bytes.error()};
+      if (!bytes) return core::Result<void>{bytes.error()};
       auto decoded = voicebank::readWav(bytes.value(), resolved.value().string());
-      if (!decoded) return core::Result<RenderSnapshot>{decoded.error()};
+      if (!decoded) return core::Result<void>{decoded.error()};
       const auto decodedBytes =
           static_cast<std::uint64_t>(decoded.value().interleaved.size()) *
           static_cast<std::uint64_t>(sizeof(float));
       if (decodedBytes > kMaximumFrozenPhraseDecodedBytes - frozenDecodedBytes) {
-        return core::failure<RenderSnapshot>(
+        return core::failure<void>(
             core::ErrorCode::Unsupported,
             "Selected Phrase audio exceeds the frozen decode budget",
             resolved.value().string());
@@ -455,39 +721,133 @@ core::Result<RenderSnapshot> RenderSnapshotFactory::create(
                   std::move(decoded).value()),
           }).first;
     }
-    selectedUnits.push_back(SelectedUnitIdentity{
-        .unitId = entry.unitId,
-        .audioSha256 = asset->second.sha256,
-    });
-    frozenAudio.push_back(synthesis::FrozenUnitAudio{
-        .unitId = entry.unitId,
+    auto alignment = alignments.find(unit->id);
+    if (alignment == alignments.end()) {
+      FrozenAlignment frozen;
+      const auto relative = std::filesystem::path{"alignments"} / (core::sha256Hex(unit->id) + ".json");
+      bool present = true;
+      auto path = bankRoot;
+      for (const auto& component : relative) {
+        path /= component;
+        std::error_code error;
+        const auto status = std::filesystem::symlink_status(path, error);
+        if (error == std::errc::no_such_file_or_directory || (!error && !std::filesystem::exists(status))) { present = false; break; }
+        if (error) return core::failure<void>(core::ErrorCode::IoError, "Cannot inspect source alignment", path.string());
+        if (std::filesystem::is_symlink(status)) return core::failure<void>(core::ErrorCode::Conflict, "Source alignment paths may not contain symbolic links", path.string());
+      }
+      if (present) {
+        const auto resolvedAlignment = voicebank::resolveBankAsset(bankRoot, relative);
+        if (!resolvedAlignment) return core::Result<void>{resolvedAlignment.error()};
+        constexpr std::uint64_t maximumAlignmentBytes = 4U * 1024U * 1024U;
+        const auto json = core::readTextFileLimited(resolvedAlignment.value(),
+            std::min<std::uint64_t>(512U * 1024U, maximumAlignmentBytes - alignmentBytes));
+        if (!json) return core::Result<void>{json.error()};
+        const auto decodedAlignment = synthesis::decodeSourcePhonemeAlignment(json.value(), *unit,
+            asset->second.sha256, static_cast<time::SampleFrame>(asset->second.audio->frameCount()));
+        if (!decodedAlignment) return core::Result<void>{decodedAlignment.error()};
+        alignmentBytes += static_cast<std::uint64_t>(json.value().size());
+        frozen.value = decodedAlignment.value();
+        frozen.sha256 = core::sha256Hex(json.value());
+      }
+      alignment = alignments.emplace(unit->id, std::move(frozen)).first;
+    }
+    frozenByUnit.emplace(unit->id, synthesis::FrozenUnitAudio{
+        .unitId = unit->id,
         .audio = asset->second.audio,
+        .sourceAlignment = alignment->second.value,
+        .verifiedAudioSha256 = asset->second.sha256,
     });
+    return {};
+  };
+
+  // Probe only phone-matching units whose edited span needs extra landmarks.
+  // Reuse the same bounded frozen assets during final selection and rendering.
+  std::vector<synthesis::SourceAlignmentEvidence> evidence;
+  for (const auto& unit : voicebankValue.units) {
+    if (!unit.enabled || unit.style != style || unit.phones.empty() || unit.phones.size() > phonemes.tokens.size()) continue;
+    bool needsAlignment = false;
+    for (std::size_t start = 0; start <= phonemes.tokens.size() - unit.phones.size(); ++start) {
+      const auto covered = std::span<const domain::PhonemeToken>{phonemes.tokens}.subspan(start, unit.phones.size());
+      if (synthesis::supportsExplicitPhonemeTiming(covered) && !synthesis::hasMultipleNuclei(covered)) continue;
+      if (std::equal(unit.phones.begin(), unit.phones.end(), covered.begin(),
+          [](const auto& phone, const auto& token) { return phone == token.symbol; })) {
+        needsAlignment = true;
+        break;
+      }
+    }
+    if (!needsAlignment) continue;
+    const auto sidecar = bankRoot / "alignments" / (core::sha256Hex(unit.id) + ".json");
+    std::error_code probeError;
+    const auto sidecarStatus = std::filesystem::symlink_status(sidecar, probeError);
+    if (probeError == std::errc::no_such_file_or_directory ||
+        (!probeError && !std::filesystem::exists(sidecarStatus))) continue;
+    if (probeError) return core::failure<RenderSnapshot>(core::ErrorCode::IoError,
+        "Cannot inspect candidate source alignment", sidecar.string());
+    const auto frozen = freezeUnit(unit);
+    if (!frozen) return core::Result<RenderSnapshot>{frozen.error()};
+    const auto& resource = frozenByUnit.at(unit.id);
+    if (resource.sourceAlignment) evidence.push_back({&*resource.sourceAlignment,
+        resource.verifiedAudioSha256, static_cast<time::SampleFrame>(resource.audio->frameCount())});
+  }
+  synthesis::DeterministicUnitSelector selector;
+  auto plan = selector.select(voicebankValue, *phraseRegion, phonemes.tokens,
+                              style, phraseRegion->unitSelectionOverrides, evidence, true);
+  if (!plan) return core::Result<RenderSnapshot>{plan.error()};
+  selectedUnits.reserve(plan.value().entries.size());
+  frozenAudio.reserve(plan.value().entries.size());
+  for (const auto& entry : plan.value().entries) {
+    const auto* unit = voicebankValue.findUnit(entry.unitId);
+    if (!unit) return core::failure<RenderSnapshot>(core::ErrorCode::NotFound, "Selected unit is absent from voicebank", entry.unitId);
+    const auto frozen = freezeUnit(*unit);
+    if (!frozen) return core::Result<RenderSnapshot>{frozen.error()};
+    const auto& resource = frozenByUnit.at(entry.unitId);
+    selectedUnits.push_back({entry.unitId, resource.verifiedAudioSha256, alignments.at(entry.unitId).sha256});
+    frozenAudio.push_back(resource);
   }
 
+  std::shared_ptr<const synthesis::CompiledScorePerformance> compiledPerformance;
+  const bool needsPerformance = std::any_of(plan.value().entries.begin(), plan.value().entries.end(),
+      [&](const auto& entry) {
+        const auto renderer = synthesis::resolveRequestedRenderer(*voicebankValue.findUnit(entry.unitId),
+            renderOptions.renderer.policy, entry.renderer);
+        return renderer == voicebank::RendererHint::Raw || renderer == voicebank::RendererHint::ClassicPsola || renderer == voicebank::RendererHint::SpectralClassic ||
+            renderer == voicebank::RendererHint::Stretch;
+      });
+  if (needsPerformance) {
+    const auto compiled = synthesis::compileScorePerformance(phraseProject.value(), *phraseRegion, sampleRate, phonemes.tokens);
+    if (!compiled) return core::Result<RenderSnapshot>{compiled.error()};
+    compiledPerformance = std::make_shared<const synthesis::CompiledScorePerformance>(compiled.value());
+  }
   auto identity = buildIdentity(phraseProject.value(), voicebankValue,
                                 plan.value(), selectedUnits, quality,
-                                sampleRate, style, renderOptions);
+                                sampleRate, style, renderOptions, ownedFrames);
   if (!identity) return core::Result<RenderSnapshot>{identity.error()};
 
   return RenderSnapshot{
       .revision = revision,
       .quality = quality,
       .renderAbiId = std::string{build::kRenderAbiId},
-      .contentHash = std::move(identity).value(),
+      .contentHash = core::sha256Hex(identity.value() + pronunciation.value().identity.resourceHash +
+                                     phonemizer::pronunciationSequenceHash(phonemes.tokens)),
       .segment = segment,
       .trackId = trackId,
+      .sourceProjectId = project.id(),
       .project = std::make_shared<const domain::Project>(
           std::move(phraseProject).value()),
-      .voicebank = std::make_shared<const voicebank::Manifest>(voicebankValue),
       .phonemes = std::make_shared<const phonemizer::Result>(std::move(phonemes)),
-      .unitPlan = std::make_shared<const synthesis::UnitPlan>(std::move(plan).value()),
-      .selectedUnits = std::move(selectedUnits),
-      .frozenAudio = std::move(frozenAudio),
-      .renderOptions = renderOptions,
-      .bankRoot = std::move(bankRoot),
+      .resource = synthesis::SampleSingerResource{
+          .voicebank = std::make_shared<const voicebank::Manifest>(voicebankValue),
+          .unitPlan = std::make_shared<const synthesis::UnitPlan>(std::move(plan).value()),
+          .selectedUnits = std::move(selectedUnits),
+          .frozenAudio = std::move(frozenAudio),
+          .bankRoot = std::move(bankRoot),
+          .renderOptions = renderOptions,
+      },
       .sampleRate = sampleRate,
       .style = std::move(style),
+      .pronunciationIdentity = pronunciation.value().identity,
+      .compiledPerformance = std::move(compiledPerformance),
+      .ownedFrames = ownedFrames,
   };
 }
 

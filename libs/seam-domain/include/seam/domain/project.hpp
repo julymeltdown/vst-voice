@@ -2,10 +2,13 @@
 
 #include "seam/core/result.hpp"
 #include "seam/domain/ids.hpp"
+#include "seam/domain/dynamics_automation.hpp"
 #include "seam/domain/note.hpp"
 #include "seam/domain/phoneme.hpp"
+#include "seam/domain/performance_intent.hpp"
 #include "seam/domain/render_controls.hpp"
 #include "seam/domain/routing.hpp"
+#include "seam/domain/voice_style_selection.hpp"
 #include "seam/time/meter_map.hpp"
 #include "seam/time/tempo_map.hpp"
 
@@ -21,7 +24,8 @@ namespace seam::domain {
 
 enum class CharacterDisplayMode { Full, Minimal, Off };
 
-enum class TechnicalLane { Phoneme, Unit, Seam, Pitch };
+enum class TechnicalLane { Phoneme, Unit, Seam, Pitch, Dynamics };
+inline constexpr std::size_t kTechnicalLaneCount{5U};
 enum class TechnicalLaneMode { Auto, Collapsed, Preview, Expanded };
 
 struct TechnicalLanePresentation final {
@@ -35,7 +39,7 @@ struct TechnicalLanePresentation final {
 struct ProjectSettings final {
   double sampleRate{48000.0};
   CharacterDisplayMode characterDisplay{CharacterDisplayMode::Minimal};
-  std::array<TechnicalLanePresentation, 4U> technicalLanes{};
+  std::array<TechnicalLanePresentation, kTechnicalLaneCount> technicalLanes{};
   bool snapEnabled{true};
   time::Tick snapGrid{time::Tick{time::kDefaultPpq / 4}};
   // Host position at this musical tick maps to source frame zero. This keeps
@@ -75,6 +79,8 @@ struct VocalRegion final {
   std::vector<UnitSelectionOverride> unitSelectionOverrides;
   std::vector<SeamOverride> seamOverrides;
   PitchAutomation pitchAutomation;
+  DynamicsAutomation dynamicsAutomation;
+  RegionPerformanceState performance;
 
   [[nodiscard]] Note* findNote(NoteId noteId) noexcept;
   [[nodiscard]] const Note* findNote(NoteId noteId) const noexcept;
@@ -94,6 +100,14 @@ struct VocalRegion final {
   friend bool operator==(const VocalRegion&, const VocalRegion&) = default;
 };
 
+struct ProceduralRecipeReference final {
+  SingerResourceIdentity resource;
+  std::string path;
+  std::string style{"neutral"};
+  [[nodiscard]] core::Result<void> validate() const;
+  friend bool operator==(const ProceduralRecipeReference&, const ProceduralRecipeReference&) = default;
+};
+
 struct VocalTrack final {
   TrackId id;
   std::string name;
@@ -105,6 +119,8 @@ struct VocalTrack final {
   bool muted{false};
   bool solo{false};
   TrackOutputRoute outputRoute{};
+  VoiceStyleSelection styleSelection;
+  std::optional<ProceduralRecipeReference> proceduralRecipe{};
 
   [[nodiscard]] VocalRegion* findRegion(RegionId regionId) noexcept;
   [[nodiscard]] const VocalRegion* findRegion(RegionId regionId) const noexcept;

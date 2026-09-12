@@ -90,7 +90,7 @@ TEST_CASE("voicebank_relink_preserves_requested_identity_and_requires_exact_matc
                                      fixture.trackId);
   CHECK(missing.status == seam::voicebank::VoicebankResolveStatus::Missing);
   auto resolved = relink.relinkTrack(
-      fixture.document.session().project(), fixture.trackId,
+      fixture.document, fixture.trackId,
       {.path = exactRoot, .kind = seam::voicebank::VoicebankRootKind::Development});
   CHECK(resolved);
   CHECK(resolved.value().resolved());

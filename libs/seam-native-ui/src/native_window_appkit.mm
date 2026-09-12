@@ -1,4 +1,5 @@
 #include "seam/native_ui/native_window.hpp"
+#include "seam/native_ui/appkit_shortcut_key.hpp"
 
 #if defined(SEAM_NATIVE_APPKIT)
 
@@ -146,6 +147,7 @@ NativeKey nativeKey(NSEvent* event) noexcept {
   NSString* characters = event.charactersIgnoringModifiers;
   if (characters.length == 0U) return NativeKey::Unknown;
   switch ([[characters uppercaseString] characterAtIndex:0U]) {
+    case 'A': return NativeKey::A;
     case 'Z': return NativeKey::Z;
     case 'Y': return NativeKey::Y;
     case 'C': return NativeKey::C;
@@ -165,7 +167,7 @@ NativeKey nativeKey(NSEvent* event) noexcept {
     case '+':
     case '=': return NativeKey::Plus;
     case '-': return NativeKey::Minus;
-    default: return NativeKey::Unknown;
+    default: return appKitNonLatinShortcutKey(event.keyCode, [characters characterAtIndex:0U]);
   }
 }
 
@@ -326,12 +328,15 @@ public:
 
   NSArray* accessibilityChildren() {
     if (client_ == nullptr || view_ == nil || window_ == nil) return @[];
+    const auto* tree = client_->accessibilityTree();
+    if (tree == nullptr) {
+      accessibilitySnapshot_ = nil;
+      return @[];
+    }
     if (accessibilitySnapshot_ != nil &&
         !accessibilitySnapshotDirty_.exchange(false, std::memory_order_acq_rel)) {
       return accessibilitySnapshot_;
     }
-    const auto* tree = client_->accessibilityTree();
-    if (tree == nullptr) return @[];
     std::size_t visibleNotes = 0U;
     for (const auto& node : tree->root().children) {
       if (node.role == SemanticRole::Note) ++visibleNotes;
@@ -392,13 +397,26 @@ public:
       return core::failure(core::ErrorCode::InvalidState,
                            "Accessibility client is unavailable");
     }
+    const bool hadCustomSurface=client_->accessibilityTree()!=nullptr;
     const auto result = client_->dispatchAccessibility(id, action);
+    // Navigation can remove the virtual control that previously held focus.
+    // Restore the real canvas only when that entire custom surface disappears;
+    // ordinary activations may intentionally focus a text editor instead.
+    if (result && action==SemanticAction::Activate) restoreCanvasAfterSurfaceExit(hadCustomSurface);
     if (result && action == SemanticAction::SetFocus && view_ != nil) {
       accessibilitySnapshotDirty_.store(true, std::memory_order_release);
       NSAccessibilityPostNotification(
           view_, NSAccessibilityFocusedUIElementChangedNotification);
     }
     return result;
+  }
+
+  void restoreCanvasAfterSurfaceExit(bool hadCustomSurface) noexcept {
+    if (hadCustomSurface && client_!=nullptr && client_->accessibilityTree()==nullptr &&
+        !textInputActive_ && window_!=nil && window_.visible && view_!=nil && NSApp.modalWindow==nil) {
+      [window_ makeKeyWindow];
+      [window_ makeFirstResponder:view_];
+    }
   }
 
   core::Result<void> setAccessibilityValue(std::string_view id,
@@ -431,9 +449,15 @@ public:
     updateScaleAndSurface();
     if (surface_.pixels().empty()) return;
     RasterCanvas canvas{surface_, scale_, textEngine_.get()};
+    // Consume this frame's announcement before painting. A repaint requested
+    // while polling a worker belongs to the next frame, including completion.
+    const bool announceAccessibility = accessibilityAnnouncementPending_.exchange(
+        false, std::memory_order_acq_rel);
     client_->paint(canvas);
-    if (accessibilityAnnouncementPending_.exchange(
-            false, std::memory_order_acq_rel)) {
+    // Painting may rebuild semantics after an AX reader already consumed the
+    // request-time invalidation. Never retain that pre-paint snapshot.
+    accessibilitySnapshotDirty_.store(true, std::memory_order_release);
+    if (announceAccessibility) {
       NSAccessibilityPostNotification(
           view_, NSAccessibilityValueChangedNotification);
     }
@@ -488,6 +512,7 @@ public:
 
   void pointerDown(NSEvent* event) noexcept {
     if (client_ == nullptr) return;
+    const bool hadCustomSurface=client_->accessibilityTree()!=nullptr;
     const auto point = [view_ convertPoint:event.locationInWindow fromView:nil];
     client_->pointerDown(PointerEvent{
         .position = ui::Point{static_cast<double>(point.x),
@@ -500,6 +525,7 @@ public:
         .modifiers = modifiers(event.modifierFlags),
         .clickCount = static_cast<int>(event.clickCount),
     });
+    restoreCanvasAfterSurfaceExit(hadCustomSurface);
   }
 
   void pointerMove(NSEvent* event, bool dragging) noexcept {
@@ -548,15 +574,26 @@ public:
 
   void keyDown(NSEvent* event, NSView* view) noexcept {
     if (textInputActive_) {
+      if ((event.modifierFlags & NSEventModifierFlagCommand) != 0U) {
+        switch (nativeKey(event)) {
+          case NativeKey::A: command(@selector(selectAll:)); return;
+          case NativeKey::V: command(@selector(paste:)); return;
+          case NativeKey::C: command(@selector(copy:)); return;
+          case NativeKey::X: command(@selector(cut:)); return;
+          default: break;
+        }
+      }
       [view interpretKeyEvents:@[ event ]];
       return;
     }
     if (client_ != nullptr) {
+      const bool hadCustomSurface=client_->accessibilityTree()!=nullptr;
       client_->keyDown(KeyEvent{
           .key = nativeKey(event),
           .modifiers = modifiers(event.modifierFlags),
           .repeat = event.isARepeat,
       });
+      restoreCanvasAfterSurfaceExit(hadCustomSurface);
     }
   }
 
@@ -618,6 +655,32 @@ public:
 
   void command(SEL selector) noexcept {
     if (!textInputActive_ || client_ == nullptr) return;
+    if (selector == @selector(paste:)) {
+      NSString* incoming = [[NSPasteboard generalPasteboard] stringForType:NSPasteboardTypeString];
+      if (incoming == nil) return;
+      constexpr NSUInteger maximumUnits = 4U * 1024U * 1024U;
+      const auto replace = replacementRange(NSMakeRange(NSNotFound, 0U));
+      const auto retained = textStorage_.length - replace.length;
+      if (retained > maximumUnits || incoming.length > maximumUnits - retained) { NSBeep(); return; }
+      insertText(incoming, replace); // Uses the same IME/selection replacement and Unicode publication path.
+      return;
+    }
+    if (selector == @selector(copy:) || selector == @selector(cut:)) {
+      if (selectedRange_.location == NSNotFound || selectedRange_.length == 0U) return;
+      const auto selection = replacementRange(selectedRange_);
+      NSString* selected = [textStorage_ substringWithRange:selection];
+      NSPasteboard* pasteboard = [NSPasteboard generalPasteboard];
+      [pasteboard clearContents];
+      if (![pasteboard setString:selected forType:NSPasteboardTypeString]) { NSBeep(); return; }
+      if (selector == @selector(cut:)) insertText(@"", selection);
+      return;
+    }
+    if (selector == @selector(selectAll:)) {
+      selectedRange_ = NSMakeRange(0U, textStorage_.length);
+      markedRange_ = NSMakeRange(NSNotFound, 0U);
+      publishComposition();
+      return;
+    }
     if (selector == @selector(insertTab:) ||
         selector == @selector(insertBacktab:)) {
       client_->keyDown(KeyEvent{
@@ -633,14 +696,16 @@ public:
         selector == @selector(insertNewlineIgnoringFieldEditor:)) {
       auto decoded = utf32FromString(textStorage_);
       if (decoded) {
-        client_->textCommit(std::move(decoded.value()));
+        // End this native field before the callback: a multi-stage editor may
+        // synchronously open its next field from textCommit.
         endTextInput();
+        client_->textCommit(std::move(decoded.value()));
       }
       return;
     }
     if (selector == @selector(cancelOperation:)) {
-      client_->textCancel();
       endTextInput();
+      client_->textCancel();
       return;
     }
     if (selector == @selector(deleteBackward:)) {
@@ -652,16 +717,21 @@ public:
       return;
     }
     if (selector == @selector(moveLeft:)) {
-      if (selectedRange_.location != NSNotFound && selectedRange_.location > 0U) {
-        selectedRange_ = NSMakeRange(selectedRange_.location - 1U, 0U);
+      if (selectedRange_.location != NSNotFound) {
+        auto destination = selectedRange_.location;
+        if (selectedRange_.length == 0U && destination > 0U)
+          destination = [textStorage_ rangeOfComposedCharacterSequenceAtIndex:destination - 1U].location;
+        selectedRange_ = NSMakeRange(destination, 0U);
       }
       publishComposition();
       return;
     }
     if (selector == @selector(moveRight:)) {
-      if (selectedRange_.location != NSNotFound &&
-          selectedRange_.location < textStorage_.length) {
-        selectedRange_ = NSMakeRange(selectedRange_.location + 1U, 0U);
+      if (selectedRange_.location != NSNotFound) {
+        auto destination = NSMaxRange(selectedRange_);
+        if (selectedRange_.length == 0U && destination < textStorage_.length)
+          destination = NSMaxRange([textStorage_ rangeOfComposedCharacterSequenceAtIndex:destination]);
+        selectedRange_ = NSMakeRange(destination, 0U);
       }
       publishComposition();
     }
@@ -933,7 +1003,7 @@ std::unique_ptr<INativeWindow> createNativeWindow() {
 }
 - (NSString*)accessibilityIdentifier { return _identifier; }
 - (id)accessibilityTitle { return _title; }
-- (id)accessibilityValue { return _value.length == 0U ? nil : _value; }
+- (id)accessibilityValue { return _editable || _value.length != 0U ? _value : nil; }
 - (void)setAccessibilityValue:(id)value {
   [self seamApplyAccessibilityValue:value];
 }
@@ -1180,6 +1250,16 @@ std::unique_ptr<INativeWindow> createNativeWindow() {
 }
 - (void)keyDown:(NSEvent*)event {
   if (_owner != nullptr) _owner->keyDown(event, self);
+}
+- (void)paste:(id)sender { (void)sender; if (_owner != nullptr) _owner->command(@selector(paste:)); }
+- (void)copy:(id)sender { (void)sender; if (_owner != nullptr) _owner->command(@selector(copy:)); }
+- (void)cut:(id)sender { (void)sender; if (_owner != nullptr) _owner->command(@selector(cut:)); }
+- (void)selectAll:(id)sender { (void)sender; if (_owner != nullptr) _owner->command(@selector(selectAll:)); }
+- (BOOL)validateUserInterfaceItem:(id<NSValidatedUserInterfaceItem>)item {
+  const auto action = item.action;
+  if (action == @selector(paste:) || action == @selector(copy:) || action == @selector(cut:) || action == @selector(selectAll:))
+    return _owner != nullptr && _owner->textInputActive();
+  return YES;
 }
 
 - (BOOL)hasMarkedText {

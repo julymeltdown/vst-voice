@@ -6,6 +6,7 @@ import unittest
 
 from tests.production.public_release_archive_fixtures import archived_candidate
 from tests.production.public_release_fixtures import acceptance_contract, candidate
+from tests.production.public_release_replay_fixtures import public_replay_fixture
 
 
 class PublicReleaseAuditTests(unittest.TestCase):
@@ -13,10 +14,8 @@ class PublicReleaseAuditTests(unittest.TestCase):
         from tools.public_release.release_audit import audit_release
 
         contract = acceptance_contract()
-        with tempfile.TemporaryDirectory() as directory:
+        with tempfile.TemporaryDirectory() as directory, public_replay_fixture(Path(directory)) as (value, manifest, contract):
             root = Path(directory)
-            value, manifest = archived_candidate(root, candidate(contract))
-
             result = audit_release(
                 value,
                 manifest,

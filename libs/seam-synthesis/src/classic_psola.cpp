@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <numbers>
 #include <span>
 #include <vector>
@@ -86,6 +87,12 @@ core::Result<RenderedUnit> ClassicPsolaRenderer::render(
   }
   const auto curveValidation = parameters.pitchCurve.validate();
   if (!curveValidation) return core::Result<RenderedUnit>{curveValidation.error()};
+  if (parameters.performance && (parameters.performance->sampleRate() != outputSampleRate ||
+      !parameters.pitchCurve.points().empty() ||
+      parameters.performanceStartFrame > std::numeric_limits<time::SampleFrame>::max() - outputFrames)) {
+    return core::failure<RenderedUnit>(core::ErrorCode::InvalidArgument,
+        "Compiled PSOLA performance requires matching rate, bounded origin and no duplicate pitch curve", unit.id);
+  }
   const auto markerValidation = unit.markers.validate(
       static_cast<time::SampleFrame>(source.frameCount()));
   if (!markerValidation) return core::Result<RenderedUnit>{markerValidation.error()};
@@ -97,6 +104,17 @@ core::Result<RenderedUnit> ClassicPsolaRenderer::render(
                                        unit.id);
   }
 
+  if (parameters.sourceMap) {
+    const auto validMap = parameters.sourceMap->validate(static_cast<time::SampleFrame>(source.frameCount()));
+    if (!validMap) return core::Result<RenderedUnit>{validMap.error()};
+    const auto& knots = parameters.sourceMap->knots;
+    if (!parameters.performance || knots.front().sourceFrame != unit.markers.audioOffset ||
+        knots.back().sourceFrame != unit.markers.audioEnd ||
+        knots.front().targetFrame != parameters.performanceStartFrame ||
+        knots.back().targetFrame - knots.front().targetFrame != outputFrames) {
+      return core::failure<RenderedUnit>(core::ErrorCode::Conflict, "PSOLA source map does not match output extent", unit.id);
+    }
+  }
   const auto mono = source.monoMix();
   const auto sampleRateRatio = static_cast<double>(outputSampleRate) /
                                static_cast<double>(source.sampleRate);
@@ -109,20 +127,35 @@ core::Result<RenderedUnit> ClassicPsolaRenderer::render(
   const auto loopEnd = unit.markers.loopEnd.value_or(releaseStart);
   const auto audioEnd = unit.markers.audioEnd;
 
-  const auto preFrames = std::clamp<time::SampleFrame>(
+  auto preFrames = std::clamp<time::SampleFrame>(
       static_cast<time::SampleFrame>(std::llround(
           static_cast<double>(stableStart - offset) * sampleRateRatio)),
       0, outputFrames);
-  const auto releaseFrames = std::clamp<time::SampleFrame>(
+  auto releaseFrames = std::clamp<time::SampleFrame>(
       static_cast<time::SampleFrame>(std::llround(
           static_cast<double>(audioEnd - releaseStart) * sampleRateRatio)),
       0, outputFrames);
-  const auto releaseOutputStart = std::max(preFrames, outputFrames - releaseFrames);
-  const auto vowelOnsetOffset = std::clamp<time::SampleFrame>(
+  auto releaseOutputStart = std::max(preFrames, outputFrames - releaseFrames);
+  auto vowelOnsetOffset = std::clamp<time::SampleFrame>(
       static_cast<time::SampleFrame>(std::llround(
           static_cast<double>(unit.markers.vowelOnset - offset) * sampleRateRatio)),
       0, outputFrames - 1);
+  if (parameters.sourceMap) {
+    const auto mapped = [&](time::SampleFrame frame) {
+      return static_cast<time::SampleFrame>(std::llround(parameters.sourceMap->targetAt(static_cast<double>(frame)))) - parameters.performanceStartFrame;
+    };
+    preFrames = std::clamp<time::SampleFrame>(mapped(stableStart), 0, outputFrames);
+    releaseOutputStart = std::clamp<time::SampleFrame>(mapped(releaseStart), preFrames, outputFrames);
+    releaseFrames = outputFrames - releaseOutputStart;
+    vowelOnsetOffset = std::clamp<time::SampleFrame>(mapped(unit.markers.vowelOnset), 0, outputFrames - 1);
+  }
 
+  if (parameters.performance && unit.phones.size() == 1U &&
+      !parameters.performance->at(parameters.performanceStartFrame + vowelOnsetOffset).reattack) {
+    // A compatible continuation enters the sustained vowel, not its recorded
+    // attack. Keep the requested vowel landmark so phrase placement is stable.
+    preFrames = 0;
+  }
   RenderedUnit result;
   result.unitId = unit.id;
   result.vowelOnsetOffset = vowelOnsetOffset;
@@ -137,6 +170,11 @@ core::Result<RenderedUnit> ClassicPsolaRenderer::render(
                                          unit.id);
     }
     double sourcePosition = static_cast<double>(offset);
+    if (parameters.sourceMap) {
+      sourcePosition = parameters.sourceMap->sourceAt(static_cast<double>(parameters.performanceStartFrame + output));
+      result.samples[static_cast<std::size_t>(output)] = interpolate(mono, std::min(sourcePosition, static_cast<double>(audioEnd - 1)));
+      continue;
+    }
     if (output < preFrames) {
       sourcePosition = static_cast<double>(offset) +
           static_cast<double>(output) * sourcePerOutput;
@@ -195,7 +233,18 @@ core::Result<RenderedUnit> ClassicPsolaRenderer::render(
                                          "Classic PSOLA render was cancelled",
                                          unit.id);
     }
-    const auto stableIndex = sourceIndex % stableMarks.size();
+    auto stableIndex = sourceIndex % stableMarks.size();
+    if (parameters.sourceMap) {
+      const auto desiredSource = parameters.sourceMap->sourceAt(static_cast<double>(parameters.performanceStartFrame) + outputMark);
+      const auto nextMark = std::lower_bound(stableMarks.begin(), stableMarks.end(), desiredSource,
+          [](const auto& mark, double frame) { return static_cast<double>(mark.frame) < frame; });
+      if (nextMark == stableMarks.end()) stableIndex = stableMarks.size() - 1U;
+      else {
+        stableIndex = static_cast<std::size_t>(nextMark - stableMarks.begin());
+        if (stableIndex > 0U && desiredSource - static_cast<double>(stableMarks[stableIndex - 1U].frame) <
+            static_cast<double>(nextMark->frame) - desiredSource) --stableIndex;
+      }
+    }
     const auto& sourceMark = stableMarks[stableIndex];
     const auto periodSource = std::clamp(
         localPeriod(stableMarks, stableIndex, sourceMedianPeriod),
@@ -216,6 +265,10 @@ core::Result<RenderedUnit> ClassicPsolaRenderer::render(
           0.5 * (1.0 + std::cos(std::numbers::pi * normalized)));
       const auto sourcePosition = static_cast<double>(sourceMark.frame) +
                                   static_cast<double>(relative) * sourcePerOutput;
+      if (parameters.sourceMap &&
+          (parameters.sourceMap->voicedAtSource(sourcePosition) == false ||
+           parameters.sourceMap->voicedAtSource(parameters.sourceMap->sourceAt(
+               static_cast<double>(parameters.performanceStartFrame + destination))) == false)) continue;
       const auto sample = interpolate(mono, sourcePosition);
       const auto index = static_cast<std::size_t>(destination);
       overlap[index] += sample * window;
@@ -223,8 +276,18 @@ core::Result<RenderedUnit> ClassicPsolaRenderer::render(
     }
 
     const auto cents = parameters.pitchCurve.centsAt(centerOutput);
-    const auto targetHz = midiToHz(static_cast<double>(targetMidi) +
+    auto targetHz = midiToHz(static_cast<double>(targetMidi) +
                                    static_cast<double>(cents) / 100.0);
+    if (parameters.performance) {
+      const auto performance = parameters.performance->at(parameters.performanceStartFrame + centerOutput);
+      const bool unvoicedSource = parameters.sourceMap && parameters.sourceMap->voicedAtSource(
+          parameters.sourceMap->sourceAt(static_cast<double>(parameters.performanceStartFrame + centerOutput))) == false;
+      if (performance.noteId && !performance.scoreFrequencyHz && !unvoicedSource) {
+        return core::failure<RenderedUnit>(core::ErrorCode::Unsupported,
+            "Classic PSOLA needs a voicing-aware path for accepted unvoiced pitch", unit.id);
+      }
+      if (performance.scoreFrequencyHz) targetHz = *performance.scoreFrequencyHz;
+    }
     if (!std::isfinite(targetHz) || targetHz <= 1.0 ||
         targetHz >= static_cast<double>(outputSampleRate) * 0.45) {
       return core::failure<RenderedUnit>(core::ErrorCode::Unsupported,
@@ -268,6 +331,12 @@ core::Result<RenderedUnit> ClassicPsolaRenderer::render(
                         static_cast<float>(fadeFrames + 1U);
     result.samples[index] *= factor;
     result.samples[result.samples.size() - 1U - index] *= factor;
+  }
+  // Apply performance gain after DC removal/fades so unity is transparent and
+  // time-varying gain is not altered by a later whole-unit mean subtraction.
+  if (parameters.performance) {
+    const auto appliedGain = applyCompiledPerformanceGain(result.samples, *parameters.performance, parameters.performanceStartFrame, stopToken);
+    if (!appliedGain) return core::Result<RenderedUnit>{appliedGain.error()};
   }
   return result;
 }

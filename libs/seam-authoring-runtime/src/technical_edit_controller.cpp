@@ -3,9 +3,12 @@
 #include "seam/application/command.hpp"
 #include "seam/application/lyric_commands.hpp"
 #include "seam/application/render_commands.hpp"
-#include "seam/phonemizer/japanese_phonemizer.hpp"
+#include "seam/phonemizer/language_resolver.hpp"
+#include "seam/phonemizer/pronunciation_resolver.hpp"
+#include "seam/synthesis/phoneme_timing_plan.hpp"
 
 #include <algorithm>
+#include <unordered_set>
 #include <cmath>
 #include <iterator>
 #include <memory>
@@ -36,6 +39,54 @@ void TechnicalEditController::notifyEdit() const {
 
 namespace {
 
+core::Result<void> validateProceduralBoundaryEdit(const domain::Project& project,
+    const domain::VocalRegion& region, std::span<const domain::PhonemeToken> tokens, domain::NoteId noteId) {
+  constexpr std::uint32_t rate = 48000U;
+  const auto timing = synthesis::compilePhonemeTimingPlan(project, region, tokens, rate,
+      synthesis::PhonemeTimingPolicy::ProceduralInNote);
+  if (!timing) return core::Result<void>{timing.error()};
+  const auto* note = region.findNote(noteId);
+  if (!note) return core::failure(core::ErrorCode::NotFound, "Procedural timing note is missing");
+  const auto origin = project.tempoMap().sampleFrameAt(region.startTick + note->startTick, rate);
+  const auto noteEnd = project.tempoMap().sampleFrameAt(region.startTick + note->endTick(), rate);
+  std::vector<std::pair<time::SampleFrame, time::SampleFrame>> spans;
+  for (std::size_t i = 0U; i < tokens.size(); ++i) if (tokens[i].key.noteId == noteId) {
+    const auto& anchor = timing.value()[i];
+    const bool onset = tokens[i].role == domain::PhonemeRole::Onset;
+    const auto start = onset ? anchor.explicitStartFrame.value_or(anchor.inferredStartFrame.value_or(-1)) : anchor.nucleusFrame;
+    const auto end = onset && !anchor.endExplicit ? anchor.nucleusFrame : anchor.endFrame;
+    if (start < origin || end > noteEnd || end <= start || (onset && end > anchor.nucleusFrame))
+      return core::failure(core::ErrorCode::Conflict, "Procedural boundary crosses its nucleus or score note, or leaves an empty gesture");
+    spans.emplace_back(start, end);
+  }
+  std::sort(spans.begin(), spans.end());
+  for (std::size_t i = 1U; i < spans.size(); ++i) if (spans[i].first < spans[i - 1U].second)
+    return core::failure(core::ErrorCode::Conflict, "Procedural boundary overlaps another gesture");
+  return core::success();
+}
+
+struct TechnicalReviewPronunciation final {
+  phonemizer::ResolvedPronunciation value;
+  bool diagnosticFallback{false};
+};
+
+core::Result<TechnicalReviewPronunciation> resolveTechnicalReviewPronunciation(
+    const domain::VocalRegion& region) {
+  const auto resolved = phonemizer::resolvePronunciation(region);
+  if (resolved) return core::success(TechnicalReviewPronunciation{resolved.value(), false});
+  if (resolved.error().code != core::ErrorCode::Unsupported ||
+      resolved.error().context != phonemizer::kMixedPronunciationLanguagesContext) {
+    return core::Result<TechnicalReviewPronunciation>{resolved.error()};
+  }
+  // A mixed-language region has no single production pronunciation identity,
+  // so the generic resolver correctly rejects it. Keep a diagnostic sequence
+  // for inspection only; every note remains unavailable for rebinding. No
+  // diagnostic identity may authorize a production edit or render.
+  const auto diagnostic = phonemizer::resolveJapanesePronunciation(region);
+  if (diagnostic) return core::success(TechnicalReviewPronunciation{diagnostic.value(), true});
+  return core::Result<TechnicalReviewPronunciation>{resolved.error()};
+}
+
 core::Result<domain::PitchAutomationPoint> normalizePitchPoint(
     const domain::VocalRegion& region, domain::PitchAutomationPoint point) {
   if (!std::isfinite(point.cents)) {
@@ -61,8 +112,7 @@ core::Result<void> TechnicalEditController::commit(
 phonemizer::Result TechnicalEditController::phonemes() const {
   const auto* current = region();
   if (current == nullptr) return {};
-  phonemizer::JapaneseKanaPhonemizer engine;
-  return engine.phonemize(*current);
+  return phonemizer::inspectPronunciation(*current);
 }
 
 std::optional<TechnicalUnitView> TechnicalEditController::unitView(
@@ -105,6 +155,51 @@ core::Result<void> TechnicalEditController::movePhonemeBoundary(
                          "Phoneme boundary key is unavailable");
   }
 
+  const auto& project = document_->session().project();
+  const auto& tracks = project.vocalTracks();
+  const auto owner = std::find_if(tracks.begin(), tracks.end(), [&](const auto& track) { return track.findRegion(regionId_) != nullptr; });
+  if (owner != tracks.end() && owner->proceduralRecipe) {
+    if ((startBoundary ? token->timing.startOffset : token->timing.endOffset) == std::optional{offset}) return core::success();
+    constexpr std::uint32_t rate = 48000U;
+    const auto timing = synthesis::compilePhonemeTimingPlan(project, *current, generated.tokens, rate,
+        synthesis::PhonemeTimingPolicy::ProceduralInNote);
+    const bool inferred = timing && std::any_of(timing.value().begin(), timing.value().end(), [&](const auto& anchor) {
+      return anchor.key.noteId == key.noteId && anchor.inferredStartFrame.has_value();
+    });
+    if (inferred) {
+      // Freeze the note's dependent automatic boundaries in the same undo step.
+      // Otherwise editing one group would move adjacent automatic vowel ends.
+      const auto* note = current->findNote(key.noteId);
+      const auto origin = project.tempoMap().sampleFrameAt(current->startTick + note->startTick, rate);
+      const auto asOffset = [&](time::SampleFrame frame) {
+        return static_cast<time::Microseconds>(std::llround(static_cast<double>(frame - origin) * 1000000.0 / rate));
+      };
+      auto tokens = generated.tokens;
+      auto command = std::make_unique<application::CompositeCommand>("Edit inferred procedural timing");
+      for (std::size_t i = 0U; i < tokens.size(); ++i) {
+        if (tokens[i].key.noteId != key.noteId) continue;
+        const auto& anchor = timing.value()[i];
+        const auto start = anchor.explicitStartFrame.value_or(anchor.inferredStartFrame.value_or(anchor.nucleusFrame));
+        const auto end = tokens[i].role == domain::PhonemeRole::Onset && !anchor.endExplicit ? anchor.nucleusFrame : anchor.endFrame;
+        domain::PhonemeOverride edit{.key = tokens[i].key};
+        if (const auto* existing = current->findPhonemeOverride(edit.key)) edit = *existing;
+        edit.locked = true;
+        edit.timing = {.startOffset = asOffset(start), .endOffset = asOffset(end)};
+        if (edit.key == key) {
+          if (startBoundary) edit.timing.startOffset = offset;
+          else edit.timing.endOffset = offset;
+        }
+        const auto valid = edit.validate();
+        if (!valid) return valid;
+        tokens[i].timing = edit.timing;
+        command->add(std::make_unique<application::UpsertPhonemeOverrideCommand>(regionId_, std::move(edit)));
+      }
+      const auto checked = validateProceduralBoundaryEdit(project, *current, tokens, key.noteId);
+      if (!checked) return checked;
+      return commit(std::move(command));
+    }
+  }
+
   domain::PhonemeOverride value{};
   value.key = key;
   value.locked = true;
@@ -116,6 +211,13 @@ core::Result<void> TechnicalEditController::movePhonemeBoundary(
       *value.timing.startOffset >= *value.timing.endOffset) {
     return core::failure(core::ErrorCode::InvalidArgument,
                          "Phoneme start boundary must precede its end boundary");
+  }
+  if (owner != tracks.end() && owner->proceduralRecipe) {
+    auto tokens = generated.tokens;
+    const auto index = static_cast<std::size_t>(token - generated.tokens.begin());
+    tokens[index].timing = value.timing;
+    const auto checked = validateProceduralBoundaryEdit(project, *current, tokens, key.noteId);
+    if (!checked) return checked;
   }
   return commit(std::make_unique<application::UpsertPhonemeOverrideCommand>(
       regionId_, std::move(value)));
@@ -144,6 +246,184 @@ core::Result<void> TechnicalEditController::setPhonemeLocked(
   value.locked = locked;
   return commit(std::make_unique<application::UpsertPhonemeOverrideCommand>(
       regionId_, std::move(value)));
+}
+
+core::Result<PhonemeBindingReview> TechnicalEditController::reviewPhonemeBindings() const {
+  const auto* current = region();
+  if (!current) return core::failure<PhonemeBindingReview>(core::ErrorCode::NotFound, "Phoneme review region is missing");
+  if (current->phonemeOverrides.size() > 4096U) {
+    return core::failure<PhonemeBindingReview>(core::ErrorCode::InvalidArgument, "Phoneme review exceeds bounds");
+  }
+  auto baseRegion = *current;
+  baseRegion.phonemeOverrides.clear();
+  const auto base = resolveTechnicalReviewPronunciation(baseRegion);
+  if (!base) return core::Result<PhonemeBindingReview>{base.error()};
+  PhonemeBindingReview review{regionId_, {}, base.value().value.pronunciation.tokens,
+                             base.value().value.pronunciation.warnings};
+  if (base.value().diagnosticFallback) review.targets.clear();
+  std::unordered_set<domain::NoteId> unavailable;
+  for (const auto& warning : review.warnings) unavailable.insert(warning.noteId);
+  for (const auto& note : current->notes) {
+    const auto* lyric = current->findLyric(note.lyricTokenId);
+    if (!lyric || !phonemizer::hasPronunciationService(lyric->language) ||
+        base.value().diagnosticFallback) {
+      if (unavailable.insert(note.id).second) {
+        review.warnings.push_back({.code = phonemizer::WarningCode::ResolutionFailure,
+            .noteId = note.id, .characterIndex = 0U,
+            .message = base.value().diagnosticFallback
+                ? "Mixed-language pronunciation is inspection-only; use one language before rebinding"
+                : "Rebinding requires a supported pronunciation language for this note"});
+      }
+    }
+  }
+  std::erase_if(review.targets, [&](const auto& token) { return unavailable.contains(token.key.noteId); });
+  for (const auto& edit : current->phonemeOverrides) {
+    if (base.value().diagnosticFallback || edit.unresolved || !edit.sourceContextId ||
+        edit.sourceContextId != phonemizer::phonemeEditContextId(base.value().value, edit.key)) {
+      review.retainedEdits.push_back(edit);
+    }
+  }
+  return core::success(std::move(review));
+}
+
+core::Result<void> TechnicalEditController::rebindPhonemeOverride(
+    const domain::PhonemeOverride& reviewed, domain::PhonemeKey target,
+    std::string_view expectedTargetContext) {
+  const auto* current = region();
+  if (!current || expectedTargetContext.size() != 64U) {
+    return core::failure(core::ErrorCode::InvalidArgument, "Phoneme rebinding requires a current target context");
+  }
+  const auto* existing = current->findPhonemeOverride(reviewed.key);
+  if (!existing || *existing != reviewed) {
+    return core::failure(core::ErrorCode::Conflict, "Retained phoneme edit changed since review");
+  }
+  if (target != reviewed.key && current->findPhonemeOverride(target)) {
+    return core::failure(core::ErrorCode::Conflict, "Phoneme rebinding target already has an edit");
+  }
+  const auto review = reviewPhonemeBindings();
+  if (!review) return core::Result<void>{review.error()};
+  const auto chosen = std::find_if(review.value().targets.begin(), review.value().targets.end(),
+      [&](const auto& token) { return token.key == target && token.contextId == expectedTargetContext; });
+  if (chosen == review.value().targets.end()) {
+    return core::failure(core::ErrorCode::Conflict, "Phoneme target context changed since review");
+  }
+  auto rebound = reviewed;
+  rebound.key = target;
+  rebound.unresolved = false;
+  rebound.sourceContextId = std::string{expectedTargetContext};
+  auto command = std::make_unique<application::CompositeCommand>("Rebind retained phoneme edit");
+  if (target != reviewed.key) {
+    command->add(std::make_unique<application::RemovePhonemeOverrideCommand>(regionId_, reviewed.key));
+  }
+  command->add(std::make_unique<application::UpsertPhonemeOverrideCommand>(regionId_, std::move(rebound)));
+  return commit(std::move(command));
+}
+
+core::Result<RetainedRenderEditReview> TechnicalEditController::reviewRetainedRenderEdits() const {
+  const auto* current = region();
+  if (!current) return core::failure<RetainedRenderEditReview>(core::ErrorCode::NotFound, "Render edit review region is missing");
+  if (current->unitSelectionOverrides.size() > 4096U || current->seamOverrides.size() > 4096U) {
+    return core::failure<RetainedRenderEditReview>(core::ErrorCode::InvalidArgument, "Render edit review exceeds bounds");
+  }
+  const auto resolved = resolveTechnicalReviewPronunciation(*current);
+  if (!resolved) return core::Result<RetainedRenderEditReview>{resolved.error()};
+  RetainedRenderEditReview review{regionId_, resolved.value().value.identity, {}, {},
+      resolved.value().value.pronunciation.tokens, resolved.value().value.pronunciation.warnings};
+  for (const auto& edit : current->unitSelectionOverrides) if (edit.unresolved) review.units.push_back(edit);
+  for (const auto& edit : current->seamOverrides) if (edit.unresolved) review.seams.push_back(edit);
+  for (const auto& note : current->notes) {
+    const auto* lyric = current->findLyric(note.lyricTokenId);
+    if (!lyric || !phonemizer::hasPronunciationService(lyric->language) ||
+        resolved.value().diagnosticFallback) {
+      review.warnings.push_back({.code = phonemizer::WarningCode::ResolutionFailure,
+          .noteId = note.id, .characterIndex = 0U,
+          .message = resolved.value().diagnosticFallback
+              ? "Mixed-language pronunciation is inspection-only; use one language before rebinding"
+              : "Render edit rebinding requires a supported pronunciation language"});
+    }
+  }
+  return core::success(std::move(review));
+}
+
+core::Result<void> TechnicalEditController::rebindUnitOverride(
+    const RetainedRenderEditReview& review, const domain::UnitSelectionOverride& reviewed,
+    domain::PhonemeKey target) {
+  const auto fresh = reviewRetainedRenderEdits();
+  if (!fresh) return core::Result<void>{fresh.error()};
+  if (review.regionId != regionId_ || review.pronunciation != fresh.value().pronunciation ||
+      review.tokens != fresh.value().tokens) {
+    return core::failure(core::ErrorCode::Conflict, "Unit target pronunciation changed since review");
+  }
+  if (std::find(review.units.begin(), review.units.end(), reviewed) == review.units.end() ||
+      std::find(fresh.value().units.begin(), fresh.value().units.end(), reviewed) == fresh.value().units.end()) {
+    return core::failure(core::ErrorCode::Conflict, "Retained unit changed since review");
+  }
+  const auto& tokens = fresh.value().tokens;
+  const auto chosen = std::find_if(tokens.begin(), tokens.end(), [&](const auto& token) { return token.key == target; });
+  if (chosen == tokens.end() || reviewed.tokenCount == 0U ||
+      reviewed.tokenCount > static_cast<std::size_t>(tokens.end() - chosen)) {
+    return core::failure(core::ErrorCode::Conflict, "Unit target span is unavailable");
+  }
+  const auto end = chosen + reviewed.tokenCount;
+  for (const auto& warning : fresh.value().warnings) {
+    if (std::any_of(chosen, end, [&](const auto& token) { return token.key.noteId == warning.noteId; })) {
+      return core::failure(core::ErrorCode::Conflict, "Unit target span has unresolved pronunciation");
+    }
+  }
+  for (const auto& other : region()->unitSelectionOverrides) {
+    if (other.startKey == reviewed.startKey) continue;
+    const auto start = std::find_if(tokens.begin(), tokens.end(), [&](const auto& token) { return token.key == other.startKey; });
+    if (start == tokens.end()) continue;
+    const auto count = std::min<std::size_t>(other.tokenCount, static_cast<std::size_t>(tokens.end() - start));
+    if (start < end && chosen < start + static_cast<std::ptrdiff_t>(count)) {
+      return core::failure(core::ErrorCode::Conflict, "Unit target overlaps another retained or active edit");
+    }
+  }
+  auto rebound = reviewed;
+  rebound.startKey = target;
+  rebound.unresolved = false;
+  auto command = std::make_unique<application::CompositeCommand>("Rebind retained unit edit");
+  if (target != reviewed.startKey) {
+    command->add(std::make_unique<application::RemoveUnitSelectionOverrideCommand>(regionId_, reviewed.startKey));
+  }
+  command->add(std::make_unique<application::UpsertUnitSelectionOverrideCommand>(regionId_, std::move(rebound)));
+  return commit(std::move(command));
+}
+
+core::Result<void> TechnicalEditController::rebindSeamOverride(
+    const RetainedRenderEditReview& review, const domain::SeamOverride& reviewed,
+    domain::PhonemeKey target) {
+  const auto fresh = reviewRetainedRenderEdits();
+  if (!fresh) return core::Result<void>{fresh.error()};
+  if (review.regionId != regionId_ || review.pronunciation != fresh.value().pronunciation ||
+      review.tokens != fresh.value().tokens) {
+    return core::failure(core::ErrorCode::Conflict, "Seam target pronunciation changed since review");
+  }
+  if (std::find(review.seams.begin(), review.seams.end(), reviewed) == review.seams.end() ||
+      std::find(fresh.value().seams.begin(), fresh.value().seams.end(), reviewed) == fresh.value().seams.end()) {
+    return core::failure(core::ErrorCode::Conflict, "Retained seam changed since review");
+  }
+  const auto& tokens = fresh.value().tokens;
+  const auto chosen = std::find_if(tokens.begin(), tokens.end(), [&](const auto& token) { return token.key == target; });
+  if (chosen == tokens.end()) return core::failure(core::ErrorCode::Conflict, "Seam target is unavailable");
+  for (const auto& warning : fresh.value().warnings) {
+    if (warning.noteId == chosen->key.noteId ||
+        (chosen != tokens.begin() && warning.noteId == std::prev(chosen)->key.noteId)) {
+      return core::failure(core::ErrorCode::Conflict, "Seam target or predecessor has unresolved pronunciation");
+    }
+  }
+  if (target != reviewed.incomingStartKey && region()->findSeamOverride(target)) {
+    return core::failure(core::ErrorCode::Conflict, "Seam target already has an edit");
+  }
+  auto rebound = reviewed;
+  rebound.incomingStartKey = target;
+  rebound.unresolved = false;
+  auto command = std::make_unique<application::CompositeCommand>("Rebind retained seam edit");
+  if (target != reviewed.incomingStartKey) {
+    command->add(std::make_unique<application::RemoveSeamOverrideCommand>(regionId_, reviewed.incomingStartKey));
+  }
+  command->add(std::make_unique<application::UpsertSeamOverrideCommand>(regionId_, std::move(rebound)));
+  return commit(std::move(command));
 }
 
 core::Result<void> TechnicalEditController::resetPhonemeOverride(

@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <numbers>
 #include <span>
 #include <vector>
@@ -93,10 +94,28 @@ core::Result<RenderedUnit> StretchUnitRenderer::render(
   }
   const auto curveValidation = parameters.pitchCurve.validate();
   if (!curveValidation) return core::Result<RenderedUnit>{curveValidation.error()};
+  if (parameters.performance && (parameters.performance->sampleRate() != outputSampleRate ||
+      !parameters.pitchCurve.points().empty() ||
+      parameters.performanceStartFrame > std::numeric_limits<time::SampleFrame>::max() - outputFrames)) {
+    return core::failure<RenderedUnit>(core::ErrorCode::InvalidArgument,
+        "Compiled stretch performance requires matching rate, bounded origin and no duplicate pitch curve", unit.id);
+  }
   const auto markerValidation = unit.markers.validate(
       static_cast<time::SampleFrame>(source.frameCount()));
   if (!markerValidation) return core::Result<RenderedUnit>{markerValidation.error()};
 
+  if (parameters.sourceMap) {
+    if (parameters.sourceDrift != 0.25F) return core::failure<RenderedUnit>(core::ErrorCode::Unsupported,
+        "Authored stretch timing cannot combine with a source-drift override", unit.id);
+    const auto valid = parameters.sourceMap->validate(static_cast<time::SampleFrame>(source.frameCount()));
+    if (!valid) return core::Result<RenderedUnit>{valid.error()};
+    const auto& knots = parameters.sourceMap->knots;
+    if (!parameters.performance || knots.front().sourceFrame != unit.markers.audioOffset ||
+        knots.back().sourceFrame != unit.markers.audioEnd || knots.front().targetFrame != parameters.performanceStartFrame ||
+        knots.back().targetFrame - knots.front().targetFrame != outputFrames) {
+      return core::failure<RenderedUnit>(core::ErrorCode::Conflict, "Stretch source map does not match output extent", unit.id);
+    }
+  }
   const auto mono = source.monoMix();
   const auto sourcePerOutput = static_cast<double>(source.sampleRate) /
                                static_cast<double>(outputSampleRate);
@@ -111,13 +130,13 @@ core::Result<RenderedUnit> StretchUnitRenderer::render(
                                        unit.id);
   }
 
-  const auto vowelOnsetFrames = std::clamp<time::SampleFrame>(
+  auto vowelOnsetFrames = std::clamp<time::SampleFrame>(
       static_cast<time::SampleFrame>(std::llround(
           static_cast<double>(markers.vowelOnset - markers.audioOffset) /
           sourcePerOutput)), 0, outputFrames - 1);
   // Granular processing is restricted to the stable vowel. The recorded onset
   // and vowel transition are copied verbatim to preserve the unit's character.
-  const auto preFrames = std::clamp<time::SampleFrame>(
+  auto preFrames = std::clamp<time::SampleFrame>(
       static_cast<time::SampleFrame>(std::llround(
           static_cast<double>(markers.stableStart - markers.audioOffset) /
           sourcePerOutput)), vowelOnsetFrames, outputFrames - 1);
@@ -125,8 +144,19 @@ core::Result<RenderedUnit> StretchUnitRenderer::render(
       static_cast<time::SampleFrame>(std::llround(
           static_cast<double>(markers.audioEnd - releaseStart) / sourcePerOutput)),
       0, std::max<time::SampleFrame>(0, outputFrames - preFrames));
-  const auto releaseOutputStart = std::max(preFrames, outputFrames - releaseFrames);
+  auto releaseOutputStart = std::max(preFrames, outputFrames - releaseFrames);
+  if (parameters.sourceMap) {
+    const auto mapped = [&](time::SampleFrame frame) {
+      return static_cast<time::SampleFrame>(std::llround(parameters.sourceMap->targetAt(static_cast<double>(frame)))) - parameters.performanceStartFrame;
+    };
+    vowelOnsetFrames = std::clamp<time::SampleFrame>(mapped(markers.vowelOnset), 0, outputFrames - 1);
+    preFrames = std::clamp<time::SampleFrame>(mapped(markers.stableStart), vowelOnsetFrames, outputFrames);
+    releaseOutputStart = std::clamp<time::SampleFrame>(mapped(releaseStart), preFrames, outputFrames);
+  }
 
+  const bool continuation = parameters.performance && unit.phones.size() == 1U &&
+      !parameters.performance->at(parameters.performanceStartFrame + vowelOnsetFrames).reattack;
+  if (continuation) preFrames = 0;
   RenderedUnit result{
       .unitId = unit.id,
       .samples = std::vector<float>(static_cast<std::size_t>(outputFrames), 0.0F),
@@ -134,13 +164,15 @@ core::Result<RenderedUnit> StretchUnitRenderer::render(
   };
 
   for (time::SampleFrame frame = 0; frame < preFrames; ++frame) {
-    const auto sourcePosition = static_cast<double>(markers.audioOffset) +
+    auto sourcePosition = static_cast<double>(markers.audioOffset) +
                                 static_cast<double>(frame) * sourcePerOutput;
+    if (parameters.sourceMap) sourcePosition = parameters.sourceMap->sourceAt(static_cast<double>(parameters.performanceStartFrame + frame));
     result.samples[static_cast<std::size_t>(frame)] = interpolate(mono, sourcePosition);
   }
   for (time::SampleFrame frame = releaseOutputStart; frame < outputFrames; ++frame) {
-    const auto sourcePosition = static_cast<double>(releaseStart) +
+    auto sourcePosition = static_cast<double>(releaseStart) +
         static_cast<double>(frame - releaseOutputStart) * sourcePerOutput;
+    if (parameters.sourceMap) sourcePosition = parameters.sourceMap->sourceAt(static_cast<double>(parameters.performanceStartFrame + frame));
     result.samples[static_cast<std::size_t>(frame)] = interpolate(
         mono, std::min(sourcePosition, static_cast<double>(markers.audioEnd - 1)));
   }
@@ -148,6 +180,9 @@ core::Result<RenderedUnit> StretchUnitRenderer::render(
   const auto grainSize = parameters.grainSize;
   const auto half = grainSize / 2U;
   const auto hop = static_cast<time::SampleFrame>(parameters.hopSize);
+  const auto sourceHz = 440.0 * std::exp2((static_cast<double>(unit.rootMidi) - 69.0) / 12.0);
+  const auto sourcePeriod = static_cast<double>(source.sampleRate) / sourceHz;
+  double targetPhaseSource = 0.0;
   const auto loopLength = static_cast<double>(loopEnd - loopStart);
   std::vector<float> overlap(result.samples.size(), 0.0F);
   std::vector<float> weights(result.samples.size(), 0.0F);
@@ -160,14 +195,32 @@ core::Result<RenderedUnit> StretchUnitRenderer::render(
     }
     const auto drift = static_cast<double>(center - preFrames) * sourcePerOutput *
                        static_cast<double>(parameters.sourceDrift);
-    const auto sourceCenter = static_cast<double>(loopStart) +
+    auto sourceCenter = static_cast<double>(loopStart) +
                               std::fmod(drift, loopLength);
-    const auto ratio = pitchRatio(targetMidi, unit.rootMidi,
+    if (parameters.sourceMap) sourceCenter = parameters.sourceMap->sourceAt(static_cast<double>(parameters.performanceStartFrame + center));
+    if (continuation && parameters.sourceMap) sourceCenter = std::max(sourceCenter, static_cast<double>(loopStart));
+    auto ratio = pitchRatio(targetMidi, unit.rootMidi,
                                    parameters.pitchCurve.centsAt(center));
+    if (parameters.performance) {
+      const auto value = parameters.performance->at(parameters.performanceStartFrame + center);
+      const bool unvoiced = parameters.sourceMap && parameters.sourceMap->voicedAtSource(sourceCenter) == false;
+      if (value.noteId && !value.scoreFrequencyHz && !unvoiced) return core::failure<RenderedUnit>(core::ErrorCode::Unsupported,
+          "Stretch rendering needs a voicing-aware path for accepted unvoiced pitch", unit.id);
+      if (value.scoreFrequencyHz) ratio = *value.scoreFrequencyHz /
+          (440.0 * std::exp2((static_cast<double>(unit.rootMidi) - 69.0) / 12.0));
+    }
     if (!std::isfinite(ratio) || ratio < 0.125 || ratio > 8.0) {
       return core::failure<RenderedUnit>(core::ErrorCode::Unsupported,
                                          "Stretch pitch ratio is unsupported",
                                          unit.id);
+    }
+    if (parameters.performance) {
+      const auto targetHz = ratio * sourceHz;
+      if (targetHz <= 1.0 || targetHz >= static_cast<double>(outputSampleRate) * 0.45) {
+        return core::failure<RenderedUnit>(core::ErrorCode::Unsupported, "Compiled stretch target pitch is unsupported", unit.id);
+      }
+      sourceCenter += std::remainder(targetPhaseSource - (sourceCenter - static_cast<double>(loopStart)), sourcePeriod);
+      targetPhaseSource = std::fmod(targetPhaseSource + ratio * static_cast<double>(hop) * sourcePerOutput, sourcePeriod);
     }
     for (std::size_t index = 0U; index < grainSize; ++index) {
       const auto destination = center + static_cast<time::SampleFrame>(index) -
@@ -178,6 +231,9 @@ core::Result<RenderedUnit> StretchUnitRenderer::render(
       }
       const auto relative = static_cast<double>(index) - static_cast<double>(half);
       const auto sourcePosition = sourceCenter + relative * ratio * sourcePerOutput;
+      if (parameters.sourceMap && (parameters.sourceMap->voicedAtSource(sourcePosition) == false ||
+          parameters.sourceMap->voicedAtSource(parameters.sourceMap->sourceAt(
+              static_cast<double>(parameters.performanceStartFrame + destination))) == false)) continue;
       const auto phase = 2.0 * std::numbers::pi * static_cast<double>(index) /
                          static_cast<double>(grainSize - 1U);
       auto window = static_cast<float>(0.5 - 0.5 * std::cos(phase));
@@ -192,9 +248,10 @@ core::Result<RenderedUnit> StretchUnitRenderer::render(
                                                 0.0, 1.0));
       }
       const auto destinationIndex = static_cast<std::size_t>(destination);
-      overlap[destinationIndex] += loopInterpolate(
-          mono, sourcePosition, static_cast<double>(loopStart),
-          static_cast<double>(loopEnd)) * window;
+      const auto sample = parameters.sourceMap ? interpolate(mono, std::clamp(sourcePosition,
+          static_cast<double>(markers.audioOffset), static_cast<double>(markers.audioEnd - 1))) :
+          loopInterpolate(mono, sourcePosition, static_cast<double>(loopStart), static_cast<double>(loopEnd));
+      overlap[destinationIndex] += sample * window;
       weights[destinationIndex] += window;
     }
   }
@@ -204,6 +261,11 @@ core::Result<RenderedUnit> StretchUnitRenderer::render(
     if (weights[index] > 1.0e-6F) {
       result.samples[index] = overlap[index] / weights[index];
     } else {
+      if (parameters.sourceMap) {
+        result.samples[index] = interpolate(mono, std::min(static_cast<double>(markers.audioEnd - 1),
+            parameters.sourceMap->sourceAt(static_cast<double>(parameters.performanceStartFrame + frame))));
+        continue;
+      }
       const auto sourcePosition = static_cast<double>(loopStart) +
           static_cast<double>(frame - preFrames) * sourcePerOutput;
       result.samples[index] = loopInterpolate(
@@ -212,6 +274,10 @@ core::Result<RenderedUnit> StretchUnitRenderer::render(
     }
   }
   finish(result, unit.gainDb + parameters.additionalGainDb, outputSampleRate);
+  if (parameters.performance) {
+    const auto applied = applyCompiledPerformanceGain(result.samples, *parameters.performance, parameters.performanceStartFrame, stopToken);
+    if (!applied) return core::Result<RenderedUnit>{applied.error()};
+  }
   return result;
 }
 

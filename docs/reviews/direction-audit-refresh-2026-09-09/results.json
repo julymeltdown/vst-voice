@@ -1,0 +1,164 @@
+{
+  "reviewDate": "2026-09-09",
+  "capturedAt": "2026-09-08T16:42:17Z",
+  "timezone": "Asia/Seoul",
+  "branch": "codex/production-readiness-completion",
+  "head": "741ae2f244b9d3ff8eb6f31dc1f73cae54ea974d",
+  "scope": "Current local worktree, read-only product code audit. Report and diagnostic artifacts only.",
+  "verdict": {
+    "architecture": "retain",
+    "executionPriority": "refocus on connected producer-to-installed-singer-to-song workflows",
+    "fullScopeBeta": "NO_GO"
+  },
+  "worktreeBeforeReport": {
+    "trackedChanged": 184,
+    "untrackedFiles": 281,
+    "totalPaths": 465,
+    "trackedInsertions": 20749,
+    "trackedDeletions": 912,
+    "excludesUntrackedLineCounts": true
+  },
+  "build": {
+    "command": "cmake --build build/release -j 4",
+    "exitCode": 0,
+    "type": "incremental full target build",
+    "warnings": "nonfatal duplicate static libraries at link"
+  },
+  "ctest": {
+    "command": "ctest --test-dir build/release --output-on-failure -j 1",
+    "exitCode": 8,
+    "total": 110,
+    "passed": 109,
+    "failed": 1,
+    "durationSeconds": 150.27,
+    "startKst": "2026-09-09 01:39",
+    "endKst": "2026-09-09 01:41",
+    "failedNames": [
+      "seam_tracked_source_closure"
+    ],
+    "unindexedRequiredInputs": 280,
+    "coreCases": {
+      "passed": 716,
+      "failed": 0
+    },
+    "producerCases": {
+      "passed": 14,
+      "failed": 0
+    },
+    "log": "build/release/Testing/Temporary/LastTest.log",
+    "countsOverlap": true
+  },
+  "matrix": {
+    "cases": 336,
+    "rows": 336,
+    "failures": 0,
+    "executionPath": "clap-plugin-process-v1",
+    "result": "PASS",
+    "evidenceScope": "engineering",
+    "releaseEligible": false,
+    "resourceMode": "development-fixture",
+    "audioSampleFormat": "float32",
+    "stateScope": "empty score with exact bank, style and output layout",
+    "tuningProof": "rendered-sample difference; not calibrated pitch accuracy",
+    "sourceScope": "configured-source-base-plus-exact-plugin-bytes; not clean-checkout attestation",
+    "pluginSha256": "f0b411ba5f9cf708dd0339704751df74a4721996b2be1662d1be74e9f1981bcb"
+  },
+  "ownershipProbe": {
+    "sameAudio": true,
+    "intendedTake": "take-b",
+    "takeARevisions": 1,
+    "takeBRevisions": 0,
+    "durableTakeARevisions": 1,
+    "durableTakeBRevisions": 0,
+    "exitCode": 0,
+    "interpretation": "Defect reproduced; exit zero means the diagnostic ran, not product correctness."
+  },
+  "pronunciationProbe": [
+    {
+      "input": "강",
+      "phones": "k a l",
+      "warnings": 0
+    },
+    {
+      "input": "밤",
+      "phones": "p a l",
+      "warnings": 0
+    },
+    {
+      "input": "밥",
+      "phones": "p a t",
+      "warnings": 0
+    },
+    {
+      "input": "어",
+      "phones": "o",
+      "warnings": 0
+    },
+    {
+      "input": "오",
+      "phones": "o",
+      "warnings": 0
+    },
+    {
+      "input": "으",
+      "phones": "u",
+      "warnings": 0
+    },
+    {
+      "input": "우",
+      "phones": "u",
+      "warnings": 0
+    },
+    {
+      "input": "먹어 single note",
+      "phones": "m o k o",
+      "warnings": 0
+    },
+    {
+      "input": "먹/어 split notes",
+      "phones": "m o k o",
+      "warnings": 0
+    },
+    {
+      "input": "read",
+      "phones": "r eh0 ae0 d",
+      "warnings": 0
+    }
+  ],
+  "gateProbe": {
+    "state": "READY",
+    "canDistribute": true,
+    "artifactCount": 0,
+    "externalWrites": false,
+    "referenceError": "valid-schema-artifact requires exactly locator and sha256"
+  },
+  "contract": {
+    "path": "docs/product/full-product-beta-contract.json",
+    "sha256": "d97e07403fbdc11a866eeb4b79ce5e1b5725cdd7a6c418f342a7c580b79d633f",
+    "requirements": 20,
+    "cases": 83,
+    "hostTuples": 9,
+    "matrixStatus": "UNRESOLVED",
+    "releasedResources": 0,
+    "profileStatus": "UNRESOLVED",
+    "empiricalCriteriaUnresolved": 11,
+    "evidenceStatus": "NOT_RUN"
+  },
+  "roadmap": {
+    "source": "docs/implementation/FULL_SCOPE_BETA_EXECUTION.md:542-544",
+    "locallyAcceptedInLedger": 5,
+    "total": 48,
+    "equalWeightLedgerPercent": 10.416666666666666,
+    "notFreshUnitAcceptance": true,
+    "notEffortOrQualityPercent": true
+  },
+  "limitations": [
+    "No actual GUI overflow review in this run",
+    "No real DAW offline bounce reproduction",
+    "No Windows runtime qualification",
+    "No new musical listener/rights/model qualification",
+    "No clean checkout source attestation",
+    "Resource absence statements are scoped to repo inventory"
+  ],
+  "diagSetup": "Initial standalone ownership-probe compile missed a phonemizer include path; adding the existing library include path fixed the diagnostic build without product code changes."
+}

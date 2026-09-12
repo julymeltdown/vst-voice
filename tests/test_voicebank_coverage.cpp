@@ -74,6 +74,42 @@ TEST_CASE("voicebank_inventory_summarizes_styles_layers_kinds_and_special_units"
   CHECK(!inventory.phoneSequences.empty());
 }
 
+TEST_CASE("voicebank coverage rejects overlapping-only cover and finds a complete alternative") {
+  using namespace seam;
+  const auto note = domain::NoteId{1U}; const auto region = regionWithNotes({{note, 60}});
+  const std::vector phones{token(note, 0U, "k"), token(note, 1U, "a"), token(note, 2U, "t")};
+  auto manifest = test::support::makeManifest({
+      test::support::makeUnit("ka", {"k", "a"}, "audio/ka.wav", 60),
+      test::support::makeUnit("at", {"a", "t"}, "audio/at.wav", 60)});
+  auto report = voicebank::VoicebankCoverageAnalyzer::analyzeRegion(manifest, domain::TrackId{7U}, region, phones, "original");
+  CHECK(!report.complete()); CHECK(report.summary.coveredPhonemes == 2U); CHECK(report.summary.sequenceConflictCount == 1U);
+  CHECK(report.issues.size() == 1U); CHECK(report.issues[0].phonemeKey == phones[2].key);
+  CHECK(report.issues[0].kind == voicebank::CoverageIssueKind::SequenceConflict);
+  CHECK(report.issues[0].relatedUnitIds == std::vector<std::string>{"at"});
+  CHECK(voicebank::coverageIssueKindName(report.issues[0].kind) == "sequence-conflict");
+  manifest.units.push_back(test::support::makeUnit("k", {"k"}, "audio/k.wav", 60));
+  report = voicebank::VoicebankCoverageAnalyzer::analyzeRegion(manifest, domain::TrackId{7U}, region, phones, "original");
+  CHECK(report.complete()); CHECK(report.summary.coveredPhonemes == 3U); // k + at, not greedy ka then a gap.
+}
+
+TEST_CASE("voicebank coverage checks every note in a unit span and rejects orphan phonemes") {
+  using namespace seam;
+  const auto a = domain::NoteId{1U}, b = domain::NoteId{2U};
+  auto region = regionWithNotes({{a, 60}, {b, 90}});
+  const auto manifest = test::support::makeManifest({test::support::makeUnit("ka", {"k", "a"}, "audio/ka.wav", 60)});
+  const std::vector phones{token(a, 0U, "k"), token(b, 0U, "a")};
+  auto report = voicebank::VoicebankCoverageAnalyzer::analyzeRegion(manifest, domain::TrackId{7U}, region, phones, "original", 12);
+  CHECK(!report.complete()); CHECK(report.summary.coveredPhonemes == 0U); CHECK(report.summary.unsupportedPitchRangeCount == 2U);
+  CHECK(report.issues[0].diagnostic.find("span") != std::string::npos);
+  region.notes[1].midiKey = 60U;
+  CHECK(voicebank::VoicebankCoverageAnalyzer::analyzeRegion(manifest, domain::TrackId{7U}, region, phones, "original").complete());
+  region.notes.pop_back();
+  report = voicebank::VoicebankCoverageAnalyzer::analyzeRegion(manifest, domain::TrackId{7U}, region, phones, "original");
+  CHECK(!report.complete()); CHECK(report.summary.coveredPhonemes == 0U);
+  CHECK(report.issues[0].diagnostic.find("span references a missing note") != std::string::npos);
+  CHECK(report.issues[1].diagnostic.find("missing note") != std::string::npos);
+}
+
 TEST_CASE("voicebank_coverage_distinguishes_missing_disabled_style_and_pitch") {
   auto ka = seam::test::support::makeUnit(
       "ka", {"k", "a"}, "audio/ka.wav", 60);
@@ -105,10 +141,10 @@ TEST_CASE("voicebank_coverage_distinguishes_missing_disabled_style_and_pitch") {
       manifest, seam::domain::TrackId{7U}, region, tokens, "original", 12);
   CHECK(report.summary.totalPhonemes == 10U);
   CHECK(report.summary.coveredPhonemes == 2U);
-  CHECK(report.summary.disabledUnitCount >= 1U);
-  CHECK(report.summary.unsupportedStyleCount >= 1U);
-  CHECK(report.summary.unsupportedPitchRangeCount >= 1U);
-  CHECK(report.summary.missingUnitCount >= 1U);
+  CHECK(report.summary.disabledUnitCount == 2U);
+  CHECK(report.summary.unsupportedStyleCount == 2U);
+  CHECK(report.summary.unsupportedPitchRangeCount == 2U);
+  CHECK(report.summary.missingUnitCount == 2U);
   CHECK(!report.complete());
 }
 

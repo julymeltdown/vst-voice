@@ -163,15 +163,15 @@ core::Result<PhraseAudio> SeamComposer::compose(
     phraseStart = std::min(phraseStart, unit->destinationStart);
     phraseEnd = std::max(phraseEnd, unit->destinationStart + size);
   }
-  if (phraseEnd <= phraseStart ||
-      static_cast<std::uint64_t>(phraseEnd - phraseStart) > 100'000'000ULL) {
+  const auto phraseLength = static_cast<std::uint64_t>(phraseEnd) - static_cast<std::uint64_t>(phraseStart);
+  if (phraseEnd <= phraseStart || phraseLength > 100'000'000ULL) {
     return core::failure<PhraseAudio>(core::ErrorCode::Unsupported,
                                       "Composed phrase is outside supported length");
   }
 
   PhraseAudio result;
   result.startFrame = phraseStart;
-  result.samples.resize(static_cast<std::size_t>(phraseEnd - phraseStart), 0.0F);
+  result.samples.resize(static_cast<std::size_t>(phraseLength), 0.0F);
   std::vector<bool> occupied(result.samples.size(), false);
 
   for (const auto* placed : ordered) {

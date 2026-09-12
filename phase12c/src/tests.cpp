@@ -44,6 +44,7 @@ int main() {
 
   LiveVoiceEngine engine;
   engine.configure(48000, 2);
+  engine.setVoiceMode(VoiceMode::MonophonicLegato);
   SEAM_REQUIRE(engine.publishResource(resource));
 
   constexpr unsigned frameCount = 768;
@@ -76,6 +77,7 @@ int main() {
   SEAM_REQUIRE(energy > 1.0);
   SEAM_REQUIRE(engine.stats().transitionHits == 1);
 
+  engine.setVoiceMode(VoiceMode::Polyphonic);
   std::vector<LiveEvent> many;
   many.reserve(33);
   for (int index = 0; index < 33; ++index) {

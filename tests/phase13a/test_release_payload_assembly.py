@@ -14,6 +14,7 @@ from scripts.assemble_release_payload import (
     assemble_release_payload,
 )
 from tools.phase13a.payload_manifest import verify_release_payload_manifest
+from tools.phase13a.neural_package import build_neural_package_manifest
 
 
 class ReleasePayloadAssemblyTests(unittest.TestCase):
@@ -60,6 +61,36 @@ class ReleasePayloadAssemblyTests(unittest.TestCase):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(value, encoding="utf-8")
         return path
+
+    def test_neural_inventory_records_absence_and_rejects_status_forgery(self) -> None:
+        self.create_payload(PayloadPlatform.WINDOWS_X64)
+        sealed = assemble_release_payload(self.payload, self.source, PayloadPlatform.WINDOWS_X64)
+        value = json.loads(sealed.path.read_bytes())
+        self.assertEqual([row["surface"] for row in value["neuralPackages"]], ["standalone", "clap", "vst3"])
+        self.assertTrue(all(row["status"] == "MISSING" for row in value["neuralPackages"]))
+        value["neuralPackages"][0]["status"] = "VERIFIED_FILES"
+        sealed.path.write_text(json.dumps(value), encoding="utf-8")
+        with self.assertRaisesRegex(PayloadAssemblyError, "neural package inventory"):
+            verify_release_payload_manifest(self.payload, PayloadPlatform.WINDOWS_X64)
+
+    def test_neural_inventory_verifies_payload_bytes_and_rejects_stale_manifest(self) -> None:
+        self.create_payload(PayloadPlatform.WINDOWS_X64)
+        helper = self.write("Standalone/Resources/neural-helper.exe", "helper-fixture")
+        raw, digest = build_neural_package_manifest(
+            self.payload / "Standalone", "0.13.1-test", "seam_editor_native.exe",
+            "Resources/neural-helper.exe", ())
+        manifest = self.payload / "Standalone/Resources/neural-helper-package.json"
+        manifest.write_bytes(raw)
+        sealed = assemble_release_payload(self.payload, self.source, PayloadPlatform.WINDOWS_X64)
+        value = json.loads(sealed.path.read_bytes())
+        self.assertEqual(value["neuralPackages"][0]["sha256"], digest)
+        self.assertEqual(value["neuralPackages"][0]["status"], "VERIFIED_FILES")
+        verify_release_payload_manifest(self.payload, PayloadPlatform.WINDOWS_X64)
+        helper.write_bytes(b"changed-helper")
+        with self.assertRaises(PayloadAssemblyError):
+            verify_release_payload_manifest(self.payload, PayloadPlatform.WINDOWS_X64)
+        with self.assertRaises(PayloadAssemblyError):
+            assemble_release_payload(self.payload, self.source, PayloadPlatform.WINDOWS_X64)
 
     def create_payload(self, platform: PayloadPlatform) -> None:
         identity = {

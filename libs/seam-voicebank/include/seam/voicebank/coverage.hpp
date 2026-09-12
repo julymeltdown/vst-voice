@@ -15,6 +15,7 @@ enum class CoverageIssueKind {
   DisabledUnit,
   UnsupportedPitchRange,
   UnsupportedStyle,
+  SequenceConflict,
 };
 
 struct UnitKindInventory final {
@@ -55,6 +56,7 @@ struct CoverageSummary final {
   std::size_t disabledUnitCount{0U};
   std::size_t unsupportedPitchRangeCount{0U};
   std::size_t unsupportedStyleCount{0U};
+  std::size_t sequenceConflictCount{0U};
 };
 
 struct VoicebankCoverageReport final {

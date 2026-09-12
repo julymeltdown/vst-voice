@@ -1,0 +1,15 @@
+Test project /Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/release
+    Start 15: seam_voice_design_tests
+1/5 Test #15: seam_voice_design_tests ...........   Passed    0.80 sec
+    Start 27: seam_phoneme_timing_tests
+2/5 Test #27: seam_phoneme_timing_tests .........   Passed    0.00 sec
+    Start 37: seam_performance_snapshot_tests
+3/5 Test #37: seam_performance_snapshot_tests ...   Passed    1.65 sec
+    Start 48: seam_export_tests
+4/5 Test #48: seam_export_tests .................   Passed    6.11 sec
+    Start 66: seam_tests
+5/5 Test #66: seam_tests ........................   Passed   23.05 sec
+
+100% tests passed, 0 tests failed out of 5
+
+Total Test time (real) =  31.62 sec

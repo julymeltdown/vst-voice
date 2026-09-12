@@ -1,0 +1,70 @@
+{
+  "base": "741ae2f244b9d3ff8eb6f31dc1f73cae54ea974d",
+  "changed": {
+    "apps/seam-voicebank-studio-native/main.cpp": {
+      "before": "40f0f8590195fba8e763b0e43de5482c2afb5f810b6816fc4ac64cb0483989a5",
+      "after": "3ec04c0708b36c1326bbceddb6e4f4b7c322288747a195bc0db184c9662312cf"
+    },
+    "libs/seam-authoring-runtime/include/seam/authoring/render_coordinator.hpp": {
+      "before": "e70743dd2f6db3e11718b9f506f81bd2c09255ab80f6eb8d9793d81681bb98ca",
+      "after": "056389ca8a5a1cd379be8c1b3df75bd848c3304e50fc245809019be6f047a199"
+    },
+    "libs/seam-authoring-runtime/src/authoring_runtime.cpp": {
+      "before": "4e6978ffedee451ffe68e9d4ff0f6f21ada374d8aaa472816e8d30cc03dc0ba3",
+      "after": "f6e8ad382161e8cfa7e65e31ee792428857da76a7d6950c4f2cd34cdcb16e2e1"
+    },
+    "libs/seam-authoring-runtime/src/render_coordinator.cpp": {
+      "before": "6e09527f42b3d371db02fa17ca0b20117be580e341fa19f4e425ad736eb282fc",
+      "after": "00a6d4af13e2e88ac45a9fe06c87c2f0c8ae6bc08b93c00788f50a6c522c93e8"
+    },
+    "libs/seam-clap-editor/src/editor_runtime_adapter.cpp": {
+      "before": "b1f4fa1556f76d1648a5e9b04ad4f1d18c02362b98f717b0948980848e5f4e98",
+      "after": "dec7be8d8941b50d39a9c67ba93b6c58cc0e582b5154eeb80aac2b99b2c1df6a"
+    },
+    "libs/seam-native-ui/include/seam/native_ui/voicebank_studio.hpp": {
+      "before": "47dc2dbe65eecb0b0ae9a1e6144a515bd1ac1c156c9f96cd35041dbeb659eaad",
+      "after": "869217d872d08e56fd4878780c38023c32a9d1aa00866d72062d5b2363442cc0"
+    },
+    "libs/seam-native-ui/src/voicebank_studio.cpp": {
+      "before": "d5bdf2321122d1517b5bf8d8b6e78e9ecc1719a56632c750680c442a3346e9f8",
+      "after": "4bc341a21996e1ef3122fc3b6dc8b1a2af3b839d060defdd930953c1abf65a08"
+    },
+    "libs/seam-platform/include/seam/platform/file_dialog.hpp": {
+      "before": "9ac4ce18c45a33a5cf477a1be4531d7d6f5868f329002b4680962136818c7f94",
+      "after": "df93a463ca9f81c701b0bf569b668a34a38d724351a8c9e5313fe06088ff8e6c"
+    },
+    "libs/seam-platform/src/file_dialog_appkit.mm": {
+      "before": "8af118a4b81fad7d027818de410295ed55f48a1dc7095e29f56fc9f5003a91ec",
+      "after": "015f232592f0b13024dc80aff5336ccf75636437904928c298d7445bf82e5797"
+    },
+    "libs/seam-platform/src/file_dialog_win32.cpp": {
+      "before": "1198d5d6071498a9959c31ad607652574771a64cba56dbbc6569b613c7885929",
+      "after": "4c2f3fe54fc03dd805ab273ffcb361eaec77444509e0c77cd28d43c35a8fbf72"
+    },
+    "tests/test_phase12b.cpp": {
+      "before": "ca40492370060eb4b5421b96f7d3028ad59811e1ad18539ae7262db2069922c5",
+      "after": "9a9170a5167ae579594516b36d734ac1e8f977da8ee7e86d2d4a6fc895f305ce"
+    },
+    "tests/test_studio_manifest_draft.cpp": {
+      "before": "4fb70fb813aaab84b9abb02ccadcfb03a63e7927b7a64b48d37cf9da23e2da27",
+      "after": "71fe93ba99de17b0ebb1f31b978f685d55fbf68a9f356fc47706b011c1b047aa"
+    }
+  },
+  "pluginSha256": "ebf5640b8760f25fde3cf1850d081c5087d0a37983d15efb1a73494dd34cd8b3",
+  "ctestLogSha256": "55a2404d2dd8dbfdfd564a0a372c484428a65e6cb71ec009742fc01cd06a85ca",
+  "fullBuild": "PASS",
+  "ctest": {
+    "passed": 119,
+    "total": 120,
+    "seconds": 255.74,
+    "onlyFailure": "seam_tracked_source_closure"
+  },
+  "core": {
+    "passed": 818,
+    "failed": 0
+  },
+  "studio": {
+    "passed": 20,
+    "failed": 0
+  }
+}

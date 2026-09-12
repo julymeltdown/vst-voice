@@ -44,6 +44,26 @@ TEST_CASE("Unicode display width preserves combining marks and wide scalars") {
   CHECK(seam::text::truncateUtf8ToDisplayWidth(emoji, 3U) == "A👩‍🎤");
 }
 
+TEST_CASE("bounded UTF-8 wrapping partitions text without splitting display clusters") {
+  using namespace seam::text;
+  const std::string input = "Á日👩‍🎤🇯🇵B\r\nC";
+  auto lines = wrapUtf8ToDisplayWidth(input, 3U); CHECK(lines);
+  CHECK(lines.value().size() == 4U);
+  CHECK(input.substr(lines.value()[0].offset, lines.value()[0].length) == "Á日");
+  CHECK(input.substr(lines.value()[1].offset, lines.value()[1].length) == "👩‍🎤");
+  CHECK(input.substr(lines.value()[2].offset, lines.value()[2].length) == "🇯🇵B\r\n");
+  std::string reconstructed;
+  for (const auto range : lines.value()) reconstructed += input.substr(range.offset, range.length);
+  CHECK(reconstructed == input);
+  CHECK(!wrapUtf8ToDisplayWidth("abc", 2U, 1U));
+  CHECK(!wrapUtf8ToDisplayWidth(std::string{"a\xff"}, 3U));
+  CHECK(!wrapUtf8ToDisplayWidth("a", 0U));
+  CHECK(!wrapUtf8ToDisplayWidth("a", 1025U));
+  CHECK(!wrapUtf8ToDisplayWidth("a", 3U, 0U));
+  CHECK(wrapUtf8ToDisplayWidth("", 3U).value().front().length == 0U);
+  CHECK(!wrapUtf8ToDisplayWidth(std::string(131073U, '\n'), 32U));
+}
+
 TEST_CASE("system text engine resolves a trusted Unicode font") {
   const auto engine = seam::text::TextEngine::createSystem();
   CHECK(engine);

@@ -22,6 +22,7 @@ def _sha256_bytes(value: bytes) -> str:
 def archived_candidate(
     root: Path,
     source_candidate: JsonObject,
+    *, extra_paths: list[str] | tuple[str, ...] = (),
 ) -> tuple[JsonObject, JsonObject]:
     candidate = copy.deepcopy(source_candidate)
     records = candidate["evidence"]
@@ -54,6 +55,11 @@ def archived_candidate(
                 "size": len(payload),
             }
         )
+    for relative in sorted(extra_paths):
+        path = root / relative
+        contents = path.read_bytes()
+        entries.append({"path": relative, "kind": "predecessor-evidence", "privacyClass": "PUBLIC_TECHNICAL",
+            "sha256": _sha256_bytes(contents), "size": len(contents)})
     anchor_sha256 = sha256_json(
         {
             "archiveId": "public-archive-001",

@@ -88,6 +88,9 @@ public:
 
   [[nodiscard]] core::Result<void> execute(
       std::unique_ptr<application::ICommand> command);
+  [[nodiscard]] core::Result<void> executePerformanceResult(
+      const application::PerformanceJobContext& context,
+      std::unique_ptr<application::ICommand> command);
   [[nodiscard]] core::Result<void> undo();
   [[nodiscard]] core::Result<void> redo();
   [[nodiscard]] core::Result<void> previewSeam(domain::PhonemeKey key,
@@ -116,9 +119,11 @@ public:
   void handleDocumentChanged();
 
 private:
+  [[nodiscard]] core::Result<void> afterCommandExecution(
+      core::Result<void> result, application::CommandImpact impact);
   struct PreviewRequest final {
     domain::Project project;
-    std::vector<rendering::TrackVoicebankSource> voicebanks;
+    std::vector<rendering::TrackSingerSource> voicebanks;
     domain::TrackId activeTrack;
     domain::RegionId activeRegion;
     std::uint64_t revision{0U};

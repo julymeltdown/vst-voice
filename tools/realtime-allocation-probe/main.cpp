@@ -6,6 +6,9 @@
 #include "seam/rendering/interleaved_audio_ring_buffer.hpp"
 #include "seam/rendering/multichannel_playback.hpp"
 #include "seam/rendering/multichannel_routing.hpp"
+#if defined(SEAM_CANDIDATE_AUDITION_PROBE)
+#include "seam/native_ui/candidate_audition.hpp"
+#endif
 
 #include <array>
 #include <atomic>
@@ -119,6 +122,87 @@ int main(int argc, char** argv) {
   const auto outputPath = argc > 1
                               ? std::filesystem::path{argv[1]}
                               : std::filesystem::path{"realtime-allocation-probe.json"};
+#if defined(SEAM_CANDIDATE_AUDITION_PROBE)
+  // Confirm that the interception is live before trusting a zero count.
+  probeCallback = true;
+  void* volatile control = ::operator new(8U);
+  ::operator delete(control);
+  probeCallback = false;
+  const bool interceptionWorks = allocations.load() == 1U && deallocations.load() == 1U;
+  allocations.store(0U);
+  deallocations.store(0U);
+  seam::core::RealtimeAuditCounters candidateAudit;
+  std::uint64_t candidateCallbacks = 0U, candidateConfigurations = 0U, outputMismatches = 0U;
+  for (const auto rate : {8000U, 48000U, 192000U}) {
+    auto audio = std::make_shared<seam::voicebank::AudioBuffer>();
+    audio->sampleRate = rate;
+    audio->channels = 1U;
+    audio->bitsPerSample = 32U;
+    audio->interleaved.resize(2048U);
+    for (std::size_t index = 0U; index < audio->interleaved.size(); ++index)
+      audio->interleaved[index] = static_cast<float>(index % 97U) / 96.0F - 0.5F;
+    for (const auto blockSize : {1U, 64U, 257U, 1024U}) {
+      for (const auto channelCount : {1U, 2U}) {
+        ++candidateConfigurations;
+        auto prepared = seam::native_ui::CandidateAuditionProcessor::create(audio, 7U, 2035U, 0.25F);
+        if (!prepared) return 1;
+        std::array<std::vector<float>, 2> samples{std::vector<float>(blockSize), std::vector<float>(blockSize)};
+        std::array<std::span<float>, 2> views{samples[0], samples[1]};
+        const auto blocks = 2028U / blockSize + 3U;
+        for (std::size_t block = 0U; block < blocks; ++block) {
+          for (auto& channel : samples) std::fill(channel.begin(), channel.end(), 9.0F);
+          const seam::platform::AudioProcessContext context{
+              .sampleRate = static_cast<double>(rate), .frameCount = blockSize,
+              .left = views[0], .right = channelCount == 2U ? views[1] : std::span<float>{},
+              .outputs = block % 2U == 0U ? std::span<std::span<float>>{views}.first(channelCount)
+                                        : std::span<std::span<float>>{}};
+          probeCallback = true;
+          {
+            seam::core::RealtimeAuditScope scope{candidateAudit};
+            prepared.value()->process(context);
+          }
+          probeCallback = false;
+          ++candidateCallbacks;
+          for (std::size_t index = 0U; index < blockSize; ++index) {
+            const auto frame = block * blockSize + index;
+            float expected = 0.0F;
+            if (frame < 2028U) {
+              const auto fade = std::min<std::size_t>(rate / 200U, 1014U);
+              const auto envelope = std::min({1.0, static_cast<double>(frame) / static_cast<double>(fade),
+                  static_cast<double>(2027U - frame) / static_cast<double>(fade)});
+              expected = static_cast<float>(static_cast<double>(audio->interleaved[frame + 7U]) * 0.25 * envelope);
+            }
+            for (std::size_t channel = 0U; channel < channelCount; ++channel)
+              if (samples[channel][index] != expected) ++outputMismatches;
+          }
+        }
+        if (!prepared.value()->finished() || prepared.value()->failed()) ++outputMismatches;
+      }
+    }
+  }
+  const bool candidatePass = interceptionWorks && outputMismatches == 0U && candidateCallbacks == 12474U &&
+      candidateConfigurations == 24U &&
+      allocations.load() == 0U && deallocations.load() == 0U && candidateAudit.lockAttempts.load() == 0U &&
+      candidateAudit.fileIoCalls.load() == 0U && candidateAudit.loggerCalls.load() == 0U;
+  const auto hash = seam::core::sha256File(argv[0]);
+  std::ofstream report(outputPath, std::ios::trunc);
+  report << "{\n  \"schemaVersion\": 1,\n  \"processor\": \"candidate-audition\",\n"
+         << "  \"interceptionSelfTest\": " << (interceptionWorks ? "true" : "false") << ",\n"
+         << "  \"callbacks\": " << candidateCallbacks << ",\n"
+         << "  \"configurations\": " << candidateConfigurations << ",\n"
+         << "  \"callbackAllocations\": " << allocations.load() << ",\n"
+         << "  \"callbackDeallocations\": " << deallocations.load() << ",\n"
+         << "  \"callbackLocks\": " << candidateAudit.lockAttempts.load() << ",\n"
+         << "  \"callbackFileIo\": " << candidateAudit.fileIoCalls.load() << ",\n"
+         << "  \"callbackLogging\": " << candidateAudit.loggerCalls.load() << ",\n"
+         << "  \"outputMismatches\": " << outputMismatches << ",\n"
+         << "  \"executableSha256\": \"" << (hash ? hash.value() : std::string{}) << "\",\n"
+         << "  \"result\": \"" << (candidatePass ? "PASS" : "FAIL") << "\"\n}\n";
+  report.close();
+  std::cout << "candidate_callbacks=" << candidateCallbacks << " allocations=" << allocations.load()
+            << " deallocations=" << deallocations.load() << " mismatches=" << outputMismatches << '\n';
+  return candidatePass && hash && report ? 0 : 1;
+#endif
   constexpr std::array<std::size_t, 4> blockSizes{64U, 128U, 256U, 512U};
   constexpr std::array<std::uint8_t, 4> channels{1U, 2U, 4U, 8U};
   constexpr std::size_t blocksPerConfiguration = 6250U;

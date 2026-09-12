@@ -6,8 +6,12 @@
 #include <cstdint>
 #include <span>
 #include <vector>
+#include <stop_token>
+#include <limits>
 
 namespace seam::voicebank {
+
+enum class PitchCorrelationMethod { Direct, Fft };
 
 struct PitchConfig final {
   std::size_t frameSize{2048};
@@ -15,6 +19,7 @@ struct PitchConfig final {
   double minimumHz{60.0};
   double maximumHz{1200.0};
   double voicingThreshold{0.32};
+  PitchCorrelationMethod correlationMethod{PitchCorrelationMethod::Direct};
 };
 
 struct PitchFrame final {
@@ -23,11 +28,16 @@ struct PitchFrame final {
   double confidence{0.0};
   bool voiced{false};
 };
+struct PitchAnalysisLimits final {
+  std::size_t maximumFrames{1048576U};
+  std::uint64_t maximumCorrelationTerms{std::numeric_limits<std::uint64_t>::max()};
+  std::uint64_t maximumTransformButterflies{std::numeric_limits<std::uint64_t>::max()};
+};
 
 [[nodiscard]] core::Result<std::vector<PitchFrame>> analyzePitch(
     std::span<const float> samples,
     std::uint32_t sampleRate,
-    PitchConfig config = {});
+    PitchConfig config = {}, std::stop_token stopToken = {}, PitchAnalysisLimits limits = {});
 [[nodiscard]] double medianVoicedPitch(std::span<const PitchFrame> frames) noexcept;
 
 }  // namespace seam::voicebank

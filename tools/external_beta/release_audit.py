@@ -22,14 +22,14 @@ class ReleaseAuditResult:
         return {"passed": self.passed, "state": self.state, "errors": list(self.errors), "blocked": list(self.blocked)}
 
 
-def audit_release(candidate: dict[str, Any], manifest: dict[str, Any], root: Path, state: str = "READY") -> ReleaseAuditResult:
+def audit_release(candidate: dict[str, Any], manifest: dict[str, Any], root: Path, state: str = "READY", *, acceptance_contract: dict[str, Any] | None = None) -> ReleaseAuditResult:
     normalized = state.upper()
     if normalized not in {"READY", "CLOSED"}:
         return ReleaseAuditResult(False, normalized, (f"unsupported release audit state: {state}",), ("state",))
     archive_result = audit_candidate(candidate, manifest, root)
     gate_state = "EXTERNAL_BETA_CLOSED" if normalized == "CLOSED" else "EXTERNAL_BETA_READY"
     gate_result = evaluate_gate(
-        candidate, gate_state, archive_verified=archive_result.passed
+        candidate, gate_state, acceptance_contract, archive_verified=archive_result.passed, evidence_root=root
     )
     errors = [f"archive: {error}" for error in archive_result.errors]
     errors.extend(f"gate: {error}" for error in gate_result.errors)

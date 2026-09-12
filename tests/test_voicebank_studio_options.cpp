@@ -38,6 +38,32 @@ TEST_CASE("voicebank studio options reject numeric suffixes") {
   CHECK(!parse(std::move(index)));
 }
 
+TEST_CASE("voicebank studio opens a source-free Designer without weakening producer arguments") {
+  const auto defaultLaunch=parse({"studio"}); CHECK(defaultLaunch); CHECK(defaultLaunch->startDesigner);
+  CHECK(defaultLaunch->manifest.empty()); CHECK(!defaultLaunch->productionProject);
+  const auto explicitLaunch=parse({"studio","--designer","--auto-close-ms","100"});
+  CHECK(explicitLaunch); CHECK(explicitLaunch->startDesigner);
+  CHECK(!parse({"studio","--designer","--record-ms","100"}));
+  CHECK(!parse({"studio","--designer","--production-project","workspace"}));
+  CHECK(!parse({"studio","--designer","--operator-id","producer"}));
+  CHECK(!parse({"studio","--unknown"}));
+  CHECK(!parse({"studio","--window-width","720"}));
+  const auto withBank=parse({"studio","--designer","--manifest","bank.json"});
+  CHECK(withBank); CHECK(withBank->manifest=="bank.json");
+  CHECK(!parse(productionArguments())->startDesigner);
+}
+
+TEST_CASE("voicebank studio explicit dimensions override restored geometry") {
+  CHECK(!parse(productionArguments())->windowSizeSpecified);
+  for (const auto* flag : {"--window-width","--window-height"}) {
+    auto args=productionArguments(); args.insert(args.end(),{flag,"720"});
+    const auto options=parse(std::move(args)); CHECK(options);
+    CHECK(options->windowSizeSpecified);
+    if (std::string_view{flag}=="--window-width") CHECK(options->windowWidth==720U);
+    else CHECK(options->windowHeight==720U);
+  }
+}
+
 TEST_CASE("voicebank studio options retain exact valid operation values") {
   auto arguments = productionArguments();
   arguments.insert(arguments.end(), {"--operation", "normalize",

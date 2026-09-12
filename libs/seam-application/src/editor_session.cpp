@@ -3,7 +3,9 @@
 namespace seam::application {
 
 EditorSession::EditorSession(domain::Project project, core::ILogger* logger)
-    : project_(std::move(project)), logger_(logger != nullptr ? logger : &fallbackLogger_) {}
+    : project_(std::move(project)),
+      performanceGeneration_(std::make_shared<const detail::PerformanceJobGeneration>()),
+      logger_(logger != nullptr ? logger : &fallbackLogger_) {}
 
 void EditorSession::log(core::LogLevel level, std::string_view message) {
   logger_->write(level, "editor-session", message);
@@ -19,6 +21,8 @@ core::Result<void> EditorSession::execute(std::unique_ptr<ICommand> command) {
   }
 
   const auto impact = command->impact();
+  auto nextGeneration = performanceGeneration_.use_count() > 1
+      ? std::make_shared<const detail::PerformanceJobGeneration>() : nullptr;
 
   const auto transactionSnapshot = project_;
   const auto result = command->apply(project_);
@@ -34,6 +38,9 @@ core::Result<void> EditorSession::execute(std::unique_ptr<ICommand> command) {
     return validation;
   }
 
+  if (nextGeneration && !samePerformanceInputs(transactionSnapshot, project_)) {
+    performanceGeneration_ = std::move(nextGeneration);
+  }
   undo_.push_back(std::move(command));
   redo_.clear();
   lastImpact_ = impact;
@@ -46,6 +53,8 @@ core::Result<void> EditorSession::undo() {
     return core::failure(core::ErrorCode::Conflict, "There is no command to undo");
   }
 
+  auto nextGeneration = performanceGeneration_.use_count() > 1
+      ? std::make_shared<const detail::PerformanceJobGeneration>() : nullptr;
   const auto transactionSnapshot = project_;
   const auto impact = undo_.back()->impact();
   const auto result = undo_.back()->revert(project_);
@@ -69,6 +78,9 @@ core::Result<void> EditorSession::undo() {
     return validation;
   }
 
+  if (nextGeneration && !samePerformanceInputs(transactionSnapshot, project_)) {
+    performanceGeneration_ = std::move(nextGeneration);
+  }
   auto command = std::move(undo_.back());
   undo_.pop_back();
   redo_.push_back(std::move(command));
@@ -82,6 +94,8 @@ core::Result<void> EditorSession::redo() {
     return core::failure(core::ErrorCode::Conflict, "There is no command to redo");
   }
 
+  auto nextGeneration = performanceGeneration_.use_count() > 1
+      ? std::make_shared<const detail::PerformanceJobGeneration>() : nullptr;
   const auto transactionSnapshot = project_;
   const auto impact = redo_.back()->impact();
   const auto result = redo_.back()->apply(project_);
@@ -105,6 +119,9 @@ core::Result<void> EditorSession::redo() {
     return validation;
   }
 
+  if (nextGeneration && !samePerformanceInputs(transactionSnapshot, project_)) {
+    performanceGeneration_ = std::move(nextGeneration);
+  }
   auto command = std::move(redo_.back());
   redo_.pop_back();
   undo_.push_back(std::move(command));
@@ -120,7 +137,9 @@ core::Result<void> EditorSession::replaceProject(domain::Project project) {
     return validation;
   }
 
+  auto nextGeneration = std::make_shared<const detail::PerformanceJobGeneration>();
   project_ = std::move(project);
+  performanceGeneration_ = std::move(nextGeneration);
   selection_.clear();
   undo_.clear();
   redo_.clear();

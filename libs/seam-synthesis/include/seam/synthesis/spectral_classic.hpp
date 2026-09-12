@@ -2,6 +2,9 @@
 
 #include "seam/core/result.hpp"
 #include "seam/synthesis/pitch_curve.hpp"
+#include "seam/synthesis/performance_compiler.hpp"
+#include "seam/synthesis/source_target_map.hpp"
+#include <memory>
 #include "seam/synthesis/raw_renderer.hpp"
 #include "seam/voicebank/voicebank.hpp"
 #include "seam/voicebank/wav.hpp"
@@ -19,6 +22,9 @@ struct SpectralRenderParameters final {
   float phaseReset{0.70F};
   float additionalGainDb{0.0F};
   PitchCurve pitchCurve;
+  std::shared_ptr<const CompiledScorePerformance> performance{};
+  time::SampleFrame performanceStartFrame{0};
+  std::optional<SourceTargetMap> sourceMap{};
 };
 
 class SpectralClassicRenderer final {

@@ -1,0 +1,11 @@
+Command:
+python3 -m unittest tests.production.test_production_draft_parity tests.production.test_voice_source_admission tests.external_beta.test_full_product_gate tests.production.test_public_release_state_machine
+
+Captured terminal completion:
+----------------------------------------------------------------------
+Ran 33 tests in 9.367s
+
+OK
+
+Exit code: 0
+This is a focused run, not all Python tests or a release acceptance.

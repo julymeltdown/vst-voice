@@ -4,6 +4,13 @@
 
 namespace seam::domain {
 
+bool continuesSharedLyric(const Note& previous, const Note& current) noexcept {
+  return previous.lyricTokenId.valid() && previous.lyricTokenId == current.lyricTokenId &&
+      previous.articulation == NoteArticulation::Legato && current.articulation == NoteArticulation::Legato &&
+      previous.startTick >= time::Tick{0} && current.startTick >= previous.startTick &&
+      current.startTick - previous.startTick == previous.durationTick;
+}
+
 core::Result<void> Note::validate() const {
   if (!id.valid()) {
     return core::failure(core::ErrorCode::InvariantViolation, "Note ID must be valid");
@@ -28,7 +35,12 @@ core::Result<void> Note::validate() const {
     return core::failure(core::ErrorCode::InvariantViolation,
                          "Note must reference a lyric token", id.toString());
   }
-  return core::success();
+  if (phoneticHint.has_value() &&
+      (phoneticHint->empty() || phoneticHint->size() > 4096U || !fromUtf8(*phoneticHint))) {
+    return core::failure(core::ErrorCode::InvariantViolation,
+                         "Phonetic hint must be nonempty bounded UTF-8", id.toString());
+  }
+  return vibrato.validate();
 }
 
 std::string toUtf8(const std::u32string& text) {

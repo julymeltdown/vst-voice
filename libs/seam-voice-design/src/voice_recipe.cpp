@@ -1,0 +1,221 @@
+#include "seam/voice_design/voice_recipe.hpp"
+#include "seam/formats/json_value.hpp"
+#include "seam/text/unicode.hpp"
+#include "seam/phonemizer/phonemizer.hpp"
+#include <algorithm>
+#include <charconv>
+#include <cmath>
+#include <set>
+
+namespace seam::voice_design {
+namespace {
+bool bounded(double value, double low, double high) { return std::isfinite(value) && value >= low && value <= high; }
+bool text(const std::string& value) {
+  return !value.empty() && value.size() <= 128U && seam::text::decodeUtf8Strict(value) && std::none_of(value.begin(), value.end(),
+      [](char c) { return static_cast<unsigned char>(c) < 32U || c == 127; });
+}
+using J = formats::JsonValue;
+bool fields(const J& value, std::initializer_list<std::string_view> names) {
+  return value.isObject() && value.asObject().size() == names.size() &&
+      std::all_of(names.begin(), names.end(), [&](auto name) { return value.find(name) != nullptr; });
+}
+bool number(const J& value, std::string_view key) { const auto* field = value.find(key); return field && field->isNumber(); }
+core::Result<VoiceRecipe> malformed() { return core::failure<VoiceRecipe>(core::ErrorCode::ParseError, "Voice recipe fields are invalid"); }
+bool parseSeed(const J& value, std::uint64_t& seed) {
+  if (!value.isString() || value.asString().empty() || value.asString().size() > 20U) return false;
+  const auto& text = value.asString();
+  const auto parsed = std::from_chars(text.data(), text.data() + text.size(), seed);
+  return parsed.ec == std::errc{} && parsed.ptr == text.data() + text.size() && text == std::to_string(seed);
+}
+}
+
+core::Result<void> VoiceRecipe::validate() const {
+  if (engineId != "seam.source-filter.v1") return core::failure(core::ErrorCode::Unsupported, "Voice recipe engine is unsupported");
+  if (!text(id) || poses.empty() || poses.size() > 64U ||
+      !bounded(phonation.openQuotient, 0.05, 0.95) || !bounded(phonation.spectralTiltDbPerOctave, -48.0, 0.0) ||
+      !bounded(phonation.aspiration, 0.0, 1.0) || !bounded(modulation.jitterCents, 0.0, 100.0) ||
+      !bounded(modulation.shimmerAmount, 0.0, 1.0) || !bounded(modulation.rateHz, 0.0, 20.0)) {
+    return core::failure(core::ErrorCode::InvalidArgument, "Voice recipe source or modulation exceeds bounds");
+  }
+  std::set<std::pair<std::string, std::string>> identities;
+  for (const auto& pose : poses) {
+    if (!text(pose.phone) || !text(pose.style) || !identities.emplace(pose.phone, pose.style).second ||
+        !bounded(pose.nasalCoupling, 0.0, 1.0) || pose.formants.size() < 3U || pose.formants.size() > 8U) {
+      return core::failure(core::ErrorCode::InvalidArgument, "Voice recipe pose identity or resonance count is invalid");
+    }
+    double previous = 0.0;
+    if (pose.nasal && (!bounded(pose.nasal->resonanceHz,50.0,4000.0) ||
+        !bounded(pose.nasal->antiresonanceHz,50.0,16000.0) ||
+        !bounded(pose.nasal->resonanceBandwidthHz,10.0,5000.0) ||
+        !bounded(pose.nasal->antiresonanceBandwidthHz,10.0,5000.0)))
+      return core::failure(core::ErrorCode::InvalidArgument,"Nasal resonance and antiresonance must be finite and bounded");
+    for (const auto& band : pose.formants) {
+      if (!bounded(band.frequencyHz, 50.0, 16000.0) || band.frequencyHz <= previous ||
+          !bounded(band.bandwidthHz, 10.0, 5000.0) || !bounded(band.gainDb, -48.0, 24.0)) {
+        return core::failure(core::ErrorCode::InvalidArgument, "Voice recipe resonance bands must be finite, bounded and ordered");
+      }
+      previous = band.frequencyHz;
+    }
+  }
+  if (frications.size() > 64U) return core::failure(core::ErrorCode::InvalidArgument, "Too many recipe frication poses");
+  identities.clear();
+  for (const auto& pose : frications) {
+    const auto& source = pose.source;
+    if (!text(pose.phone) || !text(pose.style) || !identities.emplace(pose.phone, pose.style).second ||
+        std::none_of(poses.begin(), poses.end(), [&](const auto& vowel) { return vowel.style == pose.style; }) ||
+        !bounded(source.centerHz, 80.0, 16000.0) || !bounded(source.bandwidthHz, 20.0, 16000.0) ||
+        !bounded(source.gain, 0.0, 0.25) || !bounded(source.centerHz / source.bandwidthHz, 0.25, 20.0))
+      return core::failure(core::ErrorCode::InvalidArgument, "Recipe frication identity, style or source is invalid");
+    if (pose.voicingGain && (!bounded(*pose.voicingGain,0.0,1.0) || *pose.voicingGain==0.0 ||
+        phonemizer::isVowelSymbol(pose.phone) || phonemizer::isNasalSymbol(pose.phone) ||
+        std::none_of(poses.begin(),poses.end(),[&](const auto& resonance){return resonance.phone==pose.phone && resonance.style==pose.style;})))
+      return core::failure(core::ErrorCode::InvalidArgument,"Voiced frication requires a gain in (0,1] and an explicit same-phone/style resonance pose");
+  }
+  if (plosives.size()>64U) return core::failure(core::ErrorCode::InvalidArgument,"Too many plosive poses");
+  for (const auto& pose:plosives) {
+    const auto& source=pose.source;
+    if ((pose.phone!="p" && pose.phone!="t" && pose.phone!="k") || !text(pose.style) ||
+        !identities.emplace(pose.phone,pose.style).second ||
+        std::none_of(poses.begin(),poses.end(),[&](const auto& voice) { return voice.style==pose.style; }) ||
+        !bounded(source.centerHz,80.0,16000.0) || !bounded(source.bandwidthHz,20.0,16000.0) ||
+        !bounded(source.gain,0.0,0.25) || !bounded(source.centerHz/source.bandwidthHz,0.25,20.0) ||
+        !bounded(pose.burstMilliseconds,1.0,100.0))
+      return core::failure(core::ErrorCode::InvalidArgument,"Plosive identity, style, spectrum or duration is invalid or ambiguous with frication");
+  }
+  return core::success();
+}
+
+std::int64_t voiceRecipeSchemaVersion(const VoiceRecipe& recipe) noexcept {
+  if (std::any_of(recipe.frications.begin(),recipe.frications.end(),[](const auto& pose){return pose.voicingGain.has_value();})) return 5;
+  if (!recipe.plosives.empty()) return 4;
+  return std::any_of(recipe.poses.begin(),recipe.poses.end(),[](const auto& pose) { return pose.nasal.has_value(); }) ? 3 : recipe.frications.empty() ? 1 : 2;
+}
+
+core::Result<std::string> encodeVoiceRecipe(const VoiceRecipe& recipe) {
+  const auto valid = recipe.validate();
+  if (!valid) return core::Result<std::string>{valid.error()};
+  J::Array poses;
+  const auto version = voiceRecipeSchemaVersion(recipe);
+  for (const auto& pose : recipe.poses) {
+    J::Array bands;
+    for (const auto& band : pose.formants) bands.emplace_back(J::Object{
+        {"frequencyHz", J{band.frequencyHz}}, {"bandwidthHz", J{band.bandwidthHz}}, {"gainDb", J{band.gainDb}}});
+    J row{J::Object{{"phone", J{pose.phone}}, {"style", J{pose.style}},
+        {"nasalCoupling", J{pose.nasalCoupling}}, {"formants", J{std::move(bands)}}}};
+    if (version>=3) {
+      J nasal;
+      if (pose.nasal) nasal=J::Object{{"resonanceHz",pose.nasal->resonanceHz},{"resonanceBandwidthHz",pose.nasal->resonanceBandwidthHz},
+          {"antiresonanceHz",pose.nasal->antiresonanceHz},{"antiresonanceBandwidthHz",pose.nasal->antiresonanceBandwidthHz}};
+      row.asObject().emplace("nasal",std::move(nasal));
+    }
+    poses.push_back(std::move(row));
+  }
+  J root{J::Object{{"formatId", J{"com.project-seam.voice-recipe"}},
+      {"schemaVersion", J{version}}, {"id", J{recipe.id}}, {"engineId", J{recipe.engineId}},
+      {"seed", J{std::to_string(recipe.seed)}},
+      {"phonation", J{J::Object{{"openQuotient", J{recipe.phonation.openQuotient}},
+          {"spectralTiltDbPerOctave", J{recipe.phonation.spectralTiltDbPerOctave}}, {"aspiration", J{recipe.phonation.aspiration}}}}},
+      {"modulation", J{J::Object{{"jitterCents", J{recipe.modulation.jitterCents}},
+          {"shimmerAmount", J{recipe.modulation.shimmerAmount}}, {"rateHz", J{recipe.modulation.rateHz}}}}},
+      {"poses", J{std::move(poses)}}}};
+  if (version>=2) {
+    J::Array frications;
+    for (const auto& pose : recipe.frications) {
+      J row{J::Object{
+        {"phone", pose.phone}, {"style", pose.style}, {"seed", std::to_string(pose.source.seed)},
+        {"centerHz", pose.source.centerHz}, {"bandwidthHz", pose.source.bandwidthHz}, {"gain", pose.source.gain}}};
+      if (version>=5) row.asObject().emplace("voicingGain",pose.voicingGain?J{*pose.voicingGain}:J{});
+      frications.push_back(std::move(row));
+    }
+    root.asObject().emplace("frications", std::move(frications));
+  }
+  if (version>=4) {
+    J::Array plosives;
+    for (const auto& pose:recipe.plosives) plosives.emplace_back(J::Object{
+        {"phone",pose.phone},{"style",pose.style},{"seed",std::to_string(pose.source.seed)},
+        {"centerHz",pose.source.centerHz},{"bandwidthHz",pose.source.bandwidthHz},{"gain",pose.source.gain},
+        {"burstMilliseconds",pose.burstMilliseconds}});
+    root.asObject().emplace("plosives",std::move(plosives));
+  }
+  return formats::stringifyJson(root);
+}
+
+core::Result<VoiceRecipe> decodeVoiceRecipe(std::string_view json) {
+  const auto parsed = formats::parseJson(json, {.maximumInputBytes = 512U * 1024U, .maximumDepth = 6U,
+      .maximumNodes = 8192U, .maximumStringBytes = 128U, .maximumCollectionEntries = 64U});
+  if (!parsed) return core::Result<VoiceRecipe>{parsed.error()};
+  const auto& root = parsed.value();
+  if (!root.isObject() || !root.find("formatId") || !root.find("schemaVersion") ||
+      !root.find("formatId")->isString() || root.find("formatId")->asString() != "com.project-seam.voice-recipe" ||
+      !root.find("schemaVersion")->isInteger()) return malformed();
+  const auto version = root.find("schemaVersion")->asInt64();
+  if (version < 1 || version > 5) return core::failure<VoiceRecipe>(core::ErrorCode::Unsupported, "Voice recipe schema is unsupported");
+  if (!(version == 1 ? fields(root, {"formatId", "schemaVersion", "id", "engineId", "seed", "phonation", "modulation", "poses"}) :
+      version>=4 ? fields(root,{"formatId","schemaVersion","id","engineId","seed","phonation","modulation","poses","frications","plosives"}) :
+      fields(root, {"formatId", "schemaVersion", "id", "engineId", "seed", "phonation", "modulation", "poses", "frications"}))) return malformed();
+  if (!root.find("id")->isString() || !root.find("engineId")->isString() || !root.find("seed")->isString() ||
+      !root.find("poses")->isArray()) return malformed();
+  VoiceRecipe recipe;
+  recipe.id = root.find("id")->asString(); recipe.engineId = root.find("engineId")->asString();
+  if (!parseSeed(*root.find("seed"), recipe.seed)) return malformed();
+  const auto& p = *root.find("phonation"); const auto& m = *root.find("modulation");
+  if (!fields(p, {"openQuotient", "spectralTiltDbPerOctave", "aspiration"}) ||
+      !number(p, "openQuotient") || !number(p, "spectralTiltDbPerOctave") || !number(p, "aspiration") ||
+      !fields(m, {"jitterCents", "shimmerAmount", "rateHz"}) || !number(m, "jitterCents") ||
+      !number(m, "shimmerAmount") || !number(m, "rateHz")) return malformed();
+  recipe.phonation = {p.find("openQuotient")->asNumber(), p.find("spectralTiltDbPerOctave")->asNumber(), p.find("aspiration")->asNumber()};
+  recipe.modulation = {m.find("jitterCents")->asNumber(), m.find("shimmerAmount")->asNumber(), m.find("rateHz")->asNumber()};
+  for (const auto& pose : root.find("poses")->asArray()) {
+    if (!(version>=3 ? fields(pose,{"phone","style","nasalCoupling","formants","nasal"}) : fields(pose, {"phone", "style", "nasalCoupling", "formants"})) || !pose.find("phone")->isString() ||
+        !pose.find("style")->isString() || !number(pose, "nasalCoupling") || !pose.find("formants")->isArray()) return malformed();
+    VoicePose value{pose.find("phone")->asString(), pose.find("style")->asString(), pose.find("nasalCoupling")->asNumber(), {}};
+    if (version>=3 && !pose.find("nasal")->isNull()) {
+      const auto& nasal=*pose.find("nasal");
+      if (!fields(nasal,{"resonanceHz","resonanceBandwidthHz","antiresonanceHz","antiresonanceBandwidthHz"}) ||
+          !number(nasal,"resonanceHz") || !number(nasal,"resonanceBandwidthHz") || !number(nasal,"antiresonanceHz") || !number(nasal,"antiresonanceBandwidthHz")) return malformed();
+      value.nasal=NasalResonance{nasal.find("resonanceHz")->asNumber(),nasal.find("resonanceBandwidthHz")->asNumber(),
+          nasal.find("antiresonanceHz")->asNumber(),nasal.find("antiresonanceBandwidthHz")->asNumber()};
+    }
+    for (const auto& band : pose.find("formants")->asArray()) {
+      if (!fields(band, {"frequencyHz", "bandwidthHz", "gainDb"}) || !number(band, "frequencyHz") ||
+          !number(band, "bandwidthHz") || !number(band, "gainDb")) return malformed();
+      value.formants.push_back({band.find("frequencyHz")->asNumber(), band.find("bandwidthHz")->asNumber(), band.find("gainDb")->asNumber()});
+    }
+    recipe.poses.push_back(std::move(value));
+  }
+  if (version >= 2) {
+    const auto& list = *root.find("frications");
+    if (!list.isArray() || (version==2 && list.asArray().empty())) return malformed();
+    for (const auto& pose : list.asArray()) {
+      if (!(version>=5?fields(pose,{"phone","style","seed","centerHz","bandwidthHz","gain","voicingGain"}):fields(pose, {"phone", "style", "seed", "centerHz", "bandwidthHz", "gain"})) ||
+          !pose.find("phone")->isString() || !pose.find("style")->isString() ||
+          !number(pose, "centerHz") || !number(pose, "bandwidthHz") || !number(pose, "gain")) return malformed();
+      FricationConfig source;
+      if (!parseSeed(*pose.find("seed"), source.seed)) return malformed();
+      source.centerHz = pose.find("centerHz")->asNumber(); source.bandwidthHz = pose.find("bandwidthHz")->asNumber(); source.gain = pose.find("gain")->asNumber();
+      recipe.frications.push_back({pose.find("phone")->asString(), pose.find("style")->asString(), source});
+      if (version>=5 && !pose.find("voicingGain")->isNull()) {
+        if (!pose.find("voicingGain")->isNumber()) return malformed();
+        recipe.frications.back().voicingGain=pose.find("voicingGain")->asNumber();
+      }
+    }
+  }
+  if (version>=4) {
+    const auto& list=*root.find("plosives");
+    if (!list.isArray() || (version==4 && list.asArray().empty())) return malformed();
+    for (const auto& pose:list.asArray()) {
+      if (!fields(pose,{"phone","style","seed","centerHz","bandwidthHz","gain","burstMilliseconds"}) ||
+          !pose.find("phone")->isString() || !pose.find("style")->isString() ||
+          !number(pose,"centerHz") || !number(pose,"bandwidthHz") || !number(pose,"gain") || !number(pose,"burstMilliseconds")) return malformed();
+      FricationConfig source;
+      if (!parseSeed(*pose.find("seed"),source.seed)) return malformed();
+      source.centerHz=pose.find("centerHz")->asNumber(); source.bandwidthHz=pose.find("bandwidthHz")->asNumber(); source.gain=pose.find("gain")->asNumber();
+      recipe.plosives.push_back({pose.find("phone")->asString(),pose.find("style")->asString(),source,pose.find("burstMilliseconds")->asNumber()});
+    }
+  }
+  const auto valid = recipe.validate();
+  if (!valid) return core::Result<VoiceRecipe>{valid.error()};
+  if (voiceRecipeSchemaVersion(recipe)!=version) return malformed();
+  return recipe;
+}
+}

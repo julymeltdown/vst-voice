@@ -2,6 +2,9 @@
 #include "test_support.hpp"
 
 #include "seam/voicebank/manifest_json.hpp"
+#include "seam/voicebank/content_identity.hpp"
+#include "seam/core/file_io.hpp"
+#include "seam/core/sha256.hpp"
 #include "seam/voicebank/marker_editor.hpp"
 #include "seam/voicebank/pitch.hpp"
 #include "seam/voicebank/pitch_marks.hpp"
@@ -13,6 +16,38 @@
 #include <algorithm>
 #include <cmath>
 #include <filesystem>
+
+TEST_CASE("voicebank content identity binds bounded per-unit alignment bytes") {
+  const auto root = seam::test::support::temporaryDirectory("alignment-bank-identity");
+  const auto manifest = seam::test::support::makeManifest({
+      seam::test::support::makeUnit("a", {"a"}, "a.wav", 69,
+          seam::voicebank::UnitKind::Sustain, 24000)});
+  CHECK(seam::voicebank::writeMonoPcm16Wav(root / "a.wav", 48000U,
+      seam::test::support::sineWave(48000U, 440.0, 0.5)));
+  const auto identity = [&] { return seam::voicebank::computeVoicebankContentHash(manifest, root); };
+  const auto legacy = identity();
+  CHECK(legacy);
+  std::filesystem::create_directories(root / "alignments");
+  CHECK(identity().value() == legacy.value());
+  const auto path = root / "alignments" / (seam::core::sha256Hex("a") + ".json");
+  // Identity binds bytes; semantic validation is independently required by loading.
+  CHECK(seam::core::durableAtomicWriteText(path, "{\"landmarks\":[]}"));
+  const auto aligned = identity();
+  CHECK(aligned);
+  CHECK(aligned.value() != legacy.value());
+  CHECK(seam::core::durableAtomicWriteText(path, "{\"landmarks\":[] }"));
+  CHECK(identity().value() != aligned.value());
+  CHECK(seam::core::durableAtomicWriteText(path, std::string(512U * 1024U + 1U, 'x')));
+  CHECK(!identity());
+  CHECK(std::filesystem::remove(path));
+  CHECK(identity().value() == legacy.value());
+  std::filesystem::create_symlink(root / "a.wav", path);
+  CHECK(!identity());
+  CHECK(std::filesystem::remove(path));
+  CHECK(std::filesystem::remove(root / "alignments"));
+  std::filesystem::create_directory_symlink(root, root / "alignments");
+  CHECK(!identity());
+}
 
 TEST_CASE("PCM16 WAV round trip and audio statistics remain bounded") {
   constexpr std::uint32_t sampleRate = 48000;

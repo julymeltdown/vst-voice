@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import copy
+import argparse
+import json
 from datetime import datetime
+from pathlib import Path
 from typing import Final
 
 from .approval_validation import approval_errors
@@ -13,6 +16,8 @@ from .contracts import (
     parse_time,
 )
 from .crypto_validation import operation_policy_errors, signed_record_errors
+from .replay import read_reference, restored_directory
+from .contracts import sha256_json
 
 
 ADVANCE_ACTIONS: Final[dict[str, tuple[str, str]]] = {
@@ -106,6 +111,7 @@ def transition(
     snapshot: JsonObject,
     decision: JsonObject,
     contract: JsonObject,
+    *, base: Path | None = None,
 ) -> JsonObject:
     _validate_snapshot(snapshot)
     operation_policy = contract.get("operationPolicy")
@@ -121,7 +127,7 @@ def transition(
     advance = ADVANCE_ACTIONS.get(action)
     if advance is not None:
         source, target = advance
-        if current != source or decision.get("gatePassed") is not True:
+        if current != source:
             raise _fail(f"{action} requires {source} and a passing gate")
         if action == "ACTIVATE":
             errors = approval_errors(
@@ -138,7 +144,7 @@ def transition(
         next_state = "DISTRIBUTION_PAUSED"
     elif action == "RESUME":
         pause_time = _latest_pause_time(snapshot)
-        if current != "DISTRIBUTION_PAUSED" or decision.get("gatePassed") is not True or pause_time is None:
+        if current != "DISTRIBUTION_PAUSED" or pause_time is None:
             raise _fail("RESUME requires a paused passing candidate")
         errors = approval_errors(
             decision.get("approvals"),
@@ -159,9 +165,68 @@ def transition(
         next_state = "REVOKED"
     else:
         raise _fail(f"unsupported operation action: {action}")
+    receipt = None
+    if advance is not None or action == "RESUME":
+        receipt = _reproduce_public_audit(snapshot, decision, contract, base or Path.cwd(), next_state)
     updated = copy.deepcopy(snapshot)
     updated["state"] = next_state
     log = updated["decisionLog"]
     assert isinstance(log, list)
     log.append(copy.deepcopy(decision))
+    if receipt is not None:
+        updated["lastReproducedAudit"] = receipt
     return updated
+
+
+def _reproduce_public_audit(snapshot: JsonObject, decision: JsonObject, contract: JsonObject,
+                          base: Path, target: str) -> JsonObject:
+    from .release_audit import audit_release
+    inputs = decision.get("releaseAudit")
+    if not isinstance(inputs, dict) or set(inputs) != {"candidate", "archiveManifest", "archiveRoot"}:
+        raise _fail("public promotion requires hash-bound restored releaseAudit inputs, not gatePassed")
+    if decision.get("acceptanceContractSha256") != sha256_json(contract):
+        raise _fail("public operation must bind the exact trusted acceptance contract")
+    try:
+        root = restored_directory(inputs["archiveRoot"], base, "public archiveRoot")
+        candidate = read_reference(inputs["candidate"], base, "public audit candidate")
+        manifest = read_reference(inputs["archiveManifest"], base, "public archive manifest")
+        chain = candidate.get("rootChain")
+        evidence = chain.get("evidenceRoot") if isinstance(chain, dict) else None
+        if candidate.get("candidateLineageId") != snapshot["candidateLineageId"] or not isinstance(evidence, dict) or evidence.get("sha256") != snapshot["evidenceRootSha256"]:
+            raise _fail("public audit candidate differs from the operation's lineage or evidence root")
+        result = audit_release(candidate, manifest, root, target, acceptance_contract=contract)
+        if not result.passed:
+            raise _fail("reproduced public release audit failed: " + "; ".join(result.errors[:8]))
+        return {"state": target, "candidateSha256": inputs["candidate"]["sha256"],
+            "archiveManifestSha256": inputs["archiveManifest"]["sha256"],
+            "acceptanceContractSha256": sha256_json(contract), "evidenceRootSha256": evidence["sha256"]}
+    except (OSError, ValueError, TypeError) as error:
+        raise _fail(str(error)) from error
+
+
+def main(argv: list[str] | None = None) -> int:
+    from tools.external_beta.operations import load_json
+    parser = argparse.ArgumentParser(description="Replay audits before applying a signed public release decision")
+    parser.add_argument("--snapshot", type=Path, required=True)
+    parser.add_argument("--decision", type=Path, required=True)
+    parser.add_argument("--acceptance-contract", type=Path, required=True)
+    parser.add_argument("--output", type=Path)
+    parser.add_argument("--expect-blocked", action="store_true")
+    args = parser.parse_args(argv)
+    try:
+        result = transition(load_json(args.snapshot), load_json(args.decision), load_json(args.acceptance_contract), base=args.decision.absolute().parent)
+        payload = {"passed": True, "state": result["state"], "snapshot": result}
+        code = 4 if args.expect_blocked else 0
+    except (OSError, ValueError, TypeError) as error:
+        payload = {"passed": False, "blocked": ["operation"], "errors": [str(error)]}
+        code = 0 if args.expect_blocked else 2
+    text = json.dumps(payload, sort_keys=True) + "\n"
+    print(text, end="")
+    if args.output:
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(text, encoding="utf-8")
+    return code
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

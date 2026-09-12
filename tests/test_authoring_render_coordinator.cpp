@@ -1,10 +1,13 @@
 #include "test_framework.hpp"
 
 #include "seam/authoring/render_coordinator.hpp"
+#include "seam/authoring/audio_measurement_capture.hpp"
+#include "seam/authoring/audio_measurement_job.hpp"
 #include "seam/application/project_factory.hpp"
 #include "seam/rendering/pcm_cache.hpp"
 #include "seam/rendering/project_renderer.hpp"
 #include "seam/voicebank/catalog.hpp"
+#include "seam/voice_design/recipe_resource.hpp"
 
 #include <array>
 #include <atomic>
@@ -12,6 +15,7 @@
 #include <condition_variable>
 #include <filesystem>
 #include <mutex>
+#include <limits>
 #include <string>
 #include <thread>
 #include <tuple>
@@ -149,6 +153,53 @@ seam::authoring::RenderProgress waitForTerminal(
 
 }  // namespace
 
+TEST_CASE("coordinator publishes typed procedural previews without sample bank approval") {
+  seam::application::ProjectFactory factory{8000U};
+  auto project = factory.createProject("Procedural preview");
+  const auto trackId = factory.addVocalTrack(project, "Draft singer");
+  const auto regionId = factory.addRegion(project, trackId, "Vowel", seam::time::Tick{960}, seam::time::Tick{960});
+  auto [lyric, note] = factory.makeNote(seam::time::Tick{0}, seam::time::Tick{960}, 69U,
+      U"あ", seam::domain::Language::Japanese);
+  project.findRegion(regionId)->lyrics.push_back(std::move(lyric));
+  project.findRegion(regionId)->notes.push_back(std::move(note));
+  seam::voice_design::VoiceRecipe recipe;
+  recipe.id = "coordinator-draft";
+  recipe.poses = {{"a", "neutral", 0.0, {{700.0, 80.0, 0.0}, {1200.0, 100.0, -3.0}, {2600.0, 140.0, -6.0}}}};
+  const auto resource = seam::voice_design::freezeVoiceRecipeResource(recipe); CHECK(resource);
+  std::vector<seam::rendering::TrackSingerSource> sources{
+      seam::rendering::TrackProceduralSource{trackId, resource.value(), "neutral"}};
+  const auto expected = seam::rendering::ProductionProjectRenderer{}.renderWithSources(
+      project, sources, trackId, regionId, 1U, 48000U); CHECK(expected);
+  seam::authoring::AuthoringRenderCoordinator coordinator{uniqueTempRoot("procedural-preview")};
+  coordinator.submitWithSources(project, sources, trackId, regionId, 1U, 48000U,
+      seam::rendering::RenderQuality::Preview, true);
+  CHECK(waitForTerminal(coordinator, 1U).state == seam::authoring::RenderState::Ready);
+  CHECK(coordinator.progress().totalPhrases == 1U);
+  CHECK(coordinator.progress().completedPhrases == 1U);
+  const auto published = coordinator.latest(); CHECK(published);
+  CHECK(published->result.interleaved == expected.value().interleaved);
+  CHECK(published->activeRenderer == "seam.source-filter.v1");
+  CHECK(published->activeVoicebankId.empty()); CHECK(published->result.activeUnitPlan.empty());
+  CHECK(project.findVocalTrack(trackId)->voicebank.id.empty());
+  auto invalid = sources;
+  std::get<seam::rendering::TrackProceduralSource>(invalid.front()).resource.identity.contentHash = std::string(64U, 'f');
+  coordinator.submitWithSources(project, invalid, trackId, regionId, 2U, 48000U,
+      seam::rendering::RenderQuality::Preview, true);
+  const auto failed = waitForTerminal(coordinator, 2U);
+  CHECK(failed.state == seam::authoring::RenderState::Failed);
+  CHECK(failed.failure == seam::authoring::RenderFailureKind::RenderFailed);
+  CHECK(coordinator.latest()->projectRevision == 1U);
+  CHECK(coordinator.latest()->result.interleaved == expected.value().interleaved);
+  coordinator.submitWithSources(project, sources, trackId, regionId, 3U, 48000U,
+      seam::rendering::RenderQuality::Preview, true);
+  CHECK(waitForTerminal(coordinator, 3U).state == seam::authoring::RenderState::Ready);
+  coordinator.submitWithSources(project, invalid, trackId, regionId, 2U, 48000U,
+      seam::rendering::RenderQuality::Preview, true);
+  CHECK(coordinator.progress().requestedRevision == 3U);
+  CHECK(coordinator.latest()->projectRevision == 3U);
+  CHECK(coordinator.latest()->result.interleaved == expected.value().interleaved);
+}
+
 TEST_CASE("authoring_render_coordinator_matches_direct_production_renderer") {
   auto fixture = makeRenderFixture();
   const auto coordinatorCache = uniqueTempRoot("render-coordinator-parity");
@@ -167,6 +218,8 @@ TEST_CASE("authoring_render_coordinator_matches_direct_production_renderer") {
   CHECK(published);
   CHECK(published->state == seam::authoring::RenderState::Ready);
   CHECK(published->projectRevision == 42U);
+  CHECK(published->projectId == fixture.project.id()); CHECK(published->requestId != 0U); CHECK(published->sourceIdentity);
+  CHECK(coordinator.matchesCurrent(*published)); CHECK(coordinator.acquireCurrent());
   CHECK(!published->result.interleaved.empty());
 
   seam::rendering::PcmCache cache{directCache};
@@ -181,6 +234,98 @@ TEST_CASE("authoring_render_coordinator_matches_direct_production_renderer") {
   CHECK(published->result.phraseContentHashes ==
         direct.value().phraseContentHashes);
   CHECK(published->result.activeUnitPlan == direct.value().activeUnitPlan);
+}
+
+TEST_CASE("render source identity rejects same revision resubmissions cancellation and unrelated coordinators") {
+  using namespace seam;
+  auto fixture = makeRenderFixture();
+  authoring::AuthoringRenderCoordinator coordinator{uniqueTempRoot("measurement-source")};
+  coordinator.submit(fixture.project, {fixture.source}, fixture.trackId, fixture.regionId, 42U, 48000U, rendering::RenderQuality::Preview, true);
+  CHECK(waitForTerminal(coordinator, 42U).state == authoring::RenderState::Ready);
+  const auto first = coordinator.latest(); CHECK(first); CHECK(coordinator.matchesCurrent(*first));
+  auto altered = *first; altered.result.interleaved[0] = 0.25F;
+  CHECK(!coordinator.matchesCurrent(altered));
+  altered = *first; altered.result.sampleRate = 96000U; CHECK(!coordinator.matchesCurrent(altered));
+  altered = *first; altered.quality = rendering::RenderQuality::Final; CHECK(!coordinator.matchesCurrent(altered));
+  authoring::AuthoringRenderCoordinator other{uniqueTempRoot("measurement-other")};
+  other.submit(fixture.project, {fixture.source}, fixture.trackId, fixture.regionId, 42U, 48000U, rendering::RenderQuality::Preview, true);
+  CHECK(waitForTerminal(other, 42U).state == authoring::RenderState::Ready);
+  CHECK(other.latest()->requestId == first->requestId); CHECK(other.latest()->projectId == first->projectId);
+  CHECK(!other.matchesCurrent(*first));
+  coordinator.submit(fixture.project, {fixture.source}, fixture.trackId, fixture.regionId, 42U, 48000U, rendering::RenderQuality::Preview, true);
+  CHECK(!coordinator.matchesCurrent(*first)); // Revision and content can be identical; the request is not.
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{8};
+  bool renewed = false;
+  while (std::chrono::steady_clock::now() < deadline) {
+    const auto current = coordinator.acquireCurrent();
+    if (current && current->requestId != first->requestId) { renewed = true; break; }
+    std::this_thread::sleep_for(std::chrono::milliseconds{5});
+  }
+  CHECK(renewed); const auto second = coordinator.latest(); CHECK(second);
+  CHECK(second->projectId == first->projectId); CHECK(second->projectRevision == first->projectRevision);
+  CHECK(second->requestId != first->requestId); CHECK(coordinator.matchesCurrent(*second));
+  coordinator.cancel(); CHECK(!coordinator.acquireCurrent()); CHECK(!coordinator.matchesCurrent(*second));
+  CHECK(coordinator.acquire()->state == authoring::RenderState::Ready); // Retained playback is not current measurement evidence.
+  auto invalid = fixture.source; invalid.contentHash = std::string(64U, '0');
+  coordinator.submit(fixture.project, {invalid}, fixture.trackId, fixture.regionId, 43U, 48000U, rendering::RenderQuality::Preview, true);
+  CHECK(waitForTerminal(coordinator, 43U).state == authoring::RenderState::Failed);
+  CHECK(!coordinator.acquireCurrent()); CHECK(!coordinator.matchesCurrent(*second));
+  CHECK(coordinator.acquire()->state == authoring::RenderState::Ready);
+}
+
+TEST_CASE("audio measurement capture binds actual render input and rejects same content document replacement") {
+  using namespace seam; auto fixture = makeRenderFixture();
+  application::EditorSession session{fixture.project};
+  authoring::AuthoringRenderCoordinator coordinator{uniqueTempRoot("measurement-session")};
+  CHECK(!authoring::AudioMeasurementCapture::prepare(session, coordinator));
+  coordinator.submit(session.project(), {fixture.source}, fixture.trackId, fixture.regionId, session.revision(),
+      48000U, rendering::RenderQuality::Preview, true);
+  CHECK(waitForTerminal(coordinator, session.revision()).state == authoring::RenderState::Ready);
+  auto capture = authoring::AudioMeasurementCapture::prepare(session, coordinator); CHECK(capture);
+  CHECK(capture.value().matches(session, coordinator)); CHECK(capture.value().source().sourceProject);
+  const auto count = capture.value().source().result.interleaved.size() / capture.value().source().result.channelCount;
+  const auto measured = capture.value().measure(0U, count, 64U); CHECK(measured); CHECK(measured.value().bins.size() == 64U);
+  const auto before = session.project(); application::EditorSession reopened{before};
+  CHECK(reopened.revision() == session.revision());
+  CHECK(!capture.value().matches(reopened, coordinator)); // Same ID, revision and contents; different session generation.
+  CHECK(capture.value().measure(0U, count, 64U)); // Retained immutable data remains readable, never current publication authority.
+  auto fresh = authoring::AudioMeasurementCapture::prepare(reopened, coordinator); CHECK(fresh);
+  CHECK(fresh.value().matches(reopened, coordinator)); fresh.value().close(); CHECK(!fresh.value().matches(reopened, coordinator));
+  reopened.project().findVocalTrack(fixture.trackId)->muted = true; // Also reject changes bypassing revision counters.
+  CHECK(!authoring::AudioMeasurementCapture::prepare(reopened, coordinator));
+  reopened.project().findVocalTrack(fixture.trackId)->muted = before.findVocalTrack(fixture.trackId)->muted;
+  CHECK(session.replaceProject(before)); CHECK(!capture.value().matches(session, coordinator));
+  CHECK(!authoring::AudioMeasurementCapture::prepare(session, coordinator)); // New revision needs a matching render.
+  auto active = authoring::AudioMeasurementCapture::prepare(reopened, coordinator); CHECK(active);
+  coordinator.cancel(); CHECK(!active.value().matches(reopened, coordinator));
+  CHECK(!authoring::AudioMeasurementCapture::prepare(reopened, coordinator)); CHECK(reopened.project() == before);
+}
+
+TEST_CASE("audio measurement worker retires rejects stale results and never publishes cancelled work") {
+  using namespace seam; auto fixture = makeRenderFixture();
+  auto session = std::make_unique<application::EditorSession>(fixture.project);
+  authoring::AuthoringRenderCoordinator coordinator{uniqueTempRoot("measurement-worker")};
+  coordinator.submit(session->project(), {fixture.source}, fixture.trackId, fixture.regionId, 0U, 48000U, rendering::RenderQuality::Preview, true);
+  CHECK(waitForTerminal(coordinator, 0U).state == authoring::RenderState::Ready);
+  authoring::AudioMeasurementJob job;
+  const auto wait = [&]() -> core::Result<bool> {
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{8};
+    while (std::chrono::steady_clock::now() < deadline) {
+      auto result = job.poll(*session, coordinator); if (!result || result.value()) return result;
+      std::this_thread::sleep_for(std::chrono::milliseconds{1});
+    }
+    return core::failure<bool>(core::ErrorCode::Internal, "Measurement did not retire");
+  };
+  CHECK(job.start(*session, coordinator, 0U, 4096U, 32U)); CHECK(job.preparing());
+  CHECK(!job.start(*session, coordinator, 0U, 4096U, 32U)); CHECK(wait());
+  CHECK(!job.preparing()); CHECK(job.current(*session, coordinator)); CHECK(job.current(*session, coordinator)->bins.size() == 32U);
+  const auto before = session->project(); session = std::make_unique<application::EditorSession>(before); CHECK(!job.current(*session, coordinator));
+  CHECK(job.start(*session, coordinator, 0U, 4096U, 32U)); session = std::make_unique<application::EditorSession>(before); CHECK(!wait());
+  CHECK(job.state() == authoring::AudioMeasurementJob::State::Failed); CHECK(!job.current(*session, coordinator));
+  CHECK(job.start(*session, coordinator, 0U, 4096U, 32U)); job.cancel(); CHECK(wait());
+  CHECK(job.state() == authoring::AudioMeasurementJob::State::Cancelled); CHECK(!job.current(*session, coordinator));
+  CHECK(job.start(*session, coordinator, 0U, std::numeric_limits<std::size_t>::max())); CHECK(!wait());
+  CHECK(!job.current(*session, coordinator)); CHECK(session->project() == before); CHECK(!session->canUndo());
 }
 
 TEST_CASE("authoring_render_coordinator_publishes_command_impact") {

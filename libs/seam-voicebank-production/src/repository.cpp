@@ -1,4 +1,7 @@
 #include "seam/voicebank_production/repository.hpp"
+#include "repository_source_internal.hpp"
+#include "repository_history_internal.hpp"
+#include "seam/voicebank_production/source_assessment.hpp"
 
 #include "seam/core/file_io.hpp"
 #include "seam/core/sha256.hpp"
@@ -9,12 +12,63 @@
 #include <array>
 #include <charconv>
 #include <iomanip>
+#include <limits>
 #include <optional>
 #include <sstream>
 #include <system_error>
+#if defined(_WIN32)
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#else
+#include <fcntl.h>
+#include <sys/file.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#endif
 
 namespace seam::voicebank_production {
 namespace {
+
+// Keep the lock file: unlinking it could allow another writer to lock a different
+// inode while an existing writer still holds this one. Closing releases the OS lock.
+class WorkspaceWriter final {
+public:
+  WorkspaceWriter() = default;
+  WorkspaceWriter(const WorkspaceWriter&) = delete;
+  WorkspaceWriter& operator=(const WorkspaceWriter&) = delete;
+  ~WorkspaceWriter() {
+#if defined(_WIN32)
+    if (handle_ != INVALID_HANDLE_VALUE) CloseHandle(handle_);
+#else
+    if (descriptor_ >= 0) close(descriptor_);
+#endif
+  }
+  core::Result<void> acquire(const std::filesystem::path& path) {
+#if defined(_WIN32)
+    handle_ = CreateFileW(path.c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_ALWAYS,
+        FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
+    BY_HANDLE_FILE_INFORMATION info{};
+    if (handle_ == INVALID_HANDLE_VALUE || !GetFileInformationByHandle(handle_, &info) ||
+        (info.dwFileAttributes & (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT)) != 0)
+      return core::failure(core::ErrorCode::Conflict, "Production writer lock is busy or unsafe");
+#else
+    descriptor_ = open(path.c_str(), O_RDWR | O_CREAT | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK, 0600);
+    struct stat info{};
+    if (descriptor_ < 0 || fstat(descriptor_, &info) != 0 || !S_ISREG(info.st_mode) ||
+        flock(descriptor_, LOCK_EX | LOCK_NB) != 0)
+      return core::failure(core::ErrorCode::Conflict, "Production writer lock is busy or unsafe");
+#endif
+    return core::success();
+  }
+private:
+#if defined(_WIN32)
+  HANDLE handle_{INVALID_HANDLE_VALUE};
+#else
+  int descriptor_{-1};
+#endif
+};
 
 std::string generationName(std::uint64_t generation) {
   std::ostringstream stream;
@@ -56,7 +110,8 @@ std::uint64_t highestGeneration(const std::filesystem::path& directory) {
   return highest;
 }
 
-core::Result<void> verifyLicense(const VoicebankProductionProject& project) {
+core::Result<void> verifyLicense(const std::filesystem::path& root, const VoicebankProductionProject& project) {
+  if (project.schemaVersion >= 2) return source_internal::verifySnapshots(root, project);
   auto digest = core::sha256File(project.licenseLocator);
   if (!digest) return core::Result<void>{digest.error()};
   if (digest.value() != project.licenseSha256) {
@@ -103,8 +158,8 @@ core::Result<void> prepareWorkspace(
     }
     return core::success();
   }
-  constexpr std::array<const char*, 4U> directories{
-      "assets", "generations", "journal", "staging"};
+  constexpr std::array<const char*, 5U> directories{
+      "assets", "generations", "journal", "staging", "source-evidence"};
   for (const auto* name : directories) {
     const auto directory = root / name;
     std::filesystem::create_directories(directory, error);
@@ -135,7 +190,10 @@ core::Result<void> ProductionProjectRepository::initialize(
 }
 
 core::Result<void> ProductionProjectRepository::save(
-    VoicebankProductionProject& project, const ProductionJournalEvent& event) {
+    VoicebankProductionProject& project, const ProductionJournalEvent& event,
+    std::stop_token stopToken) {
+  if (stopToken.stop_requested()) return core::failure(
+      core::ErrorCode::Conflict, "Production save cancelled before commit");
   if (!isProductionJournalAction(event.action) || event.subjectId.empty() ||
       event.operatorId.empty() ||
       !isProductionUtcTimestamp(event.occurredAtUtc) ||
@@ -146,19 +204,60 @@ core::Result<void> ProductionProjectRepository::save(
     return core::failure(core::ErrorCode::InvalidArgument,
                          "Production journal event is invalid");
   }
-  auto license = verifyLicense(project);
+  auto license = verifyLicense(root_, project);
   if (!license) return license;
   auto prepared = prepareWorkspace(root_, false);
   if (!prepared) return prepared;
+  WorkspaceWriter writer;
+  const auto locked = writer.acquire(root_ / ".writer.lock");
+  if (!locked) return locked;
   auto next = project;
   const auto occupied = std::max(highestGeneration(root_ / "generations"),
                                  highestGeneration(root_ / "journal"));
+  if (occupied > 0U) {
+    const auto current = recover();
+    if (!current) return core::Result<void>{current.error()};
+    if (current.value().projectId != project.projectId ||
+        current.value().lastDurableGeneration != project.lastDurableGeneration) {
+      return core::failure(core::ErrorCode::Conflict,
+          "Production writer is stale; recover the current generation before saving");
+    }
+    const auto preserved = source_internal::preserveBindings(current.value(), project);
+    if (!preserved) return preserved;
+    if (project.sourceQualityAssessments.size() != current.value().sourceQualityAssessments.size()) {
+      const auto& assessment = project.sourceQualityAssessments.back();
+      const auto reviewer = validateSourceQualityReviewer(current.value(),assessment);
+      if (!reviewer) return reviewer;
+      const auto material = sourceQualityMaterialIdentity(current.value(),assessment.strategyId);
+      const auto strategy = std::find_if(current.value().sourceStrategies.begin(),current.value().sourceStrategies.end(),
+          [&](const auto& row) { return row.id == assessment.strategyId; });
+      if (project.sourceQualityAssessments.size() != current.value().sourceQualityAssessments.size()+1U ||
+          event.action != "source-quality-assessment" || event.subjectId != assessment.id || event.operatorId != assessment.reviewerId ||
+          event.occurredAtUtc != assessment.reviewedAtUtc || !material || material.value() != assessment.materialSha256 ||
+          strategy == current.value().sourceStrategies.end() || sourceQualityPolicyIdentity(*strategy) != assessment.policySha256)
+        return core::failure(core::ErrorCode::Conflict,"Source assessment has no matching current reviewer journal transition");
+    } else if (event.action == "source-quality-assessment") {
+      return core::failure(core::ErrorCode::Conflict,"Source assessment event must append exactly one new decision");
+    }
+  } else if (project.lastDurableGeneration != 0U) {
+    return core::failure(core::ErrorCode::Conflict, "Production writer has no matching durable base");
+  }
+  if (occupied == 0U && !project.sourceQualityAssessments.empty())
+    return core::failure(core::ErrorCode::Conflict,"A new producer cannot start with preapproved source assessment history");
+  if (occupied >= static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max())) {
+    return core::failure(core::ErrorCode::Conflict, "Production generation counter is exhausted");
+  }
   next.lastDurableGeneration =
       std::max(project.lastDurableGeneration, occupied) + 1U;
   auto valid = validateProductionProject(next);
   if (!valid) return valid;
   const auto projectText = encodeProductionProject(next);
+  if (projectText.size() > 64U * 1024U * 1024U) return core::failure(core::ErrorCode::InvalidArgument,
+      "Production generation exceeds its recoverable serialized byte limit");
   const auto projectDigest = core::sha256Hex(projectText);
+  const auto ancestry = history_internal::captureAncestry(root_, project.projectId,
+      project.lastDurableGeneration, next.lastDurableGeneration);
+  if (!ancestry) return core::Result<void>{ancestry.error()};
   const auto journalText = formats::stringifyJson(
       formats::JsonValue{formats::JsonValue::Object{
           {"format", "com.project-seam.voicebank-production-journal-event"},
@@ -169,7 +268,14 @@ core::Result<void> ProductionProjectRepository::save(
           {"subjectId", event.subjectId},
           {"operatorId", event.operatorId},
           {"occurredAtUtc", event.occurredAtUtc},
+          {"ancestry", ancestry.value()},
       }}, true) + "\n";
+  if (journalText.size() > 1024U * 1024U) return core::failure(core::ErrorCode::InvalidArgument,
+      "Production journal exceeds its recoverable serialized byte limit");
+  // Final cancellation boundary. Once publication begins, finish the durable
+  // protocol and report its actual result, even if cancellation arrives later.
+  if (stopToken.stop_requested()) return core::failure(
+      core::ErrorCode::Conflict, "Production save cancelled before commit");
   auto journalWrite = writeImmutableText(
       journalPath(next.lastDurableGeneration), journalText);
   if (!journalWrite) return journalWrite;

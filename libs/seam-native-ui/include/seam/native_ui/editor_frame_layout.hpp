@@ -40,7 +40,7 @@ struct EditorFrameLayout final {
 };
 
 struct TechnicalLaneLayoutInput final {
-  std::array<domain::TechnicalLanePresentation, 4U> presentation;
+  std::array<domain::TechnicalLanePresentation, domain::kTechnicalLaneCount> presentation;
   std::array<bool, 4U> populated{};
   std::array<double, 4U> previewHeights{};
   double contentTop{0.0};

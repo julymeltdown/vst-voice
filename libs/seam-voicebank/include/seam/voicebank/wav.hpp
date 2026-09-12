@@ -8,7 +8,7 @@
 #include <fstream>
 #include <memory>
 #include <span>
-#include <cstdint>
+#include <stop_token>
 #include <string_view>
 #include <vector>
 
@@ -16,6 +16,14 @@ namespace seam::voicebank {
 
 inline constexpr std::uint64_t kMaximumSupportedWavBytes =
     512ULL * 1024ULL * 1024ULL;
+
+struct WavReadLimits final {
+  // Defaults retain the existing 512 MiB encoded-payload/eight-channel
+  // admission. Bounded callers should set their smaller allocation budget.
+  std::uint64_t maximumFrames{kMaximumSupportedWavBytes};
+  std::uint16_t maximumChannels{8U};
+  std::uint64_t maximumDecodedSamples{kMaximumSupportedWavBytes};
+};
 
 struct AudioBuffer final {
   std::uint32_t sampleRate{0};
@@ -82,6 +90,15 @@ private:
     std::span<const std::byte> bytes,
     std::string_view sourceLabel = {});
 [[nodiscard]] core::Result<AudioBuffer> readWav(const std::filesystem::path& path);
+// The existing overloads retain source and binary call compatibility. Limits
+// below are checked against validated WAV metadata before allocating PCM;
+// cancellation never returns a partially decoded AudioBuffer.
+[[nodiscard]] core::Result<AudioBuffer> readWav(
+    std::span<const std::byte> bytes, std::string_view sourceLabel,
+    WavReadLimits limits, std::stop_token stopToken = {});
+[[nodiscard]] core::Result<AudioBuffer> readWav(
+    const std::filesystem::path& path, WavReadLimits limits,
+    std::stop_token stopToken = {});
 [[nodiscard]] core::Result<void> writePcm16Wav(
     const std::filesystem::path& path,
     std::uint32_t sampleRate,

@@ -1,0 +1,59 @@
+# Project JSON schema 9: procedural recipe selection
+
+Schema 9 adds required `proceduralRecipe` on each vocal track. It is `null` for legacy/sample selection, or an object with exactly five string fields:
+
+```json
+{
+  "id": "my-draft-singer",
+  "version": "1",
+  "contentHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "path": "recipes/my-draft.voice-recipe.json",
+  "style": "neutral"
+}
+```
+
+The hash shown is illustrative, not a loadable resource. Resource kind is implicitly Procedural. Identity validation is shared with `SingerResourceIdentity`; path is nonempty and at most 4096 bytes, style is nonempty and at most 128 bytes, and neither allows ASCII controls. Recipe syntax and capabilities are verified on resource loading/rendering, not by inventing derived acoustic measurements during project decoding.
+
+A present reference selects the procedural singer instead of the retained sample-bank reference. Both identity and style must match a supplied procedural resource. Production project rendering and snapshot factories reject sample substitution or a mismatched procedural identity/style. Retaining sample metadata does not authorize falling back to that bank when a recipe is unavailable.
+
+Schemas 1–8 decode with no procedural selection. A non-null procedural reference in an older-version document is rejected rather than silently ignored. The writer emits schema 9, causing older schema-8 readers to reject it explicitly. Existing performance, ownership, timing and style fields retain their schema-8 meanings.
+
+Path semantics for upcoming native resolution: relative paths are relative to the saved project directory; absolute paths are external references. Loading must require the recorded canonical recipe identity using `loadVoiceRecipeResource`. Unsaved projects with relative references need a base directory, not process-CWD guessing. Relinking must explicitly update the path; changed content needs explicit reselection, not silent hash replacement.
+
+Implemented here: domain reference validation, strict codec roundtrip/migration, and render-family/identity guards. Native resolution, selection/undo UI, project-copy packaging, relinking and export integration are still open. Codec persistence alone is not a functioning native singer-selection workflow.
+
+Runtime follow-up: authoring preview now carries `TrackRecipeFileSource` into the render worker. Relative paths resolve against the saved project's parent directory; a missing/non-absolute base fails explicitly. Absolute paths are external references. The worker loads with the exact recorded identity, then delegates to typed procedural rendering. Muted/non-solo recipe sources are not loaded for the project mix. Failed loading is a render failure with last-good-audio preservation, not a sample fallback or saved-hash update. Every new preview resolves the current file; immutable resources are retained for that render request, not guessed across document replacement.
+
+An actual save/reopen/runtime test verifies relative resolution without installed sample banks, transport publication, pitch-edit/undo audio, rejection of changed file content, restoration recovery and missing-base rejection. All 29 runtime/coordinator cases pass in strict Debug/Release (8.16/3.00 seconds). Native recipe-picking/relinking UI, a dedicated undoable selection command, packaging and export remain open; reopening an already-authored reference is now supported internally.
+
+Selection-command follow-up: `SetTrackProceduralRecipeCommand` changes or clears the reference with exact expected-selection checks, track-scoped audio invalidation and undo/redo. Path-only changes use the same transaction while retaining the identity/style. It performs no filesystem I/O; loading and actual capability/identity checks remain mandatory at resolution. Existing sample-bank selection now clears the procedural reference and restores it on undo. Recipe selection is included in live performance-job input identity, so changing a singer invalidates pending jobs and undo cannot revive them.
+
+Command tests verify exact project restoration, stale/invalid edit rejection, path changes and sample/procedural switching. Runtime tests verify changed recipe audio, dirty state and exact undo/redo audio. All 45 focused command/job/runtime cases pass in strict Debug/Release (4.09/2.54 seconds). A native file picker, identity-preserving relink workflow and asynchronous picker lifetime guards remain open; the pure command's expected-value check alone is not a complete asynchronous document-generation guard.
+
+Native picker follow-up: the macOS File menu now exposes Select Procedural Recipe and Relink Procedural Recipe. The controller captures a live performance-job context before opening the dialog and commits through `executePerformanceResult`, rejecting document replacement or changed musical inputs while the dialog was open. Cancellation changes nothing. Loading is bounded; the selected path is stored as an absolute external reference. Relink requires the existing exact resource identity and preserves style, while selection may choose a new identity. The initial selector accepts single-style recipes; multi-style selection explicitly rejects pending a style-choice UI rather than choosing arbitrarily.
+
+The injected-dialog controller regression verifies cancel, select, wrong-identity relink rejection, successful path relink, undo, and a same-content document replacement during the modal dialog. Strict Release core/native build and suite pass (10.26 seconds); actual NSOpenPanel interaction and visual review were not exercised. Cross-platform menu parity, explicit multi-style choice, project-copy packaging and procedural export remain unfinished.
+
+Export follow-up: typed-source entrypoints now support single-file final audio and transactional master/stem export sets. Both standalone export actions collect saved recipe references with the project-directory base; worker rendering verifies the recorded identity. Export-set receipts add `proceduralRecipes` (track, ID, version, content hash, style) and omit procedural tracks from the sample-bank list. These are selected source identities, not voicebank approval or a rights grant. Single-file receipts retain their existing output-receipt contract.
+
+The procedural export regression decodes Float32 single/master/stem WAVs and compares exact samples with final project rendering. Changed recipe content rejects export without replacing an already committed set. All 15 export cases pass in strict Debug/Release (1.19/0.52 seconds), and the rebuilt Release core/native suite passes (10.45 seconds). Set rendering currently resolves file-backed recipes per output, requiring the same identity each time; it does not package those files or guarantee success if they disappear between outputs. Actual native export-panel interaction, packaging, multi-style selection and acoustic acceptance remain open.
+
+Multi-style picker follow-up: macOS now presents an explicit recipe-style popup for recipes containing more than one distinct style. The options are the sorted unique styles from the frozen loaded recipe; single-style recipes retain the direct path. Cancellation does not execute a command, returned values must belong to the offered set, and the live document-generation guard is checked when committing after the style dialog. The popup is labeled for accessibility and bounded to 64 options/128-byte labels. Other dialog implementations explicitly report unsupported style selection until implemented; no automatic first-style fallback was added.
+
+Injected-dialog regression coverage includes selecting a non-default style, exact undo, cancellation, invalid returned style and document replacement during the style dialog. Strict Release native/core build and all 482 cases pass (10.14 seconds), plus `git diff --check`. Actual popup visual/accessibility interaction and non-macOS parity remain unverified; packaging and acoustic qualification remain open.
+
+Save As safety follow-up: when the project directory changes (or no prior path exists), every relative recipe reference must already resolve to its exact recorded identity under the destination directory. Missing/mismatched references reject before project-file writing or document identity changes. Same-directory saves retain ordinary missing-resource save behavior; absolute external references are unchanged. This does not copy resources, rewrite path-bearing undo history, or certify portability.
+
+The regression verifies existing destination bytes and live project/path/hash/revision/dirty state remain unchanged on rejection, rejects a different recipe, then saves successfully with the exact destination recipe and preserves undo. Strict Release core/native build and all 483 cases pass (10.21 seconds), plus `git diff --check`. A transactional portable-copy/package operation remains required; this is a silent-retargeting repair, not packaging completion.
+
+Recipe/project export snapshot: `ExportSettings::includeProjectAndRecipes` is an opt-in service setting (default false). Export preparation verifies and freezes procedural inputs once, deduplicates canonical recipe bytes under `recipes/<sha256>.json`, and encodes a separate `project.seam` with rewritten relative recipe references. The working project and history are untouched. Unique recipe bytes are capped at 16 MiB; missing source bindings and noncanonical resource identities reject. Relative backing-media paths must be resolved by the caller before packaging to avoid retargeting them.
+
+Project/recipe files participate in the existing staging/journal/publication/receipt transaction alongside audio. Their file receipts use zero frames/channels to denote non-audio data; the receipt also records `includesProjectAndRecipes`. Sample-bank packages and backing media are not copied: mixed projects retain those external dependencies, so this is not a universal self-contained project archive or redistribution-rights approval.
+
+The export regression takes the original recipe offline after master rendering, verifies stems still use the captured resource, reopens the packaged project and reproduces exact PCM without the original recipe, and exercises package recovery. All 15 export cases pass in strict Debug/Release (1.18/0.56 seconds), plus `git diff --check`. The native export UI has not yet exposed the option; broader dependency packaging remains open.
+
+Native packaging choice: macOS Export Set now prompts for Audio Only, Include Project, or Cancel when the project has procedural references. Audio Only is the default; Include Project explicitly describes editable song/recipe inclusion and the exclusion of sample banks/backing audio. The existing live document-generation check protects both destination and packaging dialogs. Other dialog adapters retain audio-only behavior until they implement this optional choice.
+
+Controller regressions exercise cancellation, stale-document rejection, asynchronous packaged export with unchanged live project, and audio-only export with neither project nor recipes included. Strict Release core/native build and all 483 cases pass (11.10 seconds), plus `git diff --check`. This verifies injected-dialog/controller behavior, not actual native-panel visual interaction. Mixed-project external dependencies and cross-platform packaging UI remain open.
+
+Verification: strict Debug/Release builds passed for the affected codec/snapshot targets; all 54 cases passed (15 codec and 39 snapshot). The rebuilt Release core/native suite passed all 479 cases in 9.26 seconds. Its first run exposed two schema-8 literals in routing/export-receipt assertions; those now assert the current codec schema, with an explicit codec-header include. No production validation was bypassed. `git diff --check` passed. This does not claim a fresh full Debug/native acceptance run.

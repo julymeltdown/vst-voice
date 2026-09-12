@@ -4,6 +4,9 @@ import importlib
 import importlib.util
 from types import ModuleType
 import unittest
+import tempfile
+from pathlib import Path
+from tests.production.public_release_replay_fixtures import public_replay_fixture
 
 from tests.production.public_release_fixtures import (
     acceptance_contract,
@@ -40,15 +43,13 @@ class PublicReleaseGateTests(unittest.TestCase):
         gate = self._gate()
         contract = acceptance_contract()
 
-        result = gate.evaluate_gate(
-            candidate(contract),
-            "PUBLIC_ACTIVE",
-            acceptance_contract=contract,
-            archive_verified=True,
-        )
-
-        self.assertTrue(result.passed, result.errors)
-        self.assertEqual((), result.blocked_ids)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with public_replay_fixture(root) as (value, manifest, contract):
+                result = gate.evaluate_gate(value, "PUBLIC_ACTIVE", acceptance_contract=contract,
+                    archive_manifest=manifest, evidence_root=root)
+                self.assertTrue(result.passed, result.errors)
+                self.assertEqual((), result.blocked_ids)
 
     def test_closed_beta_without_public_documents_or_channel_stays_blocked(self) -> None:
         gate = self._gate()
@@ -263,37 +264,20 @@ class PublicReleaseGateTests(unittest.TestCase):
 
     def test_approval_reissue_does_not_change_the_evidence_root(self) -> None:
         gate = self._gate()
-        contract = acceptance_contract()
-        value = candidate(contract)
-        root_chain = value["rootChain"]
-        approvals = value["approvals"]
-        operation = value["operationEnvelope"]
-        assert isinstance(root_chain, dict)
-        assert isinstance(approvals, list)
-        assert isinstance(operation, dict)
-        evidence_root = root_chain["evidenceRoot"]
-        assert isinstance(evidence_root, dict)
-        original_root = evidence_root["sha256"]
-        approvals[0] = approval(
-            "independent-release-verifier",
-            1,
-            str(evidence_root["sha256"]),
-            "2026-08-31T01:05:00Z",
-        )
-        operation["approvalEnvelopeSha256s"] = [
-            item["envelopeSha256"] for item in approvals if isinstance(item, dict)
-        ]
-        sign_operation(operation, "envelopeSha256")
-
-        result = gate.evaluate_gate(
-            value,
-            "PUBLIC_ACTIVE",
-            acceptance_contract=contract,
-            archive_verified=True,
-        )
-
-        self.assertTrue(result.passed, result.errors)
-        self.assertEqual(original_root, evidence_root["sha256"])
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with public_replay_fixture(root) as (value, manifest, contract):
+                evidence_root = value["rootChain"]["evidenceRoot"]
+                original_root = evidence_root["sha256"]
+                approvals = value["approvals"]
+                approvals[0] = approval("independent-release-verifier", 1, str(original_root), "2026-08-31T01:05:00Z")
+                operation = value["operationEnvelope"]
+                operation["approvalEnvelopeSha256s"] = [item["envelopeSha256"] for item in approvals]
+                sign_operation(operation, "envelopeSha256")
+                result = gate.evaluate_gate(value, "PUBLIC_ACTIVE", acceptance_contract=contract,
+                    archive_manifest=manifest, evidence_root=root)
+                self.assertTrue(result.passed, result.errors)
+                self.assertEqual(original_root, evidence_root["sha256"])
 
 if __name__ == "__main__":
     unittest.main()

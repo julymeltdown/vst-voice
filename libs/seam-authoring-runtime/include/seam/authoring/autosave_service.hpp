@@ -19,6 +19,8 @@
 
 namespace seam::authoring {
 
+class VoicebankSession;
+
 struct AutosaveConfig final {
   std::filesystem::path root;
   std::chrono::seconds interval{60};
@@ -61,7 +63,8 @@ public:
   [[nodiscard]] core::Result<void> flush();
   [[nodiscard]] core::Result<std::vector<RecoveryCandidate>> discover() const;
   [[nodiscard]] core::Result<void> recover(
-      ProjectDocument& document, const RecoveryCandidate& candidate) const;
+      ProjectDocument& document, const RecoveryCandidate& candidate,
+      const VoicebankSession* voicebanks = nullptr) const;
   void shutdown() noexcept;
 
 public:

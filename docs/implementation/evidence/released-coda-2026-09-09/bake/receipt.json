@@ -1,0 +1,55 @@
+{
+  "applicationBuildSha": "741ae2f244b9d3ff8eb6f31dc1f73cae54ea974d",
+  "channels": 2,
+  "executionDateUnixMs": 1788916359975,
+  "files": [
+    {
+      "channels": 1,
+      "frames": 24000,
+      "path": "candidates/00000000000157c1-00000000000157c2.wav",
+      "sha256": "41cb6f5badf12734d2320cab5a8eb98d3b622258e258e4db3fe9842d9bea1924"
+    },
+    {
+      "channels": 0,
+      "frames": 0,
+      "path": "candidates/00000000000157c1-00000000000157c2.json",
+      "sha256": "a9dd8b108f9039a53d63cf9fb0bea24fa6634374e2d427b293d4d809f3b50be4"
+    },
+    {
+      "channels": 0,
+      "frames": 0,
+      "path": "project.seam",
+      "sha256": "deebc92563ef9c4b87c2e97a5aece5a19ea44915314acea1a8e0692706efaf4a"
+    },
+    {
+      "channels": 0,
+      "frames": 0,
+      "path": "recipes/f2682bcd009806483bb125cfae7fe97c305b21f001d238d90bdbfef414bba088.json",
+      "sha256": "f2682bcd009806483bb125cfae7fe97c305b21f001d238d90bdbfef414bba088"
+    }
+  ],
+  "format": 1,
+  "formatName": "PCM24",
+  "includesProceduralCandidates": true,
+  "includesProjectAndRecipes": true,
+  "proceduralRecipes": [
+    {
+      "contentHash": "f2682bcd009806483bb125cfae7fe97c305b21f001d238d90bdbfef414bba088",
+      "id": "released-coda",
+      "style": "neutral",
+      "trackId": "00000000000157c1",
+      "version": "4"
+    }
+  ],
+  "projectContentHash": "a17b755e8cd8921f795d83d587b7542424e743863fc6fe971a8095fee23f06cd",
+  "projectId": "00000000000157c0",
+  "projectRevision": 1,
+  "projectSchema": 9,
+  "renderAbi": "seam-render-abi-4.1-r1",
+  "renderQuality": "Final",
+  "sampleRate": 48000,
+  "schemaVersion": 2,
+  "state": "COMMITTED",
+  "transactionId": "09aaeeaf3eefd1b05c4d79c0",
+  "voicebanks": []
+}

@@ -9,11 +9,10 @@ void DiagnosticPanelModel::add(authoring::Diagnostic diagnostic) {
   if (!authoring::DiagnosticRegistry::validate(diagnostic)) return;
   const auto existing = std::find_if(
       entries_.begin(), entries_.end(), [&diagnostic](const auto& entry) {
-        return entry.diagnostic.code == diagnostic.code &&
-               entry.diagnostic.messageKey == diagnostic.messageKey;
+        return entry.diagnostic.sameIssueAs(diagnostic);
       });
   if (existing != entries_.end()) {
-    existing->diagnostic.occurrenceCount += diagnostic.occurrenceCount;
+    existing->diagnostic.addOccurrences(diagnostic.occurrenceCount);
     return;
   }
   entries_.push_back(DiagnosticPanelEntry{.diagnostic = std::move(diagnostic)});

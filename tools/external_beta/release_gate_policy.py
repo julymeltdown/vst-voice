@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from pathlib import Path
 from dataclasses import dataclass
 
 try:
@@ -173,8 +174,9 @@ def requirement_policy_errors(
     candidate: JsonObject,
     required_ids: tuple[str, ...],
     contract: JsonObject,
+    *, contract_base: Path | None = None,
 ) -> list[str]:
-    errors = full_product_contract_errors(contract)
+    errors = full_product_contract_errors(contract, base=contract_base)
     expected_contract_sha256 = contract_sha256(contract)
     if candidate.get("acceptanceContractSha256") != expected_contract_sha256:
         errors.append("candidate acceptance contract digest does not match")

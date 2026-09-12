@@ -2,6 +2,7 @@
 
 #include "seam/core/result.hpp"
 #include "seam/domain/ids.hpp"
+#include "seam/domain/note_vibrato.hpp"
 #include "seam/time/tick.hpp"
 
 #include <cstdint>
@@ -30,6 +31,8 @@ struct Note final {
   LyricTokenId lyricTokenId;
   NoteArticulation articulation{NoteArticulation::Normal};
   std::optional<std::uint64_t> slurGroup;
+  NoteVibrato vibrato;
+  std::optional<std::string> phoneticHint;
 
   [[nodiscard]] time::Tick endTick() const noexcept { return startTick + durationTick; }
   [[nodiscard]] core::Result<void> validate() const;
@@ -38,6 +41,8 @@ struct Note final {
 };
 
 [[nodiscard]] std::string toUtf8(const std::u32string& text);
+// Explicit shared-lyric melisma: never infer continuation from equal text alone.
+[[nodiscard]] bool continuesSharedLyric(const Note& previous, const Note& current) noexcept;
 [[nodiscard]] core::Result<std::u32string> fromUtf8(const std::string& text);
 
 }  // namespace seam::domain

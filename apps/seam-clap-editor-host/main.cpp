@@ -2,7 +2,9 @@
 
 #include "platform_host.hpp"
 #include "seam/build/version.hpp"
+#include "seam/core/file_io.hpp"
 #include "seam/core/sha256.hpp"
+#include "seam/formats/project_json.hpp"
 #include "seam/voicebank/catalog.hpp"
 #include "seam/voicebank/wav.hpp"
 
@@ -20,6 +22,7 @@
 #include <iostream>
 #include <optional>
 #include <span>
+#include <stdexcept>
 #include <string>
 #include <thread>
 #include <vector>
@@ -184,6 +187,8 @@ struct WriteStream final {
       auto* self = static_cast<WriteStream*>(base->ctx);
       const auto count = std::min<std::size_t>(
           static_cast<std::size_t>(requested), 31U);
+      if ((count != 0U && source == nullptr) || self->bytes.size() > 16U * 1024U * 1024U + 48U - count)
+        return -1;
       const auto* first = static_cast<const std::byte*>(source);
       self->bytes.insert(self->bytes.end(), first, first +
                                              static_cast<std::ptrdiff_t>(count));
@@ -218,6 +223,229 @@ double energy(std::span<const float> values) {
   return result;
 }
 
+// The fixture host constructs independent wire state, then tests exclusively
+// through the loaded plugin's public CLAP API. It never accesses its runtime.
+seam::domain::Project savedProject(std::span<const std::byte> bytes) {
+  if (bytes.size() < 48U || bytes.size() > 16U * 1024U * 1024U + 48U ||
+      std::memcmp(bytes.data(), "SEAMED11", 8U) != 0)
+    throw std::runtime_error{"Unexpected editor state envelope"};
+  const auto payload = bytes.subspan(48U);
+  const auto word = [&bytes](std::size_t offset) {
+    std::uint32_t value=0U;
+    for (std::uint32_t index=0U; index<4U; ++index)
+      value |= std::to_integer<std::uint32_t>(bytes[offset+index]) << (index*8U);
+    return value;
+  };
+  seam::core::Sha256 hash; hash.update(payload);
+  const auto digest=hash.digest();
+  if (word(8U)!=1U || word(12U)!=payload.size() ||
+      !std::equal(digest.begin(),digest.end(),bytes.begin()+16))
+    throw std::runtime_error{"Offline fixture state envelope failed integrity validation"};
+  const auto decoded = seam::formats::ProjectJsonCodec{}.decode(std::string{
+      reinterpret_cast<const char*>(payload.data()), payload.size()});
+  if (!decoded) throw std::runtime_error{decoded.error().message};
+  return decoded.value();
+}
+
+std::vector<std::byte> projectState(const seam::domain::Project& project) {
+  const auto encoded = seam::formats::ProjectJsonCodec{}.encode(project);
+  if (!encoded || encoded.value().size() > 16U * 1024U * 1024U)
+    throw std::runtime_error{"Cannot encode bounded offline fixture state"};
+  const auto& text = encoded.value();
+  std::vector<std::byte> bytes(48U + text.size());
+  std::memcpy(bytes.data(), "SEAMED11", 8U);
+  const auto word = [&bytes](std::size_t offset, std::uint32_t value) {
+    for (std::uint32_t index = 0U; index < 4U; ++index)
+      bytes[offset + index] = static_cast<std::byte>((value >> (index * 8U)) & 0xffU);
+  };
+  word(8U, 1U); word(12U, static_cast<std::uint32_t>(text.size()));
+  seam::core::Sha256 hash; hash.update(text);
+  const auto digest = hash.digest();
+  std::copy(digest.begin(), digest.end(), bytes.begin() + 16);
+  std::memcpy(bytes.data() + 48U, text.data(), text.size());
+  return bytes;
+}
+
+struct OfflineChecks final {
+  bool completeScore{false};
+  bool rateChange{false};
+  bool missingRejected{false};
+  bool failedFinalRejected{false};
+  bool beatsOnlyRejected{false};
+  std::size_t noteWindows{0U};
+  std::uint64_t frames{0U};
+  double scoreEnergy{0.0};
+  std::vector<float> scorePcm48k;
+  std::uint8_t channels{0U};
+};
+
+class ProbePlugin final {
+public:
+  ProbePlugin(const clap_plugin_factory_t* factory, const clap_host_t& host, const char* id)
+      : plugin(factory->create_plugin(factory, &host, id)) {
+    if (!plugin) throw std::runtime_error{"Cannot create offline probe plugin"};
+    try {
+      if (!plugin->init(plugin)) throw std::runtime_error{"Cannot initialize offline probe plugin"};
+      state = static_cast<const clap_plugin_state_t*>(plugin->get_extension(plugin, CLAP_EXT_STATE));
+      render = static_cast<const clap_plugin_render_t*>(plugin->get_extension(plugin, CLAP_EXT_RENDER));
+      if (!state || !render) throw std::runtime_error{"Offline probe extensions are missing"};
+    } catch (...) {
+      plugin->destroy(plugin); plugin=nullptr; throw;
+    }
+  }
+  ~ProbePlugin() {
+    stop();
+    if (plugin) plugin->destroy(plugin);
+  }
+  ProbePlugin(const ProbePlugin&) = delete;
+  ProbePlugin& operator=(const ProbePlugin&) = delete;
+  void load(std::span<const std::byte> bytes) {
+    ReadStream input{bytes};
+    if (!state->load(plugin, &input.stream)) throw std::runtime_error{"Offline probe state load failed"};
+  }
+  bool activate(std::uint32_t rate) {
+    if (active) return false;
+    active = plugin->activate(plugin, rate, 1U, 512U);
+    if (!active) return false;
+    processing = plugin->start_processing(plugin);
+    return processing;
+  }
+  void stop() {
+    if (processing) plugin->stop_processing(plugin);
+    if (active) plugin->deactivate(plugin);
+    processing = false; active = false;
+  }
+  const clap_plugin_t* plugin{};
+  const clap_plugin_state_t* state{};
+  const clap_plugin_render_t* render{};
+  bool active{false}, processing{false};
+};
+
+bool rejectedFinal(ProbePlugin& probe, std::span<const std::byte> state, std::uint8_t channels) {
+  probe.stop(); probe.load(state);
+  if (probe.render->set(probe.plugin, CLAP_RENDER_OFFLINE)) return false;
+  // A host ignoring the rejection must not activate and render stale Preview.
+  if (probe.activate(48000U)) return false;
+  Output output{32U, channels};
+  for (auto& plane : output.planes) std::fill(plane.begin(), plane.end(), 0.0F);
+  clap_process_t process{};
+  process.frames_count=32U; process.audio_outputs=&output.buffer; process.audio_outputs_count=1U;
+  if (probe.plugin->process(probe.plugin, &process) != CLAP_PROCESS_ERROR) return false;
+  // Explicitly returning to realtime remains supported after a rejected bounce.
+  if (!probe.render->set(probe.plugin, CLAP_RENDER_REALTIME) || !probe.activate(48000U)) return false;
+  probe.stop();
+  return true;
+}
+
+bool completeScoreBounce(ProbePlugin& probe, const seam::domain::Project& project,
+                        std::uint32_t rate, OfflineChecks& evidence) {
+  probe.stop();
+  const auto fail = [&probe] { probe.stop(); return false; };
+  if (!probe.activate(rate)) return fail();
+  const auto channels=project.routing().deviceOutputChannels;
+  Output output{512U, channels};
+  const auto offset=project.tempoMap().secondsAt(project.settings().hostStartOffsetTick);
+  std::vector<std::pair<double,double>> noteWindows;
+  double end=0.0;
+  for (const auto& track : project.vocalTracks()) {
+    if (track.muted) continue;
+    for (const auto& region : track.regions) {
+      for (const auto& note : region.notes) {
+        if (noteWindows.size() >= 256U) return fail();
+        const auto start=project.tempoMap().secondsAt(region.startTick + note.startTick) + offset;
+        const auto finish=project.tempoMap().secondsAt(region.startTick + note.startTick + note.durationTick) + offset;
+        noteWindows.emplace_back(start, finish); end=std::max(end, finish);
+      }
+    }
+  }
+  if (noteWindows.empty() || end <= 0.0 || end > 30.0) return fail();
+  const auto count=static_cast<std::uint64_t>(std::ceil((end + 0.25) * rate));
+  if (rate==48000U) {
+    evidence.scorePcm48k.clear();
+    evidence.scorePcm48k.reserve(static_cast<std::size_t>(count)*channels);
+    evidence.channels=channels;
+  }
+  std::vector<double> noteEnergies(noteWindows.size(), 0.0);
+  double total=0.0;
+  clap_event_transport_t transport{};
+  transport.header={sizeof(transport),0U,CLAP_CORE_EVENT_SPACE_ID,CLAP_EVENT_TRANSPORT,0U};
+  transport.flags=CLAP_TRANSPORT_HAS_SECONDS_TIMELINE | CLAP_TRANSPORT_IS_PLAYING;
+  clap_process_t process{};
+  process.audio_outputs=&output.buffer; process.audio_outputs_count=1U; process.transport=&transport;
+  // No NOTE_ON/MIDI events: every audible sample must come from the score.
+  for (std::uint64_t cursor=0U; cursor<count; cursor+=process.frames_count) {
+    process.frames_count=static_cast<std::uint32_t>(std::min<std::uint64_t>(512U,count-cursor));
+    process.steady_time=static_cast<std::int64_t>(cursor);
+    transport.song_pos_seconds=static_cast<clap_sectime>(std::llround(
+        static_cast<double>(cursor) / rate * static_cast<double>(CLAP_SECTIME_FACTOR)));
+    if (probe.plugin->process(probe.plugin,&process) != CLAP_PROCESS_CONTINUE) return fail();
+    for (std::uint32_t frame=0U; frame<process.frames_count; ++frame) {
+      double sampleEnergy=0.0;
+      for (const auto& plane : output.planes) {
+        if (!std::isfinite(plane[frame])) return fail();
+        sampleEnergy+=std::abs(static_cast<double>(plane[frame]));
+        if (rate==48000U) evidence.scorePcm48k.push_back(plane[frame]);
+      }
+      total+=sampleEnergy;
+      const auto seconds=static_cast<double>(cursor+frame)/rate;
+      for (std::size_t index=0U; index<noteWindows.size(); ++index) {
+        if (seconds>=noteWindows[index].first && seconds<noteWindows[index].second)
+          noteEnergies[index]+=sampleEnergy;
+      }
+    }
+  }
+  evidence.frames+=count; evidence.noteWindows+=noteWindows.size(); evidence.scoreEnergy+=total;
+  // No seconds history is an explicit error, not a guessed current-BPM bounce.
+  transport.flags=CLAP_TRANSPORT_HAS_BEATS_TIMELINE | CLAP_TRANSPORT_HAS_TEMPO | CLAP_TRANSPORT_IS_PLAYING;
+  transport.tempo=60.0; transport.song_pos_beats=8 * CLAP_BEATTIME_FACTOR;
+  process.frames_count=32U;
+  evidence.beatsOnlyRejected=probe.plugin->process(probe.plugin,&process)==CLAP_PROCESS_ERROR;
+  for (const auto& plane : output.planes)
+    evidence.beatsOnlyRejected=evidence.beatsOnlyRejected && energy(std::span{plane.data(),32U})==0.0;
+  probe.stop();
+  return total>0.01 && std::all_of(noteEnergies.begin(),noteEnergies.end(),[](double value){return value>0.01;});
+}
+
+OfflineChecks probeOffline(const clap_plugin_factory_t* factory, const clap_host_t& host,
+                          const char* id, std::span<const std::byte> original, bool missingOnly) {
+  OfflineChecks result;
+  auto project=savedProject(original);
+  const auto channels=project.routing().deviceOutputChannels;
+  // Fresh plugin/state load followed immediately by offline mode: no GUI pump,
+  // polling for Preview, sleep, warm-up notes, or linked runtime shortcuts.
+  ProbePlugin probe{factory,host,id};
+  if (!missingOnly) {
+    // Force a leading rest so SLEEP cannot hide a subsequent vocal entrance.
+    for (auto& track : project.vocalTracks())
+      for (auto& region : track.regions) region.startTick += seam::time::Tick{960};
+    const auto preparedState=projectState(project);
+    probe.load(preparedState);
+    if (probe.render->set(probe.plugin,CLAP_RENDER_OFFLINE)) {
+      result.completeScore=completeScoreBounce(probe,project,44100U,result);
+      // Same offline intent, new activation rate: must prepare new Final audio.
+      result.rateChange=completeScoreBounce(probe,project,48000U,result);
+    }
+    auto failed=project;
+    bool hasOverride=false;
+    for (auto& track : failed.vocalTracks()) {
+      for (auto& region : track.regions) {
+        if (!region.unitSelectionOverrides.empty()) {
+          region.unitSelectionOverrides.front().unitId="offline-probe.required-unit-does-not-exist";
+          hasOverride=true;
+        }
+      }
+    }
+    if (hasOverride) result.failedFinalRejected=rejectedFinal(probe,projectState(failed),channels);
+  }
+  for (auto& track : project.vocalTracks()) {
+    track.proceduralRecipe.reset();
+    track.voicebank=seam::domain::VoicebankReference{.id="offline-probe.required-bank-does-not-exist",
+        .version="1.0.0",.contentHash=std::string(64U,'f')};
+  }
+  result.missingRejected=rejectedFinal(probe,projectState(project),channels);
+  return result;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -227,6 +455,7 @@ int main(int argc, char** argv) {
   std::filesystem::path audioPath;
   std::filesystem::path targetRuntimeFixtureRoot;
   bool expectMissingBank = false;
+  bool offlineOnly = false;
   for (int index = 1; index < argc; ++index) {
     const std::string argument = argv[index];
     if (argument == "--plugin" && index + 1 < argc) {
@@ -242,6 +471,8 @@ int main(int argc, char** argv) {
       targetRuntimeFixtureRoot = argv[++index];
     } else if (argument == "--expect-missing-bank") {
       expectMissingBank = true;
+    } else if (argument == "--offline-only") {
+      offlineOnly = true;
     }
   }
   if (pluginPath.empty() ||
@@ -249,6 +480,7 @@ int main(int argc, char** argv) {
     std::cerr << "Usage: seam_clap_editor_host --plugin FILE.clap "
                  "[--screenshot FILE.ppm] [--summary FILE.json] "
                  "[--audio FILE.wav] "
+                 "[--offline-only] "
                  "[--target-runtime-fixture-root DIR | --expect-missing-bank]\n";
     return 2;
   }
@@ -353,7 +585,7 @@ int main(int argc, char** argv) {
   bool guiVisible = false;
   bool screenshotWritten = false;
   seam::clap_host::HostWindow hostWindow;
-  if (hostWindow.create(1100U, 720U) &&
+  if (!offlineOnly && hostWindow.create(1100U, 720U) &&
       gui->is_api_supported(plugin, hostWindow.api(), false) &&
       gui->create(plugin, hostWindow.api(), false)) {
     guiCreated = true;
@@ -377,6 +609,43 @@ int main(int argc, char** argv) {
   WriteStream saved;
   if (!state->save(plugin, &saved.stream) || saved.bytes.empty()) return 1;
 
+  OfflineChecks offlineChecks;
+  try {
+    offlineChecks=probeOffline(factory,host,descriptor->id,saved.bytes,expectMissingBank);
+  } catch (const std::exception& error) {
+    std::cerr << "Offline CLAP probe failed: " << error.what() << '\n';
+  }
+  const auto offlineChecksPassed=offlineChecks.missingRejected && (expectMissingBank ||
+      (offlineChecks.completeScore && offlineChecks.rateChange &&
+       offlineChecks.failedFinalRejected && offlineChecks.beatsOnlyRejected));
+  if (offlineOnly) {
+    bool audioWritten=audioPath.empty();
+    if (!audioPath.empty() && !offlineChecks.scorePcm48k.empty()) {
+      audioWritten=static_cast<bool>(seam::voicebank::writeWav(audioPath,
+          {.sampleRate=48000U,.channels=offlineChecks.channels,.sampleFormat=seam::voicebank::WavSampleFormat::Float32},
+          offlineChecks.scorePcm48k));
+    }
+    using Json=seam::formats::JsonValue;
+    const Json report{Json::Object{
+        {"result",offlineChecksPassed && audioWritten ? "PASS" : "FAIL"},
+        {"evidenceScope","engineering"},{"releaseEligible",false},
+        {"executionPath","loaded-clap-cold-score-bounce-v1"},
+        {"timingAuthority","fixed-audio-seconds-timeline"},
+        {"followHostQualified",false},{"noteEventsSent",std::int64_t{0}},
+        {"completeScoreBounce",offlineChecks.completeScore},{"rateChangeReprepared",offlineChecks.rateChange},
+        {"missingFinalRejected",offlineChecks.missingRejected},{"failedFinalRejected",offlineChecks.failedFinalRejected},
+        {"beatsOnlyRejected",offlineChecks.beatsOnlyRejected},{"expectedMissingBank",expectMissingBank},
+        {"noteWindows",static_cast<std::int64_t>(offlineChecks.noteWindows)},
+        {"capturedFrames",static_cast<std::int64_t>(offlineChecks.frames)},
+        {"scoreEnergy",offlineChecks.scoreEnergy},{"audioWritten",audioWritten}}};
+    const auto text=seam::formats::stringifyJson(report,true)+"\n";
+    std::cout << text;
+    bool summaryWritten=true;
+    if (!summaryPath.empty()) summaryWritten=static_cast<bool>(seam::core::durableAtomicWriteText(summaryPath,text));
+    plugin->destroy(plugin); entry->deinit();
+    return offlineChecksPassed && audioWritten && summaryWritten ? 0 : 1;
+  }
+
   ReadStream inactiveGuiLoad{saved.bytes};
   const auto inactiveGuiLoadAccepted =
       state->load(plugin, &inactiveGuiLoad.stream);
@@ -397,6 +666,10 @@ int main(int argc, char** argv) {
       !audioPorts->get(plugin, 0U, false, &selectedPort) ||
       selectedPort.channel_count != 4U) return 1;
   const auto offlineRenderAccepted = render->set(plugin, CLAP_RENDER_OFFLINE);
+  const auto offlineModeExpectation=expectMissingBank ? !offlineRenderAccepted : offlineRenderAccepted;
+  // Live-note/GUI evidence is a realtime workload; score-bounce evidence above
+  // has its own cold state and never borrows live-note energy as proof.
+  if (!render->set(plugin,CLAP_RENDER_REALTIME)) return 1;
 
   constexpr std::uint32_t frames = 512U;
   constexpr std::uint32_t outputChannels = 4U;
@@ -516,7 +789,7 @@ int main(int argc, char** argv) {
       expectMissingBank ||
       context.processRequests.load(std::memory_order_relaxed) > 0U;
   const auto passed = guiCreated && guiVisible && livePass &&
-                      offlineRenderAccepted && selectedPort.channel_count == 4U &&
+                      offlineModeExpectation && offlineChecksPassed && selectedPort.channel_count == 4U &&
                       inactiveGuiLoadAccepted && activeLoadRejected &&
                       stateRoundTrip && processRequestPass &&
                       (screenshotPath.empty() || screenshotWritten);
@@ -553,6 +826,14 @@ int main(int argc, char** argv) {
             << context.audioConfigRescans.load(std::memory_order_relaxed) << ",\n"
             << "  \"offlineRenderAccepted\": "
             << (offlineRenderAccepted ? "true" : "false") << ",\n"
+            << "  \"completeScoreBounce\": " << (offlineChecks.completeScore ? "true" : "false") << ",\n"
+            << "  \"rateChangeReprepared\": " << (offlineChecks.rateChange ? "true" : "false") << ",\n"
+            << "  \"missingFinalRejected\": " << (offlineChecks.missingRejected ? "true" : "false") << ",\n"
+            << "  \"failedFinalRejected\": " << (offlineChecks.failedFinalRejected ? "true" : "false") << ",\n"
+            << "  \"beatsOnlyRejected\": " << (offlineChecks.beatsOnlyRejected ? "true" : "false") << ",\n"
+            << "  \"offlineScoreFrames\": " << offlineChecks.frames << ",\n"
+            << "  \"offlineScoreNoteWindows\": " << offlineChecks.noteWindows << ",\n"
+            << "  \"offlineScoreEnergy\": " << offlineChecks.scoreEnergy << ",\n"
             << "  \"audioWritten\": " << (audioWritten ? "true" : "false") << ",\n"
             << "  \"expectedMissingBank\": "
             << (expectMissingBank ? "true" : "false") << ",\n"

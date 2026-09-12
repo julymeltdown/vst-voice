@@ -1,10 +1,12 @@
 #include "seam/authoring/diagnostic.hpp"
+#include "seam/core/sha256.hpp"
 
 #include <array>
 #include <algorithm>
 #include <initializer_list>
 #include <span>
 #include <utility>
+#include <limits>
 
 namespace seam::authoring {
 namespace {
@@ -121,6 +123,51 @@ bool DiagnosticRegistry::isRegistered(std::string_view code) noexcept {
   return find(code) != nullptr;
 }
 
+bool Diagnostic::sameIssueAs(const Diagnostic& other) const noexcept {
+  return code == other.code && messageKey == other.messageKey && severity == other.severity &&
+      affectedIds == other.affectedIds && actions == other.actions && detail == other.detail &&
+      detailTruncated == other.detailTruncated && detailEscaped == other.detailEscaped && detailSourceHash == other.detailSourceHash;
+}
+
+namespace {
+std::size_t printableUtf8Sequence(std::string_view text, std::size_t i) {
+  const auto c = static_cast<unsigned char>(text[i]);
+  if (c < 0x80U) return (c >= 0x20U && c != 0x7fU) || c == '\n' || c == '\r' || c == '\t' ? 1U : 0U;
+  const auto length = c >= 0xc2U && c <= 0xdfU ? 2U : c >= 0xe0U && c <= 0xefU ? 3U : c >= 0xf0U && c <= 0xf4U ? 4U : 0U;
+  if (length == 0U || length > text.size() - i) return 0U;
+  for (std::size_t j = 1U; j < length; ++j) {
+    const auto next = static_cast<unsigned char>(text[i + j]); if (next < 0x80U || next > 0xbfU) return 0U;
+  }
+  const auto second = static_cast<unsigned char>(text[i + 1U]);
+  if ((c == 0xe0U && second < 0xa0U) || (c == 0xedU && second > 0x9fU) ||
+      (c == 0xf0U && second < 0x90U) || (c == 0xf4U && second > 0x8fU)) return 0U;
+  return length;
+}
+}
+
+void Diagnostic::setDetail(std::string_view text) {
+  const auto sourceHash = text.empty() ? std::string{} : core::sha256Hex(text);
+  std::string output; output.reserve(std::min(text.size(), maximumDetailBytes));
+  bool escaped = false, truncated = false;
+  constexpr char hex[] = "0123456789ABCDEF";
+  for (std::size_t i = 0U; i < text.size();) {
+    const auto length = printableUtf8Sequence(text, i);
+    const auto required = length == 0U ? 4U : length;
+    if (required > maximumDetailBytes - output.size()) { truncated = true; break; }
+    if (length != 0U) { output.append(text.substr(i, length)); i += length; }
+    else {
+      const auto byte = static_cast<unsigned char>(text[i++]);
+      output += "\\x"; output.push_back(hex[byte >> 4U]); output.push_back(hex[byte & 15U]); escaped = true;
+    }
+  }
+  detail = std::move(output); detailTruncated = truncated; detailEscaped = escaped; detailSourceHash = sourceHash;
+}
+
+void Diagnostic::addOccurrences(std::size_t additional) noexcept {
+  const auto maximum = std::numeric_limits<std::size_t>::max();
+  occurrenceCount = additional > maximum - occurrenceCount ? maximum : occurrenceCount + additional;
+}
+
 DiagnosticSeverity DiagnosticRegistry::severity(std::string_view code) noexcept {
   const auto* definition = find(code);
   return definition == nullptr ? DiagnosticSeverity::Error : definition->severity;
@@ -138,10 +185,19 @@ core::Result<void> DiagnosticRegistry::validate(const Diagnostic& diagnostic) {
                          "Diagnostic code is not registered");
   }
   if (diagnostic.messageKey.empty() || diagnostic.messageKey.size() > 128U ||
-      diagnostic.occurrenceCount == 0U || diagnostic.affectedIds.size() > 32U) {
+      diagnostic.occurrenceCount == 0U || diagnostic.affectedIds.size() > 32U || diagnostic.detail.size() > Diagnostic::maximumDetailBytes) {
     return core::failure(core::ErrorCode::InvalidArgument,
                          "Diagnostic fields exceed the bounded contract");
   }
+  for (std::size_t i = 0U; i < diagnostic.detail.size();) {
+    const auto length = printableUtf8Sequence(diagnostic.detail, i);
+    if (length == 0U) return core::failure(core::ErrorCode::InvalidArgument, "Diagnostic detail must be bounded display-safe UTF-8");
+    i += length;
+  }
+  if (!diagnostic.detailSourceHash.empty() && (diagnostic.detailSourceHash.size() != 64U ||
+      !std::all_of(diagnostic.detailSourceHash.begin(), diagnostic.detailSourceHash.end(), [](unsigned char c) {
+        return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f');
+      }))) return core::failure(core::ErrorCode::InvalidArgument, "Diagnostic detail identity is invalid");
   const auto expected = actions(diagnostic.code);
   for (const auto action : diagnostic.actions) {
     if (std::find(expected.begin(), expected.end(), action) == expected.end()) {
@@ -167,12 +223,14 @@ Diagnostic DiagnosticRegistry::fromError(const core::Error& error) {
   }
   const auto diagnosticSeverity = severity(code);
   const auto diagnosticActions = actions(code);
-  return Diagnostic{.code = std::move(code),
+  Diagnostic diagnostic{.code = std::move(code),
                     .severity = diagnosticSeverity,
                     .messageKey = "generic.failure",
                     .affectedIds = {},
                     .actions = diagnosticActions,
                     .occurrenceCount = 1U};
+  diagnostic.setDetail(error.message);
+  return diagnostic;
 }
 
 }

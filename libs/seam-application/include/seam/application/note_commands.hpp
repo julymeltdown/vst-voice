@@ -25,7 +25,9 @@ struct NoteResize final {
 
 class AddNoteCommand final : public ICommand {
 public:
-  AddNoteCommand(domain::RegionId regionId, domain::LyricToken lyric, domain::Note note);
+  enum class LyricMode { Create, ReuseExact };
+  AddNoteCommand(domain::RegionId regionId, domain::LyricToken lyric, domain::Note note,
+                 LyricMode lyricMode = LyricMode::Create);
 
   [[nodiscard]] std::string_view name() const noexcept override { return "Add note"; }
   [[nodiscard]] CommandAudioImpact audioImpact() const noexcept override {
@@ -39,6 +41,14 @@ private:
   domain::RegionId regionId_;
   domain::LyricToken lyric_;
   domain::Note note_;
+  LyricMode lyricMode_;
+  std::optional<domain::PronunciationIdentity> beforePronunciation_;
+  std::optional<domain::PronunciationIdentity> afterPronunciation_;
+  std::vector<domain::PhonemeOverride> beforePhonemes_, afterPhonemes_;
+  std::vector<domain::UnitSelectionOverride> beforeUnits_, afterUnits_;
+  std::vector<domain::SeamOverride> beforeSeams_, afterSeams_;
+  std::uint64_t beforePronunciationRevision_{0U};
+  bool pronunciationCaptured_{false};
 };
 
 class RemoveNotesCommand final : public ICommand {
@@ -85,6 +95,15 @@ private:
     std::size_t originalIndex{0};
   };
 
+  struct PerformanceChange final {
+    domain::RegionId regionId;
+    domain::RegionPerformanceState before;
+    domain::RegionPerformanceState after;
+    std::vector<domain::PhonemeOverride> beforePhonemes, afterPhonemes;
+    std::vector<domain::UnitSelectionOverride> beforeUnits, afterUnits;
+    std::vector<domain::SeamOverride> beforeSeams, afterSeams;
+  };
+
   [[nodiscard]] core::Result<void> capture(const domain::Project& project);
   [[nodiscard]] core::Result<void> removeCaptured(domain::Project& project) const;
 
@@ -94,7 +113,37 @@ private:
   std::vector<RemovedPhonemeOverride> removedOverrides_;
   std::vector<RemovedUnitSelectionOverride> removedUnitOverrides_;
   std::vector<RemovedSeamOverride> removedSeamOverrides_;
+  std::vector<PerformanceChange> performanceChanges_;
   bool captured_{false};
+};
+
+struct NotePronunciationChange final {
+  domain::RegionId regionId;
+  std::optional<domain::PronunciationIdentity> before;
+  std::optional<domain::PronunciationIdentity> after;
+  std::uint64_t beforeRevision{0U};
+  std::vector<domain::PhonemeOverride> beforePhonemes, afterPhonemes;
+  std::vector<domain::UnitSelectionOverride> beforeUnits, afterUnits;
+  std::vector<domain::SeamOverride> beforeSeams, afterSeams;
+};
+
+struct NoteHintEdit final {
+  domain::NoteId noteId;
+  std::optional<std::string> before, after;
+};
+class SetNoteHintsCommand final : public ICommand {
+public:
+  explicit SetNoteHintsCommand(std::vector<NoteHintEdit> edits) : edits_(std::move(edits)) {}
+  [[nodiscard]] std::string_view name() const noexcept override { return "Edit pronunciation hints"; }
+  [[nodiscard]] CommandAudioImpact audioImpact() const noexcept override { return CommandAudioImpact::PhraseAudio; }
+  [[nodiscard]] CommandImpact impact() const override;
+  [[nodiscard]] core::Result<void> apply(domain::Project& project) override;
+  [[nodiscard]] core::Result<void> revert(domain::Project& project) override;
+private:
+  [[nodiscard]] core::Result<void> set(domain::Project& project, bool after);
+  std::vector<NoteHintEdit> edits_;
+  std::vector<NotePronunciationChange> pronunciationChanges_;
+  bool pronunciationCaptured_{false};
 };
 
 class MoveNotesCommand final : public ICommand {
@@ -112,6 +161,8 @@ public:
 private:
   [[nodiscard]] core::Result<void> set(domain::Project& project, bool after);
   std::vector<NoteMove> moves_;
+  std::vector<NotePronunciationChange> pronunciationChanges_;
+  bool pronunciationCaptured_{false};
 };
 
 class ResizeNotesCommand final : public ICommand {
@@ -130,6 +181,8 @@ public:
 private:
   [[nodiscard]] core::Result<void> set(domain::Project& project, bool after);
   std::vector<NoteResize> resizes_;
+  std::vector<NotePronunciationChange> pronunciationChanges_;
+  bool pronunciationCaptured_{false};
 };
 
 struct NotePerformanceEdit final {
@@ -160,6 +213,8 @@ public:
 private:
   [[nodiscard]] core::Result<void> set(domain::Project& project, bool after);
   std::vector<NotePerformanceEdit> edits_;
+  std::vector<NotePronunciationChange> pronunciationChanges_;
+  bool pronunciationCaptured_{false};
 };
 
 }  // namespace seam::application

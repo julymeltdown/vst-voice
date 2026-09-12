@@ -3,6 +3,7 @@
 #include "seam/authoring/authoring_runtime.hpp"
 #include "seam/authoring/autosave_service.hpp"
 #include "seam/authoring/media_import_service.hpp"
+#include "seam/authoring/interchange_service.hpp"
 #include "seam/authoring/project_lifecycle.hpp"
 #include "seam/core/result.hpp"
 #include "seam/native_ui/editor_controller.hpp"
@@ -57,6 +58,16 @@ public:
   [[nodiscard]] core::Result<void> saveProject();
   [[nodiscard]] core::Result<void> saveProjectAs(
       const std::filesystem::path& path);
+  // Import preparation is side-effect free for the active document.  The
+  // caller presents the returned bounded loss report, then explicitly accepts
+  // the draft through acceptInterchangeImport().
+  [[nodiscard]] core::Result<authoring::InterchangeImportDraft>
+  prepareInterchangeImport(const std::filesystem::path& path,
+                           authoring::InterchangeImportRequest request = {}) const;
+  [[nodiscard]] core::Result<void> acceptInterchangeImport(
+      authoring::InterchangeImportDraft draft);
+  [[nodiscard]] core::Result<authoring::InterchangeExportReceipt>
+  exportInterchange(authoring::InterchangeExportRequest request) const;
   [[nodiscard]] core::Result<void> recoverProject(
       authoring::AutosaveService& autosave,
       const authoring::RecoveryCandidate& candidate);

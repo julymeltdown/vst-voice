@@ -49,6 +49,9 @@ public:
 
   [[nodiscard]] core::Result<void> execute(
       std::unique_ptr<application::ICommand> command);
+  [[nodiscard]] core::Result<void> executePerformanceResult(
+      const application::PerformanceJobContext& context,
+      std::unique_ptr<application::ICommand> command);
   [[nodiscard]] core::Result<void> undo();
   [[nodiscard]] core::Result<void> redo();
   [[nodiscard]] core::Result<void> replaceProject(domain::Project project);

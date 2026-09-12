@@ -11,6 +11,7 @@
 #include "seam/rendering/render_pipeline.hpp"
 #include "seam/rendering/render_scheduler.hpp"
 #include "seam/rendering/render_snapshot.hpp"
+#include "seam/rendering/region_renderer.hpp"
 #include "seam/rendering/stale_audio_store.hpp"
 #include "seam/voicebank/wav.hpp"
 
@@ -97,6 +98,34 @@ TEST_CASE("phrase segmentation is stable and dirty invalidation includes neighbo
   CHECK(affected.back() == segments.value().back().id);
 }
 
+TEST_CASE("phrase segmentation looks ahead across overlapping manual dependencies") {
+  RenderFixture fixture;
+  const auto first = fixture.add(seam::time::Tick{0});
+  const auto second = fixture.add(seam::time::Tick{960});
+  fixture.add(seam::time::Tick{1920});
+  const auto last = fixture.add(seam::time::Tick{2880});
+  auto* region = fixture.project.findRegion(fixture.regionId);
+  region->unitSelectionOverrides = {{.startKey = {second, 0U}, .tokenCount = 2U, .unitId = "span"}};
+  region->seamOverrides = {{.incomingStartKey = {last, 0U}, .seamAmount = 0.5F}};
+  const auto before = fixture.project;
+  const seam::rendering::PhraseSegmentationConfig config{.splitRest = seam::time::Tick{10000}, .maximumDuration = seam::time::Tick{3000}};
+  const auto result = seam::rendering::PhraseSegmenter{}.segment(*region, config);
+  CHECK(result); CHECK(result.value().size() == 2U);
+  CHECK(result.value().front().noteIds == std::vector{first});
+  CHECK(result.value().back().noteIds.size() == 3U);
+  CHECK(result.value().back().noteIds.front() == second);
+  CHECK(result.value().back().noteIds.back() == last);
+  CHECK(result.value().back().duration() <= config.maximumDuration);
+  const auto repeated = seam::rendering::PhraseSegmenter{}.segment(*region, config);
+  CHECK(repeated); CHECK(repeated.value() == result.value());
+  CHECK(!seam::rendering::PhraseSegmenter{}.segment(*region, {.maximumDuration = seam::time::Tick{2500}}));
+  CHECK(fixture.project == before);
+  region->unitSelectionOverrides.front().unresolved = true;
+  region->seamOverrides.front().unresolved = true;
+  const auto inactive = seam::rendering::PhraseSegmenter{}.segment(*region, config);
+  CHECK(inactive); CHECK(inactive.value().front().noteIds.size() == 3U);
+}
+
 TEST_CASE("render snapshot content hash changes with canonical edit") {
   RenderFixture fixture;
   const auto noteId = fixture.add(seam::time::Tick{0});
@@ -115,7 +144,7 @@ TEST_CASE("render snapshot content hash changes with canonical edit") {
       seam::rendering::RenderQuality::Preview, bankRoot);
   CHECK(first);
   CHECK(first.value().project != nullptr);
-  CHECK(first.value().voicebank != nullptr);
+  CHECK(first.value().sample().voicebank != nullptr);
 
   fixture.project.findNote(noteId)->midiKey = 72;
   const auto second = factory.create(
@@ -268,6 +297,74 @@ TEST_CASE("content addressed PCM cache survives memory eviction") {
   CHECK(cache.stats().memoryHits >= 1);
   CHECK(cache.stats().diskHits == 1);
   CHECK(!cache.load("../escape"));
+}
+
+TEST_CASE("region renderer preserves cached fallback provenance across memory and disk hits") {
+  RenderFixture fixture;
+  fixture.add(seam::time::Tick{0});
+  fixture.add(seam::time::Tick{4800});
+  const auto bank = seam::test::support::makeManifest({seam::test::support::makeUnit(
+      "a", {"a"}, "audio/a.wav", 69, seam::voicebank::UnitKind::Sustain, 24000)});
+  const auto bankRoot = materializeSnapshotBank(bank, "region-cache-provenance-bank");
+  const auto cacheRoot = seam::test::support::temporaryDirectory("region-cache-provenance");
+  seam::rendering::PcmCache cache{cacheRoot};
+  const seam::rendering::ProductionRegionRenderer renderer;
+  const auto render = [&](seam::rendering::PcmCache& targetCache, std::uint64_t revision) {
+    return renderer.render(fixture.project, bank, bankRoot, fixture.trackId, fixture.regionId,
+        revision, 48000U, seam::rendering::RenderQuality::Preview, {}, {}, &targetCache);
+  };
+  const auto cold = render(cache, 1U);
+  CHECK(cold);
+  CHECK(cold.value().cacheHits == 0U);
+  CHECK(cold.value().phrases.size() == 2U);
+  CHECK(!cold.value().mono.empty());
+
+  // The current compiled-performance path rejects unsafe DSP fallback. Seed
+  // nonzero provenance into real cached phrase PCM without relaxing that rule.
+  // This tests the region consumer of persisted metadata, not a new fallback.
+  std::vector<seam::rendering::CachedPcm> expected;
+  for (std::size_t index = 0U; index < cold.value().phrases.size(); ++index) {
+    const auto& phrase = cold.value().phrases[index];
+    const auto stored = cache.load(phrase.contentHash);
+    CHECK(stored);
+    auto provenance = *stored.value();
+    provenance.fallbackCount = index + 1U;
+    provenance.rendererIdentity = index == 0U ? "raw" : "mixed";
+    provenance.fallbackDiagnostic = "Recorded fallback for cached phrase " + std::to_string(index);
+    CHECK(cache.store(phrase.contentHash, provenance));
+    expected.push_back(std::move(provenance));
+  }
+  const auto checkHit = [&](const seam::rendering::RegionRenderResult& result) {
+    CHECK(result.cacheHits == 2U);
+    CHECK(result.fallbackCount == 3U);
+    CHECK(result.sampleRate == cold.value().sampleRate);
+    CHECK(result.mono == cold.value().mono);
+    CHECK(result.unitCount == cold.value().unitCount);
+    CHECK(result.phrases.size() == cold.value().phrases.size());
+    for (std::size_t index = 0U; index < result.phrases.size(); ++index) {
+      const auto& phrase = result.phrases[index];
+      CHECK(phrase.cacheHit);
+      CHECK(phrase.phraseId == cold.value().phrases[index].phraseId);
+      CHECK(phrase.contentHash == cold.value().phrases[index].contentHash);
+      CHECK(phrase.unitCount == cold.value().phrases[index].unitCount);
+      CHECK(phrase.fallbackCount == expected[index].fallbackCount);
+      CHECK(phrase.rendererIdentity == expected[index].rendererIdentity);
+      CHECK(phrase.fallbackDiagnostic == expected[index].fallbackDiagnostic);
+    }
+  };
+  const auto beforeMemory = cache.stats();
+  const auto memory = render(cache, 2U);
+  CHECK(memory);
+  checkHit(memory.value());
+  CHECK(cache.stats().memoryHits == beforeMemory.memoryHits + 2U);
+  CHECK(cache.stats().writes == beforeMemory.writes);
+
+  seam::rendering::PcmCache reopened{cacheRoot};
+  const auto disk = render(reopened, 3U);
+  CHECK(disk);
+  checkHit(disk.value());
+  CHECK(reopened.stats().diskHits == 2U);
+  CHECK(reopened.stats().writes == 0U);
 }
 
 

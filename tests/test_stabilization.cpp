@@ -336,7 +336,7 @@ TEST_CASE("render identity binds selected WAV bytes and effective render options
   CHECK(baseline);
   CHECK(baseline.value().contentHash.size() == 64U);
   CHECK(baseline.value().renderAbiId == seam::build::kRenderAbiId);
-  CHECK(baseline.value().frozenAudio.size() == 1U);
+  CHECK(baseline.value().sample().frozenAudio.size() == 1U);
   seam::rendering::PhraseRenderPipeline pipeline;
   const auto frozenBeforeMutation = pipeline.render(baseline.value());
   CHECK(frozenBeforeMutation);
@@ -430,6 +430,26 @@ TEST_CASE("PCM cache validates declared payload before allocating samples") {
       .startFrame = 0,
       .samples = std::vector<float>(100U, 0.1F),
   }));
+}
+
+TEST_CASE("PCM cache preserves renderer and fallback provenance across disk hits") {
+  const auto root = seam::test::support::temporaryDirectory("pcm-provenance");
+  seam::rendering::PcmCache cache{root};
+  const seam::rendering::CachedPcm expected{
+      .sampleRate = 48000U,
+      .startFrame = 128,
+      .samples = {0.0F, 0.25F, -0.25F},
+      .rendererIdentity = "classic-psola",
+      .fallbackCount = 2U,
+      .fallbackDiagnostic = "pitch-preserving fallback was not available"};
+  CHECK(cache.store("provenance", expected));
+  cache.clearMemory();
+  const auto loaded = cache.load("provenance");
+  CHECK(loaded);
+  CHECK(loaded.value()->rendererIdentity == expected.rendererIdentity);
+  CHECK(loaded.value()->fallbackCount == expected.fallbackCount);
+  CHECK(loaded.value()->fallbackDiagnostic == expected.fallbackDiagnostic);
+  CHECK(loaded.value()->samples == expected.samples);
 }
 
 TEST_CASE("spectral and stretch renderers preserve the recorded vowel transition") {

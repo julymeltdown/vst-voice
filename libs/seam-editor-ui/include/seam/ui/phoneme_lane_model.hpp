@@ -18,6 +18,9 @@ struct PhonemeVisual final {
   Rect bounds;
   bool locked{false};
   bool timingOverridden{false};
+  bool timingEstimated{false};
+  bool timingConflict{false};
+  bool timingInferred{false}; // Compiler policy, distinct from heuristic geometry.
 };
 
 class PhonemeLaneModel final {

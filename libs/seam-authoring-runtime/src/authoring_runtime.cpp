@@ -77,11 +77,10 @@ void AuthoringRuntime::recordDiagnostic(const core::Error& error) {
   const auto existing = std::find_if(
       diagnostics_.begin(), diagnostics_.end(),
       [&diagnostic](const auto& value) {
-        return value.code == diagnostic.code &&
-               value.messageKey == diagnostic.messageKey;
+        return value.sameIssueAs(diagnostic);
       });
   if (existing != diagnostics_.end()) {
-    existing->occurrenceCount += diagnostic.occurrenceCount;
+    existing->addOccurrences(diagnostic.occurrenceCount);
   } else {
     diagnostics_.push_back(std::move(diagnostic));
   }
@@ -99,16 +98,15 @@ void AuthoringRuntime::recordRenderFailure(RenderFailureKind failure,
       .actions = DiagnosticRegistry::actions(code),
       .occurrenceCount = 1U,
   };
-  if (!message.empty()) diagnostic.messageKey += "." + std::move(message);
+  diagnostic.setDetail(message);
   std::lock_guard lock(diagnosticsMutex_);
   const auto existing = std::find_if(
       diagnostics_.begin(), diagnostics_.end(),
       [&diagnostic](const auto& value) {
-        return value.code == diagnostic.code &&
-               value.messageKey == diagnostic.messageKey;
+        return value.sameIssueAs(diagnostic);
       });
   if (existing != diagnostics_.end()) {
-    existing->occurrenceCount += diagnostic.occurrenceCount;
+    existing->addOccurrences(diagnostic.occurrenceCount);
   } else {
     diagnostics_.push_back(std::move(diagnostic));
   }
@@ -135,6 +133,8 @@ core::Result<void> AuthoringRuntime::initialize() {
   }
   auto refreshed = voicebanks_.refresh();
   if (!refreshed) return refreshed;
+  const auto migrated = voicebanks_.migrateLegacyStyles(document_->session().project());
+  if (!migrated) return core::Result<void>{migrated.error()};
   if (config_.enableTransport) {
     auto started = transport_.start();
     if (!started) return started;
@@ -229,7 +229,20 @@ core::Result<void> AuthoringRuntime::execute(
   const auto impact = command == nullptr
                           ? application::CommandImpact{}
                           : command->impact();
-  auto result = document_->execute(std::move(command));
+  return afterCommandExecution(document_->execute(std::move(command)), impact);
+}
+
+core::Result<void> AuthoringRuntime::executePerformanceResult(
+    const application::PerformanceJobContext& context,
+    std::unique_ptr<application::ICommand> command) {
+  const auto impact = command == nullptr
+                          ? application::CommandImpact{}
+                          : command->impact();
+  return afterCommandExecution(document_->executePerformanceResult(context, std::move(command)), impact);
+}
+
+core::Result<void> AuthoringRuntime::afterCommandExecution(
+    core::Result<void> result, application::CommandImpact impact) {
   if (!result) recordDiagnostic(result.error());
   document_->synchronizeDirtyState();
   if (result && impact.scope != application::CommandAudioImpact::ViewOnly &&
@@ -307,7 +320,7 @@ core::Result<void> AuthoringRuntime::previewSeam(domain::PhonemeKey key,
                   });
     seamPreviewActive_.store(true, std::memory_order_release);
     seamPreviewReady_.store(false, std::memory_order_release);
-    seamPreviewRenderer_.submit(
+    seamPreviewRenderer_.submitWithSources(
         std::move(request->project), std::move(request->voicebanks),
         request->activeTrack, request->activeRegion, request->revision,
         request->sampleRate, request->quality, true,
@@ -385,6 +398,10 @@ void AuthoringRuntime::requestPreview(bool immediate,
                                       application::CommandImpact impact) {
   if (!initialized_ || document_ == nullptr) return;
 
+  // A previously prepared Final must not remain current during debounce.
+  // The publication itself stays alive for readers and technical diagnostics.
+  renderer_.invalidateCurrent();
+
   auto request = makePreviewRequest(std::move(impact));
   if (!request.has_value()) return;
   if (immediate) {
@@ -427,9 +444,15 @@ AuthoringRuntime::makePreviewRequest(application::CommandImpact impact) const {
   const auto hasBackingAudio = std::any_of(
       project.audioTracks().begin(), project.audioTracks().end(),
       [](const auto& track) { return !track.mediaPath.empty(); });
-  std::vector<rendering::TrackVoicebankSource> sources;
+  std::vector<rendering::TrackSingerSource> sources;
   sources.reserve(states.size());
   for (const auto& state : states) {
+    if (const auto* track = project.findVocalTrack(state.trackId); track && track->proceduralRecipe) {
+      const auto& savedPath = document_->identity().projectPath;
+      sources.emplace_back(rendering::TrackRecipeFileSource{state.trackId, *track->proceduralRecipe,
+          savedPath ? std::optional<std::filesystem::path>{savedPath->parent_path()} : std::nullopt});
+      continue;
+    }
     if (state.resolution.resolved()) {
       sources.push_back(sourceFor(state.trackId,
                                   *state.resolution.candidate));
@@ -443,8 +466,8 @@ AuthoringRuntime::makePreviewRequest(application::CommandImpact impact) const {
   auto activeTrack = selectedTrack_;
   auto activeRegion = selectedRegion_;
   const auto selectedResolved = std::any_of(
-      states.begin(), states.end(), [activeTrack](const auto& state) {
-        return state.trackId == activeTrack && state.resolution.resolved();
+      sources.begin(), sources.end(), [activeTrack](const auto& source) {
+        return std::visit([activeTrack](const auto& value) { return value.trackId == activeTrack; }, source);
       });
   if (!selectedResolved || project.findRegion(activeRegion) == nullptr) {
     std::tie(activeTrack, activeRegion) =
@@ -472,7 +495,7 @@ AuthoringRuntime::makePreviewRequest(application::CommandImpact impact) const {
 }
 
 void AuthoringRuntime::submitPreview(PreviewRequest request, bool immediate) {
-  renderer_.submit(std::move(request.project), std::move(request.voicebanks),
+  renderer_.submitWithSources(std::move(request.project), std::move(request.voicebanks),
                    request.activeTrack, request.activeRegion, request.revision,
                    request.sampleRate, request.quality, immediate,
                    std::move(request.impact));
@@ -532,8 +555,8 @@ AuthoringRuntime::firstRenderableSelection(
     const domain::Project& project,
     const std::vector<TrackVoicebankState>& states) const {
   for (const auto& state : states) {
-    if (!isResolved(state)) continue;
     const auto* track = project.findVocalTrack(state.trackId);
+    if (!isResolved(state) && !(track && track->proceduralRecipe)) continue;
     if (track == nullptr || track->regions.empty()) continue;
     const auto region = std::find_if(
         track->regions.begin(), track->regions.end(),

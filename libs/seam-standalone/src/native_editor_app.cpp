@@ -333,6 +333,7 @@ core::Result<void> NativeEditorApp::initialize() {
       .reduceMotionEnabled = [] {
         return platform::currentAccessibilityPreferences().reduceMotion;
       },
+      .prepareJapaneseReadingResource = config_.prepareJapaneseReadingResource,
   };
   auto created = AuthoringSession::create(config_.authoring,
                                           std::move(callbacks));
@@ -403,6 +404,63 @@ core::Result<void> NativeEditorApp::initialize() {
             authoring_->controller().showAudioSettings();
             if (window_ != nullptr) window_->requestRepaint();
             return core::success();
+          },
+          .editPronunciationHint = [this] {
+            const auto result = authoring_->controller().beginSelectedHintEdit();
+            record(result);
+            return result;
+          },
+          .findReplaceLyrics = [this] {
+            const auto result = authoring_->controller().beginReplacementInput();
+            record(result);
+            return result;
+          },
+          .findNotes = [this] {
+            const auto result = authoring_->controller().beginFindInput();
+            record(result); return result;
+          },
+          .findActiveDiagnostics = [this] {
+            const auto result = authoring_->controller().beginDiagnosticFindInput();
+            record(result); return result;
+          },
+          .findNextNote = [this] {
+            const auto result = authoring_->controller().repeatFind();
+            record(result); return result;
+          },
+          .findPreviousNote = [this] {
+            const auto result = authoring_->controller().repeatFind(true);
+            record(result); return result;
+          },
+          .clearSelectedVibrato = [this] {
+            const auto result = authoring_->controller().openClearVibratoReview();
+            record(result); return result;
+          },
+          .editSelectedVibrato = [this] {
+            const auto result = authoring_->controller().openVibratoInspector(); record(result); return result;
+          },
+          .editRegionDynamics = [this] {
+            const auto result = authoring_->controller().openDynamicsInspector(); record(result); return result;
+          },
+          .editTrackStyle = [this] {
+            const auto result = authoring_->controller().openStyleCoverageSheet(); record(result); return result;
+          },
+          .editJapaneseReading = [this] {
+            const auto result = authoring_->controller().openJapaneseReadingReview(); record(result); return result;
+          },
+          .removeSelectedOverlaps = [this] {
+            const auto result = authoring_->controller().openNoteCleanupReview(ui::NoteCleanupKind::RemoveOverlap);
+            record(result); return result;
+          },
+          .closeSelectedGaps = [this] {
+            const auto result = authoring_->controller().openNoteCleanupReview(ui::NoteCleanupKind::CloseGap);
+            record(result); return result;
+          },
+          .autoLegatoSelectedNotes = [this] {
+            const auto result = authoring_->controller().openNoteCleanupReview(ui::NoteCleanupKind::AutoLegato);
+            record(result); return result;
+          },
+          .clearRegionDynamicsCurve = [this] {
+            const auto result = authoring_->controller().openClearDynamicsReview(); record(result); return result;
           },
       },
       [this] { closeRequested_.store(true, std::memory_order_release); });
@@ -1044,6 +1102,12 @@ core::Result<void> NativeEditorApp::handleDiagnosticAction(
       std::string text = "Project SEAM diagnostic\n";
       text += "Code: " + diagnostic.code + "\n";
       text += "Message: " + diagnostic.messageKey + "\n";
+      if (!diagnostic.detail.empty()) {
+        text += "Detail";
+        if (diagnostic.detailTruncated) text += " [truncated]";
+        if (diagnostic.detailEscaped) text += " [escaped bytes]";
+        text += ": " + diagnostic.detail + "\n";
+      }
       text += "Occurrences: " +
               std::to_string(diagnostic.occurrenceCount) + "\n";
       if (!diagnostic.affectedIds.empty()) {
@@ -1103,6 +1167,7 @@ std::optional<std::filesystem::path> NativeEditorApp::documentPath()
 
 void NativeEditorApp::paint(native_ui::RasterCanvas& canvas) noexcept {
   if (authoring_ == nullptr) return;
+  authoring_->controller().pollReplacementReview();
   if (applicationController_ != nullptr) {
     record(applicationController_->tickAutosave());
   }

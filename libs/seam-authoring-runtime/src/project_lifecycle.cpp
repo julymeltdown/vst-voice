@@ -1,7 +1,9 @@
 #include "seam/authoring/project_lifecycle.hpp"
+#include "seam/voice_design/recipe_resource.hpp"
 
 #include "seam/core/sha256.hpp"
 #include "seam/domain/note.hpp"
+#include "seam/voicebank/style_resolution.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -159,8 +161,15 @@ core::Result<void> ProjectLifecycleService::createNew(
     static_cast<void>(factory.addRegion(project, trackId, "Region 1",
                                         time::Tick{0}, sixteenBars));
     if (request.initialVoicebank.has_value()) {
-      project.vocalTracks().front().voicebank =
-          referenceFor(*request.initialVoicebank);
+      auto& track = project.vocalTracks().front();
+      track.voicebank = referenceFor(*request.initialVoicebank);
+      if (voicebanks_ != nullptr) {
+        const auto bank = voicebanks_->resolveTrack(project, trackId);
+        const auto style = voicebank::resolveVoiceStyle(track.voicebank,
+                                                        track.styleSelection, bank);
+        if (!style) return core::Result<void>{style.error()};
+        track.styleSelection = style.value().selection;
+      }
     }
   } else if (request.initialVoicebank.has_value()) {
     return core::failure(core::ErrorCode::InvalidArgument,
@@ -196,6 +205,8 @@ core::Result<OpenProjectResult> ProjectLifecycleService::open(
 
   OpenProjectResult result;
   if (voicebanks_ != nullptr) {
+    const auto migrated = voicebanks_->migrateLegacyStyles(loaded.value());
+    if (!migrated) return core::Result<OpenProjectResult>{migrated.error()};
     result.voicebanks = voicebanks_->resolveAll(loaded.value());
   }
   auto replaced = document.replaceProject(std::move(loaded).value());
@@ -222,6 +233,21 @@ core::Result<void> ProjectLifecycleService::saveAs(
     const ProjectSaveOptions& options) const {
   auto normalized = normalizedFilePath(path);
   if (!normalized) return core::Result<void>{normalized.error()};
+  for (const auto& track : document.session().project().vocalTracks()) {
+    if (!track.proceduralRecipe) continue;
+    const auto relative = std::filesystem::path{track.proceduralRecipe->path};
+    if (!relative.is_relative()) continue;
+    const auto& previous = document.identity().projectPath;
+    if (previous && previous->parent_path() == normalized.value().parent_path()) continue;
+    // Saving elsewhere must not reinterpret a relative resource as another
+    // singer. Do not mutate path-bearing undo history or copy external files
+    // implicitly; an existing destination copy must satisfy exact identity.
+    const auto candidate = voice_design::loadVoiceRecipeResource(
+        normalized.value().parent_path() / relative, track.proceduralRecipe->resource);
+    if (!candidate) return core::failure(core::ErrorCode::Conflict,
+        "Save As requires the matching relative recipe at the destination; copy or relink it first",
+        candidate.error().message);
+  }
   const auto written = write(document.session().project(), normalized.value(),
                              options);
   if (!written) return core::Result<void>{written.error()};

@@ -1,0 +1,1250 @@
+Start testing: Sep 10 00:50 KST
+----------------------------------------------------------
+14/120 Testing: seam_voice_designer_tests
+14/120 Test: seam_voice_designer_tests
+Command: "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/release/seam_voice_designer_tests"
+Directory: /Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/release
+"seam_voice_designer_tests" start time: Sep 10 00:50 KST
+Output:
+----------------------------------------------------------
+[PASS] Designer source selection resolves style filtered rows without changing recipes
+[PASS] Designer source creation retains matching vowel and rejection retains selection
+[PASS] Designer history preserves plosive bindings while unrelated voice parameters change
+[PASS] Designer stop vowel audition uses the selected pose pitch and distinct preview mode
+[PASS] Designer plosive audition is finite reproducible separate and invalidated by edits
+[PASS] Designer plosive creation seed edits removal and save are validated undoable operations
+[PASS] Designer pose duplication rejects selection changes with an unchanged recipe revision
+[PASS] Designer nasal edits audition save reopen and undo without changing the previous resource
+[PASS] Designer compact layout keeps selection status and errors inside the minimum window
+[PASS] Designer source action bars remain reachable throughout supported resize range
+[PASS] Designer voiced frication uses mixed context instead of dropping voicing
+[PASS] Designer frication context previews preserve mode pitch and draft ownership
+[PASS] Designer frication audition is bounded reproducible and separate from vowel comparison
+[PASS] Designer frication seed and removal edits preserve other sources and undo exactly
+[PASS] Designer frication creation and filter edits retain validated reproducible recipe state
+[PASS] Designer seed edits retain full unsigned precision and invalidate reproducible audio
+[PASS] Designer modulation controls produce periodic audio changes and zero-rate neutrality
+[PASS] Designer preview cancellation cannot cancel an independent recipe save
+[PASS] Designer pose duplication and removal are validated undoable draft edits
+[PASS] Designer session gestures invalidate preview and commit one undo
+[PASS] Designer A/B reference retains original recipe and PCM across edits
+[PASS] Designer resonance edits affect audition and undo restores exact audio
+[PASS] Designer audition selection invalidates old output without dirtying the recipe
+[PASS] Designer audition renders deterministic bounded PCM and follows phonation edits
+[PASS] Designer audition worker discards old voice revisions without blocking editing
+[PASS] Designer session saves reopens and rejects old document actions
+[PASS] Designer session protects edited external files and preserves failed-save state
+[PASS] Designer discard authorization replaces only after successful validation or loading
+[PASS] Designer gesture previews collapse to one undo and reject stale completion
+[PASS] Designer cancelled and neutral gestures preserve prior redo and saved identity
+[PASS] Voice Designer frozen edits undo without reviving stale actions
+[PASS] Voice Designer rejects invalid source and resonance edits atomically
+[PASS] Voice Designer keeps a bounded undo history across recipe schema changes
+
+33 passed, 0 failed
+<end of output>
+Test time =   1.52 sec
+----------------------------------------------------------
+Test Passed.
+"seam_voice_designer_tests" end time: Sep 10 00:50 KST
+"seam_voice_designer_tests" time elapsed: 00:00:01
+----------------------------------------------------------
+
+15/120 Testing: seam_voice_design_tests
+15/120 Test: seam_voice_design_tests
+Command: "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/release/seam_voice_design_tests"
+Directory: /Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/release
+"seam_voice_design_tests" start time: Sep 10 00:50 KST
+Output:
+----------------------------------------------------------
+[PASS] voiced frication candidate metadata preserves recipe voicing and rejects relabeling
+[PASS] voiced frication recipe contract is explicit versioned and cannot downgrade
+[PASS] plosive articulation renders exact closure burst and vowel with transactional seeking
+[PASS] plosive recipe bindings roundtrip and preserve existing recipe identities
+[PASS] noise codas close voicing and preserve their distinct source envelopes at the phrase end
+[PASS] plosive recipes reject ambiguous bindings and malformed durations without silently downgrading
+[PASS] plosive source has exact closure and a finite decaying burst rather than sustained frication
+[PASS] plosive source chunks checkpoints reset and cancellation preserve exact source state
+[PASS] plosive source rejects invalid spans spectra and clocks before rendering
+[PASS] explicit nasal onset gestures render voiced audio with exact chunk and checkpoint continuity
+[PASS] nasal consonant tract excludes oral output rather than relabeling a colored vowel
+[PASS] nasal codas use inferred timing and preserve explicit nonoverlapping timing
+[PASS] explicit nasal models roundtrip as schema three without relabeling legacy recipes
+[PASS] nasal tract creates measurable resonance and antiresonance with unchanged periodic pitch
+[PASS] nasal banks preserve transitions checkpoints reset and failed-block rollback
+[PASS] nasal sustained rendering survives file reload and owned-window reconstruction
+[PASS] frication recipes roundtrip in schema two while preserving canonical schema one identity
+[PASS] recipe articulation prepares resolved score edits without caller supplied frication settings
+[PASS] articulation plans bind explicit frication to shared nucleus timing without guessing phones
+[PASS] frication excitation is deterministic chunk invariant and cancellation safe
+[PASS] frication excitation rejects unsafe configurations and stays finite at supported extremes
+[PASS] recipe files save atomically and reload only the requested immutable identity
+[PASS] sustained procedural audition composes source tract gains and owned windows
+[PASS] phonation follows compiled melody with deterministic block-continuous excitation
+[PASS] oral pose crossfades preserve block state rollback and settle at the target bank
+[PASS] oral resonance changes timbre without changing a tone frequency and is block invariant
+[PASS] procedural recipe resources bind immutable canonical data to exact identity
+[PASS] voice recipes roundtrip exact draft controls poses and full width seeds
+
+28 passed, 0 failed
+<end of output>
+Test time =   0.88 sec
+----------------------------------------------------------
+Test Passed.
+"seam_voice_design_tests" end time: Sep 10 00:50 KST
+"seam_voice_design_tests" time elapsed: 00:00:00
+----------------------------------------------------------
+
+37/120 Testing: seam_performance_snapshot_tests
+37/120 Test: seam_performance_snapshot_tests
+Command: "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/release/seam_performance_snapshot_tests"
+Directory: /Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/release
+"seam_performance_snapshot_tests" start time: Sep 10 00:50 KST
+Output:
+----------------------------------------------------------
+[PASS] articulated snapshots preserve recipe timing PCM and markers through scheduler checkpoints
+[PASS] typed project sources route procedural audio at absolute score time without sample banks
+[PASS] procedural snapshots use the selected English and Korean language services
+[PASS] nasal consonant scheduler output preserves typed gestures across the vowel boundary
+[PASS] nasal recipe snapshots reconstruct a transition and reject obsolete cache identity
+[PASS] procedural vowel sequences transition poses across owned checkpoint boundaries
+[PASS] scheduler preserves voiced frication marker identity through completion and cache hits
+[PASS] procedural snapshots render frozen vowel resources without sample banks or fake units
+[PASS] canonical audio identity does not merge scheduler revisions across source projects
+[PASS] owned chunk assembly requires complete finite nonoverlapping output
+[PASS] scheduler reset drops old session work and permits revision zero without late publication
+[PASS] explicit revision invalidation prevents deleted groups from returning old audio
+[PASS] phrase revision groups invalidate queued cached and unseen obsolete chunk jobs
+[PASS] scheduled sibling snapshot windows coexist and validate cache extents
+[PASS] owned output planner covers negative and partial intervals without gaps or truncation
+[PASS] snapshot owned windows retain full musical context and reconstruct complete audio
+[PASS] backend output ownership preserves absolute frames and rejects incomplete context
+[PASS] non-sample resources freeze verified private bytes and reject mismatched identities
+[PASS] unconfigured resource variants reject without sample fallback
+[PASS] sample resource freezes renderer options and binds them to cache identity
+[PASS] production region sums independent overlapping voices and reuses voice caches
+[PASS] overlapping singer voices resolve continuation from their own predecessor
+[PASS] production region clips preutterance at frame zero without shifting vowel audio
+[PASS] explicit release renders past the note but remains inside its region
+[PASS] snapshot freezes audio-bound source alignment and includes it in cache identity
+[PASS] frozen source alignment renders both nuclei and survives sidecar removal
+[PASS] snapshot uses smaller units instead of unaligned multiple nuclei
+[PASS] phrase boundaries preserve shared lyric continuation context
+[PASS] snapshot rejects external performance that is absent from cache identity
+[PASS] normal classical snapshots own performance and apply manual pitch only once
+[PASS] single vowel continuation changes normal renderer audio with exact undo identity
+[PASS] aligned long unit follows both score pitches through normal classical snapshots
+[PASS] phrase snapshot preserves effective dynamics with only interpolation anchors
+[PASS] snapshot resolves continuation in full region context before phrase extraction
+[PASS] phrase projection rejects incomplete active relationships without changing saved edits
+[PASS] exact phrase boundary dynamics exclude unnecessary exterior anchors
+[PASS] phrase dynamics preserve empty curves clamping and spanning interpolation
+[PASS] performance snapshots freeze note intent track style and cropped dynamics
+[PASS] each persisted performance intent changes snapshot identity independently
+[PASS] faraway dynamics edits do not invalidate the extracted phrase
+[PASS] snapshot factory rejects invalid source dynamics before cropping
+[PASS] default snapshot style follows saved intent without first style substitution
+[PASS] project rendering honors saved style and reports missing styles without substitute units
+[PASS] accepted attack survives normal snapshots and manual ownership undo across sample renderers
+[PASS] snapshots exclude inert proposals but retain selected performance and manual ownership
+
+45 passed, 0 failed
+<end of output>
+Test time =   1.62 sec
+----------------------------------------------------------
+Test Passed.
+"seam_performance_snapshot_tests" end time: Sep 10 00:50 KST
+"seam_performance_snapshot_tests" time elapsed: 00:00:01
+----------------------------------------------------------
+
+48/120 Testing: seam_export_tests
+48/120 Test: seam_export_tests
+Command: "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/release/seam_export_tests"
+Directory: /Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/release
+"seam_export_tests" start time: Sep 10 00:50 KST
+Output:
+----------------------------------------------------------
+{
+  "jobs": 2,
+  "manifestSha256": "4a89442bfdeb45b038f288ae47cc3f31b678db2a6c5d50e38945cc295f479c82",
+  "state": "BatchPrepared"
+}
+
+error: Atomic create-new target already exists (/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/project-seam-articulated-export-78539-10/cli-batch.json)
+error: partially collected batch requires explicit reconciliation
+{
+  "approval": "unapproved",
+  "cancellationRequested": false,
+  "count": 2,
+  "diagnostic": "",
+  "durabilityConfirmed": true,
+  "generation": "2",
+  "projectSha256": "d6fcef686e5ee76af60d9508b51f518bd5c50538d2dbe12251b9e38272a314f2",
+  "result": "Collected"
+}
+
+{
+  "generation": "2",
+  "result": "AlreadyCollected",
+  "takes": [
+    {
+      "active": true,
+      "state": "MARKER_REVIEW",
+      "takeId": "take-sa"
+    },
+    {
+      "active": true,
+      "state": "MARKER_REVIEW",
+      "takeId": "take-sa-70"
+    }
+  ]
+}
+
+{
+  "generation": "2",
+  "result": "AlreadyCollected",
+  "takes": [
+    {
+      "active": true,
+      "state": "MARKER_REVIEW",
+      "takeId": "take-sa"
+    },
+    {
+      "active": true,
+      "state": "MARKER_REVIEW",
+      "takeId": "take-sa-70"
+    }
+  ]
+}
+
+{
+  "approval": "unapproved",
+  "outputs": [
+    {
+      "audio": "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/project-seam-articulated-export-78539-10/batch-a/output/candidates/0000000000014051-0000000000014052.wav",
+      "audioSha256": "be69f27372edc0c5396a6234cbfc4a6fe8a0b1a045a967eb2b7ab5a44d3b1bce",
+      "metadata": "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/project-seam-articulated-export-78539-10/batch-a/output/candidates/0000000000014051-0000000000014052.json",
+      "reused": true
+    },
+    {
+      "audio": "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/project-seam-articulated-export-78539-10/batch-b/output/candidates/0000000000014051-0000000000014052.wav",
+      "audioSha256": "b8e890a17d91dac23c1d4ad888a4028c87868c42f20ca2186b29958b45a79c89",
+      "metadata": "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/project-seam-articulated-export-78539-10/batch-b/output/candidates/0000000000014051-0000000000014052.json",
+      "reused": true
+    }
+  ]
+}
+
+error: Generation batch has duplicate targets, different producer states or excessive frame work
+error: batch frame budget must be an unsigned integer
+{
+  "jobId": "cli-job-sa",
+  "manifestSha256": "fe7019496a655a6466a43d5c4f17d2aa0a7a802cd0815f897cc84f9127a41f0d",
+  "state": "Prepared"
+}
+
+error: Generation job directory must be new with an existing parent
+error: Take must identify exactly one planned producer assignment
+{
+  "approval": "unapproved",
+  "audio": "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/project-seam-articulated-export-78539-10/cli-prepared-job/output/candidates/0000000000014051-0000000000014052.wav",
+  "audioSha256": "be69f27372edc0c5396a6234cbfc4a6fe8a0b1a045a967eb2b7ab5a44d3b1bce",
+  "metadata": "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/project-seam-articulated-export-78539-10/cli-prepared-job/output/candidates/0000000000014051-0000000000014052.json",
+  "reused": false
+}
+
+{
+  "audioSha256": "be69f27372edc0c5396a6234cbfc4a6fe8a0b1a045a967eb2b7ab5a44d3b1bce",
+  "diagnostic": "",
+  "durabilityConfirmed": true,
+  "generation": "2",
+  "projectSha256": "aaf725e0bb9b17e47dec014a2d2426445c77f6682f861df103b3d1a724a89e50",
+  "result": "Collected",
+  "state": "MarkerReview",
+  "takeId": "take-sa"
+}
+
+error: Generation requires an authorized procedural strategy and a new take ID
+error: File lock is busy or unsafe
+{
+  "approval": "unapproved",
+  "audio": "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/project-seam-articulated-export-78539-10/generation-job/output/candidates/0000000000014051-0000000000014052.wav",
+  "audioSha256": "be69f27372edc0c5396a6234cbfc4a6fe8a0b1a045a967eb2b7ab5a44d3b1bce",
+  "metadata": "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/project-seam-articulated-export-78539-10/generation-job/output/candidates/0000000000014051-0000000000014052.json",
+  "reused": true
+}
+
+error: Generated candidate request is stale or belongs to another target
+error: Generation expectation file is malformed or differs from its retained digest
+{
+  "audioSha256": "be69f27372edc0c5396a6234cbfc4a6fe8a0b1a045a967eb2b7ab5a44d3b1bce",
+  "diagnostic": "",
+  "durabilityConfirmed": true,
+  "generation": "3",
+  "projectSha256": "9ca461467c73dcba6bd3e8dc8439dc6dc6d43fbbd38f0cea2eae5281934df1d1",
+  "result": "Collected",
+  "state": "MarkerReview",
+  "takeId": "take-sa"
+}
+
+{
+  "active": true,
+  "audioSha256": "be69f27372edc0c5396a6234cbfc4a6fe8a0b1a045a967eb2b7ab5a44d3b1bce",
+  "generation": "3",
+  "result": "AlreadyCollected",
+  "state": "MARKER_REVIEW",
+  "takeId": "take-sa"
+}
+
+{
+  "active": true,
+  "audioSha256": "be69f27372edc0c5396a6234cbfc4a6fe8a0b1a045a967eb2b7ab5a44d3b1bce",
+  "generation": "3",
+  "result": "AlreadyCollected",
+  "state": "MARKER_REVIEW",
+  "takeId": "take-sa"
+}
+
+{
+  "approval": "unapproved",
+  "candidates": 1,
+  "receipt": "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/project-seam-articulated-export-78539-10/cli-bake/receipt.json",
+  "state": "Committed"
+}
+
+error: Export destination already contains an export set (/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/project-seam-articulated-export-78539-10/cli-bake)
+error: sample rate must be an integer from 8000 to 384000
+error: every nonempty vocal track must have a saved procedural recipe for bake-project
+{
+  "audioSha256": "469641d3218fe21314a889411f7c1a5e2822a486ff2d15e7477c4cf10848bd45",
+  "diagnostic": "",
+  "durabilityConfirmed": true,
+  "generation": "4",
+  "projectSha256": "a986081754fe8c0ab1225950c4c5cc4a0c3cc0b2a5ad0cad5dbced3671226229",
+  "state": "MarkerReview",
+  "takeId": "take-cli"
+}
+
+error: MIDI layer must be an integer from 0 to 127
+[PASS] released English stop coda bakes with a typed candidate and an inferred closure
+[PASS] multilingual vowels and nasal consonants bake and import with their distinct marker contracts
+[PASS] nasal and frication candidates bake and enter production with typed unapproved gestures
+[PASS] native vibrato draft changes final audio and survives project reload export and exact undo replay
+[PASS] native style selection changes installed bank audio and survives reload export undo and redo
+[PASS] native dynamics curve edits scale final audio and survive reload export undo and redo
+[PASS] native tempo edit changes final rendered and exported duration with exact undo replay
+[PASS] procedural export commits exact final PCM stems and truthful recipe receipts
+[PASS] pitch contour preserves window centers and breaks unvoiced missing or invalid gaps
+[PASS] candidate audition session reports device failures and releases callback state safely
+[PASS] candidate audition is bounded block invariant and runs on the output callback
+[PASS] export service publishes a committed master and receipt atomically
+[PASS] single-file export removes rollback backups after a successful replacement
+[PASS] single-file export preserves an unowned backup collision
+[PASS] single-file export rolls back the master when receipt rotation fails
+[PASS] export service cancellation leaves no claimed output
+[PASS] export service publishes master and stems while preserving canaries
+[PASS] export set failure restoring preserved files rolls back the new set
+[PASS] export replacement removes files owned only by the previous receipt
+[PASS] export replacement never removes an unowned previous sibling
+[PASS] export recovery reconciles every journalled publication phase
+[PASS] export rejects symlinked destination files
+[PASS] export recovery rejects symlinked master files
+[PASS] export receipt records canonical project and render identities
+[PASS] export writer covers the production format matrix
+
+25 passed, 0 failed
+<end of output>
+Test time =   3.32 sec
+----------------------------------------------------------
+Test Passed.
+"seam_export_tests" end time: Sep 10 00:50 KST
+"seam_export_tests" time elapsed: 00:00:03
+----------------------------------------------------------
+
+66/120 Testing: seam_tests
+66/120 Test: seam_tests
+Command: "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/release/seam_tests"
+Directory: /Users/lhs/Downloads/project-seam-usable-alpha-u3-master
+"seam_tests" start time: Sep 10 00:50 KST
+Output:
+----------------------------------------------------------
+[PASS] tempo map converts ticks, seconds, and sample frames
+[PASS] tempo map preserves an initial event
+[PASS] meter map reports one-based bar and beat
+[PASS] quantizer handles positive and negative ticks
+[PASS] add note command is undoable and redoable
+[PASS] adding notes refreshes pronunciation identity with exact undo and bounded revision
+[PASS] note geometry maintains pronunciation identity only for changed resolver inputs
+[PASS] note reordering retains broken unit spans and seam joins unresolved with exact undo
+[PASS] note insertion reconciles existing spans joins and continuation locks
+[PASS] note deletion reconciles surviving spans joins and continuation locks
+[PASS] note lyric reassignment reconciles bindings while articulation-only edits preserve pronunciation
+[PASS] technical lane presentation is undoable without audio impact
+[PASS] moving notes changes time and pitch as one transaction
+[PASS] resizing notes rejects non-positive duration
+[PASS] deleting notes removes unreferenced lyrics and is reversible
+[PASS] project factory reserves IDs after loading an existing project
+[PASS] lyric and phoneme overrides are reversible editor commands
+[PASS] deleting a note removes and restores its phoneme overrides
+[PASS] unit seam and pitch controls are persistent undoable commands
+[PASS] deleting a note removes and restores render overrides
+[PASS] internal JSON parser handles nested UTF-8 data
+[PASS] internal JSON parser accepts finite decimal and exponent numbers
+[PASS] JSON arrays relocate nested object values without dangling storage
+[PASS] project JSON round trip preserves the canonical model
+[PASS] project decoder rejects an unsupported schema
+[PASS] project decoder migrates schema one regions without phoneme overrides
+[PASS] project JSON path I/O rejects symlink and non-file targets
+[PASS] timeline zoom keeps the anchor tick stable
+[PASS] note visual layout preserves timeline truth while exposing overlaps
+[PASS] piano roll returns every overlapping note in stable cycle order
+[PASS] spatial index virtualizes a ten-thousand-note project
+[PASS] spatial index prunes non-overlapping prefixes without dropping long notes
+[PASS] piano roll draws, selects, moves, and hit-tests notes
+[PASS] piano roll defaults newly drawn notes to Japanese Hiragana
+[PASS] piano roll visuals stay within the selected region
+[PASS] piano roll keeps subpixel-duration notes addressable
+[PASS] text composition models native IME begin update commit and cancel
+[PASS] phoneme lane exposes generated and manually timed phonemes
+[PASS] phase one audio callback produces deterministic silence
+[PASS] ring buffer audio processor delivers callback audio and accounts underflow
+[PASS] ring buffer audio processor does not count reset zero-fill as underflow
+[PASS] threaded audio input feeds recording session without allocation-sensitive overflow
+[PASS] Japanese phonemizer handles hiragana katakana and contracted mora
+[PASS] Japanese phonemizer preserves sokuon moraic nasal and long vowel
+[PASS] Japanese kana normalization preserves surface and resolves width and combining voice marks
+[PASS] Japanese normalized warnings retain original scalar positions and explicit hints win
+[PASS] phoneme overrides replace symbols timing and lock state
+[PASS] unsupported Japanese lyric creates a visible warning and pause
+[PASS] explicit Japanese phone hints change pronunciation without replacing displayed lyrics
+[PASS] English phonemizer keeps stressed dictionary output and explicit hints distinct
+[PASS] English resolver binds tokens to source identity and rejects unknown words without fallback
+[PASS] generic pronunciation resolver rejects mixed explicit language regions
+[PASS] English spelling estimates remain distinct from dictionary and explicit-hint pronunciation
+[PASS] English spelling output uses the declared inventory and does not carry guesses across a pause
+[PASS] English and Korean reject stale replacement and appended phoneme contexts
+[PASS] generic pronunciation admission precedes language indexing and honours cancellation
+[PASS] English dictionary vowels consonant clusters and terminal codas have position-aware roles
+[PASS] English cluster syllabification changes real timing nucleus ownership without altering stress
+[PASS] English explicit syllable boundaries override estimates and reject malformed separators
+[PASS] English estimated spellings explicit pauses and continuations retain note ownership
+[PASS] English role-aware overrides preserve current locks and reject a changed syllable context
+[PASS] Korean Hangul phonemizer decomposes syllables, coda liaison and continuation
+[PASS] Korean resolver supports Hangul and romanized bootstrap words with bounded diagnostics
+[PASS] Korean complete jongseong oracle preserves all seven final sounds and coda roles
+[PASS] Korean initial and medial inventories preserve phonemic contrasts
+[PASS] Korean boundary rules retain original finals for liaison and contextual assimilation
+[PASS] Korean cross-note liaison preserves ownership and stops at rests or explicit hints
+[PASS] Korean compatibility jamo remain in source order with an explicit diagnostic
+[PASS] Korean explicit hints and romanized words preserve coda and onset ownership
+[PASS] SMF codec round-trips deterministic PPQ notes, tempo, meter and lyric text
+[PASS] SMF decoder handles running status and reports missing note-offs
+[PASS] SMF decoder rejects hostile lengths, SMPTE division and malformed VLQ before allocation
+[PASS] SMF encoder preserves source state and rejects invalid score fields
+[PASS] SMF project conversion creates an inert unsaved project and reports SEAM-only losses
+[PASS] native USTX decoder parses bounded flow and block YAML
+[PASS] native USTX decoder rejects aliases, duplicate keys, documents and hostile depth
+[PASS] USTX import maps tempo meter pitch vibrato and track identity without source mutation
+[PASS] USTX project export is deterministic and reports lossy fields
+[PASS] interchange service imports an unsaved USTX draft with source identity
+[PASS] interchange service exports create-new and preserves the project on collision
+[PASS] interchange service uses bounded SMF import and export paths
+[PASS] offline render identity rejects preview and malformed provenance
+[PASS] offline render session publishes only the current final identity
+[PASS] offline render session fails closed for empty audio and invalidates ready data
+[PASS] renderer capabilities expose only controls implemented by current backends
+[PASS] required unsupported controls fail before a renderer can hide them
+[PASS] dispatcher rejects an unsupported required control without rendering source audio
+[PASS] raw renderer applies an explicit pitch trajectory instead of dropping it
+[PASS] automatic performance generation is deterministic and side-effect free
+[PASS] automatic performance proposal flows through stale-safe acceptance commands
+[PASS] automatic performance rejects stale, cancelled and advanced requests
+[PASS] neural worker request and response frames round-trip with bounded metadata
+[PASS] neural worker protocol rejects stale, malformed and non-finite frames before allocation
+[PASS] neural worker protocol enforces response shape, identity and PCM range
+[PASS] neural model contract binds model, vocabulary, sample rate and output shape
+[PASS] neural worker runner uses an explicit helper and validates the response
+[PASS] harmony preparation is side-effect free and copies lyric language
+[PASS] accepted harmony is one undoable atomic edit and stale source is rejected
+[PASS] harmony preparation rejects unison, missing notes and out-of-range targets
+[PASS] Japanese reading spans preserve UTF8 punctuation unknowns and whitespace
+[PASS] Japanese reading validation bounds aggregate expansion and permits only omitted whitespace
+[PASS] validated Japanese dictionary readings project to SEAM phones without inventing unknowns
+[PASS] Japanese reading JSON decoder binds exact typed source spans and rejects schema drift
+[PASS] Japanese reading JSON decoder rejects oversized deep duplicate and cancelled responses
+[PASS] reading resource verification binds executable and exact dictionary set without accepting extra configuration
+[PASS] private reading staging owns verified independent copies until the last consumer retires
+[PASS] reading capture binds contextual words to notes and guards source generation and explicit hints
+[PASS] validated single-note reading Apply persists phones and identity with exact undo and reload
+[PASS] Japanese reading job runs staged helper off-thread and adopts only current result
+[PASS] Japanese reading job rejects concurrent starts and preserves terminal failure details
+[PASS] voicebank content identity binds bounded per-unit alignment bytes
+[PASS] PCM16 WAV round trip and audio statistics remain bounded
+[PASS] waveform spectrogram and pitch analysis produce inspectable data
+[PASS] marker editor enforces monotonic sample landmarks
+[PASS] voicebank manifest persists and validator checks real audio
+[PASS] voicebank manifest codec rejects symlink and non-file paths
+[PASS] dry take inspection enforces format and acoustic quality
+[PASS] pitch marks are generated validated and edited deterministically
+[PASS] voicebank schema one migrates without pitch marks
+[PASS] stereo PCM16 WAV writer round trips channel layout
+[PASS] voicebank schema three binds an optional character product identity
+[PASS] voicebank schema two migrates without a character binding
+[PASS] timing solver places multiple syllables sequentially within one note
+[PASS] interior timing edits select compatible smaller units and reject forced long units
+[PASS] timing solver rejects short transitions instead of extending the target span
+[PASS] timing marker conversion rounds exactly and rejects oversized metadata before conversion
+[PASS] deterministic unit selector prefers longer lower-score coverage
+[PASS] raw loop renderer preserves frame count and exposes vowel onset
+[PASS] seam composer bounds negative preutterance without signed extent overflow
+[PASS] seam overlap window bounds crossfading without shifting unit placement
+[PASS] seam composer changes overlap character without changing bounds
+[PASS] raw phrase pipeline aligns vowels and renders inspectable audio
+[PASS] onset waveform retiming preserves endpoints and relocates the vowel landmark
+[PASS] explicit unit selection persists renderer choice and alternatives
+[PASS] classic PSOLA follows target pitch and keeps consonant frames finite
+[PASS] phase reset and envelope blend are real boundary operations
+[PASS] renderer dispatcher executes spectral and stretch backends explicitly
+[PASS] renderer dispatcher reports an actual raw fallback
+[PASS] spectral classic preserves exact length and moves harmonic energy
+[PASS] granular stretch is finite deterministic and unit scoped
+[PASS] phrase segmentation is stable and dirty invalidation includes neighbors
+[PASS] phrase segmentation looks ahead across overlapping manual dependencies
+[PASS] render snapshot content hash changes with canonical edit
+[PASS] phrase snapshot cache key ignores unrelated phrase edits
+[PASS] phrase snapshot ignores presentation changes and future tempo events
+[PASS] immutable snapshot executes the complete phrase render pipeline
+[PASS] content addressed PCM cache survives memory eviction
+[PASS] region renderer preserves cached fallback provenance across memory and disk hits
+[PASS] PCM cache rejects non-finite and corrupted payloads
+[PASS] background scheduler cancels obsolete revision and reuses cache
+[PASS] stale audio remains readable until a newer revision is published
+[PASS] SPSC audio ring buffer wraps without allocation or data reordering
+[PASS] scheduler rejects an immediately stale request without running its task
+[PASS] cached audio content can be reused by a newer revision
+[PASS] render scheduler executes queued jobs by priority
+[PASS] scheduler rejects an older cached revision without replacing the latest
+[PASS] bounded PCM cache evicts memory and old disk entries
+[PASS] playback timeline mixes vocal and backing clips at absolute frames
+[PASS] playback feeder loops into the preallocated callback path
+[PASS] ring buffer processor reports zero-filled underflow
+[PASS] playback timeline mixes overlapping cached phrases with fades
+[PASS] playback feeder loops and fills a preallocated ring buffer
+[PASS] PCM cache enforces memory and disk budgets deterministically
+[PASS] unit lane exposes actual renderer fallback seam and alternatives
+[PASS] sample microscope maps waveform markers pitch marks and hit tests
+[PASS] sample microscope applies validated marker and pitch-mark edits
+[PASS] SHA-256 implementation matches published vectors
+[PASS] SHA-256 file hashing rejects symlink and non-file targets
+[PASS] bounded file reads reject symlink and non-file targets
+[PASS] generated build identity owns the current application and render ABI
+[PASS] JSON preserves int64 surrogate pairs and parser budgets
+[PASS] durable atomic write preserves old data across injected faults
+[PASS] durable atomic write rejects symlink and non-file targets
+[PASS] render identity binds selected WAV bytes and effective render options
+[PASS] voicebank asset resolver rejects symbolic-link escapes
+[PASS] PCM cache validates declared payload before allocating samples
+[PASS] PCM cache preserves renderer and fallback provenance across disk hits
+[PASS] spectral and stretch renderers preserve the recorded vowel transition
+[PASS] phase-aligned seam remains continuous after overlap ends
+[PASS] scheduler applies a final revision gate after cache publication
+[PASS] playback transport uses command queue and consumer-owned reset epoch
+[PASS] loop and play-state changes discard already buffered future audio
+[PASS] playback feeder remains race-free under threaded transport changes
+[PASS] command transactions restore project state on apply and undo failure
+[PASS] routing graph rejects cycles and preserves deterministic order
+[PASS] multichannel timeline routes independent buses to four outputs
+[PASS] multichannel feeder ring and callback preserve channel order
+[PASS] current project schema persists buses sends and track output matrix
+[PASS] bus solo includes dependencies and output path but excludes siblings
+[PASS] clip solo mutes other clips before bus routing
+[PASS] multichannel feeder stops after non-looping timeline end
+[PASS] interleaved ring rejects partial frames
+[PASS] Ed25519 keys sign verify and persist
+[PASS] signed seambank packs verifies and reads canonical entries
+[PASS] seambank rejects payload tampering and untrusted signers
+[PASS] trusted seambank installs atomically with receipt
+[PASS] seambank path policy rejects traversal executable and hidden assets
+[PASS] seambank installer requires a trusted signer at the core API
+[PASS] character-bound seambank requires matching embedded runtime assets
+[PASS] signed update manifest verifies platform epoch package and replay policy
+[PASS] update metadata rejects forged signatures and malformed replay state
+[PASS] verified update bytes produce an exact sealed installer handoff
+[PASS] trust policy validation rejects malformed identity and time windows
+[PASS] crash descriptor retirement rejects late writers while retained writer drains
+[PASS] crash handle retirement rejects late writers while retained writer drains
+[PASS] forced terminate crash leaves a bounded exact-candidate marker
+[PASS] forced native crash records the platform reason
+[PASS] startup crash without prior context remains recoverable
+[PASS] crash capture rejects duplicate unsafe and corrupted state
+[PASS] support bundle preview matches export and excludes private diagnostics
+[PASS] support bundle binds per-file consent and prepared attachment bytes
+[PASS] support bundle rejects unsafe attachments before preview
+[PASS] update controller verifies, stages, and persists accepted epochs
+[PASS] update panel exposes explicit confirmation state
+[PASS] platform capability contract names the native composition and audio adapters
+[PASS] strict UTF-8 codec round-trips Korean Japanese Chinese and emoji
+[PASS] strict UTF-8 codec rejects overlong surrogate and out-of-range input
+[PASS] Unicode display width preserves combining marks and wide scalars
+[PASS] bounded UTF-8 wrapping partitions text without splitting display clusters
+[PASS] system text engine resolves a trusted Unicode font
+[PASS] text engine renders CJK glyph alpha and reports coherent metrics
+[PASS] text engine wraps and ellipsizes within explicit bounds
+[PASS] unsupported emoji does not render a misleading replacement glyph
+[PASS] text render cache reports repeat hits and can be cleared
+[PASS] text render cache shares immutable bitmap storage on repeat hits
+[PASS] text render cache keeps distinct styles isolated
+[PASS] trusted font API rejects relative paths
+[PASS] RasterCanvas uses Unicode engine instead of byte-glyph fallback
+[PASS] RasterCanvas keeps bounded Unicode text inside its owning rectangle
+[PASS] CLAP state codec preserves bounded multichannel PCM
+[PASS] CLAP state codec rejects corruption and non-finite PCM
+[PASS] CLAP state file uses durable round trip
+[PASS] CLAP session resampling keeps channels and duration
+[PASS] CLAP master gain conversion follows decibel scale
+[PASS] CLAP master gain parser accepts exact classic-locale decimals
+[PASS] CLAP master gain parser rejects malformed or unsafe values
+[PASS] CLAP state rejects overflowed declared frame counts before allocation
+[PASS] project_document_successful_command_marks_document_dirty
+[PASS] project_document_mark_saved_clears_dirty_at_current_revision
+[PASS] project_document_undo_after_save_is_dirty_again
+[PASS] project_document_replace_project_synchronizes_factory_ids
+[PASS] project_document_failed_command_preserves_clean_state
+[PASS] project_document_recovery_path_marks_unsaved_recovered_content
+[PASS] command impact classifies audio scope instead of defaulting to project
+[PASS] command impact carries affected identity through editor history
+[PASS] editor session retains the latest impact across undo
+[PASS] composite command merges impact scopes and identity sets
+[PASS] audio track arrangement commands are undoable and mix-scoped
+[PASS] piano roll duplication preserves note expressions through undo and redo
+[PASS] region split preserves interpolated dynamics and shifts the right curve
+[PASS] region split preserves empty curves and constant endpoint extrapolation
+[PASS] invalid region splits leave note and dynamics expression unchanged
+[PASS] splitting a full one-sided dynamics curve keeps every point within its limit
+[PASS] tempo commands preserve sustained score geometry and invalidate captured jobs through undo
+[PASS] invalid tempo and meter edits preserve state and history
+[PASS] meter insert replace remove preserves tempo and exact history
+[PASS] time map command history rejects out of band replacement
+[PASS] project_lifecycle_new_project_creates_valid_canonical_document
+[PASS] project_lifecycle_new_project_rejects_invalid_bounds_without_mutation
+[PASS] project_lifecycle_save_as_round_trips_unicode_and_technical_state
+[PASS] save as cannot silently retarget a relative procedural recipe
+[PASS] project_lifecycle_save_requires_path_and_failure_preserves_dirty_state
+[PASS] project_lifecycle_reopens_a_saved_trackless_project
+[PASS] project_lifecycle_failed_open_preserves_current_document
+[PASS] project_lifecycle_never_serializes_active_document_paths
+[PASS] autosave_service_writes_snapshot_off_document_path_and_recovers_dirty_copy
+[PASS] autosave_service_binds_lineage_to_noncanonical_durable_bytes
+[PASS] autosave_service_triggers_at_command_and_interval_thresholds
+[PASS] autosave_service_keeps_only_five_newest_generations
+[PASS] autosave_service_write_failure_and_corruption_do_not_mutate_document
+[PASS] autosave_service_detects_external_project_change_by_base_hash
+[PASS] autosave_service_rejects_symlinked_payloads
+[PASS] recent_projects_canonicalizes_deduplicates_orders_and_bounds_entries
+[PASS] recent_projects_load_preserves_missing_until_explicit_refresh
+[PASS] unsaved_close_policy_save_discard_cancel_and_failed_save
+[PASS] file_dialog_contract_preserves_purpose_filters_and_suggested_name
+[PASS] workspace dialog inputs require canonical digest and bounded explicit identity
+[PASS] application_menu_routes_commands_through_dispatcher
+[PASS] unsaved_prompt_contract_returns_explicit_decision
+[PASS] application_support_directory_is_absolute_and_product_scoped
+[PASS] authoring_voicebank_session_resolves_exact_identity
+[PASS] authoring_voicebank_session_reports_resolution_failures_without_fallback
+[PASS] authoring_voicebank_session_binding_is_undoable
+[PASS] authoring_voicebank_session_canonical_root_addition_is_idempotent
+[PASS] authoring_voicebank_session_resolve_all_preserves_track_order
+[PASS] coordinator publishes typed procedural previews without sample bank approval
+[PASS] authoring_render_coordinator_matches_direct_production_renderer
+[PASS] render source identity rejects same revision resubmissions cancellation and unrelated coordinators
+[PASS] audio measurement capture binds actual render input and rejects same content document replacement
+[PASS] audio measurement worker retires rejects stale results and never publishes cancelled work
+[PASS] authoring_render_coordinator_publishes_command_impact
+[PASS] authoring_render_coordinator_newer_revision_prevents_old_publication
+[PASS] authoring_render_coordinator_keeps_stale_audibility_while_rendering
+[PASS] five_minute_stereo_pcm_copies_share_one_allocation
+[PASS] authoring_render_coordinator_orders_same_revision_publications
+[PASS] authoring_render_coordinator_cancel_invalidates_unpublished_audio
+[PASS] authoring_render_coordinator_ignores_lower_revision_submission
+[PASS] authoring_render_coordinator_cancellation_is_not_failure
+[PASS] authoring_render_coordinator_publishes_voicebank_failures_as_silence
+[PASS] authoring_render_coordinator_failed_render_preserves_previous_audio
+[PASS] authoring_render_coordinator_publication_busy_keeps_context
+[PASS] authoring_render_coordinator_quality_changes_cache_identity
+[PASS] authoring_render_coordinator_character_display_does_not_change_audio
+[PASS] authoring_render_coordinator_shutdown_joins_active_worker
+[PASS] editing inferred procedural timing preserves dependent bounds in one undo step
+[PASS] technical_edit_controller_commits_one_revision_and_one_render_request
+[PASS] retained phoneme review is read only and explicit rebinding has one undo step
+[PASS] phoneme rebinding rejects stale review payload context and occupied targets
+[PASS] phoneme review excludes fallback sounds but preserves unrelated valid targets
+[PASS] mixed pronunciation review remains inspectable but cannot authorize any rebinding
+[PASS] retained unit rebinding preserves settings ordering and exact undo
+[PASS] retained unit rebinding rejects stale incomplete warned and overlapping spans
+[PASS] retained seam review rebinds explicitly with exact undo and rejects stale targets
+[PASS] retained seam review rejects occupied targets stale payloads and warning predecessors
+[PASS] technical_edit_controller_rejects_invalid_targets_without_render
+[PASS] technical_edit_controller locks and resets phoneme overrides
+[PASS] technical_edit_controller_cycles_unit_variant_and_renderer
+[PASS] technical_edit_controller_maps_unit edits from covered nonstart phonemes
+[PASS] technical_edit_controller resets a selected voice unit
+[PASS] technical_edit_controller_edits_pitch_and_seam_with_undo
+[PASS] technical_edit_controller resets selected technical ranges as one edit
+[PASS] technical_edit_controller clamps pitch points
+[PASS] transport reports unavailable playback before a successful render
+[PASS] transport treats revision zero as available after a successful render
+[PASS] transport_controller_stop_resets_to_project_start
+[PASS] transport_controller_seek_discards_old_buffered_frames
+[PASS] transport_controller_loop_is_sample_accurate
+[PASS] transport_controller_rejects_older_publication
+[PASS] transport_controller_replacement_clamps_playhead_to_new_timeline
+[PASS] transport_controller_replacement_remaps_loop_to_new_timeline
+[PASS] transport_controller_reconfigure_preserves_logical_position_for_next_render
+[PASS] transport_controller_pause_yields_silence_without_queued_zero_clip
+[PASS] transport_controller_reconfigure_rebuilds_ring_and_preserves_service_state
+[PASS] transport_controller_reconfigure_serializes_with_control_calls
+[PASS] authoring runtime reopens relative recipe references and rejects changed content
+[PASS] authoring runtime reports unsupported compiled PSOLA without raw publication
+[PASS] authoring_runtime_note_edit_renders_and_publishes_transport_audio
+[PASS] authoring runtime publishes overlapping voices with consistent progress and undo audio
+[PASS] live proposal delivery stays silent until acceptance and undo restores cached audio
+[PASS] authoring_runtime_renders_backing_only_projects
+[PASS] authoring_runtime_quality_change_renders_final_audio
+[PASS] authoring_runtime_seam_preview is transient and restores canonical audio
+[PASS] authoring_runtime_development_voicebank_policy_is_enforced
+[PASS] authoring_runtime_selection_does_not_mutate_project
+[PASS] authoring_runtime_mutes_unresolved_tracks_in_render_copy
+[PASS] authoring_runtime_supported_technical_edit_submits_once
+[PASS] authoring_runtime_coalesces_rapid_audio_edits_to_latest_revision
+[PASS] voicebank_browser_sorts_trusted_then_development_then_untrusted
+[PASS] voicebank_browser_development_override_changes_only_selectability
+[PASS] voicebank_installer_service_installs_and_exposes_trusted_candidate
+[PASS] voicebank_installer_service_preserves_alignment_identity
+[PASS] voicebank_installer_service_exact_reinstall_is_idempotent
+[PASS] voicebank_installer_service_rejects_same_version_content_collision
+[PASS] voicebank_installer_service_rejects_untrusted_and_tampered_packages
+[PASS] voicebank_installer_service_does_not_expose_receipt_mismatch_as_trusted
+[PASS] voicebank_exact_selection_and_replacement_are_undoable
+[PASS] voicebank_relink_preserves_requested_identity_and_requires_exact_match
+[PASS] voicebank_content_mismatch_reports_expected_and_actual_hashes
+[PASS] voicebank_inventory_summarizes_styles_layers_kinds_and_special_units
+[PASS] voicebank coverage rejects overlapping-only cover and finds a complete alternative
+[PASS] voicebank coverage checks every note in a unit span and rejects orphan phonemes
+[PASS] voicebank_coverage_distinguishes_missing_disabled_style_and_pitch
+[PASS] project_renderer_continues_unaffected_regions_and_reports_failed_phrase
+[PASS] sample review packet roundtrips bounded material and rejects tampering
+[PASS] sample review decisions atomically accept reject and retain previous history
+[PASS] sample review rejects stale edited media cancelled and invalid actor decisions
+[PASS] sequential sample unit reviews preserve independent approvals and bind changed unit material
+[PASS] multi-unit sample review validates every selected owner before saving any decision
+[PASS] available sample units can be reviewed while missing assignments cannot publish
+[PASS] concurrent sample review decisions cannot both advance one captured producer generation
+[PASS] reviewed sample candidate publishes exact effective audio markers pitch and source identity
+[PASS] sample candidate rejects changed review material and incomplete candidate coverage
+[PASS] sample candidate rejects unapproved stale and altered producer assets
+[PASS] sample candidate preserves occupied destinations and cleans failed staging
+[PASS] sample candidate cannot reuse approval after a later rejection or source edit
+[PASS] sample candidate locks the generation through its final publish
+[PASS] sample candidate manifest must fit the installed decoder before publication
+[PASS] sample candidate reopens staged manifest before the atomic commit
+[PASS] sample candidate rejects raw importer self review and unavailable original attribution
+[PASS] sample candidate reports committed state when parent durability cannot be confirmed
+[PASS] sample candidate cannot reattribute an import across a missing intermediate generation
+[PASS] certified aborted journal recovery preserves source origins through explicit review and publication
+[PASS] aborted recovery evidence cannot hide deleted committed or changed interrupted history
+[PASS] recovery never certifies a missing snapshot named by the durable published pointer
+[PASS] new parent journal links preserve complete legacy generation and journal bytes
+[PASS] production writers reject concurrent and stale durable bases
+[PASS] voicebank production project recovers staged deterministic work
+[PASS] voicebank production PCM operations are bounded and deterministic
+[PASS] production edits bind the selected take instead of the first shared audio hash
+[PASS] production edits require exact parent revision even when a no-op preserves audio bytes
+[PASS] production edit rejects wrong input owner and missing target without durable changes
+[PASS] production edit rejects stale and locally mutated base snapshots
+[PASS] production audio edit invalidates only dependent current review status and keeps history
+[PASS] production staging checks take source authorization before DSP or staging output
+[PASS] production transform reports a recoverable commit after the pointer write fails
+[PASS] metadata edits bind actor and preserve their actual postcommit state
+[PASS] staged execution descriptor binds every request field and exact owner identity
+[PASS] recomputing staged project hash cannot rebind old PCM to a newer generation
+[PASS] copied staging files cannot rebind an execution descriptor to a different workspace
+[PASS] staged PCM24 bytes match the existing WAV writer for every supported operation
+[PASS] staged operation requires its original durable descriptor after reopening
+[PASS] staging refuses occupied outputs descriptors and interrupted private files without overwrite
+[PASS] concurrent same-ID stages have one winner and cannot truncate its executed audio
+[PASS] staging parent symlink cannot redirect writes outside the producer workspace
+[PASS] occupied symlink outputs and lock files cannot overwrite external targets
+[PASS] stage validation refuses replaced parent and symlinked descriptor or audio
+[PASS] staged audio tampering cannot be legitimized by recomputing the public digest
+[PASS] staged descriptor corruption cannot be treated as execution evidence
+[PASS] raw import rejects wrong journal action or subject before any asset or evidence writes
+[PASS] raw import returns a normal committed receipt without changing approval state
+[PASS] recoverably committed raw import preserves the actual migrated project and warns against retry
+[PASS] uncommitted generation-write failure retains caller state and does not return a commit receipt
+[PASS] failed stale import cannot misidentify a different recovered generation as its own commit
+[PASS] recoverably committed procedural import retains exact lineage and original generation recognition
+[PASS] recoverably committed generated batch returns all assets and one exact durable generation
+[PASS] cancelled procedural and batch imports return no receipt and leave caller project unchanged
+[PASS] source quality assessment upgrades only the current schema and retains immutable rights and evidence
+[PASS] source registration connects an empty draft to execution without musical approval
+[PASS] source registration rejects changed evidence self promotion and ambiguous input without mutation
+[PASS] registering another source preserves existing take provenance and rejects policy replacement
+[PASS] source quality decisions do not grant absent redistribution rights and reassessments remain explicit
+[PASS] source quality assessment rejects self-review stale snapshots and changed evidence without mutation
+[PASS] source quality material edits invalidate the prior decision without changing captured source attribution
+[PASS] empty source-free production drafts persist without feasibility claims
+[PASS] authorized experimental imports retain source evidence without granting candidate qualification
+[PASS] draft import requires actual source execution permission and unchanged evidence
+[PASS] shared audio keeps distinct immutable source and importer attribution across selection changes
+[PASS] legacy producer generations retain exact bytes and unknown origins when new imports migrate
+[PASS] editable manifest draft copies exact current audio and estimates unlocked markers without approving experimental sources
+[PASS] editable draft keeps missing coverage visible and stable unit identity across row order and effective edits
+[PASS] draft creation preserves existing destinations and rejects stale unauthorized cancelled or excessive work
+[PASS] editable draft cannot claim implicit language or overwrite producer and rejects unsafe output parents
+[PASS] draft atomic publication rejects changed stage and preserves a late committed durability receipt
+[PASS] draft output from supported creator commands can be explicitly reviewed and published
+[PASS] draft rejects an identical replacement directory and cleanup preserves replacement-owned files
+[PASS] draft rejects stage directory symlink substitution without deleting either owner
+[PASS] draft parent replacement does not redirect commit or cleanup
+[PASS] reviewed candidate shares the captured-directory substitution guard
+[PASS] pitch mark generation accepts cancellation and bounded work without changing valid output
+[PASS] bounded WAV decoder checks PCM8 expansion frames channels and samples before allocation
+[PASS] bounded WAV decoder rejects hostile data lengths alignment and zero budgets
+[PASS] bounded and legacy WAV overloads produce identical legitimate PCM and path results
+[PASS] WAV cancellation takes precedence before parsing or file access
+[PASS] concurrent cancellation of active WAV decoding returns no partial PCM
+[PASS] streaming WAV writer round trips PCM16 PCM24 and Float32
+[PASS] streaming WAV writer rejects non-finite Float32 and invalid formats
+[PASS] WAV reader rejects non-finite Float32 payloads
+[PASS] WAV path I/O rejects symlink and non-file targets
+[PASS] production renderer mixes a referenced backing WAV track
+[PASS] production renderer applies backing media trim before routing
+[PASS] arrangement track and region commands are undoable
+[PASS] vocal region duplicate, move, and resize commands are undoable
+[PASS] vocal track duplication generates fresh nested identities
+[PASS] audio track replacement round trips without changing identity
+[PASS] audio track mix edits are undoable and preserve routing identity
+[PASS] vocal region move and resize reject invalid edits atomically
+[PASS] arrangement reorder and region rename are undoable
+[PASS] vocal region split preserves note ownership and round trips
+[PASS] vocal region copy can target another track
+[PASS] new project dialog requires explicit choices and preserves cancel
+[PASS] arrangement panel and track inspector mirror project structure
+[PASS] lyric distribution preserves languages and assigns shared melisma tokens once
+[PASS] lyric distribution rejects malformed over-limit and foreign targets without mutation
+[PASS] duplicated melisma retains shared syllable and independent slur identities
+[PASS] shared lyric note insertion requires exact existing token and preserves its owner on undo
+[PASS] mixed slur disable preserves lyrics and unrelated articulation while exhaustion is atomic
+[PASS] phrase duplication preserves unequal durations rests and rejects end overflow atomically
+[PASS] piano roll duplicate and lyric distribution remain undoable
+[PASS] piano roll quantize, slur and melisma edits are undoable
+[PASS] editor melisma continues the vowel and undo restores repeated consonants
+[PASS] dynamics lane drafts region points atomically and preserves unrelated intent through undo redo
+[PASS] dynamics lane reset noop cancellation generation and capacity guards are exact
+[PASS] performance expression indexing rejects ambiguous missing and repeated note targets atomically
+large-vibrato-ms prepare=1.73442 apply=4.52392 undo=2.16221 redo=1.90221
+[PASS] vibrato applies 10000 selected notes with exact undo redo and reports local timings
+[PASS] vibrato selection previews mixed values and patches only explicit fields in one undo group
+large-japanese-resolve-and-two-searches-ms=325.104
+[PASS] 10000-note Japanese derived search preserves CV output context and bounded rejection
+[PASS] cancellable pronunciation preserves contextual output and override order without source mutation
+[PASS] Find jobs publish source-bound results and retire cancellation without stale selection
+[PASS] captured Find navigation wraps without musical history and rejects stale or cancelled targets
+[PASS] region dynamics clearing preserves other regions expressions ownership and generated takes
+[PASS] auto legato connects eligible selected pairs and preserves rests staccato and slur boundaries
+[PASS] auto legato does not bridge unselected notes or polyphonic overlaps
+[PASS] dependency comparison distinguishes absence and rejects duplicate keys bounds and cancellation
+[PASS] overlap and auto-legato cleanup preview canonical melisma dependencies before publication
+[PASS] note cleanup previews exact duration changes and uses canonical undoable timing edits
+[PASS] note cleanup reports ambiguous or unsafe pairs and rejects stale grids and overflowing notes
+[PASS] reviewed vibrato clear preserves every other musical field and rejects stale targets
+[PASS] distribution planning and review remain immutable until explicit guarded application
+[PASS] replacement jobs prepare private snapshots and reject edits cancellation and document replacement
+[PASS] replacement review reports canonical dependency outcomes without publishing and rejects stale review
+[PASS] replacement review pages every target safely and cancellation leaves a no-op history neutral
+[PASS] hint commands reconcile changed phones preserve displayed lyrics and undo exactly
+[PASS] hint commands reject stale unsupported and repeated targets before mutation
+[PASS] hint commands validate and publish English and Korean pronunciation identities
+large-replacement-ms preview=1.53196 apply=125.283 undo=3.13821 redo=3.36896
+large-replacement-review-prepare-ms=128.446
+large-distribution-ms=127.096
+[PASS] reviewed replacement applies 10000 lyric edits as one exact undo redo transaction
+[PASS] batch lyric indexing rejects ambiguous targets without rejecting unrelated reused ids
+[PASS] reviewed lyric replacement deduplicates shared tokens and commits one undo group
+[PASS] replacement preview rejects stale values empty outputs and expansion overflow
+[PASS] note search indexes IDs resolved phones and pronunciation warnings without rewriting lyrics
+[PASS] note search resolves generated phones through the region language service
+[PASS] note search separates Unicode lyrics and hints with stable musical ordering
+large-find-capture-and-three-navigation-ms=5.15142
+[PASS] note search admits 10000 notes and rejects oversized or malformed sources atomically
+[PASS] custom accessibility surfaces retain numeric actions without virtual notes
+[PASS] accessibility tree virtualizes large note collections
+[PASS] accessibility tree includes notes outside the piano viewport
+[PASS] export dialog preflight blocks invalid combinations
+[PASS] export progress panel exposes bounded progress and cancellation
+[PASS] semantic selection is distinct from keyboard focus
+[PASS] overlap group semantics cycle every hidden note member
+[PASS] editor semantic tree exposes stable accessible controls
+[PASS] native export progress exposes an accessible cancellation action
+[PASS] native accessibility accepts focus on every semantic node
+[PASS] design fixture semantic bounds remain contained at every target viewport
+[PASS] released English stop coda bakes with a typed candidate and an inferred closure
+[PASS] multilingual vowels and nasal consonants bake and import with their distinct marker contracts
+[PASS] nasal and frication candidates bake and enter production with typed unapproved gestures
+[PASS] native vibrato draft changes final audio and survives project reload export and exact undo replay
+[PASS] native style selection changes installed bank audio and survives reload export undo and redo
+[PASS] native dynamics curve edits scale final audio and survive reload export undo and redo
+[PASS] native tempo edit changes final rendered and exported duration with exact undo replay
+[PASS] procedural export commits exact final PCM stems and truthful recipe receipts
+[PASS] pitch contour preserves window centers and breaks unvoiced missing or invalid gaps
+[PASS] candidate audition session reports device failures and releases callback state safely
+[PASS] candidate audition is bounded block invariant and runs on the output callback
+[PASS] export service publishes a committed master and receipt atomically
+[PASS] single-file export removes rollback backups after a successful replacement
+[PASS] single-file export preserves an unowned backup collision
+[PASS] single-file export rolls back the master when receipt rotation fails
+[PASS] export service cancellation leaves no claimed output
+[PASS] export service publishes master and stems while preserving canaries
+[PASS] export set failure restoring preserved files rolls back the new set
+[PASS] export replacement removes files owned only by the previous receipt
+[PASS] export replacement never removes an unowned previous sibling
+[PASS] export recovery reconciles every journalled publication phase
+[PASS] export rejects symlinked destination files
+[PASS] export recovery rejects symlinked master files
+[PASS] export receipt records canonical project and render identities
+[PASS] export writer covers the production format matrix
+[PASS] measured PCM levels preserve antiphase channels silence and float headroom
+[PASS] measured audio windows partition frames exactly with correct partial bin energy
+[PASS] audio measurement rejects invalid shapes nonfinite windows cancellation and excess work
+[PASS] audio settings store round trips versioned device configuration
+[PASS] audio settings reject values outside the Beta device matrix
+[PASS] audio settings controller rolls back a failed device restart
+[PASS] media import records content identity for reference and project copy
+[PASS] media import rejects compressed or missing sources before copying
+[PASS] bank reference registry rejects conflicting content for one version
+[PASS] diagnostic detail remains bounded display safe and separate from its message key
+[PASS] diagnostic registry validates registered codes and actions
+[PASS] diagnostic registry rejects unknown or unregistered actions
+[PASS] diagnostic registry preserves mapped severity and actions from errors
+[PASS] diagnostic registry exposes bounded recovery and copy actions
+[PASS] render status panel preserves stale audible revision and actions
+[PASS] render status panel marks same-revision quality replacement stale
+[PASS] render status panel honors explicit stale publication truth
+[PASS] render status panel exposes active voicebank and renderer context
+[PASS] log export projection omits private and forbidden fields
+[PASS] log event validation bounds fields and counts
+[PASS] application paths keep mutable categories in distinct user roots
+[PASS] release configuration removes development and fallback defaults
+[PASS] deterministic test configuration is an explicit nonphysical opt in
+[PASS] development configuration binds an explicit fixture by default
+[PASS] realtime audit counts core file and logger operations
+[PASS] multichannel callback processor zero fills underflow without nonfinite output
+[PASS] multichannel callback does not count reset zero-fill as an underflow
+[PASS] audio device catalog exposes immutable identity and bounded capabilities
+[PASS] sample rate converter preserves bounded impulse placement
+[PASS] sample rate converter rejects invalid rates
+[PASS] streaming sample rate converter matches bounded whole-buffer conversion
+[PASS] streaming PCM source exposes hashed bounded chunks
+[PASS] trusted voicebank promotion builds bounded immutable live resources
+[PASS] live resource promotion rejects hostile markers and limits
+[PASS] production live resources preserve exact identity and bounded PCM
+[PASS] articulation planning is deterministic and reports transition fallback
+[PASS] articulation planning rejects a missing sustain vowel
+[PASS] MIDI 1 decoder maps note, expression, pedal and all-notes actions
+[PASS] MIDI 1 decoder rejects malformed data without allocation-facing state
+[PASS] live diagnostics expose stable machine-readable names
+[PASS] live resource publication is bounded and reader-safe
+[PASS] authoring_characterization_default_clap_project_is_stable
+[PASS] authoring_characterization_quality_switch_submits_one_render
+[PASS] authoring_characterization_public_adapter_surface_remains_available
+[PASS] authoring_characterization_exact_voicebank_resolution_states_are_stable
+[PASS] authoring_characterization_every_canonical_edit_submits_preview_render
+[PASS] authoring_characterization_state_codec_round_trips_canonical_project
+[PASS] authoring_characterization_newer_preview_revision_wins
+[PASS] authoring_characterization_character_display_does_not_change_render
+[PASS] authoring_characterization_revision_zero_preview_is_published
+[PASS] CLAP expression event decodes the pinned upstream wire layout
+[PASS] live engine dispatches expression and MIDI events
+[PASS] live expression mapping changes pan and vibrato output independently
+[PASS] live note tuning uses the full wildcard address independently of channel bend
+[PASS] live sustain release panic wildcard choke and zero velocity obey their distinct contracts
+[PASS] ordinary CLAP and MIDI notes remain polyphonic across distinct sample offsets
+[PASS] live legato replacement requires an explicit monophonic policy
+[PASS] MIDI vibrato timbre and pressure persist for new voices and reset per channel
+[PASS] EULA acceptance persists only the document identity and UTC timestamp
+[PASS] EULA acceptance loader fails closed on malformed state
+[PASS] EULA acceptance loader rejects extra fields and noncanonical digests
+[PASS] AppKit non-Latin shortcuts preserve controls without overriding ASCII layouts
+[PASS] native window minimum stays logical at scaled surfaces
+[PASS] native phoneme inspection shares resolver tokens and bounded failures
+[PASS] native retained phoneme review selects explicitly applies and closes accessibly
+[PASS] embedded dynamics inspector receives complete drag gestures without leaking technical edits
+[PASS] embedded editor review callback commits retained edits and dirty state
+[PASS] embedded retained review commits unit and seam callbacks
+[PASS] native retained review applies unit and seam edits through the shared panel
+[PASS] opening phoneme review preserves pending text composition
+[PASS] native window screenshots honor the requested capture dimensions
+[PASS] voicebank production rail hit testing follows painted row spacing
+[PASS] voicebank recording names stay portable direct children
+[PASS] voice identity suppresses mismatched character presentation
+[PASS] diagnostic presentation keeps recovery copy separate from stable codes
+[PASS] diagnostic presentation keeps support reachable when it is the recovery
+[PASS] editor interaction state owns hovered note detail independently
+[PASS] technical lane geometry scales one shared frame
+[PASS] adaptive empty technical lanes preserve piano roll dominance
+[PASS] diagnostic recovery controls share visible layout and hit targets
+[PASS] support panel exposes exact preview and selectable report list
+[PASS] empty piano roll paints a bounded next-step cue
+[PASS] character dock portrait geometry follows shared layout tokens
+[PASS] technical lane content metrics stay shared across compact heights
+[PASS] piano roll visual metrics stay tokenized
+[PASS] arrangement action geometry stays shared and contained
+[PASS] voicebank and audio panel text metrics stay bounded
+[PASS] editor overlay metrics stay tokenized
+[PASS] embedded runtime overlays stay below the toolbar
+[PASS] software raster surface paints deterministically and exports PPM
+[PASS] editor scene remains logically identical at one and two times scale
+[PASS] native scene paints a visible keyboard focus ring
+[PASS] native design fixture matrix is deterministic across target viewports
+[PASS] native design journey fixtures cover detail identity and motion states
+[PASS] native scene captures a subpixel-duration note without collapsing it
+[PASS] native pitch lane moves removes and cycles automation points
+[PASS] native batch lyrics use IME composition and semantic activation
+[PASS] editor status bar paints within the supported minimum width
+[PASS] microscope close bounds stay inside the modal panel
+[PASS] accessibility dispatch rejects disabled controls and disabled ancestor surfaces
+[PASS] accessibility dispatch owns its target ID while the callback replaces the tree
+[PASS] native accessibility dispatches notes outside the piano viewport
+[PASS] standalone controller opens a read-only sample microscope overlay
+[PASS] native microscope edits markers and plays a test sample through callbacks
+[PASS] native controller routes transport controls through host callbacks
+[PASS] native transport keeps play state unchanged when host rejects it
+[PASS] native arrangement inspector commits track mix through shared commands
+[PASS] native seam controls expose presets, fields, reset, and A/B preview
+[PASS] native arrangement controller exposes undoable track and region editing
+[PASS] native tempo meter dispatch guards context and notifies document changes only on success
+[PASS] native phone hint input preserves lyrics and supports clear undo and no-op
+[PASS] native phone hints reject invalid stale and unsupported edits without retargeting
+[PASS] phone hint semantics isolate active input and reject old interaction identities
+[PASS] native replacement review pages isolates refreshes and applies one undo group
+[PASS] native diagnostic Find works without a vocal region and never runs recovery or selects notes
+[PASS] native diagnostic Find pages opaque references and rejects changed diagnostics or documents
+[PASS] native derived Find searches 10000 Japanese notes and reveals the hinted final note
+[PASS] native Find preparation keeps Close available and never revives cancelled or stale results
+[PASS] native repeat Find wraps reveals and focuses matches while guarding composition and source drift
+[PASS] native Find input fields and complete result inspection select without changing the song
+[PASS] native Find pages rejects stale actions and keeps errors distinct from empty results
+[PASS] native find replace input separates stages and requires reviewed application
+[PASS] replacement detail exposes every before and after byte and never applies from detail
+[PASS] batch lyric input captures targets and rejects selection document and generation drift
+[PASS] native distribution no-op preserves language revision and change notifications
+[PASS] distribution mismatch stays in review with visible counts and no apply
+[PASS] native clear vibrato review pages guards selection and commits only on Apply
+[PASS] native cleanup review shows outcomes guards grid changes and applies exactly once
+[PASS] shared review rows actions and text input fit supported short windows
+[PASS] native dynamics clear explicitly reviews the entire region and preserves other expressions
+[PASS] native tempo input commits cancels and rejects stale or malformed text
+[PASS] tempo text round trips precision and captured event ticks cannot retarget initial BPM
+[PASS] native meter field validates signature keeps tempo separate and restores through undo
+[PASS] time-map list pages preserve identities and selected deletion rejects stale snapshots
+[PASS] native time-map panel opens selects edits refreshes removes and blocks background actions
+[PASS] time-map panel insertion is two-stage cancellable and never overwrites an existing event
+[PASS] time-map semantics expose modal actions and reject cancelled or previous-stage inputs
+[PASS] time-map composition has visible shared input geometry in toolbar and panel
+[PASS] time-map refresh retains selected event across index shifts and deletion selects successor
+[PASS] native arrangement controller routes selected tracks through shared commands
+[PASS] native arrangement exposes IME rename and keyboard reorder affordances
+[PASS] native arrangement toolbar exposes pointer and accessibility actions
+[PASS] native vibrato inspector edits drafts through fields and applies the selection once
+[PASS] native vibrato inspector rejects stale field input and keeps responsive controls in bounds
+[PASS] arrangement inspector visibility and pointer bounds agree with paint including overlays
+[PASS] crowded arrangement does not expose hidden inspector or offscreen track targets
+[PASS] native semantic focus does not mutate note or arrangement selection
+[PASS] native keyboard focus reveals full detail for a bounded note
+[PASS] native arrangement and diagnostics surfaces capture current layout
+[PASS] native controller commits one move command at pointer release
+[PASS] native controller resizes a note from its right edge
+[PASS] native text input commits Unicode lyric through undoable command
+[PASS] accessibility value setting commits the targeted lyric
+[PASS] character package loads low-poly portrait and display mode cycles
+[PASS] character display cycling does not submit an audio document change
+[PASS] lane transitions publish deterministic shared geometry within 150 milliseconds
+[PASS] reduced motion commits lane geometry without an intermediate frame
+[PASS] character identity dock follows the injected transition clock
+[PASS] toolbar project metadata avoids the portrait at compact scale width
+[PASS] toolbar identity reserves a collision-free responsive region
+[PASS] compact toolbar reserves a project identity subtitle
+[PASS] native scene renders phoneme unit pitch and full character dock
+[PASS] native scene paints exact voicebank browser cards
+[PASS] native voicebank browser routes refresh and standalone recovery
+[PASS] native scene exposes transactional audio settings controls
+[PASS] graphical voicebank studio loads audio and commits validated marker edits
+[PASS] voicebank studio marker labels avoid overlap at minimum width
+[PASS] voicebank studio marker labels use Unicode display width
+[PASS] native Japanese reading review is inspectable, safely gated, and undoable
+[PASS] Designer source selection resolves style filtered rows without changing recipes
+[PASS] Designer source creation retains matching vowel and rejection retains selection
+[PASS] Designer history preserves plosive bindings while unrelated voice parameters change
+[PASS] Designer stop vowel audition uses the selected pose pitch and distinct preview mode
+[PASS] Designer plosive audition is finite reproducible separate and invalidated by edits
+[PASS] Designer plosive creation seed edits removal and save are validated undoable operations
+[PASS] Designer pose duplication rejects selection changes with an unchanged recipe revision
+[PASS] Designer nasal edits audition save reopen and undo without changing the previous resource
+[PASS] Designer compact layout keeps selection status and errors inside the minimum window
+[PASS] Designer source action bars remain reachable throughout supported resize range
+[PASS] Designer voiced frication uses mixed context instead of dropping voicing
+[PASS] Designer frication context previews preserve mode pitch and draft ownership
+[PASS] Designer frication audition is bounded reproducible and separate from vowel comparison
+[PASS] Designer frication seed and removal edits preserve other sources and undo exactly
+[PASS] Designer frication creation and filter edits retain validated reproducible recipe state
+[PASS] Designer seed edits retain full unsigned precision and invalidate reproducible audio
+[PASS] Designer modulation controls produce periodic audio changes and zero-rate neutrality
+[PASS] Designer preview cancellation cannot cancel an independent recipe save
+[PASS] Designer pose duplication and removal are validated undoable draft edits
+[PASS] Designer session gestures invalidate preview and commit one undo
+[PASS] Designer A/B reference retains original recipe and PCM across edits
+[PASS] Designer resonance edits affect audition and undo restores exact audio
+[PASS] Designer audition selection invalidates old output without dirtying the recipe
+[PASS] Designer audition renders deterministic bounded PCM and follows phonation edits
+[PASS] Designer audition worker discards old voice revisions without blocking editing
+[PASS] Designer session saves reopens and rejects old document actions
+[PASS] Designer session protects edited external files and preserves failed-save state
+[PASS] Designer discard authorization replaces only after successful validation or loading
+[PASS] Designer gesture previews collapse to one undo and reject stale completion
+[PASS] Designer cancelled and neutral gestures preserve prior redo and saved identity
+[PASS] Voice Designer frozen edits undo without reviving stale actions
+[PASS] Voice Designer rejects invalid source and resonance edits atomically
+[PASS] Voice Designer keeps a bounded undo history across recipe schema changes
+[PASS] dedicated playback feeder service owns production and stops cleanly
+[PASS] threaded audio device drives the real callback contract
+[PASS] playback controls remain race-free while feeder and callback threads run
+[PASS] system audio adapter reports an explicit bounded open result
+[PASS] native editor audio settings restart the live deterministic transport transactionally
+[PASS] production audio failure never creates a callback clock fallback
+[PASS] audio rollback preserves the requested device open error
+[PASS] native editor defers audio callbacks until playable audio is ready
+[PASS] native editor projects completed render audio state during paint
+[PASS] native editor audio settings resume a playing transport after restart
+[PASS] native startup surfaces a persisted crash marker as a separate diagnostic
+[PASS] native crash support export contains recovered candidate context
+[PASS] native crash support refuses an unbound candidate
+[PASS] native support flow previews exports and deletes exact prepared bytes
+[PASS] native support keeps a committed export when directory refresh fails
+[PASS] native voicebank diagnostic opens the exact-card browser
+[PASS] native audio-unavailable diagnostic opens live audio settings
+[PASS] native startup promotes missing voicebank into an actionable diagnostic
+[PASS] voicebank studio options reject numeric suffixes
+Unknown argument: --unknown
+[PASS] voicebank studio opens a source-free Designer without weakening producer arguments
+[PASS] voicebank studio explicit dimensions override restored geometry
+[PASS] voicebank studio options retain exact valid operation values
+[PASS] long render failure details remain visible searchable and independently coalesced
+[PASS] diagnostic search jobs guard document and diagnostic changes without invoking recovery
+[PASS] diagnostic search capture bounds bytes before copying and reports worker decoding failures
+[PASS] active diagnostic search preserves global issues field provenance and source changes
+[PASS] diagnostic search rejects invalid and excessive data even after an early match
+[PASS] diagnostic panel coalesces typed errors and validates actions
+[PASS] diagnostic coalescing preserves affected scope severity and recovery actions
+[PASS] diagnostic occurrence counts saturate without wrapping to an invalid count
+[PASS] vibrato inspector retains invalid drafts and resolves coupled fades before one Apply
+[PASS] vibrato inspector round trips canonical text and rejects malformed stale or cancelled drafts
+[PASS] dynamics viewport handles extreme extents and local zoom pan fit without overflow
+[PASS] native dynamics navigation clips curves and keeps score and main timeline unchanged
+[PASS] shift dragging dynamics time preserves gain and rejects occupied destinations before region Apply
+[PASS] dynamics time dragging uses zoomed bounds and rejects nonfinite input
+[PASS] dynamics dragging maps extreme integers while draft points obey the region duration
+[PASS] native dynamics inspector edits point drafts and publishes the region once
+[PASS] native dynamics point fields reject replaced documents and refresh safely
+[PASS] native dynamics point paging survives deleting the final page without changing the score
+[PASS] dynamics curve handles draft gain without altering saved score and share exact field editing
+[PASS] dynamics graphical dragging rejects changed documents and nonfinite coordinates
+[PASS] dynamics handles choose the nearest dense point and cancel dragging after resize
+[PASS] dynamics inspector explains generated overrides and preserves manual replacement scope semantics
+[PASS] dynamics target samples retain polyphonic identities and expose compilation limits without blocking edits
+dynamics-capacity-ms capture=0.400042 compile=6.85317 samples=12432
+dynamics-cached-window-ms=0.191125 samples=368
+[PASS] dynamics preview measures 4096 notes in 16 voices and explicitly rejects a 10000 note target
+[PASS] native measured dynamics follows rendered frame windows channels and document freshness
+[PASS] style coverage previews declared inventory and applies only explicit style intent with exact undo
+[PASS] style sheet preserves missing choice and rejects stale untrusted and changed resources
+[PASS] style sheet does not invent coverage for empty unsupported or procedural inputs
+[PASS] style coverage uses the selected English phonemizer when the bank and region agree
+[PASS] native style sheet stages rows and rejects changed bank before exact apply undo
+[PASS] native style sheet pages declared styles without selecting or applying on navigation
+[PASS] native coverage issues expose full paged diagnostics without changing score or selection
+[PASS] native coverage unavailable explanation is fully readable and is never a successful empty report
+[style-capacity-ms] prepare=5.85392 choose=0.325166 same-choice-1000=0.008167 view-average=5.98309
+[style-snapshot-view-ms] average=0.0164333
+[PASS] style sheet maximum admitted inventory preserves counts and cached pronunciation across choices
+[PASS] standalone authoring session renders visible project through production voicebank
+[PASS] standalone transport emits production renderer audio
+[PASS] standalone forwards native voicebank browser selection to its host
+[PASS] development fixture startup clears provisional missing-bank state
+[PASS] standalone_application_controller_executes_new_open_save_and_save_as_without_cli
+[PASS] standalone_new_project_request_can_commit_an_explicit_native_path
+[PASS] startup open-file replaces the provisional Untitled document
+[PASS] standalone_application_controller_imports_project_owned_backing_audio
+[PASS] standalone_application_controller_export_set_cancel_is_side_effect_free
+[PASS] standalone export failure retains an actionable progress diagnostic
+[PASS] standalone_application_controller_exports_off_thread_and_protects_quit
+[PASS] standalone single-file export publishes its committed result
+[PASS] standalone_application_controller_respects_unsaved_cancel_and_discard
+[PASS] standalone_application_controller_discovers_and_recovers_autosave_copy
+[PASS] standalone_application_controller_blocks_close_when_pending_autosave_failed
+[PASS] native recipe picker selects relinks cancels and rejects stale document results
+[PASS] standalone_voicebank_workflow_installs_browses_selects_and_reports_coverage
+[PASS] Studio selected sample capture exposes exact material without assigning a reviewer or approving
+[PASS] Studio review requires explicit modal identity and rejects edits across all modal boundaries
+[PASS] Studio review selection round trips and reviewer changes cannot reuse a modal decision
+[PASS] Studio review capture cancels or discards stale asynchronous results without approval
+[PASS] Studio explicit acceptance publishes an actual new candidate and preserves producer input
+[PASS] Studio rejection and incomplete selected-unit review cannot publish a complete candidate
+[PASS] Studio loads an editable manifest asynchronously and rejects stale manifest picker results
+[PASS] Studio shutdown collects the actual decision outcome even when cancellation races commit
+[PASS] Studio review controls and paged evidence remain bounded at the minimum viewport
+[PASS] Studio interactive workspace opening requires the expected inventory and registered producer
+[PASS] Studio asynchronous workspace entry defers adoption and cancellation retains the empty context
+[PASS] Studio creates and opens an editable draft without a preexisting manifest or approval
+[PASS] Studio draft identity requires explicit language style and all bank fields before destination
+[PASS] Studio cancelling either draft modal performs no worker or publication
+[PASS] Studio draft modal context is rechecked after identity and destination selection
+[PASS] Studio draft refuses unsaved marker edits and retains them without showing replacement modals
+[PASS] Studio late-cancelled draft retains its commit receipt without auto-opening
+[PASS] Studio precommit cancellation does not create a draft or replace its current model
+[PASS] Studio draft stale worker result preserves newer editor state and still reports the commit
+[PASS] Studio draft loading failure cannot erase a committed directory receipt
+[PASS] Studio draft shows missing assignments and unconfirmed durability without inventing approval
+[PASS] Studio draft postcommit oversized copied audio retains receipt and previous visual model
+[PASS] Studio draft replaced audio is rejected before decode across selection and reopen
+[PASS] Studio draft resize keeps pinned waveform and spectrum after copied audio disappears
+[PASS] Studio draft binding survives edited manifest reopen and cannot downgrade through removed metadata
+[PASS] Studio ordinary external manifest does not infer digest binding from an arbitrary filename
+[PASS] Studio source qualification label does not misreport unassessed listening as blocked source rights
+[PASS] Studio sample close cancellation and discard preserve saved files and in-memory edits
+[PASS] Studio sample close save persists edited markers across reopening
+[PASS] Studio sample close rejects a modal-time edit without saving or discarding it
+[PASS] Studio sample close does not authorize closing after save failure or during background work
+[PASS] Studio background selection works without a producer and retains unsaved edits and current geometry
+[PASS] Studio cancelled background selection preserves the current editable unit and can restart
+[PASS] Studio stale background selection cannot overwrite changed manifest material
+[PASS] Studio background selection preserves the visible model on audio failure and joins on shutdown
+[PASS] Studio source evidence capture requires no manifest and only explicit independent decisions commit
+[PASS] Studio source quality rejects unlisted reviewer and changed captured evidence without a commit
+[PASS] Studio source quality rejects stale file and decision modals while preserving unsaved edits
+[PASS] Studio source quality capture cancellation preserves source history and controls do not overlap
+[PASS] Studio source decision cannot adopt evidence recaptured under the same project context during its modal
+[PASS] Studio preserves the actual source quality receipt after late cancellation
+[PASS] Studio registers a source-free planned Draft only after explicit source declarations
+[PASS] Studio source registration rejects missing declarations changed evidence and stale modals
+[PASS] Studio registration cannot adopt replacement evidence during its modal and capture can cancel
+[PASS] Studio retains source registration receipt after late cancellation without changing prior provenance
+
+858 passed, 0 failed
+<end of output>
+Test time =  21.97 sec
+----------------------------------------------------------
+Test Passed.
+"seam_tests" end time: Sep 10 00:51 KST
+"seam_tests" time elapsed: 00:00:21
+----------------------------------------------------------
+
+End testing: Sep 10 00:51 KST

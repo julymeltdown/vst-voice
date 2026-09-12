@@ -1,8 +1,11 @@
 #pragma once
 
 #include "seam/application/editor_session.hpp"
+#include "seam/application/tempo_commands.hpp"
+#include "seam/native_ui/tempo_meter_model.hpp"
 #include "seam/application/project_factory.hpp"
 #include "seam/core/result.hpp"
+#include "seam/authoring/technical_edit_controller.hpp"
 #include "seam/native_ui/editor_scene.hpp"
 #include "seam/native_ui/editor_interaction_state.hpp"
 #include "seam/native_ui/arrangement_panel.hpp"
@@ -10,6 +13,20 @@
 #include "seam/native_ui/diagnostic_panel.hpp"
 #include "seam/native_ui/track_inspector.hpp"
 #include "seam/ui/text_composition_model.hpp"
+#include "seam/ui/lyric_replacement_job.hpp"
+#include "seam/ui/vibrato_clear_preview.hpp"
+#include "seam/ui/note_cleanup_preview.hpp"
+#include "seam/ui/dynamics_clear_preview.hpp"
+#include "seam/ui/dynamics_lane_model.hpp"
+#include "seam/ui/dynamics_plot_viewport.hpp"
+#include "seam/authoring/audio_measurement_job.hpp"
+#include "seam/authoring/japanese_reading_job.hpp"
+#include "seam/ui/note_search_navigation.hpp"
+#include "seam/ui/note_search_job.hpp"
+#include "seam/native_ui/diagnostic_search_job.hpp"
+#include "seam/native_ui/vibrato_inspector.hpp"
+#include "seam/native_ui/style_coverage_sheet.hpp"
+#include "seam/text/unicode.hpp"
 #include "seam/ui/sample_microscope_model.hpp"
 
 #include <functional>
@@ -139,6 +156,16 @@ struct EditorHostCallbacks final {
       applyAudioSettings;
   std::function<std::chrono::steady_clock::time_point()> uiClock;
   std::function<bool()> reduceMotionEnabled;
+  std::function<core::Result<authoring::PhonemeBindingReview>()> reviewPhonemeBindings;
+  std::function<core::Result<void>(const domain::PhonemeOverride&, domain::PhonemeKey,
+                                  std::string_view)> rebindPhonemeOverride;
+  std::function<core::Result<authoring::RetainedRenderEditReview>()> reviewRenderEdits;
+  std::function<core::Result<void>(const authoring::RetainedRenderEditReview&,
+      const domain::UnitSelectionOverride&, domain::PhonemeKey)> rebindUnitOverride;
+  std::function<core::Result<void>(const authoring::RetainedRenderEditReview&,
+      const domain::SeamOverride&, domain::PhonemeKey)> rebindSeamOverride;
+  std::function<core::Result<authoring::StagedJapaneseReadingResource>()>
+      prepareJapaneseReadingResource;
 };
 
 class NativeEditorController final {
@@ -155,6 +182,8 @@ public:
     return pianoRoll_;
   }
   [[nodiscard]] EditorSceneState sceneState() const;
+  [[nodiscard]] core::Result<void> openPhonemeReview();
+  [[nodiscard]] core::Result<void> activatePhonemeReview(std::size_t action);
   [[nodiscard]] bool playing() const noexcept { return playing_; }
   [[nodiscard]] bool textInputActive() const noexcept { return composition_.active(); }
   [[nodiscard]] const ArrangementPanelModel& arrangementPanel() const noexcept {
@@ -206,6 +235,53 @@ public:
   void closeSampleMicroscope() noexcept;
 
   [[nodiscard]] core::Result<void> selectTrack(domain::TrackId trackId);
+  [[nodiscard]] core::Result<void> beginTempoEdit(time::Tick tick = time::Tick{0});
+  [[nodiscard]] core::Result<void> beginHintEdit(domain::NoteId noteId);
+  [[nodiscard]] core::Result<void> beginSelectedHintEdit();
+  [[nodiscard]] core::Result<void> openReplacementReview(std::string query, std::string replacement);
+  [[nodiscard]] core::Result<void> openDistributionReview(std::string text);
+  [[nodiscard]] core::Result<void> openClearVibratoReview();
+  [[nodiscard]] core::Result<void> openClearDynamicsReview();
+  [[nodiscard]] core::Result<void> openDynamicsInspector();
+  [[nodiscard]] core::Result<void> openStyleCoverageSheet();
+  [[nodiscard]] core::Result<void> openJapaneseReadingReview();
+  void setJapaneseReadingResourceResolver(std::function<core::Result<authoring::StagedJapaneseReadingResource>()> resolver) {
+    japaneseReadingResourceResolver_ = std::move(resolver);
+  }
+  void setStyleBankResolver(std::function<voicebank::VoicebankResolution(domain::TrackId)> resolver) {
+    styleSnapshotResolver_ = {}; styleBankResolver_ = std::move(resolver);
+  }
+  void setStyleBankSnapshotResolver(std::function<authoring::VoicebankSnapshotPtr(domain::TrackId)> resolver) {
+    styleBankResolver_ = {}; styleSnapshotResolver_ = std::move(resolver);
+  }
+  // Bound host coordinator must outlive this controller. Workers retain only
+  // immutable captures, never this non-owning pointer.
+  void setMeasurementCoordinator(const authoring::AuthoringRenderCoordinator& source) noexcept {
+    measurementJob_.cancel(); measurementWindow_.reset(); measurementCoordinator_ = &source;
+  }
+  [[nodiscard]] core::Result<void> openNoteCleanupReview(ui::NoteCleanupKind kind);
+  [[nodiscard]] core::Result<void> beginReplacementInput();
+  [[nodiscard]] core::Result<void> beginFindInput();
+  [[nodiscard]] core::Result<void> openVibratoInspector();
+  [[nodiscard]] core::Result<void> beginDiagnosticFindInput();
+  [[nodiscard]] core::Result<void> openDiagnosticFindReview(std::string query);
+  [[nodiscard]] core::Result<void> repeatFind(bool backwards = false);
+  [[nodiscard]] bool findPreparing() const noexcept { return findJob_.preparing() || diagnosticFindJob_.preparing(); }
+  [[nodiscard]] core::Result<void> openFindReview(std::string query, ui::NoteSearchField field = ui::NoteSearchField::Lyric);
+  void pollReplacementReview();
+  [[nodiscard]] bool replacementReviewOpen() const noexcept { return replacementOpen_ || replacementInput_.has_value(); }
+  [[nodiscard]] core::Result<void> replacementReviewAction(std::size_t action);
+  [[nodiscard]] core::Result<void> openReplacementRow(std::size_t pageRow);
+  [[nodiscard]] core::Result<void> beginMeterEdit(time::Tick tick = time::Tick{0});
+  [[nodiscard]] core::Result<TempoMeterModel> timeMapEvents() const;
+  [[nodiscard]] core::Result<void> openTimeMapPanel();
+  [[nodiscard]] core::Result<void> timeMapPanelAction(std::size_t action);
+  [[nodiscard]] core::Result<void> beginSelectedTimeMapEdit(const TempoMeterModel& model);
+  [[nodiscard]] core::Result<void> removeSelectedTimeMapEvent(const TempoMeterModel& model);
+  [[nodiscard]] core::Result<void> editTempo(std::uint64_t expectedRevision, time::Tick tick,
+                                            std::optional<double> bpm);
+  [[nodiscard]] core::Result<void> editMeter(std::uint64_t expectedRevision, time::Tick tick,
+      std::optional<application::EditMeterCommand::Signature> signature);
   [[nodiscard]] core::Result<void> selectRegion(domain::RegionId regionId);
   [[nodiscard]] core::Result<domain::TrackId> addVocalTrack(
       std::string name);
@@ -249,7 +325,7 @@ public:
   [[nodiscard]] core::Result<void> setSelectedNotesMelisma();
   [[nodiscard]] core::Result<ui::LyricDistributionReport>
   distributeSelectedLyrics(std::u32string text,
-                            domain::Language language = domain::Language::Unspecified);
+                            std::optional<domain::Language> language = std::nullopt);
 
   void resize(double logicalWidth, double logicalHeight) noexcept;
   [[nodiscard]] core::Result<void> pointerDown(const PointerEvent& event);
@@ -347,6 +423,23 @@ private:
       domain::UnitSelectionOverride value);
   [[nodiscard]] core::Result<void> reorderSelectedTrackBy(int direction);
   void markDocumentChanged();
+  [[nodiscard]] std::string timeMapSemanticPrefix() const;
+  [[nodiscard]] std::string hintSemanticPrefix() const;
+  [[nodiscard]] std::string replacementSemanticPrefix() const;
+  [[nodiscard]] ReplacementReviewView replacementReviewView() const;
+  [[nodiscard]] core::Result<void> openLyricReview(std::string query, std::string replacement, bool distribution);
+  [[nodiscard]] core::Result<void> refreshClearVibratoReview();
+  [[nodiscard]] core::Result<void> refreshClearDynamicsReview();
+  [[nodiscard]] core::Result<void> beginDynamicsFieldInput(bool tick);
+  [[nodiscard]] core::Result<domain::DynamicsAutomationPoint> dynamicsPointValue() const;
+  [[nodiscard]] core::Result<void> dragDynamicsPoint(ui::Point position);
+  [[nodiscard]] core::Result<void> navigateDynamics(ui::DynamicsPlotViewport::Action action, double anchor = 0.5);
+  [[nodiscard]] core::Result<void> cycleMeasuredChannel();
+  void pollAudioMeasurement();
+  [[nodiscard]] core::Result<void> revealFindNote(domain::NoteId noteId);
+  [[nodiscard]] core::Result<void> beginSearchInput(bool findOnly, bool diagnostics);
+  [[nodiscard]] core::Result<void> beginVibratoFieldInput(VibratoField field);
+  [[nodiscard]] core::Result<void> refreshNoteCleanupReview(ui::NoteCleanupKind kind);
   [[nodiscard]] core::Result<void> navigateLyricEdit(int direction);
   [[nodiscard]] core::Result<void> beginBatchLyricEdit();
   [[nodiscard]] core::Result<void> cycleSelectedTrackRoute();
@@ -384,10 +477,118 @@ private:
   std::optional<ui::AcousticMarkerKind> dragMicroscopeMarker_;
   std::optional<std::size_t> dragMicroscopePitchMark_;
   std::optional<domain::TrackId> renameTrackTarget_;
+  std::optional<TempoEditContext> tempoEdit_;
+  struct HintEditContext {
+    domain::ProjectId projectId;
+    domain::RegionId regionId;
+    domain::NoteId noteId;
+    std::uint64_t revision;
+    std::optional<std::string> before;
+  };
+  std::optional<HintEditContext> hintEdit_;
+  std::uint64_t hintInteraction_{0U};
+  struct ReplacementInput final {
+    application::PerformanceJobContext context;
+    domain::RegionId regionId;
+    std::uint64_t revision;
+    std::optional<std::string> query;
+    bool findOnly{false};
+    bool diagnostics{false};
+    std::optional<VibratoField> vibratoField{};
+    std::optional<bool> dynamicsTickField{};
+  };
+  std::optional<ReplacementInput> replacementInput_;
+  std::uint64_t replacementInputSerial_{0U};
+  std::string replacementInputError_;
+  ui::LyricReplacementJob replacementJob_;
+  std::optional<VibratoInspectorDraft> vibratoDraft_;
+  std::optional<StyleCoverageSheet> styleDraft_;
+  bool styleIssues_{false};
+  std::optional<std::size_t> styleIssue_;
+  std::vector<std::string> styleDetailLines_;
+  std::function<voicebank::VoicebankResolution(domain::TrackId)> styleBankResolver_;
+  std::function<authoring::VoicebankSnapshotPtr(domain::TrackId)> styleSnapshotResolver_;
+  [[nodiscard]] bool styleSourceCurrent() const;
+  std::function<core::Result<authoring::StagedJapaneseReadingResource>()> japaneseReadingResourceResolver_;
+  authoring::JapaneseReadingJob japaneseReadingJob_;
+  std::optional<phonemizer::JapaneseReadingIdentity> japaneseReadingIdentity_;
+  bool japaneseReadingMode_{false};
+  std::optional<std::size_t> japaneseReadingDetail_;
+  std::vector<std::string> japaneseReadingDetailLines_;
+  std::optional<ui::DynamicsLaneModel> dynamicsDraft_;
+  struct DynamicsPointEdit final {
+    std::optional<time::Tick> source;
+    std::string tickText{"0"};
+    std::string gainText{"1"};
+  };
+  std::optional<DynamicsPointEdit> dynamicsPointEdit_;
+  bool dynamicsGainDragging_{false};
+  ui::Rect dynamicsDragBounds_{};
+  bool dynamicsTimeDragging_{false};
+  ui::DynamicsPlotViewport::Range dynamicsDragRange_{0, 1};
+  ui::DynamicsPlotViewport dynamicsViewport_;
+  double dynamicsScrollRemainder_{0.0};
+  bool dynamicsScrollZoom_{false};
+  const authoring::AuthoringRenderCoordinator* measurementCoordinator_{nullptr};
+  authoring::AudioMeasurementJob measurementJob_;
+  struct MeasurementWindow final {
+    std::shared_ptr<const authoring::RenderPublicationIdentity> identity;
+    std::uint64_t requestId;
+    domain::RegionId region;
+    std::size_t first, count;
+    friend bool operator==(const MeasurementWindow&, const MeasurementWindow&) = default;
+  };
+  std::optional<MeasurementWindow> measurementWindow_;
+  std::size_t measuredChannel_{0U}; // Zero is controls; other values are one-based output channels.
+  std::string measurementStatus_{"Waiting for a current render"};
+  VibratoField selectedVibratoField_{VibratoField::Enabled};
+  bool replacementOpen_{false};
+  bool replacementDependencies_{false};
+  bool replacementDistribution_{false};
+  std::optional<ui::VibratoClearPreview> clearVibrato_;
+  std::optional<ui::DynamicsClearPreview> clearDynamics_;
+  std::optional<ui::NoteCleanupPreview> noteCleanup_;
+  bool findMode_{false};
+  ui::NoteSearchJob findJob_;
+  bool diagnosticFindMode_{false};
+  DiagnosticSearchJob diagnosticFindJob_;
+  std::optional<DiagnosticSearchReview> diagnosticFindReview_;
+  ui::NoteSearchField findField_{ui::NoteSearchField::Lyric};
+  std::optional<ui::NoteSearchNavigation> findNavigation_;
+  std::optional<std::size_t> findDetailIndex_;
+  std::size_t replacementPage_{0U};
+  std::uint64_t replacementInteraction_{0U};
+  domain::RegionId replacementRegion_;
+  std::string replacementQuery_, replacementText_, replacementError_;
+  std::string replacementErrorContext_;
+  struct ReplacementDetail final {
+    domain::LyricTokenId lyricId;
+    std::array<std::string, 2U> text;
+    std::array<std::vector<seam::text::Utf8LineRange>, 2U> lines;
+    std::size_t side{0U}, page{0U};
+  };
+  std::optional<ReplacementDetail> replacementDetail_;
+  std::optional<TempoMeterModel> timeMapPanel_;
+  std::size_t timeMapPage_{0U};
+  std::uint64_t timeMapInteraction_{0U};
   std::optional<domain::RegionId> renameRegionTarget_;
-  bool batchLyricTarget_{false};
+  struct BatchLyricContext final {
+    application::PerformanceJobContext context;
+    domain::RegionId regionId;
+    std::uint64_t revision;
+    std::vector<domain::NoteId> notes;
+  };
+  std::optional<BatchLyricContext> batchLyricTarget_;
   std::optional<domain::PhonemeKey> seamTarget_;
   std::optional<domain::PhonemeKey> unitTarget_;
+  std::optional<authoring::PhonemeBindingReview> phonemeReview_;
+  std::optional<authoring::RetainedRenderEditReview> renderEditReview_;
+  [[nodiscard]] std::size_t reviewEditCount() const;
+  [[nodiscard]] domain::PhonemeKey reviewEditKey() const;
+  [[nodiscard]] const std::vector<domain::PhonemeToken>& reviewTargets() const;
+  std::size_t reviewedEdit_{0U};
+  std::optional<std::size_t> reviewedTarget_;
+  std::string reviewStatus_;
   bool seamPreviewAlternate_{false};
   std::optional<time::Tick> loopAnchorTick_;
   bool playing_{false};

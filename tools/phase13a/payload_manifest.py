@@ -7,6 +7,7 @@ from tools.phase13a.distribution_manifest import tree_sha256
 from tools.phase13a.payload_identity import validate_surface_identities
 from tools.phase13a.payload_paths import require_real_directory
 from tools.phase13a.payload_trust import validate_release_trust
+from tools.phase13a.neural_package import neural_package_inventory
 from tools.phase13a.release_payload import (
     MANIFEST_NAME,
     PayloadAssemblyError,
@@ -66,6 +67,8 @@ def verify_release_payload_manifest(
     identity = _read_identity(payload / "RELEASE_IDENTITY.json")
     if value.get("releaseIdentity") != identity.to_json():
         raise PayloadAssemblyError(("release identity differs from sealed manifest",))
+    if value.get("neuralPackages") != neural_package_inventory(payload, expected_platform, identity.build_id):
+        raise PayloadAssemblyError(("neural package inventory differs from sealed manifest",))
     if issues := validate_surface_identities(
         payload, expected_platform, identity.to_json()
     ):

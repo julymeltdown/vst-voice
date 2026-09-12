@@ -8,25 +8,18 @@ namespace seam::voicebank {
 namespace {
 
 const PitchFrame* nearestVoicedFrame(std::span<const PitchFrame> frames,
-                                     time::SampleFrame sourceFrame,
-                                     float minimumConfidence) noexcept {
-  const PitchFrame* best = nullptr;
-  auto bestDistance = std::numeric_limits<std::uint64_t>::max();
-  for (const auto& frame : frames) {
-    if (!frame.voiced || frame.confidence < minimumConfidence ||
-        !std::isfinite(frame.f0Hz) || frame.f0Hz <= 0.0) {
-      continue;
-    }
-    const auto center = static_cast<time::SampleFrame>(frame.sourceFrame);
-    const auto distance = center >= sourceFrame
-        ? static_cast<std::uint64_t>(center - sourceFrame)
-        : static_cast<std::uint64_t>(sourceFrame - center);
-    if (distance < bestDistance) {
-      best = &frame;
-      bestDistance = distance;
-    }
-  }
-  return best;
+                                     time::SampleFrame sourceFrame) noexcept {
+  // analyzePitch orders frame origins; callers filter valid voiced frames once.
+  // Preserve the earlier-origin tie break without scanning every analysis
+  // frame for every output pitch mark (quadratic on long producer takes).
+  if (frames.empty()) return nullptr;
+  const auto next = std::lower_bound(frames.begin(), frames.end(), sourceFrame,
+      [](const PitchFrame& frame, time::SampleFrame value) { return frame.sourceFrame < static_cast<std::uint64_t>(value); });
+  if (next == frames.begin()) return &*next;
+  if (next == frames.end()) return &frames.back();
+  const auto previous = std::prev(next);
+  return static_cast<std::uint64_t>(sourceFrame) - previous->sourceFrame <= next->sourceFrame - static_cast<std::uint64_t>(sourceFrame)
+      ? &*previous : &*next;
 }
 
 time::SampleFrame refinePeak(std::span<const float> samples,
@@ -75,7 +68,8 @@ core::Result<std::vector<PitchMark>> generatePitchMarks(
     std::uint32_t sampleRate,
     time::SampleFrame rangeStart,
     time::SampleFrame rangeEnd,
-    PitchMarkGenerationConfig config) {
+    PitchMarkGenerationConfig config, std::stop_token stopToken,
+    PitchAnalysisLimits limits) {
   if (samples.empty() || rangeStart < 0 || rangeEnd <= rangeStart ||
       static_cast<std::uint64_t>(rangeEnd) > samples.size() ||
       sampleRate < 8000 || sampleRate > 384000 ||
@@ -89,10 +83,14 @@ core::Result<std::vector<PitchMark>> generatePitchMarks(
         "Pitch mark generation input is invalid");
   }
 
-  auto analysis = analyzePitch(samples, sampleRate, config.pitch);
+  auto analysis = analyzePitch(samples, sampleRate, config.pitch, stopToken, limits);
   if (!analysis) return core::Result<std::vector<PitchMark>>{analysis.error()};
-  const auto* firstFrame = nearestVoicedFrame(analysis.value(), rangeStart,
-                                               config.minimumConfidence);
+  std::vector<PitchFrame> voiced;
+  voiced.reserve(analysis.value().size());
+  for (const auto& frame : analysis.value())
+    if (frame.voiced && frame.confidence >= config.minimumConfidence && std::isfinite(frame.f0Hz) && frame.f0Hz > 0.0)
+      voiced.push_back(frame);
+  const auto* firstFrame = nearestVoicedFrame(voiced, rangeStart);
   if (firstFrame == nullptr) {
     return core::failure<std::vector<PitchMark>>(
         core::ErrorCode::NotFound,
@@ -106,8 +104,9 @@ core::Result<std::vector<PitchMark>> generatePitchMarks(
                                      config.pitch.frameSize / 2U));
   constexpr std::size_t kMaximumMarks = 1'000'000;
   while (predicted < rangeEnd && marks.size() < kMaximumMarks) {
-    const auto* frame = nearestVoicedFrame(analysis.value(), predicted,
-                                           config.minimumConfidence);
+    if (stopToken.stop_requested()) return core::failure<std::vector<PitchMark>>(
+        core::ErrorCode::Conflict, "Pitch mark generation cancelled");
+    const auto* frame = nearestVoicedFrame(voiced, predicted);
     if (frame == nullptr) break;
     const auto period = static_cast<time::SampleFrame>(std::llround(
         static_cast<double>(sampleRate) / frame->f0Hz));

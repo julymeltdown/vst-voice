@@ -37,6 +37,8 @@ Development uses the **`master` branch only**.
 - Track binding, exact relink, and intentional replacement are separate operations. Relink never rewrites the requested identity, and replacement participates in Undo/Redo.
 - Coverage diagnostics distinguish missing, disabled, wrong-style, and unsupported-pitch units before rendering.
 - Production rendering reports failed phrases while allowing unaffected tracks and regions to continue; no other voicebank is silently substituted.
+- Native USTX 0.9 and bounded Standard MIDI interchange paths retain score timing, lyrics, pitch/vibrato where representable, and expose explicit conversion losses; imports remain unsaved until review acceptance.
+- Interval harmony proposals are prepared without mutating the source and accepted through one stale-checked, undoable command.
 
 
 ## Phase 12B implementation

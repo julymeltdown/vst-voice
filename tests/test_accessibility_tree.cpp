@@ -1,7 +1,29 @@
 #include "test_framework.hpp"
+#include "seam/native_ui/accessibility_tree.hpp"
+
+TEST_CASE("custom accessibility surfaces retain numeric actions without virtual notes") {
+  using namespace seam::native_ui;
+  AccessibilityTree tree;
+  SemanticNode root{.id = "designer", .role = SemanticRole::Panel, .name = "Voice Designer"};
+  root.children.push_back({.id = "parameter", .role = SemanticRole::TextField, .name = "Open quotient", .value = "0.62",
+      .actions = {SemanticAction::SetFocus, SemanticAction::EditText}, .editableValue = "0.62"});
+  root.children.push_back({.id = "save", .role = SemanticRole::Button, .name = "Save voice",
+      .actions = {SemanticAction::SetFocus, SemanticAction::Activate}});
+  tree.rebuildCustom(std::move(root), "parameter");
+  CHECK(tree.virtualizedNoteCount() == 0U); CHECK(tree.materializeNotes(0U, 10U).empty());
+  CHECK(tree.focusedNode()); CHECK(tree.focusedNode()->id == "parameter");
+  CHECK(tree.focusNext(false)); CHECK(tree.focusedNode()->id == "save");
+  bool invoked = false;
+  CHECK(tree.dispatch("parameter", SemanticAction::EditText, [&](std::string_view id, SemanticAction) {
+    invoked = id == "parameter"; return seam::core::success();
+  }));
+  CHECK(invoked);
+  CHECK(!tree.dispatch("missing", SemanticAction::Activate, [](std::string_view, SemanticAction) { return seam::core::success(); }));
+  tree.rebuildCustom({.id = "replacement", .role = SemanticRole::Panel, .name = "Empty Designer"});
+  CHECK(!tree.focusedNode()); CHECK(!tree.setFocus("parameter"));
+}
 
 #include "seam/application/project_factory.hpp"
-#include "seam/native_ui/accessibility_tree.hpp"
 
 TEST_CASE("accessibility tree virtualizes large note collections") {
   seam::application::ProjectFactory factory{30000U};

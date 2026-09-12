@@ -1,9 +1,8 @@
 #include "seam/synthesis/renderer_dispatcher.hpp"
 
 namespace seam::synthesis {
-namespace {
 
-voicebank::RendererHint requestedRenderer(
+voicebank::RendererHint resolveRequestedRenderer(
     const voicebank::Unit& unit,
     RenderPolicy policy,
     const std::optional<domain::UnitRendererKind>& overrideValue) noexcept {
@@ -32,6 +31,8 @@ voicebank::RendererHint requestedRenderer(
   }
   return voicebank::RendererHint::Raw;
 }
+
+namespace {
 
 core::Result<RenderedUnit> rawFallback(
     const voicebank::Unit& unit,
@@ -71,8 +72,18 @@ core::Result<DispatchedRenderedUnit> UnitRendererDispatcher::render(
     return core::failure<DispatchedRenderedUnit>(
         core::ErrorCode::Conflict, "Unit render was cancelled", unit.id);
   }
-  const auto requested = requestedRenderer(
+  const auto requested = resolveRequestedRenderer(
       unit, parameters.policy, parameters.rendererOverride);
+  const auto capabilities = validateRendererCapabilities(
+      requested, parameters.controls, parameters.allowRawFallback);
+  if (!capabilities) return core::Result<DispatchedRenderedUnit>{capabilities.error()};
+  if (capabilities.value().canFallbackToRaw) {
+    auto raw = rawFallback(unit, source, outputSampleRate, outputFrames,
+                           targetMidi, parameters.raw);
+    if (!raw) return core::Result<DispatchedRenderedUnit>{raw.error()};
+    return fallbackResult(std::move(raw).value(), requested,
+                          capabilities.value().diagnostic);
+  }
 
   core::Result<RenderedUnit> rendered = core::failure<RenderedUnit>(
       core::ErrorCode::Internal, "Renderer dispatch did not select a backend",
@@ -81,7 +92,7 @@ core::Result<DispatchedRenderedUnit> UnitRendererDispatcher::render(
     case voicebank::RendererHint::Raw: {
       RawLoopRenderer renderer;
       rendered = renderer.render(unit, source, outputSampleRate, outputFrames,
-                                 targetMidi, parameters.raw);
+                                 targetMidi, parameters.raw, stopToken);
       break;
     }
     case voicebank::RendererHint::ClassicPsola: {
@@ -114,6 +125,10 @@ core::Result<DispatchedRenderedUnit> UnitRendererDispatcher::render(
     };
   }
   if (!parameters.allowRawFallback || requested == voicebank::RendererHint::Raw ||
+      parameters.controls.requiresPitchPreservingTransient ||
+      (requested == voicebank::RendererHint::ClassicPsola && parameters.psola.performance) ||
+      (requested == voicebank::RendererHint::SpectralClassic && parameters.spectral.performance) ||
+      (requested == voicebank::RendererHint::Stretch && parameters.stretch.performance) ||
       stopToken.stop_requested()) {
     return core::Result<DispatchedRenderedUnit>{rendered.error()};
   }

@@ -15,6 +15,8 @@ enum class WarningCode {
   LeadingLongVowel,
   OrphanOverride,
   InvalidOverride,
+  ResolutionFailure,
+  EstimatedPronunciation,
 };
 
 struct Warning final {
@@ -43,6 +45,7 @@ public:
 };
 
 [[nodiscard]] bool isVowelSymbol(std::string_view symbol) noexcept;
+[[nodiscard]] bool isNasalSymbol(std::string_view symbol) noexcept;
 [[nodiscard]] bool isVoicedSymbol(std::string_view symbol) noexcept;
 [[nodiscard]] domain::PhonemeRole inferRole(std::string_view symbol) noexcept;
 

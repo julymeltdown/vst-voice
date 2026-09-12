@@ -4,11 +4,20 @@
 
 namespace seam::native_ui {
 
+void AccessibilityTree::rebuildCustom(SemanticNode root, std::string focusedId) {
+  model_ = nullptr;
+  virtualizedNoteCount_ = 0U;
+  focusedScratch_.reset();
+  root_ = std::move(root);
+  focusedId_ = std::move(focusedId);
+  applyFocusedId();
+}
+
 void AccessibilityTree::rebuild(const EditorSceneState& state,
                                 const ui::PianoRollModel& model,
                                 AccessibilityTreeConfig config) {
   state_ = state;
-  model_ = &model;
+  model_ = state.phonemeReview.visible ? nullptr : &model;
   config_ = config;
   root_ = EditorSemanticTree::build(state, model, {}, false, false);
   std::vector<SemanticNode> retained;
@@ -18,7 +27,7 @@ void AccessibilityTree::rebuild(const EditorSceneState& state,
       retained.push_back(std::move(child));
     }
   }
-  virtualizedNoteCount_ = model.noteCount();
+  virtualizedNoteCount_ = state.phonemeReview.visible ? 0U : model.noteCount();
   const auto keep = std::min(config_.maximumMaterializedNotes,
                              virtualizedNoteCount_);
   for (std::size_t index = 0U; index < keep; ++index) {
@@ -215,8 +224,12 @@ core::Result<void> AccessibilityTree::dispatch(
     return core::failure(core::ErrorCode::InvalidArgument,
                          "Accessibility action handler is unavailable");
   }
+  // Focus is inspection, not activation: disabled controls deliberately expose
+  // SetFocus so assistive users can discover them and their disabled state.
+  if (!root_.enabled && action!=SemanticAction::SetFocus) return core::failure(core::ErrorCode::InvalidArgument,"Accessibility surface is disabled");
   const auto hasAction = [id, action](const SemanticNode& node,
                                       const auto& self) -> bool {
+    if (!node.enabled && action!=SemanticAction::SetFocus) return false;
     if (node.id == id) {
       return std::find(node.actions.begin(), node.actions.end(), action) !=
              node.actions.end();
@@ -230,7 +243,7 @@ core::Result<void> AccessibilityTree::dispatch(
     const auto index = noteIndexForId(id);
     if (!index.has_value()) return false;
     const auto node = noteNodeAt(*index);
-    return node.has_value() &&
+    return node.has_value() && (node->enabled || action==SemanticAction::SetFocus) &&
            std::find(node->actions.begin(), node->actions.end(), action) !=
                node->actions.end();
   }();
@@ -238,7 +251,10 @@ core::Result<void> AccessibilityTree::dispatch(
     return core::failure(core::ErrorCode::InvalidArgument,
                          "Accessibility action is not available");
   }
-  return handler(id, action);
+  // Callers may pass an ID borrowed from this tree. A handler can rebuild the
+  // surface synchronously; keep its argument alive through that callback.
+  const std::string stableId{id};
+  return handler(stableId, action);
 }
 
 }

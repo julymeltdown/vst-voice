@@ -57,6 +57,10 @@ public:
       Rect spectrogramBounds,
       std::size_t maximumWaveformColumns = 1024U,
       voicebank::SpectrogramConfig spectrogramConfig = {});
+  // Reposition an existing analysis and retarget its unit after an owning
+  // manifest move. No audio reads, decoding, waveform analysis or FFT work.
+  [[nodiscard]] core::Result<void> relayout(const voicebank::Unit& unit,
+      Rect waveformBounds, Rect spectrogramBounds);
 
   [[nodiscard]] const voicebank::Unit* unit() const noexcept { return unit_; }
   [[nodiscard]] const std::vector<WaveformColumn>& waveform() const noexcept {

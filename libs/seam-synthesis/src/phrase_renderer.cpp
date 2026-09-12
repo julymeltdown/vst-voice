@@ -1,4 +1,5 @@
 #include "seam/synthesis/phrase_renderer.hpp"
+#include "seam/synthesis/source_target_map.hpp"
 
 #include "seam/voicebank/asset_path.hpp"
 #include "seam/voicebank/wav.hpp"
@@ -29,6 +30,8 @@ core::Result<PhraseRenderResult> RawPhraseRenderer::render(
   result.placements.reserve(timing.placements.size());
 
   for (const auto& placement : timing.placements) {
+    if (placement.compressShortTransition) return core::failure<PhraseRenderResult>(core::ErrorCode::Unsupported,
+        "Legacy raw phrase rendering cannot consume short-transition maps", placement.unitId);
     const auto* unit = manifest.findUnit(placement.unitId);
     if (unit == nullptr) {
       return core::failure<PhraseRenderResult>(core::ErrorCode::NotFound,
@@ -51,6 +54,10 @@ core::Result<PhraseRenderResult> RawPhraseRenderer::render(
                                         renderParameters);
     if (!renderedUnit) {
       return core::Result<PhraseRenderResult>{renderedUnit.error()};
+    }
+    if (placement.explicitOnsetStart) {
+      const auto retimed = retimeRenderedOnset(renderedUnit.value(), placement.desiredVowelOnset - placement.destinationStart);
+      if (!retimed) return core::Result<PhraseRenderResult>{retimed.error()};
     }
     const auto alignedStart = placement.desiredVowelOnset -
                               renderedUnit.value().vowelOnsetOffset;
@@ -185,9 +192,36 @@ core::Result<PhraseRenderResult> ConcatenativePhraseRenderer::render(
         1, placement.destinationEnd - placement.destinationStart);
     auto dispatchParameters = options.renderer;
     dispatchParameters.rendererOverride = planEntry.renderer;
+    if (dispatchParameters.raw.performance || dispatchParameters.psola.performance ||
+        dispatchParameters.spectral.performance || dispatchParameters.stretch.performance) {
+      dispatchParameters.controls.require(RendererControl::Pitch);
+      dispatchParameters.controls.require(RendererControl::Dynamics);
+      dispatchParameters.controls.require(RendererControl::Attack);
+      dispatchParameters.controls.require(RendererControl::Release);
+      dispatchParameters.controls.require(RendererControl::Vibrato);
+    }
+    dispatchParameters.raw.performanceVowelFrame = placement.desiredVowelOnset;
+    dispatchParameters.psola.performanceStartFrame = placement.destinationStart;
+    dispatchParameters.spectral.performanceStartFrame = placement.destinationStart;
+    dispatchParameters.stretch.performanceStartFrame = placement.destinationStart;
+    if (dispatchParameters.stretch.performance && placement.explicitOnsetStart && !frozen->sourceAlignment &&
+        resolveRequestedRenderer(*unit, dispatchParameters.policy, planEntry.renderer) == voicebank::RendererHint::Stretch) {
+      return core::failure<PhraseRenderResult>(core::ErrorCode::Unsupported,
+          "Compiled stretch performance requires pitch-preserving explicit onset mapping", unit->id);
+    }
+    if (dispatchParameters.spectral.performance && placement.explicitOnsetStart && !frozen->sourceAlignment &&
+        resolveRequestedRenderer(*unit, dispatchParameters.policy, planEntry.renderer) == voicebank::RendererHint::SpectralClassic) {
+      return core::failure<PhraseRenderResult>(core::ErrorCode::Unsupported,
+          "Compiled spectral performance requires pitch-preserving explicit onset mapping", unit->id);
+    }
+    if (dispatchParameters.psola.performance && placement.explicitOnsetStart && !frozen->sourceAlignment &&
+        resolveRequestedRenderer(*unit, dispatchParameters.policy, planEntry.renderer) == voicebank::RendererHint::ClassicPsola) {
+      return core::failure<PhraseRenderResult>(core::ErrorCode::Unsupported,
+          "Compiled PSOLA performance requires pitch-preserving explicit onset mapping", unit->id);
+    }
     if (const auto* overrideValue =
             region.findUnitSelectionOverride(placement.startKey);
-        overrideValue != nullptr) {
+        overrideValue != nullptr && !overrideValue->unresolved) {
       if (overrideValue->loopPrint.has_value()) {
         dispatchParameters.raw.loopPrint = *overrideValue->loopPrint;
       }
@@ -237,16 +271,106 @@ core::Result<PhraseRenderResult> ConcatenativePhraseRenderer::render(
         }
       }
       auto curve = PitchCurve{std::move(uniquePoints)};
-      dispatchParameters.psola.pitchCurve = curve;
-      dispatchParameters.spectral.pitchCurve = curve;
-      dispatchParameters.stretch.pitchCurve = std::move(curve);
+      if (!dispatchParameters.raw.performance) dispatchParameters.raw.pitchCurve = curve;
+      if (!dispatchParameters.psola.performance) dispatchParameters.psola.pitchCurve = curve;
+      if (!dispatchParameters.spectral.performance) dispatchParameters.spectral.pitchCurve = curve;
+      if (!dispatchParameters.stretch.performance) dispatchParameters.stretch.pitchCurve = std::move(curve);
     }
 
-    auto renderedUnit = dispatcher.render(
-        *unit, *frozen->audio, outputSampleRate, requestedFrames,
-        placement.targetMidi, dispatchParameters, stopToken);
+    auto renderedUnit = [&]() -> core::Result<DispatchedRenderedUnit> {
+      if (placement.compressShortTransition && !frozen->sourceAlignment) {
+        const auto requested = resolveRequestedRenderer(*unit, dispatchParameters.policy, dispatchParameters.rendererOverride);
+        const auto map = compileShortUnitMarkerMap(*unit, placement.destinationStart,
+            placement.desiredVowelOnset, placement.destinationEnd, frozen->audio->sampleRate,
+            outputSampleRate, static_cast<time::SampleFrame>(frozen->audio->frameCount()));
+        if (!map) return core::Result<DispatchedRenderedUnit>{map.error()};
+        dispatchParameters.allowRawFallback = false;
+        if (requested == voicebank::RendererHint::Raw) {
+          dispatchParameters.raw.sourceMap = map.value(); dispatchParameters.raw.performanceStartFrame = placement.destinationStart;
+        } else if (requested == voicebank::RendererHint::ClassicPsola) {
+          dispatchParameters.psola.sourceMap = map.value(); dispatchParameters.psola.performanceStartFrame = placement.destinationStart;
+        } else if (requested == voicebank::RendererHint::SpectralClassic) {
+          dispatchParameters.spectral.sourceMap = map.value(); dispatchParameters.spectral.performanceStartFrame = placement.destinationStart;
+        } else {
+          dispatchParameters.stretch.sourceMap = map.value(); dispatchParameters.stretch.performanceStartFrame = placement.destinationStart;
+        }
+        auto output = dispatcher.render(*unit, *frozen->audio, outputSampleRate, requestedFrames,
+            placement.targetMidi, dispatchParameters, stopToken);
+        if (output) {
+          output.value().unit.vowelOnsetOffset = placement.desiredVowelOnset - placement.destinationStart;
+          output.value().diagnostic = requested == voicebank::RendererHint::Raw
+              ? "Short transition compressed from unit markers; Raw sustain pitch loop retained; transient pitch is resampled"
+              : "Short transition compressed from unit markers; acoustic qualification pending";
+        }
+        return output;
+      }
+      if (!frozen->sourceAlignment) return dispatcher.render(*unit, *frozen->audio, outputSampleRate,
+          requestedFrames, placement.targetMidi, dispatchParameters, stopToken);
+      const auto requested = resolveRequestedRenderer(
+          *unit, dispatchParameters.policy, dispatchParameters.rendererOverride);
+      if ((requested == voicebank::RendererHint::ClassicPsola && dispatchParameters.psola.performance) ||
+          (requested == voicebank::RendererHint::SpectralClassic && dispatchParameters.spectral.performance) ||
+          (requested == voicebank::RendererHint::Stretch && dispatchParameters.stretch.performance)) {
+        if (frozen->audio->sampleRate != manifest.expectedSampleRate) {
+          return core::failure<DispatchedRenderedUnit>(core::ErrorCode::Conflict, "Aligned classical source rate differs from its bank", unit->id);
+        }
+        const auto map = compileSourceTargetMap(*frozen->sourceAlignment, *unit, placement,
+            frozen->verifiedAudioSha256, static_cast<time::SampleFrame>(frozen->audio->frameCount()));
+        if (!map) return core::Result<DispatchedRenderedUnit>{map.error()};
+        if (requested == voicebank::RendererHint::ClassicPsola) dispatchParameters.psola.sourceMap = map.value();
+        else if (requested == voicebank::RendererHint::SpectralClassic) dispatchParameters.spectral.sourceMap = map.value();
+        else dispatchParameters.stretch.sourceMap = map.value();
+        auto output = dispatcher.render(*unit, *frozen->audio, outputSampleRate,
+            requestedFrames, placement.targetMidi, dispatchParameters, stopToken);
+        if (output) {
+          output.value().unit.vowelOnsetOffset = placement.desiredVowelOnset - placement.destinationStart;
+          output.value().diagnostic = requested == voicebank::RendererHint::ClassicPsola ?
+              "Source-aligned PSOLA sustain with compiled performance; transient qualification pending" :
+              (requested == voicebank::RendererHint::SpectralClassic ?
+              "Source-aligned spectral sustain with compiled performance; transient qualification pending" :
+              "Source-aligned granular sustain with compiled performance; transient qualification pending");
+        }
+        return output;
+      }
+      if (requested != voicebank::RendererHint::Raw ||
+          !region.pitchAutomation.points().empty() || dispatchParameters.raw.loopPrint != 1.0F ||
+          dispatchParameters.raw.additionalGainDb != 0.0F ||
+          std::any_of(region.performance.accepted.begin(), region.performance.accepted.end(),
+              [](const auto& selection) { return selection.channel == domain::PerformanceChannel::Pitch; })) {
+        return core::failure<DispatchedRenderedUnit>(core::ErrorCode::Unsupported,
+            "Source-aligned rendering currently requires raw selection without pitch automation or raw overrides", unit->id);
+      }
+      for (const auto& target : placement.phonemeTargets) {
+        const auto* note = region.findNote(target.key.noteId);
+        if (!note || note->midiKey != placement.targetMidi || note->vibrato.enabled) {
+          return core::failure<DispatchedRenderedUnit>(core::ErrorCode::Unsupported,
+              "Source-aligned raw rendering cannot follow pitch changes within a unit", unit->id);
+        }
+      }
+      const auto& audio = *frozen->audio;
+      if ((audio.channels != 1U && audio.channels != 2U) || audio.interleaved.size() % audio.channels != 0U ||
+          audio.frameCount() > 32ULL * 1024ULL * 1024ULL || audio.sampleRate != manifest.expectedSampleRate) {
+        return core::failure<DispatchedRenderedUnit>(core::ErrorCode::InvalidArgument, "Aligned source audio format is invalid", unit->id);
+      }
+      const auto mono = audio.monoMix();
+      auto mapped = renderAlignedRawUnit(mono, *frozen->sourceAlignment, *unit, placement, frozen->verifiedAudioSha256, stopToken);
+      if (!mapped) return core::Result<DispatchedRenderedUnit>{mapped.error()};
+      if (dispatchParameters.raw.performance) {
+        const auto gain = applyCompiledPerformanceGain(mapped.value().samples, *dispatchParameters.raw.performance, mapped.value().startFrame, stopToken);
+        if (!gain) return core::Result<DispatchedRenderedUnit>{gain.error()};
+      }
+      return DispatchedRenderedUnit{
+          .unit = {.unitId = unit->id, .samples = std::move(mapped.value().samples),
+              .vowelOnsetOffset = placement.desiredVowelOnset - mapped.value().startFrame},
+          .requested = voicebank::RendererHint::Raw, .actual = voicebank::RendererHint::Raw,
+          .usedFallback = false, .diagnostic = "Source-aligned raw resampling; not pitch-preserving"};
+    }();
     if (!renderedUnit) {
       return core::Result<PhraseRenderResult>{renderedUnit.error()};
+    }
+    if (placement.explicitOnsetStart && !frozen->sourceAlignment) {
+      const auto retimed = retimeRenderedOnset(renderedUnit.value().unit, placement.desiredVowelOnset - placement.destinationStart);
+      if (!retimed) return core::Result<PhraseRenderResult>{retimed.error()};
     }
     const auto alignedStart = placement.desiredVowelOnset -
                               renderedUnit.value().unit.vowelOnsetOffset;
@@ -259,7 +383,7 @@ core::Result<PhraseRenderResult> ConcatenativePhraseRenderer::render(
         .envelopeBlend = 0.0F,
     };
     if (const auto* overrideValue = region.findSeamOverride(placement.startKey);
-        overrideValue != nullptr) {
+        overrideValue != nullptr && !overrideValue->unresolved) {
       boundary.seamAmount = overrideValue->seamAmount.value_or(boundary.seamAmount);
       boundary.curve = overrideValue->curve;
       if (overrideValue->overlap.has_value()) {

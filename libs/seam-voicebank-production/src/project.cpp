@@ -1,9 +1,89 @@
 #include "seam/voicebank_production/project.hpp"
+#include "seam/voicebank_production/source_assessment.hpp"
+#include "seam/core/sha256.hpp"
 
 #include <algorithm>
 #include <array>
 
 namespace seam::voicebank_production {
+namespace {
+bool digest(std::string_view value) {
+  return value.size() == 64U && std::all_of(value.begin(), value.end(), [](char c) {
+    return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f');
+  });
+}
+core::Result<void> executionPolicy(const SourceStrategyAssessment& strategy) {
+  if (strategy.rights != Feasibility::Pass || !strategy.permissions.sourceUse || !strategy.permissions.transformation ||
+      strategy.licenseLocator.empty() || !digest(strategy.licenseSha256))
+    return core::failure(core::ErrorCode::Conflict, "Source execution requires recorded source-use and transformation authorization", strategy.id);
+  return core::success();
+}
+core::Result<const TakeSourceBinding*> sourceForTake(const VoicebankProductionProject& project, std::string_view takeId) {
+  const auto take = std::find_if(project.takes.begin(), project.takes.end(), [&](const auto& value) { return value.takeId == takeId; });
+  if (take == project.takes.end()) return core::failure<const TakeSourceBinding*>(core::ErrorCode::NotFound, "Source-owned take is missing");
+  if (take->sourceBindingId.empty()) return core::failure<const TakeSourceBinding*>(core::ErrorCode::Unsupported,
+      "Legacy or unattributed take requires explicit source attribution before execution or qualification", take->takeId);
+  const auto source = std::find_if(project.sourceBindings.begin(), project.sourceBindings.end(),
+      [&](const auto& value) { return value.id == take->sourceBindingId; });
+  if (source == project.sourceBindings.end() || source->takeId != take->takeId || source->rawAssetSha256 != take->rawAssetSha256)
+    return core::failure<const TakeSourceBinding*>(core::ErrorCode::Conflict, "Take source binding differs from its immutable input", take->takeId);
+  return &*source;
+}
+}  // namespace
+
+core::Result<void> requireSelectedSourceExecution(const VoicebankProductionProject& project) {
+  const auto strategy = std::find_if(project.sourceStrategies.begin(), project.sourceStrategies.end(),
+      [&](const auto& value) { return value.id == project.selectedSourceStrategyId; });
+  if (strategy == project.sourceStrategies.end())
+    return core::failure(core::ErrorCode::Conflict, "Select an authorized source before importing or generating audio");
+  const auto policy = executionPolicy(*strategy);
+  if (!policy) return policy;
+  const auto evidence = core::sha256File(strategy->licenseLocator, 4ULL * 1024ULL * 1024ULL);
+  if (!evidence || evidence.value() != strategy->licenseSha256)
+    return core::failure(core::ErrorCode::Conflict, "Selected source execution evidence is missing or changed", strategy->id);
+  return core::success();
+}
+
+core::Result<void> requireTakeSourceExecution(const VoicebankProductionProject& project, std::string_view takeId) {
+  const auto source = sourceForTake(project, takeId);
+  if (!source) return core::Result<void>{source.error()};
+  const auto captured = executionPolicy(source.value()->strategy);
+  if (!captured) return captured;
+  const auto current = std::find_if(project.sourceStrategies.begin(), project.sourceStrategies.end(),
+      [&](const auto& value) { return value.id == source.value()->strategy.id; });
+  if (current == project.sourceStrategies.end() || current->kind != source.value()->strategy.kind ||
+      current->licenseSha256 != source.value()->strategy.licenseSha256)
+    return core::failure(core::ErrorCode::Conflict, "Current source policy no longer identifies the take's captured source", std::string{takeId});
+  return executionPolicy(*current);
+}
+
+core::Result<void> requireTakeSourceQualification(const VoicebankProductionProject& project, std::string_view takeId) {
+  const auto executable = requireTakeSourceExecution(project, takeId);
+  if (!executable) return executable;
+  const auto source = sourceForTake(project, takeId);
+  if (!source) return core::Result<void>{source.error()};
+  const auto current = std::find_if(project.sourceStrategies.begin(), project.sourceStrategies.end(),
+      [&](const auto& value) { return value.id == source.value()->strategy.id; });
+  if (!source.value()->strategy.permissions.singingBankRedistribution || !source.value()->strategy.permissions.commercialRenders ||
+      current->coverage != Feasibility::Pass || current->listening != Feasibility::Pass ||
+      !current->permissions.singingBankRedistribution || !current->permissions.commercialRenders)
+    return core::failure(core::ErrorCode::Conflict, "Take source is executable but lacks complete candidate qualification", std::string{takeId});
+  return requireCurrentSourceQualityAssessment(project, source.value()->strategy.id);
+}
+
+void invalidateProductionQualification(VoicebankProductionProject& project) noexcept {
+  if (project.lifecycle == ProductionLifecycle::Qualified) project.lifecycle = ProductionLifecycle::Experimental;
+}
+
+std::string toString(ProductionLifecycle value) {
+  switch (value) {
+    case ProductionLifecycle::LegacyUnclassified: return "LEGACY_UNCLASSIFIED";
+    case ProductionLifecycle::Draft: return "DRAFT";
+    case ProductionLifecycle::Experimental: return "EXPERIMENTAL";
+    case ProductionLifecycle::Qualified: return "QUALIFIED";
+  }
+  return {};
+}
 
 ProductionQueueSummary summarizeQueues(
     const VoicebankProductionProject& project) noexcept {
@@ -39,9 +119,9 @@ bool isProductionUtcTimestamp(std::string_view value) noexcept {
 }
 
 bool isProductionJournalAction(std::string_view value) noexcept {
-  return value == "create" || value == "import" || value == "transform" ||
+  return value == "source-register" || value == "source-quality-assessment" || value == "create" || value == "import" || value == "transform" ||
          value == "marker" || value == "retake" || value == "review" ||
-         value == "save" || value == "candidate-export";
+         value == "save" || value == "candidate-export" || value == "import-procedural" || value == "import-generated-batch";
 }
 
 bool selectedStrategyReady(
@@ -52,13 +132,18 @@ bool selectedStrategyReady(
         return strategy.id == project.selectedSourceStrategyId;
       });
   if (found == project.sourceStrategies.end()) return false;
-  return found->rights == Feasibility::Pass &&
+  const bool ready = found->rights == Feasibility::Pass &&
          found->coverage == Feasibility::Pass &&
          found->listening == Feasibility::Pass &&
          found->permissions.sourceUse && found->permissions.transformation &&
          found->permissions.singingBankRedistribution &&
          found->permissions.commercialRenders &&
          !found->licenseLocator.empty() && !found->licenseSha256.empty();
+  if (!ready) return false;
+  // Legacy declarations remain unchanged. Once an assessment exists, UI and
+  // legacy export consumers must not call stale assessed material ready.
+  try { return static_cast<bool>(requireCurrentSourceQualityAssessment(project,found->id)); }
+  catch (...) { return false; }
 }
 
 std::string toString(SourceStrategyKind value) {

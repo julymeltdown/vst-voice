@@ -1,6 +1,8 @@
 #include "seam/formats/project_json.hpp"
 
 #include "seam/core/file_io.hpp"
+#include "project_performance_json.hpp"
+#include "project_region_performance_json.hpp"
 
 #include <charconv>
 #include <cmath>
@@ -99,6 +101,7 @@ core::Result<const JsonValue*> required(const JsonValue& object,
 
 bool isString(const JsonValue& value) { return value.isString(); }
 bool isNumber(const JsonValue& value) { return value.isNumber(); }
+bool isInteger(const JsonValue& value) { return value.isInteger(); }
 bool isArray(const JsonValue& value) { return value.isArray(); }
 bool isObject(const JsonValue& value) { return value.isObject(); }
 
@@ -466,7 +469,11 @@ JsonValue encodeProject(const domain::Project& project) {
                           {"durationTick", JsonValue{note.durationTick.value()}},
                           {"midiKey", JsonValue{static_cast<std::int64_t>(note.midiKey)}},
                           {"lyricId", idValue(note.lyricTokenId)},
-                          {"articulation", JsonValue{articulationName(note.articulation)}}};
+                          {"articulation", JsonValue{articulationName(note.articulation)}},
+                          {"vibrato", detail::encodeVibrato(note.vibrato)},
+                          {"phoneticHint", note.phoneticHint.has_value()
+                                               ? JsonValue{*note.phoneticHint}
+                                               : JsonValue{nullptr}}};
         if (note.slurGroup.has_value()) {
           noteObject.emplace("slurGroup", idValue(*note.slurGroup));
         }
@@ -477,7 +484,10 @@ JsonValue encodeProject(const domain::Project& project) {
         Object overrideObject{{"noteId", idValue(overrideValue.key.noteId)},
                               {"ordinal", JsonValue{static_cast<std::int64_t>(
                                   overrideValue.key.ordinal)}},
-                              {"locked", JsonValue{overrideValue.locked}}};
+                              {"locked", JsonValue{overrideValue.locked}},
+                              {"unresolved", JsonValue{overrideValue.unresolved}},
+                              {"sourceContextId", overrideValue.sourceContextId
+                                  ? JsonValue{*overrideValue.sourceContextId} : JsonValue{nullptr}}};
         if (overrideValue.symbol.has_value()) {
           overrideObject.emplace("symbol", JsonValue{*overrideValue.symbol});
         }
@@ -503,6 +513,7 @@ JsonValue encodeProject(const domain::Project& project) {
             {"renderer", JsonValue{std::string(
                 domain::unitRendererKindName(overrideValue.renderer))}},
             {"locked", JsonValue{overrideValue.locked}},
+            {"unresolved", JsonValue{overrideValue.unresolved}},
         };
         if (overrideValue.loopPrint.has_value()) {
           overrideObject.emplace("loopPrint", JsonValue{*overrideValue.loopPrint});
@@ -521,6 +532,7 @@ JsonValue encodeProject(const domain::Project& project) {
                 overrideValue.incomingStartKey.ordinal)}},
             {"curve", JsonValue{std::string(domain::seamCurveName(overrideValue.curve))}},
             {"locked", JsonValue{overrideValue.locked}},
+            {"unresolved", JsonValue{overrideValue.unresolved}},
         };
         if (overrideValue.seamAmount.has_value()) {
           seamObject.emplace("seamAmount", JsonValue{static_cast<double>(
@@ -558,7 +570,9 @@ JsonValue encodeProject(const domain::Project& project) {
                                   {"unitSelectionOverrides",
                                    JsonValue{std::move(unitSelectionOverrides)}},
                                   {"seamOverrides", JsonValue{std::move(seamOverrides)}},
-                                  {"pitchAutomation", JsonValue{std::move(pitchAutomation)}}});
+                                  {"pitchAutomation", JsonValue{std::move(pitchAutomation)}},
+                                  {"dynamicsAutomation", detail::encodeDynamics(region.dynamicsAutomation)},
+                                  {"performance", detail::encodeRegionPerformance(region.performance)}});
     }
     vocalTracks.emplace_back(Object{
         {"id", idValue(track.id)},
@@ -573,6 +587,13 @@ JsonValue encodeProject(const domain::Project& project) {
         {"muted", JsonValue{track.muted}},
         {"solo", JsonValue{track.solo}},
         {"outputRoute", encodeTrackOutputRoute(track.outputRoute)},
+        {"styleSelection", detail::encodeStyleSelection(track.styleSelection)},
+        {"proceduralRecipe", track.proceduralRecipe ? JsonValue{Object{
+            {"id", JsonValue{track.proceduralRecipe->resource.id}},
+            {"version", JsonValue{track.proceduralRecipe->resource.version}},
+            {"contentHash", JsonValue{track.proceduralRecipe->resource.contentHash}},
+            {"path", JsonValue{track.proceduralRecipe->path}},
+            {"style", JsonValue{track.proceduralRecipe->style}}}} : JsonValue{}},
         {"regions", JsonValue{std::move(regions)}}});
   }
 
@@ -639,7 +660,7 @@ core::Result<domain::Project> decodeProject(const JsonValue& root) {
                                           "Project JSON root must be an object");
   }
   const auto format = required(root, "formatId", isString, "a string");
-  const auto schema = required(root, "schemaVersion", isNumber, "a number");
+  const auto schema = required(root, "schemaVersion", isInteger, "an integer");
   const auto projectIdValue = required(root, "projectId", isString, "a string");
   const auto name = required(root, "name", isString, "a string");
   const auto ppqValue = required(root, "ppq", isNumber, "a number");
@@ -745,8 +766,9 @@ core::Result<domain::Project> decodeProject(const JsonValue& root) {
                             : 0}
           : time::Tick{0};
   if (schemaVersion >= 7) {
+    const auto requiredLaneCount = schemaVersion == 7 ? 4U : domain::kTechnicalLaneCount;
     if (technicalLanes == nullptr || !technicalLanes->isArray() ||
-        technicalLanes->asArray().size() != project.settings().technicalLanes.size()) {
+        technicalLanes->asArray().size() != requiredLaneCount) {
       return core::failure<domain::Project>(core::ErrorCode::ParseError,
                                             "Technical lane settings are invalid");
     }
@@ -796,10 +818,12 @@ core::Result<domain::Project> decodeProject(const JsonValue& root) {
     const auto* outputRoute = trackValue.find("outputRoute");
     const auto* regions = trackValue.find("regions");
     if (idJson == nullptr || trackName == nullptr || voicebank == nullptr || character == nullptr ||
-        gainDb == nullptr || pan == nullptr || muted == nullptr || solo == nullptr || regions == nullptr ||
+        gainDb == nullptr || muted == nullptr || regions == nullptr ||
+        (schemaVersion >= 4 && (pan == nullptr || solo == nullptr)) ||
         !idJson->isString() || !trackName->isString() || !voicebank->isObject() ||
-        !character->isObject() || !gainDb->isNumber() || !pan->isNumber() || !muted->isBool() ||
-        !solo->isBool() || !regions->isArray()) {
+        !character->isObject() || !gainDb->isNumber() || !muted->isBool() ||
+        (pan != nullptr && !pan->isNumber()) || (solo != nullptr && !solo->isBool()) ||
+        !regions->isArray()) {
       return core::failure<domain::Project>(core::ErrorCode::ParseError,
                                             "Vocal track fields are invalid");
     }
@@ -824,15 +848,38 @@ core::Result<domain::Project> decodeProject(const JsonValue& root) {
         .character = {characterId->asString(), characterVersion->asString()},
         .regions = {},
         .gainDb = static_cast<float>(gainDb->asNumber()),
-        .pan = static_cast<float>(pan->asNumber()),
+        .pan = pan == nullptr ? 0.0F : static_cast<float>(pan->asNumber()),
         .muted = muted->asBool(),
-        .solo = solo->asBool(),
+        .solo = solo == nullptr ? false : solo->asBool(),
         .outputRoute = domain::TrackOutputRoute{
             .bus = project.routing().masterBus,
             .matrix = domain::RoutingMatrix::monoToStereo(
-                static_cast<float>(pan->asNumber())),
+                pan == nullptr ? 0.0F : static_cast<float>(pan->asNumber())),
         },
     };
+    const auto* recipe = trackValue.find("proceduralRecipe");
+    if (schemaVersion >= 9 && recipe == nullptr) return core::failure<domain::Project>(
+        core::ErrorCode::ParseError, "Schema 9 track is missing proceduralRecipe");
+    if (recipe && !recipe->isNull()) {
+      if (schemaVersion < 9 || !recipe->isObject() || recipe->asObject().size() != 5U) return core::failure<domain::Project>(
+          core::ErrorCode::ParseError, "Procedural recipe reference has an invalid schema or shape");
+      for (const auto* key : {"id", "version", "contentHash", "path", "style"}) {
+        if (!recipe->find(key) || !recipe->find(key)->isString()) return core::failure<domain::Project>(
+            core::ErrorCode::ParseError, "Procedural recipe reference field is missing or invalid");
+      }
+      track.proceduralRecipe = domain::ProceduralRecipeReference{
+          {domain::SingerResourceKind::Procedural, recipe->find("id")->asString(),
+           recipe->find("version")->asString(), recipe->find("contentHash")->asString()},
+          recipe->find("path")->asString(), recipe->find("style")->asString()};
+    }
+    if (schemaVersion >= 8) {
+      auto selection = detail::decodeStyleSelection(trackValue.find("styleSelection"));
+      if (!selection) return core::Result<domain::Project>{selection.error()};
+      track.styleSelection = std::move(selection).value();
+    } else {
+      track.styleSelection.origin = domain::VoiceStyleOrigin::LegacyNeedsExactBankResolution;
+      track.styleSelection.styleId.clear();
+    }
     if (schemaVersion >= 4) {
       if (outputRoute == nullptr) {
         return core::failure<domain::Project>(core::ErrorCode::ParseError,
@@ -940,6 +987,14 @@ core::Result<domain::Project> decodeProject(const JsonValue& root) {
           if (!parsedSlur) return core::Result<domain::Project>{parsedSlur.error()};
           note.slurGroup = parsedSlur.value();
         }
+        if (schemaVersion >= 8) {
+          auto vibrato = detail::decodeVibrato(noteValue.find("vibrato"));
+          auto hint = detail::decodePhoneticHint(noteValue.find("phoneticHint"));
+          if (!vibrato) return core::Result<domain::Project>{vibrato.error()};
+          if (!hint) return core::Result<domain::Project>{hint.error()};
+          note.vibrato = vibrato.value();
+          note.phoneticHint = std::move(hint).value();
+        }
         region.notes.push_back(std::move(note));
       }
       if (phonemeOverrides != nullptr) {
@@ -976,7 +1031,22 @@ core::Result<domain::Project> decodeProject(const JsonValue& root) {
               .symbol = std::nullopt,
               .timing = {},
               .locked = locked->asBool(),
+              .unresolved = schemaVersion < 8,
           };
+          if (schemaVersion >= 8) {
+            const auto* unresolved = overrideJson.find("unresolved");
+            if (unresolved == nullptr || !unresolved->isBool()) {
+              return core::failure<domain::Project>(core::ErrorCode::ParseError,
+                  "Schema 8 phoneme override requires boolean unresolved state");
+            }
+            overrideValue.unresolved = unresolved->asBool();
+            const auto* context = overrideJson.find("sourceContextId");
+            if (!context || (!context->isNull() && !context->isString())) {
+              return core::failure<domain::Project>(core::ErrorCode::ParseError,
+                  "Schema 8 phoneme override requires nullable sourceContextId");
+            }
+            if (context->isString()) overrideValue.sourceContextId = context->asString();
+          }
           if (const auto* symbol = overrideJson.find("symbol"); symbol != nullptr) {
             if (!symbol->isString()) {
               return core::failure<domain::Project>(core::ErrorCode::ParseError,
@@ -1069,6 +1139,15 @@ core::Result<domain::Project> decodeProject(const JsonValue& root) {
             return core::Result<domain::Project>{
                 parsedSourcePitchResidual.error()};
           }
+          bool unresolved = schemaVersion < 8;
+          if (schemaVersion >= 8) {
+            const auto* state = overrideJson.find("unresolved");
+            if (!state || !state->isBool()) {
+              return core::failure<domain::Project>(core::ErrorCode::ParseError,
+                  "Schema 8 unit override requires boolean unresolved state");
+            }
+            unresolved = state->asBool();
+          }
           region.unitSelectionOverrides.push_back(domain::UnitSelectionOverride{
               .startKey = domain::PhonemeKey{
                   parsedNoteId.value(), static_cast<std::uint16_t>(ordinalValue)},
@@ -1080,6 +1159,7 @@ core::Result<domain::Project> decodeProject(const JsonValue& root) {
               .loopPrint = parsedLoopPrint.value(),
               .sourcePitchResidual = parsedSourcePitchResidual.value(),
               .locked = locked->asBool(),
+              .unresolved = unresolved,
           });
         }
       } else if (schemaVersion >= 3) {
@@ -1132,7 +1212,16 @@ core::Result<domain::Project> decodeProject(const JsonValue& root) {
               .envelopeBlend = std::nullopt,
               .curve = domain::parseSeamCurve(curve->asString()),
               .locked = locked->asBool(),
+              .unresolved = schemaVersion < 8,
           };
+          if (schemaVersion >= 8) {
+            const auto* state = overrideJson.find("unresolved");
+            if (!state || !state->isBool()) {
+              return core::failure<domain::Project>(core::ErrorCode::ParseError,
+                  "Schema 8 seam override requires boolean unresolved state");
+            }
+            value.unresolved = state->asBool();
+          }
           if (seamAmount != nullptr) {
             value.seamAmount = static_cast<float>(seamAmount->asNumber());
           }
@@ -1180,6 +1269,14 @@ core::Result<domain::Project> decodeProject(const JsonValue& root) {
       } else if (schemaVersion >= 3) {
         return core::failure<domain::Project>(core::ErrorCode::ParseError,
             "Schema 3 region is missing pitchAutomation");
+      }
+      if (schemaVersion >= 8) {
+        auto dynamics = detail::decodeDynamics(regionValue.find("dynamicsAutomation"));
+        if (!dynamics) return core::Result<domain::Project>{dynamics.error()};
+        region.dynamicsAutomation = std::move(dynamics).value();
+        auto performance = detail::decodeRegionPerformance(regionValue.find("performance"));
+        if (!performance) return core::Result<domain::Project>{performance.error()};
+        region.performance = std::move(performance).value();
       }
       region.sortNotes();
       track.regions.push_back(std::move(region));

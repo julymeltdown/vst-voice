@@ -7,6 +7,7 @@
 @property(nonatomic, assign) seam::platform::IApplicationCommandDispatcher* dispatcher;
 - (void)newProject:(id)sender;
 - (void)openProject:(id)sender;
+- (void)openExternalProject:(id)sender;
 - (void)recoverLatestAutosave:(id)sender;
 - (void)recoverAutosave:(id)sender;
 - (void)openRecentProject:(id)sender;
@@ -15,15 +16,35 @@
 - (void)importAudio:(id)sender;
 - (void)installVoicebank:(id)sender;
 - (void)relinkVoicebank:(id)sender;
+- (void)selectProceduralRecipe:(id)sender;
+- (void)relinkProceduralRecipe:(id)sender;
+- (void)bakeProceduralCandidates:(id)sender;
 - (void)relinkBackingAudio:(id)sender;
 - (void)openAudioSettings:(id)sender;
 - (void)selectVoicebank:(id)sender;
 - (void)openDocumentation:(id)sender;
 - (void)exportAudio:(id)sender;
+- (void)exportScore:(id)sender;
 - (void)exportSet:(id)sender;
 - (void)quitApplication:(id)sender;
 - (void)undoAction:(id)sender;
 - (void)redoAction:(id)sender;
+- (void)editPronunciationHint:(id)sender;
+- (void)findReplaceLyrics:(id)sender;
+- (void)findNotes:(id)sender;
+- (void)findActiveDiagnostics:(id)sender;
+- (void)findNextNote:(id)sender;
+- (void)findPreviousNote:(id)sender;
+- (void)clearSelectedVibrato:(id)sender;
+- (void)editSelectedVibrato:(id)sender;
+- (void)editRegionDynamics:(id)sender;
+- (void)editTrackStyle:(id)sender;
+- (void)editJapaneseReading:(id)sender;
+- (void)removeSelectedOverlaps:(id)sender;
+- (void)closeSelectedGaps:(id)sender;
+- (void)autoLegatoSelectedNotes:(id)sender;
+- (void)clearRegionDynamicsCurve:(id)sender;
+- (void)editCommand:(seam::platform::ApplicationCommand)command title:(NSString*)title;
 - (void)togglePlayback:(id)sender;
 - (void)stopPlayback:(id)sender;
 - (void)toggleLoop:(id)sender;
@@ -35,6 +56,7 @@
 }
 - (void)newProject:(id)sender { (void)sender; [self send:seam::platform::ApplicationCommand::NewProject]; }
 - (void)openProject:(id)sender { (void)sender; [self send:seam::platform::ApplicationCommand::OpenProject]; }
+- (void)openExternalProject:(id)sender { (void)sender; [self send:seam::platform::ApplicationCommand::OpenExternalProject]; }
 - (void)recoverLatestAutosave:(id)sender { (void)sender; [self send:seam::platform::ApplicationCommand::RecoverLatestAutosave]; }
 - (void)recoverAutosave:(id)sender {
   if (_dispatcher == nullptr || ![sender isKindOfClass:[NSMenuItem class]]) return;
@@ -61,6 +83,9 @@
 - (void)importAudio:(id)sender { (void)sender; [self send:seam::platform::ApplicationCommand::ImportAudio]; }
 - (void)installVoicebank:(id)sender { (void)sender; [self send:seam::platform::ApplicationCommand::InstallVoicebank]; }
 - (void)relinkVoicebank:(id)sender { (void)sender; [self send:seam::platform::ApplicationCommand::RelinkVoicebank]; }
+- (void)selectProceduralRecipe:(id)sender { (void)sender; [self send:seam::platform::ApplicationCommand::SelectProceduralRecipe]; }
+- (void)relinkProceduralRecipe:(id)sender { (void)sender; [self send:seam::platform::ApplicationCommand::RelinkProceduralRecipe]; }
+- (void)bakeProceduralCandidates:(id)sender { (void)sender; [self send:seam::platform::ApplicationCommand::BakeProceduralCandidates]; }
 - (void)relinkBackingAudio:(id)sender { (void)sender; [self send:seam::platform::ApplicationCommand::RelinkBackingAudio]; }
 - (void)openAudioSettings:(id)sender { (void)sender; [self send:seam::platform::ApplicationCommand::OpenAudioSettings]; }
 - (void)selectVoicebank:(id)sender {
@@ -75,10 +100,85 @@
       identifier.UTF8String, version.UTF8String, contentHash.UTF8String));
 }
 - (void)exportAudio:(id)sender { (void)sender; [self send:seam::platform::ApplicationCommand::ExportAudio]; }
+- (void)exportScore:(id)sender { (void)sender; [self send:seam::platform::ApplicationCommand::ExportScore]; }
 - (void)exportSet:(id)sender { (void)sender; [self send:seam::platform::ApplicationCommand::ExportSet]; }
 - (void)quitApplication:(id)sender { (void)sender; [self send:seam::platform::ApplicationCommand::Quit]; }
 - (void)undoAction:(id)sender { (void)sender; [self send:seam::platform::ApplicationCommand::Undo]; }
 - (void)redoAction:(id)sender { (void)sender; [self send:seam::platform::ApplicationCommand::Redo]; }
+- (void)editPronunciationHint:(id)sender {
+  (void)sender;
+  [self editCommand:seam::platform::ApplicationCommand::EditPronunciationHint title:@"Cannot edit pronunciation hint"];
+}
+- (void)findReplaceLyrics:(id)sender {
+  (void)sender;
+  [self editCommand:seam::platform::ApplicationCommand::FindReplaceLyrics title:@"Cannot find and replace lyrics"];
+}
+- (void)findNotes:(id)sender {
+  (void)sender;
+  [self editCommand:seam::platform::ApplicationCommand::FindNotes title:@"Cannot find notes"];
+}
+- (void)findActiveDiagnostics:(id)sender {
+  (void)sender;
+  [self editCommand:seam::platform::ApplicationCommand::FindActiveDiagnostics title:@"Cannot find active diagnostics"];
+}
+- (void)findNextNote:(id)sender {
+  (void)sender;
+  [self editCommand:seam::platform::ApplicationCommand::FindNextNote title:@"Cannot find next note"];
+}
+- (void)findPreviousNote:(id)sender {
+  (void)sender;
+  [self editCommand:seam::platform::ApplicationCommand::FindPreviousNote title:@"Cannot find previous note"];
+}
+- (void)clearSelectedVibrato:(id)sender {
+  (void)sender;
+  [self editCommand:seam::platform::ApplicationCommand::ClearSelectedVibrato title:@"Cannot clear selected vibrato"];
+}
+- (void)editRegionDynamics:(id)sender {
+  (void)sender;
+  [self editCommand:seam::platform::ApplicationCommand::EditRegionDynamics title:@"Cannot edit region dynamics"];
+}
+- (void)editTrackStyle:(id)sender {
+  (void)sender;
+  [self editCommand:seam::platform::ApplicationCommand::EditTrackStyle title:@"Cannot choose track style"];
+}
+- (void)editJapaneseReading:(id)sender {
+  (void)sender;
+  [self editCommand:seam::platform::ApplicationCommand::EditJapaneseReading title:@"Cannot resolve Japanese reading"];
+}
+- (void)editSelectedVibrato:(id)sender {
+  (void)sender;
+  [self editCommand:seam::platform::ApplicationCommand::EditSelectedVibrato title:@"Cannot edit selected vibrato"];
+}
+- (void)removeSelectedOverlaps:(id)sender {
+  (void)sender;
+  [self editCommand:seam::platform::ApplicationCommand::RemoveSelectedOverlaps title:@"Cannot remove selected overlaps"];
+}
+- (void)closeSelectedGaps:(id)sender {
+  (void)sender;
+  [self editCommand:seam::platform::ApplicationCommand::CloseSelectedGaps title:@"Cannot close selected gaps"];
+}
+- (void)autoLegatoSelectedNotes:(id)sender {
+  (void)sender;
+  [self editCommand:seam::platform::ApplicationCommand::AutoLegatoSelectedNotes title:@"Cannot apply auto legato"];
+}
+- (void)clearRegionDynamicsCurve:(id)sender {
+  (void)sender;
+  [self editCommand:seam::platform::ApplicationCommand::ClearRegionDynamicsCurve title:@"Cannot clear region dynamics curve"];
+}
+- (void)editCommand:(seam::platform::ApplicationCommand)command title:(NSString*)title {
+  if (_dispatcher == nullptr) return;
+  const auto result = _dispatcher->dispatch(command);
+  if (result) return;
+  auto* alert = [[NSAlert alloc] init];
+  alert.messageText = title;
+  const auto& message = result.error().message;
+  NSString* detail = [[NSString alloc] initWithBytes:message.data()
+      length:message.size() encoding:NSUTF8StringEncoding];
+  alert.informativeText = detail != nil ? detail : @"The selected note cannot be edited.";
+  [alert addButtonWithTitle:@"OK"];
+  if (NSApp.keyWindow != nil) [alert beginSheetModalForWindow:NSApp.keyWindow completionHandler:nil];
+  else [alert runModal];
+}
 - (void)togglePlayback:(id)sender { (void)sender; [self send:seam::platform::ApplicationCommand::TogglePlayback]; }
 - (void)stopPlayback:(id)sender { (void)sender; [self send:seam::platform::ApplicationCommand::StopPlayback]; }
 - (void)toggleLoop:(id)sender { (void)sender; [self send:seam::platform::ApplicationCommand::ToggleLoop]; }
@@ -134,6 +234,8 @@ public:
                             NSEventModifierFlagCommand, target_)];
     [fileMenu_ addItem:item(@"Open…", @selector(openProject:), @"o",
                             NSEventModifierFlagCommand, target_)];
+    [fileMenu_ addItem:item(@"Open USTX or MIDI…", @selector(openExternalProject:), @"o",
+                            NSEventModifierFlagCommand | NSEventModifierFlagShift, target_)];
     recentHolder_ = [[NSMenuItem alloc] initWithTitle:@"Open Recent"
                                                 action:nil keyEquivalent:@""];
     recentMenu_ = [[NSMenu alloc] initWithTitle:@"Open Recent"];
@@ -160,7 +262,12 @@ public:
                             0, target_)];
     [fileMenu_ addItem:item(@"Install Voicebank…", @selector(installVoicebank:), @"",
                             0, target_)];
+    [fileMenu_ addItem:item(@"Select Procedural Recipe…", @selector(selectProceduralRecipe:), @"", 0, target_)];
+    [fileMenu_ addItem:item(@"Relink Procedural Recipe…", @selector(relinkProceduralRecipe:), @"", 0, target_)];
+    [fileMenu_ addItem:item(@"Bake Unapproved Procedural Candidates…", @selector(bakeProceduralCandidates:), @"", 0, target_)];
     [fileMenu_ addItem:item(@"Export Audio…", @selector(exportAudio:), @"e",
+                            0, target_)];
+    [fileMenu_ addItem:item(@"Export Score…", @selector(exportScore:), @"",
                             0, target_)];
     [fileMenu_ addItem:item(@"Export Set…", @selector(exportSet:), @"e",
                             NSEventModifierFlagCommand, target_)];
@@ -175,6 +282,30 @@ public:
     [edit addItem:item(@"Redo", @selector(redoAction:), @"z",
                        NSEventModifierFlagCommand | NSEventModifierFlagShift,
                        target_)];
+    [edit addItem:[NSMenuItem separatorItem]];
+    [edit addItem:item(@"Edit Japanese Pronunciation Hint…", @selector(editPronunciationHint:), @"",
+                       0, target_)];
+    [edit addItem:item(@"Find Notes…", @selector(findNotes:), @"f", NSEventModifierFlagCommand, target_)];
+    [edit addItem:item(@"Find Active Diagnostics…", @selector(findActiveDiagnostics:), @"", 0, target_)];
+    [edit addItem:item(@"Find Next Note", @selector(findNextNote:), @"g", NSEventModifierFlagCommand, target_)];
+    [edit addItem:item(@"Find Previous Note", @selector(findPreviousNote:), @"g", NSEventModifierFlagCommand | NSEventModifierFlagShift, target_)];
+    [edit addItem:item(@"Find and Replace Lyrics…", @selector(findReplaceLyrics:), @"",
+                       0, target_)];
+    [edit addItem:item(@"Edit Selected Vibrato…", @selector(editSelectedVibrato:), @"", 0, target_)];
+    [edit addItem:item(@"Edit Region Dynamics…", @selector(editRegionDynamics:), @"", 0, target_)];
+    [edit addItem:item(@"Track Style and Coverage…", @selector(editTrackStyle:), @"", 0, target_)];
+    [edit addItem:item(@"Resolve Japanese Reading…", @selector(editJapaneseReading:), @"", 0, target_)];
+    [edit addItem:item(@"Clear Selected Vibrato…", @selector(clearSelectedVibrato:), @"",
+                       0, target_)];
+    [edit addItem:item(@"Remove Selected Overlaps…", @selector(removeSelectedOverlaps:), @"", 0, target_)];
+    [edit addItem:item(@"Close Selected Gaps…", @selector(closeSelectedGaps:), @"", 0, target_)];
+    [edit addItem:item(@"Auto Legato Selected Notes…", @selector(autoLegatoSelectedNotes:), @"", 0, target_)];
+    [edit addItem:item(@"Clear Region Dynamics Curve…", @selector(clearRegionDynamicsCurve:), @"", 0, target_)];
+    [edit addItem:[NSMenuItem separatorItem]];
+    [edit addItem:item(@"Cut", @selector(cut:), @"x", NSEventModifierFlagCommand, nil)];
+    [edit addItem:item(@"Copy", @selector(copy:), @"c", NSEventModifierFlagCommand, nil)];
+    [edit addItem:item(@"Paste", @selector(paste:), @"v", NSEventModifierFlagCommand, nil)];
+    [edit addItem:item(@"Select All", @selector(selectAll:), @"a", NSEventModifierFlagCommand, nil)];
     addSubmenu(root_, @"Edit", edit);
 
     auto* transport = [[NSMenu alloc] initWithTitle:@"Transport"];

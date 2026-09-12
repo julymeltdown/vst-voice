@@ -3,6 +3,7 @@
 #include "seam/core/result.hpp"
 #include "seam/domain/render_controls.hpp"
 #include "seam/synthesis/raw_renderer.hpp"
+#include "seam/synthesis/phrase_backend.hpp"
 
 #include <optional>
 #include <span>
@@ -30,11 +31,6 @@ struct PlacedRenderedUnit final {
   // Applies to the boundary immediately before this incoming unit. The first
   // unit ignores this field because no incoming boundary exists.
   std::optional<BoundarySeamSettings> incomingBoundary;
-};
-
-struct PhraseAudio final {
-  time::SampleFrame startFrame{0};
-  std::vector<float> samples;
 };
 
 class SeamComposer final {

@@ -6,6 +6,7 @@
 #include <optional>
 #include <string_view>
 #include <unordered_map>
+#include <unordered_set>
 
 namespace seam::phonemizer {
 namespace {
@@ -99,11 +100,37 @@ bool isSeparator(char32_t value) noexcept {
   }
 }
 
-std::u32string normalize(const std::u32string& input) {
-  std::u32string result;
-  result.reserve(input.size());
-  for (const auto value : input) {
-    result.push_back(toHiragana(value));
+struct NormalizedKana {
+  std::u32string text;
+  std::vector<std::size_t> sourceIndices;
+};
+
+NormalizedKana normalize(const std::u32string& input) {
+  // Targeted kana normalization, not general NFC/NFKC. Mapping facts are pinned
+  // to Unicode 17.0 UnicodeData: FF66..FF9F and kana + 3099/309A decompositions.
+  static constexpr std::u32string_view halfwidth = U"ヲァィゥェォャュョッーアイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワン";
+  static_assert(halfwidth.size() == 0xff9dU - 0xff66U + 1U);
+  static constexpr std::u32string_view unvoiced = U"かきくけこさしすせそたちつてとはひふへほう";
+  static constexpr std::u32string_view voiced = U"がぎぐげござじずぜぞだぢづでどばびぶべぼゔ";
+  static_assert(unvoiced.size() == voiced.size());
+  static constexpr std::u32string_view hRow = U"はひふへほ", pRow = U"ぱぴぷぺぽ";
+  NormalizedKana result; result.text.reserve(input.size()); result.sourceIndices.reserve(input.size());
+  for (std::size_t index = 0U; index < input.size(); ++index) {
+    auto value = input[index];
+    if (value >= 0xff66U && value <= 0xff9dU) value = halfwidth[value - 0xff66U];
+    else if (value == 0xff9eU) value = 0x3099U;
+    else if (value == 0xff9fU) value = 0x309aU;
+    else if (value == 0xff61U) value = U'。';
+    else if (value == 0xff64U) value = U'、';
+    else if (value == 0xff65U) value = U'・';
+    value = toHiragana(value);
+    if (!result.text.empty() && (value == 0x3099U || value == 0x309aU)) {
+      const auto bases = value == 0x3099U ? unvoiced : hRow;
+      const auto replacements = value == 0x3099U ? voiced : pRow;
+      const auto position = bases.find(result.text.back());
+      if (position != std::u32string_view::npos) { result.text.back() = replacements[position]; continue; }
+    }
+    result.text.push_back(value); result.sourceIndices.push_back(index);
   }
   return result;
 }
@@ -135,12 +162,16 @@ void appendPhone(std::vector<domain::PhonemeToken>& target,
   ++ordinal;
 }
 
-void applyOverrides(const domain::VocalRegion& region,
+void applyOverrides(std::span<const domain::PhonemeOverride* const> overrides,
                     domain::NoteId noteId,
                     std::vector<domain::PhonemeToken>& noteTokens,
                     std::vector<Warning>& warnings) {
-  for (const auto& overrideValue : region.phonemeOverrides) {
-    if (overrideValue.key.noteId != noteId) {
+  for (const auto* entry : overrides) {
+    const auto& overrideValue = *entry;
+    if (overrideValue.unresolved) {
+      warnings.push_back({.code = WarningCode::OrphanOverride, .noteId = noteId,
+          .characterIndex = overrideValue.key.ordinal,
+          .message = "Phoneme edit is retained but unresolved after pronunciation changed"});
       continue;
     }
     const auto validation = overrideValue.validate();
@@ -188,16 +219,55 @@ void applyOverrides(const domain::VocalRegion& region,
 
 }  // namespace
 
+core::Result<std::vector<std::string>> parseJapanesePhoneHint(std::string_view text) {
+  if (text.empty() || text.size() > 4096U)
+    return core::failure<std::vector<std::string>>(core::ErrorCode::InvalidArgument, "Japanese phone hint is empty or exceeds 4096 bytes");
+  static const auto inventory = [] {
+    std::unordered_set<std::string> phones{"N", "cl", "pau"};
+    for (const auto& [mora, values] : moraTable()) {
+      (void)mora; for (const auto& value : values) phones.insert(value);
+    }
+    return phones;
+  }();
+  const auto space = [](char c) { return c == ' ' || c == '\t' || c == '\r' || c == '\n'; };
+  std::vector<std::string> result;
+  for (std::size_t i = 0U; i < text.size();) {
+    while (i < text.size() && space(text[i])) ++i;
+    if (i == text.size()) break;
+    const auto start = i; while (i < text.size() && !space(text[i])) ++i;
+    const std::string phone{text.substr(start, i - start)};
+    if (!inventory.contains(phone) || result.size() >= 256U)
+      return core::failure<std::vector<std::string>>(core::ErrorCode::Unsupported, "Japanese phone hint requires at most 256 supported space-separated phones");
+    result.push_back(phone);
+  }
+  if (result.empty()) return core::failure<std::vector<std::string>>(core::ErrorCode::InvalidArgument, "Japanese phone hint has no phones");
+  return core::success(std::move(result));
+}
+
 Result JapaneseKanaPhonemizer::phonemize(const domain::VocalRegion& region) const {
+  return std::move(phonemize(region, {})).value();
+}
+
+core::Result<Result> JapaneseKanaPhonemizer::phonemize(const domain::VocalRegion& region, std::stop_token stop,
+    std::size_t maximumTokens) const {
+  const auto cancelled = [] { return core::failure<Result>(core::ErrorCode::Conflict, "Japanese phonemization cancelled"); };
+  if (stop.stop_requested()) return cancelled();
   Result result;
   std::unordered_map<domain::LyricTokenId, const domain::LyricToken*> lyrics;
   lyrics.reserve(region.lyrics.size());
   for (const auto& lyric : region.lyrics) {
+    if (stop.stop_requested()) return cancelled();
     lyrics.emplace(lyric.id, &lyric);
+  }
+  std::unordered_map<domain::NoteId, std::vector<const domain::PhonemeOverride*>> overrides;
+  for (const auto& edit : region.phonemeOverrides) {
+    if (stop.stop_requested()) return cancelled();
+    overrides[edit.key.noteId].push_back(&edit); // Preserve source edit order within each note.
   }
   std::vector<const domain::Note*> notes;
   notes.reserve(region.notes.size());
   for (const auto& note : region.notes) {
+    if (stop.stop_requested()) return cancelled();
     notes.push_back(&note);
   }
   std::stable_sort(notes.begin(), notes.end(), [](const auto* lhs, const auto* rhs) {
@@ -206,12 +276,22 @@ Result JapaneseKanaPhonemizer::phonemize(const domain::VocalRegion& region) cons
   });
 
   std::optional<std::string> previousVowel;
+  std::optional<std::string> previousNoteVowel;
+  const domain::Note* previousNote = nullptr;
   for (const auto* note : notes) {
+    if (stop.stop_requested()) return cancelled();
     const auto lyricEntry = lyrics.find(note->lyricTokenId);
     const auto* lyric = lyricEntry == lyrics.end() ? nullptr : lyricEntry->second;
     std::vector<domain::PhonemeToken> noteTokens;
     std::uint16_t ordinal = 0;
-    if (lyric == nullptr || lyric->surface.empty()) {
+    if (note->phoneticHint) {
+      const auto phones = parseJapanesePhoneHint(*note->phoneticHint);
+      if (!phones) {
+        result.warnings.push_back({.code = WarningCode::UnsupportedCharacter, .noteId = note->id,
+            .characterIndex = 0U, .message = phones.error().message});
+        appendPhone(noteTokens, note->id, ordinal, "pau");
+      } else for (const auto& phone : phones.value()) appendPhone(noteTokens, note->id, ordinal, phone);
+    } else if (lyric == nullptr || lyric->surface.empty()) {
       result.warnings.push_back(Warning{
           .code = WarningCode::EmptyLyric,
           .noteId = note->id,
@@ -220,11 +300,14 @@ Result JapaneseKanaPhonemizer::phonemize(const domain::VocalRegion& region) cons
       });
       appendPhone(noteTokens, note->id, ordinal, "pau");
     } else {
-      const auto text = normalize(lyric->surface);
-      const bool continuation = text == U"-" || text == U"ー" || text == U"〜";
+      const auto normalized = normalize(lyric->surface);
+      const auto& text = normalized.text;
+      const bool sharedContinuation = previousNote && domain::continuesSharedLyric(*previousNote, *note);
+      const bool continuation = text == U"-" || text == U"ー" || text == U"〜" || sharedContinuation;
       if (continuation) {
-        if (previousVowel.has_value()) {
-          appendPhone(noteTokens, note->id, ordinal, *previousVowel);
+        const auto& vowel = sharedContinuation ? previousNoteVowel : previousVowel;
+        if (vowel.has_value()) {
+          appendPhone(noteTokens, note->id, ordinal, *vowel);
         } else {
           result.warnings.push_back(Warning{
               .code = WarningCode::LeadingLongVowel,
@@ -236,6 +319,7 @@ Result JapaneseKanaPhonemizer::phonemize(const domain::VocalRegion& region) cons
         }
       } else {
         for (std::size_t index = 0; index < text.size(); ++index) {
+          if ((index & 255U) == 0U && stop.stop_requested()) return cancelled();
           const auto value = text[index];
           if (isSeparator(value)) {
             appendPhone(noteTokens, note->id, ordinal, "pau");
@@ -247,7 +331,7 @@ Result JapaneseKanaPhonemizer::phonemize(const domain::VocalRegion& region) cons
               result.warnings.push_back(Warning{
                   .code = WarningCode::LeadingLongVowel,
                   .noteId = note->id,
-                  .characterIndex = index,
+                  .characterIndex = normalized.sourceIndices[index],
                   .message = "Long-vowel mark has no preceding vowel",
               });
             } else {
@@ -278,7 +362,7 @@ Result JapaneseKanaPhonemizer::phonemize(const domain::VocalRegion& region) cons
             result.warnings.push_back(Warning{
                 .code = WarningCode::UnsupportedCharacter,
                 .noteId = note->id,
-                .characterIndex = index,
+                .characterIndex = normalized.sourceIndices[index],
                 .message = "Unsupported Japanese lyric character",
             });
             appendPhone(noteTokens, note->id, ordinal, "pau");
@@ -291,12 +375,18 @@ Result JapaneseKanaPhonemizer::phonemize(const domain::VocalRegion& region) cons
       }
     }
 
-    applyOverrides(region, note->id, noteTokens, result.warnings);
-    if (const auto vowel = lastVowel(noteTokens)) {
+    if (const auto edits = overrides.find(note->id); edits != overrides.end())
+      applyOverrides(edits->second, note->id, noteTokens, result.warnings);
+    previousNoteVowel = lastVowel(noteTokens);
+    if (const auto& vowel = previousNoteVowel) {
       previousVowel = vowel;
     }
+    if (noteTokens.size() > maximumTokens - result.tokens.size())
+      return core::failure<Result>(core::ErrorCode::InvalidArgument, "Resolved pronunciation exceeds token bounds");
     result.tokens.insert(result.tokens.end(), noteTokens.begin(), noteTokens.end());
+    previousNote = note;
   }
+  if (stop.stop_requested()) return cancelled();
   return result;
 }
 

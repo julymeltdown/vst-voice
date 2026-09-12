@@ -65,10 +65,10 @@ formats::JsonValue encodeMetadataRevision(const MetadataRevision& value) {
   };
 }
 
-formats::JsonValue encodeTake(const TakeRecord& value) {
+formats::JsonValue encodeTake(const TakeRecord& value, bool sourceAware) {
   Array revisions;
   for (const auto& id : value.derivedRevisionIds) revisions.emplace_back(id);
-  return Object{
+  Object object{
       {"takeId", value.takeId},
       {"promptId", value.promptId},
       {"coverageKey", value.coverageKey},
@@ -78,6 +78,14 @@ formats::JsonValue encodeTake(const TakeRecord& value) {
       {"supersedesTakeId", value.supersedesTakeId},
       {"state", toString(value.state)},
   };
+  if (sourceAware) object.emplace("sourceBindingId", value.sourceBindingId);
+  return object;
+}
+
+formats::JsonValue encodeSourceBinding(const TakeSourceBinding& value) {
+  return Object{{"id", value.id}, {"takeId", value.takeId}, {"rawAssetSha256", value.rawAssetSha256},
+      {"strategy", encodeStrategy(value.strategy)}, {"importerId", value.importerId},
+      {"importedAtUtc", value.importedAtUtc}, {"licenseSnapshotPath", value.licenseSnapshotPath}};
 }
 
 formats::JsonValue encodeAssignment(const UnitAssignment& value) {
@@ -115,7 +123,7 @@ std::string encodeProductionProject(
         {"reviewedAtUtc", value.reviewedAtUtc},
     }};
   });
-  const formats::JsonValue root{Object{
+  Object object{
       {"format", kProductionProjectFormat},
       {"schemaVersion", project.schemaVersion},
       {"projectId", project.projectId},
@@ -127,15 +135,26 @@ std::string encodeProductionProject(
       {"immutableAssetRoot", project.immutableAssetRoot},
       {"sourceStrategies", encodeArray(project.sourceStrategies, encodeStrategy)},
       {"assets", encodeArray(project.assets, encodeAsset)},
-      {"takes", encodeArray(project.takes, encodeTake)},
+      {"takes", encodeArray(project.takes, [&](const auto& value) { return encodeTake(value, project.schemaVersion >= 2); })},
       {"derivedRevisions", encodeArray(project.derivedRevisions, encodeRevision)},
       {"metadataRevisions", encodeArray(project.metadataRevisions, encodeMetadataRevision)},
       {"unitAssignments", encodeArray(project.unitAssignments, encodeAssignment)},
       {"operators", std::move(operators)},
       {"reviews", std::move(reviews)},
       {"lastDurableGeneration", static_cast<std::int64_t>(project.lastDurableGeneration)},
-  }};
-  return formats::stringifyJson(root, true) + "\n";
+  };
+  if (project.schemaVersion >= 2) {
+    object.emplace("lifecycle", toString(project.lifecycle));
+    object.emplace("sourceBindings", encodeArray(project.sourceBindings, encodeSourceBinding));
+  }
+  if (project.schemaVersion >= kProductionAssessmentSchemaVersion) {
+    object.emplace("sourceQualityAssessments",encodeArray(project.sourceQualityAssessments,[](const SourceQualityAssessment& value) {
+      return formats::JsonValue{Object{{"id",value.id},{"strategyId",value.strategyId},{"policySha256",value.policySha256},
+          {"materialSha256",value.materialSha256},{"evidenceSha256",value.evidenceSha256},{"reviewerId",value.reviewerId},
+          {"reviewedAtUtc",value.reviewedAtUtc},{"coverage",toString(value.coverage)},{"listening",toString(value.listening)}}};
+    }));
+  }
+  return formats::stringifyJson(formats::JsonValue{std::move(object)}, true) + "\n";
 }
 
 }

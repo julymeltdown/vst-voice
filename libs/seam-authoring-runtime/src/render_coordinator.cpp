@@ -1,10 +1,14 @@
 #include "seam/authoring/render_coordinator.hpp"
 
 #include "seam/rendering/phrase_segmenter.hpp"
+#include "seam/phonemizer/language_resolver.hpp"
+#include "seam/synthesis/performance_compiler.hpp"
+#include "seam/voice_design/recipe_resource.hpp"
 
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <limits>
 #include <span>
 #include <utility>
 
@@ -15,14 +19,20 @@ bool isAudible(const domain::VocalTrack& track, bool anySolo) noexcept {
   return !track.muted && (!anySolo || track.solo);
 }
 
-const rendering::TrackVoicebankSource* sourceFor(
-    std::span<const rendering::TrackVoicebankSource> sources,
+const rendering::TrackSingerSource* singerFor(
+    std::span<const rendering::TrackSingerSource> sources,
     domain::TrackId trackId) noexcept {
   const auto iterator = std::find_if(
       sources.begin(), sources.end(), [trackId](const auto& source) {
-        return source.trackId == trackId;
+        return std::visit([trackId](const auto& value) { return value.trackId == trackId; }, source);
       });
   return iterator == sources.end() ? nullptr : &*iterator;
+}
+
+const rendering::TrackVoicebankSource* sourceFor(
+    std::span<const rendering::TrackSingerSource> sources, domain::TrackId trackId) noexcept {
+  const auto* source = singerFor(sources, trackId);
+  return source ? std::get_if<rendering::TrackVoicebankSource>(source) : nullptr;
 }
 
 std::string rendererContext(
@@ -197,6 +207,18 @@ void AuthoringRenderCoordinator::submit(
     rendering::RenderQuality quality,
     bool immediate,
     application::CommandImpact impact) {
+  std::vector<rendering::TrackSingerSource> sources;
+  sources.reserve(voicebanks.size());
+  for (auto& source : voicebanks) sources.emplace_back(std::move(source));
+  submitWithSources(std::move(project), std::move(sources), activeTrack, activeRegion,
+      revision, sampleRate, quality, immediate, std::move(impact));
+}
+
+void AuthoringRenderCoordinator::submitWithSources(
+    domain::Project project, std::vector<rendering::TrackSingerSource> voicebanks,
+    domain::TrackId activeTrack, domain::RegionId activeRegion, std::uint64_t revision,
+    std::uint32_t sampleRate, rendering::RenderQuality quality, bool immediate,
+    application::CommandImpact impact) {
   if (shutdown_.load(std::memory_order_acquire)) return;
   sampleRate = std::clamp(sampleRate, 8000U, 192000U);
   std::string activeVoicebankId;
@@ -211,6 +233,10 @@ void AuthoringRenderCoordinator::submit(
     if (shutdown_.load(std::memory_order_acquire)) return;
     if (revision < latestSubmittedRevision_.load(std::memory_order_acquire)) {
       return;
+    }
+    if (nextRequestId_ == std::numeric_limits<std::uint64_t>::max()) {
+      latestSubmittedRequestId_.store(0U, std::memory_order_release);
+      activeStopSource_.request_stop(); pending_.reset(); return;
     }
     const auto requestId = ++nextRequestId_;
     latestSubmittedRevision_.store(revision, std::memory_order_release);
@@ -256,6 +282,10 @@ void AuthoringRenderCoordinator::submit(
   condition_.notify_all();
 }
 
+void AuthoringRenderCoordinator::invalidateCurrent() noexcept {
+  latestSubmittedRequestId_.store(0U, std::memory_order_release);
+}
+
 void AuthoringRenderCoordinator::cancel() noexcept {
   std::uint64_t revision = latestSubmittedRevision_.load(std::memory_order_acquire);
   bool cancelledPending = false;
@@ -283,6 +313,23 @@ void AuthoringRenderCoordinator::cancel() noexcept {
       .diagnostic = "Production render request cancelled",
   });
   notifyCompletion();
+}
+
+RealtimeProjectAudioPublication::ReadHandle AuthoringRenderCoordinator::acquireCurrent() const noexcept {
+  auto source = publication_.acquire();
+  if (!source || shutdown_.load(std::memory_order_acquire) || source->state != RenderState::Ready ||
+      source->sourceIdentity != sourceIdentity_ || source->requestId == 0U ||
+      source->requestId != latestSubmittedRequestId_.load(std::memory_order_acquire)) return {};
+  return source;
+}
+bool AuthoringRenderCoordinator::matchesCurrent(const PublishedProjectAudio& source) const noexcept {
+  const auto current = acquireCurrent();
+  return current && source.state == RenderState::Ready && source.sourceIdentity == current->sourceIdentity &&
+      source.projectId == current->projectId && source.requestId == current->requestId &&
+      source.projectRevision == current->projectRevision && source.quality == current->quality &&
+      source.sourceProject == current->sourceProject &&
+      source.result.sampleRate == current->result.sampleRate && source.result.channelCount == current->result.channelCount &&
+      source.result.interleaved.storageIdentity() == current->result.interleaved.storageIdentity();
 }
 
 std::shared_ptr<const PublishedProjectAudio>
@@ -338,7 +385,7 @@ void AuthoringRenderCoordinator::workerLoop(std::stop_token stopToken) {
       active_ = true;
     }
 
-    const auto totalPhrases = countPhrases(request.project);
+    const auto totalPhrases = countPhrases(request.project, request.sampleRate, request.voicebanks);
     const auto* activeSource =
         sourceFor(request.voicebanks, request.activeTrack);
     updateProgress(RenderProgress{
@@ -486,7 +533,7 @@ std::optional<PublishedProjectAudio> AuthoringRenderCoordinator::render(
   if (!checked.ok()) return makeFailureAudio(request, checked);
 
   rendering::ProductionProjectRenderer renderer;
-  auto rendered = renderer.render(
+  auto rendered = renderer.renderWithSources(
       request.project, request.voicebanks, request.activeTrack,
       request.activeRegion, request.revision, request.sampleRate,
       request.quality, synthesis::PhraseRenderOptions{}, cache_.get(),
@@ -513,6 +560,8 @@ std::optional<PublishedProjectAudio> AuthoringRenderCoordinator::render(
 
   PublishedProjectAudio audio;
   audio.projectRevision = request.revision;
+  audio.projectId = request.project.id(); audio.requestId = request.requestId; audio.sourceIdentity = sourceIdentity_;
+  audio.sourceProject = std::make_shared<const domain::Project>(request.project);
   audio.impact = request.impact;
   audio.quality = request.quality;
   audio.state = RenderState::Ready;
@@ -531,6 +580,10 @@ std::optional<PublishedProjectAudio> AuthoringRenderCoordinator::render(
   audio.activeVoicebankVersion = checked.activeVoicebankVersion;
   audio.activeVoicebankContentHash = checked.activeVoicebankContentHash;
   audio.activeRenderer = rendererContext(audio.result.activeUnitPlan);
+  if (const auto* source = singerFor(request.voicebanks, request.activeTrack);
+      source && !std::holds_alternative<rendering::TrackVoicebankSource>(*source)) {
+    audio.activeRenderer = "seam.source-filter.v1";
+  }
   return audio;
 }
 
@@ -557,6 +610,26 @@ AuthoringRenderCoordinator::preflight(const Request& request) {
   for (const auto& track : request.project.vocalTracks()) {
     if (!isAudible(track, anySolo)) continue;
     foundAudible = true;
+    if (const auto* resolved = singerFor(request.voicebanks, track.id)) {
+      if (const auto* file = std::get_if<rendering::TrackRecipeFileSource>(resolved)) {
+        const auto valid = file->reference.validate();
+        if (!valid) {
+          result.failure = RenderFailureKind::RenderFailed;
+          result.diagnostic = valid.error().message;
+          return result;
+        }
+        continue; // File I/O and exact identity verification run in the project renderer.
+      }
+      if (const auto* procedural = std::get_if<rendering::TrackProceduralSource>(resolved)) {
+        const auto recipe = voice_design::decodeVoiceRecipeResource(procedural->resource);
+        if (!recipe) {
+          result.failure = RenderFailureKind::RenderFailed;
+          result.diagnostic = recipe.error().message;
+          return result;
+        }
+        continue;
+      }
+    }
     if (track.voicebank.id.empty() || track.voicebank.version.empty()) {
       result.failure = RenderFailureKind::VoicebankMissing;
       result.diagnostic =
@@ -629,6 +702,7 @@ PublishedProjectAudio AuthoringRenderCoordinator::makeFailureAudio(
     const Request& request, const PreflightResult& preflight) {
   PublishedProjectAudio audio;
   audio.projectRevision = request.revision;
+  audio.projectId = request.project.id(); audio.requestId = request.requestId; audio.sourceIdentity = sourceIdentity_;
   audio.impact = request.impact;
   audio.quality = request.quality;
   audio.state = RenderState::Failed;
@@ -643,7 +717,8 @@ PublishedProjectAudio AuthoringRenderCoordinator::makeFailureAudio(
 }
 
 std::size_t AuthoringRenderCoordinator::countPhrases(
-    const domain::Project& project) {
+    const domain::Project& project, std::uint32_t sampleRate,
+    std::span<const rendering::TrackSingerSource> sources) {
   const auto anySolo = std::any_of(
       project.vocalTracks().begin(), project.vocalTracks().end(),
       [](const domain::VocalTrack& track) {
@@ -655,6 +730,25 @@ std::size_t AuthoringRenderCoordinator::countPhrases(
     if (!isAudible(track, anySolo)) continue;
     for (const auto& region : track.regions) {
       if (region.notes.empty()) continue;
+      const auto* source = singerFor(sources, track.id);
+      if (source && !std::holds_alternative<rendering::TrackVoicebankSource>(*source)) {
+        ++result; // The current procedural adapter renders one whole-region context.
+        continue;
+      }
+      const auto allocation = synthesis::allocateScoreVoices(region);
+      if (!allocation) continue; // The render path reports the actual failure.
+      if (allocation.value().voices.size() > 1U) {
+        const auto pronunciation = phonemizer::resolvePronunciation(region);
+        if (!pronunciation) continue;
+        const auto voices = synthesis::projectScoreVoices(project, region, sampleRate,
+            pronunciation.value().pronunciation.tokens);
+        if (!voices) continue;
+        for (const auto& voice : voices.value()) {
+          const auto phrases = segmenter.segment(voice);
+          if (phrases) result += phrases.value().size();
+        }
+        continue;
+      }
       const auto phrases = segmenter.segment(region);
       if (phrases) result += phrases.value().size();
     }

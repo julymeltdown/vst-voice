@@ -109,7 +109,7 @@ class WindowsSourceContractTests(unittest.TestCase):
             source,
         )
         self.assertIn(
-            "request.purpose == FileDialogPurpose::ExportSet;",
+            "request.purpose == FileDialogPurpose::ExportSet",
             source,
         )
         self.assertIn("CLSID_FileSaveDialog", source)

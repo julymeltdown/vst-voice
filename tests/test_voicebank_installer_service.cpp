@@ -6,6 +6,10 @@
 #include "seam/distribution/signing.hpp"
 #include "seam/voicebank/manifest_json.hpp"
 #include "seam/voicebank/wav.hpp"
+#include "seam/voicebank/content_identity.hpp"
+#include "seam/synthesis/source_phoneme_alignment.hpp"
+#include "seam/core/file_io.hpp"
+#include "seam/core/sha256.hpp"
 
 #include <filesystem>
 #include <fstream>
@@ -74,6 +78,43 @@ TEST_CASE("voicebank_installer_service_installs_and_exposes_trusted_candidate") 
   CHECK(std::filesystem::is_regular_file(
       installed.value().installDirectory / "install-receipt.json"));
   CHECK(session.candidates().size() == 1U);
+}
+
+TEST_CASE("voicebank_installer_service_preserves_alignment_identity") {
+  const auto root = seam::test::support::temporaryDirectory("aligned-install");
+  const auto source = createSource(root, 220.0);
+  const auto manifest = seam::voicebank::ManifestJsonCodec{}.load(source / "manifest.json");
+  CHECK(manifest);
+  const auto wavHash = seam::core::sha256File(source / "audio/a.wav");
+  CHECK(wavHash);
+  const auto& unit = manifest.value().units.front();
+  const seam::synthesis::SourcePhonemeAlignment alignment{unit.id, wavHash.value(), {{"a", 3600}}};
+  const auto json = seam::synthesis::encodeSourcePhonemeAlignment(alignment, unit, wavHash.value(), 5760);
+  CHECK(json);
+  const auto relative = std::filesystem::path{"alignments"} / (seam::core::sha256Hex(unit.id) + ".json");
+  std::filesystem::create_directories((source / relative).parent_path());
+  CHECK(seam::core::durableAtomicWriteText(source / relative, json.value()));
+  const auto expected = seam::voicebank::computeVoicebankContentHash(manifest.value(), source);
+  CHECK(expected);
+  const auto key = seam::distribution::generateSigningKeyPair();
+  CHECK(key);
+  const auto package = root / "aligned.seambank";
+  CHECK(seam::distribution::packSeambank(source, package, key.value()));
+  seam::authoring::VoicebankSession session({{.path = root / "installed",
+      .kind = seam::voicebank::VoicebankRootKind::Installed}}, false);
+  CHECK(session.refresh());
+  seam::authoring::VoicebankInstallerService installer(session, root / "installed");
+  const auto installed = installer.install(request(package, key.value().publicKey));
+  CHECK(installed);
+  CHECK(installed.value().contentHash == expected.value());
+  CHECK(readText(installed.value().installDirectory / relative) == json.value());
+  CHECK(installed.value().candidate.trust == seam::voicebank::VoicebankTrust::TrustedInstalled);
+  CHECK(installer.install(request(package, key.value().publicKey)));
+  CHECK(seam::core::durableAtomicWriteText(installed.value().installDirectory / relative, json.value() + "\n"));
+  CHECK(session.refresh());
+  CHECK(session.candidates().size() == 1U);
+  CHECK(session.candidates().front().contentHash != expected.value());
+  CHECK(session.candidates().front().trust != seam::voicebank::VoicebankTrust::TrustedInstalled);
 }
 
 TEST_CASE("voicebank_installer_service_exact_reinstall_is_idempotent") {

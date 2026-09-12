@@ -9,18 +9,20 @@
 
 namespace seam::native_ui {
 
-core::Result<voicebank_production::DerivedRevision>
+core::Result<voicebank_production::CommittedDerivedRevision>
 VoicebankStudioController::applySelectedProductionOperation(
     const voicebank_production::OperationRequest& request,
     std::string occurredAtUtc) {
+  if (proceduralImportBusy()) return core::failure<voicebank_production::CommittedDerivedRevision>(
+      core::ErrorCode::Conflict, "Candidate import is busy");
   if (!productionRepository_ || !productionProject_) {
-    return core::failure<voicebank_production::DerivedRevision>(
+    return core::failure<voicebank_production::CommittedDerivedRevision>(
         core::ErrorCode::InvalidState,
         "Voicebank Studio has no production project");
   }
   const auto* assignment = selectedProductionAssignment();
   if (assignment == nullptr || assignment->takeId.empty()) {
-    return core::failure<voicebank_production::DerivedRevision>(
+    return core::failure<voicebank_production::CommittedDerivedRevision>(
         core::ErrorCode::InvalidState,
         "Selected production unit has no imported take");
   }
@@ -30,7 +32,7 @@ VoicebankStudioController::applySelectedProductionOperation(
         return value.takeId == assignment->takeId;
       });
   if (take == productionProject_->takes.end()) {
-    return core::failure<voicebank_production::DerivedRevision>(
+    return core::failure<voicebank_production::CommittedDerivedRevision>(
         core::ErrorCode::InvariantViolation,
         "Selected production take is unavailable");
   }
@@ -44,7 +46,7 @@ VoicebankStudioController::applySelectedProductionOperation(
           return value.revisionId == latestId;
         });
     if (latest == productionProject_->derivedRevisions.end()) {
-      return core::failure<voicebank_production::DerivedRevision>(
+      return core::failure<voicebank_production::CommittedDerivedRevision>(
           core::ErrorCode::InvariantViolation,
           "Latest production revision is unavailable");
     }
@@ -56,7 +58,7 @@ VoicebankStudioController::applySelectedProductionOperation(
         return value.sha256 == inputSha256;
       });
   if (asset == productionProject_->assets.end()) {
-    return core::failure<voicebank_production::DerivedRevision>(
+    return core::failure<voicebank_production::CommittedDerivedRevision>(
         core::ErrorCode::NotFound,
         "Production operation input asset is unavailable");
   }
@@ -74,30 +76,35 @@ VoicebankStudioController::applySelectedProductionOperation(
                              identity + std::to_string(
                                  productionProject_->lastDurableGeneration + 1U))
                              .substr(0U, 24U);
-  auto staged = productionRepository_->stageOperation(*asset, request, stagingId);
+  const auto targetTakeId = take->takeId;
+  const auto parentRevisionId = take->derivedRevisionIds.empty()
+      ? std::string{} : take->derivedRevisionIds.back();
+  auto staged = productionRepository_->stageOperation(*productionProject_, targetTakeId,
+      parentRevisionId, request, stagingId);
   if (!staged) {
-    return core::Result<voicebank_production::DerivedRevision>{staged.error()};
+    return core::Result<voicebank_production::CommittedDerivedRevision>{staged.error()};
   }
   const auto revisionId = "revision-" + core::sha256Hex(
       identity + staged.value().outputSha256 + std::to_string(
           productionProject_->lastDurableGeneration + 1U)).substr(0U, 24U);
   auto committed = productionRepository_->commitStaged(
       *productionProject_, staged.value(), revisionId,
-      productionOperatorId_, occurredAtUtc);
+      productionOperatorId_, occurredAtUtc, targetTakeId, parentRevisionId);
   stagedRecoveryCandidateCount_ =
       productionRepository_->inspectStaged(*productionProject_).size();
-  if (committed) status_ = "AUDIO OPERATION SAVED";
+  if (committed) status_ = committed.value().durabilityConfirmed ? "AUDIO OPERATION SAVED"
+      : "AUDIO EDIT COMMITTED / RECOVER BEFORE FURTHER WORK / DO NOT REPEAT";
   return committed;
 }
 
-core::Result<void> VoicebankStudioController::persistProductionMetadata() {
+core::Result<voicebank_production::CommittedMetadataRevision> VoicebankStudioController::persistProductionMetadata() {
   if (!productionRepository_ || !productionProject_) {
-    return core::failure(core::ErrorCode::InvalidState,
+    return core::failure<voicebank_production::CommittedMetadataRevision>(core::ErrorCode::InvalidState,
                          "Voicebank Studio has no production project");
   }
   const auto* unit = selectedUnit();
   if (unit == nullptr) {
-    return core::failure(core::ErrorCode::NotFound,
+    return core::failure<voicebank_production::CommittedMetadataRevision>(core::ErrorCode::NotFound,
                          "No unit is selected for metadata revision");
   }
   const auto coverage = voicebank_studio_internal::coverageKey(*unit);
@@ -109,7 +116,7 @@ core::Result<void> VoicebankStudioController::persistProductionMetadata() {
       });
   if (assignment == productionProject_->unitAssignments.end() ||
       assignment->takeId.empty()) {
-    return core::failure(core::ErrorCode::NotFound,
+    return core::failure<voicebank_production::CommittedMetadataRevision>(core::ErrorCode::NotFound,
                          "Selected unit has no imported production take");
   }
   const auto take = std::find_if(
@@ -118,7 +125,7 @@ core::Result<void> VoicebankStudioController::persistProductionMetadata() {
         return value.takeId == assignment->takeId;
       });
   if (take == productionProject_->takes.end()) {
-    return core::failure(core::ErrorCode::InvariantViolation,
+    return core::failure<voicebank_production::CommittedMetadataRevision>(core::ErrorCode::InvariantViolation,
                          "Production assignment references an unavailable take");
   }
   auto values = voicebank_studio_internal::metadataValues(*unit);

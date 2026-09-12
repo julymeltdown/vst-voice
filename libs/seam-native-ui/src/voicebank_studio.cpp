@@ -4,8 +4,11 @@
 
 #include "seam/core/file_io.hpp"
 #include "seam/core/sha256.hpp"
+#include "seam/platform/file_dialog.hpp"
+#include "seam/voicebank_production/project_codec.hpp"
 #include "seam/formats/json_value.hpp"
 #include "seam/text/unicode.hpp"
+#include "seam/voicebank/asset_path.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -172,25 +175,18 @@ core::Result<std::filesystem::path> nextVoicebankRecordingPath(
 core::Result<void> VoicebankStudioController::openManifest(
     const std::filesystem::path& manifestPath, double logicalWidth,
     double logicalHeight) {
-  auto loaded = codec_.load(manifestPath);
+  if (proceduralImportBusy()) return core::failure(core::ErrorCode::Conflict, "Candidate import is busy");
+  auto loaded = prepareSampleManifestLoad(manifestPath, logicalWidth, logicalHeight);
   if (!loaded) return core::Result<void>{loaded.error()};
-  manifestPath_ = std::filesystem::absolute(manifestPath).lexically_normal();
-  root_ = manifestPath_.parent_path();
-  manifest_ = std::move(loaded.value());
   logicalWidth_ = std::max(720.0, logicalWidth);
   logicalHeight_ = std::max(520.0, logicalHeight);
-  if (manifest_.units.empty()) {
-    return core::failure(core::ErrorCode::NotFound,
-                         "Voicebank manifest contains no units", manifestPath.string());
-  }
-  selectedIndex_ = 0U;
-  dirty_ = false;
-  takeInspection_.reset();
+  adoptLoadedSampleUnit(std::move(loaded.value()));
   status_ = "LOADED";
-  return rebuildSelected();
+  return core::success();
 }
 
 core::Result<void> VoicebankStudioController::save() {
+  if (proceduralImportBusy()) return core::failure(core::ErrorCode::Conflict, "Candidate import is busy");
   if (manifestPath_.empty()) {
     return saveProductionProject();
   }
@@ -199,24 +195,118 @@ core::Result<void> VoicebankStudioController::save() {
   const auto productionMetadataDirty = dirty_ && productionProject_.has_value();
   auto result = codec_.save(manifest_, manifestPath_);
   if (!result) return result;
+  bool productionDurabilityConfirmed = true;
   if (productionMetadataDirty) {
     auto productionSaved = persistProductionMetadata();
-    if (!productionSaved) return productionSaved;
+    if (!productionSaved) return core::Result<void>{productionSaved.error()};
+    productionDurabilityConfirmed = productionSaved.value().durabilityConfirmed;
   }
   dirty_ = false;
-  status_ = "SAVED";
+  status_ = productionDurabilityConfirmed ? "SAVED" : "METADATA COMMITTED / RECOVER BEFORE FURTHER WORK";
   return result;
 }
 
+core::Result<bool> VoicebankStudioController::confirmSampleClose(platform::IFileDialog& dialog) {
+  if (proceduralImportBusy()) return core::failure<bool>(core::ErrorCode::Conflict, "Finish or cancel Studio work before closing");
+  if (!dirty_) return true;
+  const auto manifest = manifest_;
+  const auto manifestPath = manifestPath_;
+  const auto index = selectedIndex_;
+  const auto producer = productionProject_ ? voicebank_production::encodeProductionProject(*productionProject_) : std::string{};
+  const auto choice = dialog.confirmUnsavedSampleChanges();
+  if (!choice) return core::Result<bool>{choice.error()};
+  if (proceduralImportBusy() || !dirty_ || manifest_ != manifest || manifestPath_ != manifestPath || selectedIndex_ != index ||
+      (productionProject_ ? voicebank_production::encodeProductionProject(*productionProject_) : std::string{}) != producer)
+    return core::failure<bool>(core::ErrorCode::Conflict, "Studio changed during close confirmation; review the current edits before closing");
+  if (choice.value() == platform::UnsavedSampleDecision::Cancel) return false;
+  if (choice.value() == platform::UnsavedSampleDecision::Discard) return true;
+  const auto saved = save();
+  if (!saved) return core::Result<bool>{saved.error()};
+  return !dirty_;
+}
+
 core::Result<void> VoicebankStudioController::selectUnit(std::size_t index) {
+  if (proceduralImportBusy()) return core::failure(core::ErrorCode::Conflict, "Candidate import is busy");
   if (index >= selectableUnitCount()) {
     return core::failure(core::ErrorCode::InvalidArgument,
                          "Voicebank unit index is outside the manifest");
   }
+  if (!manifest_.units.empty()) {
+    auto prepared = prepareUnitVisual(manifest_, root_, sampleAudioBindings_, index, logicalWidth_, logicalHeight_);
+    if (!prepared) return core::Result<void>{prepared.error()};
+    audio_ = std::move(prepared.value().audio); microscope_ = std::move(prepared.value().microscope);
+    pinnedAudioUnitId_ = manifest_.units[index].id; pinnedAudioPath_ = root_ / manifest_.units[index].audioPath;
+  }
+  if (selectedIndex_ != index) generationScoreSelection_.reset();
   selectedIndex_ = index;
+  refreshCandidateMarkerPreview();
   takeInspection_.reset();
-  status_ = "UNIT " + std::to_string(index + 1U);
-  return manifest_.units.empty() ? core::success() : rebuildSelected();
+  if (!generationScoreSelection_) status_ = "UNIT " + std::to_string(index + 1U);
+  return core::success();
+}
+
+core::Result<std::string> VoicebankStudioController::editableUnitLoadIdentity() const {
+  const auto manifest = codec_.encode(manifest_);
+  if (!manifest) return core::Result<std::string>{manifest.error()};
+  core::Sha256 digest;
+  const auto field = [&](std::string_view value) {
+    digest.update(std::to_string(value.size())); digest.update(":"); digest.update(value);
+  };
+  field(manifest.value()); field(manifestPath_.generic_string()); field(root_.generic_string());
+  field(std::to_string(selectedIndex_)); field(dirty_ ? "dirty" : "clean");
+  field(std::to_string(productionSessionEpoch_)); field(std::to_string(sampleReviewSelectionRevision_));
+  field(productionProject_ ? voicebank_production::encodeProductionProject(*productionProject_) : std::string{});
+  return digest.hexDigest();
+}
+
+core::Result<void> VoicebankStudioController::beginEditableUnitSelection(std::size_t index) {
+  if (proceduralImportBusy()) return core::failure(core::ErrorCode::Conflict, "Finish or cancel the current Studio work before selecting a unit");
+  // Inventory-only selection has no audio or FFT work to move off-thread.
+  if (manifest_.units.empty()) return selectUnit(index);
+  if (index >= manifest_.units.size()) return core::failure(core::ErrorCode::InvalidArgument, "Editable unit index is outside the manifest");
+  const auto identity = editableUnitLoadIdentity(); if (!identity) return core::Result<void>{identity.error()};
+  auto worker = std::make_unique<VoicebankStudioController>();
+  worker->manifest_ = manifest_; worker->manifestPath_ = manifestPath_; worker->root_ = root_;
+  worker->sampleAudioBindings_ = sampleAudioBindings_; worker->selectedIndex_ = index;
+  worker->logicalWidth_ = logicalWidth_; worker->logicalHeight_ = logicalHeight_;
+  proceduralImportStop_ = std::stop_source{};
+  const auto stop = proceduralImportStop_.get_token(); statusBeforeImport_ = status_;
+  try {
+    editableUnitLoad_ = std::async(std::launch::async,
+        [worker = std::move(worker), identity = identity.value(), dirty = dirty_, stop]() mutable -> core::Result<EditableUnitLoad> {
+      const auto loaded = worker->rebuildSelected(stop);
+      if (!loaded) return core::Result<EditableUnitLoad>{loaded.error()};
+      return EditableUnitLoad{std::move(identity), {std::move(worker->manifest_), std::move(worker->audio_),
+          std::move(worker->microscope_), std::move(worker->manifestPath_), std::move(worker->root_),
+          worker->selectedIndex_, dirty, std::move(worker->sampleAudioBindings_)}};
+    });
+  } catch (const std::exception& error) {
+    return core::failure(core::ErrorCode::Internal, "Cannot start editable unit loading", error.what());
+  }
+  sampleReviewStatus_ = status_ = "LOADING EDITABLE UNIT / ESC CANCEL";
+  return core::success();
+}
+
+core::Result<void> VoicebankStudioController::pollEditableUnitLoad() {
+  if (!editableUnitLoad_.valid() || editableUnitLoad_.wait_for(std::chrono::seconds{0}) != std::future_status::ready)
+    return core::success();
+  try {
+    auto result = editableUnitLoad_.get();
+    if (!result) { sampleReviewStatus_ = result.error().message; status_ = statusBeforeImport_; return core::Result<void>{result.error()}; }
+    const auto identity = editableUnitLoadIdentity();
+    if (proceduralImportStop_.stop_requested() || !identity || identity.value() != result.value().contextIdentity) {
+      sampleReviewStatus_ = "EDITABLE UNIT LOAD CANCELLED OR STALE / EXISTING EDITS PRESERVED";
+      status_ = statusBeforeImport_;
+      return core::failure(core::ErrorCode::Conflict, "Editable unit load cancelled or stale; existing edits were preserved");
+    }
+    adoptLoadedSampleUnit(std::move(result.value().loaded));
+    sampleReviewStatus_ = status_ = "EDITABLE UNIT LOADED / UNSAVED EDITS PRESERVED";
+    return core::success();
+  } catch (const std::exception& error) {
+    sampleReviewStatus_ = "EDITABLE UNIT LOAD FAILED / EXISTING EDITS PRESERVED";
+    status_ = statusBeforeImport_;
+    return core::failure(core::ErrorCode::Internal, "Editable unit loading failed", error.what());
+  }
 }
 
 std::size_t VoicebankStudioController::selectableUnitCount() const noexcept {
@@ -243,6 +333,7 @@ voicebank::Unit* VoicebankStudioController::selectedUnit() noexcept {
 
 core::Result<void> VoicebankStudioController::inspectTake(
     const std::filesystem::path& path, std::int32_t expectedRootMidi) {
+  if (proceduralImportBusy()) return core::failure(core::ErrorCode::Conflict, "Candidate import is busy");
   auto inspected = voicebank::inspectDryTake(path, expectedRootMidi);
   if (!inspected) {
     takeInspection_.reset();
@@ -257,6 +348,7 @@ core::Result<void> VoicebankStudioController::inspectTake(
 core::Result<std::filesystem::path>
 VoicebankStudioController::persistTakeInspection(
     const std::filesystem::path& takePath) const {
+  if (proceduralImportBusy()) return core::failure<std::filesystem::path>(core::ErrorCode::Conflict, "Candidate import is busy");
   if (!takeInspection_.has_value()) {
     return core::failure<std::filesystem::path>(
         core::ErrorCode::InvalidState,
@@ -329,27 +421,133 @@ std::filesystem::path VoicebankStudioController::selectedAudioPath() const {
   return unit == nullptr ? std::filesystem::path{} : root_ / unit->audioPath;
 }
 
-core::Result<void> VoicebankStudioController::rebuildSelected() {
-  const auto* unit = selectedUnit();
-  if (unit == nullptr) {
-    return core::failure(core::ErrorCode::NotFound, "No voicebank unit is selected");
+core::Result<VoicebankStudioController::PreparedUnitVisual> VoicebankStudioController::prepareUnitVisual(
+    const voicebank::Manifest& manifest, const std::filesystem::path& root, const SampleAudioBindings& bindings,
+    std::size_t index, double width, double height, std::stop_token stop) const {
+  using Output = PreparedUnitVisual;
+  const auto cancelled = [] { return core::failure<Output>(core::ErrorCode::Conflict, "Studio audio loading cancelled"); };
+  if (stop.stop_requested()) return cancelled();
+  if (index >= manifest.units.size()) return core::failure<Output>(core::ErrorCode::NotFound, "No editable unit is selected");
+  const auto& unit = manifest.units[index];
+  const auto binding = bindings.hashesByUnit.find(unit.id);
+  if (bindings.draftDescriptorSha256 && (binding == bindings.hashesByUnit.end() ||
+      unit.audioPath.generic_string() != "audio/" + binding->second + ".wav"))
+    return core::failure<Output>(core::ErrorCode::Conflict, "Draft unit no longer matches its retained audio binding", unit.id);
+  const auto path = voicebank::resolveBankAsset(root, unit.audioPath);
+  if (!path) return core::Result<Output>{path.error()};
+  // Hold exactly one bounded encoded payload. Hash it before any WAV decode,
+  // then pass the same bytes to the allocation-bounded, cancellable decoder.
+  const auto bytes = core::readFileBytesLimited(path.value(), 256ULL * 1024ULL * 1024ULL);
+  if (!bytes) return core::Result<Output>{bytes.error()};
+  if (binding != bindings.hashesByUnit.end()) {
+    core::Sha256 digest;
+    for (std::size_t offset=0U; offset<bytes.value().size(); offset+=65536U) {
+      if (stop.stop_requested()) return cancelled();
+      digest.update(std::span<const std::byte>{bytes.value()}.subspan(offset, std::min<std::size_t>(65536U, bytes.value().size()-offset)));
+    }
+    if (digest.hexDigest() != binding->second)
+      return core::failure<Output>(core::ErrorCode::Conflict, "Studio audio bytes differ from the retained unit binding", unit.id);
   }
-  auto audio = voicebank::readWav(selectedAudioPath());
-  if (!audio) return core::Result<void>{audio.error()};
-  audio_ = std::move(audio.value());
-  const auto wave = waveformRect(logicalWidth_, logicalHeight_);
-  const auto spectrogram = spectrogramRect(logicalWidth_, logicalHeight_);
-  auto built = microscope_.rebuild(*unit, audio_, wave, spectrogram, 1200U,
-                                   voicebank::SpectrogramConfig{
-                                       .fftSize = 1024U,
-                                       .hopSize = 256U,
-                                   });
-  if (!built) return built;
+  const bool boundDraft = bindings.draftDescriptorSha256.has_value();
+  const voicebank::WavReadLimits limits{.maximumFrames = boundDraft ? 1024ULL*1024ULL : 32ULL*1024ULL*1024ULL,
+      .maximumChannels = static_cast<std::uint16_t>(boundDraft ? 1U : 8U),
+      .maximumDecodedSamples = boundDraft ? 1024ULL*1024ULL : 32ULL*1024ULL*1024ULL};
+  auto audio = voicebank::readWav(bytes.value(), path.value().string(), limits, stop);
+  if (!audio) return core::Result<Output>{audio.error()};
+  if (boundDraft && audio.value().sampleRate != manifest.expectedSampleRate)
+    return core::failure<Output>(core::ErrorCode::Conflict, "Draft audio sample rate differs from its manifest");
+  if (stop.stop_requested()) return cancelled();
+  ui::SampleMicroscopeModel microscope;
+  const auto built = microscope.rebuild(unit, audio.value(), waveformRect(width,height), spectrogramRect(width,height),
+      1200U, {.fftSize=1024U,.hopSize=256U});
+  if (!built) return core::Result<Output>{built.error()};
+  if (stop.stop_requested()) return cancelled();
+  return Output{std::move(audio.value()),std::move(microscope)};
+}
+
+core::Result<VoicebankStudioController::SampleReviewWorkResult::LoadedUnit> VoicebankStudioController::prepareSampleManifestLoad(
+    const std::filesystem::path& path, double width, double height, std::stop_token stop,
+    const voicebank_production::CreatedSampleManifestDraft* expectedDraft) const {
+  using Output = SampleReviewWorkResult::LoadedUnit;
+  if (stop.stop_requested()) return core::failure<Output>(core::ErrorCode::Conflict, "Studio manifest loading cancelled");
+  const auto absolute = std::filesystem::absolute(path).lexically_normal();
+  const auto root = absolute.parent_path();
+  const auto bytes = core::readTextFileLimited(absolute, 32ULL*1024ULL*1024ULL);
+  if (!bytes) return core::Result<Output>{bytes.error()};
+  if (expectedDraft && core::sha256Hex(bytes.value()) != expectedDraft->manifestSha256)
+    return core::failure<Output>(core::ErrorCode::Conflict, "Created draft manifest differs from its commit receipt");
+  auto manifest = codec_.decode(bytes.value()); if (!manifest) return core::Result<Output>{manifest.error()};
+  if (manifest.value().units.empty()) return core::failure<Output>(core::ErrorCode::NotFound, "Voicebank manifest contains no units");
+  SampleAudioBindings bindings;
+  std::optional<std::string> requiredDescriptor;
+  if (expectedDraft) requiredDescriptor = expectedDraft->draftSha256;
+  else if (sampleAudioBindings_.draftDescriptorSha256 && !manifestPath_.empty()) {
+    std::error_code leftError, rightError;
+    const auto left = std::filesystem::weakly_canonical(absolute,leftError);
+    const auto right = std::filesystem::weakly_canonical(manifestPath_,rightError);
+    if (!leftError && !rightError && left == right) requiredDescriptor = sampleAudioBindings_.draftDescriptorSha256;
+  }
+  std::error_code error;
+  const auto sidecar = std::filesystem::symlink_status(root / "draft.json",error);
+  const bool absent = error == std::errc::no_such_file_or_directory || (!error && sidecar.type() == std::filesystem::file_type::not_found);
+  if (requiredDescriptor && absent) return core::failure<Output>(core::ErrorCode::Conflict, "Bound draft metadata is missing; audio cannot become unbound on reopen");
+  if (!absent) {
+    const auto resolved = voicebank::resolveBankAsset(root, "draft.json"); if (!resolved) return core::Result<Output>{resolved.error()};
+    const auto descriptor = core::readTextFileLimited(resolved.value(),32ULL*1024ULL*1024ULL);
+    if (!descriptor) return core::Result<Output>{descriptor.error()};
+    const auto hash = core::sha256Hex(descriptor.value());
+    if (requiredDescriptor && hash != *requiredDescriptor)
+      return core::failure<Output>(core::ErrorCode::Conflict, "Bound draft metadata differs from its retained identity");
+    const auto parsed = formats::parseJson(descriptor.value(), {.maximumInputBytes=32U*1024U*1024U,.maximumDepth=24U,
+        .maximumNodes=131072U,.maximumStringBytes=16384U,.maximumCollectionEntries=8192U});
+    if (!parsed) return core::Result<Output>{parsed.error()};
+    const auto* format = parsed.value().find("format");
+    const bool supported = format && format->isString() && format->asString() == "com.project-seam.editable-sample-draft";
+    if (requiredDescriptor && !supported) return core::failure<Output>(core::ErrorCode::Conflict, "Bound draft metadata format changed");
+    if (supported) {
+      const auto* schema = parsed.value().find("schemaVersion");
+      const auto* rows = parsed.value().find("unitBindings");
+      if (!schema || !schema->isInteger() || schema->asInt64()!=1 || !rows || !rows->isArray() || rows->asArray().empty() || rows->asArray().size()>4096U)
+        return core::failure<Output>(core::ErrorCode::Unsupported, "Draft audio binding metadata has an unsupported shape");
+      for (const auto& row : rows->asArray()) {
+        const auto* id = row.find("unitId"); const auto* digest = row.find("audioSha256");
+        if (!id || !id->isString() || id->asString().empty() || !digest || !digest->isString() || digest->asString().size()!=64U ||
+            !std::all_of(digest->asString().begin(),digest->asString().end(),[](char c) { return (c>='0' && c<='9') || (c>='a' && c<='f'); }) ||
+            !bindings.hashesByUnit.emplace(id->asString(),digest->asString()).second)
+          return core::failure<Output>(core::ErrorCode::Conflict, "Draft unit audio binding is invalid or duplicated");
+      }
+      for (const auto& unit : manifest.value().units) {
+        const auto found = bindings.hashesByUnit.find(unit.id);
+        if (found == bindings.hashesByUnit.end() || unit.audioPath.generic_string() != "audio/"+found->second+".wav")
+          return core::failure<Output>(core::ErrorCode::Conflict, "Editable draft unit differs from its retained audio binding",unit.id);
+      }
+      bindings.draftDescriptorSha256 = hash;
+    }
+  }
+  width = std::max(720.0,width); height = std::max(520.0,height);
+  auto visual = prepareUnitVisual(manifest.value(),root,bindings,0U,width,height,stop);
+  if (!visual) return core::Result<Output>{visual.error()};
+  return Output{std::move(manifest.value()),std::move(visual.value().audio),std::move(visual.value().microscope),absolute,root,0U,false,std::move(bindings)};
+}
+
+core::Result<void> VoicebankStudioController::rebuildSelected(std::stop_token stop) {
+  auto visual = prepareUnitVisual(manifest_,root_,sampleAudioBindings_,selectedIndex_,logicalWidth_,logicalHeight_,stop);
+  if (!visual) return core::Result<void>{visual.error()};
+  audio_ = std::move(visual.value().audio); microscope_ = std::move(visual.value().microscope);
+  pinnedAudioUnitId_ = selectedUnit()->id; pinnedAudioPath_ = selectedAudioPath();
   return core::success();
+}
+
+core::Result<void> VoicebankStudioController::relayoutSelected() {
+  const auto* unit = selectedUnit();
+  if (!unit || unit->id != pinnedAudioUnitId_ || selectedAudioPath() != pinnedAudioPath_)
+    return core::failure(core::ErrorCode::Conflict, "Selected unit changed; pinned audio cannot be relabelled by resize");
+  return microscope_.relayout(*unit,waveformRect(logicalWidth_,logicalHeight_),spectrogramRect(logicalWidth_,logicalHeight_));
 }
 
 core::Result<void> VoicebankStudioController::moveSelectedMarker(
     ui::AcousticMarkerKind marker, double x) {
+  if (proceduralImportBusy()) return core::failure(core::ErrorCode::Conflict, "Candidate import is busy");
   auto* unit = selectedUnit();
   if (unit == nullptr) return core::failure(core::ErrorCode::NotFound, "No unit selected");
   auto moved = microscope_.moveMarker(
@@ -363,6 +561,7 @@ core::Result<void> VoicebankStudioController::moveSelectedMarker(
 
 core::Result<void> VoicebankStudioController::moveSelectedPitchMark(
     std::size_t index, double x) {
+  if (proceduralImportBusy()) return core::failure(core::ErrorCode::Conflict, "Candidate import is busy");
   auto* unit = selectedUnit();
   if (unit == nullptr) return core::failure(core::ErrorCode::NotFound, "No unit selected");
   auto moved = microscope_.movePitchMark(*unit, index, x);
@@ -374,10 +573,12 @@ core::Result<void> VoicebankStudioController::moveSelectedPitchMark(
 }
 
 void VoicebankStudioController::resize(double logicalWidth, double logicalHeight) {
+  cancelCandidateMarkerDrag();
   logicalWidth_ = std::max(720.0, logicalWidth);
   logicalHeight_ = std::max(520.0, logicalHeight);
   if (selectedUnit() != nullptr && audio_.frameCount() != 0U) {
-    static_cast<void>(rebuildSelected());
+    const auto relayout = relayoutSelected();
+    if (!relayout) status_ = relayout.error().message;
   }
 }
 

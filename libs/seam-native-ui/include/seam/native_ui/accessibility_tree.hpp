@@ -17,6 +17,9 @@ struct AccessibilityTreeConfig final {
 
 class AccessibilityTree final {
 public:
+  // Bounded non-score surfaces (for example Voice Designer) share the native
+  // bridge without fabricating a piano-roll model or virtual notes.
+  void rebuildCustom(SemanticNode root, std::string focusedId = {});
   void rebuild(const EditorSceneState& state, const ui::PianoRollModel& model,
                AccessibilityTreeConfig config = {});
   [[nodiscard]] const SemanticNode& root() const noexcept { return root_; }

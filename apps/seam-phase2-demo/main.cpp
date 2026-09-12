@@ -446,7 +446,6 @@ int main(int argc, char** argv) {
       .symbol = std::nullopt,
       .timing = seam::domain::PhonemeTiming{
           .startOffset = seam::time::Microseconds{-70000},
-          .endOffset = seam::time::Microseconds{0},
       },
       .locked = true,
   });

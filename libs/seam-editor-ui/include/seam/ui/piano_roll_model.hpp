@@ -1,6 +1,7 @@
 #pragma once
 
 #include "seam/application/editor_session.hpp"
+#include "seam/application/lyric_commands.hpp"
 #include "seam/application/project_factory.hpp"
 #include "seam/time/quantizer.hpp"
 #include "seam/ui/geometry.hpp"
@@ -10,6 +11,7 @@
 #include <optional>
 #include <string>
 #include <vector>
+#include <stop_token>
 
 namespace seam::ui {
 
@@ -38,7 +40,13 @@ struct LyricDistributionReport final {
   std::size_t appliedSyllables{0U};
   std::size_t missingSyllables{0U};
   std::size_t leftoverSyllables{0U};
-  bool committed{false};
+  bool committed{false}; // Request accepted; changedLyrics == 0 means a history-neutral no-op.
+  std::size_t targetLyrics{0U};
+  std::size_t changedLyrics{0U};
+};
+struct LyricDistributionPlan final {
+  LyricDistributionReport report;
+  std::vector<application::BatchLyricEdit> edits;
 };
 
 struct PianoRollViewport final {
@@ -94,7 +102,12 @@ public:
   [[nodiscard]] core::Result<domain::NoteId> duplicateSelection();
   [[nodiscard]] core::Result<LyricDistributionReport> distributeSelectedLyrics(
       std::u32string text,
-      domain::Language language = domain::Language::Unspecified);
+      // Omitted preserves each target language; explicit Unspecified resets it.
+      std::optional<domain::Language> language = std::nullopt);
+  [[nodiscard]] static core::Result<LyricDistributionPlan> planLyricDistribution(
+      const domain::Project& project, domain::RegionId regionId,
+      const std::vector<domain::NoteId>& selectedNotes, std::u32string text,
+      std::optional<domain::Language> language = std::nullopt, std::stop_token stop = {});
 
 private:
   [[nodiscard]] const domain::VocalRegion* region() const noexcept;

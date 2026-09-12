@@ -90,9 +90,12 @@ class PublicReleaseStateMachineTests(unittest.TestCase):
             approvals=fresh_approvals,
             gatePassed=True,
         )
-        resumed = release_gate.transition(paused, resume, contract)
+        # Fresh signatures authorize the actor, not a caller's gatePassed flag.
+        # Actual replay success is covered by test_public_release_replay.
+        with self.assertRaisesRegex(release_gate.ReleaseGateInputError, "restored releaseAudit"):
+            release_gate.transition(paused, resume, contract)
         revoked = release_gate.transition(
-            resumed,
+            paused,
             _decision("REVOKE", "revoke-001", "2026-08-31T04:00:00Z"),
             contract,
         )

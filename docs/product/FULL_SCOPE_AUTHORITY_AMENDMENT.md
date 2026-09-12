@@ -81,11 +81,14 @@ requirements; all canonical values remain null until the named owners provide
 measured, independently reviewed qualification. A scalar or omitted cell
 cannot resolve a multi-dimension criterion.
 
-The U45 semantic validator is not yet available. The central READY evaluator
-emits an explicit EB-009 error and blocked ID even if every row claims PASS;
-CLOSED inherits that error. No manual-ready flag or production fixture bypass
-is provided. U45/U46 must validate raw content, restored identity and all
-promotion paths before removing this blocker. JSON Schema proves shape only.
+The U45 semantic validator foundation is now available. The central READY
+evaluator validates a supplied report's raw content, restored identity,
+registry/check coverage, and report references; an omitted report still emits
+an explicit EB-009 error and blocked ID. The canonical contract's unresolved
+resource matrix and empirical criteria continue to block even a fully shaped
+report. No manual-ready flag or production fixture bypass is provided. U45/U46
+must still close real raw evidence, restored-archive identity, and every
+promotion path before removing the blocker. JSON Schema proves shape only.
 
 Pre-GO independent creator/producer acceptance precedes READY. The subsequent
 external cohort, CLOSED decision and later public activation remain distinct

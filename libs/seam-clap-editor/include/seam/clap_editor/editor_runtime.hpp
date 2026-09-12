@@ -7,6 +7,7 @@
 #include "seam/core/result.hpp"
 #include "seam/domain/project.hpp"
 #include "seam/clap_editor/host_timeline.hpp"
+#include "seam/clap_editor/offline_render_session.hpp"
 #include "seam/native_ui/character_presentation.hpp"
 #include "seam/native_ui/editor_controller.hpp"
 #include "seam/native_ui/editor_scene.hpp"
@@ -22,6 +23,7 @@
 
 #include <array>
 #include <atomic>
+#include <chrono>
 #include <condition_variable>
 #include <cstddef>
 #include <cstdint>
@@ -69,6 +71,9 @@ struct RenderedPreview final {
   std::size_t cacheHits{0U};
   std::size_t trackCount{0U};
   std::size_t regionCount{0U};
+  // Populated only by non-realtime Final preparation. A read handle keeps
+  // ownership in the publication slot; process() never copies this pointer.
+  std::shared_ptr<const authoring::PublishedProjectAudio> offlineSource;
 };
 
 [[nodiscard]] std::string_view previewStatusName(PreviewStatus status) noexcept;
@@ -173,6 +178,9 @@ public:
       std::function<void()> end);
   void setVoicebankInstallerHandoff(
       std::function<core::Result<void>()> callback);
+  void setJapaneseReadingResourceResolver(
+      std::function<core::Result<authoring::StagedJapaneseReadingResource>()>
+          resolver);
 
   void resize(double logicalWidth, double logicalHeight) noexcept;
   void paint(native_ui::RasterCanvas& canvas) noexcept;
@@ -220,6 +228,24 @@ public:
   void requestRender(std::uint32_t sampleRate);
   void setRenderQuality(rendering::RenderQuality quality);
   [[nodiscard]] rendering::RenderQuality renderQuality() const noexcept;
+  void setOfflineTimingAuthority(OfflineTimingAuthority authority) noexcept;
+  [[nodiscard]] OfflineTimingAuthority offlineTimingAuthority() const noexcept;
+  // Non-realtime host entrypoint. It requests a Final render and waits only
+  // outside the audio callback until the exact current revision is published.
+  [[nodiscard]] core::Result<void> prepareOfflineRender(
+      std::chrono::milliseconds timeout = std::chrono::seconds{30});
+  [[nodiscard]] OfflineRenderView offlineRenderView() const;
+  [[nodiscard]] bool offlineRenderReady() const noexcept {
+    return static_cast<bool>(acquireOfflineRenderedPreview());
+  }
+  [[nodiscard]] RealtimePreviewPublication::ReadHandle
+  acquireOfflineRenderedPreview() const noexcept {
+    if (!offlineAudioReady_.load(std::memory_order_acquire)) return {};
+    auto captured = offlinePublication_.acquire();
+    if (!captured || !captured->offlineSource ||
+        !authoring_->renderer().matchesCurrent(*captured->offlineSource)) return {};
+    return captured;
+  }
   [[nodiscard]] std::shared_ptr<const RenderedPreview> renderedPreview() const;
   [[nodiscard]] RealtimePreviewPublication::ReadHandle
   acquireRenderedPreview() const noexcept {
@@ -327,6 +353,7 @@ private:
   native_ui::EditorScenePainter painter_;
   native_ui::CharacterPresentation character_;
   mutable RealtimePreviewPublication previewPublication_;
+  mutable RealtimePreviewPublication offlinePublication_;
   live_voice::VoiceEngine live_;
   voicebank::VoicebankResolution voicebankResolution_;
   std::function<void()> repaintCallback_;
@@ -334,10 +361,15 @@ private:
   std::function<void(const native_ui::TextInputRequest&)> beginTextInput_;
   std::function<void()> endTextInput_;
   std::function<core::Result<void>()> voicebankInstallerHandoff_;
+  std::function<core::Result<authoring::StagedJapaneseReadingResource>()>
+      japaneseReadingResourceResolver_;
   double logicalWidth_{1100.0};
   double logicalHeight_{720.0};
   std::uint32_t renderSampleRate_{48000U};
   rendering::RenderQuality renderQuality_{rendering::RenderQuality::Preview};
+  OfflineTimingAuthority offlineTimingAuthority_{OfflineTimingAuthority::FixedAudio};
+  OfflineRenderSession offlineRender_;
+  std::atomic<bool> offlineAudioReady_{false};
   bool dirty_{false};
   ui::PhonemeLaneModel phonemeLane_;
   ui::UnitLaneModel unitLane_;

@@ -45,6 +45,8 @@ struct PhonemeOverride final {
   std::optional<std::string> symbol;
   PhonemeTiming timing;
   bool locked{false};
+  bool unresolved{false};
+  std::optional<std::string> sourceContextId;
 
   [[nodiscard]] core::Result<void> validate() const;
 
@@ -58,6 +60,10 @@ struct PhonemeToken final {
   bool voiced{true};
   PhonemeTiming timing;
   bool locked{false};
+  // Shared-resolver address within a source-bound pronunciation context.
+  // Empty only for raw/unbound adapter output; not an edit-lineage credential.
+  std::string contextId;
+  LyricTokenId lyricOwner;
 
   [[nodiscard]] core::Result<void> validate() const;
 

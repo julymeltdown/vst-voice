@@ -44,8 +44,13 @@ enum class RenderFailureKind {
   PublicationBusy,
 };
 
+struct RenderPublicationIdentity final {};
 struct PublishedProjectAudio final {
   std::uint64_t projectRevision{0U};
+  domain::ProjectId projectId{};
+  std::uint64_t requestId{0U};
+  std::shared_ptr<const RenderPublicationIdentity> sourceIdentity;
+  std::shared_ptr<const domain::Project> sourceProject;
   application::CommandImpact impact;
   rendering::RenderQuality quality{rendering::RenderQuality::Preview};
   RenderState state{RenderState::Idle};
@@ -163,6 +168,17 @@ public:
                   .scope = application::CommandAudioImpact::ProjectAudio,
                   .projectWide = true});
   void cancel() noexcept;
+  // Reject captured audio immediately when new document intent is queued,
+  // including the interval before a debounced render is submitted.
+  void invalidateCurrent() noexcept;
+  // Explicit resolved-resource submission; does not persist a track selection.
+  void submitWithSources(domain::Project project,
+              std::vector<rendering::TrackSingerSource> sources,
+              domain::TrackId activeTrack, domain::RegionId activeRegion,
+              std::uint64_t revision, std::uint32_t sampleRate,
+              rendering::RenderQuality quality, bool immediate = false,
+              application::CommandImpact impact = application::CommandImpact{
+                  .scope = application::CommandAudioImpact::ProjectAudio, .projectWide = true});
   void shutdown() noexcept;
 
   [[nodiscard]] RealtimeProjectAudioPublication::ReadHandle acquire()
@@ -170,6 +186,10 @@ public:
     return publication_.acquire();
   }
   [[nodiscard]] std::shared_ptr<const PublishedProjectAudio> latest() const;
+  // Current ready audio only; unlike acquire(), this rejects retained stale
+  // playback after replacement, cancellation or a same-revision resubmission.
+  [[nodiscard]] RealtimeProjectAudioPublication::ReadHandle acquireCurrent() const noexcept;
+  [[nodiscard]] bool matchesCurrent(const PublishedProjectAudio& source) const noexcept;
   [[nodiscard]] RenderProgress progress() const noexcept;
   [[nodiscard]] RenderCoordinatorStats stats() const noexcept;
   void setCompletionCallback(std::function<void()> callback);
@@ -178,7 +198,7 @@ private:
   struct Request final {
     std::uint64_t requestId{0U};
     domain::Project project;
-    std::vector<rendering::TrackVoicebankSource> voicebanks;
+    std::vector<rendering::TrackSingerSource> voicebanks;
     domain::TrackId activeTrack;
     domain::RegionId activeRegion;
     std::uint64_t revision{0U};
@@ -187,6 +207,7 @@ private:
     bool immediate{false};
     application::CommandImpact impact;
   };
+  const std::shared_ptr<const RenderPublicationIdentity> sourceIdentity_{std::make_shared<const RenderPublicationIdentity>()};
 
   struct PreflightResult final {
     RenderFailureKind failure{RenderFailureKind::None};
@@ -204,10 +225,11 @@ private:
   [[nodiscard]] std::optional<PublishedProjectAudio> render(
       const Request& request, std::stop_token stopToken);
   [[nodiscard]] static PreflightResult preflight(const Request& request);
-  [[nodiscard]] static PublishedProjectAudio makeFailureAudio(
+  [[nodiscard]] PublishedProjectAudio makeFailureAudio(
       const Request& request, const PreflightResult& preflight);
   [[nodiscard]] static std::size_t countPhrases(
-      const domain::Project& project);
+      const domain::Project& project, std::uint32_t sampleRate,
+      std::span<const rendering::TrackSingerSource> sources);
   void updateProgress(RenderProgress value) noexcept;
   void notifyCompletion();
 

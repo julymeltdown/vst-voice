@@ -1,4 +1,5 @@
 #include "seam/native_ui/editor_semantics.hpp"
+#include "seam/native_ui/tempo_meter_model.hpp"
 
 #include "seam/native_ui/editor_frame_layout.hpp"
 #include "seam/native_ui/diagnostic_presentation.hpp"
@@ -63,7 +64,7 @@ SemanticNode EditorSemanticTree::noteNode(const ui::NoteVisual& note,
       .editableValue = note.lyric,
       .description = "MIDI " + std::to_string(note.midiKey) + " / " +
                     std::to_string(note.duration.value()) +
-                    " ticks; Enter edits lyric",
+                    " ticks; Enter edits lyric; Alt+Enter edits a Japanese phone hint",
   };
 }
 
@@ -130,6 +131,26 @@ SemanticNode EditorSemanticTree::build(const EditorSceneState& state,
       .children = {},
       .description = "Use Tab and Shift-Tab to move keyboard focus",
   };
+  if (state.phonemeReview.visible) {
+    root.value = state.phonemeReview.source + " / " + state.phonemeReview.target + " / " + state.phonemeReview.status;
+    for (std::size_t i = 0U; i < 6U; ++i) {
+      root.children.push_back(SemanticNode{.id = "phoneme.review.action." + std::to_string(i),
+          .role = SemanticRole::Button, .name = kPhonemeReviewActions[i], .value = {},
+          .bounds = layout.phonemeReviewButtonBounds(state.logicalWidth, state.logicalHeight, i),
+          .enabled = state.phonemeReview.enabled[i], .focused = false,
+          .actions = state.phonemeReview.enabled[i]
+              ? std::vector<SemanticAction>{SemanticAction::Activate, SemanticAction::SetFocus}
+              : std::vector<SemanticAction>{}, .children = {}});
+    }
+    return root;
+  }
+  if (state.phonemeReview.available && !state.sampleMicroscope) {
+    root.children.push_back(SemanticNode{.id = "phoneme.review.open", .role = SemanticRole::Button,
+        .name = "Review retained edits", .value = {},
+        .bounds = layout.phonemeReviewOpenBounds(state.logicalWidth, state.logicalHeight),
+        .enabled = true, .focused = false,
+        .actions = {SemanticAction::Activate, SemanticAction::SetFocus}, .children = {}});
+  }
   if (state.sampleMicroscope.has_value() &&
       state.sampleMicroscope->model != nullptr) {
     const auto& microscope = *state.sampleMicroscope;
@@ -261,15 +282,32 @@ SemanticNode EditorSemanticTree::build(const EditorSceneState& state,
   });
   transportToolbar.children.push_back(SemanticNode{
       .id = "toolbar.tempo",
-      .role = SemanticRole::Status,
-      .name = "Project tempo",
-      .value = "BPM " + std::to_string(
-                              static_cast<int>(std::lround(state.tempoBpm))),
-      .bounds = layout.bpmBoundsForWidth(state.logicalWidth),
+      .role = SemanticRole::TextField,
+      .name = "Initial project tempo in BPM",
+      .value = tempoEditText(state.tempoBpm),
+      .bounds = layout.tempoInputBoundsForWidth(state.logicalWidth),
       .enabled = true,
       .focused = false,
-      .actions = {SemanticAction::SetFocus},
+      .actions = {SemanticAction::SetFocus, SemanticAction::Activate, SemanticAction::EditText},
       .children = {},
+  });
+  transportToolbar.children.push_back(SemanticNode{
+      .id = "toolbar.meter",
+      .role = SemanticRole::TextField,
+      .name = "Initial project time signature",
+      .value = meterEditText(state.meter),
+      .bounds = layout.meterInputBoundsForWidth(state.logicalWidth),
+      .enabled = true,
+      .focused = false,
+      .actions = {SemanticAction::SetFocus, SemanticAction::Activate, SemanticAction::EditText},
+      .children = {},
+  });
+  transportToolbar.children.push_back(SemanticNode{
+      .id = "toolbar.time-map",
+      .role = SemanticRole::Button,
+      .name = "Open tempo and meter events",
+      .bounds = layout.timeMapOpenBounds(),
+      .actions = {SemanticAction::SetFocus, SemanticAction::Activate},
   });
   transportToolbar.children.push_back(SemanticNode{
       .id = "voice.identity",
@@ -306,7 +344,7 @@ SemanticNode EditorSemanticTree::build(const EditorSceneState& state,
                                                      SemanticAction::SetFocus}
                        : std::vector<SemanticAction>{SemanticAction::SetFocus},
         .children = {},
-        .description = "Shift-L opens text input and distributes whitespace-separated syllables across selected notes",
+        .description = "Shift-L distributes one whitespace-separated syllable per distinct lyric token; select every note sharing a token. Existing languages are preserved.",
     });
   }
   const auto loopBounds =
@@ -850,6 +888,7 @@ SemanticNode EditorSemanticTree::build(const EditorSceneState& state,
     }
     double trackY = layout.toolbarHeight + layout.trackListTop;
     for (const auto& track : state.arrangementTracks) {
+      if (trackY + layout.trackRowHeight > panelBottom) break;
       const auto trackBounds = clippedBounds(ui::Rect{
           editorRight + layout.trackRowInsetX,
           trackY + layout.trackRowTopOffset,
@@ -870,6 +909,7 @@ SemanticNode EditorSemanticTree::build(const EditorSceneState& state,
       };
       trackY += layout.trackRowAdvance;
       for (const auto& region : track.regions) {
+        if (trackY + layout.regionAdvance - layout.regionBottomPadding > panelBottom) break;
         const auto regionBounds = clippedBounds(ui::Rect{
             editorRight + layout.trackRowInsetX,
             trackY,
@@ -893,15 +933,13 @@ SemanticNode EditorSemanticTree::build(const EditorSceneState& state,
       }
       panel.children.push_back(std::move(trackNode));
     }
-    if (state.inspector.valid) {
-      const auto inspectorTop = std::max(
-          layout.toolbarHeight, panelBottom - layout.inspectorHeight);
+    if (const auto resolvedTop = resolveArrangementInspectorTop(state, layout, panelBottom)) {
+      const auto inspectorTop = *resolvedTop;
       const auto firstFieldBaseline =
           inspectorTop + layout.inspectorNameBaseline +
           layout.inspectorNameToFirstFieldAdvance;
       const auto toggleTop = firstFieldBaseline +
-                             layout.inspectorFieldAdvance * 3.0 -
-                             layout.inspectorFontSize;
+                             layout.inspectorFieldAdvance * 3.0;
       const auto toggleWidth = std::max(
           1.0, (panelWidth - layout.inspectorTextInsetX * 2.0) * 0.5);
       panel.children.push_back(SemanticNode{
@@ -945,8 +983,7 @@ SemanticNode EditorSemanticTree::build(const EditorSceneState& state,
           .value = "Bus " + state.inspector.outputRoute.bus.toString(),
           .bounds = clippedBounds(ui::Rect{
               editorRight + layout.inspectorTextInsetX,
-              firstFieldBaseline + layout.inspectorFieldAdvance * 4.0 -
-                  layout.inspectorFontSize,
+              firstFieldBaseline + layout.inspectorFieldAdvance * 4.0,
               panelWidth - layout.inspectorTextInsetX * 2.0,
               layout.inspectorFieldAdvance,
           }),
@@ -957,6 +994,27 @@ SemanticNode EditorSemanticTree::build(const EditorSceneState& state,
           .children = {},
           .description = "Activate to cycle the selected track through project output buses",
       });
+      if (state.inspector.vocal) {
+        SemanticNode edit; edit.id = "inspector.vibrato"; edit.role = SemanticRole::Button;
+        edit.name = "Edit selected vibrato"; edit.enabled = state.vibratoEditable;
+        edit.bounds = {editorRight + layout.inspectorTextInsetX, firstFieldBaseline + layout.inspectorFieldAdvance * 5.0,
+            (panelWidth - layout.inspectorTextInsetX * 2.0 - 8.0) / 3.0, 22.0};
+        if (edit.enabled) edit.actions = {SemanticAction::SetFocus, SemanticAction::Activate};
+        edit.description = "Draft vibrato parameters, then explicitly Apply to Selection";
+        SemanticNode dynamics; dynamics.id = "inspector.dynamics"; dynamics.role = SemanticRole::Button;
+        dynamics.name = "Edit region dynamics"; dynamics.enabled = state.dynamicsEditable;
+        dynamics.bounds = {edit.bounds.x + edit.bounds.width + 4.0, edit.bounds.y, edit.bounds.width, edit.bounds.height};
+        if (dynamics.enabled) dynamics.actions = {SemanticAction::SetFocus, SemanticAction::Activate};
+        dynamics.description = "Edit the entire active region native dynamics curve; generated dynamics are retained";
+        SemanticNode style; style.id = "inspector.style"; style.role = SemanticRole::Button;
+        style.name = "Track style and coverage"; style.enabled = state.styleEditable;
+        style.bounds = {dynamics.bounds.x + dynamics.bounds.width + 4.0, dynamics.bounds.y, dynamics.bounds.width, dynamics.bounds.height};
+        if (style.enabled) style.actions = {SemanticAction::SetFocus, SemanticAction::Activate};
+        style.description = "Choose an explicit track style and inspect structural phoneme coverage";
+        panel.children.push_back(std::move(edit));
+        panel.children.push_back(std::move(dynamics));
+        panel.children.push_back(std::move(style));
+      }
     }
     root.children.push_back(std::move(panel));
   }

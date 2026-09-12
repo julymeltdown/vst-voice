@@ -63,6 +63,29 @@ core::Result<std::string> packageContentHash(
     addField(hash, path);
     addField(hash, digestHex(entry->sha256));
   }
+  std::set<std::string> alignmentPaths;
+  for (const auto& unit : package.manifest.units) {
+    alignmentPaths.insert("alignments/" + core::sha256Hex(unit.id) + ".json");
+  }
+  bool started = false;
+  std::uint64_t totalBytes = 0U;
+  for (const auto& path : alignmentPaths) {
+    const auto entry = std::find_if(package.entries.begin(), package.entries.end(),
+        [&path](const auto& value) { return value.path == path; });
+    if (entry == package.entries.end()) continue;
+    if (entry->payloadSize > 512ULL * 1024ULL ||
+        entry->payloadSize > 64ULL * 1024ULL * 1024ULL - totalBytes) {
+      return core::failure<std::string>(core::ErrorCode::Unsupported,
+          "Signed seambank source alignments exceed identity limits", path);
+    }
+    totalBytes += entry->payloadSize;
+    if (!started) {
+      addField(hash, "source-phoneme-alignments-v1");
+      started = true;
+    }
+    addField(hash, path);
+    addField(hash, digestHex(entry->sha256));
+  }
   return hash.hexDigest();
 }
 

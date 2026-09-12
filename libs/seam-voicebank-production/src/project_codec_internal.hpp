@@ -16,6 +16,7 @@ namespace seam::voicebank_production::codec_internal {
                             std::string_view key, bool& output);
 [[nodiscard]] core::Result<SourceStrategyAssessment> decodeStrategy(
     const formats::JsonValue& value);
+[[nodiscard]] core::Result<SourceQualityAssessment> decodeSourceQualityAssessment(const formats::JsonValue& value);
 [[nodiscard]] core::Result<AssetRecord> decodeAsset(
     const formats::JsonValue& value);
 [[nodiscard]] core::Result<DerivedRevision> decodeRevision(
@@ -23,7 +24,8 @@ namespace seam::voicebank_production::codec_internal {
 [[nodiscard]] core::Result<MetadataRevision> decodeMetadataRevision(
     const formats::JsonValue& value);
 [[nodiscard]] core::Result<TakeRecord> decodeTake(
-    const formats::JsonValue& value);
+    const formats::JsonValue& value, std::int64_t schemaVersion);
+[[nodiscard]] core::Result<TakeSourceBinding> decodeSourceBinding(const formats::JsonValue& value);
 [[nodiscard]] core::Result<UnitAssignment> decodeAssignment(
     const formats::JsonValue& value);
 

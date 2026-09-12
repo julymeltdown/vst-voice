@@ -4,6 +4,23 @@
 
 #include <algorithm>
 
+TEST_CASE("diagnostic detail remains bounded display safe and separate from its message key") {
+  using namespace seam;
+  auto diagnostic = authoring::DiagnosticRegistry::fromError(core::Error{core::ErrorCode::IoError, std::string(4097U, 'a')});
+  CHECK(diagnostic.messageKey == "generic.failure"); CHECK(diagnostic.detail.size() == 4096U); CHECK(diagnostic.detailTruncated);
+  CHECK(!diagnostic.detailEscaped); CHECK(authoring::DiagnosticRegistry::validate(diagnostic));
+  diagnostic.setDetail(std::string(4096U, 'b')); CHECK(!diagnostic.detailTruncated); CHECK(diagnostic.detail.size() == 4096U);
+  diagnostic.setDetail(std::string(4094U, 'x') + "歌"); CHECK(diagnostic.detail.size() == 4094U); CHECK(diagnostic.detailTruncated);
+  CHECK(authoring::DiagnosticRegistry::validate(diagnostic));
+  diagnostic.setDetail("歌🙂\nnext"); CHECK(diagnostic.detail == "歌🙂\nnext"); CHECK(!diagnostic.detailTruncated);
+  diagnostic.setDetail(std::string{"a\0b", 3U} + std::string(1U, static_cast<char>(0xff)));
+  CHECK(diagnostic.detail == "a\\x00b\\xFF"); CHECK(diagnostic.detailEscaped); CHECK(!diagnostic.detailTruncated);
+  CHECK(authoring::DiagnosticRegistry::validate(diagnostic));
+  auto other = diagnostic; other.detailEscaped = false; CHECK(!other.sameIssueAs(diagnostic));
+  diagnostic.detail = std::string(1U, static_cast<char>(0xff)); CHECK(!authoring::DiagnosticRegistry::validate(diagnostic));
+  diagnostic.detail = std::string(4097U, 'a'); CHECK(!authoring::DiagnosticRegistry::validate(diagnostic));
+}
+
 TEST_CASE("diagnostic registry validates registered codes and actions") {
   CHECK(seam::authoring::DiagnosticRegistry::isRegistered("BANK_UNTRUSTED"));
   const auto actions = seam::authoring::DiagnosticRegistry::actions("BANK_UNTRUSTED");

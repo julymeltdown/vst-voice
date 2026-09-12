@@ -1,6 +1,7 @@
 #include "seam/voicebank/content_identity.hpp"
 
 #include "seam/core/sha256.hpp"
+#include "seam/core/file_io.hpp"
 #include "seam/voicebank/asset_path.hpp"
 #include "seam/voicebank/manifest_json.hpp"
 #include "seam/voicebank/wav.hpp"
@@ -64,6 +65,47 @@ core::Result<std::string> computeVoicebankContentHash(
     if (!digest) return core::Result<std::string>{digest.error()};
     addField(hash, relative);
     addField(hash, digest.value());
+  }
+
+  // Preserve legacy identities when no source-alignment assets are present.
+  // Hash exact bytes here; audio-bound semantic validation belongs to loading.
+  const auto directory = bankRoot / "alignments";
+  std::error_code error;
+  const auto directoryStatus = std::filesystem::symlink_status(directory, error);
+  if (error == std::errc::no_such_file_or_directory ||
+      (!error && !std::filesystem::exists(directoryStatus))) return hash.hexDigest();
+  if (error || !std::filesystem::is_directory(directoryStatus) ||
+      std::filesystem::is_symlink(directoryStatus)) {
+    return core::failure<std::string>(core::ErrorCode::Conflict,
+        "Voicebank alignment directory must be a real directory", directory.string());
+  }
+  std::set<std::string> alignmentPaths;
+  for (const auto& unit : manifest.units) {
+    alignmentPaths.insert("alignments/" + core::sha256Hex(unit.id) + ".json");
+  }
+  std::uint64_t totalBytes = 0U;
+  bool started = false;
+  constexpr std::uint64_t maximumBytes = 64ULL * 1024ULL * 1024ULL;
+  for (const auto& relative : alignmentPaths) {
+    const auto path = bankRoot / relative;
+    error.clear();
+    const auto status = std::filesystem::symlink_status(path, error);
+    if (error == std::errc::no_such_file_or_directory ||
+        (!error && !std::filesystem::exists(status))) continue;
+    if (error) return core::failure<std::string>(core::ErrorCode::IoError,
+        "Cannot inspect voicebank alignment", path.string());
+    const auto resolved = resolveBankAsset(bankRoot, relative);
+    if (!resolved) return core::Result<std::string>{resolved.error()};
+    const auto bytes = core::readFileBytesLimited(resolved.value(),
+        std::min<std::uint64_t>(512ULL * 1024ULL, maximumBytes - totalBytes));
+    if (!bytes) return core::Result<std::string>{bytes.error()};
+    totalBytes += static_cast<std::uint64_t>(bytes.value().size());
+    if (!started) {
+      addField(hash, "source-phoneme-alignments-v1");
+      started = true;
+    }
+    addField(hash, relative);
+    addField(hash, core::sha256Hex(bytes.value()));
   }
   return hash.hexDigest();
 }

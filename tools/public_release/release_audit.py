@@ -4,7 +4,6 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
-from .archive_validation import audit_archive
 from .contracts import JsonObject, ReleaseGateInputError
 from .release_gate import evaluate_gate
 
@@ -33,21 +32,20 @@ def audit_release(
     *,
     acceptance_contract: JsonObject | None = None,
 ) -> ReleaseAuditResult:
-    archive_errors = audit_archive(candidate, manifest, root)
     gate = evaluate_gate(
         candidate,
         state,
         acceptance_contract=acceptance_contract,
-        archive_verified=not archive_errors,
+        archive_manifest=manifest,
+        evidence_root=root,
     )
     errors = tuple(
         [
-            *(f"archive: {error}" for error in archive_errors),
             *(f"gate: {error}" for error in gate.errors),
         ]
     )
     blocked_values = set(gate.blocked_ids)
-    if archive_errors:
+    if "PR-012-archive-restore" in gate.blocked_ids:
         blocked_values.add("archive-audit")
     blocked = tuple(sorted(blocked_values))
     return ReleaseAuditResult(not errors and not blocked, state, errors, blocked)

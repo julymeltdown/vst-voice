@@ -52,7 +52,10 @@ VoiceIdentityView resolveVoiceIdentity(const VoiceIdentityInput& input) noexcept
   } else if (input.renderStatus.state == RenderStatusState::Queued ||
              input.renderStatus.state == RenderStatusState::Rendering) {
     result.state = VoiceIdentityState::Rendering;
-  } else if (input.completeDwell) {
+  // A completed render is a presentation dwell state only while transport is
+  // idle.  Once the user starts playback, the character must return to its
+  // focused/performing state instead of remaining on the completion pose.
+  } else if (input.completeDwell && !input.focused) {
     result.state = VoiceIdentityState::Complete;
   } else {
     result.state = VoiceIdentityState::Ready;

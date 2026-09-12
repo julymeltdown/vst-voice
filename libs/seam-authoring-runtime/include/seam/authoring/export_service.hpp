@@ -40,6 +40,9 @@ struct ExportSettings final {
   bool includeMaster{true};
   bool includeStems{false};
   bool replaceExisting{false};
+  bool includeProjectAndRecipes{false};
+  // Explicit unapproved mono candidates, including their project/recipe source snapshot.
+  bool includeProceduralCandidates{false};
   std::function<bool(ExportPublicationPhase)> publicationFaultInjector;
 };
 
@@ -70,6 +73,18 @@ struct ExportResult final {
 
 class ExportService final {
 public:
+  [[nodiscard]] core::Result<ExportResult> exportProjectWithSources(
+      const domain::Project& project, std::span<const rendering::TrackSingerSource> sources,
+      domain::TrackId activeTrack, domain::RegionId activeRegion,
+      std::uint64_t revision, const std::filesystem::path& destination,
+      voicebank::WavSampleFormat format = voicebank::WavSampleFormat::Pcm24,
+      std::stop_token stopToken = {}) const;
+  [[nodiscard]] core::Result<ExportResult> exportSetWithSources(
+      const domain::Project& project, std::span<const rendering::TrackSingerSource> sources,
+      domain::TrackId activeTrack, domain::RegionId activeRegion,
+      std::uint64_t revision, const std::filesystem::path& destination,
+      ExportSettings settings = {}, std::function<void(const ExportProgress&)> progress = {},
+      std::stop_token stopToken = {}) const;
   [[nodiscard]] core::Result<ExportResult> exportProject(
       const domain::Project& project,
       std::span<const rendering::TrackVoicebankSource> voicebanks,

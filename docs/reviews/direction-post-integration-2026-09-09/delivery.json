@@ -1,0 +1,20 @@
+{
+  "ok": true,
+  "mode": "portable-html",
+  "html": "docs/reviews/direction-post-integration-2026-09-09/report.html",
+  "markdownSource": "DEVELOPMENT_DIRECTION_POST_INTEGRATION_REVIEW_2026-09-09_KO.md",
+  "stages": {
+    "validation": "passed",
+    "package": "passed",
+    "verification": "passed"
+  },
+  "sourceDialog": "passed",
+  "sourceInteraction": "keyboard_menu_semantic_click",
+  "viewports": [1440, 390],
+  "counts": {"blocks": 18, "charts": 1, "html": 0, "metrics": 0, "tables": 0},
+  "tableCountNote": "Exact audit tables are inside Markdown narrative blocks; native table block count is zero.",
+  "productSourceChangedDuringReview": false,
+  "trackedDiffSha256BeforeAndAfter": "9487c857832850d7d190a16897de60ae49ef6a7e4795451b78ae2e829edacc1b",
+  "publication": "local files only; not uploaded or deployed",
+  "productAcceptance": "NO_GO; report rendering QA is not product QA"
+}

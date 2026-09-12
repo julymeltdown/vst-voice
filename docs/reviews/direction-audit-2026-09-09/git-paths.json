@@ -1,0 +1,1786 @@
+[
+  {
+    "status": " M",
+    "path": "CMakeLists.txt"
+  },
+  {
+    "status": " M",
+    "path": "README.md"
+  },
+  {
+    "status": " M",
+    "path": "apps/seam-phase2-demo/main.cpp"
+  },
+  {
+    "status": " M",
+    "path": "apps/seam-voicebank-cli/main.cpp"
+  },
+  {
+    "status": " M",
+    "path": "apps/seam-voicebank-studio-native/main.cpp"
+  },
+  {
+    "status": " M",
+    "path": "docs/implementation/FULL_SCOPE_BETA_EXECUTION.md"
+  },
+  {
+    "status": " M",
+    "path": "docs/product/EXTERNAL_BETA_ACCEPTANCE.md"
+  },
+  {
+    "status": " M",
+    "path": "docs/product/FULL_SCOPE_AUTHORITY_AMENDMENT.md"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-application/include/seam/application/editor_session.hpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-application/include/seam/application/lyric_commands.hpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-application/include/seam/application/note_commands.hpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-application/include/seam/application/render_commands.hpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-application/src/arrangement_commands.cpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-application/src/editor_session.cpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-application/src/lyric_commands.cpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-application/src/note_commands.cpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-application/src/render_commands.cpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-authoring-runtime/include/seam/authoring/authoring_runtime.hpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-authoring-runtime/include/seam/authoring/autosave_service.hpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-authoring-runtime/include/seam/authoring/diagnostic.hpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-authoring-runtime/include/seam/authoring/export_service.hpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-authoring-runtime/include/seam/authoring/project_document.hpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-authoring-runtime/include/seam/authoring/render_coordinator.hpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-authoring-runtime/include/seam/authoring/technical_edit_controller.hpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-authoring-runtime/include/seam/authoring/voicebank_session.hpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-authoring-runtime/src/authoring_runtime.cpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-authoring-runtime/src/autosave_service.cpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-authoring-runtime/src/diagnostic.cpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-authoring-runtime/src/export_service.cpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-authoring-runtime/src/project_document.cpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-authoring-runtime/src/project_lifecycle.cpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-authoring-runtime/src/render_coordinator.cpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-authoring-runtime/src/technical_edit_controller.cpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-authoring-runtime/src/voicebank_installer_service.cpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-authoring-runtime/src/voicebank_session.cpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-clap-editor/include/seam/clap_editor/editor_runtime.hpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-clap-editor/src/editor_runtime_adapter.cpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-clap-editor/src/editor_runtime_input.cpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-clap-editor/src/editor_runtime_paint.cpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-clap-editor/src/editor_runtime_project.cpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-clap-editor/src/embedded_view_appkit.mm"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-clap-editor/src/plugin_entry.cpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-domain/include/seam/domain/note.hpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-domain/include/seam/domain/performance_intent.hpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-domain/include/seam/domain/phoneme.hpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-domain/include/seam/domain/project.hpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-domain/include/seam/domain/render_controls.hpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-domain/src/note.cpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-domain/src/phoneme.cpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-domain/src/project.cpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-editor-ui/include/seam/ui/phoneme_lane_model.hpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-editor-ui/include/seam/ui/piano_roll_model.hpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-editor-ui/include/seam/ui/text_composition_model.hpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-editor-ui/src/phoneme_lane_model.cpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-editor-ui/src/piano_roll_model.cpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-editor-ui/src/text_composition_model.cpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-formats/include/seam/formats/project_json.hpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-formats/src/project_json.cpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-native-ui/include/seam/native_ui/accessibility_tree.hpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-native-ui/include/seam/native_ui/diagnostic_panel.hpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-native-ui/include/seam/native_ui/editor_controller.hpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-native-ui/include/seam/native_ui/editor_frame_layout.hpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-native-ui/include/seam/native_ui/editor_scene.hpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-native-ui/include/seam/native_ui/voicebank_studio.hpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-native-ui/src/accessibility_tree.cpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-native-ui/src/diagnostic_panel.cpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-native-ui/src/diagnostic_presentation.cpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-native-ui/src/editor_controller.cpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-native-ui/src/editor_scene.cpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-native-ui/src/editor_semantics.cpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-native-ui/src/export_dialog.cpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-native-ui/src/native_window_appkit.mm"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-native-ui/src/voice_identity.cpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-native-ui/src/voicebank_studio.cpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-native-ui/src/voicebank_studio_production_edits.cpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-native-ui/src/voicebank_studio_production_project.cpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-native-ui/src/voicebank_studio_production_view.cpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-phonemizer/include/seam/phonemizer/japanese_phonemizer.hpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-phonemizer/include/seam/phonemizer/phonemizer.hpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-phonemizer/src/japanese_phonemizer.cpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-phonemizer/src/phonemizer.cpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-platform/include/seam/platform/application_menu.hpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-platform/include/seam/platform/file_dialog.hpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-platform/src/application_menu_appkit.mm"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-platform/src/file_dialog_appkit.mm"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-platform/src/file_dialog_win32.cpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-rendering/include/seam/rendering/pcm_cache.hpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-rendering/include/seam/rendering/project_renderer.hpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-rendering/include/seam/rendering/region_renderer.hpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-rendering/include/seam/rendering/render_pipeline.hpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-rendering/include/seam/rendering/render_scheduler.hpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-rendering/include/seam/rendering/render_snapshot.hpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-rendering/src/pcm_cache.cpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-rendering/src/phrase_segmenter.cpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-rendering/src/project_renderer.cpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-rendering/src/region_renderer.cpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-rendering/src/render_pipeline.cpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-rendering/src/render_scheduler.cpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-rendering/src/render_snapshot.cpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-standalone/include/seam/standalone/application_controller.hpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-standalone/include/seam/standalone/authoring_session.hpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-standalone/include/seam/standalone/native_editor_app.hpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-standalone/src/application_controller.cpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-standalone/src/authoring_session.cpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-standalone/src/native_editor_app.cpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-synthesis/include/seam/synthesis/classic_psola.hpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-synthesis/include/seam/synthesis/phrase_renderer.hpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-synthesis/include/seam/synthesis/raw_renderer.hpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-synthesis/include/seam/synthesis/renderer_dispatcher.hpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-synthesis/include/seam/synthesis/seam_composer.hpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-synthesis/include/seam/synthesis/spectral_classic.hpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-synthesis/include/seam/synthesis/stretch_renderer.hpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-synthesis/include/seam/synthesis/timing_solver.hpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-synthesis/include/seam/synthesis/unit_selection.hpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-synthesis/src/classic_psola.cpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-synthesis/src/phrase_renderer.cpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-synthesis/src/raw_renderer.cpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-synthesis/src/renderer_dispatcher.cpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-synthesis/src/seam_composer.cpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-synthesis/src/spectral_classic.cpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-synthesis/src/stretch_renderer.cpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-synthesis/src/timing_solver.cpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-synthesis/src/unit_selection.cpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-text/include/seam/text/unicode.hpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-text/src/unicode.cpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-voicebank-production/include/seam/voicebank_production/repository.hpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-voicebank-production/src/project.cpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-voicebank-production/src/project_codec_validation.cpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-voicebank-production/src/repository.cpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-voicebank-production/src/repository_import.cpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-voicebank-production/src/repository_operations.cpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-voicebank/include/seam/voicebank/content_identity.hpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-voicebank/include/seam/voicebank/coverage.hpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-voicebank/include/seam/voicebank/pitch.hpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-voicebank/src/content_identity.cpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-voicebank/src/coverage.cpp"
+  },
+  {
+    "status": " M",
+    "path": "libs/seam-voicebank/src/pitch.cpp"
+  },
+  {
+    "status": " M",
+    "path": "phase12c/CMakeLists.txt"
+  },
+  {
+    "status": " M",
+    "path": "phase12c/include/seam/phase12c/live_voice.hpp"
+  },
+  {
+    "status": " M",
+    "path": "phase12c/src/live_voice.cpp"
+  },
+  {
+    "status": " M",
+    "path": "phase12c/src/matrix_runner.cpp"
+  },
+  {
+    "status": " M",
+    "path": "phase12c/src/soak_runner.cpp"
+  },
+  {
+    "status": " M",
+    "path": "tests/external_beta/test_full_product_gate.py"
+  },
+  {
+    "status": " M",
+    "path": "tests/test_accessibility_tree.cpp"
+  },
+  {
+    "status": " M",
+    "path": "tests/test_authoring_render_coordinator.cpp"
+  },
+  {
+    "status": " M",
+    "path": "tests/test_authoring_runtime.cpp"
+  },
+  {
+    "status": " M",
+    "path": "tests/test_commands.cpp"
+  },
+  {
+    "status": " M",
+    "path": "tests/test_diagnostic_panel.cpp"
+  },
+  {
+    "status": " M",
+    "path": "tests/test_diagnostic_registry.cpp"
+  },
+  {
+    "status": " M",
+    "path": "tests/test_export_service.cpp"
+  },
+  {
+    "status": " M",
+    "path": "tests/test_macos_source_contract.py"
+  },
+  {
+    "status": " M",
+    "path": "tests/test_multichannel.cpp"
+  },
+  {
+    "status": " M",
+    "path": "tests/test_native_ui.cpp"
+  },
+  {
+    "status": " M",
+    "path": "tests/test_note_lyric_workflow.cpp"
+  },
+  {
+    "status": " M",
+    "path": "tests/test_performance_contracts.cpp"
+  },
+  {
+    "status": " M",
+    "path": "tests/test_phase12b.cpp"
+  },
+  {
+    "status": " M",
+    "path": "tests/test_phase12c_clap_events.cpp"
+  },
+  {
+    "status": " M",
+    "path": "tests/test_phonemizer.cpp"
+  },
+  {
+    "status": " M",
+    "path": "tests/test_project_lifecycle.cpp"
+  },
+  {
+    "status": " M",
+    "path": "tests/test_rendering.cpp"
+  },
+  {
+    "status": " M",
+    "path": "tests/test_serialization.cpp"
+  },
+  {
+    "status": " M",
+    "path": "tests/test_stabilization.cpp"
+  },
+  {
+    "status": " M",
+    "path": "tests/test_standalone_project_lifecycle.cpp"
+  },
+  {
+    "status": " M",
+    "path": "tests/test_standalone_voicebank_workflow.cpp"
+  },
+  {
+    "status": " M",
+    "path": "tests/test_synthesis.cpp"
+  },
+  {
+    "status": " M",
+    "path": "tests/test_technical_edit_controller.cpp"
+  },
+  {
+    "status": " M",
+    "path": "tests/test_text.cpp"
+  },
+  {
+    "status": " M",
+    "path": "tests/test_ui.cpp"
+  },
+  {
+    "status": " M",
+    "path": "tests/test_voicebank.cpp"
+  },
+  {
+    "status": " M",
+    "path": "tests/test_voicebank_coverage.cpp"
+  },
+  {
+    "status": " M",
+    "path": "tests/test_voicebank_installer_service.cpp"
+  },
+  {
+    "status": " M",
+    "path": "tests/test_voicebank_production_project.cpp"
+  },
+  {
+    "status": " M",
+    "path": "tests/test_voicebank_relink.cpp"
+  },
+  {
+    "status": " M",
+    "path": "tests/test_windows_source_contract.py"
+  },
+  {
+    "status": " M",
+    "path": "third_party/clap/include/clap/clap.h"
+  },
+  {
+    "status": " M",
+    "path": "third_party/manifest.yml"
+  },
+  {
+    "status": " M",
+    "path": "tools/external_beta/full_product_contract.py"
+  },
+  {
+    "status": " M",
+    "path": "tools/external_beta/release_gate.py"
+  },
+  {
+    "status": " M",
+    "path": "tools/realtime-allocation-probe/main.cpp"
+  },
+  {
+    "status": " M",
+    "path": "tools/singing_quality/render_inputs.cpp"
+  },
+  {
+    "status": " M",
+    "path": "tools/singing_quality/render_packet.cpp"
+  },
+  {
+    "status": "??",
+    "path": "apps/seam-voicebank-cli/signal_cancellation.hpp"
+  },
+  {
+    "status": "??",
+    "path": "docs/authoring/PHONEME_EDIT_REVIEW.md"
+  },
+  {
+    "status": "??",
+    "path": "docs/authoring/PHONEME_TIMING_DISPLAY.md"
+  },
+  {
+    "status": "??",
+    "path": "docs/authoring/PROCEDURAL_CLI_BAKING.md"
+  },
+  {
+    "status": "??",
+    "path": "docs/formats/CANDIDATE_PITCH_INSPECTION_V1.md"
+  },
+  {
+    "status": "??",
+    "path": "docs/formats/MIDI_INTERCHANGE_V1.md"
+  },
+  {
+    "status": "??",
+    "path": "docs/formats/PROCEDURAL_CANDIDATE_V1.md"
+  },
+  {
+    "status": "??",
+    "path": "docs/formats/PROCEDURAL_CANDIDATE_V2.md"
+  },
+  {
+    "status": "??",
+    "path": "docs/formats/PROJECT_JSON_V8.md"
+  },
+  {
+    "status": "??",
+    "path": "docs/formats/PROJECT_JSON_V9.md"
+  },
+  {
+    "status": "??",
+    "path": "docs/formats/SOURCE_PHONEME_ALIGNMENT_V1.md"
+  },
+  {
+    "status": "??",
+    "path": "docs/formats/USTX_INTERCHANGE_V1.md"
+  },
+  {
+    "status": "??",
+    "path": "docs/formats/VOICE_RECIPE_V1.md"
+  },
+  {
+    "status": "??",
+    "path": "docs/formats/VOICE_RECIPE_V2.md"
+  },
+  {
+    "status": "??",
+    "path": "docs/implementation/AUTOMATIC_PERFORMANCE_PROPOSAL_2026-09-08.md"
+  },
+  {
+    "status": "??",
+    "path": "docs/implementation/BROAD_RELEASE_REGRESSION_2026-09-07.md"
+  },
+  {
+    "status": "??",
+    "path": "docs/implementation/CHARACTER_PERFORMANCE_BINDING_2026-09-08.md"
+  },
+  {
+    "status": "??",
+    "path": "docs/implementation/CREATOR_BATCH_ACTIONS_2026-09-08.md"
+  },
+  {
+    "status": "??",
+    "path": "docs/implementation/DESIGNER_HANDOFF_AND_PHRASE_DUPLICATION_2026-09-07.md"
+  },
+  {
+    "status": "??",
+    "path": "docs/implementation/DYNAMICS_LANE_MODEL_2026-09-08.md"
+  },
+  {
+    "status": "??",
+    "path": "docs/implementation/DYNAMICS_TIME_NAVIGATION_2026-09-08.md"
+  },
+  {
+    "status": "??",
+    "path": "docs/implementation/FULL_PRODUCT_REPORT_VALIDATION_2026-09-08.md"
+  },
+  {
+    "status": "??",
+    "path": "docs/implementation/GENERATION_BATCH_EXECUTION_2026-09-07.md"
+  },
+  {
+    "status": "??",
+    "path": "docs/implementation/GENERATION_IMPORT_EXPECTATIONS_2026-09-07.md"
+  },
+  {
+    "status": "??",
+    "path": "docs/implementation/GENERATION_JOB_PACKAGE_2026-09-07.md"
+  },
+  {
+    "status": "??",
+    "path": "docs/implementation/HARMONY_WORKFLOW_2026-09-08.md"
+  },
+  {
+    "status": "??",
+    "path": "docs/implementation/JAPANESE_NORMALIZATION_2026-09-08.md"
+  },
+  {
+    "status": "??",
+    "path": "docs/implementation/JAPANESE_READING_INTAKE_2026-09-08.md"
+  },
+  {
+    "status": "??",
+    "path": "docs/implementation/LANGUAGE_PHONEMIZER_2026-09-08.md"
+  },
+  {
+    "status": "??",
+    "path": "docs/implementation/LIVE_EXPRESSION_REPAIR_2026-09-08.md"
+  },
+  {
+    "status": "??",
+    "path": "docs/implementation/MEASURED_AUDIO_LEVELS_2026-09-08.md"
+  },
+  {
+    "status": "??",
+    "path": "docs/implementation/MEASURED_DYNAMICS_INSPECTOR_2026-09-08.md"
+  },
+  {
+    "status": "??",
+    "path": "docs/implementation/NATIVE_GENERATION_LIVE_QA_2026-09-07.md"
+  },
+  {
+    "status": "??",
+    "path": "docs/implementation/NATIVE_PREPARED_GENERATION_2026-09-07.md"
+  },
+  {
+    "status": "??",
+    "path": "docs/implementation/NATIVE_STUDIO_RUNTIME_CHECK_2026-09-07.md"
+  },
+  {
+    "status": "??",
+    "path": "docs/implementation/NEURAL_WORKER_CONTRACT_2026-09-08.md"
+  },
+  {
+    "status": "??",
+    "path": "docs/implementation/NOTE_SEARCH_AND_BATCH_EDITING_2026-09-07.md"
+  },
+  {
+    "status": "??",
+    "path": "docs/implementation/PHASE12C_CANONICAL_EVIDENCE_2026-09-08.md"
+  },
+  {
+    "status": "??",
+    "path": "docs/implementation/PROCEDURAL_ONSET_POLICY_2026-09-07.md"
+  },
+  {
+    "status": "??",
+    "path": "docs/implementation/READING_HELPER_PROCESS_2026-09-08.md"
+  },
+  {
+    "status": "??",
+    "path": "docs/implementation/RENDERER_CAPABILITY_PROVENANCE_2026-09-08.md"
+  },
+  {
+    "status": "??",
+    "path": "docs/implementation/SELECTED_GENERATED_DYNAMICS_2026-09-08.md"
+  },
+  {
+    "status": "??",
+    "path": "docs/implementation/SHORT_UNIT_TRANSITION_MAPPING_2026-09-07.md"
+  },
+  {
+    "status": "??",
+    "path": "docs/implementation/SMF_INTERCHANGE_2026-09-08.md"
+  },
+  {
+    "status": "??",
+    "path": "docs/implementation/STYLE_COVERAGE_SHEET_MODEL_2026-09-08.md"
+  },
+  {
+    "status": "??",
+    "path": "docs/implementation/TEMPO_METER_COMMANDS_2026-09-07.md"
+  },
+  {
+    "status": "??",
+    "path": "docs/implementation/U19_VOCAL_DSP_STATUS_2026-09-06.md"
+  },
+  {
+    "status": "??",
+    "path": "docs/implementation/U20_ARTICULATION_STATUS_2026-09-07.md"
+  },
+  {
+    "status": "??",
+    "path": "docs/implementation/U3_COMPLETION_AUDIT_2026-09-06.md"
+  },
+  {
+    "status": "??",
+    "path": "docs/implementation/U4_ACCEPTANCE_REVIEW_2026-09-06.md"
+  },
+  {
+    "status": "??",
+    "path": "docs/implementation/U5_ACCEPTANCE_AUDIT_2026-09-06.md"
+  },
+  {
+    "status": "??",
+    "path": "docs/implementation/U5_TIMING_ACCEPTANCE_REVIEW_2026-09-06.md"
+  },
+  {
+    "status": "??",
+    "path": "docs/implementation/U6_PERFORMANCE_COMPILER_STATUS_2026-09-06.md"
+  },
+  {
+    "status": "??",
+    "path": "docs/implementation/U7_TYPED_RESOURCE_STATUS_2026-09-06.md"
+  },
+  {
+    "status": "??",
+    "path": "docs/implementation/USTX_NATIVE_LIFECYCLE_2026-09-08.md"
+  },
+  {
+    "status": "??",
+    "path": "docs/implementation/VIBRATO_EDITING_MODEL_2026-09-08.md"
+  },
+  {
+    "status": "??",
+    "path": "docs/implementation/VOICEBANK_COVERAGE_CORRECTNESS_2026-09-08.md"
+  },
+  {
+    "status": "??",
+    "path": "docs/implementation/VOICE_DESIGNER_ACCESSIBILITY_2026-09-07.md"
+  },
+  {
+    "status": "??",
+    "path": "docs/implementation/VOICE_DESIGNER_AUDITION_2026-09-07.md"
+  },
+  {
+    "status": "??",
+    "path": "docs/implementation/VOICE_DESIGNER_COMPACT_LAYOUT_2026-09-07.md"
+  },
+  {
+    "status": "??",
+    "path": "docs/implementation/VOICE_DESIGNER_INTERACTION_QA_2026-09-07.md"
+  },
+  {
+    "status": "??",
+    "path": "docs/implementation/VOICE_DESIGNER_MODEL_2026-09-07.md"
+  },
+  {
+    "status": "??",
+    "path": "docs/implementation/VOICE_DESIGNER_NATIVE_UI_2026-09-07.md"
+  },
+  {
+    "status": "??",
+    "path": "docs/implementation/VOICE_DESIGNER_SESSION_2026-09-07.md"
+  },
+  {
+    "status": "??",
+    "path": "docs/reviews/DEVELOPMENT_DIRECTION_REVIEW_2026-09-09.md"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-application/include/seam/application/harmony_commands.hpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-application/include/seam/application/performance_commands.hpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-application/include/seam/application/performance_job_context.hpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-application/include/seam/application/tempo_commands.hpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-application/src/harmony_commands.cpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-application/src/performance_commands.cpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-application/src/performance_job_context.cpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-application/src/tempo_commands.cpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-authoring-runtime/include/seam/authoring/audio_measurement_capture.hpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-authoring-runtime/include/seam/authoring/audio_measurement_job.hpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-authoring-runtime/include/seam/authoring/generation_job.hpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-authoring-runtime/include/seam/authoring/helper_process.hpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-authoring-runtime/include/seam/authoring/interchange_service.hpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-authoring-runtime/include/seam/authoring/japanese_reading_capture.hpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-authoring-runtime/include/seam/authoring/japanese_reading_job.hpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-authoring-runtime/include/seam/authoring/japanese_reading_resource.hpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-authoring-runtime/include/seam/authoring/japanese_reading_response.hpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-authoring-runtime/include/seam/authoring/japanese_reading_stage.hpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-authoring-runtime/include/seam/authoring/voicebank_snapshot.hpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-authoring-runtime/src/generation_batch.cpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-authoring-runtime/src/generation_job.cpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-authoring-runtime/src/helper_process.cpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-authoring-runtime/src/interchange_service.cpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-authoring-runtime/src/japanese_reading_capture.cpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-authoring-runtime/src/japanese_reading_job.cpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-authoring-runtime/src/japanese_reading_resource.cpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-authoring-runtime/src/japanese_reading_response.cpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-authoring-runtime/src/japanese_reading_stage.cpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-clap-editor/include/seam/clap_editor/offline_render_session.hpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-clap-editor/src/offline_render_session.cpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-core/include/seam/core/exclusive_file_lock.hpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-domain/src/region_performance_state.cpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-editor-ui/include/seam/ui/dependent_edit_review.hpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-editor-ui/include/seam/ui/dynamics_clear_preview.hpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-editor-ui/include/seam/ui/dynamics_lane_model.hpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-editor-ui/include/seam/ui/dynamics_plot_viewport.hpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-editor-ui/include/seam/ui/lyric_replacement_job.hpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-editor-ui/include/seam/ui/lyric_replacement_review.hpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-editor-ui/include/seam/ui/note_cleanup_preview.hpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-editor-ui/include/seam/ui/note_search_job.hpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-editor-ui/include/seam/ui/note_search_model.hpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-editor-ui/include/seam/ui/note_search_navigation.hpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-editor-ui/include/seam/ui/vibrato_clear_preview.hpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-editor-ui/include/seam/ui/vibrato_model.hpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-editor-ui/src/dynamics_lane_model.cpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-editor-ui/src/note_search_model.cpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-editor-ui/src/vibrato_model.cpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-formats/src/project_performance_json.cpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-formats/src/project_performance_json.hpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-formats/src/project_region_performance_json.cpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-formats/src/project_region_performance_json.hpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-interchange/include/seam/interchange/smf_codec.hpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-interchange/include/seam/interchange/smf_project_conversion.hpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-interchange/include/seam/interchange/ustx_codec.hpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-interchange/include/seam/interchange/ustx_project_conversion.hpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-interchange/src/smf_codec.cpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-interchange/src/smf_project_conversion.cpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-interchange/src/ustx_codec.cpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-interchange/src/ustx_project_conversion.cpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-native-ui/include/seam/native_ui/appkit_shortcut_key.hpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-native-ui/include/seam/native_ui/candidate_audition.hpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-native-ui/include/seam/native_ui/candidate_audition_session.hpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-native-ui/include/seam/native_ui/diagnostic_search.hpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-native-ui/include/seam/native_ui/diagnostic_search_job.hpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-native-ui/include/seam/native_ui/pitch_contour.hpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-native-ui/include/seam/native_ui/style_coverage_sheet.hpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-native-ui/include/seam/native_ui/tempo_meter_model.hpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-native-ui/include/seam/native_ui/vibrato_inspector.hpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-native-ui/include/seam/native_ui/voice_designer_audition.hpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-native-ui/include/seam/native_ui/voice_designer_layout.hpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-native-ui/include/seam/native_ui/voice_designer_model.hpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-native-ui/include/seam/native_ui/voice_designer_session.hpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-native-ui/src/style_coverage_sheet.cpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-native-ui/src/vibrato_inspector.cpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-native-ui/src/voice_designer_audition.cpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-native-ui/src/voice_designer_model.cpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-native-ui/src/voice_designer_session.cpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-neural-synthesis/include/seam/neural_synthesis/model_contract.hpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-neural-synthesis/include/seam/neural_synthesis/neural_phrase_backend.hpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-neural-synthesis/include/seam/neural_synthesis/worker_protocol.hpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-neural-synthesis/src/model_contract.cpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-neural-synthesis/src/neural_phrase_backend.cpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-neural-synthesis/src/worker_protocol.cpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-phonemizer/include/seam/phonemizer/english_phonemizer.hpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-phonemizer/include/seam/phonemizer/japanese_reading.hpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-phonemizer/include/seam/phonemizer/korean_phonemizer.hpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-phonemizer/include/seam/phonemizer/language_resolver.hpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-phonemizer/include/seam/phonemizer/override_reconciliation.hpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-phonemizer/include/seam/phonemizer/pronunciation_resolver.hpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-phonemizer/src/english_phonemizer.cpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-phonemizer/src/japanese_reading.cpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-phonemizer/src/korean_phonemizer.cpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-phonemizer/src/language_resolver.cpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-phonemizer/src/override_reconciliation.cpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-phonemizer/src/pronunciation_resolver.cpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-rendering/include/seam/rendering/audio_level_envelope.hpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-rendering/src/audio_level_envelope.cpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-synthesis/include/seam/synthesis/automatic_performance.hpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-synthesis/include/seam/synthesis/performance_compiler.hpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-synthesis/include/seam/synthesis/phoneme_timing_plan.hpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-synthesis/include/seam/synthesis/phrase_backend.hpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-synthesis/include/seam/synthesis/renderer_capabilities.hpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-synthesis/include/seam/synthesis/singer_resource.hpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-synthesis/include/seam/synthesis/source_phoneme_alignment.hpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-synthesis/include/seam/synthesis/source_target_map.hpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-synthesis/src/automatic_performance.cpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-synthesis/src/performance_compiler.cpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-synthesis/src/phoneme_timing_plan.cpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-synthesis/src/phrase_backend.cpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-synthesis/src/renderer_capabilities.cpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-synthesis/src/singer_resource.cpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-synthesis/src/source_phoneme_alignment.cpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-synthesis/src/source_target_map.cpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-voice-design/include/seam/voice_design/articulated_stream.hpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-voice-design/include/seam/voice_design/articulation_plan.hpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-voice-design/include/seam/voice_design/frication_config.hpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-voice-design/include/seam/voice_design/frication_gesture_stream.hpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-voice-design/include/seam/voice_design/frication_source.hpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-voice-design/include/seam/voice_design/phonation_source.hpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-voice-design/include/seam/voice_design/procedural_candidate.hpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-voice-design/include/seam/voice_design/procedural_renderer.hpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-voice-design/include/seam/voice_design/recipe_resource.hpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-voice-design/include/seam/voice_design/vocal_tract.hpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-voice-design/include/seam/voice_design/voice_recipe.hpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-voice-design/src/articulated_stream.cpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-voice-design/src/articulation_plan.cpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-voice-design/src/excitation_noise.hpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-voice-design/src/frication_gesture_stream.cpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-voice-design/src/frication_source.cpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-voice-design/src/phonation_source.cpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-voice-design/src/procedural_candidate.cpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-voice-design/src/procedural_renderer.cpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-voice-design/src/recipe_resource.cpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-voice-design/src/vocal_tract.cpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-voice-design/src/voice_recipe.cpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-voicebank-production/include/seam/voicebank_production/candidate_markers.hpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-voicebank-production/src/candidate_markers.cpp"
+  },
+  {
+    "status": "??",
+    "path": "libs/seam-voicebank-production/src/generation_expectation.cpp"
+  },
+  {
+    "status": "??",
+    "path": "phase12c/include/seam/phase12c/canonical_evidence.hpp"
+  },
+  {
+    "status": "??",
+    "path": "phase12c/src/canonical_evidence.cpp"
+  },
+  {
+    "status": "??",
+    "path": "scripts/verify_full_product_report.py"
+  },
+  {
+    "status": "??",
+    "path": "scripts/verify_phase12c_canonical_contract.py"
+  },
+  {
+    "status": "??",
+    "path": "tests/external_beta/test_full_product_report.py"
+  },
+  {
+    "status": "??",
+    "path": "tests/external_beta/test_phase12c_canonical_contract.py"
+  },
+  {
+    "status": "??",
+    "path": "tests/fixtures/projects/generators/README.md"
+  },
+  {
+    "status": "??",
+    "path": "tests/fixtures/projects/generators/reemit.cpp"
+  },
+  {
+    "status": "??",
+    "path": "tests/fixtures/projects/generators/schema1.cpp"
+  },
+  {
+    "status": "??",
+    "path": "tests/fixtures/projects/generators/schema4.cpp"
+  },
+  {
+    "status": "??",
+    "path": "tests/fixtures/projects/schema-1-historical-writer.seam"
+  },
+  {
+    "status": "??",
+    "path": "tests/fixtures/projects/schema-4-historical-writer.seam"
+  },
+  {
+    "status": "??",
+    "path": "tests/fixtures/projects/schema-5-historical-writer.seam"
+  },
+  {
+    "status": "??",
+    "path": "tests/fixtures/projects/schema-6-historical-writer.seam"
+  },
+  {
+    "status": "??",
+    "path": "tests/fixtures/projects/schema-7-historical-writer.seam"
+  },
+  {
+    "status": "??",
+    "path": "tests/fixtures/pronunciation/openjtalk-intake.json"
+  },
+  {
+    "status": "??",
+    "path": "tests/helpers/generation_job_probe.cpp"
+  },
+  {
+    "status": "??",
+    "path": "tests/helpers/neural_worker_probe.cpp"
+  },
+  {
+    "status": "??",
+    "path": "tests/helpers/reading_capture_process_probe.cpp"
+  },
+  {
+    "status": "??",
+    "path": "tests/helpers/reading_process_probe.cpp"
+  },
+  {
+    "status": "??",
+    "path": "tests/test_audio_level_envelope.cpp"
+  },
+  {
+    "status": "??",
+    "path": "tests/test_automatic_performance.cpp"
+  },
+  {
+    "status": "??",
+    "path": "tests/test_creator_batch_edits.cpp"
+  },
+  {
+    "status": "??",
+    "path": "tests/test_dynamics_lane_workflow.cpp"
+  },
+  {
+    "status": "??",
+    "path": "tests/test_english_phonemizer.cpp"
+  },
+  {
+    "status": "??",
+    "path": "tests/test_harmony_workflow.cpp"
+  },
+  {
+    "status": "??",
+    "path": "tests/test_helper_process.cpp"
+  },
+  {
+    "status": "??",
+    "path": "tests/test_interchange_service.cpp"
+  },
+  {
+    "status": "??",
+    "path": "tests/test_japanese_reading.cpp"
+  },
+  {
+    "status": "??",
+    "path": "tests/test_japanese_reading_capture.cpp"
+  },
+  {
+    "status": "??",
+    "path": "tests/test_japanese_reading_job.cpp"
+  },
+  {
+    "status": "??",
+    "path": "tests/test_japanese_reading_native.cpp"
+  },
+  {
+    "status": "??",
+    "path": "tests/test_japanese_reading_resource.cpp"
+  },
+  {
+    "status": "??",
+    "path": "tests/test_japanese_reading_response.cpp"
+  },
+  {
+    "status": "??",
+    "path": "tests/test_korean_phonemizer.cpp"
+  },
+  {
+    "status": "??",
+    "path": "tests/test_measured_dynamics_workflow.cpp"
+  },
+  {
+    "status": "??",
+    "path": "tests/test_neural_worker_protocol.cpp"
+  },
+  {
+    "status": "??",
+    "path": "tests/test_offline_render_session.cpp"
+  },
+  {
+    "status": "??",
+    "path": "tests/test_override_reconciliation.cpp"
+  },
+  {
+    "status": "??",
+    "path": "tests/test_performance_commands.cpp"
+  },
+  {
+    "status": "??",
+    "path": "tests/test_performance_compiler.cpp"
+  },
+  {
+    "status": "??",
+    "path": "tests/test_performance_edit_preservation.cpp"
+  },
+  {
+    "status": "??",
+    "path": "tests/test_performance_job_context.cpp"
+  },
+  {
+    "status": "??",
+    "path": "tests/test_performance_snapshot.cpp"
+  },
+  {
+    "status": "??",
+    "path": "tests/test_phoneme_timing.cpp"
+  },
+  {
+    "status": "??",
+    "path": "tests/test_pitch_analysis_bounds.cpp"
+  },
+  {
+    "status": "??",
+    "path": "tests/test_plugin_style_migration.cpp"
+  },
+  {
+    "status": "??",
+    "path": "tests/test_region_performance_state.cpp"
+  },
+  {
+    "status": "??",
+    "path": "tests/test_renderer_capabilities.cpp"
+  },
+  {
+    "status": "??",
+    "path": "tests/test_schema8_performance.cpp"
+  },
+  {
+    "status": "??",
+    "path": "tests/test_smf_interchange.cpp"
+  },
+  {
+    "status": "??",
+    "path": "tests/test_style_coverage_sheet.cpp"
+  },
+  {
+    "status": "??",
+    "path": "tests/test_style_migration.cpp"
+  },
+  {
+    "status": "??",
+    "path": "tests/test_tempo_meter_commands.cpp"
+  },
+  {
+    "status": "??",
+    "path": "tests/test_ustx_interchange.cpp"
+  },
+  {
+    "status": "??",
+    "path": "tests/test_vibrato_inspector.cpp"
+  },
+  {
+    "status": "??",
+    "path": "tests/test_voice_design.cpp"
+  },
+  {
+    "status": "??",
+    "path": "tests/test_voice_designer_workflow.cpp"
+  },
+  {
+    "status": "??",
+    "path": "tools/dependency-probes/check_openjtalk_reading.py"
+  },
+  {
+    "status": "??",
+    "path": "tools/dependency-probes/openjtalk_reading_probe.cpp"
+  },
+  {
+    "status": "??",
+    "path": "tools/dependency-probes/reading_transport_probe.cpp"
+  },
+  {
+    "status": "??",
+    "path": "tools/external_beta/full_product_report.py"
+  }
+]

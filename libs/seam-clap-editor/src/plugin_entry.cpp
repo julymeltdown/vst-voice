@@ -258,13 +258,23 @@ private:
     delete self(plugin);
   }
 
+  static bool prepareFinal(PluginInstance& instance) noexcept {
+    try {
+      return static_cast<bool>(instance.runtime_->prepareOfflineRender());
+    } catch (...) {
+      // Allocation/worker failures must not escape the C ABI or masquerade as
+      // an accepted bounce. The runtime clears its readiness before preparing.
+      return false;
+    }
+  }
+
   static bool CLAP_ABI pluginActivate(const clap_plugin_t* plugin,
                                       double sampleRate,
                                       std::uint32_t minimumFrames,
                                       std::uint32_t maximumFrames) {
     auto* instance = self(plugin);
     if (instance == nullptr || instance->active_ || !std::isfinite(sampleRate) ||
-        sampleRate <= 0.0 || sampleRate > 768000.0 ||
+        sampleRate < 8000.0 || sampleRate > 192000.0 ||
         minimumFrames == 0U || maximumFrames < minimumFrames ||
         maximumFrames > 1U << 20U) {
       return false;
@@ -288,6 +298,16 @@ private:
     instance->runtime_->setLiveSampleRate(sampleRate);
     instance->runtime_->requestRender(
         static_cast<std::uint32_t>(std::llround(sampleRate)));
+    if (instance->renderMode_.load(std::memory_order_acquire) ==
+        CLAP_RENDER_OFFLINE) {
+      // Activation may change the render rate. Rebind the Final publication
+      // after that change, before the host is allowed to call process().
+      if (!prepareFinal(*instance)) {
+        instance->maximumFrames_ = 0U;
+        instance->liveScratch_.clear();
+        return false;
+      }
+    }
     instance->active_ = true;
     return true;
   }
@@ -307,6 +327,8 @@ private:
     if (instance == nullptr || !instance->active_ || instance->processing_) {
       return false;
     }
+    if (instance->renderMode_.load(std::memory_order_acquire) == CLAP_RENDER_OFFLINE &&
+        !instance->runtime_->offlineRenderReady()) return false;
     instance->processing_ = true;
     return true;
   }
@@ -417,13 +439,13 @@ private:
                           std::uint32_t frame,
                           const RenderedPreview* preview,
                           std::optional<std::uint64_t> sourceFrame,
-                          float live) noexcept {
+                          const std::array<float*, 8>& live) noexcept {
     for (std::uint32_t channel = 0U; channel < output.channel_count; ++channel) {
       float value = sourceFrame.has_value() && preview != nullptr
                         ? previewValue(*preview, *sourceFrame, channel,
                                        output.channel_count)
                         : 0.0F;
-      value = std::clamp(value + live, -1.0F, 1.0F);
+      value = std::clamp(value + live[channel][frame], -1.0F, 1.0F);
       if (output.data32 != nullptr && output.data32[channel] != nullptr) {
         output.data32[channel][frame] = value;
       }
@@ -435,14 +457,14 @@ private:
 
   static void applyNoteEvent(PluginInstance& instance,
                              const clap_event_header_t& header) noexcept {
-    if (header.space_id != CLAP_CORE_EVENT_SPACE_ID) {
+    if (header.size < sizeof(clap_event_header_t) || header.space_id != CLAP_CORE_EVENT_SPACE_ID) {
       return;
     }
     if (header.type == CLAP_EVENT_NOTE_EXPRESSION) {
       if (header.size < sizeof(clap_event_note_expression_t)) return;
       const auto& expression =
           reinterpret_cast<const clap_event_note_expression_t&>(header);
-      if (expression.port_index != 0) return;
+      if (expression.port_index < -1 || expression.port_index > 0 || !std::isfinite(expression.value)) return;
       live_voice::LiveEvent event{
           .sampleOffset = header.time,
           .type = live_voice::EventType::Pressure,
@@ -450,6 +472,7 @@ private:
           .channel = expression.channel,
           .key = expression.key,
           .value = static_cast<float>(expression.value),
+          .port = expression.port_index,
       };
       switch (expression.expression_id) {
         case CLAP_NOTE_EXPRESSION_TUNING:
@@ -459,8 +482,17 @@ private:
           event.type = live_voice::EventType::Pressure;
           break;
         case CLAP_NOTE_EXPRESSION_VIBRATO:
+          event.type = live_voice::EventType::Vibrato;
+          break;
         case CLAP_NOTE_EXPRESSION_PAN:
-          event.type = live_voice::EventType::Timbre;
+          event.type = live_voice::EventType::Pan;
+          event.value = static_cast<float>(std::clamp(expression.value, 0.0, 1.0) * 2.0 - 1.0);
+          break;
+        case CLAP_NOTE_EXPRESSION_VOLUME:
+          event.type = live_voice::EventType::Volume;
+          break;
+        case CLAP_NOTE_EXPRESSION_EXPRESSION:
+          event.type = live_voice::EventType::Expression;
           break;
         case CLAP_NOTE_EXPRESSION_BRIGHTNESS:
           event.type = live_voice::EventType::Brightness;
@@ -492,18 +524,37 @@ private:
       return;
     }
     const auto& note = reinterpret_cast<const clap_event_note_t&>(header);
-    if (note.port_index != 0) return;
+    if (note.port_index < -1 || note.port_index > 0) return;
     if (header.type == CLAP_EVENT_NOTE_ON) {
-      if (note.key < 0 || note.key > 127) return;
-      instance.runtime_->noteOn(
-          note.note_id, note.key,
-          static_cast<float>(std::clamp(note.velocity, 0.0, 1.0)));
+      if (note.key < 0 || note.key > 127 || note.port_index != 0 ||
+          note.channel < 0 || note.channel > 15 || !std::isfinite(note.velocity)) return;
+      instance.runtime_->dispatchLiveEvent(live_voice::LiveEvent{
+          .sampleOffset = header.time,
+          .type = live_voice::EventType::NoteOn,
+          .noteId = note.note_id,
+          .channel = note.channel,
+          .key = note.key,
+          .value = static_cast<float>(std::clamp(note.velocity, 0.0, 1.0)),
+          .port = note.port_index,
+      });
     } else if (header.type == CLAP_EVENT_NOTE_OFF) {
-      if (note.note_id < 0 && (note.key < 0 || note.key > 127)) return;
-      instance.runtime_->noteOff(note.note_id, note.key);
+      instance.runtime_->dispatchLiveEvent(live_voice::LiveEvent{
+          .sampleOffset = header.time,
+          .type = live_voice::EventType::NoteOff,
+          .noteId = note.note_id,
+          .channel = note.channel,
+          .key = note.key,
+          .port = note.port_index,
+      });
     } else {
-      if (note.note_id < 0 && (note.key < 0 || note.key > 127)) return;
-      instance.runtime_->choke(note.note_id, note.key);
+      instance.runtime_->dispatchLiveEvent(live_voice::LiveEvent{
+          .sampleOffset = header.time,
+          .type = live_voice::EventType::NoteChoke,
+          .noteId = note.note_id,
+          .channel = note.channel,
+          .key = note.key,
+          .port = note.port_index,
+      });
     }
   }
 
@@ -524,17 +575,36 @@ private:
     }
     clearOutput(output, process->frames_count);
 
-    auto preview = instance->runtime_->acquireRenderedPreview();
+    const auto renderMode =
+        instance->renderMode_.load(std::memory_order_acquire);
+    const bool offline = renderMode == CLAP_RENDER_OFFLINE;
+    auto preview = offline ? instance->runtime_->acquireOfflineRenderedPreview()
+                           : instance->runtime_->acquireRenderedPreview();
+    // Never turn missing Final vocals into a successful silent export. Clear
+    // first, then report an error without waiting, rendering or allocating.
+    if (offline && (!preview || preview->status != PreviewStatus::Ready ||
+        preview->sampleRate != static_cast<std::uint32_t>(std::llround(instance->sampleRate_))))
+      return CLAP_PROCESS_ERROR;
     const auto timeline = hostTimelineState(*instance, process->transport);
+    // Fixed Audio can use a supplied seconds timeline or its own free-running
+    // sample clock. Beats plus one instantaneous BPM are not a tempo history.
+    if (offline && process->transport != nullptr &&
+        (!timeline.hasSeconds || !std::isfinite(timeline.seconds))) return CLAP_PROCESS_ERROR;
     const auto projectOffset =
         instance->projectOffsetSeconds_.load(std::memory_order_acquire);
     const auto defaultTempo =
         instance->defaultTempo_.load(std::memory_order_acquire);
     std::uint32_t eventIndex = 0U;
-    const auto eventCount = process->in_events != nullptr &&
+    auto eventCount = process->in_events != nullptr &&
                                     process->in_events->size != nullptr
                                 ? process->in_events->size(process->in_events)
                                 : 0U;
+    if (eventCount > phase12c::kMaxEventsPerBlock) {
+      // Fail the live portion closed without unbounded host-list iteration.
+      // Reset is allocation-free and prevents ignored note-offs hanging voices.
+      instance->runtime_->resetLive();
+      eventCount = 0U;
+    }
     const clap_event_header_t* event =
         eventIndex < eventCount && process->in_events->get != nullptr
             ? process->in_events->get(process->in_events, eventIndex)
@@ -573,10 +643,9 @@ private:
             timeline, projectOffset, defaultTempo, instance->sampleRate_, frame);
         if (mapped.audible) sourceFrame = mapped.sourceFrame;
       }
-      const auto live = output.channel_count == 0U
-                            ? 0.0F
-                            : liveOutputs[0][frame];
-      if (std::abs(live) > 1.0e-7F) produced = true;
+      for (std::uint32_t channel = 0U; channel < output.channel_count; ++channel) {
+        if (std::abs(liveOutputs[channel][frame]) > 1.0e-7F) produced = true;
+      }
       if (sourceFrame.has_value() && static_cast<bool>(preview)) {
         for (std::uint32_t channel = 0U; channel < output.channel_count; ++channel) {
           if (std::abs(previewValue(*preview, *sourceFrame, channel,
@@ -586,12 +655,20 @@ private:
           }
         }
       }
-      writeOutput(output, frame, preview.get(), sourceFrame, live);
+      writeOutput(output, frame, preview.get(), sourceFrame, liveOutputs);
     }
     if (process->transport == nullptr) {
       instance->freeRunFrame_ += process->frames_count;
     }
-    return produced ? CLAP_PROCESS_CONTINUE : CLAP_PROCESS_SLEEP;
+    if (offline && !instance->runtime_->offlineRenderReady()) {
+      clearOutput(output, process->frames_count);
+      return CLAP_PROCESS_ERROR;
+    }
+    // An intentional rest is still part of a prepared score. SLEEP would let a
+    // host omit later vocal entrances when no incoming note event wakes us.
+    if (offline && timeline.playing) return CLAP_PROCESS_CONTINUE;
+    return produced || instance->runtime_->activeLiveVoiceCount() != 0U
+               ? CLAP_PROCESS_CONTINUE : CLAP_PROCESS_SLEEP;
   }
 
   static std::uint32_t CLAP_ABI audioPortsCount(const clap_plugin_t*,
@@ -775,10 +852,21 @@ private:
         (mode != CLAP_RENDER_REALTIME && mode != CLAP_RENDER_OFFLINE)) {
       return false;
     }
+    // CLAP render-mode changes are made outside process().  For offline mode
+    // we synchronously prepare the complete Final publication here, so a host
+    // that starts a bounce immediately cannot consume a stale Preview buffer.
+    if (mode == CLAP_RENDER_OFFLINE) {
+      if (instance->active_) return false;
+      // Retain the requested offline intent even on rejection. A host that
+      // ignores false cannot activate a stale realtime Preview as its bounce;
+      // an explicit REALTIME request is the supported recovery path.
+      instance->renderMode_.store(mode, std::memory_order_release);
+      if (!prepareFinal(*instance)) return false;
+    }
     instance->renderMode_.store(mode, std::memory_order_release);
-    instance->runtime_->setRenderQuality(
-        mode == CLAP_RENDER_OFFLINE ? rendering::RenderQuality::Final
-                                    : rendering::RenderQuality::Preview);
+    if (mode == CLAP_RENDER_REALTIME) {
+      instance->runtime_->setRenderQuality(rendering::RenderQuality::Preview);
+    }
     return true;
   }
 

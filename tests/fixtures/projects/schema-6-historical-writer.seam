@@ -1,0 +1,91 @@
+{
+  "audioTracks": [
+    {
+      "gainDb": 0,
+      "id": "2",
+      "mediaHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "mediaOwnership": "project-copy",
+      "mediaPath": "song.seam.media/backing.wav",
+      "muted": false,
+      "name": "Owned Backing",
+      "originalFilename": "backing.wav",
+      "outputRoute": {
+        "busId": "1",
+        "matrix": {
+          "destinationChannels": 2,
+          "gains": [
+            1,
+            1
+          ],
+          "sourceChannels": 1
+        }
+      },
+      "pan": 0,
+      "solo": false,
+      "sourceChannels": 2,
+      "sourceFrameCount": 4,
+      "sourceSampleRate": 48000,
+      "startTick": 0,
+      "trimEndFrame": null,
+      "trimStartFrame": 0
+    }
+  ],
+  "formatId": "com.project-seam.project",
+  "meterMap": [
+    {
+      "denominator": 4,
+      "numerator": 4,
+      "tick": 0
+    }
+  ],
+  "name": "Schema 6 Media Fixture",
+  "ppq": 960,
+  "projectId": "1",
+  "routing": {
+    "buses": [
+      {
+        "channelCount": 2,
+        "gainDb": 0,
+        "id": "1",
+        "muted": false,
+        "name": "Master",
+        "solo": false
+      }
+    ],
+    "deviceOutputChannels": 2,
+    "deviceRoutes": [
+      {
+        "enabled": true,
+        "gainDb": 0,
+        "matrix": {
+          "destinationChannels": 2,
+          "gains": [
+            1,
+            0,
+            0,
+            1
+          ],
+          "sourceChannels": 2
+        },
+        "sourceBus": "1"
+      }
+    ],
+    "masterBus": "1",
+    "sends": []
+  },
+  "schemaVersion": 6,
+  "settings": {
+    "characterDisplay": "minimal",
+    "hostStartOffsetTick": 0,
+    "sampleRate": 48000,
+    "snapEnabled": true,
+    "snapGrid": 240
+  },
+  "tempoMap": [
+    {
+      "bpm": 120,
+      "tick": 0
+    }
+  ],
+  "vocalTracks": []
+}

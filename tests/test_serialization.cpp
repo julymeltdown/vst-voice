@@ -114,38 +114,34 @@ TEST_CASE("project decoder rejects an unsupported schema") {
 }
 
 TEST_CASE("project decoder migrates schema one regions without phoneme overrides") {
-  seam::application::ProjectFactory factory{300};
-  auto project = factory.createProject("Schema one fixture");
-  const auto trackId = factory.addVocalTrack(project, "Track");
-  const auto regionId = factory.addRegion(
-      project, trackId, "Region", seam::time::Tick{0}, seam::time::Tick{15360});
-  auto [lyric, note] = factory.makeNote(
-      seam::time::Tick{0}, seam::time::Tick{960}, 60, U"あ");
-  project.findRegion(regionId)->lyrics.push_back(lyric);
-  project.findRegion(regionId)->notes.push_back(note);
-
+  constexpr auto legacy = R"({
+    "formatId":"com.project-seam.project","schemaVersion":1,
+    "projectId":"1","name":"Schema one fixture","ppq":960,
+    "tempoMap":[{"tick":0,"bpm":120}],
+    "meterMap":[{"tick":0,"numerator":4,"denominator":4}],
+    "settings":{"sampleRate":48000,"characterDisplay":"minimal","snapEnabled":true,"snapGrid":240},
+    "vocalTracks":[{"id":"2","name":"Track","voicebank":{"id":"","version":"","contentHash":""},
+      "character":{"id":"","version":""},"gainDb":0,"muted":false,
+      "regions":[{"id":"3","name":"Region","startTick":0,"durationTick":15360,
+        "lyrics":[{"id":"4","surface":"あ","language":"ja"}],
+        "notes":[{"id":"5","startTick":0,"durationTick":960,"midiKey":60,"lyricId":"4","articulation":"normal"}]}]}],
+    "audioTracks":[]})";
   seam::formats::ProjectJsonCodec codec;
-  const auto encoded = codec.encode(project);
-  CHECK(encoded);
-  auto legacy = encoded.value();
-  const auto schemaPosition = legacy.find("\"schemaVersion\": 7");
-  CHECK(schemaPosition != std::string::npos);
-  legacy.replace(schemaPosition, std::string{"\"schemaVersion\": 7"}.size(),
-                 "\"schemaVersion\": 1");
-  for (const auto field : {"phonemeOverrides", "unitSelectionOverrides",
-                           "seamOverrides", "pitchAutomation"}) {
-    const auto fragment = std::string{",\n          \""} + field + "\": []";
-    const auto position = legacy.find(fragment);
-    CHECK(position != std::string::npos);
-    legacy.erase(position, fragment.size());
-  }
-  const auto hostOffsetFragment = std::string{",\n    \"hostStartOffsetTick\": 0"};
-  const auto hostOffsetPosition = legacy.find(hostOffsetFragment);
-  CHECK(hostOffsetPosition != std::string::npos);
-  legacy.erase(hostOffsetPosition, hostOffsetFragment.size());
   const auto decoded = codec.decode(legacy);
   CHECK(decoded);
-  CHECK(decoded.value() == project);
+  const auto& track = decoded.value().vocalTracks().front();
+  const auto& region = track.regions.front();
+  CHECK(region.phonemeOverrides.empty());
+  CHECK(region.unitSelectionOverrides.empty());
+  CHECK(region.pitchAutomation.points().empty());
+  CHECK(region.dynamicsAutomation.points().empty());
+  CHECK(!region.notes.front().vibrato.enabled);
+  CHECK(!region.notes.front().phoneticHint.has_value());
+  CHECK(track.styleSelection.origin == seam::domain::VoiceStyleOrigin::LegacyNeedsExactBankResolution);
+  CHECK(track.styleSelection.styleId.empty());
+  const auto upgraded = codec.encode(decoded.value());
+  CHECK(upgraded);
+  CHECK(codec.decode(upgraded.value()).value() == decoded.value());
 }
 
 TEST_CASE("project JSON path I/O rejects symlink and non-file targets") {

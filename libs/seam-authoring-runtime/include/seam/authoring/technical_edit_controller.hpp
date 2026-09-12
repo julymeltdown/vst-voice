@@ -23,6 +23,23 @@ struct TechnicalRenderView final {
   std::vector<TechnicalUnitView> units;
 };
 
+struct PhonemeBindingReview final {
+  domain::RegionId regionId;
+  std::vector<domain::PhonemeOverride> retainedEdits;
+  std::vector<domain::PhonemeToken> targets;
+  std::vector<phonemizer::Warning> warnings;
+};
+
+struct RetainedRenderEditReview final {
+  domain::RegionId regionId;
+  domain::PronunciationIdentity pronunciation;
+  std::vector<domain::UnitSelectionOverride> units;
+  std::vector<domain::SeamOverride> seams;
+  // Keep the complete sequence: filtering would invent adjacency across gaps.
+  std::vector<domain::PhonemeToken> tokens;
+  std::vector<phonemizer::Warning> warnings;
+};
+
 class TechnicalEditController final {
 public:
   using RenderViewProvider = std::function<TechnicalRenderView()>;
@@ -46,6 +63,17 @@ public:
   [[nodiscard]] core::Result<void> resetPhonemeOverrides(
       const std::vector<domain::PhonemeKey>& keys);
   [[nodiscard]] core::Result<void> resetPhonemeRegion();
+  [[nodiscard]] core::Result<PhonemeBindingReview> reviewPhonemeBindings() const;
+  [[nodiscard]] core::Result<void> rebindPhonemeOverride(
+      const domain::PhonemeOverride& reviewed, domain::PhonemeKey target,
+      std::string_view expectedTargetContext);
+  [[nodiscard]] core::Result<RetainedRenderEditReview> reviewRetainedRenderEdits() const;
+  [[nodiscard]] core::Result<void> rebindSeamOverride(
+      const RetainedRenderEditReview& review,
+      const domain::SeamOverride& reviewed, domain::PhonemeKey target);
+  [[nodiscard]] core::Result<void> rebindUnitOverride(
+      const RetainedRenderEditReview& review,
+      const domain::UnitSelectionOverride& reviewed, domain::PhonemeKey target);
   [[nodiscard]] core::Result<void> selectUnitVariant(
       domain::PhonemeKey key, std::string unitId,
       domain::UnitRendererKind renderer);

@@ -26,7 +26,8 @@ public:
                                           std::u32string currentText);
   [[nodiscard]] core::Result<void> update(std::u32string composition,
                                           CompositionSelection selection);
-  [[nodiscard]] core::Result<TextCommit> commit();
+  // Auxiliary fields may explicitly permit clearing; lyrics remain nonempty by default.
+  [[nodiscard]] core::Result<TextCommit> commit(bool allowEmpty = false);
   void cancel() noexcept;
 
   [[nodiscard]] bool active() const noexcept { return active_; }

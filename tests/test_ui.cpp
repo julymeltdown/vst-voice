@@ -288,6 +288,12 @@ TEST_CASE("text composition models native IME begin update commit and cancel") {
   composition.cancel();
   CHECK(!composition.active());
   CHECK(!composition.commit());
+  CHECK(composition.begin(lyricId, U""));
+  CHECK(!composition.commit()); // Ordinary lyric entry cannot clear its token.
+  CHECK(composition.active());
+  const auto cleared = composition.commit(true);
+  CHECK(cleared); CHECK(cleared.value().text.empty());
+  CHECK(!composition.active());
 }
 
 TEST_CASE("phoneme lane exposes generated and manually timed phonemes") {
@@ -337,4 +343,97 @@ TEST_CASE("phoneme lane exposes generated and manually timed phonemes") {
   CHECK(leftBoundary.has_value());
   CHECK(leftBoundary->first == expectedKey);
   CHECK(leftBoundary->second);
+  for (const auto zoom : {48.0, 192.0}) {
+    pianoRoll.timeline().setPixelsPerQuarter(zoom);
+    auto defaultTiming = phonemes;
+    defaultTiming.tokens.front().timing = {};
+    lane.rebuild(pianoRoll, defaultTiming, 600.0, 32.0);
+    const auto defaultEnd = lane.visuals().front().bounds.right();
+    defaultTiming.tokens.front().timing.startOffset = -60000;
+    lane.rebuild(pianoRoll, defaultTiming, 600.0, 32.0);
+    CHECK_NEAR(lane.visuals().front().bounds.right(), defaultEnd, 1.0e-9);
+    const auto endHit = lane.hitTestBoundary({defaultEnd, 604.0});
+    CHECK(endHit.has_value());
+    const auto hitVisual = std::find_if(lane.visuals().begin(), lane.visuals().end(),
+        [&](const auto& visual) { return visual.key == endHit->first; });
+    CHECK(hitVisual != lane.visuals().end());
+    CHECK_NEAR(endHit->second ? hitVisual->bounds.x : hitVisual->bounds.right(), defaultEnd, 1.0e-9);
+  }
+  auto* currentRegion = session.project().findRegion(regionId);
+  currentRegion->phonemeOverrides.clear();
+  currentRegion->lyrics.front().surface = U"かき";
+  auto syllables = phonemizer.phonemize(*currentRegion);
+  CHECK(syllables.tokens.size() == 4U);
+  lane.rebuild(pianoRoll, syllables, 600.0, 32.0);
+  CHECK(lane.visuals()[0].timingEstimated);
+  CHECK(!lane.visuals()[1].timingEstimated);
+  CHECK(lane.visuals()[0].bounds.bottom() <= lane.visuals()[1].bounds.y);
+  const auto absoluteStart = currentRegion->startTick + currentRegion->notes.front().startTick;
+  const auto midpoint = pianoRoll.pixelAtMicrosecondOffset(absoluteStart, 250000);
+  CHECK_NEAR(lane.visuals()[1].bounds.right(), midpoint, 1.0e-6);
+  CHECK_NEAR(lane.visuals()[3].bounds.x, midpoint, 1.0e-6);
+  auto* currentTrack = session.project().findVocalTrack(trackId);
+  currentTrack->proceduralRecipe = seam::domain::ProceduralRecipeReference{
+      {.kind = seam::domain::SingerResourceKind::Procedural, .id = "timing-display", .version = "2", .contentHash = std::string(64U, 'a')},
+      "recipe.json", "neutral"};
+  for (const auto zoom : {48.0, 192.0}) {
+    pianoRoll.timeline().setPixelsPerQuarter(zoom);
+    lane.rebuild(pianoRoll, syllables, 600.0, 32.0);
+    CHECK(lane.visuals()[0].timingInferred); CHECK(lane.visuals()[1].timingInferred);
+    CHECK(!lane.visuals()[0].timingEstimated); CHECK(!lane.visuals()[0].timingOverridden);
+    CHECK_NEAR(lane.visuals()[0].bounds.x, pianoRoll.pixelAtMicrosecondOffset(absoluteStart, 0), 1.0e-6);
+    CHECK_NEAR(lane.visuals()[0].bounds.right(), pianoRoll.pixelAtMicrosecondOffset(absoluteStart, 60000), 1.0e-6);
+    CHECK_NEAR(lane.visuals()[1].bounds.x, lane.visuals()[0].bounds.right(), 1.0e-6);
+    CHECK_NEAR(lane.visuals()[1].bounds.right(), pianoRoll.pixelAtMicrosecondOffset(absoluteStart, 250000), 1.0e-6);
+    CHECK_NEAR(lane.visuals()[2].bounds.right(), pianoRoll.pixelAtMicrosecondOffset(absoluteStart, 310000), 1.0e-6);
+    const auto boundaryHit = lane.hitTestBoundary({lane.visuals()[0].bounds.right(), 604.0}, 1.0);
+    CHECK(boundaryHit); CHECK(boundaryHit->first == syllables.tokens[0].key); CHECK(!boundaryHit->second);
+  }
+  auto explicitSyllables = syllables;
+  explicitSyllables.tokens[0].timing.startOffset = 0;
+  explicitSyllables.tokens[1].timing.startOffset = 100000;
+  lane.rebuild(pianoRoll, explicitSyllables, 600.0, 32.0);
+  CHECK(!lane.visuals()[0].timingInferred); CHECK(lane.visuals()[0].timingOverridden);
+  CHECK_NEAR(lane.visuals()[0].bounds.right(), pianoRoll.pixelAtMicrosecondOffset(absoluteStart, 100000), 1.0e-6);
+  CHECK(lane.visuals()[2].timingInferred);
+  currentRegion->lyrics.front().surface=U"あん";
+  const auto withCoda=phonemizer.phonemize(*currentRegion); CHECK(withCoda.tokens.size()==2U);
+  for (const auto zoom:{48.0,192.0}) {
+    currentRegion->lyrics.front().surface=U"あん";
+    pianoRoll.timeline().setPixelsPerQuarter(zoom);
+    lane.rebuild(pianoRoll,withCoda,600.0,32.0);
+    const auto& coda=lane.visuals().back();
+    CHECK(coda.timingInferred); CHECK(!coda.timingEstimated); CHECK(!coda.timingOverridden);
+    CHECK_NEAR(coda.bounds.x,pianoRoll.pixelAtMicrosecondOffset(absoluteStart,440000),1.0e-6);
+    CHECK_NEAR(coda.bounds.right(),pianoRoll.pixelAtMicrosecondOffset(absoluteStart,500000),1.0e-6);
+    CHECK_NEAR(lane.visuals().front().bounds.right(),coda.bounds.x,1.0e-6);
+    const auto hit=lane.hitTestBoundary({coda.bounds.x,604.0},1.0); CHECK(hit);
+    CHECK(hit->first==withCoda.tokens.back().key); CHECK(hit->second);
+    auto authored=withCoda; authored.tokens[0].timing.endOffset=400000; authored.tokens[1].timing.startOffset=400000;
+    lane.rebuild(pianoRoll,authored,600.0,32.0);
+    CHECK(!lane.visuals().back().timingEstimated); CHECK(!lane.visuals().back().timingInferred);
+    CHECK(lane.visuals().back().timingOverridden);
+    CHECK_NEAR(lane.visuals().back().bounds.x,pianoRoll.pixelAtMicrosecondOffset(absoluteStart,400000),1.0e-6);
+    currentRegion->lyrics.front().surface=U"ん";
+    const auto syllabic=phonemizer.phonemize(*currentRegion); CHECK(syllabic.tokens.size()==1U);
+    lane.rebuild(pianoRoll,syllabic,600.0,32.0);
+    CHECK(!lane.visuals().front().timingEstimated); CHECK(!lane.visuals().front().timingOverridden);
+    CHECK_NEAR(lane.visuals().front().bounds.x,pianoRoll.pixelAtMicrosecondOffset(absoluteStart,0),1.0e-6);
+    CHECK_NEAR(lane.visuals().front().bounds.right(),pianoRoll.pixelAtMicrosecondOffset(absoluteStart,500000),1.0e-6);
+  }
+  currentTrack->proceduralRecipe.reset();
+  currentRegion->lyrics.front().surface=U"あん";
+  lane.rebuild(pianoRoll,withCoda,600.0,32.0);
+  CHECK(lane.visuals().back().timingEstimated);
+  CHECK_NEAR(lane.visuals().back().bounds.width,28.0,1.0e-6);
+  currentRegion->lyrics.front().surface=U"かき";
+  syllables.tokens[3].timing.startOffset = 300000;
+  lane.rebuild(pianoRoll, syllables, 600.0, 32.0);
+  const auto editedBoundary = pianoRoll.pixelAtMicrosecondOffset(absoluteStart, 300000);
+  CHECK_NEAR(lane.visuals()[1].bounds.right(), editedBoundary, 1.0e-6);
+  CHECK_NEAR(lane.visuals()[3].bounds.x, editedBoundary, 1.0e-6);
+  syllables.tokens[3].timing.startOffset = -1000;
+  lane.rebuild(pianoRoll, syllables, 600.0, 32.0);
+  CHECK(!lane.visuals().empty());
+  CHECK(lane.visuals()[3].timingConflict);
 }

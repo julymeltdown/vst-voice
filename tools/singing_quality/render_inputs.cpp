@@ -111,7 +111,7 @@ core::Result<PreparedRender> prepare(const Invocation& invocation) {
         song, bank, track.id, segment, 1U, rendering::RenderQuality::Final,
         bankRoot, kSampleRate, "original", options);
     if (!snapshot) return core::Result<PreparedRender>{snapshot.error()};
-    for (const auto& identity : snapshot.value().selectedUnits) {
+    for (const auto& identity : snapshot.value().sample().selectedUnits) {
       const auto* unit = bank.findUnit(identity.unitId);
       if (unit == nullptr || lock.value().at(unit->audioPath.generic_string()) != identity.audioSha256) {
         return core::failure<PreparedRender>(core::ErrorCode::Conflict,

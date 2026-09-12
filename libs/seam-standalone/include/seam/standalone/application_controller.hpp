@@ -45,6 +45,25 @@ struct StandaloneApplicationControllerConfig final {
   std::function<void()> stateChanged;
   std::function<void()> progressChanged;
   std::function<core::Result<void>()> openAudioSettings;
+  std::function<core::Result<void>()> editPronunciationHint;
+  std::function<core::Result<void>()> findReplaceLyrics;
+  std::function<core::Result<void>()> findNotes;
+  std::function<core::Result<void>()> findActiveDiagnostics;
+  std::function<core::Result<void>()> findNextNote;
+  std::function<core::Result<void>()> findPreviousNote;
+  std::function<core::Result<void>()> clearSelectedVibrato;
+  std::function<core::Result<void>()> editSelectedVibrato;
+  std::function<core::Result<void>()> editRegionDynamics;
+  std::function<core::Result<void>()> editTrackStyle;
+  std::function<core::Result<void>()> editJapaneseReading;
+  // The callback owns the bounded conversion-review surface. Returning false
+  // cancels without replacing the current document.
+  std::function<core::Result<bool>(const authoring::InterchangeImportDraft&)>
+      reviewInterchangeImport;
+  std::function<core::Result<void>()> removeSelectedOverlaps;
+  std::function<core::Result<void>()> closeSelectedGaps;
+  std::function<core::Result<void>()> autoLegatoSelectedNotes;
+  std::function<core::Result<void>()> clearRegionDynamicsCurve;
 };
 
 class StandaloneApplicationController final
@@ -106,6 +125,7 @@ public:
   [[nodiscard]] core::Result<voicebank::VoicebankResolution> relinkVoicebank(
       domain::TrackId trackId, voicebank::VoicebankSearchRoot root);
   [[nodiscard]] core::Result<void> relinkVoicebankFromDialog();
+  [[nodiscard]] core::Result<void> selectProceduralRecipeFromDialog(bool relink = false);
   [[nodiscard]] core::Result<void> relinkBackingMediaFromDialog();
   [[nodiscard]] core::Result<void> replaceVoicebank(
       domain::TrackId trackId, std::string_view id, std::string_view version,
@@ -150,12 +170,15 @@ private:
   [[nodiscard]] core::Result<bool> chooseAndSaveAs();
   [[nodiscard]] core::Result<void> openPath(
       const std::filesystem::path& path);
+  [[nodiscard]] core::Result<void> openInterchangePath(
+      const std::filesystem::path& path);
+  [[nodiscard]] core::Result<void> exportScoreFromDialog();
   [[nodiscard]] core::Result<void> recordCurrentProject();
   [[nodiscard]] core::Result<void> exportAudio();
-  [[nodiscard]] core::Result<void> exportSetFromDialog();
+  [[nodiscard]] core::Result<void> exportSetFromDialog(bool bakeCandidates = false);
   struct ExportRequest final {
     domain::Project project;
-    std::vector<rendering::TrackVoicebankSource> voicebanks;
+    std::vector<rendering::TrackSingerSource> voicebanks;
     domain::TrackId activeTrack;
     domain::RegionId activeRegion;
     std::uint64_t revision{0U};

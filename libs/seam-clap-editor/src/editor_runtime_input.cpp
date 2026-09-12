@@ -3,7 +3,8 @@
 
 #include "seam/application/render_commands.hpp"
 #include "seam/application/lyric_commands.hpp"
-#include "seam/phonemizer/japanese_phonemizer.hpp"
+#include "seam/phonemizer/language_resolver.hpp"
+#include "seam/phonemizer/pronunciation_resolver.hpp"
 #include "seam/rendering/region_renderer.hpp"
 #include "seam/synthesis/timing_solver.hpp"
 #include "seam/voicebank/wav.hpp"
@@ -19,6 +20,8 @@ namespace seam::clap_editor {
 using namespace detail;
 
 void EditorRuntime::requestRenderAfterEdit() {
+  offlineRender_.invalidate("An edit invalidated the prepared final bounce");
+  offlineAudioReady_.store(false, std::memory_order_release);
   authoring_->handleDocumentChanged();
   dirty_ = authoring_->document().dirty();
   controller_->setDirty(dirty_);
@@ -27,6 +30,9 @@ void EditorRuntime::requestRenderAfterEdit() {
 
 void EditorRuntime::pointerDown(const native_ui::PointerEvent& event) noexcept {
   std::lock_guard lock(mutex_);
+  if (controller_->replacementReviewOpen()) {
+    static_cast<void>(controller_->pointerDown(event)); return;
+  }
   rebuildTechnicalModelsLocked();
   if (microscopeUnitId_.has_value()) {
     if (event.button == native_ui::PointerButton::Right || event.clickCount >= 2) {
@@ -184,6 +190,9 @@ void EditorRuntime::pointerDown(const native_ui::PointerEvent& event) noexcept {
 
 void EditorRuntime::pointerMove(const native_ui::PointerEvent& event) noexcept {
   std::lock_guard lock(mutex_);
+  if (controller_->replacementReviewOpen()) {
+    static_cast<void>(controller_->pointerMove(event)); return;
+  }
   if (draggingPhonemeKey_.has_value() || draggingPitchTick_.has_value()) {
     requestRepaint();
     return;
@@ -193,6 +202,10 @@ void EditorRuntime::pointerMove(const native_ui::PointerEvent& event) noexcept {
 
 void EditorRuntime::pointerUp(const native_ui::PointerEvent& event) noexcept {
   std::lock_guard lock(mutex_);
+  if (controller_->replacementReviewOpen()) {
+    draggingPhonemeKey_.reset(); draggingPitchTick_.reset();
+    static_cast<void>(controller_->pointerUp(event)); return;
+  }
   if (draggingPhonemeKey_.has_value()) {
     const auto key = *draggingPhonemeKey_;
     draggingPhonemeKey_.reset();
@@ -250,6 +263,9 @@ void EditorRuntime::scroll(double deltaX, double deltaY, ui::Point anchor,
 
 void EditorRuntime::keyDown(const native_ui::KeyEvent& event) noexcept {
   std::lock_guard lock(mutex_);
+  if (controller_->replacementReviewOpen()) {
+    static_cast<void>(controller_->keyDown(event)); return;
+  }
   if (event.key == native_ui::NativeKey::Escape &&
       microscopeUnitId_.has_value()) {
     closeSampleMicroscope();
@@ -289,8 +305,7 @@ void EditorRuntime::textCancel() noexcept {
 phonemizer::Result EditorRuntime::phonemesLocked() const {
   const auto* region = session_.project().findRegion(regionId_);
   if (region == nullptr) return {};
-  phonemizer::JapaneseKanaPhonemizer phonemizer;
-  return phonemizer.phonemize(*region);
+  return phonemizer::inspectPronunciation(*region);
 }
 
 core::Result<void> EditorRuntime::movePhonemeBoundary(
@@ -460,6 +475,8 @@ std::optional<std::string> EditorRuntime::selectedUnitId() const {
 
 void EditorRuntime::setHostTimelineState(HostTimelineState state) noexcept {
   std::lock_guard lock(mutex_);
+  offlineRender_.invalidate("Host timeline changed the offline timing identity");
+  offlineAudioReady_.store(false, std::memory_order_release);
   hostTimelineState_ = state;
 }
 

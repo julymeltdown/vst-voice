@@ -3,6 +3,7 @@
 #include "seam/authoring/project_document.hpp"
 #include "seam/authoring/technical_edit_controller.hpp"
 #include "seam/application/project_factory.hpp"
+#include "seam/rendering/render_pipeline.hpp"
 
 #include <cstdint>
 #include <string>
@@ -79,6 +80,56 @@ struct TechnicalFixture final {
 
 }  // namespace
 
+TEST_CASE("editing inferred procedural timing preserves dependent bounds in one undo step") {
+  TechnicalFixture fixture;
+  auto& project = fixture.document.session().project();
+  seam::voice_design::VoiceRecipe recipe; recipe.id = "timing-test";
+  recipe.poses = {{"a", "neutral", 0.0, {{700.0, 80.0, 0.0}, {1200.0, 100.0, -3.0}, {2600.0, 140.0, -6.0}}}};
+  recipe.poses.push_back(recipe.poses.front()); recipe.poses.back().phone = "e";
+  recipe.frications = {{"s", "neutral", {.seed = 42U}}};
+  const auto resource = seam::voice_design::freezeVoiceRecipeResource(recipe); CHECK(resource);
+  project.vocalTracks().front().proceduralRecipe = seam::domain::ProceduralRecipeReference{
+      resource.value().identity,
+      "recipe.json", "neutral"};
+  auto* region = project.findRegion(fixture.regionId);
+  region->lyrics.front().surface = U"ささ";
+  const auto before = project;
+  CHECK(!fixture.controller.movePhonemeBoundary(fixture.firstKey, false, 100000));
+  CHECK(project == before); CHECK(fixture.renderRequests == 0U);
+  CHECK(fixture.controller.movePhonemeBoundary(fixture.firstKey, false, 50000));
+  CHECK(fixture.renderRequests == 1U); CHECK(fixture.document.session().revision() == 1U);
+  region = project.findRegion(fixture.regionId);
+  CHECK(region->phonemeOverrides.size() == 4U);
+  CHECK(region->findPhonemeOverride(fixture.firstKey)->timing.startOffset == 0);
+  CHECK(region->findPhonemeOverride(fixture.firstKey)->timing.endOffset == 50000);
+  CHECK(region->findPhonemeOverride({fixture.firstKey.noteId, 1U})->timing.startOffset == 60000);
+  CHECK(region->findPhonemeOverride({fixture.firstKey.noteId, 1U})->timing.endOffset == 250000);
+  CHECK(region->findPhonemeOverride({fixture.firstKey.noteId, 2U})->timing.startOffset == 250000);
+  const auto snapshot = seam::rendering::RenderSnapshotFactory{}.createProcedural(project, resource.value(),
+      project.vocalTracks().front().id, fixture.regionId, fixture.document.session().revision(),
+      seam::rendering::RenderQuality::Preview, 48000U); CHECK(snapshot);
+  CHECK(seam::rendering::PhraseRenderPipeline{}.render(snapshot.value()));
+  const auto after = project;
+  CHECK(fixture.controller.undo()); CHECK(project == before);
+  CHECK(fixture.controller.redo()); CHECK(project == after);
+  const auto revision = fixture.document.session().revision();
+  const auto requests = fixture.renderRequests;
+  CHECK(fixture.controller.movePhonemeBoundary(fixture.firstKey, false, 50000));
+  CHECK(fixture.document.session().revision() == revision); CHECK(fixture.renderRequests == requests);
+  CHECK(!fixture.controller.movePhonemeBoundary(fixture.firstKey, false, 100000));
+  CHECK(!fixture.controller.movePhonemeBoundary({fixture.firstKey.noteId, 1U}, true, 40000));
+  CHECK(!fixture.controller.movePhonemeBoundary({fixture.firstKey.noteId, 2U}, true, 240000));
+  CHECK(!fixture.controller.movePhonemeBoundary({fixture.firstKey.noteId, 3U}, false, 510000));
+  CHECK(project == after); CHECK(fixture.document.session().revision() == revision); CHECK(fixture.renderRequests == requests);
+  CHECK(fixture.controller.movePhonemeBoundary(fixture.firstKey, false, 55000));
+  CHECK(fixture.document.session().revision() == revision + 1U); CHECK(fixture.renderRequests == requests + 1U);
+  const auto explicitSnapshot = seam::rendering::RenderSnapshotFactory{}.createProcedural(project, resource.value(),
+      project.vocalTracks().front().id, fixture.regionId, fixture.document.session().revision(),
+      seam::rendering::RenderQuality::Preview, 48000U); CHECK(explicitSnapshot);
+  CHECK(seam::rendering::PhraseRenderPipeline{}.render(explicitSnapshot.value()));
+  CHECK(fixture.controller.undo()); CHECK(project == after);
+}
+
 TEST_CASE("technical_edit_controller_commits_one_revision_and_one_render_request") {
   TechnicalFixture fixture;
   const auto before = fixture.document.session().revision();
@@ -92,6 +143,249 @@ TEST_CASE("technical_edit_controller_commits_one_revision_and_one_render_request
   CHECK(fixture.renderRequests == 2U);
   CHECK(fixture.controller.redo());
   CHECK(fixture.renderRequests == 3U);
+}
+
+TEST_CASE("retained phoneme review is read only and explicit rebinding has one undo step") {
+  TechnicalFixture fixture;
+  auto* region = fixture.document.session().project().findRegion(fixture.regionId);
+  region->phonemeOverrides = {{.key = fixture.firstKey, .timing = {.startOffset = -2100},
+                               .locked = true, .unresolved = true}};
+  const auto before = fixture.document.session().project();
+  const auto review = fixture.controller.reviewPhonemeBindings();
+  CHECK(review);
+  CHECK(review.value().retainedEdits.size() == 1U);
+  CHECK(review.value().targets.size() == 3U);
+  CHECK(review.value().warnings.empty());
+  CHECK(fixture.document.session().project() == before);
+  CHECK(fixture.renderRequests == 0U);
+  const auto target = review.value().targets[1];
+  CHECK(fixture.controller.rebindPhonemeOverride(review.value().retainedEdits.front(),
+                                                target.key, target.contextId));
+  const auto after = fixture.document.session().project();
+  CHECK(fixture.document.session().revision() == 1U);
+  CHECK(fixture.renderRequests == 1U);
+  CHECK(after.findRegion(fixture.regionId)->findPhonemeOverride(fixture.firstKey) == nullptr);
+  const auto* rebound = after.findRegion(fixture.regionId)->findPhonemeOverride(target.key);
+  CHECK(rebound != nullptr);
+  CHECK(!rebound->unresolved);
+  CHECK(rebound->sourceContextId == target.contextId);
+  CHECK(rebound->timing.startOffset == -2100);
+  CHECK(fixture.controller.phonemes().tokens[1].locked);
+  CHECK(fixture.controller.reviewPhonemeBindings().value().retainedEdits.empty());
+  CHECK(fixture.controller.undo());
+  CHECK(fixture.document.session().project() == before);
+  CHECK(fixture.controller.redo());
+  CHECK(fixture.document.session().project() == after);
+}
+
+TEST_CASE("phoneme rebinding rejects stale review payload context and occupied targets") {
+  for (unsigned scenario = 0U; scenario < 3U; ++scenario) {
+    TechnicalFixture fixture;
+    auto* region = fixture.document.session().project().findRegion(fixture.regionId);
+    region->phonemeOverrides = {{.key = fixture.firstKey, .locked = true, .unresolved = true}};
+    const auto review = fixture.controller.reviewPhonemeBindings();
+    CHECK(review);
+    const auto source = review.value().retainedEdits.front();
+    const auto target = review.value().targets[1];
+    if (scenario == 0U) region->phonemeOverrides.front().timing.startOffset = -3000;
+    if (scenario == 1U) region->lyrics.front().surface = U"か";
+    if (scenario == 2U) region->phonemeOverrides.push_back({.key = target.key, .locked = true});
+    const auto before = fixture.document.session().project();
+    CHECK(!fixture.controller.rebindPhonemeOverride(source, target.key, target.contextId));
+    CHECK(fixture.document.session().project() == before);
+    CHECK(fixture.document.session().revision() == 0U);
+    CHECK(fixture.renderRequests == 0U);
+  }
+}
+
+TEST_CASE("phoneme review excludes fallback sounds but preserves unrelated valid targets") {
+  for (unsigned scenario = 0U; scenario < 3U; ++scenario) {
+    TechnicalFixture fixture;
+    auto* region = fixture.document.session().project().findRegion(fixture.regionId);
+    region->phonemeOverrides = {{.key = fixture.firstKey, .locked = true, .unresolved = true}};
+    const auto initial = fixture.controller.reviewPhonemeBindings();
+    CHECK(initial);
+    const auto oldTarget = initial.value().targets.front();
+    const auto retained = initial.value().retainedEdits.front();
+    if (scenario == 0U) region->lyrics.front().language = seam::domain::Language::English;
+    if (scenario == 1U) region->lyrics.front().surface.clear();
+    if (scenario == 2U) region->lyrics.front().surface = U"漢";
+    const auto before = fixture.document.session().project();
+    const auto review = fixture.controller.reviewPhonemeBindings();
+    CHECK(review);
+    CHECK(review.value().retainedEdits.size() == 1U);
+    CHECK(review.value().retainedEdits.front() == retained);
+    CHECK(!review.value().warnings.empty());
+    if (scenario == 0U) CHECK(review.value().targets.empty());
+    else {
+      CHECK(review.value().targets.size() == 1U);
+      CHECK(review.value().targets.front().key.noteId != fixture.firstKey.noteId);
+    }
+    CHECK(!fixture.controller.rebindPhonemeOverride(retained, oldTarget.key, oldTarget.contextId));
+    CHECK(fixture.document.session().project() == before);
+    CHECK(fixture.document.session().revision() == 0U);
+    CHECK(fixture.renderRequests == 0U);
+  }
+}
+
+TEST_CASE("mixed pronunciation review remains inspectable but cannot authorize any rebinding") {
+  TechnicalFixture fixture;
+  auto* region = fixture.document.session().project().findRegion(fixture.regionId);
+  region->phonemeOverrides = {{.key = fixture.firstKey, .locked = true, .unresolved = true}};
+  region->unitSelectionOverrides = {{.startKey = fixture.firstKey, .unitId = "retained-unit", .unresolved = true}};
+  region->seamOverrides = {{.incomingStartKey = fixture.firstKey, .seamAmount = 0.3F, .unresolved = true}};
+  const auto oldPhonemes = fixture.controller.reviewPhonemeBindings();
+  const auto oldRender = fixture.controller.reviewRetainedRenderEdits();
+  CHECK(oldPhonemes);
+  CHECK(oldRender);
+  const auto japaneseTarget = oldPhonemes.value().targets.back();
+  region->lyrics.front().language = seam::domain::Language::English;
+  const auto before = fixture.document.session().project();
+  const auto phonemes = fixture.controller.reviewPhonemeBindings();
+  const auto render = fixture.controller.reviewRetainedRenderEdits();
+  CHECK(phonemes);
+  CHECK(render);
+  CHECK(phonemes.value().targets.empty());
+  CHECK(phonemes.value().retainedEdits == region->phonemeOverrides);
+  CHECK(!render.value().tokens.empty());
+  CHECK(!fixture.controller.rebindPhonemeOverride(region->phonemeOverrides.front(),
+      japaneseTarget.key, japaneseTarget.contextId));
+  CHECK(!fixture.controller.rebindUnitOverride(render.value(), region->unitSelectionOverrides.front(),
+      japaneseTarget.key));
+  CHECK(!fixture.controller.rebindSeamOverride(render.value(), region->seamOverrides.front(),
+      japaneseTarget.key));
+  CHECK(!fixture.controller.rebindUnitOverride(oldRender.value(), region->unitSelectionOverrides.front(),
+      japaneseTarget.key));
+  CHECK(fixture.document.session().project() == before);
+  CHECK(fixture.document.session().revision() == 0U);
+  CHECK(fixture.renderRequests == 0U);
+}
+
+TEST_CASE("retained unit rebinding preserves settings ordering and exact undo") {
+  for (unsigned scenario = 0U; scenario < 3U; ++scenario) {
+    TechnicalFixture fixture;
+    auto* region = fixture.document.session().project().findRegion(fixture.regionId);
+    seam::domain::UnitSelectionOverride retained{.startKey = fixture.firstKey,
+        .tokenCount = static_cast<std::uint16_t>(scenario == 2U ? 2U : 1U),
+        .unitId = "retained-unit", .renderer = seam::domain::UnitRendererKind::ClassicPsola,
+        .loopPrint = 0.25F, .sourcePitchResidual = 0.5F, .locked = false, .unresolved = true};
+    if (scenario != 2U) {
+      region->unitSelectionOverrides.push_back({.startKey = {
+          .noteId = region->notes.back().id, .ordinal = 0U}, .unitId = "other-unit"});
+    }
+    region->unitSelectionOverrides.push_back(retained);
+    const auto before = fixture.document.session().project();
+    CHECK(before.validate());
+    const auto review = fixture.controller.reviewRetainedRenderEdits();
+    CHECK(review);
+    const auto target = review.value().tokens[scenario == 0U ? 0U : 1U].key;
+    CHECK(fixture.controller.rebindUnitOverride(review.value(), retained, target));
+    region = fixture.document.session().project().findRegion(fixture.regionId);
+    auto expected = retained;
+    expected.startKey = target;
+    expected.unresolved = false;
+    CHECK(*region->findUnitSelectionOverride(target) == expected);
+    CHECK(fixture.renderRequests == 1U);
+    CHECK(fixture.document.session().revision() == 1U);
+    const auto after = fixture.document.session().project();
+    CHECK(fixture.controller.undo());
+    CHECK(fixture.document.session().project() == before);
+    CHECK(fixture.controller.redo());
+    CHECK(fixture.document.session().project() == after);
+  }
+}
+
+TEST_CASE("retained unit rebinding rejects stale incomplete warned and overlapping spans") {
+  for (unsigned scenario = 0U; scenario < 6U; ++scenario) {
+    TechnicalFixture fixture;
+    auto* region = fixture.document.session().project().findRegion(fixture.regionId);
+    seam::domain::UnitSelectionOverride retained{.startKey = fixture.firstKey,
+        .tokenCount = 2U, .unitId = "retained-unit", .unresolved = true};
+    region->unitSelectionOverrides.push_back(retained);
+    if (scenario == 3U) region->lyrics.back().language = seam::domain::Language::English;
+    const auto review = fixture.controller.reviewRetainedRenderEdits();
+    CHECK(review);
+    auto target = review.value().tokens[1].key;
+    if (scenario == 0U) target = review.value().tokens.back().key;
+    if (scenario == 1U) region->lyrics.front().surface = U"さ";
+    if (scenario == 2U) region->unitSelectionOverrides.front().unitId = "changed";
+    if (scenario >= 4U) region->unitSelectionOverrides.push_back({
+        .startKey = review.value().tokens.back().key, .unitId = "occupied",
+        .unresolved = scenario == 5U});
+    const auto before = fixture.document.session().project();
+    CHECK(before.validate());
+    CHECK(!fixture.controller.rebindUnitOverride(review.value(), retained, target));
+    CHECK(fixture.document.session().project() == before);
+    CHECK(fixture.document.session().revision() == 0U);
+    CHECK(fixture.renderRequests == 0U);
+  }
+}
+
+TEST_CASE("retained seam review rebinds explicitly with exact undo and rejects stale targets") {
+  TechnicalFixture fixture;
+  auto* region = fixture.document.session().project().findRegion(fixture.regionId);
+  seam::domain::SeamOverride retained{.incomingStartKey = fixture.firstKey,
+      .seamAmount = 0.7F, .overlap = seam::time::Microseconds{12000},
+      .locked = true, .unresolved = true};
+  // Valid persisted vectors need not be key-sorted; undo must preserve order.
+  region->seamOverrides.push_back({.incomingStartKey = {
+      .noteId = region->notes.back().id, .ordinal = 0U}, .seamAmount = 0.2F});
+  region->seamOverrides.push_back(retained);
+  region->unitSelectionOverrides.push_back({.startKey = fixture.firstKey,
+      .tokenCount = 2U, .unitId = "retained-unit", .unresolved = true});
+  const auto before = fixture.document.session().project();
+  const auto review = fixture.controller.reviewRetainedRenderEdits();
+  CHECK(review);
+  CHECK(review.value().seams == std::vector<seam::domain::SeamOverride>{retained});
+  CHECK(review.value().units.size() == 1U);
+  CHECK(review.value().tokens.size() == 3U);
+  CHECK(fixture.document.session().project() == before);
+  CHECK(fixture.renderRequests == 0U);
+  const auto target = review.value().tokens[1].key;
+  CHECK(fixture.controller.rebindSeamOverride(review.value(), retained, target));
+  region = fixture.document.session().project().findRegion(fixture.regionId);
+  auto expected = retained;
+  expected.incomingStartKey = target;
+  expected.unresolved = false;
+  CHECK(*region->findSeamOverride(target) == expected);
+  CHECK(region->findSeamOverride(fixture.firstKey) == nullptr);
+  CHECK(fixture.renderRequests == 1U);
+  CHECK(fixture.document.session().revision() == 1U);
+  const auto after = fixture.document.session().project();
+  CHECK(fixture.controller.undo());
+  CHECK(fixture.document.session().project() == before);
+  CHECK(fixture.controller.redo());
+  CHECK(fixture.document.session().project() == after);
+  CHECK(fixture.controller.undo());
+  region = fixture.document.session().project().findRegion(fixture.regionId);
+  region->lyrics.front().surface = U"さ";
+  const auto changed = fixture.document.session().project();
+  const auto revision = fixture.document.session().revision();
+  const auto requests = fixture.renderRequests;
+  CHECK(!fixture.controller.rebindSeamOverride(review.value(), retained, target));
+  CHECK(fixture.document.session().project() == changed);
+  CHECK(fixture.document.session().revision() == revision);
+  CHECK(fixture.renderRequests == requests);
+}
+
+TEST_CASE("retained seam review rejects occupied targets stale payloads and warning predecessors") {
+  for (unsigned scenario = 0U; scenario < 3U; ++scenario) {
+    TechnicalFixture fixture;
+    auto* region = fixture.document.session().project().findRegion(fixture.regionId);
+    seam::domain::SeamOverride retained{.incomingStartKey = fixture.firstKey, .seamAmount = 0.3F, .unresolved = true};
+    region->seamOverrides.push_back(retained);
+    if (scenario == 2U) region->lyrics.front().language = seam::domain::Language::English;
+    const auto review = fixture.controller.reviewRetainedRenderEdits();
+    CHECK(review);
+    const auto target = review.value().tokens.back().key;
+    if (scenario == 0U) region->seamOverrides.push_back({.incomingStartKey = target, .seamAmount = 0.2F});
+    if (scenario == 1U) region->seamOverrides.front().locked = false;
+    const auto before = fixture.document.session().project();
+    CHECK(!fixture.controller.rebindSeamOverride(review.value(), retained, target));
+    CHECK(fixture.document.session().project() == before);
+    CHECK(fixture.document.session().revision() == 0U);
+    CHECK(fixture.renderRequests == 0U);
+  }
 }
 
 TEST_CASE("technical_edit_controller_rejects_invalid_targets_without_render") {

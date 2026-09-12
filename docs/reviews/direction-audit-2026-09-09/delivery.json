@@ -1,0 +1,33 @@
+{
+  "ok": true,
+  "html": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/docs/reviews/direction-audit-2026-09-09/report.html",
+  "stages": {
+    "validation": "passed",
+    "package": "passed",
+    "verification": "passed"
+  },
+  "counts": {
+    "blocks": 15,
+    "charts": 1,
+    "html": 0,
+    "metrics": 0,
+    "tables": 0
+  },
+  "sourceDialog": "passed",
+  "sourceInteraction": "keyboard_menu_semantic_click",
+  "viewports": [
+    1440,
+    390
+  ],
+  "timings": {
+    "validateAndPackageMs": 1426.2,
+    "staticChartExtractionMs": 1364.1,
+    "browserRunMs": 744,
+    "readerReadyMs": 117.2,
+    "contentChecksMs": 32.1,
+    "sourceDialogMs": 32,
+    "responsiveChecksMs": 32,
+    "verificationMs": 751.4,
+    "totalMs": 2183.8
+  }
+}

@@ -19,7 +19,11 @@ namespace {
 constexpr std::array<char, 8> kMagic{'S', 'E', 'A', 'M', 'P', 'C', 'M', '4'};
 constexpr std::uint32_t kVersion = build::kPcmCacheFormatRevision;
 constexpr std::uint64_t kMaximumFrames = 200'000'000ULL;
-constexpr std::uint64_t kHeaderBytes = 8U + 4U + 4U + 8U + 8U + 8U;
+constexpr std::uint64_t kHeaderBytes = 8U + 4U + 4U + 8U + 8U + 8U +
+                                        4U + 8U + 4U;
+constexpr std::uint32_t kMaximumRendererIdentityBytes = 128U;
+constexpr std::uint32_t kMaximumFallbackDiagnosticBytes = 4096U;
+constexpr std::size_t kMaximumFallbackCount = 4096U;
 
 template <typename T>
 void writeLittleAt(std::span<std::byte> output, std::size_t& offset, T value) {
@@ -51,6 +55,16 @@ bool validKey(std::string_view key) {
   return std::all_of(key.begin(), key.end(), [](char value) {
     const auto byte = static_cast<unsigned char>(value);
     return std::isalnum(byte) != 0 || value == '-' || value == '_';
+  });
+}
+
+bool validRendererIdentity(std::string_view value) noexcept {
+  if (value.empty() || value.size() > kMaximumRendererIdentityBytes) {
+    return false;
+  }
+  return std::all_of(value.begin(), value.end(), [](char byte) {
+    const auto value = static_cast<unsigned char>(byte);
+    return value >= 0x21U && value <= 0x7eU;
   });
 }
 
@@ -190,20 +204,34 @@ core::Result<std::shared_ptr<const CachedPcm>> PcmCache::load(
     std::int64_t startFrame = 0;
     std::uint64_t frameCount = 0;
     std::uint64_t expectedChecksum = 0;
+    std::uint32_t rendererBytes = 0;
+    std::uint64_t fallbackCount = 0;
+    std::uint32_t diagnosticBytes = 0;
     if (!stream || magic != kMagic || !readLittle(stream, version) ||
         !readLittle(stream, sampleRate) || !readLittle(stream, startFrame) ||
         !readLittle(stream, frameCount) ||
-        !readLittle(stream, expectedChecksum) || version != kVersion ||
+        !readLittle(stream, expectedChecksum) ||
+        !readLittle(stream, rendererBytes) ||
+        !readLittle(stream, fallbackCount) ||
+        !readLittle(stream, diagnosticBytes) || version != kVersion ||
         sampleRate < 8000U || sampleRate > 384000U || frameCount == 0U ||
-        frameCount > kMaximumFrames) {
+        frameCount > kMaximumFrames || rendererBytes == 0U ||
+        rendererBytes > kMaximumRendererIdentityBytes ||
+        fallbackCount > kMaximumFallbackCount ||
+        diagnosticBytes > kMaximumFallbackDiagnosticBytes) {
       std::scoped_lock lock{mutex_};
       ++stats_.corruptEntries;
       return core::failure<std::shared_ptr<const CachedPcm>>(
           core::ErrorCode::ParseError, "PCM cache header is invalid",
           std::string{key});
     }
+    const auto metadataBytes = static_cast<std::uint64_t>(rendererBytes) +
+                               static_cast<std::uint64_t>(diagnosticBytes);
     const auto payload = frameCount * static_cast<std::uint64_t>(sizeof(float));
-    if (payload > limits_.maximumEntryBytes || fileBytes != kHeaderBytes + payload) {
+    if (metadataBytes > std::numeric_limits<std::uint64_t>::max() -
+                           kHeaderBytes ||
+        payload > limits_.maximumEntryBytes ||
+        fileBytes != kHeaderBytes + metadataBytes + payload) {
       std::scoped_lock lock{mutex_};
       ++stats_.corruptEntries;
       return core::failure<std::shared_ptr<const CachedPcm>>(
@@ -214,6 +242,20 @@ core::Result<std::shared_ptr<const CachedPcm>> PcmCache::load(
     pcm = std::make_shared<CachedPcm>();
     pcm->sampleRate = sampleRate;
     pcm->startFrame = startFrame;
+    pcm->rendererIdentity.resize(rendererBytes);
+    stream.read(pcm->rendererIdentity.data(),
+                static_cast<std::streamsize>(rendererBytes));
+    pcm->fallbackCount = static_cast<std::size_t>(fallbackCount);
+    pcm->fallbackDiagnostic.resize(diagnosticBytes);
+    stream.read(pcm->fallbackDiagnostic.data(),
+                static_cast<std::streamsize>(diagnosticBytes));
+    if (!stream || !validRendererIdentity(pcm->rendererIdentity)) {
+      std::scoped_lock lock{mutex_};
+      ++stats_.corruptEntries;
+      return core::failure<std::shared_ptr<const CachedPcm>>(
+          core::ErrorCode::ParseError,
+          "PCM cache renderer provenance is invalid", std::string{key});
+    }
     pcm->samples.resize(static_cast<std::size_t>(frameCount));
     for (auto& sample : pcm->samples) {
       std::uint32_t bits = 0;
@@ -258,11 +300,18 @@ core::Result<std::shared_ptr<const CachedPcm>> PcmCache::load(
 core::Result<void> PcmCache::store(std::string_view key, const CachedPcm& pcm) {
   const auto pathResult = pathFor(key);
   if (!pathResult) return core::Result<void>{pathResult.error()};
+  const auto rendererBytes = static_cast<std::uint64_t>(pcm.rendererIdentity.size());
+  const auto diagnosticBytes = static_cast<std::uint64_t>(pcm.fallbackDiagnostic.size());
+  const auto metadataBytes = rendererBytes + diagnosticBytes;
   if (pcm.sampleRate < 8000U || pcm.sampleRate > 384000U ||
       pcm.samples.empty() || pcm.samples.size() > kMaximumFrames ||
+      !validRendererIdentity(pcm.rendererIdentity) ||
+      pcm.fallbackCount > kMaximumFallbackCount ||
+      diagnosticBytes > kMaximumFallbackDiagnosticBytes ||
+      metadataBytes > std::numeric_limits<std::uint32_t>::max() ||
       payloadBytes(pcm) > limits_.maximumEntryBytes ||
       (limits_.maximumDiskBytes > 0U &&
-       kHeaderBytes + payloadBytes(pcm) > limits_.maximumDiskBytes) ||
+       kHeaderBytes + metadataBytes + payloadBytes(pcm) > limits_.maximumDiskBytes) ||
       std::any_of(pcm.samples.begin(), pcm.samples.end(),
                   [](float sample) { return !std::isfinite(sample); })) {
     return core::failure(core::ErrorCode::InvalidArgument,
@@ -271,7 +320,7 @@ core::Result<void> PcmCache::store(std::string_view key, const CachedPcm& pcm) {
   {
     std::scoped_lock ioLock{ioMutex_};
     const auto encodedSize = static_cast<std::size_t>(
-        kHeaderBytes + payloadBytes(pcm));
+        kHeaderBytes + metadataBytes + payloadBytes(pcm));
     std::vector<std::byte> encoded(encodedSize);
     std::size_t offset = 0U;
     for (const auto value : kMagic) {
@@ -284,6 +333,18 @@ core::Result<void> PcmCache::store(std::string_view key, const CachedPcm& pcm) {
     writeLittleAt(encoded, offset,
                   static_cast<std::uint64_t>(pcm.samples.size()));
     writeLittleAt(encoded, offset, pcmChecksum(pcm.samples));
+    writeLittleAt(encoded, offset,
+                  static_cast<std::uint32_t>(rendererBytes));
+    writeLittleAt(encoded, offset,
+                  static_cast<std::uint64_t>(pcm.fallbackCount));
+    writeLittleAt(encoded, offset,
+                  static_cast<std::uint32_t>(diagnosticBytes));
+    for (const auto byte : pcm.rendererIdentity) {
+      encoded[offset++] = static_cast<std::byte>(byte);
+    }
+    for (const auto byte : pcm.fallbackDiagnostic) {
+      encoded[offset++] = static_cast<std::byte>(byte);
+    }
     for (const auto sample : pcm.samples) {
       writeLittleAt(encoded, offset, std::bit_cast<std::uint32_t>(sample));
     }

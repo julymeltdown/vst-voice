@@ -13,6 +13,7 @@ from .surface_validation import (
     product_surface_findings,
     public_document_findings,
 )
+from .replay import predecessor_state
 
 
 def _finding(requirement_id: str, message: str) -> ValidationFinding:
@@ -173,18 +174,21 @@ def root_chain_findings(
 
 def external_beta_findings(candidate: JsonObject) -> tuple[ValidationFinding, ...]:
     requirement_id = "PR-003-external-beta-closed"
+    required_state = predecessor_state(str(candidate.get("state")))
+    if required_state is None:
+        return ()
     value, findings = _required_object(candidate, "externalBeta", requirement_id)
     if value is None:
         return findings
     errors = list(findings)
-    if value.get("state") != "EXTERNAL_BETA_CLOSED":
-        errors.append(_finding(requirement_id, "External Beta must be CLOSED"))
+    if value.get("state") not in {"EXTERNAL_BETA_READY", "EXTERNAL_BETA_CLOSED"} or (required_state == "CLOSED" and value.get("state") != "EXTERNAL_BETA_CLOSED"):
+        errors.append(_finding(requirement_id, f"External Beta must be {required_state}"))
     if value.get("candidateLineageId") != candidate.get("candidateLineageId"):
         errors.append(_finding(requirement_id, "External Beta candidate lineage differs"))
     if not is_sha256(value.get("candidateRootSha256")):
         errors.append(_finding(requirement_id, "External Beta candidate root is required"))
-    if value.get("archiveVerified") is not True:
-        errors.append(_finding(requirement_id, "External Beta archive must be verified"))
+    if not isinstance(value.get("releaseAudit"), dict) or not isinstance(value.get("acceptanceContract"), dict):
+        errors.append(_finding(requirement_id, "External Beta requires restored audit and contract references"))
     return tuple(errors)
 
 

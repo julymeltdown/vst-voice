@@ -8,6 +8,24 @@
 
 namespace seam::application {
 
+// Pure project edit: file loading/identity verification belongs to resource
+// resolution. The expected selection guards asynchronous picker results.
+class SetTrackProceduralRecipeCommand final : public ICommand {
+public:
+  SetTrackProceduralRecipeCommand(domain::TrackId trackId,
+      std::optional<domain::ProceduralRecipeReference> expected,
+      std::optional<domain::ProceduralRecipeReference> replacement)
+      : trackId_(trackId), before_(std::move(expected)), after_(std::move(replacement)) {}
+  [[nodiscard]] std::string_view name() const noexcept override { return "Select procedural recipe"; }
+  [[nodiscard]] CommandAudioImpact audioImpact() const noexcept override { return CommandAudioImpact::ProjectAudio; }
+  [[nodiscard]] CommandImpact impact() const override;
+  [[nodiscard]] core::Result<void> apply(domain::Project& project) override;
+  [[nodiscard]] core::Result<void> revert(domain::Project& project) override;
+private:
+  domain::TrackId trackId_;
+  std::optional<domain::ProceduralRecipeReference> before_, after_;
+};
+
 class UpsertUnitSelectionOverrideCommand final : public ICommand {
 public:
   UpsertUnitSelectionOverrideCommand(
@@ -27,7 +45,7 @@ public:
 private:
   domain::RegionId regionId_;
   domain::UnitSelectionOverride after_;
-  std::optional<domain::UnitSelectionOverride> before_;
+  std::vector<domain::UnitSelectionOverride> beforeOrder_;
   bool captured_{false};
 };
 
@@ -51,6 +69,7 @@ private:
   domain::RegionId regionId_;
   domain::PhonemeKey startKey_;
   std::optional<domain::UnitSelectionOverride> removed_;
+  std::vector<domain::UnitSelectionOverride> beforeOrder_;
 };
 
 class UpsertSeamOverrideCommand final : public ICommand {
@@ -71,7 +90,7 @@ public:
 private:
   domain::RegionId regionId_;
   domain::SeamOverride after_;
-  std::optional<domain::SeamOverride> before_;
+  std::vector<domain::SeamOverride> beforeOrder_;
   bool captured_{false};
 };
 
@@ -95,6 +114,7 @@ private:
   domain::RegionId regionId_;
   domain::PhonemeKey incomingStartKey_;
   std::optional<domain::SeamOverride> removed_;
+  std::vector<domain::SeamOverride> beforeOrder_;
 };
 
 
@@ -146,8 +166,9 @@ private:
 class SetTrackVoicebankCommand final : public ICommand {
 public:
   SetTrackVoicebankCommand(domain::TrackId trackId,
-                           domain::VoicebankReference voicebank)
-      : trackId_(trackId), after_(std::move(voicebank)) {}
+                           domain::VoicebankReference voicebank,
+                           std::optional<domain::VoiceStyleSelection> style = std::nullopt)
+      : trackId_(trackId), after_(std::move(voicebank)), afterStyle_(std::move(style)) {}
 
   [[nodiscard]] std::string_view name() const noexcept override {
     return "Set track voicebank";
@@ -163,6 +184,9 @@ private:
   domain::TrackId trackId_;
   domain::VoicebankReference after_;
   std::optional<domain::VoicebankReference> before_;
+  std::optional<domain::VoiceStyleSelection> afterStyle_;
+  domain::VoiceStyleSelection beforeStyle_;
+  std::optional<domain::ProceduralRecipeReference> beforeRecipe_;
 };
 
 class SetTrackOutputRouteCommand final : public ICommand {

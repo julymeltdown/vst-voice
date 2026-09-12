@@ -20,6 +20,8 @@ public:
   using ActionHandler = std::function<core::Result<void>(
       const authoring::Diagnostic&, authoring::DiagnosticAction)>;
 
+  // Only identical diagnostic content coalesces. Different owners, severity or
+  // recovery actions must remain independently inspectable/actionable.
   void add(authoring::Diagnostic diagnostic);
   void clear() noexcept { entries_.clear(); }
   void setActionHandler(ActionHandler handler) { actionHandler_ = std::move(handler); }

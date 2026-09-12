@@ -1,6 +1,7 @@
 #include "seam/domain/phoneme.hpp"
 
 #include <sstream>
+#include <algorithm>
 
 namespace seam::domain {
 
@@ -28,6 +29,12 @@ core::Result<void> PhonemeTiming::validate() const {
 }
 
 core::Result<void> PhonemeOverride::validate() const {
+  if (sourceContextId && (sourceContextId->size() != 64U ||
+      !std::all_of(sourceContextId->begin(), sourceContextId->end(), [](char value) {
+        return (value >= '0' && value <= '9') || (value >= 'a' && value <= 'f');
+      }))) {
+    return core::failure(core::ErrorCode::InvariantViolation, "Phoneme source context must be a SHA-256 address");
+  }
   if (!key.noteId.valid()) {
     return core::failure(core::ErrorCode::InvariantViolation,
                          "Phoneme override must reference a valid note");
@@ -49,6 +56,13 @@ core::Result<void> PhonemeToken::validate() const {
     return core::failure(core::ErrorCode::InvariantViolation,
                          "Phoneme symbol must not be empty",
                          key.toString());
+  }
+  if (!contextId.empty() && (contextId.size() != 64U || !lyricOwner.valid() ||
+      !std::all_of(contextId.begin(), contextId.end(), [](char value) {
+        return (value >= '0' && value <= '9') || (value >= 'a' && value <= 'f');
+      }))) {
+    return core::failure(core::ErrorCode::InvariantViolation,
+                         "Bound phoneme context requires a SHA-256 address and lyric owner");
   }
   return timing.validate();
 }

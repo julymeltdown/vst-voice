@@ -140,6 +140,12 @@ core::Result<RenderedUnit> SpectralClassicRenderer::render(
   }
   const auto curveValidation = parameters.pitchCurve.validate();
   if (!curveValidation) return core::Result<RenderedUnit>{curveValidation.error()};
+  if (parameters.performance && (parameters.performance->sampleRate() != outputSampleRate ||
+      !parameters.pitchCurve.points().empty() ||
+      parameters.performanceStartFrame > std::numeric_limits<time::SampleFrame>::max() - outputFrames)) {
+    return core::failure<RenderedUnit>(core::ErrorCode::InvalidArgument,
+        "Compiled spectral performance requires matching rate, bounded origin and no duplicate pitch curve", unit.id);
+  }
   const auto markerValidation = unit.markers.validate(
       static_cast<time::SampleFrame>(source.frameCount()));
   if (!markerValidation) return core::Result<RenderedUnit>{markerValidation.error()};
@@ -149,6 +155,16 @@ core::Result<RenderedUnit> SpectralClassicRenderer::render(
                                        unit.id);
   }
 
+  if (parameters.sourceMap) {
+    const auto validation = parameters.sourceMap->validate(static_cast<time::SampleFrame>(source.frameCount()));
+    if (!validation) return core::Result<RenderedUnit>{validation.error()};
+    const auto& knots = parameters.sourceMap->knots;
+    if (!parameters.performance || knots.front().sourceFrame != unit.markers.audioOffset ||
+        knots.back().sourceFrame != unit.markers.audioEnd || knots.front().targetFrame != parameters.performanceStartFrame ||
+        knots.back().targetFrame - knots.front().targetFrame != outputFrames) {
+      return core::failure<RenderedUnit>(core::ErrorCode::Conflict, "Spectral source map does not match output extent", unit.id);
+    }
+  }
   const auto mono = source.monoMix();
   const auto sourcePerOutput = static_cast<double>(source.sampleRate) /
                                static_cast<double>(outputSampleRate);
@@ -166,13 +182,13 @@ core::Result<RenderedUnit> SpectralClassicRenderer::render(
                                        unit.id);
   }
 
-  const auto vowelOnsetFrames = std::clamp<time::SampleFrame>(
+  auto vowelOnsetFrames = std::clamp<time::SampleFrame>(
       static_cast<time::SampleFrame>(std::llround(
           static_cast<double>(markers.vowelOnset - offset) / sourcePerOutput)),
       0, outputFrames - 1);
   // Preserve the complete recorded vowel transition. Spectral processing starts
   // at stableStart, not vowelOnset, so the singer's physical onset remains audible.
-  const auto preFrames = std::clamp<time::SampleFrame>(
+  auto preFrames = std::clamp<time::SampleFrame>(
       static_cast<time::SampleFrame>(std::llround(
           static_cast<double>(markers.stableStart - offset) / sourcePerOutput)),
       vowelOnsetFrames, outputFrames - 1);
@@ -181,8 +197,19 @@ core::Result<RenderedUnit> SpectralClassicRenderer::render(
       static_cast<time::SampleFrame>(std::llround(
           static_cast<double>(sourceReleaseFrames) / sourcePerOutput)),
       0, std::max<time::SampleFrame>(0, outputFrames - preFrames));
-  const auto releaseOutputStart = std::max(preFrames, outputFrames - releaseFrames);
+  auto releaseOutputStart = std::max(preFrames, outputFrames - releaseFrames);
+  if (parameters.sourceMap) {
+    const auto mapped = [&](time::SampleFrame frame) {
+      return static_cast<time::SampleFrame>(std::llround(parameters.sourceMap->targetAt(static_cast<double>(frame)))) - parameters.performanceStartFrame;
+    };
+    vowelOnsetFrames = std::clamp<time::SampleFrame>(mapped(markers.vowelOnset), 0, outputFrames - 1);
+    preFrames = std::clamp<time::SampleFrame>(mapped(stableStart), vowelOnsetFrames, outputFrames);
+    releaseOutputStart = std::clamp<time::SampleFrame>(mapped(releaseStart), preFrames, outputFrames);
+  }
 
+  const bool continuation = parameters.performance && unit.phones.size() == 1U &&
+      !parameters.performance->at(parameters.performanceStartFrame + vowelOnsetFrames).reattack;
+  if (continuation) preFrames = 0;
   RenderedUnit result{
       .unitId = unit.id,
       .samples = std::vector<float>(static_cast<std::size_t>(outputFrames), 0.0F),
@@ -192,13 +219,15 @@ core::Result<RenderedUnit> SpectralClassicRenderer::render(
   // Preserve consonant/transition and release directly from the source. Only the
   // stable vowel is spectrally transformed, retaining the unit's physical edges.
   for (time::SampleFrame frame = 0; frame < preFrames; ++frame) {
-    const auto sourcePosition = static_cast<double>(offset) +
+    auto sourcePosition = static_cast<double>(offset) +
                                 static_cast<double>(frame) * sourcePerOutput;
+    if (parameters.sourceMap) sourcePosition = parameters.sourceMap->sourceAt(static_cast<double>(parameters.performanceStartFrame + frame));
     result.samples[static_cast<std::size_t>(frame)] = interpolate(mono, sourcePosition);
   }
   for (time::SampleFrame frame = releaseOutputStart; frame < outputFrames; ++frame) {
-    const auto sourcePosition = static_cast<double>(releaseStart) +
+    auto sourcePosition = static_cast<double>(releaseStart) +
         static_cast<double>(frame - releaseOutputStart) * sourcePerOutput;
+    if (parameters.sourceMap) sourcePosition = parameters.sourceMap->sourceAt(static_cast<double>(parameters.performanceStartFrame + frame));
     result.samples[static_cast<std::size_t>(frame)] =
         interpolate(mono, std::min(sourcePosition, static_cast<double>(audioEnd - 1)));
   }
@@ -211,10 +240,13 @@ core::Result<RenderedUnit> SpectralClassicRenderer::render(
   std::vector<std::complex<double>> spectrum(fftSize);
   std::vector<std::complex<double>> shifted(fftSize);
   std::vector<double> outputPhase(half + 1U, 0.0);
+  std::vector<double> previousSourcePhase(half + 1U, 0.0);
+  std::vector<double> sourceFrequency(half + 1U, 0.0);
   std::vector<float> overlap(result.samples.size(), 0.0F);
   std::vector<float> weights(result.samples.size(), 0.0F);
   bool firstFrame = true;
   std::size_t frameIndex = 0U;
+  double previousSourceCenter = 0.0;
 
   const auto firstCenter = preFrames;
   for (auto center = firstCenter; center < releaseOutputStart; center += hop, ++frameIndex) {
@@ -225,22 +257,55 @@ core::Result<RenderedUnit> SpectralClassicRenderer::render(
     }
     const auto progress = static_cast<double>(center - preFrames) /
                           static_cast<double>(stableFrames);
-    const auto sourceCenter = static_cast<double>(loopStart) +
+    auto sourceCenter = static_cast<double>(loopStart) +
         std::fmod(progress * loopLength, loopLength);
+    if (parameters.sourceMap) sourceCenter = parameters.sourceMap->sourceAt(static_cast<double>(parameters.performanceStartFrame + center));
+    if (continuation && parameters.sourceMap) sourceCenter = std::max(sourceCenter, static_cast<double>(loopStart));
     for (std::size_t index = 0U; index < fftSize; ++index) {
       const auto relative = static_cast<double>(index) - static_cast<double>(half);
       const auto sourcePosition = sourceCenter + relative * sourcePerOutput;
       const auto phase = 2.0 * std::numbers::pi * static_cast<double>(index) /
                          static_cast<double>(fftSize - 1U);
       const auto window = 0.5 - 0.5 * std::cos(phase);
-      spectrum[index] = std::complex<double>{
-          static_cast<double>(loopInterpolate(mono, sourcePosition,
-                                              static_cast<double>(loopStart),
-                                              static_cast<double>(loopEnd))) * window,
-          0.0};
+      const auto sample = parameters.sourceMap ? interpolate(mono, std::clamp(sourcePosition,
+          static_cast<double>(offset), static_cast<double>(audioEnd - 1))) :
+          loopInterpolate(mono, sourcePosition, static_cast<double>(loopStart), static_cast<double>(loopEnd));
+      spectrum[index] = std::complex<double>{static_cast<double>(sample) * window, 0.0};
       shifted[index] = {0.0, 0.0};
     }
     fft(spectrum, false);
+    if (parameters.performance) {
+      std::vector<std::complex<double>> probe;
+      if (firstFrame && continuation && parameters.sourceMap) {
+        // A held source center has zero inter-frame motion. Measure its local
+        // off-bin frequency with one adjacent analysis window, then retain that
+        // estimate until the authored map advances into the sustain.
+        probe.resize(fftSize);
+        for (std::size_t index = 0; index < fftSize; ++index) {
+          const auto position = sourceCenter + (static_cast<double>(index) - static_cast<double>(half) + static_cast<double>(hop)) * sourcePerOutput;
+          const auto window = 0.5 - 0.5 * std::cos(2.0 * std::numbers::pi * static_cast<double>(index) / static_cast<double>(fftSize - 1U));
+          probe[index] = {static_cast<double>(interpolate(mono, std::clamp(position,
+              static_cast<double>(offset), static_cast<double>(audioEnd - 1)))) * window, 0.0};
+        }
+        fft(probe, false);
+      }
+      const auto analysisAdvance = parameters.sourceMap ? (sourceCenter - previousSourceCenter) / sourcePerOutput :
+          loopLength / static_cast<double>(stableFrames) * static_cast<double>(hop) / sourcePerOutput;
+      for (std::size_t bin = 0U; bin <= half; ++bin) {
+        const auto phase = std::arg(spectrum[bin]);
+        const auto nominal = 2.0 * std::numbers::pi * static_cast<double>(bin) / static_cast<double>(fftSize);
+        if (firstFrame) {
+          sourceFrequency[bin] = nominal;
+          if (!probe.empty()) sourceFrequency[bin] += wrappedPhaseDifference(std::arg(probe[bin]),
+              phase + nominal * static_cast<double>(hop)) / static_cast<double>(hop);
+        } else if (analysisAdvance > 1.0e-9) {
+          sourceFrequency[bin] = nominal + wrappedPhaseDifference(phase,
+              previousSourcePhase[bin] + nominal * analysisAdvance) / analysisAdvance;
+        }
+        previousSourcePhase[bin] = phase;
+      }
+    }
+    previousSourceCenter = sourceCenter;
 
     // Estimate a deliberately coarse spectral envelope.  Pitch shifting must
     // move harmonic energy first; formant preservation is applied as a
@@ -265,7 +330,15 @@ core::Result<RenderedUnit> SpectralClassicRenderer::render(
     }
 
     const auto cents = parameters.pitchCurve.centsAt(center);
-    const auto ratio = midiRatio(targetMidi, unit.rootMidi, cents);
+    auto ratio = midiRatio(targetMidi, unit.rootMidi, cents);
+    if (parameters.performance) {
+      const auto value = parameters.performance->at(parameters.performanceStartFrame + center);
+      const bool unvoicedSource = parameters.sourceMap && parameters.sourceMap->voicedAtSource(sourceCenter) == false;
+      if (value.noteId && !value.scoreFrequencyHz && !unvoicedSource) return core::failure<RenderedUnit>(core::ErrorCode::Unsupported,
+          "Spectral rendering needs a voicing-aware path for accepted unvoiced pitch", unit.id);
+      if (value.scoreFrequencyHz) ratio = *value.scoreFrequencyHz /
+          (440.0 * std::exp2((static_cast<double>(unit.rootMidi) - 69.0) / 12.0));
+    }
     if (!std::isfinite(ratio) || ratio < 0.125 || ratio > 8.0) {
       return core::failure<RenderedUnit>(core::ErrorCode::Unsupported,
                                          "SpectralClassic pitch ratio is unsupported",
@@ -298,7 +371,12 @@ core::Result<RenderedUnit> SpectralClassicRenderer::render(
           formantPreserved * static_cast<double>(parameters.formantFollow);
       const auto sourcePhase = std::arg(shiftedValue);
       if (firstFrame) {
-        outputPhase[bin] = sourcePhase;
+        outputPhase[bin] = parameters.performance ? sourcePhase * parameters.phaseReset : sourcePhase;
+      } else if (parameters.performance) {
+        // Track measured off-bin frequency. Repeatedly resetting to a source
+        // phase would detune the authoritative score during time stretching.
+        const auto frequency = sourceFrequency[left] * (1.0 - fraction) + sourceFrequency[right] * fraction;
+        outputPhase[bin] += frequency * ratio * static_cast<double>(parameters.hopSize);
       } else {
         const auto expectedAdvance = 2.0 * std::numbers::pi *
             static_cast<double>(bin) * static_cast<double>(parameters.hopSize) /
@@ -324,6 +402,9 @@ core::Result<RenderedUnit> SpectralClassicRenderer::render(
                          static_cast<double>(fftSize - 1U);
       const auto window = static_cast<float>(0.5 - 0.5 * std::cos(phase));
       const auto destinationIndex = static_cast<std::size_t>(destination);
+      if (parameters.sourceMap && (parameters.sourceMap->voicedAtSource(sourceCenter) == false ||
+          parameters.sourceMap->voicedAtSource(parameters.sourceMap->sourceAt(
+              static_cast<double>(parameters.performanceStartFrame + destination))) == false)) continue;
       overlap[destinationIndex] += static_cast<float>(shifted[index].real()) * window;
       weights[destinationIndex] += window * window;
     }
@@ -334,6 +415,11 @@ core::Result<RenderedUnit> SpectralClassicRenderer::render(
     if (weights[index] > 1.0e-7F) {
       result.samples[index] = overlap[index] / weights[index];
     } else {
+      if (parameters.sourceMap) {
+        result.samples[index] = interpolate(mono, std::min(static_cast<double>(audioEnd - 1),
+            parameters.sourceMap->sourceAt(static_cast<double>(parameters.performanceStartFrame + frame))));
+        continue;
+      }
       const auto sourcePosition = static_cast<double>(loopStart) +
           static_cast<double>(frame - preFrames) * sourcePerOutput;
       result.samples[index] = loopInterpolate(
@@ -343,6 +429,10 @@ core::Result<RenderedUnit> SpectralClassicRenderer::render(
   }
 
   finishUnit(result, unit.gainDb + parameters.additionalGainDb, outputSampleRate);
+  if (parameters.performance) {
+    const auto gain = applyCompiledPerformanceGain(result.samples, *parameters.performance, parameters.performanceStartFrame, stopToken);
+    if (!gain) return core::Result<RenderedUnit>{gain.error()};
+  }
   return result;
 }
 

@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "reviewStatus": "machine-observed-not-native-language-approved",
+  "componentRevision": "462fc38e7520aa89e4d32b2611749208528c901e",
+  "dictionarySha256": {
+    "char.bin": "888ee94c5a8a7a26d24ab3f1b7155441351954fd51ea06b4a2f78bd742492b2f",
+    "matrix.bin": "62fd16b4f64c851d5dc352ef0d5740c5fc83ddc7c203b2b0b1fc5271969a14ce",
+    "sys.dic": "49bb7ae70f373e99801ed1c8a9e68a2678947c8a49f7cd176bbd2d37b93f10e3",
+    "unk.dic": "ce97851ecda075914fa3ffe7294a1ab34ee4f6d56ba6bf9197d74143b5dffbfe"
+  },
+  "cases": [
+    {
+      "text": "私は今日学校へ行く。",
+      "tokens": [["私", "ワタシ", "ワタシ"], ["は", "ハ", "ワ"], ["今日", "キョウ", "キョー"], ["学校", "ガッコウ", "ガッコー"], ["へ", "ヘ", "エ"], ["行く", "イク", "イク"], ["。", "。", "。"]]
+    },
+    {
+      "text": "東京で歌う。未知XYZ𠮷",
+      "tokens": [["東京", "トウキョウ", "トーキョー"], ["で", "デ", "デ"], ["歌う", "ウタウ", "ウタウ"], ["。", "。", "。"], ["未知", "ミチ", "ミチ"], ["XYZ", null, null], ["𠮷", null, null]]
+    },
+    {
+      "text": "私, \"歌\"　XYZ",
+      "tokens": [["私", "ワタシ", "ワタシ"], [",", null, null], ["\"", null, null], ["歌", "カ", "カ"], ["\"　", null, null], ["XYZ", null, null]]
+    }
+  ]
+}

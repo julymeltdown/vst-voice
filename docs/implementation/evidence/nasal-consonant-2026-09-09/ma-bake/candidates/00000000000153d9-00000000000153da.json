@@ -1,0 +1,37 @@
+{
+  "approval": "unapproved",
+  "articulationPlanRevision": 2,
+  "audioSha256": "f67deb2dbe7dfdeba74988b94854973157e32f9d6bcec1b73384841dcc3eecff",
+  "compilerRevision": 9,
+  "formatId": "com.project-seam.procedural-candidate",
+  "frameCount": 24000,
+  "fricationRevision": 1,
+  "fricationStreamRevision": 1,
+  "markerSemantics": "planned-articulated-gestures",
+  "markers": [
+    {
+      "endFrame": 2880,
+      "key": "00000000000153dc:0",
+      "kind": "nasal",
+      "phone": "m",
+      "startFrame": 0
+    },
+    {
+      "endFrame": 24000,
+      "key": "00000000000153dc:1",
+      "kind": "oral-vowel",
+      "phone": "a",
+      "startFrame": 2880
+    }
+  ],
+  "proceduralRevision": 3,
+  "recipeHash": "7361e7c1d112ba26cf07284548c14866a865195f52d7737e4352b38382d8d2d2",
+  "recipeId": "language-bank",
+  "recipeVersion": "3",
+  "renderAbi": "seam-render-abi-4.1-r1",
+  "renderContentHash": "41523807e6d466e8afaf3b9743acf455027209a5b230423e1ff0a33c9f6b2c58",
+  "sampleRate": 48000,
+  "schemaVersion": 3,
+  "scoreOriginFrame": 0,
+  "style": "neutral"
+}

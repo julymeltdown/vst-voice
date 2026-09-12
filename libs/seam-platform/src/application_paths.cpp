@@ -3,14 +3,43 @@
 #include <cstdlib>
 #include <system_error>
 #include <utility>
+#include <vector>
 
 #ifdef _WIN32
 #define NOMINMAX
 #include <windows.h>
 #include <shlobj.h>
+#else
+#include <dlfcn.h>
 #endif
 
 namespace seam::platform {
+
+core::Result<std::filesystem::path> loadedModulePath(const void* address) {
+  const auto fail=[] {return core::failure<std::filesystem::path>(
+      core::ErrorCode::IoError,"Unable to locate the loaded SEAM module from its address");};
+  if (!address) return fail();
+  std::filesystem::path module;
+#ifdef _WIN32
+  HMODULE handle=nullptr;
+  if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+      reinterpret_cast<LPCWSTR>(address),&handle)) return fail();
+  std::vector<wchar_t> buffer(32768U);
+  const auto count=GetModuleFileNameW(handle,buffer.data(),static_cast<DWORD>(buffer.size()));
+  if (count==0U || count>=buffer.size()) return fail();
+  module=std::filesystem::path{std::wstring{buffer.data(),count}};
+#else
+  Dl_info info{};
+  if (dladdr(address,&info)==0 || !info.dli_fname) return fail();
+  module=std::filesystem::path{info.dli_fname};
+#endif
+  // Never reinterpret a loader's relative name using the current DAW directory.
+  if (!module.is_absolute()) return fail();
+  std::error_code error;
+  const auto resolved=std::filesystem::canonical(module,error);
+  if (error || !std::filesystem::is_regular_file(resolved,error) || error) return fail();
+  return resolved;
+}
 
 namespace {
 

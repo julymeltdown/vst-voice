@@ -122,3 +122,84 @@ def validate_source_strategy_document(document: dict[str, Any], root: Path) -> P
             if permissions.get(permission) is not True:
                 errors.append(f"selected strategy permissions.{permission} must be true")
     return ProductionResult(not errors, tuple(errors), ())
+
+
+def validate_source_strategy_draft(document: dict[str, Any], root: Path) -> ProductionResult:
+    """Validate editable source choices without asserting acquisition/release readiness.
+
+    Unlike schema 1's comparison/qualification document, schema 2 permits no
+    selected source and unavailable evidence while work is still a draft.
+    Permission flags remain explicit; this function never grants execution.
+    """
+    del root  # Planned locators need not exist until execution admission.
+    errors: list[str] = []
+    if not isinstance(document, dict):
+        return ProductionResult(False, ("source draft must be an object",), ())
+    if type(document.get("schemaVersion")) is not int or document["schemaVersion"] != 2:
+        errors.append("source draft schemaVersion must be 2")
+    if document.get("status") != "DRAFT" or document.get("assetAdmissionStatus") != "NOT_RUN":
+        errors.append("source draft must remain DRAFT with assetAdmissionStatus NOT_RUN")
+    selected = document.get("selectedStrategyId")
+    if not isinstance(selected, str):
+        errors.append("source draft selectedStrategyId must be a string, empty when undecided")
+    strategies = document.get("strategies")
+    if not isinstance(strategies, list) or len(strategies) > 4096:
+        return ProductionResult(False, tuple(errors + ["source draft strategies must be a bounded array"]), ())
+    seen: set[str] = set()
+    for index, strategy in enumerate(strategies):
+        label = f"strategies[{index}]"
+        if not isinstance(strategy, dict):
+            errors.append(f"{label} must be an object")
+            continue
+        identity = strategy.get("id")
+        if not isinstance(identity, str) or not identity or identity in seen:
+            errors.append(f"{label}.id is missing or duplicated")
+        else:
+            seen.add(identity)
+        if not isinstance(strategy.get("kind"), str) or strategy["kind"] not in STRATEGY_KINDS:
+            errors.append(f"{label}.kind is invalid")
+        for field in ("rights", "coverage", "listening"):
+            if not isinstance(strategy.get(field), str) or strategy[field] not in FEASIBILITY:
+                errors.append(f"{label}.{field} is invalid")
+        permissions = strategy.get("permissions")
+        if not isinstance(permissions, dict) or set(permissions) != set(PERMISSIONS):
+            errors.append(f"{label}.permissions must declare exactly the four applicable permissions")
+        elif any(type(permissions[field]) is not bool for field in PERMISSIONS):
+            errors.append(f"{label}.permissions must contain booleans")
+        locator, digest = strategy.get("licenseLocator"), strategy.get("licenseSha256")
+        if not isinstance(locator, str) or not isinstance(digest, str) or not isinstance(strategy.get("evidenceState"), str):
+            errors.append(f"{label} evidence fields must be explicit strings")
+            continue
+        if locator and ("\\" in locator or "\0" in locator or locator.startswith("/") or
+                        any(part in {"", ".", ".."} for part in locator.split("/"))):
+            errors.append(f"{label}.licenseLocator must be a safe repository-relative draft locator")
+        if digest and (not is_hex_digest(digest) or digest != digest.lower() or not locator):
+            errors.append(f"{label}.licenseSha256 must identify its declared evidence or be empty")
+    if isinstance(selected, str) and selected and selected not in seen:
+        errors.append("source draft selectedStrategyId does not identify a declared strategy")
+    return ProductionResult(not errors, tuple(errors), ())
+
+
+def validate_source_execution(document: dict[str, Any], root: Path) -> ProductionResult:
+    """Admit schema-2 draft execution, never redistribution or musical quality."""
+    structural = validate_source_strategy_draft(document, root)
+    if not structural.passed:
+        return structural
+    errors: list[str] = []
+    selected = next((item for item in document["strategies"] if item["id"] == document["selectedStrategyId"]), None)
+    if selected is None:
+        return ProductionResult(False, ("Select an authorized source before execution",), ())
+    if selected["rights"] != "PASS" or not selected["permissions"]["sourceUse"] or not selected["permissions"]["transformation"]:
+        errors.append("source execution requires source-use and transformation authorization")
+    if not is_hex_digest(selected["licenseSha256"]):
+        errors.append("source execution requires a captured evidence digest")
+    evidence = _evidence_path(root, selected["licenseLocator"], "selected source", errors)
+    if evidence is not None:
+        try:
+            if evidence.stat().st_size > 4 * 1024 * 1024:
+                errors.append("source execution evidence exceeds 4 MiB")
+            elif sha256_file(evidence) != selected["licenseSha256"]:
+                errors.append("source execution evidence changed")
+        except OSError as exc:
+            errors.append(f"source execution evidence cannot be read: {exc}")
+    return ProductionResult(not errors, tuple(errors), ())

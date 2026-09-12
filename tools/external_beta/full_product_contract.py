@@ -80,7 +80,7 @@ def _parse_contract(contents: bytes) -> JsonValue:
     return contract
 
 
-def full_product_contract_errors(acceptance: JsonObject) -> list[str]:
+def full_product_contract_errors(acceptance: JsonObject, *, base: Path | None = None) -> list[str]:
     reference = acceptance.get("fullProductContract")
     if not isinstance(reference, dict) or set(reference) != {"locator", "sha256"}:
         return ["full-product contract reference requires a locator and content digest"]
@@ -88,7 +88,10 @@ def full_product_contract_errors(acceptance: JsonObject) -> list[str]:
     if not isinstance(locator, str) or not locator or not isinstance(digest, str) or HEX64.fullmatch(digest) is None:
         return ["full-product contract reference requires a locator and SHA-256 content digest"]
     try:
-        contents = _read_contract(ROOT / locator)
+        path = (base if base is not None else ROOT) / locator
+        if base is not None:
+            path.resolve().relative_to(base.resolve())
+        contents = _read_contract(path)
     except (OSError, ValueError) as error:
         return [f"full-product contract reference cannot be read: {error}"]
     if hashlib.sha256(contents).hexdigest() != digest:
@@ -118,6 +121,7 @@ def full_product_report_reference_errors(candidate: JsonObject) -> list[str]:
     if not isinstance(records, list):
         return []
     errors: list[str] = []
+    references: set[tuple[str, str]] = set()
     for record in records:
         if not isinstance(record, dict) or record.get("requirementId") != "EB-009-full-product":
             continue
@@ -128,4 +132,8 @@ def full_product_report_reference_errors(candidate: JsonObject) -> list[str]:
         locator, digest = reference.get("locator"), reference.get("sha256")
         if not isinstance(locator, str) or not locator or not isinstance(digest, str) or HEX64.fullmatch(digest) is None:
             errors.append("EB-009-full-product: fullProductReport requires locator and content digest")
+            continue
+        references.add((locator, digest))
+    if len(references) > 1:
+        errors.append("EB-009-full-product: every evidence record must bind the same fullProductReport")
     return errors

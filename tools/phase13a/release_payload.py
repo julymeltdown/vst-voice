@@ -277,6 +277,8 @@ def assemble_release_payload(
         for path in sorted((payload / "Notices").rglob("*"))
         if path.is_file() and not path.is_symlink()
     )
+    from tools.phase13a.neural_package import neural_package_inventory
+    neural_packages = neural_package_inventory(payload, platform, identity.build_id)
     payload_digest = tree_sha256(payload, {MANIFEST_NAME})
     manifest_path = payload / MANIFEST_NAME
     manifest = {
@@ -287,6 +289,7 @@ def assemble_release_payload(
         "identitySha256": tree_sha256(payload / "RELEASE_IDENTITY.json"),
         "sourceClean": True,
         "surfaces": surface_entries,
+        "neuralPackages": neural_packages,
         "documents": [
             _entry(payload, f"document-{index + 1}", relative)
             for index, relative in enumerate(documents)

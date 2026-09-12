@@ -113,6 +113,21 @@ core::Result<SourceStrategyAssessment> decodeStrategy(
   return result;
 }
 
+core::Result<SourceQualityAssessment> decodeSourceQualityAssessment(const formats::JsonValue& value) {
+  SourceQualityAssessment result;
+  std::string coverage, listening;
+  if (!value.isObject() || value.asObject().size() != 9U ||
+      !readString(value,"id",result.id) || !readString(value,"strategyId",result.strategyId) ||
+      !readString(value,"policySha256",result.policySha256) || !readString(value,"materialSha256",result.materialSha256) ||
+      !readString(value,"evidenceSha256",result.evidenceSha256) || !readString(value,"reviewerId",result.reviewerId) ||
+      !readString(value,"reviewedAtUtc",result.reviewedAtUtc) || !readString(value,"coverage",coverage) ||
+      !readString(value,"listening",listening)) return parseFailure<SourceQualityAssessment>("Source quality assessment fields are invalid");
+  const auto c = feasibility(coverage), l = feasibility(listening);
+  if (!c || !l) return parseFailure<SourceQualityAssessment>("Source quality assessment outcome is invalid");
+  result.coverage = *c; result.listening = *l;
+  return result;
+}
+
 core::Result<AssetRecord> decodeAsset(const formats::JsonValue& value) {
   if (!value.isObject()) return parseFailure<AssetRecord>("Asset must be an object");
   AssetRecord result;
@@ -181,7 +196,7 @@ core::Result<MetadataRevision> decodeMetadataRevision(
   return result;
 }
 
-core::Result<TakeRecord> decodeTake(const formats::JsonValue& value) {
+core::Result<TakeRecord> decodeTake(const formats::JsonValue& value, std::int64_t schemaVersion) {
   if (!value.isObject()) return parseFailure<TakeRecord>("Take must be an object");
   TakeRecord result;
   std::int64_t pitch = 0;
@@ -203,6 +218,24 @@ core::Result<TakeRecord> decodeTake(const formats::JsonValue& value) {
   }
   result.pitchLayer = static_cast<std::int32_t>(pitch);
   result.state = *parsedState;
+  if (schemaVersion >= 2 && !readString(value, "sourceBindingId", result.sourceBindingId))
+    return parseFailure<TakeRecord>("Source-aware take must explicitly declare its source binding or unknown origin");
+  if (schemaVersion == 1 && value.find("sourceBindingId"))
+    return parseFailure<TakeRecord>("Legacy take cannot carry source-aware fields");
+  return result;
+}
+
+core::Result<TakeSourceBinding> decodeSourceBinding(const formats::JsonValue& value) {
+  TakeSourceBinding result;
+  if (!value.isObject() || value.asObject().size() != 7U ||
+      !readString(value, "id", result.id) || !readString(value, "takeId", result.takeId) ||
+      !readString(value, "rawAssetSha256", result.rawAssetSha256) ||
+      !readString(value, "importerId", result.importerId) || !readString(value, "importedAtUtc", result.importedAtUtc) ||
+      !readString(value, "licenseSnapshotPath", result.licenseSnapshotPath) || !value.find("strategy"))
+    return parseFailure<TakeSourceBinding>("Captured take source binding is malformed");
+  const auto strategy = decodeStrategy(*value.find("strategy"));
+  if (!strategy) return core::Result<TakeSourceBinding>{strategy.error()};
+  result.strategy = strategy.value();
   return result;
 }
 

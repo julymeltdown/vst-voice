@@ -31,6 +31,7 @@ struct UnitSelectionOverride final {
   std::optional<float> loopPrint;
   std::optional<float> sourcePitchResidual;
   bool locked{true};
+  bool unresolved{false};
 
   [[nodiscard]] core::Result<void> validate() const;
 
@@ -58,6 +59,7 @@ struct SeamOverride final {
   std::optional<float> envelopeBlend;
   SeamCurve curve{SeamCurve::Smooth};
   bool locked{true};
+  bool unresolved{false};
 
   [[nodiscard]] core::Result<void> validate() const;
 

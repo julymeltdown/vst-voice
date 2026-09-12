@@ -1,0 +1,1123 @@
+Start testing: Sep 09 04:28 KST
+----------------------------------------------------------
+1/120 Testing: seam_clap_offline_host_tests
+1/120 Test: seam_clap_offline_host_tests
+Command: "/usr/local/bin/python3" "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/tests/test_clap_offline_host.py" "--runner" "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/release/seam_clap_editor_host" "--plugin" "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/release/ProjectSEAMEditor.clap/Contents/MacOS/ProjectSEAMEditor" "--bank" "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/assets/demo-human-voicebank-public-domain/production-bank"
+Directory: /Users/lhs/Downloads/project-seam-usable-alpha-u3-master
+"seam_clap_offline_host_tests" start time: Sep 09 04:28 KST
+Output:
+----------------------------------------------------------
+..
+----------------------------------------------------------------------
+Ran 2 tests in 0.154s
+
+OK
+<end of output>
+Test time =   0.21 sec
+----------------------------------------------------------
+Test Passed.
+"seam_clap_offline_host_tests" end time: Sep 09 04:28 KST
+"seam_clap_offline_host_tests" time elapsed: 00:00:00
+----------------------------------------------------------
+
+5/120 Testing: seam_phase12b_tests
+5/120 Test: seam_phase12b_tests
+Command: "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/release/seam_phase12b_tests"
+Directory: /Users/lhs/Downloads/project-seam-usable-alpha-u3-master
+"seam_phase12b_tests" start time: Sep 09 04:28 KST
+Output:
+----------------------------------------------------------
+<end of output>
+Test time =   1.04 sec
+----------------------------------------------------------
+Test Failed.
+"seam_phase12b_tests" end time: Sep 09 04:28 KST
+"seam_phase12b_tests" time elapsed: 00:00:01
+----------------------------------------------------------
+
+16/120 Testing: seam_performance_compiler_tests
+16/120 Test: seam_performance_compiler_tests
+Command: "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/release/seam_performance_compiler_tests"
+Directory: /Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/release
+"seam_performance_compiler_tests" start time: Sep 09 04:28 KST
+Output:
+----------------------------------------------------------
+[PASS] score performance follows both melody notes independently of acoustic units
+[PASS] inspection exposes selected generated dynamics without changing audio ownership or silence semantics
+[PASS] score vibrato uses absolute note phase independent of block boundaries
+[PASS] score compiler rejects invalid rates and ambiguous overlapping note voices
+[PASS] score voice allocation separates overlaps deterministically without moving notes
+[PASS] multi-voice compilation resolves English pronunciation per allocated voice
+[PASS] voice compilation preserves forced unit and seam dependency boundaries
+[PASS] multi-voice compilation uses independent vowel context without rewriting custom tokens
+[PASS] score voice allocation preserves a unique shared-lyric predecessor
+[PASS] staccato release stays closed through gaps and follows tempo-resolved duration
+[PASS] compatible explicit vowel continuation links pitch while repeated syllables reattack
+[PASS] PSOLA consumes both compiled melody plateaus inside one rendered unit
+[PASS] aligned PSOLA preserves an unvoiced source interval without periodic grains
+[PASS] separate vowel continuation suppresses the recorded attack without moving its landmark
+[PASS] raw performance gain uses the transposed rendered vowel origin
+[PASS] accepted attack shapes reattacks with absolute-time ownership and neutral zero
+[PASS] accepted release fades to note end preserves continuation and keeps source tails closed
+[PASS] compiled expression indexes preserve dense unordered selections and boundaries
+[PASS] accepted pitch obeys explicit offset replacement and manual vibrato ownership
+
+19 passed, 0 failed
+<end of output>
+Test time =   0.98 sec
+----------------------------------------------------------
+Test Passed.
+"seam_performance_compiler_tests" end time: Sep 09 04:28 KST
+"seam_performance_compiler_tests" time elapsed: 00:00:00
+----------------------------------------------------------
+
+20/120 Testing: seam_language_phonemizer_tests
+20/120 Test: seam_language_phonemizer_tests
+Command: "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/release/seam_language_phonemizer_tests"
+Directory: /Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/release
+"seam_language_phonemizer_tests" start time: Sep 09 04:28 KST
+Output:
+----------------------------------------------------------
+[PASS] English phonemizer keeps stressed dictionary output and explicit hints distinct
+[PASS] English resolver binds tokens to source identity and rejects unknown words without fallback
+[PASS] generic pronunciation resolver rejects mixed explicit language regions
+[PASS] English spelling estimates remain distinct from dictionary and explicit-hint pronunciation
+[PASS] English spelling output uses the declared inventory and does not carry guesses across a pause
+[PASS] English and Korean reject stale replacement and appended phoneme contexts
+[PASS] generic pronunciation admission precedes language indexing and honours cancellation
+[PASS] English dictionary vowels consonant clusters and terminal codas have position-aware roles
+[PASS] English cluster syllabification changes real timing nucleus ownership without altering stress
+[PASS] English explicit syllable boundaries override estimates and reject malformed separators
+[PASS] English estimated spellings explicit pauses and continuations retain note ownership
+[PASS] English role-aware overrides preserve current locks and reject a changed syllable context
+[PASS] Korean Hangul phonemizer decomposes syllables, coda liaison and continuation
+[PASS] Korean resolver supports Hangul and romanized bootstrap words with bounded diagnostics
+[PASS] Korean complete jongseong oracle preserves all seven final sounds and coda roles
+[PASS] Korean initial and medial inventories preserve phonemic contrasts
+[PASS] Korean boundary rules retain original finals for liaison and contextual assimilation
+[PASS] Korean cross-note liaison preserves ownership and stops at rests or explicit hints
+[PASS] Korean compatibility jamo remain in source order with an explicit diagnostic
+[PASS] Korean explicit hints and romanized words preserve coda and onset ownership
+
+20 passed, 0 failed
+<end of output>
+Test time =   0.38 sec
+----------------------------------------------------------
+Test Passed.
+"seam_language_phonemizer_tests" end time: Sep 09 04:28 KST
+"seam_language_phonemizer_tests" time elapsed: 00:00:00
+----------------------------------------------------------
+
+24/120 Testing: seam_neural_worker_protocol_tests
+24/120 Test: seam_neural_worker_protocol_tests
+Command: "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/release/seam_neural_worker_protocol_tests"
+Directory: /Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/release
+"seam_neural_worker_protocol_tests" start time: Sep 09 04:28 KST
+Output:
+----------------------------------------------------------
+[PASS] neural worker request and response frames round-trip with bounded metadata
+[PASS] neural worker protocol rejects stale, malformed and non-finite frames before allocation
+[PASS] neural worker protocol enforces response shape, identity and PCM range
+[PASS] neural model contract binds model, vocabulary, sample rate and output shape
+[PASS] neural worker runner uses an explicit helper and validates the response
+
+5 passed, 0 failed
+<end of output>
+Test time =   1.06 sec
+----------------------------------------------------------
+Test Passed.
+"seam_neural_worker_protocol_tests" end time: Sep 09 04:28 KST
+"seam_neural_worker_protocol_tests" time elapsed: 00:00:01
+----------------------------------------------------------
+
+45/120 Testing: seam_offline_render_session_tests
+45/120 Test: seam_offline_render_session_tests
+Command: "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/release/seam_offline_render_session_tests"
+Directory: /Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/release
+"seam_offline_render_session_tests" start time: Sep 09 04:28 KST
+Output:
+----------------------------------------------------------
+[PASS] offline render identity rejects preview and malformed provenance
+[PASS] offline render session publishes only the current final identity
+[PASS] offline render session fails closed for empty audio and invalidates ready data
+
+3 passed, 0 failed
+<end of output>
+Test time =   0.36 sec
+----------------------------------------------------------
+Test Passed.
+"seam_offline_render_session_tests" end time: Sep 09 04:28 KST
+"seam_offline_render_session_tests" time elapsed: 00:00:00
+----------------------------------------------------------
+
+48/120 Testing: seam_export_tests
+48/120 Test: seam_export_tests
+Command: "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/release/seam_export_tests"
+Directory: /Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/release
+"seam_export_tests" start time: Sep 09 04:28 KST
+Output:
+----------------------------------------------------------
+{
+  "jobs": 2,
+  "manifestSha256": "ea165f45698b40b2ca8e816e98d7853cf76b26402daa377d3ac23f49c9069f70",
+  "state": "BatchPrepared"
+}
+
+error: Atomic create-new target already exists (/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/project-seam-articulated-export-64217-0/cli-batch.json)
+error: partially collected batch requires explicit reconciliation
+{
+  "approval": "unapproved",
+  "cancellationRequested": false,
+  "count": 2,
+  "diagnostic": "",
+  "durabilityConfirmed": true,
+  "generation": "2",
+  "projectSha256": "b1951492bd4096b2276ec8ae01488b2faea5d98b7af91de9e3fdd1caa29f7006",
+  "result": "Collected"
+}
+
+{
+  "generation": "2",
+  "result": "AlreadyCollected",
+  "takes": [
+    {
+      "active": true,
+      "state": "MARKER_REVIEW",
+      "takeId": "take-sa"
+    },
+    {
+      "active": true,
+      "state": "MARKER_REVIEW",
+      "takeId": "take-sa-70"
+    }
+  ]
+}
+
+{
+  "generation": "2",
+  "result": "AlreadyCollected",
+  "takes": [
+    {
+      "active": true,
+      "state": "MARKER_REVIEW",
+      "takeId": "take-sa"
+    },
+    {
+      "active": true,
+      "state": "MARKER_REVIEW",
+      "takeId": "take-sa-70"
+    }
+  ]
+}
+
+{
+  "approval": "unapproved",
+  "outputs": [
+    {
+      "audio": "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/project-seam-articulated-export-64217-0/batch-a/output/candidates/0000000000014051-0000000000014052.wav",
+      "audioSha256": "f143d7272f5bc0bacc200193c4970aa7fd1cd25547903f87aee9ab7fefa05530",
+      "metadata": "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/project-seam-articulated-export-64217-0/batch-a/output/candidates/0000000000014051-0000000000014052.json",
+      "reused": true
+    },
+    {
+      "audio": "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/project-seam-articulated-export-64217-0/batch-b/output/candidates/0000000000014051-0000000000014052.wav",
+      "audioSha256": "f14621bfb131d6b99c954bb2784e8e607e2c5dbb6275d6fe9f5f598208287415",
+      "metadata": "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/project-seam-articulated-export-64217-0/batch-b/output/candidates/0000000000014051-0000000000014052.json",
+      "reused": true
+    }
+  ]
+}
+
+error: Generation batch has duplicate targets, different producer states or excessive frame work
+error: batch frame budget must be an unsigned integer
+{
+  "jobId": "cli-job-sa",
+  "manifestSha256": "d5c6d72bac7875ce417402554990a48325e7507d4cf22aa0d630d1699590b71f",
+  "state": "Prepared"
+}
+
+error: Generation job directory must be new with an existing parent
+error: Take must identify exactly one planned producer assignment
+{
+  "approval": "unapproved",
+  "audio": "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/project-seam-articulated-export-64217-0/cli-prepared-job/output/candidates/0000000000014051-0000000000014052.wav",
+  "audioSha256": "f143d7272f5bc0bacc200193c4970aa7fd1cd25547903f87aee9ab7fefa05530",
+  "metadata": "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/project-seam-articulated-export-64217-0/cli-prepared-job/output/candidates/0000000000014051-0000000000014052.json",
+  "reused": false
+}
+
+{
+  "audioSha256": "f143d7272f5bc0bacc200193c4970aa7fd1cd25547903f87aee9ab7fefa05530",
+  "diagnostic": "",
+  "durabilityConfirmed": true,
+  "generation": "2",
+  "projectSha256": "6e8dd97b314d3749cde7d84c7b3a763c93f273798136a931f120ecbb5af83b2d",
+  "result": "Collected",
+  "state": "MarkerReview",
+  "takeId": "take-sa"
+}
+
+error: Generation requires an authorized procedural strategy and a new take ID
+error: File lock is busy or unsafe
+{
+  "approval": "unapproved",
+  "audio": "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/project-seam-articulated-export-64217-0/generation-job/output/candidates/0000000000014051-0000000000014052.wav",
+  "audioSha256": "f143d7272f5bc0bacc200193c4970aa7fd1cd25547903f87aee9ab7fefa05530",
+  "metadata": "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/project-seam-articulated-export-64217-0/generation-job/output/candidates/0000000000014051-0000000000014052.json",
+  "reused": true
+}
+
+error: Generated candidate request is stale or belongs to another target
+error: Generation expectation file is malformed or differs from its retained digest
+{
+  "audioSha256": "f143d7272f5bc0bacc200193c4970aa7fd1cd25547903f87aee9ab7fefa05530",
+  "diagnostic": "",
+  "durabilityConfirmed": true,
+  "generation": "3",
+  "projectSha256": "411c617093ca688783947288f3503b97a4e650f0bbda6f562249575190e833ca",
+  "result": "Collected",
+  "state": "MarkerReview",
+  "takeId": "take-sa"
+}
+
+{
+  "active": true,
+  "audioSha256": "f143d7272f5bc0bacc200193c4970aa7fd1cd25547903f87aee9ab7fefa05530",
+  "generation": "3",
+  "result": "AlreadyCollected",
+  "state": "MARKER_REVIEW",
+  "takeId": "take-sa"
+}
+
+{
+  "active": true,
+  "audioSha256": "f143d7272f5bc0bacc200193c4970aa7fd1cd25547903f87aee9ab7fefa05530",
+  "generation": "3",
+  "result": "AlreadyCollected",
+  "state": "MARKER_REVIEW",
+  "takeId": "take-sa"
+}
+
+{
+  "approval": "unapproved",
+  "candidates": 1,
+  "receipt": "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/project-seam-articulated-export-64217-0/cli-bake/receipt.json",
+  "state": "Committed"
+}
+
+error: Export destination already contains an export set (/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/project-seam-articulated-export-64217-0/cli-bake)
+error: sample rate must be an integer from 8000 to 384000
+error: every nonempty vocal track must have a saved procedural recipe for bake-project
+{
+  "audioSha256": "469641d3218fe21314a889411f7c1a5e2822a486ff2d15e7477c4cf10848bd45",
+  "diagnostic": "",
+  "durabilityConfirmed": true,
+  "generation": "4",
+  "projectSha256": "00fd45566e2792c1cb8620cace07dd67638038a4a24558658d4e8f196620970c",
+  "state": "MarkerReview",
+  "takeId": "take-cli"
+}
+
+error: MIDI layer must be an integer from 0 to 127
+[PASS] articulated candidates bake and enter production with typed unapproved gestures
+[PASS] native vibrato draft changes final audio and survives project reload export and exact undo replay
+[PASS] native style selection changes installed bank audio and survives reload export undo and redo
+[PASS] native dynamics curve edits scale final audio and survive reload export undo and redo
+[PASS] native tempo edit changes final rendered and exported duration with exact undo replay
+[PASS] procedural export commits exact final PCM stems and truthful recipe receipts
+[PASS] pitch contour preserves window centers and breaks unvoiced missing or invalid gaps
+[PASS] candidate audition session reports device failures and releases callback state safely
+[PASS] candidate audition is bounded block invariant and runs on the output callback
+[PASS] export service publishes a committed master and receipt atomically
+[PASS] single-file export removes rollback backups after a successful replacement
+[PASS] single-file export preserves an unowned backup collision
+[PASS] single-file export rolls back the master when receipt rotation fails
+[PASS] export service cancellation leaves no claimed output
+[PASS] export service publishes master and stems while preserving canaries
+[PASS] export set failure restoring preserved files rolls back the new set
+[PASS] export replacement removes files owned only by the previous receipt
+[PASS] export replacement never removes an unowned previous sibling
+[PASS] export recovery reconciles every journalled publication phase
+[PASS] export rejects symlinked destination files
+[PASS] export recovery rejects symlinked master files
+[PASS] export receipt records canonical project and render identities
+[PASS] export writer covers the production format matrix
+
+23 passed, 0 failed
+<end of output>
+Test time =   3.38 sec
+----------------------------------------------------------
+Test Passed.
+"seam_export_tests" end time: Sep 09 04:28 KST
+"seam_export_tests" time elapsed: 00:00:03
+----------------------------------------------------------
+
+55/120 Testing: seam_tracked_source_closure
+55/120 Test: seam_tracked_source_closure
+Command: "/usr/local/bin/python3" "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/scripts/verify_tracked_source_closure.py" "--root" "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master"
+Directory: /Users/lhs/Downloads/project-seam-usable-alpha-u3-master
+"seam_tracked_source_closure" start time: Sep 09 04:28 KST
+Output:
+----------------------------------------------------------
+SOURCE_CLOSURE=FAIL required_inputs=335
+not indexed: apps/seam-voicebank-cli/sample_review_commands.cpp (referenced by CMakeLists.txt; source-tree policy:apps)
+not indexed: apps/seam-voicebank-cli/sample_review_commands.hpp (source-tree policy:apps)
+not indexed: apps/seam-voicebank-cli/signal_cancellation.hpp (source-tree policy:apps)
+not indexed: docs/authoring/PHONEME_EDIT_REVIEW.md (source-tree policy:docs)
+not indexed: docs/authoring/PHONEME_TIMING_DISPLAY.md (source-tree policy:docs)
+not indexed: docs/authoring/PROCEDURAL_CLI_BAKING.md (source-tree policy:docs)
+not indexed: docs/formats/CANDIDATE_PITCH_INSPECTION_V1.md (source-tree policy:docs)
+not indexed: docs/formats/MIDI_INTERCHANGE_V1.md (source-tree policy:docs)
+not indexed: docs/formats/PROCEDURAL_CANDIDATE_V1.md (source-tree policy:docs)
+not indexed: docs/formats/PROCEDURAL_CANDIDATE_V2.md (source-tree policy:docs)
+not indexed: docs/formats/PROJECT_JSON_V8.md (source-tree policy:docs)
+not indexed: docs/formats/PROJECT_JSON_V9.md (source-tree policy:docs)
+not indexed: docs/formats/SOURCE_PHONEME_ALIGNMENT_V1.md (source-tree policy:docs)
+not indexed: docs/formats/USTX_INTERCHANGE_V1.md (source-tree policy:docs)
+not indexed: docs/formats/VOICE_RECIPE_V1.md (source-tree policy:docs)
+not indexed: docs/formats/VOICE_RECIPE_V2.md (source-tree policy:docs)
+not indexed: docs/implementation/AUDIT_REPAIR_AND_SAMPLE_PUBLICATION_2026-09-09.md (source-tree policy:docs)
+not indexed: docs/implementation/AUTOMATIC_PERFORMANCE_PROPOSAL_2026-09-08.md (source-tree policy:docs)
+not indexed: docs/implementation/BROAD_RELEASE_REGRESSION_2026-09-07.md (source-tree policy:docs)
+not indexed: docs/implementation/CHARACTER_PERFORMANCE_BINDING_2026-09-08.md (source-tree policy:docs)
+not indexed: docs/implementation/CREATOR_BATCH_ACTIONS_2026-09-08.md (source-tree policy:docs)
+not indexed: docs/implementation/DESIGNER_HANDOFF_AND_PHRASE_DUPLICATION_2026-09-07.md (source-tree policy:docs)
+not indexed: docs/implementation/DYNAMICS_LANE_MODEL_2026-09-08.md (source-tree policy:docs)
+not indexed: docs/implementation/DYNAMICS_TIME_NAVIGATION_2026-09-08.md (source-tree policy:docs)
+not indexed: docs/implementation/FULL_PRODUCT_REPORT_VALIDATION_2026-09-08.md (source-tree policy:docs)
+not indexed: docs/implementation/GENERATION_BATCH_EXECUTION_2026-09-07.md (source-tree policy:docs)
+not indexed: docs/implementation/GENERATION_IMPORT_EXPECTATIONS_2026-09-07.md (source-tree policy:docs)
+not indexed: docs/implementation/GENERATION_JOB_PACKAGE_2026-09-07.md (source-tree policy:docs)
+not indexed: docs/implementation/HARMONY_WORKFLOW_2026-09-08.md (source-tree policy:docs)
+not indexed: docs/implementation/JAPANESE_NORMALIZATION_2026-09-08.md (source-tree policy:docs)
+not indexed: docs/implementation/JAPANESE_READING_INTAKE_2026-09-08.md (source-tree policy:docs)
+not indexed: docs/implementation/LANGUAGE_PHONEMIZER_2026-09-08.md (source-tree policy:docs)
+not indexed: docs/implementation/LIVE_EXPRESSION_REPAIR_2026-09-08.md (source-tree policy:docs)
+not indexed: docs/implementation/MEASURED_AUDIO_LEVELS_2026-09-08.md (source-tree policy:docs)
+not indexed: docs/implementation/MEASURED_DYNAMICS_INSPECTOR_2026-09-08.md (source-tree policy:docs)
+not indexed: docs/implementation/NATIVE_GENERATION_LIVE_QA_2026-09-07.md (source-tree policy:docs)
+not indexed: docs/implementation/NATIVE_PREPARED_GENERATION_2026-09-07.md (source-tree policy:docs)
+not indexed: docs/implementation/NATIVE_STUDIO_RUNTIME_CHECK_2026-09-07.md (source-tree policy:docs)
+not indexed: docs/implementation/NEURAL_WORKER_CONTRACT_2026-09-08.md (source-tree policy:docs)
+not indexed: docs/implementation/NOTE_SEARCH_AND_BATCH_EDITING_2026-09-07.md (source-tree policy:docs)
+not indexed: docs/implementation/PHASE12C_CANONICAL_EVIDENCE_2026-09-08.md (source-tree policy:docs)
+not indexed: docs/implementation/PROCEDURAL_ONSET_POLICY_2026-09-07.md (source-tree policy:docs)
+not indexed: docs/implementation/READING_HELPER_PROCESS_2026-09-08.md (source-tree policy:docs)
+not indexed: docs/implementation/RELEASE_AUDIT_REPRODUCTION_2026-09-09.md (source-tree policy:docs)
+not indexed: docs/implementation/RENDERER_CAPABILITY_PROVENANCE_2026-09-08.md (source-tree policy:docs)
+not indexed: docs/implementation/SELECTED_GENERATED_DYNAMICS_2026-09-08.md (source-tree policy:docs)
+not indexed: docs/implementation/SHORT_UNIT_TRANSITION_MAPPING_2026-09-07.md (source-tree policy:docs)
+not indexed: docs/implementation/SMF_INTERCHANGE_2026-09-08.md (source-tree policy:docs)
+not indexed: docs/implementation/STYLE_COVERAGE_SHEET_MODEL_2026-09-08.md (source-tree policy:docs)
+not indexed: docs/implementation/TEMPO_METER_COMMANDS_2026-09-07.md (source-tree policy:docs)
+not indexed: docs/implementation/U19_VOCAL_DSP_STATUS_2026-09-06.md (source-tree policy:docs)
+not indexed: docs/implementation/U20_ARTICULATION_STATUS_2026-09-07.md (source-tree policy:docs)
+not indexed: docs/implementation/U3_COMPLETION_AUDIT_2026-09-06.md (source-tree policy:docs)
+not indexed: docs/implementation/U4_ACCEPTANCE_REVIEW_2026-09-06.md (source-tree policy:docs)
+not indexed: docs/implementation/U5_ACCEPTANCE_AUDIT_2026-09-06.md (source-tree policy:docs)
+not indexed: docs/implementation/U5_TIMING_ACCEPTANCE_REVIEW_2026-09-06.md (source-tree policy:docs)
+not indexed: docs/implementation/U6_PERFORMANCE_COMPILER_STATUS_2026-09-06.md (source-tree policy:docs)
+not indexed: docs/implementation/U7_TYPED_RESOURCE_STATUS_2026-09-06.md (source-tree policy:docs)
+not indexed: docs/implementation/USTX_NATIVE_LIFECYCLE_2026-09-08.md (source-tree policy:docs)
+not indexed: docs/implementation/VIBRATO_EDITING_MODEL_2026-09-08.md (source-tree policy:docs)
+not indexed: docs/implementation/VOICEBANK_COVERAGE_CORRECTNESS_2026-09-08.md (source-tree policy:docs)
+not indexed: docs/implementation/VOICE_DESIGNER_ACCESSIBILITY_2026-09-07.md (source-tree policy:docs)
+not indexed: docs/implementation/VOICE_DESIGNER_AUDITION_2026-09-07.md (source-tree policy:docs)
+not indexed: docs/implementation/VOICE_DESIGNER_COMPACT_LAYOUT_2026-09-07.md (source-tree policy:docs)
+not indexed: docs/implementation/VOICE_DESIGNER_INTERACTION_QA_2026-09-07.md (source-tree policy:docs)
+not indexed: docs/implementation/VOICE_DESIGNER_MODEL_2026-09-07.md (source-tree policy:docs)
+not indexed: docs/implementation/VOICE_DESIGNER_NATIVE_UI_2026-09-07.md (source-tree policy:docs)
+not indexed: docs/implementation/VOICE_DESIGNER_SESSION_2026-09-07.md (source-tree policy:docs)
+not indexed: docs/product/public-release-replay.schema.json (source-tree policy:docs)
+not indexed: docs/reviews/DEVELOPMENT_DIRECTION_REVIEW_2026-09-09.md (source-tree policy:docs)
+not indexed: docs/reviews/direction-audit-2026-09-09/README.md (source-tree policy:docs)
+not indexed: docs/reviews/direction-audit-2026-09-09/artifact.json (source-tree policy:docs)
+not indexed: docs/reviews/direction-audit-2026-09-09/delivery.json (source-tree policy:docs)
+not indexed: docs/reviews/direction-audit-2026-09-09/git-paths.json (source-tree policy:docs)
+not indexed: docs/reviews/direction-audit-2026-09-09/language_probe.cpp (source-tree policy:docs)
+not indexed: docs/reviews/direction-audit-2026-09-09/report.html (source-tree policy:docs)
+not indexed: docs/reviews/direction-audit-2026-09-09/results.json (source-tree policy:docs)
+not indexed: docs/reviews/direction-audit-refresh-2026-09-09/README.md (source-tree policy:docs)
+not indexed: docs/reviews/direction-audit-refresh-2026-09-09/artifact.json (source-tree policy:docs)
+not indexed: docs/reviews/direction-audit-refresh-2026-09-09/delivery.json (source-tree policy:docs)
+not indexed: docs/reviews/direction-audit-refresh-2026-09-09/gate_probe.py (source-tree policy:docs)
+not indexed: docs/reviews/direction-audit-refresh-2026-09-09/git-paths.json (source-tree policy:docs)
+not indexed: docs/reviews/direction-audit-refresh-2026-09-09/ownership_probe.cpp (source-tree policy:docs)
+not indexed: docs/reviews/direction-audit-refresh-2026-09-09/pronunciation_probe.cpp (source-tree policy:docs)
+not indexed: docs/reviews/direction-audit-refresh-2026-09-09/report.html (source-tree policy:docs)
+not indexed: docs/reviews/direction-audit-refresh-2026-09-09/results.json (source-tree policy:docs)
+not indexed: docs/reviews/direction-checkpoint-2026-09-09/README.md (source-tree policy:docs)
+not indexed: docs/reviews/direction-checkpoint-2026-09-09/build-full.log (source-tree policy:docs)
+not indexed: docs/reviews/direction-checkpoint-2026-09-09/ctest-focused.log.tmp17a48 (source-tree policy:docs)
+not indexed: docs/reviews/direction-post-integration-2026-09-09/README.md (source-tree policy:docs)
+not indexed: docs/reviews/direction-post-integration-2026-09-09/artifact.json (source-tree policy:docs)
+not indexed: docs/reviews/direction-post-integration-2026-09-09/assemble_report.mjs (source-tree policy:docs)
+not indexed: docs/reviews/direction-post-integration-2026-09-09/ctest-failures.txt (source-tree policy:docs)
+not indexed: docs/reviews/direction-post-integration-2026-09-09/ctest-full.log (source-tree policy:docs)
+not indexed: docs/reviews/direction-post-integration-2026-09-09/delivery.json (source-tree policy:docs)
+not indexed: docs/reviews/direction-post-integration-2026-09-09/failure_counts.sql (source-tree policy:docs)
+not indexed: docs/reviews/direction-post-integration-2026-09-09/gate_subpredicate_probe.py (source-tree policy:docs)
+not indexed: docs/reviews/direction-post-integration-2026-09-09/language_path_probe.cpp (source-tree policy:docs)
+not indexed: docs/reviews/direction-post-integration-2026-09-09/matrix.json (source-tree policy:docs)
+not indexed: docs/reviews/direction-post-integration-2026-09-09/recovery_review_probe.cpp (source-tree policy:docs)
+not indexed: docs/reviews/direction-post-integration-2026-09-09/report.html (source-tree policy:docs)
+not indexed: docs/reviews/direction-post-integration-2026-09-09/results.json (source-tree policy:docs)
+not indexed: libs/seam-application/include/seam/application/harmony_commands.hpp (source-tree policy:libs)
+not indexed: libs/seam-application/include/seam/application/performance_commands.hpp (source-tree policy:libs)
+not indexed: libs/seam-application/include/seam/application/performance_job_context.hpp (source-tree policy:libs)
+not indexed: libs/seam-application/include/seam/application/tempo_commands.hpp (source-tree policy:libs)
+not indexed: libs/seam-application/src/harmony_commands.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-application/src/performance_commands.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-application/src/performance_job_context.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-application/src/tempo_commands.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-authoring-runtime/include/seam/authoring/audio_measurement_capture.hpp (source-tree policy:libs)
+not indexed: libs/seam-authoring-runtime/include/seam/authoring/audio_measurement_job.hpp (source-tree policy:libs)
+not indexed: libs/seam-authoring-runtime/include/seam/authoring/generation_job.hpp (source-tree policy:libs)
+not indexed: libs/seam-authoring-runtime/include/seam/authoring/helper_process.hpp (source-tree policy:libs)
+not indexed: libs/seam-authoring-runtime/include/seam/authoring/interchange_service.hpp (source-tree policy:libs)
+not indexed: libs/seam-authoring-runtime/include/seam/authoring/japanese_reading_capture.hpp (source-tree policy:libs)
+not indexed: libs/seam-authoring-runtime/include/seam/authoring/japanese_reading_job.hpp (source-tree policy:libs)
+not indexed: libs/seam-authoring-runtime/include/seam/authoring/japanese_reading_resource.hpp (source-tree policy:libs)
+not indexed: libs/seam-authoring-runtime/include/seam/authoring/japanese_reading_response.hpp (source-tree policy:libs)
+not indexed: libs/seam-authoring-runtime/include/seam/authoring/japanese_reading_stage.hpp (source-tree policy:libs)
+not indexed: libs/seam-authoring-runtime/include/seam/authoring/voicebank_snapshot.hpp (source-tree policy:libs)
+not indexed: libs/seam-authoring-runtime/src/generation_batch.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-authoring-runtime/src/generation_job.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-authoring-runtime/src/helper_process.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-authoring-runtime/src/interchange_service.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-authoring-runtime/src/japanese_reading_capture.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-authoring-runtime/src/japanese_reading_job.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-authoring-runtime/src/japanese_reading_resource.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-authoring-runtime/src/japanese_reading_response.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-authoring-runtime/src/japanese_reading_stage.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-clap-editor/include/seam/clap_editor/offline_render_session.hpp (source-tree policy:libs)
+not indexed: libs/seam-clap-editor/src/offline_render_session.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-core/include/seam/core/exclusive_file_lock.hpp (source-tree policy:libs)
+not indexed: libs/seam-domain/src/region_performance_state.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-editor-ui/include/seam/ui/dependent_edit_review.hpp (source-tree policy:libs)
+not indexed: libs/seam-editor-ui/include/seam/ui/dynamics_clear_preview.hpp (source-tree policy:libs)
+not indexed: libs/seam-editor-ui/include/seam/ui/dynamics_lane_model.hpp (source-tree policy:libs)
+not indexed: libs/seam-editor-ui/include/seam/ui/dynamics_plot_viewport.hpp (source-tree policy:libs)
+not indexed: libs/seam-editor-ui/include/seam/ui/lyric_replacement_job.hpp (source-tree policy:libs)
+not indexed: libs/seam-editor-ui/include/seam/ui/lyric_replacement_review.hpp (source-tree policy:libs)
+not indexed: libs/seam-editor-ui/include/seam/ui/note_cleanup_preview.hpp (source-tree policy:libs)
+not indexed: libs/seam-editor-ui/include/seam/ui/note_search_job.hpp (source-tree policy:libs)
+not indexed: libs/seam-editor-ui/include/seam/ui/note_search_model.hpp (source-tree policy:libs)
+not indexed: libs/seam-editor-ui/include/seam/ui/note_search_navigation.hpp (source-tree policy:libs)
+not indexed: libs/seam-editor-ui/include/seam/ui/vibrato_clear_preview.hpp (source-tree policy:libs)
+not indexed: libs/seam-editor-ui/include/seam/ui/vibrato_model.hpp (source-tree policy:libs)
+not indexed: libs/seam-editor-ui/src/dynamics_lane_model.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-editor-ui/src/note_search_model.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-editor-ui/src/vibrato_model.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-formats/src/project_performance_json.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-formats/src/project_performance_json.hpp (source-tree policy:libs)
+not indexed: libs/seam-formats/src/project_region_performance_json.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-formats/src/project_region_performance_json.hpp (source-tree policy:libs)
+not indexed: libs/seam-interchange/include/seam/interchange/smf_codec.hpp (source-tree policy:libs)
+not indexed: libs/seam-interchange/include/seam/interchange/smf_project_conversion.hpp (source-tree policy:libs)
+not indexed: libs/seam-interchange/include/seam/interchange/ustx_codec.hpp (source-tree policy:libs)
+not indexed: libs/seam-interchange/include/seam/interchange/ustx_project_conversion.hpp (source-tree policy:libs)
+not indexed: libs/seam-interchange/src/smf_codec.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-interchange/src/smf_project_conversion.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-interchange/src/ustx_codec.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-interchange/src/ustx_project_conversion.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-native-ui/include/seam/native_ui/appkit_shortcut_key.hpp (source-tree policy:libs)
+not indexed: libs/seam-native-ui/include/seam/native_ui/candidate_audition.hpp (source-tree policy:libs)
+not indexed: libs/seam-native-ui/include/seam/native_ui/candidate_audition_session.hpp (source-tree policy:libs)
+not indexed: libs/seam-native-ui/include/seam/native_ui/diagnostic_search.hpp (source-tree policy:libs)
+not indexed: libs/seam-native-ui/include/seam/native_ui/diagnostic_search_job.hpp (source-tree policy:libs)
+not indexed: libs/seam-native-ui/include/seam/native_ui/pitch_contour.hpp (source-tree policy:libs)
+not indexed: libs/seam-native-ui/include/seam/native_ui/style_coverage_sheet.hpp (source-tree policy:libs)
+not indexed: libs/seam-native-ui/include/seam/native_ui/tempo_meter_model.hpp (source-tree policy:libs)
+not indexed: libs/seam-native-ui/include/seam/native_ui/vibrato_inspector.hpp (source-tree policy:libs)
+not indexed: libs/seam-native-ui/include/seam/native_ui/voice_designer_audition.hpp (source-tree policy:libs)
+not indexed: libs/seam-native-ui/include/seam/native_ui/voice_designer_layout.hpp (source-tree policy:libs)
+not indexed: libs/seam-native-ui/include/seam/native_ui/voice_designer_model.hpp (source-tree policy:libs)
+not indexed: libs/seam-native-ui/include/seam/native_ui/voice_designer_session.hpp (source-tree policy:libs)
+not indexed: libs/seam-native-ui/src/style_coverage_sheet.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-native-ui/src/vibrato_inspector.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-native-ui/src/voice_designer_audition.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-native-ui/src/voice_designer_model.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-native-ui/src/voice_designer_session.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-native-ui/src/voicebank_studio_manifest_draft.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-native-ui/src/voicebank_studio_sample_review.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-neural-synthesis/include/seam/neural_synthesis/model_contract.hpp (source-tree policy:libs)
+not indexed: libs/seam-neural-synthesis/include/seam/neural_synthesis/neural_phrase_backend.hpp (source-tree policy:libs)
+not indexed: libs/seam-neural-synthesis/include/seam/neural_synthesis/worker_protocol.hpp (source-tree policy:libs)
+not indexed: libs/seam-neural-synthesis/src/model_contract.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-neural-synthesis/src/neural_phrase_backend.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-neural-synthesis/src/worker_protocol.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-phonemizer/include/seam/phonemizer/english_phonemizer.hpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-phonemizer/include/seam/phonemizer/japanese_reading.hpp (source-tree policy:libs)
+not indexed: libs/seam-phonemizer/include/seam/phonemizer/korean_phonemizer.hpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-phonemizer/include/seam/phonemizer/language_resolver.hpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-phonemizer/include/seam/phonemizer/override_reconciliation.hpp (source-tree policy:libs)
+not indexed: libs/seam-phonemizer/include/seam/phonemizer/pronunciation_resolver.hpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-phonemizer/src/english_phonemizer.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-phonemizer/src/japanese_reading.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-phonemizer/src/korean_phonemizer.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-phonemizer/src/language_resolver.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-phonemizer/src/override_reconciliation.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-phonemizer/src/pronunciation_resolver.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-rendering/include/seam/rendering/audio_level_envelope.hpp (source-tree policy:libs)
+not indexed: libs/seam-rendering/src/audio_level_envelope.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-synthesis/include/seam/synthesis/automatic_performance.hpp (source-tree policy:libs)
+not indexed: libs/seam-synthesis/include/seam/synthesis/performance_compiler.hpp (source-tree policy:libs)
+not indexed: libs/seam-synthesis/include/seam/synthesis/phoneme_timing_plan.hpp (source-tree policy:libs)
+not indexed: libs/seam-synthesis/include/seam/synthesis/phrase_backend.hpp (source-tree policy:libs)
+not indexed: libs/seam-synthesis/include/seam/synthesis/renderer_capabilities.hpp (source-tree policy:libs)
+not indexed: libs/seam-synthesis/include/seam/synthesis/singer_resource.hpp (source-tree policy:libs)
+not indexed: libs/seam-synthesis/include/seam/synthesis/source_phoneme_alignment.hpp (source-tree policy:libs)
+not indexed: libs/seam-synthesis/include/seam/synthesis/source_target_map.hpp (source-tree policy:libs)
+not indexed: libs/seam-synthesis/src/automatic_performance.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-synthesis/src/performance_compiler.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-synthesis/src/phoneme_timing_plan.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-synthesis/src/phrase_backend.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-synthesis/src/renderer_capabilities.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-synthesis/src/singer_resource.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-synthesis/src/source_phoneme_alignment.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-synthesis/src/source_target_map.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-voice-design/include/seam/voice_design/articulated_stream.hpp (source-tree policy:libs)
+not indexed: libs/seam-voice-design/include/seam/voice_design/articulation_plan.hpp (source-tree policy:libs)
+not indexed: libs/seam-voice-design/include/seam/voice_design/frication_config.hpp (source-tree policy:libs)
+not indexed: libs/seam-voice-design/include/seam/voice_design/frication_gesture_stream.hpp (source-tree policy:libs)
+not indexed: libs/seam-voice-design/include/seam/voice_design/frication_source.hpp (source-tree policy:libs)
+not indexed: libs/seam-voice-design/include/seam/voice_design/phonation_source.hpp (source-tree policy:libs)
+not indexed: libs/seam-voice-design/include/seam/voice_design/procedural_candidate.hpp (source-tree policy:libs)
+not indexed: libs/seam-voice-design/include/seam/voice_design/procedural_renderer.hpp (source-tree policy:libs)
+not indexed: libs/seam-voice-design/include/seam/voice_design/recipe_resource.hpp (source-tree policy:libs)
+not indexed: libs/seam-voice-design/include/seam/voice_design/vocal_tract.hpp (source-tree policy:libs)
+not indexed: libs/seam-voice-design/include/seam/voice_design/voice_recipe.hpp (source-tree policy:libs)
+not indexed: libs/seam-voice-design/src/articulated_stream.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-voice-design/src/articulation_plan.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-voice-design/src/excitation_noise.hpp (source-tree policy:libs)
+not indexed: libs/seam-voice-design/src/frication_gesture_stream.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-voice-design/src/frication_source.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-voice-design/src/phonation_source.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-voice-design/src/procedural_candidate.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-voice-design/src/procedural_renderer.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-voice-design/src/recipe_resource.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-voice-design/src/vocal_tract.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-voice-design/src/voice_recipe.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-voicebank-production/include/seam/voicebank_production/candidate_markers.hpp (source-tree policy:libs)
+not indexed: libs/seam-voicebank-production/include/seam/voicebank_production/candidate_publication.hpp (source-tree policy:libs)
+not indexed: libs/seam-voicebank-production/include/seam/voicebank_production/manifest_draft.hpp (source-tree policy:libs)
+not indexed: libs/seam-voicebank-production/src/candidate_markers.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-voicebank-production/src/candidate_publication_internal.hpp (source-tree policy:libs)
+not indexed: libs/seam-voicebank-production/src/generation_expectation.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-voicebank-production/src/manifest_draft.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-voicebank-production/src/operation_staging.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-voicebank-production/src/operation_staging_internal.hpp (source-tree policy:libs)
+not indexed: libs/seam-voicebank-production/src/repository_candidate.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-voicebank-production/src/repository_history_internal.hpp (source-tree policy:libs)
+not indexed: libs/seam-voicebank-production/src/repository_review.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-voicebank-production/src/repository_source_internal.hpp (source-tree policy:libs)
+not indexed: phase12c/include/seam/phase12c/canonical_evidence.hpp (source-tree policy:phase12c)
+not indexed: phase12c/include/seam/phase12c/clap_matrix_host.hpp (source-tree policy:phase12c)
+not indexed: phase12c/src/canonical_evidence.cpp (source-tree policy:phase12c)
+not indexed: phase12c/src/clap_matrix_host.cpp (source-tree policy:phase12c)
+not indexed: phase12c/src/engine_evidence_resource.cpp (source-tree policy:phase12c)
+not indexed: scripts/run_public_release_operation.py (source-tree policy:scripts)
+not indexed: scripts/verify_full_product_report.py (source-tree policy:scripts)
+not indexed: scripts/verify_phase12c_canonical_contract.py (referenced by phase12c/CMakeLists.txt; source-tree policy:scripts)
+not indexed: tests/external_beta/full_product_report_fixture.py (source-tree policy:tests)
+not indexed: tests/external_beta/test_full_product_report.py (source-tree policy:tests)
+not indexed: tests/external_beta/test_phase12c_canonical_contract.py (source-tree policy:tests)
+not indexed: tests/fixtures/projects/generators/README.md (source-tree policy:tests)
+not indexed: tests/fixtures/projects/generators/reemit.cpp (source-tree policy:tests)
+not indexed: tests/fixtures/projects/generators/schema1.cpp (source-tree policy:tests)
+not indexed: tests/fixtures/projects/generators/schema4.cpp (source-tree policy:tests)
+not indexed: tests/fixtures/projects/schema-1-historical-writer.seam (source-tree policy:tests)
+not indexed: tests/fixtures/projects/schema-4-historical-writer.seam (referenced by CMakeLists.txt; source-tree policy:tests)
+not indexed: tests/fixtures/projects/schema-5-historical-writer.seam (source-tree policy:tests)
+not indexed: tests/fixtures/projects/schema-6-historical-writer.seam (source-tree policy:tests)
+not indexed: tests/fixtures/projects/schema-7-historical-writer.seam (source-tree policy:tests)
+not indexed: tests/fixtures/pronunciation/openjtalk-intake.json (source-tree policy:tests)
+not indexed: tests/helpers/generation_job_probe.cpp (referenced by CMakeLists.txt; source-tree policy:tests)
+not indexed: tests/helpers/neural_worker_probe.cpp (referenced by CMakeLists.txt; source-tree policy:tests)
+not indexed: tests/helpers/reading_capture_process_probe.cpp (referenced by CMakeLists.txt; source-tree policy:tests)
+not indexed: tests/helpers/reading_process_probe.cpp (referenced by CMakeLists.txt; source-tree policy:tests)
+not indexed: tests/production/public_release_replay_fixtures.py (source-tree policy:tests)
+not indexed: tests/production/test_production_draft_parity.py (source-tree policy:tests)
+not indexed: tests/production/test_public_release_replay.py (source-tree policy:tests)
+not indexed: tests/test_audio_level_envelope.cpp (referenced by CMakeLists.txt; source-tree policy:tests)
+not indexed: tests/test_automatic_performance.cpp (referenced by CMakeLists.txt; source-tree policy:tests)
+not indexed: tests/test_clap_offline_host.py (referenced by CMakeLists.txt; source-tree policy:tests)
+not indexed: tests/test_creator_batch_edits.cpp (referenced by CMakeLists.txt; source-tree policy:tests)
+not indexed: tests/test_dynamics_lane_workflow.cpp (referenced by CMakeLists.txt; source-tree policy:tests)
+not indexed: tests/test_english_phonemizer.cpp (referenced by CMakeLists.txt; source-tree policy:tests)
+not indexed: tests/test_harmony_workflow.cpp (referenced by CMakeLists.txt; source-tree policy:tests)
+not indexed: tests/test_helper_process.cpp (referenced by CMakeLists.txt; source-tree policy:tests)
+not indexed: tests/test_interchange_service.cpp (referenced by CMakeLists.txt; source-tree policy:tests)
+not indexed: tests/test_japanese_reading.cpp (referenced by CMakeLists.txt; source-tree policy:tests)
+not indexed: tests/test_japanese_reading_capture.cpp (referenced by CMakeLists.txt; source-tree policy:tests)
+not indexed: tests/test_japanese_reading_job.cpp (referenced by CMakeLists.txt; source-tree policy:tests)
+not indexed: tests/test_japanese_reading_native.cpp (referenced by CMakeLists.txt; source-tree policy:tests)
+not indexed: tests/test_japanese_reading_resource.cpp (referenced by CMakeLists.txt; source-tree policy:tests)
+not indexed: tests/test_japanese_reading_response.cpp (referenced by CMakeLists.txt; source-tree policy:tests)
+not indexed: tests/test_korean_phonemizer.cpp (referenced by CMakeLists.txt; source-tree policy:tests)
+not indexed: tests/test_manifest_draft.cpp (referenced by CMakeLists.txt; source-tree policy:tests)
+not indexed: tests/test_measured_dynamics_workflow.cpp (referenced by CMakeLists.txt; source-tree policy:tests)
+not indexed: tests/test_neural_worker_protocol.cpp (referenced by CMakeLists.txt; source-tree policy:tests)
+not indexed: tests/test_offline_render_session.cpp (referenced by CMakeLists.txt; source-tree policy:tests)
+not indexed: tests/test_override_reconciliation.cpp (referenced by CMakeLists.txt; source-tree policy:tests)
+not indexed: tests/test_performance_commands.cpp (referenced by CMakeLists.txt; source-tree policy:tests)
+not indexed: tests/test_performance_compiler.cpp (referenced by CMakeLists.txt; source-tree policy:tests)
+not indexed: tests/test_performance_edit_preservation.cpp (referenced by CMakeLists.txt; source-tree policy:tests)
+not indexed: tests/test_performance_job_context.cpp (referenced by CMakeLists.txt; source-tree policy:tests)
+not indexed: tests/test_performance_snapshot.cpp (referenced by CMakeLists.txt; source-tree policy:tests)
+not indexed: tests/test_phase12c_matrix_host.py (referenced by phase12c/CMakeLists.txt; source-tree policy:tests)
+not indexed: tests/test_phoneme_timing.cpp (referenced by CMakeLists.txt; source-tree policy:tests)
+not indexed: tests/test_pitch_analysis_bounds.cpp (referenced by CMakeLists.txt; source-tree policy:tests)
+not indexed: tests/test_plugin_style_migration.cpp (referenced by CMakeLists.txt; source-tree policy:tests)
+not indexed: tests/test_production_draft.cpp (referenced by CMakeLists.txt; source-tree policy:tests)
+not indexed: tests/test_production_edit_ownership.cpp (referenced by CMakeLists.txt; source-tree policy:tests)
+not indexed: tests/test_production_import_outcomes.cpp (referenced by CMakeLists.txt; source-tree policy:tests)
+not indexed: tests/test_production_operation_staging.cpp (referenced by CMakeLists.txt; source-tree policy:tests)
+not indexed: tests/test_region_performance_state.cpp (referenced by CMakeLists.txt; source-tree policy:tests)
+not indexed: tests/test_renderer_capabilities.cpp (referenced by CMakeLists.txt; source-tree policy:tests)
+not indexed: tests/test_sample_review_cli.cpp (referenced by CMakeLists.txt; source-tree policy:tests)
+not indexed: tests/test_schema8_performance.cpp (referenced by CMakeLists.txt; source-tree policy:tests)
+not indexed: tests/test_smf_interchange.cpp (referenced by CMakeLists.txt; source-tree policy:tests)
+not indexed: tests/test_studio_manifest_draft.cpp (referenced by CMakeLists.txt; source-tree policy:tests)
+not indexed: tests/test_studio_sample_review.cpp (referenced by CMakeLists.txt; source-tree policy:tests)
+not indexed: tests/test_style_coverage_sheet.cpp (referenced by CMakeLists.txt; source-tree policy:tests)
+not indexed: tests/test_style_migration.cpp (referenced by CMakeLists.txt; source-tree policy:tests)
+not indexed: tests/test_tempo_meter_commands.cpp (referenced by CMakeLists.txt; source-tree policy:tests)
+not indexed: tests/test_ustx_interchange.cpp (referenced by CMakeLists.txt; source-tree policy:tests)
+not indexed: tests/test_vibrato_inspector.cpp (referenced by CMakeLists.txt; source-tree policy:tests)
+not indexed: tests/test_voice_design.cpp (referenced by CMakeLists.txt; source-tree policy:tests)
+not indexed: tests/test_voice_designer_workflow.cpp (referenced by CMakeLists.txt; source-tree policy:tests)
+not indexed: tests/test_wav_read_limits.cpp (referenced by CMakeLists.txt; source-tree policy:tests)
+not indexed: tools/dependency-probes/check_openjtalk_reading.py (source-tree policy:tools)
+not indexed: tools/dependency-probes/openjtalk_reading_probe.cpp (source-tree policy:tools)
+not indexed: tools/dependency-probes/reading_transport_probe.cpp (referenced by CMakeLists.txt; source-tree policy:tools)
+not indexed: tools/external_beta/_production_draft_validation.py (source-tree policy:tools)
+not indexed: tools/external_beta/full_product_report.py (source-tree policy:tools)
+not indexed: tools/public_release/replay.py (source-tree policy:tools)
+<end of output>
+Test time =   0.23 sec
+----------------------------------------------------------
+Test Failed.
+"seam_tracked_source_closure" end time: Sep 09 04:28 KST
+"seam_tracked_source_closure" time elapsed: 00:00:00
+----------------------------------------------------------
+
+67/120 Testing: seam_production_draft_tests
+67/120 Test: seam_production_draft_tests
+Command: "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/release/seam_production_draft_tests"
+Directory: /Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/release
+"seam_production_draft_tests" start time: Sep 09 04:28 KST
+Output:
+----------------------------------------------------------
+[PASS] empty source-free production drafts persist without feasibility claims
+[PASS] authorized experimental imports retain source evidence without granting candidate qualification
+[PASS] draft import requires actual source execution permission and unchanged evidence
+[PASS] shared audio keeps distinct immutable source and importer attribution across selection changes
+[PASS] legacy producer generations retain exact bytes and unknown origins when new imports migrate
+
+5 passed, 0 failed
+<end of output>
+Test time =   0.44 sec
+----------------------------------------------------------
+Test Passed.
+"seam_production_draft_tests" end time: Sep 09 04:28 KST
+"seam_production_draft_tests" time elapsed: 00:00:00
+----------------------------------------------------------
+
+68/120 Testing: seam_manifest_draft_tests
+68/120 Test: seam_manifest_draft_tests
+Command: "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/release/seam_manifest_draft_tests"
+Directory: /Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/release
+"seam_manifest_draft_tests" start time: Sep 09 04:28 KST
+Output:
+----------------------------------------------------------
+[PASS] editable manifest draft copies exact current audio and estimates unlocked markers without approving experimental sources
+[PASS] editable draft keeps missing coverage visible and stable unit identity across row order and effective edits
+[PASS] draft creation preserves existing destinations and rejects stale unauthorized cancelled or excessive work
+[PASS] editable draft cannot claim implicit language or overwrite producer and rejects unsafe output parents
+[PASS] draft atomic publication rejects changed stage and preserves a late committed durability receipt
+[PASS] draft output from supported creator commands can be explicitly reviewed and published
+[PASS] draft rejects an identical replacement directory and cleanup preserves replacement-owned files
+[PASS] draft rejects stage directory symlink substitution without deleting either owner
+[PASS] draft parent replacement does not redirect commit or cleanup
+[PASS] reviewed candidate shares the captured-directory substitution guard
+[PASS] pitch mark generation accepts cancellation and bounded work without changing valid output
+
+11 passed, 0 failed
+<end of output>
+Test time =   0.28 sec
+----------------------------------------------------------
+Test Passed.
+"seam_manifest_draft_tests" end time: Sep 09 04:28 KST
+"seam_manifest_draft_tests" time elapsed: 00:00:00
+----------------------------------------------------------
+
+69/120 Testing: seam_wav_read_limits_tests
+69/120 Test: seam_wav_read_limits_tests
+Command: "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/release/seam_wav_read_limits_tests"
+Directory: /Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/release
+"seam_wav_read_limits_tests" start time: Sep 09 04:28 KST
+Output:
+----------------------------------------------------------
+[PASS] bounded WAV decoder checks PCM8 expansion frames channels and samples before allocation
+[PASS] bounded WAV decoder rejects hostile data lengths alignment and zero budgets
+[PASS] bounded and legacy WAV overloads produce identical legitimate PCM and path results
+[PASS] WAV cancellation takes precedence before parsing or file access
+[PASS] concurrent cancellation of active WAV decoding returns no partial PCM
+
+5 passed, 0 failed
+<end of output>
+Test time =   0.02 sec
+----------------------------------------------------------
+Test Passed.
+"seam_wav_read_limits_tests" end time: Sep 09 04:28 KST
+"seam_wav_read_limits_tests" time elapsed: 00:00:00
+----------------------------------------------------------
+
+70/120 Testing: seam_studio_sample_review_tests
+70/120 Test: seam_studio_sample_review_tests
+Command: "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/release/seam_studio_sample_review_tests"
+Directory: /Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/release
+"seam_studio_sample_review_tests" start time: Sep 09 04:28 KST
+Output:
+----------------------------------------------------------
+[PASS] Studio selected sample capture exposes exact material without assigning a reviewer or approving
+[PASS] Studio review requires explicit modal identity and rejects edits across all modal boundaries
+[PASS] Studio review selection round trips and reviewer changes cannot reuse a modal decision
+[PASS] Studio review capture cancels or discards stale asynchronous results without approval
+[PASS] Studio explicit acceptance publishes an actual new candidate and preserves producer input
+[PASS] Studio rejection and incomplete selected-unit review cannot publish a complete candidate
+[PASS] Studio loads an editable manifest asynchronously and rejects stale manifest picker results
+[PASS] Studio shutdown collects the actual decision outcome even when cancellation races commit
+[PASS] Studio review controls and paged evidence remain bounded at the minimum viewport
+
+9 passed, 0 failed
+<end of output>
+Test time =   0.59 sec
+----------------------------------------------------------
+Test Passed.
+"seam_studio_sample_review_tests" end time: Sep 09 04:28 KST
+"seam_studio_sample_review_tests" time elapsed: 00:00:00
+----------------------------------------------------------
+
+72/120 Testing: seam_production_ownership_tests
+72/120 Test: seam_production_ownership_tests
+Command: "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/release/seam_production_ownership_tests"
+Directory: /Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/release
+"seam_production_ownership_tests" start time: Sep 09 04:28 KST
+Output:
+----------------------------------------------------------
+[PASS] production edits bind the selected take instead of the first shared audio hash
+[PASS] production edits require exact parent revision even when a no-op preserves audio bytes
+[PASS] production edit rejects wrong input owner and missing target without durable changes
+[PASS] production edit rejects stale and locally mutated base snapshots
+[PASS] production audio edit invalidates only dependent current review status and keeps history
+[PASS] production staging checks take source authorization before DSP or staging output
+[PASS] production transform reports a recoverable commit after the pointer write fails
+[PASS] metadata edits bind actor and preserve their actual postcommit state
+
+8 passed, 0 failed
+<end of output>
+Test time =   0.99 sec
+----------------------------------------------------------
+Test Passed.
+"seam_production_ownership_tests" end time: Sep 09 04:28 KST
+"seam_production_ownership_tests" time elapsed: 00:00:00
+----------------------------------------------------------
+
+73/120 Testing: seam_production_staging_tests
+73/120 Test: seam_production_staging_tests
+Command: "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/release/seam_production_staging_tests"
+Directory: /Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/release
+"seam_production_staging_tests" start time: Sep 09 04:28 KST
+Output:
+----------------------------------------------------------
+[PASS] staged execution descriptor binds every request field and exact owner identity
+[PASS] recomputing staged project hash cannot rebind old PCM to a newer generation
+[PASS] copied staging files cannot rebind an execution descriptor to a different workspace
+[PASS] staged PCM24 bytes match the existing WAV writer for every supported operation
+[PASS] staged operation requires its original durable descriptor after reopening
+[PASS] staging refuses occupied outputs descriptors and interrupted private files without overwrite
+[PASS] concurrent same-ID stages have one winner and cannot truncate its executed audio
+[PASS] staging parent symlink cannot redirect writes outside the producer workspace
+[PASS] occupied symlink outputs and lock files cannot overwrite external targets
+[PASS] stage validation refuses replaced parent and symlinked descriptor or audio
+[PASS] staged audio tampering cannot be legitimized by recomputing the public digest
+[PASS] staged descriptor corruption cannot be treated as execution evidence
+
+12 passed, 0 failed
+<end of output>
+Test time =   0.58 sec
+----------------------------------------------------------
+Test Passed.
+"seam_production_staging_tests" end time: Sep 09 04:28 KST
+"seam_production_staging_tests" time elapsed: 00:00:00
+----------------------------------------------------------
+
+74/120 Testing: seam_production_import_outcome_tests
+74/120 Test: seam_production_import_outcome_tests
+Command: "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/release/seam_production_import_outcome_tests"
+Directory: /Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/release
+"seam_production_import_outcome_tests" start time: Sep 09 04:28 KST
+Output:
+----------------------------------------------------------
+[PASS] raw import rejects wrong journal action or subject before any asset or evidence writes
+[PASS] raw import returns a normal committed receipt without changing approval state
+[PASS] recoverably committed raw import preserves the actual migrated project and warns against retry
+[PASS] uncommitted generation-write failure retains caller state and does not return a commit receipt
+[PASS] failed stale import cannot misidentify a different recovered generation as its own commit
+[PASS] recoverably committed procedural import retains exact lineage and original generation recognition
+[PASS] recoverably committed generated batch returns all assets and one exact durable generation
+[PASS] cancelled procedural and batch imports return no receipt and leave caller project unchanged
+
+8 passed, 0 failed
+<end of output>
+Test time =   0.43 sec
+----------------------------------------------------------
+Test Passed.
+"seam_production_import_outcome_tests" end time: Sep 09 04:28 KST
+"seam_production_import_outcome_tests" time elapsed: 00:00:00
+----------------------------------------------------------
+
+75/120 Testing: seam_sample_review_cli_tests
+75/120 Test: seam_sample_review_cli_tests
+Command: "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/release/seam_sample_review_cli_tests"
+Directory: /Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/release
+"seam_sample_review_cli_tests" start time: Sep 09 04:28 KST
+Output:
+----------------------------------------------------------
+[PASS] CLI initializes and recovers a source-free draft without fabricated feasibility
+[PASS] CLI captured review publishes packages installs and exports a reopened new score without producer inputs
+[PASS] CLI review capture preserves occupied files and rejected or changed manifest cannot publish
+
+3 passed, 0 failed
+<end of output>
+Test time =   1.08 sec
+----------------------------------------------------------
+Test Passed.
+"seam_sample_review_cli_tests" end time: Sep 09 04:28 KST
+"seam_sample_review_cli_tests" time elapsed: 00:00:01
+----------------------------------------------------------
+
+77/120 Testing: seam_voicebank_production_tests
+77/120 Test: seam_voicebank_production_tests
+Command: "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/release/seam_voicebank_production_tests"
+Directory: /Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/release
+"seam_voicebank_production_tests" start time: Sep 09 04:28 KST
+Output:
+----------------------------------------------------------
+[PASS] sample review packet roundtrips bounded material and rejects tampering
+[PASS] sample review decisions atomically accept reject and retain previous history
+[PASS] sample review rejects stale edited media cancelled and invalid actor decisions
+[PASS] sequential sample unit reviews preserve independent approvals and bind changed unit material
+[PASS] multi-unit sample review validates every selected owner before saving any decision
+[PASS] available sample units can be reviewed while missing assignments cannot publish
+[PASS] concurrent sample review decisions cannot both advance one captured producer generation
+[PASS] reviewed sample candidate publishes exact effective audio markers pitch and source identity
+[PASS] sample candidate rejects changed review material and incomplete candidate coverage
+[PASS] sample candidate rejects unapproved stale and altered producer assets
+[PASS] sample candidate preserves occupied destinations and cleans failed staging
+[PASS] sample candidate cannot reuse approval after a later rejection or source edit
+[PASS] sample candidate locks the generation through its final publish
+[PASS] sample candidate manifest must fit the installed decoder before publication
+[PASS] sample candidate reopens staged manifest before the atomic commit
+[PASS] sample candidate rejects raw importer self review and unavailable original attribution
+[PASS] sample candidate reports committed state when parent durability cannot be confirmed
+[PASS] sample candidate cannot reattribute an import across a missing intermediate generation
+[PASS] certified aborted journal recovery preserves source origins through explicit review and publication
+[PASS] aborted recovery evidence cannot hide deleted committed or changed interrupted history
+[PASS] recovery never certifies a missing snapshot named by the durable published pointer
+[PASS] new parent journal links preserve complete legacy generation and journal bytes
+[PASS] production writers reject concurrent and stale durable bases
+[PASS] voicebank production project recovers staged deterministic work
+[PASS] voicebank production PCM operations are bounded and deterministic
+[PASS] production edits bind the selected take instead of the first shared audio hash
+[PASS] production edits require exact parent revision even when a no-op preserves audio bytes
+[PASS] production edit rejects wrong input owner and missing target without durable changes
+[PASS] production edit rejects stale and locally mutated base snapshots
+[PASS] production audio edit invalidates only dependent current review status and keeps history
+[PASS] production staging checks take source authorization before DSP or staging output
+[PASS] production transform reports a recoverable commit after the pointer write fails
+[PASS] metadata edits bind actor and preserve their actual postcommit state
+[PASS] empty source-free production drafts persist without feasibility claims
+[PASS] authorized experimental imports retain source evidence without granting candidate qualification
+[PASS] draft import requires actual source execution permission and unchanged evidence
+[PASS] shared audio keeps distinct immutable source and importer attribution across selection changes
+[PASS] legacy producer generations retain exact bytes and unknown origins when new imports migrate
+
+38 passed, 0 failed
+<end of output>
+Test time =   1.17 sec
+----------------------------------------------------------
+Test Passed.
+"seam_voicebank_production_tests" end time: Sep 09 04:28 KST
+"seam_voicebank_production_tests" time elapsed: 00:00:01
+----------------------------------------------------------
+
+105/120 Testing: seam_phase12c_live_tests
+105/120 Test: seam_phase12c_live_tests
+Command: "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/release/phase12c/seam_phase12c_live_tests"
+Directory: /Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/release/phase12c
+"seam_phase12c_live_tests" start time: Sep 09 04:28 KST
+Output:
+----------------------------------------------------------
+PHASE12C_LIVE_TESTS=PASS energy=13.7386 steals=3
+<end of output>
+Test time =   0.39 sec
+----------------------------------------------------------
+Test Passed.
+"seam_phase12c_live_tests" end time: Sep 09 04:28 KST
+"seam_phase12c_live_tests" time elapsed: 00:00:00
+----------------------------------------------------------
+
+106/120 Testing: seam_phase12c_matrix
+106/120 Test: seam_phase12c_matrix
+Command: "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/release/phase12c/seam_phase12c_matrix" "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/release/phase12c/matrix.json" "--plugin" "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/release/ProjectSEAMEditor.clap" "--bank" "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/assets/demo-human-voicebank-public-domain/production-bank" "--development-fixture"
+Directory: /Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/release/phase12c
+"seam_phase12c_matrix" start time: Sep 09 04:28 KST
+Output:
+----------------------------------------------------------
+execution=clap-plugin-process-v1 cases=336 failures=0
+<end of output>
+Test time =   4.12 sec
+----------------------------------------------------------
+Test Passed.
+"seam_phase12c_matrix" end time: Sep 09 04:28 KST
+"seam_phase12c_matrix" time elapsed: 00:00:04
+----------------------------------------------------------
+
+107/120 Testing: seam_phase12c_allocation_probe
+107/120 Test: seam_phase12c_allocation_probe
+Command: "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/release/phase12c/seam_phase12c_allocation_probe"
+Directory: /Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/release/phase12c
+"seam_phase12c_allocation_probe" start time: Sep 09 04:28 KST
+Output:
+----------------------------------------------------------
+blocks=100000 allocations=0
+<end of output>
+Test time =   1.22 sec
+----------------------------------------------------------
+Test Passed.
+"seam_phase12c_allocation_probe" end time: Sep 09 04:28 KST
+"seam_phase12c_allocation_probe" time elapsed: 00:00:01
+----------------------------------------------------------
+
+108/120 Testing: seam_phase12c_cancellation_storm
+108/120 Test: seam_phase12c_cancellation_storm
+Command: "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/release/phase12c/seam_phase12c_cancellation_storm"
+Directory: /Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/release/phase12c
+"seam_phase12c_cancellation_storm" start time: Sep 09 04:28 KST
+Output:
+----------------------------------------------------------
+submitted=10000 published=10000
+<end of output>
+Test time =   0.01 sec
+----------------------------------------------------------
+Test Passed.
+"seam_phase12c_cancellation_storm" end time: Sep 09 04:28 KST
+"seam_phase12c_cancellation_storm" time elapsed: 00:00:00
+----------------------------------------------------------
+
+109/120 Testing: seam_phase12c_soak_smoke
+109/120 Test: seam_phase12c_soak_smoke
+Command: "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/release/phase12c/seam_phase12c_soak" "--profile" "smoke" "--output" "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/release/phase12c/soak-smoke.json" "--plugin" "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/release/ProjectSEAMEditor.clap" "--bank" "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/assets/demo-human-voicebank-public-domain/production-bank"
+Directory: /Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/release/phase12c
+"seam_phase12c_soak_smoke" start time: Sep 09 04:28 KST
+Output:
+----------------------------------------------------------
+profile=smoke elapsed=5 blocks=35861 noteOns=2905 noteOffs=843 transitions=0 midi=281 steals=275 result=PASS
+<end of output>
+Test time =   5.37 sec
+----------------------------------------------------------
+Test Passed.
+"seam_phase12c_soak_smoke" end time: Sep 09 04:28 KST
+"seam_phase12c_soak_smoke" time elapsed: 00:00:05
+----------------------------------------------------------
+
+110/120 Testing: seam_phase12c_canonical_contract
+110/120 Test: seam_phase12c_canonical_contract
+Command: "/usr/local/bin/python3" "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/scripts/verify_phase12c_canonical_contract.py" "--root" "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master"
+Directory: /Users/lhs/Downloads/project-seam-usable-alpha-u3-master
+"seam_phase12c_canonical_contract" start time: Sep 09 04:28 KST
+Output:
+----------------------------------------------------------
+{
+  "contract": "phase12c-canonical-clap-v1",
+  "errors": [],
+  "evidenceScope": "engineering",
+  "pluginId": "com.project-seam.editor",
+  "releaseEligible": false,
+  "schemaVersion": 1,
+  "source": {
+    "root": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master"
+  },
+  "status": "PASS"
+}
+<end of output>
+Test time =   0.05 sec
+----------------------------------------------------------
+Test Passed.
+"seam_phase12c_canonical_contract" end time: Sep 09 04:28 KST
+"seam_phase12c_canonical_contract" time elapsed: 00:00:00
+----------------------------------------------------------
+
+111/120 Testing: seam_phase12c_matrix_evidence
+111/120 Test: seam_phase12c_matrix_evidence
+Command: "/usr/local/bin/python3" "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/scripts/verify_phase12c_canonical_contract.py" "--root" "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master" "--plugin" "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/release/ProjectSEAMEditor.clap" "--bank" "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/assets/demo-human-voicebank-public-domain/production-bank" "--matrix" "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/release/phase12c/matrix.json"
+Directory: /Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/release/phase12c
+"seam_phase12c_matrix_evidence" start time: Sep 09 04:28 KST
+Output:
+----------------------------------------------------------
+{
+  "contract": "phase12c-canonical-clap-v1",
+  "errors": [],
+  "evidenceScope": "engineering",
+  "matrix": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/release/phase12c/matrix.json",
+  "plugin": {
+    "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/release/ProjectSEAMEditor.clap",
+    "sha256": "2a8d0b5f200c4d3ebdec46fe38c3fbd4d2017c13fa429bd544588058b4e4be5b"
+  },
+  "pluginId": "com.project-seam.editor",
+  "releaseEligible": false,
+  "schemaVersion": 1,
+  "source": {
+    "root": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master"
+  },
+  "status": "PASS",
+  "voicebank": {
+    "id": "demo.public-domain.human.production",
+    "path": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/assets/demo-human-voicebank-public-domain/production-bank",
+    "treeSha256": "ec3dcff35069bbc2f2f8acfb78250265c75dd4f9bf641e4ec3530e1eec1d53f3",
+    "version": "0.12.0"
+  }
+}
+<end of output>
+Test time =   0.06 sec
+----------------------------------------------------------
+Test Passed.
+"seam_phase12c_matrix_evidence" end time: Sep 09 04:28 KST
+"seam_phase12c_matrix_evidence" time elapsed: 00:00:00
+----------------------------------------------------------
+
+112/120 Testing: seam_phase12c_matrix_admission
+112/120 Test: seam_phase12c_matrix_admission
+Command: "/usr/local/bin/python3" "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/tests/test_phase12c_matrix_host.py" "--runner" "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/release/phase12c/seam_phase12c_matrix" "--plugin" "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/release/ProjectSEAMEditor.clap" "--bank" "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/assets/demo-human-voicebank-public-domain/production-bank"
+Directory: /Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/release/phase12c
+"seam_phase12c_matrix_admission" start time: Sep 09 04:28 KST
+Output:
+----------------------------------------------------------
+....
+----------------------------------------------------------------------
+Ran 4 tests in 3.689s
+
+OK
+<end of output>
+Test time =   3.74 sec
+----------------------------------------------------------
+Test Passed.
+"seam_phase12c_matrix_admission" end time: Sep 09 04:28 KST
+"seam_phase12c_matrix_admission" time elapsed: 00:00:03
+----------------------------------------------------------
+
+End testing: Sep 09 04:28 KST

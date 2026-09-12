@@ -350,13 +350,14 @@ typedef struct clap_event_note {
   double velocity;
 } clap_event_note_t;
 
+typedef int32_t clap_note_expression;
 typedef struct clap_event_note_expression {
   clap_event_header_t header;
+  clap_note_expression expression_id;
   int32_t note_id;
   int16_t port_index;
   int16_t channel;
   int16_t key;
-  int32_t expression_id;
   double value;
 } clap_event_note_expression_t;
 
@@ -364,10 +365,10 @@ enum {
   CLAP_NOTE_EXPRESSION_VOLUME = 0,
   CLAP_NOTE_EXPRESSION_PAN = 1,
   CLAP_NOTE_EXPRESSION_TUNING = 2,
-  CLAP_NOTE_EXPRESSION_PRESSURE = 3,
-  CLAP_NOTE_EXPRESSION_VIBRATO = 4,
-  CLAP_NOTE_EXPRESSION_EXPRESSION = 5,
-  CLAP_NOTE_EXPRESSION_BRIGHTNESS = 6,
+  CLAP_NOTE_EXPRESSION_VIBRATO = 3,
+  CLAP_NOTE_EXPRESSION_EXPRESSION = 4,
+  CLAP_NOTE_EXPRESSION_BRIGHTNESS = 5,
+  CLAP_NOTE_EXPRESSION_PRESSURE = 6,
 };
 
 typedef struct clap_event_midi {

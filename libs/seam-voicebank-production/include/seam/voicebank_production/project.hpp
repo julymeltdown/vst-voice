@@ -1,5 +1,7 @@
 #pragma once
 
+#include "seam/core/result.hpp"
+
 #include <cstddef>
 #include <cstdint>
 #include <map>
@@ -9,11 +11,13 @@
 
 namespace seam::voicebank_production {
 
-inline constexpr std::int64_t kProductionProjectSchemaVersion = 1;
+inline constexpr std::int64_t kProductionProjectSchemaVersion = 2;
+inline constexpr std::int64_t kProductionAssessmentSchemaVersion = 3;
 inline constexpr const char* kProductionProjectFormat =
     "com.project-seam.voicebank-production";
 
 enum class SourceStrategyKind { HumanRecording, ProceduralSynthesis, TtsDerived };
+enum class ProductionLifecycle { LegacyUnclassified, Draft, Experimental, Qualified };
 enum class Feasibility { Pass, Blocked, NotAssessed };
 enum class AssetKind { Raw, Derived };
 enum class UnitQueueState {
@@ -39,6 +43,7 @@ struct RightsPermissions final {
   bool transformation{false};
   bool singingBankRedistribution{false};
   bool commercialRenders{false};
+  friend bool operator==(const RightsPermissions&, const RightsPermissions&) = default;
 };
 
 struct SourceStrategyAssessment final {
@@ -51,16 +56,40 @@ struct SourceStrategyAssessment final {
   std::string licenseLocator;
   std::string licenseSha256;
   std::string evidenceState;
+  friend bool operator==(const SourceStrategyAssessment&, const SourceStrategyAssessment&) = default;
 };
 
-struct AssetRecord final {
+// One immutable ingress binding per take, independent of shared audio blobs.
+// The original locator remains attribution; a hash-addressed evidence copy
+// makes the captured policy inspectable after the selected strategy changes.
+struct TakeSourceBinding final {
+  std::string id;
+  std::string takeId;
+  std::string rawAssetSha256;
+  SourceStrategyAssessment strategy;
+  std::string importerId;
+  std::string importedAtUtc;
+  std::string licenseSnapshotPath;
+  friend bool operator==(const TakeSourceBinding&, const TakeSourceBinding&) = default;
+};
+
+// Append-only reviewer decisions. They never change captured ingress rights.
+struct SourceQualityAssessment final {
+  std::string id, strategyId, policySha256, materialSha256;
+  std::string evidenceSha256, reviewerId, reviewedAtUtc;
+  Feasibility coverage{Feasibility::NotAssessed};
+  Feasibility listening{Feasibility::NotAssessed};
+  friend bool operator==(const SourceQualityAssessment&, const SourceQualityAssessment&) = default;
+};
+
+struct AssetRecord {
   std::string sha256;
   std::string relativePath;
   std::uint64_t byteSize{0U};
   AssetKind kind{AssetKind::Raw};
 };
 
-struct DerivedRevision final {
+struct DerivedRevision {
   std::string revisionId;
   std::string inputSha256;
   std::string outputSha256;
@@ -71,7 +100,7 @@ struct DerivedRevision final {
   std::string performedAtUtc;
 };
 
-struct MetadataRevision final {
+struct MetadataRevision {
   std::string revisionId;
   std::string takeId;
   std::string rawAssetSha256;
@@ -90,6 +119,9 @@ struct TakeRecord final {
   std::vector<std::string> derivedRevisionIds;
   std::string supersedesTakeId;
   UnitQueueState state{UnitQueueState::MarkerReview};
+  // Empty means unknown legacy/unattributed origin, never implicit ownership
+  // by the project's currently selected source strategy.
+  std::string sourceBindingId;
 };
 
 struct UnitAssignment final {
@@ -141,6 +173,9 @@ struct VoicebankProductionProject final {
   std::vector<OperatorRecord> operators;
   std::vector<ReviewRecord> reviews;
   std::uint64_t lastDurableGeneration{0U};
+  ProductionLifecycle lifecycle{ProductionLifecycle::Draft};
+  std::vector<TakeSourceBinding> sourceBindings;
+  std::vector<SourceQualityAssessment> sourceQualityAssessments;
 };
 
 struct ProductionQueueSummary final {
@@ -158,6 +193,13 @@ struct ProductionQueueSummary final {
 [[nodiscard]] bool isProductionJournalAction(std::string_view value) noexcept;
 [[nodiscard]] bool selectedStrategyReady(
     const VoicebankProductionProject& project) noexcept;
+// Execution admission never requires coverage or listening PASS. The caller
+// must separately verify the retained evidence bytes through the repository.
+[[nodiscard]] core::Result<void> requireSelectedSourceExecution(const VoicebankProductionProject& project);
+[[nodiscard]] core::Result<void> requireTakeSourceExecution(const VoicebankProductionProject& project, std::string_view takeId);
+[[nodiscard]] core::Result<void> requireTakeSourceQualification(const VoicebankProductionProject& project, std::string_view takeId);
+void invalidateProductionQualification(VoicebankProductionProject& project) noexcept;
+[[nodiscard]] std::string toString(ProductionLifecycle value);
 [[nodiscard]] std::string toString(SourceStrategyKind value);
 [[nodiscard]] std::string toString(Feasibility value);
 [[nodiscard]] std::string toString(AssetKind value);

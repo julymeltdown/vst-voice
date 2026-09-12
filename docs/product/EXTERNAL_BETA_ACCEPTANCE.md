@@ -45,9 +45,11 @@ the separate existing 400 ms preview workload.
 The closed evidence envelope explicitly declares a hash-bound
 `fullProductReport` reference for EB-009. Its
 [typed schema](full-product-beta-evidence.schema.json) cannot certify musical
-or product completion. Until U45 implements semantic artifact validation,
-READY and CLOSED always report the explicit EB-009 unavailable-validator
-failure, including for fabricated PASS summaries.
+or product completion. U45 now performs bounded report reading, schema
+validation, identity binding, exact case/check coverage, and raw-file
+rehashing when a report is supplied. A candidate that omits the reference
+still receives the explicit unavailable-validator diagnostic; a referenced
+report is rejected on malformed, stale, incomplete, or unresolved content.
 
 ## Closure contract
 

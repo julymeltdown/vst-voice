@@ -66,6 +66,10 @@ native_ui::NativeKey keyFor(NSEvent* event) noexcept {
     case 36:
     case 76: return native_ui::NativeKey::Enter;
     case 53: return native_ui::NativeKey::Escape;
+    case 48: return native_ui::NativeKey::Tab;
+    case 0: return native_ui::NativeKey::A;
+    case 45: return native_ui::NativeKey::N;
+    case 15: return native_ui::NativeKey::R;
     case 51: return native_ui::NativeKey::Backspace;
     case 117: return native_ui::NativeKey::Delete;
     case 123: return native_ui::NativeKey::Left;
@@ -400,9 +404,29 @@ public:
   }
 
   void commitText() noexcept {
-    if (view_ == nil || view_.editField == nil) return;
-    runtime_.textCommit(utf32(view_.editField.stringValue));
+    if (!nativeTextActive_ || view_ == nil || view_.editField == nil || !runtime_.textInputActive()) return;
+    auto text = utf32(view_.editField.stringValue);
+    // Retire this field before the runtime callback can open its successor.
     endTextInput();
+    runtime_.textCommit(std::move(text));
+  }
+
+  bool textCommand(SEL selector) noexcept {
+    if (!nativeTextActive_ || view_ == nil || view_.editField == nil) return false;
+    if (selector == @selector(insertNewline:) || selector == @selector(insertNewlineIgnoringFieldEditor:)) {
+      commitText(); return true;
+    }
+    if (selector == @selector(cancelOperation:)) {
+      endTextInput(); runtime_.textCancel(); return true;
+    }
+    if (selector == @selector(insertTab:) || selector == @selector(insertBacktab:)) {
+      runtime_.textComposition(utf32(view_.editField.stringValue), {});
+      endTextInput();
+      runtime_.keyDown({.key = native_ui::NativeKey::Tab,
+                       .modifiers = {.shift = selector == @selector(insertBacktab:)}});
+      return true;
+    }
+    return false;
   }
 
 private:
@@ -451,17 +475,22 @@ private:
                                        std::max(24.0, request.logicalBounds.height));
     const auto utf8 = domain::toUtf8(request.currentText);
     view_.editField.stringValue = [NSString stringWithUTF8String:utf8.c_str()];
+    nativeTextActive_ = true;
     view_.editField.hidden = NO;
     [view_.window makeFirstResponder:view_.editField];
   }
 
   void endTextInput() noexcept {
-    if (view_ == nil || view_.editField == nil) return;
+    if (!nativeTextActive_ || view_ == nil || view_.editField == nil) return;
+    // Responder changes may synchronously deliver didEndEditing. That callback
+    // must not commit this field twice or recurse during cancellation.
+    nativeTextActive_ = false;
     view_.editField.hidden = YES;
     [view_.window makeFirstResponder:view_];
   }
 
   EditorRuntime& runtime_;
+  bool nativeTextActive_{false};
   NSView* __strong parent_{nil};
   SeamClapChildView* __strong view_{nil};
   native_ui::PixelSurface surface_;
@@ -568,7 +597,7 @@ private:
 }
 - (NSString*)accessibilityIdentifier { return _identifier; }
 - (id)accessibilityTitle { return _title; }
-- (id)accessibilityValue { return _value.length == 0U ? nil : _value; }
+- (id)accessibilityValue { return _editable || _value.length != 0U ? _value : nil; }
 - (void)setAccessibilityValue:(id)value {
   [self seamApplyAccessibilityValue:value];
 }
@@ -748,6 +777,11 @@ private:
 - (void)controlTextDidEndEditing:(NSNotification*)notification {
   (void)notification;
   if (owner_ != nullptr) owner_->commitText();
+}
+- (BOOL)control:(NSControl*)control textView:(NSTextView*)textView doCommandBySelector:(SEL)selector {
+  (void)control;
+  (void)textView;
+  return owner_ != nullptr && owner_->textCommand(selector);
 }
 @end
 

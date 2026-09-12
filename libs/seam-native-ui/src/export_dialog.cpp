@@ -18,7 +18,7 @@ core::Result<void> ExportDialogModel::preflight(
     issues_.push_back(ExportPreflightIssue{true, "DESTINATION_EMPTY",
                                            "Choose an export destination"});
   }
-  if (!settings_.includeMaster && !settings_.includeStems) {
+  if (!settings_.includeMaster && !settings_.includeStems && !settings_.includeProceduralCandidates) {
     issues_.push_back(ExportPreflightIssue{true, "NO_OUTPUTS",
                                            "Select a master or at least one stem"});
   }

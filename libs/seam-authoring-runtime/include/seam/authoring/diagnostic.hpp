@@ -37,6 +37,14 @@ struct Diagnostic final {
   std::vector<std::string> affectedIds;
   std::vector<DiagnosticAction> actions;
   std::size_t occurrenceCount{1U};
+  std::string detail;
+  bool detailTruncated{false};
+  bool detailEscaped{false};
+  std::string detailSourceHash;
+  static constexpr std::size_t maximumDetailBytes = 4096U;
+  void setDetail(std::string_view text);
+  [[nodiscard]] bool sameIssueAs(const Diagnostic& other) const noexcept;
+  void addOccurrences(std::size_t additional) noexcept;
 };
 
 class DiagnosticRegistry final {

@@ -2,14 +2,15 @@ from ._production_candidate import validate_candidate_export, validate_retake_cl
 from ._production_common import ProductionResult, canonical_json, sha256_file, sha256_json
 from ._production_lock import create_beta_lock, validate_beta_lock
 from ._production_session import validate_recording_session
-from ._production_workspace import initialize_production_workspace, validate_production_workspace
-from ._source_admission import validate_source_strategy_document
+from ._production_workspace import initialize_production_workspace, prepare_production_draft_definition, validate_production_draft_workspace, validate_production_workspace
+from ._source_admission import validate_source_execution, validate_source_strategy_document, validate_source_strategy_draft
 
 __all__ = [
     "ProductionResult",
     "canonical_json",
     "create_beta_lock",
     "initialize_production_workspace",
+    "prepare_production_draft_definition",
     "sha256_file",
     "sha256_json",
     "validate_beta_lock",
@@ -17,7 +18,10 @@ __all__ = [
     "validate_recording_session",
     "validate_retake_closure",
     "validate_production_workspace",
+    "validate_production_draft_workspace",
     "validate_source_strategy_document",
+    "validate_source_strategy_draft",
+    "validate_source_execution",
 ]
 
 

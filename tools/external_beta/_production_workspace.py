@@ -12,6 +12,7 @@ from tools.voicebank_script_generator import production_assignments, validate_in
 
 from ._production_common import ProductionResult, is_hex_digest, is_timestamp, sha256_file
 from ._source_admission import validate_source_strategy_document
+from ._source_admission import validate_source_strategy_draft
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
@@ -37,10 +38,56 @@ def _project_strategy(item: dict[str, Any], root: Path) -> dict[str, Any]:
         "coverage": item["coverage"],
         "listening": item["listening"],
         "permissions": dict(item["permissions"]),
-        "licenseLocator": str((root / item["licenseLocator"]).resolve()),
+        "licenseLocator": str((root / item["licenseLocator"]).resolve()) if item["licenseLocator"] else "",
         "licenseSha256": item["licenseSha256"],
         "evidenceState": item["evidenceState"],
     }
+
+
+def prepare_production_draft_definition(
+    inventory: dict[str, Any] | None,
+    strategies: dict[str, Any] | None,
+    *,
+    project_id: str,
+    operator_id: str,
+    repository_root: Path = REPOSITORY_ROOT,
+) -> dict[str, Any]:
+    """Prepare schema-2 input for the C++ init-production writer; create no workspace."""
+    if not isinstance(project_id, str) or not project_id or not isinstance(operator_id, str) or not operator_id:
+        raise ValueError("project_id and operator_id are required")
+    if inventory is not None:
+        inventory_errors = validate_inventory(inventory)
+        if inventory_errors:
+            raise ValueError("invalid draft inventory: " + "; ".join(inventory_errors))
+    strategies = strategies if strategies is not None else {
+        "schemaVersion": 2, "status": "DRAFT", "assetAdmissionStatus": "NOT_RUN", "selectedStrategyId": "", "strategies": [],
+    }
+    validation = validate_source_strategy_draft(strategies, repository_root)
+    if not validation.passed:
+        raise ValueError("invalid source draft: " + "; ".join(validation.errors))
+    selected = next((item for item in strategies["strategies"] if item["id"] == strategies["selectedStrategyId"]), None)
+    return {
+        "format": "com.project-seam.voicebank-production", "schemaVersion": 2, "lifecycle": "DRAFT",
+        "projectId": project_id, "inventoryId": inventory["profileId"] if inventory else "",
+        "inventorySha256": inventory["inventorySha256"] if inventory else "",
+        "selectedSourceStrategyId": selected["id"] if selected else "",
+        "licenseLocator": str((repository_root / selected["licenseLocator"]).resolve()) if selected and selected["licenseLocator"] else "",
+        "licenseSha256": selected["licenseSha256"] if selected else "",
+        "immutableAssetRoot": "assets", "sourceStrategies": [_project_strategy(item, repository_root) for item in strategies["strategies"]],
+        "assets": [], "takes": [], "derivedRevisions": [], "metadataRevisions": [], "reviews": [], "sourceBindings": [],
+        "unitAssignments": production_assignments(inventory) if inventory else [],
+        "operators": [{"operatorId": operator_id, "role": "PRODUCER"}], "lastDurableGeneration": 0,
+    }
+
+
+def validate_production_draft_workspace(
+    workspace: Path,
+    inventory: dict[str, Any] | None = None,
+) -> ProductionResult:
+    """Read-only source-aware persistence verification; never a release gate."""
+    from ._production_draft_validation import validate_draft_workspace
+
+    return validate_draft_workspace(workspace, inventory)
 
 
 def initialize_production_workspace(

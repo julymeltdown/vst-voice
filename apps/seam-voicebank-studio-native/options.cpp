@@ -61,6 +61,8 @@ std::optional<voicebank_production::OperationKind> parseOperation(
 
 void printUsage() {
   std::cout << "Usage: seam_voicebank_studio_native [--manifest PATH] [options]\n"
+            << "  No arguments opens Voice Designer without microphone input.\n"
+            << "  --designer                start in Voice Designer\n"
             << "  --production-project PATH  recover a production workspace\n"
             << "  --inventory-sha256 HEX     require the exact inventory digest\n"
             << "  --operator-id ID           bind production journal records\n"
@@ -83,13 +85,16 @@ void printUsage() {
 
 std::optional<Options> parseOptions(int argc, char** argv) {
   Options options;
+  options.startDesigner = argc == 1;
   for (int index = 1; index < argc; ++index) {
     const std::string_view arg{argv[index]};
     if (arg == "--help") {
       printUsage();
       return std::nullopt;
     }
-    if (arg == "--manifest" && index + 1 < argc) {
+    if (arg == "--designer") {
+      options.startDesigner = true;
+    } else if (arg == "--manifest" && index + 1 < argc) {
       options.manifest = std::filesystem::path{argv[++index]};
     } else if (arg == "--production-project" && index + 1 < argc) {
       options.productionProject = std::filesystem::path{argv[++index]};
@@ -149,6 +154,7 @@ std::optional<Options> parseOptions(int argc, char** argv) {
       }
       if (arg == "--window-width") options.windowWidth = *value;
       else options.windowHeight = *value;
+      options.windowSizeSpecified = true;
     } else if (arg == "--force-synthetic-input") {
       options.forceSyntheticInput = true;
     } else if ((arg == "--record-ms" || arg == "--auto-close-ms") &&
@@ -167,7 +173,8 @@ std::optional<Options> parseOptions(int argc, char** argv) {
       return std::nullopt;
     }
   }
-  if ((options.manifest.empty() && !options.productionProject.has_value()) ||
+  if ((options.manifest.empty() && !options.productionProject.has_value() && !options.startDesigner) ||
+      (options.manifest.empty() && !options.productionProject.has_value() && options.recordDuration.count() > 0) ||
       (options.recordDuration.count() > 0 && options.autoClose.count() > 0)) {
     return std::nullopt;
   }

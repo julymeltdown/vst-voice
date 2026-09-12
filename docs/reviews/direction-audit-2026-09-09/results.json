@@ -1,0 +1,173 @@
+{
+  "auditDate": "2026-09-09",
+  "branch": "codex/production-readiness-completion",
+  "head": "741ae2f244b9d3ff8eb6f31dc1f73cae54ea974d",
+  "scope": "Current local worktree; read-only production-code review. Existing prior-turn patches preserved.",
+  "beforeReportArtifacts": {
+    "changedPaths": 446,
+    "trackedChangedPaths": 181,
+    "untrackedPaths": 265,
+    "trackedDiff": {
+      "insertions": 19757,
+      "deletions": 808
+    },
+    "changedPathsByRoot": {
+      "root": 2,
+      "apps": 4,
+      "docs": 67,
+      "libs": 267,
+      "phase12c": 7,
+      "tests": 86,
+      "third_party": 2,
+      "tools": 9,
+      "scripts": 2
+    },
+    "sourceClosureMissingInputs": 265
+  },
+  "contract": {
+    "implementationUnits": 48,
+    "ledgerLocallyAcceptedUnits": [
+      "U1",
+      "U2",
+      "U3",
+      "U4",
+      "U5"
+    ],
+    "currentAcceptanceCaveat": "U4 regressions reproduced; historical acceptance is not renewed by this audit.",
+    "requirements": 20,
+    "cases": 83,
+    "releasedResources": 0,
+    "unresolvedEmpiricalCriteria": 11
+  },
+  "bank": {
+    "path": "assets/demo-human-voicebank-public-domain/production-bank/manifest.json",
+    "unitCount": 8,
+    "uniqueAudioPaths": [
+      "audio/human-vowel-demo.wav"
+    ],
+    "rootMidi": [
+      67
+    ],
+    "classification": "technical fixture, not qualified singer"
+  },
+  "currentBuild": {
+    "command": "cmake --build build/release --target seam_tests seam_language_phonemizer_tests seam_voice_design_tests seam_performance_snapshot_tests -j 4",
+    "exitCode": 1,
+    "diagnostic": "tests/test_phase12c_clap_events.cpp:4 includes clap.h:65 CLAP_VERSION_INIT; three errors: use of old-style cast [-Werror,-Wold-style-cast]",
+    "causeBoundary": "unfinished prior implementation ABI test patch; not repaired during review"
+  },
+  "focusedBuild": {
+    "command": "cmake --build build/release --target seam_language_phonemizer_tests seam_voice_design_tests seam_performance_snapshot_tests seam_neural_worker_protocol_tests -j 4",
+    "exitCode": 0
+  },
+  "focusedCpp": [
+    {
+      "target": "seam_language_phonemizer_tests",
+      "passed": 5,
+      "failed": 0,
+      "exitCode": 0
+    },
+    {
+      "target": "seam_voice_design_tests",
+      "passed": 12,
+      "failed": 0,
+      "exitCode": 0
+    },
+    {
+      "target": "seam_performance_snapshot_tests",
+      "passed": 42,
+      "failed": 0,
+      "exitCode": 0
+    },
+    {
+      "target": "seam_neural_worker_protocol_tests",
+      "passed": 5,
+      "failed": 0,
+      "exitCode": 0
+    }
+  ],
+  "pythonTests": [
+    {
+      "command": "python3 -m unittest discover -s tests/external_beta -p test_phase12c_canonical_contract.py",
+      "passed": 15,
+      "exitCode": 0
+    },
+    {
+      "command": "python3 -m unittest discover -s tests/external_beta -p test_full_product_report.py",
+      "passed": 5,
+      "exitCode": 0
+    }
+  ],
+  "canonicalEvidenceCheck": {
+    "command": "python3 scripts/verify_phase12c_canonical_contract.py --plugin build/release/ProjectSEAMEditor.clap --bank assets/demo-human-voicebank-public-domain/production-bank --matrix build/release/phase12c/matrix.json --soak build/release/phase12c/soak-smoke.json",
+    "exitCode": 3,
+    "status": "BLOCKED",
+    "releaseEligible": false,
+    "errors": [
+      "canonical matrix executionPath must be clap-plugin-process-v1; linked-engine evidence is not canonical plugin execution",
+      "canonical matrix resourceMode must be development-fixture or installed-bank",
+      "canonical matrix sourceCommit must be a nonzero full Git commit digest",
+      "canonical matrix rowResults must contain exactly 336 independently executed rows",
+      "canonical soak executionPath must be clap-plugin-process-v1; linked-engine evidence is not canonical plugin execution",
+      "canonical soak resourceMode must be development-fixture or installed-bank",
+      "canonical soak sourceCommit must be a nonzero full Git commit digest",
+      "canonical soak transitionHits must be positive"
+    ]
+  },
+  "negativeControl": {
+    "input": "A text file, not a CLAP binary, passed as --plugin",
+    "target": "build/release/phase12c/seam_phase12c_matrix",
+    "exitCode": 0,
+    "stdout": "cases=336 fail=0 energy=57.5934",
+    "jsonResult": "PASS",
+    "meaning": "Runner hashes provided plugin bytes but only executes its linked engine; not a pass of the product requirement."
+  },
+  "languageProbe": {
+    "source": "docs/reviews/direction-audit-2026-09-09/language_probe.cpp",
+    "exitCode": 0,
+    "stdout": [
+      "en invalid_context_applied=1 orphan_warning=0",
+      "ko invalid_context_applied=1 orphan_warning=0",
+      "ja_to_ko unresolved=0 context_replaced=1",
+      "pre_cancelled_mixed_error=A region cannot mix explicit English, Korean and Japanese pronunciation services"
+    ],
+    "meaning": "Diagnostic successfully reproduced product defects. Exit zero is not product PASS."
+  },
+  "historicalOnly": {
+    "path": "build/release/Testing/Temporary/LastTest.log",
+    "timeWindow": "2026-09-09 00:03–00:05 KST",
+    "tests": 108,
+    "passed": 107,
+    "failed": [
+      "seam_tracked_source_closure"
+    ],
+    "missingSourceInputs": 264
+  },
+  "notRun": [
+    "current full CTest after interrupted ABI patch",
+    "actual canonical binary process matrix",
+    "official clap-validator",
+    "7200-second installed plugin soak",
+    "DAW host matrix",
+    "independent listening/creator study",
+    "new native visual QA",
+    "model training"
+  ],
+  "modelsSearch": {
+    "roots": [
+      "assets",
+      "build"
+    ],
+    "extensions": [
+      ".onnx",
+      ".safetensors",
+      ".pt",
+      ".pth"
+    ],
+    "matches": 0,
+    "scopeCaveat": "Not a full-disk absence claim."
+  },
+  "checks": {
+    "gitDiffCheckExit": 0
+  }
+}

@@ -5,6 +5,7 @@
 #include "seam/phonemizer/japanese_phonemizer.hpp"
 #include "seam/voicebank/catalog.hpp"
 
+#include <algorithm>
 #include <chrono>
 #include <filesystem>
 #include <iostream>
@@ -25,7 +26,7 @@ std::shared_ptr<const seam::clap_editor::RenderedPreview> waitReady(
     }
     std::this_thread::sleep_for(std::chrono::milliseconds{5});
   }
-  return runtime.renderedPreview();
+  return nullptr;
 }
 
 void addNotes(seam::application::ProjectFactory& factory,
@@ -132,6 +133,41 @@ int main() {
                                  domain::UnitRendererKind::SpectralClassic)) {
     return 14;
   }
+  // The original fixture edits the interior end of /k/ while forcing /k o/.
+  // Without source alignment that unit cannot render this edit. Previously a
+  // partial Preview (other successful phrases) was mistaken for complete Final.
+  const auto partialFinal = runtime.prepareOfflineRender(std::chrono::seconds{30});
+  if (partialFinal || runtime.offlineRenderReady() || runtime.acquireOfflineRenderedPreview() ||
+      partialFinal.error().message.find("interior phoneme timing edit") == std::string::npos) {
+    std::cerr << "unsupported interior edit was not rejected as incomplete Final";
+    if (!partialFinal) std::cerr << ": " << partialFinal.error().message;
+    std::cerr << '\n';
+    return 38;
+  }
+  // Undo both experimental actions through the real edit history, then use the
+  // supported nucleus-start boundary for the successful offline lifecycle.
+  for (int action = 0; action < 2; ++action) runtime.keyDown(native_ui::KeyEvent{
+      .key = native_ui::NativeKey::Z, .modifiers = native_ui::InputModifiers{.control = true}});
+  if (runtime.projectCopy() != activeProject) {
+    std::cerr << "undo did not restore the exact pre-experiment project\n";
+    return 39;
+  }
+  // Undo schedules a replacement render. A retained partial publication has
+  // no plan for the previously failed phrase and cannot authorize selection.
+  const auto restoredPreview = waitReady(runtime);
+  if (!restoredPreview || std::none_of(restoredPreview->unitPlan.begin(), restoredPreview->unitPlan.end(),
+      [&](const auto& entry) { return entry.unitId == unitEntry.unitId && entry.tokenStart == unitEntry.tokenStart; })) {
+    std::cerr << "undo did not publish a current selectable unit plan\n";
+    return 41;
+  }
+  const auto begin = phonemes.tokens.begin() + static_cast<std::ptrdiff_t>(unitEntry.tokenStart);
+  const auto end = begin + static_cast<std::ptrdiff_t>(std::min<std::size_t>(
+      unitEntry.tokenCount, phonemes.tokens.size() - unitEntry.tokenStart));
+  const auto nucleus = std::find_if(begin, end, [](const auto& token) {
+    return token.role == domain::PhonemeRole::Nucleus;
+  });
+  if (nucleus == end || !runtime.selectUnitVariant(key, unitEntry.unitId, domain::UnitRendererKind::SpectralClassic) ||
+      !runtime.movePhonemeBoundary(nucleus->key, true, time::Microseconds{45000})) return 40;
   if (!runtime.upsertPitchPoint(domain::PitchAutomationPoint{
           .tick = time::Tick{240}, .cents = 32.0F,
           .interpolation = domain::CurveInterpolation::Linear})) {
@@ -160,14 +196,80 @@ int main() {
 
   runtime.setRenderQuality(rendering::RenderQuality::Final);
   if (runtime.renderQuality() != rendering::RenderQuality::Final) return 20;
+  const auto offlinePrepared = runtime.prepareOfflineRender(
+      std::chrono::seconds{30});
+  const auto offlineView = runtime.offlineRenderView();
+  if (!offlinePrepared ||
+      offlineView.state != clap_editor::OfflineRenderState::Ready ||
+      !offlineView.hasAudio || offlineView.identity.projectRevision !=
+          runtime.revision()) {
+    std::cerr << "initial Final preparation failed: result=" << static_cast<bool>(offlinePrepared)
+              << " state=" << clap_editor::OfflineRenderSession::stateName(offlineView.state)
+              << " diagnostic=" << offlineView.diagnostic
+              << " identityRevision=" << offlineView.identity.projectRevision
+              << " currentRevision=" << runtime.revision();
+    if (!offlinePrepared) std::cerr << " error=" << offlinePrepared.error().message
+                                    << " context=" << offlinePrepared.error().context;
+    std::cerr << '\n';
+    return 21;
+  }
+  {
+    const auto finalAudio = runtime.acquireOfflineRenderedPreview();
+    if (!finalAudio || !finalAudio->offlineSource ||
+        finalAudio->offlineSource->quality != rendering::RenderQuality::Final ||
+        finalAudio->offlineSource->projectRevision != runtime.revision() ||
+        finalAudio->offlineSource->result.sampleRate != finalAudio->sampleRate ||
+        finalAudio->offlineSource->result.interleaved.storageIdentity() != finalAudio->interleaved.storageIdentity()) return 27;
+    // Same project revision but a new rate/request must invalidate the old
+    // captured Final source before its replacement reaches Ready.
+    runtime.requestRender(44100U);
+    if (runtime.offlineRenderReady() || runtime.acquireOfflineRenderedPreview() ||
+        runtime.offlineRenderView().state != clap_editor::OfflineRenderState::Stale) return 28;
+  }
+  if (!runtime.prepareOfflineRender(std::chrono::seconds{30})) return 29;
+  {
+    const auto finalAudio = runtime.acquireOfflineRenderedPreview();
+    if (!finalAudio || finalAudio->sampleRate != 44100U) return 30;
+  }
+  runtime.setRenderQuality(rendering::RenderQuality::Preview);
+  if (runtime.offlineRenderReady() || runtime.acquireOfflineRenderedPreview()) return 31;
+  runtime.setOfflineTimingAuthority(clap_editor::OfflineTimingAuthority::FollowHost);
+  const auto unsupportedFollowHost = runtime.prepareOfflineRender(std::chrono::seconds{30});
+  if (unsupportedFollowHost || unsupportedFollowHost.error().code != core::ErrorCode::Unsupported ||
+      runtime.offlineRenderReady() || runtime.offlineRenderView().state != clap_editor::OfflineRenderState::Failed) return 32;
+  runtime.setOfflineTimingAuthority(clap_editor::OfflineTimingAuthority::FixedAudio);
+  runtime.requestRender(48000U);
+  if (!runtime.prepareOfflineRender(std::chrono::seconds{30})) return 33;
+  // A supported edit submits a new coordinator identity even before PCM is
+  // published. It must invalidate captured Final audio without callback locks.
+  if (!runtime.setTrackMix(secondTrack, -3.0F, 0.0F, false, false)) return 34;
+  if (runtime.offlineRenderReady() || runtime.acquireOfflineRenderedPreview()) return 35;
+  if (!runtime.prepareOfflineRender(std::chrono::seconds{30})) return 36;
+  // Non-stereo auxiliary previews must not detach the exact Final PCM, and
+  // routing edits must invalidate it before the debounced request is submitted.
+  for (const auto channels : std::array<std::uint8_t, 4>{1U, 2U, 8U, 4U}) {
+    if (!runtime.configureOutputChannels(channels)) return 42;
+    if (runtime.offlineRenderReady() || runtime.acquireOfflineRenderedPreview()) return 43;
+    if (!runtime.prepareOfflineRender(std::chrono::seconds{30})) return 44;
+    const auto audio = runtime.acquireOfflineRenderedPreview();
+    if (!audio || audio->channelCount != channels || !audio->offlineSource ||
+        audio->interleaved.storageIdentity() != audio->offlineSource->result.interleaved.storageIdentity()) return 45;
+  }
   auto edited = waitReady(runtime);
   if (edited == nullptr || edited->channelCount != 4U ||
-      edited->revision != runtime.revision()) return 21;
+      edited->revision != runtime.revision()) {
+    std::cerr << "post-invalidation Preview publication failed: currentRevision=" << runtime.revision();
+    if (edited) std::cerr << " previewRevision=" << edited->revision
+                          << " channels=" << static_cast<unsigned>(edited->channelCount)
+                          << " diagnostic=" << edited->diagnostic;
+    std::cerr << '\n';
+    return 37;
+  }
 
   auto persisted = runtime.projectCopy();
   formats::ProjectJsonCodec codec;
   const auto encoded = codec.encode(persisted);
-  if (!encoded || encoded.value().find("\"schemaVersion\": 7") ==
+  if (!encoded || encoded.value().find("\"schemaVersion\": " + std::to_string(formats::ProjectJsonCodec::kSchemaVersion)) ==
                       std::string::npos ||
       encoded.value().find("\"hostStartOffsetTick\": 960") ==
                       std::string::npos) {
@@ -176,14 +278,9 @@ int main() {
   const auto decoded = codec.decode(encoded.value());
   if (!decoded || decoded.value() != persisted) return 23;
 
-  auto legacy = encoded.value();
-  const auto schema = legacy.find("\"schemaVersion\": 7");
-  const auto hostOffset = legacy.find(",\n    \"hostStartOffsetTick\": 960");
-  if (schema == std::string::npos || hostOffset == std::string::npos) return 24;
-  legacy.replace(schema, std::string{"\"schemaVersion\": 7"}.size(),
-                 "\"schemaVersion\": 4");
-  legacy.erase(hostOffset, std::string{",\n    \"hostStartOffsetTick\": 960"}.size());
-  const auto migrated = codec.decode(legacy);
+  // Exercise a real historical writer payload, not a current document with
+  // its version number relabelled while retaining newer fields.
+  const auto migrated = codec.load(std::filesystem::path{SEAM_SOURCE_SCHEMA4_FIXTURE});
   if (!migrated || migrated.value().settings().hostStartOffsetTick !=
                        time::Tick{0}) return 25;
 

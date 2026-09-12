@@ -27,6 +27,14 @@ core::Result<void> ProjectDocument::undo() {
   return result;
 }
 
+core::Result<void> ProjectDocument::executePerformanceResult(
+    const application::PerformanceJobContext& context,
+    std::unique_ptr<application::ICommand> command) {
+  const auto result = session_.executePerformanceResult(context, std::move(command));
+  if (result) updateDirtyFromRevision();
+  return result;
+}
+
 core::Result<void> ProjectDocument::redo() {
   const auto result = session_.redo();
   if (result) updateDirtyFromRevision();

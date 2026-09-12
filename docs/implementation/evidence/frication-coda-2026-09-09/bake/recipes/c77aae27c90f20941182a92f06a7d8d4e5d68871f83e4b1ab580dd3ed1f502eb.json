@@ -1,0 +1,51 @@
+{
+  "engineId": "seam.source-filter.v1",
+  "formatId": "com.project-seam.voice-recipe",
+  "frications": [
+    {
+      "bandwidthHz": 3000,
+      "centerHz": 5000,
+      "gain": 0.14999999999999999,
+      "phone": "s",
+      "seed": "42",
+      "style": "neutral"
+    }
+  ],
+  "id": "released-coda",
+  "modulation": {
+    "jitterCents": 0,
+    "rateHz": 0,
+    "shimmerAmount": 0
+  },
+  "phonation": {
+    "aspiration": 0.050000000000000003,
+    "openQuotient": 0.59999999999999998,
+    "spectralTiltDbPerOctave": -12
+  },
+  "poses": [
+    {
+      "formants": [
+        {
+          "bandwidthHz": 80,
+          "frequencyHz": 700,
+          "gainDb": 0
+        },
+        {
+          "bandwidthHz": 100,
+          "frequencyHz": 1200,
+          "gainDb": -3
+        },
+        {
+          "bandwidthHz": 140,
+          "frequencyHz": 2600,
+          "gainDb": -6
+        }
+      ],
+      "nasalCoupling": 0,
+      "phone": "aa1",
+      "style": "neutral"
+    }
+  ],
+  "schemaVersion": 2,
+  "seed": "0"
+}

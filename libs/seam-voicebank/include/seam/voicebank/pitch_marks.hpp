@@ -22,7 +22,8 @@ struct PitchMarkGenerationConfig final {
     std::uint32_t sampleRate,
     time::SampleFrame rangeStart,
     time::SampleFrame rangeEnd,
-    PitchMarkGenerationConfig config = {});
+    PitchMarkGenerationConfig config = {},
+    std::stop_token stopToken = {}, PitchAnalysisLimits limits = {});
 
 [[nodiscard]] core::Result<void> validatePitchMarks(
     std::span<const PitchMark> marks,

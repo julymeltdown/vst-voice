@@ -1,0 +1,352 @@
+# Project SEAM 개발 방향 심층 리뷰 — 수정 반영 후 재검토
+
+## 1. 결론: 아키텍처는 유지하고, 개발 순서는 제작·가창의 완결 경로로 재집중해야 한다
+
+**현재 개발이 전부 잘못된 방향인 것은 아니다. 다만 “올바른 기반 기술을 많이 구현하는 것”과 “사용자가 완성된 가상 가수를 만들고 노래를 끝내는 것” 사이의 간격이 여전히 크다.** 최근 CLAP 실행 검증, 편집 문맥 보호, 실제 sample candidate 게시 구현은 그 간격을 줄이는 유효한 진전이다. 프로젝트를 폐기하거나 전면 재작성할 근거는 없다.
+
+그러나 지금처럼 여러 단위의 부분 구현을 계속 넓히는 방식은 조정해야 한다. 아직 다음 문제가 동시에 남아 있다.
+
+- 정상적인 미검증 producer 초안을 저장하려 해도 청취·coverage PASS가 선행되어야 한다.
+- 동일 WAV를 공유하는 B take를 편집하면 A take에 변경 이력이 저장되는 오류를 직접 재현했다.
+- 검토 API는 선언만 존재하고, Studio의 export는 새 실제 publisher가 아니라 구형 템플릿으로 연결되어 있다.
+- 한국어 기초 발음 매핑 오류와 영어 추정 발음의 무경고 처리를 실제 라이브러리 실행으로 확인했다.
+- 고급 표현·일반 자음 합성·실제 neural singing·안전한 DAW final bounce는 아직 내부 구현이 더 필요하다.
+- 중앙 gate의 검사와 별개로 실제 감사 자료 없이 운영 상태를 READY로 만드는 경로가 있다. 반대로 새 보고서 검사기는 정상 artifact의 필드 구조를 거절한다.
+
+**판정: 설계 방향은 조건부 적절 / 실행 우선순위는 수정 필요 / Full-Scope Beta GO는 NO-GO.** 여기서 NO-GO는 출시 승인 불가라는 뜻이다. 다음 내부 개발을 멈춰야 한다는 뜻이 아니다. 현재 상태를 “95%이므로 마무리만 하면 된다”거나 “이제 외부 보이스 자료만 있으면 된다”고 설명하는 것은 부정확하다.
+
+이번 문서는 앞선 두 방향 리뷰와 후속 수정을 모두 반영한 새 스냅샷이다. 앞선 문서의 이미 수정된 결함을 현재 결함으로 반복하지 않는다. 기존 보고서·구현 코드는 보존했고, 이번 요청에서는 제품 코드를 추가 수정하지 않았다.
+
+## 2. 평가 기준과 범위: 테스트 통과율·로드맵 수락·제품 준비도는 서로 다르다
+
+검토 기준일은 2026년 9월 9일이다. 대상은 `codex/production-readiness-completion`의 현재 로컬 작업 트리이며, HEAD는 `741ae2f244b9d3ff8eb6f31dc1f73cae54ea974d`다. 이 커밋만 체크아웃해서는 아래의 최신 기능을 재현할 수 없다.
+
+보고서 생성 전 Git 스냅샷은 수정된 추적 파일 184개, 미추적 파일 281개, 총 465개 변경 경로였다. 추적 파일 diff만 20,749줄 추가·912줄 삭제이며 미추적 파일의 내용은 이 줄 수에 포함되지 않는다. 변경 경로 수는 통합 검토 범위이지 구현 진척률이 아니다.
+
+제품의 기준은 승인된 `VIRTUAL_SINGER_FEASIBILITY_AND_CODE_ROADMAP_2026-09-05.md`와 `docs/plans/2026-09-05-1718-feat-full-scope-beta-go-plan.md`다. **48개 구현 단위, R1–R20, V01–V18 전체 범위가 유지된다.** 일본어 우선은 개발 순서일 뿐, 일본어·고전 합성만으로 축소 출시할 수 있다는 뜻이 아니다. 영어·한국어, neural singer, 실물 자원, 양 플랫폼과 9개 host tuple도 여전히 필수다.
+
+근거는 세 등급으로 구분했다.
+
+1. **이번 실행 확인:** 현재 소스 재빌드, 전체 CTest, 별도 음소·take 소유권 진단, 출시 helper의 메모리 내 반례.
+2. **현재 소스 확인:** 실제 함수 구현·호출부·분기·스키마를 대조한 결과. 실제 DAW나 GUI 실행을 했다는 의미는 아니다.
+3. **미검증 또는 과거 기록:** 청감, 현재 화면의 overflow, Windows 실행, 실제 가수·모델·독립 평가, 이전 문서에만 있는 수락 기록.
+
+문서에 사용한 코드 위치는 프로젝트 루트 기준 `파일:행`이다. 이 보고서는 소스 중심 감사이며 전 파일 보안 보증이나 모든 플랫폼의 재인증은 아니다. 검토는 producer, 음악·언어·UX, host·출시의 세 독립 검토 축과 공통 실행 점검으로 구성했다. 외부 서비스에 자료를 전송하거나 실제 출시·승인 상태를 변경하지 않았다.
+
+## 3. 최신 검증: 전체 109/110 통과지만 제품 기능의 공백은 별도로 존재한다
+
+현재 작업 트리에서 `cmake --build build/release -j 4`가 성공했다. 이어 `ctest --test-dir build/release --output-on-failure -j 1`을 한 번 완주했다. 전체 실행 시간은 150.27초다. 이전 107/108 또는 108/110 기록을 최신 결과로 재사용하지 않았다.
+
+| 이번 검증 | 결과 | 증명하는 것과 증명하지 않는 것 |
+|---|---|---|
+| Release 전체 빌드 | 성공 | 현재 연결된 타깃의 컴파일·링크. 미사용 선언의 구현 존재는 증명하지 않음 |
+| 전체 CTest | 109/110 통과, exit 8 | 등록된 검사의 현재 결과. 제품 완료율이 아님 |
+| core 테스트 실행 | 716 passed, 0 failed | 현재 core/native 회귀 범위. 전체 CTest와 겹치므로 합산 금지 |
+| producer 테스트 실행 | 14 passed, 0 failed | 실제 candidate 파일과 Final 렌더·캐시 경로. 지원되는 검토 UI/API 완료는 아님 |
+| neural worker protocol | 통과 | 프로세스·메시지 계약. 실제 학습 모델의 가창은 아님 |
+| 실제 CLAP matrix | 336/336, 실패 0 | 현재 CLAP 바이너리의 Float32 engineering 실행 |
+| source closure | 실패, 미색인 입력 280개 | 파일이 없다는 뜻이 아니라 필수 입력이 Git index에 포함되지 않았다는 뜻 |
+| `git diff --check` | 통과 | 공백 검사. 기능·출시 승인 검사는 아님 |
+
+전체 CTest의 정확한 비율은 109/110, 약 99.1%다. **이 수치를 “프로젝트 99.1% 완성”으로 바꿔 말해서는 안 된다.** 선언만 있고 호출되지 않는 review API, 테스트가 직접 승인 상태를 넣는 경로, 정상 성공 fixture가 없는 validator도 빌드와 다수 테스트를 통과할 수 있기 때문이다.
+
+CLAP 결과는 `executionPath=clap-plugin-process-v1`, `evidenceScope=engineering`, `releaseEligible=false`, `resourceMode=development-fixture`다. 검사한 plugin SHA-256은 `f0b411ba5f9cf708dd0339704751df74a4721996b2be1662d1be74e9f1981bcb`다. state 검증은 빈 score의 bank/style/layout이며, tuning은 sample 차이 관측이지 cents 측정이 아니다. 336개 행을 336개 실제 DAW 환경으로 해석할 수 없다.
+
+원본 실행 로그: `build/release/Testing/Temporary/LastTest.log`, `LastTestsFailed.log`. 이 파일들은 향후 테스트가 덮어쓸 수 있어, 이번 숫자·진단·identity는 동반 `results.json`에도 보존했다. 보고서 작성 후 추가되는 문서는 위 Git/source-closure 스냅샷에 포함되지 않는다.
+
+## 4. 이미 개선된 부분: 이전 감사 결과를 그대로 반복하면 현재를 과소평가한다
+
+**실제 음악 처리 기반은 존재하며, 최근 수정도 제품 방향에 부합한다.** 다음은 유지·확장해야 할 구조다.
+
+- 악보의 발음·타이밍·표현을 먼저 고정하고 같은 `compiledPerformance`를 Raw/PSOLA/Spectral/Stretch에 전달한다. 샘플 선택에 음악의 의미를 맡기지 않는 구조가 적절하다. `render_snapshot.cpp:630`, `:807`, `render_pipeline.cpp:193`, `:213`.
+- 불변 snapshot, 최신 요청 확인, 취소와 캐시 identity, 수동 편집과 자동 제안의 소유권 구분은 오래된 렌더가 새 편집을 덮는 위험을 줄인다. `libs/seam-authoring-runtime/src/render_coordinator.cpp`, `libs/seam-domain/src/region_performance_state.cpp`, `libs/seam-application/src/performance_commands.cpp`.
+- Voice Designer는 단순 목업이 아니다. recipe, 실제 DSP, audition, 동결된 생성 요청과 producer assignment 연결이 있다. `apps/seam-voicebank-studio-native/main.cpp:186`, `libs/seam-authoring-runtime/src/generation_job.cpp:85`.
+- 새 sample publisher는 실제 WAV·manifest·marker·pitch 정보와 provenance를 게시한다. 양성 테스트는 producer workspace와 원본을 숨긴 뒤 새 bank로 저장된 악보를 다시 열고 Final/PSOLA 및 disk-cache 재현을 검사한다. `tests/test_voicebank_production_project.cpp:162`.
+
+이전 감사의 주요 결함은 다음처럼 구분해야 한다.
+
+| 이전 지적 | 현재 판단 | 남은 경계 |
+|---|---|---|
+| matrix가 plugin을 해시만 하고 linked engine 실행 | matrix는 실제 module load/process로 수정됨 | 실제 설치 DAW·full-song state·정밀 pitch 검증은 별도 |
+| CLAP ABI·pan·채널·주소 처리 결함 | 관련 소스 수정, 전체 회귀와 actual matrix 통과 | 모든 host의 실제 입력·장시간 사용까지 인증한 것은 아님 |
+| EN/KO stale context와 언어 전환 편집 보호 | 공통 admission·unresolved 보존이 추가됨 | 발음 자체의 정확성은 별개이며 아래에서 새 오류 재현 |
+| cache hit의 fallback count 유실 | 복구 코드와 회귀가 있음 | 음질 qualification 전체를 뜻하지 않음 |
+| producer에 실제 bank 출력 구현 없음 | 새 library publisher는 존재함 | review API·Studio·CLI·pack/install 연결 미완성 |
+| 새 CLAP 테스트 때문에 빌드 실패 | 현재 Release 빌드 성공 | 리뷰 선언이 구현됐다는 뜻은 아님 |
+
+근거: `phase12c/src/clap_matrix_host.cpp:38`, `phase12c/CMakeLists.txt:4`, `phase12c/src/matrix_runner.cpp:43`, `libs/seam-phonemizer/src/language_resolver.cpp:30`, `:169`, `libs/seam-application/src/lyric_commands.cpp:205`, `libs/seam-rendering/src/region_renderer.cpp:189`.
+
+## 5. 제작 경로: publisher를 더 키우기 전에 정상 초안·소유권·검토를 완성해야 한다
+
+### F01 — P1: producer 초안 저장이 청취·coverage PASS를 요구한다
+
+`validateProductionProject()`는 `selectedStrategyReady()`가 false이면 구조 검증부터 거절한다. 해당 readiness에는 rights, coverage, listening의 PASS와 권한 필드가 모두 필요하다. `libs/seam-voicebank-production/src/project_codec_validation.cpp:71`, `src/project.cpp:51`.
+
+이는 U9가 명시한 “미검증 Draft를 저장·재개하되 qualification은 분리한다”는 조건과 직접 충돌한다. Designer recipe 자체를 저장할 수 있는 것과 producer 전체 작업의 정상 초안 저장은 다르다. 초기에 PASS를 넣어야 다음 단계를 테스트할 수 있는 구조는 실사용자가 지켜야 할 순서를 거꾸로 만든다.
+
+**권고:** Draft/Experimental/Qualified와 source-kind별 적용 권한을 모델링하고 구조 검증·실행 허가·게시 자격·출시 자격을 분리한다. 미검증 초안은 저장되어야 하지만 이를 저장했다는 이유로 배포할 수 있어서는 안 된다. 근거: 승인 계획 `:396–410`.
+
+### F02 — P1, 직접 재현: 같은 WAV를 공유하는 두 take 중 잘못된 take가 편집된다
+
+현재 `commitStaged()`는 take ID나 예상 parent revision을 받지 않고, 입력 hash가 맞는 첫 take를 찾는다. `repository.hpp:108`, `repository_operations.cpp:66`, `:125`. Studio는 선택된 take를 알고 있지만 commit 호출에서 그 ID를 넘길 수 없다. `libs/seam-native-ui/src/voicebank_studio_production_edits.cpp:86`.
+
+현재 Release 라이브러리에 연결한 진단에서 같은 WAV를 A/B 두 take로 가져온 뒤 B의 자산으로 Normalize 작업을 만들었다. 결과는 다음과 같았으며 `recover()`로 다시 읽은 durable 상태에서도 동일했다.
+
+```text
+same_audio=1
+intended_take=take-b
+take_a_revisions=1
+take_b_revisions=0
+durable_take_a_revisions=1
+durable_take_b_revisions=0
+```
+
+오류는 GUI 선택 표시만의 문제가 아니라 저장된 편집 이력의 소유권 문제다. 정상적인 deduplication을 금지할 것이 아니라 take ID·현재 parent revision·입력 digest를 commit의 필수 조건으로 만들어야 한다. 이미 존재하는 writer lock은 동시 쓰기 보호에는 유효하지만 잘못 지정된 대상을 올바르게 바꾸지는 못한다. U11이 이 반례를 정확히 요구한다. 계획 `:434–440`.
+
+또한 해당 transform 경로에는 적용 대상의 기존 marker/pitch review 상태를 무효화하는 처리가 없다. immutable review 이력은 보존하되 현재 적용 가능 여부만 재계산해야 한다. 이 항목은 소스 확인이며 이번 진단은 take 오귀속을 직접 재현한 것이다.
+
+### F03 — P1: 새 review API는 선언만 있고, 성공 테스트는 승인 상태를 직접 만든다
+
+`prepareSampleCandidateReview`, `commitSampleCandidateReview`, packet encode/decode는 `candidate_publication.hpp:63–84`에 선언되어 있다. 현재 `libs/apps/tests/CMakeLists.txt` 검색에서 정의·호출은 확인되지 않았다. v2 material binding의 일부 내부 refactor는 있지만, 이를 사용자 작업으로 완성하는 구현은 없다.
+
+양성 publication fixture는 여전히 `Approved`, `markerReviewed`, `pitchReviewed`, PASS `ReviewRecord`를 직접 채운다. `tests/test_voicebank_production_project.cpp:76–85`. 이는 publisher의 단위 검증용 fixture로는 의미가 있지만 “사용자가 검토를 마쳤다”는 end-to-end 증거로 사용할 수 없다.
+
+**권고:** 캡처한 byte/revision/manifest에 대한 명시적 수락·거절을 하나의 durable transaction으로 구현한다. preparation이나 generation은 승인하지 않는다. 여러 unit의 순차 검토가 서로의 유효한 승인을 무조건 무효화하지 않는지도 검증한다. U13의 직접 필드 대입 없는 성공 경로가 우선이다.
+
+### F04 — P1: 실제 publisher와 native/CLI export가 아직 연결되지 않았다
+
+새 `publishSampleCandidate()`는 의미 있는 내부 성과다. 하지만 Studio `exportProductionInputs()`는 여전히 `exportU57Inputs()`를 호출하고, 이 경로의 결과는 `SYNTHETIC_READY_REAL_ASSETS_REQUIRED` 템플릿이다. `voicebank_studio_production_project.cpp:972`, `libs/seam-voicebank-production/src/repository_export.cpp:50`.
+
+따라서 현재 “게시된 bank를 읽어 소리를 낸다”는 테스트는 있지만, “정상적인 미검증 producer에서 지원되는 작업만으로 그 bank를 만들고 설치한다”는 사용자 과정은 없다. 기존 pack/sign/install 기능을 재사용하되, signature를 음악·권리 승인으로 오인하지 않도록 게시 결과와 설치 receipt를 연결해야 한다.
+
+### F05 — P1 설계 공백: assignment와 QC가 전체 가수 자원을 표현하지 못한다
+
+`UnitAssignment`는 coverage/pitch/prompt/take를 가지지만 language/style identity가 없다. `project.hpp:95`. publisher의 다중 style 거절은 이 한계를 정직하게 드러낸다. `repository_candidate.cpp:371`. 서로 다른 스타일·언어가 같은 phone/pitch를 쓸 때 편집·coverage·검토를 독립적으로 보존하려면 U10 migration이 선행되어야 한다.
+
+`DryTakeInspection::accepted()`는 항상 non-silence와 root pitch 유효성을 요구한다. `libs/seam-voicebank/include/seam/voicebank/validator.hpp:63`. 유성음 검사를 breath/closure/pause에도 그대로 적용할 수 없다. **검사를 느슨하게 만드는 것이 아니라 unit 종류별 적용 가능한 측정·제외 이유·정책 버전을 정의해야 한다.** U12의 핵심이다.
+
+## 6. 다국어: 편집 안전성은 개선됐지만 발음 정확성은 아직 기초 단계다
+
+### F06 — P1, 직접 재현: 한국어 종성과 일부 모음 구별이 틀리거나 손실된다
+
+`korean_phonemizer.cpp:66–70`의 종성 표와 `:80–86`의 한글 분해식을 실제 resolver로 실행했다. 다음 출력은 모두 warning 0이었다.
+
+```text
+강 => k a l warnings=0
+밤 => p a l warnings=0
+밥 => p a t warnings=0
+어 => o warnings=0
+오 => o warnings=0
+으 => u warnings=0
+우 => u warnings=0
+```
+
+종성 ㅁ·ㅂ·ㅇ이 해당 표에서 잘못 매핑된다. 어/오, 으/우는 동일 symbol로 합쳐져 구별 정보를 잃는다. 이 상태는 “원어민 청취 검증만 남았다”가 아니라 **실제 음소 생성 코드가 더 수정되어야 하는 상태**다. 잘못 만든 phoneme inventory로 bank를 대량 제작하면 자원도 다시 제작해야 하므로 우선순위가 높다.
+
+**권고:** 완성형·조합형 입력, 모든 초·중·종성 표, 겹받침, 연음·동화·경음화, note 간 문맥을 외부 정답과 대조하는 독립 oracle로 검증한다. 기존 테스트의 기대 배열을 정답 자체로 취급하지 않는다. `먹어` 한 note와 `먹/어` 두 note의 이번 symbol 출력은 동일했지만, 이것만으로 문맥 역할·timing까지 동등하다고 결론 내리지는 않았다.
+
+### F07 — P1, 직접 재현: 영어의 철자 기반 fallback이 불확실성을 숨긴다
+
+영어 resolver는 작은 bootstrap dictionary 이후 `fallbackWord()`로 철자를 순회한다. `english_phonemizer.cpp:19`, `:136–164`, `:261–267`. 사전에 없는 단어라도 모음이 생성되면 채택하며 추정 경고가 없다. 이번 실행에서 `read => r eh0 ae0 d warnings=0`을 확인했다.
+
+**권고:** 사전/검토된 G2P/사용자 hint의 출처를 구별하고, 추정 발음은 명확한 진단과 교정 흐름을 제공한다. stress·cluster·동형이의어·note별 음절 배분을 실제 bank vocabulary와 함께 검증한다. 추정을 모두 거절하라는 의미가 아니라 추정을 검증된 발음처럼 보여주지 말라는 의미다.
+
+### F08 — P1 연결 공백: 일본어 reading UI가 기본 앱의 실제 자원과 연결됐다는 근거가 없다
+
+reading review controller와 helper 구조는 있지만 resource callback이 없으면 `Japanese reading resource is not connected`를 반환한다. `libs/seam-native-ui/src/editor_controller.cpp:504–510`. `NativeEditorAppConfig`의 기본 callback은 비어 있으며, 배포 앱 설정에서 제공하는 경로를 확인하지 못했다. `libs/seam-standalone/include/seam/standalone/native_editor_app.hpp:45`, `apps/seam-editor-native/main.cpp:288`. CLAP adapter도 외부 resolver 없이는 같은 상태다. `editor_runtime_adapter.cpp:485`.
+
+이는 소스 연결 점검 결과다. 이번에 실제 GUI에서 한자 입력을 수행한 것은 아니다. 다음 수락 기준은 “helper 테스트 성공”이 아니라 기본 설치 앱에서 새 한자 가사→reading 검토→수정→가창→save/reopen이 작동하는지다.
+
+## 7. 가창 엔진: 소리를 내는 기능과 원하는 가수로 노래하는 기능을 분리해 보아야 한다
+
+### F09 — P1 미완성: 고급 표현은 저장 타입과 실제 DSP 능력 사이에서 끊긴다
+
+현재 capability는 Pitch/Timing/Dynamics/Vibrato/Attack/Release의 기본 6개만 지원한다. Formant/Breathiness/Tension/Airiness/Gender/StyleBlend/Growl은 이름이 있지만 지원 플래그가 없다. `libs/seam-synthesis/src/renderer_capabilities.cpp:14–20`, `:79–94`. accepted lane compiler도 Pitch/Dynamics/Attack/Release 외 채널을 거절한다. `performance_compiler.cpp:255–261`.
+
+거절하는 것은 무시하면서 성공 처리하는 것보다 계약상 정직하지만 Full-Scope 완료는 아니다. Voice Designer의 설계 파라미터를 노래 구간별 expression automation과 동일하게 계산해서도 안 된다. 필수 제어마다 실제 지원 resource/backend 조합, 중립값, 의도한 음향 변화와 부작용, export/reload를 검증해야 한다.
+
+### F10 — P1 위험: Classic PSOLA의 목표 음정 처리가 sustain 밖에서 완결되지 않는다
+
+`classic_psola.cpp:164–186`은 원본 기반 waveform으로 양끝을 채운 뒤 PSOLA grain을 sustain에 제한한다. `:227–230`. 목표 F0를 sustain에서 사용한다는 사실만으로 유성 attack/release까지 목표 선율을 따르는 것은 아니다. `renderer_capabilities.cpp:20`의 pitch-preserving transient 표시는 이 경계까지 포함해 재검증해야 한다.
+
+이번에는 실제 CV/VC의 음정 오차를 새로 측정하지 않았으므로 가청 심각도를 숫자로 단정하지 않는다. **권고:** 같은 CV/VC의 onset·sustain·release 각각을 voiced/unvoiced로 나눠 여러 target pitch와 duration에서 검사하고, 유성 transient는 목표 pitch를 따르고 무성 transient는 구조를 보존하게 한다. 모음 sustain만의 성공 fixture로 전체 표현을 인증하지 않는다.
+
+### F11 — P1 미완성: contextual unit selection과 paired style blending
+
+selector의 비용은 pitch distance, phone 수, priority, take 번호 중심이다. `unit_selection.cpp:56–64`. 위치별 선택 상태에 이전 unit과의 acoustic join 비용이 없다. `:182–194`. 지금도 동작하는 결정적 선택기지만 녹음 단위 사이의 음색·에너지·phase 불연속을 최소화하는 기능과는 다르다.
+
+paired style blending은 단순 gain mix가 아니다. assignment의 pairing identity, 정렬·발음·pitch 일치, 실제 블렌딩 DSP와 영향 구간의 재현이 함께 필요하다. 먼저 데이터 모델과 유효한 style pair를 만든 뒤 bounded 선택·합성에 연결하는 순서가 타당하다.
+
+### F12 — P1 미완성: 절차적 음색 설계에서 일반 가사 가창으로의 확장
+
+현재 articulation은 oral vowel과 명시적으로 연결한 무성 onset frication 중심이며, 그 밖의 phone은 거절한다. `libs/seam-voice-design/src/articulation_plan.cpp:79–104`. nasal coupling은 필드가 있으나 0이 아닌 값을 DSP가 거절한다. `vocal_tract.cpp:16–17`.
+
+이로써 synth처럼 음색을 조형하는 접근 자체가 틀렸다고 볼 수는 없다. 다만 발성·성도 조절은 가수의 일부분이다. 비음·파열·유성 자음·coda·coarticulation·pitch/style별 일관성이 필요하다. **여성 가수로 들리는지, 명료한지, 노래 전체에서 정체성이 유지되는지는 별도 청취·음향 평가 대상**이다. 생성 WAV 수나 slider 수를 그 증거로 대체할 수 없다.
+
+샘플 경로는 voice allocation을 거치지만 procedural project branch는 region 전체를 직접 렌더하고 compiler는 overlap을 거절하는 차이도 있다. `project_renderer.cpp:148–168`, `performance_compiler.cpp:285–288`. 같은 악보에서 singer 종류만 변경했을 때 지원 범위가 달라지는 것을 숨기지 말아야 한다.
+
+### F13 — P1 미완성: neural worker는 있지만 실제 neural singer 경로는 없다
+
+`runNeuralWorker()`의 형상·identity·timeout·취소 경계는 유효한 기반이다. 그러나 테스트 helper는 0 PCM을 반환하고 일반 render pipeline은 Sample/Procedural 외 자원을 거절한다. `libs/seam-neural-synthesis/src/neural_phrase_backend.cpp:10`, `tests/helpers/neural_worker_probe.cpp:13`, `libs/seam-rendering/src/render_pipeline.cpp:147–160`.
+
+현재 `NeuralRequest`에는 F0·dynamics와 pronunciation hash는 있지만 실제 phone sequence/duration 입력이 없다. `libs/seam-neural-synthesis/include/seam/neural_synthesis/worker_protocol.hpp:23–33`. **발음열의 hash는 발음 내용 자체가 아니다.** 실제 모델의 입력 특징 계약과 신뢰된 resource resolution이 필요하며, 모델 파일 하나를 확보한다고 바로 노래할 수 있는 상태가 아니다.
+
+이번 repo 파일 inventory에서 실제 학습 weight나 완결된 dataset/training 경로를 확인하지 못했다. 다른 위치의 미공유 자원까지 없다는 뜻은 아니다. U35 데이터·학습, U36 모델·vocoder 후보, U37 실제 inference→preview/export→설치 경로를 별도 필수 작업으로 진행해야 한다. 과거 ledger의 Phase12C에 붙은 U35 표기는 neural 진행으로 계산할 수 없다.
+
+## 8. DAW: 실제 CLAP matrix는 진전이지만 실패한 final bounce를 안전하게 끝내지는 못한다
+
+### F14 — P1: offline 준비 실패가 host 실패로 전파되지 않고 live 음성이 별도로 출력될 수 있다
+
+CLAP activation과 offline mode 설정은 `prepareOfflineRender()` 결과를 버리고 성공을 반환한다. `plugin_entry.cpp:291–302`, `:831–839`. `process()`의 `offlineReady`는 score preview만 막고 live note 처리는 계속 수행한다. `:600–619`, `:638`.
+
+따라서 Final score가 준비되지 않아도 소스 경로상 live-only 또는 무음 bounce로 이어질 수 있다. 주석의 “host가 진단을 보고 abort할 수 있다”는 설명은 실제 관찰 가능한 실패 전파를 구현했다는 증거가 아니다. **이번에는 실제 DAW bounce로 재현하지 않았으므로 이는 소스에서 확인한 실패 경로와 위험 판단이다.**
+
+수락 기준은 필요한 보컬이 모두 현재 Final로 준비된 완전한 출력, 또는 host가 관찰 가능한 실패다. MIDI live 성분과 score final을 어떤 모드에서 함께 내보낼지도 명시해야 한다. 대기·실패·오래된 score를 뺀 파일이 조용히 성공해서는 안 된다. 계획 U34 `:806`.
+
+### F15 — P1 미완성: Follow Host는 전체 tempo-map authority와 실제 연결이 더 필요하다
+
+현재 timing hash는 seconds/beats/BPM/loop snapshot에서 만든다. `editor_runtime_project.cpp:46`. `setHostTimelineState()`·`setOfflineTimingAuthority()`의 실제 production 호출 연결과 domain/codec persistence를 확인하지 못했다. `host_timeline.cpp:42`는 seconds가 없으면 현재 BPM으로 beats를 절대 시간으로 환산한다.
+
+과거 tempo 변화가 있는 악보를 현재 BPM 하나로 복원할 수는 없다. Fixed Audio와 Follow Host를 UI·저장 상태·render identity에서 구분하고, 권위 있는 map을 확보하지 못했을 때의 동작을 정해야 한다. 테스트는 tempo 변화·seek·loop·sample-rate 변경·offline 중 편집을 실제 plugin에서 관측해야 한다.
+
+soak는 여전히 linked-engine workload이며 현재 smoke는 5초다. 이는 이제 정직하게 표기되지만 실제 plugin의 장시간 soak나 9개 installed host tuple 검증을 대체하지 않는다. `phase12c/src/soak_runner.cpp:85`, `:164`.
+
+## 9. 출시 검증: 거절 테스트만으로는 안전한 gate와 가능한 정상 출구를 보장하지 못한다
+
+### F16 — P1, 직접 재현: 운영 상태 전이는 실제 audit 대신 boolean을 신뢰한다
+
+`tools/external_beta/operations.py:77–80`는 `auditPassed=true`와 승인 역할 문자열로 FROZEN→READY를 허용한다. 재개는 `freshGo=true`를 신뢰한다. `:89–92`. CLI가 이 함수를 직접 노출한다. `scripts/run_external_beta_operation.py:7`.
+
+실제 candidate·archive·report 없이 순수 함수 호출만으로 다음 결과를 확인했다.
+
+```text
+state=READY
+can_distribute=True
+artifact_count=0; external_writes=False
+```
+
+이는 실제 배포를 실행했다는 뜻은 아니지만, **중앙 `evaluate_ready()`가 실패해도 별도 운영 경로에서 배포 가능 상태를 만들 수 있다는 구현상의 우회**다. public-release 선행 Beta 검사도 상태·문자열·digest 형식·`archiveVerified` 값을 확인할 뿐 동일 감사를 재현하지 않는다. `tools/public_release/candidate_validation.py:174`.
+
+U46이 명시한 문제이며 gate 정의를 더 쓰는 것으로 해결되지 않는다. 승격·재개·닫기·후속 public promotion의 실제 진입점에서 같은 candidate/contract/archive에 대한 감사를 재현해야 한다. 테스트용 승인 역할 문자열을 실제 독립 승인으로 간주해서는 안 된다.
+
+### F17 — P1, 직접 재현: 정상 artifact 형상이 validator의 reference 계약과 충돌한다
+
+evidence schema의 artifact는 `kind`, `locator`, `sha256` 세 필드를 요구한다. `docs/product/full-product-beta-evidence.schema.json:13708`. 그런데 `_observation_errors()`는 artifact 전체를 reference 검사로 넘기며, 그 검사는 정확히 `locator`, `sha256` 두 필드만 허용한다. `tools/external_beta/full_product_report.py:232–237`, `:283`; 실제 파일 reader도 동일한 구조 제약을 가진다.
+
+schema에 맞는 `{kind: audio, locator: audio.wav, sha256: …}`를 helper에 전달하면 `requires exactly locator and sha256`가 반환된다. 결과적으로 정상 report의 성공 경로가 막혀 있다. 파일 tamper·누락·symlink를 잘 거절하는 것과 정상 보고서를 수락할 수 있는 것은 다른 성질이다.
+
+**권고:** 완전하지만 명백히 synthetic인 성공 fixture를 별도 테스트 계약 아래 만들고, 그 fixture의 필드·hash·측정·review를 하나씩 바꾼 부정 테스트를 함께 둔다. 실제 canonical 계약에 fixture PASS를 이식하거나 미동결 값을 임의로 확정하지 않는다.
+
+### F18 — P1 미완성: 현재 semantic 검사는 수치·원자료의 실제 합격 의미를 모두 판단하지 않는다
+
+measurement 경로는 주로 유한 숫자, criterion ID, raw file hash를 검사한다. `full_product_report.py:298–315`. empirical 경로도 result type과 cell ID 범위 중심이다. `:485`. 요구된 threshold와 단위·방법·측정치의 비교, 원자료 해석·재계산, canonical protocol digest 대조를 완결한 증거는 없다.
+
+현재 resource matrix와 evaluation profile이 UNRESOLVED이고 F17도 존재하므로 이 경로가 당장 정상 report를 잘못 승인한다는 뜻은 아니다. **그 두 장벽을 고친 뒤에도 hash가 맞는 파일을 합격 증거로 오인하지 않도록** typed measurement checker를 연결해야 한다. 따라서 “자료만 채우면 EB-009가 끝난다”는 해석은 틀리다.
+
+## 10. 실제 자원·UI·캐릭터: 내부 코드 공백과 외부 수락 공백을 함께 관리해야 한다
+
+현재 계약은 `matrixStatus=UNRESOLVED`, `releasedResources=[]`, evaluation profile `UNRESOLVED`, evidence `NOT_RUN`이다. 83개 case는 **검사 정의**이지 83개 통과 결과가 아니다. `docs/product/full-product-beta-contract.json:49`. 기존 Beta dossier도 BLOCKED이고 package hash·sourceAssets·reference song 근거가 비어 있다. `docs/voicebank/beta-voicebank-01-dossier.json`.
+
+포함된 public-domain production bank는 같은 짧은 녹음을 여러 phoneme unit이 공유하는 technical fixture라고 명시한다. `assets/demo-human-voicebank-public-domain/production-bank/README.md:3`. 따라서 bank 파일이 있다는 사실과 실제 원본 여성 가수가 준비됐다는 것은 다르다. 실물 자원에 대해서는 출처·적용 가능한 권한·음역·언어·style·독립 청취 결과를 묶어야 한다. 이번 보고서는 새로운 라이선스 적합성 심사를 수행하지 않았다.
+
+캐릭터는 완전 미사용이 아니다. Neutral/Focused/Rendering/Complete/Warning/Error 상태를 선택하고 실제 portrait를 그리는 경로가 있다. `libs/seam-native-ui/src/editor_controller.cpp:267`, `libs/seam-standalone/src/native_editor_app.cpp:1263`. 다만 정적 상태 6개를 읽는 구성은 U41의 음소 정렬 mouth state·seek/loop 동기화와 다르다. `libs/seam-native-ui/src/character_presentation.cpp:11`. 자원 manifest도 `NOT_A_PRODUCTION_TURNAROUND`를 명시한다.
+
+노트 겹침·텍스트 overflow·조밀한 정보 배치는 중요한 수락 항목이지만 이번에는 실제 화면을 재촬영하지 않았다. **현재 모든 화면에 해당 시각적 결함이 남아 있다고 단정하지 않는다.** 소스에서 확인한 구체적 공백은 일반 producer 화면의 accessibility tree가 `nullptr`인 점이다. Designer에서는 제공하지만 producer에서는 제공하지 않는다. `apps/seam-voicebank-studio-native/main.cpp:911–919`.
+
+다음 UI 검증은 버튼 유무보다 실제 제작 작업을 기준으로 해야 한다. 긴 한국어·영어 lyric, IME 조합 중 취소, 작은 창과 확대, 겹친 note의 선택·resize·의도된 polyphony 구분, marker 편집, 키보드·접근성 검토, 오류 후 복귀를 같은 여정 안에서 확인한다. 캐릭터는 편집 영역을 잠식하지 않으면서 현재 singer identity와 가창 상태를 설명해야 한다.
+
+## 11. 진행도는 단일 퍼센트보다 요구사항별 완결성으로 보는 것이 정확하다
+
+실행 원장은 U1–U5를 로컬 구현 수락, U6–U48을 미완료로 기록한다. `docs/implementation/FULL_SCOPE_BETA_EXECUTION.md:542–544`. 따라서 **원장상 동일 가중 단위 수락률은 5/48=10.4%**다. 이는 과거 수락 기록을 읽은 값이며, 이번에 48개 단위를 재수락한 값도, 코드량·소요 시간·제품 품질 추정치도 아니다. U6 이후에는 이미 상당한 부분 구현이 있다.
+
+아래 표는 이번 코드·실행 점검으로 확인한 기반과 남은 출구를 정리한 것이다. 각 행을 완료 또는 불가역적인 점수로 환산하지 않았다. 전체 scope는 그대로 유지한다.
+
+| 요구사항 | 실제 기반 | 아직 완결해야 할 핵심 |
+|---|---|---|
+| R1 타이밍·선율 | 공통 pronunciation/timing/compiler | 전체 발음·유성 구간·backend 간 동일 의미 |
+| R2 표현 | 저장·기본 DSP·ownership | 모든 필수 고급 제어의 가청 의미 |
+| R3 원본 Voice Designer | recipe·DSP·audition | 일반 가사·여성 음색·재사용 가능한 singer |
+| R4 실제/생성 source | import·generation·batch | 정상 Draft부터 두 제작 경로의 완결 |
+| R5 재현 가능한 bank | journal·assets·실제 publisher | supported review→package→설치 연결 |
+| R6 coverage·range·styles | style 선택·coverage 검사 | 언어/style assignment·실물 range·paired blend |
+| R7 3개 언어 | 공통 resolver·편집 보호 | 기초 매핑·사전/G2P·자원 연결·실제 가창 |
+| R8 고전 renderer | 여러 실제 PCM 경로 | voiced/unvoiced·join·정확한 capability·음질 |
+| R9 neural singer | bounded worker 계약 | 데이터·모델·실제 입력 특징·inference·설치 |
+| R10 자동 표현·take·harmony | proposal/accept와 편집 보존 | 고급 생성·비교·수정·가창까지의 사용성 |
+| R11 native 편집 | 편집 모델·일부 inspector·semantics | 전체 실제 화면·producer 접근성·작업 수락 |
+| R12 USTX/SMF | bounded parser·왕복·서비스 테스트 | 외부 파일·손실 설명·설치 앱 왕복 수락 |
+| R13 standalone/host | 실제 CLAP matrix·offline API | 실패 bounce·tempo authority·9 installed tuples |
+| R14 캐릭터 | 정적 상태별 portrait | 실물 자산·음소/재생 동기화 |
+| R15 안전·복구 | lock·revision·cancel·recovery | take 오귀속·draft/QC 경계·실플랫폼 검증 |
+| R16 음악·creator 증거 | corpus와 검사 정의 | 실제 곡·음향 측정·독립 청취/작업 결과 |
+| R17 정확한 release | 기존 package/support 구조 | 현재 source closure·U60·signed installed 증거 |
+| R18 우회 불가 gate | 중앙 report reader·negative 검사 | 정상 성공 경로·typed 의미·모든 promotion 경로 |
+| R19 provenance·권한 | source/hash/role 기반 | per-source 모델과 실제 배포 자원 증빙 |
+| R20 연결된 lifecycle | 여러 부분 경로와 candidate→audio | source→edit→review→install→unseen song 전체 |
+
+“많이 개발했는데 왜 수락 단위가 적은가?”에 대한 답은 작업이 없어서가 아니라 **단위의 종료 조건을 충족하기 전에 다음 단위의 기반을 많이 만들었기 때문**이다. 여기에 같은 CTest를 여러 집중 suite가 중복 포함하므로 PASS 총합은 더 빨리 늘어난다. 작은 prerequisite 작업은 필요하지만 그 목록만 계속 늘어나는 운영은 바꿔야 한다.
+
+## 12. 다음 빅스텝: 범위를 줄이지 말고, 실제 완결 경로 여섯 개로 묶는다
+
+### 단계 A — 정상 producer에서 시작해 실제 설치된 bank로 노래하기
+
+가장 높은 우선순위다. U9 Draft와 per-source identity → U10 language/style assignment → U11 take/parent 소유권 → U12 적용 가능한 QC → U13 명시적 검토 → U14 실제 publisher와 Studio/CLI → 기존 pack/install → 새 consumer의 song export 순으로 연결한다.
+
+종료 증거는 하나의 반복 가능한 시나리오다. **미검증 초안을 저장·재개하고, 선택한 take만 편집하고, 실제 지원 명령으로 검토하고, 새 resource를 설치한 뒤 producer 폴더 없이 처음 입력한 가사를 렌더한다.** 테스트가 직접 Approved를 채워서는 안 된다. 이전 설치 bank와 이전 곡은 draft recipe 변경·취소·실패에도 유지되어야 한다. 검토자 identity를 도구가 임의로 만들거나 대리 승인해서는 안 된다.
+
+첫 내부 milestone을 한 언어·작은 실제 자원으로 끝낼 수는 있지만 이것을 축소 Beta GO로 이름 붙이지 않는다. 혼합 source·언어·style를 표현하는 모델은 이 단계에서 막아 두지 말아야 한다.
+
+### 단계 B — 실제 발음과 음질을 기준으로 sample/procedural 가창 완성
+
+한국어 표·영어 불확실성·일본어 resource 연결을 먼저 수정해 잘못된 vocabulary로 자원이 늘어나는 것을 막는다. 대표 CV/VC, 긴 sustain, 음역 양끝, 빠른 syllable, 비음·파열·coda를 포함한 문장으로 U15–U20과 U26–U28을 묶는다.
+
+각 수정은 score→phone/timing→실제 PCM→음향 측정→독립 청취의 영향을 함께 확인한다. target F0, transient 보존, 경계 잡음, identity·style 일관성을 분리해 평가한다. 고전 renderer를 여러 개 같은 수준으로 조금씩 확장하기보다 신뢰할 기본 경로의 기준을 먼저 충족시키되, 승인된 전체 capability 의무는 유지한다.
+
+### 단계 C — 실제 neural 모델의 위험을 늦추지 말고 병행 검증
+
+U35 dataset/split/training의 재현 가능한 산출물, U36 model/vocoder pilot, U37 실제 feature→inference→Final 렌더를 하나의 축으로 운영한다. 모델 입력에 필요한 phone/duration/context/conditioning을 정의하고 sample/procedural과 동일한 ownership·취소·cache 계약으로 연결한다.
+
+초기 pilot의 목적은 GO 선언이 아니라 실제 CPU 품질·지연·메모리·권한 제약을 조기에 드러내는 것이다. 모델 품질을 확인하기 전에 배포 abstraction만 무한히 늘리거나, 데이터가 없다는 이유로 모든 내부 연결 작업을 중단해서는 안 된다.
+
+### 단계 D — 최종 출력과 전체 gate의 성공·실패 경로를 함께 완성
+
+F16 운영 승격 우회와 F17 성공 불능을 먼저 닫는다. U45의 typed measurement 판정과 U46의 모든 promotion 경로를 같은 exact candidate 감사에 연결한다. 동시에 U34의 offline 준비 실패와 tempo 변화 반례를 actual plugin host에서 실행한다.
+
+종료 조건은 “불충분한 입력은 거절”과 “완전한 유효 입력은 수락”의 쌍이다. JSON hash와 finite PCM만으로 성공 처리하지 않는다. 이 작업은 제품 완결을 위한 안전 경계이며 실제 가창 기능 대신 progress를 채우는 별도 문서 프로젝트가 되어서는 안 된다.
+
+### 단계 E — 같은 제작·노래 경로를 전체 native UX·표현·캐릭터로 확장
+
+R2/R10/R11/R12/R14를 별도 버튼 목록이 아니라 제작자의 작업으로 묶는다. score import → 발음 수정 → 자동 제안 비교/수락 → 수동 tuning → style/고급 expression → save/reopen → master/stem export를 완주한다. locked/manual 수정 보존과 실제 audio 변화가 함께 확인되어야 한다.
+
+이때 노트 겹침·overflow·IME·접근성·character playback 동기화를 화면과 입력으로 검증한다. 장식적 portrait 확대나 controller 크기 증가만으로 U41 또는 사용성을 완료 처리하지 않는다.
+
+### 단계 F — 자원과 소스 기준점을 고정하고 exact installed release를 수락
+
+리뷰 가능한 checkpoint 단위로 현재 변경을 통합하고 clean checkout에서 재빌드한다. source closure를 녹색으로 만들 목적으로 검토 없이 전부 stage하지 않는다. 이 보고서 작성 중에는 stage·commit·push를 수행하지 않았다.
+
+이후 같은 자원/모델/character와 signed candidate를 양 플랫폼·9 host tuple에서 설치, full-song state, offline bounce, 장시간 workload, recovery/support, archive restore로 검증한다. 기존 계약의 언어별 60 phrase, 3개 완성 곡, 독립 creator 5명, pitch/timing/latency 기준은 대체하거나 면제하지 않는다. 근거: `docs/product/FULL_SCOPE_AUTHORITY_AMENDMENT.md:57` 이후.
+
+## 13. 개발 운영: 병렬 축은 세 개, 완료 증거는 사용자 결과와 연결한다
+
+동시 작업 축은 **제작·자원**, **음악·언어·neural**, **host·검증·통합** 정도로 제한하는 것이 타당하다. 공유 production schema, domain, CMake, native controller는 한 소유자가 직렬 통합한다. 현재 `editor_controller.cpp`는 5,403줄, Studio main은 1,337줄이다. 파일 크기 자체가 버그라는 뜻은 아니지만 여러 작업자가 같은 상태·모달·비동기 경계를 동시에 수정하기 어렵게 한다. lifecycle 단위 분리는 기능 수락과 함께 수행하고 전면 재구성으로 다시 범위를 넓히지 않는다.
+
+각 작업의 증거는 다음 네 가지면 충분히 선명해진다.
+
+1. 어떤 기존 사용자 작업이 이제 끝나는가.
+2. 어떤 반례가 수정 전 실패하고 수정 후 통과하는가.
+3. 실제 저장물·음성·설치된 자원 중 무엇이 남는가.
+4. 아직 증명하지 못한 제품 조건은 무엇인가.
+
+검증은 변경 경계의 집중 테스트 → 관련 실제 연결 시나리오 → checkpoint에서 전체 회귀 순으로 운영한다. 모든 작은 변경마다 전체 suite를 반복하거나, 5초 soak를 누적해 장시간 qualification처럼 보고하지 않는다. 반대로 집중 테스트만 누적하고 공유 파일 통합 검증을 계속 미루지도 않는다.
+
+이번 발견은 **기존 테스트의 긍정 경로가 너무 편한 fixture를 사용하거나, 거절 경로만 검사하면 중요한 제품 결함을 놓친다**는 점을 보여준다. 올바른 방향 전환은 테스트 수를 줄이는 것도 늘리는 것도 아니라, 정상 사용자가 거치는 입력과 실패를 검증에 포함시키는 것이다.
+
+## 14. 아직 확정하지 않은 것과 최종 권고
+
+이번 리뷰에서는 실제 여성 가수의 청감, 모델 학습 결과, 현재 GUI의 모든 overflow·겹침, Windows 동작, 실제 설치 DAW의 실패 bounce를 새로 측정하지 않았다. 외부 자원이 repo 밖에 존재할 가능성도 배제하지 않는다. 따라서 남은 개발 기간이나 제품 완료율을 정밀한 숫자로 추정하지 않는다.
+
+다음에 답해야 할 질문은 재승인을 받기 위한 중단 사유가 아니라 구체적인 개발·수락 과제다. 초안에서 시작한 제작을 끝낼 수 있는가? 새로운 가사를 원래 의도한 발음과 선율로 부르는가? 같은 목소리의 identity와 style이 음역 전체에서 유지되는가? final 출력 실패가 사용자와 host에 정확하게 전달되는가? 유효한 동일 candidate만 모든 승격 경로를 통과하는가?
+
+**최종 권고는 “지금의 핵심 구조는 계속 사용하되, producer의 정상 초안부터 설치된 가수의 실제 곡까지 한 번 끝내는 일을 최우선으로 하라”다.** 동시에 발음 정답·음향 품질·실제 neural model 위험을 병행 검증한다. 최근 수리와 새 publisher는 이 방향으로의 진전이다. 하지만 이번에 재현한 take 오귀속·한국어 발음·운영 승격 우회처럼, 구성요소 PASS만으로 가려지는 내부 문제가 더 남아 있다.
+
+다음 진행 보고의 중심은 “몇 개 파일과 테스트가 늘었는가”가 아니라 **“사용자가 새 목소리로 처음 만든 곡을 끝내고, 새 설치에서 다시 열 수 있게 되었는가”**여야 한다. 그 경로가 완성되어도 Full-Scope 전체의 자원·음악·언어·host·독립 수락 조건을 모두 충족하기 전에는 Beta GO로 부르지 않는다.

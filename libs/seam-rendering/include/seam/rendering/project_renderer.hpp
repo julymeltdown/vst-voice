@@ -16,6 +16,7 @@
 #include <stop_token>
 #include <string>
 #include <vector>
+#include <variant>
 
 namespace seam::rendering {
 
@@ -26,6 +27,18 @@ struct TrackVoicebankSource final {
   std::string contentHash;
   voicebank::VoicebankTrust trust{voicebank::VoicebankTrust::UntrustedInstalled};
 };
+
+struct TrackProceduralSource final {
+  domain::TrackId trackId;
+  synthesis::ProceduralSingerResource resource;
+  std::string style{"neutral"};
+};
+struct TrackRecipeFileSource final {
+  domain::TrackId trackId;
+  domain::ProceduralRecipeReference reference;
+  std::optional<std::filesystem::path> projectDirectory;
+};
+using TrackSingerSource = std::variant<TrackVoicebankSource, TrackProceduralSource, TrackRecipeFileSource>;
 
 struct ProjectRenderDiagnostic final {
   domain::TrackId trackId;
@@ -53,6 +66,13 @@ struct ProjectRenderResult final {
 
 class ProductionProjectRenderer final {
 public:
+  [[nodiscard]] core::Result<ProjectRenderResult> renderWithSources(
+      const domain::Project& project, std::span<const TrackSingerSource> sources,
+      domain::TrackId activeTrack, domain::RegionId activeRegion,
+      std::uint64_t revision, std::uint32_t sampleRate,
+      RenderQuality quality = RenderQuality::Preview,
+      const synthesis::PhraseRenderOptions& sampleOptions = {},
+      PcmCache* cache = nullptr, std::stop_token stopToken = {}) const;
   [[nodiscard]] core::Result<ProjectRenderResult> render(
       const domain::Project& project,
       std::span<const TrackVoicebankSource> voicebanks,

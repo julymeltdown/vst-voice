@@ -25,6 +25,8 @@ enum class VoiceStage : std::uint8_t {
   Release,
 };
 
+enum class VoiceMode : std::uint8_t { Polyphonic, MonophonicLegato };
+
 struct UnitSpan {
   UnitKind kind{UnitKind::Sustain};
   std::uint32_t begin{0};
@@ -72,7 +74,11 @@ enum class EventType : std::uint8_t {
   Pressure,
   Timbre,
   Brightness,
+  Pan,
+  Vibrato,
   Midi1,
+  Volume,
+  Expression,
 };
 
 struct LiveEvent {
@@ -83,6 +89,7 @@ struct LiveEvent {
   std::int16_t key{60};
   float value{0.0F};
   std::array<std::uint8_t, 3> midi{{0, 0, 0}};
+  std::int16_t port{0};
 };
 
 struct LiveStats {
@@ -104,6 +111,9 @@ class LiveVoiceEngine {
 
   void configure(std::uint32_t sampleRate,
                  std::uint32_t outputChannels) noexcept;
+  // Configure while stopped, or on the owning audio thread. Ordinary host
+  // note events are polyphonic unless a caller explicitly selects legato.
+  void setVoiceMode(VoiceMode mode) noexcept { voiceMode_ = mode; }
   bool publishResource(
       std::shared_ptr<const LiveVoicebankResource> resource) noexcept;
   void clearResource() noexcept;
@@ -129,13 +139,21 @@ class LiveVoiceEngine {
   struct Voice {
     bool active{false};
     bool releasing{false};
+    bool keyReleased{false};
     std::int32_t noteId{-1};
     std::int16_t channel{0};
     std::int16_t key{60};
+    std::int16_t port{0};
+    float tuning{0.0F};
+    float volume{1.0F};
+    float expression{1.0F};
     float velocity{0.8F};
     float pressure{1.0F};
     float timbre{0.0F};
     float brightness{0.0F};
+    float pan{0.0F};
+    float vibrato{0.0F};
+    double vibratoPhase{0.0};
     double position{0.0};
     double increment{1.0};
     float envelope{0.0F};
@@ -177,6 +195,12 @@ class LiveVoiceEngine {
   const LiveVoicebankResource* resource_{nullptr};
   std::array<Voice, kMaxVoices> voices_{};
   std::array<float, 16> channelBend_{};
+  std::array<float, 16> channelPan_{};
+  std::array<float, 16> channelPressure_{};
+  std::array<float, 16> channelTimbre_{};
+  std::array<float, 16> channelVibrato_{};
+  std::array<bool, 16> channelSustain_{};
+  VoiceMode voiceMode_{VoiceMode::Polyphonic};
   std::uint32_t sampleRate_{48000};
   std::uint32_t outputChannels_{2};
   std::uint64_t ageCounter_{0};

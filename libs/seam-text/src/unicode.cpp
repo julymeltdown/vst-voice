@@ -210,6 +210,36 @@ std::size_t utf8DisplayWidth(std::string_view text) noexcept {
   return width;
 }
 
+core::Result<std::vector<Utf8LineRange>> wrapUtf8ToDisplayWidth(
+    std::string_view text, std::size_t maximumColumns, std::size_t maximumLines) {
+  if (text.size() > 16U * 1024U * 1024U || maximumColumns < 2U || maximumColumns > 1024U ||
+      maximumLines == 0U || maximumLines > 131072U)
+    return core::failure<std::vector<Utf8LineRange>>(core::ErrorCode::InvalidArgument, "Text wrapping exceeds supported bounds");
+  std::vector<Utf8LineRange> lines;
+  std::size_t start = 0U, width = 0U;
+  const auto append = [&](std::size_t end) {
+    if (lines.size() == maximumLines) return false;
+    lines.push_back({start, end - start}); start = end; width = 0U; return true;
+  };
+  for (std::size_t index = 0U; index < text.size();) {
+    const auto cluster = nextDisplayCluster(text, index);
+    if (!cluster) return core::failure<std::vector<Utf8LineRange>>(core::ErrorCode::InvalidArgument, "Text wrapping requires valid UTF-8");
+    if (text[index] == '\n' || text[index] == '\r') {
+      auto end = index + 1U;
+      if (text[index] == '\r' && end < text.size() && text[end] == '\n') ++end;
+      if (!append(end)) return core::failure<std::vector<Utf8LineRange>>(core::ErrorCode::InvalidArgument, "Text has too many wrapped lines");
+      index = end; continue;
+    }
+    if (width + cluster->width > maximumColumns && index > start) {
+      if (!append(index)) return core::failure<std::vector<Utf8LineRange>>(core::ErrorCode::InvalidArgument, "Text has too many wrapped lines");
+    }
+    width += cluster->width; index = cluster->end;
+  }
+  if ((start < text.size() || lines.empty()) && !append(text.size()))
+    return core::failure<std::vector<Utf8LineRange>>(core::ErrorCode::InvalidArgument, "Text has too many wrapped lines");
+  return core::success(std::move(lines));
+}
+
 std::string truncateUtf8ToDisplayWidth(std::string_view text,
                                        std::size_t maximumColumns) {
   std::string result;

@@ -290,10 +290,26 @@ void AuthoringSession::configureController() {
       .applyAudioSettings = externalCallbacks_.applyAudioSettings,
       .uiClock = externalCallbacks_.uiClock,
       .reduceMotionEnabled = externalCallbacks_.reduceMotionEnabled,
+      .reviewPhonemeBindings = [this] { return runtime_->technicalEdits().reviewPhonemeBindings(); },
+      .rebindPhonemeOverride = [this](const domain::PhonemeOverride& edit, domain::PhonemeKey target, std::string_view context) {
+        return runtime_->technicalEdits().rebindPhonemeOverride(edit, target, context);
+      },
+      .reviewRenderEdits = [this] { return runtime_->technicalEdits().reviewRetainedRenderEdits(); },
+      .rebindUnitOverride = [this](const auto& review, const auto& edit, auto target) {
+        return runtime_->technicalEdits().rebindUnitOverride(review, edit, target);
+      },
+      .rebindSeamOverride = [this](const auto& review, const auto& edit, auto target) {
+        return runtime_->technicalEdits().rebindSeamOverride(review, edit, target);
+      },
+      .prepareJapaneseReadingResource = externalCallbacks_.prepareJapaneseReadingResource,
   };
   controller_ = std::make_unique<native_ui::NativeEditorController>(
       runtime_->document().session(), runtime_->document().factory(),
       regionId_, std::move(callbacks));
+  controller_->setMeasurementCoordinator(runtime_->renderer());
+  controller_->setStyleBankSnapshotResolver([this](domain::TrackId track) {
+    return runtime_->voicebanks().resolveTrackSnapshot(runtime_->document().session().project(), track);
+  });
   controller_->setDirty(runtime_->document().dirty());
 }
 
@@ -348,9 +364,52 @@ core::Result<void> AuthoringSession::saveProjectAs(
 core::Result<void> AuthoringSession::recoverProject(
     authoring::AutosaveService& autosave,
     const authoring::RecoveryCandidate& candidate) {
-  auto recovered = autosave.recover(runtime_->document(), candidate);
+  auto recovered = autosave.recover(runtime_->document(), candidate,
+                                    &runtime_->voicebanks());
   if (!recovered) return recovered;
   return rebindAfterProjectReplacement();
+}
+
+core::Result<authoring::InterchangeImportDraft>
+AuthoringSession::prepareInterchangeImport(
+    const std::filesystem::path& path,
+    authoring::InterchangeImportRequest request) const {
+  if (runtime_ == nullptr) {
+    return core::failure<authoring::InterchangeImportDraft>(
+        core::ErrorCode::InvalidState,
+        "Interchange import requires an initialized authoring session");
+  }
+  application::ProjectFactory draftFactory{
+      runtime_->document().factory().nextIdValue()};
+  return authoring::InterchangeService{}.importFile(
+      path, draftFactory, std::move(request));
+}
+
+core::Result<void> AuthoringSession::acceptInterchangeImport(
+    authoring::InterchangeImportDraft draft) {
+  if (runtime_ == nullptr) {
+    return core::failure(core::ErrorCode::InvalidState,
+                         "Interchange import requires an initialized authoring session");
+  }
+  const auto validation = draft.project.validate();
+  if (!validation) return validation;
+  auto replaced = runtime_->document().replaceProject(std::move(draft.project));
+  if (!replaced) return replaced;
+  auto rebound = rebindAfterProjectReplacement();
+  if (rebound && externalCallbacks_.documentChanged) externalCallbacks_.documentChanged();
+  return rebound;
+}
+
+core::Result<authoring::InterchangeExportReceipt>
+AuthoringSession::exportInterchange(
+    authoring::InterchangeExportRequest request) const {
+  if (runtime_ == nullptr) {
+    return core::failure<authoring::InterchangeExportReceipt>(
+        core::ErrorCode::InvalidState,
+        "Interchange export requires an initialized authoring session");
+  }
+  return authoring::InterchangeService{}.exportFile(
+      runtime_->document().session().project(), std::move(request));
 }
 
 core::Result<authoring::MediaImportResult> AuthoringSession::importBackingMedia(

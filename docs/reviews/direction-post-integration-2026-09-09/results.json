@@ -1,0 +1,210 @@
+{
+  "reviewDate": "2026-09-09",
+  "timezone": "Asia/Seoul",
+  "capturedAt": "2026-09-08T18:27:47.347Z",
+  "branch": "codex/production-readiness-completion",
+  "head": "741ae2f244b9d3ff8eb6f31dc1f73cae54ea974d",
+  "scope": "Read-only product-source review; report and isolated synthetic diagnostics only. No product/test edits, staging, commits, pushes, reviews, or release promotions.",
+  "verdict": {
+    "architecture": "RETAIN",
+    "execution": "REFOCUS_ON_COMPLETE_CREATOR_SINGER_SONG_PATH",
+    "integration": "NOT_ACCEPTED",
+    "fullScopeBeta": "NO_GO"
+  },
+  "worktreeBeforeArtifacts": {
+    "trackedChanged": 208,
+    "untrackedFiles": 314,
+    "totalPaths": 522,
+    "trackedInsertions": 22629,
+    "trackedDeletions": 1184,
+    "untrackedLinesExcluded": true,
+    "trackedDiffSha256": "9487c857832850d7d190a16897de60ae49ef6a7e4795451b78ae2e829edacc1b"
+  },
+  "build": {
+    "command": "cmake --build build/release -j 4",
+    "exitCode": 0,
+    "output": "ninja: no work to do.",
+    "cleanCheckout": false
+  },
+  "ctest": {
+    "command": "ctest --test-dir build/release --output-on-failure -j 1 --output-log direction-review-2026-09-09.log",
+    "durableLog": "docs/reviews/direction-post-integration-2026-09-09/ctest-full.log",
+    "logSha256": "9c9b267a9877cb5d3b34093ad769819cefcef66a62d4918c776737a5b5fbb9db",
+    "startKst": "2026-09-09 03:02",
+    "endKst": "2026-09-09 03:06",
+    "durationSeconds": 248.08,
+    "exitCode": 8,
+    "total": 116,
+    "passed": 110,
+    "failed": 6,
+    "passPercent": 94.82758620689656,
+    "failedSuites": [
+      "seam_export_tests",
+      "seam_tracked_source_closure",
+      "seam_tests",
+      "seam_production_draft_tests",
+      "seam_studio_sample_review_tests",
+      "seam_voicebank_production_tests"
+    ],
+    "uniqueCppFailedCases": [
+      "articulated candidates bake and enter production with typed unapproved gestures",
+      "sample review packet roundtrips bounded material and rejects tampering",
+      "draft import requires actual source execution permission and unchanged evidence",
+      "Studio explicit acceptance publishes an actual new candidate and preserves producer input"
+    ],
+    "core": {
+      "passed": 769,
+      "failed": 4
+    },
+    "unindexedRequiredInputs": 311,
+    "countsOverlap": true,
+    "focused": {
+      "ownership": [
+        8,
+        0
+      ],
+      "staging": [
+        12,
+        0
+      ],
+      "importOutcomes": [
+        8,
+        0
+      ],
+      "sampleReviewCli": [
+        3,
+        0
+      ],
+      "studioReview": [
+        8,
+        1
+      ],
+      "producer": [
+        32,
+        2
+      ],
+      "language": [
+        15,
+        0
+      ]
+    }
+  },
+  "matrix": {
+    "cases": 336,
+    "expected": 336,
+    "failures": 0,
+    "executionPath": "clap-plugin-process-v1",
+    "evidenceScope": "engineering",
+    "releaseEligible": false,
+    "resourceMode": "development-fixture",
+    "pluginSha256": "67b150c64a71c59d5145420f80689cf2d63487c4c8191fc0b67531570978e9bf",
+    "log": "docs/reviews/direction-post-integration-2026-09-09/matrix.json"
+  },
+  "contract": {
+    "requirements": 20,
+    "cases": 83,
+    "hostTuples": 9,
+    "matrixStatus": "UNRESOLVED",
+    "releasedResources": 0,
+    "evaluationProfileStatus": "UNRESOLVED",
+    "criteria": {
+      "FIXED": 18,
+      "UNRESOLVED": 11
+    }
+  },
+  "ledger": {
+    "acceptedUnits": [
+      "U1",
+      "U2",
+      "U3",
+      "U4",
+      "U5"
+    ],
+    "totalUnits": 48,
+    "percent": 10.416666666666668,
+    "statusIsLedgerHistoryNotFreshReacceptance": true,
+    "isProductCompletionPercent": false
+  },
+  "diagnostics": {
+    "recovery": {
+      "reproduced": true,
+      "scope": "Synthetic isolated fixture, no approval/publication",
+      "control": {
+        "saveGeneration": 2,
+        "importGeneration": 3,
+        "prepareReview": "PASS"
+      },
+      "tornJournal": {
+        "gap": 2,
+        "recoveredGeneration": 1,
+        "saveGeneration": 3,
+        "saveVerify": "PASS",
+        "importGeneration": 4,
+        "importVerify": "PASS",
+        "prepareReview": "FAIL",
+        "error": "Candidate original import attribution requires contiguous verified generation history",
+        "context": "Missing generation 2"
+      }
+    },
+    "english": {
+      "input": "sing",
+      "tokens": [
+        {
+          "phone": "s",
+          "role": "Onset",
+          "voiced": false
+        },
+        {
+          "phone": "ih1",
+          "role": "Nucleus",
+          "voiced": true
+        },
+        {
+          "phone": "ng",
+          "role": "Onset",
+          "voiced": true
+        }
+      ],
+      "warnings": 0,
+      "audibleImpactMeasured": false
+    },
+    "studioPath": {
+      "lexicallyEqual": false,
+      "filesystemEquivalent": true,
+      "performedByIndependentReviewer": true
+    },
+    "gate": {
+      "case": "R13.macos-arm64-reaper-clap",
+      "readmeAsOperations": true,
+      "errors": [],
+      "fullReportOrGoBypass": false,
+      "readmeSha256": "3b12c78feed58e579a90870c20c94f18d42de88d31d56665cfbd11e07fd418e4"
+    },
+    "tempo": {
+      "kind": "formula counterexample, not native host execution",
+      "trueSeconds": 6,
+      "mappedSeconds": 8,
+      "errorFramesAt48000": 96000
+    }
+  },
+  "hashes": {
+    "DEVELOPMENT_DIRECTION_POST_INTEGRATION_REVIEW_2026-09-09_KO.md": "71ac17ccaf4b210fceebec7b15d19e5e9221c29dd949e428df0d904b6015fd27",
+    "docs/plans/2026-09-05-1718-feat-full-scope-beta-go-plan.md": "1ffb61076cc48c7bd603d4b9f3528f3b43e11a5f60be14453fadc3eb6dcacc7f",
+    "docs/product/full-product-beta-contract.json": "d97e07403fbdc11a866eeb4b79ce5e1b5725cdd7a6c418f342a7c580b79d633f",
+    "build/release/libseam_voicebank_production.a": "4509c1ebdccbd3b155ea69468b8506300dbf0b0e8caafca65ed9283dd60b8892",
+    "build/release/libseam_phonemizer.a": "4f24f4528175265a2dc163fbb1cdca4f9ae1108b8d7d7373a4f915ba805a792e",
+    "docs/reviews/direction-post-integration-2026-09-09/recovery_review_probe.cpp": "1e4f5d8c8d84c6bf6291ba7fa998437c98967b73510b3d85ffd1e8469f1ebcc4",
+    "docs/reviews/direction-post-integration-2026-09-09/language_path_probe.cpp": "ab3173769fd0eb454f49a92499201b35f7012838c669ea1468ce1c042dad63d1",
+    "docs/reviews/direction-post-integration-2026-09-09/gate_subpredicate_probe.py": "828c0adaadbe34e8f898015468f9fc0c4ca75780a6c49ae97f2be4c1a9220137"
+  },
+  "notRun": [
+    "Fresh clean-checkout build",
+    "Full current GUI visual/input review",
+    "Windows runtime",
+    "Actual nine installed DAW tuples",
+    "Long qualification soak",
+    "Qualified female singer listening",
+    "Actual trained neural singing",
+    "Independent creator/music/language acceptance"
+  ]
+}

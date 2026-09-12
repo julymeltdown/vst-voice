@@ -7,6 +7,19 @@
 
 namespace seam::domain {
 
+core::Result<void> ProceduralRecipeReference::validate() const {
+  const auto identity = resource.validate();
+  if (!identity) return identity;
+  const auto invalidText = [](const std::string& value, std::size_t limit) {
+    return value.empty() || value.size() > limit || std::any_of(value.begin(), value.end(),
+        [](unsigned char c) { return c < 32U || c == 127U; });
+  };
+  if (resource.kind != SingerResourceKind::Procedural || invalidText(path, 4096U) || invalidText(style, 128U)) {
+    return core::failure(core::ErrorCode::InvalidArgument, "Procedural recipe reference is invalid");
+  }
+  return core::success();
+}
+
 namespace {
 
 bool isSha256(std::string_view value) noexcept {
@@ -209,7 +222,14 @@ core::Result<void> VocalRegion::validate() const {
     return core::failure(core::ErrorCode::InvariantViolation,
                          "Pitch automation extends beyond the region");
   }
-  return core::success();
+  const auto dynamicsValidation = dynamicsAutomation.validate();
+  if (!dynamicsValidation) return dynamicsValidation;
+  if (!dynamicsAutomation.points().empty() &&
+      dynamicsAutomation.points().back().tick > durationTick) {
+    return core::failure(core::ErrorCode::InvariantViolation,
+                         "Dynamics automation extends beyond the region");
+  }
+  return performance.validate(notes, durationTick);
 }
 
 VocalRegion* VocalTrack::findRegion(RegionId regionId) noexcept {
@@ -304,6 +324,15 @@ core::Result<void> Project::validate() const {
     return core::failure(core::ErrorCode::InvariantViolation,
                          "Project snap grid must be positive");
   }
+  for (const auto& lane : settings_.technicalLanes) {
+    if (!std::isfinite(lane.expandedHeight) || lane.expandedHeight < 96.0 ||
+        lane.expandedHeight > 640.0 ||
+        (lane.mode != TechnicalLaneMode::Auto && lane.mode != TechnicalLaneMode::Collapsed &&
+         lane.mode != TechnicalLaneMode::Preview && lane.mode != TechnicalLaneMode::Expanded)) {
+      return core::failure(core::ErrorCode::InvariantViolation,
+                           "Technical lane presentation is invalid");
+    }
+  }
   const auto routingValidation = routing_.validate();
   if (!routingValidation) return routingValidation;
 
@@ -336,6 +365,12 @@ core::Result<void> Project::validate() const {
     }
     const auto routeValidation = validateTrackRoute(track.outputRoute, track.id);
     if (!routeValidation) return routeValidation;
+    const auto styleValidation = track.styleSelection.validate();
+    if (!styleValidation) return styleValidation;
+    if (track.proceduralRecipe) {
+      const auto recipe = track.proceduralRecipe->validate();
+      if (!recipe) return recipe;
+    }
     for (const auto& region : track.regions) {
       if (!regionIds.insert(region.id).second) {
         return core::failure(core::ErrorCode::InvariantViolation,

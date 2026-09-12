@@ -2,6 +2,7 @@
 
 #include "seam/application/command.hpp"
 #include "seam/application/selection.hpp"
+#include "seam/application/performance_job_context.hpp"
 #include "seam/core/logger.hpp"
 
 #include <cstdint>
@@ -31,6 +32,12 @@ public:
   [[nodiscard]] core::Result<void> redo();
   [[nodiscard]] core::Result<void> replaceProject(domain::Project project);
 
+  // Capture and publication run on the editor owner thread; workers read only the immutable source.
+  [[nodiscard]] core::Result<PerformanceJobContext> capturePerformanceJob() const;
+  [[nodiscard]] core::Result<void> validatePerformanceJob(const PerformanceJobContext& context) const;
+  [[nodiscard]] core::Result<void> executePerformanceResult(
+      const PerformanceJobContext& context, std::unique_ptr<ICommand> command);
+
   [[nodiscard]] bool canUndo() const noexcept { return !undo_.empty(); }
   [[nodiscard]] bool canRedo() const noexcept { return !redo_.empty(); }
   [[nodiscard]] std::string_view undoName() const noexcept;
@@ -39,6 +46,8 @@ public:
   void clearHistory() noexcept;
 
 private:
+  [[nodiscard]] static bool samePerformanceInputs(const domain::Project& left,
+                                                 const domain::Project& right);
   void incrementRevision() noexcept { ++revision_; }
   void log(core::LogLevel level, std::string_view message);
 
@@ -47,6 +56,7 @@ private:
   std::vector<std::unique_ptr<ICommand>> undo_;
   std::vector<std::unique_ptr<ICommand>> redo_;
   std::uint64_t revision_{0};
+  std::shared_ptr<const detail::PerformanceJobGeneration> performanceGeneration_;
   SessionHealth health_{SessionHealth::Ready};
   CommandImpact lastImpact_{
       .scope = CommandAudioImpact::ViewOnly,

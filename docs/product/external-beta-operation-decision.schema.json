@@ -3,7 +3,7 @@
   "$id": "https://project-seam.invalid/schemas/external-beta-operation-decision.schema.json",
   "title": "Project SEAM External Beta append-only operation decision",
   "type": "object",
-  "additionalProperties": true,
+  "additionalProperties": false,
   "required": ["schemaVersion", "decisionId", "action", "candidateRootId", "actorRole", "createdAt"],
   "properties": {
     "schemaVersion": {"const": 1},
@@ -11,6 +11,32 @@
     "action": {"enum": ["PROMOTE_READY", "START_COHORT", "PAUSE", "RESUME", "REVOKE", "CLOSE"]},
     "candidateRootId": {"type": "string", "minLength": 1},
     "actorRole": {"enum": ["A3", "A4", "A5", "A6"]},
-    "createdAt": {"type": "string", "format": "date-time"}
+    "createdAt": {"type": "string", "format": "date-time"},
+    "candidateRootSha256": {"$ref": "#/$defs/sha256"},
+    "reason": {"type": "string", "minLength": 1},
+    "consentVersion": {"type": "string", "minLength": 1},
+    "approvals": {"type": "array", "uniqueItems": true, "items": {"enum": ["A3", "A4", "A5", "A6"]}},
+    "auditPassed": {"type": "boolean", "deprecated": true},
+    "freshGo": {"type": "boolean", "deprecated": true},
+    "cohortAuditPassed": {"type": "boolean", "deprecated": true},
+    "evaluationWindowEnded": {"type": "boolean", "deprecated": true},
+    "releaseAudit": {
+      "type": "object", "additionalProperties": false,
+      "required": ["candidate", "archiveManifest", "archiveRoot"],
+      "properties": {
+        "candidate": {"$ref": "#/$defs/reference"},
+        "archiveManifest": {"$ref": "#/$defs/reference"},
+        "archiveRoot": {"type": "string", "minLength": 1}
+      }
+    }
+  },
+  "allOf": [{
+    "if": {"properties": {"action": {"enum": ["PROMOTE_READY", "START_COHORT", "RESUME", "CLOSE"]}}},
+    "then": {"required": ["candidateRootSha256", "releaseAudit"]}
+  }],
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "reference": {"type": "object", "additionalProperties": false, "required": ["locator", "sha256"],
+      "properties": {"locator": {"type": "string", "minLength": 1}, "sha256": {"$ref": "#/$defs/sha256"}}}
   }
 }

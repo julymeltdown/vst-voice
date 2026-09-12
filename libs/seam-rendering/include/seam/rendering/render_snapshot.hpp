@@ -6,6 +6,7 @@
 #include "seam/rendering/phrase_segmenter.hpp"
 #include "seam/synthesis/phrase_renderer.hpp"
 #include "seam/synthesis/unit_selection.hpp"
+#include "seam/synthesis/singer_resource.hpp"
 #include "seam/voicebank/voicebank.hpp"
 
 #include <cstdint>
@@ -18,13 +19,7 @@ namespace seam::rendering {
 
 enum class RenderQuality { Preview, Final };
 
-struct SelectedUnitIdentity final {
-  std::string unitId;
-  std::string audioSha256;
-
-  friend bool operator==(const SelectedUnitIdentity&,
-                         const SelectedUnitIdentity&) = default;
-};
+using SelectedUnitIdentity = synthesis::SelectedUnitIdentity;
 
 // Immutable, phrase-scoped input for background rendering. The snapshot owns
 // the exact phoneme and unit plans used to calculate its content identity, so
@@ -36,20 +31,34 @@ struct RenderSnapshot final {
   std::string contentHash;
   PhraseSegment segment;
   domain::TrackId trackId;
+  // Scheduling/lifecycle identity, distinct from the canonicalized render
+  // project's ID. Not part of content identity: identical audio may be shared.
+  domain::ProjectId sourceProjectId;
   std::shared_ptr<const domain::Project> project;
-  std::shared_ptr<const voicebank::Manifest> voicebank;
   std::shared_ptr<const phonemizer::Result> phonemes;
-  std::shared_ptr<const synthesis::UnitPlan> unitPlan;
-  std::vector<SelectedUnitIdentity> selectedUnits;
-  std::vector<synthesis::FrozenUnitAudio> frozenAudio;
-  synthesis::PhraseRenderOptions renderOptions;
-  std::filesystem::path bankRoot;
+  synthesis::SingerResource resource;
   std::uint32_t sampleRate{48000};
   std::string style{"original"};
+  std::optional<domain::PronunciationIdentity> pronunciationIdentity;
+  std::shared_ptr<const synthesis::CompiledScorePerformance> compiledPerformance{};
+  // Absolute half-open publication window. Musical/source context remains the
+  // complete segment; absence publishes the legacy full rendered extent.
+  std::optional<synthesis::PhraseFrameRange> ownedFrames{};
+  [[nodiscard]] const synthesis::SampleSingerResource& sample() const { return std::get<synthesis::SampleSingerResource>(resource); }
+  [[nodiscard]] synthesis::SampleSingerResource& sample() { return std::get<synthesis::SampleSingerResource>(resource); }
 };
 
 class RenderSnapshotFactory final {
 public:
+  [[nodiscard]] core::Result<RenderSnapshot> createProcedural(
+      const domain::Project& project, const synthesis::ProceduralSingerResource& resource,
+      domain::TrackId trackId, domain::RegionId regionId, std::uint64_t revision,
+      RenderQuality quality, std::uint32_t sampleRate, std::string style = "neutral",
+      std::optional<synthesis::PhraseFrameRange> ownedFrames = {}) const;
+  // Reuses frozen source context; never reopens resources or changes music.
+  [[nodiscard]] core::Result<std::vector<RenderSnapshot>> splitOwnedOutput(
+      const RenderSnapshot& source, synthesis::PhraseFrameRange output,
+      std::uint32_t maximumChunkFrames, std::size_t maximumChunks = 4096U) const;
   [[nodiscard]] core::Result<RenderSnapshot> create(
       const domain::Project& project,
       const voicebank::Manifest& voicebank,
@@ -60,7 +69,8 @@ public:
       std::filesystem::path bankRoot,
       std::uint32_t sampleRate = 0,
       std::string style = {},
-      const synthesis::PhraseRenderOptions& renderOptions = {}) const;
+      const synthesis::PhraseRenderOptions& renderOptions = {},
+      std::optional<synthesis::PhraseFrameRange> ownedFrames = {}) const;
 };
 
 // Kept for persisted Phase 3/4 diagnostics. New render identities use SHA-256.

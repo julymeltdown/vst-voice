@@ -1,0 +1,174 @@
+{
+  "audioTracks": [],
+  "formatId": "com.project-seam.project",
+  "meterMap": [
+    {
+      "denominator": 4,
+      "numerator": 4,
+      "tick": 0
+    }
+  ],
+  "name": "Released coda",
+  "ppq": 960,
+  "projectId": "157c0",
+  "routing": {
+    "buses": [
+      {
+        "channelCount": 2,
+        "gainDb": 0,
+        "id": "1",
+        "muted": false,
+        "name": "Master",
+        "solo": false
+      }
+    ],
+    "deviceOutputChannels": 2,
+    "deviceRoutes": [
+      {
+        "enabled": true,
+        "gainDb": 0,
+        "matrix": {
+          "destinationChannels": 2,
+          "gains": [
+            1,
+            0,
+            0,
+            1
+          ],
+          "sourceChannels": 2
+        },
+        "sourceBus": "1"
+      }
+    ],
+    "masterBus": "1",
+    "sends": []
+  },
+  "schemaVersion": 9,
+  "settings": {
+    "characterDisplay": "minimal",
+    "hostStartOffsetTick": 0,
+    "sampleRate": 48000,
+    "snapEnabled": true,
+    "snapGrid": 240,
+    "technicalLanes": [
+      {
+        "expandedHeight": 120,
+        "mode": "auto"
+      },
+      {
+        "expandedHeight": 120,
+        "mode": "auto"
+      },
+      {
+        "expandedHeight": 120,
+        "mode": "auto"
+      },
+      {
+        "expandedHeight": 120,
+        "mode": "auto"
+      },
+      {
+        "expandedHeight": 120,
+        "mode": "auto"
+      }
+    ]
+  },
+  "tempoMap": [
+    {
+      "bpm": 120,
+      "tick": 0
+    }
+  ],
+  "vocalTracks": [
+    {
+      "character": {
+        "id": "",
+        "version": ""
+      },
+      "gainDb": 0,
+      "id": "157c1",
+      "muted": false,
+      "name": "Singer",
+      "outputRoute": {
+        "busId": "1",
+        "matrix": {
+          "destinationChannels": 2,
+          "gains": [
+            0.70710676908493042,
+            0.70710676908493042
+          ],
+          "sourceChannels": 1
+        }
+      },
+      "pan": 0,
+      "proceduralRecipe": {
+        "contentHash": "f2682bcd009806483bb125cfae7fe97c305b21f001d238d90bdbfef414bba088",
+        "id": "released-coda",
+        "path": "recipes/f2682bcd009806483bb125cfae7fe97c305b21f001d238d90bdbfef414bba088.json",
+        "style": "neutral",
+        "version": "4"
+      },
+      "regions": [
+        {
+          "durationTick": 960,
+          "dynamicsAutomation": [],
+          "id": "157c2",
+          "lyrics": [
+            {
+              "id": "157c3",
+              "language": "en",
+              "surface": "ack"
+            }
+          ],
+          "name": "Phrase",
+          "notes": [
+            {
+              "articulation": "normal",
+              "durationTick": 960,
+              "id": "157c4",
+              "lyricId": "157c3",
+              "midiKey": 69,
+              "phoneticHint": "aa1 k",
+              "startTick": 0,
+              "vibrato": {
+                "depthCents": 50,
+                "enabled": false,
+                "fadeInFraction": 0.10000000149011612,
+                "fadeOutFraction": 0.10000000149011612,
+                "periodMilliseconds": 180,
+                "phaseTurns": 0,
+                "startFraction": 0.64999997615814209
+              }
+            }
+          ],
+          "performance": {
+            "accepted": [],
+            "ownership": [],
+            "pronunciation": null,
+            "revision": {
+              "musical": "0",
+              "ownership": "0",
+              "pronunciation": "0"
+            },
+            "takes": []
+          },
+          "phonemeOverrides": [],
+          "pitchAutomation": [],
+          "seamOverrides": [],
+          "startTick": 0,
+          "unitSelectionOverrides": []
+        }
+      ],
+      "solo": false,
+      "styleSelection": {
+        "origin": "unselected",
+        "styleId": ""
+      },
+      "voicebank": {
+        "contentHash": "",
+        "id": "",
+        "version": ""
+      }
+    }
+  ]
+}

@@ -113,8 +113,18 @@ std::vector<float> AudioBuffer::monoMix() const {
 
 core::Result<AudioBuffer> readWav(std::span<const std::byte> bytes,
                                   std::string_view sourceLabel) {
+  return readWav(bytes, sourceLabel, WavReadLimits{}, {});
+}
+
+core::Result<AudioBuffer> readWav(std::span<const std::byte> bytes,
+    std::string_view sourceLabel, WavReadLimits limits, std::stop_token stopToken) {
   const auto source = sourceLabel.empty() ? std::string{"<memory>"}
                                           : std::string{sourceLabel};
+  const auto cancelled = [&source] { return core::failure<AudioBuffer>(
+      core::ErrorCode::Conflict, "WAV decoding cancelled", source); };
+  if (stopToken.stop_requested()) return cancelled();
+  if (limits.maximumFrames == 0U || limits.maximumChannels == 0U || limits.maximumDecodedSamples == 0U)
+    return core::failure<AudioBuffer>(core::ErrorCode::InvalidArgument, "WAV decode limits must be positive", source);
   if (bytes.size() < 44U || bytes.size() > kMaximumSupportedWavBytes) {
     return core::failure<AudioBuffer>(core::ErrorCode::Unsupported,
                                       "WAV payload size is outside supported limits",
@@ -136,6 +146,7 @@ core::Result<AudioBuffer> readWav(std::span<const std::byte> bytes,
 
   std::size_t position = 12U;
   while (position + 8U <= bytes.size()) {
+    if (stopToken.stop_requested()) return cancelled();
     const auto* chunk = bytes.data() + position;
     const auto chunkSize = static_cast<std::size_t>(readU32(chunk + 4));
     position += 8U;
@@ -204,6 +215,15 @@ core::Result<AudioBuffer> readWav(std::span<const std::byte> bytes,
                                       "WAV sample count is too large",
                                       source);
   }
+  // Validate limits before resize/PCM decoding. In particular, an 8-bit file
+  // may expand fourfold and cannot borrow the encoded byte ceiling as its
+  // decoded-memory budget. Divide before multiplying to avoid overflow.
+  if (channels > limits.maximumChannels || static_cast<std::uint64_t>(frameCount) > limits.maximumFrames ||
+      static_cast<std::uint64_t>(frameCount) > limits.maximumDecodedSamples / channels ||
+      frameCount * static_cast<std::size_t>(channels) > std::numeric_limits<std::size_t>::max() / sizeof(float))
+    return core::failure<AudioBuffer>(core::ErrorCode::Unsupported,
+        "WAV channels, frames or decoded samples exceed caller limits before PCM allocation", source);
+  if (stopToken.stop_requested()) return cancelled();
   AudioBuffer result;
   result.sampleRate = sampleRate;
   result.channels = channels;
@@ -212,6 +232,7 @@ core::Result<AudioBuffer> readWav(std::span<const std::byte> bytes,
 
   const auto sampleCount = result.interleaved.size();
   for (std::size_t index = 0U; index < sampleCount; ++index) {
+    if ((index & 4095U) == 0U && stopToken.stop_requested()) return cancelled();
     const auto* sample = audioData + index * bytesPerSample;
     float value = 0.0F;
     if (floatPcm) {
@@ -236,15 +257,25 @@ core::Result<AudioBuffer> readWav(std::span<const std::byte> bytes,
     }
     result.interleaved[index] = value;
   }
+  if (stopToken.stop_requested()) return cancelled();
   return result;
 }
 
 core::Result<AudioBuffer> readWav(const std::filesystem::path& path) {
+  return readWav(path, WavReadLimits{}, {});
+}
+
+core::Result<AudioBuffer> readWav(const std::filesystem::path& path,
+    WavReadLimits limits, std::stop_token stopToken) {
+  if (stopToken.stop_requested()) return core::failure<AudioBuffer>(
+      core::ErrorCode::Conflict, "WAV decoding cancelled", path.string());
+  if (limits.maximumFrames == 0U || limits.maximumChannels == 0U || limits.maximumDecodedSamples == 0U)
+    return core::failure<AudioBuffer>(core::ErrorCode::InvalidArgument, "WAV decode limits must be positive", path.string());
   const auto target = validateWavPath(path, false);
   if (!target) return core::Result<AudioBuffer>{target.error()};
   auto bytes = core::readFileBytesLimited(path, kMaximumSupportedWavBytes);
   if (!bytes) return core::Result<AudioBuffer>{bytes.error()};
-  return readWav(bytes.value(), path.string());
+  return readWav(bytes.value(), path.string(), limits, stopToken);
 }
 
 WavStreamWriter::WavStreamWriter(std::filesystem::path path,

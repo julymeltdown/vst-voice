@@ -5,6 +5,10 @@
 #include "seam/core/sha256.hpp"
 #include "seam/formats/json_value.hpp"
 #include "seam/formats/project_json.hpp"
+#include "seam/voice_design/recipe_resource.hpp"
+#include "seam/rendering/render_pipeline.hpp"
+#include <map>
+#include <unordered_set>
 
 #include <chrono>
 #include <algorithm>
@@ -344,9 +348,19 @@ core::Result<ExportResult> ExportService::exportProject(
     domain::TrackId activeTrack, domain::RegionId activeRegion,
     std::uint64_t revision, const std::filesystem::path& destination,
     voicebank::WavSampleFormat format, std::stop_token stopToken) const {
+  std::vector<rendering::TrackSingerSource> sources;
+  sources.reserve(voicebanks.size());
+  for (const auto& source : voicebanks) sources.emplace_back(source);
+  return exportProjectWithSources(project, sources, activeTrack, activeRegion, revision, destination, format, stopToken);
+}
+
+core::Result<ExportResult> ExportService::exportProjectWithSources(
+    const domain::Project& project, std::span<const rendering::TrackSingerSource> sources,
+    domain::TrackId activeTrack, domain::RegionId activeRegion, std::uint64_t revision,
+    const std::filesystem::path& destination, voicebank::WavSampleFormat format, std::stop_token stopToken) const {
   rendering::ProductionProjectRenderer renderer;
-  const auto rendered = renderer.render(
-      project, voicebanks, activeTrack, activeRegion, revision,
+  const auto rendered = renderer.renderWithSources(
+      project, sources, activeTrack, activeRegion, revision,
       static_cast<std::uint32_t>(project.settings().sampleRate),
       rendering::RenderQuality::Final, {}, nullptr, stopToken);
   if (!rendered) return core::Result<ExportResult>{rendered.error()};
@@ -592,12 +606,24 @@ core::Result<ExportResult> ExportService::exportSet(
     ExportSettings settings,
     std::function<void(const ExportProgress&)> progress,
     std::stop_token stopToken) const {
+  std::vector<rendering::TrackSingerSource> sources;
+  sources.reserve(voicebanks.size());
+  for (const auto& source : voicebanks) sources.emplace_back(source);
+  return exportSetWithSources(project, sources, activeTrack, activeRegion, revision,
+      destination, std::move(settings), std::move(progress), stopToken);
+}
+
+core::Result<ExportResult> ExportService::exportSetWithSources(
+    const domain::Project& project, std::span<const rendering::TrackSingerSource> voicebanks,
+    domain::TrackId activeTrack, domain::RegionId activeRegion, std::uint64_t revision,
+    const std::filesystem::path& destination, ExportSettings settings,
+    std::function<void(const ExportProgress&)> progress, std::stop_token stopToken) const {
   ExportResult result{.state = ExportState::Preflight,
                       .projectRevision = revision,
                       .setPath = destination};
   notifyProgress(progress, ExportState::Preflight, {}, 0U, 0U);
   if (destination.empty() || destination.filename().empty() ||
-      (!settings.includeMaster && !settings.includeStems) ||
+      (!settings.includeMaster && !settings.includeStems && !settings.includeProceduralCandidates) ||
       settings.sampleRate < 8000U || settings.sampleRate > 384000U ||
       settings.channels == 0U || settings.channels > 8U) {
     return core::failure<ExportResult>(
@@ -606,6 +632,12 @@ core::Result<ExportResult> ExportService::exportSet(
   }
   const auto validation = project.validate();
   if (!validation) return core::Result<ExportResult>{validation.error()};
+  std::unordered_set<domain::TrackId> sourceTracks;
+  for (const auto& source : voicebanks) {
+    const auto id = std::visit([](const auto& value) { return value.trackId; }, source);
+    if (!project.findVocalTrack(id) || !sourceTracks.insert(id).second) return core::failure<ExportResult>(
+        core::ErrorCode::Conflict, "Export sources contain an unknown or duplicate vocal track");
+  }
   formats::ProjectJsonCodec projectCodec;
   const auto encodedProject = projectCodec.encode(project);
   if (!encodedProject) {
@@ -630,6 +662,63 @@ core::Result<ExportResult> ExportService::exportSet(
   }
 
   std::vector<std::pair<domain::TrackId, bool>> stems;
+  std::map<std::string, std::string> packageFiles;
+  std::vector<rendering::TrackSingerSource> frozenSources;
+  if (settings.includeProjectAndRecipes || settings.includeProceduralCandidates) {
+    if (voicebanks.size() > project.vocalTracks().size()) return core::failure<ExportResult>(
+        core::ErrorCode::InvalidArgument, "Recipe package source count exceeds project tracks");
+    for (const auto& track : project.audioTracks()) {
+      if (!track.mediaPath.empty() && std::filesystem::path{track.mediaPath}.is_relative()) return core::failure<ExportResult>(
+          core::ErrorCode::Conflict, "Resolve relative backing media before packaging the project snapshot");
+    }
+    auto packaged = project;
+    std::size_t recipeBytes = 0U;
+    for (const auto& source : voicebanks) {
+      if (stopToken.stop_requested()) return core::failure<ExportResult>(core::ErrorCode::Conflict, "Recipe packaging cancelled");
+      if (std::holds_alternative<rendering::TrackVoicebankSource>(source)) { frozenSources.push_back(source); continue; }
+      rendering::TrackProceduralSource frozen;
+      if (const auto* value = std::get_if<rendering::TrackProceduralSource>(&source)) frozen = *value;
+      else {
+        const auto& file = std::get<rendering::TrackRecipeFileSource>(source);
+        auto path = std::filesystem::path{file.reference.path};
+        if (path.is_relative()) {
+          if (!file.projectDirectory || !file.projectDirectory->is_absolute()) return core::failure<ExportResult>(
+              core::ErrorCode::NotFound, "Recipe packaging requires a saved project directory");
+          path = *file.projectDirectory / path;
+        }
+        const auto resource = voice_design::loadVoiceRecipeResource(path.lexically_normal(), file.reference.resource, stopToken);
+        if (!resource) return core::Result<ExportResult>{resource.error()};
+        frozen = {file.trackId, resource.value(), file.reference.style};
+      }
+      const auto recipe = voice_design::decodeVoiceRecipeResource(frozen.resource, stopToken);
+      if (!recipe) return core::Result<ExportResult>{recipe.error()};
+      const auto encoded = voice_design::encodeVoiceRecipe(recipe.value());
+      if (!encoded) return core::Result<ExportResult>{encoded.error()};
+      if (core::sha256Hex(encoded.value()) != frozen.resource.identity.contentHash) return core::failure<ExportResult>(
+          core::ErrorCode::Conflict, "Packaged recipe identity must describe canonical recipe bytes");
+      const auto relative = "recipes/" + frozen.resource.identity.contentHash + ".json";
+      if (!packageFiles.contains(relative)) {
+        if (encoded.value().size() > 16U * 1024U * 1024U - recipeBytes) return core::failure<ExportResult>(
+            core::ErrorCode::Unsupported, "Packaged recipes exceed the 16 MiB aggregate limit");
+        recipeBytes += encoded.value().size();
+        packageFiles.emplace(relative, encoded.value());
+      }
+      auto* track = packaged.findVocalTrack(frozen.trackId);
+      if (!track) return core::failure<ExportResult>(core::ErrorCode::NotFound, "Packaged recipe track is missing");
+      track->proceduralRecipe = domain::ProceduralRecipeReference{frozen.resource.identity, relative, frozen.style};
+      frozenSources.emplace_back(std::move(frozen));
+    }
+    const auto encoded = projectCodec.encode(packaged);
+    for (const auto& track : project.vocalTracks()) {
+      if (track.proceduralRecipe && std::none_of(frozenSources.begin(), frozenSources.end(), [&](const auto& source) {
+          const auto* procedural = std::get_if<rendering::TrackProceduralSource>(&source);
+          return procedural && procedural->trackId == track.id;
+        })) return core::failure<ExportResult>(core::ErrorCode::NotFound, "A saved recipe is absent from the package sources");
+    }
+    if (!encoded) return core::Result<ExportResult>{encoded.error()};
+    packageFiles.emplace("project.seam", encoded.value());
+    voicebanks = frozenSources; // All outputs use the same captured recipes.
+  }
   if (settings.includeStems) {
     for (const auto& track : project.vocalTracks()) {
       if (!track.muted) stems.emplace_back(track.id, true);
@@ -638,8 +727,30 @@ core::Result<ExportResult> ExportService::exportSet(
       if (!track.muted) stems.emplace_back(track.id, false);
     }
   }
+  std::vector<rendering::RenderSnapshot> candidates;
+  if (settings.includeProceduralCandidates) {
+    std::size_t notes = 0U;
+    for (const auto& source : voicebanks) {
+      const auto* procedural = std::get_if<rendering::TrackProceduralSource>(&source);
+      if (!procedural) continue;
+      const auto* track = project.findVocalTrack(procedural->trackId);
+      if (!track) return core::failure<ExportResult>(core::ErrorCode::NotFound, "Bake track is missing");
+      for (const auto& region : track->regions) {
+        if (region.notes.empty()) continue;
+        if (candidates.size() >= 256U || region.notes.size() > 65536U - notes) return core::failure<ExportResult>(
+            core::ErrorCode::Unsupported, "Procedural bake request exceeds candidate/note bounds");
+        notes += region.notes.size();
+        auto snapshot = rendering::RenderSnapshotFactory{}.createProcedural(project, procedural->resource,
+            track->id, region.id, revision, rendering::RenderQuality::Final, settings.sampleRate, procedural->style);
+        if (!snapshot) return core::Result<ExportResult>{snapshot.error()};
+        candidates.push_back(std::move(snapshot).value());
+      }
+    }
+    if (candidates.empty()) return core::failure<ExportResult>(core::ErrorCode::InvalidArgument, "No procedural regions were requested for baking");
+  }
   const auto totalFiles = static_cast<std::uint64_t>(
-      (settings.includeMaster ? 1U : 0U) + stems.size());
+      (settings.includeMaster ? 1U : 0U) + stems.size() + packageFiles.size() + candidates.size() * 2U);
+  if (totalFiles > 1024U) return core::failure<ExportResult>(core::ErrorCode::Unsupported, "Export file count exceeds receipt bounds");
   if (totalFiles == 0U) {
     return core::failure<ExportResult>(core::ErrorCode::InvalidArgument,
                                        "Export set contains no outputs");
@@ -693,7 +804,7 @@ core::Result<ExportResult> ExportService::exportSet(
       return core::failure<ExportFileReceipt>(core::ErrorCode::Conflict,
                                               "Export cancelled");
     }
-    auto rendered = renderer.render(
+    auto rendered = renderer.renderWithSources(
         renderProject, voicebanks, renderTrack, renderRegion, revision,
         settings.sampleRate, rendering::RenderQuality::Final, {}, nullptr,
         stopToken);
@@ -759,6 +870,83 @@ core::Result<ExportResult> ExportService::exportSet(
     ++completed;
   }
 
+  for (const auto& candidate : candidates) {
+    auto rendered = rendering::PhraseRenderPipeline{}.render(candidate, stopToken);
+    if (!rendered) { static_cast<void>(removeTree(staging)); return core::Result<ExportResult>{rendered.error()}; }
+    const auto prefix = std::string{"candidates/"} + candidate.trackId.toString() + "-" + candidate.segment.regionId.toString();
+    const auto path = staging / (prefix + ".wav");
+    std::filesystem::create_directories(path.parent_path(), error);
+    if (error) { static_cast<void>(removeTree(staging)); return core::failure<ExportResult>(core::ErrorCode::IoError, "Unable to stage candidate audio"); }
+    const auto origin = rendered.value().rendered.audio.startFrame;
+    rendering::ProjectRenderResult mono;
+    mono.sampleRate = candidate.sampleRate; mono.channelCount = 1U;
+    mono.interleaved = std::move(rendered.value().rendered.audio.samples);
+    const auto audio = writeRenderedFile(mono, path, voicebank::WavSampleFormat::Float32);
+    if (!audio) { static_cast<void>(removeTree(staging)); return core::Result<ExportResult>{audio.error()}; }
+    const auto& resource = std::get<synthesis::ProceduralSingerResource>(candidate.resource).identity;
+    const bool mixed = voice_design::requiresArticulation(candidate.phonemes->tokens);
+    const bool voicedFrication=std::any_of(rendered.value().proceduralMarkers.begin(),rendered.value().proceduralMarkers.end(),
+        [](const auto& marker){return marker.kind==voice_design::ProceduralGestureKind::VoicedFrication;});
+    const bool nasal=std::any_of(rendered.value().proceduralMarkers.begin(),rendered.value().proceduralMarkers.end(),
+        [](const auto& marker) { return marker.kind==voice_design::ProceduralGestureKind::Nasal; });
+    const bool plosive=std::any_of(rendered.value().proceduralMarkers.begin(),rendered.value().proceduralMarkers.end(),
+        [](const auto& marker) { return marker.kind==voice_design::ProceduralGestureKind::Plosive; });
+    formats::JsonValue::Array markers;
+    for (const auto& marker : rendered.value().proceduralMarkers) {
+      formats::JsonValue::Object entry{
+        {"key", formats::JsonValue{marker.key.toString()}}, {"phone", formats::JsonValue{marker.phone}},
+        {"startFrame", formats::JsonValue{static_cast<std::int64_t>(marker.ownedSpan.start - origin)}},
+        {"endFrame", formats::JsonValue{static_cast<std::int64_t>(marker.ownedSpan.end - origin)}}};
+      if (mixed) entry.emplace("kind", formats::JsonValue{marker.kind == voice_design::ProceduralGestureKind::Frication ? "frication" :
+          marker.kind==voice_design::ProceduralGestureKind::VoicedFrication?"voiced-frication":
+          marker.kind==voice_design::ProceduralGestureKind::Plosive?"plosive":
+          marker.kind==voice_design::ProceduralGestureKind::Nasal?"nasal":"oral-vowel"});
+      markers.emplace_back(std::move(entry));
+    }
+    formats::JsonValue::Object metadataFields{
+        {"formatId", formats::JsonValue{"com.project-seam.procedural-candidate"}},
+        {"schemaVersion", formats::JsonValue{std::int64_t{voicedFrication ? 5 : plosive ? 4 : nasal ? 3 : mixed ? 2 : 1}}}, {"approval", formats::JsonValue{"unapproved"}},
+        {"markerSemantics", formats::JsonValue{mixed ? "planned-articulated-gestures" : "planned-vowel-gestures"}},
+        {"audioSha256", formats::JsonValue{audio.value().sha256}},
+        {"sampleRate", formats::JsonValue{static_cast<std::int64_t>(candidate.sampleRate)}},
+        {"frameCount", formats::JsonValue{static_cast<std::int64_t>(mono.interleaved.size())}},
+        {"scoreOriginFrame", formats::JsonValue{static_cast<std::int64_t>(origin)}},
+        {"renderContentHash", formats::JsonValue{candidate.contentHash}},
+        {"renderAbi", formats::JsonValue{candidate.renderAbiId}},
+        {"proceduralRevision", formats::JsonValue{static_cast<std::int64_t>(mixed ? voice_design::ArticulatedStream::algorithmRevision : voice_design::kSustainedPoseRendererRevision)}},
+        {"compilerRevision", formats::JsonValue{static_cast<std::int64_t>(synthesis::kPerformanceCompilerRevision)}},
+        {"recipeId", formats::JsonValue{resource.id}}, {"recipeVersion", formats::JsonValue{resource.version}},
+        {"recipeHash", formats::JsonValue{resource.contentHash}}, {"style", formats::JsonValue{candidate.style}},
+        {"markers", formats::JsonValue{std::move(markers)}}};
+    if (mixed) {
+      metadataFields.emplace("articulationPlanRevision", formats::JsonValue{static_cast<std::int64_t>(voice_design::ArticulationPlan::algorithmRevision)});
+      metadataFields.emplace("fricationRevision", formats::JsonValue{static_cast<std::int64_t>(voice_design::FricationSource::algorithmRevision)});
+      metadataFields.emplace("fricationStreamRevision", formats::JsonValue{static_cast<std::int64_t>(voice_design::FricationGestureStream::algorithmRevision)});
+    }
+    if (plosive || voicedFrication) metadataFields.emplace("plosiveRevision", formats::JsonValue{static_cast<std::int64_t>(voice_design::PlosiveSource::algorithmRevision)});
+    const auto metadata = formats::stringifyJson(formats::JsonValue{std::move(metadataFields)}, true);
+    const auto metadataPath = staging / (prefix + ".json");
+    const auto saved = core::durableAtomicWriteTextNew(metadataPath, metadata);
+    if (!saved) { static_cast<void>(removeTree(staging)); return core::Result<ExportResult>{saved.error()}; }
+    result.files.push_back(audio.value());
+    result.files.push_back({metadataPath, core::sha256Hex(metadata), 0U, 0U});
+    completed += 2U;
+    notifyProgress(progress, ExportState::Staging, prefix, completed, totalFiles);
+  }
+  for (const auto& [relative, bytes] : packageFiles) {
+    if (stopToken.stop_requested()) {
+      static_cast<void>(removeTree(staging));
+      return core::failure<ExportResult>(core::ErrorCode::Conflict, "Recipe package writing cancelled");
+    }
+    const auto path = staging / relative;
+    std::filesystem::create_directories(path.parent_path(), error);
+    const auto written = error ? core::failure(core::ErrorCode::IoError, "Unable to create recipe package directory") :
+        core::durableAtomicWriteTextNew(path, bytes);
+    if (!written) { static_cast<void>(removeTree(staging)); return core::Result<ExportResult>{written.error()}; }
+    result.files.push_back({path, core::sha256Hex(bytes), 0U, 0U});
+    ++completed;
+    notifyProgress(progress, ExportState::Staging, relative, completed, totalFiles);
+  }
   result.state = ExportState::Prepared;
   notifyProgress(progress, result.state, {}, completed, totalFiles);
   formats::JsonValue::Array files;
@@ -772,7 +960,26 @@ core::Result<ExportResult> ExportService::exportSet(
     }});
   }
   formats::JsonValue::Array voicebankEntries;
+  formats::JsonValue::Array proceduralEntries;
+  for (const auto& source : voicebanks) {
+    const domain::SingerResourceIdentity* identity = nullptr;
+    std::string style;
+    domain::TrackId trackId;
+    if (const auto* procedural = std::get_if<rendering::TrackProceduralSource>(&source)) {
+      identity = &procedural->resource.identity; style = procedural->style; trackId = procedural->trackId;
+    } else if (const auto* file = std::get_if<rendering::TrackRecipeFileSource>(&source)) {
+      identity = &file->reference.resource; style = file->reference.style; trackId = file->trackId;
+    }
+    if (identity) proceduralEntries.emplace_back(formats::JsonValue::Object{
+        {"trackId", formats::JsonValue{trackId.toString()}}, {"id", formats::JsonValue{identity->id}},
+        {"version", formats::JsonValue{identity->version}}, {"contentHash", formats::JsonValue{identity->contentHash}},
+        {"style", formats::JsonValue{style}}});
+  }
   for (const auto& track : project.vocalTracks()) {
+    if (std::any_of(voicebanks.begin(), voicebanks.end(), [&](const auto& source) {
+        return !std::holds_alternative<rendering::TrackVoicebankSource>(source) &&
+            std::visit([&](const auto& value) { return value.trackId == track.id; }, source);
+      })) continue;
     voicebankEntries.emplace_back(formats::JsonValue{formats::JsonValue::Object{
         {"trackId", formats::JsonValue{track.id.toString()}},
         {"id", formats::JsonValue{track.voicebank.id}},
@@ -799,6 +1006,9 @@ core::Result<ExportResult> ExportService::exportSet(
           {"applicationBuildSha", formats::JsonValue{std::string{build::kSourceCommit}}},
           {"executionDateUnixMs", formats::JsonValue{executedAt}},
           {"voicebanks", formats::JsonValue{std::move(voicebankEntries)}},
+          {"proceduralRecipes", formats::JsonValue{std::move(proceduralEntries)}},
+          {"includesProjectAndRecipes", formats::JsonValue{settings.includeProjectAndRecipes || settings.includeProceduralCandidates}},
+          {"includesProceduralCandidates", formats::JsonValue{settings.includeProceduralCandidates}},
           {"files", formats::JsonValue{std::move(files)}},
       }};
   const auto receiptText = formats::stringifyJson(receiptValue, true);

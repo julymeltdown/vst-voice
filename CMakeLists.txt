@@ -8,7 +8,19 @@ project(ProjectSEAM VERSION 0.13.1 LANGUAGES CXX)
 # keep local development reproducible without pretending to be a release.
 set(SEAM_BUILD_ID "${PROJECT_VERSION}-local" CACHE STRING
     "Project SEAM candidate/build identity")
-set(SEAM_SOURCE_COMMIT "0000000000000000000000000000000000000000" CACHE STRING
+# A local Git HEAD identifies the source base, not a clean release checkout.
+# Exact executed bytes and dirty-source qualification remain separate evidence.
+set(SEAM_LOCAL_SOURCE_BASE "0000000000000000000000000000000000000000")
+if(NOT DEFINED SEAM_SOURCE_COMMIT)
+  execute_process(COMMAND git rev-parse HEAD
+    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+    RESULT_VARIABLE SEAM_LOCAL_GIT_RESULT OUTPUT_VARIABLE SEAM_LOCAL_GIT_HEAD
+    OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+  if(SEAM_LOCAL_GIT_RESULT EQUAL 0)
+    set(SEAM_LOCAL_SOURCE_BASE "${SEAM_LOCAL_GIT_HEAD}")
+  endif()
+endif()
+set(SEAM_SOURCE_COMMIT "${SEAM_LOCAL_SOURCE_BASE}" CACHE STRING
     "40-character source commit for the generated release identity")
 set(SEAM_BUILD_EPOCH "0" CACHE STRING
     "UTC build epoch for the generated release identity")
@@ -97,15 +109,17 @@ endif()
 find_package(Python3 COMPONENTS Interpreter)
 
 set(SEAM_RENDER_ABI_ID "seam-render-abi-4.1-r1")
-set(SEAM_PHONEMIZER_REVISION 1)
-set(SEAM_UNIT_SELECTOR_REVISION 1)
-set(SEAM_TIMING_SOLVER_REVISION 1)
-set(SEAM_RAW_RENDERER_REVISION 2)
-set(SEAM_PSOLA_RENDERER_REVISION 2)
-set(SEAM_SPECTRAL_RENDERER_REVISION 2)
-set(SEAM_STRETCH_RENDERER_REVISION 2)
+set(SEAM_PHONEMIZER_REVISION 4)
+set(SEAM_UNIT_SELECTOR_REVISION 4)
+# U5: sequential nuclei, explicit timing constraints and onset-aware placement.
+set(SEAM_TIMING_SOLVER_REVISION 11)
+# U5: vowel-landmark-preserving onset waveform retiming.
+set(SEAM_RAW_RENDERER_REVISION 10)
+set(SEAM_PSOLA_RENDERER_REVISION 10)
+set(SEAM_SPECTRAL_RENDERER_REVISION 7)
+set(SEAM_STRETCH_RENDERER_REVISION 5)
 set(SEAM_SEAM_COMPOSER_REVISION 2)
-set(SEAM_PCM_CACHE_FORMAT_REVISION 3)
+set(SEAM_PCM_CACHE_FORMAT_REVISION 4)
 configure_file(
   cmake/SeamBuildVersion.hpp.in
   ${CMAKE_CURRENT_BINARY_DIR}/generated/seam/build/version.hpp
@@ -154,6 +168,7 @@ add_library(seam_domain
   libs/seam-domain/src/note_vibrato.cpp
   libs/seam-domain/src/dynamics_automation.cpp
   libs/seam-domain/src/performance_intent.cpp
+  libs/seam-domain/src/region_performance_state.cpp
   libs/seam-domain/src/voice_style_selection.cpp
   libs/seam-domain/src/phoneme.cpp
   libs/seam-domain/src/render_controls.cpp
@@ -166,12 +181,77 @@ seam_apply_compiler_options(seam_domain)
 
 
 add_library(seam_phonemizer
+  libs/seam-phonemizer/src/japanese_reading.cpp
   libs/seam-phonemizer/src/phonemizer.cpp
   libs/seam-phonemizer/src/japanese_phonemizer.cpp
+  libs/seam-phonemizer/src/english_phonemizer.cpp
+  libs/seam-phonemizer/src/korean_phonemizer.cpp
+  libs/seam-phonemizer/src/language_resolver.cpp
+  libs/seam-phonemizer/src/override_reconciliation.cpp
+  libs/seam-phonemizer/src/pronunciation_resolver.cpp
 )
+set(seam_japanese_resource_sources
+  libs/seam-phonemizer/src/japanese_phonemizer.cpp
+  libs/seam-phonemizer/src/phonemizer.cpp
+  libs/seam-phonemizer/src/pronunciation_resolver.cpp
+  libs/seam-phonemizer/include/seam/phonemizer/japanese_phonemizer.hpp
+  libs/seam-phonemizer/include/seam/phonemizer/phonemizer.hpp
+  libs/seam-phonemizer/include/seam/phonemizer/pronunciation_resolver.hpp
+  libs/seam-domain/include/seam/domain/phoneme.hpp
+  libs/seam-domain/include/seam/domain/note.hpp
+  libs/seam-domain/src/note.cpp
+  libs/seam-domain/src/phoneme.cpp)
+set(seam_japanese_resource_digest_input "seam-builtin-ja-source-v1\n")
+foreach(seam_resource_source IN LISTS seam_japanese_resource_sources)
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/${seam_resource_source}")
+  file(SHA256 "${CMAKE_CURRENT_SOURCE_DIR}/${seam_resource_source}" seam_resource_sha)
+  string(APPEND seam_japanese_resource_digest_input "${seam_resource_source}:${seam_resource_sha}\n")
+endforeach()
+string(SHA256 seam_japanese_resource_sha "${seam_japanese_resource_digest_input}")
+target_compile_definitions(seam_phonemizer PRIVATE SEAM_JAPANESE_RESOURCE_HASH="${seam_japanese_resource_sha}")
+set(seam_english_resource_sources
+  libs/seam-phonemizer/src/phonemizer.cpp
+  libs/seam-phonemizer/include/seam/phonemizer/phonemizer.hpp
+  libs/seam-phonemizer/src/english_phonemizer.cpp
+  libs/seam-phonemizer/include/seam/phonemizer/english_phonemizer.hpp
+  libs/seam-phonemizer/src/language_resolver.cpp
+  libs/seam-phonemizer/include/seam/phonemizer/language_resolver.hpp)
+set(seam_english_resource_digest_input "seam-builtin-en-source-v1\n")
+foreach(seam_resource_source IN LISTS seam_english_resource_sources)
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/${seam_resource_source}")
+  file(SHA256 "${CMAKE_CURRENT_SOURCE_DIR}/${seam_resource_source}" seam_resource_sha)
+  string(APPEND seam_english_resource_digest_input "${seam_resource_source}:${seam_resource_sha}\n")
+endforeach()
+string(SHA256 seam_english_resource_sha "${seam_english_resource_digest_input}")
+set(seam_korean_resource_sources
+  libs/seam-phonemizer/src/phonemizer.cpp
+  libs/seam-phonemizer/include/seam/phonemizer/phonemizer.hpp
+  libs/seam-phonemizer/src/korean_phonemizer.cpp
+  libs/seam-phonemizer/include/seam/phonemizer/korean_phonemizer.hpp
+  libs/seam-phonemizer/src/language_resolver.cpp
+  libs/seam-phonemizer/include/seam/phonemizer/language_resolver.hpp)
+set(seam_korean_resource_digest_input "seam-builtin-ko-source-v1\n")
+foreach(seam_resource_source IN LISTS seam_korean_resource_sources)
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/${seam_resource_source}")
+  file(SHA256 "${CMAKE_CURRENT_SOURCE_DIR}/${seam_resource_source}" seam_resource_sha)
+  string(APPEND seam_korean_resource_digest_input "${seam_resource_source}:${seam_resource_sha}\n")
+endforeach()
+string(SHA256 seam_korean_resource_sha "${seam_korean_resource_digest_input}")
+target_compile_definitions(seam_phonemizer PRIVATE
+  SEAM_ENGLISH_RESOURCE_HASH="${seam_english_resource_sha}"
+  SEAM_KOREAN_RESOURCE_HASH="${seam_korean_resource_sha}")
 target_include_directories(seam_phonemizer PUBLIC libs/seam-phonemizer/include)
 target_link_libraries(seam_phonemizer PUBLIC seam_domain seam_core)
 seam_apply_compiler_options(seam_phonemizer)
+
+add_library(seam_interchange
+  libs/seam-interchange/src/smf_codec.cpp
+  libs/seam-interchange/src/smf_project_conversion.cpp
+  libs/seam-interchange/src/ustx_codec.cpp
+  libs/seam-interchange/src/ustx_project_conversion.cpp)
+target_include_directories(seam_interchange PUBLIC libs/seam-interchange/include)
+target_link_libraries(seam_interchange PUBLIC seam_application seam_formats seam_domain seam_core)
+seam_apply_compiler_options(seam_interchange)
 
 add_library(seam_application
   libs/seam-application/src/command.cpp
@@ -179,17 +259,28 @@ add_library(seam_application
   libs/seam-application/src/track_commands.cpp
   libs/seam-application/src/region_commands.cpp
   libs/seam-application/src/note_commands.cpp
+  libs/seam-application/src/performance_commands.cpp
+  libs/seam-application/src/tempo_commands.cpp
   libs/seam-application/src/lyric_commands.cpp
   libs/seam-application/src/render_commands.cpp
   libs/seam-application/src/view_commands.cpp
   libs/seam-application/src/editor_session.cpp
+  libs/seam-application/src/performance_job_context.cpp
+  libs/seam-application/src/harmony_commands.cpp
   libs/seam-application/src/project_factory.cpp
 )
 target_include_directories(seam_application PUBLIC libs/seam-application/include)
-target_link_libraries(seam_application PUBLIC seam_domain seam_core)
+target_link_libraries(seam_application PUBLIC seam_phonemizer seam_domain seam_core)
 seam_apply_compiler_options(seam_application)
 
 add_library(seam_authoring_runtime
+  libs/seam-authoring-runtime/src/interchange_service.cpp
+  libs/seam-authoring-runtime/src/japanese_reading_job.cpp
+  libs/seam-authoring-runtime/src/japanese_reading_capture.cpp
+  libs/seam-authoring-runtime/src/japanese_reading_stage.cpp
+  libs/seam-authoring-runtime/src/japanese_reading_resource.cpp
+  libs/seam-authoring-runtime/src/helper_process.cpp
+  libs/seam-authoring-runtime/src/japanese_reading_response.cpp
   libs/seam-authoring-runtime/src/project_document.cpp
   libs/seam-authoring-runtime/src/project_lifecycle.cpp
   libs/seam-authoring-runtime/src/autosave_service.cpp
@@ -204,6 +295,8 @@ add_library(seam_authoring_runtime
   libs/seam-authoring-runtime/src/diagnostic.cpp
   libs/seam-authoring-runtime/src/bank_reference_registry.cpp
   libs/seam-authoring-runtime/src/export_service.cpp
+  libs/seam-authoring-runtime/src/generation_job.cpp
+  libs/seam-authoring-runtime/src/generation_batch.cpp
   libs/seam-authoring-runtime/src/audio_settings.cpp
   libs/seam-authoring-runtime/src/audio_settings_controller.cpp
   libs/seam-authoring-runtime/src/media_import_service.cpp
@@ -212,7 +305,7 @@ add_library(seam_authoring_runtime
 target_include_directories(seam_authoring_runtime PUBLIC
   libs/seam-authoring-runtime/include)
 target_link_libraries(seam_authoring_runtime PUBLIC
-  seam_rendering seam_distribution seam_voicebank seam_formats seam_application seam_domain seam_core)
+  seam_rendering seam_distribution seam_voicebank seam_formats seam_application seam_interchange seam_domain seam_core seam_voicebank_production)
 seam_apply_compiler_options(seam_authoring_runtime)
 
 
@@ -221,21 +314,35 @@ add_library(seam_editor_ui
   libs/seam-editor-ui/src/note_spatial_index.cpp
   libs/seam-editor-ui/src/note_visual_layout.cpp
   libs/seam-editor-ui/src/piano_roll_model.cpp
+  libs/seam-editor-ui/src/note_search_model.cpp
+  libs/seam-editor-ui/src/vibrato_model.cpp
+  libs/seam-editor-ui/src/dynamics_lane_model.cpp
   libs/seam-editor-ui/src/phoneme_lane_model.cpp
   libs/seam-editor-ui/src/text_composition_model.cpp
   libs/seam-editor-ui/src/svg_renderer.cpp
 )
 target_include_directories(seam_editor_ui PUBLIC libs/seam-editor-ui/include)
-target_link_libraries(seam_editor_ui PUBLIC seam_application seam_phonemizer seam_domain seam_core)
+target_link_libraries(seam_editor_ui PUBLIC seam_application seam_synthesis seam_phonemizer seam_domain seam_core)
 seam_apply_compiler_options(seam_editor_ui)
 
 add_library(seam_formats
   libs/seam-formats/src/json_value.cpp
   libs/seam-formats/src/project_json.cpp
+  libs/seam-formats/src/project_performance_json.cpp
+  libs/seam-formats/src/project_region_performance_json.cpp
 )
 target_include_directories(seam_formats PUBLIC libs/seam-formats/include)
 target_link_libraries(seam_formats PUBLIC seam_domain seam_core)
 seam_apply_compiler_options(seam_formats)
+
+add_library(seam_neural_synthesis
+  libs/seam-neural-synthesis/src/worker_protocol.cpp
+  libs/seam-neural-synthesis/src/model_contract.cpp
+  libs/seam-neural-synthesis/src/neural_phrase_backend.cpp)
+target_include_directories(seam_neural_synthesis PUBLIC
+  libs/seam-neural-synthesis/include)
+target_link_libraries(seam_neural_synthesis PUBLIC seam_formats seam_core seam_authoring_runtime seam_platform)
+seam_apply_compiler_options(seam_neural_synthesis)
 
 
 
@@ -276,14 +383,22 @@ add_library(seam_voicebank_production
   libs/seam-voicebank-production/src/project_codec_validation.cpp
   libs/seam-voicebank-production/src/repository.cpp
   libs/seam-voicebank-production/src/repository_import.cpp
+  libs/seam-voicebank-production/src/generation_expectation.cpp
   libs/seam-voicebank-production/src/repository_operations.cpp
+  libs/seam-voicebank-production/src/operation_staging.cpp
+  libs/seam-voicebank-production/src/candidate_markers.cpp
   libs/seam-voicebank-production/src/repository_verify.cpp
   libs/seam-voicebank-production/src/repository_export.cpp
+  libs/seam-voicebank-production/src/repository_candidate.cpp
+  libs/seam-voicebank-production/src/repository_review.cpp
+  libs/seam-voicebank-production/src/manifest_draft.cpp
+  libs/seam-voicebank-production/src/source_assessment.cpp
+  libs/seam-voicebank-production/src/source_registration.cpp
 )
 target_include_directories(seam_voicebank_production PUBLIC
   libs/seam-voicebank-production/include)
 target_link_libraries(seam_voicebank_production PUBLIC
-  seam_voicebank seam_formats seam_core)
+  seam_voicebank seam_formats seam_core seam_voice_design)
 seam_apply_compiler_options(seam_voicebank_production)
 
 add_library(seam_distribution
@@ -301,14 +416,38 @@ target_link_libraries(seam_distribution PUBLIC
 seam_apply_compiler_options(seam_distribution)
 
 
+add_library(seam_voice_design
+  libs/seam-voice-design/src/voice_recipe.cpp
+  libs/seam-voice-design/src/vocal_tract.cpp
+  libs/seam-voice-design/src/phonation_source.cpp
+  libs/seam-voice-design/src/frication_source.cpp
+  libs/seam-voice-design/src/plosive_source.cpp
+  libs/seam-voice-design/src/articulation_plan.cpp
+  libs/seam-voice-design/src/frication_gesture_stream.cpp
+  libs/seam-voice-design/src/articulated_stream.cpp
+  libs/seam-voice-design/src/procedural_renderer.cpp
+  libs/seam-voice-design/src/recipe_resource.cpp
+  libs/seam-voice-design/src/procedural_candidate.cpp)
+target_include_directories(seam_voice_design PUBLIC libs/seam-voice-design/include)
+target_link_libraries(seam_voice_design PUBLIC seam_formats seam_core seam_text seam_phonemizer)
+seam_apply_compiler_options(seam_voice_design)
+
 add_library(seam_synthesis
+  libs/seam-synthesis/src/singer_resource.cpp
+  libs/seam-synthesis/src/phrase_backend.cpp
   libs/seam-synthesis/src/unit_selection.cpp
   libs/seam-synthesis/src/timing_solver.cpp
+  libs/seam-synthesis/src/phoneme_timing_plan.cpp
+  libs/seam-synthesis/src/source_phoneme_alignment.cpp
+  libs/seam-synthesis/src/source_target_map.cpp
   libs/seam-synthesis/src/raw_renderer.cpp
   libs/seam-synthesis/src/pitch_curve.cpp
+  libs/seam-synthesis/src/performance_compiler.cpp
+  libs/seam-synthesis/src/automatic_performance.cpp
   libs/seam-synthesis/src/classic_psola.cpp
   libs/seam-synthesis/src/spectral_classic.cpp
   libs/seam-synthesis/src/stretch_renderer.cpp
+  libs/seam-synthesis/src/renderer_capabilities.cpp
   libs/seam-synthesis/src/renderer_dispatcher.cpp
   libs/seam-synthesis/src/seam_composer.cpp
   libs/seam-synthesis/src/phrase_renderer.cpp
@@ -317,6 +456,7 @@ target_include_directories(seam_synthesis PUBLIC libs/seam-synthesis/include)
 target_link_libraries(seam_synthesis PUBLIC
   seam_voicebank seam_phonemizer seam_formats seam_domain seam_core)
 seam_apply_compiler_options(seam_synthesis)
+target_link_libraries(seam_voice_design PUBLIC seam_synthesis)
 
 
 add_library(seam_rendering
@@ -325,6 +465,7 @@ add_library(seam_rendering
   libs/seam-rendering/src/render_pipeline.cpp
   libs/seam-rendering/src/region_renderer.cpp
   libs/seam-rendering/src/project_renderer.cpp
+  libs/seam-rendering/src/audio_level_envelope.cpp
   libs/seam-rendering/src/sample_rate_converter.cpp
   libs/seam-rendering/src/streaming_pcm_source.cpp
   libs/seam-rendering/src/pcm_cache.cpp
@@ -339,6 +480,7 @@ add_library(seam_rendering
 )
 target_include_directories(seam_rendering PUBLIC libs/seam-rendering/include)
 target_link_libraries(seam_rendering PUBLIC
+  seam_voice_design
   seam_synthesis seam_voicebank seam_phonemizer seam_formats seam_domain seam_core
   Threads::Threads)
 seam_apply_compiler_options(seam_rendering)
@@ -425,12 +567,19 @@ if(SEAM_BUILD_NATIVE_DESKTOP)
     libs/seam-native-ui/src/diagnostic_presentation.cpp
     libs/seam-native-ui/src/editor_scene.cpp
     libs/seam-native-ui/src/editor_controller.cpp
+    libs/seam-native-ui/src/style_coverage_sheet.cpp
     libs/seam-native-ui/src/character_presentation.cpp
     libs/seam-native-ui/src/voicebank_studio.cpp
+    libs/seam-native-ui/src/voice_designer_model.cpp
+    libs/seam-native-ui/src/voice_designer_session.cpp
+    libs/seam-native-ui/src/voice_designer_audition.cpp
     libs/seam-native-ui/src/voicebank_studio_production_view.cpp
     libs/seam-native-ui/src/voicebank_studio_production_support.cpp
     libs/seam-native-ui/src/voicebank_studio_production_project.cpp
     libs/seam-native-ui/src/voicebank_studio_production_edits.cpp
+    libs/seam-native-ui/src/voicebank_studio_sample_review.cpp
+    libs/seam-native-ui/src/voicebank_studio_manifest_draft.cpp
+    libs/seam-native-ui/src/voicebank_studio_source_quality.cpp
     libs/seam-native-ui/src/new_project_dialog.cpp
     libs/seam-native-ui/src/arrangement_panel.cpp
     libs/seam-native-ui/src/track_inspector.cpp
@@ -461,6 +610,7 @@ if(SEAM_BUILD_NATIVE_DESKTOP)
   libs/seam-native-ui/src/editor_semantics.cpp
     libs/seam-native-ui/src/render_status_panel.cpp
     libs/seam-native-ui/src/diagnostic_panel.cpp
+    libs/seam-native-ui/src/vibrato_inspector.cpp
     libs/seam-native-ui/src/recovery_support_panel.cpp
     libs/seam-native-ui/src/update_panel.cpp
     libs/seam-native-ui/src/accessibility_tree.cpp)
@@ -470,7 +620,7 @@ if(SEAM_BUILD_NATIVE_DESKTOP)
     libs/seam-rendering/include
     libs/seam-voicebank/include)
   target_link_libraries(seam_native_ui PUBLIC
-    seam_authoring_runtime seam_character seam_editor_inspection seam_voicebank_production seam_voicebank seam_editor_ui seam_phonemizer seam_application seam_domain seam_text seam_core)
+    seam_authoring_runtime seam_character seam_editor_inspection seam_voicebank_production seam_voicebank seam_editor_ui seam_phonemizer seam_application seam_domain seam_text seam_platform seam_core)
   if(WIN32)
     target_sources(seam_native_ui PRIVATE
       libs/seam-native-ui/src/accessibility_win32.cpp)
@@ -512,6 +662,12 @@ add_executable(seam_realtime_allocation_probe
 target_link_libraries(seam_realtime_allocation_probe PRIVATE
   seam_playback_platform seam_platform seam_core)
 seam_apply_compiler_options(seam_realtime_allocation_probe)
+if(SEAM_BUILD_NATIVE_DESKTOP)
+  add_executable(seam_candidate_audition_probe tools/realtime-allocation-probe/main.cpp)
+  target_compile_definitions(seam_candidate_audition_probe PRIVATE SEAM_CANDIDATE_AUDITION_PROBE=1)
+  target_link_libraries(seam_candidate_audition_probe PRIVATE seam_native_ui seam_playback_platform seam_platform seam_core)
+  seam_apply_compiler_options(seam_candidate_audition_probe)
+endif()
 
 add_executable(seam_phase1_demo apps/seam-phase1-demo/main.cpp)
 target_link_libraries(seam_phase1_demo PRIVATE
@@ -664,6 +820,14 @@ if(SEAM_BUILD_NATIVE_DESKTOP)
   target_link_libraries(seam_voicebank_studio_native PRIVATE
     seam_native_ui seam_editor_inspection seam_platform seam_voicebank
     seam_formats seam_domain seam_core)
+  if(APPLE)
+    set_target_properties(seam_voicebank_studio_native PROPERTIES
+      MACOSX_BUNDLE TRUE
+      OUTPUT_NAME "SEAM Voicebank Studio"
+      MACOSX_BUNDLE_BUNDLE_NAME "SEAM Voicebank Studio"
+      MACOSX_BUNDLE_INFO_PLIST
+        "${CMAKE_CURRENT_SOURCE_DIR}/packaging/macos/VoicebankStudio-Info.plist.in")
+  endif()
   seam_apply_compiler_options(seam_voicebank_studio_native)
 endif()
 
@@ -752,7 +916,8 @@ if(SEAM_BUILD_CLAP_EDITOR_PLUGIN)
   libs/seam-clap-editor/src/editor_runtime_input.cpp
   libs/seam-clap-editor/src/editor_runtime_project.cpp
   libs/seam-clap-editor/src/editor_runtime_preview.cpp
-  libs/seam-clap-editor/src/editor_runtime_state.cpp
+    libs/seam-clap-editor/src/editor_runtime_state.cpp
+    libs/seam-clap-editor/src/offline_render_session.cpp
     libs/seam-clap-editor/src/host_timeline.cpp
     ${SEAM_CLAP_EDITOR_VIEW_SOURCE})
   target_include_directories(seam_clap_editor PUBLIC
@@ -885,9 +1050,10 @@ add_executable(seam_clap_state_tool apps/seam-clap-state-tool/main.cpp)
 target_link_libraries(seam_clap_state_tool PRIVATE seam_clap seam_voicebank seam_core)
 seam_apply_compiler_options(seam_clap_state_tool)
 
-add_executable(seam_voicebank_cli apps/seam-voicebank-cli/main.cpp)
+add_executable(seam_voicebank_cli apps/seam-voicebank-cli/main.cpp
+  apps/seam-voicebank-cli/sample_review_commands.cpp)
 target_link_libraries(seam_voicebank_cli PRIVATE
-  seam_voicebank seam_formats seam_domain seam_core)
+  seam_voicebank seam_formats seam_domain seam_core seam_voice_design seam_voicebank_production seam_authoring_runtime)
 seam_apply_compiler_options(seam_voicebank_cli)
 
 
@@ -910,6 +1076,15 @@ endif()
 
 
 if(SEAM_BUILD_TESTS AND SEAM_BUILD_CLAP_EDITOR_PLUGIN)
+  if(Python3_Interpreter_FOUND)
+    add_test(NAME seam_clap_offline_host_tests
+      COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_clap_offline_host.py
+        --runner $<TARGET_FILE:seam_clap_editor_host>
+        --plugin $<TARGET_FILE:seam_clap_editor_plugin>
+        --bank ${CMAKE_CURRENT_SOURCE_DIR}/assets/demo-human-voicebank-public-domain/production-bank)
+    set_tests_properties(seam_clap_offline_host_tests PROPERTIES TIMEOUT 180
+      WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+  endif()
   add_executable(seam_phase11_tests
     tests/test_phase11_clap_editor.cpp phase12c/src/live_fixture.cpp)
   target_include_directories(seam_phase11_tests PRIVATE tests)
@@ -943,6 +1118,7 @@ if(SEAM_BUILD_TESTS AND SEAM_BUILD_CLAP_EDITOR_PLUGIN)
   add_executable(seam_phase12b_tests tests/test_phase12b.cpp)
   target_include_directories(seam_phase12b_tests PRIVATE tests)
   target_compile_definitions(seam_phase12b_tests PRIVATE
+    SEAM_SOURCE_SCHEMA4_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/projects/schema-4-historical-writer.seam"
     SEAM_SOURCE_PRODUCTION_VOICEBANK="${CMAKE_CURRENT_SOURCE_DIR}/assets/demo-human-voicebank-public-domain/production-bank")
   target_link_libraries(seam_phase12b_tests PRIVATE
     seam_clap_editor seam_rendering seam_voicebank seam_formats
@@ -1059,6 +1235,129 @@ if(SEAM_BUILD_TESTS)
   seam_apply_compiler_options(seam_synthesis_quality_tests)
   add_test(NAME seam_synthesis_quality_tests COMMAND seam_synthesis_quality_tests)
 
+  add_executable(seam_authoring_performance_tests tests/test_main.cpp tests/test_authoring_runtime.cpp)
+  target_include_directories(seam_authoring_performance_tests PRIVATE tests)
+  target_compile_definitions(seam_authoring_performance_tests PRIVATE
+    SEAM_SOURCE_PRODUCTION_VOICEBANK="${CMAKE_CURRENT_SOURCE_DIR}/assets/demo-human-voicebank-public-domain/production-bank")
+  target_link_libraries(seam_authoring_performance_tests PRIVATE seam_authoring_runtime)
+  seam_apply_compiler_options(seam_authoring_performance_tests)
+  add_test(NAME seam_authoring_performance_tests COMMAND seam_authoring_performance_tests)
+
+  add_executable(seam_melisma_tests tests/test_main.cpp tests/test_note_lyric_workflow.cpp)
+  add_executable(seam_creator_batch_tests tests/test_main.cpp tests/test_creator_batch_edits.cpp)
+  target_include_directories(seam_creator_batch_tests PRIVATE tests)
+  target_link_libraries(seam_creator_batch_tests PRIVATE seam_editor_ui)
+  seam_apply_compiler_options(seam_creator_batch_tests)
+  add_test(NAME seam_creator_batch_tests COMMAND seam_creator_batch_tests)
+  target_include_directories(seam_melisma_tests PRIVATE tests)
+  target_link_libraries(seam_melisma_tests PRIVATE seam_editor_ui seam_synthesis seam_application seam_phonemizer)
+  seam_apply_compiler_options(seam_melisma_tests)
+  add_test(NAME seam_melisma_tests COMMAND seam_melisma_tests)
+
+  add_executable(seam_performance_compiler_tests tests/test_main.cpp tests/test_performance_compiler.cpp)
+  add_executable(seam_automatic_performance_tests
+    tests/test_main.cpp tests/test_automatic_performance.cpp)
+  add_executable(seam_voice_design_tests tests/test_main.cpp tests/test_voice_design.cpp)
+  if(SEAM_BUILD_NATIVE_DESKTOP)
+    add_executable(seam_voice_designer_tests tests/test_main.cpp tests/test_voice_designer_workflow.cpp)
+    target_include_directories(seam_voice_designer_tests PRIVATE tests)
+    target_link_libraries(seam_voice_designer_tests PRIVATE seam_native_ui)
+    seam_apply_compiler_options(seam_voice_designer_tests)
+    add_test(NAME seam_voice_designer_tests COMMAND seam_voice_designer_tests)
+  endif()
+  target_include_directories(seam_voice_design_tests PRIVATE tests)
+  target_link_libraries(seam_voice_design_tests PRIVATE seam_voice_design)
+  seam_apply_compiler_options(seam_voice_design_tests)
+  add_test(NAME seam_voice_design_tests COMMAND seam_voice_design_tests)
+  target_include_directories(seam_performance_compiler_tests PRIVATE tests)
+  target_link_libraries(seam_performance_compiler_tests PRIVATE seam_synthesis seam_application)
+  seam_apply_compiler_options(seam_performance_compiler_tests)
+  add_test(NAME seam_performance_compiler_tests COMMAND seam_performance_compiler_tests)
+  target_include_directories(seam_automatic_performance_tests PRIVATE tests)
+  target_link_libraries(seam_automatic_performance_tests PRIVATE seam_synthesis seam_application)
+  seam_apply_compiler_options(seam_automatic_performance_tests)
+  add_test(NAME seam_automatic_performance_tests COMMAND seam_automatic_performance_tests)
+
+  add_executable(seam_phoneme_timing_tests tests/test_main.cpp tests/test_phoneme_timing.cpp)
+  add_executable(seam_japanese_pronunciation_tests tests/test_main.cpp tests/test_phonemizer.cpp)
+  add_executable(seam_language_phonemizer_tests
+    tests/test_main.cpp tests/test_english_phonemizer.cpp tests/test_korean_phonemizer.cpp)
+  add_executable(seam_smf_interchange_tests
+    tests/test_main.cpp tests/test_smf_interchange.cpp)
+  add_executable(seam_ustx_interchange_tests
+    tests/test_main.cpp tests/test_ustx_interchange.cpp)
+  add_executable(seam_interchange_service_tests
+    tests/test_main.cpp tests/test_interchange_service.cpp)
+  add_executable(seam_neural_worker_protocol_tests
+    tests/test_main.cpp tests/test_neural_worker_protocol.cpp)
+  add_executable(seam_harmony_workflow_tests
+    tests/test_main.cpp tests/test_harmony_workflow.cpp)
+  add_executable(seam_renderer_capability_tests
+    tests/test_main.cpp tests/test_renderer_capabilities.cpp)
+  add_executable(seam_neural_worker_probe tests/helpers/neural_worker_probe.cpp)
+  add_executable(seam_reading_process_probe tests/helpers/reading_process_probe.cpp)
+  add_executable(seam_reading_capture_process_probe tests/helpers/reading_capture_process_probe.cpp)
+  seam_apply_compiler_options(seam_reading_capture_process_probe)
+  target_compile_definitions(seam_japanese_pronunciation_tests PRIVATE SEAM_READING_CAPTURE_PROCESS_PROBE="$<TARGET_FILE:seam_reading_capture_process_probe>")
+  add_dependencies(seam_japanese_pronunciation_tests seam_reading_capture_process_probe)
+  add_executable(seam_reading_transport_probe tools/dependency-probes/reading_transport_probe.cpp)
+  target_link_libraries(seam_reading_transport_probe PRIVATE seam_authoring_runtime)
+  seam_apply_compiler_options(seam_reading_transport_probe)
+  seam_apply_compiler_options(seam_reading_process_probe)
+  add_executable(seam_helper_process_tests tests/test_main.cpp tests/test_helper_process.cpp)
+  target_include_directories(seam_helper_process_tests PRIVATE tests)
+  target_compile_definitions(seam_helper_process_tests PRIVATE SEAM_READING_PROCESS_PROBE="$<TARGET_FILE:seam_reading_process_probe>")
+  target_link_libraries(seam_helper_process_tests PRIVATE seam_authoring_runtime)
+  add_dependencies(seam_helper_process_tests seam_reading_process_probe)
+  seam_apply_compiler_options(seam_helper_process_tests)
+  add_test(NAME seam_helper_process_tests COMMAND seam_helper_process_tests)
+  target_sources(seam_japanese_pronunciation_tests PRIVATE tests/test_japanese_reading.cpp)
+  target_sources(seam_japanese_pronunciation_tests PRIVATE tests/test_japanese_reading_response.cpp)
+  target_sources(seam_japanese_pronunciation_tests PRIVATE tests/test_japanese_reading_resource.cpp)
+  target_sources(seam_japanese_pronunciation_tests PRIVATE tests/test_japanese_reading_capture.cpp)
+  target_sources(seam_japanese_pronunciation_tests PRIVATE tests/test_japanese_reading_job.cpp)
+  target_include_directories(seam_japanese_pronunciation_tests PRIVATE tests)
+  target_link_libraries(seam_japanese_pronunciation_tests PRIVATE seam_phonemizer seam_application seam_authoring_runtime)
+  seam_apply_compiler_options(seam_japanese_pronunciation_tests)
+  add_test(NAME seam_japanese_pronunciation_tests COMMAND seam_japanese_pronunciation_tests)
+  target_include_directories(seam_language_phonemizer_tests PRIVATE tests)
+  target_link_libraries(seam_language_phonemizer_tests PRIVATE seam_phonemizer seam_application seam_synthesis)
+  seam_apply_compiler_options(seam_language_phonemizer_tests)
+  add_test(NAME seam_language_phonemizer_tests COMMAND seam_language_phonemizer_tests)
+  target_include_directories(seam_smf_interchange_tests PRIVATE tests)
+  target_link_libraries(seam_smf_interchange_tests PRIVATE seam_interchange)
+  seam_apply_compiler_options(seam_smf_interchange_tests)
+  add_test(NAME seam_smf_interchange_tests COMMAND seam_smf_interchange_tests)
+  target_include_directories(seam_ustx_interchange_tests PRIVATE tests)
+  target_link_libraries(seam_ustx_interchange_tests PRIVATE seam_interchange)
+  seam_apply_compiler_options(seam_ustx_interchange_tests)
+  add_test(NAME seam_ustx_interchange_tests COMMAND seam_ustx_interchange_tests)
+  target_include_directories(seam_interchange_service_tests PRIVATE tests)
+  target_link_libraries(seam_interchange_service_tests PRIVATE seam_authoring_runtime)
+  seam_apply_compiler_options(seam_interchange_service_tests)
+  add_test(NAME seam_interchange_service_tests COMMAND seam_interchange_service_tests)
+  target_include_directories(seam_neural_worker_protocol_tests PRIVATE tests)
+  target_link_libraries(seam_neural_worker_protocol_tests PRIVATE seam_neural_synthesis)
+  seam_apply_compiler_options(seam_neural_worker_protocol_tests)
+  add_test(NAME seam_neural_worker_protocol_tests COMMAND seam_neural_worker_protocol_tests)
+  target_include_directories(seam_harmony_workflow_tests PRIVATE tests)
+  target_link_libraries(seam_harmony_workflow_tests PRIVATE seam_application)
+  seam_apply_compiler_options(seam_harmony_workflow_tests)
+  add_test(NAME seam_harmony_workflow_tests COMMAND seam_harmony_workflow_tests)
+  target_include_directories(seam_renderer_capability_tests PRIVATE tests)
+  target_link_libraries(seam_renderer_capability_tests PRIVATE seam_synthesis)
+  seam_apply_compiler_options(seam_renderer_capability_tests)
+  add_test(NAME seam_renderer_capability_tests COMMAND seam_renderer_capability_tests)
+  target_link_libraries(seam_neural_worker_probe PRIVATE seam_neural_synthesis)
+  seam_apply_compiler_options(seam_neural_worker_probe)
+  add_dependencies(seam_neural_worker_protocol_tests seam_neural_worker_probe)
+  target_compile_definitions(seam_neural_worker_protocol_tests PRIVATE
+    SEAM_NEURAL_WORKER_PROBE="$<TARGET_FILE:seam_neural_worker_probe>")
+  target_include_directories(seam_phoneme_timing_tests PRIVATE tests)
+  target_link_libraries(seam_phoneme_timing_tests PRIVATE seam_synthesis seam_application)
+  seam_apply_compiler_options(seam_phoneme_timing_tests)
+  add_test(NAME seam_phoneme_timing_tests COMMAND seam_phoneme_timing_tests)
+
   add_executable(seam_performance_contract_tests
     tests/test_main.cpp tests/test_performance_contracts.cpp
     tests/test_voice_style_resolution.cpp)
@@ -1068,6 +1367,81 @@ if(SEAM_BUILD_TESTS)
     SEAM_PERFORMANCE_SOURCE_ROOT="${CMAKE_CURRENT_SOURCE_DIR}")
   seam_apply_compiler_options(seam_performance_contract_tests)
   add_test(NAME seam_performance_contract_tests COMMAND seam_performance_contract_tests)
+
+  add_executable(seam_performance_job_context_tests tests/test_main.cpp tests/test_performance_job_context.cpp)
+  target_include_directories(seam_performance_job_context_tests PRIVATE tests)
+  target_link_libraries(seam_performance_job_context_tests PRIVATE seam_application seam_authoring_runtime)
+  seam_apply_compiler_options(seam_performance_job_context_tests)
+  add_test(NAME seam_performance_job_context_tests COMMAND seam_performance_job_context_tests)
+
+  add_executable(seam_region_performance_state_tests
+    tests/test_main.cpp tests/test_region_performance_state.cpp)
+  target_include_directories(seam_region_performance_state_tests PRIVATE tests)
+  target_link_libraries(seam_region_performance_state_tests PRIVATE
+    seam_domain seam_formats seam_application seam_authoring_runtime seam_clap_editor)
+  seam_apply_compiler_options(seam_region_performance_state_tests)
+  add_test(NAME seam_region_performance_state_tests COMMAND seam_region_performance_state_tests)
+  set_tests_properties(seam_region_performance_state_tests PROPERTIES
+    ENVIRONMENT "SEAM_PREVIEW_CACHE_ROOT=${CMAKE_BINARY_DIR}/region-performance-preview-cache")
+
+  add_executable(seam_schema8_performance_tests
+    tests/test_main.cpp tests/test_schema8_performance.cpp)
+  target_include_directories(seam_schema8_performance_tests PRIVATE tests)
+  target_link_libraries(seam_schema8_performance_tests PRIVATE seam_application seam_formats)
+  target_compile_definitions(seam_schema8_performance_tests PRIVATE
+    SEAM_SCHEMA8_SOURCE_ROOT="${CMAKE_CURRENT_SOURCE_DIR}")
+  seam_apply_compiler_options(seam_schema8_performance_tests)
+  add_test(NAME seam_schema8_performance_tests COMMAND seam_schema8_performance_tests)
+
+  add_executable(seam_style_migration_tests tests/test_main.cpp tests/test_style_migration.cpp)
+  target_include_directories(seam_style_migration_tests PRIVATE tests)
+  target_link_libraries(seam_style_migration_tests PRIVATE seam_authoring_runtime seam_distribution)
+  target_compile_definitions(seam_style_migration_tests PRIVATE
+    SEAM_SCHEMA8_SOURCE_ROOT="${CMAKE_CURRENT_SOURCE_DIR}")
+  seam_apply_compiler_options(seam_style_migration_tests)
+  add_test(NAME seam_style_migration_tests COMMAND seam_style_migration_tests)
+
+  add_executable(seam_plugin_style_migration_tests
+    tests/test_main.cpp tests/test_plugin_style_migration.cpp)
+  target_include_directories(seam_plugin_style_migration_tests PRIVATE tests)
+  target_link_libraries(seam_plugin_style_migration_tests PRIVATE seam_clap_editor seam_distribution)
+  target_compile_definitions(seam_plugin_style_migration_tests PRIVATE
+    SEAM_SCHEMA8_SOURCE_ROOT="${CMAKE_CURRENT_SOURCE_DIR}")
+  seam_apply_compiler_options(seam_plugin_style_migration_tests)
+  add_test(NAME seam_plugin_style_migration_tests COMMAND seam_plugin_style_migration_tests)
+  set_tests_properties(seam_plugin_style_migration_tests PROPERTIES
+    ENVIRONMENT "SEAM_PREVIEW_CACHE_ROOT=${CMAKE_BINARY_DIR}/plugin-style-preview-cache")
+
+  add_executable(seam_performance_command_tests tests/test_main.cpp tests/test_performance_commands.cpp)
+  add_executable(seam_tempo_meter_tests tests/test_main.cpp tests/test_tempo_meter_commands.cpp)
+  target_include_directories(seam_tempo_meter_tests PRIVATE tests)
+  target_link_libraries(seam_tempo_meter_tests PRIVATE seam_application)
+  seam_apply_compiler_options(seam_tempo_meter_tests)
+  add_test(NAME seam_tempo_meter_tests COMMAND seam_tempo_meter_tests)
+  target_include_directories(seam_performance_command_tests PRIVATE tests)
+  target_link_libraries(seam_performance_command_tests PRIVATE seam_application)
+  seam_apply_compiler_options(seam_performance_command_tests)
+  add_test(NAME seam_performance_command_tests COMMAND seam_performance_command_tests)
+
+  add_executable(seam_override_reconciliation_tests tests/test_main.cpp tests/test_override_reconciliation.cpp)
+  target_include_directories(seam_override_reconciliation_tests PRIVATE tests)
+  target_link_libraries(seam_override_reconciliation_tests PRIVATE seam_phonemizer)
+  seam_apply_compiler_options(seam_override_reconciliation_tests)
+  add_test(NAME seam_override_reconciliation_tests COMMAND seam_override_reconciliation_tests)
+
+  add_executable(seam_performance_snapshot_tests tests/test_main.cpp tests/test_performance_snapshot.cpp)
+  target_include_directories(seam_performance_snapshot_tests PRIVATE tests)
+  target_link_libraries(seam_performance_snapshot_tests PRIVATE
+    seam_application seam_rendering seam_voicebank seam_formats)
+  seam_apply_compiler_options(seam_performance_snapshot_tests)
+  add_test(NAME seam_performance_snapshot_tests COMMAND seam_performance_snapshot_tests)
+
+  add_executable(seam_performance_edit_preservation_tests
+    tests/test_main.cpp tests/test_performance_edit_preservation.cpp)
+  target_include_directories(seam_performance_edit_preservation_tests PRIVATE tests)
+  target_link_libraries(seam_performance_edit_preservation_tests PRIVATE seam_editor_ui seam_application)
+  seam_apply_compiler_options(seam_performance_edit_preservation_tests)
+  add_test(NAME seam_performance_edit_preservation_tests COMMAND seam_performance_edit_preservation_tests)
 
   add_executable(seam_crash_capture_probe
     tests/helpers/crash_capture_probe.cpp)
@@ -1082,6 +1456,21 @@ if(SEAM_BUILD_TESTS)
     tests/test_ui.cpp
     tests/test_platform.cpp
     tests/test_phonemizer.cpp
+    tests/test_english_phonemizer.cpp
+    tests/test_korean_phonemizer.cpp
+    tests/test_smf_interchange.cpp
+    tests/test_ustx_interchange.cpp
+    tests/test_interchange_service.cpp
+    tests/test_offline_render_session.cpp
+    tests/test_renderer_capabilities.cpp
+    tests/test_automatic_performance.cpp
+    tests/test_neural_worker_protocol.cpp
+    tests/test_harmony_workflow.cpp
+    tests/test_japanese_reading.cpp
+    tests/test_japanese_reading_response.cpp
+    tests/test_japanese_reading_resource.cpp
+    tests/test_japanese_reading_capture.cpp
+    tests/test_japanese_reading_job.cpp
     tests/test_voicebank.cpp
     tests/test_synthesis.cpp
     tests/test_rendering.cpp
@@ -1099,6 +1488,8 @@ if(SEAM_BUILD_TESTS)
     tests/test_clap.cpp
     tests/test_project_document.cpp
     tests/test_command_impact.cpp
+    tests/test_performance_edit_preservation.cpp
+    tests/test_tempo_meter_commands.cpp
     tests/test_project_lifecycle.cpp
     tests/test_autosave_service.cpp
     tests/test_recent_projects.cpp
@@ -1113,15 +1504,23 @@ if(SEAM_BUILD_TESTS)
     tests/test_voicebank_relink.cpp
     tests/test_voicebank_coverage.cpp
     tests/test_voicebank_production_project.cpp
+    tests/test_production_edit_ownership.cpp
+    tests/test_production_operation_staging.cpp
+    tests/test_production_import_outcomes.cpp
+    tests/test_production_draft.cpp
+    tests/test_manifest_draft.cpp
+    tests/test_wav_read_limits.cpp
     tests/test_wav_export_formats.cpp
     tests/test_media_rendering.cpp
     tests/test_arrangement_commands.cpp
     tests/test_arrangement_panel.cpp
     tests/test_note_lyric_workflow.cpp
+    tests/test_creator_batch_edits.cpp
     tests/test_accessibility_tree.cpp
     tests/test_export_dialog.cpp
     tests/test_editor_semantics.cpp
     tests/test_export_service.cpp
+    tests/test_audio_level_envelope.cpp
     tests/test_audio_settings.cpp
     tests/test_media_import_service.cpp
     tests/test_bank_reference_registry.cpp
@@ -1145,13 +1544,54 @@ if(SEAM_BUILD_TESTS)
       phase12c/src/live_fixture.cpp)
   endif()
   if(SEAM_BUILD_NATIVE_DESKTOP)
+    add_executable(seam_diagnostic_search_tests
+      tests/test_main.cpp tests/test_diagnostic_registry.cpp tests/test_diagnostic_panel.cpp)
+    target_include_directories(seam_diagnostic_search_tests PRIVATE tests)
+    target_link_libraries(seam_diagnostic_search_tests PRIVATE seam_native_ui)
+    seam_apply_compiler_options(seam_diagnostic_search_tests)
+    add_test(NAME seam_diagnostic_search_tests COMMAND seam_diagnostic_search_tests)
+    add_executable(seam_vibrato_inspector_tests tests/test_main.cpp tests/test_vibrato_inspector.cpp)
+    target_include_directories(seam_vibrato_inspector_tests PRIVATE tests)
+    target_link_libraries(seam_vibrato_inspector_tests PRIVATE seam_native_ui)
+    seam_apply_compiler_options(seam_vibrato_inspector_tests)
+    add_test(NAME seam_vibrato_inspector_tests COMMAND seam_vibrato_inspector_tests)
+    add_executable(seam_dynamics_lane_workflow_tests tests/test_main.cpp tests/test_dynamics_lane_workflow.cpp)
+    target_include_directories(seam_dynamics_lane_workflow_tests PRIVATE tests)
+    target_link_libraries(seam_dynamics_lane_workflow_tests PRIVATE seam_native_ui)
+    seam_apply_compiler_options(seam_dynamics_lane_workflow_tests)
+    add_test(NAME seam_dynamics_lane_workflow_tests COMMAND seam_dynamics_lane_workflow_tests)
+    add_executable(seam_measured_dynamics_tests tests/test_main.cpp tests/test_measured_dynamics_workflow.cpp)
+    target_include_directories(seam_measured_dynamics_tests PRIVATE tests)
+    target_link_libraries(seam_measured_dynamics_tests PRIVATE seam_native_ui seam_voice_design)
+    seam_apply_compiler_options(seam_measured_dynamics_tests)
+    add_test(NAME seam_measured_dynamics_tests COMMAND seam_measured_dynamics_tests)
+    add_executable(seam_style_coverage_tests tests/test_main.cpp tests/test_style_coverage_sheet.cpp)
+    target_include_directories(seam_style_coverage_tests PRIVATE tests)
+    target_link_libraries(seam_style_coverage_tests PRIVATE seam_native_ui)
+    seam_apply_compiler_options(seam_style_coverage_tests)
+    add_test(NAME seam_style_coverage_tests COMMAND seam_style_coverage_tests)
+    add_executable(seam_japanese_reading_native_tests
+      tests/test_main.cpp tests/test_japanese_reading_native.cpp)
+    target_include_directories(seam_japanese_reading_native_tests PRIVATE tests)
+    target_compile_definitions(seam_japanese_reading_native_tests PRIVATE
+      SEAM_READING_CAPTURE_PROCESS_PROBE="$<TARGET_FILE:seam_reading_capture_process_probe>")
+    add_dependencies(seam_japanese_reading_native_tests seam_reading_capture_process_probe)
+    target_link_libraries(seam_japanese_reading_native_tests PRIVATE seam_native_ui)
+    seam_apply_compiler_options(seam_japanese_reading_native_tests)
+    add_test(NAME seam_japanese_reading_native_tests COMMAND seam_japanese_reading_native_tests)
     list(APPEND SEAM_TEST_SOURCES
       apps/seam-voicebank-studio-native/options.cpp
       tests/test_eula_acceptance.cpp
       tests/test_native_ui.cpp
+      tests/test_japanese_reading_native.cpp
+      tests/test_voice_designer_workflow.cpp
       tests/test_native_runtime.cpp
       tests/test_voicebank_studio_options.cpp
       tests/test_diagnostic_panel.cpp
+      tests/test_vibrato_inspector.cpp
+      tests/test_dynamics_lane_workflow.cpp
+      tests/test_measured_dynamics_workflow.cpp
+      tests/test_style_coverage_sheet.cpp
       tests/test_standalone_authoring_integration.cpp
       tests/test_standalone_project_lifecycle.cpp
       tests/test_standalone_voicebank_workflow.cpp)
@@ -1164,6 +1604,13 @@ if(SEAM_BUILD_TESTS)
   endif()
 
   if(SEAM_BUILD_CLAP_EDITOR_PLUGIN)
+    add_executable(seam_offline_render_session_tests
+      tests/test_main.cpp tests/test_offline_render_session.cpp)
+    target_include_directories(seam_offline_render_session_tests PRIVATE tests)
+    target_link_libraries(seam_offline_render_session_tests PRIVATE seam_clap_editor)
+    seam_apply_compiler_options(seam_offline_render_session_tests)
+    add_test(NAME seam_offline_render_session_tests
+      COMMAND seam_offline_render_session_tests)
     add_executable(seam_authoring_characterization_tests
       tests/test_main.cpp
       tests/test_authoring_characterization.cpp)
@@ -1199,11 +1646,25 @@ if(SEAM_BUILD_TESTS)
     tests/test_main.cpp
     tests/test_export_service.cpp)
   target_include_directories(seam_export_tests PRIVATE tests)
+  target_compile_definitions(seam_export_tests PRIVATE SEAM_TEST_VOICEBANK_CLI="$<TARGET_FILE:seam_voicebank_cli>")
+  add_dependencies(seam_export_tests seam_voicebank_cli)
   target_link_libraries(seam_export_tests PRIVATE
-    seam_authoring_runtime seam_rendering seam_synthesis seam_voicebank
+    seam_authoring_runtime seam_rendering seam_synthesis seam_voicebank seam_voicebank_production seam_native_ui
     seam_formats seam_application seam_domain seam_core)
   seam_apply_compiler_options(seam_export_tests)
   add_test(NAME seam_export_tests COMMAND seam_export_tests)
+  add_executable(seam_audio_level_tests tests/test_main.cpp tests/test_audio_level_envelope.cpp)
+  target_include_directories(seam_audio_level_tests PRIVATE tests)
+  target_link_libraries(seam_audio_level_tests PRIVATE seam_rendering)
+  seam_apply_compiler_options(seam_audio_level_tests)
+  add_test(NAME seam_audio_level_tests COMMAND seam_audio_level_tests)
+
+  add_executable(seam_generation_job_probe tests/helpers/generation_job_probe.cpp)
+  target_include_directories(seam_generation_job_probe PRIVATE apps/seam-voicebank-cli)
+  target_link_libraries(seam_generation_job_probe PRIVATE seam_authoring_runtime)
+  seam_apply_compiler_options(seam_generation_job_probe)
+  target_compile_definitions(seam_export_tests PRIVATE SEAM_TEST_GENERATION_PROBE="$<TARGET_FILE:seam_generation_job_probe>")
+  add_dependencies(seam_export_tests seam_generation_job_probe)
 
   add_executable(seam_export_transaction_probe
     tests/helpers/export_transaction_probe.cpp)
@@ -1220,6 +1681,14 @@ if(SEAM_BUILD_TESTS)
     TIMEOUT 120)
 
   if(Python3_Interpreter_FOUND)
+    add_test(NAME seam_neural_package_materialization_tests
+      COMMAND ${CMAKE_COMMAND} -E env
+        "PYTHONDONTWRITEBYTECODE=1"
+        "SEAM_NEURAL_PACKAGE_PROBE=$<TARGET_FILE:seam_neural_worker_probe>"
+        ${Python3_EXECUTABLE} -m unittest tests.phase13a.test_neural_package
+          tests.phase13a.test_payload_materializer tests.phase13a.test_release_payload_assembly)
+    set_tests_properties(seam_neural_package_materialization_tests PROPERTIES
+      WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} TIMEOUT 60)
     add_test(NAME seam_singing_quality_contract_tests
       COMMAND ${Python3_EXECUTABLE} -m unittest discover
         -s tests/singing_quality -p "test_*.py" -v)
@@ -1363,15 +1832,21 @@ if(SEAM_BUILD_TESTS)
   endif()
   target_compile_definitions(seam_tests PRIVATE
     SEAM_SOURCE_PRODUCTION_VOICEBANK="${CMAKE_CURRENT_SOURCE_DIR}/assets/demo-human-voicebank-public-domain/production-bank"
-    SEAM_CRASH_CAPTURE_PROBE_PATH="$<TARGET_FILE:seam_crash_capture_probe>")
+    SEAM_CRASH_CAPTURE_PROBE_PATH="$<TARGET_FILE:seam_crash_capture_probe>"
+    SEAM_READING_CAPTURE_PROCESS_PROBE="$<TARGET_FILE:seam_reading_capture_process_probe>"
+    SEAM_NEURAL_WORKER_PROBE="$<TARGET_FILE:seam_neural_worker_probe>")
+  add_dependencies(seam_tests seam_reading_capture_process_probe)
+  add_dependencies(seam_tests seam_neural_worker_probe)
   target_link_libraries(seam_tests PRIVATE
     seam_distribution seam_editor_inspection seam_rendering seam_synthesis seam_voicebank_production seam_voicebank seam_editor_ui seam_phonemizer seam_formats
-    seam_playback_platform seam_platform seam_authoring_runtime seam_application seam_domain seam_text seam_clap seam_core)
+    seam_playback_platform seam_platform seam_authoring_runtime seam_application seam_domain seam_text seam_interchange seam_neural_synthesis seam_clap seam_core)
   if(SEAM_BUILD_NATIVE_DESKTOP)
     target_link_libraries(seam_tests PRIVATE seam_native_ui seam_standalone_authoring)
+    target_sources(seam_tests PRIVATE tests/test_studio_sample_review.cpp tests/test_studio_manifest_draft.cpp)
   endif()
   if(SEAM_BUILD_CLAP_EDITOR_PLUGIN)
     target_link_libraries(seam_tests PRIVATE seam_clap_editor seam_live_voice)
+    target_include_directories(seam_tests SYSTEM PRIVATE third_party/clap/include)
   endif()
   seam_apply_compiler_options(seam_tests)
   add_dependencies(seam_tests seam_crash_capture_probe)
@@ -1381,16 +1856,79 @@ if(SEAM_BUILD_TESTS)
     ENVIRONMENT "SEAM_PREVIEW_CACHE_ROOT=${CMAKE_BINARY_DIR}/ctest-preview-cache")
   add_executable(seam_voicebank_production_tests
     tests/test_main.cpp
-    tests/test_voicebank_production_project.cpp)
+    tests/test_voicebank_production_project.cpp
+    tests/test_production_edit_ownership.cpp
+    tests/test_production_draft.cpp)
+  add_executable(seam_production_draft_tests tests/test_main.cpp tests/test_production_draft.cpp)
+  target_include_directories(seam_production_draft_tests PRIVATE tests)
+  target_link_libraries(seam_production_draft_tests PRIVATE seam_voicebank_production)
+  seam_apply_compiler_options(seam_production_draft_tests)
+  add_test(NAME seam_production_draft_tests COMMAND seam_production_draft_tests)
+  add_executable(seam_manifest_draft_tests tests/test_main.cpp tests/test_manifest_draft.cpp)
+  target_include_directories(seam_manifest_draft_tests PRIVATE tests)
+  target_link_libraries(seam_manifest_draft_tests PRIVATE seam_voicebank_production)
+  seam_apply_compiler_options(seam_manifest_draft_tests)
+  add_test(NAME seam_manifest_draft_tests COMMAND seam_manifest_draft_tests)
+  add_executable(seam_wav_read_limits_tests tests/test_main.cpp tests/test_wav_read_limits.cpp)
+  target_include_directories(seam_wav_read_limits_tests PRIVATE tests)
+  target_link_libraries(seam_wav_read_limits_tests PRIVATE seam_voicebank seam_core)
+  seam_apply_compiler_options(seam_wav_read_limits_tests)
+  add_test(NAME seam_wav_read_limits_tests COMMAND seam_wav_read_limits_tests)
+  if(SEAM_BUILD_NATIVE_DESKTOP)
+    add_executable(seam_studio_sample_review_tests tests/test_main.cpp tests/test_studio_sample_review.cpp)
+    target_include_directories(seam_studio_sample_review_tests PRIVATE tests)
+    target_link_libraries(seam_studio_sample_review_tests PRIVATE seam_native_ui seam_voicebank_production)
+    seam_apply_compiler_options(seam_studio_sample_review_tests)
+    add_test(NAME seam_studio_sample_review_tests COMMAND seam_studio_sample_review_tests)
+    add_executable(seam_studio_manifest_draft_tests tests/test_main.cpp tests/test_studio_manifest_draft.cpp)
+    target_include_directories(seam_studio_manifest_draft_tests PRIVATE tests)
+    target_link_libraries(seam_studio_manifest_draft_tests PRIVATE seam_native_ui seam_voicebank_production)
+    seam_apply_compiler_options(seam_studio_manifest_draft_tests)
+    add_test(NAME seam_studio_manifest_draft_tests COMMAND seam_studio_manifest_draft_tests)
+  endif()
+  add_executable(seam_production_ownership_tests
+    tests/test_main.cpp tests/test_production_edit_ownership.cpp)
+  target_include_directories(seam_production_ownership_tests PRIVATE tests)
+  target_link_libraries(seam_production_ownership_tests PRIVATE seam_voicebank_production)
+  seam_apply_compiler_options(seam_production_ownership_tests)
+  add_test(NAME seam_production_ownership_tests COMMAND seam_production_ownership_tests)
+  add_executable(seam_production_staging_tests tests/test_main.cpp tests/test_production_operation_staging.cpp)
+  target_include_directories(seam_production_staging_tests PRIVATE tests)
+  target_link_libraries(seam_production_staging_tests PRIVATE seam_voicebank_production)
+  seam_apply_compiler_options(seam_production_staging_tests)
+  add_test(NAME seam_production_staging_tests COMMAND seam_production_staging_tests)
+  add_executable(seam_production_import_outcome_tests tests/test_main.cpp tests/test_production_import_outcomes.cpp)
+  target_include_directories(seam_production_import_outcome_tests PRIVATE tests)
+  target_link_libraries(seam_production_import_outcome_tests PRIVATE
+    seam_voicebank_production seam_authoring_runtime seam_application)
+  seam_apply_compiler_options(seam_production_import_outcome_tests)
+  add_test(NAME seam_production_import_outcome_tests COMMAND seam_production_import_outcome_tests)
+  add_executable(seam_sample_review_cli_tests tests/test_main.cpp tests/test_sample_review_cli.cpp)
+  target_include_directories(seam_sample_review_cli_tests PRIVATE tests)
+  target_compile_definitions(seam_sample_review_cli_tests PRIVATE SEAM_TEST_VOICEBANK_CLI="$<TARGET_FILE:seam_voicebank_cli>")
+  target_link_libraries(seam_sample_review_cli_tests PRIVATE
+    seam_voicebank_production seam_authoring_runtime seam_distribution seam_rendering seam_application)
+  add_dependencies(seam_sample_review_cli_tests seam_voicebank_cli)
+  seam_apply_compiler_options(seam_sample_review_cli_tests)
+  add_test(NAME seam_sample_review_cli_tests COMMAND seam_sample_review_cli_tests)
+  add_executable(seam_pitch_analysis_tests tests/test_main.cpp tests/test_pitch_analysis_bounds.cpp)
+  target_include_directories(seam_pitch_analysis_tests PRIVATE tests)
+  target_link_libraries(seam_pitch_analysis_tests PRIVATE seam_voicebank seam_core)
+  seam_apply_compiler_options(seam_pitch_analysis_tests)
+  add_test(NAME seam_pitch_analysis_tests COMMAND seam_pitch_analysis_tests)
   target_include_directories(seam_voicebank_production_tests PRIVATE tests)
   target_link_libraries(seam_voicebank_production_tests PRIVATE
-    seam_voicebank_production seam_voicebank seam_formats seam_core)
+    seam_voicebank_production seam_rendering seam_application seam_voicebank seam_formats seam_core)
   seam_apply_compiler_options(seam_voicebank_production_tests)
   add_test(NAME seam_voicebank_production_tests
     COMMAND seam_voicebank_production_tests)
   add_test(NAME seam_realtime_allocation_probe
     COMMAND seam_realtime_allocation_probe
             ${CMAKE_BINARY_DIR}/realtime-allocation-probe.json)
+  if(TARGET seam_candidate_audition_probe)
+    add_test(NAME seam_candidate_audition_probe COMMAND seam_candidate_audition_probe
+      ${CMAKE_BINARY_DIR}/candidate-audition-allocation-probe.json)
+  endif()
   add_test(NAME seam_phase2_demo_smoke
     COMMAND seam_phase2_demo --output ${CMAKE_BINARY_DIR}/phase2-smoke)
   add_test(NAME seam_phase3_demo_smoke

@@ -3,6 +3,7 @@
 #include "seam/core/result.hpp"
 #include "seam/domain/render_controls.hpp"
 #include "seam/synthesis/classic_psola.hpp"
+#include "seam/synthesis/renderer_capabilities.hpp"
 #include "seam/synthesis/raw_renderer.hpp"
 #include "seam/synthesis/spectral_classic.hpp"
 #include "seam/synthesis/stretch_renderer.hpp"
@@ -32,6 +33,7 @@ struct RendererDispatchParameters final {
   PsolaRenderParameters psola{};
   SpectralRenderParameters spectral{};
   StretchRenderParameters stretch{};
+  RendererControlRequest controls{};
 };
 
 struct DispatchedRenderedUnit final {
@@ -41,6 +43,11 @@ struct DispatchedRenderedUnit final {
   bool usedFallback{false};
   std::string diagnostic;
 };
+
+// Explicit unit selection takes precedence over global policy, then bank hints.
+[[nodiscard]] voicebank::RendererHint resolveRequestedRenderer(
+    const voicebank::Unit& unit, RenderPolicy policy,
+    const std::optional<domain::UnitRendererKind>& overrideValue) noexcept;
 
 class UnitRendererDispatcher final {
 public:

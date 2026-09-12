@@ -4,6 +4,8 @@
 #include "seam/core/result.hpp"
 #include "seam/rendering/pcm_cache.hpp"
 #include "seam/synthesis/seam_composer.hpp"
+#include "seam/rendering/render_snapshot.hpp"
+#include "seam/voice_design/procedural_renderer.hpp"
 
 #include <atomic>
 #include <chrono>
@@ -20,6 +22,7 @@
 #include <vector>
 
 namespace seam::rendering {
+class ProceduralSnapshotStream;
 
 enum class RenderPriority : std::uint8_t {
   Background = 0,
@@ -46,6 +49,9 @@ struct ScheduledRenderRequest final {
   std::uint32_t sampleRate{48000};
   RenderPriority priority{RenderPriority::Background};
   RenderTask task;
+  std::optional<synthesis::PhraseFrameRange> outputFrames{};
+  std::string groupId{};
+  std::vector<voice_design::ProceduralPhoneMarker> proceduralMarkers{};
 };
 
 struct RenderCompletion final {
@@ -55,6 +61,7 @@ struct RenderCompletion final {
   RenderCompletionStatus status{RenderCompletionStatus::Failed};
   std::shared_ptr<const CachedPcm> pcm;
   core::Error error;
+  std::vector<voice_design::ProceduralPhoneMarker> proceduralMarkers{};
 };
 
 struct RenderSchedulerHooks final {
@@ -70,6 +77,8 @@ struct RenderSchedulerStats final {
   std::uint64_t cancelled{0};
   std::uint64_t stale{0};
   std::uint64_t failed{0};
+  // DSP frames in successful procedural worker calls, including pre-roll.
+  std::uint64_t proceduralFrames{0};
 };
 
 class BackgroundRenderScheduler final {
@@ -83,13 +92,28 @@ public:
   BackgroundRenderScheduler& operator=(const BackgroundRenderScheduler&) = delete;
 
   [[nodiscard]] core::Result<void> submit(ScheduledRenderRequest request);
+  [[nodiscard]] core::Result<void> submitSnapshot(RenderSnapshot snapshot,
+      RenderPriority priority = RenderPriority::Background);
+  [[nodiscard]] static std::string snapshotJobId(const RenderSnapshot& snapshot);
+  [[nodiscard]] static std::string snapshotGroupId(const RenderSnapshot& snapshot);
+  // Compares delivery with the caller's current factory-built manifest. The
+  // application must still recheck its live revision when publishing audio.
+  [[nodiscard]] static core::Result<synthesis::PhraseAudio> assembleSnapshotCompletions(
+      std::span<const RenderSnapshot> expected, std::span<const RenderCompletion> completed,
+      synthesis::PhraseFrameRange output, std::stop_token stopToken = {});
+  // Keeps a revision floor even with no replacement job (e.g. deletion/mute).
+  // Requests at the floor remain eligible; older requests cannot resurrect it.
+  [[nodiscard]] core::Result<void> invalidateGroup(std::string groupId, std::uint64_t minimumRevision);
+  // Non-realtime project/session boundary. Retains immutable PCM cache data,
+  // but discards queued completions/jobs and rejects in-flight old admission.
+  [[nodiscard]] core::Result<void> reset();
   [[nodiscard]] std::vector<RenderCompletion> drainCompleted();
   [[nodiscard]] bool waitIdle(std::chrono::milliseconds timeout);
   [[nodiscard]] RenderSchedulerStats stats() const;
   void cancelPhrase(std::string_view phraseId);
 
 private:
-  struct JobControl final { std::stop_source stop; };
+  struct JobControl final { std::stop_source stop; std::uint64_t epoch{0U}; };
   struct Job final {
     ScheduledRenderRequest request;
     std::uint64_t sequence{0};
@@ -106,7 +130,12 @@ private:
   };
 
   void workerLoop(std::stop_token token);
-  void pushCompletion(RenderCompletion completion);
+  void pushCompletion(RenderCompletion completion, std::uint64_t epoch);
+  [[nodiscard]] bool staleLocked(const ScheduledRenderRequest& request) const;
+  [[nodiscard]] core::Result<void> registerGroupLocked(const ScheduledRenderRequest& request);
+  void advanceGroupLocked(const std::string& groupId, std::uint64_t revision);
+  [[nodiscard]] core::Result<synthesis::PhraseAudio> renderProcedural(
+      const RenderSnapshot& snapshot, std::uint64_t epoch, std::stop_token token);
 
   PcmCache& cache_;
   RenderSchedulerHooks hooks_;
@@ -117,9 +146,18 @@ private:
   std::vector<RenderCompletion> completions_;
   std::unordered_map<std::string, std::shared_ptr<JobControl>> controls_;
   std::unordered_map<std::string, std::uint64_t> latestRevision_;
+  std::unordered_map<std::string, std::uint64_t> groupRevisions_;
+  std::unordered_map<std::string, std::string> jobGroups_;
+  struct ProceduralCheckpoint final {
+    std::string group;
+    std::uint64_t revision;
+    std::shared_ptr<const ProceduralSnapshotStream> stream;
+  };
+  std::vector<ProceduralCheckpoint> proceduralCheckpoints_;
   std::vector<std::jthread> workers_;
   std::size_t activeWorkers_{0};
   std::uint64_t nextSequence_{0};
+  std::uint64_t epoch_{0U};
   bool stopping_{false};
   RenderSchedulerStats stats_;
 };

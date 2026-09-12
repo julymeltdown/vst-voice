@@ -18,6 +18,12 @@ struct CachedPcm final {
   std::uint32_t sampleRate{48000};
   time::SampleFrame startFrame{0};
   std::vector<float> samples;
+  // Render provenance is part of the cache record, not inferred from the
+  // current request after a disk hit.  A cache hit can therefore reproduce
+  // the same fallback/renderer disclosure shown for a cold render.
+  std::string rendererIdentity{"unknown"};
+  std::size_t fallbackCount{0U};
+  std::string fallbackDiagnostic;
 
   friend bool operator==(const CachedPcm&, const CachedPcm&) = default;
 };

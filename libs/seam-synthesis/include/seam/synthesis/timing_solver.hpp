@@ -3,6 +3,7 @@
 #include "seam/core/result.hpp"
 #include "seam/domain/project.hpp"
 #include "seam/synthesis/unit_selection.hpp"
+#include "seam/synthesis/phoneme_timing_plan.hpp"
 #include "seam/voicebank/voicebank.hpp"
 
 #include <cstddef>
@@ -36,6 +37,11 @@ struct TimedUnitPlacement final {
   time::SampleFrame destinationStart{0};
   time::SampleFrame destinationEnd{0};
   time::SampleFrame desiredVowelOnset{0};
+  bool explicitOnsetStart{false};
+  bool compressShortTransition{false};
+  // Ordered absolute target anchors for every covered phone. Source alignment
+  // must supply matching landmarks before rendering more than one nucleus.
+  std::vector<PhonemeTimingAnchor> phonemeTargets;
 };
 
 struct TimingPlan final {
@@ -53,7 +59,9 @@ public:
       std::span<const domain::PhonemeToken> tokens,
       const UnitPlan& unitPlan,
       const voicebank::Manifest& manifest,
-      std::uint32_t outputSampleRate) const;
+      std::uint32_t outputSampleRate,
+      std::span<const SourceAlignmentEvidence> alignments = {},
+      bool allowShortTransitionMapping = false) const;
 };
 
 }  // namespace seam::synthesis

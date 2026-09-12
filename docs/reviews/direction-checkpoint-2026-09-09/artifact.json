@@ -1,0 +1,297 @@
+{
+  "surface": "report",
+  "manifest": {
+    "version": 1,
+    "surface": "report",
+    "title": "SEAM Development Direction Review",
+    "description": "Deep review based on current source, fresh rebuilds and focused regressions. Product source unchanged.",
+    "generatedAt": "2026-09-08T20:01:11.796Z",
+    "sources": [
+      {
+        "id": "review",
+        "label": "Current source-level review and decision rationale",
+        "path": "DEVELOPMENT_DIRECTION_CHECKPOINT_REVIEW_2026-09-09_EN.md"
+      },
+      {
+        "id": "execution",
+        "label": "Current build, focused execution, matrix and contract snapshot",
+        "path": "docs/reviews/direction-checkpoint-2026-09-09/results.json"
+      },
+      {
+        "id": "build",
+        "label": "Fresh full Release build compiler failure",
+        "path": "docs/reviews/direction-checkpoint-2026-09-09/build-full.log"
+      },
+      {
+        "id": "ctest",
+        "label": "Individual execution log for the 25 selected CTest entries",
+        "path": "docs/reviews/direction-checkpoint-2026-09-09/ctest-cases.log"
+      },
+      {
+        "id": "matrix",
+        "label": "Actual CLAP process matrix: 336 engineering cases",
+        "path": "docs/reviews/direction-checkpoint-2026-09-09/matrix.json"
+      },
+      {
+        "id": "soak",
+        "label": "Five-second linked-engine smoke, not actual plugin qualification",
+        "path": "docs/reviews/direction-checkpoint-2026-09-09/soak-smoke.json"
+      },
+      {
+        "id": "plan",
+        "label": "Approved full scope: 48 units and R1-R20",
+        "path": "docs/plans/2026-09-05-1718-feat-full-scope-beta-go-plan.md"
+      },
+      {
+        "id": "contract",
+        "label": "Current unresolved resource matrix and evaluation criteria",
+        "path": "docs/product/full-product-beta-contract.json"
+      },
+      {
+        "id": "ledger",
+        "label": "Historical acceptance and incomplete implementation records",
+        "path": "docs/implementation/FULL_SCOPE_BETA_EXECUTION.md"
+      },
+      {
+        "id": "coverage-query",
+        "label": "CTest registry reconciled with the current focused execution log",
+        "path": "docs/reviews/direction-checkpoint-2026-09-09/test_coverage.sql",
+        "query": {
+          "sql": "SELECT outcome AS status,\n       COUNT(*) AS entries,\n       (SELECT COUNT(*) FROM registered_test_results) AS registered,\n       '2026-09-09' AS reviewDate\nFROM registered_test_results\nGROUP BY outcome\nORDER BY entries DESC, outcome;\n",
+          "engine": "SQLite",
+          "language": "sql",
+          "tables_used": [
+            "main.registered_test_results"
+          ],
+          "executed_at": "2026-09-08T20:01:11.796Z",
+          "description": "assemble_report.mjs loads the current 120-entry CTest registry and joins it by exact test name to the retained 25-entry LastTest log. Nonselected entries are not executed, not failures."
+        }
+      }
+    ],
+    "blocks": [
+      {
+        "id": "title",
+        "type": "markdown",
+        "body": "# SEAM Development Direction Review"
+      },
+      {
+        "id": "section-1",
+        "type": "markdown",
+        "body": "## 1. Technical summary: retain the architecture, refocus on a real singer and a complete creator journey\n\n**Development is conditionally on the right track. There is no evidence-based reason to discard the architecture or restart the project. However, describing the current product as “95% of Beta GO, just finishing touches left” would be inaccurate.** Editing, persistence, generation, review, installation, and rendering are becoming genuinely connected. General-lyric pronunciation, female singer identity and quality, advanced expression, neural singing, host coverage, and independent product acceptance remain substantial obligations.\n\nThe review reaches four separate decisions:\n\n- **Architecture: retain.** Separating score, pronunciation, and performance intent from rendering, while explicitly managing immutable takes, ownership, versions, and reviews, fits the approved product.\n- **Execution priorities: refocus.** The next increments should complete real singer-to-song capabilities, rather than primarily adding contracts, state fields, or increasingly narrow fixture tests.\n- **Integration: not accepted.** The fresh full Release build fails in a newly added Studio test. A separately rebuilt Phase12B regression also fails.\n- **Full-Scope Beta GO: NO-GO.** This is a release decision, not an instruction to stop development. Useful internal implementation remains available without changing the goal.\n\nThe agreed target is not merely a sampler or vowel synthesizer. It includes **creating an original female voice without a supplied recording; editing recorded or generated material into a bank; and finishing unfamiliar Japanese, English, and Korean songs through the required classical/neural, expression, and host workflows.** The recommendations below preserve that full scope.",
+        "sourceId": "review"
+      },
+      {
+        "id": "section-2",
+        "type": "markdown",
+        "body": "## 2. Definitions: test pass rates are not product completion\n\nThis review examines the current local working tree on September 9, 2026. The approved plan requires all R1–R20 requirements, V01–V18 obligations, and 48 implementation units. A pilot or successful classical path is an engineering checkpoint, not an alternative Beta GO definition. Approved completion boundary (`docs/plans/2026-09-05-1718-feat-full-scope-beta-go-plan.md:23`)\n\nEvidence is separated into four levels:\n\n1. **Source implementation:** a real implementation and consumer path exist. This alone does not establish compilation, runtime behavior, or sound quality.\n2. **Current engineering execution:** freshly built targets and tests establish particular behavior under explicitly bounded conditions.\n3. **Product qualification:** actual resources, pronunciation, range, styles, listening quality, and creator tasks satisfy fixed criteria.\n4. **Release qualification:** the exact signed-installed candidate passes the required platforms, hosts, and restored audit.\n\nThe execution ledger records local acceptance of U1–U5: **5/48 = 10.4%**. This is a historical unit-acceptance ratio, not fresh reacceptance of those units, code-volume completion, or an estimate of remaining time. Considerable implementation exists beyond U5, so interpreting the other 89.6% as “nothing has been implemented” would also be wrong. Ledger’s explicit status (`docs/implementation/FULL_SCOPE_BETA_EXECUTION.md:544`)\n\nThis report does not invent a replacement overall product percentage. Without accepted acoustic, resource, and platform evidence, assigning 60% or 80% would imply precision that the evidence cannot support. Future reporting should separately track **accepted units, complete user journeys, qualified resources, and current regression results**.",
+        "sourceId": "review"
+      },
+      {
+        "id": "section-3",
+        "type": "markdown",
+        "body": "## 3. Fresh verification: important paths work, but integration is not complete\n\n### 3.1 The full Release build fails\n\n`cmake --build build/release -j 4` failed, and the failure was reproduced. The latest `test_studio_manifest_draft.cpp` calls the private controller method `selectedAudioPath()` at three locations. Both the core test target and the dedicated Studio draft target compile this file, so both are affected. Failing call (`tests/test_studio_manifest_draft.cpp:293`), private declaration (`libs/seam-native-ui/include/seam/native_ui/voicebank_studio.hpp:324`)\n\nThis is a confirmed test-integration error, not proof that the entire synthesis engine is broken. Conversely, successfully building some application targets does not make the full build green. The test can derive the path from the public manifest path and selected unit’s relative audio path; production internals do not need to become public for test convenience.\n\n**The latest 16 Studio draft tests cannot be reported as passing.** Earlier success of 10 cases, or completion of six additional test implementations, is not execution evidence for the current 16-case target.\n\n### 3.2 Separately rebuilt focused verification passes 23 of 25 CTest entries\n\nAfter the full build failed, explicitly selected application, plugin, and focused test targets that do not require the broken test file were rebuilt successfully. The selected serial CTest run returned **23 PASS / 2 FAIL in 28.18 seconds**. There are 120 registered CTest entries, but **this was not a current 120-entry full-suite run**.\n\nThe two failures were:\n\n- `seam_phase12b_tests`: a direct rerun also exits with code 40. The test stops while preparing its positive edit path, so the later Final lifecycle assertions are not established by this run. The cause is examined in section 10.\n- `seam_tracked_source_closure`: 335 required inputs were not indexed by Git at execution time. This includes policy-covered documents as well as source. It means the current Git checkpoint does not close over the local result—not that these files have disappeared.\n\nPassing focused targets include 38 producer cases, 11 manifest-draft cases, five WAV-limit cases, nine Studio sample-review cases, three CLI end-to-end cases, and language, performance-compiler, offline-session, and actual CLAP-host checks. Cases can overlap between targets; their sum is not a count of unique features.\n\nA separate Python run passed **33 tests in 9.367 seconds**, covering production-draft parity, source admission, the full-product gate, and the public-release state machine. This is selected gate/production regression evidence, not acceptance of a real release candidate.\n\n### 3.3 Actual plugin processing and linked-engine smoke are different evidence\n\nThe current matrix really loads the CLAP binary and calls its processing path: **336/336 cases passed**. Its result explicitly says `engineering`, `development-fixture`, and `releaseEligible:false`. It does not establish calibrated pitch accuracy or completion of a user’s song.\n\nThe five-second soak smoke instead reports **linked-engine-v1**. Recording the plugin’s hash does not change which implementation executed. It must not be described as a long-running real-DAW plugin qualification. Runner wiring (`phase12c/CMakeLists.txt:1`)\n\nBecause the full build failed, an older `seam_tests` binary was not run and relabeled as current core verification. Earlier whole-suite counts remain historical evidence and are not merged with this run.\n\nThe HTML report's coverage chart accounts for all 120 registered CTest entries: 23 passed, one runtime regression failed, one source-closure check failed, and 95 were not executed in this review. It shows the limits of current verification—not 95 defective tests, a complete test run, or a product-completion percentage.",
+        "sourceId": "execution"
+      },
+      {
+        "id": "current-test-coverage",
+        "type": "chart",
+        "chartId": "test-coverage"
+      },
+      {
+        "id": "section-4",
+        "type": "markdown",
+        "body": "## 4. Architectural strengths: safeguards are increasingly attached to real workflows\n\n### 4.1 The score owns musical intent; renderers consume it\n\nPronunciation identity, phoneme timing, pitch/dynamics, articulation, and manual ownership are represented above the individual sample renderer. Sample and Procedural resources consume these shared inputs. This reduces the risk that accidental sample selection determines the meaning of the melody. Neural rendering should join the same architecture rather than introduce an unrelated neural-only score model. Current rendering branches and input consumption (`libs/seam-rendering/src/render_pipeline.cpp:143`)\n\n### 4.2 Separating source, derived take, reviewed material, and installed resource is necessary\n\nThe implementation distinguishes source bindings and revision chains so that identical WAV bytes do not imply identical ownership or permission. Explicit review, stale-generation rejection, create-new publication, and exact content identity are important for a voicebank-production tool. Removing these boundaries would let regenerated audio silently inherit old approvals or alter existing songs.\n\nThe current end-to-end test calls the real `create-sample-draft` command. It no longer relies on the test directly fabricating a ready manifest and locked pitch marks. The resulting draft starts with estimated, unlocked annotations. After review, candidate publication, packaging, and installation, the test hides producer inputs and reopens a new score to produce Final audio and master/stem WAV files. Real draft creation (`tests/test_sample_review_cli.cpp:46`), Installation and new-score export (`tests/test_sample_review_cli.cpp:140`)\n\n**It is therefore no longer accurate to say that generation/editing into a usable bank has made no progress.** But this fixture uses a short sine wave, preconfigured source qualification, a test signing key, and a two-note “あ” score. That is engineering connectivity, not qualification of an original female singer or unfamiliar general lyrics.\n\n### 4.3 Recent recovery and integrity repairs should be retained\n\nParent/aborted-journal ancestry now distinguishes a legitimately interrupted generation from missing committed history. This permits normal recovery without arbitrarily excusing lost provenance. The current producer regression passes. Recovery ancestry recording (`libs/seam-voicebank-production/src/repository.cpp:240`)\n\nDraft creation verifies actual audio bytes and uses bounded decoding. Studio now hashes the same bytes that it decodes; resize only rearranges pinned analysis geometry. These changes are confirmed in source. The newest Studio draft regressions remain unexecuted because of the compile failure described above. Current loading order (`libs/seam-native-ui/src/voicebank_studio.cpp:338`), Pinned resize (`libs/seam-native-ui/src/voicebank_studio.cpp:455`)",
+        "sourceId": "review"
+      },
+      {
+        "id": "section-5",
+        "type": "markdown",
+        "body": "## 5. First user-safety priority: closing Studio does not protect unsaved sample edits\n\n**P1: a source-confirmed path can lose editing work.** Native Studio’s `requestClose()` calls only `allowDesignerReplacement()`. That function permits closing when the Designer is absent or clean. Sample marker/pitch edits set the separate controller’s `dirty_` flag, but that state is not included in the close decision. Close handling (`apps/seam-voicebank-studio-native/main.cpp:1181`), Designer-only check (`apps/seam-voicebank-studio-native/main.cpp:82`), Sample dirty state (`libs/seam-native-ui/src/voicebank_studio.cpp:462`)\n\nThe actual AppKit window delegate calls this method. The controller destructor waits for workers but does not save a dirty manifest. Consequently, **open draft → edit sample marker/pitch → close the window without saving** has no sample-edit protection along this path. No destructive experiment was performed on user files. Recording shutdown has a separate WAV-saving path; this finding must not be expanded into “all recordings are lost.” Actual close delegate (`libs/seam-native-ui/src/native_window_appkit.mm:732`), Controller destruction (`libs/seam-native-ui/src/voicebank_studio_production_project.cpp:268`)\n\nThe repair should cover the decision lifecycle, not merely add a warning:\n\n1. Handle Designer and sample-manifest dirty/busy states in one close policy.\n2. Provide Save / Discard / Cancel; do not close after save failure, during saving, or after a modal-time revision change.\n3. Use the same policy for normal window close and application/menu quit.\n4. Verify actual marker/pitch values after saving and restarting.\n\nThis deserves priority over additional DSP or cosmetic expansion. A tool that loses a creator’s edits cannot be trusted even if its sound improves.",
+        "sourceId": "review"
+      },
+      {
+        "id": "section-6",
+        "type": "markdown",
+        "body": "## 6. Production gaps: source reassessment, style ownership, and applicable QC\n\n### 6.1 Executable source and qualified source are correctly separated, but the qualification workflow is incomplete\n\nExecution policy checks source-use/transformation permissions and evidence. Candidate qualification additionally checks redistribution/commercial-render permissions and coverage/listening outcomes. Generation and unit review do not automatically approve those conditions, which is correct. Execution policy (`libs/seam-voicebank-production/src/project.cpp:14`), Candidate qualification (`libs/seam-voicebank-production/src/project.cpp:59`)\n\nHowever, the current init/create/prepare/inspect/review/publish commands do not complete the user workflow for recording actual source assessments and reassessments. The positive fixture starts with coverage/listening already set to PASS. The demonstrated journey therefore has an important precondition: **source qualification has been supplied in advance**. Current command set (`apps/seam-voicebank-cli/sample_review_commands.cpp:202`), Fixture preconditions (`tests/test_sample_review_cli.cpp:31`)\n\nThe next implementation needs explicit assessment commands and repository transactions recording the source revision, actor, evidence, applicability, and outcome. Immutable attribution and current policy changes must remain distinct. Relevant reviews/candidates must invalidate when their source conditions change. Hand-editing JSON or weakening the gate is not a solution. Actual permissions require appropriate evidence and review; test booleans are not a substitute for that determination.\n\n### 6.2 A single-style draft does not complete multi-style bank production\n\n`UnitAssignment` is organized around coverage key and pitch layer without language/style identity. Candidate publication explicitly rejects multiple styles. The approved target includes language coverage, reviewed range, distinct styles, and paired blending. Assignment model (`libs/seam-voicebank-production/include/seam/voicebank_production/project.hpp:117`), Multi-style rejection (`libs/seam-voicebank-production/src/repository_candidate.cpp:474`)\n\nU10 must coordinate stable language/style/phone/pitch identities, migration, generation mapping, review ownership, and candidate mapping. Including style in a draft unit ID does not complete producer-schema migration. Paired blending requires compatible pronunciation, timing, alignment, and audible results—not merely two units with similar names.\n\n### 6.3 Silence, closure, breath, and voiced sustain need different QC applicability\n\nCandidate publication requires finite mono audio and RMS above a threshold. This common check alone cannot express the different purposes of pause, closure, breath, and voiced sustain. Candidate publication also still has a call to the default WAV decoder: adding a bounded API does not mean every intake consumer now applies the same limits. Candidate audio checks (`libs/seam-voicebank-production/src/repository_candidate.cpp:532`)\n\nU12 needs unit-kind-specific pitch applicability, intentional silence/closure handling, voicing, noise/clipping, boundary, and duration checks. The answer is not to waive unsupported cases. It is to **make each check applicable to the material’s actual purpose**.",
+        "sourceId": "review"
+      },
+      {
+        "id": "section-7",
+        "type": "markdown",
+        "body": "## 7. Voice Designer: real timbre controls, incomplete general singing articulation\n\n**The Designer is not merely decorative UI.** Phonation open quotient, tilt, aspiration, jitter/shimmer, formants, and frication are edited, saved in recipes, auditioned, and passed into generation inputs. The request to sculpt a voice like a synthesizer is being implemented in the right form. Actual controls (`apps/seam-voicebank-studio-native/main.cpp:151`), Generation handoff (`apps/seam-voicebank-studio-native/main.cpp:186`)\n\nThe current articulation model, however, has **two gesture kinds: OralVowel and Frication**. Non-vowels are limited to explicitly bound unvoiced onsets; voiced consonants and codas are rejected. Nonzero nasal coupling is unsupported. Gesture definition (`libs/seam-voice-design/include/seam/voice_design/articulation_plan.hpp:8`), Allowed articulation (`libs/seam-voice-design/src/articulation_plan.cpp:79`), Nasal limitation (`libs/seam-voice-design/src/vocal_tract.cpp:16`)\n\nEnglish “sing” illustrates the boundary: correctly classifying `ng` as a coda in the phonemizer does not make the procedural engine capable of producing that nasal/coda. **Linguistic correctness and acoustic implementation are separate acceptance conditions.**\n\nThe next step is not to register every consonant as a noise pose. Closure/burst/release, voiced consonants, nasals/liquids, codas, transitions, and phonation continuity need actual gesture/tract/source models, verified in words and phrases. Raising formants or changing base pitch is also insufficient evidence for a consistent original female singer identity.\n\nCurrent audition centers on a sustained selected pose/pitch. General-lyric phrase audition and the sound after baking into a bank need to become comparable parts of the same workflow. Current audition unit (`libs/seam-native-ui/src/voice_designer_audition.cpp:39`)\n\nThe meaningful next output is not another set of sliders. It is **a pilot character whose identity remains coherent across vowels, consonants, and range, and whose unfamiliar short lyrics are intelligible**. This pilot is a diagnostic milestone, not a reduced-scope release.",
+        "sourceId": "review"
+      },
+      {
+        "id": "section-8",
+        "type": "markdown",
+        "body": "## 8. Classical rendering and expression: basic controls exist; advanced and composed capabilities remain open\n\nThe capability table enables pitch, timing, dynamics, vibrato, attack, and release. Formant, breathiness, tension, airiness, gender, style blend, and growl have names but are not enabled as supported controls. Current capabilities (`libs/seam-synthesis/src/renderer_capabilities.cpp:9`)\n\n**Editing a recipe’s static formants is different from editing a formant expression lane in a song.** Proposal and ownership storage do not establish complete expression DSP. Conversely, existing vibrato UI → command → compiler → frequency → sound-consumer paths mean it would be wrong to call every expression decorative.\n\nEach mandatory expression needs an explicit supporting backend/resource, neutral value, intended acoustic effect, and pitch/timing side-effect boundary. Implementation should close **save → reopen → Final PCM change → undo → cache identity**. Every renderer need not support every control, but a required control cannot remain unsupported everywhere.\n\nClassical quality also needs more than a single vowel or sine fixture. Separate voiced/unvoiced onset, sustain, release, and joins; evaluate real CV/VC material, fast pronunciation, leaps, and long sustains. This review did not newly measure CV/VC cents error or listening scores, so it does not invent numerical acoustic failures.\n\nHarmony exposes another cross-layer gap. `AddHarmonyCommand` inserts simultaneous notes into the same region, while procedural snapshot construction calls a single-voice compiler that rejects overlapping notes without explicit allocation. **Having a harmony command is not the same as audible procedural harmony.** Voice separation, rendering, and mixing need an end-to-end regression that preserves shared source/ownership semantics. This is a source-path finding, not a new harmony-PCM experiment. Harmony insertion (`libs/seam-application/src/harmony_commands.cpp:99`), Procedural compilation (`libs/seam-rendering/src/render_snapshot.cpp:451`), Overlap rejection (`libs/seam-synthesis/src/performance_compiler.cpp:285`)",
+        "sourceId": "review"
+      },
+      {
+        "id": "section-9",
+        "type": "markdown",
+        "body": "## 9. Languages and neural synthesis: interface registration is not singer capability\n\n### 9.1 Three language paths exist; general-lyric quality remains separate\n\nEnglish syllable boundaries, onset clusters, terminal codas, and downstream timing regressions passed in the current language target. Korean has Hangul decomposition and boundary rules; the shared resolver has identity and input bounds. These are meaningful foundations. English role/timing regressions (`tests/test_english_phonemizer.cpp:227`)\n\nEnglish still uses a small bootstrap dictionary and spelling-based estimates for unknown words. Korean boundary rules are not a complete morphology/lexical-exception engine. The basic Japanese kana path does not resolve arbitrary kanji lyrics. A separate reading helper/resource path does not automatically complete installed resource selection and every UI consumer. English dictionary (`libs/seam-phonemizer/src/english_phonemizer.cpp:25`), Korean rule boundary (`libs/seam-phonemizer/src/korean_phonemizer.cpp:94`)\n\nMeasure unknown-lyric rates, incorrect readings/stress/codas, manual correction effort, and audible results per language. Explicit mixed-language regions currently reject and should be documented accurately. This does not silently add universal code-switching as a new acceptance obligation: completing the three approved languages and promising every mixed-language combination are different scopes.\n\n### 9.2 Neural needs actual model inputs and production dispatch\n\nHelper execution, bounded framing, request/response identity, deadlines, and cancellation exist. But `NeuralRequest` contains pronunciation hash, F0, and dynamics—not the actual phoneme sequence, durations, language, or speaker/style conditioning. **A pronunciation hash cannot tell a model which lyrics to sing.** Current request contract (`libs/seam-neural-synthesis/include/seam/neural_synthesis/worker_protocol.hpp:23`)\n\nThe normal `PhraseRenderPipeline` rejects resources other than Sample/Procedural. The test helper is a probe, not a qualified trained singer. IPC success is therefore not neural singing completion. Actual pipeline dispatch (`libs/seam-rendering/src/render_pipeline.cpp:155`), Probe output (`tests/helpers/neural_worker_probe.cpp:15`)\n\nU35 data/permissions/alignment/splits/reproducible training, U36 model/vocoder/quality qualification, and U37 actual inference/conditioning/installed helper/Final/cache integration are distinct obligations. They can advance in parallel, but the protocol should be driven by real model input/output needs. Equally, the lack of a qualified model is not a reason to stop every internal integration task.",
+        "sourceId": "review"
+      },
+      {
+        "id": "section-10",
+        "type": "markdown",
+        "body": "## 10. Hosts: Fixed Audio has improved; Follow Host remains unimplemented\n\nThe actual loaded-plugin cold-score-bounce test passed. Without live note events, it checks eight score-note windows at two sample rates, rejects missing/failed Final and beats-only paths, and verifies the output WAV format. This is stronger host-boundary evidence than a linked-runtime substitute. Actual host test (`tests/test_clap_offline_host.py:23`)\n\n`prepareOfflineRender()` currently **explicitly rejects FollowHost as Unsupported**. This is safer than silently exporting incorrectly timed audio, but it is not implementation of Follow Host. Explicit rejection (`libs/seam-clap-editor/src/editor_runtime_project.cpp:181`)\n\nThe separate Phase12B regression reproducibly exits 40 while preparing the new positive edit sequence after its partial-Final negative case. An independent reviewer traced the existing Release binary twice: nucleus lookup and boundary movement succeeded; the second `selectUnitVariant()` returned **“Unit plan entry is unavailable for this phoneme.”** Test condition (`tests/test_phase12b.cpp:155`), Returned failure (`libs/seam-authoring-runtime/src/technical_edit_controller.cpp:482`)\n\nThe fixture tries selection after undo before a complete replacement unit plan is asynchronously published. `currentTechnicalRenderView()` can supply the retained partial Ready publication’s active plan. The repair should use an explicit readiness condition, not an arbitrary sleep: **undo → wait for a current complete plan → select unit/renderer → apply the supported boundary edit**. This establishes a readiness/fixture problem; it does not establish that an incorrect unit was applied or user data corrupted. Technical-view consumption (`libs/seam-authoring-runtime/src/authoring_runtime.cpp:529`)\n\nThe failed regression and successful cold bounce can coexist. Neither “all CLAP is broken” nor “the entire Final lifecycle passes” accurately describes the evidence.\n\nNext implementation needs one contract covering authoritative transport, host/project offset, tempo-map revision, range invalidation, Pending/Failed output, offline preparation, and error propagation. Instantaneous BPM cannot reconstruct earlier beat positions across tempo changes. Actual host differences must be tested.\n\nThe current results do not replace signed-installed Windows/macOS qualification across all nine required DAW tuples, VST3/AUv2 delivery, or long-running stability. In particular, five seconds of linked-engine smoke must not be promoted to long host qualification.",
+        "sourceId": "review"
+      },
+      {
+        "id": "section-11",
+        "type": "markdown",
+        "body": "## 11. Native UX and character: preserve work, readability, and responsiveness before adding surfaces\n\n### 11.1 Overlap and overflow require interaction-level acceptance\n\nOverlapping notes are not automatically a bug: polyphonic scores can legitimately overlap. Users must still know which note they are selecting and editing without distorting musical time. Short-note hit targets, selection cycling, lyric inspection, drag/resize, and undo must be tested together. Historical complaints are not proof that every old visual defect remains unchanged.\n\nText overflow should not be solved by shrinking everything into one line. Preserve compact editing density, but make important actions and decisions readable. Long hashes, paths, and diagnostics need detail views, wrapping/scrolling, copying, and keyboard navigation so their full content remains available.\n\nThe new Review screen currently passes font-size values of 6.0 for buttons/instructions and 7.0 for data/status. This is a readability risk for consequential decisions. These are confirmed code values, not measurements of physical pixels or proof of failure at every DPI. This review did not newly qualify the complete latest UI with screenshots. Current typography (`libs/seam-native-ui/src/voicebank_studio_production_view.cpp:118`)\n\n### 11.2 Resize improved, but ordinary unit selection is synchronous\n\nReview navigation uses an asynchronous path, but the ordinary rail/Up/Down path calls `selectUnit()` and performs file reading, hashing, decoding, and spectrogram construction synchronously. A maximum input size does not guarantee a responsive UI. Actual freeze duration was not measured here; this is a source-confirmed responsiveness risk. Synchronous selection (`libs/seam-native-ui/src/voicebank_studio.cpp:207`), Heavy processing (`libs/seam-native-ui/src/voicebank_studio.cpp:354`)\n\nUnify ordinary Editor selection with the same latest-request, stale-safe worker model. Measure selection latency, cancellation, and window closing using large permitted WAVs. FFT-internal cancellation and worker-shutdown latency also deserve explicit measurement.\n\n### 11.3 Character state integration exists; singing-performance integration is incomplete\n\nState assets, bank/card identity checks, and rendering/warning presentation exist. “No asset integration code exists” is no longer accurate. A character bound to a particular bank not appearing for an arbitrary newly created bank is not automatically a rendering bug. Identity integration (`libs/seam-native-ui/src/voice_identity.cpp:6`), Bank binding (`assets/character-01/manifest.json:3`)\n\nRemaining R14 work includes the actual installed singer/asset binding, mouth/performance states derived from playhead and phoneme timing, reduced motion, collapse/off, and independence from audio behavior. The priority is not more illustrations: it is making existing assets accurately communicate **who is singing, with which voice, and what is happening now**.",
+        "sourceId": "review"
+      },
+      {
+        "id": "section-12",
+        "type": "markdown",
+        "body": "## 12. Release gates: strong fail-closed foundations, incomplete evidence semantics\n\nThe current canonical contract contains **20 requirements, 83 cases, and nine host tuples**. Its resource matrix and evaluation profile are `UNRESOLVED`; there are **zero released resources** and **18 FIXED / 11 UNRESOLVED criteria**. These are current contract fields, not a count of all development audio files. Canonical contract (`docs/product/full-product-beta-contract.json:49`)\n\nMultiple units in the development bank reference the same short WAV, and its README explicitly says it is not a release-quality singer. Phone labels or structural coverage therefore cannot establish that those phonemes were actually recorded/generated correctly. Fixture purpose (`assets/demo-human-voicebank-public-domain/production-bank/README.md:3`)\n\nThe existing narrow operation-evidence probe was rerun against current code. Using README as operation input/output/raw evidence produces no errors from `_observation_errors()`. That code checks operation ID coverage and reference paths/hashes, but does not establish through typed replay that the file is the actual result of the claimed operation. Operation checks (`tools/external_beta/full_product_report.py:376`)\n\n**This is not proof of a full-report or Beta GO bypass.** The full validator separately requires schema, matrix, criteria, reviews, and other conditions. The finding is a lower-level gap in whether evidence actually demonstrates the claimed operation.\n\nU45 needs operation-specific input/output formats, source/candidate/resource bindings, and execution/replay or measurement semantics. A hash establishes that a file has not changed; it does not establish that its contents support the claim. Acoustic and creator evidence must not reduce to a PASS string or a copied JSON assertion.\n\nReporting also needs correction. The ledger’s top entry still says Studio/CLI publication and package/install integration are open, despite subsequent implementation. Conversely, the contract’s semantic-validator `UNAVAILABLE` label and a missing-report-reference diagnostic lag behind the actual validator call. **Unimplemented, unsubmitted, unverified, and failed must remain distinct states.** Current gate call (`tools/external_beta/release_gate.py:159`)",
+        "sourceId": "review"
+      },
+      {
+        "id": "section-13",
+        "type": "markdown",
+        "body": "## 13. Execution economics: reduce integration batch size and verification churn\n\nBefore adding this review’s artifacts, the working tree contained 215 changed tracked files and 336 untracked files. The tracked diff alone had 23,809 insertions and 1,250 deletions; untracked line counts are excluded. This is not evidence that the work is useless. It is a large batch to review and reproduce, making small changes more likely to trigger repeated broad verification.\n\nThe private-API test call and immediately failing replacement positive fixture demonstrate why **independent implementation completion and integration completion must be separate checkpoints**. A “stable checkpoint” message is not a substitute for an integration build.\n\nEach implementation batch should identify the user capability, file ownership, changed identity/schema, direct positive/negative checks, and acceptance boundary. Two or three purposeful lanes with non-overlapping ownership can be sufficient. This is a recommendation for the current dirty tree, not a measured universal productivity rule.\n\nDo not stage everything merely to make source closure green. At a publication checkpoint, inspect the necessary code/tests/docs and distinguish them from private recordings, recipes, rights evidence, and generated build output. This review did not stage, commit, or push anything.\n\nFollowing the owner's concern about possible session-saving loss, a local recovery snapshot captured 1,905 tracked/non-ignored worktree files, with per-file identities, a source archive, and worktree/index patches. The capture verified that files stayed unchanged and that the archive could be read. Nothing was uploaded. This protects the current baseline; it does **not** prove or disprove loss of earlier uncommitted work. Previously reported changes must be checked against actual files and executable tests, not assumed present from conversation history. A historical loss determination requires an earlier filesystem/archive or exact patch to compare.",
+        "sourceId": "review"
+      },
+      {
+        "id": "section-14",
+        "type": "markdown",
+        "body": "## 14. The next big step should complete a singer-to-song journey\n\n### Step A — Close integration failures and work-loss risks\n\nAddress the private-API test calls, Phase12B exit 40, and sample dirty-close guard. Ordinary Editor asynchronous selection can join the same user-safety batch. Acceptance requires affected targets and the full Release build to succeed, a fresh whole-suite result, and actual edit preservation across save failure, cancellation, and restart. Do not remove tests or tolerate incomplete Final audio to obtain green results.\n\n### Step B — Produce an editable real-source singer pilot\n\nConnect assessment/reassessment commands, exact origin/take ownership, generation or recording/import, applicable unit-kind QC, manual marker/pitch editing, and explicit review. A user should reach candidate publication without hand-editing files. Start with a small diagnostic corpus to expose problems quickly; do not rename it a reduced Beta.\n\nThe evidence chain is **actual source → draft → edit → save/restart → independent review → package → install → unfamiliar-lyric Final without producer paths**. Keep the sine end-to-end test as a fast engineering regression, then add actual phonetic material.\n\n### Step C — Let observed pronunciation and sound failures drive DSP work\n\nCompare nasals, voiced consonants, stops, codas, transitions, voiced transients, joins, range, and distinct styles on the same short songs. Implement the necessary categories, then choose the next priority from actual failing phones and spans. Evaluate original female identity and intelligibility on unfamiliar phrases.\n\nLanguage/style assignment migration and paired alignment should represent this real production material. Do not postpone identity modeling until the end and merely label an existing collection afterward.\n\n### Step D — Advance neural and required expression against actual models\n\nBuild the training-data/alignment/split/reproduction path, a real model/vocoder prototype, conditioning protocol, first-party native helper, and shared Final/cache/ownership integration. Start actual neural input/output work early rather than hiding this mandatory scope behind mock success. Required timbral expressions also need complete audible paths on their supporting backends.\n\n### Step E — Complete creator and host experiences using real singers and songs\n\nExercise JA/EN/KO lyrics, note/phoneme/expression edits, interchange, Follow Host tempo changes, bounce error propagation, readable review, work preservation, and character performance in real creator tasks. Development may begin with one host, but all nine tuples and both platforms remain final obligations.\n\n### Step F — Freeze the actual candidate and execute Full-Scope acceptance\n\nResolve real resources and measured criteria, finish acoustic/listener/creator qualification and preserved U60/support work, then execute installed host/long-run/restoration checks against the same signed candidate. Pass the typed product gate. Only then is the agreed Beta GO complete.\n\nThe central change is to **stop treating steps B/C as distant “asset work.”** If real voice quality remains unknown while contracts and fixtures expand, the most important failures will be found last. Preserve the full scope while developing the acoustic pilot and actual model/data path alongside engineering integration.",
+        "sourceId": "review"
+      },
+      {
+        "id": "section-15",
+        "type": "markdown",
+        "body": "## 15. Limitations, open qualification questions, and final decision\n\nThis review combines current source inspection, the approved plan, actual rebuilds and focused execution, and three independent source-review lanes. It is not a claim to have read every line or tested every environment. Product source, tests, and existing plans were not edited; only new report artifacts and evidence were written.\n\nNot performed: a fresh clean-checkout full build; execution of the latest 16-case Studio draft target; current full core execution; Windows runtime; complete latest native visual/input QA; nine signed-installed DAW tuples; long qualification soak; actual female-singer listening; actual trained neural-singer evaluation; and independent creator/language/music acceptance. None is assumed complete.\n\nThe following questions belong to the next experiments, not another round of user permission requests:\n\n- Which phones and range areas fail most for the first original singer, and is the cause linguistic, source-related, synthesis-related, or a unit join?\n- Does the intended recipe identity survive baking, editing, installation, and rendering?\n- Can users complete real source assessment with the evidence and controls available inside the product?\n- What conditioning, CPU time, and memory does the actual neural model require?\n- Does assisted performance reduce correction work under matched conditions without increasing unresolved pronunciation or timing errors?\n\n**Final decision: this is an appropriate production architecture that has advanced ahead of the actual singer product—not evidence that the project should be abandoned.** Recent draft/review/install/Final integration is a valuable correction. The next substantial advance should build real singers and songs on that foundation while closing the confirmed work-loss and integration issues. What needs to change is the execution sequence: prove the existing full goal through sound and complete creator work, rather than replace it with a smaller goal or another broad status document.",
+        "sourceId": "review"
+      }
+    ],
+    "charts": [
+      {
+        "id": "test-coverage",
+        "type": "bar",
+        "title": "Current CTest verification coverage",
+        "subtitle": "120 registered entries; only 25 executed in this review. Not product completion.",
+        "showDescription": true,
+        "dataset": "testCoverage",
+        "sourceId": "coverage-query",
+        "valueFormat": "number",
+        "encodings": {
+          "x": {
+            "field": "status",
+            "type": "nominal",
+            "label": "Execution status"
+          },
+          "y": {
+            "field": "entries",
+            "type": "quantitative",
+            "label": "CTest entries"
+          }
+        },
+        "options": {
+          "orientation": "horizontal",
+          "legend": false
+        }
+      }
+    ]
+  },
+  "snapshot": {
+    "version": 1,
+    "status": "ready",
+    "generatedAt": "2026-09-08T20:01:11.796Z",
+    "datasets": {
+      "testCoverage": [
+        {
+          "status": "Not executed",
+          "entries": 95,
+          "registered": 120,
+          "reviewDate": "2026-09-09"
+        },
+        {
+          "status": "Passed",
+          "entries": 23,
+          "registered": 120,
+          "reviewDate": "2026-09-09"
+        },
+        {
+          "status": "Runtime failure",
+          "entries": 1,
+          "registered": 120,
+          "reviewDate": "2026-09-09"
+        },
+        {
+          "status": "Source-closure failure",
+          "entries": 1,
+          "registered": 120,
+          "reviewDate": "2026-09-09"
+        }
+      ]
+    }
+  },
+  "sources": [
+    {
+      "id": "review",
+      "label": "Current source-level review and decision rationale",
+      "path": "DEVELOPMENT_DIRECTION_CHECKPOINT_REVIEW_2026-09-09_EN.md"
+    },
+    {
+      "id": "execution",
+      "label": "Current build, focused execution, matrix and contract snapshot",
+      "path": "docs/reviews/direction-checkpoint-2026-09-09/results.json"
+    },
+    {
+      "id": "build",
+      "label": "Fresh full Release build compiler failure",
+      "path": "docs/reviews/direction-checkpoint-2026-09-09/build-full.log"
+    },
+    {
+      "id": "ctest",
+      "label": "Individual execution log for the 25 selected CTest entries",
+      "path": "docs/reviews/direction-checkpoint-2026-09-09/ctest-cases.log"
+    },
+    {
+      "id": "matrix",
+      "label": "Actual CLAP process matrix: 336 engineering cases",
+      "path": "docs/reviews/direction-checkpoint-2026-09-09/matrix.json"
+    },
+    {
+      "id": "soak",
+      "label": "Five-second linked-engine smoke, not actual plugin qualification",
+      "path": "docs/reviews/direction-checkpoint-2026-09-09/soak-smoke.json"
+    },
+    {
+      "id": "plan",
+      "label": "Approved full scope: 48 units and R1-R20",
+      "path": "docs/plans/2026-09-05-1718-feat-full-scope-beta-go-plan.md"
+    },
+    {
+      "id": "contract",
+      "label": "Current unresolved resource matrix and evaluation criteria",
+      "path": "docs/product/full-product-beta-contract.json"
+    },
+    {
+      "id": "ledger",
+      "label": "Historical acceptance and incomplete implementation records",
+      "path": "docs/implementation/FULL_SCOPE_BETA_EXECUTION.md"
+    },
+    {
+      "id": "coverage-query",
+      "label": "CTest registry reconciled with the current focused execution log",
+      "path": "docs/reviews/direction-checkpoint-2026-09-09/test_coverage.sql",
+      "query": {
+        "sql": "SELECT outcome AS status,\n       COUNT(*) AS entries,\n       (SELECT COUNT(*) FROM registered_test_results) AS registered,\n       '2026-09-09' AS reviewDate\nFROM registered_test_results\nGROUP BY outcome\nORDER BY entries DESC, outcome;\n",
+        "engine": "SQLite",
+        "language": "sql",
+        "tables_used": [
+          "main.registered_test_results"
+        ],
+        "executed_at": "2026-09-08T20:01:11.796Z",
+        "description": "assemble_report.mjs loads the current 120-entry CTest registry and joins it by exact test name to the retained 25-entry LastTest log. Nonselected entries are not executed, not failures."
+      }
+    }
+  ]
+}

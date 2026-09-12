@@ -1,0 +1,71 @@
+{
+  "audioTracks": [],
+  "formatId": "com.project-seam.project",
+  "meterMap": [
+    {
+      "denominator": 4,
+      "numerator": 4,
+      "tick": 0
+    }
+  ],
+  "name": "Historical schema 1 writer",
+  "ppq": 960,
+  "projectId": "64",
+  "schemaVersion": 1,
+  "settings": {
+    "characterDisplay": "minimal",
+    "sampleRate": 48000,
+    "snapEnabled": true,
+    "snapGrid": 240
+  },
+  "tempoMap": [
+    {
+      "bpm": 120,
+      "tick": 0
+    }
+  ],
+  "vocalTracks": [
+    {
+      "character": {
+        "id": "",
+        "version": ""
+      },
+      "gainDb": 0,
+      "id": "65",
+      "muted": false,
+      "name": "Historical singer",
+      "pan": 0,
+      "regions": [
+        {
+          "durationTick": 1920,
+          "id": "66",
+          "lyrics": [
+            {
+              "id": "68",
+              "language": "ja",
+              "surface": "か"
+            }
+          ],
+          "name": "Historical phrase",
+          "notes": [
+            {
+              "articulation": "normal",
+              "durationTick": 480,
+              "id": "67",
+              "lyricId": "68",
+              "midiKey": 64,
+              "startTick": 240
+            }
+          ],
+          "startTick": 0
+        }
+      ],
+      "solo": false,
+      "voicebank": {
+        "contentHash": "",
+        "id": "",
+        "version": ""
+      }
+    }
+  ]
+}

@@ -25,6 +25,7 @@ struct NativeWindowConfig final {
   std::uint32_t minimumHeight{320U};
   std::chrono::milliseconds autoCloseAfter{0};
   std::optional<std::filesystem::path> screenshotPath;
+  bool restoreSavedFrame{true};
 };
 
 [[nodiscard]] inline std::uint32_t nativeWindowMinimumPhysicalWidth(
@@ -64,7 +65,7 @@ struct NativeWindowConfig final {
 
 [[nodiscard]] inline bool nativeWindowShouldRestoreSavedFrame(
     const NativeWindowConfig& config) noexcept {
-  return !config.screenshotPath.has_value();
+  return config.restoreSavedFrame && !config.screenshotPath.has_value();
 }
 
 class INativeWindowClient {

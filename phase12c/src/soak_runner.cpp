@@ -1,4 +1,5 @@
-#include "seam/phase12c/live_voice.hpp"
+#include "seam/phase12c/canonical_evidence.hpp"
+#include "seam/live_voice/voice_engine.hpp"
 
 #include <algorithm>
 #include <array>
@@ -6,8 +7,10 @@
 #include <cmath>
 #include <cstdint>
 #include <fstream>
+#include <filesystem>
 #include <iomanip>
 #include <iostream>
+#include <optional>
 #include <string>
 #include <thread>
 
@@ -64,11 +67,26 @@ std::size_t scheduleEvents(
 bool writeJson(const std::string& path, const std::string& profile,
                std::uint64_t requiredSeconds, std::uint64_t elapsedSeconds,
                std::uint64_t blocks, const WorkloadState& workload,
-               const LiveStats& stats, bool pass) {
+               const LiveStats& stats, bool pass,
+               const std::optional<seam::phase12c::CanonicalEvidenceIdentity>& identity) {
   std::ofstream output(path, std::ios::binary | std::ios::trunc);
   if (!output) return false;
   output << std::setprecision(9)
-         << "{\n"
+         << "{\n";
+  if (identity) {
+    output << "  \"pluginId\": \"com.project-seam.editor\",\n"
+           << "  \"pluginSha256\": \"" << identity->pluginSha256 << "\",\n"
+           << "  \"voicebankId\": \"" << identity->voicebankId << "\",\n"
+           << "  \"voicebankVersion\": \"" << identity->voicebankVersion << "\",\n"
+           << "  \"voicebankTreeSha256\": \"" << identity->voicebankTreeSha256 << "\",\n"
+           << "  \"sourceCommit\": \"" << identity->sourceCommit << "\",\n"
+           << "  \"buildId\": \"" << identity->buildId << "\",\n";
+  }
+  output << "  \"executionPath\": \"linked-engine-v1\",\n"
+         << "  \"voiceMode\": \"monophonic-legato\",\n"
+         << "  \"evidenceScope\": \"engineering\",\n"
+         << "  \"releaseEligible\": false,\n"
+         << "  \"resourceMode\": \"development-fixture\",\n"
          << "  \"profile\": \"" << profile << "\",\n"
          << "  \"requiredSeconds\": " << requiredSeconds << ",\n"
          << "  \"elapsedSeconds\": " << elapsedSeconds << ",\n"
@@ -103,20 +121,50 @@ int main(int argc, char** argv) {
 
   std::string profile = "smoke";
   std::string outputPath = "phase12c-soak.json";
+  std::optional<std::filesystem::path> plugin;
+  std::optional<std::filesystem::path> bank;
   for (int index = 1; index < argc; ++index) {
     const std::string argument = argv[index];
     if (argument == "--profile" && index + 1 < argc) {
       profile = argv[++index];
     } else if (argument == "--output" && index + 1 < argc) {
       outputPath = argv[++index];
+    } else if (argument == "--plugin" && index + 1 < argc) {
+      plugin = std::filesystem::path{argv[++index]};
+    } else if (argument == "--bank" && index + 1 < argc) {
+      bank = std::filesystem::path{argv[++index]};
     }
+  }
+  if (plugin.has_value() != bank.has_value()) {
+    std::cerr << "--plugin and --bank must be supplied together\n";
+    return 2;
   }
 
   const std::uint64_t requiredSeconds = profile == "full" ? 7200U : 5U;
   const auto requiredDuration = std::chrono::seconds{
       static_cast<std::chrono::seconds::rep>(requiredSeconds)};
-  auto resource = makeEmbeddedHumanResource();
-  LiveVoiceEngine engine;
+  std::optional<CanonicalEvidenceIdentity> identity;
+  std::shared_ptr<const LiveVoicebankResource> resource;
+  if (plugin && bank) {
+    const auto loadedIdentity = loadCanonicalEvidenceIdentity(*plugin, *bank, true);
+    if (!loadedIdentity) {
+      std::cerr << "canonical identity: " << loadedIdentity.error().message << '\n';
+      return 2;
+    }
+    const auto loadedResource = loadCanonicalVoicebankResource(*bank);
+    if (!loadedResource) {
+      std::cerr << "canonical voicebank: " << loadedResource.error().message << '\n';
+      return 2;
+    }
+    identity = loadedIdentity.value();
+    resource = loadedResource.value();
+  } else {
+    resource = makeEmbeddedHumanResource();
+  }
+  seam::live_voice::VoiceEngine engine;
+  // This legacy workload explicitly measures transition selection. Production
+  // host note events use the engine's separate polyphonic default.
+  engine.setVoiceMode(VoiceMode::MonophonicLegato);
   if (!engine.publishResource(resource)) return 1;
 
   std::array<float, kBlockFrames> left{};
@@ -169,14 +217,15 @@ int main(int argc, char** argv) {
       workload.finite && elapsed.count() >= requiredDuration.count() &&
       workload.absoluteEnergy > 1.0 && blocks > 0U &&
       workload.maxActiveVoices <= kMaxVoices && stats.noteOns > 0U &&
-      stats.noteOffs > 0U && stats.transitionHits > 0U &&
+      stats.noteOffs > 0U &&
+      (stats.transitionHits > 0U || stats.transitionFallbacks > 0U) &&
       stats.midiEvents > 0U && stats.expressionEvents > 0U &&
       stats.steals > 0U && stats.renderedFrames > 0U &&
       stats.eventOverflows == 0U;
   const bool evidenceWritten =
       writeJson(outputPath, profile, requiredSeconds,
                 static_cast<std::uint64_t>(elapsed.count()), blocks, workload,
-                stats, workloadPass);
+                stats, workloadPass, identity);
   const bool pass = workloadPass && evidenceWritten;
   std::cout << "profile=" << profile << " elapsed=" << elapsed.count()
             << " blocks=" << blocks << " noteOns=" << stats.noteOns

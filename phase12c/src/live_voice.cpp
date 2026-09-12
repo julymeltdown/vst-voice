@@ -113,6 +113,7 @@ std::uint64_t ResourcePublisher::generation() const noexcept {
 LiveVoiceEngine::LiveVoiceEngine(bool enableEmbeddedFixture) {
   static_cast<void>(enableEmbeddedFixture);
   configure(48000, 2);
+  channelPressure_.fill(1.0F);
 }
 
 void LiveVoiceEngine::configure(std::uint32_t sampleRate,
@@ -135,6 +136,11 @@ void LiveVoiceEngine::reset() noexcept {
     voice = {};
   }
   channelBend_.fill(0.0F);
+  channelPan_.fill(0.0F);
+  channelPressure_.fill(1.0F);
+  channelTimbre_.fill(0.0F);
+  channelVibrato_.fill(0.0F);
+  channelSustain_.fill(false);
   stats_ = {};
   resource_ = nullptr;
   resourceGeneration_ = 0;
@@ -182,7 +188,7 @@ LiveVoiceEngine::Voice* LiveVoiceEngine::findLegatoSource(
     std::int16_t channel) noexcept {
   Voice* latest = nullptr;
   for (auto& voice : voices_) {
-    if (voice.active && !voice.releasing && voice.channel == channel &&
+    if (voice.active && !voice.releasing && !voice.keyReleased && voice.channel == channel &&
         (!latest || voice.age > latest->age)) {
       latest = &voice;
     }
@@ -251,6 +257,7 @@ void LiveVoiceEngine::applyEvent(
       std::clamp<int>(event.channel, 0, 15));
 
   if (event.type == EventType::Midi1) {
+    if (event.midi[1] > 127U || event.midi[2] > 127U) return;
     ++stats_.midiEvents;
     const auto status = event.midi[0] & 0xF0u;
     const auto midiChannel = static_cast<std::int16_t>(event.midi[0] & 0x0Fu);
@@ -274,49 +281,107 @@ void LiveVoiceEngine::applyEvent(
       channelBend_[static_cast<std::size_t>(midiChannel)] =
           static_cast<float>(value - 8192) / 8192.0F * 2.0F;
     } else if (status == 0xD0u) {
+      const auto pressure = static_cast<float>(event.midi[1]) / 127.0F;
+      channelPressure_[static_cast<std::size_t>(midiChannel)] = pressure;
       for (auto& voice : voices_) {
         if (voice.active && voice.channel == midiChannel) {
-          voice.pressure = static_cast<float>(event.midi[1]) / 127.0F;
+          voice.pressure = pressure;
         }
       }
     } else if (status == 0xB0u && event.midi[1] == 74) {
+      const auto timbre = static_cast<float>(event.midi[2]) / 127.0F;
+      channelTimbre_[static_cast<std::size_t>(midiChannel)] = timbre;
       for (auto& voice : voices_) {
         if (voice.active && voice.channel == midiChannel) {
-          voice.timbre = static_cast<float>(event.midi[2]) / 127.0F;
+          voice.timbre = timbre;
         }
+      }
+    } else if (status == 0xB0u && event.midi[1] == 10) {
+      const auto centered = static_cast<float>(event.midi[2]) - 64.0F;
+      const auto pan = centered / (centered <= 0.0F ? 64.0F : 63.0F);
+      channelPan_[static_cast<std::size_t>(midiChannel)] = std::clamp(pan, -1.0F, 1.0F);
+      for (auto& voice : voices_) {
+        if (voice.active && voice.channel == midiChannel) voice.pan = channelPan_[static_cast<std::size_t>(midiChannel)];
+      }
+    } else if (status == 0xB0u && event.midi[1] == 1) {
+      const auto vibrato = static_cast<float>(event.midi[2]) / 127.0F;
+      channelVibrato_[static_cast<std::size_t>(midiChannel)] = vibrato;
+      for (auto& voice : voices_) if (voice.active && voice.channel == midiChannel) voice.vibrato = vibrato;
+    } else if (status == 0xB0u && event.midi[1] == 64) {
+      const bool down = event.midi[2] >= 64U;
+      channelSustain_[static_cast<std::size_t>(midiChannel)] = down;
+      if (!down) for (auto& voice : voices_) {
+        if (voice.active && voice.channel == midiChannel && voice.keyReleased) beginRelease(voice, false);
+      }
+    } else if (status == 0xB0u && (event.midi[1] == 120 || event.midi[1] == 123)) {
+      for (auto& voice : voices_) {
+        if (!voice.active || voice.channel != midiChannel) continue;
+        voice.keyReleased = true;
+        if (event.midi[1] == 120 || !channelSustain_[static_cast<std::size_t>(midiChannel)]) {
+          beginRelease(voice, event.midi[1] == 120);
+        }
+      }
+    } else if (status == 0xB0u && event.midi[1] == 121) {
+      channelBend_[static_cast<std::size_t>(midiChannel)] = 0.0F;
+      channelPan_[static_cast<std::size_t>(midiChannel)] = 0.0F;
+      channelPressure_[static_cast<std::size_t>(midiChannel)] = 1.0F;
+      channelTimbre_[static_cast<std::size_t>(midiChannel)] = 0.0F;
+      channelVibrato_[static_cast<std::size_t>(midiChannel)] = 0.0F;
+      channelSustain_[static_cast<std::size_t>(midiChannel)] = false;
+      for (auto& voice : voices_) {
+        if (!voice.active || voice.channel != midiChannel) continue;
+        voice.pressure = 1.0F; voice.timbre = 0.0F; voice.brightness = 0.0F;
+        voice.pan = 0.0F; voice.vibrato = 0.0F;
+        if (voice.keyReleased) beginRelease(voice, false);
       }
     }
     return;
   }
 
+  if (!std::isfinite(event.value) || event.noteId < -1 || event.channel < -1 ||
+      event.channel > 15 || event.key < -1 || event.key > 127 || event.port < -1 || event.port > 0) return;
+  const auto matches = [&](const Voice& voice) {
+    return voice.active && (event.noteId == -1 || voice.noteId == event.noteId) &&
+        (event.channel == -1 || voice.channel == event.channel) &&
+        (event.key == -1 || voice.key == event.key) &&
+        (event.port == -1 || voice.port == event.port);
+  };
   if (event.type == EventType::PitchBend) {
-    channelBend_[static_cast<std::size_t>(channel)] =
-        std::clamp(event.value, -48.0F, 48.0F);
+    for (auto& voice : voices_) if (matches(voice)) voice.tuning = std::clamp(event.value, -120.0F, 120.0F);
     ++stats_.expressionEvents;
     return;
   }
 
   if (event.type == EventType::Pressure || event.type == EventType::Timbre ||
-      event.type == EventType::Brightness) {
+      event.type == EventType::Brightness || event.type == EventType::Pan ||
+      event.type == EventType::Vibrato || event.type == EventType::Volume ||
+      event.type == EventType::Expression) {
     for (auto& voice : voices_) {
-      if (!voice.active ||
-          (event.noteId >= 0 && voice.noteId != event.noteId)) {
-        continue;
-      }
+      if (!matches(voice)) continue;
       if (event.type == EventType::Pressure) {
         voice.pressure = std::clamp(event.value, 0.0F, 1.0F);
       } else if (event.type == EventType::Timbre) {
         voice.timbre = std::clamp(event.value, 0.0F, 1.0F);
-      } else {
+      } else if (event.type == EventType::Brightness) {
         voice.brightness = std::clamp(event.value, 0.0F, 1.0F);
+      } else if (event.type == EventType::Pan) {
+        voice.pan = std::clamp(event.value, -1.0F, 1.0F);
+      } else if (event.type == EventType::Volume) {
+        voice.volume = std::clamp(event.value, 0.0F, 4.0F);
+      } else if (event.type == EventType::Expression) {
+        voice.expression = std::clamp(event.value, 0.0F, 1.0F);
+      } else {
+        voice.vibrato = std::clamp(event.value, 0.0F, 1.0F);
       }
     }
     ++stats_.expressionEvents;
     return;
   }
 
-  if (event.type == EventType::NoteOn && event.value > 0.0F) {
-    auto* legatoSource = findLegatoSource(channel);
+  if (event.type == EventType::NoteOn) {
+    if (event.channel < 0 || event.key < 0 || event.port < 0 || event.value < 0.0F) return;
+    auto* legatoSource = voiceMode_ == VoiceMode::MonophonicLegato && event.value > 0.0F
+        ? findLegatoSource(channel) : nullptr;
     auto* voice = allocateVoice();
 
     const auto savedTail = voice->tailSample;
@@ -330,7 +395,12 @@ void LiveVoiceEngine::applyEvent(
     voice->noteId = event.noteId;
     voice->channel = channel;
     voice->key = event.key;
+    voice->port = event.port;
     voice->velocity = std::clamp(event.value, 0.0F, 1.0F);
+    voice->pan = channelPan_[static_cast<std::size_t>(channel)];
+    voice->pressure = channelPressure_[static_cast<std::size_t>(channel)];
+    voice->timbre = channelTimbre_[static_cast<std::size_t>(channel)];
+    voice->vibrato = channelVibrato_[static_cast<std::size_t>(channel)];
     voice->age = ++ageCounter_;
     voice->attack = choose(UnitKind::Attack, event.key);
     voice->sustain = choose(UnitKind::Sustain, event.key);
@@ -372,17 +442,17 @@ void LiveVoiceEngine::applyEvent(
   }
 
   if (event.type == EventType::NoteOff ||
-      event.type == EventType::NoteChoke ||
-      (event.type == EventType::NoteOn && event.value <= 0.0F)) {
+      event.type == EventType::NoteChoke) {
     for (auto& voice : voices_) {
       if (!voice.active) {
         continue;
       }
-      const auto match = event.noteId >= 0
-                             ? voice.noteId == event.noteId
-                             : (voice.channel == channel && voice.key == event.key);
-      if (match) {
-        beginRelease(voice, event.type == EventType::NoteChoke);
+      if (matches(voice)) {
+        voice.keyReleased = true;
+        if (event.type == EventType::NoteChoke ||
+            !channelSustain_[static_cast<std::size_t>(voice.channel)]) {
+          beginRelease(voice, event.type == EventType::NoteChoke);
+        }
       }
     }
     ++stats_.noteOffs;
@@ -421,9 +491,10 @@ float LiveVoiceEngine::renderVoice(
 
   const auto bend = channelBend_[static_cast<std::size_t>(
       std::clamp<int>(voice.channel, 0, 15))];
+  const auto vibrato = static_cast<float>(voice.vibrato * 50.0 * std::sin(voice.vibratoPhase));
   voice.increment =
       std::pow(2.0,
-               (static_cast<double>(voice.key) - voice.current->rootKey + bend) /
+               (static_cast<double>(voice.key) - voice.current->rootKey + bend + voice.tuning + vibrato / 100.0F) /
                    12.0) *
       static_cast<double>(resource.sampleRate) / sampleRate_;
 
@@ -448,12 +519,18 @@ float LiveVoiceEngine::renderVoice(
   const auto shouldLoop = voice.stage == VoiceStage::Sustain;
   auto sample = interpolate(resource, voice.position, shouldLoop, *voice.current);
   voice.position += voice.increment;
+  voice.vibratoPhase += 2.0 * kPi * 5.5 / static_cast<double>(sampleRate_);
+  if (voice.vibratoPhase >= 2.0 * kPi) voice.vibratoPhase = std::fmod(voice.vibratoPhase, 2.0 * kPi);
+
+  // Keep timbre/brightness as spectral-shaping controls rather than hiding
+  // them in a scalar gain. These bounded nonlinear/filter terms are realtime
+  // safe and leave pressure as the dedicated amplitude control.
+  sample += (sample - voice.lastSample) * (0.35F * voice.brightness);
+  sample += voice.timbre * 0.15F * sample * (1.0F - std::abs(sample));
+  sample = std::clamp(sample, -1.0F, 1.0F);
 
   const auto pressureGain = 0.75F + 0.25F * voice.pressure;
-  const auto timbreGain = 0.9F + 0.1F * voice.timbre;
-  const auto brightnessGain = 0.9F + 0.1F * voice.brightness;
-  auto result = sample * voice.envelope * voice.velocity * pressureGain *
-                timbreGain * brightnessGain;
+  auto result = sample * voice.envelope * voice.velocity * pressureGain * voice.volume * voice.expression;
 
   if (voice.legatoFadeInRemaining && voice.legatoFadeLength) {
     const auto progress = 1.0F -
@@ -494,15 +571,23 @@ void LiveVoiceEngine::renderRange(
     const LiveVoicebankResource* resource) noexcept {
   for (auto frame = begin; frame < end; ++frame) {
     auto mixed = 0.0F;
+    auto left = 0.0F;
+    auto right = 0.0F;
     if (resource) {
       for (auto& voice : voices_) {
-        mixed += renderVoice(voice, *resource);
+        const auto sample = renderVoice(voice, *resource);
+        mixed += sample;
+        const auto pan = (std::clamp(voice.pan, -1.0F, 1.0F) + 1.0F) * static_cast<float>(kPi * 0.25);
+        left += sample * std::cos(pan);
+        right += sample * std::sin(pan);
       }
     }
     mixed = std::clamp(mixed, -1.0F, 1.0F);
     for (std::uint32_t channel = 0; channel < channels; ++channel) {
       if (outputs[channel]) {
-        outputs[channel][frame] = mixed;
+        outputs[channel][frame] = channels == 1U ? mixed :
+            channel == 0U ? std::clamp(left, -1.0F, 1.0F) :
+            channel == 1U ? std::clamp(right, -1.0F, 1.0F) : mixed;
       }
     }
     ++stats_.renderedFrames;

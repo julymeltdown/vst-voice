@@ -1,0 +1,201 @@
+Test project /Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/release
+    Start 48: seam_export_tests
+1/1 Test #48: seam_export_tests ................***Failed    2.79 sec
+[FAIL] English and Korean procedural vowels bake and import without Japanese-only marker restrictions
+       /Users/lhs/Downloads/project-seam-usable-alpha-u3-master/tests/test_export_service.cpp:147: CHECK failed: loaded
+{
+  "jobs": 2,
+  "manifestSha256": "5bbbf6d42f55fd1ce76accc92c2e978903650bef4be133c775fc5f011de7bee2",
+  "state": "BatchPrepared"
+}
+
+error: Atomic create-new target already exists (/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/project-seam-articulated-export-45251-1/cli-batch.json)
+error: partially collected batch requires explicit reconciliation
+{
+  "approval": "unapproved",
+  "cancellationRequested": false,
+  "count": 2,
+  "diagnostic": "",
+  "durabilityConfirmed": true,
+  "generation": "2",
+  "projectSha256": "145b93cc87e61d036ab94bb2c50c57025cdc28005aebacc8a5093cee2e583c0a",
+  "result": "Collected"
+}
+
+{
+  "generation": "2",
+  "result": "AlreadyCollected",
+  "takes": [
+    {
+      "active": true,
+      "state": "MARKER_REVIEW",
+      "takeId": "take-sa"
+    },
+    {
+      "active": true,
+      "state": "MARKER_REVIEW",
+      "takeId": "take-sa-70"
+    }
+  ]
+}
+
+{
+  "generation": "2",
+  "result": "AlreadyCollected",
+  "takes": [
+    {
+      "active": true,
+      "state": "MARKER_REVIEW",
+      "takeId": "take-sa"
+    },
+    {
+      "active": true,
+      "state": "MARKER_REVIEW",
+      "takeId": "take-sa-70"
+    }
+  ]
+}
+
+{
+  "approval": "unapproved",
+  "outputs": [
+    {
+      "audio": "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/project-seam-articulated-export-45251-1/batch-a/output/candidates/0000000000014051-0000000000014052.wav",
+      "audioSha256": "be69f27372edc0c5396a6234cbfc4a6fe8a0b1a045a967eb2b7ab5a44d3b1bce",
+      "metadata": "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/project-seam-articulated-export-45251-1/batch-a/output/candidates/0000000000014051-0000000000014052.json",
+      "reused": true
+    },
+    {
+      "audio": "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/project-seam-articulated-export-45251-1/batch-b/output/candidates/0000000000014051-0000000000014052.wav",
+      "audioSha256": "b8e890a17d91dac23c1d4ad888a4028c87868c42f20ca2186b29958b45a79c89",
+      "metadata": "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/project-seam-articulated-export-45251-1/batch-b/output/candidates/0000000000014051-0000000000014052.json",
+      "reused": true
+    }
+  ]
+}
+
+error: Generation batch has duplicate targets, different producer states or excessive frame work
+error: batch frame budget must be an unsigned integer
+{
+  "jobId": "cli-job-sa",
+  "manifestSha256": "da59f47c21a7ac0c22ac81208ff11bea5374edbf961f5c0a64a0f81f8081ab8a",
+  "state": "Prepared"
+}
+
+error: Generation job directory must be new with an existing parent
+error: Take must identify exactly one planned producer assignment
+{
+  "approval": "unapproved",
+  "audio": "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/project-seam-articulated-export-45251-1/cli-prepared-job/output/candidates/0000000000014051-0000000000014052.wav",
+  "audioSha256": "be69f27372edc0c5396a6234cbfc4a6fe8a0b1a045a967eb2b7ab5a44d3b1bce",
+  "metadata": "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/project-seam-articulated-export-45251-1/cli-prepared-job/output/candidates/0000000000014051-0000000000014052.json",
+  "reused": false
+}
+
+{
+  "audioSha256": "be69f27372edc0c5396a6234cbfc4a6fe8a0b1a045a967eb2b7ab5a44d3b1bce",
+  "diagnostic": "",
+  "durabilityConfirmed": true,
+  "generation": "2",
+  "projectSha256": "e6eb52d8f51e77f35b01f8b55ed2356166f5499049dedb9c923eb8da49513ac6",
+  "result": "Collected",
+  "state": "MarkerReview",
+  "takeId": "take-sa"
+}
+
+error: Generation requires an authorized procedural strategy and a new take ID
+error: File lock is busy or unsafe
+{
+  "approval": "unapproved",
+  "audio": "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/project-seam-articulated-export-45251-1/generation-job/output/candidates/0000000000014051-0000000000014052.wav",
+  "audioSha256": "be69f27372edc0c5396a6234cbfc4a6fe8a0b1a045a967eb2b7ab5a44d3b1bce",
+  "metadata": "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/project-seam-articulated-export-45251-1/generation-job/output/candidates/0000000000014051-0000000000014052.json",
+  "reused": true
+}
+
+error: Generated candidate request is stale or belongs to another target
+error: Generation expectation file is malformed or differs from its retained digest
+{
+  "audioSha256": "be69f27372edc0c5396a6234cbfc4a6fe8a0b1a045a967eb2b7ab5a44d3b1bce",
+  "diagnostic": "",
+  "durabilityConfirmed": true,
+  "generation": "3",
+  "projectSha256": "ca71920219dd9a631379d4811eeb7203f32e025ebeaea337482fed84577638e9",
+  "result": "Collected",
+  "state": "MarkerReview",
+  "takeId": "take-sa"
+}
+
+{
+  "active": true,
+  "audioSha256": "be69f27372edc0c5396a6234cbfc4a6fe8a0b1a045a967eb2b7ab5a44d3b1bce",
+  "generation": "3",
+  "result": "AlreadyCollected",
+  "state": "MARKER_REVIEW",
+  "takeId": "take-sa"
+}
+
+{
+  "active": true,
+  "audioSha256": "be69f27372edc0c5396a6234cbfc4a6fe8a0b1a045a967eb2b7ab5a44d3b1bce",
+  "generation": "3",
+  "result": "AlreadyCollected",
+  "state": "MARKER_REVIEW",
+  "takeId": "take-sa"
+}
+
+{
+  "approval": "unapproved",
+  "candidates": 1,
+  "receipt": "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/project-seam-articulated-export-45251-1/cli-bake/receipt.json",
+  "state": "Committed"
+}
+
+error: Export destination already contains an export set (/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/project-seam-articulated-export-45251-1/cli-bake)
+error: sample rate must be an integer from 8000 to 384000
+error: every nonempty vocal track must have a saved procedural recipe for bake-project
+{
+  "audioSha256": "469641d3218fe21314a889411f7c1a5e2822a486ff2d15e7477c4cf10848bd45",
+  "diagnostic": "",
+  "durabilityConfirmed": true,
+  "generation": "4",
+  "projectSha256": "e5a4a18649c015065d16191b9920c35dd534a0aa5eca8ee897840860a5a4e2ea",
+  "state": "MarkerReview",
+  "takeId": "take-cli"
+}
+
+error: MIDI layer must be an integer from 0 to 127
+[PASS] nasal and frication candidates bake and enter production with typed unapproved gestures
+[PASS] native vibrato draft changes final audio and survives project reload export and exact undo replay
+[PASS] native style selection changes installed bank audio and survives reload export undo and redo
+[PASS] native dynamics curve edits scale final audio and survive reload export undo and redo
+[PASS] native tempo edit changes final rendered and exported duration with exact undo replay
+[PASS] procedural export commits exact final PCM stems and truthful recipe receipts
+[PASS] pitch contour preserves window centers and breaks unvoiced missing or invalid gaps
+[PASS] candidate audition session reports device failures and releases callback state safely
+[PASS] candidate audition is bounded block invariant and runs on the output callback
+[PASS] export service publishes a committed master and receipt atomically
+[PASS] single-file export removes rollback backups after a successful replacement
+[PASS] single-file export preserves an unowned backup collision
+[PASS] single-file export rolls back the master when receipt rotation fails
+[PASS] export service cancellation leaves no claimed output
+[PASS] export service publishes master and stems while preserving canaries
+[PASS] export set failure restoring preserved files rolls back the new set
+[PASS] export replacement removes files owned only by the previous receipt
+[PASS] export replacement never removes an unowned previous sibling
+[PASS] export recovery reconciles every journalled publication phase
+[PASS] export rejects symlinked destination files
+[PASS] export recovery rejects symlinked master files
+[PASS] export receipt records canonical project and render identities
+[PASS] export writer covers the production format matrix
+
+23 passed, 1 failed
+
+
+0% tests passed, 1 tests failed out of 1
+
+Total Test time (real) =   2.79 sec
+
+The following tests FAILED:
+	 48 - seam_export_tests (Failed)
+Errors while running CTest

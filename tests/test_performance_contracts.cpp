@@ -15,6 +15,57 @@ using seam::domain::DynamicsAutomationPoint;
 using seam::domain::NoteVibrato;
 using seam::time::Tick;
 
+TEST_CASE("canonical notes validate persisted vibrato and phonetic hints") {
+  seam::domain::Note note{
+      .id = seam::domain::NoteId{1U},
+      .lyricTokenId = seam::domain::LyricTokenId{2U},
+  };
+  CHECK(note.validate());
+  note.vibrato.depthCents = std::numeric_limits<float>::infinity();
+  CHECK(!note.validate());
+  note.vibrato = {};
+  note.phoneticHint = "k a";
+  CHECK(note.validate());
+  note.phoneticHint = "";
+  CHECK(!note.validate());
+  note.phoneticHint = "\xff";
+  CHECK(!note.validate());
+  note.phoneticHint = std::string(4097U, 'a');
+  CHECK(!note.validate());
+}
+
+TEST_CASE("canonical region dynamics cannot extend beyond its musical span") {
+  seam::domain::VocalRegion region;
+  region.id = seam::domain::RegionId{1U};
+  region.durationTick = Tick{960};
+  CHECK(region.validate());
+  CHECK(region.dynamicsAutomation.upsert({Tick{960}, 0.5F}));
+  CHECK(region.validate());
+  CHECK(region.dynamicsAutomation.upsert({Tick{961}, 1.0F}));
+  CHECK(!region.validate());
+}
+
+TEST_CASE("canonical tracks reject contradictory style intent") {
+  seam::domain::Project project;
+  seam::domain::VocalTrack track;
+  track.id = seam::domain::TrackId{1U};
+  project.vocalTracks().push_back(track);
+  CHECK(project.validate());
+  project.vocalTracks().front().styleSelection = {seam::domain::VoiceStyleOrigin::Explicit, ""};
+  CHECK(!project.validate());
+}
+
+TEST_CASE("canonical dynamics lane rejects invalid presentation values") {
+  seam::domain::Project project;
+  const auto index = static_cast<std::size_t>(seam::domain::TechnicalLane::Dynamics);
+  CHECK(index < project.settings().technicalLanes.size());
+  project.settings().technicalLanes[index].expandedHeight = std::numeric_limits<double>::infinity();
+  CHECK(!project.validate());
+  project.settings().technicalLanes[index].expandedHeight = 120.0;
+  project.settings().technicalLanes[index].mode = static_cast<seam::domain::TechnicalLaneMode>(255);
+  CHECK(!project.validate());
+}
+
 TEST_CASE("project note keys are range checked before narrowing to a MIDI byte") {
   const seam::formats::ProjectJsonCodec codec;
   const auto loaded = codec.load(std::filesystem::path{SEAM_PERFORMANCE_SOURCE_ROOT} /

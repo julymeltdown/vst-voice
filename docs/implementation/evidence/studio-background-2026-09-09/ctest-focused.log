@@ -1,0 +1,19 @@
+Test project /Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/release
+    Start  1: seam_clap_offline_host_tests
+1/7 Test  #1: seam_clap_offline_host_tests .......   Passed    0.20 sec
+    Start  5: seam_phase12b_tests
+2/7 Test  #5: seam_phase12b_tests ................   Passed    0.82 sec
+    Start 66: seam_tests
+3/7 Test #66: seam_tests .........................   Passed   20.54 sec
+    Start 70: seam_studio_sample_review_tests
+4/7 Test #70: seam_studio_sample_review_tests ....   Passed    0.56 sec
+    Start 71: seam_studio_manifest_draft_tests
+5/7 Test #71: seam_studio_manifest_draft_tests ...   Passed    0.84 sec
+    Start 91: seam_macos_source_contract
+6/7 Test #91: seam_macos_source_contract .........   Passed    0.04 sec
+    Start 92: seam_windows_source_contract
+7/7 Test #92: seam_windows_source_contract .......   Passed    0.04 sec
+
+100% tests passed, 0 tests failed out of 7
+
+Total Test time (real) =  23.06 sec

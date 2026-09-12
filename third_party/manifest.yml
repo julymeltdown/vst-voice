@@ -17,7 +17,7 @@
       "name": "CLAP ABI 1.2.10 editor subset",
       "source": "https://github.com/free-audio/clap",
       "revision": "195b42a004144fab0b3cf95e9c067187d15365b7",
-      "sourceSha256": "208423e7dadaa5104c260f6d12fc04ea92c211a91903a85a0342bb470afd7045",
+      "sourceSha256": "bcc964d92a82c450cf43f35a32b78decfcc6e970ddb73362216f157ae6631387",
       "license": "MIT",
       "licenseFile": "third_party/clap/LICENSE",
       "usage": "source",
@@ -40,6 +40,16 @@
     }
   ],
   "plannedOrReferenceOnly": [
+    {
+      "name": "Open JTalk MeCab and NAIST plus UniDic-CSJ dictionary intake",
+      "source": "https://github.com/r9y9/open_jtalk",
+      "revision": "462fc38e7520aa89e4d32b2611749208528c901e",
+      "sourceSha256": "dac8303a55d808e58211953835a324644114e3189313449c9a77eab7f5cb59d3",
+      "sourceHashFormat": "git archive --format=tar at the pinned commit",
+      "declaredLicense": "BSD-3-Clause notices for MeCab, NAIST, UniDic Consortium and HTS Working Group",
+      "status": "development-intake-probe-not-vendored-or-shipped",
+      "purpose": "U26 versioned Japanese lexical reading and contextual pronunciation; no acoustic model"
+    },
     {
       "name": "iPlug2",
       "source": "https://github.com/iplug2/iplug2",

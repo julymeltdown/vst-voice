@@ -36,12 +36,12 @@ core::Result<void> TextCompositionModel::update(
   return core::success();
 }
 
-core::Result<TextCommit> TextCompositionModel::commit() {
+core::Result<TextCommit> TextCompositionModel::commit(bool allowEmpty) {
   if (!active_) {
     return core::failure<TextCommit>(core::ErrorCode::Conflict,
                                      "Text composition is not active");
   }
-  if (compositionText_.empty()) {
+  if (compositionText_.empty() && !allowEmpty) {
     return core::failure<TextCommit>(core::ErrorCode::InvalidArgument,
                                      "Committed lyric text must not be empty");
   }

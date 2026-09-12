@@ -14,6 +14,7 @@ namespace seam::live_voice {
 using EventType = phase12c::EventType;
 using LiveEvent = phase12c::LiveEvent;
 using LiveStats = phase12c::LiveStats;
+using VoiceMode = phase12c::VoiceMode;
 using LiveVoicebankResource = phase12c::LiveVoicebankResource;
 
 class VoiceEngine final {
@@ -25,6 +26,7 @@ class VoiceEngine final {
 
   void configure(std::uint32_t sampleRate,
                  std::uint32_t outputChannels) noexcept;
+  void setVoiceMode(VoiceMode mode) noexcept { engine_.setVoiceMode(mode); }
   void setOutputSampleRate(double sampleRate) noexcept;
   bool publishResource(
       std::shared_ptr<const LiveVoicebankResource> resource) noexcept;

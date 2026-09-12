@@ -27,6 +27,41 @@
 #include <vector>
 
 namespace seam::native_ui {
+inline constexpr std::array<const char*, 6U> kReplacementReviewActions{
+    "Previous", "Next", "Lyrics / dependencies", "Apply replacement", "Cancel / close", "Refresh review"};
+struct ReplacementReviewView final {
+  struct DynamicsPlot final {
+    ui::Rect bounds;
+    std::vector<ui::Point> score, draft;
+    std::vector<ui::Point> target;
+    std::vector<ui::Point> selectedGenerated;
+    std::string targetStatus;
+    struct Handle final { ui::Point position; std::size_t pageRow; };
+    std::vector<Handle> handles;
+    std::optional<ui::Point> candidate;
+    std::int64_t endTick{1};
+    std::int64_t startTick{0}, fullEndTick{1};
+    std::array<ui::Rect, 4U> navigation;
+    bool measuredMode{false}, measurementAvailable{false};
+    std::size_t measuredChannel{1U};
+    std::vector<ui::Point> measured;
+    std::string measurementLabel;
+    double measuredCeilingDb{0.0};
+    bool editable{false};
+    std::string influenceDescription;
+  };
+  bool visible{false};
+  std::string status;
+  std::string summary;
+  std::vector<std::string> rows;
+  std::array<bool, 6U> enabled{};
+  std::array<const char*, 6U> labels = kReplacementReviewActions;
+  bool rowsInspectable{false};
+  bool dockedInspector{false};
+  std::optional<DynamicsPlot> dynamicsPlot;
+};
+inline constexpr std::array<const char*, 6U> kPhonemeReviewActions{
+    "Previous edit", "Next edit", "Close", "Previous sound", "Next sound", "Apply binding"};
 
 struct EditorSceneTheme final {
   Color background{16, 15, 19, 255};
@@ -109,6 +144,16 @@ struct EditorSceneState final {
   bool audioDeviceOnline{false};
   std::string audioBackend{"OFFLINE"};
   double tempoBpm{120.0};
+  time::MeterEvent meter{time::Tick{0}, 4U, 4U};
+  bool timeMapVisible{false};
+  bool timeMapInputActive{false};
+  std::string boundedInputLabel;
+  ReplacementReviewView replacementReview;
+  bool hintInputActive{false};
+  bool timeMapStale{false};
+  std::string timeMapPrompt;
+  std::vector<std::string> timeMapRows;
+  std::optional<std::size_t> timeMapSelectedRow;
   RenderStatusView renderStatus;
   double logicalWidth{1440.0};
   double logicalHeight{900.0};
@@ -124,7 +169,7 @@ struct EditorSceneState final {
   std::optional<domain::PhonemeKey> selectedSeam;
   bool seamPreviewAlternate{false};
   std::vector<domain::PitchAutomationPoint> pitchAutomation;
-  std::array<domain::TechnicalLanePresentation, 4U> technicalLanes{};
+  std::array<domain::TechnicalLanePresentation, domain::kTechnicalLaneCount> technicalLanes{};
   std::array<bool, 4U> technicalLaneAvailable{};
   std::optional<std::array<double, 4U>> technicalLaneHeightsOverride;
 
@@ -137,6 +182,9 @@ struct EditorSceneState final {
   std::vector<authoring::VoicebankCard> voicebankCards;
   std::vector<ArrangementTrackItem> arrangementTracks;
   TrackInspectorSnapshot inspector;
+  bool vibratoEditable{false};
+  bool dynamicsEditable{false};
+  bool styleEditable{false};
   std::vector<authoring::Diagnostic> diagnostics;
   authoring::ExportProgress exportProgress;
   std::optional<authoring::ExportResult> lastExport;
@@ -147,6 +195,14 @@ struct EditorSceneState final {
     bool canPlay{false};
   };
   std::optional<SampleMicroscopeView> sampleMicroscope;
+  struct PhonemeReviewView final {
+    bool available{false};
+    bool visible{false};
+    std::string source;
+    std::string target;
+    std::string status;
+    std::array<bool, 6U> enabled{};
+  } phonemeReview;
   struct AudioDeviceOption final {
     std::string id;
     std::string name;
@@ -172,6 +228,20 @@ struct EditorSceneState final {
 };
 
 struct EditorSceneLayout final {
+  [[nodiscard]] ui::Rect phonemeReviewOpenBounds(double width, double height) const noexcept {
+    return {std::max(8.0, width - 160.0), height - 27.0, 148.0, 21.0};
+  }
+  [[nodiscard]] ui::Rect phonemeReviewPanelBounds(double width, double height) const noexcept {
+    const auto w = std::max(1.0, std::min(620.0, width - 24.0));
+    const auto h = std::max(1.0, std::min(240.0, height - 24.0));
+    return {(width - w) * 0.5, (height - h) * 0.5, w, h};
+  }
+  [[nodiscard]] ui::Rect phonemeReviewButtonBounds(double width, double height, std::size_t index) const noexcept {
+    const auto panel = phonemeReviewPanelBounds(width, height);
+    const auto w = std::max(1.0, (panel.width - 32.0) / 3.0);
+    return {panel.x + 8.0 + static_cast<double>(index % 3U) * (w + 8.0),
+            panel.bottom() - 72.0 + static_cast<double>(index / 3U) * 34.0, w, 28.0};
+  }
   struct TechnicalLaneGeometry final {
     double pianoBottom{0.0};
     double phonemeTop{0.0};
@@ -640,6 +710,73 @@ struct EditorSceneLayout final {
     return ui::Rect{stop.right() + compactToolbarGap, toolbarControlTop,
                     compactBpmWidth, toolbarControlHeight};
   }
+  [[nodiscard]] ui::Rect timeMapOpenBounds() const noexcept {
+    return {4.0, toolbarHeight + 2.0, keyboardWidth - 8.0, rulerHeight - 4.0};
+  }
+  [[nodiscard]] ui::Rect hintTextBounds(double width, double height) const noexcept {
+    auto bounds = timeMapTextBounds(width, height, false);
+    bounds.width = std::max(0.0, bounds.width - 48.0);
+    return bounds;
+  }
+  [[nodiscard]] ui::Rect hintCancelBounds(double width, double height) const noexcept {
+    const auto bounds = timeMapTextBounds(width, height, false);
+    return {bounds.right() - 44.0, bounds.y, 44.0, bounds.height};
+  }
+  [[nodiscard]] ui::Rect timeMapPanelBounds(double width, double height) const noexcept {
+    const auto w = std::min(480.0, std::max(0.0, width - 32.0));
+    const auto h = std::min(326.0, std::max(0.0, height - 16.0));
+    return {(width - w) * 0.5, (height - h) * 0.5, w, h};
+  }
+  [[nodiscard]] ui::Rect reviewPanelBounds(double width, double height, bool docked) const noexcept {
+    if (!docked) return timeMapPanelBounds(width, height);
+    const auto w = std::min(360.0, std::max(0.0, width - 16.0));
+    const auto top = height < 480.0 ? 8.0 : toolbarHeight;
+    const auto bottom = height < 480.0 ? 8.0 : statusHeight;
+    return {width - w - 8.0, top, w, std::max(0.0, height - top - bottom)};
+  }
+  [[nodiscard]] ui::Rect reviewRowBounds(double width, double height, std::size_t row, bool docked) const noexcept {
+    const auto panel = reviewPanelBounds(width, height, docked);
+    const auto stride = std::min(28.0, std::max(0.0, panel.height - 158.0) / 6.0);
+    return {panel.x + 12.0, panel.y + 54.0 + static_cast<double>(row) * stride, panel.width - 24.0, std::max(0.0, stride - 2.0)};
+  }
+  [[nodiscard]] ui::Rect reviewButtonBounds(double width, double height, std::size_t action, bool docked) const noexcept {
+    const auto panel = reviewPanelBounds(width, height, docked); const auto w = (panel.width - 32.0) / 3.0;
+    return {panel.x + 12.0 + static_cast<double>(action % 3U) * (w + 4.0),
+        panel.y + std::max(0.0, panel.height - 96.0) + static_cast<double>(action / 3U) * 30.0, w, 26.0};
+  }
+  [[nodiscard]] ui::Rect dynamicsPlotBounds(double width, double height) const noexcept {
+    const auto row = reviewRowBounds(width, height, 2U, true);
+    const auto buttons = reviewButtonBounds(width, height, 0U, true);
+    const auto top = row.y + row.height + 20.0;
+    return {row.x + 4.0, top, std::max(0.0, row.width - 8.0), std::max(0.0, std::min(128.0, buttons.y - top - 10.0))};
+  }
+  [[nodiscard]] double reviewActionOffset(double height) const noexcept {
+    return std::max(0.0, timeMapPanelBounds(480.0, height).height - 96.0);
+  }
+  [[nodiscard]] ui::Rect timeMapRowBounds(double width, double height, std::size_t row) const noexcept {
+    const auto panel = timeMapPanelBounds(width, height);
+    const auto stride = std::min(28.0, std::max(0.0, reviewActionOffset(height) - 62.0) / 6.0);
+    return {panel.x + 12.0, panel.y + 54.0 + static_cast<double>(row) * stride,
+            panel.width - 24.0, std::max(0.0, stride - 2.0)};
+  }
+  [[nodiscard]] ui::Rect timeMapTextBounds(double width, double height, bool panelVisible) const noexcept {
+    if (panelVisible) {
+      return timeMapRowBounds(width, height, 0U);
+    }
+    const auto w = std::min(240.0, std::max(0.0, width - 16.0));
+    return {std::clamp(bpmBoundsForWidth(width).x, 8.0, std::max(8.0, width - w - 8.0)), toolbarControlTop, w, toolbarControlHeight};
+  }
+  [[nodiscard]] ui::Rect timeMapActionBounds(double width, double height, std::size_t action) const noexcept {
+    const auto panel = timeMapPanelBounds(width, height); const auto w = (panel.width - 32.0) / 3.0;
+    return {panel.x + 12.0 + static_cast<double>(action % 3U) * (w + 4.0),
+            panel.y + reviewActionOffset(height) + static_cast<double>(action / 3U) * 30.0, w, 26.0};
+  }
+  [[nodiscard]] ui::Rect tempoInputBoundsForWidth(double width) const noexcept {
+    auto bounds = bpmBoundsForWidth(width); bounds.width -= 40.0; return bounds;
+  }
+  [[nodiscard]] ui::Rect meterInputBoundsForWidth(double width) const noexcept {
+    auto bounds = bpmBoundsForWidth(width); bounds.x = bounds.right() - 36.0; bounds.width = 36.0; return bounds;
+  }
   [[nodiscard]] ui::Rect batchLyricsBoundsForWidth(
       double width, bool portraitVisible = true) const noexcept {
     if (compactToolbar(width)) return ui::Rect{};
@@ -979,6 +1116,8 @@ struct EditorSceneLayout final {
 [[nodiscard]] bool editorDockVisible(const EditorSceneState& state) noexcept;
 [[nodiscard]] double resolveEditorDockWidth(
     const EditorSceneState& state, const EditorSceneLayout& layout) noexcept;
+[[nodiscard]] std::optional<double> resolveArrangementInspectorTop(
+    const EditorSceneState& state, const EditorSceneLayout& layout, double contentBottom) noexcept;
 
 class EditorScenePainter final {
 public:
@@ -1024,6 +1163,7 @@ private:
                            const EditorSceneState& state) const noexcept;
   void paintSampleMicroscope(RasterCanvas& canvas,
                              const EditorSceneState& state) const noexcept;
+  void paintPhonemeReview(RasterCanvas& canvas, const EditorSceneState& state) const noexcept;
   void paintStatus(RasterCanvas& canvas, const ui::PianoRollModel& model,
                    const EditorSceneState& state) const noexcept;
 

@@ -1,0 +1,598 @@
+Test project /Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/release
+        Start   1: seam_clap_offline_host_tests
+  1/120 Test   #1: seam_clap_offline_host_tests .................   Passed    0.20 sec
+        Start   2: seam_phase11_tests
+  2/120 Test   #2: seam_phase11_tests ...........................   Passed    0.72 sec
+        Start   3: seam_phase12a_tests
+  3/120 Test   #3: seam_phase12a_tests ..........................   Passed    7.90 sec
+        Start   4: seam_phase12a_demo_smoke
+  4/120 Test   #4: seam_phase12a_demo_smoke .....................   Passed    0.44 sec
+        Start   5: seam_phase12b_tests
+  5/120 Test   #5: seam_phase12b_tests ..........................   Passed    0.68 sec
+        Start   6: seam_phase12b_demo_smoke
+  6/120 Test   #6: seam_phase12b_demo_smoke .....................   Passed    0.65 sec
+        Start   7: seam_phase11_source_and_voice_contract
+  7/120 Test   #7: seam_phase11_source_and_voice_contract .......   Passed    0.05 sec
+        Start   8: seam_phase12a_production_contract
+  8/120 Test   #8: seam_phase12a_production_contract ............   Passed    0.04 sec
+        Start   9: seam_phase12b_contract
+  9/120 Test   #9: seam_phase12b_contract .......................   Passed    0.04 sec
+        Start  10: seam_synthesis_quality_tests
+ 10/120 Test  #10: seam_synthesis_quality_tests .................   Passed    1.01 sec
+        Start  11: seam_authoring_performance_tests
+ 11/120 Test  #11: seam_authoring_performance_tests .............   Passed    1.67 sec
+        Start  12: seam_creator_batch_tests
+ 12/120 Test  #12: seam_creator_batch_tests .....................   Passed    1.44 sec
+        Start  13: seam_melisma_tests
+ 13/120 Test  #13: seam_melisma_tests ...........................   Passed    0.35 sec
+        Start  14: seam_voice_designer_tests
+ 14/120 Test  #14: seam_voice_designer_tests ....................   Passed    0.99 sec
+        Start  15: seam_voice_design_tests
+ 15/120 Test  #15: seam_voice_design_tests ......................   Passed    0.76 sec
+        Start  16: seam_performance_compiler_tests
+ 16/120 Test  #16: seam_performance_compiler_tests ..............   Passed    0.48 sec
+        Start  17: seam_automatic_performance_tests
+ 17/120 Test  #17: seam_automatic_performance_tests .............   Passed    0.34 sec
+        Start  18: seam_helper_process_tests
+ 18/120 Test  #18: seam_helper_process_tests ....................   Passed    0.83 sec
+        Start  19: seam_japanese_pronunciation_tests
+ 19/120 Test  #19: seam_japanese_pronunciation_tests ............   Passed    1.16 sec
+        Start  20: seam_language_phonemizer_tests
+ 20/120 Test  #20: seam_language_phonemizer_tests ...............   Passed    0.01 sec
+        Start  21: seam_smf_interchange_tests
+ 21/120 Test  #21: seam_smf_interchange_tests ...................   Passed    0.51 sec
+        Start  22: seam_ustx_interchange_tests
+ 22/120 Test  #22: seam_ustx_interchange_tests ..................   Passed    0.37 sec
+        Start  23: seam_interchange_service_tests
+ 23/120 Test  #23: seam_interchange_service_tests ...............   Passed    0.35 sec
+        Start  24: seam_neural_worker_protocol_tests
+ 24/120 Test  #24: seam_neural_worker_protocol_tests ............   Passed    0.69 sec
+        Start  25: seam_harmony_workflow_tests
+ 25/120 Test  #25: seam_harmony_workflow_tests ..................   Passed    0.34 sec
+        Start  26: seam_renderer_capability_tests
+ 26/120 Test  #26: seam_renderer_capability_tests ...............   Passed    0.34 sec
+        Start  27: seam_phoneme_timing_tests
+ 27/120 Test  #27: seam_phoneme_timing_tests ....................   Passed    0.35 sec
+        Start  28: seam_performance_contract_tests
+ 28/120 Test  #28: seam_performance_contract_tests ..............   Passed    0.34 sec
+        Start  29: seam_performance_job_context_tests
+ 29/120 Test  #29: seam_performance_job_context_tests ...........   Passed    0.44 sec
+        Start  30: seam_region_performance_state_tests
+ 30/120 Test  #30: seam_region_performance_state_tests ..........   Passed    0.40 sec
+        Start  31: seam_schema8_performance_tests
+ 31/120 Test  #31: seam_schema8_performance_tests ...............   Passed    0.41 sec
+        Start  32: seam_style_migration_tests
+ 32/120 Test  #32: seam_style_migration_tests ...................   Passed    0.44 sec
+        Start  33: seam_plugin_style_migration_tests
+ 33/120 Test  #33: seam_plugin_style_migration_tests ............   Passed    0.39 sec
+        Start  34: seam_tempo_meter_tests
+ 34/120 Test  #34: seam_tempo_meter_tests .......................   Passed    0.38 sec
+        Start  35: seam_performance_command_tests
+ 35/120 Test  #35: seam_performance_command_tests ...............   Passed    0.38 sec
+        Start  36: seam_override_reconciliation_tests
+ 36/120 Test  #36: seam_override_reconciliation_tests ...........   Passed    0.46 sec
+        Start  37: seam_performance_snapshot_tests
+ 37/120 Test  #37: seam_performance_snapshot_tests ..............   Passed    1.86 sec
+        Start  38: seam_performance_edit_preservation_tests
+ 38/120 Test  #38: seam_performance_edit_preservation_tests .....   Passed    0.46 sec
+        Start  39: seam_diagnostic_search_tests
+ 39/120 Test  #39: seam_diagnostic_search_tests .................   Passed    0.37 sec
+        Start  40: seam_vibrato_inspector_tests
+ 40/120 Test  #40: seam_vibrato_inspector_tests .................   Passed    0.35 sec
+        Start  41: seam_dynamics_lane_workflow_tests
+ 41/120 Test  #41: seam_dynamics_lane_workflow_tests ............   Passed    0.73 sec
+        Start  42: seam_measured_dynamics_tests
+ 42/120 Test  #42: seam_measured_dynamics_tests .................   Passed    0.59 sec
+        Start  43: seam_style_coverage_tests
+ 43/120 Test  #43: seam_style_coverage_tests ....................   Passed    2.38 sec
+        Start  44: seam_japanese_reading_native_tests
+ 44/120 Test  #44: seam_japanese_reading_native_tests ...........   Passed    0.62 sec
+        Start  45: seam_offline_render_session_tests
+ 45/120 Test  #45: seam_offline_render_session_tests ............   Passed    0.35 sec
+        Start  46: seam_authoring_characterization_tests
+ 46/120 Test  #46: seam_authoring_characterization_tests ........   Passed    1.25 sec
+        Start  47: seam_authoring_render_coordinator_tests
+ 47/120 Test  #47: seam_authoring_render_coordinator_tests ......   Passed    1.55 sec
+        Start  48: seam_export_tests
+ 48/120 Test  #48: seam_export_tests ............................   Passed    3.32 sec
+        Start  49: seam_audio_level_tests
+ 49/120 Test  #49: seam_audio_level_tests .......................   Passed    0.39 sec
+        Start  50: seam_export_transaction_process_recovery
+ 50/120 Test  #50: seam_export_transaction_process_recovery .....   Passed    0.44 sec
+        Start  51: seam_singing_quality_contract_tests
+ 51/120 Test  #51: seam_singing_quality_contract_tests ..........   Passed    0.15 sec
+        Start  52: seam_singing_quality_workflow
+ 52/120 Test  #52: seam_singing_quality_workflow ................   Passed   20.12 sec
+        Start  53: seam_public_release_python_tests
+ 53/120 Test  #53: seam_public_release_python_tests .............   Passed   84.78 sec
+        Start  54: seam_tracked_source_closure_unit
+ 54/120 Test  #54: seam_tracked_source_closure_unit .............   Passed    0.31 sec
+        Start  55: seam_tracked_source_closure
+ 55/120 Test  #55: seam_tracked_source_closure ..................***Failed    0.22 sec
+SOURCE_CLOSURE=FAIL required_inputs=347
+not indexed: apps/seam-voicebank-cli/sample_review_commands.cpp (referenced by CMakeLists.txt; source-tree policy:apps)
+not indexed: apps/seam-voicebank-cli/sample_review_commands.hpp (source-tree policy:apps)
+not indexed: apps/seam-voicebank-cli/signal_cancellation.hpp (source-tree policy:apps)
+not indexed: docs/authoring/PHONEME_EDIT_REVIEW.md (source-tree policy:docs)
+not indexed: docs/authoring/PHONEME_TIMING_DISPLAY.md (source-tree policy:docs)
+not indexed: docs/authoring/PROCEDURAL_CLI_BAKING.md (source-tree policy:docs)
+not indexed: docs/formats/CANDIDATE_PITCH_INSPECTION_V1.md (source-tree policy:docs)
+not indexed: docs/formats/MIDI_INTERCHANGE_V1.md (source-tree policy:docs)
+not indexed: docs/formats/PROCEDURAL_CANDIDATE_V1.md (source-tree policy:docs)
+not indexed: docs/formats/PROCEDURAL_CANDIDATE_V2.md (source-tree policy:docs)
+not indexed: docs/formats/PROJECT_JSON_V8.md (source-tree policy:docs)
+not indexed: docs/formats/PROJECT_JSON_V9.md (source-tree policy:docs)
+not indexed: docs/formats/SOURCE_PHONEME_ALIGNMENT_V1.md (source-tree policy:docs)
+not indexed: docs/formats/USTX_INTERCHANGE_V1.md (source-tree policy:docs)
+not indexed: docs/formats/VOICE_RECIPE_V1.md (source-tree policy:docs)
+not indexed: docs/formats/VOICE_RECIPE_V2.md (source-tree policy:docs)
+not indexed: docs/implementation/AUDIT_REPAIR_AND_SAMPLE_PUBLICATION_2026-09-09.md (source-tree policy:docs)
+not indexed: docs/implementation/AUTOMATIC_PERFORMANCE_PROPOSAL_2026-09-08.md (source-tree policy:docs)
+not indexed: docs/implementation/BROAD_RELEASE_REGRESSION_2026-09-07.md (source-tree policy:docs)
+not indexed: docs/implementation/CHARACTER_PERFORMANCE_BINDING_2026-09-08.md (source-tree policy:docs)
+not indexed: docs/implementation/CREATOR_BATCH_ACTIONS_2026-09-08.md (source-tree policy:docs)
+not indexed: docs/implementation/DESIGNER_HANDOFF_AND_PHRASE_DUPLICATION_2026-09-07.md (source-tree policy:docs)
+not indexed: docs/implementation/DYNAMICS_LANE_MODEL_2026-09-08.md (source-tree policy:docs)
+not indexed: docs/implementation/DYNAMICS_TIME_NAVIGATION_2026-09-08.md (source-tree policy:docs)
+not indexed: docs/implementation/FULL_PRODUCT_REPORT_VALIDATION_2026-09-08.md (source-tree policy:docs)
+not indexed: docs/implementation/GENERATION_BATCH_EXECUTION_2026-09-07.md (source-tree policy:docs)
+not indexed: docs/implementation/GENERATION_IMPORT_EXPECTATIONS_2026-09-07.md (source-tree policy:docs)
+not indexed: docs/implementation/GENERATION_JOB_PACKAGE_2026-09-07.md (source-tree policy:docs)
+not indexed: docs/implementation/HARMONY_WORKFLOW_2026-09-08.md (source-tree policy:docs)
+not indexed: docs/implementation/JAPANESE_NORMALIZATION_2026-09-08.md (source-tree policy:docs)
+not indexed: docs/implementation/JAPANESE_READING_INTAKE_2026-09-08.md (source-tree policy:docs)
+not indexed: docs/implementation/LANGUAGE_PHONEMIZER_2026-09-08.md (source-tree policy:docs)
+not indexed: docs/implementation/LIVE_EXPRESSION_REPAIR_2026-09-08.md (source-tree policy:docs)
+not indexed: docs/implementation/MEASURED_AUDIO_LEVELS_2026-09-08.md (source-tree policy:docs)
+not indexed: docs/implementation/MEASURED_DYNAMICS_INSPECTOR_2026-09-08.md (source-tree policy:docs)
+not indexed: docs/implementation/NATIVE_GENERATION_LIVE_QA_2026-09-07.md (source-tree policy:docs)
+not indexed: docs/implementation/NATIVE_PREPARED_GENERATION_2026-09-07.md (source-tree policy:docs)
+not indexed: docs/implementation/NATIVE_STUDIO_RUNTIME_CHECK_2026-09-07.md (source-tree policy:docs)
+not indexed: docs/implementation/NEURAL_WORKER_CONTRACT_2026-09-08.md (source-tree policy:docs)
+not indexed: docs/implementation/NOTE_SEARCH_AND_BATCH_EDITING_2026-09-07.md (source-tree policy:docs)
+not indexed: docs/implementation/PHASE12C_CANONICAL_EVIDENCE_2026-09-08.md (source-tree policy:docs)
+not indexed: docs/implementation/PROCEDURAL_ONSET_POLICY_2026-09-07.md (source-tree policy:docs)
+not indexed: docs/implementation/READING_HELPER_PROCESS_2026-09-08.md (source-tree policy:docs)
+not indexed: docs/implementation/RELEASE_AUDIT_REPRODUCTION_2026-09-09.md (source-tree policy:docs)
+not indexed: docs/implementation/RENDERER_CAPABILITY_PROVENANCE_2026-09-08.md (source-tree policy:docs)
+not indexed: docs/implementation/SELECTED_GENERATED_DYNAMICS_2026-09-08.md (source-tree policy:docs)
+not indexed: docs/implementation/SHORT_UNIT_TRANSITION_MAPPING_2026-09-07.md (source-tree policy:docs)
+not indexed: docs/implementation/SMF_INTERCHANGE_2026-09-08.md (source-tree policy:docs)
+not indexed: docs/implementation/STYLE_COVERAGE_SHEET_MODEL_2026-09-08.md (source-tree policy:docs)
+not indexed: docs/implementation/TEMPO_METER_COMMANDS_2026-09-07.md (source-tree policy:docs)
+not indexed: docs/implementation/U19_VOCAL_DSP_STATUS_2026-09-06.md (source-tree policy:docs)
+not indexed: docs/implementation/U20_ARTICULATION_STATUS_2026-09-07.md (source-tree policy:docs)
+not indexed: docs/implementation/U3_COMPLETION_AUDIT_2026-09-06.md (source-tree policy:docs)
+not indexed: docs/implementation/U4_ACCEPTANCE_REVIEW_2026-09-06.md (source-tree policy:docs)
+not indexed: docs/implementation/U5_ACCEPTANCE_AUDIT_2026-09-06.md (source-tree policy:docs)
+not indexed: docs/implementation/U5_TIMING_ACCEPTANCE_REVIEW_2026-09-06.md (source-tree policy:docs)
+not indexed: docs/implementation/U6_PERFORMANCE_COMPILER_STATUS_2026-09-06.md (source-tree policy:docs)
+not indexed: docs/implementation/U7_TYPED_RESOURCE_STATUS_2026-09-06.md (source-tree policy:docs)
+not indexed: docs/implementation/USTX_NATIVE_LIFECYCLE_2026-09-08.md (source-tree policy:docs)
+not indexed: docs/implementation/VIBRATO_EDITING_MODEL_2026-09-08.md (source-tree policy:docs)
+not indexed: docs/implementation/VOICEBANK_COVERAGE_CORRECTNESS_2026-09-08.md (source-tree policy:docs)
+not indexed: docs/implementation/VOICE_DESIGNER_ACCESSIBILITY_2026-09-07.md (source-tree policy:docs)
+not indexed: docs/implementation/VOICE_DESIGNER_AUDITION_2026-09-07.md (source-tree policy:docs)
+not indexed: docs/implementation/VOICE_DESIGNER_COMPACT_LAYOUT_2026-09-07.md (source-tree policy:docs)
+not indexed: docs/implementation/VOICE_DESIGNER_INTERACTION_QA_2026-09-07.md (source-tree policy:docs)
+not indexed: docs/implementation/VOICE_DESIGNER_MODEL_2026-09-07.md (source-tree policy:docs)
+not indexed: docs/implementation/VOICE_DESIGNER_NATIVE_UI_2026-09-07.md (source-tree policy:docs)
+not indexed: docs/implementation/VOICE_DESIGNER_SESSION_2026-09-07.md (source-tree policy:docs)
+not indexed: docs/product/public-release-replay.schema.json (source-tree policy:docs)
+not indexed: docs/reviews/DEVELOPMENT_DIRECTION_REVIEW_2026-09-09.md (source-tree policy:docs)
+not indexed: docs/reviews/direction-audit-2026-09-09/README.md (source-tree policy:docs)
+not indexed: docs/reviews/direction-audit-2026-09-09/artifact.json (source-tree policy:docs)
+not indexed: docs/reviews/direction-audit-2026-09-09/delivery.json (source-tree policy:docs)
+not indexed: docs/reviews/direction-audit-2026-09-09/git-paths.json (source-tree policy:docs)
+not indexed: docs/reviews/direction-audit-2026-09-09/language_probe.cpp (source-tree policy:docs)
+not indexed: docs/reviews/direction-audit-2026-09-09/report.html (source-tree policy:docs)
+not indexed: docs/reviews/direction-audit-2026-09-09/results.json (source-tree policy:docs)
+not indexed: docs/reviews/direction-audit-refresh-2026-09-09/README.md (source-tree policy:docs)
+not indexed: docs/reviews/direction-audit-refresh-2026-09-09/artifact.json (source-tree policy:docs)
+not indexed: docs/reviews/direction-audit-refresh-2026-09-09/delivery.json (source-tree policy:docs)
+not indexed: docs/reviews/direction-audit-refresh-2026-09-09/gate_probe.py (source-tree policy:docs)
+not indexed: docs/reviews/direction-audit-refresh-2026-09-09/git-paths.json (source-tree policy:docs)
+not indexed: docs/reviews/direction-audit-refresh-2026-09-09/ownership_probe.cpp (source-tree policy:docs)
+not indexed: docs/reviews/direction-audit-refresh-2026-09-09/pronunciation_probe.cpp (source-tree policy:docs)
+not indexed: docs/reviews/direction-audit-refresh-2026-09-09/report.html (source-tree policy:docs)
+not indexed: docs/reviews/direction-audit-refresh-2026-09-09/results.json (source-tree policy:docs)
+not indexed: docs/reviews/direction-checkpoint-2026-09-09/README.md (source-tree policy:docs)
+not indexed: docs/reviews/direction-checkpoint-2026-09-09/artifact.json (source-tree policy:docs)
+not indexed: docs/reviews/direction-checkpoint-2026-09-09/assemble_report.mjs (source-tree policy:docs)
+not indexed: docs/reviews/direction-checkpoint-2026-09-09/build-full.log (source-tree policy:docs)
+not indexed: docs/reviews/direction-checkpoint-2026-09-09/capture_recovery.mjs (source-tree policy:docs)
+not indexed: docs/reviews/direction-checkpoint-2026-09-09/ctest-cases.log (source-tree policy:docs)
+not indexed: docs/reviews/direction-checkpoint-2026-09-09/ctest-failures.txt (source-tree policy:docs)
+not indexed: docs/reviews/direction-checkpoint-2026-09-09/ctest-focused.log (source-tree policy:docs)
+not indexed: docs/reviews/direction-checkpoint-2026-09-09/delivery.json (source-tree policy:docs)
+not indexed: docs/reviews/direction-checkpoint-2026-09-09/matrix.json (source-tree policy:docs)
+not indexed: docs/reviews/direction-checkpoint-2026-09-09/python-unittest.log (source-tree policy:docs)
+not indexed: docs/reviews/direction-checkpoint-2026-09-09/report.html (source-tree policy:docs)
+not indexed: docs/reviews/direction-checkpoint-2026-09-09/results.json (source-tree policy:docs)
+not indexed: docs/reviews/direction-checkpoint-2026-09-09/soak-smoke.json (source-tree policy:docs)
+not indexed: docs/reviews/direction-checkpoint-2026-09-09/test_coverage.sql (source-tree policy:docs)
+not indexed: docs/reviews/direction-post-integration-2026-09-09/README.md (source-tree policy:docs)
+not indexed: docs/reviews/direction-post-integration-2026-09-09/artifact.json (source-tree policy:docs)
+not indexed: docs/reviews/direction-post-integration-2026-09-09/assemble_report.mjs (source-tree policy:docs)
+not indexed: docs/reviews/direction-post-integration-2026-09-09/ctest-failures.txt (source-tree policy:docs)
+not indexed: docs/reviews/direction-post-integration-2026-09-09/ctest-full.log (source-tree policy:docs)
+not indexed: docs/reviews/direction-post-integration-2026-09-09/delivery.json (source-tree policy:docs)
+not indexed: docs/reviews/direction-post-integration-2026-09-09/failure_counts.sql (source-tree policy:docs)
+not indexed: docs/reviews/direction-post-integration-2026-09-09/gate_subpredicate_probe.py (source-tree policy:docs)
+not indexed: docs/reviews/direction-post-integration-2026-09-09/language_path_probe.cpp (source-tree policy:docs)
+not indexed: docs/reviews/direction-post-integration-2026-09-09/matrix.json (source-tree policy:docs)
+not indexed: docs/reviews/direction-post-integration-2026-09-09/recovery_review_probe.cpp (source-tree policy:docs)
+not indexed: docs/reviews/direction-post-integration-2026-09-09/report.html (source-tree policy:docs)
+not indexed: docs/reviews/direction-post-integration-2026-09-09/results.json (source-tree policy:docs)
+not indexed: libs/seam-application/include/seam/application/harmony_commands.hpp (source-tree policy:libs)
+not indexed: libs/seam-application/include/seam/application/performance_commands.hpp (source-tree policy:libs)
+not indexed: libs/seam-application/include/seam/application/performance_job_context.hpp (source-tree policy:libs)
+not indexed: libs/seam-application/include/seam/application/tempo_commands.hpp (source-tree policy:libs)
+not indexed: libs/seam-application/src/harmony_commands.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-application/src/performance_commands.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-application/src/performance_job_context.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-application/src/tempo_commands.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-authoring-runtime/include/seam/authoring/audio_measurement_capture.hpp (source-tree policy:libs)
+not indexed: libs/seam-authoring-runtime/include/seam/authoring/audio_measurement_job.hpp (source-tree policy:libs)
+not indexed: libs/seam-authoring-runtime/include/seam/authoring/generation_job.hpp (source-tree policy:libs)
+not indexed: libs/seam-authoring-runtime/include/seam/authoring/helper_process.hpp (source-tree policy:libs)
+not indexed: libs/seam-authoring-runtime/include/seam/authoring/interchange_service.hpp (source-tree policy:libs)
+not indexed: libs/seam-authoring-runtime/include/seam/authoring/japanese_reading_capture.hpp (source-tree policy:libs)
+not indexed: libs/seam-authoring-runtime/include/seam/authoring/japanese_reading_job.hpp (source-tree policy:libs)
+not indexed: libs/seam-authoring-runtime/include/seam/authoring/japanese_reading_resource.hpp (source-tree policy:libs)
+not indexed: libs/seam-authoring-runtime/include/seam/authoring/japanese_reading_response.hpp (source-tree policy:libs)
+not indexed: libs/seam-authoring-runtime/include/seam/authoring/japanese_reading_stage.hpp (source-tree policy:libs)
+not indexed: libs/seam-authoring-runtime/include/seam/authoring/voicebank_snapshot.hpp (source-tree policy:libs)
+not indexed: libs/seam-authoring-runtime/src/generation_batch.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-authoring-runtime/src/generation_job.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-authoring-runtime/src/helper_process.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-authoring-runtime/src/interchange_service.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-authoring-runtime/src/japanese_reading_capture.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-authoring-runtime/src/japanese_reading_job.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-authoring-runtime/src/japanese_reading_resource.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-authoring-runtime/src/japanese_reading_response.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-authoring-runtime/src/japanese_reading_stage.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-clap-editor/include/seam/clap_editor/offline_render_session.hpp (source-tree policy:libs)
+not indexed: libs/seam-clap-editor/src/offline_render_session.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-core/include/seam/core/exclusive_file_lock.hpp (source-tree policy:libs)
+not indexed: libs/seam-domain/src/region_performance_state.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-editor-ui/include/seam/ui/dependent_edit_review.hpp (source-tree policy:libs)
+not indexed: libs/seam-editor-ui/include/seam/ui/dynamics_clear_preview.hpp (source-tree policy:libs)
+not indexed: libs/seam-editor-ui/include/seam/ui/dynamics_lane_model.hpp (source-tree policy:libs)
+not indexed: libs/seam-editor-ui/include/seam/ui/dynamics_plot_viewport.hpp (source-tree policy:libs)
+not indexed: libs/seam-editor-ui/include/seam/ui/lyric_replacement_job.hpp (source-tree policy:libs)
+not indexed: libs/seam-editor-ui/include/seam/ui/lyric_replacement_review.hpp (source-tree policy:libs)
+not indexed: libs/seam-editor-ui/include/seam/ui/note_cleanup_preview.hpp (source-tree policy:libs)
+not indexed: libs/seam-editor-ui/include/seam/ui/note_search_job.hpp (source-tree policy:libs)
+not indexed: libs/seam-editor-ui/include/seam/ui/note_search_model.hpp (source-tree policy:libs)
+not indexed: libs/seam-editor-ui/include/seam/ui/note_search_navigation.hpp (source-tree policy:libs)
+not indexed: libs/seam-editor-ui/include/seam/ui/vibrato_clear_preview.hpp (source-tree policy:libs)
+not indexed: libs/seam-editor-ui/include/seam/ui/vibrato_model.hpp (source-tree policy:libs)
+not indexed: libs/seam-editor-ui/src/dynamics_lane_model.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-editor-ui/src/note_search_model.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-editor-ui/src/vibrato_model.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-formats/src/project_performance_json.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-formats/src/project_performance_json.hpp (source-tree policy:libs)
+not indexed: libs/seam-formats/src/project_region_performance_json.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-formats/src/project_region_performance_json.hpp (source-tree policy:libs)
+not indexed: libs/seam-interchange/include/seam/interchange/smf_codec.hpp (source-tree policy:libs)
+not indexed: libs/seam-interchange/include/seam/interchange/smf_project_conversion.hpp (source-tree policy:libs)
+not indexed: libs/seam-interchange/include/seam/interchange/ustx_codec.hpp (source-tree policy:libs)
+not indexed: libs/seam-interchange/include/seam/interchange/ustx_project_conversion.hpp (source-tree policy:libs)
+not indexed: libs/seam-interchange/src/smf_codec.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-interchange/src/smf_project_conversion.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-interchange/src/ustx_codec.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-interchange/src/ustx_project_conversion.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-native-ui/include/seam/native_ui/appkit_shortcut_key.hpp (source-tree policy:libs)
+not indexed: libs/seam-native-ui/include/seam/native_ui/candidate_audition.hpp (source-tree policy:libs)
+not indexed: libs/seam-native-ui/include/seam/native_ui/candidate_audition_session.hpp (source-tree policy:libs)
+not indexed: libs/seam-native-ui/include/seam/native_ui/diagnostic_search.hpp (source-tree policy:libs)
+not indexed: libs/seam-native-ui/include/seam/native_ui/diagnostic_search_job.hpp (source-tree policy:libs)
+not indexed: libs/seam-native-ui/include/seam/native_ui/pitch_contour.hpp (source-tree policy:libs)
+not indexed: libs/seam-native-ui/include/seam/native_ui/style_coverage_sheet.hpp (source-tree policy:libs)
+not indexed: libs/seam-native-ui/include/seam/native_ui/tempo_meter_model.hpp (source-tree policy:libs)
+not indexed: libs/seam-native-ui/include/seam/native_ui/vibrato_inspector.hpp (source-tree policy:libs)
+not indexed: libs/seam-native-ui/include/seam/native_ui/voice_designer_audition.hpp (source-tree policy:libs)
+not indexed: libs/seam-native-ui/include/seam/native_ui/voice_designer_layout.hpp (source-tree policy:libs)
+not indexed: libs/seam-native-ui/include/seam/native_ui/voice_designer_model.hpp (source-tree policy:libs)
+not indexed: libs/seam-native-ui/include/seam/native_ui/voice_designer_session.hpp (source-tree policy:libs)
+not indexed: libs/seam-native-ui/src/style_coverage_sheet.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-native-ui/src/vibrato_inspector.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-native-ui/src/voice_designer_audition.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-native-ui/src/voice_designer_model.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-native-ui/src/voice_designer_session.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-native-ui/src/voicebank_studio_manifest_draft.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-native-ui/src/voicebank_studio_sample_review.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-neural-synthesis/include/seam/neural_synthesis/model_contract.hpp (source-tree policy:libs)
+not indexed: libs/seam-neural-synthesis/include/seam/neural_synthesis/neural_phrase_backend.hpp (source-tree policy:libs)
+not indexed: libs/seam-neural-synthesis/include/seam/neural_synthesis/worker_protocol.hpp (source-tree policy:libs)
+not indexed: libs/seam-neural-synthesis/src/model_contract.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-neural-synthesis/src/neural_phrase_backend.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-neural-synthesis/src/worker_protocol.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-phonemizer/include/seam/phonemizer/english_phonemizer.hpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-phonemizer/include/seam/phonemizer/japanese_reading.hpp (source-tree policy:libs)
+not indexed: libs/seam-phonemizer/include/seam/phonemizer/korean_phonemizer.hpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-phonemizer/include/seam/phonemizer/language_resolver.hpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-phonemizer/include/seam/phonemizer/override_reconciliation.hpp (source-tree policy:libs)
+not indexed: libs/seam-phonemizer/include/seam/phonemizer/pronunciation_resolver.hpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-phonemizer/src/english_phonemizer.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-phonemizer/src/japanese_reading.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-phonemizer/src/korean_phonemizer.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-phonemizer/src/language_resolver.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-phonemizer/src/override_reconciliation.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-phonemizer/src/pronunciation_resolver.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-rendering/include/seam/rendering/audio_level_envelope.hpp (source-tree policy:libs)
+not indexed: libs/seam-rendering/src/audio_level_envelope.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-synthesis/include/seam/synthesis/automatic_performance.hpp (source-tree policy:libs)
+not indexed: libs/seam-synthesis/include/seam/synthesis/performance_compiler.hpp (source-tree policy:libs)
+not indexed: libs/seam-synthesis/include/seam/synthesis/phoneme_timing_plan.hpp (source-tree policy:libs)
+not indexed: libs/seam-synthesis/include/seam/synthesis/phrase_backend.hpp (source-tree policy:libs)
+not indexed: libs/seam-synthesis/include/seam/synthesis/renderer_capabilities.hpp (source-tree policy:libs)
+not indexed: libs/seam-synthesis/include/seam/synthesis/singer_resource.hpp (source-tree policy:libs)
+not indexed: libs/seam-synthesis/include/seam/synthesis/source_phoneme_alignment.hpp (source-tree policy:libs)
+not indexed: libs/seam-synthesis/include/seam/synthesis/source_target_map.hpp (source-tree policy:libs)
+not indexed: libs/seam-synthesis/src/automatic_performance.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-synthesis/src/performance_compiler.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-synthesis/src/phoneme_timing_plan.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-synthesis/src/phrase_backend.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-synthesis/src/renderer_capabilities.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-synthesis/src/singer_resource.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-synthesis/src/source_phoneme_alignment.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-synthesis/src/source_target_map.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-voice-design/include/seam/voice_design/articulated_stream.hpp (source-tree policy:libs)
+not indexed: libs/seam-voice-design/include/seam/voice_design/articulation_plan.hpp (source-tree policy:libs)
+not indexed: libs/seam-voice-design/include/seam/voice_design/frication_config.hpp (source-tree policy:libs)
+not indexed: libs/seam-voice-design/include/seam/voice_design/frication_gesture_stream.hpp (source-tree policy:libs)
+not indexed: libs/seam-voice-design/include/seam/voice_design/frication_source.hpp (source-tree policy:libs)
+not indexed: libs/seam-voice-design/include/seam/voice_design/phonation_source.hpp (source-tree policy:libs)
+not indexed: libs/seam-voice-design/include/seam/voice_design/procedural_candidate.hpp (source-tree policy:libs)
+not indexed: libs/seam-voice-design/include/seam/voice_design/procedural_renderer.hpp (source-tree policy:libs)
+not indexed: libs/seam-voice-design/include/seam/voice_design/recipe_resource.hpp (source-tree policy:libs)
+not indexed: libs/seam-voice-design/include/seam/voice_design/vocal_tract.hpp (source-tree policy:libs)
+not indexed: libs/seam-voice-design/include/seam/voice_design/voice_recipe.hpp (source-tree policy:libs)
+not indexed: libs/seam-voice-design/src/articulated_stream.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-voice-design/src/articulation_plan.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-voice-design/src/excitation_noise.hpp (source-tree policy:libs)
+not indexed: libs/seam-voice-design/src/frication_gesture_stream.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-voice-design/src/frication_source.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-voice-design/src/phonation_source.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-voice-design/src/procedural_candidate.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-voice-design/src/procedural_renderer.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-voice-design/src/recipe_resource.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-voice-design/src/vocal_tract.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-voice-design/src/voice_recipe.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-voicebank-production/include/seam/voicebank_production/candidate_markers.hpp (source-tree policy:libs)
+not indexed: libs/seam-voicebank-production/include/seam/voicebank_production/candidate_publication.hpp (source-tree policy:libs)
+not indexed: libs/seam-voicebank-production/include/seam/voicebank_production/manifest_draft.hpp (source-tree policy:libs)
+not indexed: libs/seam-voicebank-production/src/candidate_markers.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-voicebank-production/src/candidate_publication_internal.hpp (source-tree policy:libs)
+not indexed: libs/seam-voicebank-production/src/generation_expectation.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-voicebank-production/src/manifest_draft.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-voicebank-production/src/operation_staging.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-voicebank-production/src/operation_staging_internal.hpp (source-tree policy:libs)
+not indexed: libs/seam-voicebank-production/src/repository_candidate.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-voicebank-production/src/repository_history_internal.hpp (source-tree policy:libs)
+not indexed: libs/seam-voicebank-production/src/repository_review.cpp (referenced by CMakeLists.txt; source-tree policy:libs)
+not indexed: libs/seam-voicebank-production/src/repository_source_internal.hpp (source-tree policy:libs)
+not indexed: phase12c/include/seam/phase12c/canonical_evidence.hpp (source-tree policy:phase12c)
+not indexed: phase12c/include/seam/phase12c/clap_matrix_host.hpp (source-tree policy:phase12c)
+not indexed: phase12c/src/canonical_evidence.cpp (source-tree policy:phase12c)
+not indexed: phase12c/src/clap_matrix_host.cpp (source-tree policy:phase12c)
+not indexed: phase12c/src/engine_evidence_resource.cpp (source-tree policy:phase12c)
+not indexed: scripts/run_public_release_operation.py (source-tree policy:scripts)
+not indexed: scripts/verify_full_product_report.py (source-tree policy:scripts)
+not indexed: scripts/verify_phase12c_canonical_contract.py (referenced by phase12c/CMakeLists.txt; source-tree policy:scripts)
+not indexed: tests/external_beta/full_product_report_fixture.py (source-tree policy:tests)
+not indexed: tests/external_beta/test_full_product_report.py (source-tree policy:tests)
+not indexed: tests/external_beta/test_phase12c_canonical_contract.py (source-tree policy:tests)
+not indexed: tests/fixtures/projects/generators/README.md (source-tree policy:tests)
+not indexed: tests/fixtures/projects/generators/reemit.cpp (source-tree policy:tests)
+not indexed: tests/fixtures/projects/generators/schema1.cpp (source-tree policy:tests)
+not indexed: tests/fixtures/projects/generators/schema4.cpp (source-tree policy:tests)
+not indexed: tests/fixtures/projects/schema-1-historical-writer.seam (source-tree policy:tests)
+not indexed: tests/fixtures/projects/schema-4-historical-writer.seam (referenced by CMakeLists.txt; source-tree policy:tests)
+not indexed: tests/fixtures/projects/schema-5-historical-writer.seam (source-tree policy:tests)
+not indexed: tests/fixtures/projects/schema-6-historical-writer.seam (source-tree policy:tests)
+not indexed: tests/fixtures/projects/schema-7-historical-writer.seam (source-tree policy:tests)
+not indexed: tests/fixtures/pronunciation/openjtalk-intake.json (source-tree policy:tests)
+not indexed: tests/helpers/generation_job_probe.cpp (referenced by CMakeLists.txt; source-tree policy:tests)
+not indexed: tests/helpers/neural_worker_probe.cpp (referenced by CMakeLists.txt; source-tree policy:tests)
+not indexed: tests/helpers/reading_capture_process_probe.cpp (referenced by CMakeLists.txt; source-tree policy:tests)
+not indexed: tests/helpers/reading_process_probe.cpp (referenced by CMakeLists.txt; source-tree policy:tests)
+not indexed: tests/production/public_release_replay_fixtures.py (source-tree policy:tests)
+not indexed: tests/production/test_production_draft_parity.py (source-tree policy:tests)
+not indexed: tests/production/test_public_release_replay.py (source-tree policy:tests)
+not indexed: tests/test_audio_level_envelope.cpp (referenced by CMakeLists.txt; source-tree policy:tests)
+not indexed: tests/test_automatic_performance.cpp (referenced by CMakeLists.txt; source-tree policy:tests)
+not indexed: tests/test_clap_offline_host.py (referenced by CMakeLists.txt; source-tree policy:tests)
+not indexed: tests/test_creator_batch_edits.cpp (referenced by CMakeLists.txt; source-tree policy:tests)
+not indexed: tests/test_dynamics_lane_workflow.cpp (referenced by CMakeLists.txt; source-tree policy:tests)
+not indexed: tests/test_english_phonemizer.cpp (referenced by CMakeLists.txt; source-tree policy:tests)
+not indexed: tests/test_harmony_workflow.cpp (referenced by CMakeLists.txt; source-tree policy:tests)
+not indexed: tests/test_helper_process.cpp (referenced by CMakeLists.txt; source-tree policy:tests)
+not indexed: tests/test_interchange_service.cpp (referenced by CMakeLists.txt; source-tree policy:tests)
+not indexed: tests/test_japanese_reading.cpp (referenced by CMakeLists.txt; source-tree policy:tests)
+not indexed: tests/test_japanese_reading_capture.cpp (referenced by CMakeLists.txt; source-tree policy:tests)
+not indexed: tests/test_japanese_reading_job.cpp (referenced by CMakeLists.txt; source-tree policy:tests)
+not indexed: tests/test_japanese_reading_native.cpp (referenced by CMakeLists.txt; source-tree policy:tests)
+not indexed: tests/test_japanese_reading_resource.cpp (referenced by CMakeLists.txt; source-tree policy:tests)
+not indexed: tests/test_japanese_reading_response.cpp (referenced by CMakeLists.txt; source-tree policy:tests)
+not indexed: tests/test_korean_phonemizer.cpp (referenced by CMakeLists.txt; source-tree policy:tests)
+not indexed: tests/test_manifest_draft.cpp (referenced by CMakeLists.txt; source-tree policy:tests)
+not indexed: tests/test_measured_dynamics_workflow.cpp (referenced by CMakeLists.txt; source-tree policy:tests)
+not indexed: tests/test_neural_worker_protocol.cpp (referenced by CMakeLists.txt; source-tree policy:tests)
+not indexed: tests/test_offline_render_session.cpp (referenced by CMakeLists.txt; source-tree policy:tests)
+not indexed: tests/test_override_reconciliation.cpp (referenced by CMakeLists.txt; source-tree policy:tests)
+not indexed: tests/test_performance_commands.cpp (referenced by CMakeLists.txt; source-tree policy:tests)
+not indexed: tests/test_performance_compiler.cpp (referenced by CMakeLists.txt; source-tree policy:tests)
+not indexed: tests/test_performance_edit_preservation.cpp (referenced by CMakeLists.txt; source-tree policy:tests)
+not indexed: tests/test_performance_job_context.cpp (referenced by CMakeLists.txt; source-tree policy:tests)
+not indexed: tests/test_performance_snapshot.cpp (referenced by CMakeLists.txt; source-tree policy:tests)
+not indexed: tests/test_phase12c_matrix_host.py (referenced by phase12c/CMakeLists.txt; source-tree policy:tests)
+not indexed: tests/test_phoneme_timing.cpp (referenced by CMakeLists.txt; source-tree policy:tests)
+not indexed: tests/test_pitch_analysis_bounds.cpp (referenced by CMakeLists.txt; source-tree policy:tests)
+not indexed: tests/test_plugin_style_migration.cpp (referenced by CMakeLists.txt; source-tree policy:tests)
+not indexed: tests/test_production_draft.cpp (referenced by CMakeLists.txt; source-tree policy:tests)
+not indexed: tests/test_production_edit_ownership.cpp (referenced by CMakeLists.txt; source-tree policy:tests)
+not indexed: tests/test_production_import_outcomes.cpp (referenced by CMakeLists.txt; source-tree policy:tests)
+not indexed: tests/test_production_operation_staging.cpp (referenced by CMakeLists.txt; source-tree policy:tests)
+not indexed: tests/test_region_performance_state.cpp (referenced by CMakeLists.txt; source-tree policy:tests)
+not indexed: tests/test_renderer_capabilities.cpp (referenced by CMakeLists.txt; source-tree policy:tests)
+not indexed: tests/test_sample_review_cli.cpp (referenced by CMakeLists.txt; source-tree policy:tests)
+not indexed: tests/test_schema8_performance.cpp (referenced by CMakeLists.txt; source-tree policy:tests)
+not indexed: tests/test_smf_interchange.cpp (referenced by CMakeLists.txt; source-tree policy:tests)
+not indexed: tests/test_studio_manifest_draft.cpp (referenced by CMakeLists.txt; source-tree policy:tests)
+not indexed: tests/test_studio_sample_review.cpp (referenced by CMakeLists.txt; source-tree policy:tests)
+not indexed: tests/test_style_coverage_sheet.cpp (referenced by CMakeLists.txt; source-tree policy:tests)
+not indexed: tests/test_style_migration.cpp (referenced by CMakeLists.txt; source-tree policy:tests)
+not indexed: tests/test_tempo_meter_commands.cpp (referenced by CMakeLists.txt; source-tree policy:tests)
+not indexed: tests/test_ustx_interchange.cpp (referenced by CMakeLists.txt; source-tree policy:tests)
+not indexed: tests/test_vibrato_inspector.cpp (referenced by CMakeLists.txt; source-tree policy:tests)
+not indexed: tests/test_voice_design.cpp (referenced by CMakeLists.txt; source-tree policy:tests)
+not indexed: tests/test_voice_designer_workflow.cpp (referenced by CMakeLists.txt; source-tree policy:tests)
+not indexed: tests/test_wav_read_limits.cpp (referenced by CMakeLists.txt; source-tree policy:tests)
+not indexed: tools/dependency-probes/check_openjtalk_reading.py (source-tree policy:tools)
+not indexed: tools/dependency-probes/openjtalk_reading_probe.cpp (source-tree policy:tools)
+not indexed: tools/dependency-probes/reading_transport_probe.cpp (referenced by CMakeLists.txt; source-tree policy:tools)
+not indexed: tools/external_beta/_production_draft_validation.py (source-tree policy:tools)
+not indexed: tools/external_beta/full_product_report.py (source-tree policy:tools)
+not indexed: tools/public_release/replay.py (source-tree policy:tools)
+
+        Start  56: seam_engineering_remediation_evidence_unit
+ 56/120 Test  #56: seam_engineering_remediation_evidence_unit ...   Passed    0.08 sec
+        Start  57: seam_external_beta_python_contract_tests
+ 57/120 Test  #57: seam_external_beta_python_contract_tests .....   Passed   23.53 sec
+        Start  58: seam_voice_source_admission_tests
+ 58/120 Test  #58: seam_voice_source_admission_tests ............   Passed    0.12 sec
+        Start  59: seam_u2_tests
+ 59/120 Test  #59: seam_u2_tests ................................   Passed    0.61 sec
+        Start  60: seam_u3_tests
+ 60/120 Test  #60: seam_u3_tests ................................   Passed    0.42 sec
+        Start  61: seam_update_manifest_tests
+ 61/120 Test  #61: seam_update_manifest_tests ...................   Passed    0.45 sec
+        Start  62: seam_recovery_support_tests
+ 62/120 Test  #62: seam_recovery_support_tests ..................   Passed    0.82 sec
+        Start  63: seam_update_controller_tests
+ 63/120 Test  #63: seam_update_controller_tests .................   Passed    0.34 sec
+        Start  64: seam_eula_acceptance_tests
+ 64/120 Test  #64: seam_eula_acceptance_tests ...................   Passed    0.40 sec
+        Start  65: seam_u3_standalone_tests
+ 65/120 Test  #65: seam_u3_standalone_tests .....................   Passed    0.54 sec
+        Start  66: seam_tests
+ 66/120 Test  #66: seam_tests ...................................   Passed   19.71 sec
+        Start  67: seam_production_draft_tests
+ 67/120 Test  #67: seam_production_draft_tests ..................   Passed    0.06 sec
+        Start  68: seam_manifest_draft_tests
+ 68/120 Test  #68: seam_manifest_draft_tests ....................   Passed    0.28 sec
+        Start  69: seam_wav_read_limits_tests
+ 69/120 Test  #69: seam_wav_read_limits_tests ...................   Passed    0.02 sec
+        Start  70: seam_studio_sample_review_tests
+ 70/120 Test  #70: seam_studio_sample_review_tests ..............   Passed    0.57 sec
+        Start  71: seam_studio_manifest_draft_tests
+ 71/120 Test  #71: seam_studio_manifest_draft_tests .............   Passed    0.71 sec
+        Start  72: seam_production_ownership_tests
+ 72/120 Test  #72: seam_production_ownership_tests ..............   Passed    0.10 sec
+        Start  73: seam_production_staging_tests
+ 73/120 Test  #73: seam_production_staging_tests ................   Passed    0.14 sec
+        Start  74: seam_production_import_outcome_tests
+ 74/120 Test  #74: seam_production_import_outcome_tests .........   Passed    0.39 sec
+        Start  75: seam_sample_review_cli_tests
+ 75/120 Test  #75: seam_sample_review_cli_tests .................   Passed    0.89 sec
+        Start  76: seam_pitch_analysis_tests
+ 76/120 Test  #76: seam_pitch_analysis_tests ....................   Passed    0.67 sec
+        Start  77: seam_voicebank_production_tests
+ 77/120 Test  #77: seam_voicebank_production_tests ..............   Passed    1.12 sec
+        Start  78: seam_realtime_allocation_probe
+ 78/120 Test  #78: seam_realtime_allocation_probe ...............   Passed    1.70 sec
+        Start  79: seam_candidate_audition_probe
+ 79/120 Test  #79: seam_candidate_audition_probe ................   Passed    0.36 sec
+        Start  80: seam_phase2_demo_smoke
+ 80/120 Test  #80: seam_phase2_demo_smoke .......................   Passed    0.71 sec
+        Start  81: seam_phase3_demo_smoke
+ 81/120 Test  #81: seam_phase3_demo_smoke .......................   Passed    0.83 sec
+        Start  82: seam_phase4_demo_smoke
+ 82/120 Test  #82: seam_phase4_demo_smoke .......................   Passed    0.89 sec
+        Start  83: seam_phase6_demo_smoke
+ 83/120 Test  #83: seam_phase6_demo_smoke .......................   Passed    0.37 sec
+        Start  84: seam_phase7_demo_smoke
+ 84/120 Test  #84: seam_phase7_demo_smoke .......................   Passed    0.35 sec
+        Start  85: seam_phase8_demo_smoke
+ 85/120 Test  #85: seam_phase8_demo_smoke .......................   Passed    0.34 sec
+        Start  86: seam_phase9_demo_smoke
+ 86/120 Test  #86: seam_phase9_demo_smoke .......................   Passed    0.64 sec
+        Start  87: seam_phase8_platform_source_contract
+ 87/120 Test  #87: seam_phase8_platform_source_contract .........   Passed    0.04 sec
+        Start  88: seam_standalone_production_path_contract
+ 88/120 Test  #88: seam_standalone_production_path_contract .....   Passed    0.03 sec
+        Start  89: seam_u2_project_lifecycle_contract
+ 89/120 Test  #89: seam_u2_project_lifecycle_contract ...........   Passed    0.04 sec
+        Start  90: seam_u3_voicebank_workflow_contract
+ 90/120 Test  #90: seam_u3_voicebank_workflow_contract ..........   Passed    0.04 sec
+        Start  91: seam_macos_source_contract
+ 91/120 Test  #91: seam_macos_source_contract ...................   Passed    0.05 sec
+        Start  92: seam_windows_source_contract
+ 92/120 Test  #92: seam_windows_source_contract .................   Passed    0.05 sec
+        Start  93: seam_phase12c_target_runtime_contract
+ 93/120 Test  #93: seam_phase12c_target_runtime_contract ........   Passed    0.31 sec
+        Start  94: seam_phase12c_soak_workflow_contract
+ 94/120 Test  #94: seam_phase12c_soak_workflow_contract .........   Passed    0.05 sec
+        Start  95: seam_phase10_demo_smoke
+ 95/120 Test  #95: seam_phase10_demo_smoke ......................   Passed    0.36 sec
+        Start  96: seam_clap_state_pack_smoke
+ 96/120 Test  #96: seam_clap_state_pack_smoke ...................   Passed    0.40 sec
+        Start  97: seam_clap_state_inspect_smoke
+ 97/120 Test  #97: seam_clap_state_inspect_smoke ................   Passed    0.01 sec
+        Start  98: seam_clap_state_extract_smoke
+ 98/120 Test  #98: seam_clap_state_extract_smoke ................   Passed    0.01 sec
+        Start  99: seam_clap_plugin_host_smoke
+ 99/120 Test  #99: seam_clap_plugin_host_smoke ..................   Passed    0.05 sec
+        Start 100: seam_bank_tool_help
+100/120 Test #100: seam_bank_tool_help ..........................   Passed    0.39 sec
+        Start 101: seam_voicebank_cli_help
+101/120 Test #101: seam_voicebank_cli_help ......................   Passed    0.01 sec
+        Start 102: seam_voicebank_cli_validate
+102/120 Test #102: seam_voicebank_cli_validate ..................   Passed    0.34 sec
+        Start 103: seam_voicebank_cli_inspect_wav
+103/120 Test #103: seam_voicebank_cli_inspect_wav ...............   Passed    0.00 sec
+        Start 104: seam_phase5_demo_smoke
+104/120 Test #104: seam_phase5_demo_smoke .......................   Passed    0.88 sec
+        Start 105: seam_phase12c_live_tests
+105/120 Test #105: seam_phase12c_live_tests .....................   Passed    0.01 sec
+        Start 106: seam_phase12c_matrix
+106/120 Test #106: seam_phase12c_matrix .........................   Passed    3.58 sec
+        Start 107: seam_phase12c_allocation_probe
+107/120 Test #107: seam_phase12c_allocation_probe ...............   Passed    0.83 sec
+        Start 108: seam_phase12c_cancellation_storm
+108/120 Test #108: seam_phase12c_cancellation_storm .............   Passed    0.01 sec
+        Start 109: seam_phase12c_soak_smoke
+109/120 Test #109: seam_phase12c_soak_smoke .....................   Passed    5.03 sec
+        Start 110: seam_phase12c_canonical_contract
+110/120 Test #110: seam_phase12c_canonical_contract .............   Passed    0.05 sec
+        Start 111: seam_phase12c_matrix_evidence
+111/120 Test #111: seam_phase12c_matrix_evidence ................   Passed    0.05 sec
+        Start 112: seam_phase12c_matrix_admission
+112/120 Test #112: seam_phase12c_matrix_admission ...............   Passed    3.70 sec
+        Start 113: seam_phase12c_live_demo_smoke
+113/120 Test #113: seam_phase12c_live_demo_smoke ................   Passed    0.38 sec
+        Start 114: seam_phase13a_contract_tests
+114/120 Test #114: seam_phase13a_contract_tests .................   Passed    8.14 sec
+        Start 115: seam_external_beta_contract_tests
+115/120 Test #115: seam_external_beta_contract_tests ............   Passed   23.67 sec
+        Start 116: seam_phase13a_source_contract
+116/120 Test #116: seam_phase13a_source_contract ................   Passed    0.05 sec
+        Start 117: seam_phase13a_release_gate_blocked
+117/120 Test #117: seam_phase13a_release_gate_blocked ...........   Passed    0.04 sec
+        Start 118: seam_phase13b_contract_tests
+118/120 Test #118: seam_phase13b_contract_tests .................   Passed    1.36 sec
+        Start 119: seam_phase13b_source_contract
+119/120 Test #119: seam_phase13b_source_contract ................   Passed    0.05 sec
+        Start 120: seam_phase13b_evidence_smoke
+120/120 Test #120: seam_phase13b_evidence_smoke .................   Passed    0.94 sec
+
+99% tests passed, 1 tests failed out of 120
+
+Total Test time (real) = 255.74 sec
+
+The following tests FAILED:
+	 55 - seam_tracked_source_closure (Failed)
+Errors while running CTest

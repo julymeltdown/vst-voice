@@ -5,6 +5,33 @@
 
 namespace seam::application {
 
+CommandImpact SetTrackProceduralRecipeCommand::impact() const {
+  return {.scope = CommandAudioImpact::ProjectAudio, .projectWide = false,
+      .trackIds = {trackId_}, .regionIds = {}, .noteIds = {}, .lyricIds = {}};
+}
+
+core::Result<void> SetTrackProceduralRecipeCommand::apply(domain::Project& project) {
+  auto* track = project.findVocalTrack(trackId_);
+  if (!track) return core::failure(core::ErrorCode::NotFound, "Recipe selection track is missing");
+  if (track->proceduralRecipe != before_) return core::failure(core::ErrorCode::Conflict, "Recipe selection changed before application");
+  if (after_) {
+    const auto valid = after_->validate();
+    if (!valid) return valid;
+  }
+  auto replacement = after_;
+  track->proceduralRecipe.swap(replacement);
+  return core::success();
+}
+
+core::Result<void> SetTrackProceduralRecipeCommand::revert(domain::Project& project) {
+  auto* track = project.findVocalTrack(trackId_);
+  if (!track) return core::failure(core::ErrorCode::NotFound, "Recipe selection track is missing during undo");
+  if (track->proceduralRecipe != after_) return core::failure(core::ErrorCode::Conflict, "Recipe selection changed before undo");
+  auto replacement = before_;
+  track->proceduralRecipe.swap(replacement);
+  return core::success();
+}
+
 CommandImpact UpsertUnitSelectionOverrideCommand::impact() const {
   return CommandImpact{
       .scope = CommandAudioImpact::PhraseAudio,
@@ -159,7 +186,7 @@ core::Result<void> UpsertUnitSelectionOverrideCommand::apply(
   }
   auto* existing = region->findUnitSelectionOverride(after_.startKey);
   if (!captured_) {
-    if (existing != nullptr) before_ = *existing;
+    beforeOrder_ = region->unitSelectionOverrides;
     captured_ = true;
   }
   if (existing != nullptr) {
@@ -187,19 +214,7 @@ core::Result<void> UpsertUnitSelectionOverrideCommand::revert(
                          "Region for unit selection override was not found during undo",
                          regionId_.toString());
   }
-  auto* existing = region->findUnitSelectionOverride(after_.startKey);
-  if (before_.has_value()) {
-    if (existing != nullptr) {
-      *existing = *before_;
-    } else {
-      region->unitSelectionOverrides.push_back(*before_);
-    }
-  } else {
-    std::erase_if(region->unitSelectionOverrides,
-                  [this](const auto& value) {
-                    return value.startKey == after_.startKey;
-                  });
-  }
+  region->unitSelectionOverrides = beforeOrder_;
   return core::success();
 }
 
@@ -220,6 +235,7 @@ core::Result<void> RemoveUnitSelectionOverrideCommand::apply(
                          startKey_.toString());
   }
   removed_ = *iterator;
+  beforeOrder_ = region->unitSelectionOverrides;
   region->unitSelectionOverrides.erase(iterator);
   return core::success();
 }
@@ -241,12 +257,7 @@ core::Result<void> RemoveUnitSelectionOverrideCommand::revert(
                          "Unit selection override already exists during undo",
                          startKey_.toString());
   }
-  region->unitSelectionOverrides.push_back(*removed_);
-  std::stable_sort(region->unitSelectionOverrides.begin(),
-                   region->unitSelectionOverrides.end(),
-      [](const auto& lhs, const auto& rhs) {
-        return lhs.startKey < rhs.startKey;
-      });
+  region->unitSelectionOverrides = beforeOrder_;
   return core::success();
 }
 
@@ -271,7 +282,7 @@ core::Result<void> UpsertSeamOverrideCommand::apply(domain::Project& project) {
   }
   auto* existing = region->findSeamOverride(after_.incomingStartKey);
   if (!captured_) {
-    if (existing != nullptr) before_ = *existing;
+    beforeOrder_ = region->seamOverrides;
     captured_ = true;
   }
   if (existing != nullptr) {
@@ -297,19 +308,7 @@ core::Result<void> UpsertSeamOverrideCommand::revert(domain::Project& project) {
                          "Region for seam override was not found during undo",
                          regionId_.toString());
   }
-  auto* existing = region->findSeamOverride(after_.incomingStartKey);
-  if (before_.has_value()) {
-    if (existing != nullptr) {
-      *existing = *before_;
-    } else {
-      region->seamOverrides.push_back(*before_);
-    }
-  } else {
-    std::erase_if(region->seamOverrides,
-                  [this](const auto& value) {
-                    return value.incomingStartKey == after_.incomingStartKey;
-                  });
-  }
+  region->seamOverrides = beforeOrder_;
   return core::success();
 }
 
@@ -330,6 +329,7 @@ core::Result<void> RemoveSeamOverrideCommand::apply(domain::Project& project) {
                          "Seam override was not found",
                          incomingStartKey_.toString());
   }
+  beforeOrder_ = region->seamOverrides;
   removed_ = *iterator;
   region->seamOverrides.erase(iterator);
   return core::success();
@@ -351,11 +351,7 @@ core::Result<void> RemoveSeamOverrideCommand::revert(domain::Project& project) {
                          "Seam override already exists during undo",
                          incomingStartKey_.toString());
   }
-  region->seamOverrides.push_back(*removed_);
-  std::stable_sort(region->seamOverrides.begin(), region->seamOverrides.end(),
-      [](const auto& lhs, const auto& rhs) {
-        return lhs.incomingStartKey < rhs.incomingStartKey;
-      });
+  region->seamOverrides = beforeOrder_;
   return core::success();
 }
 
@@ -448,8 +444,25 @@ core::Result<void> SetTrackVoicebankCommand::apply(domain::Project& project) {
     return core::failure(core::ErrorCode::InvalidArgument,
                          "Voicebank selection requires ID, version, and content hash");
   }
-  if (!before_.has_value()) before_ = track->voicebank;
-  track->voicebank = after_;
+  if (before_ && track->proceduralRecipe != beforeRecipe_) return core::failure(core::ErrorCode::Conflict,
+      "Procedural selection changed before sample-bank redo");
+  if (!afterStyle_.has_value()) {
+    const bool preserve = track->voicebank == after_ ||
+        (track->voicebank.id == after_.id && !track->styleSelection.styleId.empty());
+    afterStyle_ = preserve ? track->styleSelection : domain::VoiceStyleSelection{};
+  }
+  const auto validStyle = afterStyle_->validate();
+  if (!validStyle) return validStyle;
+  if (!before_.has_value()) {
+    beforeStyle_ = track->styleSelection;
+    before_ = track->voicebank;
+    beforeRecipe_ = track->proceduralRecipe;
+  }
+  auto bank = after_;
+  auto style = *afterStyle_;
+  std::swap(track->voicebank, bank);
+  std::swap(track->styleSelection, style);
+  track->proceduralRecipe.reset();
   return core::success();
 }
 
@@ -464,7 +477,14 @@ core::Result<void> SetTrackVoicebankCommand::revert(domain::Project& project) {
                          "Track for Voicebank selection was not found during undo",
                          trackId_.toString());
   }
-  track->voicebank = *before_;
+  auto bank = *before_;
+  if (track->proceduralRecipe) return core::failure(core::ErrorCode::Conflict,
+      "Procedural selection changed before sample-bank undo");
+  auto style = beforeStyle_;
+  auto recipe = beforeRecipe_;
+  std::swap(track->voicebank, bank);
+  std::swap(track->styleSelection, style);
+  track->proceduralRecipe.swap(recipe);
   return core::success();
 }
 

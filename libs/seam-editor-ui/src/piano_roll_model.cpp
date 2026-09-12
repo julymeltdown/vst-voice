@@ -1,6 +1,7 @@
 #include "seam/ui/piano_roll_model.hpp"
 
 #include "seam/application/note_commands.hpp"
+#include "seam/application/performance_commands.hpp"
 #include "seam/application/lyric_commands.hpp"
 #include "seam/ui/note_visual_layout.hpp"
 
@@ -9,6 +10,9 @@
 #include <cmath>
 #include <limits>
 #include <memory>
+#include <map>
+#include <unordered_map>
+#include <unordered_set>
 
 namespace seam::ui {
 
@@ -411,6 +415,9 @@ core::Result<void> PianoRollModel::setSelectionSlur(bool enabled) {
       for (const auto& note : targetRegion->notes) {
         if (note.slurGroup.has_value()) maximum = std::max(maximum, *note.slurGroup);
       }
+      if (maximum == std::numeric_limits<std::uint64_t>::max()) {
+        return core::failure(core::ErrorCode::Conflict, "Slur group identity is exhausted");
+      }
       group = maximum + 1U;
     }
   }
@@ -420,7 +427,8 @@ core::Result<void> PianoRollModel::setSelectionSlur(bool enabled) {
     edits.push_back(application::NotePerformanceEdit{
         .noteId = note->id,
         .beforeArticulation = note->articulation,
-        .afterArticulation = domain::NoteArticulation::Legato,
+        .afterArticulation = enabled ? domain::NoteArticulation::Legato :
+            (note->articulation == domain::NoteArticulation::Legato ? domain::NoteArticulation::Normal : note->articulation),
         .beforeSlurGroup = note->slurGroup,
         .afterSlurGroup = group,
         .beforeLyricTokenId = note->lyricTokenId,
@@ -516,8 +524,44 @@ core::Result<domain::NoteId> PianoRollModel::duplicateSelection() {
       "Duplicate notes");
   std::vector<domain::NoteId> duplicatedIds;
   duplicatedIds.reserve(selected.size());
-  const auto offset = session_.project().settings().snapGrid;
+  std::vector<domain::PerformanceNoteRemap> performanceMapping;
+  performanceMapping.reserve(selected.size());
+  // Translate the selection as one phrase. Per-note duration offsets change
+  // intervals (and can reorder unequal-length notes) in the duplicate.
+  auto selectionEnd = selected.front()->startTick;
   for (const auto* source : selected) {
+    const auto valid = source->validate();
+    if (!valid) return core::Result<domain::NoteId>{valid.error()};
+    selectionEnd = std::max(selectionEnd, source->endTick());
+  }
+  const auto span = selectionEnd - selected.front()->startTick;
+  const auto gap = session_.project().settings().snapGrid;
+  if (gap.value() < 0 || span.value() >
+      std::numeric_limits<std::int64_t>::max() - gap.value()) {
+    return core::failure<domain::NoteId>(core::ErrorCode::InvalidArgument,
+                                         "Duplicated phrase offset would overflow");
+  }
+  const auto offset = span + gap;
+  std::map<domain::LyricTokenId, domain::LyricToken> lyricCopies;
+  std::map<std::uint64_t, std::uint64_t> slurCopies;
+  std::uint64_t maximumSlur = 0U;
+  for (const auto& existing : targetRegion->notes) {
+    if (existing.slurGroup) maximumSlur = std::max(maximumSlur, *existing.slurGroup);
+  }
+  for (const auto* source : selected) {
+    if (!source->slurGroup || slurCopies.contains(*source->slurGroup)) continue;
+    if (maximumSlur == std::numeric_limits<std::uint64_t>::max()) {
+      return core::failure<domain::NoteId>(core::ErrorCode::Conflict,
+                                           "Duplicated slur identity is exhausted");
+    }
+    slurCopies.emplace(*source->slurGroup, ++maximumSlur);
+  }
+  for (const auto* source : selected) {
+    if (source->endTick().value() >
+        std::numeric_limits<std::int64_t>::max() - offset.value()) {
+      return core::failure<domain::NoteId>(core::ErrorCode::InvalidArgument,
+                                           "Duplicated note start would overflow");
+    }
     const auto* lyric = targetRegion->findLyric(source->lyricTokenId);
     if (lyric == nullptr) {
       return core::failure<domain::NoteId>(
@@ -525,14 +569,24 @@ core::Result<domain::NoteId> PianoRollModel::duplicateSelection() {
           "Selected note references a missing lyric", source->id.toString());
     }
     auto [token, note] = factory_.makeNote(
-        source->startTick + source->durationTick + offset,
+        source->startTick + offset,
         source->durationTick, source->midiKey, lyric->surface, lyric->language);
+    const auto [copiedLyric, firstUse] = lyricCopies.emplace(source->lyricTokenId, token);
+    token = copiedLyric->second;
+    note.lyricTokenId = token.id;
     note.articulation = source->articulation;
-    note.slurGroup = source->slurGroup;
+    if (source->slurGroup) note.slurGroup = slurCopies.at(*source->slurGroup);
+    note.vibrato = source->vibrato;
+    note.phoneticHint = source->phoneticHint;
     duplicatedIds.push_back(note.id);
+    performanceMapping.push_back({source->id, note.id});
     composite->add(std::make_unique<application::AddNoteCommand>(
-        regionId_, std::move(token), std::move(note)));
+        regionId_, std::move(token), std::move(note),
+        firstUse ? application::AddNoteCommand::LyricMode::Create
+                 : application::AddNoteCommand::LyricMode::ReuseExact));
   }
+  composite->add(std::make_unique<application::CopyNotePerformanceCommand>(
+      regionId_, std::move(performanceMapping)));
   const auto result = session_.execute(std::move(composite));
   if (!result) return core::Result<domain::NoteId>{result.error()};
   session_.selection().replace(duplicatedIds);
@@ -540,22 +594,40 @@ core::Result<domain::NoteId> PianoRollModel::duplicateSelection() {
   return core::success(duplicatedIds.front());
 }
 
-core::Result<LyricDistributionReport>
-PianoRollModel::distributeSelectedLyrics(std::u32string text,
-                                         domain::Language language) {
-  auto* targetRegion = region();
+core::Result<LyricDistributionPlan>
+PianoRollModel::planLyricDistribution(const domain::Project& project, domain::RegionId regionId,
+    const std::vector<domain::NoteId>& selectedNotes, std::u32string text,
+    std::optional<domain::Language> language, std::stop_token stop) {
+  if (stop.stop_requested()) return core::failure<LyricDistributionPlan>(core::ErrorCode::Conflict, "Lyric distribution planning cancelled");
+  const std::unordered_set<domain::NoteId> selection(selectedNotes.begin(), selectedNotes.end());
+  if (selection.size() != selectedNotes.size())
+    return core::failure<LyricDistributionPlan>(core::ErrorCode::Conflict, "Duplicate distribution targets");
+  const auto* targetRegion = project.findRegion(regionId);
   if (targetRegion == nullptr) {
-    return core::failure<LyricDistributionReport>(
+    return core::failure<LyricDistributionPlan>(
         core::ErrorCode::NotFound, "Piano-roll region was not found");
   }
-  std::vector<const domain::Note*> selected;
-  for (const auto noteId : session_.selection().noteIds()) {
-    if (const auto* note = targetRegion->findNote(noteId); note != nullptr) {
-      selected.push_back(note);
-    }
+  constexpr std::size_t maximumTargets = 10000U;
+  constexpr std::size_t maximumScalars = 4U * 1024U * 1024U;
+  if (targetRegion->notes.size() > maximumTargets || targetRegion->lyrics.size() > maximumTargets ||
+      selection.size() > maximumTargets || text.size() > maximumScalars)
+    return core::failure<LyricDistributionPlan>(core::ErrorCode::InvalidArgument, "Lyric distribution exceeds note or text limits");
+  std::unordered_map<domain::LyricTokenId, const domain::LyricToken*> lyrics;
+  for (const auto& lyric : targetRegion->lyrics) {
+    if (!lyrics.emplace(lyric.id, &lyric).second)
+      return core::failure<LyricDistributionPlan>(core::ErrorCode::Conflict, "Duplicate lyric identity in distribution region");
   }
+  std::vector<const domain::Note*> selected;
+  std::unordered_set<domain::NoteId> noteIds;
+  for (const auto& note : targetRegion->notes) {
+    if (!noteIds.insert(note.id).second)
+      return core::failure<LyricDistributionPlan>(core::ErrorCode::Conflict, "Duplicate note identity in distribution region");
+    if (selection.contains(note.id)) selected.push_back(&note);
+  }
+  if (selected.size() != selection.size())
+    return core::failure<LyricDistributionPlan>(core::ErrorCode::Conflict, "All distribution targets must be in the active region");
   if (selected.empty()) {
-    return core::failure<LyricDistributionReport>(
+    return core::failure<LyricDistributionPlan>(
         core::ErrorCode::Conflict, "No selected notes can receive lyrics");
   }
   std::stable_sort(selected.begin(), selected.end(),
@@ -563,15 +635,34 @@ PianoRollModel::distributeSelectedLyrics(std::u32string text,
                      if (lhs->startTick == rhs->startTick) return lhs->id < rhs->id;
                      return lhs->startTick < rhs->startTick;
                    });
+  std::vector<const domain::LyricToken*> targets;
+  std::unordered_set<domain::LyricTokenId> targetIds;
+  for (const auto* note : selected) {
+    const auto found = lyrics.find(note->lyricTokenId);
+    if (found == lyrics.end())
+      return core::failure<LyricDistributionPlan>(core::ErrorCode::InvariantViolation, "Selected note references a missing lyric");
+    if (targetIds.insert(note->lyricTokenId).second) targets.push_back(found->second);
+  }
+  for (const auto& note : targetRegion->notes) {
+    if (targetIds.contains(note.lyricTokenId) && !selection.contains(note.id))
+      return core::failure<LyricDistributionPlan>(core::ErrorCode::Conflict, "Select every note sharing a lyric before distributing");
+  }
   std::vector<std::u32string> syllables;
   std::u32string current;
   const auto isWhitespace = [](char32_t value) noexcept {
     return value == U' ' || value == U'\t' || value == U'\r' ||
            value == U'\n' || value == U'\u3000';
   };
+  std::size_t scanned = 0U;
   for (const auto value : text) {
+    if ((scanned++ & 4095U) == 0U && stop.stop_requested())
+      return core::failure<LyricDistributionPlan>(core::ErrorCode::Conflict, "Lyric distribution planning cancelled");
+    if (value > 0x10ffffU || (value >= 0xd800U && value <= 0xdfffU))
+      return core::failure<LyricDistributionPlan>(core::ErrorCode::InvalidArgument, "Distribution text contains invalid Unicode");
     if (isWhitespace(value)) {
       if (!current.empty()) {
+        if (syllables.size() == maximumTargets)
+          return core::failure<LyricDistributionPlan>(core::ErrorCode::InvalidArgument, "Distribution has more than 10000 syllables");
         syllables.push_back(std::move(current));
         current.clear();
       }
@@ -579,47 +670,59 @@ PianoRollModel::distributeSelectedLyrics(std::u32string text,
       current.push_back(value);
     }
   }
-  if (!current.empty()) syllables.push_back(std::move(current));
+  if (!current.empty()) {
+    if (syllables.size() == maximumTargets)
+      return core::failure<LyricDistributionPlan>(core::ErrorCode::InvalidArgument, "Distribution has more than 10000 syllables");
+    syllables.push_back(std::move(current));
+  }
 
   LyricDistributionReport report{
       .requestedSyllables = syllables.size(),
       .targetNotes = selected.size(),
       .appliedSyllables = 0U,
-      .missingSyllables = syllables.size() < selected.size()
-                              ? selected.size() - syllables.size()
+      .missingSyllables = syllables.size() < targets.size()
+                              ? targets.size() - syllables.size()
                               : 0U,
-      .leftoverSyllables = syllables.size() > selected.size()
-                               ? syllables.size() - selected.size()
+      .leftoverSyllables = syllables.size() > targets.size()
+                               ? syllables.size() - targets.size()
                                : 0U,
       .committed = false,
+      .targetLyrics = targets.size(),
   };
   if (report.missingSyllables != 0U || report.leftoverSyllables != 0U) {
-    return report;
+    return LyricDistributionPlan{report, {}};
   }
   std::vector<application::BatchLyricEdit> edits;
-  edits.reserve(selected.size());
-  for (std::size_t index = 0U; index < selected.size(); ++index) {
-    const auto* lyric = targetRegion->findLyric(selected[index]->lyricTokenId);
-    if (lyric == nullptr) {
-      return core::failure<LyricDistributionReport>(
-          core::ErrorCode::InvariantViolation,
-          "Selected note references a missing lyric",
-          selected[index]->id.toString());
-    }
+  edits.reserve(targets.size());
+  for (std::size_t index = 0U; index < targets.size(); ++index) {
+    const auto* lyric = targets[index];
+    const auto afterLanguage = language.value_or(lyric->language);
+    if (lyric->surface == syllables[index] && lyric->language == afterLanguage) continue;
     edits.push_back(application::BatchLyricEdit{
         .lyricId = lyric->id,
         .before = lyric->surface,
         .after = syllables[index],
-        .language = language,
+        .language = afterLanguage,
         .beforeLanguage = lyric->language,
     });
   }
-  const auto result = session_.execute(
-      std::make_unique<application::BatchSetLyricsCommand>(std::move(edits)));
-  if (!result) return core::Result<LyricDistributionReport>{result.error()};
-  report.appliedSyllables = selected.size();
-  report.committed = true;
-  rebuildIndex();
+  report.changedLyrics = edits.size();
+  if (stop.stop_requested()) return core::failure<LyricDistributionPlan>(core::ErrorCode::Conflict, "Lyric distribution planning cancelled");
+  return LyricDistributionPlan{report, std::move(edits)};
+}
+
+core::Result<LyricDistributionReport>
+PianoRollModel::distributeSelectedLyrics(std::u32string text, std::optional<domain::Language> language) {
+  auto plan = planLyricDistribution(session_.project(), regionId_, session_.selection().noteIds(), std::move(text), language);
+  if (!plan) return core::Result<LyricDistributionReport>{plan.error()};
+  auto report = plan.value().report;
+  if (report.missingSyllables || report.leftoverSyllables) return report;
+  if (!plan.value().edits.empty()) {
+    const auto result = session_.execute(std::make_unique<application::BatchSetLyricsCommand>(std::move(plan.value().edits)));
+    if (!result) return core::Result<LyricDistributionReport>{result.error()};
+    rebuildIndex();
+  }
+  report.appliedSyllables = report.targetLyrics; report.committed = true;
   return report;
 }
 

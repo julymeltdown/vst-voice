@@ -75,6 +75,23 @@ TEST_CASE("file_dialog_contract_preserves_purpose_filters_and_suggested_name") {
   CHECK(dialog.requests.front().extensions == std::vector<std::string>{"seam"});
 }
 
+TEST_CASE("workspace dialog inputs require canonical digest and bounded explicit identity") {
+  using Input=seam::platform::IFileDialog::ProductionWorkspaceInput;
+  const Input good{std::filesystem::path{"workspace"},std::string(64U,'a'),"producer"};
+  CHECK(good.validate());
+  auto invalid=good; invalid.root.clear(); CHECK(!invalid.validate());
+  invalid=good; invalid.inventorySha256=std::string(63U,'a'); CHECK(!invalid.validate());
+  invalid=good; invalid.inventorySha256=std::string(64U,'A'); CHECK(!invalid.validate());
+  invalid=good; invalid.inventorySha256[0]='g'; CHECK(!invalid.validate());
+  invalid=good; invalid.operatorId.clear(); CHECK(!invalid.validate());
+  invalid=good; invalid.operatorId=std::string(129U,'x'); CHECK(!invalid.validate());
+  invalid=good; invalid.operatorId="producer\n"; CHECK(!invalid.validate());
+  invalid=good; invalid.operatorId=std::string{"a\0b",3U}; CHECK(!invalid.validate());
+  invalid=good; invalid.operatorId=std::string(128U,'x'); CHECK(invalid.validate());
+  // These shape checks do not authorize the identity; repository opening must
+  // still match the actual inventory and registered PRODUCER role.
+}
+
 TEST_CASE("application_menu_routes_commands_through_dispatcher") {
   FakeDispatcher dispatcher;
   FakeMenu menu;

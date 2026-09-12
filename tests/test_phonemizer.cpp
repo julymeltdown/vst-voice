@@ -2,6 +2,7 @@
 
 #include "seam/application/project_factory.hpp"
 #include "seam/phonemizer/japanese_phonemizer.hpp"
+#include "seam/phonemizer/pronunciation_resolver.hpp"
 
 #include <string>
 #include <vector>
@@ -77,6 +78,33 @@ TEST_CASE("Japanese phonemizer preserves sokuon moraic nasal and long vowel") {
         seam::domain::PhonemeRole::Coda);
 }
 
+TEST_CASE("Japanese kana normalization preserves surface and resolves width and combining voice marks") {
+  const std::vector<std::u32string> forms{U"がっきゃぱヴーん", U"ガッキャパヴーン", U"ｶﾞｯｷｬﾊﾟｳﾞｰﾝ", U"か\u3099っきゃは\u309aウ\u3099ーん"};
+  const std::vector<std::string> expected{"g", "a", "cl", "ky", "a", "p", "a", "v", "u", "u", "N"};
+  for (const auto& form : forms) {
+    PhonemizerFixture fixture; fixture.add(form, seam::time::Tick{0});
+    const auto before = fixture.project;
+    const auto result = seam::phonemizer::resolveJapanesePronunciation(*fixture.project.findRegion(fixture.regionId)); CHECK(result);
+    CHECK(result.value().pronunciation.warnings.empty()); CHECK(symbols(result.value().pronunciation.tokens) == expected);
+    CHECK(fixture.project == before);
+  }
+}
+
+TEST_CASE("Japanese normalized warnings retain original scalar positions and explicit hints win") {
+  PhonemizerFixture fixture; const auto note = fixture.add(U"ｶﾞ漢あ\u3099", seam::time::Tick{0});
+  auto* region = fixture.project.findRegion(fixture.regionId);
+  const auto result = seam::phonemizer::resolveJapanesePronunciation(*region); CHECK(result);
+  CHECK(result.value().pronunciation.warnings.size() == 2U);
+  CHECK(result.value().pronunciation.warnings[0].characterIndex == 2U);
+  CHECK(result.value().pronunciation.warnings[1].characterIndex == 4U);
+  CHECK(symbols(result.value().pronunciation.tokens) == (std::vector<std::string>{"g", "a", "pau", "a", "pau"}));
+  region->findNote(note)->phoneticHint = "k a";
+  const auto hinted = seam::phonemizer::resolveJapanesePronunciation(*region); CHECK(hinted);
+  CHECK(hinted.value().pronunciation.warnings.empty());
+  CHECK(symbols(hinted.value().pronunciation.tokens) == (std::vector<std::string>{"k", "a"}));
+  CHECK(region->lyrics.front().surface == U"ｶﾞ漢あ\u3099");
+}
+
 TEST_CASE("phoneme overrides replace symbols timing and lock state") {
   PhonemizerFixture fixture;
   const auto noteId = fixture.add(U"き", seam::time::Tick{0});
@@ -113,4 +141,28 @@ TEST_CASE("unsupported Japanese lyric creates a visible warning and pause") {
         seam::phonemizer::WarningCode::UnsupportedCharacter);
   CHECK(symbols(result.tokensForNote(noteId)) ==
         (std::vector<std::string>{"pau"}));
+}
+
+TEST_CASE("explicit Japanese phone hints change pronunciation without replacing displayed lyrics") {
+  PhonemizerFixture fixture;
+  const auto id = fixture.add(U"漢", seam::time::Tick{0});
+  auto* region = fixture.project.findRegion(fixture.regionId);
+  const auto original = region->lyrics;
+  const auto before = seam::phonemizer::resolveJapanesePronunciation(*region); CHECK(before);
+  region->findNote(id)->phoneticHint = "k a N";
+  const auto hinted = seam::phonemizer::resolveJapanesePronunciation(*region); CHECK(hinted);
+  CHECK(symbols(hinted.value().pronunciation.tokens) == (std::vector<std::string>{"k", "a", "N"}));
+  CHECK(hinted.value().pronunciation.warnings.empty()); CHECK(region->lyrics == original);
+  CHECK(hinted.value().identity.inputHash != before.value().identity.inputHash);
+  CHECK(hinted.value().identity.sequenceHash != before.value().identity.sequenceHash);
+  region->findNote(id)->phoneticHint = "not-a-phone";
+  CHECK(!seam::phonemizer::resolveJapanesePronunciation(*region));
+  const auto visible = seam::phonemizer::JapaneseKanaPhonemizer{}.phonemize(*region);
+  CHECK(!visible.warnings.empty()); CHECK(region->lyrics == original);
+  region->findNote(id)->phoneticHint.reset();
+  const auto restored = seam::phonemizer::resolveJapanesePronunciation(*region); CHECK(restored);
+  CHECK(restored.value().identity == before.value().identity);
+  CHECK(!seam::phonemizer::parseJapanesePhoneHint(" \t"));
+  CHECK(!seam::phonemizer::parseJapanesePhoneHint(std::string(4097U, 'a')));
+  CHECK(seam::phonemizer::parseJapanesePhoneHint(" ky\ta  "));
 }

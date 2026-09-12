@@ -2,6 +2,8 @@
 
 #include "seam/rendering/phrase_segmenter.hpp"
 #include "seam/rendering/render_pipeline.hpp"
+#include "seam/phonemizer/language_resolver.hpp"
+#include "seam/synthesis/performance_compiler.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -22,7 +24,7 @@ core::Result<void> mixPhrase(RegionRenderResult& output,
   std::size_t sourceOffset = 0U;
   std::uint64_t destination = 0U;
   if (startFrame < 0) {
-    const auto clipped = static_cast<std::uint64_t>(-startFrame);
+    const auto clipped = std::uint64_t{0} - static_cast<std::uint64_t>(startFrame);
     if (clipped >= samples.size()) return core::success();
     sourceOffset = static_cast<std::size_t>(clipped);
   } else {
@@ -42,6 +44,28 @@ core::Result<void> mixPhrase(RegionRenderResult& output,
                                      -1.0F, 1.0F);
   }
   return core::success();
+}
+
+std::string rendererIdentity(
+    std::span<const synthesis::RenderedPlacementInfo> placements) {
+  if (placements.empty()) return "unknown";
+  const auto first = voicebank::rendererHintName(placements.front().actualRenderer);
+  const auto same = std::all_of(
+      placements.begin(), placements.end(), [first](const auto& placement) {
+        return voicebank::rendererHintName(placement.actualRenderer) == first;
+      });
+  if (!same) return "mixed";
+  return std::string{first};
+}
+
+std::string fallbackDiagnostic(
+    std::span<const synthesis::RenderedPlacementInfo> placements) {
+  for (const auto& placement : placements) {
+    if (placement.usedFallback && !placement.diagnostic.empty()) {
+      return placement.diagnostic;
+    }
+  }
+  return {};
 }
 
 }  // namespace
@@ -69,6 +93,53 @@ core::Result<RegionRenderResult> ProductionRegionRenderer::render(
   if (track == nullptr || region == nullptr) {
     return core::failure<RegionRenderResult>(core::ErrorCode::NotFound,
                                              "Region renderer track or region is missing");
+  }
+  if (stopToken.stop_requested()) return core::failure<RegionRenderResult>(
+      core::ErrorCode::Conflict, "Region render was cancelled");
+  const auto allocation = synthesis::allocateScoreVoices(*region);
+  if (!allocation) return core::Result<RegionRenderResult>{allocation.error()};
+  if (allocation.value().voices.size() > 1U) {
+    const auto valid = project.validate();
+    if (!valid) return core::Result<RegionRenderResult>{valid.error()};
+    const auto pronunciation = phonemizer::resolvePronunciationForLanguage(*region, manifest.language);
+    if (!pronunciation) return core::Result<RegionRenderResult>{pronunciation.error()};
+    const auto voices = synthesis::projectScoreVoices(project, *region, sampleRate,
+        pronunciation.value().pronunciation.tokens);
+    if (!voices) return core::Result<RegionRenderResult>{voices.error()};
+    RegionRenderResult mixed;
+    mixed.sampleRate = sampleRate;
+    // Render sequentially: retain one child PCM at a time, not one full-song
+    // buffer per voice. Clamp only after all independent voices are summed.
+    for (const auto& voice : voices.value()) {
+      if (stopToken.stop_requested()) return core::failure<RegionRenderResult>(
+          core::ErrorCode::Conflict, "Region render was cancelled");
+      auto projected = project;
+      *projected.findRegion(regionId) = voice;
+      // Each child contains nonoverlapping score notes, so recursion stops
+      // here. Its snapshot resolves pronunciation in its own voice context.
+      auto child = render(projected, manifest, bankRoot, trackId, regionId,
+          revision, sampleRate, quality, style, options, cache, stopToken, continueOnPhraseFailure);
+      if (!child) return core::Result<RegionRenderResult>{child.error()};
+      auto& audio = child.value();
+      if (mixed.mono.size() < audio.mono.size()) mixed.mono.resize(audio.mono.size(), 0.0F);
+      for (std::size_t i = 0; i < audio.mono.size(); ++i) {
+        if (i % 4096U == 0U && stopToken.stop_requested()) return core::failure<RegionRenderResult>(
+            core::ErrorCode::Conflict, "Region render was cancelled");
+        mixed.mono[i] += audio.mono[i];
+      }
+      mixed.phrases.insert(mixed.phrases.end(), audio.phrases.begin(), audio.phrases.end());
+      mixed.unitPlan.insert(mixed.unitPlan.end(), audio.unitPlan.begin(), audio.unitPlan.end());
+      mixed.failures.insert(mixed.failures.end(), audio.failures.begin(), audio.failures.end());
+      mixed.unitCount += audio.unitCount;
+      mixed.fallbackCount += audio.fallbackCount;
+      mixed.cacheHits += audio.cacheHits;
+    }
+    for (std::size_t i = 0; i < mixed.mono.size(); ++i) {
+      if (i % 4096U == 0U && stopToken.stop_requested()) return core::failure<RegionRenderResult>(
+          core::ErrorCode::Conflict, "Region render was cancelled");
+      mixed.mono[i] = std::clamp(mixed.mono[i], -1.0F, 1.0F);
+    }
+    return mixed;
   }
   PhraseSegmenter segmenter;
   auto segments = segmenter.segment(*region);
@@ -118,14 +189,16 @@ core::Result<RegionRenderResult> ProductionRegionRenderer::render(
     RegionRenderPhraseInfo info{
         .phraseId = segment.id,
         .contentHash = snapshot.value().contentHash,
-        .unitCount = snapshot.value().unitPlan->entries.size(),
-        .fallbackCount = 0U,
+        .unitCount = snapshot.value().sample().unitPlan->entries.size(),
+        .fallbackCount = cached != nullptr ? cached->fallbackCount : 0U,
         .cacheHit = cached != nullptr,
+        .rendererIdentity = cached != nullptr ? cached->rendererIdentity : "unknown",
+        .fallbackDiagnostic = cached != nullptr ? cached->fallbackDiagnostic : "",
     };
     output.unitCount += info.unitCount;
     output.unitPlan.insert(output.unitPlan.end(),
-                           snapshot.value().unitPlan->entries.begin(),
-                           snapshot.value().unitPlan->entries.end());
+                           snapshot.value().sample().unitPlan->entries.begin(),
+                           snapshot.value().sample().unitPlan->entries.end());
     if (cached != nullptr) {
       if (cached->sampleRate != sampleRate) {
         return core::failure<RegionRenderResult>(
@@ -134,6 +207,7 @@ core::Result<RegionRenderResult> ProductionRegionRenderer::render(
       }
       const auto mixed = mixPhrase(output, cached->startFrame, cached->samples);
       if (!mixed) return core::Result<RegionRenderResult>{mixed.error()};
+      output.fallbackCount += info.fallbackCount;
       ++output.cacheHits;
       output.phrases.push_back(std::move(info));
       continue;
@@ -158,6 +232,8 @@ core::Result<RegionRenderResult> ProductionRegionRenderer::render(
         rendered.value().rendered.placements.begin(),
         rendered.value().rendered.placements.end(),
         [](const auto& placement) { return placement.usedFallback; }));
+    info.rendererIdentity = rendererIdentity(rendered.value().rendered.placements);
+    info.fallbackDiagnostic = fallbackDiagnostic(rendered.value().rendered.placements);
     output.fallbackCount += info.fallbackCount;
     const auto& audio = rendered.value().rendered.audio;
     const auto mixed = mixPhrase(output, audio.startFrame, audio.samples);
@@ -166,7 +242,10 @@ core::Result<RegionRenderResult> ProductionRegionRenderer::render(
       const auto stored = cache->store(snapshot.value().contentHash,
                                        CachedPcm{.sampleRate = sampleRate,
                                                  .startFrame = audio.startFrame,
-                                                 .samples = audio.samples});
+                                                 .samples = audio.samples,
+                                                 .rendererIdentity = info.rendererIdentity,
+                                                 .fallbackCount = info.fallbackCount,
+                                                 .fallbackDiagnostic = info.fallbackDiagnostic});
       if (!stored) return core::Result<RegionRenderResult>{stored.error()};
     }
     output.phrases.push_back(std::move(info));

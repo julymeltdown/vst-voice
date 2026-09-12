@@ -24,6 +24,8 @@ from .contracts import (
 )
 from .evidence_validation import evidence_findings
 from .operations import transition
+from .archive_validation import audit_archive
+from .replay import predecessor_state, replay_predecessor
 
 
 __all__ = (
@@ -66,6 +68,8 @@ def evaluate_gate(
     acceptance_contract: JsonObject | None = None,
     *,
     archive_verified: bool = False,
+    archive_manifest: JsonObject | None = None,
+    evidence_root: Path | None = None,
 ) -> GateResult:
     normalized = state.upper().replace(" ", "_")
     if normalized not in PUBLIC_STATES:
@@ -91,13 +95,25 @@ def evaluate_gate(
                 f"candidate state must equal {normalized}",
             )
         )
-    if normalized == "PUBLIC_ACTIVE" and not archive_verified:
+    # The historical boolean is ignored: only reopening the restored manifest
+    # and evidence can establish an audit, even for direct Python callers.
+    if archive_manifest is None or evidence_root is None:
         findings.append(
             ValidationFinding(
                 "PR-012-archive-restore",
-                "verified restored archive audit is required for PUBLIC_ACTIVE",
+                "verified restored archive audit inputs are required; archive_verified is not authority",
             )
         )
+    else:
+        findings.extend(ValidationFinding("PR-012-archive-restore", f"archive: {error}")
+            for error in audit_archive(candidate, archive_manifest, evidence_root))
+    required_beta_state = predecessor_state(normalized)
+    if required_beta_state is not None:
+        if evidence_root is None:
+            findings.append(ValidationFinding("PR-003-external-beta-closed", "restored External Beta replay root is required"))
+        else:
+            findings.extend(ValidationFinding("PR-003-external-beta-closed", error)
+                for error in replay_predecessor(candidate, contract, evidence_root, required_beta_state))
     blocked = tuple(
         requirement_id
         for requirement_id in PUBLIC_REQUIREMENT_IDS
@@ -112,12 +128,16 @@ def evaluate_public_active(
     acceptance_contract: JsonObject | None = None,
     *,
     archive_verified: bool = False,
+    archive_manifest: JsonObject | None = None,
+    evidence_root: Path | None = None,
 ) -> GateResult:
     return evaluate_gate(
         candidate,
         "PUBLIC_ACTIVE",
         acceptance_contract,
         archive_verified=archive_verified,
+        archive_manifest=archive_manifest,
+        evidence_root=evidence_root,
     )
 
 
@@ -128,6 +148,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--candidate", type=Path, required=True)
     parser.add_argument("--state", choices=PUBLIC_STATES, default="PUBLIC_ACTIVE")
     parser.add_argument("--acceptance-contract", type=Path)
+    parser.add_argument("--archive-manifest", type=Path)
+    parser.add_argument("--archive-root", type=Path)
     parser.add_argument("--json-output", type=Path)
     parser.add_argument("--expect-blocked", action="store_true")
     args = parser.parse_args(argv)
@@ -137,6 +159,8 @@ def main(argv: list[str] | None = None) -> int:
             load_json(args.candidate),
             args.state,
             contract,
+            archive_manifest=load_json(args.archive_manifest) if args.archive_manifest else None,
+            evidence_root=args.archive_root,
         )
     except (OSError, UnicodeError, ValueError, json.JSONDecodeError) as exc:
         print(

@@ -31,7 +31,9 @@ struct Options final {
   std::chrono::milliseconds recordDuration{0};
   std::uint32_t windowWidth{1440U};
   std::uint32_t windowHeight{900U};
+  bool windowSizeSpecified{false};
   bool forceSyntheticInput{false};
+  bool startDesigner{false};
 };
 
 void printUsage();

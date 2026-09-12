@@ -1,4 +1,5 @@
 #include "seam/application/arrangement_commands.hpp"
+#include "seam/phonemizer/pronunciation_resolver.hpp"
 
 #include <algorithm>
 #include <cstdint>
@@ -122,6 +123,16 @@ core::Result<domain::VocalRegion> cloneRegionWithFreshIds(
     if (!key) return core::Result<domain::VocalRegion>{key.error()};
     value.incomingStartKey = key.value();
   }
+  std::vector<domain::PerformanceNoteRemap> performanceNotes;
+  for (const auto& [sourceId, targetId] : noteIds) performanceNotes.push_back({sourceId, targetId});
+  auto performance = domain::transformRegionPerformance(source.performance, source.notes,
+      source.durationTick, performanceNotes, {time::Tick{0}, source.durationTick});
+  if (!performance) return core::Result<domain::VocalRegion>{performance.error()};
+  clone.performance = std::move(performance).value();
+  const auto rebound = phonemizer::rebindTransferredPhonemeContexts(source, clone, performanceNotes);
+  if (!rebound) return core::Result<domain::VocalRegion>{rebound.error()};
+  const auto renderEdits = phonemizer::validateTransferredRenderEdits(source, clone, performanceNotes);
+  if (!renderEdits) return core::Result<domain::VocalRegion>{renderEdits.error()};
   return clone;
 }
 
@@ -295,8 +306,60 @@ core::Result<domain::VocalRegion> makeSplitRightRegion(
       right.pitchAutomation.points().push_back(std::move(copied));
     }
   }
+  const auto& dynamics = source.dynamicsAutomation.points();
+  std::vector<domain::DynamicsAutomationPoint> leftDynamics;
+  std::vector<domain::DynamicsAutomationPoint> rightDynamics;
+  for (const auto& point : dynamics) {
+    if (point.tick <= splitTick) leftDynamics.push_back(point);
+    if (point.tick >= splitTick) {
+      rightDynamics.push_back({point.tick - splitTick, point.linearGain});
+    }
+  }
+  if (!dynamics.empty()) {
+    const auto boundaryGain = source.dynamicsAutomation.valueAt(splitTick);
+    const auto insideCurve = dynamics.front().tick < splitTick &&
+                             dynamics.back().tick > splitTick;
+    if (leftDynamics.empty() ||
+        (insideCurve && leftDynamics.back().tick < splitTick)) {
+      leftDynamics.push_back({splitTick, boundaryGain});
+    }
+    if (rightDynamics.empty() ||
+        (insideCurve && rightDynamics.front().tick > time::Tick{0})) {
+      rightDynamics.insert(rightDynamics.begin(), {time::Tick{0}, boundaryGain});
+    }
+  }
+  const auto leftDynamicsValidation =
+      left.dynamicsAutomation.replacePoints(std::move(leftDynamics));
+  if (!leftDynamicsValidation) {
+    return core::Result<domain::VocalRegion>{leftDynamicsValidation.error()};
+  }
+  const auto rightDynamicsValidation =
+      right.dynamicsAutomation.replacePoints(std::move(rightDynamics));
+  if (!rightDynamicsValidation) {
+    return core::Result<domain::VocalRegion>{rightDynamicsValidation.error()};
+  }
+  std::vector<domain::PerformanceNoteRemap> leftPerformanceNotes;
+  for (const auto& note : left.notes) leftPerformanceNotes.push_back({note.id, note.id});
+  std::vector<domain::PerformanceNoteRemap> rightPerformanceNotes;
+  for (const auto& [sourceId, targetId] : rightNotes) rightPerformanceNotes.push_back({sourceId, targetId});
+  auto leftPerformance = domain::transformRegionPerformance(source.performance, source.notes,
+      source.durationTick, leftPerformanceNotes, {time::Tick{0}, splitTick});
+  if (!leftPerformance) return core::Result<domain::VocalRegion>{leftPerformance.error()};
+  auto rightPerformance = domain::transformRegionPerformance(source.performance, source.notes,
+      source.durationTick, rightPerformanceNotes, {splitTick, source.durationTick});
+  if (!rightPerformance) return core::Result<domain::VocalRegion>{rightPerformance.error()};
+  left.performance = std::move(leftPerformance).value();
+  right.performance = std::move(rightPerformance).value();
   left.sortNotes();
   right.sortNotes();
+  const auto leftBindings = phonemizer::rebindTransferredPhonemeContexts(source, left, leftPerformanceNotes);
+  if (!leftBindings) return core::Result<domain::VocalRegion>{leftBindings.error()};
+  const auto rightBindings = phonemizer::rebindTransferredPhonemeContexts(source, right, rightPerformanceNotes);
+  if (!rightBindings) return core::Result<domain::VocalRegion>{rightBindings.error()};
+  const auto leftEdits = phonemizer::validateTransferredRenderEdits(source, left, leftPerformanceNotes);
+  if (!leftEdits) return core::Result<domain::VocalRegion>{leftEdits.error()};
+  const auto rightEdits = phonemizer::validateTransferredRenderEdits(source, right, rightPerformanceNotes);
+  if (!rightEdits) return core::Result<domain::VocalRegion>{rightEdits.error()};
   const auto leftValidation = left.validate();
   if (!leftValidation) return core::Result<domain::VocalRegion>{leftValidation.error()};
   const auto rightValidation = right.validate();
