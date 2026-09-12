@@ -138,3 +138,19 @@ Exports `ん・あ・ん・い・ん・う` as six separate 250 ms notes. The ex
 each nasal owns its entire note, without an inserted vowel. This is an audible
 diagnostic model, not a qualified Japanese pronunciation. The three variants,
 editable scores, recipes and unapproved candidate metadata are retained.
+
+### User-authored phrases
+
+```sh
+build/release/seam_singer_pilot NEW_OUTPUT_DIRECTORY phrase 'ま:60' 'た:64' 'ー:67' 'ん:65' 'あ:60'
+```
+
+Supply 1–64 `LYRIC:MIDI` arguments, with MIDI pitches 24–96. Each argument owns
+one 250 ms note at 120 BPM. Use the retained `.seam` project to edit timing and
+other performance controls afterward. UTF-8 and integer syntax are validated
+before creating the output directory. The pilot combines its explicit oral,
+nasal, frication and released-stop poses; it does not support every Japanese
+syllable. Unsupported resolved phones fail during ordinary render preparation,
+retain partial diagnostic inputs, and do not produce a successful `pilot.json`.
+No phoneme substitution or sample approval is performed. Voice quality remains
+unqualified; this is a bounded authoring/audition entry point, not a full bank.

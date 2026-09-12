@@ -129,6 +129,25 @@ def main():
                 assert all(m["endFrame"] - m["startFrame"] == metadata["frameCount"] // 6 for m in markers)
                 assert metadata["approval"] == "unapproved"
         assert nasal_hashes[0] == nasal_hashes[1]
+        custom = root / "custom"
+        subprocess.run([str(binary), str(custom), "phrase", "ま:60", "た:64", "ー:67", "ん:65", "あ:60"],
+                       check=True, capture_output=True, timeout=60)
+        report = json.loads((custom / "pilot.json").read_text())
+        assert report["releaseEligible"] is False
+        for row in report["runs"]:
+            audio = Path(row["wav"])
+            if audio.parent.name == "candidates":
+                metadata = json.loads(audio.with_suffix(".json").read_text())
+                assert [m["phone"] for m in metadata["markers"]] == ["m", "a", "t", "a", "a", "N", "a"]
+        for index, tokens in enumerate((["あ:23"], ["あ:97"], ["あ:60x"], [":60"], ["あ"], [], ["あ:60"] * 65)):
+            target = root / f"invalid-phrase-{index}"
+            result = subprocess.run([str(binary), str(target), "phrase", *tokens], capture_output=True, timeout=10)
+            assert result.returncode != 0
+            assert not target.exists()
+        unsupported = root / "unsupported-phrase"
+        result = subprocess.run([str(binary), str(unsupported), "phrase", "ば:60"], capture_output=True, timeout=10)
+        assert result.returncode != 0
+        assert not (unsupported / "pilot.json").exists()
     print("Pilot repeatability, finite/nonzero PCM, variant identity and no-overwrite checks passed; quality unassessed.")
 
 

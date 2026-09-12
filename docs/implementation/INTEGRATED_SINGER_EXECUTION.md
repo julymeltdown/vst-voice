@@ -506,6 +506,22 @@ is claimed.
 
 ## Voiced reattack boundary repair
 
+### Bounded user-authored pilot phrases
+
+The pilot CLI now accepts `phrase LYRIC:MIDI ...` rather than only fixed
+fixtures. It validates 1–64 UTF-8 lyric/pitch pairs, MIDI 24–96, and retains
+ordinary editable `.seam` projects plus recipes, WAVs and unapproved candidates.
+Notes currently use 480 ticks at 120 BPM; richer editing belongs to the saved
+score/native editor, not a second CLI score engine. The combined explicit pilot
+recipe supports the existing phone models and leaves unsupported phones as
+render errors. A custom m/a/t/a/continuation-a/N/a phrase exported successfully
+to `build/release/seam-pilot-custom-01`. Tests cover actual marker output,
+invalid syntax/pitch/count rejection before directory creation and unsupported
+voiced-stop rejection without a successful report. This is not complete phone
+coverage, a populated bank or the full new-song acceptance journey.
+Verification: Release pilot target built; updated pilot CTest passed (1/1,
+4.92 seconds). No full-suite rerun or listening acceptance claimed.
+
 ### Standalone nasal production fixture
 
 Added `seam_singer_pilot NEW_DIRECTORY nasals`: six alternating standalone
