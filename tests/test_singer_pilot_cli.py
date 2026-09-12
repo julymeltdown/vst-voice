@@ -139,18 +139,32 @@ def main():
             if audio.parent.name == "candidates":
                 metadata = json.loads(audio.with_suffix(".json").read_text())
                 assert [m["phone"] for m in metadata["markers"]] == ["m", "a", "t", "a", "a", "N", "a"]
-        for index, tokens in enumerate((["あ:23"], ["あ:97"], ["あ:60x"], [":60"], ["あ"], [], ["あ:60"] * 65)):
+        for index, tokens in enumerate((["あ:23"], ["あ:97"], ["あ:60x"], [":60"], ["あ"], [], ["あ:60"] * 65,
+                                        ["あ:60:0"], ["あ:60:-1"], ["あ:60:3841"], ["あ:60:"], ["あ:60:20x"],
+                                        ["あ:60:20:30"], ["あ:60:3840"] * 17)):
             target = root / f"invalid-phrase-{index}"
             result = subprocess.run([str(binary), str(target), "phrase", *tokens], capture_output=True, timeout=10)
             assert result.returncode != 0
             assert not target.exists()
         unsupported = root / "unsupported-phrase"
-        result = subprocess.run([str(binary), str(unsupported), "phrase", "ば:60"], capture_output=True, timeout=10)
+        result = subprocess.run([str(binary), str(unsupported), "phrase", "ら:60"], capture_output=True, timeout=10)
         assert result.returncode != 0
         assert not (unsupported / "pilot.json").exists()
-        assert b"Phone 'b'" in result.stderr
+        assert b"Phone 'r'" in result.stderr
         assert b"style 'neutral'" in result.stderr
-        assert b"seam-pilot-01-articulation-diagnostic" in result.stderr
+        assert b"seam-pilot-01-voiced-stop-diagnostic" in result.stderr
+        rhythmic = root / "rhythmic"
+        subprocess.run([str(binary), str(rhythmic), "phrase", "ば:60:960", "ー:64:240", "ん:65:720", "あ:60"],
+                       check=True, capture_output=True, timeout=60)
+        report = json.loads((rhythmic / "pilot.json").read_text())
+        for row in report["runs"]:
+            audio = Path(row["wav"])
+            if audio.parent.name == "candidates":
+                metadata = json.loads(audio.with_suffix(".json").read_text())
+                assert metadata["schemaVersion"] == 6
+                assert metadata["frameCount"] == 60000
+                assert [(m["phone"], m["startFrame"], m["endFrame"]) for m in metadata["markers"]] == [
+                    ("b", 0, 2880), ("a", 2880, 24000), ("a", 24000, 30000), ("N", 30000, 48000), ("a", 48000, 60000)]
         stop_hashes = []
         for name in ("stops", "stops-repeat"):
             subprocess.run([str(binary), str(root / name), "stops"], check=True, capture_output=True, timeout=60)

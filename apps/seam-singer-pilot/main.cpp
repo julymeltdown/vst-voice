@@ -31,7 +31,7 @@ int main(int argc, char** argv) {
     const bool custom = argc >= 3 && std::string_view(argv[2]) == "phrase";
     const bool stops = argc == 3 && std::string_view(argv[2]) == "stops";
     if (argc < 2 || (custom ? argc < 4 || argc > 67 : argc > 3 || (argc == 3 && !stops && std::string_view(argv[2]) != "articulation" && std::string_view(argv[2]) != "boundaries" && std::string_view(argv[2]) != "nasals")))
-      throw std::runtime_error("Usage: seam_singer_pilot NEW_OUTPUT_DIRECTORY [articulation|boundaries|nasals|stops] OR NEW_OUTPUT_DIRECTORY phrase LYRIC:MIDI ... (1-64 notes)");
+      throw std::runtime_error("Usage: seam_singer_pilot NEW_OUTPUT_DIRECTORY [articulation|boundaries|nasals|stops] OR NEW_OUTPUT_DIRECTORY phrase LYRIC:MIDI[:TICKS] ... (1-64 notes)");
     const bool articulation = argc == 3 && std::string_view(argv[2]) == "articulation";
     const bool boundaries = argc == 3 && std::string_view(argv[2]) == "boundaries";
     const bool nasals = argc == 3 && std::string_view(argv[2]) == "nasals";
@@ -49,34 +49,50 @@ int main(int argc, char** argv) {
         ? std::vector<std::uint8_t>{60, 64, 67, 64, 60, 64, 67, 64} : articulation
         ? std::vector<std::uint8_t>{60, 62, 64, 65, 67, 67, 65, 64, 62, 60, 60, 64, 67, 72}
         : std::vector<std::uint8_t>{60, 62, 64, 65, 67, 72};
+    std::vector<std::int64_t> durations;
     if (custom) {
       lyrics.clear(); pitches.clear();
       for (int index = 3; index < argc; ++index) {
         const std::string_view token{argv[index]};
         const auto colon = token.find(':');
         if (token.size() > 256U || colon == std::string_view::npos || colon == 0U)
-          throw std::runtime_error("Each phrase note must be bounded UTF-8 LYRIC:MIDI");
+          throw std::runtime_error("Each phrase note must be bounded UTF-8 LYRIC:MIDI[:TICKS]");
         unsigned pitch = 0U;
-        const auto number = token.substr(colon + 1U);
+        const auto durationColon=token.find(':',colon+1U);
+        const auto number = token.substr(colon + 1U,durationColon==std::string_view::npos ? durationColon : durationColon-colon-1U);
         const auto parsed = std::from_chars(number.data(), number.data() + number.size(), pitch);
         if (parsed.ec != std::errc{} || parsed.ptr != number.data() + number.size() || pitch < 24U || pitch > 96U)
           throw std::runtime_error("Phrase MIDI pitch must be an integer from 24 through 96");
         auto lyric = text::decodeUtf8Strict(token.substr(0U, colon)); require(lyric);
         lyrics.push_back(std::move(lyric.value())); pitches.push_back(static_cast<std::uint8_t>(pitch));
+        std::int64_t duration=480;
+        if (durationColon!=std::string_view::npos) {
+          const auto ticks=token.substr(durationColon+1U);
+          const auto parsedTicks=std::from_chars(ticks.data(),ticks.data()+ticks.size(),duration);
+          if (parsedTicks.ec!=std::errc{} || parsedTicks.ptr!=ticks.data()+ticks.size() || duration<1 || duration>3840)
+            throw std::runtime_error("Phrase duration must be an integer from 1 through 3840 ticks");
+        }
+        durations.push_back(duration);
       }
     }
     if (stops) {
       lyrics={U"ぱ",U"ば",U"た",U"だ",U"か",U"が"};
       pitches={60,60,64,64,67,67};
     }
+    if (!custom) durations.assign(lyrics.size(),480);
+    std::int64_t totalTicks=0;
+    for (const auto duration:durations) totalTicks+=duration;
+    if (totalTicks>61440) throw std::runtime_error("Phrase total duration exceeds 61440 ticks (32 seconds at 120 BPM)");
     if (!std::filesystem::create_directory(root)) throw std::runtime_error("Output directory must be new");
     const auto regionId = factory.addRegion(project, trackId, phrase, time::Tick{0},
-        time::Tick{static_cast<std::int64_t>(lyrics.size()) * 480});
+        time::Tick{totalTicks});
     auto* region = project.findRegion(regionId);
+    std::int64_t startTick=0;
     for (std::size_t index = 0; index < lyrics.size(); ++index) {
-      auto [lyric, note] = factory.makeNote(time::Tick{static_cast<std::int64_t>(index) * 480}, time::Tick{480},
+      auto [lyric, note] = factory.makeNote(time::Tick{startTick}, time::Tick{durations[index]},
           pitches[index], lyrics[index], domain::Language::Japanese);
       region->lyrics.push_back(std::move(lyric)); region->notes.push_back(std::move(note));
+      startTick+=durations[index];
     }
     voice_design::VoiceRecipe base;
     base.id = "seam-pilot-01-diagnostic"; base.seed = 91000U;
@@ -100,7 +116,7 @@ int main(int argc, char** argv) {
           {"t", "neutral", {.seed = 91002U, .centerHz = 4500, .bandwidthHz = 3000, .gain = 0.12}, 10},
           {"k", "neutral", {.seed = 91003U, .centerHz = 2500, .bandwidthHz = 2200, .gain = 0.12}, 10}};
     }
-    if (stops) {
+    if (stops || custom) {
       base.id="seam-pilot-01-voiced-stop-diagnostic";
       for (std::size_t index=0;index<3U;++index) {
         auto voiced=base.plosives[index];

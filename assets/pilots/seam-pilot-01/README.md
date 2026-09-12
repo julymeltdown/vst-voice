@@ -145,9 +145,18 @@ editable scores, recipes and unapproved candidate metadata are retained.
 build/release/seam_singer_pilot NEW_OUTPUT_DIRECTORY phrase 'ま:60' 'た:64' 'ー:67' 'ん:65' 'あ:60'
 ```
 
-Supply 1–64 `LYRIC:MIDI` arguments, with MIDI pitches 24–96. Each argument owns
-one 250 ms note at 120 BPM. Use the retained `.seam` project to edit timing and
-other performance controls afterward. UTF-8 and integer syntax are validated
+Supply 1–64 `LYRIC:MIDI[:TICKS]` arguments, with MIDI pitches 24–96. Duration
+defaults to 480 ticks (250 ms at 120 BPM); explicit durations may be 1–3840
+ticks, up to 61440 ticks in total (32 seconds, or 16 bars of 4/4). For example:
+
+```sh
+build/release/seam_singer_pilot NEW_OUTPUT_DIRECTORY phrase 'ば:60:960' 'ー:64:240' 'ん:65:720' 'あ:60'
+```
+
+The custom recipe includes explicit b/d/g closure models. Very short consonant
+notes may still fail timing validation rather than compressing away their
+closure/burst. Use the retained `.seam` project to edit other performance
+controls afterward. UTF-8 and integer syntax are validated
 before creating the output directory. The pilot combines its explicit oral,
 nasal, frication and released-stop poses; it does not support every Japanese
 syllable. Unsupported resolved phones fail during ordinary render preparation,

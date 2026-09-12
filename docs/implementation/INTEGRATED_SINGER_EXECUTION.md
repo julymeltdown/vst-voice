@@ -506,6 +506,25 @@ is claimed.
 
 ## Voiced reattack boundary repair
 
+### Rhythmic custom phrase authoring
+
+Custom pilot input now accepts `LYRIC:MIDI[:TICKS]`, defaults to 480 ticks and
+preserves explicit note durations in the normal saved score. Per-note durations
+are bounded to 1–3840 ticks and total duration to 61440 ticks (32 seconds at
+120 BPM). Syntax/count/range failures occur before output-directory creation;
+phonetic timing still rejects a gesture that cannot fit its note. The custom
+recipe now includes explicit b/d/g models, with unsupported liquids still
+rejected rather than substituted. A regression exports ba/melisma/N/a with
+960/240/720/480 ticks and verifies all five marker spans and the 60000-frame
+candidate. Invalid, empty, extra-field and aggregate-overflow duration inputs
+are rejected. Targeted pilot build and CTest passed (1/1, 6.35 seconds).
+No full-suite rerun or naturalness qualification is claimed for this CLI change.
+The maximum-duration diagnostic also rendered successfully in all three variants
+to `build/release/seam-pilot-rhythmic-16bar-01`: 64 quarter notes, 16 bars at
+120 BPM. Baseline candidate metadata confirms 1536000 frames at 48 kHz, 104
+markers and unapproved status. The repeated kana phrase with varied melody is
+an engineering render exercise, not independent creator/new-song acceptance.
+
 ### Normal voiced-stop rendering and candidate integration
 
 Schema-six recipes are now admitted through normal resource decoding, compiled
