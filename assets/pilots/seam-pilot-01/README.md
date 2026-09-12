@@ -126,3 +126,15 @@ higher-formants and breathier WAVs. The split at one second is a new attack.
 Projects and recipes are retained beside the audio for editing and replay.
 The CLI test verifies exported dry PCM boundaries and deterministic repeats;
 it does not establish intelligibility, naturalness or listener preference.
+
+### Standalone syllabic nasal fixture
+
+```sh
+build/release/seam_singer_pilot NEW_OUTPUT_DIRECTORY nasals
+```
+
+Exports `ん・あ・ん・い・ん・う` as six separate 250 ms notes. The explicit
+`N` pose uses the nasal resonance/antiresonance model with full nasal coupling;
+each nasal owns its entire note, without an inserted vowel. This is an audible
+diagnostic model, not a qualified Japanese pronunciation. The three variants,
+editable scores, recipes and unapproved candidate metadata are retained.

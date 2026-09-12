@@ -104,6 +104,31 @@ def main():
                     else:
                         assert energy > 1e-6, (row["variant"], note_index, energy)
         assert boundary_hashes[0] == boundary_hashes[1]
+        nasal_hashes = []
+        for name in ("nasals", "nasals-repeat"):
+            subprocess.run([str(binary), str(root / name), "nasals"],
+                           check=True, capture_output=True, timeout=60)
+            report = json.loads((root / name / "pilot.json").read_text())
+            assert report["releaseEligible"] is False
+            nasal_hashes.append([row["sha256"] for row in report["runs"]])
+            for row in report["runs"]:
+                audio = Path(row["wav"])
+                assert hashlib.sha256(audio.read_bytes()).hexdigest() == row["sha256"]
+                if audio.parent.name != "candidates":
+                    continue
+                metadata = json.loads(audio.with_suffix(".json").read_text())
+                markers = metadata["markers"]
+                assert [m["phone"] for m in markers] == ["N", "a", "N", "i", "N", "u"]
+                assert [m["kind"] for m in markers] == ["nasal", "oral-vowel"] * 3
+                pitch = json.loads((root / name / (row["variant"] + "-pitch.json")).read_text())
+                assert len(pitch["notes"]) == 6
+                assert all(note["voicedFrames"] > 0 for note in pitch["notes"])
+                assert markers[0]["startFrame"] == 0
+                assert markers[-1]["endFrame"] == metadata["frameCount"]
+                assert all(a["endFrame"] == b["startFrame"] for a, b in zip(markers, markers[1:]))
+                assert all(m["endFrame"] - m["startFrame"] == metadata["frameCount"] // 6 for m in markers)
+                assert metadata["approval"] == "unapproved"
+        assert nasal_hashes[0] == nasal_hashes[1]
     print("Pilot repeatability, finite/nonzero PCM, variant identity and no-overwrite checks passed; quality unassessed.")
 
 

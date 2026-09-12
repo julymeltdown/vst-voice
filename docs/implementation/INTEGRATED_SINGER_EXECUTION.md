@@ -506,6 +506,21 @@ is claimed.
 
 ## Voiced reattack boundary repair
 
+### Standalone nasal production fixture
+
+Added `seam_singer_pilot NEW_DIRECTORY nasals`: six alternating standalone
+Japanese `N` and oral vowel notes through normal ExportService. Inspection
+confirmed the existing syllabic-N fallback timing path; no new timing or DSP
+semantics were needed. A dedicated explicit nasal recipe pose supplies full
+nasal coupling with resonance/antiresonance instead of inserting an oral vowel.
+The CLI regression checks exact N/a/N/i/N/u markers, full-note spans, unapproved
+metadata, voiced analysis windows in every note, audio hashes and deterministic
+repeat exports across three variants. Release pilot build and updated pilot
+CTest passed (1/1, 4.67 seconds); no fresh full-suite run claimed. Listening
+artifacts are retained in `build/release/seam-pilot-syllabic-nasal-01`.
+This exercises the required standalone-N path but does not qualify its sound,
+close all phonetic classes, or complete M1.P2.
+
 ### Vowel-only production-path follow-up
 
 The new `seam_singer_pilot NEW_DIRECTORY boundaries` fixture renders the same

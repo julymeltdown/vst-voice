@@ -26,17 +26,19 @@ template<class T> void require(const seam::core::Result<T>& value) {
 int main(int argc, char** argv) {
   using namespace seam;
   try {
-    if (argc < 2 || argc > 3 || (argc == 3 && std::string_view(argv[2]) != "articulation" && std::string_view(argv[2]) != "boundaries"))
-      throw std::runtime_error("Usage: seam_singer_pilot NEW_OUTPUT_DIRECTORY [articulation|boundaries]");
+    if (argc < 2 || argc > 3 || (argc == 3 && std::string_view(argv[2]) != "articulation" && std::string_view(argv[2]) != "boundaries" && std::string_view(argv[2]) != "nasals"))
+      throw std::runtime_error("Usage: seam_singer_pilot NEW_OUTPUT_DIRECTORY [articulation|boundaries|nasals]");
     const bool articulation = argc == 3 && std::string_view(argv[2]) == "articulation";
     const bool boundaries = argc == 3 && std::string_view(argv[2]) == "boundaries";
+    const bool nasals = argc == 3 && std::string_view(argv[2]) == "nasals";
     const auto root = std::filesystem::absolute(argv[1]);
     if (!std::filesystem::create_directory(root)) throw std::runtime_error("Output directory must be new");
     application::ProjectFactory factory{91000U};
     auto project = factory.createProject("SEAM pilot: vowel and fricative ladder (unqualified)");
     const auto trackId = factory.addVocalTrack(project, "Original procedural pilot");
-    const std::string phrase = boundaries ? "a a a a then a melisma (same melody)" : articulation ? "ma mi mu me mo na ni nu ne no pa ta ka sa" : "a i u e o sa";
-    const std::vector<std::u32string> lyrics = boundaries
+    const std::string phrase = nasals ? "N a N i N u" : boundaries ? "a a a a then a melisma (same melody)" : articulation ? "ma mi mu me mo na ni nu ne no pa ta ka sa" : "a i u e o sa";
+    const std::vector<std::u32string> lyrics = nasals
+        ? std::vector<std::u32string>{U"ん", U"あ", U"ん", U"い", U"ん", U"う"} : boundaries
         ? std::vector<std::u32string>{U"あ", U"あ", U"あ", U"あ", U"あ", U"ー", U"ー", U"ー"} : articulation
         ? std::vector<std::u32string>{U"ま", U"み", U"む", U"め", U"も", U"な", U"に", U"ぬ", U"ね", U"の", U"ぱ", U"た", U"か", U"さ"}
         : std::vector<std::u32string>{U"あ", U"い", U"う", U"え", U"お", U"さ"};
@@ -61,6 +63,10 @@ int main(int argc, char** argv) {
         {"e", "neutral", 0.0, {{500, 80, 0}, {1900, 110, -3}, {2900, 160, -6}}},
         {"o", "neutral", 0.0, {{500, 90, 0}, {900, 110, -3}, {2600, 160, -6}}}};
     base.frications = {{"s", "neutral", {.seed = 91000U, .centerHz = 5500, .bandwidthHz = 3000, .gain = 0.12}}};
+    if (nasals) {
+      base.id = "seam-pilot-01-syllabic-nasal-diagnostic";
+      base.poses.push_back({"N", "neutral", 1.0, {{300, 80, 0}, {1400, 110, -6}, {2600, 160, -9}}, voice_design::NasalResonance{280, 80, 1200, 120}});
+    }
     if (articulation) {
       base.id = "seam-pilot-01-articulation-diagnostic";
       base.poses.push_back({"m", "neutral", 0.85, {{300, 80, 0}, {1100, 110, -6}, {2500, 160, -9}}, voice_design::NasalResonance{}});
