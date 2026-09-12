@@ -1,5 +1,6 @@
 #pragma once
 #include "seam/voice_design/frication_source.hpp"
+#include <span>
 
 namespace seam::voice_design {
 struct PlosiveConfig final {
@@ -27,5 +28,33 @@ private:
   std::uint32_t sampleRate_;
   time::SampleFrame origin_,position_;
   FricationSource burst_;
+};
+
+// Experimental source primitive, not an admitted phoneme/recipe model. The
+// caller supplies score-derived excitation; this source never invents pitch.
+struct VoicedPlosiveConfig final {
+  PlosiveConfig release;
+  double closureVoicingGain{0.15};
+  double closureLowpassHz{500.0};
+};
+class VoicedPlosiveSource final {
+public:
+  [[nodiscard]] static core::Result<VoicedPlosiveSource> create(
+      VoicedPlosiveConfig config, std::uint32_t sampleRate, time::SampleFrame origin);
+  [[nodiscard]] core::Result<synthesis::PhraseAudio> render(
+      std::span<const float> excitation, std::stop_token stop = {});
+  void reset() noexcept { release_.reset(); lowpassState_ = 0.0; }
+  [[nodiscard]] time::SampleFrame position() const noexcept { return release_.position(); }
+  static constexpr std::uint32_t algorithmRevision = 1U;
+private:
+  VoicedPlosiveSource(VoicedPlosiveConfig config, PlosiveSource release,
+      time::SampleFrame origin, double coefficient, std::uint32_t ramp)
+      : config_(config), release_(std::move(release)), origin_(origin),
+        coefficient_(coefficient), ramp_(ramp) {}
+  VoicedPlosiveConfig config_;
+  PlosiveSource release_;
+  time::SampleFrame origin_;
+  double coefficient_, lowpassState_{0.0};
+  std::uint32_t ramp_;
 };
 }

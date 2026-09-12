@@ -1,6 +1,7 @@
 #include "seam/voice_design/plosive_source.hpp"
 #include <algorithm>
 #include <cmath>
+#include <numbers>
 
 namespace seam::voice_design {
 core::Result<PlosiveSource> PlosiveSource::create(PlosiveConfig config,std::uint32_t sampleRate,time::SampleFrame origin) {
@@ -43,6 +44,51 @@ core::Result<synthesis::PhraseAudio> PlosiveSource::render(std::size_t frames,st
   }
   if (stop.stop_requested()) return cancelled();
   next.position_=finish; *this=std::move(next);
+  return output;
+}
+
+core::Result<VoicedPlosiveSource> VoicedPlosiveSource::create(
+    VoicedPlosiveConfig config, std::uint32_t sampleRate, time::SampleFrame origin) {
+  auto release = PlosiveSource::create(config.release, sampleRate, origin);
+  if (!release) return core::Result<VoicedPlosiveSource>{release.error()};
+  if (config.release.closureFrames < 3U || !std::isfinite(config.closureVoicingGain) || config.closureVoicingGain <= 0.0 ||
+      config.closureVoicingGain > 0.5 || !std::isfinite(config.closureLowpassHz) ||
+      config.closureLowpassHz < 40.0 || config.closureLowpassHz > 2000.0 ||
+      config.closureLowpassHz >= static_cast<double>(sampleRate) / 2.0)
+    return core::failure<VoicedPlosiveSource>(core::ErrorCode::InvalidArgument,
+        "Voiced closure gain or lowpass cutoff exceeds bounds");
+  const auto coefficient = std::exp(-2.0 * std::numbers::pi * config.closureLowpassHz / sampleRate);
+  const auto ramp = std::max(1U, std::min(sampleRate / 1000U, config.release.closureFrames / 2U));
+  return VoicedPlosiveSource{config, std::move(release.value()), origin, coefficient, ramp};
+}
+
+core::Result<synthesis::PhraseAudio> VoicedPlosiveSource::render(
+    std::span<const float> excitation, std::stop_token stop) {
+  const auto cancelled = [] { return core::failure<synthesis::PhraseAudio>(
+      core::ErrorCode::Conflict, "Voiced plosive rendering cancelled"); };
+  if (stop.stop_requested()) return cancelled();
+  if (excitation.empty() || excitation.size() > static_cast<std::size_t>(release_.end() - position()))
+    return core::failure<synthesis::PhraseAudio>(core::ErrorCode::InvalidArgument,
+        "Voiced plosive excitation exceeds its finite gesture");
+  auto candidate = *this;
+  auto output = candidate.release_.render(excitation.size(), stop);
+  if (!output) return output;
+  for (std::size_t index = 0; index < excitation.size(); ++index) {
+    if (index % 256U == 0U && stop.stop_requested()) return cancelled();
+    const auto input = excitation[index];
+    if (!std::isfinite(input) || std::abs(input) > 1.0F)
+      return core::failure<synthesis::PhraseAudio>(core::ErrorCode::InvalidArgument,
+          "Voiced plosive excitation must be finite and bounded to unit amplitude");
+    candidate.lowpassState_ = (1.0 - coefficient_) * input + coefficient_ * candidate.lowpassState_;
+    const auto frame = output.value().startFrame + static_cast<time::SampleFrame>(index);
+    if (frame >= release_.burstStart()) continue;
+    const auto smooth = [](double value) { return value * value * (3.0 - 2.0 * value); };
+    const auto attack = smooth(std::min(1.0, static_cast<double>(frame - origin_) / ramp_));
+    const auto tail = smooth(std::min(1.0, static_cast<double>(release_.burstStart() - 1 - frame) / ramp_));
+    output.value().samples[index] += static_cast<float>(candidate.lowpassState_ * config_.closureVoicingGain * attack * tail);
+  }
+  if (stop.stop_requested()) return cancelled();
+  *this = std::move(candidate);
   return output;
 }
 }

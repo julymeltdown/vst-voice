@@ -81,6 +81,44 @@ TEST_CASE("missing tract coverage identifies the requested phone style and recip
   CHECK(missingStyle.error().message.find("style 'soft'")!=std::string::npos);
 }
 
+TEST_CASE("voiced plosive primitive preserves score excitation closure and exact release") {
+  using namespace seam::voice_design;
+  for (const auto rate : {22050U, 48000U, 96000U}) {
+    const auto closure=rate/20U, burst=rate/100U;
+    VoicedPlosiveConfig config{{{},closure,burst},0.2,500.0};
+    const auto excitation=seam::test::support::sineWave(rate,220.0,
+        static_cast<double>(closure+burst)/rate,0.25F);
+    CHECK(excitation.size()==closure+burst);
+    auto source=VoicedPlosiveSource::create(config,rate,17); CHECK(source);
+    const auto whole=source.value().render(excitation); CHECK(whole);
+    CHECK(whole.value().startFrame==17);
+    CHECK(whole.value().samples.front()==0.0F);
+    CHECK(whole.value().samples[closure-1U]==0.0F);
+    CHECK(std::any_of(whole.value().samples.begin()+100,whole.value().samples.begin()+closure-100,
+        [](float value) { return std::abs(value)>0.001F; }));
+    auto unvoiced=PlosiveSource::create(config.release,rate,17); CHECK(unvoiced);
+    const auto noise=unvoiced.value().render(excitation.size()); CHECK(noise);
+    CHECK(std::equal(whole.value().samples.begin()+closure,whole.value().samples.end(),noise.value().samples.begin()+closure));
+    auto chunks=VoicedPlosiveSource::create(config,rate,17); CHECK(chunks);
+    std::vector<float> joined;
+    for (std::size_t offset=0;offset<excitation.size();) {
+      const auto size=std::min<std::size_t>(127,excitation.size()-offset);
+      const auto part=chunks.value().render(std::span<const float>{excitation}.subspan(offset,size)); CHECK(part);
+      joined.insert(joined.end(),part.value().samples.begin(),part.value().samples.end()); offset+=size;
+    }
+    CHECK(joined==whole.value().samples);
+    source.value().reset();
+    auto malformed=excitation; malformed.back()=std::numeric_limits<float>::quiet_NaN();
+    CHECK(!source.value().render(malformed)); CHECK(source.value().position()==17);
+    std::stop_source stop; stop.request_stop();
+    CHECK(!source.value().render(excitation,stop.get_token())); CHECK(source.value().position()==17);
+    CHECK(source.value().render(excitation).value().samples==whole.value().samples);
+    config.closureVoicingGain=0.0; CHECK(!VoicedPlosiveSource::create(config,rate,17));
+    config.closureVoicingGain=0.2; config.closureLowpassHz=std::numeric_limits<double>::infinity();
+    CHECK(!VoicedPlosiveSource::create(config,rate,17));
+  }
+}
+
 TEST_CASE("mixed voiced frication remains replayable across rates pitches and gain endpoints") {
   using namespace seam;
   for (const auto rate:{22050U,44100U,48000U,96000U}) for (const auto pitch:{36U,69U,96U})

@@ -506,6 +506,26 @@ is claimed.
 
 ## Voiced reattack boundary repair
 
+### Experimental voiced-closure source primitive
+
+Added `VoicedPlosiveSource` beside the existing unvoiced primitive. It accepts
+caller-supplied excitation (no independent pitch oscillator), applies bounded
+gain and a stateful one-pole low-pass during the closure, tapers the closure
+edges, and retains the existing release burst exactly. Configuration rejects
+nonfinite/out-of-range gain and cutoff and closures too short to voice. Invalid
+excitation and cancellation roll back both the filter and release-source state.
+Tests at 22.05/48/96 kHz verify nonzero closure, exact unvoiced-burst equivalence,
+whole/chunk identity, reset and failed-render rollback. Targeted Release build
+and voice-design CTest passed (1/1, 9.31 seconds).
+
+This is a source primitive only, not shipped voiced-stop support. Next required
+integration: explicit versioned recipe fields and same-phone model binding,
+compiled closure/release timing and score-derived excitation in the articulated
+renderer, marker/candidate ABI propagation, and voiced-versus-unvoiced exported
+phrase tests. Production still rejects unsupported voiced stops. No recipe
+schema or existing renderer behavior changed in this increment, and no acoustic
+quality claim is made for the experimental closure parameters.
+
 ### Actionable recipe coverage errors
 
 Recipe articulation failures now retain the original error code and identify
