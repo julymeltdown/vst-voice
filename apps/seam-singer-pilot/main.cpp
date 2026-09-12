@@ -29,8 +29,9 @@ int main(int argc, char** argv) {
   using namespace seam;
   try {
     const bool custom = argc >= 3 && std::string_view(argv[2]) == "phrase";
-    if (argc < 2 || (custom ? argc < 4 || argc > 67 : argc > 3 || (argc == 3 && std::string_view(argv[2]) != "articulation" && std::string_view(argv[2]) != "boundaries" && std::string_view(argv[2]) != "nasals")))
-      throw std::runtime_error("Usage: seam_singer_pilot NEW_OUTPUT_DIRECTORY [articulation|boundaries|nasals] OR NEW_OUTPUT_DIRECTORY phrase LYRIC:MIDI ... (1-64 notes)");
+    const bool stops = argc == 3 && std::string_view(argv[2]) == "stops";
+    if (argc < 2 || (custom ? argc < 4 || argc > 67 : argc > 3 || (argc == 3 && !stops && std::string_view(argv[2]) != "articulation" && std::string_view(argv[2]) != "boundaries" && std::string_view(argv[2]) != "nasals")))
+      throw std::runtime_error("Usage: seam_singer_pilot NEW_OUTPUT_DIRECTORY [articulation|boundaries|nasals|stops] OR NEW_OUTPUT_DIRECTORY phrase LYRIC:MIDI ... (1-64 notes)");
     const bool articulation = argc == 3 && std::string_view(argv[2]) == "articulation";
     const bool boundaries = argc == 3 && std::string_view(argv[2]) == "boundaries";
     const bool nasals = argc == 3 && std::string_view(argv[2]) == "nasals";
@@ -38,7 +39,7 @@ int main(int argc, char** argv) {
     application::ProjectFactory factory{91000U};
     auto project = factory.createProject("SEAM pilot: vowel and fricative ladder (unqualified)");
     const auto trackId = factory.addVocalTrack(project, "Original procedural pilot");
-    const std::string phrase = custom ? "User-authored diagnostic phrase" : nasals ? "N a N i N u" : boundaries ? "a a a a then a melisma (same melody)" : articulation ? "ma mi mu me mo na ni nu ne no pa ta ka sa" : "a i u e o sa";
+    const std::string phrase = stops ? "pa ba ta da ka ga" : custom ? "User-authored diagnostic phrase" : nasals ? "N a N i N u" : boundaries ? "a a a a then a melisma (same melody)" : articulation ? "ma mi mu me mo na ni nu ne no pa ta ka sa" : "a i u e o sa";
     std::vector<std::u32string> lyrics = nasals
         ? std::vector<std::u32string>{U"ん", U"あ", U"ん", U"い", U"ん", U"う"} : boundaries
         ? std::vector<std::u32string>{U"あ", U"あ", U"あ", U"あ", U"あ", U"ー", U"ー", U"ー"} : articulation
@@ -64,6 +65,10 @@ int main(int argc, char** argv) {
         lyrics.push_back(std::move(lyric.value())); pitches.push_back(static_cast<std::uint8_t>(pitch));
       }
     }
+    if (stops) {
+      lyrics={U"ぱ",U"ば",U"た",U"だ",U"か",U"が"};
+      pitches={60,60,64,64,67,67};
+    }
     if (!std::filesystem::create_directory(root)) throw std::runtime_error("Output directory must be new");
     const auto regionId = factory.addRegion(project, trackId, phrase, time::Tick{0},
         time::Tick{static_cast<std::int64_t>(lyrics.size()) * 480});
@@ -86,7 +91,7 @@ int main(int argc, char** argv) {
       base.id = "seam-pilot-01-syllabic-nasal-diagnostic";
       base.poses.push_back({"N", "neutral", 1.0, {{300, 80, 0}, {1400, 110, -6}, {2600, 160, -9}}, voice_design::NasalResonance{280, 80, 1200, 120}});
     }
-    if (articulation || custom) {
+    if (articulation || custom || stops) {
       base.id = "seam-pilot-01-articulation-diagnostic";
       base.poses.push_back({"m", "neutral", 0.85, {{300, 80, 0}, {1100, 110, -6}, {2500, 160, -9}}, voice_design::NasalResonance{}});
       base.poses.push_back({"n", "neutral", 0.75, {{300, 80, 0}, {1700, 110, -6}, {2800, 160, -9}}, voice_design::NasalResonance{300, 90, 1500, 120}});
@@ -94,6 +99,15 @@ int main(int argc, char** argv) {
           {"p", "neutral", {.seed = 91001U, .centerHz = 1200, .bandwidthHz = 1800, .gain = 0.12}, 10},
           {"t", "neutral", {.seed = 91002U, .centerHz = 4500, .bandwidthHz = 3000, .gain = 0.12}, 10},
           {"k", "neutral", {.seed = 91003U, .centerHz = 2500, .bandwidthHz = 2200, .gain = 0.12}, 10}};
+    }
+    if (stops) {
+      base.id="seam-pilot-01-voiced-stop-diagnostic";
+      for (std::size_t index=0;index<3U;++index) {
+        auto voiced=base.plosives[index];
+        voiced.phone=std::array{"b","d","g"}[index];
+        voiced.voicedClosure=voice_design::VoiceRecipe::VoicedClosure{0.2,400.0};
+        base.plosives.push_back(std::move(voiced));
+      }
     }
     formats::JsonValue::Array runs;
     for (const std::string name : {"baseline", "higher-formants", "breathier"}) {

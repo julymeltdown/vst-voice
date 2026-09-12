@@ -169,6 +169,7 @@ TEST_CASE("multilingual vowels and nasal consonants bake and import with their d
       Case{domain::Language::Korean,U"어",{},"eo"},Case{domain::Language::Korean,U"으",{},"eu"},
       Case{domain::Language::Japanese,U"ま",{},"m"},Case{domain::Language::Japanese,U"ん",{},"N"},
       Case{domain::Language::Japanese,U"あん",{},"a"},Case{domain::Language::Japanese,U"か",{},"k"},
+      Case{domain::Language::Japanese,U"ば",{},"b"},
       Case{domain::Language::English,U"za","z aa1","z"},
       Case{domain::Language::English,U"az","aa1 z","aa1"}};
   for (const auto& item:cases) {
@@ -176,7 +177,8 @@ TEST_CASE("multilingual vowels and nasal consonants bake and import with their d
     voice_design::VoiceRecipe recipe; recipe.id="language-bank";
     recipe.poses={{item.phone,"neutral",0.5,{{700.0,80.0,0.0},{1200.0,100.0,-3.0},{2600.0,140.0,-6.0}},voice_design::NasalResonance{}}};
     const bool syllabic=item.phone=="N", coda=item.lyric==U"あん", nasal=item.phone=="m" || syllabic || coda;
-    const bool plosive=item.phone=="k";
+    const bool voicedStop=item.phone=="b";
+    const bool plosive=item.phone=="k" || voicedStop;
     const bool voicedCoda=item.hint=="aa1 z";
     const bool voicedFrication=item.phone=="z" || voicedCoda;
     if (voicedFrication) {
@@ -186,11 +188,12 @@ TEST_CASE("multilingual vowels and nasal consonants bake and import with their d
     }
     if (plosive) {
       recipe.poses.front().phone="a";
-      recipe.plosives={{"k","neutral",{.seed=42U},10.0}};
+      recipe.plosives={{item.phone,"neutral",{.seed=42U},10.0}};
+      if (voicedStop) recipe.plosives.front().voicedClosure=voice_design::VoiceRecipe::VoicedClosure{0.2,400.0};
     }
     if (coda) { auto tail=recipe.poses.front(); tail.phone="N"; recipe.poses.push_back(tail); }
     else if (nasal && !syllabic) { auto vowel=recipe.poses.front(); vowel.phone="a"; vowel.nasalCoupling=0.0; recipe.poses.push_back(vowel); }
-    const auto coverage=voicedCoda?std::string{"vc:aa1z"}:voicedFrication?std::string{"cv:za"}:plosive?std::string{"cv:ka"}:syllabic?std::string{"special:N"}:coda?std::string{"vc:aN"}:nasal?std::string{"cv:ma"}:"sustain:"+item.phone;
+    const auto coverage=voicedStop?std::string{"cv:ba"}:voicedCoda?std::string{"vc:aa1z"}:voicedFrication?std::string{"cv:za"}:plosive?std::string{"cv:ka"}:syllabic?std::string{"special:N"}:coda?std::string{"vc:aN"}:nasal?std::string{"cv:ma"}:"sustain:"+item.phone;
     const auto resource=voice_design::freezeVoiceRecipeResource(recipe); CHECK(resource);
     application::ProjectFactory factory{87000U}; auto project=factory.createProject("Language bake");
     const auto track=factory.addVocalTrack(project,"Singer");
@@ -208,7 +211,7 @@ TEST_CASE("multilingual vowels and nasal consonants bake and import with their d
     const auto prefix=root/"baked/candidates"/(track.toString()+"-"+region.toString());
     const auto loaded=voice_design::loadProceduralCandidate(prefix.string()+".json",prefix.string()+".wav",resource.value());
     if (!loaded) throw test::Failure{item.phone+": "+loaded.error().message+" / "+loaded.error().context};
-    CHECK(loaded.value().schemaVersion==(voicedFrication?5U:plosive?4U:nasal?3U:1U));
+    CHECK(loaded.value().schemaVersion==(voicedStop?6U:voicedFrication?5U:plosive?4U:nasal?3U:1U));
     CHECK(loaded.value().markers.size()==((nasal && !syllabic)||plosive||voicedFrication?2U:1U)); CHECK(loaded.value().markers.front().phone==item.phone);
     if (voicedFrication) {
       const auto& marker=loaded.value().markers[voicedCoda?1U:0U];
@@ -221,10 +224,11 @@ TEST_CASE("multilingual vowels and nasal consonants bake and import with their d
       }
     }
     if (plosive) {
-      CHECK(loaded.value().markers.front().kind==voice_design::ProceduralGestureKind::Plosive);
+      CHECK(loaded.value().markers.front().kind==(voicedStop?voice_design::ProceduralGestureKind::VoicedPlosive:voice_design::ProceduralGestureKind::Plosive));
       CHECK(loaded.value().markers.front().ownedSpan.end==2880);
       const auto& pcm=loaded.value().audio->interleaved;
-      CHECK(std::all_of(pcm.begin(),pcm.begin()+2400,[](float sample){return sample==0.0F;}));
+      if (voicedStop) CHECK(std::any_of(pcm.begin(),pcm.begin()+2400,[](float sample){return std::abs(sample)>0.00001F;}));
+      else CHECK(std::all_of(pcm.begin(),pcm.begin()+2400,[](float sample){return sample==0.0F;}));
       CHECK(std::any_of(pcm.begin()+2400,pcm.begin()+2880,[](float sample){return sample!=0.0F;}));
     }
     if (nasal) {
@@ -302,7 +306,7 @@ TEST_CASE("multilingual vowels and nasal consonants bake and import with their d
     CHECK(asyncStudio.candidateMarkerPreview());
     CHECK(asyncStudio.candidateMarkerPreview()->markers==markers.value().candidate.markers);
     CHECK(asyncStudio.productionProject()->lastDurableGeneration==recovered.value().lastDurableGeneration);
-    CHECK(markers.value().candidate.markers.front().kind==(voicedFrication&&!voicedCoda?voice_design::ProceduralGestureKind::VoicedFrication:plosive?voice_design::ProceduralGestureKind::Plosive:nasal&&!coda?voice_design::ProceduralGestureKind::Nasal:voice_design::ProceduralGestureKind::OralVowel));
+    CHECK(markers.value().candidate.markers.front().kind==(voicedStop?voice_design::ProceduralGestureKind::VoicedPlosive:voicedFrication&&!voicedCoda?voice_design::ProceduralGestureKind::VoicedFrication:plosive?voice_design::ProceduralGestureKind::Plosive:nasal&&!coda?voice_design::ProceduralGestureKind::Nasal:voice_design::ProceduralGestureKind::OralVowel));
     if (voicedCoda) CHECK(markers.value().candidate.markers.back().kind==voice_design::ProceduralGestureKind::VoicedFrication);
     if (coda) CHECK(markers.value().candidate.markers.back().kind==voice_design::ProceduralGestureKind::Nasal);
   }

@@ -389,6 +389,7 @@ core::Result<std::string> buildProceduralIdentity(const domain::Project& project
   identity.integer(voice_design::FricationGestureStream::algorithmRevision);
   identity.integer(voice_design::FricationSource::algorithmRevision);
   identity.integer(voice_design::PlosiveSource::algorithmRevision);
+  if (resource.identity.version=="6") identity.integer(voice_design::VoicedPlosiveSource::algorithmRevision);
   identity.integer(synthesis::kPerformanceCompilerRevision);
   identity.integer(synthesis::kProceduralTimingPolicyRevision);
   identity.tag(build::kRenderAbiId); identity.tag(json.value());

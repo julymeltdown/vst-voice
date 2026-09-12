@@ -151,6 +151,41 @@ def main():
         assert b"Phone 'b'" in result.stderr
         assert b"style 'neutral'" in result.stderr
         assert b"seam-pilot-01-articulation-diagnostic" in result.stderr
+        stop_hashes = []
+        for name in ("stops", "stops-repeat"):
+            subprocess.run([str(binary), str(root / name), "stops"], check=True, capture_output=True, timeout=60)
+            report = json.loads((root / name / "pilot.json").read_text())
+            stop_hashes.append([row["sha256"] for row in report["runs"]])
+            for row in report["runs"]:
+                audio = Path(row["wav"])
+                if audio.parent.name != "candidates":
+                    continue
+                metadata = json.loads(audio.with_suffix(".json").read_text())
+                assert metadata["schemaVersion"] == 6 and metadata["voicedPlosiveRevision"] == 1
+                assert metadata["approval"] == "unapproved"
+                markers = metadata["markers"]
+                assert [m["phone"] for m in markers] == list("pabatadakaga")
+                assert [m["kind"] for m in markers[::2]] == ["plosive", "voiced-plosive"] * 3
+                raw = audio.read_bytes()
+                assert hashlib.sha256(raw).hexdigest() == row["sha256"]
+                offset = 12
+                chunks = {}
+                while offset + 8 <= len(raw):
+                    size = struct.unpack_from("<I", raw, offset + 4)[0]
+                    chunks[raw[offset:offset + 4]] = raw[offset + 8:offset + 8 + size]
+                    offset += 8 + size + size % 2
+                encoding, channels, rate = struct.unpack_from("<HHI", chunks[b"fmt "])
+                assert encoding == 3 and channels == 1
+                samples = struct.unpack("<" + "f" * (len(chunks[b"data"]) // 4), chunks[b"data"])
+                for marker in markers[::2]:
+                    start, end = marker["startFrame"], marker["endFrame"] - rate // 100
+                    closure = samples[start:end]
+                    assert len(closure) > 0
+                    if marker["kind"] == "plosive":
+                        assert all(value == 0 for value in closure)
+                    else:
+                        assert max(abs(value) for value in closure) > 1e-5
+        assert stop_hashes[0] == stop_hashes[1]
     print("Pilot repeatability, finite/nonzero PCM, variant identity and no-overwrite checks passed; quality unassessed.")
 
 

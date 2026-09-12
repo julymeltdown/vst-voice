@@ -16,6 +16,7 @@ struct ProceduralCandidate final {
   std::shared_ptr<const voicebank::AudioBuffer> audio;
   std::uint32_t schemaVersion{1U}, articulationPlanRevision{0U}, fricationRevision{0U}, fricationStreamRevision{0U};
   std::uint32_t plosiveRevision{0U};
+  std::uint32_t voicedPlosiveRevision{0U};
 };
 // Parses planned gestures only; audio remains null. This is not audio verification.
 [[nodiscard]] core::Result<ProceduralCandidate> parseProceduralCandidateMetadata(

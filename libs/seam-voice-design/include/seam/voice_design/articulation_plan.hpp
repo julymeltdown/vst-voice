@@ -36,7 +36,7 @@ public:
       const synthesis::ProceduralSingerResource& resource,
       const synthesis::CompiledScorePerformance& performance,
       std::span<const domain::PhonemeToken> phones, std::string_view style,
-      std::stop_token stop = {}, bool allowVoicedFrication = true, bool allowVoicedStops = false);
+      std::stop_token stop = {}, bool allowVoicedFrication = true, bool allowVoicedStops = true);
   [[nodiscard]] static core::Result<ArticulationPlan> compile(
       std::span<const domain::PhonemeToken> phones,
       std::span<const synthesis::PhonemeTimingAnchor> timing,

@@ -133,8 +133,8 @@ TEST_CASE("voiced closure recipes require explicit schema six without changing l
   CHECK(decoded.value()==recipe);
   const auto resource=voice_design::freezeVoiceRecipeResource(recipe); CHECK(resource);
   CHECK(resource.value().identity.version=="6");
-  // Runtime admission stays closed until timing/render/marker integration exists.
-  CHECK(!voice_design::decodeVoiceRecipeResource(resource.value()));
+  CHECK(voice_design::decodeVoiceRecipeResource(resource.value()));
+  CHECK(!voice_design::decodeVoiceRecipeResource(resource.value(),{},true,false));
   auto downgraded=formats::parseJson(encoded.value()).value();
   downgraded.asObject()["schemaVersion"]=formats::JsonValue{std::int64_t{5}};
   CHECK(!voice_design::decodeVoiceRecipe(formats::stringifyJson(downgraded)));
@@ -161,7 +161,7 @@ TEST_CASE("voiced stop plans bind explicit closure and burst to compiled score t
   auto recipe=nasalFixture();
   recipe.plosives={{"b","neutral",{},10.0,voice_design::VoiceRecipe::VoicedClosure{0.2,400.0}}};
   const auto resource=voice_design::freezeVoiceRecipeResource(recipe); CHECK(resource);
-  CHECK(!voice_design::ArticulationPlan::compileRecipe(resource.value(),performance.value(),phones.value().pronunciation.tokens,"neutral"));
+  CHECK(!voice_design::ArticulationPlan::compileRecipe(resource.value(),performance.value(),phones.value().pronunciation.tokens,"neutral",{},true,false));
   const auto plan=voice_design::ArticulationPlan::compileRecipe(resource.value(),performance.value(),phones.value().pronunciation.tokens,"neutral",{},true,true); CHECK(plan);
   CHECK(plan.value().gestures().size()==2U);
   const auto& stop=plan.value().gestures().front();
@@ -174,7 +174,7 @@ TEST_CASE("voiced stop plans bind explicit closure and burst to compiled score t
   CHECK(stop.voicedPlosive->closureVoicingGain==0.2);
   CHECK(stop.voicedPlosive->closureLowpassHz==400.0);
   CHECK(!voice_design::FricationGestureStream::create(plan.value()));
-  CHECK(!voice_design::ArticulatedStream::create(resource.value(),performance.value(),plan.value(),"neutral"));
+  CHECK(!voice_design::ArticulatedStream::create(resource.value(),performance.value(),plan.value(),"neutral",512U,true,false));
   auto stream=voice_design::ArticulatedStream::create(resource.value(),performance.value(),plan.value(),"neutral",127U,true,true); CHECK(stream);
   const auto audio=stream.value().renderOwned({0,24000}); CHECK(audio);
   CHECK(std::any_of(audio.value().samples.begin()+100,audio.value().samples.begin()+2300,[](float value) { return std::abs(value)>0.00001F; }));
@@ -267,6 +267,42 @@ TEST_CASE("voiced frication candidate metadata preserves recipe voicing and reje
   }
   auto invalidRecipe=recipe; invalidRecipe.frications[0].phone="a"; CHECK(!invalidRecipe.validate());
   invalidRecipe=recipe; invalidRecipe.frications[0].phone="n"; invalidRecipe.poses.back().phone="n"; CHECK(!invalidRecipe.validate());
+}
+
+TEST_CASE("voiced stop candidate metadata binds source revision and rejects unvoiced relabeling") {
+  using namespace seam;
+  using J=formats::JsonValue;
+  auto recipe=nasalFixture();
+  recipe.plosives={{"b","neutral",{},10.0,voice_design::VoiceRecipe::VoicedClosure{0.2,400.0}}};
+  const auto resource=voice_design::freezeVoiceRecipeResource(recipe); CHECK(resource);
+  const auto marker=[](std::uint16_t ordinal,const char* phone,const char* kind,std::int64_t start,std::int64_t end) {
+    return J{J::Object{{"key",domain::PhonemeKey{domain::NoteId{1U},ordinal}.toString()},
+        {"phone",phone},{"kind",kind},{"startFrame",start},{"endFrame",end}}};
+  };
+  J metadata{J::Object{{"formatId","com.project-seam.procedural-candidate"},{"schemaVersion",std::int64_t{6}},
+      {"approval","unapproved"},{"markerSemantics","planned-articulated-gestures"},
+      {"audioSha256",std::string(64U,'a')},{"renderContentHash",std::string(64U,'b')},{"renderAbi","test-abi"},
+      {"recipeId",resource.value().identity.id},{"recipeVersion","6"},{"recipeHash",resource.value().identity.contentHash},
+      {"style","neutral"},{"sampleRate",std::int64_t{48000}},{"frameCount",std::int64_t{24000}},
+      {"scoreOriginFrame",std::int64_t{0}},{"proceduralRevision",std::int64_t{10}},{"compilerRevision",std::int64_t{9}},
+      {"articulationPlanRevision",std::int64_t{9}},{"fricationRevision",std::int64_t{1}},
+      {"fricationStreamRevision",std::int64_t{3}},{"plosiveRevision",std::int64_t{1}},{"voicedPlosiveRevision",std::int64_t{1}},
+      {"markers",J::Array{marker(0U,"b","voiced-plosive",0,2880),marker(1U,"a","oral-vowel",2880,24000)}}}};
+  const auto parse=[&](const J& value){return voice_design::parseProceduralCandidateMetadata(formats::stringifyJson(value),resource.value());};
+  const auto valid=parse(metadata); CHECK(valid); CHECK(valid.value().voicedPlosiveRevision==1U);
+  CHECK(valid.value().markers[0].kind==voice_design::ProceduralGestureKind::VoicedPlosive);
+  for (unsigned scenario=0;scenario<8;++scenario) {
+    auto bad=metadata;
+    if (scenario==0) bad.asObject()["schemaVersion"]=std::int64_t{5};
+    if (scenario==1) bad.asObject()["voicedPlosiveRevision"]=std::int64_t{0};
+    if (scenario==2) bad.asObject()["proceduralRevision"]=std::int64_t{9};
+    if (scenario==3) bad.asObject()["markers"].asArray()[0].asObject()["kind"]="plosive";
+    if (scenario==4) bad.asObject()["markers"].asArray()[0].asObject()["phone"]="p";
+    if (scenario==5) bad.asObject()["markers"].asArray()[0].asObject()["endFrame"]=std::int64_t{480};
+    if (scenario==6) bad.asObject().erase("voicedPlosiveRevision");
+    if (scenario==7) bad.asObject()["approval"]="approved";
+    CHECK(!parse(bad));
+  }
 }
 
 TEST_CASE("voiced frication recipe contract is explicit versioned and cannot downgrade") {

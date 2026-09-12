@@ -10,11 +10,11 @@ public:
   [[nodiscard]] static core::Result<ArticulatedStream> createFromRecipe(
       const synthesis::ProceduralSingerResource& resource, synthesis::CompiledScorePerformance performance,
       std::span<const domain::PhonemeToken> phones, std::string style,
-      std::size_t blockFrames = 512U, std::stop_token stop = {}, bool allowVoicedFrication = true, bool allowVoicedStops = false);
+      std::size_t blockFrames = 512U, std::stop_token stop = {}, bool allowVoicedFrication = true, bool allowVoicedStops = true);
   [[nodiscard]] static core::Result<ArticulatedStream> create(
       const synthesis::ProceduralSingerResource& resource, synthesis::CompiledScorePerformance performance,
       ArticulationPlan plan, std::string style, std::size_t blockFrames = 512U,
-      bool allowVoicedFrication = true, bool allowVoicedStops = false);
+      bool allowVoicedFrication = true, bool allowVoicedStops = true);
   [[nodiscard]] core::Result<synthesis::PhraseAudio> renderOwned(synthesis::PhraseFrameRange owned, std::stop_token stop = {});
   void reset();
   [[nodiscard]] time::SampleFrame position() const noexcept { return voice_->position(); }

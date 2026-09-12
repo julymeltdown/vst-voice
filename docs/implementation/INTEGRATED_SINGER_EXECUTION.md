@@ -506,6 +506,32 @@ is claimed.
 
 ## Voiced reattack boundary repair
 
+### Normal voiced-stop rendering and candidate integration
+
+Schema-six recipes are now admitted through normal resource decoding, compiled
+articulation and rendering. Candidate schema six adds `voicedPlosiveRevision`
+and `voiced-plosive` markers. Loading binds the marker to the exact recipe's
+closure model and rejects unvoiced relabeling, missing/incorrect revision,
+insufficient closure space, schema downgrades and approval claims. Closure
+parameters remain in hash-bound recipe bytes rather than duplicated editable
+metadata. The voiced source revision participates in schema-six snapshot hashes.
+Older candidate schemas retain their shapes; mixed schema-six recipes may
+export older gesture subsets without claiming a voiced stop they did not render.
+
+Added the ordinary `stops` pilot: pa/ba/ta/da/ka/ga with matched pair pitches and
+three variants. The exported Float32 regression checks exactly silent unvoiced
+closures, nonzero voiced closures, precise marker identities and repeated hashes.
+The repository-import/Studio-reopen fixture now includes ba so collection must
+retain the new marker kind and unreviewed state. Listening WAVs are retained in
+`build/release/seam-pilot-voiced-stops-01`. The fixture isolates closure voicing
+using paired release spectra; this is not proof of natural b/d/g pronunciation.
+This section supersedes the earlier default-admission gates, not their remaining
+acoustic-quality limitations. Advanced timing/coarticulation and other phone
+classes remain open under M1.P2.
+Verification: full Release build passed; fresh full CTest passed 123/123 in
+92.61 seconds, including voiced-stop export/import/Studio reopen. No listening
+qualification, installed-host qualification or M1 completion is claimed.
+
 ### Opt-in articulated voiced-stop rendering
 
 ArticulatedStream revision ten renders admitted VoicedPlosive gestures using

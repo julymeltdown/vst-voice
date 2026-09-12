@@ -154,3 +154,18 @@ syllable. Unsupported resolved phones fail during ordinary render preparation,
 retain partial diagnostic inputs, and do not produce a successful `pilot.json`.
 No phoneme substitution or sample approval is performed. Voice quality remains
 unqualified; this is a bounded authoring/audition entry point, not a full bank.
+
+### Voiced versus unvoiced stops
+
+```sh
+build/release/seam_singer_pilot NEW_OUTPUT_DIRECTORY stops
+```
+
+Exports `ぱ・ば・た・だ・か・が` at matched pitches within each pair. The
+schema-six recipe explicitly supplies closure voicing for b/d/g and preserves
+the paired unvoiced release spectrum, isolating the closure difference for
+listening. Candidate schema six retains `voiced-plosive` markers, recipe hash
+and voiced source revision; approval remains `unapproved`. The test checks
+silent versus nonzero closure PCM and repeatability, not phonetic accuracy.
+This diagnostic still needs listener evaluation and parameter refinement;
+prevoicing, voice-onset-time variation and natural coarticulation are not claimed.
