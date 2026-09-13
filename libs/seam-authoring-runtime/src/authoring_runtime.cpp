@@ -381,6 +381,14 @@ void AuthoringRuntime::setRenderQuality(
   requestPreview(true);
 }
 
+void AuthoringRuntime::setTempoMapOverride(std::optional<time::TempoMap> map) {
+  // The caller decides when to render: a host-timed final render sets the map and asks
+  // for the render in the same step, and clearing the map afterwards must not enqueue a
+  // second render that would replace the audio the host just asked for.
+  if (tempoMapOverride_ == map) return;
+  tempoMapOverride_ = std::move(map);
+}
+
 void AuthoringRuntime::setCompletionCallback(
     std::function<void()> callback) {
   std::lock_guard lock(callbackMutex_);
@@ -428,6 +436,10 @@ void AuthoringRuntime::requestPreview(bool immediate,
 std::optional<AuthoringRuntime::PreviewRequest>
 AuthoringRuntime::makePreviewRequest(application::CommandImpact impact) const {
   auto project = document_->session().project();
+  // A host-owned timing authority replaces the document's map for this render only.
+  // The substituted project is what the renderer compiles and what the render identity
+  // hashes, so the published audio always carries the map it was rendered with.
+  if (tempoMapOverride_.has_value()) project.tempoMap() = *tempoMapOverride_;
   if (document_->identity().projectPath.has_value()) {
     const auto projectRoot = document_->identity().projectPath->parent_path();
     for (auto& track : project.audioTracks()) {

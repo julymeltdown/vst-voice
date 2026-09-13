@@ -478,11 +478,23 @@ void EditorRuntime::setHostTimelineState(HostTimelineState state) noexcept {
   offlineRender_.invalidate("Host timeline changed the offline timing identity");
   offlineAudioReady_.store(false, std::memory_order_release);
   hostTimelineState_ = state;
+  // Follow Host final rendering needs the host's tempo history, not the value that
+  // happened to be current when the render was requested. Recording is best effort: a
+  // report the map cannot accept is dropped here, and the render gate then names the
+  // span it cannot speak for instead of timing the music against a guess.
+  if (state.hasTempo && state.hasBeats) {
+    static_cast<void>(hostTempoMap_.observe(state.beats, state.tempo));
+  }
 }
 
 HostTimelineState EditorRuntime::hostTimelineState() const noexcept {
   std::lock_guard lock(mutex_);
   return hostTimelineState_;
+}
+
+HostTempoMap EditorRuntime::hostTempoMap() const {
+  std::lock_guard lock(mutex_);
+  return hostTempoMap_;
 }
 
 core::Result<void> EditorRuntime::setPrimarySeamAmount(float value) {

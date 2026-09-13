@@ -24,10 +24,41 @@ using namespace detail;
 
 namespace {
 
+// How far an acquired host tempo map must reach to time the whole score: the region
+// extent in musical beats, which does not depend on the tempo map itself.
+double projectEndBeats(const domain::Project& project) {
+  const auto ppq = static_cast<double>(project.tempoMap().ppq());
+  if (!(ppq > 0.0)) return 0.0;
+  double end = 0.0;
+  for (const auto& track : project.vocalTracks()) {
+    for (const auto& region : track.regions) {
+      const auto ticks = static_cast<double>((region.startTick + region.durationTick).value());
+      end = std::max(end, ticks / ppq);
+    }
+  }
+  return end;
+}
+
+// The acquired host observations as a project tempo map. Every observation becomes an
+// event at the host's own beat position, so the render follows the host's tempo changes
+// instead of the document's saved map. Returns nothing when the map cannot be expressed
+// at this project's resolution, which is a refusal rather than a silent approximation.
+std::optional<time::TempoMap> hostTempoMapFor(const domain::Project& project,
+                                              const HostTempoMap& acquired) {
+  time::TempoMap result{project.tempoMap().ppq()};
+  for (const auto& entry : acquired.observations()) {
+    const auto tick = time::Tick{static_cast<std::int64_t>(
+        std::llround(entry.beats * static_cast<double>(project.tempoMap().ppq())))};
+    if (!result.addOrReplace(tick, entry.bpm)) return std::nullopt;
+  }
+  return result;
+}
+
 OfflineRenderIdentity makeOfflineIdentity(
     const domain::Project& project, std::uint64_t revision,
     std::uint32_t sampleRate, OfflineTimingAuthority authority,
-    const HostTimelineState& hostTimeline) {
+    const HostTimelineState& hostTimeline,
+    const std::optional<time::TempoMap>& tempoOverride = std::nullopt) {
   OfflineRenderIdentity identity{
       .projectRevision = revision,
       .sampleRate = sampleRate,
@@ -37,7 +68,9 @@ OfflineRenderIdentity makeOfflineIdentity(
       .timingMapHash = {},
       .rendererIdentity = std::string{build::kRenderAbiId} + "/offline/v1",
   };
-  const auto encoded = formats::ProjectJsonCodec{}.encode(project);
+  auto rendered = project;
+  if (tempoOverride.has_value()) rendered.tempoMap() = *tempoOverride;
+  const auto encoded = formats::ProjectJsonCodec{}.encode(rendered);
   if (!encoded) return identity;
   identity.projectContentHash = core::sha256Hex(encoded.value());
   core::Sha256 timing;
@@ -56,6 +89,15 @@ OfflineRenderIdentity makeOfflineIdentity(
     timing.update(std::to_string(hostTimeline.loopEndSeconds));
     timing.update(std::to_string(hostTimeline.loopStartBeats));
     timing.update(std::to_string(hostTimeline.loopEndBeats));
+    timing.update(tempoOverride.has_value() ? "host-map" : "no-map");
+    if (tempoOverride.has_value()) {
+      // The acquired events are hashed directly, so two renders cannot share a timing
+      // identity while following different host tempo histories.
+      for (const auto& event : tempoOverride->events()) {
+        timing.update(std::to_string(event.tick.value()));
+        timing.update(std::to_string(event.bpm));
+      }
+    }
   }
   identity.timingMapHash = timing.hexDigest();
   return identity;
@@ -162,6 +204,24 @@ core::Result<void> EditorRuntime::prepareOfflineRender(
   OfflineRenderIdentity identity;
   std::uint64_t revision = 0U;
   domain::ProjectId projectId{};
+  // Cleared on every exit path, including the failures below, so a later Fixed Audio
+  // render can never inherit host timing from an earlier attempt.
+  struct ClearTempoOverride final {
+    authoring::AuthoringRuntime* runtime{nullptr};
+    ClearTempoOverride() = default;
+    explicit ClearTempoOverride(authoring::AuthoringRuntime* value) : runtime{value} {}
+    // The guard exists to clear the override exactly once, when its own scope ends. A
+    // copy or move would let a temporary clear the override during construction, which
+    // is the opposite of what the render needs.
+    ClearTempoOverride(const ClearTempoOverride&) = delete;
+    ClearTempoOverride& operator=(const ClearTempoOverride&) = delete;
+    ClearTempoOverride(ClearTempoOverride&&) = delete;
+    ClearTempoOverride& operator=(ClearTempoOverride&&) = delete;
+    ~ClearTempoOverride() {
+      if (runtime != nullptr) runtime->setTempoMapOverride(std::nullopt);
+    }
+  };
+  std::optional<ClearTempoOverride> hostTempoGuard;
   {
     std::lock_guard lock(mutex_);
     if (!authoring_) {
@@ -178,12 +238,40 @@ core::Result<void> EditorRuntime::prepareOfflineRender(
     offlineAudioReady_.store(false, std::memory_order_release);
     const auto started = offlineRender_.begin(identity);
     if (!started) return started;
+    std::optional<time::TempoMap> hostTempo;
     if (offlineTimingAuthority_ == OfflineTimingAuthority::FollowHost) {
-      const std::string diagnostic =
-          "Follow Host final rendering requires a complete authoritative tempo map. "
-          "This adapter currently supports only explicitly synchronized Fixed Audio.";
-      static_cast<void>(offlineRender_.fail(identity, diagnostic));
-      return core::failure(core::ErrorCode::Unsupported, diagnostic);
+      // One instantaneous BPM cannot certify later tempo events, so the render is
+      // authorized only by map coverage. The tolerance is an engineering default for how
+      // far apart two host reports may be during playback, not a measured threshold.
+      constexpr double kMaximumUnobservedBeats{1.0};
+      const auto endBeats = projectEndBeats(session_.project());
+      if (!hostTempoMap_.covers(0.0, endBeats, kMaximumUnobservedBeats)) {
+        const auto missing = hostTempoMap_.uncoveredSpan(0.0, endBeats, kMaximumUnobservedBeats);
+        const std::string diagnostic =
+            "Follow Host final rendering needs an authoritative tempo map covering beats 0.." +
+            std::to_string(endBeats) + "; this host has reported " +
+            std::to_string(hostTempoMap_.size()) + " tempo observation(s) and the uncovered span is " +
+            (missing.empty() ? std::string{"unknown"} : missing) +
+            ". An instantaneous tempo cannot certify later events.";
+        static_cast<void>(offlineRender_.fail(identity, diagnostic));
+        return core::failure(core::ErrorCode::Unsupported, diagnostic);
+      }
+      hostTempo = hostTempoMapFor(session_.project(), hostTempoMap_);
+      if (!hostTempo.has_value()) {
+        const std::string diagnostic =
+            "Follow Host final rendering could not build a usable tempo map from the host reports";
+        static_cast<void>(offlineRender_.fail(identity, diagnostic));
+        return core::failure(core::ErrorCode::Internal, diagnostic);
+      }
+      identity = makeOfflineIdentity(session_.project(), revision, renderSampleRate_,
+                                     offlineTimingAuthority_, hostTimelineState_, hostTempo);
+      const auto hostIdentityValid = identity.validate();
+      if (!hostIdentityValid) return hostIdentityValid;
+      // The session must hold the identity that will actually be rendered. Otherwise a
+      // later failure or publication for the host-timed render is rejected as stale and
+      // the host is left looking at a preparation that never resolves.
+      const auto rebound = offlineRender_.begin(identity);
+      if (!rebound) return rebound;
     }
     const auto anySolo = std::any_of(
         session_.project().vocalTracks().begin(),
@@ -219,6 +307,11 @@ core::Result<void> EditorRuntime::prepareOfflineRender(
     renderQuality_ = rendering::RenderQuality::Final;
     static_cast<void>(authoring_->setPreviewSampleRate(renderSampleRate_));
     authoring_->setRenderQuality(rendering::RenderQuality::Final);
+    // The render follows the acquired host map when Follow Host is authorized, and the
+    // document's own map otherwise. The override is cleared after the render completes so
+    // a later Fixed Audio render cannot inherit host timing.
+    authoring_->setTempoMapOverride(hostTempo);
+    if (hostTempo.has_value()) hostTempoGuard.emplace(authoring_.get());
     // Immediate here means enqueue now; the worker still owns all rendering
     // and the calling host thread only waits for the publication gate below.
     authoring_->requestPreview(true);
@@ -297,7 +390,21 @@ core::Result<void> EditorRuntime::prepareOfflineRender(
         }
         return core::success();
       }
-      const auto diagnostic = "Final offline render produced no publishable PCM";
+      // Name the failing condition: "no publishable PCM" alone cannot distinguish a
+      // stale publication from one rendered with a different timing map.
+      std::string reason;
+      if (latest == nullptr) reason = "the renderer published nothing";
+      else if (latest->state != authoring::RenderState::Ready) reason = "the publication is not ready";
+      else if (latest->projectRevision != revision) reason = "the publication is for another revision";
+      else if (latest->projectId != projectId) reason = "the publication is for another project";
+      else if (latest->quality != rendering::RenderQuality::Final) reason = "the publication is not Final quality";
+      else if (latest->sourceProject == nullptr) reason = "the publication has no source project";
+      else if (!sourceDigestMatches) reason = "the published source differs from the prepared timing identity";
+      else if (latest->result.sampleRate != identity.sampleRate) reason = "the publication sample rate differs";
+      else if (latest->result.channelCount == 0U) reason = "the publication has no channels";
+      else if (latest->result.interleaved.empty()) reason = "the publication has no audio";
+      else reason = "the publication is no longer current";
+      const auto diagnostic = "Final offline render produced no publishable PCM: " + reason;
       static_cast<void>(offlineRender_.fail(identity, diagnostic));
       offlineAudioReady_.store(false, std::memory_order_release);
       return core::failure(core::ErrorCode::Conflict, diagnostic);

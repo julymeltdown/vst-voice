@@ -7,6 +7,7 @@
 #include "seam/core/result.hpp"
 #include "seam/domain/project.hpp"
 #include "seam/clap_editor/host_timeline.hpp"
+#include "seam/clap_editor/host_tempo_map.hpp"
 #include "seam/clap_editor/offline_render_session.hpp"
 #include "seam/native_ui/character_presentation.hpp"
 #include "seam/native_ui/editor_controller.hpp"
@@ -276,6 +277,9 @@ public:
 
   void setHostTimelineState(HostTimelineState state) noexcept;
   [[nodiscard]] HostTimelineState hostTimelineState() const noexcept;
+  // The tempo history this host has actually reported. Follow Host final rendering is
+  // authorized against this map's coverage, never against the instantaneous value.
+  [[nodiscard]] HostTempoMap hostTempoMap() const;
 
   void setLiveSampleRate(double sampleRate) noexcept {
     live_.setOutputSampleRate(sampleRate);
@@ -382,6 +386,9 @@ private:
   bool draggingPhonemeStart_{false};
   std::optional<time::Tick> draggingPitchTick_;
   HostTimelineState hostTimelineState_{};
+  // Tempo history this host actually reported. Follow Host rendering is authorized
+  // against this map's coverage, never against the instantaneous value above.
+  HostTempoMap hostTempoMap_;
 };
 
 [[nodiscard]] core::Result<std::vector<std::byte>> encodeEditorState(

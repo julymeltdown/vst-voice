@@ -1,5 +1,52 @@
 # Integrated Singer Execution
 
+## A Follow Host bounce is authorized by the host's own tempo history
+
+Follow Host final rendering had an authority flag and no acquisition path: the final bounce
+refused every request because nothing in the product ever learned more than the single BPM the
+host happened to be reporting. One instantaneous tempo cannot certify a later tempo event, so
+the refusal was correct and the missing half was the history.
+
+`seam/clap_editor/host_tempo_map.hpp` and `src/host_tempo_map.cpp` add that history. The map
+records what the host actually reported as `beats` plus `bpm`, keeps it in musical order rather
+than arrival order, and is bounded at 4096 observations. Non-finite or out-of-range reports are
+refused rather than clamped, re-reporting the same position with the same tempo is idempotent,
+and the revision advances only when a tempo really changed. Its identity is a canonical hash of
+the observed history, not of the revision counter, so two hosts that reported the same map
+produce the same timing identity. `EditorRuntime::setHostTimelineState` records an observation
+whenever the host supplies both a beat position and a tempo; the accessor returns a copy.
+
+`prepareOfflineRender` now authorizes Follow Host against coverage instead of a single value. It
+asks the map to cover beats `0..projectEndBeats` with an engineering tolerance of one unobserved
+beat, and when the map cannot speak for that range it refuses with the exact uncovered span and
+the number of observations it has. When the map does cover the score it becomes a render-only
+project tempo map, the caller's own saved map is untouched, and both the substituted project and
+the observed events enter the render identity, so two bounces cannot share an identity while
+following different host tempo histories. The override is cleared when preparation returns, so a
+later Fixed Audio bounce cannot inherit host timing.
+
+Two defects surfaced only when the path was driven end to end, and both are fixed rather than
+worked around. The render-only override was being cleared *before* the render was requested: the
+guard was assigned from a temporary into `std::optional`, so the temporary's destructor cleared
+the override in the same statement that installed it. A debug trace showed the override stored
+and then cleared microseconds before `requestPreview`. The guard is now constructed in place and
+its copy and move operations are deleted, which is what makes the early clear impossible rather
+than merely absent. The second defect was that the offline session still held the identity
+computed *before* the host map was built, so the session rejected its own later failure and
+publication as stale and left the host reading "preparation is pending". Preparation now
+re-begins the session with the identity that will actually be rendered.
+
+`tests/test_host_tempo_map.cpp`, registered as CTest `seam_host_tempo_map_tests`, covers the
+versioned history, coverage at both ends and across a bounded gap, identity stability under
+re-reporting, refusal of an uncovered score and of a single observation, and the audible case: a
+two-beat region renders 48000 frames under a 120 BPM host, roughly twice that under a 60 BPM
+host, with a different timing identity for each.
+
+Not claimed. The one-beat coverage tolerance is a declared engineering default, not a measured
+threshold, and a real DAW's tempo reporting cadence has to be exercised in the installed-host
+qualification that M5 still owes. The audio is the production demo bank fixture, so this is
+timing, identity and routing evidence, not a singer. No unit acceptance changes.
+
 ## The render path is verified with the shipped neural worker, not the probe
 
 Every neural render test until now executed the transport probe, which returns silence

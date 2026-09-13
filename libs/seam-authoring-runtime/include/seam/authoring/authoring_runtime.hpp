@@ -110,6 +110,13 @@ public:
   [[nodiscard]] rendering::RenderQuality renderQuality() const noexcept {
     return renderQuality_;
   }
+  // Optional tempo map that replaces the document's map for subsequent renders. A host
+  // that owns timing (Follow Host) supplies an acquired map here, so the render follows
+  // the host's own events instead of one instantaneous BPM. The substituted project is
+  // what gets rendered and what the render identity covers, so audio can never be
+  // attributed to a map it was not rendered with. Owner-thread only, like every other
+  // render setting.
+  void setTempoMapOverride(std::optional<time::TempoMap> map);
   void setCompletionCallback(std::function<void()> callback);
   void requestPreview(
       bool immediate = false,
@@ -159,6 +166,8 @@ private:
   TechnicalEditController technicalEdits_;
   std::uint32_t previewSampleRate_{48000U};
   rendering::RenderQuality renderQuality_{rendering::RenderQuality::Preview};
+  // Absent means the document's own tempo map is authoritative for rendering.
+  std::optional<time::TempoMap> tempoMapOverride_;
   mutable std::mutex callbackMutex_;
   std::function<void()> completionCallback_;
   mutable std::mutex technicalViewMutex_;

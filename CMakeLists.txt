@@ -936,6 +936,7 @@ if(SEAM_BUILD_CLAP_EDITOR_PLUGIN)
     libs/seam-clap-editor/src/editor_runtime_state.cpp
     libs/seam-clap-editor/src/offline_render_session.cpp
     libs/seam-clap-editor/src/host_timeline.cpp
+    libs/seam-clap-editor/src/host_tempo_map.cpp
     ${SEAM_CLAP_EDITOR_VIEW_SOURCE})
   target_include_directories(seam_clap_editor PUBLIC
     libs/seam-clap-editor/include)
@@ -1153,6 +1154,19 @@ if(SEAM_BUILD_TESTS AND SEAM_BUILD_CLAP_EDITOR_PLUGIN)
       TIMEOUT 120
       WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
       ENVIRONMENT "SEAM_PREVIEW_CACHE_ROOT=${CMAKE_BINARY_DIR}/ctest-preview-cache")
+
+  add_executable(seam_host_tempo_map_tests tests/test_main.cpp tests/test_host_tempo_map.cpp)
+  target_include_directories(seam_host_tempo_map_tests PRIVATE tests)
+  target_compile_definitions(seam_host_tempo_map_tests PRIVATE
+    SEAM_SOURCE_PRODUCTION_VOICEBANK="${CMAKE_CURRENT_SOURCE_DIR}/assets/demo-human-voicebank-public-domain/production-bank")
+  target_link_libraries(seam_host_tempo_map_tests PRIVATE
+    seam_clap_editor seam_rendering seam_voicebank seam_application seam_domain seam_core)
+  seam_apply_compiler_options(seam_host_tempo_map_tests)
+  add_test(NAME seam_host_tempo_map_tests COMMAND seam_host_tempo_map_tests)
+  set_tests_properties(seam_host_tempo_map_tests PROPERTIES
+    TIMEOUT 300
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    ENVIRONMENT "SEAM_PREVIEW_CACHE_ROOT=${CMAKE_BINARY_DIR}/ctest-preview-cache")
 
   if(SEAM_RUN_NATIVE_GUI_TESTS AND UNIX AND NOT APPLE AND X11_FOUND)
     find_program(SEAM_PHASE11_XVFB_RUN_EXECUTABLE xvfb-run)
