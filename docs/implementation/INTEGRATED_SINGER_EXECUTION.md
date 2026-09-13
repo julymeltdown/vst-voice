@@ -119,6 +119,32 @@ contract, so this proves admission, request binding and response validation, not
 synthesis. The real inference path is covered separately by
 `seam_neural_production_worker`, which executes actual ONNX graphs.
 
+Closing the model chain, `tools/voice_model_training/prepare_bundle.py` composes an
+admitted bundle directly from real acoustic and vocoder export directories. The
+declaration is read from the receipts rather than typed by hand: it re-verifies
+each graph against its recorded digest and byte count, requires both exports to
+declare the same supported 48 kHz/80-bin logarithmic-mel profile with a matching
+`profileSha256`, requires the acoustic runtime smoke result, takes the ordered
+vocabulary from the acoustic receipt and converts it through the native-compatible
+converter, and writes the configuration and vocabulary with canonical bytes. The
+manifest is published last, so a directory without it is not a bundle.
+
+Two representation details were settled by inspection rather than assumption. The
+stored target matrix is `[T,F]` while the admitted graph consumes `[1,T,F]`, so the
+declaration maps the profile layout to `BTF`. Native `JsonValue` objects are
+`std::map`, and the frozen manifest is published pretty-printed with sorted keys
+and a trailing newline; the tool reproduces those exact bytes, which
+`check_bundle_preparation.py` verifies by preparing the same assets through the
+native CLI and comparing digests and manifest bytes.
+
+`seam_neural_bundle_preparation` then runs the composed bundle through the
+production worker with a real SNW1 v3 request and asserts the v3 response, bundle
+binding, request hash and expected PCM. Refusals cover tampered graph bytes, a
+profile mismatch between exports, an unsupported profile, a vocabulary whose
+padding token repeats, a missing runtime smoke result, an existing output
+directory and a nonpositive frame bound. The graphs are deterministic arithmetic
+fixtures, so the chain is proven while the singer remains unqualified.
+
 Storage note: the machine reached 124 MiB free, which caused eleven unrelated
 suite failures (demo smokes, contract tests, neural runtime checks). Those were
 not regressions; the same tests pass with storage restored. Four regenerable
