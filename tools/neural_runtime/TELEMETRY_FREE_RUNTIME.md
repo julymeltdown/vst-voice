@@ -71,6 +71,28 @@ The corrected attempt uses the new sibling directory
 `build/neural-runtime/onnxruntime-telemetry-free-pinned-build`; its completion and
 runtime qualification remain pending.
 
+## Isolated comparison environment
+
+`build/neural-runtime/diffsinger-telemetry-free-env` was created without installing
+ONNX Runtime. `pip check` passed, and a complete `pip list --format=json`
+comparison against `diffsinger-model-env` found only the intentionally absent
+`onnxruntime==1.30.0`; all other installed package versions matched. Install the
+successfully built candidate wheel here, not over the baseline environment.
+
+The following pre-runtime diagnostic completed with exit 0 in this environment:
+
+```sh
+build/neural-runtime/diffsinger-telemetry-free-env/bin/python \
+  -m tools.voice_model_training.check_diffsinger_model \
+  build/neural-runtime/diffsinger-source
+```
+
+It verified 43 changed parameter tensors, exact checkpoint-restored inference,
+exact repeated resume and continuous-versus-resumed training, and zero condition
+error in the three deployment-bridge cases. It used synthetic fixtures and did
+not request `--check-onnx`: this establishes the comparison environment's baseline,
+not exported-runtime inference, a trained singer, or a teardown repair.
+
 1. Retain the exact source revision, CMake telemetry flag, compiler/build settings
    and SHA-256 identities of the resulting wheel and native library.
 2. Install into a separate diagnostic environment and point a separate native
