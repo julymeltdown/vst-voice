@@ -1,5 +1,56 @@
 # Integrated Singer Execution
 
+## Neural tracks can render, cache and publish through the authoring coordinator
+
+Added the plan's `tests/test_neural_render_workflow.cpp` with CTest
+`seam_neural_render_workflow_tests`, and it immediately found that the
+coordinator could not render a neural track at all.
+
+`AuthoringRenderCoordinator::preflight()` resolved a track's source and then fell
+through to the sample-bank requirement for every source that was neither a recipe
+file nor a procedural resource. A neural source has no voicebank reference, so an
+audible neural track was refused with "Voicebank ID and version are missing"
+before any render started. Preflight now handles `TrackNeuralSource` explicitly:
+it requires an admitted, valid bundle and a selected runner, and it does not ask a
+neural track for a sample bank. Whether the project's saved selection agrees with
+the admitted bundle stays with the project renderer, which sees both. The new
+failure is a typed `RenderFailureKind::NeuralSourceMissing`, mapped to the CLAP
+editor's failed preview status and the `RENDER_FAILED` diagnostic code so a neural
+problem is never reported as a missing voicebank.
+
+The same workflow test then found that the neural branch of
+`ProductionProjectRenderer::renderWithSources()` never consulted the PCM cache:
+every neural phrase re-ran the worker and `cacheHits` stayed zero. The neural
+branch now loads and stores cache entries under the prepared content identity,
+which already binds the admitted bundle digest, the feature and control identity,
+the provider, runtime and worker versions, the quality setting and the owned
+window. A second identical submission is a cache hit, and changing the worker or
+runtime is a miss, so one execution's audio can never be served for another. The
+renderer identity recorded in the cache entry is `seam.neural-worker.v1`, now a
+shared constant (`rendering::kNeuralRendererIdentity`) so a cold render and a
+cache hit disclose the same renderer.
+
+Publication now names the execution instead of guessing it. `PublishedProjectAudio`
+carries `neuralIdentities`, one entry per audible neural track with the track id,
+model id, model version, bundle content hash, configuration version, inference
+step count and the worker/runtime/provider provenance — for the failure path too,
+so a failed neural render still says which model was attempted. `activeRenderer`
+reports `seam.neural-worker.v1` for an active neural track instead of the
+source-filter label that a unit-plan-derived name produced for every non-voicebank
+source.
+
+The three workflow cases are: two simultaneous neural tracks whose published
+identities and phrase content hashes stay distinct; a cancelled neural preview that
+publishes nothing (idle retained slot, no identity) and then completes on retry;
+and cache provenance that hits for an identical submission and misses when only
+the worker or runtime changed. None of them proves musical output: the executing
+runner is the transport fixture probe, which returns silence and performs no
+inference.
+
+Verification: the new target passes 3/3, the neural label group 7/7 and the
+neighbouring `seam_neural_phrase_runner_tests`, `seam_neural_render_tests` and
+`seam_authoring_render_coordinator_tests` all pass unchanged.
+
 ## The packaged helper's runtime closure is read from its own load commands
 
 Staging could copy a library, but it could not tell whether the helper would find

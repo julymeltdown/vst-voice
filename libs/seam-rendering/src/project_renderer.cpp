@@ -182,13 +182,46 @@ core::Result<ProjectRenderResult> ProductionProjectRenderer::renderWithSources(
         const auto snapshot = RenderSnapshotFactory{}.createNeural(project, *neural->bundle,
             neural->provenance, track.id, region.id, revision, quality, sampleRate);
         if (!snapshot) return core::Result<ProjectRenderResult>{snapshot.error()};
-        auto rendered = PhraseRenderPipeline{neural->runner}.render(snapshot.value(), stopToken);
-        if (!rendered) return core::Result<ProjectRenderResult>{rendered.error()};
-        auto pcm = std::make_shared<RoutedPcm>();
-        pcm->sampleRate = sampleRate;
-        pcm->startFrame = rendered.value().rendered.audio.startFrame;
-        pcm->channelCount = 1U;
-        pcm->interleavedSamples = std::move(rendered.value().rendered.audio.samples);
+        // The prepared content identity already binds the admitted bundle digest,
+        // feature and control identity, provider/runtime/worker versions, quality
+        // and the owned window. A cached entry therefore cannot be reused for a
+        // different execution of the same music.
+        std::shared_ptr<const CachedPcm> cached;
+        if (cache != nullptr) {
+          auto loaded = cache->load(snapshot.value().contentHash);
+          if (loaded) {
+            cached = std::move(loaded).value();
+          } else if (loaded.error().code != core::ErrorCode::NotFound) {
+            return core::Result<ProjectRenderResult>{loaded.error()};
+          }
+        }
+        std::shared_ptr<RoutedPcm> pcm;
+        if (cached != nullptr) {
+          if (cached->sampleRate != sampleRate) return core::failure<ProjectRenderResult>(
+              core::ErrorCode::Conflict,
+              "PCM cache entry sample rate differs from render request", track.id.toString());
+          auto mono = RoutedPcm::fromMono(*cached);
+          if (!mono) return core::Result<ProjectRenderResult>{mono.error()};
+          pcm = std::make_shared<RoutedPcm>(std::move(mono).value());
+          ++output.cacheHits;
+        } else {
+          auto rendered = PhraseRenderPipeline{neural->runner}.render(snapshot.value(), stopToken);
+          if (!rendered) return core::Result<ProjectRenderResult>{rendered.error()};
+          auto audio = std::move(rendered).value().rendered.audio;
+          if (cache != nullptr) {
+            const auto stored = cache->store(snapshot.value().contentHash,
+                CachedPcm{.sampleRate = sampleRate, .startFrame = audio.startFrame,
+                          .samples = audio.samples,
+                          .rendererIdentity = std::string{kNeuralRendererIdentity},
+                          .fallbackCount = 0U, .fallbackDiagnostic = std::string{}});
+            if (!stored) return core::Result<ProjectRenderResult>{stored.error()};
+          }
+          pcm = std::make_shared<RoutedPcm>();
+          pcm->channelCount = 1U;
+          pcm->sampleRate = sampleRate;
+          pcm->startFrame = audio.startFrame;
+          pcm->interleavedSamples = std::move(audio.samples);
+        }
         const auto valid = pcm->validate();
         if (!valid) return core::Result<ProjectRenderResult>{valid.error()};
         clips.push_back(RoutedPlaybackClip{

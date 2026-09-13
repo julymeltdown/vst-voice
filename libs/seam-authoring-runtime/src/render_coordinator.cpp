@@ -46,6 +46,33 @@ std::string rendererContext(
   return allSame ? std::string{first} : std::string{"mixed"};
 }
 
+bool isNeuralSource(const rendering::TrackSingerSource& source) noexcept {
+  return std::holds_alternative<rendering::TrackNeuralSource>(source);
+}
+
+std::vector<PublishedNeuralIdentity> neuralIdentities(
+    std::span<const rendering::TrackSingerSource> sources) {
+  std::vector<PublishedNeuralIdentity> result;
+  for (const auto& source : sources) {
+    const auto* neural = std::get_if<rendering::TrackNeuralSource>(&source);
+    if (neural == nullptr || !neural->bundle || !neural->bundle->valid()) continue;
+    const auto& execution = neural->bundle->execution();
+    const auto& metadata = neural->bundle->metadata();
+    result.push_back(PublishedNeuralIdentity{
+        .trackId = neural->trackId,
+        .modelId = execution.modelId,
+        .modelVersion = execution.modelVersion,
+        .bundleContentHash = execution.bundleContentHash,
+        .configurationVersion = metadata.configurationVersion,
+        .inferenceSteps = execution.inferenceSteps,
+        .workerVersion = neural->provenance.workerVersion,
+        .runtimeVersion = neural->provenance.runtimeVersion,
+        .provider = neural->provenance.provider,
+    });
+  }
+  return result;
+}
+
 
 }  // namespace
 
@@ -73,6 +100,7 @@ std::string_view renderFailureName(RenderFailureKind failure) noexcept {
     case RenderFailureKind::VoicebankContentMismatch:
       return "voicebank-content-mismatch";
     case RenderFailureKind::VoicebankUntrusted: return "voicebank-untrusted";
+    case RenderFailureKind::NeuralSourceMissing: return "neural-source-missing";
     case RenderFailureKind::InvalidProject: return "invalid-project";
     case RenderFailureKind::RenderFailed: return "render-failed";
     case RenderFailureKind::PublicationBusy: return "publication-busy";
@@ -580,9 +608,15 @@ std::optional<PublishedProjectAudio> AuthoringRenderCoordinator::render(
   audio.activeVoicebankVersion = checked.activeVoicebankVersion;
   audio.activeVoicebankContentHash = checked.activeVoicebankContentHash;
   audio.activeRenderer = rendererContext(audio.result.activeUnitPlan);
-  if (const auto* source = singerFor(request.voicebanks, request.activeTrack);
-      source && !std::holds_alternative<rendering::TrackVoicebankSource>(*source)) {
-    audio.activeRenderer = "seam.source-filter.v1";
+  audio.neuralIdentities = neuralIdentities(request.voicebanks);
+  if (const auto* source = singerFor(request.voicebanks, request.activeTrack)) {
+    if (isNeuralSource(*source)) {
+      // The neural worker produced this audio. Reporting the source-filter label
+      // here would name a renderer that never ran.
+      audio.activeRenderer = std::string{rendering::kNeuralRendererIdentity};
+    } else if (!std::holds_alternative<rendering::TrackVoicebankSource>(*source)) {
+      audio.activeRenderer = "seam.source-filter.v1";
+    }
   }
   return audio;
 }
@@ -625,6 +659,20 @@ AuthoringRenderCoordinator::preflight(const Request& request) {
         if (!recipe) {
           result.failure = RenderFailureKind::RenderFailed;
           result.diagnostic = recipe.error().message;
+          return result;
+        }
+        continue;
+      }
+      if (const auto* neural = std::get_if<rendering::TrackNeuralSource>(resolved)) {
+        // A neural track owns no voicebank reference, so the sample-bank checks
+        // below do not apply to it. Whether the saved selection agrees with the
+        // admitted bundle is decided by the project renderer, which sees the
+        // project and the bundle together.
+        if (!neural->bundle || !neural->bundle->valid() || !neural->runner) {
+          result.failure = RenderFailureKind::NeuralSourceMissing;
+          result.diagnostic =
+              "Neural track " + track.id.toString() +
+              " has no admitted model bundle and worker runner";
           return result;
         }
         continue;
@@ -713,6 +761,7 @@ PublishedProjectAudio AuthoringRenderCoordinator::makeFailureAudio(
   audio.activeVoicebankId = preflight.activeVoicebankId;
   audio.activeVoicebankVersion = preflight.activeVoicebankVersion;
   audio.activeVoicebankContentHash = preflight.activeVoicebankContentHash;
+  audio.neuralIdentities = neuralIdentities(request.voicebanks);
   return audio;
 }
 

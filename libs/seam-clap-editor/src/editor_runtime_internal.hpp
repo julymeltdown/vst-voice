@@ -69,6 +69,7 @@ inline PreviewStatus previewStatusFor(
       return PreviewStatus::VoicebankUntrusted;
     case authoring::RenderFailureKind::RenderFailed:
     case authoring::RenderFailureKind::PublicationBusy:
+    case authoring::RenderFailureKind::NeuralSourceMissing:
       return PreviewStatus::Failed;
   }
   return PreviewStatus::Failed;

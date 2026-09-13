@@ -1384,6 +1384,17 @@ if(SEAM_BUILD_TESTS)
   add_dependencies(seam_neural_phrase_runner_tests seam_neural_bundle_transport_probe)
   seam_apply_compiler_options(seam_neural_phrase_runner_tests)
   add_test(NAME seam_neural_phrase_runner_tests COMMAND seam_neural_phrase_runner_tests)
+  add_executable(seam_neural_render_workflow_tests
+    tests/test_main.cpp tests/test_neural_render_workflow.cpp)
+  target_include_directories(seam_neural_render_workflow_tests PRIVATE tests)
+  target_link_libraries(seam_neural_render_workflow_tests PRIVATE
+    seam_authoring_runtime seam_neural_synthesis seam_application)
+  target_compile_definitions(seam_neural_render_workflow_tests PRIVATE
+    SEAM_NEURAL_BUNDLE_TRANSPORT_PROBE="$<TARGET_FILE:seam_neural_bundle_transport_probe>")
+  add_dependencies(seam_neural_render_workflow_tests seam_neural_bundle_transport_probe)
+  seam_apply_compiler_options(seam_neural_render_workflow_tests)
+  add_test(NAME seam_neural_render_workflow_tests COMMAND seam_neural_render_workflow_tests)
+  set_tests_properties(seam_neural_render_workflow_tests PROPERTIES TIMEOUT 180)
   target_link_libraries(seam_neural_worker_probe PRIVATE seam_neural_synthesis)
   seam_apply_compiler_options(seam_neural_worker_probe)
   add_dependencies(seam_neural_worker_protocol_tests seam_neural_worker_probe)

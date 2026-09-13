@@ -39,12 +39,32 @@ enum class RenderFailureKind {
   VoicebankContentHashMissing,
   VoicebankContentMismatch,
   VoicebankUntrusted,
+  // An audible track resolved to a neural source without an admitted bundle or
+  // worker runner. This is not a voicebank problem and must not be reported as
+  // one, because the track never asked for a sample bank.
+  NeuralSourceMissing,
   InvalidProject,
   RenderFailed,
   PublicationBusy,
 };
 
 struct RenderPublicationIdentity final {};
+
+// Which admitted model and helper produced one published neural track.
+// A neural render has no sample unit plan, so the renderer identity cannot be
+// inferred from units; the coordinator reports the admitted execution instead.
+struct PublishedNeuralIdentity final {
+  domain::TrackId trackId{};
+  std::string modelId;
+  std::string modelVersion;
+  std::string bundleContentHash;
+  std::uint32_t configurationVersion{0U};
+  std::int64_t inferenceSteps{0};
+  std::string workerVersion;
+  std::string runtimeVersion;
+  std::string provider;
+};
+
 struct PublishedProjectAudio final {
   std::uint64_t projectRevision{0U};
   domain::ProjectId projectId{};
@@ -61,6 +81,9 @@ struct PublishedProjectAudio final {
   std::string activeVoicebankVersion;
   std::string activeVoicebankContentHash;
   std::string activeRenderer;
+  // Every audible neural track in this render, in submission order. Empty for a
+  // render that used no neural source, which is not the same as a failed one.
+  std::vector<PublishedNeuralIdentity> neuralIdentities;
 };
 
 class RealtimeProjectAudioPublication final {

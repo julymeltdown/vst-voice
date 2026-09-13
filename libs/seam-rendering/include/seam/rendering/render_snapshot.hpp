@@ -27,6 +27,12 @@ using SelectedUnitIdentity = synthesis::SelectedUnitIdentity;
 // instead of assuming a variant alternative.
 enum class RenderResourceFamily { Sample, Procedural, Neural };
 
+// Renderer identity disclosed for audio produced by the first-party neural
+// worker. The project renderer records it in the PCM cache and the authoring
+// coordinator publishes it, so both must use one spelling: a user comparing a
+// cold render with a cache hit must not see two different renderer names.
+inline constexpr std::string_view kNeuralRendererIdentity{"seam.neural-worker.v1"};
+
 // Application-selected execution provenance for a prepared neural snapshot.
 // The factory never invents these values: the deployment descriptor owns the
 // helper identity and the runtime actually selected records its own versions.

@@ -35,6 +35,7 @@ std::string_view renderDiagnosticCode(RenderFailureKind failure) noexcept {
       return "BANK_UNTRUSTED";
     case RenderFailureKind::InvalidProject:
     case RenderFailureKind::RenderFailed:
+    case RenderFailureKind::NeuralSourceMissing:
     case RenderFailureKind::PublicationBusy:
       return "RENDER_FAILED";
     case RenderFailureKind::None:
