@@ -221,6 +221,26 @@ on this machine, a per-phrase process remains acceptable for a pilot, and the
 question only becomes pressing once a real bundle's admission and reload time are
 measured against the agreed budget.
 
+Advanced the primary lane's installation handoff (M1.P3 item 6). The installed-song
+regression in `tests/test_standalone_voicebank_workflow.cpp` now goes past its
+one-unit fixture: it derives the phone symbols the engine will actually request
+for the phrase from the phonemizer instead of guessing unit names, packs a
+multi-unit bank for those symbols, installs it through the trusted installer, and
+selects it. The new song then reports complete coverage, the producer's generation
+inputs are removed from disk, and the song must still export master plus stems
+from the installed bank. It saves through `ApplicationCommand::SaveProjectAs` and
+reopens through `ApplicationCommand::OpenProject` on the same controller, verifies
+the reopened track still binds the same bank id, version and content hash with
+complete coverage, and re-exports to prove the master hash is identical. That
+closes the "producer workspace unavailable to the new song" requirement with
+evidence rather than intent.
+
+M1.P3 remains open: the full source → generation campaign → edit → review →
+candidate → package chain still needs its own connected regression, the plan's new
+`tests/test_original_singer_workflow.cpp` and `seam_original_singer_workflow_tests`
+do not exist yet, and the human/reviewer and real-input journeys remain external
+evidence that this work does not claim.
+
 Storage note: the machine reached 124 MiB free, which caused eleven unrelated
 suite failures (demo smokes, contract tests, neural runtime checks). Those were
 not regressions; the same tests pass with storage restored. Four regenerable

@@ -21,6 +21,8 @@
 #include <optional>
 #include <thread>
 #include <vector>
+#include "seam/application/project_factory.hpp"
+#include "seam/phonemizer/language_resolver.hpp"
 
 namespace {
 
@@ -81,6 +83,56 @@ std::filesystem::path createPackage(
   CHECK(codec.save(manifest, source / "manifest.json"));
   std::ofstream(source / "license.txt") << "test fixture\n";
   const auto package = root / "installed.seambank";
+  CHECK(seam::distribution::packSeambank(source, package, key));
+  return package;
+}
+
+// Learns the phone symbols the engine will actually request for one lyric, so the
+// fixture bank can cover them instead of guessing unit names.
+std::vector<std::string> symbolsFor(std::u32string lyric) {
+  seam::application::ProjectFactory factory{9600U};
+  auto project = factory.createProject("Symbol probe");
+  const auto track = factory.addVocalTrack(project, "Singer");
+  const auto region = factory.addRegion(project, track, "Phrase", seam::time::Tick{0},
+                                        seam::time::Tick{1920});
+  auto [lyricToken, note] = factory.makeNote(seam::time::Tick{0}, seam::time::Tick{1920}, 69U,
+                                             std::move(lyric), seam::domain::Language::Japanese);
+  auto* target = project.findRegion(region);
+  target->lyrics.push_back(std::move(lyricToken));
+  target->notes.push_back(std::move(note));
+  target->sortNotes();
+  const auto pronunciation = seam::phonemizer::resolvePronunciation(*target);
+  if (!pronunciation) throw seam::test::Failure{"phonemizer probe failed: " + pronunciation.error().message};
+  std::vector<std::string> symbols;
+  for (const auto& token : pronunciation.value().pronunciation.tokens) {
+    if (std::find(symbols.begin(), symbols.end(), token.symbol) == symbols.end()) {
+      symbols.push_back(token.symbol);
+    }
+  }
+  return symbols;
+}
+
+// A multi-unit installed bank: one sustain unit per phone the phrase needs.
+std::filesystem::path createMultiUnitPackage(const std::filesystem::path& root,
+    const seam::distribution::SigningKeyPair& key, const std::vector<std::string>& symbols) {
+  const auto source = root / "source";
+  std::filesystem::create_directories(source / "audio");
+  const auto samples = seam::test::support::sineWave(48000U, 220.0, 0.15);
+  CHECK(seam::voicebank::writePcm16Wav(source / "audio/a.wav", 48000U, 1U, samples));
+  std::vector<seam::voicebank::Unit> units;
+  for (const auto& symbol : symbols) {
+    units.push_back(seam::test::support::makeUnit(symbol, {symbol}, "audio/a.wav", 60,
+                                                  seam::voicebank::UnitKind::Sustain,
+                                                  samples.size()));
+  }
+  auto manifest = seam::test::support::makeManifest(std::move(units));
+  manifest.id = "standalone.installed.multi";
+  manifest.version = "2.0.0";
+  manifest.displayName = "Installed Multi Bank";
+  seam::voicebank::ManifestJsonCodec codec;
+  CHECK(codec.save(manifest, source / "manifest.json"));
+  std::ofstream(source / "license.txt") << "test fixture\n";
+  const auto package = root / "installed-multi.seambank";
   CHECK(seam::distribution::packSeambank(source, package, key));
   return package;
 }
@@ -314,4 +366,109 @@ TEST_CASE("standalone_voicebank_workflow_installs_browses_selects_and_reports_co
   const auto oversized = controller.value()->selectedRegionCoverage();
   CHECK(!oversized);
   CHECK(oversized.error().message.find("bounds") != std::string::npos);
+}
+
+// M1.P3 item 6: the installed-song regression must go past its one-unit fixture.
+// A bank covering the phrase's actual phones is installed, the producer inputs are
+// then removed, and the new song must still export, save and reopen with the same
+// resource binding and the same audio.
+TEST_CASE("installed multi-unit bank renders saves and reopens a new song without producer inputs") {
+  using namespace seam;
+  const auto root = test::support::temporaryDirectory("u3-installed-song");
+  auto key = distribution::generateSigningKeyPair();
+  CHECK(key);
+  auto symbols = symbolsFor(U"か");
+  for (const auto& symbol : symbolsFor(U"さ")) {
+    if (std::find(symbols.begin(), symbols.end(), symbol) == symbols.end()) symbols.push_back(symbol);
+  }
+  CHECK(symbols.size() >= 3U);
+  const auto package = createMultiUnitPackage(root, key.value(), symbols);
+  auto session = standalone::AuthoringSession::create(standalone::AuthoringSessionConfig{
+      .cacheRoot = root / "cache",
+      .voicebankRoots = {},
+      .sampleRate = 48000U,
+      .outputChannels = 2U,
+      .bindFirstAvailableVoicebank = false,
+      .allowDevelopmentVoicebanks = true,
+  });
+  CHECK(session);
+  auto dialog = std::make_unique<FakeDialog>();
+  auto* dialogPtr = dialog.get();
+  dialogPtr->responses = {package};
+  auto controller = standalone::StandaloneApplicationController::create(
+      *session.value(), std::move(dialog), std::make_unique<FakePrompt>(),
+      standalone::StandaloneApplicationControllerConfig{
+          .autosaveRoot = root / "autosaves",
+          .recentProjectsPath = root / "recent.json",
+          .voicebankInstallRoot = root / "voicebanks",
+          .trustedVoicebankKeys = {key.value().publicKey},
+          .developmentTrustRoot = std::nullopt,
+          .allowDevelopmentVoicebanks = false,
+          .defaultNewProject = {
+              .name = "Installed Song",
+              .tempoBpm = 120.0,
+              .sampleRate = 48000U,
+              .outputChannels = 2U,
+              .initialVoicebank = std::nullopt,
+          },
+          .stateChanged = {},
+      });
+  CHECK(controller);
+  CHECK(controller.value()->dispatch(platform::ApplicationCommand::InstallVoicebank));
+  CHECK(controller.value()->voicebankCards().size() == 1U);
+  const auto& card = controller.value()->voicebankCards().front();
+  CHECK(card.installed);
+  CHECK(card.trust == voicebank::VoicebankTrust::TrustedInstalled);
+  CHECK(controller.value()->selectVoicebank(card.id, card.version, card.contentHash));
+
+  // An unfamiliar two-syllable phrase drawn only from the installed bank.
+  const std::array<std::u32string, 2U> lyrics{U"か", U"さ"};
+  for (std::size_t index = 0U; index < lyrics.size(); ++index) {
+    auto [lyric, note] = session.value()->runtime().document().factory().makeNote(
+        time::Tick{960 * static_cast<std::int64_t>(index)}, time::Tick{960}, 60U + static_cast<std::uint8_t>(index * 2U),
+        lyrics[index], domain::Language::Japanese);
+    CHECK(session.value()->runtime().execute(
+        std::make_unique<application::AddNoteCommand>(session.value()->regionId(), std::move(lyric), std::move(note))));
+  }
+  const auto coverage = controller.value()->selectedRegionCoverage();
+  CHECK(coverage);
+  CHECK(coverage.value().complete());
+
+  // The new song must not depend on the producer's generation inputs.
+  std::error_code error;
+  std::filesystem::remove_all(root / "source", error);
+  CHECK(!error);
+  CHECK(!std::filesystem::exists(root / "source"));
+
+  authoring::ExportSettings settings;
+  settings.includeMaster = true;
+  settings.includeStems = true;
+  const auto exported = controller.value()->exportSet(root / "export", settings);
+  if (!exported) throw test::Failure{"installed-bank export failed: " + exported.error().message};
+  CHECK(std::filesystem::exists(exported.value().masterPath));
+  CHECK(std::filesystem::file_size(exported.value().masterPath) > 44U);
+  CHECK(!exported.value().masterSha256.empty());
+  CHECK(exported.value().files.size() >= 2U);
+  for (const auto& file : exported.value().files) CHECK(std::filesystem::exists(file.path));
+
+  // Save and reopen through the same controller, then re-export: the binding and
+  // the audio must both survive the round trip.
+  const auto saved = root / "installed-song.seam";
+  dialogPtr->responses.push_back(saved);
+  CHECK(controller.value()->dispatch(platform::ApplicationCommand::SaveProjectAs));
+  CHECK(std::filesystem::exists(saved));
+  dialogPtr->responses.push_back(saved);
+  CHECK(controller.value()->dispatch(platform::ApplicationCommand::OpenProject));
+  const auto* reopened = session.value()->runtime().document().session().project()
+                             .findVocalTrack(session.value()->trackId());
+  CHECK(reopened != nullptr);
+  CHECK(reopened->voicebank.id == card.id);
+  CHECK(reopened->voicebank.version == card.version);
+  CHECK(reopened->voicebank.contentHash == card.contentHash);
+  const auto reopenedCoverage = controller.value()->selectedRegionCoverage();
+  CHECK(reopenedCoverage);
+  CHECK(reopenedCoverage.value().complete());
+  const auto repeated = controller.value()->exportSet(root / "export-again", settings);
+  if (!repeated) throw test::Failure{"installed-bank re-export failed: " + repeated.error().message};
+  CHECK(repeated.value().masterSha256 == exported.value().masterSha256);
 }
