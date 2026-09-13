@@ -1,5 +1,31 @@
 # Reviewed CPU training command
 
+## Qualifying a candidate on held-out material
+
+```sh
+python -m tools.voice_model_training qualify-candidate \
+  /absolute/run/qualification.json EXACT_CONFIGURATION_SHA256 \
+  /absolute/build/seam_neural_worker /absolute/run/qualification.dossier.json
+```
+
+The captured configuration names the admitted bundle (directory, modelId, modelVersion,
+manifestSha256, maximumBundleBytes), 1..256 held-out items (item and song identity,
+phones, frame count, target F0 and gain) and 2..5 repetitions. The command drives the
+production worker over every item and writes a dossier that keeps each automatic
+criterion separate: bundle admission, response binding to the exact request bytes,
+vocabulary coverage of the held-out phones, determinism across repeated identical
+requests, finite non-silent audio, and runtime when a per-item budget is declared.
+Intelligibility, identity and musicality are always UNRESOLVED, because they need
+independent listeners. The verdict is FAILED when an automatic criterion fails and
+UNRESOLVED otherwise: this command never prints QUALIFIED, sets releaseEligible false
+and records no approval. Exit status is 0 for a dossier with no failed criterion, 4
+when a criterion failed (the dossier is still written so the failure stays auditable)
+and 2 for a configuration or argument error. The dossier path must be new.
+
+Arithmetic fixture graphs pass every automatic criterion and still produce an
+UNRESOLVED verdict. That is the intended result: deterministic machine behaviour is not
+evidence about a voice.
+
 ## Exporting a completed local checkpoint
 
 Install the combined `requirements-onnx-export-check.txt` environment. The export

@@ -20,6 +20,7 @@ from .features import apply_pitch_features, pitch_corrections
 from .native_features import extract_pitch
 from .label_edits import apply_label_edits
 from .conditioning import build_conditioning
+from .qualification import qualify_command
 
 
 def acoustic_targets_command(config: Path, expected_hash: str, source: Path, output: Path) -> None:
@@ -723,6 +724,16 @@ def main():
                          help="New sibling directory for phrase shards; 1M total frames, 256 MiB; incomplete attempts retained")
     dataset.add_argument("--reuse-conditioning", action="store_true",
                          help="Read-only verification of existing shards against freshly admitted labels; never repairs files")
+    qualify = commands.add_parser("qualify-candidate",
+        help="Run a candidate on held-out items and publish a dossier; never records musical approval.")
+    qualify.add_argument("configuration", type=Path,
+        help="Captured qualification JSON: bundle identity, 1..256 held-out items with phones and frame counts, "
+             "2..5 repetitions and optional per-item millisecond budget; maximum 8 MiB")
+    qualify.add_argument("configuration_sha256")
+    qualify.add_argument("worker", type=Path,
+        help="Production worker executable; hashed into the dossier, never copied")
+    qualify.add_argument("output", type=Path,
+        help="New dossier JSON; exit 4 when a criterion fails; never overwritten")
     args = parser.parse_args()
     try:
         if args.command == "acoustic-targets":
@@ -732,6 +743,8 @@ def main():
             return assemble_dataset_command(args.configuration, args.configuration_sha256, args.source_root, args.output,
                                             rights_anchor=args.rights_policy_sha256, label_anchor=args.label_policy_sha256,
                                             conditioning_directory=args.conditioning_directory, reuse_conditioning=args.reuse_conditioning)
+        if args.command == "qualify-candidate":
+            return qualify_command(args.configuration, args.configuration_sha256, args.worker, args.output)
         if args.command == "admit-labels":
             if args.output.exists() or args.output.is_symlink():
                 raise ValueError("Label admission report must be new")

@@ -2449,6 +2449,9 @@ if(SEAM_ONNXRUNTIME_ROOT)
         add_test(NAME seam_neural_bundle_preparation
           COMMAND "${SEAM_NATIVE_ONNX_PYTHON}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/neural_runtime/check_bundle_preparation.py"
             $<TARGET_FILE:seam_neural_worker> $<TARGET_FILE:seam_voicebank_cli>)
+        add_test(NAME seam_neural_candidate_qualification
+          COMMAND "${SEAM_NATIVE_ONNX_PYTHON}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/neural_runtime/check_candidate_qualification.py"
+            $<TARGET_FILE:seam_neural_worker> $<TARGET_FILE:seam_voicebank_cli>)
         # Packaging truth check against the real worker: whichever the load-command
         # analysis reports, staging must agree with it, so the packaged payload can
         # never claim a helper whose runtime it cannot load.
@@ -2479,7 +2482,8 @@ if(SEAM_ONNXRUNTIME_ROOT)
             LABELS "neural-native-experiment")
         endif()
         set_tests_properties(seam_neural_native_inspection seam_neural_native_paired_runtime
-          seam_neural_native_bundle_runtime seam_neural_production_worker seam_neural_bundle_preparation PROPERTIES TIMEOUT 180 LABELS "neural-native-experiment")
+          seam_neural_native_bundle_runtime seam_neural_production_worker seam_neural_bundle_preparation
+          seam_neural_candidate_qualification PROPERTIES TIMEOUT 300 LABELS "neural-native-experiment")
         add_custom_target(seam_neural_native_checks
           COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure -L neural-native-experiment
           DEPENDS seam_native_onnx_owned_bytes_test seam_native_onnx_inspect seam_onnx_runtime_probe seam_neural_worker seam_voicebank_cli
