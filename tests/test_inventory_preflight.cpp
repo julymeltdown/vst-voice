@@ -49,11 +49,20 @@ int runVoicebankCli(std::vector<std::string> arguments) {
 }
 #endif
 
-voice_design::VoiceRecipe preflightRecipe() {
+voice_design::VoiceRecipe preflightRecipe(bool multiFamily = false) {
   voice_design::VoiceRecipe recipe;
   recipe.id = "preflight-recipe";
   recipe.poses = {{"a", "neutral", 0.0, {{700.0, 80.0, 0.0}, {1200.0, 100.0, -3.0}, {2600.0, 140.0, -6.0}}}};
   recipe.frications = {{"s", "neutral", {.seed = 41U}}};
+  if (multiFamily) {
+    // A recipe that declares several articulation families: each candidate then carries only
+    // the revision fields for the gestures it actually rendered, which the loader has to
+    // accept rather than expecting one fixed union per schema version.
+    recipe.poses.push_back({"y", "neutral", 0.0, {{250.0, 70.0, 0.0}, {2200.0, 120.0, -3.0}, {3000.0, 170.0, -6.0}}});
+    recipe.approximants = {{"y", "neutral", 40.0}};
+    recipe.affricates = {{"ts", "neutral", {.seed = 42U, .centerHz = 4500.0, .bandwidthHz = 2500.0, .gain = 0.12},
+        {.seed = 43U, .centerHz = 5500.0, .bandwidthHz = 3000.0, .gain = 0.12}, 10.0}};
+  }
   return recipe;
 }
 
@@ -67,7 +76,7 @@ struct Fixture final {
   std::filesystem::path campaignPath{root / "campaign" / "campaign.json"};
   std::filesystem::path campaignRoot{root / "campaign"};
 
-  explicit Fixture() {
+  explicit Fixture(std::vector<std::string> coverageKeys = {"cv:s:a", "vc:a:s", "sustain:a"}, bool multiFamily = false) {
     const auto license = root / "fixture-license.txt";
     CHECK(core::durableAtomicWriteTextNew(license, "Synthetic preflight test only; no singer or Beta qualification."));
     const auto licenseHash = core::sha256File(license); CHECK(licenseHash);
@@ -82,15 +91,17 @@ struct Fixture final {
         .licenseLocator = license.string(), .licenseSha256 = licenseHash.value(),
         .evidenceState = "SYNTHETIC_TEST_ONLY"}};
     project.operators = {{"producer", "PRODUCER"}};
-    project.unitAssignments = {
-        {.coverageKey = "cv:s:a", .pitchLayer = 69, .promptId = "prompt-sa", .plannedTakeId = "take-sa", .style = "neutral"},
-        {.coverageKey = "vc:a:s", .pitchLayer = 69, .promptId = "prompt-as", .plannedTakeId = "take-as", .style = "neutral"},
-        {.coverageKey = "sustain:a", .pitchLayer = 69, .promptId = "prompt-aa", .plannedTakeId = "take-aa", .style = "neutral"}};
+    std::vector<std::string> takes;
+    for (std::size_t index = 0U; index < coverageKeys.size(); ++index) {
+      const auto suffix = std::to_string(index);
+      takes.push_back("take-" + suffix);
+      project.unitAssignments.push_back({.coverageKey = coverageKeys[index], .pitchLayer = 69,
+          .promptId = "prompt-" + suffix, .plannedTakeId = "take-" + suffix, .style = "neutral"});
+    }
     CHECK(repository.initialize(project, {.action = "create", .subjectId = project.projectId,
         .operatorId = "producer", .occurredAtUtc = "2026-09-14T00:00:00Z"}));
-    const auto resource = voice_design::freezeVoiceRecipeResource(preflightRecipe());
+    const auto resource = voice_design::freezeVoiceRecipeResource(preflightRecipe(multiFamily));
     CHECK(resource);
-    const std::vector<std::string> takes{"take-sa", "take-as", "take-aa"};
     const auto planned = authoring::planGenerationCampaign(project, takes, resource.value());
     if (!planned) throw test::Failure{"Campaign planning failed: " + planned.error().message};
     campaign = planned.value();
@@ -113,9 +124,9 @@ TEST_CASE("a preflight selects one bounded phrase per phone and kind the campaig
   // Every assignment is needed: cv:s:a is the only cv, vc:a:s is the only vc, and
   // sustain:a is the only sustain. The order is canonical, not mapped order.
   CHECK(selected.value().size() == 3U);
-  CHECK(selected.value()[0] == "take-sa");
-  CHECK(selected.value()[1] == "take-aa");
-  CHECK(selected.value()[2] == "take-as");
+  CHECK(selected.value()[0] == "take-0");   // cv:s:a
+  CHECK(selected.value()[1] == "take-2");   // sustain:a
+  CHECK(selected.value()[2] == "take-1");   // vc:a:s
   // A bound that cannot cover them is refused with the requirement, not truncated.
   const auto tight = authoring::selectInventoryPreflightTakeIds(fixture.campaign, fixture.campaignSha256,
       {.maximumPhrases = 1U});
@@ -219,6 +230,34 @@ TEST_CASE("a campaign cannot advance until its own preflight passes") {
   CHECK(collected.value().takes.size() == 3U);
   for (const auto& take : collected.value().takes) CHECK(take.state == production::UnitQueueState::MarkerReview);
 }
+
+TEST_CASE("a recipe that declares several articulation families still loads every candidate") {
+  // Each rendered unit carries only the revision fields for the gestures it used, so one
+  // schema version legitimately has several field unions. A fixed union per version rejected
+  // the candidates a real generation job produced.
+  Fixture fixture({"cv:s:a", "cv:y:a", "cv:ts:a"}, true);
+  const auto report = authoring::runInventoryPreflight(fixture.campaign, fixture.campaignSha256, fixture.preflight());
+  CHECK(report);
+  if (!report) return;
+  CHECK(report.value().passed);
+  CHECK(report.value().defective == 0U);
+  CHECK(report.value().produced == 3U);
+  CHECK(report.value().defectiveClasses.empty());
+  CHECK(report.value().phrases.size() == 3U);
+  if (report.value().phrases.size() != 3U) return;
+  // The approximant and the affricate are the two families whose candidates carry their own
+  // revision field, and both rendered here through the ordinary generation job.
+  CHECK(report.value().phrases[0].coverageKey == "cv:s:a");
+  CHECK(report.value().phrases[1].coverageKey == "cv:ts:a");
+  CHECK(report.value().phrases[2].coverageKey == "cv:y:a");
+  for (const auto& phrase : report.value().phrases) {
+    CHECK(phrase.verdict == "PRODUCED");
+    CHECK(phrase.peak > 0.0);
+    CHECK(phrase.producedPhones == phrase.requiredPhones);
+  }
+  CHECK(authoring::verifyCampaignPreflight(fixture.campaignRoot, fixture.campaign, fixture.campaignSha256));
+}
+
 
 TEST_CASE("a preflight report is admitted only in the campaign's own canonical form") {
   Fixture fixture;

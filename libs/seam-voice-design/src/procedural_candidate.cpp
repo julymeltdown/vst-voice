@@ -27,7 +27,28 @@ core::Result<ProceduralCandidate> parseProceduralCandidateMetadata(std::string_v
   if (!root.isObject() || !root.find("schemaVersion") || !root.find("schemaVersion")->isInteger()) return fail("Candidate metadata has an invalid shape");
   const auto version = root.find("schemaVersion")->asInt64();
   const bool mixed = version>=2 && version<=8;
-  if ((version != 1 && !mixed) || root.asObject().size() != (version==8 ? 24U : version==7 ? 23U : version==6 ? 22U : version>=4 ? 21U : mixed ? 20U : 17U)) return fail("Candidate metadata version or shape is unsupported");
+  if (version != 1 && !mixed) return fail("Candidate metadata version or shape is unsupported");
+  // The optional revision fields are written only for the gesture families a candidate
+  // actually rendered, so a recipe that declares several families legitimately produces
+  // different field unions under one version. The shape is still closed: every field has
+  // to be one this format defines, and each version's own field is checked below.
+  static const std::unordered_set<std::string> admitted{
+      "formatId", "schemaVersion", "approval", "markerSemantics", "audioSha256", "sampleRate",
+      "frameCount", "scoreOriginFrame", "renderContentHash", "renderAbi", "recipeId", "recipeVersion",
+      "recipeHash", "style", "proceduralRevision", "compilerRevision", "markers",
+      "articulationPlanRevision", "fricationRevision", "fricationStreamRevision",
+      "plosiveRevision", "voicedPlosiveRevision", "affricateRevision", "approximantRevision"};
+  for (const auto& [name, value] : root.asObject()) {
+    static_cast<void>(value);
+    if (admitted.count(name) == 0U) return fail("Candidate metadata field is not admitted");
+  }
+  const std::size_t required = version == 1 ? 17U : 20U;
+  const std::size_t ceiling = required + (version==8 ? 4U : version==7 ? 3U : version==6 ? 2U : version>=4 ? 1U : 0U);
+  // Versions one through six have a fixed field set; seven and eight carry whichever of
+  // their own revision fields the rendered families needed, never fewer than their own.
+  const std::size_t floor = version==8 ? required + 1U : version==7 ? required + 2U : ceiling;
+  if (root.asObject().size() < floor || root.asObject().size() > ceiling)
+    return fail("Candidate metadata version or shape is unsupported");
   const auto recipe = decodeVoiceRecipeResource(expectedRecipe, stopToken,true,true);
   if (!recipe) return core::Result<Output>{recipe.error()};
   for (const auto* field : {"formatId", "approval", "markerSemantics", "audioSha256", "renderContentHash",
@@ -65,9 +86,15 @@ core::Result<ProceduralCandidate> parseProceduralCandidateMetadata(std::string_v
   result.schemaVersion = static_cast<std::uint32_t>(version);
   if (version>=4) {
     const auto* revision=root.find("plosiveRevision");
-    if (!revision || !revision->isInteger() || revision->asInt64()<=0 || revision->asInt64()>0xffffffffLL)
-      return fail("Candidate plosive revision is invalid");
-    result.plosiveRevision=static_cast<std::uint32_t>(revision->asInt64());
+    // Versions four through seven always render a plosive-family gesture, so their release
+    // revision is mandatory. A version-eight candidate may declare only approximants, and
+    // then no release revision was written; if it does render one, the marker loop requires
+    // the field to be present and the value has to be valid whenever the field is there.
+    if (revision) {
+      if (!revision->isInteger() || revision->asInt64()<=0 || revision->asInt64()>0xffffffffLL)
+        return fail("Candidate plosive revision is invalid");
+      result.plosiveRevision=static_cast<std::uint32_t>(revision->asInt64());
+    } else if (version<=7) return fail("Candidate plosive revision is invalid");
   }
   if (mixed) {
     result.articulationPlanRevision = static_cast<std::uint32_t>(number("articulationPlanRevision"));
@@ -239,6 +266,10 @@ core::Result<ProceduralCandidate> parseProceduralCandidateMetadata(std::string_v
       return fail("Syllabic nasal candidate requires one gesture per note");
   }
   if (mixed && ((!hasVowel && !syllabicOnly) || (version==2?!hasFrication:version==3?!hasNasal:version==4?!hasPlosive:version==5?!hasVoicedFrication:version==6?!hasVoicedPlosive:version==7?!hasAffricate:!hasApproximant))) return fail("Articulated candidate lacks its required voiced and consonant gesture kinds");
+  // Every plosive-family gesture is rendered through the shared release source, so a
+  // candidate that carries one has to declare that source's revision.
+  if ((hasPlosive || hasVoicedPlosive || hasVoicedFrication || hasAffricate) && result.plosiveRevision == 0U)
+    return fail("Candidate plosive revision is missing for the gestures it rendered");
   return result;
 }
 

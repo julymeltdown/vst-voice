@@ -1,0 +1,17 @@
+SEAM pilot 01 - source declaration
+
+Source: procedural synthesis from this repository's own voice-design recipe.
+No third-party recording, no third-party sample library and no third-party model
+contributes to this source. The recipe, the inventory profile and every generated
+take belong to this project.
+
+Declared by the producer for the internal pilot workspace only:
+
+  source use      granted (the recipe is this project's own material)
+  transformation  granted (the pilot creates derived and edited material)
+  redistribution  not asserted (no release of generated material is approved)
+  commercial use  not asserted (no commercial use is approved)
+
+This is a producer declaration, not legal verification, and it is not a release
+permission. It confers no rights over any third-party material, and it cannot be
+used to authorize a human recording, a TTS voice or any other source.

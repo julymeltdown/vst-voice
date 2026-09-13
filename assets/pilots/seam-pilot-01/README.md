@@ -80,6 +80,25 @@ workspace creation use new destinations so existing evidence is preserved.
 Next implementation work completes legacy migration and the generation planner,
 then measures articulation and the actual voice before generating a full bank.
 
+## Source authorization
+
+A workspace created from a draft definition declares no source strategy, and nothing may be
+imported or generated until one is registered. For this pilot the source is the repository's
+own procedural recipe, declared in `source-declaration.txt`:
+
+```sh
+seam_voicebank_cli register-source WORKSPACE PROJECT_SHA256 pilot-procedural procedural pass \
+  yes yes no no assets/pilots/seam-pilot-01/source-declaration.txt LICENSE_SHA256 producer UTC
+```
+
+`PROJECT_SHA256` is the sha256 of the workspace's `project.json`, and `LICENSE_SHA256`
+is the sha256 of the declaration file. The declaration grants source use and transformation
+and says nothing about redistribution or commercial use, so it is not a release permission.
+It is a producer declaration, not legal verification, and it cannot authorize a human
+recording, a TTS voice or any other source. The retained digest is captured in the workspace,
+so the file must not be edited afterwards: a changed declaration is refused rather than
+silently adopted.
+
 ## Campaign planning CLI
 
 After creating a style-owned producer, select its exact planned take IDs:

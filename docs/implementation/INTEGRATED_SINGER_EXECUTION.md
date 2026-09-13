@@ -1,5 +1,61 @@
 # Integrated Singer Execution
 
+## A generation job could not collect the candidates its own export wrote
+
+The held-out preflight ran against the real inventory for the first time, and its first two
+runs refused phrases for a reason that had nothing to do with sound: the collector rejected
+the candidate metadata the export had just written.
+
+The candidate loader demanded one fixed field union per schema version (23 fields for
+version seven, 24 for version eight), but the export writes a revision field only for each
+gesture family the candidate actually rendered. A recipe that declares one family hides
+this: the earlier pilot fixtures rendered affricates or approximants on their own, and their
+metadata happened to match. The pilot's maximal recipe declares frication, plosives, voiced
+stops, affricates and approximants, so a version-eight approximant unit carries 21 fields and
+a version-seven affricate unit carries 22. The loader had also required a release revision of
+every candidate from version four upward, which a version-eight candidate that renders only
+approximants never writes.
+
+Both are repaired on the loading side, because the export's narrower field set is the honest
+one: a field naming a source the candidate did not use would be a false claim. The admitted
+fields are now a closed set with a per-version bound, so an invented field is still refused
+while a legitimate union is accepted, and the release revision is mandatory for versions four
+through seven -- whose own gesture is a plosive family -- and required of a version-eight
+candidate only when it renders a plosive-family gesture. `tests/test_inventory_preflight.cpp`
+now renders `cv:s:a`, `cv:ts:a` and `cv:y:a` from a single multi-family recipe and requires
+every candidate to load, which is the case no earlier test reached because none of them ran a
+generation job over a recipe with more than one articulation family.
+
+The same run surfaced a second gap in the reproducible path. A workspace created from a draft
+definition declares no source strategy at all, and every import and generation is refused
+until one is registered, so the pilot could not generate a single unit. The pilot now
+registers its own procedural source against a tracked declaration
+(`assets/pilots/seam-pilot-01/source-declaration.txt`) that grants source use and
+transformation and explicitly does not assert redistribution or commercial use. It is a
+producer declaration, not legal verification, and it cannot authorize a human recording, a TTS
+voice or any other source.
+
+Result of the third run: **17 held-out phrases, 17 produced, none refused**, covering 20
+phones and all five coverage kinds that prepare, at peaks of 0.011 to 0.157 and 90% to 100%
+nonzero coverage over 24000 frames each. The campaign is now admissible, which is what the
+gate was built to establish. Two readings are recorded as measurements rather than verdicts:
+the stop classes sit at 90% nonzero because their closure is deliberately silent for about
+60 ms, and `sustain:a` is the quietest class by about 2.4x against the next quietest, which
+makes it the first context to listen to rather than a defect finding.
+
+Evidence: `build/pilot-01/campaign-registered/preflight/report.json` bound to campaign
+`c312a745...`, producer `365e8bfd...` and recipe `e759b55f...`, with the seventeen phrases,
+their dry candidate audio and their metadata retained beside it, and the reading recorded in
+`assets/pilots/seam-pilot-01/PREFLIGHT_REPORT.md`. The multi-family regression is in
+`tests/test_inventory_preflight.cpp`.
+
+Not claimed. The retained audio is dry candidate output from an unqualified recipe: no
+listener has judged any of it, nothing was collected, and no approval exists. The preflight
+establishes that the classes the campaign declares render their own gestures audibly and
+reproducibly, and that the campaign may advance; it says nothing about intelligibility,
+naturalness or identity. No unit acceptance changes.
+
+
 ## A hint's consonant had no place in the syllable
 
 The previous entry reported that 210 of the pilot inventory's refusals were a structural
@@ -259,7 +315,7 @@ M1.P2's ten required changes:
 | 7 | Resumable campaign orchestration | Landed (`generation_campaign`), one bounded batch per advance. |
 | 8 | Prepare-render-collect transaction with durable receipts | Landed, including conflicts on external edits and recovery of an uncertain commit. |
 | 9 | Aggregate budget preflight | Landed: per-batch, aggregate frame and estimated-byte limits, retained-storage inspection and cancellation. |
-| 10 | Held-out pilot phrase set before the full inventory | Landed for campaign jobs: a coverage-complete bounded selection renders through the ordinary path into a gated preflight report, and advancement is refused without it. The retained defect list for the real inventory is `assets/pilots/seam-pilot-01/coverage-report.json`; a whole-inventory preflight waits on the coda/context repair because planning refuses 72% of the assignments. |
+| 10 | Held-out pilot phrase set before the full inventory | Landed and run: 17 held-out phrases covering 20 phones and five kinds rendered through the ordinary path, all produced, none refused, with the report and dry audio retained under `build/pilot-01/campaign-registered/preflight/`. The inventory's retained defect list is `assets/pilots/seam-pilot-01/coverage-report.json`; the 528 model-less assignments still cannot be planned, so the rendered preflight covers the renderable subset. |
 
 So seven of the ten are landed, two are partial, and one remains open (phrase context
 beyond the owning note).
