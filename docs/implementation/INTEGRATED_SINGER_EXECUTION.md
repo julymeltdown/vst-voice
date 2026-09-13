@@ -32,6 +32,29 @@ and import outcome); every one passed in `--rerun-failed` and in the serial run.
 Those parallel failures were contention, not regressions. Prefer a serial run or a
 quiet machine when interpreting this suite.
 
+### Next unit: the neural render path, with two inspected constraints
+
+`RenderSnapshotFactory::createNeural()` and the phrase-pipeline neural branch are
+the next package. Two constraints were inspected rather than assumed.
+
+`cmake/NeuralDependencyDirection.cmake` walks the transitive dependencies of
+`seam_neural_synthesis` and fails only if that closure reaches
+`seam_authoring_runtime` or `seam_rendering`. It does not forbid
+`seam_rendering` from linking `seam_neural_synthesis`, so the factory and the
+snapshot carrier may live in `seam-rendering` as the plan intends. The prepared
+handle must be carried in a new snapshot member; the legacy opaque
+`NeuralSingerResource::model` payload must not be reinterpreted as an admitted
+bundle.
+
+Worker run options carry the helper path, expected digest and process budgets,
+and those belong to the deployment descriptor owned above rendering. The pipeline
+therefore cannot build them itself: the neural branch needs an injected runner or
+launch contract supplied by the authoring/application layer, keeping helper
+selection out of a bank and out of the audio callback. Today the scheduler and
+pipeline already reject a neural resource with `Unsupported`
+(`libs/seam-rendering/src/render_scheduler.cpp`, `.../render_pipeline.cpp`), so no
+existing path silently treats a neural resource as sample material.
+
 Added `apps/seam-neural-worker/main.cpp`, the first executable that performs real
 acoustic-then-vocoder inference for an admitted model bundle. The application
 selects it through the existing launch contract,

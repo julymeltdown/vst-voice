@@ -229,18 +229,56 @@ clipping; even invalid samples in the discarded tail cause rejection.
 `finalizeDiffSingerResponse` wraps that final audio in a response bound to the
 canonical request hash. The native paired experiment also round-trips the
 response codec and verifies that this preserves the once-applied gain.
-This is not yet connected to the normal song backend or production worker.
+This same path is now executed by the production worker for an admitted bundle;
+it is not yet connected to the normal song backend.
 The graph weights are arithmetic constants, not
-learned voice weights. Production worker admission, cancellation, bounded
-runtime allocations, real model inference and musical evaluation remain open.
+learned voice weights. Cancellation through the render coordinator, bounded
+runtime allocations beyond the process ceilings, real model inference and
+musical evaluation remain open.
+## Production worker
+
+`apps/seam-neural-worker/main.cpp` builds as `seam_neural_worker` only when
+`SEAM_ONNXRUNTIME_ROOT` and `SEAM_NATIVE_ONNX_SCHEMA` are both set, because it
+must refuse any bundle it cannot inspect structurally. The application selects it
+through the bundle launch contract:
+
+    seam_neural_worker --seam-neural-worker-v2 BUNDLE_DIR MODEL_ID MODEL_VERSION \
+        BUNDLE_CONTENT_HASH MAXIMUM_BUNDLE_BYTES
+
+One SNW1 request frame arrives on stdin and exactly one SNW1 response frame leaves
+on stdout. The child reads the bounded frame, re-loads the bundle directory itself
+so changed bytes fail their manifest or asset digest, requires the request's
+bundle, model and vocabulary identity to match what it loaded, parses both graphs
+with the native inspector and the frozen pair contract, and only then creates
+sessions. Loaded interfaces are cross-checked against the admitted declaration
+before any tensor runs. It never serves `--seam-neural-worker-v1`, so the
+transport fixture cannot satisfy the production launch by accident.
+
+Exit codes are distinct: 2 wrong contract or usage, 3 invalid byte budget,
+4 bundle load or digest failure, 5 metadata inspection failure, 6 unreadable
+request frame, 7 malformed or mismatched request identity, 8 admission or
+inference failure (including nonfinite and out-of-range PCM), 9 response encoding
+failure, 10 stdout write failure. Diagnostics go to stderr and never to stdout.
+
+`check_production_worker.py` runs as the `seam_neural_production_worker` CTest. It
+prepares a real ONNX bundle with the CLI, drives the worker through the contract,
+and asserts exact response binding, sample count, once-applied dynamics and
+arithmetic output. It also asserts empty stdout for the legacy contract, an
+invalid budget, a wrong manifest digest, a wrong launch identity, changed bytes,
+an inadmissible graph bundle, wrong model/vocabulary/sample-rate/frame identity,
+malformed frames and an out-of-range gain. The fixture graphs remain arithmetic
+constants, so none of this qualifies a learned singer. Diffusion steps are a
+pinned constant in the worker until the admitted configuration schema carries
+them, and packaging the worker with its runtime is still open.
 # External request experiment
 
 For repeatable optional integration checks, configure `SEAM_NATIVE_ONNX_PYTHON`
 with the absolute path to the existing fixture environment's Python executable.
 Configuration verifies ONNX 1.19.1 is importable; it never installs dependencies.
 Then run `cmake --build build/release --target seam_neural_native_checks -j 4`.
-This builds required binaries and runs the four `neural-native-experiment` CTests:
-owned bytes, native structural/pair inspection, paired runtime and bundle runtime.
+This builds required binaries and runs the five `neural-native-experiment` CTests:
+owned bytes, native structural/pair inspection, paired runtime, bundle runtime and
+the production worker.
 Default builds without native inspection retain their existing test set.
 
 Set root CMake `SEAM_NATIVE_ONNX_SCHEMA` to the pinned local `onnx.proto` path
