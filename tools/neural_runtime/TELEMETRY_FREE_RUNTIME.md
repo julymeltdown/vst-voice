@@ -54,6 +54,23 @@ The pinned source fetch completed and the first telemetry-free build was launche
 on September 13. Launching the build is not evidence of successful compilation or
 a repaired runtime; retain its terminal result before proceeding.
 
+That initial build reached compilation with `onnxruntime_USE_TELEMETRY:BOOL=OFF`,
+but CMake selected Homebrew Protobuf 33.4.0 while the upstream dependency list
+pins Protobuf/protoc 33.6. Its `Protobuf_DIR` is `/opt/homebrew/lib/cmake/protobuf`.
+Treat this first build as diagnostic, not a reproducible replacement candidate.
+The build helper now sets `FETCHCONTENT_TRY_FIND_PACKAGE_MODE=NEVER` so subsequent
+new builds use FetchContent's pinned sources rather than opportunistic installed
+packages. It also supplies `Python3_EXECUTABLE` alongside the upstream builder's
+`Python_EXECUTABLE` to keep dependency-generation scripts in the selected Python
+environment. These changes do not retroactively alter the running initial build.
+
+The initial build subsequently exited 1 compiling `onnx-ml.pb.cc`; the generated
+header explicitly rejected incompatible Protobuf C++ headers/runtime. A serial
+incremental build reproduced the same error. The original directory is retained.
+The corrected attempt uses the new sibling directory
+`build/neural-runtime/onnxruntime-telemetry-free-pinned-build`; its completion and
+runtime qualification remain pending.
+
 1. Retain the exact source revision, CMake telemetry flag, compiler/build settings
    and SHA-256 identities of the resulting wheel and native library.
 2. Install into a separate diagnostic environment and point a separate native

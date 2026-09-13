@@ -30,7 +30,11 @@ def main():
     command = [sys.executable, str(checkout / "tools/ci_build/build.py"), "--update", "--build", "--config", "Release",
                "--build_dir", str(build), "--build_shared_lib", "--build_wheel", "--skip_tests",
                "--parallel", str(args.jobs), "--cmake_generator", "Ninja",
-               "--cmake_extra_defines", "onnxruntime_USE_TELEMETRY=OFF", "onnxruntime_BUILD_UNIT_TESTS=OFF"]
+               "--cmake_extra_defines", "onnxruntime_USE_TELEMETRY=OFF", "onnxruntime_BUILD_UNIT_TESTS=OFF",
+               # FetchContent otherwise prefers matching Homebrew packages over
+               # the source revision's dependency URLs and hashes.
+               "FETCHCONTENT_TRY_FIND_PACKAGE_MODE=NEVER",
+               f"Python3_EXECUTABLE={sys.executable}"]
     result = subprocess.run(command, cwd=checkout)
     if result.returncode:
         return result.returncode
