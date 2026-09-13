@@ -22,6 +22,8 @@
 - (void)relinkBackingAudio:(id)sender;
 - (void)openAudioSettings:(id)sender;
 - (void)selectVoicebank:(id)sender;
+- (void)selectNeuralResource:(id)sender;
+- (void)clearNeuralResource:(id)sender;
 - (void)openDocumentation:(id)sender;
 - (void)exportAudio:(id)sender;
 - (void)exportScore:(id)sender;
@@ -98,6 +100,22 @@
   if (identifier == nil || version == nil || contentHash == nil) return;
   static_cast<void>(_dispatcher->selectVoicebank(
       identifier.UTF8String, version.UTF8String, contentHash.UTF8String));
+}
+- (void)selectNeuralResource:(id)sender {
+  if (_dispatcher == nullptr || ![sender isKindOfClass:[NSMenuItem class]]) return;
+  NSDictionary* value = static_cast<NSMenuItem*>(sender).representedObject;
+  if (![value isKindOfClass:[NSDictionary class]]) return;
+  NSString* identifier = value[@"id"];
+  NSString* version = value[@"version"];
+  NSString* contentHash = value[@"contentHash"];
+  if (identifier == nil || version == nil || contentHash == nil) return;
+  static_cast<void>(_dispatcher->selectNeuralResource(
+      identifier.UTF8String, version.UTF8String, contentHash.UTF8String));
+}
+- (void)clearNeuralResource:(id)sender {
+  (void)sender;
+  if (_dispatcher == nullptr) return;
+  static_cast<void>(_dispatcher->clearNeuralResource());
 }
 - (void)exportAudio:(id)sender { (void)sender; [self send:seam::platform::ApplicationCommand::ExportAudio]; }
 - (void)exportScore:(id)sender { (void)sender; [self send:seam::platform::ApplicationCommand::ExportScore]; }
@@ -276,6 +294,9 @@ public:
     voicebankMenu_ = [[NSMenu alloc] initWithTitle:@"Voicebank"];
     addSubmenu(root_, @"Voicebank", voicebankMenu_);
 
+    neuralMenu_ = [[NSMenu alloc] initWithTitle:@"Neural Singer"];
+    addSubmenu(root_, @"Neural Singer", neuralMenu_);
+
     auto* edit = [[NSMenu alloc] initWithTitle:@"Edit"];
     [edit addItem:item(@"Undo", @selector(undoAction:), @"z",
                        NSEventModifierFlagCommand, target_)];
@@ -381,6 +402,37 @@ public:
       }
     }
 
+    if (neuralMenu_ != nil) {
+      [neuralMenu_ removeAllItems];
+      const auto singers = dispatcher_->neuralResources();
+      auto* none = item(@"Use No Neural Singer", @selector(clearNeuralResource:), @"", 0,
+                        target_);
+      [neuralMenu_ addItem:none];
+      [neuralMenu_ addItem:[NSMenuItem separatorItem]];
+      if (singers.empty()) {
+        auto* empty = [[NSMenuItem alloc] initWithTitle:@"No Neural Singers Installed"
+                                                  action:nil keyEquivalent:@""];
+        empty.enabled = NO;
+        [neuralMenu_ addItem:empty];
+      } else {
+        for (const auto& singer : singers) {
+          NSString* display = [NSString stringWithUTF8String:singer.displayName.c_str()];
+          NSString* version = [NSString stringWithUTF8String:singer.version.c_str()];
+          NSString* title = [NSString stringWithFormat:@"%@ — %@",
+              display == nil ? @"Neural Singer" : display,
+              version == nil ? @"?" : version];
+          auto* menuItem = item(title, @selector(selectNeuralResource:), @"", 0, target_);
+          menuItem.state = singer.selected ? NSControlStateValueOn : NSControlStateValueOff;
+          menuItem.representedObject = @{
+            @"id": [NSString stringWithUTF8String:singer.id.c_str()],
+            @"version": [NSString stringWithUTF8String:singer.version.c_str()],
+            @"contentHash": [NSString stringWithUTF8String:singer.contentHash.c_str()]
+          };
+          [neuralMenu_ addItem:menuItem];
+        }
+      }
+    }
+
     if (recoveryMenu_ != nil) {
       [recoveryMenu_ removeAllItems];
       const auto recovery = dispatcher_->recoveryItems();
@@ -437,6 +489,7 @@ public:
     fileMenu_ = nil;
     helpMenu_ = nil;
     voicebankMenu_ = nil;
+    neuralMenu_ = nil;
     root_ = nil;
     previous_ = nil;
     target_ = nil;
@@ -450,6 +503,7 @@ private:
   NSMenu* fileMenu_{nil};
   NSMenu* helpMenu_{nil};
   NSMenu* voicebankMenu_{nil};
+  NSMenu* neuralMenu_{nil};
   NSMenuItem* recentHolder_{nil};
   NSMenu* recentMenu_{nil};
   NSMenuItem* recoveryHolder_{nil};

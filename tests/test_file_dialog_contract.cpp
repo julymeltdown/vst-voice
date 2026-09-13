@@ -54,6 +54,16 @@ private:
 
 }  // namespace
 
+TEST_CASE("command dispatcher refuses neural selection until a surface implements it") {
+  // A platform that does not implement neural selection must answer with an empty
+  // list and a refusal, so its menu shows nothing to choose instead of failing
+  // silently or offering bundles the surface cannot execute.
+  FakeDispatcher dispatcher;
+  CHECK(dispatcher.neuralResources().empty());
+  CHECK(!dispatcher.selectNeuralResource("seam-pilot-01", "1.0.0", std::string(64U, 'a')));
+  CHECK(!dispatcher.clearNeuralResource());
+}
+
 TEST_CASE("file_dialog_contract_preserves_purpose_filters_and_suggested_name") {
   FakeDialog dialog;
   dialog.response = std::filesystem::path{"/tmp/曲 프로젝트.seam"};

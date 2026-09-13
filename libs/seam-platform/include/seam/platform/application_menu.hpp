@@ -118,6 +118,22 @@ public:
     return core::failure(core::ErrorCode::Unsupported,
                          "Voicebank selection is not supported");
   }
+  // Installed neural singers this surface can run. A surface that ships no
+  // verified neural deployment answers with an empty list, which is what its menu
+  // then shows, instead of offering bundles nothing could execute.
+  [[nodiscard]] virtual std::vector<NeuralResourceMenuItem> neuralResources()
+      const {
+    return {};
+  }
+  [[nodiscard]] virtual core::Result<void> selectNeuralResource(
+      std::string_view, std::string_view, std::string_view) {
+    return core::failure(core::ErrorCode::Unsupported,
+                         "Neural singer selection is not supported");
+  }
+  [[nodiscard]] virtual core::Result<void> clearNeuralResource() {
+    return core::failure(core::ErrorCode::Unsupported,
+                         "Neural singer selection is not supported");
+  }
   [[nodiscard]] virtual std::vector<DocumentationMenuItem> documentation()
       const {
     return {};

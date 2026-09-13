@@ -1,5 +1,39 @@
 # Integrated Singer Execution
 
+## The neural singer chooser is reachable from the application menu
+
+Selection existed on the controller but nothing in the running application called
+it, so the capability was still unreachable for a user. The command dispatcher now
+carries the chooser: `neuralResources()` returns the installed singers a surface
+can run and `selectNeuralResource(id, version, contentHash)` records one, with
+`clearNeuralResource()` for the empty choice. The defaults are deliberately honest —
+an empty list and an `Unsupported` refusal — so a platform that implements none of
+this shows nothing to choose instead of offering bundles it cannot execute, and no
+existing dispatcher had to change to keep compiling.
+
+The macOS menu adds a `Neural Singer` submenu beside `Voicebank`, built the same way:
+the dispatcher's list becomes items carrying their identity in `representedObject`,
+the selected singer is ticked, and the first item clears the selection. It is
+rebuilt from `IApplicationMenu::refresh()`, which the native application already
+calls from its state-changed hook, and the controller notifies state changes after
+selecting or clearing, so the tick follows the project. The Windows menu is an empty
+stub today — it installs a dispatcher and renders no dynamic menus at all — so the
+voicebank list has no Windows equivalent to mirror yet and the new defaults are what
+that platform gets.
+
+Verification. `tests/test_file_dialog_contract.cpp` adds the dispatcher contract
+case: a dispatcher that implements nothing answers with an empty list and refuses
+both selection and clearing. The controller side is already covered by the fixture
+case in `tests/test_neural_selection.cpp`, which lists, refuses, selects, undoes and
+clears against a real installed bundle. The AppKit submenu itself is
+compile-verified only.
+
+Not claimed. This checkout has no GUI test harness enabled
+(`SEAM_RUN_NATIVE_GUI_TESTS` is off), so the menu's rendering and its click path were
+not exercised; no screenshot, accessibility observation or AppKit run backs it. No
+surface yet supplies a neural deployment, so a real run shows the empty list until a
+signed deployment exists. No model, no listening result.
+
 ## A neural singer can be chosen, listed and cleared
 
 The project schema has stored `neuralResource` for a while, the encoder and
