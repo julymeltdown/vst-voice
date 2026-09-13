@@ -18,7 +18,8 @@ def _encoded(value):
 
 
 def iter_supervised_batches(snapshot: dict, directory: Path, targets: dict, *,
-                            expected_profile_sha256: str, partition: str, batch_frames: int = 256):
+                            expected_profile_sha256: str, partition: str, batch_frames: int = 256,
+                            context_frames: int = 0):
     """Join captured target records/files with conditioning; no rights admission.
 
     targets maps each source ID to (captured metadata, binary Path). The caller
@@ -33,7 +34,8 @@ def iter_supervised_batches(snapshot: dict, directory: Path, targets: dict, *,
     if not isinstance(targets, dict) or set(targets) != set(sources):
         raise ValueError("Target inventory must cover exactly the dataset source IDs")
     active_id, matrix, record = None, None, None
-    for batch in iter_conditioning_batches(snapshot, directory, partition=partition, batch_frames=batch_frames):
+    for batch in iter_conditioning_batches(snapshot, directory, partition=partition, batch_frames=batch_frames,
+                                           context_frames=context_frames):
         identity = batch["sourceId"]
         if active_id != identity:
             record, path = targets[identity]
@@ -75,7 +77,7 @@ def iter_supervised_batches(snapshot: dict, directory: Path, targets: dict, *,
 
 
 def iter_conditioning_batches(snapshot: dict, directory: Path, *, partition: str,
-                              batch_frames: int = 256):
+                              batch_frames: int = 256, context_frames: int = 0):
     """Yield unpadded, source-local column batches, never crossing partitions.
 
     Recompute conditioning from captured labels and compare exact shard bytes
@@ -86,6 +88,8 @@ def iter_conditioning_batches(snapshot: dict, directory: Path, *, partition: str
         raise ValueError("Select an explicit dataset partition")
     if type(batch_frames) is not int or not 1 <= batch_frames <= 4096:
         raise ValueError("Batch size must be 1..4096 frames")
+    if type(context_frames) is not int or context_frames < 0 or batch_frames + 2 * context_frames > 4096:
+        raise ValueError("Core plus two context halos must fit 4096 frames")
     if (snapshot.get("formatId") != "com.project-seam.training-dataset-snapshot"
             or type(snapshot.get("schemaVersion")) is not int or snapshot["schemaVersion"] != 3):
         raise ValueError("Batch reader requires a schema-3 sharded snapshot")
@@ -132,8 +136,18 @@ def iter_conditioning_batches(snapshot: dict, directory: Path, *, partition: str
             if stream.read(len(payload) + 1) != payload:
                 raise ValueError("Feature shard bytes differ")
         frames = features["frames"]
+        token_ids = {symbol: index + 1 for index, symbol in enumerate(features["vocabulary"])}
+        # Keep the complete original sequence: frame sampling can miss a short
+        # phone, and adjacent identical symbols still represent distinct phones.
+        tokens = [token_ids[phone["symbol"]] for phone in entry["label"]["phonemes"]]
         for offset in range(0, len(frames), batch_frames):
-            chunk = frames[offset:offset + batch_frames]
-            yield dict(sourceId=ref["sourceId"], partition=partition, frameOffset=offset,
+            core_end = min(len(frames), offset + batch_frames)
+            begin, end = max(0, offset - context_frames), min(len(frames), core_end + context_frames)
+            chunk = frames[begin:end]
+            yield dict(sourceId=ref["sourceId"], partition=partition, frameOffset=begin,
+                       coreFrameOffset=offset, coreFrameCount=core_end - offset,
+                       phraseAnalysisFrames=len(frames),
+                       tokens=list(tokens), mel2ph=[row["phoneIndex"] + 1 for row in chunk],
+                       lossMask=[offset <= index < core_end for index in range(begin, end)],
                        hopSize=features["hopSize"], language=features["language"],
                        columns={key: [row[key] for row in chunk] for key in chunk[0]})

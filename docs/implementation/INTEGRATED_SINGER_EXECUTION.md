@@ -4,6 +4,98 @@ Authority: `SEAM_IMPLEMENTATION_PLAN_2026-09-13.md`, preserving the original
 R1–R20 and Full-Scope U1–U48 obligations. This is current execution status,
 not a replacement product contract or a release approval.
 
+## Actual DiffSinger architecture checkpoint
+
+Recovery checkpoint verification: all 39 training-tool tests passed in the
+isolated real-model environment (13.995 seconds), including optional Torch tests
+executed rather than skipped. Native pitch CLI and tracked-source checks were
+also rerun separately. The preceding actual upstream architecture run passed
+audio-backed optimization, isolated evaluation and exact checkpoint continuation.
+This checkpoint preserves connected training mechanics; it does not complete
+production training, lawful corpus acquisition, model export or Beta qualification.
+
+Added isolated CPU objective evaluation without optimizer updates, preserving
+Torch RNG, existing gradients and mixed module modes. Tests cover repeatable
+seeded loss and state restoration on rejected input. The real architecture check
+also exercises evaluation, explicitly reusing its synthetic training fixture only
+for mechanics; genuine held-out corpus evaluation remains outstanding.
+
+Replaced constant mel targets with actual 80-bin extraction from a byte-verified
+original oscillator WAV. The real upstream model now has 58,704 parameters and
+its fixed-noise loss fell 0.9959463 → 0.9717840. Finite [1,16,80] inference, exact
+checkpoint restoration and the next resumed update all passed. Dataset/checkpoint
+engineering identity binds actual source/target/profile records and synthetic
+conditioning. This supersedes prior constant-target measurements; oscillator
+token labels are not linguistic supervision or a qualified singing dataset.
+
+Added explicit epoch source/core coverage accounting with halo-mask verification.
+Duplicate, missing, out-of-order and unknown-source cores reject. The architecture
+experiment now treats its eight repeated updates as eight single-phrase epochs,
+each with verified coverage, preserving the synthetic nature of the experiment.
+Generic iterator-only runs explicitly report coverageVerified=false.
+
+Connected the real architecture experiment to a bounded epoch runner. Eight
+synthetic updates completed with sample-weighted mean loss 0.9427672, followed by
+the same exact restore/resume checks. Unit tests cover weighted aggregation,
+empty input, budget exhaustion, cancellation, changed identities and late shard
+failure. No incomplete epoch returns a success record or writes a checkpoint;
+actual sampler/coverage policy and source admission remain caller responsibilities.
+
+Extended the actual model check with temporary checkpoint serialization of model,
+optimizer and CPU RNG plus configuration/revision/step identity. Strict restoration
+reproduced inference bit-for-bit, then the original and restored optimizers produced
+identical next loss (0.9727515) and model state. The self-produced 712,539-byte
+checkpoint was not retained. This proves the tested CPU round trip only; durable
+production checkpoint handling, other-device resume and real-data training remain open.
+
+Ran the SEAM optimization/DDPM adapter against the clean pinned upstream
+DiffSingerAcoustic class, not an interface stand-in. A deliberately small random
+54,024-parameter WaveNet DDPM changed 43 parameter tensors across eight synthetic
+fixed-noise updates; loss decreased 0.9528179 → 0.9277189. Upstream DDIM inference
+returned finite [1,16,8] mel. No learned singer checkpoint or audio was published.
+The isolated model environment needed setuptools 75.8.0 for the upstream legacy
+librosa pkg_resources import; no upstream code patch or runtime bypass was used.
+This proves executable architecture integration, not lawful data training,
+vocoder compatibility, production-size behavior or musical qualification.
+
+## Acoustic optimization primitive
+
+Implemented the inspected non-shallow DDPM training-call adapter and noise-loss
+layout conversion. Its interface fixture reaches a real optimizer update while
+checking original tokens/mel2ph and rejecting incomplete phrases or unsupported
+speaker conditioning before the model call. Source inspection exposed duration
+derivation from mel2ph; whole-phrase-only enforcement prevents falsely treating
+halo chunks as equivalent upstream training. Actual model construction and full
+conditioning/objective support remain unfinished.
+
+Added full source token sequences and one-based mel2ph to batches and the Torch
+adapter interface. Sequence construction uses original labeled phonemes rather
+than collapsing frame token runs, preserving repeated and unsampled short phones.
+Tests retain three identical tokens with frame ownership [1,3], exercise contextual
+batch mapping and reject out-of-range alignment. Actual upstream task wiring remains open.
+
+Cross-checked the pinned upstream acoustic task: DDPM noise and reflow velocity
+objectives are distinct from direct mel regression. Extended the update primitive
+with a named, model-owned per-element objective callback while retaining SEAM's
+mask/weight reduction and gradient checks. Tests distinguish custom squared-noise
+fixture loss from mel L1 and reject unnamed or already reduced objectives. Actual
+upstream architecture, noise scheduler and training-task adaptation remain open.
+
+Added source-local context halos to conditioning and paired target batches, with
+separate core offsets and an explicit loss mask. Optimization counts only core
+frames while retaining their partial-hop sample weights. Tests reconstruct all
+eight owned target frames exactly once from overlapping 4/5/3-frame inputs and
+verify exclusion of halo loss. Model-specific receptive-field sizing and temporal
+chunk-equivalence qualification are still required.
+
+Added a real Torch update step for supplied acoustic adapters, using paired
+conditioning/targets, sample-weighted L1 and finite gradient clipping. It refuses
+held-out batches and mismatched optimizer parameter ownership. Optional Torch
+tests exercise decreasing loss and changed parameters in a clearly labeled
+constant-output fixture, partial-tail weighting, invalid targets and a finite
+forward/nonfinite backward that must not call the optimizer. This is optimizer
+mechanics, not an original singer or completed M2.P3 training workflow.
+
 ## Integrated training preparation regression checkpoint
 
 Full Release CTest run: 129/130 passed in 112.91 seconds. The source-closure test

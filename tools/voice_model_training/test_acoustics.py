@@ -77,12 +77,22 @@ class AcousticTargetsTests(unittest.TestCase):
                         conditioning=[ref], vocabulary=["a"], labels=[dict(label=label, score=score)],
                         sources=[dict(row, sourceSha256=digest, frameCount=2048, sampleRate=48000)])
                     target_map = {"s": (published, root / "targets/mel.f32le")}
-                    def batches(partition="test"):
+                    def batches(partition="test", context_frames=0):
                         return list(iter_supervised_batches(snapshot, root / "features", target_map,
-                            expected_profile_sha256=published["profileSha256"], partition=partition, batch_frames=3))
+                            expected_profile_sha256=published["profileSha256"], partition=partition, batch_frames=3,
+                            context_frames=context_frames))
                     joined = batches()
                     self.assertEqual([b["melTargets"].shape for b in joined], [(3, 80), (3, 80), (2, 80)])
                     np.testing.assert_array_equal(np.concatenate([b["melTargets"] for b in joined]), targets)
+                    contextual = batches(context_frames=1)
+                    self.assertEqual([b["frameOffset"] for b in contextual], [0, 2, 5])
+                    self.assertEqual([b["coreFrameOffset"] for b in contextual], [0, 3, 6])
+                    self.assertEqual([b["melTargets"].shape[0] for b in contextual], [4, 5, 3])
+                    np.testing.assert_array_equal(np.concatenate([b["melTargets"][b["lossMask"]] for b in contextual]), targets)
+                    self.assertEqual(sum(sum(b["lossMask"]) for b in contextual), 8)
+                    self.assertEqual([b["tokens"] for b in contextual], [[1], [1], [1]])
+                    self.assertEqual([b["mel2ph"] for b in contextual], [[1] * 4, [1] * 5, [1] * 3])
+                    with self.assertRaises(ValueError): batches(context_frames=4096)
                     self.assertEqual(batches("train"), [])
                     published["sourceSha256"] = "0" * 64
                     with self.assertRaises(ValueError): batches()

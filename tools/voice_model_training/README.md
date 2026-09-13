@@ -1,5 +1,141 @@
 # Original voice model production
 
+`optimization.acoustic_evaluation_step` evaluates validation/test batches without
+an optimizer or gradients, using the same objective and core/sample weighting as
+training. The current CPU path preserves Torch RNG and each module's previous
+training/evaluation mode, including mixed submodule modes, even on failure. It
+does not erase existing gradients. An explicit evaluation seed makes diffusion
+objective comparisons repeatable. GPU/distributed RNG isolation and arbitrary
+custom buffer mutation are not covered. Loss is not perceptual vocal quality.
+The real model diagnostic exercises this path on its existing engineering fixture
+and explicitly reports that reuse; it does not call that a held-out study.
+
+The latest real-model check replaces its earlier constant 8-bin mel fixture with
+80-bin targets extracted from a digest-verified, original two-oscillator PCM WAV.
+Engineering dataset identity now hashes actual source/target/profile records and
+conditioning, replacing placeholder hashes. The temporary checkpoint binds this
+identity too. Current measurements supersede the older constant-target numbers:
+58,704 parameters; eight fixed-noise update losses 0.9959463 → 0.9717840; finite
+`[1,16,80]` inference; exact restored inference and next update; 770,715-byte
+temporary checkpoint. Token labels remain synthetic interface labels, not
+claims of intelligible phonemes in the oscillator waveform. This is an integrated
+audio-extraction/model test, not a lawful reviewed singing corpus or voice model.
+
+Epoch execution can now require `expected_source_frames`, captured from the
+selected admitted partition. Core offsets must advance contiguously per source,
+halos must match the exact boolean loss mask, and exhaustion must cover every
+expected frame. Duplicate cores, skipped starts, missing sources and inconsistent
+masks reject. Schema-2 results distinguish `coverageVerified` from mere iterator
+completion. Omitting this inventory is still permitted for generic experiments
+but provides no dataset-coverage proof. The real-model check now runs eight
+single-phrase epochs with explicit complete-frame coverage, rather than treating
+eight repeated updates as one dataset pass.
+
+`optimization.run_acoustic_epoch` consumes an admitted batch iterator through the
+update primitive, requiring captured dataset/profile hashes and an update limit.
+It aggregates loss by valid sample count, checks cancellation and a cooperative
+deadline between operations, and returns completion only after iterator exhaustion.
+Empty input, excess work, changed identities and late I/O errors invalidate the
+attempt; reaching the limit alone does not mean completion. No checkpoint is
+published. Caller still owns actual admission, sampler/coverage policy, process
+supervision and failed-attempt disposal. A stalled I/O call or GPU kernel needs
+external supervision; the cooperative deadline is not a hard timeout.
+
+The actual upstream model experiment now uses this runner for eight synthetic
+updates and still passes strict checkpoint restoration and resumed-update checks.
+The synthetic experiment hashes are explicit placeholders, not real approvals.
+
+## Real upstream model integration check
+
+`python -m tools.voice_model_training.check_diffsinger_model TRUSTED_CHECKOUT`
+requires a clean DiffSinger checkout at the pinned revision and the isolated
+Python 3.11 environment in `requirements-diffsinger-model-check.txt`. It imports
+the actual upstream architecture in its own process, constructs a small random
+54,024-parameter non-shallow DDPM/WaveNet configuration, performs eight SEAM
+optimizer updates, and runs upstream DDIM inference. It does not download/load
+weights, retain a singer checkpoint, or claim an original singer.
+
+The check now saves and restores a self-produced temporary checkpoint containing
+model state, optimizer state, CPU RNG, configuration, revision and completed-step
+count. Loading uses `weights_only=True` and strict model-state matching. On this
+CPU experiment, restored inference and the next resumed update both matched
+exactly. The 712,539-byte artifact was removed with its temporary directory; its
+digest is printed for the run. This is not a general untrusted-checkpoint loader,
+production checkpoint publication, GPU/distributed resume or an export artifact.
+
+Observed locally: 43 parameter tensors changed; fixed synthetic noise loss
+decreased from 0.9528179 to 0.9277189; inference returned finite `[1,16,8]` mel.
+Fixed-noise repetition is an optimization sanity check, not held-out evaluation.
+Upstream source remains unchanged. The environment follows its NumPy <2 and
+librosa <0.10 constraints; setuptools 75.8.0 supplies the legacy pkg_resources
+import required by librosa 0.9.2. Top-level dependency pins are present; this is
+not yet a fully hash-locked production training environment.
+
+`diffsinger_objective.DiffSingerDDPMObjective("l1"|"l2")` now adapts the inspected
+upstream training call (`tokens`, `mel2ph`, `f0`, `gt_mel`, `infer=False`) and its
+noise prediction/target layout `[1,1,M,T]` into unreduced `[1,T,M]` losses for the
+SEAM optimizer. Pass its `objective_id` with the callback. The current adapter
+requires non-shallow DDPM and rejects unsupported speaker/language/variance/
+keyshift/speed conditioning rather than supplying invented values.
+
+It also requires the entire phrase: the upstream text encoder derives duration
+conditioning from mel2ph, so cropped frame context alone changes those durations.
+Batch readers now carry `phraseAnalysisFrames`; the adapter checks it and a zero
+frame offset. Source-local halo support remains useful for other adapters but
+does not authorize chunked DiffSinger training. SEAM's weighted core reduction is
+explicitly different from an unweighted mean over padding. Full upstream model
+instantiation, extra conditioning, reflow/shallow objectives and duration-preserving
+chunking remain required work, not completed by the interface fixture tests.
+
+Batch readers now retain the complete original positive-ID `tokens` sequence
+and source-relative, one-based `mel2ph` for each expanded batch. Adjacent repeated
+symbols are not collapsed, and phonemes with no sampled hop remain in `tokens`.
+The optimizer checks bounds, ordered alignment and agreement with frame phone
+IDs, then exposes int64 `[1,N]` tokens and `[1,T]` mel2ph to the model/objective
+adapter. These match the upstream task's distinction between text and acoustic
+clocks; they do not yet instantiate that task or qualify its text-encoder context.
+
+The optimization primitive also accepts a caller-supplied
+`objective(model, inputs, target_mel)` and distinct `objective_id`. It must return
+finite, nonnegative, differentiable float32 losses of shape `[1,T,M]`, before
+reduction. SEAM then applies its core-frame mask and valid-sample weights. The
+adapter owns diffusion/flow noise, timesteps, normalization and auxiliary terms;
+an already reduced scalar is rejected because it would bypass frame ownership.
+The default remains explicitly named `mel-l1`. This makes different objectives
+possible; it does not implement or qualify the full upstream training task.
+
+This distinction was checked against the pinned
+[DiffSinger acoustic task](https://github.com/openvpi/DiffSinger/blob/336cf01b57f2ad44c6b37a79cf33993043291759/training/acoustic_task.py):
+its DDPM and rectified-flow paths do not simply regress final mel values with
+the same objective. No arbitrary model family should be silently forced into
+the default direct-regression path.
+
+Both conditioning and supervised batch readers accept `context_frames` (default
+zero). They add source-local neighboring frames around each nonoverlapping core,
+return `frameOffset` for the expanded input and `coreFrameOffset/coreFrameCount`
+for its owned target range, and provide a boolean `lossMask`. Acoustic target
+slices use the expanded range too. Core plus both halos must fit 4096 frames;
+phrase edges truncate the halo rather than borrowing another source's frames.
+The optimizer applies the mask together with valid-sample weights, so overlap
+does not duplicate loss. Caller-selected context must cover the chosen model's
+receptive field; this is not proof of chunk equivalence for arbitrary models.
+
+`optimization.acoustic_training_step` now performs an actual Torch gradient
+update on a caller-supplied model adapter and paired training batch. The adapter
+accepts frame-domain phone/F0/voicing/MIDI/rest/slur tensors and returns float32
+`[1,T,mel_bins]`; this is an internal adapter contract, not an ONNX export signature.
+The primitive uses sample-weighted L1 loss (partial-hop tails retain their valid
+sample weight), finite-output checks, gradient clipping with nonfinite rejection,
+and exact optimizer/trainable-parameter ownership checks. Held-out/validation
+batches reject before model execution. Nonfinite gradients never reach `step`.
+
+The caller still owns architecture, context/halo strategy, initialization/seeds,
+current permissions, training-run identity and checkpoint transactions. An error
+invalidates the attempt; no rollback of arbitrary model buffers/optimizer state
+is promised. No `train` command, singer model or learned checkpoint is claimed.
+Run `python -m unittest tools.voice_model_training.test_optimization` in the
+isolated Torch environment; default discovery explicitly skips when Torch is absent.
+
 ## Numerical frontend comparison checkpoint
 
 Run `python -m tools.voice_model_training.check_acoustic_parity` in the isolated
