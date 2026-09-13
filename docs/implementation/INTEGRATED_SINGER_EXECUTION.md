@@ -1,5 +1,54 @@
 # Integrated Singer Execution
 
+## The packaged helper's runtime closure is read from its own load commands
+
+Staging could copy a library, but it could not tell whether the helper would find
+it after installation. Added `tools/phase13a/macho_linkage.py`, which reads the
+Mach-O load commands (`LC_LOAD_DYLIB` and its weak, re-export, upward and lazy
+forms, `LC_ID_DYLIB`, `LC_RPATH`) and answers the question that matters: which
+images the host provides, and which references resolve from the directory the
+helper is launched out of. It parses thin 32/64-bit and universal images, selects
+the slice the payload will actually run, and refuses a truncated or oversized load
+command table instead of guessing.
+
+`derive_runtime_closure()` walks that linkage recursively through supplied search
+paths. A reference that the host provides is skipped. A reference that exists on
+the build machine but is reached through an absolute path or an rpath that will
+not exist in the package is reported as unresolved rather than copied, because
+copying the file would not repair the load command. Runtime SDKs publish a
+versioned file behind the load-name symlink, so search paths resolve symlinks and
+the real file is staged under the name the load command asks for.
+
+Staging now accepts `runtime_search_paths` and refuses the whole payload when any
+entry is unresolved, and `scripts/assemble_release_payload.py` exposes it as
+`--runtime-search-path`. Deriving a closure is implemented for macOS arm64; a
+Windows payload must pass explicit dependencies until PE import analysis lands.
+
+The first run of this analysis against the real development worker produced a
+concrete defect: the worker linked `@rpath/libonnxruntime.1.dylib` through the
+absolute build-directory rpath, so the packaged helper would have failed to load
+its runtime on any user machine while working here. `seam_neural_worker` now
+carries `@executable_path` and `@loader_path` ahead of the development SDK
+directory, so the ONNX Runtime library resolves beside the staged helper and the
+development run still finds it. After the rebuild the analysis reports
+`libonnxruntime.1.30.0.dylib` staged as `libonnxruntime.1.dylib`, which is exactly
+the name the load command asks for.
+
+What the same analysis still reports as unresolvable is real remaining work, not
+a packaging bug: 81 absolute Homebrew references (78 abseil, 2 protobuf, 1
+OpenSSL). The shipped worker must link the vendored static OpenSSL and a static
+or staged protobuf/abseil closure before a payload can be assembled with a
+derived closure. Until then the staging path refuses that worker by design, and a
+hand-written `--neural-dependency` list would have to ship 81 libraries whose
+reference paths do not exist outside this machine, which is why the check refuses
+rather than papers over it.
+
+Verification: `tests/phase13a/test_neural_helper_staging.py` grows to 14 cases
+covering load-command parsing, absolute-rpath refusal, symlinked SDK publication,
+derived staging and closure refusal; `seam_neural_package_materialization_tests`
+passes, and the new `seam_neural_worker_relocatability` target checks the invariant
+against the real built worker on every run of the neural label group (7/7 passing).
+
 ## The neural helper is staged from finalized bytes into every payload surface
 
 Completed the packaging half of M2.P2 item 9 for the two declared targets. No

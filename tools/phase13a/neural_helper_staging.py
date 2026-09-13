@@ -31,6 +31,7 @@ from tools.phase13a.neural_package import (
     build_neural_package_manifest,
     neural_package_layout,
 )
+from tools.phase13a.macho_linkage import derive_runtime_closure
 from tools.phase13a.payload_paths import (
     PayloadAssemblyError,
     require_payload_path,
@@ -172,22 +173,52 @@ def stage_neural_helper(
     dependencies: tuple[Path, ...],
     build_id: str,
     *,
+    runtime_search_paths: tuple[Path, ...] = (),
     surface_ids: tuple[str, ...] | None = None,
     protocol_version: int = 1,
 ) -> tuple[dict[str, Any], ...]:
-    """Stage and seal the helper package for every selected payload surface."""
+    """Stage and seal the helper package for every selected payload surface.
+
+    ``dependencies`` are explicit files staged under their own names. When
+    ``runtime_search_paths`` is supplied, the worker's own load commands are read
+    and its runtime closure is derived from those directories; a closure entry
+    that would not resolve from the staged directory is refused rather than
+    shipped as a library the helper cannot load.
+    """
     payload = require_real_directory(payload_root, "payload root")
     worker_path = _require_regular_file(worker, "neural worker")
-    dependency_paths = tuple(
-        _require_regular_file(path, f"neural dependency {path.name}")
+    staged_dependencies = [
+        (_require_regular_file(path, f"neural dependency {path.name}"), path.name)
         for path in dependencies
-    )
-    _require_unique(
-        [worker_path.name, *(path.name for path in dependency_paths)]
-    )
+    ]
+    if runtime_search_paths:
+        if platform != PayloadPlatform.MACOS_ARM64:
+            raise PayloadAssemblyError(
+                (
+                    "deriving a runtime closure from load commands is implemented for "
+                    f"macOS arm64 payloads; {platform} requires explicit dependencies",
+                )
+            )
+        closure = derive_runtime_closure(
+            worker_path,
+            tuple(require_real_directory(path, "runtime search path") for path in runtime_search_paths),
+            required_machine="arm64",
+        )
+        if closure.unresolved:
+            raise PayloadAssemblyError(
+                (
+                    "neural worker does not resolve from the staged directory: "
+                    + "; ".join(closure.unresolved),
+                )
+            )
+        staged_dependencies.extend(
+            (_require_regular_file(entry.source, f"neural dependency {entry.load_name}"), entry.staged_name)
+            for entry in closure.entries
+        )
+    _require_unique([worker_path.name, *(name for _, name in staged_dependencies)])
     require_platform_image(worker_path, platform, "neural worker")
-    for path in dependency_paths:
-        require_platform_image(path, platform, f"neural dependency {path.name}")
+    for path, name in staged_dependencies:
+        require_platform_image(path, platform, f"neural dependency {name}")
 
     selected = []
     for surface in surface_matrix(platform):
@@ -215,7 +246,7 @@ def stage_neural_helper(
         resources_relative = manifest_relative.parent
         helper_relative = resources_relative / helper_file_name(platform)
         dependency_relatives = tuple(
-            resources_relative / path.name for path in dependency_paths
+            resources_relative / name for _, name in staged_dependencies
         )
         _require_unique(
             [
@@ -246,7 +277,9 @@ def stage_neural_helper(
                 (f"{plan['surface']}: neural resources path is not a real directory",)
             )
         _copy_finalized(worker_path, package_root / plan["helperRelative"])
-        for source, relative in zip(dependency_paths, plan["dependencyRelatives"], strict=True):
+        for (source, _), relative in zip(
+            staged_dependencies, plan["dependencyRelatives"], strict=True
+        ):
             _copy_finalized(source, package_root / relative)
         manifest, digest = build_neural_package_manifest(
             package_root,
@@ -279,6 +312,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--platform", choices=tuple(PayloadPlatform), required=True)
     parser.add_argument("--worker", type=Path, required=True)
     parser.add_argument("--dependency", type=Path, action="append", default=[])
+    parser.add_argument(
+        "--runtime-search-path",
+        type=Path,
+        action="append",
+        default=[],
+        help="Derive the macOS runtime closure from the worker's own load commands",
+    )
     parser.add_argument("--build-id", required=True)
     parser.add_argument("--surface", action="append", default=None)
     parser.add_argument("--protocol-version", type=int, choices=(1, 2), default=1)
@@ -291,6 +331,7 @@ def main(argv: list[str] | None = None) -> int:
             tuple(arguments.dependency),
             arguments.build_id,
             surface_ids=tuple(arguments.surface) if arguments.surface else None,
+            runtime_search_paths=tuple(arguments.runtime_search_path),
             protocol_version=arguments.protocol_version,
         )
     except PayloadAssemblyError as error:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -15,6 +16,12 @@ from tools.phase13a.neural_helper_staging import (
 from tools.phase13a.neural_package import neural_package_inventory
 from tools.phase13a.payload_paths import PayloadAssemblyError
 from tools.phase13a.payload_surfaces import PayloadPlatform, surface_matrix
+from tools.phase13a.macho_linkage import (
+    derive_runtime_closure,
+    read_linkage,
+    resolves_from_staged_directory,
+    staged_name_for,
+)
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -26,6 +33,61 @@ THIN_MAGIC = (0xFEEDFACF).to_bytes(4, "little")
 def macho(cpu: int) -> bytes:
     """Build a header-only thin Mach-O image declaring one machine."""
     return THIN_MAGIC + cpu.to_bytes(4, "little") + bytes(0x40)
+
+
+LC_ID_DYLIB = 0xD
+LC_LOAD_DYLIB = 0xC
+LC_RPATH = 0x1C | 0x80000000
+
+
+def _dylib_command(command: int, name: str) -> bytes:
+    payload = name.encode("utf-8") + b"\0"
+    size = (8 + 16 + len(payload) + 7) & ~7
+    raw = bytearray(size)
+    raw[0:4] = command.to_bytes(4, "little")
+    raw[4:8] = size.to_bytes(4, "little")
+    raw[8:12] = (24).to_bytes(4, "little")
+    raw[24 : 24 + len(payload)] = payload
+    return bytes(raw)
+
+
+def _rpath_command(path: str) -> bytes:
+    payload = path.encode("utf-8") + b"\0"
+    size = (8 + 4 + len(payload) + 7) & ~7
+    raw = bytearray(size)
+    raw[0:4] = LC_RPATH.to_bytes(4, "little")
+    raw[4:8] = size.to_bytes(4, "little")
+    raw[8:12] = (12).to_bytes(4, "little")
+    raw[12 : 12 + len(payload)] = payload
+    return bytes(raw)
+
+
+def macho_image(
+    *,
+    cpu: int = ARM64,
+    install_name: str | None = None,
+    dependencies: tuple[str, ...] = (),
+    rpaths: tuple[str, ...] = (),
+) -> bytes:
+    """Build a thin Mach-O image whose load commands declare real linkage."""
+    commands = bytearray()
+    count = 0
+    if install_name is not None:
+        commands += _dylib_command(LC_ID_DYLIB, install_name)
+        count += 1
+    for name in dependencies:
+        commands += _dylib_command(LC_LOAD_DYLIB, name)
+        count += 1
+    for path in rpaths:
+        commands += _rpath_command(path)
+        count += 1
+    header = bytearray(32)
+    header[0:4] = THIN_MAGIC
+    header[4:8] = cpu.to_bytes(4, "little")
+    header[12:16] = (2).to_bytes(4, "little")
+    header[16:20] = count.to_bytes(4, "little")
+    header[20:24] = len(commands).to_bytes(4, "little")
+    return bytes(header + commands)
 
 
 def universal(cpus: tuple[int, ...]) -> bytes:
@@ -191,6 +253,206 @@ class NeuralHelperStagingTests(unittest.TestCase):
         self.assertFalse(
             (payload / "Standalone/Project SEAM.app/Contents/Resources/neural-helper-package.json").exists()
         )
+
+    def test_linkage_reads_the_load_commands_that_decide_its_closure(self) -> None:
+        image = macho_image(
+            install_name="@rpath/libmodel.1.dylib",
+            dependencies=(
+                "@rpath/libonnxruntime.1.dylib",
+                "/usr/lib/libc++.1.dylib",
+                "/opt/homebrew/opt/protobuf/lib/libprotobuf.dylib",
+            ),
+            rpaths=("@executable_path", "/Users/build/onnx/lib"),
+        )
+        linkage = read_linkage(image)
+        self.assertEqual("@rpath/libmodel.1.dylib", linkage.install_name)
+        self.assertEqual(
+            (
+                "@rpath/libonnxruntime.1.dylib",
+                "/usr/lib/libc++.1.dylib",
+                "/opt/homebrew/opt/protobuf/lib/libprotobuf.dylib",
+            ),
+            linkage.dependencies,
+        )
+        self.assertEqual(("@executable_path", "/Users/build/onnx/lib"), linkage.rpaths)
+        # The host provides the system library, so only the other two are the
+        # package's problem.
+        self.assertEqual(
+            (
+                "@rpath/libonnxruntime.1.dylib",
+                "/opt/homebrew/opt/protobuf/lib/libprotobuf.dylib",
+            ),
+            linkage.staged_dependencies(),
+        )
+        self.assertTrue(
+            resolves_from_staged_directory("@rpath/libonnxruntime.1.dylib", linkage.rpaths)
+        )
+        self.assertFalse(
+            resolves_from_staged_directory(
+                "/opt/homebrew/opt/protobuf/lib/libprotobuf.dylib", linkage.rpaths
+            )
+        )
+        self.assertEqual("libonnxruntime.1.dylib", staged_name_for("@rpath/libonnxruntime.1.dylib"))
+        self.assertIsNone(staged_name_for("@rpath/"))
+
+    def test_linkage_refuses_a_truncated_or_oversized_command_table(self) -> None:
+        oversized = bytearray(macho_image(rpaths=("@executable_path",)))
+        oversized[20:24] = (1 << 30).to_bytes(4, "little")
+        with self.assertRaisesRegex(PayloadAssemblyError, "load-command budget"):
+            read_linkage(bytes(oversized))
+        short = bytearray(macho_image(rpaths=("@executable_path",)))
+        short[20:24] = (4096).to_bytes(4, "little")
+        with self.assertRaisesRegex(PayloadAssemblyError, "truncated"):
+            read_linkage(bytes(short))
+        with self.assertRaisesRegex(PayloadAssemblyError, "not a Mach-O"):
+            read_linkage(b"not-an-image" + bytes(64))
+
+    def test_runtime_closure_stages_only_references_that_resolve_beside_the_helper(self) -> None:
+        library = self.image(
+            "libonnxruntime.1.30.0.dylib",
+            macho_image(
+                install_name="@rpath/libonnxruntime.1.dylib",
+                dependencies=("/usr/lib/libc++.1.dylib",),
+            ),
+        )
+        published = self.root / "lib"
+        published.mkdir()
+        (published / "libonnxruntime.1.dylib").symlink_to(library)
+        worker = self.image(
+            "worker",
+            macho_image(
+                dependencies=("@rpath/libonnxruntime.1.dylib",),
+                rpaths=("@executable_path",),
+            ),
+        )
+        closure = derive_runtime_closure(worker, (published,))
+        self.assertEqual((), closure.unresolved)
+        self.assertEqual(
+            [("libonnxruntime.1.30.0.dylib", "libonnxruntime.1.dylib")],
+            [(entry.source.name, entry.staged_name) for entry in closure.entries],
+        )
+        absolute = self.image(
+            "absolute-worker",
+            macho_image(
+                dependencies=("@rpath/libonnxruntime.1.dylib",),
+                rpaths=("/Users/build/onnx/lib",),
+            ),
+        )
+        refused = derive_runtime_closure(absolute, (published,))
+        self.assertEqual((), refused.entries)
+        self.assertRegex(refused.unresolved[0], "does not exist in the staged directory")
+        missing = self.image(
+            "missing-worker",
+            macho_image(
+                dependencies=("@rpath/libnotfound.1.dylib",), rpaths=("@loader_path",)
+            ),
+        )
+        unresolved = derive_runtime_closure(missing, (published,))
+        self.assertRegex(unresolved.unresolved[0], "no file was found")
+
+    def test_staging_derives_the_runtime_closure_for_macos_payloads(self) -> None:
+        payload = self.payload(PayloadPlatform.MACOS_ARM64)
+        library = self.image(
+            "libonnxruntime.1.30.0.dylib",
+            macho_image(install_name="@rpath/libonnxruntime.1.dylib"),
+        )
+        published = self.root / "lib"
+        published.mkdir()
+        (published / "libonnxruntime.1.dylib").symlink_to(library)
+        worker = self.image(
+            "worker",
+            macho_image(
+                dependencies=("@rpath/libonnxruntime.1.dylib",),
+                rpaths=("@executable_path",),
+            ),
+        )
+        stage_neural_helper(
+            payload,
+            PayloadPlatform.MACOS_ARM64,
+            worker,
+            (),
+            "build-fixture",
+            runtime_search_paths=(published,),
+        )
+        staged = payload / "Standalone/Project SEAM.app/Contents/Resources/libonnxruntime.1.dylib"
+        self.assertEqual(library.read_bytes(), staged.read_bytes())
+        manifest = json.loads(
+            (payload / "Standalone/Project SEAM.app/Contents/Resources/neural-helper-package.json").read_bytes()
+        )
+        self.assertEqual(
+            [entry["path"] for entry in manifest["dependencies"]],
+            ["Contents/Resources/libonnxruntime.1.dylib"],
+        )
+
+    def test_staging_refuses_a_closure_that_cannot_resolve_beside_the_helper(self) -> None:
+        payload = self.payload(PayloadPlatform.MACOS_ARM64)
+        worker = self.image(
+            "worker",
+            macho_image(
+                dependencies=("/opt/homebrew/opt/protobuf/lib/libprotobuf.dylib",),
+                rpaths=("@executable_path",),
+            ),
+        )
+        with self.assertRaisesRegex(PayloadAssemblyError, "does not resolve from the staged directory"):
+            stage_neural_helper(
+                payload,
+                PayloadPlatform.MACOS_ARM64,
+                worker,
+                (),
+                "build-fixture",
+                runtime_search_paths=(self.root,),
+            )
+        self.assertFalse(
+            (payload / "Standalone/Project SEAM.app/Contents/Resources/neural-helper").exists()
+        )
+        with self.assertRaisesRegex(PayloadAssemblyError, "requires explicit dependencies"):
+            stage_neural_helper(
+                self.payload(PayloadPlatform.WINDOWS_X64),
+                PayloadPlatform.WINDOWS_X64,
+                self.image("worker.exe", pe()),
+                (),
+                "build-fixture",
+                runtime_search_paths=(self.root,),
+            )
+
+    @unittest.skipUnless(
+        os.environ.get("SEAM_NEURAL_WORKER_BINARY"), "built worker not supplied"
+    )
+    def test_development_worker_is_staged_only_when_its_closure_resolves(self) -> None:
+        # This is an invariant over the real build, not a snapshot of its current
+        # state: whichever the analysis reports, staging must agree with it. The
+        # development worker currently links a Homebrew protobuf/abseil closure, so
+        # the refusal path is the one that exercises today.
+        worker = Path(os.environ["SEAM_NEURAL_WORKER_BINARY"])
+        search = tuple(
+            Path(path)
+            for path in (os.environ.get("SEAM_ONNXRUNTIME_LIBRARY_DIR"),)
+            if path
+        )
+        closure = derive_runtime_closure(worker, search, required_machine="arm64")
+        payload = self.payload(PayloadPlatform.MACOS_ARM64)
+        if closure.unresolved:
+            with self.assertRaises(PayloadAssemblyError) as raised:
+                stage_neural_helper(
+                    payload,
+                    PayloadPlatform.MACOS_ARM64,
+                    worker,
+                    (),
+                    "build-fixture",
+                    runtime_search_paths=search,
+                )
+            self.assertIn("does not resolve from the staged directory", str(raised.exception))
+            self.assertIn(closure.unresolved[0].split(" (")[0], str(raised.exception))
+        else:
+            records = stage_neural_helper(
+                payload,
+                PayloadPlatform.MACOS_ARM64,
+                worker,
+                (),
+                "build-fixture",
+                runtime_search_paths=search,
+            )
+            self.assertEqual(4, len(records))
 
     def test_cli_stages_one_surface_and_reports_refusals(self) -> None:
         payload = self.payload(PayloadPlatform.WINDOWS_X64)

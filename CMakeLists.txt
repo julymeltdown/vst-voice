@@ -2346,6 +2346,16 @@ if(SEAM_ONNXRUNTIME_ROOT)
       seam_neural_synthesis seam_native_onnx_inspection)
     target_compile_definitions(seam_neural_worker PRIVATE SEAM_NATIVE_GRAPH_INSPECTION=1)
     seam_apply_compiler_options(seam_neural_worker)
+    # The packaged helper is launched from the bundle's resources directory, so
+    # its runtime library must resolve from beside the helper. The development
+    # SDK directory stays on the search path for local runs, but it must never be
+    # the only rpath: an absolute build-directory rpath would make the helper fail
+    # on a user's machine while working here. tools/phase13a/neural_helper_staging.py
+    # refuses any artifact that cannot resolve from the staged directory.
+    get_filename_component(SEAM_ONNXRUNTIME_LIBRARY_DIR "${SEAM_ONNXRUNTIME_LIBRARY}" DIRECTORY)
+    set_target_properties(seam_neural_worker PROPERTIES
+      BUILD_RPATH "@executable_path;@loader_path;${SEAM_ONNXRUNTIME_LIBRARY_DIR}"
+      INSTALL_RPATH "@executable_path;@loader_path")
     if(SEAM_BUILD_TESTS)
       add_test(NAME seam_neural_native_owned_bytes
         COMMAND seam_native_onnx_owned_bytes_test)
@@ -2371,6 +2381,18 @@ if(SEAM_ONNXRUNTIME_ROOT)
         add_test(NAME seam_neural_bundle_preparation
           COMMAND "${SEAM_NATIVE_ONNX_PYTHON}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/neural_runtime/check_bundle_preparation.py"
             $<TARGET_FILE:seam_neural_worker> $<TARGET_FILE:seam_voicebank_cli>)
+        # Packaging truth check against the real worker: whichever the load-command
+        # analysis reports, staging must agree with it, so the packaged payload can
+        # never claim a helper whose runtime it cannot load.
+        add_test(NAME seam_neural_worker_relocatability
+          COMMAND ${CMAKE_COMMAND} -E env
+            "PYTHONDONTWRITEBYTECODE=1"
+            "SEAM_NEURAL_WORKER_BINARY=$<TARGET_FILE:seam_neural_worker>"
+            "SEAM_ONNXRUNTIME_LIBRARY_DIR=${SEAM_ONNXRUNTIME_LIBRARY_DIR}"
+            ${Python3_EXECUTABLE} -m unittest
+              tests.phase13a.test_neural_helper_staging.NeuralHelperStagingTests.test_development_worker_is_staged_only_when_its_closure_resolves)
+        set_tests_properties(seam_neural_worker_relocatability PROPERTIES
+          WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} TIMEOUT 120 LABELS "neural-native-experiment")
         set_tests_properties(seam_neural_native_inspection seam_neural_native_paired_runtime
           seam_neural_native_bundle_runtime seam_neural_production_worker seam_neural_bundle_preparation PROPERTIES TIMEOUT 180 LABELS "neural-native-experiment")
         add_custom_target(seam_neural_native_checks
