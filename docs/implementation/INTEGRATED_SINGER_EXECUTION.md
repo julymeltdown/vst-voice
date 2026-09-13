@@ -86,6 +86,39 @@ invariant violation, and cancellation reaching the runner. The production runner
 itself is still to be written in the authoring/application layer, where the
 deployment descriptor and `runNeuralBundleWorker` are available.
 
+Implemented that production runner as
+`libs/seam-authoring-runtime/{include/seam/authoring/neural_phrase_runner.hpp,src/neural_phrase_runner.cpp}`.
+`NeuralPhraseRunnerOptions` carries the canonical bundle directory, its payload
+budget, the already-resolved helper identity and process budgets, and the
+explicit silence symbol; `validate()` refuses a relative path, an unbounded
+bundle, a non-bundle launch contract, an unbudgeted process, a relative helper or
+a missing helper digest. `create()` also reads the selected directory's manifest
+and binds its digest, so a snapshot admitted from one bundle cannot be rendered
+through a different one. `render()` builds the request with
+`prepareNeuralScoreRequest`, sets `bundleContentHash` so the launch satisfies
+metadata v3, re-validates against the admitted model contract, runs
+`runNeuralBundleWorker`, and returns window-exact mono audio with no placements.
+A vocabulary without the declared silence symbol is refused instead of guessed.
+
+Two real constraints surfaced while implementing this. First, the neural path has
+no bank source, so consonant timing uses the existing source-independent in-note
+policy; `createNeural` now selects it explicitly and the timing-policy revision
+participates in the render identity. Second, request preparation refuses any
+phoneme span outside the requested output window rather than clipping it, so a
+partial neural window that excludes part of a syllable is refused with
+`InvalidArgument` today. Windowed neural rendering therefore needs a package that
+defines how out-of-window phonemes are represented before it can ship; the test
+records this refusal instead of hiding it.
+
+`seam_neural_phrase_runner_tests` drives the real parent transport with the
+existing bundle transport fixture as the selected helper and covers: a bound
+request and window-exact result over the full phrase, refusal of every unsafe
+execution option, a foreign bundle rejected as a conflict, cancellation, and a
+vocabulary without silence refused as unsupported. The helper returns silence by
+contract, so this proves admission, request binding and response validation, not
+synthesis. The real inference path is covered separately by
+`seam_neural_production_worker`, which executes actual ONNX graphs.
+
 Storage note: the machine reached 124 MiB free, which caused eleven unrelated
 suite failures (demo smokes, contract tests, neural runtime checks). Those were
 not regressions; the same tests pass with storage restored. Four regenerable

@@ -413,6 +413,7 @@ core::Result<std::string> buildNeuralIdentity(const domain::Project& project,
   IdentityWriter identity;
   identity.tag("project-seam-neural-bundle-v1");
   identity.integer(synthesis::kPerformanceCompilerRevision);
+  identity.integer(synthesis::kProceduralTimingPolicyRevision);
   identity.integer(neural_synthesis::kDiffSingerInputRevision);
   identity.tag(build::kRenderAbiId);
   identity.tag(json.value());
@@ -580,11 +581,13 @@ core::Result<RenderSnapshot> RenderSnapshotFactory::createNeural(
   const auto* frozenRegion = frozenProject.value().findRegion(regionId);
   if (!frozenRegion) return core::failure<RenderSnapshot>(core::ErrorCode::InvariantViolation,
       "Neural phrase extraction lost its source region");
-  // A neural bundle has no recipe poses, so phoneme timing follows the score the
-  // same way the sample path does. The worker receives that compiled timing and
-  // never re-derives it.
+  // A neural bundle has no bank source and no recipe poses, so consonant timing
+  // uses the existing source-independent in-note policy with its documented
+  // engineering default rather than a measured phonetic duration. The worker
+  // receives that compiled timing and never re-derives it, and the policy
+  // revision participates in the render identity above.
   const auto performance = synthesis::compileScorePerformance(frozenProject.value(), *frozenRegion, sampleRate,
-      pronunciation.value().pronunciation.tokens);
+      pronunciation.value().pronunciation.tokens, synthesis::PhonemeTimingPolicy::ProceduralInNote);
   if (!performance) return core::Result<RenderSnapshot>{performance.error()};
   const synthesis::PhraseFrameRange context{performance.value().notes().front().startFrame,
       performance.value().notes().back().endFrame};

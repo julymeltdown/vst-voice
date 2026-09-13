@@ -305,6 +305,7 @@ add_library(seam_authoring_runtime
   libs/seam-authoring-runtime/src/audio_settings.cpp
   libs/seam-authoring-runtime/src/audio_settings_controller.cpp
   libs/seam-authoring-runtime/src/media_import_service.cpp
+  libs/seam-authoring-runtime/src/neural_phrase_runner.cpp
   libs/seam-authoring-runtime/src/support_bundle.cpp
 )
 target_include_directories(seam_authoring_runtime PUBLIC
@@ -1312,6 +1313,8 @@ if(SEAM_BUILD_TESTS)
     tests/test_main.cpp tests/test_renderer_capabilities.cpp)
   add_executable(seam_neural_render_tests
     tests/test_main.cpp tests/test_neural_render_snapshot.cpp)
+  add_executable(seam_neural_phrase_runner_tests
+    tests/test_main.cpp tests/test_neural_phrase_runner.cpp)
   add_executable(seam_neural_worker_probe tests/helpers/neural_worker_probe.cpp)
   add_executable(seam_neural_bundle_transport_probe tests/helpers/neural_bundle_transport_probe.cpp)
   target_link_libraries(seam_neural_bundle_transport_probe PRIVATE seam_neural_synthesis)
@@ -1373,6 +1376,13 @@ if(SEAM_BUILD_TESTS)
   target_link_libraries(seam_neural_render_tests PRIVATE seam_rendering seam_neural_synthesis seam_application)
   seam_apply_compiler_options(seam_neural_render_tests)
   add_test(NAME seam_neural_render_tests COMMAND seam_neural_render_tests)
+  target_include_directories(seam_neural_phrase_runner_tests PRIVATE tests)
+  target_link_libraries(seam_neural_phrase_runner_tests PRIVATE seam_authoring_runtime seam_neural_synthesis seam_application)
+  target_compile_definitions(seam_neural_phrase_runner_tests PRIVATE
+    SEAM_NEURAL_BUNDLE_TRANSPORT_PROBE="$<TARGET_FILE:seam_neural_bundle_transport_probe>")
+  add_dependencies(seam_neural_phrase_runner_tests seam_neural_bundle_transport_probe)
+  seam_apply_compiler_options(seam_neural_phrase_runner_tests)
+  add_test(NAME seam_neural_phrase_runner_tests COMMAND seam_neural_phrase_runner_tests)
   target_link_libraries(seam_neural_worker_probe PRIVATE seam_neural_synthesis)
   seam_apply_compiler_options(seam_neural_worker_probe)
   add_dependencies(seam_neural_worker_protocol_tests seam_neural_worker_probe)
