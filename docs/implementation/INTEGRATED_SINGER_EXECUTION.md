@@ -1,5 +1,60 @@
 # Integrated Singer Execution
 
+## The application selects its own neural helper
+
+`TrackNeuralSource` was already consumed by the renderer, the render cache and the
+export owner, but nothing outside tests ever constructed one: the deployment
+descriptor was read only by tests and the packaging writer, and no product surface
+consulted its own signed deployment. A project could therefore save a neural
+selection that the product could not run, with no surface even looking for the
+helper it ships.
+
+`libs/seam-authoring-runtime` now owns `NeuralSelectionService`. One service is
+created per surface. It validates the surface's declared budgets and provenance,
+reads the descriptor with the same 16 KiB bound the verifier enforces, verifies the
+signature against the surface's release key under the bundle launch contract
+(schema 2 only), and loads the helper through the loaded-module anchor, so a bank
+cannot redirect execution even if it could name a path. The package supplies the
+helper path and its expected digest; the surface supplies the process budgets,
+because the package format deliberately carries none; the surface also declares
+the worker/runtime/provider provenance that is hashed into the render cache
+identity and published. Nothing comes from a project or a voicebank.
+
+`select()` then resolves one saved `NeuralResourceReference` through the installed
+resource index, freezes and admits the bundle, cross-checks the admitted execution
+identity against the saved identity, and creates the runner. It refuses an unknown
+or relabelled identity, a duplicated resource root, a bundle whose configuration is
+not executable (schema 1 declares no steps layout and no vocoder output name), a
+cancelled request, and a non-zero anchor or descriptor that fails verification. A
+saved selection this installation cannot resolve is a failure; another voice is
+never substituted for it.
+
+The standalone surface is wired to it. `StandaloneApplicationControllerConfig`
+gains the optional deployment surface and an installed-resource root, so a build
+that ships a signed helper selects it and a build that ships none behaves exactly
+as before. Construction verifies the deployment and indexes the resource root,
+which means a surface whose declared helper cannot be verified refuses to start
+instead of failing later on the first note. Both export paths (`makeExportRequest`
+and `exportAudio`) resolve a neural track before any bank source for that track and
+fail the export with the selection error rather than exporting a different singer.
+
+Verification: `tests/test_neural_selection.cpp` adds three cases to the new
+`seam_neural_selection_tests` target — the full guarded selection path with the
+refusals for a stranger's signature, a schema-1 deployment, a mismatched target or
+platform, unmeasured budgets, a missing anchor and a cancelled token; the
+non-executable bundle refusal; and a resource root whose duplicate identity is
+ambiguous. `seam_u2_tests` adds one controller case: a surface whose deployment is
+signed by nobody is refused at construction, while a controller without a neural
+deployment still starts. The executing helper in these tests is the transport
+fixture probe, which performs no inference.
+
+Not claimed. No real deployment is signed and none can be: the repository's trust
+roots are still marked `testOnly`, so a production surface has no release key to
+verify with yet. No surface can yet *choose* a neural resource — the project schema
+stores the reference, but no command or editor action sets it, and no preview or
+stop/retry surface exists. No model was trained or executed, and no listening
+result follows from any of this. M6 still owns the audible exit.
+
 ## The shipped helper no longer links the build machine's Protobuf
 
 `build/release/seam_neural_worker` recorded 81 absolute `/opt/homebrew` load

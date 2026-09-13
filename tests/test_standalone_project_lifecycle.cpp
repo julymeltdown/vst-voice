@@ -3,6 +3,7 @@
 #include "test_support.hpp"
 
 #include "seam/application/note_commands.hpp"
+#include "seam/core/file_io.hpp"
 #include "seam/platform/application_menu.hpp"
 #include "seam/platform/file_dialog.hpp"
 #include "seam/standalone/application_controller.hpp"
@@ -540,4 +541,55 @@ TEST_CASE("standalone_application_controller_blocks_close_when_pending_autosave_
   CHECK(!close);
   CHECK(!quit);
   CHECK(session->runtime().document().dirty());
+}
+
+TEST_CASE("standalone_controller_refuses_a_neural_deployment_it_cannot_verify") {
+  const auto root = seam::test::support::temporaryDirectory("standalone-neural");
+  auto session = makeSession(root);
+  bool quit = false;
+
+  // The surface declares a deployment signed by nobody. Selection must consult it
+  // and refuse: a helper SEAM cannot verify may not be executed.
+  static const char moduleAnchor{0};
+  const auto descriptor = root / "neural-deployment.json";
+  CHECK(seam::core::durableAtomicWriteText(descriptor,
+      "{\"formatId\":\"com.project-seam.neural-deployment\",\"schemaVersion\":2}"));
+  seam::authoring::NeuralSelectionSurface surface{};
+  surface.deploymentDescriptor = descriptor;
+  surface.buildId = "fixture-build";
+  surface.platform = "macos-arm64";
+  surface.surface = "standalone";
+  surface.moduleAnchor = &moduleAnchor;
+  surface.provenance = seam::rendering::NeuralRenderProvenance{
+      .workerVersion = "seam.neural-worker.v1",
+      .runtimeVersion = "onnxruntime-1.30.0",
+      .provider = "CPUExecutionProvider"};
+  surface.maximumBundleBytes = 1024U * 1024U;
+  surface.maximumFrames = 96000U;
+  surface.inferenceSteps = 10;
+  surface.maximumResidentBytes = 256U * 1024U * 1024U;
+  surface.maximumCpuTime = std::chrono::seconds{5};
+  surface.helperTimeout = std::chrono::seconds{20};
+  seam::standalone::StandaloneApplicationControllerConfig configured{};
+  configured.autosaveRoot = root / "autosaves";
+  configured.recentProjectsPath = root / "recent.json";
+  configured.neuralSelection = surface;
+  configured.neuralResourceRoot = root / "neural-resources";
+  auto refused = seam::standalone::StandaloneApplicationController::create(*session,
+      std::make_unique<FakeDialog>(), std::make_unique<FakePrompt>(), configured,
+      [&quit] { quit = true; });
+  // Construction initializes the surface, so an unusable deployment is refused
+  // before the controller exists at all.
+  CHECK(!refused);
+  CHECK(!quit);
+
+  // An installation that ships no neural helper still starts exactly as before, so
+  // adding the surface configuration cannot break a build without one.
+  seam::standalone::StandaloneApplicationControllerConfig plain{};
+  plain.autosaveRoot = root / "autosaves";
+  plain.recentProjectsPath = root / "recent.json";
+  auto controller = seam::standalone::StandaloneApplicationController::create(*session,
+      std::make_unique<FakeDialog>(), std::make_unique<FakePrompt>(), plain,
+      [&quit] { quit = true; });
+  CHECK(controller);
 }

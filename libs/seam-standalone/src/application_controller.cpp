@@ -124,7 +124,34 @@ StandaloneApplicationController::~StandaloneApplicationController() {
 core::Result<void> StandaloneApplicationController::initialize() {
   auto recent = recentProjects_.load();
   if (!recent) return recent;
+  if (config_.neuralSelection.has_value()) {
+    auto service = authoring::NeuralSelectionService::create(*config_.neuralSelection);
+    if (!service) return core::Result<void>{service.error()};
+    if (config_.neuralResourceRoot.empty())
+      return core::failure(core::ErrorCode::InvalidArgument,
+          "A configured neural deployment requires an installed-resource root");
+    auto resources = authoring::NeuralResourceRegistry::scan(config_.neuralResourceRoot,
+        config_.neuralMaximumResources, 256U * 1024U * 1024U, 512U * 1024U * 1024U);
+    if (!resources) return core::Result<void>{resources.error()};
+    neuralSelection_ = std::move(service).value();
+    neuralResources_ = std::move(resources).value();
+  }
   return refreshVoicebankBrowser();
+}
+
+core::Result<void> StandaloneApplicationController::appendNeuralSource(
+    domain::TrackId trackId,const domain::NeuralResourceReference& reference,
+    std::vector<rendering::TrackSingerSource>& sources) const {
+  if (!neuralSelection_ || !neuralResources_)
+    return core::failure(core::ErrorCode::NotFound,
+        "This installation has no verified neural deployment for the saved selection");
+  auto selected = neuralSelection_->select(trackId,reference,*neuralResources_);
+  if (!selected) return core::Result<void>{selected.error()};
+  std::erase_if(sources,[&](const auto& source) {
+    return std::visit([&](const auto& value) {return value.trackId==trackId;},source);
+  });
+  sources.push_back(std::move(selected).value());
+  return core::success();
 }
 
 core::Result<void> StandaloneApplicationController::refreshVoicebankBrowser() {
@@ -546,6 +573,15 @@ StandaloneApplicationController::makeExportRequest(
   std::vector<rendering::TrackSingerSource> sources;
   sources.reserve(states.size());
   for (const auto& state : states) {
+    // A saved neural selection is resolved through the surface's own deployment
+    // before any bank source is considered, so an unresolvable selection fails the
+    // render instead of quietly singing with a different voice.
+    if (const auto* track = project.findVocalTrack(state.trackId);
+        track != nullptr && track->neuralResource) {
+      auto appended = appendNeuralSource(state.trackId, *track->neuralResource, sources);
+      if (!appended) return core::Result<ExportRequest>{appended.error()};
+      continue;
+    }
     if (const auto* track = project.findVocalTrack(state.trackId); track && track->proceduralRecipe) {
       const auto& savedPath = session_.runtime().document().identity().projectPath;
       sources.emplace_back(rendering::TrackRecipeFileSource{state.trackId, *track->proceduralRecipe,
@@ -809,6 +845,20 @@ core::Result<void> StandaloneApplicationController::exportAudio() {
     });
   }
   for (const auto& track : project.vocalTracks()) {
+    if (track.neuralResource) {
+      auto appended = appendNeuralSource(track.id, *track.neuralResource, sources);
+      if (!appended) {
+        exportProgress_.update(authoring::ExportProgress{
+            .state = authoring::ExportState::Failed,
+            .currentOutput = errorDescription(appended.error()),
+            .completedFiles = 0U,
+            .totalFiles = 1U,
+        });
+        notifyProgressChanged();
+        return core::Result<void>{appended.error()};
+      }
+      continue;
+    }
     if (!track.proceduralRecipe) continue;
     std::erase_if(sources, [&](const auto& source) {
       return std::visit([&](const auto& value) { return value.trackId == track.id; }, source);

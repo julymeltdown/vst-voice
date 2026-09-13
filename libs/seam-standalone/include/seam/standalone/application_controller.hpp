@@ -2,6 +2,8 @@
 
 #include "seam/authoring/autosave_service.hpp"
 #include "seam/authoring/export_service.hpp"
+#include "seam/authoring/neural_resource_registry.hpp"
+#include "seam/authoring/neural_selection.hpp"
 #include "seam/authoring/project_lifecycle.hpp"
 #include "seam/authoring/recent_projects.hpp"
 #include "seam/authoring/voicebank_browser.hpp"
@@ -64,6 +66,15 @@ struct StandaloneApplicationControllerConfig final {
   std::function<core::Result<void>()> closeSelectedGaps;
   std::function<core::Result<void>()> autoLegatoSelectedNotes;
   std::function<core::Result<void>()> clearRegionDynamicsCurve;
+  // Application-owned neural execution. A surface that ships a signed neural
+  // deployment fills both fields: the descriptor and release key select the
+  // first-party helper, and the root is where installed bundles are indexed. A
+  // project may then select an installed bundle by identity. Without them a neural
+  // track still fails as a saved selection this installation cannot resolve, and
+  // no other voice is ever substituted for it.
+  std::optional<authoring::NeuralSelectionSurface> neuralSelection;
+  std::filesystem::path neuralResourceRoot{};
+  std::size_t neuralMaximumResources{64U};
 };
 
 class StandaloneApplicationController final
@@ -197,6 +208,12 @@ private:
   void notifyStateChanged() const;
   void notifyProgressChanged() const;
   [[nodiscard]] authoring::NewProjectRequest defaultNewProject() const;
+  // Adds the selected neural source for one track, replacing any resolved bank
+  // source for the same track. A track whose saved selection cannot be selected
+  // fails the render: a different voice is never substituted for it.
+  [[nodiscard]] core::Result<void> appendNeuralSource(
+      domain::TrackId trackId,const domain::NeuralResourceReference& reference,
+      std::vector<rendering::TrackSingerSource>& sources) const;
 
   AuthoringSession& session_;
   std::unique_ptr<platform::IFileDialog> fileDialog_;
@@ -208,6 +225,8 @@ private:
   authoring::RecentProjectsStore recentProjects_;
   authoring::VoicebankBrowserModel voicebankBrowser_;
   std::unique_ptr<authoring::VoicebankInstallerService> voicebankInstaller_;
+  std::optional<authoring::NeuralSelectionService> neuralSelection_;
+  std::optional<authoring::NeuralResourceRegistry> neuralResources_;
   native_ui::ExportProgressPanelModel exportProgress_;
   std::optional<authoring::ExportResult> lastExport_;
   std::stop_source exportStopSource_;
