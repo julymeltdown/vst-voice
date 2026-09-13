@@ -111,9 +111,9 @@ core::Result<std::vector<std::string>> selectInventoryPreflightTakeIds(
     frames += job.frameCount;
     order.push_back(best);
     if (order.size() > limits.maximumPhrases)
-      return fail("Campaign preflight needs " + std::to_string(order.size()) + " phrases for " +
-          std::to_string(requiredPhones.size()) + " phones and " + std::to_string(requiredKinds.size()) +
-          " kinds, which exceeds the bound of " + std::to_string(limits.maximumPhrases));
+      return fail("Campaign preflight exceeds the bound of " + std::to_string(limits.maximumPhrases) +
+          " phrases while covering " + std::to_string(requiredPhones.size()) + " phones and " +
+          std::to_string(requiredKinds.size()) + " kinds; raise the bound explicitly or drop the classes");
     if (frames > limits.maximumFrames)
       return fail("Campaign preflight exceeds the admitted frame budget before the bound is reached");
   }

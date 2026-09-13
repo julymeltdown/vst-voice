@@ -84,12 +84,13 @@ struct Fixture final {
     project.operators = {{"producer", "PRODUCER"}};
     project.unitAssignments = {
         {.coverageKey = "cv:s:a", .pitchLayer = 69, .promptId = "prompt-sa", .plannedTakeId = "take-sa", .style = "neutral"},
+        {.coverageKey = "vc:a:s", .pitchLayer = 69, .promptId = "prompt-as", .plannedTakeId = "take-as", .style = "neutral"},
         {.coverageKey = "sustain:a", .pitchLayer = 69, .promptId = "prompt-aa", .plannedTakeId = "take-aa", .style = "neutral"}};
     CHECK(repository.initialize(project, {.action = "create", .subjectId = project.projectId,
         .operatorId = "producer", .occurredAtUtc = "2026-09-14T00:00:00Z"}));
     const auto resource = voice_design::freezeVoiceRecipeResource(preflightRecipe());
     CHECK(resource);
-    const std::vector<std::string> takes{"take-sa", "take-aa"};
+    const std::vector<std::string> takes{"take-sa", "take-as", "take-aa"};
     const auto planned = authoring::planGenerationCampaign(project, takes, resource.value());
     if (!planned) throw test::Failure{"Campaign planning failed: " + planned.error().message};
     campaign = planned.value();
@@ -109,18 +110,20 @@ TEST_CASE("a preflight selects one bounded phrase per phone and kind the campaig
   const auto selected = authoring::selectInventoryPreflightTakeIds(fixture.campaign, fixture.campaignSha256);
   CHECK(selected);
   if (!selected) return;
-  // Both assignments are needed: cv:s:a is the only cv and the only source of s,
-  // and sustain:a is the only sustain. The order is canonical, not mapped order.
-  CHECK(selected.value().size() == 2U);
+  // Every assignment is needed: cv:s:a is the only cv, vc:a:s is the only vc, and
+  // sustain:a is the only sustain. The order is canonical, not mapped order.
+  CHECK(selected.value().size() == 3U);
   CHECK(selected.value()[0] == "take-sa");
   CHECK(selected.value()[1] == "take-aa");
+  CHECK(selected.value()[2] == "take-as");
   // A bound that cannot cover them is refused with the requirement, not truncated.
   const auto tight = authoring::selectInventoryPreflightTakeIds(fixture.campaign, fixture.campaignSha256,
       {.maximumPhrases = 1U});
   CHECK(!tight);
   if (!tight) {
-    CHECK(tight.error().message.find("2 phrases") != std::string::npos);
     CHECK(tight.error().message.find("bound of 1") != std::string::npos);
+    CHECK(tight.error().message.find("2 phones") != std::string::npos);
+    CHECK(tight.error().message.find("3 kinds") != std::string::npos);
   }
   CHECK(authoring::selectInventoryPreflightTakeIds(fixture.campaign, std::string(64U, '0')).error().code ==
       core::ErrorCode::InvalidArgument);
@@ -132,11 +135,11 @@ TEST_CASE("a preflight renders its phrases, retains dry audio and collects nothi
   CHECK(report);
   if (!report) return;
   CHECK(report.value().passed);
-  CHECK(report.value().produced == 2U);
+  CHECK(report.value().produced == 3U);
   CHECK(report.value().defective == 0U);
   CHECK(report.value().requiredPhones == 2U);
-  CHECK(report.value().requiredKinds == 2U);
-  CHECK(report.value().phrases.size() == 2U);
+  CHECK(report.value().requiredKinds == 3U);
+  CHECK(report.value().phrases.size() == 3U);
   for (const auto& phrase : report.value().phrases) {
     CHECK(phrase.verdict == "PRODUCED");
     CHECK(phrase.peak > 0.0);
@@ -152,6 +155,12 @@ TEST_CASE("a preflight renders its phrases, retains dry audio and collects nothi
   CHECK(bytes.value() == report.value().json);
   CHECK(std::filesystem::exists(fixture.preflight() / "phrase-0" / "output" / "candidates"));
   CHECK(std::filesystem::exists(fixture.preflight() / "phrase-1" / "output" / "candidates"));
+  CHECK(std::filesystem::exists(fixture.preflight() / "phrase-2" / "output" / "candidates"));
+  // The vowel-to-coda unit renders both of its own gestures in order: the inventory's
+  // own declared class is now a real, audible pair rather than a refused placement.
+  CHECK(report.value().phrases[2].coverageKey == "vc:a:s");
+  CHECK(report.value().phrases[2].requiredPhones == (std::vector<std::string>{"a", "s"}));
+  CHECK(report.value().phrases[2].producedPhones == (std::vector<std::string>{"a", "s"}));
   CHECK(authoring::verifyInventoryPreflight(bytes.value(), fixture.campaign, fixture.campaignSha256));
   // Rendering a phrase never commits a take or advances the producer history.
   const auto recovered = fixture.repository.recover(); CHECK(recovered);
@@ -207,7 +216,7 @@ TEST_CASE("a campaign cannot advance until its own preflight passes") {
   CHECK(advanced.value().complete);
   CHECK(advanced.value().completedBatches == advanced.value().totalBatches);
   const auto collected = fixture.repository.recover(); CHECK(collected);
-  CHECK(collected.value().takes.size() == 2U);
+  CHECK(collected.value().takes.size() == 3U);
   for (const auto& take : collected.value().takes) CHECK(take.state == production::UnitQueueState::MarkerReview);
 }
 

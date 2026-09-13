@@ -1,5 +1,63 @@
 # Integrated Singer Execution
 
+## A hint's consonant had no place in the syllable
+
+The previous entry reported that 210 of the pilot inventory's refusals were a structural
+gap in the gesture model, because the message was "requires a resolved start and
+associated nucleus". That attribution was wrong, and the measurement is what showed it:
+the gesture model places post-nucleus gestures perfectly well, and the real cause was the
+explicit phone hint.
+
+`inferRole()` derives a token's role from its symbol alone, and an ordinary consonant
+infers as an onset. That is right for a lyric, where a consonant written before the vowel
+is the syllable's onset. It is wrong for an explicit `note.n` hint such as `"a s"`, which
+produced [nucleus, onset]: an onset sitting after its own nucleus, which the timing plan
+cannot give a start and the articulation planner correctly refuses rather than placing at
+an invented frame. Symbols that carry their own role -- `N`, `cl`, `br`, `pau`, `sil` --
+and vowels were never affected, which is why `"k a"`, `"s a"` and `"k a N"` always worked
+and only vowel-to-consonant units failed.
+
+An explicit hint now gives an ordinary consonant its place in the syllable: it is a coda
+when it directly follows a vowel and no vowel follows it in that hint, and an onset
+otherwise. The lookahead keeps the maximal-onset reading of a multi-syllable hint intact,
+so `"k a s a"` is still two open syllables, and `"a cl"` and `"cl k a"` keep the roles
+those symbols already had. Lyrics are untouched; a hint that mixes a coda with a
+following syllable is still refused rather than guessed at.
+
+Measured on the same inventory and recipe as the previous report: prepared assignments
+rose from 288 to **498** of 1026, distinct prepared coverage keys from 96 to 166, and the
+coda-resolution refusal bucket from 210 to **zero**. Every vowel-to-coda class whose models
+exist now prepares (210 of the 450 `vc` assignments; the other 240 refuse for missing
+models). Coverage kinds with a prepared class rose from four to five, and no kind is
+blocked by the compiler any more: the 528 remaining refusals are 300 missing voiced
+models, 186 missing noise models and 42 symbols the Japanese adapter cannot resolve
+(`R`, `glottal`).
+
+The rendered unit is two ordered gestures, not one stretched one. A vowel-to-coda note
+compiles to a vowel that owns the note up to the coda's resolved start and a coda that
+owns the tail, with audio in both spans, and the whole range renders identically in one
+window or two. A coda whose start was never resolved is refused instead of being placed at
+an invented frame, and a coda that would begin before its own nucleus is a conflict.
+
+Evidence: `tests/test_phonemizer.cpp` asserts the role each hint produces, including the
+unchanged `"k a"`, `"k a N"` and `"k a s a"` readings and the intrinsic roles of `cl`.
+`tests/test_articulation_context.cpp` asserts the coda plan (ordered, non-overlapping
+spans, the refusal of an unresolved coda and of one crossing the nucleus) and renders the
+unit end to end from a real hint through the phonemizer, the compiler and the articulated
+stream, including chunk equality. `tests/test_inventory_preflight.cpp` renders a `vc:a:s`
+inventory class through the ordinary generation job and asserts the marker sequence
+`a, s`, so the inventory's own declared class is now an audible pair. The retained
+measurement is `assets/pilots/seam-pilot-01/coverage-report.json` with
+`assets/pilots/seam-pilot-01/COVERAGE_REPORT.md`.
+
+Not claimed. No listener has judged any coda, so nothing here is intelligibility: the
+assertion is that the coda renders as its own gesture with audible audio. This repaired
+placement *inside* one note; the plan's phrase context beyond the owning note -- pre-onset
+and release intervals that reach past a gesture's own note -- is still open, and the
+classes that remain unrenderable need new source models rather than compiler work. No unit
+acceptance changes.
+
+
 ## Half of what the pilot inventory cannot prepare is structural, not a missing sound
 
 The plan requires a coverage report showing missing phone classes and transitions before
@@ -33,6 +91,12 @@ and prepare as onsets. Those 210 refusals come from the gesture model itself: a 
 after the nucleus cannot resolve its own start and associated nucleus. That is the cost
 of the gap the plan already lists as items two and three of this package, and it is now
 measured rather than asserted.
+
+**Corrected by the next entry:** those 210 refusals are real, but the cause is not the
+gesture model. They come from the explicit phone hint, which inferred an ordinary
+consonant's role from its symbol alone and therefore wrote a post-nucleus consonant as an
+onset. The entry above stands as the measurement; its attribution is superseded, and the
+planned coda and context work is not what removed them.
 
 Consequence for the next step: a campaign over this inventory cannot be planned at all,
 because planning refuses at the first class that cannot prepare, so the held-out
@@ -186,8 +250,8 @@ M1.P2's ten required changes:
 
 | # | Required change | State |
 |---|---|---|
-| 1 | Articulation-source description per phone class | Admitted: oral vowel, nasal, frication, voiced frication, released stop, voiced stop, affricate, approximant and gesture silence. Not admitted: a standalone unreleased stop and an explicit breath event. |
-| 2 | Phrase context beyond the owning note | Open, and now measured: 210 of the pilot inventory's 738 refusals are vowel-to-coda placements of phones whose models already exist, because a gesture after the nucleus cannot resolve its own start and nucleus. Every `vc`, `release`, `glottal-attack` and `breath` assignment is refused. |
+| 1 | Articulation-source description per phone class | Admitted: oral vowel, nasal, frication, voiced frication, released stop, voiced stop, affricate, approximant, vowel-to-coda placement for ordinary consonants, and gesture silence. Not admitted: voiced fricatives, voiced affricates, the palatalized clusters, a standalone unreleased stop, and an explicit breath event. |
+| 2 | Phrase context beyond the owning note | Open. Placement inside a note is now complete for onset and coda, so what remains is context reaching past a gesture's own note: pre-onset intervals and a release the next note inherits. The 210 refusals once attributed here were the hint's role inference and are gone. |
 | 3 | Ordered spans separated from a bounded transition plan | Partial. Ordered linguistic spans are preserved and the approximant transition is a bounded declared window, but there is no shared transition-plan type and no coarticulation that crosses a gesture boundary. |
 | 4 | Chunk-invariant rendering | Done, including the new gesture. |
 | 5 | Versioned semantics for old resources | Done. Recipe schemas 1-8, candidate schemas up to 8, articulation plan revision 11. |

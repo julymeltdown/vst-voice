@@ -7,6 +7,7 @@
 #include "seam/voice_design/recipe_resource.hpp"
 
 #include "seam/synthesis/performance_compiler.hpp"
+#include "seam/phonemizer/japanese_phonemizer.hpp"
 
 #include <algorithm>
 #include <iostream>
@@ -83,7 +84,47 @@ Syllable syllable(const std::string& onset, bool onsetVoiced, time::SampleFrame 
   return value;
 }
 
+// One note that ends in a consonant: the vowel owns the note up to the coda's start, and the
+// coda owns the tail. Its placement comes from the compiler's resolved start, not from a score
+// boundary, which is what makes a vowel-to-coda unit a real gesture pair.
+Syllable codaSyllable(const std::string& coda, time::SampleFrame codaStart, bool codaVoiced,
+                      time::SampleFrame noteEnd = kNoteEnd) {
+  Syllable value;
+  const domain::PhonemeKey vowel{domain::NoteId{7U}, 0U};
+  const domain::PhonemeKey tail{domain::NoteId{7U}, 1U};
+  value.phones.push_back(domain::PhonemeToken{.key = vowel, .symbol = "a",
+                                              .role = domain::PhonemeRole::Nucleus, .voiced = true});
+  value.phones.push_back(domain::PhonemeToken{.key = tail, .symbol = coda,
+                                              .role = domain::PhonemeRole::Coda, .voiced = codaVoiced});
+  value.timing.push_back(synthesis::PhonemeTimingAnchor{.key = vowel,
+                                                        .nucleusFrame = kNoteStart,
+                                                        .endFrame = codaStart,
+                                                        .explicitStartFrame = kNoteStart,
+                                                        .syllableIndex = 0U,
+                                                        .nucleusKey = vowel,
+                                                        .endExplicit = true,
+                                                        .voiced = true});
+  value.timing.push_back(synthesis::PhonemeTimingAnchor{.key = tail,
+                                                        .nucleusFrame = kNoteStart,
+                                                        .endFrame = noteEnd,
+                                                        .syllableIndex = 0U,
+                                                        .nucleusKey = vowel,
+                                                        .endExplicit = true,
+                                                        .voiced = codaVoiced,
+                                                        .inferredStartFrame = codaStart});
+  return value;
+}
+
+core::Result<ArticulationPlan> codaPlan(const std::string& coda, bool codaVoiced,
+                                        time::SampleFrame codaStart,
+                                        std::span<const FricationBinding> frications) {
+  auto fixture = codaSyllable(coda, codaStart, codaVoiced);
+  return ArticulationPlan::compile(fixture.phones, fixture.timing, frications, kRate,
+                                   synthesis::PhraseFrameRange{kNoteStart, kNoteEnd}, {}, {}, {}, {});
+}
+
 core::Result<ArticulationPlan> planFor(const std::string& onset, bool onsetVoiced,
+
                                        time::SampleFrame nucleusFrame,
                                        std::span<const FricationBinding> frications,
                                        std::span<const AffricateBinding> affricates) {
@@ -164,7 +205,46 @@ double lowBandBalance(std::span<const float> samples, time::SampleFrame begin, t
   return second / first;
 }
 
+voice_design::VoiceRecipe codaRecipe() {
+  voice_design::VoiceRecipe recipe;
+  recipe.id = "coda-context-test";
+  recipe.seed = 43U;
+  recipe.phonation.aspiration = 0.0;
+  recipe.poses = {{"a", "neutral", 0.0, {{800.0, 90.0, 0.0}, {1250.0, 110.0, -3.0}, {2800.0, 160.0, -6.0}}}};
+  recipe.frications = {{"s", "neutral", voice_design::FricationConfig{.seed = 44U, .centerHz = 5500.0,
+                                                                     .bandwidthHz = 3000.0, .gain = 0.12}}};
+  return recipe;
+}
+
+// One note whose explicit phone hint is a vowel followed by a coda. The tokens therefore come
+// from the real phonemizer, which is where an ordinary consonant's place in the syllable is
+// decided.
+struct CodaRenderFixture final {
+  domain::Project project{domain::ProjectId{21U}, "Coda render fixture"};
+  domain::VocalRegion region;
+  domain::NoteId noteId{domain::NoteId{25U}};
+  std::vector<domain::PhonemeToken> phones;
+};
+
+CodaRenderFixture codaRenderFixture() {
+  CodaRenderFixture fixture;
+  fixture.region = domain::VocalRegion{
+      .id = domain::RegionId{23U},
+      .name = "Note",
+      .durationTick = time::Tick{960},
+      .lyrics = {{domain::LyricTokenId{24U}, U"\u3042", domain::Language::Japanese}},
+      .notes = {{.id = fixture.noteId,
+                 .durationTick = time::Tick{960},
+                 .midiKey = 60U,
+                 .lyricTokenId = domain::LyricTokenId{24U},
+                 .phoneticHint = "a s"}}};
+  const auto pronunciation = phonemizer::JapaneseKanaPhonemizer{}.phonemize(fixture.region);
+  fixture.phones = pronunciation.tokensForNote(fixture.noteId);
+  return fixture;
+}
+
 voice_design::VoiceRecipe glideRecipe(double transitionMilliseconds = 60.0) {
+
   voice_design::VoiceRecipe recipe;
   recipe.id = "approximant-context-test";
   recipe.seed = 31U;
@@ -435,4 +515,107 @@ TEST_CASE("the approximant transition moves the spectrum into its vowel") {
     CHECK(!voice_design::ArticulatedStream::create(resource.value(), performance.value(),
                                                    manual.value(), "neutral"));
   }
+}
+TEST_CASE("a consonant after the vowel is a coda gesture that owns the tail") {
+  const std::vector<FricationBinding> frications{frication("s", 5500.0)};
+  const auto codaStart = kNucleus;
+  const auto plan = codaPlan("s", false, codaStart, frications);
+  CHECK(plan);
+  if (!plan) return;
+  CHECK(plan.value().gestures().size() == 2U);
+  const auto& vowel = plan.value().gestures().front();
+  const auto& coda = plan.value().gestures().back();
+  CHECK(vowel.kind == ArticulationGestureKind::OralVowel);
+  CHECK(vowel.span.start == kNoteStart);
+  CHECK(vowel.span.end == codaStart);
+  CHECK(coda.kind == ArticulationGestureKind::Frication);
+  CHECK(coda.phone == "s");
+  CHECK(coda.span.start == codaStart);
+  CHECK(coda.span.end == kNoteEnd);
+  CHECK(!voice_design::isVoicedGesture(coda.kind));
+  CHECK(coda.frication.has_value());
+  // The two gestures stay ordered and do not overlap: the coda begins where the vowel ends.
+  CHECK(vowel.span.end == coda.span.start);
+  // A coda whose start was never resolved is refused instead of being placed at an invented
+  // frame, and a coda that would begin before its own nucleus is a conflict.
+  auto unresolved = codaSyllable("s", codaStart, false);
+  unresolved.timing.back().inferredStartFrame.reset();
+  const auto refused = ArticulationPlan::compile(unresolved.phones, unresolved.timing, frications, kRate,
+      synthesis::PhraseFrameRange{kNoteStart, kNoteEnd}, {}, {}, {}, {});
+  CHECK(!refused);
+  if (!refused) CHECK(refused.error().message.find("resolved start") != std::string::npos);
+  auto crossing = codaSyllable("s", codaStart, false);
+  crossing.timing.back().inferredStartFrame = kNoteStart;
+  CHECK(!ArticulationPlan::compile(crossing.phones, crossing.timing, frications, kRate,
+      synthesis::PhraseFrameRange{kNoteStart, kNoteEnd}, {}, {}, {}, {}));
+}
+
+TEST_CASE("a vowel-to-coda unit renders its vowel and then its coda") {
+  auto fixture = codaRenderFixture();
+  CHECK(fixture.phones.size() == 2U);
+  if (fixture.phones.size() != 2U) return;
+  // The hint decided the roles, so the second token is a coda rather than a nameless consonant.
+  CHECK(fixture.phones.front().role == domain::PhonemeRole::Nucleus);
+  CHECK(fixture.phones.back().role == domain::PhonemeRole::Coda);
+  CHECK(fixture.phones.back().symbol == "s");
+  CHECK(!fixture.phones.back().voiced);
+  const auto performance = synthesis::compileScorePerformance(fixture.project, fixture.region, kRate,
+      fixture.phones, synthesis::PhonemeTimingPolicy::ProceduralInNote);
+  CHECK(performance);
+  if (!performance) return;
+  const auto& anchors = performance.value().phonemeTiming();
+  CHECK(anchors.size() == 2U);
+  if (anchors.size() != 2U) return;
+  // The compiler reserved the coda's own tail instead of leaving its start unresolved.
+  CHECK(anchors.back().inferredStartFrame.has_value());
+  if (!anchors.back().inferredStartFrame) return;
+  const auto codaStart = *anchors.back().inferredStartFrame;
+  CHECK(codaStart > anchors.front().nucleusFrame);
+  CHECK(anchors.front().endFrame == codaStart);
+  CHECK(!performance.value().notes().empty());
+  if (performance.value().notes().empty()) return;
+  CHECK(anchors.back().endFrame == performance.value().notes().back().endFrame);
+  const auto resource = voice_design::freezeVoiceRecipeResource(codaRecipe());
+  CHECK(resource);
+  if (!resource) return;
+  auto stream = voice_design::ArticulatedStream::createFromRecipe(resource.value(), performance.value(),
+      fixture.phones, "neutral", 257U);
+  CHECK(stream);
+  if (!stream) return;
+  const auto plan = ArticulationPlan::compileRecipe(resource.value(), performance.value(), fixture.phones, "neutral");
+  CHECK(plan);
+  if (!plan) return;
+  CHECK(plan.value().gestures().size() == 2U);
+  if (plan.value().gestures().size() != 2U) return;
+  CHECK(plan.value().gestures().front().kind == ArticulationGestureKind::OralVowel);
+  CHECK(plan.value().gestures().back().kind == ArticulationGestureKind::Frication);
+  CHECK(plan.value().gestures().front().span.end == codaStart);
+  CHECK(plan.value().gestures().back().span.start == codaStart);
+  const synthesis::PhraseFrameRange whole{plan.value().context().start, plan.value().context().end};
+  const auto audio = stream.value().renderOwned(whole);
+  CHECK(audio);
+  if (!audio) return;
+  const auto samples = audio.value().samples;
+  const auto nonzero = [&](time::SampleFrame begin, time::SampleFrame end) {
+    return std::any_of(samples.begin() + begin, samples.begin() + end,
+                       [](float sample) { return sample != 0.0F; });
+  };
+  // Both halves of the unit are audible: the vowel owns the span before the coda, and the
+  // coda is not silence.
+  CHECK(nonzero(anchors.front().nucleusFrame, codaStart));
+  CHECK(nonzero(codaStart, whole.end));
+  // The same owned range from the same context is identical in one window or two.
+  auto second = voice_design::ArticulatedStream::createFromRecipe(resource.value(), performance.value(),
+      fixture.phones, "neutral", 111U);
+  CHECK(second);
+  if (!second) return;
+  const auto split = codaStart;
+  const auto prefix = second.value().renderOwned({whole.start, split});
+  const auto suffix = second.value().renderOwned({split, whole.end});
+  CHECK(prefix);
+  CHECK(suffix);
+  if (!prefix || !suffix) return;
+  std::vector<float> joined = prefix.value().samples;
+  joined.insert(joined.end(), suffix.value().samples.begin(), suffix.value().samples.end());
+  CHECK(joined == samples);
 }

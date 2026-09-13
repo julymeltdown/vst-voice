@@ -140,11 +140,12 @@ exits zero, and `status`, `missingPhones`, `missingKinds` and `refusedClasses` c
 the answer. The report destination must be new.
 
 The retained result for this inventory against the pilot's own maximal recipe is
-`coverage-report.json`, summarised in `COVERAGE_REPORT.md`: 288 of 1026 assignments
-prepare, 96 of 342 coverage keys, 20 of 41 phones and 4 of 8 kinds. Most of the refusals
-are missing models, but 210 of them are vowel-to-coda placements of phones whose models
-already exist and prepare as onsets, which is a structural gap in the gesture model
-rather than a missing pose.
+`coverage-report.json`, summarised in `COVERAGE_REPORT.md`: 498 of 1026 assignments
+prepare, 166 of 342 coverage keys, 20 of 41 phones and 5 of 8 kinds. Every remaining
+refusal is an absent model or a symbol the Japanese adapter cannot resolve; the 210
+vowel-to-coda placements that used to fail now prepare, because an explicit phone hint
+gives an ordinary consonant its place in the syllable instead of calling every consonant
+an onset.
 
 Each invocation verifies completed receipts against repository history and
 prepares/renders/collects at most one remaining batch. Repeat with the same plan

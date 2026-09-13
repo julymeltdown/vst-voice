@@ -26,49 +26,45 @@ build/release/seam_voicebank_cli inspect-generation-coverage \
 | Measure | Value |
 |---|---|
 | Assignments inspected | 1026 |
-| Prepared (snapshot compiled) | **288** |
-| Refused | **738** |
+| Prepared (snapshot compiled) | **498** |
+| Refused | **528** |
 | Declared coverage keys (style x key) | 342 |
-| Keys with a prepared class | 96 |
+| Keys with a prepared class | 166 |
 | Phones declared | 41 |
 | Phones covered by a prepared class | 20 |
 | Coverage kinds declared | 8 |
-| Kinds with any prepared class | 4 (cv, vv, sustain, special) |
-| Kinds entirely refused | 4 (vc, release, glottal-attack, breath) |
+| Kinds with any prepared class | 5 (cv, vc, vv, sustain, special) |
+| Kinds entirely refused | 3 (release, glottal-attack, breath) |
 
 Prepared phones: `N a b ch d e g i k m n o p r s t ts u w y`.
 Missing phones: `R br by cl f fy glottal gy h hy j ky my ny pau py ry sh v vy z`.
-Prepared keys, by kind: cv 210, vv 60, sustain 15, special 3.
+Prepared keys, by kind: cv 210, vc 210, vv 60, sustain 15, special 3.
 
-## Why the 738 refusals happen
+## Why the 528 refusals happen
 
 | Refusals | Cause | Nature |
 |---|---|---|
 | 300 | `requires a supported voiced articulation model` for z, j, v, gy, ny, by, my, ry, fy, vy | Missing model |
 | 186 | `has no explicit frication or released-stop source` for sh, h, f, ky, hy, py, and the closure/pause events | Missing model |
-| 210 | `requires a resolved start and associated nucleus` / `needs a resolved start and a same-note vowel nucleus` | **Structural** |
 | 42 | `Inventory phone sequence is not supported by the Japanese score adapter` for `R` (release) and `glottal` | Adapter gap |
 
-The third row is the important one. Those 210 refusals are not missing sounds: they
-are vowel-to-coda placements (`vc`) of phones whose models already exist and prepare
-happily as onsets (`t k p b d g s ch ts n m r w y`). The articulation compiler refuses
-them because a gesture after the nucleus cannot resolve its own start and associated
-nucleus in the current model. Every one of the 450 `vc` assignments is refused, and
-so is every `release`, `glottal-attack` and `breath` assignment.
-
-So the pilot inventory is not generatable end to end for two independent reasons, and
-only one of them is "the recipe lacks a pose". The larger near-term blocker is the
-coda/context model, which the implementation plan already lists as M1.P2 items 2 and 3
-(phrase context beyond the owning note; ordered spans separated from a bounded
-transition plan).
+Every refusal is now a missing model or an unresolvable symbol. That was not true of the
+first measurement of this report, which recorded 210 vowel-to-coda assignments refused
+with "requires a resolved start and associated nucleus" even though those phones had
+models and prepared as onsets. The cause was the explicit phone hint, not the gesture
+model: a hint is a bare sequence of symbols and every ordinary consonant's role was
+inferred from its symbol alone, so a consonant written after the vowel became an "onset"
+with nothing to attach to. Hints now give an ordinary consonant its place in the
+syllable, which is what turned those 210 assignments into prepared vowel-to-coda units.
 
 ## Consequences for the next steps
 
-1. Any campaign over this inventory cannot be planned as a whole: the plan refuses at
-   the first class that cannot prepare, and 72% of the assignments cannot.
-2. A held-out preflight of the whole inventory is therefore impossible today. The
-   coverage report is the retained defect list until the coda/context work lands.
-3. The singable subset today is onset-consonant syllables over the 20 prepared phones,
-   vowel-to-vowel and sustain units, and the syllabic nasal. Coda, release,
-   glottal-attack and breath coverage all wait on the same structural repair.
-
+1. Just over half the inventory (498 of 1026 assignments) still cannot prepare, entirely
+   for absent models and two unresolvable symbols. Those need new source models, not a
+   repaired compiler.
+2. A campaign over the whole inventory still cannot be planned, so the rendered preflight
+   must run over a renderable subset: the 166 prepared coverage keys, or a
+   coverage-complete selection across the five kinds that prepare.
+3. The classes that prepare now include the vowel-to-coda units the bank was most
+   obviously missing, and each renders as two ordered gestures, the vowel and then the
+   coda, rather than as one stretched gesture.

@@ -4,6 +4,7 @@
 #include <array>
 #include <map>
 #include <optional>
+#include <span>
 #include <string_view>
 #include <unordered_map>
 #include <unordered_set>
@@ -162,6 +163,23 @@ void appendPhone(std::vector<domain::PhonemeToken>& target,
   ++ordinal;
 }
 
+// An explicit phone hint is a sequence its author wrote, so position decides the role of an
+// ordinary consonant: it is a coda when it directly follows a vowel and no vowel follows it in
+// that hint, and an onset otherwise. Vowels and symbols with their own role (N, cl, br, pau,
+// sil) keep it, so "k a", "s a" and "k a N" keep their previous meaning while "a s" can now
+// express the vowel-to-coda unit an inventory names.
+void assignHintRoles(std::vector<domain::PhonemeToken>& tokens, std::size_t first,
+                     std::span<const std::string> phones) {
+  for (std::size_t index = 0U; index < phones.size(); ++index) {
+    auto& token = tokens[first + index];
+    if (token.role != domain::PhonemeRole::Onset) continue;
+    if (index == 0U || !isVowelSymbol(phones[index - 1U])) continue;
+    const bool vowelFollows = std::any_of(phones.begin() + static_cast<std::ptrdiff_t>(index) + 1,
+        phones.end(), [](const auto& phone) { return isVowelSymbol(phone); });
+    if (!vowelFollows) token.role = domain::PhonemeRole::Coda;
+  }
+}
+
 void applyOverrides(std::span<const domain::PhonemeOverride* const> overrides,
                     domain::NoteId noteId,
                     std::vector<domain::PhonemeToken>& noteTokens,
@@ -290,7 +308,11 @@ core::Result<Result> JapaneseKanaPhonemizer::phonemize(const domain::VocalRegion
         result.warnings.push_back({.code = WarningCode::UnsupportedCharacter, .noteId = note->id,
             .characterIndex = 0U, .message = phones.error().message});
         appendPhone(noteTokens, note->id, ordinal, "pau");
-      } else for (const auto& phone : phones.value()) appendPhone(noteTokens, note->id, ordinal, phone);
+      } else {
+        const auto first = noteTokens.size();
+        for (const auto& phone : phones.value()) appendPhone(noteTokens, note->id, ordinal, phone);
+        assignHintRoles(noteTokens, first, phones.value());
+      }
     } else if (lyric == nullptr || lyric->surface.empty()) {
       result.warnings.push_back(Warning{
           .code = WarningCode::EmptyLyric,

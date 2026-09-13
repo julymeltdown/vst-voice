@@ -143,6 +143,40 @@ TEST_CASE("unsupported Japanese lyric creates a visible warning and pause") {
         (std::vector<std::string>{"pau"}));
 }
 
+TEST_CASE("an explicit phone hint gives an ordinary consonant its place in the syllable") {
+  // A hint is a sequence the author wrote, so a bare symbol cannot decide onset versus coda
+  // on its own: "a s" is the vowel-to-coda unit a voicebank inventory names, while "s a" and
+  // "k a N" keep the meaning they always had.
+  PhonemizerFixture fixture;
+  const auto id = fixture.add(U"漢", seam::time::Tick{0});
+  auto* region = fixture.project.findRegion(fixture.regionId);
+  const auto roles = [&](std::string hint) {
+    region->findNote(id)->phoneticHint = std::move(hint);
+    seam::phonemizer::JapaneseKanaPhonemizer phonemizer;
+    const auto result = phonemizer.phonemize(*region);
+    std::vector<seam::domain::PhonemeRole> values;
+    for (const auto& token : result.tokensForNote(id)) values.push_back(token.role);
+    return values;
+  };
+  using seam::domain::PhonemeRole;
+  CHECK(roles("k a") == (std::vector<PhonemeRole>{PhonemeRole::Onset, PhonemeRole::Nucleus}));
+  CHECK(roles("s a") == (std::vector<PhonemeRole>{PhonemeRole::Onset, PhonemeRole::Nucleus}));
+  CHECK(roles("k a N") == (std::vector<PhonemeRole>{PhonemeRole::Onset, PhonemeRole::Nucleus, PhonemeRole::Coda}));
+  // A consonant directly after the vowel with no vowel after it is the coda of that syllable.
+  CHECK(roles("a s") == (std::vector<PhonemeRole>{PhonemeRole::Nucleus, PhonemeRole::Coda}));
+  CHECK(roles("a N") == (std::vector<PhonemeRole>{PhonemeRole::Nucleus, PhonemeRole::Coda}));
+  CHECK(roles("m a s") == (std::vector<PhonemeRole>{PhonemeRole::Onset, PhonemeRole::Nucleus, PhonemeRole::Coda}));
+  // A consonant that a later vowel claims stays the onset of the next syllable, which is what
+  // keeps the maximal-onset reading of a multi-syllable hint intact.
+  CHECK(roles("k a s a") == (std::vector<PhonemeRole>{PhonemeRole::Onset, PhonemeRole::Nucleus,
+                                                      PhonemeRole::Onset, PhonemeRole::Nucleus}));
+  // Symbols with their own role are never re-read by position.
+  CHECK(roles("a cl") == (std::vector<PhonemeRole>{PhonemeRole::Nucleus, PhonemeRole::Geminate}));
+  CHECK(roles("cl k a") == (std::vector<PhonemeRole>{PhonemeRole::Geminate, PhonemeRole::Onset, PhonemeRole::Nucleus}));
+  region->findNote(id)->phoneticHint.reset();
+}
+
+
 TEST_CASE("explicit Japanese phone hints change pronunciation without replacing displayed lyrics") {
   PhonemizerFixture fixture;
   const auto id = fixture.add(U"漢", seam::time::Tick{0});
