@@ -91,6 +91,17 @@ struct DocumentationMenuItem final {
   std::filesystem::path path;
 };
 
+// One performance proposal the surface can still decide. The label is built by
+// the surface from the take's own recorded identity -- generator, seed, span and
+// channels -- so a menu never has to invent a name for material it did not make.
+struct PerformanceTakeMenuItem final {
+  std::string id;
+  std::string label;
+  // True when an accepted selection already uses this take, which the surface
+  // shows as the current choice rather than offering it as a new decision.
+  bool accepted{false};
+};
+
 class IApplicationCommandDispatcher {
 public:
   virtual ~IApplicationCommandDispatcher() = default;
@@ -134,6 +145,27 @@ public:
   [[nodiscard]] virtual core::Result<void> clearNeuralResource() {
     return core::failure(core::ErrorCode::Unsupported,
                          "Neural singer selection is not supported");
+  }
+  // Performance proposals recorded for the region the surface has selected that
+  // still await a decision, in the order the project stores them. A surface that
+  // cannot reach the performance commands answers with an empty list instead of
+  // offering a decision that nothing would record.
+  [[nodiscard]] virtual std::vector<PerformanceTakeMenuItem> performanceTakes()
+      const {
+    return {};
+  }
+  // Selects the take over its own captured span for every channel it carries,
+  // replacing the region's current accepted selections. It never edits the take,
+  // never changes its state and never touches manual performance ownership.
+  [[nodiscard]] virtual core::Result<void> acceptPerformanceTake(std::string_view) {
+    return core::failure(core::ErrorCode::Unsupported,
+                         "Performance take decisions are not supported");
+  }
+  // Records the decision on the take instead of deleting it, so a rejected
+  // proposal keeps the identity that would explain why it was refused.
+  [[nodiscard]] virtual core::Result<void> rejectPerformanceTake(std::string_view) {
+    return core::failure(core::ErrorCode::Unsupported,
+                         "Performance take decisions are not supported");
   }
   [[nodiscard]] virtual std::vector<DocumentationMenuItem> documentation()
       const {

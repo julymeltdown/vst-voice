@@ -64,6 +64,15 @@ TEST_CASE("command dispatcher refuses neural selection until a surface implement
   CHECK(!dispatcher.clearNeuralResource());
 }
 
+TEST_CASE("command dispatcher refuses performance decisions until a surface implements it") {
+  // A platform that cannot record a performance decision must say so and offer no
+  // takes, rather than showing a menu whose choices nothing would apply.
+  FakeDispatcher dispatcher;
+  CHECK(dispatcher.performanceTakes().empty());
+  CHECK(!dispatcher.acceptPerformanceTake("proposal-1"));
+  CHECK(!dispatcher.rejectPerformanceTake("proposal-1"));
+}
+
 TEST_CASE("file_dialog_contract_preserves_purpose_filters_and_suggested_name") {
   FakeDialog dialog;
   dialog.response = std::filesystem::path{"/tmp/曲 프로젝트.seam"};

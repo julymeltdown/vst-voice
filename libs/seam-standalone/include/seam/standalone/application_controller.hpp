@@ -136,6 +136,18 @@ public:
   [[nodiscard]] core::Result<void> selectNeuralResource(
       std::string_view id,std::string_view version,std::string_view contentHash) override;
   [[nodiscard]] core::Result<void> clearNeuralResource() override;
+  // Performance proposals recorded for the selected region that still await a
+  // decision. An accepted take is listed with its state so a surface can show the
+  // current choice; a take that was already rejected is not offered again.
+  [[nodiscard]] std::vector<platform::PerformanceTakeMenuItem> performanceTakes()
+      const override;
+  // Decides one recorded proposal by identity. Accepting selects the take over its
+  // own captured span for every channel it carries; rejecting records the decision
+  // on the take. Neither action edits the take's musical payload.
+  [[nodiscard]] core::Result<void> acceptPerformanceTake(
+      std::string_view id) override;
+  [[nodiscard]] core::Result<void> rejectPerformanceTake(
+      std::string_view id) override;
   // Runs the production automatic-performance backend on the selected region and
   // adopts the result as a Proposed take. Acceptance stays a separate action, and
   // an edit that moved the material on refuses instead of publishing.

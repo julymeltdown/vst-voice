@@ -1,5 +1,48 @@
 # Integrated Singer Execution
 
+## The product can decide a performance take, not only propose one
+
+A proposal nothing can accept is an expensive way to write a file. The menu could
+propose an automatic performance, but no reachable path could accept or reject one:
+every decision would have had to go through an interface no creator can open.
+
+`IApplicationCommandDispatcher` now carries the decision. `performanceTakes()`
+lists the proposals recorded for the selected region that still await a decision,
+and `acceptPerformanceTake()` / `rejectPerformanceTake()` decide one by identity.
+The defaults stay honest -- an empty list and an `Unsupported` refusal -- so a
+surface that cannot record a decision shows nothing instead of a menu whose choices
+would quietly do nothing.
+
+A take is named from its own record: generator, version, seed, tick span and the
+channels it carries, never from its position in a list. Reordering proposals
+therefore cannot make a creator accept material they did not pick. Accepting means
+selecting the take over the span it was generated for, on every channel it carries,
+with a zero source offset -- the same mapping the previous slice proved for partial
+ranges. Rejecting goes through the command that records the decision on the take
+itself. A rejected proposal leaves the list; an accepted one stays listed with its
+state so the menu can show the current choice.
+
+The macOS menu adds a `Performance Take` submenu: one entry per proposal, each with
+its own `Accept This Take` and `Reject This Take` items carrying the take identity,
+and the accepted entry ticked and disabled.
+
+Verification. `tests/test_standalone_project_lifecycle.cpp` adds the controller
+case: two proposals are listed with distinct labels and neither is accepted;
+accepting the first selects every channel it carries with a zero offset and leaves
+the second proposal Proposed; undo restores the region without a choice; rejecting
+the second records the decision, keeps both takes and drops the rejected take from
+the list; a repeated identity is `Conflict` and an unknown one is `NotFound`; and
+the rejected take plus the accepted selection survive a project JSON encode/decode
+round trip, so the audit trail outlives the session.
+`tests/test_file_dialog_contract.cpp` adds the surface default case: a dispatcher
+that implements nothing answers with an empty list and a refusal.
+
+Not claimed. This is reachability, not selection quality. A creator can decide a
+take but still cannot audition or compare two of them at matched playback position,
+and the surface decision is whole-take: selecting a sub-range or a channel subset
+from the native product is not implemented. M3.P3 items 3 and 5 therefore remain
+open, and whether deciding takes saves creator work is still the M6.P2 study.
+
 ## A performance proposal can now be decided, not only created
 
 A proposal that cannot be rejected is not a decision, and the previous slice could

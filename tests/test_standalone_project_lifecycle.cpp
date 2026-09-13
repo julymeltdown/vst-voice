@@ -4,6 +4,7 @@
 
 #include "seam/application/note_commands.hpp"
 #include "seam/core/file_io.hpp"
+#include "seam/formats/project_json.hpp"
 #include "seam/platform/application_menu.hpp"
 #include "seam/platform/file_dialog.hpp"
 #include "seam/standalone/application_controller.hpp"
@@ -11,6 +12,7 @@
 #include "seam/voicebank/wav.hpp"
 
 #include <chrono>
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <memory>
@@ -585,6 +587,99 @@ TEST_CASE("standalone_controller_proposes_automatic_performance_as_a_proposal") 
   CHECK(session->runtime().undo());
   CHECK(session->runtime().document().session().project().findRegion(regionId)
             ->performance.takes.size() == 1U);
+}
+
+TEST_CASE("standalone_controller_decides_a_performance_take_by_identity") {
+  const auto root = seam::test::support::temporaryDirectory("standalone-decision");
+  auto session = makeSession(root);
+  addNote(*session);
+  bool quit = false;
+  seam::standalone::StandaloneApplicationControllerConfig config{};
+  config.autosaveRoot = root / "autosaves";
+  config.recentProjectsPath = root / "recent.json";
+  auto controller = seam::standalone::StandaloneApplicationController::create(*session,
+      std::make_unique<FakeDialog>(), std::make_unique<FakePrompt>(), config,
+      [&quit] { quit = true; });
+  CHECK(controller);
+  if (!controller) return;
+  const auto regionId = session->regionId();
+  const auto performance = [&]() -> const seam::domain::RegionPerformanceState& {
+    return session->runtime().document().session().project().findRegion(regionId)
+        ->performance;
+  };
+
+  // Two proposals over the same material, so a decision has to name one of them.
+  CHECK(controller.value()->dispatch(
+      seam::platform::ApplicationCommand::ProposeAutomaticPerformance));
+  CHECK(controller.value()->proposeAutomaticPerformance());
+  const std::string firstId = performance().takes[0].id;
+  const std::string secondId = performance().takes[1].id;
+  CHECK(firstId != secondId);
+  const auto offered = controller.value()->performanceTakes();
+  CHECK(offered.size() == 2U);
+  CHECK(offered[0].id == firstId);
+  CHECK(offered[0].label.find(firstId) == std::string::npos);
+  // A proposal is named from its own identity, not from its position, so a label
+  // always identifies the generator, seed, span and channels that produced it.
+  CHECK(offered[0].label.find("seed") != std::string::npos);
+  CHECK(offered[0].label.find("pitch") != std::string::npos);
+  CHECK(!offered[0].accepted);
+  CHECK(!offered[1].accepted);
+
+  // Choosing a take selects it over its own captured span on every channel it
+  // carries, and leaves the other proposal exactly as it was.
+  CHECK(controller.value()->acceptPerformanceTake(firstId));
+  CHECK(performance().accepted.size() == performance().takes[0].lanes.size());
+  CHECK(performance().takes[1].state ==
+        seam::domain::PerformanceProposalState::Proposed);
+  std::vector<seam::domain::PerformanceChannel> selectedChannels;
+  for (const auto& selection : performance().accepted) {
+    CHECK(selection.takeId == firstId);
+    CHECK(selection.sourceTickOffset == seam::time::Tick{0});
+    selectedChannels.push_back(selection.channel);
+  }
+  for (const auto& lane : performance().takes[0].lanes) {
+    CHECK(std::find(selectedChannels.begin(), selectedChannels.end(),
+                    lane.channel) != selectedChannels.end());
+  }
+  const auto afterAccept = controller.value()->performanceTakes();
+  CHECK(afterAccept.size() == 2U);
+  CHECK(afterAccept[0].accepted);
+  CHECK(!afterAccept[1].accepted);
+
+  // The decision is an ordinary edit: undo restores the region without a choice.
+  CHECK(session->runtime().undo());
+  CHECK(performance().accepted.empty());
+  CHECK(performance().takes.size() == 2U);
+
+  // Rejecting records the decision on the take instead of deleting it, and the
+  // rejected take is not offered again.
+  CHECK(controller.value()->rejectPerformanceTake(secondId));
+  CHECK(performance().takes.size() == 2U);
+  CHECK(performance().takes[1].state ==
+        seam::domain::PerformanceProposalState::Rejected);
+  const auto afterReject = controller.value()->performanceTakes();
+  CHECK(afterReject.size() == 1U);
+  CHECK(afterReject[0].id == firstId);
+
+  const auto repeated = controller.value()->rejectPerformanceTake(secondId);
+  CHECK(!repeated);
+  CHECK(repeated.error().code == seam::core::ErrorCode::Conflict);
+  const auto unknown = controller.value()->acceptPerformanceTake("take-not-here");
+  CHECK(!unknown);
+  CHECK(unknown.error().code == seam::core::ErrorCode::NotFound);
+
+  // The decision is project state, not session state: a rejected take and the
+  // accepted selection have to survive save and reopen, or the audit trail that
+  // explains what the creator refused would end with the process.
+  seam::formats::ProjectJsonCodec codec;
+  const auto encoded = codec.encode(session->runtime().document().session().project());
+  CHECK(encoded);
+  const auto decoded = codec.decode(encoded.value());
+  CHECK(decoded);
+  CHECK(decoded.value().findRegion(regionId)->performance == performance());
+  CHECK(decoded.value().findRegion(regionId)->performance.takes[1].state ==
+        seam::domain::PerformanceProposalState::Rejected);
 }
 
 TEST_CASE("standalone_controller_refuses_a_neural_deployment_it_cannot_verify") {

@@ -25,6 +25,8 @@
 - (void)selectVoicebank:(id)sender;
 - (void)selectNeuralResource:(id)sender;
 - (void)clearNeuralResource:(id)sender;
+- (void)acceptPerformanceTake:(id)sender;
+- (void)rejectPerformanceTake:(id)sender;
 - (void)openDocumentation:(id)sender;
 - (void)exportAudio:(id)sender;
 - (void)exportScore:(id)sender;
@@ -118,6 +120,18 @@
   (void)sender;
   if (_dispatcher == nullptr) return;
   static_cast<void>(_dispatcher->clearNeuralResource());
+}
+- (void)acceptPerformanceTake:(id)sender {
+  if (_dispatcher == nullptr || ![sender isKindOfClass:[NSMenuItem class]]) return;
+  NSString* identifier = static_cast<NSMenuItem*>(sender).representedObject;
+  if (![identifier isKindOfClass:[NSString class]]) return;
+  static_cast<void>(_dispatcher->acceptPerformanceTake(identifier.UTF8String));
+}
+- (void)rejectPerformanceTake:(id)sender {
+  if (_dispatcher == nullptr || ![sender isKindOfClass:[NSMenuItem class]]) return;
+  NSString* identifier = static_cast<NSMenuItem*>(sender).representedObject;
+  if (![identifier isKindOfClass:[NSString class]]) return;
+  static_cast<void>(_dispatcher->rejectPerformanceTake(identifier.UTF8String));
 }
 - (void)exportAudio:(id)sender { (void)sender; [self send:seam::platform::ApplicationCommand::ExportAudio]; }
 - (void)exportScore:(id)sender { (void)sender; [self send:seam::platform::ApplicationCommand::ExportScore]; }
@@ -300,6 +314,9 @@ public:
     neuralMenu_ = [[NSMenu alloc] initWithTitle:@"Neural Singer"];
     addSubmenu(root_, @"Neural Singer", neuralMenu_);
 
+    performanceMenu_ = [[NSMenu alloc] initWithTitle:@"Performance Take"];
+    addSubmenu(root_, @"Performance Take", performanceMenu_);
+
     auto* edit = [[NSMenu alloc] initWithTitle:@"Edit"];
     [edit addItem:item(@"Undo", @selector(undoAction:), @"z",
                        NSEventModifierFlagCommand, target_)];
@@ -436,6 +453,38 @@ public:
       }
     }
 
+    if (performanceMenu_ != nil) {
+      [performanceMenu_ removeAllItems];
+      const auto takes = dispatcher_->performanceTakes();
+      if (takes.empty()) {
+        auto* empty = [[NSMenuItem alloc] initWithTitle:@"No Performance Proposals"
+                                                  action:nil keyEquivalent:@""];
+        empty.enabled = NO;
+        [performanceMenu_ addItem:empty];
+      } else {
+        for (const auto& take : takes) {
+          NSString* identifier = [NSString stringWithUTF8String:take.id.c_str()];
+          NSString* label = [NSString stringWithUTF8String:take.label.c_str()];
+          if (identifier == nil) continue;
+          if (label == nil) label = @"Performance Take";
+          // Each proposal gets its own submenu: a decision always names the take it
+          // applies to, so accepting one can never be mistaken for accepting another.
+          auto* entry = [[NSMenuItem alloc] initWithTitle:label action:nil keyEquivalent:@""];
+          auto* decisions = [[NSMenu alloc] initWithTitle:label];
+          auto* accept = item(@"Accept This Take", @selector(acceptPerformanceTake:), @"", 0, target_);
+          accept.representedObject = identifier;
+          accept.state = take.accepted ? NSControlStateValueOn : NSControlStateValueOff;
+          accept.enabled = !take.accepted;
+          [decisions addItem:accept];
+          auto* reject = item(@"Reject This Take", @selector(rejectPerformanceTake:), @"", 0, target_);
+          reject.representedObject = identifier;
+          [decisions addItem:reject];
+          entry.submenu = decisions;
+          [performanceMenu_ addItem:entry];
+        }
+      }
+    }
+
     if (recoveryMenu_ != nil) {
       [recoveryMenu_ removeAllItems];
       const auto recovery = dispatcher_->recoveryItems();
@@ -507,6 +556,7 @@ private:
   NSMenu* helpMenu_{nil};
   NSMenu* voicebankMenu_{nil};
   NSMenu* neuralMenu_{nil};
+  NSMenu* performanceMenu_{nil};
   NSMenuItem* recentHolder_{nil};
   NSMenu* recentMenu_{nil};
   NSMenuItem* recoveryHolder_{nil};

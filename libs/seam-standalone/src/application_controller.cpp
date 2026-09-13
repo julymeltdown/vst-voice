@@ -37,6 +37,46 @@ std::string lowerExtension(const std::filesystem::path& path) {
   return extension;
 }
 
+std::string_view performanceChannelName(domain::PerformanceChannel channel) {
+  switch (channel) {
+    case domain::PerformanceChannel::Pitch: return "pitch";
+    case domain::PerformanceChannel::Timing: return "timing";
+    case domain::PerformanceChannel::Dynamics: return "dynamics";
+    case domain::PerformanceChannel::Formant: return "formant";
+    case domain::PerformanceChannel::Gender: return "gender";
+    case domain::PerformanceChannel::Attack: return "attack";
+    case domain::PerformanceChannel::Release: return "release";
+    case domain::PerformanceChannel::Breathiness: return "breathiness";
+    case domain::PerformanceChannel::Tension: return "tension";
+    case domain::PerformanceChannel::Airiness: return "airiness";
+    case domain::PerformanceChannel::StyleBlend: return "style blend";
+    case domain::PerformanceChannel::Growl: return "growl";
+  }
+  return "channel";
+}
+
+// A proposal is named from its own recorded identity rather than from its position
+// in the list, so a surface cannot mistake one take for another after a reorder.
+std::string performanceTakeLabel(const domain::PerformanceTake& take) {
+  std::string label = take.generatorId;
+  if (!take.generatorVersion.empty()) {
+    label += " ";
+    label += take.generatorVersion;
+  }
+  label += " \u00b7 seed ";
+  label += std::to_string(take.seed);
+  label += " \u00b7 ticks ";
+  label += std::to_string(take.range.startTick.value());
+  label += "\u2013";
+  label += std::to_string(take.range.endTick.value());
+  label += " \u00b7 ";
+  for (std::size_t index = 0U; index < take.lanes.size(); ++index) {
+    if (index != 0U) label += ", ";
+    label += performanceChannelName(take.lanes[index].channel);
+  }
+  return label;
+}
+
 struct DocumentationSpec final {
   std::string_view id;
   std::string_view title;
@@ -215,6 +255,90 @@ core::Result<void> StandaloneApplicationController::clearNeuralResource() {
   const auto changed = session_.runtime().execute(
       std::make_unique<application::SetTrackNeuralResourceCommand>(trackId,
           track->neuralResource, std::nullopt));
+  if (!changed) return changed;
+  const auto recorded = onDocumentChanged();
+  if (!recorded) return recorded;
+  notifyStateChanged();
+  return core::success();
+}
+
+std::vector<platform::PerformanceTakeMenuItem>
+StandaloneApplicationController::performanceTakes() const {
+  std::vector<platform::PerformanceTakeMenuItem> result;
+  const auto& project = session_.runtime().document().session().project();
+  const auto* region = project.findRegion(session_.runtime().selectedRegion());
+  if (region == nullptr) return result;
+  const auto& state = region->performance;
+  result.reserve(state.takes.size());
+  for (const auto& take : state.takes) {
+    const bool accepted = std::any_of(state.accepted.begin(), state.accepted.end(),
+        [&](const auto& selection) { return selection.takeId == take.id; });
+    // A rejected take has already been answered and must not be offered again; an
+    // accepted one stays listed so the surface can show the current choice.
+    if (!accepted && take.state != domain::PerformanceProposalState::Proposed) continue;
+    result.push_back(platform::PerformanceTakeMenuItem{
+        .id = take.id, .label = performanceTakeLabel(take), .accepted = accepted});
+  }
+  return result;
+}
+
+core::Result<void> StandaloneApplicationController::acceptPerformanceTake(
+    std::string_view id) {
+  const auto regionId = session_.runtime().selectedRegion();
+  const auto& project = session_.runtime().document().session().project();
+  const auto* region = project.findRegion(regionId);
+  if (region == nullptr) {
+    return core::failure(core::ErrorCode::Conflict,
+        "Performance takes require a selected region");
+  }
+  const auto& state = region->performance;
+  const auto found = std::find_if(state.takes.begin(), state.takes.end(),
+      [id](const auto& take) { return take.id == id; });
+  if (found == state.takes.end()) {
+    return core::failure(core::ErrorCode::NotFound,
+        "No such performance take", std::string{id});
+  }
+  if (found->state != domain::PerformanceProposalState::Proposed) {
+    return core::failure(core::ErrorCode::Conflict,
+        "That performance take is not awaiting a decision", std::string{id});
+  }
+  if (found->range.endTick > region->durationTick || found->lanes.empty()) {
+    return core::failure(core::ErrorCode::Conflict,
+        "That performance take does not cover usable material", std::string{id});
+  }
+  // Choosing a take means choosing it for the span it was generated over, on every
+  // channel it carries. A zero source offset maps that span onto the same ticks, so
+  // a surface never claims generated data the backend did not produce.
+  std::vector<domain::AcceptedPerformanceSelection> selections;
+  selections.reserve(found->lanes.size());
+  for (const auto& lane : found->lanes) {
+    selections.push_back(domain::AcceptedPerformanceSelection{
+        found->id, lane.channel,
+        domain::PerformanceTimeRange{found->range.startTick, found->range.endTick},
+        time::Tick{0}});
+  }
+  const auto changed = session_.runtime().execute(
+      std::make_unique<application::SetAcceptedPerformanceCommand>(
+          regionId, state, std::move(selections)));
+  if (!changed) return changed;
+  const auto recorded = onDocumentChanged();
+  if (!recorded) return recorded;
+  notifyStateChanged();
+  return core::success();
+}
+
+core::Result<void> StandaloneApplicationController::rejectPerformanceTake(
+    std::string_view id) {
+  const auto regionId = session_.runtime().selectedRegion();
+  const auto& project = session_.runtime().document().session().project();
+  const auto* region = project.findRegion(regionId);
+  if (region == nullptr) {
+    return core::failure(core::ErrorCode::Conflict,
+        "Performance takes require a selected region");
+  }
+  const auto changed = session_.runtime().execute(
+      std::make_unique<application::RejectPerformanceProposalCommand>(
+          regionId, region->performance, std::string{id}));
   if (!changed) return changed;
   const auto recorded = onDocumentChanged();
   if (!recorded) return recorded;
