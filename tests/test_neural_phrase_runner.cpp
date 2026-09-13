@@ -1,6 +1,7 @@
 #include "test_framework.hpp"
 #include "test_support.hpp"
 #include "seam/authoring/neural_phrase_runner.hpp"
+#include "seam/authoring/neural_resource_registry.hpp"
 #include "seam/application/project_factory.hpp"
 #include "seam/core/file_io.hpp"
 #include "seam/core/sha256.hpp"
@@ -14,6 +15,7 @@
 #include <cstdint>
 #include <memory>
 #include <set>
+#include <map>
 #include <string>
 
 namespace {
@@ -136,6 +138,100 @@ seam::rendering::RenderSnapshot boundedSnapshot(const Prepared& prepared,
 }
 
 }  // namespace
+
+namespace {
+
+// Writes one bundle directory that also carries the resource record an installed
+// bundle needs so a saved identity can be resolved back to these bytes.
+seam::core::Result<std::filesystem::path> writeInstalledBundle(const std::filesystem::path& root,
+    std::string_view name,std::string_view id,std::string_view version,std::string_view graph) {
+  const auto directory=root/std::string{name};
+  std::error_code error;
+  std::filesystem::create_directories(directory,error);
+  if (error) return seam::core::failure<std::filesystem::path>(seam::core::ErrorCode::IoError,
+      "install directory creation failed");
+  const auto admitted=writeBundle(directory,
+      R"({"formatId":"com.project-seam.neural-vocabulary","schemaVersion":1,"tokens":["<PAD>","SP","aa1","k"]})",graph);
+  if (!admitted) return seam::core::Result<std::filesystem::path>{admitted.error()};
+  const auto manifest=seam::core::readFileBytesLimited(directory/"manifest.json",32768U);
+  if (!manifest) return seam::core::Result<std::filesystem::path>{manifest.error()};
+  const auto record=std::string{R"({"contentHash":")"}+
+      seam::core::sha256Hex(manifest.value())+
+      R"(","formatId":"com.project-seam.neural-resource","id":")"+std::string{id}+
+      R"(","schemaVersion":1,"version":")"+std::string{version}+"\"}";
+  if (!seam::core::durableAtomicWriteNew(directory/"resource.json",
+      std::as_bytes(std::span{record.data(),record.size()})))
+    return seam::core::failure<std::filesystem::path>(seam::core::ErrorCode::IoError,"record write failed");
+  return seam::core::success(directory);
+}
+
+seam::domain::NeuralResourceReference selection(std::string id,std::string version,
+    const std::filesystem::path& directory) {
+  const auto manifest=seam::core::readFileBytesLimited(directory/"manifest.json",32768U);
+  return seam::domain::NeuralResourceReference{{seam::domain::SingerResourceKind::Neural,
+      std::move(id),std::move(version),seam::core::sha256Hex(manifest.value())}};
+}
+
+}  // namespace
+
+TEST_CASE("installed neural resources resolve saved identities or refuse them") {
+  using namespace seam::authoring;
+  const auto root=seam::test::support::temporaryDirectory("neural-install-root");
+  const auto first=writeInstalledBundle(root,"bank-a","seam.voice.a","1.0.0","graph fixture a"); CHECK(first);
+  const auto second=writeInstalledBundle(root,"bank-b","seam.voice.b","2.0.0","graph fixture b"); CHECK(second);
+  const auto registry=NeuralResourceRegistry::scan(root,16U,1024U*1024U,4U*1024U*1024U);
+  if (!registry) throw seam::test::Failure{"registry scan failed: "+registry.error().message};
+  CHECK(registry.value().resources().size()==2U);
+  const auto saved=selection("seam.voice.b","2.0.0",second.value());
+  const auto resolved=registry.value().resolve(saved); CHECK(resolved);
+  CHECK(resolved.value()==std::filesystem::canonical(second.value()));
+  // A saved identity is exact: version, digest and kind all participate.
+  CHECK(!registry.value().resolve(selection("seam.voice.b","1.0.0",second.value())));
+  CHECK(!registry.value().resolve(selection("seam.voice.b","2.0.0",first.value())));
+  CHECK(!registry.value().resolve(seam::domain::NeuralResourceReference{
+      {seam::domain::SingerResourceKind::Neural,"seam.voice.c","1.0.0",
+       selection("seam.voice.b","2.0.0",second.value()).resource.contentHash}}));
+  CHECK(!registry.value().resolve(seam::domain::NeuralResourceReference{
+      {seam::domain::SingerResourceKind::Procedural,"seam.voice.b","2.0.0",
+       selection("seam.voice.b","2.0.0",second.value()).resource.contentHash}}));
+  // A resource that claims a digest its manifest does not have is refused, as is
+  // one whose assets were changed after the manifest was published.
+  const auto tampered=seam::test::support::temporaryDirectory("neural-install-tampered");
+  const auto damaged=writeInstalledBundle(tampered,"bank-c","seam.voice.c","1.0.0","graph fixture c"); CHECK(damaged);
+  constexpr std::string_view differentGraph{"different graph bytes"};
+  std::error_code removeError;
+  std::filesystem::remove(tampered/"bank-c"/"acoustic",removeError); CHECK(!removeError);
+  CHECK(seam::core::durableAtomicWriteNew(tampered/"bank-c"/"acoustic",
+      std::as_bytes(std::span{differentGraph.data(),differentGraph.size()})));
+  CHECK(!NeuralResourceRegistry::scan(tampered,16U,1024U*1024U,4U*1024U*1024U));
+  const auto missingRecord=seam::test::support::temporaryDirectory("neural-install-norecord");
+  const auto recordless=missingRecord/"bank-g";
+  std::filesystem::create_directories(recordless);
+  const auto admitted=writeBundle(recordless,
+      R"({"formatId":"com.project-seam.neural-vocabulary","schemaVersion":1,"tokens":["<PAD>","SP","aa1","k"]})",
+      "graph fixture d"); CHECK(admitted);
+  CHECK(!NeuralResourceRegistry::scan(missingRecord,16U,1024U*1024U,4U*1024U*1024U));
+  // An installation root with no bundles is a valid empty catalog, and every
+  // selection into it is refused rather than substituted.
+  const auto emptyRoot=seam::test::support::temporaryDirectory("neural-install-empty");
+  const auto emptyRegistry=NeuralResourceRegistry::scan(emptyRoot,16U,1024U*1024U,4U*1024U*1024U);
+  CHECK(emptyRegistry);
+  CHECK(emptyRegistry.value().resources().empty());
+  CHECK(!emptyRegistry.value().resolve(saved));
+  // Duplicate, unbounded and cancelled scans are refused instead of guessed.
+  const auto duplicate=seam::test::support::temporaryDirectory("neural-install-duplicate");
+  const auto original=writeInstalledBundle(duplicate,"bank-e","seam.voice.e","1.0.0","graph fixture e"); CHECK(original);
+  std::error_code error;
+  std::filesystem::copy(original.value(),duplicate/"bank-f",
+                        std::filesystem::copy_options::recursive,error); CHECK(!error);
+  CHECK(!NeuralResourceRegistry::scan(duplicate,16U,1024U*1024U,4U*1024U*1024U));
+  CHECK(!NeuralResourceRegistry::scan(root,0U,1024U*1024U,4U*1024U*1024U));
+  CHECK(!NeuralResourceRegistry::scan(root,16U,8U,4U*1024U*1024U));
+  CHECK(!NeuralResourceRegistry::scan(std::filesystem::path{"relative"},16U,1024U*1024U,4U*1024U*1024U));
+  std::stop_source cancellation;
+  cancellation.request_stop();
+  CHECK(!NeuralResourceRegistry::scan(root,16U,1024U*1024U,4U*1024U*1024U,cancellation.get_token()));
+}
 
 TEST_CASE("neural phrase runner prepares a bound request and returns window-exact audio") {
   const auto directory=seam::test::support::temporaryDirectory("neural-runner");

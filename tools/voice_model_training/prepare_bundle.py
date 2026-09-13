@@ -111,13 +111,21 @@ def manifest_asset(assets):
 
 
 def prepare(acoustic_directory, vocoder_directory, output, maximum_frames,
-            steps_layout, vocoder_output):
+            steps_layout, vocoder_output, resource_id=None, resource_version=None):
     if output.exists() or output.is_symlink() or not output.parent.is_dir():
         raise ValueError("Output must be a new directory with an existing parent")
     if type(maximum_frames) is not int or not 1 <= maximum_frames <= MAXIMUM_FRAMES_LIMIT:
         raise ValueError("Maximum frames must be a bounded positive integer")
     if steps_layout not in ("scalar", "vector1") or vocoder_output not in ("audio", "waveform"):
         raise ValueError("Unsupported steps layout or vocoder output name")
+    # A resource record is what lets an installed directory be resolved back to
+    # the identity a project saved. It is written only as a pair.
+    if (resource_id is None) != (resource_version is None):
+        raise ValueError("Resource id and version must be supplied together")
+    if resource_id is not None:
+        for value, limit in ((resource_id, 256), (resource_version, 256)):
+            if type(value) is not str or not 1 <= len(value) <= limit or any(ord(c) < 32 or ord(c) == 127 for c in value):
+                raise ValueError("Resource id and version must be bounded printable text")
     acoustic, acoustic_graph = read_report(acoustic_directory, ACOUSTIC_FORMAT,
         "acousticPath", "acousticSha256", "acousticBytes")
     vocoder, vocoder_graph = read_report(vocoder_directory, VOCODER_FORMAT,
@@ -146,7 +154,16 @@ def prepare(acoustic_directory, vocoder_directory, output, maximum_frames,
         stream.write(manifest)
         stream.flush()
         os.fsync(stream.fileno())
-    return dict(manifestSha256=sha256(manifest),
+    if resource_id is not None:
+        record = canonical_json(dict(formatId="com.project-seam.neural-resource", schemaVersion=1,
+                                     id=resource_id, version=resource_version,
+                                     contentHash=sha256(manifest)))
+        with (output / "resource.json").open("xb") as stream:
+            stream.write(record)
+            stream.flush()
+            os.fsync(stream.fileno())
+    return dict(manifestSha256=sha256(manifest), resourceId=resource_id,
+                resourceVersion=resource_version,
                 assets=[dict(role=role, name=name, sha256=sha256(payload), bytes=len(payload))
                         for role, name, payload in assets],
                 acousticCheckpointReceiptSha256=acoustic["checkpointReceiptSha256"],
@@ -164,10 +181,13 @@ def main():
     parser.add_argument("--maximum-frames", type=int, required=True)
     parser.add_argument("--steps-layout", choices=("scalar", "vector1"), default="scalar")
     parser.add_argument("--vocoder-output", choices=("audio", "waveform"), default="audio")
+    parser.add_argument("--resource-id")
+    parser.add_argument("--resource-version")
     args = parser.parse_args()
     try:
         report = prepare(args.acoustic_export, args.vocoder_export, args.output,
-                         args.maximum_frames, args.steps_layout, args.vocoder_output)
+                         args.maximum_frames, args.steps_layout, args.vocoder_output,
+                         args.resource_id, args.resource_version)
         print(json.dumps(report))
         return 0
     except (OSError, ValueError, KeyError) as error:

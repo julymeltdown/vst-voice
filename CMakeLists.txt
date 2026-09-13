@@ -306,6 +306,7 @@ add_library(seam_authoring_runtime
   libs/seam-authoring-runtime/src/audio_settings_controller.cpp
   libs/seam-authoring-runtime/src/media_import_service.cpp
   libs/seam-authoring-runtime/src/neural_phrase_runner.cpp
+  libs/seam-authoring-runtime/src/neural_resource_registry.cpp
   libs/seam-authoring-runtime/src/support_bundle.cpp
 )
 target_include_directories(seam_authoring_runtime PUBLIC

@@ -100,6 +100,24 @@ def main():
             (native.stdout, report["manifestSha256"])
         assert (native_bundle / "manifest.json").read_bytes() == manifest
 
+        # An installed bundle also carries the resource record a project saves, so
+        # the identity can be resolved back to these bytes. The record's digest
+        # must be the manifest digest, and the manifest must not change for it.
+        recorded = root / "recorded"
+        with_record = compose(script, acoustic, vocoder, recorded, "--resource-id",
+                              "fixture.voice", "--resource-version", "1")
+        assert with_record.returncode == 0, with_record.stderr
+        assert (recorded / "manifest.json").read_bytes() == manifest
+        assert json.loads(with_record.stdout)["manifestSha256"] == report["manifestSha256"]
+        resource = json.loads((recorded / "resource.json").read_bytes())
+        assert resource == dict(contentHash=report["manifestSha256"],
+                                formatId="com.project-seam.neural-resource",
+                                id="fixture.voice", schemaVersion=1, version="1"), resource
+        # A half-specified identity is refused; an installed bundle is not a place
+        # for a guessed version.
+        refused = compose(script, acoustic, vocoder, root / "half-record", "--resource-id", "fixture.voice")
+        assert refused.returncode == 2 and "together" in refused.stderr, refused.stderr
+
         # The composed bundle must be admissible and executable by the real worker.
         digest = report["manifestSha256"]
         vocabulary_hash = hashlib.sha256((bundle / "vocabulary").read_bytes()).hexdigest()

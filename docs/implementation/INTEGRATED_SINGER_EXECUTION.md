@@ -167,6 +167,28 @@ Verified: `seam_tests` (including the new schema round-trip, migration, smugglin
 and family-conflict cases) and `seam_neural_render_tests` (including the
 match/mismatch selection cases) pass.
 
+Closed the remaining link between a saved selection and installed bytes.
+`prepare_bundle.py` now accepts `--resource-id` and `--resource-version` and, when
+both are given, publishes a `resource.json` record after the manifest with
+exactly that identity and the manifest digest as its content hash. The record is
+never guessed from the directory and the two values must be supplied together.
+
+`NeuralResourceRegistry` (`libs/seam-authoring-runtime/{include,src}/seam/authoring/neural_resource_registry.*`)
+scans an installation root under explicit resource, per-asset and total byte
+budgets, and verifies each candidate before indexing it: the record schema and
+printable identity, that the manifest digest equals the recorded content hash,
+that every declared asset exists as a regular file with exactly its recorded
+length and SHA-256, and that the four required roles each appear once. A
+directory without a record, a tampered asset, a duplicate identity, a relative
+root, an out-of-budget asset or a cancelled scan is refused; an empty root is a
+valid empty catalog. `resolve()` matches id, version and digest exactly, so a
+saved selection can never be satisfied by a different voice, and a reference
+whose kind is not Neural is refused before lookup.
+
+Verified: `seam_neural_phrase_runner_tests` now also covers registry scanning and
+resolution, and `seam_neural_bundle_preparation` asserts the record's identity
+against the manifest digest and refuses a half-specified identity.
+
 Storage note: the machine reached 124 MiB free, which caused eleven unrelated
 suite failures (demo smokes, contract tests, neural runtime checks). Those were
 not regressions; the same tests pass with storage restored. Four regenerable
