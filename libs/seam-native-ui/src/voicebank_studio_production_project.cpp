@@ -284,6 +284,7 @@ core::Result<void> VoicebankStudioController::finishProceduralCandidateImport() 
   cancelProceduralCandidateImport();
   if (workspaceOpen_.valid()) workspaceOpen_.wait();
   if (proceduralImport_.valid()) proceduralImport_.wait();
+  if (campaignWork_.valid()) campaignWork_.wait();
   if (waveformLoad_.valid()) waveformLoad_.wait();
   if (pitchLoad_.valid()) pitchLoad_.wait();
   if (sampleReviewWork_.valid()) sampleReviewWork_.wait();
@@ -652,6 +653,38 @@ core::Result<void> VoicebankStudioController::pollProceduralCandidateImport() {
   }
   if (editableUnitLoad_.valid()) return pollEditableUnitLoad();
   if (sampleReviewWork_.valid()) return pollSampleReviewWork();
+  if (campaignWork_.valid()) {
+    if (campaignWork_.wait_for(std::chrono::seconds{0}) != std::future_status::ready) {
+      const auto progress = generationCampaignProgress();
+      if (progress && progress->phase == GenerationCampaignProgress::Phase::Advancing)
+        status_ = "CAMPAIGN BATCHES " + std::to_string(progress->completedBatches) + "/" +
+            std::to_string(progress->totalBatches) + " / ESC CANCEL";
+      return core::success();
+    }
+    try {
+      auto result = campaignWork_.get();
+      if (!result) {
+        // A cancelled campaign keeps its retained batches and its recorded
+        // identity, so the same call can be resumed instead of re-planned.
+        if (proceduralImportStop_.stop_requested()) status_ = "CAMPAIGN CANCELLED / RESUMABLE";
+        else status_ = statusBeforeImport_;
+        return core::Result<void>{result.error()};
+      }
+      auto outcome = std::move(result).value();
+      campaignPath_ = std::move(outcome.campaignPath);
+      campaignSha256_ = std::move(outcome.campaignSha256);
+      if (outcome.adoptedProducer) {
+        productionProject_ = std::move(outcome.producer);
+        takeInspection_.reset();
+        refreshCandidateMarkerPreview();
+      }
+      status_ = std::move(outcome.status);
+      return core::success();
+    } catch (const std::exception& error) {
+      status_ = statusBeforeImport_;
+      return core::failure(core::ErrorCode::Internal, "Campaign worker failed", error.what());
+    }
+  }
   if (const auto progress = generationBatchProgress()) {
     if (progress->phase == GenerationBatchProgress::Phase::Rendering)
       status_ = "BATCH OUTPUTS " + std::to_string(progress->completedOutputs) + "/" +

@@ -590,6 +590,7 @@ if(SEAM_BUILD_NATIVE_DESKTOP)
     libs/seam-native-ui/src/voicebank_studio_production_view.cpp
     libs/seam-native-ui/src/voicebank_studio_production_support.cpp
     libs/seam-native-ui/src/voicebank_studio_production_project.cpp
+    libs/seam-native-ui/src/voicebank_studio_campaign.cpp
     libs/seam-native-ui/src/voicebank_studio_production_edits.cpp
     libs/seam-native-ui/src/voicebank_studio_sample_review.cpp
     libs/seam-native-ui/src/voicebank_studio_manifest_draft.cpp
@@ -1981,6 +1982,14 @@ if(SEAM_BUILD_TESTS)
     target_link_libraries(seam_studio_manifest_draft_tests PRIVATE seam_native_ui seam_voicebank_production)
     seam_apply_compiler_options(seam_studio_manifest_draft_tests)
     add_test(NAME seam_studio_manifest_draft_tests COMMAND seam_studio_manifest_draft_tests)
+    add_executable(seam_studio_campaign_tests
+      tests/test_main.cpp tests/test_voicebank_studio_campaign.cpp)
+    target_include_directories(seam_studio_campaign_tests PRIVATE tests)
+    target_link_libraries(seam_studio_campaign_tests PRIVATE
+      seam_native_ui seam_voicebank_production seam_authoring_runtime)
+    seam_apply_compiler_options(seam_studio_campaign_tests)
+    add_test(NAME seam_studio_campaign_tests COMMAND seam_studio_campaign_tests)
+    set_tests_properties(seam_studio_campaign_tests PROPERTIES TIMEOUT 180)
   endif()
   add_executable(seam_production_ownership_tests
     tests/test_main.cpp tests/test_production_edit_ownership.cpp)

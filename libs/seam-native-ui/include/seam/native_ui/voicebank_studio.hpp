@@ -214,6 +214,34 @@ public:
     std::size_t completedOutputs{0U}, totalOutputs{0U};
   };
   [[nodiscard]] std::optional<GenerationBatchProgress> generationBatchProgress() const noexcept;
+  // Campaign orchestration over the same services the CLI calls. Planning
+  // publishes one immutable definition into a new directory; advancement commits
+  // at most one bounded batch per service call, so a run loops until the campaign
+  // completes or the user cancels. Cancelling retains committed batches and the
+  // campaign can be resumed from its own receipts, never from a re-plan.
+  struct GenerationCampaignProgress final {
+    enum class Phase : std::uint32_t { Idle, Planning, Planned, Advancing, Complete, Cancelled, Failed };
+    Phase phase{Phase::Idle};
+    std::size_t completedBatches{0U}, totalBatches{0U};
+  };
+  [[nodiscard]] core::Result<void> beginGenerationCampaignPlan(
+      std::filesystem::path recipePath, std::vector<std::string> plannedTakeIds,
+      std::filesystem::path destination, std::size_t maximumJobsPerBatch = 0U);
+  [[nodiscard]] core::Result<void> beginGenerationCampaignAdvance(
+      std::filesystem::path campaignPath, std::string campaignSha256,
+      std::string occurredAtUtc = {});
+  // Advances the campaign identity this controller published or adopted last.
+  [[nodiscard]] core::Result<void> beginGenerationCampaignResume(
+      std::string occurredAtUtc = {});
+  void cancelGenerationCampaign() noexcept;
+  [[nodiscard]] std::optional<GenerationCampaignProgress> generationCampaignProgress() const noexcept;
+  [[nodiscard]] bool generationCampaignBusy() const noexcept { return campaignWork_.valid(); }
+  [[nodiscard]] const std::filesystem::path& generationCampaignPath() const noexcept {
+    return campaignPath_;
+  }
+  [[nodiscard]] const std::string& generationCampaignSha256() const noexcept {
+    return campaignSha256_;
+  }
   [[nodiscard]] core::Result<void> pollProceduralCandidateImport();
   // Shutdown only: request cancellation, join, then collect the actual commit result.
   [[nodiscard]] core::Result<void> finishProceduralCandidateImport();
@@ -222,7 +250,7 @@ public:
   [[nodiscard]] bool proceduralImportResultReady() const {
     return proceduralImport_.valid() && proceduralImport_.wait_for(std::chrono::seconds{0})==std::future_status::ready;
   }
-  [[nodiscard]] bool proceduralImportBusy() const noexcept { return workspaceOpen_.valid() || proceduralImport_.valid() || waveformLoad_.valid() || pitchLoad_.valid() || sampleReviewWork_.valid() || editableUnitLoad_.valid() || candidateDrag_.has_value(); }
+  [[nodiscard]] bool proceduralImportBusy() const noexcept { return workspaceOpen_.valid() || proceduralImport_.valid() || campaignWork_.valid() || waveformLoad_.valid() || pitchLoad_.valid() || sampleReviewWork_.valid() || editableUnitLoad_.valid() || candidateDrag_.has_value(); }
   [[nodiscard]] const std::optional<voice_design::ProceduralCandidate>& candidateMarkerPreview() const noexcept {
     return candidateMarkerPreview_;
   }
@@ -401,6 +429,21 @@ private:
       productionRepository_;
   std::optional<voicebank_production::VoicebankProductionProject>
       productionProject_;
+  // Campaign work shares the controller's single stop source with every other
+  // production worker: proceduralImportBusy() admits one worker at a time, so a
+  // stop request always belongs to the running job.
+  struct GenerationCampaignOutcome final {
+    std::filesystem::path campaignPath;
+    std::string campaignSha256;
+    std::size_t completedBatches{0U}, totalBatches{0U};
+    voicebank_production::VoicebankProductionProject producer;
+    bool adoptedProducer{false};
+    std::string status;
+  };
+  std::future<core::Result<GenerationCampaignOutcome>> campaignWork_;
+  std::shared_ptr<std::atomic<std::uint64_t>> generationCampaignProgress_;
+  std::filesystem::path campaignPath_;
+  std::string campaignSha256_;
   std::string productionOperatorId_;
   std::size_t stagedRecoveryCandidateCount_{0U};
   double logicalWidth_{1440.0};

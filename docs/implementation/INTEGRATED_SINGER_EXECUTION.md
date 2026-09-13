@@ -1,5 +1,52 @@
 # Integrated Singer Execution
 
+## The Studio controller can plan, run, cancel and resume a generation campaign
+
+Closed the M1.P3 item that was still open in this document: the generation
+campaign existed as authoring services and CLI commands, but the native Studio
+controller had no plan/run/cancel/resume path, so a singer-scale campaign could
+not be driven from the product surface.
+
+`libs/seam-native-ui/src/voicebank_studio_campaign.cpp` adds
+`beginGenerationCampaignPlan()`, `beginGenerationCampaignAdvance()`,
+`beginGenerationCampaignResume()`, `cancelGenerationCampaign()` and
+`generationCampaignProgress()` to `VoicebankStudioController`, implemented
+entirely on the same services the CLI calls (`planGenerationCampaign`,
+`VerifiedGenerationCampaign::admit`, `advanceGenerationCampaign`, the production
+repository). The controller never edits campaign JSON and never writes producer
+state itself: planning publishes one immutable definition into a new directory,
+and advancement is a loop of one-bounded-batch service calls. A second plan into
+an existing directory is refused, so a stored campaign is resumed or advanced,
+never replaced. Planning also refuses when the durable producer no longer matches
+the `initialProducerSha256` the definition binds, which is what made the CLI's
+stale-state check necessary in the first place.
+
+Cancellation keeps the contract the plan requires. The stop is honoured before
+every batch that would render or commit, committed batches stay in the
+repository, the recorded campaign identity is unchanged, and the controller
+reports `Cancelled` with the real campaign size so `beginGenerationCampaignResume()`
+continues from the campaign's own receipts. The batch count is read from the
+admitted definition before the first batch, so a cancel that lands while the
+worker is starting still reports "0 of 2" rather than "0 of 0" — the first
+version of this code reported the latter and the new test caught it.
+
+`tests/test_voicebank_studio_campaign.cpp` with CTest `seam_studio_campaign_tests`
+covers the three outcomes against a real producer workspace and a real recipe:
+planning writes the definition and refuses to replace it (including the empty
+recipe and empty take-id refusals); advancement commits two one-job batches,
+adopts the recovered producer into the controller, leaves every take in
+`MarkerReview` with the durable generation advanced by exactly two, and is
+idempotent when repeated; and a cancelled run keeps its retained batches and
+completes on resume, while a wrong campaign digest fails with `Conflict` and
+`Failed` progress instead of advancing a different definition. The fixture is a
+synthetic producer, recipe and audio: it proves the orchestration and its
+refusals, not a useful singer or a qualified resource.
+
+Still open under this item: the native action/dialog wiring that lets a user
+choose the recipe and destination, start or resume a campaign, watch batch
+progress in the Studio, and cancel from the existing ESC path. The controller API
+and its tests are the part the UI actions must call.
+
 ## Neural tracks can render, cache and publish through the authoring coordinator
 
 Added the plan's `tests/test_neural_render_workflow.cpp` with CTest
