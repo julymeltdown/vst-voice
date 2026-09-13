@@ -391,7 +391,7 @@ M1.P2's ten required changes:
 | 9 | Aggregate budget preflight | Landed: per-batch, aggregate frame and estimated-byte limits, retained-storage inspection and cancellation. |
 | 10 | Held-out pilot phrase set before the full inventory | Landed, run and followed through: both preflights passed, and the campaigns behind them completed with 498 takes committed as unapproved marker-review material across three pitch layers (report in `CAMPAIGN_REPORT.md`, defect list in `coverage-report.json`). The 528 model-less assignments still cannot be planned, so the inventory as a whole is not yet generatable end to end. |
 
-So eight of the ten are landed, one is partial, and one remains open (phrase context
+So seven of the ten are landed, two are partial, and one remains open (phrase context
 beyond the owning note).
 
 M1.P1 keeps one open required change: the durable C++ legacy migration operation
