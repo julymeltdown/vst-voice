@@ -30,6 +30,8 @@
 - (void)acceptPerformanceTakeOverSelectedNotes:(id)sender;
 - (void)rejectPerformanceTake:(id)sender;
 - (void)comparePerformanceTake:(id)sender;
+- (void)acceptPerformanceChannel:(id)sender;
+- (void)proposePerformanceChannel:(id)sender;
 - (void)swapPerformanceComparison:(id)sender;
 - (void)endPerformanceComparison:(id)sender;
 - (void)openDocumentation:(id)sender;
@@ -155,6 +157,25 @@
   if (![identifier isKindOfClass:[NSString class]]) return;
   static_cast<void>(_dispatcher->beginPerformanceComparison(
       identifier.UTF8String, seam::platform::PerformanceEditScope::Whole));
+}
+- (void)acceptPerformanceChannel:(id)sender {
+  if (_dispatcher == nullptr || ![sender isKindOfClass:[NSMenuItem class]]) return;
+  NSDictionary* value = static_cast<NSMenuItem*>(sender).representedObject;
+  if (![value isKindOfClass:[NSDictionary class]]) return;
+  NSString* identifier = value[@"id"];
+  NSString* channel = value[@"channel"];
+  if (identifier == nil || channel == nil) return;
+  std::vector<std::string> channels{std::string{channel.UTF8String}};
+  static_cast<void>(_dispatcher->acceptPerformanceTake(identifier.UTF8String,
+      seam::platform::PerformanceEditScope::Whole, std::move(channels)));
+}
+- (void)proposePerformanceChannel:(id)sender {
+  if (_dispatcher == nullptr || ![sender isKindOfClass:[NSMenuItem class]]) return;
+  NSString* channel = static_cast<NSMenuItem*>(sender).representedObject;
+  if (channel == nil) return;
+  std::vector<std::string> channels{std::string{channel.UTF8String}};
+  static_cast<void>(_dispatcher->proposeAutomaticPerformance(
+      seam::platform::PerformanceEditScope::SelectedNotes, std::move(channels)));
 }
 - (void)swapPerformanceComparison:(id)sender {
   (void)sender;
@@ -336,6 +357,19 @@ public:
     [fileMenu_ addItem:item(@"Propose Automatic Performance Over Selected Notes",
                             @selector(proposeAutomaticPerformanceOverSelectedNotes:), @"",
                             0, target_)];
+    // Channel-scoped regeneration is a repair action on picked material, so it always
+    // proposes over the current note selection and refuses when there is none.
+    auto* channelMenu = [[NSMenu alloc] initWithTitle:@"Regenerate Selected Notes (Channel)"];
+    for (NSString* name in @[@"pitch", @"dynamics", @"attack", @"release"]) {
+      auto* channelItem = item([name capitalizedString], @selector(proposePerformanceChannel:),
+                               @"", 0, target_);
+      channelItem.representedObject = name;
+      [channelMenu addItem:channelItem];
+    }
+    auto* channelRoot = [[NSMenuItem alloc] initWithTitle:@"Regenerate Selected Notes (Channel)"
+                                                  action:nil keyEquivalent:@""];
+    channelRoot.submenu = channelMenu;
+    [fileMenu_ addItem:channelRoot];
     [fileMenu_ addItem:item(@"Export Audio…", @selector(exportAudio:), @"e",
                             0, target_)];
     [fileMenu_ addItem:item(@"Export Score…", @selector(exportScore:), @"",
@@ -524,6 +558,25 @@ public:
           compare.representedObject = identifier;
           compare.enabled = !take.accepted;
           [decisions addItem:compare];
+          // One decision per channel the take actually carries, so a creator can keep
+          // the parts of a take they like without accepting the whole take.
+          if (!take.channels.empty()) {
+            auto* channelMenu = [[NSMenu alloc] initWithTitle:@"Accept Channels"];
+            for (const auto& channel : take.channels) {
+              NSString* name = [NSString stringWithUTF8String:channel.c_str()];
+              if (name == nil) continue;
+              auto* channelItem = item([name capitalizedString],
+                                       @selector(acceptPerformanceChannel:), @"", 0, target_);
+              channelItem.representedObject = @{@"id": identifier, @"channel": name};
+              channelItem.enabled = !take.accepted;
+              [channelMenu addItem:channelItem];
+            }
+            auto* channelRoot = [[NSMenuItem alloc] initWithTitle:@"Accept Channels"
+                                                          action:nil keyEquivalent:@""];
+            channelRoot.submenu = channelMenu;
+            channelRoot.enabled = !take.accepted;
+            [decisions addItem:channelRoot];
+          }
           auto* reject = item(@"Reject This Take", @selector(rejectPerformanceTake:), @"", 0, target_);
           reject.representedObject = identifier;
           [decisions addItem:reject];

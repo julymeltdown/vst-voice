@@ -108,6 +108,10 @@ struct PerformanceTakeMenuItem final {
   // True when an accepted selection already uses this take, which the surface
   // shows as the current choice rather than offering it as a new decision.
   bool accepted{false};
+  // Channel ids the take actually carries, in lane order. A surface offers a decision
+  // only over these, so it can never ask to accept a channel the backend did not
+  // generate for this take.
+  std::vector<std::string> channels;
 };
 
 // The alternate-take comparison a surface is holding, if any. The label names the
@@ -175,8 +179,12 @@ public:
   // replacing the region's current accepted selections. It never edits the take,
   // never changes its state and never touches manual performance ownership. A
   // surface refuses a span the take did not generate instead of clamping it.
+  // The channel list names the channels the decision covers, using the ids reported by
+  // performanceTakes(). An empty list means every channel the take carries. Naming a
+  // channel the take does not carry is refused rather than quietly widened.
   [[nodiscard]] virtual core::Result<void> acceptPerformanceTake(std::string_view,
-      PerformanceEditScope = PerformanceEditScope::Whole) {
+      PerformanceEditScope = PerformanceEditScope::Whole,
+      std::vector<std::string> = {}) {
     return core::failure(core::ErrorCode::Unsupported,
                          "Performance take decisions are not supported");
   }
@@ -191,9 +199,18 @@ public:
   // can play the same passage twice from one playhead and swap between the two.
   // Returns the comparison a surface should mark, or nothing when none is active.
   [[nodiscard]] virtual core::Result<void> beginPerformanceComparison(
-      std::string_view, PerformanceEditScope = PerformanceEditScope::Whole) {
+      std::string_view, PerformanceEditScope = PerformanceEditScope::Whole,
+      std::vector<std::string> = {}) {
     return core::failure(core::ErrorCode::Unsupported,
                          "Performance take comparison is not supported");
+  }
+  // Runs the surface's automatic-performance backend over a scope and channel set. An
+  // empty channel list means the backend's full supported set; a channel the backend
+  // cannot generate is refused instead of being dropped from the request.
+  [[nodiscard]] virtual core::Result<void> proposeAutomaticPerformance(
+      PerformanceEditScope, std::vector<std::string> = {}) {
+    return core::failure(core::ErrorCode::Unsupported,
+                         "Automatic performance proposals are not supported");
   }
   // Applies the other side of the active comparison. Refused when none is active.
   [[nodiscard]] virtual core::Result<void> swapPerformanceComparison() {

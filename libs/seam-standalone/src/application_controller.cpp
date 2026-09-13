@@ -49,10 +49,24 @@ std::string_view performanceChannelName(domain::PerformanceChannel channel) {
     case domain::PerformanceChannel::Breathiness: return "breathiness";
     case domain::PerformanceChannel::Tension: return "tension";
     case domain::PerformanceChannel::Airiness: return "airiness";
-    case domain::PerformanceChannel::StyleBlend: return "style blend";
+    case domain::PerformanceChannel::StyleBlend: return "style-blend";
     case domain::PerformanceChannel::Growl: return "growl";
   }
   return "channel";
+}
+
+std::optional<domain::PerformanceChannel> performanceChannelFromName(std::string_view name) {
+  constexpr std::array channels{
+      domain::PerformanceChannel::Pitch, domain::PerformanceChannel::Timing,
+      domain::PerformanceChannel::Dynamics, domain::PerformanceChannel::Breathiness,
+      domain::PerformanceChannel::Tension, domain::PerformanceChannel::Airiness,
+      domain::PerformanceChannel::Formant, domain::PerformanceChannel::Gender,
+      domain::PerformanceChannel::StyleBlend, domain::PerformanceChannel::Growl,
+      domain::PerformanceChannel::Attack, domain::PerformanceChannel::Release};
+  for (const auto channel : channels) {
+    if (performanceChannelName(channel) == name) return channel;
+  }
+  return std::nullopt;
 }
 
 // A proposal is named from its own recorded identity rather than from its position
@@ -276,14 +290,21 @@ StandaloneApplicationController::performanceTakes() const {
     // A rejected take has already been answered and must not be offered again; an
     // accepted one stays listed so the surface can show the current choice.
     if (!accepted && take.state != domain::PerformanceProposalState::Proposed) continue;
+    std::vector<std::string> channels;
+    channels.reserve(take.lanes.size());
+    for (const auto& lane : take.lanes) {
+      channels.emplace_back(performanceChannelName(lane.channel));
+    }
     result.push_back(platform::PerformanceTakeMenuItem{
-        .id = take.id, .label = performanceTakeLabel(take), .accepted = accepted});
+        .id = take.id, .label = performanceTakeLabel(take), .accepted = accepted,
+        .channels = std::move(channels)});
   }
   return result;
 }
 
 core::Result<void> StandaloneApplicationController::acceptPerformanceTake(
-    std::string_view id, platform::PerformanceEditScope scope) {
+    std::string_view id, platform::PerformanceEditScope scope,
+    std::vector<std::string> channels) {
   const auto regionId = session_.runtime().selectedRegion();
   const auto& editable = session_.runtime().document().session();
   const auto& project = editable.project();
@@ -293,7 +314,7 @@ core::Result<void> StandaloneApplicationController::acceptPerformanceTake(
         "Performance takes require a selected region");
   }
   const auto& state = region->performance;
-  auto selections = performanceTakeSelections(regionId, id, scope);
+  auto selections = performanceTakeSelections(regionId, id, scope, channels);
   if (!selections) return core::Result<void>{selections.error()};
   const auto changed = session_.runtime().execute(
       std::make_unique<application::SetAcceptedPerformanceCommand>(
@@ -311,7 +332,8 @@ core::Result<void> StandaloneApplicationController::acceptPerformanceTake(
 // take did not generate, and the selected-notes scope cannot reach outside it.
 core::Result<std::vector<domain::AcceptedPerformanceSelection>>
 StandaloneApplicationController::performanceTakeSelections(domain::RegionId regionId,
-    std::string_view id, platform::PerformanceEditScope scope) const {
+    std::string_view id, platform::PerformanceEditScope scope,
+    const std::vector<std::string>& channels) const {
   using Output = std::vector<domain::AcceptedPerformanceSelection>;
   const auto* region =
       session_.runtime().document().session().project().findRegion(regionId);
@@ -348,11 +370,37 @@ StandaloneApplicationController::performanceTakeSelections(domain::RegionId regi
   // Choosing a take means choosing it for the span it was generated over, on every
   // channel it carries. A zero source offset maps that span onto the same ticks, so
   // a surface never claims generated data the backend did not produce.
+  // An empty request means every channel the take carries. A named channel must exist
+  // in this take: widening a decision to a channel the backend never generated would
+  // claim audio that does not exist.
+  std::vector<domain::PerformanceChannel> requested;
+  if (channels.empty()) {
+    for (const auto& lane : found->lanes) requested.push_back(lane.channel);
+  } else {
+    for (const auto& name : channels) {
+      const auto channel = performanceChannelFromName(name);
+      if (!channel.has_value()) {
+        return core::failure<Output>(core::ErrorCode::InvalidArgument,
+            "Unknown performance channel", std::string{name});
+      }
+      const bool carried = std::any_of(found->lanes.begin(), found->lanes.end(),
+          [&](const auto& lane) { return lane.channel == *channel; });
+      if (!carried) {
+        return core::failure<Output>(core::ErrorCode::Conflict,
+            "This take carries no such channel", std::string{name});
+      }
+      if (std::find(requested.begin(), requested.end(), *channel) != requested.end()) {
+        return core::failure<Output>(core::ErrorCode::InvalidArgument,
+            "Repeated performance channel", std::string{name});
+      }
+      requested.push_back(*channel);
+    }
+  }
   Output selections;
-  selections.reserve(found->lanes.size());
-  for (const auto& lane : found->lanes) {
+  selections.reserve(requested.size());
+  for (const auto channel : requested) {
     selections.push_back(domain::AcceptedPerformanceSelection{
-        found->id, lane.channel,
+        found->id, channel,
         domain::PerformanceTimeRange{range.startTick, range.endTick}, time::Tick{0}});
   }
   return selections;
@@ -378,7 +426,8 @@ core::Result<void> StandaloneApplicationController::applyAcceptedSelections(
 }
 
 core::Result<void> StandaloneApplicationController::beginPerformanceComparison(
-    std::string_view id, platform::PerformanceEditScope scope) {
+    std::string_view id, platform::PerformanceEditScope scope,
+    std::vector<std::string> channels) {
   if (performanceComparison_.has_value()) {
     return core::failure(core::ErrorCode::Conflict,
         "A performance take comparison is already active");
@@ -404,7 +453,7 @@ core::Result<void> StandaloneApplicationController::beginPerformanceComparison(
         "No such performance take", std::string{id});
   }
   const std::string label = performanceTakeLabel(*found);
-  auto selections = performanceTakeSelections(regionId, id, scope);
+  auto selections = performanceTakeSelections(regionId, id, scope, channels);
   if (!selections) return core::Result<void>{selections.error()};
   const auto previous = state.accepted;
   const auto changed = session_.runtime().execute(
@@ -519,7 +568,7 @@ StandaloneApplicationController::selectedNotesRange(domain::RegionId regionId) c
 }
 
 core::Result<void> StandaloneApplicationController::proposeAutomaticPerformance(
-    platform::PerformanceEditScope scope) {
+    platform::PerformanceEditScope scope, std::vector<std::string> channels) {
   const auto& project = session_.runtime().document().session().project();
   const auto regionId = session_.runtime().selectedRegion();
   const auto* region = project.findRegion(regionId);
@@ -562,13 +611,40 @@ core::Result<void> StandaloneApplicationController::proposeAutomaticPerformance(
   if (!haveResource)
     return core::failure(core::ErrorCode::Conflict,
         "Automatic performance requires a selected singer");
+  // The backend generates pitch, dynamics, attack and release. An empty request means
+  // all four; a named channel outside that set is refused here rather than silently
+  // dropped, so a surface never believes it asked for something it did not get.
+  std::vector<domain::PerformanceChannel> requested{
+      domain::PerformanceChannel::Pitch, domain::PerformanceChannel::Dynamics,
+      domain::PerformanceChannel::Attack, domain::PerformanceChannel::Release};
+  if (!channels.empty()) {
+    requested.clear();
+    for (const auto& name : channels) {
+      const auto channel = performanceChannelFromName(name);
+      if (!channel.has_value()) {
+        return core::failure(core::ErrorCode::InvalidArgument,
+            "Unknown performance channel", name);
+      }
+      if (*channel != domain::PerformanceChannel::Pitch &&
+          *channel != domain::PerformanceChannel::Dynamics &&
+          *channel != domain::PerformanceChannel::Attack &&
+          *channel != domain::PerformanceChannel::Release) {
+        return core::failure(core::ErrorCode::Unsupported,
+            "The production backend cannot generate this channel", name);
+      }
+      if (std::find(requested.begin(), requested.end(), *channel) != requested.end()) {
+        return core::failure(core::ErrorCode::InvalidArgument,
+            "Repeated performance channel", name);
+      }
+      requested.push_back(*channel);
+    }
+  }
   auto& editable = session_.runtime().document().session();
   const std::string takeId =
       "proposal-" + std::to_string(++automaticProposalCounter_);
   auto prepared = authoring::AutomaticPerformanceCapture::prepare(editable, regionId,
       range,
-      {domain::PerformanceChannel::Pitch, domain::PerformanceChannel::Dynamics,
-       domain::PerformanceChannel::Attack, domain::PerformanceChannel::Release},
+      requested,
       resource, automaticProposalSeed_, takeId);
   if (!prepared) return core::Result<void>{prepared.error()};
   const auto generated = prepared.value().generate();
@@ -801,9 +877,9 @@ core::Result<void> StandaloneApplicationController::dispatch(
     case platform::ApplicationCommand::BakeProceduralCandidates:
       return exportSetFromDialog(true);
     case platform::ApplicationCommand::ProposeAutomaticPerformance:
-      return proposeAutomaticPerformance();
+      return proposeAutomaticPerformance(platform::PerformanceEditScope::Whole, {});
     case platform::ApplicationCommand::ProposeAutomaticPerformanceOverSelectedNotes:
-      return proposeAutomaticPerformance(platform::PerformanceEditScope::SelectedNotes);
+      return proposeAutomaticPerformance(platform::PerformanceEditScope::SelectedNotes, {});
     case platform::ApplicationCommand::NewProject: {
       auto allowed = confirmDestructiveAction();
       if (!allowed) return core::Result<void>{allowed.error()};

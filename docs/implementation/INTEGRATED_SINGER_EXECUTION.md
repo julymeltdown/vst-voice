@@ -1,5 +1,48 @@
 # Integrated Singer Execution
 
+## One channel at a time can be regenerated and accepted
+
+M3.P3 item 3 asks for "full and selected-range/channel regeneration", and AE3 asks that
+accepting a take preserve locked channels. The range half landed last; the channel half
+did not exist in any form. A proposal always carried all four channels the backend
+generates, and accepting one always accepted all four, so a creator who liked a take's
+pitch but not its dynamics had no way to say so.
+
+Both paths are now channel-scoped. `proposeAutomaticPerformance(scope, channels)`
+generates only the requested lanes, and `acceptPerformanceTake(take, scope,
+channels)` selects only those channels of that take. The surface learns what it may
+offer from `performanceTakes()`, which now reports the channel ids each take actually
+carries; the macOS take submenu builds `Accept Channels` from exactly that list. The
+dispatcher refuses a channel the take does not carry with `Conflict` and an
+unrecognised id with `InvalidArgument` rather than quietly widening the decision to
+every channel, because a widened acceptance would claim audio the backend never
+generated. Regeneration additionally refuses a channel the production backend cannot
+generate (anything outside pitch, dynamics, attack and release) with `Unsupported`,
+so the surface never believes it asked for something it did not get. Channel lists are
+deduplicated, and an empty list keeps the old meaning: every channel the take carries,
+or the backend's full supported set when proposing.
+
+The File menu gains a `Regenerate Selected Notes (Channel)` submenu over those four
+channels. It always proposes over the current note selection and therefore refuses when
+there is none, which is the repair workflow the exit criterion describes: keep what
+sounds right, regenerate the channel that does not.
+
+Verification. `tests/test_standalone_project_lifecycle.cpp` adds the case: a
+dynamics-only regeneration produces a proposal with one lane while the earlier
+four-channel proposal is untouched; the reported take channels match exactly; accepting
+that take for dynamics selects one selection on that channel; a channel the take does
+not carry is `Conflict`; an unknown id is `InvalidArgument` for both accepting and
+proposing; and a channel the backend cannot generate is `Unsupported`.
+`tests/test_file_dialog_contract.cpp` extends the surface default case so a dispatcher
+that implements nothing also refuses a channel-scoped proposal and decision.
+
+Not claimed. Channel scope is per channel, not per combination: there is no control for
+"pitch and attack but not dynamics", and the comparison path accepts a channel list
+without a surface control that uses it yet. Locked channels are still honoured by the
+per-frame ownership rule rather than by the accept path removing them, so accepting a
+take for a channel the creator has locked produces a selection that the compiler
+supersedes rather than a refusal. No listening or musical judgement is claimed.
+
 ## A proposal can cover an unlocked span instead of the whole region
 
 M3.P3 item 3 asks for full and selected-range regeneration, and the exit criterion ends

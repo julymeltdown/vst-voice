@@ -146,7 +146,8 @@ public:
   // on the take. Neither action edits the take's musical payload.
   [[nodiscard]] core::Result<void> acceptPerformanceTake(
       std::string_view id,
-      platform::PerformanceEditScope scope) override;
+      platform::PerformanceEditScope scope,
+      std::vector<std::string> channels) override;
   [[nodiscard]] core::Result<void> rejectPerformanceTake(
       std::string_view id) override;
   // Alternate-take comparison: the candidate take is applied while the previous
@@ -154,7 +155,11 @@ public:
   // and swap between the two states. Every swap is an ordinary undoable edit.
   [[nodiscard]] core::Result<void> beginPerformanceComparison(
       std::string_view id,
-      platform::PerformanceEditScope scope) override;
+      platform::PerformanceEditScope scope,
+      std::vector<std::string> channels) override;
+  [[nodiscard]] core::Result<void> proposeAutomaticPerformance(
+      platform::PerformanceEditScope scope,
+      std::vector<std::string> channels) override;
   [[nodiscard]] core::Result<void> swapPerformanceComparison() override;
   [[nodiscard]] core::Result<void> endPerformanceComparison() override;
   [[nodiscard]] std::optional<platform::PerformanceComparisonMenuItem>
@@ -277,7 +282,8 @@ private:
   // same span and channel rule for accepting and for comparing.
   [[nodiscard]] core::Result<std::vector<domain::AcceptedPerformanceSelection>>
   performanceTakeSelections(domain::RegionId regionId, std::string_view id,
-      platform::PerformanceEditScope scope) const;
+      platform::PerformanceEditScope scope,
+      const std::vector<std::string>& channels) const;
   // The span the creator's current note selection covers inside one region.
   [[nodiscard]] core::Result<domain::PerformanceTimeRange> selectedNotesRange(
       domain::RegionId regionId) const;
