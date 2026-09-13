@@ -36,8 +36,19 @@ struct TechnicalLanePresentation final {
                          const TechnicalLanePresentation&) = default;
 };
 
+// Which timing a final bounce is rendered against. Fixed Audio renders the score against its
+// own tempo map; Follow Host renders it against the timing the host reported for that range.
+enum class BounceTimingAuthority { FixedAudio, FollowHost };
+
+[[nodiscard]] std::string_view bounceTimingAuthorityName(
+    BounceTimingAuthority authority) noexcept;
+
 struct ProjectSettings final {
   double sampleRate{48000.0};
+  // Which timing a final bounce is rendered against. Fixed Audio uses the score's own map,
+  // which is what a project means by default; Follow Host uses the timing the host reported
+  // for the rendered range and is an explicit choice, never an inference.
+  BounceTimingAuthority bounceTimingAuthority{BounceTimingAuthority::FixedAudio};
   CharacterDisplayMode characterDisplay{CharacterDisplayMode::Minimal};
   std::array<TechnicalLanePresentation, kTechnicalLaneCount> technicalLanes{};
   bool snapEnabled{true};

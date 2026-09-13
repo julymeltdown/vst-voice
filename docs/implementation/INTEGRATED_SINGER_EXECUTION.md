@@ -1,5 +1,34 @@
 # Integrated Singer Execution
 
+## A project says which timing its bounce follows
+
+Follow Host worked in the runtime and could not be asked for. The authority was a session value
+with no control, no host parameter and nothing in the saved document, so a musician could not
+choose it at all and a project that had been bounced against the host's timing would have
+reopened silently bouncing against its own map.
+
+The choice now belongs to the project. `domain::BounceTimingAuthority` is a project setting with
+`fixed-audio` and `follow-host` as its persisted names, and schema 11 writes it into the settings
+block. A project written before the choice existed meant its own tempo map, so schema 10 and older
+decode as Fixed Audio; a schema 11 document that omits the field, or names an authority this build
+does not implement, is refused rather than quietly rendered as something else. Choosing an
+authority in the editor runtime writes that setting, so the state a host stores carries the
+decision, and reopening a project adopts it -- which is also why an imported document can no
+longer inherit whatever authority the previous session happened to be using.
+
+`tests/test_serialization.cpp` covers the round trip, the persisted spelling of both choices, the
+schema 10 default and both refusals. `tests/test_host_timeline_capture.cpp` adds the editor-level
+case: choosing Follow Host marks the project, the encoded state contains it, a reopened runtime
+adopts it, a project that never made the choice stays Fixed Audio, and switching back is persisted
+as clearly as switching away.
+
+Not claimed. There is still no control in the native editor and no CLAP parameter, so the choice is
+reachable only through the runtime API and the saved document; wiring a visible control is the
+remaining half of this package. No installed DAW bounce was run, so this is persistence and
+identity evidence, not host qualification -- the nine tuples remain M5.P2. Writing schema 11
+changes the encoded bytes of every newly saved project, which is why it is a version bump rather
+than a silent addition; older documents keep loading unchanged, and no unit acceptance changes.
+
 ## The host's transport reaches the editor without blocking the audio callback
 
 The editor runtime could capture, freeze and validate a host tempo map, and nothing in the

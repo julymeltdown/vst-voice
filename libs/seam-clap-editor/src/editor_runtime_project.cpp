@@ -114,6 +114,14 @@ core::Result<void> EditorRuntime::replaceProject(domain::Project project) {
   if (!refreshed) return refreshed;
   const auto migrated = voicebankSession_.migrateLegacyStyles(project);
   if (!migrated) return core::Result<void>{migrated.error()};
+  // A reopened project bounces the way it was saved to bounce. This is the only place the
+  // persisted choice becomes the live one, so an imported document cannot silently inherit
+  // the previous session's authority.
+  offlineTimingAuthority_ =
+      project.settings().bounceTimingAuthority == domain::BounceTimingAuthority::FollowHost
+          ? OfflineTimingAuthority::FollowHost
+          : OfflineTimingAuthority::FixedAudio;
+  preparedHostTimeline_.reset();
   const auto replaced = authoring_->document().replaceProject(std::move(project));
   if (!replaced) return replaced;
   microscopeUnitId_.reset();
@@ -173,6 +181,13 @@ void EditorRuntime::setOfflineTimingAuthority(
   std::lock_guard lock(mutex_);
   if (offlineTimingAuthority_ == authority) return;
   offlineTimingAuthority_ = authority;
+  // The choice is part of the project, not a session preference: a host that reopens this
+  // state must bounce the way the creator chose, and a project saved by an older build keeps
+  // the document's own map because that is what it meant.
+  session_.project().settings().bounceTimingAuthority =
+      authority == OfflineTimingAuthority::FollowHost
+          ? domain::BounceTimingAuthority::FollowHost
+          : domain::BounceTimingAuthority::FixedAudio;
   offlineRender_.invalidate("Offline timing authority changed");
   offlineAudioReady_.store(false, std::memory_order_release);
   preparedHostTimeline_.reset();

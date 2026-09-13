@@ -152,6 +152,15 @@ domain::CharacterDisplayMode parseCharacterMode(std::string_view value) {
   return domain::CharacterDisplayMode::Minimal;
 }
 
+// An unrecognized authority is refused rather than defaulted: a project that says its bounce
+// follows something this build does not implement must not be quietly rendered as Fixed Audio.
+std::optional<domain::BounceTimingAuthority> parseBounceTimingAuthority(
+    std::string_view value) {
+  if (value == "fixed-audio") return domain::BounceTimingAuthority::FixedAudio;
+  if (value == "follow-host") return domain::BounceTimingAuthority::FollowHost;
+  return std::nullopt;
+}
+
 std::string technicalLaneModeName(domain::TechnicalLaneMode mode) {
   switch (mode) {
     case domain::TechnicalLaneMode::Auto: return "auto";
@@ -647,6 +656,11 @@ JsonValue encodeProject(const domain::Project& project) {
       {"meterMap", encodeMeter(project.meterMap())},
       {"settings", JsonValue{Object{
           {"sampleRate", JsonValue{project.settings().sampleRate}},
+          // Persisted, not inferred: a project that bounces against the host's timing says so,
+          // and one that does not says that instead.
+          {"bounceTimingAuthority",
+           JsonValue{std::string{domain::bounceTimingAuthorityName(
+               project.settings().bounceTimingAuthority)}}},
           {"characterDisplay", JsonValue{characterModeName(project.settings().characterDisplay)}},
           {"snapEnabled", JsonValue{project.settings().snapEnabled}},
           {"snapGrid", JsonValue{project.settings().snapGrid.value()}},
@@ -741,6 +755,7 @@ core::Result<domain::Project> decodeProject(const JsonValue& root) {
   }
 
   const auto* sampleRate = settings.value()->find("sampleRate");
+  const auto* bounceTimingAuthority = settings.value()->find("bounceTimingAuthority");
   const auto* characterDisplay = settings.value()->find("characterDisplay");
   const auto* snapEnabled = settings.value()->find("snapEnabled");
   const auto* snapGrid = settings.value()->find("snapGrid");
@@ -758,7 +773,22 @@ core::Result<domain::Project> decodeProject(const JsonValue& root) {
         core::ErrorCode::ParseError,
         "Schema 5 project is missing hostStartOffsetTick");
   }
+  if (schemaVersion >= 11 &&
+      (bounceTimingAuthority == nullptr || !bounceTimingAuthority->isString())) {
+    return core::failure<domain::Project>(
+        core::ErrorCode::ParseError,
+        "Schema 11 project is missing bounceTimingAuthority");
+  }
   project.settings().sampleRate = sampleRate->asNumber();
+  if (schemaVersion >= 11) {
+    const auto authority = parseBounceTimingAuthority(bounceTimingAuthority->asString());
+    if (!authority.has_value()) {
+      return core::failure<domain::Project>(
+          core::ErrorCode::ParseError,
+          "Project bounce timing authority is not one this build implements");
+    }
+    project.settings().bounceTimingAuthority = *authority;
+  }
   project.settings().characterDisplay = parseCharacterMode(characterDisplay->asString());
   project.settings().snapEnabled = snapEnabled->asBool();
   project.settings().snapGrid = time::Tick{snapGrid->asInt64()};

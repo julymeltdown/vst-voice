@@ -2,6 +2,7 @@
 
 #include "seam/application/project_factory.hpp"
 #include "seam/clap_editor/editor_runtime.hpp"
+#include "seam/formats/project_json.hpp"
 #include "seam/voicebank/catalog.hpp"
 
 #include <chrono>
@@ -353,4 +354,54 @@ TEST_CASE("follow host preparation freezes an authority fixed audio does not inh
   if (!fixed) return;
   const auto fixedFrames = fixed->interleaved.size() / fixed->channelCount;
   CHECK(fixedFrames > followFrames * 2U - followFrames / 4U);
+}
+
+TEST_CASE("the bounce authority is part of the project and survives a reopen") {
+  // No rendering happens here, so this needs no voicebank: it is about which timing a project
+  // says its bounce follows and whether that statement survives a save and reopen.
+  const std::vector<seam::voicebank::VoicebankSearchRoot> roots{};
+
+  seam::application::ProjectFactory factory{9600U};
+  auto project = factory.createProject("Bounce authority");
+  const auto track = factory.addVocalTrack(project, "Singer");
+  static_cast<void>(factory.addRegion(project, track, "Phrase", seam::time::Tick{0},
+                                      seam::time::Tick{1920}));
+  CHECK(project.settings().bounceTimingAuthority ==
+        seam::domain::BounceTimingAuthority::FixedAudio);
+
+  seam::clap_editor::EditorRuntime runtime{std::nullopt, {}, roots};
+  CHECK(runtime.replaceProject(project));
+  CHECK(runtime.offlineTimingAuthority() ==
+        seam::clap_editor::OfflineTimingAuthority::FixedAudio);
+
+  // Choosing Follow Host is a project change, not a session preference.
+  runtime.setOfflineTimingAuthority(seam::clap_editor::OfflineTimingAuthority::FollowHost);
+  CHECK(runtime.offlineTimingAuthority() ==
+        seam::clap_editor::OfflineTimingAuthority::FollowHost);
+  CHECK(runtime.projectCopy().settings().bounceTimingAuthority ==
+        seam::domain::BounceTimingAuthority::FollowHost);
+  const auto saved = seam::formats::ProjectJsonCodec{}.encode(runtime.projectCopy());
+  CHECK(saved);
+  if (!saved) return;
+  CHECK(saved.value().find("\"bounceTimingAuthority\": \"follow-host\"") !=
+        std::string::npos);
+
+  // A reopened state bounces the way it was saved to bounce...
+  const auto decoded = seam::formats::ProjectJsonCodec{}.decode(saved.value());
+  CHECK(decoded);
+  if (!decoded) return;
+  seam::clap_editor::EditorRuntime reopened{std::nullopt, {}, roots};
+  CHECK(reopened.replaceProject(decoded.value()));
+  CHECK(reopened.offlineTimingAuthority() ==
+        seam::clap_editor::OfflineTimingAuthority::FollowHost);
+  // ...and one that never made the choice keeps the document's own map.
+  seam::clap_editor::EditorRuntime fresh{std::nullopt, {}, roots};
+  CHECK(fresh.replaceProject(project));
+  CHECK(fresh.offlineTimingAuthority() ==
+        seam::clap_editor::OfflineTimingAuthority::FixedAudio);
+
+  // Switching back is persisted as clearly as switching away from it.
+  reopened.setOfflineTimingAuthority(seam::clap_editor::OfflineTimingAuthority::FixedAudio);
+  CHECK(reopened.projectCopy().settings().bounceTimingAuthority ==
+        seam::domain::BounceTimingAuthority::FixedAudio);
 }

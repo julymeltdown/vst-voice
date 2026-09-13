@@ -187,6 +187,65 @@ TEST_CASE("project JSON persists one singer selection per track and migrates old
   CHECK(!invalidIdentity.validate());
 }
 
+TEST_CASE("project JSON persists and validates the bounce timing authority") {
+  seam::application::ProjectFactory factory{260};
+  auto project = factory.createProject("Bounce authority fixture");
+  CHECK(project.settings().bounceTimingAuthority ==
+        seam::domain::BounceTimingAuthority::FixedAudio);
+  seam::formats::ProjectJsonCodec codec;
+  const auto fixed = codec.encode(project);
+  CHECK(fixed);
+  if (!fixed) return;
+  CHECK(fixed.value().find("\"bounceTimingAuthority\": \"fixed-audio\"") !=
+        std::string::npos);
+  const auto fixedDecoded = codec.decode(fixed.value());
+  CHECK(fixedDecoded);
+  if (fixedDecoded) CHECK(fixedDecoded.value() == project);
+
+  project.settings().bounceTimingAuthority = seam::domain::BounceTimingAuthority::FollowHost;
+  const auto follow = codec.encode(project);
+  CHECK(follow);
+  if (!follow) return;
+  CHECK(follow.value().find("\"bounceTimingAuthority\": \"follow-host\"") !=
+        std::string::npos);
+  const auto followDecoded = codec.decode(follow.value());
+  CHECK(followDecoded);
+  if (!followDecoded) return;
+  CHECK(followDecoded.value() == project);
+  CHECK(followDecoded.value().settings().bounceTimingAuthority ==
+        seam::domain::BounceTimingAuthority::FollowHost);
+
+  // A project written before this choice existed meant its own tempo map, and is read as such.
+  auto legacy = seam::formats::parseJson(follow.value());
+  CHECK(legacy);
+  if (!legacy) return;
+  legacy.value().asObject()["schemaVersion"] = seam::formats::JsonValue{std::int64_t{10}};
+  legacy.value().find("settings")->asObject().erase("bounceTimingAuthority");
+  const auto legacyDecoded = codec.decode(seam::formats::stringifyJson(legacy.value()));
+  CHECK(legacyDecoded);
+  if (legacyDecoded) {
+    CHECK(legacyDecoded.value().settings().bounceTimingAuthority ==
+          seam::domain::BounceTimingAuthority::FixedAudio);
+  }
+
+  // A current project that omits the choice, or names one this build does not implement, is
+  // refused instead of being quietly rendered as Fixed Audio.
+  auto missing = seam::formats::parseJson(fixed.value());
+  CHECK(missing);
+  if (!missing) return;
+  missing.value().find("settings")->asObject().erase("bounceTimingAuthority");
+  CHECK(!codec.decode(seam::formats::stringifyJson(missing.value())));
+
+  auto unknown = seam::formats::parseJson(fixed.value());
+  CHECK(unknown);
+  if (!unknown) return;
+  unknown.value().find("settings")->asObject()["bounceTimingAuthority"] =
+      seam::formats::JsonValue{"listen-to-the-room"};
+  const auto rejected = codec.decode(seam::formats::stringifyJson(unknown.value()));
+  CHECK(!rejected);
+  if (!rejected) CHECK(rejected.error().code == seam::core::ErrorCode::ParseError);
+}
+
 TEST_CASE("project decoder rejects an unsupported schema") {
   seam::formats::ProjectJsonCodec codec;
   const auto decoded = codec.decode(

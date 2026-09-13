@@ -7,6 +7,15 @@
 
 namespace seam::domain {
 
+std::string_view bounceTimingAuthorityName(
+    BounceTimingAuthority authority) noexcept {
+  switch (authority) {
+    case BounceTimingAuthority::FixedAudio: return "fixed-audio";
+    case BounceTimingAuthority::FollowHost: return "follow-host";
+  }
+  return "fixed-audio";
+}
+
 core::Result<void> ProceduralRecipeReference::validate() const {
   const auto identity = resource.validate();
   if (!identity) return identity;
