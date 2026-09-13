@@ -120,7 +120,13 @@ bool HostTransportPublication::tryConsume(HostTimelineState& out) noexcept {
   state.numerator = meter_.numerator.load(std::memory_order_relaxed);
   state.denominator = meter_.denominator.load(std::memory_order_relaxed);
 
-  const auto after = sequence_.load(std::memory_order_acquire);
+  // The fence, not the second load, is what makes this safe: an acquire load stops later
+  // operations from moving earlier, and what is needed here is the opposite -- the field
+  // loads above must not be delayed past the sequence re-read, or they could take their
+  // values from a publish that started after it. Observed as a mixed snapshot on arm64
+  // before this fence existed (CTest caught it; a single run almost never does).
+  std::atomic_thread_fence(std::memory_order_acquire);
+  const auto after = sequence_.load(std::memory_order_relaxed);
   if (before != after) {
     tornReads_.fetch_add(1U, std::memory_order_relaxed);
     return false;

@@ -188,6 +188,9 @@ void EditorRuntime::setOfflineTimingAuthority(
       authority == OfflineTimingAuthority::FollowHost
           ? domain::BounceTimingAuthority::FollowHost
           : domain::BounceTimingAuthority::FixedAudio;
+  if (controller_) {
+    controller_->setBounceFollowHost(authority == OfflineTimingAuthority::FollowHost);
+  }
   offlineRender_.invalidate("Offline timing authority changed");
   offlineAudioReady_.store(false, std::memory_order_release);
   preparedHostTimeline_.reset();

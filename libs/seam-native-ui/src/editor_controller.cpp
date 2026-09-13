@@ -190,6 +190,8 @@ EditorSceneState NativeEditorController::sceneState() const {
       .playing = playing_,
       .loopEnabled = loopEnabled_,
       .loopAvailable = callbacks_.toggleLoop != nullptr,
+      .bounceFollowHost = bounceFollowHost_,
+      .bounceTimingAvailable = callbacks_.setBounceTiming != nullptr,
       .dirty = dirty_,
       .audioDeviceOnline = audioOnline_,
       .audioBackend = audioBackend_,
@@ -1897,6 +1899,18 @@ core::Result<void> NativeEditorController::dispatchAccessibility(
           }
           const auto result = callbacks_.toggleLoop();
           if (result) loopEnabled_ = !loopEnabled_;
+          repaint();
+          return result;
+        }
+        if (element == "toolbar.bounce" &&
+            (requested == SemanticAction::Activate ||
+             requested == SemanticAction::Toggle)) {
+          if (!callbacks_.setBounceTiming) {
+            return core::failure(core::ErrorCode::Unsupported,
+                                 "Bounce timing is not connected");
+          }
+          const auto result = callbacks_.setBounceTiming(!bounceFollowHost_);
+          if (result) bounceFollowHost_ = !bounceFollowHost_;
           repaint();
           return result;
         }
@@ -3956,6 +3970,15 @@ core::Result<void> NativeEditorController::pointerDown(
       }
       const auto result = callbacks_.toggleLoop();
       if (result) loopEnabled_ = !loopEnabled_;
+      repaint();
+      return result;
+    }
+    const auto bounceBounds =
+        layout_.bounceTimingBoundsForWidth(logicalWidth_, portraitVisible);
+    if (callbacks_.setBounceTiming && bounceBounds.width > 0.0 &&
+        bounceBounds.contains(event.position)) {
+      const auto result = callbacks_.setBounceTiming(!bounceFollowHost_);
+      if (result) bounceFollowHost_ = !bounceFollowHost_;
       repaint();
       return result;
     }

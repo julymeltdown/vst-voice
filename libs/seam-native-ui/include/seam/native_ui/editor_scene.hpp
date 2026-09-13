@@ -140,6 +140,10 @@ struct EditorSceneState final {
   bool playing{false};
   bool loopEnabled{false};
   bool loopAvailable{false};
+  // True when a final bounce is timed against the host's own report rather than the score's
+  // tempo map. Available only when the surface actually offers the choice.
+  bool bounceFollowHost{false};
+  bool bounceTimingAvailable{false};
   bool dirty{false};
   bool audioDeviceOnline{false};
   std::string audioBackend{"OFFLINE"};
@@ -375,6 +379,7 @@ struct EditorSceneLayout final {
   double batchLyricsWidth{112.0};
   double batchLyricsFontSize{8.0};
   double loopWidth{72.0};
+  double bounceTimingWidth{124.0};
   double loopFontSize{8.0};
   double compactToolbarGap{4.0};
   double compactTransportWidth{72.0};
@@ -815,6 +820,24 @@ struct EditorSceneLayout final {
       return ui::Rect{};
     }
     return ui::Rect{left, toolbarControlTop, loopWidth, toolbarControlHeight};
+  }
+  [[nodiscard]] ui::Rect bounceTimingBoundsForWidth(
+      double width, bool portraitVisible = true) const noexcept {
+    if (compactToolbar(width)) return ui::Rect{};
+    const auto loop = loopBoundsForWidth(width, portraitVisible);
+    if (loop.width <= 0.0) return ui::Rect{};
+    const auto left = loop.right() + compactToolbarGap;
+    const auto project = projectHeaderBoundsForWidth(width, portraitVisible);
+    if (project.has_value() && left + bounceTimingWidth + compactToolbarGap > project->x) {
+      return ui::Rect{};
+    }
+    const auto identity = voiceIdentityBoundsForWidth(width);
+    const auto rightLimit = identity.has_value()
+                                ? identity->x - compactToolbarGap
+                                : width - compactToolbarRightInset;
+    if (left + bounceTimingWidth > rightLimit) return ui::Rect{};
+    return ui::Rect{left, toolbarControlTop, bounceTimingWidth,
+                    toolbarControlHeight};
   }
   [[nodiscard]] double diagnosticHeight(bool visible) const noexcept {
     return visible ? diagnosticStripHeight : 0.0;

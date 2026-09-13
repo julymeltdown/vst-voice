@@ -1,5 +1,35 @@
 # Integrated Singer Execution
 
+## A creator can choose the bounce timing without leaving the editor
+
+The choice became part of the project, and nothing in the interface could make it. A musician
+working inside a DAW has no menu bar of ours, so the control belongs in the shared editor scene
+rather than in a platform menu.
+
+The toolbar now carries it beside the loop control: `BOUNCE: SCORE` when a final render is timed
+against the score's own tempo map, `BOUNCE: HOST` when it follows the host's report. It is painted
+in the shared scene, hit-tested with the same shared layout geometry, and exposed as the semantic
+node `toolbar.bounce` with a role, a name and a value that state the current choice, so it is
+reachable by pointer and by assistive technology through one geometry.
+
+Two boundaries are deliberate. The control is only shown when the surface actually connects the
+choice: `bounceTimingAvailable` is false wherever no callback is registered, so a surface that has
+no host-timed bounce does not show a button that does nothing. And the control reports the
+project's authority rather than the last thing clicked -- every controller rebuild re-reads it --
+so a project reopened in Follow Host shows Follow Host, and a refused change leaves the control
+where it was rather than displaying a state the project does not have. The CLAP editor wires the
+callback to `setOfflineTimingAuthority`, which persists the choice into the document.
+
+`tests/test_native_ui.cpp` covers the pointer path, the accessibility `Activate` path, the refusal
+path (the callback fails, the control does not move) and the surface that never registered the
+callback. Layout is asserted against the control it follows, so the new control cannot overlap the
+loop control, and it inherits the existing guards that hide toolbar controls that no longer fit.
+
+Not claimed. There is no keyboard shortcut for this choice yet and the standalone application menu
+does not offer it, so today it is reachable by pointer and by assistive technology in the editor
+surface that supports a host-timed bounce. No installed DAW bounce was run: the nine tuples and
+the real host reporting cadence remain M5.P2, and no unit acceptance changes.
+
 ## A project says which timing its bounce follows
 
 Follow Host worked in the runtime and could not be asked for. The authority was a session value

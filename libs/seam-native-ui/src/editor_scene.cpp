@@ -476,6 +476,19 @@ void EditorScenePainter::paintToolbar(RasterCanvas& canvas,
         state.loopEnabled ? "LOOP ON" : "LOOP", theme_.secondaryText,
         layout_.loopFontSize);
   }
+  const auto bounceBounds =
+      layout_.bounceTimingBoundsForWidth(width, portraitVisible);
+  if (state.bounceTimingAvailable && bounceBounds.width > 0.0) {
+    canvas.fillRect(bounceBounds,
+                    state.bounceFollowHost ? theme_.transportPlaying : theme_.panel);
+    canvas.strokeRect(bounceBounds, theme_.gridStrong,
+                      layout_.controlStrokeWidth);
+    canvas.drawText(
+        ui::Point{bounceBounds.x + layout_.transportTextInsetX,
+                  layout_.transportTextBaseline},
+        state.bounceFollowHost ? "BOUNCE: HOST" : "BOUNCE: SCORE",
+        theme_.secondaryText, layout_.loopFontSize);
+  }
   const auto projectBounds =
       layout_.projectHeaderBoundsForWidth(width, portraitVisible);
   if (projectBounds.has_value()) {

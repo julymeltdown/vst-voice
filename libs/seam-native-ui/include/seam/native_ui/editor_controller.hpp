@@ -122,6 +122,10 @@ struct EditorHostCallbacks final {
   std::function<core::Result<void>(time::Tick)> seekTick;
   std::function<core::Result<void>(time::Tick, time::Tick)> setLoopTicks;
   std::function<core::Result<void>()> toggleLoop;
+  // Chooses what a final bounce is timed against: true follows the host's own timing, false
+  // uses the score's tempo map. A surface that cannot offer the choice leaves this empty, and
+  // the control is then not shown at all rather than shown doing nothing.
+  std::function<core::Result<void>(bool)> setBounceTiming;
   std::function<void()> cancelRender;
   std::function<void()> retryRender;
   std::function<core::Result<void>(domain::PhonemeKey)> cycleUnitVariant;
@@ -344,6 +348,7 @@ public:
   void setAudioState(bool online, std::string backend);
   void setPlaying(bool playing) noexcept { playing_ = playing; }
   void setLoopEnabled(bool enabled) noexcept { loopEnabled_ = enabled; }
+  void setBounceFollowHost(bool followHost) noexcept { bounceFollowHost_ = followHost; }
   void setRenderStatus(RenderStatusView status) noexcept;
   void setExportProgress(authoring::ExportProgress progress) noexcept {
     exportProgress_ = std::move(progress);
@@ -593,6 +598,9 @@ private:
   std::optional<time::Tick> loopAnchorTick_;
   bool playing_{false};
   bool loopEnabled_{false};
+  // Mirrors the project's bounce timing authority so the toolbar control reports what the
+  // project actually says; the surface sets it whenever it adopts a project or changes it.
+  bool bounceFollowHost_{false};
   bool dirty_{false};
   bool audioOnline_{false};
   std::string audioBackend_{"OFFLINE"};

@@ -131,6 +131,8 @@ TEST_CASE("the owner is notified once per undrained report") {
 }
 
 TEST_CASE("a transport published from another thread is never torn") {
+  // Several rounds, because a torn snapshot is an interleaving and one round can miss it.
+  for (int round = 0; round < 3; ++round) {
   HostTransportPublication publication;
   constexpr int kReports = 2000;
   std::atomic<bool> writerDone{false};
@@ -179,4 +181,5 @@ TEST_CASE("a transport published from another thread is never torn") {
   CHECK(last.beats == static_cast<double>(kReports - 1));
   CHECK(last.tempo == 120.0 + static_cast<double>(kReports - 1));
   CHECK(publication.publishedCount() == static_cast<std::uint64_t>(kReports));
+  }
 }

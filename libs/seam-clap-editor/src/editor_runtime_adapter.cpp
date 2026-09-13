@@ -436,6 +436,14 @@ void EditorRuntime::configureControllerCallbacks() {
         if (controller_) controller_->setDirty(dirty_);
         requestRepaint();
       },
+      .setBounceTiming = [this](bool followHost) {
+        // Persisted with the project, so the host's saved state carries the choice.
+        setOfflineTimingAuthority(followHost
+                                      ? OfflineTimingAuthority::FollowHost
+                                      : OfflineTimingAuthority::FixedAudio);
+        requestRepaint();
+        return core::success();
+      },
       .selectVoicebank = [this](std::string_view id, std::string_view version,
                                 std::string_view contentHash) {
         return selectVoicebank(id, version, contentHash);
@@ -504,6 +512,9 @@ void EditorRuntime::configureControllerCallbacks() {
   controller_ = std::make_unique<native_ui::NativeEditorController>(
       session_, factory_, regionId_, std::move(callbacks));
   controller_->setMeasurementCoordinator(authoring_->renderer());
+  // The control must report what the project says, not what this session last clicked.
+  controller_->setBounceFollowHost(offlineTimingAuthority_ ==
+                                   OfflineTimingAuthority::FollowHost);
   controller_->setStyleBankSnapshotResolver([this](domain::TrackId track) {
     return authoring_->voicebanks().resolveTrackSnapshot(authoring_->document().session().project(), track);
   });

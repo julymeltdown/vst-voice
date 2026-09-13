@@ -368,6 +368,29 @@ SemanticNode EditorSemanticTree::build(const EditorSceneState& state,
         .description = "Loop the published audio timeline; press L to toggle",
     });
   }
+  const auto bounceBounds =
+      layout.bounceTimingBoundsForWidth(state.logicalWidth, portraitVisible);
+  if (state.bounceTimingAvailable && bounceBounds.width > 0.0) {
+    root.children.push_back(SemanticNode{
+        .id = "toolbar.bounce",
+        .role = SemanticRole::Button,
+        .name = state.bounceFollowHost ? "Bounce timing: follow the host"
+                                       : "Bounce timing: score tempo map",
+        .value = state.bounceFollowHost ? "Follow Host" : "Fixed Audio",
+        .bounds = bounceBounds,
+        .enabled = true,
+        .focused = false,
+        .selected = state.bounceFollowHost,
+        .actions = std::vector<SemanticAction>{SemanticAction::Activate,
+                                               SemanticAction::Toggle,
+                                               SemanticAction::SetFocus},
+        .children = {},
+        .description =
+            "Choose whether a final bounce follows the host's own timing or the score's "
+            "tempo map; a Follow Host bounce refuses rather than guess when the host has "
+            "not reported enough of the score",
+    });
+  }
   root.children.push_back(SemanticNode{
       .id = "timeline",
       .role = SemanticRole::Timeline,

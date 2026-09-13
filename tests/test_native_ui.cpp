@@ -2125,6 +2125,74 @@ TEST_CASE("native transport keeps play state unchanged when host rejects it") {
   CHECK(!loopController.sceneState().loopEnabled);
 }
 
+TEST_CASE("native bounce timing control chooses and reports the host authority") {
+  NativeUiFixture fixture;
+  std::vector<bool> requests;
+  seam::native_ui::NativeEditorController controller{
+      fixture.session, fixture.factory, fixture.regionId,
+      seam::native_ui::EditorHostCallbacks{
+          .setBounceTiming = [&requests](bool followHost) {
+            requests.push_back(followHost);
+            return seam::core::success();
+          },
+      }};
+  controller.resize(1440.0, 900.0);
+  const auto layout = seam::native_ui::EditorScenePainter{}.layout();
+  const auto bounds = layout.bounceTimingBoundsForWidth(1440.0, false);
+  CHECK(bounds.width > 0.0);
+  // The control never covers the loop control it follows, or the project header.
+  const auto loop = layout.loopBoundsForWidth(1440.0, false);
+  CHECK(loop.width > 0.0);
+  CHECK(bounds.x >= loop.right());
+
+  CHECK(controller.sceneState().bounceTimingAvailable);
+  CHECK(!controller.sceneState().bounceFollowHost);
+  controller.rebuildAccessibilityTree();
+  CHECK(controller.dispatchAccessibility(
+      "toolbar.bounce", seam::native_ui::SemanticAction::Activate));
+  CHECK(requests.size() == 1U);
+  CHECK(requests.front());
+  CHECK(controller.sceneState().bounceFollowHost);
+
+  CHECK(controller.pointerDown(seam::native_ui::PointerEvent{
+      .position = seam::ui::Point{bounds.x + bounds.width * 0.5,
+                                  bounds.y + bounds.height * 0.5},
+      .button = seam::native_ui::PointerButton::Left,
+      .modifiers = {},
+      .clickCount = 1,
+  }));
+  CHECK(requests.size() == 2U);
+  CHECK(!requests.back());
+  CHECK(!controller.sceneState().bounceFollowHost);
+
+  // A refused choice does not move the control's state.
+  seam::native_ui::NativeEditorController refusing{
+      fixture.session, fixture.factory, fixture.regionId,
+      seam::native_ui::EditorHostCallbacks{
+          .setBounceTiming = [](bool) {
+            return seam::core::failure(seam::core::ErrorCode::Conflict,
+                                       "bounce timing failed");
+          },
+      }};
+  refusing.resize(1440.0, 900.0);
+  const auto refused = refusing.pointerDown(seam::native_ui::PointerEvent{
+      .position = seam::ui::Point{bounds.x + bounds.width * 0.5,
+                                  bounds.y + bounds.height * 0.5},
+      .button = seam::native_ui::PointerButton::Left,
+      .modifiers = {},
+      .clickCount = 1,
+  });
+  CHECK(!refused);
+  CHECK(refused.error().code == seam::core::ErrorCode::Conflict);
+  CHECK(!refusing.sceneState().bounceFollowHost);
+
+  // A surface that cannot offer the choice does not show it.
+  seam::native_ui::NativeEditorController without{fixture.session, fixture.factory,
+                                                  fixture.regionId};
+  without.resize(1440.0, 900.0);
+  CHECK(!without.sceneState().bounceTimingAvailable);
+}
+
 TEST_CASE("native arrangement inspector commits track mix through shared commands") {
   NativeUiFixture fixture;
   fixture.session.project().settings().characterDisplay =
