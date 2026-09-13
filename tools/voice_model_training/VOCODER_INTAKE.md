@@ -210,3 +210,33 @@ and that emitted tensors do not alias the caller's mel array. The shared decoder
 retains the existing cross-width/sign-extension tests and acoustic feature hashes.
 The reader does not grant source rights or make a saved snapshot current; fresh
 review/source admission still belongs to the epoch service being integrated next.
+
+### Reviewed vocoder epoch service
+
+`vocoder_training_run.train_reviewed_vocoder_epoch` now connects fresh
+`assemble_dataset` admission, PCM/mel/F0 batches, alternating GAN updates and
+two-file checkpoint publication. It consumes all 13 captured rights/label/source
+inputs rather than accepting a saved snapshot as permission. Admission is repeated
+after training and immediately before the completion receipt is published.
+
+The first service uses complete admitted phrases, at most 4096 feature frames and
+1,048,576 PCM samples per phrase. Longer material must follow the existing reviewed
+segmentation workflow. The update budget must cover every selected training phrase;
+missing, repeated, offset or differently bound batches prevent publication. Only
+valid source samples count toward epoch coverage. Deadlines, review expiry and
+cancellation are checked between updates and publication phases. Optional named
+schedulers step once per complete epoch and are stored in the GAN checkpoint.
+
+Orchestration regressions cover exact source coverage, partition/offset failures,
+cancellation, resumed dataset mismatch and changed identity at either final
+revalidation point. These use mocked admission and optimization; they do not prove
+the integrated signed-fixture execution. The next verification is the actual
+fixture-policy → byte admission → GAN epoch → complete checkpoint route, followed
+by real admitted material and the ordinary native singer/render workflow.
+
+Verification note: the 54-test training-tool run had one error in the existing
+`test_exited_leader_does_not_skip_descendant_group_cleanup`: after its three-second
+deadline, the fixture PID file did not exist. One isolated diagnostic rerun passed
+in 3.004 seconds; the epoch test also passed in isolation. This does not convert
+the failed full run into a passing suite or establish the timing failure's cause.
+Source-closure verification passed. No process-supervision behavior was weakened.
