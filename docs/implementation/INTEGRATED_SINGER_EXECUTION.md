@@ -1,5 +1,51 @@
 # Integrated Singer Execution
 
+## A neural candidate can be qualified without being approved
+
+M2.P3 lists seven commands against tools/voice_model_training: admit, prepare,
+label-report, split, train, export and qualify-candidate. The first four and the export
+side already exist in the tracked tree -- the roadmap note that called this directory
+absent is stale, and I am correcting it here rather than repeating it.
+qualify-candidate did not exist anywhere.
+
+It exists now as the qualify-candidate subcommand of python -m
+tools.voice_model_training, in the house style of the other commands: a captured
+configuration with its own SHA-256, bounded inputs, and no overwrite of an existing
+output. The configuration names an admitted bundle by directory and manifest identity
+plus 1..256 held-out items with their phones, frame counts, target F0 and gain, and 2..5
+repetitions. The command drives the production worker over every item and records each
+automatic criterion separately: bundle admission, response binding to the exact request
+bytes, vocabulary coverage of the held-out phones, determinism across repeated
+identical requests, finite non-silent audio, and runtime when a per-item budget is
+declared.
+
+What makes it useful is what it refuses to say. Intelligibility, identity and
+musicality are always UNRESOLVED, because they need independent listeners; the verdict
+is FAILED when an automatic criterion fails and UNRESOLVED otherwise, so the command
+has no way to print QUALIFIED, always sets releaseEligible false and records no
+approval. A failing run still writes its dossier and exits 4, which is what keeps a
+rejected candidate auditable instead of silent. Exit 0 means that nothing automatic
+failed; it does not mean approved.
+
+Verification. tools/voice_model_training/test_qualification.py covers the policy and
+the command with an injected runner: identical runs pass; differing audio across
+repetitions fails only determinism; silence, nonfinite samples and a wrong response
+length fail audio or binding; a worker exit status and a budget overrun are attributed
+to their own criterion; a held-out phone outside the vocabulary fails coverage; a
+passing dossier is still UNRESOLVED with no approval and no release eligibility; and
+the command refuses a bundle manifest that differs from its capture and refuses to
+overwrite an existing dossier. tools/neural_runtime/check_candidate_qualification.py
+runs as the new CTest seam_neural_candidate_qualification: it prepares a real ONNX
+bundle with the CLI, drives the actual production worker through the command, and
+asserts that every automatic criterion passes while the verdict stays UNRESOLVED, that
+a missing phone fails coverage with exit 4, and that a closed output is refused.
+
+Not claimed. The fixture graphs are arithmetic constants, so this qualifies the
+machinery and not a voice: no held-out singing was produced and no listening happened.
+The train command in the contract is still documented as an upstream invocation rather
+than a first-party subcommand, and the honest remaining M2 work is a lawful source set,
+a real training or adaptation run, and a vocoder export for the same candidate.
+
 ## One channel at a time can be regenerated and accepted
 
 M3.P3 item 3 asks for "full and selected-range/channel regeneration", and AE3 asks that
