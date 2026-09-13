@@ -1,5 +1,36 @@
 # Integrated Singer Execution
 
+## The render path is verified with the shipped neural worker, not the probe
+
+Every neural render test until now executed the transport probe, which returns silence
+and performs no inference. That proved routing, publication identity and caching, and
+it proved nothing about the worker the product ships. The production worker had its
+own checks, but they drove it directly from Python; nothing connected "this worker
+admits a bundle and executes ONNX" to "the authoring render path publishes what the
+worker produced".
+
+`tests/test_neural_production_render.cpp` closes that seam. A new CTest,
+`seam_neural_production_render`, prepares a real ONNX bundle with the CLI, asks the
+test binary for the phones one deterministic phrase actually needs, builds the
+vocabulary from that answer, and then renders the phrase with
+`AuthoringNeuralPhraseRunner` pointed at `seam_neural_worker`. The check passes only
+when the published render names `seam.neural-worker.v1`, reports the admitted bundle
+identity and provider, and contains finite, in-range, non-silent audio. Observed
+locally: 96000 interleaved samples rendered through the shipped worker with every
+sample nonzero.
+
+Two details are deliberate. The test is driven in two phases through environment
+variables, because the phrase's phones come from the C++ phonemizer while the bundle's
+ONNX bytes come from the Python tooling; handing the vocabulary across that boundary in
+the wrong direction would let a test pass against a bundle that cannot sing the phrase.
+And the render must report its own outcome on stdout, which the driver asserts on, so a
+phase that silently did nothing cannot be mistaken for a completed render.
+
+Not claimed. The bundle carries arithmetic fixture graphs, so this is execution and
+routing evidence, not a singer. It also does not change the workflow suite's probe use:
+those tests remain the ONNX-free coverage of routing, and both the transport-probe and
+production-worker paths are now exercised.
+
 ## A neural candidate can be qualified without being approved
 
 M2.P3 lists seven commands against tools/voice_model_training: admit, prepare,

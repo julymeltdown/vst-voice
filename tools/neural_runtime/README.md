@@ -237,6 +237,15 @@ runtime allocations beyond the process ceilings, real model inference and
 musical evaluation remain open.
 ## Production worker
 
+`check_production_render.py` runs as the `seam_neural_production_render` CTest. It
+prepares a real ONNX bundle with the CLI, collects the phones one deterministic phrase
+actually needs, and then drives the authoring render path with the shipped worker
+instead of the transport probe. The check passes only when the published render names
+`seam.neural-worker.v1`, reports the admitted bundle identity and contains non-silent
+finite audio, so routing without execution can no longer pass as coverage. The graphs
+are arithmetic constants: this proves that the worker executed inside the render path,
+not that a voice was produced.
+
 `apps/seam-neural-worker/main.cpp` builds as `seam_neural_worker` only when
 `SEAM_ONNXRUNTIME_ROOT` and `SEAM_NATIVE_ONNX_SCHEMA` are both set, because it
 must refuse any bundle it cannot inspect structurally. The application selects it

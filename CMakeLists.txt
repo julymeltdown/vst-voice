@@ -2452,6 +2452,21 @@ if(SEAM_ONNXRUNTIME_ROOT)
         add_test(NAME seam_neural_candidate_qualification
           COMMAND "${SEAM_NATIVE_ONNX_PYTHON}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/neural_runtime/check_candidate_qualification.py"
             $<TARGET_FILE:seam_neural_worker> $<TARGET_FILE:seam_voicebank_cli>)
+        # The authoring render path with the shipped worker instead of the transport
+        # probe: routing is covered without ONNX, execution through it is not.
+        add_executable(seam_neural_production_render
+          tests/test_main.cpp tests/test_neural_production_render.cpp)
+        target_include_directories(seam_neural_production_render PRIVATE tests)
+        target_link_libraries(seam_neural_production_render PRIVATE
+          seam_authoring_runtime seam_neural_synthesis seam_application)
+        target_compile_definitions(seam_neural_production_render PRIVATE
+          SEAM_NEURAL_PRODUCTION_WORKER="$<TARGET_FILE:seam_neural_worker>")
+        add_dependencies(seam_neural_production_render seam_neural_worker)
+        seam_apply_compiler_options(seam_neural_production_render)
+        add_test(NAME seam_neural_production_render
+          COMMAND "${SEAM_NATIVE_ONNX_PYTHON}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/neural_runtime/check_production_render.py"
+            $<TARGET_FILE:seam_neural_production_render> $<TARGET_FILE:seam_voicebank_cli>)
+        set_tests_properties(seam_neural_production_render PROPERTIES TIMEOUT 300 LABELS "neural-native-experiment")
         # Packaging truth check against the real worker: whichever the load-command
         # analysis reports, staging must agree with it, so the packaged payload can
         # never claim a helper whose runtime it cannot load.
