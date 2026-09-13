@@ -96,7 +96,7 @@ struct CliFixture final {
   production::ProductionProjectRepository repository{root / "producer"};
   production::VoicebankProductionProject project;
   voicebank::Manifest manifest;
-  CliFixture() {
+  explicit CliFixture(std::vector<std::string> coverageKeys = {"sustain:a"}) {
     const auto license=root / "fixture-license.txt";
     CHECK(core::durableAtomicWriteTextNew(license,"Synthetic integration fixture, no production singer qualification."));
     const auto hash=core::sha256File(license); CHECK(hash);
@@ -106,7 +106,15 @@ struct CliFixture final {
       .rights=production::Feasibility::Pass, .coverage=production::Feasibility::NotAssessed, .listening=production::Feasibility::NotAssessed,
       .permissions={true,true,true,true}, .licenseLocator=license.string(), .licenseSha256=hash.value(), .evidenceState="SYNTHETIC_TEST_ONLY"}};
     project.operators={{.operatorId="producer",.role="PRODUCER"},{.operatorId="reviewer",.role="REVIEWER"}};
-    project.unitAssignments={{.coverageKey="sustain:a",.pitchLayer=69,.promptId="a",.plannedTakeId="take-a"}};
+    // One assignment and one take per declared class, so the same lifecycle can run over a
+    // single unit or over a bank that covers a consonant, a coda and a vowel sequence.
+    std::vector<std::string> takeNames;
+    for (std::size_t index = 0U; index < coverageKeys.size(); ++index) {
+      const std::string letter(1U, static_cast<char>('a' + static_cast<int>(index)));
+      takeNames.push_back("take-" + letter);
+      project.unitAssignments.push_back({.coverageKey=coverageKeys[index],.pitchLayer=69,
+          .promptId=letter,.plannedTakeId="take-" + letter});
+    }
     const auto declaredSource = project.sourceStrategies.front();
     project.sourceStrategies.clear(); project.selectedSourceStrategyId.clear();
     project.licenseLocator.clear(); project.licenseSha256.clear();
@@ -124,11 +132,16 @@ struct CliFixture final {
     CHECK(registered.find("coverage")->asString() == "NOT_ASSESSED");
     const auto sourced = repository.recover(); CHECK(sourced); project = sourced.value();
     CHECK(project.sourceQualityAssessments.empty()); CHECK(!production::selectedStrategyReady(project));
-    const auto samples=test::support::sineWave(48000U,440.0,0.12,0.25F);
-    CHECK(voicebank::writeWav(root / "raw.wav",{.sampleRate=48000U,.channels=1U,.sampleFormat=voicebank::WavSampleFormat::Pcm24},samples));
-    CHECK(repository.importRaw(project,root / "raw.wav",{.takeId="take-a",.promptId="a",.coverageKey="sustain:a",.pitchLayer=69},
-      {.action="import",.subjectId="take-a",.operatorId="producer",.occurredAtUtc="2026-09-09T10:01:00Z"}));
-    CHECK(!production::requireTakeSourceQualification(project,"take-a"));
+    for (std::size_t index = 0U; index < takeNames.size(); ++index) {
+      const std::string letter(1U, static_cast<char>('a' + static_cast<int>(index)));
+      const auto source = root / ("raw-" + letter + ".wav");
+      const auto samples = test::support::sineWave(48000U, 440.0 + 40.0 * static_cast<double>(index), 0.12, 0.25F);
+      CHECK(voicebank::writeWav(source,{.sampleRate=48000U,.channels=1U,.sampleFormat=voicebank::WavSampleFormat::Pcm24},samples));
+      CHECK(repository.importRaw(project,source,{.takeId=takeNames[index],.promptId=letter,
+          .coverageKey=coverageKeys[index],.pitchLayer=69},
+        {.action="import",.subjectId=takeNames[index],.operatorId="producer",.occurredAtUtc="2026-09-09T10:01:00Z"}));
+      CHECK(!production::requireTakeSourceQualification(project,takeNames[index]));
+    }
     const auto inspection = success({"inspect-source-quality",(root/"producer").string(),"fixture"});
     const auto qualityEvidence = root/"quality-evidence.txt";
     const std::string qualityText = "Synthetic reviewer decision for this one-tone fixture; not actual singer qualification.";
@@ -253,7 +266,7 @@ TEST_CASE("CLI captured review publishes packages installs and exports a reopene
   CHECK(formats::ProjectJsonCodec{}.save(song,fixture.root / "song.seam"));
   std::filesystem::rename(fixture.root / "producer",fixture.root / "producer-unavailable");
   std::filesystem::rename(candidate,fixture.root / "candidate-unavailable");
-  std::filesystem::rename(fixture.root / "raw.wav",fixture.root / "raw-unavailable.wav");
+  std::filesystem::rename(fixture.root / "raw-a.wav",fixture.root / "raw-a-unavailable.wav");
   std::filesystem::rename(fixture.root / "quality-evidence.txt",fixture.root / "quality-evidence-unavailable.txt");
   std::filesystem::rename(fixture.root / "fixture-license.txt",fixture.root / "fixture-license-unavailable.txt");
   const auto reopened=formats::ProjectJsonCodec{}.load(fixture.root / "song.seam"); CHECK(reopened);
@@ -276,6 +289,99 @@ TEST_CASE("CLI captured review publishes packages installs and exports a reopene
 #endif
 }
 
+TEST_CASE("CLI runs the whole lifecycle over a multi-unit bank without producer inputs") {
+#if defined(__APPLE__) || defined(__linux__)
+  using namespace seam;
+  // Four classes rather than the single sustained vowel the original regression used: a
+  // consonant onset, a coda, a vowel sequence and a sustain, which is what a bank has to carry
+  // before a song that is more than one held vowel can be sung from it.
+  CliFixture fixture({"sustain:a", "cv:s:a", "vc:a:s", "vv:a:i"});
+  const auto sourceBefore = production::encodeProductionProject(fixture.project);
+  const auto captured = fixture.capture();
+  const auto packetHash = captured.find("fileSha256")->asString();
+  const auto inspection = fixture.success({"inspect-sample-review", (fixture.root / "packet.json").string(), packetHash});
+  CHECK(inspection.find("units")->asArray().size() == 4U);
+  // Capturing a packet still approves and changes nothing.
+  const auto afterCapture = fixture.repository.recover(); CHECK(afterCapture);
+  CHECK(production::encodeProductionProject(afterCapture.value()) == sourceBefore);
+  CHECK(afterCapture.value().unitAssignments.size() == 4U);
+  for (const auto& unit : afterCapture.value().unitAssignments) CHECK(unit.state == production::UnitQueueState::MarkerReview);
+  CHECK(afterCapture.value().reviews.empty());
+  const auto reviewed = fixture.success(fixture.reviewArgs(packetHash));
+  CHECK(reviewed.find("result")->asString() == "ReviewCommitted");
+  CHECK(!reviewed.find("releaseEligible")->asBool());
+  // The decision covered every unit of the bank, not only the first.
+  const auto reviewedProject = fixture.repository.recover(); CHECK(reviewedProject);
+  CHECK(reviewedProject.value().unitAssignments.size() == 4U);
+  for (const auto& unit : reviewedProject.value().unitAssignments) CHECK(unit.state == production::UnitQueueState::Approved);
+  const auto candidate = fixture.root / "candidate";
+  const auto published = fixture.success({"publish-sample", (fixture.root / "producer").string(),
+      (fixture.root / "editable/manifest.json").string(), reviewed.find("generation")->asString(),
+      reviewed.find("projectSha256")->asString(), candidate.string()});
+  CHECK(published.find("result")->asString() == "CandidateCommitted");
+  CHECK(!published.find("releaseEligible")->asBool());
+  const auto candidateManifest = voicebank::ManifestJsonCodec{}.load(candidate / "manifest.json"); CHECK(candidateManifest);
+  if (!candidateManifest) return;
+  CHECK(candidateManifest.value().units.size() == 4U);
+  const auto key = distribution::generateSigningKeyPair(); CHECK(key);
+  const auto package = fixture.root / "bank.seambank";
+  const auto packed = distribution::packSeambank(candidate, package, key.value());
+  if (!packed) throw std::runtime_error(packed.error().message + ": " + packed.error().context);
+  authoring::VoicebankSession installedBanks({{fixture.root / "installed", voicebank::VoicebankRootKind::Installed}}, false);
+  authoring::VoicebankInstallerService installer{installedBanks, fixture.root / "installed"};
+  const auto installed = installer.install({.packagePath = package, .trustedPublicKeys = {key.value().publicKey}}); CHECK(installed);
+  if (!installed) return;
+  CHECK(installed.value().candidate.trust == voicebank::VoicebankTrust::TrustedInstalled);
+  CHECK(installed.value().candidate.manifest.units.size() == 4U);
+  CHECK(installed.value().contentHash == published.find("contentSha256")->asString());
+  // A song that needs the consonant and the vowel, not just one held vowel.
+  application::ProjectFactory factory{991000U};
+  auto song = factory.createProject("New melody from a four-class installed candidate");
+  const auto track = factory.addVocalTrack(song, "Singer");
+  const auto region = factory.addRegion(song, track, "New melody", time::Tick{0}, time::Tick{1920});
+  for (int index = 0; index < 2; ++index) {
+    auto [lyric, note] = factory.makeNote(time::Tick{960 * index}, time::Tick{960},
+        static_cast<std::uint8_t>(69 + 3 * index), index == 0 ? U"あ" : U"さ", domain::Language::Japanese);
+    song.findRegion(region)->lyrics.push_back(lyric);
+    song.findRegion(region)->notes.push_back(note);
+  }
+  song.findVocalTrack(track)->voicebank = {fixture.manifest.id, fixture.manifest.version, installed.value().contentHash};
+  song.findVocalTrack(track)->styleSelection = {domain::VoiceStyleOrigin::Explicit, "original"};
+  CHECK(formats::ProjectJsonCodec{}.save(song, fixture.root / "song.seam"));
+  // Nothing the bank was built from may remain reachable by the new song.
+  std::filesystem::rename(fixture.root / "producer", fixture.root / "producer-unavailable");
+  std::filesystem::rename(candidate, fixture.root / "candidate-unavailable");
+  for (const auto* name : {"raw-a.wav", "raw-b.wav", "raw-c.wav", "raw-d.wav"})
+    std::filesystem::rename(fixture.root / name, fixture.root / (std::string{name} + ".unavailable"));
+  std::filesystem::rename(fixture.root / "quality-evidence.txt", fixture.root / "quality-evidence-unavailable.txt");
+  std::filesystem::rename(fixture.root / "fixture-license.txt", fixture.root / "fixture-license-unavailable.txt");
+  const auto reopened = formats::ProjectJsonCodec{}.load(fixture.root / "song.seam"); CHECK(reopened);
+  if (!reopened) return;
+  authoring::VoicebankSession fresh({{fixture.root / "installed", voicebank::VoicebankRootKind::Installed}}, false);
+  CHECK(fresh.refresh());
+  const auto resolved = fresh.resolveTrack(reopened.value(), track); CHECK(resolved.resolved());
+  if (!resolved.resolved()) return;
+  CHECK(resolved.candidate->trust == voicebank::VoicebankTrust::TrustedInstalled);
+  const auto& bank = *resolved.candidate;
+  const std::vector<rendering::TrackVoicebankSource> sources{{track, bank.manifest, bank.bankRoot, bank.contentHash, bank.trust}};
+  const auto rendered = rendering::ProductionProjectRenderer{}.render(reopened.value(), sources, track, region, 1U, 48000U, rendering::RenderQuality::Final);
+  CHECK(rendered);
+  if (!rendered) return;
+  CHECK(rendered.value().diagnostics.empty());
+  CHECK(rendered.value().fallbackCount == 0U);
+  CHECK(voicebank::analyzeAudio(std::span<const float>{rendered.value().interleaved.data(), rendered.value().interleaved.size()}).rms > 1e-4);
+  authoring::ExportSettings settings; settings.format = voicebank::WavSampleFormat::Float32; settings.includeStems = true;
+  const auto exported = authoring::ExportService{}.exportSet(reopened.value(), sources, track, region, 1U, fixture.root / "export", settings);
+  CHECK(exported);
+  if (!exported) return;
+  CHECK(exported.value().state == authoring::ExportState::Committed);
+  CHECK(exported.value().files.size() >= 2U);
+  for (const auto& file : exported.value().files) {
+    const auto audio = voicebank::readWav(file.path); CHECK(audio);
+    if (audio) CHECK(audio.value().interleaved == rendered.value().interleaved);
+  }
+#endif
+}
 TEST_CASE("CLI source reassessment invalidates affected unit approval without erasing review history or source rights") {
 #if defined(__APPLE__) || defined(__linux__)
   CliFixture fixture;

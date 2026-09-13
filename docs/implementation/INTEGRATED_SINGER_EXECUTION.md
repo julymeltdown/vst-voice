@@ -1,5 +1,32 @@
 # Integrated Singer Execution
 
+## A review decision now covers a bank, not one unit
+
+Every lifecycle regression in this repository drove a single assignment and a single take, so
+nothing proved that the product's review-to-song path still holds when the material is a bank
+rather than one held vowel. The CLI fixture in `tests/test_sample_review_cli.cpp` now builds one
+assignment and one take per declared class, and a new case drives four of them -- `sustain:a`,
+`cv:s:a`, `vc:a:s` and `vv:a:i` -- through the whole path.
+
+The case captures a review packet and requires that capturing still approves nothing: four units
+are left in `MARKER_REVIEW` and the encoded producer bytes are unchanged. Inspection then reports
+four units, and one review commits a decision that covers all four -- the check that the single-unit
+fixture could not make. Publication commits a four-unit manifest, packaging signs it, and the
+installer admits it as `TrustedInstalled` with a content hash equal to the published one.
+A new song whose lyrics are `あ` and `さ`, which need the consonant and the vowel sequence rather
+than one sustain, then resolves with zero fallbacks, renders above 1e-4 RMS, and exports a master
+and stems that match the render.
+
+The last step is the one the plan asks for by name: the producer workspace, the candidate
+directory, all four raw WAVs, the quality decision and the license are renamed away, and the saved
+song still reopens and renders identically from the installed bank. `seam_sample_review_cli_tests`
+passes 7 of 7 and the serial Release suite passes 150 of 150 in 282.50 s.
+
+Not claimed. This is a synthetic fixture bank of four sine-derived WAVs with test identities:
+no listener heard anything, no reviewer judged anything, no real weight, range or quality was
+measured, and the material is not a singer. The exit it closes is coverage of the lifecycle
+shape, so no roadmap unit, package acceptance or Beta GO status changes.
+
 ## The inventory campaign runs to completion
 
 The pilot inventory now exists as generated material rather than as a fixture. Two campaigns
@@ -364,7 +391,7 @@ M1.P2's ten required changes:
 | 9 | Aggregate budget preflight | Landed: per-batch, aggregate frame and estimated-byte limits, retained-storage inspection and cancellation. |
 | 10 | Held-out pilot phrase set before the full inventory | Landed, run and followed through: both preflights passed, and the campaigns behind them completed with 498 takes committed as unapproved marker-review material across three pitch layers (report in `CAMPAIGN_REPORT.md`, defect list in `coverage-report.json`). The 528 model-less assignments still cannot be planned, so the inventory as a whole is not yet generatable end to end. |
 
-So seven of the ten are landed, two are partial, and one remains open (phrase context
+So eight of the ten are landed, one is partial, and one remains open (phrase context
 beyond the owning note).
 
 M1.P1 keeps one open required change: the durable C++ legacy migration operation
@@ -376,8 +403,10 @@ M1.P1's coverage-report requirement is satisfied: `inspect-generation-coverage`
 retains a canonical per-class report of what a recipe can prepare, and the real pilot
 inventory's result is committed at
 `assets/pilots/seam-pilot-01/coverage-report.json`. It is what makes the next repair
-choice evidence-based rather than a guess: 210 refusals are the coda and context model,
-486 are absent models, and 42 are adapter symbols.
+choice evidence-based rather than a guess: of the 528 assignments the recipe still refuses,
+300 name a phone that needs a voiced articulation model, 186 name one with no frication or
+released-stop source, and 42 are adapter symbols; the 210 refusals that were the coda and
+hint-role model are gone rather than pending.
 
 ## An affricate is one gesture, not a stop followed by a fricative
 
