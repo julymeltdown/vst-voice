@@ -14,6 +14,7 @@
 #include "seam/voicebank_production/project_codec.hpp"
 
 #include <chrono>
+#include <algorithm>
 #include <string>
 #include <thread>
 #include <vector>
@@ -211,4 +212,43 @@ TEST_CASE("a cancelled campaign keeps its retained batches and resumes from its 
   CHECK(refused.error().code == core::ErrorCode::Conflict);
   const auto failed = fixture.controller.generationCampaignProgress(); CHECK(failed);
   CHECK(failed->phase == Phase::Failed);
+}
+
+TEST_CASE("campaign controls appear only when the producer and identity allow them") {
+  Fixture fixture;
+  const auto byId = [](const auto& controls, std::string_view id) {
+    return std::find_if(controls.begin(), controls.end(),
+        [&](const auto& control) { return control.id == id; });
+  };
+  const auto idle = seam::native_ui::studioGenerationControls(fixture.controller, 1040.0, false);
+  CHECK(idle.size() == 6U);
+  CHECK(byId(idle, "plan-campaign") != idle.end());
+  CHECK(byId(idle, "plan-campaign")->enabled);
+  // Running requires an identity this controller recorded, so it starts disabled
+  // and is never presented as a runnable campaign.
+  CHECK(byId(idle, "run-campaign") != idle.end());
+  CHECK(!byId(idle, "run-campaign")->enabled);
+  CHECK(byId(idle, "run-campaign")->label == "Run campaign");
+  for (const auto& control : seam::native_ui::studioGenerationControls(fixture.controller, 1040.0, true)) {
+    CHECK(!control.enabled);
+  }
+  // Planning records the identity, which enables the run control and renames it.
+  CHECK(fixture.controller.beginGenerationCampaignPlan(fixture.recipePath,
+      {"take-sa", "take-sa-soft"}, fixture.root / "campaign-controls", 1U));
+  CHECK(drain(fixture.controller));
+  const auto planned = seam::native_ui::studioGenerationControls(fixture.controller, 1040.0, false);
+  CHECK(byId(planned, "run-campaign")->enabled);
+  CHECK(byId(planned, "run-campaign")->label == "Resume campaign");
+  // The campaign row sits below the single-job rows and does not collide with
+  // them, and it stays inside the panel for the narrowest supported width.
+  CHECK(byId(planned, "plan-campaign")->bounds.y > byId(planned, "assemble")->bounds.y);
+  CHECK(byId(planned, "plan-campaign")->bounds.y == byId(planned, "run-campaign")->bounds.y);
+  CHECK(byId(planned, "plan-campaign")->bounds.x + byId(planned, "plan-campaign")->bounds.width <=
+      byId(planned, "run-campaign")->bounds.x);
+  for (const auto width : {720.0, 1040.0, 1600.0}) {
+    for (const auto& control : seam::native_ui::studioGenerationControls(fixture.controller, width, false)) {
+      CHECK(control.bounds.x + control.bounds.width <= width - 280.0);
+      CHECK(control.bounds.y + control.bounds.height <= 322.0);
+    }
+  }
 }

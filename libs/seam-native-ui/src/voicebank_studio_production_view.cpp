@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <iomanip>
+#include <set>
 #include <sstream>
 
 namespace seam::native_ui {
@@ -228,10 +229,24 @@ std::vector<StudioSampleReviewControl> studioGenerationControls(
   const auto cellWidth=areaWidth/2.0;
   const bool busy=controller.proceduralImportBusy();
   const bool enabled=controller.selectedProductionAssignment() && !busy && !recordingActive;
+  // Campaign planning needs planned take ids, not a selected row, and a run needs
+  // a campaign identity this controller published or adopted. Neither is inferred
+  // from the other, so a missing campaign can never look like a runnable one.
+  std::size_t plannedTakeIds=0U;
+  if (const auto* project=controller.productionProject()) {
+    std::set<std::string> unique;
+    for (const auto& row:project->unitAssignments) if (!row.plannedTakeId.empty()) unique.insert(row.plannedTakeId);
+    plannedTakeIds=unique.size();
+  }
+  const bool campaignReady=!controller.generationCampaignPath().empty();
+  const bool free=!busy && !recordingActive;
   return {{"prepare","Prepare",{294.0,268.0,cellWidth-2.0,18.0},enabled},
           {"generate","Run job",{294.0+cellWidth,268.0,cellWidth-2.0,18.0},enabled},
           {"assemble","Make batch",{294.0,286.0,cellWidth-2.0,18.0},enabled},
-          {busy?"cancel":"batch",busy?"Cancel work":"Run batch",{294.0+cellWidth,286.0,cellWidth-2.0,18.0},busy || enabled}};
+          {busy?"cancel":"batch",busy?"Cancel work":"Run batch",{294.0+cellWidth,286.0,cellWidth-2.0,18.0},busy || enabled},
+          {"plan-campaign","Plan campaign",{294.0,304.0,cellWidth-2.0,18.0},free && plannedTakeIds!=0U},
+          {"run-campaign",campaignReady?"Resume campaign":"Run campaign",
+              {294.0+cellWidth,304.0,cellWidth-2.0,18.0},free && campaignReady}};
 }
 
 void paintProductionEmptyCanvas(

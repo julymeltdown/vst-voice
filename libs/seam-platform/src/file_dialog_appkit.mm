@@ -426,6 +426,7 @@ public:
                         request.purpose == FileDialogPurpose::ExportPitchInspection ||
                         request.purpose == FileDialogPurpose::PrepareGenerationJob ||
                         request.purpose == FileDialogPurpose::PrepareGenerationBatch ||
+                        request.purpose == FileDialogPurpose::PlanGenerationCampaign ||
                         request.purpose == FileDialogPurpose::SaveDesignerRecipe ||
                         request.purpose == FileDialogPurpose::PublishSampleCandidate ||
                         request.purpose == FileDialogPurpose::CreateSampleManifestDraft;
@@ -446,7 +447,8 @@ public:
         panel.canCreateDirectories =
             request.purpose == FileDialogPurpose::SaveProject ||
             request.purpose == FileDialogPurpose::ExportSet ||
-            request.purpose == FileDialogPurpose::BakeProceduralCandidates;
+            request.purpose == FileDialogPurpose::BakeProceduralCandidates ||
+            request.purpose == FileDialogPurpose::PlanGenerationCampaign;
       }
       if (openPanel != nil) {
         openPanel.canChooseFiles = !directory;

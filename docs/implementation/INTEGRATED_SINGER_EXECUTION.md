@@ -84,10 +84,25 @@ completes on resume, while a wrong campaign digest fails with `Conflict` and
 synthetic producer, recipe and audio: it proves the orchestration and its
 refusals, not a useful singer or a qualified resource.
 
-Still open under this item: the native action/dialog wiring that lets a user
-choose the recipe and destination, start or resume a campaign, watch batch
-progress in the Studio, and cancel from the existing ESC path. The controller API
-and its tests are the part the UI actions must call.
+The native surface now exposes it. `studioGenerationControls()` adds a "Plan
+campaign" control and a "Run campaign" / "Resume campaign" control below the
+single-job controls: planning is offered whenever the producer has planned take
+ids, running only once this controller recorded a campaign identity, and either
+recording or a busy worker disables both. `apps/seam-voicebank-studio-native`
+wires them to the platform dialogs and to `Cmd/Ctrl-Shift-C` and
+`Cmd/Ctrl-Shift-Y`, with a new `FileDialogPurpose::PlanGenerationCampaign` that
+names a *new* folder (save mode with directory creation on AppKit and Win32, since
+the definition must live in its own directory and an existing one is never
+reused). ESC already cancelled a run because campaign work shares the controller's
+stop source, and the status line already reports batch progress, so no separate
+progress or cancel path was needed.
+
+Verification for the surface: `seam_studio_campaign_tests` checks the control set
+(present only with a producer workspace, planning enabled for planned take ids,
+running disabled until an identity exists and relabelled to "Resume campaign"
+afterwards, every control disabled while recording, and non-colliding bounds down
+to the 720px minimum width), and `seam_export_tests` now finds the batch and cancel
+controls by id instead of by position, because the panel legitimately grew a row.
 
 ## Neural tracks can render, cache and publish through the authoring coordinator
 

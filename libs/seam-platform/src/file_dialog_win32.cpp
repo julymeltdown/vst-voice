@@ -381,9 +381,10 @@ public:
                       request.purpose == FileDialogPurpose::ExportSet ||
                       request.purpose == FileDialogPurpose::BakeProceduralCandidates ||
                       request.purpose == FileDialogPurpose::ExportPitchInspection ||
-                      request.purpose == FileDialogPurpose::PrepareGenerationJob ||
-                      request.purpose == FileDialogPurpose::PrepareGenerationBatch ||
-                      request.purpose == FileDialogPurpose::SaveDesignerRecipe ||
+                     request.purpose == FileDialogPurpose::PrepareGenerationJob ||
+                     request.purpose == FileDialogPurpose::PrepareGenerationBatch ||
+                     request.purpose == FileDialogPurpose::PlanGenerationCampaign ||
+                     request.purpose == FileDialogPurpose::SaveDesignerRecipe ||
                       request.purpose == FileDialogPurpose::PublishSampleCandidate ||
                       request.purpose == FileDialogPurpose::CreateSampleManifestDraft;
     ComPtr<::IFileDialog> dialog;

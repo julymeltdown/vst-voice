@@ -1129,11 +1129,14 @@ TEST_CASE("nasal and frication candidates bake and enter production with typed u
   CHECK(preparationStudio.openProductionProject(root / "studio-preparation", producer.inventorySha256, "producer"));
   for (const auto width:{720.0,1040.0,1600.0}) {
     const auto controls=native_ui::studioGenerationControls(preparationStudio,width,false);
-    CHECK(controls.size()==4U);
+    CHECK(controls.size()==6U);
     for (const auto& control:controls) {
-      CHECK(control.enabled); CHECK(control.bounds.x>=294.0);
+      // Planning only needs planned take ids; a campaign run needs an identity
+      // this controller recorded, which does not exist until a campaign is planned.
+      CHECK(control.enabled==(control.id!="run-campaign"));
+      CHECK(control.bounds.x>=294.0);
       CHECK(control.bounds.x+control.bounds.width<=width-280.0);
-      CHECK(control.bounds.y>=268.0); CHECK(control.bounds.y+control.bounds.height<=304.0);
+      CHECK(control.bounds.y>=268.0); CHECK(control.bounds.y+control.bounds.height<=322.0);
     }
     CHECK(controls[0].bounds.x+controls[0].bounds.width<controls[1].bounds.x);
     CHECK(controls[0].bounds.y+controls[0].bounds.height<=controls[2].bounds.y);
@@ -1151,11 +1154,15 @@ TEST_CASE("nasal and frication candidates bake and enter production with typed u
   CHECK(preparationStudio.beginGenerationScoreInspection(root / "shared-score.seam"));
   CHECK(preparationStudio.proceduralImportBusy()); CHECK(!preparationStudio.save());
   const auto busyControls=native_ui::studioGenerationControls(preparationStudio,720.0,false);
-  CHECK(busyControls.size()==4U);
+  CHECK(busyControls.size()==6U);
   for (const auto& control:busyControls) CHECK(control.enabled==(control.id=="cancel"));
-  CHECK(busyControls.back().id=="cancel"); CHECK(busyControls.back().label=="Cancel work");
+  const auto controlById=[](const auto& controls,std::string_view id) {
+    return std::find_if(controls.begin(),controls.end(),[&](const auto& control){return control.id==id;});
+  };
+  CHECK(controlById(busyControls,"cancel")->label=="Cancel work");
   CHECK(drainPreparation()); CHECK(preparationStudio.status() == "SCORE READY / SHIFT-P PREPARE");
-  CHECK(native_ui::studioGenerationControls(preparationStudio,720.0,false).back().id=="batch");
+  const auto idleControls=native_ui::studioGenerationControls(preparationStudio,720.0,false);
+  CHECK(controlById(idleControls,"batch")->label=="Run batch");
   const auto scoreSelection = preparationStudio.takeGenerationScoreSelection(); CHECK(scoreSelection);
   CHECK(!preparationStudio.takeGenerationScoreSelection());
   const auto beforeCancelledInspection=preparationStudio.status();

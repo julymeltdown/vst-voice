@@ -31,6 +31,10 @@ enum class FileDialogPurpose {
   OpenGenerationBatch,
   PrepareGenerationJob,
   PrepareGenerationBatch,
+  // Names a new campaign folder. The campaign definition must live in its own
+  // directory, so the platform asks for that directory's name and parent and the
+  // controller creates it; an existing directory is never reused.
+  PlanGenerationCampaign,
   SaveDesignerRecipe,
   PublishSampleCandidate,
   OpenSampleManifest,

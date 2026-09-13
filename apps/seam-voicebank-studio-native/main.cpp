@@ -728,6 +728,53 @@ public:
     auditionStatus_ = selectedGesture ? "AUDITION: RAW GESTURE" : "AUDITION: RAW TAKE";
     return seam::core::success();
   }
+  // Campaign planning and running. The recipe is an explicit file choice and the
+  // destination names a new folder: the controller publishes one immutable
+  // definition there and refuses an existing directory, so a stored campaign is
+  // advanced or resumed rather than replaced.
+  seam::core::Result<void> planCampaignFromDialog() {
+    if (controller_.proceduralImportBusy() || recording_.armed() || recording_.recordedFrames() > 0U || designer_.busy())
+      return seam::core::failure(seam::core::ErrorCode::Conflict, "Finish recording, Designer work or production work before campaign planning");
+    const auto* project = controller_.productionProject();
+    if (project == nullptr)
+      return seam::core::failure(seam::core::ErrorCode::InvalidState, "Open a producer workspace first");
+    std::vector<std::string> takeIds;
+    for (const auto& row : project->unitAssignments)
+      if (!row.plannedTakeId.empty() && std::find(takeIds.begin(), takeIds.end(), row.plannedTakeId) == takeIds.end())
+        takeIds.push_back(row.plannedTakeId);
+    if (takeIds.empty())
+      return seam::core::failure(seam::core::ErrorCode::InvalidState, "The producer has no planned take ids to generate");
+    const auto epoch = controller_.productionSessionEpoch();
+    const auto generation = project->lastDurableGeneration;
+    const auto selected = controller_.selectedIndex();
+    auto dialog = seam::platform::createNativeFileDialog();
+    const auto recipe = dialog->choose({.purpose = seam::platform::FileDialogPurpose::SelectProceduralRecipe,
+        .title = "Select the Campaign Recipe", .initialDirectory = {}, .suggestedName = {}, .extensions = {"json"}});
+    if (!recipe) return seam::core::Result<void>{recipe.error()};
+    if (!recipe.value()) return seam::core::success();
+    const auto afterRecipe = controller_.validateProductionImportContext(epoch, generation, selected);
+    if (!afterRecipe) return afterRecipe;
+    const auto destination = dialog->choose({.purpose = seam::platform::FileDialogPurpose::PlanGenerationCampaign,
+        .title = "New Generation Campaign Folder", .initialDirectory = recipe.value()->parent_path(),
+        .suggestedName = "campaign", .extensions = {}});
+    if (!destination) return seam::core::Result<void>{destination.error()};
+    if (!destination.value()) return seam::core::success();
+    const auto afterDestination = controller_.validateProductionImportContext(epoch, generation, selected);
+    if (!afterDestination) return afterDestination;
+    return controller_.beginGenerationCampaignPlan(*recipe.value(), takeIds, *destination.value());
+  }
+
+  seam::core::Result<void> runCampaignFromDialog() {
+    if (controller_.proceduralImportBusy() || recording_.armed() || recording_.recordedFrames() > 0U || designer_.busy())
+      return seam::core::failure(seam::core::ErrorCode::Conflict, "Finish recording, Designer work or production work before a campaign run");
+    if (controller_.generationCampaignPath().empty())
+      return seam::core::failure(seam::core::ErrorCode::InvalidState, "Plan a generation campaign before running one");
+    // One call covers a fresh campaign, a cancelled one and a completed one: the
+    // controller advances from the identity it recorded, and the service re-verifies
+    // receipts instead of re-planning.
+    return controller_.beginGenerationCampaignResume();
+  }
+
   seam::core::Result<void> assembleBatchFromDialog() {
     if (controller_.proceduralImportBusy() || recording_.armed() || recording_.recordedFrames() > 0U)
       return seam::core::failure(seam::core::ErrorCode::Conflict, "Finish recording or candidate work before batch assembly");
@@ -996,6 +1043,8 @@ public:
       controller_.cancelProceduralCandidateImport();
       return seam::core::success();
     }
+    if (id=="plan-campaign") return planCampaignFromDialog();
+    if (id=="run-campaign") return runCampaignFromDialog();
     struct ModalGuard {
       bool& active;
       explicit ModalGuard(bool& value):active(value) { active=true; }
@@ -1318,6 +1367,10 @@ public:
       record(event.modifiers.shift ? generationFromDialog() : importProceduralFromDialog());
     } else if (event.key == seam::native_ui::NativeKey::B && event.modifiers.primaryShortcut() && event.modifiers.shift) {
       record(generationFromDialog(true));
+    } else if (event.key == seam::native_ui::NativeKey::C && event.modifiers.primaryShortcut() && event.modifiers.shift) {
+      record(planCampaignFromDialog());
+    } else if (event.key == seam::native_ui::NativeKey::Y && event.modifiers.primaryShortcut() && event.modifiers.shift) {
+      record(runCampaignFromDialog());
     } else if (event.key == seam::native_ui::NativeKey::P && event.modifiers.shift) {
       record(preparationFromDialog());
     } else if (event.key == seam::native_ui::NativeKey::P) {
