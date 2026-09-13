@@ -269,6 +269,7 @@ void EditorRuntime::publishPreviewFromAuthoring() {
   const auto shared = authoring_->renderer().latest();
   if (shared == nullptr || shared->state == authoring::RenderState::Idle) return;
   static_cast<void>(previewPublication_.publish(makeRenderedPreview(*shared)));
+  refreshRenderStatusView();
   std::function<void()> callback;
   {
     std::lock_guard lock(mutex_);
@@ -522,6 +523,7 @@ void EditorRuntime::configureControllerCallbacks() {
   const auto ready = voicebankResolution_.resolved();
   controller_->setAudioState(ready, voicebankStatusLabel(voicebankResolution_));
   controller_->setVoicebankCards(voicebankBrowser_.cards());
+  refreshRenderStatusView();
 }
 
 void EditorRuntime::rebuildController() {

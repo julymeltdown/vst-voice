@@ -1,5 +1,30 @@
 # Integrated Singer Execution
 
+## The editor shows what its bounce is doing, including when it refuses
+
+The plug-in surface never fed the editor's render status panel. Only the standalone application
+did, so inside a DAW the panel showed its default state, the loop control -- which is enabled only
+when audible audio exists -- was inert there, and a Follow Host bounce that refused for want of a
+reported range left the creator with no visible reason at all.
+
+`EditorRuntime::refreshRenderStatusView()` now projects the actual state into that panel: the
+offline preparation when one has been attempted, and the ordinary render coordinator otherwise,
+with the offline diagnostic preferred because it names what the host has not reported and what
+would have to be recaptured. `renderStatusView()` exposes the result for readers. It is refreshed
+when the controller is rebuilt, when a preview is published, when the timing authority changes,
+and on every exit path of `prepareOfflineRender` through a scope guard, so refusals are shown and
+not only successes.
+
+`tests/test_host_timeline_capture.cpp` asserts both directions on a real editor runtime with the
+production demo bank: after a Fixed Audio bounce the panel reports Ready with audible audio, and
+after a Follow Host bounce that a silent host cannot authorize it reports Failed with the
+uncovered span, the recapture instruction and no audible audio.
+
+Not claimed. The panel reports; it does not stop a host from writing a file, which stays a
+host-qualification concern in this package and M5.P2. No DAW was run, and the state shown is the
+editor's view of SEAM's own render pipeline rather than any host's bounce result. No unit
+acceptance changes.
+
 ## A creator can choose the bounce timing without leaving the editor
 
 The choice became part of the project, and nothing in the interface could make it. A musician

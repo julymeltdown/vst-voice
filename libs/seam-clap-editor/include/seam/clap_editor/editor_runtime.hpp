@@ -228,6 +228,9 @@ public:
   [[nodiscard]] std::vector<voicebank::VoicebankCandidate> availableVoicebanks() const;
 
   void requestRender(std::uint32_t sampleRate);
+  // Owner-thread projection of the render state into the editor's panel. Safe to call with
+  // mutex_ held or not: it never takes this runtime's mutex.
+  void refreshRenderStatusView();
   void setRenderQuality(rendering::RenderQuality quality);
   [[nodiscard]] rendering::RenderQuality renderQuality() const noexcept;
   void setOfflineTimingAuthority(OfflineTimingAuthority authority) noexcept;
@@ -237,6 +240,10 @@ public:
   [[nodiscard]] core::Result<void> prepareOfflineRender(
       std::chrono::milliseconds timeout = std::chrono::seconds{30});
   [[nodiscard]] OfflineRenderView offlineRenderView() const;
+  // What the editor's render status panel should show: the offline bounce when one has been
+  // prepared or refused, and the ordinary render otherwise. A refused Follow Host bounce is
+  // visible here, including the range that would have to be recaptured.
+  [[nodiscard]] native_ui::RenderStatusView renderStatusView() const;
   [[nodiscard]] bool offlineRenderReady() const noexcept {
     return static_cast<bool>(acquireOfflineRenderedPreview());
   }

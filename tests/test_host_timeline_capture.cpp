@@ -354,6 +354,22 @@ TEST_CASE("follow host preparation freezes an authority fixed audio does not inh
   if (!fixed) return;
   const auto fixedFrames = fixed->interleaved.size() / fixed->channelCount;
   CHECK(fixedFrames > followFrames * 2U - followFrames / 4U);
+
+  // The editor's own status shows what happened, so a refused host-timed bounce is visible
+  // instead of leaving the creator to guess why the bounce did not follow the host.
+  CHECK(runtime.renderStatusView().state == seam::native_ui::RenderStatusState::Ready);
+  CHECK(runtime.renderStatusView().hasAudibleAudio);
+  seam::clap_editor::EditorRuntime silent{std::nullopt, {}, roots};
+  CHECK(silent.replaceProject(runtime.projectCopy()));
+  silent.setOfflineTimingAuthority(seam::clap_editor::OfflineTimingAuthority::FollowHost);
+  const auto refused = silent.prepareOfflineRender(std::chrono::seconds{10});
+  CHECK(!refused);
+  if (!refused) CHECK(refused.error().code == seam::core::ErrorCode::Unsupported);
+  const auto status = silent.renderStatusView();
+  CHECK(status.state == seam::native_ui::RenderStatusState::Failed);
+  CHECK(status.diagnostic.find("uncovered span") != std::string::npos);
+  CHECK(status.diagnostic.find("Recapture") != std::string::npos);
+  CHECK(!status.hasAudibleAudio);
 }
 
 TEST_CASE("the bounce authority is part of the project and survives a reopen") {

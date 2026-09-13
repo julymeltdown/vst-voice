@@ -194,6 +194,7 @@ void EditorRuntime::setOfflineTimingAuthority(
   offlineRender_.invalidate("Offline timing authority changed");
   offlineAudioReady_.store(false, std::memory_order_release);
   preparedHostTimeline_.reset();
+  refreshRenderStatusView();
 }
 
 OfflineTimingAuthority EditorRuntime::offlineTimingAuthority() const noexcept {
@@ -203,6 +204,16 @@ OfflineTimingAuthority EditorRuntime::offlineTimingAuthority() const noexcept {
 
 core::Result<void> EditorRuntime::prepareOfflineRender(
     std::chrono::milliseconds timeout) {
+  // Every exit path, including the refusals below, leaves the editor's render status panel
+  // describing what actually happened -- which is where a creator sees that a Follow Host
+  // bounce needs a range the host has not reported yet.
+  struct RefreshRenderStatus final {
+    EditorRuntime* runtime{nullptr};
+    ~RefreshRenderStatus() {
+      if (runtime != nullptr) runtime->refreshRenderStatusView();
+    }
+  };
+  const RefreshRenderStatus statusRefresh{this};
   offlineAudioReady_.store(false, std::memory_order_release);
   if (timeout <= std::chrono::milliseconds::zero() ||
       timeout > std::chrono::minutes{5}) {
