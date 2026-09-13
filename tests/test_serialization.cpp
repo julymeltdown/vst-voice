@@ -105,6 +105,88 @@ TEST_CASE("project JSON round trip preserves the canonical model") {
   CHECK(decoded.value() == project);
 }
 
+namespace {
+
+// Rewrites one already-encoded project so a schema test can describe an older
+// file without hand-maintaining a second full fixture.
+void replaceSchemaVersion(std::string& json,std::string_view replacement) {
+  const auto key=json.find("\"schemaVersion\"");
+  const auto colon=json.find(':',key);
+  auto begin=colon+1U;
+  while (begin<json.size() && json[begin]==' ') ++begin;
+  auto end=begin;
+  while (end<json.size() && json[end]>='0' && json[end]<='9') ++end;
+  json.replace(begin,end-begin,replacement);
+}
+
+void replaceNeuralMemberWithNull(std::string& json) {
+  const auto key=json.find("\"neuralResource\"");
+  const auto colon=json.find(':',key);
+  auto begin=colon+1U;
+  while (begin<json.size() && json[begin]==' ') ++begin;
+  auto end=begin;
+  if (begin<json.size() && json[begin]=='{') {
+    int depth=0;
+    for (;end<json.size();++end) {
+      if (json[end]=='{') ++depth;
+      else if (json[end]=='}' && --depth==0) {++end; break;}
+    }
+  } else {
+    while (end<json.size() && json[end]!=',' && json[end]!='}') ++end;
+    while (end>begin && json[end-1]==' ') --end;
+  }
+  json.replace(begin,end-begin,"null");
+}
+
+}  // namespace
+
+TEST_CASE("project JSON persists one singer selection per track and migrates older schemas") {
+  seam::application::ProjectFactory factory{120};
+  auto project = factory.createProject("Neural selection fixture");
+  const auto trackId = factory.addVocalTrack(project, "Neural");
+  auto* track = project.findVocalTrack(trackId);
+  track->neuralResource = seam::domain::NeuralResourceReference{
+      {seam::domain::SingerResourceKind::Neural, "neural.bank.test", "1.0.0", std::string(64U, 'a')}};
+  CHECK(project.validate());
+  seam::formats::ProjectJsonCodec codec;
+  const auto encoded = codec.encode(project);
+  CHECK(encoded);
+  CHECK(encoded.value().find("\"neuralResource\"") != std::string::npos);
+  CHECK(encoded.value().find("neural.bank.test") != std::string::npos);
+  const auto decoded = codec.decode(encoded.value());
+  CHECK(decoded);
+  CHECK(decoded.value() == project);
+  const auto& saved = decoded.value().vocalTracks().front().neuralResource;
+  CHECK(saved.has_value());
+  CHECK(saved->resource.id == "neural.bank.test");
+  CHECK(saved->resource.kind == seam::domain::SingerResourceKind::Neural);
+  // A schema 9 file has no neural member. It migrates to "no neural selection"
+  // instead of inventing a voice or refusing the project.
+  auto older = encoded.value();
+  replaceSchemaVersion(older, "9");
+  replaceNeuralMemberWithNull(older);
+  const auto migrated = codec.decode(older);
+  CHECK(migrated);
+  CHECK(!migrated.value().vocalTracks().front().neuralResource.has_value());
+  CHECK(migrated.value().vocalTracks().front().proceduralRecipe.has_value() == false);
+  // The same old schema must not smuggle a new selection it cannot describe.
+  auto smuggled = encoded.value();
+  replaceSchemaVersion(smuggled, "9");
+  CHECK(!codec.decode(smuggled));
+  // One track selects one singer family, and the reference kind must match.
+  auto conflicting = project;
+  conflicting.findVocalTrack(trackId)->proceduralRecipe = seam::domain::ProceduralRecipeReference{
+      {seam::domain::SingerResourceKind::Procedural, "recipe", "1", std::string(64U, 'b')},
+      "recipe.json", "neutral"};
+  CHECK(!conflicting.validate());
+  auto wrongKind = project;
+  wrongKind.findVocalTrack(trackId)->neuralResource->resource.kind = seam::domain::SingerResourceKind::Procedural;
+  CHECK(!wrongKind.validate());
+  auto invalidIdentity = project;
+  invalidIdentity.findVocalTrack(trackId)->neuralResource->resource.contentHash.clear();
+  CHECK(!invalidIdentity.validate());
+}
+
 TEST_CASE("project decoder rejects an unsupported schema") {
   seam::formats::ProjectJsonCodec codec;
   const auto decoded = codec.decode(

@@ -594,6 +594,10 @@ JsonValue encodeProject(const domain::Project& project) {
             {"contentHash", JsonValue{track.proceduralRecipe->resource.contentHash}},
             {"path", JsonValue{track.proceduralRecipe->path}},
             {"style", JsonValue{track.proceduralRecipe->style}}}} : JsonValue{}},
+        {"neuralResource", track.neuralResource ? JsonValue{Object{
+            {"id", JsonValue{track.neuralResource->resource.id}},
+            {"version", JsonValue{track.neuralResource->resource.version}},
+            {"contentHash", JsonValue{track.neuralResource->resource.contentHash}}}} : JsonValue{}},
         {"regions", JsonValue{std::move(regions)}}});
   }
 
@@ -871,6 +875,24 @@ core::Result<domain::Project> decodeProject(const JsonValue& root) {
           {domain::SingerResourceKind::Procedural, recipe->find("id")->asString(),
            recipe->find("version")->asString(), recipe->find("contentHash")->asString()},
           recipe->find("path")->asString(), recipe->find("style")->asString()};
+    }
+    // Schema 10 records the optional neural singer selection. It is required to be
+    // present so an older build refuses a newer project instead of silently
+    // dropping the selected voice.
+    const auto* neural = trackValue.find("neuralResource");
+    if (schemaVersion >= 10 && neural == nullptr) return core::failure<domain::Project>(
+        core::ErrorCode::ParseError, "Schema 10 track is missing neuralResource");
+    if (neural != nullptr && !neural->isNull()) {
+      if (schemaVersion < 10 || !neural->isObject() || neural->asObject().size() != 3U)
+        return core::failure<domain::Project>(core::ErrorCode::ParseError,
+            "Neural resource reference has an invalid schema or shape");
+      for (const auto* key : {"id", "version", "contentHash"}) {
+        if (!neural->find(key) || !neural->find(key)->isString()) return core::failure<domain::Project>(
+            core::ErrorCode::ParseError, "Neural resource reference field is missing or invalid");
+      }
+      track.neuralResource = domain::NeuralResourceReference{
+          {domain::SingerResourceKind::Neural, neural->find("id")->asString(),
+           neural->find("version")->asString(), neural->find("contentHash")->asString()}};
     }
     if (schemaVersion >= 8) {
       auto selection = detail::decodeStyleSelection(trackValue.find("styleSelection"));

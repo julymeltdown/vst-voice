@@ -108,6 +108,16 @@ struct ProceduralRecipeReference final {
   friend bool operator==(const ProceduralRecipeReference&, const ProceduralRecipeReference&) = default;
 };
 
+// Persisted selection of an installed neural singer bundle. Identity only: the
+// application resolves this identity to a local admitted bundle and its first
+// party helper. No filesystem path, helper command or resolved execution state
+// belongs in a project file.
+struct NeuralResourceReference final {
+  SingerResourceIdentity resource;
+  [[nodiscard]] core::Result<void> validate() const;
+  friend bool operator==(const NeuralResourceReference&, const NeuralResourceReference&) = default;
+};
+
 struct VocalTrack final {
   TrackId id;
   std::string name;
@@ -121,6 +131,9 @@ struct VocalTrack final {
   TrackOutputRoute outputRoute{};
   VoiceStyleSelection styleSelection;
   std::optional<ProceduralRecipeReference> proceduralRecipe{};
+  // A track may select one singer family. It selects neither, one recipe, or
+  // one neural bundle; selecting both is an invalid project, not a preference.
+  std::optional<NeuralResourceReference> neuralResource{};
 
   [[nodiscard]] VocalRegion* findRegion(RegionId regionId) noexcept;
   [[nodiscard]] const VocalRegion* findRegion(RegionId regionId) const noexcept;

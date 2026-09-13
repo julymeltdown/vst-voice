@@ -145,6 +145,28 @@ padding token repeats, a missing runtime smoke result, an existing output
 directory and a nonpositive frame bound. The graphs are deterministic arithmetic
 fixtures, so the chain is proven while the singer remains unqualified.
 
+Added the persisted product selection. `domain::NeuralResourceReference` stores
+only a singer resource identity, and `VocalTrack` now holds an optional
+`neuralResource` beside `proceduralRecipe`; `Project::validate()` refuses a track
+that selects both families and refuses a reference whose kind is not Neural.
+Project JSON is schema 10: the track member is written explicitly (including
+`null`), and it is required when the schema is 10 or newer so an older build
+refuses a newer project instead of silently dropping the selected voice. A schema
+9 file without the member still migrates to "no neural selection", while a file
+that claims schema 9 and carries a neural reference is refused rather than
+half-understood. No path, helper command or resolved execution state is stored in
+a project file.
+
+The render path now honours that selection in both directions. A track that saved
+a neural selection cannot produce a sample-bank snapshot, mirroring the existing
+saved-procedural-recipe refusal, and `createNeural` refuses a bundle whose model
+id, version or bundle digest differs from the saved selection. An unbound track
+still previews, so trying a voice before selecting it stays possible.
+
+Verified: `seam_tests` (including the new schema round-trip, migration, smuggling
+and family-conflict cases) and `seam_neural_render_tests` (including the
+match/mismatch selection cases) pass.
+
 Storage note: the machine reached 124 MiB free, which caused eleven unrelated
 suite failures (demo smokes, contract tests, neural runtime checks). Those were
 not regressions; the same tests pass with storage restored. Four regenerable

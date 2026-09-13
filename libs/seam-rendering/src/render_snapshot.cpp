@@ -563,6 +563,14 @@ core::Result<RenderSnapshot> RenderSnapshotFactory::createNeural(
   }
   if (track->proceduralRecipe) return core::failure<RenderSnapshot>(core::ErrorCode::Conflict,
       "A saved procedural singer cannot render through an admitted neural bundle");
+  // A persisted selection is a promise about which voice this music used. A
+  // snapshot may run unbound for a preview, but it may never contradict a saved
+  // selection, and it may never silently substitute a different bundle.
+  if (track->neuralResource && (track->neuralResource->resource.id != bundle.execution().modelId ||
+      track->neuralResource->resource.version != bundle.execution().modelVersion ||
+      track->neuralResource->resource.contentHash != bundle.execution().bundleContentHash))
+    return core::failure<RenderSnapshot>(core::ErrorCode::Conflict,
+        "Neural snapshot bundle differs from the saved track selection");
   // The admitted acoustic graph is bound to one rate and hop; resampling the
   // request would silently change the model's input contract.
   if (bundle.metadata().model.sampleRate != sampleRate) return core::failure<RenderSnapshot>(
@@ -703,6 +711,8 @@ core::Result<RenderSnapshot> RenderSnapshotFactory::create(
   const auto* region = track->findRegion(segment.regionId);
   if (track->proceduralRecipe) return core::failure<RenderSnapshot>(core::ErrorCode::Conflict,
       "A saved procedural singer cannot render through a sample-bank snapshot");
+  if (track->neuralResource) return core::failure<RenderSnapshot>(core::ErrorCode::Conflict,
+      "A saved neural singer cannot render through a sample-bank snapshot");
   if (region == nullptr) {
     return core::failure<RenderSnapshot>(core::ErrorCode::NotFound,
                                          "Render snapshot region was not found",

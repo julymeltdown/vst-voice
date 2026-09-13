@@ -234,6 +234,40 @@ TEST_CASE("neural snapshot refuses unbounded, mismatched, foreign and stale prep
       RenderQuality::Final,48000U));
 }
 
+TEST_CASE("a saved neural selection binds the snapshot to exactly that bundle") {
+  using namespace seam::rendering;
+  const auto frozen=freezeBundle(48000U); CHECK(frozen);
+  const auto admitted=AdmittedNeuralBundle::admit(frozen.value(),65536U,10); CHECK(admitted);
+  const NeuralRenderProvenance provenance{.workerVersion="seam-neural-worker-1",
+      .runtimeVersion="onnxruntime-1.30.0",.provider="CPUExecutionProvider"};
+  auto music=score();
+  const auto factory=RenderSnapshotFactory{};
+  // The persistence layer stores the same identity the snapshot admits.
+  auto* track=music.project.findVocalTrack(music.track);
+  track->neuralResource=seam::domain::NeuralResourceReference{seam::domain::SingerResourceIdentity{
+      seam::domain::SingerResourceKind::Neural,admitted.value().execution().modelId,
+      admitted.value().execution().modelVersion,admitted.value().execution().bundleContentHash}};
+  CHECK(music.project.validate());
+  const auto bound=factory.createNeural(music.project,admitted.value(),provenance,music.track,
+      music.region,1U,RenderQuality::Final,48000U,"original"); CHECK(bound);
+  CHECK(track->neuralResource->resource.contentHash==bound.value().neuralExecution->execution().bundleContentHash);
+  // A different bundle, version or digest may not satisfy a saved selection.
+  for (int field=0;field<3;++field) {
+    auto changed=*track->neuralResource;
+    if (field==0) changed.resource.id="another-bank";
+    if (field==1) changed.resource.version="2";
+    if (field==2) changed.resource.contentHash=std::string(64U,'b');
+    track->neuralResource=changed;
+    CHECK(factory.createNeural(music.project,admitted.value(),provenance,music.track,music.region,1U,
+        RenderQuality::Final,48000U,"original").error().code==seam::core::ErrorCode::Conflict);
+  }
+  // An unbound track still previews, so selecting a voice is not a precondition
+  // for trying one.
+  track->neuralResource.reset();
+  CHECK(factory.createNeural(music.project,admitted.value(),provenance,music.track,music.region,1U,
+      RenderQuality::Final,48000U,"original"));
+}
+
 TEST_CASE("unadmitted and legacy neural resources stay non-executable for rendering") {
   using namespace seam::rendering;
   // A legacy opaque model resource is a family tag, never an execution carrier.

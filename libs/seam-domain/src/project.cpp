@@ -20,6 +20,15 @@ core::Result<void> ProceduralRecipeReference::validate() const {
   return core::success();
 }
 
+core::Result<void> NeuralResourceReference::validate() const {
+  const auto identity = resource.validate();
+  if (!identity) return identity;
+  if (resource.kind != SingerResourceKind::Neural) {
+    return core::failure(core::ErrorCode::InvalidArgument, "Neural resource reference is invalid");
+  }
+  return core::success();
+}
+
 namespace {
 
 bool isSha256(std::string_view value) noexcept {
@@ -370,6 +379,15 @@ core::Result<void> Project::validate() const {
     if (track.proceduralRecipe) {
       const auto recipe = track.proceduralRecipe->validate();
       if (!recipe) return recipe;
+    }
+    if (track.neuralResource) {
+      const auto neural = track.neuralResource->validate();
+      if (!neural) return neural;
+    }
+    if (track.proceduralRecipe && track.neuralResource) {
+      return core::failure(core::ErrorCode::InvariantViolation,
+                           "A track cannot select both a procedural recipe and a neural bundle",
+                           track.id.toString());
     }
     for (const auto& region : track.regions) {
       if (!regionIds.insert(region.id).second) {

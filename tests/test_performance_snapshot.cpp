@@ -659,6 +659,19 @@ TEST_CASE("procedural snapshots render frozen vowel resources without sample ban
 TEST_CASE("canonical audio identity does not merge scheduler revisions across source projects") {
   PerformanceSnapshotFixture fixture;
   const auto first = fixture.snapshot();
+  {
+    // A track that selected a neural bundle must not silently render from the
+    // sample bank. The rule mirrors the saved procedural-recipe refusal.
+    auto* track = fixture.project.findVocalTrack(fixture.trackId);
+    track->neuralResource = seam::domain::NeuralResourceReference{
+        {seam::domain::SingerResourceKind::Neural, "neural.bank", "1", std::string(64U, 'a')}};
+    const auto segments = seam::rendering::PhraseSegmenter{}.segment(*fixture.project.findRegion(fixture.regionId));
+    CHECK(segments);
+    CHECK(!seam::rendering::RenderSnapshotFactory{}.create(fixture.project, fixture.bank,
+        fixture.trackId, segments.value().front(), 1U, seam::rendering::RenderQuality::Preview, fixture.bankRoot));
+    track->neuralResource.reset();
+    CHECK(fixture.snapshot().contentHash == first.contentHash);
+  }
   seam::domain::Project other{seam::domain::ProjectId{99999U}, "Independent project", fixture.project.ppq()};
   other.settings() = fixture.project.settings();
   other.tempoMap() = fixture.project.tempoMap();
