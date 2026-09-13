@@ -154,6 +154,73 @@ core::Result<void> StandaloneApplicationController::appendNeuralSource(
   return core::success();
 }
 
+std::vector<platform::NeuralResourceMenuItem>
+StandaloneApplicationController::neuralResources() const {
+  std::vector<platform::NeuralResourceMenuItem> result;
+  if (!neuralResources_) return result;
+  const auto* track = session_.runtime().document().session().project().findVocalTrack(
+      session_.runtime().selectedTrack());
+  const auto& resources = neuralResources_->resources();
+  result.reserve(resources.size());
+  for (const auto& resource : resources) {
+    const bool selected = track != nullptr && track->neuralResource.has_value() &&
+        track->neuralResource->resource.id == resource.id &&
+        track->neuralResource->resource.version == resource.version &&
+        track->neuralResource->resource.contentHash == resource.contentHash;
+    result.push_back(platform::NeuralResourceMenuItem{
+        .id = resource.id,
+        .version = resource.version,
+        .contentHash = resource.contentHash,
+        .displayName = resource.id + " " + resource.version,
+        .selected = selected,
+    });
+  }
+  return result;
+}
+
+core::Result<void> StandaloneApplicationController::selectNeuralResource(
+    std::string_view id,std::string_view version,std::string_view contentHash) {
+  if (!neuralSelection_ || !neuralResources_)
+    return core::failure(core::ErrorCode::NotFound,
+        "This installation has no verified neural deployment");
+  const auto trackId = session_.runtime().selectedTrack();
+  const auto* track = session_.runtime().document().session().project().findVocalTrack(trackId);
+  if (track == nullptr)
+    return core::failure(core::ErrorCode::Conflict,
+        "Neural selection requires a selected vocal track");
+  domain::NeuralResourceReference candidate{
+      {domain::SingerResourceKind::Neural, std::string{id}, std::string{version},
+       std::string{contentHash}}};
+  // Resolve first: a project must not record a selection this installation cannot
+  // admit, and the renderer would refuse it later without saying why.
+  const auto directory = neuralResources_->resolve(candidate);
+  if (!directory) return core::Result<void>{directory.error()};
+  const auto changed = session_.runtime().execute(
+      std::make_unique<application::SetTrackNeuralResourceCommand>(trackId,
+          track->neuralResource, candidate));
+  if (!changed) return changed;
+  const auto recorded = onDocumentChanged();
+  if (!recorded) return recorded;
+  notifyStateChanged();
+  return core::success();
+}
+
+core::Result<void> StandaloneApplicationController::clearNeuralResource() {
+  const auto trackId = session_.runtime().selectedTrack();
+  const auto* track = session_.runtime().document().session().project().findVocalTrack(trackId);
+  if (track == nullptr || !track->neuralResource)
+    return core::failure(core::ErrorCode::Conflict,
+        "No neural singer is selected on this track");
+  const auto changed = session_.runtime().execute(
+      std::make_unique<application::SetTrackNeuralResourceCommand>(trackId,
+          track->neuralResource, std::nullopt));
+  if (!changed) return changed;
+  const auto recorded = onDocumentChanged();
+  if (!recorded) return recorded;
+  notifyStateChanged();
+  return core::success();
+}
+
 core::Result<void> StandaloneApplicationController::refreshVoicebankBrowser() {
   auto refreshed = session_.runtime().voicebanks().refresh();
   if (!refreshed) return refreshed;

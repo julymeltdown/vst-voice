@@ -14,6 +14,9 @@
 #include "seam/core/sha256.hpp"
 #include "seam/distribution/signing.hpp"
 #include "seam/platform/application_paths.hpp"
+#include "seam/platform/file_dialog.hpp"
+#include "seam/standalone/application_controller.hpp"
+#include "seam/standalone/authoring_session.hpp"
 
 #include <array>
 #include <chrono>
@@ -211,6 +214,25 @@ domain::NeuralResourceReference reference(const Bundle& bundle) {
 
 }  // namespace
 
+namespace {
+
+class StubDialog final : public platform::IFileDialog {
+public:
+  core::Result<std::optional<std::filesystem::path>> choose(
+      const platform::FileDialogRequest&) override {
+    return std::optional<std::filesystem::path>{};
+  }
+};
+
+class StubPrompt final : public platform::IUnsavedChangesPrompt {
+public:
+  core::Result<platform::UnsavedDecision> choose(std::string_view) override {
+    return platform::UnsavedDecision::Discard;
+  }
+};
+
+}  // namespace
+
 TEST_CASE("neural selection verifies the surface deployment before admitting a bundle") {
   const auto scratch = test::support::temporaryDirectory("neural-selection-surface");
   const auto bundle = writeBundle(scratch / "resources", "voice", "seam-pilot-01", "1.0.0", 3U);
@@ -305,4 +327,72 @@ TEST_CASE("neural selection refuses a resource root with a duplicate identity") 
   writeBundle(root, "voice-b", "seam-pilot-01", "1.0.0", 3U);
   const auto registry = authoring::NeuralResourceRegistry::scan(root, 8U, kBundleBytes, kBundleBytes);
   CHECK(!registry);
+}
+
+TEST_CASE("standalone controller selects and clears an installed neural singer") {
+  const auto scratch = test::support::temporaryDirectory("neural-selection-controller");
+  const auto bundle = writeBundle(scratch / "resources", "voice", "seam-pilot-01", "1.0.0", 3U);
+  auto fixture = makeSurface(scratch, "fixture-build", 2U, kPlatform, "standalone");
+  std::filesystem::create_directories(scratch / "banks");
+  auto session = standalone::AuthoringSession::create(standalone::AuthoringSessionConfig{
+      .cacheRoot = scratch / "cache",
+      .voicebankRoots = {voicebank::VoicebankSearchRoot{
+          .path = scratch / "banks", .kind = voicebank::VoicebankRootKind::Development}},
+      .sampleRate = 48000U,
+      .outputChannels = 2U,
+      .bindFirstAvailableVoicebank = false,
+      .allowDevelopmentVoicebanks = true,
+  });
+  CHECK(session);
+  if (!session) return;
+  standalone::StandaloneApplicationControllerConfig config{};
+  config.autosaveRoot = scratch / "autosaves";
+  config.recentProjectsPath = scratch / "recent.json";
+  config.neuralSelection = fixture.surface;
+  config.neuralResourceRoot = bundle.directory.parent_path();
+  auto controller = standalone::StandaloneApplicationController::create(*session.value(),
+      std::make_unique<StubDialog>(), std::make_unique<StubPrompt>(), config);
+  CHECK(controller);
+  if (!controller) return;
+
+  const auto listed = controller.value()->neuralResources();
+  CHECK(listed.size() == 1U);
+  if (listed.size() != 1U) return;
+  CHECK(listed.front().id == bundle.id);
+  CHECK(listed.front().version == bundle.version);
+  CHECK(listed.front().contentHash == bundle.contentHash);
+  CHECK(!listed.front().selected);
+
+  // A selection this installation cannot run is refused before the project changes.
+  const auto& project = session.value()->runtime().document().session().project();
+  const auto trackId = session.value()->runtime().selectedTrack();
+  const auto* track = project.findVocalTrack(trackId);
+  CHECK(track != nullptr);
+  CHECK(!controller.value()->selectNeuralResource(bundle.id, "2.0.0", bundle.contentHash));
+  CHECK(!controller.value()->clearNeuralResource());
+  CHECK(track != nullptr && !track->neuralResource.has_value());
+
+  CHECK(controller.value()->selectNeuralResource(bundle.id, bundle.version, bundle.contentHash));
+  const auto* selected = session.value()->runtime().document().session().project()
+                             .findVocalTrack(trackId);
+  CHECK(selected != nullptr);
+  if (selected == nullptr) return;
+  CHECK(selected->neuralResource.has_value());
+  CHECK(selected->neuralResource->resource.kind == domain::SingerResourceKind::Neural);
+  CHECK(selected->neuralResource->resource.id == bundle.id);
+  CHECK(selected->neuralResource->resource.version == bundle.version);
+  CHECK(selected->neuralResource->resource.contentHash == bundle.contentHash);
+  CHECK(controller.value()->neuralResources().front().selected);
+
+  // Undo restores the previous state through the same command the edit used.
+  CHECK(session.value()->runtime().undo());
+  const auto* undone = session.value()->runtime().document().session().project()
+                           .findVocalTrack(trackId);
+  CHECK(undone != nullptr && !undone->neuralResource.has_value());
+
+  CHECK(controller.value()->selectNeuralResource(bundle.id, bundle.version, bundle.contentHash));
+  CHECK(controller.value()->clearNeuralResource());
+  const auto* cleared = session.value()->runtime().document().session().project()
+                            .findVocalTrack(trackId);
+  CHECK(cleared != nullptr && !cleared->neuralResource.has_value());
 }

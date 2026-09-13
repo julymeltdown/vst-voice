@@ -1401,7 +1401,8 @@ if(SEAM_BUILD_TESTS)
     tests/test_main.cpp tests/test_neural_selection.cpp)
   target_include_directories(seam_neural_selection_tests PRIVATE tests)
   target_link_libraries(seam_neural_selection_tests PRIVATE
-    seam_authoring_runtime seam_neural_synthesis seam_application)
+    seam_authoring_runtime seam_neural_synthesis seam_application
+    seam_standalone_authoring seam_native_ui)
   target_compile_definitions(seam_neural_selection_tests PRIVATE
     SEAM_NEURAL_BUNDLE_TRANSPORT_PROBE="$<TARGET_FILE:seam_neural_bundle_transport_probe>")
   add_dependencies(seam_neural_selection_tests seam_neural_bundle_transport_probe)

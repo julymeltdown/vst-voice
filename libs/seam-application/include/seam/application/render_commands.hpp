@@ -26,6 +26,27 @@ private:
   std::optional<domain::ProceduralRecipeReference> before_, after_;
 };
 
+// Pure project edit: which installed neural singer a track uses. Resolving and
+// verifying those bundle bytes belongs to the installed-resource registry and the
+// surface's own deployment, so this command records only the identity a surface
+// already resolved. The expected selection guards an asynchronous chooser result
+// exactly as the procedural recipe command does.
+class SetTrackNeuralResourceCommand final : public ICommand {
+public:
+  SetTrackNeuralResourceCommand(domain::TrackId trackId,
+      std::optional<domain::NeuralResourceReference> expected,
+      std::optional<domain::NeuralResourceReference> replacement)
+      : trackId_(trackId), before_(std::move(expected)), after_(std::move(replacement)) {}
+  [[nodiscard]] std::string_view name() const noexcept override { return "Select neural singer"; }
+  [[nodiscard]] CommandAudioImpact audioImpact() const noexcept override { return CommandAudioImpact::ProjectAudio; }
+  [[nodiscard]] CommandImpact impact() const override;
+  [[nodiscard]] core::Result<void> apply(domain::Project& project) override;
+  [[nodiscard]] core::Result<void> revert(domain::Project& project) override;
+private:
+  domain::TrackId trackId_;
+  std::optional<domain::NeuralResourceReference> before_, after_;
+};
+
 class UpsertUnitSelectionOverrideCommand final : public ICommand {
 public:
   UpsertUnitSelectionOverrideCommand(

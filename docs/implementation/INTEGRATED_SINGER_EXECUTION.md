@@ -1,5 +1,47 @@
 # Integrated Singer Execution
 
+## A neural singer can be chosen, listed and cleared
+
+The project schema has stored `neuralResource` for a while, the encoder and
+decoder round-trip it, and the renderer compares a prepared bundle against it —
+but nothing could *set* it. The controller had no way to choose an installed
+neural singer, so the selection the previous change made renderable could only
+appear in a project a test wrote by hand.
+
+`application::SetTrackNeuralResourceCommand` now mirrors the procedural-recipe
+command: it records only an identity a surface already resolved, refuses to apply
+or undo over a changed selection, validates a replacement before swapping it, and
+reports project-audio impact scoped to its track. Resolution and bundle admission
+stay where they belong, in the surface's own deployment and the installed-resource
+index.
+
+The standalone controller exposes the chooser the native surface needs:
+`neuralResources()` lists what this installation can actually run — in registry
+order, from the same verified index the renderer resolves through, and empty when
+the surface ships no verified deployment rather than listing bundles nothing could
+execute. `selectNeuralResource(id, version, contentHash)` resolves the identity
+through that index *before* editing, so a selection this installation cannot admit
+is never saved into a project, then executes the command and refreshes the
+document and browser. `clearNeuralResource()` records the same edit with no
+replacement. `platform::NeuralResourceMenuItem` carries the identity, a display
+name and the selected flag, matching the shape of the existing voicebank menu
+item.
+
+Verification. `tests/test_performance_commands.cpp` adds a command case: a stale
+chooser result is refused without touching the revision, a reference whose kind is
+not neural is rejected, clearing and undo restore exactly the previous project, and
+an unknown track is a clean failure. `tests/test_neural_selection.cpp` adds a
+controller case that runs against a real installed bundle fixture: the list shows
+the installed singer as unselected, an identity the index cannot resolve is
+refused *before* the project changes, selection records the exact identity, undo
+restores the cleared state, and clearing works through the public surface.
+
+Not claimed. There is still no menu entry, so a user cannot yet reach selection
+from the running application: the dispatcher and native menu list are the next
+step, and the Windows menu implementation cannot be compiled or verified on this
+machine. No real deployment is signed, no model exists, and none of this is a
+listening result.
+
 ## The application selects its own neural helper
 
 `TrackNeuralSource` was already consumed by the renderer, the render cache and the

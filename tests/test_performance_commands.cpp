@@ -148,6 +148,46 @@ TEST_CASE("procedural selection relink and sample switching preserve exact undo 
   CHECK(!guarded.revert(direct)); CHECK(direct.vocalTracks().front().proceduralRecipe == moved);
 }
 
+TEST_CASE("neural singer selection is guarded, reversible and rejects a stale chooser result") {
+  using namespace seam;
+  const auto original = expressionProject();
+  application::EditorSession session{original};
+  const domain::NeuralResourceReference singer{
+      {domain::SingerResourceKind::Neural, "seam-pilot-01", "1.0.0", std::string(64U, 'c')}};
+  CHECK(session.execute(std::make_unique<application::SetTrackNeuralResourceCommand>(
+      TrackId{11U}, std::nullopt, singer)));
+  auto selected = original;
+  selected.vocalTracks().front().neuralResource = singer;
+  CHECK(session.project() == selected);
+  CHECK(session.lastImpact().trackIds == std::vector<TrackId>{TrackId{11U}});
+  CHECK(session.undo());
+  CHECK(session.project() == original);
+  CHECK(session.redo());
+  CHECK(session.project() == selected);
+  // A chooser result computed against a selection that has since changed is
+  // refused rather than overwriting the newer choice.
+  auto newer = singer;
+  newer.resource.contentHash = std::string(64U, 'd');
+  auto stale = session.revision();
+  CHECK(!session.execute(std::make_unique<application::SetTrackNeuralResourceCommand>(
+      TrackId{11U}, std::nullopt, newer)));
+  CHECK(session.revision() == stale);
+  CHECK(session.project() == selected);
+  // A reference whose identity is not a neural resource is rejected outright.
+  auto invalid = singer;
+  invalid.resource.kind = domain::SingerResourceKind::Sample;
+  CHECK(!session.execute(std::make_unique<application::SetTrackNeuralResourceCommand>(
+      TrackId{11U}, singer, invalid)));
+  CHECK(session.project() == selected);
+  CHECK(session.execute(std::make_unique<application::SetTrackNeuralResourceCommand>(
+      TrackId{11U}, singer, std::nullopt)));
+  CHECK(!session.project().vocalTracks().front().neuralResource.has_value());
+  CHECK(session.undo());
+  CHECK(session.project() == selected);
+  CHECK(!session.execute(std::make_unique<application::SetTrackNeuralResourceCommand>(
+      TrackId{9999U}, std::nullopt, singer)));
+}
+
 TEST_CASE("performance take selection is atomic reversible and rejects stale proposals") {
   using namespace seam::domain;
   auto project = expressionProject();

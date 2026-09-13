@@ -32,6 +32,36 @@ core::Result<void> SetTrackProceduralRecipeCommand::revert(domain::Project& proj
   return core::success();
 }
 
+CommandImpact SetTrackNeuralResourceCommand::impact() const {
+  return {.scope = CommandAudioImpact::ProjectAudio, .projectWide = false,
+      .trackIds = {trackId_}, .regionIds = {}, .noteIds = {}, .lyricIds = {}};
+}
+
+core::Result<void> SetTrackNeuralResourceCommand::apply(domain::Project& project) {
+  auto* track = project.findVocalTrack(trackId_);
+  if (!track) return core::failure(core::ErrorCode::NotFound, "Neural selection track is missing");
+  if (track->neuralResource != before_) return core::failure(core::ErrorCode::Conflict,
+      "Neural selection changed before application");
+  if (after_) {
+    const auto valid = after_->validate();
+    if (!valid) return valid;
+  }
+  auto replacement = after_;
+  track->neuralResource.swap(replacement);
+  return core::success();
+}
+
+core::Result<void> SetTrackNeuralResourceCommand::revert(domain::Project& project) {
+  auto* track = project.findVocalTrack(trackId_);
+  if (!track) return core::failure(core::ErrorCode::NotFound,
+      "Neural selection track is missing during undo");
+  if (track->neuralResource != after_) return core::failure(core::ErrorCode::Conflict,
+      "Neural selection changed before undo");
+  auto replacement = before_;
+  track->neuralResource.swap(replacement);
+  return core::success();
+}
+
 CommandImpact UpsertUnitSelectionOverrideCommand::impact() const {
   return CommandImpact{
       .scope = CommandAudioImpact::PhraseAudio,

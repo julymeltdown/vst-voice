@@ -126,6 +126,16 @@ public:
   [[nodiscard]] core::Result<void> selectVoicebank(
       std::string_view id, std::string_view version,
       std::string_view contentHash) override;
+  // Installed neural singers this surface can run, in registry order. Empty when
+  // the surface ships no verified deployment, which is the honest answer rather
+  // than a list of bundles nothing could execute.
+  [[nodiscard]] std::vector<platform::NeuralResourceMenuItem> neuralResources() const;
+  // Selects or clears the neural singer of the selected track. The identity is
+  // resolved through the installed index before the edit, so a selection this
+  // installation cannot run is never saved into a project.
+  [[nodiscard]] core::Result<void> selectNeuralResource(
+      std::string_view id,std::string_view version,std::string_view contentHash);
+  [[nodiscard]] core::Result<void> clearNeuralResource();
 
   [[nodiscard]] const std::vector<authoring::VoicebankCard>& voicebankCards()
       const noexcept { return voicebankBrowser_.cards(); }

@@ -72,6 +72,18 @@ struct VoicebankMenuItem final {
   bool selected{false};
 };
 
+// One installed neural singer a surface can select. The list comes from the
+// surface's verified installed-resource index, so an item is always a bundle the
+// selected helper can actually admit; the identity a project saves is the same
+// three fields the renderer compares against.
+struct NeuralResourceMenuItem final {
+  std::string id;
+  std::string version;
+  std::string contentHash;
+  std::string displayName;
+  bool selected{false};
+};
+
 struct DocumentationMenuItem final {
   std::string id;
   std::string displayName;
