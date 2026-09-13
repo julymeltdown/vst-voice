@@ -92,6 +92,33 @@ The first retained full export check is running under the lifecycle runner at
 A separate native probe build uses `build/neural-runtime/seam-telemetry-free` and
 the installed SDK. Neither pending check authorizes replacing the baseline.
 
+### Completed local qualification checks
+
+The first full export check completed with exit 0 (27.37 seconds). Encoder maximum
+absolute error was `9.5367431640625e-7`; deterministic denoiser maximum error was
+`7.450580596923828e-8`. All three full acoustic dynamic-shape cases passed.
+
+The separate native probe built successfully; its CMake library path and Mach-O
+RPATH point at the telemetry-free SDK. Paired-profile inference and CLI-prepared
+bundle reload/inference passed, including changed-byte rejection. The probe still
+uses local Homebrew dependencies for SEAM's graph inspector and is not a portable
+installed release package.
+
+Ten full training → checkpoint → export → Python/native inference processes then
+completed with exit 0 and no timeouts. Every retained stdout/stderr byte count and
+SHA-256 was rechecked, as were each report's encoder, denoiser, acoustic and native
+three-case success fields. Total time was 203.656 seconds (19.279–23.732 seconds
+per attempt). Evidence directory:
+`build/neural-runtime/telemetry-free-export-native-lifecycle`.
+Its `report.json` SHA-256 is
+`e3f246e301cee7a71b31a228705ab30db791c1225d298957e13ebfe018de661f`.
+
+This is positive evidence for the telemetry-free repair on this macOS machine,
+not universal crash freedom. The baseline remains unchanged. Older-macOS and
+Windows support, portable packaging, longer product-host lifecycle tests, actual
+vocoder integration and musical qualification remain open. Stochastic full-sampler
+numerical parity is still not claimed by the deterministic-denoiser comparisons.
+
 ## Isolated comparison environment
 
 `build/neural-runtime/diffsinger-telemetry-free-env` was created without installing
