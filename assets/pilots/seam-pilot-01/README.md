@@ -145,6 +145,13 @@ behind as evidence either way. `advance-generation-campaign` refuses any campaig
 `preflight/report.json` is missing, stale, names another campaign, or did not clear every
 phrase.
 
++### Generated bank
+
+The campaign that consumes this inventory ran to completion: 498 takes across the three
+pitch layers, all unapproved marker-review material, with the commands, counts, measurements
+and listening order in `CAMPAIGN_REPORT.md` beside the rendered preflight reading in
+`PREFLIGHT_REPORT.md`.
+
 ### Declared coverage report
 
 ```sh

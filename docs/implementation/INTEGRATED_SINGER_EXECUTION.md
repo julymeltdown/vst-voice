@@ -1,5 +1,52 @@
 # Integrated Singer Execution
 
+## The inventory campaign runs to completion
+
+The pilot inventory now exists as generated material rather than as a fixture. Two campaigns
+were planned, preflighted and advanced to completion against the producer workspace: the first
+took one renderable coverage key per class at the lowest pitch layer (166 assignments, three
+batches), and the second took the same keys at the two higher layers (332 assignments, six
+batches). Both preflights passed before either campaign advanced, and neither run needed a
+single hand edit of a JSON file.
+
+Result: **498 takes committed**, 166 coverage keys at three pitch layers each, split cv 210,
+vc 210, vv 60, sustain 15 and special 3. Every take is 24000 frames at 48000 Hz, every take is
+in `MARKER_REVIEW` and none is approved, no take is silent, peaks run 0.0110 to 0.1571 and
+nonzero coverage 90% to 100%. The 90% classes are the stops, whose closure is deliberately
+silent for about 60 ms of each unit. Advancement is resumable and idempotent: repeating it on a
+completed campaign returned the same status, the same 498 takes and the same durable
+generation, so the recovery path holds at bank scale rather than only in a fixture.
+
+This is the exit the package asked for -- multiple phonetic classes and connected phrases
+through ordinary immutable rendering, and a campaign that completes and replays without manual
+editing -- with one honest qualification: it holds for the 498 assignments the recipe can
+prepare, not for the inventory as a whole. The other 528 assignments still cannot prepare at all
+because they name a phone with no source model, which is model work rather than pipeline work.
+
+The run also produced no new defects, which is evidence in its own right: 498 candidates went
+through export, metadata, collection and repository commit after last entry's two repairs, and
+the only thing holding them back is the qualification they were never meant to have.
+
+A listening order is recorded rather than a defect list. Eleven of the 498 takes sit below 0.02
+peak, and every one of them is a vowel-only or glide context (`sustain:a` at layer 60 is the
+quietest at 0.0110) against a model whose loudest classes are the noise-bearing ones. That is
+descriptive, not a threshold: the contexts are simply the first ones a listening pass should
+hear. The unsupported side of the list is already retained in the coverage report.
+
+Evidence: `assets/pilots/seam-pilot-01/CAMPAIGN_REPORT.md` records the commands, the counts,
+the per-kind measurements and the listening order. The workspace, its eleven generations, all
+498 raw take assets and both campaign directories are retained under `build/pilot-01/`, with
+audio at `build/pilot-01/producer/assets/raw/<first two hex>/<sha256>.wav` keyed by each take's
+`rawAssetSha256`. Campaigns `c312a745...` and `2b7a1c02...` each carry their own passing
+preflight report beside them.
+
+Not claimed. A complete bank is not a usable voicebank: these takes are unapproved
+marker-review material with no listening, no review decision, no range or style qualification,
+no identity assessment and no package, and the recipe is still a diagnostic source-filter
+model, so nothing here says whether it sounds like a singer. Only one style and the three pilot
+pitch layers exist. No unit acceptance changes.
+
+
 ## A generation job could not collect the candidates its own export wrote
 
 The held-out preflight ran against the real inventory for the first time, and its first two
@@ -315,7 +362,7 @@ M1.P2's ten required changes:
 | 7 | Resumable campaign orchestration | Landed (`generation_campaign`), one bounded batch per advance. |
 | 8 | Prepare-render-collect transaction with durable receipts | Landed, including conflicts on external edits and recovery of an uncertain commit. |
 | 9 | Aggregate budget preflight | Landed: per-batch, aggregate frame and estimated-byte limits, retained-storage inspection and cancellation. |
-| 10 | Held-out pilot phrase set before the full inventory | Landed and run: 17 held-out phrases covering 20 phones and five kinds rendered through the ordinary path, all produced, none refused, with the report and dry audio retained under `build/pilot-01/campaign-registered/preflight/`. The inventory's retained defect list is `assets/pilots/seam-pilot-01/coverage-report.json`; the 528 model-less assignments still cannot be planned, so the rendered preflight covers the renderable subset. |
+| 10 | Held-out pilot phrase set before the full inventory | Landed, run and followed through: both preflights passed, and the campaigns behind them completed with 498 takes committed as unapproved marker-review material across three pitch layers (report in `CAMPAIGN_REPORT.md`, defect list in `coverage-report.json`). The 528 model-less assignments still cannot be planned, so the inventory as a whole is not yet generatable end to end. |
 
 So seven of the ten are landed, two are partial, and one remains open (phrase context
 beyond the owning note).
