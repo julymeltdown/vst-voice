@@ -17,7 +17,7 @@ TRAINING_REVISION = "4d0889c4c180c75ad3000cc565864656344f8190"
 DEPLOYMENT_REVISION = "336cf01b57f2ad44c6b37a79cf33993043291759"
 
 
-def check_onnx(adapter):
+def export_checked_onnx(adapter):
     import onnx
     import onnxruntime as ort
     import torch
@@ -53,8 +53,12 @@ def check_onnx(adapter):
             torch.testing.assert_close(actual, expected, atol=1e-5, rtol=1e-5)
             cases.append(dict(frames=frames, samples=actual.shape[1],
                               maximumError=(actual - expected).abs().max().item()))
-    return dict(passed=True, graphBytes=len(payload), graphSha256=inspection["sha256"],
+    return payload, dict(passed=True, graphBytes=len(payload), graphSha256=inspection["sha256"],
                 cases=cases, graphRetained=False, deterministicMiniNSFOnly=True)
+
+
+def check_onnx(adapter):
+    return export_checked_onnx(adapter)[1]
 
 
 def trusted_checkout(path, revision):

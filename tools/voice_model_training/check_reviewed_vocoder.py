@@ -1,7 +1,10 @@
 """Real vocoder epoch diagnostic under explicitly synthetic fixture policies."""
 import hashlib
 import importlib.util
+import json
 from pathlib import Path
+import subprocess
+import sys
 import tempfile
 
 from .check_vocoder_model import TRAINING_REVISION, trusted_checkout
@@ -10,7 +13,7 @@ from .vocoder_training_run import train_reviewed_vocoder_epoch
 
 
 def check_reviewed_vocoder(checkout, *, root, dataset_inputs, conditioning_directory,
-                           targets, profile_sha256, pcm_sources):
+                           targets, profile_sha256, pcm_sources, deployment_checkout=None):
     import torch
     checkout = trusted_checkout(checkout, TRAINING_REVISION)
     def module(name, path):
@@ -68,7 +71,27 @@ def check_reviewed_vocoder(checkout, *, root, dataset_inputs, conditioning_direc
         for name, value in owner.state_dict().items():
             if not torch.equal(value, expected_state[f"{i}.{name}"]):
                 raise AssertionError("Reviewed vocoder resumed state differs")
+    export = None
+    if deployment_checkout is not None:
+        from .__main__ import publish_new
+        profile_path = root / "vocoder-profile.json"
+        publish_new(profile_path, profile)
+        resumed_hash = hashlib.sha256((root / "vocoder-resumed/checkpoint.json").read_bytes()).hexdigest()
+        completed = subprocess.run([sys.executable, "-m", "tools.voice_model_training.export_vocoder",
+            "--checkpoint", str(root / "vocoder-resumed"), "--receipt-sha256", resumed_hash,
+            "--profile", str(profile_path), "--profile-sha256", hashlib.sha256(profile_path.read_bytes()).hexdigest(),
+            "--trusted-checkout", str(deployment_checkout), "--output", str(root / "vocoder-export")],
+            capture_output=True, text=True, timeout=90)
+        if completed.returncode:
+            raise ValueError(f"Vocoder checkpoint export failed: {completed.stderr[-512:]}")
+        export = json.loads((root / "vocoder-export/export.json").read_bytes())
+        graph = (root / "vocoder-export/vocoder.onnx").read_bytes()
+        if (export != json.loads(completed.stdout) or export["checkpointReceiptSha256"] != resumed_hash
+                or export["vocoderSha256"] != hashlib.sha256(graph).hexdigest()
+                or export["vocoderBytes"] != len(graph) or export["releaseEligible"] is not False):
+            raise AssertionError("Vocoder export lost checkpoint or graph identity")
     return dict(passed=True, firstEpoch=first["epoch"], resumedEpoch=resumed["epoch"],
+                checkpointExport=export,
                 continuationExact=True, checkpointBytes=first["checkpointBytes"],
                 syntheticInputs=True, fixturePolicyOnly=True, checkpointRetained=False,
                 singerQualified=False, releaseEligible=False)

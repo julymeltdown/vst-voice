@@ -260,6 +260,7 @@ def check_reviewed_run(model, optimizer, *, objective, model_metadata: dict,
             from .check_reviewed_vocoder import check_reviewed_vocoder
             vocoder = check_reviewed_vocoder(vocoder_checkout, root=root, dataset_inputs=inputs,
                 conditioning_directory=shards, targets=targets, profile_sha256=profile,
+                deployment_checkout=trusted_checkout if check_export else None,
                 pcm_sources={row["sourceId"]: root / row["path"] for row in sources})
         passed = changed > 0 and exact and len(validation) == 1 and receipt["epoch"]["coverageVerified"]
         passed = passed and (vocoder is None or vocoder["passed"])

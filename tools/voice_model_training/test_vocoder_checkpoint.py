@@ -14,7 +14,7 @@ from tools.voice_model_training.vocoder_checkpoint import publish_vocoder_checkp
 class VocoderCheckpointTests(unittest.TestCase):
     def test_serialization_finalizer_preserves_write_failure(self):
         import torch
-        from .gan_checkpoint_storage import publish_checkpoint
+        from tools.voice_model_training.gan_checkpoint_storage import publish_checkpoint
 
         class BrokenStream:
             def __enter__(self):
@@ -44,7 +44,7 @@ class VocoderCheckpointTests(unittest.TestCase):
 
     def test_real_serializer_preserves_file_bound(self):
         import torch
-        from .gan_checkpoint_storage import publish_checkpoint
+        from tools.voice_model_training.gan_checkpoint_storage import publish_checkpoint
         model = torch.nn.Linear(1, 1)
         optimizer = torch.optim.AdamW(model.parameters())
         with tempfile.TemporaryDirectory() as root:

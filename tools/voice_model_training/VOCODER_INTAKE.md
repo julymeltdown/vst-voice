@@ -268,3 +268,38 @@ ZIP finalizer masks it with an `unexpected pos` error. Regressions verify ENOSPC
 identity, the real serializer's file-size bound, and absent completion receipts
 after failure. Eight focused vocoder tests and source-closure verification passed;
 this does not supersede the earlier failed full-suite result.
+
+### Persistent checkpoint-to-vocoder export
+
+`python -m tools.voice_model_training.export_vocoder` accepts `--checkpoint`,
+`--receipt-sha256`, `--profile`, `--profile-sha256`, `--trusted-checkout` (the pinned
+DiffSinger deployment checkout), and `--output` (new directory). It captures and
+validates both local GAN files through the existing transport, verifies the
+reviewed-epoch architecture/profile/dataset/objective bindings, strictly loads
+the generator, exports and compares dynamic-length ONNX, then writes
+`vocoder.onnx` and publishes `export.json` last. No optimizer state is stripped
+from the input checkpoint or substituted with freshly initialized state.
+
+The current export family is the explicitly tested deterministic 48 kHz/80-bin
+MiniNSF configuration. Other configurations fail explicitly; this is not a claim
+that its small diagnostic architecture is the final singer model. The command
+executes trusted upstream Python and accepts trusted local Torch checkpoints,
+not arbitrary third-party archives. Source rights are not revalidated by export;
+the receipt does not grant model-bundle admission or singer/release qualification.
+
+The integrated diagnostic now launches this command on the resumed reviewed
+fixture checkpoint and compares the printed receipt, published receipt and graph
+bytes. `build/neural-runtime/vocoder-checkpoint-export-first/report.json` records
+exit zero in 43.506 seconds; stdout SHA-256 is
+`c0619d5150ab0e63a0705fd54d97078bbfdc40b16f59f5d285b3ecedd65d66b3`.
+The graph was 168,336 bytes with SHA-256
+`696c835272c44afde36355758c146d7f09fd2beec18dd663a168f01466ddc8a1`.
+Torch/ORT comparisons covered 1/3/16/23 frames, including unvoiced conditioning;
+maximum absolute error was 2.981e-8. The command produces persistent artifacts,
+but this diagnostic deliberately invokes it inside a temporary fixture: only
+the diagnostic logs survive. No production singer checkpoint was created.
+
+Verification: the full training-tool discovery run passed 57 tests in 17.397
+seconds in the telemetry-free Torch environment; source closure and diff checks
+also passed. This is a new passing run, not removal of the earlier timing-failure
+record or proof that its intermittent cause has been repaired.
