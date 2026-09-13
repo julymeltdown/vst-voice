@@ -493,6 +493,28 @@ TEST_CASE("generated timing proposals displace syllable anchors through the orde
   const auto refused = synthesis::compilePhonemeTimingPlan(f.project, f.region(), tokens, 48000U);
   CHECK(!refused);
   CHECK(refused.error().code == core::ErrorCode::Conflict);
+
+  // The score keeps the note's sounding window: a displacement that would move a
+  // syllable outside the attack/release envelope is refused rather than accepted as a
+  // gesture nothing could sound.
+  performance.takes.back().lanes = {{domain::PerformanceChannel::Timing,
+      {{time::Tick{0}, -1000000.0}}}};
+  const auto early = synthesis::compilePhonemeTimingPlan(f.project, f.region(), tokens, 48000U);
+  CHECK(!early);
+  CHECK(early.error().code == core::ErrorCode::Conflict);
+  performance.takes.back().lanes = {{domain::PerformanceChannel::Timing,
+      {{time::Tick{0}, 1500000.0}}}};
+  const auto late = synthesis::compilePhonemeTimingPlan(f.project, f.region(), tokens, 48000U);
+  CHECK(!late);
+  CHECK(late.error().code == core::ErrorCode::Conflict);
+
+  // A displacement that stays inside the note is still accepted, so the bound is a
+  // boundary on nonsense rather than a removal of the capability.
+  performance.takes.back().lanes = {{domain::PerformanceChannel::Timing,
+      {{time::Tick{0}, 120000.0}}}};
+  const auto bounded = synthesis::compilePhonemeTimingPlan(f.project, f.region(), tokens, 48000U);
+  CHECK(bounded);
+  CHECK(bounded.value()[1].nucleusFrame == baseline.value()[1].nucleusFrame + 5760);
 }
 
 TEST_CASE("timing contract keeps a trailing coda with its preceding final nucleus") {

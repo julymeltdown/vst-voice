@@ -1,5 +1,34 @@
 # Integrated Singer Execution
 
+## A proposal can cover an unlocked span instead of the whole region
+
+M3.P3 item 3 asks for full and selected-range regeneration, and the exit criterion ends
+with "regenerate an unlocked range". Until now every proposal covered the whole
+selected region, so repairing one phrase meant re-proposing material that already
+sounded right and then deciding again about all of it.
+
+The File menu now offers `Propose Automatic Performance Over Selected Notes` beside
+the whole-region command. Both go through one capture owner; the difference is the
+range it captures, which is the span the creator has selected rather than the region's
+full duration. The action is refused with `Conflict` when no note in the region is
+selected, and when the selection reaches outside the region, so a surface cannot
+regenerate a span that does not exist. `PerformanceEditScope` now names both scopes
+for proposing and deciding, which also removed a duplicated selection-span
+implementation: the accept path and the propose path resolve the creator's selection
+through one helper.
+
+Verification. `tests/test_standalone_project_lifecycle.cpp` adds the case: the
+whole-region command still captures the region's full duration; selecting the second
+note and regenerating captures exactly that note's span and leaves the first proposal
+and every accepted selection untouched; and with no selection the command is refused
+and publishes nothing.
+
+Not claimed. The proposal still carries the four channels the production backend
+generates, so a channel-scoped regenerate remains open, and the caller cannot yet name
+an arbitrary tick range -- the scope is the creator's note selection. Regenerating an
+unlocked range also still means "decide again about the take covering that range";
+nothing here merges two proposals automatically.
+
 ## Generated timing now lands through the ordered timing solver
 
 M3.P3 item 4 asked for generated timing to be resolved through the ordered timing

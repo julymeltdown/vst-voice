@@ -20,6 +20,7 @@
 - (void)relinkProceduralRecipe:(id)sender;
 - (void)bakeProceduralCandidates:(id)sender;
 - (void)proposeAutomaticPerformance:(id)sender;
+- (void)proposeAutomaticPerformanceOverSelectedNotes:(id)sender;
 - (void)relinkBackingAudio:(id)sender;
 - (void)openAudioSettings:(id)sender;
 - (void)selectVoicebank:(id)sender;
@@ -96,6 +97,10 @@
 - (void)relinkProceduralRecipe:(id)sender { (void)sender; [self send:seam::platform::ApplicationCommand::RelinkProceduralRecipe]; }
 - (void)bakeProceduralCandidates:(id)sender { (void)sender; [self send:seam::platform::ApplicationCommand::BakeProceduralCandidates]; }
 - (void)proposeAutomaticPerformance:(id)sender { (void)sender; [self send:seam::platform::ApplicationCommand::ProposeAutomaticPerformance]; }
+- (void)proposeAutomaticPerformanceOverSelectedNotes:(id)sender {
+  (void)sender;
+  [self send:seam::platform::ApplicationCommand::ProposeAutomaticPerformanceOverSelectedNotes];
+}
 - (void)relinkBackingAudio:(id)sender { (void)sender; [self send:seam::platform::ApplicationCommand::RelinkBackingAudio]; }
 - (void)openAudioSettings:(id)sender { (void)sender; [self send:seam::platform::ApplicationCommand::OpenAudioSettings]; }
 - (void)selectVoicebank:(id)sender {
@@ -142,14 +147,14 @@
   NSString* identifier = static_cast<NSMenuItem*>(sender).representedObject;
   if (![identifier isKindOfClass:[NSString class]]) return;
   static_cast<void>(_dispatcher->acceptPerformanceTake(
-      identifier.UTF8String, seam::platform::PerformanceTakeScope::SelectedNotes));
+      identifier.UTF8String, seam::platform::PerformanceEditScope::SelectedNotes));
 }
 - (void)comparePerformanceTake:(id)sender {
   if (_dispatcher == nullptr || ![sender isKindOfClass:[NSMenuItem class]]) return;
   NSString* identifier = static_cast<NSMenuItem*>(sender).representedObject;
   if (![identifier isKindOfClass:[NSString class]]) return;
   static_cast<void>(_dispatcher->beginPerformanceComparison(
-      identifier.UTF8String, seam::platform::PerformanceTakeScope::WholeTake));
+      identifier.UTF8String, seam::platform::PerformanceEditScope::Whole));
 }
 - (void)swapPerformanceComparison:(id)sender {
   (void)sender;
@@ -328,6 +333,9 @@ public:
     [fileMenu_ addItem:item(@"Relink Procedural Recipe…", @selector(relinkProceduralRecipe:), @"", 0, target_)];
     [fileMenu_ addItem:item(@"Bake Unapproved Procedural Candidates…", @selector(bakeProceduralCandidates:), @"", 0, target_)];
     [fileMenu_ addItem:item(@"Propose Automatic Performance", @selector(proposeAutomaticPerformance:), @"", 0, target_)];
+    [fileMenu_ addItem:item(@"Propose Automatic Performance Over Selected Notes",
+                            @selector(proposeAutomaticPerformanceOverSelectedNotes:), @"",
+                            0, target_)];
     [fileMenu_ addItem:item(@"Export Audio…", @selector(exportAudio:), @"e",
                             0, target_)];
     [fileMenu_ addItem:item(@"Export Score…", @selector(exportScore:), @"",

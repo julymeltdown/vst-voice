@@ -630,7 +630,7 @@ TEST_CASE("standalone_controller_decides_a_performance_take_by_identity") {
   // Choosing a take selects it over its own captured span on every channel it
   // carries, and leaves the other proposal exactly as it was.
   CHECK(controller.value()->acceptPerformanceTake(
-      firstId, seam::platform::PerformanceTakeScope::WholeTake));
+      firstId, seam::platform::PerformanceEditScope::Whole));
   CHECK(performance().accepted.size() == performance().takes[0].lanes.size());
   CHECK(performance().takes[1].state ==
         seam::domain::PerformanceProposalState::Proposed);
@@ -668,7 +668,7 @@ TEST_CASE("standalone_controller_decides_a_performance_take_by_identity") {
   CHECK(!repeated);
   CHECK(repeated.error().code == seam::core::ErrorCode::Conflict);
   const auto unknown = controller.value()->acceptPerformanceTake(
-      "take-not-here", seam::platform::PerformanceTakeScope::WholeTake);
+      "take-not-here", seam::platform::PerformanceEditScope::Whole);
   CHECK(!unknown);
   CHECK(unknown.error().code == seam::core::ErrorCode::NotFound);
 
@@ -716,7 +716,7 @@ TEST_CASE("standalone_controller_accepts_a_take_over_the_selected_notes_only") {
   // of silently choosing the whole take on the creator's behalf.
   editable.selection().clear();
   const auto none = controller.value()->acceptPerformanceTake(
-      takeId, seam::platform::PerformanceTakeScope::SelectedNotes);
+      takeId, seam::platform::PerformanceEditScope::SelectedNotes);
   CHECK(!none);
   CHECK(none.error().code == seam::core::ErrorCode::Conflict);
 
@@ -724,7 +724,7 @@ TEST_CASE("standalone_controller_accepts_a_take_over_the_selected_notes_only") {
   // exactly that span instead of the whole take the backend generated.
   editable.selection().selectOnly(note.id);
   CHECK(controller.value()->acceptPerformanceTake(
-      takeId, seam::platform::PerformanceTakeScope::SelectedNotes));
+      takeId, seam::platform::PerformanceEditScope::SelectedNotes));
   const auto& accepted =
       editable.project().findRegion(regionId)->performance.accepted;
   const auto laneCount =
@@ -753,7 +753,7 @@ TEST_CASE("standalone_controller_accepts_a_take_over_the_selected_notes_only") {
   CHECK(secondTakeId != takeId);
   editable.selection().selectOnly(secondNote);
   CHECK(controller.value()->acceptPerformanceTake(
-      secondTakeId, seam::platform::PerformanceTakeScope::SelectedNotes));
+      secondTakeId, seam::platform::PerformanceEditScope::SelectedNotes));
   const auto& merged =
       editable.project().findRegion(regionId)->performance.accepted;
   CHECK(merged.size() == laneCount * 2U);
@@ -772,6 +772,62 @@ TEST_CASE("standalone_controller_accepts_a_take_over_the_selected_notes_only") {
   }
   CHECK(firstNoteSelections == laneCount);
   CHECK(secondNoteSelections == laneCount);
+}
+
+TEST_CASE("standalone_controller_regenerates_only_the_selected_notes") {
+  const auto root = seam::test::support::temporaryDirectory("standalone-partial-proposal");
+  auto session = makeSession(root);
+  addNote(*session);
+  bool quit = false;
+  seam::standalone::StandaloneApplicationControllerConfig config{};
+  config.autosaveRoot = root / "autosaves";
+  config.recentProjectsPath = root / "recent.json";
+  auto controller = seam::standalone::StandaloneApplicationController::create(*session,
+      std::make_unique<FakeDialog>(), std::make_unique<FakePrompt>(), config,
+      [&quit] { quit = true; });
+  CHECK(controller);
+  if (!controller) return;
+  const auto regionId = session->regionId();
+  auto& editable = session->runtime().document().session();
+  const auto performance = [&]() -> const seam::domain::RegionPerformanceState& {
+    return editable.project().findRegion(regionId)->performance;
+  };
+  const auto regionDuration = editable.project().findRegion(regionId)->durationTick;
+  auto [lyric, second] = session->runtime().document().factory().makeNote(
+      seam::time::Tick{960}, seam::time::Tick{960}, 62U, U"\u304d",
+      seam::domain::Language::Japanese);
+  CHECK(session->runtime().execute(std::make_unique<seam::application::AddNoteCommand>(
+      regionId, std::move(lyric), std::move(second))));
+  const auto secondNote = editable.project().findRegion(regionId)->notes.back().id;
+  const auto wholeRegion = seam::domain::PerformanceTimeRange{seam::time::Tick{0}, regionDuration};
+  const auto secondSpan = seam::domain::PerformanceTimeRange{
+      seam::time::Tick{960}, seam::time::Tick{1920}};
+
+  // The whole-region command is unchanged.
+  CHECK(controller.value()->dispatch(
+      seam::platform::ApplicationCommand::ProposeAutomaticPerformance));
+  CHECK(performance().takes.size() == 1U);
+  CHECK(performance().takes.back().range == wholeRegion);
+
+  // Selecting one note and regenerating proposes over exactly that note, so a repair
+  // pass never re-proposes material that already sounds right.
+  editable.selection().selectOnly(secondNote);
+  CHECK(controller.value()->dispatch(
+      seam::platform::ApplicationCommand::ProposeAutomaticPerformanceOverSelectedNotes));
+  CHECK(performance().takes.size() == 2U);
+  CHECK(performance().takes.back().range == secondSpan);
+  CHECK(performance().takes.back().state ==
+        seam::domain::PerformanceProposalState::Proposed);
+  CHECK(performance().takes.front().range == wholeRegion);
+  CHECK(performance().accepted.empty());
+
+  // Without a selection there is nothing to regenerate, and nothing is published.
+  editable.selection().clear();
+  const auto none = controller.value()->dispatch(
+      seam::platform::ApplicationCommand::ProposeAutomaticPerformanceOverSelectedNotes);
+  CHECK(!none);
+  CHECK(none.error().code == seam::core::ErrorCode::Conflict);
+  CHECK(performance().takes.size() == 2U);
 }
 
 TEST_CASE("standalone_controller_compares_two_takes_from_one_playhead") {
@@ -798,7 +854,7 @@ TEST_CASE("standalone_controller_compares_two_takes_from_one_playhead") {
   const std::string firstId = performance().takes[0].id;
   const std::string secondId = performance().takes[1].id;
   CHECK(controller.value()->acceptPerformanceTake(
-      firstId, seam::platform::PerformanceTakeScope::WholeTake));
+      firstId, seam::platform::PerformanceEditScope::Whole));
   const auto acceptedFirst = performance().accepted;
   CHECK(!acceptedFirst.empty());
   CHECK(controller.value()->performanceComparison() == std::nullopt);
@@ -806,7 +862,7 @@ TEST_CASE("standalone_controller_compares_two_takes_from_one_playhead") {
   // Comparing the second take applies it while the first state stays held, so both
   // sides exist at once and neither is a copy of the other.
   CHECK(controller.value()->beginPerformanceComparison(
-      secondId, seam::platform::PerformanceTakeScope::WholeTake));
+      secondId, seam::platform::PerformanceEditScope::Whole));
   const auto comparison = controller.value()->performanceComparison();
   CHECK(comparison.has_value());
   CHECK(comparison->takeId == secondId);
@@ -839,18 +895,18 @@ TEST_CASE("standalone_controller_compares_two_takes_from_one_playhead") {
   CHECK(lapsed.error().code == seam::core::ErrorCode::Conflict);
 
   const auto unknown = controller.value()->beginPerformanceComparison(
-      "take-not-here", seam::platform::PerformanceTakeScope::WholeTake);
+      "take-not-here", seam::platform::PerformanceEditScope::Whole);
   CHECK(!unknown);
   CHECK(unknown.error().code == seam::core::ErrorCode::NotFound);
   const auto alreadyAccepted = controller.value()->beginPerformanceComparison(
-      secondId, seam::platform::PerformanceTakeScope::WholeTake);
+      secondId, seam::platform::PerformanceEditScope::Whole);
   CHECK(!alreadyAccepted);
   CHECK(alreadyAccepted.error().code == seam::core::ErrorCode::Conflict);
 
   CHECK(controller.value()->beginPerformanceComparison(
-      firstId, seam::platform::PerformanceTakeScope::WholeTake));
+      firstId, seam::platform::PerformanceEditScope::Whole));
   const auto nested = controller.value()->beginPerformanceComparison(
-      secondId, seam::platform::PerformanceTakeScope::WholeTake);
+      secondId, seam::platform::PerformanceEditScope::Whole);
   CHECK(!nested);
   CHECK(nested.error().code == seam::core::ErrorCode::Conflict);
   CHECK(controller.value()->endPerformanceComparison());

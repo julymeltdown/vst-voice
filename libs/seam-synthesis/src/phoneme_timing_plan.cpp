@@ -125,9 +125,15 @@ core::Result<std::vector<PhonemeTimingAnchor>> compilePhonemeTimingPlan(
                 "Generated timing offset overflows the output timeline", tokens[i].key.toString());
           }
           anchor += delta;
-          if (anchor < 0) {
+          // The score still owns the note's sounding window: its attack, release and
+          // vibrato phase are evaluated against the note span, which a generated
+          // proposal does not move. A displacement that would place the syllable
+          // outside that window is therefore refused rather than accepted as a
+          // gesture no envelope could cover.
+          if (anchor < startFrame || anchor > endFrame) {
             return core::failure<Output>(core::ErrorCode::Conflict,
-                "Generated timing offset precedes the output timeline", tokens[i].key.toString());
+                "Generated timing leaves the note span the score defines",
+                tokens[i].key.toString());
           }
         }
       }

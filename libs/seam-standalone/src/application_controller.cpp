@@ -283,7 +283,7 @@ StandaloneApplicationController::performanceTakes() const {
 }
 
 core::Result<void> StandaloneApplicationController::acceptPerformanceTake(
-    std::string_view id, platform::PerformanceTakeScope scope) {
+    std::string_view id, platform::PerformanceEditScope scope) {
   const auto regionId = session_.runtime().selectedRegion();
   const auto& editable = session_.runtime().document().session();
   const auto& project = editable.project();
@@ -311,10 +311,10 @@ core::Result<void> StandaloneApplicationController::acceptPerformanceTake(
 // take did not generate, and the selected-notes scope cannot reach outside it.
 core::Result<std::vector<domain::AcceptedPerformanceSelection>>
 StandaloneApplicationController::performanceTakeSelections(domain::RegionId regionId,
-    std::string_view id, platform::PerformanceTakeScope scope) const {
+    std::string_view id, platform::PerformanceEditScope scope) const {
   using Output = std::vector<domain::AcceptedPerformanceSelection>;
-  const auto& editable = session_.runtime().document().session();
-  const auto* region = editable.project().findRegion(regionId);
+  const auto* region =
+      session_.runtime().document().session().project().findRegion(regionId);
   if (region == nullptr) {
     return core::failure<Output>(core::ErrorCode::Conflict,
         "Performance takes require a selected region");
@@ -335,25 +335,10 @@ StandaloneApplicationController::performanceTakeSelections(domain::RegionId regi
         "That performance take does not cover usable material", std::string{id});
   }
   auto range = found->range;
-  if (scope == platform::PerformanceTakeScope::SelectedNotes) {
-    const auto selected = editable.selection().noteIds();
-    bool any = false;
-    for (const auto noteId : selected) {
-      const auto* note = region->findNote(noteId);
-      if (note == nullptr) continue;
-      if (!any) {
-        range = domain::PerformanceTimeRange{note->startTick, note->endTick()};
-        any = true;
-        continue;
-      }
-      range.startTick = std::min(range.startTick, note->startTick);
-      range.endTick = std::max(range.endTick, note->endTick());
-    }
-    if (!any) {
-      return core::failure<Output>(core::ErrorCode::Conflict,
-          "Accepting a performance take over selected notes requires a note selection",
-          std::string{id});
-    }
+  if (scope == platform::PerformanceEditScope::SelectedNotes) {
+    auto selected = selectedNotesRange(regionId);
+    if (!selected) return core::Result<Output>{selected.error()};
+    range = selected.value();
     if (range.startTick < found->range.startTick || range.endTick > found->range.endTick) {
       return core::failure<Output>(core::ErrorCode::Conflict,
           "The selected notes are outside the span this take was generated for",
@@ -393,7 +378,7 @@ core::Result<void> StandaloneApplicationController::applyAcceptedSelections(
 }
 
 core::Result<void> StandaloneApplicationController::beginPerformanceComparison(
-    std::string_view id, platform::PerformanceTakeScope scope) {
+    std::string_view id, platform::PerformanceEditScope scope) {
   if (performanceComparison_.has_value()) {
     return core::failure(core::ErrorCode::Conflict,
         "A performance take comparison is already active");
@@ -504,13 +489,56 @@ core::Result<void> StandaloneApplicationController::rejectPerformanceTake(
   return core::success();
 }
 
-core::Result<void> StandaloneApplicationController::proposeAutomaticPerformance() {
+core::Result<domain::PerformanceTimeRange>
+StandaloneApplicationController::selectedNotesRange(domain::RegionId regionId) const {
+  const auto& editable = session_.runtime().document().session();
+  const auto* region = editable.project().findRegion(regionId);
+  if (region == nullptr) {
+    return core::failure<domain::PerformanceTimeRange>(core::ErrorCode::Conflict,
+        "Automatic performance requires a selected region");
+  }
+  const auto selected = editable.selection().noteIds();
+  bool any = false;
+  domain::PerformanceTimeRange range{};
+  for (const auto noteId : selected) {
+    const auto* note = region->findNote(noteId);
+    if (note == nullptr) continue;
+    if (!any) {
+      range = domain::PerformanceTimeRange{note->startTick, note->endTick()};
+      any = true;
+      continue;
+    }
+    range.startTick = std::min(range.startTick, note->startTick);
+    range.endTick = std::max(range.endTick, note->endTick());
+  }
+  if (!any) {
+    return core::failure<domain::PerformanceTimeRange>(core::ErrorCode::Conflict,
+        "This action needs a note selection in the region it applies to");
+  }
+  return range;
+}
+
+core::Result<void> StandaloneApplicationController::proposeAutomaticPerformance(
+    platform::PerformanceEditScope scope) {
   const auto& project = session_.runtime().document().session().project();
   const auto regionId = session_.runtime().selectedRegion();
   const auto* region = project.findRegion(regionId);
   if (region == nullptr)
     return core::failure(core::ErrorCode::Conflict,
         "Automatic performance requires a selected region");
+  // Whole means the whole selected region; the selected-notes scope regenerates only
+  // the span the creator picked, which is what makes a repair pass possible without
+  // proposing over material that already sounds right.
+  auto range = domain::PerformanceTimeRange{time::Tick{0}, region->durationTick};
+  if (scope == platform::PerformanceEditScope::SelectedNotes) {
+    auto selectedRange = selectedNotesRange(regionId);
+    if (!selectedRange) return core::Result<void>{selectedRange.error()};
+    range = selectedRange.value();
+    if (range.startTick < time::Tick{0} || range.endTick > region->durationTick) {
+      return core::failure(core::ErrorCode::Conflict,
+          "The selected notes are outside the region this proposal would cover");
+    }
+  }
   // The proposal records the singer it was computed for: the track's own saved
   // neural selection when it has one, otherwise the resolved voicebank. A track
   // with neither is refused rather than proposed against an unknown voice.
@@ -538,7 +566,7 @@ core::Result<void> StandaloneApplicationController::proposeAutomaticPerformance(
   const std::string takeId =
       "proposal-" + std::to_string(++automaticProposalCounter_);
   auto prepared = authoring::AutomaticPerformanceCapture::prepare(editable, regionId,
-      domain::PerformanceTimeRange{time::Tick{0}, region->durationTick},
+      range,
       {domain::PerformanceChannel::Pitch, domain::PerformanceChannel::Dynamics,
        domain::PerformanceChannel::Attack, domain::PerformanceChannel::Release},
       resource, automaticProposalSeed_, takeId);
@@ -774,6 +802,8 @@ core::Result<void> StandaloneApplicationController::dispatch(
       return exportSetFromDialog(true);
     case platform::ApplicationCommand::ProposeAutomaticPerformance:
       return proposeAutomaticPerformance();
+    case platform::ApplicationCommand::ProposeAutomaticPerformanceOverSelectedNotes:
+      return proposeAutomaticPerformance(platform::PerformanceEditScope::SelectedNotes);
     case platform::ApplicationCommand::NewProject: {
       auto allowed = confirmDestructiveAction();
       if (!allowed) return core::Result<void>{allowed.error()};

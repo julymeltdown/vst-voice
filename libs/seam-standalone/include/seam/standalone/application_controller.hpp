@@ -146,7 +146,7 @@ public:
   // on the take. Neither action edits the take's musical payload.
   [[nodiscard]] core::Result<void> acceptPerformanceTake(
       std::string_view id,
-      platform::PerformanceTakeScope scope) override;
+      platform::PerformanceEditScope scope) override;
   [[nodiscard]] core::Result<void> rejectPerformanceTake(
       std::string_view id) override;
   // Alternate-take comparison: the candidate take is applied while the previous
@@ -154,7 +154,7 @@ public:
   // and swap between the two states. Every swap is an ordinary undoable edit.
   [[nodiscard]] core::Result<void> beginPerformanceComparison(
       std::string_view id,
-      platform::PerformanceTakeScope scope) override;
+      platform::PerformanceEditScope scope) override;
   [[nodiscard]] core::Result<void> swapPerformanceComparison() override;
   [[nodiscard]] core::Result<void> endPerformanceComparison() override;
   [[nodiscard]] std::optional<platform::PerformanceComparisonMenuItem>
@@ -162,7 +162,12 @@ public:
   // Runs the production automatic-performance backend on the selected region and
   // adopts the result as a Proposed take. Acceptance stays a separate action, and
   // an edit that moved the material on refuses instead of publishing.
-  [[nodiscard]] core::Result<void> proposeAutomaticPerformance();
+  // Runs the production automatic-performance backend on the selected region, or on
+  // the span the creator selected when asked for that scope, and adopts the result as
+  // a Proposed take. Acceptance stays a separate action, and an edit that moved the
+  // material on refuses instead of publishing.
+  [[nodiscard]] core::Result<void> proposeAutomaticPerformance(
+      platform::PerformanceEditScope scope = platform::PerformanceEditScope::Whole);
 
   [[nodiscard]] const std::vector<authoring::VoicebankCard>& voicebankCards()
       const noexcept { return voicebankBrowser_.cards(); }
@@ -272,7 +277,10 @@ private:
   // same span and channel rule for accepting and for comparing.
   [[nodiscard]] core::Result<std::vector<domain::AcceptedPerformanceSelection>>
   performanceTakeSelections(domain::RegionId regionId, std::string_view id,
-      platform::PerformanceTakeScope scope) const;
+      platform::PerformanceEditScope scope) const;
+  // The span the creator's current note selection covers inside one region.
+  [[nodiscard]] core::Result<domain::PerformanceTimeRange> selectedNotesRange(
+      domain::RegionId regionId) const;
   // Applies an exact accepted-selection list as one undoable edit.
   [[nodiscard]] core::Result<void> applyAcceptedSelections(
       domain::RegionId regionId,

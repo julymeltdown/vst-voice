@@ -36,6 +36,7 @@ enum class ApplicationCommand {
   RelinkProceduralRecipe,
   BakeProceduralCandidates,
   ProposeAutomaticPerformance,
+  ProposeAutomaticPerformanceOverSelectedNotes,
   EditPronunciationHint,
   FindReplaceLyrics,
   ClearSelectedVibrato,
@@ -95,11 +96,11 @@ struct DocumentationMenuItem final {
 // One performance proposal the surface can still decide. The label is built by
 // the surface from the take's own recorded identity -- generator, seed, span and
 // channels -- so a menu never has to invent a name for material it did not make.
-// Which part of a proposal a decision applies to. The whole take is the default
-// because that is the span the backend actually generated; the selected-notes
-// scope accepts only the span the creator currently has selected, which must lie
-// inside the take.
-enum class PerformanceTakeScope { WholeTake, SelectedNotes };
+// Which span a performance action applies to. Whole means the take's own captured
+// span when deciding, and the selected region when proposing. SelectedNotes means the
+// span the creator currently has selected, which must lie inside the material an
+// action can honestly cover.
+enum class PerformanceEditScope { Whole, SelectedNotes };
 
 struct PerformanceTakeMenuItem final {
   std::string id;
@@ -175,7 +176,7 @@ public:
   // never changes its state and never touches manual performance ownership. A
   // surface refuses a span the take did not generate instead of clamping it.
   [[nodiscard]] virtual core::Result<void> acceptPerformanceTake(std::string_view,
-      PerformanceTakeScope = PerformanceTakeScope::WholeTake) {
+      PerformanceEditScope = PerformanceEditScope::Whole) {
     return core::failure(core::ErrorCode::Unsupported,
                          "Performance take decisions are not supported");
   }
@@ -190,7 +191,7 @@ public:
   // can play the same passage twice from one playhead and swap between the two.
   // Returns the comparison a surface should mark, or nothing when none is active.
   [[nodiscard]] virtual core::Result<void> beginPerformanceComparison(
-      std::string_view, PerformanceTakeScope = PerformanceTakeScope::WholeTake) {
+      std::string_view, PerformanceEditScope = PerformanceEditScope::Whole) {
     return core::failure(core::ErrorCode::Unsupported,
                          "Performance take comparison is not supported");
   }
