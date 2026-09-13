@@ -241,6 +241,32 @@ candidate → package chain still needs its own connected regression, the plan's
 do not exist yet, and the human/reviewer and real-input journeys remain external
 evidence that this work does not claim.
 
+Added that regression. `tests/test_original_singer_workflow.cpp` now runs as CTest
+`seam_original_singer_workflow_tests` and covers the connected lifecycle the plan
+names: a synthetic source is imported into a producer workspace, edited by a
+committed normalize operation, prepared for review, accepted by a supplied
+reviewer decision, published as a candidate bank, packaged as a signed
+`.seambank`, and installed through the standalone controller. The installation
+first attempts a byte-tampered package and requires that attempt to fail with no
+installed card, then retries the same action successfully, so a genuine refusal
+and retry is part of the flow rather than a separate unit fixture.
+
+After installing, the new song must report complete coverage, the producer
+workspace is renamed away, and the song still exports master plus stems from the
+installed bank. It saves through `SaveProjectAs` and reopens through `OpenProject`
+on the same controller, re-exports with an identical master hash, and verifies the
+installed bank's content hash against the card. Finally it mutates the producer
+draft (unit queue state and last durable generation) and proves the saved song
+bytes and the installed bank manifest are unchanged, which is the plan's
+immutable-old-song requirement.
+
+Still open under M1.P3: the generation-campaign orchestration (plan/run/cancel/
+resume with collected takes) is exercised by its own unit suites rather than this
+connected regression, the native Studio actions for review and packaging are not
+yet the path this test drives, and the reviewed-by-a-real-person and real-input
+journeys remain external evidence. This test uses a synthetic source and test
+identities only; it does not qualify an original singer.
+
 Storage note: the machine reached 124 MiB free, which caused eleven unrelated
 suite failures (demo smokes, contract tests, neural runtime checks). Those were
 not regressions; the same tests pass with storage restored. Four regenerable

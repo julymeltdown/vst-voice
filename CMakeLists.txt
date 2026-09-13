@@ -1878,6 +1878,9 @@ if(SEAM_BUILD_TESTS)
     add_executable(seam_u3_standalone_tests
       tests/test_main.cpp
       tests/test_standalone_voicebank_workflow.cpp)
+    add_executable(seam_original_singer_workflow_tests
+      tests/test_main.cpp
+      tests/test_original_singer_workflow.cpp)
     target_include_directories(seam_u3_standalone_tests PRIVATE tests)
     target_link_libraries(seam_u3_standalone_tests PRIVATE
       seam_standalone_authoring seam_native_ui seam_authoring_runtime
@@ -1885,6 +1888,14 @@ if(SEAM_BUILD_TESTS)
       seam_voicebank seam_formats seam_application seam_domain seam_core)
     seam_apply_compiler_options(seam_u3_standalone_tests)
     add_test(NAME seam_u3_standalone_tests COMMAND seam_u3_standalone_tests)
+    target_include_directories(seam_original_singer_workflow_tests PRIVATE tests)
+    target_link_libraries(seam_original_singer_workflow_tests PRIVATE
+      seam_standalone_authoring seam_native_ui seam_authoring_runtime
+      seam_distribution seam_rendering seam_synthesis seam_phonemizer
+      seam_voicebank seam_voicebank_production seam_formats seam_application
+      seam_domain seam_core)
+    seam_apply_compiler_options(seam_original_singer_workflow_tests)
+    add_test(NAME seam_original_singer_workflow_tests COMMAND seam_original_singer_workflow_tests)
   endif()
 
   add_executable(seam_tests ${SEAM_TEST_SOURCES})
