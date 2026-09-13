@@ -6,6 +6,165 @@ not a replacement product contract or a release approval.
 
 ## Neural bundle metadata compatibility follow-up
 
+CLI-to-native child handoff: added `check_bundle_runtime.py` and trusted native
+`--paired-bundle` experiment mode. The check converts exporter-style vocabulary
+with the real CLI, prepares its manifest, inspects the byte-bound bundle offline,
+then launches a separate native process that reloads/freeze-verifies the actual
+directory before paired inference. Rebuilt runtime/CLI targets and the end-to-end
+check passed. A same-length mutation of the vocoder after parent inspection is
+rejected by child loading. This advances disk-byte revalidation but is not the
+production worker protocol or production pre-session ONNX admission; all graphs
+remain application-generated arithmetic fixtures, not learned singer weights.
+
+CLI bundle preparation: added `prepare-neural-bundle DIRECTORY MODEL_ID
+MODEL_VERSION MAX_PAYLOAD_BYTES` for four named regular assets. It reads bounded
+bytes, builds/freeze-verifies a canonical manifest, validates metadata, creates
+the manifest without overwriting, and reloads it before reporting
+`DATA_BUNDLE_PREPARED_UNAPPROVED`. CLI integration CTest passed (1/1, 2.47 seconds),
+including invalid-metadata/no-publication, exact manifest identity, prepare→
+inspect and repeat/no-overwrite. Graph validity remains unclaimed. Assets must
+remain stable during preparation; a failed post-publication reload retains the
+manifest for diagnosis, not an automatic rollback or multi-file transaction.
+
+CLI directory inspection: exposed `inspect-neural-bundle DIRECTORY MODEL_ID
+MODEL_VERSION MANIFEST_SHA256 MAX_PAYLOAD_BYTES`. It uses native directory
+loading and metadata inspection, reports verified identity/clock/vocabulary,
+and explicitly returns `METADATA_INSPECTED_ONLY` with execution/release flags
+false. Rebuilt CLI integration CTest passed (1/1, 3.65 seconds). Tests cover
+invalid limits, changed asset rejection and successful metadata-only inspection
+of deliberately non-ONNX graph placeholders, preventing a metadata PASS from
+being described as executable admission. It performs no installation or writes.
+
+Native directory intake: added `loadNeuralBundleDirectory`, reading bounded
+`manifest.json`, validating all declared role/name/size/hash fields and aggregate
+payload limits before asset reads, and freezing the exact loaded asset bytes.
+Canonical manifest identity and payload hashes are rechecked by the freeze
+factory. Initial rebuilt native protocol CTest passed (1/1, 1.12 seconds),
+covering successful metadata inspection, wrong identity, payload limits,
+changed-file rejection, cancellation and retained immutable bytes after disk
+changes. Regular-file/non-symlink checks are point-in-time checks, not race-free
+filesystem isolation; byte hashes remain authoritative and graph execution is
+not admitted. Peak memory includes read buffers plus frozen copies, so payload
+limits are not process-RSS limits. General importer UI and child-side invocation
+are still open.
+
+Native CLI preparation integration: added `convert-neural-vocabulary SOURCE_JSON
+SOURCE_SHA256 NEW_OUTPUT_JSON` to the existing voicebank CLI. It reads bounded
+source bytes, verifies the caller's expected digest, uses the native converter
+and durably creates a new output without overwriting. Its report binds both
+hashes and remains `CONVERTED_UNAPPROVED`/releaseEligible false. The rebuilt CLI
+integration CTest passed (1/1, 2.90 seconds), including wrong-hash/no-output,
+alias preservation, output hash, source preservation and no-overwrite cases.
+This is a usable preparation action, not a full neural bank importer or release
+approval. No Python or ONNX Runtime dependency was added to the CLI.
+
+Converter differential verification: added a bounded native test-helper entry
+and `check_vocabulary_parity.py`. The first run exposed differing canonical
+bytes: native JSON is two-space-indented with a final newline; Python had emitted
+compact JSON. Aligned Python output to the native writer. Sixteen byte-for-byte
+comparisons now pass across shuffled maps, aliases, Unicode/escaped Unicode and
+larger inventories; twelve invalid-source cases are rejected by both paths.
+All 40 offline unit tests also passed. Regenerated converted vocabularies have
+new content hashes compared with the earlier compact Python output; existing
+serialized vocabulary decoding is unchanged, and bundle manifests must always
+bind the actual bytes. This is converter parity, not complete bank admission.
+
+Native vocabulary conversion: added `convertDiffSingerVocabulary` to the neural
+library using bounded native JSON parsing. It preserves positive source IDs,
+canonicalizes merged alias groups deterministically and rejects gaps, padding
+collisions, malformed IDs/names and duplicate keys. Native protocol CTest passed
+(1/1, 1.37 seconds). The paired native runtime fixture now uses this converter
+before freezing its vocabulary, replacing its hand-authored SEAM vocabulary.
+This provides the native conversion service; general bank-import UI, persisted
+source provenance and actual learned-bank qualification remain unfinished.
+
+Exporter vocabulary conversion: added `convert_vocabulary.py`, consuming bounded
+phone-to-ID JSON and emitting canonical SEAM vocabulary v2 without reassigning
+any positive trained ID. Merged aliases are retained, padding is reserved at
+zero, sparse IDs are rejected rather than compacted, and output is rechecked
+against the metadata parser envelope. Tests reconstruct the complete original
+mapping, verify order-independent output, reject malformed mappings, and feed
+converted bytes into hash-bound bundle inspection. This closes the offline
+mapping conversion gap, not native importer wiring or learned model execution.
+
+Exporter vocabulary compatibility: pinned DiffSinger `PhonemeDictionary.dump`
+exports phone-to-ID JSON and merged groups can assign multiple phone names to
+one positive ID (`utils/phoneme_utils.py:107-137,187-189`). Added SEAM vocabulary
+v2 with canonical `tokens` plus `aliases` mapping names to existing nonpadding
+IDs. Native vocabulary size now counts embedding tokens, not alias names.
+Native protocol CTest passed (1/1, 1.12 seconds); all 36 offline tests passed,
+including shared cross-language IDs and invalid alias collisions/targets.
+Legacy vocabulary v1 remains unchanged. Exported-map conversion, language-ID
+conditioning and actual learned-bank inference are still open.
+
+Configuration v3 output binding: native/offline readers now require explicit
+`vocoderOutput` (`audio` or `waveform`) in v3, retaining v1/v2 legacy semantics.
+Offline bundle inspection passes this declaration to actual pair inspection;
+native paired fixtures author v3 and reject a graph output name that differs
+before inference. Native protocol CTest passed (1/1, 2.44 seconds), dynamic
+paired runtime passed and all 35 offline tests passed. This supersedes the
+unbound output-name limitation below. The fixture CLI deliberately selects two
+fixed profiles (scalar/audio and vector1/waveform); it is not a general bank
+importer or production admission interface, and does not execute learned vocals.
+
+Exporter-source intake: cloned `openvpi/DiffSinger` into ignored
+`build/neural-runtime/DiffSinger-source` and pinned inspection to
+`336cf01b57f2ad44c6b37a79cf33993043291759`. No exporter/dependency/training code
+or pretrained weights were executed. Its NSF-HiFiGAN exporter declares output
+`waveform`, not our initial fixture's `audio`. Pair inspection now takes an
+explicit allowed output name and binds it in the digest; native trusted-fixture
+execution handles either declared output. Dynamic paired tests now exercise
+`waveform` with vector1 steps. Bundle configuration still has no output-name
+field, so its offline wrapper retains the legacy audio default pending a
+versioned binding; no arbitrary bank execution is authorized.
+
+Source: `deployment/exporters/nsf_hifigan_exporter.py` at the pinned revision,
+input/output names and opset 17 in `_torch_export_model`. The acoustic exporter
+also has optional language, speaker, variance, gender, velocity and depth paths.
+These are not automatically covered by the minimal paired profile. The source
+checkout includes an Apache-2.0 license; this is not evidence of permissions
+for separately obtained voice weights, recordings or training datasets.
+
+Native v2 execution binding: the paired runtime fixture now freezes explicit v2
+spectral declarations and application-selected scalar/vector1 steps layout.
+The actual graph steps rank must match that metadata before inference. Release
+runtime target rebuilt and paired check passed: both layouts execute at both
+sequence lengths, opposite declared layouts fail before Run, and wrong-hop
+output fails afterward. This supersedes the v1 fixture limitation below.
+It does not prove FFT/window/mel semantics from actual learned model behavior
+or establish production graph admission and worker execution.
+
+Configuration v2 follow-up: native and offline metadata readers now require
+`fftSize`, `windowSize`, `melFrequencyScale` on both acoustic/vocoder feature
+objects and root `stepsLayout`. FFT bounds are 2..32768; window must be positive,
+no larger than FFT, and at least the hop. Frequency scale is explicitly Slaney
+or HTK; steps layout is scalar or vector1. Pair declarations must match exactly.
+Version 1 remains readable with unspecified spectral fields and a legacy scalar
+layout; no missing values are inferred. Native protocol CTest passed (1/1,
+2.96 seconds); all 33 offline tests passed, including actual vector1 graph
+inspection through v2 bundle configuration. This supersedes the missing-field
+and scalar-only bundle limitations below, but not graph/runtime compatibility
+or execution admission. The native arithmetic fixture still authors v1 metadata.
+
+Source-backed exporter correction: inspected the existing OpenUtau checkout at
+`8c0dc4007e6e8c8181f3a12c10205671800eeb8b`. Its
+`OpenUtau.Core/DiffSinger/DiffSingerRenderer.cs:275` constructs continuous
+acceleration `steps` as int64 `[1]`, not the scalar used in our initial fixture.
+Offline pair inspection now accepts an explicit `steps_layout` choice, binds
+it in the contract digest and rejects mismatched ranks. Native fixture execution
+inspects the actual steps input and supports exactly scalar or `[1]`. Both
+layouts passed dynamic paired execution; wrong-hop output still fails. All 31
+offline tests passed. Bundle configuration currently has no steps-layout field,
+so its existing inspector retains scalar behavior; production schema binding
+must be completed rather than inferring rank silently.
+
+The same source review found missing metadata dimensions in our configuration:
+FFT size, analysis-window size and mel-frequency scale (Slaney versus HTK).
+OpenUtau checks these in addition to sample rate, hop, mel bins and frequency
+range. Our current metadata cannot establish their compatibility. This is an
+open admission requirement, not justification to accept an arbitrary exported
+pair. No learned model assets were found in the checked project paths.
+
 Offline JSON-bound follow-up: added a quote/escape-aware container-depth check
 before recursive decoding and post-decode node, collection, finite-number and
 128-byte UTF-8 string checks. Configuration uses native 128-node/16-entry
@@ -929,3 +1088,95 @@ Neither fixture is a listening-quality acceptance result.
   full CTest invocation: 123/123 passed in 84.76 seconds, including the expanded
   boundary matrix and production pilot CLI. This supersedes the earlier narrow
   test boundary for this repair, but does not establish musical qualification.
+# Integrated regression checkpoint
+
+The accumulated bundle metadata/vocabulary conversion, CLI preparation, request
+v3, launch v2, deployment materialization and transport changes passed a complete
+Release build and all 124 CTest targets (`ctest --test-dir build/release
+--output-on-failure -j 4`, 102.83 s). Separately, 40 offline neural-runtime tests,
+16 native/Python vocabulary byte comparisons plus 12 rejection cases, paired
+arithmetic runtime inference and CLI-prepared bundle request inference passed.
+This supersedes the earlier focused-only verification boundaries for these code
+changes. It does not satisfy learned singing, independent listening, production
+graph admission, Windows/installed-host qualification or full Beta GO acceptance.
+
+# Deployment descriptor materialization checkpoint
+
+Added `build_neural_deployment_descriptor` in the release-package tooling. It
+reconstructs the canonical helper manifest from finalized files, checks the
+application-specified build/module/protocol target, and emits unsigned canonical
+descriptor bytes plus their digest for the release signing owner. Schema 1
+remains eight fields; schema 2 includes explicit launch protocol 2. Unsupported
+platform/surface combinations, unsafe manifest paths, changed payloads and
+cross-version packages are rejected. It neither supplies keys nor signs releases.
+
+The native package materialization suite passed in 6.12 s. New tests generate
+descriptors in Python, sign them with ephemeral test keys in a copied native
+module, and exercise signature verification plus module-anchored package loading
+for both versions. A correctly signed descriptor targeting the wrong loaded
+package version is rejected. Test helper bytes are not execution-qualified;
+these results establish deployment plumbing only, not production inference.
+
+# Bundle-aware process transport checkpoint
+
+`runNeuralBundleWorker` now requires launch protocol 2, request metadata v3,
+an application-selected absolute canonical directory, a bounded aggregate bundle
+size, and nonzero CPU/resident-memory budgets. It reloads and verifies metadata,
+uses the bundle's vocabulary, and launches the selected helper with the directory,
+model ID/version, manifest hash and payload budget as separate arguments.
+Shared transport code retains helper hashing, deadlines, bounded pipes, request
+hash checks and exact response identity checks, including the bundle hash.
+
+The separate `seam_neural_bundle_transport_probe` is a zero-PCM transport fixture,
+not the v1 probe and not a production graph worker. It reloads actual bundle bytes
+in the child; no ONNX session is constructed. Tests cover successful binding,
+missing response bundle identity, missing budgets, payload limits, wrong launch
+version, the legacy helper, cancellation before launch and changed bundle bytes.
+Production child graph admission remains mandatory and unimplemented in this
+transport layer. Windows and installed-host execution evidence remain pending.
+
+# Versioned neural deployment checkpoint
+
+Helper manifests now admit only the explicit schema/protocol pairs 1/1 and 2/2.
+The resolved options retain that launch version; the legacy runner rejects 2.
+Signed deployment schema 2 requires an explicit protocolVersion 2, an application
+target expecting 2, and a loaded package with the same launch version. Schema 1
+retains its original eight-field representation and expected legacy protocol.
+Python package materialization can seal either version without changing its
+default; payload inventory reconstructs the declared version rather than silently
+rewriting it to 1. File integrity is not proof of a helper's implementation.
+
+Verification: native protocol test passed (1.05 s), including signed version
+selection and cross-version rejection. Python/native package materialization
+exercises generated manifests for both versions. Production bundle launch and
+child graph admission are still pending; no new singing capability is claimed.
+
+# Bundle-conditioned protocol v3 checkpoint
+
+Implemented the M2.P1 metadata version boundary: request/response v3 carry an
+explicit `bundleContentHash`, matching the current frozen bundle's model content
+identity. V3 requests require phonetic conditioning; v3 responses require the
+canonical request hash. Binary framing remains SNW1/version 1, and metadata v1/v2
+retain their existing representations. Unknown fields prevent silent downgrades.
+The legacy `runNeuralWorker` launcher refuses bundle-conditioned requests rather
+than letting its v1 helper satisfy a production contract accidentally.
+
+Focused verification: native protocol CTest passed (1.11 s); native arithmetic
+bundle runtime test passed for both v2 and v3, including wrong bundle identity
+and attempted downgrade. This implements the wire contract, not the remaining
+production v2 launcher, admitted graph handle, packaging, or real singer model.
+
+# Request-driven runtime experiment checkpoint
+
+The native optional ORT probe now accepts an external framed request through
+`--paired-request`, validates it against child-loaded bundle metadata and vocabulary
+before session creation, and returns binary request-bound PCM. The end-to-end
+CLI preparation/reload test verifies two pitch/dynamics combinations, 731-sample
+output with padded-tail removal, exact canonical request hashes, and rejection of
+truncation, trailing bytes, wrong model identity, and changed graph bytes.
+
+Verification: optional native probe rebuilt successfully; bundle runtime test
+passed; all 40 offline neural-runtime unit tests passed. No full Release-suite
+rerun is claimed for this checkpoint. Fixtures are arithmetic graphs, not learned
+voices. Production worker packaging, model admission, cancellation, lawful learned
+assets, singing qualification, and the remaining full implementation plan stay open.

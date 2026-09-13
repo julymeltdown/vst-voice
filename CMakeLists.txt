@@ -342,6 +342,7 @@ seam_apply_compiler_options(seam_formats)
 
 add_library(seam_neural_synthesis
   libs/seam-neural-synthesis/src/bundle_metadata.cpp
+  libs/seam-neural-synthesis/src/bundle_directory.cpp
   libs/seam-neural-synthesis/src/diffsinger_inputs.cpp
   libs/seam-neural-synthesis/src/deployment_descriptor.cpp
   libs/seam-neural-synthesis/src/worker_protocol.cpp
@@ -1064,7 +1065,7 @@ add_executable(seam_voicebank_cli apps/seam-voicebank-cli/main.cpp
   apps/seam-voicebank-cli/campaign_commands.cpp
   apps/seam-voicebank-cli/sample_review_commands.cpp)
 target_link_libraries(seam_voicebank_cli PRIVATE
-  seam_voicebank seam_formats seam_domain seam_core seam_voice_design seam_voicebank_production seam_authoring_runtime)
+  seam_voicebank seam_formats seam_domain seam_core seam_voice_design seam_voicebank_production seam_authoring_runtime seam_neural_synthesis)
 seam_apply_compiler_options(seam_voicebank_cli)
 add_executable(seam_singer_pilot apps/seam-singer-pilot/main.cpp)
 target_link_libraries(seam_singer_pilot PRIVATE seam_authoring_runtime)
@@ -1309,6 +1310,9 @@ if(SEAM_BUILD_TESTS)
   add_executable(seam_renderer_capability_tests
     tests/test_main.cpp tests/test_renderer_capabilities.cpp)
   add_executable(seam_neural_worker_probe tests/helpers/neural_worker_probe.cpp)
+  add_executable(seam_neural_bundle_transport_probe tests/helpers/neural_bundle_transport_probe.cpp)
+  target_link_libraries(seam_neural_bundle_transport_probe PRIVATE seam_neural_synthesis)
+  seam_apply_compiler_options(seam_neural_bundle_transport_probe)
   add_executable(seam_reading_process_probe tests/helpers/reading_process_probe.cpp)
   add_executable(seam_reading_capture_process_probe tests/helpers/reading_capture_process_probe.cpp)
   seam_apply_compiler_options(seam_reading_capture_process_probe)
@@ -1365,6 +1369,9 @@ if(SEAM_BUILD_TESTS)
   target_link_libraries(seam_neural_worker_probe PRIVATE seam_neural_synthesis)
   seam_apply_compiler_options(seam_neural_worker_probe)
   add_dependencies(seam_neural_worker_protocol_tests seam_neural_worker_probe)
+  add_dependencies(seam_neural_worker_protocol_tests seam_neural_bundle_transport_probe)
+  target_compile_definitions(seam_neural_worker_protocol_tests PRIVATE
+    SEAM_NEURAL_BUNDLE_TRANSPORT_PROBE="$<TARGET_FILE:seam_neural_bundle_transport_probe>")
   target_compile_definitions(seam_neural_worker_protocol_tests PRIVATE
     SEAM_NEURAL_WORKER_PROBE="$<TARGET_FILE:seam_neural_worker_probe>")
   target_include_directories(seam_phoneme_timing_tests PRIVATE tests)
@@ -1861,6 +1868,9 @@ if(SEAM_BUILD_TESTS)
     SEAM_NEURAL_WORKER_PROBE="$<TARGET_FILE:seam_neural_worker_probe>")
   add_dependencies(seam_tests seam_reading_capture_process_probe)
   add_dependencies(seam_tests seam_neural_worker_probe)
+  add_dependencies(seam_tests seam_neural_bundle_transport_probe)
+  target_compile_definitions(seam_tests PRIVATE
+    SEAM_NEURAL_BUNDLE_TRANSPORT_PROBE="$<TARGET_FILE:seam_neural_bundle_transport_probe>")
   target_link_libraries(seam_tests PRIVATE
     seam_distribution seam_editor_inspection seam_rendering seam_synthesis seam_voicebank_production seam_voicebank seam_editor_ui seam_phonemizer seam_formats
     seam_playback_platform seam_platform seam_authoring_runtime seam_application seam_domain seam_text seam_interchange seam_neural_synthesis seam_clap seam_core)

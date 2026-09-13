@@ -4,6 +4,7 @@ import unittest
 from onnx import TensorProto as T, helper
 
 from inspect_pair import inspect_pair
+from check_paired_runtime import graphs
 
 
 def fixture(acoustic=True, layout="BTF"):
@@ -82,6 +83,24 @@ class PairTests(unittest.TestCase):
                         {"bins": 512, "hop_size": 1, "maximum_sample_frames": 4194304}):
             with self.assertRaises(ValueError):
                 self.inspect(**options)
+
+    def test_explicit_openutau_steps_vector(self):
+        acoustic, vocoder = graphs(steps_layout="vector1")
+        args = dict(bins=80, layout="BTF", hop_size=256, maximum_sample_frames=48000)
+        with self.assertRaisesRegex(ValueError, "rank"):
+            inspect_pair(acoustic, vocoder, **args)
+        report = inspect_pair(acoustic, vocoder, steps_layout="vector1", **args)
+        self.assertEqual(report["contract"]["stepsLayout"], "vector1")
+        with self.assertRaisesRegex(ValueError, "steps layout"):
+            inspect_pair(acoustic, vocoder, steps_layout="guessed", **args)
+
+    def test_explicit_exporter_waveform_output(self):
+        acoustic, vocoder = graphs(vocoder_output="waveform")
+        args = dict(bins=80, layout="BTF", hop_size=256, maximum_sample_frames=48000)
+        with self.assertRaisesRegex(ValueError, "Unexpected outputs"):
+            inspect_pair(acoustic, vocoder, **args)
+        report = inspect_pair(acoustic, vocoder, vocoder_output="waveform", **args)
+        self.assertEqual(report["contract"]["vocoderOutput"], "waveform")
 
 
 if __name__ == "__main__":

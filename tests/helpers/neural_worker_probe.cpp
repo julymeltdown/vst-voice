@@ -10,6 +10,41 @@
 #include <thread>
 
 int main(int argc, char** argv) {
+  if (argc==6 && std::string_view{argv[1]}=="--seam-neural-deployment-load-probe") {
+    // Generated ephemeral key is test-only, never a release credential.
+    const std::string_view version{argv[5]};
+    if (version!="1" && version!="2") return 2;
+    std::string json; char byte{};
+    while (std::cin.get(byte)) {
+      if (json.size()>=16U*1024U) return 6;
+      json.push_back(byte);
+    }
+    if (!std::cin.eof()) return 7;
+    const auto key=seam::distribution::generateSigningKeyPair(); if (!key) return 10;
+    const auto signature=seam::distribution::signEd25519(
+        std::as_bytes(std::span{json.data(),json.size()}),key.value().privateKey);
+    if (!signature) return 11;
+    const auto verified=seam::neural_synthesis::VerifiedNeuralDeployment::verify(json,
+        signature.value(),key.value().publicKey,{argv[2],argv[3],argv[4],version=="1"?1U:2U});
+    if (!verified) return 12;
+    static const char anchor=0;
+    const auto loaded=verified.value().load(&anchor);
+    if (!loaded) return 13;
+    return loaded.value().protocolVersion==(version=="1"?1U:2U)?0:14;
+  }
+  if (argc==2 && std::string_view{argv[1]}=="--seam-convert-vocabulary-probe") {
+    std::string json;
+    char byte{};
+    while (std::cin.get(byte)) {
+      if (json.size()>=4U*1024U*1024U) return 6;
+      json.push_back(byte);
+    }
+    if (!std::cin.eof()) return 7;
+    const auto converted=seam::neural_synthesis::convertDiffSingerVocabulary(json);
+    if (!converted) {std::cerr<<converted.error().message; return 8;}
+    std::cout<<converted.value();
+    return std::cout?0:5;
+  }
   if (argc==6 && std::string_view{argv[1]}=="--seam-neural-package-load-probe") {
     static const char anchor=0;
     // Ephemeral signing is fixture setup only. Production must receive its

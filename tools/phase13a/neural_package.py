@@ -19,6 +19,61 @@ from tools.phase13a.payload_surfaces import PayloadPlatform, surface_matrix
 MAXIMUM_FILE_BYTES = 256 * 1024 * 1024
 
 
+def build_neural_deployment_descriptor(
+    package_root: Path, build_id: str, platform: PayloadPlatform, surface: str,
+    module: str, manifest_path: str, *, protocol_version: int = 1,
+) -> tuple[bytes, str]:
+    """Return unsigned canonical bytes for the release owner's detached signature.
+
+    Rebuild the package manifest from finalized files before binding its digest.
+    This does not certify a worker implementation or grant release approval.
+    """
+    if type(protocol_version) is not int or protocol_version not in (1, 2):
+        raise PayloadAssemblyError(("neural deployment protocol is unsupported",))
+    if (platform not in (PayloadPlatform.MACOS_ARM64, PayloadPlatform.WINDOWS_X64)
+            or surface not in {"standalone", "clap", "vst3", "auv2"}
+            or (surface == "auv2" and platform != PayloadPlatform.MACOS_ARM64)):
+        raise PayloadAssemblyError(("neural deployment platform or surface is unsupported",))
+    if (not manifest_path or len(manifest_path.encode("utf-8")) > 4096
+            or any(ord(c) < 32 or ord(c) == 127 for c in manifest_path)
+            or "\\" in manifest_path or ":" in manifest_path
+            or any(part in {"", ".", ".."} for part in manifest_path.split("/"))
+            or manifest_path == module):
+        raise PayloadAssemblyError(("neural deployment manifest path is invalid",))
+    root = require_real_directory(package_root, "neural package root")
+    path = require_payload_path(root, manifest_path)
+    if not path.is_file() or path.stat().st_size > 256 * 1024:
+        raise PayloadAssemblyError(("neural deployment manifest exceeds bounds",))
+    with path.open("rb") as stream:
+        raw = stream.read(256 * 1024 + 1)
+    if len(raw) > 256 * 1024:
+        raise PayloadAssemblyError(("neural deployment manifest exceeds bounds",))
+    try:
+        value = json.loads(raw)
+        if (value["buildId"] != build_id or value["module"]["path"] != module
+                or value["protocolVersion"] != protocol_version):
+            raise ValueError("package identity differs from deployment target")
+        expected, digest = build_neural_package_manifest(
+            root, build_id, module, value["helper"]["path"],
+            tuple(entry["path"] for entry in value["dependencies"]),
+            protocol_version=protocol_version)
+        if raw != expected:
+            raise ValueError("package manifest differs from finalized files")
+    except (ValueError, TypeError, KeyError, AttributeError, RecursionError) as error:
+        raise PayloadAssemblyError(("neural deployment package is invalid",)) from error
+    descriptor = dict(formatId="com.project-seam.neural-deployment",
+                      schemaVersion=protocol_version, buildId=build_id,
+                      platform=str(platform), surface=surface, modulePath=module,
+                      manifestPath=manifest_path, manifestSha256=digest)
+    if protocol_version == 2:
+        descriptor["protocolVersion"] = 2
+    encoded = (json.dumps(descriptor, ensure_ascii=False, sort_keys=True,
+                          separators=(",", ":")) + "\n").encode("utf-8")
+    if len(encoded) > 16 * 1024:
+        raise PayloadAssemblyError(("neural deployment descriptor exceeds bounds",))
+    return encoded, hashlib.sha256(encoded).hexdigest()
+
+
 def neural_package_inventory(payload: Path, platform: PayloadPlatform, build_id: str) -> list[dict[str, str]]:
     """Seal explicit absence or verified files; neither state grants release GO."""
     result: list[dict[str, str]] = []
@@ -53,7 +108,8 @@ def neural_package_inventory(payload: Path, platform: PayloadPlatform, build_id:
                 raise ValueError("module or build differs")
             expected, digest = build_neural_package_manifest(
                 payload / package, build_id, value["module"]["path"], value["helper"]["path"],
-                tuple(entry["path"] for entry in value["dependencies"]))
+                tuple(entry["path"] for entry in value["dependencies"]),
+                protocol_version=value["protocolVersion"])
             if raw != expected:
                 raise ValueError("manifest does not match finalized package bytes")
         except (ValueError, TypeError, KeyError, AttributeError, RecursionError) as error:
@@ -69,8 +125,11 @@ def build_neural_package_manifest(
     module: str,
     helper: str,
     dependencies: tuple[str, ...],
+    *, protocol_version: int = 1,
 ) -> tuple[bytes, str]:
-    """Return canonical schema-1 bytes and their digest, without writing files."""
+    """Seal an explicit launch version; this does not qualify the helper implementation."""
+    if type(protocol_version) is not int or protocol_version not in (1, 2):
+        raise PayloadAssemblyError(("neural package protocol version is unsupported",))
     if (not build_id or len(build_id.encode("utf-8")) > 256
             or any(ord(c) < 32 or ord(c) == 127 for c in build_id)
             or len(dependencies) > 64):
@@ -109,9 +168,9 @@ def build_neural_package_manifest(
 
     manifest = {
         "formatId": "com.project-seam.neural-helper-package",
-        "schemaVersion": 1,
+        "schemaVersion": protocol_version,
         "buildId": build_id,
-        "protocolVersion": 1,
+        "protocolVersion": protocol_version,
         "module": entry(module),
         "helper": entry(helper),
         "dependencies": [entry(name) for name in dependencies],

@@ -222,6 +222,9 @@ core::Result<void> PhoneticConditioning::validate(std::uint64_t frameCount,
 }
 
 core::Result<void> NeuralRequest::validate(const WorkerProtocolLimits& limits) const {
+  if (!bundleContentHash.empty() && (!conditioning ||
+      !validHash(bundleContentHash,limits.maximumHashBytes) || bundleContentHash!=modelContentHash))
+    return core::failure(core::ErrorCode::InvalidArgument,"Neural bundle request requires conditioned matching bundle identity");
   if (requestId == 0U || !validText(modelId, limits.maximumModelIdBytes) ||
       !validText(modelVersion, limits.maximumModelIdBytes) ||
       !validHash(modelContentHash, limits.maximumHashBytes) ||
@@ -239,6 +242,9 @@ core::Result<void> NeuralRequest::validate(const WorkerProtocolLimits& limits) c
 }
 
 core::Result<void> NeuralResponse::validate(const WorkerProtocolLimits& limits) const {
+  if (!bundleContentHash.empty() && (requestContentHash.empty() ||
+      !validHash(bundleContentHash,limits.maximumHashBytes) || bundleContentHash!=modelContentHash))
+    return core::failure(core::ErrorCode::InvalidArgument,"Neural bundle response requires request and matching bundle identity");
   if (!requestContentHash.empty() && !validHash(requestContentHash,limits.maximumHashBytes))
     return core::failure(core::ErrorCode::InvalidArgument,"Neural response request hash is invalid");
   if (requestId == 0U || !validText(backendId, limits.maximumModelIdBytes) ||
@@ -257,6 +263,10 @@ core::Result<std::vector<std::byte>> encodeRequest(const NeuralRequest& request,
                                                    WorkerProtocolLimits limits) {
   const auto valid = request.validate(limits); if (!valid) return core::Result<std::vector<std::byte>>{valid.error()};
   Object metadata{{"kind", request.conditioning?"seam-neural-request-v2":"seam-neural-request-v1"}, {"requestId", JsonValue{static_cast<std::int64_t>(request.requestId)}}, {"modelId", request.modelId}, {"modelVersion", request.modelVersion}, {"modelContentHash", request.modelContentHash}, {"pronunciationHash", request.pronunciationHash}, {"sampleRate", JsonValue{static_cast<std::int64_t>(request.sampleRate)}}, {"channels", JsonValue{static_cast<std::int64_t>(request.channels)}}, {"frameCount", JsonValue{static_cast<std::int64_t>(request.frameCount)}}, {"featureKind", request.conditioning?"f0-dynamics-phonemes":"f0-dynamics"}};
+  if (!request.bundleContentHash.empty()) {
+    metadata["kind"]="seam-neural-request-v3";
+    metadata.emplace("bundleContentHash",request.bundleContentHash);
+  }
   if (request.conditioning) {
     JsonValue::Array spans;
     for (const auto& span:request.conditioning->spans) spans.emplace_back(Object{
@@ -276,9 +286,10 @@ core::Result<NeuralRequest> decodeRequest(std::span<const std::byte> frame,
   const auto decoded = decodeFrame(frame, kRequestType, limits); if (!decoded) return core::Result<NeuralRequest>{decoded.error()};
   const auto& metadata = decoded.value().metadata;
   const auto kind = requiredString(metadata, "kind", 64U);
-  if (!kind || (kind.value()!="seam-neural-request-v1" && kind.value()!="seam-neural-request-v2")) return core::failure<NeuralRequest>(core::ErrorCode::ParseError,"Neural request kind is invalid");
-  const bool conditioned=kind.value()=="seam-neural-request-v2";
-  if (!(conditioned?hasOnlyKeys(metadata,{"kind","requestId","modelId","modelVersion","modelContentHash","pronunciationHash","sampleRate","channels","frameCount","featureKind","vocabularyHash","vocabularySize","phonemes"}):hasOnlyKeys(metadata, {"kind", "requestId", "modelId", "modelVersion", "modelContentHash", "pronunciationHash", "sampleRate", "channels", "frameCount", "featureKind"})))
+  if (!kind || (kind.value()!="seam-neural-request-v1" && kind.value()!="seam-neural-request-v2" && kind.value()!="seam-neural-request-v3")) return core::failure<NeuralRequest>(core::ErrorCode::ParseError,"Neural request kind is invalid");
+  const bool bundled=kind.value()=="seam-neural-request-v3";
+  const bool conditioned=bundled || kind.value()=="seam-neural-request-v2";
+  if (!(bundled?hasOnlyKeys(metadata,{"kind","requestId","modelId","modelVersion","modelContentHash","pronunciationHash","sampleRate","channels","frameCount","featureKind","vocabularyHash","vocabularySize","phonemes","bundleContentHash"}):conditioned?hasOnlyKeys(metadata,{"kind","requestId","modelId","modelVersion","modelContentHash","pronunciationHash","sampleRate","channels","frameCount","featureKind","vocabularyHash","vocabularySize","phonemes"}):hasOnlyKeys(metadata, {"kind", "requestId", "modelId", "modelVersion", "modelContentHash", "pronunciationHash", "sampleRate", "channels", "frameCount", "featureKind"})))
     return core::failure<NeuralRequest>(core::ErrorCode::ParseError, "Neural request metadata fields are unsupported");
   auto id = requiredUnsigned(metadata, "requestId", std::numeric_limits<std::uint64_t>::max()); if (!id) return core::Result<NeuralRequest>{id.error()};
   auto model = requiredString(metadata, "modelId", limits.maximumModelIdBytes); if (!model) return core::Result<NeuralRequest>{model.error()};
@@ -311,6 +322,12 @@ core::Result<NeuralRequest> decodeRequest(std::span<const std::byte> frame,
   const auto values = decodeFloats(decoded.value().payload, frames.value() * 2U); if (!values) return core::Result<NeuralRequest>{values.error()};
   NeuralRequest result{.requestId = id.value(), .modelId = std::move(model).value(), .modelVersion = std::move(version).value(), .modelContentHash = std::move(modelHash).value(), .pronunciationHash = std::move(pronunciation).value(), .sampleRate = rate.value(), .channels = channels.value(), .frameCount = frames.value(), .f0Hz = {}, .dynamics = {}};
   result.conditioning=std::move(conditioning); result.vocabularySize=vocabularySize;
+  if (bundled) {
+    const auto hash=requiredString(metadata,"bundleContentHash",limits.maximumHashBytes);
+    if (!hash || !validHash(hash.value(),limits.maximumHashBytes))
+      return core::failure<NeuralRequest>(core::ErrorCode::ParseError,"Neural bundle request identity is invalid");
+    result.bundleContentHash=hash.value();
+  }
   result.f0Hz.assign(values.value().begin(), values.value().begin() + static_cast<std::ptrdiff_t>(frames.value()));
   result.dynamics.assign(values.value().begin() + static_cast<std::ptrdiff_t>(frames.value()), values.value().end());
   const auto valid = result.validate(limits); if (!valid) return core::Result<NeuralRequest>{valid.error()};
@@ -322,6 +339,10 @@ core::Result<std::vector<std::byte>> encodeResponse(const NeuralResponse& respon
   const auto valid = response.validate(limits); if (!valid) return core::Result<std::vector<std::byte>>{valid.error()};
   Object metadata{{"kind", response.requestContentHash.empty()?"seam-neural-response-v1":"seam-neural-response-v2"}, {"requestId", JsonValue{static_cast<std::int64_t>(response.requestId)}}, {"backendId", response.backendId}, {"modelContentHash", response.modelContentHash}, {"sampleRate", JsonValue{static_cast<std::int64_t>(response.sampleRate)}}, {"channels", JsonValue{static_cast<std::int64_t>(response.channels)}}, {"frameCount", JsonValue{static_cast<std::int64_t>(response.frameCount)}}};
   if (!response.requestContentHash.empty()) metadata.emplace("requestContentHash",response.requestContentHash);
+  if (!response.bundleContentHash.empty()) {
+    metadata["kind"]="seam-neural-response-v3";
+    metadata.emplace("bundleContentHash",response.bundleContentHash);
+  }
   return encodeFrame(kResponseType, metadata, response.pcm, limits);
 }
 
@@ -330,9 +351,10 @@ core::Result<NeuralResponse> decodeResponse(std::span<const std::byte> frame,
   const auto decoded = decodeFrame(frame, kResponseType, limits); if (!decoded) return core::Result<NeuralResponse>{decoded.error()};
   const auto& metadata = decoded.value().metadata;
   const auto kind = requiredString(metadata, "kind", 64U);
-  if (!kind || (kind.value()!="seam-neural-response-v1" && kind.value()!="seam-neural-response-v2")) return core::failure<NeuralResponse>(core::ErrorCode::ParseError,"Neural response kind is invalid");
-  const bool bound=kind.value()=="seam-neural-response-v2";
-  if (!(bound?hasOnlyKeys(metadata,{"kind","requestId","backendId","modelContentHash","sampleRate","channels","frameCount","requestContentHash"}):hasOnlyKeys(metadata, {"kind", "requestId", "backendId", "modelContentHash", "sampleRate", "channels", "frameCount"})))
+  if (!kind || (kind.value()!="seam-neural-response-v1" && kind.value()!="seam-neural-response-v2" && kind.value()!="seam-neural-response-v3")) return core::failure<NeuralResponse>(core::ErrorCode::ParseError,"Neural response kind is invalid");
+  const bool bundled=kind.value()=="seam-neural-response-v3";
+  const bool bound=bundled || kind.value()=="seam-neural-response-v2";
+  if (!(bundled?hasOnlyKeys(metadata,{"kind","requestId","backendId","modelContentHash","sampleRate","channels","frameCount","requestContentHash","bundleContentHash"}):bound?hasOnlyKeys(metadata,{"kind","requestId","backendId","modelContentHash","sampleRate","channels","frameCount","requestContentHash"}):hasOnlyKeys(metadata, {"kind", "requestId", "backendId", "modelContentHash", "sampleRate", "channels", "frameCount"})))
     return core::failure<NeuralResponse>(core::ErrorCode::ParseError, "Neural response metadata fields are unsupported");
   std::string requestHash;
   if (bound) {
@@ -349,6 +371,12 @@ core::Result<NeuralResponse> decodeResponse(std::span<const std::byte> frame,
   const auto values = decodeFloats(decoded.value().payload, frames.value() * channels.value()); if (!values) return core::Result<NeuralResponse>{values.error()};
   NeuralResponse result{.requestId = id.value(), .backendId = std::move(backend).value(), .modelContentHash = std::move(hash).value(), .sampleRate = rate.value(), .channels = channels.value(), .frameCount = frames.value(), .pcm = std::move(values).value()};
   result.requestContentHash=std::move(requestHash);
+  if (bundled) {
+    const auto bundle=requiredString(metadata,"bundleContentHash",limits.maximumHashBytes);
+    if (!bundle || !validHash(bundle.value(),limits.maximumHashBytes))
+      return core::failure<NeuralResponse>(core::ErrorCode::ParseError,"Neural bundle response identity is invalid");
+    result.bundleContentHash=bundle.value();
+  }
   const auto valid = result.validate(limits); if (!valid) return core::Result<NeuralResponse>{valid.error()};
   return result;
 }

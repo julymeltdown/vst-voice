@@ -67,6 +67,76 @@ graphs before the positive inference runs.
 
 ### Proposed paired export profile
 
+`convert_vocabulary.py EXPORTED.phonemes.json` converts the pinned exporter's
+phone-to-ID map to SEAM vocabulary v2 on stdout, preserving every positive ID
+and merged alias. Padding is reserved at zero. Gaps, duplicate JSON keys,
+invalid token names and invalid IDs are rejected; the converter never renumbers
+or modifies the source file. Canonical names within alias groups are chosen
+deterministically without changing lookup IDs. This is vocabulary conversion,
+not language-ID conditioning, acoustic model admission or rights approval.
+
+Native bank-preparation command (no Python or ONNX Runtime required):
+
+```text
+seam_voicebank_cli convert-neural-vocabulary SOURCE_JSON SOURCE_SHA256 NEW_OUTPUT_JSON
+```
+
+The command verifies the exact source digest before conversion, publishes a
+new output file without overwriting an existing one, and reports source/output
+hashes with status `CONVERTED_UNAPPROVED`. It does not install a bank, approve
+source rights or claim that a model is executable.
+
+`seam_voicebank_cli inspect-neural-bundle DIRECTORY MODEL_ID MODEL_VERSION MANIFEST_SHA256 MAX_PAYLOAD_BYTES`
+loads declared assets and inspects metadata without executing graphs. It reports
+`METADATA_INSPECTED_ONLY`, hashes, vocabulary size, clock and configuration
+version, with `executionAdmitted` and `releaseEligible` both false. Use an
+explicit payload budget no greater than 512 MiB; this is not an RSS limit.
+
+`seam_voicebank_cli prepare-neural-bundle DIRECTORY MODEL_ID MODEL_VERSION MAX_PAYLOAD_BYTES`
+prepares a directory containing four regular files named `acoustic`, `vocoder`,
+`vocabulary`, `configuration`. It validates frozen metadata, creates a new
+canonical `manifest.json`, then reloads declared bytes for verification. It
+reports `DATA_BUNDLE_PREPARED_UNAPPROVED`, not executable admission. Existing
+manifests are never replaced. Keep assets unchanged during preparation; if the
+post-publication reload fails, the new manifest remains for diagnosis. This is
+not a multi-file transaction or graph-format/rights approval.
+
+The Python converter matches native `convertDiffSingerVocabulary` serialization
+(two-space indentation and final newline). Verify byte parity with:
+`build/neural-runtime/fixture-env/bin/python tools/neural_runtime/check_vocabulary_parity.py build/release/seam_neural_worker_probe`.
+Earlier compact Python conversions have different hashes; do not reuse their
+manifests when regenerating vocabulary bytes.
+
+Configuration v3 adds required `vocoderOutput` (`audio`/`waveform`), binding the
+actual graph output name in both offline inspection and native paired execution.
+Earlier configurations retain legacy audio semantics. This supersedes the
+pending output-name binding described in older source-review notes below.
+
+Exporter source inspected at openvpi/DiffSinger revision
+`336cf01b57f2ad44c6b37a79cf33993043291759`: NSF-HiFiGAN exports `waveform`.
+Pair inspection accepts explicit `vocoder_output="audio"` (legacy default) or
+`"waveform"` and binds the name. Native trusted-fixture execution supports both;
+the vector1 dynamic case now uses `waveform`. Bundle output-name configuration
+binding remains pending; its wrapper still defaults to `audio`. Neither the
+source checkout nor this interface match supplies trained weights or their rights.
+
+Bundle configuration version 2 now binds `stepsLayout` (`scalar`/`vector1`)
+and requires `fftSize`, `windowSize`, `melFrequencyScale` (`slaney`/`htk`) in
+each feature declaration. Native and offline readers enforce matching values;
+offline bundle inspection passes the configured steps rank to pair inspection.
+Version 1 is retained as legacy metadata with unspecified spectral fields.
+This supersedes the missing-field limitation recorded in the source review
+below; declarations alone still do not prove the graph implements them.
+
+Source correction: OpenUtau checkout `8c0dc4007e6e8c8181f3a12c10205671800eeb8b`
+uses int64 `[1]` steps for continuous acceleration. `inspect_pair` now takes
+explicit `steps_layout="scalar"` (legacy fixture default) or `"vector1"` and
+binds the choice in its contract hash. Native fixture execution checks and uses
+the actual input rank; both layouts are exercised. This does not yet extend
+bundle configuration or support speedup/depth/variance conditioning. FFT size,
+window size and mel-frequency scale also remain missing configuration fields
+identified by this source review; current compatibility is incomplete.
+
 `inspect_pair.inspect_pair` consumes actual acoustic/vocoder bytes and explicit
 `bins`, `layout`, `hop_size`, and `maximum_sample_frames` parameters. It invokes
 graph inspection itself; caller-supplied inspection reports are not trusted.
@@ -92,6 +162,27 @@ configuration binding still require production validation. Static declarations
 alone cannot establish these properties.
 
 ### Native paired-profile execution experiment
+
+The complete trusted-fixture disk handoff can be run with:
+
+```sh
+build/neural-runtime/fixture-env/bin/python tools/neural_runtime/check_bundle_runtime.py build/release/seam_voicebank_cli build/release/seam_onnx_runtime_probe
+```
+
+This uses CLI vocabulary conversion and manifest preparation, offline bundle
+inspection, then `--paired-bundle DIRECTORY MODEL_ID VERSION MANIFEST_SHA256`
+in a separate native process. That process reloads and freezes actual bytes
+before constructing sessions. A same-length vocoder mutation after inspection
+is rejected on child loading. The mode is restricted by documentation to
+trusted arithmetic fixtures; it is not the signed production worker protocol,
+pre-session graph admission or an arbitrary-bank execution command.
+
+The native paired experiment now authors v2 metadata. Scalar steps are the
+default; `--steps-vector1` explicitly declares `[1]`. The actual graph rank must
+match that frozen declaration before `Run`. The paired test executes both
+layouts and rejects the opposite declaration for the same graph. This replaces
+the earlier rank-selection experiment and v1 fixture configuration; it is not
+production admission or proof of FFT/mel numerical semantics in learned graphs.
 
 Offline `inspect_bundle.inspect_bundle` accepts manifest bytes, a name-to-bytes
 asset map and the expected manifest digest. It verifies immutable asset lengths
@@ -142,3 +233,20 @@ This is not yet connected to the normal song backend or production worker.
 The graph weights are arithmetic constants, not
 learned voice weights. Production worker admission, cancellation, bounded
 runtime allocations, real model inference and musical evaluation remain open.
+# External request experiment
+
+The fixture probe accepts legacy conditioned metadata v2 and bundle-conditioned
+v3. V3 explicitly binds `bundleContentHash` to the frozen manifest/model identity
+and returns response v3 with both bundle and canonical request hashes. SNW1 binary
+framing stays version 1. The ordinary legacy worker launcher deliberately refuses
+v3 until the distinct production v2 launch/deployment contract is implemented.
+
+`seam_onnx_runtime_probe --paired-request DIRECTORY MODEL_ID VERSION MANIFEST_SHA256`
+accepts one bounded SNW1 request on stdin (EOF required) and emits a binary
+request-bound response on stdout. It reloads the frozen bundle and validates
+request identity and vocabulary/timing preparation before creating graph sessions.
+This remains a trusted arithmetic-fixture experiment, not production graph
+admission, a signed worker, or evidence of learned singing quality.
+`check_bundle_runtime.py` exercises pitch/dynamics changes, exact output length,
+PCM values, canonical request hashes, malformed frames, wrong model identity,
+and changed bundle bytes. Runtime cancellation and production isolation remain open.

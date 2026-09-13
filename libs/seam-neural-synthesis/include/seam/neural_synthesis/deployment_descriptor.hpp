@@ -9,6 +9,7 @@ struct NeuralDeploymentTarget final {
   std::string_view buildId;
   std::string_view platform;
   std::string_view surface;
+  std::uint32_t protocolVersion{1U};
 };
 
 // Constructible only by validating a detached signature and the loaded surface's
@@ -31,6 +32,7 @@ private:
   std::string manifestHash_;
   std::string buildId_;
   std::string contentHash_;
+  std::uint32_t protocolVersion_{1U};
 };
 
 }  // namespace seam::neural_synthesis

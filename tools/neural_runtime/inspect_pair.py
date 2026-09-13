@@ -12,7 +12,12 @@ from inspect_graph import MAX_ELEMENTS, inspect_bytes
 
 
 def inspect_pair(acoustic_bytes: bytes, vocoder_bytes: bytes, *, bins: int,
-                 layout: str, hop_size: int, maximum_sample_frames: int) -> dict:
+                 layout: str, hop_size: int, maximum_sample_frames: int,
+                 steps_layout: str = "scalar", vocoder_output: str = "audio") -> dict:
+    if vocoder_output not in ("audio", "waveform"):
+        raise ValueError("Unsupported vocoder output name")
+    if steps_layout not in ("scalar", "vector1"):
+        raise ValueError("Unsupported steps layout")
     for name, value, maximum in (("bins", bins, 512), ("hop_size", hop_size, 8192),
                                  ("maximum_sample_frames", maximum_sample_frames, 4194304)):
         if type(value) is not int or not 1 <= value <= maximum:
@@ -57,18 +62,20 @@ def inspect_pair(acoustic_bytes: bytes, vocoder_bytes: bytes, *, bins: int,
     frame_axis = sequence(inputs["f0"], TensorProto.FLOAT)
     if frame_axis == token_axis or mel(outputs["mel"]) != frame_axis:
         raise ValueError("Acoustic time axes disagree")
-    tensor(inputs["steps"], TensorProto.INT64, 0)
+    steps_shape = tensor(inputs["steps"], TensorProto.INT64, 0 if steps_layout == "scalar" else 1)
+    if steps_layout == "vector1" and steps_shape != [1]:
+        raise ValueError("Steps vector must contain one value")
 
     inputs = tensors(vocoder, "inputs", ("mel", "f0"))
-    outputs = tensors(vocoder, "outputs", ("audio",))
+    outputs = tensors(vocoder, "outputs", (vocoder_output,))
     # Symbol spellings are scoped to each graph, not shared across files.
     vocoder_axis = mel(inputs["mel"])
     if sequence(inputs["f0"], TensorProto.FLOAT) != vocoder_axis:
         raise ValueError("Vocoder conditioning axes disagree")
-    if sequence(outputs["audio"], TensorProto.FLOAT) == vocoder_axis:
+    if sequence(outputs[vocoder_output], TensorProto.FLOAT) == vocoder_axis:
         raise ValueError("Audio samples cannot reuse the mel-frame axis")
 
-    contract = {"profile": "seam-acoustic-vocoder-v1", "acousticHash": acoustic["sha256"],
+    contract = {"profile": "seam-acoustic-vocoder-v1", "stepsLayout": steps_layout, "vocoderOutput": vocoder_output, "acousticHash": acoustic["sha256"],
                 "vocoderHash": vocoder["sha256"], "bins": bins, "layout": layout,
                 "hopSize": hop_size, "maximumSampleFrames": maximum_sample_frames,
                 "maximumMelFrames": frames, "maximumMelElements": frames * bins}

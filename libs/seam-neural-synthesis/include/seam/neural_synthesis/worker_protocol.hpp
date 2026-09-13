@@ -50,6 +50,9 @@ struct NeuralRequest final {
   std::vector<float> dynamics;
   std::optional<PhoneticConditioning> conditioning{};
   std::uint32_t vocabularySize{0U};
+  // Nonempty selects metadata v3. Identity of the canonical frozen bundle;
+  // v1/v2 retain their original semantics and cannot carry this field.
+  std::string bundleContentHash{};
 
   [[nodiscard]] core::Result<void> validate(
       const WorkerProtocolLimits& limits = {}) const;
@@ -66,6 +69,7 @@ struct NeuralResponse final {
   std::vector<float> pcm;
   // SHA-256 of the complete canonical request frame; required for conditioned responses.
   std::string requestContentHash{};
+  std::string bundleContentHash{};
 
   [[nodiscard]] core::Result<void> validate(
       const WorkerProtocolLimits& limits = {}) const;

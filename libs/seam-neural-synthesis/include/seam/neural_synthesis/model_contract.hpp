@@ -12,6 +12,10 @@
 
 namespace seam::neural_synthesis {
 
+// Data-only importer for the pinned DiffSinger phone-to-ID JSON format.
+// Preserves trained positive IDs and merged aliases; never fills ID gaps.
+[[nodiscard]] core::Result<std::string> convertDiffSingerVocabulary(std::string_view json);
+
 struct ModelContract final {
   std::string modelId;
   std::string modelVersion;
@@ -42,11 +46,12 @@ public:
       std::span<const domain::PhonemeToken> phones,std::span<const synthesis::PhonemeTimingAnchor> timing,
       time::SampleFrame origin,time::SampleFrame end,std::string_view silencePhone,
       const WorkerProtocolLimits& limits = {}) const;
-  [[nodiscard]] std::uint32_t size() const noexcept { return static_cast<std::uint32_t>(tokens_.size()); }
+  [[nodiscard]] std::uint32_t size() const noexcept { return vocabularySize_; }
   [[nodiscard]] const std::string& contentHash() const noexcept { return contentHash_; }
 private:
   NeuralVocabulary() = default;
   std::string contentHash_;
+  std::uint32_t vocabularySize_{0};
   std::map<std::string,std::uint32_t,std::less<>> tokens_;
 };
 

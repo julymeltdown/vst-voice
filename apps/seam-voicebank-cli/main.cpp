@@ -9,6 +9,9 @@
 #include "seam/voicebank_production/repository.hpp"
 #include "seam/voicebank_production/project_codec.hpp"
 #include "seam/core/sha256.hpp"
+#include "seam/core/file_io.hpp"
+#include "seam/neural_synthesis/model_contract.hpp"
+#include "seam/neural_synthesis/bundle_metadata.hpp"
 #include "seam/authoring/export_service.hpp"
 #include "seam/authoring/generation_job.hpp"
 #include "signal_cancellation.hpp"
@@ -18,6 +21,7 @@
 #include <charconv>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <filesystem>
 #include <fstream>
@@ -528,6 +532,9 @@ void printUsage() {
       << "  seam_voicebank_cli validate MANIFEST [BANK_ROOT]\n"
       << "  seam_voicebank_cli inspect MANIFEST\n"
       << "  seam_voicebank_cli inspect-wav WAV\n"
+      << "  seam_voicebank_cli convert-neural-vocabulary SOURCE_JSON SOURCE_SHA256 NEW_OUTPUT_JSON\n"
+      << "  seam_voicebank_cli inspect-neural-bundle DIRECTORY MODEL_ID MODEL_VERSION MANIFEST_SHA256 MAX_PAYLOAD_BYTES\n"
+      << "  seam_voicebank_cli prepare-neural-bundle DIRECTORY MODEL_ID MODEL_VERSION MAX_PAYLOAD_BYTES\n"
       << "  seam_voicebank_cli analyze WAV OUTPUT_DIRECTORY\n"
       << "  seam_voicebank_cli bake-project PROJECT OUTPUT_DIRECTORY [SAMPLE_RATE]\n"
       << "  seam_voicebank_cli run-generation JOB_DIRECTORY MANIFEST_SHA256\n"
@@ -547,6 +554,85 @@ void printUsage() {
 }  // namespace
 
 int main(int argc, char** argv) {
+  if (argc>=2 && std::string_view{argv[1]}=="prepare-neural-bundle") {
+    if (argc!=6) {std::cerr<<"prepare-neural-bundle requires DIRECTORY MODEL_ID MODEL_VERSION MAX_PAYLOAD_BYTES\n"; return 1;}
+    const std::string_view limitText{argv[5]}; std::size_t limit=0;
+    const auto [end,error]=std::from_chars(limitText.data(),limitText.data()+limitText.size(),limit);
+    if (error!=std::errc{} || end!=limitText.data()+limitText.size() || limit==0 || limit>512U*1024U*1024U) {
+      std::cerr<<"Invalid payload limit\n"; return 1;
+    }
+    std::error_code ec;
+    const auto root=std::filesystem::canonical(argv[2],ec);
+    if (ec || !std::filesystem::is_directory(root,ec) || ec) {std::cerr<<"Bundle directory is unavailable\n"; return 1;}
+    std::vector<std::vector<std::byte>> owned; owned.reserve(4);
+    std::vector<seam::synthesis::NeuralBundleAssetInput> inputs; inputs.reserve(4);
+    const std::array names{"acoustic","vocoder","vocabulary","configuration"};
+    std::size_t total=0;
+    for (std::size_t index=0;index<names.size();++index) {
+      const auto path=root/names[index];
+      const auto status=std::filesystem::symlink_status(path,ec);
+      if (ec || !std::filesystem::is_regular_file(status) || total>=limit) {std::cerr<<"Missing regular asset or exhausted payload budget\n"; return 1;}
+      const auto perAsset=index>=2?4U*1024U*1024U:256U*1024U*1024U;
+      auto bytes=seam::core::readFileBytesLimited(path,std::min<std::size_t>(perAsset,limit-total));
+      if (!bytes) {printError(bytes.error()); return 1;}
+      total+=bytes.value().size(); owned.push_back(std::move(bytes.value()));
+      inputs.push_back({static_cast<seam::synthesis::NeuralAssetRole>(index),names[index],owned.back(),seam::core::sha256Hex(owned.back())});
+    }
+    const auto manifest=seam::synthesis::FrozenNeuralBundle::manifest(inputs,limit);
+    if (!manifest) {printError(manifest.error()); return 1;}
+    const seam::domain::SingerResourceIdentity identity{seam::domain::SingerResourceKind::Neural,argv[3],argv[4],seam::core::sha256Hex(manifest.value())};
+    const auto bundle=seam::synthesis::FrozenNeuralBundle::freeze(identity,inputs,limit);
+    if (!bundle) {printError(bundle.error()); return 1;}
+    const auto metadata=seam::neural_synthesis::inspectNeuralBundleMetadata(bundle.value());
+    if (!metadata) {printError(metadata.error()); return 1;}
+    const auto written=seam::core::durableAtomicWriteTextNew(root/"manifest.json",manifest.value());
+    if (!written) {printError(written.error()); return 1;}
+    const auto verified=seam::neural_synthesis::loadNeuralBundleDirectory(root,identity,limit);
+    if (!verified) {printError(verified.error()); return 1;}
+    using J=seam::formats::JsonValue;
+    std::cout<<seam::formats::stringifyJson(J{J::Object{{"status","DATA_BUNDLE_PREPARED_UNAPPROVED"},
+        {"manifestSha256",identity.contentHash},{"executionAdmitted",false},{"releaseEligible",false}}});
+    return std::cout?0:1;
+  }
+  if (argc>=2 && std::string_view{argv[1]}=="inspect-neural-bundle") {
+    if (argc!=7) {std::cerr<<"inspect-neural-bundle requires DIRECTORY MODEL_ID MODEL_VERSION MANIFEST_SHA256 MAX_PAYLOAD_BYTES\n"; return 1;}
+    const std::string_view limitText{argv[6]}; std::size_t limit=0;
+    const auto [end,error]=std::from_chars(limitText.data(),limitText.data()+limitText.size(),limit);
+    if (error!=std::errc{} || end!=limitText.data()+limitText.size() || limit==0) {std::cerr<<"Invalid payload limit\n"; return 1;}
+    const auto bundle=seam::neural_synthesis::loadNeuralBundleDirectory(argv[2],
+        {seam::domain::SingerResourceKind::Neural,argv[3],argv[4],argv[5]},limit);
+    if (!bundle) {printError(bundle.error()); return 1;}
+    const auto metadata=seam::neural_synthesis::inspectNeuralBundleMetadata(bundle.value());
+    if (!metadata) {printError(metadata.error()); return 1;}
+    using J=seam::formats::JsonValue;
+    std::cout<<seam::formats::stringifyJson(J{J::Object{{"status","METADATA_INSPECTED_ONLY"},
+        {"modelId",metadata.value().model.modelId},{"modelVersion",metadata.value().model.modelVersion},
+        {"manifestSha256",bundle.value().identity().contentHash},{"vocabularySha256",metadata.value().model.vocabularyHash},
+        {"vocabularySize",static_cast<std::int64_t>(metadata.value().vocabulary.size())},
+        {"configurationVersion",static_cast<std::int64_t>(metadata.value().configurationVersion)},
+        {"assetCount",static_cast<std::int64_t>(bundle.value().assets().size())},
+        {"sampleRate",static_cast<std::int64_t>(metadata.value().model.sampleRate)},
+        {"hopSize",static_cast<std::int64_t>(metadata.value().model.hopSize)},
+        {"stepsLayout",metadata.value().stepsLayout},{"vocoderOutput",metadata.value().vocoderOutput},
+        {"executionAdmitted",false},{"releaseEligible",false}}});
+    return std::cout?0:1;
+  }
+  if (argc>=2 && std::string_view{argv[1]}=="convert-neural-vocabulary") {
+    if (argc!=5) {std::cerr<<"convert-neural-vocabulary requires SOURCE_JSON SOURCE_SHA256 NEW_OUTPUT_JSON\n"; return 1;}
+    const auto source=seam::core::readTextFileLimited(argv[2],4U*1024U*1024U);
+    if (!source) {printError(source.error()); return 1;}
+    const auto sourceHash=seam::core::sha256Hex(source.value());
+    if (sourceHash!=argv[3]) {std::cerr<<"Source vocabulary digest mismatch\n"; return 1;}
+    const auto converted=seam::neural_synthesis::convertDiffSingerVocabulary(source.value());
+    if (!converted) {printError(converted.error()); return 1;}
+    const auto written=seam::core::durableAtomicWriteTextNew(argv[4],converted.value());
+    if (!written) {printError(written.error()); return 1;}
+    using J=seam::formats::JsonValue;
+    std::cout<<seam::formats::stringifyJson(J{J::Object{{"status","CONVERTED_UNAPPROVED"},
+        {"sourceSha256",sourceHash},{"vocabularySha256",seam::core::sha256Hex(converted.value())},
+        {"releaseEligible",false}}});
+    return std::cout?0:1;
+  }
   if (argc < 2) {
     printUsage();
     return 1;

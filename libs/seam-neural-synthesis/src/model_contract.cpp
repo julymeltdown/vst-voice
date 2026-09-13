@@ -9,6 +9,39 @@
 
 namespace seam::neural_synthesis {
 
+core::Result<std::string> convertDiffSingerVocabulary(std::string_view json) {
+  const auto invalid=[] {return core::failure<std::string>(core::ErrorCode::InvalidArgument,
+      "DiffSinger vocabulary contains invalid names, IDs or gaps; IDs cannot be renumbered");};
+  const auto limits=formats::JsonParseLimits{.maximumInputBytes=4U*1024U*1024U,.maximumDepth=3U,
+      .maximumNodes=65544U,.maximumStringBytes=128U,.maximumCollectionEntries=65536U};
+  const auto parsed=formats::parseJson(json,limits);
+  if (!parsed) return core::Result<std::string>{parsed.error()};
+  if (!parsed.value().isObject() || parsed.value().asObject().empty()) return invalid();
+  std::map<std::uint32_t,std::vector<std::string>> groups;
+  for (const auto& [phone,id]:parsed.value().asObject()) {
+    if (phone.empty() || phone=="<PAD>" || !domain::fromUtf8(phone) ||
+        std::any_of(phone.begin(),phone.end(),[](unsigned char c){return c<32U || c==127U;}) ||
+        !id.isInteger() || id.asInt64()<1 || id.asInt64()>=65536) return invalid();
+    groups[static_cast<std::uint32_t>(id.asInt64())].push_back(phone);
+  }
+  using J=formats::JsonValue;
+  J::Array tokens{J{"<PAD>"}};
+  J::Object aliases;
+  std::uint32_t expected=1;
+  for (auto& [id,names]:groups) {
+    if (id!=expected++) return invalid();
+    std::sort(names.begin(),names.end());
+    tokens.emplace_back(names.front());
+    for (std::size_t index=1;index<names.size();++index)
+      aliases.emplace(names[index],J{static_cast<std::int64_t>(id)});
+  }
+  const auto encoded=formats::stringifyJson(J{J::Object{{"formatId","com.project-seam.neural-vocabulary"},
+      {"schemaVersion",std::int64_t{2}},{"tokens",std::move(tokens)},{"aliases",std::move(aliases)}}});
+  const auto checked=formats::parseJson(encoded,limits);
+  if (!checked) return core::Result<std::string>{checked.error()};
+  return encoded;
+}
+
 core::Result<NeuralVocabulary> NeuralVocabulary::decode(std::string_view json,const ModelContract& model) {
   const auto valid=model.validate(); if (!valid) return core::Result<NeuralVocabulary>{valid.error()};
   if (json.size()>4U*1024U*1024U) return core::failure<NeuralVocabulary>(core::ErrorCode::InvalidArgument,"Neural vocabulary exceeds its byte limit");
@@ -19,8 +52,11 @@ core::Result<NeuralVocabulary> NeuralVocabulary::decode(std::string_view json,co
   if (!decoded) return core::Result<NeuralVocabulary>{decoded.error()};
   const auto& root=decoded.value();
   const auto* format=root.find("formatId"); const auto* version=root.find("schemaVersion"); const auto* tokens=root.find("tokens");
-  if (!root.isObject() || root.asObject().size()!=3U || !format || !format->isString() ||
-      format->asString()!="com.project-seam.neural-vocabulary" || !version || !version->isInteger() || version->asInt64()!=1 ||
+  const bool aliased=version && version->isInteger() && version->asInt64()==2;
+  const auto* aliases=root.find("aliases");
+  if (!root.isObject() || root.asObject().size()!=(aliased?4U:3U) || !format || !format->isString() ||
+      format->asString()!="com.project-seam.neural-vocabulary" || !version || !version->isInteger() || (!aliased && version->asInt64()!=1) ||
+      (aliased && (!aliases || !aliases->isObject())) ||
       !tokens || !tokens->isArray() || tokens->asArray().empty())
     return core::failure<NeuralVocabulary>(core::ErrorCode::ParseError,"Neural vocabulary format is invalid");
   NeuralVocabulary result; result.contentHash_=hash;
@@ -31,6 +67,16 @@ core::Result<NeuralVocabulary> NeuralVocabulary::decode(std::string_view json,co
     const auto index=static_cast<std::uint32_t>(result.tokens_.size());
     if (!result.tokens_.emplace(token.asString(),index).second)
       return core::failure<NeuralVocabulary>(core::ErrorCode::InvalidArgument,"Neural vocabulary contains duplicate tokens");
+  }
+  result.vocabularySize_=static_cast<std::uint32_t>(result.tokens_.size());
+  if (aliased) {
+    for (const auto& [alias,id]:aliases->asObject()) {
+      if (alias.empty() || !domain::fromUtf8(alias) ||
+          std::any_of(alias.begin(),alias.end(),[](unsigned char c){return c<0x20U || c==0x7fU;}) ||
+          !id.isInteger() || id.asInt64()<1 || static_cast<std::uint64_t>(id.asInt64())>=result.vocabularySize_ ||
+          !result.tokens_.emplace(alias,static_cast<std::uint32_t>(id.asInt64())).second)
+        return core::failure<NeuralVocabulary>(core::ErrorCode::InvalidArgument,"Neural vocabulary alias is invalid or collides with a token");
+    }
   }
   return result;
 }

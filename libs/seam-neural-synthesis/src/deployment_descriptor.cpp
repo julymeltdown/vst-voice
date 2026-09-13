@@ -36,10 +36,10 @@ core::Result<VerifiedNeuralDeployment> VerifiedNeuralDeployment::verify(
   const auto verified=distribution::verifyEd25519(signedBytes,signature,trustedReleaseKey);
   if (!verified) return core::Result<Output>{verified.error()};
   const auto parsed=formats::parseJson(json,{.maximumInputBytes=16U*1024U,.maximumDepth=2U,
-      .maximumNodes=16U,.maximumStringBytes=4096U,.maximumCollectionEntries=8U});
+      .maximumNodes=16U,.maximumStringBytes=4096U,.maximumCollectionEntries=9U});
   if (!parsed) return core::Result<Output>{parsed.error()};
   const auto& root=parsed.value();
-  if (!root.isObject() || root.asObject().size()!=8U) return fail();
+  if (!root.isObject()) return fail();
   const auto get=[&](std::string_view key)->const std::string* {
     const auto* field=root.find(key);
     return field && field->isString()?&field->asString():nullptr;
@@ -48,7 +48,13 @@ core::Result<VerifiedNeuralDeployment> VerifiedNeuralDeployment::verify(
   const auto* build=get("buildId"); const auto* platform=get("platform");
   const auto* surface=get("surface"); const auto* module=get("modulePath");
   const auto* manifest=get("manifestPath"); const auto* hash=get("manifestSha256");
-  if (!format || *format!="com.project-seam.neural-deployment" || !version || !version->isInteger() || version->asInt64()!=1 ||
+  if (!version || !version->isInteger() || (version->asInt64()!=1 && version->asInt64()!=2)) return fail();
+  const auto launchVersion=static_cast<std::uint32_t>(version->asInt64());
+  const auto* protocol=root.find("protocolVersion");
+  if (launchVersion!=expected.protocolVersion ||
+      (launchVersion==1U && root.asObject().size()!=8U) ||
+      (launchVersion==2U && (root.asObject().size()!=9U || !protocol || !protocol->isInteger() || protocol->asInt64()!=2))) return fail();
+  if (!format || *format!="com.project-seam.neural-deployment" ||
       !build || !clean(*build) || build->size()>256U || *build!=expected.buildId ||
       !platform || (*platform!="macos-arm64" && *platform!="windows-x64") || *platform!=expected.platform ||
       !surface || (*surface!="standalone" && *surface!="clap" && *surface!="vst3" && *surface!="auv2") || *surface!=expected.surface ||
@@ -61,12 +67,17 @@ core::Result<VerifiedNeuralDeployment> VerifiedNeuralDeployment::verify(
   result.manifestHash_=*hash;
   result.buildId_=*build;
   result.contentHash_=core::sha256Hex(json);
+  result.protocolVersion_=launchVersion;
   return result;
 }
 
 core::Result<NeuralWorkerRunOptions> VerifiedNeuralDeployment::load(
     const void* moduleAnchor,std::stop_token stop) const {
-  return loadNeuralHelperForModule(moduleAnchor,modulePath_,manifestPath_,manifestHash_,buildId_,stop);
+  auto loaded=loadNeuralHelperForModule(moduleAnchor,modulePath_,manifestPath_,manifestHash_,buildId_,stop);
+  if (!loaded) return loaded;
+  if (loaded.value().protocolVersion!=protocolVersion_)
+    return core::failure<NeuralWorkerRunOptions>(core::ErrorCode::Conflict,"Neural deployment and helper launch versions differ");
+  return loaded;
 }
 
 }  // namespace seam::neural_synthesis

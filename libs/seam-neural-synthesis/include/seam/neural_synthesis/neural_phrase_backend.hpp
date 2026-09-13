@@ -44,6 +44,8 @@ struct NeuralWorkerRunOptions final {
   // nonzero budgets. Sampling is not an OS security sandbox.
   std::size_t maximumResidentBytes{0U};
   std::chrono::milliseconds maximumCpuTime{0};
+  // Trusted package launch contract; independent of SNW1 frame version.
+  std::uint32_t protocolVersion{1U};
 };
 
 struct NeuralWorkerResult final {
@@ -78,5 +80,13 @@ struct NeuralWorkerResult final {
 [[nodiscard]] core::Result<NeuralWorkerResult> runNeuralWorker(
     const NeuralRequest& request, const ModelContract& model,
     NeuralWorkerRunOptions options, std::stop_token stop = {});
+
+// Transport only: the selected first-party child must independently admit the
+// graph bytes it loads before constructing inference sessions. Parent metadata
+// inspection is not execution admission. Not callable from the audio callback.
+[[nodiscard]] core::Result<NeuralWorkerResult> runNeuralBundleWorker(
+    const NeuralRequest& request,const std::filesystem::path& bundleDirectory,
+    std::size_t maximumBundleBytes,NeuralWorkerRunOptions options,
+    std::stop_token stop = {});
 
 }  // namespace seam::neural_synthesis

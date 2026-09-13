@@ -1,4 +1,5 @@
 #include "seam/neural_synthesis/neural_phrase_backend.hpp"
+#include "seam/neural_synthesis/bundle_metadata.hpp"
 
 #include "seam/platform/helper_process.hpp"
 #include "seam/core/sha256.hpp"
@@ -84,9 +85,10 @@ core::Result<NeuralHelperPackage> NeuralHelperPackage::decode(
         std::none_of(text.begin(),text.end(),[](unsigned char c){return c<0x20U || c==0x7fU;});
   };
   if (!root.isObject() || root.asObject().size()!=7U || !format || !format->isString() ||
-      format->asString()!="com.project-seam.neural-helper-package" || !schema || !schema->isInteger() || schema->asInt64()!=1 ||
+      format->asString()!="com.project-seam.neural-helper-package" || !schema || !schema->isInteger() ||
+      (schema->asInt64()!=1 && schema->asInt64()!=2) ||
       !build || !build->isString() || build->asString().size()>256U || !clean(build->asString()) ||
-      !protocol || !protocol->isInteger() || protocol->asInt64()!=1 || !module || !helper || !deps || !deps->isArray()) return fail();
+      !protocol || !protocol->isInteger() || protocol->asInt64()!=schema->asInt64() || !module || !helper || !deps || !deps->isArray()) return fail();
   std::set<std::string> paths;
   const auto file=[&](const formats::JsonValue& value)->core::Result<NeuralPackageFile> {
     const auto* path=value.find("path"); const auto* hash=value.find("sha256"); const auto* size=value.find("maximumBytes");
@@ -106,6 +108,7 @@ core::Result<NeuralHelperPackage> NeuralHelperPackage::decode(
   const auto moduleFile=file(*module); if (!moduleFile) return core::Result<NeuralHelperPackage>{moduleFile.error()};
   const auto helperFile=file(*helper); if (!helperFile) return core::Result<NeuralHelperPackage>{helperFile.error()};
   NeuralHelperPackage result{.buildId=build->asString(),.module=moduleFile.value(),.helper=helperFile.value(),.dependencies={}};
+  result.protocolVersion=static_cast<std::uint32_t>(protocol->asInt64());
   for (const auto& dependency:deps->asArray()) {
     const auto decoded=file(dependency); if (!decoded) return core::Result<NeuralHelperPackage>{decoded.error()};
     result.dependencies.push_back(decoded.value());
@@ -118,7 +121,8 @@ core::Result<NeuralWorkerRunOptions> resolveNeuralHelperPackage(
     const NeuralHelperPackage& package,std::string_view expectedBuildId,std::stop_token stop) {
   using Output=NeuralWorkerRunOptions;
   if (!packageRoot.is_absolute() || !loadedModule.is_absolute() || expectedBuildId.empty() ||
-      expectedBuildId.size()>256U || package.buildId!=expectedBuildId || package.protocolVersion!=1U ||
+      expectedBuildId.size()>256U || package.buildId!=expectedBuildId ||
+      (package.protocolVersion!=1U && package.protocolVersion!=2U) ||
       package.dependencies.size()>64U)
     return core::failure<Output>(core::ErrorCode::InvalidArgument,"Neural package anchor, build or protocol is incompatible");
   std::error_code error;
@@ -159,7 +163,7 @@ core::Result<NeuralWorkerRunOptions> resolveNeuralHelperPackage(
   }
   if (stop.stop_requested()) return core::failure<Output>(core::ErrorCode::Conflict,"Neural package resolution cancelled");
   return Output{.helper=helper.value(),.helperContentHash=package.helper.contentHash,
-      .maximumHelperBytes=package.helper.maximumBytes};
+      .maximumHelperBytes=package.helper.maximumBytes,.protocolVersion=package.protocolVersion};
 }
 
 core::Result<NeuralRequest> prepareNeuralScoreRequest(
@@ -222,9 +226,10 @@ core::Result<NeuralRequest> prepareNeuralScoreRequest(
   return request;
 }
 
-core::Result<NeuralWorkerResult> runNeuralWorker(
+namespace {
+core::Result<NeuralWorkerResult> runWorkerTransport(
     const NeuralRequest& request, const ModelContract& model,
-    NeuralWorkerRunOptions options, std::stop_token stop) {
+    NeuralWorkerRunOptions options,std::vector<std::string> arguments, std::stop_token stop) {
   using Output = NeuralWorkerResult;
   if (stop.stop_requested())
     return core::failure<Output>(core::ErrorCode::Conflict,"Neural worker execution cancelled");
@@ -252,7 +257,7 @@ core::Result<NeuralWorkerResult> runNeuralWorker(
   const auto input = std::string{reinterpret_cast<const char*>(encoded.value().data()), encoded.value().size()};
   platform::HelperProcessRequest helper{
       .executable = options.helper,
-      .arguments = {"--seam-neural-worker-v1"},
+      .arguments = std::move(arguments),
       .timeout = options.timeout,
       .maximumStdoutBytes = options.limits.maximumFrameBytes,
       .maximumStderrBytes = options.limits.maximumMetadataBytes,
@@ -270,6 +275,7 @@ core::Result<NeuralWorkerResult> runNeuralWorker(
       (!response.value().requestContentHash.empty() && response.value().requestContentHash!=core::sha256Hex(std::span<const std::byte>{encoded.value()})))
     return core::failure<Output>(core::ErrorCode::Conflict,"Neural response is not bound to the complete request");
   if (response.value().requestId != request.requestId ||
+      response.value().bundleContentHash != request.bundleContentHash ||
       response.value().modelContentHash != request.modelContentHash ||
       response.value().sampleRate != request.sampleRate ||
       response.value().channels != request.channels ||
@@ -277,6 +283,43 @@ core::Result<NeuralWorkerResult> runNeuralWorker(
     return core::failure<Output>(core::ErrorCode::Conflict,
                                  "Neural worker response does not match its request");
   return Output{std::move(response).value(), std::move(run.value().standardError)};
+}
+} // namespace
+
+core::Result<NeuralWorkerResult> runNeuralWorker(
+    const NeuralRequest& request,const ModelContract& model,
+    NeuralWorkerRunOptions options,std::stop_token stop) {
+  if (options.protocolVersion!=1U || !request.bundleContentHash.empty())
+    return core::failure<NeuralWorkerResult>(core::ErrorCode::Unsupported,"Legacy worker launcher requires protocol 1 and a legacy request");
+  return runWorkerTransport(request,model,std::move(options),{"--seam-neural-worker-v1"},stop);
+}
+
+core::Result<NeuralWorkerResult> runNeuralBundleWorker(
+    const NeuralRequest& request,const std::filesystem::path& bundleDirectory,
+    std::size_t maximumBundleBytes,NeuralWorkerRunOptions options,std::stop_token stop) {
+  using Output=NeuralWorkerResult;
+  if (stop.stop_requested()) return core::failure<Output>(core::ErrorCode::Conflict,"Neural bundle launch cancelled");
+  if (options.protocolVersion!=2U || request.bundleContentHash.empty())
+    return core::failure<Output>(core::ErrorCode::Unsupported,"Bundle launch requires protocol 2 and request metadata v3");
+  const auto valid=request.validate(options.limits);
+  if (!valid) return core::Result<Output>{valid.error()};
+  if (!bundleDirectory.is_absolute() || maximumBundleBytes==0U || maximumBundleBytes>512U*1024U*1024U ||
+      options.maximumResidentBytes==0U || options.maximumCpuTime.count()<=0)
+    return core::failure<Output>(core::ErrorCode::InvalidArgument,"Bundle launch requires an absolute directory and explicit resource budgets");
+  std::error_code error;
+  const auto canonical=std::filesystem::canonical(bundleDirectory,error);
+  if (error || canonical!=bundleDirectory)
+    return core::failure<Output>(core::ErrorCode::Conflict,"Bundle launch directory must be canonical and available");
+  const auto bundle=loadNeuralBundleDirectory(canonical,
+      {domain::SingerResourceKind::Neural,request.modelId,request.modelVersion,request.bundleContentHash},maximumBundleBytes,stop);
+  if (!bundle) return core::Result<Output>{bundle.error()};
+  const auto metadata=inspectNeuralBundleMetadata(bundle.value(),stop);
+  if (!metadata) return core::Result<Output>{metadata.error()};
+  options.vocabulary=metadata.value().vocabulary;
+  const auto name=canonical.u8string();
+  return runWorkerTransport(request,metadata.value().model,std::move(options),
+      {"--seam-neural-worker-v2",std::string{name.begin(),name.end()},request.modelId,
+       request.modelVersion,request.bundleContentHash,std::to_string(maximumBundleBytes)},stop);
 }
 
 }  // namespace seam::neural_synthesis

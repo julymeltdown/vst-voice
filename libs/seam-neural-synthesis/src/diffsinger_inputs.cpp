@@ -96,7 +96,8 @@ core::Result<NeuralResponse> finalizeDiffSingerResponse(
   NeuralResponse response{.requestId=request.requestId,.backendId=std::move(backendId),
       .modelContentHash=request.modelContentHash,.sampleRate=request.sampleRate,
       .channels=request.channels,.frameCount=request.frameCount,.pcm=std::move(audio.value()),
-      .requestContentHash=core::sha256Hex(std::span<const std::byte>{encoded.value()})};
+      .requestContentHash=core::sha256Hex(std::span<const std::byte>{encoded.value()}),
+      .bundleContentHash=request.bundleContentHash};
   const auto valid=response.validate();
   if (!valid) return core::Result<NeuralResponse>{valid.error()};
   if (stop.stop_requested()) return core::failure<NeuralResponse>(core::ErrorCode::Conflict,

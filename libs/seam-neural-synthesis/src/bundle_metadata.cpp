@@ -10,9 +10,10 @@ bool fields(const J& value,std::initializer_list<const char*> names) {
   return value.isObject() && value.asObject().size()==names.size() &&
       std::all_of(names.begin(),names.end(),[&](auto name){return value.find(name)!=nullptr;});
 }
-core::Result<MelFeatureSpec> feature(const J& value) {
+core::Result<MelFeatureSpec> feature(const J& value,bool extended) {
   const auto bad=[] {return core::failure<MelFeatureSpec>(core::ErrorCode::InvalidArgument,"Neural mel feature declaration is invalid");};
-  if (!fields(value,{"sampleRate","hopSize","bins","layout","amplitudeScale","multiplier","offset","minimumHz","maximumHz"})) return bad();
+  if (!(extended?fields(value,{"sampleRate","hopSize","bins","layout","amplitudeScale","multiplier","offset","minimumHz","maximumHz","fftSize","windowSize","melFrequencyScale"}):
+      fields(value,{"sampleRate","hopSize","bins","layout","amplitudeScale","multiplier","offset","minimumHz","maximumHz"}))) return bad();
   for (const auto* key:{"sampleRate","hopSize","bins"}) if (!value.find(key)->isInteger()) return bad();
   for (const auto* key:{"layout","amplitudeScale"}) if (!value.find(key)->isString()) return bad();
   for (const auto* key:{"multiplier","offset","minimumHz","maximumHz"}) if (!value.find(key)->isNumber() || !std::isfinite(value.find(key)->asNumber())) return bad();
@@ -25,6 +26,13 @@ core::Result<MelFeatureSpec> feature(const J& value) {
       (result.amplitudeScale!="linear-amplitude" && result.amplitudeScale!="ln-amplitude" && result.amplitudeScale!="log10-amplitude") ||
       result.multiplier<=0 || result.multiplier>1000 || std::abs(result.offset)>1000 ||
       result.minimumHz<0 || result.maximumHz<=result.minimumHz || result.maximumHz>static_cast<double>(rate)/2.0) return bad();
+  if (extended) {
+    if (!value.find("fftSize")->isInteger() || !value.find("windowSize")->isInteger() || !value.find("melFrequencyScale")->isString()) return bad();
+    const auto fft=value.find("fftSize")->asInt64(),window=value.find("windowSize")->asInt64();
+    const auto& scale=value.find("melFrequencyScale")->asString();
+    if (fft<2 || fft>32768 || window<1 || window>fft || hop>window || (scale!="slaney" && scale!="htk")) return bad();
+    result.fftSize=static_cast<std::uint32_t>(fft); result.windowSize=static_cast<std::uint32_t>(window); result.melFrequencyScale=scale;
+  }
   return result;
 }
 std::string_view bytes(const synthesis::FrozenSingerData& data) {
@@ -47,12 +55,30 @@ core::Result<NeuralBundleMetadata> inspectNeuralBundleMetadata(const synthesis::
       .maximumNodes=128U,.maximumStringBytes=128U,.maximumCollectionEntries=16U});
   if (!parsed) return core::Result<Output>{parsed.error()};
   const auto& root=parsed.value();
-  if (!fields(root,{"formatId","schemaVersion","maximumFrames","acousticFeatures","vocoderFeatures"}) ||
+  const auto* version=root.find("schemaVersion");
+  const bool outputBound=version && version->isInteger() && version->asInt64()==3;
+  const bool extended=outputBound || (version && version->isInteger() && version->asInt64()==2);
+  if (!(outputBound?fields(root,{"formatId","schemaVersion","maximumFrames","acousticFeatures","vocoderFeatures","stepsLayout","vocoderOutput"}):extended?fields(root,{"formatId","schemaVersion","maximumFrames","acousticFeatures","vocoderFeatures","stepsLayout"}):
+      fields(root,{"formatId","schemaVersion","maximumFrames","acousticFeatures","vocoderFeatures"})) ||
       !root.find("formatId")->isString() || root.find("formatId")->asString()!="com.project-seam.neural-bundle-configuration" ||
-      !root.find("schemaVersion")->isInteger() || root.find("schemaVersion")->asInt64()!=1 ||
+      !root.find("schemaVersion")->isInteger() || (!extended && root.find("schemaVersion")->asInt64()!=1) ||
       !root.find("maximumFrames")->isInteger() || root.find("maximumFrames")->asInt64()<1 || root.find("maximumFrames")->asInt64()>4LL*1024LL*1024LL)
     return core::failure<Output>(core::ErrorCode::ParseError,"Neural bundle configuration shape or frame bound is invalid");
-  const auto acoustic=feature(*root.find("acousticFeatures")),vocoder=feature(*root.find("vocoderFeatures"));
+  std::string steps="scalar";
+  std::string output="audio";
+  if (outputBound) {
+    const auto* name=root.find("vocoderOutput");
+    if (!name->isString() || (name->asString()!="audio" && name->asString()!="waveform"))
+      return core::failure<Output>(core::ErrorCode::InvalidArgument,"Neural vocoder output name is invalid");
+    output=name->asString();
+  }
+  if (extended) {
+    const auto* layout=root.find("stepsLayout");
+    if (!layout->isString() || (layout->asString()!="scalar" && layout->asString()!="vector1"))
+      return core::failure<Output>(core::ErrorCode::InvalidArgument,"Neural steps layout is invalid");
+    steps=layout->asString();
+  }
+  const auto acoustic=feature(*root.find("acousticFeatures"),extended),vocoder=feature(*root.find("vocoderFeatures"),extended);
   if (!acoustic) return core::Result<Output>{acoustic.error()};
   if (!vocoder) return core::Result<Output>{vocoder.error()};
   if (acoustic.value()!=vocoder.value()) return core::failure<Output>(core::ErrorCode::Conflict,"Acoustic and vocoder mel declarations are incompatible");
@@ -64,6 +90,6 @@ core::Result<NeuralBundleMetadata> inspectNeuralBundleMetadata(const synthesis::
   auto decoded=NeuralVocabulary::decode(bytes(*vocabulary),model);
   if (!decoded) return core::Result<Output>{decoded.error()};
   if (stop.stop_requested()) return cancelled();
-  return Output{std::move(model),std::move(decoded.value()),acoustic.value()};
+  return Output{std::move(model),std::move(decoded.value()),acoustic.value(),outputBound?3U:extended?2U:1U,std::move(steps),std::move(output)};
 }
 }

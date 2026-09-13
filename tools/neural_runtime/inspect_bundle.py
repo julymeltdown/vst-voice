@@ -105,11 +105,13 @@ def inspect_bundle(manifest_bytes, asset_bytes, expected_hash):
         raise ValueError("Asset ordering or closure differs")
     configuration = parse(by_role["configuration"], 4 * 1024 * 1024,
                           maximum_nodes=128, maximum_entries=16)
-    fields(configuration, ("formatId", "schemaVersion", "maximumFrames", "acousticFeatures", "vocoderFeatures"))
-    if configuration["formatId"] != "com.project-seam.neural-bundle-configuration" or type(configuration["schemaVersion"]) is not int or configuration["schemaVersion"] != 1:
+    output_bound = type(configuration) is dict and configuration.get("schemaVersion") == 3
+    extended = output_bound or (type(configuration) is dict and configuration.get("schemaVersion") == 2)
+    fields(configuration, ("formatId", "schemaVersion", "maximumFrames", "acousticFeatures", "vocoderFeatures") + (("stepsLayout",) if extended else ()) + (("vocoderOutput",) if output_bound else ()))
+    if configuration["formatId"] != "com.project-seam.neural-bundle-configuration" or type(configuration["schemaVersion"]) is not int or configuration["schemaVersion"] not in (1, 2, 3):
         raise ValueError("Unsupported configuration schema")
     feature = configuration["acousticFeatures"]
-    fields(feature, ("sampleRate", "hopSize", "bins", "layout", "amplitudeScale", "multiplier", "offset", "minimumHz", "maximumHz"))
+    fields(feature, ("sampleRate", "hopSize", "bins", "layout", "amplitudeScale", "multiplier", "offset", "minimumHz", "maximumHz") + (("fftSize", "windowSize", "melFrequencyScale") if extended else ()))
     if feature != configuration["vocoderFeatures"]:
         raise ValueError("Acoustic and vocoder features disagree")
     for name in ("sampleRate", "hopSize", "bins"):
@@ -125,18 +127,34 @@ def inspect_bundle(manifest_bytes, asset_bytes, expected_hash):
             raise ValueError("Invalid numeric feature")
     if feature["amplitudeScale"] not in ("linear-amplitude", "ln-amplitude", "log10-amplitude") or not 0 < feature["multiplier"] <= 1000 or abs(feature["offset"]) > 1000 or not 0 <= feature["minimumHz"] < feature["maximumHz"] <= feature["sampleRate"] / 2:
         raise ValueError("Invalid mel representation")
+    if extended:
+        for role in ("acousticFeatures", "vocoderFeatures"):
+            spec = configuration[role]
+            if type(spec["fftSize"]) is not int or type(spec["windowSize"]) is not int or not 2 <= spec["fftSize"] <= 32768 or not 1 <= spec["windowSize"] <= spec["fftSize"] or spec["hopSize"] > spec["windowSize"] or spec["melFrequencyScale"] not in ("slaney", "htk"):
+                raise ValueError("Invalid spectral analysis convention")
     vocabulary = parse(by_role["vocabulary"], 4 * 1024 * 1024)
-    fields(vocabulary, ("formatId", "schemaVersion", "tokens"))
+    aliased = type(vocabulary) is dict and vocabulary.get("schemaVersion") == 2
+    fields(vocabulary, ("formatId", "schemaVersion", "tokens") + (("aliases",) if aliased else ()))
     tokens = vocabulary["tokens"]
-    if vocabulary["formatId"] != "com.project-seam.neural-vocabulary" or type(vocabulary["schemaVersion"]) is not int or vocabulary["schemaVersion"] != 1 or type(tokens) is not list or not 1 <= len(tokens) <= 65536:
+    if vocabulary["formatId"] != "com.project-seam.neural-vocabulary" or type(vocabulary["schemaVersion"]) is not int or vocabulary["schemaVersion"] not in (1, 2) or type(tokens) is not list or not 1 <= len(tokens) <= 65536:
         raise ValueError("Invalid vocabulary schema")
     if any(type(token) is not str or not token or len(token.encode("utf-8")) > 128 or
            any(ord(character) < 32 or ord(character) == 127 for character in token)
            for token in tokens) or len(set(tokens)) != len(tokens) or tokens[0] != "<PAD>":
         raise ValueError("Invalid paired-profile vocabulary")
+    if aliased:
+        aliases = vocabulary["aliases"]
+        canonical_tokens = set(tokens)
+        if type(aliases) is not dict:
+            raise ValueError("Invalid vocabulary aliases")
+        for alias, index in aliases.items():
+            if not alias or alias in canonical_tokens or any(ord(c) < 32 or ord(c) == 127 for c in alias) or type(index) is not int or not 1 <= index < len(tokens):
+                raise ValueError("Invalid vocabulary alias target or name")
     pair = inspect_pair(by_role["acoustic"], by_role["vocoder"], bins=feature["bins"],
                         layout=feature["layout"], hop_size=feature["hopSize"],
-                        maximum_sample_frames=configuration["maximumFrames"])
+                        maximum_sample_frames=configuration["maximumFrames"],
+                        steps_layout=configuration["stepsLayout"] if extended else "scalar",
+                        vocoder_output=configuration["vocoderOutput"] if output_bound else "audio")
     return {"status": "OFFLINE_BUNDLE_INSPECTED", "bundleHash": expected_hash,
             "vocabularyHash": hashlib.sha256(by_role["vocabulary"]).hexdigest(),
             "pair": pair, "executionAdmitted": False, "releaseEligible": False}

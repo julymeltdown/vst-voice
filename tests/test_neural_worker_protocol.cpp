@@ -131,6 +131,43 @@ TEST_CASE("neural score conditioning uses compiled timing and explicit silence w
 #endif
 }
 
+TEST_CASE("neural vocabulary aliases preserve trained IDs without increasing embedding size") {
+  using namespace seam; using namespace seam::neural_synthesis;
+  using J=formats::JsonValue;
+  const auto decode=[](const J::Object& aliases) {
+    const auto json=formats::stringifyJson(J{J::Object{{"formatId","com.project-seam.neural-vocabulary"},
+        {"schemaVersion",std::int64_t{2}},{"tokens",J::Array{J{"<PAD>"},J{"SP"},J{"ja/a"}}},{"aliases",aliases}}});
+    ModelContract model{.modelId="aliases",.modelVersion="1",.modelContentHash=std::string(64,'a'),.vocabularyHash=core::sha256Hex(json)};
+    return NeuralVocabulary::decode(json,model);
+  };
+  const auto vocabulary=decode({{"en/aa",std::int64_t{2}},{"ko/a",std::int64_t{2}}}); CHECK(vocabulary);
+  CHECK(vocabulary.value().size()==3U);
+  CHECK(vocabulary.value().tokenId("ja/a").value()==2U);
+  CHECK(vocabulary.value().tokenId("en/aa").value()==2U);
+  CHECK(vocabulary.value().tokenId("ko/a").value()==2U);
+  CHECK(!vocabulary.value().tokenId("a"));
+  for (const auto& aliases:std::vector<J::Object>{{{"alias",std::int64_t{0}}},{{"alias",std::int64_t{3}}},
+      {{"alias",std::int64_t{-1}}},{{"alias",2.5}},{{"ja/a",std::int64_t{2}}},{{"bad\n",std::int64_t{2}}}})
+    CHECK(!decode(aliases));
+}
+
+TEST_CASE("native DiffSinger vocabulary conversion preserves source IDs and aliases") {
+  using namespace seam; using namespace seam::neural_synthesis;
+  const auto converted=convertDiffSingerVocabulary(R"({"SP":1,"ja/a":3,"ko/a":3,"AP":2,"en/aa":3})"); CHECK(converted);
+  const auto reordered=convertDiffSingerVocabulary(R"({"en/aa":3,"AP":2,"ko/a":3,"ja/a":3,"SP":1})"); CHECK(reordered);
+  CHECK(converted.value()==reordered.value());
+  ModelContract model{.modelId="import",.modelVersion="1",.modelContentHash=std::string(64,'a'),
+      .vocabularyHash=core::sha256Hex(converted.value())};
+  const auto vocabulary=NeuralVocabulary::decode(converted.value(),model); CHECK(vocabulary);
+  CHECK(vocabulary.value().size()==4U);
+  CHECK(vocabulary.value().tokenId("SP").value()==1U);
+  CHECK(vocabulary.value().tokenId("AP").value()==2U);
+  for (const auto* phone:{"ja/a","ko/a","en/aa"}) CHECK(vocabulary.value().tokenId(phone).value()==3U);
+  for (const auto* invalid:{R"({"a":2})",R"({"a":0})",R"({"a":-1})",R"({"a":true})",R"({"a":1.5})",
+      R"({"a":65536})",R"({"<PAD>":1})",R"({"bad\n":1})",R"({"a":1,"a":2})","{}","[]"})
+    CHECK(!convertDiffSingerVocabulary(invalid));
+}
+
 TEST_CASE("neural phonetic conditioning requires complete explicit vocabulary bound spans") {
   using namespace seam::neural_synthesis;
   PhoneticConditioning value{std::string(64U,'c'),{{1U,0U,40U},{0U,40U,50U},{2U,50U,100U}}};
@@ -174,6 +211,33 @@ TEST_CASE("neural request v2 carries bounded phoneme spans without silent v1 dow
       .vocabularyHash=input.conditioning->vocabularyHash};
   CHECK(model.validateRequest(input)); model.vocabularyHash=std::string(64U,'d'); CHECK(!model.validateRequest(input));
   input.conditioning.reset(); CHECK(!encodeRequest(input)); // No stray vocabulary declaration in v1.
+}
+
+TEST_CASE("neural bundle v3 preserves explicit identity and rejects legacy downgrade") {
+  using namespace seam::neural_synthesis;
+  auto input=request(); input.vocabularySize=3U;
+  input.conditioning=PhoneticConditioning{std::string(64U,'c'),{{1U,0U,4U}}};
+  input.bundleContentHash=input.modelContentHash;
+  const auto encoded=encodeRequest(input); CHECK(encoded);
+  CHECK(decodeRequest(encoded.value()).value()==input);
+  const std::string wire{reinterpret_cast<const char*>(encoded.value().data()),encoded.value().size()};
+  const auto kind=wire.find("seam-neural-request-v3"); CHECK(kind!=std::string::npos);
+  auto bad=encoded.value(); bad[kind+20U]=std::byte{'2'}; CHECK(!decodeRequest(bad));
+  ModelContract model{.modelId=input.modelId,.modelVersion=input.modelVersion,
+      .modelContentHash=input.modelContentHash,.vocabularyHash=input.conditioning->vocabularyHash};
+  CHECK(!runNeuralWorker(input,model,{}));
+  const std::vector<float> padded(256U,0.25F);
+  const auto response=finalizeDiffSingerResponse(input,model,padded,"fixture"); CHECK(response);
+  CHECK(response.value().bundleContentHash==input.bundleContentHash);
+  const auto output=encodeResponse(response.value()); CHECK(output);
+  CHECK(decodeResponse(output.value()).value()==response.value());
+  const std::string responseWire{reinterpret_cast<const char*>(output.value().data()),output.value().size()};
+  const auto responseKind=responseWire.find("seam-neural-response-v3"); CHECK(responseKind!=std::string::npos);
+  bad=output.value(); bad[responseKind+21U]=std::byte{'2'}; CHECK(!decodeResponse(bad));
+  auto invalid=response.value(); invalid.requestContentHash.clear(); CHECK(!encodeResponse(invalid));
+  invalid=response.value(); invalid.bundleContentHash=std::string(64U,'d'); CHECK(!encodeResponse(invalid));
+  input.bundleContentHash=std::string(64U,'d'); CHECK(!encodeRequest(input));
+  input.bundleContentHash=input.modelContentHash; input.conditioning.reset(); CHECK(!encodeRequest(input));
 }
 
 TEST_CASE("neural worker request and response frames round-trip with bounded metadata") {
@@ -409,7 +473,15 @@ TEST_CASE("neural package resolution binds module build helper and dependency fi
   CHECK(valid.value().helper==std::filesystem::canonical(root/"helper"));
   CHECK(valid.value().helperContentHash==digest.value());
   auto bad=package; bad.buildId="other-build"; CHECK(!resolve(bad));
-  bad=package; bad.protocolVersion=2U; CHECK(!resolve(bad));
+  bad=package; bad.protocolVersion=3U; CHECK(!resolve(bad));
+  auto bundleManifest=manifest;
+  bundleManifest.replace(bundleManifest.find("\"schemaVersion\":1"),17U,"\"schemaVersion\":2");
+  bundleManifest.replace(bundleManifest.find("\"protocolVersion\":1"),19U,"\"protocolVersion\":2");
+  const auto bundlePackage=NeuralHelperPackage::decode(bundleManifest,core::sha256Hex(bundleManifest)); CHECK(bundlePackage);
+  CHECK(bundlePackage.value().protocolVersion==2U);
+  const auto bundleOptions=resolve(bundlePackage.value()); CHECK(bundleOptions);
+  CHECK(bundleOptions.value().protocolVersion==2U);
+  CHECK(!runNeuralWorker(request(),ModelContract{},bundleOptions.value()));
   bad=package; bad.helper.relativePath="../helper"; CHECK(!resolve(bad));
   bad=package; bad.helper.relativePath=root/"helper"; CHECK(!resolve(bad));
   bad=package; bad.helper.relativePath="missing"; CHECK(!resolve(bad));
@@ -466,6 +538,13 @@ TEST_CASE("signed neural deployment binds exact descriptor bytes and the loaded 
     return distribution::signEd25519(std::as_bytes(std::span{bytes.data(),bytes.size()}),key.value().privateKey);
   };
   const auto signature=sign(json); CHECK(signature);
+  auto v2=json;
+  v2.replace(v2.find("\"schemaVersion\":1"),17U,"\"schemaVersion\":2,\"protocolVersion\":2");
+  const auto v2Signature=sign(v2); CHECK(v2Signature);
+  auto v2Target=target; v2Target.protocolVersion=2U;
+  CHECK(VerifiedNeuralDeployment::verify(v2,v2Signature.value(),key.value().publicKey,v2Target));
+  CHECK(!VerifiedNeuralDeployment::verify(v2,v2Signature.value(),key.value().publicKey,target));
+  CHECK(!VerifiedNeuralDeployment::verify(json,signature.value(),key.value().publicKey,v2Target));
   const auto verified=VerifiedNeuralDeployment::verify(json,signature.value(),key.value().publicKey,target); CHECK(verified);
   CHECK(verified.value().contentHash()==core::sha256Hex(json));
   CHECK(!verified.value().load(nullptr));
@@ -588,11 +667,89 @@ TEST_CASE("frozen bundle metadata binds vocabulary and rejects incompatible acou
     return synthesis::FrozenNeuralBundle::freeze({domain::SingerResourceKind::Neural,"bundle","1",core::sha256Hex(manifest.value())},assets,4096U);
   };
   const auto bundle=freeze(configuration,vocabulary); CHECK(bundle);
+  const auto directory=test::support::temporaryDirectory("neural-bundle-directory");
+  CHECK(core::durableAtomicWriteNew(directory/"manifest.json",bundle.value().manifestData().bytes()));
+  for (const auto& asset:bundle.value().assets()) CHECK(core::durableAtomicWriteNew(directory/asset.name,asset.data->bytes()));
+  const auto loaded=neural_synthesis::loadNeuralBundleDirectory(directory,bundle.value().identity(),4096U); CHECK(loaded);
+  CHECK(loaded.value().identity().contentHash==bundle.value().identity().contentHash);
+  CHECK(neural_synthesis::inspectNeuralBundleMetadata(loaded.value()));
+#if defined(SEAM_NEURAL_BUNDLE_TRANSPORT_PROBE) && !defined(_WIN32)
+  auto input=request(); input.modelId="bundle"; input.modelVersion="1";
+  input.modelContentHash=bundle.value().identity().contentHash;
+  input.bundleContentHash=input.modelContentHash; input.vocabularySize=3U;
+  input.conditioning=neural_synthesis::PhoneticConditioning{core::sha256Hex(vocabulary),{{2U,0U,4U}}};
+  neural_synthesis::NeuralWorkerRunOptions launch{
+      .helper=SEAM_NEURAL_BUNDLE_TRANSPORT_PROBE,
+      .helperContentHash=core::sha256File(SEAM_NEURAL_BUNDLE_TRANSPORT_PROBE).value(),
+      .maximumResidentBytes=256U*1024U*1024U,.maximumCpuTime=std::chrono::seconds{2},.protocolVersion=2U};
+  const auto canonical=std::filesystem::canonical(directory);
+  const auto run=neural_synthesis::runNeuralBundleWorker(input,canonical,4096U,launch); CHECK(run);
+  CHECK(run.value().response.bundleContentHash==input.bundleContentHash);
+  auto stale=input; stale.requestId=92U;
+  CHECK(!neural_synthesis::runNeuralBundleWorker(stale,canonical,4096U,launch));
+  auto unbounded=launch; unbounded.maximumResidentBytes=0U;
+  CHECK(!neural_synthesis::runNeuralBundleWorker(input,canonical,4096U,unbounded));
+  unbounded=launch; unbounded.maximumCpuTime=std::chrono::milliseconds{0};
+  CHECK(!neural_synthesis::runNeuralBundleWorker(input,canonical,4096U,unbounded));
+  CHECK(!neural_synthesis::runNeuralBundleWorker(input,canonical,1U,launch));
+  auto legacy=launch; legacy.protocolVersion=1U;
+  CHECK(!neural_synthesis::runNeuralBundleWorker(input,canonical,4096U,legacy));
+  legacy=launch; legacy.helper=SEAM_NEURAL_WORKER_PROBE;
+  legacy.helperContentHash=core::sha256File(SEAM_NEURAL_WORKER_PROBE).value();
+  CHECK(!neural_synthesis::runNeuralBundleWorker(input,canonical,4096U,legacy));
+  std::stop_source cancelledLaunch; cancelledLaunch.request_stop();
+  CHECK(!neural_synthesis::runNeuralBundleWorker(input,canonical,4096U,launch,cancelledLaunch.get_token()));
+#endif
+  CHECK(!neural_synthesis::loadNeuralBundleDirectory(directory,bundle.value().identity(),1U));
+  auto wrongIdentity=bundle.value().identity(); wrongIdentity.contentHash=std::string(64,'0');
+  CHECK(!neural_synthesis::loadNeuralBundleDirectory(directory,wrongIdentity,4096U));
+  CHECK(core::durableAtomicWriteText(directory/"vocabulary","{}"));
+#if defined(SEAM_NEURAL_BUNDLE_TRANSPORT_PROBE) && !defined(_WIN32)
+  CHECK(!neural_synthesis::runNeuralBundleWorker(input,canonical,4096U,launch));
+#endif
+  CHECK(!neural_synthesis::loadNeuralBundleDirectory(directory,bundle.value().identity(),4096U));
+  CHECK(core::durableAtomicWriteText(directory/"vocabulary",std::string(vocabulary.size(),'x')));
+  CHECK(!neural_synthesis::loadNeuralBundleDirectory(directory,bundle.value().identity(),4096U));
+  CHECK(neural_synthesis::inspectNeuralBundleMetadata(loaded.value()));
+  std::stop_source stoppedLoad; stoppedLoad.request_stop();
+  CHECK(!neural_synthesis::loadNeuralBundleDirectory(directory,bundle.value().identity(),4096U,stoppedLoad.get_token()));
   const auto metadata=neural_synthesis::inspectNeuralBundleMetadata(bundle.value()); CHECK(metadata);
   CHECK(metadata.value().model.modelContentHash==bundle.value().identity().contentHash);
   CHECK(metadata.value().model.vocabularyHash==core::sha256Hex(vocabulary));
   CHECK(metadata.value().vocabulary.tokenId("a").value()==2U);
   CHECK(metadata.value().features.bins==80U);
+  CHECK(metadata.value().configurationVersion==1U);
+  CHECK(metadata.value().features.fftSize==0U);
+  auto extended=configuration;
+  extended.asObject()["schemaVersion"]=std::int64_t{2};
+  extended.asObject()["stepsLayout"]="vector1";
+  for (const auto* role:{"acousticFeatures","vocoderFeatures"}) {
+    auto& spec=extended.asObject()[role].asObject();
+    spec["fftSize"]=std::int64_t{2048}; spec["windowSize"]=std::int64_t{1024}; spec["melFrequencyScale"]="slaney";
+  }
+  const auto extendedBundle=freeze(extended,vocabulary); CHECK(extendedBundle);
+  const auto extendedMetadata=neural_synthesis::inspectNeuralBundleMetadata(extendedBundle.value()); CHECK(extendedMetadata);
+  CHECK(extendedMetadata.value().configurationVersion==2U);
+  CHECK(extendedMetadata.value().features.fftSize==2048U);
+  CHECK(extendedMetadata.value().stepsLayout=="vector1");
+  auto outputBound=extended; outputBound.asObject()["schemaVersion"]=std::int64_t{3};
+  outputBound.asObject()["vocoderOutput"]="waveform";
+  const auto outputMetadata=neural_synthesis::inspectNeuralBundleMetadata(freeze(outputBound,vocabulary).value()); CHECK(outputMetadata);
+  CHECK(outputMetadata.value().configurationVersion==3U);
+  CHECK(outputMetadata.value().vocoderOutput=="waveform");
+  outputBound.asObject()["vocoderOutput"]="guessed";
+  CHECK(!neural_synthesis::inspectNeuralBundleMetadata(freeze(outputBound,vocabulary).value()));
+  for (const auto* key:{"fftSize","windowSize","melFrequencyScale"}) {
+    auto mismatch=extended;
+    auto& value=mismatch.asObject()["vocoderFeatures"].asObject()[key];
+    value=value.isString()?J{"htk"}:J{value.asInt64()+1};
+    CHECK(!neural_synthesis::inspectNeuralBundleMetadata(freeze(mismatch,vocabulary).value()));
+  }
+  auto badWindow=extended;
+  for (const auto* role:{"acousticFeatures","vocoderFeatures"}) badWindow.asObject()[role].asObject()["windowSize"]=std::int64_t{4096};
+  CHECK(!neural_synthesis::inspectNeuralBundleMetadata(freeze(badWindow,vocabulary).value()));
+  auto badSteps=extended; badSteps.asObject()["stepsLayout"]="guess";
+  CHECK(!neural_synthesis::inspectNeuralBundleMetadata(freeze(badSteps,vocabulary).value()));
   for (const auto* field:{"sampleRate","hopSize","bins","layout","amplitudeScale","multiplier","offset","minimumHz","maximumHz"}) {
     auto mismatch=configuration;
     auto& value=mismatch.asObject()["vocoderFeatures"].asObject()[field];

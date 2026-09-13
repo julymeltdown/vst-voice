@@ -4,6 +4,7 @@ import unittest
 
 from check_paired_runtime import graphs
 from inspect_bundle import inspect_bundle, parse
+from convert_vocabulary import convert_vocabulary
 
 
 def encode(value):
@@ -104,6 +105,64 @@ class BundleTests(unittest.TestCase):
             parse(b'[1,2,3]', 10000, maximum_entries=2)
         with self.assertRaisesRegex(ValueError, "node"):
             parse(b'[1,2,3]', 10000, maximum_nodes=3)
+
+    def test_version_two_binds_spectral_convention_and_steps(self):
+        self.configuration.update(schemaVersion=2, stepsLayout="vector1")
+        for role in ("acousticFeatures", "vocoderFeatures"):
+            self.configuration[role].update(fftSize=2048, windowSize=1024, melFrequencyScale="slaney")
+        self.assets["acoustic"], self.assets["vocoder"] = graphs(steps_layout="vector1")
+        self.assets["configuration"] = encode(self.configuration)
+        manifest, digest = self.manifest()
+        report = inspect_bundle(manifest, self.assets, digest)
+        self.assertEqual(report["pair"]["contract"]["stepsLayout"], "vector1")
+        self.configuration["vocoderFeatures"]["melFrequencyScale"] = "htk"
+        self.assets["configuration"] = encode(self.configuration)
+        manifest, digest = self.manifest()
+        with self.assertRaisesRegex(ValueError, "disagree"):
+            inspect_bundle(manifest, self.assets, digest)
+
+    def test_version_two_rejects_matching_invalid_windows(self):
+        self.configuration.update(schemaVersion=2, stepsLayout="scalar")
+        for role in ("acousticFeatures", "vocoderFeatures"):
+            self.configuration[role].update(fftSize=1024, windowSize=2048, melFrequencyScale="slaney")
+        self.assets["configuration"] = encode(self.configuration)
+        manifest, digest = self.manifest()
+        with self.assertRaisesRegex(ValueError, "spectral"):
+            inspect_bundle(manifest, self.assets, digest)
+
+    def test_version_three_binds_actual_vocoder_output(self):
+        self.configuration.update(schemaVersion=3, stepsLayout="vector1", vocoderOutput="waveform")
+        for role in ("acousticFeatures", "vocoderFeatures"):
+            self.configuration[role].update(fftSize=2048, windowSize=1024, melFrequencyScale="slaney")
+        self.assets["acoustic"], self.assets["vocoder"] = graphs(steps_layout="vector1", vocoder_output="waveform")
+        self.assets["configuration"] = encode(self.configuration)
+        manifest, digest = self.manifest()
+        report = inspect_bundle(manifest, self.assets, digest)
+        self.assertEqual(report["pair"]["contract"]["vocoderOutput"], "waveform")
+        self.configuration["vocoderOutput"] = "audio"
+        self.assets["configuration"] = encode(self.configuration)
+        manifest, digest = self.manifest()
+        with self.assertRaisesRegex(ValueError, "Unexpected outputs"):
+            inspect_bundle(manifest, self.assets, digest)
+
+    def test_vocabulary_aliases_preserve_shared_id(self):
+        vocabulary = dict(formatId="com.project-seam.neural-vocabulary", schemaVersion=2,
+                          tokens=["<PAD>", "SP", "ja/a"], aliases={"en/aa": 2, "ko/a": 2})
+        self.assets["vocabulary"] = encode(vocabulary)
+        manifest, digest = self.manifest()
+        self.assertEqual(inspect_bundle(manifest, self.assets, digest)["status"], "OFFLINE_BUNDLE_INSPECTED")
+        for alias, index in (("bad", 0), ("bad", 3), ("ja/a", 2), ("bad", True)):
+            vocabulary["aliases"] = {alias: index}
+            self.assets["vocabulary"] = encode(vocabulary)
+            manifest, digest = self.manifest()
+            with self.assertRaisesRegex(ValueError, "alias"):
+                inspect_bundle(manifest, self.assets, digest)
+
+    def test_converted_export_vocabulary_enters_hash_bound_bundle(self):
+        self.assets["vocabulary"] = convert_vocabulary(encode({"SP": 1, "ja/a": 2, "ko/a": 2}))
+        manifest, digest = self.manifest()
+        report = inspect_bundle(manifest, self.assets, digest)
+        self.assertEqual(report["vocabularyHash"], hashlib.sha256(self.assets["vocabulary"]).hexdigest())
 
 
 if __name__ == "__main__":

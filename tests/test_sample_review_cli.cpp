@@ -14,6 +14,80 @@
 #include "seam/voicebank_production/project_codec.hpp"
 #include "seam/voicebank_production/repository.hpp"
 
+TEST_CASE("CLI inspects frozen neural metadata without claiming graph execution") {
+#if defined(SEAM_TEST_VOICEBANK_CLI)
+  using namespace seam; using J=formats::JsonValue;
+  const auto root=test::support::temporaryDirectory("inspect-neural-cli");
+  const auto feature=formats::parseJson(R"({"sampleRate":48000,"hopSize":256,"bins":80,"layout":"BTF","amplitudeScale":"ln-amplitude","multiplier":1.0,"offset":0.0,"minimumHz":40.0,"maximumHz":16000.0})"); CHECK(feature);
+  const auto configuration=formats::stringifyJson(J{J::Object{{"formatId","com.project-seam.neural-bundle-configuration"},
+      {"schemaVersion",std::int64_t{1}},{"maximumFrames",std::int64_t{48000}},
+      {"acousticFeatures",feature.value()},{"vocoderFeatures",feature.value()}}});
+  // Deliberately not graphs: metadata inspection must never imply execution.
+  const std::map<std::string,std::string> files{{"acoustic","not an ONNX graph"},{"configuration",configuration},
+      {"vocabulary",R"({"formatId":"com.project-seam.neural-vocabulary","schemaVersion":1,"tokens":["<PAD>","SP","a"]})"},
+      {"vocoder","not a vocoder"}};
+  J::Array assets;
+  for (const auto& [name,bytes]:files) {
+    CHECK(core::durableAtomicWriteTextNew(root/name,bytes));
+    assets.emplace_back(J::Object{{"name",name},{"role",name},{"sha256",core::sha256Hex(bytes)},
+        {"bytes",static_cast<std::int64_t>(bytes.size())}});
+  }
+  const auto manifest=formats::stringifyJson(J{J::Object{{"formatId","com.project-seam.neural-data-bundle"},
+      {"schemaVersion",std::int64_t{1}},{"assets",assets}}});
+  const std::vector<std::string> prepareArgs{"prepare-neural-bundle",root.string(),"fixture","1","4096"};
+  CHECK(core::durableAtomicWriteText(root/"configuration","{}"));
+  CHECK(!authoring::runBoundedHelperProcess({.executable=SEAM_TEST_VOICEBANK_CLI,.arguments=prepareArgs}));
+  CHECK(!std::filesystem::exists(root/"manifest.json"));
+  CHECK(core::durableAtomicWriteText(root/"configuration",configuration));
+  const auto prepared=authoring::runBoundedHelperProcess({.executable=SEAM_TEST_VOICEBANK_CLI,.arguments=prepareArgs}); CHECK(prepared);
+  const auto preparedReport=formats::parseJson(prepared.value().standardOutput); CHECK(preparedReport);
+  CHECK(preparedReport.value().find("status")->asString()=="DATA_BUNDLE_PREPARED_UNAPPROVED");
+  CHECK(preparedReport.value().find("manifestSha256")->asString()==core::sha256Hex(manifest));
+  CHECK(core::readTextFileLimited(root/"manifest.json",32768).value()==manifest);
+  CHECK(!authoring::runBoundedHelperProcess({.executable=SEAM_TEST_VOICEBANK_CLI,.arguments=prepareArgs}));
+  CHECK(core::readTextFileLimited(root/"manifest.json",32768).value()==manifest);
+  std::vector<std::string> args{"inspect-neural-bundle",root.string(),"fixture","1",core::sha256Hex(manifest),"4096"};
+  const auto run=authoring::runBoundedHelperProcess({.executable=SEAM_TEST_VOICEBANK_CLI,.arguments=args}); CHECK(run);
+  const auto report=formats::parseJson(run.value().standardOutput); CHECK(report);
+  CHECK(report.value().find("status")->asString()=="METADATA_INSPECTED_ONLY");
+  CHECK(!report.value().find("executionAdmitted")->asBool()); CHECK(!report.value().find("releaseEligible")->asBool());
+  CHECK(report.value().find("vocabularySize")->asInt64()==3);
+  CHECK(report.value().find("manifestSha256")->asString()==args[4]);
+  for (const auto* limit:{"0","-1","4096x","536870913"}) {
+    auto invalid=args; invalid.back()=limit;
+    CHECK(!authoring::runBoundedHelperProcess({.executable=SEAM_TEST_VOICEBANK_CLI,.arguments=invalid}));
+  }
+  CHECK(core::durableAtomicWriteText(root/"acoustic","modified"));
+  CHECK(!authoring::runBoundedHelperProcess({.executable=SEAM_TEST_VOICEBANK_CLI,.arguments=args}));
+#endif
+}
+
+TEST_CASE("CLI converts hash-bound neural vocabulary without overwriting files or approving it") {
+#if defined(SEAM_TEST_VOICEBANK_CLI)
+  using namespace seam;
+  const auto root=test::support::temporaryDirectory("neural-vocabulary-cli");
+  const auto source=root/"export.json",output=root/"vocabulary.json";
+  const std::string mapping=R"({"SP":1,"ja/a":2,"ko/a":2})";
+  CHECK(core::durableAtomicWriteTextNew(source,mapping));
+  std::vector<std::string> args{"convert-neural-vocabulary",source.string(),core::sha256Hex(mapping),output.string()};
+  auto wrong=args; wrong[2]=std::string(64,'0');
+  CHECK(!authoring::runBoundedHelperProcess({.executable=SEAM_TEST_VOICEBANK_CLI,.arguments=wrong}));
+  CHECK(!std::filesystem::exists(output));
+  const auto run=authoring::runBoundedHelperProcess({.executable=SEAM_TEST_VOICEBANK_CLI,.arguments=args}); CHECK(run);
+  const auto report=formats::parseJson(run.value().standardOutput); CHECK(report);
+  CHECK(report.value().find("status")->asString()=="CONVERTED_UNAPPROVED");
+  CHECK(!report.value().find("releaseEligible")->asBool());
+  const auto converted=core::readTextFileLimited(output,4096); CHECK(converted);
+  CHECK(report.value().find("vocabularySha256")->asString()==core::sha256Hex(converted.value()));
+  const auto vocabulary=formats::parseJson(converted.value()); CHECK(vocabulary);
+  CHECK(vocabulary.value().find("tokens")->asArray().size()==3U);
+  CHECK(vocabulary.value().find("aliases")->find("ko/a")->asInt64()==2);
+  CHECK(!authoring::runBoundedHelperProcess({.executable=SEAM_TEST_VOICEBANK_CLI,.arguments=args}));
+  CHECK(core::readTextFileLimited(output,4096).value()==converted.value());
+  CHECK(core::readTextFileLimited(source,4096).value()==mapping);
+#endif
+}
+
 namespace {
 using namespace seam;
 namespace production = voicebank_production;
