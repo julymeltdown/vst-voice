@@ -589,6 +589,11 @@ def _decode_point(encoded: bytes) -> tuple[int, int] | None:
     x = _xrecover(y)
     if (x & 1) != sign:
         x = _Q - x
+    x %= _Q
+    if (-x * x + y * y - 1 - _D * x * x * y * y) % _Q:
+        return None
+    if _encode_point((x, y)) != encoded:
+        return None
     return x, y
 
 
@@ -627,6 +632,10 @@ def ed25519_verify(signature: bytes, message: bytes, public_key: bytes) -> bool:
     point_a = _decode_point(public_key)
     point_r = _decode_point(encoded_r)
     if point_a is None or point_r is None:
+        return False
+    # Reject torsion-only keys/nonces, including identity-key universal forgeries.
+    # This is deliberately stricter than merely satisfying the group equation.
+    if _scalar_mult(point_a, 8) == (0, 1) or _scalar_mult(point_r, 8) == (0, 1):
         return False
     challenge = int.from_bytes(hashlib.sha512(encoded_r + public_key + message).digest(), "little") % _L
     return _encode_point(_scalar_mult(_B, scalar_s)) == _encode_point(_edwards_add(point_r, _scalar_mult(point_a, challenge)))

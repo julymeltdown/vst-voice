@@ -91,6 +91,40 @@ output grants source permission or musical/release approval.
 
 ## Training permission capture API
 
+Source admission is now runnable:
+`python3 -m tools.voice_model_training admit CONFIG CONFIG_HASH ROOT NEW_REPORT
+--review REVIEW --review-sha256 REVIEW_FILE_HASH --policy POLICY
+--policy-file-sha256 POLICY_FILE_HASH --trusted-policy-sha256 CANONICAL_POLICY_HASH`.
+The trusted canonical hash must come from the operator's independent trust
+policy, not from the review being checked. File hashes capture exact input bytes;
+the canonical hash binds policy meaning. Review expiry uses actual system Unix
+time and is checked again after inspection. Exit 0 publishes a new source-only
+admission report; failed verification or existing output returns exit 2. It does
+not generate signatures, provision trust, schedule work or authorize an entire
+training run. Future consumers must recheck current trust/expiry/content.
+
+`admit_sources` joins a trusted signed review with fresh inspection of the exact
+permission configuration. Missing scopes reject even if a signature is valid.
+Only after review verification and matching audio/evidence does the result set
+`sourcePermissionsAdmitted=true`; it records configuration/policy/review hashes,
+signer, verification time and expiry. This is a time-bound source-permission
+decision under the supplied policy, not a reusable bearer capability: consumers
+must revalidate current policy, expiry and inputs. Labels, split, model/runtime
+and execution readiness remain unchecked, so `trainingAdmitted` stays false.
+The API is implemented; CLI admission/publication is not yet connected.
+
+`review.verify_training_review` verifies a supplied Ed25519 review using the
+existing role-bound signature implementation. The caller supplies an independently
+trusted canonical policy SHA-256, the exact configuration digest, and current Unix
+time. Closed policy/record fields, training-rights-reviewer role, signer identity,
+purpose, configuration binding, issue/expiry times and signature are checked.
+Revocation requires the caller to supply the current independently trusted policy;
+the verifier does not fetch policy updates or make an embedded key trustworthy.
+Fixture keys exist only in tests. Successful verification authenticates the review
+under that supplied trust anchor, but does not admit execution. It must still be
+joined to fresh source/evidence inspection and complete scopes. No real policy,
+approval or training run has been created.
+
 CLI: `python3 -m tools.voice_model_training permission-report CONFIG HASH ROOT NEW_REPORT`.
 The configuration contains exactly `formatId` =
 `com.project-seam.training-permission-config`, `schemaVersion` = 1, `manifest`,

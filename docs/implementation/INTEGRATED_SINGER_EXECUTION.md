@@ -1497,6 +1497,48 @@ voices. Production worker packaging, model admission, cancellation, lawful learn
 assets, singing qualification, and the remaining full implementation plan stay open.
 # Source-bound training label command
 
+Signature repair interoperability checks: fetched RFC 8032 section 7.1 from
+https://www.rfc-editor.org/rfc/rfc8032.txt and added its first two public known-answer
+vectors. Public-key derivation, exact deterministic signatures and verification
+match; S+L malleability rejects. Four update-CLI tests passed. Added a training
+review regression showing that an identity-key forged review rejects even under
+an explicitly supplied policy containing that weak key; training CTest passed.
+These vectors and regression tests are targeted evidence, not a full independent
+cryptographic implementation audit.
+
+Shared signature repair: reproduced identity-key universal forgery acceptance in
+the Python Ed25519 verifier used by release and training review verification.
+Added on-curve/canonical point decoding and rejection of torsion-only public keys
+and nonce points. Tests cover the forged identity signature, noncanonical zero-x
+sign encoding, out-of-field encoding, valid signatures and altered messages.
+Three update-CLI tests and all 25 training tests passed. This is a targeted
+security repair, not a claim of complete cryptographic audit or subgroup-policy
+qualification. No real signed approvals were issued.
+
+Admission CLI follow-up: connected `admit` to captured configuration/review/policy
+files, independent canonical policy hash and fresh audio/evidence inspection.
+Uses the system clock and rechecks expiry before publication. New reports only;
+no signing, trust provisioning or training execution. All 25 training tests passed,
+including subprocess fixture admission, no-overwrite and wrong-anchor rejection.
+Only fixture signatures were used; no real source admission was performed.
+
+Source-admission join: extracted read-only permission configuration inspection
+and connected it to trusted signed-review verification in `admit_sources`.
+A valid signature cannot bypass missing scopes or changed audio/evidence.
+Successful fixture admission records sourcePermissionsAdmitted with policy,
+review, configuration identities and expiry; trainingAdmitted remains false
+because label/split/execution prerequisites are separate. All 25 training tests
+passed, including valid signed source admission and signed-incomplete/changed
+source rejection. No real source permission approval was issued.
+
+Signed-review verification: added closed training review/policy contracts using
+existing role-bound Ed25519 verification. Requires an independent policy hash,
+exact captured configuration digest, explicit current time, training reviewer
+role and matching signer. Expired/future, wrong-configuration, altered-signature
+and wrong-anchor reviews reject. All 25 training tests passed using a test-only
+signer. No real trust anchor or review was issued. Successful verification is
+not execution admission; fresh inspected permissions must still be joined.
+
 Complete integrated checkpoint: all 129 registered CTests passed in 85.50 seconds
 with `-j 4`, including the 24-case training-tool group and native ONNX checks.
 This supersedes the earlier split 128-plus-one test invocation. Reviewed the next

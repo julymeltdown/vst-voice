@@ -7,6 +7,7 @@ import stat
 from pathlib import Path
 import sys
 import tempfile
+import time
 
 from .split import split_sources
 from .prepare import prepare_sources
@@ -14,9 +15,10 @@ from .labels import label_report, score_report
 from .segment import segment_source, crop_labels, crop_score
 from .audio_source import inspect_pcm_source
 from .permissions import inspect_permission_sources
+from .review import verify_training_review
 
 
-def permission_command(config: Path, expected_hash: str, root: Path, output: Path) -> int:
+def inspect_permission_config(config: Path, expected_hash: str, root: Path) -> dict:
     value = load_config(config, expected_hash)
     fields = {"formatId", "schemaVersion", "manifest", "sources", "sampleRate", "evidence"}
     if (not isinstance(value, dict) or set(value) != fields
@@ -49,8 +51,28 @@ def permission_command(config: Path, expected_hash: str, root: Path, output: Pat
     report = inspect_permission_sources(value["manifest"], captured, root=root,
                                         sources=value["sources"], sample_rate=value["sampleRate"])
     report["configurationSha256"] = expected_hash
+    return report
+
+
+def permission_command(config: Path, expected_hash: str, root: Path, output: Path) -> int:
+    report = inspect_permission_config(config, expected_hash, root)
     publish_new(output, report)
     return 0 if report["assertionsComplete"] else 3
+
+
+def admit_sources(config: Path, expected_hash: str, root: Path, *, review: dict, policy: dict,
+                  trusted_policy_sha256: str, now: int) -> dict:
+    verified = verify_training_review(review, policy=policy, trusted_policy_sha256=trusted_policy_sha256,
+                                      configuration_sha256=expected_hash, now=now)
+    inspected = inspect_permission_config(config, expected_hash, root)
+    if not inspected["assertionsComplete"]:
+        raise ValueError("Signed configuration lacks required training scope assertions")
+    return dict(formatId="com.project-seam.training-source-admission", schemaVersion=1,
+                configurationSha256=expected_hash, policySha256=trusted_policy_sha256,
+                reviewSha256=verified["reviewSha256"], signerId=verified["signerId"],
+                verifiedAt=now, expiresAt=review["expiresAt"], sources=inspected["sources"],
+                sourceBytesVerified=True, reviewAuthenticated=True, sourcePermissionsAdmitted=True,
+                trainingAdmitted=False, releaseEligible=False)
 
 
 def load_config(config: Path, expected_hash: str) -> dict:
@@ -349,8 +371,27 @@ def main():
     permissions.add_argument("configuration_sha256")
     permissions.add_argument("source_root", type=Path, help="Stable audio/evidence root; evidence max 4 MiB each, 64 MiB total")
     permissions.add_argument("output", type=Path, help="New report; no overwrite; exit 3 means missing asserted scopes")
+    admit = commands.add_parser("admit", help="Verify reviewed source permissions; does not start or admit model training.")
+    admit.add_argument("configuration", type=Path, help="Captured permission config, at most 8 MiB")
+    admit.add_argument("configuration_sha256")
+    admit.add_argument("source_root", type=Path)
+    admit.add_argument("output", type=Path, help="New time-bound source admission report; never overwritten")
+    admit.add_argument("--review", type=Path, required=True, help="Supplied signed review JSON, at most 8 MiB")
+    admit.add_argument("--review-sha256", required=True, help="Captured SHA-256 of exact review file bytes")
+    admit.add_argument("--policy", type=Path, required=True, help="Externally trusted reviewer policy JSON")
+    admit.add_argument("--policy-file-sha256", required=True, help="Captured SHA-256 of exact policy file bytes")
+    admit.add_argument("--trusted-policy-sha256", required=True, help="Independent canonical policy hash; never infer from the review")
     args = parser.parse_args()
     try:
+        if args.command == "admit":
+            review = load_config(args.review, args.review_sha256)
+            policy = load_config(args.policy, args.policy_file_sha256)
+            result = admit_sources(args.configuration, args.configuration_sha256, args.source_root,
+                review=review, policy=policy, trusted_policy_sha256=args.trusted_policy_sha256, now=int(time.time()))
+            if int(time.time()) >= result["expiresAt"]:
+                raise ValueError("Review expired while inspecting sources")
+            publish_new(args.output, result)
+            return 0
         if args.command == "permission-report":
             return permission_command(args.configuration, args.configuration_sha256, args.source_root, args.output)
         if args.command == "segment-batch":
