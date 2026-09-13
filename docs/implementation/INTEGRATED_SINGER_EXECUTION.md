@@ -47,6 +47,17 @@ the worker or runtime changed. None of them proves musical output: the executing
 runner is the transport fixture probe, which returns silence and performs no
 inference.
 
+Two more cases close the rest of M2.P2 item 7. A neural project now exports a
+committed master and stems through `ExportService::exportSetWithSources()`, with
+the exported WAV frame count equal to the neural render and a reproducible master
+digest across two exports of the same execution. A source with no runner is a
+typed `NeuralSourceMissing` failure with the diagnostic text naming the missing
+admitted bundle: the previously published audio keeps its revision and samples,
+and a repaired request publishes again at a newer revision. So an older
+successful phrase cannot be published over a failed current neural request.
+
+Verification: the workflow target now passes 5 cases.
+
 Verification: the new target passes 3/3, the neural label group 7/7 and the
 neighbouring `seam_neural_phrase_runner_tests`, `seam_neural_render_tests` and
 `seam_authoring_render_coordinator_tests` all pass unchanged.

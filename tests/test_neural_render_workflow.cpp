@@ -9,6 +9,7 @@
 
 #include "seam/authoring/neural_phrase_runner.hpp"
 #include "seam/authoring/render_coordinator.hpp"
+#include "seam/authoring/export_service.hpp"
 #include "seam/application/project_factory.hpp"
 #include "seam/core/file_io.hpp"
 #include "seam/core/sha256.hpp"
@@ -17,6 +18,7 @@
 #include "seam/rendering/project_renderer.hpp"
 
 #include <array>
+#include <algorithm>
 #include <chrono>
 #include <condition_variable>
 #include <cstdint>
@@ -298,4 +300,75 @@ TEST_CASE("neural cache provenance separates executions that share a bundle") {
   CHECK(changed.neuralIdentities.front().bundleContentHash==first.neuralIdentities.front().bundleContentHash);
   CHECK(changed.neuralIdentities.front().workerVersion=="seam-neural-worker-2");
   CHECK(changed.result.phraseContentHashes!=first.result.phraseContentHashes);
+}
+
+TEST_CASE("a neural project exports master and stems from the same execution") {
+  const auto root=seam::test::support::temporaryDirectory("neural-workflow-export");
+  seam::application::ProjectFactory factory{9500U};
+  auto project=factory.createProject("Neural export");
+  const auto track=addNeuralTrack(project,factory,root/"voice","ak","seam.voice.export","1.0.0",seam::time::Tick{0});
+  const auto selected=sources(std::vector<Track>{track},provenance());
+  const auto expected=seam::rendering::ProductionProjectRenderer{}.renderWithSources(
+      project,selected,track.track,track.region,7U,48000U); CHECK(expected);
+  seam::authoring::ExportSettings settings{};
+  settings.sampleRate=48000U; settings.channels=2U; settings.includeMaster=true;
+  settings.includeStems=true; settings.replaceExisting=true;
+  seam::authoring::ExportProgress last{};
+  const auto exported=seam::authoring::ExportService{}.exportSetWithSources(project,selected,
+      track.track,track.region,7U,root/"export",settings,[&](const seam::authoring::ExportProgress& value) { last=value; });
+  if (!exported) throw seam::test::Failure{"neural export failed: "+exported.error().message+" | "+exported.error().context};
+  CHECK(exported.value().state==seam::authoring::ExportState::Committed);
+  CHECK(!exported.value().masterPath.empty());
+  CHECK(std::filesystem::exists(exported.value().masterPath));
+  CHECK(exported.value().files.size()>=2U);
+  const auto masterPath=exported.value().masterPath;
+  const auto stem=std::find_if(exported.value().files.begin(),exported.value().files.end(),
+      [&masterPath](const seam::authoring::ExportFileReceipt& file) { return file.path!=masterPath; });
+  CHECK(stem!=exported.value().files.end());
+  CHECK(std::filesystem::exists(stem->path));
+  // The exported audio is the neural render, frame for frame, and its identity is
+  // reproducible: a second export of the same execution produces the same bytes.
+  const auto master=seam::voicebank::readWav(exported.value().masterPath); CHECK(master);
+  CHECK(master.value().sampleRate==48000U);
+  CHECK(master.value().channels==2U);
+  CHECK(master.value().frameCount()==expected.value().interleaved.size()/2U);
+  const auto repeated=seam::authoring::ExportService{}.exportSetWithSources(project,selected,
+      track.track,track.region,8U,root/"export-2",settings);
+  CHECK(repeated);
+  CHECK(repeated.value().masterSha256==exported.value().masterSha256);
+  CHECK(last.totalFiles==exported.value().files.size());
+}
+
+TEST_CASE("a neural worker failure is a structured diagnostic that keeps older audio") {
+  const auto root=seam::test::support::temporaryDirectory("neural-workflow-failure");
+  seam::application::ProjectFactory factory{9600U};
+  auto project=factory.createProject("Neural failure");
+  const auto track=addNeuralTrack(project,factory,root/"voice","ak","seam.voice.failure","1.0.0",seam::time::Tick{0});
+  const auto selected=sources(std::vector<Track>{track},provenance());
+  seam::authoring::AuthoringRenderCoordinator coordinator{root/"cache"};
+  coordinator.submitWithSources(project,selected,track.track,track.region,61U,48000U,
+      seam::rendering::RenderQuality::Preview,true);
+  CHECK(waitForTerminal(coordinator,61U).state==seam::authoring::RenderState::Ready);
+  const auto published=coordinator.latest(); CHECK(published);
+  CHECK(published->result.interleaved.size()>0U);
+  // A source with no runner is a typed neural failure, not a voicebank error and
+  // not a silent success. The previously published audio stays audible.
+  auto broken=selected;
+  auto& neural=std::get<TrackNeuralSource>(broken.front());
+  neural.runner=nullptr;
+  coordinator.submitWithSources(project,broken,track.track,track.region,62U,48000U,
+      seam::rendering::RenderQuality::Preview,true);
+  const auto failed=waitForTerminal(coordinator,62U);
+  CHECK(failed.state==seam::authoring::RenderState::Failed);
+  CHECK(failed.failure==seam::authoring::RenderFailureKind::NeuralSourceMissing);
+  CHECK(failed.diagnostic.find("admitted model bundle")!=std::string::npos);
+  CHECK(seam::authoring::renderFailureName(failed.failure)=="neural-source-missing");
+  const auto retained=coordinator.latest(); CHECK(retained);
+  CHECK(retained->projectRevision==61U);
+  CHECK(retained->result.interleaved==published->result.interleaved);
+  // A repaired request publishes again and the identity reflects the newer revision.
+  coordinator.submitWithSources(project,selected,track.track,track.region,63U,48000U,
+      seam::rendering::RenderQuality::Preview,true);
+  CHECK(waitForTerminal(coordinator,63U).state==seam::authoring::RenderState::Ready);
+  CHECK(coordinator.latest()->projectRevision==63U);
 }
