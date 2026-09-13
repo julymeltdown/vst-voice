@@ -12,6 +12,7 @@
 namespace seam::voicebank {
 
 enum class PitchCorrelationMethod { Direct, Fft };
+enum class PitchFrameCoverage { CompleteWindows, FullHopGrid };
 
 struct PitchConfig final {
   std::size_t frameSize{2048};
@@ -20,6 +21,8 @@ struct PitchConfig final {
   double maximumHz{1200.0};
   double voicingThreshold{0.32};
   PitchCorrelationMethod correlationMethod{PitchCorrelationMethod::Direct};
+  // FullHopGrid emits ceil(sampleCount / hopSize) frames, zero-padding tails.
+  PitchFrameCoverage coverage{PitchFrameCoverage::CompleteWindows};
 };
 
 struct PitchFrame final {

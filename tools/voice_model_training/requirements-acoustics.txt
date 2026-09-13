@@ -1,0 +1,2 @@
+# Optional acoustic target environment; version exercised locally.
+numpy==2.4.4

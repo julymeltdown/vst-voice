@@ -131,6 +131,42 @@ int inspectCommand(const std::filesystem::path& manifestPath) {
   return 0;
 }
 
+int extractPitchCommand(const std::filesystem::path& path) {
+  const auto bytes = seam::core::readFileBytesLimited(path, 64U * 1024U * 1024U);
+  if (!bytes) { printError(bytes.error()); return 2; }
+  const auto audio = seam::voicebank::readWav(bytes.value(), "training pitch source",
+      {.maximumFrames = 16000000U, .maximumChannels = 1U, .maximumDecodedSamples = 16000000U});
+  if (!audio) { printError(audio.error()); return 2; }
+  seam::voicebank::PitchConfig config;
+  config.frameSize = 128U;
+  while (config.frameSize < audio.value().sampleRate / 24U) config.frameSize *= 2U;
+  config.correlationMethod = seam::voicebank::PitchCorrelationMethod::Fft;
+  config.coverage = seam::voicebank::PitchFrameCoverage::FullHopGrid;
+  const auto pitch = seam::voicebank::analyzePitch(audio.value().interleaved, audio.value().sampleRate,
+      config, {}, {.maximumFrames = 65536U, .maximumCorrelationTerms = 0U,
+                   .maximumTransformButterflies = 512000000U});
+  if (!pitch) { printError(pitch.error()); return 3; }
+  seam::formats::JsonValue::Array frames;
+  for (const auto& frame : pitch.value()) {
+    frames.emplace_back(seam::formats::JsonValue::Object{
+        {"sourceFrame", static_cast<std::int64_t>(frame.sourceFrame)}, {"f0Hz", frame.f0Hz},
+        {"confidence", frame.confidence}, {"voiced", frame.voiced}});
+  }
+  const seam::formats::JsonValue result{seam::formats::JsonValue::Object{
+      {"formatId", "com.project-seam.training-pitch-features"}, {"schemaVersion", std::int64_t{1}},
+      {"sourceSha256", seam::core::sha256Hex(bytes.value())},
+      {"sampleRate", static_cast<std::int64_t>(audio.value().sampleRate)},
+      {"frameCount", static_cast<std::int64_t>(audio.value().frameCount())},
+      {"windowFrames", static_cast<std::int64_t>(config.frameSize)},
+      {"hopSize", static_cast<std::int64_t>(config.hopSize)},
+      {"minimumHz", config.minimumHz}, {"maximumHz", config.maximumHz},
+      {"voicingThreshold", config.voicingThreshold}, {"algorithm", "fft-autocorrelation-v1"},
+      {"coverage", "full-hop-zero-padded"}, {"pitchFrames", std::move(frames)},
+      {"trainingAdmitted", false}, {"releaseEligible", false}}};
+  std::cout << seam::formats::stringifyJson(result, false) << '\n';
+  return 0;
+}
+
 int analyzeCommand(const std::filesystem::path& wavPath,
                    const std::filesystem::path& outputDirectory) {
   const auto audio = seam::voicebank::readWav(wavPath);
@@ -532,6 +568,7 @@ void printUsage() {
       << "  seam_voicebank_cli validate MANIFEST [BANK_ROOT]\n"
       << "  seam_voicebank_cli inspect MANIFEST\n"
       << "  seam_voicebank_cli inspect-wav WAV\n"
+      << "  seam_voicebank_cli extract-pitch WAV  (JSON stdout; mono, 64 MiB input; bounded FFT work)\n"
       << "  seam_voicebank_cli convert-neural-vocabulary SOURCE_JSON SOURCE_SHA256 NEW_OUTPUT_JSON\n"
       << "  seam_voicebank_cli inspect-neural-bundle DIRECTORY MODEL_ID MODEL_VERSION MANIFEST_SHA256 MAX_PAYLOAD_BYTES\n"
       << "  seam_voicebank_cli prepare-neural-bundle DIRECTORY MODEL_ID MODEL_VERSION MAX_PAYLOAD_BYTES\n"
@@ -680,6 +717,10 @@ int main(int argc, char** argv) {
       return 1;
     }
     return inspectWavCommand(argv[2]);
+  }
+  if (command == "extract-pitch") {
+    if (argc != 3) { printUsage(); return 1; }
+    return extractPitchCommand(argv[2]);
   }
   std::cerr << "unknown command: " << command << '\n';
   printUsage();

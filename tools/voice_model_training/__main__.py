@@ -15,7 +15,107 @@ from .labels import label_report, score_report
 from .segment import segment_source, crop_labels, crop_score
 from .audio_source import inspect_pcm_source
 from .permissions import inspect_permission_sources
-from .review import verify_training_review
+from .review import verify_training_review, verify_label_review
+from .features import apply_pitch_features, pitch_corrections
+from .native_features import extract_pitch
+from .label_edits import apply_label_edits
+from .conditioning import build_conditioning
+
+
+def acoustic_targets_command(config: Path, expected_hash: str, source: Path, output: Path) -> None:
+    value = load_config(config, expected_hash)
+    if (not isinstance(value, dict) or set(value) != {"formatId", "schemaVersion", "sourceSha256", "sampleRate",
+            "fftSize", "hopSize", "bins", "minimumHz", "maximumHz"}
+            or value["formatId"] != "com.project-seam.training-acoustic-config"
+            or type(value["schemaVersion"]) is not int or value["schemaVersion"] != 1):
+        raise ValueError("Unsupported acoustic target configuration")
+    if output.exists() or output.is_symlink():
+        raise ValueError("Acoustic output directory must be new")
+    if source.is_symlink():
+        raise ValueError("Acoustic source cannot be a symlink")
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+    with os.fdopen(os.open(source, flags), "rb") as stream:
+        info = os.fstat(stream.fileno())
+        if not stat.S_ISREG(info.st_mode) or not 1 <= info.st_size <= 64 * 1024 * 1024:
+            raise ValueError("Acoustic source must be a regular WAV at most 64 MiB")
+        payload = stream.read(64 * 1024 * 1024 + 1)
+    try:
+        from .acoustics import wav_log_mel_targets
+        record, targets = wav_log_mel_targets(payload, expected_sha256=value["sourceSha256"],
+            sample_rate=value["sampleRate"], fft_size=value["fftSize"], hop_size=value["hopSize"],
+            bins=value["bins"], minimum_hz=value["minimumHz"], maximum_hz=value["maximumHz"])
+    except ImportError as error:
+        raise ValueError("Acoustic extraction requires the optional NumPy environment") from error
+    record["configurationSha256"] = expected_hash
+    record["targetPath"] = "mel.f32le"
+    output.mkdir(mode=0o700)
+    with (output / "mel.f32le").open("xb") as stream:
+        stream.write(targets.astype("<f4", copy=False).tobytes(order="C"))
+        stream.flush()
+        os.fsync(stream.fileno())
+    # Metadata is the final publication marker; a binary alone is incomplete.
+    publish_new(output / "target.json", record)
+
+
+def correct_labels_command(config: Path, expected_hash: str, root: Path, output: Path) -> None:
+    value = load_config(config, expected_hash)
+    fields = {"formatId", "schemaVersion", "source", "sampleRate", "label", "edits", "vocabulary", "minimumConfidence"}
+    if (not isinstance(value, dict) or set(value) != fields
+            or value["formatId"] != "com.project-seam.training-label-correction-config"
+            or type(value["schemaVersion"]) is not int or value["schemaVersion"] != 1):
+        raise ValueError("Unsupported label correction configuration")
+    vocab = value["vocabulary"]
+    if (not isinstance(vocab, list) or not 1 <= len(vocab) <= 4096
+            or any(not isinstance(s, str) or not 1 <= len(s.encode()) <= 256 for s in vocab)
+            or len(set(vocab)) != len(vocab)):
+        raise ValueError("Invalid correction vocabulary")
+    prepared = prepare_sources(root, [value["source"]], sample_rate=value["sampleRate"])
+    if prepared["rejectedCount"]:
+        raise ValueError("Correction source inspection failed")
+    audio = prepared["sources"][0]["inspection"]
+    label = value["label"]
+    if (not isinstance(label, dict) or label.get("sourceId") != value["source"]["sourceId"]
+            or label.get("frameCount") != audio["frameCount"]):
+        raise ValueError("Correction label differs from inspected source identity/geometry")
+    updated = apply_label_edits(label, value["edits"], vocabulary=set(vocab), minimum_confidence=value["minimumConfidence"])
+    publish_new(output, dict(formatId="com.project-seam.training-label-correction", schemaVersion=1,
+        configurationSha256=expected_hash, sourceSha256=audio["sourceSha256"], audioSha256=audio["audioSha256"],
+        parentLabelSha256=hashlib.sha256(encode_report(label)).hexdigest(),
+        labelSha256=hashlib.sha256(encode_report(updated)).hexdigest(), label=updated, edits=value["edits"],
+        consistency=label_report(updated, vocabulary=set(vocab), minimum_confidence=value["minimumConfidence"]),
+        reviewAuthenticated=False, trainingAdmitted=False, releaseEligible=False))
+
+
+def refresh_pitch_command(config: Path, expected_hash: str, root: Path, executable: Path, output: Path) -> None:
+    value = load_config(config, expected_hash)
+    fields = {"formatId", "schemaVersion", "source", "sampleRate", "label", "vocabulary", "minimumConfidence"}
+    if (not isinstance(value, dict) or set(value) != fields
+            or value["formatId"] != "com.project-seam.training-pitch-refresh-config"
+            or type(value["schemaVersion"]) is not int or value["schemaVersion"] != 1):
+        raise ValueError("Unsupported pitch refresh configuration")
+    vocabulary = value["vocabulary"]
+    if (not isinstance(vocabulary, list) or not 1 <= len(vocabulary) <= 4096
+            or any(not isinstance(s, str) or not 1 <= len(s.encode()) <= 256 for s in vocabulary)
+            or len(set(vocabulary)) != len(vocabulary)):
+        raise ValueError("Invalid pitch refresh vocabulary")
+    root = root.resolve(strict=True)
+    prepared = prepare_sources(root, [value["source"]], sample_rate=value["sampleRate"])
+    if prepared["rejectedCount"]:
+        raise ValueError("Pitch refresh source inspection failed")
+    label = value["label"]
+    label_report(label, vocabulary=set(vocabulary), minimum_confidence=value["minimumConfidence"])
+    source = value["source"]
+    if label["sourceId"] != source["sourceId"]:
+        raise ValueError("Pitch refresh label source identity differs")
+    features = extract_pitch(executable, root / source["path"])
+    updated = apply_pitch_features(label, features, source_sha256=source["sourceSha256"],
+        sample_rate=value["sampleRate"], vocabulary=set(vocabulary), minimum_confidence=value["minimumConfidence"])
+    corrections = pitch_corrections(label, features, source_sha256=source["sourceSha256"],
+        sample_rate=value["sampleRate"], vocabulary=set(vocabulary), minimum_confidence=value["minimumConfidence"])
+    publish_new(output, dict(formatId="com.project-seam.training-refreshed-pitch-label", schemaVersion=2,
+        configurationSha256=expected_hash, sourceSha256=source["sourceSha256"],
+        audioSha256=prepared["sources"][0]["inspection"]["audioSha256"], label=updated,
+        features=features, pitchCorrections=corrections, reviewAuthenticated=False, trainingAdmitted=False, releaseEligible=False))
 
 
 def inspect_permission_config(config: Path, expected_hash: str, root: Path) -> dict:
@@ -75,6 +175,138 @@ def admit_sources(config: Path, expected_hash: str, root: Path, *, review: dict,
                 trainingAdmitted=False, releaseEligible=False)
 
 
+def admit_segment(permission_config: Path, permission_hash: str, source_root: Path, *,
+                  segment_config: Path, segment_hash: str, source_path: Path, output: Path,
+                  review: dict, policy: dict, trusted_policy_sha256: str, now: int, resume: bool = False,
+                  fresh_pitch_extractor: Path | None = None) -> dict:
+    """Authenticate the parent and derive the clip; never trust a stored receipt."""
+    admission = admit_sources(permission_config, permission_hash, source_root, review=review,
+                              policy=policy, trusted_policy_sha256=trusted_policy_sha256, now=now)
+    config = load_config(segment_config, segment_hash)
+    if not isinstance(config, dict) or not isinstance(config.get("source"), dict):
+        raise ValueError("Segment lacks captured parent identity")
+    declared = config["source"]
+    parent = next((r for r in admission["sources"] if r["sourceId"] == declared.get("sourceId")), None)
+    if parent is None or any(declared.get(k) != parent[k] for k in ("sourceSha256", "songId", "sessionId", "lineageId")):
+        raise ValueError("Segment parent differs from reviewed source or lineage")
+    artifact = segment_command(segment_config, segment_hash, source_path, output, resume=resume,
+                               fresh_pitch_extractor=fresh_pitch_extractor)
+    if artifact["parentAudioSha256"] != parent["audioSha256"]:
+        raise ValueError("Derived segment PCM parent differs from inspected admission")
+    return dict(formatId="com.project-seam.training-segment-admission", schemaVersion=1,
+                parentConfigurationSha256=permission_hash, segmentConfigurationSha256=segment_hash,
+                policySha256=trusted_policy_sha256, reviewSha256=admission["reviewSha256"],
+                expiresAt=admission["expiresAt"], verifiedAt=now, identityId=parent["identityId"],
+                segmentRecordSha256=hashlib.sha256(encode_report(artifact)).hexdigest(),
+                sourceId=artifact["sourceId"], sourceSha256=artifact["sourceSha256"], audioSha256=artifact["audioSha256"],
+                sourcePermissionsAdmitted=True, trainingAdmitted=False, releaseEligible=False)
+
+
+def assemble_dataset(permission_config: Path, permission_hash: str, label_config: Path, label_hash: str,
+                     root: Path, *, rights_review: dict, rights_policy: dict, rights_anchor: str,
+                     label_review: dict, label_policy: dict, label_anchor: str, now: int,
+                     seed: str, held_out_songs: list[str], conditioning_directory: Path | None = None) -> dict:
+    """Revalidate both authorities before building a source/label/split snapshot."""
+    rights = admit_sources(permission_config, permission_hash, root, review=rights_review,
+                           policy=rights_policy, trusted_policy_sha256=rights_anchor, now=now)
+    annotations = admit_labels(label_config, label_hash, root, review=label_review,
+                               policy=label_policy, trusted_policy_sha256=label_anchor, now=now)
+    rights_by_id = {r["sourceId"]: r for r in rights["sources"]}
+    labels_by_id = {r["sourceId"]: r for r in annotations["sources"]}
+    if set(rights_by_id) != set(labels_by_id):
+        raise ValueError("Rights and label admission cover different source sets")
+    captured_labels = load_config(label_config, label_hash)
+    declared = {r["sourceId"]: r for r in captured_labels["sources"]}
+    for identity, source in rights_by_id.items():
+        if any(source[k] != labels_by_id[identity][k] for k in ("sourceSha256", "audioSha256", "sampleRate")):
+            raise ValueError("Rights and labels refer to different audio")
+        if any(source[k] != declared[identity][k] for k in ("songId", "sessionId", "lineageId")):
+            raise ValueError("Reviewed source lineage differs between configurations")
+    rows = [{k: r[k] for k in ("sourceId", "songId", "sessionId", "lineageId", "audioSha256")}
+            for r in rights["sources"]]
+    split = split_sources(rows, seed=seed, held_out_songs=held_out_songs)
+    # Preflight total work; sharded mode retains only one phrase's expanded rows.
+    total_frames = sum(len(entry["label"]["f0Hz"]) for entry in captured_labels["labels"])
+    if total_frames > (1000000 if conditioning_directory is not None else 65536):
+        raise ValueError("Dataset conditioning exceeds the selected storage frame budget")
+    if any(len(entry["label"]["f0Hz"]) > 65536 for entry in captured_labels["labels"]):
+        raise ValueError("Segment long sources before conditioning (65536 frames per phrase)")
+    if conditioning_directory is not None:
+        conditioning_directory.mkdir(mode=0o700)  # Exclusive: never mix attempts.
+    conditioning, stored_bytes = [], 0
+    for index, entry in enumerate(sorted(captured_labels["labels"], key=lambda e: e["label"]["sourceId"])):
+        features = build_conditioning(entry["label"], entry["score"],
+                        vocabulary=captured_labels["vocabulary"], minimum_confidence=captured_labels["minimumConfidence"])
+        if conditioning_directory is None:
+            conditioning.append(features)
+        else:
+            payload = encode_report(features)
+            stored_bytes += len(payload)
+            if stored_bytes > 256 * 1024 * 1024:
+                raise ValueError("Conditioning shard disk budget exceeded; incomplete attempt retained")
+            name = f"phrase-{index:06d}.json"
+            publish_new(conditioning_directory / name, features)
+            conditioning.append(dict(sourceId=features["sourceId"], path=name,
+                sha256=hashlib.sha256(payload).hexdigest(), sizeBytes=len(payload), frameCount=len(features["frames"])))
+    conditioning_hash = hashlib.sha256(encode_report(conditioning)).hexdigest()
+    identity = dict(permissionConfigurationSha256=permission_hash, labelConfigurationSha256=label_hash,
+                    rightsReviewSha256=rights["reviewSha256"], labelReviewSha256=annotations["reviewSha256"],
+                    conditioningSha256=conditioning_hash, split=split)
+    issues = [dict(code="missing-partition", partition=p) for p in split["missingPartitions"]]
+    if split["duplicateAudioGroups"]:
+        issues.append(dict(code="duplicate-selection-review-required"))
+    result = dict(formatId="com.project-seam.training-dataset-snapshot", schemaVersion=3 if conditioning_directory is not None else 2,
+                datasetSha256=hashlib.sha256(encode_report(identity)).hexdigest(), bindings=identity,
+                expiresAt=min(rights["expiresAt"], annotations["expiresAt"]), verifiedAt=now,
+                sources=rights["sources"], labels=captured_labels["labels"], vocabulary=captured_labels["vocabulary"],
+                conditioning=conditioning, conditioningFrameCount=total_frames,
+                preparationIssues=issues, sourcePermissionsAdmitted=True, labelsAdmitted=True,
+                trainingAdmitted=False, releaseEligible=False)
+    if conditioning_directory is not None:
+        result["conditioningDirectory"] = conditioning_directory.name
+        result["conditioningBytes"] = stored_bytes
+    return result
+
+
+def assemble_dataset_command(config: Path, expected_hash: str, root: Path, output: Path, *,
+                             rights_anchor: str, label_anchor: str, conditioning_directory: Path | None = None) -> int:
+    value = load_config(config, expected_hash)
+    refs = {"permissionConfig", "labelConfig", "rightsReview", "rightsPolicy", "labelReview", "labelPolicy"}
+    if (not isinstance(value, dict) or set(value) != refs | {"formatId", "schemaVersion", "seed", "heldOutSongs"}
+            or value["formatId"] != "com.project-seam.training-dataset-config"
+            or type(value["schemaVersion"]) is not int or value["schemaVersion"] != 1):
+        raise ValueError("Unsupported dataset assembly configuration")
+    if output.exists() or output.is_symlink():
+        raise ValueError("Dataset snapshot must be new")
+    if conditioning_directory is not None:
+        if (conditioning_directory.parent.resolve(strict=True) != output.parent.resolve(strict=True)
+                or conditioning_directory.name == output.name
+                or conditioning_directory.exists() or conditioning_directory.is_symlink()):
+            raise ValueError("Conditioning directory must be new and a sibling of the snapshot")
+    root = root.resolve(strict=True)
+    references = {}
+    for key in refs:
+        ref = value[key]
+        if not isinstance(ref, dict) or set(ref) != {"path", "sha256"}:
+            raise ValueError("Dataset references require path and captured SHA-256")
+        name = ref["path"]
+        if (not isinstance(name, str) or not 1 <= len(name) <= 128 or name in (".", "..")
+                or any(c not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_." for c in name)):
+            raise ValueError("Dataset references must be flat ASCII filenames")
+        references[key] = load_config(root / name, ref["sha256"])
+    permission, labels = value["permissionConfig"], value["labelConfig"]
+    snapshot = assemble_dataset(root / permission["path"], permission["sha256"], root / labels["path"], labels["sha256"], root,
+        rights_review=references["rightsReview"], rights_policy=references["rightsPolicy"], rights_anchor=rights_anchor,
+        label_review=references["labelReview"], label_policy=references["labelPolicy"], label_anchor=label_anchor,
+        now=int(time.time()), seed=value["seed"], held_out_songs=value["heldOutSongs"],
+        conditioning_directory=conditioning_directory)
+    if int(time.time()) >= snapshot["expiresAt"]:
+        raise ValueError("Dataset review expired during assembly")
+    snapshot["assemblyConfigurationSha256"] = expected_hash
+    publish_new(output, snapshot)
+    return 3 if snapshot["preparationIssues"] else 0
+
+
 def load_config(config: Path, expected_hash: str) -> dict:
     if config.is_symlink() or not config.is_file():
         raise ValueError("Configuration must be a regular non-symlink file")
@@ -124,7 +356,7 @@ def prepare_command(config: Path, expected_hash: str, root: Path, output: Path) 
     return 3 if result["rejectedCount"] else 0
 
 
-def labels_command(config: Path, expected_hash: str, root: Path, output: Path) -> int:
+def inspect_label_config(config: Path, expected_hash: str, root: Path) -> dict:
     value = load_config(config, expected_hash)
     fields = {"formatId", "schemaVersion", "sampleRate", "sources", "labels", "vocabulary", "minimumConfidence"}
     if (not isinstance(value, dict) or set(value) != fields
@@ -169,13 +401,40 @@ def labels_command(config: Path, expected_hash: str, root: Path, output: Path) -
         reports.append(report)
     reports.sort(key=lambda item: item["sourceId"])
     passed = all(item["consistencyPassed"] for item in reports)
-    publish_new(output, dict(formatId="com.project-seam.training-label-batch-report", schemaVersion=value["schemaVersion"],
+    return dict(formatId="com.project-seam.training-label-batch-report", schemaVersion=value["schemaVersion"],
                             configurationSha256=expected_hash, sources=reports, consistencyPassed=passed,
-                            trainingAdmitted=False, releaseEligible=False))
-    return 0 if passed else 3
+                            trainingAdmitted=False, releaseEligible=False)
 
 
-def segment_command(config: Path, expected_hash: str, source_path: Path, output: Path, *, resume: bool = False) -> dict:
+def labels_command(config: Path, expected_hash: str, root: Path, output: Path) -> int:
+    report = inspect_label_config(config, expected_hash, root)
+    publish_new(output, report)
+    return 0 if report["consistencyPassed"] else 3
+
+
+def admit_labels(config: Path, expected_hash: str, root: Path, *, review: dict, policy: dict,
+                 trusted_policy_sha256: str, now: int) -> dict:
+    verified = verify_label_review(review, policy=policy, trusted_policy_sha256=trusted_policy_sha256,
+                                   configuration_sha256=expected_hash, now=now)
+    inspected = inspect_label_config(config, expected_hash, root)
+    if inspected["schemaVersion"] != 3:
+        raise ValueError("Label admission requires explicit score and silence ownership")
+    admitted = []
+    for source in inspected["sources"]:
+        if any(issue["code"] != "review-revision-missing" for issue in source["correctionQueue"]):
+            raise ValueError("Signed label configuration still contains unresolved corrections")
+        admitted.append(dict(sourceId=source["sourceId"], sourceSha256=source["sourceSha256"],
+                             audioSha256=source["audioSha256"], sampleRate=source["sampleRate"],
+                             scoreSupervision=source["scoreSupervision"]))
+    return dict(formatId="com.project-seam.training-label-admission", schemaVersion=1,
+                configurationSha256=expected_hash, policySha256=trusted_policy_sha256,
+                reviewSha256=verified["reviewSha256"], signerId=verified["signerId"],
+                verifiedAt=now, expiresAt=review["expiresAt"], sources=admitted,
+                labelsAdmitted=True, sourcePermissionsAdmitted=False, trainingAdmitted=False, releaseEligible=False)
+
+
+def segment_command(config: Path, expected_hash: str, source_path: Path, output: Path, *, resume: bool = False,
+                    fresh_pitch_extractor: Path | None = None) -> dict:
     value = load_config(config, expected_hash)
     fields = {"formatId", "schemaVersion", "source", "sampleRate", "segmentId", "startFrame", "endFrame"}
     if isinstance(value, dict) and value.get("schemaVersion") in (2, 3):
@@ -201,6 +460,14 @@ def segment_command(config: Path, expected_hash: str, source_path: Path, output:
     audio, record = segment_source(payload, source=value["source"], sample_rate=value["sampleRate"],
                                    segment_id=value["segmentId"], start_frame=value["startFrame"], end_frame=value["endFrame"])
     record.update(configurationSha256=expected_hash, path="audio.wav")
+    fresh = None
+    if fresh_pitch_extractor is not None:
+        if value["schemaVersion"] < 2:
+            raise ValueError("Fresh crop pitch requires a label-bearing configuration")
+        with tempfile.TemporaryDirectory(prefix="seam-pitch-crop-") as temporary:
+            captured_path = Path(temporary) / "clip.wav"
+            captured_path.write_bytes(audio)
+            fresh = extract_pitch(fresh_pitch_extractor, captured_path)
     if value["schemaVersion"] >= 2:
         bound = value["parentLabel"]
         if not isinstance(bound, dict) or set(bound) != {"sourceSha256", "audioSha256", "label"}:
@@ -217,12 +484,17 @@ def segment_command(config: Path, expected_hash: str, source_path: Path, output:
                 or len(set(vocab)) != len(vocab)):
             raise ValueError("Invalid crop vocabulary")
         cropped = crop_labels(label, segment_id=value["segmentId"], start_frame=value["startFrame"],
-                              end_frame=value["endFrame"], vocabulary=set(vocab), minimum_confidence=value["minimumConfidence"])
+                              end_frame=value["endFrame"], vocabulary=set(vocab), minimum_confidence=value["minimumConfidence"],
+                              fresh_features=fresh, child_source_sha256=record["sourceSha256"], sample_rate=value["sampleRate"])
         record.update(schemaVersion=value["schemaVersion"], label=dict(sourceSha256=record["sourceSha256"],
                       audioSha256=record["audioSha256"], label=cropped))
         if value["schemaVersion"] == 3:
             record["label"]["score"] = crop_score(value["parentScore"], label,
                 start_frame=value["startFrame"], end_frame=value["endFrame"])
+        if fresh is not None:
+            corrections = pitch_corrections(cropped, fresh, source_sha256=record["sourceSha256"],
+                sample_rate=value["sampleRate"], vocabulary=set(vocab), minimum_confidence=value["minimumConfidence"])
+            record.update(schemaVersion=5, pitchFeatures=fresh, pitchCorrections=corrections)
     # Exclusive directory creation reserves this artifact. On interruption retain
     # partial output, never overwrite it; the manifest is the final commit marker.
     if resume and output.exists():
@@ -248,7 +520,8 @@ def segment_command(config: Path, expected_hash: str, source_path: Path, output:
     return record
 
 
-def segment_batch_command(config: Path, expected_hash: str, root: Path, output: Path, report: Path, *, resume: bool) -> int:
+def segment_batch_command(config: Path, expected_hash: str, root: Path, output: Path, report: Path, *, resume: bool,
+                          fresh_pitch_extractor: Path | None = None) -> int:
     value = load_config(config, expected_hash)
     if (not isinstance(value, dict) or set(value) != {"formatId", "schemaVersion", "entries"}
             or value["formatId"] != "com.project-seam.voice-training-segment-batch"
@@ -282,7 +555,7 @@ def segment_batch_command(config: Path, expected_hash: str, root: Path, output: 
     for row in value["entries"]:
         try:
             artifact = segment_command(root / row["configuration"], row["configurationSha256"], root / row["source"],
-                            output / row["outputName"], resume=resume)
+                            output / row["outputName"], resume=resume, fresh_pitch_extractor=fresh_pitch_extractor)
             owners.setdefault(artifact["sourceId"], []).append(row["outputName"])
             inventory.append({key: artifact[key] for key in ("sourceId", "songId", "sessionId", "lineageId", "audioSha256")})
             results.append(dict(outputName=row["outputName"], configurationSha256=row["configurationSha256"],
@@ -317,7 +590,7 @@ def verify_exact_file(path: Path, expected: bytes) -> None:
             raise ValueError("Resume artifact content differs")
 
 
-def encode_report(result: dict) -> bytes:
+def encode_report(result: dict | list) -> bytes:
     return (json.dumps(result, sort_keys=True, ensure_ascii=False, separators=(",", ":")) + "\n").encode()
 
 
@@ -339,6 +612,11 @@ def publish_new(output: Path, result: dict) -> None:
 def main():
     parser = argparse.ArgumentParser(description="Original-model preparation tools; no musical or release approval.")
     commands = parser.add_subparsers(dest="command", required=True)
+    acoustic = commands.add_parser("acoustic-targets", help="Extract byte-bound log-mel data; no training or source-rights approval.")
+    acoustic.add_argument("configuration", type=Path, help="Captured explicit analysis profile JSON, at most 8 MiB")
+    acoustic.add_argument("configuration_sha256")
+    acoustic.add_argument("source", type=Path, help="Mono integer PCM WAV, at most 64 MiB")
+    acoustic.add_argument("output", type=Path, help="New directory; writes mel.f32le then target.json; no overwrite/resume")
     split = commands.add_parser("split", help="Split captured source identities without leakage; never overwrite output.")
     split.add_argument("configuration", type=Path, help="UTF-8 JSON configuration, maximum 8 MiB")
     split.add_argument("configuration_sha256", help="Expected SHA-256 of the exact configuration bytes")
@@ -359,6 +637,7 @@ def main():
     segment.add_argument("source_path", type=Path, help="Captured mono integer PCM WAV, maximum 64 MiB")
     segment.add_argument("output", type=Path, help="New directory containing audio.wav and final segment.json identity record")
     segment.add_argument("--resume", action="store_true", help="Verify exact existing audio; finish a missing record or verify complete output; never overwrite")
+    segment.add_argument("--fresh-pitch-extractor", type=Path, help="Trusted native CLI; re-extract on the exact clip, including off-grid starts")
     batch = commands.add_parser("segment-batch", help="Process 1..64 captured phrase configs; retain per-entry failures; no approval.")
     batch.add_argument("configuration", type=Path)
     batch.add_argument("configuration_sha256")
@@ -366,6 +645,7 @@ def main():
     batch.add_argument("output", type=Path, help="Private clip directory; existing directory requires --resume")
     batch.add_argument("report", type=Path, help="New report for this attempt, never overwritten; exit 3 means entry failures")
     batch.add_argument("--resume", action="store_true")
+    batch.add_argument("--fresh-pitch-extractor", type=Path, help="Trusted native CLI; each entry must contain labels")
     permissions = commands.add_parser("permission-report", help="Inspect captured permission assertions and audio; does not authorize training.")
     permissions.add_argument("configuration", type=Path, help="Captured JSON, maximum 8 MiB")
     permissions.add_argument("configuration_sha256")
@@ -381,13 +661,90 @@ def main():
     admit.add_argument("--policy", type=Path, required=True, help="Externally trusted reviewer policy JSON")
     admit.add_argument("--policy-file-sha256", required=True, help="Captured SHA-256 of exact policy file bytes")
     admit.add_argument("--trusted-policy-sha256", required=True, help="Independent canonical policy hash; never infer from the review")
+    admit.add_argument("--segment-config", type=Path, help="Optional captured crop configuration; requires all segment options")
+    admit.add_argument("--segment-sha256")
+    admit.add_argument("--segment-source", type=Path)
+    admit.add_argument("--segment-output", type=Path, help="Clip directory distinct from the admission report")
+    admit.add_argument("--resume-segment", action="store_true", help="Verify/recover exact existing clip; admission report must still be new")
+    admit.add_argument("--fresh-pitch-extractor", type=Path, help="Trusted native CLI for derived clips only")
+    refresh = commands.add_parser("refresh-pitch", help="Run trusted native extractor and publish unreviewed refreshed labels; POSIX only.")
+    refresh.add_argument("configuration", type=Path, help="Captured JSON, at most 8 MiB")
+    refresh.add_argument("configuration_sha256")
+    refresh.add_argument("source_root", type=Path)
+    refresh.add_argument("extractor", type=Path, help="Trusted first-party seam_voicebank_cli; 30-second deadline")
+    refresh.add_argument("output", type=Path, help="New report with feature evidence and labels; never overwritten")
+    correct = commands.add_parser("correct-labels", help="Apply captured stale-checked label edits; creates no review approval.")
+    correct.add_argument("configuration", type=Path, help="Captured edit config, maximum 8 MiB")
+    correct.add_argument("configuration_sha256")
+    correct.add_argument("source_root", type=Path)
+    correct.add_argument("output", type=Path, help="New corrected label/audit report; never overwritten")
+    admit_label = commands.add_parser("admit-labels", help="Verify signed musical annotation review against actual source; no source-rights or training approval.")
+    admit_label.add_argument("configuration", type=Path, help="Captured schema 3 label configuration, maximum 8 MiB")
+    admit_label.add_argument("configuration_sha256")
+    admit_label.add_argument("source_root", type=Path)
+    admit_label.add_argument("output", type=Path, help="New time-bound label admission report; never overwritten")
+    admit_label.add_argument("--review", type=Path, required=True)
+    admit_label.add_argument("--review-sha256", required=True)
+    admit_label.add_argument("--policy", type=Path, required=True)
+    admit_label.add_argument("--policy-file-sha256", required=True)
+    admit_label.add_argument("--trusted-policy-sha256", required=True, help="Independent canonical label-review policy hash")
+    dataset = commands.add_parser("assemble-dataset", help="Revalidate rights/labels and assemble a split snapshot; never starts training.")
+    dataset.add_argument("configuration", type=Path, help="Captured assembly JSON; maximum 8 MiB per referenced JSON")
+    dataset.add_argument("configuration_sha256")
+    dataset.add_argument("source_root", type=Path)
+    dataset.add_argument("output", type=Path, help="New snapshot; exit 3 retains preparation issues; no overwrite")
+    dataset.add_argument("--rights-policy-sha256", required=True, help="Independent canonical rights policy trust anchor")
+    dataset.add_argument("--label-policy-sha256", required=True, help="Independent canonical annotation policy trust anchor")
+    dataset.add_argument("--conditioning-directory", type=Path,
+                         help="New sibling directory for phrase shards; 1M total frames, 256 MiB; incomplete attempts retained")
     args = parser.parse_args()
     try:
+        if args.command == "acoustic-targets":
+            acoustic_targets_command(args.configuration, args.configuration_sha256, args.source, args.output)
+            return 0
+        if args.command == "assemble-dataset":
+            return assemble_dataset_command(args.configuration, args.configuration_sha256, args.source_root, args.output,
+                                            rights_anchor=args.rights_policy_sha256, label_anchor=args.label_policy_sha256,
+                                            conditioning_directory=args.conditioning_directory)
+        if args.command == "admit-labels":
+            if args.output.exists() or args.output.is_symlink():
+                raise ValueError("Label admission report must be new")
+            result = admit_labels(args.configuration, args.configuration_sha256, args.source_root,
+                review=load_config(args.review, args.review_sha256), policy=load_config(args.policy, args.policy_file_sha256),
+                trusted_policy_sha256=args.trusted_policy_sha256, now=int(time.time()))
+            if int(time.time()) >= result["expiresAt"]:
+                raise ValueError("Label review expired during inspection")
+            publish_new(args.output, result)
+            return 0
+        if args.command == "correct-labels":
+            correct_labels_command(args.configuration, args.configuration_sha256, args.source_root, args.output)
+            return 0
+        if args.command == "refresh-pitch":
+            refresh_pitch_command(args.configuration, args.configuration_sha256, args.source_root, args.extractor, args.output)
+            return 0
         if args.command == "admit":
+            segment_options = (args.segment_config, args.segment_sha256, args.segment_source, args.segment_output)
+            if any(v is not None for v in segment_options) and not all(v is not None for v in segment_options):
+                raise ValueError("Derived admission requires all four segment options")
+            if args.resume_segment and args.segment_config is None:
+                raise ValueError("Segment resume requires a derived admission")
+            if args.fresh_pitch_extractor is not None and args.segment_config is None:
+                raise ValueError("Fresh pitch extraction requires derived admission")
+            if args.output.exists() or args.output.is_symlink():
+                raise ValueError("Admission report must be new")
             review = load_config(args.review, args.review_sha256)
             policy = load_config(args.policy, args.policy_file_sha256)
-            result = admit_sources(args.configuration, args.configuration_sha256, args.source_root,
-                review=review, policy=policy, trusted_policy_sha256=args.trusted_policy_sha256, now=int(time.time()))
+            if args.segment_config is not None:
+                if args.output.resolve().is_relative_to(args.segment_output.resolve()):
+                    raise ValueError("Admission report must be outside the clip directory")
+                result = admit_segment(args.configuration, args.configuration_sha256, args.source_root,
+                    segment_config=args.segment_config, segment_hash=args.segment_sha256,
+                    source_path=args.segment_source, output=args.segment_output, resume=args.resume_segment,
+                    fresh_pitch_extractor=args.fresh_pitch_extractor,
+                    review=review, policy=policy, trusted_policy_sha256=args.trusted_policy_sha256, now=int(time.time()))
+            else:
+                result = admit_sources(args.configuration, args.configuration_sha256, args.source_root,
+                    review=review, policy=policy, trusted_policy_sha256=args.trusted_policy_sha256, now=int(time.time()))
             if int(time.time()) >= result["expiresAt"]:
                 raise ValueError("Review expired while inspecting sources")
             publish_new(args.output, result)
@@ -396,9 +753,10 @@ def main():
             return permission_command(args.configuration, args.configuration_sha256, args.source_root, args.output)
         if args.command == "segment-batch":
             return segment_batch_command(args.configuration, args.configuration_sha256, args.source_root,
-                                         args.output, args.report, resume=args.resume)
+                                         args.output, args.report, resume=args.resume, fresh_pitch_extractor=args.fresh_pitch_extractor)
         if args.command == "segment":
-            segment_command(args.configuration, args.configuration_sha256, args.source_path, args.output, resume=args.resume)
+            segment_command(args.configuration, args.configuration_sha256, args.source_path, args.output, resume=args.resume,
+                            fresh_pitch_extractor=args.fresh_pitch_extractor)
             return 0
         if args.command in ("labels", "label-report"):
             return labels_command(args.configuration, args.configuration_sha256, args.source_root, args.output)

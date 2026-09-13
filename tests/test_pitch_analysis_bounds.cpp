@@ -5,6 +5,28 @@
 #include <numbers>
 #include <cmath>
 
+TEST_CASE("Full hop pitch coverage includes bounded zero padded tail frames") {
+  using namespace seam::voicebank;
+  for (const auto count : {1U, 255U, 256U, 257U, 4097U}) {
+    std::vector<float> samples(count, 0.0F);
+    PitchConfig config;
+    config.coverage = PitchFrameCoverage::FullHopGrid;
+    config.correlationMethod = PitchCorrelationMethod::Fft;
+    const auto frames = 1U + (count - 1U) / 256U;
+    const auto result = analyzePitch(samples, 48000U, config, {}, {frames, 0U, 10000000U});
+    CHECK(result);
+    CHECK(result.value().size() == frames);
+    for (std::size_t index = 0; index < result.value().size(); ++index) {
+      CHECK(result.value()[index].sourceFrame == index * 256U);
+      CHECK(!result.value()[index].voiced);
+      CHECK(result.value()[index].f0Hz == 0.0);
+    }
+    CHECK(!analyzePitch(samples, 48000U, config, {}, {frames - 1U, 0U, 10000000U}));
+    config.coverage = static_cast<PitchFrameCoverage>(99);
+    CHECK(!analyzePitch(samples, 48000U, config));
+  }
+}
+
 TEST_CASE("FFT pitch correlation matches the direct estimator across rates and signals") {
   using namespace seam::voicebank;
   for (const auto rate : {8000U, 48000U, 192000U}) {

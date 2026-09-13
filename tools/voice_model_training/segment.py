@@ -5,6 +5,7 @@ import wave
 
 from .audio_source import inspect_pcm_source
 from .labels import label_report, score_report
+from .features import apply_pitch_features
 
 
 def crop_score(score: dict, label: dict, *, start_frame: int, end_frame: int) -> dict:
@@ -42,7 +43,8 @@ def crop_score(score: dict, label: dict, *, start_frame: int, end_frame: int) ->
 
 
 def crop_labels(label: dict, *, segment_id: str, start_frame: int, end_frame: int,
-                vocabulary: set[str], minimum_confidence: float) -> dict:
+                vocabulary: set[str], minimum_confidence: float, fresh_features: dict | None = None,
+                child_source_sha256: str = "", sample_rate: int = 0) -> dict:
     """Rebase structural annotations; caller binds parent/child audio identities.
 
     Existing F0 frames can be reused only at an analysis-hop-aligned start.
@@ -57,7 +59,7 @@ def crop_labels(label: dict, *, segment_id: str, start_frame: int, end_frame: in
             or not 0 <= start_frame < end_frame <= label["frameCount"]):
         raise ValueError("Label crop is outside the source")
     hop = label["hopSize"]
-    if start_frame % hop:
+    if start_frame % hop and fresh_features is None:
         raise ValueError("Off-grid label crop requires fresh F0/voicing extraction")
     phones = []
     for phone in label["phonemes"]:
@@ -68,6 +70,12 @@ def crop_labels(label: dict, *, segment_id: str, start_frame: int, end_frame: in
     result = dict(sourceId=segment_id, frameCount=end_frame - start_frame, hopSize=hop,
                   phonemes=phones, f0Hz=label["f0Hz"][first:stop], voiced=label["voiced"][first:stop],
                   reviewRevision=None)
+    if fresh_features is not None:
+        # Structural staging only; placeholders are never returned or published.
+        count = (result["frameCount"] + 255) // 256
+        result.update(hopSize=256, f0Hz=[0] * count, voiced=[False] * count)
+        return apply_pitch_features(result, fresh_features, source_sha256=child_source_sha256,
+                                    sample_rate=sample_rate, vocabulary=vocabulary, minimum_confidence=minimum_confidence)
     label_report(result, vocabulary=vocabulary, minimum_confidence=minimum_confidence)
     return result
 

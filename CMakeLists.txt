@@ -1718,6 +1718,10 @@ if(SEAM_BUILD_TESTS)
       WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
       ENVIRONMENT "PYTHONDONTWRITEBYTECODE=1" TIMEOUT 60
       LABELS "voice-model-training")
+    add_test(NAME seam_training_pitch_cli
+      COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_training_pitch_cli.py
+        $<TARGET_FILE:seam_voicebank_cli>)
+    set_tests_properties(seam_training_pitch_cli PROPERTIES TIMEOUT 60 LABELS "voice-model-training")
     add_test(NAME seam_draft_inventory_tests
       COMMAND ${Python3_EXECUTABLE} -m unittest tests.test_draft_voicebank_inventory
         tests.test_voicebank_script_generator)

@@ -1,5 +1,114 @@
 # Original voice model production
 
+## Numerical frontend comparison checkpoint
+
+Run `python -m tools.voice_model_training.check_acoustic_parity` in the isolated
+Python 3.11 environment defined by `requirements-acoustic-parity.txt`. The local
+run passed all 24 comparisons: silence, tone, seeded noise and boundary impulse
+across three sample-rate/FFT/hop combinations, each using float64 and float32
+Torch STFT plus librosa Slaney filters. Maximum absolute log-mel error was
+4.7401e-7 against float64 and 0.0016051 against float32; the largest float32
+case-mean error was 2.7060e-5. Preset limits were max/mean 2e-6/1e-6 for float64
+and 0.01/0.0001 for float32. Exact frame shapes also matched.
+
+This checks independently implemented frontend operations with SEAM's explicit
+whole-hop tail padding, not a trained model, augmentation path, arbitrary profile,
+or all upstream execution behavior. The comparison environment is build-local;
+Torch/librosa are not added to the native application. Dependency versions are
+captured, but wheel hashes and other-platform reproducibility remain unqualified.
+
+`batches.iter_supervised_batches` joins schema-3 conditioning with captured
+acoustic metadata and binary paths. Supply an exact source-ID map of
+`(record, binary_path)`, an independently selected `expected_profile_sha256`,
+partition and batch size. It checks source/PCM identities, sample rate, hop,
+sample/frame counts, float32 layout, dimensions, finite values and exact binary
+digest before returning source-local `melTargets` alongside conditioning columns.
+The target matrix is loaded once per source; emitted target slices are owned
+copies. Each batch retains dataset, target and profile digests. This is now
+paired training data, not an optimizer, trained checkpoint or permission grant.
+Callers still own fresh review/source admission and captured metadata provenance.
+Profile hashes bind exact canonical numeric representation; consume the hash
+from the selected captured profile, not a separately reconstructed equivalent.
+
+## Acoustic target command
+
+`python3 -m tools.voice_model_training acoustic-targets CONFIG CONFIG_SHA256 SOURCE_WAV NEW_DIRECTORY`
+
+The captured JSON requires exactly `formatId` =
+`com.project-seam.training-acoustic-config`, integer `schemaVersion` = 1,
+`sourceSha256`, `sampleRate`, `fftSize`, `hopSize`, `bins`, `minimumHz`, and
+`maximumHz`. This selects the explicit full-hop Slaney profile described below;
+it does not select an arbitrary upstream model's frontend. NumPy is optional
+for other commands but required here; absence produces a clear exit-2 diagnostic.
+
+Successful extraction writes `mel.f32le` followed by `target.json`. The latter
+binds source, configuration, profile, target dimensions and exact target digest.
+The source is read as bounded owned bytes, then hash-verified before extraction.
+Output must be new; no overwrite or resume is supported. A binary without final
+metadata is an incomplete attempt, retained for diagnosis. Retry to a new
+directory. This publication does not claim directory-fsync power-loss durability.
+Exit 0 means extraction completed, not permission admission, model compatibility,
+training success or musical qualification. Dataset-to-target joining remains open.
+
+`acoustics.wav_log_mel_targets` now connects the target extractor to exact WAV
+bytes. It verifies the expected container digest, mono integer PCM geometry and
+sample rate through the existing source inspector, decodes 16/24/32-bit signed
+little-endian PCM without resampling or normalization, and returns target data
+plus source/PCM identities. The record binds the explicit profile, NumPy version,
+target shape/byte count, and SHA-256 of row-major little-endian float32 targets.
+The API writes no files and grants no source rights. Tests exercise identical
+cross-width signal values, negative full scale, 24-bit sign extension, target
+hashes and rejection of mismatched source digest/rate. Cache publication and
+training integration still need to consume these records and arrays.
+
+`acoustics.log_mel_targets` implements the explicit SEAM full-hop Slaney profile
+using optional NumPy (`requirements-acoustics.txt`). Inputs are normalized mono
+samples; output is float32 `[frames, bins]`. It pads the tail with zeros to a
+whole hop, reflects `(fft-hop)/2` at the boundaries, applies a periodic Hann
+window equal to FFT size, projects unnormalized FFT magnitude through
+Slaney-area-normalized filters, and takes `ln(max(mel, 1e-5))`. Clips too short
+for reflection reject. Analysis proceeds in blocks of 128 frames, with bounded
+input/output and mel-projection work. This is a proposed target profile, not a
+claim of compatibility with existing model weights. Keyshift/speed augmentation,
+separate window sizes, source-byte intake, and target-cache integration are open.
+
+Profile research inspected [DiffSinger nvSTFT at revision 336cf01](https://github.com/openvpi/DiffSinger/blob/336cf01b57f2ad44c6b37a79cf33993043291759/modules/nsf_hifigan/nvSTFT.py)
+and [librosa 0.10.2 mel filters](https://github.com/librosa/librosa/blob/0.10.2/librosa/filters.py).
+SEAM's added whole-hop tail padding is deliberate; upstream's default frame count
+must not be assumed identical. Current tests establish silence floor, frame count,
+log-amplitude scaling, finite float32 output and invalid input rejection. Numerical
+differential comparison with the upstream Torch/librosa extractor remains required.
+The optional acoustic tests explicitly skip when NumPy is absent; that skip is
+not acoustic verification. NumPy 2.4.4 was present and these tests ran locally.
+
+`batches.iter_conditioning_batches(snapshot, feature_directory, partition="train",
+batch_frames=256)` reads schema-3 shards into source-local column batches. It
+recomputes deterministic partition membership, verifies binding/reference hashes,
+reconstructs expected conditioning from captured labels, and compares exact
+shard bytes before emitting that source. Batch size is bounded to 1..4096 frames;
+the last batch is short, not padded. `sourceFrame`, `frameOffset`, `validSamples`,
+and the source ID retain sample-clock ownership. Held-out rows never enter the
+selected training partition, and altered shards reject.
+
+This reader is feature I/O only. It does not reauthenticate reviews, enforce
+current alignment confidence policy, read original audio, or authorize training.
+Its caller must freshly revalidate the dataset before starting a run. A later
+shard can fail after earlier batches were consumed; do not publish a checkpoint
+from a failed run. Acoustic targets, model optimization and checkpoint/export
+integration remain unfinished.
+
+`conditioning.build_conditioning` now expands validated acoustic labels and
+explicit-rest score supervision into frame-aligned trainer inputs. It uses
+left-edge positions on the label hop clock, ordered positive vocabulary IDs
+(zero reserved for padding), separate rest masks, note/phone indices, slur and
+syllable ownership, original F0/voicing, and valid sample counts for partial tails.
+MIDI zero is not treated as silence. Phone timing remains independent from note
+timing to preserve anticipated consonants. Unresolved consistency corrections
+reject; a missing review string alone is not authentication and grants no rights.
+The transform defaults to a 65,536-frame output limit and never mutates inputs.
+This is a Python feature-building API, not yet a trainer or model export path;
+callers must independently validate actual source bytes and current approvals.
+
 Implementation owner for M2.P3. No learned model is trained by this directory yet.
 
 `label_report` checks contiguous in-phrase phoneme spans, vocabulary membership,
@@ -89,7 +198,144 @@ locking, checkpoint/export comparison, and held-out singing qualification. No
 output grants source permission or musical/release approval.
 # Source-bound label CLI
 
+## Reviewed dataset assembly
+
+`assemble_dataset` freshly verifies both source-rights and annotation reviews,
+inspects audio, requires identical source sets/hashes/clocks and matching
+song/session/lineage, then runs deterministic grouped splitting. The snapshot
+contains labels, vocabulary, source metadata, both review/configuration bindings,
+split evidence and a reproducible binding hash. Its expiry is the earlier review
+expiry. Missing partitions and unresolved duplicate selection are explicit
+preparation issues, not hidden by assembly success. This first API covers directly
+reviewed sources; combining separately admitted descendants and CLI publication
+remain unfinished. Training execution remains unadmitted.
+
+## Explicit label corrections
+
+`admit-labels CONFIG HASH ROOT NEW_REPORT --review FILE --review-sha256 HASH
+--policy FILE --policy-file-sha256 HASH --trusted-policy-sha256 HASH` publishes
+a verified label-admission report. It uses current system time, rechecks expiry
+after source inspection, rejects existing output, and accepts only the separate
+annotation-review policy. Unresolved consistency errors fail without publication.
+Exit 0 means annotation admission under the supplied trusted policy, not source
+permissions, model quality or whole-training readiness. Fixture tests do not
+constitute an actual expert review.
+
+`admit_labels` joins signed annotation review to fresh source inspection and
+schema 3 score/silence checks. Unknown phones, low alignment confidence and
+inconsistent voicing cannot be bypassed by a valid signature. A missing old
+review-revision string is allowed because authority comes from the independently
+verified signed configuration, not that string. The time-bound result binds
+configuration/policy/review and inspected source hashes and sets labelsAdmitted;
+source permissions and whole training admission remain false. CLI publication
+and full dataset assembly are not yet connected.
+
+`review.verify_label_review` authenticates annotation reviews using the distinct
+`seam-training-label-review-1` policy, `training-label-reviewer` role,
+`com.project-seam.training-label-review` record and `APPROVE_LABELS` decision.
+It retains the same independent policy/configuration hash and expiry checks as
+rights review, but neither review type is accepted in place of the other. It
+does not itself inspect labels or admit training; that join remains unfinished.
+
+CLI: `python3 -m tools.voice_model_training correct-labels CONFIG HASH ROOT NEW_REPORT`.
+Closed configuration fields: `formatId` =
+`com.project-seam.training-label-correction-config`, `schemaVersion` = 1, `source`
+(preparation row), `sampleRate`, `label`, `edits`, `vocabulary`, `minimumConfidence`.
+The command re-inspects audio identity/geometry, applies the full edit transaction
+and publishes a new label with the edit list, source/configuration hashes and
+parent/child label hashes. Label hashes use compact sorted UTF-8 JSON plus a
+newline, matching `encode_report`. Review is invalidated; remaining consistency
+issues are retained. Stale edits and existing output reject, without modifying
+the previous label. No musical review or training approval is issued.
+
+`label_edits.apply_label_edits` applies 1..65536 corrections transactionally.
+Every edit contains `kind` (`pitch` or `phoneme`), zero-based `index`, `expected`
+old value and `replacement`. Pitch values contain F0 and voicing together;
+phoneme values are the complete existing phone-label object. Adjacent boundary
+changes are validated after the whole edit set, enabling coherent shared-boundary
+correction. Duplicate targets, stale values and invalid final geometry reject.
+Original labels remain unchanged and review revision is cleared. Correction
+application is not reviewer authentication; CLI/editor publication is still open.
+
+## Native pitch feature adapter
+
+Refreshed-label schema 2 and fresh-pitch segment schema 5 now include
+`pitchCorrections`: low-confidence voiced frames (using supplied minimumConfidence)
+and every zero-padded analysis window are queued with source-frame indices.
+Review remains required even with no queued issues; the threshold is a supplied
+review setting, not a validated quality cutoff. Silent frames are not flagged
+solely for low correlation. Older output records remain untouched; exact resume
+does not rewrite schema 4 records into schema 5, so use a new destination when
+upgrading a previously generated fresh-feature artifact.
+
+The same `--fresh-pitch-extractor` option is now available on `segment-batch`
+and derived `admit`. Batch entries must contain labels; exact resume re-extracts
+and compares the complete record rather than trusting old pitch data. Derived
+admission revalidates parent rights before extraction and checks expiry before
+publishing admission. Native integration covers off-grid batch/resume and a
+fixture-signed parent admission through actual fresh extraction. No real approval
+or label-quality acceptance is implied by those tests.
+
+`segment --fresh-pitch-extractor TRUSTED_CLI` now supports arbitrary crop starts
+for label-bearing segment configurations. It writes the exact derived PCM to a
+private temporary WAV, re-extracts features on that clip's own clock, checks the
+child hash and rebases phonemes. Segment record schema 4 retains full fresh feature
+evidence and cleared-review labels; existing no-extractor behavior is unchanged.
+No intermediate feature placeholders are published. Temporary input is removed
+on completion/failure. This is not an accuracy guarantee; batch/derived-admission
+orchestration of this option and native-language boundary review remain open.
+
+End-to-end command: `python3 -m tools.voice_model_training refresh-pitch CONFIG
+CONFIG_HASH SOURCE_ROOT TRUSTED_SEAM_VOICEBANK_CLI NEW_REPORT`.
+Configuration fields are exactly `formatId` =
+`com.project-seam.training-pitch-refresh-config`, `schemaVersion` = 1, `source`
+(one preparation record), `sampleRate`, `label`, `vocabulary`, `minimumConfidence`.
+The command inspects the source, runs bounded native extraction, verifies source
+and feature geometry, and publishes new labels plus the complete feature report.
+Source PCM hash and configuration hash are retained; previous review is cleared.
+Existing reports are never overwritten. Input labels must already have valid
+structural geometry; this is not automatic phoneme alignment or arbitrary crop
+repair. Output remains unreviewed and training admission remains false.
+
+`native_features.extract_pitch(executable, source)` runs the explicitly selected
+trusted first-party native extractor on POSIX, with a default 30-second deadline
+(maximum 60), 16 MiB stdout and 64 KiB stderr capture limits. It drains both pipes,
+kills a still-running process group on failure, waits for its direct child, and
+rejects duplicate/nonfinite JSON. This is not a sandbox or executable trust
+provisioning; use a stable trusted binary. Windows support is not implemented.
+Actual native-output equivalence and fixture timeout/overflow/malformed-response
+tests are included. CLI refreshed-label publication remains to be connected.
+
+`features.apply_pitch_features` consumes captured JSON from
+`seam_voicebank_cli extract-pitch WAV`, checks exact source hash, sample clock,
+full hop grid, fixed extractor settings and frame values, then returns a copied
+label with fresh F0/voicing and cleared review revision. Existing phonemes are
+preserved. Callers must bind the expected hash to inspected source audio; a hash
+asserted by the feature JSON alone is not authority. Feature confidence and
+extractor metadata remain in the separately captured feature report. The native
+CLI integration test now exercises this conversion and wrong-source rejection.
+Automated extractor invocation/publication, off-grid crop orchestration and
+real-singer pitch quality remain unfinished.
+
 ## Training permission capture API
+
+Derived CLI admission extends `admit` with all four options:
+`--segment-config FILE --segment-sha256 HASH --segment-source WAV --segment-output DIR`.
+The positional output remains a new admission report outside the clip directory.
+`--resume-segment` permits exact clip verification/recovery but never reuses an
+admission report. Parent review/permissions are rechecked for every invocation;
+the current system clock is checked again before admission publication. If
+publication/expiry fails after extraction, the clip remains unapproved and can
+be inspected or revalidated on a later attempt. No training is started.
+
+`admit_segment` revalidates the signed parent permission configuration and actual
+sources, compares the segment's parent hash and song/session/lineage, then invokes
+normal byte-bound segmentation. The returned derived-source admission binds the
+child WAV/PCM/segment-record hashes to the parent review/policy and singer identity.
+It does not accept a saved admission receipt as authority. Unreviewed lineage
+changes reject before clip output. The ordinary segment artifact remains unapproved;
+the separate time-bound admission result does not grant label or training readiness.
+CLI publication and dataset-wide derived-source admission are still unfinished.
 
 Source admission is now runnable:
 `python3 -m tools.voice_model_training admit CONFIG CONFIG_HASH ROOT NEW_REPORT
@@ -301,3 +547,56 @@ exit 3 publishes a correction queue; exit 2 rejects invalid input without publis
 a new report. Existing outputs are never overwritten. Review revision text is
 not authenticated approval. Permissions, musical accuracy, notes/slurs/lyrics,
 and actual training remain separate unfinished obligations.
+# Reviewed dataset assembly
+
+For phrase-sharded output, add `--conditioning-directory NEW_SIBLING_DIRECTORY`.
+The directory and snapshot must share a parent, have different names, and not
+already exist. Schema-3 snapshots store ordered per-source references (filename,
+SHA-256, exact byte size, analysis frame count) in `conditioning`, rather than
+expanded features. `conditioningDirectory` names the sibling directory. Resolve
+references relative to that directory, never relative to an arbitrary working
+directory. The reference-list digest participates in dataset identity.
+
+Sharded assembly retains one expanded phrase at a time, with at most 65,536
+analysis frames per phrase, 1,000,000 per attempt and 256 MiB of feature files.
+The manifest is published last, after review-expiry rechecking. On failure,
+already written shards remain for diagnosis; no manifest means no completed
+dataset. Retry with new output names; merging/resuming incomplete attempts is
+not implemented. Individual file publication prevents overwrite, but this does
+not claim directory-fsync power-loss durability or hostile-parent race isolation.
+Source/configuration intake limits still apply; this is not an unlimited corpus
+loader. Consumers must verify referenced bytes and current authority before use.
+
+Snapshot schema 2 includes source-sorted `conditioning` and
+`conditioningFrameCount`. The dataset bindings include `conditioningSha256`,
+computed from the canonical expanded feature list, so a change to feature
+construction changes dataset identity. The compact snapshot writer currently
+allows at most 65,536 analysis frames across all sources; it rejects larger
+inputs before expanded allocation. This is a pilot-size limit, not a production
+corpus strategy: streamed/sharded feature storage remains required for full
+training. Old schema-1 snapshots contain no expanded conditioning and are not
+silently promoted. Reassembly revalidates source and review inputs.
+
+Run `python3 -m tools.voice_model_training assemble-dataset CONFIG CONFIG_SHA256 SOURCE_ROOT NEW_SNAPSHOT --rights-policy-sha256 RIGHTS_ANCHOR --label-policy-sha256 LABEL_ANCHOR`.
+
+The captured configuration has `formatId: com.project-seam.training-dataset-config`,
+integer `schemaVersion: 1`, `seed`, `heldOutSongs`, and six references:
+`permissionConfig`, `labelConfig`, `rightsReview`, `rightsPolicy`, `labelReview`,
+and `labelPolicy`. Each reference contains exactly `path` (a flat ASCII filename
+within SOURCE_ROOT) and `sha256` (the exact file-byte digest). Policy command-line
+anchors are independently trusted canonical policy digests, not those file-byte
+digests. Each referenced JSON is limited to 8 MiB.
+
+Assembly freshly verifies both review purposes, current expiry, actual source
+audio, schema-3 score labels, and shared source/song/session/lineage identity.
+It retains deterministic split bindings and reports missing partitions and exact
+audio duplicates without silently dropping material. Exit 0 means no assembly
+preparation issues; exit 3 publishes a snapshot with issues to resolve; exit 2
+rejects invalid input or an existing output. Existing snapshots are never replaced.
+The earliest review expiry applies to the result. Later consumers must revalidate
+authority and source bytes; the snapshot is not a permanent admission token.
+
+This command does not train, export, qualify a singer, or authorize release.
+`trainingAdmitted` and `releaseEligible` remain false even on exit 0. The current
+join accepts directly reviewed sources; a separate derived-clip admission join
+is not yet implemented.

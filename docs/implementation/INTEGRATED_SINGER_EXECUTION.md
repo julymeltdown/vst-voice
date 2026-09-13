@@ -4,6 +4,99 @@ Authority: `SEAM_IMPLEMENTATION_PLAN_2026-09-13.md`, preserving the original
 R1–R20 and Full-Scope U1–U48 obligations. This is current execution status,
 not a replacement product contract or a release approval.
 
+## Integrated training preparation regression checkpoint
+
+Full Release CTest run: 129/130 passed in 112.91 seconds. The source-closure test
+caught two newly created comparison files not yet indexed during the run; after
+staging them, its focused rerun passed in 0.26 seconds. Thus every registered
+test has current passing evidence across the full run and that corrected rerun;
+this was not a single clean 130/130 invocation. No runtime regression failed.
+
+An isolated Python 3.11 / Torch 2.8.0 / librosa 0.10.2 / NumPy 2.2.6 environment
+passed dependency checking and all 24 frontend numerical comparison cases.
+Maximum absolute errors: 4.7401e-7 (float64 reference), 0.0016051 (float32).
+The comparison explicitly prepads to SEAM's full-hop policy. Trained-model
+compatibility, lawful production data, optimization, learned checkpoints,
+production worker integration and musical qualification remain unfinished.
+
+## Frame conditioning implementation
+
+Connected acoustic target binaries to source-local conditioning batches through
+`iter_supervised_batches`, requiring an explicit profile hash and matching source,
+PCM, sample rate, hop and frame geometry. It verifies exact binary content and
+finite float32 values, then supplies owned target slices. End-to-end tests use
+the actual extraction CLI and compare batches of 3/3/2 frames to the full API
+output, with source-identity and single-byte corruption rejection. Training
+optimization, upstream numerical parity and qualified data remain outstanding.
+
+Exposed acoustic extraction through `acoustic-targets CONFIG HASH WAV NEW_DIR`.
+It captures bounded regular source bytes, verifies the expected digest, computes
+targets, writes little-endian float32 data, and publishes hash-bound metadata
+last. Subprocess tests verify binary equivalence to the API, hashes, no overwrite
+and altered-source rejection without output. This closes standalone extraction,
+not dataset/optimizer integration, upstream parity or real singer qualification.
+
+Connected mel extraction to owned, digest-verified WAV bytes through the existing
+PCM inspector. Added signed 16/24/32-bit decoding and target/profile/source hashes
+without resampling or source writes. Cross-width exact-signal tests passed,
+including negative full scale and 24-bit sign extension; wrong digest/rate reject.
+This yields acoustic data, but does not yet publish a target cache or train a model.
+
+Added actual log-mel target computation as an optional NumPy API after inspecting
+pinned DiffSinger and librosa source. Its explicit full-hop tail policy differs
+from unpadded upstream extraction; no learned-model compatibility is claimed.
+Local NumPy 2.4.4 tests ran (not skipped), covering silence, partial-hop geometry,
+amplitude scaling and invalid input. Upstream numerical comparison, authenticated
+audio intake, acoustic shard integration and optimizer consumption remain open.
+
+Implemented source-local, partition-specific column batch consumption of schema-3
+shards. The reader recomputes split geometry, checks binding/reference identities,
+and compares each shard with conditioning reconstructed from captured labels
+before yielding it. Integration tests cover held-out exclusion, altered bytes,
+invalid batch limits, and a four-frame phrase split into batches of three and one.
+No optimizer or acoustic target loading is implied; callers still own fresh
+source/review admission and must discard a training attempt if later I/O fails.
+
+Added optional phrase-sharded dataset assembly through the public CLI. Schema 3
+retains only one expanded phrase while writing bounded, hash-referenced feature
+files, and publishes the dataset manifest last. Total limits are 1M analysis
+frames and 256 MiB per attempt, with 65,536 frames per phrase. Existing output
+directories reject; incomplete attempts are retained without a final manifest.
+Subprocess checks compare sharded features exactly with inline schema-2 output,
+verify hashes/sizes, and ensure retries and snapshot/directory collisions reject.
+Trainer-side shard consumption and checkpoint production remain open.
+
+Connected the transform to actual `assemble-dataset` execution. Schema-2
+snapshots carry source-sorted conditioning, its canonical digest in dataset
+bindings, and the aggregate analysis frame count. API and subprocess coverage
+inspect the generated phone/note/pitch/tail values and digest. Expansion is
+preflight-bounded to 65,536 frames per compact snapshot; full-corpus sharding and
+trainer consumption are explicitly unfinished, not bypassed by raising limits.
+
+Added a bounded pure training feature transform mapping validated phoneme and
+score intervals onto the existing F0 analysis clock. Preserved independent
+phone/note timing, explicit rest versus MIDI-zero distinction, slur ownership,
+expressive F0, and partial-tail sample counts. Unit coverage checks exact
+boundaries, unchanged inputs, budget rejection and unresolved confidence issues.
+No training run or learned singer is claimed; trainer consumption remains open.
+
+## Reviewed dataset assembly CLI checkpoint
+
+Connected `assemble-dataset` to fresh source-rights and schema-3 label admission,
+captured configuration/review references, independently pinned policy anchors,
+and deterministic leakage-aware splitting. The output retains configuration
+identity and the earliest review expiry. Missing partitions or duplicate-selection
+work publish an issue-bearing snapshot with exit 3; invalid inputs reject, and
+existing snapshots cannot be overwritten. No training or release approval follows.
+
+Verified the actual subprocess command against currently valid fixture-only
+signatures: issue publication, exact configuration binding, no overwrite, changed
+review digest rejection, and parent-path rejection. Focused CTest groups
+`seam_voice_model_training_tests` and `seam_training_pitch_cli` both passed
+(12.89 seconds total). These checks use test material, not a lawful production
+corpus or independent musical approval. Real data acquisition, derived-clip
+admission joining, training, export, and held-out singer qualification remain open.
+
 ## Neural bundle metadata compatibility follow-up
 
 CLI-to-native child handoff: added `check_bundle_runtime.py` and trusted native
@@ -1496,6 +1589,143 @@ rerun is claimed for this checkpoint. Fixtures are arithmetic graphs, not learne
 voices. Production worker packaging, model admission, cancellation, lawful learned
 assets, singing qualification, and the remaining full implementation plan stay open.
 # Source-bound training label command
+
+Reviewed dataset assembly API: joined fresh source-rights admission, annotation
+admission and deterministic splitting with exact source/hash/clock/lineage checks.
+Snapshot binds both configurations/reviews, labels, vocabulary and split evidence;
+missing partitions/duplicate selection remain explicit issues and training stays
+unadmitted. Fixture integration passed for deterministic assembly, missing train/
+validation partitions and signed conflicting lineage rejection. No real dataset
+was admitted or trained. CLI and derived-source dataset assembly remain open.
+
+Annotation admission CLI: added `admit-labels` with captured label/review/policy
+inputs, independent trust anchor, fresh source inspection and current-clock
+expiry checks before publication. Existing output and signed unresolved label
+errors reject without overwriting anything. Fixture subprocess tests cover valid
+admission, immutable prior output and invalid-label nonpublication. Source rights
+and full training readiness remain explicitly separate.
+
+Source-bound annotation admission: refactored label inspection for reuse and
+joined it with label-specific signed review. Admission requires schema 3 score/
+silence ownership and rejects unresolved phone/confidence/voicing corrections.
+The absent legacy review string may be superseded by the verified signature;
+source permissions and training execution remain separate. All 30 training
+tests passed, including fixture admission and signed low-confidence rejection.
+No real label approval or whole-dataset training admission was issued.
+
+Annotation authority separation: refactored shared review checks behind explicit
+rights/label verification entry points. Label reviews require a distinct policy,
+role, format and decision; tests reject rights-as-label and label-as-rights replay
+while valid fixture signatures still verify. All 30 training tests passed. No
+real annotation review was created; source-bound label admission remains open.
+
+Extractor lifecycle repair: timeout cleanup previously called poll(), which could
+reap an exited leader and skip killing descendants retaining output pipes. It
+now checks unreaped returncode state and terminates the process group before
+waiting, preserving PID ownership through that operation. A forking fixture
+exits the leader while its descendant holds pipes; regression verifies targeted
+group termination on timeout. The first test draft had unsafe redundant cleanup
+after PID reaping and an overly short startup allowance; removed that redundant
+kill and increased the test deadline. Focused lifecycle tests pass.
+
+Correction publication: `correct-labels` now re-inspects the source, checks label
+identity/geometry, applies stale-checked corrections and publishes new label/edit
+evidence with parent/child label hashes. Review remains invalidated; consistency
+diagnostics remain visible. All 29 training tests passed, including subprocess
+corrected publication, hash lineage, no-overwrite and stale-edit rejection.
+Native correction UI and authenticated musical review remain unfinished.
+
+Label correction API: added transactional F0/voicing and phoneme-object edits
+with expected-old-value checks. Shared boundaries can be changed in one batch;
+stale targets, duplicate targets, invalid timing and inconsistent voicing reject
+without changing the original. Derived labels clear review revision. All 28
+training tests passed. CLI/editor integration and authenticated label approval
+remain unfinished; a corrected label is not automatically training truth.
+
+Pitch correction queue: fresh extraction now publishes low-confidence voiced
+frame and zero-padded-window diagnostics, with source frame indices and explicit
+reviewRequired. Refreshed reports use schema 2; fresh-pitch segments use schema 5.
+Old artifacts are not overwritten/migrated during resume. Training and native CLI
+integration tests passed, including uncertainty/tail diagnostics. This exposes
+known estimate uncertainty; it does not establish a validated acoustic threshold
+or independent label approval.
+
+Fresh-feature workflow integration: propagated the extractor option through
+batch preparation and reviewed derived-source admission. Native tests execute
+off-grid batch extraction, exact resumed extraction and fixture-signed parent
+admission followed by real native feature extraction. Training and native feature
+groups passed. This closes option plumbing, not real dataset permission, musical
+label review, Windows supervision or actual model training.
+
+Off-grid crop integration: `segment --fresh-pitch-extractor` now extracts fresh
+native pitch on the exact child WAV and publishes schema 4 evidence-bound labels.
+It supports starts between parent hops without shifting/reusing parent F0 frames;
+phonemes are rebased and review stays invalidated. The native integration test
+executes a one-sample-offset crop and verifies child feature hash and geometry.
+Training and native feature CTest groups passed. Batch/admission option propagation
+and real-voice boundary quality remain unfinished.
+
+Automatic refresh CLI: `refresh-pitch` now joins captured configuration, bounded
+source inspection, supervised native extraction and feature-to-label conversion,
+then publishes a new report containing full feature evidence and cleared-review
+labels. Integration exercises the actual native binary through the Python CLI
+and verifies no-overwrite. Training and native feature CTest groups passed. This
+does not create phoneme alignments, approve labels or train a model.
+
+Native extraction supervisor: added POSIX first-party extractor invocation with
+deadline, bounded stdout/stderr, concurrent pipe draining, failure termination and
+strict JSON parsing. Integration compares actual native output to supervised
+output; fixture tests cover timeout, duplicate fields, stderr overflow and a
+subsequent successful invocation. All 27 training tests passed. This does not
+establish OS sandboxing, Windows support or executable authenticity; refreshed
+label publication is still unfinished.
+
+Voiced feature verification: native CLI tests now extract deterministic PCM tones
+at 8 kHz/110 Hz, 48 kHz/220 and 880 Hz, and 192 kHz/440 Hz, then consume their
+features in the training adapter. Complete-window estimates pass a 10-cent test
+tolerance; no tail-accuracy or real-voice claim follows. Adapter regressions reject
+wrong settings/grid, nonfinite values and inconsistent voicing without modifying
+parent labels. All 26 training tests and the native feature CLI integration passed.
+
+Native-to-training feature adapter: `apply_pitch_features` now validates exact
+native feature fields, source hash, clock, window/hop settings and full frame grid,
+then copies fresh F0/voicing into labels and clears review revision. The native
+CLI test consumes actual generated feature JSON and rejects a wrong source hash;
+it passed. This does not yet orchestrate extraction automatically or establish
+real-voice pitch accuracy. Existing phonemes remain supplied annotations.
+
+Native feature command: `seam_voicebank_cli extract-pitch WAV` now emits full-hop
+FFT autocorrelation features as JSON stdout, binding the exact captured WAV hash
+and declaring window/hop/range/threshold/algorithm/coverage. Input is bounded to
+64 MiB, mono decoded samples to 16 million, output frames to 65536 and FFT work
+to 512 million butterflies. Rate-scaled power-of-two windows preserve the existing
+60..1200 Hz diagnostic range. No automatic training approval. Added native CLI
+integration cases for full/partial-hop silence, hash binding, source preservation
+and malformed input. Python training adapter and real-voice quality remain open.
+
+Fresh-feature preparation: inspected native `analyzePitch` and found its default
+complete-window output does not match training's ceil(samples/hop) label geometry.
+Added explicit `PitchFrameCoverage::FullHopGrid` with zero-padded tail windows,
+preserving default CompleteWindows behavior. Work/frame budgets include every
+added tail frame. Regression cases cover single-sample, exact-hop, partial-hop
+and longer tails, silence, invalid coverage and frame-budget rejection. This is
+the native prerequisite for fresh crop feature extraction; CLI integration and
+acoustic quality qualification are not yet claimed.
+
+Derived admission CLI: `admit` now accepts a captured crop configuration/source
+and separate clip destination, checks all four options together, and publishes
+the derived-source admission outside the clip directory. Exact clip resume is
+explicit and always creates a new time-bound admission report after parent
+review verification. All 25 training tests passed, including CLI derived hash
+binding and resumed re-admission. No real approvals or training were performed.
+
+Checkpoint `4e05891b` preserves signed source admission and the shared signature
+repair locally (not pushed). Follow-up `admit_segment` now revalidates parent
+review/source/evidence, checks parent hash and lineage, then derives an exact clip
+and binds its identities to the reviewed singer. Tests cover derived admission
+and unreviewed lineage rejection before output. All 25 training tests passed.
+Only fixture approvals were exercised; no real source authorization or training
+was performed. Derived admission CLI/dataset assembly remain open.
 
 Signature repair interoperability checks: fetched RFC 8032 section 7.1 from
 https://www.rfc-editor.org/rfc/rfc8032.txt and added its first two public known-answer

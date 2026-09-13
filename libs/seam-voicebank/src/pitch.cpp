@@ -47,6 +47,7 @@ core::Result<std::vector<PitchFrame>> analyzePitch(std::span<const float> sample
       config.frameSize < 128 || config.frameSize > 65536U || config.hopSize == 0 ||
       !std::isfinite(config.minimumHz) || !std::isfinite(config.maximumHz) || !std::isfinite(config.voicingThreshold) ||
       (config.correlationMethod != PitchCorrelationMethod::Direct && config.correlationMethod != PitchCorrelationMethod::Fft) ||
+      (config.coverage != PitchFrameCoverage::CompleteWindows && config.coverage != PitchFrameCoverage::FullHopGrid) ||
       config.minimumHz <= 0.0 || config.maximumHz <= config.minimumHz ||
       config.maximumHz >= static_cast<double>(sampleRate) / 2.0 ||
       config.voicingThreshold <= 0.0 || config.voicingThreshold >= 1.0) {
@@ -66,7 +67,9 @@ core::Result<std::vector<PitchFrame>> analyzePitch(std::span<const float> sample
         core::ErrorCode::InvalidArgument, "Pitch lag range is empty");
   }
 
-  const auto frameCount = samples.size() <= config.frameSize
+  const auto frameCount = config.coverage == PitchFrameCoverage::FullHopGrid
+                              ? 1U + (samples.size() - 1U) / config.hopSize
+                              : samples.size() <= config.frameSize
                               ? 1U
                               : 1U + (samples.size() - config.frameSize) / config.hopSize;
   // Exact number of inner correlation terms in a non-silent frame; charge all
