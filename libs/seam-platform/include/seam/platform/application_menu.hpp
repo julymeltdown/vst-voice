@@ -94,6 +94,12 @@ struct DocumentationMenuItem final {
 // One performance proposal the surface can still decide. The label is built by
 // the surface from the take's own recorded identity -- generator, seed, span and
 // channels -- so a menu never has to invent a name for material it did not make.
+// Which part of a proposal a decision applies to. The whole take is the default
+// because that is the span the backend actually generated; the selected-notes
+// scope accepts only the span the creator currently has selected, which must lie
+// inside the take.
+enum class PerformanceTakeScope { WholeTake, SelectedNotes };
+
 struct PerformanceTakeMenuItem final {
   std::string id;
   std::string label;
@@ -154,10 +160,12 @@ public:
       const {
     return {};
   }
-  // Selects the take over its own captured span for every channel it carries,
+  // Selects the take over the requested span for every channel it carries,
   // replacing the region's current accepted selections. It never edits the take,
-  // never changes its state and never touches manual performance ownership.
-  [[nodiscard]] virtual core::Result<void> acceptPerformanceTake(std::string_view) {
+  // never changes its state and never touches manual performance ownership. A
+  // surface refuses a span the take did not generate instead of clamping it.
+  [[nodiscard]] virtual core::Result<void> acceptPerformanceTake(std::string_view,
+      PerformanceTakeScope = PerformanceTakeScope::WholeTake) {
     return core::failure(core::ErrorCode::Unsupported,
                          "Performance take decisions are not supported");
   }

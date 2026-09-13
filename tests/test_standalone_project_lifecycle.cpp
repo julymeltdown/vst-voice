@@ -20,6 +20,7 @@
 #include <string>
 #include <thread>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #ifndef SEAM_SOURCE_PRODUCTION_VOICEBANK
@@ -628,7 +629,8 @@ TEST_CASE("standalone_controller_decides_a_performance_take_by_identity") {
 
   // Choosing a take selects it over its own captured span on every channel it
   // carries, and leaves the other proposal exactly as it was.
-  CHECK(controller.value()->acceptPerformanceTake(firstId));
+  CHECK(controller.value()->acceptPerformanceTake(
+      firstId, seam::platform::PerformanceTakeScope::WholeTake));
   CHECK(performance().accepted.size() == performance().takes[0].lanes.size());
   CHECK(performance().takes[1].state ==
         seam::domain::PerformanceProposalState::Proposed);
@@ -665,7 +667,8 @@ TEST_CASE("standalone_controller_decides_a_performance_take_by_identity") {
   const auto repeated = controller.value()->rejectPerformanceTake(secondId);
   CHECK(!repeated);
   CHECK(repeated.error().code == seam::core::ErrorCode::Conflict);
-  const auto unknown = controller.value()->acceptPerformanceTake("take-not-here");
+  const auto unknown = controller.value()->acceptPerformanceTake(
+      "take-not-here", seam::platform::PerformanceTakeScope::WholeTake);
   CHECK(!unknown);
   CHECK(unknown.error().code == seam::core::ErrorCode::NotFound);
 
@@ -680,6 +683,58 @@ TEST_CASE("standalone_controller_decides_a_performance_take_by_identity") {
   CHECK(decoded.value().findRegion(regionId)->performance == performance());
   CHECK(decoded.value().findRegion(regionId)->performance.takes[1].state ==
         seam::domain::PerformanceProposalState::Rejected);
+}
+
+TEST_CASE("standalone_controller_accepts_a_take_over_the_selected_notes_only") {
+  const auto root = seam::test::support::temporaryDirectory("standalone-partial-decision");
+  auto session = makeSession(root);
+  addNote(*session);
+  bool quit = false;
+  seam::standalone::StandaloneApplicationControllerConfig config{};
+  config.autosaveRoot = root / "autosaves";
+  config.recentProjectsPath = root / "recent.json";
+  auto controller = seam::standalone::StandaloneApplicationController::create(*session,
+      std::make_unique<FakeDialog>(), std::make_unique<FakePrompt>(), config,
+      [&quit] { quit = true; });
+  CHECK(controller);
+  if (!controller) return;
+  const auto regionId = session->regionId();
+  auto& editable = session->runtime().document().session();
+  CHECK(controller.value()->dispatch(
+      seam::platform::ApplicationCommand::ProposeAutomaticPerformance));
+  const auto takeId =
+      editable.project().findRegion(regionId)->performance.takes.front().id;
+  const auto note = editable.project().findRegion(regionId)->notes.front();
+  const auto noteRange =
+      seam::domain::PerformanceTimeRange{note.startTick, note.endTick()};
+  const auto takeRange =
+      editable.project().findRegion(regionId)->performance.takes.front().range;
+  CHECK(takeRange.startTick <= noteRange.startTick);
+  CHECK(noteRange.endTick <= takeRange.endTick);
+
+  // Without a selection there is no span to act on, so the surface refuses instead
+  // of silently choosing the whole take on the creator's behalf.
+  editable.selection().clear();
+  const auto none = controller.value()->acceptPerformanceTake(
+      takeId, seam::platform::PerformanceTakeScope::SelectedNotes);
+  CHECK(!none);
+  CHECK(none.error().code == seam::core::ErrorCode::Conflict);
+
+  // The selected note is what the decision replaces: the accepted selection covers
+  // exactly that span instead of the whole take the backend generated.
+  editable.selection().selectOnly(note.id);
+  CHECK(controller.value()->acceptPerformanceTake(
+      takeId, seam::platform::PerformanceTakeScope::SelectedNotes));
+  const auto& accepted =
+      editable.project().findRegion(regionId)->performance.accepted;
+  const auto laneCount =
+      editable.project().findRegion(regionId)->performance.takes.front().lanes.size();
+  CHECK(accepted.size() == laneCount);
+  for (const auto& selection : accepted) {
+    CHECK(selection.takeId == takeId);
+    CHECK(selection.sourceTickOffset == seam::time::Tick{0});
+    CHECK(std::get<seam::domain::PerformanceTimeRange>(selection.scope) == noteRange);
+  }
 }
 
 TEST_CASE("standalone_controller_refuses_a_neural_deployment_it_cannot_verify") {

@@ -283,9 +283,10 @@ StandaloneApplicationController::performanceTakes() const {
 }
 
 core::Result<void> StandaloneApplicationController::acceptPerformanceTake(
-    std::string_view id) {
+    std::string_view id, platform::PerformanceTakeScope scope) {
   const auto regionId = session_.runtime().selectedRegion();
-  const auto& project = session_.runtime().document().session().project();
+  const auto& editable = session_.runtime().document().session();
+  const auto& project = editable.project();
   const auto* region = project.findRegion(regionId);
   if (region == nullptr) {
     return core::failure(core::ErrorCode::Conflict,
@@ -306,6 +307,35 @@ core::Result<void> StandaloneApplicationController::acceptPerformanceTake(
     return core::failure(core::ErrorCode::Conflict,
         "That performance take does not cover usable material", std::string{id});
   }
+  // The selected-notes decision uses the span the creator selected, so a partial
+  // acceptance never claims generated data outside it. The selection must lie
+  // inside the take: a span the backend did not generate is refused, not clamped.
+  auto range = found->range;
+  if (scope == platform::PerformanceTakeScope::SelectedNotes) {
+    const auto selected = editable.selection().noteIds();
+    bool any = false;
+    for (const auto noteId : selected) {
+      const auto* note = region->findNote(noteId);
+      if (note == nullptr) continue;
+      if (!any) {
+        range = domain::PerformanceTimeRange{note->startTick, note->endTick()};
+        any = true;
+        continue;
+      }
+      range.startTick = std::min(range.startTick, note->startTick);
+      range.endTick = std::max(range.endTick, note->endTick());
+    }
+    if (!any) {
+      return core::failure(core::ErrorCode::Conflict,
+          "Accepting a performance take over selected notes requires a note selection",
+          std::string{id});
+    }
+    if (range.startTick < found->range.startTick || range.endTick > found->range.endTick) {
+      return core::failure(core::ErrorCode::Conflict,
+          "The selected notes are outside the span this take was generated for",
+          std::string{id});
+    }
+  }
   // Choosing a take means choosing it for the span it was generated over, on every
   // channel it carries. A zero source offset maps that span onto the same ticks, so
   // a surface never claims generated data the backend did not produce.
@@ -314,8 +344,7 @@ core::Result<void> StandaloneApplicationController::acceptPerformanceTake(
   for (const auto& lane : found->lanes) {
     selections.push_back(domain::AcceptedPerformanceSelection{
         found->id, lane.channel,
-        domain::PerformanceTimeRange{found->range.startTick, found->range.endTick},
-        time::Tick{0}});
+        domain::PerformanceTimeRange{range.startTick, range.endTick}, time::Tick{0}});
   }
   const auto changed = session_.runtime().execute(
       std::make_unique<application::SetAcceptedPerformanceCommand>(

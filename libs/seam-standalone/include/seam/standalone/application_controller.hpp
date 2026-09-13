@@ -145,7 +145,8 @@ public:
   // own captured span for every channel it carries; rejecting records the decision
   // on the take. Neither action edits the take's musical payload.
   [[nodiscard]] core::Result<void> acceptPerformanceTake(
-      std::string_view id) override;
+      std::string_view id,
+      platform::PerformanceTakeScope scope) override;
   [[nodiscard]] core::Result<void> rejectPerformanceTake(
       std::string_view id) override;
   // Runs the production automatic-performance backend on the selected region and

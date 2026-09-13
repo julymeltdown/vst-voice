@@ -26,6 +26,7 @@
 - (void)selectNeuralResource:(id)sender;
 - (void)clearNeuralResource:(id)sender;
 - (void)acceptPerformanceTake:(id)sender;
+- (void)acceptPerformanceTakeOverSelectedNotes:(id)sender;
 - (void)rejectPerformanceTake:(id)sender;
 - (void)openDocumentation:(id)sender;
 - (void)exportAudio:(id)sender;
@@ -132,6 +133,13 @@
   NSString* identifier = static_cast<NSMenuItem*>(sender).representedObject;
   if (![identifier isKindOfClass:[NSString class]]) return;
   static_cast<void>(_dispatcher->rejectPerformanceTake(identifier.UTF8String));
+}
+- (void)acceptPerformanceTakeOverSelectedNotes:(id)sender {
+  if (_dispatcher == nullptr || ![sender isKindOfClass:[NSMenuItem class]]) return;
+  NSString* identifier = static_cast<NSMenuItem*>(sender).representedObject;
+  if (![identifier isKindOfClass:[NSString class]]) return;
+  static_cast<void>(_dispatcher->acceptPerformanceTake(
+      identifier.UTF8String, seam::platform::PerformanceTakeScope::SelectedNotes));
 }
 - (void)exportAudio:(id)sender { (void)sender; [self send:seam::platform::ApplicationCommand::ExportAudio]; }
 - (void)exportScore:(id)sender { (void)sender; [self send:seam::platform::ApplicationCommand::ExportScore]; }
@@ -476,6 +484,12 @@ public:
           accept.state = take.accepted ? NSControlStateValueOn : NSControlStateValueOff;
           accept.enabled = !take.accepted;
           [decisions addItem:accept];
+          auto* selectedNotes = item(@"Accept Over Selected Notes",
+                                     @selector(acceptPerformanceTakeOverSelectedNotes:),
+                                     @"", 0, target_);
+          selectedNotes.representedObject = identifier;
+          selectedNotes.enabled = !take.accepted;
+          [decisions addItem:selectedNotes];
           auto* reject = item(@"Reject This Take", @selector(rejectPerformanceTake:), @"", 0, target_);
           reject.representedObject = identifier;
           [decisions addItem:reject];

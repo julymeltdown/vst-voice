@@ -1,5 +1,34 @@
 # Integrated Singer Execution
 
+## A decision can cover the selected notes instead of the whole take
+
+Deciding a proposal was all-or-nothing: a surface could accept the take over the
+span the backend generated, or reject it. M3.P3 item 3 asks for selected-range
+regeneration, and accepting a whole phrase when a creator wants to keep three notes
+of it is exactly the manual work the feature exists to remove.
+
+`PerformanceTakeScope` now separates `WholeTake` from `SelectedNotes`. A
+selected-notes decision resolves the creator's current note selection inside the
+region, spans it from the earliest selected note to the latest, and refuses a
+selection that is empty or that reaches outside the span the take was generated for.
+The range is never clamped: a span the backend did not produce is refused together
+with the take identity, so a surface cannot claim generated data that does not
+exist. Both scopes keep the zero source offset the previous slice established, which
+is what keeps the take-to-region mapping honest.
+
+The macOS submenu gains `Accept Over Selected Notes` beside the whole-take items, so
+the decision is reachable without a new dialog.
+
+Verification. `tests/test_standalone_project_lifecycle.cpp` adds the case: an
+unselected region is refused with `Conflict`; selecting the note and accepting with
+`SelectedNotes` produces one accepted selection per channel the take carries, each
+covering exactly that note's span with a zero offset under the chosen take identity.
+
+Not claimed. This is a range decision, not a channel decision: the surface still
+accepts every channel a take carries at once. Decisions also replace the region's
+accepted selections rather than merging with them, and there is still no audition or
+comparison at matched playback position. M3.P3 items 3 and 5 therefore remain open.
+
 ## The product can decide a performance take, not only propose one
 
 A proposal nothing can accept is an expensive way to write a file. The menu could
