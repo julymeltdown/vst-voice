@@ -293,23 +293,47 @@ core::Result<void> StandaloneApplicationController::acceptPerformanceTake(
         "Performance takes require a selected region");
   }
   const auto& state = region->performance;
+  auto selections = performanceTakeSelections(regionId, id, scope);
+  if (!selections) return core::Result<void>{selections.error()};
+  const auto changed = session_.runtime().execute(
+      std::make_unique<application::SetAcceptedPerformanceCommand>(
+          regionId, state, std::move(selections).value(),
+          application::PerformanceAcceptanceMode::Merge));
+  if (!changed) return changed;
+  const auto recorded = onDocumentChanged();
+  if (!recorded) return recorded;
+  notifyStateChanged();
+  return core::success();
+}
+
+// The accepted selections one decision over a take would introduce. Both accepting
+// and comparing use this rule, so a comparison can never claim a span or channel the
+// take did not generate, and the selected-notes scope cannot reach outside it.
+core::Result<std::vector<domain::AcceptedPerformanceSelection>>
+StandaloneApplicationController::performanceTakeSelections(domain::RegionId regionId,
+    std::string_view id, platform::PerformanceTakeScope scope) const {
+  using Output = std::vector<domain::AcceptedPerformanceSelection>;
+  const auto& editable = session_.runtime().document().session();
+  const auto* region = editable.project().findRegion(regionId);
+  if (region == nullptr) {
+    return core::failure<Output>(core::ErrorCode::Conflict,
+        "Performance takes require a selected region");
+  }
+  const auto& state = region->performance;
   const auto found = std::find_if(state.takes.begin(), state.takes.end(),
       [id](const auto& take) { return take.id == id; });
   if (found == state.takes.end()) {
-    return core::failure(core::ErrorCode::NotFound,
+    return core::failure<Output>(core::ErrorCode::NotFound,
         "No such performance take", std::string{id});
   }
   if (found->state != domain::PerformanceProposalState::Proposed) {
-    return core::failure(core::ErrorCode::Conflict,
+    return core::failure<Output>(core::ErrorCode::Conflict,
         "That performance take is not awaiting a decision", std::string{id});
   }
   if (found->range.endTick > region->durationTick || found->lanes.empty()) {
-    return core::failure(core::ErrorCode::Conflict,
+    return core::failure<Output>(core::ErrorCode::Conflict,
         "That performance take does not cover usable material", std::string{id});
   }
-  // The selected-notes decision uses the span the creator selected, so a partial
-  // acceptance never claims generated data outside it. The selection must lie
-  // inside the take: a span the backend did not generate is refused, not clamped.
   auto range = found->range;
   if (scope == platform::PerformanceTakeScope::SelectedNotes) {
     const auto selected = editable.selection().noteIds();
@@ -326,12 +350,12 @@ core::Result<void> StandaloneApplicationController::acceptPerformanceTake(
       range.endTick = std::max(range.endTick, note->endTick());
     }
     if (!any) {
-      return core::failure(core::ErrorCode::Conflict,
+      return core::failure<Output>(core::ErrorCode::Conflict,
           "Accepting a performance take over selected notes requires a note selection",
           std::string{id});
     }
     if (range.startTick < found->range.startTick || range.endTick > found->range.endTick) {
-      return core::failure(core::ErrorCode::Conflict,
+      return core::failure<Output>(core::ErrorCode::Conflict,
           "The selected notes are outside the span this take was generated for",
           std::string{id});
     }
@@ -339,22 +363,126 @@ core::Result<void> StandaloneApplicationController::acceptPerformanceTake(
   // Choosing a take means choosing it for the span it was generated over, on every
   // channel it carries. A zero source offset maps that span onto the same ticks, so
   // a surface never claims generated data the backend did not produce.
-  std::vector<domain::AcceptedPerformanceSelection> selections;
+  Output selections;
   selections.reserve(found->lanes.size());
   for (const auto& lane : found->lanes) {
     selections.push_back(domain::AcceptedPerformanceSelection{
         found->id, lane.channel,
         domain::PerformanceTimeRange{range.startTick, range.endTick}, time::Tick{0}});
   }
+  return selections;
+}
+
+core::Result<void> StandaloneApplicationController::applyAcceptedSelections(
+    domain::RegionId regionId,
+    const std::vector<domain::AcceptedPerformanceSelection>& selections) {
+  const auto& project = session_.runtime().document().session().project();
+  const auto* region = project.findRegion(regionId);
+  if (region == nullptr) {
+    return core::failure(core::ErrorCode::Conflict,
+        "Performance takes require a selected region");
+  }
   const auto changed = session_.runtime().execute(
       std::make_unique<application::SetAcceptedPerformanceCommand>(
-          regionId, state, std::move(selections),
-          application::PerformanceAcceptanceMode::Merge));
+          regionId, region->performance, selections));
   if (!changed) return changed;
   const auto recorded = onDocumentChanged();
   if (!recorded) return recorded;
   notifyStateChanged();
   return core::success();
+}
+
+core::Result<void> StandaloneApplicationController::beginPerformanceComparison(
+    std::string_view id, platform::PerformanceTakeScope scope) {
+  if (performanceComparison_.has_value()) {
+    return core::failure(core::ErrorCode::Conflict,
+        "A performance take comparison is already active");
+  }
+  const auto regionId = session_.runtime().selectedRegion();
+  const auto& editable = session_.runtime().document().session();
+  const auto* region = editable.project().findRegion(regionId);
+  if (region == nullptr) {
+    return core::failure(core::ErrorCode::Conflict,
+        "Performance takes require a selected region");
+  }
+  const auto& state = region->performance;
+  const bool alreadyAccepted = std::any_of(state.accepted.begin(), state.accepted.end(),
+      [id](const auto& selection) { return selection.takeId == id; });
+  if (alreadyAccepted) {
+    return core::failure(core::ErrorCode::Conflict,
+        "That performance take is already the accepted choice", std::string{id});
+  }
+  const auto found = std::find_if(state.takes.begin(), state.takes.end(),
+      [id](const auto& take) { return take.id == id; });
+  if (found == state.takes.end()) {
+    return core::failure(core::ErrorCode::NotFound,
+        "No such performance take", std::string{id});
+  }
+  const std::string label = performanceTakeLabel(*found);
+  auto selections = performanceTakeSelections(regionId, id, scope);
+  if (!selections) return core::Result<void>{selections.error()};
+  const auto previous = state.accepted;
+  const auto changed = session_.runtime().execute(
+      std::make_unique<application::SetAcceptedPerformanceCommand>(
+          regionId, state, std::move(selections).value(),
+          application::PerformanceAcceptanceMode::Merge));
+  if (!changed) return changed;
+  const auto* applied = session_.runtime().document().session().project()
+                            .findRegion(regionId);
+  if (applied == nullptr) {
+    return core::failure(core::ErrorCode::Conflict,
+        "Performance region disappeared during comparison");
+  }
+  // The candidate is whatever the merge actually produced, so swapping restores the
+  // exact state the creator heard rather than a recomputed guess.
+  performanceComparison_ = PerformanceComparisonState{
+      .regionId = regionId,
+      .takeId = std::string{id},
+      .label = label,
+      .previous = previous,
+      .candidate = applied->performance.accepted,
+      .candidateApplied = true,
+  };
+  const auto recorded = onDocumentChanged();
+  if (!recorded) return recorded;
+  notifyStateChanged();
+  return core::success();
+}
+
+core::Result<void> StandaloneApplicationController::swapPerformanceComparison() {
+  if (!performanceComparison_.has_value()) {
+    return core::failure(core::ErrorCode::Conflict,
+        "No performance take comparison is active");
+  }
+  auto& comparison = *performanceComparison_;
+  const auto& target =
+      comparison.candidateApplied ? comparison.previous : comparison.candidate;
+  const auto applied = applyAcceptedSelections(comparison.regionId, target);
+  if (!applied) return applied;
+  comparison.candidateApplied = !comparison.candidateApplied;
+  return core::success();
+}
+
+core::Result<void> StandaloneApplicationController::endPerformanceComparison() {
+  if (!performanceComparison_.has_value()) {
+    return core::failure(core::ErrorCode::Conflict,
+        "No performance take comparison is active");
+  }
+  // The applied side stays: ending a comparison chooses the take that is sounding
+  // rather than silently reverting the creator's last decision.
+  performanceComparison_.reset();
+  notifyStateChanged();
+  return core::success();
+}
+
+std::optional<platform::PerformanceComparisonMenuItem>
+StandaloneApplicationController::performanceComparison() const {
+  if (!performanceComparison_.has_value()) return std::nullopt;
+  return platform::PerformanceComparisonMenuItem{
+      .takeId = performanceComparison_->takeId,
+      .label = performanceComparison_->label,
+      .candidateApplied = performanceComparison_->candidateApplied,
+  };
 }
 
 core::Result<void> StandaloneApplicationController::rejectPerformanceTake(
@@ -508,6 +636,9 @@ core::Result<void> StandaloneApplicationController::openPath(
     const std::filesystem::path& path) {
   auto opened = session_.openProject(path);
   if (!opened) return core::Result<void>{opened.error()};
+  // A held comparison names a take and two selection states of the document that
+  // just went away, so it cannot survive a document replacement.
+  performanceComparison_.reset();
   auto recorded = recordCurrentProject();
   if (recorded) notifyStateChanged();
   return recorded;
@@ -532,6 +663,7 @@ core::Result<void> StandaloneApplicationController::openInterchangePath(
   if (!accepted.value()) return core::success();
   auto replaced = session_.acceptInterchangeImport(std::move(draft).value());
   if (!replaced) return replaced;
+  performanceComparison_.reset();
   notifyStateChanged();
   return core::success();
 }
@@ -820,7 +952,10 @@ core::Result<void> StandaloneApplicationController::dispatch(
 core::Result<void> StandaloneApplicationController::createNewProject(
     authoring::NewProjectRequest request) {
   auto created = session_.createNewProject(std::move(request));
-  if (created) notifyStateChanged();
+  if (created) {
+    performanceComparison_.reset();
+    notifyStateChanged();
+  }
   return created;
 }
 

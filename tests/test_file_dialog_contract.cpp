@@ -71,6 +71,10 @@ TEST_CASE("command dispatcher refuses performance decisions until a surface impl
   CHECK(dispatcher.performanceTakes().empty());
   CHECK(!dispatcher.acceptPerformanceTake("proposal-1"));
   CHECK(!dispatcher.rejectPerformanceTake("proposal-1"));
+  CHECK(!dispatcher.beginPerformanceComparison("proposal-1"));
+  CHECK(!dispatcher.swapPerformanceComparison());
+  CHECK(!dispatcher.endPerformanceComparison());
+  CHECK(dispatcher.performanceComparison() == std::nullopt);
 }
 
 TEST_CASE("file_dialog_contract_preserves_purpose_filters_and_suggested_name") {

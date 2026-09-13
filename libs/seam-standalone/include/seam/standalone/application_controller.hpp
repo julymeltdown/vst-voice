@@ -149,6 +149,16 @@ public:
       platform::PerformanceTakeScope scope) override;
   [[nodiscard]] core::Result<void> rejectPerformanceTake(
       std::string_view id) override;
+  // Alternate-take comparison: the candidate take is applied while the previous
+  // selection state is held, so the creator can play one passage from one playhead
+  // and swap between the two states. Every swap is an ordinary undoable edit.
+  [[nodiscard]] core::Result<void> beginPerformanceComparison(
+      std::string_view id,
+      platform::PerformanceTakeScope scope) override;
+  [[nodiscard]] core::Result<void> swapPerformanceComparison() override;
+  [[nodiscard]] core::Result<void> endPerformanceComparison() override;
+  [[nodiscard]] std::optional<platform::PerformanceComparisonMenuItem>
+  performanceComparison() const override;
   // Runs the production automatic-performance backend on the selected region and
   // adopts the result as a Proposed take. Acceptance stays a separate action, and
   // an edit that moved the material on refuses instead of publishing.
@@ -258,6 +268,26 @@ private:
   // Fixed so the same material and take identity always produce the same proposal;
   // the counter is what makes successive proposals distinct takes.
   std::uint64_t automaticProposalSeed_{1U};
+  // The accepted selections one decision over a take would introduce, using the
+  // same span and channel rule for accepting and for comparing.
+  [[nodiscard]] core::Result<std::vector<domain::AcceptedPerformanceSelection>>
+  performanceTakeSelections(domain::RegionId regionId, std::string_view id,
+      platform::PerformanceTakeScope scope) const;
+  // Applies an exact accepted-selection list as one undoable edit.
+  [[nodiscard]] core::Result<void> applyAcceptedSelections(
+      domain::RegionId regionId,
+      const std::vector<domain::AcceptedPerformanceSelection>& selections);
+  // Held alternate-take comparison. Session state only: it names a take and the two
+  // selection states, and the project remains the single owner of what is applied.
+  struct PerformanceComparisonState final {
+    domain::RegionId regionId;
+    std::string takeId;
+    std::string label;
+    std::vector<domain::AcceptedPerformanceSelection> previous;
+    std::vector<domain::AcceptedPerformanceSelection> candidate;
+    bool candidateApplied{false};
+  };
+  std::optional<PerformanceComparisonState> performanceComparison_;
   native_ui::ExportProgressPanelModel exportProgress_;
   std::optional<authoring::ExportResult> lastExport_;
   std::stop_source exportStopSource_;

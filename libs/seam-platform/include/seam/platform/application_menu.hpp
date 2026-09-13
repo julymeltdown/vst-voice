@@ -4,6 +4,7 @@
 
 #include <filesystem>
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -108,6 +109,15 @@ struct PerformanceTakeMenuItem final {
   bool accepted{false};
 };
 
+// The alternate-take comparison a surface is holding, if any. The label names the
+// candidate take, and the flag reports which of the two states the region carries
+// right now, so a surface can mark the side that is currently sounding.
+struct PerformanceComparisonMenuItem final {
+  std::string takeId;
+  std::string label;
+  bool candidateApplied{false};
+};
+
 class IApplicationCommandDispatcher {
 public:
   virtual ~IApplicationCommandDispatcher() = default;
@@ -174,6 +184,29 @@ public:
   [[nodiscard]] virtual core::Result<void> rejectPerformanceTake(std::string_view) {
     return core::failure(core::ErrorCode::Unsupported,
                          "Performance take decisions are not supported");
+  }
+  // Starts an alternate-take comparison: the candidate is applied over the
+  // requested span while the previous selection state stays held, so the creator
+  // can play the same passage twice from one playhead and swap between the two.
+  // Returns the comparison a surface should mark, or nothing when none is active.
+  [[nodiscard]] virtual core::Result<void> beginPerformanceComparison(
+      std::string_view, PerformanceTakeScope = PerformanceTakeScope::WholeTake) {
+    return core::failure(core::ErrorCode::Unsupported,
+                         "Performance take comparison is not supported");
+  }
+  // Applies the other side of the active comparison. Refused when none is active.
+  [[nodiscard]] virtual core::Result<void> swapPerformanceComparison() {
+    return core::failure(core::ErrorCode::Unsupported,
+                         "Performance take comparison is not supported");
+  }
+  // Keeps whichever side is applied and releases the held state.
+  [[nodiscard]] virtual core::Result<void> endPerformanceComparison() {
+    return core::failure(core::ErrorCode::Unsupported,
+                         "Performance take comparison is not supported");
+  }
+  [[nodiscard]] virtual std::optional<PerformanceComparisonMenuItem>
+  performanceComparison() const {
+    return std::nullopt;
   }
   [[nodiscard]] virtual std::vector<DocumentationMenuItem> documentation()
       const {

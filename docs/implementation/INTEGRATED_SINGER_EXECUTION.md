@@ -1,5 +1,51 @@
 # Integrated Singer Execution
 
+## Two takes can be compared from one playhead
+
+M3.P3 item 5 asks for alternate-take audition, accept/reject, comparison with the
+previous accepted take, and persistence. Decisions existed; comparison did not. The
+previous slice's revision fix is what makes this possible at all -- before it, holding
+two proposals at one musical revision was impossible once either was accepted.
+
+The comparison is a held pair of selection states rather than a second audio path.
+`beginPerformanceComparison(take, scope)` applies the candidate through the same
+merge rule as accepting it, and keeps the region's previous accepted selections
+alongside the exact list the merge produced. `swapPerformanceComparison()` applies
+the other side with the replace rule, so a swap restores the state the creator
+actually heard rather than a recomputed guess; `endPerformanceComparison()` releases
+the held state and keeps whichever side is sounding, because ending a comparison is a
+choice, not a revert. Every swap is an ordinary undoable edit, so a creator can undo
+out of a comparison without leaving a half-applied state behind.
+
+The creator hears both sides through the normal preview transport at one playhead:
+the applied side is what the renderer publishes, and swapping re-renders it. This is
+matched playback position by construction -- there is no second buffer, no second
+device and no resampling step that could drift against the live timeline. Comparison
+state is session state: it names a take and two selection lists, the project remains
+the only owner of what is applied, and the state is dropped when the document is
+replaced.
+
+The macOS menu grows `Compare This Take` in each proposal's submenu, plus `Swap` and
+`End Comparison` items that show which side is applied and are disabled when no
+comparison is held.
+
+Verification. `tests/test_standalone_project_lifecycle.cpp` adds the comparison case:
+two proposals exist, the first is accepted, comparing the second applies it while the
+previous state is held and every candidate selection names the compared take; a swap
+restores the exact previous list and a second swap restores the candidate; undo and
+redo move between the same two states; ending keeps the applied side and refuses a
+further swap with `Conflict`; an unknown take is `NotFound`, an already accepted
+candidate and a nested comparison are both `Conflict`.
+`tests/test_file_dialog_contract.cpp` extends the surface default case: a dispatcher
+that implements nothing offers no comparison and refuses all three calls.
+
+Not claimed. There is no instantaneous A/B crossfade, no automatic pass-by-pass
+alternation, and no per-channel comparison: the creator swaps explicitly, and each
+swap re-renders through the ordinary preview path, so the gap between sides is a
+render latency rather than a sample-accurate cut. Comparison also cannot outlive an
+edit that moves the material: a swap after the score changed is refused by the same
+revision rule that protects acceptance.
+
 ## A decision keeps what it does not cover, and no longer invalidates its siblings
 
 Three connected defects sat between the decision commands and a usable alternate-take

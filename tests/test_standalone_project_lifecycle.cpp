@@ -774,6 +774,88 @@ TEST_CASE("standalone_controller_accepts_a_take_over_the_selected_notes_only") {
   CHECK(secondNoteSelections == laneCount);
 }
 
+TEST_CASE("standalone_controller_compares_two_takes_from_one_playhead") {
+  const auto root = seam::test::support::temporaryDirectory("standalone-comparison");
+  auto session = makeSession(root);
+  addNote(*session);
+  bool quit = false;
+  seam::standalone::StandaloneApplicationControllerConfig config{};
+  config.autosaveRoot = root / "autosaves";
+  config.recentProjectsPath = root / "recent.json";
+  auto controller = seam::standalone::StandaloneApplicationController::create(*session,
+      std::make_unique<FakeDialog>(), std::make_unique<FakePrompt>(), config,
+      [&quit] { quit = true; });
+  CHECK(controller);
+  if (!controller) return;
+  const auto regionId = session->regionId();
+  const auto performance = [&]() -> const seam::domain::RegionPerformanceState& {
+    return session->runtime().document().session().project().findRegion(regionId)
+        ->performance;
+  };
+  CHECK(controller.value()->dispatch(
+      seam::platform::ApplicationCommand::ProposeAutomaticPerformance));
+  CHECK(controller.value()->proposeAutomaticPerformance());
+  const std::string firstId = performance().takes[0].id;
+  const std::string secondId = performance().takes[1].id;
+  CHECK(controller.value()->acceptPerformanceTake(
+      firstId, seam::platform::PerformanceTakeScope::WholeTake));
+  const auto acceptedFirst = performance().accepted;
+  CHECK(!acceptedFirst.empty());
+  CHECK(controller.value()->performanceComparison() == std::nullopt);
+
+  // Comparing the second take applies it while the first state stays held, so both
+  // sides exist at once and neither is a copy of the other.
+  CHECK(controller.value()->beginPerformanceComparison(
+      secondId, seam::platform::PerformanceTakeScope::WholeTake));
+  const auto comparison = controller.value()->performanceComparison();
+  CHECK(comparison.has_value());
+  CHECK(comparison->takeId == secondId);
+  CHECK(comparison->candidateApplied);
+  CHECK(!comparison->label.empty());
+  const auto acceptedSecond = performance().accepted;
+  CHECK(acceptedSecond != acceptedFirst);
+  for (const auto& selection : acceptedSecond) {
+    CHECK(selection.takeId == secondId);
+  }
+
+  // Swapping is an ordinary undoable edit that restores the exact other side.
+  CHECK(controller.value()->swapPerformanceComparison());
+  CHECK(performance().accepted == acceptedFirst);
+  CHECK(!controller.value()->performanceComparison()->candidateApplied);
+  CHECK(controller.value()->swapPerformanceComparison());
+  CHECK(performance().accepted == acceptedSecond);
+  CHECK(controller.value()->performanceComparison()->candidateApplied);
+  CHECK(controller.value()->dispatch(seam::platform::ApplicationCommand::Undo));
+  CHECK(performance().accepted == acceptedFirst);
+  CHECK(controller.value()->dispatch(seam::platform::ApplicationCommand::Redo));
+  CHECK(performance().accepted == acceptedSecond);
+
+  // Ending keeps whichever side is sounding instead of silently reverting it.
+  CHECK(controller.value()->endPerformanceComparison());
+  CHECK(controller.value()->performanceComparison() == std::nullopt);
+  CHECK(performance().accepted == acceptedSecond);
+  const auto lapsed = controller.value()->swapPerformanceComparison();
+  CHECK(!lapsed);
+  CHECK(lapsed.error().code == seam::core::ErrorCode::Conflict);
+
+  const auto unknown = controller.value()->beginPerformanceComparison(
+      "take-not-here", seam::platform::PerformanceTakeScope::WholeTake);
+  CHECK(!unknown);
+  CHECK(unknown.error().code == seam::core::ErrorCode::NotFound);
+  const auto alreadyAccepted = controller.value()->beginPerformanceComparison(
+      secondId, seam::platform::PerformanceTakeScope::WholeTake);
+  CHECK(!alreadyAccepted);
+  CHECK(alreadyAccepted.error().code == seam::core::ErrorCode::Conflict);
+
+  CHECK(controller.value()->beginPerformanceComparison(
+      firstId, seam::platform::PerformanceTakeScope::WholeTake));
+  const auto nested = controller.value()->beginPerformanceComparison(
+      secondId, seam::platform::PerformanceTakeScope::WholeTake);
+  CHECK(!nested);
+  CHECK(nested.error().code == seam::core::ErrorCode::Conflict);
+  CHECK(controller.value()->endPerformanceComparison());
+}
+
 TEST_CASE("standalone_controller_refuses_a_neural_deployment_it_cannot_verify") {
   const auto root = seam::test::support::temporaryDirectory("standalone-neural");
   auto session = makeSession(root);

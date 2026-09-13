@@ -28,6 +28,9 @@
 - (void)acceptPerformanceTake:(id)sender;
 - (void)acceptPerformanceTakeOverSelectedNotes:(id)sender;
 - (void)rejectPerformanceTake:(id)sender;
+- (void)comparePerformanceTake:(id)sender;
+- (void)swapPerformanceComparison:(id)sender;
+- (void)endPerformanceComparison:(id)sender;
 - (void)openDocumentation:(id)sender;
 - (void)exportAudio:(id)sender;
 - (void)exportScore:(id)sender;
@@ -140,6 +143,23 @@
   if (![identifier isKindOfClass:[NSString class]]) return;
   static_cast<void>(_dispatcher->acceptPerformanceTake(
       identifier.UTF8String, seam::platform::PerformanceTakeScope::SelectedNotes));
+}
+- (void)comparePerformanceTake:(id)sender {
+  if (_dispatcher == nullptr || ![sender isKindOfClass:[NSMenuItem class]]) return;
+  NSString* identifier = static_cast<NSMenuItem*>(sender).representedObject;
+  if (![identifier isKindOfClass:[NSString class]]) return;
+  static_cast<void>(_dispatcher->beginPerformanceComparison(
+      identifier.UTF8String, seam::platform::PerformanceTakeScope::WholeTake));
+}
+- (void)swapPerformanceComparison:(id)sender {
+  (void)sender;
+  if (_dispatcher == nullptr) return;
+  static_cast<void>(_dispatcher->swapPerformanceComparison());
+}
+- (void)endPerformanceComparison:(id)sender {
+  (void)sender;
+  if (_dispatcher == nullptr) return;
+  static_cast<void>(_dispatcher->endPerformanceComparison());
 }
 - (void)exportAudio:(id)sender { (void)sender; [self send:seam::platform::ApplicationCommand::ExportAudio]; }
 - (void)exportScore:(id)sender { (void)sender; [self send:seam::platform::ApplicationCommand::ExportScore]; }
@@ -464,6 +484,7 @@ public:
     if (performanceMenu_ != nil) {
       [performanceMenu_ removeAllItems];
       const auto takes = dispatcher_->performanceTakes();
+      const auto comparison = dispatcher_->performanceComparison();
       if (takes.empty()) {
         auto* empty = [[NSMenuItem alloc] initWithTitle:@"No Performance Proposals"
                                                   action:nil keyEquivalent:@""];
@@ -490,6 +511,11 @@ public:
           selectedNotes.representedObject = identifier;
           selectedNotes.enabled = !take.accepted;
           [decisions addItem:selectedNotes];
+          auto* compare = item(@"Compare This Take", @selector(comparePerformanceTake:),
+                               @"", 0, target_);
+          compare.representedObject = identifier;
+          compare.enabled = !take.accepted;
+          [decisions addItem:compare];
           auto* reject = item(@"Reject This Take", @selector(rejectPerformanceTake:), @"", 0, target_);
           reject.representedObject = identifier;
           [decisions addItem:reject];
@@ -497,6 +523,21 @@ public:
           [performanceMenu_ addItem:entry];
         }
       }
+      // The comparison holds the previous accepted state while the candidate is
+      // applied, so swapping plays the same passage from the same playhead on the
+      // other side without any silent edit to the project.
+      [performanceMenu_ addItem:[NSMenuItem separatorItem]];
+      const bool comparing = comparison.has_value();
+      auto* swap = item(comparing && comparison->candidateApplied
+                            ? @"Swap: Hear Previous Take" : @"Swap: Hear Compared Take",
+                        @selector(swapPerformanceComparison:), @"", 0, target_);
+      swap.enabled = comparing;
+      swap.state = comparing && comparison->candidateApplied ? NSControlStateValueOn
+                                                             : NSControlStateValueOff;
+      [performanceMenu_ addItem:swap];
+      auto* end = item(@"End Comparison", @selector(endPerformanceComparison:), @"", 0, target_);
+      end.enabled = comparing;
+      [performanceMenu_ addItem:end];
     }
 
     if (recoveryMenu_ != nil) {
