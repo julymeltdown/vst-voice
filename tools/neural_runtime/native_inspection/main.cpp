@@ -25,12 +25,13 @@ unsigned elementBytes(int type) {
   }
 }
 
-bool validValues(const onnx::TensorProto& tensor) {
+int validateValues(const onnx::TensorProto& tensor,std::stop_token stop) {
   const auto type=tensor.data_type();
   if (tensor.has_raw_data()) {
     const auto width=elementBytes(type);
     const auto& data=tensor.raw_data();
     for (std::size_t offset=0;offset<data.size();offset+=width) {
+      if ((offset&4095U)==0U && stop.stop_requested()) return 18;
       // ONNX raw tensor storage is little-endian, independent of host order.
       std::uint64_t bits=0;
       for (unsigned byte=0;byte<width;++byte)
@@ -38,37 +39,49 @@ bool validValues(const onnx::TensorProto& tensor) {
       if ((type==onnx::TensorProto::FLOAT && (bits&0x7f800000U)==0x7f800000U) ||
           (type==onnx::TensorProto::DOUBLE && (bits&0x7ff0000000000000ULL)==0x7ff0000000000000ULL) ||
           (type==onnx::TensorProto::FLOAT16 && (bits&0x7c00U)==0x7c00U) ||
-          (type==onnx::TensorProto::BOOL && bits>1U)) return false;
+          (type==onnx::TensorProto::BOOL && bits>1U)) return 14;
     }
   } else {
-    for (const auto value:tensor.float_data()) if (!std::isfinite(value)) return false;
-    for (const auto value:tensor.double_data()) if (!std::isfinite(value)) return false;
+    std::size_t checked=0;
+    const auto cancelled=[&] {return (checked++&4095U)==0U && stop.stop_requested();};
+    for (const auto value:tensor.float_data()) {
+      if (cancelled()) return 18;
+      if (!std::isfinite(value)) return 14;
+    }
+    for (const auto value:tensor.double_data()) {
+      if (cancelled()) return 18;
+      if (!std::isfinite(value)) return 14;
+    }
     for (const auto value:tensor.int32_data()) {
+      if (cancelled()) return 18;
       if ((type==onnx::TensorProto::BOOL && (value<0 || value>1)) ||
           (type==onnx::TensorProto::INT8 && (value<-128 || value>127)) ||
           (type==onnx::TensorProto::UINT8 && (value<0 || value>255)) ||
-          (type==onnx::TensorProto::FLOAT16 && (value<0 || value>65535 || (value&0x7c00)==0x7c00))) return false;
+          (type==onnx::TensorProto::FLOAT16 && (value<0 || value>65535 || (value&0x7c00)==0x7c00))) return 14;
     }
   }
-  return true;
+  return 0;
 }
 
-static int inspectModelBytes(std::span<const char> bytes,onnx::ModelProto& model,google::protobuf::Struct& report) {
+static int inspectModelBytes(std::span<const char> bytes,onnx::ModelProto& model,google::protobuf::Struct& report,std::stop_token stop) {
   constexpr int maximumBytes=256*1024*1024;
   if (bytes.empty() || bytes.size()>maximumBytes) return 3;
   google::protobuf::io::ArrayInputStream raw{bytes.data(),static_cast<int>(bytes.size())};
   google::protobuf::io::CodedInputStream coded{&raw};
   coded.SetTotalBytesLimit(maximumBytes); coded.SetRecursionLimit(64);
   if (!model.ParseFromCodedStream(&coded) || !coded.ConsumedEntireMessage()) return 4;
+  if (stop.stop_requested()) return 18;
   if (!model.has_graph() || model.ir_version()<1 || model.ir_version()>10 ||
       model.functions_size() || model.training_info_size() || model.opset_import_size()!=1 ||
       !model.opset_import(0).domain().empty() || model.opset_import(0).version()<13 ||
       model.opset_import(0).version()>21) return 5;
   std::vector<const google::protobuf::Message*> pending{&model};
   std::size_t visited=0,nodes=0,tensors=0;
+  std::size_t textBytes=0;
   std::uint64_t declaredBytes=0;
   constexpr std::uint64_t maximumElements=64U*1024U*1024U,maximumTensorBytes=512U*1024U*1024U;
   while (!pending.empty()) {
+    if (stop.stop_requested()) return 18;
     const auto* message=pending.back(); pending.pop_back();
     if (++visited>200000) return 6;
     const auto* reflection=message->GetReflection();
@@ -107,7 +120,7 @@ static int inspectModelBytes(std::span<const char> bytes,onnx::ModelProto& model
         }
         if (expectedCount!=elements || typedCount!=expectedCount) return 13;
       }
-      if (!validValues(*tensor)) return 14;
+      if (const auto invalid=validateValues(*tensor,stop)) return invalid;
     }
     if (const auto* value=dynamic_cast<const onnx::ValueInfoProto*>(message)) {
       if (!value->has_type() || !value->type().has_tensor_type()) return 12;
@@ -126,6 +139,18 @@ static int inspectModelBytes(std::span<const char> bytes,onnx::ModelProto& model
     std::vector<const google::protobuf::FieldDescriptor*> fields;
     reflection->ListFields(*message,&fields);
     for (const auto* field:fields) {
+      if (field->type()==google::protobuf::FieldDescriptor::TYPE_STRING) {
+        const auto count=field->is_repeated()?reflection->FieldSize(*message,field):1;
+        std::string scratch;
+        for (int index=0;index<count;++index) {
+          if ((index&4095)==0 && stop.stop_requested()) return 18;
+          const auto& text=field->is_repeated()?
+              reflection->GetRepeatedStringReference(*message,field,index,&scratch):
+              reflection->GetStringReference(*message,field,&scratch);
+          if (text.size()>4096U || text.size()>8U*1024U*1024U-textBytes) return 19;
+          textBytes+=text.size();
+        }
+      }
       if (field->cpp_type()!=google::protobuf::FieldDescriptor::CPPTYPE_MESSAGE) continue;
       const auto count=field->is_repeated()?reflection->FieldSize(*message,field):1;
       if (pending.size()+visited+static_cast<std::size_t>(count)>200000) return 6;
@@ -136,13 +161,18 @@ static int inspectModelBytes(std::span<const char> bytes,onnx::ModelProto& model
   }
   // External data was rejected throughout the message tree before calling the
   // upstream in-memory checker. Never call its filename-loading overload.
+  if (stop.stop_requested()) return 18;
   try { onnx::checker::check_model(model,false); }
-  catch (const std::exception& error) { std::cerr<<error.what()<<'\n'; return 15; }
+  // Exception text may contain model-controlled names or large graph fragments.
+  // The reusable API reports a stable code, not unbounded stderr side effects.
+  catch (const std::exception&) { return 15; }
+  if (stop.stop_requested()) return 18;
   auto& fields=*report.mutable_fields();
   fields["status"].set_string_value("NATIVE_STRUCTURE_CHECKED");
   fields["nodes"].set_number_value(nodes);
   fields["tensors"].set_number_value(tensors);
   fields["declaredTensorBytes"].set_number_value(declaredBytes);
+  fields["textBytes"].set_number_value(textBytes);
   fields["irVersion"].set_number_value(model.ir_version());
   fields["opset"].set_number_value(model.opset_import(0).version());
   fields["executionAdmitted"].set_bool_value(false);
@@ -165,10 +195,12 @@ static int inspectModelBytes(std::span<const char> bytes,onnx::ModelProto& model
   return 0;
 }
 
-int inspectBytes(std::span<const char> bytes,onnx::ModelProto& model,google::protobuf::Struct& report) {
+int inspectBytes(std::span<const char> bytes,onnx::ModelProto& model,google::protobuf::Struct& report,std::stop_token stop) {
+  if (stop.stop_requested()) return 18;
   onnx::ModelProto candidate; google::protobuf::Struct candidateReport;
-  const auto result=inspectModelBytes(bytes,candidate,candidateReport);
+  const auto result=inspectModelBytes(bytes,candidate,candidateReport,stop);
   if (result) return result;
+  if (stop.stop_requested()) return 18;
   model.Swap(&candidate); report.Swap(&candidateReport);
   return 0;
 }

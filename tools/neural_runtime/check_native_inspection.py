@@ -130,6 +130,20 @@ def main():
                 node.attribute.append(helper.make_attribute("not_a_supported_attribute", 1))
             run(model.SerializeToString(), 15)
         acoustic_path, vocoder_path = Path(directory) / "acoustic", Path(directory) / "vocoder"
+        private_name = "MODEL_PRIVATE_NAME_" + "x" * 128 + "\nFORGED_LOG_ENTRY"
+        model = onnx.load_model_from_string(acoustic)
+        model.graph.node[0].input[0] = private_name
+        diagnostic = run(model.SerializeToString(), 15)
+        assert diagnostic.stderr == b"Native ONNX inspection failed (code 15)\n"
+        assert not diagnostic.stdout
+        model.graph.node[0].input[0] = "x" * 4097
+        run(model.SerializeToString(), 19)
+        model = onnx.load_model_from_string(acoustic)
+        model.doc_string = "x" * 4096
+        run(model.SerializeToString(), 0)
+        for index in range(2049):
+            model.metadata_props.add(key=str(index), value="x" * 4096)
+        run(model.SerializeToString(), 19)
         for steps, output in (("scalar", "audio"), ("vector1", "waveform")):
             a, v = graphs(steps_layout=steps, vocoder_output=output)
             acoustic_path.write_bytes(a)

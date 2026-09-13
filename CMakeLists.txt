@@ -1711,6 +1711,13 @@ if(SEAM_BUILD_TESTS)
           tests.phase13a.test_payload_materializer tests.phase13a.test_release_payload_assembly)
     set_tests_properties(seam_neural_package_materialization_tests PROPERTIES
       WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} TIMEOUT 60)
+    add_test(NAME seam_voice_model_training_tests
+      COMMAND ${Python3_EXECUTABLE} -m unittest discover
+        -s tools/voice_model_training -p "test_*.py")
+    set_tests_properties(seam_voice_model_training_tests PROPERTIES
+      WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+      ENVIRONMENT "PYTHONDONTWRITEBYTECODE=1" TIMEOUT 60
+      LABELS "voice-model-training")
     add_test(NAME seam_draft_inventory_tests
       COMMAND ${Python3_EXECUTABLE} -m unittest tests.test_draft_voicebank_inventory
         tests.test_voicebank_script_generator)

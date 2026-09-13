@@ -15,6 +15,19 @@ The command-line reader is an adapter around that API. Run
 verify source-buffer independence and failure atomicity. This is not yet the
 immutable prepared execution handle required by the production roadmap.
 
+The API accepts an optional stop token and returns code 18 on observed
+cancellation, without replacing outputs. Checks surround third-party parsing
+and checking, occur per traversed message, and periodically during tensor scans.
+Protobuf parsing and the upstream checker are not internally interruptible;
+this is cooperative cancellation, not a wall-clock bound. The child supervisor
+is still needed for hard deadlines. The CLI passes an empty token.
+
+Declared protobuf text fields are capped at 4096 bytes each and 8 MiB combined
+across the model tree (code 19 on violation). This includes metadata/doc strings;
+raw tensor bytes follow their separate tensor policy. Reports expose `textBytes`.
+These checks happen after protobuf parsing, before upstream structural checking;
+they do not establish a preallocation memory limit.
+
 From the project root:
 
 ```sh

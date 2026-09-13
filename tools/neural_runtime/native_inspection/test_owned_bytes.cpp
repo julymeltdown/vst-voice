@@ -22,4 +22,7 @@ int main() {
   if (parsed.SerializeAsString()!=before || report.SerializeAsString()!=reportBefore) return 4;
   if (inspectBytes({},parsed,report)!=3) return 5;
   if (parsed.SerializeAsString()!=before || report.SerializeAsString()!=reportBefore) return 6;
+  std::stop_source cancelled; cancelled.request_stop();
+  if (inspectBytes(source.SerializeAsString(),parsed,report,cancelled.get_token())!=18) return 7;
+  if (parsed.SerializeAsString()!=before || report.SerializeAsString()!=reportBefore) return 8;
 }

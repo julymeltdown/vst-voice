@@ -1,2 +1,7 @@
 #include "inspection.hpp"
-int main(int argc,char** argv) {return runInspectionCommand(argc,argv);}
+#include <iostream>
+int main(int argc,char** argv) {
+  const auto result=runInspectionCommand(argc,argv);
+  if (result) std::cerr<<"Native ONNX inspection failed (code "<<result<<")\n";
+  return result;
+}

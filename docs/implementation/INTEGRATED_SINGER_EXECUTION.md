@@ -1088,6 +1088,135 @@ Neither fixture is a listening-quality acceptance result.
   full CTest invocation: 123/123 passed in 84.76 seconds, including the expanded
   boundary matrix and production pilot CLI. This supersedes the earlier narrow
   test boundary for this repair, but does not establish musical qualification.
+# Training label consistency checkpoint
+
+Added phoneme/F0/voicing label validation and a correction queue. Checks cover
+phrase bounds, complete contiguous phone spans, vocabulary membership, explicitly
+configured confidence threshold and analysis-frame geometry. Low-confidence,
+unknown or unreviewed labels are not silently accepted. Supplied review revision
+text is not authenticated; all outputs retain trainingAdmitted=false.
+
+Verification: fourteen training-tool tests passed, including valid consistency
+without approval, combined correction reasons and invalid alignment/feature
+geometry. Source digest, note/slur/lyric binding, reviewed revisions and the
+label-report CLI remain open, as do permission admission and actual training.
+
+# Captured source-preparation CLI checkpoint
+
+Added the `prepare CONFIG SHA256 SOURCE_ROOT NEW_REPORT` command, sharing bounded
+configuration loading and no-replace publication with `split`. It binds the exact
+configuration identity to file-inspection results. Exit 3 preserves per-source
+rejection diagnostics without a split-ready inventory; exit 0 means inspected
+only, not rights/training approval. Invalid config/publication returns exit 2.
+
+Verification: eleven training-tool tests passed, including subprocess preparation
+success, rejected-source diagnostics and existing-output preservation. Audio
+transforms, segmentation, permission admission, labels and training remain open.
+
+# Source-file preparation integration checkpoint
+
+Added read-only `prepare_sources`: explicit root, contained source paths,
+captured digests, per-file/aggregate byte budgets, regular-file checks and
+per-item inspection diagnostics. Successful sources produce actual PCM-derived
+split identities; any failure suppresses the complete split-ready inventory
+instead of silently omitting failed records. Original files remain unchanged.
+Path checks do not claim race-free filesystem isolation.
+
+Verification: ten training-tool tests passed, including actual source reads,
+missing/escaping/linked paths, changed digest, no partial split publication and
+source preservation. Captured-config prepare CLI, permissions and transforms
+remain unfinished; these results do not qualify training data or a singer.
+
+# Training source PCM inspection checkpoint
+
+Added bounded inspection of actual captured mono integer PCM WAV bytes: expected
+source digest, requested sample rate, supported widths, duration/frame limits and
+exact payload length. It returns both source-container identity and a separate
+geometry-plus-PCM identity, without converting or modifying audio. Unsupported
+formats require a future explicit preparation transform. No rights are admitted.
+
+Verification: nine training-tool tests passed. Metadata-only WAV variations have
+different source hashes but the same PCM identity and therefore stay in one split
+group; wrong digests, stereo/unsupported width, wrong clock and truncated payloads
+reject. Permission admission, reviewed labels and training remain unfinished.
+
+# Exact-audio duplicate dossier checkpoint
+
+Split output schema 2 now reports duplicate-audio source groups, unique-audio
+counts by partition and redundant-source totals, while retaining every source
+reference. This prevents raw record counts from masquerading as independent
+recording counts. Selection/removal is explicitly review-required; no label or
+permission conflict is resolved automatically. Input configuration stays v1.
+
+Verification: six training-tool tests passed, including three duplicate records
+counted as one unique recording in the held-out partition, stable output order
+and preservation of all source records. Hashes remain caller-supplied pending
+the separate source-audio admission stage.
+
+# Captured dataset split command checkpoint
+
+Added `python3 -m tools.voice_model_training split CONFIG SHA256 NEW_OUTPUT`.
+It reads bounded captured configuration, rejects duplicate keys/schema changes,
+binds configuration and source-inventory hashes, and publishes canonical output
+without replacing an existing destination. Opened input must be a regular file.
+Temporary output is fsynced before same-directory no-replace link publication;
+directory durability and Windows qualification are not claimed.
+
+Verification: five training-tool tests passed, including subprocess command
+execution, bad digest/no output, deterministic repeated output, source preservation,
+overwrite refusal and temporary cleanup. No source permissions or audio are
+admitted by this split command; the rest of the training pipeline remains open.
+
+# Original-model dataset split implementation checkpoint
+
+Started the planned `tools/voice_model_training` owner with deterministic source
+splitting. Song/session/lineage/exact-audio relationships are unioned transitively;
+groups touching explicitly held-out songs are assigned wholly to test. Remaining
+groups use seeded hashing; missing partitions are reported rather than repaired
+by leaking related recordings. A canonical source-inventory digest is retained.
+
+Verification: four tests passed, covering order independence, transitive leakage,
+explicit holdout propagation, invalid identities and input preservation. This is
+the split algorithm only, not the full command or source-admission pipeline. No
+audio, permissions, labels, learned checkpoint or singing qualification was created.
+
+# Native graph text-budget checkpoint
+
+Native inspection bounds each protobuf string field to 4096 bytes and total
+model-tree text to 8 MiB before upstream checking. Raw tensor storage is excluded
+from this text policy and retains its own bounds. The policy includes descriptive
+metadata; actual export compatibility is still to be qualified. Checks are
+post-parse and do not prevent all parser allocation.
+
+Verification: all four native integration tests passed in 8.36 s. Tests accept
+the per-field boundary, reject an oversized name and reject aggregate metadata
+overflow. The diagnostic privacy test now uses a bounded forged-log name so it
+still reaches the upstream checker rather than failing the new text budget first.
+
+# Native checker exception diagnostic checkpoint
+
+The reusable native inspection API no longer writes upstream checker exception
+text to stderr. The CLI emits a stable numeric failure message; the runtime
+caller retains its existing bounded generic failure message. This avoids echoing
+model-controlled tensor names or graph fragments from caught checker exceptions.
+It does not intercept every third-party library's internal logging mechanism.
+
+Verification: all four native integration tests passed in 6.34 s. A regression
+uses a 64 KiB input name containing a forged log line; rejection emits only the
+fixed code-15 diagnostic and no stdout.
+
+# Cooperative native-inspection cancellation checkpoint
+
+`inspectBytes` now accepts a stop token, checks cancellation before/after parsing
+and upstream checking, per traversed message and periodically during numeric
+tensor scans. Observed cancellation returns code 18 without replacing outputs.
+The ownership test covers pre-cancelled inspection and preservation of prior
+results. Third-party parser/checker calls remain noninterruptible internally;
+process supervision is still required for hard deadlines. CLI behavior is unchanged.
+
+Verification: native build-and-test target passed all four integration tests in
+4.87 s. In-flight cooperative cancellation latency is not measured by these tests.
+
 # Full native-enabled regression checkpoint
 
 The complete enabled Release build passed, followed by all 128 CTest targets
@@ -1366,3 +1495,139 @@ passed; all 40 offline neural-runtime unit tests passed. No full Release-suite
 rerun is claimed for this checkpoint. Fixtures are arithmetic graphs, not learned
 voices. Production worker packaging, model admission, cancellation, lawful learned
 assets, singing qualification, and the remaining full implementation plan stay open.
+# Source-bound training label command
+
+Complete integrated checkpoint: all 129 registered CTests passed in 85.50 seconds
+with `-j 4`, including the 24-case training-tool group and native ONNX checks.
+This supersedes the earlier split 128-plus-one test invocation. Reviewed the next
+authorization boundary: existing `tools/public_release/crypto_validation.py`
+provides role-bound signed-record verification. Training admission must bind a
+distinct trusted reviewer policy and exact captured dataset/evidence identities;
+a key embedded in an assertion cannot authenticate itself. No real reviewer
+policy, signed training approval or trained model was created in this checkpoint.
+
+Permission CLI follow-up: `permission-report` now captures bounded regular-file
+evidence and actual audio from a captured configuration, publishes source-bound
+scope assertions and retains explicit false training-admission/review-authentication
+flags. Exit 3 reports missing asserted scopes; wrong evidence fails without new
+output; existing reports reject. All 24 training tests passed, including subprocess
+CLI success, missing modelTraining, changed evidence and no-overwrite cases.
+This does not complete the plan's authenticated `admit` operation.
+
+Permission/audio join follow-up: added `inspect_permission_sources`, which
+reuses the bounded preparation reader and requires exact source-set and hash
+agreement with permission assertions. Schema 2 reports now bind actual PCM
+identity/geometry plus song/session/lineage. Source-byte verification is distinct
+from review authentication and training admission; both latter flags stay false.
+All 24 training tests passed, including mismatched permission digest, unmatched
+source ID and altered recording rejection. CLI evidence capture and authenticated
+execution admission remain open.
+
+Training-permission capture: inspected existing external-beta source admission;
+its four bank/render scopes do not include model training. Added a separate
+training manifest checker reusing those names and requiring modelTraining,
+modelRedistribution and commercialModels independently. Evidence bytes are
+bounded and hash-checked; supplied reviews are not authenticated and no execution
+authority is granted. All 23 training tests passed, including bank-only scope
+rejection for complete assertions and missing/changed evidence. Actual source
+joins and authenticated training admission remain unfinished.
+
+Batch-to-split integration: batch report schema 2 now binds successful child
+source IDs, WAV hashes and exact segment-record hashes and exposes `splitSources`
+only when every entry succeeds and child IDs are unique. Duplicate IDs are
+reported without deleting clips and cause exit 3 with no split inventory.
+The integration test consumes the verified inventory in the existing splitter,
+checks held-out grouping and exact-audio duplicate accounting, and verifies
+duplicate-ID rejection. All 22 training tests passed. Permissions, reviewed
+labels and trained-model qualification remain separate unfinished requirements.
+
+Batch preparation follow-up: added `segment-batch` for 1..64 captured phrase
+configurations, sequential bounded source reads, unique flat output names,
+per-entry rejection reports and explicit resume through existing byte-verified
+segment publication. Every attempt requires a new report. The added recovery
+test preserves a successful clip and old report while a missing input is supplied
+and completed on resume. All 22 training-tool tests passed. Dataset-wide identity
+admission, rights, reviewed labels, actual training and musical qualification
+are still incomplete; batch success is PREPARED_UNAPPROVED only.
+
+Publication recovery follow-up: `segment --resume` verifies existing output
+against re-derived source/configuration-bound bytes. Complete artifacts return
+without writes; exact audio lacking a record receives only the final record.
+Truncated audio, conflicting records, directory symlinks and unexpected entries
+reject without overwrite. Existing no-resume behavior is preserved. This handles
+the audio-complete/manifest-missing interruption boundary, not arbitrary partial
+audio repair or concurrent hostile directory mutation.
+
+Integrated checkpoint verification: Release build succeeded; the existing full
+128-test CTest registry passed with zero failures in 85.53 seconds (`-j 4`).
+Registered `seam_voice_model_training_tests` in the root CMake test suite with
+a 60-second timeout and repository working directory. After CMake regeneration,
+the new test group passed all 21 internal Python tests in 1.13 seconds. The new
+registry contains 129 tests; this was 128 full-suite tests followed by the new
+group, not a single post-registration 129-test invocation. No learned weights,
+independent listening, installed nine-host qualification or Beta GO follows
+from this engineering checkpoint.
+
+Score-segmentation follow-up: segment schema 3 now crops explicit-silence score
+supervision alongside acoustic labels. Notes/rests are clipped and rebased,
+syllables/phone ranges/silence indices remapped, and an initial retained melisma
+note becomes a local onset with review still invalidated. Inconsistent ownership
+requires relabeling instead of invented supervision. All 21 training tests passed,
+including CLI publication and melisma/silence reindexing. Silence-only score crops,
+fresh feature extraction, source authorization and actual training remain open.
+
+Label-segmentation follow-up: added copied/rebased acoustic labels to segment
+config/output schema 2. Parent source identity, geometry and container/PCM hashes
+are checked before output creation. Child labels bind the new clip hashes;
+phoneme spans and hop-aligned F0/voicing slices are rebased without modifying the
+parent, and review revision is always cleared. Off-grid starts explicitly require
+fresh extraction. All 20 training tests passed, including CLI labeled publication
+and wrong-parent rejection. Score cropping and feature re-extraction remain open.
+
+Segmentation publication follow-up: the `segment` CLI now consumes a captured
+configuration and source WAV and creates a new directory with sample-exact
+`audio.wav` plus final hash-bound `segment.json`. Validation precedes directory
+creation; existing/partial directories reject without overwrite. Interrupted
+output is retained, not silently resumed. Tests verify CLI content identity,
+frame count, lineage, invalid interval, existing/partial output and immutable
+original bytes. All 19 training-tool tests passed. This is single-phrase
+publication, not batch recovery, label rebasing, permission admission or training.
+
+Phrase preparation follow-up: implemented `segment_source` to extract exact
+half-open PCM frame intervals from captured mono 16/24/32-bit sources. Returns
+new WAV bytes plus parent/child content hashes, transform revision/range and
+inherited song/session/lineage. Tests verify exact nonzero sample slices,
+repeatability, invalid intervals/identity rejection, and descendant grouping in
+held-out splits. All 18 training-tool tests passed. No source is modified; no
+rights admission, model training, label rebasing or batch publication is claimed.
+
+Schema 3 follow-up adds explicit non-lyric silence phone ownership. Ordered
+syllable ranges and silence indices must partition every phone exactly once;
+duplicate, overlapping, missing, unordered and out-of-range ownership reject.
+Schema 1/2 interpretation is preserved. Also closed the correction-report
+budget check for diagnostics produced only by phonemes and missing review.
+Verification: 17 training-tool tests passed, including schema 3 CLI publication
+and leading/internal/trailing silence ownership. Supplied silence classification
+is not acoustic evidence or authenticated review.
+
+Follow-up: label configuration/report schema 2 adds explicit lyric syllables,
+phone ranges, MIDI notes, rests and slur continuation checks. Schema 1 remains
+unchanged. Canonical `label-report` command now matches the implementation plan,
+with `labels` preserved as an alias. All 16 training-tool tests passed, including
+source-bound schema 2 subprocess reporting and invalid slur rejection. These
+are structural supervision checks, not acoustic alignment, silence-phone
+ownership, authenticated review, training execution or musical acceptance.
+
+Added the `tools.voice_model_training labels` CLI to connect label consistency
+checks to actual inspected PCM sources. It requires one label per captured
+source, verifies container/PCM hashes and frame geometry, and publishes a
+configuration-bound report without overwriting earlier output. Inconsistent
+labels produce exit 3 and a correction queue; invalid identities produce exit 2
+without publication. Source data stays unchanged. This does not authenticate
+reviews, admit training rights, train weights, or establish musical quality.
+
+Verification: all 15 training-tool unit tests passed, including the subprocess
+label CLI success/correction/mismatched-source/no-overwrite paths. Full native
+regression suite was not rerun for this Python-only addition. Next training work
+must connect lyrics, note/slur supervision and source/permission admission to
+the prepared data; no milestone is claimed complete here.
