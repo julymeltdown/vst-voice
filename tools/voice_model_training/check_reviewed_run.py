@@ -28,7 +28,8 @@ from .training_run import train_reviewed_epoch
 
 
 def check_reviewed_run(model, optimizer, *, objective, model_metadata: dict,
-                       trusted_checkout: Path | None = None) -> dict:
+                       trusted_checkout: Path | None = None, check_export: bool = False,
+                       native_probe: Path | None = None) -> dict:
     """Exercise real file admission, optimization, publication and held-out I/O."""
     import numpy as np
     import torch
@@ -221,6 +222,39 @@ def check_reviewed_run(model, optimizer, *, objective, model_metadata: dict,
             if json.loads((root / "continuous" / "run.json").read_bytes()) != continuous_result:
                 raise ValueError("Multi-epoch completion record differs from command result")
             command_result["continuousVersusResumedExact"] = True
+            if check_export:
+                acoustic_profile = next(iter(targets.values()))[0]["profile"]
+                publish_new(root / "profile.json", acoustic_profile)
+                exported = subprocess.run([sys.executable, "-m", "tools.voice_model_training.export",
+                    "--checkpoint", str(root / "command-checkpoint"), "--receipt-sha256", command_hash,
+                    "--profile", str(root / "profile.json"),
+                    "--profile-sha256", hashlib.sha256(encode_report(acoustic_profile)).hexdigest(),
+                    "--trusted-checkout", str(trusted_checkout), "--output", str(root / "export")],
+                    capture_output=True, text=True, timeout=90)
+                if exported.returncode:
+                    raise ValueError(f"Acoustic export command failed: {exported.stderr[-512:]}")
+                export_report = json.loads((root / "export" / "export.json").read_bytes())
+                graph_hash = hashlib.sha256((root / "export" / "acoustic.onnx").read_bytes()).hexdigest()
+                if (graph_hash != export_report["acousticSha256"]
+                        or graph_hash != json.loads(exported.stdout)["acousticSha256"]
+                        or export_report["checkpointReceiptSha256"] != command_hash
+                        or export_report["releaseEligible"] is not False):
+                    raise ValueError("Published export lost graph identity or checkpoint provenance")
+                command_result["checkpointExportVerified"] = True
+                if native_probe is not None:
+                    native_command = [str(native_probe.resolve(strict=True)), "--acoustic-export",
+                                      str(root / "export" / "acoustic.onnx"), graph_hash]
+                    native = subprocess.run(native_command, capture_output=True, text=True, timeout=60)
+                    if native.returncode:
+                        raise ValueError(f"Native learned acoustic inference failed: {native.stderr[-512:]}")
+                    native_result = json.loads(native.stdout)
+                    if native_result.get("status") != "ACOUSTIC_EXPORT_NATIVE_SMOKE" or native_result.get("cases") != 3:
+                        raise ValueError("Unexpected native acoustic smoke result")
+                    rejected = subprocess.run(native_command[:-1] + ["0" * 64],
+                                              capture_output=True, text=True, timeout=15)
+                    if rejected.returncode == 0 or "captured digest" not in rejected.stderr:
+                        raise ValueError("Native acoustic intake did not reject a wrong hash")
+                    command_result["nativeAcousticExport"] = native_result
         passed = changed > 0 and exact and len(validation) == 1 and receipt["epoch"]["coverageVerified"]
         return dict(passed=passed, changedParameterTensors=changed, checkpointRestoredExact=exact,
                     epoch=receipt["epoch"], partitionCounts=split["counts"], validation=validation,

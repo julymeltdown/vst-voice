@@ -15,7 +15,11 @@ REVISION = "336cf01b57f2ad44c6b37a79cf33993043291759"
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("trusted_checkout", type=Path)
+    parser.add_argument("--check-onnx", action="store_true", help="Also serialize and execute the real encoder graph")
+    parser.add_argument("--native-probe", type=Path, help="Also execute exported weights through the native probe")
     args = parser.parse_args()
+    if args.native_probe is not None and not args.check_onnx:
+        parser.error("--native-probe requires --check-onnx")
     checkout = args.trusted_checkout.resolve(strict=True)
     def git(*arguments):
         return subprocess.check_output(["git", "-C", str(checkout), *arguments], text=True, timeout=10).strip()
@@ -126,8 +130,23 @@ def main():
     from tools.voice_model_training.check_reviewed_run import check_reviewed_run
     reviewed_run = check_reviewed_run(model, optimizer, objective=objective,
                                      model_metadata=dict(configuration=config, revision=REVISION),
-                                     trusted_checkout=checkout)
+                                     trusted_checkout=checkout, check_export=args.check_onnx, native_probe=args.native_probe)
     passed = passed and reviewed_run["passed"]
+    from tools.voice_model_training.export_adapter import check_deployment_bridge
+    deployment_bridge = check_deployment_bridge(model, configuration=config, acoustic_profile=acoustic["profile"])
+    passed = passed and deployment_bridge["passed"]
+    encoder_runtime = acoustic_runtime = denoiser_runtime = None
+    if args.check_onnx:
+        from tools.voice_model_training.export_adapter import prepare_acoustic_export
+        from tools.voice_model_training.onnx_encoder import check_encoder_runtime
+        deployment = prepare_acoustic_export(model, configuration=config, acoustic_profile=acoustic["profile"])
+        encoder_runtime = check_encoder_runtime(deployment)
+        passed = passed and encoder_runtime["passed"]
+        from tools.voice_model_training.onnx_acoustic import check_acoustic_runtime, check_denoiser_runtime
+        denoiser_runtime = check_denoiser_runtime(deployment)
+        passed = passed and denoiser_runtime["passed"]
+        acoustic_runtime = check_acoustic_runtime(deployment)
+        passed = passed and acoustic_runtime["passed"]
     print(json.dumps(dict(revision=REVISION, torch=torch.__version__, numpy=np.__version__, configuration=config,
                          parameterCount=sum(p.numel() for p in model.parameters()), changedParameterTensors=changed,
                          losses=losses, inferenceShape=list(output.shape), passed=passed,
@@ -139,6 +158,10 @@ def main():
                          restoredInferenceExact=inference_equal, continuationLosses=continuation,
                          resumedUpdateExact=resumed_equal, checkpointRetained=False,
                          reviewedRun=reviewed_run,
+                         deploymentBridge=deployment_bridge,
+                         encoderRuntime=encoder_runtime,
+                         acousticRuntime=acoustic_runtime,
+                         denoiserRuntime=denoiser_runtime,
                          syntheticInputs=True, singerQualified=False, releaseEligible=False), indent=2))
     return 0 if passed else 1
 

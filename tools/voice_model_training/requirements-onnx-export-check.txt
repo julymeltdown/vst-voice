@@ -1,0 +1,7 @@
+# Install together to preserve the upstream model environment's NumPy major.
+-r requirements-diffsinger-model-check.txt
+onnx==1.19.1
+onnxruntime==1.30.0
+ml-dtypes==0.5.3
+protobuf==7.36.1
+flatbuffers==25.12.19

@@ -180,19 +180,70 @@ seam::synthesis::FrozenNeuralBundle freezeFixtureBundle(
 }
 }
 
-// Real-runtime integration probe only. These tiny arithmetic graphs are not
-// learned acoustic/vocoder models and this is not the admitted worker protocol.
+// Real-runtime integration probe only. Paired modes use arithmetic fixtures;
+// --acoustic-export can inspect/execute owned learned weights without a vocoder.
+// Neither mode is the admitted production worker protocol.
 int main(int argc,char** argv) {
+  const bool acousticExport=argc==4 && std::string_view{argv[1]}=="--acoustic-export";
   const bool vectorSteps=argc==5 && std::string_view{argv[4]}=="--steps-vector1";
   const bool paired=(argc==4 || vectorSteps) && std::string_view{argv[3]}=="--paired-profile";
   const bool requestMode=argc==6 && std::string_view{argv[1]}=="--paired-request";
   const bool bundleMode=requestMode || (argc==6 && std::string_view{argv[1]}=="--paired-bundle");
-  if (argc!=3 && !paired && !bundleMode) {std::cerr<<"Usage: seam_onnx_runtime_probe ACOUSTIC_FIXTURE VOCODER_FIXTURE [--paired-profile [--steps-vector1]] or {--paired-bundle|--paired-request} DIRECTORY MODEL_ID VERSION MANIFEST_SHA256\n"; return 2;}
+  if (argc!=3 && !paired && !bundleMode && !acousticExport) {std::cerr<<"Usage: seam_onnx_runtime_probe ACOUSTIC_FIXTURE VOCODER_FIXTURE [--paired-profile [--steps-vector1]] or {--paired-bundle|--paired-request} DIRECTORY MODEL_ID VERSION MANIFEST_SHA256 or --acoustic-export GRAPH SHA256\n"; return 2;}
   try {
     Ort::Env environment{ORT_LOGGING_LEVEL_WARNING,"seam-inference-probe"};
+    environment.DisableTelemetryEvents();
     Ort::SessionOptions options;
     options.SetIntraOpNumThreads(1); options.SetInterOpNumThreads(1);
     options.SetExecutionMode(ExecutionMode::ORT_SEQUENTIAL);
+    if (acousticExport) {
+      const auto bytes=readGraph(argv[2]);
+      if (seam::core::sha256Hex(std::as_bytes(std::span{bytes.data(),bytes.size()}))!=argv[3])
+        throw std::runtime_error("Acoustic export differs from captured digest");
+#if defined(SEAM_NATIVE_GRAPH_INSPECTION)
+      {
+        onnx::ModelProto model;
+        google::protobuf::Struct report;
+        const auto inspectionCode=inspectBytes({bytes.data(),bytes.size()},model,report);
+        if (inspectionCode)
+          throw std::runtime_error("Native acoustic export inspection rejected graph: "+std::to_string(inspectionCode));
+      }
+#else
+      throw std::runtime_error("Acoustic export requires native graph inspection support");
+#endif
+      Ort::Session session{environment,bytes.data(),bytes.size(),options};
+      if (session.GetInputCount()!=4 || session.GetOutputCount()!=1)
+        throw std::runtime_error("Unexpected acoustic export tensor count");
+      const auto outputType=session.GetOutputTypeInfo(0);
+      if (outputType.GetONNXType()!=ONNX_TYPE_TENSOR)
+        throw std::runtime_error("Acoustic output must be a tensor");
+      const auto outputInfo=outputType.GetTensorTypeAndShapeInfo();
+      const auto outputShape=outputInfo.GetShape();
+      if (outputInfo.GetElementType()!=ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT || outputShape.size()!=3 ||
+          outputShape[0]!=1 || outputShape[1]!=-1 || outputShape[2]<1 || outputShape[2]>512)
+        throw std::runtime_error("Acoustic output must be dynamic BTF mel");
+      auto memory=Ort::MemoryInfo::CreateCpu(OrtArenaAllocator,OrtMemTypeDefault);
+      const std::array<const char*,4> names{"tokens","durations","f0","steps"};
+      const char* outputName="mel";
+      for (const std::int64_t frames:{3,16,23}) {
+        std::array<std::int64_t,2> tokens{1,1},durations{1,frames-1},tokenShape{1,2},frameShape{1,frames};
+        std::int64_t steps=4;
+        std::vector<float> f0(static_cast<std::size_t>(frames),220.0F);
+        std::array<Ort::Value,4> inputs{
+          Ort::Value::CreateTensor<std::int64_t>(memory,tokens.data(),tokens.size(),tokenShape.data(),tokenShape.size()),
+          Ort::Value::CreateTensor<std::int64_t>(memory,durations.data(),durations.size(),tokenShape.data(),tokenShape.size()),
+          Ort::Value::CreateTensor<float>(memory,f0.data(),f0.size(),frameShape.data(),frameShape.size()),
+          Ort::Value::CreateTensor<std::int64_t>(memory,&steps,1,nullptr,0)};
+        auto results=session.Run(Ort::RunOptions{nullptr},names.data(),inputs.data(),inputs.size(),&outputName,1);
+        if (!shapeMatches(results.front(),{1,frames,outputShape[2]}))
+          throw std::runtime_error("Acoustic export returned unexpected shape");
+        const auto* data=results.front().GetTensorData<float>();
+        for (std::int64_t index=0;index<frames*outputShape[2];++index)
+          if (!std::isfinite(data[index])) throw std::runtime_error("Acoustic export returned nonfinite mel");
+      }
+      std::cout<<"{\"status\":\"ACOUSTIC_EXPORT_NATIVE_SMOKE\",\"cases\":3,\"vocoderIntegrated\":false,\"releaseEligible\":false}\n";
+      return 0;
+    }
     const auto runBundle=[&](const seam::synthesis::FrozenNeuralBundle& bundle) {
       const auto metadata=seam::neural_synthesis::inspectNeuralBundleMetadata(bundle);
       if (!metadata) throw std::runtime_error(metadata.error().message);

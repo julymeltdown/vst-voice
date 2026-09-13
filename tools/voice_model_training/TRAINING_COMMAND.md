@@ -1,5 +1,37 @@
 # Reviewed CPU training command
 
+## Exporting a completed local checkpoint
+
+Install the combined `requirements-onnx-export-check.txt` environment. The export
+command loads a trusted local checkpoint, checks its captured architecture and
+vocabulary, and requires the exact acoustic profile used in training:
+
+```sh
+build/neural-runtime/diffsinger-model-env/bin/python -m tools.voice_model_training.export \
+  --checkpoint /absolute/run/epoch-000002 \
+  --receipt-sha256 EXACT_CHECKPOINT_JSON_FILE_SHA256 \
+  --profile /absolute/data/profile.json --profile-sha256 EXACT_PROFILE_FILE_SHA256 \
+  --trusted-checkout /absolute/trusted/DiffSinger \
+  --output /absolute/run/new-acoustic-export
+```
+
+`profile.json` contains the acoustic target record's `profile` object alone. Its
+exact file hash is separate from the canonical profile hash inside the checkpoint;
+both are checked. Export creates `acoustic.onnx` and then `export.json` in a new
+directory. The latter binds graph bytes, checkpoint receipt/binary, vocabulary,
+profile and pinned upstream revision. Offline graph inspection and a five-frame
+ORT smoke run must pass before publication. Existing output is never overwritten.
+
+This is an unqualified acoustic artifact, not an admitted model bundle or audio
+export. Rights are not freshly approved by this command. It does not export a
+vocoder, validate singing quality or grant redistribution permission. Use only
+trusted locally produced checkpoints and trusted upstream source; neither Torch
+deserialization nor source execution is an untrusted-input sandbox. A graph file
+without the final export record is incomplete. Check process exit status as well
+as output files, because native teardown failures can occur after publication.
+
+## Training
+
 This entry point initializes or resumes a DiffSinger DDPM model and runs complete
 train-partition epochs. It is a usable training execution primitive, not a finished
 model-production workflow. It does not export

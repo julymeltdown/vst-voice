@@ -1,0 +1,5 @@
+# Build tooling only; keep separate from trained-model/runtime environments.
+numpy==1.26.4
+packaging==24.2
+wheel==0.45.1
+setuptools==75.8.0

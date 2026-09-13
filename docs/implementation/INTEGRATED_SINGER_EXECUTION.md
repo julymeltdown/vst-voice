@@ -6,6 +6,96 @@ not a replacement product contract or a release approval.
 
 ## Actual DiffSinger architecture checkpoint
 
+Recovery verification: the complete Release CTest suite passed 130/130 in 86.02
+seconds after the native export-path changes. This includes native paired/bundle
+checks and source closure, but does not erase the separately reproduced Python ORT
+teardown SIGABRT. Telemetry-free source retrieval remains active; replacement build
+and qualification have not yet occurred. Existing runtime installations are intact.
+
+Inspected ONNX Runtime v1.30.0 source at
+`f2c39fe2f838cf35ce7da92824f5a5e3ee6e88a7`: runtime telemetry disabling only flips an
+atomic flag; constructor initialization and SDK shutdown remain active. The source
+supports `onnxruntime_USE_TELEMETRY=OFF` at compile time. Added a pinned CPU
+wheel/shared-library build helper and `tools/neural_runtime/TELEMETRY_FREE_RUNTIME.md`
+with the required replacement qualification. Source expansion/download is underway;
+no replacement build or runtime installation has yet been claimed or performed.
+
+Connected actual checkpoint exports to the native C++ ORT probe through
+`--acoustic-export GRAPH SHA256`. Native hash binding, structural inspection,
+dynamic BTF output checks and finite-value checks execute before reporting three
+successful learned-weight cases (3/16/23 frames); wrong hashes reject. Existing
+paired-fixture regression passes with `--native-inspection`. Native telemetry is
+explicitly disabled. This remains a probe, not the production worker/render path.
+
+The first real graph revealed native rejection code 14: the exported encoder
+stores a negative-infinity attention mask, disallowed by native finite-tensor
+intake. Export now rewrites only recognized scalar float32 negative-infinity
+constants consumed as Where data operands to the finite float32 floor. Other
+nonfinite constants reject. Valid token IDs are positive; all-padding input is
+outside this contract. The real native subprocess subsequently completed all
+cases and the wrong-hash rejection test.
+
+IMPORTANT: the complete parent Python diagnostic again aborted at shutdown with
+recursive_mutex failure (SIGABRT) despite disabling ORT telemetry, after native
+subprocess success. Disabling telemetry has NOT proven a root-cause repair. Native
+inference evidence is valid for that subprocess, but the overall export/runtime
+environment remains unqualified. Do not rerun until green and discard this finding;
+shipping runtime lifecycle/telemetry implementation needs further investigation.
+
+Added the persistent acoustic export command from a captured trusted local
+checkpoint. It verifies architecture settings, vocabulary and acoustic profile,
+strictly restores weights, exports/inspects the merged graph, executes an ORT smoke
+case and publishes acoustic.onnx followed by export.json. The actual upstream
+diagnostic now invokes this command in a separate process and verifies published
+graph hashes and checkpoint receipt provenance; the complete run exited zero with
+checkpointExportVerified=true. These are temporary engineering fixtures in the
+diagnostic; no qualified singer asset or redistribution authorization is created.
+The command itself preserves its selected output for later native integration.
+
+Added real-weight denoiser ONNX/PyTorch parity using identical supplied tensors:
+eight cases over 3/16/23/257 frames and timesteps 0/7 met 1e-5 absolute/relative
+tolerance; maximum observed error 7.450581e-8. This isolates learned-model arithmetic
+from cross-runtime RNG differences and does not close stochastic sampler parity.
+One diagnostic run exited 134 after emitting passing results. The macOS report
+`Python-2026-09-13-195108.ips` identifies an ORT Microsoft telemetry worker in
+`DebugEventSource::DispatchEvent` / HTTP response handling, with recursive_mutex
+failure during teardown. An unchanged repeat exited zero. ORT telemetry is now
+disabled before diagnostic session creation; broader shutdown reliability remains
+unqualified and JSON `passed` alone must never substitute for a zero process exit.
+The first complete rerun after telemetry disabling exited zero and retained all
+eight denoiser parity passes; this is a smoke result, not a stability soak.
+
+Actual encoder+diffusion ONNX merge now passes SEAM's data-only graph inspector
+and ONNX Runtime 1.30.0 with scalar runtime steps (1,4,8) and dynamic frame lengths
+(16,3,23). All outputs have finite [1,T,80] geometry. Merged graph is 845063 bytes,
+SHA-256 `f9e0862d596fddfb88f2e4f7c17db2c962224541681a190e660dc5052f6282fb`.
+Root-cause fixes: a typed non-shallow entry avoids upstream Optional-Tensor JIT
+inference failure while reusing upstream samplers and requiring seeded exact Torch
+parity; seeded outer initializer name mappings preserve If/Loop captures during
+graph prefixing/merge. This is real trained-weight graph execution, not arithmetic
+fixture substitution. Stochastic numerical parity across runtimes, vocoder/model
+bundle publication and native production rendering remain outstanding.
+
+Serialized the actual trained duration encoder to ONNX opset 17 and executed its
+owned bytes with ONNX Runtime 1.30.0. Five shape cases passed (including zero-duration
+phone and 1025-token sequence), maximum absolute error 9.536743e-7. Materializing a
+4096-token positional table before tracing prevents the upstream lazy-growth branch
+from freezing the initial 1024-entry capacity. Intermediate graph: 644485 bytes,
+SHA-256 `cbb7c6ac9069526cb7b70697cb6ca97461516ac0495024a8e50d70890a2b61de`.
+Verified with NumPy 1.26.4, ONNX 1.19.1, ml-dtypes 0.5.3 after repairing an unintended
+NumPy upgrade from unconstrained dependency resolution; explicit export-check pins
+are now provided. This encoder is not the complete SEAM acoustic graph. Diffusion
+serialization, graph merge, vocoder and native production rendering remain open.
+
+Inspected the actual upstream deployment modules and SEAM acoustic/vocoder tensor
+profile. Added a strict training-weight → deployment-model bridge with explicit
+natural-log scale binding: upstream deployment defaults to converting log10 mel,
+whereas SEAM targets already use ln amplitude. Setting `mel_base=e` avoids that
+incorrect extra scaling. The actual model passed strict state loading and exact
+conditioning parity at 3, 16 and 23 frames (including a zero-duration phone), and
+deployment diffusion returned finite [1,23,80] mel. This is Torch-side deployment
+verification, not serialized ONNX parity, acoustic quality or native rendering.
+
 Added bounded multi-epoch command execution, retaining one parent-linked checkpoint
 per completed epoch and publishing a run completion record only after all requested
 epochs finish. Source/label/shard admission refreshes each epoch with stable dataset

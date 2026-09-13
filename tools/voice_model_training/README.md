@@ -1,5 +1,68 @@
 # Original voice model production
 
+The real export now passes native acoustic smoke execution and wrong-hash rejection.
+To meet native finite-tensor intake, encoder export maps only recognized scalar
+negative-infinity Where mask constants to finite float32 floor; other nonfinite
+constants reject. A later parent diagnostic shutdown still SIGABRTed despite ORT
+telemetry disabling. Thus the local native subprocess passed, but full runtime
+teardown reliability remains unresolved; process exit status must remain a gate.
+
+The optional `--native-probe build/release/seam_onnx_runtime_probe` argument to
+`check_diffsinger_model ... --check-onnx` now sends the actual exported checkpoint
+graph through the native C++ runtime probe. `--acoustic-export GRAPH SHA256` checks
+the captured hash and native offline inspection before creating an ORT session,
+then tests finite dynamic BTF mel at 3/16/23 frames. A wrong digest must reject.
+This mode requires a build with native graph inspection and retains the probe's
+16 MiB graph intake limit. Native telemetry is disabled. This is learned acoustic
+execution in a diagnostic executable, not a production worker or vocoder output.
+
+`python -m tools.voice_model_training.export` now publishes a persistent acoustic
+graph and provenance record from a captured local checkpoint, after strict model
+loading, matching profile/configuration/vocabulary, offline graph inspection and
+ORT smoke execution. See `TRAINING_COMMAND.md` for invocation. This does not grant
+rights or model-bundle admission and does not produce vocoder audio. Encoder export
+examples now also support a one-symbol vocabulary rather than assuming three IDs.
+
+The ONNX diagnostic now compares the actual trained denoiser with identical
+PyTorch/ORT inputs at 3,16,23,257 frames and first/last diffusion timesteps. Eight
+cases met tolerance; maximum error 7.450581e-8. This verifies deterministic backbone
+numerics, not full stochastic sampler parity. One run printed passing numerical
+results but aborted during teardown (exit 134); its macOS crash stack points to
+`onnxruntime_pybind11_state.so`'s Microsoft telemetry worker locking a recursive
+mutex during HTTP response handling. A pre-change repeat exited zero. Export
+diagnostics now explicitly disable ORT telemetry before sessions; this setting is
+not proof of a fully resolved native teardown race or a completed reliability soak.
+
+`check_diffsinger_model ... --check-onnx` now additionally exports and merges the
+actual encoder and DDPM diffusion into one `tokens/durations/f0/steps → mel` graph.
+A typed non-shallow entry avoids upstream unannotated optional-argument JIT errors;
+its seeded Torch outputs must match upstream exactly at steps 1, 4 and 8 before
+serialization. Graph merging preserves enclosing initializer references inside
+If/Loop bodies. The 845063-byte merged graph passed SEAM offline inspection and
+ONNX Runtime execution at 3/16/23 frames and steps 4/1/8. Outputs are finite with
+the expected [1,T,80] shape. Stochastic cross-runtime numerical parity is not yet
+verified; no vocoder, retained model bundle or native singer render is claimed.
+
+The optional `check_diffsinger_model ... --check-onnx` diagnostic now exports actual
+trained duration-encoder weights and executes the graph in ONNX Runtime 1.30.0.
+Install `requirements-onnx-export-check.txt` together to retain NumPy 1.26.4 and
+compatible ml-dtypes 0.5.3 (ml-dtypes 0.6 requires NumPy 2). `pip check` passed.
+Five runtime cases cover dynamic token/frame axes, zero-duration phones and 1025
+tokens; maximum observed absolute error is 9.536743e-7. The exporter materializes
+the upstream positional table for 4096 tokens before tracing to avoid freezing its
+initial 1024-entry capacity. Host-side input bounds are still required; this is not
+a claim that arbitrary graph inputs are safe. Tracer/constant-fold warnings remain
+visible. The 644485-byte graph is an intermediate encoder only, not a complete
+acoustic graph, vocoder or release artifact. Next: diffusion serialization and merge.
+
+`export_adapter.prepare_acoustic_export` now strictly loads owned training weights
+into the pinned upstream deployment architecture in an isolated process. It binds
+the captured natural-log mel profile to `mel_base=e`, avoiding the upstream default
+log10-to-ln multiplication. Actual-model diagnostic conditioning matches exactly
+for duration vectors [5,6,5], [1,0,2] and [9,3,11]; deployment diffusion produces
+finite [1,23,80] mel output. This is a Torch deployment-model bridge only: ONNX
+serialization/runtime verification and vocoder/native rendering are not completed.
+
 `train --epochs N` now runs bounded continuous epochs with fresh admission at each
 boundary, live optimizer/RNG state, parent-linked epoch checkpoints and a final
 `run.json` only on complete success. Total binary output and cooperative run-time
