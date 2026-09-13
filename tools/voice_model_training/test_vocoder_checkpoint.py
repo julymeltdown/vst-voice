@@ -1,4 +1,5 @@
 import hashlib
+import errno
 import importlib.util
 from pathlib import Path
 import random
@@ -11,6 +12,48 @@ from tools.voice_model_training.vocoder_checkpoint import publish_vocoder_checkp
 
 @unittest.skipUnless(importlib.util.find_spec("torch"), "Optional Torch environment required")
 class VocoderCheckpointTests(unittest.TestCase):
+    def test_serialization_finalizer_preserves_write_failure(self):
+        import torch
+        from .gan_checkpoint_storage import publish_checkpoint
+
+        class BrokenStream:
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                return False
+            def write(self, data):
+                raise OSError(errno.ENOSPC, "Fixture disk full")
+
+        def masked_save(state, writer):
+            try:
+                writer.write(b"fixture")
+            finally:
+                raise RuntimeError("Fixture ZIP finalizer unexpected pos")
+
+        model = torch.nn.Linear(1, 1)
+        optimizer = torch.optim.AdamW(model.parameters())
+        with tempfile.TemporaryDirectory() as root:
+            output = Path(root) / "failed"
+            with patch.object(Path, "open", return_value=BrokenStream()), patch("torch.save", masked_save):
+                with self.assertRaises(OSError) as raised:
+                    publish_checkpoint(model, optimizer, output, metadata={},
+                                       epoch=dict(epochComplete=True, coverageVerified=True))
+            self.assertEqual(raised.exception.errno, errno.ENOSPC)
+            self.assertIsInstance(raised.exception.__cause__, RuntimeError)
+            self.assertFalse((output / "checkpoint.json").exists())
+
+    def test_real_serializer_preserves_file_bound(self):
+        import torch
+        from .gan_checkpoint_storage import publish_checkpoint
+        model = torch.nn.Linear(1, 1)
+        optimizer = torch.optim.AdamW(model.parameters())
+        with tempfile.TemporaryDirectory() as root:
+            output = Path(root) / "bounded"
+            with self.assertRaisesRegex(ValueError, "GAN state file exceeds bound"):
+                publish_checkpoint(model, optimizer, output, metadata={}, maximum_bytes=1,
+                                   epoch=dict(epochComplete=True, coverageVerified=True))
+            self.assertFalse((output / "checkpoint.json").exists())
+
     def test_complete_gan_continuation_and_rng(self):
         import numpy as np
         import torch

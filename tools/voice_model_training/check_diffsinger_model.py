@@ -17,6 +17,7 @@ def main():
     parser.add_argument("trusted_checkout", type=Path)
     parser.add_argument("--check-onnx", action="store_true", help="Also serialize and execute the real encoder graph")
     parser.add_argument("--native-probe", type=Path, help="Also execute exported weights through the native probe")
+    parser.add_argument("--vocoder-checkout", type=Path, help="Also run reviewed GAN epochs using a pinned trusted SingingVocoders checkout")
     args = parser.parse_args()
     if args.native_probe is not None and not args.check_onnx:
         parser.error("--native-probe requires --check-onnx")
@@ -130,7 +131,8 @@ def main():
     from tools.voice_model_training.check_reviewed_run import check_reviewed_run
     reviewed_run = check_reviewed_run(model, optimizer, objective=objective,
                                      model_metadata=dict(configuration=config, revision=REVISION),
-                                     trusted_checkout=checkout, check_export=args.check_onnx, native_probe=args.native_probe)
+                                     trusted_checkout=checkout, check_export=args.check_onnx, native_probe=args.native_probe,
+                                     vocoder_checkout=args.vocoder_checkout)
     passed = passed and reviewed_run["passed"]
     from tools.voice_model_training.export_adapter import check_deployment_bridge
     deployment_bridge = check_deployment_bridge(model, configuration=config, acoustic_profile=acoustic["profile"])

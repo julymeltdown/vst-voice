@@ -38,19 +38,34 @@ def publish_checkpoint(model, optimizer, output, *, metadata, epoch, maximum_byt
         digest, count = hashlib.sha256(), 0
         with (output / name).open("xb") as stream:
             class Writer:
+                failure = None
                 def write(self, data):
                     nonlocal count
-                    if count + len(data) > maximum_bytes:
-                        raise ValueError("GAN state file exceeds bound; incomplete output retained")
-                    written = stream.write(data)
-                    if written != len(data):
-                        raise OSError("Incomplete GAN checkpoint write")
+                    if self.failure is not None:
+                        raise self.failure
+                    try:
+                        if count + len(data) > maximum_bytes:
+                            raise ValueError("GAN state file exceeds bound; incomplete output retained")
+                        written = stream.write(data)
+                        if written != len(data):
+                            raise OSError("Incomplete GAN checkpoint write")
+                    except (OSError, ValueError) as error:
+                        self.failure = error
+                        raise
                     count += written
                     digest.update(data)
                     return written
                 def flush(self):
                     stream.flush()
-            torch.save(state, Writer())
+            writer = Writer()
+            try:
+                torch.save(state, writer)
+            except Exception as error:
+                # Torch's ZIP finalizer can replace ENOSPC or our size-limit
+                # failure with an unrelated "unexpected pos" RuntimeError.
+                if writer.failure is not None and error is not writer.failure:
+                    raise writer.failure from error
+                raise
             stream.flush()
             os.fsync(stream.fileno())
         records.append(dict(path=name, bytes=count, sha256=digest.hexdigest()))

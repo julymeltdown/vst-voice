@@ -240,3 +240,31 @@ deadline, the fixture PID file did not exist. One isolated diagnostic rerun pass
 in 3.004 seconds; the epoch test also passed in isolation. This does not convert
 the failed full run into a passing suite or establish the timing failure's cause.
 Source-closure verification passed. No process-supervision behavior was weakened.
+
+### Signed-fixture integrated vocoder execution
+
+The optional `check_diffsinger_model --vocoder-checkout` path now reuses the
+actual synthetic fixture's signed rights/label policies, captured source bytes,
+conditioning and targets. It executes first and continuous second GAN epochs,
+restores the first complete checkpoint, then executes the resumed second epoch.
+Epoch results and every generator/discriminator state tensor must match exactly.
+The temporary continuous-reference checkpoint is released before publishing the
+resumed checkpoint; all three publication paths still execute.
+
+The retained `build/neural-runtime/vocoder-reviewed-epoch-write-errors/report.json`
+records one complete exit-zero run in 37.789 seconds. Its `001.stdout` SHA-256 is
+`dc7ef4b3765325e537ed4101e5b572ecf61fd835ac5ba6bd4aa3216598bcb97c`.
+The report confirms exact continuation, a 553,464,348-byte GAN checkpoint,
+complete 4,096-valid-sample fixture coverage, and the existing three-case native
+acoustic export smoke test. This is synthetic engineering evidence, not a trained
+singer, retained production checkpoint, listening qualification or Beta GO.
+
+Two preceding integrated attempts failed with ENOSPC and remain retained under
+`vocoder-reviewed-epoch-first` and `vocoder-reviewed-epoch-bounded-storage`.
+Available storage changed between attempts; the successful run does not establish
+that machine capacity is now adequate for sustained training. No build artifacts
+were removed. GAN storage now preserves the original writer failure when Torch's
+ZIP finalizer masks it with an `unexpected pos` error. Regressions verify ENOSPC
+identity, the real serializer's file-size bound, and absent completion receipts
+after failure. Eight focused vocoder tests and source-closure verification passed;
+this does not supersede the earlier failed full-suite result.

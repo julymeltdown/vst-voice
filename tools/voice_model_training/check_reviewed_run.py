@@ -29,7 +29,7 @@ from .training_run import train_reviewed_epoch
 
 def check_reviewed_run(model, optimizer, *, objective, model_metadata: dict,
                        trusted_checkout: Path | None = None, check_export: bool = False,
-                       native_probe: Path | None = None) -> dict:
+                       native_probe: Path | None = None, vocoder_checkout: Path | None = None) -> dict:
     """Exercise real file admission, optimization, publication and held-out I/O."""
     import numpy as np
     import torch
@@ -255,9 +255,16 @@ def check_reviewed_run(model, optimizer, *, objective, model_metadata: dict,
                     if rejected.returncode == 0 or "captured digest" not in rejected.stderr:
                         raise ValueError("Native acoustic intake did not reject a wrong hash")
                     command_result["nativeAcousticExport"] = native_result
+        vocoder = None
+        if vocoder_checkout is not None:
+            from .check_reviewed_vocoder import check_reviewed_vocoder
+            vocoder = check_reviewed_vocoder(vocoder_checkout, root=root, dataset_inputs=inputs,
+                conditioning_directory=shards, targets=targets, profile_sha256=profile,
+                pcm_sources={row["sourceId"]: root / row["path"] for row in sources})
         passed = changed > 0 and exact and len(validation) == 1 and receipt["epoch"]["coverageVerified"]
+        passed = passed and (vocoder is None or vocoder["passed"])
         return dict(passed=passed, changedParameterTensors=changed, checkpointRestoredExact=exact,
                     epoch=receipt["epoch"], partitionCounts=split["counts"], validation=validation,
-                    trainingCommand=command_result,
+                    trainingCommand=command_result, vocoderEpoch=vocoder,
                     syntheticInputs=True, fixturePolicyOnly=True, singerQualified=False,
                     checkpointRetained=False, releaseEligible=False)
