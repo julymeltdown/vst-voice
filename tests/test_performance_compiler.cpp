@@ -797,6 +797,28 @@ TEST_CASE("compiled expression indexes preserve dense unordered selections and b
   CHECK(f.project == original);
 }
 
+TEST_CASE("an accepted channel the audio path does not consume never becomes amplitude") {
+  using namespace seam; using namespace domain; using time::Tick;
+  Fixture f; const auto note = f.region().notes.front().id;
+  auto& state = f.region().performance;
+  // A timing proposal carries microseconds, not gain. It is consumed by the ordered
+  // timing plan, so the per-frame audio path must leave the amplitude alone.
+  state.takes = {{.id = "timing", .sourceRegionId = f.id,
+      .resource = {SingerResourceKind::Neural, "fixture", "1", std::string(64U, 'a')},
+      .pronunciation = {Language::Japanese, "fixture", "1", std::string(64U, 'b'), std::string(64U, 'c'), std::string(64U, 'd')},
+      .generatorId = "fixture", .generatorVersion = "1", .range = {Tick{0}, Tick{1920}},
+      .lanes = {{PerformanceChannel::Timing, {{Tick{0}, 30000.0}}}}}};
+  state.accepted = {{"timing", PerformanceChannel::Timing, note, Tick{0}}};
+  const auto compiled = synthesis::compileScorePerformance(f.project, f.region(), 48000U);
+  CHECK(compiled);
+  const auto& spans = compiled.value().notes();
+  CHECK(spans.size() == 2U);
+  CHECK(compiled.value().at(spans[0].startFrame).dynamicsGain == 1.0F);
+  CHECK(compiled.value().at(spans[1].startFrame).dynamicsGain == 1.0F);
+  CHECK(compiled.value().at(spans[0].startFrame).scoreFrequencyHz.has_value());
+  CHECK(!compiled.value().at(spans[0].startFrame).selectedGeneratedDynamicsGain);
+}
+
 TEST_CASE("accepted pitch obeys explicit offset replacement and manual vibrato ownership") {
   Fixture f;
   using namespace seam::domain;

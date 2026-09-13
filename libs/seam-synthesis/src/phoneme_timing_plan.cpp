@@ -6,6 +6,52 @@
 #include <unordered_set>
 
 namespace seam::synthesis {
+namespace {
+
+// Where one accepted selection applies, in region-relative ticks. A note scope
+// resolves through the notes that exist now, so a generated proposal is read against
+// current material rather than a stale identity.
+std::optional<domain::PerformanceTimeRange> acceptedSpan(const domain::VocalRegion& region,
+    const domain::AcceptedPerformanceSelection& selection) {
+  if (const auto* noteId = std::get_if<domain::NoteId>(&selection.scope)) {
+    const auto* note = region.findNote(*noteId);
+    if (note == nullptr) return std::nullopt;
+    return domain::PerformanceTimeRange{note->startTick, note->endTick()};
+  }
+  return std::get<domain::PerformanceTimeRange>(selection.scope);
+}
+
+// The generated timing displacement for one syllable, in microseconds. It comes from
+// an accepted Timing proposal, is read where the syllable would otherwise land, and is
+// suppressed wherever the creator has taken the channel over: manual replacement
+// wins, exactly as it does for pitch.
+std::optional<time::Microseconds> generatedTimingOffset(const domain::VocalRegion& region,
+    domain::NoteId noteId, time::Tick tick) {
+  const auto& performance = region.performance;
+  if (!performance.permitsGenerated(domain::PerformanceChannel::Timing, noteId, tick, false)) {
+    return std::nullopt;
+  }
+  for (const auto& selection : performance.accepted) {
+    if (selection.channel != domain::PerformanceChannel::Timing) continue;
+    const auto span = acceptedSpan(region, selection);
+    if (!span) continue;
+    if (!span->contains(tick)) continue;
+    const auto take = std::find_if(performance.takes.begin(), performance.takes.end(),
+        [&](const auto& value) { return value.id == selection.takeId; });
+    if (take == performance.takes.end()) continue;
+    const auto lane = std::find_if(take->lanes.begin(), take->lanes.end(),
+        [](const auto& value) { return value.channel == domain::PerformanceChannel::Timing; });
+    if (lane == take->lanes.end()) continue;
+    const auto value =
+        domain::samplePerformanceLane(*lane, tick + selection.sourceTickOffset);
+    if (!value.has_value()) return std::nullopt;
+    return time::Microseconds{std::llround(*value)};
+  }
+  return std::nullopt;
+}
+
+}  // namespace
+
 core::Result<std::vector<PhonemeTimingAnchor>> compilePhonemeTimingPlan(
     const domain::Project& project, const domain::VocalRegion& region,
     std::span<const domain::PhonemeToken> tokens, std::uint32_t sampleRate, PhonemeTimingPolicy policy) {
@@ -63,6 +109,28 @@ core::Result<std::vector<PhonemeTimingAnchor>> compilePhonemeTimingPlan(
       groups[i - begin] = group;
       auto anchor = boundary(group);
       auto finish = boundary(group + 1U);
+      // A generated timing proposal displaces the syllable from its score position;
+      // a neutral zero leaves it where the score put it. It composes here, before any
+      // audio exists, so the ordered timing solver sees one timeline rather than a
+      // per-frame offset applied after placement. Authored offsets stay absolute from
+      // the note start and always win: they are the creator's own timing intent.
+      if (i == nuclei[group] && !tokens[i].timing.startOffset) {
+        const auto anchorTick = project.tempoMap().tickAtSampleFrame(anchor, sampleRate) -
+                                region.startTick;
+        if (const auto offset = generatedTimingOffset(region, id, anchorTick)) {
+          const auto delta = static_cast<time::SampleFrame>(std::llround(
+              static_cast<double>(*offset) * static_cast<double>(sampleRate) / 1000000.0));
+          if (delta > 0 && anchor > std::numeric_limits<time::SampleFrame>::max() - delta) {
+            return core::failure<Output>(core::ErrorCode::Conflict,
+                "Generated timing offset overflows the output timeline", tokens[i].key.toString());
+          }
+          anchor += delta;
+          if (anchor < 0) {
+            return core::failure<Output>(core::ErrorCode::Conflict,
+                "Generated timing offset precedes the output timeline", tokens[i].key.toString());
+          }
+        }
+      }
       const auto applyOffset = [&](time::Microseconds offset, time::SampleFrame& value) {
         const auto delta = static_cast<time::SampleFrame>(std::llround(static_cast<double>(offset) * static_cast<double>(sampleRate) / 1000000.0));
         if (delta > 0 && startFrame > std::numeric_limits<time::SampleFrame>::max() - delta) return false;
@@ -115,8 +183,12 @@ core::Result<std::vector<PhonemeTimingAnchor>> compilePhonemeTimingPlan(
         // reserves at most one quarter of a normal syllable, capped at 60 ms.
         const auto duration = std::max<time::SampleFrame>(1, std::min<time::SampleFrame>(
             static_cast<time::SampleFrame>(sampleRate) * 60 / 1000, (finish - start) / 4));
-        result[*onset].inferredStartFrame = start;
-        result[nuclei[group]].nucleusFrame = start + duration;
+        // The gesture starts where this syllable's nucleus actually resolved, so a
+        // generated timing proposal moves the onset with its vowel instead of
+        // stretching the consonant against a fixed score boundary.
+        const auto resolvedStart = result[nuclei[group]].nucleusFrame;
+        result[*onset].inferredStartFrame = resolvedStart;
+        result[nuclei[group]].nucleusFrame = resolvedStart + duration;
         generatedStarts[group] = start;
       }
     }

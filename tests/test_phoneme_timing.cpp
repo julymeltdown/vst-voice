@@ -428,6 +428,73 @@ TEST_CASE("timing contract distinguishes onset edits from the shared nucleus anc
   CHECK(result.value()[2].nucleusFrame == result.value()[3].nucleusFrame);
 }
 
+TEST_CASE("generated timing proposals displace syllable anchors through the ordered plan") {
+  using namespace seam;
+  TimingFixture f;
+  const auto tokens = f.tokens();
+  const auto baseline = synthesis::compilePhonemeTimingPlan(f.project, f.region(), tokens, 48000U);
+  CHECK(baseline);
+  const auto noteStartFrame = f.project.tempoMap().sampleFrameAt(seam::time::Tick{1440}, 48000.0);
+  CHECK(baseline.value()[1].nucleusFrame == noteStartFrame);
+  CHECK(baseline.value()[3].nucleusFrame > baseline.value()[1].nucleusFrame);
+
+  const auto pronunciation = phonemizer::resolveJapanesePronunciation(f.region());
+  CHECK(pronunciation);
+  const auto noteId = f.region().notes.front().id;
+  domain::PerformanceTake take{};
+  take.id = "timing-take";
+  take.sourceRegionId = f.id;
+  take.capturedRevision = f.region().performance.revision;
+  take.resource = {domain::SingerResourceKind::Neural, "fixture", "1", std::string(64U, 'a')};
+  take.pronunciation = pronunciation.value().identity;
+  take.generatorId = "fixture";
+  take.generatorVersion = "1";
+  take.range = {time::Tick{0}, f.region().durationTick};
+  take.lanes = {{domain::PerformanceChannel::Timing, {{time::Tick{0}, 30000.0}}}};
+  auto& performance = f.region().performance;
+  performance.takes.push_back(take);
+  performance.accepted = {{take.id, domain::PerformanceChannel::Timing, noteId, time::Tick{0}}};
+
+  // A thirty millisecond proposal moves both syllables by 1440 frames at 48 kHz, and
+  // the automatic end follows the moved nucleus instead of an obsolete boundary.
+  const auto displaced = synthesis::compilePhonemeTimingPlan(f.project, f.region(), tokens, 48000U);
+  CHECK(displaced);
+  CHECK(displaced.value()[1].nucleusFrame == baseline.value()[1].nucleusFrame + 1440);
+  CHECK(displaced.value()[3].nucleusFrame == baseline.value()[3].nucleusFrame + 1440);
+  CHECK(displaced.value()[1].endFrame == displaced.value()[3].nucleusFrame);
+  // Generated timing is not an authored edit: provenance stays honest.
+  CHECK(!displaced.value()[1].explicitStartFrame);
+  CHECK(!displaced.value()[3].explicitStartFrame);
+
+  // Manual replacement wins, exactly as it does for pitch.
+  domain::ManualPerformanceOwnership owner{};
+  owner.channel = domain::PerformanceChannel::Timing;
+  owner.mode = domain::ManualPerformanceMode::Replace;
+  owner.scope = noteId;
+  performance.ownership.push_back(owner);
+  const auto manual = synthesis::compilePhonemeTimingPlan(f.project, f.region(), tokens, 48000U);
+  CHECK(manual);
+  CHECK(manual.value()[1].nucleusFrame == baseline.value()[1].nucleusFrame);
+  CHECK(manual.value()[3].nucleusFrame == baseline.value()[3].nucleusFrame);
+  performance.ownership.clear();
+
+  // An authored offset stays absolute from the note start and applies only to the
+  // token the creator wrote it for; the other syllable still follows the proposal.
+  auto authored = tokens;
+  authored[1].timing.startOffset = time::Microseconds{-10000};
+  const auto composed = synthesis::compilePhonemeTimingPlan(f.project, f.region(), authored, 48000U);
+  CHECK(composed);
+  CHECK(composed.value()[1].nucleusFrame == noteStartFrame - 480);
+  CHECK(composed.value()[3].nucleusFrame == baseline.value()[3].nucleusFrame + 1440);
+
+  // A proposal that would reorder the nuclei is refused, not clamped.
+  performance.takes.back().lanes = {{domain::PerformanceChannel::Timing,
+      {{time::Tick{480}, 0.0}, {time::Tick{960}, -1000000.0}}}};
+  const auto refused = synthesis::compilePhonemeTimingPlan(f.project, f.region(), tokens, 48000U);
+  CHECK(!refused);
+  CHECK(refused.error().code == core::ErrorCode::Conflict);
+}
+
 TEST_CASE("timing contract keeps a trailing coda with its preceding final nucleus") {
   TimingFixture f;
   auto tokens = f.tokens();

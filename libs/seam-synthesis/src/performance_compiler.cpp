@@ -226,17 +226,9 @@ core::Result<void> applyCompiledPerformanceGain(std::span<float> samples,
   return {};
 }
 namespace {
-std::optional<double> laneValue(const domain::PerformanceLane& lane, time::Tick tick, std::size_t upperIndex) {
-  const auto& points = lane.points;
-  if (upperIndex == 0U) return points.front().value;
-  const auto upper = points.begin() + static_cast<std::ptrdiff_t>(upperIndex);
-  if (upper == points.end()) return points.back().value;
-  const auto& left = *std::prev(upper);
-  // Voicing transitions are discrete; never interpolate across a null pitch.
-  if (!left.value || !upper->value) return left.value;
-  const auto fraction = std::clamp(static_cast<double>((tick - left.tick).value()) /
-      static_cast<double>((upper->tick - left.tick).value()), 0.0, 1.0);
-  return *left.value + fraction * (*upper->value - *left.value);
+std::optional<double> laneValue(const domain::PerformanceLane& lane, time::Tick tick,
+    std::size_t upperIndex) {
+  return domain::samplePerformanceLane(lane, tick, upperIndex);
 }
 }
 core::Result<CompiledScorePerformance> compileScorePerformance(
@@ -254,6 +246,10 @@ core::Result<CompiledScorePerformance> compileScorePerformance(
   if (!valid) return core::Result<CompiledScorePerformance>{valid.error()};
   for (const auto& selection : region.performance.accepted) {
     if (selection.channel != domain::PerformanceChannel::Pitch &&
+        // Timing is admitted here because it is consumed by the ordered timing plan
+        // below, not by per-frame score evaluation. The remaining channels still have
+        // no consumer, so claiming them would invent audio the backend cannot make.
+        selection.channel != domain::PerformanceChannel::Timing &&
         selection.channel != domain::PerformanceChannel::Dynamics &&
         selection.channel != domain::PerformanceChannel::Attack &&
         selection.channel != domain::PerformanceChannel::Release) {
@@ -469,7 +465,14 @@ ScorePerformanceSample CompiledScorePerformance::evaluate(time::SampleFrame fram
       result.attackMilliseconds = value;
     } else if (selection.channel == domain::PerformanceChannel::Release) {
       result.releaseMilliseconds = value;
-    } else if (value) result.dynamicsGain = static_cast<float>(*value);
+    } else if (selection.channel == domain::PerformanceChannel::Dynamics && value) {
+      result.dynamicsGain = static_cast<float>(*value);
+    }
+    // Every other channel stays out of the per-frame audio path on purpose. A
+    // generated timing proposal is consumed by the ordered timing plan, and the
+    // remaining channels are reported unsupported by the renderer capability table.
+    // None of them is an amplitude, which is what a fallback assignment here would
+    // have claimed by writing a microsecond offset into a gain.
   }
   if (result.attackMilliseconds && *result.attackMilliseconds > 0.0 && note.reattack) {
     const auto attackFrames = *result.attackMilliseconds * static_cast<double>(sampleRate_) / 1000.0;

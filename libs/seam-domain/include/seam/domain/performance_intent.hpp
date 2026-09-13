@@ -6,6 +6,7 @@
 #include "seam/time/tick.hpp"
 
 #include <cstdint>
+#include <cstddef>
 #include <optional>
 #include <span>
 #include <string>
@@ -96,6 +97,14 @@ struct PerformanceLane final {
 };
 
 [[nodiscard]] std::string_view performanceChannelUnit(PerformanceChannel channel) noexcept;
+
+// Value of a lane at one tick. Surrounding points are interpolated, except across a
+// null value: a voicing transition is discrete and must never be bridged by a
+// fabricated number. Ticks before the first point read the first value and ticks
+// after the last read the last one. The optional upper index is a hint for callers
+// that already know the first point after the tick, such as per-frame evaluation.
+[[nodiscard]] std::optional<double> samplePerformanceLane(const PerformanceLane& lane,
+    time::Tick tick, std::optional<std::size_t> upperIndex = std::nullopt) noexcept;
 
 enum class PerformanceProposalState { Proposed, Rejected };
 

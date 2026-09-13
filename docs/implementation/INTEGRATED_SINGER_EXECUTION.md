@@ -1,5 +1,50 @@
 # Integrated Singer Execution
 
+## Generated timing now lands through the ordered timing solver
+
+M3.P3 item 4 asked for generated timing to be resolved through the ordered timing
+solver before audio exists, so that generated F0, manual offsets and manual vibrato
+compose once. The generated *pitch* half of that already worked; timing did not. The
+compiler accepted only pitch, dynamics, attack and release, so a proposal carrying a
+timing lane could not be rendered at all, and there was no other consumer for the
+microsecond offsets it carries.
+
+A timing proposal is now read where the syllable would otherwise start and displaces
+that syllable's nucleus through the same plan the authored offsets use. The rules are
+explicit because the two kinds of offset mean different things: an authored offset is
+an absolute position relative to the note start and always wins, while a generated
+offset is a displacement from the score position with a neutral zero. Manual
+replacement on the timing channel suppresses the generated value exactly as it does
+for pitch, so a locked syllable is never moved by a proposal. Because the displacement
+is applied before anything is placed, ordered nuclei, automatic ends and the release
+inside the region are all evaluated against the moved anchors -- a proposal that would
+reorder two nuclei or push a syllable before the output timeline is refused with
+`Conflict` instead of being clamped. A procedural onset gesture now starts where its
+syllable's nucleus actually resolved, so a displaced syllable moves its consonant with
+its vowel instead of stretching against a fixed score boundary.
+
+Lane sampling moved into the domain as `samplePerformanceLane`, because the
+per-frame evaluator and the timing plan must agree on what a lane value is at a tick.
+It keeps the existing rule that a null point is never bridged: a voicing transition is
+discrete, and interpolating across it would fabricate pitch.
+
+Verification. `tests/test_phoneme_timing.cpp` adds the case: a 30 ms proposal moves
+both nuclei by exactly 1440 frames at 48 kHz with the automatic end following the
+moved nucleus; manual replacement restores the score timing; an authored offset stays
+absolute for its own token while the proposal still displaces the other syllable; and
+a proposal that would reorder the nuclei is refused. `tests/test_performance_compiler.cpp`
+adds the guard case: an admitted timing selection never becomes amplitude, and the
+per-frame evaluation still reports neutral gain.
+
+Not claimed. Item 4 is not complete. A generated timing proposal moves phoneme
+anchors, not the compiled note span the pitch and amplitude envelopes use, so a
+displaced syllable currently sounds with its gesture moved while its envelope stays on
+the score grid. Reconciling the two needs the note spans themselves to become
+proposal-aware, which is a larger change to voice allocation and articulation windows.
+The production backend still emits no timing lane at all, so this is the path a
+timing-predicting backend will land on, not evidence that a useful timing proposal
+exists yet. No listening or musical judgement is claimed.
+
 ## Two takes can be compared from one playhead
 
 M3.P3 item 5 asks for alternate-take audition, accept/reject, comparison with the

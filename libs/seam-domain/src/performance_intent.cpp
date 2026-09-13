@@ -1,6 +1,34 @@
 #include "seam/domain/performance_intent.hpp"
 
+#include <algorithm>
+#include <cmath>
+
 namespace seam::domain {
+
+std::optional<double> samplePerformanceLane(const PerformanceLane& lane, time::Tick tick,
+    std::optional<std::size_t> upperIndex) noexcept {
+  const auto& points = lane.points;
+  if (points.empty()) return std::nullopt;
+  std::size_t index = 0U;
+  if (upperIndex.has_value()) {
+    index = std::min(*upperIndex, points.size());
+  } else {
+    const auto upper = std::upper_bound(points.begin(), points.end(), tick,
+        [](time::Tick value, const PerformancePoint& point) { return value < point.tick; });
+    index = static_cast<std::size_t>(upper - points.begin());
+  }
+  if (index == 0U) return points.front().value;
+  if (index >= points.size()) return points.back().value;
+  const auto& left = points[index - 1U];
+  const auto& right = points[index];
+  // Voicing transitions are discrete; never interpolate across a null value.
+  if (!left.value || !right.value) return left.value;
+  const auto span = (right.tick - left.tick).value();
+  if (span <= 0) return left.value;
+  const auto fraction = std::clamp(static_cast<double>((tick - left.tick).value()) /
+      static_cast<double>(span), 0.0, 1.0);
+  return *left.value + fraction * (*right.value - *left.value);
+}
 
 bool PerformanceTimeRange::contains(time::Tick tick) const noexcept {
   return tick >= startTick && tick < endTick;
