@@ -31,7 +31,7 @@ from tools.phase13a.neural_package import (
     build_neural_package_manifest,
     neural_package_layout,
 )
-from tools.phase13a.macho_linkage import derive_runtime_closure
+from tools.phase13a.runtime_closure import derive_runtime_closure
 from tools.phase13a.payload_paths import (
     PayloadAssemblyError,
     require_payload_path,
@@ -192,17 +192,13 @@ def stage_neural_helper(
         for path in dependencies
     ]
     if runtime_search_paths:
-        if platform != PayloadPlatform.MACOS_ARM64:
-            raise PayloadAssemblyError(
-                (
-                    "deriving a runtime closure from load commands is implemented for "
-                    f"macOS arm64 payloads; {platform} requires explicit dependencies",
-                )
-            )
+        # The closure is read from the image's own linkage: load commands on macOS,
+        # import descriptors on Windows. Both platforms resolve their runtime from
+        # the directory the helper is launched out of, so the same rule applies.
         closure = derive_runtime_closure(
             worker_path,
             tuple(require_real_directory(path, "runtime search path") for path in runtime_search_paths),
-            required_machine="arm64",
+            required_machine="arm64" if platform == PayloadPlatform.MACOS_ARM64 else "x86_64",
         )
         if closure.unresolved:
             raise PayloadAssemblyError(
@@ -317,7 +313,7 @@ def main(argv: list[str] | None = None) -> int:
         type=Path,
         action="append",
         default=[],
-        help="Derive the macOS runtime closure from the worker's own load commands",
+        help="Derive the worker's runtime closure from its own linkage",
     )
     parser.add_argument("--build-id", required=True)
     parser.add_argument("--surface", action="append", default=None)

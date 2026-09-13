@@ -1,5 +1,47 @@
 # Integrated Singer Execution
 
+## The Windows payload's runtime closure is derived from its own imports
+
+Packaging could derive a macOS helper's runtime from its load commands but refused
+the same for Windows, so a Windows payload could only be staged with a
+hand-written dependency list. That asymmetry is gone.
+
+Added `tools/phase13a/pe_linkage.py`, which reads a PE image's import directory:
+the DOS header, the optional header's data directory, the real section table for
+RVA-to-offset translation, and the import descriptor array up to its declared
+size. Import names are returned in descriptor order, and a descriptor that names
+a path instead of a module is distinguishable.
+
+`derive_runtime_closure()` now lives in `tools/phase13a/runtime_closure.py` and
+dispatches on the image container, with `macho_linkage` reduced to Mach-O parsing
+and resolution. The two platforms need different rules and the module states
+both: macOS resolves `@rpath` through LC_RPATH entries, so an absolute
+build-directory rpath is reported unresolved; Windows records only module names
+and its loader searches the running image's directory first, so a bare module name
+resolves beside the helper while a path-naming descriptor does not. Resolution is
+case-insensitive on Windows and follows symbolic links, so a plain-name copy of a
+versioned runtime is staged under the name the import asks for.
+
+One deliberate rule: the VC++ runtime is not treated as host-provided. Assuming it
+exists is exactly the failure mode this work exists to catch, so `vcruntime140.dll`
+and friends are reported unless the release owner ships them or supplies them in a
+search path. Only the operating system's own modules (including `api-ms-win-*` API
+sets) are skipped.
+
+Staging and the assembly CLI use the same owner for both platforms:
+`--runtime-search-path` now derives a Windows closure too, and the previous
+"requires explicit dependencies" refusal for Windows is removed.
+
+Verification: `tests/phase13a/test_neural_helper_staging.py` grows to 17 cases with
+three new ones — reading a synthetic PE import directory (including the truncated
+and non-PE refusals), deriving a Windows closure that stages the package's own
+modules while reporting a path-referencing descriptor and a missing module, and
+staging a Windows payload end-to-end from a derived closure so
+`neural_package_inventory()` reports `VERIFIED_FILES`. The staging group runs 46
+tests. The PE fixtures are synthetic: the Windows worker has still never been
+built or executed on Windows, so this proves the analysis and the refusals, not a
+running Windows helper.
+
 ## The Studio controller can plan, run, cancel and resume a generation campaign
 
 Closed the M1.P3 item that was still open in this document: the generation

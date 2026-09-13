@@ -18,7 +18,6 @@ silently copied.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import Path
 
 from tools.phase13a.payload_paths import PayloadAssemblyError
 
@@ -46,7 +45,6 @@ DEPENDENCY_COMMANDS = frozenset(
 )
 MAXIMUM_LOAD_COMMANDS = 4096
 MAXIMUM_LOAD_COMMAND_BYTES = 1 << 20
-MAXIMUM_CLOSURE_DEPTH = 8
 SYSTEM_PREFIXES = ("/usr/lib/", "/System/Library/", "/System/iOSSupport/")
 STAGED_RPATH_ROOTS = (
     "@executable_path",
@@ -69,21 +67,6 @@ class MachoLinkage:
     def staged_dependencies(self) -> tuple[str, ...]:
         """Return the dependencies a package must provide itself."""
         return tuple(name for name in self.dependencies if not is_system_library(name))
-
-
-@dataclass(frozen=True, slots=True)
-class ClosureEntry:
-    """One file to stage, and the name a load command will look for."""
-
-    source: Path
-    staged_name: str
-    load_name: str
-
-
-@dataclass(frozen=True, slots=True)
-class RuntimeClosure:
-    entries: tuple[ClosureEntry, ...]
-    unresolved: tuple[str, ...]
 
 
 def is_system_library(load_name: str) -> bool:
@@ -218,92 +201,8 @@ def read_linkage(data: bytes, *, required_machine: str | None = None) -> MachoLi
     return _parse_slice(data, chosen)
 
 
-def _resolve_load_name(load_name: str, search_paths: tuple[Path, ...]) -> Path | None:
-    """Find the real file a load name refers to inside the supplied directories.
-
-    Runtime SDKs publish the versioned library as the real file and the load
-    name as a symbolic link, so a symlink is followed here and the resolved file
-    is what gets staged under the name the load command asks for.
-    """
-    name = staged_name_for(load_name)
-    if name is None:
-        return None
-    for directory in search_paths:
-        candidate = directory / name
-        if not candidate.exists():
-            continue
-        resolved = candidate.resolve()
-        if resolved.is_file():
-            return resolved
-    return None
-
-
-def derive_runtime_closure(
-    worker: Path,
-    search_paths: tuple[Path, ...],
-    *,
-    required_machine: str | None = None,
-    maximum_depth: int = MAXIMUM_CLOSURE_DEPTH,
-) -> RuntimeClosure:
-    """Return every image the worker needs the package to ship.
-
-    A dependency that the host provides is skipped. A dependency that exists in
-    the search paths but is referenced through an absolute path or an unstaged
-    rpath is still unresolved, because the staged copy would not be found.
-    """
-    entries: list[ClosureEntry] = []
-    unresolved: list[str] = []
-    seen_names: set[str] = set()
-    pending: list[tuple[Path, MachoLinkage, int]] = [
-        (worker, read_linkage(worker.read_bytes(), required_machine=required_machine), 0)
-    ]
-    while pending:
-        _, linkage, depth = pending.pop(0)
-        for load_name in linkage.dependencies:
-            if is_system_library(load_name):
-                continue
-            name = staged_name_for(load_name)
-            if name is None or name in seen_names:
-                continue
-            source = _resolve_load_name(load_name, search_paths)
-            if not resolves_from_staged_directory(load_name, linkage.rpaths):
-                detail = (
-                    f"found at {source}"
-                    if source is not None
-                    else "not found in the supplied search paths"
-                )
-                unresolved.append(
-                    f"{load_name} ({detail}, but the image references it through a path "
-                    "or rpath that does not exist in the "
-                    f"staged directory; rpaths: {', '.join(linkage.rpaths) or 'none'})"
-                )
-                continue
-            if source is None:
-                unresolved.append(
-                    f"{load_name} (resolves from the staged directory, but no file was "
-                    "found in the supplied search paths)"
-                )
-                continue
-            seen_names.add(name)
-            entries.append(ClosureEntry(source, name, load_name))
-            if depth + 1 >= maximum_depth:
-                unresolved.append(f"{load_name} (closure depth limit reached)")
-                continue
-            pending.append(
-                (
-                    source,
-                    read_linkage(source.read_bytes(), required_machine=required_machine),
-                    depth + 1,
-                )
-            )
-    return RuntimeClosure(tuple(entries), tuple(unresolved))
-
-
 __all__ = [
-    "ClosureEntry",
     "MachoLinkage",
-    "RuntimeClosure",
-    "derive_runtime_closure",
     "is_system_library",
     "read_linkage",
     "resolves_from_staged_directory",
