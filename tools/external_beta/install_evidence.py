@@ -10,8 +10,17 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 
+try:
+    from tools.platform_identity import host_platforms
+except ImportError:  # tooling imports this module with tools/external_beta on sys.path
+    import sys
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from platform_identity import host_platforms
+
+
 HEX64 = re.compile(r"^[0-9a-fA-F]{64}$")
-PLATFORMS = {"macos": "arm64", "windows": "x86_64"}
+PLATFORMS = host_platforms()
 INSTALL_ROW_IDS = tuple(f"INSTALL-{index:03d}" for index in range(1, 13))
 FORBIDDEN_PATH_PARTS = {"source", "build", ".git", "build-baseline2", "node_modules"}
 

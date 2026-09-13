@@ -574,6 +574,25 @@ TEST_CASE("signed neural deployment binds exact descriptor bytes and the loaded 
   rejectSigned("\"schemaVersion\":1","\"schemaVersion\":1,\"unexpected\":true");
   const std::string oversized(16U*1024U+1U,' '); const auto oversizedSignature=sign(oversized); CHECK(oversizedSignature);
   CHECK(!VerifiedNeuralDeployment::verify(oversized,oversizedSignature.value(),key.value().publicKey,target));
+  // The full-product contract spells the Windows target "windows-x86_64"; the
+  // deployment descriptor spells it "windows-x64". The two names are not
+  // interchangeable, so a correctly signed descriptor carrying the contract
+  // spelling must be refused instead of accepted by string coincidence. Only the
+  // explicit mapping owner may translate between the namespaces.
+  const auto swapPlatform=[&](std::string_view platform) {
+    auto bytes=json; const auto at=bytes.find("\"macos-arm64\""); CHECK(at!=std::string::npos);
+    bytes.replace(at,13U,std::string{"\""}+std::string{platform}+"\""); return bytes;
+  };
+  const auto windowsBytes=swapPlatform("windows-x64");
+  const auto windowsSignature=sign(windowsBytes); CHECK(windowsSignature);
+  CHECK(VerifiedNeuralDeployment::verify(windowsBytes,windowsSignature.value(),key.value().publicKey,
+      NeuralDeploymentTarget{"signed-build","windows-x64","clap"}));
+  const auto contractBytes=swapPlatform("windows-x86_64");
+  const auto contractSignature=sign(contractBytes); CHECK(contractSignature);
+  CHECK(!VerifiedNeuralDeployment::verify(contractBytes,contractSignature.value(),key.value().publicKey,
+      NeuralDeploymentTarget{"signed-build","windows-x86_64","clap"}));
+  CHECK(!VerifiedNeuralDeployment::verify(contractBytes,contractSignature.value(),key.value().publicKey,
+      NeuralDeploymentTarget{"signed-build","windows-x64","clap"}));
 }
 
 TEST_CASE("DiffSinger inputs conserve hop durations and retain phone ownership at rounded boundaries") {

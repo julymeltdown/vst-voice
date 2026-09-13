@@ -20,6 +20,7 @@ from tools.phase13a.payload_surfaces import (
 )
 from tools.phase13a.payload_trust import validate_release_trust
 from tools.phase13a.release_identity import read_project_version
+from tools.platform_identity import product_contract_platform
 
 
 MANIFEST_NAME: Final = "release-payload-manifest.json"
@@ -285,6 +286,7 @@ def assemble_release_payload(
         "schemaVersion": 1,
         "purpose": "project-seam-release-payload",
         "platform": platform,
+        "productContractPlatform": product_contract_platform(platform),
         "releaseIdentity": identity.to_json(),
         "identitySha256": tree_sha256(payload / "RELEASE_IDENTITY.json"),
         "sourceClean": True,

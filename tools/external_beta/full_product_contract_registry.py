@@ -3,6 +3,15 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Final
 
+try:
+    from tools.platform_identity import product_contract_platforms
+except ImportError:  # tooling imports this module with tools/external_beta on sys.path
+    import sys
+    from pathlib import Path
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from platform_identity import product_contract_platforms
+
 
 @dataclass(frozen=True, slots=True)
 class RequirementSpec:
@@ -138,7 +147,7 @@ REQUIREMENTS: Final = {
 }
 
 LANGUAGES: Final = ("ja", "en", "ko")
-PLATFORMS: Final = ("macos-arm64", "windows-x86_64")
+PLATFORMS: Final = product_contract_platforms()
 HOST_TUPLES: Final = (
     "macos-arm64/reaper/CLAP",
     "macos-arm64/reaper/VST3",

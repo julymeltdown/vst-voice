@@ -14,6 +14,14 @@ import stat
 from pathlib import Path
 from typing import Any, Mapping
 
+try:
+    from tools.platform_identity import deployment_platforms
+except ImportError:  # tooling imports this module with tools/phase13a on sys.path
+    import sys
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from platform_identity import deployment_platforms
+
 
 SCHEMA_VERSION = 1
 HANDOFF_SCHEMA_VERSION = 2
@@ -24,7 +32,7 @@ ALGORITHMS = {"Ed25519"}
 UPDATE_PURPOSE = "update"
 RECOVERY_PURPOSE = "update-recovery"
 CHANNEL = "external-beta"
-PLATFORMS = {"macos-arm64", "windows-x64", "linux-x64"}
+PLATFORMS = set(deployment_platforms())
 RANGE_FIELDS = {"project", "media", "bank", "settings", "autosave", "clap-state", "host-state"}
 
 

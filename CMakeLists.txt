@@ -1726,6 +1726,7 @@ if(SEAM_BUILD_TESTS)
         "PYTHONDONTWRITEBYTECODE=1"
         "SEAM_NEURAL_PACKAGE_PROBE=$<TARGET_FILE:seam_neural_worker_probe>"
         ${Python3_EXECUTABLE} -m unittest tests.phase13a.test_neural_package
+          tests.phase13a.test_neural_helper_staging
           tests.phase13a.test_payload_materializer tests.phase13a.test_release_payload_assembly)
     set_tests_properties(seam_neural_package_materialization_tests PROPERTIES
       WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} TIMEOUT 60)
@@ -1747,6 +1748,11 @@ if(SEAM_BUILD_TESTS)
       COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_singer_pilot_cli.py $<TARGET_FILE:seam_singer_pilot>)
     set_tests_properties(seam_singer_pilot_cli PROPERTIES TIMEOUT 150)
     set_tests_properties(seam_draft_inventory_tests PROPERTIES
+      WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+      ENVIRONMENT "PYTHONDONTWRITEBYTECODE=1" TIMEOUT 60)
+    add_test(NAME seam_platform_identity_tests
+      COMMAND ${Python3_EXECUTABLE} -m unittest tests.test_platform_identity)
+    set_tests_properties(seam_platform_identity_tests PROPERTIES
       WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
       ENVIRONMENT "PYTHONDONTWRITEBYTECODE=1" TIMEOUT 60)
     add_test(NAME seam_singing_quality_contract_tests

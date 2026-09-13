@@ -14,9 +14,10 @@ from tools.phase13a.payload_paths import (
     require_payload_path,
     require_real_directory,
 )
-from tools.phase13a.payload_surfaces import PayloadPlatform, surface_matrix
+from tools.phase13a.payload_surfaces import PayloadPlatform, Surface, surface_matrix
 
 MAXIMUM_FILE_BYTES = 256 * 1024 * 1024
+HELPER_MANIFEST_NAME = "neural-helper-package.json"
 
 
 def build_neural_deployment_descriptor(
@@ -81,14 +82,7 @@ def neural_package_inventory(payload: Path, platform: PayloadPlatform, build_id:
         if surface.identifier == "installer-verifier":
             continue
         binary = Path(surface.binary_relative_path)
-        bundle = Path(surface.relative_path)
-        if platform == PayloadPlatform.WINDOWS_X64 and surface.identifier in {"standalone", "clap"}:
-            package = bundle.parent
-            resources = "Resources" if surface.identifier == "standalone" else "ProjectSEAMEditor.resources"
-            relative_manifest = Path(resources) / "neural-helper-package.json"
-        else:
-            package = bundle
-            relative_manifest = Path("Contents/Resources/neural-helper-package.json")
+        package, relative_manifest = neural_package_layout(platform, surface)
         manifest_path = package / relative_manifest
         path = payload / manifest_path
         row = {"surface": surface.identifier, "path": manifest_path.as_posix(), "status": "MISSING"}
@@ -117,6 +111,32 @@ def neural_package_inventory(payload: Path, platform: PayloadPlatform, build_id:
         row.update(status="VERIFIED_FILES", sha256=digest)
         result.append(row)
     return result
+
+
+def neural_package_layout(
+    platform: PayloadPlatform, surface: Surface
+) -> tuple[Path, Path]:
+    """Return the package root and helper-manifest location for one surface.
+
+    macOS and VST3 bundles keep their resources under ``Contents/Resources``.
+    The Windows standalone and CLAP binaries are loose executables, so their
+    resources live beside them under ``Resources`` and
+    ``ProjectSEAMEditor.resources`` respectively. This is the single owner of
+    that layout; staging and inventory both read it.
+    """
+    package = Path(surface.relative_path)
+    if platform == PayloadPlatform.WINDOWS_X64 and surface.identifier in {
+        "standalone",
+        "clap",
+    }:
+        package = package.parent
+        resources = (
+            "Resources"
+            if surface.identifier == "standalone"
+            else "ProjectSEAMEditor.resources"
+        )
+        return package, Path(resources) / HELPER_MANIFEST_NAME
+    return package, Path("Contents/Resources") / HELPER_MANIFEST_NAME
 
 
 def build_neural_package_manifest(

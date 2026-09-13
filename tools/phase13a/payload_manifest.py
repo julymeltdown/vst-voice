@@ -21,6 +21,7 @@ from tools.phase13a.release_payload import (
     _validate_resource_inventory,
     validate_payload_shape,
 )
+from tools.platform_identity import product_contract_platform
 
 
 @dataclass(frozen=True, slots=True)
@@ -62,6 +63,8 @@ def verify_release_payload_manifest(
         value.get("schemaVersion") != 1
         or value.get("purpose") != "project-seam-release-payload"
         or value.get("platform") != expected_platform
+        or value.get("productContractPlatform")
+        != product_contract_platform(expected_platform)
     ):
         raise PayloadAssemblyError(("release payload manifest identity is invalid",))
     identity = _read_identity(payload / "RELEASE_IDENTITY.json")

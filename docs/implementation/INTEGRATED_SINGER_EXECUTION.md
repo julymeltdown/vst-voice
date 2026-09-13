@@ -1,5 +1,108 @@
 # Integrated Singer Execution
 
+## The neural helper is staged from finalized bytes into every payload surface
+
+Completed the packaging half of M2.P2 item 9 for the two declared targets. No
+packaging path could previously place the neural worker and its inference runtime
+into a payload, so `neuralPackages` could only ever report `MISSING` and a
+released payload had nothing to launch.
+
+Added `tools/phase13a/neural_helper_staging.py`. `stage_neural_helper()` takes the
+finalized worker, its runtime dependencies, the payload platform and the build
+identity, then stages one helper package beside every declared surface and seals
+it through the existing `build_neural_package_manifest()`. Staging is two-phase:
+every surface is validated before the first byte is written, so a payload can
+never be left half-staged by a later failure. An artifact that is already staged
+with identical bytes is left untouched, and one staged with different bytes is
+refused instead of silently replaced.
+
+The platform check reads the image itself, not the file name. `image_identity()`
+parses thin and universal Mach-O headers and PE headers, and
+`require_platform_image()` refuses an artifact whose container or machine does not
+match the target: a Mach-O cannot be sealed into a Windows payload, a PE cannot be
+sealed into a macOS payload, an arm64 target refuses an x86_64-only Mach-O, and a
+universal image is accepted only when it declares the required machine. A file
+that is not a Mach-O or PE image is refused rather than treated as a dependency.
+The helper name (`neural-helper`/`neural-helper.exe`), the surface layout, the
+manifest location and the module path all come from one place:
+`neural_package_layout()` now owns the per-surface layout that
+`neural_package_inventory()` used to restate.
+
+The assembly entry point can now stage before sealing:
+`scripts/assemble_release_payload.py --neural-worker <path> [--neural-dependency
+<path>]... [--neural-surface <id>] [--neural-protocol-version 1|2]` stages the
+helper, binds it to the payload's own `RELEASE_IDENTITY.json` build id, and then
+assembles and seals the payload. Without those flags the previous behavior is
+unchanged and `neuralPackages` still records explicit absence.
+
+Verification: `tests/phase13a/test_neural_helper_staging.py` adds 8 cases over
+container parsing, macOS and Windows staging, cross-platform refusal, universal
+binaries, name conflicts, replaced bytes and the CLI; the payload assembly suite
+adds an end-to-end case where the CLI stages a helper and the sealed manifest
+reports `VERIFIED_FILES` for every Windows surface, plus a refusal case for a
+macOS image. The 40 tests of `seam_neural_package_materialization_tests` pass
+(3 probe-dependent cases skip when the group is run without the CTest-provided
+native probe). The fixture images used by these
+tests are labelled fixtures: they prove the packaging path and its refusals, not
+that an inference-qualified worker was produced.
+
+Still open in this package: an actual built worker plus a verified ONNX Runtime
+dependency closure per platform (the macOS closure must be derived from the
+image's own load commands rather than a hand-written list), the Windows process
+backend execution, and M2.P2 item 7's native preview/stop/retry, multi-voice
+scheduling and cache provenance on the neural path.
+
+## Platform identity is one explicit table, not string coincidence
+
+Advanced the naming half of M2.P2 item 9. The product names its two supported
+targets in three namespaces whose Windows spelling differs on purpose: host and
+install evidence carry a platform name plus a separate architecture
+(`macos`/`arm64`, `windows`/`x86_64`), payload, update and neural-deployment
+descriptors carry one identifier (`macos-arm64`, `windows-x64`), and the
+full-product contract carries `macos-arm64`/`windows-x86_64`. Nothing previously
+owned the translation between them, so a caller that compared
+`windows-x64` with `windows-x86_64` would either pass by coincidence or fail by
+accident.
+
+Added `tools/platform_identity.py` as that owner. One frozen table holds a row
+per target with its host name, architecture, deployment identifier and optional
+contract identifier; `linux-x64` is deployment-only and therefore has no
+contract identity. The accessors are `host_platforms()`, `deployment_platforms()`,
+`product_contract_platforms()`, `product_contract_platform()`,
+`deployment_platform()`, `deployment_platform_for_host()` and
+`identity_for_deployment()`. Every accessor refuses an unknown value, a wrong
+namespace (the contract spelling is not a deployment platform and the reverse is
+also true) and a malformed or empty string with `PlatformIdentityError`, so an
+unlisted platform cannot pass through unexamined.
+
+Four duplicated tables now read from that owner instead of restating the strings:
+`tools/phase13a/update_contract.py`, `tools/external_beta/host_evidence.py`,
+`tools/external_beta/install_evidence.py` and
+`tools/external_beta/product_soak.py` take the host or deployment view, and
+`tools/external_beta/full_product_contract_registry.py` takes the contract view.
+`host_platforms()` deliberately returns only the two certifiable host targets, so
+the install and soak evidence contracts keep exactly the platform pairs their
+matrix documents declare.
+
+The mapping also became load-bearing rather than descriptive. The sealed release
+payload manifest now records `productContractPlatform` through
+`product_contract_platform()`, and `verify_release_payload_manifest()` re-derives
+that value, so a payload whose contract identity was rewritten after assembly is
+refused as a manifest identity failure instead of being trusted. On the native
+side, `tests/test_neural_worker_protocol.cpp` now proves the two namespaces are
+distinct: a correctly signed descriptor declaring `windows-x64` loads, and an
+equally signed descriptor declaring the contract spelling `windows-x86_64` is
+refused. Translation may only happen through the mapping owner.
+
+Verification: `seam_platform_identity_tests` is registered (9 tests),
+`seam_neural_package_materialization_tests` passes 30 tests including the new
+payload-manifest binding case, the external-beta Python contract suite passes
+179 tests, and `seam_neural_worker_protocol_tests` passes with the new native
+guard. Packaging the actual worker and runtime into a payload is still open: no
+packaging script stages the neural worker or its ONNX Runtime dependencies yet,
+and the Windows process backend still has no executed evidence. (The packaging
+half of that sentence is superseded by the entry above: staging now exists.)
+
 ## Production neural worker executes admitted bundles
 
 Added the prepared admission handle `AdmittedNeuralBundle`

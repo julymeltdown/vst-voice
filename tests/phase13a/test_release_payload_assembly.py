@@ -12,9 +12,11 @@ from scripts.assemble_release_payload import (
     PayloadAssemblyError,
     PayloadPlatform,
     assemble_release_payload,
+    main as assemble_release_payload_main,
 )
 from tools.phase13a.payload_manifest import verify_release_payload_manifest
 from tools.phase13a.neural_package import build_neural_package_manifest
+from tests.phase13a.test_neural_helper_staging import pe
 
 
 class ReleasePayloadAssemblyTests(unittest.TestCase):
@@ -91,6 +93,79 @@ class ReleasePayloadAssemblyTests(unittest.TestCase):
             verify_release_payload_manifest(self.payload, PayloadPlatform.WINDOWS_X64)
         with self.assertRaises(PayloadAssemblyError):
             assemble_release_payload(self.payload, self.source, PayloadPlatform.WINDOWS_X64)
+
+    def test_sealed_manifest_binds_the_product_contract_platform(self) -> None:
+        # The payload/update namespace spells Windows "windows-x64"; the full-product
+        # contract spells it "windows-x86_64". The sealed manifest records the
+        # contract identity through the explicit mapping owner, and a manifest whose
+        # binding was rewritten is refused instead of being trusted by coincidence.
+        self.create_payload(PayloadPlatform.WINDOWS_X64)
+        sealed = assemble_release_payload(
+            self.payload, self.source, PayloadPlatform.WINDOWS_X64
+        )
+        value = json.loads(sealed.path.read_bytes())
+        self.assertEqual("windows-x64", value["platform"])
+        self.assertEqual("windows-x86_64", value["productContractPlatform"])
+        verify_release_payload_manifest(self.payload, PayloadPlatform.WINDOWS_X64)
+        for replacement in ("windows-x64", "windows-x86_64 ", "linux-x64"):
+            with self.subTest(replacement=replacement):
+                value["productContractPlatform"] = replacement
+                sealed.path.write_text(json.dumps(value), encoding="utf-8")
+                with self.assertRaisesRegex(
+                    PayloadAssemblyError, "manifest identity is invalid"
+                ):
+                    verify_release_payload_manifest(
+                        self.payload, PayloadPlatform.WINDOWS_X64
+                    )
+
+    def test_cli_stages_the_helper_before_sealing_the_payload(self) -> None:
+        # The packaged payload is the only place a released helper can come from, so
+        # the assembly entry point must be able to stage it. The worker fixture here
+        # is a header-only image labeled a fixture: it proves the packaging path and
+        # the platform check, not that an inference-qualified worker was produced.
+        self.create_payload(PayloadPlatform.WINDOWS_X64)
+        worker = Path(self.temporary.name) / "seam_neural_worker.exe"
+        worker.write_bytes(pe())
+        self.assertEqual(
+            0,
+            assemble_release_payload_main(
+                [
+                    "--payload", str(self.payload),
+                    "--source-root", str(self.source),
+                    "--platform", "windows-x64",
+                    "--neural-worker", str(worker),
+                ]
+            ),
+        )
+        manifest = json.loads(
+            (self.payload / "release-payload-manifest.json").read_text(encoding="utf-8")
+        )
+        rows = {row["surface"]: row for row in manifest["neuralPackages"]}
+        self.assertEqual({"standalone", "clap", "vst3"}, set(rows))
+        for surface, row in rows.items():
+            with self.subTest(surface=surface):
+                self.assertEqual("VERIFIED_FILES", row["status"])
+                self.assertRegex(row["sha256"], "^[0-9a-f]{64}$")
+        self.assertTrue((self.payload / "Standalone/Resources/neural-helper.exe").is_file())
+        verified = verify_release_payload_manifest(
+            self.payload, PayloadPlatform.WINDOWS_X64
+        )
+        self.assertEqual("0.13.1-test", verified.identity.build_id)
+        # A macOS image must never be sealed into a Windows payload, and the CLI must
+        # report the refusal instead of assembling a payload that cannot launch it.
+        wrong = Path(self.temporary.name) / "mach-o-worker"
+        wrong.write_bytes(bytes.fromhex("cffaedfe") + (0x0100000C).to_bytes(4, "little") + bytes(0x40))
+        self.assertEqual(
+            3,
+            assemble_release_payload_main(
+                [
+                    "--payload", str(self.payload),
+                    "--source-root", str(self.source),
+                    "--platform", "windows-x64",
+                    "--neural-worker", str(wrong),
+                ]
+            ),
+        )
 
     def create_payload(self, platform: PayloadPlatform) -> None:
         identity = {
