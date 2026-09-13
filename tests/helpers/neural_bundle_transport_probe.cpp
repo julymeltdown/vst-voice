@@ -1,8 +1,13 @@
 // Dedicated transport fixture. No graph execution or production admission.
 #include "seam/neural_synthesis/bundle_metadata.hpp"
 #include "seam/core/sha256.hpp"
+#include "seam/core/file_io.hpp"
 #include <charconv>
 #include <iostream>
+#include <thread>
+#if !defined(_WIN32)
+#include <unistd.h>
+#endif
 
 int main(int argc,char** argv) {
   using namespace seam::neural_synthesis;
@@ -26,6 +31,14 @@ int main(int argc,char** argv) {
   if (!request || request.value().bundleContentHash!=bundle.value().identity().contentHash ||
       !metadata.value().model.validateRequest(request.value()) ||
       request.value().vocabularySize!=metadata.value().vocabulary.size()) return 7;
+#if !defined(_WIN32)
+  if (request.value().requestId==93U || request.value().requestId==94U) {
+    // Test-only readiness handshake, after actual child-side bundle/request load.
+    const auto marker=std::filesystem::path{argv[2]}/("child-"+std::to_string(request.value().requestId));
+    if (!seam::core::durableAtomicWriteTextNew(marker,std::to_string(getpid()))) return 10;
+    std::this_thread::sleep_for(std::chrono::seconds{10});
+  }
+#endif
   NeuralResponse response{.requestId=request.value().requestId,.backendId="transport-fixture-only",
       .modelContentHash=request.value().modelContentHash,.sampleRate=request.value().sampleRate,
       .channels=request.value().channels,.frameCount=request.value().frameCount,

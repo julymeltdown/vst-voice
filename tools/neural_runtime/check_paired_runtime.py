@@ -84,7 +84,8 @@ def main():
                 # native metadata/graph bridge must reject it before Run.
                 mismatched = arguments[:-1] if steps_layout == "vector1" else arguments + ["--steps-vector1"]
                 rejected = subprocess.run(mismatched, capture_output=True, text=True, timeout=20)
-                assert rejected.returncode == 3, (rejected.returncode, rejected.stderr)
+                rejection_code = 7 if "--native-inspection" in sys.argv[2:] else 3
+                assert rejected.returncode == rejection_code, (rejected.returncode, rejected.stderr)
     print("Dynamic four-input acoustic and pitch-conditioned vocoder execution passed; no singing claim.")
 
 

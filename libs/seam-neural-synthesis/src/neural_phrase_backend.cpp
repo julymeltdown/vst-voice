@@ -304,16 +304,24 @@ core::Result<NeuralWorkerResult> runNeuralBundleWorker(
   const auto valid=request.validate(options.limits);
   if (!valid) return core::Result<Output>{valid.error()};
   if (!bundleDirectory.is_absolute() || maximumBundleBytes==0U || maximumBundleBytes>512U*1024U*1024U ||
-      options.maximumResidentBytes==0U || options.maximumCpuTime.count()<=0)
+      options.maximumResidentBytes==0U || options.maximumResidentBytes>4ULL*1024ULL*1024ULL*1024ULL ||
+      options.maximumCpuTime.count()<=0 || options.maximumCpuTime.count()>60000 ||
+      options.timeout.count()<=0 || options.timeout.count()>60000 ||
+      options.limits.maximumFrameBytes==0U || options.limits.maximumFrameBytes>64U*1024U*1024U ||
+      options.limits.maximumMetadataBytes==0U || options.limits.maximumMetadataBytes>1024U*1024U)
     return core::failure<Output>(core::ErrorCode::InvalidArgument,"Bundle launch requires an absolute directory and explicit resource budgets");
   std::error_code error;
   const auto canonical=std::filesystem::canonical(bundleDirectory,error);
   if (error || canonical!=bundleDirectory)
     return core::failure<Output>(core::ErrorCode::Conflict,"Bundle launch directory must be canonical and available");
-  const auto bundle=loadNeuralBundleDirectory(canonical,
-      {domain::SingerResourceKind::Neural,request.modelId,request.modelVersion,request.bundleContentHash},maximumBundleBytes,stop);
-  if (!bundle) return core::Result<Output>{bundle.error()};
-  const auto metadata=inspectNeuralBundleMetadata(bundle.value(),stop);
+  // The child reloads its own bytes. Do not retain a second full graph payload
+  // in the parent for the entire inference interval; metadata owns its values.
+  const auto metadata=[&]() -> core::Result<NeuralBundleMetadata> {
+    const auto bundle=loadNeuralBundleDirectory(canonical,
+        {domain::SingerResourceKind::Neural,request.modelId,request.modelVersion,request.bundleContentHash},maximumBundleBytes,stop);
+    if (!bundle) return core::Result<NeuralBundleMetadata>{bundle.error()};
+    return inspectNeuralBundleMetadata(bundle.value(),stop);
+  }();
   if (!metadata) return core::Result<Output>{metadata.error()};
   options.vocabulary=metadata.value().vocabulary;
   const auto name=canonical.u8string();

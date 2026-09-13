@@ -7,6 +7,7 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import onnx
 
 from check_paired_runtime import graphs
 from inspect_bundle import inspect_bundle
@@ -40,6 +41,20 @@ def main():
         arguments = [runtime, "--paired-bundle", directory, "fixture", "1", digest]
         result = subprocess.run(arguments, check=True, capture_output=True, text=True, timeout=20)
         assert json.loads(result.stdout)["status"] == "PAIRED_PROFILE_INFERENCE_ONLY"
+        if "--native-inspection" in sys.argv[3:]:
+            invalid_root = root / "invalid-graph"
+            invalid_root.mkdir()
+            invalid_model = onnx.load_model_from_string(acoustic)
+            invalid_model.graph.node[0].op_type = "NotAnOnnxOperator"
+            for name, data in assets.items():
+                (invalid_root / name).write_bytes(invalid_model.SerializeToString() if name == "acoustic" else data)
+            invalid_prepared = subprocess.run([cli, "prepare-neural-bundle", str(invalid_root), "fixture", "1", "1048576"],
+                                             check=True, capture_output=True, text=True, timeout=20)
+            invalid_digest = json.loads(invalid_prepared.stdout)["manifestSha256"]
+            rejected = subprocess.run([runtime, "--paired-bundle", str(invalid_root), "fixture", "1", invalid_digest],
+                                      capture_output=True, text=True, timeout=20)
+            assert rejected.returncode == 7 and "Native frozen graph inspection" in rejected.stderr, rejected
+            assert not rejected.stdout
         request_arguments = [runtime, "--paired-request", directory, "fixture", "1", digest]
         count = 731
         metadata = dict(kind="seam-neural-request-v2", requestId=91, modelId="fixture",

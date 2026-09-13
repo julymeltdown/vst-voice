@@ -2270,6 +2270,8 @@ add_subdirectory(phase13b)
 include(cmake/NeuralDependencyDirection.cmake)
 seam_check_neural_dependency_direction()
 set(SEAM_ONNXRUNTIME_ROOT "" CACHE PATH "Optional local ONNX Runtime SDK for the arithmetic inference probe")
+set(SEAM_NATIVE_ONNX_SCHEMA "" CACHE FILEPATH "Optional pinned ONNX schema for native checked runtime experiments")
+set(SEAM_NATIVE_ONNX_PYTHON "" CACHE FILEPATH "Optional existing ONNX 1.19.1 Python environment for native integration tests")
 if(SEAM_ONNXRUNTIME_ROOT)
   unset(SEAM_ONNXRUNTIME_INCLUDE CACHE)
   unset(SEAM_ONNXRUNTIME_LIBRARY CACHE)
@@ -2279,6 +2281,39 @@ if(SEAM_ONNXRUNTIME_ROOT)
   target_include_directories(seam_onnx_runtime_probe SYSTEM PRIVATE "${SEAM_ONNXRUNTIME_INCLUDE}")
   target_link_libraries(seam_onnx_runtime_probe PRIVATE "${SEAM_ONNXRUNTIME_LIBRARY}" seam_neural_synthesis)
   seam_apply_compiler_options(seam_onnx_runtime_probe)
+  if(SEAM_NATIVE_ONNX_SCHEMA)
+    set(SEAM_ONNX_SCHEMA "${SEAM_NATIVE_ONNX_SCHEMA}" CACHE FILEPATH "Pinned ONNX experiment schema" FORCE)
+    add_subdirectory(tools/neural_runtime/native_inspection native-onnx-inspection)
+    target_link_libraries(seam_onnx_runtime_probe PRIVATE seam_native_onnx_inspection)
+    target_compile_definitions(seam_onnx_runtime_probe PRIVATE SEAM_NATIVE_GRAPH_INSPECTION=1)
+    if(SEAM_BUILD_TESTS)
+      add_test(NAME seam_neural_native_owned_bytes
+        COMMAND seam_native_onnx_owned_bytes_test)
+      set_tests_properties(seam_neural_native_owned_bytes PROPERTIES TIMEOUT 20 LABELS "neural-native-experiment")
+      if(SEAM_NATIVE_ONNX_PYTHON)
+        execute_process(COMMAND "${SEAM_NATIVE_ONNX_PYTHON}" -c "import onnx; assert onnx.__version__ == '1.19.1'"
+          RESULT_VARIABLE native_python_valid OUTPUT_QUIET ERROR_VARIABLE native_python_error TIMEOUT 10)
+        if(NOT native_python_valid EQUAL 0)
+          message(FATAL_ERROR "Native ONNX tests require an existing ONNX 1.19.1 environment: ${native_python_error}")
+        endif()
+        add_test(NAME seam_neural_native_inspection
+          COMMAND "${SEAM_NATIVE_ONNX_PYTHON}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/neural_runtime/check_native_inspection.py"
+            $<TARGET_FILE:seam_native_onnx_inspect>)
+        add_test(NAME seam_neural_native_paired_runtime
+          COMMAND "${SEAM_NATIVE_ONNX_PYTHON}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/neural_runtime/check_paired_runtime.py"
+            $<TARGET_FILE:seam_onnx_runtime_probe> --native-inspection)
+        add_test(NAME seam_neural_native_bundle_runtime
+          COMMAND "${SEAM_NATIVE_ONNX_PYTHON}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/neural_runtime/check_bundle_runtime.py"
+            $<TARGET_FILE:seam_voicebank_cli> $<TARGET_FILE:seam_onnx_runtime_probe> --native-inspection)
+        set_tests_properties(seam_neural_native_inspection seam_neural_native_paired_runtime
+          seam_neural_native_bundle_runtime PROPERTIES TIMEOUT 120 LABELS "neural-native-experiment")
+        add_custom_target(seam_neural_native_checks
+          COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure -L neural-native-experiment
+          DEPENDS seam_native_onnx_owned_bytes_test seam_native_onnx_inspect seam_onnx_runtime_probe seam_voicebank_cli
+          WORKING_DIRECTORY "${CMAKE_BINARY_DIR}" USES_TERMINAL)
+      endif()
+    endif()
+  endif()
 endif()
 if(SEAM_BUILD_TESTS)
   add_test(NAME seam_neural_dependency_direction

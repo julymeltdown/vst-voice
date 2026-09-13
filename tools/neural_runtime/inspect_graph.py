@@ -14,6 +14,10 @@ from onnx import TensorProto
 MAX_BYTES = 256 * 1024 * 1024
 MAX_ELEMENTS = 64 * 1024 * 1024
 MAX_MESSAGES = 200_000
+MAX_TENSOR_BYTES = 512 * 1024 * 1024
+ELEMENT_BYTES = {TensorProto.FLOAT: 4, TensorProto.FLOAT16: 2, TensorProto.DOUBLE: 8,
+                 TensorProto.INT32: 4, TensorProto.INT64: 8, TensorProto.INT8: 1,
+                 TensorProto.UINT8: 1, TensorProto.BOOL: 1}
 
 
 def inspect_bytes(payload: bytes) -> dict:
@@ -33,6 +37,8 @@ def inspect_bytes(payload: bytes) -> dict:
         raise ValueError("Unsupported opset revision")
     stack = [(model, 0)]
     visited = nodes = tensors = 0
+    tensor_bytes = 0
+    operators = {}
     while stack:
         message, depth = stack.pop()
         visited += 1
@@ -46,13 +52,12 @@ def inspect_bytes(payload: bytes) -> dict:
                 onnx.defs.get_schema(message.op_type, opset, "")
             except onnx.defs.SchemaError as error:
                 raise ValueError("Unknown standard operator") from error
+            operators[message.op_type] = operators.get(message.op_type, 0) + 1
         if isinstance(message, TensorProto):
             tensors += 1
             if message.external_data or message.data_location == TensorProto.EXTERNAL:
                 raise ValueError("External tensor references rejected")
-            if message.data_type not in (TensorProto.FLOAT, TensorProto.FLOAT16,
-                    TensorProto.DOUBLE, TensorProto.INT32, TensorProto.INT64,
-                    TensorProto.INT8, TensorProto.UINT8, TensorProto.BOOL):
+            if message.data_type not in ELEMENT_BYTES:
                 raise ValueError("Unsupported tensor element type")
             elements = 1
             if len(message.dims) > 8:
@@ -63,6 +68,9 @@ def inspect_bytes(payload: bytes) -> dict:
                 elements *= dimension
                 if elements > MAX_ELEMENTS:
                     raise ValueError("Tensor element bound exceeded")
+            tensor_bytes += elements * ELEMENT_BYTES[message.data_type]
+            if tensor_bytes > MAX_TENSOR_BYTES:
+                raise ValueError("Aggregate declared tensor storage bound exceeded")
         for field, value in message.ListFields():
             if field.message_type is not None:
                 children = value if field.is_repeated else (value,)
@@ -78,14 +86,20 @@ def inspect_bytes(payload: bytes) -> dict:
             if not value.type.HasField("tensor_type"):
                 raise ValueError("Non-tensor graph interface rejected")
             tensor = value.type.tensor_type
+            if tensor.elem_type not in ELEMENT_BYTES:
+                raise ValueError("Unsupported interface element type")
             if not tensor.HasField("shape") or len(tensor.shape.dim) > 8:
                 raise ValueError("Unspecified or excessive interface rank")
             shape = []
+            static_elements = 1
             for dimension in tensor.shape.dim:
                 if dimension.HasField("dim_value"):
                     if not 0 <= dimension.dim_value <= MAX_ELEMENTS:
                         raise ValueError("Interface dimension bound exceeded")
                     shape.append(dimension.dim_value)
+                    static_elements *= dimension.dim_value
+                    if static_elements > MAX_ELEMENTS:
+                        raise ValueError("Interface static dimension product bound exceeded")
                 elif dimension.HasField("dim_param") and dimension.dim_param:
                     shape.append(dimension.dim_param)
                 else:
@@ -95,7 +109,8 @@ def inspect_bytes(payload: bytes) -> dict:
 
     return {"status": "OFFLINE_GRAPH_INSPECTED", "sha256": hashlib.sha256(payload).hexdigest(),
             "bytes": len(payload), "irVersion": model.ir_version, "opset": opset,
-            "nodes": nodes, "tensors": tensors, "inputs": interface(model.graph.input),
+            "nodes": nodes, "tensors": tensors, "declaredTensorBytes": tensor_bytes,
+            "operators": dict(sorted(operators.items())), "inputs": interface(model.graph.input),
             "outputs": interface(model.graph.output), "releaseEligible": False}
 
 

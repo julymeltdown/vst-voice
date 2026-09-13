@@ -3,6 +3,7 @@ import hashlib
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 import onnx
 from onnx import TensorProto, helper
@@ -28,6 +29,8 @@ class InspectionTests(unittest.TestCase):
         self.assertEqual(report["sha256"], hashlib.sha256(self.payload).hexdigest())
         self.assertEqual(report["inputs"], [{"name": "f0", "dtype": 1, "shape": [1, 4]}])
         self.assertEqual(report["nodes"], 1)
+        self.assertEqual(report["operators"], {"Mul": 1})
+        self.assertEqual(report["declaredTensorBytes"], 4)
         self.assertFalse(report["releaseEligible"])
 
     def test_external_initializer(self):
@@ -58,6 +61,28 @@ class InspectionTests(unittest.TestCase):
     def test_custom_import(self):
         self.model.opset_import.add(domain="custom", version=1)
         self.reject("standard ONNX")
+
+    def test_aggregate_tensor_storage(self):
+        # Each tensor fits individually; combined decoded storage does not.
+        self.model.graph.initializer.append(helper.make_tensor("other", TensorProto.DOUBLE, [1], [1.0]))
+        with patch("inspect_graph.MAX_TENSOR_BYTES", 8):
+            self.reject("Aggregate declared tensor")
+
+    def test_interface_static_product(self):
+        shape = self.model.graph.input[0].type.tensor_type.shape
+        shape.dim[0].dim_value = 65536
+        shape.dim[1].dim_value = 65536
+        self.reject("Interface static dimension product")
+
+    def test_interface_type_rejected(self):
+        # Valid ONNX string interface, but outside this numeric intake family.
+        model = helper.make_model(helper.make_graph(
+            [helper.make_node("Identity", ["x"], ["y"])], "strings",
+            [helper.make_tensor_value_info("x", TensorProto.STRING, [1])],
+            [helper.make_tensor_value_info("y", TensorProto.STRING, [1])]),
+            opset_imports=[helper.make_opsetid("", 17)], ir_version=9)
+        self.model = model
+        self.reject("Unsupported interface")
 
     def test_dynamic_interface_reported_not_execution_admitted(self):
         dim = self.model.graph.input[0].type.tensor_type.shape.dim[1]

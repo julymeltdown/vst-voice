@@ -235,6 +235,32 @@ learned voice weights. Production worker admission, cancellation, bounded
 runtime allocations, real model inference and musical evaluation remain open.
 # External request experiment
 
+For repeatable optional integration checks, configure `SEAM_NATIVE_ONNX_PYTHON`
+with the absolute path to the existing fixture environment's Python executable.
+Configuration verifies ONNX 1.19.1 is importable; it never installs dependencies.
+Then run `cmake --build build/release --target seam_neural_native_checks -j 4`.
+This builds required binaries and runs the four `neural-native-experiment` CTests:
+owned bytes, native structural/pair inspection, paired runtime and bundle runtime.
+Default builds without native inspection retain their existing test set.
+
+Set root CMake `SEAM_NATIVE_ONNX_SCHEMA` to the pinned local `onnx.proto` path
+alongside `SEAM_ONNXRUNTIME_ROOT` to enable native checks in the bundle runtime
+probe. Both frozen graph byte buffers are inspected and pair-checked before
+either ORT session is created; those same buffers are then passed to ORT.
+The default empty option adds no parser dependency. With it enabled, pass
+`--native-inspection` to `check_bundle_runtime.py` and `check_paired_runtime.py`.
+The former verifies a correctly hashed bundle containing an unknown operator
+is rejected before inference. This is still an optional fixture experiment,
+not a production worker, execution-family policy or release admission.
+
+Offline graph reports include a sorted operator/count inventory and combined
+declared tensor storage (`declaredTensorBytes`). Intake caps that storage at
+512 MiB across initializers and attribute tensors, checks static interface
+dimension products, and accepts only the declared numeric/bool tensor types.
+These bounds do not account for runtime intermediates, dynamic dimensions,
+allocator overhead, or parser RSS. The operator inventory is not an allowlist
+and does not admit a graph for production execution.
+
 The fixture probe accepts legacy conditioned metadata v2 and bundle-conditioned
 v3. V3 explicitly binds `bundleContentHash` to the frozen manifest/model identity
 and returns response v3 with both bundle and canonical request hashes. SNW1 binary

@@ -2,6 +2,10 @@
 #include "seam/neural_synthesis/diffsinger_inputs.hpp"
 #include "seam/neural_synthesis/bundle_metadata.hpp"
 #include "seam/core/sha256.hpp"
+#if defined(SEAM_NATIVE_GRAPH_INSPECTION)
+#include "inspection.hpp"
+#include "pair_contract.hpp"
+#endif
 #include <array>
 #include <cmath>
 #include <filesystem>
@@ -218,6 +222,23 @@ int main(int argc,char** argv) {
       };
       const auto frozenAcoustic=bytes(seam::synthesis::NeuralAssetRole::Acoustic);
       const auto frozenVocoder=bytes(seam::synthesis::NeuralAssetRole::Vocoder);
+#if defined(SEAM_NATIVE_GRAPH_INSPECTION)
+      // Scope parsed graphs to inspection; sessions below use the exact frozen
+      // input bytes, not reserialized models or reopened filesystem paths.
+      {
+        onnx::ModelProto acousticModel,vocoderModel;
+        google::protobuf::Struct report;
+        const auto inspectFrozen=[&](auto data,auto& model) {
+          return inspectBytes({reinterpret_cast<const char*>(data.data()),data.size()},model,report);
+        };
+        if (inspectFrozen(frozenAcoustic,acousticModel) || inspectFrozen(frozenVocoder,vocoderModel))
+          throw std::runtime_error("Native frozen graph inspection rejected the bundle");
+        const auto& spec=metadata.value();
+        if (!pairContract(acousticModel,vocoderModel,spec.features.bins,spec.features.layout,
+            spec.stepsLayout,spec.vocoderOutput,spec.features.hopSize,static_cast<unsigned>(spec.model.maximumFrames)))
+          throw std::runtime_error("Native frozen graph pair contract rejected the bundle");
+      }
+#endif
       Ort::Session acoustic{environment,frozenAcoustic.data(),frozenAcoustic.size(),options};
       Ort::Session vocoder{environment,frozenVocoder.data(),frozenVocoder.size(),options};
       return pairedProfile(acoustic,vocoder,metadata.value(),supplied?&*supplied:nullptr);

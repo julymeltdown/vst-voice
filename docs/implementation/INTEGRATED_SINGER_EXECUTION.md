@@ -1088,6 +1088,192 @@ Neither fixture is a listening-quality acceptance result.
   full CTest invocation: 123/123 passed in 84.76 seconds, including the expanded
   boundary matrix and production pilot CLI. This supersedes the earlier narrow
   test boundary for this repair, but does not establish musical qualification.
+# Full native-enabled regression checkpoint
+
+The complete enabled Release build passed, followed by all 128 CTest targets
+(`ctest --test-dir build/release --output-on-failure -j 4`, 113.11 s).
+All 43 offline Python neural tests also passed. This includes the four optional
+native inspection/runtime tests and the original product regression suite.
+It supersedes the focused-only test boundary for the accumulated native changes.
+The parser/runtime remain development dependencies; full production execution
+policy, trained original singer, installed-host evidence and Beta GO are not
+established by this regression result.
+
+# Optional native integration test target checkpoint
+
+Registered four native experiment CTests and a build-and-test target,
+`seam_neural_native_checks`, with explicit binary dependencies. Enabling the
+Python-driven checks requires an application-configured existing ONNX 1.19.1
+environment; configuration performs no installation or download. Default builds
+do not acquire these dependencies. The enabled checkout now has 128 CTest entries,
+not 128 newly verified tests in this checkpoint.
+
+Verification: the new target built its dependencies and passed all four tests
+in 9.25 s. The last complete 124-test run predates this optional registration;
+no new full-suite claim is made. Tests remain fixture/structural evidence, not
+production singer qualification or Beta GO approval.
+
+# Frozen native inspection-to-runtime checkpoint
+
+The root build can optionally link native structural inspection into the existing
+arithmetic runtime probe with `SEAM_NATIVE_ONNX_SCHEMA`. Bundle metadata and both
+frozen graphs are checked, including native pair compatibility, before either
+ORT session is constructed. Parsed validation models are discarded; ORT receives
+the same immutable bytes that were inspected. No path is reopened in between.
+
+Verification: rebuilt the enabled probe; CLI-prepared bundle/request inference
+and both pair profiles passed. A newly prepared, correctly hashed bundle with
+an unknown operator rejects with the native inspection error before session
+construction. Mismatched pair declarations now reject earlier in this mode.
+Default builds do not gain a parser dependency. This integration is still a
+development experiment: production worker packaging, execution-family resource
+policy and an admitted handle remain open; no learned singing is claimed.
+
+# Reusable in-memory native inspection checkpoint
+
+Extracted the native checker into a reusable object-library target with an
+`inspectBytes` API. The pathname command is now an adapter. Parsing operates
+only on supplied bytes; model/report outputs are replaced transactionally after
+all checks pass. Failed inspection preserves previous outputs. This enables
+future frozen-bundle/worker integration without reopening graph paths.
+
+Verification: native build and owned-byte test passed; results survive source
+buffer changes and malformed/empty input leaves prior outputs unchanged. The
+tensor and pair regression script also passed. No production worker currently
+consumes this API, and a prepared admission handle remains required.
+
+# Native acoustic/vocoder pair checkpoint
+
+Added a native pair contract operating directly on parsed/checked ModelProto
+objects. It requires exact tensor names/types/ranks, batch one, declared mel
+layout/bins, steps scalar or vector-one, vocabulary-duration axis agreement,
+per-graph frame-axis consistency and a distinct output-sample axis. Hop/frame
+declarations bound mel element count; actual computed shapes remain runtime checks.
+
+Verification: native experiment rebuilt; scalar/audio and vector1/waveform
+profiles passed; 12 mismatched configurations rejected, alongside the existing
+tensor regressions. This is structural pair validation, not a prepared execution
+admission handle or proof of acoustic feature semantics/learned singing.
+
+# Native graph interface reporting checkpoint
+
+Native inspection now returns verified top-level input/output names, element
+types, static/symbolic dimensions, IR and opset versions using proper JSON
+serialization. Differential checks compare both acoustic/vocoder interfaces
+against Python and cover a name containing quotes, backslash, newline and Unicode.
+The rebuilt checker passed the existing 16 representation/28 rejection cases.
+These interfaces support the next native pair-contract step; reports still do
+not authorize execution or establish dynamic runtime bounds.
+
+# Upstream native graph-checker integration checkpoint
+
+The isolated native inspection build now includes the locally installed ONNX
+1.19.1 checker and standard operator schemas, plus their source dependencies.
+It calls the in-memory checker only after external-reference and local bounds
+checks. Unknown standard operators, undeclared inputs and unsupported attributes
+are rejected. Full shape inference is disabled; an execution-family allowlist,
+resource-cost policy, pair validation and production packaging remain open.
+
+Verification: native target built successfully; 16 valid tensor representations
+and 28 rejection cases passed, including three upstream checker regressions.
+Status is `NATIVE_STRUCTURE_CHECKED`, not execution admission. Dependencies remain
+local development inputs and are not shipping/release-qualified artifacts.
+
+# Native tensor numeric-value checkpoint
+
+Native tensor inspection rejects nonfinite float32/64/16, noncanonical Boolean
+values and out-of-range typed int8/uint8/float16 storage values. Raw storage uses
+explicit little-endian order. This policy also rejects intentional infinite mask
+constants; real-model compatibility is not established. Operator attributes and
+runtime outputs need separate validation.
+
+Verification: rebuilt parser; 16 valid raw/typed representations and 25 rejection
+cases passed, including eleven invalid-value cases. Operator semantics and
+production inference admission remain unfinished.
+
+# Native tensor payload consistency checkpoint
+
+Native tensor inspection now enforces exact raw byte lengths or exact typed
+element counts according to the declared shape/type. Mixed raw/typed storage,
+wrong typed fields and segmented tensors are rejected. Numeric ranges and
+finiteness remain separate unfinished checks, as do operator/schema validation
+and production graph admission.
+
+Verification: rebuilt parser; both graph inventories still match Python;
+14 invalid cases reject; all eight supported types pass in both raw and typed
+form with matching declared byte counts (16 representation cases). The earlier
+large missing-data fixture now rejects missing payload before reaching the
+second tensor's aggregate-storage check, as intended.
+
+# Native tensor bounds checkpoint
+
+The native parser experiment now checks numeric/bool element types, rank,
+overflow-safe dimension products, aggregate declared tensor storage and all
+encountered ValueInfo shapes. It rejects unnamed dynamic dimensions but does
+not yet bound named dynamic dimensions at runtime. Reports include declared
+tensor bytes. Generated parser payloads are not execution-admitted; tensor
+payload consistency and operator/schema validation remain missing.
+
+Verification: rebuilt native experiment; two graph storage inventories matched
+Python; ten invalid cases were rejected, including excessive tensor/interface
+products, negative dimensions, unsupported tensor types and aggregate storage.
+
+# Native schema parser experiment checkpoint
+
+Added an isolated native ONNX parser target using locally available Protobuf
+33.4.0 and hash-checked ONNX 1.19.1 schema bytes. Reflection code is generated
+only in the build directory. No shipping target links this experiment.
+Native input-byte and recursion limits precede parsing; a bounded reflective
+walk rejects external tensors, unknown fields, custom domains, training graphs
+and local functions. Message-count checks occur after parsing, not before
+allocation. This is parser groundwork, not a completed graph admission factory.
+
+Verification: configured/built on macOS arm64; two arithmetic graph node/tensor
+inventories matched the Python inspector; empty/truncated bytes, unknown fields,
+custom domains and nested external tensor metadata were rejected. Operator,
+shape and pair validation and production worker integration remain open.
+
+# Parent bundle-loading lifetime checkpoint
+
+Bundle launch now rejects process budgets beyond the platform runner's limits
+before filesystem lookup/model loading. Regression cases use a missing directory
+to prove invalid-budget rejection precedes path admission. Parent graph payload
+ownership is scoped to metadata inspection and released before launching the
+child, which independently loads its own verified bytes. Metadata/vocabulary
+remain owned values. This removes parent graph retention during inference; it
+does not establish a measured peak-memory ceiling or eliminate loading copies.
+
+Verification: rebuilt native worker protocol target and passed its CTest in
+3.58 s, including bundle transport, cancellation and deadline coverage.
+
+# In-flight bundle-worker termination checkpoint
+
+The dedicated transport fixture now supplies a test-only readiness/PID marker
+after child-side bundle and request validation. Native tests wait for this
+handshake before cancellation, verify the terminated PID no longer exists, and
+exercise a separate deadline-terminated child. A fresh request must succeed
+afterward. This closes the earlier pre-launch-only cancellation evidence gap for
+the macOS bundle transport fixture, not installed hosts or Windows supervision.
+
+Verification: rebuilt fixture/protocol test; initial protocol run passed (2.19 s)
+and three consecutive repeat-until-fail runs passed (4.23 s total). No production
+graph runtime or learned audio is involved in these lifecycle tests.
+
+# Graph intake storage and interface checkpoint
+
+The offline ONNX inspector now limits aggregate declared tensor storage to
+512 MiB, including nested tensor attributes, rather than applying only per-tensor
+element limits. Numeric/bool interface types and static dimension products are
+checked explicitly. Reports expose sorted operator counts and declared storage
+for subsequent graph-family policy work; neither field grants admission.
+Runtime intermediates, dynamic dimensions, parser memory and production child
+admission remain outside this check.
+
+Verification: all 43 offline neural tests passed, including combined-storage,
+interface-product and unsupported-interface regressions. Paired arithmetic and
+CLI-prepared bundle runtime checks passed. No new full CTest run was needed for
+this Python-only inspector change; the preceding native checkpoint remains below.
+
 # Integrated regression checkpoint
 
 The accumulated bundle metadata/vocabulary conversion, CLI preparation, request

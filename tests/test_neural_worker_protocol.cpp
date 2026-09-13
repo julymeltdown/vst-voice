@@ -20,6 +20,12 @@
 #include <limits>
 #include <string>
 #include <vector>
+#include <thread>
+#include <fstream>
+#if !defined(_WIN32)
+#include <cerrno>
+#include <signal.h>
+#endif
 
 namespace {
 
@@ -692,6 +698,17 @@ TEST_CASE("frozen bundle metadata binds vocabulary and rejects incompatible acou
   unbounded=launch; unbounded.maximumCpuTime=std::chrono::milliseconds{0};
   CHECK(!neural_synthesis::runNeuralBundleWorker(input,canonical,4096U,unbounded));
   CHECK(!neural_synthesis::runNeuralBundleWorker(input,canonical,1U,launch));
+  // Invalid process budgets must fail before touching a missing model directory.
+  for (int scenario=0;scenario<5;++scenario) {
+    auto invalidBudget=launch;
+    if (scenario==0) invalidBudget.maximumCpuTime=std::chrono::milliseconds{60001};
+    if (scenario==1) invalidBudget.timeout=std::chrono::milliseconds{60001};
+    if (scenario==2) invalidBudget.maximumResidentBytes=4ULL*1024ULL*1024ULL*1024ULL+1U;
+    if (scenario==3) invalidBudget.limits.maximumFrameBytes=64U*1024U*1024U+1U;
+    if (scenario==4) invalidBudget.limits.maximumMetadataBytes=1024U*1024U+1U;
+    const auto rejected=neural_synthesis::runNeuralBundleWorker(input,canonical/"missing",4096U,invalidBudget);
+    CHECK(!rejected); CHECK(rejected.error().code==core::ErrorCode::InvalidArgument);
+  }
   auto legacy=launch; legacy.protocolVersion=1U;
   CHECK(!neural_synthesis::runNeuralBundleWorker(input,canonical,4096U,legacy));
   legacy=launch; legacy.helper=SEAM_NEURAL_WORKER_PROBE;
@@ -699,6 +716,32 @@ TEST_CASE("frozen bundle metadata binds vocabulary and rejects incompatible acou
   CHECK(!neural_synthesis::runNeuralBundleWorker(input,canonical,4096U,legacy));
   std::stop_source cancelledLaunch; cancelledLaunch.request_stop();
   CHECK(!neural_synthesis::runNeuralBundleWorker(input,canonical,4096U,launch,cancelledLaunch.get_token()));
+  std::stop_source inFlight;
+  auto delayed=input; delayed.requestId=93U;
+  const auto marker=canonical/"child-93";
+  {
+    std::jthread cancelWhenReady([&](std::stop_token token) {
+      const auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds{3};
+      while (!token.stop_requested() && std::chrono::steady_clock::now()<deadline) {
+        if (std::filesystem::exists(marker)) {inFlight.request_stop(); return;}
+        std::this_thread::sleep_for(std::chrono::milliseconds{5});
+      }
+    });
+    const auto cancelled=neural_synthesis::runNeuralBundleWorker(delayed,canonical,4096U,launch,inFlight.get_token());
+    CHECK(!cancelled); CHECK(inFlight.stop_requested());
+  }
+  const auto childGone=[](const std::filesystem::path& ready) {
+    std::ifstream stream{ready}; int pid{}; stream>>pid;
+    CHECK(stream); CHECK(pid>0);
+    errno=0; CHECK(kill(pid,0)==-1); CHECK(errno==ESRCH);
+  };
+  childGone(marker);
+  delayed.requestId=94U;
+  auto deadlineLaunch=launch; deadlineLaunch.timeout=std::chrono::milliseconds{1000};
+  CHECK(!neural_synthesis::runNeuralBundleWorker(delayed,canonical,4096U,deadlineLaunch));
+  childGone(canonical/"child-94");
+  // A fresh request still succeeds after both termination paths.
+  CHECK(neural_synthesis::runNeuralBundleWorker(input,canonical,4096U,launch));
 #endif
   CHECK(!neural_synthesis::loadNeuralBundleDirectory(directory,bundle.value().identity(),1U));
   auto wrongIdentity=bundle.value().identity(); wrongIdentity.contentHash=std::string(64,'0');
