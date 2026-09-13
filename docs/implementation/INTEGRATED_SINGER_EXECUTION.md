@@ -70,6 +70,11 @@ anchors, not the compiled note span the pitch and amplitude envelopes use, so a
 displaced syllable currently sounds with its gesture moved while its envelope stays on
 the score grid. Reconciling the two needs the note spans themselves to become
 proposal-aware, which is a larger change to voice allocation and articulation windows.
+Until then the boundary is enforced rather than assumed: a generated displacement that
+would place a syllable outside the note span the score defines is refused with
+`Conflict`, so no proposal can ask for a gesture that no attack, release or vibrato
+phase could sound. A thirty-millisecond proposal inside the note still lands exactly,
+and the note-span bound is covered by the same test case.
 The production backend still emits no timing lane at all, so this is the path a
 timing-predicting backend will land on, not evidence that a useful timing proposal
 exists yet. No listening or musical judgement is claimed.
