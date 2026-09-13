@@ -9,6 +9,7 @@
 #include "seam/authoring/generation_job.hpp"
 #include "seam/authoring/inventory_generation.hpp"
 #include "seam/authoring/generation_campaign.hpp"
+#include "seam/authoring/inventory_preflight.hpp"
 #include "seam/authoring/generation_batch_collection.hpp"
 #include "seam/application/project_factory.hpp"
 #include "seam/formats/json_value.hpp"
@@ -901,6 +902,12 @@ TEST_CASE("nasal and frication candidates bake and enter production with typed u
   const auto advancePath = root / "advanced-campaign/campaign.json";
   CHECK(core::durableAtomicWriteTextNew(advancePath, advancePlan.value()));
   const auto advanceHash = core::sha256Hex(advancePlan.value());
+  // A campaign cannot multiply a phone class across the bank before its held-out
+  // phrases have rendered audibly; this is that preflight, retained beside it.
+  const auto advancePreflight = authoring::runInventoryPreflight(advancePlan.value(), advanceHash,
+      root / "advanced-campaign" / "preflight");
+  CHECK(advancePreflight);
+  if (advancePreflight) CHECK(advancePreflight.value().passed);
   const auto storageCanary = root / "advanced-campaign/storage-canary";
   CHECK(core::durableAtomicWriteTextNew(storageCanary, "x"));
   std::filesystem::resize_file(storageCanary, 8ULL * 1024ULL * 1024ULL * 1024ULL + 1U);

@@ -300,6 +300,7 @@ add_library(seam_authoring_runtime
   libs/seam-authoring-runtime/src/generation_campaign_preparation.cpp
   libs/seam-authoring-runtime/src/generation_campaign_advance.cpp
   libs/seam-authoring-runtime/src/generation_campaign_storage.cpp
+  libs/seam-authoring-runtime/src/inventory_preflight.cpp
   libs/seam-authoring-runtime/src/generation_batch.cpp
   libs/seam-authoring-runtime/src/generation_batch_collection.cpp
   libs/seam-authoring-runtime/src/audio_settings.cpp
@@ -1761,6 +1762,19 @@ if(SEAM_BUILD_TESTS)
   seam_apply_compiler_options(seam_authoring_render_coordinator_tests)
   add_test(NAME seam_authoring_render_coordinator_tests
     COMMAND seam_authoring_render_coordinator_tests)
+
+  add_executable(seam_inventory_preflight_tests
+    tests/test_main.cpp
+    tests/test_inventory_preflight.cpp)
+  target_include_directories(seam_inventory_preflight_tests PRIVATE tests)
+  target_compile_definitions(seam_inventory_preflight_tests PRIVATE SEAM_TEST_VOICEBANK_CLI="$<TARGET_FILE:seam_voicebank_cli>")
+  add_dependencies(seam_inventory_preflight_tests seam_voicebank_cli)
+  target_link_libraries(seam_inventory_preflight_tests PRIVATE
+    seam_authoring_runtime seam_rendering seam_synthesis seam_voicebank
+    seam_voicebank_production seam_formats seam_application seam_domain seam_core)
+  seam_apply_compiler_options(seam_inventory_preflight_tests)
+  add_test(NAME seam_inventory_preflight_tests
+    COMMAND seam_inventory_preflight_tests)
 
   add_executable(seam_export_tests
     tests/test_main.cpp

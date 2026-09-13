@@ -1,5 +1,6 @@
 #include "seam/authoring/generation_campaign.hpp"
 #include "seam/authoring/generation_batch_collection.hpp"
+#include "seam/authoring/inventory_preflight.hpp"
 #include "seam/voicebank_production/project_codec.hpp"
 #include "seam/core/file_io.hpp"
 #include "seam/core/exclusive_file_lock.hpp"
@@ -26,6 +27,10 @@ core::Result<CampaignAdvanceResult> advanceGenerationCampaign(
   if (!voicebank_production::isProductionUtcTimestamp(occurredAtUtc) || std::none_of(before.value().operators.begin(), before.value().operators.end(),
       [&](const auto& entry) { return entry.operatorId == operatorId; })) return fail("Campaign operator or timestamp is invalid");
   const auto root = std::filesystem::absolute(campaignPath).parent_path();
+  // A campaign may not multiply a phone class across the bank until the held-out
+  // phrases that exercise every class it declares have rendered audibly.
+  const auto preflight = verifyCampaignPreflight(root, bytes.value(), campaignSha256, stop);
+  if (!preflight) return fail("Campaign preflight is not admitted: " + preflight.error().message);
   const auto storageLimit = static_cast<std::uint64_t>(plan.find("maximumEstimatedBytes")->asInt64());
   const auto checkStorage = [&] { return inspectCampaignStorage(root, storageLimit, 262144U, stop); };
   const auto initialStorage = checkStorage();

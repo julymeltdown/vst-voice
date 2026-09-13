@@ -1,5 +1,61 @@
 # Integrated Singer Execution
 
+## A campaign cannot multiply a phone class before its phrases have rendered audibly
+
+The pilot inventory has 2052 assignments and 342 distinct coverage keys. Planning a
+campaign compiles each take's performance, which proves a class can be *prepared*; it
+does not prove the class renders its own gestures or any audio at all. One defective
+phone class would have been discovered only after it had been baked into every unit that
+names it, which is the opposite of the order the plan asked for.
+
+A campaign now has to clear a held-out preflight first. The selection is the campaign's
+own jobs, chosen deterministically with a greedy cover over two required sets: every
+distinct phone symbol any job declares, and every distinct coverage kind. Jobs are
+ordered canonically, so the same campaign always yields the same phrase set, and the
+bound is a refusal rather than a truncation -- a campaign whose classes need more phrases
+than the bound allows is rejected with the count, the phone and kind totals, and the
+bound, instead of quietly testing a subset.
+
+Each selected phrase then renders through the ordinary immutable generation path, one
+job at a time, into `preflight/phrase-N/`: dry candidate audio, the candidate metadata
+and its planned gesture markers. Nothing is collected, so the producer's takes and
+durable generation are untouched and the preflight cannot approve anything. The
+measurement compares the coverage key with what came out: every phone the key declares
+must appear as its own gesture, the phrase must not be silent unless every phone it
+declares is a silence event, and the peak and nonzero-frame count are retained per
+phrase. A phrase that refuses to render keeps its refusal message as its detail rather
+than being dropped.
+
+Advancement is gated on the result. `advanceGenerationCampaign()` now requires
+`<campaign directory>/preflight/report.json`, and the report is admitted only when it
+names the campaign it was asked about, the campaign's frozen producer hash and recipe
+hash, a phrase set that equals the campaign's own canonical selection in order with each
+phrase's coverage key matching that job, and a status and defective list that follow from
+its own phrase verdicts. A campaign with no report, a stale report, a report that skipped
+a class, or a report that did not clear every phrase is refused before a single batch is
+prepared, rendered or committed.
+
+Evidence: `tests/test_inventory_preflight.cpp`, registered as CTest
+`seam_inventory_preflight_tests`, covers the coverage-complete selection and its
+bounded refusal, a passing preflight that retains dry audio and leaves the producer
+state untouched, the gate (no report, a failing report, and then a passing report that
+does advance and commits unapproved takes), the canonical admission of the report
+(status-only rewrite, dropped phrase, relabelled coverage key and another campaign's
+digest are all refused), and the CLI command end to end. The Studio campaign suite and
+the export-service campaign suite now preflight before they advance, so the existing
+plan/advance/cancel/resume paths are exercised through the gate.
+
+Not claimed. The report is local, unsigned evidence: it is verified against the
+campaign's frozen inputs and re-derived structure, but a consistent hand edit of a
+failing verdict is not detectable without re-rendering, and the retained dry audio is
+what a reader checks instead. No listener has judged any preflight phrase, so a passing
+report means the classes rendered their declared gestures audibly and nothing more. The
+real pilot inventory has not been preflighted yet: planning it still refuses the phones
+whose models are absent (`j`, `R`, `by`, `gy`, `cl`, `pau`, `br`, `glottal`,
+`v`, `z`, `h`) before a campaign exists, so producing the retained defect list for the
+full inventory remains the next step. No unit acceptance changes.
+
+
 ## A liquid or glide is the transition it declares, and it lands on the nucleus
 
 The pilot's Japanese inventory names `r`, `w` and `y`, and none of them could be
@@ -82,9 +138,10 @@ M1.P2's ten required changes:
 | 7 | Resumable campaign orchestration | Landed (`generation_campaign`), one bounded batch per advance. |
 | 8 | Prepare-render-collect transaction with durable receipts | Landed, including conflicts on external edits and recovery of an uncertain commit. |
 | 9 | Aggregate budget preflight | Landed: per-batch, aggregate frame and estimated-byte limits, retained-storage inspection and cancellation. |
-| 10 | Held-out pilot phrase set before the full inventory | Open. This is the next M1.P2 item. |
+| 10 | Held-out pilot phrase set before the full inventory | Landed for campaign jobs: a coverage-complete bounded selection renders through the ordinary path into a gated preflight report, and advancement is refused without it. The real pilot inventory's retained defect list is still to be produced. |
 
-So six of the ten are landed, two are partial, and two are open.
+So seven of the ten are landed, two are partial, and one remains open (phrase context
+beyond the owning note).
 
 M1.P1 keeps one open required change: the durable C++ legacy migration operation
 with its retained receipt and history-transition verification. The Python planner

@@ -1,6 +1,7 @@
 #include "campaign_commands.hpp"
 #include "signal_cancellation.hpp"
 #include "seam/authoring/generation_campaign.hpp"
+#include "seam/authoring/inventory_preflight.hpp"
 #include "seam/voice_design/recipe_resource.hpp"
 #include "seam/voicebank_production/project_codec.hpp"
 #include "seam/core/file_io.hpp"
@@ -13,20 +14,48 @@ void printCampaignUsage() {
   std::cout << "  seam_voicebank_cli draft-generation-campaign WORKSPACE RECIPE_JSON NEW_PLAN_JSON TAKE_ID [TAKE_ID ...]\n"
             << "  seam_voicebank_cli plan-generation-campaign WORKSPACE PLAN_JSON PLAN_SHA256 NEW_OUTPUT_DIRECTORY\n"
             << "  seam_voicebank_cli inspect-generation-campaign CAMPAIGN_JSON CAMPAIGN_SHA256\n";
+  std::cout << "  seam_voicebank_cli preflight-generation-campaign CAMPAIGN_JSON CAMPAIGN_SHA256\n";
   std::cout << "  seam_voicebank_cli advance-generation-campaign WORKSPACE CAMPAIGN_JSON CAMPAIGN_SHA256 OPERATOR UTC\n";
 }
 std::optional<int> runCampaignCommand(int argc, char** argv) {
   const std::string_view command{argv[1]};
   if (command != "draft-generation-campaign" && command != "plan-generation-campaign" && command != "inspect-generation-campaign" &&
-      command != "advance-generation-campaign") return std::nullopt;
+      command != "preflight-generation-campaign" && command != "advance-generation-campaign") return std::nullopt;
   const auto error = [](std::string_view message) -> std::optional<int> { std::cerr << "error: " << message << '\n'; return 1; };
   const bool draft = command == "draft-generation-campaign", publish = command == "plan-generation-campaign";
   const bool advance = command == "advance-generation-campaign";
-  if ((draft && (argc < 6 || argc > 16389)) || (publish && argc != 6) || (advance && argc != 7) || (!draft && !publish && !advance && argc != 4)) {
+  const bool preflight = command == "preflight-generation-campaign";
+  if ((draft && (argc < 6 || argc > 16389)) || (publish && argc != 6) || (advance && argc != 7) ||
+      (preflight && argc != 4) || (!draft && !publish && !advance && !preflight && argc != 4)) {
     printCampaignUsage(); return 1;
   }
   SignalCancellation cancellation;
   if (!cancellation.install()) return error("cannot install cancellation handlers");
+  if (preflight) {
+    // The held-out phrase set renders into the campaign's own directory, because a
+    // campaign cannot be advanced until a passing report is retained beside it.
+    const auto loaded = core::readTextFileLimited(argv[2], 32U * 1024U * 1024U);
+    if (!loaded) return error(loaded.error().message);
+    const auto campaignRoot = std::filesystem::absolute(argv[2]).parent_path() / "preflight";
+    const auto report = authoring::runInventoryPreflight(loaded.value(), argv[3], campaignRoot, {}, cancellation.token());
+    if (!report) return error(report.error().message);
+    formats::JsonValue::Array defective;
+    for (const auto& entry : report.value().defectiveClasses) defective.emplace_back(entry);
+    std::cout << formats::stringifyJson(formats::JsonValue::Object{
+        {"status", report.value().passed ? "PASS" : "FAIL"}, {"releaseEligible", false},
+        {"campaignSha256", std::string{argv[3]}},
+        {"phraseCount", static_cast<std::int64_t>(report.value().phrases.size())},
+        {"produced", static_cast<std::int64_t>(report.value().produced)},
+        {"defective", static_cast<std::int64_t>(report.value().defective)},
+        {"defectiveClasses", formats::JsonValue{std::move(defective)}},
+        {"reportPath", (campaignRoot / "report.json").string()}}) << '\n';
+    if (!report.value().passed) {
+      for (const auto& phrase : report.value().phrases)
+        if (phrase.verdict != "PRODUCED") std::cerr << "error: " << phrase.coverageKey << ": " << phrase.detail << '\n';
+      return 1;
+    }
+    return 0;
+  }
   if (advance) {
     const auto result = authoring::advanceGenerationCampaign(voicebank_production::ProductionProjectRepository{argv[2]},
         argv[3], argv[4], argv[5], argv[6], cancellation.token());

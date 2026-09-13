@@ -106,6 +106,26 @@ Advance one bounded batch at a time:
 build/release/seam_voicebank_cli advance-generation-campaign WORKSPACE CAMPAIGN_JSON CAMPAIGN_SHA256 OPERATOR UTC
 ```
 
+Advancement requires a held-out preflight first, because planning proves a class can be
+prepared but not that it renders its own gestures or any audio:
+
+```sh
+build/release/seam_voicebank_cli preflight-generation-campaign CAMPAIGN_JSON CAMPAIGN_SHA256
+```
+
+This selects the campaign's own jobs by coverage -- every distinct phone symbol and
+every distinct coverage kind must be exercised -- renders them one at a time into
+`CAMPAIGN_DIRECTORY/preflight/phrase-N/`, and writes `preflight/report.json` beside the
+retained dry audio and candidate metadata. It never collects, so no take is committed and
+no approval is created. A bound that cannot cover the campaign's classes is refused with
+the count rather than truncated, the directory must be new, and a phrase that renders
+silence for audible phones, or produces no gesture for a phone its key declares, is
+reported as `REFUSED` with its reason and named in `defectiveClasses`. The command exits
+non-zero on a failing report so a script stops there, and the report and audio stay
+behind as evidence either way. `advance-generation-campaign` refuses any campaign whose
+`preflight/report.json` is missing, stale, names another campaign, or did not clear every
+phrase.
+
 Each invocation verifies completed receipts against repository history and
 prepares/renders/collects at most one remaining batch. Repeat with the same plan
 and hash until `COLLECTED_UNREVIEWED`; that status is not voice approval or Beta GO.

@@ -7,6 +7,7 @@
 #include "test_support.hpp"
 #include "seam/native_ui/voicebank_studio.hpp"
 #include "seam/authoring/generation_campaign.hpp"
+#include "seam/authoring/inventory_preflight.hpp"
 #include "seam/core/file_io.hpp"
 #include "seam/core/sha256.hpp"
 #include "seam/formats/json_value.hpp"
@@ -49,6 +50,19 @@ voice_design::VoiceRecipe campaignRecipe() {
   softNoise.style = "soft";
   recipe.frications.push_back(softNoise);
   return recipe;
+}
+
+// The gate under test: a campaign cannot advance until the held-out phrases that
+// exercise every class it declares have rendered audibly beside it.
+void preflightCampaign(const Controller& controller, const std::filesystem::path& directory) {
+  const auto path = controller.generationCampaignPath();
+  const auto bytes = core::readTextFileLimited(path, 32U * 1024U * 1024U);
+  CHECK(bytes);
+  if (!bytes) return;
+  const auto report = authoring::runInventoryPreflight(bytes.value(), controller.generationCampaignSha256(),
+      directory / "preflight");
+  CHECK(report);
+  if (report) CHECK(report.value().passed);
 }
 
 struct Fixture final {
@@ -137,6 +151,7 @@ TEST_CASE("campaign advancement commits every batch and adopts the recovered pro
   production::ProductionProjectRepository repository{fixture.workspace};
   const auto plannedState = repository.recover(); CHECK(plannedState);
   const auto beforeGeneration = plannedState.value().lastDurableGeneration;
+  preflightCampaign(fixture.controller, destination);
   CHECK(fixture.controller.beginGenerationCampaignAdvance(path, sha, "2026-09-14T00:00:01Z"));
   const auto advanced = drain(fixture.controller); CHECK(advanced);
   const auto progress = fixture.controller.generationCampaignProgress(); CHECK(progress);
@@ -171,6 +186,7 @@ TEST_CASE("a cancelled campaign keeps its retained batches and resumes from its 
   CHECK(drain(fixture.controller));
   const auto path = fixture.controller.generationCampaignPath();
   const auto sha = fixture.controller.generationCampaignSha256();
+  preflightCampaign(fixture.controller, destination);
   CHECK(fixture.controller.beginGenerationCampaignAdvance(path, sha, "2026-09-14T00:00:02Z"));
   // The stop request may land before or after the first batch commits; both are
   // legal, so the test asserts the contract rather than a race outcome.
