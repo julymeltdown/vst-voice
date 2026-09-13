@@ -1,5 +1,101 @@
 # Original voice model production
 
+`train --epochs N` now runs bounded continuous epochs with fresh admission at each
+boundary, live optimizer/RNG state, parent-linked epoch checkpoints and a final
+`run.json` only on complete success. Total binary output and cooperative run-time
+budgets are explicit. Separate resumed invocations remain supported. See
+`TRAINING_COMMAND.md`; automatic quality-based stopping and review renewal remain
+unfinished, alongside model export and actual singer qualification.
+
+The training command now supports `--resume` with a separately captured
+`--resume-receipt-sha256`. It restores local model/optimizer/CPU RNG state, requires
+unchanged captured configuration and environment, and matches the freshly admitted
+dataset before training. New checkpoints retain completed-epoch count and parent
+receipt identity. See `TRAINING_COMMAND.md` for the strict continuation contract;
+review renewal and quality-based scheduling are not yet supported.
+
+The standalone `python -m tools.voice_model_training.train` command now initializes
+a bounded CPU DiffSinger DDPM model from captured settings and runs reviewed
+epochs into new checkpoint directories. See [TRAINING_COMMAND.md](TRAINING_COMMAND.md)
+for exact schemas, invocation and limitations. The actual upstream diagnostic
+also runs this command as a subprocess and reloads its checkpoint. Quality-based
+scheduling, export/vocoder/native rendering and vocal qualification remain
+unfinished; the command is not a completed production-model workflow.
+
+`load_dataset_inputs(config, sha256, root, rights_anchor=..., label_anchor=...)`
+is the shared read-only configuration boundary for assembly and training owners.
+It verifies the assembly document and all six referenced file hashes, preserves
+independently supplied policy anchors, and returns the thirteen admission inputs
+without publishing a snapshot or granting authority. The reviewed-run diagnostic
+now uses this same file-backed path. Source/signature/lifetime checks still occur
+at assembly/use time. The training command above uses this same loader.
+
+The pinned `check_diffsinger_model` diagnostic also executes `check_reviewed_run`:
+three temporary oscillator WAVs, actual PCM/mel capture, fixture-only signed
+rights and label reviews, fresh sharded admission, the connected training service,
+checkpoint reload and a separate validation source. The upstream DDPM run passed
+with 43 changed parameter tensors and exact checkpoint parameter restoration.
+One train phrase (16 frames / 4096 samples) was consumed; train/validation/test
+each contain one distinct fixture. A separate unit integration test exercises the
+same real I/O and signing path with a tiny scalar Torch model, without mocked
+admission or optimization. These public test keys are never production trust
+keys; oscillator labels do not establish lyric supervision or singer quality.
+All temporary material/checkpoints are removed by the diagnostic's temporary
+directory lifecycle. This is still not production corpus training or release GO.
+
+`training_run.train_reviewed_epoch` connects fresh dual-review dataset admission,
+read-only conditioning reuse, paired acoustic batches, exact train-partition
+coverage, optimization and checkpoint publication. Supply the thirteen captured
+`assemble_dataset` inputs (excluding `now` and conditioning options), independently
+selected policy anchors, target records/paths, profile hash, owned CPU model and
+optimizer, run metadata, budgets and a new checkpoint directory. The service
+checks cancellation and review expiry between updates, and refreshes admission
+after optimization and again after checkpoint serialization before the receipt.
+Any failure invalidates the in-memory attempt; discard it. A failed final check
+may retain an incomplete binary without a completion receipt. Whole phrases are
+limited to 4096 frames; no duration-altering chunk fallback is used. Caller-owned
+target metadata and model-code provenance remain explicit prerequisites.
+Orchestration contract tests use mocks; they are not a real-corpus training study.
+Multi-epoch production training, real reviewed corpus, model export and ordinary
+native song-render integration remain unfinished. No release approval is issued.
+
+`assemble-dataset ... --conditioning-directory EXISTING_DIRECTORY
+--reuse-conditioning` now performs fresh source/review admission and reconstructs
+expected conditioning, then compares existing shard bytes without writing them.
+A new snapshot is still required. Unchanged inputs retain dataset identity;
+changed source audio, reviews, labels or shard bytes reject rather than repairing
+the cache or silently accepting an old receipt. The API exposes the same behavior
+as `assemble_dataset(..., reuse_conditioning=True)`. This supplies a revalidation
+path for run/epoch boundaries; it does not itself launch or authorize a training
+transaction. Other unrelated files in the shard directory are neither loaded nor
+removed. Stable parent directories remain a caller responsibility.
+
+`checkpoint.load_local_checkpoint(directory, receipt_sha256=...)` now loads only
+through a captured completion-record digest. It checks the fixed binary path,
+current Torch version, coverage-complete metadata, byte limits, regular/non-symlink
+files and exact binary/metadata hashes before `weights_only=True` loading from
+owned bytes. Embedded metadata must match the receipt. The caller must trust the
+producer and receipt digest: this is not a hostile third-party archive importer,
+and byte limits do not prove bounded tensor allocation for arbitrary archives.
+Fresh source/review authority is still required before resuming actual training.
+The real DiffSinger diagnostic now uses this loader and still reproduces inference
+and the next update exactly; corruption tests prove changed bytes never reach
+Torch deserialization.
+
+`checkpoint.publish_checkpoint` publishes locally produced CPU model/optimizer
+and RNG state with captured run metadata and a coverage-complete epoch record.
+It creates a new directory, bounds checkpoint writes (default/maximum 512 MiB),
+flushes and fsyncs `checkpoint.pt`, then publishes `checkpoint.json` with exact
+binary and metadata hashes. A `before_publish` callback lets the caller recheck
+current authority before the completion record. Existing directories reject;
+failed or expired attempts retain incomplete artifacts without that record.
+This does not authenticate supplied epoch records or grant training/release rights.
+Metadata is JSON-captured with a 1 MiB cap; the caller owns stable model state.
+Written-byte limits are not serializer memory/time bounds. Directory-fsync
+power-loss durability, hostile-directory races and untrusted checkpoint import
+are not claimed. The actual DiffSinger diagnostic now uses this publication path
+for its temporary restore/resume check instead of a standalone `torch.save` call.
+
 `optimization.acoustic_evaluation_step` evaluates validation/test batches without
 an optimizer or gradients, using the same objective and core/sample weighting as
 training. The current CPU path preserves Torch RNG and each module's previous

@@ -221,6 +221,19 @@ class ReviewTests(unittest.TestCase):
             self.assertEqual(reference["sizeBytes"], len(shard_bytes))
             self.assertEqual(json.loads(shard_bytes), snapshot["conditioning"][0])
             self.assertEqual(sharded["conditioningBytes"], len(shard_bytes))
+            refresh = assemble_cli("refreshed.json", *shard_option, "--reuse-conditioning")
+            self.assertEqual(refresh.returncode, 3, refresh.stderr)
+            refreshed = json.loads((root / "refreshed.json").read_bytes())
+            self.assertEqual(refreshed["datasetSha256"], sharded["datasetSha256"])
+            self.assertEqual((root / "features" / reference["path"]).read_bytes(), shard_bytes)
+            self.assertEqual(assemble_cli("no-directory.json", "--reuse-conditioning").returncode, 2)
+            self.assertFalse((root / "no-directory.json").exists())
+            current_audio = (root / "audio.wav").read_bytes()
+            (root / "audio.wav").write_bytes(current_audio[:-1])
+            self.assertEqual(assemble_cli("changed-source-refresh.json", *shard_option, "--reuse-conditioning").returncode, 2)
+            self.assertFalse((root / "changed-source-refresh.json").exists())
+            self.assertEqual((root / "features" / reference["path"]).read_bytes(), shard_bytes)
+            (root / "audio.wav").write_bytes(current_audio)
             from tools.voice_model_training.batches import iter_conditioning_batches
             batches = list(iter_conditioning_batches(sharded, root / "features", partition="test", batch_frames=1))
             self.assertEqual(len(batches), 1)
@@ -233,6 +246,8 @@ class ReviewTests(unittest.TestCase):
                 list(iter_conditioning_batches(sharded, root / "features", partition="test", batch_frames=0))
             shard_path = root / "features" / reference["path"]
             shard_path.write_bytes(shard_bytes.replace(b'"f0Hz":220', b'"f0Hz":221'))
+            self.assertEqual(assemble_cli("bad-refresh.json", *shard_option, "--reuse-conditioning").returncode, 2)
+            self.assertFalse((root / "bad-refresh.json").exists())
             with self.assertRaises(ValueError):
                 list(iter_conditioning_batches(sharded, root / "features", partition="test"))
             shard_path.write_bytes(shard_bytes)

@@ -205,8 +205,11 @@ def admit_segment(permission_config: Path, permission_hash: str, source_root: Pa
 def assemble_dataset(permission_config: Path, permission_hash: str, label_config: Path, label_hash: str,
                      root: Path, *, rights_review: dict, rights_policy: dict, rights_anchor: str,
                      label_review: dict, label_policy: dict, label_anchor: str, now: int,
-                     seed: str, held_out_songs: list[str], conditioning_directory: Path | None = None) -> dict:
+                     seed: str, held_out_songs: list[str], conditioning_directory: Path | None = None,
+                     reuse_conditioning: bool = False) -> dict:
     """Revalidate both authorities before building a source/label/split snapshot."""
+    if type(reuse_conditioning) is not bool or (reuse_conditioning and conditioning_directory is None):
+        raise ValueError("Read-only conditioning reuse requires a shard directory")
     rights = admit_sources(permission_config, permission_hash, root, review=rights_review,
                            policy=rights_policy, trusted_policy_sha256=rights_anchor, now=now)
     annotations = admit_labels(label_config, label_hash, root, review=label_review,
@@ -232,7 +235,11 @@ def assemble_dataset(permission_config: Path, permission_hash: str, label_config
     if any(len(entry["label"]["f0Hz"]) > 65536 for entry in captured_labels["labels"]):
         raise ValueError("Segment long sources before conditioning (65536 frames per phrase)")
     if conditioning_directory is not None:
-        conditioning_directory.mkdir(mode=0o700)  # Exclusive: never mix attempts.
+        if reuse_conditioning:
+            if conditioning_directory.is_symlink() or not conditioning_directory.is_dir():
+                raise ValueError("Conditioning reuse requires an existing real directory")
+        else:
+            conditioning_directory.mkdir(mode=0o700)  # Exclusive: never mix attempts.
     conditioning, stored_bytes = [], 0
     for index, entry in enumerate(sorted(captured_labels["labels"], key=lambda e: e["label"]["sourceId"])):
         features = build_conditioning(entry["label"], entry["score"],
@@ -245,7 +252,10 @@ def assemble_dataset(permission_config: Path, permission_hash: str, label_config
             if stored_bytes > 256 * 1024 * 1024:
                 raise ValueError("Conditioning shard disk budget exceeded; incomplete attempt retained")
             name = f"phrase-{index:06d}.json"
-            publish_new(conditioning_directory / name, features)
+            if reuse_conditioning:
+                verify_exact_file(conditioning_directory / name, payload)
+            else:
+                publish_new(conditioning_directory / name, features)
             conditioning.append(dict(sourceId=features["sourceId"], path=name,
                 sha256=hashlib.sha256(payload).hexdigest(), sizeBytes=len(payload), frameCount=len(features["frames"])))
     conditioning_hash = hashlib.sha256(encode_report(conditioning)).hexdigest()
@@ -268,21 +278,19 @@ def assemble_dataset(permission_config: Path, permission_hash: str, label_config
     return result
 
 
-def assemble_dataset_command(config: Path, expected_hash: str, root: Path, output: Path, *,
-                             rights_anchor: str, label_anchor: str, conditioning_directory: Path | None = None) -> int:
+def load_dataset_inputs(config: Path, expected_hash: str, root: Path, *,
+                        rights_anchor: str, label_anchor: str) -> dict:
+    """Capture the shared assembly/training inputs without publishing anything.
+
+    File hashes are checked here; source bytes, signatures and review lifetime
+    are checked by assemble_dataset at the actual use boundary.
+    """
     value = load_config(config, expected_hash)
     refs = {"permissionConfig", "labelConfig", "rightsReview", "rightsPolicy", "labelReview", "labelPolicy"}
     if (not isinstance(value, dict) or set(value) != refs | {"formatId", "schemaVersion", "seed", "heldOutSongs"}
             or value["formatId"] != "com.project-seam.training-dataset-config"
             or type(value["schemaVersion"]) is not int or value["schemaVersion"] != 1):
         raise ValueError("Unsupported dataset assembly configuration")
-    if output.exists() or output.is_symlink():
-        raise ValueError("Dataset snapshot must be new")
-    if conditioning_directory is not None:
-        if (conditioning_directory.parent.resolve(strict=True) != output.parent.resolve(strict=True)
-                or conditioning_directory.name == output.name
-                or conditioning_directory.exists() or conditioning_directory.is_symlink()):
-            raise ValueError("Conditioning directory must be new and a sibling of the snapshot")
     root = root.resolve(strict=True)
     references = {}
     for key in refs:
@@ -295,11 +303,27 @@ def assemble_dataset_command(config: Path, expected_hash: str, root: Path, outpu
             raise ValueError("Dataset references must be flat ASCII filenames")
         references[key] = load_config(root / name, ref["sha256"])
     permission, labels = value["permissionConfig"], value["labelConfig"]
-    snapshot = assemble_dataset(root / permission["path"], permission["sha256"], root / labels["path"], labels["sha256"], root,
+    return dict(permission_config=root / permission["path"], permission_hash=permission["sha256"],
+        label_config=root / labels["path"], label_hash=labels["sha256"], root=root,
         rights_review=references["rightsReview"], rights_policy=references["rightsPolicy"], rights_anchor=rights_anchor,
         label_review=references["labelReview"], label_policy=references["labelPolicy"], label_anchor=label_anchor,
-        now=int(time.time()), seed=value["seed"], held_out_songs=value["heldOutSongs"],
-        conditioning_directory=conditioning_directory)
+        seed=value["seed"], held_out_songs=value["heldOutSongs"])
+
+
+def assemble_dataset_command(config: Path, expected_hash: str, root: Path, output: Path, *,
+                             rights_anchor: str, label_anchor: str, conditioning_directory: Path | None = None,
+                             reuse_conditioning: bool = False) -> int:
+    if output.exists() or output.is_symlink():
+        raise ValueError("Dataset snapshot must be new")
+    if conditioning_directory is not None:
+        if (conditioning_directory.parent.resolve(strict=True) != output.parent.resolve(strict=True)
+                or conditioning_directory.name == output.name
+                or (conditioning_directory.exists() and not reuse_conditioning) or conditioning_directory.is_symlink()):
+            raise ValueError("Conditioning directory must be a sibling; existing shards require explicit reuse")
+    inputs = load_dataset_inputs(config, expected_hash, root,
+                                 rights_anchor=rights_anchor, label_anchor=label_anchor)
+    snapshot = assemble_dataset(**inputs, now=int(time.time()),
+        conditioning_directory=conditioning_directory, reuse_conditioning=reuse_conditioning)
     if int(time.time()) >= snapshot["expiresAt"]:
         raise ValueError("Dataset review expired during assembly")
     snapshot["assemblyConfigurationSha256"] = expected_hash
@@ -697,6 +721,8 @@ def main():
     dataset.add_argument("--label-policy-sha256", required=True, help="Independent canonical annotation policy trust anchor")
     dataset.add_argument("--conditioning-directory", type=Path,
                          help="New sibling directory for phrase shards; 1M total frames, 256 MiB; incomplete attempts retained")
+    dataset.add_argument("--reuse-conditioning", action="store_true",
+                         help="Read-only verification of existing shards against freshly admitted labels; never repairs files")
     args = parser.parse_args()
     try:
         if args.command == "acoustic-targets":
@@ -705,7 +731,7 @@ def main():
         if args.command == "assemble-dataset":
             return assemble_dataset_command(args.configuration, args.configuration_sha256, args.source_root, args.output,
                                             rights_anchor=args.rights_policy_sha256, label_anchor=args.label_policy_sha256,
-                                            conditioning_directory=args.conditioning_directory)
+                                            conditioning_directory=args.conditioning_directory, reuse_conditioning=args.reuse_conditioning)
         if args.command == "admit-labels":
             if args.output.exists() or args.output.is_symlink():
                 raise ValueError("Label admission report must be new")

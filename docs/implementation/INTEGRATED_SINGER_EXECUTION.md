@@ -6,6 +6,76 @@ not a replacement product contract or a release approval.
 
 ## Actual DiffSinger architecture checkpoint
 
+Added bounded multi-epoch command execution, retaining one parent-linked checkpoint
+per completed epoch and publishing a run completion record only after all requested
+epochs finish. Source/label/shard admission refreshes each epoch with stable dataset
+identity; live optimizer and CPU RNG state continue without reinitialization. Run
+time and cumulative binary checkpoint bytes are bounded cooperatively. Earlier
+complete checkpoints remain recoverable if a later epoch fails.
+Actual upstream-model verification passed: two continuous epochs match separate
+first-epoch/resumed-second-epoch execution in loss, model tensors and CPU RNG.
+
+Implemented strict local-checkpoint continuation in the training command. Resume
+requires captured receipt identity, matching configuration/environment/profile and
+fresh matching dataset admission before optimization. It restores model, optimizer
+and CPU RNG state and records completed epochs plus parent receipt hash. Review
+renewal, dataset migration and quality-based scheduling remain open.
+Verified with two separate upstream-model subprocess continuations from the same
+first-epoch checkpoint: identical second-epoch loss, model tensors and CPU RNG,
+with completedEpochs=2 and matching parent receipt identities in both outputs.
+
+Added the runnable `tools.voice_model_training.train` CPU entry point: exact
+configuration hashes, shared dataset input capture, bounded model settings, flat
+target inventory, trusted pinned upstream checkout and reviewed-epoch publication.
+The real architecture diagnostic invokes it in a fresh subprocess and reloads the
+result: one complete 16-frame training phrase, loss 0.9917272, matching checkpoint
+receipt and coverage. Configurable continuous epochs are now supported; quality-based scheduling,
+real corpus training, export and native singer rendering remain open. See the
+training tool's `TRAINING_COMMAND.md` for the runnable contract.
+
+The next connected diagnostic has now passed against clean pinned upstream
+DiffSinger revision `336cf01b57f2ad44c6b37a79cf33993043291759` (Torch 2.8.0,
+NumPy 1.26.4, CPU). Three distinct temporary oscillator sources traverse actual
+file capture, fixture-only dual signatures, sharded admission and the reviewed
+training service. One train phrase covers all 16 frames, changes 43 model tensors,
+and restores checkpoint parameters exactly. A separate validation phrase executes
+the evaluation path; the third fixture remains in the test partition. No mock
+replaces admission, target loading or optimization in this diagnostic. Reported
+training loss 0.9709514 and validation loss 1.0373794 describe synthetic mechanics,
+not lyric intelligibility or held-out singer quality. Real corpus production,
+multi-epoch training, export and native rendering remain open.
+
+Connected `train_reviewed_epoch` now orchestrates fresh admission, paired targets,
+whole-phrase optimization, complete train-frame coverage and revalidated checkpoint
+publication. Preflight rejects preparation issues and phrases above 4096 frames.
+Cancellation/expiry interrupt between updates; source/label/shard admission is
+repeated after the epoch and before the final receipt. Contract tests cover early
+rejection, late identity changes and failed training without publication. These
+mocked boundary tests do not establish real-corpus training or singer quality.
+The signed-fixture integration is now exercised as described above; production
+multi-epoch execution and actual model export/render integration remain next.
+
+Added read-only conditioning reuse during fresh dataset assembly. Existing shards
+must match features reconstructed from newly admitted source/label inputs; they
+are never rewritten. CLI tests preserve dataset identity and shard bytes on a
+successful refresh, reject missing reuse directories, altered shard content and
+changed source audio, and publish no snapshot on rejection. This enables fresh
+admission checks at training boundaries without regenerating feature caches.
+
+Connected checkpoint restoration to captured receipt identity and verified owned
+bytes, replacing direct path loading. The local-producer loader rejects altered
+binary content before Torch deserialization and verifies embedded metadata against
+the completion record. The actual model still restores inference and continuation
+exactly. This does not extend trust to arbitrary downloaded checkpoints or bypass
+fresh source/review admission for a resumed training run.
+
+Added reusable checkpoint publication with new-directory/no-overwrite semantics,
+bounded binary writes, file fsync, metadata/binary hashes and a final authority
+recheck callback before receipt publication. Tests cover byte limits, absent
+coverage and late expiration without a completion record. The actual architecture
+round trip now exercises this owner. It remains a local CPU checkpoint writer,
+not an untrusted importer or completed authorized production-training workflow.
+
 Recovery checkpoint verification: all 39 training-tool tests passed in the
 isolated real-model environment (13.995 seconds), including optional Torch tests
 executed rather than skipped. Native pitch CLI and tracked-source checks were

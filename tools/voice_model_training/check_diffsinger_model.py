@@ -26,6 +26,7 @@ def main():
     from tools.voice_model_training.optimization import acoustic_training_step, acoustic_evaluation_step, run_acoustic_epoch
     from tools.voice_model_training.diffsinger_objective import DiffSingerDDPMObjective
     from tools.voice_model_training.acoustics import wav_log_mel_targets
+    from tools.voice_model_training.checkpoint import publish_checkpoint, load_local_checkpoint
     # Original oscillator fixture only: no human identity, borrowed voice or claimed lyric supervision.
     positions = np.arange(4096) / 48000
     signal = .2 * np.sin(2 * np.pi * 220 * positions) + .05 * np.sin(2 * np.pi * 440 * positions)
@@ -82,15 +83,22 @@ def main():
     # This is a self-produced temporary checkpoint, not an untrusted checkpoint importer.
     # Keep optimizer and CPU RNG state so continuation can be compared exactly.
     with tempfile.TemporaryDirectory(prefix="seam-model-roundtrip-") as temporary:
-        checkpoint = Path(temporary) / "engineering-check.pt"
-        torch.save(dict(model=model.state_dict(), optimizer=optimizer.state_dict(),
-                        rng=torch.get_rng_state(), configuration=config, revision=REVISION,
-                        completedSteps=8, syntheticInputs=True, engineeringIdentity=engineering_identity), checkpoint)
+        checkpoint_directory = Path(temporary) / "checkpoint"
+        publication = publish_checkpoint(model, optimizer, checkpoint_directory, epoch=epoch,
+            metadata=dict(configuration=config, revision=REVISION, completedSteps=8,
+                          syntheticInputs=True, engineeringIdentity=engineering_identity))
+        checkpoint = checkpoint_directory / publication["checkpointPath"]
         checkpoint_bytes = checkpoint.read_bytes()
         checkpoint_hash = hashlib.sha256(checkpoint_bytes).hexdigest()
-        restored = torch.load(checkpoint, map_location="cpu", weights_only=True)
-        if (restored["revision"] != REVISION or restored["configuration"] != config or restored["completedSteps"] != 8
-                or restored["engineeringIdentity"] != engineering_identity):
+        if checkpoint_hash != publication["checkpointSha256"]:
+            raise ValueError("Published checkpoint bytes differ")
+        receipt_hash = hashlib.sha256((checkpoint_directory / "checkpoint.json").read_bytes()).hexdigest()
+        restored, loaded_publication = load_local_checkpoint(checkpoint_directory, receipt_sha256=receipt_hash)
+        if loaded_publication != publication:
+            raise ValueError("Checkpoint receipt round trip differs")
+        restored_metadata = restored["metadata"]
+        if (restored_metadata["revision"] != REVISION or restored_metadata["configuration"] != config
+                or restored_metadata["completedSteps"] != 8 or restored_metadata["engineeringIdentity"] != engineering_identity):
             raise ValueError("Checkpoint experiment identity changed")
         resumed_model = DiffSingerAcoustic(vocab_size=4, out_dims=80)
         resumed_model.load_state_dict(restored["model"], strict=True)
@@ -115,6 +123,11 @@ def main():
                      and all(torch.equal(value, resumed_model.state_dict()[key]) for key, value in model.state_dict().items()))
     passed = (changed > 0 and losses[-1] < losses[0] and tuple(output.shape) == (1, 16, 80)
               and bool(torch.isfinite(output).all()) and inference_equal and resumed_equal and evaluation_isolated)
+    from tools.voice_model_training.check_reviewed_run import check_reviewed_run
+    reviewed_run = check_reviewed_run(model, optimizer, objective=objective,
+                                     model_metadata=dict(configuration=config, revision=REVISION),
+                                     trusted_checkout=checkout)
+    passed = passed and reviewed_run["passed"]
     print(json.dumps(dict(revision=REVISION, torch=torch.__version__, numpy=np.__version__, configuration=config,
                          parameterCount=sum(p.numel() for p in model.parameters()), changedParameterTensors=changed,
                          losses=losses, inferenceShape=list(output.shape), passed=passed,
@@ -125,6 +138,7 @@ def main():
                          checkpointBytes=len(checkpoint_bytes), checkpointSha256=checkpoint_hash,
                          restoredInferenceExact=inference_equal, continuationLosses=continuation,
                          resumedUpdateExact=resumed_equal, checkpointRetained=False,
+                         reviewedRun=reviewed_run,
                          syntheticInputs=True, singerQualified=False, releaseEligible=False), indent=2))
     return 0 if passed else 1
 
