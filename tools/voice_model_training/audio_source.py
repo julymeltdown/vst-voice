@@ -5,6 +5,24 @@ import json
 import wave
 
 
+def decode_pcm_source(payload: bytes, *, expected_sha256: str, sample_rate: int):
+    """Return inspected identity and normalized float64 mono PCM, without transforms."""
+    import numpy as np
+    source = inspect_pcm_source(payload, expected_sha256=expected_sha256, sample_rate=sample_rate)
+    if source["frameCount"] > 16000000:
+        raise ValueError("Decoded source exceeds sample budget")
+    with wave.open(io.BytesIO(payload), "rb") as reader:
+        pcm = reader.readframes(source["frameCount"])
+    width = source["sampleWidthBytes"]
+    if width == 3:
+        octets = np.frombuffer(pcm, dtype=np.uint8).reshape(-1, 3).astype(np.int32)
+        values = octets[:, 0] | (octets[:, 1] << 8) | (octets[:, 2] << 16)
+        values = (values ^ 0x800000) - 0x800000
+    else:
+        values = np.frombuffer(pcm, dtype="<i2" if width == 2 else "<i4")
+    return source, values.astype(np.float64) / (1 << (8 * width - 1))
+
+
 def inspect_pcm_source(payload: bytes, *, expected_sha256: str, sample_rate: int) -> dict:
     """Inspect mono integer PCM WAV without resampling or rewriting its source.
 

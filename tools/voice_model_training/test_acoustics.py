@@ -94,6 +94,22 @@ class AcousticTargetsTests(unittest.TestCase):
                     self.assertEqual([b["mel2ph"] for b in contextual], [[1] * 4, [1] * 5, [1] * 3])
                     with self.assertRaises(ValueError): batches(context_frames=4096)
                     self.assertEqual(batches("train"), [])
+                    if importlib.util.find_spec("torch"):
+                        from tools.voice_model_training.vocoder_batches import iter_vocoder_batches
+                        def vocoder_batches(partition="test"):
+                            return list(iter_vocoder_batches(snapshot, root / "features", target_map,
+                                {"s": root / "source.wav"}, expected_profile_sha256=published["profileSha256"],
+                                partition=partition, batch_frames=3))
+                        audio_batches = vocoder_batches()
+                        self.assertEqual([b["validSamples"] for b in audio_batches], [768, 768, 512])
+                        self.assertEqual([tuple(b["mel"].shape) for b in audio_batches], [(1, 80, 3), (1, 80, 3), (1, 80, 2)])
+                        np.testing.assert_array_equal(np.concatenate([b["pcm"].numpy().ravel() for b in audio_batches]),
+                                                      np.array(integers, dtype=np.float32) / 32768)
+                        self.assertEqual(vocoder_batches("train"), [])
+                        (root / "source.wav").write_bytes(payload[:-1])
+                        with self.assertRaises(ValueError):
+                            vocoder_batches()
+                        (root / "source.wav").write_bytes(payload)
                     published["sourceSha256"] = "0" * 64
                     with self.assertRaises(ValueError): batches()
                     published["sourceSha256"] = digest

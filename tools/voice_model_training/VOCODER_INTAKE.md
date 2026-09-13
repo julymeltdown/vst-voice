@@ -186,3 +186,27 @@ Diagnostic checkpoints are temporary; no trained singer weights are published.
 
 An admitted-data epoch service, real corpus training, production worker integration
 and quality qualification remain unfinished.
+
+### PCM/mel/F0 batch join
+
+`vocoder_batches.iter_vocoder_batches` now consumes the existing source-bound
+supervised-batch iterator plus an explicit source-ID-to-WAV-path map. It verifies
+captured WAV and PCM identities and sample clocks, uses a shared inspected
+16/24/32-bit PCM decoder, and returns owned CPU float32 BFT mel, BF F0 and B1S PCM.
+It reads only the selected partition's material and does not randomly substitute
+sources. Batch PCM is limited to 1,048,576 samples; source WAV intake remains
+bounded to 64 MiB. Later file failures invalidate the epoch, not just that item.
+
+Offsets are in whole feature hops. A partial final hop is zero-padded according
+to the acoustic profile and returns explicit `validSamples` and `paddedSamples`.
+The padding participates in the current GAN's full-window losses; it is a declared
+boundary convention, not evidence of additional recorded silence or extra valid
+coverage. The epoch service must count only valid source samples toward completion.
+
+The real acoustic/conditioning integration test verifies partition isolation,
+exact reconstructed PCM across consecutive batches and changed-source rejection.
+A separate partial-hop test verifies 500 real samples plus 12 zero-padding samples,
+and that emitted tensors do not alias the caller's mel array. The shared decoder
+retains the existing cross-width/sign-extension tests and acoustic feature hashes.
+The reader does not grant source rights or make a saved snapshot current; fresh
+review/source admission still belongs to the epoch service being integrated next.
