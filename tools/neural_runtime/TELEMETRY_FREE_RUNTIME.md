@@ -50,6 +50,10 @@ choosing an explicit recovery command. Never delete other runtime environments.
 
 ## Required qualification before replacement
 
+The pinned source fetch completed and the first telemetry-free build was launched
+on September 13. Launching the build is not evidence of successful compilation or
+a repaired runtime; retain its terminal result before proceeding.
+
 1. Retain the exact source revision, CMake telemetry flag, compiler/build settings
    and SHA-256 identities of the resulting wheel and native library.
 2. Install into a separate diagnostic environment and point a separate native
@@ -62,6 +66,27 @@ choosing an explicit recovery command. Never delete other runtime environments.
    perform the appropriate platform lifecycle/privacy checks. A cache flag alone
    is not binary or network-behavior proof.
 6. Only after that evidence select the replacement runtime for ordinary builds.
+
+Use the checked-in lifecycle runner to retain repeated direct-process evidence:
+
+```sh
+build/neural-runtime/ort-build-env/bin/python tools/neural_runtime/check_process_lifecycle.py \
+  --output build/neural-runtime/lifecycle-candidate-01 --attempts 10 --timeout 300 \
+  -- /absolute/path/to/qualified-environment/bin/python /absolute/path/to/inference-check.py
+```
+
+The command above is a template, not a completed qualification run. Select a
+diagnostic that validates numerical outputs itself, then repeat it with the exact
+candidate runtime. Every attempt retains stdout/stderr files, hashes, exit status,
+timeout/launch failures and elapsed time. All requested attempts must exit zero;
+successful JSON followed by a failing process exit remains a failure. Existing
+output directories are refused. `releaseEligible` is always false.
+
+This runner executes trusted local commands without a shell. Logs are streamed to
+disk but not size-limited; select bounded diagnostics and sufficient disk space.
+Timeout terminates the direct child, not an arbitrary descendant tree. Use direct
+inference checks for lifecycle evidence; production worker supervision remains a
+separate product obligation. An interrupted runner is not a completed study.
 
 Vocoder integration, production worker/render integration, singing quality and
 the rest of Full-Scope Beta GO remain separate obligations.
