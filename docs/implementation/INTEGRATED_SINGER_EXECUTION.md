@@ -1,5 +1,67 @@
 # Integrated Singer Execution
 
+## The shipped helper no longer links the build machine's Protobuf
+
+`build/release/seam_neural_worker` recorded 81 absolute `/opt/homebrew` load
+paths (78 Abseil, 2 Protobuf, 1 OpenSSL), so the packaging owner refused the only
+helper SEAM can actually ship. The development SDK publishes Protobuf and Abseil
+as shared libraries only, and a payload that links them can never resolve on a
+user's machine.
+
+`tools/neural_runtime/build_static_protobuf.py` now builds the pinned Protobuf
+33.4 release with its vendored Abseil 20250512.1 as static archives, verifies that
+the install tree contains no shared library at all, and links a probe
+(`static_protobuf_probe.cpp`) that reads and re-parses a `FileDescriptorProto`.
+The repository's own closure reader then proves the probe resolves every
+non-system reference from beside itself. A distribution build points at that
+prefix with `-DSEAM_STATIC_PROTOBUF_ROOT` and at the pinned code generator with
+`-DSEAM_PROTOC_EXECUTABLE`, because the runtime-only archive deliberately ships no
+`protoc`; `tools/phase13a/static_protobuf.py` is the payload-facing entry point.
+
+Three defects were found and fixed while making this work, and the first one is
+worth recording because it fails in a way that looks like a broken archive:
+
+* Abseil installs an ABI-pinned `absl/base/options.h` derived from the C++ standard
+  known at configure time, while its own sources compile from the unpinned header.
+  Leaving the standard to the compiler default pinned `ABSL_OPTION_USE_STD_STRING_VIEW`
+  to 0 (Abseil's own `string_view` class) while the archives were built against
+  `std::string_view`, so every Protobuf reference to `absl::string_view`, `CEscape`,
+  `ByChar::Find` and friends was unresolved even though the archive defined those
+  exact symbols. Linker flags cannot repair an ABI disagreement; both builds now fix
+  `CMAKE_CXX_STANDARD=17`, and `verify_static_install()` re-reads the installed
+  header and refuses a pin that disagrees with the archives.
+* The probe's flattened Abseil link list was previously diagnosed as mis-ordered.
+  It was not: the same undefines survived `-Wl,-all_load`, which is what pointed at
+  a symbol-level ABI mismatch rather than a link-order problem.
+* The builder is importable rather than only a CLI, and `--probe-only` is hermetic:
+  it re-verifies an installed prefix and the probe without the pinned tarballs, the
+  network or a code generator, so a configured build can re-check the SDK cheaply.
+
+Evidence. Configuring a distribution build with the static Protobuf/Abseil SDK, the
+pinned static OpenSSL 3.5.7 (`libcrypto.a`, commit
+`8cf17aaeb4599f8af87fefd810b5b5fee90fe69e`) and the 1.30.0 ONNX Runtime takes
+`seam_neural_worker` from **81 host load paths to zero**: `otool -L` lists only the
+ONNX runtime (`@rpath`) and operating-system libraries/frameworks, and
+`derive_runtime_closure()` reports **1 entry, 0 unresolved** — the one entry being
+the ONNX runtime the payload ships beside the helper. The staging invariant that
+previously exercised only its refusal branch now stages the real worker, which is
+the end-to-end statement that matters: the helper a payload would ship is one the
+packaging owner accepts.
+
+Verification. `tests/phase13a/test_static_protobuf.py` adds 13 hermetic cases
+(exact pins and digests, the pin parser, the refusals for a shared library, an ABI
+pin mismatch, a missing archive, a missing CMake package and a missing prefix, and
+the payload entry point's placement). CTest gains
+`seam_static_protobuf_contract_tests` unconditionally and `seam_static_protobuf_closure`
+whenever `SEAM_STATIC_PROTOBUF_ROOT` is set; both pass in this checkout, and the
+closure test passes in a build configured with the static SDK. `THIRD_PARTY_NOTICES.md`
+now records the statically linked Protobuf/Abseil pins.
+
+Not claimed. No payload was assembled, signed or installed, the payload driver does
+not yet build the neural worker at all, and no Windows closure was produced. This
+removes a hard blocker for the installed payload; it is not installed-execution
+evidence, and M5 still owns the nine host tuples.
+
 ## The Windows payload's runtime closure is derived from its own imports
 
 Packaging could derive a macOS helper's runtime from its load commands but refused

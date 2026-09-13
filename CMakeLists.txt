@@ -1742,6 +1742,15 @@ if(SEAM_BUILD_TESTS)
           tests.phase13a.test_payload_materializer tests.phase13a.test_release_payload_assembly)
     set_tests_properties(seam_neural_package_materialization_tests PROPERTIES
       WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} TIMEOUT 60)
+    # Hermetic contract for the static Protobuf/Abseil closure: the pins, the ABI
+    # pin on the installed Abseil header, and the refusals that keep a shared or
+    # ABI-mismatched prefix from being handed to a payload build.
+    add_test(NAME seam_static_protobuf_contract_tests
+      COMMAND ${CMAKE_COMMAND} -E env
+        "PYTHONDONTWRITEBYTECODE=1"
+        ${Python3_EXECUTABLE} -m unittest tests.phase13a.test_static_protobuf)
+    set_tests_properties(seam_static_protobuf_contract_tests PROPERTIES
+      WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} TIMEOUT 60)
     add_test(NAME seam_voice_model_training_tests
       COMMAND ${Python3_EXECUTABLE} -m unittest discover
         -s tools/voice_model_training -p "test_*.py")
@@ -2339,6 +2348,30 @@ add_subdirectory(phase13b)
 # transitive target links after all subdirectories have declared their targets.
 include(cmake/NeuralDependencyDirection.cmake)
 seam_check_neural_dependency_direction()
+
+# Distribution builds link the helper against a static Protobuf/Abseil closure so
+# its runtime resolves beside it. That closure deliberately ships no protoc, so the
+# build-time code generator is supplied explicitly and pinned by version instead of
+# being resolved from the host package prefix.
+set(SEAM_STATIC_PROTOBUF_ROOT "" CACHE PATH "Optional static Protobuf/Abseil SDK for a relocatable neural worker")
+set(SEAM_PROTOC_EXECUTABLE "" CACHE FILEPATH "Optional pinned protoc used to generate the ONNX schema sources")
+if(SEAM_PROTOC_EXECUTABLE AND NOT EXISTS "${SEAM_PROTOC_EXECUTABLE}")
+  message(FATAL_ERROR "SEAM_PROTOC_EXECUTABLE does not exist: ${SEAM_PROTOC_EXECUTABLE}")
+endif()
+if(SEAM_STATIC_PROTOBUF_ROOT)
+  if(NOT IS_DIRECTORY "${SEAM_STATIC_PROTOBUF_ROOT}")
+    message(FATAL_ERROR "SEAM_STATIC_PROTOBUF_ROOT is not a directory: ${SEAM_STATIC_PROTOBUF_ROOT}")
+  endif()
+  if(NOT SEAM_PROTOC_EXECUTABLE)
+    message(FATAL_ERROR
+      "A static Protobuf SDK ships the runtime closure only; set SEAM_PROTOC_EXECUTABLE to the pinned code generator")
+  endif()
+  # Resolve Protobuf from the pinned static SDK and prove it: a consumer that
+  # silently falls back to a host package would put the helper straight back to
+  # linking absolute paths that cannot exist on a user's machine.
+  list(PREPEND CMAKE_PREFIX_PATH "${SEAM_STATIC_PROTOBUF_ROOT}")
+  list(APPEND CMAKE_IGNORE_PREFIX_PATH "/opt/homebrew" "/usr/local")
+endif()
 set(SEAM_ONNXRUNTIME_ROOT "" CACHE PATH "Optional local ONNX Runtime SDK for the arithmetic inference probe")
 set(SEAM_NATIVE_ONNX_SCHEMA "" CACHE FILEPATH "Optional pinned ONNX schema for native checked runtime experiments")
 set(SEAM_NATIVE_ONNX_PYTHON "" CACHE FILEPATH "Optional existing ONNX 1.19.1 Python environment for native integration tests")
@@ -2413,6 +2446,23 @@ if(SEAM_ONNXRUNTIME_ROOT)
               tests.phase13a.test_neural_helper_staging.NeuralHelperStagingTests.test_development_worker_is_staged_only_when_its_closure_resolves)
         set_tests_properties(seam_neural_worker_relocatability PROPERTIES
           WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} TIMEOUT 120 LABELS "neural-native-experiment")
+        if(SEAM_STATIC_PROTOBUF_ROOT)
+          # A build configured with the static SDK must keep it static, ABI
+          # consistent and closed. The check re-reads the *installed* prefix and
+          # links the repository's own probe against it, so a prefix that drifted
+          # after configure is caught here rather than at payload assembly.
+          add_test(NAME seam_static_protobuf_closure
+            COMMAND ${CMAKE_COMMAND} -E env
+              "PYTHONDONTWRITEBYTECODE=1"
+              ${Python3_EXECUTABLE}
+                "${CMAKE_CURRENT_SOURCE_DIR}/tools/neural_runtime/build_static_protobuf.py"
+                --probe-only
+                --prefix "${SEAM_STATIC_PROTOBUF_ROOT}"
+                --probe-build-dir "${CMAKE_CURRENT_BINARY_DIR}/static-protobuf-probe")
+          set_tests_properties(seam_static_protobuf_closure PROPERTIES
+            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} TIMEOUT 300
+            LABELS "neural-native-experiment")
+        endif()
         set_tests_properties(seam_neural_native_inspection seam_neural_native_paired_runtime
           seam_neural_native_bundle_runtime seam_neural_production_worker seam_neural_bundle_preparation PROPERTIES TIMEOUT 180 LABELS "neural-native-experiment")
         add_custom_target(seam_neural_native_checks

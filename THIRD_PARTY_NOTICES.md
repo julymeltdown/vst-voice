@@ -26,6 +26,19 @@ verification. OpenSSL is available under the Apache License 2.0. The exact
 upstream `LICENSE.txt` is copied into each assembled distribution payload.
 Project SEAM does not ship a dynamically loaded OpenSSL runtime.
 
+### Protobuf 33.4 and Abseil 20250512.1
+
+Project SEAM distribution builds statically link Protobuf 33.4 (release tarball
+SHA-256 `bc670a4e34992c175137ddda24e76562bb928f849d712a0e3c2fb2e19249bea1`) and
+its vendored Abseil 20250512.1 (release tarball SHA-256
+`9b7a064305e9fd94d124ffa6cc358592eb42b5da588fb4e07d09254aa40086db`) so the
+shipped neural helper resolves its Protobuf runtime from the directory it is
+launched out of rather than from a host package prefix. Protobuf is available
+under the BSD-3-Clause license and Abseil under the Apache License 2.0. The
+archive is built from the pinned tarballs and contains no shared Protobuf or
+Abseil library; Project SEAM does not ship a dynamically loaded Protobuf runtime.
+
+
 ## System libraries and APIs
 
 ### Linux
@@ -101,6 +114,7 @@ The following exact checkouts are used only on target build/validation runners a
 - **Steinberg VST3 SDK 3.8.1**, commit `3cdf9ca5d1f5b1b21e0a86832aa4abe55607bd96` with locked recursive submodules, MIT.
 - **Apple AudioUnitSDK 1.4.0**, commit `bd98b31feff57a15989fcfab4cd86dc63382b1ac`, Apache-2.0.
 - **OpenSSL 3.5.7**, commit `8cf17aaeb4599f8af87fefd810b5b5fee90fe69e`, Apache-2.0; compiled as a static Crypto archive and linked into shipping binaries.
+- **Protobuf 33.4** (BSD-3-Clause) and **Abseil 20250512.1** (Apache-2.0), pinned by release-tarball SHA-256; compiled as static archives and linked into the shipping neural helper.
 
 The acquisition script verifies exact revisions and licence files and forbids wrapper-time network dependency resolution. VST3 and AUv2 distributables must carry the notices required by their actual resolved source closure.
 
