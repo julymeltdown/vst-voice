@@ -2290,7 +2290,9 @@ set(SEAM_NATIVE_ONNX_PYTHON "" CACHE FILEPATH "Optional existing ONNX 1.19.1 Pyt
 if(SEAM_ONNXRUNTIME_ROOT)
   unset(SEAM_ONNXRUNTIME_INCLUDE CACHE)
   unset(SEAM_ONNXRUNTIME_LIBRARY CACHE)
-  find_path(SEAM_ONNXRUNTIME_INCLUDE onnxruntime_cxx_api.h PATHS "${SEAM_ONNXRUNTIME_ROOT}/include" NO_DEFAULT_PATH REQUIRED)
+  # Release archives use include/; upstream source installs use include/onnxruntime/.
+  find_path(SEAM_ONNXRUNTIME_INCLUDE onnxruntime_cxx_api.h PATHS "${SEAM_ONNXRUNTIME_ROOT}/include"
+    PATH_SUFFIXES onnxruntime NO_DEFAULT_PATH REQUIRED)
   find_library(SEAM_ONNXRUNTIME_LIBRARY onnxruntime PATHS "${SEAM_ONNXRUNTIME_ROOT}/lib" NO_DEFAULT_PATH REQUIRED)
   add_executable(seam_onnx_runtime_probe tools/neural_runtime/runtime_probe.cpp)
   target_include_directories(seam_onnx_runtime_probe SYSTEM PRIVATE "${SEAM_ONNXRUNTIME_INCLUDE}")
