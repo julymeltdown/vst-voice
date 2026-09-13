@@ -306,6 +306,7 @@ add_library(seam_authoring_runtime
   libs/seam-authoring-runtime/src/audio_settings_controller.cpp
   libs/seam-authoring-runtime/src/media_import_service.cpp
   libs/seam-authoring-runtime/src/neural_phrase_runner.cpp
+  libs/seam-authoring-runtime/src/automatic_performance_capture.cpp
   libs/seam-authoring-runtime/src/neural_resource_registry.cpp
   libs/seam-authoring-runtime/src/neural_selection.cpp
   libs/seam-authoring-runtime/src/support_bundle.cpp
@@ -1294,7 +1295,8 @@ if(SEAM_BUILD_TESTS)
   seam_apply_compiler_options(seam_performance_compiler_tests)
   add_test(NAME seam_performance_compiler_tests COMMAND seam_performance_compiler_tests)
   target_include_directories(seam_automatic_performance_tests PRIVATE tests)
-  target_link_libraries(seam_automatic_performance_tests PRIVATE seam_synthesis seam_application)
+  target_link_libraries(seam_automatic_performance_tests PRIVATE
+    seam_synthesis seam_application seam_authoring_runtime)
   seam_apply_compiler_options(seam_automatic_performance_tests)
   add_test(NAME seam_automatic_performance_tests COMMAND seam_automatic_performance_tests)
 

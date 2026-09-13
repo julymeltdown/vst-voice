@@ -34,6 +34,7 @@ enum class ApplicationCommand {
   SelectProceduralRecipe,
   RelinkProceduralRecipe,
   BakeProceduralCandidates,
+  ProposeAutomaticPerformance,
   EditPronunciationHint,
   FindReplaceLyrics,
   ClearSelectedVibrato,

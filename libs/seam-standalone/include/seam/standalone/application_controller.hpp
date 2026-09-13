@@ -136,6 +136,10 @@ public:
   [[nodiscard]] core::Result<void> selectNeuralResource(
       std::string_view id,std::string_view version,std::string_view contentHash) override;
   [[nodiscard]] core::Result<void> clearNeuralResource() override;
+  // Runs the production automatic-performance backend on the selected region and
+  // adopts the result as a Proposed take. Acceptance stays a separate action, and
+  // an edit that moved the material on refuses instead of publishing.
+  [[nodiscard]] core::Result<void> proposeAutomaticPerformance();
 
   [[nodiscard]] const std::vector<authoring::VoicebankCard>& voicebankCards()
       const noexcept { return voicebankBrowser_.cards(); }
@@ -237,6 +241,10 @@ private:
   std::unique_ptr<authoring::VoicebankInstallerService> voicebankInstaller_;
   std::optional<authoring::NeuralSelectionService> neuralSelection_;
   std::optional<authoring::NeuralResourceRegistry> neuralResources_;
+  std::uint64_t automaticProposalCounter_{0U};
+  // Fixed so the same material and take identity always produce the same proposal;
+  // the counter is what makes successive proposals distinct takes.
+  std::uint64_t automaticProposalSeed_{1U};
   native_ui::ExportProgressPanelModel exportProgress_;
   std::optional<authoring::ExportResult> lastExport_;
   std::stop_source exportStopSource_;

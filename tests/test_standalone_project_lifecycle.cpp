@@ -543,6 +543,50 @@ TEST_CASE("standalone_application_controller_blocks_close_when_pending_autosave_
   CHECK(session->runtime().document().dirty());
 }
 
+TEST_CASE("standalone_controller_proposes_automatic_performance_as_a_proposal") {
+  const auto root = seam::test::support::temporaryDirectory("standalone-proposal");
+  auto session = makeSession(root);
+  addNote(*session);
+  bool quit = false;
+  seam::standalone::StandaloneApplicationControllerConfig config{};
+  config.autosaveRoot = root / "autosaves";
+  config.recentProjectsPath = root / "recent.json";
+  auto controller = seam::standalone::StandaloneApplicationController::create(*session,
+      std::make_unique<FakeDialog>(), std::make_unique<FakePrompt>(), config,
+      [&quit] { quit = true; });
+  CHECK(controller);
+  if (!controller) return;
+  const auto regionId = session->regionId();
+  const auto* region = session->runtime().document().session().project().findRegion(regionId);
+  CHECK(region != nullptr);
+  if (region == nullptr) return;
+  const auto regionEnd = region->durationTick;
+  const seam::domain::PerformanceTimeRange expectedRange{seam::time::Tick{0}, regionEnd};
+
+  // The menu command runs the production backend and adopts the result as a
+  // proposal. It must not accept it, and it must not touch unrelated state.
+  CHECK(controller.value()->dispatch(
+      seam::platform::ApplicationCommand::ProposeAutomaticPerformance));
+  const auto& afterFirst = session->runtime().document().session().project()
+                               .findRegion(regionId)->performance;
+  CHECK(afterFirst.takes.size() == 1U);
+  CHECK(afterFirst.takes.front().state == seam::domain::PerformanceProposalState::Proposed);
+  CHECK(afterFirst.takes.front().generatorId == "seam-phrase-proposal");
+  CHECK(afterFirst.takes.front().range == expectedRange);
+  CHECK(afterFirst.accepted.empty());
+
+  // Asking again is a second, distinct proposal over the same material.
+  CHECK(controller.value()->proposeAutomaticPerformance());
+  const auto& afterSecond = session->runtime().document().session().project()
+                                .findRegion(regionId)->performance;
+  CHECK(afterSecond.takes.size() == 2U);
+  CHECK(afterSecond.takes[0].id != afterSecond.takes[1].id);
+  CHECK(afterSecond.accepted.empty());
+  CHECK(session->runtime().undo());
+  CHECK(session->runtime().document().session().project().findRegion(regionId)
+            ->performance.takes.size() == 1U);
+}
+
 TEST_CASE("standalone_controller_refuses_a_neural_deployment_it_cannot_verify") {
   const auto root = seam::test::support::temporaryDirectory("standalone-neural");
   auto session = makeSession(root);

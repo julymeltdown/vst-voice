@@ -1,5 +1,59 @@
 # Integrated Singer Execution
 
+## Automatic performance is a real proposal, not a placeholder
+
+The only automatic-performance backend was the deterministic reference one: pitch
+was each note's written pitch plus up to four cents of seeded jitter, dynamics
+copied the region's automation, and attack and release were two constants. Nothing
+in the product called it at all, so the capability existed only as a lifecycle
+fixture.
+
+`generatePhraseAwarePerformance` is the production backend, identified as
+`seam-phrase-proposal` version 1. It derives shaping from the compiled score rather
+than from noise. Phrases are runs of notes with no rest between them; the pitch lane
+arcs toward the phrase centre, opens with an onset scoop when a phrase begins on a
+consonant and the phonemizer reports that symbol as an onset, and settles the last
+note of a phrase exactly on its written pitch. The dynamics lane modulates the
+region's own automation instead of replacing it -- a phrase arch, a phrase-start
+accent, an accent after a leap of five semitones or more, and a damping on the final
+note, all clamped into the channel unit range. Attack follows articulation (legato
+or slurred long, staccato short, phrase-initial short) and release follows phrase
+position, articulation and a stop coda in the resolved pronunciation. Seeded
+humanization is deliberately tiny: a different seed cannot be the substance.
+
+The backend stamps its own identity and refuses a request naming a different
+generator or an unknown version of itself, so a take can never be mislabelled for
+later invalidation or cache keys. Request validation is now shared with the
+reference backend, so both enforce one contract. The authoring-runtime capture owner
+supplies the product path: it captures the performance job, the region and its
+revision, then runs generation from the captured project -- safe to call off the UI
+thread -- and adopts the result through the shared proposal command. A session that
+moved on, a take that belongs to another capture, and a second adoption through the
+same capture are each refused.
+
+The action is reachable: `ProposeAutomaticPerformance` is a dispatcher command with
+a File-menu item, and the controller resolves the selected region, the singer
+identity the proposal is recorded against (the track's saved neural selection, or
+the resolved voicebank), a fixed seed and a per-run take identity before running it.
+
+Verification. `tests/test_automatic_performance.cpp` adds four backend cases:
+identity and proposal state; the arch, scoop and resolution invariants; articulation
+and partial-range behaviour with every point inside the requested range; determinism
+per seed; and the refusals for a foreign generator, an unknown version, a stale
+revision, an unsupported channel and cancellation. It also adds a capture case that
+adopts a proposal into a real session, leaves accepted selections untouched,
+survives undo and redo, and refuses both a reused capture and a moved session.
+`seam_u2_tests` adds the controller case: dispatching the menu command leaves one
+Proposed take with the backend's identity and no accepted selection, a second
+dispatch is a distinct proposal, and undo removes it.
+
+Not claimed. The proposal defaults are named constants, not measured thresholds, and
+nothing here is a listening or quality judgement: whether this saves a creator work
+is the M6.P2 counterbalanced study. Alternate-take audition and comparison, partial
+range and per-channel regeneration from the native surface, and the comparison UI
+that M3.P3 items 3 and 5 require are still missing; today one command proposes over
+the whole selected region.
+
 ## The neural singer chooser is reachable from the application menu
 
 Selection existed on the controller but nothing in the running application called

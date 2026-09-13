@@ -2,6 +2,7 @@
 
 #include "seam/phonemizer/language_resolver.hpp"
 #include "seam/native_ui/export_dialog.hpp"
+#include "seam/authoring/automatic_performance_capture.hpp"
 #include "seam/voice_design/recipe_resource.hpp"
 #include "seam/application/render_commands.hpp"
 #include <set>
@@ -221,6 +222,55 @@ core::Result<void> StandaloneApplicationController::clearNeuralResource() {
   return core::success();
 }
 
+core::Result<void> StandaloneApplicationController::proposeAutomaticPerformance() {
+  const auto& project = session_.runtime().document().session().project();
+  const auto regionId = session_.runtime().selectedRegion();
+  const auto* region = project.findRegion(regionId);
+  if (region == nullptr)
+    return core::failure(core::ErrorCode::Conflict,
+        "Automatic performance requires a selected region");
+  // The proposal records the singer it was computed for: the track's own saved
+  // neural selection when it has one, otherwise the resolved voicebank. A track
+  // with neither is refused rather than proposed against an unknown voice.
+  domain::SingerResourceIdentity resource{};
+  bool haveResource = false;
+  const auto trackId = session_.runtime().selectedTrack();
+  if (const auto* track = project.findVocalTrack(trackId);
+      track != nullptr && track->neuralResource) {
+    resource = track->neuralResource->resource;
+    haveResource = true;
+  } else {
+    for (const auto& state : session_.runtime().voicebanks().resolveAll(project)) {
+      if (state.trackId != trackId || !state.resolution.resolved()) continue;
+      resource = domain::SingerResourceIdentity{domain::SingerResourceKind::Sample,
+          state.resolution.candidate->manifest.id,
+          state.resolution.candidate->manifest.version,
+          state.resolution.candidate->contentHash};
+      haveResource = true;
+    }
+  }
+  if (!haveResource)
+    return core::failure(core::ErrorCode::Conflict,
+        "Automatic performance requires a selected singer");
+  auto& editable = session_.runtime().document().session();
+  const std::string takeId =
+      "proposal-" + std::to_string(++automaticProposalCounter_);
+  auto prepared = authoring::AutomaticPerformanceCapture::prepare(editable, regionId,
+      domain::PerformanceTimeRange{time::Tick{0}, region->durationTick},
+      {domain::PerformanceChannel::Pitch, domain::PerformanceChannel::Dynamics,
+       domain::PerformanceChannel::Attack, domain::PerformanceChannel::Release},
+      resource, automaticProposalSeed_, takeId);
+  if (!prepared) return core::Result<void>{prepared.error()};
+  const auto generated = prepared.value().generate();
+  if (!generated) return core::Result<void>{generated.error()};
+  const auto applied = prepared.value().apply(generated.value(), editable);
+  if (!applied) return applied;
+  session_.runtime().handleDocumentChanged();
+  static_cast<void>(onDocumentChanged());
+  notifyStateChanged();
+  return core::success();
+}
+
 core::Result<void> StandaloneApplicationController::refreshVoicebankBrowser() {
   auto refreshed = session_.runtime().voicebanks().refresh();
   if (!refreshed) return refreshed;
@@ -436,6 +486,8 @@ core::Result<void> StandaloneApplicationController::dispatch(
       return selectProceduralRecipeFromDialog(true);
     case platform::ApplicationCommand::BakeProceduralCandidates:
       return exportSetFromDialog(true);
+    case platform::ApplicationCommand::ProposeAutomaticPerformance:
+      return proposeAutomaticPerformance();
     case platform::ApplicationCommand::NewProject: {
       auto allowed = confirmDestructiveAction();
       if (!allowed) return core::Result<void>{allowed.error()};

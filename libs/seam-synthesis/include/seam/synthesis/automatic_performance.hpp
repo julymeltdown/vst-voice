@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <stop_token>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace seam::synthesis {
@@ -42,5 +43,25 @@ generateAutomaticPerformance(
     const phonemizer::ResolvedPronunciation& pronunciation,
     AutomaticPerformanceRequest request,
     std::stop_token stopToken = {});
+
+// Identity of the production proposal backend. A proposal must never be
+// mistakable for the deterministic reference backend above, so this backend stamps
+// its own identity and refuses a request that names a different generator or an
+// unknown version of itself.
+inline constexpr std::string_view kPhraseAwareGeneratorId{"seam-phrase-proposal"};
+inline constexpr std::string_view kPhraseAwareGeneratorVersion{"1"};
+
+// Production proposal backend: derives expressive shaping from the compiled score
+// -- phrase position, note-to-note leaps, articulation and the phoneme roles the
+// region actually resolves to -- and modulates the region's own dynamics
+// automation instead of replacing it. The result is a Proposed take like any other,
+// so it still needs the shared acceptance command, and a user's manual edits and
+// accepted takes stay authoritative. This claims structural shaping, not taste:
+// language/style-conditioned quality remains M3.P1/M6 work, and no measured
+// quality threshold is asserted here.
+[[nodiscard]] core::Result<domain::PerformanceTake> generatePhraseAwarePerformance(
+    const domain::Project& project, const domain::VocalRegion& region,
+    const phonemizer::ResolvedPronunciation& pronunciation,
+    AutomaticPerformanceRequest request, std::stop_token stopToken = {});
 
 }  // namespace seam::synthesis

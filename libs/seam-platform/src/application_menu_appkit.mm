@@ -19,6 +19,7 @@
 - (void)selectProceduralRecipe:(id)sender;
 - (void)relinkProceduralRecipe:(id)sender;
 - (void)bakeProceduralCandidates:(id)sender;
+- (void)proposeAutomaticPerformance:(id)sender;
 - (void)relinkBackingAudio:(id)sender;
 - (void)openAudioSettings:(id)sender;
 - (void)selectVoicebank:(id)sender;
@@ -88,6 +89,7 @@
 - (void)selectProceduralRecipe:(id)sender { (void)sender; [self send:seam::platform::ApplicationCommand::SelectProceduralRecipe]; }
 - (void)relinkProceduralRecipe:(id)sender { (void)sender; [self send:seam::platform::ApplicationCommand::RelinkProceduralRecipe]; }
 - (void)bakeProceduralCandidates:(id)sender { (void)sender; [self send:seam::platform::ApplicationCommand::BakeProceduralCandidates]; }
+- (void)proposeAutomaticPerformance:(id)sender { (void)sender; [self send:seam::platform::ApplicationCommand::ProposeAutomaticPerformance]; }
 - (void)relinkBackingAudio:(id)sender { (void)sender; [self send:seam::platform::ApplicationCommand::RelinkBackingAudio]; }
 - (void)openAudioSettings:(id)sender { (void)sender; [self send:seam::platform::ApplicationCommand::OpenAudioSettings]; }
 - (void)selectVoicebank:(id)sender {
@@ -283,6 +285,7 @@ public:
     [fileMenu_ addItem:item(@"Select Procedural Recipe…", @selector(selectProceduralRecipe:), @"", 0, target_)];
     [fileMenu_ addItem:item(@"Relink Procedural Recipe…", @selector(relinkProceduralRecipe:), @"", 0, target_)];
     [fileMenu_ addItem:item(@"Bake Unapproved Procedural Candidates…", @selector(bakeProceduralCandidates:), @"", 0, target_)];
+    [fileMenu_ addItem:item(@"Propose Automatic Performance", @selector(proposeAutomaticPerformance:), @"", 0, target_)];
     [fileMenu_ addItem:item(@"Export Audio…", @selector(exportAudio:), @"e",
                             0, target_)];
     [fileMenu_ addItem:item(@"Export Score…", @selector(exportScore:), @"",
