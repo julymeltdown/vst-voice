@@ -2,6 +2,7 @@
 
 #include "seam/core/result.hpp"
 #include "seam/domain/project.hpp"
+#include "seam/neural_synthesis/model_bundle.hpp"
 #include "seam/phonemizer/phonemizer.hpp"
 #include "seam/rendering/phrase_segmenter.hpp"
 #include "seam/synthesis/phrase_renderer.hpp"
@@ -20,6 +21,21 @@ namespace seam::rendering {
 enum class RenderQuality { Preview, Final };
 
 using SelectedUnitIdentity = synthesis::SelectedUnitIdentity;
+
+// Which execution carrier a snapshot actually holds. A prepared neural snapshot
+// carries no sample voicebank and no procedural recipe, so code must ask this
+// instead of assuming a variant alternative.
+enum class RenderResourceFamily { Sample, Procedural, Neural };
+
+// Application-selected execution provenance for a prepared neural snapshot.
+// The factory never invents these values: the deployment descriptor owns the
+// helper identity and the runtime actually selected records its own versions.
+struct NeuralRenderProvenance final {
+  std::string workerVersion;
+  std::string runtimeVersion;
+  std::string provider;
+  [[nodiscard]] core::Result<void> validate() const;
+};
 
 // Immutable, phrase-scoped input for background rendering. The snapshot owns
 // the exact phoneme and unit plans used to calculate its content identity, so
@@ -44,9 +60,27 @@ struct RenderSnapshot final {
   // Absolute half-open publication window. Musical/source context remains the
   // complete segment; absence publishes the legacy full rendered extent.
   std::optional<synthesis::PhraseFrameRange> ownedFrames{};
+  // Authoritative neural execution carrier. When set, `resource` holds an inert
+  // Neural tag: nothing may read resource bytes as a model, and bundle identity
+  // comes only from this admitted handle.
+  std::shared_ptr<const neural_synthesis::AdmittedNeuralBundle> neuralExecution{};
+  // Checked carriers. `sample()` and `procedural()` trap when the snapshot holds
+  // another family, so prefer these pointers whenever the family is not already
+  // proven. A neural snapshot returns nullptr from both.
+  [[nodiscard]] const synthesis::SampleSingerResource* findSample() const noexcept {
+    return std::get_if<synthesis::SampleSingerResource>(&resource);
+  }
+  [[nodiscard]] synthesis::SampleSingerResource* findSample() noexcept {
+    return std::get_if<synthesis::SampleSingerResource>(&resource);
+  }
+  [[nodiscard]] const synthesis::ProceduralSingerResource* findProcedural() const noexcept {
+    return std::get_if<synthesis::ProceduralSingerResource>(&resource);
+  }
   [[nodiscard]] const synthesis::SampleSingerResource& sample() const { return std::get<synthesis::SampleSingerResource>(resource); }
   [[nodiscard]] synthesis::SampleSingerResource& sample() { return std::get<synthesis::SampleSingerResource>(resource); }
 };
+
+[[nodiscard]] RenderResourceFamily renderResourceFamily(const RenderSnapshot& snapshot) noexcept;
 
 class RenderSnapshotFactory final {
 public:
@@ -54,6 +88,16 @@ public:
       const domain::Project& project, const synthesis::ProceduralSingerResource& resource,
       domain::TrackId trackId, domain::RegionId regionId, std::uint64_t revision,
       RenderQuality quality, std::uint32_t sampleRate, std::string style = "neutral",
+      std::optional<synthesis::PhraseFrameRange> ownedFrames = {}) const;
+  // Binds an admitted model bundle to one vocal region. The bundle owns model
+  // identity; the project owns music and pronunciation; neither is inferred
+  // from the other.
+  [[nodiscard]] core::Result<RenderSnapshot> createNeural(
+      const domain::Project& project,
+      const neural_synthesis::AdmittedNeuralBundle& bundle,
+      const NeuralRenderProvenance& provenance,
+      domain::TrackId trackId, domain::RegionId regionId, std::uint64_t revision,
+      RenderQuality quality, std::uint32_t sampleRate, std::string style = {},
       std::optional<synthesis::PhraseFrameRange> ownedFrames = {}) const;
   // Reuses frozen source context; never reopens resources or changes music.
   [[nodiscard]] core::Result<std::vector<RenderSnapshot>> splitOwnedOutput(

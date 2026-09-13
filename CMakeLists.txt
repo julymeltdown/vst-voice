@@ -492,7 +492,7 @@ add_library(seam_rendering
 target_include_directories(seam_rendering PUBLIC libs/seam-rendering/include)
 target_link_libraries(seam_rendering PUBLIC
   seam_voice_design
-  seam_synthesis seam_voicebank seam_phonemizer seam_formats seam_domain seam_core
+  seam_synthesis seam_neural_synthesis seam_voicebank seam_phonemizer seam_formats seam_domain seam_core
   Threads::Threads)
 seam_apply_compiler_options(seam_rendering)
 
@@ -1310,6 +1310,8 @@ if(SEAM_BUILD_TESTS)
     tests/test_main.cpp tests/test_harmony_workflow.cpp)
   add_executable(seam_renderer_capability_tests
     tests/test_main.cpp tests/test_renderer_capabilities.cpp)
+  add_executable(seam_neural_render_tests
+    tests/test_main.cpp tests/test_neural_render_snapshot.cpp)
   add_executable(seam_neural_worker_probe tests/helpers/neural_worker_probe.cpp)
   add_executable(seam_neural_bundle_transport_probe tests/helpers/neural_bundle_transport_probe.cpp)
   target_link_libraries(seam_neural_bundle_transport_probe PRIVATE seam_neural_synthesis)
@@ -1367,6 +1369,10 @@ if(SEAM_BUILD_TESTS)
   target_link_libraries(seam_renderer_capability_tests PRIVATE seam_synthesis)
   seam_apply_compiler_options(seam_renderer_capability_tests)
   add_test(NAME seam_renderer_capability_tests COMMAND seam_renderer_capability_tests)
+  target_include_directories(seam_neural_render_tests PRIVATE tests)
+  target_link_libraries(seam_neural_render_tests PRIVATE seam_rendering seam_neural_synthesis seam_application)
+  seam_apply_compiler_options(seam_neural_render_tests)
+  add_test(NAME seam_neural_render_tests COMMAND seam_neural_render_tests)
   target_link_libraries(seam_neural_worker_probe PRIVATE seam_neural_synthesis)
   seam_apply_compiler_options(seam_neural_worker_probe)
   add_dependencies(seam_neural_worker_protocol_tests seam_neural_worker_probe)

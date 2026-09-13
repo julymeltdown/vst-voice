@@ -1,0 +1,177 @@
+#include "test_framework.hpp"
+#include "seam/build/version.hpp"
+#include "seam/core/sha256.hpp"
+#include "seam/neural_synthesis/model_bundle.hpp"
+#include "seam/rendering/render_pipeline.hpp"
+#include "seam/rendering/render_snapshot.hpp"
+#include "seam/application/project_factory.hpp"
+
+#include <array>
+#include <cstdint>
+#include <string>
+
+namespace {
+
+using seam::neural_synthesis::AdmittedNeuralBundle;
+
+std::string configuration(std::uint32_t version,std::uint32_t sampleRate,std::uint64_t maximumFrames) {
+  const auto features=[&] {
+    return std::string{R"({"sampleRate":)"}+std::to_string(sampleRate)+
+        R"(,"hopSize":256,"bins":80,"layout":"BTF","amplitudeScale":"ln-amplitude",)"+
+        R"("multiplier":1.0,"offset":0.0,"minimumHz":40.0,"maximumHz":16000.0,)"+
+        R"("fftSize":2048,"windowSize":1024,"melFrequencyScale":"slaney"})";
+  }();
+  std::string result=R"({"formatId":"com.project-seam.neural-bundle-configuration","schemaVersion":)"+
+      std::to_string(version)+R"(,"maximumFrames":)"+std::to_string(maximumFrames)+R"(,"acousticFeatures":)"+features+
+      R"(,"vocoderFeatures":)"+features+R"(,"stepsLayout":"scalar")";
+  if (version>=3U) result+=R"(,"vocoderOutput":"audio")";
+  return result+"}";
+}
+
+seam::core::Result<seam::synthesis::FrozenNeuralBundle> freezeBundle(std::uint32_t sampleRate,
+    std::uint64_t maximumFrames=48000U,std::uint32_t version=3U) {
+  using namespace seam::synthesis;
+  const std::string graph="admissible graph fixture";
+  const std::string declaration=configuration(version,sampleRate,maximumFrames);
+  const std::string vocabulary=R"({"formatId":"com.project-seam.neural-vocabulary","schemaVersion":1,"tokens":["<PAD>","SP","aa1","k"]})";
+  const auto input=[&](NeuralAssetRole role,const char* name,const std::string& value) {
+    return NeuralBundleAssetInput{role,name,std::as_bytes(std::span{value.data(),value.size()}),seam::core::sha256Hex(value)};
+  };
+  const std::array assets{input(NeuralAssetRole::Acoustic,"acoustic",graph),
+      input(NeuralAssetRole::Vocoder,"vocoder",graph),input(NeuralAssetRole::Vocabulary,"vocabulary",vocabulary),
+      input(NeuralAssetRole::Configuration,"configuration",declaration)};
+  const auto manifest=FrozenNeuralBundle::manifest(assets,1024U*1024U);
+  if (!manifest) return seam::core::Result<FrozenNeuralBundle>{manifest.error()};
+  return FrozenNeuralBundle::freeze({seam::domain::SingerResourceKind::Neural,"neural-test-bank","1",
+      seam::core::sha256Hex(manifest.value())},assets,1024U*1024U);
+}
+
+struct Score final {
+  seam::domain::Project project;
+  seam::domain::TrackId track{};
+  seam::domain::RegionId region{};
+};
+
+Score score(std::u32string lyric=U"ak",seam::domain::Language language=seam::domain::Language::English) {
+  seam::application::ProjectFactory factory{9100U};
+  Score result{};
+  result.project=factory.createProject("Neural snapshot");
+  result.track=factory.addVocalTrack(result.project,"Singer");
+  result.region=factory.addRegion(result.project,result.track,"Phrase",seam::time::Tick{0},seam::time::Tick{1920});
+  auto [value,note]=factory.makeNote(seam::time::Tick{0},seam::time::Tick{1920},69U,std::move(lyric),language);
+  auto* region=result.project.findRegion(result.region);
+  region->lyrics.push_back(std::move(value));
+  region->notes.push_back(std::move(note));
+  region->sortNotes();
+  return result;
+}
+
+}  // namespace
+
+TEST_CASE("neural snapshot binds an admitted bundle to pronunciation and score identity") {
+  using namespace seam::rendering;
+  const auto frozen=freezeBundle(48000U); CHECK(frozen);
+  const auto admitted=AdmittedNeuralBundle::admit(frozen.value(),65536U,10); CHECK(admitted);
+  const NeuralRenderProvenance provenance{.workerVersion="seam-neural-worker-1",
+      .runtimeVersion="onnxruntime-1.30.0",.provider="CPUExecutionProvider"};
+  auto music=score();
+  const auto snapshot=RenderSnapshotFactory{}.createNeural(music.project,admitted.value(),provenance,
+      music.track,music.region,7U,RenderQuality::Final,48000U,"original"); CHECK(snapshot);
+  CHECK(snapshot.value().contentHash.size()==64U);
+  CHECK(snapshot.value().revision==7U);
+  CHECK(snapshot.value().renderAbiId==std::string{seam::build::kRenderAbiId});
+  CHECK(snapshot.value().sourceProjectId==music.project.id());
+  CHECK(snapshot.value().neuralExecution!=nullptr);
+  CHECK(snapshot.value().neuralExecution->execution()==admitted.value().execution());
+  CHECK(renderResourceFamily(snapshot.value())==RenderResourceFamily::Neural);
+  CHECK(snapshot.value().pronunciationIdentity.has_value());
+  CHECK(snapshot.value().phonemes!=nullptr && !snapshot.value().phonemes->tokens.empty());
+  CHECK(snapshot.value().compiledPerformance!=nullptr);
+  // The score-owned context bounds the published window.
+  const auto& performance=*snapshot.value().compiledPerformance;
+  CHECK(!snapshot.value().ownedFrames.has_value()||
+      (snapshot.value().ownedFrames->start>=performance.notes().front().startFrame&&
+       snapshot.value().ownedFrames->end<=performance.notes().back().endFrame));
+  // An explicit owned window participates in identity instead of being ignored.
+  const seam::synthesis::PhraseFrameRange window{performance.notes().front().startFrame,
+      performance.notes().front().startFrame+256};
+  const auto narrowed=RenderSnapshotFactory{}.createNeural(music.project,admitted.value(),provenance,
+      music.track,music.region,7U,RenderQuality::Final,48000U,"original",window); CHECK(narrowed);
+  CHECK(narrowed.value().contentHash!=snapshot.value().contentHash);
+  CHECK(narrowed.value().ownedFrames==window);
+  CHECK(RenderSnapshotFactory{}.splitOwnedOutput(narrowed.value(),window,128U).error().code==seam::core::ErrorCode::Unsupported);
+  // Identity is per execution and per music, never shareable across either.
+  const auto otherSteps=AdmittedNeuralBundle::admit(frozen.value(),65536U,4); CHECK(otherSteps);
+  const auto changed=RenderSnapshotFactory{}.createNeural(music.project,otherSteps.value(),provenance,
+      music.track,music.region,7U,RenderQuality::Final,48000U,"original"); CHECK(changed);
+  CHECK(changed.value().contentHash!=snapshot.value().contentHash);
+  const NeuralRenderProvenance otherRuntime{.workerVersion="seam-neural-worker-1",
+      .runtimeVersion="onnxruntime-1.31.0",.provider="CPUExecutionProvider"};
+  const auto reruntime=RenderSnapshotFactory{}.createNeural(music.project,admitted.value(),otherRuntime,
+      music.track,music.region,7U,RenderQuality::Final,48000U,"original"); CHECK(reruntime);
+  CHECK(reruntime.value().contentHash!=snapshot.value().contentHash);
+  const auto preview=RenderSnapshotFactory{}.createNeural(music.project,admitted.value(),provenance,
+      music.track,music.region,7U,RenderQuality::Preview,48000U,"original"); CHECK(preview);
+  CHECK(preview.value().contentHash!=snapshot.value().contentHash);
+  // A neural snapshot must not answer sample or procedural queries.
+  CHECK(snapshot.value().findSample()==nullptr);
+  CHECK(snapshot.value().findProcedural()==nullptr);
+  CHECK(PhraseRenderPipeline{}.render(snapshot.value()).error().code==seam::core::ErrorCode::Unsupported);
+}
+
+TEST_CASE("neural snapshot refuses unbounded, mismatched, foreign and stale preparation") {
+  using namespace seam::rendering;
+  const auto frozen=freezeBundle(48000U); CHECK(frozen);
+  const auto admitted=AdmittedNeuralBundle::admit(frozen.value(),65536U,10); CHECK(admitted);
+  const NeuralRenderProvenance provenance{.workerVersion="seam-neural-worker-1",
+      .runtimeVersion="onnxruntime-1.30.0",.provider="CPUExecutionProvider"};
+  auto music=score();
+  const auto factory=RenderSnapshotFactory{};
+  // Provenance is required and bounded.
+  for (const NeuralRenderProvenance& broken:{NeuralRenderProvenance{},
+      NeuralRenderProvenance{.workerVersion="w",.runtimeVersion="r",.provider=""},
+      NeuralRenderProvenance{.workerVersion=std::string(257U,'w'),.runtimeVersion="r",.provider="p"},
+      NeuralRenderProvenance{.workerVersion="w\n",.runtimeVersion="r",.provider="p"}}) {
+    CHECK(!factory.createNeural(music.project,admitted.value(),broken,music.track,music.region,1U,
+        RenderQuality::Final,48000U));
+  }
+  // The admitted model rate and the snapshot rate must agree; resampling is not
+  // silently allowed to change the model contract.
+  CHECK(!factory.createNeural(music.project,admitted.value(),provenance,music.track,music.region,1U,
+      RenderQuality::Final,44100U));
+  // An unknown track or region cannot borrow another score's identity.
+  CHECK(!factory.createNeural(music.project,admitted.value(),provenance,seam::domain::TrackId{999U},music.region,1U,
+      RenderQuality::Final,48000U));
+  CHECK(!factory.createNeural(music.project,admitted.value(),provenance,music.track,seam::domain::RegionId{999U},1U,
+      RenderQuality::Final,48000U));
+  // An owned window outside the score context is refused, not clamped.
+  const auto outside=RenderSnapshotFactory{}.createNeural(music.project,admitted.value(),provenance,
+      music.track,music.region,1U,RenderQuality::Final,48000U,"original",
+      seam::synthesis::PhraseFrameRange{-4096,4096});
+  CHECK(!outside);
+  // A track already bound to a procedural recipe cannot host a neural bundle.
+  auto proceduralMusic=score();
+  proceduralMusic.project.findVocalTrack(proceduralMusic.track)->proceduralRecipe=
+      seam::domain::ProceduralRecipeReference{.path="recipe.json",.style="neutral"};
+  CHECK(!factory.createNeural(proceduralMusic.project,admitted.value(),provenance,proceduralMusic.track,
+      proceduralMusic.region,1U,RenderQuality::Final,48000U));
+  // A region with no singable notes cannot produce an executable request.
+  auto empty=score();
+  empty.project.findRegion(empty.region)->notes.clear();
+  CHECK(!factory.createNeural(empty.project,admitted.value(),provenance,empty.track,empty.region,1U,
+      RenderQuality::Final,48000U));
+}
+
+TEST_CASE("unadmitted and legacy neural resources stay non-executable for rendering") {
+  using namespace seam::rendering;
+  // A legacy opaque model resource is a family tag, never an execution carrier.
+  RenderSnapshot legacy{};
+  legacy.resource=seam::synthesis::NeuralSingerResource{};
+  CHECK(renderResourceFamily(legacy)==RenderResourceFamily::Neural);
+  CHECK(legacy.neuralExecution==nullptr);
+  CHECK(PhraseRenderPipeline{}.render(legacy).error().code==seam::core::ErrorCode::Unsupported);
+  // Sample and procedural families are unchanged by the neural carrier.
+  RenderSnapshot sample{};
+  sample.resource=seam::synthesis::SampleSingerResource{};
+  CHECK(renderResourceFamily(sample)==RenderResourceFamily::Sample);
+}

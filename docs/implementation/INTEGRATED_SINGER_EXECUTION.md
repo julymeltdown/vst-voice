@@ -34,6 +34,47 @@ quiet machine when interpreting this suite.
 
 ### Next unit: the neural render path, with two inspected constraints
 
+Implemented `RenderSnapshotFactory::createNeural()`
+(`libs/seam-rendering/src/render_snapshot.cpp`). It binds one admitted model
+bundle to one vocal region and refuses to invent any part of the identity: the
+bundle owns model identity, the project owns music and pronunciation, and the
+caller supplies `NeuralRenderProvenance` (worker build, runtime version, selected
+provider) from the signed deployment descriptor. A `RenderSnapshot` now carries
+`neuralExecution`, the authoritative prepared bundle, while `resource` holds an
+inert `NeuralSingerResource` tag; nothing may read resource bytes as a model.
+
+`buildNeuralIdentity` hashes the bundle digest, configuration version, inference
+steps, declared frame bound, mel geometry, amplitude scale, vocabulary hash, steps
+layout, vocoder output name, `kDiffSingerInputRevision`, the execution provenance,
+the frozen project JSON, pronunciation identity, style, ABI, quality and owned
+window. Two runs that differ in any of those cannot share cached audio. The
+factory refuses a bundle that cannot be prepared, unbounded or non-printable
+provenance, a region with no notes, an unknown track or region, a snapshot rate
+that differs from the admitted model rate, an owned window outside the score
+context, and a track already bound to a procedural recipe.
+
+`renderResourceFamily()` now reports Sample, Procedural or Neural from one place,
+and `findSample()`/`findProcedural()` give checked carriers. This was not cosmetic:
+the first draft of the render test called `sample()` on a neural snapshot and
+trapped with `bad_variant_access`, which is exactly the failure mode the plan
+warned about for sample-only accesses. Neural subdivision and neural pipeline
+execution remain explicit `Unsupported` refusals with named messages, so no path
+can silently treat a prepared bundle as a bank.
+
+Verified: `seam_neural_render_tests` passes, and the complete Release suite passed
+132 of 133 with the only failure being source closure for these then-untracked
+files.
+
+Storage note: the machine reached 124 MiB free, which caused eleven unrelated
+suite failures (demo smokes, contract tests, neural runtime checks). Those were
+not regressions; the same tests pass with storage restored. Four regenerable
+ONNX Runtime build artifacts were removed to recover space: `onnxruntime-source`
+(954 MiB), `onnxruntime-telemetry-free-pinned-build` (686 MiB),
+`onnxruntime-telemetry-free-build` (260 MiB) and the redundant
+`onnxruntime-osx-arm64-1.30.0.tgz` (40 MiB). The telemetry-free SDK, the release
+SDK, every Python environment, both source checkouts and every evidence directory
+were retained. Rebuild the removed trees with `tools/neural_runtime/build_telemetry_free.py`.
+
 `RenderSnapshotFactory::createNeural()` and the phrase-pipeline neural branch are
 the next package. Two constraints were inspected rather than assumed.
 

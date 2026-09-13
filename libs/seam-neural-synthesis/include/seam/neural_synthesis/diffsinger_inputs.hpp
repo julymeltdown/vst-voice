@@ -6,6 +6,11 @@
 
 namespace seam::neural_synthesis {
 
+// Algorithm revision of the conversion below. Any change to token/duration
+// quantization, F0 ownership or padding changes rendered audio, so render
+// identity must include this value.
+inline constexpr std::uint32_t kDiffSingerInputRevision = 1U;
+
 // Batch size is one. tokens/durations are int64 [1, N], f0Hz is float32
 // [1, T], and steps is an int64 scalar for the inspected acoustic exporter.
 struct DiffSingerAcousticInputs final {

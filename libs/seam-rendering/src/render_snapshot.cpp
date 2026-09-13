@@ -1,4 +1,5 @@
 #include "seam/rendering/render_snapshot.hpp"
+#include "seam/neural_synthesis/diffsinger_inputs.hpp"
 #include "seam/rendering/render_pipeline.hpp"
 
 #include "seam/build/version.hpp"
@@ -401,7 +402,73 @@ core::Result<std::string> buildProceduralIdentity(const domain::Project& project
   return identity.finish();
 }
 
+core::Result<std::string> buildNeuralIdentity(const domain::Project& project,
+    const neural_synthesis::AdmittedNeuralBundle& bundle, const domain::PronunciationIdentity& pronunciation,
+    const NeuralRenderProvenance& provenance, std::string_view style, RenderQuality quality,
+    std::uint32_t sampleRate, std::optional<synthesis::PhraseFrameRange> ownedFrames) {
+  const auto json = formats::ProjectJsonCodec{}.encode(project);
+  if (!json) return core::Result<std::string>{json.error()};
+  const auto& execution = bundle.execution();
+  const auto& metadata = bundle.metadata();
+  IdentityWriter identity;
+  identity.tag("project-seam-neural-bundle-v1");
+  identity.integer(synthesis::kPerformanceCompilerRevision);
+  identity.integer(neural_synthesis::kDiffSingerInputRevision);
+  identity.tag(build::kRenderAbiId);
+  identity.tag(json.value());
+  // Model identity, feature declaration and declared controls all participate:
+  // two bundles with the same music but any different declaration must not share
+  // cached audio.
+  identity.tag(execution.modelId);
+  identity.tag(execution.modelVersion);
+  identity.tag(execution.bundleContentHash);
+  identity.integer(execution.configurationVersion);
+  identity.integer(execution.inferenceSteps);
+  identity.integer(metadata.model.maximumFrames);
+  identity.integer(metadata.features.sampleRate);
+  identity.integer(metadata.features.hopSize);
+  identity.integer(metadata.features.bins);
+  identity.tag(metadata.features.layout);
+  identity.tag(metadata.features.amplitudeScale);
+  identity.floating(metadata.features.multiplier);
+  identity.floating(metadata.features.offset);
+  identity.floating(metadata.features.minimumHz);
+  identity.floating(metadata.features.maximumHz);
+  identity.tag(metadata.model.vocabularyHash);
+  identity.tag(metadata.stepsLayout);
+  identity.tag(metadata.vocoderOutput);
+  identity.tag(provenance.workerVersion);
+  identity.tag(provenance.runtimeVersion);
+  identity.tag(provenance.provider);
+  identity.tag(pronunciation.resourceHash);
+  identity.tag(pronunciation.sequenceHash);
+  identity.tag(style);
+  identity.integer(sampleRate);
+  addEnum(identity, quality);
+  identity.boolean(ownedFrames.has_value());
+  if (ownedFrames) { identity.integer(ownedFrames->start); identity.integer(ownedFrames->end); }
+  return identity.finish();
+}
+
 }  // namespace
+
+core::Result<void> NeuralRenderProvenance::validate() const {
+  const auto acceptable=[](std::string_view value) {
+    return !value.empty() && value.size()<=256U &&
+        std::all_of(value.begin(),value.end(),[](char c){return static_cast<unsigned char>(c)>=32U && static_cast<unsigned char>(c)<127U;});
+  };
+  if (!acceptable(workerVersion) || !acceptable(runtimeVersion) || !acceptable(provider))
+    return core::failure(core::ErrorCode::InvalidArgument,
+        "Neural render provenance requires a bounded printable worker, runtime and provider identity");
+  return core::success();
+}
+
+RenderResourceFamily renderResourceFamily(const RenderSnapshot& snapshot) noexcept {
+  if (snapshot.neuralExecution) return RenderResourceFamily::Neural;
+  if (std::holds_alternative<synthesis::ProceduralSingerResource>(snapshot.resource)) return RenderResourceFamily::Procedural;
+  if (std::holds_alternative<synthesis::NeuralSingerResource>(snapshot.resource)) return RenderResourceFamily::Neural;
+  return RenderResourceFamily::Sample;
+}
 
 std::string fnv1aHex(std::string_view value) {
   core::StableHash64 hash;
@@ -475,12 +542,82 @@ core::Result<RenderSnapshot> RenderSnapshotFactory::createProcedural(
       .compiledPerformance = std::make_shared<const synthesis::CompiledScorePerformance>(performance.value()), .ownedFrames = ownedFrames};
 }
 
+core::Result<RenderSnapshot> RenderSnapshotFactory::createNeural(
+    const domain::Project& project, const neural_synthesis::AdmittedNeuralBundle& bundle,
+    const NeuralRenderProvenance& provenance, domain::TrackId trackId, domain::RegionId regionId,
+    std::uint64_t revision, RenderQuality quality, std::uint32_t sampleRate, std::string style,
+    std::optional<synthesis::PhraseFrameRange> ownedFrames) const {
+  if (!bundle.valid()) return core::failure<RenderSnapshot>(core::ErrorCode::InvalidArgument,
+      "Neural snapshot requires an admitted model bundle");
+  const auto provenanceValid = provenance.validate();
+  if (!provenanceValid) return core::Result<RenderSnapshot>{provenanceValid.error()};
+  const auto valid = project.validate();
+  if (!valid) return core::Result<RenderSnapshot>{valid.error()};
+  const auto* track = project.findVocalTrack(trackId);
+  const auto* region = track ? track->findRegion(regionId) : nullptr;
+  if (!track || !region || region->notes.empty() || region->notes.size() > 4096U ||
+      sampleRate < 8000U || sampleRate > 384000U) {
+    return core::failure<RenderSnapshot>(core::ErrorCode::InvalidArgument,
+        "Neural snapshot track, region or output rate is invalid");
+  }
+  if (track->proceduralRecipe) return core::failure<RenderSnapshot>(core::ErrorCode::Conflict,
+      "A saved procedural singer cannot render through an admitted neural bundle");
+  // The admitted acoustic graph is bound to one rate and hop; resampling the
+  // request would silently change the model's input contract.
+  if (bundle.metadata().model.sampleRate != sampleRate) return core::failure<RenderSnapshot>(
+      core::ErrorCode::Conflict, "Neural snapshot rate differs from the admitted model rate");
+  const auto pronunciation = phonemizer::resolvePronunciation(*region);
+  if (!pronunciation) return core::Result<RenderSnapshot>{pronunciation.error()};
+  PhraseSegment segment{.id = regionId.toString() + ":neural", .regionId = regionId,
+      .startTick = region->notes.front().startTick, .endTick = region->notes.front().endTick(), .noteIds = {}};
+  for (const auto& note : region->notes) {
+    segment.startTick = std::min(segment.startTick, note.startTick);
+    segment.endTick = std::max(segment.endTick, note.endTick());
+    segment.noteIds.push_back(note.id);
+  }
+  auto frozenProject = extractPhraseProject(project, trackId, segment);
+  if (!frozenProject) return core::Result<RenderSnapshot>{frozenProject.error()};
+  const auto* frozenRegion = frozenProject.value().findRegion(regionId);
+  if (!frozenRegion) return core::failure<RenderSnapshot>(core::ErrorCode::InvariantViolation,
+      "Neural phrase extraction lost its source region");
+  // A neural bundle has no recipe poses, so phoneme timing follows the score the
+  // same way the sample path does. The worker receives that compiled timing and
+  // never re-derives it.
+  const auto performance = synthesis::compileScorePerformance(frozenProject.value(), *frozenRegion, sampleRate,
+      pronunciation.value().pronunciation.tokens);
+  if (!performance) return core::Result<RenderSnapshot>{performance.error()};
+  const synthesis::PhraseFrameRange context{performance.value().notes().front().startFrame,
+      performance.value().notes().back().endFrame};
+  const auto outputValid = synthesis::PhraseOutputContract{sampleRate, context, ownedFrames.value_or(context)}.validate();
+  if (!outputValid) return core::Result<RenderSnapshot>{outputValid.error()};
+  const auto identity = buildNeuralIdentity(frozenProject.value(), bundle, pronunciation.value().identity,
+      provenance, style, quality, sampleRate, ownedFrames);
+  if (!identity) return core::Result<RenderSnapshot>{identity.error()};
+  return RenderSnapshot{.revision = revision, .quality = quality, .renderAbiId = std::string{build::kRenderAbiId},
+      .contentHash = identity.value(), .segment = std::move(segment), .trackId = trackId,
+      .sourceProjectId = project.id(),
+      .project = std::make_shared<const domain::Project>(std::move(frozenProject).value()),
+      .phonemes = std::make_shared<const phonemizer::Result>(pronunciation.value().pronunciation),
+      // Inert family tag only; the admitted bundle is the execution carrier.
+      .resource = synthesis::NeuralSingerResource{},
+      .sampleRate = sampleRate, .style = std::move(style),
+      .pronunciationIdentity = pronunciation.value().identity,
+      .compiledPerformance = std::make_shared<const synthesis::CompiledScorePerformance>(performance.value()),
+      .ownedFrames = ownedFrames,
+      .neuralExecution = std::make_shared<const neural_synthesis::AdmittedNeuralBundle>(bundle)};
+}
+
 core::Result<std::vector<RenderSnapshot>> RenderSnapshotFactory::splitOwnedOutput(
     const RenderSnapshot& source, synthesis::PhraseFrameRange output,
     std::uint32_t maximumChunkFrames, std::size_t maximumChunks) const {
   using Output = std::vector<RenderSnapshot>;
   const auto windows = synthesis::planOwnedPhraseWindows(output, maximumChunkFrames, maximumChunks);
   if (!windows) return core::Result<Output>{windows.error()};
+  // Subdivision needs a per-window identity that includes the admitted bundle.
+  // Refuse it explicitly instead of letting a neural snapshot fall into the
+  // sample branch and fail on missing sample material.
+  if (source.neuralExecution) return core::failure<Output>(core::ErrorCode::Unsupported,
+      "Neural snapshot subdivision is not implemented for prepared bundles");
   if (const auto* procedural = std::get_if<synthesis::ProceduralSingerResource>(&source.resource)) {
     if (!source.sourceProjectId.valid() || !source.pronunciationIdentity) return core::failure<Output>(
         core::ErrorCode::InvalidArgument, "Procedural chunk source identity is missing");

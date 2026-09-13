@@ -156,6 +156,8 @@ core::Result<PhrasePipelineResult> PhraseRenderPipeline::render(
         .proceduralMarkers = std::move(rendered.value().markers)};
   }
   if (!std::holds_alternative<synthesis::SampleSingerResource>(snapshot.resource)) {
+    if (snapshot.neuralExecution) return core::failure<PhrasePipelineResult>(core::ErrorCode::Unsupported,
+        "Neural snapshot execution is not connected to this pipeline entry point");
     return core::failure<PhrasePipelineResult>(core::ErrorCode::Unsupported,
         "Phrase pipeline has no backend for this resource");
   }
