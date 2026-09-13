@@ -5,7 +5,7 @@ re-admit the dataset before continuing and discard objects after a failed restor
 """
 import random
 
-from .checkpoint import load_local_checkpoint, publish_checkpoint
+from .gan_checkpoint_storage import load_local_checkpoint, publish_checkpoint
 
 
 def _owners(generator, discriminators, generator_optimizer, discriminator_optimizer):

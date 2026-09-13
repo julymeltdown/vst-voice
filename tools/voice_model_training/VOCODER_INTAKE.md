@@ -156,6 +156,33 @@ schedulers verified exact next-step losses, generator/discriminator state,
 scheduler state and RNG draws after restoring. Changed run metadata, missing
 schedulers and a different optimizer type are rejected. This is a trusted local
 checkpoint API, not a hostile archive importer or renewed source permission.
-The existing 512 MiB checkpoint ceiling remains; larger GAN configurations need
-an explicit storage strategy rather than silently raising limits. Full upstream
-GAN continuation and an admitted-data epoch service remain to be integrated.
+
+### Upstream continuation and two-file storage
+
+The actual upstream GAN continuation check exposed a 553,464,348-byte checkpoint,
+which exceeds the acoustic transport's 512 MiB single-file ceiling. The first
+attempt failed honestly; its report is retained at
+`build/neural-runtime/vocoder-gan-resume-first`.
+
+GAN publication now uses a distinct `com.project-seam.gan-checkpoint` receipt with
+`models.pt` and `training.pt`. Each file retains a maximum of 512 MiB, and the
+two-file aggregate cannot exceed 1 GiB. The `maximum_bytes` option on the GAN API
+is a per-file bound. The acoustic checkpoint format and ceiling are unchanged.
+The GAN loader retains support for the earlier local single-file format.
+
+Both files are captured and hash-verified before either Torch deserializer runs.
+The final receipt binds individual file sizes/digests, aggregate identity, run
+metadata and epoch completion. Publication failure leaves no completion receipt;
+tests cover a damaged training-state file and the pre-publication authority callback.
+
+`check_vocoder_model --check-gan --check-resume --check-onnx` then passed with the
+actual upstream models: resumed next-step losses/gradient norms and every model
+weight/buffer matched the uninterrupted result exactly. Post-resume ONNX export
+passed all four cases (maximum error `2.2351741790771484e-8`). This run exited 0
+in 7.897 seconds; local report directory:
+`build/neural-runtime/vocoder-gan-resume-split`. Checkpoint aggregate identity:
+`08c342b39026712cdb89d603d9b6355429af66f4a2406986fa256bf107354b9e`.
+Diagnostic checkpoints are temporary; no trained singer weights are published.
+
+An admitted-data epoch service, real corpus training, production worker integration
+and quality qualification remain unfinished.

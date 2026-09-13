@@ -4,6 +4,7 @@ from pathlib import Path
 import random
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from tools.voice_model_training.vocoder_checkpoint import publish_vocoder_checkpoint, restore_vocoder_checkpoint
 
@@ -62,6 +63,22 @@ class VocoderCheckpointTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 restore_vocoder_checkpoint(rg, [rd], wrong_go, rdo, output, receipt_sha256=receipt_hash,
                                           expected_metadata=metadata, schedulers=wrong_schedulers)
+            self.assertTrue((output / "models.pt").is_file())
+            self.assertTrue((output / "training.pt").is_file())
+            # A damaged second file is rejected before either payload is decoded.
+            with (output / "training.pt").open("ab") as stream:
+                stream.write(b"changed")
+            with patch("torch.load", side_effect=AssertionError("must validate both files first")):
+                with self.assertRaises(ValueError):
+                    restore_vocoder_checkpoint(rg, [rd], rgo, rdo, output, receipt_sha256=receipt_hash,
+                                              expected_metadata=metadata, schedulers=rs)
+            failed = Path(root) / "failed"
+            def expired():
+                raise ValueError("Fixture source authority expired before publication")
+            with self.assertRaises(ValueError):
+                publish_vocoder_checkpoint(g, [d], go, do, failed, metadata=metadata,
+                    epoch=dict(epochComplete=True, coverageVerified=True), before_publish=expired)
+            self.assertFalse((failed / "checkpoint.json").exists())
 
 
 if __name__ == "__main__":

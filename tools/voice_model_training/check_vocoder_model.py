@@ -4,12 +4,14 @@ Executes trusted upstream Python source. No pretrained weights are downloaded.
 This is not GAN training, an admitted voice dataset, or singing qualification.
 """
 import argparse
+import hashlib
 import importlib.util
 import io
 import json
 from pathlib import Path
 import subprocess
 import sys
+import tempfile
 
 TRAINING_REVISION = "4d0889c4c180c75ad3000cc565864656344f8190"
 DEPLOYMENT_REVISION = "336cf01b57f2ad44c6b37a79cf33993043291759"
@@ -70,7 +72,10 @@ def main():
     parser.add_argument("deployment_checkout", type=Path)
     parser.add_argument("--check-onnx", action="store_true", help="Export and compare deterministic MiniNSF only")
     parser.add_argument("--check-gan", action="store_true", help="Run one real MiniNSF GAN mechanics step on synthetic PCM")
+    parser.add_argument("--check-resume", action="store_true", help="Verify complete upstream GAN checkpoint continuation; requires --check-gan")
     args = parser.parse_args()
+    if args.check_resume and not args.check_gan:
+        parser.error("--check-resume requires --check-gan")
     training = trusted_checkout(args.training_checkout, TRAINING_REVISION)
     deployment = trusted_checkout(args.deployment_checkout, DEPLOYMENT_REVISION)
     import torch
@@ -156,6 +161,38 @@ def main():
             gan = vocoder_gan_step(model, discriminators, generator_optimizer, discriminator_optimizer,
                 mel=conditioned_mel, f0=f0, pcm=pcm, hop_size=256, partition="train",
                 reconstruction_loss=lambda generated, real: (logarithmic_mel(generated) - logarithmic_mel(real)).abs().mean())
+            if args.check_resume:
+                from tools.voice_model_training.vocoder_checkpoint import publish_vocoder_checkpoint, restore_vocoder_checkpoint
+                metadata = dict(trainingRevision=TRAINING_REVISION, deploymentRevision=DEPLOYMENT_REVISION,
+                                configuration=config, syntheticInputs=True, fixtureOnly=True)
+                def next_step():
+                    return vocoder_gan_step(model, discriminators, generator_optimizer, discriminator_optimizer,
+                        mel=conditioned_mel, f0=f0, pcm=pcm, hop_size=256, partition="train",
+                        reconstruction_loss=lambda generated, real: (logarithmic_mel(generated) - logarithmic_mel(real)).abs().mean())
+                def owned_state():
+                    return {f"{i}.{name}": tensor.detach().clone()
+                            for i, owner in enumerate([model, *discriminators])
+                            for name, tensor in owner.state_dict().items()}
+                with tempfile.TemporaryDirectory(prefix="seam-vocoder-resume-") as temporary:
+                    output = Path(temporary) / "checkpoint"
+                    receipt = publish_vocoder_checkpoint(model, discriminators, generator_optimizer,
+                        discriminator_optimizer, output, metadata=metadata,
+                        epoch=dict(epochComplete=True, coverageVerified=True, fixtureOnly=True))
+                    digest = hashlib.sha256((output / "checkpoint.json").read_bytes()).hexdigest()
+                    continuous = next_step()
+                    expected = owned_state()
+                    restore_vocoder_checkpoint(model, discriminators, generator_optimizer, discriminator_optimizer,
+                        output, receipt_sha256=digest, expected_metadata=metadata)
+                    resumed = next_step()
+                    if continuous != resumed:
+                        raise AssertionError("Upstream GAN resumed losses/gradients differ")
+                    for i, owner in enumerate([model, *discriminators]):
+                        for name, tensor in owner.state_dict().items():
+                            if not torch.equal(tensor, expected[f"{i}.{name}"]):
+                                raise AssertionError("Upstream GAN resumed weights/buffers differ")
+                    gan["continuation"] = dict(exact=True, checkpointBytes=receipt["checkpointBytes"],
+                                                checkpointSha256=receipt["checkpointSha256"],
+                                                checkpointRetained=False, fixtureOnly=True)
             adapter.generator.load_state_dict(model.state_dict(), strict=True)
         reports.append(dict(configuration=config, cases=cases, strictStateLoad=True,
                             fixtureLoss=loss.item(), changedParameterTensors=changed,
