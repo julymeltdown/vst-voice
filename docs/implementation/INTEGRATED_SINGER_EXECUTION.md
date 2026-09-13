@@ -1,5 +1,62 @@
 # Integrated Singer Execution
 
+## Half of what the pilot inventory cannot prepare is structural, not a missing sound
+
+The plan requires a coverage report showing missing phone classes and transitions before
+thousands of jobs run. The inventory declared 342 coverage keys and nothing had ever
+checked them against the recipe that was supposed to sing them.
+
+`inspectInventoryCoverage()` now compiles every assignment's inventory score and
+snapshot against a recipe and returns a canonical report: one entry per class with its
+status, frame span and, when it refuses, the refusal message that was actually raised.
+It also derives the declared requirement independently of what happens to prepare, so a
+phone named by any assignment stays required even when every assignment naming it fails,
+and reports the phones and kinds nothing covers. It renders no audio, collects nothing
+and reserves no assignment, and it refuses an inventory larger than its bound rather than
+truncating. The CLI command `inspect-generation-coverage WORKSPACE RECIPE_JSON
+NEW_REPORT_JSON` writes the report to a new path and exits zero even when the inventory
+is incomplete, because the report is the deliverable and its `status`,
+`missingPhones`, `missingKinds` and `refusedClasses` carry the answer.
+
+Measured on the real pilot inventory with the pilot's own maximal recipe: 288 of 1026
+assignments prepare, 738 refuse; 96 of 342 coverage keys prepare; 20 of 41 phones and 4
+of 8 kinds are covered. cv, vv, sustain and special have prepared classes; every `vc`,
+`release`, `glottal-attack` and `breath` assignment is refused. The prepared phones are
+`N a b ch d e g i k m n o p r s t ts u w y`.
+
+The refusals split four ways: 300 missing voiced models (z, j, v and the palatalized
+voiced clusters), 186 missing noise models (sh, h, f and the palatalized unvoiced
+clusters, plus the closure and pause events), 42 symbols the Japanese score adapter
+cannot resolve at all (`R`, `glottal`), and **210 that are none of those** -- vowel-to-coda
+placements of phones such as `t k p b d g s ch ts n m r w y` whose models already exist
+and prepare as onsets. Those 210 refusals come from the gesture model itself: a gesture
+after the nucleus cannot resolve its own start and associated nucleus. That is the cost
+of the gap the plan already lists as items two and three of this package, and it is now
+measured rather than asserted.
+
+Consequence for the next step: a campaign over this inventory cannot be planned at all,
+because planning refuses at the first class that cannot prepare, so the held-out
+preflight cannot yet be run across the whole bank. The coverage report is the retained
+defect list until the coda and context work lands, and the singable subset today is
+onset syllables over twenty phones, vowel-to-vowel, sustain and the syllabic nasal.
+
+Evidence: `tests/test_inventory_coverage.cpp`, registered as CTest
+`seam_inventory_coverage_tests`, covers a fully prepared inventory (status, counts,
+canonical report fields, no collection) and an inventory whose voiced-affricate class
+cannot prepare (the refused class is named, the uncovered phone is listed, the frame span
+stays zero), the assignment bound, and the CLI path including its refusal to replace a
+retained report. The retained measurement is
+`assets/pilots/seam-pilot-01/coverage-report.json` with the reproduction commands and
+interpretation in `assets/pilots/seam-pilot-01/COVERAGE_REPORT.md`.
+
+Not claimed. This is snapshot compilation, not audio: no waveform was produced and no
+listener heard anything, so it says nothing about quality or intelligibility, only about
+which classes the recipe can prepare. The numbers belong to one recipe revision and one
+inventory revision, both named by hash inside the report. A `PREPARED` class is not a
+qualified class -- the rendered preflight is still what proves audio exists. No unit
+acceptance changes.
+
+
 ## A campaign cannot multiply a phone class before its phrases have rendered audibly
 
 The pilot inventory has 2052 assignments and 342 distinct coverage keys. Planning a
@@ -130,7 +187,7 @@ M1.P2's ten required changes:
 | # | Required change | State |
 |---|---|---|
 | 1 | Articulation-source description per phone class | Admitted: oral vowel, nasal, frication, voiced frication, released stop, voiced stop, affricate, approximant and gesture silence. Not admitted: a standalone unreleased stop and an explicit breath event. |
-| 2 | Phrase context beyond the owning note | Open. A gesture still cannot begin before its own note. |
+| 2 | Phrase context beyond the owning note | Open, and now measured: 210 of the pilot inventory's 738 refusals are vowel-to-coda placements of phones whose models already exist, because a gesture after the nucleus cannot resolve its own start and nucleus. Every `vc`, `release`, `glottal-attack` and `breath` assignment is refused. |
 | 3 | Ordered spans separated from a bounded transition plan | Partial. Ordered linguistic spans are preserved and the approximant transition is a bounded declared window, but there is no shared transition-plan type and no coarticulation that crosses a gesture boundary. |
 | 4 | Chunk-invariant rendering | Done, including the new gesture. |
 | 5 | Versioned semantics for old resources | Done. Recipe schemas 1-8, candidate schemas up to 8, articulation plan revision 11. |
@@ -138,7 +195,7 @@ M1.P2's ten required changes:
 | 7 | Resumable campaign orchestration | Landed (`generation_campaign`), one bounded batch per advance. |
 | 8 | Prepare-render-collect transaction with durable receipts | Landed, including conflicts on external edits and recovery of an uncertain commit. |
 | 9 | Aggregate budget preflight | Landed: per-batch, aggregate frame and estimated-byte limits, retained-storage inspection and cancellation. |
-| 10 | Held-out pilot phrase set before the full inventory | Landed for campaign jobs: a coverage-complete bounded selection renders through the ordinary path into a gated preflight report, and advancement is refused without it. The real pilot inventory's retained defect list is still to be produced. |
+| 10 | Held-out pilot phrase set before the full inventory | Landed for campaign jobs: a coverage-complete bounded selection renders through the ordinary path into a gated preflight report, and advancement is refused without it. The retained defect list for the real inventory is `assets/pilots/seam-pilot-01/coverage-report.json`; a whole-inventory preflight waits on the coda/context repair because planning refuses 72% of the assignments. |
 
 So seven of the ten are landed, two are partial, and one remains open (phrase context
 beyond the owning note).
@@ -147,6 +204,13 @@ M1.P1 keeps one open required change: the durable C++ legacy migration operation
 with its retained receipt and history-transition verification. The Python planner
 and its 18 parity tests exist; a generic save still cannot upgrade a schema, which
 is deliberate until that operation lands.
+
+M1.P1's coverage-report requirement is satisfied: `inspect-generation-coverage`
+retains a canonical per-class report of what a recipe can prepare, and the real pilot
+inventory's result is committed at
+`assets/pilots/seam-pilot-01/coverage-report.json`. It is what makes the next repair
+choice evidence-based rather than a guess: 210 refusals are the coda and context model,
+486 are absent models, and 42 are adapter symbols.
 
 ## An affricate is one gesture, not a stop followed by a fricative
 

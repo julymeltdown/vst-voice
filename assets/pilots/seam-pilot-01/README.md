@@ -126,6 +126,26 @@ behind as evidence either way. `advance-generation-campaign` refuses any campaig
 `preflight/report.json` is missing, stale, names another campaign, or did not clear every
 phrase.
 
+### Declared coverage report
+
+```sh
+build/release/seam_voicebank_cli inspect-generation-coverage WORKSPACE RECIPE_JSON NEW_REPORT_JSON
+```
+
+This compiles every assignment's score and snapshot against the recipe and retains a
+canonical report of what each class can and cannot prepare, with the refusal message
+kept per class. It renders no audio, collects nothing and reserves no assignment, so an
+incomplete result is a finding rather than a failure: the command writes the report and
+exits zero, and `status`, `missingPhones`, `missingKinds` and `refusedClasses` carry
+the answer. The report destination must be new.
+
+The retained result for this inventory against the pilot's own maximal recipe is
+`coverage-report.json`, summarised in `COVERAGE_REPORT.md`: 288 of 1026 assignments
+prepare, 96 of 342 coverage keys, 20 of 41 phones and 4 of 8 kinds. Most of the refusals
+are missing models, but 210 of them are vowel-to-coda placements of phones whose models
+already exist and prepare as onsets, which is a structural gap in the gesture model
+rather than a missing pose.
+
 Each invocation verifies completed receipts against repository history and
 prepares/renders/collects at most one remaining batch. Repeat with the same plan
 and hash until `COLLECTED_UNREVIEWED`; that status is not voice approval or Beta GO.
