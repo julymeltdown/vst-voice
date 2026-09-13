@@ -71,6 +71,27 @@ The corrected attempt uses the new sibling directory
 `build/neural-runtime/onnxruntime-telemetry-free-pinned-build`; its completion and
 runtime qualification remain pending.
 
+The corrected build subsequently completed with exit 0. Produced local artifacts:
+
+- Wheel: `onnxruntime-1.30.0-cp311-cp311-macosx_26_0_arm64.whl`, SHA-256
+  `e07919e03e24a0ece4864247e1a1ec834cb5319d9bd45b61ba3e724eeca4ded9`.
+- Built `libonnxruntime.1.30.0.dylib`, SHA-256
+  `387d537a886fd4b4487df439eec38c8fa07004a480ebb35e927513a936a97b4c`.
+- SDK installed using upstream CMake into
+  `build/neural-runtime/onnxruntime-telemetry-free-sdk` (not a system prefix).
+
+The wheel was installed with `--no-deps` in the isolated environment below;
+`pip check` passed. `nm -a -C` searches of both the built shared library and Python
+extension found no `Microsoft::Applications::Events`, `LogManagerProvider` or
+`DebugEventSource` symbols. This supports removal of the observed crashing SDK;
+it is not network-behavior proof or a clean-shutdown result. The wheel's macOS 26
+tag is a local diagnostic boundary, not older-macOS compatibility evidence.
+
+The first retained full export check is running under the lifecycle runner at
+`build/neural-runtime/telemetry-free-export-first` (one attempt, 3600-second limit).
+A separate native probe build uses `build/neural-runtime/seam-telemetry-free` and
+the installed SDK. Neither pending check authorizes replacing the baseline.
+
 ## Isolated comparison environment
 
 `build/neural-runtime/diffsinger-telemetry-free-env` was created without installing
