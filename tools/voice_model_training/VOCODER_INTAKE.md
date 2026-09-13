@@ -115,3 +115,28 @@ stochastic ONNX parity is not claimed. Retained local process reports are under
 
 Next: implement actual admitted PCM/mel/F0 batches and the GAN training/checkpoint
 state, then join the exported acoustic/vocoder graphs in the native worker path.
+
+### Alternating GAN step
+
+`vocoder_optimization.vocoder_gan_step` now performs a least-squares discriminator
+update followed by generator adversarial, feature-matching and supplied
+reconstruction losses. It rejects held-out partitions, invalid PCM geometry,
+nonfinite tensors, shared parameters and incorrect optimizer ownership before
+training. Discriminator inputs detach generated audio; the generator phase freezes
+discriminator parameters and switches them to evaluation mode to prevent spectral
+normalization buffer updates. Prior mixed module modes are restored afterward.
+Both updates clip gradient norm to 1 and reject nonfinite parameters.
+
+Failures after the discriminator update require discarding the in-memory attempt;
+this operation is not transactional and cannot replace a full GAN checkpoint.
+
+`check_vocoder_model --check-gan --check-onnx` executed the real upstream multi-scale
+discriminator and a two-period `[3, 5]` multi-period discriminator on original
+oscillator PCM with 48 kHz/80-bin/256-hop log-mel reconstruction. The process exited
+0 in 7.492 seconds. Gradient ownership checks passed, and the post-GAN exported
+MiniNSF matched PyTorch in all four dynamic cases (maximum error
+`1.871376298367977e-8`). Local evidence is retained under
+`build/neural-runtime/vocoder-gan-first`. This verifies one actual GAN mechanics
+step, not an admitted dataset, a long training run, all discriminator configurations,
+checkpoint continuation or musical quality. The broader training service still
+needs those integrations.

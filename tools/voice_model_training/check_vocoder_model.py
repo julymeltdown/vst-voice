@@ -69,6 +69,7 @@ def main():
     parser.add_argument("training_checkout", type=Path)
     parser.add_argument("deployment_checkout", type=Path)
     parser.add_argument("--check-onnx", action="store_true", help="Export and compare deterministic MiniNSF only")
+    parser.add_argument("--check-gan", action="store_true", help="Run one real MiniNSF GAN mechanics step on synthetic PCM")
     args = parser.parse_args()
     training = trusted_checkout(args.training_checkout, TRAINING_REVISION)
     deployment = trusted_checkout(args.deployment_checkout, DEPLOYMENT_REVISION)
@@ -134,12 +135,35 @@ def main():
         if not changed or not all(torch.isfinite(p).all() for p in model.parameters()):
             raise AssertionError("Vocoder optimization did not produce finite changed weights")
         adapter.generator.load_state_dict(model.state_dict(), strict=True)
+        gan = None
+        if mini and args.check_gan:
+            from tools.voice_model_training.vocoder_optimization import vocoder_gan_step
+            mel_spec = importlib.util.spec_from_file_location("seam_checked_vocoder_mel",
+                                                            training / "utils/wav2mel.py")
+            mel_module = importlib.util.module_from_spec(mel_spec)
+            mel_spec.loader.exec_module(mel_module)
+            transform = mel_module.PitchAdjustableMelSpectrogram(
+                sample_rate=48000, n_fft=1024, win_length=1024, hop_length=256,
+                f_min=20, f_max=24000, n_mels=80)
+            def logarithmic_mel(audio):
+                return transform(audio.squeeze(1)).clamp_min(1e-5).log()
+            pcm = target.reshape(1, 1, -1)
+            conditioned_mel = logarithmic_mel(pcm)
+            discriminators = [source.MultiScaleDiscriminator(), source.MultiPeriodDiscriminator([3, 5])]
+            discriminator_optimizer = torch.optim.AdamW(
+                [p for d in discriminators for p in d.parameters()], lr=1e-4, betas=(.8, .99), weight_decay=0)
+            generator_optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4, betas=(.8, .99), weight_decay=0)
+            gan = vocoder_gan_step(model, discriminators, generator_optimizer, discriminator_optimizer,
+                mel=conditioned_mel, f0=f0, pcm=pcm, hop_size=256, partition="train",
+                reconstruction_loss=lambda generated, real: (logarithmic_mel(generated) - logarithmic_mel(real)).abs().mean())
+            adapter.generator.load_state_dict(model.state_dict(), strict=True)
         reports.append(dict(configuration=config, cases=cases, strictStateLoad=True,
                             fixtureLoss=loss.item(), changedParameterTensors=changed,
+                            ganStep=gan,
                             onnxRuntime=check_onnx(adapter) if mini and args.check_onnx else None))
     print(json.dumps(dict(passed=True, trainingRevision=TRAINING_REVISION,
                           deploymentRevision=DEPLOYMENT_REVISION, models=reports,
-                          syntheticInputs=True, ganTrainingVerified=False,
+                          syntheticInputs=True, ganStepVerified=args.check_gan, ganTrainingVerified=False,
                           onnxExported=args.check_onnx, singerQualified=False, releaseEligible=False), indent=2))
 
 
