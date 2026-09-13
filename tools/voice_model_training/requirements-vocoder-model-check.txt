@@ -1,0 +1,3 @@
+-r requirements-diffsinger-model-check.txt
+# Imported by pinned DiffSinger's vocoder utilities, including model-only usage.
+matplotlib==3.10.0

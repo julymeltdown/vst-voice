@@ -79,3 +79,39 @@ SEAM profile. No training has been launched from that configuration.
 From-scratch training remains contingent on admitted source material and measured
 quality. Synthetic fixtures may validate optimization and export mechanics, but
 cannot establish intelligibility, female-voice identity or commercial source rights.
+
+## Implemented architecture and export check
+
+```sh
+build/neural-runtime/diffsinger-telemetry-free-env/bin/python -m pip install \
+  -r tools/voice_model_training/requirements-vocoder-model-check.txt
+build/neural-runtime/diffsinger-telemetry-free-env/bin/python \
+  -m tools.voice_model_training.check_vocoder_model \
+  build/neural-runtime/singing-vocoders-source \
+  build/neural-runtime/diffsinger-source --check-onnx
+```
+
+The optional ONNX check additionally requires the existing ONNX diagnostic
+dependencies and the separately built telemetry-free runtime. This command does
+not install or select an ONNX Runtime itself. The plotting dependency was added
+after the ten-run runtime comparison; that environment comparison is historical,
+not a claim that the extended vocoder environment still has an identical package set.
+
+The command verifies both clean pinned checkouts before importing source and
+downloads no weights. Standard NSF and MiniNSF both passed exact training-to-
+deployment state loading and output equality on 1, 3, 16 and 23 mel frames,
+producing 256, 768, 4096 and 5888 PCM samples respectively. A single fixture L1
+optimization step changed 100/92 parameter tensors respectively with finite loss
+and parameters. That is gradient connectivity, not a completed GAN trainer.
+
+The deterministic MiniNSF graph exported after the update passed ONNX inspection
+and all four PyTorch-versus-ORT comparisons at the declared 1e-5 tolerances;
+maximum absolute error was `2.8001522878184915e-8`. Graph size: 168,336 bytes;
+SHA-256: `8a19add81b6e11df1a235f33ec0b171fa1f254b71d8a51a4cdffc44b772082ee`.
+The graph itself is not retained or admitted as a model bundle. Standard NSF's
+stochastic ONNX parity is not claimed. Retained local process reports are under
+`build/neural-runtime/vocoder-architecture-first` and
+`build/neural-runtime/vocoder-onnx-first`, both with exit 0.
+
+Next: implement actual admitted PCM/mel/F0 batches and the GAN training/checkpoint
+state, then join the exported acoustic/vocoder graphs in the native worker path.
