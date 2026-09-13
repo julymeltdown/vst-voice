@@ -44,7 +44,10 @@ core::Result<VoiceRecipe> decodeVoiceRecipeResource(
   if (stopToken.stop_requested()) return core::failure<VoiceRecipe>(core::ErrorCode::Conflict, "Recipe loading cancelled");
   const auto valid = resource.validate();
   if (!valid) return core::Result<VoiceRecipe>{valid.error()};
+  // Schema seven adds unvoiced affricates, so it needs no opt-in of its own; the voiced
+  // extensions stay behind the flags that admit them.
   if (resource.identity.version != "1" && resource.identity.version != "2" && resource.identity.version != "3" && resource.identity.version != "4" &&
+      resource.identity.version != "7" &&
       !(allowVoicedFrication && resource.identity.version=="5") &&
       !(allowVoicedStops && allowVoicedFrication && resource.identity.version=="6")) return core::failure<VoiceRecipe>(
       core::ErrorCode::Unsupported, "Procedural recipe resource version is unsupported");

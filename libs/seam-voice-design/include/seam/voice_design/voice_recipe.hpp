@@ -63,6 +63,18 @@ struct VoiceRecipe final {
     friend bool operator==(const PlosivePose&,const PlosivePose&)=default;
   };
   std::vector<PlosivePose> plosives;
+  // Schema-seven explicit opt-in: a released closure whose burst is followed by a frication
+  // tail, which is what makes an affricate different from a stop plus a later fricative.
+  // Absent poses keep their previous meaning, so an old recipe never becomes an affricate by
+  // virtue of naming a phone that a newer build would like to interpret.
+  struct AffricatePose final {
+    std::string phone, style;
+    FricationConfig burst;
+    FricationConfig tail;
+    double burstMilliseconds{10.0};
+    friend bool operator==(const AffricatePose&, const AffricatePose&) = default;
+  };
+  std::vector<AffricatePose> affricates;
   [[nodiscard]] core::Result<void> validate() const;
   friend bool operator==(const VoiceRecipe&, const VoiceRecipe&) = default;
 };

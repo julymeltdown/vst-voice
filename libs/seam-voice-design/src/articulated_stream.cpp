@@ -54,6 +54,15 @@ core::Result<ArticulatedStream> ArticulatedStream::create(
           gesture.voicedPlosive->closureVoicingGain!=binding->voicedClosure->gain ||
           gesture.voicedPlosive->closureLowpassHz!=binding->voicedClosure->lowpassHz))
         return core::failure<ArticulatedStream>(core::ErrorCode::Conflict,"Voiced closure plan differs from the frozen recipe");
+    } else if (gesture.kind == ArticulationGestureKind::Affricate) {
+      const auto binding = std::find_if(recipe.value().affricates.begin(), recipe.value().affricates.end(),
+          [&](const auto& pose) { return pose.phone == gesture.phone && pose.style == style; });
+      if (binding == recipe.value().affricates.end() || !gesture.affricate ||
+          binding->burst != gesture.affricate->release.burst ||
+          binding->tail != gesture.affricate->tail ||
+          static_cast<time::SampleFrame>(std::llround(binding->burstMilliseconds * plan.sampleRate() / 1000.0)) !=
+              gesture.affricate->release.burstFrames)
+        return core::failure<ArticulatedStream>(core::ErrorCode::Conflict, "Affricate plan differs from the frozen recipe");
     } else if (isNoiseGesture(gesture.kind)) {
       const auto binding = std::find_if(recipe.value().frications.begin(), recipe.value().frications.end(),
           [&](const auto& pose) { return pose.phone == gesture.phone && pose.style == style; });

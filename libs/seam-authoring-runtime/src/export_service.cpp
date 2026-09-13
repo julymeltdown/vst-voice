@@ -893,6 +893,8 @@ core::Result<ExportResult> ExportService::exportSetWithSources(
         [](const auto& marker) { return marker.kind==voice_design::ProceduralGestureKind::Nasal; });
     const bool plosive=std::any_of(rendered.value().proceduralMarkers.begin(),rendered.value().proceduralMarkers.end(),
         [](const auto& marker) { return marker.kind==voice_design::ProceduralGestureKind::Plosive; });
+    const bool affricate=std::any_of(rendered.value().proceduralMarkers.begin(),rendered.value().proceduralMarkers.end(),
+        [](const auto& marker) { return marker.kind==voice_design::ProceduralGestureKind::Affricate; });
     formats::JsonValue::Array markers;
     for (const auto& marker : rendered.value().proceduralMarkers) {
       formats::JsonValue::Object entry{
@@ -900,6 +902,7 @@ core::Result<ExportResult> ExportService::exportSetWithSources(
         {"startFrame", formats::JsonValue{static_cast<std::int64_t>(marker.ownedSpan.start - origin)}},
         {"endFrame", formats::JsonValue{static_cast<std::int64_t>(marker.ownedSpan.end - origin)}}};
       if (mixed) entry.emplace("kind", formats::JsonValue{marker.kind == voice_design::ProceduralGestureKind::Frication ? "frication" :
+          marker.kind==voice_design::ProceduralGestureKind::Affricate?"affricate":
           marker.kind==voice_design::ProceduralGestureKind::VoicedPlosive?"voiced-plosive":
           marker.kind==voice_design::ProceduralGestureKind::VoicedFrication?"voiced-frication":
           marker.kind==voice_design::ProceduralGestureKind::Plosive?"plosive":
@@ -908,7 +911,7 @@ core::Result<ExportResult> ExportService::exportSetWithSources(
     }
     formats::JsonValue::Object metadataFields{
         {"formatId", formats::JsonValue{"com.project-seam.procedural-candidate"}},
-        {"schemaVersion", formats::JsonValue{std::int64_t{voicedPlosive ? 6 : voicedFrication ? 5 : plosive ? 4 : nasal ? 3 : mixed ? 2 : 1}}}, {"approval", formats::JsonValue{"unapproved"}},
+        {"schemaVersion", formats::JsonValue{std::int64_t{affricate ? 7 : voicedPlosive ? 6 : voicedFrication ? 5 : plosive ? 4 : nasal ? 3 : mixed ? 2 : 1}}}, {"approval", formats::JsonValue{"unapproved"}},
         {"markerSemantics", formats::JsonValue{mixed ? "planned-articulated-gestures" : "planned-vowel-gestures"}},
         {"audioSha256", formats::JsonValue{audio.value().sha256}},
         {"sampleRate", formats::JsonValue{static_cast<std::int64_t>(candidate.sampleRate)}},
@@ -926,8 +929,11 @@ core::Result<ExportResult> ExportService::exportSetWithSources(
       metadataFields.emplace("fricationRevision", formats::JsonValue{static_cast<std::int64_t>(voice_design::FricationSource::algorithmRevision)});
       metadataFields.emplace("fricationStreamRevision", formats::JsonValue{static_cast<std::int64_t>(voice_design::FricationGestureStream::algorithmRevision)});
     }
-    if (plosive || voicedFrication || voicedPlosive) metadataFields.emplace("plosiveRevision", formats::JsonValue{static_cast<std::int64_t>(voice_design::PlosiveSource::algorithmRevision)});
+    // An affricate's release is a plosive source, so its revision applies to affricate-only
+    // candidates as well.
+    if (plosive || voicedFrication || voicedPlosive || affricate) metadataFields.emplace("plosiveRevision", formats::JsonValue{static_cast<std::int64_t>(voice_design::PlosiveSource::algorithmRevision)});
     if (voicedPlosive) metadataFields.emplace("voicedPlosiveRevision",formats::JsonValue{static_cast<std::int64_t>(voice_design::VoicedPlosiveSource::algorithmRevision)});
+    if (affricate) metadataFields.emplace("affricateRevision",formats::JsonValue{static_cast<std::int64_t>(voice_design::ArticulationPlan::kAffricateModelRevision)});
     const auto metadata = formats::stringifyJson(formats::JsonValue{std::move(metadataFields)}, true);
     const auto metadataPath = staging / (prefix + ".json");
     const auto saved = core::durableAtomicWriteTextNew(metadataPath, metadata);

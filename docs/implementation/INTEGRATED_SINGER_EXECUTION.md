@@ -1,5 +1,49 @@
 # Integrated Singer Execution
 
+## An affricate is one gesture, not a stop followed by a fricative
+
+The pilot's Japanese inventory names `ts`, `ch`, `j`, `r`, `w` and `y`, and the articulation
+model could not produce any of them: `つ` and `ち` were refused with "has no explicit frication or
+released-stop source", so two ordinary syllables of the pilot language had no path at all.
+
+An affricate is now its own recipe pose and its own gesture. `VoiceRecipe::AffricatePose` (schema
+seven) binds an explicit release spectrum, an explicit tail spectrum and how long the release
+lasts; it is an opt-in field, so a recipe written before it keeps its previous meaning and a
+phone is never reinterpreted as an affricate because a newer build would like it to be. The
+loader admits schema seven without a voiced-feature flag, because the extension itself is
+unvoiced. `ArticulationGestureKind::Affricate` carries the parts: a silent closure, the declared
+release, and then frication until the vowel nucleus, with the split derived deterministically
+from the note's own span (the tail keeps at least 20 ms and at least half of what remains after
+the release; the closure takes the rest). A note with no room for a closure, a release and a tail
+is refused with the millisecond requirement in the message rather than compressed, and a voiced
+affricate is refused by name -- prevoiced closure plus voiced frication is a different model, and
+an unvoiced noise pair is not substituted for it.
+
+The aperiodic lane renders the two parts inside the one gesture, so they cannot overlap each
+other, and its closure frames stay exactly silent while the release and the tail are not. A
+chunked render of the same owned range from the same context is identical to a whole one, which
+is what keeps the new gesture inside the existing chunk-invariance contract.
+
+Candidate metadata gains schema seven, an `affricate` marker kind and an `affricateRevision`; the
+plosive revision is recorded for affricate-only candidates too, because the release is a plosive
+source. A schema-seven recipe also satisfies a schema-six candidate, since it carries everything
+version six did, exactly as version six already satisfied version five.
+
+Evidence: `tests/test_articulation_context.cpp`, registered as CTest
+`seam_articulation_context_tests`, covers the gesture kind and split arithmetic, the short-note
+refusal and its message, the voiced-affricate refusal, that frication, plosive and affricate stay
+distinct gestures, the silence/release/tail rendering, and whole-versus-chunked equality. The
+pilot's new `affricates` fixture renders `つ・ち・た・さ` and is checked by the existing CLI
+regression for schema seven, the marker sequence, silent closure, nonzero release and tail, and
+repeatability; run it with `build/release/seam_singer_pilot NEW_OUTPUT_DIRECTORY affricates`.
+
+Not claimed. Nothing here is intelligibility: no listener has judged `つ` or `ち`, and the burst
+and tail spectra are experimental parameter choices rather than phonetic qualification. Voiced
+affricates (`じ`, `ぢ`), liquids and glides (`r`, `w`, `y`) and pre-onset context beyond the
+owning note are still unsupported and are refused rather than approximated, so the pilot
+inventory is known not to be generatable end to end; the pilot README says so. No unit acceptance
+changes.
+
 ## The editor shows what its bounce is doing, including when it refuses
 
 The plug-in surface never fed the editor's render status panel. Only the standalone application

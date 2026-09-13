@@ -24,7 +24,7 @@ core::Result<synthesis::PhraseAudio> FricationGestureStream::renderOwned(synthes
   if (stop.stop_requested()) return cancelled();
   time::SampleFrame work = 0;
   for (const auto& gesture : plan_->gestures()) {
-    if (!isNoiseGesture(gesture.kind)) continue;
+    if (!isAperiodicGesture(gesture.kind)) continue;
     const auto begin = std::max(position_, gesture.span.start);
     const auto end = std::min(owned.end, gesture.span.end);
     if (end <= begin) continue;
@@ -37,7 +37,7 @@ core::Result<synthesis::PhraseAudio> FricationGestureStream::renderOwned(synthes
   const auto gestures = plan_->gestures();
   while (candidate.position_ < owned.end) {
     if (stop.stop_requested()) return cancelled();
-    while (candidate.next_ < gestures.size() && (!isNoiseGesture(gestures[candidate.next_].kind) ||
+    while (candidate.next_ < gestures.size() && (!isAperiodicGesture(gestures[candidate.next_].kind) ||
         gestures[candidate.next_].span.end <= candidate.position_)) {
       ++candidate.next_; candidate.source_.reset(); candidate.plosive_.reset();
     }
@@ -47,27 +47,47 @@ core::Result<synthesis::PhraseAudio> FricationGestureStream::renderOwned(synthes
       candidate.position_ = std::min(gesture.span.start, owned.end); continue;
     }
     const bool plosive = gesture.kind == ArticulationGestureKind::Plosive;
-    if (plosive && !candidate.plosive_) {
-      auto source = PlosiveSource::create(*gesture.plosive, plan_->sampleRate(), gesture.span.start);
+    const bool affricate = gesture.kind == ArticulationGestureKind::Affricate;
+    if ((plosive || affricate) && !candidate.plosive_) {
+      const auto& release = plosive ? *gesture.plosive : gesture.affricate->release;
+      auto source = PlosiveSource::create(release, plan_->sampleRate(), gesture.span.start);
       if (!source) return core::Result<Output>{source.error()};
       candidate.plosive_ = std::move(source.value());
     }
-    if (!plosive && !candidate.source_) {
+    // An affricate's frication begins where its release burst ends; until then the closure and
+    // the burst own the span, so the two parts of the gesture cannot overlap each other.
+    const auto releaseEnd = affricate
+        ? gesture.span.start + static_cast<time::SampleFrame>(gesture.affricate->release.closureFrames) +
+              static_cast<time::SampleFrame>(gesture.affricate->release.burstFrames)
+        : gesture.span.start;
+    const bool inRelease = affricate && candidate.position_ < releaseEnd;
+    if (affricate && !inRelease && !candidate.source_) {
+      auto source = FricationSource::create(gesture.affricate->tail, plan_->sampleRate(), releaseEnd);
+      if (!source) return core::Result<Output>{source.error()};
+      candidate.source_ = std::move(source.value());
+    }
+    if (!plosive && !affricate && !candidate.source_) {
       auto source = FricationSource::create(*gesture.frication, plan_->sampleRate(), gesture.span.start);
       if (!source) return core::Result<Output>{source.error()};
       candidate.source_ = std::move(source.value());
     }
+    const auto limit = inRelease ? releaseEnd : gesture.span.end;
     const auto count = static_cast<std::size_t>(std::min({static_cast<time::SampleFrame>(blockFrames_),
-        gesture.span.end - candidate.position_, owned.end - candidate.position_}));
-    const auto rendered = plosive ? candidate.plosive_->render(count, stop) : candidate.source_->render(count, stop);
+        limit - candidate.position_, owned.end - candidate.position_}));
+    const auto rendered = (plosive || inRelease) ? candidate.plosive_->render(count, stop)
+                                                 : candidate.source_->render(count, stop);
     if (!rendered) return core::Result<Output>{rendered.error()};
-    const auto fade = std::min<time::SampleFrame>(plan_->sampleRate() / 200U, (gesture.span.end - gesture.span.start) / 2);
+    const auto noisyStart = affricate ? releaseEnd : gesture.span.start;
+    const auto fade = std::min<time::SampleFrame>(plan_->sampleRate() / 200U, (gesture.span.end - noisyStart) / 2);
     for (std::size_t index = 0U; index < count; ++index) {
       const auto frame = candidate.position_ + static_cast<time::SampleFrame>(index);
       if (frame < owned.start) continue;
-      auto envelope = plosive || fade == 0 ? 1.0 : std::min({1.0, static_cast<double>(frame - gesture.span.start) / static_cast<double>(fade),
-          static_cast<double>(gesture.span.end - 1 - frame) / static_cast<double>(fade)});
-      envelope = envelope * envelope * (3.0 - 2.0 * envelope);
+      auto envelope = 1.0;
+      if (!plosive && !inRelease && fade > 0) {
+        envelope = std::min({1.0, static_cast<double>(frame - noisyStart) / static_cast<double>(fade),
+            static_cast<double>(gesture.span.end - 1 - frame) / static_cast<double>(fade)});
+        envelope = envelope * envelope * (3.0 - 2.0 * envelope);
+      }
       output.samples[static_cast<std::size_t>(frame - owned.start)] = static_cast<float>(rendered.value().samples[index] * envelope);
     }
     candidate.position_ += static_cast<time::SampleFrame>(count);

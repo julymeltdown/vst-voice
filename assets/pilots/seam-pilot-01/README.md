@@ -39,10 +39,13 @@ The CLI regression checks the exact phone sequence, four gesture classes,
 contiguous planned boundaries, unapproved status, audio hashes and repeatability.
 Markers prove planned timing only, not perceptual onset accuracy.
 
-Still absent from this probe: voiced stops, affricates, liquids/glides,
-standalone nasal, pre-onset context, melisma, short-note failure cases and
-independent intelligibility judgments. Do not use these fourteen notes to claim
-complete Japanese coverage or generate a qualified full bank.
+Still absent from this probe: liquids and glides (`r`, `w`, `y`), the voiced
+affricate `j`, pre-onset context that reaches before its owning note, and
+independent intelligibility judgments. Do not use these notes to claim complete
+Japanese coverage or generate a qualified full bank. The invented Japanese
+inventory does name `r`, `w`, `y` and `j`; those sequences are refused during
+render preparation rather than substituted, so the inventory is not yet
+generatable end to end.
 
 Generate the proposed Japanese coverage, across three planned pitch layers:
 
@@ -178,3 +181,25 @@ and voiced source revision; approval remains `unapproved`. The test checks
 silent versus nonzero closure PCM and repeatability, not phonetic accuracy.
 This diagnostic still needs listener evaluation and parameter refinement;
 prevoicing, voice-onset-time variation and natural coarticulation are not claimed.
+
+### Affricates
+
+```sh
+build/release/seam_singer_pilot NEW_OUTPUT_DIRECTORY affricates
+```
+
+Exports `つ・ち・た・さ` at 250 ms per note: the two unvoiced affricates beside
+the stop and the fricative they are composed from. A schema-seven recipe pose
+binds the release spectrum and the frication tail, and one gesture carries the
+whole phone: a silent closure, a finite release, then frication until the vowel
+nucleus. The split is deterministic (the release lasts its declared
+milliseconds, the tail keeps at least 20 ms and at least half of what remains,
+and the closure takes the rest), so a note with no room for a closure, a release
+and a tail is refused with the millisecond requirement instead of being
+compressed. The candidate metadata records schema seven, `affricateRevision`
+one and `affricate` markers; the CLI regression checks the marker sequence, the
+silent closure, the nonzero release and tail, and repeatability.
+
+Voiced affricates (`じ`, `ぢ`) are not supported: a prevoiced closure and voiced
+frication are a different model, and the unvoiced pair is not substituted for
+them. Liquids, glides and pre-onset context remain open.

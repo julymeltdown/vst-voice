@@ -1,4 +1,6 @@
 #include "seam/voice_design/procedural_candidate.hpp"
+#include "seam/voice_design/articulated_stream.hpp"
+#include "seam/voice_design/frication_gesture_stream.hpp"
 #include "seam/formats/json_value.hpp"
 #include "seam/core/sha256.hpp"
 #include "seam/voice_design/frication_source.hpp"
@@ -24,8 +26,8 @@ core::Result<ProceduralCandidate> parseProceduralCandidateMetadata(std::string_v
   const auto& root = parsed.value();
   if (!root.isObject() || !root.find("schemaVersion") || !root.find("schemaVersion")->isInteger()) return fail("Candidate metadata has an invalid shape");
   const auto version = root.find("schemaVersion")->asInt64();
-  const bool mixed = version>=2 && version<=6;
-  if ((version != 1 && !mixed) || root.asObject().size() != (version==6 ? 22U : version>=4 ? 21U : mixed ? 20U : 17U)) return fail("Candidate metadata version or shape is unsupported");
+  const bool mixed = version>=2 && version<=7;
+  if ((version != 1 && !mixed) || root.asObject().size() != (version==7 ? 23U : version==6 ? 22U : version>=4 ? 21U : mixed ? 20U : 17U)) return fail("Candidate metadata version or shape is unsupported");
   const auto recipe = decodeVoiceRecipeResource(expectedRecipe, stopToken,true,true);
   if (!recipe) return core::Result<Output>{recipe.error()};
   for (const auto* field : {"formatId", "approval", "markerSemantics", "audioSha256", "renderContentHash",
@@ -78,11 +80,25 @@ core::Result<ProceduralCandidate> parseProceduralCandidateMetadata(std::string_v
   if (version==6) {
     const auto* revision=root.find("voicedPlosiveRevision");
     if (!revision || !revision->isInteger() || revision->asInt64()!=VoicedPlosiveSource::algorithmRevision ||
-        expectedRecipe.identity.version!="6" || result.proceduralRevision<10U || result.articulationPlanRevision<9U || result.fricationStreamRevision<3U)
+        // A schema-seven recipe carries everything a schema-six recipe carries plus unvoiced
+        // affricates, so it satisfies this candidate's requirement just as version six does.
+        (expectedRecipe.identity.version!="6" && expectedRecipe.identity.version!="7") ||
+        result.proceduralRevision<10U || result.articulationPlanRevision<9U || result.fricationStreamRevision<3U)
       return fail("Voiced-stop candidate requires its recipe and source/renderer revisions");
     result.voicedPlosiveRevision=static_cast<std::uint32_t>(revision->asInt64());
   }
-  bool hasVowel = false, hasFrication = false, hasNasal=false, hasPlosive=false, hasVoicedFrication=false, hasVoicedPlosive=false;
+  if (version==7) {
+    const auto* revision=root.find("affricateRevision");
+    if (!revision || !revision->isInteger() ||
+        revision->asInt64()!=static_cast<std::int64_t>(ArticulationPlan::kAffricateModelRevision) ||
+        expectedRecipe.identity.version!="7" ||
+        result.proceduralRevision<ArticulatedStream::algorithmRevision ||
+        result.articulationPlanRevision<ArticulationPlan::algorithmRevision ||
+        result.fricationStreamRevision<FricationGestureStream::algorithmRevision)
+      return fail("Affricate candidate requires its recipe and source/renderer revisions");
+    result.affricateRevision=static_cast<std::uint32_t>(revision->asInt64());
+  }
+  bool hasVowel = false, hasFrication = false, hasNasal=false, hasPlosive=false, hasVoicedFrication=false, hasVoicedPlosive=false, hasAffricate=false;
   std::unordered_set<std::string> checkedVowelPoses;
   std::unordered_set<std::string> keys;
   time::SampleFrame previousEnd = 0;
@@ -106,12 +122,14 @@ core::Result<ProceduralCandidate> parseProceduralCandidateMetadata(std::string_v
       const auto* value = entry.find("kind");
       if (!value || !value->isString() || (value->asString() != "oral-vowel" && value->asString() != "frication" &&
           !(version>=3 && value->asString()=="nasal") && !(version>=4 && value->asString()=="plosive") &&
-          !(version>=5 && value->asString()=="voiced-frication") && !(version==6 && value->asString()=="voiced-plosive"))) return fail("Candidate gesture kind is unsupported");
+          !(version>=5 && value->asString()=="voiced-frication") && !(version>=6 && value->asString()=="voiced-plosive") &&
+          !(version>=7 && value->asString()=="affricate"))) return fail("Candidate gesture kind is unsupported");
       if (value->asString() == "frication") kind = ProceduralGestureKind::Frication;
       if (value->asString() == "nasal") kind = ProceduralGestureKind::Nasal;
       if (value->asString() == "plosive") kind = ProceduralGestureKind::Plosive;
       if (value->asString() == "voiced-frication") kind = ProceduralGestureKind::VoicedFrication;
       if (value->asString() == "voiced-plosive") kind = ProceduralGestureKind::VoicedPlosive;
+      if (value->asString() == "affricate") kind = ProceduralGestureKind::Affricate;
     }
     const auto start = entry.find("startFrame")->asInt64(), end = entry.find("endFrame")->asInt64();
     if (start < previousEnd || end <= start || end > frames) return fail("Candidate marker bounds are invalid");
@@ -152,6 +170,23 @@ core::Result<ProceduralCandidate> parseProceduralCandidateMetadata(std::string_v
         hasVoicedPlosive=true;
       }
       hasPlosive=true;
+    } else if (kind==ProceduralGestureKind::Affricate) {
+      const auto pose = std::find_if(recipe.value().affricates.begin(), recipe.value().affricates.end(), [&](const auto& value) {
+        return value.phone == phone && value.style == result.style;
+      });
+      if (pose == recipe.value().affricates.end()) return fail("Candidate affricate is not bound to its recipe style");
+      const auto burst = static_cast<time::SampleFrame>(std::llround(pose->burstMilliseconds * result.sampleRate / 1000.0));
+      const auto minimumTail = static_cast<time::SampleFrame>(std::llround(
+          ArticulationPlan::kMinimumAffricateTailMilliseconds * result.sampleRate / 1000.0));
+      if (burst <= 0 || end-start <= burst + minimumTail)
+        return fail("Candidate affricate has no bounded closure, burst and frication tail");
+      const auto release = PlosiveSource::create({pose->burst,
+          static_cast<std::uint32_t>(end-start-burst-minimumTail), static_cast<std::uint32_t>(burst)},
+          result.sampleRate, origin+start);
+      if (!release) return core::Result<Output>{release.error()};
+      const auto tail = FricationSource::create(pose->tail, result.sampleRate, origin+end-minimumTail);
+      if (!tail) return core::Result<Output>{tail.error()};
+      hasAffricate=true;
     } else {
       const auto pose = std::find_if(recipe.value().frications.begin(), recipe.value().frications.end(), [&](const auto& value) {
         return value.phone == phone && value.style == result.style;
@@ -180,7 +215,7 @@ core::Result<ProceduralCandidate> parseProceduralCandidateMetadata(std::string_v
     for (const auto& marker:result.markers) if (!notes.insert(marker.key.noteId).second)
       return fail("Syllabic nasal candidate requires one gesture per note");
   }
-  if (mixed && ((!hasVowel && !syllabicOnly) || (version==2?!hasFrication:version==3?!hasNasal:version==4?!hasPlosive:version==5?!hasVoicedFrication:!hasVoicedPlosive))) return fail("Articulated candidate lacks its required voiced and consonant gesture kinds");
+  if (mixed && ((!hasVowel && !syllabicOnly) || (version==2?!hasFrication:version==3?!hasNasal:version==4?!hasPlosive:version==5?!hasVoicedFrication:version==6?!hasVoicedPlosive:!hasAffricate))) return fail("Articulated candidate lacks its required voiced and consonant gesture kinds");
   return result;
 }
 

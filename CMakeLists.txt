@@ -1196,6 +1196,17 @@ if(SEAM_BUILD_TESTS AND SEAM_BUILD_CLAP_EDITOR_PLUGIN)
     TIMEOUT 300
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
 
+  add_executable(seam_articulation_context_tests
+    tests/test_main.cpp tests/test_articulation_context.cpp)
+  target_include_directories(seam_articulation_context_tests PRIVATE tests)
+  target_link_libraries(seam_articulation_context_tests PRIVATE
+    seam_voice_design seam_synthesis seam_domain seam_core)
+  seam_apply_compiler_options(seam_articulation_context_tests)
+  add_test(NAME seam_articulation_context_tests COMMAND seam_articulation_context_tests)
+  set_tests_properties(seam_articulation_context_tests PROPERTIES
+    TIMEOUT 300
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+
   if(SEAM_RUN_NATIVE_GUI_TESTS AND UNIX AND NOT APPLE AND X11_FOUND)
     find_program(SEAM_PHASE11_XVFB_RUN_EXECUTABLE xvfb-run)
     if(SEAM_PHASE11_XVFB_RUN_EXECUTABLE)

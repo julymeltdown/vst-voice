@@ -26,16 +26,19 @@ core::Result<ArticulationPlan> ArticulationPlan::compileRecipe(
       (phone.role==domain::PhonemeRole::Onset || phone.role==domain::PhonemeRole::Coda)) requestedStops.insert(phone.symbol);
   std::vector<FricationBinding> bindings;
   std::vector<PlosiveBinding> plosives;
+  std::vector<AffricateBinding> affricates;
   for (const auto& pose : recipe.value().plosives) if (pose.style == style && requestedStops.contains(pose.phone))
     plosives.push_back({pose.phone, pose.source, pose.burstMilliseconds, pose.voicedClosure});
   for (const auto& pose : recipe.value().frications) if (pose.style == style && requestedFrication.contains(pose.phone))
     bindings.push_back({pose.phone, pose.source, pose.voicingGain});
+  for (const auto& pose : recipe.value().affricates) if (pose.style == style && requestedStops.contains(pose.phone))
+    affricates.push_back({pose.phone, pose.burst, pose.tail, pose.burstMilliseconds});
   const auto notes = performance.notes();
   std::vector<std::string> nasals;
   for (const auto& pose:recipe.value().poses) if (pose.style==style && pose.nasal && pose.nasalCoupling>0.0 && phonemizer::isNasalSymbol(pose.phone))
     nasals.push_back(pose.phone);
   const synthesis::PhraseFrameRange context{notes.front().startFrame, notes.back().endFrame};
-  auto plan = compile(phones, performance.phonemeTiming(), bindings, performance.sampleRate(), context,nasals,plosives);
+  auto plan = compile(phones, performance.phonemeTiming(), bindings, performance.sampleRate(), context,nasals,plosives,affricates);
   if (!plan) return core::failure<ArticulationPlan>(plan.error().code,
       "Recipe '" + recipe.value().id + "', style '" + std::string(style) + "': " + plan.error().message);
   std::map<domain::NoteId, const synthesis::ScoreNoteSpan*> scoreNotes;
@@ -64,9 +67,10 @@ core::Result<ArticulationPlan> ArticulationPlan::compile(
     std::span<const synthesis::PhonemeTimingAnchor> timing,
     std::span<const FricationBinding> bindings, std::uint32_t sampleRate,
     synthesis::PhraseFrameRange context, std::span<const std::string> nasalBindings,
-    std::span<const PlosiveBinding> plosiveBindings) {
+    std::span<const PlosiveBinding> plosiveBindings,
+    std::span<const AffricateBinding> affricateBindings) {
   const auto invalid = [](const char* message) { return core::failure<ArticulationPlan>(core::ErrorCode::InvalidArgument, message); };
-  if (phones.empty() || phones.size() > 16384U || phones.size() != timing.size() || bindings.size() > 64U || nasalBindings.size()>64U || plosiveBindings.size()>64U ||
+  if (phones.empty() || phones.size() > 16384U || phones.size() != timing.size() || bindings.size() > 64U || nasalBindings.size()>64U || plosiveBindings.size()>64U || affricateBindings.size()>64U ||
       sampleRate < 8000U || sampleRate > 384000U || context.start < 0 || context.end <= context.start || context.end > (time::SampleFrame{1} << 52))
     return invalid("Articulation input or context exceeds bounds");
   std::map<std::string, FricationBinding, std::less<>> sources;
@@ -96,6 +100,21 @@ core::Result<ArticulationPlan> ArticulationPlan::compile(
     const auto source = FricationSource::create(binding.source, sampleRate, context.start);
     if (!source) return core::Result<ArticulationPlan>{source.error()};
   }
+  std::map<std::string, AffricateBinding, std::less<>> affricates;
+  for (const auto& binding : affricateBindings) {
+    // Unvoiced affricates only. A voiced phone must not reach a noise pair, and a symbol outside
+    // the admitted set is refused rather than guessed at.
+    if ((binding.phone != "ts" && binding.phone != "ch") ||
+        sources.contains(binding.phone) || stops.contains(binding.phone) ||
+        !std::isfinite(binding.burstMilliseconds) || binding.burstMilliseconds < 1.0 ||
+        binding.burstMilliseconds > 100.0 ||
+        !affricates.emplace(binding.phone, binding).second)
+      return invalid("Affricate binding is unsupported, ambiguous or duplicated");
+    const auto burst = FricationSource::create(binding.burst, sampleRate, context.start);
+    if (!burst) return core::Result<ArticulationPlan>{burst.error()};
+    const auto tail = FricationSource::create(binding.tail, sampleRate, context.start);
+    if (!tail) return core::Result<ArticulationPlan>{tail.error()};
+  }
   for (const auto& anchor : timing) if (!anchors.emplace(anchor.key, &anchor).second) return invalid("Articulation timing keys are duplicated");
   std::set<domain::PhonemeKey> seen;
   std::map<domain::NoteId,std::size_t> tokenCounts;
@@ -119,6 +138,7 @@ core::Result<ArticulationPlan> ArticulationPlan::compile(
     std::optional<PlosiveConfig> plosive;
     std::optional<double> voicingGain;
     std::optional<VoicedPlosiveConfig> voicedPlosive;
+    std::optional<AffricateConfig> affricate;
     if (vowel) {
       if (anchor.nucleusKey != std::optional{phone.key}) return invalid("Oral vowel lacks its own nucleus anchor");
     } else if (nasal && phone.symbol=="N" && phone.role==domain::PhonemeRole::Coda &&
@@ -146,16 +166,24 @@ core::Result<ArticulationPlan> ArticulationPlan::compile(
     } else {
       const auto binding = sources.find(phone.symbol);
       const auto stopBinding = stops.find(phone.symbol);
-      const bool noiseCoda=phone.role==domain::PhonemeRole::Coda && (stopBinding!=stops.end() || binding!=sources.end());
+      const auto affricateBinding = affricates.find(phone.symbol);
+      const bool noiseCoda=phone.role==domain::PhonemeRole::Coda &&
+          (stopBinding!=stops.end() || binding!=sources.end() || affricateBinding!=affricates.end());
       const auto phoneLabel="Phone '"+phone.symbol+"' on note "+phone.key.noteId.toString();
       const bool voicedStop=stopBinding!=stops.end() && stopBinding->second.voicedClosure.has_value();
+      if (affricateBinding!=affricates.end() && phone.voiced)
+        return core::failure<ArticulationPlan>(core::ErrorCode::Unsupported,phoneLabel+
+            " is a voiced affricate; it needs prevoiced closure and voiced frication, which this "
+            "build does not model, so an unvoiced noise pair will not be substituted for it");
+      if (affricateBinding!=affricates.end() && voicedStop)
+        return invalid("Affricate binding collides with a plosive binding for the same phone");
       if (stopBinding!=stops.end() && voicedStop!=phone.voiced) return invalid("Plosive binding voicing differs from its token");
-      if (phone.voiced && !voicedStop && (binding==sources.end() || !binding->second.voicingGain))
+      if (phone.voiced && !voicedStop && affricateBinding==affricates.end() && (binding==sources.end() || !binding->second.voicingGain))
         return core::failure<ArticulationPlan>(core::ErrorCode::Unsupported,phoneLabel+
             " requires a supported voiced articulation model; an unvoiced noise source cannot render it");
       if (!phone.voiced && binding!=sources.end() && binding->second.voicingGain)
         return invalid("Voiced frication binding cannot be used for an unvoiced token");
-      if (binding == sources.end() && stopBinding == stops.end())
+      if (binding == sources.end() && stopBinding == stops.end() && affricateBinding == affricates.end())
         return core::failure<ArticulationPlan>(core::ErrorCode::Unsupported,phoneLabel+
             " has no explicit frication or released-stop source in the selected style");
       if (phone.role != domain::PhonemeRole::Onset && !noiseCoda)
@@ -174,7 +202,34 @@ core::Result<ArticulationPlan> ArticulationPlan::compile(
       if (noiseCoda) {
         if (start<anchor.nucleusFrame) return invalid("Noise coda requires a post-nucleus start");
       } else if (end > anchor.nucleusFrame) return invalid("Noise onset crosses its vowel nucleus");
-      if (stopBinding != stops.end()) {
+      if (affricateBinding != affricates.end()) {
+        if (start < context.start || end > context.end || end <= start)
+          return invalid("Affricate gesture is outside its context or empty");
+        const auto burstFrames = static_cast<time::SampleFrame>(std::llround(
+            affricateBinding->second.burstMilliseconds * sampleRate / 1000.0));
+        const auto minimumTailFrames = static_cast<time::SampleFrame>(std::llround(
+            kMinimumAffricateTailMilliseconds * sampleRate / 1000.0));
+        const auto span = end - start;
+        if (burstFrames <= 0 || span <= burstFrames + minimumTailFrames)
+          return core::failure<ArticulationPlan>(core::ErrorCode::Unsupported, phoneLabel +
+              " has no room for a released closure and its frication tail; it needs at least " +
+              std::to_string(static_cast<double>(burstFrames + minimumTailFrames + 1) * 1000.0 /
+                             static_cast<double>(sampleRate)) +
+              " ms of note time");
+        // The closure takes what is left after the release and the tail, and the tail is at least
+        // the admitted minimum so a barely-long-enough note does not become a stop with a click.
+        const auto afterBurst = span - burstFrames;
+        const auto tailFrames = std::min<time::SampleFrame>(afterBurst - 1,
+            std::max<time::SampleFrame>(minimumTailFrames, afterBurst / 2));
+        const auto closureFrames = afterBurst - tailFrames;
+        const PlosiveConfig release{affricateBinding->second.burst,
+            static_cast<std::uint32_t>(closureFrames),
+            static_cast<std::uint32_t>(burstFrames)};
+        const auto checked = PlosiveSource::create(release, sampleRate, start);
+        if (!checked) return core::Result<ArticulationPlan>{checked.error()};
+        affricate = AffricateConfig{release, affricateBinding->second.tail,
+            static_cast<std::uint32_t>(tailFrames)};
+      } else if (stopBinding != stops.end()) {
         if (start < context.start || end > context.end || end <= start)
           return invalid("Plosive gesture is outside its context or empty");
         const auto burstFrames = static_cast<time::SampleFrame>(std::llround(stopBinding->second.burstMilliseconds * sampleRate / 1000.0));
@@ -195,8 +250,8 @@ core::Result<ArticulationPlan> ArticulationPlan::compile(
     }
     if (start < context.start || end > context.end || end <= start) return invalid("Articulation gesture is outside its context or empty");
     result.gestures_.push_back({vowel ? ArticulationGestureKind::OralVowel : nasal ? ArticulationGestureKind::Nasal :
-        voicedPlosive ? ArticulationGestureKind::VoicedPlosive : plosive ? ArticulationGestureKind::Plosive : voicingGain ? ArticulationGestureKind::VoicedFrication : ArticulationGestureKind::Frication,
-        phone.key, phone.symbol, {start, end}, source, plosive, voicingGain, voicedPlosive});
+        affricate ? ArticulationGestureKind::Affricate : voicedPlosive ? ArticulationGestureKind::VoicedPlosive : plosive ? ArticulationGestureKind::Plosive : voicingGain ? ArticulationGestureKind::VoicedFrication : ArticulationGestureKind::Frication,
+        phone.key, phone.symbol, {start, end}, source, plosive, voicingGain, voicedPlosive, affricate});
   }
   std::sort(result.gestures_.begin(), result.gestures_.end(), [](const auto& a, const auto& b) { return a.span.start < b.span.start; });
   for (std::size_t index = 1U; index < result.gestures_.size(); ++index)

@@ -200,6 +200,56 @@ def main():
                     else:
                         assert max(abs(value) for value in closure) > 1e-5
         assert stop_hashes[0] == stop_hashes[1]
+
+        # An affricate is a released closure that continues into a frication tail inside one
+        # gesture, so the closure is silent, the release is not, and the tail that follows it is
+        # not either. た and さ are rendered beside them as the stop and fricative they are made
+        # from, which is what makes the comparison listenable.
+        affricate_hashes = []
+        for name in ("affricates", "affricates-repeat"):
+            subprocess.run([str(binary), str(root / name), "affricates"], check=True,
+                           capture_output=True, timeout=60)
+            report = json.loads((root / name / "pilot.json").read_text())
+            affricate_hashes.append([row["sha256"] for row in report["runs"]])
+            for row in report["runs"]:
+                audio = Path(row["wav"])
+                if audio.parent.name != "candidates":
+                    continue
+                metadata = json.loads(audio.with_suffix(".json").read_text())
+                assert metadata["schemaVersion"] == 7
+                assert metadata["affricateRevision"] == 1
+                assert metadata["plosiveRevision"] == 1
+                assert metadata["approval"] == "unapproved"
+                markers = metadata["markers"]
+                assert [m["phone"] for m in markers] == ["ts", "u", "ch", "i", "t", "a", "s", "a"]
+                assert [m["kind"] for m in markers] == [
+                    "affricate", "oral-vowel", "affricate", "oral-vowel",
+                    "plosive", "oral-vowel", "frication", "oral-vowel"]
+                raw = audio.read_bytes()
+                assert hashlib.sha256(raw).hexdigest() == row["sha256"]
+                offset = 12
+                chunks = {}
+                while offset + 8 <= len(raw):
+                    size = struct.unpack_from("<I", raw, offset + 4)[0]
+                    chunks[raw[offset:offset + 4]] = raw[offset + 8:offset + 8 + size]
+                    offset += 8 + size + size % 2
+                encoding, channels, rate = struct.unpack_from("<HHI", chunks[b"fmt "])
+                assert encoding == 3 and channels == 1
+                samples = struct.unpack("<" + "f" * (len(chunks[b"data"]) // 4), chunks[b"data"])
+                for marker, burst_milliseconds in zip(
+                        [m for m in markers if m["kind"] == "affricate"], (10, 12)):
+                    start = marker["startFrame"]
+                    span = marker["endFrame"] - start
+                    burst = round(burst_milliseconds * rate / 1000)
+                    minimum_tail = round(0.020 * rate / 1000)
+                    after_burst = span - burst
+                    tail = min(after_burst - 1, max(minimum_tail, after_burst // 2))
+                    closure = after_burst - tail
+                    assert closure >= 1 and tail >= minimum_tail
+                    assert all(value == 0 for value in samples[start:start + closure])
+                    assert any(value != 0 for value in samples[start + closure:start + closure + burst])
+                    assert any(value != 0 for value in samples[start + closure + burst:start + span])
+        assert affricate_hashes[0] == affricate_hashes[1]
     print("Pilot repeatability, finite/nonzero PCM, variant identity and no-overwrite checks passed; quality unassessed.")
 
 
