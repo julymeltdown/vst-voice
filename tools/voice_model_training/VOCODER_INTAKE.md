@@ -140,3 +140,22 @@ MiniNSF matched PyTorch in all four dynamic cases (maximum error
 step, not an admitted dataset, a long training run, all discriminator configurations,
 checkpoint continuation or musical quality. The broader training service still
 needs those integrations.
+
+### Complete local GAN checkpoint transport
+
+`vocoder_checkpoint` now reuses the bounded checkpoint/receipt transport with a
+joint generator/discriminator module owner and explicit dual-optimizer state.
+It captures optional named schedulers, Torch CPU RNG, Python's global RNG and
+NumPy's legacy global RNG. Independently created RNG instances are not captured;
+a future data service must either use these owned streams or explicitly extend
+its checkpoint contract. Optimizer/scheduler class identities, discriminator
+count and NumPy version are bound alongside the caller's run metadata.
+
+A deterministic alternating-GAN regression with AdamW and two learning-rate
+schedulers verified exact next-step losses, generator/discriminator state,
+scheduler state and RNG draws after restoring. Changed run metadata, missing
+schedulers and a different optimizer type are rejected. This is a trusted local
+checkpoint API, not a hostile archive importer or renewed source permission.
+The existing 512 MiB checkpoint ceiling remains; larger GAN configurations need
+an explicit storage strategy rather than silently raising limits. Full upstream
+GAN continuation and an admitted-data epoch service remain to be integrated.
