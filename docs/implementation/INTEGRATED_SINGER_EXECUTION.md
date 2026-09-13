@@ -1,5 +1,40 @@
 # Integrated Singer Execution
 
+## A performance proposal can now be decided, not only created
+
+A proposal that cannot be rejected is not a decision, and the previous slice could
+only add one. `RejectPerformanceProposalCommand` records the decision on the take
+itself, so a rejected proposal keeps its identity, generator, seed and captured
+revision instead of disappearing. The refusals are the substance: an unknown take is
+`NotFound`, a take that is not still `Proposed` is `Conflict`, and a take that an
+accepted selection still references is `Conflict` rather than a silent dead
+reference. That last rule is not cosmetic -- `RegionPerformanceState::validate`
+skips rejected takes while it walks accepted selections, so rejecting a selected
+take would otherwise leave an accepted selection that occupies the selection list
+and replaces nothing. The decision moves no revision axis, so proposals captured
+before the rejection stay acceptable and a creator cannot invalidate a pending
+proposal by accident.
+
+Partial-range acceptance is the other half of the same requirement, and it already
+had a mechanism without proof: an accepted selection carries `sourceTickOffset`,
+which maps the selected musical range onto the ticks of the captured take
+(`selection.sourceTickOffset + range.startTick`). The regression accepts the middle
+of a region from a take that covers all of it, then proves the refusal that keeps
+the mechanism honest -- shifting the same selection past the captured span is
+refused by `validate()` as an unmapped span instead of being silently clamped.
+
+Verification. `tests/test_automatic_performance.cpp` adds three cases: rejection
+keeps the take, leaves acceptances alone, leaves the revision axes untouched, and
+survives undo and redo; rejection refuses an unknown take, an accepted take and a
+repeated decision, including an expectation captured before an interleaved edit;
+and partial acceptance selects a sub-range, validates, and refuses a shifted
+unmapped selection.
+
+Not claimed. This is the decision half of M3.P3 item 3. Alternate-take audition and
+comparison, regeneration of a rejected or partial result, and the native accept and
+reject surfaces are still missing: the menu can propose, but nothing in the running
+application can yet accept or reject what it proposed.
+
 ## Automatic performance is a real proposal, not a placeholder
 
 The only automatic-performance backend was the deterministic reference one: pitch

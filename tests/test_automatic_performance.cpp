@@ -375,3 +375,135 @@ TEST_CASE("automatic performance rejects stale, cancelled and advanced requests"
       fixture.project, *fixture.project.findRegion(fixture.regionId),
       pronunciation, fixture.request(pronunciation), stop.get_token()));
 }
+
+TEST_CASE("rejecting a proposal is undoable and keeps the take for audit") {
+  Fixture fixture;
+  const auto pronunciation = fixture.pronunciation();
+  auto proposal = seam::synthesis::generateAutomaticPerformance(
+      fixture.project, *fixture.project.findRegion(fixture.regionId),
+      pronunciation, fixture.request(pronunciation));
+  CHECK(proposal);
+  const auto before = fixture.project.findRegion(fixture.regionId)->performance;
+  seam::application::EditorSession session{fixture.project};
+  CHECK(session.execute(std::make_unique<seam::application::AddPerformanceProposalCommand>(
+      fixture.regionId, before, proposal.value())));
+  const auto added = session.project().findRegion(fixture.regionId)->performance;
+  CHECK(session.execute(std::make_unique<seam::application::RejectPerformanceProposalCommand>(
+      fixture.regionId, added, proposal.value().id)));
+  const auto decided = session.project().findRegion(fixture.regionId)->performance;
+  CHECK(decided.takes.size() == 1U);
+  CHECK(decided.takes.front().id == proposal.value().id);
+  CHECK(decided.takes.front().state == seam::domain::PerformanceProposalState::Rejected);
+  CHECK(decided.accepted.empty());
+  // A decision is not a musical edit: no revision axis moves, so a proposal
+  // captured before the rejection stays acceptable.
+  CHECK(decided.revision == added.revision);
+  CHECK(decided.validate(
+      session.project().findRegion(fixture.regionId)->notes,
+      session.project().findRegion(fixture.regionId)->durationTick));
+  CHECK(session.undo());
+  CHECK(session.project().findRegion(fixture.regionId)->performance == added);
+  CHECK(session.redo());
+  CHECK(session.project().findRegion(fixture.regionId)->performance == decided);
+}
+
+TEST_CASE("rejecting a proposal refuses unknown, accepted and already decided takes") {
+  Fixture fixture;
+  const auto pronunciation = fixture.pronunciation();
+  auto proposal = seam::synthesis::generateAutomaticPerformance(
+      fixture.project, *fixture.project.findRegion(fixture.regionId),
+      pronunciation, fixture.request(pronunciation));
+  CHECK(proposal);
+  const auto before = fixture.project.findRegion(fixture.regionId)->performance;
+  seam::application::EditorSession session{fixture.project};
+  CHECK(session.execute(std::make_unique<seam::application::AddPerformanceProposalCommand>(
+      fixture.regionId, before, proposal.value())));
+  const auto added = session.project().findRegion(fixture.regionId)->performance;
+
+  const auto unknown = session.execute(
+      std::make_unique<seam::application::RejectPerformanceProposalCommand>(
+          fixture.regionId, added, "take-not-present"));
+  CHECK(!unknown);
+  CHECK(unknown.error().code == seam::core::ErrorCode::NotFound);
+  CHECK(session.project().findRegion(fixture.regionId)->performance == added);
+
+  const std::vector<seam::domain::AcceptedPerformanceSelection> accepted{
+      {proposal.value().id, seam::domain::PerformanceChannel::Pitch,
+       seam::domain::PerformanceTimeRange{seam::time::Tick{0}, seam::time::Tick{1920}},
+       seam::time::Tick{0}}};
+  CHECK(session.execute(std::make_unique<seam::application::SetAcceptedPerformanceCommand>(
+      fixture.regionId, added, accepted)));
+  const auto selected = session.project().findRegion(fixture.regionId)->performance;
+  // Silently rejecting a selected take would leave a dead accepted selection
+  // that validates as skipped but still occupies the selection list.
+  const auto selectedRefusal = session.execute(
+      std::make_unique<seam::application::RejectPerformanceProposalCommand>(
+          fixture.regionId, selected, proposal.value().id));
+  CHECK(!selectedRefusal);
+  CHECK(selectedRefusal.error().code == seam::core::ErrorCode::Conflict);
+  CHECK(session.project().findRegion(fixture.regionId)->performance == selected);
+
+  CHECK(session.execute(std::make_unique<seam::application::SetAcceptedPerformanceCommand>(
+      fixture.regionId, selected, std::vector<seam::domain::AcceptedPerformanceSelection>{})));
+  const auto cleared = session.project().findRegion(fixture.regionId)->performance;
+  CHECK(session.execute(std::make_unique<seam::application::RejectPerformanceProposalCommand>(
+      fixture.regionId, cleared, proposal.value().id)));
+  const auto decided = session.project().findRegion(fixture.regionId)->performance;
+  CHECK(decided.takes.front().state == seam::domain::PerformanceProposalState::Rejected);
+
+  const auto repeated = session.execute(
+      std::make_unique<seam::application::RejectPerformanceProposalCommand>(
+          fixture.regionId, decided, proposal.value().id));
+  CHECK(!repeated);
+  CHECK(repeated.error().code == seam::core::ErrorCode::Conflict);
+
+  // An expectation captured before an interleaved edit cannot overwrite it.
+  auto staleCopy = session.project();
+  seam::application::RejectPerformanceProposalCommand staleCommand{
+      fixture.regionId, added, proposal.value().id};
+  const auto staleResult = staleCommand.apply(staleCopy);
+  CHECK(!staleResult);
+  CHECK(staleResult.error().code == seam::core::ErrorCode::Conflict);
+}
+
+TEST_CASE("a proposal can be accepted over a partial range and refuses an unmapped span") {
+  Fixture fixture;
+  const auto pronunciation = fixture.pronunciation();
+  auto proposal = seam::synthesis::generateAutomaticPerformance(
+      fixture.project, *fixture.project.findRegion(fixture.regionId),
+      pronunciation, fixture.request(pronunciation));
+  CHECK(proposal);
+  const auto before = fixture.project.findRegion(fixture.regionId)->performance;
+  seam::application::EditorSession session{fixture.project};
+  CHECK(session.execute(std::make_unique<seam::application::AddPerformanceProposalCommand>(
+      fixture.regionId, before, proposal.value())));
+  const auto added = session.project().findRegion(fixture.regionId)->performance;
+  CHECK(added.takes.front().range.startTick == seam::time::Tick{0});
+  CHECK(added.takes.front().range.endTick == seam::time::Tick{1920});
+
+  // The creator selects the middle of the region; the zero source offset maps
+  // it onto the same ticks of the captured span, so only that part is replaced.
+  const std::vector<seam::domain::AcceptedPerformanceSelection> partial{
+      {proposal.value().id, seam::domain::PerformanceChannel::Pitch,
+       seam::domain::PerformanceTimeRange{seam::time::Tick{480}, seam::time::Tick{1440}},
+       seam::time::Tick{0}}};
+  CHECK(session.execute(std::make_unique<seam::application::SetAcceptedPerformanceCommand>(
+      fixture.regionId, added, partial)));
+  const auto selected = session.project().findRegion(fixture.regionId)->performance;
+  CHECK(selected.accepted == partial);
+  CHECK(selected.validate(session.project().findRegion(fixture.regionId)->notes,
+                          session.project().findRegion(fixture.regionId)->durationTick));
+
+  // The same selection shifted past the captured span would read take data that
+  // was never generated, so it is refused instead of silently clamped.
+  const std::vector<seam::domain::AcceptedPerformanceSelection> unmapped{
+      {proposal.value().id, seam::domain::PerformanceChannel::Pitch,
+       seam::domain::PerformanceTimeRange{seam::time::Tick{480}, seam::time::Tick{1440}},
+       seam::time::Tick{1440}}};
+  const auto refused = session.execute(
+      std::make_unique<seam::application::SetAcceptedPerformanceCommand>(
+          fixture.regionId, selected, unmapped));
+  CHECK(!refused);
+  CHECK(refused.error().code == seam::core::ErrorCode::InvariantViolation);
+  CHECK(session.project().findRegion(fixture.regionId)->performance == selected);
+}

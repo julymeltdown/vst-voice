@@ -3,6 +3,7 @@
 
 #include <cstddef>
 #include <algorithm>
+#include <iterator>
 #include <limits>
 #include <unordered_set>
 #include <unordered_map>
@@ -122,6 +123,61 @@ core::Result<void> SetAcceptedPerformanceCommand::revert(domain::Project& projec
   if (!region) return core::failure(core::ErrorCode::NotFound, "Performance region was not found");
   if (!after_ || region->performance != *after_) return core::failure(core::ErrorCode::Conflict,
       "Cannot undo a performance selection over changed state");
+  const auto valid = before_.validate(region->notes, region->durationTick);
+  if (!valid) return valid;
+  region->performance = before_;
+  return core::success();
+}
+
+RejectPerformanceProposalCommand::RejectPerformanceProposalCommand(domain::RegionId regionId,
+    domain::RegionPerformanceState expected, std::string takeId)
+    : regionId_(regionId), before_(std::move(expected)), takeId_(std::move(takeId)) {}
+
+CommandImpact RejectPerformanceProposalCommand::impact() const {
+  return {.scope = CommandAudioImpact::PhraseAudio, .projectWide = false,
+          .trackIds = {}, .regionIds = {regionId_}, .noteIds = {}, .lyricIds = {}};
+}
+
+core::Result<void> RejectPerformanceProposalCommand::apply(domain::Project& project) {
+  auto* region = project.findRegion(regionId_);
+  if (!region) return core::failure(core::ErrorCode::NotFound, "Performance region was not found");
+  if (region->performance != before_) return core::failure(core::ErrorCode::Conflict,
+      "Performance changed before the proposal decision");
+  const auto valid = region->validate();
+  if (!valid) return valid;
+  if (!after_) {
+    const auto take = std::find_if(before_.takes.begin(), before_.takes.end(),
+        [&](const auto& value) { return value.id == takeId_; });
+    if (take == before_.takes.end()) {
+      return core::failure(core::ErrorCode::NotFound, "Performance proposal was not found", takeId_);
+    }
+    if (take->state != domain::PerformanceProposalState::Proposed) {
+      return core::failure(core::ErrorCode::Conflict,
+          "Performance proposal is not awaiting a decision", takeId_);
+    }
+    if (std::any_of(before_.accepted.begin(), before_.accepted.end(),
+            [&](const auto& selection) { return selection.takeId == takeId_; })) {
+      return core::failure(core::ErrorCode::Conflict,
+          "Accepted performance selections must be replaced before the take is rejected", takeId_);
+    }
+    auto next = before_;
+    const auto index = static_cast<std::size_t>(std::distance(before_.takes.begin(), take));
+    next.takes[index].state = domain::PerformanceProposalState::Rejected;
+    const auto nextValid = next.validate(region->notes, region->durationTick);
+    if (!nextValid) return nextValid;
+    after_ = std::move(next);
+  }
+  const auto afterValid = after_->validate(region->notes, region->durationTick);
+  if (!afterValid) return afterValid;
+  region->performance = *after_;
+  return core::success();
+}
+
+core::Result<void> RejectPerformanceProposalCommand::revert(domain::Project& project) {
+  auto* region = project.findRegion(regionId_);
+  if (!region) return core::failure(core::ErrorCode::NotFound, "Performance region was not found");
+  if (!after_ || region->performance != *after_) return core::failure(core::ErrorCode::Conflict,
+      "Cannot undo a performance decision over changed state");
   const auto valid = before_.validate(region->notes, region->durationTick);
   if (!valid) return valid;
   region->performance = before_;

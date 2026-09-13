@@ -95,6 +95,27 @@ private:
   std::vector<domain::PhonemeOverride> afterPhonemes_;
 };
 
+// Marks one proposed take as rejected. The take is retained for comparison and its
+// lanes are never edited; a take that an accepted selection still points at cannot
+// be rejected, because that would leave the selection referring to rejected
+// material. Rejection changes no revision axis, so proposals captured before the
+// rejection stay acceptable on exactly the material they were computed for.
+class RejectPerformanceProposalCommand final : public ICommand {
+public:
+  RejectPerformanceProposalCommand(domain::RegionId regionId,
+      domain::RegionPerformanceState expected, std::string takeId);
+  [[nodiscard]] std::string_view name() const noexcept override { return "Reject performance proposal"; }
+  [[nodiscard]] CommandAudioImpact audioImpact() const noexcept override { return CommandAudioImpact::PhraseAudio; }
+  [[nodiscard]] CommandImpact impact() const override;
+  [[nodiscard]] core::Result<void> apply(domain::Project& project) override;
+  [[nodiscard]] core::Result<void> revert(domain::Project& project) override;
+private:
+  domain::RegionId regionId_;
+  domain::RegionPerformanceState before_;
+  std::string takeId_;
+  std::optional<domain::RegionPerformanceState> after_;
+};
+
 class EditPerformanceCommand final : public ICommand {
 public:
   EditPerformanceCommand(std::vector<NoteExpressionEdit> notes,
