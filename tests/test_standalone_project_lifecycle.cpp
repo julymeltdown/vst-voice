@@ -735,6 +735,43 @@ TEST_CASE("standalone_controller_accepts_a_take_over_the_selected_notes_only") {
     CHECK(selection.sourceTickOffset == seam::time::Tick{0});
     CHECK(std::get<seam::domain::PerformanceTimeRange>(selection.scope) == noteRange);
   }
+
+  // A second note and a second proposal: deciding on the new note must not discard
+  // what was already accepted for the first one, which is the whole point of a
+  // range decision over a whole-take replacement.
+  auto [lyric, second] = session->runtime().document().factory().makeNote(
+      seam::time::Tick{960}, seam::time::Tick{960}, 62U, U"\u304d",
+      seam::domain::Language::Japanese);
+  CHECK(session->runtime().execute(std::make_unique<seam::application::AddNoteCommand>(
+      regionId, std::move(lyric), std::move(second))));
+  const auto secondNote = editable.project().findRegion(regionId)->notes.back().id;
+  const auto secondRange = seam::domain::PerformanceTimeRange{
+      seam::time::Tick{960}, seam::time::Tick{1920}};
+  CHECK(controller.value()->proposeAutomaticPerformance());
+  const auto secondTakeId =
+      editable.project().findRegion(regionId)->performance.takes.back().id;
+  CHECK(secondTakeId != takeId);
+  editable.selection().selectOnly(secondNote);
+  CHECK(controller.value()->acceptPerformanceTake(
+      secondTakeId, seam::platform::PerformanceTakeScope::SelectedNotes));
+  const auto& merged =
+      editable.project().findRegion(regionId)->performance.accepted;
+  CHECK(merged.size() == laneCount * 2U);
+  std::size_t firstNoteSelections{0U};
+  std::size_t secondNoteSelections{0U};
+  for (const auto& selection : merged) {
+    const auto range = std::get<seam::domain::PerformanceTimeRange>(selection.scope);
+    if (range == noteRange) {
+      CHECK(selection.takeId == takeId);
+      ++firstNoteSelections;
+      continue;
+    }
+    CHECK(range == secondRange);
+    CHECK(selection.takeId == secondTakeId);
+    ++secondNoteSelections;
+  }
+  CHECK(firstNoteSelections == laneCount);
+  CHECK(secondNoteSelections == laneCount);
 }
 
 TEST_CASE("standalone_controller_refuses_a_neural_deployment_it_cannot_verify") {

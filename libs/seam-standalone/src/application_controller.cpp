@@ -348,7 +348,8 @@ core::Result<void> StandaloneApplicationController::acceptPerformanceTake(
   }
   const auto changed = session_.runtime().execute(
       std::make_unique<application::SetAcceptedPerformanceCommand>(
-          regionId, state, std::move(selections)));
+          regionId, state, std::move(selections),
+          application::PerformanceAcceptanceMode::Merge));
   if (!changed) return changed;
   const auto recorded = onDocumentChanged();
   if (!recorded) return recorded;

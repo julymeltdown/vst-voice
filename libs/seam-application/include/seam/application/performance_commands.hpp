@@ -29,11 +29,22 @@ private:
 
 // Changes selection of existing proposals only; never deletes takes or manual
 // ownership. New selections must still match their captured musical context.
+enum class PerformanceAcceptanceMode {
+  // The given list becomes the region's whole selection state.
+  Replace,
+  // The given list wins only inside the spans it covers: an existing selection
+  // whose channel and span meet one of the new selections is replaced by it, and
+  // every other existing selection survives. This is what lets a creator accept a
+  // take over three notes without discarding what was accepted on the others.
+  Merge,
+};
+
 class SetAcceptedPerformanceCommand final : public ICommand {
 public:
   SetAcceptedPerformanceCommand(domain::RegionId regionId,
       domain::RegionPerformanceState expected,
-      std::vector<domain::AcceptedPerformanceSelection> selections);
+      std::vector<domain::AcceptedPerformanceSelection> selections,
+      PerformanceAcceptanceMode mode = PerformanceAcceptanceMode::Replace);
   [[nodiscard]] std::string_view name() const noexcept override { return "Select performance take"; }
   [[nodiscard]] CommandAudioImpact audioImpact() const noexcept override { return CommandAudioImpact::PhraseAudio; }
   [[nodiscard]] CommandImpact impact() const override;
@@ -43,6 +54,7 @@ private:
   domain::RegionId regionId_;
   domain::RegionPerformanceState before_;
   std::vector<domain::AcceptedPerformanceSelection> selections_;
+  PerformanceAcceptanceMode mode_{PerformanceAcceptanceMode::Replace};
   std::optional<domain::RegionPerformanceState> after_;
 };
 

@@ -1,5 +1,54 @@
 # Integrated Singer Execution
 
+## A decision keeps what it does not cover, and no longer invalidates its siblings
+
+Three connected defects sat between the decision commands and a usable alternate-take
+workflow.
+
+**Acceptance advanced the ownership revision, so siblings went stale.** Accepting one
+proposal incremented `revision.ownership`, and take currency is whole-revision
+equality. The moment a creator accepted proposal A, every other proposal B captured
+for the same material was refused with "generated from a different musical,
+pronunciation or ownership revision" -- exactly the comparison the alternate-take
+requirement asks for. That axis belongs to manual ownership: it says the creator
+locked a channel, which genuinely invalidates a take made before the lock. Deciding a
+take is not a manual ownership edit, so acceptance no longer advances it. Manual
+ownership edits, lyric and pronunciation changes, and score edits all still refuse a
+stale take, and a render is still invalidated on acceptance because the snapshot
+identity hashes the phrase project, which contains the accepted selections.
+This supersedes the 2026-09-06 U6 status note that recorded the increment.
+
+**A decision replaced the whole selection state.** Selecting three notes and accepting
+a take discarded what had already been accepted on the others. `SetAcceptedPerformanceCommand`
+now takes `PerformanceAcceptanceMode`: `Replace` keeps its old meaning for callers
+that mean it, and `Merge` retains every existing selection the decision does not
+cover while each new selection replaces only what meets it on the same channel. The
+native decision path merges, so accepting a take on note 2 leaves note 1's accepted
+material and manual ownership untouched. Composition needs each selection's interval,
+including note-scoped ones, which are resolved against the region's current notes
+rather than against a stale identity.
+
+**An unknown take was dereferenced before it was checked.** The acceptance loop found
+a take with `find_if` and immediately read `take->capturedRevision` without testing
+for `end()`. The existing refusal test passed only because comparing garbage against
+the revision happened to fail. A missing take is now `NotFound` with the take identity,
+and the state is untouched.
+
+Verification. `tests/test_automatic_performance.cpp` adds the merge case: a decision on
+one note and one channel survives a later decision on another note and channel; the
+same note on the same channel is replaced rather than duplicated; the merged state
+validates; and one undo restores exactly the previous selection state. The existing
+selection case in `tests/test_performance_commands.cpp` now asserts that acceptance
+leaves the revision untouched. `tests/test_standalone_project_lifecycle.cpp` extends
+the selected-notes case: after a second note and a second proposal, accepting on the
+new note keeps both decisions, four selections on each note under their own take
+identities.
+
+Not claimed. A take still cannot be accepted for a channel subset, and there is still
+no audition or comparison at matched playback position, so M3.P3 items 3 and 5 remain
+open. The merge rule is deliberately span-local: it does not attempt to order several
+takes over the same channel, it simply refuses overlapping claims by replacing them.
+
 ## A decision can cover the selected notes instead of the whole take
 
 Deciding a proposal was all-or-nothing: a surface could accept the take over the

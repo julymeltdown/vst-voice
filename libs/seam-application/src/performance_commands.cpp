@@ -11,6 +11,28 @@
 
 namespace seam::application {
 
+namespace {
+
+// The interval one accepted selection covers. A note scope resolves through the
+// current region, so a decision is composed against the notes that exist now rather
+// than against a stale identity.
+std::optional<domain::PerformanceTimeRange> acceptedSpan(const domain::VocalRegion& region,
+    const domain::AcceptedPerformanceSelection& selection) {
+  if (const auto* noteId = std::get_if<domain::NoteId>(&selection.scope)) {
+    const auto* note = region.findNote(*noteId);
+    if (note == nullptr) return std::nullopt;
+    return domain::PerformanceTimeRange{note->startTick, note->endTick()};
+  }
+  return std::get<domain::PerformanceTimeRange>(selection.scope);
+}
+
+bool spansMeet(const domain::PerformanceTimeRange& left,
+    const domain::PerformanceTimeRange& right) {
+  return left.startTick < right.endTick && right.startTick < left.endTick;
+}
+
+}  // namespace
+
 AddPerformanceProposalCommand::AddPerformanceProposalCommand(domain::RegionId regionId,
     domain::RegionPerformanceState expected, domain::PerformanceTake proposal)
     : regionId_(regionId), before_(std::move(expected)), proposal_(std::move(proposal)) {}
@@ -68,8 +90,10 @@ core::Result<void> AddPerformanceProposalCommand::revert(domain::Project& projec
 
 SetAcceptedPerformanceCommand::SetAcceptedPerformanceCommand(domain::RegionId regionId,
     domain::RegionPerformanceState expected,
-    std::vector<domain::AcceptedPerformanceSelection> selections)
-    : regionId_(regionId), before_(std::move(expected)), selections_(std::move(selections)) {}
+    std::vector<domain::AcceptedPerformanceSelection> selections,
+    PerformanceAcceptanceMode mode)
+    : regionId_(regionId), before_(std::move(expected)), selections_(std::move(selections)),
+      mode_(mode) {}
 
 CommandImpact SetAcceptedPerformanceCommand::impact() const {
   return {.scope = CommandAudioImpact::PhraseAudio, .projectWide = false,
@@ -84,13 +108,41 @@ core::Result<void> SetAcceptedPerformanceCommand::apply(domain::Project& project
   const auto valid = region->validate();
   if (!valid) return valid;
   if (!after_) {
-    if (selections_.size() > domain::kMaximumPerformanceSelections ||
-        before_.revision.ownership == std::numeric_limits<std::uint64_t>::max()) {
+    if (selections_.size() > domain::kMaximumPerformanceSelections) {
       return core::failure(core::ErrorCode::InvalidArgument, "Performance selection exceeds bounds");
     }
     auto next = before_;
-    next.accepted = selections_;
-    ++next.revision.ownership;
+    std::vector<domain::AcceptedPerformanceSelection> accepted;
+    if (mode_ == PerformanceAcceptanceMode::Merge) {
+      // A merge keeps every existing selection the new decision does not cover, and
+      // lets each new selection replace only what meets it on the same channel.
+      for (const auto& existing : before_.accepted) {
+        const auto span = acceptedSpan(*region, existing);
+        if (!span) {
+          return core::failure(core::ErrorCode::InvariantViolation,
+              "Accepted performance references a missing note");
+        }
+        const bool replaced = std::any_of(selections_.begin(), selections_.end(),
+            [&](const auto& addition) {
+              if (addition.channel != existing.channel) return false;
+              const auto additionSpan = acceptedSpan(*region, addition);
+              return additionSpan.has_value() && spansMeet(*span, *additionSpan);
+            });
+        if (!replaced) accepted.push_back(existing);
+      }
+    }
+    accepted.insert(accepted.end(), selections_.begin(), selections_.end());
+    if (accepted.size() > domain::kMaximumPerformanceSelections) {
+      return core::failure(core::ErrorCode::InvalidArgument,
+          "Performance selection exceeds bounds");
+    }
+    next.accepted = std::move(accepted);
+    // Deciding a take is not a manual ownership edit, so it deliberately does not
+    // advance the ownership revision. Advancing it here made every sibling proposal
+    // captured at the same musical revision unusable the moment one of them was
+    // accepted, which is exactly the alternate-take workflow this state exists for.
+    // Manual ownership edits still advance the axis, so a take generated before the
+    // creator locked a channel is still refused.
     const auto selectionValid = next.validate(region->notes, region->durationTick);
     if (!selectionValid) return selectionValid;
     std::optional<domain::PronunciationIdentity> pronunciation;
@@ -98,6 +150,10 @@ core::Result<void> SetAcceptedPerformanceCommand::apply(domain::Project& project
       if (std::find(before_.accepted.begin(), before_.accepted.end(), selection) != before_.accepted.end()) continue;
       const auto take = std::find_if(before_.takes.begin(), before_.takes.end(),
           [&](const auto& value) { return value.id == selection.takeId; });
+      if (take == before_.takes.end()) {
+        return core::failure(core::ErrorCode::NotFound,
+            "Accepted performance references an absent take", selection.takeId);
+      }
       const auto current = domain::validatePerformanceAcceptanceRevision(take->capturedRevision, before_.revision);
       if (!current) return current;
       if (!pronunciation) {

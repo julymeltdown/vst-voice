@@ -212,7 +212,10 @@ TEST_CASE("performance take selection is atomic reversible and rejects stale pro
   CHECK(state.accepted == selected);
   CHECK(state.ownership == expected.ownership);
   CHECK(state.takes == expected.takes);
-  CHECK(state.revision.ownership == expected.revision.ownership + 1U);
+  // Acceptance is not a manual ownership edit: the revision that decides whether a
+  // take is still usable must not move, or accepting one proposal would invalidate
+  // every sibling proposal captured for the same material.
+  CHECK(state.revision == expected.revision);
   CHECK(session.undo()); CHECK(session.project() == initial);
   CHECK(session.redo()); CHECK(session.project() == accepted);
   CHECK(session.execute(std::make_unique<seam::application::SetAcceptedPerformanceCommand>(region.id, state,

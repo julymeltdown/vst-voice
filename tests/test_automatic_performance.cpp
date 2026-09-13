@@ -466,6 +466,74 @@ TEST_CASE("rejecting a proposal refuses unknown, accepted and already decided ta
   CHECK(staleResult.error().code == seam::core::ErrorCode::Conflict);
 }
 
+TEST_CASE("merging a decision replaces only the span and channel it covers") {
+  PhraseFixture fixture;
+  const auto pronunciation = fixture.pronunciation();
+  auto proposal = seam::synthesis::generatePhraseAwarePerformance(
+      fixture.project, *fixture.project.findRegion(fixture.regionId), pronunciation,
+      fixture.request(pronunciation));
+  CHECK(proposal);
+  const auto before = fixture.project.findRegion(fixture.regionId)->performance;
+  seam::application::EditorSession session{fixture.project};
+  CHECK(session.execute(std::make_unique<seam::application::AddPerformanceProposalCommand>(
+      fixture.regionId, before, proposal.value())));
+  const auto added = session.project().findRegion(fixture.regionId)->performance;
+  const auto notes = session.project().findRegion(fixture.regionId)->notes;
+  CHECK(notes.size() == 4U);
+  const seam::domain::AcceptedPerformanceSelection pitchFirst{
+      proposal.value().id, seam::domain::PerformanceChannel::Pitch,
+      seam::domain::PerformanceScope{notes[0].id}, seam::time::Tick{0}};
+  const seam::domain::AcceptedPerformanceSelection dynamicsThird{
+      proposal.value().id, seam::domain::PerformanceChannel::Dynamics,
+      seam::domain::PerformanceScope{notes[2].id}, seam::time::Tick{0}};
+
+  // The first decision covers one note on one channel.
+  const std::vector<seam::domain::AcceptedPerformanceSelection> first{pitchFirst};
+  CHECK(session.execute(std::make_unique<seam::application::SetAcceptedPerformanceCommand>(
+      fixture.regionId, added, first)));
+  const auto single = session.project().findRegion(fixture.regionId)->performance;
+  CHECK(single.accepted == first);
+
+  // A later decision on another note and channel keeps it: a creator who accepts a
+  // take for one note never asked to lose what was accepted for the others.
+  const std::vector<seam::domain::AcceptedPerformanceSelection> second{dynamicsThird};
+  CHECK(session.execute(std::make_unique<seam::application::SetAcceptedPerformanceCommand>(
+      fixture.regionId, single, second,
+      seam::application::PerformanceAcceptanceMode::Merge)));
+  const auto merged = session.project().findRegion(fixture.regionId)->performance;
+  CHECK(merged.accepted.size() == 2U);
+  CHECK(std::find(merged.accepted.begin(), merged.accepted.end(), pitchFirst) !=
+        merged.accepted.end());
+  CHECK(std::find(merged.accepted.begin(), merged.accepted.end(), dynamicsThird) !=
+        merged.accepted.end());
+  CHECK(merged.validate(notes, fixture.project.findRegion(fixture.regionId)->durationTick));
+
+  // The same note on the same channel is replaced rather than duplicated, which is
+  // what keeps a merge from producing two overlapping selections.
+  const seam::domain::AcceptedPerformanceSelection pitchRange{
+      proposal.value().id, seam::domain::PerformanceChannel::Pitch,
+      seam::domain::PerformanceScope{seam::domain::PerformanceTimeRange{
+          seam::time::Tick{0}, seam::time::Tick{480}}},
+      seam::time::Tick{0}};
+  const std::vector<seam::domain::AcceptedPerformanceSelection> replacement{pitchRange};
+  CHECK(session.execute(std::make_unique<seam::application::SetAcceptedPerformanceCommand>(
+      fixture.regionId, merged, replacement,
+      seam::application::PerformanceAcceptanceMode::Merge)));
+  const auto replaced = session.project().findRegion(fixture.regionId)->performance;
+  CHECK(replaced.accepted.size() == 2U);
+  CHECK(std::find(replaced.accepted.begin(), replaced.accepted.end(), pitchFirst) ==
+        replaced.accepted.end());
+  CHECK(std::find(replaced.accepted.begin(), replaced.accepted.end(), pitchRange) !=
+        replaced.accepted.end());
+  CHECK(std::find(replaced.accepted.begin(), replaced.accepted.end(), dynamicsThird) !=
+        replaced.accepted.end());
+
+  // A merge is one undoable edit that restores exactly the previous selection state.
+  CHECK(session.undo());
+  CHECK(session.project().findRegion(fixture.regionId)->performance.accepted ==
+        merged.accepted);
+}
+
 TEST_CASE("a proposal can be accepted over a partial range and refuses an unmapped span") {
   Fixture fixture;
   const auto pronunciation = fixture.pronunciation();
