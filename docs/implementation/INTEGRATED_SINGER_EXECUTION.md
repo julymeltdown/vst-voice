@@ -189,6 +189,26 @@ Verified: `seam_neural_phrase_runner_tests` now also covers registry scanning an
 resolution, and `seam_neural_bundle_preparation` asserts the record's identity
 against the manifest digest and refuses a half-specified identity.
 
+Reached the product render path. `rendering::TrackSingerSource` gained a
+`TrackNeuralSource` carrying the admitted bundle, the execution provenance and the
+selected runner; the source carries no helper path because the runner already
+holds the resolved first-party selection and its process budgets.
+`ProductionProjectRenderer::renderWithSources` dispatches a neural track to
+`createNeural` plus `PhraseRenderPipeline{runner}`, produces mono model audio at
+the phrase's absolute start frame, routes it through the same track route and
+gain as other families, and publishes the snapshot content hash. The previous
+fall-through to the sample branch is now unreachable for a neural source, so a
+prepared model can no longer trap or be treated as a bank.
+
+The saved-selection rule is enforced in two places: the coordinator refuses a
+resolved singer whose model id, version or bundle digest differs from the saved
+selection, and `createNeural` refuses the same mismatch at snapshot level. A
+missing runner is an explicit invalid-argument refusal rather than a silent
+substitution. `seam_neural_phrase_runner_tests` covers a full neural project
+render (one track, one region, one phrase, stereo routing with silence on the
+right channel, empty unit plan and no invented diagnostics) plus the mismatch and
+missing-runner refusals.
+
 Storage note: the machine reached 124 MiB free, which caused eleven unrelated
 suite failures (demo smokes, contract tests, neural runtime checks). Those were
 not regressions; the same tests pass with storage restored. Four regenerable

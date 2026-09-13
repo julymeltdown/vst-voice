@@ -143,6 +143,15 @@ core::Result<ProjectRenderResult> ProductionProjectRenderer::renderWithSources(
           procedural->style != track.proceduralRecipe->style) return core::failure<ProjectRenderResult>(
           core::ErrorCode::Conflict, "Resolved singer differs from the saved procedural recipe selection");
     }
+    if (track.neuralResource) {
+      const auto* neural = std::get_if<TrackNeuralSource>(source);
+      if (!neural || !neural->bundle ||
+          neural->bundle->execution().modelId != track.neuralResource->resource.id ||
+          neural->bundle->execution().modelVersion != track.neuralResource->resource.version ||
+          neural->bundle->execution().bundleContentHash != track.neuralResource->resource.contentHash)
+        return core::failure<ProjectRenderResult>(core::ErrorCode::Conflict,
+            "Resolved singer differs from the saved neural selection", track.id.toString());
+    }
     for (const auto& region : track.regions) {
       if (region.notes.empty()) continue;
       if (const auto* procedural = std::get_if<TrackProceduralSource>(source)) {
@@ -150,6 +159,30 @@ core::Result<ProjectRenderResult> ProductionProjectRenderer::renderWithSources(
             track.id, region.id, revision, quality, sampleRate, procedural->style);
         if (!snapshot) return core::Result<ProjectRenderResult>{snapshot.error()};
         auto rendered = PhraseRenderPipeline{}.render(snapshot.value(), stopToken);
+        if (!rendered) return core::Result<ProjectRenderResult>{rendered.error()};
+        auto pcm = std::make_shared<RoutedPcm>();
+        pcm->sampleRate = sampleRate;
+        pcm->startFrame = rendered.value().rendered.audio.startFrame;
+        pcm->channelCount = 1U;
+        pcm->interleavedSamples = std::move(rendered.value().rendered.audio.samples);
+        const auto valid = pcm->validate();
+        if (!valid) return core::Result<ProjectRenderResult>{valid.error()};
+        clips.push_back(RoutedPlaybackClip{
+            .id = track.id.toString() + ":" + region.id.toString(), .pcm = std::move(pcm),
+            .outputRoute = routeForTrack(track.outputRoute, track.pan),
+            .gain = domain::decibelsToLinear(track.gainDb), .fadeInFrames = 0, .fadeOutFrames = 0,
+            .enabled = true, .solo = track.solo});
+        ++output.regionCount; ++output.phraseCount;
+        output.phraseContentHashes.push_back(snapshot.value().contentHash);
+        continue;
+      }
+      if (const auto* neural = std::get_if<TrackNeuralSource>(source)) {
+        if (!neural->bundle || !neural->runner) return core::failure<ProjectRenderResult>(
+            core::ErrorCode::InvalidArgument, "Neural singer source is incomplete", track.id.toString());
+        const auto snapshot = RenderSnapshotFactory{}.createNeural(project, *neural->bundle,
+            neural->provenance, track.id, region.id, revision, quality, sampleRate);
+        if (!snapshot) return core::Result<ProjectRenderResult>{snapshot.error()};
+        auto rendered = PhraseRenderPipeline{neural->runner}.render(snapshot.value(), stopToken);
         if (!rendered) return core::Result<ProjectRenderResult>{rendered.error()};
         auto pcm = std::make_shared<RoutedPcm>();
         pcm->sampleRate = sampleRate;

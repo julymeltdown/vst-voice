@@ -9,6 +9,7 @@
 #include "seam/phonemizer/language_resolver.hpp"
 #include "seam/rendering/render_pipeline.hpp"
 #include "seam/rendering/render_snapshot.hpp"
+#include "seam/rendering/project_renderer.hpp"
 
 #include <array>
 #include <chrono>
@@ -173,6 +174,53 @@ seam::domain::NeuralResourceReference selection(std::string id,std::string versi
 }
 
 }  // namespace
+
+TEST_CASE("project rendering routes a neural track through the selected runner") {
+  namespace rendering=seam::rendering;
+  const auto directory=seam::test::support::temporaryDirectory("neural-coordinator");
+  auto prepared=prepare(directory,"ak");
+  const auto runner=AuthoringNeuralPhraseRunner::create(options(directory)); CHECK(runner);
+  const auto selected=std::make_shared<const AuthoringNeuralPhraseRunner>(std::move(runner).value());
+  const auto* performance=prepared.snapshot.compiledPerformance.get(); CHECK(performance!=nullptr);
+  const auto extent=std::size_t(performance->notes().back().endFrame-performance->notes().front().startFrame);
+  const rendering::NeuralRenderProvenance provenance{.workerVersion="seam-neural-worker-1",
+      .runtimeVersion="onnxruntime-1.30.0",.provider="CPUExecutionProvider"};
+  const auto render=[&](std::shared_ptr<const AuthoringNeuralPhraseRunner> runner) {
+    const std::vector<rendering::TrackSingerSource> sources{rendering::TrackNeuralSource{
+        prepared.track,prepared.admitted,provenance,std::move(runner)}};
+    return rendering::ProductionProjectRenderer{}.renderWithSources(prepared.project,sources,
+        prepared.track,prepared.region,1U,48000U);
+  };
+  const auto rendered=render(selected);
+  if (!rendered) throw seam::test::Failure{"neural project render failed: "+rendered.error().message+" | "+rendered.error().context};
+  CHECK(rendered.value().trackCount==1U);
+  CHECK(rendered.value().regionCount==1U);
+  CHECK(rendered.value().phraseCount==1U);
+  CHECK(rendered.value().channelCount==2U);
+  // The model owns no sample units, so no unit plan or diagnostics are invented.
+  CHECK(rendered.value().activeUnitPlan.empty());
+  CHECK(rendered.value().diagnostics.empty());
+  CHECK(rendered.value().phraseContentHashes.size()==1U);
+  CHECK(rendered.value().phraseContentHashes.front().size()==64U);
+  // Mono model audio is routed to the stereo device output with silence on the
+  // right channel, at the phrase's absolute start frame.
+  const auto& snapshot=prepared.snapshot;
+  const auto start=static_cast<std::size_t>(snapshot.compiledPerformance->notes().front().startFrame);
+  CHECK(rendered.value().interleaved.size()==2U*(start+extent));
+  CHECK_NEAR(rendered.value().interleaved[start*2U],0.0F,0.000001F);
+  CHECK_NEAR(rendered.value().interleaved[start*2U+1U],0.0F,0.000001F);
+  // A saved selection must match the resolved bundle exactly, and a missing
+  // runner is refused rather than silently rendering something else.
+  auto* track=prepared.project.findVocalTrack(prepared.track);
+  track->neuralResource=seam::domain::NeuralResourceReference{
+      {seam::domain::SingerResourceKind::Neural,prepared.admitted->execution().modelId,
+       prepared.admitted->execution().modelVersion,prepared.admitted->execution().bundleContentHash}};
+  CHECK(render(selected));
+  track->neuralResource->resource.contentHash=std::string(64U,'c');
+  CHECK(render(selected).error().code==seam::core::ErrorCode::Conflict);
+  track->neuralResource.reset();
+  CHECK(render(nullptr).error().code==seam::core::ErrorCode::InvalidArgument);
+}
 
 TEST_CASE("installed neural resources resolve saved identities or refuse them") {
   using namespace seam::authoring;

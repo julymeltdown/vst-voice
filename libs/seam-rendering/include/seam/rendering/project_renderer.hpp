@@ -5,6 +5,7 @@
 #include "seam/rendering/multichannel_routing.hpp"
 #include "seam/rendering/pcm_cache.hpp"
 #include "seam/rendering/region_renderer.hpp"
+#include "seam/rendering/render_pipeline.hpp"
 #include "seam/rendering/shared_pcm_buffer.hpp"
 #include "seam/synthesis/unit_selection.hpp"
 #include "seam/voicebank/catalog.hpp"
@@ -38,7 +39,17 @@ struct TrackRecipeFileSource final {
   domain::ProceduralRecipeReference reference;
   std::optional<std::filesystem::path> projectDirectory;
 };
-using TrackSingerSource = std::variant<TrackVoicebankSource, TrackProceduralSource, TrackRecipeFileSource>;
+// A prepared neural bundle chosen by the application, with the runner that can
+// execute it. The source never carries a helper path or command: the runner
+// already holds the resolved first-party selection and its process budgets.
+struct TrackNeuralSource final {
+  domain::TrackId trackId;
+  std::shared_ptr<const neural_synthesis::AdmittedNeuralBundle> bundle;
+  NeuralRenderProvenance provenance;
+  std::shared_ptr<const NeuralPhraseRunner> runner;
+};
+using TrackSingerSource = std::variant<TrackVoicebankSource, TrackProceduralSource, TrackRecipeFileSource,
+                                       TrackNeuralSource>;
 
 struct ProjectRenderDiagnostic final {
   domain::TrackId trackId;
