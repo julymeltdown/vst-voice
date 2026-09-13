@@ -209,6 +209,18 @@ render (one track, one region, one phrase, stereo routing with silence on the
 right channel, empty unit plan and no invented diagnostics) plus the mismatch and
 missing-runner refusals.
 
+Measured the worker invocation cost that decides whether the pilot needs a
+bounded session owner. `seam_neural_production_worker` now times its first
+accepted invocation and three identical repeats on the development Mac and prints
+them as JSON. Final recorded run: cold 0.0521 s, warm 0.0484/0.0498/0.0493 s. The
+fixture bundle is about one kilobyte of arithmetic graph, so these numbers bound
+process creation plus admission and deliberately exclude real model-load time; a
+production-sized bundle will be larger and slower to admit. The decision stays
+`pending real-model measurement`: with roughly 50 ms of fixed per-invocation cost
+on this machine, a per-phrase process remains acceptable for a pilot, and the
+question only becomes pressing once a real bundle's admission and reload time are
+measured against the agreed budget.
+
 Storage note: the machine reached 124 MiB free, which caused eleven unrelated
 suite failures (demo smokes, contract tests, neural runtime checks). Those were
 not regressions; the same tests pass with storage restored. Four regenerable

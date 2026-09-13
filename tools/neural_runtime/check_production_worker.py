@@ -13,6 +13,7 @@ import struct
 import subprocess
 import sys
 import tempfile
+import time
 
 from check_paired_runtime import graphs
 
@@ -61,7 +62,19 @@ def main():
 
         frequency, gain = 210.0, 0.5
         request = encode(metadata, frequency, gain)
+        # Startup cost decides whether the pilot needs a bounded session owner that
+        # keeps an admitted model resident. These figures are dominated by process
+        # creation and admission because the fixture graphs are arithmetic; they
+        # bound startup, not real model-load time.
+        cold_started = time.perf_counter()
         accepted = run(worker, launch, request)
+        cold_seconds = time.perf_counter() - cold_started
+        warm_seconds = []
+        for _ in range(3):
+            started = time.perf_counter()
+            repeat = run(worker, launch, request)
+            warm_seconds.append(time.perf_counter() - started)
+            assert repeat.returncode == 0 and repeat.stdout == accepted.stdout
         assert accepted.returncode == 0, accepted.stderr
         # The frame type nibble is 2 for every response; metadata kind carries v3.
         magic, version, kind, reserved, size, payload_size = struct.unpack("<4sHBBIQ", accepted.stdout[:20])
@@ -139,6 +152,10 @@ def main():
         # Two requests on one invocation are impossible: the worker answers once.
         doubled = run(worker, launch, request + request)
         assert not doubled.stdout and doubled.returncode == 7, doubled.returncode
+    print(json.dumps(dict(status="PRODUCTION_WORKER_FIXTURE_ONLY", coldSeconds=round(cold_seconds, 4),
+                          warmSeconds=[round(value, 4) for value in warm_seconds],
+                          learnedWeights=False, sessionOwnerDecision="pending real-model measurement",
+                          releaseEligible=False)))
     print("Production worker admitted real bundle bytes, produced bound PCM, and rejected "
           "legacy, changed and inadmissible inputs. Arithmetic fixture only; no learned singer claim.")
 
