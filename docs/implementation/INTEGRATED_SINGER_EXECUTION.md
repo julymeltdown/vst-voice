@@ -2,6 +2,36 @@
 
 ## Production neural worker executes admitted bundles
 
+Added the prepared admission handle `AdmittedNeuralBundle`
+(`libs/seam-neural-synthesis/{include/seam/neural_synthesis/model_bundle.hpp,src/model_bundle.cpp}`).
+`admit()` verifies the frozen manifest, both graph payloads, the vocabulary and
+the declared execution identity once, then retains those immutable payloads as
+shared pointers. Copying a prepared handle therefore shares one model instead of
+duplicating graph bytes per phrase snapshot, which is what the render path needs
+before it can prepare work outside the audio callback. The handle carries
+`ModelContract`, `NeuralBundleVocabulary`, `MelFeatureSpec`, steps layout,
+vocoder output name and a `NeuralExecutionIdentity` that includes the bundle
+content digest and the inference-step count, because steps change the result for
+identical input.
+
+Admission refuses four cases the metadata inspection alone would allow: a
+configuration schema v1 bundle, which declares neither a steps layout nor a
+vocoder output name and would otherwise execute assumed defaults; a bundle whose
+declared frame bound exceeds the caller's prepared budget; an out-of-range or
+zero step count and frame budget; and a vocabulary that does not decode or does
+not match the declared model vocabulary hash. A moved-from handle is refused as
+well. `tests/test_neural_model_bundle.cpp` covers acceptance, identity binding,
+asset sharing across handle copies, a distinct identity for a different step
+count, and every refusal above. This handle is not operator-level graph admission
+and not an OS sandbox: the child still parses the exact bytes it executes.
+
+Verification note: the complete Release suite passed 132/132 serially in 275.42
+seconds. An earlier `ctest -j 4` run on the loaded machine reported nine failures
+(demo smokes, two neural runtime checks, dependency direction, production staging
+and import outcome); every one passed in `--rerun-failed` and in the serial run.
+Those parallel failures were contention, not regressions. Prefer a serial run or a
+quiet machine when interpreting this suite.
+
 Added `apps/seam-neural-worker/main.cpp`, the first executable that performs real
 acoustic-then-vocoder inference for an admitted model bundle. The application
 selects it through the existing launch contract,

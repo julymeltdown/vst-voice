@@ -347,6 +347,7 @@ add_library(seam_neural_synthesis
   libs/seam-neural-synthesis/src/deployment_descriptor.cpp
   libs/seam-neural-synthesis/src/worker_protocol.cpp
   libs/seam-neural-synthesis/src/model_contract.cpp
+  libs/seam-neural-synthesis/src/model_bundle.cpp
   libs/seam-neural-synthesis/src/neural_phrase_backend.cpp)
 target_include_directories(seam_neural_synthesis PUBLIC
   libs/seam-neural-synthesis/include)
@@ -1304,7 +1305,7 @@ if(SEAM_BUILD_TESTS)
   add_executable(seam_interchange_service_tests
     tests/test_main.cpp tests/test_interchange_service.cpp)
   add_executable(seam_neural_worker_protocol_tests
-    tests/test_main.cpp tests/test_neural_worker_protocol.cpp)
+    tests/test_main.cpp tests/test_neural_worker_protocol.cpp tests/test_neural_model_bundle.cpp)
   add_executable(seam_harmony_workflow_tests
     tests/test_main.cpp tests/test_harmony_workflow.cpp)
   add_executable(seam_renderer_capability_tests
