@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <span>
 
 namespace seam::clap_editor {
 namespace {
@@ -45,15 +46,21 @@ core::Result<void> HostTempoMap::observe(double beats, double bpm) {
 
 bool HostTempoMap::covers(double startBeats, double endBeats,
                           double maximumGapBeats) const noexcept {
-  if (observations_.empty() || !std::isfinite(startBeats) || !std::isfinite(endBeats) ||
+  return coversObservations(observations_, startBeats, endBeats, maximumGapBeats);
+}
+
+bool HostTempoMap::coversObservations(std::span<const HostTempoObservation> observations,
+                                      double startBeats, double endBeats,
+                                      double maximumGapBeats) noexcept {
+  if (observations.empty() || !std::isfinite(startBeats) || !std::isfinite(endBeats) ||
       !std::isfinite(maximumGapBeats) || maximumGapBeats <= 0.0 || endBeats <= startBeats) {
     return false;
   }
-  if (observations_.front().beats > startBeats || observations_.back().beats < endBeats) {
+  if (observations.front().beats > startBeats || observations.back().beats < endBeats) {
     return false;
   }
-  for (std::size_t index = 1U; index < observations_.size(); ++index) {
-    if (observations_[index].beats - observations_[index - 1U].beats > maximumGapBeats) {
+  for (std::size_t index = 1U; index < observations.size(); ++index) {
+    if (observations[index].beats - observations[index - 1U].beats > maximumGapBeats) {
       return false;
     }
   }
@@ -62,27 +69,33 @@ bool HostTempoMap::covers(double startBeats, double endBeats,
 
 std::string HostTempoMap::uncoveredSpan(double startBeats, double endBeats,
                                         double maximumGapBeats) const {
+  return uncoveredSpanOf(observations_, startBeats, endBeats, maximumGapBeats);
+}
+
+std::string HostTempoMap::uncoveredSpanOf(
+    std::span<const HostTempoObservation> observations, double startBeats,
+    double endBeats, double maximumGapBeats) {
   if (!std::isfinite(startBeats) || !std::isfinite(endBeats) || endBeats <= startBeats) {
     return {};
   }
   const auto describe = [](double begin, double end) {
     return std::to_string(begin) + ".." + std::to_string(end);
   };
-  if (observations_.empty()) return describe(startBeats, endBeats);
-  if (observations_.front().beats > startBeats) {
-    return describe(startBeats, std::min(observations_.front().beats, endBeats));
+  if (observations.empty()) return describe(startBeats, endBeats);
+  if (observations.front().beats > startBeats) {
+    return describe(startBeats, std::min(observations.front().beats, endBeats));
   }
   if (std::isfinite(maximumGapBeats) && maximumGapBeats > 0.0) {
-    for (std::size_t index = 1U; index < observations_.size(); ++index) {
-      const auto previous = observations_[index - 1U].beats;
-      const auto next = observations_[index].beats;
+    for (std::size_t index = 1U; index < observations.size(); ++index) {
+      const auto previous = observations[index - 1U].beats;
+      const auto next = observations[index].beats;
       if (next - previous <= maximumGapBeats) continue;
       if (next <= startBeats || previous >= endBeats) continue;
       return describe(std::max(previous, startBeats), std::min(next, endBeats));
     }
   }
-  if (observations_.back().beats < endBeats) {
-    return describe(std::max(observations_.back().beats, startBeats), endBeats);
+  if (observations.back().beats < endBeats) {
+    return describe(std::max(observations.back().beats, startBeats), endBeats);
   }
   return {};
 }

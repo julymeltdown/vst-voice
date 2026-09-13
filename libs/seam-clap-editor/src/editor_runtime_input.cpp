@@ -475,16 +475,25 @@ std::optional<std::string> EditorRuntime::selectedUnitId() const {
 
 void EditorRuntime::setHostTimelineState(HostTimelineState state) noexcept {
   std::lock_guard lock(mutex_);
-  offlineRender_.invalidate("Host timeline changed the offline timing identity");
-  offlineAudioReady_.store(false, std::memory_order_release);
+  const auto previousContent = hostTimelineCapture_.contentHash();
   hostTimelineState_ = state;
-  // Follow Host final rendering needs the host's tempo history, not the value that
-  // happened to be current when the render was requested. Recording is best effort: a
-  // report the map cannot accept is dropped here, and the render gate then names the
-  // span it cannot speak for instead of timing the music against a guess.
-  if (state.hasTempo && state.hasBeats) {
-    static_cast<void>(hostTempoMap_.observe(state.beats, state.tempo));
+  hostTimelineCapture_.observe(state, renderSampleRate_);
+  if (offlineTimingAuthority_ != OfflineTimingAuthority::FollowHost) {
+    // A Fixed Audio bounce is defined by the document's own map. What a host does with its
+    // transport cannot invalidate it.
+    return;
   }
+  // The host reports on every audio block. A transport that is merely advancing is not a
+  // change to the authority a prepared bounce rests on, so it must not throw that bounce
+  // away; a tempo, meter, loop or sample-rate change is.
+  if (preparedHostTimeline_.has_value()) {
+    if (hostTimelineCapture_.describes(*preparedHostTimeline_)) return;
+    preparedHostTimeline_.reset();
+  } else if (hostTimelineCapture_.contentHash() == previousContent) {
+    return;
+  }
+  offlineRender_.invalidate("Host timing changed the offline render identity");
+  offlineAudioReady_.store(false, std::memory_order_release);
 }
 
 HostTimelineState EditorRuntime::hostTimelineState() const noexcept {
@@ -494,7 +503,25 @@ HostTimelineState EditorRuntime::hostTimelineState() const noexcept {
 
 HostTempoMap EditorRuntime::hostTempoMap() const {
   std::lock_guard lock(mutex_);
-  return hostTempoMap_;
+  return hostTimelineCapture_.tempoMap();
+}
+
+std::optional<PreparedHostTimeline> EditorRuntime::preparedHostTimeline() const {
+  std::lock_guard lock(mutex_);
+  if (offlineTimingAuthority_ != OfflineTimingAuthority::FollowHost ||
+      !preparedHostTimeline_.has_value()) {
+    return std::nullopt;
+  }
+  const auto& prepared = *preparedHostTimeline_;
+  // The authority describes one project revision at one render rate, frozen from one host
+  // content. Anything else means the caller is looking at a preparation that no longer
+  // describes what a bounce would do now.
+  if (prepared.projectRevision() != session_.revision() ||
+      prepared.sampleRate() != renderSampleRate_ ||
+      !hostTimelineCapture_.describes(prepared)) {
+    return std::nullopt;
+  }
+  return prepared;
 }
 
 core::Result<void> EditorRuntime::setPrimarySeamAmount(float value) {

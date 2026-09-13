@@ -46,12 +46,20 @@ public:
   // range is never reported as covered.
   [[nodiscard]] bool covers(double startBeats, double endBeats,
                             double maximumGapBeats) const noexcept;
+  // The same coverage rule over an arbitrary sorted observation set, so a caller that has
+  // clipped a map to one rendered range judges it exactly as this class judges its own.
+  [[nodiscard]] static bool coversObservations(
+      std::span<const HostTempoObservation> observations, double startBeats,
+      double endBeats, double maximumGapBeats) noexcept;
 
   // The first span inside [startBeats, endBeats] this map cannot speak for, as a
   // human-readable a..b string, judged by the same tolerance as covers(), or empty when
   // nothing is missing.
   [[nodiscard]] std::string uncoveredSpan(double startBeats, double endBeats,
                                           double maximumGapBeats) const;
+  [[nodiscard]] static std::string uncoveredSpanOf(
+      std::span<const HostTempoObservation> observations, double startBeats,
+      double endBeats, double maximumGapBeats);
 
   [[nodiscard]] std::uint64_t revision() const noexcept { return revision_; }
   [[nodiscard]] std::span<const HostTempoObservation> observations() const noexcept {

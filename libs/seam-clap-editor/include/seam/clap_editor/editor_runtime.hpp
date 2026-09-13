@@ -9,6 +9,7 @@
 #include "seam/clap_editor/host_timeline.hpp"
 #include "seam/clap_editor/host_tempo_map.hpp"
 #include "seam/clap_editor/offline_render_session.hpp"
+#include "seam/clap_editor/prepared_host_timeline.hpp"
 #include "seam/native_ui/character_presentation.hpp"
 #include "seam/native_ui/editor_controller.hpp"
 #include "seam/native_ui/editor_scene.hpp"
@@ -280,6 +281,11 @@ public:
   // The tempo history this host has actually reported. Follow Host final rendering is
   // authorized against this map's coverage, never against the instantaneous value.
   [[nodiscard]] HostTempoMap hostTempoMap() const;
+  // The frozen authority the current Follow Host readiness rests on: what range the host
+  // covered, which tempo and meter segments it stated there and the identity over both.
+  // Empty when the authority is Fixed Audio, when nothing has been prepared, or when the
+  // host has since reported different musical content.
+  [[nodiscard]] std::optional<PreparedHostTimeline> preparedHostTimeline() const;
 
   void setLiveSampleRate(double sampleRate) noexcept {
     live_.setOutputSampleRate(sampleRate);
@@ -386,9 +392,11 @@ private:
   bool draggingPhonemeStart_{false};
   std::optional<time::Tick> draggingPitchTick_;
   HostTimelineState hostTimelineState_{};
-  // Tempo history this host actually reported. Follow Host rendering is authorized
-  // against this map's coverage, never against the instantaneous value above.
-  HostTempoMap hostTempoMap_;
+  // Everything this host has actually reported: tempo history, meter segments, loop state
+  // and sample rate. Follow Host rendering is authorized against this capture's coverage
+  // for the requested range, never against the instantaneous value above.
+  HostTimelineCapture hostTimelineCapture_;
+  std::optional<PreparedHostTimeline> preparedHostTimeline_;
 };
 
 [[nodiscard]] core::Result<std::vector<std::byte>> encodeEditorState(

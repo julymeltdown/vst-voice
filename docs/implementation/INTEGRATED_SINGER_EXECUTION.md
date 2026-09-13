@@ -1,5 +1,57 @@
 # Integrated Singer Execution
 
+## A Follow Host bounce is prepared from a frozen host timeline
+
+The tempo map from the previous change told the render what the host had said, and two things
+were still wrong around it. There was no typed authority to inspect: the map was a private member,
+the host's meter and loop state were never recorded at all, and "has this bounce gone stale?" was
+answered by comparing a hash of everything the host had ever reported. That last question is the
+one the host asks most often, because it reports on every audio block -- so a transport that was
+simply advancing threw away a ready bounce.
+
+`seam/clap_editor/prepared_host_timeline.hpp` and `src/prepared_host_timeline.cpp` add
+`HostTimelineCapture` and the immutable `PreparedHostTimeline` it freezes. The capture accumulates
+what the host reported -- beat positions, tempo, meter, loop boundaries and the sample rate it was
+running at -- bounded at 4096 reports and 256 meter segments, and detects a backward jump as a
+seek rather than pretending the sample relation stayed monotonic. Freezing a range produces the
+authority one bounce rests on: project identity and revision, sample rate, project resolution,
+project offset, the requested musical range, the tempo segments that determine that range
+(including the bounding observations that make coverage decidable), the host's meter segments,
+loop semantics, report and seek counts, and two identities -- one over the capture content, one
+over the frozen preparation.
+
+Validity is now judged on the range, not on the whole history. `HostTimelineCapture::describes()`
+answers whether the host still says the same musical thing about the frozen range: every segment
+the preparation depends on, no new tempo or meter inside the range, the same loop semantics and
+the same sample rate. Advancing the transport and reporting tempos beyond the end of the score are
+not changes; a tempo or meter change inside the range is. `EditorRuntime::setHostTimelineState`
+acts on that answer, so a prepared bounce survives ordinary playback and is dropped -- with its
+audio -- exactly when the authority it was rendered from changed. A Fixed Audio bounce is defined
+by the document's own map, so host reports no longer invalidate it at all.
+
+Preparation refuses rather than approximates. An empty or inverted range, an out-of-range sample
+rate or offset, a non-positive gap tolerance, a sample-rate change during capture, meter segments
+beyond capacity, a host that is looping without stating usable musical loop boundaries, and a
+range the host never covered are each named failures; the coverage refusal carries the uncovered
+span, how many tempo observations the host has actually reported, and what to recapture. The
+frozen authority's identity enters the Follow Host timing identity alongside the substituted tempo
+map, so a bounce cannot be attributed to a host map it was not rendered with.
+
+`tests/test_host_timeline_capture.cpp`, registered as CTest `seam_host_timeline_capture_tests`,
+covers the frozen range and its sample extent, refusal of an uncovered range and of an undeclared
+gap, a loop that states no boundaries, a meter change, a seek that keeps the map while changing the
+identity, a tempo change that rewrites it, a stopped host, a rate change during capture, and the
+integrated case: a two-beat score whose document says 60 BPM renders 48000 frames under a 120 BPM
+host and about twice that after switching back to Fixed Audio, while an in-range tempo change
+drops the frozen authority and an out-of-range one does not.
+
+Not claimed. Every host report in these tests is synthetic. A real DAW's reporting cadence, its
+loop and meter semantics across a full bounce, and the nine required installed tuples remain M5.P2
+work, and R13 is not closed by this. The live transport mapper still converts beats to seconds at
+the instantaneous tempo for realtime note placement; the offline bounce no longer depends on that
+approximation, but M5.P2 owns fixing the live path and its addressing semantics. No unit acceptance
+changes.
+
 ## A Follow Host bounce is authorized by the host's own tempo history
 
 Follow Host final rendering had an authority flag and no acquisition path: the final bounce
