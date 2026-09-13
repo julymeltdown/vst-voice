@@ -2,6 +2,7 @@
 #include "seam/clap_editor/editor_runtime.hpp"
 #include "seam/clap_editor/embedded_view.hpp"
 #include "seam/clap_editor/host_timeline.hpp"
+#include "seam/clap_editor/host_transport_publication.hpp"
 #include "seam/live_voice/midi1_decoder.hpp"
 #include "seam/platform/application_menu.hpp"
 
@@ -265,6 +266,20 @@ private:
       // Allocation/worker failures must not escape the C ABI or masquerade as
       // an accepted bounce. The runtime clears its readiness before preparing.
       return false;
+    }
+  }
+
+  // Owner thread. Moves whatever the audio callback has reported into the editor runtime,
+  // which is the only place allowed to lock, capture or invalidate. The waiting flag is
+  // cleared before draining, so a report published during the drain raises a new request
+  // instead of being lost. Called from on_main_thread and from the GUI timer, because a host
+  // is free to deliver only one of those.
+  static void drainHostTransport(PluginInstance& instance) noexcept {
+    if (!instance.transportPublication_.shouldNotifyOwner()) return;
+    instance.transportPublication_.clearNotify();
+    HostTimelineState state;
+    while (instance.transportPublication_.tryConsume(state)) {
+      instance.runtime_->setHostTimelineState(state);
     }
   }
 
@@ -586,6 +601,15 @@ private:
         preview->sampleRate != static_cast<std::uint32_t>(std::llround(instance->sampleRate_))))
       return CLAP_PROCESS_ERROR;
     const auto timeline = hostTimelineState(*instance, process->transport);
+    // Hand the host's own report to the owner thread. This is a lock-free store into a
+    // publication the runtime never reads directly: the editor runtime is updated from the
+    // owner thread, so a report cannot block, allocate or invalidate inside the callback.
+    if (process->transport != nullptr &&
+        instance->transportPublication_.publish(timeline) &&
+        instance->transportPublication_.requestCallbackIfNeeded() &&
+        instance->host_ != nullptr && instance->host_->request_callback != nullptr) {
+      instance->host_->request_callback(instance->host_);
+    }
     // Fixed Audio can use a supplied seconds timeline or its own free-running
     // sample clock. Beats plus one instantaneous BPM are not a tempo history.
     if (offline && process->transport != nullptr &&
@@ -1063,8 +1087,11 @@ private:
   static void CLAP_ABI timerOnTimer(const clap_plugin_t* plugin,
                                     clap_id timerId) {
     auto* instance = self(plugin);
-    if (instance != nullptr && instance->view_ != nullptr &&
-        timerId == instance->timerId_) {
+    if (instance == nullptr) return;
+    // The timer runs on the same owner thread as on_main_thread, so it is a second safe
+    // place to drain a report from a host that did not deliver the requested callback.
+    drainHostTransport(*instance);
+    if (instance->view_ != nullptr && timerId == instance->timerId_) {
       instance->view_->onTimer();
       instance->synchronizeAudioPortConfiguration();
     }
@@ -1103,6 +1130,7 @@ private:
   static void CLAP_ABI pluginOnMainThread(const clap_plugin_t* plugin) {
     auto* instance = self(plugin);
     if (instance == nullptr) return;
+    drainHostTransport(*instance);
     instance->synchronizeAudioPortConfiguration();
     if (instance->view_ != nullptr &&
         instance->timerId_ == CLAP_INVALID_ID) {
@@ -1170,6 +1198,9 @@ private:
   std::uint64_t freeRunFrame_{0U};
   std::atomic<double> projectOffsetSeconds_{0.0};
   std::atomic<double> defaultTempo_{120.0};
+  // What the host told us about its transport, handed to the editor runtime from the owner
+  // thread. The audio callback only ever stores into this; it never locks the runtime.
+  clap_editor::HostTransportPublication transportPublication_;
   std::atomic<std::uint8_t> outputChannels_{2U};
   std::atomic<std::uint8_t> desiredOutputChannels_{2U};
   std::atomic<clap_plugin_render_mode> renderMode_{CLAP_RENDER_REALTIME};

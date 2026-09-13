@@ -1,5 +1,47 @@
 # Integrated Singer Execution
 
+## The host's transport reaches the editor without blocking the audio callback
+
+The editor runtime could capture, freeze and validate a host tempo map, and nothing in the
+product ever gave it one. The CLAP entry already read the host's transport on every block for
+live note placement, but that value died with the callback; the September review of this area
+warned specifically that calling a locking setter from the audio thread would damage normal
+playback, so the fix could not simply hand the block's report to the runtime.
+
+`seam/clap_editor/host_transport_publication.hpp` and `src/host_transport_publication.cpp` add
+the handoff. The audio callback is the only writer and stores atomics only; the owner thread is
+the only reader, and a seqlock sequence makes a snapshot that straddled a publish detectable
+rather than usable. Nothing here allocates, locks or waits on either side, and a torn read is
+counted and refused instead of being mixed into one report.
+
+The decision whether a report is worth forwarding lives on the audio thread, because that is the
+only place the previously forwarded report is known. The first report is forwarded, as is any
+change of tempo, meter, loop state or playing state, and any position movement of at least half a
+beat or a quarter second. A host that reports on every block therefore stops growing the acquired
+map without adding information, and the quantum stays well inside the one-beat coverage tolerance
+the frozen authority requires. `requestCallbackIfNeeded()` asks the host for a callback once per
+undrained report, so a host that ignores the request is not asked again for the same one.
+
+`plugin_entry.cpp` publishes in `process()` and drains on the main thread: the owner clears the
+pending flag before draining, so a report published during the drain raises a fresh request
+instead of being lost, and both `on_main_thread` and the GUI timer drain because a host is free to
+deliver only one of them. Only the owner thread touches the runtime, through
+`EditorRuntime::setHostTimelineState`, which records the report into the capture and -- under
+Fixed Audio -- deliberately does not invalidate a document-timed bounce.
+
+`tests/test_host_transport_publication.cpp`, registered as CTest
+`seam_host_transport_publication_tests`, covers the forwarding rules at and around the quantum,
+one-shot delivery per snapshot, one callback request per undrained report, and a two-thread case
+that publishes 2000 reports whose tempo encodes their position, so a snapshot that mixed two
+reports would be visible: every delivered snapshot was self-consistent, no torn read reached the
+reader, and the final report was delivered.
+
+Not claimed. Every transport in these tests is synthetic, and the bounce authority is still a
+runtime setting with no persisted project or plugin value and no control a musician can reach, so
+a real DAW user cannot yet choose Follow Host for a bounce; completing that choice is the next
+step in this package. Real host reporting cadence, the nine required tuples and the offline-song
+qualification remain M5.P2 work. No unit acceptance changes.
+
 ## A Follow Host bounce is prepared from a frozen host timeline
 
 The tempo map from the previous change told the render what the host had said, and two things
