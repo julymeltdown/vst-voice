@@ -146,6 +146,37 @@ core::Result<voice_design::SustainedPoseResult> ProceduralSnapshotStream::render
 core::Result<PhrasePipelineResult> PhraseRenderPipeline::render(
     const RenderSnapshot& snapshot,
     std::stop_token stopToken) const {
+  if (snapshot.neuralExecution) {
+    if (!neuralRunner_) return core::failure<PhrasePipelineResult>(core::ErrorCode::Unsupported,
+        "Neural snapshot requires a selected first-party worker runner");
+    if (snapshot.project==nullptr || snapshot.phonemes==nullptr || snapshot.compiledPerformance==nullptr ||
+        !snapshot.pronunciationIdentity || snapshot.contentHash.empty() || snapshot.renderAbiId.empty() ||
+        snapshot.sampleRate<8000U || snapshot.sampleRate>384000U || !snapshot.neuralExecution->valid())
+      return core::failure<PhrasePipelineResult>(core::ErrorCode::InvalidArgument,
+          "Neural render snapshot is incomplete");
+    if (snapshot.neuralExecution->metadata().model.sampleRate!=snapshot.sampleRate ||
+        !std::holds_alternative<synthesis::NeuralSingerResource>(snapshot.resource))
+      return core::failure<PhrasePipelineResult>(core::ErrorCode::Conflict,
+          "Neural snapshot disagrees with its admitted model identity");
+    if (stopToken.stop_requested()) return core::failure<PhrasePipelineResult>(core::ErrorCode::Conflict,
+        "Neural phrase rendering cancelled");
+    auto rendered=neuralRunner_->render(snapshot,stopToken);
+    if (!rendered) return core::Result<PhrasePipelineResult>{rendered.error()};
+    // A model result carries no sample units or procedural markers. Reject a
+    // runner that fabricated either instead of forwarding it downstream.
+    if (!rendered.value().placements.empty()) return core::failure<PhrasePipelineResult>(
+        core::ErrorCode::InvariantViolation,"Neural runner returned sample placement metadata");
+    if (snapshot.ownedFrames) {
+      const auto expected=static_cast<std::size_t>(snapshot.ownedFrames->end-snapshot.ownedFrames->start);
+      if (rendered.value().audio.startFrame!=snapshot.ownedFrames->start ||
+          rendered.value().audio.samples.size()!=expected)
+        return core::failure<PhrasePipelineResult>(core::ErrorCode::Conflict,
+            "Neural audio does not cover its declared owned window exactly");
+    }
+    return PhrasePipelineResult{.phonemes=*snapshot.phonemes,.unitPlan={},.timing={},
+        .rendered=std::move(rendered).value(),.resourceKind=domain::SingerResourceKind::Neural,
+        .proceduralMarkers={}};
+  }
   if (std::holds_alternative<synthesis::ProceduralSingerResource>(snapshot.resource)) {
     auto stream = ProceduralSnapshotStream::create(snapshot, stopToken);
     if (!stream) return core::Result<PhrasePipelineResult>{stream.error()};
@@ -156,8 +187,6 @@ core::Result<PhrasePipelineResult> PhraseRenderPipeline::render(
         .proceduralMarkers = std::move(rendered.value().markers)};
   }
   if (!std::holds_alternative<synthesis::SampleSingerResource>(snapshot.resource)) {
-    if (snapshot.neuralExecution) return core::failure<PhrasePipelineResult>(core::ErrorCode::Unsupported,
-        "Neural snapshot execution is not connected to this pipeline entry point");
     return core::failure<PhrasePipelineResult>(core::ErrorCode::Unsupported,
         "Phrase pipeline has no backend for this resource");
   }

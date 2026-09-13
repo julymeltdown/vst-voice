@@ -65,6 +65,27 @@ Verified: `seam_neural_render_tests` passes, and the complete Release suite pass
 132 of 133 with the only failure being source closure for these then-untracked
 files.
 
+Added the pipeline half of that package. `PhraseRenderPipeline` now takes an
+optional `std::shared_ptr<const NeuralPhraseRunner>`; the abstract
+`NeuralPhraseRunner` is what the application implements, so helper selection,
+expected digest and process budgets stay out of the bank and out of the audio
+callback. A pipeline without a selected runner refuses a neural snapshot with a
+named `Unsupported` error instead of falling back to sample material. With a
+runner, the branch verifies the snapshot is complete, that its rate matches the
+admitted model, and that the returned audio covers the declared owned window with
+exactly the declared frame count. It rejects a runner that returns sample
+placement metadata as an invariant violation, forwards the compiled phonemes,
+reports `SingerResourceKind::Neural`, and leaves the unit plan and procedural
+markers empty. `PhraseAudio` carries no sample rate, so rate agreement remains the
+runner's contract and is stated in the interface.
+
+`seam_neural_render_tests` covers both halves with a test-only runner: refusal
+without a selected runner, successful execution, exact owned-window enforcement, a
+one-sample overlap rejected as a conflict, fabricated placements rejected as an
+invariant violation, and cancellation reaching the runner. The production runner
+itself is still to be written in the authoring/application layer, where the
+deployment descriptor and `runNeuralBundleWorker` are available.
+
 Storage note: the machine reached 124 MiB free, which caused eleven unrelated
 suite failures (demo smokes, contract tests, neural runtime checks). Those were
 not regressions; the same tests pass with storage restored. Four regenerable

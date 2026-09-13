@@ -68,6 +68,78 @@ Score score(std::u32string lyric=U"ak",seam::domain::Language language=seam::dom
 
 }  // namespace
 
+namespace {
+
+// Test-only runner. It never selects a helper or a runtime; the production
+// runner is the application's, and the real admission and execution path is
+// verified separately by seam_neural_production_worker.
+class FixtureRunner final : public seam::rendering::NeuralPhraseRunner {
+public:
+  explicit FixtureRunner(std::size_t overlap=0U,std::size_t placementCount=0U)
+      : overlap_(overlap),placementCount_(placementCount) {}
+  [[nodiscard]] seam::core::Result<seam::synthesis::PhraseRenderResult> render(
+      const seam::rendering::RenderSnapshot& snapshot,std::stop_token stopToken) const override {
+    if (stopToken.stop_requested()) return seam::core::failure<seam::synthesis::PhraseRenderResult>(
+        seam::core::ErrorCode::Conflict,"Fixture neural rendering cancelled");
+    // Absent ownership means the full compiled extent, matching the other
+    // families' "publish the complete rendered extent" rule.
+    const auto fallback=snapshot.compiledPerformance!=nullptr
+        ? seam::synthesis::PhraseFrameRange{snapshot.compiledPerformance->notes().front().startFrame,
+                                            snapshot.compiledPerformance->notes().back().endFrame}
+        : seam::synthesis::PhraseFrameRange{0,0};
+    const auto range=snapshot.ownedFrames.value_or(fallback);
+    const auto count=static_cast<std::size_t>(range.end-range.start)+overlap_;
+    seam::synthesis::PhraseRenderResult result{.audio={range.start,std::vector<float>(count,0.25F)},.placements={}};
+    for (std::size_t index=0U;index<placementCount_;++index)
+      result.placements.push_back(seam::synthesis::RenderedPlacementInfo{});
+    return result;
+  }
+private:
+  std::size_t overlap_{0U};
+  std::size_t placementCount_{0U};
+};
+
+}  // namespace
+
+TEST_CASE("neural pipeline requires a selected worker runner and verifies the owned window") {
+  using namespace seam::rendering;
+  const auto frozen=freezeBundle(48000U); CHECK(frozen);
+  const auto admitted=AdmittedNeuralBundle::admit(frozen.value(),65536U,10); CHECK(admitted);
+  const NeuralRenderProvenance provenance{.workerVersion="seam-neural-worker-1",
+      .runtimeVersion="onnxruntime-1.30.0",.provider="CPUExecutionProvider"};
+  auto music=score();
+  const auto snapshot=RenderSnapshotFactory{}.createNeural(music.project,admitted.value(),provenance,
+      music.track,music.region,1U,RenderQuality::Final,48000U,"original"); CHECK(snapshot);
+  // Without a selected runner the pipeline refuses instead of falling back.
+  CHECK(PhraseRenderPipeline{}.render(snapshot.value()).error().code==seam::core::ErrorCode::Unsupported);
+  const auto selected=std::make_shared<const FixtureRunner>();
+  const auto rendered=PhraseRenderPipeline{selected}.render(snapshot.value()); CHECK(rendered);
+  CHECK(rendered.value().resourceKind==seam::domain::SingerResourceKind::Neural);
+  CHECK(rendered.value().proceduralMarkers.empty());
+  CHECK(rendered.value().unitPlan.entries.empty());
+  CHECK(rendered.value().rendered.placements.empty());
+  CHECK(!rendered.value().rendered.audio.samples.empty());
+  // The declared owned window is enforced exactly, not trimmed or padded later.
+  const auto* performance=snapshot.value().compiledPerformance.get();
+  CHECK(performance!=nullptr);
+  const seam::synthesis::PhraseFrameRange window{performance->notes().front().startFrame,
+      performance->notes().front().startFrame+512};
+  const auto narrowed=RenderSnapshotFactory{}.createNeural(music.project,admitted.value(),provenance,
+      music.track,music.region,1U,RenderQuality::Final,48000U,"original",window); CHECK(narrowed);
+  const auto exact=PhraseRenderPipeline{selected}.render(narrowed.value()); CHECK(exact);
+  CHECK(exact.value().rendered.audio.startFrame==window.start);
+  CHECK(exact.value().rendered.audio.samples.size()==512U);
+  const auto overlap=PhraseRenderPipeline{std::make_shared<const FixtureRunner>(1U)}.render(narrowed.value());
+  CHECK(overlap.error().code==seam::core::ErrorCode::Conflict);
+  const auto fabricated=PhraseRenderPipeline{std::make_shared<const FixtureRunner>(0U,1U)}.render(narrowed.value());
+  CHECK(fabricated.error().code==seam::core::ErrorCode::InvariantViolation);
+  // Cancellation reaches the runner instead of publishing stale audio.
+  std::stop_source cancellation;
+  cancellation.request_stop();
+  CHECK(PhraseRenderPipeline{selected}.render(narrowed.value(),cancellation.get_token()).error().code==
+      seam::core::ErrorCode::Conflict);
+}
+
 TEST_CASE("neural snapshot binds an admitted bundle to pronunciation and score identity") {
   using namespace seam::rendering;
   const auto frozen=freezeBundle(48000U); CHECK(frozen);
