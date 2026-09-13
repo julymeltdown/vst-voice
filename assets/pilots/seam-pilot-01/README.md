@@ -39,13 +39,12 @@ The CLI regression checks the exact phone sequence, four gesture classes,
 contiguous planned boundaries, unapproved status, audio hashes and repeatability.
 Markers prove planned timing only, not perceptual onset accuracy.
 
-Still absent from this probe: liquids and glides (`r`, `w`, `y`), the voiced
-affricate `j`, pre-onset context that reaches before its owning note, and
-independent intelligibility judgments. Do not use these notes to claim complete
-Japanese coverage or generate a qualified full bank. The invented Japanese
-inventory does name `r`, `w`, `y` and `j`; those sequences are refused during
-render preparation rather than substituted, so the inventory is not yet
-generatable end to end.
+Still absent from this probe: the voiced affricate `j`, pre-onset context that
+reaches before its owning note, and independent intelligibility judgments. Do
+not use these notes to claim complete Japanese coverage or generate a qualified
+full bank. The invented Japanese inventory does name every one of those phones;
+the ones with no admitted model are refused during render preparation rather
+than substituted, so the inventory is not yet generatable end to end.
 
 Generate the proposed Japanese coverage, across three planned pitch layers:
 
@@ -202,4 +201,33 @@ silent closure, the nonzero release and tail, and repeatability.
 
 Voiced affricates (`じ`, `ぢ`) are not supported: a prevoiced closure and voiced
 frication are a different model, and the unvoiced pair is not substituted for
-them. Liquids, glides and pre-onset context remain open.
+them.
+
+### Liquids and glides
+
+```sh
+build/release/seam_singer_pilot NEW_OUTPUT_DIRECTORY glides
+```
+
+Exports `ら・わ・や・あ` at 250 ms per note: the three voiced approximants beside
+a bare vowel as the comparison point. A schema-eight recipe pose declares each
+approximant's own resonance bank and the milliseconds of formant transition
+that carries it into the vowel that follows; the transition begins exactly that
+far before the gesture ends, so it lands on the vowel nucleus instead of being a
+short step at the vowel's own onset. A note too short for the declaration keeps
+the declaration and compresses the entry crossfade instead of dropping the
+motion, and a gesture whose span is shorter than the declared transition
+becomes entirely transition. The candidate metadata records schema eight,
+`approximantRevision` one and `approximant` markers; the CLI regression checks
+the marker sequence `r a w a y a a`, that no segment of a glide is silent, that
+each glide's own span measurably changes its band profile rather than holding
+one pose, and repeatability. That the motion is toward the vowel, and comes from
+the declared duration rather than the gesture's existence, is asserted where the
+declaration can be compared against a control, in `seam_articulation_context_tests`.
+
+The poses are experimental parameter choices, not phonetic qualification, and no
+listener has judged `ら`, `わ` or `や`. Pre-onset context that reaches before its
+owning note, and coarticulation with a preceding phone in the same note, remain
+open. `l`, the voiced affricate `j` and every other phone the pilot recipe does
+not admit are refused with their phone name and recipe identity rather than
+approximated.

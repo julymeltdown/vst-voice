@@ -3,8 +3,13 @@
 #include "seam/voice_design/articulated_stream.hpp"
 #include "seam/voice_design/articulation_plan.hpp"
 #include "seam/voice_design/frication_gesture_stream.hpp"
+#include "seam/voice_design/phonation_source.hpp"
+#include "seam/voice_design/recipe_resource.hpp"
+
+#include "seam/synthesis/performance_compiler.hpp"
 
 #include <algorithm>
+#include <iostream>
 #include <string>
 #include <vector>
 
@@ -15,6 +20,7 @@ using voice_design::AffricateBinding;
 using voice_design::ArticulationGestureKind;
 using voice_design::ArticulationPlan;
 using voice_design::FricationBinding;
+using voice_design::ApproximantBinding;
 
 constexpr std::uint32_t kRate{48000U};
 constexpr time::SampleFrame kNoteStart{0};
@@ -84,7 +90,91 @@ core::Result<ArticulationPlan> planFor(const std::string& onset, bool onsetVoice
   auto fixture = syllable(onset, onsetVoiced, nucleusFrame);
   return ArticulationPlan::compile(fixture.phones, fixture.timing, frications, kRate,
                                    synthesis::PhraseFrameRange{kNoteStart, kNoteEnd}, {}, {},
-                                   affricates);
+                                   affricates, {});
+}
+
+core::Result<ArticulationPlan> approximantPlan(const std::string& onset, bool onsetVoiced,
+                                               time::SampleFrame nucleusFrame,
+                                               std::span<const ApproximantBinding> approximants) {
+  auto fixture = syllable(onset, onsetVoiced, nucleusFrame);
+  return ArticulationPlan::compile(fixture.phones, fixture.timing, {}, kRate,
+                                   synthesis::PhraseFrameRange{kNoteStart, kNoteEnd}, {}, {}, {}, approximants);
+}
+
+// A one-note Japanese syllable whose onset is a voiced approximant, compiled through the real
+// score compiler the way a song would be.
+struct GlideFixture final {
+  domain::Project project{domain::ProjectId{11U}, "Glide fixture"};
+  domain::VocalRegion region;
+  std::vector<domain::PhonemeToken> phones;
+};
+
+GlideFixture glideFixture(const std::string& onsetSymbol) {
+  GlideFixture fixture;
+  fixture.region = domain::VocalRegion{
+      .id = domain::RegionId{13U},
+      .name = "Note",
+      .durationTick = time::Tick{960},
+      .lyrics = {{domain::LyricTokenId{14U}, U"や", domain::Language::Japanese}},
+      .notes = {{.id = domain::NoteId{15U},
+                 .durationTick = time::Tick{960},
+                 .midiKey = 67U,
+                 .lyricTokenId = domain::LyricTokenId{14U}}}};
+  fixture.phones = {
+      // The onset states where it starts and the vowel states where its nucleus begins, exactly
+      // as an authored syllable does; the glide then fills the span before that nucleus.
+      {.key = {domain::NoteId{15U}, 0U},
+       .symbol = onsetSymbol,
+       .role = domain::PhonemeRole::Onset,
+       .voiced = true,
+       .timing = {.startOffset = time::Microseconds{0}}},
+      {.key = {domain::NoteId{15U}, 1U},
+       .symbol = "a",
+       .role = domain::PhonemeRole::Nucleus,
+       .voiced = true,
+       .timing = {.startOffset = time::Microseconds{100000}}}};
+  return fixture;
+}
+
+// The energy in the 500-1000 Hz region relative to the 100-500 Hz region of one rendered window.
+// This recipe's glide pose puts its energy at a 250 Hz first resonance and its vowel at a 800 Hz
+// one, so this balance follows the vocal-tract pose. A zero-crossing count would not: at this
+// pitch it follows the excitation's own harmonic spacing instead.
+double lowBandBalance(std::span<const float> samples, time::SampleFrame begin, time::SampleFrame end) {
+  constexpr double kPi = 3.14159265358979323846;
+  double first = 0.0;
+  double second = 0.0;
+  const auto width = static_cast<std::size_t>(end - begin);
+  for (std::uint32_t hz = 100U; hz <= 1000U; hz += 50U) {
+    double real = 0.0;
+    double imaginary = 0.0;
+    for (std::size_t index = 0U; index < width; ++index) {
+      const auto hann = 0.5 - 0.5 * std::cos(2.0 * kPi * static_cast<double>(index) /
+                                             static_cast<double>(width - 1U));
+      const auto angle = 2.0 * kPi * static_cast<double>(hz) * static_cast<double>(index) /
+                         static_cast<double>(kRate);
+      const auto value = static_cast<double>(samples[static_cast<std::size_t>(begin) + index]) * hann;
+      real += value * std::cos(angle);
+      imaginary += value * std::sin(angle);
+    }
+    const auto energy = (real * real + imaginary * imaginary) / static_cast<double>(width * width);
+    if (hz < 500U) first += energy;
+    else second += energy;
+  }
+  return second / first;
+}
+
+voice_design::VoiceRecipe glideRecipe(double transitionMilliseconds = 60.0) {
+  voice_design::VoiceRecipe recipe;
+  recipe.id = "approximant-context-test";
+  recipe.seed = 31U;
+  recipe.phonation.aspiration = 0.0;
+  // A palatal glide into a low vowel moves the spectrum down, which makes the transition
+  // measurable rather than merely scheduled.
+  recipe.poses = {{"a", "neutral", 0.0, {{800.0, 90.0, 0.0}, {1250.0, 110.0, -3.0}, {2800.0, 160.0, -6.0}}},
+                  {"y", "neutral", 0.0, {{250.0, 70.0, 0.0}, {2200.0, 120.0, -3.0}, {3000.0, 170.0, -6.0}}}};
+  recipe.approximants = {{"y", "neutral", transitionMilliseconds}};
+  return recipe;
 }
 
 }  // namespace
@@ -221,4 +311,128 @@ TEST_CASE("the aperiodic lane renders the affricate's closure, release and tail"
   std::vector<float> joined = prefix.value().samples;
   joined.insert(joined.end(), suffix.value().samples.begin(), suffix.value().samples.end());
   CHECK(joined == whole.value().samples);
+}
+
+TEST_CASE("a voiced approximant is a tonal gesture with a bounded transition") {
+  const std::vector<ApproximantBinding> approximants{ApproximantBinding{"y", 60.0}};
+  const auto plan = approximantPlan("y", true, kNucleus, approximants);
+  CHECK(plan);
+  if (!plan) return;
+  CHECK(plan.value().gestures().size() == 2U);
+  const auto& gesture = plan.value().gestures().front();
+  CHECK(gesture.kind == ArticulationGestureKind::Approximant);
+  CHECK(voice_design::isVoicedGesture(gesture.kind));
+  CHECK(!voice_design::isAperiodicGesture(gesture.kind));
+  CHECK(gesture.span.start == kNoteStart);
+  CHECK(gesture.span.end == kNucleus);
+  // 60 ms of transition, well inside a 500 ms onset.
+  CHECK(gesture.transitionFrames == static_cast<std::uint32_t>(std::llround(60.0 * kRate / 1000.0)));
+  CHECK(!gesture.affricate);
+  CHECK(!gesture.frication);
+  CHECK(plan.value().gestures().back().kind == ArticulationGestureKind::OralVowel);
+  CHECK(plan.value().gestures().back().span.start == kNucleus);
+
+  // The transition can never outlast the note it belongs to.
+  const std::vector<ApproximantBinding> longTransition{ApproximantBinding{"y", 200.0}};
+  const auto clamped = approximantPlan("y", true, 1440, longTransition);
+  CHECK(clamped);
+  if (clamped) CHECK(clamped.value().gestures().front().transitionFrames == 1440U);
+
+  // A voiced approximant binding is not a way to voice an unvoiced token, and a symbol this
+  // build does not admit is refused instead of being treated as a vowel.
+  const auto voiceless = approximantPlan("y", false, kNucleus, approximants);
+  CHECK(!voiceless);
+  if (!voiceless) CHECK(voiceless.error().code == core::ErrorCode::InvalidArgument);
+  const std::vector<ApproximantBinding> unsupported{ApproximantBinding{"l", 40.0}};
+  CHECK(!approximantPlan("l", true, kNucleus, unsupported));
+}
+
+TEST_CASE("the approximant transition moves the spectrum into its vowel") {
+  auto fixture = glideFixture("y");
+  const auto performance = synthesis::compileScorePerformance(fixture.project, fixture.region,
+                                                             kRate, fixture.phones);
+  CHECK(performance);
+  if (!performance) return;
+  const auto resource = voice_design::freezeVoiceRecipeResource(glideRecipe());
+  CHECK(resource);
+  if (!resource) return;
+  auto stream = voice_design::ArticulatedStream::createFromRecipe(
+      resource.value(), performance.value(), fixture.phones, "neutral", 257U);
+  if (!stream) std::cerr << "stream error: " << stream.error().message << std::endl;
+  CHECK(stream);
+  if (!stream) return;
+  const auto context = stream.value().position();
+  static_cast<void>(context);
+  const auto plan = voice_design::ArticulationPlan::compileRecipe(
+      resource.value(), performance.value(), fixture.phones, "neutral");
+  CHECK(plan);
+  if (!plan) return;
+  const auto span = plan.value().gestures().front().span;
+  CHECK(plan.value().gestures().front().kind == ArticulationGestureKind::Approximant);
+  const synthesis::PhraseFrameRange whole{plan.value().context().start, plan.value().context().end};
+  const auto audio = stream.value().renderOwned(whole);
+  CHECK(audio);
+  if (!audio) return;
+  const auto samples = audio.value().samples;
+  const auto nonzero = [&](time::SampleFrame begin, time::SampleFrame end) {
+    return std::any_of(samples.begin() + begin, samples.begin() + end,
+                       [](float sample) { return sample != 0.0F; });
+  };
+  // A glide is voiced throughout, unlike a plosive closure.
+  CHECK(nonzero(span.start, span.end));
+  CHECK(nonzero(span.end, whole.end));
+  // The declared transition is what moves the tract into its vowel: this recipe's glide pose holds
+  // its energy at a 250 Hz first resonance and the vowel holds it at 800 Hz, so the low-band
+  // balance rises across the transition. This is a directional pose check, not an intelligibility
+  // or quality claim.
+  const auto transitionFrames = static_cast<time::SampleFrame>(plan.value().gestures().front().transitionFrames);
+  CHECK(transitionFrames > 0);
+  CHECK(transitionFrames < span.end - span.start);
+  const auto tailFrames = static_cast<time::SampleFrame>(kRate / 40U);
+  const auto steady = lowBandBalance(samples, span.start, span.end - transitionFrames);
+  const auto tail = lowBandBalance(samples, span.end - tailFrames, span.end);
+  CHECK(tail > steady * 10.0);
+
+  // The declared duration is the cause, not the gesture's mere existence: five milliseconds of
+  // declaration leaves the same window in the glide's own pose.
+  const auto shortResource = voice_design::freezeVoiceRecipeResource(glideRecipe(5.0));
+  CHECK(shortResource);
+  if (!shortResource) return;
+  auto shortStream = voice_design::ArticulatedStream::createFromRecipe(
+      shortResource.value(), performance.value(), fixture.phones, "neutral", 257U);
+  CHECK(shortStream);
+  if (!shortStream) return;
+  const auto shortAudio = shortStream.value().renderOwned(whole);
+  CHECK(shortAudio);
+  if (!shortAudio) return;
+  const auto shortTail = lowBandBalance(shortAudio.value().samples, span.end - tailFrames, span.end);
+  CHECK(shortTail < tail / 10.0);
+
+  // The same owned range from the same full context is identical in one window or two.
+  auto second = voice_design::ArticulatedStream::createFromRecipe(
+      resource.value(), performance.value(), fixture.phones, "neutral", 129U);
+  CHECK(second);
+  if (!second) return;
+  const auto split = span.start + (span.end - span.start) / 2;
+  const auto prefix = second.value().renderOwned({whole.start, split});
+  CHECK(prefix);
+  const auto suffix = second.value().renderOwned({split, whole.end});
+  CHECK(suffix);
+  if (!prefix || !suffix) return;
+  std::vector<float> joined = prefix.value().samples;
+  joined.insert(joined.end(), suffix.value().samples.begin(), suffix.value().samples.end());
+  CHECK(joined == samples);
+
+  // A plan whose transition differs from the frozen recipe cannot be rendered.
+  const std::vector<ApproximantBinding> other{ApproximantBinding{"y", 20.0}};
+  const auto stale = voice_design::ArticulationPlan::compileRecipe(
+      resource.value(), performance.value(), fixture.phones, "neutral");
+  CHECK(stale);
+  const auto manual = approximantPlan("y", true, plan.value().gestures().front().span.end,
+                                      other);
+  CHECK(manual);
+  if (manual) {
+    CHECK(!voice_design::ArticulatedStream::create(resource.value(), performance.value(),
+                                                   manual.value(), "neutral"));
+  }
 }

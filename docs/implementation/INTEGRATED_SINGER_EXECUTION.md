@@ -1,6 +1,98 @@
 # Integrated Singer Execution
 
+## A liquid or glide is the transition it declares, and it lands on the nucleus
+
+The pilot's Japanese inventory names `r`, `w` and `y`, and none of them could be
+rendered: `ら`, `わ` and `や` were refused as unsupported voiced phones, so three
+ordinary syllables of the pilot language had no path at all. The remaining two
+phone classes of the plan's articulation list are now admitted, and the way they
+are admitted is the point -- an approximant is not a vowel with a different
+resonance bank, it is a *motion* into the vowel that follows it.
+
+`VoiceRecipe::ApproximantPose` (schema eight) binds a phone and style to its own
+resonance pose and to the milliseconds of formant transition that carries it
+into the neighbouring vowel. It is an opt-in field: a recipe written before it
+keeps its previous meaning, and a phone is never reinterpreted as an
+approximant because a newer build would like it to be. A declaration needs a
+same-phone, same-style resonance pose to move from, must be between 5 ms and
+200 ms, and an unvoiced token or an unadmitted symbol is refused by name rather
+than voiced or treated as a vowel.
+
+`ArticulationGestureKind::Approximant` is a voiced, non-aperiodic gesture with a
+`transitionFrames` member the plan derives from the frozen recipe and clamps to
+the note's own span. The renderer starts that transition exactly
+`transitionFrames` before the gesture ends, so the declared motion occupies the
+end of the glide and arrives at the vowel nucleus instead of being a short step
+at the vowel's own onset. Two details make that truthful rather than
+approximate. A transition can only be scheduled at a block boundary, so the
+block ends exactly where the motion must begin -- otherwise the same owned range
+would render differently depending on how a caller split it, which is what the
+chunk-invariance contract forbids. And when the entry crossfade still owns the
+tract at that frame, the declared window is compressed to land on the nucleus
+rather than dropped, because this tract owns one transition at a time.
+
+Candidate metadata gains schema eight, an `approximant` marker kind and an
+`approximantRevision`. A schema-eight recipe also satisfies a schema-seven
+candidate, exactly as version seven already satisfied version six.
+
+Evidence: `tests/test_articulation_context.cpp` covers the gesture kind and its
+voiced classification, the bounded and clamped transition, the voiceless-token
+and unadmitted-symbol refusals, and the two measurements that make the motion a
+claim rather than a schedule: the low-band balance of the glide's own span rises
+from 0.0013 to 4.78 across the transition, and a five-millisecond declaration of
+the same recipe leaves the same window at 0.0025, so the declared duration is the
+cause. Whole-versus-chunked equality and the refusal of a plan whose transition
+differs from the frozen recipe are asserted in the same case. The pilot's `glides`
+fixture renders `ら・わ・や・あ` and the CLI regression checks schema eight,
+`approximantRevision`, the marker sequence `r a w a y a a`, that no segment of a
+glide is silent, that each glide's own span measurably changes its band profile
+rather than holding one pose, and repeatability; run it with
+`build/release/seam_singer_pilot NEW_OUTPUT_DIRECTORY glides`. The full configured
+Release build and the registered CTest run are reported in the commit that
+carries this entry.
+
+Not claimed. Nothing here is intelligibility: no listener has judged `ら`, `わ` or
+`や`, and the resonance banks and transition lengths are experimental parameter
+choices rather than phonetic qualification. Zero-crossing direction is
+deliberately not asserted anywhere, because at these pitches it follows the
+excitation's own harmonic spacing rather than the pose; the measurement used is
+a spectral band profile, and the pilot regression only asserts that a glide's own
+span moves rather than holding one pose, because a glide whose declaration spans
+its whole gesture has no static part to compare against. Voiced affricates (`じ`, `ぢ`), pre-onset context
+beyond the owning note, and coarticulation with a preceding phone inside the same
+note remain unsupported and are refused rather than approximated, so the pilot
+inventory is still known not to be generatable end to end. The pilot README says
+so. No unit acceptance changes.
+
+## Milestone status, September 14, 2026
+
+This records where the implementation plan's M1 packages actually stand. It is
+not a unit acceptance and it does not renumber anything.
+
+M1.P2's ten required changes:
+
+| # | Required change | State |
+|---|---|---|
+| 1 | Articulation-source description per phone class | Admitted: oral vowel, nasal, frication, voiced frication, released stop, voiced stop, affricate, approximant and gesture silence. Not admitted: a standalone unreleased stop and an explicit breath event. |
+| 2 | Phrase context beyond the owning note | Open. A gesture still cannot begin before its own note. |
+| 3 | Ordered spans separated from a bounded transition plan | Partial. Ordered linguistic spans are preserved and the approximant transition is a bounded declared window, but there is no shared transition-plan type and no coarticulation that crosses a gesture boundary. |
+| 4 | Chunk-invariant rendering | Done, including the new gesture. |
+| 5 | Versioned semantics for old resources | Done. Recipe schemas 1-8, candidate schemas up to 8, articulation plan revision 11. |
+| 6 | Shared inventory generation planner | Landed (`inventory_generation`), consumed by the campaign. |
+| 7 | Resumable campaign orchestration | Landed (`generation_campaign`), one bounded batch per advance. |
+| 8 | Prepare-render-collect transaction with durable receipts | Landed, including conflicts on external edits and recovery of an uncertain commit. |
+| 9 | Aggregate budget preflight | Landed: per-batch, aggregate frame and estimated-byte limits, retained-storage inspection and cancellation. |
+| 10 | Held-out pilot phrase set before the full inventory | Open. This is the next M1.P2 item. |
+
+So six of the ten are landed, two are partial, and two are open.
+
+M1.P1 keeps one open required change: the durable C++ legacy migration operation
+with its retained receipt and history-transition verification. The Python planner
+and its 18 parity tests exist; a generic save still cannot upgrade a schema, which
+is deliberate until that operation lands.
+
 ## An affricate is one gesture, not a stop followed by a fricative
+
 
 The pilot's Japanese inventory names `ts`, `ch`, `j`, `r`, `w` and `y`, and the articulation
 model could not produce any of them: `つ` and `ち` were refused with "has no explicit frication or

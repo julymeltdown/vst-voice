@@ -63,6 +63,16 @@ core::Result<ArticulatedStream> ArticulatedStream::create(
           static_cast<time::SampleFrame>(std::llround(binding->burstMilliseconds * plan.sampleRate() / 1000.0)) !=
               gesture.affricate->release.burstFrames)
         return core::failure<ArticulatedStream>(core::ErrorCode::Conflict, "Affricate plan differs from the frozen recipe");
+    } else if (gesture.kind == ArticulationGestureKind::Approximant) {
+      const auto binding = std::find_if(recipe.value().approximants.begin(), recipe.value().approximants.end(),
+          [&](const auto& pose) { return pose.phone == gesture.phone && pose.style == style; });
+      const auto span = gesture.span.end - gesture.span.start;
+      const auto expected = binding == recipe.value().approximants.end() ? time::SampleFrame{0}
+          : std::clamp<time::SampleFrame>(static_cast<time::SampleFrame>(std::llround(
+                binding->transitionMilliseconds * plan.sampleRate() / 1000.0)), 1, span);
+      if (binding == recipe.value().approximants.end() || gesture.transitionFrames == 0U ||
+          static_cast<time::SampleFrame>(gesture.transitionFrames) != expected)
+        return core::failure<ArticulatedStream>(core::ErrorCode::Conflict, "Approximant plan differs from the frozen recipe");
     } else if (isNoiseGesture(gesture.kind)) {
       const auto binding = std::find_if(recipe.value().frications.begin(), recipe.value().frications.end(),
           [&](const auto& pose) { return pose.phone == gesture.phone && pose.style == style; });
@@ -121,13 +131,48 @@ core::Result<synthesis::PhraseAudio> ArticulatedStream::renderOwned(synthesis::P
     const bool noteAttack = tonal && reattacksAt(gesture->span.start);
     const bool noteRelease = tonal && reattacksAt(gesture->span.end);
     auto boundary = owned.end;
-    if (gesture) boundary = std::min(boundary, active ? gesture->span.end : gesture->span.start);
+    auto glide = static_cast<const ArticulationGesture*>(nullptr);
+    auto entryFrames = time::SampleFrame{0};
+    auto glideFrames = time::SampleFrame{0};
+    if (gesture) {
+      boundary = std::min(boundary, active ? gesture->span.end : gesture->span.start);
+      // A voiced approximant declares the formant motion into its neighbouring vowel, and that
+      // motion is the gesture: it begins exactly `transitionFrames` before the gesture ends, so it
+      // lands on the nucleus instead of being a short step at the vowel's own onset. This tract
+      // owns one transition at a time, so the motion starts when the entry crossfade has released
+      // it; a glide with no room for both keeps the declaration and compresses the crossfade
+      // window rather than dropping the declared motion.
+      entryFrames = std::min<time::SampleFrame>(plan_->sampleRate() / 50U, gesture->span.end - gesture->span.start);
+      if (tonal && gesture->transitionFrames > 0U && candidate.next_ + 1U < gestures.size())
+        glide = &gestures[candidate.next_ + 1U];
+      if (glide && (glide->span.start != gesture->span.end || glide->phone == candidate.currentPhone_))
+        glide = nullptr;
+      if (glide) {
+        glideFrames = std::min<time::SampleFrame>(static_cast<time::SampleFrame>(gesture->transitionFrames),
+                                                  gesture->span.end - gesture->span.start);
+        // A transition is scheduled at a block boundary, and the same owned range has to render
+        // identically however a caller splits it, so the block ends exactly where the motion must
+        // begin and exactly where the entry crossfade would release the tract.
+        if (position < gesture->span.end - glideFrames) boundary = std::min(boundary, gesture->span.end - glideFrames);
+        if (position < gesture->span.start + entryFrames) boundary = std::min(boundary, gesture->span.start + entryFrames);
+      }
+    }
     const auto count = static_cast<std::size_t>(std::min<time::SampleFrame>(static_cast<time::SampleFrame>(blockFrames_), boundary - position));
     if (tonal && position == gesture->span.start && gesture->phone != candidate.currentPhone_) {
       const auto transition = candidate.tract_->transitionTo(*recipe_, gesture->phone, style_,
-          static_cast<std::size_t>(std::min<time::SampleFrame>(plan_->sampleRate() / 50U, gesture->span.end - gesture->span.start)));
+          static_cast<std::size_t>(entryFrames));
       if (!transition) return core::Result<Output>{transition.error()};
       candidate.currentPhone_ = gesture->phone;
+    }
+    if (glide && position >= gesture->span.end - glideFrames &&
+        candidate.tract_->transitionFramesRemaining() == 0U) {
+      const auto frames = std::min<time::SampleFrame>(glideFrames, gesture->span.end - position);
+      if (frames > 0) {
+        const auto transition = candidate.tract_->transitionTo(*recipe_, glide->phone, style_,
+            static_cast<std::size_t>(frames));
+        if (!transition) return core::Result<Output>{transition.error()};
+        candidate.currentPhone_ = glide->phone;
+      }
     }
     auto excitation = candidate.voice_->render(count, stop);
     if (!excitation) return core::Result<Output>{excitation.error()};

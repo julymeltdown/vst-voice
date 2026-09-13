@@ -106,10 +106,26 @@ core::Result<void> VoiceRecipe::validate() const {
                            "Affricate identity, style, burst or tail spectrum is invalid or ambiguous");
     }
   }
+  if (approximants.size() > 64U) return core::failure(core::ErrorCode::InvalidArgument, "Too many approximant poses");
+  for (const auto& pose : approximants) {
+    // Only the voiced approximants the pilot's language needs. Each one must own a resonance
+    // pose, because the transition is between two resonance banks and not a new source.
+    const bool supportedPhone = pose.phone == "r" || pose.phone == "w" || pose.phone == "y";
+    if (!supportedPhone || !text(pose.phone) || !text(pose.style) ||
+        !identities.emplace(pose.phone, pose.style).second ||
+        std::none_of(poses.begin(), poses.end(), [&](const auto& voice) {
+          return voice.phone == pose.phone && voice.style == pose.style;
+        }) ||
+        !bounded(pose.transitionMilliseconds, 5.0, 200.0)) {
+      return core::failure(core::ErrorCode::InvalidArgument,
+                           "Approximant identity, style, resonance pose or transition is invalid or ambiguous");
+    }
+  }
   return core::success();
 }
 
 std::int64_t voiceRecipeSchemaVersion(const VoiceRecipe& recipe) noexcept {
+  if (!recipe.approximants.empty()) return 8;
   if (!recipe.affricates.empty()) return 7;
   if (std::any_of(recipe.plosives.begin(),recipe.plosives.end(),[](const auto& pose){return pose.voicedClosure.has_value();})) return 6;
   if (std::any_of(recipe.frications.begin(),recipe.frications.end(),[](const auto& pose){return pose.voicingGain.has_value();})) return 5;
@@ -181,6 +197,14 @@ core::Result<std::string> encodeVoiceRecipe(const VoiceRecipe& recipe) {
     }
     root.asObject().emplace("affricates", std::move(affricates));
   }
+  if (version>=8) {
+    J::Array approximants;
+    for (const auto& pose : recipe.approximants) {
+      approximants.emplace_back(J::Object{{"phone", pose.phone}, {"style", pose.style},
+          {"transitionMilliseconds", J{pose.transitionMilliseconds}}});
+    }
+    root.asObject().emplace("approximants", std::move(approximants));
+  }
   return formats::stringifyJson(root);
 }
 
@@ -193,8 +217,9 @@ core::Result<VoiceRecipe> decodeVoiceRecipe(std::string_view json) {
       !root.find("formatId")->isString() || root.find("formatId")->asString() != "com.project-seam.voice-recipe" ||
       !root.find("schemaVersion")->isInteger()) return malformed();
   const auto version = root.find("schemaVersion")->asInt64();
-  if (version < 1 || version > 7) return core::failure<VoiceRecipe>(core::ErrorCode::Unsupported, "Voice recipe schema is unsupported");
+  if (version < 1 || version > 8) return core::failure<VoiceRecipe>(core::ErrorCode::Unsupported, "Voice recipe schema is unsupported");
   if (!(version == 1 ? fields(root, {"formatId", "schemaVersion", "id", "engineId", "seed", "phonation", "modulation", "poses"}) :
+      version>=8 ? fields(root,{"formatId","schemaVersion","id","engineId","seed","phonation","modulation","poses","frications","plosives","affricates","approximants"}) :
       version>=7 ? fields(root,{"formatId","schemaVersion","id","engineId","seed","phonation","modulation","poses","frications","plosives","affricates"}) :
       version>=4 ? fields(root,{"formatId","schemaVersion","id","engineId","seed","phonation","modulation","poses","frications","plosives"}) :
       fields(root, {"formatId", "schemaVersion", "id", "engineId", "seed", "phonation", "modulation", "poses", "frications"}))) return malformed();
@@ -285,6 +310,17 @@ core::Result<VoiceRecipe> decodeVoiceRecipe(std::string_view json) {
           pose.find("burstMilliseconds")->asNumber()};
       if (!parseSpectrum(*pose.find("burst"),row.burst) || !parseSpectrum(*pose.find("tail"),row.tail)) return malformed();
       recipe.affricates.push_back(std::move(row));
+    }
+  }
+  if (version>=8) {
+    const auto& list=*root.find("approximants");
+    if (!list.isArray()) return malformed();
+    for (const auto& pose:list.asArray()) {
+      if (!fields(pose,{"phone","style","transitionMilliseconds"}) ||
+          !pose.find("phone")->isString() || !pose.find("style")->isString() ||
+          !number(pose,"transitionMilliseconds")) return malformed();
+      recipe.approximants.push_back({pose.find("phone")->asString(),
+          pose.find("style")->asString(), pose.find("transitionMilliseconds")->asNumber()});
     }
   }
   const auto valid = recipe.validate();

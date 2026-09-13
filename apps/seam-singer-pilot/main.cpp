@@ -31,8 +31,9 @@ int main(int argc, char** argv) {
     const bool custom = argc >= 3 && std::string_view(argv[2]) == "phrase";
     const bool stops = argc == 3 && std::string_view(argv[2]) == "stops";
     const bool affricates = argc == 3 && std::string_view(argv[2]) == "affricates";
-    if (argc < 2 || (custom ? argc < 4 || argc > 67 : argc > 3 || (argc == 3 && !stops && !affricates && std::string_view(argv[2]) != "articulation" && std::string_view(argv[2]) != "boundaries" && std::string_view(argv[2]) != "nasals")))
-      throw std::runtime_error("Usage: seam_singer_pilot NEW_OUTPUT_DIRECTORY [articulation|boundaries|nasals|stops|affricates] OR NEW_OUTPUT_DIRECTORY phrase LYRIC:MIDI[:TICKS] ... (1-64 notes)");
+    const bool glides = argc == 3 && std::string_view(argv[2]) == "glides";
+    if (argc < 2 || (custom ? argc < 4 || argc > 67 : argc > 3 || (argc == 3 && !stops && !affricates && !glides && std::string_view(argv[2]) != "articulation" && std::string_view(argv[2]) != "boundaries" && std::string_view(argv[2]) != "nasals")))
+      throw std::runtime_error("Usage: seam_singer_pilot NEW_OUTPUT_DIRECTORY [articulation|boundaries|nasals|stops|affricates|glides] OR NEW_OUTPUT_DIRECTORY phrase LYRIC:MIDI[:TICKS] ... (1-64 notes)");
     const bool articulation = argc == 3 && std::string_view(argv[2]) == "articulation";
     const bool boundaries = argc == 3 && std::string_view(argv[2]) == "boundaries";
     const bool nasals = argc == 3 && std::string_view(argv[2]) == "nasals";
@@ -40,7 +41,7 @@ int main(int argc, char** argv) {
     application::ProjectFactory factory{91000U};
     auto project = factory.createProject("SEAM pilot: vowel and fricative ladder (unqualified)");
     const auto trackId = factory.addVocalTrack(project, "Original procedural pilot");
-    const std::string phrase = stops ? "pa ba ta da ka ga" : affricates ? "tsu chi ta sa" : custom ? "User-authored diagnostic phrase" : nasals ? "N a N i N u" : boundaries ? "a a a a then a melisma (same melody)" : articulation ? "ma mi mu me mo na ni nu ne no pa ta ka sa" : "a i u e o sa";
+    const std::string phrase = stops ? "pa ba ta da ka ga" : affricates ? "tsu chi ta sa" : glides ? "ra wa ya a" : custom ? "User-authored diagnostic phrase" : nasals ? "N a N i N u" : boundaries ? "a a a a then a melisma (same melody)" : articulation ? "ma mi mu me mo na ni nu ne no pa ta ka sa" : "a i u e o sa";
     std::vector<std::u32string> lyrics = nasals
         ? std::vector<std::u32string>{U"ん", U"あ", U"ん", U"い", U"ん", U"う"} : boundaries
         ? std::vector<std::u32string>{U"あ", U"あ", U"あ", U"あ", U"あ", U"ー", U"ー", U"ー"} : articulation
@@ -85,6 +86,12 @@ int main(int argc, char** argv) {
       // is made from: つ (ts), ち (ch), then た (t) and さ (s) as the comparison points.
       lyrics={U"つ",U"ち",U"た",U"さ"};
       pitches={60,62,64,65};
+    }
+    if (glides) {
+      // A voiced liquid or glide whose defining gesture is the formant transition into its
+      // vowel: ら (r), わ (w), や (y), then あ alone as the comparison point.
+      lyrics={U"ら",U"わ",U"や",U"あ"};
+      pitches={60,62,64,64};
     }
     if (!custom) durations.assign(lyrics.size(),480);
     std::int64_t totalTicks=0;
@@ -143,6 +150,16 @@ int main(int argc, char** argv) {
               {.seed=91007U,.centerHz=4500,.bandwidthHz=3500,.gain=0.12}, 12.0}};
     }
     if (affricates) base.id="seam-pilot-01-affricate-diagnostic";
+    if (glides || custom) {
+      // Experimental resonance banks and transition lengths, not phonetic qualification. Each
+      // approximant needs its own same-phone resonance pose, which is what the transition moves
+      // into; a static vowel remains the comparison point in the fixture.
+      base.poses.push_back({"r", "neutral", 0.0, {{400, 80, 0}, {1400, 110, -3}, {2200, 160, -6}}});
+      base.poses.push_back({"w", "neutral", 0.0, {{300, 80, 0}, {610, 100, -3}, {2200, 160, -6}}});
+      base.poses.push_back({"y", "neutral", 0.0, {{250, 70, 0}, {2200, 120, -3}, {3000, 170, -6}}});
+      base.approximants = {{"r", "neutral", 45.0}, {"w", "neutral", 60.0}, {"y", "neutral", 40.0}};
+    }
+    if (glides) base.id="seam-pilot-01-approximant-diagnostic";
     formats::JsonValue::Array runs;
     for (const std::string name : {"baseline", "higher-formants", "breathier"}) {
       auto recipe = base;

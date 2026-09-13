@@ -1,11 +1,52 @@
 """Exercise real pilot exports; this does not score musical intelligibility."""
 import json
 import hashlib
+import math
 from pathlib import Path
 import subprocess
 import struct
 import sys
 import tempfile
+
+
+_BAND_EDGES = ((100, 200), (200, 350), (350, 500), (500, 700), (700, 900), (900, 1200),
+               (1200, 1600), (1600, 2200), (2200, 2800), (2800, 3400))
+
+
+def _float_mono(raw):
+    """The sample rate and mono samples of a float32 WAV the pilot wrote."""
+    offset = 12
+    chunks = {}
+    while offset + 8 <= len(raw):
+        size = struct.unpack_from("<I", raw, offset + 4)[0]
+        chunks[raw[offset:offset + 4]] = raw[offset + 8:offset + 8 + size]
+        offset += 8 + size + size % 2
+    encoding, channels, rate = struct.unpack_from("<HHI", chunks[b"fmt "])
+    assert encoding == 3 and channels == 1
+    return rate, struct.unpack("<" + "f" * (len(chunks[b"data"]) // 4), chunks[b"data"])
+
+
+def _band_profile(samples, rate):
+    """A Hann-windowed band profile, normalized so that loudness does not affect the shape."""
+    energy = []
+    width = len(samples)
+    for low, high in _BAND_EDGES:
+        total = 0.0
+        for hz in range(low, high + 1, 50):
+            real = imaginary = 0.0
+            for index, value in enumerate(samples):
+                window = 0.5 - 0.5 * math.cos(2.0 * math.pi * index / (width - 1))
+                angle = 2.0 * math.pi * hz * index / rate
+                real += value * window * math.cos(angle)
+                imaginary += value * window * math.sin(angle)
+            total += (real * real + imaginary * imaginary) / (width * width)
+        energy.append(total)
+    scale = sum(energy) or 1.0
+    return [value / scale for value in energy]
+
+
+def _band_distance(left, right):
+    return sum(abs(first - second) for first, second in zip(left, right))
 
 
 def main():
@@ -147,10 +188,12 @@ def main():
             assert result.returncode != 0
             assert not target.exists()
         unsupported = root / "unsupported-phrase"
-        result = subprocess.run([str(binary), str(unsupported), "phrase", "ら:60"], capture_output=True, timeout=10)
+        # The recipe the custom phrase builds admits liquids and glides now, so the refusal this
+        # checks is the phone class that is still deliberately absent: a voiced affricate.
+        result = subprocess.run([str(binary), str(unsupported), "phrase", "じ:60"], capture_output=True, timeout=10)
         assert result.returncode != 0
         assert not (unsupported / "pilot.json").exists()
-        assert b"Phone 'r'" in result.stderr
+        assert b"Phone 'j'" in result.stderr
         assert b"style 'neutral'" in result.stderr
         assert b"seam-pilot-01-voiced-stop-diagnostic" in result.stderr
         rhythmic = root / "rhythmic"
@@ -250,6 +293,50 @@ def main():
                     assert any(value != 0 for value in samples[start + closure:start + closure + burst])
                     assert any(value != 0 for value in samples[start + closure + burst:start + span])
         assert affricate_hashes[0] == affricate_hashes[1]
+
+        # A liquid or glide is a voiced gesture whose defining motion is the formant transition
+        # its recipe declares into the vowel that follows. Each approximant span stays voiced
+        # throughout -- unlike the plosive closure above -- and ends measurably closer to its
+        # vowel's steady pose than it started. ら, わ and や are rendered beside a bare あ, which
+        # is the comparison point; none of this is a listening or quality claim.
+        glide_hashes = []
+        for name in ("glides", "glides-repeat"):
+            subprocess.run([str(binary), str(root / name), "glides"], check=True,
+                           capture_output=True, timeout=60)
+            report = json.loads((root / name / "pilot.json").read_text())
+            glide_hashes.append([row["sha256"] for row in report["runs"]])
+            for row in report["runs"]:
+                audio = Path(row["wav"])
+                if audio.parent.name != "candidates":
+                    continue
+                metadata = json.loads(audio.with_suffix(".json").read_text())
+                assert metadata["schemaVersion"] == 8
+                assert metadata["approximantRevision"] == 1
+                assert metadata["articulationPlanRevision"] == 11
+                assert metadata["approval"] == "unapproved"
+                markers = metadata["markers"]
+                assert [m["phone"] for m in markers] == ["r", "a", "w", "a", "y", "a", "a"]
+                assert [m["kind"] for m in markers[:6]] == ["approximant", "oral-vowel"] * 3
+                assert [m["kind"] for m in markers[6:]] == ["oral-vowel"]
+                raw = audio.read_bytes()
+                assert hashlib.sha256(raw).hexdigest() == row["sha256"]
+                rate, samples = _float_mono(raw)
+                window = rate // 200
+                for index, marker in enumerate(markers):
+                    if marker["kind"] != "approximant":
+                        continue
+                    start, end = marker["startFrame"], marker["endFrame"]
+                    # No silent segment anywhere in the glide: a closure would have one.
+                    for offset in range(start, end, window):
+                        assert max(abs(value) for value in samples[offset:min(end, offset + window)]) > 1e-6
+                    quarter = (end - start) // 4
+                    head = _band_profile(samples[start:start + quarter], rate)
+                    tail = _band_profile(samples[end - quarter:end], rate)
+                    # The gesture is a movement rather than a static pose. That it moves toward
+                    # the vowel is asserted where the declared duration can be compared against a
+                    # control, in seam_articulation_context_tests; this fixture is fixed.
+                    assert _band_distance(head, tail) > 0.05
+        assert glide_hashes[0] == glide_hashes[1]
     print("Pilot repeatability, finite/nonzero PCM, variant identity and no-overwrite checks passed; quality unassessed.")
 
 

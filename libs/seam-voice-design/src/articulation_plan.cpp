@@ -33,12 +33,15 @@ core::Result<ArticulationPlan> ArticulationPlan::compileRecipe(
     bindings.push_back({pose.phone, pose.source, pose.voicingGain});
   for (const auto& pose : recipe.value().affricates) if (pose.style == style && requestedStops.contains(pose.phone))
     affricates.push_back({pose.phone, pose.burst, pose.tail, pose.burstMilliseconds});
+  std::vector<ApproximantBinding> approximants;
+  for (const auto& pose : recipe.value().approximants) if (pose.style == style && requestedStops.contains(pose.phone))
+    approximants.push_back({pose.phone, pose.transitionMilliseconds});
   const auto notes = performance.notes();
   std::vector<std::string> nasals;
   for (const auto& pose:recipe.value().poses) if (pose.style==style && pose.nasal && pose.nasalCoupling>0.0 && phonemizer::isNasalSymbol(pose.phone))
     nasals.push_back(pose.phone);
   const synthesis::PhraseFrameRange context{notes.front().startFrame, notes.back().endFrame};
-  auto plan = compile(phones, performance.phonemeTiming(), bindings, performance.sampleRate(), context,nasals,plosives,affricates);
+  auto plan = compile(phones, performance.phonemeTiming(), bindings, performance.sampleRate(), context,nasals,plosives,affricates,approximants);
   if (!plan) return core::failure<ArticulationPlan>(plan.error().code,
       "Recipe '" + recipe.value().id + "', style '" + std::string(style) + "': " + plan.error().message);
   std::map<domain::NoteId, const synthesis::ScoreNoteSpan*> scoreNotes;
@@ -68,9 +71,10 @@ core::Result<ArticulationPlan> ArticulationPlan::compile(
     std::span<const FricationBinding> bindings, std::uint32_t sampleRate,
     synthesis::PhraseFrameRange context, std::span<const std::string> nasalBindings,
     std::span<const PlosiveBinding> plosiveBindings,
-    std::span<const AffricateBinding> affricateBindings) {
+    std::span<const AffricateBinding> affricateBindings,
+    std::span<const ApproximantBinding> approximantBindings) {
   const auto invalid = [](const char* message) { return core::failure<ArticulationPlan>(core::ErrorCode::InvalidArgument, message); };
-  if (phones.empty() || phones.size() > 16384U || phones.size() != timing.size() || bindings.size() > 64U || nasalBindings.size()>64U || plosiveBindings.size()>64U || affricateBindings.size()>64U ||
+  if (phones.empty() || phones.size() > 16384U || phones.size() != timing.size() || bindings.size() > 64U || nasalBindings.size()>64U || plosiveBindings.size()>64U || affricateBindings.size()>64U || approximantBindings.size()>64U ||
       sampleRate < 8000U || sampleRate > 384000U || context.start < 0 || context.end <= context.start || context.end > (time::SampleFrame{1} << 52))
     return invalid("Articulation input or context exceeds bounds");
   std::map<std::string, FricationBinding, std::less<>> sources;
@@ -115,6 +119,18 @@ core::Result<ArticulationPlan> ArticulationPlan::compile(
     const auto tail = FricationSource::create(binding.tail, sampleRate, context.start);
     if (!tail) return core::Result<ArticulationPlan>{tail.error()};
   }
+  std::map<std::string, ApproximantBinding, std::less<>> approximants;
+  for (const auto& binding : approximantBindings) {
+    // A voiced liquid or glide. The binding carries only the transition length; the resonance
+    // bank it moves to is the recipe's own same-phone pose, which the stream checks.
+    if ((binding.phone != "r" && binding.phone != "w" && binding.phone != "y") ||
+        sources.contains(binding.phone) || stops.contains(binding.phone) ||
+        affricates.contains(binding.phone) ||
+        !std::isfinite(binding.transitionMilliseconds) ||
+        binding.transitionMilliseconds < 5.0 || binding.transitionMilliseconds > 200.0 ||
+        !approximants.emplace(binding.phone, binding).second)
+      return invalid("Approximant binding is unsupported, ambiguous or duplicated");
+  }
   for (const auto& anchor : timing) if (!anchors.emplace(anchor.key, &anchor).second) return invalid("Articulation timing keys are duplicated");
   std::set<domain::PhonemeKey> seen;
   std::map<domain::NoteId,std::size_t> tokenCounts;
@@ -139,6 +155,7 @@ core::Result<ArticulationPlan> ArticulationPlan::compile(
     std::optional<double> voicingGain;
     std::optional<VoicedPlosiveConfig> voicedPlosive;
     std::optional<AffricateConfig> affricate;
+    std::uint32_t transitionFrames{0U};
     if (vowel) {
       if (anchor.nucleusKey != std::optional{phone.key}) return invalid("Oral vowel lacks its own nucleus anchor");
     } else if (nasal && phone.symbol=="N" && phone.role==domain::PhonemeRole::Coda &&
@@ -163,6 +180,33 @@ core::Result<ArticulationPlan> ArticulationPlan::compile(
         if (start<anchor.nucleusFrame) return invalid("Nasal coda requires a resolved post-nucleus start");
         end=anchor.endFrame;
       }
+    } else if (approximants.find(phone.symbol) != approximants.end()) {
+      const auto& binding = approximants.at(phone.symbol);
+      const auto phoneLabel="Phone '"+phone.symbol+"' on note "+phone.key.noteId.toString();
+      if (!phone.voiced) return invalid("Approximant binding cannot be used for a voiceless token");
+      const bool approximantCoda = phone.role == domain::PhonemeRole::Coda;
+      if (!approximantCoda && phone.role != domain::PhonemeRole::Onset)
+        return core::failure<ArticulationPlan>(core::ErrorCode::Unsupported, phoneLabel +
+            " uses a role unsupported by a voiced approximant; onset or coda is required");
+      const auto onsetStart = anchor.explicitStartFrame ? anchor.explicitStartFrame : anchor.inferredStartFrame;
+      if (!onsetStart || !anchor.nucleusKey) return core::failure<ArticulationPlan>(
+          core::ErrorCode::Unsupported, "Approximant gesture requires a resolved start and associated nucleus");
+      const auto nucleus = anchors.find(*anchor.nucleusKey);
+      if (nucleus == anchors.end() || nucleus->second->key.noteId != phone.key.noteId ||
+          !nucleus->second->voiced.value_or(false) ||
+          nucleus->second->nucleusKey != anchor.nucleusKey ||
+          nucleus->second->nucleusFrame != anchor.nucleusFrame)
+        return invalid("Approximant nucleus binding is inconsistent");
+      start = *onsetStart;
+      end = approximantCoda || anchor.endExplicit ? anchor.endFrame : anchor.nucleusFrame;
+      if (approximantCoda) {
+        if (start<anchor.nucleusFrame) return invalid("Approximant coda requires a post-nucleus start");
+      } else if (end > anchor.nucleusFrame) return invalid("Approximant onset crosses its vowel nucleus");
+      if (end <= start) return invalid("Approximant gesture is empty");
+      // The transition is the gesture, but it can never outlast the note it belongs to.
+      const auto requested = static_cast<time::SampleFrame>(std::llround(
+          binding.transitionMilliseconds * sampleRate / 1000.0));
+      transitionFrames = static_cast<std::uint32_t>(std::clamp<time::SampleFrame>(requested, 1, end - start));
     } else {
       const auto binding = sources.find(phone.symbol);
       const auto stopBinding = stops.find(phone.symbol);
@@ -250,8 +294,9 @@ core::Result<ArticulationPlan> ArticulationPlan::compile(
     }
     if (start < context.start || end > context.end || end <= start) return invalid("Articulation gesture is outside its context or empty");
     result.gestures_.push_back({vowel ? ArticulationGestureKind::OralVowel : nasal ? ArticulationGestureKind::Nasal :
+        transitionFrames > 0U ? ArticulationGestureKind::Approximant :
         affricate ? ArticulationGestureKind::Affricate : voicedPlosive ? ArticulationGestureKind::VoicedPlosive : plosive ? ArticulationGestureKind::Plosive : voicingGain ? ArticulationGestureKind::VoicedFrication : ArticulationGestureKind::Frication,
-        phone.key, phone.symbol, {start, end}, source, plosive, voicingGain, voicedPlosive, affricate});
+        phone.key, phone.symbol, {start, end}, source, plosive, voicingGain, voicedPlosive, affricate, transitionFrames});
   }
   std::sort(result.gestures_.begin(), result.gestures_.end(), [](const auto& a, const auto& b) { return a.span.start < b.span.start; });
   for (std::size_t index = 1U; index < result.gestures_.size(); ++index)

@@ -75,6 +75,16 @@ struct VoiceRecipe final {
     friend bool operator==(const AffricatePose&, const AffricatePose&) = default;
   };
   std::vector<AffricatePose> affricates;
+  // Schema-eight explicit opt-in: a voiced approximant (liquid or glide) whose resonance comes
+  // from the same-phone resonance pose and whose defining gesture is the bounded formant
+  // transition into the neighbouring vowel. Absent poses keep their previous meaning, so an
+  // unused consonant resonance bank in an older recipe does not become a sung glide.
+  struct ApproximantPose final {
+    std::string phone, style;
+    double transitionMilliseconds{40.0};
+    friend bool operator==(const ApproximantPose&, const ApproximantPose&) = default;
+  };
+  std::vector<ApproximantPose> approximants;
   [[nodiscard]] core::Result<void> validate() const;
   friend bool operator==(const VoiceRecipe&, const VoiceRecipe&) = default;
 };
