@@ -2303,6 +2303,14 @@ if(SEAM_ONNXRUNTIME_ROOT)
     add_subdirectory(tools/neural_runtime/native_inspection native-onnx-inspection)
     target_link_libraries(seam_onnx_runtime_probe PRIVATE seam_native_onnx_inspection)
     target_compile_definitions(seam_onnx_runtime_probe PRIVATE SEAM_NATIVE_GRAPH_INSPECTION=1)
+    # Production worker entry point. It is built only where native structural
+    # admission is available, because it must refuse a bundle it cannot inspect.
+    add_executable(seam_neural_worker apps/seam-neural-worker/main.cpp)
+    target_include_directories(seam_neural_worker SYSTEM PRIVATE "${SEAM_ONNXRUNTIME_INCLUDE}")
+    target_link_libraries(seam_neural_worker PRIVATE "${SEAM_ONNXRUNTIME_LIBRARY}"
+      seam_neural_synthesis seam_native_onnx_inspection)
+    target_compile_definitions(seam_neural_worker PRIVATE SEAM_NATIVE_GRAPH_INSPECTION=1)
+    seam_apply_compiler_options(seam_neural_worker)
     if(SEAM_BUILD_TESTS)
       add_test(NAME seam_neural_native_owned_bytes
         COMMAND seam_native_onnx_owned_bytes_test)
@@ -2322,11 +2330,14 @@ if(SEAM_ONNXRUNTIME_ROOT)
         add_test(NAME seam_neural_native_bundle_runtime
           COMMAND "${SEAM_NATIVE_ONNX_PYTHON}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/neural_runtime/check_bundle_runtime.py"
             $<TARGET_FILE:seam_voicebank_cli> $<TARGET_FILE:seam_onnx_runtime_probe> --native-inspection)
+        add_test(NAME seam_neural_production_worker
+          COMMAND "${SEAM_NATIVE_ONNX_PYTHON}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/neural_runtime/check_production_worker.py"
+            $<TARGET_FILE:seam_neural_worker> $<TARGET_FILE:seam_voicebank_cli>)
         set_tests_properties(seam_neural_native_inspection seam_neural_native_paired_runtime
-          seam_neural_native_bundle_runtime PROPERTIES TIMEOUT 120 LABELS "neural-native-experiment")
+          seam_neural_native_bundle_runtime seam_neural_production_worker PROPERTIES TIMEOUT 120 LABELS "neural-native-experiment")
         add_custom_target(seam_neural_native_checks
           COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure -L neural-native-experiment
-          DEPENDS seam_native_onnx_owned_bytes_test seam_native_onnx_inspect seam_onnx_runtime_probe seam_voicebank_cli
+          DEPENDS seam_native_onnx_owned_bytes_test seam_native_onnx_inspect seam_onnx_runtime_probe seam_neural_worker seam_voicebank_cli
           WORKING_DIRECTORY "${CMAKE_BINARY_DIR}" USES_TERMINAL)
       endif()
     endif()

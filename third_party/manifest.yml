@@ -41,6 +41,16 @@
   ],
   "plannedOrReferenceOnly": [
     {
+      "name": "ONNX Runtime C/C++ API 1.30.0",
+      "source": "https://github.com/microsoft/onnxruntime",
+      "revision": "v1.30.0",
+      "declaredLicense": "MIT",
+      "status": "development-local-sdk-not-vendored-or-shipped",
+      "usage": "locally-built shared library linked by the development-only production neural worker and inference probes",
+      "localBuild": "tools/neural_runtime/build_telemetry_free.py",
+      "purpose": "admitted acoustic and vocoder graph execution in the neural worker; shipping requires the telemetry-free replacement qualification recorded in tools/neural_runtime/TELEMETRY_FREE_RUNTIME.md"
+    },
+    {
       "name": "OpenVPI DiffSinger acoustic and vocoder export contracts",
       "source": "https://github.com/openvpi/DiffSinger",
       "revision": "336cf01b57f2ad44c6b37a79cf33993043291759",

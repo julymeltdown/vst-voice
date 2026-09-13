@@ -1,5 +1,53 @@
 # Integrated Singer Execution
 
+## Production neural worker executes admitted bundles
+
+Added `apps/seam-neural-worker/main.cpp`, the first executable that performs real
+acoustic-then-vocoder inference for an admitted model bundle. The application
+selects it through the existing launch contract,
+`--seam-neural-worker-v2 BUNDLE_DIR MODEL_ID MODEL_VERSION BUNDLE_CONTENT_HASH
+MAXIMUM_BUNDLE_BYTES`, with one SNW1 request frame on stdin and exactly one SNW1
+response frame on stdout. The child never receives a command, library path or
+script from a bank.
+
+Admission order is deliberate. The worker reads the bounded request frame, then
+re-loads the bundle directory itself through `loadNeuralBundleDirectory`, so a
+file changed after parent inspection fails its manifest or asset digest. It then
+inspects the bundle metadata, requires the request's bundle, model and vocabulary
+identity to match the bytes it loaded, and only then parses both graphs with the
+native ONNX inspector and the frozen pair contract. Session creation happens after
+that admission; loaded interfaces are cross-checked against the admitted
+declaration before any tensor is executed. A build without native graph admission
+cannot execute a bundle, and the CMake target now exists only where the pinned
+schema is available.
+
+Inference reuses the shared DiffSinger path: `prepareDiffSingerAcousticInputs`
+produces tokens, durations, padded F0 and the step tensor; the acoustic graph
+produces mel; the admitted vocoder produces audio; `finalizeDiffSingerResponse`
+validates the complete padded buffer, trims the final partial hop to the exact
+requested sample range and applies sample-domain dynamics once. Rejections cover
+nonfinite mel or PCM, wrong mel or audio geometry, an out-of-range gained sample
+and any request/response identity mismatch.
+
+`tools/neural_runtime/check_production_worker.py` builds a real ONNX bundle with
+the production CLI, drives the worker through that contract, and asserts exact
+response binding, sample count and arithmetic output. It also asserts that the
+worker refuses the v1 transport contract, an invalid byte budget, a wrong manifest
+digest, a wrong launch identity, bytes changed after preparation, a bundle whose
+graphs fail admission, wrong model/vocabulary/sample-rate/frame identities, malformed
+frames and an out-of-range dynamics result, always with empty stdout. The v1
+transport fixture remains a separate executable that accepts an uninspected-graph
+bundle the production worker rejects.
+
+Verified in two builds: `build/release` with the local ONNX Runtime 1.30.0 SDK and
+`build/neural-runtime/seam-telemetry-free` with the telemetry-free local SDK. All
+five `neural-native-experiment` tests pass in both, including the new worker test.
+These are deterministic arithmetic fixture graphs executed with real runtime and
+real admission; no learned singer, voice identity, listening result or Beta claim
+follows. The worker's diffusion step count is a pinned diagnostic constant because
+the admitted configuration schema does not yet carry it, and the production
+bundle still needs its model-configuration and packaging revision.
+
 Authority: `SEAM_IMPLEMENTATION_PLAN_2026-09-13.md`, preserving the original
 R1–R20 and Full-Scope U1–U48 obligations. This is current execution status,
 not a replacement product contract or a release approval.
