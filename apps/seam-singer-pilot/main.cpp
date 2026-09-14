@@ -258,12 +258,18 @@ int main(int argc, char** argv) {
           config.correlationMethod = voicebank::PitchCorrelationMethod::Fft;
           const auto measured = voicebank::analyzePitch(mono, wav.value().sampleRate, config); require(measured);
           formats::JsonValue::Array notes;
+          std::int64_t noteStartTick = 0;
           for (std::size_t index = 0; index < pitches.size(); ++index) {
             // Fixed central half of each score note; no data-dependent exclusions.
+            // Custom phrases can have unequal durations. A fixed index * 480 window would analyze
+            // the preceding or following note and report that error as a property of the voice.
+            const auto windowStartTick = noteStartTick + durations[index] / 4;
+            const auto windowEndTick = noteStartTick + 3 * durations[index] / 4;
+            noteStartTick += durations[index];
             const auto begin = static_cast<std::size_t>(std::llround(project.tempoMap().secondsAt(
-                time::Tick{static_cast<std::int64_t>(index) * 480 + 120}) * wav.value().sampleRate));
+                time::Tick{windowStartTick}) * wav.value().sampleRate));
             const auto end = static_cast<std::size_t>(std::llround(project.tempoMap().secondsAt(
-                time::Tick{static_cast<std::int64_t>(index) * 480 + 360}) * wav.value().sampleRate));
+                time::Tick{windowEndTick}) * wav.value().sampleRate));
             const auto expected = 440.0 * std::exp2((static_cast<double>(pitches[index]) - 69.0) / 12.0);
             std::size_t total = 0U, voiced = 0U, within = 0U, octaves = 0U;
             std::vector<double> errors;
@@ -282,6 +288,9 @@ int main(int argc, char** argv) {
             if (!errors.empty()) median = (errors[(errors.size() - 1U) / 2U] + errors[errors.size() / 2U]) / 2.0;
             notes.emplace_back(formats::JsonValue::Object{
                 {"noteIndex", static_cast<std::int64_t>(index)}, {"expectedHz", expected},
+                {"windowStartTick", windowStartTick}, {"windowEndTick", windowEndTick},
+                {"windowStartFrame", static_cast<std::int64_t>(begin)},
+                {"windowEndFrame", static_cast<std::int64_t>(end)},
                 {"analysisFrames", static_cast<std::int64_t>(total)}, {"voicedFrames", static_cast<std::int64_t>(voiced)},
                 {"within50CentsFrames", static_cast<std::int64_t>(within)}, {"largePitchErrorFrames", static_cast<std::int64_t>(octaves)},
                 {"medianAbsoluteCents", median}});

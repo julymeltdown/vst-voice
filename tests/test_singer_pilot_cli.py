@@ -213,6 +213,12 @@ def main():
         subprocess.run([str(binary), str(rhythmic), "phrase", "ば:60:960", "ー:64:240", "ん:65:720", "あ:60"],
                        check=True, capture_output=True, timeout=60)
         report = json.loads((rhythmic / "pilot.json").read_text())
+        for variant in ("baseline", "higher-formants", "breathier"):
+            pitch_report = json.loads((rhythmic / (variant + "-pitch.json")).read_text())
+            assert [(n["windowStartTick"], n["windowEndTick"]) for n in pitch_report["notes"]] == [
+                (240, 720), (1020, 1140), (1380, 1740), (2040, 2280)]
+            assert [(n["windowStartFrame"], n["windowEndFrame"]) for n in pitch_report["notes"]] == [
+                (6000, 18000), (25500, 28500), (34500, 43500), (51000, 57000)]
         for row in report["runs"]:
             audio = Path(row["wav"])
             if audio.parent.name == "candidates":
