@@ -106,6 +106,9 @@ enum class ProceduralResolveStatus {
   ContentHashMissing,
   ContentMismatch,
   Untrusted,
+  // The resource declares an engine or engine revision this build cannot render. It is present and
+  // trusted; it is simply not playable here, which a creator must be told rather than shown silence.
+  IncompatibleEngine,
   UnsafeEntry,
   InvalidReference,
 };
@@ -134,6 +137,10 @@ struct ProceduralCatalogue final {
 struct ProceduralResolveOptions final {
   bool requireTrustedInstalled{true};
   bool allowDevelopmentFixtures{true};
+  // The engine this build can render, and its revision. Empty means the caller does not check
+  // compatibility, which is only appropriate when the surface is not going to render the resource.
+  std::string renderableEngineId;
+  std::uint32_t renderableEngineRevision{0U};
 };
 
 struct ProceduralResolution final {

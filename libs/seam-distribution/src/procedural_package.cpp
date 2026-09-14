@@ -695,6 +695,24 @@ ProceduralResolution resolveProceduralSinger(
     result.diagnostic = "Procedural singer content does not match the saved project state";
     return result;
   }
+  // Compatibility is checked before trust: a resource that cannot be rendered here is not playable
+  // whatever its signature says, and reporting it as untrusted would name the wrong reason.
+  if (!options.renderableEngineId.empty()) {
+    const auto renderable = std::find_if(contentMatches.begin(), contentMatches.end(),
+        [&options](const ProceduralCandidate* candidate) {
+          return candidate->manifest.engineId == options.renderableEngineId &&
+                 candidate->manifest.engineRevision == options.renderableEngineRevision;
+        });
+    if (renderable == contentMatches.end()) {
+      const auto& declared = contentMatches.front()->manifest;
+      result.status = ProceduralResolveStatus::IncompatibleEngine;
+      result.diagnostic = "Procedural singer needs engine " + declared.engineId + " revision " +
+          std::to_string(declared.engineRevision) + ", but this build renders " +
+          options.renderableEngineId + " revision " +
+          std::to_string(options.renderableEngineRevision);
+      return result;
+    }
+  }
   const auto acceptable = [&options](const ProceduralCandidate* candidate) noexcept {
     if (candidate->trust == ProceduralTrust::TrustedInstalled) return true;
     if (candidate->trust == ProceduralTrust::DevelopmentFixture)
@@ -758,6 +776,7 @@ std::string_view proceduralResolveStatusName(ProceduralResolveStatus status) noe
     case ProceduralResolveStatus::ContentHashMissing: return "content-hash-missing";
     case ProceduralResolveStatus::ContentMismatch: return "content-mismatch";
     case ProceduralResolveStatus::Untrusted: return "untrusted";
+    case ProceduralResolveStatus::IncompatibleEngine: return "incompatible-engine";
     case ProceduralResolveStatus::UnsafeEntry: return "unsafe-entry";
     case ProceduralResolveStatus::InvalidReference: return "invalid-reference";
   }

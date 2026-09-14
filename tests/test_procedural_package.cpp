@@ -463,3 +463,55 @@ TEST_CASE("A development procedural resource is labelled and never trusted by de
   CHECK(distribution::resolveProceduralSinger(reference, rescan.value(), strict).status ==
         distribution::ProceduralResolveStatus::Untrusted);
 }
+
+TEST_CASE("A procedural singer built for another engine is reported as incompatible, not untrusted") {
+  const auto root = test::support::temporaryDirectory("procedural-engine");
+  const auto source = createProceduralSource(root);
+  auto key = distribution::generateSigningKeyPair();
+  CHECK(key.hasValue());
+  if (!key) return;
+  const auto packagePath = root / "pilot.seamsinger";
+  CHECK(distribution::packProceduralPackage(source, packagePath, key.value()).hasValue());
+  const auto installRoot = root / "installed";
+  distribution::InstallProceduralOptions installOptions;
+  installOptions.verification = distribution::VerifySeambankOptions{
+      .limits = {},
+      .trustedPublicKeys = {key.value().publicKey},
+      .requireTrustedSigner = true};
+  auto installed = distribution::installProceduralPackage(packagePath, installRoot, installOptions);
+  CHECK(installed.hasValue());
+  if (!installed) return;
+  distribution::ProceduralCatalogue catalogue;
+  auto scanned = catalogue.scan({distribution::ProceduralSearchRoot{
+      .path = installRoot, .kind = distribution::ProceduralRootKind::Installed}});
+  CHECK(scanned.hasValue());
+  if (!scanned) return;
+  const domain::SingerResourceIdentity reference{domain::SingerResourceKind::Procedural,
+                                                 "original.singer.pilot", "1.0.0",
+                                                 installed.value().contentHash};
+
+  // The engine this build renders is reported by the resource, so a matching request resolves.
+  const auto& declared = scanned.value().front().manifest;
+  distribution::ProceduralResolveOptions matching;
+  matching.renderableEngineId = declared.engineId;
+  matching.renderableEngineRevision = declared.engineRevision;
+  CHECK(distribution::resolveProceduralSinger(reference, scanned.value(), matching).resolved());
+
+  // An engine the build does not render gives an incompatible-engine reason that names both sides,
+  // and is distinct from an untrusted signer.
+  distribution::ProceduralResolveOptions otherEngine = matching;
+  otherEngine.renderableEngineId = "seam.source-filter.v0";
+  const auto incompatible =
+      distribution::resolveProceduralSinger(reference, scanned.value(), otherEngine);
+  CHECK(incompatible.status == distribution::ProceduralResolveStatus::IncompatibleEngine);
+  CHECK(incompatible.diagnostic.find(declared.engineId) != std::string::npos);
+  CHECK(incompatible.diagnostic.find("seam.source-filter.v0") != std::string::npos);
+  // A revision mismatch is the same verdict, not a different one.
+  distribution::ProceduralResolveOptions otherRevision = matching;
+  otherRevision.renderableEngineRevision = declared.engineRevision + 1U;
+  CHECK(distribution::resolveProceduralSinger(reference, scanned.value(), otherRevision).status ==
+        distribution::ProceduralResolveStatus::IncompatibleEngine);
+  // With no compatibility request the caller still resolves, which is what a browser view wants.
+  distribution::ProceduralResolveOptions unchecked;
+  CHECK(distribution::resolveProceduralSinger(reference, scanned.value(), unchecked).resolved());
+}
