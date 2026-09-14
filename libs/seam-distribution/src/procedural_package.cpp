@@ -203,19 +203,20 @@ core::Result<ProceduralSingerManifest> ProceduralSingerManifestJsonCodec::decode
 
 namespace {
 
-// The declared recipe must be exactly the bytes the package carries and a recipe this build can
-// decode. A digest that matches undecodable bytes is still refused: it would be a package that
-// verifies and then cannot be admitted.
+// The declared digest is over the recipe's *canonical* encoding, which is exactly the identity a
+// project stores and the renderer validates. Comparing it to the raw file bytes instead would accept
+// a package whose recipe re-encodes to a different identity than the one the manifest promised.
 core::Result<void> checkRecipeBytes(const std::vector<std::byte>& bytes,
                                     const ProceduralSingerManifest& manifest) {
-  const auto digest = core::sha256Hex(bytes);
-  if (digest != manifest.recipeSha256)
-    return core::failure(core::ErrorCode::Conflict,
-                         "Procedural recipe bytes do not match the manifest digest",
-                         manifest.recipeEntry);
   const std::string text(reinterpret_cast<const char*>(bytes.data()), bytes.size());
   auto recipe = voice_design::decodeVoiceRecipe(text);
   if (!recipe) return core::Result<void>{recipe.error()};
+  auto canonical = voice_design::encodeVoiceRecipe(recipe.value());
+  if (!canonical) return core::Result<void>{canonical.error()};
+  if (core::sha256Hex(canonical.value()) != manifest.recipeSha256)
+    return core::failure(core::ErrorCode::Conflict,
+                         "Procedural recipe does not match the manifest digest",
+                         manifest.recipeEntry);
   if (recipe.value().engineId != manifest.engineId)
     return core::failure(core::ErrorCode::Conflict,
                          "Procedural recipe engine does not match the manifest",

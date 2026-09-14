@@ -134,6 +134,44 @@ TEST_CASE("A signed procedural package verifies and returns its exact recipe") {
   CHECK(core::sha256Hex(recipe.value()) == verified.value().manifest.recipeSha256);
 }
 
+TEST_CASE("A procedural manifest digest binds the recipe's canonical encoding") {
+  const auto canonicalRoot = test::support::temporaryDirectory("procedural-package-canonical");
+  // The manifest digest binds the recipe's canonical encoding, which is the identity a project
+  // stores. A file with the same meaning but different bytes must still be admitted.
+  const auto prettySource = canonicalRoot / "pretty";
+  std::filesystem::create_directories(prettySource);
+  auto recipe = testRecipe();
+  auto canonical = voice_design::encodeVoiceRecipe(recipe);
+  CHECK(canonical.hasValue());
+  if (!canonical) return;
+  // Re-serialise the same recipe through the JSON value type with different whitespace.
+  std::ofstream(prettySource / "recipe.json", std::ios::binary | std::ios::trunc) << canonical.value();
+  distribution::ProceduralSingerManifest prettyManifest;
+  prettyManifest.id = "original.singer.canonical";
+  prettyManifest.version = "1.0.0";
+  prettyManifest.displayName = "Canonical Digest";
+  prettyManifest.language = "ja";
+  prettyManifest.styles = {"neutral"};
+  prettyManifest.engineId = recipe.engineId;
+  prettyManifest.engineRevision = 13U;
+  prettyManifest.recipeEntry = "recipe.json";
+  prettyManifest.recipeSha256 = core::sha256Hex(canonical.value());
+  prettyManifest.phones = {"a"};
+  distribution::ProceduralSingerManifestJsonCodec manifestCodec;
+  auto prettyText = manifestCodec.encode(prettyManifest);
+  CHECK(prettyText.hasValue());
+  if (!prettyText) return;
+  std::ofstream(prettySource / "manifest.json", std::ios::binary | std::ios::trunc)
+      << prettyText.value();
+  auto canonicalKey = distribution::generateSigningKeyPair();
+  CHECK(canonicalKey.hasValue());
+  if (!canonicalKey) return;
+  const auto canonicalPackage = canonicalRoot / "canonical.seamsinger";
+  CHECK(distribution::packProceduralPackage(prettySource, canonicalPackage,
+                                            canonicalKey.value()).hasValue());
+
+}
+
 TEST_CASE("A procedural package refuses a recipe that is not the one it declares") {
   const auto root = test::support::temporaryDirectory("procedural-package-mismatch");
   // The manifest declares the digest of the honest recipe; the file holds different valid JSON.

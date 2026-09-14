@@ -2,6 +2,14 @@
 
 ## A procedural singer is now a package, not a loose JSON file
 
+September 15, 2026 — D4.6 prerequisite fix. The manifest digest was compared against the packaged
+recipe file bytes, but the identity a project stores and the renderer validates is the digest of the
+recipe's *canonical* encoding. A package whose recipe decoded to the declared identity but re-encoded
+differently would have been refused for the wrong reason, and one whose bytes merely looked identical
+would have been accepted without proving identity. Admission now decodes the recipe, re-encodes it,
+and compares that digest, and a case packs a recipe whose file bytes differ from the canonical form to
+pin the contract.
+
 September 15, 2026 — D4.7 added. `resolveProceduralSinger` now takes the engine id and revision the
 calling build can render. A resource whose declared engine or revision does not match reports
 `IncompatibleEngine` with both sides named, and that verdict is checked before trust so a playable
@@ -40,7 +48,7 @@ different fields; signing proves authenticity, not musical quality. This closes 
 manifest/admission and pack/verify substeps of the plan's procedural distribution slice;
 native selection and the connected acceptance journey remain open.
 
-Verified. `seam_procedural_package_tests` passes 10 of 10: engine-compatibility resolution that separates an incompatible engine or revision from an untrusted signer and still browses without a compatibility request; catalogue discovery catalogue discovery that recomputes installed content hashes and downgrades a missing, wrong-family or stale receipt; exact-identity resolution that separates missing, version mismatch, missing hash, content mismatch and untrusted, with relink resolving the same identity against another root; a development root reported as a fixture and refused by a caller requiring trusted installs; transactional installation with a receipt that matches the published content hash; refusal of an untrusted signer and of a caller that does not require trust, both leaving nothing on disk; and the package cases themselves:  typed manifest round trip with bounded
+Verified. `seam_procedural_package_tests` passes 11 of 11: canonical recipe-digest binding; engine-compatibility resolution that separates an incompatible engine or revision from an untrusted signer and still browses without a compatibility request; catalogue discovery catalogue discovery that recomputes installed content hashes and downgrades a missing, wrong-family or stale receipt; exact-identity resolution that separates missing, version mismatch, missing hash, content mismatch and untrusted, with relink resolving the same identity against another root; a development root reported as a fixture and refused by a caller requiring trusted installs; transactional installation with a receipt that matches the published content hash; refusal of an untrusted signer and of a caller that does not require trust, both leaving nothing on disk; and the package cases themselves:  typed manifest round trip with bounded
 identity, coverage, digest and engine fields; a signed package that verifies and returns exactly the
 recipe it declares, with the packaged bytes matching the manifest digest; refusal of a package whose
 recipe does not match its declared digest, leaving no artifact behind; mutual family refusal, so a
