@@ -92,8 +92,17 @@ core::Result<ArticulationPlan> ArticulationPlan::compileRecipe(
   for (const auto& gesture : plan.value().gestures()) {
     if (stop.stop_requested()) return cancelled();
     const auto found = scoreNotes.find(gesture.key.noteId);
-    if (found == scoreNotes.end() || gesture.span.start < found->second->startFrame || gesture.span.end > found->second->endFrame)
-      return core::failure<ArticulationPlan>(core::ErrorCode::Unsupported, "Articulation outside its score note requires extended phonation context");
+    if (found == scoreNotes.end()) return core::failure<ArticulationPlan>(core::ErrorCode::Unsupported,
+        "Articulation names a note the performance does not contain");
+    // The creator's own timing can place a gesture outside its own note: a consonant that begins
+    // before its beat, or a release the next note starts inside. What bounds that gesture is the
+    // phrase context and the partition rather than the note box. The span stays inside the context
+    // the performance defines, the neighbouring gesture owns the frames on the far side of the
+    // boundary because the plan is ordered and never overlaps, and no note is lost because the
+    // coverage check below still requires a gesture for every note in the phrase.
+    if (gesture.span.start < context.start || gesture.span.end > context.end)
+      return core::failure<ArticulationPlan>(core::ErrorCode::Unsupported,
+          "Articulation outside the phrase context requires a wider phonation context");
     covered.insert(gesture.key.noteId);
     if (isVoicedGesture(gesture.kind) && gesture.kind != ArticulationGestureKind::VoicedPlosive && checkedVowels.insert(gesture.phone).second) {
       const auto tract = VocalTract::create(recipe.value(), gesture.phone, style, performance.sampleRate());

@@ -1,5 +1,34 @@
 # Integrated Singer Execution
 
+## A gesture that crosses its own note is bounded by the phrase, not the note
+
+The articulation layer refused any gesture whose span left its own score note: a consonant the
+creator placed before its beat, or a release that carries into the next note, came back as a refusal
+naming the missing feature instead of rendering. The timing layer had accepted those offsets all
+along -- an authored phoneme offset is absolute from the note start and may be negative -- so the
+score a creator wrote and the audio the renderer produced disagreed about who owned the frames.
+
+The plan now bounds a gesture by the phrase context and by the partition rather than by the note box.
+A span may start before its own note or end after it, provided it stays inside the context the
+performance defines and the neighbouring gesture owns the frames on the far side of the boundary,
+which the ordered non-overlapping plan already guarantees. Every note still needs its own gesture, so
+a crossing can never swallow a neighbour: the note that receives the frames keeps material of its own,
+and the moving gesture stops where that material begins.
+
+Verified. `seam_articulation_context_tests` covers both halves through the real timing compiler and
+the real phonemizer. A vowel that releases twenty milliseconds early and a following note whose
+consonant begins exactly those twenty milliseconds before its own beat compile into three gestures
+that meet once, the frication sounds on the far side of the boundary, and the same owned range renders
+identically in one window or two. The same pre-onset without the vowel yielding is still refused as an
+overlap, so the crossing is admitted because the phrase accounts for it rather than because the note
+stopped mattering. A coda whose release keeps the opening twenty milliseconds of the next note is
+admitted on the same terms, with that note's own vowel starting where the coda ends.
+
+Not claimed. This is timing ownership, not articulation quality: no listener has judged a pre-onset
+consonant, and coarticulation between two gestures inside one note -- the other half of the package's
+third required change -- remains open, together with the shared transition plan that would describe
+it. No unit acceptance changes.
+
 ## An event phone is a declared span, not a recorded articulation
 
 The pilot inventory's last 48 refusals were not a missing source but five symbols that are events:
@@ -540,7 +569,7 @@ M1.P2's ten required changes:
 | # | Required change | State |
 |---|---|---|
 | 1 | Articulation-source description per phone class | Admitted: oral vowel, nasal, frication, voiced frication, released stop, voiced stop, unvoiced affricate, voiced affricate with a prevoiced closure and a voiced tail, approximant, palatalized consonants that borrow a base release, vowel-to-coda placement for ordinary consonants, gesture silence, a declared closure event that is exactly silent for its resolved span, and a declared breath event with its own source. Not admitted: coarticulation between a consonant and the neighbouring vowel inside one note, and any event a recipe does not declare. |
-| 2 | Phrase context beyond the owning note | Open. Placement inside a note is now complete for onset and coda, so what remains is context reaching past a gesture's own note: pre-onset intervals and a release the next note inherits. The 210 refusals once attributed here were the hint's role inference and are gone. |
+| 2 | Phrase context beyond the owning note | Landed. A gesture may cross its own note boundary when the phrase accounts for it: a consonant that begins before its beat takes frames the previous vowel releases, and a coda may keep the opening frames of the next note. The plan is bounded by the phrase context and the partition rather than the note box, a placement the phrase does not account for is still refused as an overlap, and every note keeps a gesture of its own. |
 | 3 | Ordered spans separated from a bounded transition plan | Partial. Ordered linguistic spans are preserved and the approximant transition is a bounded declared window, but there is no shared transition-plan type and no coarticulation that crosses a gesture boundary. |
 | 4 | Chunk-invariant rendering | Done, including the new gesture. |
 | 5 | Versioned semantics for old resources | Done. Recipe schemas 1-8, candidate schemas up to 8, articulation plan revision 11. |
@@ -550,8 +579,8 @@ M1.P2's ten required changes:
 | 9 | Aggregate budget preflight | Landed: per-batch, aggregate frame and estimated-byte limits, retained-storage inspection and cancellation. |
 | 10 | Held-out pilot phrase set before the full inventory | Landed, run and followed through: both preflights passed, and the campaigns behind them completed with 498 takes committed as unapproved marker-review material across three pitch layers (report in `CAMPAIGN_REPORT.md`, defect list in `coverage-report.json`). The fricative, palatalized, voiced-affricate and event repairs took coverage to 1026 of 1026 assignments, so a campaign over the whole inventory now plans as 1026 jobs and the rendered held-out preflight passes all 38 declared classes with none defective. The inventory is generatable end to end as declared; a prepared class is still not phonetic qualification. |
 
-So seven of the ten are landed, two are partial, and one remains open (phrase context
-beyond the owning note).
+So nine of the ten are landed, and one remains partial: the ordered spans are still separated from a
+bounded transition plan, whose cross-gesture coarticulation half is what is left.
 
 M1.P1's last open required change landed: the durable C++ legacy migration
 operation with its retained receipt and history-transition verification, applied

@@ -965,7 +965,26 @@ TEST_CASE("recipe articulation prepares resolved score edits without caller supp
   const std::vector<voice_design::FricationBinding> explicitBindings{{"s", recipe.frications.front().source}};
   CHECK(voice_design::ArticulationPlan::compile(extendedPhones, extended.value().phonemeTiming(), explicitBindings,
       48000U, {extended.value().notes().front().startFrame, extended.value().notes().back().endFrame}));
-  CHECK(!voice_design::ArticulationPlan::compileRecipe(resource.value(), extended.value(), extendedPhones, "neutral"));
+  // The onset may begin before its own note, because the creator's offset is the authority for
+  // where it sits. The frames it spends in the score gap are governed by the score's own gain, so
+  // it still cannot borrow the next note's pitch context: what the recipe path refuses is a
+  // placement the phrase does not account for, which the overlap cases cover.
+  const auto extendedPlan = voice_design::ArticulationPlan::compileRecipe(resource.value(), extended.value(), extendedPhones, "neutral");
+  CHECK(extendedPlan);
+  if (extendedPlan) {
+    const auto crossing = std::find_if(extendedPlan.value().gestures().begin(), extendedPlan.value().gestures().end(),
+        [&](const auto& gesture) { return gesture.key.noteId == second.id && gesture.phone == "s"; });
+    CHECK(crossing != extendedPlan.value().gestures().end());
+    if (crossing != extendedPlan.value().gestures().end()) {
+      CHECK(crossing->span.start < extended.value().notes()[1].startFrame);
+      // The frames it crosses into belong to the same note's own vowel, which starts where the
+      // onset ends: the plan is still a partition, so the crossing is accounted for.
+      const auto vowel = std::find_if(extendedPlan.value().gestures().begin(), extendedPlan.value().gestures().end(),
+          [&](const auto& gesture) { return gesture.key.noteId == second.id && gesture.phone == "a"; });
+      CHECK(vowel != extendedPlan.value().gestures().end());
+      if (vowel != extendedPlan.value().gestures().end()) CHECK(crossing->span.end == vowel->span.start);
+    }
+  }
   // Unused frication presets do not impose their Nyquist requirements on vowels.
   region.notes.resize(1U); region.phonemeOverrides.clear(); region.lyrics.front().surface = U"あ";
   const auto vowel = phonemizer::resolveJapanesePronunciation(region); CHECK(vowel);

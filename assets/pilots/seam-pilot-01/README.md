@@ -39,10 +39,11 @@ The CLI regression checks the exact phone sequence, four gesture classes,
 contiguous planned boundaries, unapproved status, audio hashes and repeatability.
 Markers prove planned timing only, not perceptual onset accuracy.
 
-Still absent from this probe: pre-onset context that reaches before its owning
-note, coarticulation inside one note, and independent intelligibility
-judgments. Do not use these notes to claim complete Japanese coverage or
-generate a qualified full bank. The invented Japanese inventory names every
+Still absent from this probe: coarticulation between two gestures inside one note
+and independent intelligibility judgments. A consonant that begins before its own
+beat, and a coda whose release keeps the opening frames of the next note, are
+admitted when the phrase accounts for them. Do not use these notes to claim
+complete Japanese coverage or generate a qualified full bank. The inventory names every
 phone it declares, and a phone with no admitted model is still refused during
 render preparation rather than substituted -- `l` is the standing example --
 but the inventory as declared is now generatable end to end.
@@ -293,9 +294,9 @@ declaration can be compared against a control, in `seam_articulation_context_tes
 
 The poses are experimental parameter choices, not phonetic qualification, and no
 listener has judged `ら`, `わ` or `や`. Pre-onset context that reaches before its
-owning note, and coarticulation with a preceding phone in the same note, remain
-open. `l`, the voiced affricate `j` and every other phone the pilot recipe does
-not admit are refused with their phone name and recipe identity rather than
+owning note is admitted when the previous vowel releases the frames it takes, so what
+remains open is coarticulation with a preceding phone in the same note. `l` and every
+other phone the pilot recipe does not admit are refused with their phone name and recipe identity rather than
 approximated.
 
 ## Fricative and palatalized coverage in the maximal recipe

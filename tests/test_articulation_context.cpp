@@ -798,6 +798,138 @@ TEST_CASE("the approximant transition moves the spectrum into its vowel") {
                                                    manual.value(), "neutral"));
   }
 }
+// Two notes whose phones come from the real phonemizer, so the only thing that decides where the
+// gestures land is the creator's own authored timing.
+struct CrossNoteFixture final {
+  domain::Project project{domain::ProjectId{81U}, "Cross-note fixture"};
+  domain::VocalRegion region;
+  domain::NoteId firstNote{domain::NoteId{82U}}, secondNote{domain::NoteId{83U}};
+  std::vector<domain::PhonemeToken> phones;
+};
+
+CrossNoteFixture crossNoteFixture(const char* firstHint, const char* secondHint) {
+  CrossNoteFixture fixture;
+  fixture.region = domain::VocalRegion{
+      .id = domain::RegionId{84U},
+      .name = "Two notes",
+      .durationTick = time::Tick{1920},
+      .lyrics = {{domain::LyricTokenId{85U}, U"\u3042", domain::Language::Japanese},
+                 {domain::LyricTokenId{86U}, U"\u3042", domain::Language::Japanese}},
+      .notes = {{.id = fixture.firstNote, .startTick = time::Tick{0}, .durationTick = time::Tick{960},
+                 .midiKey = 60U, .lyricTokenId = domain::LyricTokenId{85U}, .phoneticHint = firstHint},
+                {.id = fixture.secondNote, .startTick = time::Tick{960}, .durationTick = time::Tick{960},
+                 .midiKey = 62U, .lyricTokenId = domain::LyricTokenId{86U}, .phoneticHint = secondHint}}};
+  const auto pronunciation = phonemizer::JapaneseKanaPhonemizer{}.phonemize(fixture.region);
+  CHECK(pronunciation.tokens.size() == 3U);
+  fixture.phones = pronunciation.tokens;
+  return fixture;
+}
+
+TEST_CASE("a gesture that crosses its own note boundary is bounded by the phrase, not the note") {
+  const auto lead = time::Microseconds{20000};
+  const auto leadFrames = static_cast<time::SampleFrame>(std::llround(20000.0 * kRate / 1000000.0));
+  // Authored offsets are absolute from the note's own start, and one 960-tick note at 120 BPM is a
+  // quarter note, so the note's end is half a second in.
+  constexpr time::Microseconds kNoteDuration{500000};
+  const auto resource = voice_design::freezeVoiceRecipeResource(codaRecipe());
+  CHECK(resource);
+  if (!resource) return;
+
+  // A consonant that begins before its own note: the previous vowel releases exactly the frames it
+  // takes, so the two gestures meet once instead of overlapping.
+  auto preOnset = crossNoteFixture("a", "s a");
+  CHECK(preOnset.phones.size() == 3U);
+  if (preOnset.phones.size() != 3U) return;
+  preOnset.phones[0].timing.endOffset = kNoteDuration - lead;
+  preOnset.phones[1].timing.startOffset = -lead;
+  const auto early = synthesis::compileScorePerformance(preOnset.project, preOnset.region, kRate,
+      preOnset.phones, synthesis::PhonemeTimingPolicy::ProceduralInNote);
+  if (!early) throw test::Failure{early.error().message};
+  const auto& earlyAnchors = early.value().phonemeTiming();
+  const auto earlyNotes = early.value().notes();
+  CHECK(earlyAnchors.size() == 3U); CHECK(earlyNotes.size() == 2U);
+  if (earlyAnchors.size() != 3U || earlyNotes.size() != 2U) return;
+  CHECK(earlyAnchors[0].endFrame == earlyNotes[0].endFrame - leadFrames);
+  CHECK(earlyAnchors[1].explicitStartFrame.has_value());
+  if (!earlyAnchors[1].explicitStartFrame) return;
+  CHECK(*earlyAnchors[1].explicitStartFrame == earlyAnchors[0].endFrame);
+  CHECK(*earlyAnchors[1].explicitStartFrame < earlyNotes[1].startFrame);
+  const auto earlyPlan = ArticulationPlan::compileRecipe(resource.value(), early.value(), preOnset.phones, "neutral");
+  if (!earlyPlan) throw test::Failure{earlyPlan.error().message};
+  CHECK(earlyPlan.value().gestures().size() == 3U);
+  if (earlyPlan.value().gestures().size() != 3U) return;
+  const auto& vowel = earlyPlan.value().gestures()[0];
+  const auto& onset = earlyPlan.value().gestures()[1];
+  CHECK(vowel.span.end == onset.span.start);
+  CHECK(onset.span.start < earlyNotes[1].startFrame);
+  CHECK(onset.span.end == earlyAnchors[2].nucleusFrame);
+  const synthesis::PhraseFrameRange whole{earlyPlan.value().context().start, earlyPlan.value().context().end};
+  auto stream = voice_design::ArticulatedStream::createFromRecipe(resource.value(), early.value(),
+      preOnset.phones, "neutral", 257U);
+  CHECK(stream);
+  if (!stream) return;
+  const auto audio = stream.value().renderOwned(whole);
+  CHECK(audio);
+  if (!audio) return;
+  const auto samples = audio.value().samples;
+  const auto nonzero = [&](time::SampleFrame begin, time::SampleFrame end) {
+    return std::any_of(samples.begin() + begin, samples.begin() + end,
+                       [](float sample) { return sample != 0.0F; });
+  };
+  CHECK(nonzero(0, vowel.span.end));
+  CHECK(nonzero(onset.span.start, onset.span.end));
+  CHECK(nonzero(earlyAnchors[2].nucleusFrame, whole.end));
+  auto repeat = voice_design::ArticulatedStream::createFromRecipe(resource.value(), early.value(),
+      preOnset.phones, "neutral", 111U);
+  CHECK(repeat);
+  if (!repeat) return;
+  const auto split = onset.span.start;
+  const auto prefix = repeat.value().renderOwned({whole.start, split});
+  const auto suffix = repeat.value().renderOwned({split, whole.end});
+  CHECK(prefix); CHECK(suffix);
+  if (!prefix || !suffix) return;
+  std::vector<float> joined = prefix.value().samples;
+  joined.insert(joined.end(), suffix.value().samples.begin(), suffix.value().samples.end());
+  CHECK(joined == samples);
+
+  // The same pre-onset without the previous vowel yielding is still an overlap, so a crossing is
+  // admitted because the phrase accounts for it rather than because the note stopped mattering.
+  auto collided = crossNoteFixture("a", "s a");
+  CHECK(collided.phones.size() == 3U);
+  if (collided.phones.size() != 3U) return;
+  collided.phones[1].timing.startOffset = -lead;
+  const auto overlapping = synthesis::compileScorePerformance(collided.project, collided.region, kRate,
+      collided.phones, synthesis::PhonemeTimingPolicy::ProceduralInNote);
+  if (!overlapping) throw test::Failure{overlapping.error().message};
+  CHECK(!ArticulationPlan::compileRecipe(resource.value(), overlapping.value(), collided.phones, "neutral"));
+
+  // A release the next note starts inside: the first note's coda keeps the opening frames of the
+  // second note, and that note's own vowel begins where the coda ends.
+  auto inherited = crossNoteFixture("a s", "a");
+  CHECK(inherited.phones.size() == 3U);
+  if (inherited.phones.size() != 3U) return;
+  inherited.phones[0].timing.endOffset = time::Microseconds{400000};
+  inherited.phones[1].timing.startOffset = time::Microseconds{400000};
+  inherited.phones[1].timing.endOffset = kNoteDuration + lead;
+  inherited.phones[2].timing.startOffset = lead;
+  const auto carried = synthesis::compileScorePerformance(inherited.project, inherited.region, kRate,
+      inherited.phones, synthesis::PhonemeTimingPolicy::ProceduralInNote);
+  if (!carried) throw test::Failure{carried.error().message};
+  const auto carriedPlan = ArticulationPlan::compileRecipe(resource.value(), carried.value(), inherited.phones, "neutral");
+  CHECK(carriedPlan);
+  if (!carriedPlan) return;
+  CHECK(carriedPlan.value().gestures().size() == 3U);
+  if (carriedPlan.value().gestures().size() != 3U) return;
+  const auto carriedNotes = carried.value().notes();
+  CHECK(carriedNotes.size() == 2U);
+  if (carriedNotes.size() != 2U) return;
+  const auto& coda = carriedPlan.value().gestures()[1];
+  const auto& nextVowel = carriedPlan.value().gestures()[2];
+  CHECK(coda.span.end == carriedNotes[0].endFrame + leadFrames);
+  CHECK(nextVowel.span.start == coda.span.end);
+  CHECK(nextVowel.span.start > carriedNotes[1].startFrame);
+}
+
 TEST_CASE("a consonant after the vowel is a coda gesture that owns the tail") {
   const std::vector<FricationBinding> frications{frication("s", 5500.0)};
   const auto codaStart = kNucleus;
