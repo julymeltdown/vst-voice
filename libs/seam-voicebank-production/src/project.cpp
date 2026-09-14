@@ -126,7 +126,8 @@ bool isProductionUtcTimestamp(std::string_view value) noexcept {
 }
 
 bool isProductionJournalAction(std::string_view value) noexcept {
-  return value == "source-register" || value == "source-quality-assessment" || value == "create" || value == "import" || value == "transform" ||
+  return value == "source-register" || value == "source-quality-assessment" || value == "style-migration" ||
+         value == "create" || value == "import" || value == "transform" ||
          value == "marker" || value == "retake" || value == "review" ||
          value == "save" || value == "candidate-export" || value == "import-procedural" || value == "import-generated-batch";
 }

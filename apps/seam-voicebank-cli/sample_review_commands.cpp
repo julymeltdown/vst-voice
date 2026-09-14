@@ -272,10 +272,28 @@ int sourceQuality(int argc, char** argv, bool record) {
 }
 } // namespace
 
+namespace {
+int migrateStyle(int argc, char** argv) {
+  if (argc != 7) return fail({core::ErrorCode::InvalidArgument,"Invalid style migration command arguments",{}});
+  SignalCancellation cancellation;
+  production::ProductionProjectRepository repository{argv[2]};
+  auto project = repository.recover(); if (!project) return fail(project.error(),&cancellation);
+  const auto verified = repository.verify(project.value()); if (!verified) return fail(verified.error(),&cancellation);
+  const auto committed = repository.applyStyleMigration(project.value(),argv[3],argv[4],argv[5],argv[6],cancellation.token());
+  if (!committed) return fail(committed.error(),&cancellation);
+  print({{"result","StyleMigrationCommitted"},{"generation",std::to_string(committed.value().committedGeneration)},
+      {"projectSha256",committed.value().committedProjectSha256},{"schemaVersion","4"},
+      {"durabilityConfirmed",committed.value().durabilityConfirmed},{"diagnostic",committed.value().diagnostic},
+      {"unitApproval","invalidated where style ownership changed"},{"releaseEligible",false}});
+  return 0;
+}
+} // namespace
+
 std::optional<int> runSampleReviewCommand(int argc, char** argv) {
   if (argc<2) return std::nullopt;
   const std::string_view command{argv[1]};
   if (command=="register-source") return registerSource(argc,argv);
+  if (command=="migrate-style") return migrateStyle(argc,argv);
   if (command=="inspect-source-quality") return sourceQuality(argc,argv,false);
   if (command=="record-source-quality") return sourceQuality(argc,argv,true);
   if (command=="init-production") return initializeDraft(argc,argv);
@@ -290,6 +308,8 @@ void printSampleReviewUsage() {
   std::cout << "  seam_voicebank_cli inspect-source-quality WORKSPACE STRATEGY\n"
     << "  seam_voicebank_cli register-source WORKSPACE PROJECT_SHA256 ID human|procedural|tts pass|blocked|not-assessed SOURCE_USE TRANSFORM REDISTRIBUTE COMMERCIAL LICENSE LICENSE_SHA256 PRODUCER UTC\n"
     << "    Each permission is yes|no. Appends/selects a NEW source; records your declaration, not legal or musical verification.\n"
+    << "  seam_voicebank_cli migrate-style WORKSPACE PLAN_JSON PROJECT_SHA256 PRODUCER UTC\n"
+    << "    Applies one verified, resolved legacy style migration plan as a new generation; refuses ambiguous ownership.\n"
     << "  seam_voicebank_cli record-source-quality WORKSPACE STRATEGY PROJECT_SHA256 ID REVIEWER UTC COVERAGE LISTENING EVIDENCE EVIDENCE_SHA256\n"
     << "    Outcomes: pass|blocked|not-assessed. Records an independent supplied decision; never grants source rights or unit approval.\n"
     << "  seam_voicebank_cli init-production WORKSPACE DRAFT_DEFINITION FILE_SHA256 PRODUCER UTC\n"

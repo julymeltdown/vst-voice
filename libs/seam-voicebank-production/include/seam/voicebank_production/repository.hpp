@@ -167,6 +167,14 @@ public:
       VoicebankProductionProject& project, const SourceStrategyAssessment& source,
       std::string_view expectedProjectSha256, std::string producerId,
       std::string occurredAtUtc, std::stop_token stopToken = {});
+  // The one durable path from a legacy (pre-style) producer to style ownership. The plan is the
+  // exact document a verified legacy inventory was migrated against, its proposed project has to
+  // agree with this operation's own result, and unresolved ownership is refused rather than
+  // chosen here. Existing approvals become review-required history; nothing is requalified.
+  [[nodiscard]] core::Result<ProductionCommitReceipt> applyStyleMigration(
+      VoicebankProductionProject& project, const std::filesystem::path& planPath,
+      std::string_view expectedProjectSha256, std::string producerId,
+      std::string occurredAtUtc, std::stop_token stopToken = {});
   [[nodiscard]] core::Result<ExportedU57Inputs> exportU57Inputs(
       VoicebankProductionProject& project,
       const std::filesystem::path& destination,
@@ -175,6 +183,11 @@ public:
       const AssetRecord& asset) const;
 
 private:
+  // The single durable append path. Only the evidence-backed style migration may cross from
+  // legacy bytes into style ownership; every other writer passes false and keeps the refusal.
+  [[nodiscard]] core::Result<void> writeGeneration(
+      VoicebankProductionProject& project, const ProductionJournalEvent& event,
+      std::stop_token stopToken, bool allowStyleOwnershipTransition);
   [[nodiscard]] core::Result<AssetRecord> importProceduralCandidateBound(
       VoicebankProductionProject& project, const std::filesystem::path& metadataPath,
       const std::filesystem::path& audioPath, const synthesis::ProceduralSingerResource& recipe,

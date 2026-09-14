@@ -158,8 +158,8 @@ core::Result<void> prepareWorkspace(
     }
     return core::success();
   }
-  constexpr std::array<const char*, 5U> directories{
-      "assets", "generations", "journal", "staging", "source-evidence"};
+  constexpr std::array<const char*, 6U> directories{
+      "assets", "generations", "journal", "staging", "source-evidence", "migrations"};
   for (const auto* name : directories) {
     const auto directory = root / name;
     std::filesystem::create_directories(directory, error);
@@ -192,6 +192,12 @@ core::Result<void> ProductionProjectRepository::initialize(
 core::Result<void> ProductionProjectRepository::save(
     VoicebankProductionProject& project, const ProductionJournalEvent& event,
     std::stop_token stopToken) {
+  return writeGeneration(project, event, stopToken, false);
+}
+
+core::Result<void> ProductionProjectRepository::writeGeneration(
+    VoicebankProductionProject& project, const ProductionJournalEvent& event,
+    std::stop_token stopToken, bool allowStyleOwnershipTransition) {
   if (stopToken.stop_requested()) return core::failure(
       core::ErrorCode::Conflict, "Production save cancelled before commit");
   if (!isProductionJournalAction(event.action) || event.subjectId.empty() ||
@@ -222,7 +228,7 @@ core::Result<void> ProductionProjectRepository::save(
       return core::failure(core::ErrorCode::Conflict,
           "Production writer is stale; recover the current generation before saving");
     }
-    const auto preserved = source_internal::preserveBindings(current.value(), project);
+    const auto preserved = source_internal::preserveBindings(current.value(), project, allowStyleOwnershipTransition);
     if (!preserved) return preserved;
     if (project.sourceQualityAssessments.size() != current.value().sourceQualityAssessments.size()) {
       const auto& assessment = project.sourceQualityAssessments.back();

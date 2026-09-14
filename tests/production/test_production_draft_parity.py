@@ -178,6 +178,46 @@ class ProductionDraftParityTests(unittest.TestCase):
                     self.assertTrue(all(t["state"] == "MARKER_REVIEW" and t["style"] == "original" for t in proposed["takes"]))
                     self.assertEqual(plan, prepare_style_migration(workspace, inventory))
 
+                    self.assertTrue(all(t["state"] == "MARKER_REVIEW" and t["style"] == "original" for t in proposed["takes"]))
+                    self.assertEqual(plan, prepare_style_migration(workspace, inventory))
+                # The durable application is C++: the CLI has to accept the plan this planner wrote,
+                # produce exactly its proposed project, retain the plan and refuse to apply it twice.
+                cli = ROOT / "build/release/seam_voicebank_cli"
+                if not cli.is_file():
+                    self.skipTest("C++ CLI is not built")
+                applied = subprocess.run([str(cli), "migrate-style", str(workspace), str(output_file),
+                    plan["sourceProjectSha256"], "producer", "2026-09-14T11:00:00Z"], cwd=ROOT,
+                    capture_output=True, text=True, timeout=60)
+                if len(styles) > 1:
+                    self.assertNotEqual(0, applied.returncode)
+                    self.assertIn("explicit per-assignment evidence", applied.stderr)
+                    self.assertEqual(before, {str(p.relative_to(workspace)): p.read_bytes()
+                                              for p in workspace.rglob("*") if p.is_file()})
+                else:
+                    self.assertEqual(0, applied.returncode, applied.stderr)
+                    self.assertEqual("StyleMigrationCommitted", json.loads(applied.stdout)["result"])
+                    after = json.loads((workspace / "project.json").read_text())
+                    self.assertEqual(4, after["schemaVersion"])
+                    self.assertEqual("ja", after["language"])
+                    self.assertEqual(project["lastDurableGeneration"] + 1, after["lastDurableGeneration"])
+                    self.assertEqual(project["reviews"], after["reviews"])
+                    self.assertTrue(all(t["style"] == "original" and t["state"] == "MARKER_REVIEW"
+                                        for t in after["takes"]))
+                    self.assertTrue(all(a["style"] == "original" and not a["markerReviewed"]
+                                        and not a["pitchReviewed"] and a["state"] in ("MARKER_REVIEW", "MISSING")
+                                        for a in after["unitAssignments"]))
+                    expected = dict(proposed)
+                    expected["lastDurableGeneration"] = after["lastDurableGeneration"]
+                    self.assertEqual(expected, after)
+                    retained = list((workspace / "migrations").glob("*.json"))
+                    self.assertEqual(1, len(retained))
+                    self.assertEqual(output_file.read_bytes(), retained[0].read_bytes())
+                    self.assertEqual(hashlib.sha256(retained[0].read_bytes()).hexdigest(), retained[0].stem)
+                    repeat = subprocess.run([str(cli), "migrate-style", str(workspace), str(output_file),
+                        hashlib.sha256(retained[0].read_bytes()).hexdigest(), "producer", "2026-09-14T11:01:00Z"],
+                        cwd=ROOT, capture_output=True, text=True, timeout=60)
+                    self.assertNotEqual(0, repeat.returncode)
+                    self.assertEqual(after, json.loads((workspace / "project.json").read_text()))
     def test_style_owned_source_cannot_inherit_unrecorded_quality(self) -> None:
         self.assertTrue(_quality_current({"schemaVersion": 2, "sourceQualityAssessments": []}, "source"))
         self.assertFalse(_quality_current({"schemaVersion": 4, "sourceQualityAssessments": []}, "source"))

@@ -1,5 +1,42 @@
 # Integrated Singer Execution
 
+## The durable legacy migration is the only path into style ownership
+
+The producer schema that carries style and language ownership is an upgrade, and until now only a
+plan for it existed: the Python planner verified a legacy inventory, prepared the target state and
+refused to apply anything, while every C++ write path refused to cross into the new schema. The
+durable operation now exists. `migrate-style` (and the repository method behind it) takes an exact
+plan document, checks that it was prepared from this producer's current durable bytes and from a
+verified inventory digest, resolves the single style and language the plan declares, and then
+receives the plan's own proposed project as a second opinion rather than a trusted answer: the
+operation computes the migration itself and refuses unless the two encodings agree.
+
+Three things follow from that. Legacy ownership without a unique style binding is refused by name
+("explicit per-assignment evidence") instead of being resolved by a default. An approval taken under
+the style-free identity cannot survive into style ownership, because the review basis changed, so the
+affected assignments and their takes become review-required while every historical review record
+stays exactly where it was. And the generic save still refuses the same transition, so the migration
+is a distinct, auditable operation rather than a flag on an ordinary write. The exact plan bytes are
+retained under `migrations/<plan sha256>.json` before the generation that depends on them is written,
+the journal records `style-migration` with that digest as its subject, and the previous generation stays
+readable through the ordinary historical recovery path.
+
+Verified. `seam_production_style_migration_tests ` passes 4 of 4: a resolved plan migrates a real
+imported legacy producer as one new generation, retains the plan, leaves the pre-migration generation
+readable and refuses to apply the same plan twice; an unresolved plan is refused with the producer
+unchanged and no retained plan; a stale snapshot, a plan whose proposed project keeps an approval, a
+plan that proposes two styles, a non-producer actor, a bad timestamp, a malformed document and an
+already-applied plan are each refused; and a generic save still cannot carry a legacy producer into
+style ownership. The cross-language acceptance runs in `seam_public_release_python_tests`: the Python
+planner writes the plan, the CLI applies it, the durable project equals the plan's proposed project
+with the generation advanced, the plan is retained byte-for-byte under its own digest, and a second
+application is refused. That suite passes 92 tests.
+
+Not claimed. This migrates ownership, not qualification: no listening, review or range evidence moves
+with it, the plan's own qualification field is `REASSESSMENT_REQUIRED`, and the migrated generation is
+release-ineligible.
+
+## A voiced affricate is a closure that carries voicing, its burst and a voiced tail
 ## A voiced affricate is a closure that carries voicing, its burst and a voiced tail
 
 Japanese じ and じゃ are voiced affricates, and the engine refused `j` by name rather than let an
@@ -473,10 +510,11 @@ M1.P2's ten required changes:
 So seven of the ten are landed, two are partial, and one remains open (phrase context
 beyond the owning note).
 
-M1.P1 keeps one open required change: the durable C++ legacy migration operation
-with its retained receipt and history-transition verification. The Python planner
-and its 18 parity tests exist; a generic save still cannot upgrade a schema, which
-is deliberate until that operation lands.
+M1.P1's last open required change landed: the durable C++ legacy migration
+operation with its retained receipt and history-transition verification, applied
+through `migrate-style` against the Python planner's own plan. A generic save still
+cannot upgrade a schema, which is deliberate: the migration is a distinct,
+evidence-backed operation.
 
 M1.P1's coverage-report requirement is satisfied: `inspect-generation-coverage`
 retains a canonical per-class report of what a recipe can prepare, and the real pilot
@@ -2727,7 +2765,7 @@ rights and musical qualification remain open under the original plan.
 
 | Package | Implementation | Demonstrated workflow | Qualification remaining | Next action |
 |---|---|---|---|---|
-| M1.P1 | In progress: inventory v2→producer v4; language-bound generation; multi-style draft/review/publication; legacy readers retained | Two-style initialization, generation collection, native-controller draft creation, review and candidate reopen regressions | Explicit legacy migration and populated-history parity remain | Complete migration, then campaign/articulation |
+| M1.P1 | Implemented: inventory v2→producer v4; language-bound generation; multi-style draft/review/publication; legacy readers retained; durable evidence-backed legacy migration with a retained plan and parity against the planner | Two-style initialization, generation collection, native-controller draft creation, review and candidate reopen regressions, plus the migration suite and the planner-to-CLI parity case | None outstanding for this package's required changes | Campaign and articulation work continues in M1.P2/P3 |
 | M1.P2/P3 | Not completed by this increment | Existing procedural/producer foundation retained | Connected articulation, campaign, actual bank and unfamiliar-song evidence | Continue after the necessary M1.P1 producer bindings |
 | M2–M6 | Remaining full scope retained | No new milestone qualification | As specified by the implementation plan | Independent neural process/data work remains available |
 

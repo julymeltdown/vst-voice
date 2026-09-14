@@ -180,8 +180,11 @@ core::Result<void> verifySnapshots(const std::filesystem::path& root, const Voic
   return core::success();
 }
 
-core::Result<void> preserveBindings(const VoicebankProductionProject& current, const VoicebankProductionProject& proposed) {
-  if (current.schemaVersion < kProductionStyleSchemaVersion && proposed.schemaVersion >= kProductionStyleSchemaVersion)
+core::Result<void> preserveBindings(const VoicebankProductionProject& current, const VoicebankProductionProject& proposed,
+                                    bool allowStyleOwnershipTransition) {
+  // Only the durable migration operation may cross into style ownership, and it must say so.
+  if (!allowStyleOwnershipTransition && current.schemaVersion < kProductionStyleSchemaVersion &&
+      proposed.schemaVersion >= kProductionStyleSchemaVersion)
     return core::failure(core::ErrorCode::Unsupported, "Legacy style ownership requires explicit evidence-backed migration, not generic save");
   if (current.schemaVersion >= kProductionStyleSchemaVersion) {
     if (current.language != proposed.language)
