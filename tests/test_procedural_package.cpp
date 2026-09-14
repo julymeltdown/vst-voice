@@ -324,3 +324,142 @@ TEST_CASE("A procedural installation requires a trusted signer and writes nothin
   CHECK(!rejected.hasValue());
   CHECK(rejected.error().code == core::ErrorCode::InvalidArgument);
 }
+
+TEST_CASE("An installed procedural singer is discovered and resolved by exact identity") {
+  const auto root = test::support::temporaryDirectory("procedural-catalogue");
+  const auto source = createProceduralSource(root);
+  auto key = distribution::generateSigningKeyPair();
+  CHECK(key.hasValue());
+  if (!key) return;
+  const auto packagePath = root / "pilot.seamsinger";
+  CHECK(distribution::packProceduralPackage(source, packagePath, key.value()).hasValue());
+  const auto installRoot = root / "installed";
+  distribution::InstallProceduralOptions installOptions;
+  installOptions.verification = distribution::VerifySeambankOptions{
+      .limits = {},
+      .trustedPublicKeys = {key.value().publicKey},
+      .requireTrustedSigner = true};
+  auto installed = distribution::installProceduralPackage(packagePath, installRoot, installOptions);
+  CHECK(installed.hasValue());
+  if (!installed) return;
+
+  distribution::ProceduralCatalogue catalogue;
+  auto scanned = catalogue.scan({distribution::ProceduralSearchRoot{
+      .path = installRoot, .kind = distribution::ProceduralRootKind::Installed}});
+  CHECK(scanned.hasValue());
+  if (!scanned) return;
+  CHECK(scanned.value().size() == 1U);
+  if (scanned.value().size() != 1U) return;
+  CHECK(scanned.value().front().trust == distribution::ProceduralTrust::TrustedInstalled);
+  CHECK(scanned.value().front().contentHash == installed.value().contentHash);
+
+  const domain::SingerResourceIdentity reference{domain::SingerResourceKind::Procedural,
+                                                 "original.singer.pilot", "1.0.0",
+                                                 installed.value().contentHash};
+  const auto resolved = distribution::resolveProceduralSinger(reference, scanned.value());
+  CHECK(resolved.resolved());
+  // The catalogue reports the canonical install root; the installer returns the caller's path. Both
+  // name the same directory, so compare canonically rather than textually.
+  CHECK(std::filesystem::canonical(resolved.candidate->resourceRoot) ==
+        std::filesystem::canonical(installed.value().installDirectory));
+
+  // A different content hash for the same version is a mismatch, and names both sides.
+  auto altered = reference;
+  altered.contentHash = std::string(64U, 'c');
+  const auto mismatch = distribution::resolveProceduralSinger(altered, scanned.value());
+  CHECK(mismatch.status == distribution::ProceduralResolveStatus::ContentMismatch);
+  CHECK(mismatch.expectedContentHash == altered.contentHash);
+  CHECK(mismatch.actualContentHashes.size() == 1U);
+
+  // A missing version is distinguished from a missing singer.
+  auto otherVersion = reference;
+  otherVersion.version = "9.9.9";
+  const auto versionMismatch = distribution::resolveProceduralSinger(otherVersion, scanned.value());
+  CHECK(versionMismatch.status == distribution::ProceduralResolveStatus::VersionMismatch);
+  CHECK(versionMismatch.availableVersions.size() == 1U);
+  auto otherId = reference;
+  otherId.id = "original.singer.absent";
+  CHECK(distribution::resolveProceduralSinger(otherId, scanned.value()).status ==
+        distribution::ProceduralResolveStatus::Missing);
+
+  // A reference without a content hash cannot be resolved silently.
+  auto unbound = reference;
+  unbound.contentHash.clear();
+  CHECK(distribution::resolveProceduralSinger(unbound, scanned.value()).status ==
+        distribution::ProceduralResolveStatus::ContentHashMissing);
+
+  // Relink is the same identity against a different root; it does not rewrite the identity.
+  const auto relinkRoot = root / "relinked";
+  distribution::InstallProceduralOptions relinkOptions = installOptions;
+  relinkOptions.replaceExisting = false;
+  auto relinked = distribution::installProceduralPackage(packagePath, relinkRoot, relinkOptions);
+  CHECK(relinked.hasValue());
+  if (!relinked) return;
+  auto secondScan = catalogue.scan({distribution::ProceduralSearchRoot{
+      .path = relinkRoot, .kind = distribution::ProceduralRootKind::Installed}});
+  CHECK(secondScan.hasValue());
+  if (!secondScan) return;
+  const auto relinkResolution =
+      distribution::resolveProceduralSinger(reference, secondScan.value());
+  CHECK(relinkResolution.resolved());
+  CHECK(std::filesystem::canonical(relinkResolution.candidate->resourceRoot) ==
+        std::filesystem::canonical(relinked.value().installDirectory));
+  CHECK(relinkResolution.candidate->manifest.id == reference.id);
+  CHECK(relinkResolution.candidate->contentHash == reference.contentHash);
+}
+
+TEST_CASE("A development procedural resource is labelled and never trusted by default") {
+  const auto root = test::support::temporaryDirectory("procedural-catalogue-dev");
+  const auto source = createProceduralSource(root);
+  auto key = distribution::generateSigningKeyPair();
+  CHECK(key.hasValue());
+  if (!key) return;
+  const auto packagePath = root / "pilot.seamsinger";
+  CHECK(distribution::packProceduralPackage(source, packagePath, key.value()).hasValue());
+  const auto installRoot = root / "installed";
+  distribution::InstallProceduralOptions installOptions;
+  installOptions.verification = distribution::VerifySeambankOptions{
+      .limits = {},
+      .trustedPublicKeys = {key.value().publicKey},
+      .requireTrustedSigner = true};
+  auto installed = distribution::installProceduralPackage(packagePath, installRoot, installOptions);
+  CHECK(installed.hasValue());
+  if (!installed) return;
+
+  // A development root reports fixtures regardless of a valid receipt, and a caller that requires
+  // trusted installs refuses them by name.
+  distribution::ProceduralCatalogue catalogue;
+  auto scanned = catalogue.scan({distribution::ProceduralSearchRoot{
+      .path = installRoot, .kind = distribution::ProceduralRootKind::Development}});
+  CHECK(scanned.hasValue());
+  if (!scanned) return;
+  CHECK(scanned.value().size() == 1U);
+  if (scanned.value().size() != 1U) return;
+  CHECK(scanned.value().front().trust == distribution::ProceduralTrust::DevelopmentFixture);
+  const domain::SingerResourceIdentity reference{domain::SingerResourceKind::Procedural,
+                                                 "original.singer.pilot", "1.0.0",
+                                                 installed.value().contentHash};
+  distribution::ProceduralResolveOptions strict;
+  strict.requireTrustedInstalled = true;
+  strict.allowDevelopmentFixtures = false;
+  const auto refused = distribution::resolveProceduralSinger(reference, scanned.value(), strict);
+  CHECK(refused.status == distribution::ProceduralResolveStatus::Untrusted);
+  CHECK(refused.diagnostic.find("trust") != std::string::npos);
+  distribution::ProceduralResolveOptions permissive;
+  permissive.requireTrustedInstalled = false;
+  permissive.allowDevelopmentFixtures = true;
+  CHECK(distribution::resolveProceduralSinger(reference, scanned.value(), permissive).resolved());
+
+  // A receipt that no longer matches the installed bytes downgrades trust rather than being trusted.
+  const auto& directory = installed.value().installDirectory;
+  std::filesystem::remove(directory / "install-receipt.json");
+  auto rescan = catalogue.scan({distribution::ProceduralSearchRoot{
+      .path = installRoot, .kind = distribution::ProceduralRootKind::Installed}});
+  CHECK(rescan.hasValue());
+  if (!rescan) return;
+  CHECK(rescan.value().size() == 1U);
+  if (rescan.value().size() != 1U) return;
+  CHECK(rescan.value().front().trust == distribution::ProceduralTrust::UntrustedInstalled);
+  CHECK(distribution::resolveProceduralSinger(reference, rescan.value(), strict).status ==
+        distribution::ProceduralResolveStatus::Untrusted);
+}

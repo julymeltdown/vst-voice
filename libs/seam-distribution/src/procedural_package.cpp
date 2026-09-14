@@ -8,7 +8,9 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cstdlib>
 #include <set>
+#include <system_error>
 
 namespace seam::distribution {
 namespace {
@@ -491,6 +493,275 @@ core::Result<InstalledProceduralSinger> installProceduralPackage(
       .signerKeyId = package.value().container.signerKeyId,
       .installDirectory = target,
   };
+}
+
+}  // namespace seam::distribution
+
+namespace seam::distribution {
+namespace {
+
+constexpr std::size_t kMaximumProceduralCandidates = 4096U;
+
+bool isRealRegularFile(const std::filesystem::path& path) {
+  std::error_code error;
+  const auto status = std::filesystem::symlink_status(path, error);
+  return !error && !std::filesystem::is_symlink(status) &&
+         std::filesystem::is_regular_file(status);
+}
+
+bool isRealDirectory(const std::filesystem::path& path) {
+  std::error_code error;
+  const auto status = std::filesystem::symlink_status(path, error);
+  return !error && !std::filesystem::is_symlink(status) &&
+         std::filesystem::is_directory(status);
+}
+
+struct ProceduralReceipt final {
+  bool present{false};
+  bool signatureValid{false};
+  bool signerTrusted{false};
+  std::string id;
+  std::string version;
+  std::string contentHash;
+  std::string packageDigest;
+  std::string signerKeyId;
+};
+
+ProceduralReceipt loadProceduralReceipt(const std::filesystem::path& resourceRoot) {
+  ProceduralReceipt result;
+  const auto path = resourceRoot / "install-receipt.json";
+  if (!isRealRegularFile(path)) return result;
+  auto text = core::readTextFileLimited(path, 1024U * 1024U);
+  if (!text) return result;
+  auto parsed = formats::parseJson(text.value());
+  if (!parsed || !parsed.value().isObject()) return result;
+  result.present = true;
+  const auto readString = [&parsed](std::string_view key) -> std::string {
+    const auto* value = parsed.value().find(key);
+    return value != nullptr && value->isString() ? value->asString() : std::string{};
+  };
+  const auto readBool = [&parsed](std::string_view key) -> bool {
+    const auto* value = parsed.value().find(key);
+    return value != nullptr && value->isBool() && value->asBool();
+  };
+  // A receipt that is not this family is not a receipt for this resource.
+  if (readString("resourceFamily") != "procedural-singer") return ProceduralReceipt{};
+  result.id = readString("id");
+  result.version = readString("version");
+  result.contentHash = readString("contentHash");
+  result.packageDigest = readString("packageDigest");
+  result.signerKeyId = readString("signerKeyId");
+  result.signatureValid = readBool("signatureValid");
+  result.signerTrusted = readBool("signerTrusted");
+  return result;
+}
+
+}  // namespace
+
+core::Result<std::vector<ProceduralCandidate>> ProceduralCatalogue::scan(
+    const std::vector<ProceduralSearchRoot>& roots) const {
+  std::vector<ProceduralCandidate> result;
+  for (const auto& root : roots) {
+    if (!isRealDirectory(root.path)) continue;
+    std::error_code error;
+    for (std::filesystem::directory_iterator product(root.path, error), end;
+         !error && product != end; product.increment(error)) {
+      if (!isRealDirectory(product->path())) continue;
+      for (std::filesystem::directory_iterator version(product->path(), error), endVersion;
+           !error && version != endVersion; version.increment(error)) {
+        const auto resourceRoot = version->path();
+        const auto name = resourceRoot.filename().string();
+        // Staging and backup directories are installation machinery, not installed resources.
+        if (name.starts_with(".staging-") || name.starts_with(".backup-")) continue;
+        if (!isRealDirectory(resourceRoot)) continue;
+        const auto manifestPath = resourceRoot / "manifest.json";
+        if (!isRealRegularFile(manifestPath)) continue;
+        auto text = core::readTextFileLimited(manifestPath, 1024U * 1024U);
+        if (!text) continue;
+        ProceduralSingerManifestJsonCodec codec;
+        auto manifest = codec.decode(text.value());
+        if (!manifest) continue;
+        const auto recipePath = resourceRoot / manifest.value().recipeEntry;
+        if (!isRealRegularFile(recipePath)) continue;
+        auto recipeBytes = core::readFileBytesLimited(recipePath, 16U * 1024U * 1024U);
+        if (!recipeBytes) continue;
+        // The content hash is recomputed from the installed bytes. A receipt that disagrees with
+        // them describes a different resource than the one on disk.
+        const auto contentHash = proceduralContentHash(text.value(), recipeBytes.value());
+        const auto receipt = loadProceduralReceipt(resourceRoot);
+        const auto matches = receipt.present && receipt.id == manifest.value().id &&
+                             receipt.version == manifest.value().version &&
+                             receipt.contentHash == contentHash;
+        ProceduralTrust trust = ProceduralTrust::DevelopmentFixture;
+        if (root.kind == ProceduralRootKind::Installed) {
+          trust = matches && receipt.signatureValid && receipt.signerTrusted
+                      ? ProceduralTrust::TrustedInstalled
+                      : ProceduralTrust::UntrustedInstalled;
+        }
+        result.push_back(ProceduralCandidate{
+            .manifest = std::move(manifest).value(),
+            .resourceRoot = resourceRoot,
+            .contentHash = contentHash,
+            .trust = trust,
+            .packageDigest = receipt.packageDigest,
+            .signerKeyId = receipt.signerKeyId,
+        });
+        if (result.size() > kMaximumProceduralCandidates) {
+          return core::failure<std::vector<ProceduralCandidate>>(
+              core::ErrorCode::Unsupported,
+              "Procedural catalogue exceeds the supported candidate count");
+        }
+      }
+    }
+  }
+  const auto trustRank = [](ProceduralTrust trust) noexcept {
+    switch (trust) {
+      case ProceduralTrust::TrustedInstalled: return 0;
+      case ProceduralTrust::DevelopmentFixture: return 1;
+      case ProceduralTrust::UntrustedInstalled: return 2;
+    }
+    return 3;
+  };
+  std::stable_sort(result.begin(), result.end(), [&](const auto& lhs, const auto& rhs) {
+    if (lhs.manifest.id != rhs.manifest.id) return lhs.manifest.id < rhs.manifest.id;
+    if (lhs.manifest.version != rhs.manifest.version)
+      return lhs.manifest.version < rhs.manifest.version;
+    if (lhs.contentHash != rhs.contentHash) return lhs.contentHash < rhs.contentHash;
+    const auto lhsRank = trustRank(lhs.trust);
+    const auto rhsRank = trustRank(rhs.trust);
+    if (lhsRank != rhsRank) return lhsRank < rhsRank;
+    return lhs.resourceRoot.generic_string() < rhs.resourceRoot.generic_string();
+  });
+  result.erase(std::unique(result.begin(), result.end(), [](const auto& lhs, const auto& rhs) {
+    return lhs.manifest.id == rhs.manifest.id &&
+           lhs.manifest.version == rhs.manifest.version &&
+           lhs.contentHash == rhs.contentHash && lhs.resourceRoot == rhs.resourceRoot;
+  }), result.end());
+  return result;
+}
+
+ProceduralResolution resolveProceduralSinger(
+    const domain::SingerResourceIdentity& reference,
+    const std::vector<ProceduralCandidate>& candidates,
+    const ProceduralResolveOptions& options) {
+  ProceduralResolution result;
+  if (reference.id.empty() || reference.version.empty() ||
+      reference.kind != domain::SingerResourceKind::Procedural) {
+    result.status = ProceduralResolveStatus::InvalidReference;
+    result.diagnostic = "A procedural selection needs a procedural identity with an id and version";
+    return result;
+  }
+  std::vector<const ProceduralCandidate*> idMatches;
+  std::vector<const ProceduralCandidate*> versionMatches;
+  for (const auto& candidate : candidates) {
+    if (candidate.manifest.id != reference.id) continue;
+    idMatches.push_back(&candidate);
+    result.availableVersions.push_back(candidate.manifest.version);
+    if (candidate.manifest.version == reference.version) versionMatches.push_back(&candidate);
+  }
+  std::sort(result.availableVersions.begin(), result.availableVersions.end());
+  result.availableVersions.erase(std::unique(result.availableVersions.begin(),
+                                             result.availableVersions.end()),
+                                 result.availableVersions.end());
+  if (idMatches.empty()) {
+    result.status = ProceduralResolveStatus::Missing;
+    result.diagnostic = "Procedural singer is not installed: " + reference.id;
+    return result;
+  }
+  if (versionMatches.empty()) {
+    result.status = ProceduralResolveStatus::VersionMismatch;
+    result.diagnostic = "Procedural singer version is unavailable: " + reference.id + " " +
+                        reference.version;
+    return result;
+  }
+  if (reference.contentHash.empty()) {
+    result.status = ProceduralResolveStatus::ContentHashMissing;
+    result.diagnostic =
+        "Project procedural selection has no content hash; an explicit rebind is required";
+    return result;
+  }
+  std::vector<const ProceduralCandidate*> contentMatches;
+  for (const auto* candidate : versionMatches)
+    if (candidate->contentHash == reference.contentHash) contentMatches.push_back(candidate);
+  if (contentMatches.empty()) {
+    result.status = ProceduralResolveStatus::ContentMismatch;
+    result.expectedContentHash = reference.contentHash;
+    for (const auto* candidate : versionMatches)
+      result.actualContentHashes.push_back(candidate->contentHash);
+    std::sort(result.actualContentHashes.begin(), result.actualContentHashes.end());
+    result.actualContentHashes.erase(
+        std::unique(result.actualContentHashes.begin(), result.actualContentHashes.end()),
+        result.actualContentHashes.end());
+    result.diagnostic = "Procedural singer content does not match the saved project state";
+    return result;
+  }
+  const auto acceptable = [&options](const ProceduralCandidate* candidate) noexcept {
+    if (candidate->trust == ProceduralTrust::TrustedInstalled) return true;
+    if (candidate->trust == ProceduralTrust::DevelopmentFixture)
+      return options.allowDevelopmentFixtures;
+    return !options.requireTrustedInstalled;
+  };
+  const auto selected = std::find_if(contentMatches.begin(), contentMatches.end(), acceptable);
+  if (selected == contentMatches.end()) {
+    result.status = ProceduralResolveStatus::Untrusted;
+    result.diagnostic =
+        "Matching procedural singer content exists, but its trust policy is not accepted";
+    return result;
+  }
+  result.status = ProceduralResolveStatus::Resolved;
+  result.candidate = **selected;
+  result.diagnostic = std::string{"Resolved "} + (*selected)->manifest.displayName + " (" +
+                      std::string{proceduralTrustName((*selected)->trust)} + ")";
+  return result;
+}
+
+std::vector<ProceduralSearchRoot> defaultProceduralSearchRoots() {
+  std::vector<ProceduralSearchRoot> result;
+#ifdef _WIN32
+  if (const auto* local = std::getenv("LOCALAPPDATA"); local != nullptr) {
+    result.push_back({std::filesystem::path{local} / "ProjectSEAM" / "Singers",
+                      ProceduralRootKind::Installed});
+  }
+#elif defined(__APPLE__)
+  if (const auto* home = std::getenv("HOME"); home != nullptr) {
+    result.push_back({std::filesystem::path{home} / "Library" / "Application Support" /
+                          "ProjectSEAM" / "Singers",
+                      ProceduralRootKind::Installed});
+  }
+#else
+  if (const auto* xdg = std::getenv("XDG_DATA_HOME"); xdg != nullptr) {
+    result.push_back({std::filesystem::path{xdg} / "project-seam" / "singers",
+                      ProceduralRootKind::Installed});
+  } else if (const auto* home = std::getenv("HOME"); home != nullptr) {
+    result.push_back({std::filesystem::path{home} / ".local" / "share" / "project-seam" /
+                          "singers",
+                      ProceduralRootKind::Installed});
+  }
+#endif
+  return result;
+}
+
+std::string_view proceduralTrustName(ProceduralTrust trust) noexcept {
+  switch (trust) {
+    case ProceduralTrust::TrustedInstalled: return "trusted-installed";
+    case ProceduralTrust::UntrustedInstalled: return "untrusted-installed";
+    case ProceduralTrust::DevelopmentFixture: return "development-fixture";
+  }
+  return "unknown";
+}
+
+std::string_view proceduralResolveStatusName(ProceduralResolveStatus status) noexcept {
+  switch (status) {
+    case ProceduralResolveStatus::Resolved: return "resolved";
+    case ProceduralResolveStatus::Missing: return "missing";
+    case ProceduralResolveStatus::VersionMismatch: return "version-mismatch";
+    case ProceduralResolveStatus::ContentHashMissing: return "content-hash-missing";
+    case ProceduralResolveStatus::ContentMismatch: return "content-mismatch";
+    case ProceduralResolveStatus::Untrusted: return "untrusted";
+    case ProceduralResolveStatus::UnsafeEntry: return "unsafe-entry";
+    case ProceduralResolveStatus::InvalidReference: return "invalid-reference";
+  }
+  return "unknown";
 }
 
 }  // namespace seam::distribution

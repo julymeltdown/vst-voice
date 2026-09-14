@@ -2,6 +2,14 @@
 
 ## A procedural singer is now a package, not a loose JSON file
 
+September 15, 2026 — D4.5 added. `ProceduralCatalogue::scan` walks installed and development roots,
+skips staging and backup directories, and recomputes each candidate's content hash from the installed
+manifest and recipe instead of trusting the receipt. A receipt that is missing, of the wrong family,
+or that disagrees with the bytes downgrades trust to untrusted-installed rather than being believed.
+`resolveProceduralSinger` separates missing, version mismatch, missing hash, content mismatch,
+untrusted and invalid reference from each other, so a surface can say which one happened. Relink is
+the same declared identity resolved against another root and never rewrites the identity.
+
 September 15, 2026 — D4.4 added on top of the package family. `installProceduralPackage` writes the
 verified entries into a staging directory, re-checks the installed manifest against the signed one,
 publishes a typed receipt carrying the resource family, id, version, content hash, recipe digest,
@@ -23,9 +31,9 @@ not the recipe bytes, whose digest is malformed, whose recipe this build cannot 
 recipe engine disagrees with the manifest. Declared coverage and reviewed qualification stay
 different fields; signing proves authenticity, not musical quality. This closes the
 manifest/admission and pack/verify substeps of the plan's procedural distribution slice;
-catalogue, native selection and the connected acceptance journey remain open.
+native selection and the connected acceptance journey remain open.
 
-Verified. `seam_procedural_package_tests` passes 7 of 7: transactional installation with a receipt that matches the published content hash; refusal of an untrusted signer and of a caller that does not require trust, both leaving nothing on disk; and the package cases themselves:  typed manifest round trip with bounded
+Verified. `seam_procedural_package_tests` passes 9 of 9: catalogue discovery that recomputes installed content hashes and downgrades a missing, wrong-family or stale receipt; exact-identity resolution that separates missing, version mismatch, missing hash, content mismatch and untrusted, with relink resolving the same identity against another root; a development root reported as a fixture and refused by a caller requiring trusted installs; transactional installation with a receipt that matches the published content hash; refusal of an untrusted signer and of a caller that does not require trust, both leaving nothing on disk; and the package cases themselves:  typed manifest round trip with bounded
 identity, coverage, digest and engine fields; a signed package that verifies and returns exactly the
 recipe it declares, with the packaged bytes matching the manifest digest; refusal of a package whose
 recipe does not match its declared digest, leaving no artifact behind; mutual family refusal, so a
@@ -33,7 +41,7 @@ procedural manifest is not read as a bank and a voicebank manifest is not read a
 singer; and a whole-package tamper that no longer verifies. The aggregate core suite passes 904
 cases and the registered CTest run passes 166 of 166.
 
-Not claimed. No installed catalogue entry, exact-identity resolution, native
+Not claimed. No native
 selection, review-candidate binding or renderer-compatibility policy exists yet, so a creator still
 selects a procedural recipe by file path. No package was rendered or listened to, and no engine
 revision was pinned to a retained build. No U-unit acceptance or Beta GO state changes.

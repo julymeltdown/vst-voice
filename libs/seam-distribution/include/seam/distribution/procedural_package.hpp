@@ -1,10 +1,13 @@
 #pragma once
 
 #include "seam/distribution/seambank.hpp"
+#include "seam/domain/performance_intent.hpp"
 
 #include <cstdint>
 #include <filesystem>
+#include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace seam::distribution {
@@ -89,6 +92,73 @@ struct InstalledProceduralSinger final {
   std::string signerKeyId;
   std::filesystem::path installDirectory;
 };
+
+enum class ProceduralRootKind { Installed, Development };
+
+enum class ProceduralTrust { TrustedInstalled, UntrustedInstalled, DevelopmentFixture };
+
+// Every way a saved procedural selection can fail to resolve, kept separate so a surface can tell a
+// creator which one happened instead of collapsing them into "missing".
+enum class ProceduralResolveStatus {
+  Resolved,
+  Missing,
+  VersionMismatch,
+  ContentHashMissing,
+  ContentMismatch,
+  Untrusted,
+  UnsafeEntry,
+  InvalidReference,
+};
+
+struct ProceduralSearchRoot final {
+  std::filesystem::path path;
+  ProceduralRootKind kind{ProceduralRootKind::Installed};
+};
+
+struct ProceduralCandidate final {
+  ProceduralSingerManifest manifest;
+  std::filesystem::path resourceRoot;
+  // Recomputed from the installed manifest and recipe, not taken from the receipt: a receipt that
+  // disagrees with the bytes it sits beside describes a different resource.
+  std::string contentHash;
+  ProceduralTrust trust{ProceduralTrust::UntrustedInstalled};
+  std::string packageDigest;
+  std::string signerKeyId;
+};
+
+struct ProceduralCatalogue final {
+  [[nodiscard]] core::Result<std::vector<ProceduralCandidate>> scan(
+      const std::vector<ProceduralSearchRoot>& roots) const;
+};
+
+struct ProceduralResolveOptions final {
+  bool requireTrustedInstalled{true};
+  bool allowDevelopmentFixtures{true};
+};
+
+struct ProceduralResolution final {
+  ProceduralResolveStatus status{ProceduralResolveStatus::Missing};
+  std::optional<ProceduralCandidate> candidate{};
+  std::vector<std::string> availableVersions;
+  std::string expectedContentHash;
+  std::vector<std::string> actualContentHashes;
+  std::string diagnostic;
+
+  [[nodiscard]] bool resolved() const noexcept {
+    return status == ProceduralResolveStatus::Resolved && candidate.has_value();
+  }
+};
+
+// Exact identity resolution against a catalogue. Relink means resolving the same declared identity
+// against a different root; it never rewrites the identity the project asked for.
+[[nodiscard]] ProceduralResolution resolveProceduralSinger(
+    const domain::SingerResourceIdentity& reference,
+    const std::vector<ProceduralCandidate>& candidates,
+    const ProceduralResolveOptions& options = {});
+
+[[nodiscard]] std::vector<ProceduralSearchRoot> defaultProceduralSearchRoots();
+[[nodiscard]] std::string_view proceduralTrustName(ProceduralTrust trust) noexcept;
+[[nodiscard]] std::string_view proceduralResolveStatusName(ProceduralResolveStatus status) noexcept;
 
 // Installs a verified procedural package transactionally: everything is written to a staging
 // directory, re-checked against the signed identity, given a receipt, and only then published.
