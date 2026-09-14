@@ -1082,7 +1082,13 @@ core::Result<void> VoicebankStudioController::importSelectedTake(
            .takeId = takeId,
            .reviewerId = productionOperatorId_,
            .result = takeInspection_->accepted() ? "PASS" : "REJECTED",
-           .reviewedAtUtc = occurredAtUtc}},
+           .reviewedAtUtc = occurredAtUtc},
+       // A style-owned producer stores the style on the take as well as on the assignment, so an
+       // imported or retaken take has to carry the assignment's own style. Without it the import is
+       // refused as an incomplete identity, which made the native retake impossible in exactly the
+       // workspaces the style migration produced. It stays empty for a legacy workspace, where a
+       // non-empty style is the invalid value.
+       .style = assignment.style},
       {.action = retake ? "retake" : "import",
        .subjectId = takeId,
        .operatorId = productionOperatorId_,

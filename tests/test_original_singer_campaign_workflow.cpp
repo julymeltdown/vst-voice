@@ -23,6 +23,7 @@
 #include "seam/voicebank/content_identity.hpp"
 #include "seam/voicebank/manifest_json.hpp"
 #include "seam/voicebank_production/project_codec.hpp"
+#include "seam/voicebank_production/project.hpp"
 
 #include <chrono>
 #include <memory>
@@ -213,17 +214,109 @@ TEST_CASE("a collected generation campaign take becomes the installed bank of a 
   CHECK(!controller.publishedSampleCandidate());
   CHECK(!controller.sampleReviewReceipt());
 
+  // A marker edit is a real edit of the selected unit through the native action, and it is saved
+  // before anything reviews it.
+  CHECK(controller.selectedUnit() != nullptr);
+  if (controller.selectedUnit() == nullptr) return;
+  const auto beforeEdit = controller.selectedUnit()->markers.stableStart;
+  CHECK(controller.moveSelectedMarker(ui::AcousticMarkerKind::StableStart,
+      controller.microscope().frameToPixel(beforeEdit + 8)));
+  CHECK(controller.selectedUnit()->markers.stableStart != beforeEdit);
+  CHECK(controller.dirty());
+  CHECK(controller.save());
+  CHECK(!controller.dirty());
+
+  // The first decision rejects the edited unit, and nothing is publishable from it.
+  CHECK(controller.beginSelectedSampleReview());
+  CHECK(drain(controller));
+  if (!controller.sampleReviewInspection()) return;
   CHECK(controller.selectSampleReviewer(controller.sampleReviewInspection()->context, "reviewer"));
   CHECK(controller.beginSampleReviewDecision(controller.sampleReviewInspection()->context, "reviewer",
-      production::SampleCandidateReviewDecision::Accept, "2026-09-14T12:02:00Z"));
+      production::SampleCandidateReviewDecision::Reject, "2026-09-14T12:02:00Z"));
+  CHECK(drain(controller));
+  const auto rejected = controller.sampleReviewReceipt();
+  CHECK(rejected);
+  CHECK(rejected && !rejected->candidate);
+  CHECK(controller.productionProject());
+  CHECK(controller.productionProject()->unitAssignments.front().state == production::UnitQueueState::Rejected);
+  const auto afterRejection = controller.captureSampleReviewContext();
+  CHECK(afterRejection);
+  CHECK(controller.beginSampleCandidatePublication(afterRejection.value(), root / "rejected"));
+  CHECK(!drain(controller));
+  CHECK(!std::filesystem::exists(root / "rejected"));
+
+  // The retake is the product's own action: inspect the new material, import it as a superseding
+  // take of the rejected assignment, and check that nothing from the rejected take travels with it.
+  const auto retakeWav = root / "retake.wav";
+  CHECK(voicebank::writeWav(retakeWav, {.sampleRate = 48000U, .channels = 1U,
+      .sampleFormat = voicebank::WavSampleFormat::Pcm24},
+      test::support::sineWave(48000U, 440.0, 0.18, 0.18F)));
+  CHECK(controller.inspectTake(retakeWav, 69));
+  CHECK(controller.importSelectedTake(retakeWav, "2026-09-14T12:03:00Z"));
+  CHECK(controller.productionProject());
+  const auto retakeTakeId = controller.productionProject()->unitAssignments.front().takeId;
+  CHECK(!retakeTakeId.empty());
+  CHECK(retakeTakeId != "take-sa");
+  CHECK(controller.productionProject()->unitAssignments.front().state == production::UnitQueueState::MarkerReview);
+  const auto retaken = std::find_if(controller.productionProject()->takes.begin(),
+      controller.productionProject()->takes.end(),
+      [&](const production::TakeRecord& take) { return take.takeId == retakeTakeId; });
+  CHECK(retaken != controller.productionProject()->takes.end());
+  if (retaken == controller.productionProject()->takes.end()) return;
+  const auto retakeSha = retaken->rawAssetSha256;
+  CHECK(retakeSha.size() == 64U);
+  CHECK(retakeSha != generatedSha);
+  // The assessment recorded for the previous material does not qualify this one.
+  CHECK(!production::requireTakeSourceQualification(*controller.productionProject(), retakeTakeId));
+
+  const auto retakeContext = controller.captureSampleReviewContext();
+  CHECK(retakeContext);
+  const auto retakeEvidence = root / "source-quality-retake.txt";
+  CHECK(core::durableAtomicWriteTextNew(retakeEvidence,
+      "SYNTHETIC TEST EVIDENCE: reassessment of the retaken material"));
+  CHECK(controller.beginSourceQualityEvidenceCapture(retakeContext.value(), retakeEvidence));
+  CHECK(drain(controller));
+  CHECK(controller.sourceQualityInspection());
+  if (!controller.sourceQualityInspection() || controller.sourceQualityInspection()->reviewers.empty())
+    return;
+  const auto retakeQuality = *controller.sourceQualityInspection();
+  CHECK(controller.beginSourceQualityDecision(retakeQuality, "assessment-2", retakeQuality.reviewers.front(),
+      production::Feasibility::Pass, production::Feasibility::Pass, "2026-09-14T12:03:30Z"));
+  CHECK(drain(controller));
+  CHECK(controller.sourceQualityReceipt());
+  CHECK(production::requireTakeSourceQualification(*controller.productionProject(), retakeTakeId));
+
+  // A new draft from the retaken material, an explicit new review that accepts it, then publication.
+  const production::SampleManifestDraftIdentity retakeIdentity{.id = "original.singer.retake",
+      .version = "1.0.0", .displayName = "Retaken Candidate",
+      .language = domain::Language::Japanese, .style = "neutral"};
+  const auto retakeDraftContext = controller.captureSampleReviewContext();
+  CHECK(retakeDraftContext);
+  CHECK(controller.beginSampleManifestDraftCreation(retakeDraftContext.value(), retakeIdentity,
+      root / "draft-retake"));
+  CHECK(drain(controller));
+  const auto retakeDraft = controller.createdSampleManifestDraft();
+  CHECK(retakeDraft);
+  CHECK(retakeDraft && retakeDraft->missingAssignments.empty());
+  CHECK(!controller.manifest().units.empty());
+  if (retakeDraft && !controller.manifest().units.empty()) {
+    const auto draftAudio = core::sha256File(retakeDraft->root / controller.manifest().units.front().audioPath);
+    CHECK(draftAudio);
+    CHECK(!draftAudio || draftAudio.value() == retakeSha);
+  }
+  CHECK(controller.beginSelectedSampleReview());
+  CHECK(drain(controller));
+  if (!controller.sampleReviewInspection()) return;
+  CHECK(controller.selectSampleReviewer(controller.sampleReviewInspection()->context, "reviewer"));
+  CHECK(controller.beginSampleReviewDecision(controller.sampleReviewInspection()->context, "reviewer",
+      production::SampleCandidateReviewDecision::Accept, "2026-09-14T12:04:00Z"));
   CHECK(drain(controller));
   const auto receipt = controller.sampleReviewReceipt();
   CHECK(receipt);
   CHECK(receipt && receipt->durabilityConfirmed);
   if (receipt && !receipt->candidate)
-    throw test::Failure{"review produced no candidate: diagnostic=[" +
-        receipt->diagnostic + "] status=[" + controller.sampleReviewStatus() + "] reviews=" +
-        std::to_string(receipt->reviews.size())};
+    throw test::Failure{"the retake review produced no candidate: diagnostic=[" +
+        receipt->diagnostic + "] status=[" + controller.sampleReviewStatus() + "]"};
   CHECK(receipt && receipt->candidate);
 
   const auto approved = controller.captureSampleReviewContext();
@@ -290,7 +383,7 @@ TEST_CASE("a collected generation campaign take becomes the installed bank of a 
   if (!installedManifest || installedManifest.value().units.empty()) return;
   const auto installedAudio = core::sha256File(*installedRoot / installedManifest.value().units.front().audioPath);
   CHECK(installedAudio);
-  CHECK(!installedAudio || installedAudio.value() == generatedSha);
+  CHECK(!installedAudio || installedAudio.value() == retakeSha);
 
   auto [lyric, note] = session.value()->runtime().document().factory().makeNote(
       time::Tick{0}, time::Tick{1920}, 69U, U"\u3055", domain::Language::Japanese);

@@ -1,5 +1,35 @@
 # Integrated Singer Execution
 
+## A retake in a style-owned workspace was refused by the retake itself
+
+The native retake action imports new material over the selected unit's current take. In a
+style-owned producer it could not: the import request it builds never carried the assignment's
+style, and a style-owned workspace refuses a take whose style is empty, so the action failed with an
+incomplete-identity error in exactly the workspaces the style migration produced. A legacy
+workspace hides the defect, because there an empty style is the valid value.
+
+The retake now carries the assignment's own style, which is the same style the assignment, the
+inventory row and the take's source binding all record. Nothing else in the action changed: it still
+derives the retake's take id, still supersedes the current take, still records the importer's own
+review, and still starts the new take unapproved.
+
+Verified. The connected regression below now drives the whole M1.P3 item-four route in one chain
+and passes: a marker edit on the selected unit through the native action, saved before review; a
+rejection decision that leaves the assignment rejected with no candidate and publication refused;
+the native retake over that rejected unit with freshly inspected material; the check that the retake
+material is not covered by the assessment recorded for the previous material
+(`requireTakeSourceQualification` fails for the new take); a fresh evidence capture and assessment
+that restores qualification; a new draft from the retaken material whose audio digest is the
+retaken take's own; an explicit new review that accepts it; publication; signing; installation; and
+a new song that reports complete coverage, exports, saves, reopens and re-exports identically from
+the installed bank whose unit digest is the retaken take's raw asset digest. The full Release build
+and the registered CTest run are reported in the commit that carries this entry.
+
+Not claimed. This is still a synthetic fixture: the retake material is a generated sine take, the
+assessment is a fixture declaration, and no listener judged either take. The marker edit is one
+marker of one unit; the rejection and retake cover one assignment at one pitch layer. The route is
+proved connected, not musically qualified. No unit acceptance changes.
+
 ## The generated take is what the installed bank sings
 
 M1.P3's automated exit names one deterministic lifecycle: source, generation, edit, review,
@@ -36,9 +66,9 @@ Not claimed. Every identity here is a synthetic fixture: no listener heard the g
 source-quality outcome is a fixture declaration rather than an independent judgment, and the
 workspace carries one phone class at one pitch layer. The campaign in this chain is a single batch;
 multi-batch advancement, cancellation and resume remain covered by `seam_studio_campaign_tests`
-rather than here. The marker edit, rejection, retake and explicit re-review route is exercised by
-the native review and candidate-marker suites, not inside this chain, and the real recording journey
-and a genuine independent reviewer are still external evidence. No unit acceptance changes.
+rather than here. The marker edit, rejection, retake and explicit re-review route was folded into
+this chain by the entry above; the real recording journey and a genuine independent reviewer are
+still external evidence. No unit acceptance changes.
 
 ## A neural graph is admitted from its own bytes, not from a description of itself
 
