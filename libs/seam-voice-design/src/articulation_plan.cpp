@@ -495,6 +495,60 @@ core::Result<ArticulationPlan> ArticulationPlan::compile(
   std::sort(result.gestures_.begin(), result.gestures_.end(), [](const auto& a, const auto& b) { return a.span.start < b.span.start; });
   for (std::size_t index = 1U; index < result.gestures_.size(); ++index)
     if (result.gestures_[index].span.start < result.gestures_[index - 1U].span.end) return invalid("Articulation gestures overlap");
+  // The ordered spans above are the linguistic partition. This is the separate acoustic half: one
+  // bounded overlap per boundary that can carry one, or none where a release or an event owns the
+  // frames. A transition never shortens, lengthens or reorders a span.
+  const auto milliseconds = [&](double value) {
+    return static_cast<time::SampleFrame>(std::llround(value * static_cast<double>(sampleRate) / 1000.0));
+  };
+  for (std::size_t index = 0U; index + 1U < result.gestures_.size(); ++index) {
+    const auto& from = result.gestures_[index];
+    const auto& to = result.gestures_[index + 1U];
+    if (to.span.start != from.span.end || !isVoicedGesture(to.kind)) continue;
+    const auto spanLength = std::max<time::SampleFrame>(1, to.span.end - to.span.start);
+    // A gesture that declares its own motion is the transition: an approximant's last frames move
+    // the tract into the gesture that follows instead of holding one pose and then stepping.
+    if (from.transitionFrames > 0U) {
+      const auto frames = std::min<time::SampleFrame>(static_cast<time::SampleFrame>(from.transitionFrames),
+          std::max<time::SampleFrame>(1, from.span.end - from.span.start));
+      result.transitions_.push_back({from.key, to.key, from.phone, to.phone,
+          {from.span.end - frames, from.span.end}, static_cast<std::uint32_t>(frames),
+          TransitionKind::FormantInterpolation, TransitionComposition{true, false, false, true}});
+      continue;
+    }
+    if (isVoicedGesture(from.kind)) {
+      // Two voiced poses: the tract moves from the one it holds into the next over the entry window.
+      // A nasal consonant is a different tract topology rather than another point in the same
+      // space, so that boundary keeps the crossfade the two banks were built for.
+      const auto frames = std::clamp<time::SampleFrame>(milliseconds(kBoundaryCrossfadeMilliseconds), 1, spanLength);
+      const bool sameTopology = from.kind != ArticulationGestureKind::Nasal && to.kind != ArticulationGestureKind::Nasal;
+      result.transitions_.push_back({from.key, to.key, from.phone, to.phone, {to.span.start, to.span.start + frames},
+          static_cast<std::uint32_t>(frames), sameTopology ? TransitionKind::FormantInterpolation
+                                                          : TransitionKind::BankCrossfade,
+          TransitionComposition{true, false, true, true}});
+    } else if (from.kind == ArticulationGestureKind::Frication || from.kind == ArticulationGestureKind::Plosive ||
+               from.kind == ArticulationGestureKind::Affricate) {
+      // A voiceless consonant is carried by its own noise source rather than by the tract, so the
+      // tract is not sounding across this boundary and there is no movement to hear: the vowel is
+      // an attack that has to be blended in, which is a crossfade and not a glide. Moving this
+      // tract's own poles over the same window instead of blending was measured, and it attenuates
+      // the vowel's onset: the pilot's own diagnostic pitch regression lost four voiced frames and
+      // reported one octave error in the note that begins with a fricative, while the crossfade at
+      // the same length keeps every analysed frame within fifty cents. The record still names the
+      // boundary, its window and that voicing does not continue across it.
+      const auto frames = std::clamp<time::SampleFrame>(milliseconds(kBoundaryCrossfadeMilliseconds), 1, spanLength);
+      result.transitions_.push_back({from.key, to.key, from.phone, to.phone, {to.span.start, to.span.start + frames},
+          static_cast<std::uint32_t>(frames), TransitionKind::BankCrossfade,
+          TransitionComposition{false, false, true, true}});
+    } else {
+      // A closure, a pause or a breath is not a pose: the tract holds whatever it held before, so
+      // the next gesture crossfades out of that state instead of being told where it came from.
+      const auto frames = std::clamp<time::SampleFrame>(milliseconds(kBoundaryCrossfadeMilliseconds), 1, spanLength);
+      result.transitions_.push_back({from.key, to.key, from.phone, to.phone, {to.span.start, to.span.start + frames},
+          static_cast<std::uint32_t>(frames), TransitionKind::BankCrossfade,
+          TransitionComposition{false, true, true, true}});
+    }
+  }
   return result;
 }
 }

@@ -755,8 +755,11 @@ TEST_CASE("the approximant transition moves the spectrum into its vowel") {
   const auto tail = lowBandBalance(samples, span.end - tailFrames, span.end);
   CHECK(tail > steady * 10.0);
 
-  // The declared duration is the cause, not the gesture's mere existence: five milliseconds of
-  // declaration leaves the same window in the glide's own pose.
+  // The declared duration is the cause, not the gesture's mere existence: a five-millisecond
+  // declaration moves a twelfth as far, so the same window stays near the glide's own pose. The
+  // bound is a fraction of the movement between the two poses because the transition is a movement
+  // of this tract's own poles now -- a short window moves quickly rather than blending two banks,
+  // so what the assertion keeps is that the declaration decides how far the sound has travelled.
   const auto shortResource = voice_design::freezeVoiceRecipeResource(glideRecipe(5.0));
   CHECK(shortResource);
   if (!shortResource) return;
@@ -768,7 +771,7 @@ TEST_CASE("the approximant transition moves the spectrum into its vowel") {
   CHECK(shortAudio);
   if (!shortAudio) return;
   const auto shortTail = lowBandBalance(shortAudio.value().samples, span.end - tailFrames, span.end);
-  CHECK(shortTail < tail / 10.0);
+  CHECK(shortTail < steady + (tail - steady) * 0.25);
 
   // The same owned range from the same full context is identical in one window or two.
   auto second = voice_design::ArticulatedStream::createFromRecipe(
@@ -928,6 +931,198 @@ TEST_CASE("a gesture that crosses its own note boundary is bounded by the phrase
   CHECK(coda.span.end == carriedNotes[0].endFrame + leadFrames);
   CHECK(nextVowel.span.start == coda.span.end);
   CHECK(nextVowel.span.start > carriedNotes[1].startFrame);
+}
+
+TEST_CASE("a formant transition moves this tract's own poles over the declared window") {
+  // The mechanism on its own, with a constant excitation so the only thing changing is the filter:
+  // a tract holding one pose is told to arrive at another over a bounded window, and it must land
+  // closer to the pose it declared than to the one it started from, without a second filter.
+  voice_design::VoiceRecipe recipe;
+  recipe.id = "tract-transition-test";
+  recipe.seed = 73U;
+  recipe.phonation.aspiration = 0.0;
+  recipe.poses = {{ "a", "neutral", 0.0, {{800.0, 90.0, 0.0}, {1250.0, 110.0, -3.0}, {2800.0, 160.0, -6.0}} },
+                  { "i", "neutral", 0.0, {{300.0, 70.0, 0.0}, {2300.0, 120.0, -3.0}, {3200.0, 170.0, -6.0}} }};
+  const auto frames = static_cast<std::size_t>(std::llround(30.0 * kRate / 1000.0));
+  auto moving = voice_design::VocalTract::create(recipe, "a", "neutral", kRate);
+  auto held = voice_design::VocalTract::create(recipe, "a", "neutral", kRate);
+  auto arrived = voice_design::VocalTract::create(recipe, "i", "neutral", kRate);
+  CHECK(moving); CHECK(held); CHECK(arrived);
+  if (!moving || !held || !arrived) return;
+  CHECK(moving.value().interpolateTo(recipe, "i", "neutral", frames));
+  CHECK(moving.value().interpolating());
+  // A pulse train rather than a constant: a bank of band-pass resonances rejects DC, so the input
+  // has to excite the formants for the two poses to be comparable at all. Long enough that what the
+  // tract started with has rung out by the end, because a transition changes the filter's state as
+  // well as its design and only the settled part is comparable.
+  std::vector<float> excitation(frames * 20U, 0.0F);
+  for (std::size_t index = 0U; index < excitation.size(); index += 400U) excitation[index] = 0.5F;
+  const auto rendered = moving.value().process(excitation);
+  const auto stayed = held.value().process(excitation);
+  const auto staticTarget = arrived.value().process(excitation);
+  CHECK(rendered); CHECK(stayed); CHECK(staticTarget);
+  if (!rendered || !stayed || !staticTarget) return;
+  // The window is exactly as long as it declared itself to be, and no longer pending.
+  CHECK(!moving.value().interpolating());
+  const auto window = static_cast<std::size_t>(frames);
+  const auto settled = excitation.size() - 10U * window;
+  const auto distance = [&](const std::vector<float>& lhs, const std::vector<float>& rhs, std::size_t from) {
+    double total = 0.0;
+    for (std::size_t index = from; index < lhs.size(); ++index) total += std::abs(lhs[index] - rhs[index]);
+    return total;
+  };
+  // Inside the window the moving tract is neither of the two static poses: it is on its way.
+  CHECK(distance(rendered.value(), stayed.value(), 0U) > 0.0);
+  CHECK(distance(rendered.value(), staticTarget.value(), 0U) > 0.0);
+  // Once the movement is over and the resonators have settled, it holds the pose it declared rather
+  // than the one it started from.
+  CHECK(distance(rendered.value(), staticTarget.value(), settled) <
+      distance(rendered.value(), stayed.value(), settled));
+  // A transition that is already running cannot be superseded, and one is not left pending.
+  CHECK(moving.value().transitionFramesRemaining() == 0U);
+  // The same window, processed in blocks, is the same signal: the movement is a function of the
+  // frame index, not of the block the caller chose.
+  auto chunked = voice_design::VocalTract::create(recipe, "a", "neutral", kRate);
+  CHECK(chunked);
+  if (!chunked) return;
+  CHECK(chunked.value().interpolateTo(recipe, "i", "neutral", frames));
+  std::vector<float> joined;
+  for (std::size_t offset = 0U; offset < excitation.size(); offset += 97U) {
+    const auto count = std::min<std::size_t>(97U, excitation.size() - offset);
+    const auto piece = chunked.value().process(std::span<const float>{excitation}.subspan(offset, count));
+    CHECK(piece);
+    if (!piece) return;
+    joined.insert(joined.end(), piece.value().begin(), piece.value().end());
+  }
+  CHECK(joined == rendered.value());
+}
+
+TEST_CASE("a consonant and its vowel share a bounded transition the plan declares") {
+  // One note holding a vowel, an unvoiced consonant and a second vowel: the second vowel's onset is
+  // where that consonant's frames and the vowel's own pose meet. The recipe's two vowels are far
+  // apart (a holds its first resonance at 800 Hz, i at 300 Hz), so the movement is measurable.
+  voice_design::VoiceRecipe recipe;
+  recipe.id = "coarticulation-context-test";
+  recipe.seed = 71U;
+  recipe.phonation.aspiration = 0.0;
+  recipe.poses = {{ "a", "neutral", 0.0, {{800.0, 90.0, 0.0}, {1250.0, 110.0, -3.0}, {2800.0, 160.0, -6.0}} },
+                  { "i", "neutral", 0.0, {{300.0, 70.0, 0.0}, {2300.0, 120.0, -3.0}, {3200.0, 170.0, -6.0}} }};
+  recipe.frications = {{ "s", "neutral", voice_design::FricationConfig{.seed = 72U, .centerHz = 5500.0,
+                                                                      .bandwidthHz = 3000.0, .gain = 0.12} }};
+  const auto resource = voice_design::freezeVoiceRecipeResource(recipe);
+  CHECK(resource);
+  if (!resource) return;
+  domain::Project project{domain::ProjectId{91U}, "Coarticulation"};
+  domain::VocalRegion region{.id = domain::RegionId{92U}, .name = "Note", .durationTick = time::Tick{960},
+      .lyrics = {{domain::LyricTokenId{93U}, U"\u3042", domain::Language::Japanese}},
+      .notes = {{.id = domain::NoteId{94U}, .durationTick = time::Tick{960}, .midiKey = 60U,
+                 .lyricTokenId = domain::LyricTokenId{93U}, .phoneticHint = "a s i"}}};
+  const auto resolved = phonemizer::JapaneseKanaPhonemizer{}.phonemize(region);
+  const auto& phones = resolved.tokens;
+  CHECK(phones.size() == 3U);
+  if (phones.size() != 3U) return;
+  const auto performance = synthesis::compileScorePerformance(project, region, kRate, phones,
+      synthesis::PhonemeTimingPolicy::ProceduralInNote);
+  CHECK(performance);
+  if (!performance) return;
+  const auto plan = ArticulationPlan::compileRecipe(resource.value(), performance.value(), phones, "neutral");
+  if (!plan) throw test::Failure{plan.error().message};
+  CHECK(plan.value().gestures().size() == 3U);
+  CHECK(plan.value().transitions().size() == 1U);
+  if (plan.value().transitions().size() != 1U) return;
+  const auto& transition = plan.value().transitions().front();
+  const auto& vowel = plan.value().gestures().back();
+  // The transition belongs to the boundary the consonant and the vowel share. A voiceless consonant
+  // is not carried by the tract, so the tract is not sounding across this boundary and the vowel is
+  // an attack to blend in rather than a movement to hear: the boundary declares the crossfade, and
+  // moving the tract's own poles over the same window instead was measured to attenuate the vowel's
+  // onset past what the pilot's own diagnostic pitch regression admits.
+  CHECK(transition.fromPhone == "s");
+  CHECK(transition.toPhone == "i");
+  CHECK(transition.kind == voice_design::TransitionKind::BankCrossfade);
+  CHECK(transition.frames == static_cast<std::uint32_t>(std::llround(20.0 * kRate / 1000.0)));
+  CHECK(transition.span.start == vowel.span.start);
+  CHECK(transition.span.end == vowel.span.start + static_cast<time::SampleFrame>(transition.frames));
+  CHECK(transition.composition.voicingContinues == false);
+  CHECK(transition.composition.releaseOwnsFrames == false);
+  CHECK(transition.composition.targetAttackInsideWindow);
+  CHECK(transition.composition.noisePassesThrough);
+  // Transitions never move a span: the gestures still tile the phrase exactly as before.
+  CHECK(plan.value().gestures()[0].span.end == plan.value().gestures()[1].span.start);
+  CHECK(plan.value().gestures()[1].span.end == plan.value().gestures()[2].span.start);
+  auto stream = voice_design::ArticulatedStream::createFromRecipe(resource.value(), performance.value(),
+      phones, "neutral", 257U);
+  CHECK(stream);
+  if (!stream) return;
+  const synthesis::PhraseFrameRange whole{plan.value().context().start, plan.value().context().end};
+  const auto audio = stream.value().renderOwned(whole);
+  CHECK(audio);
+  if (!audio) return;
+  const auto samples = audio.value().samples;
+  // The window is inside the vowel's own span, so the phrase still renders its declared length and
+  // the overlapping frames are the ones the vowel already owned: a transition is acoustic overlap,
+  // not a second span, and how far the tract travels across it is measured where the movement is
+  // the only thing happening, in the vocal-tract case below.
+  CHECK(samples.size() == static_cast<std::size_t>(whole.end - whole.start));
+  CHECK(std::any_of(samples.begin() + transition.span.start, samples.begin() + transition.span.end,
+      [](float sample) { return sample != 0.0F; }));
+  // The same owned range from the same context is identical in one window or two.
+  auto second = voice_design::ArticulatedStream::createFromRecipe(resource.value(), performance.value(),
+      phones, "neutral", 129U);
+  CHECK(second);
+  if (!second) return;
+  const auto prefix = second.value().renderOwned({whole.start, transition.span.end});
+  const auto suffix = second.value().renderOwned({transition.span.end, whole.end});
+  CHECK(prefix);
+  CHECK(suffix);
+  if (!prefix || !suffix) return;
+  std::vector<float> joined = prefix.value().samples;
+  joined.insert(joined.end(), suffix.value().samples.begin(), suffix.value().samples.end());
+  CHECK(joined == samples);
+}
+
+TEST_CASE("a voiced boundary between two sung poses is a declared movement") {
+  // The other mode, on the boundary where it belongs: both sides are poses the tract holds while it
+  // sounds, so the boundary moves this tract's own poles over the declared window instead of
+  // blending two banks. The recipe's vowels are far apart (a holds its first resonance at 800 Hz,
+  // i at 300 Hz), so which mode the plan declared is not a matter of taste.
+  voice_design::VoiceRecipe recipe;
+  recipe.id = "voiced-transition-test";
+  recipe.seed = 75U;
+  recipe.phonation.aspiration = 0.0;
+  recipe.poses = {{ "a", "neutral", 0.0, {{800.0, 90.0, 0.0}, {1250.0, 110.0, -3.0}, {2800.0, 160.0, -6.0}} },
+                  { "i", "neutral", 0.0, {{300.0, 70.0, 0.0}, {2300.0, 120.0, -3.0}, {3200.0, 170.0, -6.0}} }};
+  const auto resource = voice_design::freezeVoiceRecipeResource(recipe);
+  CHECK(resource);
+  if (!resource) return;
+  domain::Project project{domain::ProjectId{95U}, "Voiced boundary"};
+  domain::VocalRegion region{.id = domain::RegionId{96U}, .name = "Note", .durationTick = time::Tick{960},
+      .lyrics = {{domain::LyricTokenId{97U}, U"\u3042", domain::Language::Japanese}},
+      .notes = {{.id = domain::NoteId{98U}, .durationTick = time::Tick{960}, .midiKey = 60U,
+                 .lyricTokenId = domain::LyricTokenId{97U}, .phoneticHint = "a i"}}};
+  const auto resolved = phonemizer::JapaneseKanaPhonemizer{}.phonemize(region);
+  const auto& phones = resolved.tokens;
+  CHECK(phones.size() == 2U);
+  if (phones.size() != 2U) return;
+  const auto performance = synthesis::compileScorePerformance(project, region, kRate, phones,
+      synthesis::PhonemeTimingPolicy::ProceduralInNote);
+  CHECK(performance);
+  if (!performance) return;
+  const auto plan = ArticulationPlan::compileRecipe(resource.value(), performance.value(), phones, "neutral");
+  if (!plan) throw test::Failure{plan.error().message};
+  CHECK(plan.value().gestures().size() == 2U);
+  CHECK(plan.value().transitions().size() == 1U);
+  if (plan.value().transitions().size() != 1U) return;
+  const auto& transition = plan.value().transitions().front();
+  const auto& second = plan.value().gestures().back();
+  CHECK(transition.fromPhone == "a");
+  CHECK(transition.toPhone == "i");
+  CHECK(transition.kind == voice_design::TransitionKind::FormantInterpolation);
+  CHECK(transition.frames == static_cast<std::uint32_t>(std::llround(20.0 * kRate / 1000.0)));
+  CHECK(transition.span.start == second.span.start);
+  CHECK(transition.composition.voicingContinues);
+  CHECK(!transition.composition.releaseOwnsFrames);
+  CHECK(transition.composition.targetAttackInsideWindow);
 }
 
 TEST_CASE("a consonant after the vowel is a coda gesture that owns the tail") {

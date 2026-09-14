@@ -1,5 +1,72 @@
 # Integrated Singer Execution
 
+## A coarticulation boundary is a transition the plan declares, not a weakened overlap
+
+The plan had one list. A gesture either owned its frames by itself or the phrase was refused as an
+overlap, so a consonant could not colour the vowel that followed it, and the only movement the model
+could name was an approximant's own last frames. Ordered linguistic spans and acoustic overlap were
+the same thing, which is why the boundary between them could not be stated.
+
+They are now two lists. The gestures stay an ordered, non-overlapping partition of the phrase, and a
+separate transition plan names every boundary that carries an acoustic overlap: which gesture to
+which, the absolute span, the frame count, the mode, and what each layer does across it. The
+composition record says whether voicing continues or the release owns the frames, whether the
+target's own attack is inside the window, and that noise crosses the boundary with its own source
+rather than being retriggered by the tract.
+
+The mode is decided per boundary, and the decision that a boundary is not a movement is a measured
+one. Two voiced poses move: one filter runs the whole time and its poles travel from the pose the
+tract holds into the next over 20 ms, except where a nasal consonant is one side, because a nasal
+tract is a different topology rather than another point in one parameter space and that boundary
+keeps the crossfade the two banks were built for. An approximant's own declared motion is the
+transition itself, so the renderer no longer infers it from the gesture order. A closure, a pause or
+a breath is not a pose, so the next gesture crossfades out of whatever the tract held, and the record
+says the release owned those frames. A voiceless frication, plosive or affricate into a voiced next
+gesture is a 20 ms crossfade with voicing not continuing, not a movement: a voiceless consonant is
+carried by its own noise source, so the tract is not sounding across that boundary and the vowel is
+an attack to blend in. Declaring a movement there was implemented and measured first, and it
+attenuates the vowel's onset -- the pilot's own diagnostic pitch regression lost four voiced frames
+and then read one frame an octave low in the note that begins with a fricative -- so the boundary
+declares the crossfade at the same length instead, and the regression passes with every analysed
+frame of every note within fifty cents.
+
+`VocalTract::interpolateTo` is the mechanism. One filter runs for the whole window and its
+resonance frequencies, bandwidths and gains are re-designed each frame from the pose the tract holds
+to the pose it is told to arrive at, with the filter state carried across, the nasal stage moved by
+the same smoothed progress, and the final frame landing exactly on the target pose rather than on
+its own interpolation. Nothing is invented for the starting side: it is whatever this tract holds.
+The renderer reads the plan instead of deriving a window of its own — it looks up the entry
+transition at the boundary and the declared motion for an approximant, uses that frame count, and
+applies the declared mode. A boundary the plan does not describe keeps the plain crossfade it always
+had, and so does a declared movement whose two banks are not two points in one parameter space (a
+different resonance count, or a nasal-only side): the phrase renders as it did before this existed
+rather than being refused.
+
+Verified. `seam_articulation_context_tests` passes 15 of 15 with three new cases. A vowel, a
+voiceless fricative and a second vowel in one note compile into exactly one transition -- `s` to
+`i`, a crossfade, 20 ms, starting where the vowel starts, with the composition flags that boundary
+declares -- while the three gestures still tile the phrase exactly once. Two vowels in one note,
+both poses the tract holds while it sounds, compile into one transition with the other mode: a
+formant movement of 20 ms that starts at the second vowel and reports voicing as continuing. The
+mechanism is driven directly over a pulse train: inside the window the tract is neither the pose it
+started from nor the one it declared, and once the window has closed and the resonators have settled
+it holds the pose it declared rather than the one it started from; the window is exactly as long as
+it declared itself and is no longer pending; and the same window processed in 97-frame blocks is the
+same signal as the whole render, which is what keeps the movement a function of the frame index
+rather than of the caller's block size. `seam_singer_pilot_cli` passes, including the diagnostic
+pitch assertion that failed while the voiceless boundary declared a movement. The full build and the
+registered CTest run are reported in the commit that carries this entry.
+
+Not claimed. Nothing here is intelligibility: no listener has judged a consonant-coloured vowel, and
+20 ms is the renderer's own previous window rather than a measured phonetic duration. The moving mode
+starts from the pose the tract already holds, so an ordinary voiceless consonant never shapes that
+movement; a palatalized consonant does put its own pose in force during its own gesture, and only
+then does the onset window start from the consonant's shape. The mode decision at the voiceless
+boundary rests on one measured diagnostic rather than on listening, and it is a decision this plan
+declares and can revisit rather than a silent one. Aspiration and the burst appear in the record as
+which layer owns the frames, not as a measured aspiration model. M1.P2's ten required changes are now
+all landed, which is a package implementation statement and not a unit acceptance, and no n changes.
+
 ## A gesture that crosses its own note is bounded by the phrase, not the note
 
 The articulation layer refused any gesture whose span left its own score note: a consonant the
@@ -568,19 +635,20 @@ M1.P2's ten required changes:
 
 | # | Required change | State |
 |---|---|---|
-| 1 | Articulation-source description per phone class | Admitted: oral vowel, nasal, frication, voiced frication, released stop, voiced stop, unvoiced affricate, voiced affricate with a prevoiced closure and a voiced tail, approximant, palatalized consonants that borrow a base release, vowel-to-coda placement for ordinary consonants, gesture silence, a declared closure event that is exactly silent for its resolved span, and a declared breath event with its own source. Not admitted: coarticulation between a consonant and the neighbouring vowel inside one note, and any event a recipe does not declare. |
+| 1 | Articulation-source description per phone class | Admitted: oral vowel, nasal, frication, voiced frication, released stop, voiced stop, unvoiced affricate, voiced affricate with a prevoiced closure and a voiced tail, approximant, palatalized consonants that borrow a base release, vowel-to-coda placement for ordinary consonants, gesture silence, a declared closure event that is exactly silent for its resolved span, and a declared breath event with its own source. A consonant-to-vowel boundary inside one note now carries a declared transition as well: it is a crossfade, because a voiceless consonant is not carried by the tract and so the tract is not sounding across it. Any event a recipe does not declare is still refused. |
 | 2 | Phrase context beyond the owning note | Landed. A gesture may cross its own note boundary when the phrase accounts for it: a consonant that begins before its beat takes frames the previous vowel releases, and a coda may keep the opening frames of the next note. The plan is bounded by the phrase context and the partition rather than the note box, a placement the phrase does not account for is still refused as an overlap, and every note keeps a gesture of its own. |
-| 3 | Ordered spans separated from a bounded transition plan | Partial. Ordered linguistic spans are preserved and the approximant transition is a bounded declared window, but there is no shared transition-plan type and no coarticulation that crosses a gesture boundary. |
+| 3 | Ordered spans separated from a bounded transition plan | Landed. The gesture list is still an ordered non-overlapping partition and a separate transition list names every boundary that carries an acoustic overlap -- its span, its frame count, its mode and what each layer does across it -- and the renderer applies the declared mode instead of deriving a window. |
 | 4 | Chunk-invariant rendering | Done, including the new gesture. |
-| 5 | Versioned semantics for old resources | Done. Recipe schemas 1-8, candidate schemas up to 8, articulation plan revision 11. |
+| 5 | Versioned semantics for old resources | Done. Recipe schemas 1-11 and candidate schemas 1-11 are each read with their own meaning, the articulation plan is revision 13, and the transition model is revision 1. |
 | 6 | Shared inventory generation planner | Landed (`inventory_generation`), consumed by the campaign. |
 | 7 | Resumable campaign orchestration | Landed (`generation_campaign`), one bounded batch per advance. |
 | 8 | Prepare-render-collect transaction with durable receipts | Landed, including conflicts on external edits and recovery of an uncertain commit. |
 | 9 | Aggregate budget preflight | Landed: per-batch, aggregate frame and estimated-byte limits, retained-storage inspection and cancellation. |
 | 10 | Held-out pilot phrase set before the full inventory | Landed, run and followed through: both preflights passed, and the campaigns behind them completed with 498 takes committed as unapproved marker-review material across three pitch layers (report in `CAMPAIGN_REPORT.md`, defect list in `coverage-report.json`). The fricative, palatalized, voiced-affricate and event repairs took coverage to 1026 of 1026 assignments, so a campaign over the whole inventory now plans as 1026 jobs and the rendered held-out preflight passes all 38 declared classes with none defective. The inventory is generatable end to end as declared; a prepared class is still not phonetic qualification. |
 
-So nine of the ten are landed, and one remains partial: the ordered spans are still separated from a
-bounded transition plan, whose cross-gesture coarticulation half is what is left.
+So all ten are landed. That is a package implementation statement, not a unit acceptance: the
+acoustic result is unreviewed, and M1.P3 still has its connected campaign/review path, the
+real-recording journey and an independent reviewer open.
 
 M1.P1's last open required change landed: the durable C++ legacy migration
 operation with its retained receipt and history-transition verification, applied

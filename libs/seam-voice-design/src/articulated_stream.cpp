@@ -192,23 +192,36 @@ core::Result<synthesis::PhraseAudio> ArticulatedStream::renderOwned(synthesis::P
     auto glide = static_cast<const ArticulationGesture*>(nullptr);
     auto entryFrames = time::SampleFrame{0};
     auto glideFrames = time::SampleFrame{0};
+    const ArticulationTransition* entry = nullptr;
+    const ArticulationTransition* declared = nullptr;
     if (gesture) {
       boundary = std::min(boundary, active ? gesture->span.end : gesture->span.start);
       if (inVoicedRelease) boundary = std::min(boundary, releaseEndOf(*gesture));
+      // The transition plan already decided whether this boundary carries an acoustic overlap and
+      // in which mode, so the renderer reads it instead of deriving a window of its own.
+      for (const auto& transition : plan_->transitions())
+        if (transition.to == gesture->key && transition.span.start == gesture->span.start) { entry = &transition; break; }
+      entryFrames = entry ? static_cast<time::SampleFrame>(entry->frames)
+          : std::min<time::SampleFrame>(plan_->sampleRate() / 50U, gesture->span.end - gesture->span.start);
       // A voiced approximant declares the formant motion into its neighbouring vowel, and that
       // motion is the gesture: it begins exactly `transitionFrames` before the gesture ends, so it
       // lands on the nucleus instead of being a short step at the vowel's own onset. This tract
-      // owns one transition at a time, so the motion starts when the entry crossfade has released
-      // it; a glide with no room for both keeps the declaration and compresses the crossfade
-      // window rather than dropping the declared motion.
-      entryFrames = std::min<time::SampleFrame>(plan_->sampleRate() / 50U, gesture->span.end - gesture->span.start);
-      if (tonal && gesture->transitionFrames > 0U && candidate.next_ + 1U < gestures.size())
+      // owns one transition at a time, so the motion starts when the entry transition has released
+      // it; a glide with no room for both keeps the declaration and compresses the shorter window
+      // rather than dropping the declared motion.
+      if (tonal && gesture->transitionFrames > 0U && candidate.next_ + 1U < gestures.size()) {
         glide = &gestures[candidate.next_ + 1U];
-      if (glide && (glide->span.start != gesture->span.end || glide->phone == candidate.currentPhone_))
+        for (const auto& transition : plan_->transitions())
+          if (transition.from == gesture->key && transition.span.end == gesture->span.end) { declared = &transition; break; }
+        if (declared) glideFrames = static_cast<time::SampleFrame>(declared->frames);
+      }
+      if (glide && (glide->span.start != gesture->span.end || glide->phone == candidate.currentPhone_)) {
         glide = nullptr;
+        declared = nullptr;
+      }
       if (glide) {
-        glideFrames = std::min<time::SampleFrame>(static_cast<time::SampleFrame>(gesture->transitionFrames),
-                                                  gesture->span.end - gesture->span.start);
+        if (!declared) glideFrames = std::min<time::SampleFrame>(static_cast<time::SampleFrame>(gesture->transitionFrames),
+                                                                 gesture->span.end - gesture->span.start);
         // A transition is scheduled at a block boundary, and the same owned range has to render
         // identically however a caller splits it, so the block ends exactly where the motion must
         // begin and exactly where the entry crossfade would release the tract.
@@ -221,19 +234,33 @@ core::Result<synthesis::PhraseAudio> ArticulatedStream::renderOwned(synthesis::P
     // when the gesture itself is unvoiced, so the release and the vowel's onset transition start
     // from the palatal shape. That transition into the vowel is what distinguishes きゃ from か.
     const auto posePhone = gesture->posePhone.value_or(gesture->phone);
+    // A declared movement needs the pose it starts from and the pose it arrives at to be two points
+    // in one parameter space: the same resonance count. The plan decides the kind from the gesture
+    // classes, which is what identifies a coarticulation boundary, but only the recipe can say
+    // whether the two banks line up. A boundary that declares a movement the banks cannot make
+    // keeps the crossfade it had before the transition plan existed, which is the case that
+    // crossfade is for, so a recipe that mixes resonance counts renders as it always did.
+    const auto applyTransition = [&](const ArticulationTransition* transition, std::string_view phone,
+                                     time::SampleFrame frames) -> core::Result<void> {
+      if (transition && transition->kind == TransitionKind::FormantInterpolation) {
+        auto moved = candidate.tract_->interpolateTo(*recipe_, transition->toPhone, style_,
+            static_cast<std::size_t>(frames));
+        if (moved || moved.error().code != core::ErrorCode::Unsupported) return moved;
+      }
+      return candidate.tract_->transitionTo(*recipe_, phone, style_, static_cast<std::size_t>(frames));
+    };
     if (candidate.tract_ && (tonal || gesture->posePhone.has_value()) && position == gesture->span.start && posePhone != candidate.currentPhone_) {
-      const auto transition = candidate.tract_->transitionTo(*recipe_, posePhone, style_,
-          static_cast<std::size_t>(entryFrames));
-      if (!transition) return core::Result<Output>{transition.error()};
+      const auto frames = static_cast<std::size_t>(entryFrames);
+      const auto applied = applyTransition(entry, posePhone, static_cast<time::SampleFrame>(frames));
+      if (!applied) return core::Result<Output>{applied.error()};
       candidate.currentPhone_ = posePhone;
     }
     if (glide && position >= gesture->span.end - glideFrames &&
         candidate.tract_->transitionFramesRemaining() == 0U) {
       const auto frames = std::min<time::SampleFrame>(glideFrames, gesture->span.end - position);
       if (frames > 0) {
-        const auto transition = candidate.tract_->transitionTo(*recipe_, glide->phone, style_,
-            static_cast<std::size_t>(frames));
-        if (!transition) return core::Result<Output>{transition.error()};
+        const auto applied = applyTransition(declared, glide->phone, frames);
+        if (!applied) return core::Result<Output>{applied.error()};
         candidate.currentPhone_ = glide->phone;
       }
     }

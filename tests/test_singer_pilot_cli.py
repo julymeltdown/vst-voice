@@ -325,7 +325,7 @@ def main():
                 metadata = json.loads(audio.with_suffix(".json").read_text())
                 assert metadata["schemaVersion"] == 8
                 assert metadata["approximantRevision"] == 1
-                assert metadata["articulationPlanRevision"] == 12
+                assert metadata["articulationPlanRevision"] == 13
                 assert metadata["approval"] == "unapproved"
                 markers = metadata["markers"]
                 assert [m["phone"] for m in markers] == ["r", "a", "w", "a", "y", "a", "a"]
@@ -369,7 +369,7 @@ def main():
                 assert metadata["schemaVersion"] == 11
                 assert metadata["closureRevision"] == 1
                 assert metadata["breathRevision"] == 1
-                assert metadata["articulationPlanRevision"] == 12
+                assert metadata["articulationPlanRevision"] == 13
                 assert metadata["approval"] == "unapproved"
                 markers = metadata["markers"]
                 assert [(m["phone"], m["kind"]) for m in markers] == [

@@ -17,18 +17,45 @@ public:
   // A pending transition must finish or be reset before another is scheduled.
   [[nodiscard]] core::Result<void> transitionTo(const VoiceRecipe& recipe,
       std::string_view phone, std::string_view style, std::size_t frames);
+  // Moves this tract's own poles from the pose it currently holds to another over the window: one
+  // filter runs the whole time and its resonance frequencies, bandwidths and weights are
+  // re-designed each frame, so the transition is a formant movement rather than a change of filter.
+  // The filter state is carried across the movement, which is what makes the result a continuous
+  // sound instead of two sounds spliced together. A pose with no nasal model ramps its coupling in
+  // or out instead. Nothing is invented for the starting side: it is whatever this tract holds.
+  // A pending transition must finish or be reset before another is scheduled.
+  [[nodiscard]] core::Result<void> interpolateTo(const VoiceRecipe& recipe, std::string_view phone,
+      std::string_view style, std::size_t frames);
   [[nodiscard]] std::size_t transitionFramesRemaining() const noexcept { return remaining_; }
+  [[nodiscard]] bool interpolating() const noexcept { return mode_ == Mode::FormantInterpolation; }
 private:
   VocalTract() = default;
-  struct Band final { double b0, b2, a1, a2, weight, z1{0.0}, z2{0.0}; };
+  enum class Mode { Idle, BankCrossfade, FormantInterpolation };
+  struct Band final {
+    double b0{0.0}, b2{0.0}, a1{0.0}, a2{0.0}, weight{0.0}, z1{0.0}, z2{0.0};
+    // The pose this band was designed from, kept so a transition can move the filter itself.
+    double frequencyHz{0.0}, bandwidthHz{0.0}, gain{1.0};
+  };
   struct Biquad final { double b0,b1,b2,a1,a2,z1{0.0},z2{0.0}; };
-  struct NasalState final { Biquad resonance,antiresonance; };
+  // The RBJ designs both the pose banks and a moving transition use, so the two cannot drift apart.
+  [[nodiscard]] static Biquad designBandPass(double frequencyHz, double bandwidthHz, double sampleRate) noexcept;
+  [[nodiscard]] static Biquad designNotch(double frequencyHz, double bandwidthHz, double sampleRate) noexcept;
+  struct NasalState final {
+    Biquad resonance, antiresonance;
+    double resonanceHz{0.0}, resonanceBandwidthHz{0.0}, antiresonanceHz{0.0}, antiresonanceBandwidthHz{0.0};
+  };
   std::vector<Band> bands_;
   std::vector<Band> targetBands_;
+  // The pose this tract held when the window opened, kept so the movement goes from there to the
+  // target once rather than compounding frame by frame.
+  std::vector<Band> sourceBands_;
   std::optional<NasalState> nasal_, targetNasal_;
+  std::optional<NasalState> sourceNasal_;
   double coupling_{0.0}, targetCoupling_{0.0};
+  double sourceCoupling_{0.0};
   bool nasalOnly_{false}, targetNasalOnly_{false};
   std::uint32_t sampleRate_{0U};
   std::size_t transitionFrames_{0U}, remaining_{0U};
+  Mode mode_{Mode::Idle};
 };
 }

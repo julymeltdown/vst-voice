@@ -4,6 +4,7 @@
 #include "seam/synthesis/phoneme_timing_plan.hpp"
 #include "seam/synthesis/performance_compiler.hpp"
 #include "seam/voice_design/recipe_resource.hpp"
+#include "seam/voice_design/transition_plan.hpp"
 
 namespace seam::voice_design {
 // Affricate is a released closure whose burst continues into a frication tail inside one
@@ -76,7 +77,14 @@ struct ArticulationGesture final {
 // do not prove that its output realizes the named phone intelligibly.
 class ArticulationPlan final {
 public:
-  static constexpr std::uint32_t algorithmRevision = 12U;
+  static constexpr std::uint32_t algorithmRevision = 13U;
+  // The engineering default, not a measured phonetic duration: how long a boundary that is not a
+  // movement takes to blend one pose into the next. It is the window the renderer used to derive
+  // for itself (sampleRate/50), now declared by the plan rather than guessed per gesture.
+  static constexpr double kBoundaryCrossfadeMilliseconds{20.0};
+  // Versions the transition plan: which boundaries produce a bounded acoustic overlap, which mode
+  // each one uses, and what the composition says the layers do across it.
+  static constexpr std::uint32_t kTransitionModelRevision{1U};
   // The shortest frication a released closure may continue into before the pair stops being an
   // affricate and becomes a stop with a separate fricative.
   static constexpr double kMinimumAffricateTailMilliseconds{20.0};
@@ -115,11 +123,15 @@ public:
       std::span<const ClosureBinding> closureBindings = {},
       std::span<const BreathBinding> breathBindings = {});
   [[nodiscard]] std::span<const ArticulationGesture> gestures() const noexcept { return gestures_; }
+  // Every bounded acoustic overlap the renderer will perform, in frame order. The linguistic spans
+  // above remain an ordered partition; this list never shortens, lengthens or reorders one.
+  [[nodiscard]] std::span<const ArticulationTransition> transitions() const noexcept { return transitions_; }
   [[nodiscard]] std::uint32_t sampleRate() const noexcept { return sampleRate_; }
   [[nodiscard]] synthesis::PhraseFrameRange context() const noexcept { return context_; }
 private:
   ArticulationPlan() = default;
   std::vector<ArticulationGesture> gestures_;
+  std::vector<ArticulationTransition> transitions_;
   std::uint32_t sampleRate_{0U};
   synthesis::PhraseFrameRange context_;
 };
