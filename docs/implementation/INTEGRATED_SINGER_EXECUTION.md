@@ -1,5 +1,42 @@
 # Integrated Singer Execution
 
+## A voiced affricate is a closure that carries voicing, its burst and a voiced tail
+
+Japanese じ and じゃ are voiced affricates, and the engine refused `j` by name rather than let an
+unvoiced noise pair stand in for it. That refusal was correct while the model had no way to voice a
+closure and a frication tail separately inside one gesture; recipe schema ten now declares the three
+parts and the articulation plan composes them into one gesture, so the phone keeps one marker and one
+identity in the bank. The prevoiced closure and its burst are rendered from the score's own excitation
+by the voiced plosive source, and the tail is rendered as voicing through the tract with frication
+noise added on top, exactly as a voiced fricative already was. A block never straddles the release
+end, so the two ways of being voiced cannot bleed into each other.
+
+Candidate metadata version ten records the same fact: a `voiced-affricate` marker, the affricate
+model revision, and the voiced plosive revision its closure is rendered by. The loader refuses a
+candidate whose closure is silent, whose tail is unvoiced, whose burst is missing, or whose recipe
+does not declare all three.
+
+Coverage moved from 948 to **978 of 1026** assignments. What remains is 48: the two adapter symbols
+with the breath sequence (`R`, `glottal`, `br`) and the pause and closure events (`pau`, `cl`), which the
+inventory names as units although a pause and a closure are events rather than recorded material.
+
+Rendered evidence: a four-unit campaign (`cv:j:a`, `cv:j:i`, `cv:j:u` and the coda `vc:a:j`) planned,
+preflighted and advanced with no hand-edited JSON. The preflight passed with four phrases produced and
+zero defective, and the campaign collected four takes in ` MARKER_REVIEW `. Measured on the collected
+`cv:j:a` take: the closure window holds low-band energy 2.87e-05 and high-band energy 3.5e-10, and the
+tail holds 1.2e-05 low and 3.9e-05 high. The unvoiced control `cv:ch:a` from the retained pilot bank has
+exactly zero energy in the same closure window and 6.9e-03 RMS in its burst, which is the difference
+between a voiced affricate and an unvoiced one measured rather than asserted. The workspace, campaign,
+preflight report and recipe are retained under `build/pilot-01/voiced-affricate-{ws,campaign}` and
+`build/pilot-01/voiced-affricate-recipe.json`. Suites: `seam_voice_design_tests ` 39 of 39 and
+`seam_articulation_context_tests ` 11 of 11, including a case that requires the voiced closure to carry
+energy, its high band to stay below its low band, and the tail to add noise an order of magnitude
+above the closure's.
+
+Not claimed. No listener heard anything, no reviewer judged anything and no unit acceptance moved.
+The spectra are declared engineering parameters, so nothing here says a `j` sounds like a singer.
+
+## A palatalized consonant is its base's release through its own pose
 ## A palatalized consonant is its base's release through its own pose
 
 The pilot inventory names `ky gy hy py by my ny ry fy vy`, and the phonemizer emits them as single
@@ -422,7 +459,7 @@ M1.P2's ten required changes:
 
 | # | Required change | State |
 |---|---|---|
-| 1 | Articulation-source description per phone class | Admitted: oral vowel, nasal, frication, voiced frication, released stop, voiced stop, affricate, approximant, palatalized consonants that borrow a base release, vowel-to-coda placement for ordinary consonants, and gesture silence. Not admitted: voiced affricates, a standalone unreleased stop, and an explicit breath event. |
+| 1 | Articulation-source description per phone class | Admitted: oral vowel, nasal, frication, voiced frication, released stop, voiced stop, unvoiced affricate, voiced affricate with a prevoiced closure and a voiced tail, approximant, palatalized consonants that borrow a base release, vowel-to-coda placement for ordinary consonants, and gesture silence. Not admitted: a standalone unreleased stop and an explicit breath event. |
 | 2 | Phrase context beyond the owning note | Open. Placement inside a note is now complete for onset and coda, so what remains is context reaching past a gesture's own note: pre-onset intervals and a release the next note inherits. The 210 refusals once attributed here were the hint's role inference and are gone. |
 | 3 | Ordered spans separated from a bounded transition plan | Partial. Ordered linguistic spans are preserved and the approximant transition is a bounded declared window, but there is no shared transition-plan type and no coarticulation that crosses a gesture boundary. |
 | 4 | Chunk-invariant rendering | Done, including the new gesture. |
@@ -431,7 +468,7 @@ M1.P2's ten required changes:
 | 7 | Resumable campaign orchestration | Landed (`generation_campaign`), one bounded batch per advance. |
 | 8 | Prepare-render-collect transaction with durable receipts | Landed, including conflicts on external edits and recovery of an uncertain commit. |
 | 9 | Aggregate budget preflight | Landed: per-batch, aggregate frame and estimated-byte limits, retained-storage inspection and cancellation. |
-| 10 | Held-out pilot phrase set before the full inventory | Landed, run and followed through: both preflights passed, and the campaigns behind them completed with 498 takes committed as unapproved marker-review material across three pitch layers (report in `CAMPAIGN_REPORT.md`, defect list in `coverage-report.json`). The fricative and palatalized repairs took coverage to 948 of 1026 assignments and eight more classes were rendered and collected; the 78 that remain still cannot be planned, so the inventory as a whole is not yet generatable end to end. |
+| 10 | Held-out pilot phrase set before the full inventory | Landed, run and followed through: both preflights passed, and the campaigns behind them completed with 498 takes committed as unapproved marker-review material across three pitch layers (report in `CAMPAIGN_REPORT.md`, defect list in `coverage-report.json`). The fricative, palatalized and voiced-affricate repairs took coverage to 978 of 1026 assignments, and the twelve new classes were rendered and collected; the 48 that remain still cannot be planned, so the inventory as a whole is not yet generatable end to end. |
 
 So seven of the ten are landed, two are partial, and one remains open (phrase context
 beyond the owning note).
@@ -445,9 +482,9 @@ M1.P1's coverage-report requirement is satisfied: `inspect-generation-coverage`
 retains a canonical per-class report of what a recipe can prepare, and the real pilot
 inventory's result is committed at
 `assets/pilots/seam-pilot-01/coverage-report.json`. It is what makes the next repair
-choice evidence-based rather than a guess: of the 1026 assignments it prepares 948 and still
-refuses 78 -- a voiced affricate source (30), two adapter symbols with the breath sequence (42),
-and the pause and closure events (6). The 210 coda and 186 frication refusals are gone.
+choice evidence-based rather than a guess: of the 1026 assignments it prepares 978 and still
+refuses 48 -- two adapter symbols with the breath sequence (42) and the pause and closure events
+(6). The coda, frication, palatalized and voiced-affricate refusals are gone.
 
 ## An affricate is one gesture, not a stop followed by a fricative
 

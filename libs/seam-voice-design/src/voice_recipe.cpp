@@ -89,9 +89,9 @@ core::Result<void> VoiceRecipe::validate() const {
   }
   if (affricates.size() > 64U) return core::failure(core::ErrorCode::InvalidArgument, "Too many affricate poses");
   for (const auto& pose : affricates) {
-    // Only unvoiced affricates are admitted today. A voiced affricate needs a prevoiced closure
-    // plus voiced frication, and admitting the symbol now would let an unvoiced noise pair stand
-    // in for a voiced consonant.
+    // Only unvoiced affricates are admitted here. A voiced affricate is not an unvoiced noise pair
+    // with a different label, so it has its own binding family below and this one keeps refusing
+    // the symbol.
     const bool supportedPhone = pose.phone == "ts" || pose.phone == "ch";
     const auto spectrumIsBounded = [&](const FricationConfig& source) {
       return bounded(source.centerHz, 80.0, 16000.0) && bounded(source.bandwidthHz, 20.0, 16000.0) &&
@@ -105,6 +105,28 @@ core::Result<void> VoiceRecipe::validate() const {
       return core::failure(core::ErrorCode::InvalidArgument,
                            "Affricate identity, style, burst or tail spectrum is invalid or ambiguous");
     }
+  }
+  if (voicedAffricates.size() > 64U) return core::failure(core::ErrorCode::InvalidArgument,
+      "Too many voiced affricate poses");
+  for (const auto& pose : voicedAffricates) {
+    // A voiced affricate is a prevoiced closure, a burst and a voiced frication tail. The tail is
+    // voiced through the tract, so this phone needs its own resonance pose, and the burst and tail
+    // spectra are bounded exactly like every other noise source in a recipe.
+    const auto spectrumIsBounded = [&](const FricationConfig& source) {
+      return bounded(source.centerHz, 80.0, 16000.0) && bounded(source.bandwidthHz, 20.0, 16000.0) &&
+             bounded(source.gain, 0.0, 0.25) && bounded(source.centerHz / source.bandwidthHz, 0.25, 20.0);
+    };
+    if (pose.phone != "j" || !text(pose.style) ||
+        !identities.emplace(pose.phone, pose.style).second ||
+        !spectrumIsBounded(pose.burst) || !spectrumIsBounded(pose.tail) ||
+        !bounded(pose.burstMilliseconds, 1.0, 100.0) ||
+        !bounded(pose.closureVoicingGain, 0.0, 0.5) || pose.closureVoicingGain == 0.0 ||
+        !bounded(pose.closureLowpassHz, 40.0, 2000.0) ||
+        !bounded(pose.tailVoicingGain, 0.0, 1.0) || pose.tailVoicingGain == 0.0 ||
+        std::none_of(poses.begin(), poses.end(), [&](const auto& resonance) {
+          return resonance.phone == pose.phone && resonance.style == pose.style; }))
+      return core::failure(core::ErrorCode::InvalidArgument,
+          "Voiced affricate identity, style, spectra, closure or resonance pose is invalid or ambiguous");
   }
   if (approximants.size() > 64U) return core::failure(core::ErrorCode::InvalidArgument, "Too many approximant poses");
   for (const auto& pose : approximants) {
@@ -150,6 +172,7 @@ core::Result<void> VoiceRecipe::validate() const {
 }
 
 std::int64_t voiceRecipeSchemaVersion(const VoiceRecipe& recipe) noexcept {
+  if (!recipe.voicedAffricates.empty()) return 10;
   if (!recipe.palatalized.empty()) return 9;
   if (!recipe.approximants.empty()) return 8;
   if (!recipe.affricates.empty()) return 7;
@@ -239,6 +262,20 @@ core::Result<std::string> encodeVoiceRecipe(const VoiceRecipe& recipe) {
     }
     root.asObject().emplace("palatalized", std::move(palatalized));
   }
+  if (version>=10) {
+    const auto spectrum = [](const FricationConfig& source) {
+      return J::Object{{"seed", std::to_string(source.seed)}, {"centerHz", J{source.centerHz}},
+          {"bandwidthHz", J{source.bandwidthHz}}, {"gain", J{source.gain}}};
+    };
+    J::Array voicedAffricates;
+    for (const auto& pose : recipe.voicedAffricates) {
+      voicedAffricates.emplace_back(J::Object{{"phone", pose.phone}, {"style", pose.style},
+          {"burstMilliseconds", J{pose.burstMilliseconds}}, {"burst", J{spectrum(pose.burst)}},
+          {"tail", J{spectrum(pose.tail)}}, {"closureVoicingGain", J{pose.closureVoicingGain}},
+          {"closureLowpassHz", J{pose.closureLowpassHz}}, {"tailVoicingGain", J{pose.tailVoicingGain}}});
+    }
+    root.asObject().emplace("voicedAffricates", std::move(voicedAffricates));
+  }
   return formats::stringifyJson(root);
 }
 
@@ -251,8 +288,9 @@ core::Result<VoiceRecipe> decodeVoiceRecipe(std::string_view json) {
       !root.find("formatId")->isString() || root.find("formatId")->asString() != "com.project-seam.voice-recipe" ||
       !root.find("schemaVersion")->isInteger()) return malformed();
   const auto version = root.find("schemaVersion")->asInt64();
-  if (version < 1 || version > 9) return core::failure<VoiceRecipe>(core::ErrorCode::Unsupported, "Voice recipe schema is unsupported");
+  if (version < 1 || version > 10) return core::failure<VoiceRecipe>(core::ErrorCode::Unsupported, "Voice recipe schema is unsupported");
   if (!(version == 1 ? fields(root, {"formatId", "schemaVersion", "id", "engineId", "seed", "phonation", "modulation", "poses"}) :
+      version>=10 ? fields(root,{"formatId","schemaVersion","id","engineId","seed","phonation","modulation","poses","frications","plosives","affricates","approximants","palatalized","voicedAffricates"}) :
       version>=9 ? fields(root,{"formatId","schemaVersion","id","engineId","seed","phonation","modulation","poses","frications","plosives","affricates","approximants","palatalized"}) :
       version>=8 ? fields(root,{"formatId","schemaVersion","id","engineId","seed","phonation","modulation","poses","frications","plosives","affricates","approximants"}) :
       version>=7 ? fields(root,{"formatId","schemaVersion","id","engineId","seed","phonation","modulation","poses","frications","plosives","affricates"}) :
@@ -367,6 +405,34 @@ core::Result<VoiceRecipe> decodeVoiceRecipe(std::string_view json) {
           !pose.find("basePhone")->isString()) return malformed();
       recipe.palatalized.push_back({pose.find("phone")->asString(),
           pose.find("style")->asString(), pose.find("basePhone")->asString()});
+    }
+  }
+  if (version>=10) {
+    const auto& list=*root.find("voicedAffricates");
+    if (!list.isArray()) return malformed();
+    for (const auto& pose:list.asArray()) {
+      if (!fields(pose,{"phone","style","burstMilliseconds","burst","tail","closureVoicingGain",
+              "closureLowpassHz","tailVoicingGain"}) ||
+          !pose.find("phone")->isString() || !pose.find("style")->isString() ||
+          !number(pose,"burstMilliseconds") || !number(pose,"closureVoicingGain") ||
+          !number(pose,"closureLowpassHz") || !number(pose,"tailVoicingGain")) return malformed();
+      const auto parseSpectrum = [](const J& value, FricationConfig& source) {
+        if (!fields(value,{"seed","centerHz","bandwidthHz","gain"}) ||
+            !value.find("seed")->isString() || !number(value,"centerHz") ||
+            !number(value,"bandwidthHz") || !number(value,"gain")) return false;
+        if (!parseSeed(*value.find("seed"),source.seed)) return false;
+        source.centerHz=value.find("centerHz")->asNumber();
+        source.bandwidthHz=value.find("bandwidthHz")->asNumber();
+        source.gain=value.find("gain")->asNumber();
+        return true;
+      };
+      VoiceRecipe::VoicedAffricatePose row{pose.find("phone")->asString(),pose.find("style")->asString(),{},{},0.0,0.0,0.0,0.0};
+      if (!parseSpectrum(*pose.find("burst"),row.burst) || !parseSpectrum(*pose.find("tail"),row.tail)) return malformed();
+      row.burstMilliseconds=pose.find("burstMilliseconds")->asNumber();
+      row.closureVoicingGain=pose.find("closureVoicingGain")->asNumber();
+      row.closureLowpassHz=pose.find("closureLowpassHz")->asNumber();
+      row.tailVoicingGain=pose.find("tailVoicingGain")->asNumber();
+      recipe.voicedAffricates.push_back(std::move(row));
     }
   }
   const auto valid = recipe.validate();

@@ -74,6 +74,17 @@ core::Result<ArticulatedStream> ArticulatedStream::create(
           static_cast<time::SampleFrame>(std::llround(binding->burstMilliseconds * plan.sampleRate() / 1000.0)) !=
               gesture.affricate->release.burstFrames)
         return core::failure<ArticulatedStream>(core::ErrorCode::Conflict, "Affricate plan differs from the frozen recipe");
+    } else if (gesture.kind == ArticulationGestureKind::VoicedAffricate) {
+      const auto binding = std::find_if(recipe.value().voicedAffricates.begin(), recipe.value().voicedAffricates.end(),
+          [&](const auto& pose) { return pose.phone == sourcePhone && pose.style == style; });
+      if (binding == recipe.value().voicedAffricates.end() || !gesture.affricate || !gesture.voicedPlosive ||
+          !gesture.voicingGain || *gesture.voicingGain != binding->tailVoicingGain ||
+          binding->burst != gesture.affricate->release.burst || binding->tail != gesture.affricate->tail ||
+          binding->closureVoicingGain != gesture.voicedPlosive->closureVoicingGain ||
+          binding->closureLowpassHz != gesture.voicedPlosive->closureLowpassHz ||
+          static_cast<time::SampleFrame>(std::llround(binding->burstMilliseconds * plan.sampleRate() / 1000.0)) !=
+              gesture.affricate->release.burstFrames)
+        return core::failure<ArticulatedStream>(core::ErrorCode::Conflict, "Voiced affricate plan differs from the frozen recipe");
     } else if (gesture.kind == ArticulationGestureKind::Approximant) {
       const auto binding = std::find_if(recipe.value().approximants.begin(), recipe.value().approximants.end(),
           [&](const auto& pose) { return pose.phone == sourcePhone && pose.style == style; });
@@ -129,7 +140,17 @@ core::Result<synthesis::PhraseAudio> ArticulatedStream::renderOwned(synthesis::P
     }
     const auto* gesture = candidate.next_ < gestures.size() ? &gestures[candidate.next_] : nullptr;
     const bool active = gesture && gesture->span.start <= position;
-    const bool voicedStop=active && gesture->kind==ArticulationGestureKind::VoicedPlosive;
+    // A voiced affricate is voiced in two different ways inside one gesture: its closure carries
+    // the voicing a stop's closure carries, and its frication tail is voiced through the tract.
+    // The release end is where the burst stops and the tail begins, and a block never straddles it.
+    const auto releaseEndOf = [](const ArticulationGesture& value) {
+      return value.affricate ? value.span.start +
+          static_cast<time::SampleFrame>(value.affricate->release.closureFrames) +
+          static_cast<time::SampleFrame>(value.affricate->release.burstFrames) : value.span.start;
+    };
+    const bool inVoicedRelease = active && gesture->kind==ArticulationGestureKind::VoicedAffricate &&
+        position < releaseEndOf(*gesture);
+    const bool voicedStop=active && (gesture->kind==ArticulationGestureKind::VoicedPlosive || inVoicedRelease);
     const bool tonal = active && isVoicedGesture(gesture->kind) && !voicedStop;
     // Source phase restarts on score reattacks, not on every phone change.
     // Keep intra-note articulation and shared-lyric continuations connected.
@@ -147,6 +168,7 @@ core::Result<synthesis::PhraseAudio> ArticulatedStream::renderOwned(synthesis::P
     auto glideFrames = time::SampleFrame{0};
     if (gesture) {
       boundary = std::min(boundary, active ? gesture->span.end : gesture->span.start);
+      if (inVoicedRelease) boundary = std::min(boundary, releaseEndOf(*gesture));
       // A voiced approximant declares the formant motion into its neighbouring vowel, and that
       // motion is the gesture: it begins exactly `transitionFrames` before the gesture ends, so it
       // lands on the nucleus instead of being a short step at the vowel's own onset. This tract

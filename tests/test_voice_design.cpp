@@ -444,6 +444,89 @@ TEST_CASE("plosive articulation renders exact closure burst and vowel with trans
   }
 }
 
+TEST_CASE("voiced affricate recipes roundtrip as schema ten and refuse a noise pair") {
+  using namespace seam;
+  auto recipe=nasalFixture(); recipe.poses[0].nasal.reset(); recipe.poses[0].nasalCoupling=0.0;
+  recipe.poses.push_back({"j","neutral",0.0,{{300.0,80.0,0.0},{1900.0,110.0,-3.0},{2900.0,160.0,-6.0}}});
+  recipe.voicedAffricates={{"j","neutral",{.seed=81U,.centerHz=3000.0,.bandwidthHz=2500.0,.gain=0.12},
+      {.seed=82U,.centerHz=4500.0,.bandwidthHz=3500.0,.gain=0.12},12.0,0.2,400.0,0.35}};
+  const auto encoded=voice_design::encodeVoiceRecipe(recipe); CHECK(encoded);
+  const auto parsed=formats::parseJson(encoded.value()); CHECK(parsed);
+  if (!encoded || !parsed) return;
+  CHECK(parsed.value().find("schemaVersion")->asInt64()==10);
+  CHECK(voice_design::decodeVoiceRecipe(encoded.value()).value()==recipe);
+  const auto frozen=voice_design::freezeVoiceRecipeResource(recipe); CHECK(frozen);
+  if (!frozen) return;
+  CHECK(frozen.value().identity.version=="10");
+  CHECK(voice_design::decodeVoiceRecipeResource(frozen.value()));
+  // All three parts have to be declared: a silent closure is an unvoiced affricate, and an unvoiced
+  // tail is a stop with a fricative after it.
+  auto missingPose=recipe; missingPose.poses.pop_back(); CHECK(!missingPose.validate());
+  auto wrongPhone=recipe; wrongPhone.voicedAffricates.front().phone="ts"; CHECK(!wrongPhone.validate());
+  auto silentClosure=recipe; silentClosure.voicedAffricates.front().closureVoicingGain=0.0; CHECK(!silentClosure.validate());
+  auto loudClosure=recipe; loudClosure.voicedAffricates.front().closureVoicingGain=0.9; CHECK(!loudClosure.validate());
+  auto unvoicedTail=recipe; unvoicedTail.voicedAffricates.front().tailVoicingGain=0.0; CHECK(!unvoicedTail.validate());
+  auto noBurst=recipe; noBurst.voicedAffricates.front().burstMilliseconds=0.0; CHECK(!noBurst.validate());
+  auto duplicated=recipe; duplicated.voicedAffricates.push_back(duplicated.voicedAffricates.front()); CHECK(!duplicated.validate());
+  auto collides=recipe; collides.affricates={{"j","neutral",{.seed=83U,.centerHz=3000.0,.bandwidthHz=2500.0,.gain=0.12},
+      {.seed=84U,.centerHz=4500.0,.bandwidthHz=3500.0,.gain=0.12},12.0}}; CHECK(!collides.validate());
+  // A schema-nine document cannot carry the schema-ten binding, and a schema-ten digest cannot
+  // drop it.
+  for (unsigned scenario=0U;scenario<3U;++scenario) {
+    auto invalid=parsed.value();
+    if (scenario==0U) *invalid.find("schemaVersion")=formats::JsonValue{std::int64_t{9}};
+    if (scenario==1U) invalid.find("voicedAffricates")->asArray().clear();
+    if (scenario==2U) invalid.asObject().erase("voicedAffricates");
+    CHECK(!voice_design::decodeVoiceRecipe(formats::stringifyJson(invalid)));
+  }
+}
+
+TEST_CASE("voiced affricate candidate metadata keeps one marker and its three parts") {
+  using namespace seam;
+  using J=formats::JsonValue;
+  auto recipe=nasalFixture(); recipe.poses[0].nasal.reset(); recipe.poses[0].nasalCoupling=0.0;
+  recipe.poses.push_back({"j","neutral",0.0,{{300.0,80.0,0.0},{1900.0,110.0,-3.0},{2900.0,160.0,-6.0}}});
+  recipe.voicedAffricates={{"j","neutral",{.seed=85U,.centerHz=3000.0,.bandwidthHz=2500.0,.gain=0.12},
+      {.seed=86U,.centerHz=4500.0,.bandwidthHz=3500.0,.gain=0.12},12.0,0.2,400.0,0.35}};
+  const auto resource=voice_design::freezeVoiceRecipeResource(recipe); CHECK(resource);
+  if (!resource) return;
+  CHECK(resource.value().identity.version=="10");
+  const auto marker=[](std::uint16_t ordinal,const char* phone,const char* kind,
+      std::int64_t start,std::int64_t end) {
+    return J{J::Object{{"key",domain::PhonemeKey{domain::NoteId{1U},ordinal}.toString()},
+        {"phone",phone},{"kind",kind},{"startFrame",start},{"endFrame",end},{"palatalized",false}}};
+  };
+  J metadata{J::Object{{"formatId","com.project-seam.procedural-candidate"},{"schemaVersion",std::int64_t{10}},
+      {"approval","unapproved"},{"markerSemantics","planned-articulated-gestures"},
+      {"audioSha256",std::string(64U,'a')},{"renderContentHash",std::string(64U,'b')},{"renderAbi","test-abi"},
+      {"recipeId",resource.value().identity.id},{"recipeVersion","10"},{"recipeHash",resource.value().identity.contentHash},
+      {"style","neutral"},{"sampleRate",std::int64_t{48000}},{"frameCount",std::int64_t{24000}},
+      {"scoreOriginFrame",std::int64_t{0}},
+      {"proceduralRevision",std::int64_t{voice_design::ArticulatedStream::algorithmRevision}},
+      {"compilerRevision",std::int64_t{9}},
+      {"articulationPlanRevision",std::int64_t{voice_design::ArticulationPlan::algorithmRevision}},
+      {"fricationRevision",std::int64_t{1}},{"fricationStreamRevision",std::int64_t{3}},
+      {"plosiveRevision",std::int64_t{1}},{"voicedPlosiveRevision",std::int64_t{1}},
+      {"voicedAffricateRevision",std::int64_t{1}},
+      {"markers",J::Array{marker(0U,"j","voiced-affricate",0,4800),marker(1U,"a","oral-vowel",4800,24000)}}}};
+  const auto parse=[&](const J& value){return voice_design::parseProceduralCandidateMetadata(formats::stringifyJson(value),resource.value());};
+  const auto valid=parse(metadata); CHECK(valid);
+  if (!valid) return;
+  CHECK(valid.value().schemaVersion==10U); CHECK(valid.value().voicedAffricateRevision==1U);
+  CHECK(valid.value().markers.front().kind==voice_design::ProceduralGestureKind::VoicedAffricate);
+  CHECK(valid.value().markers.front().phone=="j");
+  for (unsigned scenario=0U;scenario<6U;++scenario) {
+    auto bad=metadata;
+    if (scenario==0U) bad.asObject()["voicedAffricateRevision"]=std::int64_t{2};
+    if (scenario==1U) bad.asObject()["voicedPlosiveRevision"]=std::int64_t{2};
+    if (scenario==2U) bad.asObject()["markers"].asArray()[0].asObject()["kind"]="affricate";
+    if (scenario==3U) bad.asObject()["markers"].asArray()[0].asObject()["phone"]="ts";
+    if (scenario==4U) bad.asObject()["recipeVersion"]="9";
+    if (scenario==5U) bad.asObject().erase("voicedAffricateRevision");
+    CHECK(!parse(bad));
+  }
+}
+
 TEST_CASE("palatalized recipes roundtrip as schema nine and cannot relabel a base consonant") {
   using namespace seam;
   auto recipe=nasalFixture();

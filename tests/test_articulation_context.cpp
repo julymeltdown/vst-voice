@@ -266,7 +266,7 @@ struct PalatalizedRenderFixture final {
   std::vector<domain::PhonemeToken> phones;
 };
 
-PalatalizedRenderFixture palatalizedRenderFixture(const char* hint) {
+PalatalizedRenderFixture hintSyllableFixture(const char* hint) {
   PalatalizedRenderFixture fixture;
   fixture.region = domain::VocalRegion{
       .id = domain::RegionId{43U},
@@ -325,6 +325,59 @@ double lowResonanceBalance(std::span<const float> samples, time::SampleFrame beg
 }
 
 }  // namespace
+// A voiced affricate's release is a closure that carries voicing, its burst, and a voiced frication
+// tail: the same three parts an unvoiced affricate has, except that the closure is not silent.
+voice_design::VoiceRecipe voicedAffricateRecipe() {
+  voice_design::VoiceRecipe recipe;
+  recipe.id = "voiced-affricate-context-test";
+  recipe.seed = 71U;
+  recipe.phonation.aspiration = 0.0;
+  recipe.poses = {{"a", "neutral", 0.0, {{800.0, 90.0, 0.0}, {1250.0, 110.0, -3.0}, {2800.0, 160.0, -6.0}}},
+                  {"j", "neutral", 0.0, {{300.0, 80.0, 0.0}, {1900.0, 110.0, -3.0}, {2900.0, 160.0, -6.0}}}};
+  recipe.voicedAffricates = {{"j", "neutral",
+      {.seed = 72U, .centerHz = 3000.0, .bandwidthHz = 2500.0, .gain = 0.12},
+      {.seed = 73U, .centerHz = 4500.0, .bandwidthHz = 3500.0, .gain = 0.12}, 12.0, 0.2, 400.0, 0.35}};
+  return recipe;
+}
+
+// The unvoiced affricate that the voiced one is compared against, bound the same way.
+voice_design::VoiceRecipe unvoicedAffricateRecipe() {
+  voice_design::VoiceRecipe recipe;
+  recipe.id = "unvoiced-affricate-context-test";
+  recipe.seed = 71U;
+  recipe.phonation.aspiration = 0.0;
+  recipe.poses = {{"a", "neutral", 0.0, {{800.0, 90.0, 0.0}, {1250.0, 110.0, -3.0}, {2800.0, 160.0, -6.0}}}};
+  recipe.affricates = {{"ch", "neutral",
+      {.seed = 74U, .centerHz = 3000.0, .bandwidthHz = 2500.0, .gain = 0.12},
+      {.seed = 75U, .centerHz = 4500.0, .bandwidthHz = 3500.0, .gain = 0.12}, 12.0}};
+  return recipe;
+}
+
+// The energy of one rendered window in a low band and in a high band. A voiced affricate's closure
+// holds voicing and almost no noise, and its tail holds both; an unvoiced affricate's closure holds
+// neither. A directional source check, not an intelligibility claim.
+void bandEnergy(std::span<const float> samples, time::SampleFrame begin, time::SampleFrame end,
+                double& low, double& high) {
+  constexpr double kPi = 3.14159265358979323846;
+  low = 0.0;
+  high = 0.0;
+  const auto width = static_cast<std::size_t>(end - begin);
+  if (width < 2U) return;
+  for (std::uint32_t hz = 100U; hz <= 6000U; hz += 100U) {
+    double real = 0.0;
+    double imaginary = 0.0;
+    for (std::size_t index = 0U; index < width; ++index) {
+      const auto hann = 0.5 - 0.5 * std::cos(2.0 * kPi * static_cast<double>(index) / static_cast<double>(width - 1U));
+      const auto angle = 2.0 * kPi * static_cast<double>(hz) * static_cast<double>(index) / static_cast<double>(kRate);
+      const auto value = static_cast<double>(samples[static_cast<std::size_t>(begin) + index]) * hann;
+      real += value * std::cos(angle);
+      imaginary += value * std::sin(angle);
+    }
+    const auto energy = (real * real + imaginary * imaginary) / static_cast<double>(width * width);
+    if (hz <= 600U) low += energy;
+    else if (hz >= 2500U) high += energy;
+  }
+}
 
 TEST_CASE("an affricate is one gesture whose release continues into its tail") {
   const std::vector<AffricateBinding> affricates{affricate("ts", 4500.0, 5500.0)};
@@ -494,10 +547,86 @@ TEST_CASE("a voiced approximant is a tonal gesture with a bounded transition") {
   CHECK(!approximantPlan("l", true, kNucleus, unsupported));
 }
 
+TEST_CASE("a voiced affricate keeps voicing through its closure and its tail") {
+  using namespace seam;
+  const auto voiced = hintSyllableFixture("j a");
+  const auto unvoiced = hintSyllableFixture("ch a");
+  CHECK(voiced.phones.front().symbol == "j");
+  CHECK(unvoiced.phones.front().symbol == "ch");
+  if (voiced.phones.size() != 2U || unvoiced.phones.size() != 2U) return;
+  const auto voicedResource = voice_design::freezeVoiceRecipeResource(voicedAffricateRecipe());
+  const auto unvoicedResource = voice_design::freezeVoiceRecipeResource(unvoicedAffricateRecipe());
+  CHECK(voicedResource);
+  CHECK(unvoicedResource);
+  if (!voicedResource || !unvoicedResource) return;
+  CHECK(voicedResource.value().identity.version == "10");
+  const auto voicedPerformance = synthesis::compileScorePerformance(voiced.project, voiced.region, kRate,
+      voiced.phones, synthesis::PhonemeTimingPolicy::ProceduralInNote);
+  const auto unvoicedPerformance = synthesis::compileScorePerformance(unvoiced.project, unvoiced.region, kRate,
+      unvoiced.phones, synthesis::PhonemeTimingPolicy::ProceduralInNote);
+  CHECK(voicedPerformance);
+  CHECK(unvoicedPerformance);
+  if (!voicedPerformance || !unvoicedPerformance) return;
+  const auto voicedPlan = voice_design::ArticulationPlan::compileRecipe(voicedResource.value(),
+      voicedPerformance.value(), voiced.phones, "neutral");
+  const auto unvoicedPlan = voice_design::ArticulationPlan::compileRecipe(unvoicedResource.value(),
+      unvoicedPerformance.value(), unvoiced.phones, "neutral");
+  CHECK(voicedPlan);
+  CHECK(unvoicedPlan);
+  if (!voicedPlan || !unvoicedPlan) return;
+  const auto& gesture = voicedPlan.value().gestures().front();
+  CHECK(gesture.kind == ArticulationGestureKind::VoicedAffricate);
+  CHECK(gesture.phone == "j");
+  CHECK(gesture.affricate.has_value());
+  CHECK(gesture.voicedPlosive.has_value());
+  CHECK(gesture.voicingGain.has_value());
+  const auto& control = unvoicedPlan.value().gestures().front();
+  CHECK(control.kind == ArticulationGestureKind::Affricate);
+  CHECK(!control.voicedPlosive.has_value());
+  // One gesture, one marker: the three parts of the release do not become three phones.
+  CHECK(voicedPlan.value().gestures().size() == 2U);
+  const auto releaseEnd = gesture.span.start + static_cast<time::SampleFrame>(gesture.affricate->release.closureFrames) +
+      static_cast<time::SampleFrame>(gesture.affricate->release.burstFrames);
+  CHECK(releaseEnd < gesture.span.end);
+  const auto render = [&](const synthesis::ProceduralSingerResource& resource,
+                          const PalatalizedRenderFixture& fixture, const ArticulationPlan& plan,
+                          std::vector<float>& out) {
+    const auto performance = synthesis::compileScorePerformance(fixture.project, fixture.region, kRate,
+        fixture.phones, synthesis::PhonemeTimingPolicy::ProceduralInNote);
+    if (!performance) return false;
+    auto stream = voice_design::ArticulatedStream::createFromRecipe(resource, performance.value(),
+        fixture.phones, "neutral", 257U);
+    if (!stream) { std::cerr << stream.error().message << std::endl; return false; }
+    const auto audio = stream.value().renderOwned({plan.context().start, plan.context().end});
+    if (!audio) return false;
+    out = audio.value().samples;
+    return true;
+  };
+  std::vector<float> voicedAudio, unvoicedAudio;
+  CHECK(render(voicedResource.value(), voiced, voicedPlan.value(), voicedAudio));
+  CHECK(render(unvoicedResource.value(), unvoiced, unvoicedPlan.value(), unvoicedAudio));
+  if (voicedAudio.empty() || unvoicedAudio.empty()) return;
+  const auto closureStart = gesture.span.start;
+  const auto closureEnd = releaseEnd - static_cast<time::SampleFrame>(gesture.affricate->release.burstFrames);
+  const auto tailStart = releaseEnd + static_cast<time::SampleFrame>(kRate / 200U);
+  const auto tailEnd = std::min<time::SampleFrame>(gesture.span.end, tailStart + static_cast<time::SampleFrame>(kRate / 50U));
+  double voicedLow = 0.0, voicedHigh = 0.0, tailLow = 0.0, tailHigh = 0.0, controlLow = 0.0, controlHigh = 0.0;
+  bandEnergy(voicedAudio, closureStart, closureEnd, voicedLow, voicedHigh);
+  bandEnergy(voicedAudio, tailStart, tailEnd, tailLow, tailHigh);
+  bandEnergy(unvoicedAudio, closureStart, closureEnd, controlLow, controlHigh);
+  // The unvoiced affricate's closure is exactly silent; the voiced one's carries the excitation the
+  // score supplies, and its tail adds frication noise on top of that voicing.
+  CHECK(controlLow + controlHigh == 0.0);
+  CHECK(voicedLow > 1e-9);
+  CHECK(voicedHigh * 20.0 < voicedLow);
+  CHECK(tailHigh > voicedHigh * 20.0);
+  CHECK(tailLow > 1e-9);
+}
+
 TEST_CASE("a palatalized consonant renders its own pose rather than its base consonant") {
   using namespace seam;
-  const auto palatalized = palatalizedRenderFixture("ky a");
-  const auto plain = palatalizedRenderFixture("k a");
+  const auto palatalized = hintSyllableFixture("ky a");
+  const auto plain = hintSyllableFixture("k a");
   // The hint keeps the phone's identity: the inventory's key names a unit a bank has to contain,
   // so a palatalized syllable is not rewritten into a consonant the song can already ask for.
   CHECK(palatalized.phones.size() == 2U);

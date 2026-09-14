@@ -187,15 +187,28 @@ def main():
             result = subprocess.run([str(binary), str(target), "phrase", *tokens], capture_output=True, timeout=10)
             assert result.returncode != 0
             assert not target.exists()
-        unsupported = root / "unsupported-phrase"
-        # The recipe the custom phrase builds admits liquids and glides now, so the refusal this
-        # checks is the phone class that is still deliberately absent: a voiced affricate.
-        result = subprocess.run([str(binary), str(unsupported), "phrase", "じ:60"], capture_output=True, timeout=10)
-        assert result.returncode != 0
-        assert not (unsupported / "pilot.json").exists()
-        assert b"Phone 'j'" in result.stderr
-        assert b"style 'neutral'" in result.stderr
-        assert b"seam-pilot-01-voiced-stop-diagnostic" in result.stderr
+        # The maximal recipe admits the voiced affricate now, so じ renders as one gesture whose
+        # candidate says it is a voiced affricate rather than an unvoiced pair. A recipe that does
+        # not declare it still refuses the symbol by name, which the articulation-context suite
+        # checks where a recipe without the binding can be supplied.
+        voiced = root / "voiced-affricate"
+        subprocess.run([str(binary), str(voiced), "phrase", "じ:60", "じゃ:62"], check=True,
+                       capture_output=True, timeout=60)
+        voicedReport = json.loads((voiced / "pilot.json").read_text())
+        assert voicedReport["releaseEligible"] is False
+        voicedMarkers = 0
+        for row in voicedReport["runs"]:
+            audio = Path(row["wav"])
+            if audio.parent.name != "candidates":
+                continue
+            metadata = json.loads(audio.with_suffix(".json").read_text())
+            assert metadata["schemaVersion"] == 10
+            assert metadata["voicedAffricateRevision"] == 1
+            kinds = [m["kind"] for m in metadata["markers"]]
+            assert kinds == ["voiced-affricate", "oral-vowel", "voiced-affricate", "oral-vowel"], kinds
+            assert all(m["palatalized"] is False for m in metadata["markers"])
+            voicedMarkers += 1
+        assert voicedMarkers == 3
         rhythmic = root / "rhythmic"
         subprocess.run([str(binary), str(rhythmic), "phrase", "ば:60:960", "ー:64:240", "ん:65:720", "あ:60"],
                        check=True, capture_output=True, timeout=60)

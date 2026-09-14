@@ -192,6 +192,12 @@ int main(int argc, char** argv) {
           {"py", "neutral", "p"}, {"by", "neutral", "b"}, {"hy", "neutral", "h"},
           {"fy", "neutral", "f"}, {"vy", "neutral", "v"}, {"ry", "neutral", "r"},
           {"my", "neutral", "m"}, {"ny", "neutral", "n"}};
+      // The voiced affricate じ/じゃ: a prevoiced closure, its release burst and a voiced frication
+      // tail, with its own resonance pose because the tail is voiced through the tract.
+      base.poses.push_back({"j", "neutral", 0.0, {{300, 80, 0}, {1900, 110, -3}, {2900, 160, -6}}});
+      base.voicedAffricates = {{"j", "neutral",
+          {.seed = 91020U, .centerHz = 3000, .bandwidthHz = 2500, .gain = 0.12},
+          {.seed = 91021U, .centerHz = 4500, .bandwidthHz = 3500, .gain = 0.12}, 12.0, 0.2, 400.0, 0.35}};
     }
     formats::JsonValue::Array runs;
     for (const std::string name : {"baseline", "higher-formants", "breathier"}) {

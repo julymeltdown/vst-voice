@@ -311,3 +311,13 @@ palatal resonance declared under its own name, so a bank has a `ky` unit rather 
 inventory from 498 to 948 of 1026 assignments the recipe can prepare; the remaining 78 are `j`, `R`,
 `glottal`, `br`, `pau` and `cl`. Preparing a class is still not phonetic qualification: no listener has
 heard any of them, and every burst spectrum is the base consonant's.
+
+## Voiced affricate coverage in the maximal recipe
+
+The maximal recipe also declares `j`, the voiced affricate じ/じゃ, as a prevoiced closure, its
+release burst and a voiced frication tail in one gesture (recipe schema ten). Its closure carries
+the excitation the score supplies, so it is audible rather than silent the way an unvoiced
+affricate's closure is, and its tail adds frication noise on top of that voicing. Coverage is now
+978 of 1026 assignments; the 48 that remain are the two adapter symbols with the breath sequence
+(`R`, `glottal`, `br`) and the pause and closure events (`pau`, `cl`). No listener has heard any of them,
+and every spectrum is a declared engineering parameter rather than phonetic qualification.

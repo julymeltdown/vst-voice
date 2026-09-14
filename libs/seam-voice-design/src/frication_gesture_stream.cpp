@@ -4,9 +4,9 @@
 namespace seam::voice_design {
 core::Result<FricationGestureStream> FricationGestureStream::create(ArticulationPlan plan, std::size_t blockFrames, bool voicedStopsRenderedSeparately) {
   if (!voicedStopsRenderedSeparately && std::any_of(plan.gestures().begin(),plan.gestures().end(),[](const auto& gesture) {
-        return gesture.kind==ArticulationGestureKind::VoicedPlosive;
+        return gesture.kind==ArticulationGestureKind::VoicedPlosive || gesture.kind==ArticulationGestureKind::VoicedAffricate;
       })) return core::failure<FricationGestureStream>(core::ErrorCode::Unsupported,
-          "Voiced plosive gestures require score excitation and cannot use the noise-only renderer");
+          "Voiced plosive and voiced affricate gestures require score excitation and cannot use the noise-only renderer");
   if (blockFrames == 0U || blockFrames > 65536U) return core::failure<FricationGestureStream>(
       core::ErrorCode::InvalidArgument, "Frication stream block size is outside bounds");
   FricationGestureStream result;
@@ -47,8 +47,12 @@ core::Result<synthesis::PhraseAudio> FricationGestureStream::renderOwned(synthes
       candidate.position_ = std::min(gesture.span.start, owned.end); continue;
     }
     const bool plosive = gesture.kind == ArticulationGestureKind::Plosive;
-    const bool affricate = gesture.kind == ArticulationGestureKind::Affricate;
-    if ((plosive || affricate) && !candidate.plosive_) {
+    const bool affricate = gesture.kind == ArticulationGestureKind::Affricate ||
+        gesture.kind == ArticulationGestureKind::VoicedAffricate;
+    // A voiced affricate's closure and burst are rendered from the score's own excitation, so this
+    // lane owns only its frication tail and stays silent for the release.
+    const bool voicedAffricate = gesture.kind == ArticulationGestureKind::VoicedAffricate;
+    if ((plosive || (affricate && !voicedAffricate)) && !candidate.plosive_) {
       const auto& release = plosive ? *gesture.plosive : gesture.affricate->release;
       auto source = PlosiveSource::create(release, plan_->sampleRate(), gesture.span.start);
       if (!source) return core::Result<Output>{source.error()};
@@ -74,6 +78,10 @@ core::Result<synthesis::PhraseAudio> FricationGestureStream::renderOwned(synthes
     const auto limit = inRelease ? releaseEnd : gesture.span.end;
     const auto count = static_cast<std::size_t>(std::min({static_cast<time::SampleFrame>(blockFrames_),
         limit - candidate.position_, owned.end - candidate.position_}));
+    if (voicedAffricate && inRelease) {
+      candidate.position_ += static_cast<time::SampleFrame>(count);
+      continue;
+    }
     const auto rendered = (plosive || inRelease) ? candidate.plosive_->render(count, stop)
                                                  : candidate.source_->render(count, stop);
     if (!rendered) return core::Result<Output>{rendered.error()};

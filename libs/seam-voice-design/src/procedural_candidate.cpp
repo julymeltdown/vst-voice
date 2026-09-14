@@ -26,7 +26,7 @@ core::Result<ProceduralCandidate> parseProceduralCandidateMetadata(std::string_v
   const auto& root = parsed.value();
   if (!root.isObject() || !root.find("schemaVersion") || !root.find("schemaVersion")->isInteger()) return fail("Candidate metadata has an invalid shape");
   const auto version = root.find("schemaVersion")->asInt64();
-  const bool mixed = version>=2 && version<=9;
+  const bool mixed = version>=2 && version<=10;
   if (version != 1 && !mixed) return fail("Candidate metadata version or shape is unsupported");
   // The optional revision fields are written only for the gesture families a candidate
   // actually rendered, so a recipe that declares several families legitimately produces
@@ -38,16 +38,16 @@ core::Result<ProceduralCandidate> parseProceduralCandidateMetadata(std::string_v
       "recipeHash", "style", "proceduralRevision", "compilerRevision", "markers",
       "articulationPlanRevision", "fricationRevision", "fricationStreamRevision",
       "plosiveRevision", "voicedPlosiveRevision", "affricateRevision", "approximantRevision",
-      "palatalizedRevision"};
+      "palatalizedRevision", "voicedAffricateRevision"};
   for (const auto& [name, value] : root.asObject()) {
     static_cast<void>(value);
     if (admitted.count(name) == 0U) return fail("Candidate metadata field is not admitted");
   }
   const std::size_t required = version == 1 ? 17U : 20U;
-  const std::size_t ceiling = required + (version==9 ? 5U : version==8 ? 4U : version==7 ? 3U : version==6 ? 2U : version>=4 ? 1U : 0U);
+  const std::size_t ceiling = required + (version==10 ? 6U : version==9 ? 5U : version==8 ? 4U : version==7 ? 3U : version==6 ? 2U : version>=4 ? 1U : 0U);
   // Versions one through six have a fixed field set; seven and eight carry whichever of
   // their own revision fields the rendered families needed, never fewer than their own.
-  const std::size_t floor = version==9 ? required + 1U : version==8 ? required + 1U : version==7 ? required + 2U : ceiling;
+  const std::size_t floor = version==10 ? required + 1U : version==9 ? required + 1U : version==8 ? required + 1U : version==7 ? required + 2U : ceiling;
   if (root.asObject().size() < floor || root.asObject().size() > ceiling)
     return fail("Candidate metadata version or shape is unsupported");
   const auto recipe = decodeVoiceRecipeResource(expectedRecipe, stopToken,true,true);
@@ -146,7 +146,21 @@ core::Result<ProceduralCandidate> parseProceduralCandidateMetadata(std::string_v
       return fail("Palatalized candidate requires its recipe and renderer revisions");
     result.palatalizedRevision=static_cast<std::uint32_t>(revision->asInt64());
   }
-  bool hasVowel = false, hasFrication = false, hasNasal=false, hasPlosive=false, hasVoicedFrication=false, hasVoicedPlosive=false, hasAffricate=false, hasApproximant=false, hasPalatalized=false;
+  if (version==10) {
+    const auto* revision=root.find("voicedAffricateRevision");
+    // The closure of a voiced affricate is rendered by the voiced plosive source, so that source's
+    // revision belongs to this candidate as much as the affricate model's own.
+    const auto* closure=root.find("voicedPlosiveRevision");
+    if (!revision || !revision->isInteger() ||
+        revision->asInt64()!=static_cast<std::int64_t>(ArticulationPlan::kVoicedAffricateModelRevision) ||
+        !closure || !closure->isInteger() || closure->asInt64()!=static_cast<std::int64_t>(VoicedPlosiveSource::algorithmRevision) ||
+        expectedRecipe.identity.version!="10" ||
+        result.proceduralRevision<ArticulatedStream::algorithmRevision ||
+        result.articulationPlanRevision<ArticulationPlan::algorithmRevision)
+      return fail("Voiced affricate candidate requires its recipe and renderer revisions");
+    result.voicedAffricateRevision=static_cast<std::uint32_t>(revision->asInt64());
+  }
+  bool hasVowel = false, hasFrication = false, hasNasal=false, hasPlosive=false, hasVoicedFrication=false, hasVoicedPlosive=false, hasAffricate=false, hasApproximant=false, hasPalatalized=false, hasVoicedAffricate=false;
   std::unordered_set<std::string> checkedVowelPoses;
   std::unordered_set<std::string> keys;
   time::SampleFrame previousEnd = 0;
@@ -193,6 +207,7 @@ core::Result<ProceduralCandidate> parseProceduralCandidateMetadata(std::string_v
           !(version>=3 && value->asString()=="nasal") && !(version>=4 && value->asString()=="plosive") &&
           !(version>=5 && value->asString()=="voiced-frication") && !(version>=6 && value->asString()=="voiced-plosive") &&
           !(version>=7 && value->asString()=="affricate") &&
+          !(version>=10 && value->asString()=="voiced-affricate") &&
           !(version>=8 && value->asString()=="approximant"))) return fail("Candidate gesture kind is unsupported");
       if (value->asString() == "frication") kind = ProceduralGestureKind::Frication;
       if (value->asString() == "nasal") kind = ProceduralGestureKind::Nasal;
@@ -200,6 +215,7 @@ core::Result<ProceduralCandidate> parseProceduralCandidateMetadata(std::string_v
       if (value->asString() == "voiced-frication") kind = ProceduralGestureKind::VoicedFrication;
       if (value->asString() == "voiced-plosive") kind = ProceduralGestureKind::VoicedPlosive;
       if (value->asString() == "affricate") kind = ProceduralGestureKind::Affricate;
+      if (value->asString() == "voiced-affricate") kind = ProceduralGestureKind::VoicedAffricate;
       if (value->asString() == "approximant") kind = ProceduralGestureKind::Approximant;
     }
     const auto start = entry.find("startFrame")->asInt64(), end = entry.find("endFrame")->asInt64();
@@ -272,6 +288,34 @@ core::Result<ProceduralCandidate> parseProceduralCandidateMetadata(std::string_v
       if (!tract) return core::Result<Output>{tract.error()};
       if (end-start < 1) return fail("Candidate approximant has no bounded transition span");
       hasApproximant=true;
+    } else if (kind==ProceduralGestureKind::VoicedAffricate) {
+      // A voiced affricate owns one marker and three parts: a prevoiced closure, its burst and a
+      // voiced frication tail. The recipe has to declare all three, and the tail is voiced through
+      // a resonance pose of the same phone, so a bare noise pair can never load as one.
+      const auto pose = std::find_if(recipe.value().voicedAffricates.begin(), recipe.value().voicedAffricates.end(),
+          [&](const auto& value) { return value.phone == sourcePhone && value.style == result.style; });
+      if (pose == recipe.value().voicedAffricates.end())
+        return fail("Candidate voiced affricate is not bound to its recipe style");
+      if (phonemizer::isVowelSymbol(phone) || phonemizer::isNasalSymbol(phone))
+        return fail("Voiced-affricate marker conflicts with a vowel or nasal identity");
+      const auto burst = static_cast<time::SampleFrame>(std::llround(pose->burstMilliseconds * result.sampleRate / 1000.0));
+      const auto minimumTail = static_cast<time::SampleFrame>(std::llround(
+          ArticulationPlan::kMinimumAffricateTailMilliseconds * result.sampleRate / 1000.0));
+      if (burst <= 0 || end-start <= burst + minimumTail)
+        return fail("Candidate voiced affricate has no bounded closure, burst and voiced tail");
+      const auto release = PlosiveSource::create({pose->burst,
+          static_cast<std::uint32_t>(end-start-burst-minimumTail), static_cast<std::uint32_t>(burst)},
+          result.sampleRate, origin+start);
+      if (!release) return core::Result<Output>{release.error()};
+      const auto voiced = VoicedPlosiveSource::create({{pose->burst,
+          static_cast<std::uint32_t>(end-start-burst-minimumTail), static_cast<std::uint32_t>(burst)},
+          pose->closureVoicingGain,pose->closureLowpassHz},result.sampleRate,origin+start);
+      if (!voiced) return core::Result<Output>{voiced.error()};
+      const auto tail = FricationSource::create(pose->tail, result.sampleRate, origin+end-minimumTail);
+      if (!tail) return core::Result<Output>{tail.error()};
+      const auto tract = VocalTract::create(recipe.value(), phone, result.style, result.sampleRate);
+      if (!tract) return core::Result<Output>{tract.error()};
+      hasVoicedAffricate=true;
     } else {
       const auto pose = std::find_if(recipe.value().frications.begin(), recipe.value().frications.end(), [&](const auto& value) {
         return value.phone == sourcePhone && value.style == result.style;
@@ -301,10 +345,11 @@ core::Result<ProceduralCandidate> parseProceduralCandidateMetadata(std::string_v
     for (const auto& marker:result.markers) if (!notes.insert(marker.key.noteId).second)
       return fail("Syllabic nasal candidate requires one gesture per note");
   }
-  if (mixed && ((!hasVowel && !syllabicOnly) || (version==2?!hasFrication:version==3?!hasNasal:version==4?!hasPlosive:version==5?!hasVoicedFrication:version==6?!hasVoicedPlosive:version==7?!hasAffricate:version==8?!hasApproximant:!hasPalatalized))) return fail("Articulated candidate lacks its required voiced and consonant gesture kinds");
+  if (mixed && ((!hasVowel && !syllabicOnly) || (version==2?!hasFrication:version==3?!hasNasal:version==4?!hasPlosive:version==5?!hasVoicedFrication:version==6?!hasVoicedPlosive:version==7?!hasAffricate:version==8?!hasApproximant:version==9?!hasPalatalized:!hasVoicedAffricate))) return fail("Articulated candidate lacks its required voiced and consonant gesture kinds");
   // Every plosive-family gesture is rendered through the shared release source, so a
   // candidate that carries one has to declare that source's revision.
   if ((hasPlosive || hasVoicedPlosive || hasVoicedFrication || hasAffricate) && result.plosiveRevision == 0U)
+  if ((hasPlosive || hasVoicedPlosive || hasVoicedFrication || hasAffricate || hasVoicedAffricate) && result.plosiveRevision == 0U)
     return fail("Candidate plosive revision is missing for the gestures it rendered");
   return result;
 }

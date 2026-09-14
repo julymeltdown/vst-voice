@@ -20,6 +20,7 @@ struct ProceduralCandidate final {
   std::uint32_t affricateRevision{0U};
   std::uint32_t approximantRevision{0U};
   std::uint32_t palatalizedRevision{0U};
+  std::uint32_t voicedAffricateRevision{0U};
 };
 // Parses planned gestures only; audio remains null. This is not audio verification.
 [[nodiscard]] core::Result<ProceduralCandidate> parseProceduralCandidateMetadata(

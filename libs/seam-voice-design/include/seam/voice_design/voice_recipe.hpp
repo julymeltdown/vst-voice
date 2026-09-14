@@ -75,6 +75,19 @@ struct VoiceRecipe final {
     friend bool operator==(const AffricatePose&, const AffricatePose&) = default;
   };
   std::vector<AffricatePose> affricates;
+  // Schema-ten explicit opt-in: a voiced affricate is a prevoiced closure, its release burst and a
+  // voiced frication tail. It needs a same-phone resonance pose because the tail is voiced through
+  // the tract, and it is refused rather than approximated when any of its three parts is missing.
+  struct VoicedAffricatePose final {
+    std::string phone, style;
+    FricationConfig burst;
+    FricationConfig tail;
+    double burstMilliseconds{10.0};
+    double closureVoicingGain{0.15}, closureLowpassHz{500.0};
+    double tailVoicingGain{0.35};
+    friend bool operator==(const VoicedAffricatePose&, const VoicedAffricatePose&) = default;
+  };
+  std::vector<VoicedAffricatePose> voicedAffricates;
   // Schema-eight explicit opt-in: a voiced approximant (liquid or glide) whose resonance comes
   // from the same-phone resonance pose and whose defining gesture is the bounded formant
   // transition into the neighbouring vowel. Absent poses keep their previous meaning, so an
