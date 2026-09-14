@@ -48,6 +48,11 @@ struct ArticulationGesture final {
   // Bounded formant transition for a voiced approximant, in frames. Zero means the generic
   // short crossfade a vowel-to-vowel change already uses.
   std::uint32_t transitionFrames{0U};
+  // The resonance pose this gesture leaves in force from its start, which is what makes a
+  // palatalized consonant palatalized rather than its base consonant sung with another label.
+  // Empty for every gesture whose resonance is simply the pose named after its own phone, and
+  // it is never a caller's choice: the frozen recipe has to declare the palatalized phone.
+  std::optional<std::string> posePhone{};
 };
 // Immutable prepared gestures. Explicit bindings request a DSP source; they
 // do not prove that its output realizes the named phone intelligibly.
@@ -60,8 +65,11 @@ public:
   // Versions the affricate composition rule itself: how a released closure, its burst and its
   // frication tail are split inside one gesture.
   static constexpr std::uint32_t kAffricateModelRevision{1U};
-  // Versions the approximant rule: the transition length admitted for a liquid or glide gesture.
-  static constexpr std::uint32_t kApproximantModelRevision{1U};
+   // Versions the approximant rule: the transition length admitted for a liquid or glide gesture.
+   static constexpr std::uint32_t kApproximantModelRevision{1U};
+   // Versions the palatalized rule: a base consonant's release rendered through the palatal
+   // resonance pose declared under the palatalized phone's own name.
+  static constexpr std::uint32_t kPalatalizedModelRevision{1U};
   // Worker preparation from immutable recipe data; never invents onset timing
   // or borrows source settings from another style. Not acoustic qualification.
   [[nodiscard]] static core::Result<ArticulationPlan> compileRecipe(
@@ -76,7 +84,8 @@ public:
       synthesis::PhraseFrameRange context, std::span<const std::string> nasalBindings = {},
       std::span<const PlosiveBinding> plosiveBindings = {},
       std::span<const AffricateBinding> affricateBindings = {},
-      std::span<const ApproximantBinding> approximantBindings = {});
+      std::span<const ApproximantBinding> approximantBindings = {},
+      std::span<const std::string> palatalizedPhones = {});
   [[nodiscard]] std::span<const ArticulationGesture> gestures() const noexcept { return gestures_; }
   [[nodiscard]] std::uint32_t sampleRate() const noexcept { return sampleRate_; }
   [[nodiscard]] synthesis::PhraseFrameRange context() const noexcept { return context_; }

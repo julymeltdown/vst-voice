@@ -121,10 +121,36 @@ core::Result<void> VoiceRecipe::validate() const {
                            "Approximant identity, style, resonance pose or transition is invalid or ambiguous");
     }
   }
+  if (palatalized.size() > 64U) return core::failure(core::ErrorCode::InvalidArgument,
+      "Too many palatalized poses");
+  for (const auto& pose : palatalized) {
+    // The palatal shape is declared under the palatalized phone's own name, and the release comes
+    // from a base that this recipe already binds. Without both, the phone would be the base sung
+    // with a different label, which is exactly what must not be admitted.
+    const auto sameStyle = [&](const auto& value) { return value.style == pose.style; };
+    const bool baseIsNoise = std::any_of(frications.begin(), frications.end(), [&](const auto& source) {
+             return sameStyle(source) && source.phone == pose.basePhone; }) ||
+           std::any_of(plosives.begin(), plosives.end(), [&](const auto& source) {
+             return sameStyle(source) && source.phone == pose.basePhone; }) ||
+           std::any_of(affricates.begin(), affricates.end(), [&](const auto& source) {
+             return sameStyle(source) && source.phone == pose.basePhone; });
+    const bool baseIsResonant = std::any_of(approximants.begin(), approximants.end(), [&](const auto& source) {
+             return sameStyle(source) && source.phone == pose.basePhone; }) ||
+           std::any_of(poses.begin(), poses.end(), [&](const auto& resonance) {
+             return sameStyle(resonance) && resonance.phone == pose.basePhone && resonance.nasal.has_value() &&
+                    phonemizer::isNasalSymbol(resonance.phone); });
+    if (!text(pose.phone) || !text(pose.style) || !text(pose.basePhone) || pose.phone == pose.basePhone ||
+        !identities.emplace(pose.phone, pose.style).second || !(baseIsNoise || baseIsResonant) ||
+        std::none_of(poses.begin(), poses.end(), [&](const auto& resonance) {
+          return sameStyle(resonance) && resonance.phone == pose.phone; }))
+      return core::failure(core::ErrorCode::InvalidArgument,
+          "Palatalized identity, style, base source or resonance pose is invalid or ambiguous");
+  }
   return core::success();
 }
 
 std::int64_t voiceRecipeSchemaVersion(const VoiceRecipe& recipe) noexcept {
+  if (!recipe.palatalized.empty()) return 9;
   if (!recipe.approximants.empty()) return 8;
   if (!recipe.affricates.empty()) return 7;
   if (std::any_of(recipe.plosives.begin(),recipe.plosives.end(),[](const auto& pose){return pose.voicedClosure.has_value();})) return 6;
@@ -205,6 +231,14 @@ core::Result<std::string> encodeVoiceRecipe(const VoiceRecipe& recipe) {
     }
     root.asObject().emplace("approximants", std::move(approximants));
   }
+  if (version>=9) {
+    J::Array palatalized;
+    for (const auto& pose : recipe.palatalized) {
+      palatalized.emplace_back(J::Object{{"phone", pose.phone}, {"style", pose.style},
+          {"basePhone", pose.basePhone}});
+    }
+    root.asObject().emplace("palatalized", std::move(palatalized));
+  }
   return formats::stringifyJson(root);
 }
 
@@ -217,8 +251,9 @@ core::Result<VoiceRecipe> decodeVoiceRecipe(std::string_view json) {
       !root.find("formatId")->isString() || root.find("formatId")->asString() != "com.project-seam.voice-recipe" ||
       !root.find("schemaVersion")->isInteger()) return malformed();
   const auto version = root.find("schemaVersion")->asInt64();
-  if (version < 1 || version > 8) return core::failure<VoiceRecipe>(core::ErrorCode::Unsupported, "Voice recipe schema is unsupported");
+  if (version < 1 || version > 9) return core::failure<VoiceRecipe>(core::ErrorCode::Unsupported, "Voice recipe schema is unsupported");
   if (!(version == 1 ? fields(root, {"formatId", "schemaVersion", "id", "engineId", "seed", "phonation", "modulation", "poses"}) :
+      version>=9 ? fields(root,{"formatId","schemaVersion","id","engineId","seed","phonation","modulation","poses","frications","plosives","affricates","approximants","palatalized"}) :
       version>=8 ? fields(root,{"formatId","schemaVersion","id","engineId","seed","phonation","modulation","poses","frications","plosives","affricates","approximants"}) :
       version>=7 ? fields(root,{"formatId","schemaVersion","id","engineId","seed","phonation","modulation","poses","frications","plosives","affricates"}) :
       version>=4 ? fields(root,{"formatId","schemaVersion","id","engineId","seed","phonation","modulation","poses","frications","plosives"}) :
@@ -321,6 +356,17 @@ core::Result<VoiceRecipe> decodeVoiceRecipe(std::string_view json) {
           !number(pose,"transitionMilliseconds")) return malformed();
       recipe.approximants.push_back({pose.find("phone")->asString(),
           pose.find("style")->asString(), pose.find("transitionMilliseconds")->asNumber()});
+    }
+  }
+  if (version>=9) {
+    const auto& list=*root.find("palatalized");
+    if (!list.isArray()) return malformed();
+    for (const auto& pose:list.asArray()) {
+      if (!fields(pose,{"phone","style","basePhone"}) ||
+          !pose.find("phone")->isString() || !pose.find("style")->isString() ||
+          !pose.find("basePhone")->isString()) return malformed();
+      recipe.palatalized.push_back({pose.find("phone")->asString(),
+          pose.find("style")->asString(), pose.find("basePhone")->asString()});
     }
   }
   const auto valid = recipe.validate();

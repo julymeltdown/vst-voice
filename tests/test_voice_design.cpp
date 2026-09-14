@@ -231,6 +231,51 @@ TEST_CASE("mixed voiced frication remains replayable across rates pitches and ga
     }
 }
 
+TEST_CASE("palatalized candidate metadata keeps the phone identity and its base release") {
+  using namespace seam;
+  using J=formats::JsonValue;
+  auto recipe=nasalFixture(); recipe.poses[0].nasal.reset(); recipe.poses[0].nasalCoupling=0.0;
+  recipe.poses.push_back({"ky","neutral",0.0,{{250.0,70.0,0.0},{2200.0,120.0,-3.0},{3000.0,170.0,-6.0}}});
+  recipe.plosives={{"k","neutral",{.seed=63U,.centerHz=2500.0,.bandwidthHz=2200.0,.gain=0.12},10.0}};
+  recipe.palatalized={{"ky","neutral","k"}};
+  const auto resource=voice_design::freezeVoiceRecipeResource(recipe); CHECK(resource);
+  if (!resource) return;
+  CHECK(resource.value().identity.version=="9");
+  const auto marker=[](std::uint16_t ordinal,const char* phone,const char* kind,std::int64_t start,
+      std::int64_t end,bool palatalized) {
+    return J{J::Object{{"key",domain::PhonemeKey{domain::NoteId{1U},ordinal}.toString()},
+        {"phone",phone},{"kind",kind},{"startFrame",start},{"endFrame",end},{"palatalized",palatalized}}};
+  };
+  J metadata{J::Object{{"formatId","com.project-seam.procedural-candidate"},{"schemaVersion",std::int64_t{9}},
+      {"approval","unapproved"},{"markerSemantics","planned-articulated-gestures"},
+      {"audioSha256",std::string(64U,'a')},{"renderContentHash",std::string(64U,'b')},{"renderAbi","test-abi"},
+      {"recipeId",resource.value().identity.id},{"recipeVersion","9"},{"recipeHash",resource.value().identity.contentHash},
+      {"style","neutral"},{"sampleRate",std::int64_t{48000}},{"frameCount",std::int64_t{24000}},
+      {"scoreOriginFrame",std::int64_t{0}},
+      {"proceduralRevision",std::int64_t{voice_design::ArticulatedStream::algorithmRevision}},
+      {"compilerRevision",std::int64_t{9}},
+      {"articulationPlanRevision",std::int64_t{voice_design::ArticulationPlan::algorithmRevision}},
+      {"fricationRevision",std::int64_t{1}},{"fricationStreamRevision",std::int64_t{3}},
+      {"plosiveRevision",std::int64_t{1}},{"palatalizedRevision",std::int64_t{1}},
+      {"markers",J::Array{marker(0U,"ky","plosive",0,4800,true),marker(1U,"a","oral-vowel",4800,24000,false)}}}};
+  const auto parse=[&](const J& value){return voice_design::parseProceduralCandidateMetadata(formats::stringifyJson(value),resource.value());};
+  const auto valid=parse(metadata); CHECK(valid);
+  if (!valid) return;
+  CHECK(valid.value().schemaVersion==9U); CHECK(valid.value().palatalizedRevision==1U);
+  CHECK(valid.value().markers[0].palatalized); CHECK(!valid.value().markers[1].palatalized);
+  CHECK(valid.value().markers[0].phone=="ky");
+  for (unsigned scenario=0U;scenario<6U;++scenario) {
+    auto bad=metadata;
+    if (scenario==0U) bad.asObject()["palatalizedRevision"]=std::int64_t{2};
+    if (scenario==1U) bad.asObject()["markers"].asArray()[0].asObject()["palatalized"]=false;
+    if (scenario==2U) bad.asObject()["markers"].asArray()[0].asObject()["phone"]="k";
+    if (scenario==3U) bad.asObject()["recipeVersion"]="8";
+    if (scenario==4U) bad.asObject()["markers"].asArray()[0].asObject()["kind"]="frication";
+    if (scenario==5U) bad.asObject()["palatalizedRevision"]=std::int64_t{0};
+    CHECK(!parse(bad));
+  }
+}
+
 TEST_CASE("voiced frication candidate metadata preserves recipe voicing and rejects relabeling") {
   using namespace seam;
   using J=formats::JsonValue;
@@ -397,6 +442,44 @@ TEST_CASE("plosive articulation renders exact closure burst and vowel with trans
     const std::vector<voice_design::PlosiveBinding> stops{{"k",{.seed=42U},10.0}};
     CHECK(!voice_design::ArticulationPlan::compile(phones,performance.value().phonemeTiming(),fric,rate,context,{},stops));
   }
+}
+
+TEST_CASE("palatalized recipes roundtrip as schema nine and cannot relabel a base consonant") {
+  using namespace seam;
+  auto recipe=nasalFixture();
+  recipe.plosives={{"k","neutral",{.seed=45U,.centerHz=2500.0,.bandwidthHz=2200.0,.gain=0.12},10.0}};
+  recipe.poses.push_back({"ky","neutral",0.0,{{250.0,70.0,0.0},{2200.0,120.0,-3.0},{3000.0,170.0,-6.0}}});
+  recipe.palatalized={{"ky","neutral","k"}};
+  const auto encoded=voice_design::encodeVoiceRecipe(recipe); CHECK(encoded);
+  const auto parsed=formats::parseJson(encoded.value()); CHECK(parsed);
+  if (!encoded || !parsed) return;
+  CHECK(parsed.value().find("schemaVersion")->asInt64()==9);
+  CHECK(voice_design::decodeVoiceRecipe(encoded.value()).value()==recipe);
+  const auto frozen=voice_design::freezeVoiceRecipeResource(recipe); CHECK(frozen);
+  if (!frozen) return;
+  CHECK(frozen.value().identity.version=="9");
+  CHECK(voice_design::decodeVoiceRecipeResource(frozen.value()));
+  // The base has to be bound and the palatal shape declared, because a palatalized symbol with
+  // neither half would simply be the base consonant wearing a new label.
+  auto missingPose=recipe; missingPose.poses.pop_back(); CHECK(!missingPose.validate());
+  auto unboundBase=recipe; unboundBase.plosives.front().phone="p"; CHECK(!unboundBase.validate());
+  auto ownBase=recipe; ownBase.palatalized.front().basePhone="ky"; CHECK(!ownBase.validate());
+  auto vowelBase=recipe; vowelBase.palatalized.front().basePhone="a"; CHECK(!vowelBase.validate());
+  auto duplicated=recipe; duplicated.palatalized.push_back(duplicated.palatalized.front()); CHECK(!duplicated.validate());
+  auto relabelled=recipe; relabelled.frications={{"ky","neutral",{.seed=46U}}}; CHECK(!relabelled.validate());
+  // Neither half of the declaration can be dropped from a schema-nine document, and a document
+  // that drops it is not a schema-nine document any more.
+  for (unsigned scenario=0U;scenario<3U;++scenario) {
+    auto invalid=parsed.value();
+    if (scenario==0U) *invalid.find("schemaVersion")=formats::JsonValue{std::int64_t{8}};
+    if (scenario==1U) invalid.find("palatalized")->asArray().clear();
+    if (scenario==2U) invalid.asObject().erase("palatalized");
+    CHECK(!voice_design::decodeVoiceRecipe(formats::stringifyJson(invalid)));
+  }
+  // Removing the declaration returns the same recipe to the schema it had before.
+  auto legacy=recipe; legacy.poses.pop_back(); legacy.plosives.clear(); legacy.palatalized.clear();
+  const auto legacyFrozen=voice_design::freezeVoiceRecipeResource(legacy); CHECK(legacyFrozen);
+  if (legacyFrozen) CHECK(legacyFrozen.value().identity==voice_design::freezeVoiceRecipeResource(nasalFixture()).value().identity);
 }
 
 TEST_CASE("plosive recipe bindings roundtrip and preserve existing recipe identities") {

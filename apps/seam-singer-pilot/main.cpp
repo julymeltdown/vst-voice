@@ -116,7 +116,20 @@ int main(int argc, char** argv) {
         {"u", "neutral", 0.0, {{350, 80, 0}, {1100, 100, -3}, {2500, 160, -6}}},
         {"e", "neutral", 0.0, {{500, 80, 0}, {1900, 110, -3}, {2900, 160, -6}}},
         {"o", "neutral", 0.0, {{500, 90, 0}, {900, 110, -3}, {2600, 160, -6}}}};
-    base.frications = {{"s", "neutral", {.seed = 91000U, .centerHz = 5500, .bandwidthHz = 3000, .gain = 0.12}}};
+    // A tuned alveolar sibilant, then the classes the scale needs beside it: a wider lower
+    // sibilant (sh), and the two weak broad-band non-sibilants (h, f). These are declared
+    // source parameters and spectra, not phonetic qualification.
+    base.frications = {
+        {"s", "neutral", {.seed = 91000U, .centerHz = 5500, .bandwidthHz = 3000, .gain = 0.12}},
+        {"sh", "neutral", {.seed = 91010U, .centerHz = 3500, .bandwidthHz = 3000, .gain = 0.12}},
+        {"h", "neutral", {.seed = 91011U, .centerHz = 1200, .bandwidthHz = 2400, .gain = 0.06}},
+        {"f", "neutral", {.seed = 91012U, .centerHz = 2000, .bandwidthHz = 3000, .gain = 0.08}}};
+    // A voiced fricative is noise plus voicing, and the voicing it adds is shaped by the same
+    // tract, so it needs its own same-phone resonance pose before the binding can be declared.
+    base.poses.push_back({"z", "neutral", 0.0, {{300, 80, 0}, {1700, 110, -3}, {2800, 160, -6}}});
+    base.poses.push_back({"v", "neutral", 0.0, {{350, 80, 0}, {1100, 100, -3}, {2500, 160, -6}}});
+    base.frications.push_back({"z", "neutral", {.seed = 91013U, .centerHz = 5000, .bandwidthHz = 2500, .gain = 0.10}, 0.35});
+    base.frications.push_back({"v", "neutral", {.seed = 91014U, .centerHz = 2000, .bandwidthHz = 3000, .gain = 0.08}, 0.35});
     if (nasals || custom) {
       base.id = "seam-pilot-01-syllabic-nasal-diagnostic";
       base.poses.push_back({"N", "neutral", 1.0, {{300, 80, 0}, {1400, 110, -6}, {2600, 160, -9}}, voice_design::NasalResonance{280, 80, 1200, 120}});
@@ -160,6 +173,26 @@ int main(int argc, char** argv) {
       base.approximants = {{"r", "neutral", 45.0}, {"w", "neutral", 60.0}, {"y", "neutral", 40.0}};
     }
     if (glides) base.id="seam-pilot-01-approximant-diagnostic";
+    if (custom) {
+      // The maximal diagnostic recipe also declares the palatalized consonants: each one takes
+      // its release from the consonant already bound above and carries its own palatal resonance,
+      // which is the shape its release moves through into the vowel. Experimental resonance and
+      // transition data, not phonetic qualification.
+      base.poses.push_back({"ky", "neutral", 0.0, {{250, 70, 0}, {2200, 120, -3}, {3000, 170, -6}}});
+      base.poses.push_back({"gy", "neutral", 0.0, {{250, 70, 0}, {2100, 120, -3}, {2900, 170, -6}}});
+      base.poses.push_back({"py", "neutral", 0.0, {{250, 70, 0}, {2200, 120, -3}, {3000, 170, -6}}});
+      base.poses.push_back({"by", "neutral", 0.0, {{250, 70, 0}, {2100, 120, -3}, {2900, 170, -6}}});
+      base.poses.push_back({"hy", "neutral", 0.0, {{300, 80, 0}, {2300, 120, -3}, {3100, 170, -6}}});
+      base.poses.push_back({"fy", "neutral", 0.0, {{300, 80, 0}, {1900, 120, -3}, {2700, 170, -6}}});
+      base.poses.push_back({"vy", "neutral", 0.0, {{300, 80, 0}, {1700, 120, -3}, {2600, 170, -6}}});
+      base.poses.push_back({"ry", "neutral", 0.0, {{350, 80, 0}, {1900, 110, -3}, {2400, 160, -6}}});
+      base.poses.push_back({"my", "neutral", 0.85, {{300, 80, 0}, {1900, 110, -6}, {2800, 160, -9}}, voice_design::NasalResonance{280, 80, 1200, 120}});
+      base.poses.push_back({"ny", "neutral", 0.75, {{300, 80, 0}, {2200, 110, -6}, {3000, 160, -9}}, voice_design::NasalResonance{300, 90, 1700, 120}});
+      base.palatalized = {{"ky", "neutral", "k"}, {"gy", "neutral", "g"},
+          {"py", "neutral", "p"}, {"by", "neutral", "b"}, {"hy", "neutral", "h"},
+          {"fy", "neutral", "f"}, {"vy", "neutral", "v"}, {"ry", "neutral", "r"},
+          {"my", "neutral", "m"}, {"ny", "neutral", "n"}};
+    }
     formats::JsonValue::Array runs;
     for (const std::string name : {"baseline", "higher-formants", "breathier"}) {
       auto recipe = base;

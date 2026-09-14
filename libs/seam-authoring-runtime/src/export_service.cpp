@@ -897,6 +897,10 @@ core::Result<ExportResult> ExportService::exportSetWithSources(
         [](const auto& marker) { return marker.kind==voice_design::ProceduralGestureKind::Affricate; });
     const bool approximant=std::any_of(rendered.value().proceduralMarkers.begin(),rendered.value().proceduralMarkers.end(),
         [](const auto& marker) { return marker.kind==voice_design::ProceduralGestureKind::Approximant; });
+    const bool palatalized=std::any_of(rendered.value().proceduralMarkers.begin(),rendered.value().proceduralMarkers.end(),
+        [](const auto& marker) { return marker.palatalized; });
+    const auto candidateSchema=static_cast<std::int64_t>(palatalized ? 9 : approximant ? 8 : affricate ? 7 :
+        voicedPlosive ? 6 : voicedFrication ? 5 : plosive ? 4 : nasal ? 3 : mixed ? 2 : 1);
     formats::JsonValue::Array markers;
     for (const auto& marker : rendered.value().proceduralMarkers) {
       formats::JsonValue::Object entry{
@@ -910,11 +914,14 @@ core::Result<ExportResult> ExportService::exportSetWithSources(
           marker.kind==voice_design::ProceduralGestureKind::VoicedFrication?"voiced-frication":
           marker.kind==voice_design::ProceduralGestureKind::Plosive?"plosive":
           marker.kind==voice_design::ProceduralGestureKind::Nasal?"nasal":"oral-vowel"});
+      // A palatalized gesture's source is its base consonant's, so the marker has to say so for a
+      // reader to resolve the same binding the renderer used.
+      if (candidateSchema>=9) entry.emplace("palatalized", formats::JsonValue{marker.palatalized});
       markers.emplace_back(std::move(entry));
     }
     formats::JsonValue::Object metadataFields{
         {"formatId", formats::JsonValue{"com.project-seam.procedural-candidate"}},
-        {"schemaVersion", formats::JsonValue{std::int64_t{approximant ? 8 : affricate ? 7 : voicedPlosive ? 6 : voicedFrication ? 5 : plosive ? 4 : nasal ? 3 : mixed ? 2 : 1}}}, {"approval", formats::JsonValue{"unapproved"}},
+        {"schemaVersion", formats::JsonValue{candidateSchema}}, {"approval", formats::JsonValue{"unapproved"}},
         {"markerSemantics", formats::JsonValue{mixed ? "planned-articulated-gestures" : "planned-vowel-gestures"}},
         {"audioSha256", formats::JsonValue{audio.value().sha256}},
         {"sampleRate", formats::JsonValue{static_cast<std::int64_t>(candidate.sampleRate)}},
@@ -938,6 +945,7 @@ core::Result<ExportResult> ExportService::exportSetWithSources(
     if (voicedPlosive) metadataFields.emplace("voicedPlosiveRevision",formats::JsonValue{static_cast<std::int64_t>(voice_design::VoicedPlosiveSource::algorithmRevision)});
     if (affricate) metadataFields.emplace("affricateRevision",formats::JsonValue{static_cast<std::int64_t>(voice_design::ArticulationPlan::kAffricateModelRevision)});
     if (approximant) metadataFields.emplace("approximantRevision",formats::JsonValue{static_cast<std::int64_t>(voice_design::ArticulationPlan::kApproximantModelRevision)});
+    if (palatalized) metadataFields.emplace("palatalizedRevision",formats::JsonValue{static_cast<std::int64_t>(voice_design::ArticulationPlan::kPalatalizedModelRevision)});
     const auto metadata = formats::stringifyJson(formats::JsonValue{std::move(metadataFields)}, true);
     const auto metadataPath = staging / (prefix + ".json");
     const auto saved = core::durableAtomicWriteTextNew(metadataPath, metadata);

@@ -257,6 +257,73 @@ voice_design::VoiceRecipe glideRecipe(double transitionMilliseconds = 60.0) {
   return recipe;
 }
 
+// One note whose explicit phone hint is a palatalized consonant and its vowel. The hint is the
+// inventory's own spelling, so the phone keeps its identity instead of becoming k plus y.
+struct PalatalizedRenderFixture final {
+  domain::Project project{domain::ProjectId{41U}, "Palatalized render fixture"};
+  domain::VocalRegion region;
+  domain::NoteId noteId{domain::NoteId{45U}};
+  std::vector<domain::PhonemeToken> phones;
+};
+
+PalatalizedRenderFixture palatalizedRenderFixture(const char* hint) {
+  PalatalizedRenderFixture fixture;
+  fixture.region = domain::VocalRegion{
+      .id = domain::RegionId{43U},
+      .name = "Note",
+      .durationTick = time::Tick{960},
+      .lyrics = {{domain::LyricTokenId{44U}, U"\u3042", domain::Language::Japanese}},
+      .notes = {{.id = fixture.noteId,
+                 .durationTick = time::Tick{960},
+                 .midiKey = 60U,
+                 .lyricTokenId = domain::LyricTokenId{44U},
+                 .phoneticHint = hint}}};
+  const auto pronunciation = phonemizer::JapaneseKanaPhonemizer{}.phonemize(fixture.region);
+  fixture.phones = pronunciation.tokensForNote(fixture.noteId);
+  return fixture;
+}
+
+// The base release plus the palatal pose that release moves out of, which is what makes a
+// palatalized consonant different from its base rather than the same sound under a new label.
+voice_design::VoiceRecipe palatalizedRecipe() {
+  voice_design::VoiceRecipe recipe;
+  recipe.id = "palatalized-context-test";
+  recipe.seed = 61U;
+  recipe.phonation.aspiration = 0.0;
+  recipe.poses = {{"a", "neutral", 0.0, {{800.0, 90.0, 0.0}, {1250.0, 110.0, -3.0}, {2800.0, 160.0, -6.0}}},
+                  {"ky", "neutral", 0.0, {{250.0, 70.0, 0.0}, {2200.0, 120.0, -3.0}, {3000.0, 170.0, -6.0}}}};
+  recipe.plosives = {{"k", "neutral", {.seed = 62U, .centerHz = 2500.0, .bandwidthHz = 2200.0, .gain = 0.12}, 10.0}};
+  recipe.palatalized = {{"ky", "neutral", "k"}};
+  return recipe;
+}
+
+// The energy in the 200-500 Hz region relative to the 500-1000 Hz region of one rendered window.
+// The palatal pose holds its first resonance at 250 Hz and the vowel holds its own at 800 Hz, so
+// this balance says which of the two the tract is at. A directional pose check, not an
+// intelligibility or quality claim.
+double lowResonanceBalance(std::span<const float> samples, time::SampleFrame begin, time::SampleFrame end) {
+  constexpr double kPi = 3.14159265358979323846;
+  const auto width = static_cast<std::size_t>(end - begin);
+  if (width < 2U) return 0.0;
+  double low = 0.0;
+  double high = 0.0;
+  for (std::uint32_t hz = 200U; hz <= 1000U; hz += 50U) {
+    double real = 0.0;
+    double imaginary = 0.0;
+    for (std::size_t index = 0U; index < width; ++index) {
+      const auto hann = 0.5 - 0.5 * std::cos(2.0 * kPi * static_cast<double>(index) / static_cast<double>(width - 1U));
+      const auto angle = 2.0 * kPi * static_cast<double>(hz) * static_cast<double>(index) / static_cast<double>(kRate);
+      const auto value = static_cast<double>(samples[static_cast<std::size_t>(begin) + index]) * hann;
+      real += value * std::cos(angle);
+      imaginary += value * std::sin(angle);
+    }
+    const auto energy = (real * real + imaginary * imaginary) / static_cast<double>(width * width);
+    if (hz <= 500U) low += energy;
+    else high += energy;
+  }
+  return low / (high + 1e-15);
+}
+
 }  // namespace
 
 TEST_CASE("an affricate is one gesture whose release continues into its tail") {
@@ -425,6 +492,92 @@ TEST_CASE("a voiced approximant is a tonal gesture with a bounded transition") {
   if (!voiceless) CHECK(voiceless.error().code == core::ErrorCode::InvalidArgument);
   const std::vector<ApproximantBinding> unsupported{ApproximantBinding{"l", 40.0}};
   CHECK(!approximantPlan("l", true, kNucleus, unsupported));
+}
+
+TEST_CASE("a palatalized consonant renders its own pose rather than its base consonant") {
+  using namespace seam;
+  const auto palatalized = palatalizedRenderFixture("ky a");
+  const auto plain = palatalizedRenderFixture("k a");
+  // The hint keeps the phone's identity: the inventory's key names a unit a bank has to contain,
+  // so a palatalized syllable is not rewritten into a consonant the song can already ask for.
+  CHECK(palatalized.phones.size() == 2U);
+  CHECK(palatalized.phones.front().symbol == "ky");
+  CHECK(plain.phones.front().symbol == "k");
+  if (palatalized.phones.size() != 2U || plain.phones.size() != 2U) return;
+  const auto resource = voice_design::freezeVoiceRecipeResource(palatalizedRecipe());
+  CHECK(resource);
+  if (!resource) return;
+  const auto palatalizedPerformance = synthesis::compileScorePerformance(
+      palatalized.project, palatalized.region, kRate, palatalized.phones,
+      synthesis::PhonemeTimingPolicy::ProceduralInNote);
+  const auto plainPerformance = synthesis::compileScorePerformance(
+      plain.project, plain.region, kRate, plain.phones,
+      synthesis::PhonemeTimingPolicy::ProceduralInNote);
+  CHECK(palatalizedPerformance);
+  CHECK(plainPerformance);
+  if (!palatalizedPerformance || !plainPerformance) return;
+  const auto palatalizedPlan = voice_design::ArticulationPlan::compileRecipe(
+      resource.value(), palatalizedPerformance.value(), palatalized.phones, "neutral");
+  const auto plainPlan = voice_design::ArticulationPlan::compileRecipe(
+      resource.value(), plainPerformance.value(), plain.phones, "neutral");
+  CHECK(palatalizedPlan);
+  CHECK(plainPlan);
+  if (!palatalizedPlan || !plainPlan) return;
+  const auto& onset = palatalizedPlan.value().gestures().front();
+  CHECK(onset.kind == ArticulationGestureKind::Plosive);
+  CHECK(onset.phone == "ky");
+  CHECK(onset.posePhone.has_value());
+  if (onset.posePhone) CHECK(*onset.posePhone == "ky");
+  // The release is the base consonant's own burst; the palatalization is the resonance the release
+  // moves out of, not a second noise source invented for the symbol.
+  CHECK(onset.plosive.has_value());
+  if (onset.plosive) CHECK(onset.plosive->burst.centerHz == 2500.0);
+  CHECK(!plainPlan.value().gestures().front().posePhone.has_value());
+  // A frozen recipe that does not declare the palatalized phone cannot render this plan: the base
+  // consonant under a new name is exactly what the plan may not become.
+  auto withoutPalatalized = palatalizedRecipe();
+  withoutPalatalized.palatalized.clear();
+  const auto baseOnly = voice_design::freezeVoiceRecipeResource(withoutPalatalized);
+  CHECK(baseOnly);
+  if (!baseOnly) return;
+  const auto relabelled = voice_design::ArticulatedStream::create(
+      baseOnly.value(), palatalizedPerformance.value(), palatalizedPlan.value(), "neutral");
+  CHECK(!relabelled);
+  if (!relabelled) CHECK(relabelled.error().message.find("Palatalized") != std::string::npos);
+  auto palatalizedStream = voice_design::ArticulatedStream::createFromRecipe(
+      resource.value(), palatalizedPerformance.value(), palatalized.phones, "neutral", 257U);
+  auto plainStream = voice_design::ArticulatedStream::createFromRecipe(
+      resource.value(), plainPerformance.value(), plain.phones, "neutral", 257U);
+  CHECK(palatalizedStream);
+  CHECK(plainStream);
+  if (!palatalizedStream || !plainStream) return;
+  const synthesis::PhraseFrameRange palatalizedRange{palatalizedPlan.value().context().start,
+                                                    palatalizedPlan.value().context().end};
+  const synthesis::PhraseFrameRange plainRange{plainPlan.value().context().start,
+                                               plainPlan.value().context().end};
+  const auto palatalizedAudio = palatalizedStream.value().renderOwned(palatalizedRange);
+  const auto plainAudio = plainStream.value().renderOwned(plainRange);
+  CHECK(palatalizedAudio);
+  CHECK(plainAudio);
+  if (!palatalizedAudio || !plainAudio) return;
+  const auto nucleus = palatalizedPlan.value().gestures().back().span.start;
+  const auto window = static_cast<time::SampleFrame>(kRate / 100U);
+  // The vowel leaves the palatal pose instead of already being at its own, so its opening frames
+  // hold the palatal first resonance and then settle onto the vowel. Directional, and no
+  // intelligibility claim follows.
+  const auto onsetPalatalized = lowResonanceBalance(palatalizedAudio.value().samples, nucleus, nucleus + window);
+  const auto onsetPlain = lowResonanceBalance(plainAudio.value().samples, nucleus, nucleus + window);
+  CHECK(onsetPalatalized > onsetPlain);
+  const auto settled = nucleus + static_cast<time::SampleFrame>(kRate / 20U);
+  const auto settledPalatalized = lowResonanceBalance(palatalizedAudio.value().samples, settled, settled + window);
+  const auto settledPlain = lowResonanceBalance(plainAudio.value().samples, settled, settled + window);
+  CHECK(std::abs(settledPalatalized - settledPlain) < 0.01);
+  CHECK(std::any_of(palatalizedAudio.value().samples.begin(),
+                    palatalizedAudio.value().samples.begin() + nucleus,
+                    [](float sample) { return sample != 0.0F; }));
+  CHECK(std::any_of(palatalizedAudio.value().samples.begin() + nucleus,
+                    palatalizedAudio.value().samples.end(),
+                    [](float sample) { return sample != 0.0F; }));
 }
 
 TEST_CASE("the approximant transition moves the spectrum into its vowel") {

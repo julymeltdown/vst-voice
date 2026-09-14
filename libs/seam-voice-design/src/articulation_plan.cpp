@@ -40,8 +40,34 @@ core::Result<ArticulationPlan> ArticulationPlan::compileRecipe(
   std::vector<std::string> nasals;
   for (const auto& pose:recipe.value().poses) if (pose.style==style && pose.nasal && pose.nasalCoupling>0.0 && phonemizer::isNasalSymbol(pose.phone))
     nasals.push_back(pose.phone);
+  // A palatalized consonant is not a new source: its release comes from the base consonant this
+  // recipe already binds, and its colour from the pose declared under its own name. Both are
+  // copied here so the ordinary gesture paths render it, and the phone keeps its own identity so
+  // a bank still has a unit for it rather than a relabelled base consonant.
+  std::vector<std::string> palatalizedPhones;
+  for (const auto& pose : recipe.value().palatalized) {
+    if (pose.style != style || !requestedStops.contains(pose.phone)) continue;
+    const auto inStyle = [&](const auto& base) { return base.style == style && base.phone == pose.basePhone; };
+    const auto basePlosive = std::find_if(recipe.value().plosives.begin(), recipe.value().plosives.end(), inStyle);
+    const auto baseFrication = std::find_if(recipe.value().frications.begin(), recipe.value().frications.end(), inStyle);
+    const auto baseAffricate = std::find_if(recipe.value().affricates.begin(), recipe.value().affricates.end(), inStyle);
+    const auto baseApproximant = std::find_if(recipe.value().approximants.begin(), recipe.value().approximants.end(), inStyle);
+    const auto baseNasal = std::find_if(recipe.value().poses.begin(), recipe.value().poses.end(),
+        [&](const auto& base) { return inStyle(base) && base.nasal.has_value(); });
+    if (basePlosive != recipe.value().plosives.end())
+      plosives.push_back({pose.phone, basePlosive->source, basePlosive->burstMilliseconds, basePlosive->voicedClosure});
+    else if (baseAffricate != recipe.value().affricates.end())
+      affricates.push_back({pose.phone, baseAffricate->burst, baseAffricate->tail, baseAffricate->burstMilliseconds});
+    else if (baseFrication != recipe.value().frications.end())
+      bindings.push_back({pose.phone, baseFrication->source, baseFrication->voicingGain});
+    else if (baseApproximant != recipe.value().approximants.end())
+      approximants.push_back({pose.phone, baseApproximant->transitionMilliseconds});
+    else if (baseNasal != recipe.value().poses.end()) nasals.push_back(pose.phone);
+    else continue;
+    palatalizedPhones.push_back(pose.phone);
+  }
   const synthesis::PhraseFrameRange context{notes.front().startFrame, notes.back().endFrame};
-  auto plan = compile(phones, performance.phonemeTiming(), bindings, performance.sampleRate(), context,nasals,plosives,affricates,approximants);
+  auto plan = compile(phones, performance.phonemeTiming(), bindings, performance.sampleRate(), context,nasals,plosives,affricates,approximants,palatalizedPhones);
   if (!plan) return core::failure<ArticulationPlan>(plan.error().code,
       "Recipe '" + recipe.value().id + "', style '" + std::string(style) + "': " + plan.error().message);
   std::map<domain::NoteId, const synthesis::ScoreNoteSpan*> scoreNotes;
@@ -58,6 +84,10 @@ core::Result<ArticulationPlan> ArticulationPlan::compileRecipe(
       const auto tract = VocalTract::create(recipe.value(), gesture.phone, style, performance.sampleRate());
       if (!tract) return core::Result<ArticulationPlan>{tract.error()};
     }
+    if (gesture.posePhone) {
+      const auto tract = VocalTract::create(recipe.value(), *gesture.posePhone, style, performance.sampleRate());
+      if (!tract) return core::Result<ArticulationPlan>{tract.error()};
+    }
   }
   if (checkedVowels.empty() || covered.size() != notes.size()) return core::failure<ArticulationPlan>(
       core::ErrorCode::Unsupported, "Recipe articulation requires voiced poses and complete score-note coverage");
@@ -72,14 +102,18 @@ core::Result<ArticulationPlan> ArticulationPlan::compile(
     synthesis::PhraseFrameRange context, std::span<const std::string> nasalBindings,
     std::span<const PlosiveBinding> plosiveBindings,
     std::span<const AffricateBinding> affricateBindings,
-    std::span<const ApproximantBinding> approximantBindings) {
+    std::span<const ApproximantBinding> approximantBindings,
+    std::span<const std::string> palatalizedPhones) {
   const auto invalid = [](const char* message) { return core::failure<ArticulationPlan>(core::ErrorCode::InvalidArgument, message); };
+  const std::set<std::string,std::less<>> palatalized{palatalizedPhones.begin(), palatalizedPhones.end()};
   if (phones.empty() || phones.size() > 16384U || phones.size() != timing.size() || bindings.size() > 64U || nasalBindings.size()>64U || plosiveBindings.size()>64U || affricateBindings.size()>64U || approximantBindings.size()>64U ||
       sampleRate < 8000U || sampleRate > 384000U || context.start < 0 || context.end <= context.start || context.end > (time::SampleFrame{1} << 52))
     return invalid("Articulation input or context exceeds bounds");
   std::map<std::string, FricationBinding, std::less<>> sources;
   std::set<std::string,std::less<>> nasals;
-  for (const auto& phone:nasalBindings) if (!phonemizer::isNasalSymbol(phone) || !nasals.insert(phone).second)
+  // A palatalized nasal is admitted here as well: its resonance pose is the nasal one declared
+  // under its own name, so it belongs on the nasal path rather than the noise paths.
+  for (const auto& phone:nasalBindings) if ((!phonemizer::isNasalSymbol(phone) && palatalized.count(phone) == 0U) || !nasals.insert(phone).second)
     return invalid("Nasal binding is unsupported or duplicated");
   for (const auto& binding : bindings) {
     if (binding.phone.empty() || binding.phone.size() > 128U ||
@@ -93,8 +127,10 @@ core::Result<ArticulationPlan> ArticulationPlan::compile(
   std::map<domain::PhonemeKey, const synthesis::PhonemeTimingAnchor*> anchors;
   std::map<std::string, PlosiveBinding, std::less<>> stops;
   for (const auto& binding : plosiveBindings) {
-    const bool validPhone=binding.voicedClosure ? (binding.phone=="b" || binding.phone=="d" || binding.phone=="g") :
-        (binding.phone=="p" || binding.phone=="t" || binding.phone=="k");
+    // A palatalized consonant carries its base's closure and burst, so its phone name is not one
+    // of the plain plosive symbols, but it is admitted only when the caller named it as one.
+    const bool validPhone=palatalized.count(binding.phone)!=0U || (binding.voicedClosure ? (binding.phone=="b" || binding.phone=="d" || binding.phone=="g") :
+        (binding.phone=="p" || binding.phone=="t" || binding.phone=="k"));
     if (!validPhone ||
         (binding.voicedClosure && (!std::isfinite(binding.voicedClosure->gain) || binding.voicedClosure->gain<=0.0 || binding.voicedClosure->gain>0.5 ||
             !std::isfinite(binding.voicedClosure->lowpassHz) || binding.voicedClosure->lowpassHz<40.0 || binding.voicedClosure->lowpassHz>2000.0)) ||
@@ -123,7 +159,7 @@ core::Result<ArticulationPlan> ArticulationPlan::compile(
   for (const auto& binding : approximantBindings) {
     // A voiced liquid or glide. The binding carries only the transition length; the resonance
     // bank it moves to is the recipe's own same-phone pose, which the stream checks.
-    if ((binding.phone != "r" && binding.phone != "w" && binding.phone != "y") ||
+    if ((binding.phone != "r" && binding.phone != "w" && binding.phone != "y" && palatalized.count(binding.phone) == 0U) ||
         sources.contains(binding.phone) || stops.contains(binding.phone) ||
         affricates.contains(binding.phone) ||
         !std::isfinite(binding.transitionMilliseconds) ||
@@ -296,7 +332,8 @@ core::Result<ArticulationPlan> ArticulationPlan::compile(
     result.gestures_.push_back({vowel ? ArticulationGestureKind::OralVowel : nasal ? ArticulationGestureKind::Nasal :
         transitionFrames > 0U ? ArticulationGestureKind::Approximant :
         affricate ? ArticulationGestureKind::Affricate : voicedPlosive ? ArticulationGestureKind::VoicedPlosive : plosive ? ArticulationGestureKind::Plosive : voicingGain ? ArticulationGestureKind::VoicedFrication : ArticulationGestureKind::Frication,
-        phone.key, phone.symbol, {start, end}, source, plosive, voicingGain, voicedPlosive, affricate, transitionFrames});
+        phone.key, phone.symbol, {start, end}, source, plosive, voicingGain, voicedPlosive, affricate, transitionFrames,
+        palatalized.count(phone.symbol) == 0U ? std::optional<std::string>{} : std::optional<std::string>{phone.symbol}});
   }
   std::sort(result.gestures_.begin(), result.gestures_.end(), [](const auto& a, const auto& b) { return a.span.start < b.span.start; });
   for (std::size_t index = 1U; index < result.gestures_.size(); ++index)

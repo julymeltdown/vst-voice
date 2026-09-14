@@ -36,7 +36,7 @@ bool isVoicedSymbol(std::string_view symbol) noexcept {
   return symbol != "pau" && symbol != "sil" && symbol != "cl" &&
          symbol != "k" && symbol != "ky" && symbol != "kk" && symbol != "s" &&
          symbol != "sh" && symbol != "t" && symbol != "ch" &&
-         symbol != "ts" && symbol != "h" && symbol != "hh" && symbol != "hy" &&
+         symbol != "ts" && symbol != "h" && symbol != "hh" && symbol != "hy" && symbol != "fy" &&
          symbol != "f" && symbol != "p" && symbol != "py" && symbol != "pp" &&
          symbol != "tt" && symbol != "th" && symbol != "ph" && symbol != "kh" &&
          symbol != "ss" && symbol != "cch" && symbol != "chh";

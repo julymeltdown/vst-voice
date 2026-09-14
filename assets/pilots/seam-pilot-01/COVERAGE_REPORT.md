@@ -2,8 +2,10 @@
 
 Engineering measurement, not a musical one. It records which of the pilot
 inventory's own declared classes the pilot recipe can actually prepare, and why the
-rest cannot. No audio was rendered, no listener heard anything, and nothing here is
-a release decision.
+rest cannot. No listener heard anything, and nothing here is a release decision. The
+ten palatalized classes were rendered and collected afterwards through the ordinary
+campaign path; that run is recorded in
+`docs/implementation/INTEGRATED_SINGER_EXECUTION.md`.
 
 ## Reproduce
 
@@ -21,50 +23,60 @@ build/release/seam_voicebank_cli inspect-generation-coverage \
   /tmp/pilot-ws /tmp/pilot-max/baseline-recipe.json assets/pilots/seam-pilot-01/coverage-report.json
 ```
 
+This measurement's recipe is schema nine (`3a2b5d61...`) against the pilot producer
+`9ac6387d...`.
+
 ## Result
 
 | Measure | Value |
 |---|---|
 | Assignments inspected | 1026 |
-| Prepared (snapshot compiled) | **498** |
-| Refused | **528** |
+| Prepared (snapshot compiled) | **948** |
+| Refused | **78** |
 | Declared coverage keys (style x key) | 342 |
-| Keys with a prepared class | 166 |
+| Keys with a prepared class | 316 |
 | Phones declared | 41 |
-| Phones covered by a prepared class | 20 |
+| Phones covered by a prepared class | 35 |
 | Coverage kinds declared | 8 |
 | Kinds with any prepared class | 5 (cv, vc, vv, sustain, special) |
 | Kinds entirely refused | 3 (release, glottal-attack, breath) |
 
-Prepared phones: `N a b ch d e g i k m n o p r s t ts u w y`.
-Missing phones: `R br by cl f fy glottal gy h hy j ky my ny pau py ry sh v vy z`.
-Prepared keys, by kind: cv 210, vc 210, vv 60, sustain 15, special 3.
+Prepared phones: `N a b by ch d e f fy g gy h hy i k ky m my n ny o p py r ry s sh t ts u v vy w y z`.
+Missing phones: `R br cl glottal j pau`.
 
-## Why the 528 refusals happen
+Prepared assignments, by kind: cv 435, vc 435, vv 60, sustain 15, special 3.
+
+## Why the 78 refusals happen
 
 | Refusals | Cause | Nature |
 |---|---|---|
-| 300 | `requires a supported voiced articulation model` for z, j, v, gy, ny, by, my, ry, fy, vy | Missing model |
-| 186 | `has no explicit frication or released-stop source` for sh, h, f, ky, hy, py, and the closure/pause events | Missing model |
-| 42 | `Inventory phone sequence is not supported by the Japanese score adapter` for `R` (release) and `glottal` | Adapter gap |
+| 30 | `requires a supported voiced articulation model` for `j` | Missing model: a voiced affricate needs a prevoiced closure and voiced frication, and this build refuses rather than substituting an unvoiced pair |
+| 42 | `Inventory phone sequence is not supported by the Japanese score adapter` for `R`, `glottal` and the `br` sequences | Adapter gap |
+| 6 | `has no explicit frication or released-stop source` for `pau` and `cl` | Inventory question: a pause and a closure are events, not recorded units |
 
-Every refusal is now a missing model or an unresolvable symbol. That was not true of the
-first measurement of this report, which recorded 210 vowel-to-coda assignments refused
-with "requires a resolved start and associated nucleus" even though those phones had
-models and prepared as onsets. The cause was the explicit phone hint, not the gesture
-model: a hint is a bare sequence of symbols and every ordinary consonant's role was
-inferred from its symbol alone, so a consonant written after the vowel became an "onset"
-with nothing to attach to. Hints now give an ordinary consonant its place in the
-syllable, which is what turned those 210 assignments into prepared vowel-to-coda units.
+## What changed since the first measurement
+
+The first measurement of this report refused 528 assignments. Three repairs closed 450 of
+them, and each kept the phone's identity rather than rewriting the syllable:
+
+1. **Explicit hint roles (210).** A consonant written after a vowel in a hint became a coda
+   with its own resolved start instead of an onset with nothing to attach to.
+2. **Frication bindings (150).** `sh`, `h` and `f` are declared unvoiced frication, and `z` and
+   `v` are declared voiced frication with the same-phone resonance pose the voiced source
+   requires. `fy` also became voiceless, which it always was: the phonemizer listed `hy` as
+   voiceless and had left `fy` out of that list.
+3. **Palatalized consonants (300).** `ky gy hy py by my ny ry fy vy` are declared in recipe
+   schema nine as a base consonant's release carried through the palatal pose named after the
+   palatalized phone itself: `ky` takes its release from `k` and its colour from the `ky` pose, so a
+   bank has a `ky` unit rather than a relabelled `k`.
 
 ## Consequences for the next steps
 
-1. Just over half the inventory (498 of 1026 assignments) still cannot prepare, entirely
-   for absent models and two unresolvable symbols. Those need new source models, not a
-   repaired compiler.
-2. A campaign over the whole inventory still cannot be planned, so the rendered preflight
-   must run over a renderable subset: the 166 prepared coverage keys, or a
-   coverage-complete selection across the five kinds that prepare.
-3. The classes that prepare now include the vowel-to-coda units the bank was most
-   obviously missing, and each renders as two ordered gestures, the vowel and then the
-   coda, rather than as one stretched gesture.
+1. 78 of 1026 assignments still cannot prepare, and none of them needs a repaired compiler:
+   a voiced affricate source (`j`), two adapter symbols (`R`, `glottal`) and the closure series
+   (`br`, `pau`, `cl`).
+2. A campaign over the whole inventory still cannot be planned, so the rendered preflight runs
+   over a renderable subset; the palatalized subset used for this evidence is retained under
+   `build/pilot-01/palatalized-campaign` with its workspace beside it.
+3. Every prepared class is declared source parameters and spectra, not phonetic qualification.
+   Being able to prepare a `ky` unit says nothing about whether it sounds like a singer.

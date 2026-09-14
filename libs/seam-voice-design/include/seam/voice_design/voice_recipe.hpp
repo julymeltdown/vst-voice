@@ -85,6 +85,15 @@ struct VoiceRecipe final {
     friend bool operator==(const ApproximantPose&, const ApproximantPose&) = default;
   };
   std::vector<ApproximantPose> approximants;
+  // Schema-nine explicit opt-in: a palatalized consonant borrows its base consonant's release
+  // source and is coloured by the resonance pose declared under its own phone name, so きゃ is
+  // not か sung longer. Absent poses keep their previous meaning, so a recipe that merely names
+  // a palatalized symbol never becomes one by virtue of the newer build reading it.
+  struct PalatalizedPose final {
+    std::string phone, style, basePhone;
+    friend bool operator==(const PalatalizedPose&, const PalatalizedPose&) = default;
+  };
+  std::vector<PalatalizedPose> palatalized;
   [[nodiscard]] core::Result<void> validate() const;
   friend bool operator==(const VoiceRecipe&, const VoiceRecipe&) = default;
 };

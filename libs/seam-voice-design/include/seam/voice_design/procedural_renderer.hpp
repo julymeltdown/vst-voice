@@ -28,6 +28,9 @@ struct ProceduralPhoneMarker final {
   synthesis::PhraseFrameRange ownedSpan;
   bool startClipped{false}, endClipped{false};
   ProceduralGestureKind kind{ProceduralGestureKind::OralVowel};
+  // True when the gesture is a palatalized consonant whose source is its base consonant's and
+  // whose resonance is the pose named after the gesture's own phone.
+  bool palatalized{false};
   friend bool operator==(const ProceduralPhoneMarker&, const ProceduralPhoneMarker&) = default;
 };
 struct SustainedPoseResult final {

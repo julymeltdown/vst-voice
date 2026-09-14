@@ -1,5 +1,47 @@
 # Integrated Singer Execution
 
+## A palatalized consonant is its base's release through its own pose
+
+The pilot inventory names `ky gy hy py by my ny ry fy vy`, and the phonemizer emits them as single
+phones: きゃ is `ky` plus `a`, not `k` plus `y` plus `a`. The engine refused every one of them
+because the style bound only a plosive `k` and the plan had no way to say what makes `ky` different.
+Declaring `ky` as a plosive would have been substituted noise, so recipe schema nine declares the
+relation instead: `palatalized` binds a phone to the base consonant whose release it borrows and
+requires a same-style resonance pose named after the palatalized phone itself. Validation also
+requires the base to be bound in the same style, whether as a frication, a plosive, an affricate, an
+approximant or a nasal pose, and refuses a phone that names itself as its own base.
+
+The articulation plan copies the base's release under the palatalized phone's own name, so the marker
+and the bank unit keep `ky` rather than becoming a second `k`, and marks the gesture with the pose it
+has to carry. The stream puts that pose in force from the gesture's first frame even when the gesture
+is unvoiced, which is what colours the release and the vowel's onset transition; it also refuses a
+plan whose pose and frozen recipe disagree, so a base consonant cannot pass as its palatalized form.
+Candidate metadata version nine records the same fact with a per-marker flag and a model revision, so
+a collected take cannot be reread as a plain base consonant.
+
+Two smaller repairs came with it. The fricatives the scale needs were unbound: `sh`, `h` and `f` are now
+declared unvoiced frication and `z` and `v` are declared voiced frication with the same-phone resonance
+pose that source requires, which closed 150 assignments. And `fy` was classified as voiced while `hy` was
+not, so ふゃ could never have been rendered as the voiceless fricative it is; the phonemizer's voiceless
+list now contains it.
+
+Coverage moved from 498 to 648 with the fricatives and to **948 of 1026** assignments with the
+palatalized consonants. The 78 that remain need a voiced affricate source (`j`, which needs a prevoiced
+closure and voiced frication), two adapter symbols (`R`, `glottal`) and the closure series (`br`, `pau`, `cl`).
+
+Rendered evidence: an eight-unit campaign (`ky gy hy my ry fy vy` onsets and a `ky` coda) planned,
+preflighted and advanced with no hand-edited JSON. The preflight passed with seven phrases produced
+and zero defective, and the campaign collected eight takes, all in ` MARKER_REVIEW `, all 24000 frames at
+48000 Hz, peaks 0.0336 to 0.1020 and nonzero coverage 90% to 100%, with the 90% being the two
+plosive closures. The workspace, the campaign, its preflight report and the recipe are retained under
+`build/pilot-01/palatalized-{ws,campaign}` and `build/pilot-01/palatalized-recipe.json`. Suites: `seam_voice_design_tests `
+36 of 36, `seam_articulation_context_tests ` 10 of 10 including a case that requires the palatalized
+onset to leave the palatal pose and then settle onto the same vowel as the plain one.
+
+Not claimed. No listener heard anything, no reviewer judged anything and no unit acceptance moved.
+The burst spectrum is still the base consonant's and the palatalization is the resonance transition,
+so this says nothing about whether a `ky` sounds like a singer, and every parameter here is declared
+engineering data rather than phonetic qualification.
 ## A review decision now covers a bank, not one unit
 
 Every lifecycle regression in this repository drove a single assignment and a single take, so
@@ -380,7 +422,7 @@ M1.P2's ten required changes:
 
 | # | Required change | State |
 |---|---|---|
-| 1 | Articulation-source description per phone class | Admitted: oral vowel, nasal, frication, voiced frication, released stop, voiced stop, affricate, approximant, vowel-to-coda placement for ordinary consonants, and gesture silence. Not admitted: voiced fricatives, voiced affricates, the palatalized clusters, a standalone unreleased stop, and an explicit breath event. |
+| 1 | Articulation-source description per phone class | Admitted: oral vowel, nasal, frication, voiced frication, released stop, voiced stop, affricate, approximant, palatalized consonants that borrow a base release, vowel-to-coda placement for ordinary consonants, and gesture silence. Not admitted: voiced affricates, a standalone unreleased stop, and an explicit breath event. |
 | 2 | Phrase context beyond the owning note | Open. Placement inside a note is now complete for onset and coda, so what remains is context reaching past a gesture's own note: pre-onset intervals and a release the next note inherits. The 210 refusals once attributed here were the hint's role inference and are gone. |
 | 3 | Ordered spans separated from a bounded transition plan | Partial. Ordered linguistic spans are preserved and the approximant transition is a bounded declared window, but there is no shared transition-plan type and no coarticulation that crosses a gesture boundary. |
 | 4 | Chunk-invariant rendering | Done, including the new gesture. |
@@ -389,7 +431,7 @@ M1.P2's ten required changes:
 | 7 | Resumable campaign orchestration | Landed (`generation_campaign`), one bounded batch per advance. |
 | 8 | Prepare-render-collect transaction with durable receipts | Landed, including conflicts on external edits and recovery of an uncertain commit. |
 | 9 | Aggregate budget preflight | Landed: per-batch, aggregate frame and estimated-byte limits, retained-storage inspection and cancellation. |
-| 10 | Held-out pilot phrase set before the full inventory | Landed, run and followed through: both preflights passed, and the campaigns behind them completed with 498 takes committed as unapproved marker-review material across three pitch layers (report in `CAMPAIGN_REPORT.md`, defect list in `coverage-report.json`). The 528 model-less assignments still cannot be planned, so the inventory as a whole is not yet generatable end to end. |
+| 10 | Held-out pilot phrase set before the full inventory | Landed, run and followed through: both preflights passed, and the campaigns behind them completed with 498 takes committed as unapproved marker-review material across three pitch layers (report in `CAMPAIGN_REPORT.md`, defect list in `coverage-report.json`). The fricative and palatalized repairs took coverage to 948 of 1026 assignments and eight more classes were rendered and collected; the 78 that remain still cannot be planned, so the inventory as a whole is not yet generatable end to end. |
 
 So seven of the ten are landed, two are partial, and one remains open (phrase context
 beyond the owning note).
@@ -403,10 +445,9 @@ M1.P1's coverage-report requirement is satisfied: `inspect-generation-coverage`
 retains a canonical per-class report of what a recipe can prepare, and the real pilot
 inventory's result is committed at
 `assets/pilots/seam-pilot-01/coverage-report.json`. It is what makes the next repair
-choice evidence-based rather than a guess: of the 528 assignments the recipe still refuses,
-300 name a phone that needs a voiced articulation model, 186 name one with no frication or
-released-stop source, and 42 are adapter symbols; the 210 refusals that were the coda and
-hint-role model are gone rather than pending.
+choice evidence-based rather than a guess: of the 1026 assignments it prepares 948 and still
+refuses 78 -- a voiced affricate source (30), two adapter symbols with the breath sequence (42),
+and the pause and closure events (6). The 210 coda and 186 frication refusals are gone.
 
 ## An affricate is one gesture, not a stop followed by a fricative
 

@@ -25,7 +25,7 @@ core::Result<std::vector<voice_design::ProceduralPhoneMarker>> projectProcedural
     for (const auto& gesture : plan.value().gestures()) {
       const auto start = std::max(owned.start, gesture.span.start), end = std::min(owned.end, gesture.span.end);
       if (start < end) result.push_back({gesture.key, gesture.phone, {start, end}, start != gesture.span.start, end != gesture.span.end,
-          gesture.kind});
+          gesture.kind, gesture.posePhone.has_value()});
     }
     return result;
   }

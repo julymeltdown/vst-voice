@@ -26,7 +26,7 @@ core::Result<ProceduralCandidate> parseProceduralCandidateMetadata(std::string_v
   const auto& root = parsed.value();
   if (!root.isObject() || !root.find("schemaVersion") || !root.find("schemaVersion")->isInteger()) return fail("Candidate metadata has an invalid shape");
   const auto version = root.find("schemaVersion")->asInt64();
-  const bool mixed = version>=2 && version<=8;
+  const bool mixed = version>=2 && version<=9;
   if (version != 1 && !mixed) return fail("Candidate metadata version or shape is unsupported");
   // The optional revision fields are written only for the gesture families a candidate
   // actually rendered, so a recipe that declares several families legitimately produces
@@ -37,16 +37,17 @@ core::Result<ProceduralCandidate> parseProceduralCandidateMetadata(std::string_v
       "frameCount", "scoreOriginFrame", "renderContentHash", "renderAbi", "recipeId", "recipeVersion",
       "recipeHash", "style", "proceduralRevision", "compilerRevision", "markers",
       "articulationPlanRevision", "fricationRevision", "fricationStreamRevision",
-      "plosiveRevision", "voicedPlosiveRevision", "affricateRevision", "approximantRevision"};
+      "plosiveRevision", "voicedPlosiveRevision", "affricateRevision", "approximantRevision",
+      "palatalizedRevision"};
   for (const auto& [name, value] : root.asObject()) {
     static_cast<void>(value);
     if (admitted.count(name) == 0U) return fail("Candidate metadata field is not admitted");
   }
   const std::size_t required = version == 1 ? 17U : 20U;
-  const std::size_t ceiling = required + (version==8 ? 4U : version==7 ? 3U : version==6 ? 2U : version>=4 ? 1U : 0U);
+  const std::size_t ceiling = required + (version==9 ? 5U : version==8 ? 4U : version==7 ? 3U : version==6 ? 2U : version>=4 ? 1U : 0U);
   // Versions one through six have a fixed field set; seven and eight carry whichever of
   // their own revision fields the rendered families needed, never fewer than their own.
-  const std::size_t floor = version==8 ? required + 1U : version==7 ? required + 2U : ceiling;
+  const std::size_t floor = version==9 ? required + 1U : version==8 ? required + 1U : version==7 ? required + 2U : ceiling;
   if (root.asObject().size() < floor || root.asObject().size() > ceiling)
     return fail("Candidate metadata version or shape is unsupported");
   const auto recipe = decodeVoiceRecipeResource(expectedRecipe, stopToken,true,true);
@@ -135,13 +136,24 @@ core::Result<ProceduralCandidate> parseProceduralCandidateMetadata(std::string_v
       return fail("Approximant candidate requires its recipe and renderer revisions");
     result.approximantRevision=static_cast<std::uint32_t>(revision->asInt64());
   }
-  bool hasVowel = false, hasFrication = false, hasNasal=false, hasPlosive=false, hasVoicedFrication=false, hasVoicedPlosive=false, hasAffricate=false, hasApproximant=false;
+  if (version==9) {
+    const auto* revision=root.find("palatalizedRevision");
+    if (!revision || !revision->isInteger() ||
+        revision->asInt64()!=static_cast<std::int64_t>(ArticulationPlan::kPalatalizedModelRevision) ||
+        expectedRecipe.identity.version!="9" ||
+        result.proceduralRevision<ArticulatedStream::algorithmRevision ||
+        result.articulationPlanRevision<ArticulationPlan::algorithmRevision)
+      return fail("Palatalized candidate requires its recipe and renderer revisions");
+    result.palatalizedRevision=static_cast<std::uint32_t>(revision->asInt64());
+  }
+  bool hasVowel = false, hasFrication = false, hasNasal=false, hasPlosive=false, hasVoicedFrication=false, hasVoicedPlosive=false, hasAffricate=false, hasApproximant=false, hasPalatalized=false;
   std::unordered_set<std::string> checkedVowelPoses;
   std::unordered_set<std::string> keys;
   time::SampleFrame previousEnd = 0;
   for (const auto& entry : markers->asArray()) {
     if (stopToken.stop_requested()) return cancelled();
-    if (!entry.isObject() || entry.asObject().size() != (mixed ? 5U : 4U) || !entry.find("key") || !entry.find("key")->isString() ||
+    if (!entry.isObject() || entry.asObject().size() != (mixed ? (version>=9 ? 6U : 5U) : 4U) ||
+        !entry.find("key") || !entry.find("key")->isString() ||
         !entry.find("phone") || !entry.find("phone")->isString() || !entry.find("startFrame") || !entry.find("startFrame")->isInteger() ||
         !entry.find("endFrame") || !entry.find("endFrame")->isInteger()) return fail("Candidate marker shape is invalid");
     const auto& key = entry.find("key")->asString();
@@ -154,6 +166,26 @@ core::Result<ProceduralCandidate> parseProceduralCandidateMetadata(std::string_v
         note == 0U || ordinal >= 16384U || key != domain::PhonemeKey{domain::NoteId{note}, static_cast<std::uint16_t>(ordinal)}.toString() || !keys.insert(key).second)
       return fail("Candidate phoneme key is noncanonical or duplicated");
     const auto& phone = entry.find("phone")->asString();
+    bool palatalized = false;
+    if (version >= 9) {
+      const auto* flag = entry.find("palatalized");
+      if (!flag || !flag->isBool()) return fail("Candidate palatalized flag is missing or invalid");
+      palatalized = flag->asBool();
+    }
+    // A palatalized consonant renders its base consonant's source under its own phone name, so
+    // the binding lookups below resolve to the base the recipe names while the resonance pose
+    // stays the palatalized phone's own. A reader that skipped this would be checking the wrong
+    // binding, which is exactly how a base consonant could pass as its palatalized form.
+    std::string sourcePhone = phone;
+    if (palatalized) {
+      const auto binding = std::find_if(recipe.value().palatalized.begin(), recipe.value().palatalized.end(),
+          [&](const auto& value) { return value.phone == phone && value.style == result.style; });
+      if (binding == recipe.value().palatalized.end())
+        return fail("Candidate palatalized phone is not declared by its recipe");
+      if (phonemizer::isVowelSymbol(phone)) return fail("Palatalized marker conflicts with a vowel identity");
+      sourcePhone = binding->basePhone;
+      hasPalatalized = true;
+    }
     auto kind = ProceduralGestureKind::OralVowel;
     if (mixed) {
       const auto* value = entry.find("kind");
@@ -183,7 +215,10 @@ core::Result<ProceduralCandidate> parseProceduralCandidateMetadata(std::string_v
       }
       hasVowel = true;
     } else if (kind==ProceduralGestureKind::Nasal) {
-      if (!phonemizer::isNasalSymbol(phone)) return fail("Candidate nasal symbol is unsupported");
+      // A palatalized nasal keeps its own identity and takes the base nasal's resonance, so the
+      // symbol check follows the base rather than refusing a phone the recipe declared.
+      if (!phonemizer::isNasalSymbol(phone) && !(palatalized && phonemizer::isNasalSymbol(sourcePhone)))
+        return fail("Candidate nasal symbol is unsupported");
       if (checkedVowelPoses.insert(phone).second) {
         const auto tract=VocalTract::create(recipe.value(),phone,result.style,result.sampleRate);
         if (!tract) return core::Result<Output>{tract.error()};
@@ -191,7 +226,7 @@ core::Result<ProceduralCandidate> parseProceduralCandidateMetadata(std::string_v
       hasNasal=true;
     } else if (kind==ProceduralGestureKind::Plosive || kind==ProceduralGestureKind::VoicedPlosive) {
       const auto pose = std::find_if(recipe.value().plosives.begin(), recipe.value().plosives.end(), [&](const auto& value) {
-        return value.phone == phone && value.style == result.style;
+        return value.phone == sourcePhone && value.style == result.style;
       });
       if (pose == recipe.value().plosives.end()) return fail("Candidate plosive is not bound to its recipe style");
       const bool voiced=kind==ProceduralGestureKind::VoicedPlosive;
@@ -211,7 +246,7 @@ core::Result<ProceduralCandidate> parseProceduralCandidateMetadata(std::string_v
       hasPlosive=true;
     } else if (kind==ProceduralGestureKind::Affricate) {
       const auto pose = std::find_if(recipe.value().affricates.begin(), recipe.value().affricates.end(), [&](const auto& value) {
-        return value.phone == phone && value.style == result.style;
+        return value.phone == sourcePhone && value.style == result.style;
       });
       if (pose == recipe.value().affricates.end()) return fail("Candidate affricate is not bound to its recipe style");
       const auto burst = static_cast<time::SampleFrame>(std::llround(pose->burstMilliseconds * result.sampleRate / 1000.0));
@@ -228,7 +263,7 @@ core::Result<ProceduralCandidate> parseProceduralCandidateMetadata(std::string_v
       hasAffricate=true;
     } else if (kind==ProceduralGestureKind::Approximant) {
       const auto pose = std::find_if(recipe.value().approximants.begin(), recipe.value().approximants.end(), [&](const auto& value) {
-        return value.phone == phone && value.style == result.style;
+        return value.phone == sourcePhone && value.style == result.style;
       });
       if (pose == recipe.value().approximants.end()) return fail("Candidate approximant is not bound to its recipe style");
       if (phonemizer::isVowelSymbol(phone) || phonemizer::isNasalSymbol(phone))
@@ -239,7 +274,7 @@ core::Result<ProceduralCandidate> parseProceduralCandidateMetadata(std::string_v
       hasApproximant=true;
     } else {
       const auto pose = std::find_if(recipe.value().frications.begin(), recipe.value().frications.end(), [&](const auto& value) {
-        return value.phone == phone && value.style == result.style;
+        return value.phone == sourcePhone && value.style == result.style;
       });
       if (pose == recipe.value().frications.end()) return fail("Candidate frication is not bound to its recipe style");
       const bool voiced=kind==ProceduralGestureKind::VoicedFrication;
@@ -254,7 +289,8 @@ core::Result<ProceduralCandidate> parseProceduralCandidateMetadata(std::string_v
       if (!source) return core::Result<Output>{source.error()};
       hasFrication = true;
     }
-    result.markers.push_back({{domain::NoteId{note}, static_cast<std::uint16_t>(ordinal)}, phone, {start, end}, false, false, kind});
+    result.markers.push_back({{domain::NoteId{note}, static_cast<std::uint16_t>(ordinal)}, phone, {start, end}, false, false, kind,
+        palatalized});
     previousEnd = end;
   }
   const bool syllabicOnly=version==3 && std::all_of(result.markers.begin(),result.markers.end(),[](const auto& marker) {
@@ -265,7 +301,7 @@ core::Result<ProceduralCandidate> parseProceduralCandidateMetadata(std::string_v
     for (const auto& marker:result.markers) if (!notes.insert(marker.key.noteId).second)
       return fail("Syllabic nasal candidate requires one gesture per note");
   }
-  if (mixed && ((!hasVowel && !syllabicOnly) || (version==2?!hasFrication:version==3?!hasNasal:version==4?!hasPlosive:version==5?!hasVoicedFrication:version==6?!hasVoicedPlosive:version==7?!hasAffricate:!hasApproximant))) return fail("Articulated candidate lacks its required voiced and consonant gesture kinds");
+  if (mixed && ((!hasVowel && !syllabicOnly) || (version==2?!hasFrication:version==3?!hasNasal:version==4?!hasPlosive:version==5?!hasVoicedFrication:version==6?!hasVoicedPlosive:version==7?!hasAffricate:version==8?!hasApproximant:!hasPalatalized))) return fail("Articulated candidate lacks its required voiced and consonant gesture kinds");
   // Every plosive-family gesture is rendered through the shared release source, so a
   // candidate that carries one has to declare that source's revision.
   if ((hasPlosive || hasVoicedPlosive || hasVoicedFrication || hasAffricate) && result.plosiveRevision == 0U)

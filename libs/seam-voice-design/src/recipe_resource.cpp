@@ -44,11 +44,12 @@ core::Result<VoiceRecipe> decodeVoiceRecipeResource(
   if (stopToken.stop_requested()) return core::failure<VoiceRecipe>(core::ErrorCode::Conflict, "Recipe loading cancelled");
   const auto valid = resource.validate();
   if (!valid) return core::Result<VoiceRecipe>{valid.error()};
-  // Schema seven adds unvoiced affricates and schema eight adds voiced approximants, whose
-  // sources are ordinary phonation and the recipe's own resonance poses; neither needs an opt-in
-  // flag of its own, and the voiced extensions that change a source stay behind theirs.
+  // Schema seven adds unvoiced affricates, schema eight adds voiced approximants and schema nine
+  // adds palatalized consonants: each borrows ordinary phonation or a base consonant's own source
+  // and the recipe's identical resonance poses, so none needs a new opt-in flag. The voiced
+  // extensions that change a source stay behind theirs.
   if (resource.identity.version != "1" && resource.identity.version != "2" && resource.identity.version != "3" && resource.identity.version != "4" &&
-      resource.identity.version != "7" && resource.identity.version != "8" &&
+      resource.identity.version != "7" && resource.identity.version != "8" && resource.identity.version != "9" &&
       !(allowVoicedFrication && resource.identity.version=="5") &&
       !(allowVoicedStops && allowVoicedFrication && resource.identity.version=="6")) return core::failure<VoiceRecipe>(
       core::ErrorCode::Unsupported, "Procedural recipe resource version is unsupported");

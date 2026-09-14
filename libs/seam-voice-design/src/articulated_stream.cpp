@@ -38,13 +38,24 @@ core::Result<ArticulatedStream> ArticulatedStream::create(
       return core::failure<ArticulatedStream>(core::ErrorCode::Conflict, "Articulation span or voicing differs from compiled performance");
     const bool voicedStop=gesture.kind==ArticulationGestureKind::VoicedPlosive;
     if (voiced && !voicedStop) {
-      const auto pose = VocalTract::create(recipe.value(), gesture.phone, style, plan.sampleRate());
+      const auto pose = VocalTract::create(recipe.value(), gesture.posePhone.value_or(gesture.phone), style, plan.sampleRate());
       if (!pose) return core::Result<ArticulatedStream>{pose.error()};
-      if (initialPhone.empty()) initialPhone = gesture.phone;
+      if (initialPhone.empty()) initialPhone = gesture.posePhone.value_or(gesture.phone);
     }
+    // A palatalized consonant declares both halves of itself: the frozen recipe must name its
+    // base source and its own palatal pose. Either half missing means the plan is not the recipe's
+    // articulation, and a plan that drops the pose would be the base consonant with a new label.
+    const auto palatalized = std::find_if(recipe.value().palatalized.begin(), recipe.value().palatalized.end(),
+        [&](const auto& pose) { return pose.phone == gesture.phone && pose.style == style; });
+    if ((palatalized != recipe.value().palatalized.end()) != gesture.posePhone.has_value() ||
+        (gesture.posePhone && *gesture.posePhone != gesture.phone))
+      return core::failure<ArticulatedStream>(core::ErrorCode::Conflict, "Palatalized plan differs from the frozen recipe");
+    // The source a palatalized consonant renders with is its base consonant's, so every binding
+    // comparison below resolves through the base the recipe names rather than the phone's own name.
+    const std::string& sourcePhone = palatalized == recipe.value().palatalized.end() ? gesture.phone : palatalized->basePhone;
     if (gesture.kind == ArticulationGestureKind::Plosive || voicedStop) {
       const auto binding = std::find_if(recipe.value().plosives.begin(), recipe.value().plosives.end(),
-          [&](const auto& pose) { return pose.phone == gesture.phone && pose.style == style; });
+          [&](const auto& pose) { return pose.phone == sourcePhone && pose.style == style; });
       if (binding == recipe.value().plosives.end() || !gesture.plosive || binding->voicedClosure.has_value()!=voicedStop ||
           binding->source != gesture.plosive->burst ||
           static_cast<time::SampleFrame>(std::llround(binding->burstMilliseconds * plan.sampleRate() / 1000.0)) != gesture.plosive->burstFrames)
@@ -56,7 +67,7 @@ core::Result<ArticulatedStream> ArticulatedStream::create(
         return core::failure<ArticulatedStream>(core::ErrorCode::Conflict,"Voiced closure plan differs from the frozen recipe");
     } else if (gesture.kind == ArticulationGestureKind::Affricate) {
       const auto binding = std::find_if(recipe.value().affricates.begin(), recipe.value().affricates.end(),
-          [&](const auto& pose) { return pose.phone == gesture.phone && pose.style == style; });
+          [&](const auto& pose) { return pose.phone == sourcePhone && pose.style == style; });
       if (binding == recipe.value().affricates.end() || !gesture.affricate ||
           binding->burst != gesture.affricate->release.burst ||
           binding->tail != gesture.affricate->tail ||
@@ -65,7 +76,7 @@ core::Result<ArticulatedStream> ArticulatedStream::create(
         return core::failure<ArticulatedStream>(core::ErrorCode::Conflict, "Affricate plan differs from the frozen recipe");
     } else if (gesture.kind == ArticulationGestureKind::Approximant) {
       const auto binding = std::find_if(recipe.value().approximants.begin(), recipe.value().approximants.end(),
-          [&](const auto& pose) { return pose.phone == gesture.phone && pose.style == style; });
+          [&](const auto& pose) { return pose.phone == sourcePhone && pose.style == style; });
       const auto span = gesture.span.end - gesture.span.start;
       const auto expected = binding == recipe.value().approximants.end() ? time::SampleFrame{0}
           : std::clamp<time::SampleFrame>(static_cast<time::SampleFrame>(std::llround(
@@ -75,7 +86,7 @@ core::Result<ArticulatedStream> ArticulatedStream::create(
         return core::failure<ArticulatedStream>(core::ErrorCode::Conflict, "Approximant plan differs from the frozen recipe");
     } else if (isNoiseGesture(gesture.kind)) {
       const auto binding = std::find_if(recipe.value().frications.begin(), recipe.value().frications.end(),
-          [&](const auto& pose) { return pose.phone == gesture.phone && pose.style == style; });
+          [&](const auto& pose) { return pose.phone == sourcePhone && pose.style == style; });
       if (binding == recipe.value().frications.end() || !gesture.frication || binding->source != *gesture.frication ||
           binding->voicingGain!=gesture.voicingGain ||
           (gesture.kind==ArticulationGestureKind::VoicedFrication)!=gesture.voicingGain.has_value())
@@ -158,11 +169,15 @@ core::Result<synthesis::PhraseAudio> ArticulatedStream::renderOwned(synthesis::P
       }
     }
     const auto count = static_cast<std::size_t>(std::min<time::SampleFrame>(static_cast<time::SampleFrame>(blockFrames_), boundary - position));
-    if (tonal && position == gesture->span.start && gesture->phone != candidate.currentPhone_) {
-      const auto transition = candidate.tract_->transitionTo(*recipe_, gesture->phone, style_,
+    // A palatalized consonant puts its own palatal resonance in force for the whole gesture, even
+    // when the gesture itself is unvoiced, so the release and the vowel's onset transition start
+    // from the palatal shape. That transition into the vowel is what distinguishes きゃ from か.
+    const auto posePhone = gesture->posePhone.value_or(gesture->phone);
+    if ((tonal || gesture->posePhone.has_value()) && position == gesture->span.start && posePhone != candidate.currentPhone_) {
+      const auto transition = candidate.tract_->transitionTo(*recipe_, posePhone, style_,
           static_cast<std::size_t>(entryFrames));
       if (!transition) return core::Result<Output>{transition.error()};
-      candidate.currentPhone_ = gesture->phone;
+      candidate.currentPhone_ = posePhone;
     }
     if (glide && position >= gesture->span.end - glideFrames &&
         candidate.tract_->transitionFramesRemaining() == 0U) {
