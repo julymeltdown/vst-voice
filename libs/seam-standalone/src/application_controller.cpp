@@ -851,6 +851,15 @@ core::Result<void> StandaloneApplicationController::dispatch(
     case platform::ApplicationCommand::EditRegionDynamics:
       if (!config_.editRegionDynamics) return core::failure(core::ErrorCode::Unsupported, "Dynamics inspector is not connected");
       return config_.editRegionDynamics();
+    case platform::ApplicationCommand::NudgeFormantUp:
+      if (!config_.nudgeFormantUp) return core::failure(core::ErrorCode::Unsupported, "Formant editing is not connected");
+      return config_.nudgeFormantUp();
+    case platform::ApplicationCommand::NudgeFormantDown:
+      if (!config_.nudgeFormantDown) return core::failure(core::ErrorCode::Unsupported, "Formant editing is not connected");
+      return config_.nudgeFormantDown();
+    case platform::ApplicationCommand::ResetRegionFormantCurve:
+      if (!config_.resetRegionFormantCurve) return core::failure(core::ErrorCode::Unsupported, "Formant editing is not connected");
+      return config_.resetRegionFormantCurve();
     case platform::ApplicationCommand::EditTrackStyle:
       if (!config_.editTrackStyle) return core::failure(core::ErrorCode::Unsupported, "Style sheet is not connected");
       return config_.editTrackStyle();

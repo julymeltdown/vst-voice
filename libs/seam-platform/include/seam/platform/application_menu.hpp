@@ -50,6 +50,9 @@ enum class ApplicationCommand {
   FindPreviousNote,
   EditSelectedVibrato,
   EditRegionDynamics,
+  NudgeFormantUp,
+  NudgeFormantDown,
+  ResetRegionFormantCurve,
   EditTrackStyle,
   EditJapaneseReading,
 };

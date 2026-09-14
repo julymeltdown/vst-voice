@@ -12,11 +12,13 @@
 #include "test_support.hpp"
 
 #include "seam/application/project_factory.hpp"
+#include "seam/application/editor_session.hpp"
 #include "seam/domain/formant_automation.hpp"
 #include "seam/formats/json_value.hpp"
 #include "seam/formats/project_json.hpp"
 #include "seam/rendering/render_pipeline.hpp"
 #include "seam/rendering/render_snapshot.hpp"
+#include "seam/native_ui/editor_controller.hpp"
 #include "seam/synthesis/renderer_capabilities.hpp"
 #include "seam/voice_design/recipe_resource.hpp"
 
@@ -260,6 +262,109 @@ TEST_CASE("A bank that cannot move its resonances refuses the curve instead of d
       project, manifest, fixture.track, rendering::PhraseSegment{.regionId = fixture.region}, 1U,
       rendering::RenderQuality::Preview, bankRoot, 48000U);
   if (!neutral) CHECK(neutral.error().code != core::ErrorCode::Unsupported);
+}
+
+// A controller fixture whose single track is either a source-filter singer or a sample bank, which is
+// the difference the formant channel's capability decision turns on.
+struct CarrierFixture final {
+  application::ProjectFactory factory{7400U};
+  domain::RegionId regionId{};
+  domain::TrackId trackId{};
+  application::EditorSession session;
+
+  explicit CarrierFixture(bool procedural) : session(makeProject(procedural)) {}
+  [[nodiscard]] bool isProcedural() const noexcept { return procedural_; }
+
+  domain::Project makeProject(bool procedural) {
+    procedural_ = procedural;
+    auto project = factory.createProject("Formant editing");
+    trackId = factory.addVocalTrack(project, "Singer");
+    regionId = factory.addRegion(project, trackId, "Phrase", time::Tick{0}, time::Tick{3840});
+    auto [lyric, note] = factory.makeNote(time::Tick{0}, time::Tick{3840}, 45U, U"あ",
+                                          domain::Language::Japanese);
+    auto* region = project.findRegion(regionId);
+    region->lyrics.push_back(std::move(lyric));
+    region->notes.push_back(std::move(note));
+    if (procedural) {
+      project.findVocalTrack(trackId)->proceduralRecipe = domain::ProceduralRecipeReference{
+          .resource = {domain::SingerResourceKind::Procedural, "formant-channel", "1.0.0",
+                       std::string(64U, 'a')},
+          .path = "recipe.json",
+          .style = "neutral"};
+    }
+    return project;
+  }
+
+ private:
+  bool procedural_{false};
+};
+
+TEST_CASE("A formant nudge is an undoable edit on the singer that can take it") {
+  CarrierFixture fixture{true};
+  native_ui::NativeEditorController controller{fixture.session, fixture.factory, fixture.regionId, {}};
+  controller.setPlayheadTick(time::Tick{480});
+  CHECK_NEAR(controller.formantShiftAtPlayhead(), 0.0, 1e-6);
+  CHECK(controller.nudgeFormantShift(2).hasValue());
+  const auto* region = fixture.session.project().findRegion(fixture.regionId);
+  CHECK(region != nullptr);
+  if (region == nullptr) return;
+  CHECK(region->formantAutomation.points().size() == 1U);
+  CHECK(region->formantAutomation.points().front().tick == time::Tick{480});
+  CHECK_NEAR(region->formantAutomation.points().front().semitones, 2.0, 1e-6);
+  CHECK_NEAR(controller.formantShiftAtPlayhead(), 2.0, 1e-6);
+
+  // A second nudge at the same playhead replaces its point rather than accumulating points.
+  CHECK(controller.nudgeFormantShift(3).hasValue());
+  CHECK(region->formantAutomation.points().size() == 1U);
+  CHECK_NEAR(region->formantAutomation.points().front().semitones, 5.0, 1e-6);
+
+  // The shift is bounded by the channel's own range, not by how often the menu item was used.
+  CHECK(controller.nudgeFormantShift(100).hasValue());
+  CHECK_NEAR(region->formantAutomation.points().front().semitones,
+             domain::kMaximumFormantShiftSemitones, 1e-6);
+
+  // Every one of those is an ordinary undoable edit.
+  CHECK(fixture.session.undo());
+  CHECK_NEAR(fixture.session.project().findRegion(fixture.regionId)
+                 ->formantAutomation.points().front().semitones,
+             5.0, 1e-6);
+  CHECK(fixture.session.undo());
+  CHECK_NEAR(fixture.session.project().findRegion(fixture.regionId)
+                 ->formantAutomation.points().front().semitones,
+             2.0, 1e-6);
+  CHECK(fixture.session.undo());
+  CHECK(fixture.session.project().findRegion(fixture.regionId)->formantAutomation.points().empty());
+
+  // And resetting a curve is a real edit too, not a silent mutation.
+  CHECK(controller.nudgeFormantShift(1).hasValue());
+  CHECK(!fixture.session.project().findRegion(fixture.regionId)->formantAutomation.points().empty());
+  CHECK(controller.resetFormantCurve().hasValue());
+  CHECK(fixture.session.project().findRegion(fixture.regionId)->formantAutomation.points().empty());
+  CHECK(fixture.session.undo());
+  CHECK(!fixture.session.project().findRegion(fixture.regionId)->formantAutomation.points().empty());
+}
+
+TEST_CASE("A singer without resonances refuses the nudge and keeps the stored curve") {
+  CarrierFixture fixture{false};
+  native_ui::NativeEditorController controller{fixture.session, fixture.factory, fixture.regionId, {}};
+  controller.setPlayheadTick(time::Tick{960});
+  // A curve that arrived with the document is not destroyed by a refused edit.
+  auto* region = fixture.session.project().findRegion(fixture.regionId);
+  CHECK(region != nullptr);
+  if (region == nullptr) return;
+  CHECK(region->formantAutomation.upsert({time::Tick{0}, 5.0F}).hasValue());
+  const auto refused = controller.nudgeFormantShift(1);
+  CHECK(!refused.hasValue());
+  CHECK(refused.error().code == core::ErrorCode::Unsupported);
+  CHECK(refused.error().message.find("formant") != std::string::npos);
+  CHECK(refused.error().message.find("source-filter") != std::string::npos);
+  CHECK(region->formantAutomation.points().size() == 1U);
+  CHECK_NEAR(region->formantAutomation.points().front().semitones, 5.0, 1e-6);
+  CHECK_NEAR(controller.formantShiftAtPlayhead(), 5.0, 1e-6);
+
+  // Clearing is always allowed: it is the remedy, not the request.
+  CHECK(controller.resetFormantCurve().hasValue());
+  CHECK(region->formantAutomation.points().empty());
 }
 
 TEST_CASE("A shift moves the envelope and leaves the fundamental alone") {

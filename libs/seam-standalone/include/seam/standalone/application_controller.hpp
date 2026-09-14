@@ -56,6 +56,9 @@ struct StandaloneApplicationControllerConfig final {
   std::function<core::Result<void>()> clearSelectedVibrato;
   std::function<core::Result<void>()> editSelectedVibrato;
   std::function<core::Result<void>()> editRegionDynamics;
+  std::function<core::Result<void>()> nudgeFormantUp;
+  std::function<core::Result<void>()> nudgeFormantDown;
+  std::function<core::Result<void>()> resetRegionFormantCurve;
   std::function<core::Result<void>()> editTrackStyle;
   std::function<core::Result<void>()> editJapaneseReading;
   // The callback owns the bounded conversion-review surface. Returning false

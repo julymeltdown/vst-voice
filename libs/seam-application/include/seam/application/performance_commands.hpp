@@ -69,6 +69,13 @@ struct RegionDynamicsEdit final {
   domain::DynamicsAutomation curve;
 };
 
+// The formant channel's own curve. It is a separate edit from the dynamics curve because they are
+// separate channels of intent: one changes level, the other moves the vocal tract's resonances.
+struct RegionFormantEdit final {
+  domain::RegionId regionId;
+  domain::FormantAutomation curve;
+};
+
 struct TrackStyleEdit final {
   domain::TrackId trackId;
   domain::VoiceStyleSelection selection;
@@ -133,7 +140,8 @@ public:
   EditPerformanceCommand(std::vector<NoteExpressionEdit> notes,
                          std::vector<RegionDynamicsEdit> regions = {},
                          std::vector<TrackStyleEdit> tracks = {},
-                         std::vector<RegionOwnershipEdit> ownership = {});
+                         std::vector<RegionOwnershipEdit> ownership = {},
+                         std::vector<RegionFormantEdit> formant = {});
 
   [[nodiscard]] std::string_view name() const noexcept override;
   [[nodiscard]] CommandAudioImpact audioImpact() const noexcept override;
@@ -148,9 +156,11 @@ private:
 
   std::vector<NoteExpressionEdit> afterNotes_;
   std::vector<RegionDynamicsEdit> afterRegions_;
+  std::vector<RegionFormantEdit> afterFormant_;
   std::vector<TrackStyleEdit> afterTracks_;
   std::vector<NoteExpressionEdit> beforeNotes_;
   std::vector<RegionDynamicsEdit> beforeRegions_;
+  std::vector<RegionFormantEdit> beforeFormant_;
   std::vector<TrackStyleEdit> beforeTracks_;
   std::vector<RegionOwnershipEdit> ownershipEdits_;
   struct OwnershipState final {

@@ -1884,7 +1884,7 @@ if(SEAM_BUILD_TESTS)
   target_include_directories(seam_formant_expression_tests PRIVATE tests)
   target_link_libraries(seam_formant_expression_tests PRIVATE
     seam_rendering seam_voice_design seam_synthesis seam_application
-    seam_formats seam_voicebank seam_domain seam_core)
+    seam_native_ui seam_formats seam_voicebank seam_domain seam_core)
   seam_apply_compiler_options(seam_formant_expression_tests)
   add_test(NAME seam_formant_expression_tests
     COMMAND seam_formant_expression_tests)

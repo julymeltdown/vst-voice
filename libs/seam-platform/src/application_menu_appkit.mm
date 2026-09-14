@@ -50,6 +50,9 @@
 - (void)clearSelectedVibrato:(id)sender;
 - (void)editSelectedVibrato:(id)sender;
 - (void)editRegionDynamics:(id)sender;
+- (void)nudgeFormantUp:(id)sender;
+- (void)nudgeFormantDown:(id)sender;
+- (void)resetRegionFormantCurve:(id)sender;
 - (void)editTrackStyle:(id)sender;
 - (void)editJapaneseReading:(id)sender;
 - (void)removeSelectedOverlaps:(id)sender;
@@ -224,6 +227,18 @@
 - (void)editRegionDynamics:(id)sender {
   (void)sender;
   [self editCommand:seam::platform::ApplicationCommand::EditRegionDynamics title:@"Cannot edit region dynamics"];
+}
+- (void)nudgeFormantUp:(id)sender {
+  (void)sender;
+  [self editCommand:seam::platform::ApplicationCommand::NudgeFormantUp title:@"Cannot raise the formant shift"];
+}
+- (void)nudgeFormantDown:(id)sender {
+  (void)sender;
+  [self editCommand:seam::platform::ApplicationCommand::NudgeFormantDown title:@"Cannot lower the formant shift"];
+}
+- (void)resetRegionFormantCurve:(id)sender {
+  (void)sender;
+  [self editCommand:seam::platform::ApplicationCommand::ResetRegionFormantCurve title:@"Cannot reset the formant curve"];
 }
 - (void)editTrackStyle:(id)sender {
   (void)sender;
@@ -404,6 +419,9 @@ public:
                        0, target_)];
     [edit addItem:item(@"Edit Selected Vibrato…", @selector(editSelectedVibrato:), @"", 0, target_)];
     [edit addItem:item(@"Edit Region Dynamics…", @selector(editRegionDynamics:), @"", 0, target_)];
+    [edit addItem:item(@"Raise Formant Shift", @selector(nudgeFormantUp:), @"]", NSEventModifierFlagCommand, target_)];
+    [edit addItem:item(@"Lower Formant Shift", @selector(nudgeFormantDown:), @"[", NSEventModifierFlagCommand, target_)];
+    [edit addItem:item(@"Reset Formant Curve", @selector(resetRegionFormantCurve:), @"", 0, target_)];
     [edit addItem:item(@"Track Style and Coverage…", @selector(editTrackStyle:), @"", 0, target_)];
     [edit addItem:item(@"Resolve Japanese Reading…", @selector(editJapaneseReading:), @"", 0, target_)];
     [edit addItem:item(@"Clear Selected Vibrato…", @selector(clearSelectedVibrato:), @"",

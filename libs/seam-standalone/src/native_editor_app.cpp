@@ -441,6 +441,15 @@ core::Result<void> NativeEditorApp::initialize() {
           .editRegionDynamics = [this] {
             const auto result = authoring_->controller().openDynamicsInspector(); record(result); return result;
           },
+          .nudgeFormantUp = [this] {
+            const auto result = authoring_->controller().nudgeFormantShift(1); record(result); return result;
+          },
+          .nudgeFormantDown = [this] {
+            const auto result = authoring_->controller().nudgeFormantShift(-1); record(result); return result;
+          },
+          .resetRegionFormantCurve = [this] {
+            const auto result = authoring_->controller().resetFormantCurve(); record(result); return result;
+          },
           .editTrackStyle = [this] {
             const auto result = authoring_->controller().openStyleCoverageSheet(); record(result); return result;
           },
@@ -1254,6 +1263,8 @@ void NativeEditorApp::paint(native_ui::RasterCanvas& canvas) noexcept {
   auto state = authoring_->controller().sceneState();
   state.playheadPixel =
       authoring_->controller().pianoRoll().timeline().tickToPixel(tick);
+  // An edit that lands on the playhead needs the tick, not the pixel.
+  authoring_->controller().setPlayheadTick(tick);
   if (window_ != nullptr &&
       (progress.state == authoring::RenderState::Queued ||
        progress.state == authoring::RenderState::Rendering ||

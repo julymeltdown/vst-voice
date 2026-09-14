@@ -361,6 +361,16 @@ public:
   }
   void setDirty(bool dirty) noexcept;
   void setPlayheadPixel(double value) noexcept;
+  // Where the transport is, in musical time. The host already computes this to place the playhead, and
+  // an edit that lands on the playhead needs the tick rather than the pixel.
+  void setPlayheadTick(time::Tick tick) noexcept { playheadTick_ = tick; }
+  [[nodiscard]] time::Tick playheadTick() const noexcept { return playheadTick_; }
+  // The formant channel's editing surface. A singer whose carrier cannot move its own resonances
+  // refuses the edit and says which resource change would allow it; a refused edit never touches a
+  // curve that is already stored.
+  [[nodiscard]] core::Result<void> nudgeFormantShift(int steps);
+  [[nodiscard]] core::Result<void> resetFormantCurve();
+  [[nodiscard]] float formantShiftAtPlayhead() const noexcept;
   void setCharacterMetadata(std::string name, std::string style) {
     characterName_ = std::move(name);
     characterStyle_ = std::move(style);
@@ -618,6 +628,7 @@ private:
   double logicalWidth_{1440.0};
   double logicalHeight_{900.0};
   double playheadPixel_{0.0};
+  time::Tick playheadTick_{0};
   std::string characterName_;
   std::string characterStyle_;
   const PixelSurface* characterPortrait_{nullptr};

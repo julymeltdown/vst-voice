@@ -1,5 +1,40 @@
 # Integrated Singer Execution
 
+## The formant channel is an edit a creator can make, and a carrier can refuse
+
+The channel existed, but nothing could author it: no command carried it, no menu item reached it, and
+the playhead an edit lands on was not known to the editor at all. A capability with no editing surface
+is a fact about the code, not about the product.
+
+`RegionFormantEdit` joins the composite performance edit, so a formant curve is validated, captured
+before the change, applied, reverted and reported as phrase audio exactly as a dynamics curve is -- one
+channel of intent per edit, and every one of them undoable. The editor now tracks the transport tick
+beside the playhead pixel, because a nudge lands at a musical position rather than at a pixel, and
+`nudgeFormantShift` and `resetFormantCurve` write the curve through that command.
+
+The capability decision decides the edit as well as the render. A nudge asks the carrier whether it can
+move its own resonances; a sample bank cannot, so the edit is refused with the reason and with the
+change that would allow it -- select a source-filter singer -- and whatever curve the document already
+contains is left exactly as it was, because an edit that cannot be applied must not destroy intent that
+was stored. Clearing is always allowed: it is the remedy rather than the request. The native menu now
+carries Raise Formant Shift, Lower Formant Shift and Reset Formant Curve, so the channel is reachable
+without a project file.
+
+Verified. `seam_formant_expression_tests` passes 7 of 7. The two new cases run a real editor session
+and controller: a nudge on a source-filter track writes one point at the playhead tick with the
+requested shift, a second nudge at the same tick replaces that point rather than accumulating points, a
+hundred-step nudge stops at the channel's own bound, and each of those is undone back to the previous
+curve in order; resetting a curve is an edit that undoes to the curve it replaced. On a sample-bank
+track the same nudge is refused with Unsupported, the message names the channel and the source-filter
+remedy, the stored five-semitone curve is still there afterwards and still reports five semitones at
+the playhead, and clearing it -- which is allowed -- removes it. The whole tree builds and the
+registered CTest run is reported in the commit that carries this entry.
+
+Not claimed. The nudge is a menu item and a key equivalent, not a drawn lane: there is no curve editor
+for this channel, no per-point drag, and no inspector row showing the channel's applicability beside
+its value, which is what M4.P1 item 6 still owes. The plug-in host has no playhead, so it cannot nudge
+at all. Nothing was listened to and no unit acceptance changes.
+
 ## The formant channel moves the tract, and a bank that has no tract says so
 
 Seven of the thirteen expression controls had no storage at all: they existed as capability names and

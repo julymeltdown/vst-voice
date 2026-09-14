@@ -5427,4 +5427,74 @@ void NativeEditorController::setPlayheadPixel(double value) noexcept {
   repaint();
 }
 
+float NativeEditorController::formantShiftAtPlayhead() const noexcept {
+  const auto* region = session_.project().findRegion(regionId_);
+  return region == nullptr ? 0.0F : region->formantAutomation.valueAt(playheadTick_);
+}
+
+core::Result<void> NativeEditorController::nudgeFormantShift(int steps) {
+  const auto* region = session_.project().findRegion(regionId_);
+  const auto* track = session_.project().findVocalTrack(selectedTrackId_);
+  if (region == nullptr || track == nullptr)
+    return core::failure(core::ErrorCode::NotFound, "Formant edit has no region or track");
+  if (steps == 0) return core::success();
+  // The channel is only real where the carrier owns its resonances. Everything else is refused with the
+  // reason and the change that would make it possible, and whatever curve is already stored stays
+  // exactly as it was.
+  const auto carrier = track->proceduralRecipe ? synthesis::RendererCarrier::SourceFilter
+                                               : synthesis::RendererCarrier::SampleBank;
+  synthesis::RendererControlRequest request;
+  request.require(synthesis::RendererControl::Formant);
+  const auto allowed = synthesis::validateRendererCapabilities(carrier, request);
+  if (!allowed) {
+    return core::Result<void>{core::Error{core::ErrorCode::Unsupported,
+        std::string{"The selected singer cannot move its own vocal-tract resonances, so it cannot "
+                    "apply a formant shift. "} +
+            allowed.error().message +
+            ". Select a source-filter (voice designer) singer to edit this channel."}};
+  }
+  const auto current = region->formantAutomation.valueAt(playheadTick_);
+  const auto target = std::clamp(current + static_cast<float>(steps),
+                                 -domain::kMaximumFormantShiftSemitones,
+                                 domain::kMaximumFormantShiftSemitones);
+  auto next = region->formantAutomation;
+  if (!(target != 0.0F))
+    next = domain::FormantAutomation{};
+  else {
+    const auto inserted = next.upsert(domain::FormantAutomationPoint{playheadTick_, target});
+    if (!inserted) return inserted;
+  }
+  // A nudge that lands on the value already in force is not an edit, and a no-op must not fill the
+  // undo stack with an entry that changes nothing.
+  if (next == region->formantAutomation) return core::success();
+  auto context = session_.capturePerformanceJob();
+  if (!context) return core::Result<void>{context.error()};
+  return session_.executePerformanceResult(
+      context.value(),
+      std::make_unique<application::EditPerformanceCommand>(
+          std::vector<application::NoteExpressionEdit>{},
+          std::vector<application::RegionDynamicsEdit>{},
+          std::vector<application::TrackStyleEdit>{},
+          std::vector<application::RegionOwnershipEdit>{},
+          std::vector<application::RegionFormantEdit>{{regionId_, std::move(next)}}));
+}
+
+core::Result<void> NativeEditorController::resetFormantCurve() {
+  const auto* region = session_.project().findRegion(regionId_);
+  if (region == nullptr)
+    return core::failure(core::ErrorCode::NotFound, "Formant edit has no region");
+  if (region->formantAutomation.points().empty()) return core::success();
+  auto context = session_.capturePerformanceJob();
+  if (!context) return core::Result<void>{context.error()};
+  return session_.executePerformanceResult(
+      context.value(),
+      std::make_unique<application::EditPerformanceCommand>(
+          std::vector<application::NoteExpressionEdit>{},
+          std::vector<application::RegionDynamicsEdit>{},
+          std::vector<application::TrackStyleEdit>{},
+          std::vector<application::RegionOwnershipEdit>{},
+          std::vector<application::RegionFormantEdit>{
+              {regionId_, domain::FormantAutomation{}}}));
+}
+
 }  // namespace seam::native_ui
