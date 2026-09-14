@@ -2,6 +2,14 @@
 
 ## A procedural singer is now a package, not a loose JSON file
 
+September 15, 2026 — D4.4 added on top of the package family. `installProceduralPackage` writes the
+verified entries into a staging directory, re-checks the installed manifest against the signed one,
+publishes a typed receipt carrying the resource family, id, version, content hash, recipe digest,
+engine identity and signer, then renames into place with a backup-and-rollback path for replacement.
+Installation requires an explicit trusted key; a caller who does not require trust is refused rather
+than allowed to install unverified content. A duplicate version is refused without disturbing the
+existing installation, and no staging or backup directory survives either outcome.
+
 September 15, 2026 — D4.1/D4.3. The signed container that carried sample banks is now family-neutral:
 the entry table, per-entry digests, single Ed25519 signature, path policy, size bounds and durable
 publish live in one implementation, and the sample bank is one family over it. The refactor is
@@ -15,18 +23,17 @@ not the recipe bytes, whose digest is malformed, whose recipe this build cannot 
 recipe engine disagrees with the manifest. Declared coverage and reviewed qualification stay
 different fields; signing proves authenticity, not musical quality. This closes the
 manifest/admission and pack/verify substeps of the plan's procedural distribution slice;
-installation, catalogue, native selection and the connected acceptance journey remain open.
+catalogue, native selection and the connected acceptance journey remain open.
 
-Verified. `seam_procedural_package_tests` passes 5 of 5: typed manifest round trip with bounded
+Verified. `seam_procedural_package_tests` passes 7 of 7: transactional installation with a receipt that matches the published content hash; refusal of an untrusted signer and of a caller that does not require trust, both leaving nothing on disk; and the package cases themselves:  typed manifest round trip with bounded
 identity, coverage, digest and engine fields; a signed package that verifies and returns exactly the
 recipe it declares, with the packaged bytes matching the manifest digest; refusal of a package whose
 recipe does not match its declared digest, leaving no artifact behind; mutual family refusal, so a
 procedural manifest is not read as a bank and a voicebank manifest is not read as a procedural
 singer; and a whole-package tamper that no longer verifies. The aggregate core suite passes 904
-cases and the registered CTest run passes 165 of 166, the only failure being source closure before
-staging.
+cases and the registered CTest run passes 166 of 166.
 
-Not claimed. No installer receipt, installed catalogue entry, exact-identity resolution, native
+Not claimed. No installed catalogue entry, exact-identity resolution, native
 selection, review-candidate binding or renderer-compatibility policy exists yet, so a creator still
 selects a procedural recipe by file path. No package was rendered or listened to, and no engine
 revision was pinned to a retained build. No U-unit acceptance or Beta GO state changes.

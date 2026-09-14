@@ -74,4 +74,29 @@ struct PackProceduralPackageOptions final {
 [[nodiscard]] core::Result<std::vector<std::byte>> readProceduralRecipe(
     const ProceduralPackageInfo& package);
 
+struct InstallProceduralOptions final {
+  VerifySeambankOptions verification{};
+  bool replaceExisting{false};
+};
+
+struct InstalledProceduralSinger final {
+  std::string id;
+  std::string version;
+  // A digest over the installed manifest and recipe, so a host can bind a song to the exact
+  // resource it used the way a sample bank binds to its unit content hash.
+  std::string contentHash;
+  std::string packageDigest;
+  std::string signerKeyId;
+  std::filesystem::path installDirectory;
+};
+
+// Installs a verified procedural package transactionally: everything is written to a staging
+// directory, re-checked against the signed identity, given a receipt, and only then published.
+// Installing never overwrites another singer's version unless the caller asks for replacement, and
+// a failure leaves no partial installation and no stray staging directory.
+[[nodiscard]] core::Result<InstalledProceduralSinger> installProceduralPackage(
+    const std::filesystem::path& packagePath,
+    const std::filesystem::path& installRoot,
+    const InstallProceduralOptions& options = {});
+
 }  // namespace seam::distribution

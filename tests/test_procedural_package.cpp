@@ -8,6 +8,7 @@
 #include "seam/distribution/seambank.hpp"
 #include "seam/distribution/signing.hpp"
 #include "seam/core/sha256.hpp"
+#include "seam/formats/json_value.hpp"
 #include "seam/voice_design/articulation_plan.hpp"
 #include "seam/voice_design/voice_recipe.hpp"
 
@@ -232,4 +233,94 @@ TEST_CASE("A tampered procedural package no longer verifies") {
                                           .trustedPublicKeys = {key.value().publicKey},
                                           .requireTrustedSigner = true});
   CHECK(!verified.hasValue());
+}
+
+TEST_CASE("An installed procedural singer is transactional and receipted") {
+  const auto root = test::support::temporaryDirectory("procedural-install");
+  const auto source = createProceduralSource(root);
+  auto key = distribution::generateSigningKeyPair();
+  CHECK(key.hasValue());
+  if (!key) return;
+  const auto packagePath = root / "pilot.seamsinger";
+  CHECK(distribution::packProceduralPackage(source, packagePath, key.value()).hasValue());
+
+  const auto installRoot = root / "installed";
+  distribution::InstallProceduralOptions options;
+  options.verification = distribution::VerifySeambankOptions{
+      .limits = {},
+      .trustedPublicKeys = {key.value().publicKey},
+      .requireTrustedSigner = true};
+  auto installed = distribution::installProceduralPackage(packagePath, installRoot, options);
+  CHECK(installed.hasValue());
+  if (!installed) return;
+  CHECK(installed.value().id == "original.singer.pilot");
+  CHECK(!installed.value().contentHash.empty());
+  const auto directory = installed.value().installDirectory;
+  CHECK(std::filesystem::is_regular_file(directory / "manifest.json"));
+  CHECK(std::filesystem::is_regular_file(directory / "recipe.json"));
+  CHECK(std::filesystem::is_regular_file(directory / "install-receipt.json"));
+  // The receipt carries the exact resource identity a song can bind to.
+  auto receiptText = core::readTextFileLimited(directory / "install-receipt.json", 1024U * 1024U);
+  CHECK(receiptText.hasValue());
+  if (!receiptText) return;
+  auto receipt = formats::parseJson(receiptText.value());
+  CHECK(receipt.hasValue());
+  if (!receipt) return;
+  const auto* contentHash = receipt.value().find("contentHash");
+  CHECK(contentHash != nullptr && contentHash->isString());
+  CHECK(contentHash->asString() == installed.value().contentHash);
+  const auto* family = receipt.value().find("resourceFamily");
+  CHECK(family != nullptr && family->asString() == "procedural-singer");
+
+  // Installing the same version again is refused, and leaves the first installation intact.
+  auto duplicate = distribution::installProceduralPackage(packagePath, installRoot, options);
+  CHECK(!duplicate.hasValue());
+  CHECK(duplicate.error().code == core::ErrorCode::Conflict);
+  CHECK(std::filesystem::is_regular_file(directory / "install-receipt.json"));
+  // No staging directory survives a successful or refused installation.
+  for (const auto& entry : std::filesystem::directory_iterator(installRoot)) {
+    const auto name = entry.path().filename().string();
+    CHECK(name.starts_with(".staging-") == false);
+    CHECK(name.starts_with(".backup-") == false);
+  }
+
+  // Replacement is explicit and produces the same identity for identical content.
+  options.replaceExisting = true;
+  auto replaced = distribution::installProceduralPackage(packagePath, installRoot, options);
+  CHECK(replaced.hasValue());
+  if (!replaced) return;
+  CHECK(replaced.value().contentHash == installed.value().contentHash);
+}
+
+TEST_CASE("A procedural installation requires a trusted signer and writes nothing without one") {
+  const auto root = test::support::temporaryDirectory("procedural-install-trust");
+  const auto source = createProceduralSource(root);
+  auto key = distribution::generateSigningKeyPair();
+  auto other = distribution::generateSigningKeyPair();
+  CHECK(key.hasValue() && other.hasValue());
+  if (!key || !other) return;
+  const auto packagePath = root / "pilot.seamsinger";
+  CHECK(distribution::packProceduralPackage(source, packagePath, key.value()).hasValue());
+  const auto installRoot = root / "installed";
+
+  distribution::InstallProceduralOptions untrusted;
+  untrusted.verification = distribution::VerifySeambankOptions{
+      .limits = {},
+      .trustedPublicKeys = {other.value().publicKey},
+      .requireTrustedSigner = true};
+  auto refused = distribution::installProceduralPackage(packagePath, installRoot, untrusted);
+  CHECK(!refused.hasValue());
+  CHECK(refused.error().code == core::ErrorCode::Conflict);
+  CHECK(!std::filesystem::exists(installRoot / "original.singer.pilot"));
+
+  // A caller that does not require a trusted signer is rejected outright, because installation is
+  // exactly the operation that must not happen on an unverified key.
+  distribution::InstallProceduralOptions permissive;
+  permissive.verification = distribution::VerifySeambankOptions{
+      .limits = {},
+      .trustedPublicKeys = {},
+      .requireTrustedSigner = false};
+  auto rejected = distribution::installProceduralPackage(packagePath, installRoot, permissive);
+  CHECK(!rejected.hasValue());
+  CHECK(rejected.error().code == core::ErrorCode::InvalidArgument);
 }
