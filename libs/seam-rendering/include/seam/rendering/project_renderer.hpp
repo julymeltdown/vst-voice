@@ -70,6 +70,10 @@ struct ProjectRenderResult final {
   // prepared snapshots the audible mix was rendered from. Empty when the request named no active
   // region or when its render published no phone timeline.
   std::vector<RenderedCueSpan> performanceCues;
+  // Who produced the audible material the partition and the mix belong to. Absent when the request
+  // named no active region, when that region's render published no identity, or when the identity is
+  // incomplete: a presentation binds to a complete identity or to nothing.
+  std::optional<RenderedPerformanceIdentity> performanceIdentity;
   std::vector<ProjectRenderDiagnostic> diagnostics;
   std::size_t trackCount{0U};
   std::size_t regionCount{0U};

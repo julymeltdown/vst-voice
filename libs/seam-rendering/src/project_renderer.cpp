@@ -1,5 +1,6 @@
 #include "seam/rendering/project_renderer.hpp"
 
+#include "seam/phonemizer/pronunciation_resolver.hpp"
 #include "seam/rendering/sample_rate_converter.hpp"
 #include "seam/rendering/streaming_pcm_source.hpp"
 #include "seam/rendering/render_pipeline.hpp"
@@ -164,6 +165,15 @@ core::Result<ProjectRenderResult> ProductionProjectRenderer::renderWithSources(
                                                    snapshot.value().phonemes->tokens);
           if (!cues) return core::Result<ProjectRenderResult>{cues.error()};
           output.performanceCues = std::move(cues).value();
+          const auto identity = RenderedPerformanceIdentity{
+              snapshot.value().findProcedural()->identity.id,
+              snapshot.value().findProcedural()->identity.version,
+              snapshot.value().findProcedural()->identity.contentHash,
+              snapshot.value().style,
+              phonemizer::pronunciationSequenceHash(snapshot.value().phonemes->tokens),
+              snapshot.value().revision,
+              snapshot.value().sampleRate};
+          if (identity.complete()) output.performanceIdentity = identity;
         }
         auto rendered = PhraseRenderPipeline{}.render(snapshot.value(), stopToken);
         if (!rendered) return core::Result<ProjectRenderResult>{rendered.error()};
@@ -195,6 +205,16 @@ core::Result<ProjectRenderResult> ProductionProjectRenderer::renderWithSources(
                                                    snapshot.value().phonemes->tokens);
           if (!cues) return core::Result<ProjectRenderResult>{cues.error()};
           output.performanceCues = std::move(cues).value();
+          const auto& execution = neural->bundle->execution();
+          const auto identity = RenderedPerformanceIdentity{
+              execution.modelId,
+              execution.modelVersion,
+              execution.bundleContentHash,
+              snapshot.value().style,
+              phonemizer::pronunciationSequenceHash(snapshot.value().phonemes->tokens),
+              snapshot.value().revision,
+              snapshot.value().sampleRate};
+          if (identity.complete()) output.performanceIdentity = identity;
         }
         // The prepared content identity already binds the admitted bundle digest,
         // feature and control identity, provider/runtime/worker versions, quality
@@ -256,6 +276,17 @@ core::Result<ProjectRenderResult> ProductionProjectRenderer::renderWithSources(
       if (!rendered) return core::Result<ProjectRenderResult>{rendered.error()};
       if (track.id == activeTrack && region.id == activeRegion)
         output.performanceCues = rendered.value().performanceCues;
+      if (track.id == activeTrack && region.id == activeRegion) {
+        const auto identity = RenderedPerformanceIdentity{
+            sample.manifest.id,
+            sample.manifest.version,
+            sample.contentHash,
+            track.styleSelection.styleId,
+            renderedPronunciationIdentity(rendered.value().phrasePronunciationDigests),
+            revision,
+            sampleRate};
+        if (identity.complete()) output.performanceIdentity = identity;
+      }
       for (const auto& failure : rendered.value().failures) {
         output.diagnostics.push_back(ProjectRenderDiagnostic{
             .trackId = track.id,

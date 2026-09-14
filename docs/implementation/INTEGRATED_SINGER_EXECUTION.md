@@ -1,5 +1,56 @@
 # Integrated Singer Execution
 
+## The standalone dock draws the published phrase, and a render is what binds it
+
+A performance read model existed and a dock policy existed, but nothing in the product produced one.
+The render still published no singer identity a presentation could bind to, the scene had no field for
+a performance, and no host asked for a frame, so a character could describe a phrase it could never
+show.
+
+The render now publishes the identity of what it rendered alongside the partition. `RenderedPerformanceIdentity`
+carries the resource id, version and content digest, the style, the render revision and the sample rate,
+with `pronunciationIdentity` a framed digest over the ordered per-phrase pronunciation digests the
+region published, so two different phrase splits cannot hash to one identity. It is filled from the
+prepared snapshot for procedural and neural renders and from the resolved voicebank plus the track's own
+style selection for sample renders, and an incomplete identity is not published at all rather than
+published with a placeholder.
+
+`AuthoringSession` evaluates that published render once per request and revision, on the calling
+thread, so the render callback never publishes presentation state from a worker. It then builds the
+snapshot through the published-render adapter and answers `characterPerformanceFrameAt(tick)` by
+mapping the transport through the project's own tempo map at the snapshot's sample rate. The snapshot
+now carries that sample rate, because a playhead cannot be mapped onto a frame coordinate without it.
+
+The dock is drawn from that. `EditorSceneState` gained a bounded performance view, the controller
+applies the host's reduced-motion preference to it (the setting belongs to the presentation, not to the
+phrase), and the dock paints a mouth label, a measured level bar and a mouth glyph. Reduced motion drops
+the glyph and keeps the label and the level, and a playhead outside the phrase says so in the dock
+instead of drawing a still mouth. The standalone host binds the dock once per published render and
+passes the frame for the current transport position every paint.
+
+Verified. `seam_character_performance_dock_tests` passes 3 of 3: the controller carries a performance
+into the scene and applies reduced motion from the host callback while leaving it false when the host
+says nothing; painting a dock with a phrase differs from painting it without one, painting it with
+reduced motion differs from both, and painting it again after the phrase is cleared restores the
+original pixels exactly; and in the standalone session a completed render binds the dock, whose
+identity is the procedural recipe's own id and content digest at style `neutral` and revision one,
+whose cues are non-empty and whose snapshot validates, whose playhead at the phrase start performs with
+nonzero energy and whose playhead four phrases later is closed and not performing, and whose second
+render rebinds at revision two with the generation advanced exactly once. Evaluating the same published
+render again is not a new phrase and does not advance the generation.
+`seam_render_performance_cues_tests` passes 5 of 5, including the new identity assertions and the
+framed-digest case, and `seam_character_performance_tests` passes 18 of 18. The whole tree builds and
+the registered CTest run is reported in the commit that carries this entry.
+
+Not claimed. The plug-in host still receives operational state only, so CLAP, VST3 and AUv2 do not yet
+draw a phrase; there is no captured screenshot or visual QA of a running window, only painted pixel
+comparisons. A singer switch that produces no new render leaves the previous binding in place, and
+overlapping vocal tracks are not disambiguated: the dock follows the region the render published, which
+is the active region rather than a policy for which of several simultaneous singers owns the character.
+Expression is still caller-supplied transport rather than analysis, the mouths remain the dock's own
+drawing vocabulary rather than a phonetic claim, nothing was listened to, no artwork was reviewed, and
+no unit acceptance changes.
+
 ## A rendered phrase publishes the phone partition a presentation may draw
 
 The character layer could already describe a performance, but nothing produced one. A render result

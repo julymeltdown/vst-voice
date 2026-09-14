@@ -1262,6 +1262,26 @@ void NativeEditorApp::paint(native_ui::RasterCanvas& canvas) noexcept {
   }
   character_.setDisplayMode(state.characterMode);
   character_.setState(state.characterState);
+  // The dock follows the phrase the current render published. A rebuild clears whatever was showing
+  // first, so a new render that published nothing closes the mouth instead of leaving the previous
+  // phrase's mouth on screen.
+  if (boundPerformanceGeneration_ != authoring_->characterPerformanceGeneration()) {
+    boundPerformanceGeneration_ = authoring_->characterPerformanceGeneration();
+    character_.clearPerformanceSnapshot();
+    if (const auto* performance = authoring_->characterPerformance(); performance != nullptr) {
+      static_cast<void>(character_.followSinger(character::performanceBindingKey(*performance)));
+      static_cast<void>(character_.setPerformanceSnapshot(*performance));
+    }
+  }
+  if (const auto frame = authoring_->characterPerformanceFrameAt(tick); frame.has_value()) {
+    state.characterPerformance = native_ui::EditorSceneState::CharacterPerformanceView{
+        .mouth = frame->mouth,
+        .energy = frame->energy,
+        .expression = frame->expression,
+        .performing = frame->performing,
+        .reducedMotion = false,
+    };
+  }
   state.characterPortrait = character_.portrait();
   authoring_->controller().setCharacterPortrait(state.characterPortrait);
   if (state.characterName.empty()) state.characterName = character_.displayName();

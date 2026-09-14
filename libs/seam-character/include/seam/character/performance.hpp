@@ -48,6 +48,9 @@ struct CharacterPerformanceSnapshot final {
   std::string resourceId, resourceVersion, resourceContentHash, style;
   std::string pronunciationIdentity;
   std::uint64_t renderRevision{0};
+  // The frame coordinate the spans are expressed in. Without it a playhead cannot be mapped onto the
+  // model, so it travels with the snapshot instead of being re-guessed from the transport.
+  std::uint32_t sampleRate{48000U};
   time::SampleFrame origin{0}, end{0};
   std::uint32_t windowFrames{240U};
   std::vector<PerformanceCue> cues;

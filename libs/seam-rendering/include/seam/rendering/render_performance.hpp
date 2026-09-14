@@ -35,6 +35,24 @@ inline constexpr std::size_t kMaximumRenderedCueSpans = 65536U;
 [[nodiscard]] RenderedCueKind renderedCueKindForSymbol(
     std::string_view symbol, domain::PhonemeRole role) noexcept;
 
+// The identity a presentation binds a performance to. Every field is published by the render that is
+// already audible, so a dock never has to re-derive which singer, style or pronunciation produced the
+// audio it is following. pronunciationIdentity is a canonical digest over the pronunciation the whole
+// active region rendered, so a lyric that re-resolves to different phones is a different performance
+// even when the audio bytes happen to be identical.
+struct RenderedPerformanceIdentity final {
+  std::string resourceId, resourceVersion, resourceContentHash, style, pronunciationIdentity;
+  std::uint64_t renderRevision{0};
+  std::uint32_t sampleRate{48000U};
+  [[nodiscard]] bool complete() const noexcept;
+  friend bool operator==(const RenderedPerformanceIdentity&,
+                         const RenderedPerformanceIdentity&) = default;
+};
+
+// The ordered per-phrase pronunciation digests, framed and hashed together. Empty input yields an
+// empty digest, because a region that published no phrase has no pronunciation to name.
+[[nodiscard]] std::string renderedPronunciationIdentity(std::span<const std::string> phraseDigests);
+
 // The ordered partition the dock can draw, projected from the compiled plan in absolute project
 // frames. The projection is needed because a compiled plan keeps richer declarations than a
 // single-mouth presentation can show: a phone may declare an onset inside the previous phone's

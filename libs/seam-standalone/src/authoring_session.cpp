@@ -3,11 +3,13 @@
 #include "seam/application/project_factory.hpp"
 #include "seam/application/arrangement_commands.hpp"
 #include "seam/application/render_commands.hpp"
+#include "seam/native_ui/character_performance_binding.hpp"
 #include "seam/rendering/streaming_pcm_source.hpp"
 #include "seam/voicebank/wav.hpp"
 
 #include <algorithm>
 #include <memory>
+#include <span>
 #include <system_error>
 #include <utility>
 
@@ -321,6 +323,56 @@ void AuthoringSession::onDocumentChanged() {
 
 void AuthoringSession::onRenderCompleted() {
   if (externalCallbacks_.requestRepaint) externalCallbacks_.requestRepaint();
+}
+
+const character::CharacterPerformanceSnapshot* AuthoringSession::characterPerformance() {
+  const auto published = runtime_->renderer().latest();
+  const auto publishedRequest = published ? published->requestId : 0U;
+  const auto ready = published && published->state == authoring::RenderState::Ready;
+  const auto revision = ready ? published->projectRevision : 0U;
+  if (characterPerformanceEvaluated_ && characterPerformanceRequest_ == publishedRequest &&
+      characterPerformanceRevision_ == revision)
+    return characterPerformance_.has_value() ? &*characterPerformance_ : nullptr;
+  characterPerformanceEvaluated_ = true;
+  characterPerformanceRequest_ = publishedRequest;
+  characterPerformanceRevision_ = revision;
+  characterPerformance_.reset();
+  characterPerformanceDiagnostic_.clear();
+  // The generation changes even when the evaluation publishes nothing: a host that was drawing a
+  // phrase has to learn that the phrase is gone, and that is a state change of its own.
+  ++characterPerformanceGeneration_;
+  if (!ready) return nullptr;
+  const auto& result = published->result;
+  if (!result.performanceIdentity.has_value() || result.performanceCues.empty()) return nullptr;
+  const auto& identity = *result.performanceIdentity;
+  native_ui::CharacterPerformanceBindingRequest request;
+  request.resourceId = identity.resourceId;
+  request.resourceVersion = identity.resourceVersion;
+  request.resourceContentHash = identity.resourceContentHash;
+  request.style = identity.style;
+  request.pronunciationIdentity = identity.pronunciationIdentity;
+  request.renderRevision = identity.renderRevision;
+  request.sampleRate = identity.sampleRate;
+  request.channelCount = result.channelCount;
+  request.interleaved =
+      std::span<const float>{result.interleaved.data(), result.interleaved.size()};
+  request.cues = result.performanceCues;
+  auto built = native_ui::buildPublishedCharacterPerformance(request);
+  if (!built) {
+    characterPerformanceDiagnostic_ = built.error().message;
+    return nullptr;
+  }
+  characterPerformance_ = std::move(built).value();
+  return &*characterPerformance_;
+}
+
+std::optional<character::CharacterPerformanceFrame> AuthoringSession::characterPerformanceFrameAt(
+    time::Tick position) const noexcept {
+  if (!characterPerformance_.has_value()) return std::nullopt;
+  const auto& project = runtime_->document().session().project();
+  const auto frame = project.tempoMap().sampleFrameAt(position,
+      static_cast<double>(characterPerformance_->sampleRate));
+  return character::characterPerformanceFrameAt(*characterPerformance_, frame);
 }
 
 

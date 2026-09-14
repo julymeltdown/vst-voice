@@ -1,10 +1,41 @@
 #include "seam/rendering/render_performance.hpp"
 
+#include "seam/core/sha256.hpp"
 #include "seam/phonemizer/phonemizer.hpp"
 
 #include <algorithm>
+#include <string>
 
 namespace seam::rendering {
+
+namespace {
+
+bool isDigest(std::string_view value) {
+  return value.size() == 64U && std::all_of(value.begin(), value.end(), [](char character) {
+           return (character >= '0' && character <= '9') || (character >= 'a' && character <= 'f');
+         });
+}
+
+}  // namespace
+
+bool RenderedPerformanceIdentity::complete() const noexcept {
+  return !resourceId.empty() && !resourceVersion.empty() && !style.empty() &&
+         isDigest(resourceContentHash) && isDigest(pronunciationIdentity);
+}
+
+std::string renderedPronunciationIdentity(std::span<const std::string> phraseDigests) {
+  if (phraseDigests.empty()) return {};
+  // Each digest is framed by its own length so two different orders or splits can never hash to the
+  // same identity by concatenation.
+  std::string framed;
+  for (const auto& digest : phraseDigests) {
+    framed += std::to_string(digest.size());
+    framed.push_back(':');
+    framed += digest;
+    framed.push_back(';');
+  }
+  return core::sha256Hex(framed);
+}
 
 RenderedCueKind renderedCueKindForSymbol(std::string_view symbol,
                                         domain::PhonemeRole role) noexcept {

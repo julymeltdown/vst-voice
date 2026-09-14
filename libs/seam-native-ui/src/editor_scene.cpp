@@ -1061,6 +1061,35 @@ void EditorScenePainter::paintCharacter(RasterCanvas& canvas,
   canvas.drawText(ui::Point{textX, modeTop},
                   "C: FULL / MIN / OFF", theme_.secondaryText,
                   layout_.characterDockDetailFontSize);
+  if (!state.characterPerformance.has_value()) return;
+  // What the character is singing, drawn from the published phrase rather than from the dock's own
+  // operational state. The label and the measured level are always shown; only the mouth glyph moves,
+  // so a host with reduced motion enabled keeps every fact and loses only the animation.
+  const auto& performance = *state.characterPerformance;
+  const auto level = std::clamp(static_cast<double>(performance.energy), 0.0, 1.0);
+  const auto performanceTop = modeTop + layout_.characterDockPerformanceAdvance;
+  const auto glyphLeft = textX + layout_.characterDockPerformanceBarWidth +
+                         layout_.characterDockPerformanceGlyphWidth;
+  canvas.drawText(ui::Point{textX, performanceTop},
+                  std::string{"MOUTH "} + std::string{character::mouthShapeName(performance.mouth)},
+                  theme_.primaryText, layout_.characterDockDetailFontSize);
+  if (!performance.reducedMotion) {
+    const auto glyphHeight = layout_.characterDockPerformanceGlyphHeight * (0.2 + 0.8 * level);
+    canvas.fillRect(ui::Rect{glyphLeft, performanceTop - glyphHeight,
+                             layout_.characterDockPerformanceGlyphWidth, glyphHeight},
+                    performance.performing ? theme_.accent : theme_.gridStrong);
+  }
+  const auto barTop = performanceTop + layout_.characterDockPerformanceBarHeight * 2.0;
+  canvas.strokeRect(ui::Rect{textX, barTop, layout_.characterDockPerformanceBarWidth,
+                             layout_.characterDockPerformanceBarHeight},
+                    theme_.gridStrong, layout_.characterDockPortraitBorderWidth);
+  canvas.fillRect(ui::Rect{textX, barTop, layout_.characterDockPerformanceBarWidth * level,
+                           layout_.characterDockPerformanceBarHeight},
+                  theme_.accent);
+  if (!performance.performing)
+    canvas.drawText(ui::Point{textX, barTop + layout_.characterDockDetailFontSize * 2.0},
+                    "NO PHRASE AT PLAYHEAD", theme_.secondaryText,
+                    layout_.characterDockDetailFontSize);
 }
 
 std::optional<double> resolveArrangementInspectorTop(const EditorSceneState& state,

@@ -42,6 +42,9 @@ struct RegionRenderResult final {
   // The phone partition this region's own phrases were rendered from, in absolute project frames.
   // A presentation can follow the published mix with it without re-deriving any timing.
   std::vector<RenderedCueSpan> performanceCues;
+  // One pronunciation digest per published phrase, in the same order as the phrase list. The caller
+  // that knows the singer's own identity combines these into the region's performance identity.
+  std::vector<std::string> phrasePronunciationDigests;
   std::vector<RegionRenderPhraseFailure> failures;
   std::size_t unitCount{0U};
   std::size_t fallbackCount{0U};

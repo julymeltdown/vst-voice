@@ -368,6 +368,13 @@ public:
   void setCharacterPortrait(const PixelSurface* portrait) noexcept {
     characterPortrait_ = portrait;
   }
+  // The dock's performance read model for the phrase that is published. The controller adds the
+  // host's reduced-motion preference when it builds the scene, because that setting belongs to the
+  // presentation rather than to the phrase.
+  void setCharacterPerformance(EditorSceneState::CharacterPerformanceView view) {
+    characterPerformance_ = view;
+  }
+  void clearCharacterPerformance() noexcept { characterPerformance_.reset(); }
   void setCharacterBinding(VoiceIdentityInput::CharacterBinding binding) {
     characterBinding_ = std::move(binding);
   }
@@ -614,6 +621,7 @@ private:
   std::string characterName_;
   std::string characterStyle_;
   const PixelSurface* characterPortrait_{nullptr};
+  std::optional<EditorSceneState::CharacterPerformanceView> characterPerformance_;
   std::optional<VoiceIdentityInput::CharacterBinding> characterBinding_;
   bool voicebankBrowserVisible_{false};
   std::vector<authoring::VoicebankCard> voicebankCards_;

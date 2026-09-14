@@ -107,6 +107,17 @@ TEST_CASE("A published render carries the phone partition it sang from") {
   // 1920 ticks at the default 120 bpm and 960 ppq is two quarter notes: 48000 frames at 48 kHz. The
   // partition cannot run past the music that produced it.
   CHECK(rendered.performanceCues.back().endFrame <= 48000);
+  // The identity a presentation binds to comes from the same render: the resource the audio was made
+  // from, the style it was rendered in, and a digest over the pronunciation that produced it.
+  CHECK(rendered.performanceIdentity.has_value());
+  CHECK(rendered.performanceIdentity->complete());
+  CHECK(rendered.performanceIdentity->resourceId == sung.resource.identity.id);
+  CHECK(rendered.performanceIdentity->resourceVersion == sung.resource.identity.version);
+  CHECK(rendered.performanceIdentity->resourceContentHash == sung.resource.identity.contentHash);
+  CHECK(rendered.performanceIdentity->style == "neutral");
+  CHECK(rendered.performanceIdentity->renderRevision == 1U);
+  CHECK(rendered.performanceIdentity->sampleRate == 48000U);
+  CHECK(rendered.performanceIdentity->pronunciationIdentity.size() == 64U);
   // The second note begins at tick 960, which is frame 24000. Its stop has to be placed after the
   // first note's material, not at the start of the published mix.
   CHECK(rendered.performanceCues.back().startFrame >= 0);
@@ -125,6 +136,21 @@ TEST_CASE("A request that names another active region publishes no partition") {
       rendering::RenderQuality::Final);
   CHECK(rendered.hasValue());
   CHECK(rendered.value().performanceCues.empty());
+  CHECK(!rendered.value().performanceIdentity.has_value());
+}
+
+TEST_CASE("A region's pronunciation identity is framed, not concatenated") {
+  const std::array<std::string, 2> split{"aa", "bbb"};
+  const std::array<std::string, 2> other{"aab", "bb"};
+  const auto first = rendering::renderedPronunciationIdentity(split);
+  const auto second = rendering::renderedPronunciationIdentity(other);
+  CHECK(first.size() == 64U);
+  CHECK(second.size() == 64U);
+  // Two different phrase splits must not hash to one identity, which is what a bare concatenation
+  // would do.
+  CHECK(first != second);
+  CHECK(rendering::renderedPronunciationIdentity(split) == first);
+  CHECK(rendering::renderedPronunciationIdentity({}).empty());
 }
 
 TEST_CASE("The product's own symbols decide the shape the dock may draw") {

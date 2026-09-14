@@ -5,6 +5,7 @@
 #include "seam/authoring/media_import_service.hpp"
 #include "seam/authoring/interchange_service.hpp"
 #include "seam/authoring/project_lifecycle.hpp"
+#include "seam/character/performance.hpp"
 #include "seam/core/result.hpp"
 #include "seam/native_ui/editor_controller.hpp"
 #include "seam/voicebank/catalog.hpp"
@@ -77,6 +78,25 @@ public:
   [[nodiscard]] core::Result<void> relinkBackingMedia(
       domain::TrackId trackId, const std::filesystem::path& sourcePath);
 
+  // The performance read model for the phrase the current render published. Evaluation happens on
+  // the calling thread and only once per published request, so the render callback never publishes
+  // presentation state from a worker. It is absent whenever no published render is bound to a
+  // complete identity, which is what keeps the dock from drawing a mouth for audio nobody can hear.
+  // The generation counter changes on every evaluation, so a host binds the dock once per published
+  // phrase instead of comparing whole snapshots every frame.
+  [[nodiscard]] const character::CharacterPerformanceSnapshot* characterPerformance();
+  [[nodiscard]] std::uint64_t characterPerformanceGeneration() const noexcept {
+    return characterPerformanceGeneration_;
+  }
+  [[nodiscard]] const std::string& characterPerformanceDiagnostic() const noexcept {
+    return characterPerformanceDiagnostic_;
+  }
+  // The dock's frame for one transport position, or nothing when no phrase is bound. The mapping is
+  // the project's own tempo map at the published render's sample rate, so a seek or a loop lands on
+  // the frame the audio itself is at.
+  [[nodiscard]] std::optional<character::CharacterPerformanceFrame> characterPerformanceFrameAt(
+      time::Tick position) const noexcept;
+
 private:
   AuthoringSession(std::unique_ptr<authoring::AuthoringRuntime> runtime,
                    domain::TrackId trackId,
@@ -101,6 +121,12 @@ private:
   native_ui::EditorHostCallbacks externalCallbacks_;
   domain::TrackId trackId_{};
   domain::RegionId regionId_{};
+  std::optional<character::CharacterPerformanceSnapshot> characterPerformance_;
+  bool characterPerformanceEvaluated_{false};
+  std::uint64_t characterPerformanceRequest_{0U};
+  std::uint64_t characterPerformanceRevision_{0U};
+  std::uint64_t characterPerformanceGeneration_{0U};
+  std::string characterPerformanceDiagnostic_;
 };
 
 }  // namespace seam::standalone

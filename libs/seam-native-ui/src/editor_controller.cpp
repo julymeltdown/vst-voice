@@ -222,6 +222,7 @@ EditorSceneState NativeEditorController::sceneState() const {
       .characterState = playing_ ? character::State::Focused
                                  : (dirty_ ? character::State::Warning
                                            : character::State::Neutral),
+      .characterPerformance = characterPerformance_,
       .characterName = characterName_,
       .characterStyle = characterStyle_,
       .characterPortrait = characterPortrait_,
@@ -292,6 +293,9 @@ EditorSceneState NativeEditorController::sceneState() const {
     }
     state.characterPortrait = characterPortrait_;
   }
+  if (state.characterPerformance.has_value())
+    state.characterPerformance->reducedMotion =
+        callbacks_.reduceMotionEnabled && callbacks_.reduceMotionEnabled();
   if (microscopeUnit_.has_value()) {
     state.sampleMicroscope = EditorSceneState::SampleMicroscopeView{
         .model = &microscope_,

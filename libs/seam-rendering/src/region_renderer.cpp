@@ -185,6 +185,8 @@ core::Result<RegionRenderResult> ProductionRegionRenderer::render(
       if (!cues) return core::Result<RegionRenderResult>{cues.error()};
       output.performanceCues.insert(output.performanceCues.end(), cues.value().begin(),
                                     cues.value().end());
+      output.phrasePronunciationDigests.push_back(
+          phonemizer::pronunciationSequenceHash(snapshot.value().phonemes->tokens));
     }
     std::shared_ptr<const CachedPcm> cached;
     if (cache != nullptr) {

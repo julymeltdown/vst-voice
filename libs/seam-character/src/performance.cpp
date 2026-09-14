@@ -62,6 +62,8 @@ core::Result<void> CharacterPerformanceSnapshot::validate() const {
     return core::Result<void>{invalid("Character performance snapshot identity is incomplete")};
   if (!isDigest(resourceContentHash))
     return core::Result<void>{invalid("Character performance snapshot resource digest is malformed")};
+  if (sampleRate < kMinimumSampleRate || sampleRate > kMaximumSampleRate)
+    return core::Result<void>{invalid("Character performance snapshot sample rate is outside its bound")};
   if (end <= origin)
     return core::Result<void>{invalid("Character performance snapshot span is empty or inverted")};
   if (windowFrames == 0U || windowFrames > kMaximumWindowFrames)
@@ -133,6 +135,7 @@ core::Result<CharacterPerformanceSnapshot> buildCharacterPerformanceSnapshot(
   result.style = request.style;
   result.pronunciationIdentity = request.pronunciationIdentity;
   result.renderRevision = request.renderRevision;
+  result.sampleRate = request.sampleRate;
   result.origin = request.origin;
   result.end = request.end;
   result.windowFrames = windowFrames;

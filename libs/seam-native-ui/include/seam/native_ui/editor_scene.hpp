@@ -1,6 +1,7 @@
 #pragma once
 
 #include "seam/character/character.hpp"
+#include "seam/character/performance.hpp"
 #include "seam/domain/project.hpp"
 #include "seam/native_ui/pixel_surface.hpp"
 #include "seam/native_ui/editor_frame_layout.hpp"
@@ -179,6 +180,18 @@ struct EditorSceneState final {
 
   domain::CharacterDisplayMode characterMode{domain::CharacterDisplayMode::Minimal};
   character::State characterState{character::State::Neutral};
+  // What the character is singing, when the dock holds a performance for the phrase that is
+  // published. Absent means no snapshot is bound to the selected singer, so the dock shows its
+  // operational state and no mouth: a still dock is not the same claim as a silent phrase.
+  struct CharacterPerformanceView final {
+    character::MouthShape mouth{character::MouthShape::Closed};
+    float energy{0.0F};
+    float expression{0.0F};
+    bool performing{false};
+    // The host's accessibility setting. Movement is dropped, the reported state is not.
+    bool reducedMotion{false};
+  };
+  std::optional<CharacterPerformanceView> characterPerformance{};
   std::string characterName;
   std::string characterStyle;
   const PixelSurface* characterPortrait{nullptr};
@@ -279,6 +292,11 @@ struct EditorSceneLayout final {
   double characterDockNameToRoleAdvance{18.0};
   double characterDockRoleToStateAdvance{16.0};
   double characterDockStateToModeAdvance{16.0};
+  double characterDockPerformanceAdvance{30.0};
+  double characterDockPerformanceBarWidth{104.0};
+  double characterDockPerformanceBarHeight{4.0};
+  double characterDockPerformanceGlyphWidth{14.0};
+  double characterDockPerformanceGlyphHeight{18.0};
   double characterDockNameFontSize{9.0};
   double characterDockDetailFontSize{7.0};
   double characterDockDividerStrokeWidth{1.0};

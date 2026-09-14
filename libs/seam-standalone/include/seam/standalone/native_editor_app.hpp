@@ -128,6 +128,9 @@ private:
 
   NativeEditorAppConfig config_;
   std::unique_ptr<AuthoringSession> authoring_;
+  // Which published performance the dock is currently bound to. Binding copies a phrase-sized read
+  // model, so it happens once per published render rather than once per painted frame.
+  std::uint64_t boundPerformanceGeneration_{0U};
   std::unique_ptr<StandaloneApplicationController> applicationController_;
   std::unique_ptr<platform::IApplicationMenu> applicationMenu_;
   native_ui::CharacterPresentation character_;
