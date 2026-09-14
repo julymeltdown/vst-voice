@@ -365,6 +365,30 @@ EditorSceneState NativeEditorController::sceneState() const {
     state.seamOverrides = region->seamOverrides;
     state.pitchAutomation = region->pitchAutomation.points();
   }
+  if (expressionLaneVisible_) {
+    const auto descriptor = ui::describeExpressionChannel(expressionChannel_);
+    state.expression.channel = expressionChannel_;
+    state.expression.label = std::string{descriptor.label};
+    state.expression.unit = std::string{descriptor.unit};
+    state.expression.minimum = descriptor.minimum;
+    state.expression.maximum = descriptor.maximum;
+    state.expression.neutral = descriptor.neutral;
+    state.expression.valueAtPlayhead = expressionValueAtPlayhead();
+    state.expression.draftOpen = expressionDraft_.has_value();
+    state.expression.draftChanged = expressionDraft_ && expressionDraft_->hasChanges();
+    if (expressionDraft_) state.expression.points = expressionDraft_->points();
+    else if (const auto* region = session_.project().findRegion(regionId_); region != nullptr)
+      state.expression.points = ui::readExpressionPoints(*region, expressionChannel_);
+    // The lane reports the same carrier decision the renderer makes, so a stored curve is never
+    // silently dropped and a refusal is never invisible.
+    if (!session_.project().findVocalTrack(selectedTrackId_)) {
+      state.expression.refusal = "Select a vocal track to see channel applicability";
+    } else {
+      const auto allowed = ui::validateExpressionCarrier(session_.project(), selectedTrackId_,
+                                                         expressionChannel_);
+      state.expression.refusal = allowed ? std::string{} : allowed.error().message;
+    }
+  }
   state.phonemeReview.available = callbacks_.reviewPhonemeBindings && callbacks_.rebindPhonemeOverride;
   state.phonemeReview.visible = phonemeReview_.has_value();
   if (phonemeReview_) {
@@ -4105,6 +4129,12 @@ core::Result<void> NativeEditorController::pointerDown(
   }
   if (event.position.y >= automationTop &&
       event.position.y < automationTop + automationHeight) {
+    if (expressionLaneVisible_) {
+      if (event.button != PointerButton::Left) return core::success();
+      const auto result = beginExpressionGesture(event.position, automationTop, automationHeight, event);
+      repaint();
+      return result;
+    }
     const auto existing = pitchPointAt(event.position, automationTop,
                                        automationHeight);
     if (existing.has_value()) {
@@ -4375,6 +4405,16 @@ core::Result<void> NativeEditorController::pointerMove(
     repaint();
     return core::success();
   }
+  if (dragMode_ == DragMode::MoveExpressionPoint) {
+    const auto expressionState = sceneState();
+    const auto overlayInset = layout_.diagnosticHeight(!expressionState.diagnostics.empty()) +
+        layout_.exportHeight(expressionState.exportProgress.totalFiles != 0U);
+    const auto technical = resolveEditorTechnicalLaneHeights(
+        expressionState, layout_, logicalHeight_ - layout_.statusHeight - overlayInset);
+    const auto automationTop = technical.pianoBottom + technical.values[0U] +
+        technical.values[1U] + technical.values[2U];
+    return updateExpressionGesture(event.position, automationTop, technical.values[3U]);
+  }
   if (dragMode_ == DragMode::MicroscopeMarker ||
       dragMode_ == DragMode::MicroscopePitchMark) {
     dragCurrent_ = event.position;
@@ -4498,6 +4538,9 @@ core::Result<void> NativeEditorController::pointerUp(
     dragPitchTick_.reset();
     repaint();
     return result;
+  }
+  if (dragMode_ == DragMode::MoveExpressionPoint) {
+    return endExpressionGesture();
   }
   dragCurrent_ = event.position;
   core::Result<void> result = core::success();
@@ -4742,6 +4785,24 @@ core::Result<void> NativeEditorController::keyDown(const KeyEvent& event) {
   if (event.key == NativeKey::Enter && event.modifiers.alt &&
       !event.modifiers.primaryShortcut()) {
     return beginSelectedHintEdit();
+  }
+
+  // While the expression lane is drawn it owns the two channel gestures that would otherwise belong to
+  // the whole document: Alt+Up/Down is a nudge of the selected channel, and Shift+Alt+Left/Right walks
+  // the channel picker. Both are undoable as single commands.
+  if (expressionLaneVisible_ && !event.modifiers.primaryShortcut()) {
+    if (event.modifiers.alt && !event.modifiers.shift &&
+        (event.key == NativeKey::Up || event.key == NativeKey::Down)) {
+      const auto nudged = nudgeExpressionLane(event.key == NativeKey::Up ? 1 : -1);
+      repaint();
+      return nudged;
+    }
+    if (event.modifiers.alt && event.modifiers.shift &&
+        (event.key == NativeKey::Left || event.key == NativeKey::Right)) {
+      const auto cycled = cycleExpressionLane(event.key == NativeKey::Right ? 1 : -1);
+      repaint();
+      return cycled;
+    }
   }
 
   if (event.modifiers.alt && !event.modifiers.primaryShortcut() &&
@@ -5869,6 +5930,217 @@ core::Result<void> NativeEditorController::resetGrowlCurve() {
           std::vector<application::RegionAirinessEdit>{},
           std::vector<application::RegionGenderEdit>{},
           std::vector<application::RegionGrowlEdit>{{regionId_, domain::GrowlAutomation{}}}));
+}
+
+}  // namespace seam::native_ui
+
+namespace seam::native_ui {
+
+core::Result<void> NativeEditorController::openExpressionLane(ui::ExpressionChannel channel) {
+  if (composition_.active() || replacementOpen_ || timeMapPanel_ || sampleMicroscopeOpen())
+    return core::failure(core::ErrorCode::Conflict, "Finish the active edit before opening the expression lane");
+  const auto* region = session_.project().findRegion(regionId_);
+  if (region == nullptr)
+    return core::failure(core::ErrorCode::NotFound, "Select a region before editing expression");
+  expressionChannel_ = channel;
+  expressionLaneVisible_ = true;
+  expressionDraft_.reset();
+  expressionDragTick_.reset();
+  repaint();
+  return core::success();
+}
+
+core::Result<void> NativeEditorController::cycleExpressionLane(int direction) {
+  if (direction == 0) return core::success();
+  return openExpressionLane(ui::nextExpressionChannel(expressionChannel_, direction));
+}
+
+core::Result<void> NativeEditorController::closeExpressionLane() {
+  expressionDraft_.reset();
+  expressionDragTick_.reset();
+  expressionLaneVisible_ = false;
+  repaint();
+  return core::success();
+}
+
+core::Result<ui::ExpressionLaneModel*> NativeEditorController::ensureExpressionDraft() {
+  if (expressionDraft_) return &expressionDraft_.value();
+  auto prepared = ui::ExpressionLaneModel::prepare(session_, regionId_, expressionChannel_);
+  if (!prepared) return core::Result<ui::ExpressionLaneModel*>{prepared.error()};
+  expressionDraft_.emplace(std::move(prepared.value()));
+  return &expressionDraft_.value();
+}
+
+core::Result<void> NativeEditorController::commitExpressionDraft() {
+  if (!expressionDraft_) return core::success();
+  const auto applied = expressionDraft_->apply(session_, regionId_);
+  if (!applied) { expressionDraft_.reset(); expressionDragTick_.reset(); return applied; }
+  expressionDraft_.reset();
+  expressionDragTick_.reset();
+  markDocumentChanged();
+  return core::success();
+}
+
+float NativeEditorController::expressionValueAtPlayhead() const {
+  if (expressionDraft_) return expressionDraft_->valueAt(playheadTick_);
+  const auto* region = session_.project().findRegion(regionId_);
+  if (region == nullptr) return ui::describeExpressionChannel(expressionChannel_).neutral;
+  const auto points = ui::readExpressionPoints(*region, expressionChannel_);
+  const auto descriptor = ui::describeExpressionChannel(expressionChannel_);
+  if (points.empty()) return descriptor.neutral;
+  const auto after = std::lower_bound(points.begin(), points.end(), playheadTick_,
+      [](const ui::ExpressionPoint& point, time::Tick value) { return point.tick < value; });
+  if (after == points.begin()) return after->amount;
+  if (after == points.end()) return points.back().amount;
+  if (after->tick == playheadTick_) return after->amount;
+  const auto before = after - 1;
+  const auto span = (after->tick - before->tick).value();
+  if (span <= 0) return after->amount;
+  const auto position = static_cast<double>((playheadTick_ - before->tick).value()) /
+                        static_cast<double>(span);
+  return static_cast<float>(static_cast<double>(before->amount) +
+                            static_cast<double>(after->amount - before->amount) * position);
+}
+
+time::Tick NativeEditorController::expressionTickAt(double x) const {
+  const auto* region = session_.project().findRegion(regionId_);
+  auto tick = pianoRoll_.timeline().pixelToTick(std::max(0.0, x - layout_.keyboardWidth));
+  if (region != nullptr) tick = std::clamp(tick, time::Tick{0}, region->durationTick);
+  if (session_.project().settings().snapEnabled) {
+    tick = time::Quantizer(session_.project().settings().snapGrid).snap(tick);
+    if (region != nullptr) tick = std::clamp(tick, time::Tick{0}, region->durationTick);
+  }
+  return tick < time::Tick{0} ? time::Tick{0} : tick;
+}
+
+float NativeEditorController::expressionAmountAt(double y, double automationTop,
+                                                double automationHeight) const {
+  const auto descriptor = ui::describeExpressionChannel(expressionChannel_);
+  const auto centerY = automationTop + automationHeight * layout_.automationCenterFraction;
+  const auto span = std::max(std::abs(descriptor.maximum - descriptor.neutral),
+                             std::abs(descriptor.neutral - descriptor.minimum));
+  const auto scale = automationHeight * layout_.pitchAutomationVerticalScale * 0.5;
+  if (scale <= 0.0 || span <= 0.0F) return descriptor.neutral;
+  const auto normalized = (centerY - y) / scale;
+  const auto value = static_cast<double>(descriptor.neutral) + normalized * span;
+  return std::clamp(static_cast<float>(value), descriptor.minimum, descriptor.maximum);
+}
+
+std::optional<time::Tick> NativeEditorController::expressionPointAt(ui::Point point,
+                                                                   double automationTop,
+                                                                   double automationHeight) const {
+  const auto* region = session_.project().findRegion(regionId_);
+  if (region == nullptr) return std::nullopt;
+  const auto descriptor = ui::describeExpressionChannel(expressionChannel_);
+  const auto points = expressionDraft_ ? expressionDraft_->points()
+                                       : ui::readExpressionPoints(*region, expressionChannel_);
+  const auto centerY = automationTop + automationHeight * layout_.automationCenterFraction;
+  const auto span = std::max(std::abs(descriptor.maximum - descriptor.neutral),
+                             std::abs(descriptor.neutral - descriptor.minimum));
+  const auto scale = automationHeight * layout_.pitchAutomationVerticalScale * 0.5;
+  std::optional<time::Tick> result;
+  auto bestDistance = std::numeric_limits<double>::max();
+  for (const auto& candidate : points) {
+    const auto x = layout_.keyboardWidth + pianoRoll_.timeline().tickToPixel(candidate.tick);
+    const auto y = centerY - (span <= 0.0F ? 0.0 : (candidate.amount - descriptor.neutral) / span) * scale;
+    const auto dx = point.x - x;
+    const auto dy = point.y - y;
+    const auto distance = dx * dx + dy * dy;
+    if (distance > 64.0 || distance >= bestDistance) continue;
+    bestDistance = distance;
+    result = candidate.tick;
+  }
+  return result;
+}
+
+core::Result<void> NativeEditorController::beginExpressionGesture(
+    ui::Point position, double automationTop, double automationHeight,
+    const PointerEvent& event) {
+  auto draft = ensureExpressionDraft();
+  if (!draft) return core::Result<void>{draft.error()};
+  const auto tick = expressionTickAt(position.x);
+  const auto existing = expressionPointAt(position, automationTop, automationHeight);
+  if (existing.has_value()) {
+    if (event.modifiers.shift) {
+      expressionDragTick_ = existing;
+      const auto erased = draft.value()->erase(*existing);
+      if (erased) return commitExpressionDraft();
+      expressionDragTick_.reset();
+      return erased;
+    }
+    expressionDragTick_ = existing;
+    dragMode_ = DragMode::MoveExpressionPoint;
+    return core::success();
+  }
+  const auto amount = expressionAmountAt(position.y, automationTop, automationHeight);
+  const auto inserted = draft.value()->upsert(ui::ExpressionPoint{tick, amount});
+  if (!inserted) return inserted;
+  expressionDragTick_ = tick;
+  dragMode_ = DragMode::MoveExpressionPoint;
+  return core::success();
+}
+
+core::Result<void> NativeEditorController::updateExpressionGesture(
+    ui::Point position, double automationTop, double automationHeight) {
+  if (!expressionDraft_ || !expressionDragTick_.has_value())
+    return core::failure(core::ErrorCode::InvalidState, "No expression point is being moved");
+  const auto tick = expressionTickAt(position.x);
+  const auto amount = expressionAmountAt(position.y, automationTop, automationHeight);
+  if (tick == *expressionDragTick_) {
+    const auto replaced = expressionDraft_->upsert(ui::ExpressionPoint{tick, amount});
+    if (!replaced) return replaced;
+  } else {
+    const auto moved = expressionDraft_->move(*expressionDragTick_, ui::ExpressionPoint{tick, amount});
+    if (!moved) return moved;
+    expressionDragTick_ = tick;
+  }
+  repaint();
+  return core::success();
+}
+
+core::Result<void> NativeEditorController::endExpressionGesture() {
+  dragMode_ = DragMode::None;
+  return commitExpressionDraft();
+}
+
+core::Result<void> NativeEditorController::nudgeExpressionLane(int steps) {
+  if (steps == 0) return core::success();
+  auto draft = ensureExpressionDraft();
+  if (!draft) return core::Result<void>{draft.error()};
+  const auto descriptor = ui::describeExpressionChannel(expressionChannel_);
+  const auto current = draft.value()->valueAt(playheadTick_);
+  const auto target = snappedToNeutral(std::clamp(
+      current + descriptor.step * static_cast<float>(steps), descriptor.minimum, descriptor.maximum));
+  auto next = draft.value()->points();
+  const auto equalToNeutral = [&descriptor](float value) {
+    return std::abs(value - descriptor.neutral) < 1.0e-6F;
+  };
+  const auto existing = std::lower_bound(next.begin(), next.end(), playheadTick_,
+      [](const ui::ExpressionPoint& point, time::Tick value) { return point.tick < value; });
+  if (equalToNeutral(target)) {
+    if (existing != next.end() && existing->tick == playheadTick_) next.erase(existing);
+    // A neutral point can still shape the ramp to another non-neutral point. Collapse only a curve
+    // that is neutral everywhere, so a local nudge cannot erase expression elsewhere in the phrase.
+    if (std::all_of(next.begin(), next.end(), [&](const ui::ExpressionPoint& point) {
+          return equalToNeutral(point.amount); })) next.clear();
+  } else if (existing != next.end() && existing->tick == playheadTick_) {
+    existing->amount = target;
+  } else {
+    next.insert(existing, ui::ExpressionPoint{playheadTick_, target});
+  }
+  const auto replaced = draft.value()->replacePoints(std::move(next));
+  if (!replaced) return replaced;
+  if (!draft.value()->hasChanges()) { expressionDraft_.reset(); return core::success(); }
+  return commitExpressionDraft();
+}
+
+core::Result<void> NativeEditorController::resetExpressionLaneDraft() {
+  if (!expressionDraft_) return core::success();
+  const auto reset = expressionDraft_->reset();
+  if (!reset) return reset;
+  expressionDraft_.reset();
+  repaint();
+  return core::success();
 }
 
 }  // namespace seam::native_ui

@@ -905,6 +905,24 @@ core::Result<void> StandaloneApplicationController::dispatch(
     case platform::ApplicationCommand::ResetRegionGrowlCurve:
       if (!config_.resetRegionGrowlCurve) return core::failure(core::ErrorCode::Unsupported, "Growl editing is not connected");
       return config_.resetRegionGrowlCurve();
+    case platform::ApplicationCommand::OpenExpressionLane:
+      if (!config_.openExpressionLane) return core::failure(core::ErrorCode::Unsupported, "The expression lane is not connected");
+      return config_.openExpressionLane();
+    case platform::ApplicationCommand::NextExpressionChannel:
+      if (!config_.nextExpressionChannel) return core::failure(core::ErrorCode::Unsupported, "The expression lane is not connected");
+      return config_.nextExpressionChannel();
+    case platform::ApplicationCommand::PreviousExpressionChannel:
+      if (!config_.previousExpressionChannel) return core::failure(core::ErrorCode::Unsupported, "The expression lane is not connected");
+      return config_.previousExpressionChannel();
+    case platform::ApplicationCommand::NudgeExpressionChannelUp:
+      if (!config_.nudgeExpressionChannelUp) return core::failure(core::ErrorCode::Unsupported, "The expression lane is not connected");
+      return config_.nudgeExpressionChannelUp();
+    case platform::ApplicationCommand::NudgeExpressionChannelDown:
+      if (!config_.nudgeExpressionChannelDown) return core::failure(core::ErrorCode::Unsupported, "The expression lane is not connected");
+      return config_.nudgeExpressionChannelDown();
+    case platform::ApplicationCommand::CloseExpressionLane:
+      if (!config_.closeExpressionLane) return core::failure(core::ErrorCode::Unsupported, "The expression lane is not connected");
+      return config_.closeExpressionLane();
     case platform::ApplicationCommand::EditTrackStyle:
       if (!config_.editTrackStyle) return core::failure(core::ErrorCode::Unsupported, "Style sheet is not connected");
       return config_.editTrackStyle();

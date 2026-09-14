@@ -247,6 +247,19 @@ public:
   [[nodiscard]] core::Result<void> openClearVibratoReview();
   [[nodiscard]] core::Result<void> openClearDynamicsReview();
   [[nodiscard]] core::Result<void> openDynamicsInspector();
+  // The timbral channels share one drawn lane. Opening it selects the channel and captures a draft;
+  // applying a gesture commits exactly one undoable edit. A singer that cannot render the channel
+  // still shows what is stored, with the refusal beside it.
+  [[nodiscard]] core::Result<void> openExpressionLane(ui::ExpressionChannel channel);
+  [[nodiscard]] core::Result<void> cycleExpressionLane(int direction);
+  [[nodiscard]] ui::ExpressionChannel selectedExpressionChannel() const noexcept {
+    return expressionChannel_;
+  }
+  [[nodiscard]] float expressionValueAtPlayhead() const;
+  [[nodiscard]] core::Result<void> nudgeExpressionLane(int steps);
+  [[nodiscard]] core::Result<void> resetExpressionLaneDraft();
+  [[nodiscard]] bool expressionLaneOpen() const noexcept { return expressionLaneVisible_; }
+  [[nodiscard]] core::Result<void> closeExpressionLane();
   [[nodiscard]] core::Result<void> openStyleCoverageSheet();
   [[nodiscard]] core::Result<void> openJapaneseReadingReview();
   void setJapaneseReadingResourceResolver(std::function<core::Result<authoring::StagedJapaneseReadingResource>()> resolver) {
@@ -454,6 +467,7 @@ private:
     MovePitchPoint,
     MicroscopeMarker,
     MicroscopePitchMark,
+    MoveExpressionPoint,
   };
 
   [[nodiscard]] ui::Point modelPoint(ui::Point windowPoint) const noexcept;
@@ -564,6 +578,28 @@ private:
   std::optional<std::size_t> japaneseReadingDetail_;
   std::vector<std::string> japaneseReadingDetailLines_;
   std::optional<ui::DynamicsLaneModel> dynamicsDraft_;
+  // The channel lane is persistent: the selected channel stays drawn after a gesture is committed,
+  // and a draft exists only while a gesture is in progress.
+  ui::ExpressionChannel expressionChannel_{ui::ExpressionChannel::Formant};
+  bool expressionLaneVisible_{false};
+  std::optional<ui::ExpressionLaneModel> expressionDraft_;
+  std::optional<time::Tick> expressionDragTick_;
+  [[nodiscard]] core::Result<ui::ExpressionLaneModel*> ensureExpressionDraft();
+  [[nodiscard]] core::Result<void> commitExpressionDraft();
+  [[nodiscard]] core::Result<void> beginExpressionGesture(ui::Point position,
+                                                          double automationTop,
+                                                          double automationHeight,
+                                                          const PointerEvent& event);
+  [[nodiscard]] core::Result<void> updateExpressionGesture(ui::Point position,
+                                                           double automationTop,
+                                                           double automationHeight);
+  [[nodiscard]] core::Result<void> endExpressionGesture();
+  [[nodiscard]] std::optional<time::Tick> expressionPointAt(ui::Point point,
+                                                            double automationTop,
+                                                            double automationHeight) const;
+  [[nodiscard]] time::Tick expressionTickAt(double x) const;
+  [[nodiscard]] float expressionAmountAt(double y, double automationTop,
+                                         double automationHeight) const;
   struct DynamicsPointEdit final {
     std::optional<time::Tick> source;
     std::string tickText{"0"};

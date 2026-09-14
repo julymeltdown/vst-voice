@@ -334,6 +334,7 @@ add_library(seam_editor_ui
   libs/seam-editor-ui/src/note_search_model.cpp
   libs/seam-editor-ui/src/vibrato_model.cpp
   libs/seam-editor-ui/src/dynamics_lane_model.cpp
+  libs/seam-editor-ui/src/expression_lane.cpp
   libs/seam-editor-ui/src/phoneme_lane_model.cpp
   libs/seam-editor-ui/src/text_composition_model.cpp
   libs/seam-editor-ui/src/svg_renderer.cpp
@@ -1694,6 +1695,12 @@ if(SEAM_BUILD_TESTS)
     target_link_libraries(seam_dynamics_lane_workflow_tests PRIVATE seam_native_ui)
     seam_apply_compiler_options(seam_dynamics_lane_workflow_tests)
     add_test(NAME seam_dynamics_lane_workflow_tests COMMAND seam_dynamics_lane_workflow_tests)
+    add_executable(seam_expression_lane_tests tests/test_main.cpp tests/test_expression_lane.cpp)
+    target_include_directories(seam_expression_lane_tests PRIVATE tests)
+    target_link_libraries(seam_expression_lane_tests PRIVATE
+      seam_native_ui seam_editor_ui seam_formats seam_rendering seam_voice_design)
+    seam_apply_compiler_options(seam_expression_lane_tests)
+    add_test(NAME seam_expression_lane_tests COMMAND seam_expression_lane_tests)
     add_executable(seam_measured_dynamics_tests tests/test_main.cpp tests/test_measured_dynamics_workflow.cpp)
     target_include_directories(seam_measured_dynamics_tests PRIVATE tests)
     target_link_libraries(seam_measured_dynamics_tests PRIVATE seam_native_ui seam_voice_design)

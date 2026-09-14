@@ -315,6 +315,30 @@
   (void)sender;
   [self editCommand:seam::platform::ApplicationCommand::ResetRegionGrowlCurve title:@"Cannot reset the growl curve"];
 }
+- (void)openExpressionLane:(id)sender {
+  (void)sender;
+  [self editCommand:seam::platform::ApplicationCommand::OpenExpressionLane title:@"Cannot open the expression lane"];
+}
+- (void)nextExpressionChannel:(id)sender {
+  (void)sender;
+  [self editCommand:seam::platform::ApplicationCommand::NextExpressionChannel title:@"Cannot choose the next channel"];
+}
+- (void)previousExpressionChannel:(id)sender {
+  (void)sender;
+  [self editCommand:seam::platform::ApplicationCommand::PreviousExpressionChannel title:@"Cannot choose the previous channel"];
+}
+- (void)nudgeExpressionChannelUp:(id)sender {
+  (void)sender;
+  [self editCommand:seam::platform::ApplicationCommand::NudgeExpressionChannelUp title:@"Cannot raise the expression channel"];
+}
+- (void)nudgeExpressionChannelDown:(id)sender {
+  (void)sender;
+  [self editCommand:seam::platform::ApplicationCommand::NudgeExpressionChannelDown title:@"Cannot lower the expression channel"];
+}
+- (void)closeExpressionLane:(id)sender {
+  (void)sender;
+  [self editCommand:seam::platform::ApplicationCommand::CloseExpressionLane title:@"Cannot close the expression lane"];
+}
 - (void)editTrackStyle:(id)sender {
   (void)sender;
   [self editCommand:seam::platform::ApplicationCommand::EditTrackStyle title:@"Cannot choose track style"];
@@ -512,6 +536,12 @@ public:
     [edit addItem:item(@"Raise Growl", @selector(nudgeGrowlUp:), @"]", NSEventModifierFlagCommand | NSEventModifierFlagOption | NSEventModifierFlagShift, target_)];
     [edit addItem:item(@"Lower Growl", @selector(nudgeGrowlDown:), @"[", NSEventModifierFlagCommand | NSEventModifierFlagOption | NSEventModifierFlagShift, target_)];
     [edit addItem:item(@"Reset Growl Curve", @selector(resetRegionGrowlCurve:), @"", 0, target_)];
+    [edit addItem:item(@"Open Expression Lane", @selector(openExpressionLane:), @"", 0, target_)];
+    [edit addItem:item(@"Next Expression Channel", @selector(nextExpressionChannel:), @"", 0, target_)];
+    [edit addItem:item(@"Previous Expression Channel", @selector(previousExpressionChannel:), @"", 0, target_)];
+    [edit addItem:item(@"Raise Expression Channel", @selector(nudgeExpressionChannelUp:), @"", 0, target_)];
+    [edit addItem:item(@"Lower Expression Channel", @selector(nudgeExpressionChannelDown:), @"", 0, target_)];
+    [edit addItem:item(@"Close Expression Lane", @selector(closeExpressionLane:), @"", 0, target_)];
     [edit addItem:item(@"Track Style and Coverage…", @selector(editTrackStyle:), @"", 0, target_)];
     [edit addItem:item(@"Resolve Japanese Reading…", @selector(editJapaneseReading:), @"", 0, target_)];
     [edit addItem:item(@"Clear Selected Vibrato…", @selector(clearSelectedVibrato:), @"",

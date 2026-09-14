@@ -131,7 +131,8 @@ TechnicalLaneHeights resolveEditorTechnicalLaneHeights(
           !state.phonemes.tokens.empty() || state.technicalLaneAvailable[0U],
           !state.unitOverrides.empty() || state.technicalLaneAvailable[1U],
           !state.seamOverrides.empty() || state.technicalLaneAvailable[2U],
-          !state.pitchAutomation.empty() || state.technicalLaneAvailable[3U],
+          !state.pitchAutomation.empty() || state.technicalLaneAvailable[3U] ||
+              state.expressionLabelVisible(),
       },
       .previewHeights = { layout.phonemeLaneHeight, layout.unitLaneHeight,
                           layout.seamLaneHeight, layout.automationLaneHeight },
@@ -833,7 +834,55 @@ void EditorScenePainter::paintTechnicalLanes(
             : "CLICK TO SET BOUNDARY CHARACTER",
         theme_.primaryText, layout_.laneInstructionFontSize);
   }
-  laneLabel(canvas, automationTop, automationHeight, "PITCH");
+  if (state.expressionLabelVisible()) {
+    // One lane, many channels: the lane name is the selected channel and its unit, and the empty-state
+    // hint states the gesture. A stored curve is drawn even when the selected singer refuses it, with
+    // the refusal printed beside the chain so the creator is never shown a silent drop.
+    const auto& channel = state.expression;
+    laneLabel(canvas, automationTop, automationHeight, channel.label);
+    // The unit is stated in the lane's own free space at its right edge, where the label column is too
+    // narrow to hold it, so a normalized share is never read as semitones or as a bipolar value.
+    if (channel.refusal.empty())
+      canvas.drawText(
+          ui::Rect{editorRight - 210.0, automationTop + 1.0, 206.0,
+                   layout_.pitchEmptyTextFontSize + 2.0},
+          std::string{"unit: "} + channel.unit, theme_.secondaryText,
+          layout_.pitchEmptyTextFontSize);
+    const auto chainY = automationTop + automationHeight * layout_.automationCenterFraction;
+    canvas.line(ui::Point{left, chainY}, ui::Point{editorRight, chainY},
+                theme_.gridStrong, layout_.automationGridStrokeWidth);
+    std::optional<ui::Point> previous;
+    const auto position = [&](ui::ExpressionPoint point) {
+      const auto span = std::max(std::abs(channel.maximum - channel.neutral),
+                                 std::abs(channel.neutral - channel.minimum));
+      const auto scale = automationHeight * layout_.pitchAutomationVerticalScale * 0.5;
+      const auto x = left + model.timeline().tickToPixel(point.tick);
+      const auto y = span <= 0.0F ? chainY
+                                  : chainY - (point.amount - channel.neutral) / span * scale;
+      return ui::Point{x, y};
+    };
+    for (const auto& point : channel.points) {
+      const auto current = position(point);
+      if (current.x < left || current.x > editorRight) continue;
+      if (previous.has_value()) canvas.line(*previous, current, theme_.automation,
+                                            layout_.automationCurveStrokeWidth);
+      previous = current;
+      canvas.fillRect(ui::Rect{current.x - 2.0, current.y - 2.0, 4.0, 4.0}, theme_.accent);
+    }
+    // The gesture hint occupies the lane only while the channel has no points, exactly as the pitch
+    // hint does, so a drawn curve is never overdrawn by instruction text.
+    if (channel.points.empty())
+      canvas.drawText(
+          ui::Point{left + layout_.pitchEmptyTextInsetX,
+                    automationTop + layout_.pitchEmptyTextFontSize + 2.0},
+          "CLICK: ADD / DRAG: MOVE / SHIFT+CLICK: DELETE / ALT+UP/DOWN: NUDGE",
+          theme_.secondaryText, layout_.pitchEmptyTextFontSize);
+    if (!channel.refusal.empty())
+      canvas.drawText(
+          ui::Point{left + layout_.pitchEmptyTextInsetX,
+                    automationTop + automationHeight - layout_.pitchEmptyTextBottomPadding},
+          channel.refusal, theme_.runtimeOverlayError, layout_.pitchEmptyTextFontSize);
+  }
 
   ui::PhonemeLaneModel phonemeLane;
   phonemeLane.rebuild(model, state.phonemes,
@@ -953,7 +1002,9 @@ void EditorScenePainter::paintTechnicalLanes(
                        automationHeight * layout_.automationCenterFraction;
   canvas.line(ui::Point{left, centerY}, ui::Point{editorRight, centerY},
               theme_.gridStrong, layout_.automationGridStrokeWidth);
-  if (!state.pitchAutomation.empty()) {
+  // The automation band shows either the score's pitch curve or the selected timbral channel. When a
+  // channel is selected the band belongs to it, so the two curves never draw over each other.
+  if (!state.expressionLabelVisible() && !state.pitchAutomation.empty()) {
     std::optional<std::pair<domain::PitchAutomationPoint, ui::Point>> previous;
     for (const auto& point : state.pitchAutomation) {
       const auto x = left + model.timeline().tickToPixel(point.tick);
@@ -1008,7 +1059,8 @@ void EditorScenePainter::paintTechnicalLanes(
                       theme_.automation);
       previous = std::make_pair(point, current);
     }
-  } else {
+  } else if (!state.expressionLabelVisible()) {
+    laneLabel(canvas, automationTop, automationHeight, "PITCH");
     const auto baseline = std::min(
         layout_.pitchEmptyTextBaselineOffset,
         std::max(1.0, automationHeight - layout_.pitchEmptyTextFontSize -

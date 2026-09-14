@@ -68,6 +68,13 @@ enum class ApplicationCommand {
   NudgeGrowlUp,
   NudgeGrowlDown,
   ResetRegionGrowlCurve,
+  // One drawn lane for the timbral channels that share a region curve.
+  OpenExpressionLane,
+  NextExpressionChannel,
+  PreviousExpressionChannel,
+  NudgeExpressionChannelUp,
+  NudgeExpressionChannelDown,
+  CloseExpressionLane,
   EditTrackStyle,
   EditJapaneseReading,
 };

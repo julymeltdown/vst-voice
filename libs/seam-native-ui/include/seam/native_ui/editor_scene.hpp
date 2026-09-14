@@ -18,6 +18,7 @@
 #include "seam/phonemizer/phonemizer.hpp"
 #include "seam/ui/piano_roll_model.hpp"
 #include "seam/ui/sample_microscope_model.hpp"
+#include "seam/ui/expression_lane.hpp"
 
 #include <cstdint>
 #include <algorithm>
@@ -174,6 +175,27 @@ struct EditorSceneState final {
   std::optional<domain::PhonemeKey> selectedSeam;
   bool seamPreviewAlternate{false};
   std::vector<domain::PitchAutomationPoint> pitchAutomation;
+  // The timbral channel the automation lane is editing, with its own stored curve and unit. The
+  // lane is always available; whether the selected singer can render the channel is reported beside
+  // it rather than hidden, so a stored curve is never invisible.
+  struct ExpressionLaneView final {
+    ui::ExpressionChannel channel{ui::ExpressionChannel::Formant};
+    std::string label;
+    std::string unit;
+    float minimum{0.0F};
+    float maximum{1.0F};
+    float neutral{0.0F};
+    float valueAtPlayhead{0.0F};
+    std::vector<ui::ExpressionPoint> points;
+    // Empty when the selected carrier renders the channel; otherwise the product's own refusal.
+    std::string refusal;
+    bool draftOpen{false};
+    bool draftChanged{false};
+  } expression;
+  // The expression lane is available whenever a channel is selected; the automation lane carries it.
+  [[nodiscard]] bool expressionLabelVisible() const noexcept {
+    return !expression.label.empty();
+  }
   std::array<domain::TechnicalLanePresentation, domain::kTechnicalLaneCount> technicalLanes{};
   std::array<bool, 4U> technicalLaneAvailable{};
   std::optional<std::array<double, 4U>> technicalLaneHeightsOverride;

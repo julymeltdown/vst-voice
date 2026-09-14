@@ -74,6 +74,12 @@ struct StandaloneApplicationControllerConfig final {
   std::function<core::Result<void>()> nudgeGrowlUp;
   std::function<core::Result<void>()> nudgeGrowlDown;
   std::function<core::Result<void>()> resetRegionGrowlCurve;
+  std::function<core::Result<void>()> openExpressionLane;
+  std::function<core::Result<void>()> nextExpressionChannel;
+  std::function<core::Result<void>()> previousExpressionChannel;
+  std::function<core::Result<void>()> nudgeExpressionChannelUp;
+  std::function<core::Result<void>()> nudgeExpressionChannelDown;
+  std::function<core::Result<void>()> closeExpressionLane;
   std::function<core::Result<void>()> editTrackStyle;
   std::function<core::Result<void>()> editJapaneseReading;
   // The callback owns the bounded conversion-review surface. Returning false

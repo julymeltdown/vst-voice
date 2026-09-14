@@ -495,6 +495,26 @@ core::Result<void> NativeEditorApp::initialize() {
           .resetRegionGrowlCurve = [this] {
             const auto result = authoring_->controller().resetGrowlCurve(); record(result); return result;
           },
+          .openExpressionLane = [this] {
+            const auto result = authoring_->controller().openExpressionLane(
+                authoring_->controller().selectedExpressionChannel());
+            record(result); return result;
+          },
+          .nextExpressionChannel = [this] {
+            const auto result = authoring_->controller().cycleExpressionLane(1); record(result); return result;
+          },
+          .previousExpressionChannel = [this] {
+            const auto result = authoring_->controller().cycleExpressionLane(-1); record(result); return result;
+          },
+          .nudgeExpressionChannelUp = [this] {
+            const auto result = authoring_->controller().nudgeExpressionLane(1); record(result); return result;
+          },
+          .nudgeExpressionChannelDown = [this] {
+            const auto result = authoring_->controller().nudgeExpressionLane(-1); record(result); return result;
+          },
+          .closeExpressionLane = [this] {
+            const auto result = authoring_->controller().closeExpressionLane(); record(result); return result;
+          },
           .editTrackStyle = [this] {
             const auto result = authoring_->controller().openStyleCoverageSheet(); record(result); return result;
           },

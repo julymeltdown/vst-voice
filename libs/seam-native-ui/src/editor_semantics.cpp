@@ -5,6 +5,7 @@
 #include "seam/native_ui/diagnostic_presentation.hpp"
 
 #include <array>
+#include <charconv>
 #include <algorithm>
 #include <cmath>
 
@@ -568,6 +569,22 @@ SemanticNode EditorSemanticTree::build(const EditorSceneState& state,
     }
     return std::to_string(state.pitchAutomation.size()) + " automation points";
   };
+  // The automation lane reports the selected timbral channel when one is drawn, so a reader that
+  // cannot see the curve still learns the channel, its unit, the value at the playhead and any
+  // refusal. This is the applicable-expression row the plan asks for, carried in the lane itself.
+  const auto expressionLane = [&state](std::string_view name) {
+    if (name != "pitch" || !state.expressionLabelVisible()) return std::string{};
+    std::string value = state.expression.label + " channel, " +
+        std::to_string(state.expression.points.size()) + " points, " + state.expression.unit +
+        ", value at playhead ";
+    std::array<char, 32> buffer{};
+    const auto formatted = std::to_chars(buffer.data(), buffer.data() + buffer.size(),
+                                         state.expression.valueAtPlayhead);
+    value.append(buffer.data(), formatted.ptr);
+    if (state.expression.draftChanged) value += ", unsaved gesture in progress";
+    if (!state.expression.refusal.empty()) value += "; refused: " + state.expression.refusal;
+    return value;
+  };
   const auto laneDescription = [](std::string_view name) {
     if (name == "phoneme") {
       return std::string{"Generated phoneme tokens and diagnostics"};
@@ -609,12 +626,17 @@ SemanticNode EditorSemanticTree::build(const EditorSceneState& state,
         .id = "lane." + lane.first,
         .role = SemanticRole::Lane,
         .name = lane.first + " lane",
-        .value = laneValue(lane.first),
+        .value = expressionLane(lane.first).empty() ? laneValue(lane.first)
+                                                    : expressionLane(lane.first),
         .bounds = laneBounds,
         .enabled = true,
         .focused = false,
         .actions = {SemanticAction::SetFocus, SemanticAction::Toggle},
-        .description = laneDescription(lane.first),
+        .description = lane.first == "pitch" && !expressionLane(lane.first).empty()
+                           ? std::string{"Timbral channel curve: click to add, drag to move, "
+                                         "shift-click to delete, alt-arrows to nudge, and "
+                                         "shift-alt-arrows to change channel"}
+                           : laneDescription(lane.first),
     });
     laneTop += lane.second;
   }

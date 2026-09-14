@@ -1,5 +1,38 @@
 # Integrated Singer Execution
 
+## The timbral channels now have a lane you can draw on
+
+September 15, 2026 — D2. The six channels that share a region curve are edited through one drawn lane
+in the automation band instead of six keyboard nudges. `ExpressionChannelDescriptor` carries each
+channel's own unit and bound; `ExpressionLaneModel` captures a draft exactly as the dynamics lane does
+and commits one gesture as exactly one undoable command.
+
+The surface is shared; the meaning is not. Formant is semitones with a one-semitone step, gender is
+bipolar, and breathiness, tension, airiness and growl are normalized shares with a tenth step. A
+channel that the selected singer cannot render is still drawn from the stored project curve, with the
+renderer's own refusal printed in the lane; edits are refused rather than silently dropped. The lane
+is reachable from the Edit menu, and the same facts are exposed in the automation lane's accessible
+value and description.
+
+Verified. `seam_expression_lane_tests` passes 8 of 8: units and bounds per channel; one semitone, one
+bipolar and one normalized channel driven through the same insert/move/delete/undo interaction;
+out-of-range, nonfinite and beyond-region points rejected rather than clamped; cancellation and a
+stale session revision refusing to apply; a bank refusing every one of the six channels by name while
+the stored curve stays visible and clearable; save/reload round trip; and the drawn lane reporting
+channel, unit, playhead value and refusal. The paint case renders the real scene and is retained by
+request.
+
+Review of that render found two defects that the assertions alone did not catch: the pitch empty-state
+hint still painted inside the band the expression lane owns, and instruction text overdraw the curve.
+The lane now takes the band from pitch when it is open and shows its gesture hint only while the
+channel has no points, with the unit stated in the band's right margin. The full Release build and the
+registered suite pass together here, and source closure passes once the new files are staged.
+
+Not claimed. This is one shared surface for six existing channels, not a new synthesis capability.
+Undo grouping beyond a single gesture, drawn interpolation modes and per-channel lane stacks are not
+implemented. The lane was verified on the fixture project and the retained packet's own song is the
+next input. No U-unit acceptance or Beta GO state changes.
+
 ## The revised plan now has a retained song to edit and compare
 
 September 15, 2026 — D1 technical packet. The existing procedural pilot rendered
