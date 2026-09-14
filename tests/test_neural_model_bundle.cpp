@@ -1,4 +1,5 @@
 #include "test_framework.hpp"
+#include "test_onnx_fixture.hpp"
 #include "seam/core/sha256.hpp"
 #include "seam/neural_synthesis/model_bundle.hpp"
 
@@ -25,16 +26,16 @@ std::string configuration(std::uint32_t version,std::uint64_t maximumFrames) {
   return result+"}";
 }
 
-seam::core::Result<seam::synthesis::FrozenNeuralBundle> fixture(std::string_view graph,
-    std::uint32_t version,std::uint64_t maximumFrames,
+seam::core::Result<seam::synthesis::FrozenNeuralBundle> fixture(std::string_view acoustic,
+    std::string_view vocoder,std::uint32_t version,std::uint64_t maximumFrames,
     std::string_view vocabulary=R"({"formatId":"com.project-seam.neural-vocabulary","schemaVersion":1,"tokens":["<PAD>","SP","a"]})") {
   using namespace seam::synthesis;
   const std::string declaration=configuration(version,maximumFrames);
   const auto input=[&](NeuralAssetRole role,const char* name,std::string_view value) {
     return NeuralBundleAssetInput{role,name,std::as_bytes(std::span{value.data(),value.size()}),seam::core::sha256Hex(value)};
   };
-  const std::array assets{input(NeuralAssetRole::Acoustic,"acoustic",graph),
-      input(NeuralAssetRole::Vocoder,"vocoder",graph),input(NeuralAssetRole::Vocabulary,"vocabulary",vocabulary),
+  const std::array assets{input(NeuralAssetRole::Acoustic,"acoustic",acoustic),
+      input(NeuralAssetRole::Vocoder,"vocoder",vocoder),input(NeuralAssetRole::Vocabulary,"vocabulary",vocabulary),
       input(NeuralAssetRole::Configuration,"configuration",declaration)};
   const auto manifest=FrozenNeuralBundle::manifest(assets,1024U*1024U);
   if (!manifest) return seam::core::Result<FrozenNeuralBundle>{manifest.error()};
@@ -44,9 +45,18 @@ seam::core::Result<seam::synthesis::FrozenNeuralBundle> fixture(std::string_view
 
 }  // namespace
 
+namespace {
+
+// The configured declaration names its vocoder output "audio" and its mel layout BTF with 80 bins,
+// so the fixtures below declare exactly that and the tests vary one thing at a time from there.
+std::string acousticGraph() { return seam::test::onnx::onnxAcousticGraph(); }
+std::string vocoderGraph() { return seam::test::onnx::onnxVocoderGraph(80U, 1U, "audio"); }
+
+}  // namespace
+
 TEST_CASE("admitted neural bundle binds execution identity and shares frozen assets") {
   using namespace seam::neural_synthesis;
-  const auto bundle=fixture("admissible graph fixture",3U,48000U);
+  const auto bundle=fixture(acousticGraph(),vocoderGraph(),3U,48000U);
   CHECK(bundle);
   const auto admitted=AdmittedNeuralBundle::admit(bundle.value(),65536U,10);
   CHECK(admitted);
@@ -64,7 +74,13 @@ TEST_CASE("admitted neural bundle binds execution identity and shares frozen ass
   CHECK(copy.acoustic().get()==admitted.value().acoustic().get());
   CHECK(copy.vocoder().get()==admitted.value().vocoder().get());
   CHECK(copy.vocabulary().get()==admitted.value().vocabulary().get());
-  CHECK(copy.acoustic()->sha256()==seam::core::sha256Hex("admissible graph fixture"));
+  CHECK(copy.acoustic()->sha256()==seam::core::sha256Hex(acousticGraph()));
+  // The handle retains what each graph file declares, not just the configuration's description.
+  CHECK(admitted.value().acousticGraph().opset==17U);
+  CHECK(admitted.value().acousticGraph().producer=="seam-test");
+  CHECK(admitted.value().acousticGraph().findOutput("mel")!=nullptr);
+  CHECK(admitted.value().vocoderGraph().findInput("mel")!=nullptr);
+  CHECK(admitted.value().vocoderGraph().findOutput("audio")!=nullptr);
   // A different steps value is a different execution identity.
   const auto other=AdmittedNeuralBundle::admit(bundle.value(),65536U,20);
   CHECK(other);
@@ -76,11 +92,11 @@ TEST_CASE("admitted neural bundle binds execution identity and shares frozen ass
 TEST_CASE("admitted neural bundle refuses legacy, over-budget, mismatched and cancelled preparation") {
   using namespace seam::neural_synthesis;
   // Schema v1 declares neither a steps layout nor an output name.
-  const auto legacy=fixture("admissible graph fixture",1U,48000U);
+  const auto legacy=fixture(acousticGraph(),vocoderGraph(),1U,48000U);
   CHECK(legacy);
   const auto refusedLegacy=AdmittedNeuralBundle::admit(legacy.value(),65536U,10);
   CHECK(!refusedLegacy);
-  const auto declared=fixture("admissible graph fixture",3U,48000U);
+  const auto declared=fixture(acousticGraph(),vocoderGraph(),3U,48000U);
   CHECK(declared);
   const auto overBudget=AdmittedNeuralBundle::admit(declared.value(),4096U,10);
   CHECK(!overBudget);
@@ -94,7 +110,7 @@ TEST_CASE("admitted neural bundle refuses legacy, over-budget, mismatched and ca
   CHECK(retained.valid() && !moved.valid());
   CHECK(!AdmittedNeuralBundle::admit(std::move(moved),65536U,10));
   const auto vocabulary=R"({"formatId":"com.project-seam.neural-vocabulary","schemaVersion":1,"tokens":["<PAD>","SP"]})";
-  const auto other=fixture("admissible graph fixture",3U,48000U,vocabulary);
+  const auto other=fixture(acousticGraph(),vocoderGraph(),3U,48000U,vocabulary);
   CHECK(other);
   const auto admitted=AdmittedNeuralBundle::admit(other.value(),65536U,10);
   CHECK(admitted);
@@ -104,7 +120,133 @@ TEST_CASE("admitted neural bundle refuses legacy, over-budget, mismatched and ca
   CHECK(!AdmittedNeuralBundle::admit(declared.value(),65536U,10,cancellation.get_token()));
   // Freezing is byte binding only; a vocabulary that cannot be decoded is
   // refused at admission, before any phrase is prepared.
-  const auto undecodable=fixture("admissible graph fixture",3U,48000U,"{}");
+  const auto undecodable=fixture(acousticGraph(),vocoderGraph(),3U,48000U,"{}");
   CHECK(undecodable);
   CHECK(!AdmittedNeuralBundle::admit(undecodable.value(),65536U,10));
+}
+
+TEST_CASE("graph inspection reports what a graph file declares") {
+  using namespace seam::neural_synthesis;
+  const auto acoustic=acousticGraph();
+  const auto graph=inspectNeuralGraph(std::as_bytes(std::span{acoustic.data(),acoustic.size()}));
+  CHECK(graph);
+  if (!graph) return;
+  CHECK(graph.value().irVersion==9U);
+  CHECK(graph.value().opset==17U);
+  CHECK(graph.value().producer=="seam-test");
+  // The operator set is what the file uses, unique and sorted, not what the file claims elsewhere.
+  CHECK(graph.value().operators==std::vector<std::string>{"MatMul"});
+  CHECK(graph.value().nodeCount==1U);
+  CHECK(graph.value().initializerCount==1U);
+  CHECK(graph.value().initializerBytes==4ULL*80ULL);
+  CHECK(graph.value().inputs.size()==1U);
+  CHECK(graph.value().inputs.front().name=="phones");
+  CHECK(graph.value().inputs.front().elementType==7U);
+  CHECK(graph.value().outputs.size()==1U);
+  const auto* mel=graph.value().findOutput("mel");
+  CHECK(mel!=nullptr);
+  if (!mel) return;
+  // A symbolic time axis is recorded as unbounded while the rank and the feature axis stay known.
+  CHECK((mel->dimensions==std::vector<std::int64_t>{1,-1,80}));
+  CHECK(mel->dynamicDimensions()==1U);
+  CHECK(isFloatTensorElementType(mel->elementType));
+  CHECK(!isFloatTensorElementType(7U));
+  CHECK(tensorElementTypeName(mel->elementType)=="float32");
+  CHECK(tensorElementTypeName(7U)=="int64");
+  CHECK(isAdmittedOperator("ConvTranspose"));
+  // The graph-bearing operators are not admitted: their subgraphs are not inspected here.
+  CHECK(!isAdmittedOperator("Loop"));
+  CHECK(!isAdmittedOperator("SeamCustomOp"));
+}
+
+TEST_CASE("graph inspection refuses bytes no admitted export family produces") {
+  using namespace seam::neural_synthesis;
+  using namespace seam::test::onnx;
+  const auto inspect=[&](const std::string& bytes) {
+    return inspectNeuralGraph(std::as_bytes(std::span{bytes.data(),bytes.size()}));
+  };
+  // A model whose meta declares a training record, a function or any other field is refused rather
+  // than skipped, so a second representation cannot ride along unnoticed.
+  auto unknownModel=onnxModel(onnxGraph({onnxValueInfo("mel",1U,{"1","T","80"})},
+      {onnxValueInfo("audio",1U,{"1","samples"})},{onnxNode("Identity",{"mel"},{"audio"})}));
+  protoVarintField(unknownModel,20U,1U);
+  CHECK(!inspect(unknownModel));
+  // An explicit custom operator domain is refused by name, and so is an operator outside the set.
+  const auto customDomain=onnxModel(onnxGraph({onnxValueInfo("mel",1U,{"1","T","80"})},
+      {onnxValueInfo("audio",1U,{"1","samples"})},
+      {onnxNode("SeamLookup",{"mel"},{"audio"},"com.example.case")}));
+  CHECK(!inspect(customDomain));
+  const auto unknownOperator=onnxModel(onnxGraph({onnxValueInfo("mel",1U,{"1","T","80"})},
+      {onnxValueInfo("audio",1U,{"1","samples"})},
+      {onnxNode("FancyNeuralOp",{"mel"},{"audio"})}));
+  CHECK(!inspect(unknownOperator));
+  // A node attribute that carries a subgraph is refused: this reader does not inspect subgraphs.
+  std::string attribute;
+  protoBytesField(attribute,1U,"body");
+  protoBytesField(attribute,6U,"subgraph bytes");
+  std::string node;
+  protoBytesField(node,1U,"mel");
+  protoBytesField(node,2U,"audio");
+  protoBytesField(node,4U,"Identity");
+  protoBytesField(node,5U,attribute);
+  const auto subgraph=onnxModel(onnxGraph({onnxValueInfo("mel",1U,{"1","T","80"})},
+      {onnxValueInfo("audio",1U,{"1","samples"})},{node}));
+  CHECK(!inspect(subgraph));
+  // An initializer that reaches outside the file for its bytes is refused outright.
+  std::string external;
+  protoVarintField(external,1U,80U);
+  protoVarintField(external,2U,1U);
+  protoBytesField(external,8U,"weights");
+  protoVarintField(external,14U,1U);
+  const auto externalData=onnxModel(onnxGraph({onnxValueInfo("mel",1U,{"1","T","80"})},
+      {onnxValueInfo("audio",1U,{"1","samples"})},
+      {onnxNode("Identity",{"mel"},{"audio"})},{external}));
+  CHECK(!inspect(externalData));
+  // Revisions outside the admitted window, and a second operator set, are refused.
+  CHECK(!inspect(onnxAcousticGraph(80U,1U,{},"seam-test",9U,12U)));
+  CHECK(!inspect(onnxAcousticGraph(80U,1U,{},"seam-test",9U,22U)));
+  CHECK(!inspect(onnxAcousticGraph(80U,1U,{},"seam-test",11U,17U)));
+  auto twoOpsets=acousticGraph();
+  std::string extraOpset;
+  protoVarintField(extraOpset,2U,17U);
+  protoBytesField(twoOpsets,8U,extraOpset);
+  CHECK(!inspect(twoOpsets));
+  // Two tensors may not share one name, and a graph may not declare nothing.
+  const auto duplicate=onnxModel(onnxGraph({onnxValueInfo("mel",1U,{"1","T","80"}),
+      onnxValueInfo("mel",1U,{"1","T","80"})},{onnxValueInfo("audio",1U,{"1","samples"})},
+      {onnxNode("Identity",{"mel"},{"audio"})}));
+  CHECK(!inspect(duplicate));
+  CHECK(!inspect(onnxModel(onnxGraph({},{onnxValueInfo("audio",1U,{"1","samples"})},{onnxNode("Identity",{},{})}))));
+  // Truncated, non-protobuf and oversized payloads are refused before anything is bound.
+  auto truncated=acousticGraph();
+  truncated.resize(truncated.size()-1U);
+  CHECK(!inspect(truncated));
+  CHECK(!inspect(std::string{"\xff\xff\xfe not a graph"}));
+  const auto oversized=acousticGraph();
+  CHECK(!inspectNeuralGraph(std::as_bytes(std::span{oversized.data(),oversized.size()}),
+      GraphInspectionLimits{.maximumBytes=16U}));
+  GraphInspectionLimits tiny;
+  tiny.maximumInitializerBytes=16U;
+  CHECK(!inspectNeuralGraph(std::as_bytes(std::span{oversized.data(),oversized.size()}),tiny));
+}
+
+TEST_CASE("admission refuses a pair of individually valid graphs that disagree") {
+  using namespace seam::neural_synthesis;
+  const auto refused=[&](const std::string& acoustic,const std::string& vocoder) {
+    const auto bundle=fixture(acoustic,vocoder,3U,48000U);
+    CHECK(bundle);
+    return !bundle || !AdmittedNeuralBundle::admit(bundle.value(),65536U,10);
+  };
+  // The vocoder consumes a different number of mel bins than the acoustic graph emits.
+  CHECK(refused(seam::test::onnx::onnxAcousticGraph(80U),seam::test::onnx::onnxVocoderGraph(64U,1U,"audio")));
+  // The acoustic graph leaves the feature axis unbounded, so nothing proves what it would emit.
+  CHECK(refused(seam::test::onnx::onnxAcousticGraph(80U,1U,"?"),seam::test::onnx::onnxVocoderGraph(80U,1U,"audio")));
+  // The two graphs disagree about the mel element type.
+  CHECK(refused(seam::test::onnx::onnxAcousticGraph(80U,1U,{}),seam::test::onnx::onnxVocoderGraph(80U,10U,"audio")));
+  // The configured vocoder output name is not a tensor the vocoder graph declares.
+  CHECK(refused(acousticGraph(),seam::test::onnx::onnxVocoderGraph(80U,1U,"waveform")));
+  // A vocoder that declares two output channels is refused; the model contract is mono.
+  CHECK(refused(acousticGraph(),seam::test::onnx::onnxVocoderGraph(80U,1U,"audio","2")));
+  // The pair the configuration describes is admitted, so the refusals above are the difference.
+  CHECK(!refused(acousticGraph(),vocoderGraph()));
 }

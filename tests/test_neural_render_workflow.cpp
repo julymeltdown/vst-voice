@@ -6,6 +6,7 @@
 // cache behaviour, never musical output or model quality.
 #include "test_framework.hpp"
 #include "test_support.hpp"
+#include "test_onnx_fixture.hpp"
 
 #include "seam/authoring/neural_phrase_runner.hpp"
 #include "seam/authoring/render_coordinator.hpp"
@@ -59,15 +60,19 @@ std::string vocabularyJson(const std::set<std::string>& symbols) {
 }
 
 seam::core::Result<AdmittedNeuralBundle> writeBundle(const std::filesystem::path& directory,
-    std::string_view vocabulary,std::string_view graph,std::string_view modelId,
+    std::string_view vocabulary,std::string_view producer,std::string_view modelId,
     std::string_view modelVersion) {
   using namespace seam::synthesis;
   const std::string declaration=configuration();
+  // Real graph bytes, not a placeholder: admission reads both files and binds the acoustic mel
+  // output to the vocoder mel input before a runner can exist.
+  const std::string acoustic=seam::test::onnx::onnxAcousticGraph(80U,1U,{},producer);
+  const std::string vocoder=seam::test::onnx::onnxVocoderGraph(80U,1U,"audio","1",producer);
   const auto asset=[&](NeuralAssetRole role,const char* name,std::string_view value) {
     return NeuralBundleAssetInput{role,name,std::as_bytes(std::span{value.data(),value.size()}),seam::core::sha256Hex(value)};
   };
-  const std::array assets{asset(NeuralAssetRole::Acoustic,"acoustic",graph),
-      asset(NeuralAssetRole::Vocoder,"vocoder",graph),asset(NeuralAssetRole::Vocabulary,"vocabulary",vocabulary),
+  const std::array assets{asset(NeuralAssetRole::Acoustic,"acoustic",acoustic),
+      asset(NeuralAssetRole::Vocoder,"vocoder",vocoder),asset(NeuralAssetRole::Vocabulary,"vocabulary",vocabulary),
       asset(NeuralAssetRole::Configuration,"configuration",declaration)};
   const auto manifest=FrozenNeuralBundle::manifest(assets,1024U*1024U);
   if (!manifest) return seam::core::Result<AdmittedNeuralBundle>{manifest.error()};
@@ -111,7 +116,7 @@ Track addNeuralTrack(seam::domain::Project& project,seam::application::ProjectFa
   if (!pronunciation) throw seam::test::Failure{"phonemizer fixture failed: "+pronunciation.error().message};
   std::set<std::string> symbols;
   for (const auto& token:pronunciation.value().pronunciation.tokens) symbols.insert(token.symbol);
-  const auto admitted=writeBundle(directory,vocabularyJson(symbols),"workflow graph fixture "+std::string{modelId},
+  const auto admitted=writeBundle(directory,vocabularyJson(symbols),"workflow-fixture-"+std::string{modelId},
       modelId,modelVersion);
   if (!admitted) throw seam::test::Failure{"bundle fixture failed: "+admitted.error().message};
   result.bundle=std::make_shared<const AdmittedNeuralBundle>(std::move(admitted).value());

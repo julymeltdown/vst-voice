@@ -1,5 +1,6 @@
 #include "test_framework.hpp"
 #include "test_support.hpp"
+#include "test_onnx_fixture.hpp"
 #include "seam/authoring/neural_phrase_runner.hpp"
 #include "seam/authoring/neural_resource_registry.hpp"
 #include "seam/application/project_factory.hpp"
@@ -46,14 +47,18 @@ std::string vocabularyJson(const std::set<std::string>& symbols,bool includeSile
 }
 
 seam::core::Result<AdmittedNeuralBundle> writeBundle(const std::filesystem::path& directory,
-    std::string_view vocabulary,std::string_view graph="transport graph fixture") {
+    std::string_view vocabulary,std::string_view producer="runner-fixture") {
   using namespace seam::synthesis;
   const std::string declaration=configuration();
+  // Real graph bytes, not a placeholder: admission reads the two files and binds the acoustic mel
+  // output to the vocoder mel input, so a fixture that is not a graph would be refused.
+  const std::string acoustic=seam::test::onnx::onnxAcousticGraph(80U,1U,{},producer);
+  const std::string vocoder=seam::test::onnx::onnxVocoderGraph(80U,1U,"audio","1",producer);
   const auto asset=[&](NeuralAssetRole role,const char* name,std::string_view value) {
     return NeuralBundleAssetInput{role,name,std::as_bytes(std::span{value.data(),value.size()}),seam::core::sha256Hex(value)};
   };
-  const std::array assets{asset(NeuralAssetRole::Acoustic,"acoustic",graph),
-      asset(NeuralAssetRole::Vocoder,"vocoder",graph),asset(NeuralAssetRole::Vocabulary,"vocabulary",vocabulary),
+  const std::array assets{asset(NeuralAssetRole::Acoustic,"acoustic",acoustic),
+      asset(NeuralAssetRole::Vocoder,"vocoder",vocoder),asset(NeuralAssetRole::Vocabulary,"vocabulary",vocabulary),
       asset(NeuralAssetRole::Configuration,"configuration",declaration)};
   const auto manifest=FrozenNeuralBundle::manifest(assets,1024U*1024U);
   if (!manifest) return seam::core::Result<AdmittedNeuralBundle>{manifest.error()};
@@ -78,13 +83,13 @@ struct Prepared final {
 };
 
 Prepared prepareWithGraph(const std::filesystem::path& directory,const std::string& lyric,
-    bool includeSilence,std::string_view graph);
+    bool includeSilence,std::string_view producer);
 
 Prepared prepare(const std::filesystem::path& directory,const std::string& lyric,bool includeSilence=true) {
-  return prepareWithGraph(directory,lyric,includeSilence,"transport graph fixture");
+  return prepareWithGraph(directory,lyric,includeSilence,"runner-fixture");
 }
 Prepared prepareWithGraph(const std::filesystem::path& directory,const std::string& lyric,
-    bool includeSilence,std::string_view graph) {
+    bool includeSilence,std::string_view producer) {
   seam::application::ProjectFactory factory{9300U};
   Prepared result{};
   result.project=factory.createProject("Runner");
@@ -103,7 +108,7 @@ Prepared prepareWithGraph(const std::filesystem::path& directory,const std::stri
   const auto pronunciation=seam::phonemizer::resolvePronunciation(*region);
   if (!pronunciation) throw seam::test::Failure{"phonemizer fixture failed: "+pronunciation.error().message};
   for (const auto& token:pronunciation.value().pronunciation.tokens) result.symbols.insert(token.symbol);
-  const auto admitted=writeBundle(directory,vocabularyJson(result.symbols,includeSilence),graph);
+  const auto admitted=writeBundle(directory,vocabularyJson(result.symbols,includeSilence),producer);
   if (!admitted) throw seam::test::Failure{"bundle fixture failed: "+admitted.error().message};
   result.admitted=std::make_shared<const AdmittedNeuralBundle>(std::move(admitted).value());
   const seam::rendering::NeuralRenderProvenance provenance{.workerVersion="seam-neural-worker-1",
@@ -145,14 +150,14 @@ namespace {
 // Writes one bundle directory that also carries the resource record an installed
 // bundle needs so a saved identity can be resolved back to these bytes.
 seam::core::Result<std::filesystem::path> writeInstalledBundle(const std::filesystem::path& root,
-    std::string_view name,std::string_view id,std::string_view version,std::string_view graph) {
+    std::string_view name,std::string_view id,std::string_view version,std::string_view producer) {
   const auto directory=root/std::string{name};
   std::error_code error;
   std::filesystem::create_directories(directory,error);
   if (error) return seam::core::failure<std::filesystem::path>(seam::core::ErrorCode::IoError,
       "install directory creation failed");
   const auto admitted=writeBundle(directory,
-      R"({"formatId":"com.project-seam.neural-vocabulary","schemaVersion":1,"tokens":["<PAD>","SP","aa1","k"]})",graph);
+      R"({"formatId":"com.project-seam.neural-vocabulary","schemaVersion":1,"tokens":["<PAD>","SP","aa1","k"]})",producer);
   if (!admitted) return seam::core::Result<std::filesystem::path>{admitted.error()};
   const auto manifest=seam::core::readFileBytesLimited(directory/"manifest.json",32768U);
   if (!manifest) return seam::core::Result<std::filesystem::path>{manifest.error()};
@@ -225,8 +230,8 @@ TEST_CASE("project rendering routes a neural track through the selected runner")
 TEST_CASE("installed neural resources resolve saved identities or refuse them") {
   using namespace seam::authoring;
   const auto root=seam::test::support::temporaryDirectory("neural-install-root");
-  const auto first=writeInstalledBundle(root,"bank-a","seam.voice.a","1.0.0","graph fixture a"); CHECK(first);
-  const auto second=writeInstalledBundle(root,"bank-b","seam.voice.b","2.0.0","graph fixture b"); CHECK(second);
+  const auto first=writeInstalledBundle(root,"bank-a","seam.voice.a","1.0.0","fixture-a"); CHECK(first);
+  const auto second=writeInstalledBundle(root,"bank-b","seam.voice.b","2.0.0","fixture-b"); CHECK(second);
   const auto registry=NeuralResourceRegistry::scan(root,16U,1024U*1024U,4U*1024U*1024U);
   if (!registry) throw seam::test::Failure{"registry scan failed: "+registry.error().message};
   CHECK(registry.value().resources().size()==2U);
@@ -245,19 +250,19 @@ TEST_CASE("installed neural resources resolve saved identities or refuse them") 
   // A resource that claims a digest its manifest does not have is refused, as is
   // one whose assets were changed after the manifest was published.
   const auto tampered=seam::test::support::temporaryDirectory("neural-install-tampered");
-  const auto damaged=writeInstalledBundle(tampered,"bank-c","seam.voice.c","1.0.0","graph fixture c"); CHECK(damaged);
-  constexpr std::string_view differentGraph{"different graph bytes"};
+  const auto damaged=writeInstalledBundle(tampered,"bank-c","seam.voice.c","1.0.0","fixture-c"); CHECK(damaged);
+  constexpr std::string_view differentBytes{"different graph bytes"};
   std::error_code removeError;
   std::filesystem::remove(tampered/"bank-c"/"acoustic",removeError); CHECK(!removeError);
   CHECK(seam::core::durableAtomicWriteNew(tampered/"bank-c"/"acoustic",
-      std::as_bytes(std::span{differentGraph.data(),differentGraph.size()})));
+      std::as_bytes(std::span{differentBytes.data(),differentBytes.size()})));
   CHECK(!NeuralResourceRegistry::scan(tampered,16U,1024U*1024U,4U*1024U*1024U));
   const auto missingRecord=seam::test::support::temporaryDirectory("neural-install-norecord");
   const auto recordless=missingRecord/"bank-g";
   std::filesystem::create_directories(recordless);
   const auto admitted=writeBundle(recordless,
       R"({"formatId":"com.project-seam.neural-vocabulary","schemaVersion":1,"tokens":["<PAD>","SP","aa1","k"]})",
-      "graph fixture d"); CHECK(admitted);
+      "fixture-d"); CHECK(admitted);
   CHECK(!NeuralResourceRegistry::scan(missingRecord,16U,1024U*1024U,4U*1024U*1024U));
   // An installation root with no bundles is a valid empty catalog, and every
   // selection into it is refused rather than substituted.
@@ -268,7 +273,7 @@ TEST_CASE("installed neural resources resolve saved identities or refuse them") 
   CHECK(!emptyRegistry.value().resolve(saved));
   // Duplicate, unbounded and cancelled scans are refused instead of guessed.
   const auto duplicate=seam::test::support::temporaryDirectory("neural-install-duplicate");
-  const auto original=writeInstalledBundle(duplicate,"bank-e","seam.voice.e","1.0.0","graph fixture e"); CHECK(original);
+  const auto original=writeInstalledBundle(duplicate,"bank-e","seam.voice.e","1.0.0","fixture-e"); CHECK(original);
   std::error_code error;
   std::filesystem::copy(original.value(),duplicate/"bank-f",
                         std::filesystem::copy_options::recursive,error); CHECK(!error);
@@ -347,7 +352,7 @@ TEST_CASE("neural phrase runner refuses unsafe options, foreign bundles and canc
   CHECK(!AuthoringNeuralPhraseRunner::create(good,cancellation.get_token()));
   // A second, individually valid bundle cannot serve the first snapshot.
   const auto other=seam::test::support::temporaryDirectory("neural-runner-other");
-  const auto otherPrepared=prepareWithGraph(other,"ak",true,"different graph fixture");
+  const auto otherPrepared=prepareWithGraph(other,"ak",true,"fixture-other");
   CHECK(otherPrepared.admitted->execution().bundleContentHash!=
       prepared.admitted->execution().bundleContentHash);
   const auto foreign=AuthoringNeuralPhraseRunner::create(options(other)); CHECK(foreign);

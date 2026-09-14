@@ -1,4 +1,5 @@
 #include "test_framework.hpp"
+#include "test_onnx_fixture.hpp"
 #include "seam/build/version.hpp"
 #include "seam/core/sha256.hpp"
 #include "seam/neural_synthesis/model_bundle.hpp"
@@ -31,14 +32,15 @@ std::string configuration(std::uint32_t version,std::uint32_t sampleRate,std::ui
 seam::core::Result<seam::synthesis::FrozenNeuralBundle> freezeBundle(std::uint32_t sampleRate,
     std::uint64_t maximumFrames=48000U,std::uint32_t version=3U) {
   using namespace seam::synthesis;
-  const std::string graph="admissible graph fixture";
+  const std::string acoustic=seam::test::onnx::onnxAcousticGraph();
+  const std::string vocoder=seam::test::onnx::onnxVocoderGraph(80U,1U,"audio");
   const std::string declaration=configuration(version,sampleRate,maximumFrames);
   const std::string vocabulary=R"({"formatId":"com.project-seam.neural-vocabulary","schemaVersion":1,"tokens":["<PAD>","SP","aa1","k"]})";
   const auto input=[&](NeuralAssetRole role,const char* name,const std::string& value) {
     return NeuralBundleAssetInput{role,name,std::as_bytes(std::span{value.data(),value.size()}),seam::core::sha256Hex(value)};
   };
-  const std::array assets{input(NeuralAssetRole::Acoustic,"acoustic",graph),
-      input(NeuralAssetRole::Vocoder,"vocoder",graph),input(NeuralAssetRole::Vocabulary,"vocabulary",vocabulary),
+  const std::array assets{input(NeuralAssetRole::Acoustic,"acoustic",acoustic),
+      input(NeuralAssetRole::Vocoder,"vocoder",vocoder),input(NeuralAssetRole::Vocabulary,"vocabulary",vocabulary),
       input(NeuralAssetRole::Configuration,"configuration",declaration)};
   const auto manifest=FrozenNeuralBundle::manifest(assets,1024U*1024U);
   if (!manifest) return seam::core::Result<FrozenNeuralBundle>{manifest.error()};

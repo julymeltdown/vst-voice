@@ -1,5 +1,67 @@
 # Integrated Singer Execution
 
+## A neural graph is admitted from its own bytes, not from a description of itself
+
+Admission checked the frozen manifest, the configuration document, the vocabulary and the execution
+identity, and its own comment said what that was not: the mel declaration was compared against the
+configuration's own fields, never against the graph files. Two files that each looked individually
+plausible and disagreed about the feature representation would be admitted together, and a bundle
+could carry arbitrary bytes -- a custom-domain operator, an initializer stored outside the file, a
+shape nothing bounds -- into the child that executes them, because nothing had read the graphs.
+
+The graph files are now read. `graph_contract.hpp/.cpp` parses the ONNX ModelProto wire format
+directly, with no protobuf or ONNX Runtime dependency in the resource path, under explicit byte,
+depth, node, tensor and initializer budgets, and no declared length is trusted before it has been
+checked against what is actually left. It reports the IR version, the operator set and producer,
+every graph input and output with its element type and rank, the operator set the file uses, and the
+initializer count and declared tensor bytes. A dimension the model does not bound is recorded as
+unbounded rather than given a default, so a caller that needs a bound refuses on that count instead
+of assuming one.
+
+The shape is closed. Unknown fields in any message are refused instead of skipped, so a second
+representation cannot ride along unnoticed. Refused by name: external tensor data and a tensor
+segment, the three attribute fields that carry a subgraph (this reader does not inspect subgraphs),
+a custom operator domain, an operator outside the admitted standard-domain set, a second operator
+set, an IR version or opset outside the admitted window, a duplicate tensor name, a graph with no
+input or output, a malformed or truncated encoding, and a payload past its byte or tensor budget.
+
+Admission then binds the pair rather than describing it. The acoustic graph's mel output and the
+vocoder graph's mel input must each be unique, rank three, floating point, and agree with the
+configured layout and bin count on the feature axis and with each other on element type; a dynamic
+feature axis is refused, because the vocoder would then have to accept whatever the acoustic graph
+happened to emit. The configured vocoder output name must be a declared output, floating point,
+rank at most two, and not more than one channel. The prepared handle retains both contracts, so what
+the files declared travels with the admitted execution identity instead of being reduced to the
+configuration's description of them.
+
+Verified. `seam_neural_worker_protocol_tests` passes 23 of 23 with three added cases. One reports
+what a graph declares: IR 9, opset 17, the producer string, the operator set the file uses, node and
+initializer counts, declared initializer bytes, and a mel output whose symbolic time axis is recorded
+as unbounded while its rank and 80-bin feature axis stay known. One refuses bytes no admitted export
+family produces: an unknown model field, a custom operator domain, an unknown operator, a
+subgraph-bearing attribute, an externally stored initializer, opset 12 and 22, IR 11, a second
+operator set, a duplicate tensor name, a graph with no input, a truncated payload, a non-protobuf
+payload, an oversized graph and an over-budget initializer. One refuses a pair of individually valid
+graphs that disagree -- 64 bins against 80, an unbounded feature axis, a different mel element type,
+a vocoder output name the graph does not declare, and a vocoder that declares two channels -- while
+the pair the configuration describes is admitted, so the refusals are the difference and not the
+absence of a working path. The four other suites that prepare real bundles pass as well
+(`seam_neural_render_tests` 5/5, `seam_neural_phrase_runner_tests` 4/4,
+`seam_neural_render_workflow_tests` 5/5, `seam_neural_selection_tests` 4/4), because their
+fixtures now build real ModelProto bytes through a shared test-only encoder instead of a placeholder
+string. The full Release build passed and the registered CTest run passed 150 of 151; the single
+failure is the tracked-source-closure check, which only refuses while a new source file is untracked.
+
+Not claimed. This admits declared structure, not behaviour: no operator semantics, shape propagation,
+numerical result or memory bound is checked, and no inference is performed here. The admitted
+operator set is a curated standard-domain list, so a legitimate export using something outside it is
+refused by name and extending the list is a deliberate change with its own review. In the bundle
+path the byte bound is the frozen asset's own admitted length, so a large graph is bounded by the
+bundle rather than by a separate graph-specific ceiling, and no peak-memory or CPU ceiling and no
+operating-system sandbox is claimed. The production bundle-conditioned launcher, the child's own
+re-admission of the exact bytes it loads, Windows supervision, installed-host qualification and any
+learned model remain open, so M2.P1 is not complete and no n changes.
+
 ## A coarticulation boundary is a transition the plan declares, not a weakened overlap
 
 The plan had one list. A gesture either owned its frames by itself or the phrase was refused as an
@@ -649,6 +711,14 @@ M1.P2's ten required changes:
 So all ten are landed. That is a package implementation statement, not a unit acceptance: the
 acoustic result is unreviewed, and M1.P3 still has its connected campaign/review path, the
 real-recording journey and an independent reviewer open.
+
+M2.P1 stands where its own entries leave it. Landed: the bounded process primitive and its single
+implementation in platform, the dependency direction out of neural, the versioned deployment and
+request/response metadata boundary, the data-only bundle and its manifest, and now operator-level
+graph admission of the two graph files. Open: the production bundle-conditioned v2 launcher, the
+child's own admission of the exact bytes it loads, a Windows process backend and any resource
+ceiling that is a real bound rather than best-effort sampling, plug-in host supervision, and a real
+learned acoustic/vocoder model. None of that is implied by admitting a graph's declared structure.
 
 M1.P1's last open required change landed: the durable C++ legacy migration
 operation with its retained receipt and history-transition verification, applied

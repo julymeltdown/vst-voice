@@ -7,6 +7,7 @@
 // selection, admission and refusal behaviour.
 #include "test_framework.hpp"
 #include "test_support.hpp"
+#include "test_onnx_fixture.hpp"
 
 #include "seam/authoring/neural_resource_registry.hpp"
 #include "seam/authoring/neural_selection.hpp"
@@ -88,14 +89,17 @@ Bundle writeBundle(const std::filesystem::path& root, std::string_view name, std
   Bundle bundle{};
   bundle.directory = root / name;
   std::filesystem::create_directories(bundle.directory);
-  const std::string graph{"selection graph fixture"};
+  // Real graph bytes: admission reads both files and binds the acoustic mel output to the vocoder
+  // mel input, so a placeholder would be refused before the selection behaviour under test.
+  const std::string acoustic{test::onnx::onnxAcousticGraph()};
+  const std::string vocoder{test::onnx::onnxVocoderGraph(80U,1U,"audio")};
   const std::string declaration{configuration(configurationSchema)};
   const auto asset = [](NeuralAssetRole role, const char* assetName, std::string_view value) {
     return NeuralBundleAssetInput{role, assetName,
         std::as_bytes(std::span{value.data(), value.size()}), core::sha256Hex(value)};
   };
-  const std::array assets{asset(NeuralAssetRole::Acoustic, "acoustic", graph),
-      asset(NeuralAssetRole::Vocoder, "vocoder", graph),
+  const std::array assets{asset(NeuralAssetRole::Acoustic, "acoustic", acoustic),
+      asset(NeuralAssetRole::Vocoder, "vocoder", vocoder),
       asset(NeuralAssetRole::Vocabulary, "vocabulary", kVocabulary),
       asset(NeuralAssetRole::Configuration, "configuration", declaration)};
   const auto manifest = FrozenNeuralBundle::manifest(assets, kBundleBytes);

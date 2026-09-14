@@ -354,6 +354,7 @@ add_library(seam_neural_synthesis
   libs/seam-neural-synthesis/src/worker_protocol.cpp
   libs/seam-neural-synthesis/src/model_contract.cpp
   libs/seam-neural-synthesis/src/model_bundle.cpp
+  libs/seam-neural-synthesis/src/graph_contract.cpp
   libs/seam-neural-synthesis/src/neural_phrase_backend.cpp)
 target_include_directories(seam_neural_synthesis PUBLIC
   libs/seam-neural-synthesis/include)
