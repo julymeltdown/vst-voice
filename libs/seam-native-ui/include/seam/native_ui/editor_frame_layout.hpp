@@ -7,6 +7,19 @@
 
 namespace seam::native_ui {
 
+// How much of the character dock the current width can carry. The dock is secondary artwork beside a
+// minimum musical workspace, so it collapses in a fixed order: the portrait goes first, then the whole
+// dock. It never squeezes the timeline, and it never drops the identity and status indicators while
+// still drawing itself -- a cropped face and a clipped name are worse than not drawing the dock.
+inline constexpr double kCharacterDockPortraitMinimumWidth{140.0};
+inline constexpr double kCharacterDockCompactMinimumWidth{88.0};
+
+enum class CharacterDockPresentation { Hidden, Compact, Full };
+
+[[nodiscard]] CharacterDockPresentation resolveCharacterDockPresentation(
+    double dockWidth,
+    double portraitMinimumWidth = kCharacterDockPortraitMinimumWidth) noexcept;
+
 struct EditorFrameLayoutInput final {
   double logicalWidth{0.0};
   double logicalHeight{0.0};

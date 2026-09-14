@@ -1033,34 +1033,44 @@ void EditorScenePainter::paintCharacter(RasterCanvas& canvas,
     return;
   }
   const auto width = canvas.logicalWidth() - editorRight;
+  // The dock is the last thing that should take room from the piano roll and the first thing that
+  // should give it back. A narrow dock drops its portrait before it drops the identity, the state and
+  // the performance strip, and a dock too narrow for those is not drawn at all.
+  const auto presentation = resolveCharacterDockPresentation(width);
+  if (presentation == CharacterDockPresentation::Hidden) return;
   canvas.fillRect(ui::Rect{editorRight, layout_.toolbarHeight, width,
                            contentBottom - layout_.toolbarHeight},
                   theme_.characterBackground);
   canvas.line(ui::Point{editorRight, layout_.toolbarHeight},
               ui::Point{editorRight, contentBottom}, theme_.accentSecondary,
               layout_.characterDockDividerStrokeWidth);
-  const auto portraitBounds = layout_.characterDockPortraitBounds(
-      editorRight, contentBottom, canvas.logicalWidth());
-  canvas.drawImageNearest(portraitBounds, *state.characterPortrait,
-                          layout_.characterDockPortraitScale);
-  canvas.strokeRect(portraitBounds, theme_.gridStrong,
-                    layout_.characterDockPortraitBorderWidth);
-  const auto textTop = layout_.characterDockMetadataTop(portraitBounds);
   const auto textX = editorRight + layout_.characterDockTextInsetX;
-  canvas.drawText(ui::Point{textX, textTop},
-                  state.characterName.empty() ? "CHARACTER 01" : state.characterName,
-                  theme_.primaryText, layout_.characterDockNameFontSize);
+  const auto textWidth = std::max(0.0, width - layout_.characterDockTextInsetX * 2.0);
+  const auto line = [&](double top, std::string_view text, Color color, double size) {
+    canvas.drawText(ui::Rect{textX, top, textWidth, size + 2.0}, text, color, size);
+  };
+  double textTop = layout_.toolbarHeight + layout_.characterDockPortraitTopInset;
+  if (presentation == CharacterDockPresentation::Full) {
+    const auto portraitBounds = layout_.characterDockPortraitBounds(
+        editorRight, contentBottom, canvas.logicalWidth());
+    canvas.drawImageNearest(portraitBounds, *state.characterPortrait,
+                            layout_.characterDockPortraitScale);
+    canvas.strokeRect(portraitBounds, theme_.gridStrong,
+                      layout_.characterDockPortraitBorderWidth);
+    textTop = layout_.characterDockMetadataTop(portraitBounds);
+  }
+  // Every metadata line is drawn inside the dock's own width so a long name is ellipsized instead of
+  // running over the artwork or off the window.
+  line(textTop, state.characterName.empty() ? "CHARACTER 01" : state.characterName,
+       theme_.primaryText, layout_.characterDockNameFontSize);
   const auto roleTop = textTop + layout_.characterDockNameToRoleAdvance;
-  canvas.drawText(ui::Point{textX, roleTop}, "VOICEBANK AVATAR",
-                  theme_.secondaryText, layout_.characterDockDetailFontSize);
+  line(roleTop, "VOICEBANK AVATAR", theme_.secondaryText, layout_.characterDockDetailFontSize);
   const auto stateTop = roleTop + layout_.characterDockRoleToStateAdvance;
-  canvas.drawText(ui::Point{textX, stateTop},
-                  "STATE " + characterStateLabel(state.characterState),
-                  theme_.accent, layout_.characterDockDetailFontSize);
+  line(stateTop, "STATE " + characterStateLabel(state.characterState), theme_.accent,
+       layout_.characterDockDetailFontSize);
   const auto modeTop = stateTop + layout_.characterDockStateToModeAdvance;
-  canvas.drawText(ui::Point{textX, modeTop},
-                  "C: FULL / MIN / OFF", theme_.secondaryText,
-                  layout_.characterDockDetailFontSize);
+  line(modeTop, "C: FULL / MIN / OFF", theme_.secondaryText,
+       layout_.characterDockDetailFontSize);
   if (!state.characterPerformance.has_value()) return;
   // What the character is singing, drawn from the published phrase rather than from the dock's own
   // operational state. The label and the measured level are always shown; only the mouth glyph moves,
@@ -1068,28 +1078,27 @@ void EditorScenePainter::paintCharacter(RasterCanvas& canvas,
   const auto& performance = *state.characterPerformance;
   const auto level = std::clamp(static_cast<double>(performance.energy), 0.0, 1.0);
   const auto performanceTop = modeTop + layout_.characterDockPerformanceAdvance;
-  const auto glyphLeft = textX + layout_.characterDockPerformanceBarWidth +
-                         layout_.characterDockPerformanceGlyphWidth;
-  canvas.drawText(ui::Point{textX, performanceTop},
-                  std::string{"MOUTH "} + std::string{character::mouthShapeName(performance.mouth)},
-                  theme_.primaryText, layout_.characterDockDetailFontSize);
-  if (!performance.reducedMotion) {
+  const auto barWidth = std::min(layout_.characterDockPerformanceBarWidth, textWidth);
+  line(performanceTop,
+       std::string{"MOUTH "} + std::string{character::mouthShapeName(performance.mouth)},
+       theme_.primaryText, layout_.characterDockDetailFontSize);
+  // The glyph is the only part that moves, so it is drawn only where there is room for it beside the
+  // level bar, and reduced motion drops it while keeping the label and the measured level.
+  if (!performance.reducedMotion && presentation == CharacterDockPresentation::Full) {
     const auto glyphHeight = layout_.characterDockPerformanceGlyphHeight * (0.2 + 0.8 * level);
-    canvas.fillRect(ui::Rect{glyphLeft, performanceTop - glyphHeight,
+    canvas.fillRect(ui::Rect{textX + barWidth, performanceTop - glyphHeight,
                              layout_.characterDockPerformanceGlyphWidth, glyphHeight},
                     performance.performing ? theme_.accent : theme_.gridStrong);
   }
   const auto barTop = performanceTop + layout_.characterDockPerformanceBarHeight * 2.0;
-  canvas.strokeRect(ui::Rect{textX, barTop, layout_.characterDockPerformanceBarWidth,
-                             layout_.characterDockPerformanceBarHeight},
+  canvas.strokeRect(ui::Rect{textX, barTop, barWidth, layout_.characterDockPerformanceBarHeight},
                     theme_.gridStrong, layout_.characterDockPortraitBorderWidth);
-  canvas.fillRect(ui::Rect{textX, barTop, layout_.characterDockPerformanceBarWidth * level,
+  canvas.fillRect(ui::Rect{textX, barTop, barWidth * level,
                            layout_.characterDockPerformanceBarHeight},
                   theme_.accent);
   if (!performance.performing)
-    canvas.drawText(ui::Point{textX, barTop + layout_.characterDockDetailFontSize * 2.0},
-                    "NO PHRASE AT PLAYHEAD", theme_.secondaryText,
-                    layout_.characterDockDetailFontSize);
+    line(barTop + layout_.characterDockDetailFontSize * 2.0, "NO PHRASE AT PLAYHEAD",
+         theme_.secondaryText, layout_.characterDockDetailFontSize);
 }
 
 std::optional<double> resolveArrangementInspectorTop(const EditorSceneState& state,

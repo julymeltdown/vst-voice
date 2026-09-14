@@ -1,5 +1,38 @@
 # Integrated Singer Execution
 
+## The dock gives up its artwork before it takes the piano roll's room
+
+The character dock had one width and no floor. When the window narrowed, the frame layout kept the
+timeline's declared minimum and pushed the dock into whatever was left, so the portrait was scaled into
+a strip and the metadata ran past the dock's own edge. That is the failure the dock exists to avoid: a
+cropped face does not identify a singer and a clipped name does not name one, and both were being drawn
+in the space the piano roll had just lost.
+
+`resolveCharacterDockPresentation` now fixes the collapse order in one place: a dock with room for its
+artwork is Full, a dock narrower than the portrait's minimum width is Compact, and a dock narrower than
+what the identity, state and performance strip need is Hidden. A width that is not finite hides the dock
+instead of drawing a fragment. The painter follows it -- Full draws the portrait, Compact replaces the
+portrait with the dock's own background and keeps the metadata and the strip, Hidden paints nothing at
+all -- and every metadata line is drawn inside the dock's own width, so a long name is ellipsized
+instead of overflowing whether or not a text engine is available. The performance glyph is drawn only
+where there is room beside the level bar and only when the host has not asked for reduced motion.
+
+Verified. `seam_character_dock_layout_tests` passes 2 of 2. The policy holds at every boundary: the
+portrait minimum and the compact minimum are inclusive, one point below each falls to the next state
+down, zero and a NaN width are Hidden. Painting the same dock at 560, 380 and 330 logical pixels with a
+declared 180-pixel timeline minimum produces three different surfaces, and one sample point inside the
+artwork's own rectangle reads as the portrait colour, then the dock background, then the window
+background, which is what "artwork first, then the dock" means on pixels. The frame layout keeps the
+timeline at or above its declared minimum in all three cases, and the compact dock still inks its
+metadata, so the identity and the performance strip survive the artwork's collapse. The whole tree
+builds and the registered CTest run is reported in the commit that carries this entry.
+
+Not claimed. The artwork in this suite is a flat colour, not a reviewed character asset, and no visual
+redesign is claimed: this is a collapse policy and one dock measured on a painted surface, not a
+reviewed layout or a captured screenshot of a running window. Which of several simultaneous singers
+owns the dock is still the active region's decision, the plug-in host still draws operational state
+only, and no unit acceptance changes.
+
 ## The standalone dock draws the published phrase, and a render is what binds it
 
 A performance read model existed and a dock policy existed, but nothing in the product produced one.

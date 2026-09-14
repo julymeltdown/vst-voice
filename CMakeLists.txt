@@ -1857,6 +1857,16 @@ if(SEAM_BUILD_TESTS)
   add_test(NAME seam_character_performance_dock_tests
     COMMAND seam_character_performance_dock_tests)
 
+  add_executable(seam_character_dock_layout_tests
+    tests/test_main.cpp
+    tests/test_character_dock_layout.cpp)
+  target_include_directories(seam_character_dock_layout_tests PRIVATE tests)
+  target_link_libraries(seam_character_dock_layout_tests PRIVATE
+    seam_native_ui seam_application seam_domain seam_core)
+  seam_apply_compiler_options(seam_character_dock_layout_tests)
+  add_test(NAME seam_character_dock_layout_tests
+    COMMAND seam_character_dock_layout_tests)
+
   add_executable(seam_generation_job_probe tests/helpers/generation_job_probe.cpp)
   target_include_directories(seam_generation_job_probe PRIVATE apps/seam-voicebank-cli)
   target_link_libraries(seam_generation_job_probe PRIVATE seam_authoring_runtime)

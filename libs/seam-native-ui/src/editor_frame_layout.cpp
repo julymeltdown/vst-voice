@@ -6,6 +6,14 @@
 
 namespace seam::native_ui {
 
+CharacterDockPresentation resolveCharacterDockPresentation(
+    double dockWidth, double portraitMinimumWidth) noexcept {
+  // Written as negated comparisons so a non-finite width hides the dock instead of drawing a fragment.
+  if (!(dockWidth >= kCharacterDockCompactMinimumWidth)) return CharacterDockPresentation::Hidden;
+  if (!(dockWidth >= portraitMinimumWidth)) return CharacterDockPresentation::Compact;
+  return CharacterDockPresentation::Full;
+}
+
 TechnicalLaneHeights resolveTechnicalLaneHeights(
     const TechnicalLaneLayoutInput& input) noexcept {
   TechnicalLaneHeights result;
