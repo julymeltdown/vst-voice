@@ -1,5 +1,45 @@
 # Integrated Singer Execution
 
+## The generated take is what the installed bank sings
+
+M1.P3's automated exit names one deterministic lifecycle: source, generation, edit, review,
+candidate, package, install, new song. Every part existed, but not in one chain. The campaign's
+plan/run/cancel/resume route was exercised by its own suite; the review decision, publication,
+signing, installation and new-song export by another. Between them sat the claim the milestone
+actually rests on -- that the material a campaign committed is the material the installed bank
+sings -- and nothing asserted it.
+
+`seam_original_singer_campaign_workflow_tests` now runs that chain as one test on a style-owned
+producer workspace. It plans a one-batch campaign from a recipe and refuses to advance until the
+rendered held-out preflight beside it passes; advances to completion and asserts what was committed
+is marker-review material rather than a finished resource; records the explicit current
+source-quality assessment a style-owned producer requires, through the native source-quality
+action, which had no test caller before this and whose only other caller is the app surface; creates
+the editable manifest draft from the collected material through the native action and asserts the
+draft's audio is byte-identical to the raw asset the campaign committed; proves that publication
+before any decision is refused and leaves no directory behind; accepts through the native reviewer
+path; publishes through the native publication action; signs and installs the candidate through the
+product's own installer; and then, with the producer workspace renamed away, adds the syllable the
+assignment covers, sees complete coverage, exports master and stems, saves, reopens and re-exports
+with an identical master hash. The end-to-end audio check is the point: the installed bank's unit
+file digest equals the collected take's raw asset digest, so the song is singing generated material
+rather than a fixture that merely shares a path.
+
+Verified. `seam_original_singer_campaign_workflow_tests` passes 1 of 1, registered as CTest
+`seam_original_singer_campaign_workflow_tests`, and the full Release build plus the registered
+CTest run are reported in the commit that carries this entry. The covered refusals are the
+preflight gate, publication before a decision, and the explicit assessment requirement; the covered
+positive path is campaign, draft, review, publication, package, install, new song, export and
+reopen.
+
+Not claimed. Every identity here is a synthetic fixture: no listener heard the generated take, the
+source-quality outcome is a fixture declaration rather than an independent judgment, and the
+workspace carries one phone class at one pitch layer. The campaign in this chain is a single batch;
+multi-batch advancement, cancellation and resume remain covered by `seam_studio_campaign_tests`
+rather than here. The marker edit, rejection, retake and explicit re-review route is exercised by
+the native review and candidate-marker suites, not inside this chain, and the real recording journey
+and a genuine independent reviewer are still external evidence. No unit acceptance changes.
+
 ## A neural graph is admitted from its own bytes, not from a description of itself
 
 Admission checked the frozen manifest, the configuration document, the vocabulary and the execution
@@ -709,8 +749,10 @@ M1.P2's ten required changes:
 | 10 | Held-out pilot phrase set before the full inventory | Landed, run and followed through: both preflights passed, and the campaigns behind them completed with 498 takes committed as unapproved marker-review material across three pitch layers (report in `CAMPAIGN_REPORT.md`, defect list in `coverage-report.json`). The fricative, palatalized, voiced-affricate and event repairs took coverage to 1026 of 1026 assignments, so a campaign over the whole inventory now plans as 1026 jobs and the rendered held-out preflight passes all 38 declared classes with none defective. The inventory is generatable end to end as declared; a prepared class is still not phonetic qualification. |
 
 So all ten are landed. That is a package implementation statement, not a unit acceptance: the
-acoustic result is unreviewed, and M1.P3 still has its connected campaign/review path, the
-real-recording journey and an independent reviewer open.
+acoustic result is unreviewed, and M1.P3 still has the real-recording journey and an independent
+reviewer open. Its connected campaign/review path now runs inside one regression
+(`seam_original_singer_campaign_workflow_tests`), so what is left there is the marker-edit and
+rejection/retake route inside that same chain rather than a missing connection.
 
 M2.P1 stands where its own entries leave it. Landed: the bounded process primitive and its single
 implementation in platform, the dependency direction out of neural, the versioned deployment and
