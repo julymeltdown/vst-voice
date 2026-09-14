@@ -4,6 +4,7 @@
 #include "seam/domain/project.hpp"
 #include "seam/rendering/pcm_cache.hpp"
 #include "seam/rendering/render_snapshot.hpp"
+#include "seam/rendering/render_performance.hpp"
 #include "seam/synthesis/phrase_renderer.hpp"
 #include "seam/voicebank/voicebank.hpp"
 
@@ -38,6 +39,9 @@ struct RegionRenderResult final {
   std::vector<float> mono;
   std::vector<RegionRenderPhraseInfo> phrases;
   std::vector<synthesis::UnitPlanEntry> unitPlan;
+  // The phone partition this region's own phrases were rendered from, in absolute project frames.
+  // A presentation can follow the published mix with it without re-deriving any timing.
+  std::vector<RenderedCueSpan> performanceCues;
   std::vector<RegionRenderPhraseFailure> failures;
   std::size_t unitCount{0U};
   std::size_t fallbackCount{0U};

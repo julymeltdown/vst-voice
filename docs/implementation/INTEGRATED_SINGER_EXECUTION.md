@@ -1,5 +1,63 @@
 # Integrated Singer Execution
 
+## A rendered phrase publishes the phone partition a presentation may draw
+
+The character layer could already describe a performance, but nothing produced one. A render result
+published the mix and the unit plan, not the ordered phone timeline, so a presentation had exactly
+two bad options: re-derive timing that the renderer never used for the audio, or invent a mouth. The
+same gap made the dock's second question unanswerable -- which singer a performance belongs to, and
+what a presentation does when the answer changes mid-playback.
+
+`rendering::collectPhrasePerformanceCues` now projects the compiled plan the render actually sang
+from into a partition a single mouth can follow, in absolute project frames. It is a projection
+rather than a copy because the plan declares more than one mouth can show: a consonant may declare an
+onset inside the previous vowel's recorded span, and a phone with no declared onset falls back to its
+own nucleus. The rule is therefore explicit -- each phone starts at the later of its declared onset
+and the onset already in use, ends where the next phone starts, and the last phone ends where its own
+recorded span ends; a declaration that cannot own a single frame is not drawn. `RegionRenderResult`
+and `ProjectRenderResult` now carry those spans for the active track and region, collected from the
+prepared snapshot itself before the PCM cache decides whether the phrase is rendered or reused, so a
+cache hit publishes the same presentation data as a fresh render. The kinds are the dock's own
+vocabulary: the product's `cl` and `pau` symbols and role, with vowels and nasals classified by the
+phonemizer's own predicates, and everything else a consonant.
+
+The dock now has an explicit singer policy. `CharacterPresentation::followSinger` records which
+resource, style and render revision it is following and closes the mouth whenever that identity
+changes, because the phrase that was showing belonged to the previous singer. A snapshot that does
+not belong to the followed singer is refused with a conflict instead of being drawn, and the first
+snapshot adopts its own identity so a single-singer host does not have to bind in two steps.
+`native_ui::buildPublishedCharacterPerformance` closes the loop from a published render: it mixes
+the published interleaved mix down to mono over exactly the span the cues cover, maps the kinds, and
+refuses an empty partition, an unsupported channel count, a mix shorter than the phrase it claims, a
+span longer than one presentation may cover and an unordered cue, by cause.
+
+Verified. `seam_render_performance_cues_tests` passes 4 of 4: a real two-note procedural region
+rendered through `ProductionProjectRenderer` publishes an ordered, non-overlapping partition whose
+frames are absolute (the second note's stop lands at 24000 and its vowel at 26880, not at the start of
+the mix), containing at least one vowel and one consonant and ending inside the music; a request that
+names another active region publishes none; the product's `cl`, `pau`, vowel, nasal and consonant
+symbols classify as declared; and an anchor with no resolved phone is refused with InvariantViolation
+while a zero and a one-span bound are refused with InvalidArgument. That suite also records the
+finding that forced the projection: the compiled anchors for this phrase are a vowel 0..24000, a stop
+with an inferred onset at 24000 and an end of 48000, and a vowel with a nucleus of 26880 and the same
+recorded end, so the anchors' own ends are not a partition. `seam_character_performance_tests` passes
+18 of 18, including the new singer policy (following the same singer keeps the phrase, following
+another style or another render revision closes the mouth, the previous singer's phrase is refused
+with a conflict, an incomplete identity is refused with InvalidArgument, and the followed singer is
+unchanged by a refusal) and the published binding (a stereo mix whose channels differ is averaged,
+the partition becomes cues with the declared mouths, a stop is a closed mouth at its own frame, and
+an absent partition, zero channels, a short mix and an unordered partition are each refused). The
+whole tree builds and the registered CTest run is reported in the commit that carries this entry.
+
+Not claimed. Nothing draws a mouth yet: the standalone and plug-in hosts still receive operational
+state only, so the scene, painter and app wiring for M4.P3 item 3 -- including stop, seek, loop,
+overlapping tracks, singer switch at the application level and reduced motion -- remain open, and
+frames were read by tests rather than from a running window. Expression is still transport rather
+than analysis because the only envelope a snapshot can hold is one a caller supplied. The cue kinds
+are the dock's drawing vocabulary, not a phonetic transcription, and a stop is drawn as a consonant
+unless the product's own `cl` symbol declares a closure. Nothing was listened to, no artwork was
+reviewed, and no unit acceptance changes.
+
 ## The dock draws the phrase that is sounding, not the state it is reporting
 
 A character resource describes six operational states -- Neutral, Focused, Rendering, Complete,

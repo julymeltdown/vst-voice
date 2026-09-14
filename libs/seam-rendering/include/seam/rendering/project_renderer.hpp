@@ -66,6 +66,10 @@ struct ProjectRenderResult final {
   SharedPcmBuffer interleaved;
   std::vector<std::string> phraseContentHashes;
   std::vector<synthesis::UnitPlanEntry> activeUnitPlan;
+  // The active track and region's phone partition, in absolute project frames, taken from the same
+  // prepared snapshots the audible mix was rendered from. Empty when the request named no active
+  // region or when its render published no phone timeline.
+  std::vector<RenderedCueSpan> performanceCues;
   std::vector<ProjectRenderDiagnostic> diagnostics;
   std::size_t trackCount{0U};
   std::size_t regionCount{0U};

@@ -176,6 +176,16 @@ core::Result<RegionRenderResult> ProductionRegionRenderer::render(
       continue;
     }
 
+    // The cue partition comes from the prepared snapshot itself, before the cache branch decides
+    // whether this phrase is rendered or reused, so a cache hit publishes the same presentation data
+    // as a fresh render instead of silently having none.
+    if (snapshot.value().compiledPerformance && snapshot.value().phonemes) {
+      auto cues = collectPhrasePerformanceCues(*snapshot.value().compiledPerformance,
+                                               snapshot.value().phonemes->tokens);
+      if (!cues) return core::Result<RegionRenderResult>{cues.error()};
+      output.performanceCues.insert(output.performanceCues.end(), cues.value().begin(),
+                                    cues.value().end());
+    }
     std::shared_ptr<const CachedPcm> cached;
     if (cache != nullptr) {
       auto loaded = cache->load(snapshot.value().contentHash);

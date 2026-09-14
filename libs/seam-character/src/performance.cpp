@@ -176,6 +176,12 @@ core::Result<CharacterPerformanceSnapshot> buildCharacterPerformanceSnapshot(
   return core::success(std::move(result));
 }
 
+PerformanceBindingKey performanceBindingKey(const CharacterPerformanceSnapshot& snapshot) noexcept {
+  return PerformanceBindingKey{snapshot.resourceId, snapshot.resourceVersion,
+                               snapshot.resourceContentHash, snapshot.style,
+                               snapshot.renderRevision};
+}
+
 CharacterPerformanceFrame characterPerformanceFrameAt(
     const CharacterPerformanceSnapshot& snapshot, time::SampleFrame playhead) noexcept {
   CharacterPerformanceFrame result;

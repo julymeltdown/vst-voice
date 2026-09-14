@@ -158,6 +158,13 @@ core::Result<ProjectRenderResult> ProductionProjectRenderer::renderWithSources(
         const auto snapshot = RenderSnapshotFactory{}.createProcedural(project, procedural->resource,
             track.id, region.id, revision, quality, sampleRate, procedural->style);
         if (!snapshot) return core::Result<ProjectRenderResult>{snapshot.error()};
+        if (track.id == activeTrack && region.id == activeRegion &&
+            snapshot.value().compiledPerformance && snapshot.value().phonemes) {
+          auto cues = collectPhrasePerformanceCues(*snapshot.value().compiledPerformance,
+                                                   snapshot.value().phonemes->tokens);
+          if (!cues) return core::Result<ProjectRenderResult>{cues.error()};
+          output.performanceCues = std::move(cues).value();
+        }
         auto rendered = PhraseRenderPipeline{}.render(snapshot.value(), stopToken);
         if (!rendered) return core::Result<ProjectRenderResult>{rendered.error()};
         auto pcm = std::make_shared<RoutedPcm>();
@@ -182,6 +189,13 @@ core::Result<ProjectRenderResult> ProductionProjectRenderer::renderWithSources(
         const auto snapshot = RenderSnapshotFactory{}.createNeural(project, *neural->bundle,
             neural->provenance, track.id, region.id, revision, quality, sampleRate);
         if (!snapshot) return core::Result<ProjectRenderResult>{snapshot.error()};
+        if (track.id == activeTrack && region.id == activeRegion &&
+            snapshot.value().compiledPerformance && snapshot.value().phonemes) {
+          auto cues = collectPhrasePerformanceCues(*snapshot.value().compiledPerformance,
+                                                   snapshot.value().phonemes->tokens);
+          if (!cues) return core::Result<ProjectRenderResult>{cues.error()};
+          output.performanceCues = std::move(cues).value();
+        }
         // The prepared content identity already binds the admitted bundle digest,
         // feature and control identity, provider/runtime/worker versions, quality
         // and the owned window. A cached entry therefore cannot be reused for a
@@ -240,6 +254,8 @@ core::Result<ProjectRenderResult> ProductionProjectRenderer::renderWithSources(
           std::string{},
           options, cache, stopToken, true);
       if (!rendered) return core::Result<ProjectRenderResult>{rendered.error()};
+      if (track.id == activeTrack && region.id == activeRegion)
+        output.performanceCues = rendered.value().performanceCues;
       for (const auto& failure : rendered.value().failures) {
         output.diagnostics.push_back(ProjectRenderDiagnostic{
             .trackId = track.id,

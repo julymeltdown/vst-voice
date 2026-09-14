@@ -41,6 +41,13 @@ public:
   // exactly where it was.
   [[nodiscard]] core::Result<void> setPerformanceSnapshot(
       character::CharacterPerformanceSnapshot snapshot);
+  // Which singer the dock follows. Selecting a different resource, style or render revision closes
+  // the mouth: the phrase that was showing was the previous singer's, and the dock must not keep
+  // drawing it while the new one has not been performed yet.
+  [[nodiscard]] core::Result<void> followSinger(character::PerformanceBindingKey key);
+  [[nodiscard]] bool followingSinger() const noexcept { return followedSinger_.has_value(); }
+  [[nodiscard]] const character::PerformanceBindingKey& followedSinger() const
+      noexcept { return *followedSinger_; }
   void clearPerformanceSnapshot() noexcept { performance_.reset(); }
   [[nodiscard]] bool hasPerformanceSnapshot() const noexcept {
     return performance_.has_value();
@@ -59,6 +66,7 @@ private:
   character::State state_{character::State::Neutral};
   domain::CharacterDisplayMode mode_{domain::CharacterDisplayMode::Minimal};
   std::optional<character::CharacterPerformanceSnapshot> performance_;
+  std::optional<character::PerformanceBindingKey> followedSinger_;
 };
 
 }  // namespace seam::native_ui

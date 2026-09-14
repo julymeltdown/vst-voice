@@ -76,6 +76,18 @@ struct CharacterPerformanceRequest final {
     const CharacterPerformanceRequest& request, std::uint32_t windowFrames = 240U,
     std::stop_token stop = {});
 
+// Which singer a performance belongs to. Two resources, two styles or two render revisions are two
+// singers as far as a presentation is concerned: a mouth that was showing the previous singer's
+// phrase must not keep moving for a phrase that has not arrived yet.
+struct PerformanceBindingKey final {
+  std::string resourceId, resourceVersion, resourceContentHash, style;
+  std::uint64_t renderRevision{0};
+  friend bool operator==(const PerformanceBindingKey&, const PerformanceBindingKey&) = default;
+};
+
+[[nodiscard]] PerformanceBindingKey performanceBindingKey(
+    const CharacterPerformanceSnapshot& snapshot) noexcept;
+
 // The bounded read model one playhead position produces. performing is true only inside the
 // snapshot's own span; outside it the mouth is closed and both envelopes are zero, while whatever
 // operational state the dock is showing stays untouched. This is a pure function of the snapshot

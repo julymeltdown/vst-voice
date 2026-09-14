@@ -485,6 +485,7 @@ add_library(seam_rendering
   libs/seam-rendering/src/render_pipeline.cpp
   libs/seam-rendering/src/region_renderer.cpp
   libs/seam-rendering/src/project_renderer.cpp
+  libs/seam-rendering/src/render_performance.cpp
   libs/seam-rendering/src/audio_level_envelope.cpp
   libs/seam-rendering/src/sample_rate_converter.cpp
   libs/seam-rendering/src/streaming_pcm_source.cpp
@@ -630,6 +631,7 @@ if(SEAM_BUILD_NATIVE_DESKTOP)
   add_library(seam_native_ui ${SEAM_NATIVE_UI_SOURCES})
   target_sources(seam_native_ui PRIVATE
   libs/seam-native-ui/src/editor_semantics.cpp
+    libs/seam-native-ui/src/character_performance_binding.cpp
     libs/seam-native-ui/src/render_status_panel.cpp
     libs/seam-native-ui/src/diagnostic_panel.cpp
     libs/seam-native-ui/src/vibrato_inspector.cpp
@@ -1833,6 +1835,16 @@ if(SEAM_BUILD_TESTS)
   seam_apply_compiler_options(seam_character_performance_tests)
   add_test(NAME seam_character_performance_tests
     COMMAND seam_character_performance_tests)
+
+  add_executable(seam_render_performance_cues_tests
+    tests/test_main.cpp
+    tests/test_render_performance_cues.cpp)
+  target_include_directories(seam_render_performance_cues_tests PRIVATE tests)
+  target_link_libraries(seam_render_performance_cues_tests PRIVATE
+    seam_rendering seam_voice_design seam_synthesis seam_application seam_domain seam_core)
+  seam_apply_compiler_options(seam_render_performance_cues_tests)
+  add_test(NAME seam_render_performance_cues_tests
+    COMMAND seam_render_performance_cues_tests)
 
   add_executable(seam_generation_job_probe tests/helpers/generation_job_probe.cpp)
   target_include_directories(seam_generation_job_probe PRIVATE apps/seam-voicebank-cli)

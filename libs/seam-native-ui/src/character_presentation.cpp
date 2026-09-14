@@ -46,7 +46,25 @@ core::Result<void> CharacterPresentation::setPerformanceSnapshot(
     character::CharacterPerformanceSnapshot snapshot) {
   const auto valid = snapshot.validate();
   if (!valid) return valid;
+  // A snapshot may only drive the singer the dock is following. With no singer selected yet the
+  // first snapshot adopts its own identity, which keeps a single-singer host from having to announce
+  // and then bind in two steps; every later switch is explicit.
+  const auto key = character::performanceBindingKey(snapshot);
+  if (followedSinger_.has_value() && !(*followedSinger_ == key))
+    return core::Result<void>{core::Error{core::ErrorCode::Conflict,
+        "A performance snapshot does not belong to the singer the dock follows"}};
+  followedSinger_ = key;
   performance_ = std::move(snapshot);
+  return core::success();
+}
+
+core::Result<void> CharacterPresentation::followSinger(character::PerformanceBindingKey key) {
+  if (key.resourceId.empty() || key.resourceVersion.empty() || key.resourceContentHash.empty() ||
+      key.style.empty())
+    return core::Result<void>{core::Error{core::ErrorCode::InvalidArgument,
+        "A followed singer has no complete identity"}};
+  if (!followedSinger_.has_value() || !(*followedSinger_ == key)) performance_.reset();
+  followedSinger_ = std::move(key);
   return core::success();
 }
 

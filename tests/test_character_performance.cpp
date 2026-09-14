@@ -19,6 +19,8 @@
 #include "seam/character/performance.hpp"
 #include "seam/core/error.hpp"
 #include "seam/native_ui/character_presentation.hpp"
+#include "seam/native_ui/character_performance_binding.hpp"
+#include "seam/rendering/render_performance.hpp"
 
 #include <array>
 #include <cstdint>
@@ -67,6 +69,19 @@ character::CharacterPerformanceSnapshot buildOrFail(
   auto built = character::buildCharacterPerformanceSnapshot(request, windowFrames);
   CHECK(built.hasValue());
   return std::move(built.value());
+}
+
+character::CharacterPerformanceSnapshot sungSnapshot(std::string style, std::uint64_t revision) {
+  const auto samples = constant(960U, 0.5F);
+  auto request = makeRequest(samples);
+  request.style = std::move(style);
+  request.renderRevision = revision;
+  return buildOrFail(request);
+}
+
+character::PerformanceBindingKey bindingKey(std::string style, std::uint64_t revision) {
+  return character::PerformanceBindingKey{"seam-pilot-01", "1.0.0", std::string(kDigest),
+                                          std::move(style), revision};
 }
 
 TEST_CASE("A snapshot is built from the phrase that is audible") {
@@ -413,6 +428,118 @@ TEST_CASE("A snapshot the dock cannot draw is refused instead of replacing what 
   CHECK(presentation.hasPerformanceSnapshot());
   CHECK(presentation.performanceSnapshot()->energy[0] <= 1.0F);
   CHECK(presentation.performanceFrameAt(300).performing);
+}
+
+TEST_CASE("Switching singer closes the mouth instead of drawing the previous phrase") {
+  native_ui::CharacterPresentation presentation;
+  const auto neutral = bindingKey("neutral", 7U);
+  const auto soft = bindingKey("soft", 7U);
+  CHECK(presentation.followSinger(neutral).hasValue());
+  CHECK(presentation.followingSinger());
+  CHECK(presentation.setPerformanceSnapshot(sungSnapshot("neutral", 7U)).hasValue());
+  CHECK(presentation.performanceFrameAt(300).performing);
+  // Following the singer that is already followed changes nothing: a repaint is not a switch.
+  CHECK(presentation.followSinger(neutral).hasValue());
+  CHECK(presentation.hasPerformanceSnapshot());
+  CHECK(presentation.performanceFrameAt(300).performing);
+
+  CHECK(presentation.followSinger(soft).hasValue());
+  CHECK(presentation.followedSinger() == soft);
+  CHECK(!presentation.hasPerformanceSnapshot());
+  const auto closed = presentation.performanceFrameAt(300);
+  CHECK(!closed.performing);
+  CHECK(closed.mouth == character::MouthShape::Closed);
+  // The previous singer's phrase cannot be handed to the new one.
+  const auto stale = presentation.setPerformanceSnapshot(sungSnapshot("neutral", 7U));
+  CHECK(!stale.hasValue());
+  CHECK(stale.error().code == core::ErrorCode::Conflict);
+  CHECK(!presentation.hasPerformanceSnapshot());
+  CHECK(presentation.setPerformanceSnapshot(sungSnapshot("soft", 7U)).hasValue());
+  CHECK(presentation.performanceFrameAt(300).performing);
+  // A new render of the same style is a different singer too: the phrase that was showing was
+  // rendered from different material.
+  CHECK(presentation.followSinger(bindingKey("soft", 8U)).hasValue());
+  CHECK(!presentation.hasPerformanceSnapshot());
+  CHECK(!presentation.performanceFrameAt(300).performing);
+  // An incomplete identity is refused rather than followed as an anonymous singer.
+  const auto incomplete = presentation.followSinger(character::PerformanceBindingKey{});
+  CHECK(!incomplete.hasValue());
+  CHECK(incomplete.error().code == core::ErrorCode::InvalidArgument);
+  CHECK(presentation.followedSinger() == bindingKey("soft", 8U));
+}
+
+TEST_CASE("A published mix and its rendered partition become one performance") {
+  const std::array<rendering::RenderedCueSpan, 3> cues{{
+      {"a", rendering::RenderedCueKind::Vowel, 0, 240},
+      {"k", rendering::RenderedCueKind::Closure, 240, 300},
+      {"a", rendering::RenderedCueKind::Vowel, 300, 480},
+  }};
+  // A stereo mix whose mean is the same on both sides: the mixdown has to be an average, not a
+  // channel pick, or a panned phrase would report the wrong envelope.
+  std::vector<float> mix(480U * 2U, 0.0F);
+  for (std::size_t frame = 0U; frame < 240U; ++frame) {
+    mix[frame * 2U] = 0.5F;
+    mix[frame * 2U + 1U] = 0.5F;
+  }
+  for (std::size_t frame = 240U; frame < 480U; ++frame) {
+    mix[frame * 2U] = 1.0F;
+    mix[frame * 2U + 1U] = 0.0F;
+  }
+  native_ui::CharacterPerformanceBindingRequest request;
+  request.resourceId = "seam-pilot-01";
+  request.resourceVersion = "1.0.0";
+  request.resourceContentHash = std::string(kDigest);
+  request.style = "neutral";
+  request.pronunciationIdentity = "ja-ipa-1";
+  request.renderRevision = 7U;
+  request.sampleRate = 48000U;
+  request.channelCount = 2U;
+  request.interleaved = mix;
+  request.cues = cues;
+  const auto built = native_ui::buildPublishedCharacterPerformance(request);
+  CHECK(built.hasValue());
+  CHECK(built.value().origin == 0);
+  CHECK(built.value().end == 480);
+  CHECK(built.value().windowCount() == 2U);
+  CHECK(built.value().cues.size() == 3U);
+  CHECK(built.value().cues[1].kind == character::CueKind::Closure);
+  CHECK(built.value().cues[1].phone == "k");
+  CHECK(built.value().cues[0].mouth == character::MouthShape::Open);
+  // The first window is a constant 0.5 and the second averages to 0.5 as well, so both are silent
+  // or both loud together; the peak of the phrase is what normalizes them.
+  CHECK_NEAR(built.value().energy[0], built.value().energy[1], 1e-6);
+  CHECK_NEAR(built.value().energy[0], 1.0, 1e-6);
+  CHECK(!built.value().expressionMeasured);
+  CHECK(built.value().validate().hasValue());
+
+  const auto frame = character::characterPerformanceFrameAt(built.value(), 250);
+  CHECK(frame.performing);
+  CHECK(frame.mouth == character::MouthShape::Closed);
+  CHECK(frame.energy > 0.0F);
+
+  auto noCues = request;
+  noCues.cues = {};
+  const auto refused = native_ui::buildPublishedCharacterPerformance(noCues);
+  CHECK(!refused.hasValue());
+  CHECK(refused.error().code == core::ErrorCode::InvalidArgument);
+
+  auto noChannels = request;
+  noChannels.channelCount = 0U;
+  CHECK(!native_ui::buildPublishedCharacterPerformance(noChannels).hasValue());
+
+  auto shortMix = request;
+  shortMix.interleaved = std::span<const float>{mix}.first(200U);
+  CHECK(!native_ui::buildPublishedCharacterPerformance(shortMix).hasValue());
+
+  auto unordered = request;
+  const std::array<rendering::RenderedCueSpan, 2> backwards{{
+      {"a", rendering::RenderedCueKind::Vowel, 300, 480},
+      {"k", rendering::RenderedCueKind::Closure, 240, 300},
+  }};
+  unordered.cues = backwards;
+  const auto unorderedResult = native_ui::buildPublishedCharacterPerformance(unordered);
+  CHECK(!unorderedResult.hasValue());
+  CHECK(unorderedResult.error().code == core::ErrorCode::InvalidArgument);
 }
 
 }  // namespace
