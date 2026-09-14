@@ -944,6 +944,8 @@ core::Result<void> StandaloneApplicationController::dispatch(
       return config_.editPronunciationHint();
     case platform::ApplicationCommand::SelectProceduralRecipe:
       return selectProceduralRecipeFromDialog(false);
+    case platform::ApplicationCommand::SelectInstalledProceduralSinger:
+      return selectInstalledProceduralSinger();
     case platform::ApplicationCommand::RelinkProceduralRecipe:
       return selectProceduralRecipeFromDialog(true);
     case platform::ApplicationCommand::BakeProceduralCandidates:
@@ -1616,6 +1618,102 @@ core::Result<void> StandaloneApplicationController::selectProceduralRecipeFromDi
   const auto changed = session_.runtime().executePerformanceResult(context.value(),
       std::make_unique<application::SetTrackProceduralRecipeCommand>(trackId, before,
           domain::ProceduralRecipeReference{resource.value().identity, path.string(), style}));
+  if (!changed) return changed;
+  const auto recorded = onDocumentChanged();
+  if (!recorded) return recorded;
+  notifyStateChanged();
+  return core::success();
+}
+
+core::Result<std::vector<distribution::ProceduralCandidate>>
+StandaloneApplicationController::installedProceduralSingers() const {
+  // Only a surface that states which engine it renders may treat an installed resource as usable,
+  // so an unset engine is an error here rather than a permissive default.
+  if (config_.renderableProceduralEngineId.empty())
+    return core::failure<std::vector<distribution::ProceduralCandidate>>(
+        core::ErrorCode::Unsupported,
+        "This build does not declare a renderable procedural engine");
+  const auto roots = config_.proceduralSingerRoots.empty()
+                         ? distribution::defaultProceduralSearchRoots()
+                         : config_.proceduralSingerRoots;
+  distribution::ProceduralCatalogue catalogue;
+  auto candidates = catalogue.scan(roots);
+  if (!candidates) return candidates;
+  // The catalogue lists what is present, including fixtures and untrusted installs; the caller
+  // decides what to offer. Compatibility is reported rather than silently filtered.
+  return candidates;
+}
+
+core::Result<void> StandaloneApplicationController::selectInstalledProceduralSinger() {
+  const auto trackId = session_.runtime().selectedTrack();
+  const auto* track = session_.runtime().document().session().project().findVocalTrack(trackId);
+  if (track == nullptr)
+    return core::failure(core::ErrorCode::Conflict,
+                         "Selecting an installed singer requires a selected vocal track");
+  auto candidates = installedProceduralSingers();
+  if (!candidates) return core::Result<void>{candidates.error()};
+  if (candidates.value().empty())
+    return core::failure(core::ErrorCode::NotFound,
+                         "No procedural singer is installed in the configured roots");
+  // Only renderable, acceptable candidates are offered, in catalogue order. An incompatible or
+  // untrusted resource is deliberately not presented as a choice.
+  std::vector<const distribution::ProceduralCandidate*> offered;
+  std::vector<std::string> labels;
+  for (const auto& candidate : candidates.value()) {
+    distribution::ProceduralResolveOptions options;
+    options.renderableEngineId = config_.renderableProceduralEngineId;
+    options.renderableEngineRevision = config_.renderableProceduralEngineRevision;
+    options.requireTrustedInstalled = !config_.allowDevelopmentVoicebanks;
+    options.allowDevelopmentFixtures = config_.allowDevelopmentVoicebanks;
+    const domain::SingerResourceIdentity identity{domain::SingerResourceKind::Procedural,
+                                                  candidate.manifest.id,
+                                                  candidate.manifest.version,
+                                                  candidate.contentHash};
+    const auto resolution = distribution::resolveProceduralSinger(
+        identity, std::vector<distribution::ProceduralCandidate>{candidate}, options);
+    if (!resolution.resolved()) continue;
+    offered.push_back(&candidate);
+    labels.push_back(candidate.manifest.displayName + " (" + candidate.manifest.id + " " +
+                     candidate.manifest.version + ")");
+  }
+  if (offered.empty()) {
+    return core::failure(core::ErrorCode::NotFound,
+        "No installed procedural singer matches this build's engine and trust policy");
+  }
+  const auto choice = fileDialog_->chooseRecipeStyle(labels);
+  if (!choice) return core::Result<void>{choice.error()};
+  if (!choice.value()) return core::success();
+  const auto selected = std::find(labels.begin(), labels.end(), *choice.value());
+  if (selected == labels.end())
+    return core::failure(core::ErrorCode::InvalidArgument,
+                         "Selected procedural singer is not one of the offered candidates");
+  const auto index = static_cast<std::size_t>(std::distance(labels.begin(), selected));
+  const auto& candidate = *offered[index];
+  const auto before = track->proceduralRecipe;
+  // A singer that declares several styles must have one chosen explicitly; taking the first would
+  // silently decide a musical property for the creator.
+  std::string style = candidate.manifest.styles.front();
+  if (candidate.manifest.styles.size() > 1U) {
+    const auto styleChoice = fileDialog_->chooseRecipeStyle(candidate.manifest.styles);
+    if (!styleChoice) return core::Result<void>{styleChoice.error()};
+    if (!styleChoice.value()) return core::success();
+    if (std::find(candidate.manifest.styles.begin(), candidate.manifest.styles.end(),
+                  *styleChoice.value()) == candidate.manifest.styles.end())
+      return core::failure(core::ErrorCode::InvalidArgument,
+                           "Selected style is not declared by the installed singer");
+    style = *styleChoice.value();
+  }
+  const auto context = session_.runtime().document().session().capturePerformanceJob();
+  if (!context) return core::Result<void>{context.error()};
+  // An installed selection records the installed manifest path, so the project is portable to
+  // another machine only through the same identity resolution a bank reference uses.
+  const auto reference = domain::ProceduralRecipeReference{
+      domain::SingerResourceIdentity{domain::SingerResourceKind::Procedural,
+                                     candidate.manifest.id, candidate.manifest.version,
+                                     candidate.contentHash},
+      (candidate.resourceRoot / candidate.manifest.recipeEntry).string(), style};
+  const auto changed = session_.runtime().executePerformanceResult(context.value(),
+      std::make_unique<application::SetTrackProceduralRecipeCommand>(trackId, before, reference));
   if (!changed) return changed;
   const auto recorded = onDocumentChanged();
   if (!recorded) return recorded;

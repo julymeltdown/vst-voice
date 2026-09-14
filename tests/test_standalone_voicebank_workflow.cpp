@@ -1,7 +1,9 @@
 #include "test_framework.hpp"
 #include "test_support.hpp"
 
+#include "seam/distribution/procedural_package.hpp"
 #include "seam/distribution/seambank.hpp"
+#include "seam/core/sha256.hpp"
 #include "seam/application/note_commands.hpp"
 #include "seam/distribution/signing.hpp"
 #include "seam/platform/application_menu.hpp"
@@ -471,4 +473,119 @@ TEST_CASE("installed multi-unit bank renders saves and reopens a new song withou
   const auto repeated = controller.value()->exportSet(root / "export-again", settings);
   if (!repeated) throw test::Failure{"installed-bank re-export failed: " + repeated.error().message};
   CHECK(repeated.value().masterSha256 == exported.value().masterSha256);
+}
+
+TEST_CASE("the application selects an installed procedural singer by identity, not by path") {
+  const auto root = seam::test::support::temporaryDirectory("installed-procedural-picker");
+  seam::voice_design::VoiceRecipe recipe;
+  recipe.id = "installed-picker";
+  recipe.seed = 77U;
+  recipe.poses = {{"a", "neutral", 0.0, {{700.0, 80.0, 0.0}, {1200.0, 100.0, -3.0}, {2600.0, 140.0, -6.0}}}};
+  const auto source = root / "source";
+  std::filesystem::create_directories(source);
+  auto encoded = seam::voice_design::encodeVoiceRecipe(recipe);
+  CHECK(encoded.hasValue());
+  if (!encoded) return;
+  std::ofstream(source / "recipe.json", std::ios::binary | std::ios::trunc) << encoded.value();
+  seam::distribution::ProceduralSingerManifest manifest;
+  manifest.id = "seam.installed.pilot";
+  manifest.version = "1.0.0";
+  manifest.displayName = "Installed Pilot";
+  manifest.language = "ja";
+  manifest.styles = {"neutral"};
+  manifest.engineId = recipe.engineId;
+  manifest.engineRevision = 13U;
+  manifest.recipeEntry = "recipe.json";
+  manifest.recipeSha256 = seam::core::sha256Hex(encoded.value());
+  manifest.phones = {"a"};
+  seam::distribution::ProceduralSingerManifestJsonCodec manifestCodec;
+  auto manifestText = manifestCodec.encode(manifest);
+  CHECK(manifestText.hasValue());
+  if (!manifestText) return;
+  std::ofstream(source / "manifest.json", std::ios::binary | std::ios::trunc) << manifestText.value();
+  auto key = seam::distribution::generateSigningKeyPair();
+  CHECK(key.hasValue());
+  if (!key) return;
+  const auto packagePath = root / "pilot.seamsinger";
+  CHECK(seam::distribution::packProceduralPackage(source, packagePath, key.value()).hasValue());
+  const auto installRoot = root / "singers";
+  seam::distribution::InstallProceduralOptions installOptions;
+  installOptions.verification = seam::distribution::VerifySeambankOptions{
+      .limits = {}, .trustedPublicKeys = {key.value().publicKey}, .requireTrustedSigner = true};
+  auto installed = seam::distribution::installProceduralPackage(packagePath, installRoot, installOptions);
+  CHECK(installed.hasValue());
+  if (!installed) return;
+
+  auto session = seam::standalone::AuthoringSession::create(
+      seam::standalone::AuthoringSessionConfig{.cacheRoot = root / "cache", .voicebankRoots = {},
+          .sampleRate = 48000U, .outputChannels = 2U, .bindFirstAvailableVoicebank = false,
+          .allowDevelopmentVoicebanks = false});
+  CHECK(session.hasValue());
+  if (!session) return;
+  seam::standalone::StandaloneApplicationControllerConfig config{
+      .autosaveRoot = root / "autosaves", .recentProjectsPath = root / "recent.json"};
+  config.proceduralSingerRoots = {seam::distribution::ProceduralSearchRoot{
+      .path = installRoot, .kind = seam::distribution::ProceduralRootKind::Installed}};
+  auto controller = seam::standalone::StandaloneApplicationController::create(
+      *session.value(), std::make_unique<FakeDialog>(), std::make_unique<FakePrompt>(), config);
+  CHECK(controller.hasValue());
+  if (!controller) return;
+  auto& runtime = session.value()->runtime();
+  const auto trackId = runtime.selectedTrack();
+  CHECK(trackId.valid());
+  const auto original = runtime.document().session().project();
+
+  // Without a declared renderable engine the application refuses rather than guessing.
+  auto listed = controller.value()->installedProceduralSingers();
+  CHECK(!listed.hasValue());
+  CHECK(!controller.value()->dispatch(
+      seam::platform::ApplicationCommand::SelectInstalledProceduralSinger));
+  CHECK(runtime.document().session().project() == original);
+
+  // A singer built for another engine is present on disk but is not offered as a choice.
+  config.renderableProceduralEngineId = "seam.source-filter.other";
+  auto foreign = seam::standalone::StandaloneApplicationController::create(
+      *session.value(), std::make_unique<FakeDialog>(), std::make_unique<FakePrompt>(), config);
+  CHECK(foreign.hasValue());
+  if (!foreign) return;
+  CHECK(!foreign.value()->dispatch(
+      seam::platform::ApplicationCommand::SelectInstalledProceduralSinger));
+  CHECK(runtime.document().session().project() == original);
+
+  // Cancelling the chooser leaves the track untouched.
+  config.renderableProceduralEngineId = manifest.engineId;
+  config.renderableProceduralEngineRevision = manifest.engineRevision;
+  auto cancellingDialog = std::make_unique<FakeDialog>();
+  auto* cancellingPicker = cancellingDialog.get();
+  cancellingPicker->styleResponse = std::nullopt;
+  auto cancelling = seam::standalone::StandaloneApplicationController::create(
+      *session.value(), std::move(cancellingDialog), std::make_unique<FakePrompt>(), config);
+  CHECK(cancelling.hasValue());
+  if (!cancelling) return;
+  CHECK(cancelling.value()->dispatch(
+      seam::platform::ApplicationCommand::SelectInstalledProceduralSinger));
+  CHECK(cancellingPicker->offeredStyles.size() == 1U);
+  CHECK(cancellingPicker->offeredStyles.front().find("Installed Pilot") != std::string::npos);
+  CHECK(runtime.document().session().project() == original);
+
+  // Choosing the offered singer records the installed identity and its installed recipe path.
+  auto choosingDialog = std::make_unique<FakeDialog>();
+  auto* choosingPicker = choosingDialog.get();
+  choosingPicker->styleResponse = cancellingPicker->offeredStyles.front();
+  auto choosing = seam::standalone::StandaloneApplicationController::create(
+      *session.value(), std::move(choosingDialog), std::make_unique<FakePrompt>(), config);
+  CHECK(choosing.hasValue());
+  if (!choosing) return;
+  CHECK(choosing.value()->dispatch(
+      seam::platform::ApplicationCommand::SelectInstalledProceduralSinger));
+  const auto chosen = runtime.document().session().project().findVocalTrack(trackId)->proceduralRecipe;
+  CHECK(chosen.has_value());
+  if (!chosen) return;
+  CHECK(chosen->resource.id == manifest.id);
+  CHECK(chosen->resource.version == manifest.version);
+  CHECK(chosen->resource.contentHash == installed.value().contentHash);
+  CHECK(chosen->style == "neutral");
+  CHECK(chosen->path == (installed.value().installDirectory / "recipe.json").string());
+  CHECK(runtime.undo());
+  CHECK(!runtime.document().session().project().findVocalTrack(trackId)->proceduralRecipe.has_value());
 }

@@ -114,6 +114,7 @@
 - (void)installVoicebank:(id)sender { (void)sender; [self send:seam::platform::ApplicationCommand::InstallVoicebank]; }
 - (void)relinkVoicebank:(id)sender { (void)sender; [self send:seam::platform::ApplicationCommand::RelinkVoicebank]; }
 - (void)selectProceduralRecipe:(id)sender { (void)sender; [self send:seam::platform::ApplicationCommand::SelectProceduralRecipe]; }
+- (void)selectInstalledProceduralSinger:(id)sender { (void)sender; [self send:seam::platform::ApplicationCommand::SelectInstalledProceduralSinger]; }
 - (void)relinkProceduralRecipe:(id)sender { (void)sender; [self send:seam::platform::ApplicationCommand::RelinkProceduralRecipe]; }
 - (void)bakeProceduralCandidates:(id)sender { (void)sender; [self send:seam::platform::ApplicationCommand::BakeProceduralCandidates]; }
 - (void)proposeAutomaticPerformance:(id)sender { (void)sender; [self send:seam::platform::ApplicationCommand::ProposeAutomaticPerformance]; }
@@ -465,6 +466,7 @@ public:
     [fileMenu_ addItem:item(@"Install Voicebank…", @selector(installVoicebank:), @"",
                             0, target_)];
     [fileMenu_ addItem:item(@"Select Procedural Recipe…", @selector(selectProceduralRecipe:), @"", 0, target_)];
+    [fileMenu_ addItem:item(@"Select Installed Singer…", @selector(selectInstalledProceduralSinger:), @"", 0, target_)];
     [fileMenu_ addItem:item(@"Relink Procedural Recipe…", @selector(relinkProceduralRecipe:), @"", 0, target_)];
     [fileMenu_ addItem:item(@"Bake Unapproved Procedural Candidates…", @selector(bakeProceduralCandidates:), @"", 0, target_)];
     [fileMenu_ addItem:item(@"Propose Automatic Performance", @selector(proposeAutomaticPerformance:), @"", 0, target_)];

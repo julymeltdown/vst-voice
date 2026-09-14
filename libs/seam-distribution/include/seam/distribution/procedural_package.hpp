@@ -137,8 +137,9 @@ struct ProceduralCatalogue final {
 struct ProceduralResolveOptions final {
   bool requireTrustedInstalled{true};
   bool allowDevelopmentFixtures{true};
-  // The engine this build can render, and its revision. Empty means the caller does not check
-  // compatibility, which is only appropriate when the surface is not going to render the resource.
+  // The engine this build can render, and its revision. An empty engine means the caller is browsing
+  // rather than rendering and does not check compatibility. A zero revision means the caller knows
+  // the engine but not the revision it will render with, so only the engine is compared.
   std::string renderableEngineId;
   std::uint32_t renderableEngineRevision{0U};
 };

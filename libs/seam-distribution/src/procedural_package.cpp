@@ -570,7 +570,12 @@ core::Result<std::vector<ProceduralCandidate>> ProceduralCatalogue::scan(
       if (!isRealDirectory(product->path())) continue;
       for (std::filesystem::directory_iterator version(product->path(), error), endVersion;
            !error && version != endVersion; version.increment(error)) {
-        const auto resourceRoot = version->path();
+        // Report the canonical location. One installed resource reached through a differently
+        // spelled search root must still compare equal to itself, because a project stores the
+        // resource path and has to resolve it again after the caller's root spelling changes.
+        std::error_code canonicalError;
+        const auto resourceRoot = std::filesystem::canonical(version->path(), canonicalError);
+        if (canonicalError) continue;
         const auto name = resourceRoot.filename().string();
         // Staging and backup directories are installation machinery, not installed resources.
         if (name.starts_with(".staging-") || name.starts_with(".backup-")) continue;
@@ -702,15 +707,18 @@ ProceduralResolution resolveProceduralSinger(
     const auto renderable = std::find_if(contentMatches.begin(), contentMatches.end(),
         [&options](const ProceduralCandidate* candidate) {
           return candidate->manifest.engineId == options.renderableEngineId &&
-                 candidate->manifest.engineRevision == options.renderableEngineRevision;
+                 (options.renderableEngineRevision == 0U ||
+                  candidate->manifest.engineRevision == options.renderableEngineRevision);
         });
     if (renderable == contentMatches.end()) {
       const auto& declared = contentMatches.front()->manifest;
       result.status = ProceduralResolveStatus::IncompatibleEngine;
       result.diagnostic = "Procedural singer needs engine " + declared.engineId + " revision " +
           std::to_string(declared.engineRevision) + ", but this build renders " +
-          options.renderableEngineId + " revision " +
-          std::to_string(options.renderableEngineRevision);
+          options.renderableEngineId +
+          (options.renderableEngineRevision == 0U
+               ? std::string{}
+               : " revision " + std::to_string(options.renderableEngineRevision));
       return result;
     }
   }

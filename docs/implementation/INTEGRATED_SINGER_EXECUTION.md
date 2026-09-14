@@ -1,5 +1,41 @@
 # Integrated Singer Execution
 
+## The application offers an installed singer by identity, and only one it can render
+
+September 15, 2026 — D4.6 added. A creator no longer has to know where an installed procedural
+singer lives on disk. `SelectInstalledProceduralSinger` scans the configured procedural roots,
+offers every candidate this build can actually render, and records the chosen resource as a
+`ProceduralRecipeReference` carrying the resource identity, the installed manifest's recipe path and
+the selected style, so the track names the installed resource rather than a file the creator
+happened to pick.
+
+Two rules decide what is offered. A build that has not declared its renderable engine refuses to
+list anything at all, rather than defaulting to permissive; that is a configuration error the caller
+must fix, not a browse. Among the candidates that do resolve, an incompatible engine and an untrusted
+install are both withheld from the chooser instead of being presented with a caveat a creator would
+have to interpret. A singer declaring more than one style asks which style, because taking the first
+would silently decide a musical property.
+
+Two defects were found and repaired while landing this. The catalogue's `resourceRoot` came from
+whatever spelling of the search root the caller passed, while the installer publishes a canonical
+path, so the same installed singer compared unequal to itself and an installed selection would not
+have matched the identity it recorded. The catalogue now reports a canonical resource root. Separately,
+a zero engine revision in `ProceduralResolveOptions` now means "the caller knows the engine but not the
+revision it will render with, so compare the engine only", instead of failing every candidate; an
+empty engine still means the caller is browsing and checks nothing.
+
+Verified. `seam_u3_standalone_tests` passes 4 of 4, including the new case: with no declared engine
+the listing and the command both fail and the project is unchanged; a singer built for another engine
+is present on disk but is not offered, and cancelling the chooser leaves the track untouched; and
+choosing the offered singer records the installed id, version and content hash with the installed
+recipe path, which one undo removes. `seam_procedural_package_tests` passes 11 of 11 unchanged.
+
+Not claimed. The selected singer is not written into a review candidate, and the connected acceptance
+journey in D4.8 does not exist yet, so no end-to-end authoring-to-installed-resource run has been
+performed. No installed singer has been rendered or listened to. Editing an installed singer still
+does not produce a copy, and no engine revision is pinned to a retained build. No U-unit acceptance or
+Beta GO state changes.
+
 ## A procedural singer is now a package, not a loose JSON file
 
 September 15, 2026 — D4.6 prerequisite fix. The manifest digest was compared against the packaged

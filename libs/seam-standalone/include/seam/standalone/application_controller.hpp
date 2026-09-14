@@ -8,6 +8,7 @@
 #include "seam/authoring/recent_projects.hpp"
 #include "seam/authoring/voicebank_browser.hpp"
 #include "seam/authoring/voicebank_installer_service.hpp"
+#include "seam/distribution/procedural_package.hpp"
 #include "seam/voicebank/coverage.hpp"
 #include "seam/core/result.hpp"
 #include "seam/platform/application_menu.hpp"
@@ -32,6 +33,12 @@ struct StandaloneApplicationControllerConfig final {
   std::filesystem::path autosaveRoot;
   std::filesystem::path recentProjectsPath;
   std::filesystem::path voicebankInstallRoot{};
+  // Where installed procedural singers are catalogued. Empty means the platform default roots.
+  std::vector<distribution::ProceduralSearchRoot> proceduralSingerRoots{};
+  // The engine and revision this build renders. Required before an installed singer may be selected,
+  // because a resource built for another engine must not be chosen here.
+  std::string renderableProceduralEngineId{};
+  std::uint32_t renderableProceduralEngineRevision{0U};
   std::filesystem::path manualsRoot{};
   std::vector<distribution::Ed25519PublicKey> trustedVoicebankKeys{};
   std::optional<distribution::Ed25519PublicKey> developmentTrustRoot{};
@@ -208,6 +215,10 @@ public:
       domain::TrackId trackId, voicebank::VoicebankSearchRoot root);
   [[nodiscard]] core::Result<void> relinkVoicebankFromDialog();
   [[nodiscard]] core::Result<void> selectProceduralRecipeFromDialog(bool relink = false);
+  // Choose an installed procedural singer by identity instead of by file path. Returns the installed
+  // resource so the track records an exact identity a producer may later relink.
+  [[nodiscard]] core::Result<void> selectInstalledProceduralSinger();
+  [[nodiscard]] core::Result<std::vector<distribution::ProceduralCandidate>> installedProceduralSingers() const;
   [[nodiscard]] core::Result<void> relinkBackingMediaFromDialog();
   [[nodiscard]] core::Result<void> replaceVoicebank(
       domain::TrackId trackId, std::string_view id, std::string_view version,

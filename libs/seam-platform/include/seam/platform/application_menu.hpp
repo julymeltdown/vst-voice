@@ -33,6 +33,7 @@ enum class ApplicationCommand {
   StopPlayback,
   ToggleLoop,
   SelectProceduralRecipe,
+  SelectInstalledProceduralSinger,
   RelinkProceduralRecipe,
   BakeProceduralCandidates,
   ProposeAutomaticPerformance,
