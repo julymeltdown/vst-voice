@@ -14,6 +14,10 @@ constexpr std::array<State, 6> kStates{
     State::Neutral, State::Focused, State::Rendering,
     State::Complete, State::Warning, State::Error};
 
+constexpr std::array<MouthShape, 6> kMouthShapes{
+    MouthShape::Closed, MouthShape::Narrow, MouthShape::Nasal,
+    MouthShape::Open, MouthShape::Wide, MouthShape::Round};
+
 bool safeRelativeAsset(const std::filesystem::path& path) {
   if (path.empty() || path.is_absolute()) return false;
   for (const auto& part : path) {
@@ -65,10 +69,18 @@ State parseState(std::string_view value) noexcept {
 }
 
 core::Result<void> Manifest::validate() const {
-  if (schemaVersion != 1) {
+  if (schemaVersion != kStatusOnlyManifestSchema && schemaVersion != kPerformanceManifestSchema) {
     return core::failure(core::ErrorCode::Unsupported,
                          "Unsupported character manifest schema",
                          std::to_string(schemaVersion));
+  }
+  if (schemaVersion == kStatusOnlyManifestSchema) {
+    // A status-only package cannot claim a performance field of any kind: that would let a package
+    // look like a turnaround while its schema says a reader may not expect one.
+    if (declaresPerformance() || developmentOnly) {
+      return core::failure(core::ErrorCode::InvariantViolation,
+                           "A status-only character package declares no performance assets");
+    }
   }
   if (characterId.empty() || displayName.empty() || version.empty() ||
       voicebankId.empty() || style.empty()) {
@@ -87,6 +99,16 @@ core::Result<void> Manifest::validate() const {
                            std::string{stateName(state)});
     }
   }
+  if (schemaVersion == kPerformanceManifestSchema) {
+    for (const auto shape : kMouthShapes) {
+      const auto iterator = mouthAssets.find(shape);
+      if (iterator == mouthAssets.end() || !safeRelativeAsset(iterator->second)) {
+        return core::failure(core::ErrorCode::InvariantViolation,
+                             "Character performance asset is missing or unsafe",
+                             std::string{mouthShapeName(shape)});
+      }
+    }
+  }
   return core::success();
 }
 
@@ -99,6 +121,16 @@ std::filesystem::path Manifest::assetFor(State state) const {
 
 std::filesystem::path Package::assetPath(State state) const {
   return root / manifest.assetFor(state);
+}
+
+std::filesystem::path Manifest::mouthAssetFor(MouthShape shape) const {
+  const auto iterator = mouthAssets.find(shape);
+  return iterator == mouthAssets.end() ? std::filesystem::path{} : iterator->second;
+}
+
+std::filesystem::path Package::mouthAssetPath(MouthShape shape) const {
+  const auto relative = manifest.mouthAssetFor(shape);
+  return relative.empty() ? std::filesystem::path{} : root / relative;
 }
 
 core::Result<Package> loadPackage(const std::filesystem::path& packageRoot,
@@ -180,6 +212,33 @@ core::Result<Package> loadPackage(const std::filesystem::path& packageRoot,
     }
     manifest.stateAssets.emplace(state, std::filesystem::path{value->asString()});
   }
+  // Performance fields are read whenever they are present and then validated against the schema, so a
+  // status-only package that carries them is refused instead of silently ignoring them.
+  if (const auto* mouths = parsed.value().find("mouths"); mouths != nullptr) {
+    if (!mouths->isObject()) {
+      return core::failure<Package>(core::ErrorCode::ParseError,
+                                    "Character manifest mouths must be an object");
+    }
+    for (const auto shape : kMouthShapes) {
+      const auto key = mouthShapeName(shape);
+      const auto* value = mouths->find(key);
+      if (value == nullptr) continue;
+      if (!value->isString() || value->asString().empty()) {
+        return core::failure<Package>(core::ErrorCode::ParseError,
+                                      "Character performance asset path must be a string",
+                                      std::string{key});
+      }
+      manifest.mouthAssets.emplace(shape, std::filesystem::path{value->asString()});
+    }
+  }
+  if (const auto* developmentOnly = parsed.value().find("developmentOnly");
+      developmentOnly != nullptr) {
+    if (!developmentOnly->isBool()) {
+      return core::failure<Package>(core::ErrorCode::ParseError,
+                                    "Character manifest developmentOnly must be a boolean");
+    }
+    manifest.developmentOnly = developmentOnly->asBool();
+  }
   auto validation = manifest.validate();
   if (!validation) return core::Result<Package>{validation.error()};
 
@@ -196,6 +255,24 @@ core::Result<Package> loadPackage(const std::filesystem::path& packageRoot,
     if (relative.empty() || relative.native().starts_with("..")) {
       return core::failure<Package>(core::ErrorCode::InvariantViolation,
                                     "Character state asset escapes package root",
+                                    candidate.string());
+    }
+  }
+  for (const auto shape : kMouthShapes) {
+    const auto relativeAsset = manifest.mouthAssetFor(shape);
+    if (relativeAsset.empty()) continue;
+    const auto candidate = canonicalRoot / relativeAsset;
+    std::error_code assetError;
+    const auto canonicalAsset = std::filesystem::weakly_canonical(candidate, assetError);
+    if (assetError || !std::filesystem::is_regular_file(canonicalAsset, assetError)) {
+      return core::failure<Package>(core::ErrorCode::IoError,
+                                    "Character performance asset is not a regular file",
+                                    candidate.string());
+    }
+    const auto relative = canonicalAsset.lexically_relative(canonicalRoot);
+    if (relative.empty() || relative.native().starts_with("..")) {
+      return core::failure<Package>(core::ErrorCode::InvariantViolation,
+                                    "Character performance asset escapes package root",
                                     candidate.string());
     }
   }

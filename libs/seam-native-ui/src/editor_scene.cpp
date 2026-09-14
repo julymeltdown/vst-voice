@@ -1089,10 +1089,19 @@ void EditorScenePainter::paintCharacter(RasterCanvas& canvas,
   // The glyph is the only part that moves, so it is drawn only where there is room for it beside the
   // level bar, and reduced motion drops it while keeping the label and the measured level.
   if (!performance.reducedMotion && presentation == CharacterDockPresentation::Full) {
-    const auto glyphHeight = layout_.characterDockPerformanceGlyphHeight * (0.2 + 0.8 * level);
-    canvas.fillRect(ui::Rect{textX + barWidth, performanceTop - glyphHeight,
-                             layout_.characterDockPerformanceGlyphWidth, glyphHeight},
-                    performance.performing ? theme_.accent : theme_.gridStrong);
+    if (state.characterMouth != nullptr) {
+      // A package that declares performance artwork gets to draw it. The asset replaces the dock's own
+      // drawing rather than sitting beside it, so a reviewed turnaround is what the user sees.
+      canvas.drawImageNearest(
+          ui::Rect{textX + barWidth, performanceTop - layout_.characterDockMouthAssetHeight,
+                   layout_.characterDockMouthAssetWidth, layout_.characterDockMouthAssetHeight},
+          *state.characterMouth, layout_.characterDockPortraitScale);
+    } else {
+      const auto glyphHeight = layout_.characterDockPerformanceGlyphHeight * (0.2 + 0.8 * level);
+      canvas.fillRect(ui::Rect{textX + barWidth, performanceTop - glyphHeight,
+                               layout_.characterDockPerformanceGlyphWidth, glyphHeight},
+                      performance.performing ? theme_.accent : theme_.gridStrong);
+    }
   }
   const auto barTop = performanceTop + layout_.characterDockPerformanceBarHeight * 2.0;
   canvas.strokeRect(ui::Rect{textX, barTop, barWidth, layout_.characterDockPerformanceBarHeight},

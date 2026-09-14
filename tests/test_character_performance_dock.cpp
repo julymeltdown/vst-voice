@@ -160,6 +160,44 @@ authoring::RenderState waitForRender(standalone::AuthoringSession& session,
   return authoring::RenderState::Idle;
 }
 
+TEST_CASE("A declared mouth asset replaces the dock's own drawing") {
+  DockFixture fixture;
+  native_ui::NativeEditorController controller{fixture.session, fixture.factory,
+                                               fixture.regionId, {}};
+  auto state = controller.sceneState();
+  state.logicalWidth = 900.0;
+  state.logicalHeight = 640.0;
+  state.characterMode = domain::CharacterDisplayMode::Full;
+  state.voiceIdentity.characterActive = true;
+  state.characterName = "Pilot";
+  native_ui::PixelSurface portrait{220U, 200U};
+  portrait.clear(native_ui::Color{30U, 10U, 40U, 255U});
+  state.characterPortrait = &portrait;
+  state.characterPerformance = view(character::MouthShape::Open, 0.8F, true);
+
+  native_ui::EditorScenePainter painter;
+  std::unique_ptr<text::TextEngine> engine;
+  if (auto created = text::TextEngine::createSystem(); created) engine = std::move(created).value();
+  const auto fallback = paintDock(painter, controller.pianoRoll(), state, engine.get());
+
+  // A package that declares performance artwork gets to draw it instead of the dock's own glyph.
+  native_ui::PixelSurface mouth{24U, 24U};
+  mouth.clear(native_ui::Color{200U, 40U, 90U, 255U});
+  state.characterMouth = &mouth;
+  const auto declared = paintDock(painter, controller.pianoRoll(), state, engine.get());
+  CHECK(declared != fallback);
+
+  // Reduced motion drops the artwork, and neither the artwork nor the fallback glyph is drawn in its
+  // place: the dock keeps the label and the level.
+  state.characterPerformance->reducedMotion = true;
+  const auto reducedWithAsset = paintDock(painter, controller.pianoRoll(), state, engine.get());
+  CHECK(reducedWithAsset != declared);
+  CHECK(reducedWithAsset != fallback);
+  state.characterMouth = nullptr;
+  const auto reducedWithoutAsset = paintDock(painter, controller.pianoRoll(), state, engine.get());
+  CHECK(reducedWithAsset == reducedWithoutAsset);
+}
+
 TEST_CASE("The dock says what is singing and whether that phrase has fallen behind") {
   DockFixture fixture;
   native_ui::NativeEditorController controller{fixture.session, fixture.factory,

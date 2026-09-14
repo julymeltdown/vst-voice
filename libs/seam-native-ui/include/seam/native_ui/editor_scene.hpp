@@ -195,6 +195,9 @@ struct EditorSceneState final {
     bool reducedMotion{false};
   };
   std::optional<CharacterPerformanceView> characterPerformance{};
+  // The declared mouth artwork for the shape the performance is drawing, when the character package
+  // has one. A status-only package leaves this null and the dock draws its own fallback instead.
+  const PixelSurface* characterMouth{nullptr};
   std::string characterName;
   std::string characterStyle;
   const PixelSurface* characterPortrait{nullptr};
@@ -300,6 +303,8 @@ struct EditorSceneLayout final {
   double characterDockPerformanceBarHeight{4.0};
   double characterDockPerformanceGlyphWidth{14.0};
   double characterDockPerformanceGlyphHeight{18.0};
+  double characterDockMouthAssetWidth{22.0};
+  double characterDockMouthAssetHeight{22.0};
   double characterDockNameFontSize{9.0};
   double characterDockDetailFontSize{7.0};
   double characterDockDividerStrokeWidth{1.0};

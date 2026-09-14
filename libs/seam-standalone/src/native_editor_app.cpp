@@ -1282,6 +1282,7 @@ void NativeEditorApp::paint(native_ui::RasterCanvas& canvas) noexcept {
         .audibleStale = authoring_->characterPerformanceStale(),
         .reducedMotion = false,
     };
+    state.characterMouth = character_.mouth(frame->mouth);
   }
   state.characterPortrait = character_.portrait();
   authoring_->controller().setCharacterPortrait(state.characterPortrait);

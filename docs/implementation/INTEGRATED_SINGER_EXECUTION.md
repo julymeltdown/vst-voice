@@ -1,5 +1,45 @@
 # Integrated Singer Execution
 
+## A character package declares its performance, or honestly has none
+
+The dock could draw a mouth, but a character package could not supply one. Its manifest was schema one:
+six operating-state assets and nothing else, so the mouth was always the dock's own glyph and there was
+no way for reviewed artwork to reach the screen. The converse was also unguarded -- nothing in the
+package format said whether a package was a status-only character or a performance turnaround, and
+nothing carried the development-only fact that the Phase 13B asset tooling already writes.
+
+Schema two adds declared performance assets. A performance package declares every mouth shape it can be
+asked for, because a partially authored turnaround blended with the dock's own fallback drawing is
+worse than a status-only character that honestly has no face: a missing or unsafe shape is refused by
+name. Every declared asset is checked the way state assets already were -- regular file, inside the
+package root, no escape -- and the development flag now travels in the package's own bytes rather than
+in its directory name, so a rename cannot promote development artwork. Schema one keeps its exact
+meaning: it is status-only, and a schema-one manifest that carries a mouth map or a development flag is
+refused rather than silently ignoring the claim.
+
+The presentation loads a declared turnaround whole and exposes it per shape; the standalone host asks
+it for the shape the published phrase is currently drawing. A status-only package leaves that lookup
+empty and the dock draws its own glyph, which is what keeps the shipped development character working
+exactly as before.
+
+Verified. `seam_character_package_performance_tests` passes 5 of 5: a status-only package loads,
+declares no performance, resolves no mouth and presents none; a complete performance package loads,
+resolves all six shapes to existing files and exposes them; a partial turnaround, a schema-one package
+that carries a mouth map, a schema-one package that carries a development flag and an unknown schema
+are each refused with the right code; a mouth path that escapes the root is refused as an invariant
+violation and a declared-but-absent one as an I/O error; and a development package copied into a
+directory named for production still reports itself development-only when loaded.
+`seam_character_performance_dock_tests` passes 5 of 5, including the new painting case: a declared
+mouth asset changes the dock's pixels, and with reduced motion the artwork and the fallback glyph are
+both left undrawn -- identical pixels whether an asset exists or not -- while the label and the level
+stay. The tracked character-01 package is schema one and still loads as status-only. The whole tree
+builds and the registered CTest run is reported in the commit that carries this entry.
+
+Not claimed. The assets in these tests are flat colours written by the test, not a reviewed turnaround;
+no production character artwork exists, and the shipped character remains a development one. Nothing
+was looked at by a person, no visual QA was captured from a running window, the plug-in host still
+draws operational state only, and no unit acceptance changes.
+
 ## The dock says what it is singing, and whether that phrase is still current
 
 The dock drew a mouth and a level, and it was silent about two things a listener can hear and a reader

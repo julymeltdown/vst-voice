@@ -28,6 +28,15 @@ public:
   [[nodiscard]] const PixelSurface* portrait() const noexcept {
     return portrait(state_);
   }
+  // The declared mouth artwork, or nothing for a status-only package. A presentation never invents a
+  // mouth from an absent asset: an undeclared shape falls back to the dock's own drawing.
+  [[nodiscard]] const PixelSurface* mouth(character::MouthShape shape) const noexcept;
+  [[nodiscard]] bool hasPerformanceAssets() const noexcept { return !mouths_.empty(); }
+  // Whether this package declares itself a development turnaround. It is read from the package's own
+  // bytes, so renaming or moving the directory cannot change the answer.
+  [[nodiscard]] bool developmentOnly() const noexcept {
+    return package_.has_value() && package_->manifest.developmentOnly;
+  }
   void setState(character::State state) noexcept { state_ = state; }
   [[nodiscard]] character::State state() const noexcept { return state_; }
   void setDisplayMode(domain::CharacterDisplayMode mode) noexcept { mode_ = mode; }
@@ -63,6 +72,7 @@ public:
 private:
   std::optional<character::Package> package_;
   std::map<character::State, PixelSurface> portraits_;
+  std::map<character::MouthShape, PixelSurface> mouths_;
   character::State state_{character::State::Neutral};
   domain::CharacterDisplayMode mode_{domain::CharacterDisplayMode::Minimal};
   std::optional<character::CharacterPerformanceSnapshot> performance_;

@@ -18,8 +18,23 @@ core::Result<void> CharacterPresentation::load(
     if (!portrait) return core::Result<void>{portrait.error()};
     loaded.emplace(state, std::move(portrait.value()));
   }
+  // A performance package is loaded whole: every shape it declares must decode, so a presentation
+  // cannot end up drawing half of one turnaround and half of its own fallback.
+  std::map<character::MouthShape, PixelSurface> mouths;
+  constexpr std::array<character::MouthShape, 6> shapes{
+      character::MouthShape::Closed, character::MouthShape::Narrow,
+      character::MouthShape::Nasal, character::MouthShape::Open,
+      character::MouthShape::Wide, character::MouthShape::Round};
+  for (const auto shape : shapes) {
+    const auto relative = package.value().manifest.mouthAssetFor(shape);
+    if (relative.empty()) continue;
+    auto mouth = PixelSurface::loadPpm(package.value().mouthAssetPath(shape), maximumAssetBytes);
+    if (!mouth) return core::Result<void>{mouth.error()};
+    mouths.emplace(shape, std::move(mouth.value()));
+  }
   package_ = std::move(package.value());
   portraits_ = std::move(loaded);
+  mouths_ = std::move(mouths);
   state_ = package_->manifest.defaultState;
   return core::success();
 }
@@ -32,6 +47,11 @@ const PixelSurface* CharacterPresentation::portrait(character::State state) cons
     if (fallback != portraits_.end()) return &fallback->second;
   }
   return nullptr;
+}
+
+const PixelSurface* CharacterPresentation::mouth(character::MouthShape shape) const noexcept {
+  const auto iterator = mouths_.find(shape);
+  return iterator == mouths_.end() ? nullptr : &iterator->second;
 }
 
 std::string CharacterPresentation::displayName() const {

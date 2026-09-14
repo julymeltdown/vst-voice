@@ -1,5 +1,6 @@
 #pragma once
 
+#include "seam/character/performance.hpp"
 #include "seam/core/result.hpp"
 
 #include <filesystem>
@@ -21,6 +22,12 @@ enum class State {
 [[nodiscard]] std::string_view stateName(State state) noexcept;
 [[nodiscard]] State parseState(std::string_view value) noexcept;
 
+// A schema-one package is status-only: it names its six operating-state assets and nothing else, and a
+// presentation that asks it for a mouth gets nothing rather than a guess. Schema two adds declared
+// performance assets.
+inline constexpr std::int32_t kStatusOnlyManifestSchema{1};
+inline constexpr std::int32_t kPerformanceManifestSchema{2};
+
 struct Accent final {
   std::string primary{"#8B4C69"};
   std::string secondary{"#6E5A86"};
@@ -38,9 +45,19 @@ struct Manifest final {
   State defaultState{State::Neutral};
   Accent accent;
   std::map<State, std::filesystem::path> stateAssets;
+  // Declared only by a performance schema. A package that declares performance must declare every
+  // mouth shape it could be asked for: a partially authored turnaround is not a turnaround, and it is
+  // refused rather than mixed with the presentation's own fallback drawing.
+  std::map<MouthShape, std::filesystem::path> mouthAssets;
+  // Whether this artwork is a development turnaround. It travels in the package's own bytes, so moving
+  // or renaming the directory cannot promote it to production.
+  bool developmentOnly{false};
 
   [[nodiscard]] core::Result<void> validate() const;
   [[nodiscard]] std::filesystem::path assetFor(State state) const;
+  // Empty for a status-only package, or for a shape this package does not declare.
+  [[nodiscard]] std::filesystem::path mouthAssetFor(MouthShape shape) const;
+  [[nodiscard]] bool declaresPerformance() const noexcept { return !mouthAssets.empty(); }
 };
 
 struct Package final {
@@ -48,6 +65,7 @@ struct Package final {
   Manifest manifest;
 
   [[nodiscard]] std::filesystem::path assetPath(State state) const;
+  [[nodiscard]] std::filesystem::path mouthAssetPath(MouthShape shape) const;
 };
 
 [[nodiscard]] core::Result<Package> loadPackage(
