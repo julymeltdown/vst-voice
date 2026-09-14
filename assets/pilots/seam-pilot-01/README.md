@@ -298,3 +298,16 @@ owning note, and coarticulation with a preceding phone in the same note, remain
 open. `l`, the voiced affricate `j` and every other phone the pilot recipe does
 not admit are refused with their phone name and recipe identity rather than
 approximated.
+
+## Fricative and palatalized coverage in the maximal recipe
+
+`seam_singer_pilot NEW_OUTPUT_DIRECTORY phrase 'あ:60'` (custom phrase mode) declares every class this
+pilot has, and that is the recipe the coverage report measures. It now also declares the fricatives
+`sh`, `h` and `f` as unvoiced frication with their own spectra, `z` and `v` as voiced frication with the
+same-phone resonance pose that source requires, and the palatalized consonants
+`ky gy hy py by my ny ry fy vy` as recipe schema nine: each takes its base consonant's release and the
+palatal resonance declared under its own name, so a bank has a `ky` unit rather than a relabelled `k`.
+`fy` also stopped being classified as voiced, which it never was. Together these took the pilot
+inventory from 498 to 948 of 1026 assignments the recipe can prepare; the remaining 78 are `j`, `R`,
+`glottal`, `br`, `pau` and `cl`. Preparing a class is still not phonetic qualification: no listener has
+heard any of them, and every burst spectrum is the base consonant's.
