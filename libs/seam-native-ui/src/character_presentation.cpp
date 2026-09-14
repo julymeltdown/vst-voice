@@ -42,4 +42,18 @@ std::string CharacterPresentation::styleName() const {
   return package_.has_value() ? package_->manifest.style : std::string{};
 }
 
+core::Result<void> CharacterPresentation::setPerformanceSnapshot(
+    character::CharacterPerformanceSnapshot snapshot) {
+  const auto valid = snapshot.validate();
+  if (!valid) return valid;
+  performance_ = std::move(snapshot);
+  return core::success();
+}
+
+character::CharacterPerformanceFrame CharacterPresentation::performanceFrameAt(
+    time::SampleFrame playhead) const noexcept {
+  if (!performance_.has_value()) return character::CharacterPerformanceFrame{};
+  return character::characterPerformanceFrameAt(*performance_, playhead);
+}
+
 }  // namespace seam::native_ui

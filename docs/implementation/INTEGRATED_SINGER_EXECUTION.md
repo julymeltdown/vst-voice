@@ -1,5 +1,61 @@
 # Integrated Singer Execution
 
+## The dock draws the phrase that is sounding, not the state it is reporting
+
+A character resource describes six operational states -- Neutral, Focused, Rendering, Complete,
+Warning and Error -- and the native dock drew exactly one of them. Nothing in the product carried
+the performance, so nothing could open a mouth while audio played, and there was no place to put
+that fact without overloading Rendering or Complete, which are readiness states and would then be
+lying about readiness for as long as a phrase lasted.
+
+`CharacterPerformanceSnapshot` is a bounded, immutable read model built from the same phrase result
+that is audible. It keeps only what a presentation can honestly draw: the identity and render
+revision of the resource it came from, the phrase span, a fixed analysis window, per-window energy
+normalized to that phrase's own peak, an expression envelope that is copied window for window when
+one was supplied and reported as zeros with `expressionMeasured` false when one was not, and one cue
+per phone span carrying the phone it came from and the shape the dock can show for it. It carries no
+file paths, no portraits and no decoded audio. A build refuses what it cannot describe honestly: an
+envelope of the wrong length is refused instead of stretched, cues must be ordered, non-empty and
+inside the phrase, the sample buffer must cover the span it claims, the identity must be complete
+with a real digest, the window length is bounded, and a build that was already cancelled is refused.
+Reading is then a pure function of the snapshot and a playhead, so stop, seek and loop are the
+caller's own arithmetic over one immutable model, and a playhead outside the span is a closed mouth
+with zero envelopes and `performing` false rather than silence being asserted.
+
+The dock holds that model beside its operational state instead of inside it. `CharacterPresentation`
+validates a snapshot before accepting it and refuses one it cannot draw rather than replacing what is
+already showing, and playing, seeking or clearing a phrase leaves the operational state exactly where
+it was: a warning stays a warning while a vowel is on screen. With no snapshot loaded the frame is
+closed and not performing, so the absence of a phrase is not drawn as a phrase.
+
+Verified. `seam_character_performance_tests` passes 16 of 16, registered as CTest
+`seam_character_performance_tests`: a constant 0.5 phrase produces nonzero bounded energy and zeros
+with `expressionMeasured` false; an all-zero phrase stays zero instead of dividing by an absent peak;
+two constant windows of 0.25 and 1.0 normalize to exactly 0.25 and 1.0; a 500-frame phrase covers
+three windows and its partial last window still normalizes; cue spans resolve to the phone, the
+shape and the frame that covers the playhead, including a closed mouth for a playhead between cues;
+the span is half-open, so a playhead before the origin, at the end and past the end is closed, zero
+and not performing; repeated reads of one playhead are equal around an intervening read elsewhere;
+an expression envelope of the wrong length is refused with a message; a supplied envelope is copied
+window for window and clamped; unordered, past-the-end and empty-span cues are refused; empty,
+inverted and short-buffer spans are refused; a malformed digest, a missing pronunciation identity, a
+48001-frame window and a zero-frame window are refused; a cancelled build returns Conflict; and a
+tampered snapshot's own `validate()` refuses an inflated energy, a negative expression, a truncated
+envelope, a mismatched envelope pair, a missing resource version, a short digest, an empty span, an
+unsupported schema and an unordered cue. Then the dock itself: an accepted snapshot plays while
+`State::Warning` stays Warning, the same warning survives a playhead outside the span and a clear,
+and a tampered snapshot is refused with the previous frame still drawn. `seam_character` and
+`seam_native_ui` were rebuilt from the whole tree and the whole registered CTest run is reported in
+the commit that carries this entry.
+
+Not claimed. Nobody listened to anything and no artwork was reviewed: the phone-to-mouth mapping is
+an engineering default for the dock's own drawing vocabulary, not approved character art and not a
+phonetic claim, and no phrase-synchronized production asset set exists yet. Expression here is
+transport, not analysis, because the only envelope a snapshot can hold is one a caller supplied. The
+frames above were read by the test, not from a running window, so no window, event loop or repaint is
+verified. This is M4.P3's performance-presentation item, which is a package implementation statement
+and not a unit acceptance, and no unit acceptance changes.
+
 ## Every import path that builds a take now carries the style it will be stored under
 
 The style migration moved language and style ownership onto the assignment and the take, and a

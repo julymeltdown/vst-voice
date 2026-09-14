@@ -1,9 +1,11 @@
 #pragma once
 
 #include "seam/character/character.hpp"
+#include "seam/character/performance.hpp"
 #include "seam/core/result.hpp"
 #include "seam/domain/project.hpp"
 #include "seam/native_ui/pixel_surface.hpp"
+#include "seam/time/tick.hpp"
 
 #include <filesystem>
 #include <map>
@@ -33,11 +35,30 @@ public:
   [[nodiscard]] std::string displayName() const;
   [[nodiscard]] std::string styleName() const;
 
+  // What the character is singing is a separate read model from what the dock is reporting. A
+  // snapshot that does not validate is refused rather than drawn, so a presentation can never show
+  // a mouth the phrase it came from does not support. Clearing it leaves the operational state
+  // exactly where it was.
+  [[nodiscard]] core::Result<void> setPerformanceSnapshot(
+      character::CharacterPerformanceSnapshot snapshot);
+  void clearPerformanceSnapshot() noexcept { performance_.reset(); }
+  [[nodiscard]] bool hasPerformanceSnapshot() const noexcept {
+    return performance_.has_value();
+  }
+  [[nodiscard]] const character::CharacterPerformanceSnapshot* performanceSnapshot() const noexcept {
+    return performance_.has_value() ? &*performance_ : nullptr;
+  }
+  // With no snapshot the answer is a closed, silent, not-performing frame: the absence of a phrase
+  // is not a phrase of silence, and it does not change state() either.
+  [[nodiscard]] character::CharacterPerformanceFrame performanceFrameAt(
+      time::SampleFrame playhead) const noexcept;
+
 private:
   std::optional<character::Package> package_;
   std::map<character::State, PixelSurface> portraits_;
   character::State state_{character::State::Neutral};
   domain::CharacterDisplayMode mode_{domain::CharacterDisplayMode::Minimal};
+  std::optional<character::CharacterPerformanceSnapshot> performance_;
 };
 
 }  // namespace seam::native_ui
