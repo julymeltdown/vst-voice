@@ -198,6 +198,48 @@ core::Result<domain::FormantAutomation> decodeFormant(const JsonValue* value) {
   return result;
 }
 
+JsonValue encodeBreathiness(const domain::BreathinessAutomation& breathiness) {
+  JsonValue::Array points;
+  points.reserve(breathiness.points().size());
+  for (const auto& point : breathiness.points()) {
+    points.emplace_back(JsonValue::Object{
+        {"tick", JsonValue{point.tick.value()}},
+        {"amount", JsonValue{point.amount}},
+    });
+  }
+  return JsonValue{std::move(points)};
+}
+
+core::Result<domain::BreathinessAutomation> decodeBreathiness(const JsonValue* value) {
+  if (value == nullptr || !value->isArray() ||
+      value->asArray().size() > domain::kMaximumBreathinessPoints) {
+    return core::failure<domain::BreathinessAutomation>(core::ErrorCode::ParseError,
+        "Schema 13 region requires bounded breathinessAutomation points");
+  }
+  std::vector<domain::BreathinessAutomationPoint> points;
+  points.reserve(value->asArray().size());
+  for (const auto& point : value->asArray()) {
+    if (!point.isObject() || point.asObject().size() != 2U) {
+      return core::failure<domain::BreathinessAutomation>(core::ErrorCode::ParseError,
+          "Breathiness point requires tick and amount");
+    }
+    const auto* tick = point.find("tick");
+    const auto amount = boundedNumber(point.find("amount"), 0.0,
+                                      static_cast<double>(domain::kMaximumBreathiness));
+    if (tick == nullptr || !tick->isInteger()) {
+      return core::failure<domain::BreathinessAutomation>(core::ErrorCode::ParseError,
+                                                          "Breathiness tick must be an integer");
+    }
+    if (!amount) return core::Result<domain::BreathinessAutomation>{amount.error()};
+    points.push_back({.tick = time::Tick{tick->asInt64()},
+                      .amount = static_cast<float>(amount.value())});
+  }
+  domain::BreathinessAutomation result;
+  const auto validation = result.replacePoints(std::move(points));
+  if (!validation) return core::Result<domain::BreathinessAutomation>{validation.error()};
+  return result;
+}
+
 JsonValue encodeStyleSelection(const domain::VoiceStyleSelection& selection) {
   return JsonValue::Object{
       {"origin", JsonValue{std::string{styleOriginName(selection.origin)}}},

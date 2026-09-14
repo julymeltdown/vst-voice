@@ -450,6 +450,15 @@ core::Result<void> NativeEditorApp::initialize() {
           .resetRegionFormantCurve = [this] {
             const auto result = authoring_->controller().resetFormantCurve(); record(result); return result;
           },
+          .nudgeBreathinessUp = [this] {
+            const auto result = authoring_->controller().nudgeBreathiness(1); record(result); return result;
+          },
+          .nudgeBreathinessDown = [this] {
+            const auto result = authoring_->controller().nudgeBreathiness(-1); record(result); return result;
+          },
+          .resetRegionBreathinessCurve = [this] {
+            const auto result = authoring_->controller().resetBreathinessCurve(); record(result); return result;
+          },
           .editTrackStyle = [this] {
             const auto result = authoring_->controller().openStyleCoverageSheet(); record(result); return result;
           },

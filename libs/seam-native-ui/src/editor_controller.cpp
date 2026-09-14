@@ -5497,4 +5497,79 @@ core::Result<void> NativeEditorController::resetFormantCurve() {
               {regionId_, domain::FormantAutomation{}}}));
 }
 
+float NativeEditorController::breathinessAtPlayhead() const noexcept {
+  const auto* region = session_.project().findRegion(regionId_);
+  return region == nullptr ? 0.0F : region->breathinessAutomation.valueAt(playheadTick_);
+}
+
+core::Result<void> NativeEditorController::nudgeBreathiness(int steps) {
+  // One step is a tenth of the channel, which is the unit a creator actually hears: the channel is
+  // normalized, so a step is a share of the balance rather than a level in decibels.
+  constexpr float kBreathinessStep = 0.1F;
+  const auto* region = session_.project().findRegion(regionId_);
+  const auto* track = session_.project().findVocalTrack(selectedTrackId_);
+  if (region == nullptr || track == nullptr)
+    return core::failure(core::ErrorCode::NotFound, "Breathiness edit has no region or track");
+  if (steps == 0) return core::success();
+  // Only a carrier that generates its own excitation has a balance to move. Everything else is refused
+  // with the reason and the change that would make it possible, and whatever curve is already stored
+  // stays exactly as it was.
+  const auto carrier = track->proceduralRecipe ? synthesis::RendererCarrier::SourceFilter
+                                               : synthesis::RendererCarrier::SampleBank;
+  synthesis::RendererControlRequest request;
+  request.require(synthesis::RendererControl::Breathiness);
+  const auto allowed = synthesis::validateRendererCapabilities(carrier, request);
+  if (!allowed) {
+    return core::Result<void>{core::Error{core::ErrorCode::Unsupported,
+        std::string{"The selected singer does not generate the excitation a breathiness curve would "
+                    "rebalance, so it cannot apply one. "} +
+            allowed.error().message +
+            ". Select a source-filter (voice designer) singer to edit this channel."}};
+  }
+  const auto current = region->breathinessAutomation.valueAt(playheadTick_);
+  const auto target = std::clamp(
+      current + kBreathinessStep * static_cast<float>(steps), 0.0F, domain::kMaximumBreathiness);
+  auto next = region->breathinessAutomation;
+  if (!(target != 0.0F))
+    next = domain::BreathinessAutomation{};
+  else {
+    const auto inserted =
+        next.upsert(domain::BreathinessAutomationPoint{playheadTick_, target});
+    if (!inserted) return inserted;
+  }
+  // A nudge that lands on the value already in force is not an edit, and a no-op must not fill the undo
+  // stack with an entry that changes nothing.
+  if (next == region->breathinessAutomation) return core::success();
+  auto context = session_.capturePerformanceJob();
+  if (!context) return core::Result<void>{context.error()};
+  return session_.executePerformanceResult(
+      context.value(),
+      std::make_unique<application::EditPerformanceCommand>(
+          std::vector<application::NoteExpressionEdit>{},
+          std::vector<application::RegionDynamicsEdit>{},
+          std::vector<application::TrackStyleEdit>{},
+          std::vector<application::RegionOwnershipEdit>{},
+          std::vector<application::RegionFormantEdit>{},
+          std::vector<application::RegionBreathinessEdit>{{regionId_, std::move(next)}}));
+}
+
+core::Result<void> NativeEditorController::resetBreathinessCurve() {
+  const auto* region = session_.project().findRegion(regionId_);
+  if (region == nullptr)
+    return core::failure(core::ErrorCode::NotFound, "Breathiness edit has no region");
+  if (region->breathinessAutomation.points().empty()) return core::success();
+  auto context = session_.capturePerformanceJob();
+  if (!context) return core::Result<void>{context.error()};
+  return session_.executePerformanceResult(
+      context.value(),
+      std::make_unique<application::EditPerformanceCommand>(
+          std::vector<application::NoteExpressionEdit>{},
+          std::vector<application::RegionDynamicsEdit>{},
+          std::vector<application::TrackStyleEdit>{},
+          std::vector<application::RegionOwnershipEdit>{},
+          std::vector<application::RegionFormantEdit>{},
+          std::vector<application::RegionBreathinessEdit>{
+              {regionId_, domain::BreathinessAutomation{}}}));
+}
+
 }  // namespace seam::native_ui

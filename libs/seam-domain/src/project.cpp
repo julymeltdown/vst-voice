@@ -254,6 +254,13 @@ core::Result<void> VocalRegion::validate() const {
     return core::failure(core::ErrorCode::InvariantViolation,
                          "Formant automation extends beyond the region");
   }
+  const auto breathinessValidation = breathinessAutomation.validate();
+  if (!breathinessValidation) return breathinessValidation;
+  if (!breathinessAutomation.points().empty() &&
+      breathinessAutomation.points().back().tick > durationTick) {
+    return core::failure(core::ErrorCode::InvariantViolation,
+                         "Breathiness automation extends beyond the region");
+  }
   return performance.validate(notes, durationTick);
 }
 

@@ -76,6 +76,13 @@ struct RegionFormantEdit final {
   domain::FormantAutomation curve;
 };
 
+// The breathiness channel is a third channel of intent again: it rebalances the excitation's periodic
+// and aperiodic energy, so it is neither a level nor a resonance and cannot be expressed as either.
+struct RegionBreathinessEdit final {
+  domain::RegionId regionId;
+  domain::BreathinessAutomation curve;
+};
+
 struct TrackStyleEdit final {
   domain::TrackId trackId;
   domain::VoiceStyleSelection selection;
@@ -141,7 +148,8 @@ public:
                          std::vector<RegionDynamicsEdit> regions = {},
                          std::vector<TrackStyleEdit> tracks = {},
                          std::vector<RegionOwnershipEdit> ownership = {},
-                         std::vector<RegionFormantEdit> formant = {});
+                         std::vector<RegionFormantEdit> formant = {},
+                         std::vector<RegionBreathinessEdit> breathiness = {});
 
   [[nodiscard]] std::string_view name() const noexcept override;
   [[nodiscard]] CommandAudioImpact audioImpact() const noexcept override;
@@ -157,10 +165,12 @@ private:
   std::vector<NoteExpressionEdit> afterNotes_;
   std::vector<RegionDynamicsEdit> afterRegions_;
   std::vector<RegionFormantEdit> afterFormant_;
+  std::vector<RegionBreathinessEdit> afterBreathiness_;
   std::vector<TrackStyleEdit> afterTracks_;
   std::vector<NoteExpressionEdit> beforeNotes_;
   std::vector<RegionDynamicsEdit> beforeRegions_;
   std::vector<RegionFormantEdit> beforeFormant_;
+  std::vector<RegionBreathinessEdit> beforeBreathiness_;
   std::vector<TrackStyleEdit> beforeTracks_;
   std::vector<RegionOwnershipEdit> ownershipEdits_;
   struct OwnershipState final {

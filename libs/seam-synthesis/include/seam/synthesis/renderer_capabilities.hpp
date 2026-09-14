@@ -63,9 +63,9 @@ struct RendererCapabilityDecision final {
 
 // Which execution carrier a decision is about. A sample bank and the source-filter engine are
 // different carriers with different controls, so a request is answered for the carrier that will
-// actually run instead of for a hint the carrier does not have. The formant channel is the first
-// control where the two answers differ: the source-filter engine moves its own resonances, and a
-// concatenative bank cannot.
+// actually run instead of for a hint the carrier does not have. The formant and breathiness channels
+// are where the two answers differ today: the source-filter engine owns its own resonances and its own
+// excitation, and a concatenative bank owns neither.
 enum class RendererCarrier { SampleBank, SourceFilter };
 
 [[nodiscard]] RendererCapabilityView rendererCapabilities(

@@ -8,7 +8,7 @@
 #include <stop_token>
 
 namespace seam::synthesis {
-inline constexpr std::uint32_t kPerformanceCompilerRevision = 9U;
+inline constexpr std::uint32_t kPerformanceCompilerRevision = 10U;
 inline constexpr std::size_t kMaximumScoreVoiceAllocationNotes = 4096U;
 
 struct ScoreVoicePlan final {
@@ -29,6 +29,10 @@ struct ScorePerformanceSample final {
   // The vocal-tract envelope shift for this frame, in semitones. The excitation is untouched, so this
   // moves the resonances without moving the melody.
   float formantSemitones{0.0F};
+  // The periodic/aperiodic balance of the excitation for this frame, normalized to the channel's own
+  // range. It is not a gain: zero is the recipe's own source and one is the breathiest setting the
+  // channel admits, so a consumer that treats this as loudness would be wrong by construction.
+  float breathiness{0.0F};
   float articulationGain{1.0F};
   // Accepted amplitude attack; absent/manual replacement retains the neutral
   // envelope. Continuations expose intent but do not restart the attack.
@@ -78,6 +82,7 @@ private:
   domain::PitchAutomation pitch_;
   domain::DynamicsAutomation dynamics_;
   domain::FormantAutomation formant_;
+  domain::BreathinessAutomation breathiness_;
   domain::RegionPerformanceState performance_;
   struct FrameScope final {
     std::optional<domain::NoteId> noteId;

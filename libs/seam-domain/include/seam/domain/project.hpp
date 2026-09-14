@@ -2,6 +2,7 @@
 
 #include "seam/core/result.hpp"
 #include "seam/domain/ids.hpp"
+#include "seam/domain/breathiness_automation.hpp"
 #include "seam/domain/dynamics_automation.hpp"
 #include "seam/domain/formant_automation.hpp"
 #include "seam/domain/note.hpp"
@@ -95,6 +96,10 @@ struct VocalRegion final {
   // The vocal-tract envelope is a channel of its own: it moves the resonances without touching the
   // excitation, so the melody stays where the score put it.
   FormantAutomation formantAutomation;
+  // The other half of the same idea: breathiness rebalances the excitation's periodic and aperiodic
+  // energy without touching the tract, so it changes how a voice is produced rather than how it is
+  // filtered. Zero is the recipe's own source, exactly as an absent curve always meant.
+  BreathinessAutomation breathinessAutomation;
   RegionPerformanceState performance;
 
   [[nodiscard]] Note* findNote(NoteId noteId) noexcept;

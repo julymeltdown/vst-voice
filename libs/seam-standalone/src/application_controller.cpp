@@ -860,6 +860,15 @@ core::Result<void> StandaloneApplicationController::dispatch(
     case platform::ApplicationCommand::ResetRegionFormantCurve:
       if (!config_.resetRegionFormantCurve) return core::failure(core::ErrorCode::Unsupported, "Formant editing is not connected");
       return config_.resetRegionFormantCurve();
+    case platform::ApplicationCommand::NudgeBreathinessUp:
+      if (!config_.nudgeBreathinessUp) return core::failure(core::ErrorCode::Unsupported, "Breathiness editing is not connected");
+      return config_.nudgeBreathinessUp();
+    case platform::ApplicationCommand::NudgeBreathinessDown:
+      if (!config_.nudgeBreathinessDown) return core::failure(core::ErrorCode::Unsupported, "Breathiness editing is not connected");
+      return config_.nudgeBreathinessDown();
+    case platform::ApplicationCommand::ResetRegionBreathinessCurve:
+      if (!config_.resetRegionBreathinessCurve) return core::failure(core::ErrorCode::Unsupported, "Breathiness editing is not connected");
+      return config_.resetRegionBreathinessCurve();
     case platform::ApplicationCommand::EditTrackStyle:
       if (!config_.editTrackStyle) return core::failure(core::ErrorCode::Unsupported, "Style sheet is not connected");
       return config_.editTrackStyle();

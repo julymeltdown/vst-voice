@@ -1,5 +1,6 @@
 #include "seam/voice_design/phonation_source.hpp"
 #include "excitation_noise.hpp"
+#include "seam/domain/breathiness_automation.hpp"
 #include <algorithm>
 #include <cmath>
 #include <numbers>
@@ -64,7 +65,19 @@ core::Result<synthesis::PhraseAudio> PhonationSource::render(std::size_t frames,
       if (weight > 0.0) voiced /= weight;
       phase += frequency / rate; phase -= std::floor(phase);
     }
-    const auto sample = 0.25 * ((1.0 - phonation_.aspiration) * voiced + phonation_.aspiration * noise) *
+    // Breathiness is a balance, not an addition: it moves share from the periodic part of the
+    // excitation to its aperiodic part, so a breathy phrase is not a louder phrase, and the aperiodic
+    // share stops at the channel's own bound so that the source stays voiced rather than becoming a
+    // whisper. A frame whose breathiness is exactly zero leaves the arithmetic below identical to the
+    // source that had no breathiness channel at all.
+    const auto breathiness = static_cast<double>(std::clamp(musical.breathiness, 0.0F, 1.0F));
+    const auto periodicShare =
+        (1.0 - phonation_.aspiration) *
+        (1.0 - static_cast<double>(domain::kBreathinessAperiodicShare) * breathiness);
+    const auto aperiodicShare =
+        phonation_.aspiration + (1.0 - phonation_.aspiration) *
+                                    static_cast<double>(domain::kBreathinessAperiodicShare) * breathiness;
+    const auto sample = 0.25 * (periodicShare * voiced + aperiodicShare * noise) *
         (1.0 + modulation_.shimmerAmount * modulation);
     if (!std::isfinite(sample) || std::abs(sample) > 0.500001) return core::failure<Output>(
         core::ErrorCode::InvariantViolation, "Phonation output exceeded its safety bound");

@@ -371,6 +371,12 @@ public:
   [[nodiscard]] core::Result<void> nudgeFormantShift(int steps);
   [[nodiscard]] core::Result<void> resetFormantCurve();
   [[nodiscard]] float formantShiftAtPlayhead() const noexcept;
+  // The breathiness channel's editing surface. It is the same capability decision one layer down: a
+  // carrier that does not generate the excitation has nothing to rebalance, so it refuses by name and
+  // leaves the stored curve alone.
+  [[nodiscard]] core::Result<void> nudgeBreathiness(int steps);
+  [[nodiscard]] core::Result<void> resetBreathinessCurve();
+  [[nodiscard]] float breathinessAtPlayhead() const noexcept;
   void setCharacterMetadata(std::string name, std::string style) {
     characterName_ = std::move(name);
     characterStyle_ = std::move(style);

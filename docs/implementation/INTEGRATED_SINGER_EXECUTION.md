@@ -1,5 +1,69 @@
 # Integrated Singer Execution
 
+## Breathiness is a balance a creator can set, and a carrier that has no excitation refuses it
+
+The breathiness channel existed as a name in the capability table and as a unit in the persisted take
+lanes, and as nothing a creator could touch: no curve, no command, no consumer. A control the product
+advertises and the renderer never reads is a claim the audio contradicts.
+
+`BreathinessAutomation` joins the region's curves beside pitch, dynamics and formant, and the project
+schema moves to 13 with the readers for 1 through 12 unchanged: a document written before the channel
+existed has an empty curve, and an empty curve is exactly the neutral setting. The persisted unit is the
+channel's own, a normalized balance between the periodic and the aperiodic part of the excitation,
+because a decibel or microphone-level unit would mean something different for every recipe it was
+applied to.
+
+The excitation is where the balance belongs, and the procedural engine has exactly one owner of it:
+`PhonationSource`, which both the sustained-pose renderer and the articulated stream create. It applies
+one balance per control block, moving a share of the periodic weight into aperiodic weight, so a breathy
+phrase is a different production of the same note rather than a louder one, and the arithmetic for a
+frame whose breathiness is exactly zero is the arithmetic of a frame that never had the channel at all.
+
+The maximum conversion is measured rather than chosen. The aperiodic generator is much louder per unit of
+weight than the harmonic stack, so a share that reads as modest is already a large change in energy: at
+one fifth of the periodic weight the rendered phrase stops carrying its own fundamental and rises by
+about half its level. Fifteen hundredths of the periodic weight is the last setting that stays clearly
+voiced -- measured periodicity falls from about 0.98 to about 0.70, the recovered fundamental stays
+within a few hundredths of a hertz, and the level moves by about two percent -- so that is where the
+channel's maximum sits.
+
+The capability decision is the formant channel's decision one layer down. A concatenative bank has no
+excitation to rebalance and an admitted model is not asked to, so a curve that asks for anything is
+refused with the carrier named and with the change that would allow it, while a curve that asks for
+nothing is not a request and renders as before. Raise Breathiness (Command-Shift-]), Lower Breathiness
+(Command-Shift-[) and Reset Breathiness Curve are reachable from the native menu; one step is a tenth of
+the channel, a nudge at a tick that already carries the value in force is not an edit, and every
+accepted nudge is an ordinary undoable edit.
+
+Verified. `seam_breathiness_expression_tests` passes 7 of 7. The channel's own cases cover bounds,
+ordering and interpolation, the rejection of a share above one, a negative share, a nonfinite share and
+out-of-order points, a save/reload round trip at schema 13, a schema-12 document loading with an empty
+curve, and an out-of-range amount inside a schema-13 document being a parse error rather than a clamped
+value. The capability cases prove the source-filter carrier advertises Breathiness while a bank does
+not, that validating a bank request fails with the control named, that a bank snapshot carrying a
+non-neutral curve is refused with breathiness named, and that the same bank renders the same region when
+the curve asks for nothing. The controller cases run a real editor session: two steps write one point at
+the playhead tick with a share of 0.2, a second nudge at that tick replaces the point instead of
+accumulating points, a hundred steps stop at the channel's bound, every one of those undoes back to the
+previous curve in order, and resetting is an edit that undoes to the curve it replaced. On a sample-bank
+track the same nudge is refused with Unsupported, the message names breathiness and the source-filter
+remedy, the stored half curve is still there and still reports half at the playhead, and clearing it --
+which is always allowed -- removes it. The acoustic oracle renders the same vowel four times: a neutral
+curve is bit-identical to no curve, periodicity falls monotonically from the plain render (about 0.98)
+through the half setting to the breathiest one (about 0.70), the drop exceeds 0.15, the breathiest render
+is still above 0.5 and therefore still recovered as voiced, its fundamental stays within 2 Hz of the
+plain render, and its level stays within the same order as the render it came from. The whole tree
+builds and the registered CTest run is reported in the commit that carries this entry.
+
+Not claimed. This is one channel of the mandatory expression list: tension, airiness, gender, growl and
+style blend still have no algorithm behind their names, so M3.P2 is not complete. The acoustic oracle
+measured the sustained-pose path; the articulated stream shares the same excitation owner, which is why
+one change covers both, but it was not measured. There is no drawn lane or curve editor for this channel
+and no inspector row showing applicability beside its value, which is what M4.P1 item 6 still owes. The
+compiler revision advance means previously compiled performance is not reused, and a breathy phrase
+renders with the old compiler revision nowhere. Nothing was listened to, the oracle measures the render
+rather than a listener's judgement, and no unit acceptance changes.
+
 ## The formant channel is an edit a creator can make, and a carrier can refuse
 
 The channel existed, but nothing could author it: no command carried it, no menu item reached it, and

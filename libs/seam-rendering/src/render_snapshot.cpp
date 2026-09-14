@@ -49,6 +49,24 @@ std::string formantShiftUnsupportedMessage(std::string_view carrier) {
          "the shift would be dropped in silence. Remove the curve or select a source-filter singer.";
 }
 
+// Breathiness is the same kind of request one layer down: it rebalances the excitation the source-filter
+// engine generates for itself, and neither a concatenative bank nor an admitted model has that
+// excitation to rebalance. A curve that asks for nothing is not a request.
+bool requiresBreathiness(const domain::VocalRegion& region) noexcept {
+  return std::any_of(region.breathinessAutomation.points().begin(),
+                     region.breathinessAutomation.points().end(),
+                     [](const domain::BreathinessAutomationPoint& point) {
+                       return point.amount != 0.0F;
+                     });
+}
+
+std::string breathinessUnsupportedMessage(std::string_view carrier) {
+  return std::string{"The selected "} + std::string{carrier} +
+         " cannot apply the project's breathiness curve: it does not generate the excitation that would "
+         "be rebalanced, so the curve would be dropped in silence. Remove the curve or select a "
+         "source-filter singer.";
+}
+
 core::Result<domain::VocalRegion> extractPhraseRegion(
     const domain::VocalRegion& source, const PhraseSegment& segment) {
   std::unordered_set<domain::NoteId> noteIds;
@@ -134,6 +152,23 @@ core::Result<domain::VocalRegion> extractPhraseRegion(
   const auto formantCopied = result.formantAutomation.replacePoints(
       std::vector<domain::FormantAutomationPoint>{firstFormant, lastFormant});
   if (!formantCopied) return core::Result<domain::VocalRegion>{formantCopied.error()};
+  // The breathiness curve is windowed by the same rule, so the phrase carries the balance that is in
+  // force where it starts, every change inside it, and the one that follows.
+  const auto& breathiness = source.breathinessAutomation.points();
+  const auto beforeBreathinessTick = [](const domain::BreathinessAutomationPoint& point,
+                                        time::Tick tick) { return point.tick < tick; };
+  auto firstBreathiness = std::lower_bound(breathiness.begin(), breathiness.end(),
+                                           segment.startTick, beforeBreathinessTick);
+  if (firstBreathiness != breathiness.begin() &&
+      (firstBreathiness == breathiness.end() || firstBreathiness->tick > segment.startTick)) {
+    --firstBreathiness;
+  }
+  auto lastBreathiness = std::lower_bound(firstBreathiness, breathiness.end(), segment.endTick,
+                                          beforeBreathinessTick);
+  if (lastBreathiness != breathiness.end()) ++lastBreathiness;
+  const auto breathinessCopied = result.breathinessAutomation.replacePoints(
+      std::vector<domain::BreathinessAutomationPoint>{firstBreathiness, lastBreathiness});
+  if (!breathinessCopied) return core::Result<domain::VocalRegion>{breathinessCopied.error()};
   const auto effectiveScope = [&](const domain::PerformanceScope& scope)
       -> std::optional<domain::PerformanceScope> {
     if (const auto* note = std::get_if<domain::NoteId>(&scope)) {
@@ -602,6 +637,9 @@ core::Result<RenderSnapshot> RenderSnapshotFactory::createNeural(
   if (requiresFormantShift(*region))
     return core::failure<RenderSnapshot>(core::ErrorCode::Unsupported,
         formantShiftUnsupportedMessage("neural model"), trackId.toString());
+  if (requiresBreathiness(*region))
+    return core::failure<RenderSnapshot>(core::ErrorCode::Unsupported,
+        breathinessUnsupportedMessage("neural model"), trackId.toString());
   // A persisted selection is a promise about which voice this music used. A
   // snapshot may run unbound for a preview, but it may never contradict a saved
   // selection, and it may never silently substitute a different bundle.
@@ -760,6 +798,9 @@ core::Result<RenderSnapshot> RenderSnapshotFactory::create(
   if (requiresFormantShift(*region))
     return core::failure<RenderSnapshot>(core::ErrorCode::Unsupported,
         formantShiftUnsupportedMessage("sample bank"), trackId.toString());
+  if (requiresBreathiness(*region))
+    return core::failure<RenderSnapshot>(core::ErrorCode::Unsupported,
+        breathinessUnsupportedMessage("sample bank"), trackId.toString());
   if (segment.id.empty() || segment.noteIds.empty() || bankRoot.empty()) {
     return core::failure<RenderSnapshot>(core::ErrorCode::InvalidArgument,
                                          "Render snapshot identity is incomplete");

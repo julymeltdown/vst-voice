@@ -11,7 +11,9 @@ namespace seam::formats::detail {
 [[nodiscard]] JsonValue encodeDynamics(const domain::DynamicsAutomation& dynamics);
 [[nodiscard]] core::Result<domain::DynamicsAutomation> decodeDynamics(const JsonValue* value);
 [[nodiscard]] JsonValue encodeFormant(const domain::FormantAutomation& formant);
+[[nodiscard]] JsonValue encodeBreathiness(const domain::BreathinessAutomation& breathiness);
 [[nodiscard]] core::Result<domain::FormantAutomation> decodeFormant(const JsonValue* value);
+[[nodiscard]] core::Result<domain::BreathinessAutomation> decodeBreathiness(const JsonValue* value);
 [[nodiscard]] JsonValue encodeStyleSelection(const domain::VoiceStyleSelection& selection);
 [[nodiscard]] core::Result<domain::VoiceStyleSelection> decodeStyleSelection(const JsonValue* value);
 

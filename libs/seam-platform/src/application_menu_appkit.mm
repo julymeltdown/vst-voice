@@ -53,6 +53,9 @@
 - (void)nudgeFormantUp:(id)sender;
 - (void)nudgeFormantDown:(id)sender;
 - (void)resetRegionFormantCurve:(id)sender;
+- (void)nudgeBreathinessUp:(id)sender;
+- (void)nudgeBreathinessDown:(id)sender;
+- (void)resetRegionBreathinessCurve:(id)sender;
 - (void)editTrackStyle:(id)sender;
 - (void)editJapaneseReading:(id)sender;
 - (void)removeSelectedOverlaps:(id)sender;
@@ -240,6 +243,18 @@
   (void)sender;
   [self editCommand:seam::platform::ApplicationCommand::ResetRegionFormantCurve title:@"Cannot reset the formant curve"];
 }
+- (void)nudgeBreathinessUp:(id)sender {
+  (void)sender;
+  [self editCommand:seam::platform::ApplicationCommand::NudgeBreathinessUp title:@"Cannot raise breathiness"];
+}
+- (void)nudgeBreathinessDown:(id)sender {
+  (void)sender;
+  [self editCommand:seam::platform::ApplicationCommand::NudgeBreathinessDown title:@"Cannot lower breathiness"];
+}
+- (void)resetRegionBreathinessCurve:(id)sender {
+  (void)sender;
+  [self editCommand:seam::platform::ApplicationCommand::ResetRegionBreathinessCurve title:@"Cannot reset the breathiness curve"];
+}
 - (void)editTrackStyle:(id)sender {
   (void)sender;
   [self editCommand:seam::platform::ApplicationCommand::EditTrackStyle title:@"Cannot choose track style"];
@@ -422,6 +437,9 @@ public:
     [edit addItem:item(@"Raise Formant Shift", @selector(nudgeFormantUp:), @"]", NSEventModifierFlagCommand, target_)];
     [edit addItem:item(@"Lower Formant Shift", @selector(nudgeFormantDown:), @"[", NSEventModifierFlagCommand, target_)];
     [edit addItem:item(@"Reset Formant Curve", @selector(resetRegionFormantCurve:), @"", 0, target_)];
+    [edit addItem:item(@"Raise Breathiness", @selector(nudgeBreathinessUp:), @"]", NSEventModifierFlagCommand | NSEventModifierFlagShift, target_)];
+    [edit addItem:item(@"Lower Breathiness", @selector(nudgeBreathinessDown:), @"[", NSEventModifierFlagCommand | NSEventModifierFlagShift, target_)];
+    [edit addItem:item(@"Reset Breathiness Curve", @selector(resetRegionBreathinessCurve:), @"", 0, target_)];
     [edit addItem:item(@"Track Style and Coverage…", @selector(editTrackStyle:), @"", 0, target_)];
     [edit addItem:item(@"Resolve Japanese Reading…", @selector(editJapaneseReading:), @"", 0, target_)];
     [edit addItem:item(@"Clear Selected Vibrato…", @selector(clearSelectedVibrato:), @"",
