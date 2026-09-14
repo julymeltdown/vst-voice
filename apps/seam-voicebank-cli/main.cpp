@@ -545,10 +545,36 @@ int importProceduralCommand(int argc, char** argv) {
   if (!project) { printError(project.error()); return 1; }
   const auto recipe = seam::voice_design::loadVoiceRecipeResource(argv[5]);
   if (!recipe) { printError(recipe.error()); return 1; }
+  // A style-owned producer stores the style on the take as well as on the assignment, so this
+  // collection carries the style of the assignment the take belongs to. The repository verifies
+  // that the candidate's own declared style agrees with it. A legacy workspace keeps the empty
+  // style it always had, and a take whose coverage does not exist stays unbound rather than
+  // borrowing another row's style.
+  const auto assignmentStyle = [&](std::string_view coverageKey, std::int32_t pitchLayer,
+                                   std::string& style) -> bool {
+    if (project.value().schemaVersion < seam::voicebank_production::kProductionStyleSchemaVersion) {
+      style.clear();
+      return true;
+    }
+    const auto found = std::find_if(project.value().unitAssignments.begin(), project.value().unitAssignments.end(),
+        [&](const seam::voicebank_production::UnitAssignment& row) {
+          return row.coverageKey == coverageKey && row.pitchLayer == pitchLayer;
+        });
+    if (found == project.value().unitAssignments.end()) return false;
+    style = found->style;
+    return true;
+  };
+  std::string style;
+  if (!assignmentStyle(argv[8], pitch, style)) {
+    // Naming the real cause matters: the repository would otherwise report the style disagreement
+    // that follows from a missing row rather than the missing row itself.
+    std::cerr << "error: coverage " << argv[8] << " at MIDI layer " << pitch << " is not in this inventory\n";
+    return 1;
+  }
   const auto imported = repository.importProceduralCandidate(project.value(), argv[3], argv[4], recipe.value(),
       {.takeId = argv[6], .promptId = argv[7], .coverageKey = argv[8], .pitchLayer = pitch,
        .supersedesTakeId = argc == 13 ? argv[12] : "", .initialState = seam::voicebank_production::UnitQueueState::MarkerReview,
-       .review = std::nullopt},
+       .review = std::nullopt, .style = style},
       {.action = argc == 13 ? "retake" : "import-procedural", .subjectId = argv[6],
        .operatorId = argv[10], .occurredAtUtc = argv[11]});
   if (!imported) { printError(imported.error()); return 1; }

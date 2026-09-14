@@ -1,5 +1,34 @@
 # Integrated Singer Execution
 
+## Every import path that builds a take now carries the style it will be stored under
+
+The style migration moved language and style ownership onto the assignment and the take, and a
+style-owned workspace refuses a take whose style is empty. That rule is right, but three import
+paths built their take record without the style at all, so each of them failed in exactly the
+workspaces the migration produced while continuing to work on a legacy producer, where an empty
+style is the valid value. The native retake was fixed first; this entry closes the other two.
+
+The native candidate import now carries the selected assignment's style, and the repository's own
+check still does the deciding: a candidate whose declared style differs from its assignment is
+refused by name instead of being relabelled to fit. The CLI's procedural collection derives the
+style from the assignment that owns the coverage key and MIDI layer, and when no row owns that
+coverage it says so, rather than letting the take record carry an empty style that would have been
+reported later as a style disagreement.
+
+Verified. `seam_style_owned_candidate_import_tests` passes 3 of 3, registered as CTest
+`seam_style_owned_candidate_import_tests`: a style-owned producer imports a generated candidate
+through the native action and the take keeps its assignment's style as unapproved marker-review
+material; a candidate declared in another style is refused with a conflict and leaves the workspace
+unchanged; and the CLI collects the same candidate into a style-owned producer, while a coverage the
+inventory does not declare is refused by that cause. The fixture bakes its candidate through the
+real export service, so the metadata, markers and style are the ones the product writes, and the
+whole registered CTest run is reported in the commit that carries this entry.
+
+Not claimed. The candidate is a procedural render of one recipe in one style, not a singer; the
+tests cover one coverage key at one pitch layer, and they do not exercise a candidate produced by a
+neural model or by a recording. This closes an import-path defect class, not a qualification. No
+unit acceptance changes.
+
 ## A retake in a style-owned workspace was refused by the retake itself
 
 The native retake action imports new material over the selected unit's current take. In a

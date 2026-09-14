@@ -1804,6 +1804,19 @@ if(SEAM_BUILD_TESTS)
     seam_formats seam_application seam_domain seam_core)
   seam_apply_compiler_options(seam_export_tests)
   add_test(NAME seam_export_tests COMMAND seam_export_tests)
+  add_executable(seam_style_owned_candidate_import_tests
+    tests/test_main.cpp
+    tests/test_style_owned_candidate_import.cpp)
+  target_include_directories(seam_style_owned_candidate_import_tests PRIVATE tests)
+  target_compile_definitions(seam_style_owned_candidate_import_tests PRIVATE SEAM_TEST_VOICEBANK_CLI="$<TARGET_FILE:seam_voicebank_cli>")
+  add_dependencies(seam_style_owned_candidate_import_tests seam_voicebank_cli)
+  target_link_libraries(seam_style_owned_candidate_import_tests PRIVATE
+    seam_authoring_runtime seam_rendering seam_synthesis seam_voicebank
+    seam_voicebank_production seam_native_ui seam_formats seam_application
+    seam_domain seam_core)
+  seam_apply_compiler_options(seam_style_owned_candidate_import_tests)
+  add_test(NAME seam_style_owned_candidate_import_tests
+    COMMAND seam_style_owned_candidate_import_tests)
   add_executable(seam_audio_level_tests tests/test_main.cpp tests/test_audio_level_envelope.cpp)
   target_include_directories(seam_audio_level_tests PRIVATE tests)
   target_link_libraries(seam_audio_level_tests PRIVATE seam_rendering)
