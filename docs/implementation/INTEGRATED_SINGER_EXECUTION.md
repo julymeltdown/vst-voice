@@ -1,5 +1,60 @@
 # Integrated Singer Execution
 
+## Airiness is a band the source owns, and it is measurably not breathiness
+
+Airiness and breathiness sit next to each other in the product's control list and are easy to conflate in
+the code: both change the aperiodic content of the excitation, and a channel that duplicated its
+neighbour would be a control that lies about what the product can do.
+`AirinessAutomation` joins the region's curves beside pitch, dynamics, formant, breathiness and
+tension, and the project schema moves to 15 with the readers for 1 through 14 unchanged.
+
+The difference between the two channels is bandwidth rather than amount. Breathiness is a balance: it
+moves share from the periodic part of the excitation into the aspiration the recipe already declares,
+which is a dark, low-passed noise, and it does so in the band the voice is already using. Airiness adds
+the part of that same stream the aspiration filter rejected -- one subtraction, `white - filtered`,
+which is the high-frequency complement of the filter the source already runs. Nothing new is generated
+and nothing is stored: the band exists because the source owns its noise, so the carriers that do not own
+it refuse the curve exactly as they refuse the channels beside it.
+
+The two channels were built to be separable and then measured to prove it. At its maximum, airiness takes
+the ratio of the 7-16 kHz band to the 1-4 kHz band from 0.0104 to 0.0296, about 2.9 times, while the
+level of the render moves by 0.09 percent and the measured periodicity of the source stays at 0.976 from
+0.978. The maximally breathy render of the same vowel, measured in the same test and on the same window,
+falls to 0.695. An airy source is still a clearly voiced one; a breathy source is not. Both leave the
+fundamental where the score put it.
+
+That separation is what the test asserts rather than what its comments say: the airiness case renders the
+plain vowel, the neutral curve, the airiest curve and the breathiest curve, and requires the airy render
+to keep a periodicity above 0.9 and to exceed the breathy render by more than a tenth. A future change
+that made airiness a second breathiness -- or that made the two channels interchangeable -- would fail
+here instead of shipping.
+
+Verified. `seam_airiness_expression_tests` passes 7 of 7. The channel's own cases cover bounds, ordering
+and interpolation, the rejection of a share above one, a negative share, a nonfinite share and
+out-of-order points, a save/reload round trip at schema 15, a schema-14 document loading with an empty
+curve, and an out-of-range amount inside a schema-15 document being a parse error rather than a clamped
+value. The capability cases prove the source-filter carrier advertises Airiness while a bank does not,
+that validating a bank request fails with the control named, that a bank snapshot carrying a non-neutral
+curve is refused with airiness named, and that the same bank renders the same region when the curve asks
+for nothing. The controller cases run a real editor session: four steps write one point at the playhead
+tick with a share of 0.4, a second nudge replaces that point instead of accumulating points, a hundred
+steps stop at the channel's bound, each accepted nudge undoes back to the previous curve in order, and
+resetting is an edit that undoes to the curve it replaced. On a sample-bank track the same nudge is
+refused with Unsupported, the message names airiness and the source-filter remedy, the stored 0.6 curve is
+still there and still reports 0.6 at the playhead, and clearing it -- which is always allowed -- removes
+it. The acoustic oracle is described above: a neutral curve is bit-identical to no curve, the high-band
+ratio rises by more than half again, the source stays above 0.9 periodicity and above the breathy render
+by more than a tenth, the recovered fundamental stays within 2 Hz, and the level rise stays under half
+again so that the channel cannot stand in for a gain. The whole tree builds and the registered CTest run
+is reported in the commit that carries this entry.
+
+Not claimed. Gender, growl and style blend still have no algorithm behind their names, so M3.P2 is not
+complete. The band is a bounded subtraction of the source's own noise and says nothing about any measured
+breathy or aspirated phonation. The oracle measured the sustained-pose path; the articulated stream
+shares the same excitation owner but was not measured. There is still no drawn lane, no curve editor and
+no inspector applicability row for any of these channels, which is what M4.P1 item 6 owes. Nothing was
+listened to, and no unit acceptance changes.
+
 ## Tension is a spectrum a creator can set, and a carrier with no harmonic source refuses it
 
 Tension is the channel that is easiest to fake with a gain and the least honest when it is. A loud phrase

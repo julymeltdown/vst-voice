@@ -85,6 +85,23 @@ std::string tensionUnsupportedMessage(std::string_view carrier) {
          "source-filter singer.";
 }
 
+// Airiness is a band of the source's own noise, which is the same kind of request as breathiness and
+// tension: the carrier has to own the source to have a band to shape.
+bool requiresAiriness(const domain::VocalRegion& region) noexcept {
+  return std::any_of(region.airinessAutomation.points().begin(),
+                     region.airinessAutomation.points().end(),
+                     [](const domain::AirinessAutomationPoint& point) {
+                       return point.amount != 0.0F;
+                     });
+}
+
+std::string airinessUnsupportedMessage(std::string_view carrier) {
+  return std::string{"The selected "} + std::string{carrier} +
+         " cannot apply the project's airiness curve: it does not generate the noise band the curve "
+         "would add, so the curve would be dropped in silence. Remove the curve or select a "
+         "source-filter singer.";
+}
+
 core::Result<domain::VocalRegion> extractPhraseRegion(
     const domain::VocalRegion& source, const PhraseSegment& segment) {
   std::unordered_set<domain::NoteId> noteIds;
@@ -203,6 +220,22 @@ core::Result<domain::VocalRegion> extractPhraseRegion(
   const auto tensionCopied = result.tensionAutomation.replacePoints(
       std::vector<domain::TensionAutomationPoint>{firstTension, lastTension});
   if (!tensionCopied) return core::Result<domain::VocalRegion>{tensionCopied.error()};
+  // The airiness curve is windowed by the same rule as the curves beside it.
+  const auto& airiness = source.airinessAutomation.points();
+  const auto beforeAirinessTick = [](const domain::AirinessAutomationPoint& point,
+                                     time::Tick tick) { return point.tick < tick; };
+  auto firstAiriness = std::lower_bound(airiness.begin(), airiness.end(), segment.startTick,
+                                        beforeAirinessTick);
+  if (firstAiriness != airiness.begin() &&
+      (firstAiriness == airiness.end() || firstAiriness->tick > segment.startTick)) {
+    --firstAiriness;
+  }
+  auto lastAiriness = std::lower_bound(firstAiriness, airiness.end(), segment.endTick,
+                                       beforeAirinessTick);
+  if (lastAiriness != airiness.end()) ++lastAiriness;
+  const auto airinessCopied = result.airinessAutomation.replacePoints(
+      std::vector<domain::AirinessAutomationPoint>{firstAiriness, lastAiriness});
+  if (!airinessCopied) return core::Result<domain::VocalRegion>{airinessCopied.error()};
   const auto effectiveScope = [&](const domain::PerformanceScope& scope)
       -> std::optional<domain::PerformanceScope> {
     if (const auto* note = std::get_if<domain::NoteId>(&scope)) {
@@ -677,6 +710,9 @@ core::Result<RenderSnapshot> RenderSnapshotFactory::createNeural(
   if (requiresTension(*region))
     return core::failure<RenderSnapshot>(core::ErrorCode::Unsupported,
         tensionUnsupportedMessage("neural model"), trackId.toString());
+  if (requiresAiriness(*region))
+    return core::failure<RenderSnapshot>(core::ErrorCode::Unsupported,
+        airinessUnsupportedMessage("neural model"), trackId.toString());
   // A persisted selection is a promise about which voice this music used. A
   // snapshot may run unbound for a preview, but it may never contradict a saved
   // selection, and it may never silently substitute a different bundle.
@@ -841,6 +877,9 @@ core::Result<RenderSnapshot> RenderSnapshotFactory::create(
   if (requiresTension(*region))
     return core::failure<RenderSnapshot>(core::ErrorCode::Unsupported,
         tensionUnsupportedMessage("sample bank"), trackId.toString());
+  if (requiresAiriness(*region))
+    return core::failure<RenderSnapshot>(core::ErrorCode::Unsupported,
+        airinessUnsupportedMessage("sample bank"), trackId.toString());
   if (segment.id.empty() || segment.noteIds.empty() || bankRoot.empty()) {
     return core::failure<RenderSnapshot>(core::ErrorCode::InvalidArgument,
                                          "Render snapshot identity is incomplete");

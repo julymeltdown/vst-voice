@@ -8,7 +8,7 @@
 #include <stop_token>
 
 namespace seam::synthesis {
-inline constexpr std::uint32_t kPerformanceCompilerRevision = 11U;
+inline constexpr std::uint32_t kPerformanceCompilerRevision = 12U;
 inline constexpr std::size_t kMaximumScoreVoiceAllocationNotes = 4096U;
 
 struct ScoreVoicePlan final {
@@ -37,6 +37,10 @@ struct ScorePerformanceSample final {
   // breathiness it is not a gain: zero is the recipe's own source and one is the most pressed setting
   // the channel admits, so a consumer that treated it as loudness would be wrong by construction.
   float tension{0.0F};
+  // The share of high-frequency noise the source adds above its own aspiration filter's corner. It is
+  // not breathiness and not a gain: airiness is a band, and a consumer that treated it as either would
+  // be wrong by construction.
+  float airiness{0.0F};
   float articulationGain{1.0F};
   // Accepted amplitude attack; absent/manual replacement retains the neutral
   // envelope. Continuations expose intent but do not restart the attack.
@@ -88,6 +92,7 @@ private:
   domain::FormantAutomation formant_;
   domain::BreathinessAutomation breathiness_;
   domain::TensionAutomation tension_;
+  domain::AirinessAutomation airiness_;
   domain::RegionPerformanceState performance_;
   struct FrameScope final {
     std::optional<domain::NoteId> noteId;

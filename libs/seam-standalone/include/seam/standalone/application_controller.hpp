@@ -65,6 +65,9 @@ struct StandaloneApplicationControllerConfig final {
   std::function<core::Result<void>()> nudgeTensionUp;
   std::function<core::Result<void>()> nudgeTensionDown;
   std::function<core::Result<void>()> resetRegionTensionCurve;
+  std::function<core::Result<void>()> nudgeAirinessUp;
+  std::function<core::Result<void>()> nudgeAirinessDown;
+  std::function<core::Result<void>()> resetRegionAirinessCurve;
   std::function<core::Result<void>()> editTrackStyle;
   std::function<core::Result<void>()> editJapaneseReading;
   // The callback owns the bounded conversion-review surface. Returning false

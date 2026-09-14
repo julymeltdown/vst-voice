@@ -268,6 +268,13 @@ core::Result<void> VocalRegion::validate() const {
     return core::failure(core::ErrorCode::InvariantViolation,
                          "Tension automation extends beyond the region");
   }
+  const auto airinessValidation = airinessAutomation.validate();
+  if (!airinessValidation) return airinessValidation;
+  if (!airinessAutomation.points().empty() &&
+      airinessAutomation.points().back().tick > durationTick) {
+    return core::failure(core::ErrorCode::InvariantViolation,
+                         "Airiness automation extends beyond the region");
+  }
   return performance.validate(notes, durationTick);
 }
 

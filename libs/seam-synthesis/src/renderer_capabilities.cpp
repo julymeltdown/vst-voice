@@ -41,6 +41,7 @@ RendererCapabilityView rendererCapabilities(RendererCarrier carrier) noexcept {
   result.supported[static_cast<std::size_t>(RendererControl::Formant)] = true;
   result.supported[static_cast<std::size_t>(RendererControl::Breathiness)] = true;
   result.supported[static_cast<std::size_t>(RendererControl::Tension)] = true;
+  result.supported[static_cast<std::size_t>(RendererControl::Airiness)] = true;
   result.pitchPreservingTransient = true;
   return result;
 }

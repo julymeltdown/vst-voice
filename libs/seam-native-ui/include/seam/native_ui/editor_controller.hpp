@@ -382,6 +382,11 @@ public:
   [[nodiscard]] core::Result<void> nudgeTension(int steps);
   [[nodiscard]] core::Result<void> resetTensionCurve();
   [[nodiscard]] float tensionAtPlayhead() const noexcept;
+  // And the fourth source-side channel. Airiness is a band of the source's own noise rather than a
+  // balance, so it is exposed as its own curve beside breathiness instead of being folded into it.
+  [[nodiscard]] core::Result<void> nudgeAiriness(int steps);
+  [[nodiscard]] core::Result<void> resetAirinessCurve();
+  [[nodiscard]] float airinessAtPlayhead() const noexcept;
   void setCharacterMetadata(std::string name, std::string style) {
     characterName_ = std::move(name);
     characterStyle_ = std::move(style);

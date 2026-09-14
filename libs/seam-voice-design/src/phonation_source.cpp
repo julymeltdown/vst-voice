@@ -1,6 +1,7 @@
 #include "seam/voice_design/phonation_source.hpp"
 #include "excitation_noise.hpp"
 #include "seam/domain/breathiness_automation.hpp"
+#include "seam/domain/airiness_automation.hpp"
 #include <algorithm>
 #include <cmath>
 #include <numbers>
@@ -61,7 +62,11 @@ core::Result<synthesis::PhraseAudio> PhonationSource::render(std::size_t frames,
     if (i % 256U == 0U && stopToken.stop_requested()) return core::failure<Output>(core::ErrorCode::Conflict, "Phonation rendering cancelled");
     const auto frame = position_ + static_cast<time::SampleFrame>(i);
     const auto musical = performance_->at(frame);
-    noise = noisePole * noise + (1.0 - noisePole) * noiseAt(seed_, frame);
+    // The white sample and the filtered aspiration are kept apart on purpose: the difference between
+    // them is the part of the stream the aspiration filter rejected, which is the high-frequency band
+    // the airiness channel adds.
+    const auto white = noiseAt(seed_, frame);
+    noise = noisePole * noise + (1.0 - noisePole) * white;
     if (!musical.noteId) { lastNote.reset(); continue; }
     if (lastNote != musical.noteId && musical.reattack) phase = 0.0;
     lastNote = musical.noteId;
@@ -96,7 +101,13 @@ core::Result<synthesis::PhraseAudio> PhonationSource::render(std::size_t frames,
     const auto aperiodicShare =
         phonation_.aspiration + (1.0 - phonation_.aspiration) *
                                     static_cast<double>(domain::kBreathinessAperiodicShare) * breathiness;
-    const auto sample = 0.25 * (periodicShare * voiced + aperiodicShare * noise) *
+    // Airiness is a band rather than a balance: it adds a small share of the high-frequency part of the
+    // same stream, above the aspiration filter's corner, where the periodic source has almost no energy.
+    // A frame whose airiness is exactly zero adds exactly nothing and renders by the arithmetic above.
+    const auto airiness = static_cast<double>(std::clamp(musical.airiness, 0.0F, 1.0F));
+    const auto air =
+        airiness * static_cast<double>(domain::kAirinessNoiseShare) * (white - noise);
+    const auto sample = 0.25 * (periodicShare * voiced + aperiodicShare * noise + air) *
         (1.0 + modulation_.shimmerAmount * modulation);
     if (!std::isfinite(sample) || std::abs(sample) > 0.500001) return core::failure<Output>(
         core::ErrorCode::InvariantViolation, "Phonation output exceeded its safety bound");

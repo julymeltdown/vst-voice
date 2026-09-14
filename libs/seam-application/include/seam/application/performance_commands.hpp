@@ -90,6 +90,13 @@ struct RegionTensionEdit final {
   domain::TensionAutomation curve;
 };
 
+// And a fifth: airiness adds a high-frequency noise band, which is neither a level, a resonance, a
+// periodic/aperiodic balance, nor the source's own tilt.
+struct RegionAirinessEdit final {
+  domain::RegionId regionId;
+  domain::AirinessAutomation curve;
+};
+
 struct TrackStyleEdit final {
   domain::TrackId trackId;
   domain::VoiceStyleSelection selection;
@@ -157,7 +164,8 @@ public:
                          std::vector<RegionOwnershipEdit> ownership = {},
                          std::vector<RegionFormantEdit> formant = {},
                          std::vector<RegionBreathinessEdit> breathiness = {},
-                         std::vector<RegionTensionEdit> tension = {});
+                         std::vector<RegionTensionEdit> tension = {},
+                         std::vector<RegionAirinessEdit> airiness = {});
 
   [[nodiscard]] std::string_view name() const noexcept override;
   [[nodiscard]] CommandAudioImpact audioImpact() const noexcept override;
@@ -175,12 +183,14 @@ private:
   std::vector<RegionFormantEdit> afterFormant_;
   std::vector<RegionBreathinessEdit> afterBreathiness_;
   std::vector<RegionTensionEdit> afterTension_;
+  std::vector<RegionAirinessEdit> afterAiriness_;
   std::vector<TrackStyleEdit> afterTracks_;
   std::vector<NoteExpressionEdit> beforeNotes_;
   std::vector<RegionDynamicsEdit> beforeRegions_;
   std::vector<RegionFormantEdit> beforeFormant_;
   std::vector<RegionBreathinessEdit> beforeBreathiness_;
   std::vector<RegionTensionEdit> beforeTension_;
+  std::vector<RegionAirinessEdit> beforeAiriness_;
   std::vector<TrackStyleEdit> beforeTracks_;
   std::vector<RegionOwnershipEdit> ownershipEdits_;
   struct OwnershipState final {

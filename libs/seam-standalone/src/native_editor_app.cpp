@@ -468,6 +468,15 @@ core::Result<void> NativeEditorApp::initialize() {
           .resetRegionTensionCurve = [this] {
             const auto result = authoring_->controller().resetTensionCurve(); record(result); return result;
           },
+          .nudgeAirinessUp = [this] {
+            const auto result = authoring_->controller().nudgeAiriness(1); record(result); return result;
+          },
+          .nudgeAirinessDown = [this] {
+            const auto result = authoring_->controller().nudgeAiriness(-1); record(result); return result;
+          },
+          .resetRegionAirinessCurve = [this] {
+            const auto result = authoring_->controller().resetAirinessCurve(); record(result); return result;
+          },
           .editTrackStyle = [this] {
             const auto result = authoring_->controller().openStyleCoverageSheet(); record(result); return result;
           },

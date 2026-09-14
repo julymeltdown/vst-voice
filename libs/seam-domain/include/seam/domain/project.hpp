@@ -3,6 +3,7 @@
 #include "seam/core/result.hpp"
 #include "seam/domain/ids.hpp"
 #include "seam/domain/breathiness_automation.hpp"
+#include "seam/domain/airiness_automation.hpp"
 #include "seam/domain/dynamics_automation.hpp"
 #include "seam/domain/formant_automation.hpp"
 #include "seam/domain/note.hpp"
@@ -104,6 +105,9 @@ struct VocalRegion final {
   // Tension is the third source-side channel: it changes the harmonic source's own spectrum, so it is
   // neither a level nor a resonance and cannot be expressed as either.
   TensionAutomation tensionAutomation;
+  // Airiness is the high-frequency half of the source-side noise behaviour: it is deliberately not the
+  // same request as breathiness, which rebalances the low-passed aspiration the recipe already has.
+  AirinessAutomation airinessAutomation;
   RegionPerformanceState performance;
 
   [[nodiscard]] Note* findNote(NoteId noteId) noexcept;

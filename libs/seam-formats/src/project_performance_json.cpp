@@ -282,6 +282,48 @@ core::Result<domain::TensionAutomation> decodeTension(const JsonValue* value) {
   return result;
 }
 
+JsonValue encodeAiriness(const domain::AirinessAutomation& airiness) {
+  JsonValue::Array points;
+  points.reserve(airiness.points().size());
+  for (const auto& point : airiness.points()) {
+    points.emplace_back(JsonValue::Object{
+        {"tick", JsonValue{point.tick.value()}},
+        {"amount", JsonValue{point.amount}},
+    });
+  }
+  return JsonValue{std::move(points)};
+}
+
+core::Result<domain::AirinessAutomation> decodeAiriness(const JsonValue* value) {
+  if (value == nullptr || !value->isArray() ||
+      value->asArray().size() > domain::kMaximumAirinessPoints) {
+    return core::failure<domain::AirinessAutomation>(core::ErrorCode::ParseError,
+        "Schema 15 region requires bounded airinessAutomation points");
+  }
+  std::vector<domain::AirinessAutomationPoint> points;
+  points.reserve(value->asArray().size());
+  for (const auto& point : value->asArray()) {
+    if (!point.isObject() || point.asObject().size() != 2U) {
+      return core::failure<domain::AirinessAutomation>(core::ErrorCode::ParseError,
+          "Airiness point requires tick and amount");
+    }
+    const auto* tick = point.find("tick");
+    const auto amount = boundedNumber(point.find("amount"), 0.0,
+                                      static_cast<double>(domain::kMaximumAiriness));
+    if (tick == nullptr || !tick->isInteger()) {
+      return core::failure<domain::AirinessAutomation>(core::ErrorCode::ParseError,
+                                                       "Airiness tick must be an integer");
+    }
+    if (!amount) return core::Result<domain::AirinessAutomation>{amount.error()};
+    points.push_back({.tick = time::Tick{tick->asInt64()},
+                      .amount = static_cast<float>(amount.value())});
+  }
+  domain::AirinessAutomation result;
+  const auto validation = result.replacePoints(std::move(points));
+  if (!validation) return core::Result<domain::AirinessAutomation>{validation.error()};
+  return result;
+}
+
 JsonValue encodeStyleSelection(const domain::VoiceStyleSelection& selection) {
   return JsonValue::Object{
       {"origin", JsonValue{std::string{styleOriginName(selection.origin)}}},

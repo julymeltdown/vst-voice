@@ -5641,4 +5641,75 @@ core::Result<void> NativeEditorController::resetTensionCurve() {
           std::vector<application::RegionTensionEdit>{{regionId_, domain::TensionAutomation{}}}));
 }
 
+float NativeEditorController::airinessAtPlayhead() const noexcept {
+  const auto* region = session_.project().findRegion(regionId_);
+  return region == nullptr ? 0.0F : region->airinessAutomation.valueAt(playheadTick_);
+}
+
+core::Result<void> NativeEditorController::nudgeAiriness(int steps) {
+  constexpr float kAirinessStep = 0.1F;
+  const auto* region = session_.project().findRegion(regionId_);
+  const auto* track = session_.project().findVocalTrack(selectedTrackId_);
+  if (region == nullptr || track == nullptr)
+    return core::failure(core::ErrorCode::NotFound, "Airiness edit has no region or track");
+  if (steps == 0) return core::success();
+  const auto carrier = track->proceduralRecipe ? synthesis::RendererCarrier::SourceFilter
+                                               : synthesis::RendererCarrier::SampleBank;
+  synthesis::RendererControlRequest request;
+  request.require(synthesis::RendererControl::Airiness);
+  const auto allowed = synthesis::validateRendererCapabilities(carrier, request);
+  if (!allowed) {
+    return core::Result<void>{core::Error{core::ErrorCode::Unsupported,
+        std::string{"The selected singer does not generate the noise band an airiness curve would add, "
+                    "so it cannot apply one. "} +
+            allowed.error().message +
+            ". Select a source-filter (voice designer) singer to edit this channel."}};
+  }
+  const auto current = region->airinessAutomation.valueAt(playheadTick_);
+  const auto target = std::clamp(
+      current + kAirinessStep * static_cast<float>(steps), 0.0F, domain::kMaximumAiriness);
+  auto next = region->airinessAutomation;
+  if (!(target != 0.0F))
+    next = domain::AirinessAutomation{};
+  else {
+    const auto inserted = next.upsert(domain::AirinessAutomationPoint{playheadTick_, target});
+    if (!inserted) return inserted;
+  }
+  if (next == region->airinessAutomation) return core::success();
+  auto context = session_.capturePerformanceJob();
+  if (!context) return core::Result<void>{context.error()};
+  return session_.executePerformanceResult(
+      context.value(),
+      std::make_unique<application::EditPerformanceCommand>(
+          std::vector<application::NoteExpressionEdit>{},
+          std::vector<application::RegionDynamicsEdit>{},
+          std::vector<application::TrackStyleEdit>{},
+          std::vector<application::RegionOwnershipEdit>{},
+          std::vector<application::RegionFormantEdit>{},
+          std::vector<application::RegionBreathinessEdit>{},
+          std::vector<application::RegionTensionEdit>{},
+          std::vector<application::RegionAirinessEdit>{{regionId_, std::move(next)}}));
+}
+
+core::Result<void> NativeEditorController::resetAirinessCurve() {
+  const auto* region = session_.project().findRegion(regionId_);
+  if (region == nullptr)
+    return core::failure(core::ErrorCode::NotFound, "Airiness edit has no region");
+  if (region->airinessAutomation.points().empty()) return core::success();
+  auto context = session_.capturePerformanceJob();
+  if (!context) return core::Result<void>{context.error()};
+  return session_.executePerformanceResult(
+      context.value(),
+      std::make_unique<application::EditPerformanceCommand>(
+          std::vector<application::NoteExpressionEdit>{},
+          std::vector<application::RegionDynamicsEdit>{},
+          std::vector<application::TrackStyleEdit>{},
+          std::vector<application::RegionOwnershipEdit>{},
+          std::vector<application::RegionFormantEdit>{},
+          std::vector<application::RegionBreathinessEdit>{},
+          std::vector<application::RegionTensionEdit>{},
+          std::vector<application::RegionAirinessEdit>{
+              {regionId_, domain::AirinessAutomation{}}}));
+}
+
 }  // namespace seam::native_ui

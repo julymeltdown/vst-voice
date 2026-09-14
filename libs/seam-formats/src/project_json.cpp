@@ -586,6 +586,8 @@ JsonValue encodeProject(const domain::Project& project) {
                                    detail::encodeBreathiness(region.breathinessAutomation)},
                                   {"tensionAutomation",
                                    detail::encodeTension(region.tensionAutomation)},
+                                  {"airinessAutomation",
+                                   detail::encodeAiriness(region.airinessAutomation)},
                                   {"performance", detail::encodeRegionPerformance(region.performance)}});
     }
     vocalTracks.emplace_back(Object{
@@ -1349,6 +1351,11 @@ core::Result<domain::Project> decodeProject(const JsonValue& root) {
         auto tension = detail::decodeTension(regionValue.find("tensionAutomation"));
         if (!tension) return core::Result<domain::Project>{tension.error()};
         region.tensionAutomation = std::move(tension).value();
+      }
+      if (schemaVersion >= 15) {
+        auto airiness = detail::decodeAiriness(regionValue.find("airinessAutomation"));
+        if (!airiness) return core::Result<domain::Project>{airiness.error()};
+        region.airinessAutomation = std::move(airiness).value();
       }
       region.sortNotes();
       track.regions.push_back(std::move(region));
