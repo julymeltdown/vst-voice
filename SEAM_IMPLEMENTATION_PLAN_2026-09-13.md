@@ -9,6 +9,8 @@ execution_started_by_this_document: false
 
 # SEAM Implementation Plan: Integrated Singer Delivery
 
+> **Execution-order update, September 15:** follow [SEAM Revised Development Plan](SEAM_REVISED_DEVELOPMENT_PLAN_2026-09-15.md) for the current near-term sequence: close the growl checkpoint, retain direct-procedural listening evidence, deliver expression editing, make evidence-led repairs, and finish procedural distribution while neural feasibility proceeds independently. This document's R1–R20/U1–U48/U60 obligations and detailed acceptance criteria remain in force. Its baseline and “begin M1.P1” handoff are historical, not instructions to restart completed work.
+
 ## 1. Purpose and authority
 
 This document turns the six-milestone proposal into a development specification that an implementer can follow. It defines the next code changes, their ordering, the data contracts they must preserve, test cases, runnable deliverables, and the evidence needed to close each outcome.
