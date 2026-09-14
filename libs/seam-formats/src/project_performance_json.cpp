@@ -367,6 +367,48 @@ core::Result<domain::GenderAutomation> decodeGender(const JsonValue* value) {
   return result;
 }
 
+JsonValue encodeGrowl(const domain::GrowlAutomation& growl) {
+  JsonValue::Array points;
+  points.reserve(growl.points().size());
+  for (const auto& point : growl.points()) {
+    points.emplace_back(JsonValue::Object{
+        {"tick", JsonValue{point.tick.value()}},
+        {"amount", JsonValue{point.amount}},
+    });
+  }
+  return JsonValue{std::move(points)};
+}
+
+core::Result<domain::GrowlAutomation> decodeGrowl(const JsonValue* value) {
+  if (value == nullptr || !value->isArray() ||
+      value->asArray().size() > domain::kMaximumGrowlPoints) {
+    return core::failure<domain::GrowlAutomation>(core::ErrorCode::ParseError,
+        "Schema 17 region requires bounded growlAutomation points");
+  }
+  std::vector<domain::GrowlAutomationPoint> points;
+  points.reserve(value->asArray().size());
+  for (const auto& point : value->asArray()) {
+    if (!point.isObject() || point.asObject().size() != 2U) {
+      return core::failure<domain::GrowlAutomation>(core::ErrorCode::ParseError,
+          "Growl point requires tick and amount");
+    }
+    const auto* tick = point.find("tick");
+    const auto amount = boundedNumber(point.find("amount"), 0.0,
+                                      static_cast<double>(domain::kMaximumGrowl));
+    if (tick == nullptr || !tick->isInteger()) {
+      return core::failure<domain::GrowlAutomation>(core::ErrorCode::ParseError,
+                                                    "Growl tick must be an integer");
+    }
+    if (!amount) return core::Result<domain::GrowlAutomation>{amount.error()};
+    points.push_back({.tick = time::Tick{tick->asInt64()},
+                      .amount = static_cast<float>(amount.value())});
+  }
+  domain::GrowlAutomation result;
+  const auto validation = result.replacePoints(std::move(points));
+  if (!validation) return core::Result<domain::GrowlAutomation>{validation.error()};
+  return result;
+}
+
 JsonValue encodeStyleSelection(const domain::VoiceStyleSelection& selection) {
   return JsonValue::Object{
       {"origin", JsonValue{std::string{styleOriginName(selection.origin)}}},

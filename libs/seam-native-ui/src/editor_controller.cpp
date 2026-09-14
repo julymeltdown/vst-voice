@@ -5796,4 +5796,79 @@ core::Result<void> NativeEditorController::resetGenderCurve() {
           std::vector<application::RegionGenderEdit>{{regionId_, domain::GenderAutomation{}}}));
 }
 
+float NativeEditorController::growlAtPlayhead() const noexcept {
+  const auto* region = session_.project().findRegion(regionId_);
+  return region == nullptr ? 0.0F : region->growlAutomation.valueAt(playheadTick_);
+}
+
+core::Result<void> NativeEditorController::nudgeGrowl(int steps) {
+  constexpr float kGrowlStep = 0.1F;
+  const auto* region = session_.project().findRegion(regionId_);
+  const auto* track = session_.project().findVocalTrack(selectedTrackId_);
+  if (region == nullptr || track == nullptr)
+    return core::failure(core::ErrorCode::NotFound, "Growl edit has no region or track");
+  if (steps == 0) return core::success();
+  const auto carrier = track->proceduralRecipe ? synthesis::RendererCarrier::SourceFilter
+                                               : synthesis::RendererCarrier::SampleBank;
+  synthesis::RendererControlRequest request;
+  request.require(synthesis::RendererControl::Growl);
+  const auto allowed = synthesis::validateRendererCapabilities(carrier, request);
+  if (!allowed) {
+    return core::Result<void>{core::Error{core::ErrorCode::Unsupported,
+        std::string{"The selected singer does not generate the excitation a growl curve adds roughness "
+                    "to, so it cannot apply one. "} +
+            allowed.error().message +
+            ". Select a source-filter (voice designer) singer to edit this channel."}};
+  }
+  const auto current = region->growlAutomation.valueAt(playheadTick_);
+  const auto target = snappedToNeutral(std::clamp(
+      current + kGrowlStep * static_cast<float>(steps), 0.0F, domain::kMaximumGrowl));
+  auto next = region->growlAutomation;
+  const auto inserted = next.upsert(domain::GrowlAutomationPoint{playheadTick_, target});
+  if (!inserted) return inserted;
+  // A neutral point can shape the ramp to another non-neutral point. Only collapse a wholly neutral
+  // curve; clearing the region here would destroy edits outside the playhead.
+  if (std::all_of(next.points().begin(), next.points().end(),
+                  [](const auto& point) { return point.amount == 0.0F; }))
+    next = domain::GrowlAutomation{};
+  if (next == region->growlAutomation) return core::success();
+  auto context = session_.capturePerformanceJob();
+  if (!context) return core::Result<void>{context.error()};
+  return session_.executePerformanceResult(
+      context.value(),
+      std::make_unique<application::EditPerformanceCommand>(
+          std::vector<application::NoteExpressionEdit>{},
+          std::vector<application::RegionDynamicsEdit>{},
+          std::vector<application::TrackStyleEdit>{},
+          std::vector<application::RegionOwnershipEdit>{},
+          std::vector<application::RegionFormantEdit>{},
+          std::vector<application::RegionBreathinessEdit>{},
+          std::vector<application::RegionTensionEdit>{},
+          std::vector<application::RegionAirinessEdit>{},
+          std::vector<application::RegionGenderEdit>{},
+          std::vector<application::RegionGrowlEdit>{{regionId_, std::move(next)}}));
+}
+
+core::Result<void> NativeEditorController::resetGrowlCurve() {
+  const auto* region = session_.project().findRegion(regionId_);
+  if (region == nullptr)
+    return core::failure(core::ErrorCode::NotFound, "Growl edit has no region");
+  if (region->growlAutomation.points().empty()) return core::success();
+  auto context = session_.capturePerformanceJob();
+  if (!context) return core::Result<void>{context.error()};
+  return session_.executePerformanceResult(
+      context.value(),
+      std::make_unique<application::EditPerformanceCommand>(
+          std::vector<application::NoteExpressionEdit>{},
+          std::vector<application::RegionDynamicsEdit>{},
+          std::vector<application::TrackStyleEdit>{},
+          std::vector<application::RegionOwnershipEdit>{},
+          std::vector<application::RegionFormantEdit>{},
+          std::vector<application::RegionBreathinessEdit>{},
+          std::vector<application::RegionTensionEdit>{},
+          std::vector<application::RegionAirinessEdit>{},
+          std::vector<application::RegionGenderEdit>{},
+          std::vector<application::RegionGrowlEdit>{{regionId_, domain::GrowlAutomation{}}}));
+}
+
 }  // namespace seam::native_ui

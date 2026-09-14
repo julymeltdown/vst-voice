@@ -119,6 +119,23 @@ std::string genderUnsupportedMessage(std::string_view carrier) {
          "silence. Remove the curve or select a source-filter singer.";
 }
 
+// Growl is a roughness of the source's own excitation, which a bank and an admitted model do not hand the
+// application to shape. A curve that asks for nothing is not a request.
+bool requiresGrowl(const domain::VocalRegion& region) noexcept {
+  return std::any_of(region.growlAutomation.points().begin(),
+                     region.growlAutomation.points().end(),
+                     [](const domain::GrowlAutomationPoint& point) {
+                       return point.amount != 0.0F;
+                     });
+}
+
+std::string growlUnsupportedMessage(std::string_view carrier) {
+  return std::string{"The selected "} + std::string{carrier} +
+         " cannot apply the project's growl curve: it does not generate the excitation the roughness is "
+         "added to, so the curve would be dropped in silence. Remove the curve or select a source-filter "
+         "singer.";
+}
+
 core::Result<domain::VocalRegion> extractPhraseRegion(
     const domain::VocalRegion& source, const PhraseSegment& segment) {
   std::unordered_set<domain::NoteId> noteIds;
@@ -268,6 +285,21 @@ core::Result<domain::VocalRegion> extractPhraseRegion(
   const auto genderCopied = result.genderAutomation.replacePoints(
       std::vector<domain::GenderAutomationPoint>{firstGender, lastGender});
   if (!genderCopied) return core::Result<domain::VocalRegion>{genderCopied.error()};
+  // The growl curve is windowed by the same rule as the curves beside it.
+  const auto& growl = source.growlAutomation.points();
+  const auto beforeGrowlTick = [](const domain::GrowlAutomationPoint& point,
+                                  time::Tick tick) { return point.tick < tick; };
+  auto firstGrowl = std::lower_bound(growl.begin(), growl.end(), segment.startTick,
+                                     beforeGrowlTick);
+  if (firstGrowl != growl.begin() &&
+      (firstGrowl == growl.end() || firstGrowl->tick > segment.startTick)) {
+    --firstGrowl;
+  }
+  auto lastGrowl = std::lower_bound(firstGrowl, growl.end(), segment.endTick, beforeGrowlTick);
+  if (lastGrowl != growl.end()) ++lastGrowl;
+  const auto growlCopied = result.growlAutomation.replacePoints(
+      std::vector<domain::GrowlAutomationPoint>{firstGrowl, lastGrowl});
+  if (!growlCopied) return core::Result<domain::VocalRegion>{growlCopied.error()};
   const auto effectiveScope = [&](const domain::PerformanceScope& scope)
       -> std::optional<domain::PerformanceScope> {
     if (const auto* note = std::get_if<domain::NoteId>(&scope)) {
@@ -748,6 +780,9 @@ core::Result<RenderSnapshot> RenderSnapshotFactory::createNeural(
   if (requiresGender(*region))
     return core::failure<RenderSnapshot>(core::ErrorCode::Unsupported,
         genderUnsupportedMessage("neural model"), trackId.toString());
+  if (requiresGrowl(*region))
+    return core::failure<RenderSnapshot>(core::ErrorCode::Unsupported,
+        growlUnsupportedMessage("neural model"), trackId.toString());
   // A persisted selection is a promise about which voice this music used. A
   // snapshot may run unbound for a preview, but it may never contradict a saved
   // selection, and it may never silently substitute a different bundle.
@@ -918,6 +953,9 @@ core::Result<RenderSnapshot> RenderSnapshotFactory::create(
   if (requiresGender(*region))
     return core::failure<RenderSnapshot>(core::ErrorCode::Unsupported,
         genderUnsupportedMessage("sample bank"), trackId.toString());
+  if (requiresGrowl(*region))
+    return core::failure<RenderSnapshot>(core::ErrorCode::Unsupported,
+        growlUnsupportedMessage("sample bank"), trackId.toString());
   if (segment.id.empty() || segment.noteIds.empty() || bankRoot.empty()) {
     return core::failure<RenderSnapshot>(core::ErrorCode::InvalidArgument,
                                          "Render snapshot identity is incomplete");

@@ -438,17 +438,19 @@ core::Result<void> validateEdits(
     const std::vector<RegionTensionEdit>& tension,
     const std::vector<RegionAirinessEdit>& airiness,
     const std::vector<RegionGenderEdit>& gender,
+    const std::vector<RegionGrowlEdit>& growl,
     const std::vector<TrackStyleEdit>& tracks,
     std::size_t ownershipCount, const Index& noteIndex) {
   if ((notes.empty() && regions.empty() && formant.empty() && breathiness.empty() && tension.empty() &&
-       airiness.empty() && gender.empty() && tracks.empty() && ownershipCount == 0U) ||
+       airiness.empty() && gender.empty() && growl.empty() && tracks.empty() && ownershipCount == 0U) ||
       notes.size() > kMaximumEdits || regions.size() > kMaximumEdits ||
       formant.size() > kMaximumEdits || breathiness.size() > kMaximumEdits ||
       tension.size() > kMaximumEdits || airiness.size() > kMaximumEdits ||
-      gender.size() > kMaximumEdits || tracks.size() > kMaximumEdits ||
+      gender.size() > kMaximumEdits || growl.size() > kMaximumEdits ||
+      tracks.size() > kMaximumEdits ||
       ownershipCount > kMaximumEdits ||
       notes.size() + regions.size() + formant.size() + breathiness.size() + tension.size() +
-              airiness.size() + gender.size() + tracks.size() + ownershipCount >
+              airiness.size() + gender.size() + growl.size() + tracks.size() + ownershipCount >
           kMaximumEdits) {
     return core::failure(core::ErrorCode::InvalidArgument,
                          "Performance edit target count is outside supported bounds");
@@ -541,6 +543,28 @@ core::Result<void> validateEdits(
   std::unordered_set<domain::RegionId> breathinessIds;
   std::unordered_set<domain::RegionId> airinessIds;
   std::unordered_set<domain::RegionId> genderIds;
+  std::unordered_set<domain::RegionId> growlIds;
+  for (const auto& edit : growl) {
+    if (!growlIds.insert(edit.regionId).second) {
+      return core::failure(core::ErrorCode::InvalidArgument,
+                           "Performance edit repeats a growl region",
+                           edit.regionId.toString());
+    }
+    const auto* region = project.findRegion(edit.regionId);
+    if (region == nullptr) {
+      return core::failure(core::ErrorCode::NotFound,
+                           "Performance growl region was not found",
+                           edit.regionId.toString());
+    }
+    const auto validation = edit.curve.validate();
+    if (!validation) return validation;
+    if (!edit.curve.points().empty() &&
+        edit.curve.points().back().tick > region->durationTick) {
+      return core::failure(core::ErrorCode::InvariantViolation,
+                           "Growl automation extends beyond the region",
+                           edit.regionId.toString());
+    }
+  }
   for (const auto& edit : gender) {
     if (!genderIds.insert(edit.regionId).second) {
       return core::failure(core::ErrorCode::InvalidArgument,
@@ -630,7 +654,8 @@ EditPerformanceCommand::EditPerformanceCommand(
     std::vector<RegionBreathinessEdit> breathiness,
     std::vector<RegionTensionEdit> tension,
     std::vector<RegionAirinessEdit> airiness,
-    std::vector<RegionGenderEdit> gender)
+    std::vector<RegionGenderEdit> gender,
+    std::vector<RegionGrowlEdit> growl)
     : afterNotes_(std::move(notes)),
       afterRegions_(std::move(regions)),
       afterFormant_(std::move(formant)),
@@ -638,6 +663,7 @@ EditPerformanceCommand::EditPerformanceCommand(
       afterTension_(std::move(tension)),
       afterAiriness_(std::move(airiness)),
       afterGender_(std::move(gender)),
+      afterGrowl_(std::move(growl)),
       afterTracks_(std::move(tracks)),
       ownershipEdits_(std::move(ownership)) {}
 
@@ -742,11 +768,12 @@ core::Result<void> EditPerformanceCommand::setExpressions(domain::Project& proje
   const auto& tension = after ? afterTension_ : beforeTension_;
   const auto& airiness = after ? afterAiriness_ : beforeAiriness_;
   const auto& gender = after ? afterGender_ : beforeGender_;
+  const auto& growl = after ? afterGrowl_ : beforeGrowl_;
   const auto& tracks = after ? afterTracks_ : beforeTracks_;
   const auto indexedNotes = expressionNoteIndex(project, notes);
   if (!indexedNotes) return core::Result<void>{indexedNotes.error()};
   const auto validation = validateEdits(project, notes, regions, formant, breathiness, tension,
-                                       airiness, gender, tracks, ownershipEdits_.size(),
+                                       airiness, gender, growl, tracks, ownershipEdits_.size(),
                                        indexedNotes.value());
   if (!validation) return validation;
 
@@ -804,6 +831,7 @@ core::Result<void> EditPerformanceCommand::setExpressions(domain::Project& proje
   auto stagedTension = tension;
   auto stagedAiriness = airiness;
   auto stagedGender = gender;
+  auto stagedGrowl = growl;
   auto stagedTracks = tracks;
   if (!captured_) {
     std::vector<NoteExpressionEdit> priorNotes;
@@ -813,6 +841,7 @@ core::Result<void> EditPerformanceCommand::setExpressions(domain::Project& proje
     std::vector<RegionTensionEdit> priorTension;
     std::vector<RegionAirinessEdit> priorAiriness;
     std::vector<RegionGenderEdit> priorGender;
+    std::vector<RegionGrowlEdit> priorGrowl;
     std::vector<TrackStyleEdit> priorTracks;
     priorNotes.reserve(notes.size());
     priorRegions.reserve(regions.size());
@@ -821,6 +850,7 @@ core::Result<void> EditPerformanceCommand::setExpressions(domain::Project& proje
     priorTension.reserve(tension.size());
     priorAiriness.reserve(airiness.size());
     priorGender.reserve(gender.size());
+    priorGrowl.reserve(growl.size());
     priorTracks.reserve(tracks.size());
     for (const auto& edit : notes) {
       const auto* note = indexedNotes.value().at(edit.noteId);
@@ -850,6 +880,10 @@ core::Result<void> EditPerformanceCommand::setExpressions(domain::Project& proje
       const auto* region = project.findRegion(edit.regionId);
       priorGender.push_back({region->id, region->genderAutomation});
     }
+    for (const auto& edit : growl) {
+      const auto* region = project.findRegion(edit.regionId);
+      priorGrowl.push_back({region->id, region->growlAutomation});
+    }
     for (const auto& edit : tracks) {
       const auto* track = project.findVocalTrack(edit.trackId);
       priorTracks.push_back({track->id, track->styleSelection});
@@ -861,6 +895,7 @@ core::Result<void> EditPerformanceCommand::setExpressions(domain::Project& proje
     beforeTension_ = std::move(priorTension);
     beforeAiriness_ = std::move(priorAiriness);
     beforeGender_ = std::move(priorGender);
+    beforeGrowl_ = std::move(priorGrowl);
     beforeTracks_ = std::move(priorTracks);
     beforeOwnership_ = std::move(priorOwnership);
     afterOwnership_ = std::move(nextOwnership);
@@ -889,6 +924,9 @@ core::Result<void> EditPerformanceCommand::setExpressions(domain::Project& proje
   }
   for (auto& edit : stagedGender) {
     std::swap(project.findRegion(edit.regionId)->genderAutomation, edit.curve);
+  }
+  for (auto& edit : stagedGrowl) {
+    std::swap(project.findRegion(edit.regionId)->growlAutomation, edit.curve);
   }
   for (auto& edit : stagedTracks) {
     std::swap(project.findVocalTrack(edit.trackId)->styleSelection, edit.selection);

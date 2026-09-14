@@ -104,6 +104,12 @@ struct RegionGenderEdit final {
   domain::GenderAutomation curve;
 };
 
+// Growl controls half-rate modulation of the periodic source, independently of the other channels.
+struct RegionGrowlEdit final {
+  domain::RegionId regionId;
+  domain::GrowlAutomation curve;
+};
+
 struct TrackStyleEdit final {
   domain::TrackId trackId;
   domain::VoiceStyleSelection selection;
@@ -173,7 +179,8 @@ public:
                          std::vector<RegionBreathinessEdit> breathiness = {},
                          std::vector<RegionTensionEdit> tension = {},
                          std::vector<RegionAirinessEdit> airiness = {},
-                         std::vector<RegionGenderEdit> gender = {});
+                         std::vector<RegionGenderEdit> gender = {},
+                         std::vector<RegionGrowlEdit> growl = {});
 
   [[nodiscard]] std::string_view name() const noexcept override;
   [[nodiscard]] CommandAudioImpact audioImpact() const noexcept override;
@@ -193,6 +200,7 @@ private:
   std::vector<RegionTensionEdit> afterTension_;
   std::vector<RegionAirinessEdit> afterAiriness_;
   std::vector<RegionGenderEdit> afterGender_;
+  std::vector<RegionGrowlEdit> afterGrowl_;
   std::vector<TrackStyleEdit> afterTracks_;
   std::vector<NoteExpressionEdit> beforeNotes_;
   std::vector<RegionDynamicsEdit> beforeRegions_;
@@ -201,6 +209,7 @@ private:
   std::vector<RegionTensionEdit> beforeTension_;
   std::vector<RegionAirinessEdit> beforeAiriness_;
   std::vector<RegionGenderEdit> beforeGender_;
+  std::vector<RegionGrowlEdit> beforeGrowl_;
   std::vector<TrackStyleEdit> beforeTracks_;
   std::vector<RegionOwnershipEdit> ownershipEdits_;
   struct OwnershipState final {

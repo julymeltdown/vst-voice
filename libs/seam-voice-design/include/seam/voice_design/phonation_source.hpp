@@ -30,6 +30,12 @@ private:
   double appliedTiltDbPerOctave_{0.0};
   time::SampleFrame origin_{0}, position_{0};
   double phase_{0.0}, noise_{0.0};
+  // The growl modulation runs at half the note's rate. It is a second accumulator rather than a function
+  // of the note's phase, because a half-rate function of a phase that wraps once per fundamental is not
+  // continuous: it jumps back once per period and modulates at the fundamental's rate instead. Both
+  // accumulators advance from the same per-sample frequency by an exact ratio of two, so the modulation
+  // cannot drift away from the note, and it starts over with the note on a reattack.
+  double subPhase_{0.0};
   std::optional<domain::NoteId> lastNote_;
 };
 }

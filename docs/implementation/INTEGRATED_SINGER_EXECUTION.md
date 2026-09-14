@@ -1,5 +1,45 @@
 # Integrated Singer Execution
 
+## Growl reaches the source, and a neutral nudge preserves the rest of the phrase
+
+September 15, 2026 — revised-plan D0. Growl now has a normalized region curve,
+schema-17 persistence (older schemas load without the curve), compiler revision 14,
+snapshot windowing, typed undoable edits and native menu dispatch. Sample-bank and
+neural snapshots refuse non-neutral growl requests by name; the source-filter path
+modulates the periodic excitation with a half-rate phase accumulator. Reattack and
+reset restart that accumulator. The modulation depth bounds periodic gain to 0.5–1.0.
+
+Two earlier DSP approaches were rejected using the sustained-vowel probe. Adding a
+55 Hz tone below a 110 Hz fundamental barely changed the measured subharmonic peak
+(0.007602 to 0.007674) after tract filtering. Computing half-rate modulation directly
+from the wrapping fundamental phase instead repeated at the fundamental rate and
+left inter-harmonic energy unchanged (0.4936 to 0.4936). The retained half-rate
+accumulator produced inter-harmonic energy 0.493592 to 1.910222 and a 55 Hz peak
+0.007602 to 0.664456 in that probe; the tests assert bounded monotone changes and
+period doubling rather than treating those recorded measurements as listening proof.
+
+Checkpoint review found a separate editing defect: nudging one point to zero cleared
+the entire region curve. The growl nudge now preserves an explicit neutral point when
+other points remain non-neutral, collapsing only a wholly neutral curve. A two-point
+regression proves the later value and intervening ramp survive and undo/redo restores
+the complete prior/next curve. The test also reacquires region state after reset,
+avoiding a pointer retained across project replacement.
+
+Verified. The rebuilt growl suite passes 8/8, including schema round trip, legacy
+loading, invalid values, carrier refusal, editing and the acoustic bound oracle.
+The earlier retained full CTest log reports 163/164 passed before this review repair,
+with only source closure failing for three untracked growl files. After the review
+repair, all six rebuilt expression targets pass (7.50 seconds), and explicit staging
+resolves source closure: the standalone audit and CTest closure target both pass
+(0.26 seconds). This is a fresh affected run plus a resolved closure check, not a
+claim that the historical full run had no failures.
+
+Not claimed. These measurements cover the sustained-pose fixture, not listener
+judgment, female identity or full articulated automation qualification. Shared drawn
+expression editing and style blend remain unfinished. No U-unit or Beta GO acceptance
+is changed. Execution now follows the revised plan: retain direct-procedural listening
+material before adding another product capability.
+
 ## Gender is a coupling, and a nudge that lands on neutral now lands on neutral
 
 Gender was the one channel in the section-7 list that could not be built as another single-domain control,

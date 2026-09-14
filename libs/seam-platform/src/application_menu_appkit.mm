@@ -65,6 +65,9 @@
 - (void)nudgeGenderUp:(id)sender;
 - (void)nudgeGenderDown:(id)sender;
 - (void)resetRegionGenderCurve:(id)sender;
+- (void)nudgeGrowlUp:(id)sender;
+- (void)nudgeGrowlDown:(id)sender;
+- (void)resetRegionGrowlCurve:(id)sender;
 - (void)editTrackStyle:(id)sender;
 - (void)editJapaneseReading:(id)sender;
 - (void)removeSelectedOverlaps:(id)sender;
@@ -300,6 +303,18 @@
   (void)sender;
   [self editCommand:seam::platform::ApplicationCommand::ResetRegionGenderCurve title:@"Cannot reset the gender curve"];
 }
+- (void)nudgeGrowlUp:(id)sender {
+  (void)sender;
+  [self editCommand:seam::platform::ApplicationCommand::NudgeGrowlUp title:@"Cannot raise growl"];
+}
+- (void)nudgeGrowlDown:(id)sender {
+  (void)sender;
+  [self editCommand:seam::platform::ApplicationCommand::NudgeGrowlDown title:@"Cannot lower growl"];
+}
+- (void)resetRegionGrowlCurve:(id)sender {
+  (void)sender;
+  [self editCommand:seam::platform::ApplicationCommand::ResetRegionGrowlCurve title:@"Cannot reset the growl curve"];
+}
 - (void)editTrackStyle:(id)sender {
   (void)sender;
   [self editCommand:seam::platform::ApplicationCommand::EditTrackStyle title:@"Cannot choose track style"];
@@ -494,6 +509,9 @@ public:
     [edit addItem:item(@"Raise Gender", @selector(nudgeGenderUp:), @"]", NSEventModifierFlagCommand | NSEventModifierFlagControl | NSEventModifierFlagShift, target_)];
     [edit addItem:item(@"Lower Gender", @selector(nudgeGenderDown:), @"[", NSEventModifierFlagCommand | NSEventModifierFlagControl | NSEventModifierFlagShift, target_)];
     [edit addItem:item(@"Reset Gender Curve", @selector(resetRegionGenderCurve:), @"", 0, target_)];
+    [edit addItem:item(@"Raise Growl", @selector(nudgeGrowlUp:), @"]", NSEventModifierFlagCommand | NSEventModifierFlagOption | NSEventModifierFlagShift, target_)];
+    [edit addItem:item(@"Lower Growl", @selector(nudgeGrowlDown:), @"[", NSEventModifierFlagCommand | NSEventModifierFlagOption | NSEventModifierFlagShift, target_)];
+    [edit addItem:item(@"Reset Growl Curve", @selector(resetRegionGrowlCurve:), @"", 0, target_)];
     [edit addItem:item(@"Track Style and Coverage…", @selector(editTrackStyle:), @"", 0, target_)];
     [edit addItem:item(@"Resolve Japanese Reading…", @selector(editJapaneseReading:), @"", 0, target_)];
     [edit addItem:item(@"Clear Selected Vibrato…", @selector(clearSelectedVibrato:), @"",

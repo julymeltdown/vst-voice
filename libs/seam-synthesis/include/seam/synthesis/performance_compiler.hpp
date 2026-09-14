@@ -8,7 +8,7 @@
 #include <stop_token>
 
 namespace seam::synthesis {
-inline constexpr std::uint32_t kPerformanceCompilerRevision = 13U;
+inline constexpr std::uint32_t kPerformanceCompilerRevision = 14U;
 inline constexpr std::size_t kMaximumScoreVoiceAllocationNotes = 4096U;
 
 struct ScoreVoicePlan final {
@@ -44,6 +44,9 @@ struct ScorePerformanceSample final {
   // The coupled tract/source mapping for this frame, bipolar around a neutral zero. A consumer must apply
   // both halves: taking either one alone would be a different channel.
   float gender{0.0F};
+  // The roughness of the source for this frame, normalized to the channel's range. Zero is the recipe's
+  // own source, and a consumer that applied it as gain would be wrong by construction.
+  float growl{0.0F};
   float articulationGain{1.0F};
   // Accepted amplitude attack; absent/manual replacement retains the neutral
   // envelope. Continuations expose intent but do not restart the attack.
@@ -97,6 +100,7 @@ private:
   domain::TensionAutomation tension_;
   domain::AirinessAutomation airiness_;
   domain::GenderAutomation gender_;
+  domain::GrowlAutomation growl_;
   domain::RegionPerformanceState performance_;
   struct FrameScope final {
     std::optional<domain::NoteId> noteId;

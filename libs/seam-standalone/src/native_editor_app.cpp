@@ -486,6 +486,15 @@ core::Result<void> NativeEditorApp::initialize() {
           .resetRegionGenderCurve = [this] {
             const auto result = authoring_->controller().resetGenderCurve(); record(result); return result;
           },
+          .nudgeGrowlUp = [this] {
+            const auto result = authoring_->controller().nudgeGrowl(1); record(result); return result;
+          },
+          .nudgeGrowlDown = [this] {
+            const auto result = authoring_->controller().nudgeGrowl(-1); record(result); return result;
+          },
+          .resetRegionGrowlCurve = [this] {
+            const auto result = authoring_->controller().resetGrowlCurve(); record(result); return result;
+          },
           .editTrackStyle = [this] {
             const auto result = authoring_->controller().openStyleCoverageSheet(); record(result); return result;
           },

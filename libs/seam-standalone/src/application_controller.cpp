@@ -896,6 +896,15 @@ core::Result<void> StandaloneApplicationController::dispatch(
     case platform::ApplicationCommand::ResetRegionGenderCurve:
       if (!config_.resetRegionGenderCurve) return core::failure(core::ErrorCode::Unsupported, "Gender editing is not connected");
       return config_.resetRegionGenderCurve();
+    case platform::ApplicationCommand::NudgeGrowlUp:
+      if (!config_.nudgeGrowlUp) return core::failure(core::ErrorCode::Unsupported, "Growl editing is not connected");
+      return config_.nudgeGrowlUp();
+    case platform::ApplicationCommand::NudgeGrowlDown:
+      if (!config_.nudgeGrowlDown) return core::failure(core::ErrorCode::Unsupported, "Growl editing is not connected");
+      return config_.nudgeGrowlDown();
+    case platform::ApplicationCommand::ResetRegionGrowlCurve:
+      if (!config_.resetRegionGrowlCurve) return core::failure(core::ErrorCode::Unsupported, "Growl editing is not connected");
+      return config_.resetRegionGrowlCurve();
     case platform::ApplicationCommand::EditTrackStyle:
       if (!config_.editTrackStyle) return core::failure(core::ErrorCode::Unsupported, "Style sheet is not connected");
       return config_.editTrackStyle();

@@ -2,6 +2,7 @@
 #include "excitation_noise.hpp"
 #include "seam/domain/breathiness_automation.hpp"
 #include "seam/domain/airiness_automation.hpp"
+#include "seam/domain/growl_automation.hpp"
 #include <algorithm>
 #include <cmath>
 #include <numbers>
@@ -40,7 +41,7 @@ core::Result<synthesis::PhraseAudio> PhonationSource::render(std::size_t frames,
           core::ErrorCode::InvalidArgument, "Phonation block exceeds bounds");
   if (stopToken.stop_requested()) return core::failure<Output>(core::ErrorCode::Conflict, "Phonation rendering cancelled");
   Output output{position_, std::vector<float>(frames)};
-  auto phase = phase_; auto noise = noise_; auto lastNote = lastNote_;
+  auto phase = phase_; auto subPhase = subPhase_; auto noise = noise_; auto lastNote = lastNote_;
   const auto rate = static_cast<double>(performance_->sampleRate());
   const auto noisePole = std::exp(-2.0 * std::numbers::pi * std::min(6000.0, 0.3 * rate) / rate);
   const auto modulationPhase = 0.5 * (noiseAt(seed_, 0) + 1.0);
@@ -71,7 +72,7 @@ core::Result<synthesis::PhraseAudio> PhonationSource::render(std::size_t frames,
     const auto white = noiseAt(seed_, frame);
     noise = noisePole * noise + (1.0 - noisePole) * white;
     if (!musical.noteId) { lastNote.reset(); continue; }
-    if (lastNote != musical.noteId && musical.reattack) phase = 0.0;
+    if (lastNote != musical.noteId && musical.reattack) { phase = 0.0; subPhase = 0.0; }
     lastNote = musical.noteId;
     const auto modulation = modulation_.rateHz == 0.0 ? 0.0 : std::sin(2.0 * std::numbers::pi *
         std::fmod(static_cast<double>(frame) / rate * modulation_.rateHz + modulationPhase, 1.0));
@@ -91,6 +92,7 @@ core::Result<synthesis::PhraseAudio> PhonationSource::render(std::size_t frames,
       }
       if (weight > 0.0) voiced /= weight;
       phase += frequency / rate; phase -= std::floor(phase);
+      subPhase += 0.5 * frequency / rate; subPhase -= std::floor(subPhase);
     }
     // Breathiness is a balance, not an addition: it moves share from the periodic part of the
     // excitation to its aperiodic part, so a breathy phrase is not a louder phrase, and the aperiodic
@@ -110,14 +112,25 @@ core::Result<synthesis::PhraseAudio> PhonationSource::render(std::size_t frames,
     const auto airiness = static_cast<double>(std::clamp(musical.airiness, 0.0F, 1.0F));
     const auto air =
         airiness * static_cast<double>(domain::kAirinessNoiseShare) * (white - noise);
-    const auto sample = 0.25 * (periodicShare * voiced + aperiodicShare * noise + air) *
+    // Growl modulates the periodic part using a half-rate phase accumulator driven by the note's
+    // frequency. Its sidebands sit half a fundamental from each harmonic; in the measured vowel they
+    // survive tract filtering much better than an added subharmonic tone. The depth bounds the gain. A
+    // frame whose growl is exactly zero multiplies by exactly one.
+    const auto growl = static_cast<double>(std::clamp(musical.growl, 0.0F, 1.0F));
+    const auto halfRate = 0.5 * (1.0 + std::cos(2.0 * std::numbers::pi * subPhase));
+    const auto roughGain =
+        1.0 - growl * static_cast<double>(domain::kGrowlSubharmonicDepth) * (1.0 - halfRate);
+    const auto sample = 0.25 * (periodicShare * voiced * roughGain + aperiodicShare * noise + air) *
         (1.0 + modulation_.shimmerAmount * modulation);
     if (!std::isfinite(sample) || std::abs(sample) > 0.500001) return core::failure<Output>(
         core::ErrorCode::InvariantViolation, "Phonation output exceeded its safety bound");
     output.samples[i] = static_cast<float>(sample);
   }
-  phase_ = phase; noise_ = noise; lastNote_ = lastNote; position_ += static_cast<time::SampleFrame>(frames);
+  phase_ = phase; subPhase_ = subPhase; noise_ = noise; lastNote_ = lastNote;
+  position_ += static_cast<time::SampleFrame>(frames);
   return output;
 }
-void PhonationSource::reset() noexcept { position_ = origin_; phase_ = 0.0; noise_ = 0.0; lastNote_.reset(); }
+void PhonationSource::reset() noexcept {
+  position_ = origin_; phase_ = 0.0; subPhase_ = 0.0; noise_ = 0.0; lastNote_.reset();
+}
 }

@@ -45,6 +45,8 @@ RendererCapabilityView rendererCapabilities(RendererCarrier carrier) noexcept {
   // Gender is the coupled channel: it moves the tract's resonances and the source's spectrum together,
   // and only a carrier that owns both halves can apply it.
   result.supported[static_cast<std::size_t>(RendererControl::Gender)] = true;
+  // Growl is a roughness of the source the carrier generates for itself.
+  result.supported[static_cast<std::size_t>(RendererControl::Growl)] = true;
   result.pitchPreservingTransient = true;
   return result;
 }

@@ -11,6 +11,7 @@
 #include "seam/domain/performance_intent.hpp"
 #include "seam/domain/tension_automation.hpp"
 #include "seam/domain/gender_automation.hpp"
+#include "seam/domain/growl_automation.hpp"
 #include "seam/domain/render_controls.hpp"
 #include "seam/domain/routing.hpp"
 #include "seam/domain/voice_style_selection.hpp"
@@ -112,6 +113,9 @@ struct VocalRegion final {
   // Gender is the channel that couples the two halves of the voice instead of moving one of them: it is
   // bipolar, and zero is exactly the recipe's own tract and source.
   GenderAutomation genderAutomation;
+  // Growl is the roughness channel: a subharmonic locked to the note's own fundamental, so the channel is
+  // bounded by construction rather than by a limiter.
+  GrowlAutomation growlAutomation;
   RegionPerformanceState performance;
 
   [[nodiscard]] Note* findNote(NoteId noteId) noexcept;

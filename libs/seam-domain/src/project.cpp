@@ -282,6 +282,13 @@ core::Result<void> VocalRegion::validate() const {
     return core::failure(core::ErrorCode::InvariantViolation,
                          "Gender automation extends beyond the region");
   }
+  const auto growlValidation = growlAutomation.validate();
+  if (!growlValidation) return growlValidation;
+  if (!growlAutomation.points().empty() &&
+      growlAutomation.points().back().tick > durationTick) {
+    return core::failure(core::ErrorCode::InvariantViolation,
+                         "Growl automation extends beyond the region");
+  }
   return performance.validate(notes, durationTick);
 }
 

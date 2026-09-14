@@ -392,6 +392,11 @@ public:
   [[nodiscard]] core::Result<void> nudgeGender(int steps);
   [[nodiscard]] core::Result<void> resetGenderCurve();
   [[nodiscard]] float genderAtPlayhead() const noexcept;
+  // The roughness channel: a subharmonic lock on the source the carrier generates, so a carrier without
+  // its own excitation refuses it.
+  [[nodiscard]] core::Result<void> nudgeGrowl(int steps);
+  [[nodiscard]] core::Result<void> resetGrowlCurve();
+  [[nodiscard]] float growlAtPlayhead() const noexcept;
   void setCharacterMetadata(std::string name, std::string style) {
     characterName_ = std::move(name);
     characterStyle_ = std::move(style);

@@ -590,6 +590,8 @@ JsonValue encodeProject(const domain::Project& project) {
                                    detail::encodeAiriness(region.airinessAutomation)},
                                   {"genderAutomation",
                                    detail::encodeGender(region.genderAutomation)},
+                                  {"growlAutomation",
+                                   detail::encodeGrowl(region.growlAutomation)},
                                   {"performance", detail::encodeRegionPerformance(region.performance)}});
     }
     vocalTracks.emplace_back(Object{
@@ -1363,6 +1365,11 @@ core::Result<domain::Project> decodeProject(const JsonValue& root) {
         auto gender = detail::decodeGender(regionValue.find("genderAutomation"));
         if (!gender) return core::Result<domain::Project>{gender.error()};
         region.genderAutomation = std::move(gender).value();
+      }
+      if (schemaVersion >= 17) {
+        auto growl = detail::decodeGrowl(regionValue.find("growlAutomation"));
+        if (!growl) return core::Result<domain::Project>{growl.error()};
+        region.growlAutomation = std::move(growl).value();
       }
       region.sortNotes();
       track.regions.push_back(std::move(region));
