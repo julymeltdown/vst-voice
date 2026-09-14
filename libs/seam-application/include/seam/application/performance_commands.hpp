@@ -97,6 +97,13 @@ struct RegionAirinessEdit final {
   domain::AirinessAutomation curve;
 };
 
+// And the coupled one: gender moves the tract and the source together, so it is neither of the channels
+// that move one half each.
+struct RegionGenderEdit final {
+  domain::RegionId regionId;
+  domain::GenderAutomation curve;
+};
+
 struct TrackStyleEdit final {
   domain::TrackId trackId;
   domain::VoiceStyleSelection selection;
@@ -165,7 +172,8 @@ public:
                          std::vector<RegionFormantEdit> formant = {},
                          std::vector<RegionBreathinessEdit> breathiness = {},
                          std::vector<RegionTensionEdit> tension = {},
-                         std::vector<RegionAirinessEdit> airiness = {});
+                         std::vector<RegionAirinessEdit> airiness = {},
+                         std::vector<RegionGenderEdit> gender = {});
 
   [[nodiscard]] std::string_view name() const noexcept override;
   [[nodiscard]] CommandAudioImpact audioImpact() const noexcept override;
@@ -184,6 +192,7 @@ private:
   std::vector<RegionBreathinessEdit> afterBreathiness_;
   std::vector<RegionTensionEdit> afterTension_;
   std::vector<RegionAirinessEdit> afterAiriness_;
+  std::vector<RegionGenderEdit> afterGender_;
   std::vector<TrackStyleEdit> afterTracks_;
   std::vector<NoteExpressionEdit> beforeNotes_;
   std::vector<RegionDynamicsEdit> beforeRegions_;
@@ -191,6 +200,7 @@ private:
   std::vector<RegionBreathinessEdit> beforeBreathiness_;
   std::vector<RegionTensionEdit> beforeTension_;
   std::vector<RegionAirinessEdit> beforeAiriness_;
+  std::vector<RegionGenderEdit> beforeGender_;
   std::vector<TrackStyleEdit> beforeTracks_;
   std::vector<RegionOwnershipEdit> ownershipEdits_;
   struct OwnershipState final {

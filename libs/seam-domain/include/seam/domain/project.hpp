@@ -10,6 +10,7 @@
 #include "seam/domain/phoneme.hpp"
 #include "seam/domain/performance_intent.hpp"
 #include "seam/domain/tension_automation.hpp"
+#include "seam/domain/gender_automation.hpp"
 #include "seam/domain/render_controls.hpp"
 #include "seam/domain/routing.hpp"
 #include "seam/domain/voice_style_selection.hpp"
@@ -108,6 +109,9 @@ struct VocalRegion final {
   // Airiness is the high-frequency half of the source-side noise behaviour: it is deliberately not the
   // same request as breathiness, which rebalances the low-passed aspiration the recipe already has.
   AirinessAutomation airinessAutomation;
+  // Gender is the channel that couples the two halves of the voice instead of moving one of them: it is
+  // bipolar, and zero is exactly the recipe's own tract and source.
+  GenderAutomation genderAutomation;
   RegionPerformanceState performance;
 
   [[nodiscard]] Note* findNote(NoteId noteId) noexcept;

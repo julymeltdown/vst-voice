@@ -18,6 +18,8 @@ namespace seam::formats::detail {
 [[nodiscard]] core::Result<domain::TensionAutomation> decodeTension(const JsonValue* value);
 [[nodiscard]] JsonValue encodeAiriness(const domain::AirinessAutomation& airiness);
 [[nodiscard]] core::Result<domain::AirinessAutomation> decodeAiriness(const JsonValue* value);
+[[nodiscard]] JsonValue encodeGender(const domain::GenderAutomation& gender);
+[[nodiscard]] core::Result<domain::GenderAutomation> decodeGender(const JsonValue* value);
 [[nodiscard]] JsonValue encodeStyleSelection(const domain::VoiceStyleSelection& selection);
 [[nodiscard]] core::Result<domain::VoiceStyleSelection> decodeStyleSelection(const JsonValue* value);
 

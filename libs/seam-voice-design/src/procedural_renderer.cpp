@@ -200,10 +200,16 @@ core::Result<SustainedPoseResult> SustainedPoseStream::renderOwned(synthesis::Ph
     auto excitation = source.render(count, stopToken);
     if (!excitation) return core::Result<SustainedPoseResult>{excitation.error()};
     if (!active) std::fill(excitation.value().samples.begin(), excitation.value().samples.end(), 0.0F);
-    // The vocal-tract envelope is a control-rate channel, exactly as it is on the articulated path.
-    const auto formant = performance_->at(source.position()).formantSemitones;
-    if (static_cast<double>(formant) != tract.formantShiftSemitones()) {
-      const auto applied = tract.setFormantShift(static_cast<double>(formant));
+    // The vocal-tract envelope is a control-rate channel, exactly as it is on the articulated path. The
+    // formant channel owns the tract alone; gender couples the tract to the source, so its tract half is
+    // added here and its source half is applied where the excitation is generated.
+    const auto musical = performance_->at(source.position());
+    const auto formant =
+        static_cast<double>(musical.formantSemitones) +
+        static_cast<double>(std::clamp(musical.gender, -1.0F, 1.0F)) *
+            static_cast<double>(domain::kGenderFormantSemitones);
+    if (formant != tract.formantShiftSemitones()) {
+      const auto applied = tract.setFormantShift(formant);
       if (!applied) return core::Result<SustainedPoseResult>{applied.error()};
     }
     auto shaped = tract.process(excitation.value().samples, stopToken);

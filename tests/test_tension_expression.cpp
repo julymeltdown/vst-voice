@@ -372,6 +372,13 @@ TEST_CASE("A tension nudge is an undoable edit on the singer that can take it") 
   CHECK(controller.resetTensionCurve().hasValue());
   CHECK(controller.nudgeTension(-1).hasValue());
   CHECK(fixture.session.project().findRegion(fixture.regionId)->tensionAutomation.points().empty());
+
+  // Ten steps up and ten steps back down land on the neutral value exactly, so the curve is cleared
+  // rather than left holding a point that is neutral to seven decimal places.
+  CHECK(controller.nudgeTension(10).hasValue());
+  CHECK(controller.nudgeTension(-10).hasValue());
+  CHECK_NEAR(controller.tensionAtPlayhead(), 0.0, 1e-9);
+  CHECK(fixture.session.project().findRegion(fixture.regionId)->tensionAutomation.points().empty());
 }
 
 TEST_CASE("A singer without a harmonic source refuses the nudge and keeps the stored curve") {

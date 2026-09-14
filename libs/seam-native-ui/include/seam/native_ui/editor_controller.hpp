@@ -387,6 +387,11 @@ public:
   [[nodiscard]] core::Result<void> nudgeAiriness(int steps);
   [[nodiscard]] core::Result<void> resetAirinessCurve();
   [[nodiscard]] float airinessAtPlayhead() const noexcept;
+  // The coupled channel: a gender nudge moves the tract and the source together, so it is refused by any
+  // carrier that owns only one of them.
+  [[nodiscard]] core::Result<void> nudgeGender(int steps);
+  [[nodiscard]] core::Result<void> resetGenderCurve();
+  [[nodiscard]] float genderAtPlayhead() const noexcept;
   void setCharacterMetadata(std::string name, std::string style) {
     characterName_ = std::move(name);
     characterStyle_ = std::move(style);

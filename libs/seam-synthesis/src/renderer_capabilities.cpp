@@ -42,6 +42,9 @@ RendererCapabilityView rendererCapabilities(RendererCarrier carrier) noexcept {
   result.supported[static_cast<std::size_t>(RendererControl::Breathiness)] = true;
   result.supported[static_cast<std::size_t>(RendererControl::Tension)] = true;
   result.supported[static_cast<std::size_t>(RendererControl::Airiness)] = true;
+  // Gender is the coupled channel: it moves the tract's resonances and the source's spectrum together,
+  // and only a carrier that owns both halves can apply it.
+  result.supported[static_cast<std::size_t>(RendererControl::Gender)] = true;
   result.pitchPreservingTransient = true;
   return result;
 }

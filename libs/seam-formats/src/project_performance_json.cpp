@@ -324,6 +324,49 @@ core::Result<domain::AirinessAutomation> decodeAiriness(const JsonValue* value) 
   return result;
 }
 
+JsonValue encodeGender(const domain::GenderAutomation& gender) {
+  JsonValue::Array points;
+  points.reserve(gender.points().size());
+  for (const auto& point : gender.points()) {
+    points.emplace_back(JsonValue::Object{
+        {"tick", JsonValue{point.tick.value()}},
+        {"amount", JsonValue{point.amount}},
+    });
+  }
+  return JsonValue{std::move(points)};
+}
+
+core::Result<domain::GenderAutomation> decodeGender(const JsonValue* value) {
+  if (value == nullptr || !value->isArray() ||
+      value->asArray().size() > domain::kMaximumGenderPoints) {
+    return core::failure<domain::GenderAutomation>(core::ErrorCode::ParseError,
+        "Schema 16 region requires bounded genderAutomation points");
+  }
+  std::vector<domain::GenderAutomationPoint> points;
+  points.reserve(value->asArray().size());
+  for (const auto& point : value->asArray()) {
+    if (!point.isObject() || point.asObject().size() != 2U) {
+      return core::failure<domain::GenderAutomation>(core::ErrorCode::ParseError,
+          "Gender point requires tick and amount");
+    }
+    const auto* tick = point.find("tick");
+    const auto amount = boundedNumber(point.find("amount"),
+                                      -static_cast<double>(domain::kMaximumGender),
+                                      static_cast<double>(domain::kMaximumGender));
+    if (tick == nullptr || !tick->isInteger()) {
+      return core::failure<domain::GenderAutomation>(core::ErrorCode::ParseError,
+                                                     "Gender tick must be an integer");
+    }
+    if (!amount) return core::Result<domain::GenderAutomation>{amount.error()};
+    points.push_back({.tick = time::Tick{tick->asInt64()},
+                      .amount = static_cast<float>(amount.value())});
+  }
+  domain::GenderAutomation result;
+  const auto validation = result.replacePoints(std::move(points));
+  if (!validation) return core::Result<domain::GenderAutomation>{validation.error()};
+  return result;
+}
+
 JsonValue encodeStyleSelection(const domain::VoiceStyleSelection& selection) {
   return JsonValue::Object{
       {"origin", JsonValue{std::string{styleOriginName(selection.origin)}}},

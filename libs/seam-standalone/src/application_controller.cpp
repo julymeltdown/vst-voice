@@ -887,6 +887,15 @@ core::Result<void> StandaloneApplicationController::dispatch(
     case platform::ApplicationCommand::ResetRegionAirinessCurve:
       if (!config_.resetRegionAirinessCurve) return core::failure(core::ErrorCode::Unsupported, "Airiness editing is not connected");
       return config_.resetRegionAirinessCurve();
+    case platform::ApplicationCommand::NudgeGenderUp:
+      if (!config_.nudgeGenderUp) return core::failure(core::ErrorCode::Unsupported, "Gender editing is not connected");
+      return config_.nudgeGenderUp();
+    case platform::ApplicationCommand::NudgeGenderDown:
+      if (!config_.nudgeGenderDown) return core::failure(core::ErrorCode::Unsupported, "Gender editing is not connected");
+      return config_.nudgeGenderDown();
+    case platform::ApplicationCommand::ResetRegionGenderCurve:
+      if (!config_.resetRegionGenderCurve) return core::failure(core::ErrorCode::Unsupported, "Gender editing is not connected");
+      return config_.resetRegionGenderCurve();
     case platform::ApplicationCommand::EditTrackStyle:
       if (!config_.editTrackStyle) return core::failure(core::ErrorCode::Unsupported, "Style sheet is not connected");
       return config_.editTrackStyle();

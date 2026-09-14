@@ -24,6 +24,17 @@ namespace seam::native_ui {
 
 namespace {
 
+// A nudge moves a channel by a fraction of its range, so ten of them have to land exactly on the
+// channel's neutral value rather than a hundred-millionth away from it: the sum of ten tenths is not
+// exactly one in binary floating point, and a stored point that is neutral to seven decimal places is
+// still a stored curve that reports a non-neutral value, refuses to be cleared by the nudge that created
+// it, and makes an edit out of an edit that changed nothing. The tolerance is seven orders of magnitude
+// below one step, so it can only catch arithmetic residue and never a value someone chose.
+float snappedToNeutral(float value) noexcept {
+  constexpr float kNeutralTolerance = 1.0e-6F;
+  return std::abs(value) < kNeutralTolerance ? 0.0F : value;
+}
+
 domain::LyricTokenId externalTextTarget() noexcept {
   return domain::LyricTokenId{std::numeric_limits<std::uint64_t>::max()};
 }
@@ -5454,9 +5465,9 @@ core::Result<void> NativeEditorController::nudgeFormantShift(int steps) {
             ". Select a source-filter (voice designer) singer to edit this channel."}};
   }
   const auto current = region->formantAutomation.valueAt(playheadTick_);
-  const auto target = std::clamp(current + static_cast<float>(steps),
-                                 -domain::kMaximumFormantShiftSemitones,
-                                 domain::kMaximumFormantShiftSemitones);
+  const auto target = snappedToNeutral(std::clamp(current + static_cast<float>(steps),
+                                                  -domain::kMaximumFormantShiftSemitones,
+                                                  domain::kMaximumFormantShiftSemitones));
   auto next = region->formantAutomation;
   if (!(target != 0.0F))
     next = domain::FormantAutomation{};
@@ -5527,8 +5538,8 @@ core::Result<void> NativeEditorController::nudgeBreathiness(int steps) {
             ". Select a source-filter (voice designer) singer to edit this channel."}};
   }
   const auto current = region->breathinessAutomation.valueAt(playheadTick_);
-  const auto target = std::clamp(
-      current + kBreathinessStep * static_cast<float>(steps), 0.0F, domain::kMaximumBreathiness);
+  const auto target = snappedToNeutral(std::clamp(
+      current + kBreathinessStep * static_cast<float>(steps), 0.0F, domain::kMaximumBreathiness));
   auto next = region->breathinessAutomation;
   if (!(target != 0.0F))
     next = domain::BreathinessAutomation{};
@@ -5598,8 +5609,8 @@ core::Result<void> NativeEditorController::nudgeTension(int steps) {
             ". Select a source-filter (voice designer) singer to edit this channel."}};
   }
   const auto current = region->tensionAutomation.valueAt(playheadTick_);
-  const auto target = std::clamp(
-      current + kTensionStep * static_cast<float>(steps), 0.0F, domain::kMaximumTension);
+  const auto target = snappedToNeutral(std::clamp(
+      current + kTensionStep * static_cast<float>(steps), 0.0F, domain::kMaximumTension));
   auto next = region->tensionAutomation;
   if (!(target != 0.0F))
     next = domain::TensionAutomation{};
@@ -5666,8 +5677,8 @@ core::Result<void> NativeEditorController::nudgeAiriness(int steps) {
             ". Select a source-filter (voice designer) singer to edit this channel."}};
   }
   const auto current = region->airinessAutomation.valueAt(playheadTick_);
-  const auto target = std::clamp(
-      current + kAirinessStep * static_cast<float>(steps), 0.0F, domain::kMaximumAiriness);
+  const auto target = snappedToNeutral(std::clamp(
+      current + kAirinessStep * static_cast<float>(steps), 0.0F, domain::kMaximumAiriness));
   auto next = region->airinessAutomation;
   if (!(target != 0.0F))
     next = domain::AirinessAutomation{};
@@ -5710,6 +5721,79 @@ core::Result<void> NativeEditorController::resetAirinessCurve() {
           std::vector<application::RegionTensionEdit>{},
           std::vector<application::RegionAirinessEdit>{
               {regionId_, domain::AirinessAutomation{}}}));
+}
+
+float NativeEditorController::genderAtPlayhead() const noexcept {
+  const auto* region = session_.project().findRegion(regionId_);
+  return region == nullptr ? 0.0F : region->genderAutomation.valueAt(playheadTick_);
+}
+
+core::Result<void> NativeEditorController::nudgeGender(int steps) {
+  constexpr float kGenderStep = 0.1F;
+  const auto* region = session_.project().findRegion(regionId_);
+  const auto* track = session_.project().findVocalTrack(selectedTrackId_);
+  if (region == nullptr || track == nullptr)
+    return core::failure(core::ErrorCode::NotFound, "Gender edit has no region or track");
+  if (steps == 0) return core::success();
+  const auto carrier = track->proceduralRecipe ? synthesis::RendererCarrier::SourceFilter
+                                               : synthesis::RendererCarrier::SampleBank;
+  synthesis::RendererControlRequest request;
+  request.require(synthesis::RendererControl::Gender);
+  const auto allowed = synthesis::validateRendererCapabilities(carrier, request);
+  if (!allowed) {
+    return core::Result<void>{core::Error{core::ErrorCode::Unsupported,
+        std::string{"The selected singer does not own both the vocal tract and the source that a gender "
+                    "curve moves together, so it cannot apply one. "} +
+            allowed.error().message +
+            ". Select a source-filter (voice designer) singer to edit this channel."}};
+  }
+  const auto current = region->genderAutomation.valueAt(playheadTick_);
+  const auto target = snappedToNeutral(std::clamp(
+      current + kGenderStep * static_cast<float>(steps),
+      -domain::kMaximumGender, domain::kMaximumGender));
+  auto next = region->genderAutomation;
+  if (!(target != 0.0F))
+    next = domain::GenderAutomation{};
+  else {
+    const auto inserted = next.upsert(domain::GenderAutomationPoint{playheadTick_, target});
+    if (!inserted) return inserted;
+  }
+  if (next == region->genderAutomation) return core::success();
+  auto context = session_.capturePerformanceJob();
+  if (!context) return core::Result<void>{context.error()};
+  return session_.executePerformanceResult(
+      context.value(),
+      std::make_unique<application::EditPerformanceCommand>(
+          std::vector<application::NoteExpressionEdit>{},
+          std::vector<application::RegionDynamicsEdit>{},
+          std::vector<application::TrackStyleEdit>{},
+          std::vector<application::RegionOwnershipEdit>{},
+          std::vector<application::RegionFormantEdit>{},
+          std::vector<application::RegionBreathinessEdit>{},
+          std::vector<application::RegionTensionEdit>{},
+          std::vector<application::RegionAirinessEdit>{},
+          std::vector<application::RegionGenderEdit>{{regionId_, std::move(next)}}));
+}
+
+core::Result<void> NativeEditorController::resetGenderCurve() {
+  const auto* region = session_.project().findRegion(regionId_);
+  if (region == nullptr)
+    return core::failure(core::ErrorCode::NotFound, "Gender edit has no region");
+  if (region->genderAutomation.points().empty()) return core::success();
+  auto context = session_.capturePerformanceJob();
+  if (!context) return core::Result<void>{context.error()};
+  return session_.executePerformanceResult(
+      context.value(),
+      std::make_unique<application::EditPerformanceCommand>(
+          std::vector<application::NoteExpressionEdit>{},
+          std::vector<application::RegionDynamicsEdit>{},
+          std::vector<application::TrackStyleEdit>{},
+          std::vector<application::RegionOwnershipEdit>{},
+          std::vector<application::RegionFormantEdit>{},
+          std::vector<application::RegionBreathinessEdit>{},
+          std::vector<application::RegionTensionEdit>{},
+          std::vector<application::RegionAirinessEdit>{},
+          std::vector<application::RegionGenderEdit>{{regionId_, domain::GenderAutomation{}}}));
 }
 
 }  // namespace seam::native_ui

@@ -1,5 +1,59 @@
 # Integrated Singer Execution
 
+## Gender is a coupling, and a nudge that lands on neutral now lands on neutral
+
+Gender was the one channel in the section-7 list that could not be built as another single-domain control,
+because the list already has both of its halves: the formant channel moves the tract's resonances alone and
+the tension channel tilts the source alone. Gender is defined as the channel that moves both, by a fixed
+ratio, so that the two halves of one voice stay consistent with each other. `GenderAutomation` joins the
+region's curves, the project schema moves to 16 with the readers for 1 through 15 unchanged, and the unit
+is bipolar with zero exactly neutral.
+
+The test for a coupling cannot be a pair of independent spectral measurements, because a tract shift
+moves a source-shaped measurement and a source tilt moves a tract-shaped one. It is instead exact: a
+gender curve of one must render bit-identically to the render where the formant channel carries
+`kGenderFormantSemitones` and the tension channel carries `kGenderTiltDbPerOctave / kTensionTiltDbPerOctave`.
+The two neighbouring channels are given gender's own amounts, and the resulting audio has to be identical
+sample for sample. That claim cannot be satisfied by a channel that moves one half twice, and it is
+checked as equality rather than as a threshold. The same case then proves neither half alone is gender,
+that a neutral curve is the source that had no curve at all, that the third formant rises with a positive
+value and falls with a negative one, that the source-only render leaves the third formant where it was,
+and that the fundamental does not move.
+
+That oracle found a defect in the channels beside it, which is recorded here because it was never gender's
+alone. A nudge is a tenth of a channel, and ten tenths are not exactly one in binary floating point:
+starting from the channel's maximum, ten downward steps produced -1.5e-8 rather than zero. The channel
+treated that as a value rather than as neutral, so it stored a point, reported a non-neutral value at the
+playhead, and made an edit out of an edit that changed nothing -- exactly the failure the no-op rule was
+written to prevent, hiding one step below the resolution of the check that was supposed to catch it. Every
+share-based nudge now snaps a target within a millionth of neutral to neutral before deciding whether it is
+an edit. Seven orders of magnitude below one step, the tolerance can only catch arithmetic residue and can
+never round away a value someone chose, and each of the four affected channels now has a case that walks
+ten steps up and ten back down and requires the curve to be cleared.
+
+Verified. `seam_gender_expression_tests` passes 7 of 7. The channel's own cases cover the bipolar bounds
+(both directions are ordinary values, only the bound is a mistake), ordering and interpolation, a
+save/reload round trip at schema 16, a schema-15 document loading with an empty curve, and an out-of-range
+amount inside a schema-16 document being a parse error rather than a clamped value. The capability cases
+prove the source-filter carrier advertises Gender while a bank does not, that validating a bank request
+fails with the control named, that a bank snapshot carrying a non-neutral curve is refused with gender
+named, and that the same bank renders the same region when the curve asks for nothing. The controller
+cases run a real editor session in both directions, bound the value at both ends, remove the point when a
+nudge lands on neutral, undo every step in order, and prove that a sample-bank track refuses the nudge
+with Unsupported while leaving the stored -0.5 curve in place and still clearable. `seam_breathiness_expression_tests`,
+`seam_tension_expression_tests`, `seam_airiness_expression_tests` and `seam_formant_expression_tests`
+each pass 7 of 7 with their new neutral-cancellation case, and the registered CTest run is reported in the
+commit that carries this entry.
+
+Not claimed. Growl and style blend still have no algorithm behind their names, so M3.P2 is not complete,
+and style blend additionally needs two compatible aligned styles that this repository does not have.
+Gender here is one defined, measured mapping of tract and source; it is not a claim about perceived
+identity, about a physiological model of vocal-fold size, or about any particular listener's judgement of
+masculine or feminine voice, and the product's own identity rubric is M6 work. The oracle measured the
+sustained-pose path; the articulated stream shares both owners but was not measured. There is still no
+drawn lane, no curve editor and no inspector applicability row for any of these channels, which is what
+M4.P1 item 6 owes. Nothing was listened to, and no unit acceptance changes.
+
 ## Airiness is a band the source owns, and it is measurably not breathiness
 
 Airiness and breathiness sit next to each other in the product's control list and are easy to conflate in

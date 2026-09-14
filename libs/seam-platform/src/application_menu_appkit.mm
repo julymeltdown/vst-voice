@@ -62,6 +62,9 @@
 - (void)nudgeAirinessUp:(id)sender;
 - (void)nudgeAirinessDown:(id)sender;
 - (void)resetRegionAirinessCurve:(id)sender;
+- (void)nudgeGenderUp:(id)sender;
+- (void)nudgeGenderDown:(id)sender;
+- (void)resetRegionGenderCurve:(id)sender;
 - (void)editTrackStyle:(id)sender;
 - (void)editJapaneseReading:(id)sender;
 - (void)removeSelectedOverlaps:(id)sender;
@@ -285,6 +288,18 @@
   (void)sender;
   [self editCommand:seam::platform::ApplicationCommand::ResetRegionAirinessCurve title:@"Cannot reset the airiness curve"];
 }
+- (void)nudgeGenderUp:(id)sender {
+  (void)sender;
+  [self editCommand:seam::platform::ApplicationCommand::NudgeGenderUp title:@"Cannot raise gender"];
+}
+- (void)nudgeGenderDown:(id)sender {
+  (void)sender;
+  [self editCommand:seam::platform::ApplicationCommand::NudgeGenderDown title:@"Cannot lower gender"];
+}
+- (void)resetRegionGenderCurve:(id)sender {
+  (void)sender;
+  [self editCommand:seam::platform::ApplicationCommand::ResetRegionGenderCurve title:@"Cannot reset the gender curve"];
+}
 - (void)editTrackStyle:(id)sender {
   (void)sender;
   [self editCommand:seam::platform::ApplicationCommand::EditTrackStyle title:@"Cannot choose track style"];
@@ -476,6 +491,9 @@ public:
     [edit addItem:item(@"Raise Airiness", @selector(nudgeAirinessUp:), @"]", NSEventModifierFlagCommand | NSEventModifierFlagControl, target_)];
     [edit addItem:item(@"Lower Airiness", @selector(nudgeAirinessDown:), @"[", NSEventModifierFlagCommand | NSEventModifierFlagControl, target_)];
     [edit addItem:item(@"Reset Airiness Curve", @selector(resetRegionAirinessCurve:), @"", 0, target_)];
+    [edit addItem:item(@"Raise Gender", @selector(nudgeGenderUp:), @"]", NSEventModifierFlagCommand | NSEventModifierFlagControl | NSEventModifierFlagShift, target_)];
+    [edit addItem:item(@"Lower Gender", @selector(nudgeGenderDown:), @"[", NSEventModifierFlagCommand | NSEventModifierFlagControl | NSEventModifierFlagShift, target_)];
+    [edit addItem:item(@"Reset Gender Curve", @selector(resetRegionGenderCurve:), @"", 0, target_)];
     [edit addItem:item(@"Track Style and Coverage…", @selector(editTrackStyle:), @"", 0, target_)];
     [edit addItem:item(@"Resolve Japanese Reading…", @selector(editJapaneseReading:), @"", 0, target_)];
     [edit addItem:item(@"Clear Selected Vibrato…", @selector(clearSelectedVibrato:), @"",

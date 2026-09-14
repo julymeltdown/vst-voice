@@ -285,9 +285,15 @@ core::Result<synthesis::PhraseAudio> ArticulatedStream::renderOwned(synthesis::P
       // The vocal-tract envelope is a control-rate channel: one shift per block, applied before the
       // block is filtered. A shift that has not changed costs nothing, and a shift that would put a
       // resonance past Nyquist is refused by cause instead of being clamped.
-      const auto formant = performance_->at(position).formantSemitones;
-      if (static_cast<double>(formant) != candidate.tract_->formantShiftSemitones()) {
-        const auto applied = candidate.tract_->setFormantShift(static_cast<double>(formant));
+      // The formant channel owns the tract alone; gender couples the tract to the source, so its tract
+      // half is added here and its source half is applied where the excitation is generated.
+      const auto musical = performance_->at(position);
+      const auto formant =
+          static_cast<double>(musical.formantSemitones) +
+          static_cast<double>(std::clamp(musical.gender, -1.0F, 1.0F)) *
+              static_cast<double>(domain::kGenderFormantSemitones);
+      if (formant != candidate.tract_->formantShiftSemitones()) {
+        const auto applied = candidate.tract_->setFormantShift(formant);
         if (!applied) return core::Result<Output>{applied.error()};
       }
       auto voiced = candidate.tract_->process(excitation.value().samples, stop);

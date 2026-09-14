@@ -477,6 +477,15 @@ core::Result<void> NativeEditorApp::initialize() {
           .resetRegionAirinessCurve = [this] {
             const auto result = authoring_->controller().resetAirinessCurve(); record(result); return result;
           },
+          .nudgeGenderUp = [this] {
+            const auto result = authoring_->controller().nudgeGender(1); record(result); return result;
+          },
+          .nudgeGenderDown = [this] {
+            const auto result = authoring_->controller().nudgeGender(-1); record(result); return result;
+          },
+          .resetRegionGenderCurve = [this] {
+            const auto result = authoring_->controller().resetGenderCurve(); record(result); return result;
+          },
           .editTrackStyle = [this] {
             const auto result = authoring_->controller().openStyleCoverageSheet(); record(result); return result;
           },

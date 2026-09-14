@@ -102,6 +102,23 @@ std::string airinessUnsupportedMessage(std::string_view carrier) {
          "source-filter singer.";
 }
 
+// Gender is the coupled request: it needs the carrier to own both the tract and the source, because
+// applying half of it would silently become a different channel.
+bool requiresGender(const domain::VocalRegion& region) noexcept {
+  return std::any_of(region.genderAutomation.points().begin(),
+                     region.genderAutomation.points().end(),
+                     [](const domain::GenderAutomationPoint& point) {
+                       return point.amount != 0.0F;
+                     });
+}
+
+std::string genderUnsupportedMessage(std::string_view carrier) {
+  return std::string{"The selected "} + std::string{carrier} +
+         " cannot apply the project's gender curve: gender moves the tract's resonances and the source's "
+         "spectrum together, and this carrier owns neither half, so the curve would be dropped in "
+         "silence. Remove the curve or select a source-filter singer.";
+}
+
 core::Result<domain::VocalRegion> extractPhraseRegion(
     const domain::VocalRegion& source, const PhraseSegment& segment) {
   std::unordered_set<domain::NoteId> noteIds;
@@ -236,6 +253,21 @@ core::Result<domain::VocalRegion> extractPhraseRegion(
   const auto airinessCopied = result.airinessAutomation.replacePoints(
       std::vector<domain::AirinessAutomationPoint>{firstAiriness, lastAiriness});
   if (!airinessCopied) return core::Result<domain::VocalRegion>{airinessCopied.error()};
+  // The gender curve is windowed by the same rule as the curves beside it.
+  const auto& gender = source.genderAutomation.points();
+  const auto beforeGenderTick = [](const domain::GenderAutomationPoint& point,
+                                   time::Tick tick) { return point.tick < tick; };
+  auto firstGender = std::lower_bound(gender.begin(), gender.end(), segment.startTick,
+                                      beforeGenderTick);
+  if (firstGender != gender.begin() &&
+      (firstGender == gender.end() || firstGender->tick > segment.startTick)) {
+    --firstGender;
+  }
+  auto lastGender = std::lower_bound(firstGender, gender.end(), segment.endTick, beforeGenderTick);
+  if (lastGender != gender.end()) ++lastGender;
+  const auto genderCopied = result.genderAutomation.replacePoints(
+      std::vector<domain::GenderAutomationPoint>{firstGender, lastGender});
+  if (!genderCopied) return core::Result<domain::VocalRegion>{genderCopied.error()};
   const auto effectiveScope = [&](const domain::PerformanceScope& scope)
       -> std::optional<domain::PerformanceScope> {
     if (const auto* note = std::get_if<domain::NoteId>(&scope)) {
@@ -713,6 +745,9 @@ core::Result<RenderSnapshot> RenderSnapshotFactory::createNeural(
   if (requiresAiriness(*region))
     return core::failure<RenderSnapshot>(core::ErrorCode::Unsupported,
         airinessUnsupportedMessage("neural model"), trackId.toString());
+  if (requiresGender(*region))
+    return core::failure<RenderSnapshot>(core::ErrorCode::Unsupported,
+        genderUnsupportedMessage("neural model"), trackId.toString());
   // A persisted selection is a promise about which voice this music used. A
   // snapshot may run unbound for a preview, but it may never contradict a saved
   // selection, and it may never silently substitute a different bundle.
@@ -880,6 +915,9 @@ core::Result<RenderSnapshot> RenderSnapshotFactory::create(
   if (requiresAiriness(*region))
     return core::failure<RenderSnapshot>(core::ErrorCode::Unsupported,
         airinessUnsupportedMessage("sample bank"), trackId.toString());
+  if (requiresGender(*region))
+    return core::failure<RenderSnapshot>(core::ErrorCode::Unsupported,
+        genderUnsupportedMessage("sample bank"), trackId.toString());
   if (segment.id.empty() || segment.noteIds.empty() || bankRoot.empty()) {
     return core::failure<RenderSnapshot>(core::ErrorCode::InvalidArgument,
                                          "Render snapshot identity is incomplete");

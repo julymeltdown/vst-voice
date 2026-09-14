@@ -588,6 +588,8 @@ JsonValue encodeProject(const domain::Project& project) {
                                    detail::encodeTension(region.tensionAutomation)},
                                   {"airinessAutomation",
                                    detail::encodeAiriness(region.airinessAutomation)},
+                                  {"genderAutomation",
+                                   detail::encodeGender(region.genderAutomation)},
                                   {"performance", detail::encodeRegionPerformance(region.performance)}});
     }
     vocalTracks.emplace_back(Object{
@@ -1356,6 +1358,11 @@ core::Result<domain::Project> decodeProject(const JsonValue& root) {
         auto airiness = detail::decodeAiriness(regionValue.find("airinessAutomation"));
         if (!airiness) return core::Result<domain::Project>{airiness.error()};
         region.airinessAutomation = std::move(airiness).value();
+      }
+      if (schemaVersion >= 16) {
+        auto gender = detail::decodeGender(regionValue.find("genderAutomation"));
+        if (!gender) return core::Result<domain::Project>{gender.error()};
+        region.genderAutomation = std::move(gender).value();
       }
       region.sortNotes();
       track.regions.push_back(std::move(region));

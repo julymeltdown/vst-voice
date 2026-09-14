@@ -357,6 +357,14 @@ TEST_CASE("An airiness nudge is an undoable edit on the singer that can take it"
   CHECK(fixture.session.project().findRegion(fixture.regionId)->airinessAutomation.points().empty());
   CHECK(fixture.session.undo());
   CHECK(!fixture.session.project().findRegion(fixture.regionId)->airinessAutomation.points().empty());
+
+  // Ten steps up and ten steps back down land on the neutral value exactly, so the curve is cleared
+  // rather than left holding a point that is neutral to seven decimal places.
+  CHECK(controller.resetAirinessCurve().hasValue());
+  CHECK(controller.nudgeAiriness(10).hasValue());
+  CHECK(controller.nudgeAiriness(-10).hasValue());
+  CHECK_NEAR(controller.airinessAtPlayhead(), 0.0, 1e-9);
+  CHECK(fixture.session.project().findRegion(fixture.regionId)->airinessAutomation.points().empty());
 }
 
 TEST_CASE("A singer without a noise band refuses the nudge and keeps the stored curve") {

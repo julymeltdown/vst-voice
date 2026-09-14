@@ -62,6 +62,9 @@ enum class ApplicationCommand {
   NudgeAirinessUp,
   NudgeAirinessDown,
   ResetRegionAirinessCurve,
+  NudgeGenderUp,
+  NudgeGenderDown,
+  ResetRegionGenderCurve,
   EditTrackStyle,
   EditJapaneseReading,
 };

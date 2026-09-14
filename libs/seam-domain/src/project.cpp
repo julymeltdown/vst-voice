@@ -275,6 +275,13 @@ core::Result<void> VocalRegion::validate() const {
     return core::failure(core::ErrorCode::InvariantViolation,
                          "Airiness automation extends beyond the region");
   }
+  const auto genderValidation = genderAutomation.validate();
+  if (!genderValidation) return genderValidation;
+  if (!genderAutomation.points().empty() &&
+      genderAutomation.points().back().tick > durationTick) {
+    return core::failure(core::ErrorCode::InvariantViolation,
+                         "Gender automation extends beyond the region");
+  }
   return performance.validate(notes, durationTick);
 }
 

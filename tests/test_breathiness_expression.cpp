@@ -331,6 +331,15 @@ TEST_CASE("A breathiness nudge is an undoable edit on the singer that can take i
   CHECK(fixture.session.undo());
   CHECK(!fixture.session.project().findRegion(fixture.regionId)
              ->breathinessAutomation.points().empty());
+
+  // Ten steps up and ten steps back down land on the neutral value exactly, so the curve is cleared
+  // rather than left holding a point that is neutral to seven decimal places.
+  CHECK(controller.resetBreathinessCurve().hasValue());
+  CHECK(controller.nudgeBreathiness(10).hasValue());
+  CHECK(controller.nudgeBreathiness(-10).hasValue());
+  const auto* cleared = fixture.session.project().findRegion(fixture.regionId);
+  CHECK_NEAR(controller.breathinessAtPlayhead(), 0.0, 1e-9);
+  CHECK(cleared->breathinessAutomation.points().empty());
 }
 
 TEST_CASE("A singer without its own excitation refuses the nudge and keeps the stored curve") {

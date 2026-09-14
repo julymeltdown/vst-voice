@@ -29,7 +29,7 @@ core::Result<PhonationSource> PhonationSource::create(const VoiceRecipe& recipe,
   // A source with no tension curve uses the recipe's table itself, not a copy that has been through a
   // neutral tilt: tension zero has to render exactly what the source rendered before the channel existed.
   result.appliedHarmonics_ = result.harmonics_;
-  result.appliedTension_ = 0.0;
+  result.appliedTiltDbPerOctave_ = 0.0;
   return result;
 }
 
@@ -48,15 +48,18 @@ core::Result<synthesis::PhraseAudio> PhonationSource::render(std::size_t frames,
   // for itself rather than to the phrase's level. One tilt per processing block is enough, exactly as the
   // tract's formant shift is one shift per block, and the tilt for a tension of exactly zero is a factor
   // of exactly one, which leaves the table the recipe declared untouched.
-  const auto tension = static_cast<double>(
-      std::clamp(performance_->at(position_).tension, 0.0F, 1.0F));
-  if (tension != appliedTension_) {
-    const auto tilt = tension * static_cast<double>(domain::kTensionTiltDbPerOctave) / 6.020599913279624;
+  const auto opening = performance_->at(position_);
+  const auto tension = static_cast<double>(std::clamp(opening.tension, 0.0F, 1.0F));
+  const auto gender = static_cast<double>(std::clamp(opening.gender, -1.0F, 1.0F));
+  const auto tiltDbPerOctave = tension * static_cast<double>(domain::kTensionTiltDbPerOctave) +
+                               gender * static_cast<double>(domain::kGenderTiltDbPerOctave);
+  if (tiltDbPerOctave != appliedTiltDbPerOctave_) {
+    const auto tilt = tiltDbPerOctave / 6.020599913279624;
     for (std::size_t index = 0U; index < appliedHarmonics_.size(); ++index) {
       appliedHarmonics_[index] =
           harmonics_[index] * std::pow(static_cast<double>(index + 1U), tilt);
     }
-    appliedTension_ = tension;
+    appliedTiltDbPerOctave_ = tiltDbPerOctave;
   }
   for (std::size_t i = 0; i < frames; ++i) {
     if (i % 256U == 0U && stopToken.stop_requested()) return core::failure<Output>(core::ErrorCode::Conflict, "Phonation rendering cancelled");

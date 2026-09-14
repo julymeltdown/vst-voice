@@ -25,7 +25,9 @@ private:
   // One table per processing block is a control-rate change like the vocal tract's formant shift, and a
   // block whose tension equals the applied one costs nothing.
   std::array<double, 256U> appliedHarmonics_{};
-  double appliedTension_{0.0};
+  // The key is the combined tilt in force, not one channel's value: tension and gender both change the
+  // source's spectrum, and the table depends only on their sum. Zero means the recipe's own table.
+  double appliedTiltDbPerOctave_{0.0};
   time::SampleFrame origin_{0}, position_{0};
   double phase_{0.0}, noise_{0.0};
   std::optional<domain::NoteId> lastNote_;

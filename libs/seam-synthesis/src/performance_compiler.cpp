@@ -242,6 +242,7 @@ core::Result<CompiledScorePerformance> compileScorePerformance(
       region.breathinessAutomation.points().size() > 16384U ||
       region.tensionAutomation.points().size() > 16384U ||
       region.airinessAutomation.points().size() > 16384U ||
+      region.genderAutomation.points().size() > 16384U ||
       region.startTick.value() < 0 || region.durationTick.value() <= 0 ||
       region.startTick.value() > std::numeric_limits<std::int64_t>::max() - region.durationTick.value()) {
     return core::failure<CompiledScorePerformance>(core::ErrorCode::InvalidArgument, "Score performance input exceeds bounds");
@@ -271,6 +272,7 @@ core::Result<CompiledScorePerformance> compileScorePerformance(
   result.breathiness_ = region.breathinessAutomation;
   result.tension_ = region.tensionAutomation;
   result.airiness_ = region.airinessAutomation;
+  result.gender_ = region.genderAutomation;
   result.performance_ = region.performance;
   result.notes_.reserve(region.notes.size());
   for (const auto& note : region.notes) {
@@ -407,6 +409,7 @@ ScorePerformanceSample CompiledScorePerformance::evaluate(time::SampleFrame fram
   result.breathiness = breathiness_.valueAt(tick);
   result.tension = tension_.valueAt(tick);
   result.airiness = airiness_.valueAt(tick);
+  result.gender = gender_.valueAt(tick);
   const auto& vibrato = note.vibrato;
   if (vibrato.enabled) {
     const auto duration = static_cast<double>(note.endFrame - note.startFrame);
