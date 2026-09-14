@@ -325,7 +325,7 @@ def main():
                 metadata = json.loads(audio.with_suffix(".json").read_text())
                 assert metadata["schemaVersion"] == 8
                 assert metadata["approximantRevision"] == 1
-                assert metadata["articulationPlanRevision"] == 11
+                assert metadata["articulationPlanRevision"] == 12
                 assert metadata["approval"] == "unapproved"
                 markers = metadata["markers"]
                 assert [m["phone"] for m in markers] == ["r", "a", "w", "a", "y", "a", "a"]
@@ -350,6 +350,46 @@ def main():
                     # control, in seam_articulation_context_tests; this fixture is fixed.
                     assert _band_distance(head, tail) > 0.05
         assert glide_hashes[0] == glide_hashes[1]
+
+        # A declared event phone is a span, not a recorded articulation: a closure is exactly
+        # silent for the span its role resolves and a breath is unvoiced noise from its own
+        # source. The fixture renders the moraic obstruent as a vowel's coda, a breath, a closure,
+        # a glottal occlusion before its vowel, a pause and a bare vowel as the control.
+        event_hashes = []
+        for name in ("events", "events-repeat"):
+            subprocess.run([str(binary), str(root / name), "events"], check=True,
+                           capture_output=True, timeout=60)
+            report = json.loads((root / name / "pilot.json").read_text())
+            event_hashes.append([row["sha256"] for row in report["runs"]])
+            for row in report["runs"]:
+                audio = Path(row["wav"])
+                if audio.parent.name != "candidates":
+                    continue
+                metadata = json.loads(audio.with_suffix(".json").read_text())
+                assert metadata["schemaVersion"] == 11
+                assert metadata["closureRevision"] == 1
+                assert metadata["breathRevision"] == 1
+                assert metadata["articulationPlanRevision"] == 12
+                assert metadata["approval"] == "unapproved"
+                markers = metadata["markers"]
+                assert [(m["phone"], m["kind"]) for m in markers] == [
+                    ("a", "oral-vowel"), ("R", "closure"), ("br", "breath"), ("cl", "closure"),
+                    ("glottal", "closure"), ("a", "oral-vowel"), ("pau", "closure"), ("a", "oral-vowel")]
+                raw = audio.read_bytes()
+                assert hashlib.sha256(raw).hexdigest() == row["sha256"]
+                rate, samples = _float_mono(raw)
+                for marker in markers:
+                    start, end = marker["startFrame"], marker["endFrame"]
+                    span = samples[start:end]
+                    assert span, marker
+                    if marker["kind"] == "closure":
+                        # A closure is silence, exactly: no residual excitation, no noise.
+                        assert all(value == 0 for value in span), marker
+                    else:
+                        assert any(value != 0 for value in span), marker
+                # The vowel-to-coda unit keeps its vowel: the moraic obstruent only owns the tail.
+                assert any(value != 0 for value in samples[0:markers[1]["startFrame"]])
+        assert event_hashes[0] == event_hashes[1]
     print("Pilot repeatability, finite/nonzero PCM, variant identity and no-overwrite checks passed; quality unassessed.")
 
 

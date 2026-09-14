@@ -39,12 +39,13 @@ The CLI regression checks the exact phone sequence, four gesture classes,
 contiguous planned boundaries, unapproved status, audio hashes and repeatability.
 Markers prove planned timing only, not perceptual onset accuracy.
 
-Still absent from this probe: the voiced affricate `j`, pre-onset context that
-reaches before its owning note, and independent intelligibility judgments. Do
-not use these notes to claim complete Japanese coverage or generate a qualified
-full bank. The invented Japanese inventory does name every one of those phones;
-the ones with no admitted model are refused during render preparation rather
-than substituted, so the inventory is not yet generatable end to end.
+Still absent from this probe: pre-onset context that reaches before its owning
+note, coarticulation inside one note, and independent intelligibility
+judgments. Do not use these notes to claim complete Japanese coverage or
+generate a qualified full bank. The invented Japanese inventory names every
+phone it declares, and a phone with no admitted model is still refused during
+render preparation rather than substituted -- `l` is the standing example --
+but the inventory as declared is now generatable end to end.
 
 Generate the proposed Japanese coverage, across three planned pitch layers:
 
@@ -166,12 +167,10 @@ exits zero, and `status`, `missingPhones`, `missingKinds` and `refusedClasses` c
 the answer. The report destination must be new.
 
 The retained result for this inventory against the pilot's own maximal recipe is
-`coverage-report.json`, summarised in `COVERAGE_REPORT.md`: 498 of 1026 assignments
-prepare, 166 of 342 coverage keys, 20 of 41 phones and 5 of 8 kinds. Every remaining
-refusal is an absent model or a symbol the Japanese adapter cannot resolve; the 210
-vowel-to-coda placements that used to fail now prepare, because an explicit phone hint
-gives an ordinary consonant its place in the syllable instead of calling every consonant
-an onset.
+`coverage-report.json`, summarised in `COVERAGE_REPORT.md`: every one of the 1026 assignments
+prepares, which is all 342 coverage keys, all 41 phones and all 8 kinds. The first such run of
+this report prepared 498 of them; the repairs that closed the rest are listed in the report,
+and the last 48 were the event classes described below.
 
 Each invocation verifies completed receipts against repository history and
 prepares/renders/collects at most one remaining batch. Repeat with the same plan
@@ -308,8 +307,9 @@ same-phone resonance pose that source requires, and the palatalized consonants
 `ky gy hy py by my ny ry fy vy` as recipe schema nine: each takes its base consonant's release and the
 palatal resonance declared under its own name, so a bank has a `ky` unit rather than a relabelled `k`.
 `fy` also stopped being classified as voiced, which it never was. Together these took the pilot
-inventory from 498 to 948 of 1026 assignments the recipe can prepare; the remaining 78 are `j`, `R`,
-`glottal`, `br`, `pau` and `cl`. Preparing a class is still not phonetic qualification: no listener has
+inventory from 498 to 948 of 1026 assignments the recipe could prepare at that point; the remaining
+78 were `j`, `R`, `glottal`, `br`, `pau` and `cl`, and the two sections below close them. Preparing a
+class is still not phonetic qualification: no listener has
 heard any of them, and every burst spectrum is the base consonant's.
 
 ## Voiced affricate coverage in the maximal recipe
@@ -318,6 +318,27 @@ The maximal recipe also declares `j`, the voiced affricate じ/じゃ, as a prev
 release burst and a voiced frication tail in one gesture (recipe schema ten). Its closure carries
 the excitation the score supplies, so it is audible rather than silent the way an unvoiced
 affricate's closure is, and its tail adds frication noise on top of that voicing. Coverage is now
-978 of 1026 assignments; the 48 that remain are the two adapter symbols with the breath sequence
-(`R`, `glottal`, `br`) and the pause and closure events (`pau`, `cl`). No listener has heard any of them,
-and every spectrum is a declared engineering parameter rather than phonetic qualification.
+978 of 1026 assignments; the 48 that remained were the two adapter symbols with the breath sequence
+(`R`, `glottal`, `br`) and the pause and closure events (`pau`, `cl`), which the event section below
+closes. No listener has heard any of them, and every spectrum is a declared engineering parameter
+rather than phonetic qualification.
+
+## Event phones in the maximal recipe
+
+The last 48 refusals were events rather than articulations, so the repair was a declaration rather
+than a source. Recipe schema eleven declares a closure (`R`, `glottal`, `cl`, `pau`) as an exactly
+silent span and a breath (`br`) as unvoiced noise from its own source, and the Japanese phone hint
+now admits `R` and `br`. `seam_singer_pilot NEW_OUTPUT_DIRECTORY events` renders all five beside a
+bare vowel: the moraic obstruent as the coda of `a R`, the breath, a closure, a glottal occlusion
+before its vowel, a pause and the control vowel.
+
+The CLI regression checks that every closure span is exactly zero, that the breath span is not, that
+the event candidate is schema eleven with its own revision fields, and that a repeat run produces
+identical audio. Coverage is then complete: 1026 of 1026 assignments prepare, a campaign over the
+whole inventory plans as 1026 jobs, and the rendered held-out preflight passes all 38 declared
+classes with none defective.
+
+What that does not say: a closure is silence, so the moraic obstruent, the pause and the closure
+prepare as zero audio rather than as a sung consonant, and a breath is this pilot's declared noise
+rather than a measured aspiration. No listener has judged any of it, and a glottal stop's release
+is not modelled separately from its closure.

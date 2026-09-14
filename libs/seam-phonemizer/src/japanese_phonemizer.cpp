@@ -241,7 +241,10 @@ core::Result<std::vector<std::string>> parseJapanesePhoneHint(std::string_view t
   if (text.empty() || text.size() > 4096U)
     return core::failure<std::vector<std::string>>(core::ErrorCode::InvalidArgument, "Japanese phone hint is empty or exceeds 4096 bytes");
   static const auto inventory = [] {
-    std::unordered_set<std::string> phones{"N", "cl", "pau"};
+    // The pilot inventory also declares the event symbols a sung score names directly: the
+    // moraic obstruent, an explicit glottal closure and a breath. They are admitted here as
+    // symbols; whether a recipe can render one is a separate, declared question.
+    std::unordered_set<std::string> phones{"N", "cl", "pau", "R", "glottal", "br"};
     for (const auto& [mora, values] : moraTable()) {
       (void)mora; for (const auto& value : values) phones.insert(value);
     }

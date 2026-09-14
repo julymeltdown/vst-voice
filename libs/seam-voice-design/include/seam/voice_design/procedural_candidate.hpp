@@ -21,6 +21,10 @@ struct ProceduralCandidate final {
   std::uint32_t approximantRevision{0U};
   std::uint32_t palatalizedRevision{0U};
   std::uint32_t voicedAffricateRevision{0U};
+  // Schema-eleven event families: a candidate that rendered a declared closure or breath says
+  // which rule it used, so a reader never has to infer silence from a missing field.
+  std::uint32_t closureRevision{0U};
+  std::uint32_t breathRevision{0U};
 };
 // Parses planned gestures only; audio remains null. This is not audio verification.
 [[nodiscard]] core::Result<ProceduralCandidate> parseProceduralCandidateMetadata(

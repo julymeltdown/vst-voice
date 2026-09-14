@@ -2,6 +2,7 @@
 #include "seam/synthesis/phrase_backend.hpp"
 #include "seam/voice_design/procedural_renderer.hpp"
 #include "seam/voice_design/vocal_tract.hpp"
+#include <algorithm>
 #include <limits>
 #include <algorithm>
 
@@ -64,6 +65,14 @@ core::Result<std::string> validateProceduralSnapshot(const RenderSnapshot& snaps
     if (!plan) return core::Result<std::string>{plan.error()};
     for (const auto& gesture : plan.value().gestures()) if (voice_design::isVoicedGesture(gesture.kind))
       return gesture.phone;
+    // A unit can be nothing but declared event spans -- a pause, a closure, a breath -- and then
+    // there is no voiced pose to name. Its own event symbol is its identity; naming a pose it does
+    // not have would be the substitution the event model refuses, and it would also give an
+    // all-silent unit a vowel identity it never rendered.
+    const auto eventOnly = std::all_of(plan.value().gestures().begin(), plan.value().gestures().end(),
+        [](const auto& gesture) { return gesture.kind == voice_design::ArticulationGestureKind::Closure ||
+            gesture.kind == voice_design::ArticulationGestureKind::Breath; });
+    if (eventOnly && !plan.value().gestures().empty()) return plan.value().gestures().front().phone;
     return core::failure<std::string>(core::ErrorCode::Unsupported, "Articulated snapshot has no voiced pose");
   }
   const auto vowel = voice_design::validateSustainedVowelPhrase(*region, snapshot.phonemes->tokens);

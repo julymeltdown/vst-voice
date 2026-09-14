@@ -31,7 +31,10 @@ core::Result<ArticulatedStream> ArticulatedStream::create(
     const auto& anchor = *found->second;
     const bool vowel = gesture.kind == ArticulationGestureKind::OralVowel;
     const bool voiced=isVoicedGesture(gesture.kind);
-    const bool syllabic=gesture.kind==ArticulationGestureKind::Nasal && gesture.phone=="N" && !anchor.nucleusKey;
+    // A gesture whose note has no vowel owns the note's fallback span: the syllabic nasal, and a
+    // unit of one declared event, which has no nucleus to attach itself to.
+    const bool syllabic=!anchor.nucleusKey && (gesture.kind==ArticulationGestureKind::Nasal ||
+        gesture.kind==ArticulationGestureKind::Closure || gesture.kind==ArticulationGestureKind::Breath);
     const auto start = vowel ? anchor.nucleusFrame : anchor.explicitStartFrame.value_or(anchor.inferredStartFrame.value_or(syllabic?anchor.nucleusFrame:-1));
     const auto end = vowel || anchor.endExplicit || start>=anchor.nucleusFrame ? anchor.endFrame : anchor.nucleusFrame;
     if (start != gesture.span.start || end != gesture.span.end || anchor.voiced != std::optional{voiced})
@@ -102,20 +105,43 @@ core::Result<ArticulatedStream> ArticulatedStream::create(
           binding->voicingGain!=gesture.voicingGain ||
           (gesture.kind==ArticulationGestureKind::VoicedFrication)!=gesture.voicingGain.has_value())
         return core::failure<ArticulatedStream>(core::ErrorCode::Conflict, "Frication plan differs from the frozen recipe");
+    } else if (gesture.kind == ArticulationGestureKind::Closure) {
+      // A closure declares silence and nothing else. Any source on it would be a claim that the
+      // span is not silent, so the plan is refused rather than rendered with an invented one.
+      const auto binding = std::find_if(recipe.value().closures.begin(), recipe.value().closures.end(),
+          [&](const auto& pose) { return pose.phone == gesture.phone && pose.style == style; });
+      if (binding == recipe.value().closures.end() || gesture.frication || gesture.plosive ||
+          gesture.voicingGain || gesture.voicedPlosive || gesture.affricate ||
+          gesture.transitionFrames != 0U || gesture.posePhone.has_value())
+        return core::failure<ArticulatedStream>(core::ErrorCode::Conflict, "Closure plan differs from the frozen recipe");
+    } else if (gesture.kind == ArticulationGestureKind::Breath) {
+      const auto binding = std::find_if(recipe.value().breaths.begin(), recipe.value().breaths.end(),
+          [&](const auto& pose) { return pose.phone == gesture.phone && pose.style == style; });
+      if (binding == recipe.value().breaths.end() || !gesture.frication ||
+          binding->source != *gesture.frication || gesture.voicingGain)
+        return core::failure<ArticulatedStream>(core::ErrorCode::Conflict, "Breath plan differs from the frozen recipe");
     }
   }
-  if (initialPhone.empty()) return core::failure<ArticulatedStream>(core::ErrorCode::Unsupported, "Articulated stream requires a voiced pose");
   auto voice = PhonationSource::create(recipe.value(), performance, plan.context().start);
-  auto tract = VocalTract::create(recipe.value(), initialPhone, style, plan.sampleRate());
   auto noise = FricationGestureStream::create(plan, blockFrames, allowVoicedStops);
   if (!voice) return core::Result<ArticulatedStream>{voice.error()};
-  if (!tract) return core::Result<ArticulatedStream>{tract.error()};
   if (!noise) return core::Result<ArticulatedStream>{noise.error()};
   ArticulatedStream result;
   result.plan_ = std::make_shared<const ArticulationPlan>(std::move(plan));
   result.performance_ = std::make_shared<const synthesis::CompiledScorePerformance>(std::move(performance));
   result.recipe_ = std::make_shared<const VoiceRecipe>(std::move(recipe.value()));
-  result.voice_ = std::move(voice.value()); result.tract_ = std::move(tract.value()); result.initialTract_ = result.tract_;
+  result.voice_ = std::move(voice.value());
+  // A phrase can be entirely event spans -- a pause, a closure, a breath -- and then no gesture is
+  // voiced and no pose is held. The tract stays unset instead of borrowing another phone's pose,
+  // and the voiced lane contributes exactly nothing for every frame.
+  if (!initialPhone.empty()) {
+    // The stream's own immutable recipe, not the local one: that was moved into the stream above,
+    // so reading it here would validate a moved-from recipe instead of the one that was checked.
+    auto tract = VocalTract::create(*result.recipe_, initialPhone, style, plan.sampleRate());
+    if (!tract) return core::Result<ArticulatedStream>{tract.error()};
+    result.tract_ = std::move(tract.value());
+  }
+  result.initialTract_ = result.tract_;
   result.frication_ = std::move(noise.value()); result.style_ = std::move(style);
   result.initialPhone_ = initialPhone; result.currentPhone_ = initialPhone; result.blockFrames_ = blockFrames;
   return result;
@@ -195,7 +221,7 @@ core::Result<synthesis::PhraseAudio> ArticulatedStream::renderOwned(synthesis::P
     // when the gesture itself is unvoiced, so the release and the vowel's onset transition start
     // from the palatal shape. That transition into the vowel is what distinguishes きゃ from か.
     const auto posePhone = gesture->posePhone.value_or(gesture->phone);
-    if ((tonal || gesture->posePhone.has_value()) && position == gesture->span.start && posePhone != candidate.currentPhone_) {
+    if (candidate.tract_ && (tonal || gesture->posePhone.has_value()) && position == gesture->span.start && posePhone != candidate.currentPhone_) {
       const auto transition = candidate.tract_->transitionTo(*recipe_, posePhone, style_,
           static_cast<std::size_t>(entryFrames));
       if (!transition) return core::Result<Output>{transition.error()};
@@ -225,8 +251,14 @@ core::Result<synthesis::PhraseAudio> ArticulatedStream::renderOwned(synthesis::P
       stopAudio=std::move(rendered.value());
     }
     if (!tonal) std::fill(excitation.value().samples.begin(), excitation.value().samples.end(), 0.0F);
-    auto voiced = candidate.tract_->process(excitation.value().samples, stop);
-    if (!voiced) return core::Result<Output>{voiced.error()};
+    // A plan of nothing but event spans holds no pose, so it has no tract to shape the
+    // excitation and the voiced lane is exactly silent for every frame of it.
+    std::vector<float> voicedSamples;
+    if (candidate.tract_) {
+      auto voiced = candidate.tract_->process(excitation.value().samples, stop);
+      if (!voiced) return core::Result<Output>{voiced.error()};
+      voicedSamples = std::move(voiced.value());
+    } else voicedSamples.assign(static_cast<std::size_t>(count), 0.0F);
     const auto noise = candidate.frication_->renderOwned({position, position + static_cast<time::SampleFrame>(count)}, stop);
     if (!noise) return core::Result<Output>{noise.error()};
     for (std::size_t index = 0U; index < count; ++index) {
@@ -250,14 +282,14 @@ core::Result<synthesis::PhraseAudio> ArticulatedStream::renderOwned(synthesis::P
           voicingGain=previous.voicingGain.value_or(1.0)+(voicingGain-previous.voicingGain.value_or(1.0))*t;
         }
       }
-      voiced.value()[index] = static_cast<float>(voiced.value()[index] * envelope * voicingGain) + noise.value().samples[index] +
+      voicedSamples[index] = static_cast<float>(voicedSamples[index] * envelope * voicingGain) + noise.value().samples[index] +
           (stopAudio ? stopAudio->samples[index] : 0.0F);
     }
-    const auto gained = synthesis::applyCompiledPerformanceGain(voiced.value(), *performance_, position, stop);
+    const auto gained = synthesis::applyCompiledPerformanceGain(voicedSamples, *performance_, position, stop);
     if (!gained) return core::Result<Output>{gained.error()};
     for (std::size_t index = 0U; index < count; ++index) {
       const auto frame = position + static_cast<time::SampleFrame>(index);
-      if (frame >= owned.start) output.samples[static_cast<std::size_t>(frame - owned.start)] = voiced.value()[index];
+      if (frame >= owned.start) output.samples[static_cast<std::size_t>(frame - owned.start)] = voicedSamples[index];
     }
   }
   if (stop.stop_requested()) return cancelled();

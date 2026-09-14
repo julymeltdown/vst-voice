@@ -169,10 +169,18 @@ core::Result<std::vector<PhonemeTimingAnchor>> compilePhonemeTimingPlan(
         const auto group = groups[i - begin];
         if (tokens[i].timing.startOffset || tokens[i].timing.endOffset) eligibleGroups[group] = false;
         if (i == nuclei[group]) continue;
-        if (tokens[i].role==domain::PhonemeRole::Onset && i<nuclei[group]) {
+        // A declared event phone occupies an edge exactly the way an onset or a coda does: the
+        // moraic obstruent before its vowel is an onset-position closure and after its vowel a
+        // coda-position one. Its role says which phone it is, not which edge it sits on, so an
+        // event that is neither is what makes a group ineligible rather than the role itself.
+        const bool eventPhone = tokens[i].role==domain::PhonemeRole::Geminate ||
+            tokens[i].role==domain::PhonemeRole::Breath || tokens[i].role==domain::PhonemeRole::Silence;
+        const bool onsetPosition = i<nuclei[group] && (tokens[i].role==domain::PhonemeRole::Onset || eventPhone);
+        const bool codaPosition = i>nuclei[group] && (tokens[i].role==domain::PhonemeRole::Coda || eventPhone);
+        if (onsetPosition) {
           if (onsets[group]) eligibleGroups[group]=false;
           onsets[group]=i;
-        } else if (tokens[i].role==domain::PhonemeRole::Coda && i>nuclei[group]) {
+        } else if (codaPosition) {
           if (codas[group]) eligibleGroups[group]=false;
           codas[group]=i;
         } else eligibleGroups[group]=false;

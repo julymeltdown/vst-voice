@@ -901,7 +901,11 @@ core::Result<ExportResult> ExportService::exportSetWithSources(
         [](const auto& marker) { return marker.palatalized; });
     const bool voicedAffricate=std::any_of(rendered.value().proceduralMarkers.begin(),rendered.value().proceduralMarkers.end(),
         [](const auto& marker) { return marker.kind==voice_design::ProceduralGestureKind::VoicedAffricate; });
-    const auto candidateSchema=static_cast<std::int64_t>(voicedAffricate ? 10 : palatalized ? 9 : approximant ? 8 : affricate ? 7 :
+    const bool closure=std::any_of(rendered.value().proceduralMarkers.begin(),rendered.value().proceduralMarkers.end(),
+        [](const auto& marker) { return marker.kind==voice_design::ProceduralGestureKind::Closure; });
+    const bool breath=std::any_of(rendered.value().proceduralMarkers.begin(),rendered.value().proceduralMarkers.end(),
+        [](const auto& marker) { return marker.kind==voice_design::ProceduralGestureKind::Breath; });
+    const auto candidateSchema=static_cast<std::int64_t>(closure || breath ? 11 : voicedAffricate ? 10 : palatalized ? 9 : approximant ? 8 : affricate ? 7 :
         voicedPlosive ? 6 : voicedFrication ? 5 : plosive ? 4 : nasal ? 3 : mixed ? 2 : 1);
     formats::JsonValue::Array markers;
     for (const auto& marker : rendered.value().proceduralMarkers) {
@@ -910,6 +914,8 @@ core::Result<ExportResult> ExportService::exportSetWithSources(
         {"startFrame", formats::JsonValue{static_cast<std::int64_t>(marker.ownedSpan.start - origin)}},
         {"endFrame", formats::JsonValue{static_cast<std::int64_t>(marker.ownedSpan.end - origin)}}};
       if (mixed) entry.emplace("kind", formats::JsonValue{marker.kind == voice_design::ProceduralGestureKind::Frication ? "frication" :
+          marker.kind==voice_design::ProceduralGestureKind::Closure?"closure":
+          marker.kind==voice_design::ProceduralGestureKind::Breath?"breath":
           marker.kind==voice_design::ProceduralGestureKind::VoicedAffricate?"voiced-affricate":
           marker.kind==voice_design::ProceduralGestureKind::Approximant?"approximant":
           marker.kind==voice_design::ProceduralGestureKind::Affricate?"affricate":
@@ -951,6 +957,8 @@ core::Result<ExportResult> ExportService::exportSetWithSources(
     if (palatalized) metadataFields.emplace("palatalizedRevision",formats::JsonValue{static_cast<std::int64_t>(voice_design::ArticulationPlan::kPalatalizedModelRevision)});
     if (voicedAffricate) metadataFields.emplace("voicedAffricateRevision",formats::JsonValue{static_cast<std::int64_t>(voice_design::ArticulationPlan::kVoicedAffricateModelRevision)});
     if (voicedAffricate) metadataFields.emplace("voicedPlosiveRevision",formats::JsonValue{static_cast<std::int64_t>(voice_design::VoicedPlosiveSource::algorithmRevision)});
+    if (closure) metadataFields.emplace("closureRevision",formats::JsonValue{static_cast<std::int64_t>(voice_design::ArticulationPlan::kClosureEventModelRevision)});
+    if (breath) metadataFields.emplace("breathRevision",formats::JsonValue{static_cast<std::int64_t>(voice_design::ArticulationPlan::kBreathEventModelRevision)});
     const auto metadata = formats::stringifyJson(formats::JsonValue{std::move(metadataFields)}, true);
     const auto metadataPath = staging / (prefix + ".json");
     const auto saved = core::durableAtomicWriteTextNew(metadataPath, metadata);

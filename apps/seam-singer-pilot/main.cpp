@@ -32,8 +32,9 @@ int main(int argc, char** argv) {
     const bool stops = argc == 3 && std::string_view(argv[2]) == "stops";
     const bool affricates = argc == 3 && std::string_view(argv[2]) == "affricates";
     const bool glides = argc == 3 && std::string_view(argv[2]) == "glides";
-    if (argc < 2 || (custom ? argc < 4 || argc > 67 : argc > 3 || (argc == 3 && !stops && !affricates && !glides && std::string_view(argv[2]) != "articulation" && std::string_view(argv[2]) != "boundaries" && std::string_view(argv[2]) != "nasals")))
-      throw std::runtime_error("Usage: seam_singer_pilot NEW_OUTPUT_DIRECTORY [articulation|boundaries|nasals|stops|affricates|glides] OR NEW_OUTPUT_DIRECTORY phrase LYRIC:MIDI[:TICKS] ... (1-64 notes)");
+    const bool events = argc == 3 && std::string_view(argv[2]) == "events";
+    if (argc < 2 || (custom ? argc < 4 || argc > 67 : argc > 3 || (argc == 3 && !stops && !affricates && !glides && !events && std::string_view(argv[2]) != "articulation" && std::string_view(argv[2]) != "boundaries" && std::string_view(argv[2]) != "nasals")))
+      throw std::runtime_error("Usage: seam_singer_pilot NEW_OUTPUT_DIRECTORY [articulation|boundaries|nasals|stops|affricates|glides|events] OR NEW_OUTPUT_DIRECTORY phrase LYRIC:MIDI[:TICKS] ... (1-64 notes)");
     const bool articulation = argc == 3 && std::string_view(argv[2]) == "articulation";
     const bool boundaries = argc == 3 && std::string_view(argv[2]) == "boundaries";
     const bool nasals = argc == 3 && std::string_view(argv[2]) == "nasals";
@@ -41,7 +42,7 @@ int main(int argc, char** argv) {
     application::ProjectFactory factory{91000U};
     auto project = factory.createProject("SEAM pilot: vowel and fricative ladder (unqualified)");
     const auto trackId = factory.addVocalTrack(project, "Original procedural pilot");
-    const std::string phrase = stops ? "pa ba ta da ka ga" : affricates ? "tsu chi ta sa" : glides ? "ra wa ya a" : custom ? "User-authored diagnostic phrase" : nasals ? "N a N i N u" : boundaries ? "a a a a then a melisma (same melody)" : articulation ? "ma mi mu me mo na ni nu ne no pa ta ka sa" : "a i u e o sa";
+    const std::string phrase = stops ? "pa ba ta da ka ga" : affricates ? "tsu chi ta sa" : glides ? "ra wa ya a" : events ? "a R, br, cl, glottal a, pau" : custom ? "User-authored diagnostic phrase" : nasals ? "N a N i N u" : boundaries ? "a a a a then a melisma (same melody)" : articulation ? "ma mi mu me mo na ni nu ne no pa ta ka sa" : "a i u e o sa";
     std::vector<std::u32string> lyrics = nasals
         ? std::vector<std::u32string>{U"ん", U"あ", U"ん", U"い", U"ん", U"う"} : boundaries
         ? std::vector<std::u32string>{U"あ", U"あ", U"あ", U"あ", U"あ", U"ー", U"ー", U"ー"} : articulation
@@ -93,6 +94,16 @@ int main(int argc, char** argv) {
       lyrics={U"ら",U"わ",U"や",U"あ"};
       pitches={60,62,64,64};
     }
+    // The declared event phones: the moraic obstruent as a vowel's coda, a breath, a closure, a
+    // glottal occlusion before its vowel, and a pause. Each note carries its own phone hint, so the
+    // fixture names the exact phones the unit classes name rather than a lyric that happens to
+    // phonemize the same way.
+    std::vector<std::string> hints(lyrics.size());
+    if (events) {
+      lyrics={U"あ",U"ぶ",U"く",U"ぐ",U"ぷ",U"あ"};
+      pitches={60,62,64,65,67,64};
+      hints={"a R","br","cl","glottal a","pau","a"};
+    }
     if (!custom) durations.assign(lyrics.size(),480);
     std::int64_t totalTicks=0;
     for (const auto duration:durations) totalTicks+=duration;
@@ -105,6 +116,7 @@ int main(int argc, char** argv) {
     for (std::size_t index = 0; index < lyrics.size(); ++index) {
       auto [lyric, note] = factory.makeNote(time::Tick{startTick}, time::Tick{durations[index]},
           pitches[index], lyrics[index], domain::Language::Japanese);
+      if (!hints[index].empty()) note.phoneticHint = hints[index];
       region->lyrics.push_back(std::move(lyric)); region->notes.push_back(std::move(note));
       startTick+=durations[index];
     }
@@ -173,6 +185,17 @@ int main(int argc, char** argv) {
       base.approximants = {{"r", "neutral", 45.0}, {"w", "neutral", 60.0}, {"y", "neutral", 40.0}};
     }
     if (glides) base.id="seam-pilot-01-approximant-diagnostic";
+    // Schema eleven declares the event phones the pilot inventory names but no articulation can
+    // produce. A closure is exactly silent for the span its role resolves and a breath is unvoiced
+    // noise from its own declared source; each keeps its own symbol, so the bank holds one unit per
+    // symbol instead of one silence relabelled four ways. Experimental spectrum, not phonetic
+    // qualification.
+    if (events || custom) {
+      base.closures = {{"cl", "neutral"}, {"pau", "neutral"}, {"R", "neutral"}, {"glottal", "neutral"}};
+      base.breaths = {{"br", "neutral",
+          {.seed = 91030U, .centerHz = 2500, .bandwidthHz = 6000, .gain = 0.05}}};
+    }
+    if (events) base.id="seam-pilot-01-event-diagnostic";
     if (custom) {
       // The maximal diagnostic recipe also declares the palatalized consonants: each one takes
       // its release from the consonant already bound above and carries its own palatal resonance,

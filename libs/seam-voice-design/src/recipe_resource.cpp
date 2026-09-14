@@ -45,12 +45,14 @@ core::Result<VoiceRecipe> decodeVoiceRecipeResource(
   const auto valid = resource.validate();
   if (!valid) return core::Result<VoiceRecipe>{valid.error()};
   // Schema seven adds unvoiced affricates, schema eight voiced approximants, schema nine
-  // palatalized consonants and schema ten voiced affricates: each borrows ordinary phonation, a
+  // palatalized consonants, schema ten voiced affricates and schema eleven declared event spans:
+  // each borrows ordinary phonation, a
   // base consonant's own source or a scored excitation the caller supplies, and the recipe's
   // identical resonance poses, so none needs a new opt-in flag. The voiced extensions that
   // change a source stay behind theirs.
   if (resource.identity.version != "1" && resource.identity.version != "2" && resource.identity.version != "3" && resource.identity.version != "4" &&
       resource.identity.version != "7" && resource.identity.version != "8" && resource.identity.version != "9" &&
+      resource.identity.version != "11" &&
       resource.identity.version != "10" &&
       !(allowVoicedFrication && resource.identity.version=="5") &&
       !(allowVoicedStops && allowVoicedFrication && resource.identity.version=="6")) return core::failure<VoiceRecipe>(

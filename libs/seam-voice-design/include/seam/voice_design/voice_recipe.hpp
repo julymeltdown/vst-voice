@@ -107,6 +107,22 @@ struct VoiceRecipe final {
     friend bool operator==(const PalatalizedPose&, const PalatalizedPose&) = default;
   };
   std::vector<PalatalizedPose> palatalized;
+  // Schema-eleven explicit opt-in: an event phone is a declared span rather than a recorded
+  // articulation. A closure (the moraic obstruent, an explicit closure, a pause or a glottal
+  // occlusion) is exactly silent for the span its role resolves, and a breath is unvoiced
+  // broadband noise from its declared source. Both keep their own symbol, so a bank still has a
+  // unit per symbol; neither is inferred from a symbol a newer build happens to recognise.
+  struct ClosurePose final {
+    std::string phone, style;
+    friend bool operator==(const ClosurePose&, const ClosurePose&) = default;
+  };
+  std::vector<ClosurePose> closures;
+  struct BreathPose final {
+    std::string phone, style;
+    FricationConfig source;
+    friend bool operator==(const BreathPose&, const BreathPose&) = default;
+  };
+  std::vector<BreathPose> breaths;
   [[nodiscard]] core::Result<void> validate() const;
   friend bool operator==(const VoiceRecipe&, const VoiceRecipe&) = default;
 };

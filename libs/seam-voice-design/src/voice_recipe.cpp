@@ -168,10 +168,34 @@ core::Result<void> VoiceRecipe::validate() const {
       return core::failure(core::ErrorCode::InvalidArgument,
           "Palatalized identity, style, base source or resonance pose is invalid or ambiguous");
   }
+  // An event phone is admitted only for the symbols whose own semantics it is, and only when the
+  // recipe names it in a style it also declares. A closure carries no source at all: its whole
+  // meaning is that the resolved span is silent, which is why an undeclared closure symbol is a
+  // refusal rather than silence.
+  if (closures.size() > 64U) return core::failure(core::ErrorCode::InvalidArgument, "Too many closure poses");
+  for (const auto& pose : closures) {
+    const bool supportedPhone = pose.phone == "cl" || pose.phone == "pau" || pose.phone == "R" ||
+        pose.phone == "glottal";
+    if (!supportedPhone || !text(pose.style) || !identities.emplace(pose.phone, pose.style).second ||
+        std::none_of(poses.begin(), poses.end(), [&](const auto& voice) { return voice.style == pose.style; }))
+      return core::failure(core::ErrorCode::InvalidArgument,
+          "Closure identity, style or declaration is invalid or ambiguous");
+  }
+  if (breaths.size() > 64U) return core::failure(core::ErrorCode::InvalidArgument, "Too many breath poses");
+  for (const auto& pose : breaths) {
+    const auto& source = pose.source;
+    if (pose.phone != "br" || !text(pose.style) || !identities.emplace(pose.phone, pose.style).second ||
+        std::none_of(poses.begin(), poses.end(), [&](const auto& voice) { return voice.style == pose.style; }) ||
+        !bounded(source.centerHz, 80.0, 16000.0) || !bounded(source.bandwidthHz, 20.0, 16000.0) ||
+        !bounded(source.gain, 0.0, 0.25) || !bounded(source.centerHz / source.bandwidthHz, 0.25, 20.0))
+      return core::failure(core::ErrorCode::InvalidArgument,
+          "Breath identity, style or source spectrum is invalid or ambiguous");
+  }
   return core::success();
 }
 
 std::int64_t voiceRecipeSchemaVersion(const VoiceRecipe& recipe) noexcept {
+  if (!recipe.closures.empty() || !recipe.breaths.empty()) return 11;
   if (!recipe.voicedAffricates.empty()) return 10;
   if (!recipe.palatalized.empty()) return 9;
   if (!recipe.approximants.empty()) return 8;
@@ -276,6 +300,20 @@ core::Result<std::string> encodeVoiceRecipe(const VoiceRecipe& recipe) {
     }
     root.asObject().emplace("voicedAffricates", std::move(voicedAffricates));
   }
+  if (version>=11) {
+    J::Array closures;
+    for (const auto& pose : recipe.closures) {
+      closures.emplace_back(J::Object{{"phone", pose.phone}, {"style", pose.style}});
+    }
+    root.asObject().emplace("closures", std::move(closures));
+    J::Array breaths;
+    for (const auto& pose : recipe.breaths) {
+      breaths.emplace_back(J::Object{{"phone", pose.phone}, {"style", pose.style},
+          {"seed", std::to_string(pose.source.seed)}, {"centerHz", J{pose.source.centerHz}},
+          {"bandwidthHz", J{pose.source.bandwidthHz}}, {"gain", J{pose.source.gain}}});
+    }
+    root.asObject().emplace("breaths", std::move(breaths));
+  }
   return formats::stringifyJson(root);
 }
 
@@ -288,8 +326,9 @@ core::Result<VoiceRecipe> decodeVoiceRecipe(std::string_view json) {
       !root.find("formatId")->isString() || root.find("formatId")->asString() != "com.project-seam.voice-recipe" ||
       !root.find("schemaVersion")->isInteger()) return malformed();
   const auto version = root.find("schemaVersion")->asInt64();
-  if (version < 1 || version > 10) return core::failure<VoiceRecipe>(core::ErrorCode::Unsupported, "Voice recipe schema is unsupported");
+  if (version < 1 || version > 11) return core::failure<VoiceRecipe>(core::ErrorCode::Unsupported, "Voice recipe schema is unsupported");
   if (!(version == 1 ? fields(root, {"formatId", "schemaVersion", "id", "engineId", "seed", "phonation", "modulation", "poses"}) :
+      version>=11 ? fields(root,{"formatId","schemaVersion","id","engineId","seed","phonation","modulation","poses","frications","plosives","affricates","approximants","palatalized","voicedAffricates","closures","breaths"}) :
       version>=10 ? fields(root,{"formatId","schemaVersion","id","engineId","seed","phonation","modulation","poses","frications","plosives","affricates","approximants","palatalized","voicedAffricates"}) :
       version>=9 ? fields(root,{"formatId","schemaVersion","id","engineId","seed","phonation","modulation","poses","frications","plosives","affricates","approximants","palatalized"}) :
       version>=8 ? fields(root,{"formatId","schemaVersion","id","engineId","seed","phonation","modulation","poses","frications","plosives","affricates","approximants"}) :
@@ -433,6 +472,28 @@ core::Result<VoiceRecipe> decodeVoiceRecipe(std::string_view json) {
       row.closureLowpassHz=pose.find("closureLowpassHz")->asNumber();
       row.tailVoicingGain=pose.find("tailVoicingGain")->asNumber();
       recipe.voicedAffricates.push_back(std::move(row));
+    }
+  }
+  if (version>=11) {
+    const auto& closureList=*root.find("closures");
+    if (!closureList.isArray()) return malformed();
+    for (const auto& pose:closureList.asArray()) {
+      if (!fields(pose,{"phone","style"}) || !pose.find("phone")->isString() ||
+          !pose.find("style")->isString()) return malformed();
+      recipe.closures.push_back({pose.find("phone")->asString(), pose.find("style")->asString()});
+    }
+    const auto& breathList=*root.find("breaths");
+    if (!breathList.isArray()) return malformed();
+    for (const auto& pose:breathList.asArray()) {
+      if (!fields(pose,{"phone","style","seed","centerHz","bandwidthHz","gain"}) ||
+          !pose.find("phone")->isString() || !pose.find("style")->isString() ||
+          !number(pose,"centerHz") || !number(pose,"bandwidthHz") || !number(pose,"gain")) return malformed();
+      FricationConfig source;
+      if (!parseSeed(*pose.find("seed"),source.seed)) return malformed();
+      source.centerHz=pose.find("centerHz")->asNumber();
+      source.bandwidthHz=pose.find("bandwidthHz")->asNumber();
+      source.gain=pose.find("gain")->asNumber();
+      recipe.breaths.push_back({pose.find("phone")->asString(), pose.find("style")->asString(), source});
     }
   }
   const auto valid = recipe.validate();

@@ -313,6 +313,58 @@ TEST_CASE("multilingual vowels and nasal consonants bake and import with their d
   }
 }
 
+TEST_CASE("a declared event unit bakes and prepares without inventing a voiced pose") {
+  using namespace seam;
+  // A unit of one declared event owns a note with no vowel in it. Preparation and baking have to
+  // admit that instead of demanding a voiced pose the unit never renders, and the two events keep
+  // their own identities: a closure is exactly silent and a breath is not. That difference is what
+  // makes an event a declared span rather than an omitted articulation.
+  for (const bool breath : {false, true}) {
+    const auto root=test::support::temporaryDirectory(breath?"event-breath-bank":"event-closure-bank");
+    voice_design::VoiceRecipe recipe; recipe.id=breath?"event-breath-bank":"event-closure-bank";
+    recipe.poses={{"a","neutral",0.0,{{700.0,80.0,0.0},{1200.0,100.0,-3.0},{2600.0,140.0,-6.0}}}};
+    const std::string phone=breath?"br":"cl";
+    if (breath) recipe.breaths={{"br","neutral",{.seed=91030U,.centerHz=2500.0,.bandwidthHz=6000.0,.gain=0.05}}};
+    else recipe.closures={{"cl","neutral"}};
+    const auto resource=voice_design::freezeVoiceRecipeResource(recipe); CHECK(resource);
+    if (!resource) return;
+    application::ProjectFactory factory{91030U}; auto project=factory.createProject("Event bake");
+    const auto track=factory.addVocalTrack(project,"Singer");
+    const auto region=factory.addRegion(project,track,"Phrase",time::Tick{0},time::Tick{960});
+    auto [lyric,note]=factory.makeNote(time::Tick{0},time::Tick{960},69U,U"く",domain::Language::Japanese);
+    note.phoneticHint=phone;
+    project.findRegion(region)->lyrics.push_back(lyric); project.findRegion(region)->notes.push_back(note);
+    const auto snapshot=rendering::RenderSnapshotFactory{}.createProcedural(project,resource.value(),track,region,1U,
+        rendering::RenderQuality::Final,48000U); CHECK(snapshot);
+    if (!snapshot) return;
+    CHECK(snapshot.value().phonemes->tokens.size()==1U);
+    CHECK(snapshot.value().phonemes->tokens.front().symbol==phone);
+    CHECK(voice_design::requiresArticulation(snapshot.value().phonemes->tokens));
+    // The generation/import path validates the same snapshot, and it is where an all-event unit
+    // used to be refused for having no voiced pose to name.
+    const auto prepared=rendering::ProceduralSnapshotStream::create(snapshot.value()); CHECK(prepared);
+    const auto rendered=rendering::PhraseRenderPipeline{}.render(snapshot.value()); CHECK(rendered);
+    if (!rendered) return;
+    authoring::ExportSettings settings; settings.includeMaster=false; settings.includeProceduralCandidates=true;
+    const std::vector<rendering::TrackSingerSource> sources{rendering::TrackProceduralSource{track,resource.value(),"neutral"}};
+    const auto baked=authoring::ExportService{}.exportSetWithSources(project,sources,track,region,1U,root/"baked",settings); CHECK(baked);
+    if (!baked) return;
+    const auto prefix=root/"baked/candidates"/(track.toString()+"-"+region.toString());
+    const auto loaded=voice_design::loadProceduralCandidate(prefix.string()+".json",prefix.string()+".wav",resource.value());
+    if (!loaded) throw test::Failure{loaded.error().message};
+    CHECK(loaded.value().schemaVersion==11U);
+    CHECK(loaded.value().markers.size()==1U);
+    CHECK(loaded.value().markers.front().phone==phone);
+    CHECK(loaded.value().markers.front().kind==(breath?voice_design::ProceduralGestureKind::Breath:
+        voice_design::ProceduralGestureKind::Closure));
+    CHECK(loaded.value().closureRevision==(breath?0U:1U));
+    CHECK(loaded.value().breathRevision==(breath?1U:0U));
+    const auto& pcm=loaded.value().audio->interleaved;
+    if (breath) CHECK(std::any_of(pcm.begin(),pcm.end(),[](float sample){return sample!=0.0F;}));
+    else CHECK(std::all_of(pcm.begin(),pcm.end(),[](float sample){return sample==0.0F;}));
+  }
+}
+
 TEST_CASE("nasal and frication candidates bake and enter production with typed unapproved gestures") {
   using namespace seam;
   const auto root = test::support::temporaryDirectory("articulated-export");
@@ -786,7 +838,10 @@ TEST_CASE("nasal and frication candidates bake and enter production with typed u
       inventoryProducer, "take-sa", {resource.value(), "soft"}));
   CHECK(!std::filesystem::exists(root / "wrong-inventory.seam"));
   auto invalidInventory = inventoryProducer;
-  invalidInventory.unitAssignments.front().coverageKey = "release:a:R";
+  // A symbol the Japanese adapter does not admit at all. The moraic obstruent used to be the
+  // example here until a recipe could declare it as a closure, so the example moved to a phone no
+  // declaration covers.
+  invalidInventory.unitAssignments.front().coverageKey = "release:a:l";
   CHECK(!authoring::buildInventoryGenerationScore(invalidInventory, "take-sa"));
   invalidInventory = inventoryProducer; invalidInventory.language = "en";
   CHECK(!authoring::buildInventoryGenerationScore(invalidInventory, "take-sa"));

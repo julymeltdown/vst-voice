@@ -13,7 +13,10 @@ namespace seam::voice_design {
 // Approximant is a voiced liquid or glide: the phonation continues through a resonance bank of
 // its own and the gesture's defining sound is the bounded formant transition into its
 // neighbouring vowel, not a noise source.
-enum class ArticulationGestureKind { OralVowel, Frication, Nasal, Plosive, VoicedFrication, VoicedPlosive, Affricate, Approximant, VoicedAffricate };
+// Closure and Breath are declared event spans rather than articulated ones: a closure is exactly
+// silent for the span its role resolves, and a breath is unvoiced broadband noise. Both keep the
+// symbol that owns them, so a bank still holds one unit per symbol.
+enum class ArticulationGestureKind { OralVowel, Frication, Nasal, Plosive, VoicedFrication, VoicedPlosive, Affricate, Approximant, VoicedAffricate, Closure, Breath };
 [[nodiscard]] inline bool isVoicedGesture(ArticulationGestureKind kind) noexcept {
   return kind == ArticulationGestureKind::OralVowel || kind == ArticulationGestureKind::Nasal || kind == ArticulationGestureKind::VoicedFrication || kind == ArticulationGestureKind::VoicedPlosive || kind == ArticulationGestureKind::Approximant || kind == ArticulationGestureKind::VoicedAffricate;
 }
@@ -24,7 +27,7 @@ enum class ArticulationGestureKind { OralVowel, Frication, Nasal, Plosive, Voice
 // closure, burst and tail are all unvoiced.
 [[nodiscard]] inline bool isAperiodicGesture(ArticulationGestureKind kind) noexcept {
   return isNoiseGesture(kind) || kind == ArticulationGestureKind::Affricate ||
-      kind == ArticulationGestureKind::VoicedAffricate;
+      kind == ArticulationGestureKind::VoicedAffricate || kind == ArticulationGestureKind::Breath;
 }
 struct FricationBinding final { std::string phone; FricationConfig source; std::optional<double> voicingGain{}; };
 struct PlosiveBinding final { std::string phone; FricationConfig source; double burstMilliseconds{10.0}; std::optional<VoiceRecipe::VoicedClosure> voicedClosure{}; };
@@ -40,6 +43,10 @@ struct VoicedAffricateBinding final {
   double tailVoicingGain{0.35};
 };
 struct ApproximantBinding final { std::string phone; double transitionMilliseconds{40.0}; };
+// A closure binding declares that this phone's resolved span is silent. It carries no source,
+// because inventing one would be exactly the substitution the event model refuses.
+struct ClosureBinding final { std::string phone; };
+struct BreathBinding final { std::string phone; FricationConfig source; };
 struct AffricateConfig final {
   PlosiveConfig release;
   FricationConfig tail;
@@ -69,7 +76,7 @@ struct ArticulationGesture final {
 // do not prove that its output realizes the named phone intelligibly.
 class ArticulationPlan final {
 public:
-  static constexpr std::uint32_t algorithmRevision = 11U;
+  static constexpr std::uint32_t algorithmRevision = 12U;
   // The shortest frication a released closure may continue into before the pair stops being an
   // affricate and becomes a stop with a separate fricative.
   static constexpr double kMinimumAffricateTailMilliseconds{20.0};
@@ -84,6 +91,10 @@ public:
   // Versions the voiced affricate rule: how a prevoiced closure, its burst and its voiced
   // frication tail are split inside one gesture.
   static constexpr std::uint32_t kVoicedAffricateModelRevision{1U};
+  // Versions the event rules: which symbol a declared closure silences, and how a declared
+  // breath's source fills the span its role resolves.
+  static constexpr std::uint32_t kClosureEventModelRevision{1U};
+  static constexpr std::uint32_t kBreathEventModelRevision{1U};
   // Worker preparation from immutable recipe data; never invents onset timing
   // or borrows source settings from another style. Not acoustic qualification.
   [[nodiscard]] static core::Result<ArticulationPlan> compileRecipe(
@@ -100,7 +111,9 @@ public:
       std::span<const AffricateBinding> affricateBindings = {},
       std::span<const ApproximantBinding> approximantBindings = {},
       std::span<const std::string> palatalizedPhones = {},
-      std::span<const VoicedAffricateBinding> voicedAffricateBindings = {});
+      std::span<const VoicedAffricateBinding> voicedAffricateBindings = {},
+      std::span<const ClosureBinding> closureBindings = {},
+      std::span<const BreathBinding> breathBindings = {});
   [[nodiscard]] std::span<const ArticulationGesture> gestures() const noexcept { return gestures_; }
   [[nodiscard]] std::uint32_t sampleRate() const noexcept { return sampleRate_; }
   [[nodiscard]] synthesis::PhraseFrameRange context() const noexcept { return context_; }

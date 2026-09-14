@@ -1,5 +1,48 @@
 # Integrated Singer Execution
 
+## An event phone is a declared span, not a recorded articulation
+
+The pilot inventory's last 48 refusals were not a missing source but five symbols that are events:
+the moraic obstruent `R`, a glottal occlusion `glottal`, a pause `pau`, a closure `cl` and a breath
+`br`. The model had no way to say that a span is exactly silent or that a span is noise in its own
+right, so the sound the inventory asked for was the one thing the recipe could not describe, and the
+Japanese score adapter never admitted `R` or `br` at all.
+
+Recipe schema eleven declares them. `closures` names the symbols whose resolved span is exactly
+silent -- the moraic obstruent as the tail of its vowel's note, a glottal occlusion as the span
+before its vowel, a pause or a standalone closure as its whole note -- and `breaths` names `br` with
+its own source spectrum. Two gesture kinds carry them: `ArticulationGestureKind::Closure`, which
+neither lane excites, and `ArticulationGestureKind::Breath`, which the aperiodic lane renders from
+the declared source. Nothing is inferred from a symbol: a closure is admitted only for the four
+symbols whose semantics it is, a breath only for `br`, and only in a style the recipe declares, so a
+symbol a newer build happens to recognise never becomes silence on its own.
+
+Three repairs were needed beyond the schema. The timing plan treated a `Geminate`, `Breath` or
+`Silence` role as an ineligible syllable, so a moraic obstruent could never receive a resolved start;
+an event phone now occupies the edge its position implies. A phrase can be nothing but event spans,
+so the renderer holds no vocal tract rather than borrowing another phone's pose, and the snapshot
+validation names the event's own symbol instead of demanding a voiced pose it never renders. And a
+candidate from a recipe that declares several families is no longer refused for carrying a
+lower-numbered candidate schema: what proves its claim is that every marker finds its own binding in
+its own recipe, which the marker loop already checks.
+
+Verified. `seam_singer_pilot NEW_OUTPUT_DIRECTORY events` renders `a R`, `br`, `cl`, `glottal a`,
+`pau` and a control vowel, and the CLI regression asserts what makes an event an event: every closure
+span is exactly zero and the breath span is not, the candidate is schema eleven with
+`closureRevision` and `breathRevision`, and a repeat run is byte-identical. `seam_tests` covers the
+unit shape directly, baking an event unit through the export service and loading it back as a
+candidate -- the path that used to refuse it for having no voiced pose. The pilot inventory now
+prepares 1026 of 1026 assignments, up from 978, and a campaign over the whole inventory plans as 1026
+jobs and passes the rendered held-out preflight on all 38 declared classes with none defective: the
+first time that preflight could be run over the full inventory.
+
+Not claimed. A closure is silence, so the moraic obstruent, the pause and the closure prepare as zero
+audio rather than as a sung consonant; a glottal stop's release is not modelled apart from its
+closure; and a breath is a declared engineering spectrum rather than a measured aspiration. No
+listener has judged any of them, and a prepared class is not phonetic qualification. Pre-onset
+context that reaches before its owning note and coarticulation inside one note remain open, and no
+unit acceptance changes.
+
 ## The durable legacy migration is the only path into style ownership
 
 The producer schema that carries style and language ownership is an upgrade, and until now only a
@@ -496,7 +539,7 @@ M1.P2's ten required changes:
 
 | # | Required change | State |
 |---|---|---|
-| 1 | Articulation-source description per phone class | Admitted: oral vowel, nasal, frication, voiced frication, released stop, voiced stop, unvoiced affricate, voiced affricate with a prevoiced closure and a voiced tail, approximant, palatalized consonants that borrow a base release, vowel-to-coda placement for ordinary consonants, and gesture silence. Not admitted: a standalone unreleased stop and an explicit breath event. |
+| 1 | Articulation-source description per phone class | Admitted: oral vowel, nasal, frication, voiced frication, released stop, voiced stop, unvoiced affricate, voiced affricate with a prevoiced closure and a voiced tail, approximant, palatalized consonants that borrow a base release, vowel-to-coda placement for ordinary consonants, gesture silence, a declared closure event that is exactly silent for its resolved span, and a declared breath event with its own source. Not admitted: coarticulation between a consonant and the neighbouring vowel inside one note, and any event a recipe does not declare. |
 | 2 | Phrase context beyond the owning note | Open. Placement inside a note is now complete for onset and coda, so what remains is context reaching past a gesture's own note: pre-onset intervals and a release the next note inherits. The 210 refusals once attributed here were the hint's role inference and are gone. |
 | 3 | Ordered spans separated from a bounded transition plan | Partial. Ordered linguistic spans are preserved and the approximant transition is a bounded declared window, but there is no shared transition-plan type and no coarticulation that crosses a gesture boundary. |
 | 4 | Chunk-invariant rendering | Done, including the new gesture. |
@@ -505,7 +548,7 @@ M1.P2's ten required changes:
 | 7 | Resumable campaign orchestration | Landed (`generation_campaign`), one bounded batch per advance. |
 | 8 | Prepare-render-collect transaction with durable receipts | Landed, including conflicts on external edits and recovery of an uncertain commit. |
 | 9 | Aggregate budget preflight | Landed: per-batch, aggregate frame and estimated-byte limits, retained-storage inspection and cancellation. |
-| 10 | Held-out pilot phrase set before the full inventory | Landed, run and followed through: both preflights passed, and the campaigns behind them completed with 498 takes committed as unapproved marker-review material across three pitch layers (report in `CAMPAIGN_REPORT.md`, defect list in `coverage-report.json`). The fricative, palatalized and voiced-affricate repairs took coverage to 978 of 1026 assignments, and the twelve new classes were rendered and collected; the 48 that remain still cannot be planned, so the inventory as a whole is not yet generatable end to end. |
+| 10 | Held-out pilot phrase set before the full inventory | Landed, run and followed through: both preflights passed, and the campaigns behind them completed with 498 takes committed as unapproved marker-review material across three pitch layers (report in `CAMPAIGN_REPORT.md`, defect list in `coverage-report.json`). The fricative, palatalized, voiced-affricate and event repairs took coverage to 1026 of 1026 assignments, so a campaign over the whole inventory now plans as 1026 jobs and the rendered held-out preflight passes all 38 declared classes with none defective. The inventory is generatable end to end as declared; a prepared class is still not phonetic qualification. |
 
 So seven of the ten are landed, two are partial, and one remains open (phrase context
 beyond the owning note).
@@ -520,9 +563,10 @@ M1.P1's coverage-report requirement is satisfied: `inspect-generation-coverage`
 retains a canonical per-class report of what a recipe can prepare, and the real pilot
 inventory's result is committed at
 `assets/pilots/seam-pilot-01/coverage-report.json`. It is what makes the next repair
-choice evidence-based rather than a guess: of the 1026 assignments it prepares 978 and still
-refuses 48 -- two adapter symbols with the breath sequence (42) and the pause and closure events
-(6). The coda, frication, palatalized and voiced-affricate refusals are gone.
+choice evidence-based rather than a guess, and the inventory's own declared classes are now all
+prepared: 1026 of 1026 assignments, every one of the 342 keys, 41 phones and 8 kinds, with nothing
+refused. The coda, frication, palatalized, voiced-affricate and event refusals are gone, and the
+campaign over the whole inventory plans as 1026 jobs and passes its rendered held-out preflight.
 
 ## An affricate is one gesture, not a stop followed by a fricative
 

@@ -40,6 +40,17 @@ core::Result<ArticulationPlan> ArticulationPlan::compileRecipe(
   std::vector<ApproximantBinding> approximants;
   for (const auto& pose : recipe.value().approximants) if (pose.style == style && requestedStops.contains(pose.phone))
     approximants.push_back({pose.phone, pose.transitionMilliseconds});
+  // An event phone is requested by symbol whatever role the hint gave it: the moraic obstruent is
+  // a coda in a vowel-to-coda unit and owns a whole note in a special unit, and both are the same
+  // declaration.
+  std::set<std::string> requestedSymbols;
+  for (const auto& phone : phones) requestedSymbols.insert(phone.symbol);
+  std::vector<ClosureBinding> closures;
+  for (const auto& pose : recipe.value().closures) if (pose.style == style && requestedSymbols.contains(pose.phone))
+    closures.push_back({pose.phone});
+  std::vector<BreathBinding> breaths;
+  for (const auto& pose : recipe.value().breaths) if (pose.style == style && requestedSymbols.contains(pose.phone))
+    breaths.push_back({pose.phone, pose.source});
   const auto notes = performance.notes();
   std::vector<std::string> nasals;
   for (const auto& pose:recipe.value().poses) if (pose.style==style && pose.nasal && pose.nasalCoupling>0.0 && phonemizer::isNasalSymbol(pose.phone))
@@ -71,7 +82,7 @@ core::Result<ArticulationPlan> ArticulationPlan::compileRecipe(
     palatalizedPhones.push_back(pose.phone);
   }
   const synthesis::PhraseFrameRange context{notes.front().startFrame, notes.back().endFrame};
-  auto plan = compile(phones, performance.phonemeTiming(), bindings, performance.sampleRate(), context,nasals,plosives,affricates,approximants,palatalizedPhones,voicedAffricates);
+  auto plan = compile(phones, performance.phonemeTiming(), bindings, performance.sampleRate(), context,nasals,plosives,affricates,approximants,palatalizedPhones,voicedAffricates,closures,breaths);
   if (!plan) return core::failure<ArticulationPlan>(plan.error().code,
       "Recipe '" + recipe.value().id + "', style '" + std::string(style) + "': " + plan.error().message);
   std::map<domain::NoteId, const synthesis::ScoreNoteSpan*> scoreNotes;
@@ -93,8 +104,14 @@ core::Result<ArticulationPlan> ArticulationPlan::compileRecipe(
       if (!tract) return core::Result<ArticulationPlan>{tract.error()};
     }
   }
-  if (checkedVowels.empty() || covered.size() != notes.size()) return core::failure<ArticulationPlan>(
-      core::ErrorCode::Unsupported, "Recipe articulation requires voiced poses and complete score-note coverage");
+  // A phrase can be entirely event spans -- a pause, a closure, a breath -- and then no voiced
+  // gesture exists to check. The recipe still has to offer this style a voice, because otherwise
+  // the plan would be a partial read of a recipe that never declared the style at all.
+  const bool styleDeclaresVoice = std::any_of(recipe.value().poses.begin(), recipe.value().poses.end(),
+      [&](const auto& pose) { return pose.style == style; });
+  if (covered.size() != notes.size() || (checkedVowels.empty() && !styleDeclaresVoice))
+      return core::failure<ArticulationPlan>(core::ErrorCode::Unsupported,
+          "Recipe articulation requires a declared style and complete score-note coverage");
   if (stop.stop_requested()) return cancelled();
   return plan;
 }
@@ -108,10 +125,13 @@ core::Result<ArticulationPlan> ArticulationPlan::compile(
     std::span<const AffricateBinding> affricateBindings,
     std::span<const ApproximantBinding> approximantBindings,
     std::span<const std::string> palatalizedPhones,
-    std::span<const VoicedAffricateBinding> voicedAffricateBindings) {
+    std::span<const VoicedAffricateBinding> voicedAffricateBindings,
+    std::span<const ClosureBinding> closureBindings,
+    std::span<const BreathBinding> breathBindings) {
   const auto invalid = [](const char* message) { return core::failure<ArticulationPlan>(core::ErrorCode::InvalidArgument, message); };
   const std::set<std::string,std::less<>> palatalized{palatalizedPhones.begin(), palatalizedPhones.end()};
   if (phones.empty() || phones.size() > 16384U || phones.size() != timing.size() || bindings.size() > 64U || nasalBindings.size()>64U || plosiveBindings.size()>64U || affricateBindings.size()>64U || approximantBindings.size()>64U ||
+      closureBindings.size() > 64U || breathBindings.size() > 64U ||
       sampleRate < 8000U || sampleRate > 384000U || context.start < 0 || context.end <= context.start || context.end > (time::SampleFrame{1} << 52))
     return invalid("Articulation input or context exceeds bounds");
   std::map<std::string, FricationBinding, std::less<>> sources;
@@ -190,6 +210,28 @@ core::Result<ArticulationPlan> ArticulationPlan::compile(
         !approximants.emplace(binding.phone, binding).second)
       return invalid("Approximant binding is unsupported, ambiguous or duplicated");
   }
+  // An event binding is admitted only for the symbol whose own semantics it is, and it must not
+  // collide with any other binding for that phone: a closure and a frication of the same symbol
+  // would be two different claims about one unit.
+  std::set<std::string,std::less<>> closures;
+  for (const auto& binding : closureBindings) {
+    const bool supportedPhone = binding.phone == "cl" || binding.phone == "pau" || binding.phone == "R" ||
+        binding.phone == "glottal";
+    if (!supportedPhone || !closures.insert(binding.phone).second || sources.contains(binding.phone) ||
+        stops.contains(binding.phone) || affricates.contains(binding.phone) ||
+        voicedAffricates.contains(binding.phone) || approximants.contains(binding.phone) || nasals.contains(binding.phone))
+      return invalid("Closure binding is unsupported, ambiguous or duplicated");
+  }
+  std::map<std::string, BreathBinding, std::less<>> breaths;
+  for (const auto& binding : breathBindings) {
+    if (binding.phone != "br" || sources.contains(binding.phone) || stops.contains(binding.phone) ||
+        affricates.contains(binding.phone) || voicedAffricates.contains(binding.phone) ||
+        approximants.contains(binding.phone) || nasals.contains(binding.phone) || closures.contains(binding.phone) ||
+        !breaths.emplace(binding.phone, binding).second)
+      return invalid("Breath binding is unsupported, ambiguous or duplicated");
+    const auto source = FricationSource::create(binding.source, sampleRate, context.start);
+    if (!source) return core::Result<ArticulationPlan>{source.error()};
+  }
   for (const auto& anchor : timing) if (!anchors.emplace(anchor.key, &anchor).second) return invalid("Articulation timing keys are duplicated");
   std::set<domain::PhonemeKey> seen;
   std::map<domain::NoteId,std::size_t> tokenCounts;
@@ -216,6 +258,8 @@ core::Result<ArticulationPlan> ArticulationPlan::compile(
     std::optional<AffricateConfig> affricate;
     bool voicedAffricate = false;
     std::uint32_t transitionFrames{0U};
+    bool closureEvent = false;
+    bool breathEvent = false;
     if (vowel) {
       if (anchor.nucleusKey != std::optional{phone.key}) return invalid("Oral vowel lacks its own nucleus anchor");
     } else if (nasal && phone.symbol=="N" && phone.role==domain::PhonemeRole::Coda &&
@@ -267,6 +311,41 @@ core::Result<ArticulationPlan> ArticulationPlan::compile(
       const auto requested = static_cast<time::SampleFrame>(std::llround(
           binding.transitionMilliseconds * sampleRate / 1000.0));
       transitionFrames = static_cast<std::uint32_t>(std::clamp<time::SampleFrame>(requested, 1, end - start));
+    } else if (closures.contains(phone.symbol) || breaths.contains(phone.symbol)) {
+      // An event is a span, not an articulation: a declared closure is exactly silent and a
+      // declared breath is its own unvoiced source. The span is the same one every other gesture
+      // resolves through, so an event never invents timing; it only declines to borrow a vowel's.
+      const auto phoneLabel = "Phone '" + phone.symbol + "' on note " + phone.key.noteId.toString();
+      if (phone.role == domain::PhonemeRole::Nucleus) return invalid("Event phone cannot own a vowel nucleus");
+      const bool soleToken = tokenCounts.at(phone.key.noteId) == 1U && !anchor.nucleusKey;
+      if (soleToken) {
+        // A unit of one event note has no vowel to attach to and owns the note's whole resolved
+        // span, exactly as the syllabic nasal already does.
+        start = anchor.explicitStartFrame.value_or(anchor.nucleusFrame);
+        end = anchor.endFrame;
+      } else {
+        const auto onsetStart = anchor.explicitStartFrame ? anchor.explicitStartFrame : anchor.inferredStartFrame;
+        if (!onsetStart || !anchor.nucleusKey) return core::failure<ArticulationPlan>(
+            core::ErrorCode::Unsupported, "Event gesture requires a resolved start and associated nucleus");
+        const auto nucleus = anchors.find(*anchor.nucleusKey);
+        if (nucleus == anchors.end() || nucleus->second->key.noteId != phone.key.noteId ||
+            !nucleus->second->voiced.value_or(false) ||
+            nucleus->second->nucleusKey != anchor.nucleusKey ||
+            nucleus->second->nucleusFrame != anchor.nucleusFrame)
+          return invalid("Event gesture nucleus binding is inconsistent");
+        const bool afterNucleus = phone.key.ordinal > anchor.nucleusKey->ordinal;
+        start = *onsetStart;
+        end = afterNucleus || anchor.endExplicit ? anchor.endFrame : anchor.nucleusFrame;
+        if (afterNucleus) {
+          if (start < anchor.nucleusFrame) return invalid("Event coda requires a post-nucleus start");
+        } else if (end > anchor.nucleusFrame) return invalid("Event onset crosses its vowel nucleus");
+      }
+      const auto minimumFrames = std::max<time::SampleFrame>(1,
+          static_cast<time::SampleFrame>(std::llround(5.0 * static_cast<double>(sampleRate) / 1000.0)));
+      if (end - start < minimumFrames) return core::failure<ArticulationPlan>(core::ErrorCode::Unsupported,
+          phoneLabel + " has less than five milliseconds of span to be an event; it needs more note time");
+      if (breaths.contains(phone.symbol)) { source = breaths.at(phone.symbol).source; breathEvent = true; }
+      else closureEvent = true;
     } else {
       const auto binding = sources.find(phone.symbol);
       const auto stopBinding = stops.find(phone.symbol);
@@ -397,6 +476,7 @@ core::Result<ArticulationPlan> ArticulationPlan::compile(
     }
     if (start < context.start || end > context.end || end <= start) return invalid("Articulation gesture is outside its context or empty");
     result.gestures_.push_back({vowel ? ArticulationGestureKind::OralVowel : nasal ? ArticulationGestureKind::Nasal :
+        closureEvent ? ArticulationGestureKind::Closure : breathEvent ? ArticulationGestureKind::Breath :
         transitionFrames > 0U ? ArticulationGestureKind::Approximant :
         voicedAffricate ? ArticulationGestureKind::VoicedAffricate :
         affricate ? ArticulationGestureKind::Affricate : voicedPlosive ? ArticulationGestureKind::VoicedPlosive : plosive ? ArticulationGestureKind::Plosive : voicingGain ? ArticulationGestureKind::VoicedFrication : ArticulationGestureKind::Frication,
