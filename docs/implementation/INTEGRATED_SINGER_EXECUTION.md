@@ -1,5 +1,40 @@
 # Integrated Singer Execution
 
+## The dock says what it is singing, and whether that phrase is still current
+
+The dock drew a mouth and a level, and it was silent about two things a listener can hear and a reader
+cannot see. The first is that a phrase can be old: an edit or a failed render leaves the audible
+publication exactly where it was, which is correct -- that audio is still what plays -- but a dock that
+draws it with no qualification claims the project and the phrase agree. The second is that the mouth
+was the only place any of this existed, so a reader that cannot see the dock learned nothing about the
+performance at all.
+
+`CharacterPerformanceView` now carries the render's own staleness, the standalone host fills it from
+the coordinator's `audibleAudioStale`, and the dock paints the mouth line in the secondary colour with
+a STALE marker and draws the measured level in the secondary accent instead of the primary one. The
+phrase is still drawn, because it is still what a listener hears; what changes is that the dock no
+longer presents it as current.
+
+The dock's accessible value now carries the same facts. It names the character's state, whether the
+phrase is singing or closed, the mouth the dock is drawing, the level as a percentage, and, when it
+applies, that the project changed after this render. A dock with no phrase publishes none of those
+facts rather than an empty performance.
+
+Verified. `seam_character_performance_dock_tests` passes 4 of 4. The new case reads the built
+semantic tree: the dock node's value names singing, the open mouth and a level of 80 percent while the
+phrase is current, gains the sentence about the project changing after this render once the phrase is
+stale, and loses every performance fact when there is no phrase. Painting the stale view differs from
+painting the current one. In the session case, a render for a new revision with an unusable source
+fails, the audible phrase stays at revision two -- the dock keeps drawing what is playing -- and
+`characterPerformanceStale` reports that the project has moved on. The whole tree builds and the
+registered CTest run is reported in the commit that carries this entry.
+
+Not claimed. The plug-in host still receives operational state only: it has no host position to map
+onto a phrase, so a CLAP, VST3 or AUv2 dock cannot yet say which frame is sounding, and that is host
+timing work rather than a presentation one. Which of several simultaneous singers owns the dock is
+still the active region's decision. The stale marker is verified on a painted surface, not in a
+captured window, and no unit acceptance changes.
+
 ## The dock gives up its artwork before it takes the piano roll's room
 
 The character dock had one width and no floor. When the window narrowed, the frame layout kept the

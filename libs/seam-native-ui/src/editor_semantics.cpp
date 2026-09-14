@@ -619,12 +619,27 @@ SemanticNode EditorSemanticTree::build(const EditorSceneState& state,
     laneTop += lane.second;
   }
   if (characterFull && !supportVisible && editorRight < root.bounds.width) {
+    // The dock's accessible value carries the same facts the dock draws, so a reader that cannot see
+    // the mouth still learns what is being sung, how loud the phrase is, and whether the phrase has
+    // fallen behind the project.
+    auto dockValue = std::string{"Full character presentation"};
+    if (state.characterPerformance.has_value()) {
+      const auto& performance = *state.characterPerformance;
+      dockValue += performance.performing ? "; singing; mouth " : "; not performing; mouth ";
+      dockValue += character::mouthShapeName(performance.mouth);
+      dockValue += "; level " +
+                   std::to_string(static_cast<int>(
+                       std::lround(std::clamp(static_cast<double>(performance.energy), 0.0, 1.0) *
+                                   100.0))) +
+                   " percent";
+      if (performance.audibleStale) dockValue += "; the project changed after this render";
+    }
     root.children.push_back(SemanticNode{
         .id = "character.dock",
         .role = SemanticRole::Panel,
         .name = state.characterName.empty() ? "Character dock"
                                             : "Character " + state.characterName,
-        .value = "Full character presentation",
+        .value = std::move(dockValue),
         .bounds = ui::Rect{editorRight, layout.toolbarHeight,
                            root.bounds.width - editorRight,
                            std::max(0.0, laneBottom - layout.toolbarHeight)},

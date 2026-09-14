@@ -1279,6 +1279,7 @@ void NativeEditorApp::paint(native_ui::RasterCanvas& canvas) noexcept {
         .energy = frame->energy,
         .expression = frame->expression,
         .performing = frame->performing,
+        .audibleStale = authoring_->characterPerformanceStale(),
         .reducedMotion = false,
     };
   }

@@ -188,6 +188,9 @@ struct EditorSceneState final {
     float energy{0.0F};
     float expression{0.0F};
     bool performing{false};
+    // True when the project changed after the render this phrase came from. The dock keeps drawing
+    // what is audible, and says that it is no longer what the project describes.
+    bool audibleStale{false};
     // The host's accessibility setting. Movement is dropped, the reported state is not.
     bool reducedMotion{false};
   };

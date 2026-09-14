@@ -1079,9 +1079,13 @@ void EditorScenePainter::paintCharacter(RasterCanvas& canvas,
   const auto level = std::clamp(static_cast<double>(performance.energy), 0.0, 1.0);
   const auto performanceTop = modeTop + layout_.characterDockPerformanceAdvance;
   const auto barWidth = std::min(layout_.characterDockPerformanceBarWidth, textWidth);
+  // The mouth line also carries the one fact the dock cannot show by drawing a mouth: that the phrase
+  // it is drawing is no longer what the project describes.
   line(performanceTop,
-       std::string{"MOUTH "} + std::string{character::mouthShapeName(performance.mouth)},
-       theme_.primaryText, layout_.characterDockDetailFontSize);
+       std::string{"MOUTH "} + std::string{character::mouthShapeName(performance.mouth)} +
+           (performance.audibleStale ? "  STALE" : ""),
+       performance.audibleStale ? theme_.secondaryText : theme_.primaryText,
+       layout_.characterDockDetailFontSize);
   // The glyph is the only part that moves, so it is drawn only where there is room for it beside the
   // level bar, and reduced motion drops it while keeping the label and the measured level.
   if (!performance.reducedMotion && presentation == CharacterDockPresentation::Full) {
@@ -1095,7 +1099,7 @@ void EditorScenePainter::paintCharacter(RasterCanvas& canvas,
                     theme_.gridStrong, layout_.characterDockPortraitBorderWidth);
   canvas.fillRect(ui::Rect{textX, barTop, barWidth * level,
                            layout_.characterDockPerformanceBarHeight},
-                  theme_.accent);
+                  performance.audibleStale ? theme_.accentSecondary : theme_.accent);
   if (!performance.performing)
     line(barTop + layout_.characterDockDetailFontSize * 2.0, "NO PHRASE AT PLAYHEAD",
          theme_.secondaryText, layout_.characterDockDetailFontSize);

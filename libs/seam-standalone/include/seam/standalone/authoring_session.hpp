@@ -91,6 +91,10 @@ public:
   [[nodiscard]] const std::string& characterPerformanceDiagnostic() const noexcept {
     return characterPerformanceDiagnostic_;
   }
+  // Whether the audible render the dock is following still describes the project. The dock keeps
+  // showing the phrase a listener is hearing; this is how a host says that the project has moved on
+  // since that phrase was rendered.
+  [[nodiscard]] bool characterPerformanceStale() const noexcept;
   // The dock's frame for one transport position, or nothing when no phrase is bound. The mapping is
   // the project's own tempo map at the published render's sample rate, so a seek or a loop lands on
   // the frame the audio itself is at.

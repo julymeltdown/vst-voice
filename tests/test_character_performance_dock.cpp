@@ -17,6 +17,7 @@
 #include "seam/native_ui/character_presentation.hpp"
 #include "seam/native_ui/editor_controller.hpp"
 #include "seam/native_ui/editor_scene.hpp"
+#include "seam/native_ui/editor_semantics.hpp"
 #include "seam/native_ui/pixel_surface.hpp"
 #include "seam/standalone/authoring_session.hpp"
 #include "seam/text/text_engine.hpp"
@@ -24,6 +25,7 @@
 #include "seam/voice_design/recipe_resource.hpp"
 
 #include <chrono>
+#include <algorithm>
 #include <filesystem>
 #include <memory>
 #include <optional>
@@ -143,7 +145,8 @@ TEST_CASE("Painting a phrase changes the dock, and reduced motion removes only t
 }
 
 // A render is submitted asynchronously; a published phrase is what this suite waits for.
-bool waitForRender(standalone::AuthoringSession& session, std::uint64_t revision) {
+authoring::RenderState waitForRender(standalone::AuthoringSession& session,
+                                     std::uint64_t revision) {
   const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{30};
   while (std::chrono::steady_clock::now() < deadline) {
     const auto progress = session.runtime().renderer().progress();
@@ -151,10 +154,58 @@ bool waitForRender(standalone::AuthoringSession& session, std::uint64_t revision
         (progress.state == authoring::RenderState::Ready ||
          progress.state == authoring::RenderState::Failed ||
          progress.state == authoring::RenderState::Cancelled))
-      return progress.state == authoring::RenderState::Ready;
+      return progress.state;
     std::this_thread::sleep_for(std::chrono::milliseconds{5});
   }
-  return false;
+  return authoring::RenderState::Idle;
+}
+
+TEST_CASE("The dock says what is singing and whether that phrase has fallen behind") {
+  DockFixture fixture;
+  native_ui::NativeEditorController controller{fixture.session, fixture.factory,
+                                               fixture.regionId, {}};
+  auto state = controller.sceneState();
+  state.logicalWidth = 900.0;
+  state.logicalHeight = 640.0;
+  state.characterMode = domain::CharacterDisplayMode::Full;
+  state.voiceIdentity.characterActive = true;
+  state.characterName = "Pilot";
+  native_ui::PixelSurface portrait{220U, 200U};
+  portrait.clear(native_ui::Color{30U, 10U, 40U, 255U});
+  state.characterPortrait = &portrait;
+  state.characterPerformance = view(character::MouthShape::Open, 0.8F, true);
+
+  const auto dockValue = [&](const native_ui::EditorSceneState& candidate) {
+    const auto tree = native_ui::EditorSemanticTree::build(candidate, controller.pianoRoll());
+    const auto dock = std::find_if(tree.children.begin(), tree.children.end(),
+                                   [](const auto& child) { return child.id == "character.dock"; });
+    CHECK(dock != tree.children.end());
+    return dock->value;
+  };
+  const auto fresh = dockValue(state);
+  // A reader that cannot see the mouth still learns what is being sung and how loud it is.
+  CHECK(fresh.find("singing") != std::string::npos);
+  CHECK(fresh.find("mouth open") != std::string::npos);
+  CHECK(fresh.find("level 80 percent") != std::string::npos);
+  CHECK(fresh.find("changed after this render") == std::string::npos);
+
+  native_ui::EditorScenePainter painter;
+  std::unique_ptr<text::TextEngine> engine;
+  if (auto created = text::TextEngine::createSystem(); created) engine = std::move(created).value();
+  const auto freshPixels = paintDock(painter, controller.pianoRoll(), state, engine.get());
+
+  state.characterPerformance->audibleStale = true;
+  const auto stale = dockValue(state);
+  CHECK(stale.find("changed after this render") != std::string::npos);
+  const auto stalePixels = paintDock(painter, controller.pianoRoll(), state, engine.get());
+  // The phrase keeps playing and the dock says that the project has moved on since it was rendered.
+  CHECK(stalePixels != freshPixels);
+
+  // A dock with no phrase at all says that too, instead of describing an empty performance.
+  state.characterPerformance.reset();
+  const auto idle = dockValue(state);
+  CHECK(idle.find("singing") == std::string::npos);
+  CHECK(idle.find("mouth") == std::string::npos);
 }
 
 TEST_CASE("A completed render binds the dock to the phrase it published") {
@@ -205,7 +256,7 @@ TEST_CASE("A completed render binds the dock to the phrase it published") {
   created.runtime().renderer().submitWithSources(project, sources, created.trackId(),
                                                 created.regionId(), 1U, 48000U,
                                                 rendering::RenderQuality::Preview, true);
-  if (!waitForRender(created, 1U))
+  if (waitForRender(created, 1U) != authoring::RenderState::Ready)
     throw test::Failure{"the first render did not become ready: " +
                         created.runtime().renderer().progress().diagnostic};
   const auto* performance = created.characterPerformance();
@@ -233,12 +284,13 @@ TEST_CASE("A completed render binds the dock to the phrase it published") {
   CHECK(past.has_value());
   CHECK(!past->performing);
   CHECK(past->mouth == character::MouthShape::Closed);
+  CHECK(!created.characterPerformanceStale());
 
   // A second render is a second phrase: the dock rebinds, and the previous snapshot is not reused.
   created.runtime().renderer().submitWithSources(project, sources, created.trackId(),
                                                 created.regionId(), 2U, 48000U,
                                                 rendering::RenderQuality::Preview, true);
-  if (!waitForRender(created, 2U))
+  if (waitForRender(created, 2U) != authoring::RenderState::Ready)
     throw test::Failure{"the second render did not become ready: " +
                         created.runtime().renderer().progress().diagnostic};
   const auto* rebound = created.characterPerformance();
@@ -246,6 +298,20 @@ TEST_CASE("A completed render binds the dock to the phrase it published") {
   if (rebound == nullptr) return;
   CHECK(rebound->renderRevision == 2U);
   CHECK(created.characterPerformanceGeneration() == generation + 1U);
+
+  // A render that fails leaves the audible phrase exactly where it was, and the dock says that the
+  // project has moved on instead of drawing the old phrase as if it were current.
+  auto broken = sources;
+  std::get<rendering::TrackProceduralSource>(broken.front()).resource.identity.contentHash =
+      std::string(64U, 'f');
+  created.runtime().renderer().submitWithSources(project, broken, created.trackId(),
+                                                created.regionId(), 3U, 48000U,
+                                                rendering::RenderQuality::Preview, true);
+  CHECK(waitForRender(created, 3U) == authoring::RenderState::Failed);
+  CHECK(created.characterPerformanceStale());
+  const auto* audible = created.characterPerformance();
+  CHECK(audible != nullptr);
+  if (audible != nullptr) CHECK(audible->renderRevision == 2U);
 }
 
 }  // namespace

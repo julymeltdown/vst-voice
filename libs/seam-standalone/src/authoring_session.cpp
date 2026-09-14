@@ -375,6 +375,10 @@ std::optional<character::CharacterPerformanceFrame> AuthoringSession::characterP
   return character::characterPerformanceFrameAt(*characterPerformance_, frame);
 }
 
+bool AuthoringSession::characterPerformanceStale() const noexcept {
+  return runtime_->renderer().progress().audibleAudioStale;
+}
+
 
 core::Result<void> AuthoringSession::createNewProject(
     authoring::NewProjectRequest request) {
