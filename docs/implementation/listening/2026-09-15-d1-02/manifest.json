@@ -1,0 +1,2710 @@
+{
+  "formatId": "com.project-seam.listening-packet",
+  "schemaVersion": 1,
+  "packetId": "2026-09-15-d1-02",
+  "createdAt": "2026-09-14T22:38:05.247740+00:00",
+  "status": "RENDERED_UNREVIEWED",
+  "sourceCommit": "b6e515894f63f147af6e5db1364b327d0cb0cd74",
+  "binarySha256": "d750e380623652ec56c2a3ddd28f58ca62c09034504b78b40d7032f6038886d6",
+  "system": "macOS-26.2-arm64-arm-64bit-Mach-O",
+  "machine": "arm64",
+  "listeningStatus": "NOT_REVIEWED",
+  "releaseEligible": false,
+  "bankComparison": "NOT_RUN: candidates are generated audio, not installed sample-bank renders",
+  "reproducibility": "Retained macOS binary and Homebrew dependency copy; absolute loader paths and system frameworks still required",
+  "cases": [
+    {
+      "id": "vowels",
+      "arguments": [],
+      "outputs": [
+        {
+          "path": "vowels/baseline/master.wav",
+          "variant": "baseline",
+          "sha256": "1586f86148cce0fdd296cf6aa30e78b7759d0bca915a3993dab5ffa4f5e89d05",
+          "recipeHash": "85af174759290346b20f128ae9fd8f66c964b403bb67f78ebc3d2c161be81756",
+          "sampleRate": 48000,
+          "channels": 2,
+          "frames": 72000,
+          "durationSeconds": 1.5,
+          "peak": 0.06454109400510788,
+          "rms": 0.021289113199969106,
+          "clippedSamples": 0
+        },
+        {
+          "path": "vowels/baseline/candidates/0000000000016379-000000000001637a.wav",
+          "variant": "baseline",
+          "sha256": "81587ddefb4410264922f9b83bc0f0a6230d92697a1ddd199a70a43bd80b8305",
+          "recipeHash": "85af174759290346b20f128ae9fd8f66c964b403bb67f78ebc3d2c161be81756",
+          "sampleRate": 48000,
+          "channels": 1,
+          "frames": 72000,
+          "durationSeconds": 1.5,
+          "peak": 0.09127489477396011,
+          "rms": 0.030107353135471714,
+          "clippedSamples": 0
+        },
+        {
+          "path": "vowels/higher-formants/master.wav",
+          "variant": "higher-formants",
+          "sha256": "eef305587977aa656d2f2e97c3ea7c3cb5bed1824a3073aedcb0220f464c4b1b",
+          "recipeHash": "f6e8528fe4757ca2624550403fdb3e9d3e060e88a3888297fe0a7e3bf63de10c",
+          "sampleRate": 48000,
+          "channels": 2,
+          "frames": 72000,
+          "durationSeconds": 1.5,
+          "peak": 0.06454109400510788,
+          "rms": 0.012132096505119113,
+          "clippedSamples": 0
+        },
+        {
+          "path": "vowels/higher-formants/candidates/0000000000016379-000000000001637a.wav",
+          "variant": "higher-formants",
+          "sha256": "3a20a9cbb171d381da785d3f2c2535fc8a86c066242c822c906b5ae49b6aa5a3",
+          "recipeHash": "f6e8528fe4757ca2624550403fdb3e9d3e060e88a3888297fe0a7e3bf63de10c",
+          "sampleRate": 48000,
+          "channels": 1,
+          "frames": 72000,
+          "durationSeconds": 1.5,
+          "peak": 0.09127489477396011,
+          "rms": 0.017157375714479922,
+          "clippedSamples": 0
+        },
+        {
+          "path": "vowels/breathier/master.wav",
+          "variant": "breathier",
+          "sha256": "b5f61da15080412f27c56a0ee6da1372381a7235fe92c4f2eb3a5513cbc03a5a",
+          "recipeHash": "70fa5fbeae9972cb53d126ea90002c31bb49aa1576c50e4ab329d60b50e1e793",
+          "sampleRate": 48000,
+          "channels": 2,
+          "frames": 72000,
+          "durationSeconds": 1.5,
+          "peak": 0.06454109400510788,
+          "rms": 0.02070089330495418,
+          "clippedSamples": 0
+        },
+        {
+          "path": "vowels/breathier/candidates/0000000000016379-000000000001637a.wav",
+          "variant": "breathier",
+          "sha256": "d5480e53b8d09503764759e46550b88e61ee3f90f70590ff2db2aaf7daf4b720",
+          "recipeHash": "70fa5fbeae9972cb53d126ea90002c31bb49aa1576c50e4ab329d60b50e1e793",
+          "sampleRate": 48000,
+          "channels": 1,
+          "frames": 72000,
+          "durationSeconds": 1.5,
+          "peak": 0.09127489477396011,
+          "rms": 0.02927548457194137,
+          "clippedSamples": 0
+        }
+      ],
+      "exportAndAnalysisSeconds": 1.6677825830411166,
+      "emittedAudioSeconds": 9.0,
+      "exportAndAnalysisSecondsPerEmittedAudioSecond": 0.1853091758934574
+    },
+    {
+      "id": "articulation",
+      "arguments": [
+        "articulation"
+      ],
+      "outputs": [
+        {
+          "path": "articulation/baseline/master.wav",
+          "variant": "baseline",
+          "sha256": "940a96f65819c36da27ca492a315b3b2813e41617c0301dfef97c871cdac0d69",
+          "recipeHash": "dd37ea25af9c3b6fba91afd9b38dc315b3efbd1df4268c30cce5c51459aea255",
+          "sampleRate": 48000,
+          "channels": 2,
+          "frames": 168000,
+          "durationSeconds": 3.5,
+          "peak": 0.10174328833818436,
+          "rms": 0.025148098619966624,
+          "clippedSamples": 0
+        },
+        {
+          "path": "articulation/baseline/candidates/0000000000016379-000000000001637a.wav",
+          "variant": "baseline",
+          "sha256": "e659620be33eade1ac226bad4ba79b8717f08988faf70608d68d44c84791934e",
+          "recipeHash": "dd37ea25af9c3b6fba91afd9b38dc315b3efbd1df4268c30cce5c51459aea255",
+          "sampleRate": 48000,
+          "channels": 1,
+          "frames": 168000,
+          "durationSeconds": 3.5,
+          "peak": 0.1438867449760437,
+          "rms": 0.035564782744357294,
+          "clippedSamples": 0
+        },
+        {
+          "path": "articulation/higher-formants/master.wav",
+          "variant": "higher-formants",
+          "sha256": "b15d3ad308e56a3f5f74fb9a27ab3695be4e1e9d0faf582d63e9392d4ece7544",
+          "recipeHash": "875065d410209cbac18a95490d17fd242c4daaa03bc37e54558c427dfad73c97",
+          "sampleRate": 48000,
+          "channels": 2,
+          "frames": 168000,
+          "durationSeconds": 3.5,
+          "peak": 0.10174328833818436,
+          "rms": 0.022723700664690778,
+          "clippedSamples": 0
+        },
+        {
+          "path": "articulation/higher-formants/candidates/0000000000016379-000000000001637a.wav",
+          "variant": "higher-formants",
+          "sha256": "18ea8c2887579fe48970b5d58a835f147a7a060bf61b9c67739e67da834f5752",
+          "recipeHash": "875065d410209cbac18a95490d17fd242c4daaa03bc37e54558c427dfad73c97",
+          "sampleRate": 48000,
+          "channels": 1,
+          "frames": 168000,
+          "durationSeconds": 3.5,
+          "peak": 0.1438867449760437,
+          "rms": 0.03213616621801095,
+          "clippedSamples": 0
+        },
+        {
+          "path": "articulation/breathier/master.wav",
+          "variant": "breathier",
+          "sha256": "3bf36e6513346b2fd7ef160facd0ebd35ab54a02fc4b8dc47e8d1c32fcdb8803",
+          "recipeHash": "e30c6585315540faca1b3f282636298f14f8ce57909f583711988cc1eda5619b",
+          "sampleRate": 48000,
+          "channels": 2,
+          "frames": 168000,
+          "durationSeconds": 3.5,
+          "peak": 0.09997063875198364,
+          "rms": 0.024403238025516683,
+          "clippedSamples": 0
+        },
+        {
+          "path": "articulation/breathier/candidates/0000000000016379-000000000001637a.wav",
+          "variant": "breathier",
+          "sha256": "2443fa47cb2b1220854742d4637b508115c051bb85a5cf9350310873ccc4626d",
+          "recipeHash": "e30c6585315540faca1b3f282636298f14f8ce57909f583711988cc1eda5619b",
+          "sampleRate": 48000,
+          "channels": 1,
+          "frames": 168000,
+          "durationSeconds": 3.5,
+          "peak": 0.14137983322143555,
+          "rms": 0.03451139077258703,
+          "clippedSamples": 0
+        }
+      ],
+      "exportAndAnalysisSeconds": 0.9691107920370996,
+      "emittedAudioSeconds": 21.0,
+      "exportAndAnalysisSecondsPerEmittedAudioSecond": 0.0461481329541476
+    },
+    {
+      "id": "stops",
+      "arguments": [
+        "stops"
+      ],
+      "outputs": [
+        {
+          "path": "stops/baseline/master.wav",
+          "variant": "baseline",
+          "sha256": "7904844a32fb959a0dd1a6603ad7df150a2148690ec4e6fa2fb43ea325d9a464",
+          "recipeHash": "2c7d10ec171e0c33a5ae4d322e5d7ae0c1cb3bc3c4ae32429c4872555f92e60c",
+          "sampleRate": 48000,
+          "channels": 2,
+          "frames": 72000,
+          "durationSeconds": 1.5,
+          "peak": 0.04325854778289795,
+          "rms": 0.006074689015339069,
+          "clippedSamples": 0
+        },
+        {
+          "path": "stops/baseline/candidates/0000000000016379-000000000001637a.wav",
+          "variant": "baseline",
+          "sha256": "9f1e946980e8711bed371952d011f8acf8159e3ce1fb3d2084bddbba3019bc6f",
+          "recipeHash": "2c7d10ec171e0c33a5ae4d322e5d7ae0c1cb3bc3c4ae32429c4872555f92e60c",
+          "sampleRate": 48000,
+          "channels": 1,
+          "frames": 72000,
+          "durationSeconds": 1.5,
+          "peak": 0.06117682531476021,
+          "rms": 0.008590907743240915,
+          "clippedSamples": 0
+        },
+        {
+          "path": "stops/higher-formants/master.wav",
+          "variant": "higher-formants",
+          "sha256": "e18430fd0047c0df7fc5ed39fbfa77a5dc2ec57d8bbce097ca3128a4dab6cac3",
+          "recipeHash": "79db626f15e8f3ea8c3e91b65ff4af2ff3b6d982b754ea6cf4982f4783229b79",
+          "sampleRate": 48000,
+          "channels": 2,
+          "frames": 72000,
+          "durationSeconds": 1.5,
+          "peak": 0.04325854778289795,
+          "rms": 0.0049401092997186586,
+          "clippedSamples": 0
+        },
+        {
+          "path": "stops/higher-formants/candidates/0000000000016379-000000000001637a.wav",
+          "variant": "higher-formants",
+          "sha256": "48a847caa7ec611d3c606e69be2a49b4082511ba962f79022ddc49f13637a3ae",
+          "recipeHash": "79db626f15e8f3ea8c3e91b65ff4af2ff3b6d982b754ea6cf4982f4783229b79",
+          "sampleRate": 48000,
+          "channels": 1,
+          "frames": 72000,
+          "durationSeconds": 1.5,
+          "peak": 0.06117682531476021,
+          "rms": 0.006986369694052847,
+          "clippedSamples": 0
+        },
+        {
+          "path": "stops/breathier/master.wav",
+          "variant": "breathier",
+          "sha256": "03acecac9317e35f77be85cad2e4afd3be6fd1b8ecc3260d28c1715ddbb66a97",
+          "recipeHash": "633c47fcb4544ef3a1bb19a388b234207f501446fcf9f432559e55508368bdeb",
+          "sampleRate": 48000,
+          "channels": 2,
+          "frames": 72000,
+          "durationSeconds": 1.5,
+          "peak": 0.04325854778289795,
+          "rms": 0.0054321688820480685,
+          "clippedSamples": 0
+        },
+        {
+          "path": "stops/breathier/candidates/0000000000016379-000000000001637a.wav",
+          "variant": "breathier",
+          "sha256": "c0b46cee1000c2a9b1ea31e3b94b98c394b220d37ea763b82dcea7693678e18d",
+          "recipeHash": "633c47fcb4544ef3a1bb19a388b234207f501446fcf9f432559e55508368bdeb",
+          "sampleRate": 48000,
+          "channels": 1,
+          "frames": 72000,
+          "durationSeconds": 1.5,
+          "peak": 0.06117682531476021,
+          "rms": 0.007682247037868396,
+          "clippedSamples": 0
+        }
+      ],
+      "exportAndAnalysisSeconds": 0.4245190409710631,
+      "emittedAudioSeconds": 9.0,
+      "exportAndAnalysisSecondsPerEmittedAudioSecond": 0.04716878233011812
+    },
+    {
+      "id": "affricates",
+      "arguments": [
+        "affricates"
+      ],
+      "outputs": [
+        {
+          "path": "affricates/baseline/master.wav",
+          "variant": "baseline",
+          "sha256": "4531ded6ebd53ea1c0368c48b3c3e84eec85697f20f27301cbd84896db09eec5",
+          "recipeHash": "fd56689e6b49d3965d67dae3d63cc7dbbfe2f917816970bd35b704526a819376",
+          "sampleRate": 48000,
+          "channels": 2,
+          "frames": 48000,
+          "durationSeconds": 1.0,
+          "peak": 0.069675974547863,
+          "rms": 0.018391429510942615,
+          "clippedSamples": 0
+        },
+        {
+          "path": "affricates/baseline/candidates/0000000000016379-000000000001637a.wav",
+          "variant": "baseline",
+          "sha256": "976f3a774bd137af8aac0751e2e8c2075bc6137e85e18ffb4a912e05afe27a8f",
+          "recipeHash": "fd56689e6b49d3965d67dae3d63cc7dbbfe2f917816970bd35b704526a819376",
+          "sampleRate": 48000,
+          "channels": 1,
+          "frames": 48000,
+          "durationSeconds": 1.0,
+          "peak": 0.09853671491146088,
+          "rms": 0.02600940949748671,
+          "clippedSamples": 0
+        },
+        {
+          "path": "affricates/higher-formants/master.wav",
+          "variant": "higher-formants",
+          "sha256": "1a9b15784fc06472d503bf80c6a55c3d08742e849f2a4ad4f93a65105564d7ba",
+          "recipeHash": "1839a7779971a13fe4e187ac93f618a072fc695379d21f7bbd4a905820ff335e",
+          "sampleRate": 48000,
+          "channels": 2,
+          "frames": 48000,
+          "durationSeconds": 1.0,
+          "peak": 0.069675974547863,
+          "rms": 0.011643254105606113,
+          "clippedSamples": 0
+        },
+        {
+          "path": "affricates/higher-formants/candidates/0000000000016379-000000000001637a.wav",
+          "variant": "higher-formants",
+          "sha256": "cf1687b8b8d82cbb00f18dfb17426d9d5eac9f02f36532f1ecd6138e35219d51",
+          "recipeHash": "1839a7779971a13fe4e187ac93f618a072fc695379d21f7bbd4a905820ff335e",
+          "sampleRate": 48000,
+          "channels": 1,
+          "frames": 48000,
+          "durationSeconds": 1.0,
+          "peak": 0.09853671491146088,
+          "rms": 0.016466048151465514,
+          "clippedSamples": 0
+        },
+        {
+          "path": "affricates/breathier/master.wav",
+          "variant": "breathier",
+          "sha256": "6fd6e0b2d2055e642af167521b500c399970700a9e10074f048436ec39a12330",
+          "recipeHash": "180bf3b7cefe87355d3c6763edb43bc2666485e2bd9ad98236b601729d8c88a6",
+          "sampleRate": 48000,
+          "channels": 2,
+          "frames": 48000,
+          "durationSeconds": 1.0,
+          "peak": 0.069675974547863,
+          "rms": 0.017978700641866727,
+          "clippedSamples": 0
+        },
+        {
+          "path": "affricates/breathier/candidates/0000000000016379-000000000001637a.wav",
+          "variant": "breathier",
+          "sha256": "0d497b0284182bb8eaf5f7be439c7a4189b69aa997f04f2fa53d17b6826fd821",
+          "recipeHash": "180bf3b7cefe87355d3c6763edb43bc2666485e2bd9ad98236b601729d8c88a6",
+          "sampleRate": 48000,
+          "channels": 1,
+          "frames": 48000,
+          "durationSeconds": 1.0,
+          "peak": 0.09853671491146088,
+          "rms": 0.025425722718281696,
+          "clippedSamples": 0
+        }
+      ],
+      "exportAndAnalysisSeconds": 0.3036373750073835,
+      "emittedAudioSeconds": 6.0,
+      "exportAndAnalysisSecondsPerEmittedAudioSecond": 0.050606229167897254
+    },
+    {
+      "id": "glides",
+      "arguments": [
+        "glides"
+      ],
+      "outputs": [
+        {
+          "path": "glides/baseline/master.wav",
+          "variant": "baseline",
+          "sha256": "88580b8e1d466878ed01d30a28707c6f20c815e9125ee6b327ad5dc3f353059e",
+          "recipeHash": "c0f80f958d37fe6b2261670763d55dc55a15c1ea0c7c3c201e637423dc2b2018",
+          "sampleRate": 48000,
+          "channels": 2,
+          "frames": 48000,
+          "durationSeconds": 1.0,
+          "peak": 0.020181328058242798,
+          "rms": 0.003926100417059858,
+          "clippedSamples": 0
+        },
+        {
+          "path": "glides/baseline/candidates/0000000000016379-000000000001637a.wav",
+          "variant": "baseline",
+          "sha256": "810c402ed8c0cb479afc42aa04e7ba113df69676c89a5b9962ff77c3405214b1",
+          "recipeHash": "c0f80f958d37fe6b2261670763d55dc55a15c1ea0c7c3c201e637423dc2b2018",
+          "sampleRate": 48000,
+          "channels": 1,
+          "frames": 48000,
+          "durationSeconds": 1.0,
+          "peak": 0.028540708124637604,
+          "rms": 0.00555234455273593,
+          "clippedSamples": 0
+        },
+        {
+          "path": "glides/higher-formants/master.wav",
+          "variant": "higher-formants",
+          "sha256": "5e077ebfa2d056f268add5fcb56169e558ffe0e4c27a127c37fa5a397fec8489",
+          "recipeHash": "15d515fddca17f0374527bc1e99cf963d3eb4a131f83f389d2f0b2f1bcbda4a2",
+          "sampleRate": 48000,
+          "channels": 2,
+          "frames": 48000,
+          "durationSeconds": 1.0,
+          "peak": 0.017716029658913612,
+          "rms": 0.0029467206529197655,
+          "clippedSamples": 0
+        },
+        {
+          "path": "glides/higher-formants/candidates/0000000000016379-000000000001637a.wav",
+          "variant": "higher-formants",
+          "sha256": "3eb01c287d2cc581de5f17bd79575098982fad8c271677efc0201c2f6fb10b79",
+          "recipeHash": "15d515fddca17f0374527bc1e99cf963d3eb4a131f83f389d2f0b2f1bcbda4a2",
+          "sampleRate": 48000,
+          "channels": 1,
+          "frames": 48000,
+          "durationSeconds": 1.0,
+          "peak": 0.02505424991250038,
+          "rms": 0.004167292381553623,
+          "clippedSamples": 0
+        },
+        {
+          "path": "glides/breathier/master.wav",
+          "variant": "breathier",
+          "sha256": "893d876d1236c4b6aa7edcff16bfea6378fbb925ae796c6f12b8bcf522df3909",
+          "recipeHash": "d74d34b72a3d11310c13ccbdb6a30a67bfd6afd751505e2996b363726b4054c9",
+          "sampleRate": 48000,
+          "channels": 2,
+          "frames": 48000,
+          "durationSeconds": 1.0,
+          "peak": 0.019454512745141983,
+          "rms": 0.0035068981478599227,
+          "clippedSamples": 0
+        },
+        {
+          "path": "glides/breathier/candidates/0000000000016379-000000000001637a.wav",
+          "variant": "breathier",
+          "sha256": "c05aace6d0687a223c79b322234e2637ef7525cf47dc1506495cb2f45a803152",
+          "recipeHash": "d74d34b72a3d11310c13ccbdb6a30a67bfd6afd751505e2996b363726b4054c9",
+          "sampleRate": 48000,
+          "channels": 1,
+          "frames": 48000,
+          "durationSeconds": 1.0,
+          "peak": 0.027512837201356888,
+          "rms": 0.004959503009615625,
+          "clippedSamples": 0
+        }
+      ],
+      "exportAndAnalysisSeconds": 0.3056289160158485,
+      "emittedAudioSeconds": 6.0,
+      "exportAndAnalysisSecondsPerEmittedAudioSecond": 0.05093815266930809
+    },
+    {
+      "id": "nasals",
+      "arguments": [
+        "nasals"
+      ],
+      "outputs": [
+        {
+          "path": "nasals/baseline/master.wav",
+          "variant": "baseline",
+          "sha256": "dee2c22049143a4ade7cfe35a9b1d76c7f3ac0a31b2934df412685105ab9274f",
+          "recipeHash": "ee2de1672497d80b2d8f3babe1ae196920548c35c89ff36e1301a5e75554d3f9",
+          "sampleRate": 48000,
+          "channels": 2,
+          "frames": 72000,
+          "durationSeconds": 1.5,
+          "peak": 0.11109352856874466,
+          "rms": 0.041359058826348064,
+          "clippedSamples": 0
+        },
+        {
+          "path": "nasals/baseline/candidates/0000000000016379-000000000001637a.wav",
+          "variant": "baseline",
+          "sha256": "ce8fb8d95754a62c35415441dd0ef1b0c86f1462ce48069831aa64ef265e6bb2",
+          "recipeHash": "ee2de1672497d80b2d8f3babe1ae196920548c35c89ff36e1301a5e75554d3f9",
+          "sampleRate": 48000,
+          "channels": 1,
+          "frames": 72000,
+          "durationSeconds": 1.5,
+          "peak": 0.15710997581481934,
+          "rms": 0.05849054290766273,
+          "clippedSamples": 0
+        },
+        {
+          "path": "nasals/higher-formants/master.wav",
+          "variant": "higher-formants",
+          "sha256": "ba9ca6c875f69a6f0583d53f02e0e42c7296a41900d0151845a63d5f13b6d2e1",
+          "recipeHash": "d22797733441ccb84d4a07ce4df71f1ebac9b21e5680f10e99a256a05afcf567",
+          "sampleRate": 48000,
+          "channels": 2,
+          "frames": 72000,
+          "durationSeconds": 1.5,
+          "peak": 0.11109352856874466,
+          "rms": 0.04318983585402176,
+          "clippedSamples": 0
+        },
+        {
+          "path": "nasals/higher-formants/candidates/0000000000016379-000000000001637a.wav",
+          "variant": "higher-formants",
+          "sha256": "28b0419dedb406431e6baf9940b28921a286875d7f3fb378d60f18700a2f0c6f",
+          "recipeHash": "d22797733441ccb84d4a07ce4df71f1ebac9b21e5680f10e99a256a05afcf567",
+          "sampleRate": 48000,
+          "channels": 1,
+          "frames": 72000,
+          "durationSeconds": 1.5,
+          "peak": 0.15710997581481934,
+          "rms": 0.061079652652730965,
+          "clippedSamples": 0
+        },
+        {
+          "path": "nasals/breathier/master.wav",
+          "variant": "breathier",
+          "sha256": "0054de37d0d4bcdd9e6f601287cfeb8658663fc7be0388b6016e2e085bee3e82",
+          "recipeHash": "069fa019de9df032681542b6ab0e9eb2fcb1a54585437f963036b76d04722bcb",
+          "sampleRate": 48000,
+          "channels": 2,
+          "frames": 72000,
+          "durationSeconds": 1.5,
+          "peak": 0.11125287413597107,
+          "rms": 0.04027681161064329,
+          "clippedSamples": 0
+        },
+        {
+          "path": "nasals/breathier/candidates/0000000000016379-000000000001637a.wav",
+          "variant": "breathier",
+          "sha256": "c7b6c0049b4407bc45826c0c7ddf11d6d923a84ed4b09d07c7ebcc5611a1ed93",
+          "recipeHash": "069fa019de9df032681542b6ab0e9eb2fcb1a54585437f963036b76d04722bcb",
+          "sampleRate": 48000,
+          "channels": 1,
+          "frames": 72000,
+          "durationSeconds": 1.5,
+          "peak": 0.1573353260755539,
+          "rms": 0.05696001419065124,
+          "clippedSamples": 0
+        }
+      ],
+      "exportAndAnalysisSeconds": 0.4278225000016391,
+      "emittedAudioSeconds": 9.0,
+      "exportAndAnalysisSecondsPerEmittedAudioSecond": 0.04753583333351546
+    },
+    {
+      "id": "melisma",
+      "arguments": [
+        "boundaries"
+      ],
+      "outputs": [
+        {
+          "path": "melisma/baseline/master.wav",
+          "variant": "baseline",
+          "sha256": "9a587c291923c98e758833f6462da95b919c241d841ae2c4a20bb1b31e44ab3b",
+          "recipeHash": "85af174759290346b20f128ae9fd8f66c964b403bb67f78ebc3d2c161be81756",
+          "sampleRate": 48000,
+          "channels": 2,
+          "frames": 96000,
+          "durationSeconds": 2.0,
+          "peak": 0.013828613795340061,
+          "rms": 0.004702375875984446,
+          "clippedSamples": 0
+        },
+        {
+          "path": "melisma/baseline/candidates/0000000000016379-000000000001637a.wav",
+          "variant": "baseline",
+          "sha256": "2b8819d410a575f05a3675ab469092a145b6fae580bf88e454c6fd5e056aa0a1",
+          "recipeHash": "85af174759290346b20f128ae9fd8f66c964b403bb67f78ebc3d2c161be81756",
+          "sampleRate": 48000,
+          "channels": 1,
+          "frames": 96000,
+          "durationSeconds": 2.0,
+          "peak": 0.019556613638997078,
+          "rms": 0.006650163853195231,
+          "clippedSamples": 0
+        },
+        {
+          "path": "melisma/higher-formants/master.wav",
+          "variant": "higher-formants",
+          "sha256": "5c26466a2cdb665eb6f3d69ce015013974052461b61bc39bb41f8c3930442dc9",
+          "recipeHash": "f6e8528fe4757ca2624550403fdb3e9d3e060e88a3888297fe0a7e3bf63de10c",
+          "sampleRate": 48000,
+          "channels": 2,
+          "frames": 96000,
+          "durationSeconds": 2.0,
+          "peak": 0.008676682598888874,
+          "rms": 0.0028129718893418927,
+          "clippedSamples": 0
+        },
+        {
+          "path": "melisma/higher-formants/candidates/0000000000016379-000000000001637a.wav",
+          "variant": "higher-formants",
+          "sha256": "1a25e26037b565b1bb21edfc11798b3e84ec6f4920d28629bfbbc30dbb3057ba",
+          "recipeHash": "f6e8528fe4757ca2624550403fdb3e9d3e060e88a3888297fe0a7e3bf63de10c",
+          "sampleRate": 48000,
+          "channels": 1,
+          "frames": 96000,
+          "durationSeconds": 2.0,
+          "peak": 0.012270682491362095,
+          "rms": 0.003978143064580614,
+          "clippedSamples": 0
+        },
+        {
+          "path": "melisma/breathier/master.wav",
+          "variant": "breathier",
+          "sha256": "6215fb70a5eb3db919f88f886fcd0f584a7fec2858486db10f3a466693723eed",
+          "recipeHash": "70fa5fbeae9972cb53d126ea90002c31bb49aa1576c50e4ab329d60b50e1e793",
+          "sampleRate": 48000,
+          "channels": 2,
+          "frames": 96000,
+          "durationSeconds": 2.0,
+          "peak": 0.012776166200637817,
+          "rms": 0.0038988355466354372,
+          "clippedSamples": 0
+        },
+        {
+          "path": "melisma/breathier/candidates/0000000000016379-000000000001637a.wav",
+          "variant": "breathier",
+          "sha256": "aec5799b182f75d1d48373564f1fe11003f8be61b2ee9c9243c4ae902e9feb9c",
+          "recipeHash": "70fa5fbeae9972cb53d126ea90002c31bb49aa1576c50e4ab329d60b50e1e793",
+          "sampleRate": 48000,
+          "channels": 1,
+          "frames": 96000,
+          "durationSeconds": 2.0,
+          "peak": 0.018068227916955948,
+          "rms": 0.005513786201150967,
+          "clippedSamples": 0
+        }
+      ],
+      "exportAndAnalysisSeconds": 0.5771942500141449,
+      "emittedAudioSeconds": 12.0,
+      "exportAndAnalysisSecondsPerEmittedAudioSecond": 0.04809952083451208
+    },
+    {
+      "id": "events",
+      "arguments": [
+        "events"
+      ],
+      "outputs": [
+        {
+          "path": "events/baseline/master.wav",
+          "variant": "baseline",
+          "sha256": "5343ad105bf59fa96cc350bfccb51ca1e29d52e7862c6af900278523e5c154a8",
+          "recipeHash": "291884f07bf8314adcffc3ec888d803e1c9169a4788eb7a71f0b7012d9a935d6",
+          "sampleRate": 48000,
+          "channels": 2,
+          "frames": 72000,
+          "durationSeconds": 1.5,
+          "peak": 0.03497684374451637,
+          "rms": 0.004953289179686811,
+          "clippedSamples": 0
+        },
+        {
+          "path": "events/baseline/candidates/0000000000016379-000000000001637a.wav",
+          "variant": "baseline",
+          "sha256": "3adbb22dcc0a54f11a22dbd5e042a401db90e52934fd1759c93c2c15ae921464",
+          "recipeHash": "291884f07bf8314adcffc3ec888d803e1c9169a4788eb7a71f0b7012d9a935d6",
+          "sampleRate": 48000,
+          "channels": 1,
+          "frames": 72000,
+          "durationSeconds": 1.5,
+          "peak": 0.04946472868323326,
+          "rms": 0.007005008856840301,
+          "clippedSamples": 0
+        },
+        {
+          "path": "events/higher-formants/master.wav",
+          "variant": "higher-formants",
+          "sha256": "3bb3f06fd016b065e54975c442dc65741f78f89842449c0699f3c8400d9b6aad",
+          "recipeHash": "a59ee0db9ddefca5ef40f0573d2c432f60c901aac148dd7dabc002e8295de3af",
+          "sampleRate": 48000,
+          "channels": 2,
+          "frames": 72000,
+          "durationSeconds": 1.5,
+          "peak": 0.03497684374451637,
+          "rms": 0.004632417304923523,
+          "clippedSamples": 0
+        },
+        {
+          "path": "events/higher-formants/candidates/0000000000016379-000000000001637a.wav",
+          "variant": "higher-formants",
+          "sha256": "3fbc5b71e085d3b6436d5f7ebd1f5479104081f6d93bd865c6f683afddc746bc",
+          "recipeHash": "a59ee0db9ddefca5ef40f0573d2c432f60c901aac148dd7dabc002e8295de3af",
+          "sampleRate": 48000,
+          "channels": 1,
+          "frames": 72000,
+          "durationSeconds": 1.5,
+          "peak": 0.04946472868323326,
+          "rms": 0.006551227492282591,
+          "clippedSamples": 0
+        },
+        {
+          "path": "events/breathier/master.wav",
+          "variant": "breathier",
+          "sha256": "9954fa3e1ffdbadf5ff9615bd5e06ed123ba517aec045595121ee0ae33844e75",
+          "recipeHash": "abe464079ab5d6ab0302dde7771b492290d82eb5cf324343476c665e96803fc9",
+          "sampleRate": 48000,
+          "channels": 2,
+          "frames": 72000,
+          "durationSeconds": 1.5,
+          "peak": 0.03497684374451637,
+          "rms": 0.004803415754330453,
+          "clippedSamples": 0
+        },
+        {
+          "path": "events/breathier/candidates/0000000000016379-000000000001637a.wav",
+          "variant": "breathier",
+          "sha256": "df1bcbd8f6824bcffbdc4b99d27387451200f3be9c33bce3e94bedd4e43e6864",
+          "recipeHash": "abe464079ab5d6ab0302dde7771b492290d82eb5cf324343476c665e96803fc9",
+          "sampleRate": 48000,
+          "channels": 1,
+          "frames": 72000,
+          "durationSeconds": 1.5,
+          "peak": 0.04946472868323326,
+          "rms": 0.006793055822780901,
+          "clippedSamples": 0
+        }
+      ],
+      "exportAndAnalysisSeconds": 0.39658295799745247,
+      "emittedAudioSeconds": 9.0,
+      "exportAndAnalysisSecondsPerEmittedAudioSecond": 0.04406477311082805
+    },
+    {
+      "id": "range",
+      "arguments": [
+        "phrase",
+        "ま:60:960",
+        "み:66:960",
+        "む:72:960",
+        "め:66:960",
+        "も:60:960"
+      ],
+      "outputs": [
+        {
+          "path": "range/baseline/master.wav",
+          "variant": "baseline",
+          "sha256": "bce758400fb0288ffc386a755832e55a1d0d439b0827a76165670ab4242b9a7a",
+          "recipeHash": "7688afab747661d59ec1423a9a101114d61956bd062c464c45a74f8fb26f893e",
+          "sampleRate": 48000,
+          "channels": 2,
+          "frames": 120000,
+          "durationSeconds": 2.5,
+          "peak": 0.10174328833818436,
+          "rms": 0.019334288757048713,
+          "clippedSamples": 0
+        },
+        {
+          "path": "range/baseline/candidates/0000000000016379-000000000001637a.wav",
+          "variant": "baseline",
+          "sha256": "f0e6f2089b9e4823f72b7d9bb81c461eb0f40151e0f15057d62ab250d845ee55",
+          "recipeHash": "7688afab747661d59ec1423a9a101114d61956bd062c464c45a74f8fb26f893e",
+          "sampleRate": 48000,
+          "channels": 1,
+          "frames": 120000,
+          "durationSeconds": 2.5,
+          "peak": 0.1438867449760437,
+          "rms": 0.02734281385209493,
+          "clippedSamples": 0
+        },
+        {
+          "path": "range/higher-formants/master.wav",
+          "variant": "higher-formants",
+          "sha256": "4456955569f50217f306dfbc1298708fd6d1dd7917c8d24fa44608efe6d1cf4f",
+          "recipeHash": "52ebb15859389fbb370504581130f00fb5bd19f2a6ef51f0f70b2998387fa701",
+          "sampleRate": 48000,
+          "channels": 2,
+          "frames": 120000,
+          "durationSeconds": 2.5,
+          "peak": 0.10174328833818436,
+          "rms": 0.02188840698401557,
+          "clippedSamples": 0
+        },
+        {
+          "path": "range/higher-formants/candidates/0000000000016379-000000000001637a.wav",
+          "variant": "higher-formants",
+          "sha256": "a3221de5dfa4065f8cd0a28d57c2c5c398e060742b5d5fd49272f2321602740a",
+          "recipeHash": "52ebb15859389fbb370504581130f00fb5bd19f2a6ef51f0f70b2998387fa701",
+          "sampleRate": 48000,
+          "channels": 1,
+          "frames": 120000,
+          "durationSeconds": 2.5,
+          "peak": 0.1438867449760437,
+          "rms": 0.03095488254761845,
+          "clippedSamples": 0
+        },
+        {
+          "path": "range/breathier/master.wav",
+          "variant": "breathier",
+          "sha256": "8ea89b461c4646b7f9cec7bd0cc59407dd9ff7b9e84c02fd36b3e29f0910aa7a",
+          "recipeHash": "be0207899a45d64a6975fbe6e1f1ea9ffca5ef18285f1d237893ce47fa0907a7",
+          "sampleRate": 48000,
+          "channels": 2,
+          "frames": 120000,
+          "durationSeconds": 2.5,
+          "peak": 0.09997063875198364,
+          "rms": 0.018719326947558953,
+          "clippedSamples": 0
+        },
+        {
+          "path": "range/breathier/candidates/0000000000016379-000000000001637a.wav",
+          "variant": "breathier",
+          "sha256": "90666f77e81769bf167249005c0567f774cdedfee2cee1bbc12fedb8ff0033e4",
+          "recipeHash": "be0207899a45d64a6975fbe6e1f1ea9ffca5ef18285f1d237893ce47fa0907a7",
+          "sampleRate": 48000,
+          "channels": 1,
+          "frames": 120000,
+          "durationSeconds": 2.5,
+          "peak": 0.14137983322143555,
+          "rms": 0.026473126491419557,
+          "clippedSamples": 0
+        }
+      ],
+      "exportAndAnalysisSeconds": 0.6907149580074474,
+      "emittedAudioSeconds": 15.0,
+      "exportAndAnalysisSecondsPerEmittedAudioSecond": 0.04604766386716316
+    },
+    {
+      "id": "rhythm",
+      "arguments": [
+        "phrase",
+        "ば:60:960",
+        "ー:64:240",
+        "ん:65:720",
+        "あ:60:480"
+      ],
+      "outputs": [
+        {
+          "path": "rhythm/baseline/master.wav",
+          "variant": "baseline",
+          "sha256": "9bff898cfe4ce7c24a8723b67bb2dc0040d2c8678df64a5c62defc24bf56b6a0",
+          "recipeHash": "7688afab747661d59ec1423a9a101114d61956bd062c464c45a74f8fb26f893e",
+          "sampleRate": 48000,
+          "channels": 2,
+          "frames": 60000,
+          "durationSeconds": 1.25,
+          "peak": 0.0791657492518425,
+          "rms": 0.025148832304680492,
+          "clippedSamples": 0
+        },
+        {
+          "path": "rhythm/baseline/candidates/0000000000016379-000000000001637a.wav",
+          "variant": "baseline",
+          "sha256": "c79033a1864d5dc2cd86c688c5878c310c77dc403214d96bd9cefd93d3f01706",
+          "recipeHash": "7688afab747661d59ec1423a9a101114d61956bd062c464c45a74f8fb26f893e",
+          "sampleRate": 48000,
+          "channels": 1,
+          "frames": 60000,
+          "durationSeconds": 1.25,
+          "peak": 0.11195727437734604,
+          "rms": 0.03556582033673731,
+          "clippedSamples": 0
+        },
+        {
+          "path": "rhythm/higher-formants/master.wav",
+          "variant": "higher-formants",
+          "sha256": "9d8814add4970063489c5b572b813b1454b0edac8940f1447ef7fc5026d317f3",
+          "recipeHash": "52ebb15859389fbb370504581130f00fb5bd19f2a6ef51f0f70b2998387fa701",
+          "sampleRate": 48000,
+          "channels": 2,
+          "frames": 60000,
+          "durationSeconds": 1.25,
+          "peak": 0.07878424227237701,
+          "rms": 0.02505087525376987,
+          "clippedSamples": 0
+        },
+        {
+          "path": "rhythm/higher-formants/candidates/0000000000016379-000000000001637a.wav",
+          "variant": "higher-formants",
+          "sha256": "aeb0e101d11317f6f84fc09c71018f096e6601594bc08d01e08b36b1badd8b7e",
+          "recipeHash": "52ebb15859389fbb370504581130f00fb5bd19f2a6ef51f0f70b2998387fa701",
+          "sampleRate": 48000,
+          "channels": 1,
+          "frames": 60000,
+          "durationSeconds": 1.25,
+          "peak": 0.1114177405834198,
+          "rms": 0.0354272881472668,
+          "clippedSamples": 0
+        },
+        {
+          "path": "rhythm/breathier/master.wav",
+          "variant": "breathier",
+          "sha256": "8f356625aa4b590f952ba39aef2d09384e01a31687c83a27a74d31541ae4fca3",
+          "recipeHash": "be0207899a45d64a6975fbe6e1f1ea9ffca5ef18285f1d237893ce47fa0907a7",
+          "sampleRate": 48000,
+          "channels": 2,
+          "frames": 60000,
+          "durationSeconds": 1.25,
+          "peak": 0.07612501829862595,
+          "rms": 0.024376164477279298,
+          "clippedSamples": 0
+        },
+        {
+          "path": "rhythm/breathier/candidates/0000000000016379-000000000001637a.wav",
+          "variant": "breathier",
+          "sha256": "a2d9dd44ddd44fe1553ba2d20b8af2e11d11aa7b723baaf8263000dcd832103d",
+          "recipeHash": "be0207899a45d64a6975fbe6e1f1ea9ffca5ef18285f1d237893ce47fa0907a7",
+          "sampleRate": 48000,
+          "channels": 1,
+          "frames": 60000,
+          "durationSeconds": 1.25,
+          "peak": 0.10765703022480011,
+          "rms": 0.03447310298832937,
+          "clippedSamples": 0
+        }
+      ],
+      "exportAndAnalysisSeconds": 0.3997403340181336,
+      "emittedAudioSeconds": 7.5,
+      "exportAndAnalysisSecondsPerEmittedAudioSecond": 0.05329871120241781
+    },
+    {
+      "id": "unfamiliar-song",
+      "arguments": [
+        "phrase",
+        "あ:60:960",
+        "さ:62:960",
+        "の:64:960",
+        "そ:67:480",
+        "ら:64:1440",
+        "あ:65:960",
+        "お:64:960",
+        "い:62:960",
+        "か:60:480",
+        "ぜ:62:1440",
+        "こ:64:960",
+        "え:67:960",
+        "が:69:960",
+        "ひ:67:480",
+        "び:65:480",
+        "く:64:960",
+        "き:62:960",
+        "み:64:960",
+        "と:65:960",
+        "う:67:480",
+        "た:69:480",
+        "う:67:960",
+        "あ:72:960",
+        "さ:69:960",
+        "の:67:960",
+        "そ:65:480",
+        "ら:64:1440",
+        "こ:62:1920",
+        "え:60:1920",
+        "ー:60:2880"
+      ],
+      "outputs": [
+        {
+          "path": "unfamiliar-song/baseline/master.wav",
+          "variant": "baseline",
+          "sha256": "35149f83f3a94ced78a93940cada2f830a9ef261f2a3ea5ce56ed263266ff149",
+          "recipeHash": "7688afab747661d59ec1423a9a101114d61956bd062c464c45a74f8fb26f893e",
+          "sampleRate": 48000,
+          "channels": 2,
+          "frames": 768000,
+          "durationSeconds": 16.0,
+          "peak": 0.07767466455698013,
+          "rms": 0.015646963143721045,
+          "clippedSamples": 0
+        },
+        {
+          "path": "unfamiliar-song/baseline/candidates/0000000000016379-000000000001637a.wav",
+          "variant": "baseline",
+          "sha256": "6bea61ba18acc3861111479ce3be93f99cf20bb27e502c53f8682876cb4bf13a",
+          "recipeHash": "7688afab747661d59ec1423a9a101114d61956bd062c464c45a74f8fb26f893e",
+          "sampleRate": 48000,
+          "channels": 1,
+          "frames": 768000,
+          "durationSeconds": 16.0,
+          "peak": 0.10984856635332108,
+          "rms": 0.02212814786787962,
+          "clippedSamples": 0
+        },
+        {
+          "path": "unfamiliar-song/higher-formants/master.wav",
+          "variant": "higher-formants",
+          "sha256": "b168b3b6fa06bab825ebdadd52a33ce52bbb19a6c810af61857521973c6ddd7e",
+          "recipeHash": "52ebb15859389fbb370504581130f00fb5bd19f2a6ef51f0f70b2998387fa701",
+          "sampleRate": 48000,
+          "channels": 2,
+          "frames": 768000,
+          "durationSeconds": 16.0,
+          "peak": 0.07767466455698013,
+          "rms": 0.014058309052917576,
+          "clippedSamples": 0
+        },
+        {
+          "path": "unfamiliar-song/higher-formants/candidates/0000000000016379-000000000001637a.wav",
+          "variant": "higher-formants",
+          "sha256": "7fda291c7dd5606f749d7bd1305eb403a2452a01658fe56feb7bda3cb9c78c4c",
+          "recipeHash": "52ebb15859389fbb370504581130f00fb5bd19f2a6ef51f0f70b2998387fa701",
+          "sampleRate": 48000,
+          "channels": 1,
+          "frames": 768000,
+          "durationSeconds": 16.0,
+          "peak": 0.10984856635332108,
+          "rms": 0.0198814516644593,
+          "clippedSamples": 0
+        },
+        {
+          "path": "unfamiliar-song/breathier/master.wav",
+          "variant": "breathier",
+          "sha256": "286174433a4aa8b996cedc0074797d801bc4451f33026322c506d639b378ac04",
+          "recipeHash": "be0207899a45d64a6975fbe6e1f1ea9ffca5ef18285f1d237893ce47fa0907a7",
+          "sampleRate": 48000,
+          "channels": 2,
+          "frames": 768000,
+          "durationSeconds": 16.0,
+          "peak": 0.07690485566854477,
+          "rms": 0.01511751850999065,
+          "clippedSamples": 0
+        },
+        {
+          "path": "unfamiliar-song/breathier/candidates/0000000000016379-000000000001637a.wav",
+          "variant": "breathier",
+          "sha256": "8d24498f97437debeb8f94d9366f271898e62f3ae13bd3a37fbc8ec58e0599c5",
+          "recipeHash": "be0207899a45d64a6975fbe6e1f1ea9ffca5ef18285f1d237893ce47fa0907a7",
+          "sampleRate": 48000,
+          "channels": 1,
+          "frames": 768000,
+          "durationSeconds": 16.0,
+          "peak": 0.10875988751649857,
+          "rms": 0.021379400071502262,
+          "clippedSamples": 0
+        }
+      ],
+      "exportAndAnalysisSeconds": 4.3697017910308205,
+      "emittedAudioSeconds": 96.0,
+      "exportAndAnalysisSecondsPerEmittedAudioSecond": 0.04551772698990438
+    }
+  ],
+  "artifacts": [
+    {
+      "path": "affricates/baseline/candidates/0000000000016379-000000000001637a.json",
+      "bytes": 2012,
+      "sha256": "5bcedc307741dea40089b5566b722c6b899c5c40a4e2f09e77ae61faf3a2f7b6"
+    },
+    {
+      "path": "affricates/baseline/candidates/0000000000016379-000000000001637a.wav",
+      "bytes": 192044,
+      "sha256": "976f3a774bd137af8aac0751e2e8c2075bc6137e85e18ffb4a912e05afe27a8f"
+    },
+    {
+      "path": "affricates/baseline/master.wav",
+      "bytes": 384044,
+      "sha256": "4531ded6ebd53ea1c0368c48b3c3e84eec85697f20f27301cbd84896db09eec5"
+    },
+    {
+      "path": "affricates/baseline/project.seam",
+      "bytes": 6407,
+      "sha256": "0e72ac6cea8082b3f9b62b41d76b8c543b7b5682e525c40d48b25f39d19cc5c9"
+    },
+    {
+      "path": "affricates/baseline/receipt.json",
+      "bytes": 1883,
+      "sha256": "911d09e48cbf006180567120920c02a889f54ef7d4141239d5576a315f036dbf"
+    },
+    {
+      "path": "affricates/baseline/recipes/fd56689e6b49d3965d67dae3d63cc7dbbfe2f917816970bd35b704526a819376.json",
+      "bytes": 7279,
+      "sha256": "fd56689e6b49d3965d67dae3d63cc7dbbfe2f917816970bd35b704526a819376"
+    },
+    {
+      "path": "affricates/baseline-pitch.json",
+      "bytes": 1705,
+      "sha256": "08c06bcc186ba9198a2608e6b403dd296d41b3690f4bc286232a308ca9709182"
+    },
+    {
+      "path": "affricates/baseline-recipe.json",
+      "bytes": 7279,
+      "sha256": "fd56689e6b49d3965d67dae3d63cc7dbbfe2f917816970bd35b704526a819376"
+    },
+    {
+      "path": "affricates/baseline.seam",
+      "bytes": 6350,
+      "sha256": "c9306a6685ac079abf0c1894ce61a583a616d585a47bb069003fff1aba0529ae"
+    },
+    {
+      "path": "affricates/breathier/candidates/0000000000016379-000000000001637a.json",
+      "bytes": 2012,
+      "sha256": "de6b60ecd5fd2382c875539f1fc173d24e1cd5628227e24e7a39fb8d518c0bc5"
+    },
+    {
+      "path": "affricates/breathier/candidates/0000000000016379-000000000001637a.wav",
+      "bytes": 192044,
+      "sha256": "0d497b0284182bb8eaf5f7be439c7a4189b69aa997f04f2fa53d17b6826fd821"
+    },
+    {
+      "path": "affricates/breathier/master.wav",
+      "bytes": 384044,
+      "sha256": "6fd6e0b2d2055e642af167521b500c399970700a9e10074f048436ec39a12330"
+    },
+    {
+      "path": "affricates/breathier/project.seam",
+      "bytes": 6407,
+      "sha256": "f0582f7a6946b465b2e1c5ac06e383bcff3b1fcd880eca96c19ccd5f53befe9d"
+    },
+    {
+      "path": "affricates/breathier/receipt.json",
+      "bytes": 1883,
+      "sha256": "abefea96e994c1bdc03853c233d61153ba1fedaae0696240fc9d7e05df68a97f"
+    },
+    {
+      "path": "affricates/breathier/recipes/180bf3b7cefe87355d3c6763edb43bc2666485e2bd9ad98236b601729d8c88a6.json",
+      "bytes": 7278,
+      "sha256": "180bf3b7cefe87355d3c6763edb43bc2666485e2bd9ad98236b601729d8c88a6"
+    },
+    {
+      "path": "affricates/breathier-pitch.json",
+      "bytes": 1701,
+      "sha256": "c5d40a73f0779985ba8e49627806083f73e3e6c7ff39e9c323bf2a6084588318"
+    },
+    {
+      "path": "affricates/breathier-recipe.json",
+      "bytes": 7278,
+      "sha256": "180bf3b7cefe87355d3c6763edb43bc2666485e2bd9ad98236b601729d8c88a6"
+    },
+    {
+      "path": "affricates/breathier.seam",
+      "bytes": 6351,
+      "sha256": "e62d155dff6846a9cdae2fee50a2cf794c1ea1c4599036162a62d63c547e6de9"
+    },
+    {
+      "path": "affricates/higher-formants/candidates/0000000000016379-000000000001637a.json",
+      "bytes": 2012,
+      "sha256": "882ebd914f2ebd41cad84165c56a6ea03b459d0284a9df0c327b63644f1d7ea6"
+    },
+    {
+      "path": "affricates/higher-formants/candidates/0000000000016379-000000000001637a.wav",
+      "bytes": 192044,
+      "sha256": "cf1687b8b8d82cbb00f18dfb17426d9d5eac9f02f36532f1ecd6138e35219d51"
+    },
+    {
+      "path": "affricates/higher-formants/master.wav",
+      "bytes": 384044,
+      "sha256": "1a9b15784fc06472d503bf80c6a55c3d08742e849f2a4ad4f93a65105564d7ba"
+    },
+    {
+      "path": "affricates/higher-formants/project.seam",
+      "bytes": 6407,
+      "sha256": "a06843a38db244668fcd7a9c95a0e7bde0b851f9d05ca1bec090d57be487d19e"
+    },
+    {
+      "path": "affricates/higher-formants/receipt.json",
+      "bytes": 1883,
+      "sha256": "3e49d90bf8cb95a7074aa3aaa71aa123c5c67a3fe2d7d91518d99ad14e75a6c6"
+    },
+    {
+      "path": "affricates/higher-formants/recipes/1839a7779971a13fe4e187ac93f618a072fc695379d21f7bbd4a905820ff335e.json",
+      "bytes": 7439,
+      "sha256": "1839a7779971a13fe4e187ac93f618a072fc695379d21f7bbd4a905820ff335e"
+    },
+    {
+      "path": "affricates/higher-formants-pitch.json",
+      "bytes": 1704,
+      "sha256": "c6996190e8d691aa4ccdc6449030d7eda7a693e32ecded2db8518119ae282f2c"
+    },
+    {
+      "path": "affricates/higher-formants-recipe.json",
+      "bytes": 7439,
+      "sha256": "1839a7779971a13fe4e187ac93f618a072fc695379d21f7bbd4a905820ff335e"
+    },
+    {
+      "path": "affricates/higher-formants.seam",
+      "bytes": 6357,
+      "sha256": "cf572fb317cdf0beedabe5839793cf77a28dcf16462bee31093c4829a3f0f9e8"
+    },
+    {
+      "path": "affricates/pilot.json",
+      "bytes": 2629,
+      "sha256": "d98456ead1e58924ddcde35356fe20495f5c1b79ae090becfb4e900bb7fb84ea"
+    },
+    {
+      "path": "affricates.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "affricates.stdout.txt",
+      "bytes": 706,
+      "sha256": "3f56dcaa547421ca2dd660d536843482026456889ec5977814d4ce88b17deba1"
+    },
+    {
+      "path": "articulation/baseline/candidates/0000000000016379-000000000001637a.json",
+      "bytes": 4895,
+      "sha256": "1ece9c10ead604e2e481e84f8ea7c6aba9709112aa1989be9f7106ba272bdd9e"
+    },
+    {
+      "path": "articulation/baseline/candidates/0000000000016379-000000000001637a.wav",
+      "bytes": 672044,
+      "sha256": "e659620be33eade1ac226bad4ba79b8717f08988faf70608d68d44c84791934e"
+    },
+    {
+      "path": "articulation/baseline/master.wav",
+      "bytes": 1344044,
+      "sha256": "940a96f65819c36da27ca492a315b3b2813e41617c0301dfef97c871cdac0d69"
+    },
+    {
+      "path": "articulation/baseline/project.seam",
+      "bytes": 13808,
+      "sha256": "192c2b6612416e4aba8ec1c48635c3a24f97ec3fd22b7c66834454a9f049a20a"
+    },
+    {
+      "path": "articulation/baseline/receipt.json",
+      "bytes": 1888,
+      "sha256": "0f6e3f26e3f27d4309ebe314c098bb59dd22b0ab16925e5311dc10414f3b5025"
+    },
+    {
+      "path": "articulation/baseline/recipes/dd37ea25af9c3b6fba91afd9b38dc315b3efbd1df4268c30cce5c51459aea255.json",
+      "bytes": 6487,
+      "sha256": "dd37ea25af9c3b6fba91afd9b38dc315b3efbd1df4268c30cce5c51459aea255"
+    },
+    {
+      "path": "articulation/baseline-pitch.json",
+      "bytes": 5407,
+      "sha256": "8bd15f8ab61599171eceb413c21e574aa4cc4a9a384e3a2354f5fab3528dfd72"
+    },
+    {
+      "path": "articulation/baseline-recipe.json",
+      "bytes": 6487,
+      "sha256": "dd37ea25af9c3b6fba91afd9b38dc315b3efbd1df4268c30cce5c51459aea255"
+    },
+    {
+      "path": "articulation/baseline.seam",
+      "bytes": 13751,
+      "sha256": "21031265292e1f8276c1fc2d2daeec71f0ac6bcb6d9750a8982d96d874e7e25b"
+    },
+    {
+      "path": "articulation/breathier/candidates/0000000000016379-000000000001637a.json",
+      "bytes": 4895,
+      "sha256": "7d193b89f9c79a5b84797aa95887aa1a48795ec0f9650b70c4ec3b07c1d7170f"
+    },
+    {
+      "path": "articulation/breathier/candidates/0000000000016379-000000000001637a.wav",
+      "bytes": 672044,
+      "sha256": "2443fa47cb2b1220854742d4637b508115c051bb85a5cf9350310873ccc4626d"
+    },
+    {
+      "path": "articulation/breathier/master.wav",
+      "bytes": 1344044,
+      "sha256": "3bf36e6513346b2fd7ef160facd0ebd35ab54a02fc4b8dc47e8d1c32fcdb8803"
+    },
+    {
+      "path": "articulation/breathier/project.seam",
+      "bytes": 13808,
+      "sha256": "bda53164bae0c665b25dfb44b0fb3a703263d6ecc50ee63db1fbac465828b3ac"
+    },
+    {
+      "path": "articulation/breathier/receipt.json",
+      "bytes": 1888,
+      "sha256": "a1b8c35a03c0e13daa6651481af11cdb6c0ba40a22c56202eca06965b9fd46bf"
+    },
+    {
+      "path": "articulation/breathier/recipes/e30c6585315540faca1b3f282636298f14f8ce57909f583711988cc1eda5619b.json",
+      "bytes": 6486,
+      "sha256": "e30c6585315540faca1b3f282636298f14f8ce57909f583711988cc1eda5619b"
+    },
+    {
+      "path": "articulation/breathier-pitch.json",
+      "bytes": 5400,
+      "sha256": "5e5cd61a6f81421a3d4e8886235b057a7dd935488ce66142df573f1b7f8c9aa2"
+    },
+    {
+      "path": "articulation/breathier-recipe.json",
+      "bytes": 6486,
+      "sha256": "e30c6585315540faca1b3f282636298f14f8ce57909f583711988cc1eda5619b"
+    },
+    {
+      "path": "articulation/breathier.seam",
+      "bytes": 13752,
+      "sha256": "902a5d631070cf095468c3ff9753e3d7ed6f510e8394d4e81d64ae375f2cc4cf"
+    },
+    {
+      "path": "articulation/higher-formants/candidates/0000000000016379-000000000001637a.json",
+      "bytes": 4895,
+      "sha256": "14f9bdee52b2a32f39218075c7f02a0cc9c8eff557b22b81e3de5f120b498e19"
+    },
+    {
+      "path": "articulation/higher-formants/candidates/0000000000016379-000000000001637a.wav",
+      "bytes": 672044,
+      "sha256": "18ea8c2887579fe48970b5d58a835f147a7a060bf61b9c67739e67da834f5752"
+    },
+    {
+      "path": "articulation/higher-formants/master.wav",
+      "bytes": 1344044,
+      "sha256": "b15d3ad308e56a3f5f74fb9a27ab3695be4e1e9d0faf582d63e9392d4ece7544"
+    },
+    {
+      "path": "articulation/higher-formants/project.seam",
+      "bytes": 13808,
+      "sha256": "8cdb98a6d5716a53a37aa110b093a8eab55e6ac1223762463a83cd36d116eb9a"
+    },
+    {
+      "path": "articulation/higher-formants/receipt.json",
+      "bytes": 1888,
+      "sha256": "a15fb2f7a63aa7b0ce55de63802905843379e170e785875faee649367212455f"
+    },
+    {
+      "path": "articulation/higher-formants/recipes/875065d410209cbac18a95490d17fd242c4daaa03bc37e54558c427dfad73c97.json",
+      "bytes": 6647,
+      "sha256": "875065d410209cbac18a95490d17fd242c4daaa03bc37e54558c427dfad73c97"
+    },
+    {
+      "path": "articulation/higher-formants-pitch.json",
+      "bytes": 5407,
+      "sha256": "2619f3dc7a6a155f023b5f9a4c0e936dab8e4f112c4902c36ef65f11e9b5a388"
+    },
+    {
+      "path": "articulation/higher-formants-recipe.json",
+      "bytes": 6647,
+      "sha256": "875065d410209cbac18a95490d17fd242c4daaa03bc37e54558c427dfad73c97"
+    },
+    {
+      "path": "articulation/higher-formants.seam",
+      "bytes": 13758,
+      "sha256": "f2da26a65907697c6a24fcf4cd1d88603ea0ba31f46b3c88e971605f90cec11f"
+    },
+    {
+      "path": "articulation/pilot.json",
+      "bytes": 2661,
+      "sha256": "9760898f6bd72d148ffad3a830d5c0569a9ece20b956cfdb9cd81d94a5d77de7"
+    },
+    {
+      "path": "articulation.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "articulation.stdout.txt",
+      "bytes": 718,
+      "sha256": "07683b690433a50f73dd488db1813945acead6dc99978955b53bdb1fe993ae6b"
+    },
+    {
+      "path": "build/dependencies.txt",
+      "bytes": 1013,
+      "sha256": "6d2e2d39de1522bcc6aaa9330ba94c3333abfb217be2cbc327cfa5016a6daa90"
+    },
+    {
+      "path": "build/libcrypto.3.dylib",
+      "bytes": 4856256,
+      "sha256": "a12805a18cd5e4f733fa8727b91afa08b587f9da5a760517cd79cb508a3a3f71"
+    },
+    {
+      "path": "build/seam_singer_pilot",
+      "bytes": 2336000,
+      "sha256": "d750e380623652ec56c2a3ddd28f58ca62c09034504b78b40d7032f6038886d6"
+    },
+    {
+      "path": "build/version.hpp",
+      "bytes": 985,
+      "sha256": "4e5a799ed0d6551ea1717f5aa1a6264f85153e957b9d64b890552c0d78b9667f"
+    },
+    {
+      "path": "events/baseline/candidates/0000000000016379-000000000001637a.json",
+      "bytes": 2229,
+      "sha256": "ccaa837fabcd0befeb51114f31255e5dfe5654e4da50a27efe6a2321cc38a25b"
+    },
+    {
+      "path": "events/baseline/candidates/0000000000016379-000000000001637a.wav",
+      "bytes": 288044,
+      "sha256": "3adbb22dcc0a54f11a22dbd5e042a401db90e52934fd1759c93c2c15ae921464"
+    },
+    {
+      "path": "events/baseline/master.wav",
+      "bytes": 576044,
+      "sha256": "5343ad105bf59fa96cc350bfccb51ca1e29d52e7862c6af900278523e5c154a8"
+    },
+    {
+      "path": "events/baseline/project.seam",
+      "bytes": 7900,
+      "sha256": "9e886831ef8912ecbfe0396aa814ad662f93e1b43d817f8468fe884a06263376"
+    },
+    {
+      "path": "events/baseline/receipt.json",
+      "bytes": 1880,
+      "sha256": "d6f35498cbe1b6493072c74c4d9688452247c07e29b8784ca534b86de78c980a"
+    },
+    {
+      "path": "events/baseline/recipes/291884f07bf8314adcffc3ec888d803e1c9169a4788eb7a71f0b7012d9a935d6.json",
+      "bytes": 5273,
+      "sha256": "291884f07bf8314adcffc3ec888d803e1c9169a4788eb7a71f0b7012d9a935d6"
+    },
+    {
+      "path": "events/baseline-pitch.json",
+      "bytes": 2390,
+      "sha256": "1c70a9442ca5797d76834804bf71b194d7c8a2f3ce7e0b5da55049b4b7b46710"
+    },
+    {
+      "path": "events/baseline-recipe.json",
+      "bytes": 5273,
+      "sha256": "291884f07bf8314adcffc3ec888d803e1c9169a4788eb7a71f0b7012d9a935d6"
+    },
+    {
+      "path": "events/baseline.seam",
+      "bytes": 7843,
+      "sha256": "26c220aa8d6c2f98a38a64cd462b17e7702898eae315eae4a10fe6b10b65213f"
+    },
+    {
+      "path": "events/breathier/candidates/0000000000016379-000000000001637a.json",
+      "bytes": 2229,
+      "sha256": "0c58301ce241c3b4ca4d9f53e4b1341bc861a5ab0b41439e5c86fc8fa3e2cea2"
+    },
+    {
+      "path": "events/breathier/candidates/0000000000016379-000000000001637a.wav",
+      "bytes": 288044,
+      "sha256": "df1bcbd8f6824bcffbdc4b99d27387451200f3be9c33bce3e94bedd4e43e6864"
+    },
+    {
+      "path": "events/breathier/master.wav",
+      "bytes": 576044,
+      "sha256": "9954fa3e1ffdbadf5ff9615bd5e06ed123ba517aec045595121ee0ae33844e75"
+    },
+    {
+      "path": "events/breathier/project.seam",
+      "bytes": 7900,
+      "sha256": "9161b52a7bbebbe2d6501d4de7a9f9fef551feb40c5d8221b7cee46f3fd1457e"
+    },
+    {
+      "path": "events/breathier/receipt.json",
+      "bytes": 1880,
+      "sha256": "63e576c8a21189934416675245fd02df9541fc019479ee359d70912af47ae445"
+    },
+    {
+      "path": "events/breathier/recipes/abe464079ab5d6ab0302dde7771b492290d82eb5cf324343476c665e96803fc9.json",
+      "bytes": 5272,
+      "sha256": "abe464079ab5d6ab0302dde7771b492290d82eb5cf324343476c665e96803fc9"
+    },
+    {
+      "path": "events/breathier-pitch.json",
+      "bytes": 2387,
+      "sha256": "168a34f9948848af52ac1872c7dfc679b386bd6f78f370f02a407c5dac421b07"
+    },
+    {
+      "path": "events/breathier-recipe.json",
+      "bytes": 5272,
+      "sha256": "abe464079ab5d6ab0302dde7771b492290d82eb5cf324343476c665e96803fc9"
+    },
+    {
+      "path": "events/breathier.seam",
+      "bytes": 7844,
+      "sha256": "dc7723ddbc059d4fd9aea359100d9d027a9f884cdd2e9c16e4a0fe5fe2f58021"
+    },
+    {
+      "path": "events/higher-formants/candidates/0000000000016379-000000000001637a.json",
+      "bytes": 2229,
+      "sha256": "f5266047de653fc931707c82b64df2823dda230c4568120dccf1ce97cafe2cc5"
+    },
+    {
+      "path": "events/higher-formants/candidates/0000000000016379-000000000001637a.wav",
+      "bytes": 288044,
+      "sha256": "3fbc5b71e085d3b6436d5f7ebd1f5479104081f6d93bd865c6f683afddc746bc"
+    },
+    {
+      "path": "events/higher-formants/master.wav",
+      "bytes": 576044,
+      "sha256": "3bb3f06fd016b065e54975c442dc65741f78f89842449c0699f3c8400d9b6aad"
+    },
+    {
+      "path": "events/higher-formants/project.seam",
+      "bytes": 7900,
+      "sha256": "5db867b6d95c0111898f237f88203f12d97a9094544f99aff11f85a179d1cc16"
+    },
+    {
+      "path": "events/higher-formants/receipt.json",
+      "bytes": 1880,
+      "sha256": "9fd24a729c1075b98af5fc2404ab2a77f67546a56816399025119f7c2ce4e01d"
+    },
+    {
+      "path": "events/higher-formants/recipes/a59ee0db9ddefca5ef40f0573d2c432f60c901aac148dd7dabc002e8295de3af.json",
+      "bytes": 5405,
+      "sha256": "a59ee0db9ddefca5ef40f0573d2c432f60c901aac148dd7dabc002e8295de3af"
+    },
+    {
+      "path": "events/higher-formants-pitch.json",
+      "bytes": 2391,
+      "sha256": "92d06b71233dc269284b75811f20b2678d142ba04266b3f1aa82a87185a1fd0a"
+    },
+    {
+      "path": "events/higher-formants-recipe.json",
+      "bytes": 5405,
+      "sha256": "a59ee0db9ddefca5ef40f0573d2c432f60c901aac148dd7dabc002e8295de3af"
+    },
+    {
+      "path": "events/higher-formants.seam",
+      "bytes": 7850,
+      "sha256": "551596b0ccff6a1a0c408520dc9ce7ff5c5ffbea07ac51fd3377a991ef8222d7"
+    },
+    {
+      "path": "events/pilot.json",
+      "bytes": 2623,
+      "sha256": "d2b0238e09ddef4f4dd36bbee704f0795cad5ce1d36ce84d111e0af974ffe49e"
+    },
+    {
+      "path": "events.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "events.stdout.txt",
+      "bytes": 682,
+      "sha256": "505fa342d9b81e02d5bfd4862cac65b273887eb8266ce0e450f9c6357e687ff0"
+    },
+    {
+      "path": "glides/baseline/candidates/0000000000016379-000000000001637a.json",
+      "bytes": 1852,
+      "sha256": "f6712907803ed0fd96595e5c067ae645f2bdc08ccc711967e11f5a025c2d7d86"
+    },
+    {
+      "path": "glides/baseline/candidates/0000000000016379-000000000001637a.wav",
+      "bytes": 192044,
+      "sha256": "810c402ed8c0cb479afc42aa04e7ba113df69676c89a5b9962ff77c3405214b1"
+    },
+    {
+      "path": "glides/baseline/master.wav",
+      "bytes": 384044,
+      "sha256": "88580b8e1d466878ed01d30a28707c6f20c815e9125ee6b327ad5dc3f353059e"
+    },
+    {
+      "path": "glides/baseline/project.seam",
+      "bytes": 6406,
+      "sha256": "ba562aea1679cc2508af960fbe5875247c01153d325070a1b64d1db7b1f76f29"
+    },
+    {
+      "path": "glides/baseline/receipt.json",
+      "bytes": 1885,
+      "sha256": "c1f3e5bac927b82191bc2b3f4a9e0b0c398fdffe94ad3d15fdc9c744add1df0e"
+    },
+    {
+      "path": "glides/baseline/recipes/c0f80f958d37fe6b2261670763d55dc55a15c1ea0c7c3c201e637423dc2b2018.json",
+      "bytes": 6400,
+      "sha256": "c0f80f958d37fe6b2261670763d55dc55a15c1ea0c7c3c201e637423dc2b2018"
+    },
+    {
+      "path": "glides/baseline-pitch.json",
+      "bytes": 1704,
+      "sha256": "46aa502012b3bba90b9b779fab947a4628082254edff480561103e7fa6460b5b"
+    },
+    {
+      "path": "glides/baseline-recipe.json",
+      "bytes": 6400,
+      "sha256": "c0f80f958d37fe6b2261670763d55dc55a15c1ea0c7c3c201e637423dc2b2018"
+    },
+    {
+      "path": "glides/baseline.seam",
+      "bytes": 6349,
+      "sha256": "42b3e9628869ff1ffcd3f84c89f44d45ce1f747360143179c0372d2f2b85a4f7"
+    },
+    {
+      "path": "glides/breathier/candidates/0000000000016379-000000000001637a.json",
+      "bytes": 1852,
+      "sha256": "346dacc2d210077173a0a820ae6409e3ad2f134f0fcc55f53fdf82dce4e4ae79"
+    },
+    {
+      "path": "glides/breathier/candidates/0000000000016379-000000000001637a.wav",
+      "bytes": 192044,
+      "sha256": "c05aace6d0687a223c79b322234e2637ef7525cf47dc1506495cb2f45a803152"
+    },
+    {
+      "path": "glides/breathier/master.wav",
+      "bytes": 384044,
+      "sha256": "893d876d1236c4b6aa7edcff16bfea6378fbb925ae796c6f12b8bcf522df3909"
+    },
+    {
+      "path": "glides/breathier/project.seam",
+      "bytes": 6406,
+      "sha256": "07ca0a2fd7710392b90695370346f04d6d930feadf74d6fc4398fe1e9a84a94b"
+    },
+    {
+      "path": "glides/breathier/receipt.json",
+      "bytes": 1885,
+      "sha256": "4dd5ad5fefa9d71a260110bec9306f3af9cd83bd1b3ca9de9520057eb0bc6538"
+    },
+    {
+      "path": "glides/breathier/recipes/d74d34b72a3d11310c13ccbdb6a30a67bfd6afd751505e2996b363726b4054c9.json",
+      "bytes": 6399,
+      "sha256": "d74d34b72a3d11310c13ccbdb6a30a67bfd6afd751505e2996b363726b4054c9"
+    },
+    {
+      "path": "glides/breathier-pitch.json",
+      "bytes": 1699,
+      "sha256": "591a1a7d56bb3bcf55f9c7b39df3b3640bc86bc40c616e96b78a84cc95714ba0"
+    },
+    {
+      "path": "glides/breathier-recipe.json",
+      "bytes": 6399,
+      "sha256": "d74d34b72a3d11310c13ccbdb6a30a67bfd6afd751505e2996b363726b4054c9"
+    },
+    {
+      "path": "glides/breathier.seam",
+      "bytes": 6350,
+      "sha256": "acd19509d24e866d69c2d1fa0ae4396b3f90b55b2a4085c5da5c818efd89218b"
+    },
+    {
+      "path": "glides/higher-formants/candidates/0000000000016379-000000000001637a.json",
+      "bytes": 1852,
+      "sha256": "b19484039110ab6f34e435d345167b29ab4ff0464bc234163e0de94a07c36441"
+    },
+    {
+      "path": "glides/higher-formants/candidates/0000000000016379-000000000001637a.wav",
+      "bytes": 192044,
+      "sha256": "3eb01c287d2cc581de5f17bd79575098982fad8c271677efc0201c2f6fb10b79"
+    },
+    {
+      "path": "glides/higher-formants/master.wav",
+      "bytes": 384044,
+      "sha256": "5e077ebfa2d056f268add5fcb56169e558ffe0e4c27a127c37fa5a397fec8489"
+    },
+    {
+      "path": "glides/higher-formants/project.seam",
+      "bytes": 6406,
+      "sha256": "5948202618f681aa8f6e184e83138fa3cedd08690fbeb835f9a086e36b277a07"
+    },
+    {
+      "path": "glides/higher-formants/receipt.json",
+      "bytes": 1885,
+      "sha256": "cac6ad033468979292c0ad9c6aa484fbf4d92d11edb9ff2219a062825d1b431d"
+    },
+    {
+      "path": "glides/higher-formants/recipes/15d515fddca17f0374527bc1e99cf963d3eb4a131f83f389d2f0b2f1bcbda4a2.json",
+      "bytes": 6579,
+      "sha256": "15d515fddca17f0374527bc1e99cf963d3eb4a131f83f389d2f0b2f1bcbda4a2"
+    },
+    {
+      "path": "glides/higher-formants-pitch.json",
+      "bytes": 1704,
+      "sha256": "82b2dd03027aca2acfbc4077f15c8a4adfea4a6ab3cfb8d0840242760d51a7da"
+    },
+    {
+      "path": "glides/higher-formants-recipe.json",
+      "bytes": 6579,
+      "sha256": "15d515fddca17f0374527bc1e99cf963d3eb4a131f83f389d2f0b2f1bcbda4a2"
+    },
+    {
+      "path": "glides/higher-formants.seam",
+      "bytes": 6356,
+      "sha256": "cac951dad513a43b3ec1f4c03a53ce7014b4b5e9971cedeca0aa27479fbdcfed"
+    },
+    {
+      "path": "glides/pilot.json",
+      "bytes": 2608,
+      "sha256": "f40f131272627be12d879ef13db895ff4a5c25311a7c551e4c718f85056d84de"
+    },
+    {
+      "path": "glides.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "glides.stdout.txt",
+      "bytes": 682,
+      "sha256": "3ab0e958ccafa562dd092441c879107ff05bd7b83e24ecfa5951aeafba228e84"
+    },
+    {
+      "path": "melisma/baseline/candidates/0000000000016379-000000000001637a.json",
+      "bytes": 1636,
+      "sha256": "8f9700c1937c2bbfc9975a771fe240d75a0c67b2e58db9be804fb5e8309ff04b"
+    },
+    {
+      "path": "melisma/baseline/candidates/0000000000016379-000000000001637a.wav",
+      "bytes": 384044,
+      "sha256": "2b8819d410a575f05a3675ab469092a145b6fae580bf88e454c6fd5e056aa0a1"
+    },
+    {
+      "path": "melisma/baseline/master.wav",
+      "bytes": 768044,
+      "sha256": "9a587c291923c98e758833f6462da95b919c241d841ae2c4a20bb1b31e44ab3b"
+    },
+    {
+      "path": "melisma/baseline/project.seam",
+      "bytes": 9368,
+      "sha256": "3aa0a850ce2e9b741b29684b65b4d593ff5a3122782eefef15affa9d4143cec7"
+    },
+    {
+      "path": "melisma/baseline/receipt.json",
+      "bytes": 1873,
+      "sha256": "b954bd826e96490a420f1a7d47cf920b57e13e8718ede2ab832c6fb242e65390"
+    },
+    {
+      "path": "melisma/baseline/recipes/85af174759290346b20f128ae9fd8f66c964b403bb67f78ebc3d2c161be81756.json",
+      "bytes": 4728,
+      "sha256": "85af174759290346b20f128ae9fd8f66c964b403bb67f78ebc3d2c161be81756"
+    },
+    {
+      "path": "melisma/baseline-pitch.json",
+      "bytes": 3179,
+      "sha256": "728ea77537d8bb8186a98c7752a1c534eeace40d18dae55b17e1b89cdfce7290"
+    },
+    {
+      "path": "melisma/baseline-recipe.json",
+      "bytes": 4728,
+      "sha256": "85af174759290346b20f128ae9fd8f66c964b403bb67f78ebc3d2c161be81756"
+    },
+    {
+      "path": "melisma/baseline.seam",
+      "bytes": 9311,
+      "sha256": "bf8db90dce490e91cc4b4448c00cd16a87c263eb6b11853d459322ea3cf9688b"
+    },
+    {
+      "path": "melisma/breathier/candidates/0000000000016379-000000000001637a.json",
+      "bytes": 1636,
+      "sha256": "08dfd1ff507c5689d95a58dce1210adca71a0df92f056a38451fe7c767b857b3"
+    },
+    {
+      "path": "melisma/breathier/candidates/0000000000016379-000000000001637a.wav",
+      "bytes": 384044,
+      "sha256": "aec5799b182f75d1d48373564f1fe11003f8be61b2ee9c9243c4ae902e9feb9c"
+    },
+    {
+      "path": "melisma/breathier/master.wav",
+      "bytes": 768044,
+      "sha256": "6215fb70a5eb3db919f88f886fcd0f584a7fec2858486db10f3a466693723eed"
+    },
+    {
+      "path": "melisma/breathier/project.seam",
+      "bytes": 9368,
+      "sha256": "e19f507708c5b32944b016387d9fbe52fc8550ec1f244550ab6bb7255ee91605"
+    },
+    {
+      "path": "melisma/breathier/receipt.json",
+      "bytes": 1873,
+      "sha256": "ef2291616781d2e601d268e2661ee26db2197d20cf9ab453483d7d67b8566c50"
+    },
+    {
+      "path": "melisma/breathier/recipes/70fa5fbeae9972cb53d126ea90002c31bb49aa1576c50e4ab329d60b50e1e793.json",
+      "bytes": 4727,
+      "sha256": "70fa5fbeae9972cb53d126ea90002c31bb49aa1576c50e4ab329d60b50e1e793"
+    },
+    {
+      "path": "melisma/breathier-pitch.json",
+      "bytes": 3171,
+      "sha256": "507e30eeeababc293c54ef4cc77726a43e6dd449900515d656850b9b5eefbef7"
+    },
+    {
+      "path": "melisma/breathier-recipe.json",
+      "bytes": 4727,
+      "sha256": "70fa5fbeae9972cb53d126ea90002c31bb49aa1576c50e4ab329d60b50e1e793"
+    },
+    {
+      "path": "melisma/breathier.seam",
+      "bytes": 9312,
+      "sha256": "f554291e791c2b644bb9ac35b3a372227ec5b7106814437d23da1871b29b5805"
+    },
+    {
+      "path": "melisma/higher-formants/candidates/0000000000016379-000000000001637a.json",
+      "bytes": 1636,
+      "sha256": "e63680d1508709aea9a9f77566b11b046d1d1f4b5ba98bb3b1f81be937fe2695"
+    },
+    {
+      "path": "melisma/higher-formants/candidates/0000000000016379-000000000001637a.wav",
+      "bytes": 384044,
+      "sha256": "1a25e26037b565b1bb21edfc11798b3e84ec6f4920d28629bfbbc30dbb3057ba"
+    },
+    {
+      "path": "melisma/higher-formants/master.wav",
+      "bytes": 768044,
+      "sha256": "5c26466a2cdb665eb6f3d69ce015013974052461b61bc39bb41f8c3930442dc9"
+    },
+    {
+      "path": "melisma/higher-formants/project.seam",
+      "bytes": 9368,
+      "sha256": "c694ea22fd44696d357f4c13106109830ce11ef07a13d99cc257115788c62799"
+    },
+    {
+      "path": "melisma/higher-formants/receipt.json",
+      "bytes": 1873,
+      "sha256": "d88eafccb679a22aa0b71eb8c4e98d60548ea509945eef1679d5ea4574bf4d27"
+    },
+    {
+      "path": "melisma/higher-formants/recipes/f6e8528fe4757ca2624550403fdb3e9d3e060e88a3888297fe0a7e3bf63de10c.json",
+      "bytes": 4860,
+      "sha256": "f6e8528fe4757ca2624550403fdb3e9d3e060e88a3888297fe0a7e3bf63de10c"
+    },
+    {
+      "path": "melisma/higher-formants-pitch.json",
+      "bytes": 3179,
+      "sha256": "46684f6640727fd1535943b9f32836b6c792a2b4299b1638b5ab2842aa8dc1d6"
+    },
+    {
+      "path": "melisma/higher-formants-recipe.json",
+      "bytes": 4860,
+      "sha256": "f6e8528fe4757ca2624550403fdb3e9d3e060e88a3888297fe0a7e3bf63de10c"
+    },
+    {
+      "path": "melisma/higher-formants.seam",
+      "bytes": 9318,
+      "sha256": "59bbb1bc259829219a5dc97ce49b4284f38548d03d742972a859e1ff6783049c"
+    },
+    {
+      "path": "melisma/pilot.json",
+      "bytes": 2641,
+      "sha256": "4d2d1ed139bed7ca4e95e474c963d879df6afa7488543ab25862f235bed95a5e"
+    },
+    {
+      "path": "melisma.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "melisma.stdout.txt",
+      "bytes": 688,
+      "sha256": "8a01f32ef4b9e5ec291a6d40a6399634f86ef0f23d0b0074bcfd504f8d263ec2"
+    },
+    {
+      "path": "nasals/baseline/candidates/0000000000016379-000000000001637a.json",
+      "bytes": 1664,
+      "sha256": "4e9d4162b45755697aeaef203ef00247f1cef7c08b1eff9def8c0e21968258b4"
+    },
+    {
+      "path": "nasals/baseline/candidates/0000000000016379-000000000001637a.wav",
+      "bytes": 288044,
+      "sha256": "ce8fb8d95754a62c35415441dd0ef1b0c86f1462ce48069831aa64ef265e6bb2"
+    },
+    {
+      "path": "nasals/baseline/master.wav",
+      "bytes": 576044,
+      "sha256": "dee2c22049143a4ade7cfe35a9b1d76c7f3ac0a31b2934df412685105ab9274f"
+    },
+    {
+      "path": "nasals/baseline/project.seam",
+      "bytes": 7884,
+      "sha256": "ce48982b6ecc6697d2b863df3e1d673e945c759e820f2d0d0fb46224b18af78b"
+    },
+    {
+      "path": "nasals/baseline/receipt.json",
+      "bytes": 1888,
+      "sha256": "270be68b070b67740f8df37a8b57f3bb405567fe221555087e26cb8e2aab7c9e"
+    },
+    {
+      "path": "nasals/baseline/recipes/ee2de1672497d80b2d8f3babe1ae196920548c35c89ff36e1301a5e75554d3f9.json",
+      "bytes": 5330,
+      "sha256": "ee2de1672497d80b2d8f3babe1ae196920548c35c89ff36e1301a5e75554d3f9"
+    },
+    {
+      "path": "nasals/baseline-pitch.json",
+      "bytes": 2443,
+      "sha256": "74f449a57f730a5b497ccc57770c9a148773d0eab3f857685ce94decd2558ba6"
+    },
+    {
+      "path": "nasals/baseline-recipe.json",
+      "bytes": 5330,
+      "sha256": "ee2de1672497d80b2d8f3babe1ae196920548c35c89ff36e1301a5e75554d3f9"
+    },
+    {
+      "path": "nasals/baseline.seam",
+      "bytes": 7827,
+      "sha256": "73d31294763395ce44fc254ed8616b86708c8d0bc8bbd0b9c34041810caac7be"
+    },
+    {
+      "path": "nasals/breathier/candidates/0000000000016379-000000000001637a.json",
+      "bytes": 1664,
+      "sha256": "de88c1625bc1c33ea3be22c0ab6f6e171a74f53b1db608bdb4b63e58bcd2deed"
+    },
+    {
+      "path": "nasals/breathier/candidates/0000000000016379-000000000001637a.wav",
+      "bytes": 288044,
+      "sha256": "c7b6c0049b4407bc45826c0c7ddf11d6d923a84ed4b09d07c7ebcc5611a1ed93"
+    },
+    {
+      "path": "nasals/breathier/master.wav",
+      "bytes": 576044,
+      "sha256": "0054de37d0d4bcdd9e6f601287cfeb8658663fc7be0388b6016e2e085bee3e82"
+    },
+    {
+      "path": "nasals/breathier/project.seam",
+      "bytes": 7884,
+      "sha256": "990f5788c602dde61eb03d8b68a22cad1639ca0fdeb0675dd72ac9d49c20c3b5"
+    },
+    {
+      "path": "nasals/breathier/receipt.json",
+      "bytes": 1888,
+      "sha256": "8cb4f73f93e4f811296dc36f5b59c874747fda89367e6c59981a847725137d52"
+    },
+    {
+      "path": "nasals/breathier/recipes/069fa019de9df032681542b6ab0e9eb2fcb1a54585437f963036b76d04722bcb.json",
+      "bytes": 5329,
+      "sha256": "069fa019de9df032681542b6ab0e9eb2fcb1a54585437f963036b76d04722bcb"
+    },
+    {
+      "path": "nasals/breathier-pitch.json",
+      "bytes": 2439,
+      "sha256": "3872d4939d3ea2b64fd07ca0af57cc00367a5c14115d326a434e8750676ac42f"
+    },
+    {
+      "path": "nasals/breathier-recipe.json",
+      "bytes": 5329,
+      "sha256": "069fa019de9df032681542b6ab0e9eb2fcb1a54585437f963036b76d04722bcb"
+    },
+    {
+      "path": "nasals/breathier.seam",
+      "bytes": 7828,
+      "sha256": "d3ce834b8947dcd40e06449bab5f833a081329029d6e53e11ace5790e5b489eb"
+    },
+    {
+      "path": "nasals/higher-formants/candidates/0000000000016379-000000000001637a.json",
+      "bytes": 1664,
+      "sha256": "316ebfcc17a4921dd5aa6dd9be1838951d77b1b50a608a933d02721087c137ea"
+    },
+    {
+      "path": "nasals/higher-formants/candidates/0000000000016379-000000000001637a.wav",
+      "bytes": 288044,
+      "sha256": "28b0419dedb406431e6baf9940b28921a286875d7f3fb378d60f18700a2f0c6f"
+    },
+    {
+      "path": "nasals/higher-formants/master.wav",
+      "bytes": 576044,
+      "sha256": "ba9ca6c875f69a6f0583d53f02e0e42c7296a41900d0151845a63d5f13b6d2e1"
+    },
+    {
+      "path": "nasals/higher-formants/project.seam",
+      "bytes": 7884,
+      "sha256": "4d1fcb604801c9e91b7aece1a525f9eee0c1786297e451733fa1fbc7888c807c"
+    },
+    {
+      "path": "nasals/higher-formants/receipt.json",
+      "bytes": 1888,
+      "sha256": "e96a1b98cc707d4d57ef9d913e0f28039ae5e3877d71fda5372fd6a73ccf268c"
+    },
+    {
+      "path": "nasals/higher-formants/recipes/d22797733441ccb84d4a07ce4df71f1ebac9b21e5680f10e99a256a05afcf567.json",
+      "bytes": 5490,
+      "sha256": "d22797733441ccb84d4a07ce4df71f1ebac9b21e5680f10e99a256a05afcf567"
+    },
+    {
+      "path": "nasals/higher-formants-pitch.json",
+      "bytes": 2443,
+      "sha256": "f1c448c3ff186e62fdc4bcd7bdb87e9e018270c3f41d851c9f32acb82ae6dd31"
+    },
+    {
+      "path": "nasals/higher-formants-recipe.json",
+      "bytes": 5490,
+      "sha256": "d22797733441ccb84d4a07ce4df71f1ebac9b21e5680f10e99a256a05afcf567"
+    },
+    {
+      "path": "nasals/higher-formants.seam",
+      "bytes": 7834,
+      "sha256": "a4780f7c6ebf9a16952142a3cba70992db7255c66b4ca4974ba31c802f0d5b02"
+    },
+    {
+      "path": "nasals/pilot.json",
+      "bytes": 2597,
+      "sha256": "c0b2602df5bafbeecf7d55bdd18a6bdf895c1e9bd432400f56418b1633d99afd"
+    },
+    {
+      "path": "nasals.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "nasals.stdout.txt",
+      "bytes": 682,
+      "sha256": "b6e3d83cf3b5856aaf5b31d6e7887a8d3da56cd93f864874f571f5b24f24ab37"
+    },
+    {
+      "path": "range/baseline/candidates/0000000000016379-000000000001637a.json",
+      "bytes": 2240,
+      "sha256": "5817195c0ff3ecdea091d192be73944f56138b8c9b7ba19a27676532f5696086"
+    },
+    {
+      "path": "range/baseline/candidates/0000000000016379-000000000001637a.wav",
+      "bytes": 480044,
+      "sha256": "f0e6f2089b9e4823f72b7d9bb81c461eb0f40151e0f15057d62ab250d845ee55"
+    },
+    {
+      "path": "range/baseline/master.wav",
+      "bytes": 960044,
+      "sha256": "bce758400fb0288ffc386a755832e55a1d0d439b0827a76165670ab4242b9a7a"
+    },
+    {
+      "path": "range/baseline/project.seam",
+      "bytes": 7166,
+      "sha256": "adae778f657c967f9e87f3edaecd637275ef1f8057e138ebc31a906ba69f2001"
+    },
+    {
+      "path": "range/baseline/receipt.json",
+      "bytes": 1888,
+      "sha256": "d61fe1d247075e7741857202c6d1f52457db3db1a60f6fe95a7f9845074fa431"
+    },
+    {
+      "path": "range/baseline/recipes/7688afab747661d59ec1423a9a101114d61956bd062c464c45a74f8fb26f893e.json",
+      "bytes": 17354,
+      "sha256": "7688afab747661d59ec1423a9a101114d61956bd062c464c45a74f8fb26f893e"
+    },
+    {
+      "path": "range/baseline-pitch.json",
+      "bytes": 2076,
+      "sha256": "ff0c82d49ba7e8b5a770b487c128c369e0355cd003d2c2bfe1eecf62fc719695"
+    },
+    {
+      "path": "range/baseline-recipe.json",
+      "bytes": 17354,
+      "sha256": "7688afab747661d59ec1423a9a101114d61956bd062c464c45a74f8fb26f893e"
+    },
+    {
+      "path": "range/baseline.seam",
+      "bytes": 7109,
+      "sha256": "2b066424d8b2c2243a24115f7287734ce365cda40c8be6b5e676509cf0a66518"
+    },
+    {
+      "path": "range/breathier/candidates/0000000000016379-000000000001637a.json",
+      "bytes": 2240,
+      "sha256": "57d3513156f22adadea2df5bcaba65b899d7b0e019856e558d42c4939b4b94c8"
+    },
+    {
+      "path": "range/breathier/candidates/0000000000016379-000000000001637a.wav",
+      "bytes": 480044,
+      "sha256": "90666f77e81769bf167249005c0567f774cdedfee2cee1bbc12fedb8ff0033e4"
+    },
+    {
+      "path": "range/breathier/master.wav",
+      "bytes": 960044,
+      "sha256": "8ea89b461c4646b7f9cec7bd0cc59407dd9ff7b9e84c02fd36b3e29f0910aa7a"
+    },
+    {
+      "path": "range/breathier/project.seam",
+      "bytes": 7166,
+      "sha256": "4a3a5a3007bbc20a8a63f8178eda3038e9abbbbca77a65b6cc7517d57790d2ee"
+    },
+    {
+      "path": "range/breathier/receipt.json",
+      "bytes": 1888,
+      "sha256": "b71048ac4e54ee9a7886bc2ec8dafc958b9e400f19d9cd69430e9a9199bc8017"
+    },
+    {
+      "path": "range/breathier/recipes/be0207899a45d64a6975fbe6e1f1ea9ffca5ef18285f1d237893ce47fa0907a7.json",
+      "bytes": 17353,
+      "sha256": "be0207899a45d64a6975fbe6e1f1ea9ffca5ef18285f1d237893ce47fa0907a7"
+    },
+    {
+      "path": "range/breathier-pitch.json",
+      "bytes": 2073,
+      "sha256": "5beb730badcd6d83431809b38d998ffeeb52644b2dc59f2998514d9234d4e4e2"
+    },
+    {
+      "path": "range/breathier-recipe.json",
+      "bytes": 17353,
+      "sha256": "be0207899a45d64a6975fbe6e1f1ea9ffca5ef18285f1d237893ce47fa0907a7"
+    },
+    {
+      "path": "range/breathier.seam",
+      "bytes": 7110,
+      "sha256": "d1cf7847bd37402a34a0cf63eb55f265ab3260f0547f67c0485d57432a368999"
+    },
+    {
+      "path": "range/higher-formants/candidates/0000000000016379-000000000001637a.json",
+      "bytes": 2240,
+      "sha256": "acc66b7cdade0dc08837a765ca6aa8f4d3bd471dc613c359aad3263f43b77540"
+    },
+    {
+      "path": "range/higher-formants/candidates/0000000000016379-000000000001637a.wav",
+      "bytes": 480044,
+      "sha256": "a3221de5dfa4065f8cd0a28d57c2c5c398e060742b5d5fd49272f2321602740a"
+    },
+    {
+      "path": "range/higher-formants/master.wav",
+      "bytes": 960044,
+      "sha256": "4456955569f50217f306dfbc1298708fd6d1dd7917c8d24fa44608efe6d1cf4f"
+    },
+    {
+      "path": "range/higher-formants/project.seam",
+      "bytes": 7166,
+      "sha256": "b61cb88f38cab8d6d05374ad04680d90f43dd8c85a6247d3e26355203e1857e3"
+    },
+    {
+      "path": "range/higher-formants/receipt.json",
+      "bytes": 1888,
+      "sha256": "37c7beebd421d07b351b33ce928ffd8391a00a49df4333179a75a7a15a2bc7dd"
+    },
+    {
+      "path": "range/higher-formants/recipes/52ebb15859389fbb370504581130f00fb5bd19f2a6ef51f0f70b2998387fa701.json",
+      "bytes": 17766,
+      "sha256": "52ebb15859389fbb370504581130f00fb5bd19f2a6ef51f0f70b2998387fa701"
+    },
+    {
+      "path": "range/higher-formants-pitch.json",
+      "bytes": 2078,
+      "sha256": "407f0efe8513440d328a89d3a6be09e5e5a38816fec01d0ce2a2697475cd757f"
+    },
+    {
+      "path": "range/higher-formants-recipe.json",
+      "bytes": 17766,
+      "sha256": "52ebb15859389fbb370504581130f00fb5bd19f2a6ef51f0f70b2998387fa701"
+    },
+    {
+      "path": "range/higher-formants.seam",
+      "bytes": 7116,
+      "sha256": "0b4c82a24bf8a239c99ca00ed27e84a8185fd98e805cc0baa33d2a6ca62c6a44"
+    },
+    {
+      "path": "range/pilot.json",
+      "bytes": 2607,
+      "sha256": "73e9b1180d7529f05d373224c9359b35d16faaa8aa885985cae0e1a2715ec3bc"
+    },
+    {
+      "path": "range.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "range.stdout.txt",
+      "bytes": 676,
+      "sha256": "864a92556471aaf4c799b7d933a750738e1a1dcd87df5014553012b3277ddaa6"
+    },
+    {
+      "path": "request.json",
+      "bytes": 1771,
+      "sha256": "948286c344fde1688781cd6630bd21b3e5e073c16783f08ada488821cd6ab0a8"
+    },
+    {
+      "path": "rhythm/baseline/candidates/0000000000016379-000000000001637a.json",
+      "bytes": 1581,
+      "sha256": "aed0ef4391696f1c5da849f153a92649f88c9f6b7965aba9b68af427adca4b57"
+    },
+    {
+      "path": "rhythm/baseline/candidates/0000000000016379-000000000001637a.wav",
+      "bytes": 240044,
+      "sha256": "c79033a1864d5dc2cd86c688c5878c310c77dc403214d96bd9cefd93d3f01706"
+    },
+    {
+      "path": "rhythm/baseline/master.wav",
+      "bytes": 480044,
+      "sha256": "9bff898cfe4ce7c24a8723b67bb2dc0040d2c8678df64a5c62defc24bf56b6a0"
+    },
+    {
+      "path": "rhythm/baseline/project.seam",
+      "bytes": 6429,
+      "sha256": "49997e86642d59ef17d3d8e73cc114f50d124317b5c06e37b9a419218cfcc718"
+    },
+    {
+      "path": "rhythm/baseline/receipt.json",
+      "bytes": 1886,
+      "sha256": "9524f3ce9b4667c907fb1e254bafc695a9e680bd42424a38b2a5884463b5f822"
+    },
+    {
+      "path": "rhythm/baseline/recipes/7688afab747661d59ec1423a9a101114d61956bd062c464c45a74f8fb26f893e.json",
+      "bytes": 17354,
+      "sha256": "7688afab747661d59ec1423a9a101114d61956bd062c464c45a74f8fb26f893e"
+    },
+    {
+      "path": "rhythm/baseline-pitch.json",
+      "bytes": 1703,
+      "sha256": "b79676769260b1f452abbd4a20c97f8cf051205aca9133ca63c494b2e2057b60"
+    },
+    {
+      "path": "rhythm/baseline-recipe.json",
+      "bytes": 17354,
+      "sha256": "7688afab747661d59ec1423a9a101114d61956bd062c464c45a74f8fb26f893e"
+    },
+    {
+      "path": "rhythm/baseline.seam",
+      "bytes": 6372,
+      "sha256": "75790e34f74f37fe72273b6122211e789a7022c4ffcc08d2a5beb37c39f790f3"
+    },
+    {
+      "path": "rhythm/breathier/candidates/0000000000016379-000000000001637a.json",
+      "bytes": 1581,
+      "sha256": "81542bfd289f558841802bb76b1b4d12f79c66caa75bc06d542b575775abdbbe"
+    },
+    {
+      "path": "rhythm/breathier/candidates/0000000000016379-000000000001637a.wav",
+      "bytes": 240044,
+      "sha256": "a2d9dd44ddd44fe1553ba2d20b8af2e11d11aa7b723baaf8263000dcd832103d"
+    },
+    {
+      "path": "rhythm/breathier/master.wav",
+      "bytes": 480044,
+      "sha256": "8f356625aa4b590f952ba39aef2d09384e01a31687c83a27a74d31541ae4fca3"
+    },
+    {
+      "path": "rhythm/breathier/project.seam",
+      "bytes": 6429,
+      "sha256": "f8b45c12798bb7726eb524c5b1ddafe697ad12638a5d5e9f5f357904a1a4d3c5"
+    },
+    {
+      "path": "rhythm/breathier/receipt.json",
+      "bytes": 1886,
+      "sha256": "14f5524f4677973b68a9da642f4009fb524680164a680201ea4bd592c52fe9a0"
+    },
+    {
+      "path": "rhythm/breathier/recipes/be0207899a45d64a6975fbe6e1f1ea9ffca5ef18285f1d237893ce47fa0907a7.json",
+      "bytes": 17353,
+      "sha256": "be0207899a45d64a6975fbe6e1f1ea9ffca5ef18285f1d237893ce47fa0907a7"
+    },
+    {
+      "path": "rhythm/breathier-pitch.json",
+      "bytes": 1700,
+      "sha256": "e2f74af502b27385e24ff7f849a0abc7cf57f23e7f2afa3f825f4546b2960cf9"
+    },
+    {
+      "path": "rhythm/breathier-recipe.json",
+      "bytes": 17353,
+      "sha256": "be0207899a45d64a6975fbe6e1f1ea9ffca5ef18285f1d237893ce47fa0907a7"
+    },
+    {
+      "path": "rhythm/breathier.seam",
+      "bytes": 6373,
+      "sha256": "f8e99f2d818b9c5ecc03c6662fc63bad839ca9662ee05c47da15616fb77fd9ea"
+    },
+    {
+      "path": "rhythm/higher-formants/candidates/0000000000016379-000000000001637a.json",
+      "bytes": 1581,
+      "sha256": "4870c868e3c3edb2a6f47b8fc1d5977c70553eceb94579d71e5bc653be31a55e"
+    },
+    {
+      "path": "rhythm/higher-formants/candidates/0000000000016379-000000000001637a.wav",
+      "bytes": 240044,
+      "sha256": "aeb0e101d11317f6f84fc09c71018f096e6601594bc08d01e08b36b1badd8b7e"
+    },
+    {
+      "path": "rhythm/higher-formants/master.wav",
+      "bytes": 480044,
+      "sha256": "9d8814add4970063489c5b572b813b1454b0edac8940f1447ef7fc5026d317f3"
+    },
+    {
+      "path": "rhythm/higher-formants/project.seam",
+      "bytes": 6429,
+      "sha256": "70eaaf2ca94e102df4dddc74a9b6cde6d1dd58d42392e4148879c88ebc42b872"
+    },
+    {
+      "path": "rhythm/higher-formants/receipt.json",
+      "bytes": 1886,
+      "sha256": "7db9ac9d1c00b0b801a11c4e1eaedee61b0eb09332a79b48d905505d9e3f01bc"
+    },
+    {
+      "path": "rhythm/higher-formants/recipes/52ebb15859389fbb370504581130f00fb5bd19f2a6ef51f0f70b2998387fa701.json",
+      "bytes": 17766,
+      "sha256": "52ebb15859389fbb370504581130f00fb5bd19f2a6ef51f0f70b2998387fa701"
+    },
+    {
+      "path": "rhythm/higher-formants-pitch.json",
+      "bytes": 1704,
+      "sha256": "dbbdada43be957ddd7316de65b8fb2f70d9ecb2b3004e29ab7a10972ed2a4740"
+    },
+    {
+      "path": "rhythm/higher-formants-recipe.json",
+      "bytes": 17766,
+      "sha256": "52ebb15859389fbb370504581130f00fb5bd19f2a6ef51f0f70b2998387fa701"
+    },
+    {
+      "path": "rhythm/higher-formants.seam",
+      "bytes": 6379,
+      "sha256": "478cb63ec32e0a658203ff6b9b097389438578456f9c5da30ff02b6a661d6299"
+    },
+    {
+      "path": "rhythm/pilot.json",
+      "bytes": 2617,
+      "sha256": "18dd020263f32f3083df33166f7d410f928d44939328793f272b66ba28f61eb5"
+    },
+    {
+      "path": "rhythm.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "rhythm.stdout.txt",
+      "bytes": 682,
+      "sha256": "5bdaef9a835fb2da407800b8623e1d0ae476f201eabac842ff6cd6b230d928f1"
+    },
+    {
+      "path": "stops/baseline/candidates/0000000000016379-000000000001637a.json",
+      "bytes": 2613,
+      "sha256": "a956e5e4e50d1f6e673815ca769aed6b0a3e7f878945abd4f6b6c0663ba4cf20"
+    },
+    {
+      "path": "stops/baseline/candidates/0000000000016379-000000000001637a.wav",
+      "bytes": 288044,
+      "sha256": "9f1e946980e8711bed371952d011f8acf8159e3ce1fb3d2084bddbba3019bc6f"
+    },
+    {
+      "path": "stops/baseline/master.wav",
+      "bytes": 576044,
+      "sha256": "7904844a32fb959a0dd1a6603ad7df150a2148690ec4e6fa2fb43ea325d9a464"
+    },
+    {
+      "path": "stops/baseline/project.seam",
+      "bytes": 7887,
+      "sha256": "c816311e731ac079c5ba184c61a7fe5f0aa727319ab2b93edc545a4dc47f0fbe"
+    },
+    {
+      "path": "stops/baseline/receipt.json",
+      "bytes": 1885,
+      "sha256": "4a1050aa50e2bee3bbd2ec7f434b001458f839f5413f282c89fdda93aca56995"
+    },
+    {
+      "path": "stops/baseline/recipes/2c7d10ec171e0c33a5ae4d322e5d7ae0c1cb3bc3c4ae32429c4872555f92e60c.json",
+      "bytes": 7410,
+      "sha256": "2c7d10ec171e0c33a5ae4d322e5d7ae0c1cb3bc3c4ae32429c4872555f92e60c"
+    },
+    {
+      "path": "stops/baseline-pitch.json",
+      "bytes": 2442,
+      "sha256": "64433e658e86a0db9ad754491b3059debd33fd053ddf803d124e2337732d606d"
+    },
+    {
+      "path": "stops/baseline-recipe.json",
+      "bytes": 7410,
+      "sha256": "2c7d10ec171e0c33a5ae4d322e5d7ae0c1cb3bc3c4ae32429c4872555f92e60c"
+    },
+    {
+      "path": "stops/baseline.seam",
+      "bytes": 7830,
+      "sha256": "a947a8506fd5dec39f0ee302f51c6035dfdee5101257d1a5191c93d8aeaf6911"
+    },
+    {
+      "path": "stops/breathier/candidates/0000000000016379-000000000001637a.json",
+      "bytes": 2613,
+      "sha256": "b43b455d319664e5039e685ac141a93dd141b8e95933c7cce044bebcf03ad8c4"
+    },
+    {
+      "path": "stops/breathier/candidates/0000000000016379-000000000001637a.wav",
+      "bytes": 288044,
+      "sha256": "c0b46cee1000c2a9b1ea31e3b94b98c394b220d37ea763b82dcea7693678e18d"
+    },
+    {
+      "path": "stops/breathier/master.wav",
+      "bytes": 576044,
+      "sha256": "03acecac9317e35f77be85cad2e4afd3be6fd1b8ecc3260d28c1715ddbb66a97"
+    },
+    {
+      "path": "stops/breathier/project.seam",
+      "bytes": 7887,
+      "sha256": "5cacca0de3b10ea2826f16ac74e612afdd6c93a7d4fa33eb66e1abf4c74dc722"
+    },
+    {
+      "path": "stops/breathier/receipt.json",
+      "bytes": 1885,
+      "sha256": "f35a62718723a73066a2c44d9f67a5362476d1744047b18079e4460a1943afe4"
+    },
+    {
+      "path": "stops/breathier/recipes/633c47fcb4544ef3a1bb19a388b234207f501446fcf9f432559e55508368bdeb.json",
+      "bytes": 7409,
+      "sha256": "633c47fcb4544ef3a1bb19a388b234207f501446fcf9f432559e55508368bdeb"
+    },
+    {
+      "path": "stops/breathier-pitch.json",
+      "bytes": 2436,
+      "sha256": "08522087d0e7e7e54d4f6e77921139716e6940217a0dcedca5e55416484abf6e"
+    },
+    {
+      "path": "stops/breathier-recipe.json",
+      "bytes": 7409,
+      "sha256": "633c47fcb4544ef3a1bb19a388b234207f501446fcf9f432559e55508368bdeb"
+    },
+    {
+      "path": "stops/breathier.seam",
+      "bytes": 7831,
+      "sha256": "65c0db417e8c8f7259a4bf19e2bd86014314d6a3fc56dc0d533d8ed0ad972cf7"
+    },
+    {
+      "path": "stops/higher-formants/candidates/0000000000016379-000000000001637a.json",
+      "bytes": 2613,
+      "sha256": "34166228c78957aef3dc73cf628502232bbf189920cbdfeb3c57ef72553810d0"
+    },
+    {
+      "path": "stops/higher-formants/candidates/0000000000016379-000000000001637a.wav",
+      "bytes": 288044,
+      "sha256": "48a847caa7ec611d3c606e69be2a49b4082511ba962f79022ddc49f13637a3ae"
+    },
+    {
+      "path": "stops/higher-formants/master.wav",
+      "bytes": 576044,
+      "sha256": "e18430fd0047c0df7fc5ed39fbfa77a5dc2ec57d8bbce097ca3128a4dab6cac3"
+    },
+    {
+      "path": "stops/higher-formants/project.seam",
+      "bytes": 7887,
+      "sha256": "290b684e19957b39ac845b82395e66961fda0ca3739ee469227fb115a30511b8"
+    },
+    {
+      "path": "stops/higher-formants/receipt.json",
+      "bytes": 1885,
+      "sha256": "248edcd580a7b484f9a6b151135512a5ca733db5209047e3f9d41cc08e753db7"
+    },
+    {
+      "path": "stops/higher-formants/recipes/79db626f15e8f3ea8c3e91b65ff4af2ff3b6d982b754ea6cf4982f4783229b79.json",
+      "bytes": 7570,
+      "sha256": "79db626f15e8f3ea8c3e91b65ff4af2ff3b6d982b754ea6cf4982f4783229b79"
+    },
+    {
+      "path": "stops/higher-formants-pitch.json",
+      "bytes": 2438,
+      "sha256": "09a326c30a2b52c3cb7ec52a959c6f3e74d3dd4ad8028b8cec63e98cd8a7626e"
+    },
+    {
+      "path": "stops/higher-formants-recipe.json",
+      "bytes": 7570,
+      "sha256": "79db626f15e8f3ea8c3e91b65ff4af2ff3b6d982b754ea6cf4982f4783229b79"
+    },
+    {
+      "path": "stops/higher-formants.seam",
+      "bytes": 7837,
+      "sha256": "b6abc230bc1a73a483fffdc2411a5205b139d848adfabecea37a83586a3224bf"
+    },
+    {
+      "path": "stops/pilot.json",
+      "bytes": 2609,
+      "sha256": "8d6e36cc6e42159e4863f209e8a761eab100352f416ef420ed7780b8e0e56b0e"
+    },
+    {
+      "path": "stops.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "stops.stdout.txt",
+      "bytes": 676,
+      "sha256": "ad2ea19e8aca2f7604548a5359179fca3ad5bdd155763650460e8a977171f714"
+    },
+    {
+      "path": "unfamiliar-song/baseline/candidates/0000000000016379-000000000001637a.json",
+      "bytes": 8286,
+      "sha256": "f152c29eaeacdef3b97a0f5d7f43298fead1dc56b5f968ac1ba442c92e0a682d"
+    },
+    {
+      "path": "unfamiliar-song/baseline/candidates/0000000000016379-000000000001637a.wav",
+      "bytes": 3072044,
+      "sha256": "6bea61ba18acc3861111479ce3be93f99cf20bb27e502c53f8682876cb4bf13a"
+    },
+    {
+      "path": "unfamiliar-song/baseline/master.wav",
+      "bytes": 6144044,
+      "sha256": "35149f83f3a94ced78a93940cada2f830a9ef261f2a3ea5ce56ed263266ff149"
+    },
+    {
+      "path": "unfamiliar-song/baseline/project.seam",
+      "bytes": 25617,
+      "sha256": "30c7d290d4710a56c073e625bb648c050aa815c6ef1937ed43da8aa66a6aac58"
+    },
+    {
+      "path": "unfamiliar-song/baseline/receipt.json",
+      "bytes": 1888,
+      "sha256": "fe53a75cac7c5abec0eea330ea43ef77fbe7a570bc0f1976922b071c93a8f234"
+    },
+    {
+      "path": "unfamiliar-song/baseline/recipes/7688afab747661d59ec1423a9a101114d61956bd062c464c45a74f8fb26f893e.json",
+      "bytes": 17354,
+      "sha256": "7688afab747661d59ec1423a9a101114d61956bd062c464c45a74f8fb26f893e"
+    },
+    {
+      "path": "unfamiliar-song/baseline-pitch.json",
+      "bytes": 11373,
+      "sha256": "8d82e8cf35a2b0dac90d3653503f0a4709e927335793264a307da8637adbfa7c"
+    },
+    {
+      "path": "unfamiliar-song/baseline-recipe.json",
+      "bytes": 17354,
+      "sha256": "7688afab747661d59ec1423a9a101114d61956bd062c464c45a74f8fb26f893e"
+    },
+    {
+      "path": "unfamiliar-song/baseline.seam",
+      "bytes": 25560,
+      "sha256": "4c3d1ae04b219f1c9c3bdf22ef71eac0fe3456fea6a34bea67fd5f0cf8db3f5f"
+    },
+    {
+      "path": "unfamiliar-song/breathier/candidates/0000000000016379-000000000001637a.json",
+      "bytes": 8286,
+      "sha256": "ea67539b6b1f90ca0486710458820aa25b9809fb3ddc67df5fd6a4287a42e766"
+    },
+    {
+      "path": "unfamiliar-song/breathier/candidates/0000000000016379-000000000001637a.wav",
+      "bytes": 3072044,
+      "sha256": "8d24498f97437debeb8f94d9366f271898e62f3ae13bd3a37fbc8ec58e0599c5"
+    },
+    {
+      "path": "unfamiliar-song/breathier/master.wav",
+      "bytes": 6144044,
+      "sha256": "286174433a4aa8b996cedc0074797d801bc4451f33026322c506d639b378ac04"
+    },
+    {
+      "path": "unfamiliar-song/breathier/project.seam",
+      "bytes": 25617,
+      "sha256": "9a988e162582a548f5bbc1a5738f8c1a8fcc9410b3a31cabbe7f6e7ddbc3a2b8"
+    },
+    {
+      "path": "unfamiliar-song/breathier/receipt.json",
+      "bytes": 1888,
+      "sha256": "30c5086e8b2afd693c7bca32623bfc963a64b7973fd2cf2a8fb30cea6a99b5c7"
+    },
+    {
+      "path": "unfamiliar-song/breathier/recipes/be0207899a45d64a6975fbe6e1f1ea9ffca5ef18285f1d237893ce47fa0907a7.json",
+      "bytes": 17353,
+      "sha256": "be0207899a45d64a6975fbe6e1f1ea9ffca5ef18285f1d237893ce47fa0907a7"
+    },
+    {
+      "path": "unfamiliar-song/breathier-pitch.json",
+      "bytes": 11349,
+      "sha256": "1a68e21c01593709571df0649f4c10fc8ed663e9d36bd862ac921940f7711b03"
+    },
+    {
+      "path": "unfamiliar-song/breathier-recipe.json",
+      "bytes": 17353,
+      "sha256": "be0207899a45d64a6975fbe6e1f1ea9ffca5ef18285f1d237893ce47fa0907a7"
+    },
+    {
+      "path": "unfamiliar-song/breathier.seam",
+      "bytes": 25561,
+      "sha256": "96cf1b6b8e8b4368460dbbefbde7241dcfc14a55731898c7c953c6583fe32cf3"
+    },
+    {
+      "path": "unfamiliar-song/higher-formants/candidates/0000000000016379-000000000001637a.json",
+      "bytes": 8286,
+      "sha256": "0940c8a075cccf8727a3b21ef5c23bab5839403a4f6f78dbb78c7eb91d7e11e8"
+    },
+    {
+      "path": "unfamiliar-song/higher-formants/candidates/0000000000016379-000000000001637a.wav",
+      "bytes": 3072044,
+      "sha256": "7fda291c7dd5606f749d7bd1305eb403a2452a01658fe56feb7bda3cb9c78c4c"
+    },
+    {
+      "path": "unfamiliar-song/higher-formants/master.wav",
+      "bytes": 6144044,
+      "sha256": "b168b3b6fa06bab825ebdadd52a33ce52bbb19a6c810af61857521973c6ddd7e"
+    },
+    {
+      "path": "unfamiliar-song/higher-formants/project.seam",
+      "bytes": 25617,
+      "sha256": "7fe0b81d687dc0b3c4c3ae7a3a8e5d345b279569704222b091d4c9414a6f1986"
+    },
+    {
+      "path": "unfamiliar-song/higher-formants/receipt.json",
+      "bytes": 1888,
+      "sha256": "7fdd806d3de65e589f3350b27bbc8b9daed4a4b34a0b7fd3d3313c228b3ca877"
+    },
+    {
+      "path": "unfamiliar-song/higher-formants/recipes/52ebb15859389fbb370504581130f00fb5bd19f2a6ef51f0f70b2998387fa701.json",
+      "bytes": 17766,
+      "sha256": "52ebb15859389fbb370504581130f00fb5bd19f2a6ef51f0f70b2998387fa701"
+    },
+    {
+      "path": "unfamiliar-song/higher-formants-pitch.json",
+      "bytes": 11373,
+      "sha256": "5da75a187f999fabb75d562dce634218280905bb67410aedb772de4ff59bb595"
+    },
+    {
+      "path": "unfamiliar-song/higher-formants-recipe.json",
+      "bytes": 17766,
+      "sha256": "52ebb15859389fbb370504581130f00fb5bd19f2a6ef51f0f70b2998387fa701"
+    },
+    {
+      "path": "unfamiliar-song/higher-formants.seam",
+      "bytes": 25567,
+      "sha256": "041651d240887e549b0d125af523a9003e413c4606a16c25f124042ba3580898"
+    },
+    {
+      "path": "unfamiliar-song/pilot.json",
+      "bytes": 2672,
+      "sha256": "2aa7c9360e7c25afada9b70a4baa634b35e00ed393f47f25a4cc19d59ce24bd2"
+    },
+    {
+      "path": "unfamiliar-song.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "unfamiliar-song.stdout.txt",
+      "bytes": 736,
+      "sha256": "36bb39204699231e9b0e14824b7f1fce14106369687cc7e0287a9b2226657822"
+    },
+    {
+      "path": "vowels/baseline/candidates/0000000000016379-000000000001637a.json",
+      "bytes": 1810,
+      "sha256": "7e7ca6def6bad47dd6654af224bd83bc7b8605873a2358c356583c12daa214d7"
+    },
+    {
+      "path": "vowels/baseline/candidates/0000000000016379-000000000001637a.wav",
+      "bytes": 288044,
+      "sha256": "81587ddefb4410264922f9b83bc0f0a6230d92697a1ddd199a70a43bd80b8305"
+    },
+    {
+      "path": "vowels/baseline/master.wav",
+      "bytes": 576044,
+      "sha256": "1586f86148cce0fdd296cf6aa30e78b7759d0bca915a3993dab5ffa4f5e89d05"
+    },
+    {
+      "path": "vowels/baseline/project.seam",
+      "bytes": 7870,
+      "sha256": "0669d78054748570ef0f3da0fca0858fc7697ca56530d7a4b73b81eff664f9e0"
+    },
+    {
+      "path": "vowels/baseline/receipt.json",
+      "bytes": 1873,
+      "sha256": "0e24d88d418cb1b3db8d9b3a877527528e98c6ed684017cfcd20227816121794"
+    },
+    {
+      "path": "vowels/baseline/recipes/85af174759290346b20f128ae9fd8f66c964b403bb67f78ebc3d2c161be81756.json",
+      "bytes": 4728,
+      "sha256": "85af174759290346b20f128ae9fd8f66c964b403bb67f78ebc3d2c161be81756"
+    },
+    {
+      "path": "vowels/baseline-pitch.json",
+      "bytes": 2444,
+      "sha256": "55b1fc9f88d705f0e3de60302574f180fe6df12a4c8a7e4975776b18c5b5aa4f"
+    },
+    {
+      "path": "vowels/baseline-recipe.json",
+      "bytes": 4728,
+      "sha256": "85af174759290346b20f128ae9fd8f66c964b403bb67f78ebc3d2c161be81756"
+    },
+    {
+      "path": "vowels/baseline.seam",
+      "bytes": 7813,
+      "sha256": "7afd6541eea6675dcc1c8178e82bcbb2ce0a2db2f15dde61feecf548bde14133"
+    },
+    {
+      "path": "vowels/breathier/candidates/0000000000016379-000000000001637a.json",
+      "bytes": 1810,
+      "sha256": "fffd0efb627ed4f868c5a931a1752c6527c50674f632fd6c06e4b2db616b1ebc"
+    },
+    {
+      "path": "vowels/breathier/candidates/0000000000016379-000000000001637a.wav",
+      "bytes": 288044,
+      "sha256": "d5480e53b8d09503764759e46550b88e61ee3f90f70590ff2db2aaf7daf4b720"
+    },
+    {
+      "path": "vowels/breathier/master.wav",
+      "bytes": 576044,
+      "sha256": "b5f61da15080412f27c56a0ee6da1372381a7235fe92c4f2eb3a5513cbc03a5a"
+    },
+    {
+      "path": "vowels/breathier/project.seam",
+      "bytes": 7870,
+      "sha256": "ece3ff6fffac9b9054693a1a11d573934631f2547dda23bbfc6b060a62ad1d0f"
+    },
+    {
+      "path": "vowels/breathier/receipt.json",
+      "bytes": 1873,
+      "sha256": "fff070f494185106b65525f0cdfb1879fbfd7f8614c4311dfe26ffbac909661f"
+    },
+    {
+      "path": "vowels/breathier/recipes/70fa5fbeae9972cb53d126ea90002c31bb49aa1576c50e4ab329d60b50e1e793.json",
+      "bytes": 4727,
+      "sha256": "70fa5fbeae9972cb53d126ea90002c31bb49aa1576c50e4ab329d60b50e1e793"
+    },
+    {
+      "path": "vowels/breathier-pitch.json",
+      "bytes": 2438,
+      "sha256": "834ed3b222ff4250fd68a41a1b13e7dfd2a878ca33967e8c3c9eb226373cb9f3"
+    },
+    {
+      "path": "vowels/breathier-recipe.json",
+      "bytes": 4727,
+      "sha256": "70fa5fbeae9972cb53d126ea90002c31bb49aa1576c50e4ab329d60b50e1e793"
+    },
+    {
+      "path": "vowels/breathier.seam",
+      "bytes": 7814,
+      "sha256": "079f9115f3067284054398acee102c4fa8237690fd36eedaed1c6935fa547365"
+    },
+    {
+      "path": "vowels/higher-formants/candidates/0000000000016379-000000000001637a.json",
+      "bytes": 1810,
+      "sha256": "43e06f7bce604921189fedcd681f1cde387608f3dd2ed860b9ff4e16422fa4a7"
+    },
+    {
+      "path": "vowels/higher-formants/candidates/0000000000016379-000000000001637a.wav",
+      "bytes": 288044,
+      "sha256": "3a20a9cbb171d381da785d3f2c2535fc8a86c066242c822c906b5ae49b6aa5a3"
+    },
+    {
+      "path": "vowels/higher-formants/master.wav",
+      "bytes": 576044,
+      "sha256": "eef305587977aa656d2f2e97c3ea7c3cb5bed1824a3073aedcb0220f464c4b1b"
+    },
+    {
+      "path": "vowels/higher-formants/project.seam",
+      "bytes": 7870,
+      "sha256": "78b1a9ab0b13c8a580a5b56e6121bcb6285d9e6d04eb82054c06832aad476509"
+    },
+    {
+      "path": "vowels/higher-formants/receipt.json",
+      "bytes": 1873,
+      "sha256": "dbe010269a437d123a599b852520dc7a046108254aaa1609d8050797c8115286"
+    },
+    {
+      "path": "vowels/higher-formants/recipes/f6e8528fe4757ca2624550403fdb3e9d3e060e88a3888297fe0a7e3bf63de10c.json",
+      "bytes": 4860,
+      "sha256": "f6e8528fe4757ca2624550403fdb3e9d3e060e88a3888297fe0a7e3bf63de10c"
+    },
+    {
+      "path": "vowels/higher-formants-pitch.json",
+      "bytes": 2442,
+      "sha256": "ccb6a69b302c39e9367614db85d3562027ce26eb142362dfa0ab92138717d7f8"
+    },
+    {
+      "path": "vowels/higher-formants-recipe.json",
+      "bytes": 4860,
+      "sha256": "f6e8528fe4757ca2624550403fdb3e9d3e060e88a3888297fe0a7e3bf63de10c"
+    },
+    {
+      "path": "vowels/higher-formants.seam",
+      "bytes": 7820,
+      "sha256": "556f540da0c87f17d315ac439caf788cc8540bd5ddb19cdef224759d32a8d5b9"
+    },
+    {
+      "path": "vowels/pilot.json",
+      "bytes": 2600,
+      "sha256": "6c8a9dfc91111ebacbde45b07dfe01f6cb621761832d8ca8ea83a7698af562d2"
+    },
+    {
+      "path": "vowels.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "vowels.stdout.txt",
+      "bytes": 682,
+      "sha256": "fdb45333d244ad200868841c181fbc1665cd8e4de019c00ae7604b2066dd02d8"
+    }
+  ]
+}

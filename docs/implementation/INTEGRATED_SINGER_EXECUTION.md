@@ -1,5 +1,26 @@
 # Integrated Singer Execution
 
+## The revised plan now has a retained song to edit and compare
+
+September 15, 2026 — D1 technical packet. The existing procedural pilot rendered
+11 cases including a 16-second unfamiliar melody across three recipe variants (66 WAVs,
+335 retained artifact files, no clipping). The packet lives outside disposable build
+output at `/Users/lhs/Downloads/seam-listening-artifacts/2026-09-15-d1-02`; its
+manifest and decision record are under `docs/implementation/listening/2026-09-15-d1-02/`.
+It retains exact scores/recipes, original audio, measurements, executable and dependency
+identities. The retained binary rerenders the melody with six identical WAV hashes.
+
+Verified. All artifact hashes match. The pilot CLI suite passes after repairing its
+unequal-duration pitch-analysis windows; reported window ticks/frames now follow the
+actual score rather than a fixed note-index stride. The packet is generated with the
+bounded `tools/singing_quality/listening_packet.py` orchestrator through the existing
+production export path, not a new synthesis implementation.
+
+Not claimed. No human listening or creator judgment exists for the packet yet; no
+acoustic repair route is chosen. Candidate WAVs are not installed-bank renders. Retained
+binary dependencies do not establish a portable installed application. D1's technical
+material is available; its musical outcome remains pending. Continue D2 on this song.
+
 ## Growl reaches the source, and a neutral nudge preserves the rest of the phrase
 
 September 15, 2026 — revised-plan D0. Growl now has a normalized region curve,
