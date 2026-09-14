@@ -29,8 +29,9 @@ RendererCapabilityView rendererCapabilities(RendererCarrier carrier) noexcept {
   RendererCapabilityView result{.renderer = voicebank::RendererHint::Raw};
   // The source-filter engine compiles the score once and owns its own excitation and tract, so it
   // consumes every control the compiled performance carries, including the formant channel it now
-  // moves by re-designing the tract's own resonances and the breathiness channel it now applies by
-  // rebalancing that excitation's periodic and aperiodic energy.
+  // moves by re-designing the tract's own resonances, the breathiness channel it applies by rebalancing
+  // that excitation's periodic and aperiodic energy, and the tension channel it applies by tilting the
+  // spectrum of the harmonic source it generates.
   result.supported[static_cast<std::size_t>(RendererControl::Pitch)] = true;
   result.supported[static_cast<std::size_t>(RendererControl::Timing)] = true;
   result.supported[static_cast<std::size_t>(RendererControl::Dynamics)] = true;
@@ -39,6 +40,7 @@ RendererCapabilityView rendererCapabilities(RendererCarrier carrier) noexcept {
   result.supported[static_cast<std::size_t>(RendererControl::Release)] = true;
   result.supported[static_cast<std::size_t>(RendererControl::Formant)] = true;
   result.supported[static_cast<std::size_t>(RendererControl::Breathiness)] = true;
+  result.supported[static_cast<std::size_t>(RendererControl::Tension)] = true;
   result.pitchPreservingTransient = true;
   return result;
 }

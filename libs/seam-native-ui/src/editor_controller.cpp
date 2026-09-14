@@ -5572,4 +5572,73 @@ core::Result<void> NativeEditorController::resetBreathinessCurve() {
               {regionId_, domain::BreathinessAutomation{}}}));
 }
 
+float NativeEditorController::tensionAtPlayhead() const noexcept {
+  const auto* region = session_.project().findRegion(regionId_);
+  return region == nullptr ? 0.0F : region->tensionAutomation.valueAt(playheadTick_);
+}
+
+core::Result<void> NativeEditorController::nudgeTension(int steps) {
+  // One step is a tenth of the channel, matching the share-based channels beside it.
+  constexpr float kTensionStep = 0.1F;
+  const auto* region = session_.project().findRegion(regionId_);
+  const auto* track = session_.project().findVocalTrack(selectedTrackId_);
+  if (region == nullptr || track == nullptr)
+    return core::failure(core::ErrorCode::NotFound, "Tension edit has no region or track");
+  if (steps == 0) return core::success();
+  const auto carrier = track->proceduralRecipe ? synthesis::RendererCarrier::SourceFilter
+                                               : synthesis::RendererCarrier::SampleBank;
+  synthesis::RendererControlRequest request;
+  request.require(synthesis::RendererControl::Tension);
+  const auto allowed = synthesis::validateRendererCapabilities(carrier, request);
+  if (!allowed) {
+    return core::Result<void>{core::Error{core::ErrorCode::Unsupported,
+        std::string{"The selected singer does not generate the harmonic source a tension curve would "
+                    "shape, so it cannot apply one. "} +
+            allowed.error().message +
+            ". Select a source-filter (voice designer) singer to edit this channel."}};
+  }
+  const auto current = region->tensionAutomation.valueAt(playheadTick_);
+  const auto target = std::clamp(
+      current + kTensionStep * static_cast<float>(steps), 0.0F, domain::kMaximumTension);
+  auto next = region->tensionAutomation;
+  if (!(target != 0.0F))
+    next = domain::TensionAutomation{};
+  else {
+    const auto inserted = next.upsert(domain::TensionAutomationPoint{playheadTick_, target});
+    if (!inserted) return inserted;
+  }
+  if (next == region->tensionAutomation) return core::success();
+  auto context = session_.capturePerformanceJob();
+  if (!context) return core::Result<void>{context.error()};
+  return session_.executePerformanceResult(
+      context.value(),
+      std::make_unique<application::EditPerformanceCommand>(
+          std::vector<application::NoteExpressionEdit>{},
+          std::vector<application::RegionDynamicsEdit>{},
+          std::vector<application::TrackStyleEdit>{},
+          std::vector<application::RegionOwnershipEdit>{},
+          std::vector<application::RegionFormantEdit>{},
+          std::vector<application::RegionBreathinessEdit>{},
+          std::vector<application::RegionTensionEdit>{{regionId_, std::move(next)}}));
+}
+
+core::Result<void> NativeEditorController::resetTensionCurve() {
+  const auto* region = session_.project().findRegion(regionId_);
+  if (region == nullptr)
+    return core::failure(core::ErrorCode::NotFound, "Tension edit has no region");
+  if (region->tensionAutomation.points().empty()) return core::success();
+  auto context = session_.capturePerformanceJob();
+  if (!context) return core::Result<void>{context.error()};
+  return session_.executePerformanceResult(
+      context.value(),
+      std::make_unique<application::EditPerformanceCommand>(
+          std::vector<application::NoteExpressionEdit>{},
+          std::vector<application::RegionDynamicsEdit>{},
+          std::vector<application::TrackStyleEdit>{},
+          std::vector<application::RegionOwnershipEdit>{},
+          std::vector<application::RegionFormantEdit>{},
+          std::vector<application::RegionBreathinessEdit>{},
+          std::vector<application::RegionTensionEdit>{{regionId_, domain::TensionAutomation{}}}));
+}
+
 }  // namespace seam::native_ui

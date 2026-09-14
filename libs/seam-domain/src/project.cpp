@@ -261,6 +261,13 @@ core::Result<void> VocalRegion::validate() const {
     return core::failure(core::ErrorCode::InvariantViolation,
                          "Breathiness automation extends beyond the region");
   }
+  const auto tensionValidation = tensionAutomation.validate();
+  if (!tensionValidation) return tensionValidation;
+  if (!tensionAutomation.points().empty() &&
+      tensionAutomation.points().back().tick > durationTick) {
+    return core::failure(core::ErrorCode::InvariantViolation,
+                         "Tension automation extends beyond the region");
+  }
   return performance.validate(notes, durationTick);
 }
 

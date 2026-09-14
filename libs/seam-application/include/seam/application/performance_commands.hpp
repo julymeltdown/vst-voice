@@ -83,6 +83,13 @@ struct RegionBreathinessEdit final {
   domain::BreathinessAutomation curve;
 };
 
+// And a fourth: tension changes the harmonic source's own spectrum, so it is not a level, not a
+// resonance, and not a balance between periodic and aperiodic energy.
+struct RegionTensionEdit final {
+  domain::RegionId regionId;
+  domain::TensionAutomation curve;
+};
+
 struct TrackStyleEdit final {
   domain::TrackId trackId;
   domain::VoiceStyleSelection selection;
@@ -149,7 +156,8 @@ public:
                          std::vector<TrackStyleEdit> tracks = {},
                          std::vector<RegionOwnershipEdit> ownership = {},
                          std::vector<RegionFormantEdit> formant = {},
-                         std::vector<RegionBreathinessEdit> breathiness = {});
+                         std::vector<RegionBreathinessEdit> breathiness = {},
+                         std::vector<RegionTensionEdit> tension = {});
 
   [[nodiscard]] std::string_view name() const noexcept override;
   [[nodiscard]] CommandAudioImpact audioImpact() const noexcept override;
@@ -166,11 +174,13 @@ private:
   std::vector<RegionDynamicsEdit> afterRegions_;
   std::vector<RegionFormantEdit> afterFormant_;
   std::vector<RegionBreathinessEdit> afterBreathiness_;
+  std::vector<RegionTensionEdit> afterTension_;
   std::vector<TrackStyleEdit> afterTracks_;
   std::vector<NoteExpressionEdit> beforeNotes_;
   std::vector<RegionDynamicsEdit> beforeRegions_;
   std::vector<RegionFormantEdit> beforeFormant_;
   std::vector<RegionBreathinessEdit> beforeBreathiness_;
+  std::vector<RegionTensionEdit> beforeTension_;
   std::vector<TrackStyleEdit> beforeTracks_;
   std::vector<RegionOwnershipEdit> ownershipEdits_;
   struct OwnershipState final {

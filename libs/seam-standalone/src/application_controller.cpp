@@ -869,6 +869,15 @@ core::Result<void> StandaloneApplicationController::dispatch(
     case platform::ApplicationCommand::ResetRegionBreathinessCurve:
       if (!config_.resetRegionBreathinessCurve) return core::failure(core::ErrorCode::Unsupported, "Breathiness editing is not connected");
       return config_.resetRegionBreathinessCurve();
+    case platform::ApplicationCommand::NudgeTensionUp:
+      if (!config_.nudgeTensionUp) return core::failure(core::ErrorCode::Unsupported, "Tension editing is not connected");
+      return config_.nudgeTensionUp();
+    case platform::ApplicationCommand::NudgeTensionDown:
+      if (!config_.nudgeTensionDown) return core::failure(core::ErrorCode::Unsupported, "Tension editing is not connected");
+      return config_.nudgeTensionDown();
+    case platform::ApplicationCommand::ResetRegionTensionCurve:
+      if (!config_.resetRegionTensionCurve) return core::failure(core::ErrorCode::Unsupported, "Tension editing is not connected");
+      return config_.resetRegionTensionCurve();
     case platform::ApplicationCommand::EditTrackStyle:
       if (!config_.editTrackStyle) return core::failure(core::ErrorCode::Unsupported, "Style sheet is not connected");
       return config_.editTrackStyle();

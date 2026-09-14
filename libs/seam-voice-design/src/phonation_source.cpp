@@ -25,6 +25,10 @@ core::Result<PhonationSource> PhonationSource::create(const VoiceRecipe& recipe,
     result.harmonics_[i] = std::sin(std::numbers::pi * harmonic * recipe.phonation.openQuotient) *
         std::pow(harmonic, recipe.phonation.spectralTiltDbPerOctave / 6.020599913279624);
   }
+  // A source with no tension curve uses the recipe's table itself, not a copy that has been through a
+  // neutral tilt: tension zero has to render exactly what the source rendered before the channel existed.
+  result.appliedHarmonics_ = result.harmonics_;
+  result.appliedTension_ = 0.0;
   return result;
 }
 
@@ -39,6 +43,20 @@ core::Result<synthesis::PhraseAudio> PhonationSource::render(std::size_t frames,
   const auto rate = static_cast<double>(performance_->sampleRate());
   const auto noisePole = std::exp(-2.0 * std::numbers::pi * std::min(6000.0, 0.3 * rate) / rate);
   const auto modulationPhase = 0.5 * (noiseAt(seed_, 0) + 1.0);
+  // Tension is the source's own spectrum, so it is applied to the harmonic table the source generates
+  // for itself rather than to the phrase's level. One tilt per processing block is enough, exactly as the
+  // tract's formant shift is one shift per block, and the tilt for a tension of exactly zero is a factor
+  // of exactly one, which leaves the table the recipe declared untouched.
+  const auto tension = static_cast<double>(
+      std::clamp(performance_->at(position_).tension, 0.0F, 1.0F));
+  if (tension != appliedTension_) {
+    const auto tilt = tension * static_cast<double>(domain::kTensionTiltDbPerOctave) / 6.020599913279624;
+    for (std::size_t index = 0U; index < appliedHarmonics_.size(); ++index) {
+      appliedHarmonics_[index] =
+          harmonics_[index] * std::pow(static_cast<double>(index + 1U), tilt);
+    }
+    appliedTension_ = tension;
+  }
   for (std::size_t i = 0; i < frames; ++i) {
     if (i % 256U == 0U && stopToken.stop_requested()) return core::failure<Output>(core::ErrorCode::Conflict, "Phonation rendering cancelled");
     const auto frame = position_ + static_cast<time::SampleFrame>(i);
@@ -58,7 +76,8 @@ core::Result<synthesis::PhraseAudio> PhonationSource::render(std::size_t frames,
       for (std::size_t h = 0; h < count; ++h) {
         const auto harmonic = static_cast<double>(h + 1U);
         const auto taperPosition = std::clamp((harmonic * frequency - 0.35 * rate) / (0.1 * rate), 0.0, 1.0);
-        const auto amplitude = harmonics_[h] * 0.5 * (1.0 + std::cos(std::numbers::pi * taperPosition));
+        const auto amplitude =
+            appliedHarmonics_[h] * 0.5 * (1.0 + std::cos(std::numbers::pi * taperPosition));
         voiced += amplitude * std::sin(2.0 * std::numbers::pi * harmonic * phase);
         weight += std::abs(amplitude);
       }

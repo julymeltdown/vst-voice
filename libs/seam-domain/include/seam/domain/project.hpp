@@ -8,6 +8,7 @@
 #include "seam/domain/note.hpp"
 #include "seam/domain/phoneme.hpp"
 #include "seam/domain/performance_intent.hpp"
+#include "seam/domain/tension_automation.hpp"
 #include "seam/domain/render_controls.hpp"
 #include "seam/domain/routing.hpp"
 #include "seam/domain/voice_style_selection.hpp"
@@ -100,6 +101,9 @@ struct VocalRegion final {
   // energy without touching the tract, so it changes how a voice is produced rather than how it is
   // filtered. Zero is the recipe's own source, exactly as an absent curve always meant.
   BreathinessAutomation breathinessAutomation;
+  // Tension is the third source-side channel: it changes the harmonic source's own spectrum, so it is
+  // neither a level nor a resonance and cannot be expressed as either.
+  TensionAutomation tensionAutomation;
   RegionPerformanceState performance;
 
   [[nodiscard]] Note* findNote(NoteId noteId) noexcept;

@@ -435,16 +435,17 @@ core::Result<void> validateEdits(
     const std::vector<RegionDynamicsEdit>& regions,
     const std::vector<RegionFormantEdit>& formant,
     const std::vector<RegionBreathinessEdit>& breathiness,
+    const std::vector<RegionTensionEdit>& tension,
     const std::vector<TrackStyleEdit>& tracks,
     std::size_t ownershipCount, const Index& noteIndex) {
-  if ((notes.empty() && regions.empty() && formant.empty() && breathiness.empty() && tracks.empty() &&
-       ownershipCount == 0U) ||
+  if ((notes.empty() && regions.empty() && formant.empty() && breathiness.empty() && tension.empty() &&
+       tracks.empty() && ownershipCount == 0U) ||
       notes.size() > kMaximumEdits || regions.size() > kMaximumEdits ||
       formant.size() > kMaximumEdits || breathiness.size() > kMaximumEdits ||
-      tracks.size() > kMaximumEdits ||
+      tension.size() > kMaximumEdits || tracks.size() > kMaximumEdits ||
       ownershipCount > kMaximumEdits ||
-      notes.size() + regions.size() + formant.size() + breathiness.size() + tracks.size() +
-              ownershipCount >
+      notes.size() + regions.size() + formant.size() + breathiness.size() + tension.size() +
+              tracks.size() + ownershipCount >
           kMaximumEdits) {
     return core::failure(core::ErrorCode::InvalidArgument,
                          "Performance edit target count is outside supported bounds");
@@ -491,6 +492,28 @@ core::Result<void> validateEdits(
 
   std::unordered_set<domain::TrackId> trackIds;
   std::unordered_set<domain::RegionId> formantIds;
+  std::unordered_set<domain::RegionId> tensionIds;
+  for (const auto& edit : tension) {
+    if (!tensionIds.insert(edit.regionId).second) {
+      return core::failure(core::ErrorCode::InvalidArgument,
+                           "Performance edit repeats a tension region",
+                           edit.regionId.toString());
+    }
+    const auto* region = project.findRegion(edit.regionId);
+    if (region == nullptr) {
+      return core::failure(core::ErrorCode::NotFound,
+                           "Performance tension region was not found",
+                           edit.regionId.toString());
+    }
+    const auto validation = edit.curve.validate();
+    if (!validation) return validation;
+    if (!edit.curve.points().empty() &&
+        edit.curve.points().back().tick > region->durationTick) {
+      return core::failure(core::ErrorCode::InvariantViolation,
+                           "Tension automation extends beyond the region",
+                           edit.regionId.toString());
+    }
+  }
   for (const auto& edit : formant) {
     if (!formantIds.insert(edit.regionId).second) {
       return core::failure(core::ErrorCode::InvalidArgument,
@@ -557,11 +580,13 @@ EditPerformanceCommand::EditPerformanceCommand(
     std::vector<TrackStyleEdit> tracks,
     std::vector<RegionOwnershipEdit> ownership,
     std::vector<RegionFormantEdit> formant,
-    std::vector<RegionBreathinessEdit> breathiness)
+    std::vector<RegionBreathinessEdit> breathiness,
+    std::vector<RegionTensionEdit> tension)
     : afterNotes_(std::move(notes)),
       afterRegions_(std::move(regions)),
       afterFormant_(std::move(formant)),
       afterBreathiness_(std::move(breathiness)),
+      afterTension_(std::move(tension)),
       afterTracks_(std::move(tracks)),
       ownershipEdits_(std::move(ownership)) {}
 
@@ -663,11 +688,12 @@ core::Result<void> EditPerformanceCommand::setExpressions(domain::Project& proje
   const auto& regions = after ? afterRegions_ : beforeRegions_;
   const auto& formant = after ? afterFormant_ : beforeFormant_;
   const auto& breathiness = after ? afterBreathiness_ : beforeBreathiness_;
+  const auto& tension = after ? afterTension_ : beforeTension_;
   const auto& tracks = after ? afterTracks_ : beforeTracks_;
   const auto indexedNotes = expressionNoteIndex(project, notes);
   if (!indexedNotes) return core::Result<void>{indexedNotes.error()};
-  const auto validation = validateEdits(project, notes, regions, formant, breathiness, tracks,
-                                       ownershipEdits_.size(), indexedNotes.value());
+  const auto validation = validateEdits(project, notes, regions, formant, breathiness, tension,
+                                       tracks, ownershipEdits_.size(), indexedNotes.value());
   if (!validation) return validation;
 
   std::vector<OwnershipState> priorOwnership;
@@ -721,17 +747,20 @@ core::Result<void> EditPerformanceCommand::setExpressions(domain::Project& proje
   auto stagedRegions = regions;
   auto stagedFormant = formant;
   auto stagedBreathiness = breathiness;
+  auto stagedTension = tension;
   auto stagedTracks = tracks;
   if (!captured_) {
     std::vector<NoteExpressionEdit> priorNotes;
     std::vector<RegionDynamicsEdit> priorRegions;
     std::vector<RegionFormantEdit> priorFormant;
     std::vector<RegionBreathinessEdit> priorBreathiness;
+    std::vector<RegionTensionEdit> priorTension;
     std::vector<TrackStyleEdit> priorTracks;
     priorNotes.reserve(notes.size());
     priorRegions.reserve(regions.size());
     priorFormant.reserve(formant.size());
     priorBreathiness.reserve(breathiness.size());
+    priorTension.reserve(tension.size());
     priorTracks.reserve(tracks.size());
     for (const auto& edit : notes) {
       const auto* note = indexedNotes.value().at(edit.noteId);
@@ -749,6 +778,10 @@ core::Result<void> EditPerformanceCommand::setExpressions(domain::Project& proje
       const auto* region = project.findRegion(edit.regionId);
       priorBreathiness.push_back({region->id, region->breathinessAutomation});
     }
+    for (const auto& edit : tension) {
+      const auto* region = project.findRegion(edit.regionId);
+      priorTension.push_back({region->id, region->tensionAutomation});
+    }
     for (const auto& edit : tracks) {
       const auto* track = project.findVocalTrack(edit.trackId);
       priorTracks.push_back({track->id, track->styleSelection});
@@ -757,6 +790,7 @@ core::Result<void> EditPerformanceCommand::setExpressions(domain::Project& proje
     beforeRegions_ = std::move(priorRegions);
     beforeFormant_ = std::move(priorFormant);
     beforeBreathiness_ = std::move(priorBreathiness);
+    beforeTension_ = std::move(priorTension);
     beforeTracks_ = std::move(priorTracks);
     beforeOwnership_ = std::move(priorOwnership);
     afterOwnership_ = std::move(nextOwnership);
@@ -776,6 +810,9 @@ core::Result<void> EditPerformanceCommand::setExpressions(domain::Project& proje
   }
   for (auto& edit : stagedBreathiness) {
     std::swap(project.findRegion(edit.regionId)->breathinessAutomation, edit.curve);
+  }
+  for (auto& edit : stagedTension) {
+    std::swap(project.findRegion(edit.regionId)->tensionAutomation, edit.curve);
   }
   for (auto& edit : stagedTracks) {
     std::swap(project.findVocalTrack(edit.trackId)->styleSelection, edit.selection);

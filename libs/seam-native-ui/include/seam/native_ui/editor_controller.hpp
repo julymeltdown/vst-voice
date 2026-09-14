@@ -377,6 +377,11 @@ public:
   [[nodiscard]] core::Result<void> nudgeBreathiness(int steps);
   [[nodiscard]] core::Result<void> resetBreathinessCurve();
   [[nodiscard]] float breathinessAtPlayhead() const noexcept;
+  // And the third source-side channel. Tension is a spectrum rather than a level, so it is exposed and
+  // refused exactly like its neighbours instead of being folded into a gain.
+  [[nodiscard]] core::Result<void> nudgeTension(int steps);
+  [[nodiscard]] core::Result<void> resetTensionCurve();
+  [[nodiscard]] float tensionAtPlayhead() const noexcept;
   void setCharacterMetadata(std::string name, std::string style) {
     characterName_ = std::move(name);
     characterStyle_ = std::move(style);

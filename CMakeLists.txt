@@ -169,6 +169,7 @@ add_library(seam_domain
   libs/seam-domain/src/dynamics_automation.cpp
   libs/seam-domain/src/formant_automation.cpp
   libs/seam-domain/src/breathiness_automation.cpp
+  libs/seam-domain/src/tension_automation.cpp
   libs/seam-domain/src/performance_intent.cpp
   libs/seam-domain/src/region_performance_state.cpp
   libs/seam-domain/src/voice_style_selection.cpp
@@ -1900,6 +1901,17 @@ if(SEAM_BUILD_TESTS)
   seam_apply_compiler_options(seam_breathiness_expression_tests)
   add_test(NAME seam_breathiness_expression_tests
     COMMAND seam_breathiness_expression_tests)
+
+  add_executable(seam_tension_expression_tests
+    tests/test_main.cpp
+    tests/test_tension_expression.cpp)
+  target_include_directories(seam_tension_expression_tests PRIVATE tests)
+  target_link_libraries(seam_tension_expression_tests PRIVATE
+    seam_rendering seam_voice_design seam_synthesis seam_application
+    seam_native_ui seam_formats seam_voicebank seam_domain seam_core)
+  seam_apply_compiler_options(seam_tension_expression_tests)
+  add_test(NAME seam_tension_expression_tests
+    COMMAND seam_tension_expression_tests)
 
   add_executable(seam_generation_job_probe tests/helpers/generation_job_probe.cpp)
   target_include_directories(seam_generation_job_probe PRIVATE apps/seam-voicebank-cli)

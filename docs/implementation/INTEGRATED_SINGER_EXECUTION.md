@@ -1,5 +1,74 @@
 # Integrated Singer Execution
 
+## Tension is a spectrum a creator can set, and a carrier with no harmonic source refuses it
+
+Tension is the channel that is easiest to fake with a gain and the least honest when it is. A loud phrase
+is not a pressed one, and a control that secretly moves the level would make every later comparison --
+including a listener's -- measure the wrong thing.
+
+`TensionAutomation` joins the region's curves beside pitch, dynamics, formant and breathiness, and the
+project schema moves to 14 with the readers for 1 through 13 unchanged. The persisted unit is the
+channel's own: a normalized tilt applied to the harmonic source's own spectral roll-off, where zero is
+the recipe's source and one is the most pressed setting the channel admits.
+
+The consumer is again the one place that owns the excitation. `PhonationSource` builds its harmonic
+table from the recipe, so tension is applied by rebuilding that table with the tilt in force -- one table
+per processing block, exactly as the tract's formant shift is one shift per block, and a block whose
+tension equals the applied one costs nothing. A source with no tension curve uses the recipe's own table
+rather than a copy that has been through a neutral tilt, and the tilt for a tension of exactly zero is a
+factor of exactly one, so the channel is bit-identical to its own absence.
+
+The maximum is a measured bound, and the first measurement was a rejection. This channel was built with
+nine decibels per octave at maximum, which took the ratio of harmonic energy above two kilohertz to
+harmonic energy around the first formant to about forty-six times the recipe's own and left the
+fundamental ten times weaker: that is a different instrument, not a more pressed voice. Four decibels per
+octave moves the same ratio by about four times while the fundamental stays within a factor of about two
+and the recovered fundamental is unchanged, so that is where the channel's maximum sits. The lesson is
+kept in the constant's documentation rather than in a comment about taste.
+
+The measurement itself had to change to say that. A spectral centroid was tried first and reported almost
+no movement -- 1865.2 Hz against 1865.2 Hz -- while the renders were plainly different, because one
+dominant harmonic pins an average that a moving balance underneath it cannot shift. The oracle now sums
+harmonic energy in two bands by searching a narrow window around each expected harmonic of the score's
+own fundamental, which is stable against the grid that a fixed-frequency sweep depends on.
+
+The capability decision is the same one its neighbours make. A concatenative bank has no harmonic source
+to tilt and an admitted model is not asked to, so a curve that asks for anything is refused with the
+carrier named and with the change that would allow it, while a curve that asks for nothing is not a
+request and renders as before. Raise Tension (Command-Option-]), Lower Tension (Command-Option-[) and
+Reset Tension Curve are reachable from the native menu, one step being a tenth of the channel; every
+accepted nudge is an ordinary undoable edit, and a downward nudge at the floor is not an edit at all and
+so leaves no undo entry behind.
+
+Verified. `seam_tension_expression_tests` passes 7 of 7. The channel's own cases cover bounds, ordering
+and interpolation, the rejection of a share above one, a negative share, a nonfinite share and
+out-of-order points, a save/reload round trip at schema 14, a schema-13 document loading with an empty
+curve, and an out-of-range amount inside a schema-14 document being a parse error rather than a clamped
+value. The capability cases prove the source-filter carrier advertises Tension while a bank does not,
+that validating a bank request fails with the control named, that a bank snapshot carrying a non-neutral
+curve is refused with tension named, and that the same bank renders the same region when the curve asks
+for nothing. The controller cases run a real editor session: three steps write one point at the playhead
+tick with a share of 0.3, a second nudge replaces that point, a hundred steps stop at the channel's
+bound, every accepted nudge undoes back to the previous curve in order, resetting is an edit that undoes
+to the curve it replaced, and a nudge downward at the floor leaves the document and the undo history
+untouched. On a sample-bank track the same nudge is refused with Unsupported, the message names tension
+and the source-filter remedy, the stored half curve is still there and still reports half at the
+playhead, and clearing it -- which is always allowed -- removes it. The acoustic oracle renders the same
+vowel four times and compares the renders after matching their levels, so a level change cannot pass as
+effort: a neutral curve is bit-identical to no curve, the measured tilt of the level-matched renders rises
+from 0.0019 through 0.0027 to 0.0074 as the curve rises, the maximum is more than twice the recipe's own
+balance, the recovered fundamental of the tense render is within 2 Hz of the plain one, and the source
+stays periodic with a coherence above 0.8. The whole tree builds and the registered CTest run is reported
+in the commit that carries this entry.
+
+Not claimed. This is the second of the three source-side channels: airiness, gender, growl and style
+blend still have no algorithm behind their names, so M3.P2 is not complete. The tilt is a source-spectrum
+change and nothing else -- no formant bandwidth change, no subglottal or laryngeal model, and no claim
+that the result matches any measured pressed-phonatory behaviour. The oracle measured the sustained-pose
+path; the articulated stream shares the same excitation owner but was not measured. There is still no
+drawn lane, no curve editor and no inspector applicability row for any of these channels, which is what
+M4.P1 item 6 owes. Nothing was listened to, and no unit acceptance changes.
+
 ## Breathiness is a balance a creator can set, and a carrier that has no excitation refuses it
 
 The breathiness channel existed as a name in the capability table and as a unit in the persisted take

@@ -459,6 +459,15 @@ core::Result<void> NativeEditorApp::initialize() {
           .resetRegionBreathinessCurve = [this] {
             const auto result = authoring_->controller().resetBreathinessCurve(); record(result); return result;
           },
+          .nudgeTensionUp = [this] {
+            const auto result = authoring_->controller().nudgeTension(1); record(result); return result;
+          },
+          .nudgeTensionDown = [this] {
+            const auto result = authoring_->controller().nudgeTension(-1); record(result); return result;
+          },
+          .resetRegionTensionCurve = [this] {
+            const auto result = authoring_->controller().resetTensionCurve(); record(result); return result;
+          },
           .editTrackStyle = [this] {
             const auto result = authoring_->controller().openStyleCoverageSheet(); record(result); return result;
           },

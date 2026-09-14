@@ -67,6 +67,24 @@ std::string breathinessUnsupportedMessage(std::string_view carrier) {
          "source-filter singer.";
 }
 
+// Tension is the same request again, on the source's own spectrum: neither a concatenative bank nor an
+// admitted model hands the application the harmonic source it would have to tilt. A curve that asks for
+// nothing is not a request.
+bool requiresTension(const domain::VocalRegion& region) noexcept {
+  return std::any_of(region.tensionAutomation.points().begin(),
+                     region.tensionAutomation.points().end(),
+                     [](const domain::TensionAutomationPoint& point) {
+                       return point.amount != 0.0F;
+                     });
+}
+
+std::string tensionUnsupportedMessage(std::string_view carrier) {
+  return std::string{"The selected "} + std::string{carrier} +
+         " cannot apply the project's tension curve: it does not generate the harmonic source whose "
+         "spectrum would change, so the curve would be dropped in silence. Remove the curve or select a "
+         "source-filter singer.";
+}
+
 core::Result<domain::VocalRegion> extractPhraseRegion(
     const domain::VocalRegion& source, const PhraseSegment& segment) {
   std::unordered_set<domain::NoteId> noteIds;
@@ -169,6 +187,22 @@ core::Result<domain::VocalRegion> extractPhraseRegion(
   const auto breathinessCopied = result.breathinessAutomation.replacePoints(
       std::vector<domain::BreathinessAutomationPoint>{firstBreathiness, lastBreathiness});
   if (!breathinessCopied) return core::Result<domain::VocalRegion>{breathinessCopied.error()};
+  // The tension curve is windowed by the same rule as the curves beside it.
+  const auto& tension = source.tensionAutomation.points();
+  const auto beforeTensionTick = [](const domain::TensionAutomationPoint& point,
+                                    time::Tick tick) { return point.tick < tick; };
+  auto firstTension = std::lower_bound(tension.begin(), tension.end(), segment.startTick,
+                                       beforeTensionTick);
+  if (firstTension != tension.begin() &&
+      (firstTension == tension.end() || firstTension->tick > segment.startTick)) {
+    --firstTension;
+  }
+  auto lastTension = std::lower_bound(firstTension, tension.end(), segment.endTick,
+                                      beforeTensionTick);
+  if (lastTension != tension.end()) ++lastTension;
+  const auto tensionCopied = result.tensionAutomation.replacePoints(
+      std::vector<domain::TensionAutomationPoint>{firstTension, lastTension});
+  if (!tensionCopied) return core::Result<domain::VocalRegion>{tensionCopied.error()};
   const auto effectiveScope = [&](const domain::PerformanceScope& scope)
       -> std::optional<domain::PerformanceScope> {
     if (const auto* note = std::get_if<domain::NoteId>(&scope)) {
@@ -640,6 +674,9 @@ core::Result<RenderSnapshot> RenderSnapshotFactory::createNeural(
   if (requiresBreathiness(*region))
     return core::failure<RenderSnapshot>(core::ErrorCode::Unsupported,
         breathinessUnsupportedMessage("neural model"), trackId.toString());
+  if (requiresTension(*region))
+    return core::failure<RenderSnapshot>(core::ErrorCode::Unsupported,
+        tensionUnsupportedMessage("neural model"), trackId.toString());
   // A persisted selection is a promise about which voice this music used. A
   // snapshot may run unbound for a preview, but it may never contradict a saved
   // selection, and it may never silently substitute a different bundle.
@@ -801,6 +838,9 @@ core::Result<RenderSnapshot> RenderSnapshotFactory::create(
   if (requiresBreathiness(*region))
     return core::failure<RenderSnapshot>(core::ErrorCode::Unsupported,
         breathinessUnsupportedMessage("sample bank"), trackId.toString());
+  if (requiresTension(*region))
+    return core::failure<RenderSnapshot>(core::ErrorCode::Unsupported,
+        tensionUnsupportedMessage("sample bank"), trackId.toString());
   if (segment.id.empty() || segment.noteIds.empty() || bankRoot.empty()) {
     return core::failure<RenderSnapshot>(core::ErrorCode::InvalidArgument,
                                          "Render snapshot identity is incomplete");
