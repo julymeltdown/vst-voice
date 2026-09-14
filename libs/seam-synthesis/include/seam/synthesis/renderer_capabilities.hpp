@@ -61,12 +61,25 @@ struct RendererCapabilityDecision final {
   std::string diagnostic;
 };
 
+// Which execution carrier a decision is about. A sample bank and the source-filter engine are
+// different carriers with different controls, so a request is answered for the carrier that will
+// actually run instead of for a hint the carrier does not have. The formant channel is the first
+// control where the two answers differ: the source-filter engine moves its own resonances, and a
+// concatenative bank cannot.
+enum class RendererCarrier { SampleBank, SourceFilter };
+
 [[nodiscard]] RendererCapabilityView rendererCapabilities(
     voicebank::RendererHint renderer) noexcept;
+[[nodiscard]] RendererCapabilityView rendererCapabilities(
+    RendererCarrier carrier) noexcept;
 [[nodiscard]] core::Result<RendererCapabilityDecision>
 validateRendererCapabilities(voicebank::RendererHint renderer,
                              const RendererControlRequest& request,
                              bool allowRawFallback);
+[[nodiscard]] core::Result<RendererCapabilityDecision>
+validateRendererCapabilities(RendererCarrier carrier,
+                             const RendererControlRequest& request,
+                             bool allowRawFallback = false);
 [[nodiscard]] std::string_view rendererControlName(
     RendererControl control) noexcept;
 

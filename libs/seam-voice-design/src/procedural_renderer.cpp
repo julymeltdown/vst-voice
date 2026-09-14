@@ -200,6 +200,12 @@ core::Result<SustainedPoseResult> SustainedPoseStream::renderOwned(synthesis::Ph
     auto excitation = source.render(count, stopToken);
     if (!excitation) return core::Result<SustainedPoseResult>{excitation.error()};
     if (!active) std::fill(excitation.value().samples.begin(), excitation.value().samples.end(), 0.0F);
+    // The vocal-tract envelope is a control-rate channel, exactly as it is on the articulated path.
+    const auto formant = performance_->at(source.position()).formantSemitones;
+    if (static_cast<double>(formant) != tract.formantShiftSemitones()) {
+      const auto applied = tract.setFormantShift(static_cast<double>(formant));
+      if (!applied) return core::Result<SustainedPoseResult>{applied.error()};
+    }
     auto shaped = tract.process(excitation.value().samples, stopToken);
     if (!shaped) return core::Result<SustainedPoseResult>{shaped.error()};
     // Gates and accepted dynamics belong after resonance, so filter ringing

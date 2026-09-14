@@ -1,10 +1,87 @@
 #include "seam/voice_design/vocal_tract.hpp"
+#include "seam/domain/formant_automation.hpp"
 #include "seam/phonemizer/phonemizer.hpp"
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <numbers>
 
 namespace seam::voice_design {
+
+core::Result<void> VocalTract::scaleBanks(std::vector<Band>& bands,
+    std::optional<NasalState>& nasal, double ratio, std::uint32_t sampleRate) {
+  const auto nyquist = static_cast<double>(sampleRate) * 0.5;
+  for (auto& band : bands) {
+    const auto frequency = band.frequencyHz * ratio;
+    const auto bandwidth = band.bandwidthHz * ratio;
+    if (!(frequency > 0.0) || frequency >= nyquist || !(bandwidth > 0.0))
+      return core::failure(core::ErrorCode::Unsupported,
+                           "A formant shift would put a vocal tract resonance at or past Nyquist");
+    const auto designed = designBandPass(frequency, bandwidth, static_cast<double>(sampleRate));
+    if (!(1.0 + designed.a1 + designed.a2 > 0.0 && 1.0 - designed.a1 + designed.a2 > 0.0 &&
+          1.0 - designed.a2 > 0.0))
+      return core::failure(core::ErrorCode::InvariantViolation,
+                           "Shifted vocal tract coefficients are not strictly stable");
+    band.frequencyHz = frequency;
+    band.bandwidthHz = bandwidth;
+    band.b0 = designed.b0;
+    band.b2 = designed.b2;
+    band.a1 = designed.a1;
+    band.a2 = designed.a2;
+  }
+  if (nasal.has_value()) {
+    const auto resonance = nasal->resonanceHz * ratio;
+    const auto resonanceBandwidth = nasal->resonanceBandwidthHz * ratio;
+    const auto antiresonance = nasal->antiresonanceHz * ratio;
+    const auto antiresonanceBandwidth = nasal->antiresonanceBandwidthHz * ratio;
+    if (!(resonance > 0.0) || resonance >= nyquist || !(antiresonance > 0.0) ||
+        antiresonance >= nyquist || !(resonanceBandwidth > 0.0) || !(antiresonanceBandwidth > 0.0))
+      return core::failure(core::ErrorCode::Unsupported,
+                           "A formant shift would put the nasal stage at or past Nyquist");
+    nasal->resonance = designBandPass(resonance, resonanceBandwidth, static_cast<double>(sampleRate));
+    nasal->antiresonance = designNotch(antiresonance, antiresonanceBandwidth,
+                                      static_cast<double>(sampleRate));
+    nasal->resonanceHz = resonance;
+    nasal->resonanceBandwidthHz = resonanceBandwidth;
+    nasal->antiresonanceHz = antiresonance;
+    nasal->antiresonanceBandwidthHz = antiresonanceBandwidth;
+  }
+  return core::success();
+}
+
+core::Result<void> VocalTract::setFormantShift(double semitones) {
+  if (!std::isfinite(semitones) ||
+      std::abs(semitones) > static_cast<double>(domain::kMaximumFormantShiftSemitones))
+    return core::failure(core::ErrorCode::InvalidArgument,
+                         "Formant shift is outside the supported range");
+  if (semitones == shiftSemitones_) return core::success();
+  // The delta between the shift this tract already holds and the one requested. Scaling by the delta
+  // keeps repeated calls idempotent instead of compounding the pose away from the one that was
+  // authored.
+  const auto ratio = std::pow(2.0, (semitones - shiftSemitones_) / 12.0);
+  auto bands = bands_;
+  auto targetBands = targetBands_;
+  auto sourceBands = sourceBands_;
+  auto nasal = nasal_;
+  auto targetNasal = targetNasal_;
+  auto sourceNasal = sourceNasal_;
+  // Every bank is a copy, so a refusal anywhere leaves the tract exactly as it was.
+  const std::array<core::Result<void>, 3> applied{
+      scaleBanks(bands, nasal, ratio, sampleRate_),
+      scaleBanks(targetBands, targetNasal, ratio, sampleRate_),
+      scaleBanks(sourceBands, sourceNasal, ratio, sampleRate_)};
+  for (const auto& result : applied)
+    if (!result) return core::Result<void>{result.error()};
+  bands_ = std::move(bands);
+  targetBands_ = std::move(targetBands);
+  sourceBands_ = std::move(sourceBands);
+  nasal_ = std::move(nasal);
+  targetNasal_ = std::move(targetNasal);
+  sourceNasal_ = std::move(sourceNasal);
+  shiftSemitones_ = semitones;
+  return core::success();
+}
+
 VocalTract::Biquad VocalTract::designBandPass(double frequencyHz, double bandwidthHz, double sampleRate) noexcept {
   // W3C Audio EQ Cookbook, RBJ constant-0-dB-peak BPF. bandwidthHz parameterizes nominal Q=f/B;
   // the measured digital bandwidth is a separate question.
@@ -81,6 +158,13 @@ core::Result<void> VocalTract::transitionTo(const VoiceRecipe& recipe,
   targetBands_ = std::move(target.value().bands_);
   targetNasal_ = std::move(target.value().nasal_); targetCoupling_ = target.value().coupling_;
   targetNasalOnly_=target.value().nasalOnly_;
+  // A target pose is designed from the recipe, which is unshifted, so it has to take the shift this
+  // tract is holding or the crossfade would slide back to the unshifted tract.
+  if (shiftSemitones_ != 0.0) {
+    const auto applied = scaleBanks(targetBands_, targetNasal_,
+        std::pow(2.0, shiftSemitones_ / 12.0), sampleRate_);
+    if (!applied) return core::Result<void>{applied.error()};
+  }
   sourceBands_.clear(); sourceNasal_.reset(); sourceCoupling_ = 0.0;
   mode_ = Mode::BankCrossfade;
   transitionFrames_ = frames; remaining_ = frames;
@@ -108,6 +192,11 @@ core::Result<void> VocalTract::interpolateTo(const VoiceRecipe& recipe, std::str
   targetNasal_ = std::move(target.value().nasal_);
   targetCoupling_ = target.value().coupling_;
   targetNasalOnly_ = false;
+  if (shiftSemitones_ != 0.0) {
+    const auto applied = scaleBanks(targetBands_, targetNasal_,
+        std::pow(2.0, shiftSemitones_ / 12.0), sampleRate_);
+    if (!applied) return core::Result<void>{applied.error()};
+  }
   // A nasal model that only the target declares is ramped in by its coupling, which starts at the
   // source value; its own parameters are the ones it will hold once the window is over.
   if (!nasal_ && targetNasal_) nasal_ = targetNasal_;

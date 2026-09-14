@@ -31,6 +31,24 @@ constexpr std::uint64_t kMaximumFrozenPhraseEncodedBytes =
 constexpr std::uint64_t kMaximumFrozenPhraseDecodedBytes =
     512ULL * 1024ULL * 1024ULL;
 
+// The formant channel is a control a concatenative bank and an admitted model do not have. A curve
+// that asks for one would otherwise be dropped in silence, which is exactly what the capability rule
+// forbids, so the request is refused by name instead. A curve that is entirely neutral is not a
+// request.
+bool requiresFormantShift(const domain::VocalRegion& region) noexcept {
+  return std::any_of(region.formantAutomation.points().begin(),
+                     region.formantAutomation.points().end(),
+                     [](const domain::FormantAutomationPoint& point) {
+                       return point.semitones != 0.0F;
+                     });
+}
+
+std::string formantShiftUnsupportedMessage(std::string_view carrier) {
+  return std::string{"The selected "} + std::string{carrier} +
+         " cannot apply the project's formant curve: it has no vocal-tract resonances of its own, so "
+         "the shift would be dropped in silence. Remove the curve or select a source-filter singer.";
+}
+
 core::Result<domain::VocalRegion> extractPhraseRegion(
     const domain::VocalRegion& source, const PhraseSegment& segment) {
   std::unordered_set<domain::NoteId> noteIds;
@@ -98,6 +116,24 @@ core::Result<domain::VocalRegion> extractPhraseRegion(
   const auto copied = result.dynamicsAutomation.replacePoints(
       std::vector<domain::DynamicsAutomationPoint>{first, last});
   if (!copied) return core::Result<domain::VocalRegion>{copied.error()};
+  // The formant curve is windowed exactly like the dynamics curve: the point in force at the phrase
+  // start, the points inside it, and the one that follows, so a phrase never ends on the value of a
+  // point it does not contain.
+  const auto& formant = source.formantAutomation.points();
+  const auto beforeFormantTick = [](const domain::FormantAutomationPoint& point,
+                                    time::Tick tick) { return point.tick < tick; };
+  auto firstFormant = std::lower_bound(formant.begin(), formant.end(), segment.startTick,
+                                       beforeFormantTick);
+  if (firstFormant != formant.begin() &&
+      (firstFormant == formant.end() || firstFormant->tick > segment.startTick)) {
+    --firstFormant;
+  }
+  auto lastFormant = std::lower_bound(firstFormant, formant.end(), segment.endTick,
+                                      beforeFormantTick);
+  if (lastFormant != formant.end()) ++lastFormant;
+  const auto formantCopied = result.formantAutomation.replacePoints(
+      std::vector<domain::FormantAutomationPoint>{firstFormant, lastFormant});
+  if (!formantCopied) return core::Result<domain::VocalRegion>{formantCopied.error()};
   const auto effectiveScope = [&](const domain::PerformanceScope& scope)
       -> std::optional<domain::PerformanceScope> {
     if (const auto* note = std::get_if<domain::NoteId>(&scope)) {
@@ -563,6 +599,9 @@ core::Result<RenderSnapshot> RenderSnapshotFactory::createNeural(
   }
   if (track->proceduralRecipe) return core::failure<RenderSnapshot>(core::ErrorCode::Conflict,
       "A saved procedural singer cannot render through an admitted neural bundle");
+  if (requiresFormantShift(*region))
+    return core::failure<RenderSnapshot>(core::ErrorCode::Unsupported,
+        formantShiftUnsupportedMessage("neural model"), trackId.toString());
   // A persisted selection is a promise about which voice this music used. A
   // snapshot may run unbound for a preview, but it may never contradict a saved
   // selection, and it may never silently substitute a different bundle.
@@ -718,6 +757,9 @@ core::Result<RenderSnapshot> RenderSnapshotFactory::create(
                                          "Render snapshot region was not found",
                                          segment.regionId.toString());
   }
+  if (requiresFormantShift(*region))
+    return core::failure<RenderSnapshot>(core::ErrorCode::Unsupported,
+        formantShiftUnsupportedMessage("sample bank"), trackId.toString());
   if (segment.id.empty() || segment.noteIds.empty() || bankRoot.empty()) {
     return core::failure<RenderSnapshot>(core::ErrorCode::InvalidArgument,
                                          "Render snapshot identity is incomplete");

@@ -282,6 +282,14 @@ core::Result<synthesis::PhraseAudio> ArticulatedStream::renderOwned(synthesis::P
     // excitation and the voiced lane is exactly silent for every frame of it.
     std::vector<float> voicedSamples;
     if (candidate.tract_) {
+      // The vocal-tract envelope is a control-rate channel: one shift per block, applied before the
+      // block is filtered. A shift that has not changed costs nothing, and a shift that would put a
+      // resonance past Nyquist is refused by cause instead of being clamped.
+      const auto formant = performance_->at(position).formantSemitones;
+      if (static_cast<double>(formant) != candidate.tract_->formantShiftSemitones()) {
+        const auto applied = candidate.tract_->setFormantShift(static_cast<double>(formant));
+        if (!applied) return core::Result<Output>{applied.error()};
+      }
       auto voiced = candidate.tract_->process(excitation.value().samples, stop);
       if (!voiced) return core::Result<Output>{voiced.error()};
       voicedSamples = std::move(voiced.value());

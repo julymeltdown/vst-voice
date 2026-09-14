@@ -155,6 +155,49 @@ core::Result<domain::DynamicsAutomation> decodeDynamics(const JsonValue* value) 
   return result;
 }
 
+JsonValue encodeFormant(const domain::FormantAutomation& formant) {
+  JsonValue::Array points;
+  points.reserve(formant.points().size());
+  for (const auto& point : formant.points()) {
+    points.emplace_back(JsonValue::Object{
+        {"tick", JsonValue{point.tick.value()}},
+        {"semitones", JsonValue{point.semitones}},
+    });
+  }
+  return JsonValue{std::move(points)};
+}
+
+core::Result<domain::FormantAutomation> decodeFormant(const JsonValue* value) {
+  if (value == nullptr || !value->isArray() ||
+      value->asArray().size() > domain::kMaximumFormantPoints) {
+    return core::failure<domain::FormantAutomation>(core::ErrorCode::ParseError,
+        "Schema 12 region requires bounded formantAutomation points");
+  }
+  std::vector<domain::FormantAutomationPoint> points;
+  points.reserve(value->asArray().size());
+  for (const auto& point : value->asArray()) {
+    if (!point.isObject() || point.asObject().size() != 2U) {
+      return core::failure<domain::FormantAutomation>(core::ErrorCode::ParseError,
+          "Formant point requires tick and semitones");
+    }
+    const auto* tick = point.find("tick");
+    const auto shift = boundedNumber(point.find("semitones"),
+        -static_cast<double>(domain::kMaximumFormantShiftSemitones),
+        static_cast<double>(domain::kMaximumFormantShiftSemitones));
+    if (tick == nullptr || !tick->isInteger()) {
+      return core::failure<domain::FormantAutomation>(core::ErrorCode::ParseError,
+                                                      "Formant tick must be an integer");
+    }
+    if (!shift) return core::Result<domain::FormantAutomation>{shift.error()};
+    points.push_back({.tick = time::Tick{tick->asInt64()},
+                      .semitones = static_cast<float>(shift.value())});
+  }
+  domain::FormantAutomation result;
+  const auto validation = result.replacePoints(std::move(points));
+  if (!validation) return core::Result<domain::FormantAutomation>{validation.error()};
+  return result;
+}
+
 JsonValue encodeStyleSelection(const domain::VoiceStyleSelection& selection) {
   return JsonValue::Object{
       {"origin", JsonValue{std::string{styleOriginName(selection.origin)}}},

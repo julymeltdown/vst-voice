@@ -238,6 +238,7 @@ core::Result<CompiledScorePerformance> compileScorePerformance(
       sampleRate < 8000U || sampleRate > 384000U || region.notes.size() > 4096U || phonemes.size() > 16384U ||
       region.pitchAutomation.points().size() > 16384U ||
       region.dynamicsAutomation.points().size() > 16384U || project.tempoMap().events().size() > 4096U ||
+      region.formantAutomation.points().size() > 16384U ||
       region.startTick.value() < 0 || region.durationTick.value() <= 0 ||
       region.startTick.value() > std::numeric_limits<std::int64_t>::max() - region.durationTick.value()) {
     return core::failure<CompiledScorePerformance>(core::ErrorCode::InvalidArgument, "Score performance input exceeds bounds");
@@ -263,6 +264,7 @@ core::Result<CompiledScorePerformance> compileScorePerformance(
   result.sampleRate_ = sampleRate;
   result.pitch_ = region.pitchAutomation;
   result.dynamics_ = region.dynamicsAutomation;
+  result.formant_ = region.formantAutomation;
   result.performance_ = region.performance;
   result.notes_.reserve(region.notes.size());
   for (const auto& note : region.notes) {
@@ -395,6 +397,7 @@ ScorePerformanceSample CompiledScorePerformance::evaluate(time::SampleFrame fram
     }
   }
   result.dynamicsGain = dynamics_.valueAt(tick);
+  result.formantSemitones = formant_.valueAt(tick);
   const auto& vibrato = note.vibrato;
   if (vibrato.enabled) {
     const auto duration = static_cast<double>(note.endFrame - note.startFrame);
@@ -467,6 +470,10 @@ ScorePerformanceSample CompiledScorePerformance::evaluate(time::SampleFrame fram
       result.releaseMilliseconds = value;
     } else if (selection.channel == domain::PerformanceChannel::Dynamics && value) {
       result.dynamicsGain = static_cast<float>(*value);
+    } else if (selection.channel == domain::PerformanceChannel::Formant && value) {
+      // A manual formant edit is authoritative over the generated curve, exactly as a manual dynamics
+      // edit is: the channel's own unit is semitones, so the value is applied as it was written.
+      result.formantSemitones = static_cast<float>(*value);
     }
     // Every other channel stays out of the per-frame audio path on purpose. A
     // generated timing proposal is consumed by the ordered timing plan, and the

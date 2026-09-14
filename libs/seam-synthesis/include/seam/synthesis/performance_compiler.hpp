@@ -26,6 +26,9 @@ struct ScorePerformanceSample final {
   std::optional<double> scoreFrequencyHz;
   double vibratoCents{0.0};
   float dynamicsGain{1.0F};
+  // The vocal-tract envelope shift for this frame, in semitones. The excitation is untouched, so this
+  // moves the resonances without moving the melody.
+  float formantSemitones{0.0F};
   float articulationGain{1.0F};
   // Accepted amplitude attack; absent/manual replacement retains the neutral
   // envelope. Continuations expose intent but do not restart the attack.
@@ -74,6 +77,7 @@ private:
   std::uint32_t sampleRate_{48000U};
   domain::PitchAutomation pitch_;
   domain::DynamicsAutomation dynamics_;
+  domain::FormantAutomation formant_;
   domain::RegionPerformanceState performance_;
   struct FrameScope final {
     std::optional<domain::NoteId> noteId;

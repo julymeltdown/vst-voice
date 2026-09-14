@@ -3,6 +3,7 @@
 #include "seam/core/result.hpp"
 #include "seam/domain/ids.hpp"
 #include "seam/domain/dynamics_automation.hpp"
+#include "seam/domain/formant_automation.hpp"
 #include "seam/domain/note.hpp"
 #include "seam/domain/phoneme.hpp"
 #include "seam/domain/performance_intent.hpp"
@@ -91,6 +92,9 @@ struct VocalRegion final {
   std::vector<SeamOverride> seamOverrides;
   PitchAutomation pitchAutomation;
   DynamicsAutomation dynamicsAutomation;
+  // The vocal-tract envelope is a channel of its own: it moves the resonances without touching the
+  // excitation, so the melody stays where the score put it.
+  FormantAutomation formantAutomation;
   RegionPerformanceState performance;
 
   [[nodiscard]] Note* findNote(NoteId noteId) noexcept;

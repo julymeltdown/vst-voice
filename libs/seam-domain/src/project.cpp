@@ -247,6 +247,13 @@ core::Result<void> VocalRegion::validate() const {
     return core::failure(core::ErrorCode::InvariantViolation,
                          "Dynamics automation extends beyond the region");
   }
+  const auto formantValidation = formantAutomation.validate();
+  if (!formantValidation) return formantValidation;
+  if (!formantAutomation.points().empty() &&
+      formantAutomation.points().back().tick > durationTick) {
+    return core::failure(core::ErrorCode::InvariantViolation,
+                         "Formant automation extends beyond the region");
+  }
   return performance.validate(notes, durationTick);
 }
 

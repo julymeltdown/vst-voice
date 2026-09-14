@@ -23,9 +23,54 @@ RendererCapabilityView makeCapabilities(voicebank::RendererHint renderer) noexce
 
 }  // namespace
 
+RendererCapabilityView rendererCapabilities(RendererCarrier carrier) noexcept {
+  if (carrier == RendererCarrier::SampleBank)
+    return makeCapabilities(voicebank::RendererHint::ClassicPsola);
+  RendererCapabilityView result{.renderer = voicebank::RendererHint::Raw};
+  // The source-filter engine compiles the score once and owns its own excitation and tract, so it
+  // consumes every control the compiled performance carries, including the formant channel it now
+  // moves by re-designing the tract's own resonances.
+  result.supported[static_cast<std::size_t>(RendererControl::Pitch)] = true;
+  result.supported[static_cast<std::size_t>(RendererControl::Timing)] = true;
+  result.supported[static_cast<std::size_t>(RendererControl::Dynamics)] = true;
+  result.supported[static_cast<std::size_t>(RendererControl::Vibrato)] = true;
+  result.supported[static_cast<std::size_t>(RendererControl::Attack)] = true;
+  result.supported[static_cast<std::size_t>(RendererControl::Release)] = true;
+  result.supported[static_cast<std::size_t>(RendererControl::Formant)] = true;
+  result.pitchPreservingTransient = true;
+  return result;
+}
+
 RendererCapabilityView rendererCapabilities(
     voicebank::RendererHint renderer) noexcept {
   return makeCapabilities(renderer);
+}
+
+core::Result<RendererCapabilityDecision> validateRendererCapabilities(
+    RendererCarrier carrier, const RendererControlRequest& request, bool allowRawFallback) {
+  const auto selected = rendererCapabilities(carrier);
+  RendererCapabilityDecision decision{
+      .requested = selected,
+      .fallback = selected,
+      .canFallbackToRaw = false,
+      .diagnostic = {},
+  };
+  std::string missing;
+  for (std::size_t index = 0U; index < kRendererControlCount; ++index) {
+    if (!request.required[index] || selected.supported[index]) continue;
+    if (!missing.empty()) missing += ", ";
+    missing += std::string{rendererControlName(static_cast<RendererControl>(index))};
+  }
+  if (missing.empty() &&
+      (!request.requiresPitchPreservingTransient || selected.pitchPreservingTransient))
+    return decision;
+  // A carrier is not a hint: there is no second backend behind it to fall back to, and a control it
+  // does not implement has to fail by name rather than disappear.
+  static_cast<void>(allowRawFallback);
+  decision.diagnostic = missing.empty()
+                            ? "The selected carrier cannot preserve the required transient timing"
+                            : "The selected carrier lacks required controls: " + missing;
+  return core::failure<RendererCapabilityDecision>(core::ErrorCode::Unsupported, decision.diagnostic);
 }
 
 core::Result<RendererCapabilityDecision> validateRendererCapabilities(

@@ -86,7 +86,8 @@ core::Result<SmfScore> exportSmfProject(
     score.notes.push_back({note.startTick, note.durationTick, note.midiKey, 100U, 0U});
   }
   if (!region->phonemeOverrides.empty() || !region->unitSelectionOverrides.empty() || !region->seamOverrides.empty() ||
-      !region->dynamicsAutomation.points().empty() || region->performance.pronunciation.has_value())
+      !region->dynamicsAutomation.points().empty() || !region->formantAutomation.points().empty() ||
+      region->performance.pronunciation.has_value())
     score.issues.push_back({SmfIssueSeverity::Loss, time::Tick{0}, "SEAM phoneme, expression, performance and unit metadata are not representable in SMF v1"});
   const auto valid = score.validate(limits); if (!valid) return core::Result<Output>{valid.error()};
   return score;

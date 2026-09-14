@@ -581,6 +581,7 @@ JsonValue encodeProject(const domain::Project& project) {
                                   {"seamOverrides", JsonValue{std::move(seamOverrides)}},
                                   {"pitchAutomation", JsonValue{std::move(pitchAutomation)}},
                                   {"dynamicsAutomation", detail::encodeDynamics(region.dynamicsAutomation)},
+                                  {"formantAutomation", detail::encodeFormant(region.formantAutomation)},
                                   {"performance", detail::encodeRegionPerformance(region.performance)}});
     }
     vocalTracks.emplace_back(Object{
@@ -1329,6 +1330,11 @@ core::Result<domain::Project> decodeProject(const JsonValue& root) {
         auto performance = detail::decodeRegionPerformance(regionValue.find("performance"));
         if (!performance) return core::Result<domain::Project>{performance.error()};
         region.performance = std::move(performance).value();
+      }
+      if (schemaVersion >= 12) {
+        auto formant = detail::decodeFormant(regionValue.find("formantAutomation"));
+        if (!formant) return core::Result<domain::Project>{formant.error()};
+        region.formantAutomation = std::move(formant).value();
       }
       region.sortNotes();
       track.regions.push_back(std::move(region));

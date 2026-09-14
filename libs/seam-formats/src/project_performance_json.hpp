@@ -10,6 +10,8 @@ namespace seam::formats::detail {
 [[nodiscard]] core::Result<std::optional<std::string>> decodePhoneticHint(const JsonValue* value);
 [[nodiscard]] JsonValue encodeDynamics(const domain::DynamicsAutomation& dynamics);
 [[nodiscard]] core::Result<domain::DynamicsAutomation> decodeDynamics(const JsonValue* value);
+[[nodiscard]] JsonValue encodeFormant(const domain::FormantAutomation& formant);
+[[nodiscard]] core::Result<domain::FormantAutomation> decodeFormant(const JsonValue* value);
 [[nodiscard]] JsonValue encodeStyleSelection(const domain::VoiceStyleSelection& selection);
 [[nodiscard]] core::Result<domain::VoiceStyleSelection> decodeStyleSelection(const JsonValue* value);
 

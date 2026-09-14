@@ -1,5 +1,54 @@
 # Integrated Singer Execution
 
+## The formant channel moves the tract, and a bank that has no tract says so
+
+Seven of the thirteen expression controls had no storage at all: they existed as capability names and
+nothing else. The formant channel is the first of them to become real, because it is the one a
+concatenative bank genuinely cannot have and the source-filter engine genuinely can: the engine owns
+its own resonances, so moving them is a tract change rather than a claim.
+
+The persisted unit is a semitone shift of the vocal tract's resonance frequencies, bounded at two
+octaves, saved as its own region curve and interpolated between points exactly as the dynamics curve
+is. The project schema is twelve; a document written before the channel existed still loads with an
+empty curve rather than being refused, and a schema-twelve curve outside the bound is a parse error
+rather than a clamped value. The compiled performance now carries the shift per frame, so a manual
+formant edit is authoritative over the generated curve the same way a manual dynamics edit is.
+
+The engine applies it by re-designing the tract every control block from the resonance frequencies and
+bandwidths each band retained, carrying the filter state across, and it applies the same shift to any
+pose the tract is moving toward -- otherwise a coarticulation window would slide back to the unshifted
+tract. The shift is a delta from the one the tract already holds, so repeated calls cannot compound the
+pose away from the one that was authored, and a shift that would put a resonance at or past Nyquist is
+refused by cause instead of being clamped to a different vowel. Both procedural paths, the articulated
+one and the sustained one, apply it.
+
+Capabilities now answer for the carrier rather than only for a hint. The source-filter carrier
+advertises the formant channel; a sample bank does not, because it has no resonances of its own. A
+project whose curve asks for a shift is refused by name by the sample-bank and neural snapshot
+factories instead of being dropped in silence, and a curve that is entirely neutral is not a request.
+The interchange loss reports now name the formant curve alongside the dynamics curve, so an USTX or SMF
+conversion cannot lose it quietly either.
+
+Verified. `seam_formant_expression_tests` passes 5 of 5: the curve refuses out-of-range, non-finite
+and unordered points, interpolates between them and erases idempotently; a saved curve round-trips
+through the project codec while a schema-eleven document without the field still loads as an empty
+curve and a schema-twelve curve at thirty semitones is refused as a parse error; the source-filter
+carrier advertises the channel while a sample bank does not, and a request requiring it fails by name
+against the bank; a bank asked to render a region whose curve asks for seven semitones is refused with
+Unsupported while a neutral curve is not; and the acoustic oracle holds -- rendering the same vowel
+with a seven-semitone curve moves the frozen spectral centroid between 300 and 4000 Hz up by more than
+twenty percent while the autocorrelation fundamental stays within two hertz, and a curve of zero
+semitones renders bit-identical samples to having no curve at all. The whole tree builds and the
+registered CTest run is reported in the commit that carries this entry.
+
+Not claimed. Nothing in the UI can author this curve yet: there is no command and no inspector row, so a
+creator cannot set it without a project file, and the lane work belongs to M4.P1. The shift is applied
+at control-block rate rather than per frame, which is a declared smoothing choice and not a measured
+one. The neural carrier refuses the curve because admitted bundle metadata still declares no supported
+conditioning inputs; a model that can be conditioned will need that declaration before it can accept
+one. Nothing was listened to: the oracle measures a fixture render, and no claim is made about how the
+shifted vowel sounds. No unit acceptance changes.
+
 ## A character package declares its performance, or honestly has none
 
 The dock could draw a mouth, but a character package could not supply one. Its manifest was schema one:
