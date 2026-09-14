@@ -434,11 +434,12 @@ add_library(seam_distribution
   libs/seam-distribution/src/trust_policy.cpp
   libs/seam-distribution/src/update_manifest.cpp
   libs/seam-distribution/src/sealed_handoff.cpp
+  libs/seam-distribution/src/procedural_package.cpp
 )
 target_include_directories(seam_distribution PUBLIC
   libs/seam-distribution/include)
 target_link_libraries(seam_distribution PUBLIC
-  seam_voicebank seam_formats seam_domain seam_core OpenSSL::Crypto)
+  seam_voicebank seam_voice_design seam_formats seam_domain seam_core OpenSSL::Crypto)
 seam_apply_compiler_options(seam_distribution)
 
 
@@ -1893,6 +1894,14 @@ if(SEAM_BUILD_TESTS)
   add_executable(seam_formant_expression_tests
     tests/test_main.cpp
     tests/test_formant_expression.cpp)
+  add_executable(seam_procedural_package_tests
+    tests/test_main.cpp
+    tests/test_procedural_package.cpp)
+  target_include_directories(seam_procedural_package_tests PRIVATE tests)
+  target_link_libraries(seam_procedural_package_tests PRIVATE
+    seam_distribution seam_voice_design seam_core)
+  seam_apply_compiler_options(seam_procedural_package_tests)
+  add_test(NAME seam_procedural_package_tests COMMAND seam_procedural_package_tests)
   target_include_directories(seam_formant_expression_tests PRIVATE tests)
   target_link_libraries(seam_formant_expression_tests PRIVATE
     seam_rendering seam_voice_design seam_synthesis seam_application

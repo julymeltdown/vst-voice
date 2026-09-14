@@ -51,6 +51,7 @@ struct PackSeambankOptions final {
   SeambankLimits limits{};
 };
 
+
 struct VerifySeambankOptions final {
   SeambankLimits limits{};
   std::vector<Ed25519PublicKey> trustedPublicKeys;
@@ -72,6 +73,41 @@ struct VerifySeambankOptions final {
     const VerifySeambankOptions& options = {});
 
 [[nodiscard]] bool isSafeSeambankPath(std::string_view path) noexcept;
+// A verified signed container whose payload meaning belongs to the caller. The sample-bank
+// entrypoints above are one family over it; a procedural singer package is another, and neither
+// re-implements the signature, entry table, path policy or digest checks.
+struct SignedContainerInfo final {
+  std::filesystem::path packagePath;
+  std::uint32_t formatVersion{SeambankPackageInfo::kFormatVersion};
+  std::string packageDigest;
+  Ed25519PublicKey signerPublicKey{};
+  std::string signerKeyId;
+  Ed25519Signature signature{};
+  std::vector<SeambankEntry> entries;
+  std::uint64_t payloadBytes{0U};
+  bool signatureValid{false};
+  bool signerTrusted{false};
+};
+
+struct PackSignedContainerOptions final {
+  SeambankLimits limits{};
+  // The manifest path every member of this family must contain. The container does not decode it.
+  std::string rootManifest{"manifest.json"};
+};
+
+[[nodiscard]] core::Result<SignedContainerInfo> packSignedContainer(
+    const std::filesystem::path& sourceDirectory,
+    const std::filesystem::path& outputPackage,
+    const SigningKeyPair& signingKey,
+    const PackSignedContainerOptions& options = {});
+
+[[nodiscard]] core::Result<SignedContainerInfo> verifySignedContainer(
+    const std::filesystem::path& packagePath,
+    const VerifySeambankOptions& options = {});
+
+[[nodiscard]] core::Result<std::vector<std::byte>> readSignedContainerEntry(
+    const SignedContainerInfo& info, const std::filesystem::path& packagePath,
+    std::string_view entryPath, std::uint64_t maximumBytes);
 [[nodiscard]] bool isAllowedSeambankAsset(std::string_view path) noexcept;
 
 }  // namespace seam::distribution

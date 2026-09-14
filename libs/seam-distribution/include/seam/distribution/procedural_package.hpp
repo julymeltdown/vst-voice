@@ -1,0 +1,77 @@
+#pragma once
+
+#include "seam/distribution/seambank.hpp"
+
+#include <cstdint>
+#include <filesystem>
+#include <string>
+#include <vector>
+
+namespace seam::distribution {
+
+// A distributable original procedural singer: one immutable recipe plus the declared facts a
+// selector needs. It is a different family from a sample bank, so the container carries a typed
+// manifest and the sample-bank `manifest.json` contract is untouched.
+//
+// Declared support and reviewed qualification are deliberately different things. This manifest
+// records what the producer *states* (language, styles, phones, engine revision). Signing proves
+// authenticity, not musical quality, and no field here may be read as a review outcome.
+struct ProceduralSingerManifest final {
+  static constexpr std::int32_t kSchemaVersion = 1;
+  static constexpr std::string_view kFormatId = "com.project-seam.procedural-singer";
+
+  std::string id;
+  std::string version;
+  std::string displayName;
+  std::string language{"und"};
+  std::vector<std::string> styles{"neutral"};
+  // The engine that must render this recipe, and its revision. A recipe built for one engine
+  // revision is not silently rendered by another.
+  std::string engineId;
+  std::uint32_t engineRevision{0U};
+  // Canonical recipe bytes inside the package, and their digest.
+  std::string recipeEntry{"recipe.json"};
+  std::string recipeSha256;
+  // Declared phone coverage. Declared, not measured.
+  std::vector<std::string> phones;
+
+  [[nodiscard]] core::Result<void> validate() const;
+  friend bool operator==(const ProceduralSingerManifest&, const ProceduralSingerManifest&) = default;
+};
+
+class ProceduralSingerManifestJsonCodec final {
+public:
+  [[nodiscard]] core::Result<std::string> encode(const ProceduralSingerManifest& manifest) const;
+  [[nodiscard]] core::Result<ProceduralSingerManifest> decode(std::string_view json) const;
+};
+
+// A verified signed procedural package: the container it was admitted from, plus the declared
+// manifest. The recipe itself is read on demand so a large recipe is not duplicated in memory.
+struct ProceduralPackageInfo final {
+  SignedContainerInfo container;
+  ProceduralSingerManifest manifest;
+};
+
+struct PackProceduralPackageOptions final {
+  SeambankLimits limits{};
+};
+
+// Packs a source directory that contains the procedural manifest and the exact recipe bytes it
+// names. The manifest, the recipe digest and the recipe's own decodability are all checked before
+// anything is signed, so a package that verifies is one a first-party renderer can admit.
+[[nodiscard]] core::Result<ProceduralPackageInfo> packProceduralPackage(
+    const std::filesystem::path& sourceDirectory,
+    const std::filesystem::path& outputPackage,
+    const SigningKeyPair& signingKey,
+    const PackProceduralPackageOptions& options = {});
+
+[[nodiscard]] core::Result<ProceduralPackageInfo> verifyProceduralPackage(
+    const std::filesystem::path& packagePath,
+    const VerifySeambankOptions& options = {});
+
+// The recipe bytes exactly as packaged, re-checked against the manifest digest and decoded as a
+// recipe before being returned. Read-only relative to signed content.
+[[nodiscard]] core::Result<std::vector<std::byte>> readProceduralRecipe(
+    const ProceduralPackageInfo& package);
+
+}  // namespace seam::distribution

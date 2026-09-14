@@ -1,0 +1,285 @@
+#include "seam/distribution/procedural_package.hpp"
+
+#include "seam/core/file_io.hpp"
+#include "seam/core/sha256.hpp"
+#include "seam/formats/json_value.hpp"
+#include "seam/voice_design/articulation_plan.hpp"
+#include "seam/voice_design/voice_recipe.hpp"
+
+#include <algorithm>
+#include <set>
+
+namespace seam::distribution {
+namespace {
+
+using seam::formats::JsonValue;
+using Object = JsonValue::Object;
+using Array = JsonValue::Array;
+
+constexpr std::string_view kManifestEntry = "manifest.json";
+
+bool safeIdentity(std::string_view value) noexcept {
+  if (value.empty() || value.size() > 128U) return false;
+  return std::all_of(value.begin(), value.end(), [](unsigned char character) {
+    return std::isalnum(character) != 0 || character == '.' || character == '-' ||
+           character == '_';
+  });
+}
+
+core::Result<std::vector<std::string>> stringArray(const JsonValue* value,
+                                                   std::string_view field,
+                                                   std::size_t maximum) {
+  if (value == nullptr || !value->isArray() || value->asArray().empty() ||
+      value->asArray().size() > maximum) {
+    return core::failure<std::vector<std::string>>(core::ErrorCode::ParseError,
+                                                   "Procedural manifest array is invalid",
+                                                   std::string{field});
+  }
+  std::set<std::string> unique;
+  std::vector<std::string> result;
+  for (const auto& entry : value->asArray()) {
+    if (!entry.isString() || entry.asString().empty() || entry.asString().size() > 64U)
+      return core::failure<std::vector<std::string>>(core::ErrorCode::ParseError,
+                                                     "Procedural manifest entry is invalid",
+                                                     std::string{field});
+    if (!unique.insert(entry.asString()).second)
+      return core::failure<std::vector<std::string>>(
+          core::ErrorCode::ParseError, "Procedural manifest repeats an entry",
+          std::string{field});
+    result.push_back(entry.asString());
+  }
+  return result;
+}
+
+core::Result<std::string> requiredString(const JsonValue& root, std::string_view field,
+                                         std::size_t maximum) {
+  const auto* value = root.find(field);
+  if (value == nullptr || !value->isString() || value->asString().empty() ||
+      value->asString().size() > maximum) {
+    return core::failure<std::string>(core::ErrorCode::ParseError,
+                                      "Procedural manifest string field is invalid",
+                                      std::string{field});
+  }
+  return value->asString();
+}
+
+}  // namespace
+
+core::Result<void> ProceduralSingerManifest::validate() const {
+  if (!safeIdentity(id) || !safeIdentity(version))
+    return core::failure(core::ErrorCode::InvalidArgument,
+                         "Procedural singer identity is empty or unsafe");
+  if (displayName.empty() || displayName.size() > 256U)
+    return core::failure(core::ErrorCode::InvalidArgument,
+                         "Procedural singer display name is invalid");
+  if (language.empty() || language.size() > 16U)
+    return core::failure(core::ErrorCode::InvalidArgument,
+                         "Procedural singer language is invalid");
+  if (engineId.empty() || engineId.size() > 128U)
+    return core::failure(core::ErrorCode::InvalidArgument,
+                         "Procedural singer engine identity is invalid");
+  if (engineRevision == 0U)
+    return core::failure(core::ErrorCode::InvalidArgument,
+                         "Procedural singer engine revision must be nonzero");
+  if (styles.empty() || styles.size() > 64U)
+    return core::failure(core::ErrorCode::InvalidArgument,
+                         "Procedural singer must declare at least one style");
+  if (std::any_of(styles.begin(), styles.end(), [](const std::string& style) {
+        return style.empty() || style.size() > 64U;
+      }))
+    return core::failure(core::ErrorCode::InvalidArgument,
+                         "Procedural singer declares an invalid style");
+  if (!isSafeSeambankPath(recipeEntry) ||
+      recipeEntry == kManifestEntry)
+    return core::failure(core::ErrorCode::InvalidArgument,
+                         "Procedural recipe entry path is invalid");
+  // A sha256 is 64 lowercase hex characters. A short or uppercase digest is a producer mistake,
+  // not a value to normalise, because the digest is what binds the signed recipe.
+  if (recipeSha256.size() != 64U ||
+      !std::all_of(recipeSha256.begin(), recipeSha256.end(), [](unsigned char character) {
+        return std::isdigit(character) != 0 || (character >= 'a' && character <= 'f');
+      }))
+    return core::failure(core::ErrorCode::InvalidArgument,
+                         "Procedural recipe digest must be lowercase SHA-256 hex");
+  if (phones.empty() || phones.size() > 4096U)
+    return core::failure(core::ErrorCode::InvalidArgument,
+                         "Procedural singer must declare its phone coverage");
+  return core::success();
+}
+
+core::Result<std::string> ProceduralSingerManifestJsonCodec::encode(
+    const ProceduralSingerManifest& manifest) const {
+  const auto valid = manifest.validate();
+  if (!valid) return core::Result<std::string>{valid.error()};
+  Array styles;
+  for (const auto& style : manifest.styles) styles.emplace_back(style);
+  Array phones;
+  for (const auto& phone : manifest.phones) phones.emplace_back(phone);
+  return formats::stringifyJson(JsonValue{Object{
+      {"formatId", JsonValue{std::string{ProceduralSingerManifest::kFormatId}}},
+      {"schemaVersion", JsonValue{static_cast<std::int64_t>(ProceduralSingerManifest::kSchemaVersion)}},
+      {"id", JsonValue{manifest.id}},
+      {"version", JsonValue{manifest.version}},
+      {"displayName", JsonValue{manifest.displayName}},
+      {"language", JsonValue{manifest.language}},
+      {"styles", JsonValue{std::move(styles)}},
+      {"engineId", JsonValue{manifest.engineId}},
+      {"engineRevision", JsonValue{static_cast<std::int64_t>(manifest.engineRevision)}},
+      {"recipeEntry", JsonValue{manifest.recipeEntry}},
+      {"recipeSha256", JsonValue{manifest.recipeSha256}},
+      {"phones", JsonValue{std::move(phones)}},
+  }}, true);
+}
+
+core::Result<ProceduralSingerManifest> ProceduralSingerManifestJsonCodec::decode(
+    std::string_view json) const {
+  auto parsed = formats::parseJson(json, formats::JsonParseLimits{
+      .maximumInputBytes = 1024U * 1024U,
+      .maximumDepth = 16U,
+      .maximumNodes = 8192U,
+      .maximumStringBytes = 64U * 1024U,
+      .maximumCollectionEntries = 4096U,
+  });
+  if (!parsed) return core::Result<ProceduralSingerManifest>{parsed.error()};
+  if (!parsed.value().isObject())
+    return core::failure<ProceduralSingerManifest>(core::ErrorCode::ParseError,
+                                                   "Procedural manifest root must be an object");
+  const auto& root = parsed.value();
+  const auto* formatId = root.find("formatId");
+  const auto* schema = root.find("schemaVersion");
+  if (formatId == nullptr || !formatId->isString() ||
+      formatId->asString() != ProceduralSingerManifest::kFormatId) {
+    return core::failure<ProceduralSingerManifest>(core::ErrorCode::Unsupported,
+                                                   "Unsupported procedural manifest format");
+  }
+  if (schema == nullptr || !schema->isNumber() ||
+      schema->asInt64() != ProceduralSingerManifest::kSchemaVersion) {
+    return core::failure<ProceduralSingerManifest>(core::ErrorCode::Unsupported,
+                                                   "Unsupported procedural manifest schema");
+  }
+  ProceduralSingerManifest manifest;
+  auto id = requiredString(root, "id", 128U);
+  auto version = requiredString(root, "version", 128U);
+  auto displayName = requiredString(root, "displayName", 256U);
+  auto language = requiredString(root, "language", 16U);
+  auto engineId = requiredString(root, "engineId", 128U);
+  auto recipeEntry = requiredString(root, "recipeEntry", 1024U);
+  auto recipeSha256 = requiredString(root, "recipeSha256", 64U);
+  if (!id) return core::Result<ProceduralSingerManifest>{id.error()};
+  if (!version) return core::Result<ProceduralSingerManifest>{version.error()};
+  if (!displayName) return core::Result<ProceduralSingerManifest>{displayName.error()};
+  if (!language) return core::Result<ProceduralSingerManifest>{language.error()};
+  if (!engineId) return core::Result<ProceduralSingerManifest>{engineId.error()};
+  if (!recipeEntry) return core::Result<ProceduralSingerManifest>{recipeEntry.error()};
+  if (!recipeSha256) return core::Result<ProceduralSingerManifest>{recipeSha256.error()};
+  const auto* engineRevision = root.find("engineRevision");
+  if (engineRevision == nullptr || !engineRevision->isInteger() ||
+      engineRevision->asInt64() <= 0 ||
+      engineRevision->asInt64() > static_cast<std::int64_t>(std::numeric_limits<std::uint32_t>::max())) {
+    return core::failure<ProceduralSingerManifest>(core::ErrorCode::ParseError,
+                                                   "Procedural engine revision is invalid");
+  }
+  auto styles = stringArray(root.find("styles"), "styles", 64U);
+  auto phones = stringArray(root.find("phones"), "phones", 4096U);
+  if (!styles) return core::Result<ProceduralSingerManifest>{styles.error()};
+  if (!phones) return core::Result<ProceduralSingerManifest>{phones.error()};
+  manifest.id = id.value();
+  manifest.version = version.value();
+  manifest.displayName = displayName.value();
+  manifest.language = language.value();
+  manifest.styles = std::move(styles).value();
+  manifest.engineId = engineId.value();
+  manifest.engineRevision = static_cast<std::uint32_t>(engineRevision->asInt64());
+  manifest.recipeEntry = recipeEntry.value();
+  manifest.recipeSha256 = recipeSha256.value();
+  manifest.phones = std::move(phones).value();
+  const auto valid = manifest.validate();
+  if (!valid) return core::Result<ProceduralSingerManifest>{valid.error()};
+  return manifest;
+}
+
+namespace {
+
+// The declared recipe must be exactly the bytes the package carries and a recipe this build can
+// decode. A digest that matches undecodable bytes is still refused: it would be a package that
+// verifies and then cannot be admitted.
+core::Result<void> checkRecipeBytes(const std::vector<std::byte>& bytes,
+                                    const ProceduralSingerManifest& manifest) {
+  const auto digest = core::sha256Hex(bytes);
+  if (digest != manifest.recipeSha256)
+    return core::failure(core::ErrorCode::Conflict,
+                         "Procedural recipe bytes do not match the manifest digest",
+                         manifest.recipeEntry);
+  const std::string text(reinterpret_cast<const char*>(bytes.data()), bytes.size());
+  auto recipe = voice_design::decodeVoiceRecipe(text);
+  if (!recipe) return core::Result<void>{recipe.error()};
+  if (recipe.value().engineId != manifest.engineId)
+    return core::failure(core::ErrorCode::Conflict,
+                         "Procedural recipe engine does not match the manifest",
+                         recipe.value().engineId);
+  return core::success();
+}
+
+}  // namespace
+
+core::Result<ProceduralPackageInfo> packProceduralPackage(
+    const std::filesystem::path& sourceDirectory,
+    const std::filesystem::path& outputPackage,
+    const SigningKeyPair& signingKey,
+    const PackProceduralPackageOptions& options) {
+  const auto manifestPath = sourceDirectory / kManifestEntry;
+  auto manifestText = core::readTextFileLimited(manifestPath, 1024U * 1024U);
+  if (!manifestText) return core::Result<ProceduralPackageInfo>{manifestText.error()};
+  ProceduralSingerManifestJsonCodec codec;
+  auto manifest = codec.decode(manifestText.value());
+  if (!manifest) return core::Result<ProceduralPackageInfo>{manifest.error()};
+  const auto recipePath = sourceDirectory / manifest.value().recipeEntry;
+  auto recipeBytes = core::readFileBytesLimited(recipePath, 16U * 1024U * 1024U);
+  if (!recipeBytes) return core::Result<ProceduralPackageInfo>{recipeBytes.error()};
+  const auto recipeChecked = checkRecipeBytes(recipeBytes.value(), manifest.value());
+  if (!recipeChecked) return core::Result<ProceduralPackageInfo>{recipeChecked.error()};
+  auto packed = packSignedContainer(sourceDirectory, outputPackage, signingKey,
+      PackSignedContainerOptions{.limits = options.limits, .rootManifest = std::string{kManifestEntry}});
+  if (!packed) return core::Result<ProceduralPackageInfo>{packed.error()};
+  return verifyProceduralPackage(outputPackage, VerifySeambankOptions{
+      .limits = options.limits,
+      .trustedPublicKeys = {signingKey.publicKey},
+      .requireTrustedSigner = true});
+}
+
+core::Result<ProceduralPackageInfo> verifyProceduralPackage(
+    const std::filesystem::path& packagePath,
+    const VerifySeambankOptions& options) {
+  auto container = verifySignedContainer(packagePath, options);
+  if (!container) return core::Result<ProceduralPackageInfo>{container.error()};
+  auto manifestBytes = readSignedContainerEntry(container.value(), packagePath, kManifestEntry,
+                                                1024U * 1024U);
+  if (!manifestBytes) return core::Result<ProceduralPackageInfo>{manifestBytes.error()};
+  const std::string manifestText(reinterpret_cast<const char*>(manifestBytes.value().data()),
+                                 manifestBytes.value().size());
+  ProceduralSingerManifestJsonCodec codec;
+  auto manifest = codec.decode(manifestText);
+  if (!manifest) return core::Result<ProceduralPackageInfo>{manifest.error()};
+  // The signed container proves the bytes; this proves the bytes are the declared recipe.
+  const auto recipeEntry = std::find_if(container.value().entries.begin(),
+      container.value().entries.end(),
+      [&manifest](const auto& entry) { return entry.path == manifest.value().recipeEntry; });
+  if (recipeEntry == container.value().entries.end()) {
+    return core::failure<ProceduralPackageInfo>(core::ErrorCode::NotFound,
+                                                "Procedural package lacks its declared recipe",
+                                                manifest.value().recipeEntry);
+  }
+  return ProceduralPackageInfo{std::move(container.value()), std::move(manifest.value())};
+}
+
+core::Result<std::vector<std::byte>> readProceduralRecipe(
+    const ProceduralPackageInfo& package) {
+  auto bytes = readSignedContainerEntry(package.container, package.container.packagePath,
+                                        package.manifest.recipeEntry, 16U * 1024U * 1024U);
+  if (!bytes) return core::Result<std::vector<std::byte>>{bytes.error()};
+  const auto checked = checkRecipeBytes(bytes.value(), package.manifest);
+  if (!checked) return core::Result<std::vector<std::byte>>{checked.error()};
+  return bytes;
+}
+
+}  // namespace seam::distribution

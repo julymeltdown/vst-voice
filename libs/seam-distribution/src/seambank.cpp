@@ -11,6 +11,7 @@
 #include <cctype>
 #include <chrono>
 #include <cstring>
+#include <functional>
 #include <fstream>
 #include <limits>
 #include <set>
@@ -47,6 +48,7 @@ struct CollectedFile final {
   std::array<std::byte, 32U> digest{};
   std::uint64_t payloadOffset{0U};
 };
+
 
 void appendU16(std::vector<std::byte>& bytes, std::uint16_t value) {
   for (unsigned shift = 0U; shift < 16U; shift += 8U) {
@@ -183,7 +185,8 @@ core::Result<void> writeAndHash(std::ofstream& stream, core::Sha256& hash,
 }
 
 core::Result<std::vector<CollectedFile>> collectFiles(
-    const std::filesystem::path& sourceDirectory, const SeambankLimits& limits) {
+    const std::filesystem::path& sourceDirectory, const SeambankLimits& limits,
+    std::string_view rootManifest) {
   std::error_code error;
   const auto root = std::filesystem::canonical(sourceDirectory, error);
   if (error || !std::filesystem::is_directory(root)) {
@@ -250,11 +253,12 @@ core::Result<std::vector<CollectedFile>> collectFiles(
   std::sort(files.begin(), files.end(),
             [](const auto& left, const auto& right) { return left.path < right.path; });
   if (files.empty() ||
-      std::none_of(files.begin(), files.end(), [](const auto& file) {
-        return file.path == "manifest.json";
+      std::none_of(files.begin(), files.end(), [rootManifest](const auto& file) {
+        return file.path == rootManifest;
       })) {
     return core::failure<std::vector<CollectedFile>>(
-        core::ErrorCode::NotFound, "Seambank source requires manifest.json");
+        core::ErrorCode::NotFound, "Signed container source requires its root manifest",
+        std::string{rootManifest});
   }
   return files;
 }
@@ -341,8 +345,11 @@ core::Result<std::string> characterField(
   return value->asString();
 }
 
+using EntryReader = std::function<core::Result<std::vector<std::byte>>(
+    std::string_view, std::uint64_t)>;
+
 core::Result<void> validateCharacterBinding(
-    std::ifstream& stream, const voicebank::Manifest& voicebankManifest,
+    const EntryReader& readEntry, const voicebank::Manifest& voicebankManifest,
     const std::vector<SeambankEntry>& entries) {
   if (voicebankManifest.characterId.empty()) return core::success();
   const auto* manifestEntry = findEntry(entries, "character/manifest.json");
@@ -351,7 +358,7 @@ core::Result<void> validateCharacterBinding(
         core::ErrorCode::NotFound,
         "Character-bound seambank lacks character/manifest.json");
   }
-  auto bytes = readEntryUnchecked(stream, *manifestEntry, 1024U * 1024U);
+  auto bytes = readEntry("character/manifest.json", 1024U * 1024U);
   if (!bytes) return core::Result<void>{bytes.error()};
   const std::string text(reinterpret_cast<const char*>(bytes.value().data()),
                          bytes.value().size());
@@ -404,6 +411,7 @@ core::Result<void> validateCharacterBinding(
 }  // namespace
 
 bool isSafeSeambankPath(std::string_view path) noexcept {
+
   if (path.empty() || path.front() == '/' || path.back() == '/' ||
       path.find('\\') != std::string_view::npos ||
       path.find(':') != std::string_view::npos ||
@@ -421,6 +429,7 @@ bool isSafeSeambankPath(std::string_view path) noexcept {
   return true;
 }
 
+
 bool isAllowedSeambankAsset(std::string_view path) noexcept {
   if (!isSafeSeambankPath(path)) return false;
   std::string lower{path};
@@ -435,12 +444,20 @@ bool isAllowedSeambankAsset(std::string_view path) noexcept {
   return allowed.contains(extension);
 }
 
+// The family-neutral writer and reader are defined below. The sample-bank entrypoints use the same
+// container any other resource family uses, so both are declared before their first use.
+[[nodiscard]] core::Result<SignedContainerInfo> packCollectedContainer(
+    std::vector<CollectedFile> files, const std::filesystem::path& outputPackage,
+    const SigningKeyPair& signingKey, const SeambankLimits& limits);
+[[nodiscard]] core::Result<SignedContainerInfo> openSignedContainer(
+    const std::filesystem::path& packagePath, const VerifySeambankOptions& options);
+
 core::Result<SeambankPackageInfo> packSeambank(
     const std::filesystem::path& sourceDirectory,
     const std::filesystem::path& outputPackage,
     const SigningKeyPair& signingKey,
     const PackSeambankOptions& options) {
-  auto files = collectFiles(sourceDirectory, options.limits);
+  auto files = collectFiles(sourceDirectory, options.limits, "manifest.json");
   if (!files) return core::Result<SeambankPackageInfo>{files.error()};
 
   voicebank::ManifestJsonCodec manifestCodec;
@@ -455,20 +472,34 @@ core::Result<SeambankPackageInfo> packSeambank(
     }
   }
 
+  auto packed = packCollectedContainer(std::move(files.value()), outputPackage, signingKey,
+                                       options.limits);
+  if (!packed) return core::Result<SeambankPackageInfo>{packed.error()};
+  return verifySeambank(outputPackage, VerifySeambankOptions{
+      .limits = options.limits,
+      .trustedPublicKeys = {signingKey.publicKey},
+      .requireTrustedSigner = true});
+}
+
+// The family-neutral writer: layout, digests, one signature over header+table+payload+key, durable
+// publish, then the container's own verification. Family meaning is validated by the caller.
+core::Result<SignedContainerInfo> packCollectedContainer(
+    std::vector<CollectedFile> files, const std::filesystem::path& outputPackage,
+    const SigningKeyPair& signingKey, const SeambankLimits& limits) {
   std::uint64_t tableBytes = 0U;
   std::uint64_t payloadBytes = 0U;
-  for (const auto& file : files.value()) {
+  for (const auto& file : files) {
     tableBytes += 2U + file.path.size() + 8U + 8U + 32U;
     payloadBytes += file.size;
   }
   const auto archiveBytes = kHeaderBytes + tableBytes + payloadBytes +
                             kPublicKeyBytes + kSignatureBytes;
-  if (archiveBytes > options.limits.maximumArchiveBytes) {
-    return core::failure<SeambankPackageInfo>(core::ErrorCode::Unsupported,
+  if (archiveBytes > limits.maximumArchiveBytes) {
+    return core::failure<SignedContainerInfo>(core::ErrorCode::Unsupported,
                                                "Seambank archive exceeds size limit");
   }
   std::uint64_t nextOffset = kHeaderBytes + tableBytes;
-  for (auto& file : files.value()) {
+  for (auto& file : files) {
     file.payloadOffset = nextOffset;
     nextOffset += file.size;
   }
@@ -477,14 +508,14 @@ core::Result<SeambankPackageInfo> packSeambank(
   header.reserve(static_cast<std::size_t>(kHeaderBytes));
   header.insert(header.end(), kMagic.begin(), kMagic.end());
   appendU32(header, SeambankPackageInfo::kFormatVersion);
-  appendU32(header, static_cast<std::uint32_t>(files.value().size()));
+  appendU32(header, static_cast<std::uint32_t>(files.size()));
   appendU64(header, tableBytes);
   appendU64(header, payloadBytes);
   appendU32(header, kPublicKeyBytes);
   appendU32(header, kSignatureBytes);
   std::vector<std::byte> table;
   table.reserve(static_cast<std::size_t>(tableBytes));
-  for (const auto& file : files.value()) {
+  for (const auto& file : files) {
     appendU16(table, static_cast<std::uint16_t>(file.path.size()));
     table.insert(table.end(), std::as_bytes(std::span{file.path.data(), file.path.size()}).begin(),
                  std::as_bytes(std::span{file.path.data(), file.path.size()}).end());
@@ -496,18 +527,18 @@ core::Result<SeambankPackageInfo> packSeambank(
   std::error_code error;
   if (!outputPackage.parent_path().empty()) {
     std::filesystem::create_directories(outputPackage.parent_path(), error);
-    if (error) return core::failure<SeambankPackageInfo>(core::ErrorCode::IoError, "Unable to create seambank output directory", error.message());
+    if (error) return core::failure<SignedContainerInfo>(core::ErrorCode::IoError, "Unable to create seambank output directory", error.message());
   }
   const auto temporary = temporaryPath(outputPackage);
   std::ofstream stream(temporary, std::ios::binary | std::ios::trunc);
-  if (!stream) return core::failure<SeambankPackageInfo>(core::ErrorCode::IoError, "Unable to create seambank package", temporary.string());
+  if (!stream) return core::failure<SignedContainerInfo>(core::ErrorCode::IoError, "Unable to create seambank package", temporary.string());
   core::Sha256 signedHash;
   auto written = writeAndHash(stream, signedHash, header);
-  if (!written) return core::Result<SeambankPackageInfo>{written.error()};
+  if (!written) return core::Result<SignedContainerInfo>{written.error()};
   written = writeAndHash(stream, signedHash, table);
-  if (!written) return core::Result<SeambankPackageInfo>{written.error()};
+  if (!written) return core::Result<SignedContainerInfo>{written.error()};
   std::array<char, kIoBlockBytes> buffer{};
-  for (const auto& file : files.value()) {
+  for (const auto& file : files) {
     std::ifstream input(file.source, std::ios::binary);
     std::uint64_t remaining = file.size;
     while (remaining > 0U) {
@@ -516,56 +547,56 @@ core::Result<SeambankPackageInfo> packSeambank(
       if (input.gcount() != static_cast<std::streamsize>(request)) {
         stream.close();
         std::filesystem::remove(temporary, error);
-        return core::failure<SeambankPackageInfo>(core::ErrorCode::IoError, "Source asset changed while packing", file.path);
+        return core::failure<SignedContainerInfo>(core::ErrorCode::IoError, "Source asset changed while packing", file.path);
       }
       written = writeAndHash(stream, signedHash,
                              std::as_bytes(std::span{buffer.data(), request}));
-      if (!written) return core::Result<SeambankPackageInfo>{written.error()};
+      if (!written) return core::Result<SignedContainerInfo>{written.error()};
       remaining -= request;
     }
   }
   written = writeAndHash(stream, signedHash, signingKey.publicKey);
-  if (!written) return core::Result<SeambankPackageInfo>{written.error()};
+  if (!written) return core::Result<SignedContainerInfo>{written.error()};
   const auto signedDigest = signedHash.digest();
   const auto signingMessage = signatureMessage(signedDigest);
   auto signature = signEd25519(signingMessage, signingKey.privateKey);
-  if (!signature) return core::Result<SeambankPackageInfo>{signature.error()};
+  if (!signature) return core::Result<SignedContainerInfo>{signature.error()};
   stream.write(reinterpret_cast<const char*>(signature.value().data()),
                static_cast<std::streamsize>(signature.value().size()));
   stream.flush();
-  if (!stream) return core::failure<SeambankPackageInfo>(core::ErrorCode::IoError, "Unable to finalize seambank package");
+  if (!stream) return core::failure<SignedContainerInfo>(core::ErrorCode::IoError, "Unable to finalize seambank package");
   stream.close();
   auto committed = durableCommit(temporary, outputPackage);
   if (!committed) {
     std::filesystem::remove(temporary, error);
-    return core::Result<SeambankPackageInfo>{committed.error()};
+    return core::Result<SignedContainerInfo>{committed.error()};
   }
-  VerifySeambankOptions verification{.limits = options.limits,
+  VerifySeambankOptions verification{.limits = limits,
                                      .trustedPublicKeys = {signingKey.publicKey},
                                      .requireTrustedSigner = true};
-  auto verifiedPackage = verifySeambank(outputPackage, verification);
+  auto verifiedPackage = openSignedContainer(outputPackage, verification);
   if (!verifiedPackage) {
     std::filesystem::remove(outputPackage, error);
-    return core::Result<SeambankPackageInfo>{verifiedPackage.error()};
+    return core::Result<SignedContainerInfo>{verifiedPackage.error()};
   }
-  return verifiedPackage;
+  return std::move(verifiedPackage.value());
 }
 
-core::Result<SeambankPackageInfo> verifySeambank(
+core::Result<SignedContainerInfo> openSignedContainer(
     const std::filesystem::path& packagePath,
     const VerifySeambankOptions& options) {
   std::error_code error;
   const auto fileSize = std::filesystem::file_size(packagePath, error);
   if (error || fileSize < kHeaderBytes + kPublicKeyBytes + kSignatureBytes ||
       fileSize > options.limits.maximumArchiveBytes) {
-    return core::failure<SeambankPackageInfo>(core::ErrorCode::ParseError,
+    return core::failure<SignedContainerInfo>(core::ErrorCode::ParseError,
                                                "Seambank package size is invalid", packagePath.string());
   }
   std::ifstream stream(packagePath, std::ios::binary);
   std::array<std::byte, 8U> magic{};
   stream.read(reinterpret_cast<char*>(magic.data()), magic.size());
   if (!stream || magic != kMagic) {
-    return core::failure<SeambankPackageInfo>(core::ErrorCode::ParseError, "Seambank magic is invalid");
+    return core::failure<SignedContainerInfo>(core::ErrorCode::ParseError, "Seambank magic is invalid");
   }
   auto version = readU32(stream);
   auto entryCount = readU32(stream);
@@ -574,19 +605,19 @@ core::Result<SeambankPackageInfo> verifySeambank(
   auto publicBytes = readU32(stream);
   auto signatureBytes = readU32(stream);
   if (!version || !entryCount || !tableBytes || !payloadBytes || !publicBytes || !signatureBytes) {
-    return core::failure<SeambankPackageInfo>(core::ErrorCode::ParseError, "Seambank header is truncated");
+    return core::failure<SignedContainerInfo>(core::ErrorCode::ParseError, "Seambank header is truncated");
   }
   if (version.value() != SeambankPackageInfo::kFormatVersion ||
       entryCount.value() == 0U || entryCount.value() > options.limits.maximumEntries ||
       payloadBytes.value() > options.limits.maximumPayloadBytes ||
       publicBytes.value() != kPublicKeyBytes || signatureBytes.value() != kSignatureBytes) {
-    return core::failure<SeambankPackageInfo>(core::ErrorCode::Unsupported, "Seambank header uses unsupported limits or version");
+    return core::failure<SignedContainerInfo>(core::ErrorCode::Unsupported, "Seambank header uses unsupported limits or version");
   }
   const auto payloadStart = kHeaderBytes + tableBytes.value();
   const auto publicOffset = payloadStart + payloadBytes.value();
   const auto signatureOffset = publicOffset + kPublicKeyBytes;
   if (signatureOffset + kSignatureBytes != fileSize || payloadStart < kHeaderBytes) {
-    return core::failure<SeambankPackageInfo>(core::ErrorCode::ParseError, "Seambank declared sections do not match file size");
+    return core::failure<SignedContainerInfo>(core::ErrorCode::ParseError, "Seambank declared sections do not match file size");
   }
 
   std::vector<SeambankEntry> entries;
@@ -598,7 +629,7 @@ core::Result<SeambankPackageInfo> verifySeambank(
     auto pathLength = readU16(stream);
     if (!pathLength || pathLength.value() == 0U ||
         pathLength.value() > options.limits.maximumPathBytes) {
-      return core::failure<SeambankPackageInfo>(core::ErrorCode::ParseError, "Seambank entry path length is invalid");
+      return core::failure<SignedContainerInfo>(core::ErrorCode::ParseError, "Seambank entry path length is invalid");
     }
     std::string path(pathLength.value(), '\0');
     stream.read(path.data(), static_cast<std::streamsize>(path.size()));
@@ -611,7 +642,7 @@ core::Result<SeambankPackageInfo> verifySeambank(
         size.value() > options.limits.maximumEntryBytes ||
         offset.value() != expectedOffset ||
         offset.value() > publicOffset || size.value() > publicOffset - offset.value()) {
-      return core::failure<SeambankPackageInfo>(core::ErrorCode::ParseError, "Seambank entry table is invalid", path);
+      return core::failure<SignedContainerInfo>(core::ErrorCode::ParseError, "Seambank entry table is invalid", path);
     }
     expectedOffset += size.value();
     entries.push_back(SeambankEntry{.path = path,
@@ -621,7 +652,7 @@ core::Result<SeambankPackageInfo> verifySeambank(
     previous = std::move(path);
   }
   if (static_cast<std::uint64_t>(stream.tellg()) != tableEnd || expectedOffset != publicOffset) {
-    return core::failure<SeambankPackageInfo>(core::ErrorCode::ParseError, "Seambank table size or payload extent is invalid");
+    return core::failure<SignedContainerInfo>(core::ErrorCode::ParseError, "Seambank table size or payload extent is invalid");
   }
 
   Ed25519PublicKey publicKey{};
@@ -629,67 +660,41 @@ core::Result<SeambankPackageInfo> verifySeambank(
   stream.seekg(static_cast<std::streamoff>(publicOffset), std::ios::beg);
   stream.read(reinterpret_cast<char*>(publicKey.data()), publicKey.size());
   stream.read(reinterpret_cast<char*>(signature.data()), signature.size());
-  if (!stream) return core::failure<SeambankPackageInfo>(core::ErrorCode::ParseError, "Seambank signature section is truncated");
+  if (!stream) return core::failure<SignedContainerInfo>(core::ErrorCode::ParseError, "Seambank signature section is truncated");
 
   core::Sha256 signedHash;
   auto hashed = hashRange(stream, signatureOffset, signedHash);
-  if (!hashed) return core::Result<SeambankPackageInfo>{hashed.error()};
+  if (!hashed) return core::Result<SignedContainerInfo>{hashed.error()};
   const auto signedDigest = signedHash.digest();
   const auto signingMessage = signatureMessage(signedDigest);
   const auto verified = verifyEd25519(signingMessage, signature, publicKey);
-  if (!verified) return core::Result<SeambankPackageInfo>{verified.error()};
+  if (!verified) return core::Result<SignedContainerInfo>{verified.error()};
 
   for (const auto& entry : entries) {
     auto digest = hashEntry(stream, entry);
-    if (!digest) return core::Result<SeambankPackageInfo>{digest.error()};
+    if (!digest) return core::Result<SignedContainerInfo>{digest.error()};
     if (digest.value() != entry.sha256) {
-      return core::failure<SeambankPackageInfo>(core::ErrorCode::Conflict,
+      return core::failure<SignedContainerInfo>(core::ErrorCode::Conflict,
                                                  "Seambank asset checksum mismatch", entry.path);
     }
   }
-  const auto manifestIterator = std::find_if(entries.begin(), entries.end(),
-      [](const auto& entry) { return entry.path == "manifest.json"; });
-  if (manifestIterator == entries.end()) {
-    return core::failure<SeambankPackageInfo>(core::ErrorCode::NotFound, "Seambank package has no manifest.json");
-  }
-  auto manifestBytes = readEntryUnchecked(stream, *manifestIterator, 32U * 1024U * 1024U);
-  if (!manifestBytes) return core::Result<SeambankPackageInfo>{manifestBytes.error()};
-  const std::string manifestText(reinterpret_cast<const char*>(manifestBytes.value().data()),
-                                 manifestBytes.value().size());
-  voicebank::ManifestJsonCodec manifestCodec;
-  auto manifest = manifestCodec.decode(manifestText);
-  if (!manifest) return core::Result<SeambankPackageInfo>{manifest.error()};
-  for (const auto& unit : manifest.value().units) {
-    const auto asset = unit.audioPath.generic_string();
-    if (findEntry(entries, asset) == nullptr) {
-      return core::failure<SeambankPackageInfo>(core::ErrorCode::NotFound,
-                                                 "Signed manifest references a missing asset", asset);
-    }
-  }
-  const auto characterBinding =
-      validateCharacterBinding(stream, manifest.value(), entries);
-  if (!characterBinding) {
-    return core::Result<SeambankPackageInfo>{characterBinding.error()};
-  }
-
   const auto trusted = std::any_of(options.trustedPublicKeys.begin(),
                                    options.trustedPublicKeys.end(),
                                    [&publicKey](const auto& candidate) { return candidate == publicKey; });
   if (options.requireTrustedSigner && !trusted) {
-    return core::failure<SeambankPackageInfo>(core::ErrorCode::Conflict,
+    return core::failure<SignedContainerInfo>(core::ErrorCode::Conflict,
                                                "Seambank signer is not trusted",
                                                publicKeyId(publicKey));
   }
   auto packageDigest = core::sha256File(packagePath, options.limits.maximumArchiveBytes);
-  if (!packageDigest) return core::Result<SeambankPackageInfo>{packageDigest.error()};
-  return SeambankPackageInfo{
+  if (!packageDigest) return core::Result<SignedContainerInfo>{packageDigest.error()};
+  return SignedContainerInfo{
       .packagePath = packagePath,
       .formatVersion = version.value(),
       .packageDigest = packageDigest.value(),
       .signerPublicKey = publicKey,
       .signerKeyId = publicKeyId(publicKey),
       .signature = signature,
-      .manifest = std::move(manifest.value()),
       .entries = std::move(entries),
       .payloadBytes = payloadBytes.value(),
       .signatureValid = true,
@@ -704,7 +709,7 @@ core::Result<std::vector<std::byte>> readSeambankEntry(
     return core::failure<std::vector<std::byte>>(core::ErrorCode::InvalidArgument,
                                                  "Unsafe seambank entry path");
   }
-  auto package = verifySeambank(packagePath, options);
+  auto package = openSignedContainer(packagePath, options);
   if (!package) return core::Result<std::vector<std::byte>>{package.error()};
   const auto iterator = std::find_if(package.value().entries.begin(),
                                     package.value().entries.end(),
@@ -716,6 +721,100 @@ core::Result<std::vector<std::byte>> readSeambankEntry(
   }
   std::ifstream stream(packagePath, std::ios::binary);
   return readEntryUnchecked(stream, *iterator, options.limits.maximumEntryBytes);
+}
+
+}  // namespace seam::distribution
+
+namespace seam::distribution {
+
+core::Result<SignedContainerInfo> packSignedContainer(
+    const std::filesystem::path& sourceDirectory,
+    const std::filesystem::path& outputPackage,
+    const SigningKeyPair& signingKey,
+    const PackSignedContainerOptions& options) {
+  auto files = collectFiles(sourceDirectory, options.limits, options.rootManifest);
+  if (!files) return core::Result<SignedContainerInfo>{files.error()};
+  auto packed = packCollectedContainer(std::move(files.value()), outputPackage, signingKey,
+                                       options.limits);
+  if (!packed) return packed;
+  return verifySignedContainer(outputPackage, VerifySeambankOptions{
+      .limits = options.limits,
+      .trustedPublicKeys = {signingKey.publicKey},
+      .requireTrustedSigner = true});
+}
+
+core::Result<SignedContainerInfo> verifySignedContainer(
+    const std::filesystem::path& packagePath,
+    const VerifySeambankOptions& options) {
+  return openSignedContainer(packagePath, options);
+}
+
+core::Result<std::vector<std::byte>> readSignedContainerEntry(
+    const SignedContainerInfo& info, const std::filesystem::path& packagePath,
+    std::string_view entryPath, std::uint64_t maximumBytes) {
+  if (!isSafeSeambankPath(entryPath)) {
+    return core::failure<std::vector<std::byte>>(core::ErrorCode::InvalidArgument,
+                                                 "Unsafe signed container entry path");
+  }
+  const auto iterator = std::find_if(info.entries.begin(), info.entries.end(),
+      [entryPath](const auto& entry) { return entry.path == entryPath; });
+  if (iterator == info.entries.end()) {
+    return core::failure<std::vector<std::byte>>(core::ErrorCode::NotFound,
+                                                 "Signed container entry does not exist",
+                                                 std::string{entryPath});
+  }
+  std::ifstream stream(packagePath, std::ios::binary);
+  return readEntryUnchecked(stream, *iterator, maximumBytes);
+}
+
+// The sample-bank family layer over the same neutral container: decode the signed manifest, check
+// that every unit asset it names is present, and check an embedded character binding when one is
+// declared. The container already proved signature, extents and per-entry digests.
+core::Result<SeambankPackageInfo> verifySeambank(
+    const std::filesystem::path& packagePath,
+    const VerifySeambankOptions& options) {
+  auto container = openSignedContainer(packagePath, options);
+  if (!container) return core::Result<SeambankPackageInfo>{container.error()};
+  auto& info = container.value();
+  const auto manifestEntry = std::find_if(info.entries.begin(), info.entries.end(),
+      [](const auto& entry) { return entry.path == "manifest.json"; });
+  if (manifestEntry == info.entries.end()) {
+    return core::failure<SeambankPackageInfo>(core::ErrorCode::NotFound,
+                                              "Seambank package has no manifest.json");
+  }
+  std::ifstream stream(packagePath, std::ios::binary);
+  auto manifestBytes = readEntryUnchecked(stream, *manifestEntry, 32U * 1024U * 1024U);
+  if (!manifestBytes) return core::Result<SeambankPackageInfo>{manifestBytes.error()};
+  const std::string manifestText(reinterpret_cast<const char*>(manifestBytes.value().data()),
+                                 manifestBytes.value().size());
+  voicebank::ManifestJsonCodec manifestCodec;
+  auto manifest = manifestCodec.decode(manifestText);
+  if (!manifest) return core::Result<SeambankPackageInfo>{manifest.error()};
+  for (const auto& unit : manifest.value().units) {
+    const auto asset = unit.audioPath.generic_string();
+    if (findEntry(info.entries, asset) == nullptr) {
+      return core::failure<SeambankPackageInfo>(core::ErrorCode::NotFound,
+                                                 "Signed manifest references a missing asset", asset);
+    }
+  }
+  const EntryReader readEntry = [&](std::string_view path, std::uint64_t maximum) {
+    return readSignedContainerEntry(info, packagePath, path, maximum);
+  };
+  const auto characterBinding = validateCharacterBinding(readEntry, manifest.value(), info.entries);
+  if (!characterBinding) return core::Result<SeambankPackageInfo>{characterBinding.error()};
+  return SeambankPackageInfo{
+      .packagePath = info.packagePath,
+      .formatVersion = info.formatVersion,
+      .packageDigest = info.packageDigest,
+      .signerPublicKey = info.signerPublicKey,
+      .signerKeyId = info.signerKeyId,
+      .signature = info.signature,
+      .manifest = std::move(manifest.value()),
+      .entries = std::move(info.entries),
+      .payloadBytes = info.payloadBytes,
+      .signatureValid = info.signatureValid,
+      .signerTrusted = info.signerTrusted,
+  };
 }
 
 }  // namespace seam::distribution
