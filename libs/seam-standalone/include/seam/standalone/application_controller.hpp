@@ -219,6 +219,16 @@ public:
   // resource so the track records an exact identity a producer may later relink.
   [[nodiscard]] core::Result<void> selectInstalledProceduralSinger();
   [[nodiscard]] core::Result<std::vector<distribution::ProceduralCandidate>> installedProceduralSingers() const;
+  // One installed singer as the surface sees it. A singer that is present but unusable is reported
+  // with the resolver's own status and reason instead of being silently dropped, so a creator is
+  // told that a signed singer exists and why it cannot be used here.
+  struct InstalledSingerOffer final {
+    distribution::ProceduralCandidate candidate;
+    distribution::ProceduralResolveStatus status{distribution::ProceduralResolveStatus::Missing};
+    std::string reason;
+    bool selectable{false};
+  };
+  [[nodiscard]] core::Result<std::vector<InstalledSingerOffer>> installedSingerOffers() const;
   // Copy the installed singer this track uses into a creator-owned draft and select that draft, so
   // editing it cannot rewrite the signed installation it came from. Returns the draft path.
   [[nodiscard]] core::Result<std::filesystem::path> copyInstalledSingerToDraft(

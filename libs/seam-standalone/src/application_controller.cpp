@@ -1648,6 +1648,32 @@ StandaloneApplicationController::installedProceduralSingers() const {
   return candidates;
 }
 
+core::Result<std::vector<StandaloneApplicationController::InstalledSingerOffer>>
+StandaloneApplicationController::installedSingerOffers() const {
+  using Offer = InstalledSingerOffer;
+  auto candidates = installedProceduralSingers();
+  if (!candidates) return core::Result<std::vector<Offer>>{candidates.error()};
+  std::vector<Offer> offers;
+  offers.reserve(candidates.value().size());
+  for (const auto& candidate : candidates.value()) {
+    distribution::ProceduralResolveOptions options;
+    options.renderableEngineId = config_.renderableProceduralEngineId;
+    options.renderableEngineRevision = config_.renderableProceduralEngineRevision;
+    options.requireTrustedInstalled = !config_.allowDevelopmentVoicebanks;
+    options.allowDevelopmentFixtures = config_.allowDevelopmentVoicebanks;
+    const auto resolution = distribution::resolveProceduralSinger(
+        candidate.renderIdentity, std::vector<distribution::ProceduralCandidate>{candidate},
+        options);
+    Offer offer;
+    offer.candidate = candidate;
+    offer.status = resolution.status;
+    offer.reason = resolution.diagnostic;
+    offer.selectable = resolution.resolved();
+    offers.push_back(std::move(offer));
+  }
+  return offers;
+}
+
 core::Result<void> StandaloneApplicationController::selectInstalledProceduralSinger() {
   const auto trackId = session_.runtime().selectedTrack();
   const auto* track = session_.runtime().document().session().project().findVocalTrack(trackId);
@@ -1660,29 +1686,30 @@ core::Result<void> StandaloneApplicationController::selectInstalledProceduralSin
     return core::failure(core::ErrorCode::NotFound,
                          "No procedural singer is installed in the configured roots");
   // Only renderable, acceptable candidates are offered, in catalogue order. An incompatible or
-  // untrusted resource is deliberately not presented as a choice.
-  std::vector<const distribution::ProceduralCandidate*> offered;
+  // untrusted resource is deliberately not presented as a choice, but it is still named in the
+  // refusal below rather than disappearing silently.
+  const auto offers = installedSingerOffers();
+  if (!offers) return core::Result<void>{offers.error()};
+  std::vector<const InstalledSingerOffer*> offered;
   std::vector<std::string> labels;
-  for (const auto& candidate : candidates.value()) {
-    distribution::ProceduralResolveOptions options;
-    options.renderableEngineId = config_.renderableProceduralEngineId;
-    options.renderableEngineRevision = config_.renderableProceduralEngineRevision;
-    options.requireTrustedInstalled = !config_.allowDevelopmentVoicebanks;
-    options.allowDevelopmentFixtures = config_.allowDevelopmentVoicebanks;
-    // Resolution is asked about the identity a project would record, which is the renderer's
-    // identity, not the distribution version. Using the distribution identity here would find no
-    // match and silently offer nothing.
-    const auto resolution = distribution::resolveProceduralSinger(
-        candidate.renderIdentity, std::vector<distribution::ProceduralCandidate>{candidate},
-        options);
-    if (!resolution.resolved()) continue;
-    offered.push_back(&candidate);
-    labels.push_back(candidate.manifest.displayName + " (" + candidate.manifest.id + " " +
-                     candidate.manifest.version + ")");
+  for (const auto& offer : offers.value()) {
+    if (!offer.selectable) continue;
+    offered.push_back(&offer);
+    labels.push_back(offer.candidate.manifest.displayName + " (" +
+                     offer.candidate.manifest.id + " " + offer.candidate.manifest.version + ")");
   }
   if (offered.empty()) {
-    return core::failure(core::ErrorCode::NotFound,
-        "No installed procedural singer matches this build's engine and trust policy");
+    // Name what is installed and why it cannot be used, so a signed singer that this build cannot
+    // render is distinguishable from having installed nothing at all.
+    std::string detail = "No installed procedural singer can be used here.";
+    std::uint32_t blocked = 0U;
+    for (const auto& offer : offers.value()) {
+      if (offer.selectable) continue;
+      if (blocked < 4U) detail += " [" + offer.candidate.manifest.id + " " +
+                                    offer.candidate.manifest.version + ": " + offer.reason + "]";
+      ++blocked;
+    }
+    return core::failure(core::ErrorCode::NotFound, detail);
   }
   const auto choice = fileDialog_->chooseRecipeStyle(labels);
   if (!choice) return core::Result<void>{choice.error()};
@@ -1692,7 +1719,7 @@ core::Result<void> StandaloneApplicationController::selectInstalledProceduralSin
     return core::failure(core::ErrorCode::InvalidArgument,
                          "Selected procedural singer is not one of the offered candidates");
   const auto index = static_cast<std::size_t>(std::distance(labels.begin(), selected));
-  const auto& candidate = *offered[index];
+  const auto& candidate = offered[index]->candidate;
   const auto before = track->proceduralRecipe;
   // A singer that declares several styles must have one chosen explicitly; taking the first would
   // silently decide a musical property for the creator.

@@ -81,7 +81,7 @@ Sequencing and default work selection change in four ways:
 | D4.1/D4.3 manifest and pack/verify | **Done** | `71955fc7`, `89c17ce4` |
 | D4.4 install and receipts | **Done** | `5cc5992a` |
 | D4.5 catalogue and resolve | **Done** | `3489f570` |
-| D4.6 native selection | **Done and pushed** | `bbc730d9`; standalone suite 4/4 |
+| D4.6 native selection and copy-to-edit | **Done and pushed** | `bbc730d9` selection; `4d3b3739` copy-to-edit; `475e9eba` Designer save guard; journey 9/9 |
 | D4.7 compatibility | **Done** | `a84e672d` |
 | D4.2 review candidate | **Done and published** | `5d149f22`; `seam_procedural_review_tests` 10/10 |
 | D4.8 connected journey | **Done and published, and it found a real defect** | `9711eecb`; journey 6/6; installed selection now records the identity the renderer validates |

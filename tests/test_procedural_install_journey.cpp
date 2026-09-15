@@ -699,3 +699,78 @@ TEST_CASE("The application copies the selected installed singer to an editable d
   if (!installedAfter) return;
   CHECK(installedAfter.value() == installedBefore.value());
 }
+
+// D4.6 requires trust, qualification and capability details at selection time. A signed singer this
+// build cannot render must be reported with its reason rather than disappearing from the list.
+TEST_CASE("An unusable installed singer is reported with its reason instead of hidden") {
+  const auto root = test::support::temporaryDirectory("procedural-offer-reasons");
+  auto key = distribution::generateSigningKeyPair();
+  CHECK(key.hasValue());
+  if (!key) return;
+  const auto package = createProceduralPackage(root, key.value());
+  const auto installRoot = root / "singers";
+  distribution::InstallProceduralOptions installOptions;
+  installOptions.verification = distribution::VerifySeambankOptions{
+      .limits = {}, .trustedPublicKeys = {key.value().publicKey}, .requireTrustedSigner = true};
+  CHECK(distribution::installProceduralPackage(package, installRoot, installOptions).hasValue());
+
+  auto session = standalone::AuthoringSession::create(standalone::AuthoringSessionConfig{
+      .cacheRoot = root / "cache",
+      .voicebankRoots = {},
+      .sampleRate = 48000U,
+      .outputChannels = 2U,
+      .bindFirstAvailableVoicebank = false,
+      .allowDevelopmentVoicebanks = false});
+  CHECK(session.hasValue());
+  if (!session) return;
+
+  // This build renders a different engine, so the installed singer is present but not selectable.
+  auto foreignDialog = std::make_unique<FakeDialog>();
+  standalone::StandaloneApplicationControllerConfig foreignConfig{
+      .autosaveRoot = root / "autosaves", .recentProjectsPath = root / "recent.json"};
+  foreignConfig.proceduralSingerRoots = {distribution::ProceduralSearchRoot{
+      .path = installRoot, .kind = distribution::ProceduralRootKind::Installed}};
+  foreignConfig.renderableProceduralEngineId = "seam.source-filter.other";
+  foreignConfig.renderableProceduralEngineRevision = 14U;
+  auto foreign = standalone::StandaloneApplicationController::create(
+      *session.value(), std::move(foreignDialog), std::make_unique<FakePrompt>(), foreignConfig);
+  CHECK(foreign.hasValue());
+  if (!foreign) return;
+  const auto foreignOffers = foreign.value()->installedSingerOffers();
+  CHECK(foreignOffers.hasValue());
+  if (!foreignOffers) return;
+  CHECK(foreignOffers.value().size() == 1U);
+  // Present, named, refused, and the reason says which engine was needed.
+  CHECK(!foreignOffers.value().front().selectable);
+  CHECK(foreignOffers.value().front().status ==
+        distribution::ProceduralResolveStatus::IncompatibleEngine);
+  CHECK(foreignOffers.value().front().candidate.manifest.id == "authored-original");
+  CHECK(foreignOffers.value().front().reason.find("seam.source-filter.other") !=
+        std::string::npos);
+  // The refusal names what is installed and why it cannot be used.
+  const auto refused = foreign.value()->dispatch(
+      platform::ApplicationCommand::SelectInstalledProceduralSinger);
+  CHECK(!refused.hasValue());
+  if (!refused) {
+    CHECK(refused.error().message.find("authored-original") != std::string::npos);
+    CHECK(refused.error().message.find("engine") != std::string::npos);
+  }
+
+  // The same installation is selectable by a build that renders its engine, and it is reported as
+  // trusted rather than as a development fixture.
+  auto nativeDialog = std::make_unique<FakeDialog>();
+  standalone::StandaloneApplicationControllerConfig nativeConfig = foreignConfig;
+  nativeConfig.renderableProceduralEngineId = "seam.source-filter.v1";
+  auto native = standalone::StandaloneApplicationController::create(
+      *session.value(), std::move(nativeDialog), std::make_unique<FakePrompt>(), nativeConfig);
+  CHECK(native.hasValue());
+  if (!native) return;
+  const auto nativeOffers = native.value()->installedSingerOffers();
+  CHECK(nativeOffers.hasValue());
+  if (!nativeOffers) return;
+  CHECK(nativeOffers.value().size() == 1U);
+  CHECK(nativeOffers.value().front().selectable);
+  CHECK(nativeOffers.value().front().status == distribution::ProceduralResolveStatus::Resolved);
+  CHECK(nativeOffers.value().front().candidate.trust ==
+        distribution::ProceduralTrust::TrustedInstalled);
+}

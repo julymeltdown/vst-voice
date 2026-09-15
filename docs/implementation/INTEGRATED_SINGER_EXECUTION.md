@@ -1,5 +1,29 @@
 # Integrated Singer Execution
 
+## A signed singer this build cannot render is named, not hidden
+
+September 15, 2026 — D4.6 trust and reason surfacing added. Selection previously kept unusable
+singers out of the chooser entirely, which meant a creator who had correctly installed a signed singer
+for another engine saw only that nothing could be used, with no way to tell that apart from having
+installed nothing.
+
+`StandaloneApplicationController::installedSingerOffers` now reports every installed singer with the
+resolver's own status, reason and a selectable flag, and both selection and the refusal message are
+derived from that one listing so the two cannot disagree. When nothing is usable the refusal names
+each blocked singer and why, for example that it needs `seam.source-filter.other` while this build
+renders `seam.source-filter.v1`. The chooser itself is unchanged: only renderable, accepted resources
+are offered.
+
+Verified. `seam_procedural_install_journey_tests` passes 10 of 10, including the new case: a singer
+installed for another engine is reported present with `IncompatibleEngine` and a reason naming the
+engine it needs, the refusal message names the singer and the engine, the same installation is
+selectable once the build declares the right engine and is reported as `TrustedInstalled` rather than
+as a development fixture.
+
+Not claimed. This surfaces what the resolver already decided; it does not add a qualification status,
+because no reviewed procedural singer exists yet. The chooser still presents a flat list rather than
+grouped trust and capability detail, and no creator has been observed using it. No U-unit acceptance
+or Beta GO state changes.
 ## A creator edits a copy, and the signed installation cannot be rewritten
 
 September 15, 2026 — D4.6 copy-to-edit added, completing the substep. The plan requires that a
