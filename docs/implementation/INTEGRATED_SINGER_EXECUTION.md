@@ -1,5 +1,44 @@
 # Integrated Singer Execution
 
+## A review decision is bound to the exact rendering it was made about
+
+September 15, 2026 — D4.2 added. Signing a procedural singer proves who produced it. It says nothing
+about whether anyone reviewed it, and until now nothing stopped an edited recipe from inheriting an
+earlier approval. `ProceduralReviewBasis` now names every fact a decision depends on: the resource
+identity, the canonical recipe digest, the installed content hash, the engine and its revision, the
+render ABI, the compiler revision, the sample rate, the digests of the score and audio that were
+reviewed, and the render settings. Its digest is taken over the canonical encoding, the same way the
+manifest digest binds the canonical recipe rather than raw file bytes.
+
+The invariant is one comparison. A decision resolves to a candidate only when the digest the decision
+was recorded against equals the candidate's current digest. Change the recipe, the renderer revision,
+the render ABI, the compiler, the settings, or the audio that was listened to, and the prior approval
+becomes stale rather than inherited. When the decision carries the basis it reviewed, the stale report
+names the fields that actually changed instead of only reporting that something did.
+
+Three related rules prevent a manufactured approval. Evidence digests are computed from the files
+rather than accepted from the caller, so a review cannot claim evidence it was not performed against.
+An acceptance is refused on a candidate that carries no score and audio evidence, because accepting
+is a claim that evidence was examined; a rejection without evidence remains recordable. And a decision
+whose recorded digest does not match the basis it names, or whose carried basis contradicts its own
+digest, is refused rather than stored.
+
+Verified. `seam_procedural_review_tests` passes 10 of 10: a stable digest that survives a JSON round
+trip and an invalid-basis refusal; a changed recipe, a changed compiler revision, a changed render ABI
+and a changed engine revision each making a prior acceptance stale, with `recipeSha256` named as the
+differing field; changed audio invalidating a review whose recipe and renderer are identical; a
+rejection after an acceptance withdrawing it and a later acceptance restoring it; refusal of a
+forged, malformed, anonymous or self-contradictory decision; refusal of an acceptance with no
+evidence alongside a recordable rejection without it; a decision belonging to another candidate not
+counting as evidence and not being reported as stale; freezing hashing the real files and refusing
+missing evidence; and a wrong-family or malformed basis document refused as `Unsupported`.
+
+Not claimed. No review has been performed on a real procedural singer: these cases exercise the
+binding, not a reviewer's judgment. The decision store is not yet connected to the authoring session,
+so a creator cannot yet record a decision through the application, and the connected acceptance
+journey in D4.8 does not exist. Signature validity and musical approval remain different statuses. No
+U-unit acceptance or Beta GO state changes.
+
 ## The application offers an installed singer by identity, and only one it can render
 
 September 15, 2026 — D4.6 added. A creator no longer has to know where an installed procedural

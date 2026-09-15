@@ -435,6 +435,7 @@ add_library(seam_distribution
   libs/seam-distribution/src/update_manifest.cpp
   libs/seam-distribution/src/sealed_handoff.cpp
   libs/seam-distribution/src/procedural_package.cpp
+  libs/seam-distribution/src/procedural_review.cpp
 )
 target_include_directories(seam_distribution PUBLIC
   libs/seam-distribution/include)
@@ -1901,7 +1902,15 @@ if(SEAM_BUILD_TESTS)
   target_link_libraries(seam_procedural_package_tests PRIVATE
     seam_distribution seam_voice_design seam_core)
   seam_apply_compiler_options(seam_procedural_package_tests)
-  add_test(NAME seam_procedural_package_tests COMMAND seam_procedural_package_tests)
+ add_test(NAME seam_procedural_package_tests COMMAND seam_procedural_package_tests)
+  add_executable(seam_procedural_review_tests
+    tests/test_main.cpp
+    tests/test_procedural_review.cpp)
+  target_include_directories(seam_procedural_review_tests PRIVATE tests)
+  target_link_libraries(seam_procedural_review_tests PRIVATE
+    seam_distribution seam_voice_design seam_core)
+  seam_apply_compiler_options(seam_procedural_review_tests)
+  add_test(NAME seam_procedural_review_tests COMMAND seam_procedural_review_tests)
   target_include_directories(seam_formant_expression_tests PRIVATE tests)
   target_link_libraries(seam_formant_expression_tests PRIVATE
     seam_rendering seam_voice_design seam_synthesis seam_application
