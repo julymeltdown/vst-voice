@@ -984,3 +984,70 @@ TEST_CASE("The application records and reads a review of the installed singer it
   CHECK(replaced.value().basisDigest != forged.basisDigest);
   CHECK(replaced.value().accepted());
 }
+
+// The File-menu items dispatch through ApplicationCommand, which is a separate path from calling the
+// controller method directly. An untested dispatch case is how a menu item quietly does nothing.
+TEST_CASE("The copy and select commands are reachable through the menu dispatch path") {
+  const auto root = test::support::temporaryDirectory("procedural-menu-dispatch");
+  auto key = distribution::generateSigningKeyPair();
+  CHECK(key.hasValue());
+  if (!key) return;
+  const auto package = createProceduralPackage(root, key.value());
+  const auto installRoot = root / "singers";
+  distribution::InstallProceduralOptions installOptions;
+  installOptions.verification = distribution::VerifySeambankOptions{
+      .limits = {}, .trustedPublicKeys = {key.value().publicKey}, .requireTrustedSigner = true};
+  CHECK(distribution::installProceduralPackage(package, installRoot, installOptions).hasValue());
+  auto session = standalone::AuthoringSession::create(standalone::AuthoringSessionConfig{
+      .cacheRoot = root / "cache",
+      .voicebankRoots = {},
+      .sampleRate = 48000U,
+      .outputChannels = 2U,
+      .bindFirstAvailableVoicebank = false,
+      .allowDevelopmentVoicebanks = false});
+  CHECK(session.hasValue());
+  if (!session) return;
+  auto dialog = std::make_unique<FakeDialog>();
+  auto* picker = dialog.get();
+  standalone::StandaloneApplicationControllerConfig config{
+      .autosaveRoot = root / "autosaves", .recentProjectsPath = root / "recent.json"};
+  config.proceduralSingerRoots = {distribution::ProceduralSearchRoot{
+      .path = installRoot, .kind = distribution::ProceduralRootKind::Installed}};
+  config.renderableProceduralEngineId = "seam.source-filter.v1";
+  config.renderableProceduralEngineRevision = 14U;
+  auto controller = standalone::StandaloneApplicationController::create(
+      *session.value(), std::move(dialog), std::make_unique<FakePrompt>(), config);
+  CHECK(controller.hasValue());
+  if (!controller) return;
+  auto& runtime = session.value()->runtime();
+  const auto trackId = runtime.selectedTrack();
+
+  // The copy command without a selected singer is refused rather than silently doing nothing, which
+  // is the difference between a menu item that reports a problem and one that appears broken.
+  picker->responses = {root / "drafts" / "unused.json"};
+  const auto withoutSelection = controller.value()->dispatch(
+      platform::ApplicationCommand::CopyInstalledSingerToDraft);
+  CHECK(!withoutSelection.hasValue());
+  CHECK(!std::filesystem::exists(root / "drafts" / "unused.json"));
+
+  // Select through the command, then copy through the command.
+  picker->styleResponse = std::nullopt;
+  CHECK(controller.value()->dispatch(platform::ApplicationCommand::SelectInstalledProceduralSinger));
+  picker->styleResponse = picker->offeredStyles.front();
+  CHECK(controller.value()->dispatch(platform::ApplicationCommand::SelectInstalledProceduralSinger));
+  std::filesystem::create_directories(root / "drafts");
+  const auto draft = root / "drafts" / "from-menu.json";
+  picker->responses = {draft};
+  CHECK(controller.value()->dispatch(platform::ApplicationCommand::CopyInstalledSingerToDraft));
+  CHECK(std::filesystem::exists(draft));
+  CHECK(runtime.document().session().project().findVocalTrack(trackId)->proceduralRecipe->path ==
+        draft.string());
+  // Cancelling the menu action writes nothing and leaves the project on the installed singer.
+  const auto installed = runtime.document().session().project()
+                            .findVocalTrack(trackId)
+                            ->proceduralRecipe->path;
+  picker->responses = {std::nullopt};
+  CHECK(controller.value()->dispatch(platform::ApplicationCommand::CopyInstalledSingerToDraft));
+  CHECK(runtime.document().session().project().findVocalTrack(trackId)->proceduralRecipe->path ==
+        installed);
+}
