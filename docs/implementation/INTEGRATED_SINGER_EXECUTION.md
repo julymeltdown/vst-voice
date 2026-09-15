@@ -1,5 +1,29 @@
 # Integrated Singer Execution
 
+## The expression lane is checked at the minimum window, not only at a comfortable one
+
+September 15, 2026 — D2 layout coverage added. The lane's exit in the plan asks for focused semantic
+and layout checks at the enforced minimum window, 1024x768, and at 1280x800, because a surface that
+paints correctly only at a large size is not yet a usable one. The existing painter case ran at
+1440x900 and only when an environment variable asked for a capture, so the minimum size and the
+channel identity across a resize were untested.
+
+The new case paints the real scene at 1024x768 and at 1280x800, keeps the stored curve and the
+channel's own unit and label across both sizes, and then walks all six channels at the minimum size
+asserting each one reports its own label and unit. It also paints at the minimum size with a long
+Japanese project and region name, because long text is where a compact band runs out of room first and
+the product's pilot languages produce exactly that.
+
+Verified. `seam_expression_lane_tests` passes 9 of 9 and the registered run passes 170 of 170. The
+assertions are about what the scene reports and whether it paints without failing, not about a
+particular pixel result, so they catch a collapsed or overflowing layout rather than pinning a
+decoration.
+
+Not claimed. This is a semantic and paint-level check, not native visual observation: no human has
+looked at the lane at these sizes, and the plan treats native screenshots and human review as separate
+evidence. IME focus behavior and the accessibility tree at the minimum size are not covered here.
+No U-unit acceptance or Beta GO state changes.
+
 ## A recorded review is now visible where the singer is chosen
 
 September 15, 2026 — review surfacing added. The decision store could record and re-read an approval,

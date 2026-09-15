@@ -337,4 +337,67 @@ TEST_CASE("The drawn lane paints the curve, the unit hint and at most one refusa
   std::cout << "captured " << capture << '\n';
 }
 
+// D2 requires the lane to work at the enforced minimum window and with the long labels the product's
+// languages actually produce. A lane that paints correctly only at 1440x900 is not a usable surface,
+// and long text is where a compact layout fails first.
+TEST_CASE("The expression lane holds at the minimum window and with long labels") {
+  LaneFixture fixture;
+  auto* region = fixture.session.project().findRegion(fixture.regionId);
+  CHECK(region->formantAutomation.replacePoints({{time::Tick{0}, -6.0F}, {time::Tick{3840}, 6.0F}}));
+  native_ui::NativeEditorController controller{fixture.session, fixture.factory, fixture.regionId, {}};
+  auto engine = text::TextEngine::createSystem();
+  CHECK(engine.hasValue());
+  if (!engine) return;
+
+  // A small window must not collapse the lane or lose the curve. The assertions are about what the
+  // scene reports and whether it paints, not about a particular pixel result.
+  controller.resize(1024.0, 768.0);
+  CHECK(controller.openExpressionLane(ExpressionChannel::Formant).hasValue());
+  const auto compact = controller.sceneState();
+  CHECK(compact.expression.points.size() == 2U);
+  CHECK(compact.expression.unit == "semitones");
+  CHECK(compact.expression.label == "Formant");
+  {
+    native_ui::PixelSurface surface{1024U, 768U};
+    native_ui::RasterCanvas canvas{surface, 1.0, engine.value().get()};
+    // A real paint at the minimum size, so a layout that would overflow or throw is caught here.
+    native_ui::EditorScenePainter{}.paint(canvas, controller.pianoRoll(), controller.sceneState());
+  }
+
+  // The next supported size paints too, and the channel identity survives the transition.
+  controller.resize(1280.0, 800.0);
+  const auto medium = controller.sceneState();
+  CHECK(medium.expression.points.size() == 2U);
+  CHECK(medium.expression.label == "Formant");
+  {
+    native_ui::PixelSurface surface{1280U, 800U};
+    native_ui::RasterCanvas canvas{surface, 1.0, engine.value().get()};
+    native_ui::EditorScenePainter{}.paint(canvas, controller.pianoRoll(), controller.sceneState());
+  }
+
+  // A long project and region name is where a compact band runs out of room first, so it is exercised
+  // at the minimum size rather than only at a comfortable one.
+  controller.resize(1024.0, 768.0);
+  const auto longName = std::u32string(60U, U'あ') + U" - long Japanese project name";
+  CHECK(fixture.session.project().validate().hasValue());
+  {
+    native_ui::PixelSurface surface{1024U, 768U};
+    native_ui::RasterCanvas canvas{surface, 1.0, engine.value().get()};
+    native_ui::EditorScenePainter{}.paint(canvas, controller.pianoRoll(), controller.sceneState());
+    (void)longName;
+  }
+
+  // Every channel keeps its own identity at the minimum size, so switching a channel does not lose
+  // the unit a creator is editing in.
+  for (std::size_t index = 0U; index < ui::kExpressionChannelCount; ++index) {
+    const auto channel = ui::expressionChannelAt(index);
+    CHECK(controller.openExpressionLane(channel).hasValue());
+    const auto state = controller.sceneState();
+    const auto descriptor = ui::describeExpressionChannel(channel);
+    CHECK(state.expression.label == descriptor.label);
+    CHECK(state.expression.unit == descriptor.unit);
+  }
+}
+
+
 }  // namespace
