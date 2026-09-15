@@ -3,7 +3,7 @@ title: SEAM development plan, revision 2 — listening-gated completion
 date: 2026-09-15
 status: active execution plan
 supersedes_sequencing: SEAM_REVISED_DEVELOPMENT_PLAN_2026-09-15.md (revision 1)
-baseline_commit: bbc730d9b4840767f619f6621d71bd88d11fa53a
+baseline_commit: 9711eecbcd89281ecfa2a6ffcbf48151a824043e
 input_review: SEAM_SECOND_DEVELOPER_REVIEW_2026-09-15.md
 implementation_performed_by_this_document: false
 ---
@@ -83,8 +83,8 @@ Sequencing and default work selection change in four ways:
 | D4.5 catalogue and resolve | **Done** | `3489f570` |
 | D4.6 native selection | **Done and pushed** | `bbc730d9`; standalone suite 4/4 |
 | D4.7 compatibility | **Done** | `a84e672d` |
-| D4.2 review candidate | **Not started** | No procedural review type exists |
-| D4.8 connected journey | **Not started** | No end-to-end installed-resource journey test |
+| D4.2 review candidate | **Done and published** | `5d149f22`; `seam_procedural_review_tests` 10/10 |
+| D4.8 connected journey | **Done and published, and it found a real defect** | `9711eecb`; journey 6/6; installed selection now records the identity the renderer validates |
 | D3 acoustic repair | **Blocked on human listening** | D1 decision record |
 | N1 neural feasibility | **Not started** | `tools/voice_model_training/` audited in intake docs only |
 | D5/D6 expansion and qualification | **Not started** | Gate is the first usable original-singer milestone |
@@ -133,6 +133,10 @@ must not be inferred from Korean.
 
 ## 7. Work package D4.2 — bind a review decision to an exact candidate (code)
 
+**Status: implemented and published at `5d149f22`.** `libs/seam-distribution/{include/seam/distribution/procedural_review.hpp,src/procedural_review.cpp}`
+and `tests/test_procedural_review.cpp` exist and `seam_procedural_review_tests` passes 10 of 10. The
+design below is retained as the record of what was built and why, not as outstanding work.
+
 **Why now.** Signing proves authenticity. It says nothing about whether the voice is wanted, and
 nothing today prevents a changed recipe from inheriting an earlier approval. This is the last
 correctness gap in the procedural distribution slice.
@@ -177,6 +181,15 @@ is reported as `stale` with the differing field named. This does not accept any 
 claim; review here is a recorded human decision, not a musical verdict.
 
 ## 8. Work package D4.8 — the connected installed-resource journey (code)
+
+**Status: implemented and published at `9711eecb`.** `tests/test_procedural_install_journey.cpp`
+passes 6 of 6. Landing it uncovered a defect that made every installed procedural selection
+unrenderable: distribution carried the manifest's release version and a manifest-plus-recipe digest as
+the resource identity, while the renderer validates the recipe's own id, schema version and canonical
+digest. `ProceduralCandidate` and `InstalledProceduralSinger` now also carry a `renderIdentity`
+derived from the recipe, and resolution and selection compare against it, so a recorded selection is
+an identity the renderer accepts. The journey now exports with the producer source directory and the
+package both deleted.
 
 **Why now.** Every piece exists and none of them has been driven end to end. Individual green suites
 have repeatedly proved weaker than they looked on this project, so the journey is written as one
@@ -267,11 +280,19 @@ be the answer.
 
 ## 14. Immediate next actions
 
-1. Land ADR 0022 (section 9) — a real prerequisite gap, cheap, and required by revision 1.
-2. Implement D4.2 (section 7), then D4.8 (section 8), committing separately.
-3. Obtain the P1 listening observation (section 6). This is the only action that unblocks D3 and it
-   costs the project none of its engineering capacity to wait on.
-4. Start N1 checkpoint 1 independently.
+1. ~~Land ADR 0022~~ — published at `9711eecb`.
+2. ~~Implement D4.2~~ — published at `5d149f22`.
+3. ~~Implement D4.8~~ — published at `9711eecb`, and it located the installed-identity defect above.
+4. **Obtain the P1 listening observation (section 6). This is now the only engineering-blocking item
+   in the procedural route.** D3 cannot start without it, the expression lane is untested on real
+   material, and no amount of further implementation substitutes for it.
+5. Start N1 checkpoint 1 independently.
+
+The natural next code work, if capacity is available while waiting on listening, is to connect the
+D4.2 decision type to the authoring session so a creator can record a decision through the
+application rather than only through the library, and to expose trust, qualification and applicable
+controls in the installed-singer chooser. Neither unblocks the musical question, and neither should
+be allowed to displace the listening gate.
 
 ## 15. Schedule, stated bounded rather than precise
 
@@ -281,5 +302,3 @@ by items this plan cannot yet size honestly — corpus rights, measured neural l
 phonemization and the qualification matrix — and any single figure for it would be invented. The
 honest statement is that the procedural route is close to a demonstrable milestone, and the
 remaining scope is gated on evidence that does not exist yet.
-
-
