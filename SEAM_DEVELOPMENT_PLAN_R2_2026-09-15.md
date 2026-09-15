@@ -3,7 +3,7 @@ title: SEAM development plan, revision 2 — listening-gated completion
 date: 2026-09-15
 status: active execution plan
 supersedes_sequencing: SEAM_REVISED_DEVELOPMENT_PLAN_2026-09-15.md (revision 1)
-baseline_commit: cdc00afd234fe573185368230001fd3d8eb479d8
+baseline_commit: 6dfb8612c98a6f7c11f3b949e58021c8dab14c77
 input_review: SEAM_SECOND_DEVELOPER_REVIEW_2026-09-15.md
 implementation_performed_by_this_document: false
 ---
@@ -86,7 +86,7 @@ Sequencing and default work selection change in four ways:
 | D4.2 review candidate | **Done and published** | `5d149f22` binding; `4bf9b4d4` durable store and application surface; `seam_procedural_review_tests` 14/14 |
 | D4.8 connected journey | **Done and published, and it twice found real defects** | `9711eecb` identity mismatch; `b2466aa0` reachability from the shipped app; `7daa2036` menu dispatch; journey 14/14 |
 | D3 acoustic repair | **Blocked on human listening** | D1 decision record |
-| N1 neural feasibility | **Checkpoint 1 done** | `b78b92cf` input record plus a verifier that reports four of six inputs absent; no training run |
+| N1 neural feasibility | **Checkpoints 1 and the corpus-free half of 2 done** | `b78b92cf` input record reporting four of six inputs absent; `c94cc6c3` runs and retains the vocoder bridge at SEAM profile; no corpus, training run or held-out song |
 | D5/D6 expansion and qualification | **Not started** | Gate is the first usable original-singer milestone |
 
 ## 5. Progress, stated in the four labels rather than a percentage
@@ -297,9 +297,9 @@ What remains, and what each thing is waiting on:
    implementation substitutes for it.
 2. **D3's two repair cycles**, once an observation exists. Each is capped at eight active engineering
    hours and starts from the failure class the observation names.
-3. **A native action that opens the review surface.** The store and the controller methods exist and are
-   tested, but no menu item drives them, so a creator cannot yet record a decision without a developer.
-   This is bounded work and does not displace the listening gate.
+3. ~~A native action that opens the review surface.~~ Done at `6dfb8612`: `ReviewInstalledSinger` is a
+   File-menu item with a reviewer identity, an explicit decision and evidence pickers, and it records
+   nothing on cancel. The AppKit presentation has been compiled but not exercised by a person.
 4. **Remaining N1 checkpoints**, blocked on inputs the feasibility record reports as absent: an
    authorized corpus, admitted labels, an admitted vocoder and a rights decision. The corpus-free
    vocoder bridge is done, so what is left is the part that needs material rather than code.
