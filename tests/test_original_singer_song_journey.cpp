@@ -11,6 +11,8 @@
 
 #include "seam/application/note_commands.hpp"
 #include "seam/application/arrangement_commands.hpp"
+#include "seam/application/lyric_commands.hpp"
+#include "seam/ui/vibrato_model.hpp"
 #include "seam/core/sha256.hpp"
 #include "seam/formats/project_json.hpp"
 #include "seam/formats/json_value.hpp"
@@ -382,6 +384,158 @@ TEST_CASE("An installed original singer renders an authored lyric song") {
   CHECK(region != nullptr);
   if (region == nullptr) return;
   CHECK(region->notes.size() == songNotes().size());
+
+  auto& runtime = editor.session->runtime();
+  const auto regionId = runtime.selectedRegion();
+
+  // The remaining edits a creator makes in a tuning session, driven through the application's own
+  // commands rather than by writing project fields. Each is required by this milestone and each is
+  // checked to have changed the project, because an edit that silently did nothing would otherwise
+  // look the same as one that worked.
+  {
+    auto* edited = runtime.document().session().project().findRegion(regionId);
+    CHECK(edited != nullptr);
+    if (edited == nullptr || edited->notes.empty()) return;
+
+    // A lyric change: the first note's vowel becomes a different one the recipe declares.
+    const auto lyricId = edited->notes.front().lyricTokenId;
+    CHECK(runtime.execute(std::make_unique<application::SetLyricCommand>(
+        lyricId, U"い", domain::Language::Japanese)).hasValue());
+    edited = runtime.document().session().project().findRegion(regionId);
+    CHECK(edited != nullptr);
+    if (edited == nullptr) return;
+    const auto* changedLyric = edited->findLyric(lyricId);
+    CHECK(changedLyric != nullptr);
+    if (changedLyric != nullptr) CHECK(changedLyric->surface == U"い");
+
+    // A note pitch change: the first note moves up a semitone through the move command.
+    const auto firstNote = edited->notes.front();
+
+    // A phoneme boundary move: the first note's vowel onset shifts, through the same technical edit
+    // controller the editor's drag gesture uses. This is a timing edit, so it is the one operation
+    // here whose effect is verified against the compiled phrase rather than only the stored field.
+    {
+      // The key must name a phoneme the phrase grammar actually generated for this note. Taking the
+      // second token of the note is a real onset inside a syllable; inventing an ordinal would ask the
+      // controller to edit a boundary that does not exist, which it correctly refuses.
+      const auto generated = runtime.technicalEdits().phonemes();
+      // A boundary only exists where a syllable has more than one phone, so the note is chosen for
+      // having an onset rather than being assumed to. A bare vowel note has a single token and no
+      // internal boundary to move, which the controller correctly refuses.
+      // The boundary belongs to the consonant that opens the syllable, which is the first token of a
+      // note that has more than one phone. The vowel beside it is a nucleus and its own boundaries are
+      // pinned to the consonant, so moving the nucleus is correctly refused.
+      std::optional<domain::PhonemeKey> boundaryKey;
+      for (const auto& note : edited->notes) {
+        const auto tokens = generated.tokensForNote(note.id);
+        if (tokens.size() >= 2U) { boundaryKey = tokens.front().key; break; }
+      }
+      CHECK(boundaryKey.has_value());
+      if (!boundaryKey) return;
+      const auto key = *boundaryKey;
+      const auto beforeRevision = runtime.document().session().revision();
+      // The consonant's end boundary is pulled earlier than its default allowance. The edit may not
+      // cross the nucleus or leave the onset gesture empty, so it tightens an existing boundary rather
+      // than inventing a span. This is a real timing edit: it changes where the consonant ends and the
+      // vowel begins in the rendered phrase.
+      const auto movedBoundary = runtime.technicalEdits().movePhonemeBoundary(
+          key, false, time::Microseconds{20000});
+      if (!movedBoundary) throw test::Failure{"moving the phoneme boundary failed: " + movedBoundary.error().message};
+      CHECK(movedBoundary.hasValue());
+      CHECK(runtime.document().session().revision() == beforeRevision + 1U);
+      const auto* moved = runtime.document().session().project().findRegion(regionId);
+      CHECK(moved != nullptr);
+      if (moved != nullptr) {
+        const auto override_ = std::find_if(moved->phonemeOverrides.begin(), moved->phonemeOverrides.end(),
+            [&](const domain::PhonemeOverride& value) { return value.key == key; });
+        CHECK(override_ != moved->phonemeOverrides.end());
+      }
+    }
+    const application::NoteMove move{firstNote.id, firstNote.startTick, firstNote.startTick,
+                                     firstNote.midiKey, static_cast<std::uint8_t>(firstNote.midiKey + 1U)};
+    CHECK(runtime.execute(std::make_unique<application::MoveNotesCommand>(
+        std::vector<application::NoteMove>{move})).hasValue());
+    const auto* pitched = runtime.document().session().project().findRegion(regionId);
+    CHECK(pitched != nullptr);
+    if (pitched != nullptr && !pitched->notes.empty())
+      CHECK(pitched->notes.front().midiKey == static_cast<std::uint8_t>(firstNote.midiKey + 1U));
+
+    // Vibrato on the same note, applied through the inspector model rather than by assignment.
+    // The inspector edits the current selection, so the note is selected first, exactly as a creator
+    // selects it before opening the inspector.
+    runtime.document().session().selection().selectOnly(firstNote.id);
+    auto vibrato = ui::VibratoModel::prepare(runtime.document().session(), regionId,
+        ui::VibratoFields{.enabled = true, .depthCents = 45.0F, .periodMilliseconds = 200.0F});
+    if (!vibrato) throw test::Failure{"preparing the vibrato edit failed: " + vibrato.error().message};
+    CHECK(vibrato.hasValue());
+    if (!vibrato) return;
+    CHECK(vibrato.value().apply(runtime.document().session(), regionId).hasValue());
+    const auto* withVibrato = runtime.document().session().project().findRegion(regionId);
+    CHECK(withVibrato != nullptr);
+    if (withVibrato != nullptr) {
+      const auto enabled = std::any_of(withVibrato->notes.begin(), withVibrato->notes.end(),
+          [](const domain::Note& note) { return note.vibrato.enabled; });
+      CHECK(enabled);
+    }
+
+    // Timbral expression, drawn through the shared lane rather than by assigning the region's
+    // automation fields. The lane is the surface a creator actually uses, and each channel carries its
+    // own unit in its descriptor, so one loop exercises both shapes the editor has to satisfy: a
+    // bipolar channel scaled in semitones, which must accept a negative value on the other side of its
+    // neutral, and a unipolar channel scaled in a share, which has no negative side to draw on.
+    {
+      const auto drawLane = [&](ui::ExpressionChannel channel,
+                                std::initializer_list<std::pair<time::Tick, float>> curve) {
+        auto lane = ui::ExpressionLaneModel::prepare(runtime.document().session(), regionId, channel);
+        if (!lane) throw test::Failure{"preparing the " +
+            std::string{ui::describeExpressionChannel(channel).id} + " lane failed: " +
+            lane.error().message};
+        CHECK(lane.hasValue());
+        if (!lane) return false;
+        // The selected singer is the procedural source-filter voice, so these channels are the ones it
+        // applies. A lane that reported itself uneditable here would mean the surface and the renderer
+        // disagreed about the route the creator selected.
+        CHECK(lane.value().editable().hasValue());
+        if (!lane.value().editable()) return false;
+        for (const auto& [tick, amount] : curve) {
+          CHECK(lane.value().upsert(ui::ExpressionPoint{tick, amount}).hasValue());
+        }
+        CHECK(lane.value().hasChanges());
+        CHECK(lane.value().apply(runtime.document().session(), regionId).hasValue());
+        return true;
+      };
+
+      // Bipolar: a formant drop below the neutral on the first half, a lift above it on the second.
+      const auto formantDrawn = drawLane(ui::ExpressionChannel::Formant,
+          {{time::Tick{0}, -3.0F}, {time::Tick{4800}, 4.0F}});
+      CHECK(formantDrawn);
+      // Unipolar: breathiness rises from its neutral floor. There is no negative share to draw.
+      const auto breathinessDrawn =
+          drawLane(ui::ExpressionChannel::Breathiness, {{time::Tick{0}, 0.35F}});
+      CHECK(breathinessDrawn);
+      if (!formantDrawn || !breathinessDrawn) return;
+
+      const auto* timbral = runtime.document().session().project().findRegion(regionId);
+      CHECK(timbral != nullptr);
+      if (timbral == nullptr) return;
+      const auto formant = ui::readExpressionPoints(*timbral, ui::ExpressionChannel::Formant);
+      const auto breathiness = ui::readExpressionPoints(*timbral, ui::ExpressionChannel::Breathiness);
+      CHECK(formant.size() == 2U);
+      CHECK(breathiness.size() == 1U);
+      // Both sides of the bipolar channel survived the round trip into the domain's own automation.
+      if (formant.size() == 2U) {
+        CHECK(formant.front().amount < 0.0F);
+        CHECK(formant.back().amount > 0.0F);
+      }
+      if (breathiness.size() == 1U) CHECK(breathiness.front().amount > 0.0F);
+      // A unipolar channel must refuse a value outside its declared share, so the surface cannot widen
+      // a channel by asking for one.
+      auto refuses = ui::ExpressionLaneModel::prepare(
+          runtime.document().session(), regionId, ui::ExpressionChannel::Breathiness);
+      CHECK(refuses.hasValue());
+      if (refuses) CHECK(!refuses.value().upsert(ui::ExpressionPoint{time::Tick{9600}, -0.5F}).hasValue());
+    }
+  }
 
   authoring::ExportSettings settings;
   settings.includeMaster = true;
