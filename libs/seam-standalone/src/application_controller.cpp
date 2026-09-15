@@ -1840,8 +1840,13 @@ core::Result<void> StandaloneApplicationController::selectInstalledProceduralSin
   for (const auto& offer : offers.value()) {
     if (!offer.selectable) continue;
     offered.push_back(&offer);
-    labels.push_back(offer.candidate.manifest.displayName + " (" +
-                     offer.candidate.manifest.id + " " + offer.candidate.manifest.version + ")");
+    // The chooser label names what the singer will actually render, not only what it is called. A
+    // creator choosing between singers should see the controls and language before committing, which
+    // is the difference between an informed choice and discovering a refusal after writing a phrase.
+    std::string label = offer.candidate.manifest.displayName + " (" +
+                        offer.candidate.manifest.id + " " + offer.candidate.manifest.version + ")";
+    if (!offer.capabilitySummary.empty()) label += " - " + offer.capabilitySummary;
+    labels.push_back(std::move(label));
   }
   if (offered.empty()) {
     // Name what is installed and why it cannot be used, so a signed singer that this build cannot

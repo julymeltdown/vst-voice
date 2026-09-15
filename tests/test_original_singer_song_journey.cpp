@@ -268,6 +268,12 @@ void selectInstalledSinger(Editor& editor) {
   if (!listed) throw test::Failure{"listing installed singers failed: " + listed.error().message};
   if (editor.dialog->offeredStyles.size() != 1U)
     throw test::Failure{"exactly one installed singer was expected"};
+  // The label the chooser shows must state what the singer will render, so the creator sees the
+  // supported controls and the review state before committing to a voice rather than after.
+  const auto& label = editor.dialog->offeredStyles.front();
+  if (label.find("voice designer") == std::string::npos || label.find("formant") == std::string::npos ||
+      label.find("unreviewed") == std::string::npos)
+    throw test::Failure{"the singer chooser label does not describe what the singer renders: " + label};
   editor.dialog->styleResponse = editor.dialog->offeredStyles.front();
   const auto selected = editor.controller->dispatch(
       platform::ApplicationCommand::SelectInstalledProceduralSinger);
