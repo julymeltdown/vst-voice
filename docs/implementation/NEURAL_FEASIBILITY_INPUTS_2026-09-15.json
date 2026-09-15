@@ -1,0 +1,62 @@
+{
+  "formatId": "com.project-seam.neural-feasibility-input-record",
+  "schemaVersion": 1,
+  "purpose": "N1 checkpoint 1: name the inputs a bounded learned-singer experiment needs, and state which are present. This is not a training authorization, a corpus approval or a quality claim.",
+  "sourceCommit": "20cce99645723943cc88976984dc25b463616a1c",
+  "host": {
+    "machine": "Apple M3 Max",
+    "memoryBytes": 51539607552,
+    "note": "CPU training on this host is bounded by the ceiling in trainingBounds, not by the machine's nominal capacity."
+  },
+  "trainingBounds": {
+    "maximumSteps": 2000,
+    "maximumWallClockMinutes": 240,
+    "maximumPeakMemoryBytes": 17179869184,
+    "maximumOutputBytes": 8589934592,
+    "cancellation": "stop token checked between steps; checkpoint written before any stop is honoured",
+    "note": "A run specification is written before any sustained run, and a short throughput smoke run sizes the next one. These are ceilings for an experiment, not a schedule."
+  },
+  "inputs": {
+    "corpus": {
+      "status": "absent",
+      "reason": "No authorized singing corpus is present. tests/singing_quality/corpus holds four diagnostic scores and one public-domain spoken-voice bank notice, which is not training material: the same notice records that it cannot demonstrate intelligible singing.",
+      "unblocks": "An authorized corpus with source-group splits, retained provenance and a real recording, or an explicit decision to train on authorized generated material."
+    },
+    "labels": {
+      "status": "absent",
+      "reason": "Labels are derived from the corpus, so the label admission path exists (admit-labels) but has no admitted input to consume. The word-aligned and phone-level annotation review the pipeline requires has not been performed on any real recording."
+    },
+    "acousticProfile": {
+      "status": "present",
+      "location": "assets/pilots/seam-pilot-01/profile.json",
+      "sha256": "2046afa00dfa42d9cc4400bf81598fbd1778232aae7f3d41b36264d9eaf82ead",
+      "note": "This is the pilot's language and pitch-layer record, not the 48 kHz / 80-bin / hop-256 acoustic target the training tooling binds. The training profile object must be produced from a corpus before training."
+    },
+    "vocoderProfile": {
+      "status": "absent",
+      "reason": "No vocoder is admitted. VOCODER_INTAKE.md records that published OpenVPI vocoders are 44.1 kHz / 128-bin / hop-512 with CC BY-NC-SA pretrained weights, against SEAM's 48 kHz / 80-bin / hop-256 target, so no published checkpoint is a drop-in and its weights are not commercially admissible without a separate rights decision."
+    },
+    "upstreamRevision": {
+      "status": "present",
+      "location": "build/neural-runtime/DiffSinger-source",
+      "note": "Pinned upstream source and a working local model environment exist. Upstream executes Python code, so the checkout is trusted-local material, not an untrusted-input sandbox.",
+      "revision": "336cf01b57f2ad44c6b37a79cf33993043291759"
+    },
+    "permissionEvidence": {
+      "status": "absent",
+      "reason": "No training permission manifest with byte-bound evidence exists. The admission path (permission-report, admit) is implemented and deliberately refuses to authorize training on its own, and model training and redistribution are separate scopes from any bank permission."
+    }
+  },
+  "existingCapability": {
+    "note": "These are implemented and tested, and none of them is a learned singer. Recorded here so the missing inputs are not confused with missing code.",
+    "trainingPrimitive": "DiffSinger DDPM architecture, bounded training, checkpoint and resume exist in tools/voice_model_training.",
+    "acousticExport": "A real trained checkpoint exports to ONNX and passes native inspection and ORT smoke execution; the training diagnostic itself used oscillator fixtures.",
+    "workerDeployment": "Bundle admission, the shipped worker, and render integration are tested; the song proof used arithmetic graphs.",
+    "qualification": "qualify-candidate drives the worker over held-out items and always reports UNRESOLVED, because intelligibility, identity and musicality need independent listeners."
+  },
+  "nextBoundedAction": {
+    "step": "Build the model-only vocoder bridge at SEAM's own profile (48 kHz, 80 mel, hop 256, upsample product 256) and prove exact dynamic output lengths and finite reconstruction before any acoustic training run.",
+    "why": "A geometry and reconstruction check is cheap, needs no corpus and catches a profile mismatch before a long run is sized against it. Random initialization is a geometry diagnostic, not a singer.",
+    "notClaimed": "This is not a vocoder qualification, a corpus substitute or evidence that any voice is intelligible."
+  }
+}

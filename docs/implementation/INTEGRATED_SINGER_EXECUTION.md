@@ -1,5 +1,43 @@
 # Integrated Singer Execution
 
+## The neural lane now says which inputs are missing, and nothing more
+
+September 15, 2026 — N1 checkpoint 1 added. The plan's first neural checkpoint is a feasibility input
+record: name what a bounded learned-singer experiment needs, and state which of it exists. The risk
+is that such a record becomes a paragraph asserting readiness, so it is written as a machine-checked
+gate instead.
+
+`docs/implementation/NEURAL_FEASIBILITY_INPUTS_2026-09-15.json` declares six required inputs with a
+status, a location and a binding — a digest for file-shaped inputs, an exact revision for a source
+pin. `scripts/verify_neural_feasibility_inputs.py` checks that a declared-present input is actually
+present, that its binding is well formed, and that a corpus digest matches the file when one is
+required. It exits 3 with `FEASIBILITY_INPUT=INCOMPLETE` while anything is missing, which is the
+current and expected state, and 2 for a malformed record.
+
+The record's honest result: four of six inputs are absent. There is no authorized singing corpus
+(`tests/singing_quality/corpus` holds four diagnostic scores and a notice that already states it
+cannot demonstrate intelligible singing), therefore no admitted labels, no admitted vocoder, and no
+training permission manifest with byte-bound evidence. Present are the pilot profile, which is not the
+48 kHz / 80-bin / hop-256 training profile, and the pinned upstream checkout with a working local model
+environment. The record also lists existing capability explicitly, so missing inputs are not confused
+with missing code: the DDPM training primitive, ONNX acoustic export, bundle admission, the shipped
+worker and the qualification command all exist, and none of them is a learned singer.
+
+Verified. `tools/voice_model_training/test_feasibility_inputs.py` passes 6 of 6 inside the existing
+`seam_voice_model_training_tests` target: a missing declaration is reported rather than ignored and
+every required input is named; an unverifiable presence claim is treated as absent while a revision-
+bound source pin is accepted; an unrecognised status is refused as an authoring error rather than
+silently read as absent; a present input that is not on disk and a corpus digest mismatch are both
+reported; and the gate contains no training invocation or subprocess path. The gate reports
+`missing=corpus,labels,vocoderProfile,permissionEvidence` on the record as committed.
+
+Not claimed. This is an input inventory, not training admission, corpus approval, expenditure
+authorization or a quality result. No training run was started, no model was trained, no vocoder was
+admitted and no singing audio was produced. The record's bounded next action — a model-only vocoder
+bridge at SEAM's own profile, to catch a feature mismatch before a long run is sized against it — was
+not performed. No U-unit acceptance or Beta GO state changes.
+
+
 ## The expression lane is audible on a real song, not only drawn
 
 September 15, 2026 — D2 exit closed. The lane already drew, persisted and refused correctly, but its
