@@ -1,5 +1,27 @@
 # Integrated Singer Execution
 
+## IME composition is checked at the minimum window, closing D2's last uncovered clause
+
+September 15, 2026 — D2's exit named IME focus at the minimum window as uncovered. The existing
+batch-lyrics case ran at 1280x720, so nothing established that opening composition at the enforced
+minimum still anchors the composer somewhere real, or that the input closes exactly once. A composer
+anchored off-surface, or left open after a commit, is a defect a comfortable window would hide.
+
+The new case drives the real keyboard route at 1024x768: Shift+L over a selected note opens the
+composer, and the rectangle the host receives must be non-empty, start inside the window and end
+inside it, because an empty or off-surface anchor is how a composition box becomes invisible while the
+state still says it is open. It then cancels and confirms the input closed exactly once and wrote
+nothing, reopens, commits, and confirms the input closed again, the review opened, and the committed
+lyric is the one that reached the project.
+
+Verified. seam_tests passes 911 of 911 and the registered run passes 170 of 170.
+
+Not claimed. This asserts a usable anchor rectangle and a single close per composition, not a pixel
+result and not how a real input method renders at that size; no human has driven an IME at the
+minimum window and no assistive technology has been run against it. It also records which route ran:
+the request deliberately carries no single lyric identity, because distributing lyrics over a
+selection is not one token's edit. No U-unit acceptance or Beta GO state changes.
+
 ## A renderer change is recorded, reported, and kept out of the audio identity
 
 September 15, 2026 — D4.7 closed its last gap: nothing recorded which renderer produced a project's

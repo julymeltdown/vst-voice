@@ -1465,6 +1465,85 @@ TEST_CASE("native batch lyrics use IME composition and semantic activation") {
   CHECK(!controller.textInputActive());
 }
 
+// D2's exit names IME focus at the minimum window as uncovered: the existing batch-lyrics case runs
+// at 1280x720, so nothing checked that opening composition at the enforced minimum still reports a
+// usable input rectangle and still ends exactly once. A composer anchored off-surface or left open
+// after a commit is the failure this looks for.
+TEST_CASE("native IME composition holds at the minimum window and ends exactly once") {
+  NativeUiFixture fixture;
+  const auto* region = fixture.session.project().findRegion(fixture.regionId);
+  CHECK(region != nullptr);
+  const auto noteId = fixture.noteId;
+  fixture.session.selection().replace({noteId});
+
+  std::optional<seam::native_ui::TextInputRequest> request;
+  std::size_t beginCalls = 0U;
+  std::size_t endCalls = 0U;
+  seam::native_ui::NativeEditorController controller{
+      fixture.session, fixture.factory, fixture.regionId,
+      seam::native_ui::EditorHostCallbacks{
+          .beginTextInput = [&request, &beginCalls](
+              const seam::native_ui::TextInputRequest& value) {
+            ++beginCalls;
+            request = value;
+          },
+          .endTextInput = [&endCalls] { ++endCalls; },
+          .documentChanged = [] {},
+      }};
+  controller.resize(1024.0, 768.0);
+
+  CHECK(controller.keyDown(seam::native_ui::KeyEvent{
+      .key = seam::native_ui::NativeKey::L,
+      .modifiers = seam::native_ui::InputModifiers{.shift = true},
+      .repeat = false,
+  }));
+  CHECK(controller.textInputActive());
+  CHECK(beginCalls == 1U);
+  CHECK(request.has_value());
+  if (!request) return;
+
+  // The anchor must be a real place on the surface. An empty or out-of-surface rectangle is how a
+  // composition box ends up invisible at a small size even though the state says it is open.
+  CHECK(request->logicalBounds.width > 0.0);
+  CHECK(request->logicalBounds.height > 0.0);
+  CHECK(request->logicalBounds.x >= 0.0);
+  CHECK(request->logicalBounds.y >= 0.0);
+  CHECK(request->logicalBounds.right() <= 1024.0);
+  CHECK(request->logicalBounds.bottom() <= 768.0);
+  CHECK(request->currentText.empty());
+  // Distributing lyrics over a selection is not a single token's edit, so the request carries no
+  // particular lyric identity. Recording that here keeps the assertion honest about which route ran.
+  CHECK(request->lyricId != fixture.lyricId);
+
+  // A composition that is cancelled closes the input once and writes nothing.
+  controller.cancelTextComposition();
+  CHECK(!controller.textInputActive());
+  CHECK(endCalls == 1U);
+
+  // A composition that commits closes the input once and reaches the review, so the keyboard route
+  // and the semantic route behave the same at the minimum size.
+  CHECK(controller.keyDown(seam::native_ui::KeyEvent{
+      .key = seam::native_ui::NativeKey::L,
+      .modifiers = seam::native_ui::InputModifiers{.shift = true},
+      .repeat = false,
+  }));
+  CHECK(controller.textInputActive());
+  CHECK(endCalls == 1U);
+  CHECK(controller.commitTextComposition(U"み"));
+  CHECK(!controller.textInputActive());
+  CHECK(endCalls == 2U);
+  CHECK(controller.sceneState().replacementReview.visible);
+  applyReadyLyricReview(controller);
+  const auto* refreshed = fixture.session.project().findRegion(fixture.regionId);
+  CHECK(refreshed != nullptr);
+  const auto* note = refreshed != nullptr ? refreshed->findNote(noteId) : nullptr;
+  CHECK(note != nullptr);
+  if (note == nullptr) return;
+  const auto* lyric = refreshed->findLyric(note->lyricTokenId);
+  CHECK(lyric != nullptr);
+  if (lyric != nullptr) CHECK(lyric->surface == U"み");
+}
+
 TEST_CASE("editor status bar paints within the supported minimum width") {
   NativeUiFixture fixture;
   seam::native_ui::NativeEditorController controller{
