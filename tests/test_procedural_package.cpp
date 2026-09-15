@@ -391,9 +391,12 @@ TEST_CASE("An installed procedural singer is discovered and resolved by exact id
   CHECK(scanned.value().front().trust == distribution::ProceduralTrust::TrustedInstalled);
   CHECK(scanned.value().front().contentHash == installed.value().contentHash);
 
-  const domain::SingerResourceIdentity reference{domain::SingerResourceKind::Procedural,
-                                                 "original.singer.pilot", "1.0.0",
-                                                 installed.value().contentHash};
+  // A project records the identity the renderer validates, which the catalogue derives from the
+  // recipe rather than from the manifest's release version.
+  const auto reference = scanned.value().front().renderIdentity;
+  CHECK(reference.kind == domain::SingerResourceKind::Procedural);
+  CHECK(reference.id == "procedural-package");
+  CHECK(reference.version == "1");
   const auto resolved = distribution::resolveProceduralSinger(reference, scanned.value());
   CHECK(resolved.resolved());
   // The catalogue reports the canonical install root; the installer returns the caller's path. Both
@@ -442,8 +445,9 @@ TEST_CASE("An installed procedural singer is discovered and resolved by exact id
   CHECK(relinkResolution.resolved());
   CHECK(std::filesystem::canonical(relinkResolution.candidate->resourceRoot) ==
         std::filesystem::canonical(relinked.value().installDirectory));
-  CHECK(relinkResolution.candidate->manifest.id == reference.id);
-  CHECK(relinkResolution.candidate->contentHash == reference.contentHash);
+  // Relink resolves the same render identity against another root, and does not rewrite it.
+  CHECK(relinkResolution.candidate->renderIdentity == reference);
+  CHECK(relinkResolution.candidate->manifest.id == "original.singer.pilot");
 }
 
 TEST_CASE("A development procedural resource is labelled and never trusted by default") {
@@ -474,9 +478,7 @@ TEST_CASE("A development procedural resource is labelled and never trusted by de
   CHECK(scanned.value().size() == 1U);
   if (scanned.value().size() != 1U) return;
   CHECK(scanned.value().front().trust == distribution::ProceduralTrust::DevelopmentFixture);
-  const domain::SingerResourceIdentity reference{domain::SingerResourceKind::Procedural,
-                                                 "original.singer.pilot", "1.0.0",
-                                                 installed.value().contentHash};
+  const auto reference = scanned.value().front().renderIdentity;
   distribution::ProceduralResolveOptions strict;
   strict.requireTrustedInstalled = true;
   strict.allowDevelopmentFixtures = false;
@@ -524,9 +526,7 @@ TEST_CASE("A procedural singer built for another engine is reported as incompati
       .path = installRoot, .kind = distribution::ProceduralRootKind::Installed}});
   CHECK(scanned.hasValue());
   if (!scanned) return;
-  const domain::SingerResourceIdentity reference{domain::SingerResourceKind::Procedural,
-                                                 "original.singer.pilot", "1.0.0",
-                                                 installed.value().contentHash};
+  const auto reference = scanned.value().front().renderIdentity;
 
   // The engine this build renders is reported by the resource, so a matching request resolves.
   const auto& declared = scanned.value().front().manifest;

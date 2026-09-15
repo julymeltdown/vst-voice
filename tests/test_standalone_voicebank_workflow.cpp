@@ -581,9 +581,11 @@ TEST_CASE("the application selects an installed procedural singer by identity, n
   const auto chosen = runtime.document().session().project().findVocalTrack(trackId)->proceduralRecipe;
   CHECK(chosen.has_value());
   if (!chosen) return;
-  CHECK(chosen->resource.id == manifest.id);
-  CHECK(chosen->resource.version == manifest.version);
-  CHECK(chosen->resource.contentHash == installed.value().contentHash);
+  // The recorded identity is the one the renderer validates, derived from the recipe rather than
+  // from the manifest's release version. Removing the diagnostic probe is part of the same slice.
+  CHECK(chosen->resource.id == recipe.id);
+  CHECK(chosen->resource.version == "1");
+  CHECK(chosen->resource.contentHash == seam::core::sha256Hex(encoded.value()));
   CHECK(chosen->style == "neutral");
   CHECK(chosen->path == (installed.value().installDirectory / "recipe.json").string());
   CHECK(runtime.undo());

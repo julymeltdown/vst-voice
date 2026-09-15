@@ -224,6 +224,23 @@ core::Result<void> checkRecipeBytes(const std::vector<std::byte>& bytes,
   return core::success();
 }
 
+// The identity the renderer validates, derived exactly as the voice-design layer derives it: the id
+// comes from the recipe, the version is its schema version, and the digest is over its canonical
+// encoding. Deriving it independently here would be a second definition of the same identity, so
+// this decodes, re-encodes and hashes the same way instead of trusting a stored value.
+core::Result<domain::SingerResourceIdentity> proceduralRenderIdentity(
+    const std::vector<std::byte>& bytes) {
+  using Output = domain::SingerResourceIdentity;
+  const std::string text(reinterpret_cast<const char*>(bytes.data()), bytes.size());
+  auto recipe = voice_design::decodeVoiceRecipe(text);
+  if (!recipe) return core::Result<Output>{recipe.error()};
+  auto canonical = voice_design::encodeVoiceRecipe(recipe.value());
+  if (!canonical) return core::Result<Output>{canonical.error()};
+  return Output{domain::SingerResourceKind::Procedural, recipe.value().id,
+                std::to_string(voice_design::voiceRecipeSchemaVersion(recipe.value())),
+                core::sha256Hex(canonical.value())};
+}
+
 }  // namespace
 
 core::Result<ProceduralPackageInfo> packProceduralPackage(
@@ -428,6 +445,14 @@ core::Result<InstalledProceduralSinger> installProceduralPackage(
         "Installed procedural manifest differs from the signed manifest");
   }
   const auto contentHash = proceduralContentHash(installedText.value(), recipeBytes.value());
+  // The installed recipe is already verified, so this derivation cannot fail for a resource that
+  // reached this point; a failure still refuses installation rather than publishing an unrenderable
+  // singer.
+  const auto renderIdentity = proceduralRenderIdentity(recipeBytes.value());
+  if (!renderIdentity) {
+    std::filesystem::remove_all(staging, error);
+    return core::Result<InstalledProceduralSinger>{renderIdentity.error()};
+  }
   formats::JsonValue::Object receipt;
   receipt.emplace("schemaVersion", static_cast<std::int64_t>(1));
   receipt.emplace("resourceFamily", std::string{"procedural-singer"});
@@ -490,6 +515,7 @@ core::Result<InstalledProceduralSinger> installProceduralPackage(
       .id = manifest.id,
       .version = manifest.version,
       .contentHash = contentHash,
+      .renderIdentity = renderIdentity.value(),
       .packageDigest = package.value().container.packageDigest,
       .signerKeyId = package.value().container.signerKeyId,
       .installDirectory = target,
@@ -594,6 +620,11 @@ core::Result<std::vector<ProceduralCandidate>> ProceduralCatalogue::scan(
         // The content hash is recomputed from the installed bytes. A receipt that disagrees with
         // them describes a different resource than the one on disk.
         const auto contentHash = proceduralContentHash(text.value(), recipeBytes.value());
+        // The renderer derives its identity from the recipe, not from the manifest: the version is
+        // the recipe's schema version and the digest is over its canonical encoding. Compute that
+        // here so a selection can record an identity the renderer will actually accept.
+        const auto renderIdentity = proceduralRenderIdentity(recipeBytes.value());
+        if (!renderIdentity) continue;
         const auto receipt = loadProceduralReceipt(resourceRoot);
         const auto matches = receipt.present && receipt.id == manifest.value().id &&
                              receipt.version == manifest.value().version &&
@@ -608,6 +639,7 @@ core::Result<std::vector<ProceduralCandidate>> ProceduralCatalogue::scan(
             .manifest = std::move(manifest).value(),
             .resourceRoot = resourceRoot,
             .contentHash = contentHash,
+            .renderIdentity = renderIdentity.value(),
             .trust = trust,
             .packageDigest = receipt.packageDigest,
             .signerKeyId = receipt.signerKeyId,
@@ -660,10 +692,12 @@ ProceduralResolution resolveProceduralSinger(
   std::vector<const ProceduralCandidate*> idMatches;
   std::vector<const ProceduralCandidate*> versionMatches;
   for (const auto& candidate : candidates) {
-    if (candidate.manifest.id != reference.id) continue;
+    // A project records the renderer's identity, so resolution compares against that identity. The
+    // manifest's id and release version are distribution facts and do not appear in a saved song.
+    if (candidate.renderIdentity.id != reference.id) continue;
     idMatches.push_back(&candidate);
-    result.availableVersions.push_back(candidate.manifest.version);
-    if (candidate.manifest.version == reference.version) versionMatches.push_back(&candidate);
+    result.availableVersions.push_back(candidate.renderIdentity.version);
+    if (candidate.renderIdentity.version == reference.version) versionMatches.push_back(&candidate);
   }
   std::sort(result.availableVersions.begin(), result.availableVersions.end());
   result.availableVersions.erase(std::unique(result.availableVersions.begin(),
@@ -688,12 +722,13 @@ ProceduralResolution resolveProceduralSinger(
   }
   std::vector<const ProceduralCandidate*> contentMatches;
   for (const auto* candidate : versionMatches)
-    if (candidate->contentHash == reference.contentHash) contentMatches.push_back(candidate);
+    if (candidate->renderIdentity.contentHash == reference.contentHash)
+      contentMatches.push_back(candidate);
   if (contentMatches.empty()) {
     result.status = ProceduralResolveStatus::ContentMismatch;
     result.expectedContentHash = reference.contentHash;
     for (const auto* candidate : versionMatches)
-      result.actualContentHashes.push_back(candidate->contentHash);
+      result.actualContentHashes.push_back(candidate->renderIdentity.contentHash);
     std::sort(result.actualContentHashes.begin(), result.actualContentHashes.end());
     result.actualContentHashes.erase(
         std::unique(result.actualContentHashes.begin(), result.actualContentHashes.end()),

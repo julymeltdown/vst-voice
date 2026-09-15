@@ -1,5 +1,44 @@
 # Integrated Singer Execution
 
+## The installed procedural route is now connected end to end, and it was not before
+
+September 15, 2026 — D4.8 added, and it found a real defect. The separate pieces of the procedural
+slice were each green, but nobody had driven them as one journey. The journey test did what it was
+written for: it proved that a project selecting an installed procedural singer could not have sung
+with it.
+
+The cause was an identity mismatch at the seam between distribution and rendering. The installer and
+catalogue describe a resource with the *distribution* identity: the producer's release version, such
+as `1.0.0`, and a digest over the installed manifest and recipe. The renderer validates the *recipe's*
+identity: the id inside the recipe, the recipe's own schema version, such as `1`, and a digest over
+the recipe's canonical encoding. The installed selection recorded the first and the renderer checked
+the second, so `loadVoiceRecipeResource` refused every installed singer with "Recipe file does not
+match the requested singer resource identity". Every installed procedural selection was unrenderable,
+and no existing test could see it because each layer was only ever tested against its own identity.
+
+`ProceduralCandidate` and `InstalledProceduralSinger` now carry a `renderIdentity`, derived from the
+recipe exactly as the voice-design layer derives it, and `resolveProceduralSinger` and installed
+selection compare against that identity. The distribution identity remains available and unchanged;
+the two are simply no longer confused. The renderer accepts what an installed selection records, and
+the journey exports with the producer's source directory deleted and the package removed.
+
+Verified. `seam_procedural_install_journey_tests` passes 6 of 6: the recorded identity loads and
+equals what the renderer validates; a creator selects an installed singer, tunes the formant channel
+on a new note, saves, then reopens and exports after both the producer source directory and the
+package are deleted; an untrusted signature installs nothing and leaves no directory; a resource
+built for another engine is catalogued but not offered and cannot be selected; a removed installation
+resolves as `Missing` with the resource named; a second version installs side by side with the first
+still resolving; and a tampered package leaves no staging or backup directory and does not disturb
+the installation already present. `seam_procedural_package_tests` passes 11 of 11 against the
+corrected identity semantics, and `seam_u3_standalone_tests` passes 4 of 4.
+
+Not claimed. No real producer has signed a package and no human has listened to a rendered installed
+singer. The review decision type from D4.2 is not yet wired into the authoring session, so the
+journey does not record a decision through the application. No engine revision is pinned to a
+retained build, so reproducing an old sound still requires a retained runnable build. No U-unit
+acceptance or Beta GO state changes.
+
+## A review decision is bound to the exact rendering it was made about
 ## A review decision is bound to the exact rendering it was made about
 
 September 15, 2026 — D4.2 added. Signing a procedural singer proves who produced it. It says nothing

@@ -1911,6 +1911,17 @@ if(SEAM_BUILD_TESTS)
     seam_distribution seam_voice_design seam_core)
   seam_apply_compiler_options(seam_procedural_review_tests)
   add_test(NAME seam_procedural_review_tests COMMAND seam_procedural_review_tests)
+  add_executable(seam_procedural_install_journey_tests
+    tests/test_main.cpp
+    tests/test_procedural_install_journey.cpp)
+  target_include_directories(seam_procedural_install_journey_tests PRIVATE tests)
+  target_link_libraries(seam_procedural_install_journey_tests PRIVATE
+    seam_standalone_authoring seam_distribution seam_voice_design seam_application
+    seam_authoring_runtime seam_rendering seam_synthesis seam_formats seam_voicebank
+    seam_phonemizer seam_domain seam_core)
+  seam_apply_compiler_options(seam_procedural_install_journey_tests)
+  add_test(NAME seam_procedural_install_journey_tests
+    COMMAND seam_procedural_install_journey_tests)
   target_include_directories(seam_formant_expression_tests PRIVATE tests)
   target_link_libraries(seam_formant_expression_tests PRIVATE
     seam_rendering seam_voice_design seam_synthesis seam_application

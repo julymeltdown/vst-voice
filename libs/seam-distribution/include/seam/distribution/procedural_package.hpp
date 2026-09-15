@@ -88,6 +88,9 @@ struct InstalledProceduralSinger final {
   // A digest over the installed manifest and recipe, so a host can bind a song to the exact
   // resource it used the way a sample bank binds to its unit content hash.
   std::string contentHash;
+  // The identity a project records and the renderer validates, as opposed to the distribution
+  // identity above. A caller that selects this singer records this value.
+  domain::SingerResourceIdentity renderIdentity{domain::SingerResourceKind::Procedural, {}, {}, {}};
   std::string packageDigest;
   std::string signerKeyId;
   std::filesystem::path installDirectory;
@@ -124,6 +127,12 @@ struct ProceduralCandidate final {
   // Recomputed from the installed manifest and recipe, not taken from the receipt: a receipt that
   // disagrees with the bytes it sits beside describes a different resource.
   std::string contentHash;
+  // The identity the renderer validates when it loads the installed recipe. It is derived from the
+  // recipe itself, which is a different thing from the distribution identity above: the manifest
+  // carries a producer's release version, while the recipe carries the schema version the renderer
+  // checks and a digest over its canonical encoding. A selection must record this, or the renderer
+  // will refuse the resource it was told to sing with.
+  domain::SingerResourceIdentity renderIdentity{domain::SingerResourceKind::Procedural, {}, {}, {}};
   ProceduralTrust trust{ProceduralTrust::UntrustedInstalled};
   std::string packageDigest;
   std::string signerKeyId;

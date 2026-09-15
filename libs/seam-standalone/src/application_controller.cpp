@@ -1665,12 +1665,12 @@ core::Result<void> StandaloneApplicationController::selectInstalledProceduralSin
     options.renderableEngineRevision = config_.renderableProceduralEngineRevision;
     options.requireTrustedInstalled = !config_.allowDevelopmentVoicebanks;
     options.allowDevelopmentFixtures = config_.allowDevelopmentVoicebanks;
-    const domain::SingerResourceIdentity identity{domain::SingerResourceKind::Procedural,
-                                                  candidate.manifest.id,
-                                                  candidate.manifest.version,
-                                                  candidate.contentHash};
+    // Resolution is asked about the identity a project would record, which is the renderer's
+    // identity, not the distribution version. Using the distribution identity here would find no
+    // match and silently offer nothing.
     const auto resolution = distribution::resolveProceduralSinger(
-        identity, std::vector<distribution::ProceduralCandidate>{candidate}, options);
+        candidate.renderIdentity, std::vector<distribution::ProceduralCandidate>{candidate},
+        options);
     if (!resolution.resolved()) continue;
     offered.push_back(&candidate);
     labels.push_back(candidate.manifest.displayName + " (" + candidate.manifest.id + " " +
@@ -1707,10 +1707,11 @@ core::Result<void> StandaloneApplicationController::selectInstalledProceduralSin
   if (!context) return core::Result<void>{context.error()};
   // An installed selection records the installed manifest path, so the project is portable to
   // another machine only through the same identity resolution a bank reference uses.
+  // The identity recorded is the one the renderer validates, which is derived from the recipe
+  // rather than from the manifest's release version. Recording the distribution version here would
+  // store an identity the renderer refuses, and the selection would not sing.
   const auto reference = domain::ProceduralRecipeReference{
-      domain::SingerResourceIdentity{domain::SingerResourceKind::Procedural,
-                                     candidate.manifest.id, candidate.manifest.version,
-                                     candidate.contentHash},
+      candidate.renderIdentity,
       (candidate.resourceRoot / candidate.manifest.recipeEntry).string(), style};
   const auto changed = session_.runtime().executePerformanceResult(context.value(),
       std::make_unique<application::SetTrackProceduralRecipeCommand>(trackId, before, reference));
