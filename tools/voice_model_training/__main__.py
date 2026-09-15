@@ -21,6 +21,7 @@ from .native_features import extract_pitch
 from .label_edits import apply_label_edits
 from .conditioning import build_conditioning
 from .qualification import qualify_command
+from .generated_teacher import label_config_from_exports
 
 
 def acoustic_targets_command(config: Path, expected_hash: str, source: Path, output: Path) -> None:
@@ -734,6 +735,17 @@ def main():
         help="Production worker executable; hashed into the dossier, never copied")
     qualify.add_argument("output", type=Path,
         help="New dossier JSON; exit 4 when a criterion fails; never overwritten")
+    teacher = commands.add_parser("generated-teacher-labels",
+        help="Translate captured procedural-teacher exports into an admitted label configuration; "
+             "creates no permission, label admission or training approval.")
+    teacher.add_argument("configuration", type=Path,
+        help="Captured translation JSON: sample rate, vocabulary, confidence, and 1..10000 exports "
+             "with their source-root-relative audio paths; maximum 8 MiB")
+    teacher.add_argument("configuration_sha256")
+    teacher.add_argument("source_root", type=Path,
+        help="Root the export audio will be prepared from; inspected by the caller, not modified here")
+    teacher.add_argument("output", type=Path,
+        help="New label configuration JSON; never overwritten; still requires rights and annotation review")
     args = parser.parse_args()
     try:
         if args.command == "acoustic-targets":
@@ -745,6 +757,21 @@ def main():
                                             conditioning_directory=args.conditioning_directory, reuse_conditioning=args.reuse_conditioning)
         if args.command == "qualify-candidate":
             return qualify_command(args.configuration, args.configuration_sha256, args.worker, args.output)
+        if args.command == "generated-teacher-labels":
+            value = load_config(args.configuration, args.configuration_sha256)
+            fields = {"formatId", "schemaVersion", "sampleRate", "vocabulary",
+                      "minimumConfidence", "exports", "relativePaths"}
+            if (not isinstance(value, dict) or set(value) != fields
+                    or value["formatId"] != "com.project-seam.voice-training-generated-teacher-config"
+                    or type(value["schemaVersion"]) is not int or value["schemaVersion"] != 1):
+                raise ValueError("Unsupported generated-teacher configuration")
+            if not args.source_root.is_dir():
+                raise ValueError("Generated-teacher source root must be an existing directory")
+            config = label_config_from_exports(exports=value["exports"],
+                sample_rate=value["sampleRate"], relative_paths=value["relativePaths"],
+                vocabulary=value["vocabulary"], minimum_confidence=value["minimumConfidence"])
+            publish_new(args.output, config)
+            return 0
         if args.command == "admit-labels":
             if args.output.exists() or args.output.is_symlink():
                 raise ValueError("Label admission report must be new")

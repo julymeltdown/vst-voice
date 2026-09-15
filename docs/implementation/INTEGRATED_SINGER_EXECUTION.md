@@ -1,5 +1,19 @@
 # Integrated Singer Execution
 
+## The neural path can now be exercised from the project's own renders, with its limits named
+
+September 16, 2026 — M3.1/M3.2 of the jointly agreed R3 plan. The neural pipeline was blocked on an authorized corpus: training needs a source with permission, admitted labels, and an admitted vocoder. A procedural render supplies the first two in a form no external recording can, because the renderer knows which phone it produced and when, so its phone timeline is a plan rather than an annotation someone had to make. That makes a bounded teacher/student experiment possible now instead of after a corpus is acquired.
+
+`tools/voice_model_training/generated_teacher.py` turns a captured render into the exact label and score documents the existing preparation pipeline already admits, so no downstream stage needs a special case. It is reachable as `python3 -m tools.voice_model_training generated-teacher-labels`, and the output it writes is read by the pipeline's own `inspect_label_config`, which is what the test asserts rather than a private copy of the rule.
+
+Two limits are built into the module because they are the part that would otherwise become a false claim. The emitted phone spans are the renderer's **intent**: they say which phone the engine meant to produce over a span, not that the audio acoustically contains that phone with that boundary. Training on them teaches the student the teacher's articulation, so they can measure whether a student reproduces the teacher and cannot establish that either is phonetically correct; the export records `labelOrigin` as `renderer-intent-not-acoustic-truth`. And permission is still required: `sourceRightsAdmitted`, `labelsAdmitted`, `trainingAdmitted` and `releaseEligible` are all false, and the label configuration carries exactly the seven fields the admission step defines so it cannot smuggle an approval of its own.
+
+The adapter refuses a gap in the phone alignment rather than inferring one, refuses voicing that disagrees with F0, and requires score notes and rests to partition the source frames. Those are the same conditions the admitted validators enforce downstream, applied at the point where the material is created.
+
+Verified. `tools/voice_model_training/test_generated_teacher.py` 8/8 under the registered `seam_voice_model_training_tests` suite, which now runs 86 tests; a generated export round-trips through `inspect_label_config` and produces a schema-3 configuration with one source and one label. A real CLI invocation was run against a captured export and produced the expected configuration. `SOURCE_CLOSURE=PASS`.
+
+Not claimed. No model was trained, no corpus was acquired and no vocoder was admitted, so there is still no learned singer and R9 is untouched. The teacher's own intelligibility is unverified and unknown; a student that matches it would therefore match an unmeasured target. The experiment this enables tests reconstruction, distinguishability and conditioning sensitivity, and none of those is a perceptual identity or musical-quality claim.
+
 ## An original singer renders a whole lyric song, and the route it will use is decided once
 
 September 16, 2026 — M1.1–M1.3 of the jointly agreed R3 plan. Two things landed together because they are the same question asked twice: what will render this track's sound, and can a creator actually finish a song with it.
