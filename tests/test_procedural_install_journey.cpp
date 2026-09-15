@@ -18,8 +18,10 @@
 #include "seam/voice_design/recipe_resource.hpp"
 #include "seam/voice_design/voice_recipe.hpp"
 #include "seam/ui/expression_lane.hpp"
+#include "seam/voicebank/wav.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <memory>
@@ -312,6 +314,24 @@ TEST_CASE("An installed procedural singer sings a tuned phrase after the produce
   CHECK(std::filesystem::exists(exported.value().masterPath));
   CHECK(std::filesystem::file_size(exported.value().masterPath) > 44U);
   CHECK(!exported.value().masterSha256.empty());
+  // A file larger than a header can still be silence, so the exported master is decoded and required
+  // to carry real signal. An export that produced an empty render would otherwise pass this journey.
+  const auto master = voicebank::readWav(exported.value().masterPath);
+  CHECK(master.hasValue());
+  if (!master) return;
+  CHECK(master.value().sampleRate == 48000U);
+  CHECK(master.value().channels >= 1U);
+  CHECK(!master.value().interleaved.empty());
+  double peak = 0.0;
+  double energy = 0.0;
+  for (const auto sample : master.value().interleaved) {
+    const auto magnitude = std::abs(static_cast<double>(sample));
+    peak = std::max(peak, magnitude);
+    energy += static_cast<double>(sample) * static_cast<double>(sample);
+  }
+  CHECK(peak > 1e-4);
+  CHECK(energy > 0.0);
+  for (const auto sample : master.value().interleaved) CHECK(std::isfinite(sample));
 }
 
 // A package the producer never signed by the trusted key must not install, and a resource whose

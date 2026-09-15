@@ -3,7 +3,7 @@ title: SEAM development plan, revision 2 — listening-gated completion
 date: 2026-09-15
 status: active execution plan
 supersedes_sequencing: SEAM_REVISED_DEVELOPMENT_PLAN_2026-09-15.md (revision 1)
-baseline_commit: 2521951f5f05231b6d411c093ffb9183dcf3f148
+baseline_commit: cdc00afd234fe573185368230001fd3d8eb479d8
 input_review: SEAM_SECOND_DEVELOPER_REVIEW_2026-09-15.md
 implementation_performed_by_this_document: false
 ---
@@ -77,14 +77,14 @@ Sequencing and default work selection change in four ways:
 |---|---|---|
 | D0 growl checkpoint | **Done and published** | `b8fff071`; growl suite 8/8; closure passes |
 | D1 listening packet | **Rendered, retained, unreviewed** | 11 cases, 66 WAVs, 16-second melody, 335 hashes checked; `LISTENING NOT_REVIEWED`. `2521951f` adds a comparison tool that reports differences without ranking them, and confirms the retained rerender is 6/6 identical |
-| D2 expression lane | **Exit closed** | `68dada55` lane; `f983c3c5` proves all six channels change the rendered audio on a source-filter song and that a sample carrier refuses them by name; `seam_expression_on_song_tests` 3/3 |
+| D2 expression lane | **Exit closed** | `68dada55` lane; `f983c3c5` proves all six channels change the rendered audio and a sample carrier refuses them by name; `dfd5929b` covers the minimum window and long labels; `fefe5fd8` asserts the accessible value; lane suite 10/10 |
 | D4.1/D4.3 manifest and pack/verify | **Done** | `71955fc7`, `89c17ce4` |
 | D4.4 install and receipts | **Done** | `5cc5992a` |
 | D4.5 catalogue and resolve | **Done** | `3489f570` |
-| D4.6 native selection, copy-to-edit and reason surfacing | **Done and pushed** | `bbc730d9` selection; `4d3b3739` copy-to-edit; `475e9eba` Designer save guard; `0c43a690` names an unusable singer with its reason; journey 10/10 |
+| D4.6 native selection, copy-to-edit and reason surfacing | **Done and pushed** | `bbc730d9` selection; `4d3b3739` copy-to-edit; `475e9eba` Designer save guard; `0c43a690` names an unusable singer with its reason; `8ad65f6c` shows review status; journey 14/14 |
 | D4.7 compatibility | **Done** | `a84e672d` |
-| D4.2 review candidate | **Done and published** | `5d149f22`; `seam_procedural_review_tests` 10/10 |
-| D4.8 connected journey | **Done and published, and it found a real defect** | `9711eecb`; journey 10/10; installed selection now records the identity the renderer validates |
+| D4.2 review candidate | **Done and published** | `5d149f22` binding; `4bf9b4d4` durable store and application surface; `seam_procedural_review_tests` 14/14 |
+| D4.8 connected journey | **Done and published, and it twice found real defects** | `9711eecb` identity mismatch; `b2466aa0` reachability from the shipped app; `7daa2036` menu dispatch; journey 14/14 |
 | D3 acoustic repair | **Blocked on human listening** | D1 decision record |
 | N1 neural feasibility | **Checkpoint 1 done** | `b78b92cf` input record plus a verifier that reports four of six inputs absent; no training run |
 | D5/D6 expansion and qualification | **Not started** | Gate is the first usable original-singer milestone |

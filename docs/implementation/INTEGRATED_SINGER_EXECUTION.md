@@ -1,5 +1,25 @@
 # Integrated Singer Execution
 
+## The journey's export is decoded, not merely measured
+
+September 15, 2026 — export assertion strengthened. The connected journey checked that the exported
+master existed, exceeded a 44-byte header and had a digest. A file larger than a header can still be
+silence, so an export that produced an empty render would have passed the very test written to prove
+the workflow works.
+
+The master is now decoded and required to carry real signal: a 48 kHz rate, at least one channel, a
+non-empty sample buffer, finite samples, a peak above the noise floor and nonzero energy. This also
+confirms the ordinary render path really produces audio for an installed singer, which the earlier
+size check only assumed.
+
+Verified. `seam_procedural_install_journey_tests` passes 14 of 14 with the decoded master, and the
+registered run passes 170 of 170. The installed singer selects, tunes, saves, reopens with the
+producer's source directory and package deleted, and exports audio that is measurably non-silent.
+
+Not claimed. Passing samples and nonzero energy are not intelligibility, identity or musical quality.
+No human has listened to this output, which remains the unreviewed D1 question. No U-unit acceptance
+or Beta GO state changes.
+
 ## A review file beside the singers is not mistaken for one of them
 
 September 15, 2026 — placement risk checked. The review store lives in the same directory the singer
