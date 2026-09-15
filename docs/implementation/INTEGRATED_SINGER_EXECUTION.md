@@ -1,5 +1,27 @@
 # Integrated Singer Execution
 
+## The lane's accessible value is asserted, not assumed from the painting code beside it
+
+September 15, 2026 — D2 accessibility coverage added. The plan requires a full accessible value text
+for the expression lane, and the automation lane is the row a reader who cannot see the curve depends
+on. The code existed in `editor_semantics.cpp`, but no test asserted what it reports, which is how an
+accessibility surface silently regresses to an empty string.
+
+The new case reads the semantic tree the way an assistive client would, finds the automation lane node
+by its id, and checks the reported value names the channel, the channel's own unit, the point count
+and the value at the playhead. It then repeats the check for a channel the selected carrier refuses and
+asserts the stored curve and the refusal are still reported, so a refused channel is described rather
+than dropped. Finding the node by id rather than by display name also fixed a wrong assumption in the
+test itself: the lane node is named `pitch lane`, so matching on the bare lane key found nothing.
+
+Verified. `seam_expression_lane_tests` passes 10 of 10 and the registered run passes 170 of 170.
+Reading the description also confirms a refused channel is described as an editable timbral curve only
+when the carrier actually supports it.
+
+Not claimed. This checks what the tree reports, not how a screen reader presents it, and no assistive
+technology has been run against the lane. IME focus behavior at the minimum window remains uncovered.
+No U-unit acceptance or Beta GO state changes.
+
 ## The expression lane is checked at the minimum window, not only at a comfortable one
 
 September 15, 2026 — D2 layout coverage added. The lane's exit in the plan asks for focused semantic

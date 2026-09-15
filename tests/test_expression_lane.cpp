@@ -14,10 +14,12 @@
 #include "seam/formats/project_json.hpp"
 #include "seam/native_ui/editor_controller.hpp"
 #include "seam/native_ui/editor_scene.hpp"
+#include "seam/native_ui/editor_semantics.hpp"
 #include "seam/native_ui/pixel_surface.hpp"
 #include "seam/text/text_engine.hpp"
 #include "seam/ui/expression_lane.hpp"
 
+#include <functional>
 #include <string>
 #include <vector>
 #include <cstdlib>
@@ -397,6 +399,67 @@ TEST_CASE("The expression lane holds at the minimum window and with long labels"
     CHECK(state.expression.label == descriptor.label);
     CHECK(state.expression.unit == descriptor.unit);
   }
+}
+
+
+// D2 requires a full accessible value text for the lane. The automation lane is the row a reader who
+// cannot see the curve depends on, so its reported value is asserted rather than assumed from the
+// painting code that sits beside it.
+TEST_CASE("The expression lane reports its channel, unit, value and refusal to accessibility") {
+  LaneFixture fixture;
+  auto* region = fixture.session.project().findRegion(fixture.regionId);
+  CHECK(region->growlAutomation.replacePoints({{time::Tick{0}, 0.2F}}));
+  native_ui::NativeEditorController controller{fixture.session, fixture.factory, fixture.regionId, {}};
+  controller.resize(1280.0, 800.0);
+  CHECK(controller.openExpressionLane(ExpressionChannel::Growl).hasValue());
+  const auto state = controller.sceneState();
+  CHECK(state.expressionLabelVisible());
+  const auto tree = native_ui::EditorSemanticTree::build(state, controller.pianoRoll());
+
+  // Find the automation row that carries the expression description and check what it reports.
+  std::string value;
+  std::string description;
+  const std::function<void(const native_ui::SemanticNode&)> walk =
+      [&](const native_ui::SemanticNode& node) {
+        // The lane node is named after the lane, so the automation row is matched by its id.
+        if (node.id == "lane.pitch") {
+          value = node.value;
+          description = node.description;
+        }
+        for (const auto& child : node.children) walk(child);
+      };
+  walk(tree);
+  CHECK(!value.empty());
+  // The channel, its unit and the point count are all present, so a reader learns what is edited.
+  CHECK(value.find("Growl") != std::string::npos);
+  CHECK(value.find("normalized share") != std::string::npos);
+  CHECK(value.find("1 points") != std::string::npos);
+  CHECK(value.find("value at playhead") != std::string::npos);
+  CHECK(!description.empty());
+
+  // A channel the selected carrier refuses still reports its stored curve and the refusal, so the
+  // accessible surface never silently drops a creator's intent.
+  LaneFixture bankFixture{false};
+  auto* bankRegion = bankFixture.session.project().findRegion(bankFixture.regionId);
+  CHECK(bankRegion->formantAutomation.replacePoints({{time::Tick{0}, 3.0F}}));
+  native_ui::NativeEditorController bankController{bankFixture.session, bankFixture.factory,
+                                                  bankFixture.regionId, {}};
+  bankController.resize(1280.0, 800.0);
+  CHECK(bankController.openExpressionLane(ExpressionChannel::Formant).hasValue());
+  const auto bankState = bankController.sceneState();
+  CHECK(bankState.expressionLabelVisible());
+  CHECK(!bankState.expression.refusal.empty());
+  const auto bankTree = native_ui::EditorSemanticTree::build(bankState, bankController.pianoRoll());
+  std::string bankValue;
+  const std::function<void(const native_ui::SemanticNode&)> bankWalk =
+      [&](const native_ui::SemanticNode& node) {
+        if (node.id == "lane.pitch") bankValue = node.value;
+        for (const auto& child : node.children) bankWalk(child);
+      };
+  bankWalk(bankTree);
+  CHECK(bankValue.find("Formant") != std::string::npos);
+  CHECK(bankValue.find("semitones") != std::string::npos);
+  CHECK(bankValue.find("refused") != std::string::npos);
 }
 
 
