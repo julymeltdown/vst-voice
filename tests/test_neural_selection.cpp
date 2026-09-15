@@ -366,6 +366,12 @@ TEST_CASE("standalone controller selects and clears an installed neural singer")
   CHECK(listed.front().version == bundle.version);
   CHECK(listed.front().contentHash == bundle.contentHash);
   CHECK(!listed.front().selected);
+  // The neural menu states what the singer renders, exactly as the procedural picker does. A creator
+  // choosing a neural voice must be able to see that the six timbral channels are not part of it
+  // before writing a phrase, rather than discovering that after drawing a curve.
+  CHECK(listed.front().capabilitySummary.find("neural singer") != std::string::npos);
+  CHECK(listed.front().capabilitySummary.find("pitch") != std::string::npos);
+  CHECK(listed.front().capabilitySummary.find("formant") == std::string::npos);
 
   // A selection this installation cannot run is refused before the project changes.
   const auto& project = session.value()->runtime().document().session().project();

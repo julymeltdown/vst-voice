@@ -235,6 +235,16 @@ StandaloneApplicationController::neuralResources() const {
         .contentHash = resource.contentHash,
         .displayName = resource.id + " " + resource.version,
         .selected = selected,
+        // The deployment this surface actually ships declares the controls the worker consumes; the
+        // route resolver applies the neural carrier's real capability set rather than a claim from the
+        // bundle's own metadata.
+        .capabilitySummary = rendering::singerRouteCapabilitySummary(
+            rendering::resolveSingerRouteForResource(
+                domain::SingerResourceIdentity{.kind = domain::SingerResourceKind::Neural,
+                                                .id = resource.id,
+                                                .version = resource.version,
+                                                .contentHash = resource.contentHash},
+                synthesis::RendererCarrier::Neural, {})),
     });
   }
   return result;

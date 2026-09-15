@@ -113,6 +113,10 @@ struct NeuralResourceMenuItem final {
   std::string contentHash;
   std::string displayName;
   bool selected{false};
+  // What this singer will actually render, from the same route resolver the procedural picker uses.
+  // A neural singer refuses the six timbral channels by name, so a creator choosing between singers
+  // should see that before writing a phrase rather than after drawing a curve that cannot be applied.
+  std::string capabilitySummary;
 };
 
 struct DocumentationMenuItem final {
