@@ -6,7 +6,7 @@ import wave
 import hashlib
 
 from tools.voice_model_training.generated_teacher import (
-    build_export, build_label, build_score, label_config_from_exports,
+    build_export, build_label, build_score, export_from_candidate, label_config_from_exports,
 )
 from tools.voice_model_training.labels import label_report, score_report
 
@@ -172,6 +172,55 @@ class GeneratedTeacherTest(unittest.TestCase):
         # Producing a label configuration is not a permission and not a review, so the command help
         # says so rather than letting a caller read a written file as an approval.
         self.assertIn("creates no permission", result.stdout)
+
+    def test_a_real_captured_candidate_becomes_a_teacher_export(self):
+        # The whole point of the adapter is to consume what the renderer actually wrote, so this
+        # builds the candidate metadata and measured pitch in the shapes the export and the native
+        # extractor produce, rather than hand-feeding a prepared label.
+        frames, rate = 1024, 48000
+        payload = mono_wav(frames, rate)
+        candidate = dict(formatId="com.project-seam.procedural-candidate", schemaVersion=4,
+                         approval="unapproved", sampleRate=rate, frameCount=frames,
+                         recipeHash="e" * 64, renderContentHash="f" * 64, proceduralRevision=14,
+                         markers=[dict(phone="a", startFrame=0, endFrame=512),
+                                  dict(phone="a", startFrame=512, endFrame=1024)])
+        pitch = dict(pitchFrames=[dict(sourceFrame=index * 256, f0Hz=220.0, confidence=0.9, voiced=True)
+                                  for index in range(4)])
+        export = export_from_candidate(candidate=candidate, pitch_features=pitch,
+                                       source_id="p", song_id="s", session_id="x", lineage_id="l",
+                                       syllable_lyrics=["a", "a"], note_midi=[62, 64],
+                                       pcm_payload=payload)
+        self.assertEqual([p["symbol"] for p in export["label"]["phonemes"]], ["a", "a"])
+        self.assertEqual([n["midi"] for n in export["score"]["notes"]], [62, 64])
+        # The measured pitch is carried, not the written score.
+        self.assertEqual(export["label"]["f0Hz"], [220.0] * 4)
+        label_report(export["label"], vocabulary={"a"}, minimum_confidence=0.0)
+        score_report(export["score"], frame_count=frames,
+                     phoneme_count=2, explicit_silence=True)
+
+    def test_a_captured_candidate_must_still_be_unapproved(self):
+        candidate = dict(formatId="com.project-seam.procedural-candidate", approval="approved",
+                         sampleRate=48000, frameCount=512, recipeHash="a" * 64,
+                         renderContentHash="b" * 64, proceduralRevision=14,
+                         markers=[dict(phone="a", startFrame=0, endFrame=512)])
+        with self.assertRaises(ValueError):
+            export_from_candidate(candidate=candidate, pitch_features=dict(pitchFrames=[]),
+                                  source_id="p", song_id="s", session_id="x", lineage_id="l",
+                                  syllable_lyrics=["a"], note_midi=[62], pcm_payload=mono_wav(512))
+
+    def test_a_candidate_with_a_marker_gap_is_refused(self):
+        candidate = dict(formatId="com.project-seam.procedural-candidate", approval="unapproved",
+                         sampleRate=48000, frameCount=1024, recipeHash="a" * 64,
+                         renderContentHash="b" * 64, proceduralRevision=14,
+                         markers=[dict(phone="a", startFrame=0, endFrame=512),
+                                  dict(phone="i", startFrame=600, endFrame=1024)])
+        pitch = dict(pitchFrames=[dict(sourceFrame=index * 256, f0Hz=220.0, confidence=0.9, voiced=True)
+                                  for index in range(4)])
+        with self.assertRaises(ValueError):
+            export_from_candidate(candidate=candidate, pitch_features=pitch,
+                                  source_id="p", song_id="s", session_id="x", lineage_id="l",
+                                  syllable_lyrics=["a", "i"], note_midi=[62, 64],
+                                  pcm_payload=mono_wav(1024))
 
 
 if __name__ == "__main__":

@@ -262,3 +262,80 @@ def label_config_from_exports(*, exports: list[dict], sample_rate: int,
     return dict(formatId="com.project-seam.voice-training-label-config", schemaVersion=3,
                 sampleRate=sample_rate, sources=sources, labels=labels,
                 vocabulary=list(vocabulary), minimumConfidence=float(minimum_confidence))
+
+
+def export_from_candidate(*, candidate: dict, pitch_features: dict, source_id: str,
+                          song_id: str, session_id: str, lineage_id: str,
+                          syllable_lyrics: list[str], note_midi: list[int | None],
+                          pcm_payload: bytes) -> dict:
+    """Build a teacher export from a real procedural candidate and its measured pitch.
+
+    ``candidate`` is the metadata the export writes beside a baked candidate: it carries the
+    renderer's own phone markers, each with the span it owned, and the audio digest. ``pitch_features``
+    is the native extractor's full-hop measurement of that same audio. The phone spans are taken from
+    the renderer's markers rather than from the score, because the markers are what the engine
+    actually produced, and they are still intent rather than acoustic proof.
+
+    The measured F0 is used, not the written score, because the teacher is an expressive synthesizer
+    and a student should learn what it sang rather than what the note asked for.
+    """
+    if not isinstance(candidate, dict) or candidate.get("formatId") != "com.project-seam.procedural-candidate":
+        raise ValueError("Generated teacher requires a captured procedural candidate")
+    if candidate.get("approval") != "unapproved":
+        raise ValueError("A captured candidate must still be unapproved when it is used as teaching material")
+    markers = candidate.get("markers")
+    if not isinstance(markers, list) or not 1 <= len(markers) <= 4096:
+        raise ValueError("Captured candidate markers are missing or oversized")
+    frame_count = _require_int(candidate.get("frameCount"), "candidate frameCount", maximum=192000 * 600)
+    spans = []
+    for marker in markers:
+        if not isinstance(marker, dict) or "phone" not in marker:
+            raise ValueError("Captured candidate marker is malformed")
+        spans.append(dict(symbol=_require_text(marker["phone"], "marker phone"),
+                          startFrame=_require_int(marker["startFrame"], "marker startFrame", maximum=frame_count),
+                          endFrame=_require_int(marker["endFrame"], "marker endFrame", maximum=frame_count),
+                          # The renderer's plan is exact about which phone it produced, so alignment
+                          # confidence is fully 1.0 in the span sense even though the span is not
+                          # proof of an acoustic boundary.
+                          confidence=1.0))
+    frames = pitch_features.get("pitchFrames") if isinstance(pitch_features, dict) else None
+    if not isinstance(frames, list) or not frames:
+        raise ValueError("Captured candidate requires its measured pitch frames")
+    f0_hz = [float(frame["f0Hz"]) for frame in frames]
+    voiced = [frame["voiced"] for frame in frames]
+    if len(syllable_lyrics) != len(note_midi):
+        raise ValueError("Generated teacher needs one MIDI value per syllable lyric")
+    # Notes and rests must partition the source frames, so each captured marker span becomes one note
+    # in order and the syllable follows the marker's phone. A marker whose phone is a declared silence
+    # keeps the rest semantics rather than being forced into a syllable.
+    notes, next_frame, syllable = [], 0, 0
+    for index, marker in enumerate(markers):
+        start = _require_int(marker["startFrame"], "note startFrame", maximum=frame_count)
+        end = _require_int(marker["endFrame"], "note endFrame", maximum=frame_count)
+        if start != next_frame or not start < end:
+            raise ValueError("Captured candidate markers must partition the phrase contiguously")
+        midi = note_midi[index] if index < len(note_midi) else None
+        if midi is None:
+            notes.append(dict(startFrame=start, endFrame=end, midi=None, syllable=None, slur=False))
+        else:
+            if syllable >= len(syllable_lyrics):
+                raise ValueError("Captured candidate has more pitched markers than declared syllables")
+            notes.append(dict(startFrame=start, endFrame=end, midi=_require_int(midi, "note midi", maximum=127),
+                              syllable=syllable, slur=False))
+            syllable += 1
+        next_frame = end
+    if next_frame != frame_count:
+        raise ValueError("Captured candidate markers must cover the complete phrase")
+    score = build_score(language="ja", syllable_lyrics=list(syllable_lyrics),
+                        note_spans=notes, frame_count=frame_count, silence_indices=[])
+    return build_export(source_id=source_id, song_id=song_id, session_id=session_id,
+                        lineage_id=lineage_id, sample_rate=candidate["sampleRate"],
+                        hop_size=256, frame_count=frame_count, phone_spans=spans,
+                        f0_hz=f0_hz, voiced=voiced, score=score, pcm_payload=pcm_payload,
+                        recipe_sha256=candidate["recipeHash"], engine_id="seam.source-filter.v1",
+                        # The captured candidate records the renderer revision that produced the audio,
+                        # and that revision is part of what the material is. Defaulting a missing one
+                        # would attribute the audio to a revision nobody recorded.
+                        engine_revision=_require_int(candidate["proceduralRevision"], "proceduralRevision",
+                                                     minimum=1, maximum=1_000_000),
+                        score_sha256=candidate["renderContentHash"])
