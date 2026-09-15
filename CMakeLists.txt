@@ -436,6 +436,7 @@ add_library(seam_distribution
   libs/seam-distribution/src/sealed_handoff.cpp
   libs/seam-distribution/src/procedural_package.cpp
   libs/seam-distribution/src/procedural_review.cpp
+  libs/seam-distribution/src/procedural_review_store.cpp
 )
 target_include_directories(seam_distribution PUBLIC
   libs/seam-distribution/include)

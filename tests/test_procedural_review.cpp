@@ -5,9 +5,12 @@
 #include "test_support.hpp"
 
 #include "seam/distribution/procedural_review.hpp"
+#include "seam/distribution/procedural_review_store.hpp"
 #include "seam/core/sha256.hpp"
 
 #include <algorithm>
+#include <atomic>
+#include <thread>
 #include <filesystem>
 #include <fstream>
 #include <string>
@@ -320,3 +323,143 @@ TEST_CASE("A malformed or wrong-family review basis document is refused") {
   if (decoded) return;
   CHECK(decoded.error().code == seam::core::ErrorCode::Unsupported);
 }
+
+// A review store is the only durable record of what a reviewer approved, so it must refuse to lose or
+// rewrite a decision. These cases check the store's own integrity, not the review rules it reuses.
+TEST_CASE("A review store keeps decisions across reopen and refuses a duplicate id") {
+  const auto root = test::support::temporaryDirectory("procedural-review-store");
+  const auto statePath = root / "reviews" / "decisions.json";
+  auto store = distribution::ProceduralReviewStore::open(statePath);
+  CHECK(store.hasValue());
+  if (!store) return;
+  CHECK(!std::filesystem::exists(statePath));
+
+  const auto fixture = makeFixture("procedural-review-store-record");
+  const auto accepted = decisionFor(fixture.candidate, "review-1",
+                                    distribution::ProceduralReviewDecisionKind::Accept);
+  CHECK(store.value().record(fixture.candidate, accepted).hasValue());
+  CHECK(std::filesystem::exists(statePath));
+  CHECK(store.value().size() == 1U);
+  // The same id describes the same decision, so it is refused rather than appended a second time.
+  const auto duplicate = store.value().record(fixture.candidate, accepted);
+  CHECK(!duplicate.hasValue());
+  CHECK(store.value().size() == 1U);
+
+  // A reopened store still resolves the approval, so the decision survived the round trip.
+  auto reopened = distribution::ProceduralReviewStore::open(statePath);
+  CHECK(reopened.hasValue());
+  if (!reopened) return;
+  const auto receipt = reopened.value().resolve(fixture.candidate);
+  CHECK(receipt.hasValue());
+  if (!receipt) return;
+  CHECK(receipt.value().accepted());
+  CHECK(receipt.value().current.size() == 1U);
+
+  // A second decision against the same candidate is appended, and the later one decides.
+  const auto rejected = decisionFor(fixture.candidate, "review-2",
+                                    distribution::ProceduralReviewDecisionKind::Reject,
+                                    "2026-09-15T12:00:00Z");
+  CHECK(reopened.value().record(fixture.candidate, rejected).hasValue());
+  const auto after = reopened.value().resolve(fixture.candidate);
+  CHECK(after.hasValue());
+  if (!after) return;
+  CHECK(!after.value().accepted());
+  CHECK(after.value().reject());
+  CHECK(after.value().current.size() == 2U);
+}
+
+TEST_CASE("A review store refuses a decision that is not about the candidate it names") {
+  const auto root = test::support::temporaryDirectory("procedural-review-store-refusals");
+  auto store = distribution::ProceduralReviewStore::open(root / "decisions.json");
+  CHECK(store.hasValue());
+  if (!store) return;
+  const auto fixture = makeFixture("procedural-review-store-refusal-fixture");
+  // Every rule that makes a decision meaningful still applies through the store.
+  auto forged = decisionFor(fixture.candidate, "review-1",
+                            distribution::ProceduralReviewDecisionKind::Accept);
+  forged.basisDigest = std::string(64U, 'b');
+  CHECK(!store.value().record(fixture.candidate, forged).hasValue());
+  auto anonymous = decisionFor(fixture.candidate, "review-2",
+                               distribution::ProceduralReviewDecisionKind::Accept);
+  anonymous.reviewerId.clear();
+  CHECK(!store.value().record(fixture.candidate, anonymous).hasValue());
+  auto noEvidence = fixture.candidate;
+  noEvidence.basis.scoreSha256.clear();
+  noEvidence.basis.audioSha256.clear();
+  distribution::ProceduralReviewDecision bare;
+  bare.reviewId = "review-3";
+  bare.candidateId = noEvidence.candidateId;
+  bare.basisDigest = noEvidence.basis.digest().value();
+  bare.kind = distribution::ProceduralReviewDecisionKind::Accept;
+  bare.reviewerId = "reviewer-1";
+  bare.reviewedAtUtc = "2026-09-15T10:00:00Z";
+  CHECK(!store.value().record(noEvidence, bare).hasValue());
+  // Nothing was written, because every attempt was refused before the store was touched.
+  CHECK(store.value().size() == 0U);
+  CHECK(!std::filesystem::exists(root / "decisions.json"));
+}
+
+TEST_CASE("A corrupt review store is reported rather than replaced") {
+  const auto root = test::support::temporaryDirectory("procedural-review-store-corrupt");
+  const auto statePath = root / "decisions.json";
+  std::filesystem::create_directories(root);
+  // A store is the only record of an approval, so damage must surface instead of being overwritten.
+  std::ofstream(statePath, std::ios::binary | std::ios::trunc) << "{ not json";
+  const auto opened = distribution::ProceduralReviewStore::open(statePath);
+  CHECK(!opened.hasValue());
+  CHECK(std::filesystem::exists(statePath));
+  // A store claiming another format is refused even when it is valid JSON.
+  std::ofstream(statePath, std::ios::binary | std::ios::trunc)
+      << R"({\"formatId\":\"com.project-seam.procedural-singer\",\"schemaVersion\":1,\"decisions\":[]})";
+  CHECK(!distribution::ProceduralReviewStore::open(statePath).hasValue());
+  // An unrecognised decision kind must not be read as a rejection, which would discard an approval.
+  std::ofstream(statePath, std::ios::binary | std::ios::trunc) << R"({\"formatId\":\""
+      << "com.project-seam.procedural-review-store\" << R"(\",\"schemaVersion\":1,\"decisions\":[{\"reviewId\":\"r\",\"candidateId\":\"c\",\"basisDigest\":\""
+      << std::string(64U, 'a') << R"(\",\"kind\":\"maybe\",\"reviewerId\":\"p\",\"reviewedAtUtc\":\"t\"}]})";
+  CHECK(!distribution::ProceduralReviewStore::open(statePath).hasValue());
+  // An empty path is a conflict rather than a silent no-op.
+  CHECK(!distribution::ProceduralReviewStore::open(std::filesystem::path{}).hasValue());
+}
+
+// The store's read-modify-write must not lose a decision when two writers race. A lost approval is
+// silent, so it is tested directly rather than assumed from the lock's presence.
+TEST_CASE("Concurrent review decisions are all retained rather than lost") {
+  const auto root = test::support::temporaryDirectory("procedural-review-store-race");
+  const auto statePath = root / "decisions.json";
+  const auto fixture = makeFixture("procedural-review-store-race-fixture");
+  constexpr std::size_t kWriters = 8U;
+  std::atomic<std::size_t> accepted{0U};
+  std::atomic<std::size_t> refused{0U};
+  std::vector<std::thread> threads;
+  threads.reserve(kWriters);
+  for (std::size_t index = 0U; index < kWriters; ++index) {
+    threads.emplace_back([&, index] {
+      auto store = distribution::ProceduralReviewStore::open(statePath);
+      if (!store) {
+        ++refused;
+        return;
+      }
+      auto decision = decisionFor(fixture.candidate, "review-" + std::to_string(index),
+                                  distribution::ProceduralReviewDecisionKind::Accept,
+                                  "2026-09-15T10:00:0" + std::to_string(index) + "Z");
+      if (store.value().record(fixture.candidate, decision)) {
+        ++accepted;
+      } else {
+        ++refused;
+      }
+    });
+  }
+  for (auto& thread : threads) thread.join();
+  // At least one writer must succeed, and every success must be present afterwards. A store that
+  // lost an update would report fewer decisions than the number of successful records.
+  CHECK(accepted.load() >= 1U);
+  auto reopened = distribution::ProceduralReviewStore::open(statePath);
+  CHECK(reopened.hasValue());
+  if (!reopened) return;
+  const auto receipt = reopened.value().resolve(fixture.candidate);
+  CHECK(receipt.hasValue());
+  if (!receipt) return;
+  CHECK(receipt.value().current.size() == accepted.load());
+  CHECK(accepted.load() + refused.load() == kWriters);
+}
+

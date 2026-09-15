@@ -4,6 +4,8 @@
 #include "seam/native_ui/export_dialog.hpp"
 #include "seam/authoring/automatic_performance_capture.hpp"
 #include "seam/voice_design/recipe_resource.hpp"
+#include "seam/build/version.hpp"
+#include "seam/synthesis/performance_compiler.hpp"
 #include "seam/application/render_commands.hpp"
 #include <set>
 
@@ -1999,6 +2001,133 @@ core::Result<void> StandaloneApplicationController::recover(
   if (recovered) notifyStateChanged();
   return recovered;
 }
+
+
+namespace {
+
+// The review candidate id names the exact installed resource, so a decision can never be reported as
+// current for a different recipe with the same producer version.
+std::string reviewCandidateId(const distribution::ProceduralCandidate& candidate) {
+  return candidate.manifest.id + "-" + candidate.renderIdentity.contentHash;
+}
+
+}  // namespace
+
+core::Result<distribution::ProceduralReviewCandidate>
+StandaloneApplicationController::reviewCandidateForSelectedSinger(
+    const std::filesystem::path& scoreEvidence, const std::filesystem::path& audioEvidence) const {
+  using Output = distribution::ProceduralReviewCandidate;
+  if (config_.renderableProceduralEngineId.empty())
+    return core::failure<Output>(core::ErrorCode::Unsupported,
+                                 "This build does not declare a renderable procedural engine");
+  const auto trackId = session_.runtime().selectedTrack();
+  const auto* track = session_.runtime().document().session().project().findVocalTrack(trackId);
+  if (track == nullptr || !track->proceduralRecipe)
+    return core::failure<Output>(
+        core::ErrorCode::Conflict,
+        "Reviewing requires a track with a procedural singer selected");
+  auto offers = installedSingerOffers();
+  if (!offers) return core::Result<Output>{offers.error()};
+  const distribution::ProceduralCandidate* installed = nullptr;
+  for (const auto& offer : offers.value()) {
+    if (offer.selectable && offer.candidate.renderIdentity == track->proceduralRecipe->resource) {
+      installed = &offer.candidate;
+      break;
+    }
+  }
+  if (installed == nullptr)
+    return core::failure<Output>(
+        core::ErrorCode::NotFound,
+        "The selected procedural singer is not an installed resource this build can render, so it "
+        "cannot carry an installed review");
+  // The project stores its rate as a real number, so it is validated and converted explicitly
+  // rather than narrowed: a review basis records the exact rate the evidence was produced at.
+  const auto projectSampleRate =
+      session_.runtime().document().session().project().settings().sampleRate;
+  if (!(projectSampleRate >= 1.0) || projectSampleRate > 768000.0)
+    return core::failure<Output>(core::ErrorCode::InvalidState,
+                                 "The project sample rate is not a rate a renderer can produce",
+                                 std::to_string(projectSampleRate));
+  const auto basis = distribution::freezeProceduralReviewBasis(
+      installed->manifest, installed->contentHash, std::string{build::kRenderAbiId},
+      synthesis::kPerformanceCompilerRevision,
+      static_cast<std::uint32_t>(projectSampleRate), scoreEvidence,
+      audioEvidence,
+      // The settings digest covers the render facts a decision depends on beyond the recipe itself.
+      std::string{build::kRenderAbiId} + ":" +
+          std::to_string(config_.renderableProceduralEngineRevision));
+  if (!basis) return core::Result<Output>{basis.error()};
+  Output review;
+  review.candidateId = reviewCandidateId(*installed);
+  review.manifest = installed->manifest;
+  review.basis = basis.value();
+  return review;
+}
+
+core::Result<distribution::ProceduralReviewReceipt>
+StandaloneApplicationController::installedSingerReview() const {
+  using Output = distribution::ProceduralReviewReceipt;
+  if (config_.proceduralReviewStorePath.empty())
+    return core::failure<Output>(core::ErrorCode::Unsupported,
+                                 "This build has no procedural review store configured");
+  const auto trackId = session_.runtime().selectedTrack();
+  const auto* track = session_.runtime().document().session().project().findVocalTrack(trackId);
+  if (track == nullptr || !track->proceduralRecipe)
+    return core::failure<Output>(core::ErrorCode::Conflict,
+                                 "Reading a review requires a track with a procedural singer selected");
+  auto store = distribution::ProceduralReviewStore::open(config_.proceduralReviewStorePath);
+  if (!store) return core::Result<Output>{store.error()};
+  const auto offers = installedSingerOffers();
+  if (!offers) return core::Result<Output>{offers.error()};
+  for (const auto& offer : offers.value()) {
+    if (!offer.selectable) continue;
+    if (offer.candidate.renderIdentity != track->proceduralRecipe->resource) continue;
+    const auto candidateId = reviewCandidateId(offer.candidate);
+    auto decisions = store.value().decisionsFor(candidateId);
+    if (!decisions) return core::Result<Output>{decisions.error()};
+    if (decisions.value().empty()) return core::success(Output{.candidateId = candidateId});
+    // Reading does not require fresh evidence, so the candidate is rebuilt from the basis the
+    // decision itself recorded.
+    const auto& recorded = decisions.value().back();
+    if (!recorded.recordedBasis.has_value())
+      return core::failure<Output>(core::ErrorCode::InvalidState,
+                                   "A stored decision carries no basis to resolve against",
+                                   recorded.reviewId);
+    distribution::ProceduralReviewCandidate review;
+    review.candidateId = candidateId;
+    review.manifest = offer.candidate.manifest;
+    review.basis = recorded.recordedBasis.value();
+    return store.value().resolve(review);
+  }
+  return core::failure<Output>(core::ErrorCode::NotFound,
+                               "The selected procedural singer is not an installed resource");
+}
+
+core::Result<distribution::ProceduralReviewReceipt>
+StandaloneApplicationController::reviewInstalledSinger(
+    const distribution::ProceduralReviewDecision& decision,
+    const std::filesystem::path& scoreEvidence, const std::filesystem::path& audioEvidence) {
+  using Output = distribution::ProceduralReviewReceipt;
+  if (config_.proceduralReviewStorePath.empty())
+    return core::failure<Output>(core::ErrorCode::Unsupported,
+                                 "This build has no procedural review store configured");
+  auto review = reviewCandidateForSelectedSinger(scoreEvidence, audioEvidence);
+  if (!review) return core::Result<Output>{review.error()};
+  auto recorded = decision;
+  recorded.candidateId = review.value().candidateId;
+  // The digest the decision names is the candidate's own, so a caller cannot approve material other
+  // than the resource the track actually selected.
+  const auto digest = review.value().basis.digest();
+  if (!digest) return core::Result<Output>{digest.error()};
+  recorded.basisDigest = digest.value();
+  recorded.recordedBasis = review.value().basis;
+  auto store = distribution::ProceduralReviewStore::open(config_.proceduralReviewStorePath);
+  if (!store) return core::Result<Output>{store.error()};
+  const auto stored = store.value().record(review.value(), recorded);
+  if (!stored) return core::Result<Output>{stored.error()};
+  return store.value().resolve(review.value());
+}
+
 
 core::Result<std::filesystem::path>
 StandaloneApplicationController::copyInstalledSingerToDraft(

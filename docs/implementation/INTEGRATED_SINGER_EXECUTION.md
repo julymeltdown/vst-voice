@@ -1,5 +1,49 @@
 # Integrated Singer Execution
 
+## A review decision now survives a restart and is reachable from the application
+
+September 15, 2026 — D4.2 completed. The review binding existed as a library type, which meant a
+decision could be validated but not kept: there was no store, so nothing survived a restart, and the
+authoring session exposed no way to record or read one. A decision that cannot be persisted is not a
+review, it is a calculation.
+
+`ProceduralReviewStore` is a durable, append-only store of decisions keyed by the exact basis they
+were made about. It reuses the same validation a direct `recordProceduralReviewDecision` call gets, so
+a stored decision is one that could legitimately have been recorded: a forged digest, an anonymous
+reviewer and an acceptance with no evidence are all refused before the file is touched. A duplicate
+review id is refused rather than appended, an unknown stored kind is refused rather than read as a
+rejection, and a corrupt store is reported rather than replaced, because it is the only record of what
+a reviewer approved.
+
+Two real defects were found while landing it. The store's read-modify-write was initially unsynchronized
+after the type's mutex prevented the store from being moved into a `Result`; it now holds an OS file
+lock across the load and the atomic publish, so a second process is excluded as well as a second
+caller, and a concurrency case pins that no successful record is lost. Separately, the store dropped
+the basis a decision was made about, so a decision could not be resolved after a restart at all — it
+would have been reported as carrying no basis. The basis is now persisted through its own codec and is
+required on both write and read.
+
+`StandaloneApplicationController::reviewInstalledSinger` and `installedSingerReview` connect the store
+to the application for the installed singer a track actually selected: the candidate is built from
+that exact resource, the evidence digests are computed from the supplied files, and the caller's own
+basis digest is replaced with the candidate's so a forged one cannot take effect. Reading back needs no
+fresh evidence. A build with no configured store reports that rather than recording nothing.
+
+Verified. `seam_procedural_review_tests` passes 14 of 14 and `seam_procedural_install_journey_tests`
+passes 12 of 12. The store keeps decisions across reopen, refuses a duplicate id, appends a second
+decision and lets the later one decide; refuses every decision the library rules refuse without
+creating a file; reports a corrupt, wrong-family or unknown-kind store instead of replacing it; retains
+every successful record under eight concurrent writers; and through the application, reviewing without
+a selected singer or with missing evidence fails, a real review is recorded and read back with the
+same basis digest, and a forged digest does not become the stored one.
+
+Not claimed. No human has reviewed a procedural singer; every decision in these cases was written by
+the test. The store is not yet driven from a native menu action, so there is no creator-facing control
+for it, and no evidence in this checkpoint is a musical judgment. Signing remains authenticity, and a
+stored acceptance is a recorded human decision, not a qualification. No U-unit acceptance or Beta GO
+state changes.
+
+
 ## The review step is now inside the installed journey, not beside it
 
 September 15, 2026 — D4.8 completed. The connected journey covered authoring, packaging, installation,

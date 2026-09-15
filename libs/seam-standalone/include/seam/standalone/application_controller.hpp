@@ -9,6 +9,7 @@
 #include "seam/authoring/voicebank_browser.hpp"
 #include "seam/authoring/voicebank_installer_service.hpp"
 #include "seam/distribution/procedural_package.hpp"
+#include "seam/distribution/procedural_review_store.hpp"
 #include "seam/voicebank/coverage.hpp"
 #include "seam/core/result.hpp"
 #include "seam/platform/application_menu.hpp"
@@ -39,6 +40,9 @@ struct StandaloneApplicationControllerConfig final {
   // because a resource built for another engine must not be chosen here.
   std::string renderableProceduralEngineId{};
   std::uint32_t renderableProceduralEngineRevision{0U};
+  // Where procedural review decisions are recorded. Empty leaves decision recording unavailable, and
+  // a caller that asks for it is told so rather than silently recording nothing.
+  std::filesystem::path proceduralReviewStorePath{};
   std::filesystem::path manualsRoot{};
   std::vector<distribution::Ed25519PublicKey> trustedVoicebankKeys{};
   std::optional<distribution::Ed25519PublicKey> developmentTrustRoot{};
@@ -229,6 +233,20 @@ public:
     bool selectable{false};
   };
   [[nodiscard]] core::Result<std::vector<InstalledSingerOffer>> installedSingerOffers() const;
+  // Freeze a review candidate for the installed singer this track uses, hash the evidence supplied,
+  // and record the decision in the configured store. Reviewing needs a rendered score and audio to
+  // examine, so both are required and their digests are computed from the files rather than trusted.
+  [[nodiscard]] core::Result<distribution::ProceduralReviewReceipt> reviewInstalledSinger(
+      const distribution::ProceduralReviewDecision& decision,
+      const std::filesystem::path& scoreEvidence,
+      const std::filesystem::path& audioEvidence);
+  // The stored decisions for the installed singer this track uses, so a surface can show whether the
+  // selected resource is reviewed before a creator relies on it.
+  [[nodiscard]] core::Result<distribution::ProceduralReviewReceipt> installedSingerReview() const;
+  // The review candidate for the installed singer this track uses, built from the evidence supplied.
+  [[nodiscard]] core::Result<distribution::ProceduralReviewCandidate> reviewCandidateForSelectedSinger(
+      const std::filesystem::path& scoreEvidence,
+      const std::filesystem::path& audioEvidence) const;
   // Copy the installed singer this track uses into a creator-owned draft and select that draft, so
   // editing it cannot rewrite the signed installation it came from. Returns the draft path.
   [[nodiscard]] core::Result<std::filesystem::path> copyInstalledSingerToDraft(

@@ -894,3 +894,93 @@ TEST_CASE("A reviewed recipe keeps its approval into the installed journey and l
   mislabelled.recordedBasis = candidate.basis;
   CHECK(!distribution::recordProceduralReviewDecision(editedCandidate, mislabelled).hasValue());
 }
+
+// The D4.2 decision store must be reachable from the application, not only from the library, so a
+// creator-facing surface can record and read a review of the singer it actually selected.
+TEST_CASE("The application records and reads a review of the installed singer it selected") {
+  const auto root = test::support::temporaryDirectory("procedural-app-review");
+  auto key = distribution::generateSigningKeyPair();
+  CHECK(key.hasValue());
+  if (!key) return;
+  const auto package = createProceduralPackage(root, key.value());
+  const auto installRoot = root / "singers";
+  distribution::InstallProceduralOptions installOptions;
+  installOptions.verification = distribution::VerifySeambankOptions{
+      .limits = {}, .trustedPublicKeys = {key.value().publicKey}, .requireTrustedSigner = true};
+  CHECK(distribution::installProceduralPackage(package, installRoot, installOptions).hasValue());
+
+  auto session = standalone::AuthoringSession::create(standalone::AuthoringSessionConfig{
+      .cacheRoot = root / "cache",
+      .voicebankRoots = {},
+      .sampleRate = 48000U,
+      .outputChannels = 2U,
+      .bindFirstAvailableVoicebank = false,
+      .allowDevelopmentVoicebanks = false});
+  CHECK(session.hasValue());
+  if (!session) return;
+  auto dialog = std::make_unique<FakeDialog>();
+  auto* picker = dialog.get();
+  standalone::StandaloneApplicationControllerConfig config{
+      .autosaveRoot = root / "autosaves", .recentProjectsPath = root / "recent.json"};
+  config.proceduralSingerRoots = {distribution::ProceduralSearchRoot{
+      .path = installRoot, .kind = distribution::ProceduralRootKind::Installed}};
+  config.renderableProceduralEngineId = "seam.source-filter.v1";
+  config.renderableProceduralEngineRevision = 14U;
+  config.proceduralReviewStorePath = root / "reviews" / "decisions.json";
+  auto controller = standalone::StandaloneApplicationController::create(
+      *session.value(), std::move(dialog), std::make_unique<FakePrompt>(), config);
+  CHECK(controller.hasValue());
+  if (!controller) return;
+  // Reviewing needs a selected installed singer and evidence to examine.
+  const auto evidence = root / "evidence";
+  std::filesystem::create_directories(evidence);
+  std::ofstream(evidence / "phrase.json") << "{\"notes\":\"a\"}";
+  std::ofstream(evidence / "phrase.wav") << "dry render";
+  distribution::ProceduralReviewDecision decision;
+  decision.reviewId = "review-1";
+  decision.kind = distribution::ProceduralReviewDecisionKind::Accept;
+  decision.reviewerId = "producer-1";
+  decision.reviewedAtUtc = "2026-09-15T09:00:00Z";
+  CHECK(!controller.value()
+             ->reviewInstalledSinger(decision, evidence / "phrase.json", evidence / "phrase.wav")
+             .hasValue());
+
+  // With a singer selected, the same call records the decision and returns it as current.
+  picker->styleResponse = std::nullopt;
+  CHECK(controller.value()->dispatch(platform::ApplicationCommand::SelectInstalledProceduralSinger));
+  picker->styleResponse = picker->offeredStyles.front();
+  CHECK(controller.value()->dispatch(platform::ApplicationCommand::SelectInstalledProceduralSinger));
+  const auto reviewed = controller.value()->reviewInstalledSinger(
+      decision, evidence / "phrase.json", evidence / "phrase.wav");
+  CHECK(reviewed.hasValue());
+  if (!reviewed) return;
+  CHECK(reviewed.value().accepted());
+  CHECK(reviewed.value().current.size() == 1U);
+  CHECK(!reviewed.value().basisDigest.empty());
+
+  // Reading it back does not require fresh evidence, and it is still the same approval.
+  const auto read = controller.value()->installedSingerReview();
+  CHECK(read.hasValue());
+  if (!read) return;
+  CHECK(read.value().accepted());
+  CHECK(read.value().current.size() == 1U);
+  CHECK(read.value().basisDigest == reviewed.value().basisDigest);
+
+  // Missing evidence is refused rather than recorded with an invented digest.
+  auto second = decision;
+  second.reviewId = "review-2";
+  CHECK(!controller.value()
+             ->reviewInstalledSinger(second, evidence / "absent.json", evidence / "phrase.wav")
+             .hasValue());
+  // An acceptance cannot be recorded about material other than the selected resource: the caller's
+  // digest is replaced with the candidate's, so a forged digest simply does not take effect.
+  auto forged = decision;
+  forged.reviewId = "review-3";
+  forged.basisDigest = std::string(64U, 'f');
+  const auto replaced = controller.value()->reviewInstalledSinger(
+      forged, evidence / "phrase.json", evidence / "phrase.wav");
+  CHECK(replaced.hasValue());
+  if (!replaced) return;
+  CHECK(replaced.value().basisDigest != forged.basisDigest);
+  CHECK(replaced.value().accepted());
+}
