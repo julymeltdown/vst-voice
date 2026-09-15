@@ -12,6 +12,7 @@
 #include "seam/application/note_commands.hpp"
 #include "seam/application/arrangement_commands.hpp"
 #include "seam/core/sha256.hpp"
+#include "seam/formats/project_json.hpp"
 #include "seam/formats/json_value.hpp"
 #include "seam/distribution/procedural_package.hpp"
 #include "seam/distribution/signing.hpp"
@@ -469,6 +470,41 @@ TEST_CASE("Tuning an installed singer survives undo, save, reopen and export") {
   CHECK(reopenedExport.hasValue());
   if (!reopenedExport) return;
   CHECK(reopenedExport.value().masterSha256 == tuned.value().masterSha256);
+
+  // What the receipt's project identity describes, pinned so it cannot drift. The receipt is written
+  // at export and names the project bytes the export was made from. Recording the renderer that
+  // produced this audio is a later edit to the document, so a project saved after its first export has
+  // different bytes than the receipt records while its audio is unchanged. That is the honest reading:
+  // the receipt describes the export's input, and the sound is compared by the audio hash rather than
+  // through the receipt. This is asserted rather than assumed because the two identities are computed
+  // from different encodings, and a future change that made one silently cover the other would
+  // otherwise pass unnoticed.
+  {
+    const auto receipt = core::readTextFileLimited(tuned.value().receiptPath, 4U << 20U);
+    CHECK(receipt.hasValue());
+    if (!receipt) return;
+    const auto parsed = formats::parseJson(receipt.value());
+    CHECK(parsed.hasValue());
+    if (!parsed) return;
+    const auto* field = parsed.value().find("projectContentHash");
+    CHECK(field != nullptr);
+    if (field == nullptr) return;
+    const auto recorded = std::string{field->asString()};
+    CHECK(recorded.size() == 64U);
+    // The receipt names the project document as it stood when the export was made, and the reopened
+    // session's project is exactly that document because this export is the most recent edit. The
+    // distinction that matters is against the audio identity, which is deliberately a different thing:
+    // the sound is compared by its master digest, never through this document digest. Recording that a
+    // renderer produced audio is an edit made after the export, so a project saved later has different
+    // bytes than this receipt records while its sound is unchanged. Pinning the document-side equality
+    // here means a change that made the receipt cover something else would fail rather than pass.
+    const auto documentEncoding = formats::ProjectJsonCodec{}.encode(
+        reopened.session->runtime().document().session().project());
+    CHECK(documentEncoding.hasValue());
+    if (!documentEncoding) return;
+    CHECK(recorded == core::sha256Hex(documentEncoding.value()));
+    CHECK(recorded != tuned.value().masterSha256);
+  }
 
   // Retain listenable audio beside a manifest when a caller names an artifact root. The material is
   // what the workflow and perceptual observations need, and it is written outside the repository
