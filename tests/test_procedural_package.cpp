@@ -5,6 +5,7 @@
 #include "test_support.hpp"
 
 #include "seam/distribution/procedural_package.hpp"
+#include "seam/distribution/procedural_review_store.hpp"
 #include "seam/distribution/seambank.hpp"
 #include "seam/distribution/signing.hpp"
 #include "seam/core/sha256.hpp"
@@ -553,3 +554,40 @@ TEST_CASE("A procedural singer built for another engine is reported as incompati
   distribution::ProceduralResolveOptions unchecked;
   CHECK(distribution::resolveProceduralSinger(reference, scanned.value(), unchecked).resolved());
 }
+
+// The review store lives beside the installed singers, in the same directory the catalogue scans, so a
+// stray file there must not be mistaken for a singer. This is the kind of accident that only appears
+// once both features are switched on together.
+TEST_CASE("A review file beside the singers is not mistaken for an installed singer") {
+  const auto root = test::support::temporaryDirectory("procedural-review-beside-singers");
+  const auto source = createProceduralSource(root);
+  auto key = distribution::generateSigningKeyPair();
+  CHECK(key.hasValue());
+  if (!key) return;
+  const auto packagePath = root / "pilot.seamsinger";
+  CHECK(distribution::packProceduralPackage(source, packagePath, key.value()).hasValue());
+  const auto installRoot = root / "installed";
+  distribution::InstallProceduralOptions installOptions;
+  installOptions.verification = distribution::VerifySeambankOptions{
+      .limits = {}, .trustedPublicKeys = {key.value().publicKey}, .requireTrustedSigner = true};
+  auto installed = distribution::installProceduralPackage(packagePath, installRoot, installOptions);
+  CHECK(installed.hasValue());
+  if (!installed) return;
+
+  // A real review store in the scanned root, plus a stray file, both outside any product directory.
+  auto store = distribution::ProceduralReviewStore::open(installRoot / "reviews.json");
+  CHECK(store.hasValue());
+  if (!store) return;
+  std::ofstream(installRoot / "README.txt") << "not a singer";
+
+  distribution::ProceduralCatalogue catalogue;
+  const auto scanned = catalogue.scan({distribution::ProceduralSearchRoot{
+      .path = installRoot, .kind = distribution::ProceduralRootKind::Installed}});
+  CHECK(scanned.hasValue());
+  if (!scanned) return;
+  // Exactly the one real singer is discovered; the review document and the stray file are ignored.
+  CHECK(scanned.value().size() == 1U);
+  CHECK(scanned.value().front().manifest.id == "original.singer.pilot");
+  CHECK(scanned.value().front().trust == distribution::ProceduralTrust::TrustedInstalled);
+}
+

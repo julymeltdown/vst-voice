@@ -1,5 +1,24 @@
 # Integrated Singer Execution
 
+## A review file beside the singers is not mistaken for one of them
+
+September 15, 2026 — placement risk checked. The review store lives in the same directory the singer
+catalogue scans, because both are user-owned resource data under the support root. That is a real
+collision risk introduced by choosing those paths: `reviews.json` and any stray file sit where the
+catalogue walks looking for products.
+
+The scan skips anything that is not a real directory, so a plain file is ignored, and the new case pins
+that rather than leaving it as a reading of the code. It installs a real singer, creates a real review
+store and a stray text file in the same root, and asserts that exactly one singer is discovered with the
+right id and trust. The accident this guards against only appears once both features are switched on
+together, which is exactly the situation the shipped application is now in.
+
+Verified. `seam_procedural_package_tests` passes 12 of 12 and the registered run passes 170 of 170.
+
+Not claimed. This checks that the catalogue is not confused by the files; it does not test a singer
+root containing a partially written store after a crash, which the store's own atomic write is designed
+to prevent. No U-unit acceptance or Beta GO state changes.
+
 ## The lane's accessible value is asserted, not assumed from the painting code beside it
 
 September 15, 2026 — D2 accessibility coverage added. The plan requires a full accessible value text
