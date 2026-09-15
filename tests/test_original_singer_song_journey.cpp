@@ -20,6 +20,7 @@
 #include "seam/platform/file_dialog.hpp"
 #include "seam/standalone/application_controller.hpp"
 #include "seam/standalone/authoring_session.hpp"
+#include "seam/authoring/render_coordinator.hpp"
 #include "seam/ui/expression_lane.hpp"
 #include "seam/voice_design/recipe_resource.hpp"
 #include "seam/voice_design/voice_recipe.hpp"
@@ -435,6 +436,28 @@ TEST_CASE("Tuning an installed singer survives undo, save, reopen and export") {
   if (!tuned) return;
   // The edit reached the audio, so the exported master is no longer the baseline.
   CHECK(tuned.value().masterSha256 != baselineSha);
+
+  // Clause three of this milestone: an edit must publish audio that corresponds to the revision it
+  // asked for, and the published material must be the singer's. A stale publication would let the
+  // creator hear the previous phrase while believing the edit took effect, which is the failure this
+  // check exists to catch. The coordinator already owns cancellation and stale rejection; what is
+  // asserted here is that an ordinary edit reaches the audible path at the right revision.
+  {
+    const auto progress = runtime.renderer().progress();
+    CHECK(progress.requestedRevision == progress.publishedRevision);
+    CHECK(progress.publishedRevision > 0U);
+    CHECK(!progress.audibleAudioStale);
+    const auto audible = runtime.renderer().acquireCurrent();
+    CHECK(static_cast<bool>(audible));
+    if (audible) {
+      CHECK(audible->projectRevision == progress.publishedRevision);
+      // The audible material must name the renderer that produced it. "Some renderer ran" is not the
+      // claim; the claim is that the source-filter singer the creator selected is the one they hear.
+      CHECK(audible->activeRenderer.find("filter") != std::string::npos ||
+            audible->activeRenderer.find("source") != std::string::npos);
+      CHECK(!audible->result.interleaved.empty());
+    }
+  }
 
   // Undo restores exactly the sound the project had before the edit.
   CHECK(runtime.undo().hasValue());
