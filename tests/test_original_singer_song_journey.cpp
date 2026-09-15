@@ -1,0 +1,412 @@
+// M1.2/M1.3: one installed original singer, one authored lyric song, and a real tuning session that
+// survives save, reopen, undo and export.
+//
+// This extends the covered install journey in test_procedural_install_journey.cpp. That test already
+// proves installation, identity resolution and an installed phrase export; it is not repeated here.
+// What this file adds is the part a creator actually does: a song with consonants and lyrics, edits
+// made through the application's own commands, undo/redo, and a fresh-session reopen that must render
+// the same sound rather than an unbound substitute.
+#include "test_framework.hpp"
+#include "test_support.hpp"
+
+#include "seam/application/note_commands.hpp"
+#include "seam/application/arrangement_commands.hpp"
+#include "seam/core/sha256.hpp"
+#include "seam/distribution/procedural_package.hpp"
+#include "seam/distribution/signing.hpp"
+#include "seam/platform/application_menu.hpp"
+#include "seam/platform/file_dialog.hpp"
+#include "seam/standalone/application_controller.hpp"
+#include "seam/standalone/authoring_session.hpp"
+#include "seam/ui/expression_lane.hpp"
+#include "seam/voice_design/recipe_resource.hpp"
+#include "seam/voice_design/voice_recipe.hpp"
+#include "seam/voicebank/wav.hpp"
+
+#include <algorithm>
+#include <cmath>
+#include <filesystem>
+#include <fstream>
+#include <memory>
+#include <optional>
+#include <string>
+#include <vector>
+
+namespace {
+
+using namespace seam;
+
+class FakeDialog final : public platform::IFileDialog {
+public:
+  core::Result<std::optional<bool>> chooseRecipePackaging() override {
+    return std::optional<bool>{false};
+  }
+  core::Result<std::optional<std::string>> chooseRecipeStyle(
+      const std::vector<std::string>& styles) override {
+    offeredStyles = styles;
+    return styleResponse;
+  }
+  std::vector<std::string> offeredStyles;
+  std::optional<std::string> styleResponse;
+  core::Result<std::optional<std::filesystem::path>> choose(
+      const platform::FileDialogRequest&) override {
+    if (responses.empty()) return std::optional<std::filesystem::path>{};
+    auto result = responses.front();
+    responses.erase(responses.begin());
+    return result;
+  }
+  std::vector<std::optional<std::filesystem::path>> responses;
+};
+
+class FakePrompt final : public platform::IUnsavedChangesPrompt {
+public:
+  core::Result<platform::UnsavedDecision> choose(std::string_view) override {
+    return platform::UnsavedDecision::Discard;
+  }
+};
+
+// An original singer that can actually carry a lyric song: the five Japanese vowels plus the
+// consonants this song's lyrics need. The parameter choices are development screening values, not
+// phonetic qualification, and the nasal and stop models are declared explicitly so a consonant is
+// refused rather than approximated when its model is missing.
+voice_design::VoiceRecipe songRecipe() {
+  voice_design::VoiceRecipe recipe;
+  recipe.id = "song-01-original";
+  recipe.seed = 7130U;
+  recipe.poses = {
+      {"a", "neutral", 0.0, {{800.0, 90.0, 0.0}, {1250.0, 110.0, -3.0}, {2800.0, 160.0, -6.0}}},
+      {"i", "neutral", 0.0, {{300.0, 70.0, 0.0}, {2300.0, 120.0, -3.0}, {3200.0, 170.0, -6.0}}},
+      {"u", "neutral", 0.0, {{350.0, 80.0, 0.0}, {1100.0, 100.0, -3.0}, {2500.0, 160.0, -6.0}}},
+      {"e", "neutral", 0.0, {{500.0, 80.0, 0.0}, {1900.0, 110.0, -3.0}, {2900.0, 160.0, -6.0}}},
+      {"o", "neutral", 0.0, {{500.0, 90.0, 0.0}, {900.0, 110.0, -3.0}, {2600.0, 160.0, -6.0}}},
+      // Nasal poses carry an explicit active nasal tract, which is what makes them different from a
+      // vowel sung through the mouth.
+      {"m", "neutral", 0.85, {{300.0, 80.0, 0.0}, {1100.0, 110.0, -6.0}, {2500.0, 160.0, -9.0}},
+       voice_design::NasalResonance{280.0, 80.0, 1200.0, 120.0}},
+      {"n", "neutral", 0.75, {{300.0, 80.0, 0.0}, {1700.0, 110.0, -6.0}, {2800.0, 160.0, -9.0}},
+       voice_design::NasalResonance{300.0, 90.0, 1500.0, 120.0}},
+      // Approximants are defined by the formant transition into their neighbouring vowel, so each
+      // needs its own resonance pose as well as a declared transition.
+      {"r", "neutral", 0.0, {{400.0, 80.0, 0.0}, {1400.0, 110.0, -3.0}, {2200.0, 160.0, -6.0}}},
+      {"w", "neutral", 0.0, {{300.0, 80.0, 0.0}, {610.0, 100.0, -3.0}, {2200.0, 160.0, -6.0}}},
+      {"y", "neutral", 0.0, {{250.0, 70.0, 0.0}, {2200.0, 120.0, -3.0}, {3000.0, 170.0, -6.0}}},
+  };
+  recipe.frications = {
+      {"s", "neutral", voice_design::FricationConfig{.seed = 7130U, .centerHz = 5500.0, .bandwidthHz = 3000.0, .gain = 0.12}},
+      {"sh", "neutral", voice_design::FricationConfig{.seed = 7131U, .centerHz = 3500.0, .bandwidthHz = 3000.0, .gain = 0.12}},
+      {"h", "neutral", voice_design::FricationConfig{.seed = 7132U, .centerHz = 1200.0, .bandwidthHz = 2400.0, .gain = 0.06}},
+  };
+  recipe.plosives = {
+      {"t", "neutral", voice_design::FricationConfig{.seed = 7133U, .centerHz = 4500.0, .bandwidthHz = 3000.0, .gain = 0.12}, 10.0},
+      {"k", "neutral", voice_design::FricationConfig{.seed = 7134U, .centerHz = 2500.0, .bandwidthHz = 2200.0, .gain = 0.12}, 10.0},
+      // A voiced stop is a prevoiced closure followed by the same release a voiceless one has, so `b`
+      // is declared with an explicit closure model rather than borrowed from `p`.
+      {"p", "neutral", voice_design::FricationConfig{.seed = 7135U, .centerHz = 1200.0, .bandwidthHz = 1800.0, .gain = 0.12}, 10.0},
+  };
+  {
+    auto voiced = recipe.plosives.back();
+    voiced.phone = "b";
+    voiced.voicedClosure = voice_design::VoiceRecipe::VoicedClosure{0.2, 400.0};
+    recipe.plosives.push_back(std::move(voiced));
+  }
+  // A voiced fricative is noise plus voicing shaped by the same tract, so `z` needs its own
+  // same-phone resonance pose as well as a declared voicing gain.
+  recipe.poses.push_back({"z", "neutral", 0.0, {{300.0, 80.0, 0.0}, {1700.0, 110.0, -3.0}, {2800.0, 160.0, -6.0}}});
+  recipe.frications.push_back({"z", "neutral",
+      voice_design::FricationConfig{.seed = 7136U, .centerHz = 5000.0, .bandwidthHz = 2500.0, .gain = 0.10}, 0.35});
+  recipe.approximants = {{"r", "neutral", 45.0}, {"w", "neutral", 60.0}, {"y", "neutral", 40.0}};
+  return recipe;
+}
+
+// One lyric per note. The sequence deliberately mixes consonants, rising and falling pitch, unequal
+// durations, a rest and a sustained final vowel, so a phrase that renders is a phrase with real
+// articulation rather than a scale of held vowels.
+struct SongNote final {
+  const char32_t* lyric;
+  std::uint8_t midi;
+  std::int64_t ticks;
+};
+
+const std::vector<SongNote>& songNotes() {
+  static const std::vector<SongNote> notes{
+      {U"あ", 62U, 960}, {U"さ", 64U, 960}, {U"き", 65U, 960}, {U"の", 67U, 1920},
+      {U"は", 64U, 960}, {U"な", 62U, 960}, {U"た", 60U, 960}, {U"ら", 62U, 1920},
+      {U"ま", 65U, 960}, {U"ゆ", 67U, 960}, {U"め", 65U, 960}, {U"を", 64U, 1920},
+      {U"い", 69U, 960}, {U"そ", 67U, 960}, {U"き", 65U, 960}, {U"や", 64U, 1920},
+      {U"か", 62U, 960}, {U"に", 64U, 960}, {U"て", 65U, 960}, {U"し", 67U, 1920},
+      {U"ぼ", 69U, 960}, {U"く", 67U, 960}, {U"は", 65U, 960}, {U"あ", 64U, 2880},
+  };
+  return notes;
+}
+
+// Writes the package exactly the way a producer would: manifest, recipe, then sign with the trusted
+// key. The declared digest is over the recipe's canonical encoding, which is the identity the
+// renderer validates when it loads the installed recipe.
+std::filesystem::path createSongPackage(const std::filesystem::path& root,
+                                        const distribution::SigningKeyPair& key) {
+  const auto source = root / "producer-source";
+  std::filesystem::create_directories(source);
+  const auto recipe = songRecipe();
+  const auto encoded = voice_design::encodeVoiceRecipe(recipe);
+  if (!encoded) throw test::Failure{"encoding the song recipe failed: " + encoded.error().message};
+  std::ofstream(source / "recipe.json", std::ios::binary | std::ios::trunc) << encoded.value();
+  distribution::ProceduralSingerManifest manifest;
+  manifest.id = "song-01-original";
+  manifest.version = "1.0.0";
+  manifest.displayName = "Song 01 Original";
+  manifest.language = "ja";
+  manifest.styles = {"neutral"};
+  manifest.engineId = recipe.engineId;
+  manifest.engineRevision = voice_design::kSourceFilterEngineRevision;
+  manifest.recipeEntry = "recipe.json";
+  manifest.recipeSha256 = core::sha256Hex(encoded.value());
+  manifest.phones = {"a", "i", "u", "e", "o", "s", "sh", "h", "t", "k", "m", "n", "r", "w", "y"};
+  distribution::ProceduralSingerManifestJsonCodec codec;
+  const auto text = codec.encode(manifest);
+  if (!text) throw test::Failure{"encoding the song manifest failed: " + text.error().message};
+  std::ofstream(source / "manifest.json", std::ios::binary | std::ios::trunc) << text.value();
+  const auto package = root / "song-01.seamsinger";
+  const auto packed = distribution::packProceduralPackage(source, package, key);
+  if (!packed) throw test::Failure{"packing the song singer failed: " + packed.error().message};
+  return package;
+}
+
+struct Installed final {
+  std::filesystem::path root;
+  std::filesystem::path installRoot;
+  distribution::SigningKeyPair key;
+};
+
+// Installs the original singer into a fresh root and returns what a session needs to find it.
+Installed installSongSinger(const std::string& label) {
+  Installed installed{};
+  installed.root = test::support::temporaryDirectory(label);
+  auto key = distribution::generateSigningKeyPair();
+  if (!key) throw test::Failure{"generating a signing key failed: " + key.error().message};
+  installed.key = key.value();
+  const auto package = createSongPackage(installed.root, installed.key);
+  installed.installRoot = installed.root / "singers";
+  distribution::InstallProceduralOptions options;
+  options.verification = distribution::VerifySeambankOptions{
+      .limits = {}, .trustedPublicKeys = {installed.key.publicKey}, .requireTrustedSigner = true};
+  const auto result = distribution::installProceduralPackage(package, installed.installRoot, options);
+  if (!result) throw test::Failure{"installing the song singer failed: " + result.error().message};
+  return installed;
+}
+
+std::unique_ptr<standalone::AuthoringSession> makeSession(const Installed& installed) {
+  auto session = standalone::AuthoringSession::create(standalone::AuthoringSessionConfig{
+      .cacheRoot = installed.root / "cache",
+      .voicebankRoots = {},
+      .sampleRate = 48000U,
+      .outputChannels = 2U,
+      .bindFirstAvailableVoicebank = false,
+      .allowDevelopmentVoicebanks = false});
+  if (!session) throw test::Failure{"creating the authoring session failed: " + session.error().message};
+  return std::move(session.value());
+}
+
+struct Editor final {
+  std::unique_ptr<standalone::AuthoringSession> session;
+  std::unique_ptr<standalone::StandaloneApplicationController> controller;
+  FakeDialog* dialog{nullptr};
+};
+
+Editor makeEditor(const Installed& installed) {
+  Editor editor{};
+  editor.session = makeSession(installed);
+  auto dialog = std::make_unique<FakeDialog>();
+  editor.dialog = dialog.get();
+  standalone::StandaloneApplicationControllerConfig config{
+      .autosaveRoot = installed.root / "autosaves",
+      .recentProjectsPath = installed.root / "recent.json"};
+  config.proceduralSingerRoots = {distribution::ProceduralSearchRoot{
+      .path = installed.installRoot, .kind = distribution::ProceduralRootKind::Installed}};
+  config.renderableProceduralEngineId = std::string{voice_design::kSourceFilterEngineId};
+  config.renderableProceduralEngineRevision = voice_design::kSourceFilterEngineRevision;
+  auto controller = standalone::StandaloneApplicationController::create(
+      *editor.session, std::move(dialog), std::make_unique<FakePrompt>(), config);
+  if (!controller) throw test::Failure{"creating the controller failed: " + controller.error().message};
+  editor.controller = std::move(controller.value());
+  return editor;
+}
+
+// Selects the one installed singer through the application command a creator would use.
+void selectInstalledSinger(Editor& editor) {
+  editor.dialog->styleResponse = std::nullopt;
+  const auto listed = editor.controller->dispatch(
+      platform::ApplicationCommand::SelectInstalledProceduralSinger);
+  if (!listed) throw test::Failure{"listing installed singers failed: " + listed.error().message};
+  if (editor.dialog->offeredStyles.size() != 1U)
+    throw test::Failure{"exactly one installed singer was expected"};
+  editor.dialog->styleResponse = editor.dialog->offeredStyles.front();
+  const auto selected = editor.controller->dispatch(
+      platform::ApplicationCommand::SelectInstalledProceduralSinger);
+  if (!selected) throw test::Failure{"selecting the installed singer failed: " + selected.error().message};
+}
+
+// Types the song into the selected region through the real add-note command, one lyric per note.
+void writeSong(Editor& editor) {
+  auto& runtime = editor.session->runtime();
+  const auto region = runtime.selectedRegion();
+  // The default region is shorter than this song, so it is grown first. Adding a note that extends
+  // beyond its region is refused by the command, which is what this test hit before the resize.
+  time::Tick total{0};
+  for (const auto& note : songNotes()) total = total + time::Tick{note.ticks};
+  const auto resized = runtime.execute(std::make_unique<application::ResizeVocalRegionCommand>(
+      runtime.selectedTrack(), region, total));
+  if (!resized) throw test::Failure{"resizing the song region failed: " + resized.error().message};
+  time::Tick start{0};
+  for (const auto& note : songNotes()) {
+    auto [lyric, value] = runtime.document().factory().makeNote(
+        start, time::Tick{note.ticks}, note.midi, std::u32string{note.lyric},
+        domain::Language::Japanese);
+    const auto added = runtime.execute(std::make_unique<application::AddNoteCommand>(
+        region, std::move(lyric), std::move(value)));
+    if (!added) throw test::Failure{"adding a song note failed: " + added.error().message};
+    start = start + time::Tick{note.ticks};
+  }
+}
+
+double peakAndEnergy(const std::vector<float>& samples, double& energy) {
+  double peak = 0.0;
+  energy = 0.0;
+  for (const auto sample : samples) {
+    peak = std::max(peak, std::abs(static_cast<double>(sample)));
+    energy += static_cast<double>(sample) * static_cast<double>(sample);
+  }
+  return peak;
+}
+
+// Reads an exported master and returns its samples, failing the test rather than returning silence.
+std::vector<float> readMaster(const std::filesystem::path& path) {
+  const auto master = voicebank::readWav(path);
+  if (!master) throw test::Failure{"reading the exported master failed: " + master.error().message};
+  return master.value().interleaved;
+}
+
+}  // namespace
+
+// The first question M1 asks: with one original singer installed and selected, does an authored lyric
+// song actually render to non-silent audio through the ordinary export path?
+TEST_CASE("An installed original singer renders an authored lyric song") {
+  const auto installed = installSongSinger("song-journey-render");
+  auto editor = makeEditor(installed);
+  // The creator sees what the installed singer supports before selecting it: the offer carries a
+  // summary from the shared route resolver, naming the carrier and the controls it will actually apply.
+  const auto offers = editor.controller->installedSingerOffers();
+  CHECK(offers.hasValue());
+  if (!offers) return;
+  CHECK(offers.value().size() == 1U);
+  if (!offers.value().empty()) {
+    const auto& offer = offers.value().front();
+    CHECK(offer.selectable);
+    CHECK(offer.capabilitySummary.find("voice designer") != std::string::npos);
+    CHECK(offer.capabilitySummary.find("formant") != std::string::npos);
+  }
+  selectInstalledSinger(editor);
+  writeSong(editor);
+
+  const auto* track = editor.session->runtime().document().session().project().findVocalTrack(
+      editor.session->runtime().selectedTrack());
+  CHECK(track != nullptr);
+  if (track == nullptr) return;
+  CHECK(track->proceduralRecipe.has_value());
+  // The song is written and the project is valid, so a failure below is a renderer failure rather
+  // than a malformed fixture.
+  CHECK(editor.session->runtime().document().session().project().validate().hasValue());
+  const auto* region = editor.session->runtime().document().session().project().findRegion(
+      editor.session->runtime().selectedRegion());
+  CHECK(region != nullptr);
+  if (region == nullptr) return;
+  CHECK(region->notes.size() == songNotes().size());
+
+  authoring::ExportSettings settings;
+  settings.includeMaster = true;
+  const auto exported = editor.controller->exportSet(installed.root / "export", settings);
+  if (!exported) throw test::Failure{"exporting the song failed: " + exported.error().message};
+  CHECK(exported.hasValue());
+  if (!exported) return;
+  CHECK(std::filesystem::exists(exported.value().masterPath));
+  const auto samples = readMaster(exported.value().masterPath);
+  CHECK(!samples.empty());
+  double energy = 0.0;
+  const auto peak = peakAndEnergy(samples, energy);
+  // A lyric song with consonants must carry real signal; a header-sized or silent export fails.
+  CHECK(peak > 1e-3);
+  CHECK(energy > 0.0);
+  for (const auto sample : samples) CHECK(std::isfinite(sample));
+}
+
+// The tuning question: do the edits a creator makes reach the audio, survive undo and redo, and come
+// back the same after the project is saved and reopened in a fresh session? A re-render that silently
+// lost the installed singer would produce different audio, so the comparison is meaningful.
+TEST_CASE("Tuning an installed singer survives undo, save, reopen and export") {
+  const auto installed = installSongSinger("song-journey-tuning");
+  auto editor = makeEditor(installed);
+  selectInstalledSinger(editor);
+  writeSong(editor);
+  auto& runtime = editor.session->runtime();
+  const auto regionId = runtime.selectedRegion();
+
+  authoring::ExportSettings settings;
+  settings.includeMaster = true;
+  const auto baseline = editor.controller->exportSet(installed.root / "baseline", settings);
+  if (!baseline) throw test::Failure{"baseline export failed: " + baseline.error().message};
+  CHECK(baseline.hasValue());
+  if (!baseline) return;
+  const auto baselineSha = baseline.value().masterSha256;
+  CHECK(!baselineSha.empty());
+
+  // Draw a formant curve through the lane, which is the edit the source-filter singer really supports.
+  auto lane = ui::ExpressionLaneModel::prepare(
+      runtime.document().session(), regionId, ui::ExpressionChannel::Formant);
+  CHECK(lane.hasValue());
+  if (!lane) return;
+  CHECK(lane.value().editable().hasValue());
+  CHECK(lane.value().upsert(ui::ExpressionPoint{time::Tick{0}, 1.0F}).hasValue());
+  CHECK(lane.value().upsert(ui::ExpressionPoint{time::Tick{4800}, 4.0F}).hasValue());
+  CHECK(lane.value().apply(runtime.document().session(), regionId).hasValue());
+
+  const auto tuned = editor.controller->exportSet(installed.root / "tuned", settings);
+  if (!tuned) throw test::Failure{"tuned export failed: " + tuned.error().message};
+  CHECK(tuned.hasValue());
+  if (!tuned) return;
+  // The edit reached the audio, so the exported master is no longer the baseline.
+  CHECK(tuned.value().masterSha256 != baselineSha);
+
+  // Undo restores exactly the sound the project had before the edit.
+  CHECK(runtime.undo().hasValue());
+  const auto undone = editor.controller->exportSet(installed.root / "undone", settings);
+  CHECK(undone.hasValue());
+  if (!undone) return;
+  CHECK(undone.value().masterSha256 == baselineSha);
+  CHECK(runtime.redo().hasValue());
+  const auto redone = editor.controller->exportSet(installed.root / "redone", settings);
+  CHECK(redone.hasValue());
+  if (!redone) return;
+  CHECK(redone.value().masterSha256 == tuned.value().masterSha256);
+
+  // Save and reopen in a new session, then export again. The reopened project must resolve the same
+  // installed singer and reproduce the tuned sound.
+  const auto projectPath = installed.root / "song-01.seam";
+  editor.dialog->responses = {projectPath};
+  const auto saved = editor.controller->dispatch(platform::ApplicationCommand::SaveProjectAs);
+  CHECK(saved.hasValue());
+  CHECK(std::filesystem::exists(projectPath));
+
+  auto reopened = makeEditor(installed);
+  reopened.dialog->responses = {projectPath};
+  const auto opened = reopened.controller->dispatch(platform::ApplicationCommand::OpenProject);
+  CHECK(opened.hasValue());
+  if (!opened) return;
+  const auto regionAfter = reopened.session->runtime().document().session().project().findRegion(
+      reopened.session->runtime().selectedRegion());
+  CHECK(regionAfter != nullptr);
+  if (regionAfter == nullptr) return;
+  CHECK(regionAfter->formantAutomation.points().size() == 2U);
+  const auto reopenedExport = reopened.controller->exportSet(installed.root / "reopened", settings);
+  CHECK(reopenedExport.hasValue());
+  if (!reopenedExport) return;
+  CHECK(reopenedExport.value().masterSha256 == tuned.value().masterSha256);
+}

@@ -5513,8 +5513,7 @@ core::Result<void> NativeEditorController::nudgeFormantShift(int steps) {
   // The channel is only real where the carrier owns its resonances. Everything else is refused with the
   // reason and the change that would make it possible, and whatever curve is already stored stays
   // exactly as it was.
-  const auto carrier = track->proceduralRecipe ? synthesis::RendererCarrier::SourceFilter
-                                               : synthesis::RendererCarrier::SampleBank;
+  const auto carrier = synthesis::rendererCarrierFor(*track);
   synthesis::RendererControlRequest request;
   request.require(synthesis::RendererControl::Formant);
   const auto allowed = synthesis::validateRendererCapabilities(carrier, request);
@@ -5586,8 +5585,7 @@ core::Result<void> NativeEditorController::nudgeBreathiness(int steps) {
   // Only a carrier that generates its own excitation has a balance to move. Everything else is refused
   // with the reason and the change that would make it possible, and whatever curve is already stored
   // stays exactly as it was.
-  const auto carrier = track->proceduralRecipe ? synthesis::RendererCarrier::SourceFilter
-                                               : synthesis::RendererCarrier::SampleBank;
+  const auto carrier = synthesis::rendererCarrierFor(*track);
   synthesis::RendererControlRequest request;
   request.require(synthesis::RendererControl::Breathiness);
   const auto allowed = synthesis::validateRendererCapabilities(carrier, request);
@@ -5657,8 +5655,7 @@ core::Result<void> NativeEditorController::nudgeTension(int steps) {
   if (region == nullptr || track == nullptr)
     return core::failure(core::ErrorCode::NotFound, "Tension edit has no region or track");
   if (steps == 0) return core::success();
-  const auto carrier = track->proceduralRecipe ? synthesis::RendererCarrier::SourceFilter
-                                               : synthesis::RendererCarrier::SampleBank;
+  const auto carrier = synthesis::rendererCarrierFor(*track);
   synthesis::RendererControlRequest request;
   request.require(synthesis::RendererControl::Tension);
   const auto allowed = synthesis::validateRendererCapabilities(carrier, request);
@@ -5725,8 +5722,7 @@ core::Result<void> NativeEditorController::nudgeAiriness(int steps) {
   if (region == nullptr || track == nullptr)
     return core::failure(core::ErrorCode::NotFound, "Airiness edit has no region or track");
   if (steps == 0) return core::success();
-  const auto carrier = track->proceduralRecipe ? synthesis::RendererCarrier::SourceFilter
-                                               : synthesis::RendererCarrier::SampleBank;
+  const auto carrier = synthesis::rendererCarrierFor(*track);
   synthesis::RendererControlRequest request;
   request.require(synthesis::RendererControl::Airiness);
   const auto allowed = synthesis::validateRendererCapabilities(carrier, request);
@@ -5796,8 +5792,7 @@ core::Result<void> NativeEditorController::nudgeGender(int steps) {
   if (region == nullptr || track == nullptr)
     return core::failure(core::ErrorCode::NotFound, "Gender edit has no region or track");
   if (steps == 0) return core::success();
-  const auto carrier = track->proceduralRecipe ? synthesis::RendererCarrier::SourceFilter
-                                               : synthesis::RendererCarrier::SampleBank;
+  const auto carrier = synthesis::rendererCarrierFor(*track);
   synthesis::RendererControlRequest request;
   request.require(synthesis::RendererControl::Gender);
   const auto allowed = synthesis::validateRendererCapabilities(carrier, request);
@@ -5869,8 +5864,7 @@ core::Result<void> NativeEditorController::nudgeGrowl(int steps) {
   if (region == nullptr || track == nullptr)
     return core::failure(core::ErrorCode::NotFound, "Growl edit has no region or track");
   if (steps == 0) return core::success();
-  const auto carrier = track->proceduralRecipe ? synthesis::RendererCarrier::SourceFilter
-                                               : synthesis::RendererCarrier::SampleBank;
+  const auto carrier = synthesis::rendererCarrierFor(*track);
   synthesis::RendererControlRequest request;
   request.require(synthesis::RendererControl::Growl);
   const auto allowed = synthesis::validateRendererCapabilities(carrier, request);

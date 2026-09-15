@@ -492,6 +492,7 @@ target_link_libraries(seam_voice_design PUBLIC seam_synthesis)
 add_library(seam_rendering
   libs/seam-rendering/src/phrase_segmenter.cpp
   libs/seam-rendering/src/render_snapshot.cpp
+  libs/seam-rendering/src/singer_route.cpp
   libs/seam-rendering/src/render_pipeline.cpp
   libs/seam-rendering/src/region_renderer.cpp
   libs/seam-rendering/src/project_renderer.cpp
@@ -1389,6 +1390,13 @@ if(SEAM_BUILD_TESTS)
     tests/test_main.cpp tests/test_renderer_capabilities.cpp)
   add_executable(seam_neural_render_tests
     tests/test_main.cpp tests/test_neural_render_snapshot.cpp)
+  add_executable(seam_singer_route_tests
+    tests/test_main.cpp tests/test_singer_route.cpp)
+  target_include_directories(seam_singer_route_tests PRIVATE tests)
+  target_link_libraries(seam_singer_route_tests PRIVATE
+    seam_rendering seam_synthesis seam_application seam_domain seam_core)
+  seam_apply_compiler_options(seam_singer_route_tests)
+  add_test(NAME seam_singer_route_tests COMMAND seam_singer_route_tests)
   add_executable(seam_neural_phrase_runner_tests
     tests/test_main.cpp tests/test_neural_phrase_runner.cpp)
   add_executable(seam_neural_worker_probe tests/helpers/neural_worker_probe.cpp)
@@ -1924,6 +1932,17 @@ if(SEAM_BUILD_TESTS)
   add_executable(seam_procedural_install_journey_tests
     tests/test_main.cpp
     tests/test_procedural_install_journey.cpp)
+  add_executable(seam_original_singer_song_journey_tests
+    tests/test_main.cpp
+    tests/test_original_singer_song_journey.cpp)
+  target_include_directories(seam_original_singer_song_journey_tests PRIVATE tests)
+  target_link_libraries(seam_original_singer_song_journey_tests PRIVATE
+    seam_standalone_authoring seam_distribution seam_voice_design seam_application
+    seam_authoring_runtime seam_rendering seam_synthesis seam_formats seam_voicebank
+    seam_phonemizer seam_domain seam_core)
+  seam_apply_compiler_options(seam_original_singer_song_journey_tests)
+  add_test(NAME seam_original_singer_song_journey_tests
+    COMMAND seam_original_singer_song_journey_tests)
   target_include_directories(seam_procedural_install_journey_tests PRIVATE tests)
   target_link_libraries(seam_procedural_install_journey_tests PRIVATE
     seam_standalone_authoring seam_distribution seam_voice_design seam_application

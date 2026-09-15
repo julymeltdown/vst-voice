@@ -2,7 +2,7 @@
 
 Snapshot: September 15, 2026. This guide identifies the conversations, specifications, implementation records, and source files needed to explain the project and take over development. It does not issue a new acceptance decision.
 
-Current sequencing update: read [SEAM Revised Development Plan](SEAM_REVISED_DEVELOPMENT_PLAN_2026-09-15.md) alongside the scope and September 13 specification. It incorporates the [second-developer review](SEAM_SECOND_DEVELOPER_REVIEW_2026-09-15.md), makes the existing direct procedural route the first creator checkpoint, and prioritizes listening evidence and expression editing before further inventory expansion. It changes execution order, not Full-Scope Beta GO requirements.
+Current sequencing update: start with the jointly agreed [R3 development plan](SEAM_JOINT_DEVELOPMENT_PLAN_R3_2026-09-15.md). It gives the code-level next batch, six integrated milestones, dependency rules and command runbook. The first delivery is an installed original singer and a complete lyric-song tuning session; independent engineering continues while specific observations are pending, and the qualified neural singer remains mandatory. Earlier development plans and the [second-developer review](SEAM_SECOND_DEVELOPER_REVIEW_2026-09-15.md) provide historical rationale, not current work selection. Full-Scope Beta GO requirements are unchanged.
 
 ## 1. The project in one paragraph
 
@@ -15,7 +15,7 @@ The primary Codex task is **“SEAM 완성도와 개발 로드맵 평가”**.
 - Task ID: `01a02275-293a-7192-8c2e-144b9325d7dc`.
 - Workspace: `/Users/lhs/Downloads/project-seam-usable-alpha-u3-master`.
 - This is the current long-running project conversation. Its title and identity were verified through the app's task listing.
-- The other currently listed task in this workspace, **“대기”** (`01a0a066-1eba-71f2-8c0d-e21f9419cbcc`), is described as a second developer waiting for instructions. It is not the primary requirements or implementation history.
+- The other task, **“대기”** (`01a0a066-1eba-71f2-8c0d-e21f9419cbcc`), supplied the second-developer review and participated in the subsequent code-backed direction review and full-file agreement on R3. It is supporting review history, not the primary requirements history.
 
 Do not start by reading every build log. Read these decision clusters in the primary conversation, in order. The quoted snippets are search anchors from the owner's messages; the descriptions explain their significance in English.
 
@@ -40,7 +40,7 @@ All links below are relative to the repository root so the guide also works in a
 | Order | File | Purpose and reading instructions |
 |---|---|---|
 | 1 | [Virtual Singer Feasibility and Code Roadmap](VIRTUAL_SINGER_FEASIBILITY_AND_CODE_ROADMAP_2026-09-05.md) | Read the revision decision, Goal Capsule, R1–R20, and capability requirements. This defines what the finished product must do. Its original defect observations are historical, not proof that each defect remains. |
-| 2 | [September 13 implementation plan](SEAM_IMPLEMENTATION_PLAN_2026-09-13.md) | The active implementation specification. Read sections 1–5, then the six milestone/package definitions, exit criteria, command runbook, and evidence contracts. M1.P1–M6.P3 are delivery packages, not replacements for the original U-units. |
+| 2 | [Joint R3 development plan](SEAM_JOINT_DEVELOPMENT_PLAN_R3_2026-09-15.md) | Current execution plan: verified baseline, six outcomes, file/API guidance, next M1 implementation batch, test commands and unchanged R/U traceability. The [September 13 specification](SEAM_IMPLEMENTATION_PLAN_2026-09-13.md) remains technical history; R3 controls current sequencing. |
 | 3 | [Integrated Singer Execution](docs/implementation/INTEGRATED_SINGER_EXECUTION.md) | The most useful current implementation narrative. Read the newest entries at the top, including every `Verified.` and `Not claimed.` paragraph. Then find the September 14 milestone table, generated-take-to-installed-bank lifecycle, neural worker, Follow Host, and automatic-performance entries. Read adjacent follow-ups before assuming an older limitation is still open. |
 | 4 | [September 12 progress and revised roadmap](SEAM_PROGRESS_AND_REVISED_ROADMAP_2026-09-12.md) | Explains the assessment and why execution was regrouped into six outcomes. Its commit, test counts, and remaining-work statements are a dated baseline; substantial implementation followed. |
 | 5 | [Full-Scope Beta GO plan](docs/plans/2026-09-05-1718-feat-full-scope-beta-go-plan.md) | The original U1–U48 decomposition, requirement mapping, acceptance obligations, and Definition of Done. Use it to decide whether a unit can actually close. |

@@ -7,6 +7,7 @@
 #include "seam/build/version.hpp"
 #include "seam/synthesis/performance_compiler.hpp"
 #include "seam/application/render_commands.hpp"
+#include "seam/rendering/singer_route.hpp"
 #include <set>
 
 #include <algorithm>
@@ -1258,6 +1259,17 @@ core::Result<void>
 StandaloneApplicationController::recordExportedRendererProvenance() {
   // Recording the renderer of an export that has not committed would attribute audio to code that
   // never ran. The caller names a completed export; this checks rather than trusts that claim.
+  const auto& settings =
+      session_.runtime().document().session().project().settings();
+  // An export whose renderer this project already records changes nothing, and executing the command
+  // anyway would push an entry onto the creator's undo stack that no audible edit sits behind. The
+  // next undo would then appear to do nothing, and a project exported repeatedly would collect one
+  // such entry per export. The record is a disclosure about audio, so it is only worth making when it
+  // actually differs from what is already recorded.
+  if (settings.renderedRenderAbi == std::string{build::kRenderAbiId} &&
+      settings.renderedCompilerRevision == synthesis::kPerformanceCompilerRevision) {
+    return core::success();
+  }
   auto recorded = session_.runtime().execute(
       std::make_unique<application::RecordRendererProvenanceCommand>(
           std::string{build::kRenderAbiId},
@@ -1751,6 +1763,25 @@ StandaloneApplicationController::installedSingerOffers() const {
     offer.status = resolution.status;
     offer.reason = resolution.diagnostic;
     offer.selectable = resolution.resolved();
+    // The summary is derived from the same declaration the resolver used, so the label and the
+    // eventual render cannot disagree about which controls this singer supports.
+    {
+      rendering::SingerRouteEnvironment environment{};
+      environment.renderableEngineId = config_.renderableProceduralEngineId;
+      environment.renderableEngineRevision = config_.renderableProceduralEngineRevision;
+      environment.available = resolution.resolved();
+      environment.unavailableReason = resolution.diagnostic;
+      environment.declaration = rendering::SingerRouteDeclaration{
+          .engineId = candidate.manifest.engineId,
+          .engineRevision = candidate.manifest.engineRevision,
+          .language = candidate.manifest.language,
+          .styles = candidate.manifest.styles,
+          .phones = candidate.manifest.phones,
+          .declared = true};
+      const auto route = rendering::resolveSingerRouteForResource(
+          candidate.renderIdentity, synthesis::RendererCarrier::SourceFilter, environment);
+      offer.capabilitySummary = rendering::singerRouteCapabilitySummary(route);
+    }
     // A stored decision is reported with the singer, so a review is visible where the choice is made
     // instead of living in a record nothing reads. It is read only when a store is configured, and a
     // store problem degrades to unreviewed rather than failing the whole listing.

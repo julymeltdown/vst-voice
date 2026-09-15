@@ -1,5 +1,25 @@
 # Integrated Singer Execution
 
+## An original singer renders a whole lyric song, and the route it will use is decided once
+
+September 16, 2026 — M1.1–M1.3 of the jointly agreed R3 plan. Two things landed together because they are the same question asked twice: what will render this track's sound, and can a creator actually finish a song with it.
+
+**A latent capability defect was real and is closed.** `RendererCarrier` had only `SampleBank` and `SourceFilter`, and `rendererCapabilities` returned the source-filter control set for anything that was not a sample bank, so a neural track resolved to the full set including the six timbral channels while `render_snapshot.cpp` refuses all six on neural. The lane and the renderer disagreed, and the moment a neural singer became selectable the surface would have offered a control the renderer rejects. The carriers are now exhaustive — `SampleBank`, `SourceFilter`, `Neural` — and each states its own controls, so a new carrier must declare them rather than inherit them by falling through an `else`. Neural consumes the shared compiled pitch, timing, dynamics, vibrato, attack and release path and refuses the six timbral channels by name, exactly as the sample bank does, until an admitted execution contract is shown to consume a control.
+
+The decision now lives in one place. `rendererCarrierFor(track)` replaces the sample-versus-else test at eight call sites in the editor controller and the expression lane, and `resolveSingerRoute` derives the carrier, its capabilities, its availability and its status from the recorded singer. `ResolvedSingerRoute` distinguishes code support, declared coverage, availability and review, because a runnable resource can still be unreviewed and a reviewed one can still be built for an engine revision this build does not render. It is derived on demand: no project schema version was added, because capability is a function of the singer and the region rather than a property to persist.
+
+The picker now states the answer before the choice. `installedSingerOffers()` carries a `capabilitySummary` built from the same resolver, naming the carrier, the controls the singer will actually apply, its declared language and whether a review covers it, so a creator is not told no one control at a time after writing a phrase.
+
+**One installed original singer sings a whole authored lyric song.** `seam_original_singer_song_journey_tests` installs a signed original singer, selects it through the application command, writes a 24-note Japanese lyric song with consonants, rests, unequal durations and a sustained final vowel through the real add-note command, and exports it. The export is decoded and required to carry real signal rather than a header. This extends the covered install journey rather than repeating it.
+
+**Tuning survives undo, save, reopen and export.** The same test draws a formant curve through the expression lane, confirms the exported master changed, undoes and confirms it returns identical to the baseline, redoes, saves, reopens in a fresh session and exports again, requiring the reopened export to equal the tuned export. A re-render that silently lost the installed singer would produce different audio, so the comparison is meaningful rather than merely non-empty.
+
+This is what that journey found: **every committed export pushed a renderer-provenance record onto the creator's undo stack.** The record is metadata, a disclosure about audio rather than a change to it, so the creator's next undo appeared to do nothing, and a project exported repeatedly collected one such entry per export. `recordExportedRendererProvenance` now records only when the renderer it would name differs from what the project already records. The disclosure still happens the first time and after a real renderer change; a no-op record no longer interleaves with the user's edits. This was a real product defect in the owning layer, not a test artifact, and it is the class of thing this journey exists to catch.
+
+Verified. `seam_renderer_capability_tests` 6/6 including the per-carrier matrix that pins all 13 controls for sample, source-filter and neural and asserts neural is not aliased to sample; `seam_singer_route_tests` 8/8; `seam_original_singer_song_journey_tests` 2/2; the full registered suite passes 172/172; `SOURCE_CLOSURE=PASS`.
+
+Not claimed. No listener has judged this song, so no intelligibility, identity or musical-quality claim is made. The fixture's recipe parameters are development screening values, not phonetic qualification. No human has yet performed this session unaided, so the creator-workflow observation remains open. The song is a Japanese lyric test, not reviewed JP/EN/KR coverage. Neural remains mandatory under R9 and is not satisfied by this work.
+
 ## IME composition is checked at the minimum window, closing D2's last uncovered clause
 
 September 15, 2026 — D2's exit named IME focus at the minimum window as uncovered. The existing

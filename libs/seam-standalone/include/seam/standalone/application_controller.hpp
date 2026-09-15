@@ -258,6 +258,10 @@ public:
     // has actually been reviewed before they rely on it.
     bool reviewed{false};
     std::string reviewDetail;
+    // What this singer will actually render, from the shared route resolver, so a creator sees the
+    // controls and language before choosing rather than discovering a refusal after writing a phrase.
+    // Populated for every offer, including one that cannot be used, where it names the reason.
+    std::string capabilitySummary;
   };
   [[nodiscard]] core::Result<std::vector<InstalledSingerOffer>> installedSingerOffers() const;
   // Freeze a review candidate for the installed singer this track uses, hash the evidence supplied,

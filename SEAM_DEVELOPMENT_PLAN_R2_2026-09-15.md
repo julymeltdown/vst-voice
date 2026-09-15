@@ -1,7 +1,8 @@
 ---
 title: SEAM development plan, revision 2 — listening-gated completion
 date: 2026-09-15
-status: active execution plan
+status: historical execution plan; superseded by joint revision 3
+superseded_by: SEAM_JOINT_DEVELOPMENT_PLAN_R3_2026-09-15.md
 supersedes_sequencing: SEAM_REVISED_DEVELOPMENT_PLAN_2026-09-15.md (revision 1)
 baseline_commit: 13429a9ec0a27ab8451682625c92bbe9823756f6
 input_review: SEAM_SECOND_DEVELOPER_REVIEW_2026-09-15.md
@@ -9,6 +10,8 @@ implementation_performed_by_this_document: false
 ---
 
 # SEAM development plan, revision 2
+
+> Execution update, September 15, 2026: use the jointly reviewed [R3 development plan](SEAM_JOINT_DEVELOPMENT_PLAN_R3_2026-09-15.md) for current sequencing and code-level guidance. The body below preserves the earlier snapshot. Its broad listening-stop language must not halt independent engineering; listening observations gate dependent perceptual repairs. R9 remains mandatory, not an optional fallback. Installed procedural singers retain the six timbral controls; sample and neural routes currently refuse them. R3 contains the corrected capability work and complete singer-and-song milestone.
 
 ## 1. What this document is, and what the supplied report is
 

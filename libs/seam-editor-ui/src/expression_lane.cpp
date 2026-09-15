@@ -206,9 +206,9 @@ core::Result<void> validateExpressionCarrier(const domain::Project& project,
     return core::failure(core::ErrorCode::NotFound, "Expression channel has no vocal track");
   // The source-filter carrier owns its own excitation and tract; the sample-bank and neural carriers
   // receive audio and refuse these channels by name. The surface reports the same decision the
-  // renderer makes, so a drawn curve is never silently dropped.
-  const auto carrier = track->proceduralRecipe ? synthesis::RendererCarrier::SourceFilter
-                                               : synthesis::RendererCarrier::SampleBank;
+  // renderer makes, so a drawn curve is never silently dropped. The carrier comes from the shared
+  // decision so a surface and the renderer cannot disagree about a neural or sample singer.
+  const auto carrier = synthesis::rendererCarrierFor(*track);
   synthesis::RendererControlRequest request;
   request.require(describeExpressionChannel(channel).control);
   const auto allowed = synthesis::validateRendererCapabilities(carrier, request);

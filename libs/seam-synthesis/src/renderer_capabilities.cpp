@@ -1,5 +1,7 @@
 #include "seam/synthesis/renderer_capabilities.hpp"
 
+#include "seam/domain/project.hpp"
+
 #include <algorithm>
 #include <array>
 
@@ -23,15 +25,14 @@ RendererCapabilityView makeCapabilities(voicebank::RendererHint renderer) noexce
 
 }  // namespace
 
-RendererCapabilityView rendererCapabilities(RendererCarrier carrier) noexcept {
-  if (carrier == RendererCarrier::SampleBank)
-    return makeCapabilities(voicebank::RendererHint::ClassicPsola);
+namespace {
+
+// The source-filter engine compiles the score once and owns its own excitation and tract, so it
+// consumes every control the compiled performance carries, including the formant channel that moves
+// its own resonances, the breathiness channel that rebalances its periodic and aperiodic energy, and
+// the tension channel that tilts the spectrum of the harmonic source it generates.
+RendererCapabilityView sourceFilterCapabilities() noexcept {
   RendererCapabilityView result{.renderer = voicebank::RendererHint::Raw};
-  // The source-filter engine compiles the score once and owns its own excitation and tract, so it
-  // consumes every control the compiled performance carries, including the formant channel it now
-  // moves by re-designing the tract's own resonances, the breathiness channel it applies by rebalancing
-  // that excitation's periodic and aperiodic energy, and the tension channel it applies by tilting the
-  // spectrum of the harmonic source it generates.
   result.supported[static_cast<std::size_t>(RendererControl::Pitch)] = true;
   result.supported[static_cast<std::size_t>(RendererControl::Timing)] = true;
   result.supported[static_cast<std::size_t>(RendererControl::Dynamics)] = true;
@@ -49,6 +50,45 @@ RendererCapabilityView rendererCapabilities(RendererCarrier carrier) noexcept {
   result.supported[static_cast<std::size_t>(RendererControl::Growl)] = true;
   result.pitchPreservingTransient = true;
   return result;
+}
+
+// The shipped neural worker renders from transferred audio and phonetic conditioning. It consumes the
+// shared compiled pitch, timing, dynamics, vibrato, attack and release path, and it does not generate a
+// designer-owned excitation or tract, so it refuses the six timbral channels exactly as the sample bank
+// does. Its own conditioning controls are not claimed here until an admitted execution contract is
+// shown to consume them.
+RendererCapabilityView neuralCapabilities() noexcept {
+  RendererCapabilityView result{.renderer = voicebank::RendererHint::Raw};
+  result.supported[static_cast<std::size_t>(RendererControl::Pitch)] = true;
+  result.supported[static_cast<std::size_t>(RendererControl::Timing)] = true;
+  result.supported[static_cast<std::size_t>(RendererControl::Dynamics)] = true;
+  result.supported[static_cast<std::size_t>(RendererControl::Vibrato)] = true;
+  result.supported[static_cast<std::size_t>(RendererControl::Attack)] = true;
+  result.supported[static_cast<std::size_t>(RendererControl::Release)] = true;
+  result.pitchPreservingTransient = true;
+  return result;
+}
+
+}  // namespace
+
+RendererCapabilityView rendererCapabilities(RendererCarrier carrier) noexcept {
+  // Exhaustive on purpose: a new carrier must state its own controls rather than inheriting the
+  // source-filter set by falling through an else branch.
+  switch (carrier) {
+    case RendererCarrier::SampleBank:
+      return makeCapabilities(voicebank::RendererHint::ClassicPsola);
+    case RendererCarrier::SourceFilter:
+      return sourceFilterCapabilities();
+    case RendererCarrier::Neural:
+      return neuralCapabilities();
+  }
+  return makeCapabilities(voicebank::RendererHint::ClassicPsola);
+}
+
+RendererCarrier rendererCarrierFor(const domain::VocalTrack& track) noexcept {
+  if (track.neuralResource) return RendererCarrier::Neural;
+  if (track.proceduralRecipe) return RendererCarrier::SourceFilter;
+  return RendererCarrier::SampleBank;
 }
 
 RendererCapabilityView rendererCapabilities(
