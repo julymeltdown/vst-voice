@@ -1051,3 +1051,90 @@ TEST_CASE("The copy and select commands are reachable through the menu dispatch 
   CHECK(runtime.document().session().project().findVocalTrack(trackId)->proceduralRecipe->path ==
         installed);
 }
+
+// A recorded decision that nothing reads is not a review, it is a write-only record. The review status
+// must be visible where the singer is offered, and must not be reported as current once it stops
+// describing the material.
+TEST_CASE("A recorded review is visible where the installed singer is offered") {
+  const auto root = test::support::temporaryDirectory("procedural-offer-review");
+  auto key = distribution::generateSigningKeyPair();
+  CHECK(key.hasValue());
+  if (!key) return;
+  const auto package = createProceduralPackage(root, key.value());
+  const auto installRoot = root / "singers";
+  distribution::InstallProceduralOptions installOptions;
+  installOptions.verification = distribution::VerifySeambankOptions{
+      .limits = {}, .trustedPublicKeys = {key.value().publicKey}, .requireTrustedSigner = true};
+  CHECK(distribution::installProceduralPackage(package, installRoot, installOptions).hasValue());
+  auto session = standalone::AuthoringSession::create(standalone::AuthoringSessionConfig{
+      .cacheRoot = root / "cache",
+      .voicebankRoots = {},
+      .sampleRate = 48000U,
+      .outputChannels = 2U,
+      .bindFirstAvailableVoicebank = false,
+      .allowDevelopmentVoicebanks = false});
+  CHECK(session.hasValue());
+  if (!session) return;
+  auto dialog = std::make_unique<FakeDialog>();
+  auto* picker = dialog.get();
+  standalone::StandaloneApplicationControllerConfig config{
+      .autosaveRoot = root / "autosaves", .recentProjectsPath = root / "recent.json"};
+  config.proceduralSingerRoots = {distribution::ProceduralSearchRoot{
+      .path = installRoot, .kind = distribution::ProceduralRootKind::Installed}};
+  config.renderableProceduralEngineId = "seam.source-filter.v1";
+  config.renderableProceduralEngineRevision = 14U;
+  config.proceduralReviewStorePath = root / "reviews" / "decisions.json";
+  auto controller = standalone::StandaloneApplicationController::create(
+      *session.value(), std::move(dialog), std::make_unique<FakePrompt>(), config);
+  CHECK(controller.hasValue());
+  if (!controller) return;
+  // An installation with no decision is offered and reported as unreviewed.
+  auto offers = controller.value()->installedSingerOffers();
+  CHECK(offers.hasValue());
+  if (!offers) return;
+  CHECK(offers.value().size() == 1U);
+  CHECK(offers.value().front().selectable);
+  CHECK(!offers.value().front().reviewed);
+
+  const auto evidence = root / "evidence";
+  std::filesystem::create_directories(evidence);
+  std::ofstream(evidence / "phrase.json") << "{\"notes\":\"a\"}";
+  std::ofstream(evidence / "phrase.wav") << "dry render";
+  picker->styleResponse = std::nullopt;
+  CHECK(controller.value()->dispatch(platform::ApplicationCommand::SelectInstalledProceduralSinger));
+  picker->styleResponse = picker->offeredStyles.front();
+  CHECK(controller.value()->dispatch(platform::ApplicationCommand::SelectInstalledProceduralSinger));
+  distribution::ProceduralReviewDecision decision;
+  decision.reviewId = "review-1";
+  decision.kind = distribution::ProceduralReviewDecisionKind::Accept;
+  decision.reviewerId = "producer-1";
+  decision.reviewedAtUtc = "2026-09-15T09:00:00Z";
+  CHECK(controller.value()
+             ->reviewInstalledSinger(decision, evidence / "phrase.json", evidence / "phrase.wav")
+             .hasValue());
+
+  // Now the same listing says the resource is reviewed, which is what makes the decision useful.
+  offers = controller.value()->installedSingerOffers();
+  CHECK(offers.hasValue());
+  if (!offers) return;
+  CHECK(offers.value().front().reviewed);
+  CHECK(offers.value().front().reviewDetail.empty());
+
+  // A replacement with different content produces a different render identity, so the old approval no
+  // longer covers it and the listing must not claim it does.
+  const auto variant = createProceduralPackageVariant(root, key.value(), 909U);
+  distribution::InstallProceduralOptions second;
+  second.verification = installOptions.verification;
+  second.replaceExisting = false;
+  CHECK(distribution::installProceduralPackage(variant, installRoot, second).hasValue());
+  offers = controller.value()->installedSingerOffers();
+  CHECK(offers.hasValue());
+  if (!offers) return;
+  std::size_t reviewedCount = 0U;
+  for (const auto& offer : offers.value()) {
+    if (offer.reviewed) ++reviewedCount;
+  }
+  // Exactly one of the two installed versions is the reviewed one.
+  CHECK(offers.value().size() == 2U);
+  CHECK(reviewedCount == 1U);
+}

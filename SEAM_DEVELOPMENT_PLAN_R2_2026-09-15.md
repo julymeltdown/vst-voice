@@ -280,20 +280,30 @@ be the answer.
 
 ## 14. Immediate next actions
 
-1. ~~Land ADR 0022~~ — published at `9711eecb`.
-2. ~~Implement D4.2~~ — published at `5d149f22`.
-3. ~~Implement D4.8~~ — published at `9711eecb`, and it located the installed-identity defect above.
-4. **Obtain the P1 listening observation (section 6). This is now the only engineering-blocking item
-   in the procedural route.** D3 cannot start without it, and no amount of further implementation
-   substitutes for it. The expression lane is no longer untested on real material: its audible
-   consequence is verified, so the remaining question is musical rather than mechanical.
-5. Start N1 checkpoint 1 independently.
+Completed since this plan was written, in order: ADR 0022 (`9711eecb`); D4.2 review binding
+(`5d149f22`) and its durable store (`4bf9b4d4`); D4.8 connected journey (`9711eecb`, extended by
+`b4169316`); D4.6 copy-to-edit (`4d3b3739`) with a second save-path guard (`475e9eba`) and reason
+surfacing (`0c43a690`); the reachability repair that wires the procedural roots into the shipped
+application (`b2466aa0`); the expression lane's audible exit (`f983c3c5`); a listening comparison tool
+that refuses to rank packets (`2521951f`); and N1 checkpoint 1 plus the corpus-free vocoder bridge
+(`b78b92cf`, `c94cc6c3`). The whole procedural slice, D2 and D4, is now built and reachable from the
+application.
 
-The natural next code work, if capacity is available while waiting on listening, is to connect the
-D4.2 decision type to the authoring session so a creator can record a decision through the
-application rather than only through the library, and to expose trust, qualification and applicable
-controls in the installed-singer chooser. Neither unblocks the musical question, and neither should
-be allowed to displace the listening gate.
+What remains, and what each thing is waiting on:
+
+1. **The P1 listening observation is the only engineering-blocking item left in the procedural route.**
+   D3 cannot start without it, because the plan refuses to pick an acoustic repair from waveform
+   statistics. Everything else in D2 and D4 is done. It waits on a person, not on code, and no further
+   implementation substitutes for it.
+2. **D3's two repair cycles**, once an observation exists. Each is capped at eight active engineering
+   hours and starts from the failure class the observation names.
+3. **A native action that opens the review surface.** The store and the controller methods exist and are
+   tested, but no menu item drives them, so a creator cannot yet record a decision without a developer.
+   This is bounded work and does not displace the listening gate.
+4. **Remaining N1 checkpoints**, blocked on inputs the feasibility record reports as absent: an
+   authorized corpus, admitted labels, an admitted vocoder and a rights decision. The corpus-free
+   vocoder bridge is done, so what is left is the part that needs material rather than code.
+5. **D5/D6**, gated on the first usable original-singer milestone and on route-specific audio evidence.
 
 ## 15. Schedule, stated bounded rather than precise
 

@@ -1671,6 +1671,38 @@ StandaloneApplicationController::installedSingerOffers() const {
     offer.status = resolution.status;
     offer.reason = resolution.diagnostic;
     offer.selectable = resolution.resolved();
+    // A stored decision is reported with the singer, so a review is visible where the choice is made
+    // instead of living in a record nothing reads. It is read only when a store is configured, and a
+    // store problem degrades to unreviewed rather than failing the whole listing.
+    if (!config_.proceduralReviewStorePath.empty()) {
+      auto store = distribution::ProceduralReviewStore::open(config_.proceduralReviewStorePath);
+      if (store) {
+        auto decisions = store.value().decisionsFor(candidate.manifest.id + "-" +
+                                                    candidate.renderIdentity.contentHash);
+        if (decisions && !decisions.value().empty()) {
+          const auto& recorded = decisions.value().back();
+          if (recorded.recordedBasis.has_value()) {
+            distribution::ProceduralReviewCandidate review;
+            review.candidateId = candidate.manifest.id + "-" +
+                                 candidate.renderIdentity.contentHash;
+            review.manifest = candidate.manifest;
+            review.basis = recorded.recordedBasis.value();
+            auto receipt = store.value().resolve(review);
+            if (receipt) {
+              offer.reviewed = receipt.value().accepted();
+              if (!receipt.value().stale.empty())
+                offer.reviewDetail = "a recorded review no longer matches this resource";
+              else if (receipt.value().reject())
+                offer.reviewDetail = "a recorded review rejected this resource";
+            }
+          } else {
+            offer.reviewDetail = "a recorded review carries no basis";
+          }
+        }
+      } else {
+        offer.reviewDetail = "the review store could not be read";
+      }
+    }
     offers.push_back(std::move(offer));
   }
   return offers;

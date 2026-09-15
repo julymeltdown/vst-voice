@@ -1,5 +1,31 @@
 # Integrated Singer Execution
 
+## A recorded review is now visible where the singer is chosen
+
+September 15, 2026 — review surfacing added. The decision store could record and re-read an approval,
+but nothing consumed it: the receipt was write-only, which is the same defect class as the earlier
+unreachable capabilities on this project. A review nobody can see at the moment of choosing a singer
+does not help anyone decide anything.
+
+`InstalledSingerOffer` now carries `reviewed` and a `reviewDetail` reason, and the offer listing reads
+the store so a creator sees whether the resource they are about to use has actually been reviewed. The
+report is honest about the failure cases: a decision that no longer matches the resource is described
+as no longer matching rather than as approved, a rejection is described as a rejection, and a store
+that cannot be read degrades to unreviewed with a reason rather than failing the whole listing.
+
+Verified. `seam_procedural_install_journey_tests` passes 14 of 14 including the new case: an
+installation with no decision is offered as selectable and unreviewed; after a real review is recorded
+the same listing reports it as reviewed with no caveat; and installing a second version with different
+content leaves exactly one of the two versions reported as reviewed, because the approval is bound to
+the exact content identity rather than to the producer's version string.
+
+Not claimed. No human has reviewed a procedural singer; the decision in this case was written by the
+test. Surfacing review status is not qualification, and a reviewed resource is not thereby a good or
+releasable one. There is still no native menu action that records a decision, so a creator can read
+review status but cannot yet create one without a developer. No U-unit acceptance or Beta GO state
+changes.
+
+
 ## The shipped application can now reach the installed singer it catalogues
 
 September 15, 2026 — reachability defect found and repaired. Every D4 checkpoint passed its own suite,

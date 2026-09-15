@@ -231,6 +231,11 @@ public:
     distribution::ProceduralResolveStatus status{distribution::ProceduralResolveStatus::Missing};
     std::string reason;
     bool selectable{false};
+    // Whether a recorded review decision still covers this exact resource. A decision that no longer
+    // applies is reported as unreviewed rather than as approved, so a surface can show a creator what
+    // has actually been reviewed before they rely on it.
+    bool reviewed{false};
+    std::string reviewDetail;
   };
   [[nodiscard]] core::Result<std::vector<InstalledSingerOffer>> installedSingerOffers() const;
   // Freeze a review candidate for the installed singer this track uses, hash the evidence supplied,
