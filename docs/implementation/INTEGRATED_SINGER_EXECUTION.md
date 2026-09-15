@@ -1,5 +1,39 @@
 # Integrated Singer Execution
 
+## The shipped application can now reach the installed singer it catalogues
+
+September 15, 2026 — reachability defect found and repaired. Every D4 checkpoint passed its own suite,
+and none of it was reachable from the application the project actually ships. `NativeEditorApp`
+constructed the controller without setting `proceduralSingerRoots`, the renderable engine identity or
+the review store path, so in the shipping build the installed singer picker had no roots to scan, the
+engine was undeclared so selection refused, and there was nowhere to keep a review decision. A
+capability that exists only in tests is not a product capability, and the earlier defects in this slice
+were all of this kind.
+
+`ApplicationPaths` now resolves `proceduralSingerRoot` and `proceduralReviewStorePath` beside the
+sample-bank roots, under user data rather than the installation, because a procedural singer is a
+user-installed resource like a bank and the installation may be read-only. The review store is a file
+inside the singer root, so removing the singers removes their decisions instead of leaving approvals
+for resources that no longer exist. `NativeEditorApp` supplies both, along with the engine identity,
+from one declaration.
+
+The engine identity was also a magic number waiting to drift. `voice_design::kSourceFilterEngineId`
+and `kSourceFilterEngineRevision` now name what a recipe targets and what this build renders, and the
+recipe's own default engine id derives from the constant, so the value a package declares and the value
+a build accepts come from one source of truth.
+
+Verified. `seam_tests` passes 908 of 908 including a new case: the procedural singer root and its
+review store are absolute, both live under the user data root, the review store is a file inside the
+singer root, and the singer root is distinct from both the bank root and the user data root itself. The
+full registered run passes 170 of 170 and the shipping `seam_editor_native` bundle builds with the
+wiring in place.
+
+Not claimed. This proves the application configures the roots and the engine identity; it does not
+prove a creator can reach the picker through a menu, because no native action opens it yet, and no
+installed singer has been selected in the shipping build by a person. No U-unit acceptance or Beta GO
+state changes.
+
+
 ## A review decision now survives a restart and is reachable from the application
 
 September 15, 2026 — D4.2 completed. The review binding existed as a library type, which meant a

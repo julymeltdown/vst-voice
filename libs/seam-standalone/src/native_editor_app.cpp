@@ -360,6 +360,16 @@ core::Result<void> NativeEditorApp::initialize() {
           .autosaveRoot = supportRoot / "Autosaves",
           .recentProjectsPath = supportRoot / "recent-projects.json",
           .voicebankInstallRoot = supportRoot / "Voicebanks",
+          // An installed procedural singer is a user resource like a bank, so the shipped application
+          // catalogs it beside the banks and keeps its review decisions with the rest of the user data.
+          // Declaring the engine here is what lets the picker offer a singer this build can really
+          // render and name the reason for any it cannot.
+          .proceduralSingerRoots = {distribution::ProceduralSearchRoot{
+              .path = supportRoot / "Singers",
+              .kind = distribution::ProceduralRootKind::Installed}},
+          .renderableProceduralEngineId = std::string{voice_design::kSourceFilterEngineId},
+          .renderableProceduralEngineRevision = voice_design::kSourceFilterEngineRevision,
+          .proceduralReviewStorePath = supportRoot / "Singers" / "reviews.json",
           .manualsRoot = manualsRoot,
           .trustedVoicebankKeys = config_.trustedVoicebankKeys,
           .developmentTrustRoot = config_.developmentTrustRoot,

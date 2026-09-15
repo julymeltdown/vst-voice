@@ -72,6 +72,8 @@ ApplicationPaths fromRoots(std::filesystem::path installRoot,
       .projectsRoot = {},
       .voicebankRoot = {},
       .voicebankTrustRoot = {},
+      .proceduralSingerRoot = {},
+      .proceduralReviewStorePath = {},
       .autosaveRoot = {},
       .recoveryRoot = {},
       .logsRoot = {},
@@ -83,6 +85,11 @@ ApplicationPaths fromRoots(std::filesystem::path installRoot,
   result.projectsRoot = result.userDataRoot / "Projects";
   result.voicebankRoot = result.userDataRoot / "Voicebanks";
   result.voicebankTrustRoot = result.userDataRoot / "Trust";
+  // A procedural singer is a user-installed resource like a bank, so it lives beside the
+  // banks and its review decisions sit with the rest of the user data rather than in the
+  // installation, which may be read-only.
+  result.proceduralSingerRoot = result.userDataRoot / "Singers";
+  result.proceduralReviewStorePath = result.userDataRoot / "Singers" / "reviews.json";
   result.autosaveRoot = state / "Autosaves";
   result.recoveryRoot = state / "Recovery";
   result.logsRoot = state / "Logs";

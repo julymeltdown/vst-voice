@@ -2,6 +2,7 @@
 #include "seam/core/result.hpp"
 #include "seam/voice_design/frication_config.hpp"
 #include <cstdint>
+#include <string_view>
 #include <optional>
 #include <string>
 #include <vector>
@@ -34,9 +35,20 @@ struct Modulation final {
 };
 // Draft design-time data only: no score F0, executable script, source approval
 // or installed-bank mutation. Runtime capabilities are a separate contract.
+// The engine a recipe targets, and the revision of it this build renders. A distributed recipe declares
+// these, and a build declares what it can actually render from the same source of truth, so a resource
+// built for another revision is reported as incompatible instead of being rendered by a different one.
+inline constexpr std::string_view kSourceFilterEngineId = "seam.source-filter.v1";
+// This build's declaration of the source-filter renderer it implements. A distributed recipe states
+// the revision it was built for and this build states the revision it renders, so a mismatch is
+// reported as incompatible rather than rendered by a renderer that would sound different. Bump it
+// whenever source-filter rendering changes behavior for the same recipe, which is what makes an old
+// review decision inapplicable to newly built material.
+inline constexpr std::uint32_t kSourceFilterEngineRevision = 14U;
+
 struct VoiceRecipe final {
   std::string id;
-  std::string engineId{"seam.source-filter.v1"};
+  std::string engineId{std::string{kSourceFilterEngineId}};
   std::uint64_t seed{0U};
   Phonation phonation;
   Modulation modulation;

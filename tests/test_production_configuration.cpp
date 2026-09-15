@@ -36,6 +36,26 @@ TEST_CASE("application paths keep mutable categories in distinct user roots") {
   CHECK(paths.resourcesRoot != paths.userDataRoot);
 }
 
+// The procedural singer root and its review store are what make the installed-singer lifecycle reachable
+// at all: without them the shipped application catalogs nothing and the commands fail. They are checked
+// here with the other user paths rather than only in the controller tests, because a build that never
+// resolves them would pass every library test and still ship a picker that can never offer a singer.
+TEST_CASE("the procedural singer root and review store resolve under the user data root") {
+  const auto paths = testPaths();
+  CHECK(paths.proceduralSingerRoot.is_absolute());
+  CHECK(paths.proceduralReviewStorePath.is_absolute());
+  // The singer root is user-owned, like the banks, so it must sit under user data and not beside the
+  // installation, which may be read-only.
+  CHECK(paths.proceduralSingerRoot.string().starts_with(paths.userDataRoot.string()));
+  CHECK(paths.proceduralReviewStorePath.string().starts_with(paths.userDataRoot.string()));
+  // The review store is a file inside the singer root, so removing the singers also removes their
+  // decisions rather than leaving approvals behind for resources that no longer exist.
+  CHECK(paths.proceduralReviewStorePath.parent_path() == paths.proceduralSingerRoot);
+  CHECK(paths.proceduralSingerRoot != paths.voicebankRoot);
+  CHECK(paths.proceduralSingerRoot != paths.userDataRoot);
+}
+
+
 TEST_CASE("release configuration removes development and fallback defaults") {
   const auto paths = testPaths();
   const auto configuration = seam::standalone::makeProductionConfiguration(
