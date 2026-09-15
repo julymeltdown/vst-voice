@@ -18,8 +18,14 @@
 #include "seam/native_ui/pixel_surface.hpp"
 #include "seam/text/text_engine.hpp"
 #include "seam/ui/expression_lane.hpp"
+#include "seam/rendering/render_pipeline.hpp"
+#include "seam/rendering/render_snapshot.hpp"
+#include "seam/voice_design/recipe_resource.hpp"
+#include "seam/synthesis/singer_resource.hpp"
+#include <span>
 
 #include <functional>
+#include <cmath>
 #include <string>
 #include <vector>
 #include <cstdlib>
@@ -31,6 +37,22 @@ using namespace seam;
 using ui::ExpressionChannel;
 using ui::ExpressionLaneModel;
 using ui::ExpressionPoint;
+
+// The recipe the lane fixture's track names. Rendering needs the resource itself rather than the
+// reference a project stores, so it is frozen here to match what a project would resolve.
+voice_design::VoiceRecipe laneRecipe() {
+  voice_design::VoiceRecipe recipe;
+  recipe.id = "expression-lane";
+  recipe.seed = 4321U;
+  voice_design::VoicePose pose;
+  pose.phone = "a";
+  pose.style = "neutral";
+  pose.formants = {voice_design::ResonanceBand{700.0, 90.0, 0.0},
+                   voice_design::ResonanceBand{1200.0, 100.0, -3.0},
+                   voice_design::ResonanceBand{2600.0, 140.0, -6.0}};
+  recipe.poses.push_back(pose);
+  return recipe;
+}
 
 struct LaneFixture final {
   application::ProjectFactory factory{9600U};
@@ -51,17 +73,21 @@ struct LaneFixture final {
     region->lyrics.push_back(std::move(lyric));
     region->notes.push_back(std::move(note));
     if (procedural) {
+      // The stored reference must be the identity the renderer derives from the recipe, because the
+      // snapshot refuses a resource whose identity differs from the project's selection.
+      const auto frozen = voice_design::freezeVoiceRecipeResource(laneRecipe());
+      if (!frozen) throw test::Failure{frozen.error().message};
       project.findVocalTrack(trackId)->proceduralRecipe = domain::ProceduralRecipeReference{
-          .resource = {domain::SingerResourceKind::Procedural, "expression-lane", "1.0.0",
-                       std::string(64U, 'b')},
-          .path = "recipe.json",
-          .style = "neutral"};
+          .resource = frozen.value().identity, .path = "recipe.json", .style = "neutral"};
     }
     return project;
   }
 };
 
+
 TEST_CASE("Every channel reports its own unit and bound rather than a shared range") {
+
+
   const auto formant = ui::describeExpressionChannel(ExpressionChannel::Formant);
   CHECK(formant.unit == "semitones");
   CHECK_NEAR(formant.maximum, domain::kMaximumFormantShiftSemitones, 1e-6);
@@ -254,6 +280,40 @@ TEST_CASE("A lane edit survives a save, reload and re-export of the same curve")
   CHECK(reloaded->genderAutomation.points().size() == 2U);
   CHECK_NEAR(reloaded->genderAutomation.points().front().amount, -0.5, 1e-6);
   CHECK_NEAR(reloaded->genderAutomation.valueAt(time::Tick{840}), 0.125, 1e-6);
+
+  // The reloaded project must still render, and the stored curve must reach the audio: a lane edit that
+  // survives serialization but never affects rendering would pass every assertion above.
+  // The renderer requires the frozen resource's identity to be the one the project stored, so the
+  // fixture's own reference is used rather than a freshly derived one. A snapshot that accepted a
+  // mismatched identity would let a project render a different voice than it selected.
+  const auto* track = decoded.value().findVocalTrack(fixture.trackId);
+  CHECK(track != nullptr);
+  if (track == nullptr) return;
+  const auto recipeBytes = voice_design::encodeVoiceRecipe(laneRecipe());
+  CHECK(recipeBytes.hasValue());
+  if (!recipeBytes) return;
+  const auto frozen = synthesis::freezeProceduralResource(
+      track->proceduralRecipe->resource,
+      std::as_bytes(std::span<const char>{recipeBytes.value().data(), recipeBytes.value().size()}));
+  CHECK(frozen.hasValue());
+  if (!frozen) return;
+  const auto resource = frozen;
+  CHECK(resource.hasValue());
+  if (!resource) return;
+  auto snapshot = rendering::RenderSnapshotFactory{}.createProcedural(
+      decoded.value(), resource.value(), fixture.trackId, fixture.regionId, 1U,
+      rendering::RenderQuality::Final, 48000U);
+  CHECK(snapshot.hasValue());
+  if (!snapshot) return;
+  auto rendered = rendering::PhraseRenderPipeline{}.render(snapshot.value());
+  CHECK(rendered.hasValue());
+  if (!rendered) return;
+  double energy = 0.0;
+  for (const auto sample : rendered.value().rendered.audio.samples) {
+    CHECK(std::isfinite(sample));
+    energy += static_cast<double>(sample) * static_cast<double>(sample);
+  }
+  CHECK(energy > 0.0);
 }
 
 TEST_CASE("The drawn lane reports the channel, its unit, the playhead value and its refusal") {
