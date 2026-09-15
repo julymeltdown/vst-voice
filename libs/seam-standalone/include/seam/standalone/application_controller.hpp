@@ -248,6 +248,9 @@ public:
   // The stored decisions for the installed singer this track uses, so a surface can show whether the
   // selected resource is reviewed before a creator relies on it.
   [[nodiscard]] core::Result<distribution::ProceduralReviewReceipt> installedSingerReview() const;
+  // Ask for a reviewer identity, a decision and the evidence it examined, then record it. This is the
+  // creator-facing entry point, so a review can be recorded without a developer.
+  [[nodiscard]] core::Result<void> reviewInstalledSingerFromDialog();
   // The review candidate for the installed singer this track uses, built from the evidence supplied.
   [[nodiscard]] core::Result<distribution::ProceduralReviewCandidate> reviewCandidateForSelectedSinger(
       const std::filesystem::path& scoreEvidence,

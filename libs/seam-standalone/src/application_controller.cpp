@@ -12,6 +12,10 @@
 #include <algorithm>
 #include <array>
 #include <cctype>
+#include <chrono>
+#include <ctime>
+#include <iomanip>
+#include <sstream>
 #include <utility>
 
 namespace seam::standalone {
@@ -948,6 +952,8 @@ core::Result<void> StandaloneApplicationController::dispatch(
       return selectProceduralRecipeFromDialog(false);
     case platform::ApplicationCommand::SelectInstalledProceduralSinger:
       return selectInstalledProceduralSinger();
+    case platform::ApplicationCommand::ReviewInstalledSinger:
+      return reviewInstalledSingerFromDialog();
     case platform::ApplicationCommand::CopyInstalledSingerToDraft: {
       const auto copied = copyInstalledSingerToDraft();
       return copied ? core::Result<void>{} : core::Result<void>{copied.error()};
@@ -1650,6 +1656,25 @@ StandaloneApplicationController::installedProceduralSingers() const {
   return candidates;
 }
 
+namespace {
+
+// A recorded review decision is stamped in UTC, so a decision taken in one timezone orders correctly
+// against one taken in another. The format matches the rest of the product's journal records.
+std::string utcTimestampNow() {
+  const auto time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+  std::tm utc{};
+#ifdef _WIN32
+  gmtime_s(&utc, &time);
+#else
+  gmtime_r(&time, &utc);
+#endif
+  std::ostringstream output;
+  output << std::put_time(&utc, "%Y-%m-%dT%H:%M:%SZ");
+  return output.str();
+}
+
+}  // namespace
+
 core::Result<std::vector<StandaloneApplicationController::InstalledSingerOffer>>
 StandaloneApplicationController::installedSingerOffers() const {
   using Offer = InstalledSingerOffer;
@@ -2160,6 +2185,58 @@ StandaloneApplicationController::reviewInstalledSinger(
   return store.value().resolve(review.value());
 }
 
+
+
+core::Result<void> StandaloneApplicationController::reviewInstalledSingerFromDialog() {
+  if (config_.proceduralReviewStorePath.empty())
+    return core::failure(core::ErrorCode::Unsupported,
+                         "This build has no procedural review store configured");
+  // The summary names the exact resource the decision will be about, so a reviewer sees what they
+  // are approving rather than a display name that could belong to a different build.
+  const auto trackId = session_.runtime().selectedTrack();
+  const auto* track = session_.runtime().document().session().project().findVocalTrack(trackId);
+  if (track == nullptr || !track->proceduralRecipe)
+    return core::failure(core::ErrorCode::Conflict,
+                         "Reviewing requires a track with a procedural singer selected");
+  const auto offers = installedSingerOffers();
+  if (!offers) return core::Result<void>{offers.error()};
+  const InstalledSingerOffer* selected = nullptr;
+  for (const auto& offer : offers.value()) {
+    if (offer.selectable && offer.candidate.renderIdentity == track->proceduralRecipe->resource) {
+      selected = &offer;
+      break;
+    }
+  }
+  if (selected == nullptr)
+    return core::failure(core::ErrorCode::NotFound,
+                         "The selected procedural singer is not an installed resource this build "
+                         "can render, so it cannot be reviewed here");
+  const auto summary = std::string{"Singer: "} + selected->candidate.manifest.displayName +
+                                   " (" + selected->candidate.manifest.id + ")\nRecipe: " +
+                                   selected->candidate.renderIdentity.contentHash +
+                                   "\nEngine: " + selected->candidate.manifest.engineId +
+                                   "\nA decision records what you reviewed; it is not a claim "
+                                   "that the voice is good.";
+  const auto entry = fileDialog_->chooseProceduralReview(summary);
+  if (!entry) return core::Result<void>{entry.error()};
+  if (!entry.value()) return core::success();
+  distribution::ProceduralReviewDecision decision;
+  // The review id binds the decision to the resource and its reviewer, so a second decision by the
+  // same person about the same material is a duplicate rather than a silent second approval.
+  decision.reviewId = std::string{entry.value()->accept ? "accept" : "reject"} + "-" +
+                      entry.value()->reviewerId + "-" +
+                      selected->candidate.renderIdentity.contentHash.substr(0U, 16U);
+  decision.kind = entry.value()->accept ? distribution::ProceduralReviewDecisionKind::Accept
+                                        : distribution::ProceduralReviewDecisionKind::Reject;
+  decision.reviewerId = entry.value()->reviewerId;
+  decision.reviewedAtUtc = utcTimestampNow();
+  const auto recorded = reviewInstalledSinger(decision, entry.value()->scoreEvidence,
+                                               entry.value()->audioEvidence);
+  if (!recorded) return core::Result<void>{recorded.error()};
+  // The listing carries review status, so the surface is told to re-read it.
+  notifyStateChanged();
+  return core::success();
+}
 
 core::Result<std::filesystem::path>
 StandaloneApplicationController::copyInstalledSingerToDraft(

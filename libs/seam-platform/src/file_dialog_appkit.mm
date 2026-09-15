@@ -262,6 +262,70 @@ public:
       return Output{std::string{text}};
     }
   }
+  core::Result<std::optional<ProceduralReviewInput>> chooseProceduralReview(
+      std::string_view summary) override {
+    using Output = std::optional<ProceduralReviewInput>;
+    if (![NSThread isMainThread])
+      return core::failure<Output>(core::ErrorCode::InvalidState,
+                                   "Procedural review must run on the main thread");
+    if (summary.size() > 16384U)
+      return core::failure<Output>(core::ErrorCode::InvalidArgument,
+                                   "Procedural review summary is oversized");
+    @autoreleasepool {
+      NSAlert* alert = [[NSAlert alloc] init];
+      alert.messageText = @"Review this installed procedural singer";
+      alert.informativeText = nsString(summary);
+      [alert addButtonWithTitle:@"Choose evidence\u2026"];
+      [alert addButtonWithTitle:@"Cancel"];
+      NSTextField* reviewer = [[NSTextField alloc] initWithFrame:NSMakeRect(0,0,420,26)];
+      reviewer.placeholderString = @"Reviewer identity";
+      [reviewer setAccessibilityLabel:@"Reviewer identity for this decision"];
+      NSPopUpButton* decision = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(0,0,420,28) pullsDown:NO];
+      [decision addItemWithTitle:@"Reject"];
+      [decision addItemWithTitle:@"Accept"];
+      [decision setAccessibilityLabel:@"Review decision"];
+      NSStackView* stack = [NSStackView stackViewWithViews:@[reviewer, decision]];
+      stack.orientation = NSUserInterfaceLayoutOrientationVertical;
+      stack.spacing = 8.0;
+      alert.accessoryView = stack;
+      if ([alert runModal] != NSAlertFirstButtonReturn) return Output{};
+      // A recorded decision is a human attribution, so an identity is required rather than optional.
+      if (reviewer.stringValue.length == 0U || reviewer.stringValue.length > 128U)
+        return core::failure<Output>(core::ErrorCode::InvalidArgument,
+                                     "A reviewer identity is required");
+      const char* reviewerText = reviewer.stringValue.UTF8String;
+      if (reviewerText == nullptr)
+        return core::failure<Output>(core::ErrorCode::InvalidArgument,
+                                     "Reviewer identity is not valid text");
+      ProceduralReviewInput input;
+      input.reviewerId = std::string{reviewerText};
+      input.accept = decision.indexOfSelectedItem == 1;
+      // The evidence is named explicitly, so the digests are computed from the files the reviewer
+      // points at rather than from anything supplied as a claim.
+      NSOpenPanel* score = [NSOpenPanel openPanel];
+      score.message = @"Choose the score that was reviewed";
+      score.canChooseFiles = YES;
+      score.canChooseDirectories = NO;
+      score.allowsMultipleSelection = NO;
+      if ([score runModal] != NSModalResponseOK || score.URL == nil) return Output{};
+      if (score.URL.fileSystemRepresentation == nullptr)
+        return core::failure<Output>(core::ErrorCode::InvalidArgument,
+                                     "The score path is not usable");
+      input.scoreEvidence = std::filesystem::path{score.URL.fileSystemRepresentation};
+      NSOpenPanel* audio = [NSOpenPanel openPanel];
+      audio.message = @"Choose the audio that was listened to";
+      audio.canChooseFiles = YES;
+      audio.canChooseDirectories = NO;
+      audio.allowsMultipleSelection = NO;
+      if ([audio runModal] != NSModalResponseOK || audio.URL == nil) return Output{};
+      if (audio.URL.fileSystemRepresentation == nullptr)
+        return core::failure<Output>(core::ErrorCode::InvalidArgument,
+                                     "The audio path is not usable");
+      input.audioEvidence = std::filesystem::path{audio.URL.fileSystemRepresentation};
+      return Output{std::move(input)};
+    }
+  }
+
   core::Result<std::optional<DesignerPoseIdentity>> chooseDesignerPoseIdentity(DesignerPoseKind kind) override {
     const bool frication=kind!=DesignerPoseKind::Voiced, plosive=kind==DesignerPoseKind::Plosive;
     using Output = std::optional<DesignerPoseIdentity>;

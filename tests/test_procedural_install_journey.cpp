@@ -53,6 +53,15 @@ public:
     responses.erase(responses.begin());
     return result;
   }
+  // The procedural review entry point. A test sets the response to drive the dialogue, or leaves it
+  // unset to model the user cancelling, which must write nothing.
+  core::Result<std::optional<ProceduralReviewInput>> chooseProceduralReview(
+      std::string_view summary) override {
+    reviewSummary = std::string{summary};
+    return reviewResponse;
+  }
+  std::string reviewSummary;
+  std::optional<ProceduralReviewInput> reviewResponse;
   std::vector<platform::FileDialogRequest> requests;
   std::vector<std::optional<std::filesystem::path>> responses;
 };
@@ -1157,4 +1166,88 @@ TEST_CASE("A recorded review is visible where the installed singer is offered") 
   // Exactly one of the two installed versions is the reviewed one.
   CHECK(offers.value().size() == 2U);
   CHECK(reviewedCount == 1U);
+}
+
+// The review action must be reachable from the menu and must not record anything when the reviewer
+// cancels. A menu item that writes on cancel would store an approval nobody made.
+TEST_CASE("The review action records through the dialog and writes nothing on cancel") {
+  const auto root = test::support::temporaryDirectory("procedural-review-dialog");
+  auto key = distribution::generateSigningKeyPair();
+  CHECK(key.hasValue());
+  if (!key) return;
+  const auto package = createProceduralPackage(root, key.value());
+  const auto installRoot = root / "singers";
+  distribution::InstallProceduralOptions installOptions;
+  installOptions.verification = distribution::VerifySeambankOptions{
+      .limits = {}, .trustedPublicKeys = {key.value().publicKey}, .requireTrustedSigner = true};
+  CHECK(distribution::installProceduralPackage(package, installRoot, installOptions).hasValue());
+  auto session = standalone::AuthoringSession::create(standalone::AuthoringSessionConfig{
+      .cacheRoot = root / "cache",
+      .voicebankRoots = {},
+      .sampleRate = 48000U,
+      .outputChannels = 2U,
+      .bindFirstAvailableVoicebank = false,
+      .allowDevelopmentVoicebanks = false});
+  CHECK(session.hasValue());
+  if (!session) return;
+  auto dialog = std::make_unique<FakeDialog>();
+  auto* picker = dialog.get();
+  standalone::StandaloneApplicationControllerConfig config{
+      .autosaveRoot = root / "autosaves", .recentProjectsPath = root / "recent.json"};
+  config.proceduralSingerRoots = {distribution::ProceduralSearchRoot{
+      .path = installRoot, .kind = distribution::ProceduralRootKind::Installed}};
+  config.renderableProceduralEngineId = "seam.source-filter.v1";
+  config.renderableProceduralEngineRevision = 14U;
+  config.proceduralReviewStorePath = root / "singers" / "reviews.json";
+  auto controller = standalone::StandaloneApplicationController::create(
+      *session.value(), std::move(dialog), std::make_unique<FakePrompt>(), config);
+  CHECK(controller.hasValue());
+  if (!controller) return;
+  // No singer selected: the action reports that rather than opening a dialogue about nothing.
+  picker->reviewResponse = platform::IFileDialog::ProceduralReviewInput{};
+  CHECK(!controller.value()->dispatch(platform::ApplicationCommand::ReviewInstalledSinger));
+  CHECK(picker->reviewSummary.empty());
+
+  picker->styleResponse = std::nullopt;
+  CHECK(controller.value()->dispatch(platform::ApplicationCommand::SelectInstalledProceduralSinger));
+  picker->styleResponse = picker->offeredStyles.front();
+  CHECK(controller.value()->dispatch(platform::ApplicationCommand::SelectInstalledProceduralSinger));
+
+  // A cancelled dialogue records nothing and creates no store file.
+  picker->reviewResponse = std::nullopt;
+  CHECK(controller.value()->dispatch(platform::ApplicationCommand::ReviewInstalledSinger));
+  CHECK(!picker->reviewSummary.empty());
+  CHECK(!std::filesystem::exists(config.proceduralReviewStorePath));
+
+  const auto evidence = root / "evidence";
+  std::filesystem::create_directories(evidence);
+  std::ofstream(evidence / "phrase.json") << "{\"notes\":\"a\"}";
+  std::ofstream(evidence / "phrase.wav") << "dry render";
+  platform::IFileDialog::ProceduralReviewInput input;
+  input.reviewerId = "producer-1";
+  input.accept = true;
+  input.scoreEvidence = evidence / "phrase.json";
+  input.audioEvidence = evidence / "phrase.wav";
+  picker->reviewResponse = input;
+  CHECK(controller.value()->dispatch(platform::ApplicationCommand::ReviewInstalledSinger));
+  CHECK(std::filesystem::exists(config.proceduralReviewStorePath));
+  // The summary the reviewer saw named the exact resource the decision became about.
+  CHECK(picker->reviewSummary.find("authored-original") != std::string::npos);
+  CHECK(picker->reviewSummary.find("not a claim") != std::string::npos);
+  const auto read = controller.value()->installedSingerReview();
+  CHECK(read.hasValue());
+  if (!read) return;
+  CHECK(read.value().accepted());
+  // The same reviewer recording the same decision twice is a duplicate, not a second approval.
+  CHECK(!controller.value()->dispatch(platform::ApplicationCommand::ReviewInstalledSinger));
+  // An acceptance with missing evidence is refused and does not become a stored approval.
+  platform::IFileDialog::ProceduralReviewInput missing = input;
+  missing.reviewerId = "producer-2";
+  missing.scoreEvidence = evidence / "absent.json";
+  picker->reviewResponse = missing;
+  CHECK(!controller.value()->dispatch(platform::ApplicationCommand::ReviewInstalledSinger));
+  const auto offers = controller.value()->installedSingerOffers();
+  CHECK(offers.hasValue());
+  if (!offers) return;
+  CHECK(offers.value().front().reviewed);
 }

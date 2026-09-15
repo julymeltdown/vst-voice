@@ -112,6 +112,21 @@ public:
   [[nodiscard]] virtual core::Result<std::optional<std::string>> chooseSampleReviewer(const std::vector<std::string>&) {
     return core::failure<std::optional<std::string>>(core::ErrorCode::Unsupported, "Registered reviewer selection is unavailable on this platform");
   }
+  // A procedural review is about one installed resource and the evidence a reviewer examined. The
+  // identity is asked for explicitly because a recorded decision is a human attribution, and the
+  // evidence is named by the reviewer because the digests are computed from the files they point at.
+  struct ProceduralReviewInput final {
+    std::string reviewerId;
+    bool accept{false};
+    std::filesystem::path scoreEvidence;
+    std::filesystem::path audioEvidence;
+  };
+  [[nodiscard]] virtual core::Result<std::optional<ProceduralReviewInput>> chooseProceduralReview(
+      std::string_view summary) {
+    static_cast<void>(summary);
+    return core::failure<std::optional<ProceduralReviewInput>>(
+        core::ErrorCode::Unsupported, "Procedural review entry is unavailable on this platform");
+  }
   [[nodiscard]] virtual core::Result<std::optional<std::string>> chooseDesignerSeed(std::string_view, bool frication = false) {
     static_cast<void>(frication);
     return core::failure<std::optional<std::string>>(core::ErrorCode::Unsupported, "Designer seed dialog is unavailable on this platform");

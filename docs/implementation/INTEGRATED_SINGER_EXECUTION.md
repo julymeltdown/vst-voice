@@ -1,5 +1,33 @@
 # Integrated Singer Execution
 
+## A review can be recorded from the application now, not only from the library
+
+September 15, 2026 — native review action added, closing the last bounded item in the plan's procedural
+route. The store, the controller methods and the review status were all in place and tested, but a
+creator still needed a developer to record a decision. Reading D4.2's own exit condition — that a
+prototype review can be recorded and read — the missing half was the entry point.
+
+`IFileDialog` gains a procedural review input and the AppKit adapter implements it with a reviewer
+identity field, an explicit accept or reject choice and file pickers for the score and audio that were
+reviewed. The identity is required rather than optional, because a recorded decision is a human
+attribution and a blank one would store an approval nobody owns. `ReviewInstalledSinger` is a File-menu
+item that reaches `reviewInstalledSingerFromDialog`, which names the exact resource in the summary the
+reviewer sees, stamps the decision in UTC in the same format the rest of the product's journals use,
+and derives a review id from the decision, the reviewer and the resource content hash so the same
+person recording the same decision twice is a duplicate rather than a silent second approval.
+
+Verified. `seam_procedural_install_journey_tests` passes 15 of 15 with the new case: the action is
+refused with no dialogue when no singer is selected; a cancelled dialogue opens the summary but writes
+nothing and creates no store file; a real review records an approval that reads back as accepted and
+appears as reviewed in the offer listing; repeating the same decision is refused as a duplicate; and an
+acceptance naming missing evidence is refused and does not disturb the stored approval. The registered
+run passes 170 of 170.
+
+Not claimed. The dialog is driven by a test double here, so the AppKit presentation, the reviewer field
+and the two file pickers have been compiled but not exercised by a person. No human has reviewed a
+procedural singer; every decision in these cases was written by the test. This is review plumbing, not
+qualification. No U-unit acceptance or Beta GO state changes.
+
 ## The journey's export is decoded, not merely measured
 
 September 15, 2026 — export assertion strengthened. The connected journey checked that the exported
