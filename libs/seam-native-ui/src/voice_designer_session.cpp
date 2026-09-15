@@ -50,6 +50,35 @@ core::Result<void> VoiceDesignerSession::beginSave(std::filesystem::path path) {
     return core::failure(core::ErrorCode::Conflict, "Finish Designer work before saving");
   std::error_code error; path = std::filesystem::absolute(path, error).lexically_normal();
   if (error) return core::failure(core::ErrorCode::InvalidArgument, "Cannot resolve Designer save path");
+  // An installed singer is signed and immutable, so a draft is never written inside one. The check
+  // runs before any background work starts, so a refused save leaves the session untouched.
+  // An installed procedural resource is self-describing: its directory carries the manifest and the
+  // installation receipt beside the recipe. Detecting that marker needs no configuration, so the
+  // refusal holds even for a caller that never declares a protected root.
+  {
+    const auto parent = path.parent_path();
+    std::error_code markerError;
+    if (!parent.empty() &&
+        std::filesystem::is_regular_file(parent / "install-receipt.json", markerError) &&
+        std::filesystem::is_regular_file(parent / "manifest.json", markerError))
+      return core::failure(core::ErrorCode::Conflict,
+                           "A draft cannot be saved over an installed singer", parent.string());
+  }
+  for (const auto& root : protectedRoots_) {
+    if (root.empty()) continue;
+    std::error_code rootError;
+    const auto canonicalRoot = std::filesystem::weakly_canonical(root, rootError);
+    if (rootError) continue;
+    const auto canonicalPath = std::filesystem::weakly_canonical(path, rootError);
+    if (rootError) continue;
+    const auto rootText = canonicalRoot.generic_string();
+    const auto pathText = canonicalPath.generic_string();
+    if (pathText == rootText ||
+        (pathText.size() > rootText.size() && pathText.compare(0, rootText.size(), rootText) == 0 &&
+         pathText[rootText.size()] == '/'))
+      return core::failure(core::ErrorCode::Conflict,
+                           "A draft cannot be saved inside an installed singer", rootText);
+  }
   const auto recipe = model_->recipe(); const auto revision = model_->revision();
   const auto hash = model_->resource().identity.contentHash;
   const auto previousHash = path == path_ ? persistedHash_ : std::string{};

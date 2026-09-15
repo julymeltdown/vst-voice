@@ -5,6 +5,7 @@
 #include "seam/native_ui/voice_designer_layout.hpp"
 #include "seam/native_ui/voice_designer_source_selection.hpp"
 #include "seam/core/exclusive_file_lock.hpp"
+#include "seam/core/sha256.hpp"
 #include "seam/voice_design/frication_source.hpp"
 #include <thread>
 #include <algorithm>
@@ -884,4 +885,65 @@ TEST_CASE("Voice Designer keeps a bounded undo history across recipe schema chan
   unsigned redos = 0U;
   while (model.canRedo()) { CHECK(model.redo(model.revision())); ++redos; }
   CHECK(redos == 128U); CHECK(model.recipe().seed == 140U);
+}
+
+// An installed singer is signed and immutable. The Designer must not be able to save a draft over
+// one, whether the caller declared a protected root or not, because the installed layout is
+// self-describing.
+TEST_CASE("The Designer refuses to save a draft over an installed singer") {
+  using namespace seam;
+  const auto root = test::support::temporaryDirectory("designer-protected-roots");
+  // An installed-looking resource: a manifest and receipt beside the recipe it would overwrite.
+  const auto installed = root / "singers" / "some.singer" / "1.0.0";
+  std::filesystem::create_directories(installed);
+  std::ofstream(installed / "manifest.json") << "{}";
+  std::ofstream(installed / "install-receipt.json") << "{}";
+  CHECK(voice_design::saveVoiceRecipeFile(installed / "recipe.json", designerFixture()));
+  const auto installedBefore = core::sha256File(installed / "recipe.json", 1024U * 1024U);
+  CHECK(installedBefore.hasValue());
+  if (!installedBefore) return;
+
+  native_ui::VoiceDesignerSession session;
+  CHECK(session.create(designerFixture()));
+  CHECK(session.model() != nullptr);
+  // The installation is detected from its own layout, so a caller that declares nothing is still
+  // protected, and the recipe that is already there is untouched.
+  CHECK(!session.beginSave(installed / "recipe.json"));
+  CHECK(!session.busy());
+  const auto installedAfter = core::sha256File(installed / "recipe.json", 1024U * 1024U);
+  CHECK(installedAfter.hasValue());
+  if (!installedAfter) return;
+  CHECK(installedAfter.value() == installedBefore.value());
+
+  // A declared protected root refuses a nested save even where no marker exists yet, and a draft
+  // outside every root still saves normally.
+  session.setProtectedRoots({root / "singers"});
+  CHECK(!session.beginSave(root / "singers" / "new.singer" / "1.0.0" / "recipe.json"));
+  CHECK(!session.busy());
+  std::filesystem::create_directories(root / "drafts");
+  const auto draft = root / "drafts" / "my-singer.json";
+  CHECK(session.beginSave(draft));
+  CHECK(drainDesigner(session));
+  CHECK(std::filesystem::exists(draft));
+}
+
+// A sibling file in the installed directory must be refused too, not only the recipe entry, because
+// any write into signed content risks corrupting a verified installation.
+TEST_CASE("The Designer refuses any save inside a protected root and leaves prior saves working") {
+  using namespace seam;
+  const auto root = test::support::temporaryDirectory("designer-protected-sibling");
+  native_ui::VoiceDesignerSession session;
+  session.setProtectedRoots({root / "installed"});
+  CHECK(session.create(designerFixture()));
+  CHECK(!session.beginSave(root / "installed" / "sibling.json"));
+  CHECK(!session.busy());
+  // The refusal is about location, not about the session: a normal save still works afterwards.
+  std::filesystem::create_directories(root / "drafts");
+  const auto allowed = root / "drafts" / "fine.json";
+  CHECK(session.beginSave(allowed));
+  CHECK(drainDesigner(session));
+  CHECK(!session.path().empty());
+  // A second save to the same draft path is still allowed, so the guard did not break normal saves.
+  CHECK(session.beginSave(allowed));
+  CHECK(drainDesigner(session));
 }

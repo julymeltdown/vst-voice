@@ -7,6 +7,16 @@ namespace seam::native_ui {
 class VoiceDesignerSession final {
 public:
   ~VoiceDesignerSession();
+  // Roots the Designer must never save into. An installed singer's files are signed and immutable, so
+  // a draft belongs outside them; a save aimed inside a protected root is refused rather than
+  // overwriting signed content. Empty by default, because a caller that has no installed singers has
+  // nothing to protect.
+  void setProtectedRoots(std::vector<std::filesystem::path> roots) {
+    protectedRoots_ = std::move(roots);
+  }
+  [[nodiscard]] const std::vector<std::filesystem::path>& protectedRoots() const noexcept {
+    return protectedRoots_;
+  }
   [[nodiscard]] bool busy() const noexcept { return work_.valid(); }
   [[nodiscard]] bool auditionBusy() const noexcept { return auditionWork_.valid(); }
   [[nodiscard]] const std::shared_ptr<const voicebank::AudioBuffer>& auditionAudio() const noexcept { return auditionAudio_; }
@@ -78,6 +88,7 @@ private:
   std::optional<VoiceDesignerModel> model_;
   std::filesystem::path path_;
   std::string persistedHash_;
+  std::vector<std::filesystem::path> protectedRoots_;
   std::uint64_t epoch_{0U};
   std::future<core::Result<FileResult>> work_;
   std::stop_source stop_;

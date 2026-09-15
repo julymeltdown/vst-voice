@@ -33,9 +33,13 @@ singer is refused, cancelling writes nothing, a draft inside the install root is
 copy is created, recorded on the track, undoable, and leaves the signed installation byte-identical.
 
 Not claimed. No creator has been observed making a musical change to a copy, and no listening
-judgment exists. The Voice Designer's own save path is not yet restricted to non-installation roots,
-so a creator could still navigate a save dialog into an installation directory from the Studio; that
-is a separate open defect recorded in the plan rather than claimed fixed here. No U-unit acceptance
+judgment exists, and no creator has been observed reaching for the copy action unaided. The Voice
+Designer's save path is now guarded too: `VoiceDesignerSession::beginSave` refuses a destination
+inside a declared protected root and also detects an installed singer from its own layout, so a save
+aimed at an installation is refused even when the caller declares no root. `seam_voice_designer_tests`
+passes 38 of 38 with both cases. That guard protects the paths this repository exercises; it is not a
+filesystem-level immutability guarantee against someone with direct access to the directory. No
+U-unit acceptance or Beta GO state changes.
 or Beta GO state changes.
 ## The installed procedural route is now connected end to end, and it was not before
 
