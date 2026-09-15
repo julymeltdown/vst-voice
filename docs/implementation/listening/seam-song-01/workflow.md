@@ -30,6 +30,16 @@ An installed, signed original procedural singer is selected through the applicat
 
 The song fixture is checked in at `assets/pilots/seam-song-01/recipe.json` and is the production encoder's own output. The journey refuses to run when that checked-in definition and the code recipe disagree, so the retained material cannot come to describe a singer nobody rendered. Regeneration is deliberate and documented in that directory's README.
 
+## Where to listen
+
+The first retained M1 material is at `/Users/lhs/Downloads/seam-listening-artifacts/2026-09-16-song-01/`. Start with `baseline.mp3` for the untuned song, then `tuned.mp3`, which carries one drawn formant curve. The `.wav` masters beside them are what the manifest hashes and what any measurement must use; the MP3 files are lossy auditions only. The manifest records the route, the note count, the master digests, `listening: NOT_REVIEWED` and `creatorWorkflow: NOT_OBSERVED`, so the material cannot be mistaken for an approved result.
+
+This material is the workflow song. It is deliberately not the short perceptual comparison set: the retained 16-second diagnostic packet under `docs/implementation/listening/2026-09-15-d1-02/` remains the right size for an intelligibility and identity judgement, and a 40-second song is kept out of repeated listening comparisons so a long melody does not confound which failure class a listener is hearing.
+
+## Working length
+
+The song is 48 notes over 40.5 seconds at the default tempo, which is inside the 30-to-60-second range the plan asks for. The earlier draft was 15.5 seconds and was extended deliberately rather than left short: a song shorter than the working length would let a tuning session finish before the creator had to loop, save and resume, which is exactly the workflow this milestone exists to exercise.
+
 The journey also found and closed a real defect in the owning layer: every committed export pushed a metadata-only renderer-provenance record onto the creator's undo stack, so the creator's next undo appeared to do nothing and repeated exports stacked invisible entries. The record is now written only when it differs.
 
 ## What is not observed
@@ -55,4 +65,3 @@ Audition-only MP3 conversions under `/Users/lhs/Downloads/seam-listening-artifac
 3. The neural input path advances independently. The generated-teacher adapter now lets the pipeline be exercised from this project's own renders, and it records its phone spans as renderer intent rather than acoustic truth.
 
 Neural singing remains mandatory under R9 and is untouched by M1. No claim of intelligibility, identity, musical quality, release readiness or Beta GO is made here.
-

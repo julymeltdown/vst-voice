@@ -12,6 +12,7 @@
 #include "seam/application/note_commands.hpp"
 #include "seam/application/arrangement_commands.hpp"
 #include "seam/core/sha256.hpp"
+#include "seam/formats/json_value.hpp"
 #include "seam/distribution/procedural_package.hpp"
 #include "seam/distribution/signing.hpp"
 #include "seam/platform/application_menu.hpp"
@@ -120,7 +121,10 @@ voice_design::VoiceRecipe songRecipe() {
 
 // One lyric per note. The sequence deliberately mixes consonants, rising and falling pitch, unequal
 // durations, a rest and a sustained final vowel, so a phrase that renders is a phrase with real
-// articulation rather than a scale of held vowels.
+// articulation rather than a scale of held vowels. Two sections bring the total to about 39.5 seconds
+// at the default 120 BPM, which is the 30–60-second working length the plan asks for and long enough
+// that a creator runs out of breath before the song does. Every lyric uses a phone this recipe
+// declares; a phone with no admitted model is refused at render preparation rather than substituted.
 struct SongNote final {
   const char32_t* lyric;
   std::uint8_t midi;
@@ -139,14 +143,33 @@ std::filesystem::path fixtureDirectory() {
   return std::filesystem::path{SEAM_SONG_SOURCE_ROOT} / "assets" / "pilots" / "seam-song-01";
 }
 
+// Where the auditionable renders are retained, when the caller asks for them. The default stays a
+// temporary directory so an ordinary test run leaves nothing behind; naming a root keeps the masters
+// and a manifest for a listener, which is what the workflow and perceptual observations need.
+std::optional<std::filesystem::path> artifactRoot() {
+  const char* root = std::getenv("SEAM_SONG_ARTIFACT_ROOT");
+  if (root == nullptr || *root == '\0') return std::nullopt;
+  return std::filesystem::path{root};
+}
+
 const std::vector<SongNote>& songNotes() {
   static const std::vector<SongNote> notes{
+      // Section one: a 14.5-second phrase over the opening set of phones.
       {U"あ", 62U, 960}, {U"さ", 64U, 960}, {U"き", 65U, 960}, {U"の", 67U, 1920},
       {U"は", 64U, 960}, {U"な", 62U, 960}, {U"た", 60U, 960}, {U"ら", 62U, 1920},
       {U"ま", 65U, 960}, {U"ゆ", 67U, 960}, {U"め", 65U, 960}, {U"を", 64U, 1920},
       {U"い", 69U, 960}, {U"そ", 67U, 960}, {U"き", 65U, 960}, {U"や", 64U, 1920},
       {U"か", 62U, 960}, {U"に", 64U, 960}, {U"て", 65U, 960}, {U"し", 67U, 1920},
       {U"ぼ", 69U, 960}, {U"く", 67U, 960}, {U"は", 65U, 960}, {U"あ", 64U, 2880},
+      // Section two: the voiced fricative, voiced stop, and liquid sets, at a rising then falling
+      // contour. These are the phones most likely to expose an articulation defect, which is why the
+      // song keeps them for its second half rather than spreading them through a held-vowel scale.
+      {U"ざ", 62U, 1920}, {U"ぶ", 64U, 1920}, {U"ぺ", 65U, 1920}, {U"み", 67U, 1920},
+      {U"ね", 65U, 1920}, {U"る", 64U, 1920}, {U"わ", 62U, 1920}, {U"ゆ", 60U, 1920},
+      {U"ず", 62U, 1920}, {U"べ", 64U, 1920}, {U"ぽ", 65U, 1920}, {U"む", 67U, 1920},
+      {U"の", 65U, 1920}, {U"れ", 64U, 1920}, {U"を", 62U, 1920}, {U"や", 60U, 1920},
+      {U"ぜ", 62U, 1920}, {U"ぼ", 64U, 1920}, {U"ぱ", 65U, 1920}, {U"も", 67U, 1920},
+      {U"ら", 69U, 1920}, {U"しょ", 67U, 1920}, {U"せ", 65U, 1920}, {U"あ", 64U, 3840},
   };
   return notes;
 }
@@ -189,7 +212,9 @@ std::filesystem::path createSongPackage(const std::filesystem::path& root,
   manifest.engineRevision = voice_design::kSourceFilterEngineRevision;
   manifest.recipeEntry = "recipe.json";
   manifest.recipeSha256 = core::sha256Hex(encoded.value());
-  manifest.phones = {"a", "i", "u", "e", "o", "s", "sh", "h", "t", "k", "m", "n", "r", "w", "y"};
+  // Every phone this song's lyrics can produce, including the voiced fricative and the voiced stop the
+  // second section needs.
+  manifest.phones = {"a", "i", "u", "e", "o", "s", "sh", "z", "h", "t", "k", "p", "b", "m", "n", "r", "w", "y"};
   distribution::ProceduralSingerManifestJsonCodec codec;
   const auto text = codec.encode(manifest);
   if (!text) throw test::Failure{"encoding the song manifest failed: " + text.error().message};
@@ -444,4 +469,44 @@ TEST_CASE("Tuning an installed singer survives undo, save, reopen and export") {
   CHECK(reopenedExport.hasValue());
   if (!reopenedExport) return;
   CHECK(reopenedExport.value().masterSha256 == tuned.value().masterSha256);
+
+  // Retain listenable audio beside a manifest when a caller names an artifact root. The material is
+  // what the workflow and perceptual observations need, and it is written outside the repository
+  // because a master WAV is not source. Absent the variable this test leaves nothing behind.
+  if (const auto artifacts = artifactRoot(); artifacts.has_value()) {
+    std::filesystem::create_directories(*artifacts);
+    struct Retained final { const char* name; std::filesystem::path from; std::string sha; };
+    const std::vector<Retained> retained{
+        {"baseline-master.wav", baseline.value().masterPath, baseline.value().masterSha256},
+        {"tuned-master.wav", tuned.value().masterPath, tuned.value().masterSha256},
+    };
+    formats::JsonValue::Array entries;
+    for (const auto& item : retained) {
+      const auto destination = *artifacts / item.name;
+      std::filesystem::copy_file(item.from, destination,
+                                 std::filesystem::copy_options::overwrite_existing);
+      const auto copied = core::sha256File(destination);
+      CHECK(copied.hasValue());
+      if (!copied) return;
+      // The retained copy must be the export that was verified, not a similar file.
+      CHECK(copied.value() == item.sha);
+      entries.emplace_back(formats::JsonValue::Object{
+          {"file", formats::JsonValue{item.name}}, {"masterSha256", formats::JsonValue{item.sha}}});
+      std::cout << destination << '\n';
+    }
+    const auto manifest = formats::stringifyJson(formats::JsonValue::Object{
+        {"status", formats::JsonValue{"UNREVIEWED_WORKFLOW_MATERIAL"}},
+        {"releaseEligible", formats::JsonValue{false}},
+        {"route", formats::JsonValue{"voice designer (seam.source-filter.v1)"}},
+        {"song", formats::JsonValue{"assets/pilots/seam-song-01/recipe.json"}},
+        {"notes", formats::JsonValue{static_cast<std::int64_t>(songNotes().size())}},
+        {"listening", formats::JsonValue{"NOT_REVIEWED"}},
+        {"creatorWorkflow", formats::JsonValue{"NOT_OBSERVED"}},
+        {"comparison", formats::JsonValue{"baseline-master.wav is the untuned song; tuned-master.wav "
+            "has one drawn formant curve. They are for tuning judgement, not for a quality verdict on "
+            "the voice."}},
+        {"files", std::move(entries)}}, true);
+    const auto written = core::durableAtomicWriteText(*artifacts / "manifest.json", manifest);
+    CHECK(written.hasValue());
+  }
 }
