@@ -51,28 +51,44 @@ Two corrections to R3's own wording, because a reader of R3 alone would expect t
 
 ### 1.1 Defects found by reading source during this reconciliation
 
-These three are **not** reproduced failures. They are places where the code and its own stated intent
-disagree, found by reading, and each is listed with the test that would prove or disprove it. They are
-scheduled below rather than fixed silently, so each fix is reviewable on its own commit.
+These three are **not** reproduced failures. They are places where the code and its own stated
+intent diverge, found by reading. D1 is a latent divergence with no reproduction available; D2 and D3
+are live gaps whose effect is visible on every run, which is why those two are drawn from the owner's
+design review and D1 is not. Each is listed with the test that would prove or disprove it, and each is
+scheduled below rather than fixed silently, so a fix is reviewable on its own commit.
 
-**D1 — the chosen character state decides whether the character appears at all.**
-`libs/seam-standalone/src/native_editor_app.cpp:1420` publishes `character_.portrait()`, which is
-`portrait(state)`, and `native_editor_app.cpp:1397` sets that state from the render status: Warning,
-Rendering, Complete, Error. `assets/character-01/manifest.json` declares all six states, so the
-character's *face* changes with render status, which is intended. The disagreement is that
-`libs/seam-clap-editor/src/editor_runtime_paint.cpp:29` gates visibility on
-`portrait(Neutral) != nullptr`, so a package declaring only some states would be invisible in one
-surface and visible in another. The declared contract already says a package either declares the full
-turnaround or is not one (`libs/seam-character/include/seam/character/character.hpp:49`), so both
-surfaces must answer this question from the package rather than from whichever surface was written
-last. *Proving test:* a package with one state missing is refused at load, and visibility for one
-package is identical in standalone and CLAP.
+**D1 — the two surfaces decide dock presence by asking different questions.**
+This one was overstated in the first draft of this section, and a review round corrected it in yet a
+different direction, so the resolution is stated at length here to stop a third reader repeating it.
+Two facts are easy to conflate:
+
+- `Manifest::validate()` (`libs/seam-character/src/character.cpp:94`), `loadPackage` (`:204`) and
+  `CharacterPresentation::load` (`libs/seam-native-ui/src/character_presentation.cpp:16`) between them
+  require all six states to be declared *and* to decode; a package missing one is refused at load. The
+  `defaultState` fallback in `Manifest::assetFor` (`:116`) and `portrait()` (`:42`) therefore does not
+  make a partial turnaround renderable — with the current loader it is unreachable for any shipped
+  package, which is why no surface can disagree with another about a partial one today.
+- What *is* asymmetric is the predicate each surface uses.
+  `libs/seam-clap-editor/src/editor_runtime_paint.cpp:29` gates dock **layout** on
+  `character_.portrait(character::State::Neutral) != nullptr`, an asset lookup.
+  `libs/seam-standalone/src/native_editor_app.cpp:1420` gates nothing: it publishes whatever
+  `portrait()` returns and lets the dock decide from the display mode. The same question — should this
+  window reserve the character dock — is answered by an asset lookup in one surface and by
+  `CharacterDisplayMode` in the other. D2 below asks for mouth artwork, and the character-state work
+  that follows is exactly the change that would make this divergence real.
+
+*Proving test:* one shared predicate over the manifest and the display mode, called by both surfaces,
+plus an assertion that a manifest missing any state is refused at load — the second half pins behaviour
+that already holds so a later change cannot quietly weaken it.
 
 **D2 — the character cannot open its mouth, because no shipped package declares mouth artwork.**
 `libs/seam-standalone/src/native_editor_app.cpp:1418` asks for `character_.mouth(frame->mouth)`, and
 for a status-only package that answer is empty: `assets/character-01/manifest.json` has no
-`mouthAssets` block, `declaresPerformance()` is false, and `hasPerformanceAssets()` has zero call
-sites anywhere in `libs/` or `apps/`. The dock therefore falls back to drawing a mouth glyph
+`mouthAssets` block, `declaresPerformance()` is false, and `hasPerformanceAssets()` has no call site
+anywhere in `libs/` or `apps/` — it is *tested* but never *consulted* by a shipping surface
+(`tests/test_character_package_performance.cpp:107,129,195` against the declaration at
+`libs/seam-native-ui/include/seam/native_ui/character_presentation.hpp:34`). The dock therefore falls
+back to drawing a mouth glyph
 (`libs/seam-native-ui/src/editor_scene.cpp:1144`). The engine, the six mouth shapes, the cue mapping
 and the performance snapshot all exist; the artwork does not. This is the asset-utilization gap the
 owner raised in design review, and it is the one item in that critique that is a *content* problem
@@ -93,30 +109,46 @@ material rather than on code. Both numbers below are given with the rule that pr
 can be checked rather than believed.
 
 **Scope A — the first usable original-singer milestone** (the smallest outcome worth calling a
-product, R3 section 4.1): roughly **60% engineering-complete, 43% complete including its evidence
-gates**. M1.1-M1.3 engineering is demonstrated, the tuning surface exists, and what is missing is the
-unobserved creator session and every listening result.
+product, R3 section 4.1): **85% engineering, 15% gates**, on the same rule as the table below. M1.1-M1.3
+engineering is demonstrated and the tuning surface exists; what is missing is unit U1.3a-c, the
+inspector applicability row, and then the unobserved creator session and every listening result. This
+scope therefore looks far more complete than the full-product column and that is not a contradiction:
+the first-milestone definition deliberately excludes neural singing, three languages, the DAW matrix
+and production inventory, so its gate share is much smaller.
 
 **Scope B — the full-product Beta GO** (all 20 requirements, 83 cases, 18 work packages):
 
-| Milestone | Weight | Engineering | Gates | Weighted |
+The rule for the two published columns: a milestone's *engineering* share is the fraction of its named
+units whose observable contract exists and passes in this checkout, and a milestone's *gate* share is
+the fraction of its acceptance that needs a human or an external result. The two are complementary, so
+engineering plus gates is 100% and the internally checkable figure is the product of the two shares:
+
+| Milestone | Spec share | Engineering | Gates | Checkable now |
 |---|---|---|---|---|
-| M1 usable original-singer session | 20 | 85% | 0% | 8.6 |
-| M2 musically usable first voice | 15 | 20% | 0% | 2.3 |
-| M3 qualified neural original singer | 20 | 65% | 0% | 4.0 |
-| M4 production, languages, style | 20 | 35% | 0% | 4.0 |
-| M5 supported standalone and DAW product | 15 | 60% | 0% | 6.0 |
-| M6 full-scope Beta GO evidence | 10 | 15% | 0% | 1.5 |
-| **Total** | **100** | | | **26.4** |
+| M1 usable original-singer session | 20% | 85% | 15% | 17.0% |
+| M2 musically usable first voice | 15% | 20% | 80% | 3.0% |
+| M3 qualified neural original singer | 20% | 65% | 35% | 13.0% |
+| M4 production, languages, style | 20% | 35% | 65% | 7.0% |
+| M5 supported standalone and DAW product | 15% | 65% | 35% | 9.8% |
+| M6 full-scope Beta GO evidence | 10% | 5% | 95% | 0.5% |
+| **Total** | **100%** | | | **50.3%** |
 
-The rule: a milestone's engineering percentage is the fraction of its named units whose observable
-contract exists and passes in this checkout; a gate is a human or external result and counts as zero
-until it has happened. A milestone that is implemented but has never been used by a person cannot
-exceed the share its gate is worth. No milestone is credited because a file exists.
+Read the two halves apart, because neither alone is the answer. **The engineering half is about 50%
+of the specification's own weight** — that is the part a developer can still close without help, and it
+is why the next executable queue in section 9 is long. **The gate half is near zero**, because no
+human has observed the workflow, no listener has judged any audio, no authorized source exists, no
+native language has been reviewed and no Windows machine has run the product. The gate shares are what
+the remaining distance actually consists of, and a completed engineering column would not move them.
 
-That is also the honest answer to how much more a beta needs: engineering is roughly a quarter done at
-full scope, and the largest remaining block of risk is not code. The concrete blocking items are in
-section 9.
+Two notes on how these figures were chosen, so they can be argued with rather than trusted. The
+specification shares follow the count of units each milestone owns in section 10 of R3, rounded to the
+nearest five percent, with M6 kept small because it consumes the other five milestones' evidence rather
+than producing its own. M6's engineering share of 5% is the one row that changed on review: it was
+reported as fully engineering-checkable at 15%, which was wrong in the revealing direction, since M6's
+content is independent reviewers, five pre-GO creator sessions and restored-archive audits — the most
+human-gated milestone in the project, not the least. An earlier draft of this section published a single
+weighted total of 26.4%; that column was dropped because the numbers behind it were not derivable from
+the rule printed beside them, which defeated the purpose of stating the rule.
 ## 3. M1 — finish the first usable session
 
 M1.1 and M1.2 are closed. What remains in M1 is three code units and one observation.
@@ -307,10 +339,19 @@ name and ignores the tensor fails the acoustic-effect test.
 `Unsupported` for anything that is not Apple or Linux. The neural worker runs through
 `runBoundedHelperProcess` (`libs/seam-neural-synthesis/src/neural_phrase_backend.cpp:269`), so
 **neural inference cannot run on Windows at all today**, and Windows x64 is half the declared platform
-scope. This is a bounded, self-contained port: `CreateProcessW` with an inherited-handle policy, a
-bounded wait, a job object for the memory ceiling, and `GetProcessMemoryInfo` for the usage reading
-that `:207` currently reports as unavailable. It needs a Windows machine to verify and does not need a
-corpus, so it is executable now and should not wait behind U3.3.
+scope.
+
+It is worse than one signature. The same `#else` at `helper_process.cpp:129` disables the *second*
+production caller, `JapaneseReadingCapture::read`
+(`libs/seam-authoring-runtime/src/japanese_reading_capture.cpp:97`), so Japanese reading capture is
+unavailable on Windows as well. The port therefore unblocks R9 **and** part of the M4.2 Japanese
+workflow — three surfaces, not two — and whoever does it has two callers to qualify, not one. That is
+also why U5.1 is scheduled ahead of the milestones it appears to serve.
+
+This is a bounded, self-contained port: `CreateProcessW` with an inherited-handle policy, a bounded
+wait, a job object for the memory ceiling, and `GetProcessMemoryInfo` for the usage reading that `:207`
+currently reports as unavailable. It needs a Windows machine to verify and does not need a corpus, so it
+is executable now and should not wait behind U3.3.
 
 **Then.** Replace the arithmetic fixtures in `tests/test_neural_production_render.cpp` with an actual
 admitted learned candidate for the retained acceptance run, keeping the fixtures as routing
@@ -366,12 +407,14 @@ suited to the algorithm.
 
 ## 7. M5 — supported standalone and DAW product
 
-### U5.1 — the Windows platform port (scheduled early because it blocks two milestones)
+### U5.1 — the Windows platform port (gated on a machine, not on code)
 
-Beyond the helper-process work in U3.5, the declared host matrix covers Windows x64 REAPER and Bitwig
-for both CLAP and VST3. `scripts/build_windows_installer.ps1` and `package_windows_plugin.ps1` exist;
-what does not exist is a measured run on that platform. This unit is one machine plus one build plus
-recorded host evidence, and macOS results cannot substitute for it.
+Beyond the helper-process work in U3.5 — which this unit inherits and must not duplicate, since the
+same port also gates Japanese reading capture on Windows (`libs/seam-authoring-runtime/src/japanese_reading_capture.cpp:97`) —
+the declared host matrix covers Windows x64 REAPER and Bitwig for both CLAP and VST3.
+`scripts/build_windows_installer.ps1` and `package_windows_plugin.ps1` exist; what does not exist is a
+measured run on that platform. This unit is one machine plus one build plus recorded host evidence, and
+macOS results cannot substitute for it.
 
 ### U5.2 — interchange, character and recovery on real hosts
 
@@ -381,8 +424,11 @@ supported-host run. `tools/external_beta` already owns the cohort and host evide
 ## 8. The design critique, converted to work
 
 The owner asked for a design-improvement plan naming overlapping notes, text overflow and underused
-character assets. Two of the three are real and localized; the third is partly handled already and
-needs a stated rule rather than a rebuild.
+character assets. All three are real; they are not all the same *kind* of real, and the difference
+decides the work. Overlap (8.1) is a modeling gap in one function. Text overflow (8.2) is one policy
+the scene already applies in most places and omits in two recently added call sites, so it needs one
+helper and not a rebuild. Character assets (8.3) is the only one that needs authored content as well
+as code, and the code half of it is small.
 
 ### 8.1 Overlapping notes (real — D3)
 
@@ -417,11 +463,15 @@ maximum-length refusal and unit string and assert the drawn text stays inside it
 
 Two distinct problems, and they should land as two commits.
 
-**Fix the visibility predicate (D1).** `editor_runtime_paint.cpp:29` and
-`native_editor_app.cpp:1420` must both ask the package whether it declares the full turnaround, not
-whether one particular state decoded. Add `CharacterPresentation::declaresTurnaround()` over the
-existing all-six-state rule in `libs/seam-character/include/seam/character/character.hpp:49` and use
-it in both surfaces.
+**Unify the dock-presence predicate (D1).** `editor_runtime_paint.cpp:29` and
+`native_editor_app.cpp:1420` answer one question — should this window reserve the character dock — with
+two different inputs: an asset lookup in the plug-in and the display mode in standalone. Add one
+predicate, `CharacterPresentation::dockVisible(CharacterDisplayMode)`, that reads the manifest and the
+mode together, and call it from both surfaces so the question has one answer. It must not be built on
+`portrait(Neutral) != nullptr`: because all six states are mandatory at load (D1 in section 1.1), that
+lookup is a mere existence test whose failure has a different meaning than the layout assumes. Keep the
+existing `defaultState` fallback in `Manifest::assetFor` — it is reachable for a hand-built in-memory
+manifest and is not part of this question.
 
 **Use the artwork that exists, then extend it.** `assets/character-01/runtime/*.ppm` is 320x480 and
 the standalone header draws it into a 48x48 square
@@ -452,7 +502,14 @@ production turnaround is separate work and must not inherit that approval.
 | M6 five independent creators | five participants meeting the canonical independence protocol | owner, external |
 
 Nothing above is unblocked by more code. The next executable engineering, in order, is: U1.3a, U1.3b,
-U1.3c, U1.5, D1/D2/D3, U3.5's Windows helper port and U5.1, U2.1, U3.3, then the material-gated work.
+U1.3c, D1, U1.5, U2.1, D2, D3, `8.2`, `8.3`, U3.3, then the material-gated work.
+
+Two reorderings from the first draft of this section, both because an item was smaller than it looked.
+**U3.5's Windows helper-process port and U5.1's Windows host run moved out of the early queue**: they
+are real and they block three surfaces, but they need a Windows machine that is not present, so they
+belong in the blocked table's neighbourhood rather than at the head of an executable list. **D1** moved
+ahead of D2 rather than riding with it, because D1 is one predicate with two call sites, while D2 needs
+authored artwork; separating them keeps one of the pair in the executable queue.
 
 ## 10. Suggested commit boundaries
 
@@ -461,12 +518,16 @@ One reviewable commit per unit, in this order, each with its own tests:
 1. `U1.3a` cancel during a pending edit, in the song journey.
 2. `U1.3b` copy-to-draft leaves the installation untouched.
 3. `U1.3c` a timing edit is measured, not inferred.
-4. `D1 + D2` one visibility predicate for the character in both surfaces.
-5. `D3` overlap and density are different claims.
-6. `U1.5` the inspector states a channel's applicability.
+4. `D1` one dock-presence predicate for the character, called by both surfaces.
+5. `U1.5` the inspector states a channel's applicability.
+6. `U2.1` the listening reference set and the ASR triage runner.
 7. `8.2` one ellipsis policy for variable-length editor strings.
-8. `8.3` aspect-correct portrait use, then declared mouth artwork.
-9. `U3.5` the Windows helper-process port.
+8. `D3` overlap and density are different claims.
+9. `8.3` aspect-correct portrait use, then declared mouth artwork.
+10. `U3.3` the local vocoder reconstruction baseline.
+
+Deferred until the machine exists: `U3.5`'s Windows helper-process port and `U5.1`'s Windows host run,
+as one reviewable change, since they share one port and one verification environment.
 
 Update `docs/implementation/INTEGRATED_SINGER_EXECUTION.md` once per landed slice, insert-only at the
 top, and keep the three-line status block. A documentation-only change is not a unit.
@@ -504,14 +565,30 @@ Musical review:    ACCEPTED | REJECTED | NOT_REVIEWED
 These are reporting labels. Final qualification uses the existing canonical typed records and
 independent reviews; do not invent a second evidence schema for them.
 
-## 13. Eligibility boundary
+## 13. Joint review record
 
-Prepared by the primary implementer at `3454ce9f`. `SEAM_JOINT_DEVELOPMENT_PLAN_R3_2026-09-15.md`
-remains the agreed document until the second developer (`01a0a066`) has read this one and recorded
-agreement or blocking corrections. Section 1's reconciliation, section 2's percentages and the three
-defects in section 1.1 are reviewable against the cited source; everything from section 3 onward is a
-proposal.
+Participants: the primary implementer, and the second developer (task `01a0a066`, the author of
+`SEAM_SECOND_DEVELOPER_REVIEW_2026-09-15.md`). The second developer reviewed R4 read-only at
+`f82b0e8c` and answered with agreement plus two blocking corrections; both are landed above.
+
+| Raised against | Correction | Landed as | Deciding source |
+|---|---|---|---|
+| `1.1` D1 mechanism | The `defaultState` fallback means a partial package is not invisible in one surface; the real asymmetry is that one surface gates layout on a portrait lookup and the other on display mode | D1 rewritten as a latent divergence, with the proving test changed | `libs/seam-character/src/character.cpp:94` and `:204` require all six states; `libs/seam-clap-editor/src/editor_runtime_paint.cpp:29` vs `libs/seam-standalone/src/native_editor_app.cpp:1420` |
+| `2` percentage table | The weighted column was not derivable from the stated rule, and M6 was undiscounted in the human-gated direction it should be most discounted in | Weighted column and the 26.4% total dropped; engineering and gate shares published separately, each statement above rederived | The section's own rule, applied to `docs/product/full-product-beta-contract.json` and R3 section 9 |
+| `1.1` D2 | `hasPerformanceAssets()` is tested but never consulted by a shipping surface | Added to D2 | `tests/test_character_package_performance.cpp:107,129,195` |
+| `3` U3.5 | A second production caller, Japanese reading capture, is disabled by the same `#else` | Added to U3.5 and cross-referenced from U5.1 | `libs/seam-authoring-runtime/src/japanese_reading_capture.cpp:97`; `libs/seam-platform/src/helper_process.cpp:129` |
+| `13` (withdrawn) | The reviewer proposed that `validate()` only checks declared states, so a one-state-missing package loads | Withdrawn by agreement: `character.cpp:94`, `:204` and `character_presentation.cpp:16` all require all six states | `libs/seam-character/src/character.cpp:94` |
+
+This document's first draft contained an overstated D1 and an underivable total. Both were found by
+review rather than by the author, which is the argument for keeping that review in the loop rather than
+stamping a plan the implementer wrote alone.
+
+### Eligibility boundary
+
+`SEAM_JOINT_DEVELOPMENT_PLAN_R3_2026-09-15.md` is superseded for work selection by this revision, which
+the second developer has now reviewed. Section 1's reconciliation and section 2's shares are checkable
+against the cited source; everything from section 3 onward remains a proposal for the owner's
+direction, not an accepted unit.
 
 No implementation, training, musical approval, release acceptance or commit/push is performed by
 publishing this document.
-
