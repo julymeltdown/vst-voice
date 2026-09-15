@@ -246,6 +246,93 @@ TEST_CASE("project JSON persists and validates the bounce timing authority") {
   if (!rejected) CHECK(rejected.error().code == seam::core::ErrorCode::ParseError);
 }
 
+TEST_CASE("project JSON records the renderer, rejects a half record, and keeps it out of identity") {
+  seam::application::ProjectFactory factory{320};
+  auto project = factory.createProject("Renderer provenance fixture");
+  seam::formats::ProjectJsonCodec codec;
+
+  // A project nobody has rendered records nothing. Reporting equivalence would be a claim no one
+  // observed, so the comparison says unknown rather than same.
+  CHECK(project.settings().renderedRenderAbi.empty());
+  CHECK(project.settings().renderedCompilerRevision == 0U);
+  CHECK(seam::domain::compareRendererProvenance(
+            project.settings().renderedRenderAbi,
+            project.settings().renderedCompilerRevision, "seam-render-abi-4.1-r1", 14U) ==
+        seam::domain::RendererProvenance::Unknown);
+  CHECK(seam::domain::rendererProvenanceDifference("", 0U, "abi", 14U).empty());
+
+  // The comparison separates the two ways a renderer can change, and names the field.
+  CHECK(seam::domain::compareRendererProvenance("abi-old", 14U, "abi-new", 14U) ==
+        seam::domain::RendererProvenance::Changed);
+  CHECK(seam::domain::compareRendererProvenance("abi", 13U, "abi", 14U) ==
+        seam::domain::RendererProvenance::Changed);
+  CHECK(seam::domain::compareRendererProvenance("abi", 14U, "abi", 14U) ==
+        seam::domain::RendererProvenance::Same);
+  CHECK(seam::domain::rendererProvenanceDifference("abi-old", 13U, "abi-new", 14U) ==
+        "renderAbi abi-old -> abi-new, compilerRevision 13 -> 14");
+
+  // A record travels with the document, so a later build can tell which code made the sound.
+  project.settings().renderedRenderAbi = "seam-render-abi-4.1-r1";
+  project.settings().renderedCompilerRevision = 14U;
+  const auto stamped = codec.encode(project);
+  CHECK(stamped);
+  if (!stamped) return;
+  CHECK(stamped.value().find("\"renderedRenderAbi\": \"seam-render-abi-4.1-r1\"") !=
+        std::string::npos);
+  const auto reloaded = codec.decode(stamped.value());
+  CHECK(reloaded);
+  if (!reloaded) return;
+  CHECK(reloaded.value().settings().renderedRenderAbi == "seam-render-abi-4.1-r1");
+  CHECK(reloaded.value().settings().renderedCompilerRevision == 14U);
+  CHECK(reloaded.value() == project);
+
+  // Recording which renderer made a sound must not change what that sound is. An identity encoding
+  // omits the record, so a stamp cannot move the identity that decides whether cached audio is
+  // reused. The document encoding above and the identity encoding below differ in exactly that.
+  const auto identity = codec.encode(
+      project, seam::formats::ProjectJsonEncodeOptions{.includeRendererProvenance = false});
+  CHECK(identity);
+  if (!identity) return;
+  CHECK(identity.value().find("\"renderedRenderAbi\": \"\"") != std::string::npos);
+  auto unrendered = project;
+  unrendered.settings().renderedRenderAbi.clear();
+  unrendered.settings().renderedCompilerRevision = 0U;
+  const auto unrenderedIdentity = codec.encode(
+      unrendered, seam::formats::ProjectJsonEncodeOptions{.includeRendererProvenance = false});
+  CHECK(unrenderedIdentity);
+  if (!unrenderedIdentity) return;
+  CHECK(identity.value() == unrenderedIdentity.value());
+
+  // A half record names a renderer without its revision and would be indistinguishable from an
+  // older build, which is the confusion the field exists to prevent.
+  auto half = project;
+  half.settings().renderedCompilerRevision = 0U;
+  CHECK(!half.validate());
+  auto oversized = project;
+  oversized.settings().renderedRenderAbi = std::string(129U, 'a');
+  CHECK(!oversized.validate());
+
+  // A document that claims this schema and omits the record is malformed rather than silently
+  // treated as having no provenance.
+  auto missing = seam::formats::parseJson(stamped.value());
+  CHECK(missing);
+  if (!missing) return;
+  missing.value().find("settings")->asObject().erase("renderedRenderAbi");
+  CHECK(!codec.decode(seam::formats::stringifyJson(missing.value())));
+
+  // A document written before the field existed has no record, which is the honest unknown.
+  auto legacy = seam::formats::parseJson(stamped.value());
+  CHECK(legacy);
+  if (!legacy) return;
+  legacy.value().asObject()["schemaVersion"] = seam::formats::JsonValue{std::int64_t{17}};
+  legacy.value().find("settings")->asObject().erase("renderedRenderAbi");
+  legacy.value().find("settings")->asObject().erase("renderedCompilerRevision");
+  const auto legacyDecoded = codec.decode(seam::formats::stringifyJson(legacy.value()));
+  CHECK(legacyDecoded);
+  if (!legacyDecoded) return;
+  CHECK(legacyDecoded.value().settings().renderedRenderAbi.empty());
+  CHECK(legacyDecoded.value().settings().renderedCompilerRevision == 0U);
+}
 TEST_CASE("project decoder rejects an unsupported schema") {
   seam::formats::ProjectJsonCodec codec;
   const auto decoded = codec.decode(

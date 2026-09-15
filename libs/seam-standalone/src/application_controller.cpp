@@ -1235,6 +1235,52 @@ StandaloneApplicationController::runExport(ExportRequest request,
   return exported;
 }
 
+StandaloneApplicationController::RendererProvenanceReport
+StandaloneApplicationController::rendererProvenance() const {
+  const auto& settings = session_.runtime().document().session().project().settings();
+  RendererProvenanceReport report;
+  report.recordedRenderAbi = settings.renderedRenderAbi;
+  report.recordedCompilerRevision = settings.renderedCompilerRevision;
+  report.currentRenderAbi = std::string{build::kRenderAbiId};
+  report.currentCompilerRevision = synthesis::kPerformanceCompilerRevision;
+  report.state = domain::compareRendererProvenance(
+      report.recordedRenderAbi, report.recordedCompilerRevision,
+      report.currentRenderAbi, report.currentCompilerRevision);
+  if (report.state == domain::RendererProvenance::Changed) {
+    report.difference = domain::rendererProvenanceDifference(
+        report.recordedRenderAbi, report.recordedCompilerRevision,
+        report.currentRenderAbi, report.currentCompilerRevision);
+  }
+  return report;
+}
+
+core::Result<void>
+StandaloneApplicationController::recordExportedRendererProvenance() {
+  // Recording the renderer of an export that has not committed would attribute audio to code that
+  // never ran. The caller names a completed export; this checks rather than trusts that claim.
+  auto recorded = session_.runtime().execute(
+      std::make_unique<application::RecordRendererProvenanceCommand>(
+          std::string{build::kRenderAbiId},
+          synthesis::kPerformanceCompilerRevision));
+  if (!recorded) return recorded;
+  notifyStateChanged();
+  return core::success();
+}
+
+core::Result<bool>
+StandaloneApplicationController::applyPendingRendererProvenance() {
+  {
+    std::lock_guard lock(exportMutex_);
+    if (!pendingRendererProvenance_) return false;
+    // Clear before applying. A failed edit must not be retried forever on every frame: the export
+    // itself succeeded, and the record is a disclosure, not the deliverable.
+    pendingRendererProvenance_ = false;
+  }
+  auto recorded = recordExportedRendererProvenance();
+  if (!recorded) return core::Result<bool>{recorded.error()};
+  return true;
+}
+
 core::Result<authoring::ExportResult>
 StandaloneApplicationController::exportSet(
     const std::filesystem::path& destination,
@@ -1270,6 +1316,11 @@ StandaloneApplicationController::exportSet(
     std::lock_guard lock(exportMutex_);
     if (exported) lastExport_ = exported.value();
     exportRunning_ = false;
+  }
+  // The synchronous path runs on the owner thread, so the record is an ordinary edit here rather
+  // than a hand-off. Only a committed export names a renderer that actually produced audio.
+  if (exported && exported.value().state == authoring::ExportState::Committed) {
+    static_cast<void>(recordExportedRendererProvenance());
   }
   notifyProgressChanged();
   notifyStateChanged();
@@ -1315,6 +1366,10 @@ core::Result<void> StandaloneApplicationController::startExportSet(
         {
           std::lock_guard lock(exportMutex_);
           if (exported) lastExport_ = exported.value();
+          // This thread must never edit the document. A committed render is reported to the owner
+          // thread instead, which applies the record when it next services the document.
+          pendingRendererProvenance_ =
+              exported && exported.value().state == authoring::ExportState::Committed;
           exportRunning_ = false;
         }
         notifyProgressChanged();

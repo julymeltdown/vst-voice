@@ -1,5 +1,42 @@
 # Integrated Singer Execution
 
+## A renderer change is recorded, reported, and kept out of the audio identity
+
+September 15, 2026 — D4.7 closed its last gap: nothing recorded which renderer produced a project's
+sound, so a renderer change would have migrated the sound silently.
+
+The project now carries the renderer that last produced audio it heard or exported, as the renderer's
+own ABI identity plus the compiler revision inside it, persisted at schema 18. A project that records
+nothing reads as unknown rather than same, because nothing observed how it sounded and claiming
+equivalence would pass a compatibility check nobody earned. When the record differs from this build,
+the application raises a notice that names the differing field instead of asserting only that
+something changed, and dismissal is keyed to that exact description so a notice cannot reappear every
+frame and a genuinely new difference still speaks.
+
+Two design hazards decided the shape. The render completion callback runs on a render worker, so the
+record is an undoable edit applied by the owner thread: the synchronous export path applies it
+directly, and the background path reports a committed export through a pending flag that the owner
+thread consumes once per frame. And the sample, procedural and neural identity builders, the CLAP
+offline identity and the export receipt all hash the encoded project, so encoding gained an explicit
+option that omits the record. Which build made a sound is a fact about audio that already exists, not
+an input to what that audio is; including it would have let the act of recording a renderer change the
+identity that decides cache reuse. Recording provenance is a metadata edit, so it schedules no render
+and invalidates no audio.
+
+Verified. seam_tests passes 910 of 910 including a new serialization case (the record round-trips, an
+older schema loads as unknown, a half record and an oversized identity are rejected, a schema-18
+document without the field is malformed, and a stamped project and an unrendered one produce
+byte-identical identity encodings) and a new controller case (an unrendered project reports unknown, a
+committed export records this build, a foreign record reports changed with the field named, recording
+is one metadata revision that leaves the previous master hash untouched, and the background hand-off
+applies exactly once). The registered run passes 170 of 170 and SOURCE_CLOSURE=PASS.
+
+Not claimed. No renderer change has been observed by a person: the changed-renderer path is exercised
+by writing a foreign identity into the project, and the notice's presentation has been compiled and
+unit-tested but not seen on screen with a real build. This records and discloses provenance; it does
+not preserve the old renderer's behaviour, and it transfers no acoustic qualification. No U-unit
+acceptance or Beta GO state changes.
+
 ## A review can be recorded from the application now, not only from the library
 
 September 15, 2026 — native review action added, closing the last bounded item in the plan's procedural

@@ -348,4 +348,32 @@ private:
   std::vector<std::pair<domain::TrackId, domain::TrackOutputRoute>> beforeRoutes_;
 };
 
+// Records which renderer produced the audio this project has heard or exported. A metadata edit, not
+// an acoustic one: the record describes audio that already exists, so it must not schedule a render
+// or invalidate the very sound it names. Applying the same provenance twice is not a second edit, and
+// revert restores exactly what was recorded before, including "nothing recorded".
+class RecordRendererProvenanceCommand final : public ICommand {
+public:
+  RecordRendererProvenanceCommand(std::string renderAbi,
+                                  std::uint32_t compilerRevision)
+      : afterRenderAbi_(std::move(renderAbi)),
+        afterCompilerRevision_(compilerRevision) {}
+  [[nodiscard]] std::string_view name() const noexcept override {
+    return "Record rendered sound's renderer";
+  }
+  [[nodiscard]] CommandAudioImpact audioImpact() const noexcept override {
+    return CommandAudioImpact::MetadataOnly;
+  }
+  [[nodiscard]] CommandImpact impact() const override;
+  [[nodiscard]] core::Result<void> apply(domain::Project& project) override;
+  [[nodiscard]] core::Result<void> revert(domain::Project& project) override;
+
+private:
+  std::string afterRenderAbi_;
+  std::uint32_t afterCompilerRevision_{0U};
+  std::string beforeRenderAbi_;
+  std::uint32_t beforeCompilerRevision_{0U};
+  bool captured_{false};
+};
+
 }  // namespace seam::application

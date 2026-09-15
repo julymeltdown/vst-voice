@@ -148,6 +148,28 @@ public:
     std::lock_guard lock(exportMutex_);
     return lastExport_;
   }
+  // Whether the sound this project carries was produced by different code than this build renders.
+  // A project that records no renderer reports Unknown, which is the honest answer for a document
+  // whose audio nobody attributed; reporting Same there would pass a compatibility check on behalf
+  // of a comparison nobody made. This is a read of the document, so it belongs to the owner thread.
+  struct RendererProvenanceReport final {
+    domain::RendererProvenance state{domain::RendererProvenance::Unknown};
+    std::string recordedRenderAbi;
+    std::uint32_t recordedCompilerRevision{0U};
+    std::string currentRenderAbi;
+    std::uint32_t currentCompilerRevision{0U};
+    // Which recorded field no longer matches, named so a notice can say what changed. Empty unless
+    // the state is Changed.
+    std::string difference;
+  };
+  [[nodiscard]] RendererProvenanceReport rendererProvenance() const;
+  // Records which renderer produced the audio of the export that just completed. Owner thread only:
+  // the record is an undoable edit of the document, and a render worker must never mutate it.
+  [[nodiscard]] core::Result<void> recordExportedRendererProvenance();
+  // Applies a provenance record a completed background export left for the owner thread. Does
+  // nothing when no background export finished since the last call, so a host may call it every
+  // frame. Returns whether a record was applied.
+  [[nodiscard]] core::Result<bool> applyPendingRendererProvenance();
   [[nodiscard]] core::Result<bool> requestClose();
   [[nodiscard]] std::vector<platform::RecentProjectMenuItem> recentProjects()
       const override;
@@ -383,6 +405,10 @@ private:
   mutable std::mutex exportMutex_;
   std::jthread exportWorker_;
   bool exportRunning_{false};
+  // Set by the background export worker when it commits, read and cleared by the owner thread. The
+  // worker never touches the document: it reports that a renderer produced audio, and the owner
+  // thread decides when that becomes an edit.
+  bool pendingRendererProvenance_{false};
 };
 
 }  // namespace seam::standalone

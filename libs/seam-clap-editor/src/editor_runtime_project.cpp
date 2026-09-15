@@ -56,7 +56,10 @@ OfflineRenderIdentity makeOfflineIdentity(
   };
   auto rendered = project;
   if (tempoOverride != nullptr) rendered.tempoMap() = *tempoOverride;
-  const auto encoded = formats::ProjectJsonCodec{}.encode(rendered);
+  // A recorded renderer says which build made a sound, not what the sound is, so it stays out of the
+  // offline identity. Otherwise recording provenance would invalidate the very bounce it describes.
+  const auto encoded = formats::ProjectJsonCodec{}.encode(
+      rendered, formats::ProjectJsonEncodeOptions{.includeRendererProvenance = false});
   if (!encoded) return identity;
   identity.projectContentHash = core::sha256Hex(encoded.value());
   core::Sha256 timing;

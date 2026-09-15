@@ -460,7 +460,8 @@ JsonValue encodeMeter(const time::MeterMap& map) {
   return JsonValue{std::move(events)};
 }
 
-JsonValue encodeProject(const domain::Project& project) {
+JsonValue encodeProject(const domain::Project& project,
+                        ProjectJsonEncodeOptions options) {
   Array vocalTracks;
   for (const auto& track : project.vocalTracks()) {
     Array regions;
@@ -677,6 +678,22 @@ JsonValue encodeProject(const domain::Project& project) {
           {"snapGrid", JsonValue{project.settings().snapGrid.value()}},
           {"hostStartOffsetTick",
            JsonValue{project.settings().hostStartOffsetTick.value()}},
+          // The renderer that last produced this project's audio. Persisted so a later build can tell
+          // that it would render the project with different code, instead of migrating the sound
+          // silently. An unrendered project writes an empty identity and a zero revision.
+          //
+          // An identity encoding omits both fields. They describe which code made audio that already
+          // exists, so including them would let the act of recording a renderer change the identity
+          // that decides whether cached audio may be reused. The record travels with the document; it
+          // never becomes an acoustic input.
+          {"renderedRenderAbi", JsonValue{options.includeRendererProvenance
+                                              ? project.settings().renderedRenderAbi
+                                              : std::string{}}},
+          {"renderedCompilerRevision",
+           JsonValue{static_cast<std::int64_t>(
+               options.includeRendererProvenance
+                   ? project.settings().renderedCompilerRevision
+                   : 0U)}},
           {"technicalLanes", JsonValue{std::move(technicalLanes)}}}}},
       {"routing", encodeRouting(project.routing())},
       {"vocalTracks", JsonValue{std::move(vocalTracks)}},
@@ -771,6 +788,8 @@ core::Result<domain::Project> decodeProject(const JsonValue& root) {
   const auto* snapEnabled = settings.value()->find("snapEnabled");
   const auto* snapGrid = settings.value()->find("snapGrid");
   const auto* hostStartOffsetTick = settings.value()->find("hostStartOffsetTick");
+  const auto* renderedRenderAbi = settings.value()->find("renderedRenderAbi");
+  const auto* renderedCompilerRevision = settings.value()->find("renderedCompilerRevision");
   const auto* technicalLanes = settings.value()->find("technicalLanes");
   if (sampleRate == nullptr || characterDisplay == nullptr || snapEnabled == nullptr || snapGrid == nullptr ||
       !sampleRate->isNumber() || !characterDisplay->isString() || !snapEnabled->isBool() ||
@@ -789,6 +808,15 @@ core::Result<domain::Project> decodeProject(const JsonValue& root) {
     return core::failure<domain::Project>(
         core::ErrorCode::ParseError,
         "Schema 11 project is missing bounceTimingAuthority");
+  }
+  // From schema 18 the recorded renderer is present, so a document that claims the new schema and
+  // omits it is malformed rather than silently treated as having no provenance.
+  if (schemaVersion >= 18 &&
+      (renderedRenderAbi == nullptr || !renderedRenderAbi->isString() ||
+       renderedCompilerRevision == nullptr || !renderedCompilerRevision->isInteger())) {
+    return core::failure<domain::Project>(
+        core::ErrorCode::ParseError,
+        "Schema 18 project is missing its recorded renderer provenance");
   }
   project.settings().sampleRate = sampleRate->asNumber();
   if (schemaVersion >= 11) {
@@ -810,6 +838,20 @@ core::Result<domain::Project> decodeProject(const JsonValue& root) {
                             ? hostStartOffsetTick->asInt64()
                             : 0}
           : time::Tick{0};
+  // An older document has no recorded renderer, which is the honest "unknown" rather than a claim.
+  if (schemaVersion >= 18) {
+    if (renderedRenderAbi->asString().size() > 128U ||
+        renderedCompilerRevision->asInt64() < 0 ||
+        renderedCompilerRevision->asInt64() >
+            static_cast<std::int64_t>(std::numeric_limits<std::uint32_t>::max())) {
+      return core::failure<domain::Project>(
+          core::ErrorCode::ParseError,
+          "Project recorded renderer provenance is out of range");
+    }
+    project.settings().renderedRenderAbi = renderedRenderAbi->asString();
+    project.settings().renderedCompilerRevision =
+        static_cast<std::uint32_t>(renderedCompilerRevision->asInt64());
+  }
   if (schemaVersion >= 7) {
     const auto requiredLaneCount = schemaVersion == 7 ? 4U : domain::kTechnicalLaneCount;
     if (technicalLanes == nullptr || !technicalLanes->isArray() ||
@@ -1485,11 +1527,16 @@ core::Result<domain::Project> decodeProject(const JsonValue& root) {
 }  // namespace
 
 core::Result<std::string> ProjectJsonCodec::encode(const domain::Project& project) const {
+  return encode(project, ProjectJsonEncodeOptions{});
+}
+
+core::Result<std::string> ProjectJsonCodec::encode(
+    const domain::Project& project, ProjectJsonEncodeOptions options) const {
   const auto validation = project.validate();
   if (!validation) {
     return core::Result<std::string>{validation.error()};
   }
-  return stringifyJson(encodeProject(project), true);
+  return stringifyJson(encodeProject(project, options), true);
 }
 
 core::Result<domain::Project> ProjectJsonCodec::decode(std::string_view json) const {

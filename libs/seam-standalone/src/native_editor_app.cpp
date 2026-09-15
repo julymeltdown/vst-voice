@@ -992,6 +992,16 @@ core::Result<void> NativeEditorApp::handleDiagnosticAction(
           diagnostic.code == "SUPPORT_BUNDLE_EXPORTED") {
         authoring_->controller().setRecoverySupportView({});
       }
+      // The renderer notice is about a record in the document, so dismissing it dismisses this
+      // telling of it. The record stays, and the notice returns if the difference changes into
+      // something the creator has not seen yet.
+      if (diagnostic.code == "RENDERER_CHANGED") {
+        dismissedRendererDifference_ = diagnostic.detail;
+        rendererChangedDiagnostic_.reset();
+        authoring_->controller().setDiagnostics({});
+        if (window_ != nullptr) window_->requestRepaint();
+        return core::success();
+      }
       authoring_->runtime().clearDiagnostics();
       authoring_->controller().setDiagnostics({});
       if (window_ != nullptr) window_->requestRepaint();
@@ -1254,6 +1264,11 @@ void NativeEditorApp::paint(native_ui::RasterCanvas& canvas) noexcept {
   authoring_->controller().pollReplacementReview();
   if (applicationController_ != nullptr) {
     record(applicationController_->tickAutosave());
+    // A background export committed on its own thread and reported the renderer it used instead of
+    // editing the document there. This is the owner thread, so the record becomes an ordinary edit
+    // here, once, and only for an export that actually committed.
+    const auto applied = applicationController_->applyPendingRendererProvenance();
+    if (!applied) record(applied.error());
   }
   const auto transport = authoring_->runtime().transport().state();
   if (!transport.playing) stopAudioForPlayback();
@@ -1293,6 +1308,38 @@ void NativeEditorApp::paint(native_ui::RasterCanvas& canvas) noexcept {
   }
   auto diagnostics = authoring_->runtime().diagnostics();
   if (audioDiagnostic_.has_value()) diagnostics.push_back(*audioDiagnostic_);
+  // A record that this project sounded different asks the creator a question, so it is raised where
+  // the project is being looked at rather than only stored in a file nobody reads.
+  if (applicationController_ != nullptr) {
+    const auto provenance = applicationController_->rendererProvenance();
+    if (provenance.state == domain::RendererProvenance::Changed &&
+        provenance.difference != dismissedRendererDifference_) {
+      authoring::Diagnostic notice{
+          .code = "RENDERER_CHANGED",
+          .severity = authoring::DiagnosticRegistry::severity("RENDERER_CHANGED"),
+          .messageKey = "render.renderer_changed",
+          .affectedIds = {},
+          .actions = authoring::DiagnosticRegistry::actions("RENDERER_CHANGED"),
+          .occurrenceCount = 1U,
+      };
+      // The detail names the field that differs, so the creator can tell a renderer change from an
+      // accidental edit instead of being told only that something is different.
+      notice.setDetail(provenance.difference.empty()
+                           ? std::string{"recorded renderer differs from this build"}
+                           : provenance.difference);
+      rendererChangedDiagnostic_ = std::move(notice);
+    } else {
+      rendererChangedDiagnostic_.reset();
+      // Re-arm dismissal once the project's record matches this build again, so a later change is a
+      // new event rather than one the creator silenced by accident.
+      if (provenance.state != domain::RendererProvenance::Changed) {
+        dismissedRendererDifference_.clear();
+      }
+    }
+  }
+  if (rendererChangedDiagnostic_.has_value()) {
+    diagnostics.push_back(*rendererChangedDiagnostic_);
+  }
   authoring_->controller().setDiagnostics(std::move(diagnostics));
   const auto& project = authoring_->runtime().document().session().project();
   const auto tick = project.tempoMap().tickAtSampleFrame(

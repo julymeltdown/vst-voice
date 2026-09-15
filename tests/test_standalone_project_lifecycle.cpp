@@ -3,12 +3,14 @@
 #include "test_support.hpp"
 
 #include "seam/application/note_commands.hpp"
+#include "seam/build/version.hpp"
 #include "seam/core/file_io.hpp"
 #include "seam/formats/project_json.hpp"
 #include "seam/platform/application_menu.hpp"
 #include "seam/platform/file_dialog.hpp"
 #include "seam/standalone/application_controller.hpp"
 #include "seam/standalone/authoring_session.hpp"
+#include "seam/synthesis/performance_compiler.hpp"
 #include "seam/voicebank/wav.hpp"
 
 #include <chrono>
@@ -396,6 +398,100 @@ TEST_CASE("standalone_application_controller_exports_off_thread_and_protects_qui
   }
   CHECK(!controller.value()->exportInProgress());
   CHECK(controller.value()->lastExport().has_value());
+}
+
+TEST_CASE("standalone records the renderer of a committed export and reports a changed one") {
+  const auto root = seam::test::support::temporaryDirectory("standalone-renderer-provenance");
+  auto session = makeSession(root);
+  addNote(*session);
+  auto dialog = std::make_unique<FakeDialog>();
+  auto prompt = std::make_unique<FakePrompt>();
+  auto controller = seam::standalone::StandaloneApplicationController::create(
+      *session, std::move(dialog), std::move(prompt),
+      seam::standalone::StandaloneApplicationControllerConfig{
+          .autosaveRoot = root / "autosaves",
+          .recentProjectsPath = root / "recent.json",
+          .defaultNewProject = {},
+          .stateChanged = {},
+          .progressChanged = {},
+      });
+  CHECK(controller);
+  if (!controller) return;
+
+  // Nothing has been rendered, so nothing is recorded and the comparison says unknown rather than
+  // claiming the sound already matches this build.
+  const auto before = controller.value()->rendererProvenance();
+  CHECK(before.state == seam::domain::RendererProvenance::Unknown);
+  CHECK(before.recordedRenderAbi.empty());
+  CHECK(before.recordedCompilerRevision == 0U);
+  CHECK(before.difference.empty());
+  CHECK(!before.currentRenderAbi.empty());
+
+  // A committed export names the renderer that produced its audio, so the project records it.
+  const auto settings = seam::authoring::ExportSettings{
+      .sampleRate = 48000U,
+      .channels = 2U,
+      .format = seam::voicebank::WavSampleFormat::Pcm24,
+      .includeMaster = true,
+      .includeStems = false,
+      .replaceExisting = false,
+  };
+  const auto exported = controller.value()->exportSet(root / "export", settings);
+  CHECK(exported.hasValue());
+  if (!exported) return;
+  CHECK(exported.value().state == seam::authoring::ExportState::Committed);
+
+  const auto& recorded =
+      session->runtime().document().session().project().settings();
+  CHECK(recorded.renderedRenderAbi == std::string{seam::build::kRenderAbiId});
+  CHECK(recorded.renderedCompilerRevision ==
+        seam::synthesis::kPerformanceCompilerRevision);
+
+  const auto after = controller.value()->rendererProvenance();
+  CHECK(after.state == seam::domain::RendererProvenance::Same);
+  CHECK(after.difference.empty());
+
+  // A project whose recorded sound came from other code reports the change and names the field, so a
+  // creator can tell a renderer change from an accidental edit.
+  session->runtime().document().session().project().settings().renderedRenderAbi =
+      "seam-render-abi-0.0-r0";
+  const auto changed = controller.value()->rendererProvenance();
+  CHECK(changed.state == seam::domain::RendererProvenance::Changed);
+  CHECK(changed.difference.find("renderAbi seam-render-abi-0.0-r0 -> ") == 0U);
+
+  // Recording provenance is metadata, not music: it must not invalidate the audio it describes.
+  const auto revisionBefore = session->runtime().document().session().revision();
+  const auto identityBefore = controller.value()->lastExport();
+  CHECK(controller.value()->recordExportedRendererProvenance());
+  const auto restored = controller.value()->rendererProvenance();
+  CHECK(restored.state == seam::domain::RendererProvenance::Same);
+  CHECK(session->runtime().document().session().revision() == revisionBefore + 1U);
+  const auto identityAfter = controller.value()->lastExport();
+  CHECK(identityBefore.has_value() == identityAfter.has_value());
+  if (identityBefore && identityAfter) {
+    CHECK(identityBefore->masterSha256 == identityAfter->masterSha256);
+  }
+
+  // The background path reports a committed render for the owner thread instead of editing the
+  // document on the worker, and applying it once is all a frame loop may do.
+  session->runtime().document().session().project().settings().renderedRenderAbi.clear();
+  session->runtime().document().session().project().settings().renderedCompilerRevision = 0U;
+  CHECK(controller.value()->startExportSet(root / "async-export", settings));
+  for (std::size_t attempt = 0U;
+       attempt < 500U && controller.value()->exportInProgress(); ++attempt) {
+    std::this_thread::sleep_for(std::chrono::milliseconds{10});
+  }
+  CHECK(!controller.value()->exportInProgress());
+  const auto applied = controller.value()->applyPendingRendererProvenance();
+  CHECK(applied.hasValue());
+  if (!applied) return;
+  CHECK(applied.value());
+  CHECK(session->runtime().document().session().project().settings().renderedRenderAbi ==
+        std::string{seam::build::kRenderAbiId});
+  // Applying again is not a second edit: the pending record was consumed when it was applied.
+  const auto repeated = controller.value()->applyPendingRendererProvenance();
+  CHECK(repeated.hasValue());
+  if (repeated) CHECK(!repeated.value());
 }
 
 TEST_CASE("standalone single-file export publishes its committed result") {

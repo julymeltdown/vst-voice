@@ -151,6 +151,14 @@ private:
   std::filesystem::path recoveryRoot_;
   std::string startupDeviceId_;
   std::optional<authoring::Diagnostic> audioDiagnostic_;
+  // A notice that this project's recorded sound came from different renderer code than this build
+  // runs. Held beside the audio notice rather than inside the document, because it is a disclosure
+  // about the document, not a property of it, and it must disappear when the creator dismisses it.
+  std::optional<authoring::Diagnostic> rendererChangedDiagnostic_;
+  // The difference the creator already dismissed. Dismissal is keyed to that exact description, so
+  // re-raising the notice every frame would be a notice nobody can close, while a genuinely new
+  // difference still speaks up.
+  std::string dismissedRendererDifference_;
   native_ui::INativeWindow* window_{nullptr};
   std::atomic<bool> closeRequested_{false};
   std::string lastError_;

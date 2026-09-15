@@ -16,6 +16,41 @@ std::string_view bounceTimingAuthorityName(
   return "fixed-audio";
 }
 
+RendererProvenance compareRendererProvenance(
+    std::string_view renderedRenderAbi, std::uint32_t renderedCompilerRevision,
+    std::string_view currentRenderAbi, std::uint32_t currentCompilerRevision) noexcept {
+  // Nothing recorded means nothing is known. Reporting `Same` here would let an unrendered or
+  // pre-provenance project pass a compatibility check it never earned.
+  if (renderedRenderAbi.empty() || renderedCompilerRevision == 0U) {
+    return RendererProvenance::Unknown;
+  }
+  if (renderedRenderAbi == currentRenderAbi && renderedCompilerRevision == currentCompilerRevision) {
+    return RendererProvenance::Same;
+  }
+  return RendererProvenance::Changed;
+}
+
+std::string rendererProvenanceDifference(
+    std::string_view renderedRenderAbi, std::uint32_t renderedCompilerRevision,
+    std::string_view currentRenderAbi, std::uint32_t currentCompilerRevision) {
+  if (renderedRenderAbi.empty() || renderedCompilerRevision == 0U) return {};
+  std::string difference;
+  if (renderedRenderAbi != currentRenderAbi) {
+    difference = "renderAbi ";
+    difference += renderedRenderAbi;
+    difference += " -> ";
+    difference += currentRenderAbi;
+  }
+  if (renderedCompilerRevision != currentCompilerRevision) {
+    if (!difference.empty()) difference += ", ";
+    difference += "compilerRevision ";
+    difference += std::to_string(renderedCompilerRevision);
+    difference += " -> ";
+    difference += std::to_string(currentCompilerRevision);
+  }
+  return difference;
+}
+
 core::Result<void> ProceduralRecipeReference::validate() const {
   const auto identity = resource.validate();
   if (!identity) return identity;
@@ -383,6 +418,18 @@ core::Result<void> Project::validate() const {
   if (settings_.snapGrid <= time::Tick{0}) {
     return core::failure(core::ErrorCode::InvariantViolation,
                          "Project snap grid must be positive");
+  }
+  // A recorded renderer is either fully absent, meaning this project's sound has no recorded
+  // provenance, or complete. A half-recorded pair would name a renderer without its revision and
+  // would be indistinguishable from an older build, which is exactly the confusion the field exists
+  // to prevent.
+  if (!settings_.renderedRenderAbi.empty() && settings_.renderedCompilerRevision == 0U) {
+    return core::failure(core::ErrorCode::InvariantViolation,
+                         "A recorded renderer needs its compiler revision");
+  }
+  if (settings_.renderedRenderAbi.size() > 128U) {
+    return core::failure(core::ErrorCode::InvariantViolation,
+                         "A recorded renderer identity is too long");
   }
   for (const auto& lane : settings_.technicalLanes) {
     if (!std::isfinite(lane.expandedHeight) || lane.expandedHeight < 96.0 ||

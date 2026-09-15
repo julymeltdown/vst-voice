@@ -46,6 +46,23 @@ struct TechnicalLanePresentation final {
 // own tempo map; Follow Host renders it against the timing the host reported for that range.
 enum class BounceTimingAuthority { FixedAudio, FollowHost };
 
+// Whether a project that recorded a renderer would now be rendered by different code. A project with
+// no recorded renderer reports `Unknown` rather than `Same`, because nothing observed how it sounded
+// and claiming equivalence would be a silent migration dressed up as compatibility. Callers use this
+// to tell a creator that the sound they approved is no longer the sound this build produces.
+enum class RendererProvenance { Unknown, Same, Changed };
+
+[[nodiscard]] RendererProvenance compareRendererProvenance(
+    std::string_view renderedRenderAbi, std::uint32_t renderedCompilerRevision,
+    std::string_view currentRenderAbi, std::uint32_t currentCompilerRevision) noexcept;
+
+// Which part of the recorded renderer no longer matches, so a report can name the field instead of
+// saying only that something changed. Empty when nothing differs or when nothing was recorded: an
+// unknown provenance has no field to name, and inventing one would misdescribe the state.
+[[nodiscard]] std::string rendererProvenanceDifference(
+    std::string_view renderedRenderAbi, std::uint32_t renderedCompilerRevision,
+    std::string_view currentRenderAbi, std::uint32_t currentCompilerRevision);
+
 [[nodiscard]] std::string_view bounceTimingAuthorityName(
     BounceTimingAuthority authority) noexcept;
 
@@ -62,6 +79,14 @@ struct ProjectSettings final {
   // Host position at this musical tick maps to source frame zero. This keeps
   // plug-in pre-roll and project-offset semantics in the canonical state.
   time::Tick hostStartOffsetTick{time::Tick{0}};
+  // The renderer that last produced audio this project heard or exported, recorded as the
+  // renderer's own ABI identity plus the compiler revision inside it. It is deliberately empty for
+  // a project that has never been rendered, because an empty value means "unknown" and a fabricated
+  // one would claim a provenance nobody observed. Its purpose is to make a renderer change visible:
+  // a project whose recorded identity differs from the current build is rendered by different code
+  // than it was before, and the product must say so rather than silently migrating the sound.
+  std::string renderedRenderAbi;
+  std::uint32_t renderedCompilerRevision{0U};
 
   friend bool operator==(const ProjectSettings&, const ProjectSettings&) = default;
 };

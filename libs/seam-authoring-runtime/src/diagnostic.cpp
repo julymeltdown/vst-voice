@@ -32,6 +32,10 @@ constexpr DiagnosticAction kBankRecovery[]{DiagnosticAction::InstallVoicebank,
 constexpr DiagnosticAction kRetrySupport[]{DiagnosticAction::Retry,
                                             DiagnosticAction::CopyDiagnostic,
                                             DiagnosticAction::OpenSupport};
+// A renderer change is not repairable from the project file: reproducing the previous sound needs the
+// previous build. The creator can dismiss the notice or copy it, and neither pretends to fix it.
+constexpr DiagnosticAction kRendererChanged[]{DiagnosticAction::Dismiss,
+                                               DiagnosticAction::CopyDiagnostic};
 constexpr DiagnosticAction kRetry[]{DiagnosticAction::Retry,
                                     DiagnosticAction::CopyDiagnostic};
 constexpr DiagnosticAction kRelinkSupport[]{DiagnosticAction::RelinkMedia,
@@ -64,6 +68,7 @@ constexpr std::array definitions{
     Definition{"BANK_COVERAGE_MISSING", DiagnosticSeverity::Warning, kChooseBank},
     Definition{"RENDER_FAILED", DiagnosticSeverity::Error, kRetrySupport},
     Definition{"RENDER_STALE", DiagnosticSeverity::Warning, kRetry},
+    Definition{"RENDERER_CHANGED", DiagnosticSeverity::Warning, kRendererChanged},
     Definition{"MEDIA_MISSING", DiagnosticSeverity::Error, kRelinkSupport},
     Definition{"AUDIO_UNAVAILABLE", DiagnosticSeverity::Error, kOpenSettings},
     Definition{"PERSISTENCE_FAILED", DiagnosticSeverity::Critical, kRecoverSupport},

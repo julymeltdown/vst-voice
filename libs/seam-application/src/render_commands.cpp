@@ -194,6 +194,50 @@ CommandImpact ConfigureProjectOutputCommand::impact() const {
   };
 }
 
+CommandImpact RecordRendererProvenanceCommand::impact() const {
+  return CommandImpact{
+      .scope = CommandAudioImpact::MetadataOnly,
+      .projectWide = true,
+      .trackIds = {},
+      .regionIds = {},
+      .noteIds = {},
+      .lyricIds = {},
+  };
+}
+
+core::Result<void> RecordRendererProvenanceCommand::apply(
+    domain::Project& project) {
+  // A recorded renderer names the code that made audio, so a blank identity would be a record of
+  // nothing. Callers that have no renderer to name must not apply this command at all.
+  if (afterRenderAbi_.empty() || afterCompilerRevision_ == 0U) {
+    return core::failure(core::ErrorCode::InvalidArgument,
+                         "A recorded renderer needs an identity and a revision");
+  }
+  if (afterRenderAbi_.size() > 128U) {
+    return core::failure(core::ErrorCode::InvalidArgument,
+                         "A recorded renderer identity is too long");
+  }
+  if (!captured_) {
+    beforeRenderAbi_ = project.settings().renderedRenderAbi;
+    beforeCompilerRevision_ = project.settings().renderedCompilerRevision;
+    captured_ = true;
+  }
+  project.settings().renderedRenderAbi = afterRenderAbi_;
+  project.settings().renderedCompilerRevision = afterCompilerRevision_;
+  return core::success();
+}
+
+core::Result<void> RecordRendererProvenanceCommand::revert(
+    domain::Project& project) {
+  if (!captured_) {
+    return core::failure(core::ErrorCode::Conflict,
+                         "Renderer provenance command has no captured state");
+  }
+  project.settings().renderedRenderAbi = beforeRenderAbi_;
+  project.settings().renderedCompilerRevision = beforeCompilerRevision_;
+  return core::success();
+}
+
 UpsertUnitSelectionOverrideCommand::UpsertUnitSelectionOverrideCommand(
     domain::RegionId regionId,
     domain::UnitSelectionOverride overrideValue)

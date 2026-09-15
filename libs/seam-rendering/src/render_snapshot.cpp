@@ -537,7 +537,8 @@ core::Result<std::string> buildIdentity(
     const synthesis::PhraseRenderOptions& renderOptions,
     std::optional<synthesis::PhraseFrameRange> ownedFrames) {
   formats::ProjectJsonCodec codec;
-  auto projectJson = codec.encode(phraseProject);
+  auto projectJson = codec.encode(
+      phraseProject, formats::ProjectJsonEncodeOptions{.includeRendererProvenance = false});
   if (!projectJson) return core::Result<std::string>{projectJson.error()};
 
   IdentityWriter writer;
@@ -582,7 +583,10 @@ core::Result<std::string> buildProceduralIdentity(const domain::Project& project
     const synthesis::ProceduralSingerResource& resource, const domain::PronunciationIdentity& pronunciation,
     std::string_view style, RenderQuality quality, std::uint32_t sampleRate,
     std::optional<synthesis::PhraseFrameRange> ownedFrames) {
-  const auto json = formats::ProjectJsonCodec{}.encode(project);
+  // Identity excludes the recorded renderer. Which build produced a sound is a fact about the audio,
+  // not an input to what the audio is, so a stamp must not move the identity it describes.
+  const auto json = formats::ProjectJsonCodec{}.encode(
+      project, formats::ProjectJsonEncodeOptions{.includeRendererProvenance = false});
   if (!json) return core::Result<std::string>{json.error()};
   IdentityWriter identity;
   identity.tag("project-seam-procedural-articulation-v2");
@@ -608,7 +612,8 @@ core::Result<std::string> buildNeuralIdentity(const domain::Project& project,
     const neural_synthesis::AdmittedNeuralBundle& bundle, const domain::PronunciationIdentity& pronunciation,
     const NeuralRenderProvenance& provenance, std::string_view style, RenderQuality quality,
     std::uint32_t sampleRate, std::optional<synthesis::PhraseFrameRange> ownedFrames) {
-  const auto json = formats::ProjectJsonCodec{}.encode(project);
+  const auto json = formats::ProjectJsonCodec{}.encode(
+      project, formats::ProjectJsonEncodeOptions{.includeRendererProvenance = false});
   if (!json) return core::Result<std::string>{json.error()};
   const auto& execution = bundle.execution();
   const auto& metadata = bundle.metadata();
