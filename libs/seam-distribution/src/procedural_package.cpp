@@ -5,6 +5,7 @@
 #include "seam/formats/json_value.hpp"
 #include "seam/voice_design/articulation_plan.hpp"
 #include "seam/voice_design/voice_recipe.hpp"
+#include "seam/voice_design/recipe_resource.hpp"
 
 #include <algorithm>
 #include <atomic>
@@ -825,6 +826,90 @@ std::string_view proceduralResolveStatusName(ProceduralResolveStatus status) noe
     case ProceduralResolveStatus::InvalidReference: return "invalid-reference";
   }
   return "unknown";
+}
+
+namespace {
+
+// Whether candidate lies inside root, comparing canonical paths so a symlinked or differently
+// spelled destination cannot escape the check. A destination that does not exist yet is resolved
+// through its nearest existing ancestor.
+bool isInsideRoot(const std::filesystem::path& candidate, const std::filesystem::path& root) {
+  std::error_code error;
+  const auto resolvedRoot = std::filesystem::weakly_canonical(root, error);
+  if (error) return false;
+  const auto resolvedCandidate = std::filesystem::weakly_canonical(candidate, error);
+  if (error) return false;
+  const auto rootText = resolvedRoot.generic_string();
+  const auto candidateText = resolvedCandidate.generic_string();
+  if (candidateText == rootText) return true;
+  if (candidateText.size() <= rootText.size()) return false;
+  return candidateText.compare(0, rootText.size(), rootText) == 0 &&
+         candidateText[rootText.size()] == '/';
+}
+
+}  // namespace
+
+core::Result<std::filesystem::path> copyInstalledSingerToDraft(
+    const ProceduralCandidate& candidate,
+    const std::filesystem::path& destination,
+    const CopyInstalledProceduralOptions& options) {
+  using Output = std::filesystem::path;
+  const auto identityValid = candidate.renderIdentity.validate();
+  if (!identityValid)
+    return core::failure<Output>(core::ErrorCode::InvalidArgument,
+                                 "A copied singer needs a valid render identity",
+                                 candidate.manifest.id);
+  if (destination.empty())
+    return core::failure<Output>(core::ErrorCode::InvalidArgument,
+                                 "A draft destination path is required");
+  // The copy must never be written into a protected root, which includes the resource's own
+  // installation directory. This is the invariant that keeps signed content immutable, and it is
+  // enforced here rather than left to the caller.
+  for (const auto& root : options.protectedRoots) {
+    if (!root.empty() && isInsideRoot(destination, root))
+      return core::failure<Output>(core::ErrorCode::Conflict,
+                                   "A creator draft must not be written inside a protected "
+                                   "installation root",
+                                   root.string());
+  }
+  if (isInsideRoot(destination, candidate.resourceRoot))
+    return core::failure<Output>(core::ErrorCode::Conflict,
+                                 "A creator draft must not be written inside the installed singer",
+                                 candidate.resourceRoot.string());
+  std::error_code error;
+  const auto recipePath = candidate.resourceRoot / candidate.manifest.recipeEntry;
+  if (!isRealRegularFile(recipePath))
+    return core::failure<Output>(core::ErrorCode::NotFound,
+                                 "The installed singer's recipe is absent", recipePath.string());
+  auto bytes = core::readFileBytesLimited(recipePath, 16U * 1024U * 1024U);
+  if (!bytes) return core::Result<Output>{bytes.error()};
+  // Read the installed recipe as the resource this project selected, so a file replaced since
+  // discovery is refused rather than silently copied under the old identity.
+  const auto resource = voice_design::loadVoiceRecipeResource(
+      recipePath, std::optional<domain::SingerResourceIdentity>{candidate.renderIdentity});
+  if (!resource) return core::Result<Output>{resource.error()};
+  const std::string text(reinterpret_cast<const char*>(bytes.value().data()),
+                         bytes.value().size());
+  auto recipe = voice_design::decodeVoiceRecipe(text);
+  if (!recipe) return core::Result<Output>{recipe.error()};
+  const auto canonical = voice_design::encodeVoiceRecipe(recipe.value());
+  if (!canonical) return core::Result<Output>{canonical.error()};
+  const auto parent = destination.parent_path();
+  if (!parent.empty()) {
+    std::filesystem::create_directories(parent, error);
+    if (error)
+      return core::failure<Output>(core::ErrorCode::IoError,
+                                   "Unable to create the draft directory", error.message());
+  }
+  if (std::filesystem::exists(destination, error) && !options.overwriteExisting)
+    return core::failure<Output>(core::ErrorCode::Conflict,
+                                 "A draft already exists at the destination",
+                                 destination.string());
+  // Writing the canonical encoding means the draft is identical in identity to the installed
+  // recipe it came from, so editing it produces a new identity rather than an ambiguous one.
+  const auto saved = core::durableAtomicWriteText(destination, canonical.value());
+  if (!saved) return core::Result<Output>{saved.error()};
+  return destination;
 }
 
 }  // namespace seam::distribution

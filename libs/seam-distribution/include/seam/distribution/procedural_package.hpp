@@ -186,4 +186,21 @@ struct ProceduralResolution final {
     const std::filesystem::path& installRoot,
     const InstallProceduralOptions& options = {});
 
+// Copying an installed singer to a creator-owned draft. A signed installation is immutable, so a
+// creator who wants to change one edits a copy instead. The copy reads the installed recipe after
+// re-verifying it against the candidate's own identity, writes the canonical bytes, and refuses any
+// destination inside a protected root, so this operation cannot rewrite signed content by
+// construction rather than by convention.
+struct CopyInstalledProceduralOptions final {
+  // Roots a draft must never be written into, normally the installed search roots plus the copied
+  // resource's own directory. A destination inside any of them is refused.
+  std::vector<std::filesystem::path> protectedRoots{};
+  bool overwriteExisting{false};
+};
+
+[[nodiscard]] core::Result<std::filesystem::path> copyInstalledSingerToDraft(
+    const ProceduralCandidate& candidate,
+    const std::filesystem::path& destination,
+    const CopyInstalledProceduralOptions& options = {});
+
 }  // namespace seam::distribution

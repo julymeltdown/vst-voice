@@ -24,6 +24,9 @@ enum class FileDialogPurpose {
   ExportScore,
   SelectProceduralRecipe,
   RelinkProceduralRecipe,
+  // Names a creator-owned draft copied from an installed singer. The destination must be outside
+  // every installation root, because signed content is immutable.
+  CopyInstalledSingerToDraft,
   BakeProceduralCandidates,
   ImportProceduralCandidate,
   ExportPitchInspection,

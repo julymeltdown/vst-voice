@@ -946,6 +946,10 @@ core::Result<void> StandaloneApplicationController::dispatch(
       return selectProceduralRecipeFromDialog(false);
     case platform::ApplicationCommand::SelectInstalledProceduralSinger:
       return selectInstalledProceduralSinger();
+    case platform::ApplicationCommand::CopyInstalledSingerToDraft: {
+      const auto copied = copyInstalledSingerToDraft();
+      return copied ? core::Result<void>{} : core::Result<void>{copied.error()};
+    }
     case platform::ApplicationCommand::RelinkProceduralRecipe:
       return selectProceduralRecipeFromDialog(true);
     case platform::ApplicationCommand::BakeProceduralCandidates:
@@ -1967,6 +1971,78 @@ core::Result<void> StandaloneApplicationController::recover(
   auto recovered = session_.recoverProject(autosave_, candidate);
   if (recovered) notifyStateChanged();
   return recovered;
+}
+
+core::Result<std::filesystem::path>
+StandaloneApplicationController::copyInstalledSingerToDraft(
+    std::optional<std::filesystem::path> destination) {
+  const auto trackId = session_.runtime().selectedTrack();
+  const auto* track = session_.runtime().document().session().project().findVocalTrack(trackId);
+  if (track == nullptr || !track->proceduralRecipe)
+    return core::failure<std::filesystem::path>(
+        core::ErrorCode::Conflict,
+        "Copying an installed singer requires a track with a procedural singer selected");
+  if (config_.renderableProceduralEngineId.empty())
+    return core::failure<std::filesystem::path>(
+        core::ErrorCode::Unsupported,
+        "This build does not declare a renderable procedural engine");
+  auto candidates = installedProceduralSingers();
+  if (!candidates) return core::Result<std::filesystem::path>{candidates.error()};
+  // The copy follows the identity the project recorded, not a path, so a replaced installation is
+  // refused instead of silently copying a singer the project never selected.
+  const auto resolution = distribution::resolveProceduralSinger(
+      track->proceduralRecipe->resource, candidates.value(),
+      distribution::ProceduralResolveOptions{
+          .requireTrustedInstalled = !config_.allowDevelopmentVoicebanks,
+          .allowDevelopmentFixtures = config_.allowDevelopmentVoicebanks,
+          .renderableEngineId = config_.renderableProceduralEngineId,
+          .renderableEngineRevision = config_.renderableProceduralEngineRevision});
+  if (!resolution.resolved())
+    return core::failure<std::filesystem::path>(core::ErrorCode::Conflict,
+                                                "The selected procedural singer is not installed: " +
+                                                    resolution.diagnostic);
+  auto target = destination;
+  if (!target.has_value()) {
+    const auto chooser = fileDialog_->choose(platform::FileDialogRequest{
+        .purpose = platform::FileDialogPurpose::CopyInstalledSingerToDraft,
+        .title = "Copy Installed Singer to Draft",
+        .initialDirectory = initialDirectory(session_.runtime().document()),
+        .suggestedName = resolution.candidate->manifest.id + "-draft.json",
+        .extensions = {"json"}});
+    if (!chooser) return core::Result<std::filesystem::path>{chooser.error()};
+    if (!chooser.value()) return core::success(std::filesystem::path{});
+    if (!chooser.value()->is_absolute())
+      return core::failure<std::filesystem::path>(
+          core::ErrorCode::InvalidArgument,
+          "A draft destination must be an absolute path");
+    target = chooser.value()->lexically_normal();
+  }
+  // The installation roots are protected: a draft written into one would overwrite signed content.
+  std::vector<std::filesystem::path> protectedRoots;
+  for (const auto& root : (config_.proceduralSingerRoots.empty()
+                               ? distribution::defaultProceduralSearchRoots()
+                               : config_.proceduralSingerRoots)) {
+    protectedRoots.push_back(root.path);
+  }
+  const auto written = distribution::copyInstalledSingerToDraft(
+      resolution.candidate.value(), *target,
+      distribution::CopyInstalledProceduralOptions{.protectedRoots = std::move(protectedRoots)});
+  if (!written) return core::Result<std::filesystem::path>{written.error()};
+  // Selecting the draft is what makes the copy useful: the creator now edits creator-owned bytes.
+  const auto context = session_.runtime().document().session().capturePerformanceJob();
+  if (!context) return core::Result<std::filesystem::path>{context.error()};
+  const auto resource = voice_design::loadVoiceRecipeResource(written.value());
+  if (!resource) return core::Result<std::filesystem::path>{resource.error()};
+  const auto before = track->proceduralRecipe;
+  const auto changed = session_.runtime().executePerformanceResult(context.value(),
+      std::make_unique<application::SetTrackProceduralRecipeCommand>(trackId, before,
+          domain::ProceduralRecipeReference{resource.value().identity, written.value().string(),
+                                            before->style}));
+  if (!changed) return core::Result<std::filesystem::path>{changed.error()};
+  const auto recorded = onDocumentChanged();
+  if (!recorded) return core::Result<std::filesystem::path>{recorded.error()};
+  notifyStateChanged();
+  return written.value();
 }
 
 }  // namespace seam::standalone

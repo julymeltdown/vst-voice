@@ -481,3 +481,221 @@ TEST_CASE("An interrupted procedural install leaves no staging or partial resour
     CHECK(!name.starts_with(".backup-"));
   }
 }
+
+// Copy-to-edit is the D4.6 obligation that a creator can change an installed singer without
+// rewriting signed content. These cases check the invariant, not just the happy path: the installed
+// bytes must be untouched by any copy or edit.
+TEST_CASE("A creator copies an installed singer to a draft and the installation is unchanged") {
+  const auto root = test::support::temporaryDirectory("procedural-copy-to-draft");
+  auto key = distribution::generateSigningKeyPair();
+  CHECK(key.hasValue());
+  if (!key) return;
+  const auto package = createProceduralPackage(root, key.value());
+  const auto installRoot = root / "singers";
+  distribution::InstallProceduralOptions installOptions;
+  installOptions.verification = distribution::VerifySeambankOptions{
+      .limits = {}, .trustedPublicKeys = {key.value().publicKey}, .requireTrustedSigner = true};
+  const auto installed = distribution::installProceduralPackage(package, installRoot, installOptions);
+  CHECK(installed.hasValue());
+  if (!installed) return;
+
+  distribution::ProceduralCatalogue catalogue;
+  auto scanned = catalogue.scan({distribution::ProceduralSearchRoot{
+      .path = installRoot, .kind = distribution::ProceduralRootKind::Installed}});
+  CHECK(scanned.hasValue());
+  if (!scanned) return;
+  CHECK(scanned.value().size() == 1U);
+  const auto candidate = scanned.value().front();
+  const auto installedRecipe = installed.value().installDirectory / "recipe.json";
+  const auto installedBefore = core::sha256File(installedRecipe, 1024U * 1024U);
+  CHECK(installedBefore.hasValue());
+  if (!installedBefore) return;
+
+  // The draft is written outside every installation root.
+  const auto draft = root / "drafts" / "my-singer.json";
+  const auto copied = distribution::copyInstalledSingerToDraft(
+      candidate, draft,
+      distribution::CopyInstalledProceduralOptions{.protectedRoots = {installRoot}});
+  CHECK(copied.hasValue());
+  if (!copied) return;
+  CHECK(std::filesystem::exists(draft));
+  // The draft is the same singer, so editing it starts from what the creator selected.
+  const auto draftResource = voice_design::loadVoiceRecipeResource(draft, std::nullopt);
+  CHECK(draftResource.hasValue());
+  if (!draftResource) return;
+  CHECK(draftResource.value().identity == candidate.renderIdentity);
+  // Copying did not touch the signed installation.
+  const auto installedAfter = core::sha256File(installedRecipe, 1024U * 1024U);
+  CHECK(installedAfter.hasValue());
+  if (!installedAfter) return;
+  CHECK(installedAfter.value() == installedBefore.value());
+
+  // Editing the draft produces a new identity and still leaves the installation alone.
+  auto edited = draftResource.value();
+  const auto loadedRecipe = voice_design::decodeVoiceRecipeResource(edited);
+  CHECK(loadedRecipe.hasValue());
+  if (!loadedRecipe) return;
+  auto recipe = loadedRecipe.value();
+  recipe.poses.front().formants.front().frequencyHz += 60.0;
+  const auto editedResource = voice_design::freezeVoiceRecipeResource(recipe);
+  CHECK(editedResource.hasValue());
+  if (!editedResource) return;
+  CHECK(editedResource.value().identity != candidate.renderIdentity);
+  CHECK(editedResource.value().identity.id == candidate.renderIdentity.id);
+  CHECK(voice_design::saveVoiceRecipeFile(draft, recipe).hasValue());
+  const auto installedFinal = core::sha256File(installedRecipe, 1024U * 1024U);
+  CHECK(installedFinal.hasValue());
+  if (!installedFinal) return;
+  CHECK(installedFinal.value() == installedBefore.value());
+}
+
+TEST_CASE("A draft can never be written inside an installation root") {
+  const auto root = test::support::temporaryDirectory("procedural-copy-protected");
+  auto key = distribution::generateSigningKeyPair();
+  CHECK(key.hasValue());
+  if (!key) return;
+  const auto package = createProceduralPackage(root, key.value());
+  const auto installRoot = root / "singers";
+  distribution::InstallProceduralOptions installOptions;
+  installOptions.verification = distribution::VerifySeambankOptions{
+      .limits = {}, .trustedPublicKeys = {key.value().publicKey}, .requireTrustedSigner = true};
+  const auto installed = distribution::installProceduralPackage(package, installRoot, installOptions);
+  CHECK(installed.hasValue());
+  if (!installed) return;
+  distribution::ProceduralCatalogue catalogue;
+  auto scanned = catalogue.scan({distribution::ProceduralSearchRoot{
+      .path = installRoot, .kind = distribution::ProceduralRootKind::Installed}});
+  CHECK(scanned.hasValue());
+  if (!scanned) return;
+  const auto candidate = scanned.value().front();
+  const auto installedRecipe = installed.value().installDirectory / "recipe.json";
+  const auto installedBefore = core::sha256File(installedRecipe, 1024U * 1024U);
+  CHECK(installedBefore.hasValue());
+  if (!installedBefore) return;
+
+  // A destination inside the install root is refused, so the signed recipe cannot be overwritten.
+  const auto insideRoot = installRoot / "authored-original" / "1.0.0" / "recipe.json";
+  const auto refused = distribution::copyInstalledSingerToDraft(
+      candidate, insideRoot,
+      distribution::CopyInstalledProceduralOptions{.protectedRoots = {installRoot}});
+  CHECK(!refused.hasValue());
+  if (!refused) CHECK(refused.error().code == core::ErrorCode::Conflict);
+  CHECK(std::filesystem::exists(installedRecipe));
+  const auto installedAfter = core::sha256File(installedRecipe, 1024U * 1024U);
+  CHECK(installedAfter.hasValue());
+  if (!installedAfter) return;
+  CHECK(installedAfter.value() == installedBefore.value());
+
+  // A destination inside the resource's own directory is refused even without a protected-root list.
+  const auto insideResource = candidate.resourceRoot / "copy.json";
+  CHECK(!distribution::copyInstalledSingerToDraft(
+      candidate, insideResource, distribution::CopyInstalledProceduralOptions{}).hasValue());
+
+  // An existing draft is not silently overwritten unless the caller asks for it.
+  const auto draft = root / "drafts" / "taken.json";
+  CHECK(distribution::copyInstalledSingerToDraft(
+      candidate, draft,
+      distribution::CopyInstalledProceduralOptions{.protectedRoots = {installRoot}}).hasValue());
+  CHECK(!distribution::copyInstalledSingerToDraft(
+      candidate, draft,
+      distribution::CopyInstalledProceduralOptions{.protectedRoots = {installRoot}}).hasValue());
+  CHECK(distribution::copyInstalledSingerToDraft(
+      candidate, draft,
+      distribution::CopyInstalledProceduralOptions{.protectedRoots = {installRoot},
+                                                  .overwriteExisting = true}).hasValue());
+}
+
+// The whole point of copy-to-edit: the creator can reach it from the running application and the
+// project then follows the creator-owned draft rather than the signed installation.
+TEST_CASE("The application copies the selected installed singer to an editable draft") {
+  const auto root = test::support::temporaryDirectory("procedural-copy-app");
+  auto key = distribution::generateSigningKeyPair();
+  CHECK(key.hasValue());
+  if (!key) return;
+  const auto package = createProceduralPackage(root, key.value());
+  const auto installRoot = root / "singers";
+  distribution::InstallProceduralOptions installOptions;
+  installOptions.verification = distribution::VerifySeambankOptions{
+      .limits = {}, .trustedPublicKeys = {key.value().publicKey}, .requireTrustedSigner = true};
+  const auto installed = distribution::installProceduralPackage(package, installRoot, installOptions);
+  CHECK(installed.hasValue());
+  if (!installed) return;
+  auto session = standalone::AuthoringSession::create(standalone::AuthoringSessionConfig{
+      .cacheRoot = root / "cache",
+      .voicebankRoots = {},
+      .sampleRate = 48000U,
+      .outputChannels = 2U,
+      .bindFirstAvailableVoicebank = false,
+      .allowDevelopmentVoicebanks = false});
+  CHECK(session.hasValue());
+  if (!session) return;
+  auto dialog = std::make_unique<FakeDialog>();
+  auto* picker = dialog.get();
+  standalone::StandaloneApplicationControllerConfig config{
+      .autosaveRoot = root / "autosaves", .recentProjectsPath = root / "recent.json"};
+  config.proceduralSingerRoots = {distribution::ProceduralSearchRoot{
+      .path = installRoot, .kind = distribution::ProceduralRootKind::Installed}};
+  config.renderableProceduralEngineId = "seam.source-filter.v1";
+  config.renderableProceduralEngineRevision = 14U;
+  auto controller = standalone::StandaloneApplicationController::create(
+      *session.value(), std::move(dialog), std::make_unique<FakePrompt>(), config);
+  CHECK(controller.hasValue());
+  if (!controller) return;
+  auto& runtime = session.value()->runtime();
+  const auto trackId = runtime.selectedTrack();
+  CHECK(trackId.valid());
+
+  // Copying requires a selected procedural singer, so an unsupported request is refused first.
+  const auto withoutSelection = controller.value()->copyInstalledSingerToDraft(
+      root / "drafts" / "no-selection.json");
+  CHECK(!withoutSelection.hasValue());
+
+  picker->styleResponse = std::nullopt;
+  CHECK(controller.value()->dispatch(platform::ApplicationCommand::SelectInstalledProceduralSinger));
+  picker->styleResponse = picker->offeredStyles.front();
+  CHECK(controller.value()->dispatch(platform::ApplicationCommand::SelectInstalledProceduralSinger));
+  const auto selectedRecipe = runtime.document().session().project()
+                                  .findVocalTrack(trackId)
+                                  ->proceduralRecipe->path;
+  CHECK(selectedRecipe == (installed.value().installDirectory / "recipe.json").string());
+  const auto installedBefore = core::sha256File(selectedRecipe, 1024U * 1024U);
+  CHECK(installedBefore.hasValue());
+  if (!installedBefore) return;
+
+  // Cancel writes nothing and leaves the project on the installed singer.
+  picker->responses = {std::nullopt};
+  const auto cancelled = controller.value()->copyInstalledSingerToDraft();
+  CHECK(cancelled.hasValue());
+  if (!cancelled) return;
+  CHECK(cancelled.value().empty());
+  CHECK(runtime.document().session().project().findVocalTrack(trackId)->proceduralRecipe->path ==
+        selectedRecipe);
+
+  // A draft inside the installation root is refused by the command as well as the library.
+  const auto refused = controller.value()->copyInstalledSingerToDraft(
+      installRoot / "authored-original" / "1.0.0" / "recipe.json");
+  CHECK(!refused.hasValue());
+  CHECK(runtime.document().session().project().findVocalTrack(trackId)->proceduralRecipe->path ==
+        selectedRecipe);
+
+  // A real draft is created, selected, and undoable back to the installed singer.
+  const auto draft = root / "drafts" / "my-draft.json";
+  const auto copied = controller.value()->copyInstalledSingerToDraft(draft);
+  CHECK(copied.hasValue());
+  if (!copied) return;
+  CHECK(copied.value() == draft);
+  CHECK(std::filesystem::exists(draft));
+  const auto* afterCopy = runtime.document().session().project().findVocalTrack(trackId);
+  CHECK(afterCopy->proceduralRecipe->path == draft.string());
+  // The draft carries the installed singer's identity, because it is the same voice as a starting
+  // point; editing it is what produces a different one.
+  CHECK(afterCopy->proceduralRecipe->resource == installed.value().renderIdentity);
+  CHECK(runtime.undo());
+  CHECK(runtime.document().session().project().findVocalTrack(trackId)->proceduralRecipe->path ==
+        selectedRecipe);
+  // Nothing in this sequence modified the signed installation.
+  const auto installedAfter = core::sha256File(selectedRecipe, 1024U * 1024U);
+  CHECK(installedAfter.hasValue());
+  if (!installedAfter) return;
+  CHECK(installedAfter.value() == installedBefore.value());
+}

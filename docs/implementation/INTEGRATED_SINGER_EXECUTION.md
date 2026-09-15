@@ -1,5 +1,42 @@
 # Integrated Singer Execution
 
+## A creator edits a copy, and the signed installation cannot be rewritten
+
+September 15, 2026 — D4.6 copy-to-edit added, completing the substep. The plan requires that a
+creator selecting an installed procedural singer can edit a copy without mutating signed content.
+Selection alone did not provide that: the previous slice let a creator select an installed singer,
+but there was no supported way to change one, and an open save path could have targeted the
+installation directory.
+
+`copyInstalledSingerToDraft` in `libs/seam-distribution/src/procedural_package.cpp` reads the installed
+recipe, re-verifies it against the candidate's own render identity so a file replaced since discovery
+is refused rather than silently copied, writes the canonical encoding to a creator-owned path, and
+refuses any destination inside a protected root. The containment test resolves both paths weakly
+canonically, so a symlinked or differently spelled destination cannot escape it. The resource's own
+installation directory is protected even when the caller passes no root list, so the operation cannot
+rewrite signed content by construction rather than by convention.
+
+The application reaches it through `StandaloneApplicationController::copyInstalledSingerToDraft` and
+the new `CopyInstalledSingerToDraft` command and File-menu item. The command resolves the track's
+recorded identity through the same exact-identity resolution selection uses, refuses a draft inside
+an installation root, writes the copy, then selects the draft as one undoable change so the project
+follows creator-owned bytes and can be undone back to the installed singer. Cancelling writes
+nothing. The draft starts as the same voice, because that is what the creator chose to edit; editing
+it is what produces a new identity.
+
+Verified. `seam_procedural_install_journey_tests` passes 9 of 9, including the three new cases: a
+copy is byte-identical in the installation before and after copying, editing the draft produces a
+different content identity with the same resource id while the installation still hashes unchanged;
+a destination inside the install root or the resource's own directory is refused as a conflict and an
+existing draft is not silently overwritten; and through the application, copying without a selected
+singer is refused, cancelling writes nothing, a draft inside the install root is refused, and a real
+copy is created, recorded on the track, undoable, and leaves the signed installation byte-identical.
+
+Not claimed. No creator has been observed making a musical change to a copy, and no listening
+judgment exists. The Voice Designer's own save path is not yet restricted to non-installation roots,
+so a creator could still navigate a save dialog into an installation directory from the Studio; that
+is a separate open defect recorded in the plan rather than claimed fixed here. No U-unit acceptance
+or Beta GO state changes.
 ## The installed procedural route is now connected end to end, and it was not before
 
 September 15, 2026 — D4.8 added, and it found a real defect. The separate pieces of the procedural

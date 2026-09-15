@@ -34,6 +34,7 @@ enum class ApplicationCommand {
   ToggleLoop,
   SelectProceduralRecipe,
   SelectInstalledProceduralSinger,
+  CopyInstalledSingerToDraft,
   RelinkProceduralRecipe,
   BakeProceduralCandidates,
   ProposeAutomaticPerformance,

@@ -219,6 +219,10 @@ public:
   // resource so the track records an exact identity a producer may later relink.
   [[nodiscard]] core::Result<void> selectInstalledProceduralSinger();
   [[nodiscard]] core::Result<std::vector<distribution::ProceduralCandidate>> installedProceduralSingers() const;
+  // Copy the installed singer this track uses into a creator-owned draft and select that draft, so
+  // editing it cannot rewrite the signed installation it came from. Returns the draft path.
+  [[nodiscard]] core::Result<std::filesystem::path> copyInstalledSingerToDraft(
+      std::optional<std::filesystem::path> destination = std::nullopt);
   [[nodiscard]] core::Result<void> relinkBackingMediaFromDialog();
   [[nodiscard]] core::Result<void> replaceVoicebank(
       domain::TrackId trackId, std::string_view id, std::string_view version,
