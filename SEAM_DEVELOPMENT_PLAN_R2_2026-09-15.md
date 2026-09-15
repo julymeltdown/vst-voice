@@ -3,7 +3,7 @@ title: SEAM development plan, revision 2 — listening-gated completion
 date: 2026-09-15
 status: active execution plan
 supersedes_sequencing: SEAM_REVISED_DEVELOPMENT_PLAN_2026-09-15.md (revision 1)
-baseline_commit: b78b92cf2cc265f6d7eb7844e908d069ca1dddb4
+baseline_commit: 2521951f5f05231b6d411c093ffb9183dcf3f148
 input_review: SEAM_SECOND_DEVELOPER_REVIEW_2026-09-15.md
 implementation_performed_by_this_document: false
 ---
@@ -76,7 +76,7 @@ Sequencing and default work selection change in four ways:
 | Package | State | Evidence |
 |---|---|---|
 | D0 growl checkpoint | **Done and published** | `b8fff071`; growl suite 8/8; closure passes |
-| D1 listening packet | **Rendered, retained, unreviewed** | 11 cases, 66 WAVs, 16-second melody, 335 hashes checked; `LISTENING NOT_REVIEWED` |
+| D1 listening packet | **Rendered, retained, unreviewed** | 11 cases, 66 WAVs, 16-second melody, 335 hashes checked; `LISTENING NOT_REVIEWED`. `2521951f` adds a comparison tool that reports differences without ranking them, and confirms the retained rerender is 6/6 identical |
 | D2 expression lane | **Exit closed** | `68dada55` lane; `f983c3c5` proves all six channels change the rendered audio on a source-filter song and that a sample carrier refuses them by name; `seam_expression_on_song_tests` 3/3 |
 | D4.1/D4.3 manifest and pack/verify | **Done** | `71955fc7`, `89c17ce4` |
 | D4.4 install and receipts | **Done** | `5cc5992a` |
