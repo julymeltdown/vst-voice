@@ -3,7 +3,7 @@ title: SEAM development plan, revision 2 — listening-gated completion
 date: 2026-09-15
 status: active execution plan
 supersedes_sequencing: SEAM_REVISED_DEVELOPMENT_PLAN_2026-09-15.md (revision 1)
-baseline_commit: f983c3c566edeeaa21ce9e388280f6816e9e2ce2
+baseline_commit: b78b92cf2cc265f6d7eb7844e908d069ca1dddb4
 input_review: SEAM_SECOND_DEVELOPER_REVIEW_2026-09-15.md
 implementation_performed_by_this_document: false
 ---
@@ -86,7 +86,7 @@ Sequencing and default work selection change in four ways:
 | D4.2 review candidate | **Done and published** | `5d149f22`; `seam_procedural_review_tests` 10/10 |
 | D4.8 connected journey | **Done and published, and it found a real defect** | `9711eecb`; journey 10/10; installed selection now records the identity the renderer validates |
 | D3 acoustic repair | **Blocked on human listening** | D1 decision record |
-| N1 neural feasibility | **Not started** | `tools/voice_model_training/` audited in intake docs only |
+| N1 neural feasibility | **Checkpoint 1 done** | `b78b92cf` input record plus a verifier that reports four of six inputs absent; no training run |
 | D5/D6 expansion and qualification | **Not started** | Gate is the first usable original-singer milestone |
 
 ## 5. Progress, stated in the four labels rather than a percentage
