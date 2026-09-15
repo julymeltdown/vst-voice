@@ -774,3 +774,123 @@ TEST_CASE("An unusable installed singer is reported with its reason instead of h
   CHECK(nativeOffers.value().front().candidate.trust ==
         distribution::ProceduralTrust::TrustedInstalled);
 }
+
+// The plan's D4.8 happy path includes freezing a review candidate and recording an acceptance
+// between authoring and packaging. This drives that whole sequence as one journey and checks that the
+// approval travels with the exact material it was made about.
+TEST_CASE("A reviewed recipe keeps its approval into the installed journey and loses it on a change") {
+  const auto root = test::support::temporaryDirectory("procedural-review-journey");
+  auto key = distribution::generateSigningKeyPair();
+  CHECK(key.hasValue());
+  if (!key) return;
+  const auto package = createProceduralPackage(root, key.value());
+  const auto installRoot = root / "singers";
+  distribution::InstallProceduralOptions installOptions;
+  installOptions.verification = distribution::VerifySeambankOptions{
+      .limits = {}, .trustedPublicKeys = {key.value().publicKey}, .requireTrustedSigner = true};
+  const auto installed = distribution::installProceduralPackage(package, installRoot, installOptions);
+  CHECK(installed.hasValue());
+  if (!installed) return;
+
+  // A producer freezes the exact material a review decision is about: the recipe as installed, the
+  // score and audio evidence that were examined, and the renderer that produced them.
+  const auto evidence = root / "evidence";
+  std::filesystem::create_directories(evidence);
+  std::ofstream(evidence / "phrase.json") << "{\"notes\":\"a\"}";
+  std::ofstream(evidence / "phrase.wav") << "dry render of the reviewed phrase";
+  const auto basis = distribution::freezeProceduralReviewBasis(
+      distribution::ProceduralSingerManifest{
+          .id = "authored-original",
+          .version = "1.0.0",
+          .displayName = "Authored Original",
+          .language = "ja",
+          .styles = {"neutral"},
+          .engineId = "seam.source-filter.v1",
+          .engineRevision = 14U,
+          .recipeEntry = "recipe.json",
+          .recipeSha256 = installed.value().renderIdentity.contentHash,
+          .phones = {"a"}},
+      installed.value().contentHash, "seam-render-abi-3", 14U, 48000U, evidence / "phrase.json",
+      evidence / "phrase.wav", "settings-default");
+  CHECK(basis.hasValue());
+  if (!basis) return;
+  distribution::ProceduralReviewCandidate candidate;
+  candidate.candidateId = "authored-original-1.0.0";
+  candidate.basis = basis.value();
+  distribution::ProceduralReviewDecision accepted;
+  accepted.reviewId = "review-1";
+  accepted.candidateId = candidate.candidateId;
+  accepted.basisDigest = candidate.basis.digest().value();
+  accepted.recordedBasis = candidate.basis;
+  accepted.kind = distribution::ProceduralReviewDecisionKind::Accept;
+  accepted.reviewerId = "producer-1";
+  accepted.reviewedAtUtc = "2026-09-15T09:00:00Z";
+  CHECK(distribution::recordProceduralReviewDecision(candidate, accepted).hasValue());
+  const auto receipt = distribution::resolveProceduralReviewDecisions(candidate, {accepted});
+  CHECK(receipt.hasValue());
+  if (!receipt) return;
+  CHECK(receipt.value().accepted());
+  CHECK(receipt.value().stale.empty());
+
+  // The approved recipe is what gets packaged and installed, so the approval still resolves against
+  // the installed material rather than only against the frozen copy.
+  distribution::ProceduralCatalogue catalogue;
+  auto scanned = catalogue.scan({distribution::ProceduralSearchRoot{
+      .path = installRoot, .kind = distribution::ProceduralRootKind::Installed}});
+  CHECK(scanned.hasValue());
+  if (!scanned) return;
+  CHECK(scanned.value().size() == 1U);
+  CHECK(scanned.value().front().renderIdentity == installed.value().renderIdentity);
+  CHECK(scanned.value().front().renderIdentity.contentHash == candidate.basis.recipeSha256);
+
+  // Editing the installed recipe is what a creator does to a draft, and that necessarily produces a
+  // new basis: the previous approval must not follow it.
+  const auto draft = root / "drafts" / "edited.json";
+  CHECK(distribution::copyInstalledSingerToDraft(
+      scanned.value().front(), draft,
+      distribution::CopyInstalledProceduralOptions{.protectedRoots = {installRoot}}).hasValue());
+  const auto loaded = voice_design::loadVoiceRecipeResource(draft, std::nullopt);
+  CHECK(loaded.hasValue());
+  if (!loaded) return;
+  auto editedRecipe = voice_design::decodeVoiceRecipeResource(loaded.value());
+  CHECK(editedRecipe.hasValue());
+  if (!editedRecipe) return;
+  editedRecipe.value().poses.front().formants.front().frequencyHz += 45.0;
+  CHECK(voice_design::saveVoiceRecipeFile(draft, editedRecipe.value()).hasValue());
+  const auto edited = voice_design::loadVoiceRecipeResource(draft, std::nullopt);
+  CHECK(edited.hasValue());
+  if (!edited) return;
+  CHECK(edited.value().identity != installed.value().renderIdentity);
+
+  auto editedCandidate = candidate;
+  editedCandidate.candidateId = "authored-original-edited";
+  editedCandidate.basis.recipeSha256 = edited.value().identity.contentHash;
+  const auto editedReceipt = distribution::resolveProceduralReviewDecisions(editedCandidate,
+                                                                           {accepted});
+  CHECK(editedReceipt.hasValue());
+  if (!editedReceipt) return;
+  // The approval was about the recipe that was reviewed, and the edited copy is a different candidate
+  // because editing the recipe produced a different content identity. A decision belonging to another
+  // candidate is not this candidate's evidence at all, so it is neither current nor stale. Staleness
+  // is reserved for the same candidate whose reviewed material changed.
+  CHECK(!editedReceipt.value().accepted());
+  CHECK(editedReceipt.value().current.empty());
+  CHECK(editedReceipt.value().stale.empty());
+  // The same candidate with changed material is stale, which is the case the D4.2 suite pins.
+  auto sameIdentity = editedCandidate;
+  sameIdentity.candidateId = candidate.candidateId;
+  const auto staleReceipt = distribution::resolveProceduralReviewDecisions(sameIdentity,
+                                                                          {accepted});
+  CHECK(staleReceipt.hasValue());
+  if (!staleReceipt) return;
+  CHECK(!staleReceipt.value().accepted());
+  CHECK(staleReceipt.value().stale.size() == 1U);
+  // And recording a new acceptance against the edited copy is refused while the evidence still
+  // describes the old one, which is what stops an approval being reattached to different material.
+  auto mislabelled = accepted;
+  mislabelled.reviewId = "review-2";
+  mislabelled.candidateId = editedCandidate.candidateId;
+  mislabelled.basisDigest = editedCandidate.basis.digest().value();
+  mislabelled.recordedBasis = candidate.basis;
+  CHECK(!distribution::recordProceduralReviewDecision(editedCandidate, mislabelled).hasValue());
+}

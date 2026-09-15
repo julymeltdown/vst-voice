@@ -1,5 +1,38 @@
 # Integrated Singer Execution
 
+## The review step is now inside the installed journey, not beside it
+
+September 15, 2026 — D4.8 completed. The connected journey covered authoring, packaging, installation,
+selection, tuning, reopen and export, but the plan's happy path also runs a review candidate and a
+recorded acceptance between authoring and packaging. The D4.2 review suite exercised that binding on
+its own, which is exactly the pattern that hid the installed-identity defect earlier: separately green
+pieces that were never driven together.
+
+The new journey case freezes a review basis from the installed singer's own render identity and the
+evidence a reviewer examined, records an acceptance against it, and then checks the approval survives
+into the installed material. It then does what a creator does next — copies the installed singer to a
+draft and edits the recipe — and asserts the approval does not follow. That distinction is precise:
+with a changed recipe the edited copy is a *different candidate*, so the original decision is not its
+evidence and is neither current nor stale, while the same candidate whose reviewed material changed is
+stale. Writing the case exposed that I had conflated the two, and the assertions now pin both.
+
+It also confirms that an acceptance cannot be reattached to edited material: recording a decision
+whose carried basis still describes the old recipe is refused even when the recorded digest is updated
+to match, because the carried basis and its digest must agree.
+
+Verified. `seam_procedural_install_journey_tests` passes 11 of 11. The new case proves the frozen
+basis resolves as accepted with no stale entries; the installed resource's render identity equals the
+reviewed recipe digest, so the approval is about the material that was actually installed; editing a
+copy yields a different identity whose receipt is unaccepted with no current entries; the same
+candidate with changed material is stale with one entry; and reattaching an approval to the edited copy
+is refused.
+
+Not claimed. This exercises the decision store as a library. The review decision is still not exposed
+through the authoring session, so a creator cannot yet record one from the application, and no human
+has actually reviewed a procedural singer. Every decision in these cases was written by the test.
+No U-unit acceptance or Beta GO state changes.
+
+
 ## A new render can now be compared against the retained packet, and the tool refuses to rank them
 
 September 15, 2026 — listening regression added. Section 6.3 of the revised plan asks for a compact,
