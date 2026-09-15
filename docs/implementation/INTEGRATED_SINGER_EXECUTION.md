@@ -1,5 +1,41 @@
 # Integrated Singer Execution
 
+## The vocoder bridge runs at SEAM's own profile, and that was not previously shown
+
+September 15, 2026 — N1 checkpoint 2's corpus-free step executed. The plan asks for a small complete
+signal path that proves reconstruction before a costly acoustic run, and the intake document names the
+cheapest honest version of that: build the generator at SEAM's own feature profile and check exact
+dynamic output lengths and architecture assumptions, before any training is sized against it.
+
+The pinned MiniNSF generator instantiates at 48 kHz, 80 mel bins, hop 256, n_fft 1024, 20–24 kHz mel
+bounds and an [8, 8, 2, 2] upsample product — SEAM's target, not upstream's 44.1 kHz / 128-bin /
+hop-512 default. It exports to ONNX, passes native graph inspection, and runs in ONNX Runtime at 1, 3,
+16 and 23 frames, producing exactly 256, 768, 4096 and 5888 samples. PyTorch and ONNX Runtime outputs
+agree to between 6.5e-09 and 2.8e-08 maximum absolute error, which is float32 accumulation noise rather
+than a modelling difference. Strict state loading succeeded for both the full and MiniNSF
+configurations.
+
+One real environment defect was found and repaired: the pinned upstream utils module imports
+`matplotlib` only to set the Agg backend, and the local model environment did not have it, so the
+documented command could not run at all. Installing it into that environment was required to execute
+the check; nothing else about the host or the graph changed.
+
+Verified. `docs/implementation/evidence/neural-vocoder-bridge-2026-09-15/` retains the full report and
+the command's stderr with per-file digests, and `tools/voice_model_training/test_feasibility_inputs.py`
+passes 8 of 8, including that the retained hashes still match their bytes and that the manifest claims
+no more than was proved. The run reports `passed: true` with `syntheticInputs: true`,
+`singerQualified: false` and `releaseEligible: false`. The three stderr warnings are a torch weight_norm
+deprecation, a notice that the legacy TorchScript exporter is still the default, and unapplied constant
+folding for opset-10 Slice steps; the export succeeded and every runtime case ran.
+
+Not claimed. This is a geometry and numerical-parity diagnostic on synthetic input. It is not GAN
+training, not a vocoder qualification, not an admitted bundle, and not evidence that any voice is
+intelligible. No checkpoint was trained, no corpus was used, and nothing was rendered through the
+shipped worker. The remaining neural checkpoints still need an authorized corpus, admitted labels and
+a rights decision that the feasibility record reports as absent. No U-unit acceptance or Beta GO state
+changes.
+
+
 ## The neural lane now says which inputs are missing, and nothing more
 
 September 15, 2026 — N1 checkpoint 1 added. The plan's first neural checkpoint is a feasibility input

@@ -1,0 +1,171 @@
+{
+  "passed": true,
+  "trainingRevision": "4d0889c4c180c75ad3000cc565864656344f8190",
+  "deploymentRevision": "336cf01b57f2ad44c6b37a79cf33993043291759",
+  "models": [
+    {
+      "configuration": {
+        "sampling_rate": 48000,
+        "num_mels": 80,
+        "hop_size": 256,
+        "n_fft": 1024,
+        "win_size": 1024,
+        "fmin": 20,
+        "fmax": 24000,
+        "mini_nsf": false,
+        "noise_sigma": 0.0,
+        "upsample_rates": [
+          8,
+          8,
+          2,
+          2
+        ],
+        "upsample_kernel_sizes": [
+          16,
+          16,
+          4,
+          4
+        ],
+        "upsample_initial_channel": 32,
+        "resblock_kernel_sizes": [
+          3
+        ],
+        "resblock_dilation_sizes": [
+          [
+            1,
+            3,
+            5
+          ]
+        ],
+        "resblock": "1",
+        "pc_aug": false
+      },
+      "cases": [
+        {
+          "frames": 1,
+          "samples": 256,
+          "maximumError": 0.0
+        },
+        {
+          "frames": 3,
+          "samples": 768,
+          "maximumError": 0.0
+        },
+        {
+          "frames": 16,
+          "samples": 4096,
+          "maximumError": 0.0
+        },
+        {
+          "frames": 23,
+          "samples": 5888,
+          "maximumError": 0.0
+        }
+      ],
+      "strictStateLoad": true,
+      "fixtureLoss": 0.07169678062200546,
+      "changedParameterTensors": 100,
+      "ganStep": null,
+      "onnxRuntime": null
+    },
+    {
+      "configuration": {
+        "sampling_rate": 48000,
+        "num_mels": 80,
+        "hop_size": 256,
+        "n_fft": 1024,
+        "win_size": 1024,
+        "fmin": 20,
+        "fmax": 24000,
+        "mini_nsf": true,
+        "noise_sigma": 0.0,
+        "upsample_rates": [
+          8,
+          8,
+          2,
+          2
+        ],
+        "upsample_kernel_sizes": [
+          16,
+          16,
+          4,
+          4
+        ],
+        "upsample_initial_channel": 32,
+        "resblock_kernel_sizes": [
+          3
+        ],
+        "resblock_dilation_sizes": [
+          [
+            1,
+            3,
+            5
+          ]
+        ],
+        "resblock": "1",
+        "pc_aug": false
+      },
+      "cases": [
+        {
+          "frames": 1,
+          "samples": 256,
+          "maximumError": 0.0
+        },
+        {
+          "frames": 3,
+          "samples": 768,
+          "maximumError": 0.0
+        },
+        {
+          "frames": 16,
+          "samples": 4096,
+          "maximumError": 0.0
+        },
+        {
+          "frames": 23,
+          "samples": 5888,
+          "maximumError": 0.0
+        }
+      ],
+      "strictStateLoad": true,
+      "fixtureLoss": 0.06399855762720108,
+      "changedParameterTensors": 92,
+      "ganStep": null,
+      "onnxRuntime": {
+        "passed": true,
+        "graphBytes": 168336,
+        "graphSha256": "8a19add81b6e11df1a235f33ec0b171fa1f254b71d8a51a4cdffc44b772082ee",
+        "cases": [
+          {
+            "frames": 1,
+            "samples": 256,
+            "maximumError": 6.51925802230835e-09
+          },
+          {
+            "frames": 3,
+            "samples": 768,
+            "maximumError": 1.1175870895385742e-08
+          },
+          {
+            "frames": 16,
+            "samples": 4096,
+            "maximumError": 2.2351741790771484e-08
+          },
+          {
+            "frames": 23,
+            "samples": 5888,
+            "maximumError": 2.8001522878184915e-08
+          }
+        ],
+        "graphRetained": false,
+        "deterministicMiniNSFOnly": true
+      }
+    }
+  ],
+  "syntheticInputs": true,
+  "ganStepVerified": false,
+  "ganTrainingVerified": false,
+  "onnxExported": true,
+  "singerQualified": false,
+  "releaseEligible": false
+}

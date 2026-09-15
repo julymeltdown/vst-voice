@@ -93,6 +93,33 @@ class FeasibilityInputGate(unittest.TestCase):
         self.assertNotIn('train(', text)
         self.assertNotIn('subprocess', text)
 
+class RetainedVocoderBridgeEvidence(unittest.TestCase):
+    """The N1 vocoder bridge evidence must stay bound to the bytes it describes."""
+
+    def test_retained_evidence_hashes_still_match(self):
+        root = (Path(__file__).resolve().parents[2] / 'docs' / 'implementation' / 'evidence'
+                / 'neural-vocoder-bridge-2026-09-15')
+        manifest = json.loads((root / 'manifest.json').read_text())
+        self.assertTrue(manifest['files'])
+        for name, meta in manifest['files'].items():
+            actual = hashlib.sha256((root / name).read_bytes()).hexdigest()
+            self.assertEqual(actual, meta['sha256'], name)
+
+    def test_retained_evidence_claims_no_more_than_it_proved(self):
+        root = (Path(__file__).resolve().parents[2] / 'docs' / 'implementation' / 'evidence'
+                / 'neural-vocoder-bridge-2026-09-15')
+        manifest = json.loads((root / 'manifest.json').read_text())
+        report = json.loads((root / 'vocoder-bridge-report.json').read_text())
+        # A geometry and parity check must not be recorded as a qualified singer or a release input.
+        self.assertFalse(manifest['singerQualified'])
+        self.assertFalse(manifest['releaseEligible'])
+        self.assertFalse(report['ganTrainingVerified'])
+        self.assertTrue(report['syntheticInputs'])
+        # The exact SEAM profile is what makes the check meaningful, so it is asserted, not assumed.
+        self.assertEqual(manifest['profile']['samplingRate'], 48000)
+        self.assertEqual(manifest['profile']['numMels'], 80)
+        self.assertEqual(manifest['profile']['hopSize'], 256)
+
 
 if __name__ == '__main__':
     unittest.main()

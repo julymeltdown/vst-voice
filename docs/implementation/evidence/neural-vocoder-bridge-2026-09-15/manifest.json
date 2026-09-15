@@ -1,0 +1,40 @@
+{
+  "formatId": "com.project-seam.neural-vocoder-bridge-evidence",
+  "schemaVersion": 1,
+  "command": "python -m tools.voice_model_training.check_vocoder_model build/neural-runtime/singing-vocoders-source build/neural-runtime/DiffSinger-source --check-onnx",
+  "sourceCommit": "347e3d63cc143db421c12f4f5645e89ca9f18594",
+  "trainingRevision": "4d0889c4c180c75ad3000cc565864656344f8190",
+  "deploymentRevision": "336cf01b57f2ad44c6b37a79cf33993043291759",
+  "profile": {
+    "samplingRate": 48000,
+    "numMels": 80,
+    "hopSize": 256,
+    "nFft": 1024,
+    "fmin": 20,
+    "fmax": 24000,
+    "upsampleRates": [
+      8,
+      8,
+      2,
+      2
+    ]
+  },
+  "passed": true,
+  "syntheticInputs": true,
+  "onnxExported": true,
+  "singerQualified": false,
+  "releaseEligible": false,
+  "environmentNote": "matplotlib was installed into diffsinger-model-env to satisfy an unused Agg-backend import in the pinned upstream utils module. The host was otherwise unchanged.",
+  "files": {
+    "stderr.txt": {
+      "sha256": "6406f7226e4e65eb8e45e446fadc46db148e3e1aa20ba671b06113331d1fe562",
+      "bytes": 2493
+    },
+    "vocoder-bridge-report.json": {
+      "sha256": "0b79b9c2c703b28f419663e64cb5eda1c309055f60bd68de602d305b37f03c19",
+      "bytes": 3740
+    }
+  },
+  "claims": "Proves the pinned MiniNSF generator instantiates and exports at SEAM profile, outputs the exact expected sample count for 1/3/16/23 frames, and matches PyTorch within float32 tolerance in ONNX Runtime. It does not prove GAN training, a vocoder qualification, an admitted bundle or any singing quality.",
+  "stderrInterpretation": "stderr holds three toolchain warnings, not failures: a torch weight_norm deprecation, a notice that the legacy TorchScript ONNX exporter is still the default, and unapplied constant folding for opset>=10 Slice steps. The export succeeded and ONNX Runtime executed the graph in all four cases."
+}
