@@ -2050,6 +2050,10 @@ if(SEAM_BUILD_TESTS)
         tests.test_voicebank_script_generator)
     add_test(NAME seam_singer_pilot_cli
       COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_singer_pilot_cli.py $<TARGET_FILE:seam_singer_pilot>)
+    add_test(NAME seam_listening_packet_comparison
+      COMMAND ${Python3_EXECUTABLE} -m unittest tests.test_listening_packet_comparison)
+    set_tests_properties(seam_listening_packet_comparison PROPERTIES
+      WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} TIMEOUT 120)
     set_tests_properties(seam_singer_pilot_cli PROPERTIES TIMEOUT 150)
     set_tests_properties(seam_draft_inventory_tests PROPERTIES
       WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}

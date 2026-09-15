@@ -1,5 +1,35 @@
 # Integrated Singer Execution
 
+## A new render can now be compared against the retained packet, and the tool refuses to rank them
+
+September 15, 2026 — listening regression added. Section 6.3 of the revised plan asks for a compact,
+durable, versioned listening reference with new output generated alongside it rather than in place,
+and for a byte difference to request investigation rather than veto a deliberate improvement. The
+packets retained their hashes but nothing compared two of them.
+
+`scripts/compare_listening_packets.py` compares a newly rendered packet, or a re-rendered artifact
+tree, against a retained reference. It matches outputs by case, variant and file role, reports
+identical, changed, missing and added separately, and for a change reports which identity fields
+differ — the recipe hash, sample rate, channel layout or frame count — so a difference is attributed
+rather than left as an unexplained hash. It never writes to the reference, and it refuses to overwrite
+an existing report. Its recorded verdict is `UNRANKED`, because no hash and no distance metric can
+establish that a voice got worse.
+
+Verified. `tests/test_listening_packet_comparison.py` passes 7 of 7 and is registered as
+`seam_listening_packet_comparison`: identical packets report identical; a changed output is reported
+with its changed identity field named on both sides; missing and added outputs are distinguished; a
+re-rendered tree is located through the reference's own declared paths; a partial rerender is scoped
+to one case; the tool exits 3 on a difference, leaves the reference byte-identical and writes an
+`UNRANKED` report that it refuses to overwrite; and the D1 packet compares to its retained
+`2026-09-15-d1-repeat` rerender as 6 of 6 identical.
+
+Not claimed. The rerender comparison confirms reproducibility for an unchanged deterministic
+configuration, which is repeatability and not quality. No reference was promoted, no listening
+observation exists, and the tool cannot say whether either packet sounds better. The partial-rerender
+case currently covers only the song case, because that is what the retained rerender contains. No
+U-unit acceptance or Beta GO state changes.
+
+
 ## The vocoder bridge runs at SEAM's own profile, and that was not previously shown
 
 September 15, 2026 — N1 checkpoint 2's corpus-free step executed. The plan asks for a small complete
