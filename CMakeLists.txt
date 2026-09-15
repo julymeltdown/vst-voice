@@ -1936,6 +1936,8 @@ if(SEAM_BUILD_TESTS)
     tests/test_main.cpp
     tests/test_original_singer_song_journey.cpp)
   target_include_directories(seam_original_singer_song_journey_tests PRIVATE tests)
+  target_compile_definitions(seam_original_singer_song_journey_tests PRIVATE
+    SEAM_SONG_SOURCE_ROOT="${CMAKE_CURRENT_SOURCE_DIR}")
   target_link_libraries(seam_original_singer_song_journey_tests PRIVATE
     seam_standalone_authoring seam_distribution seam_voice_design seam_application
     seam_authoring_runtime seam_rendering seam_synthesis seam_formats seam_voicebank

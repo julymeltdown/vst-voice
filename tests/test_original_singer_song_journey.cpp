@@ -127,6 +127,18 @@ struct SongNote final {
   std::int64_t ticks;
 };
 
+// The checked-in definition of this song, resolved from the configured source root so the test finds
+// it whether it runs from the repository or from a build directory. `SEAM_SONG_SOURCE_ROOT` overrides
+// the root for an out-of-tree run.
+#ifndef SEAM_SONG_SOURCE_ROOT
+#define SEAM_SONG_SOURCE_ROOT "."
+#endif
+std::filesystem::path fixtureDirectory() {
+  if (const char* root = std::getenv("SEAM_SONG_SOURCE_ROOT"); root != nullptr)
+    return std::filesystem::path{root} / "assets" / "pilots" / "seam-song-01";
+  return std::filesystem::path{SEAM_SONG_SOURCE_ROOT} / "assets" / "pilots" / "seam-song-01";
+}
+
 const std::vector<SongNote>& songNotes() {
   static const std::vector<SongNote> notes{
       {U"あ", 62U, 960}, {U"さ", 64U, 960}, {U"き", 65U, 960}, {U"の", 67U, 1920},
@@ -149,6 +161,23 @@ std::filesystem::path createSongPackage(const std::filesystem::path& root,
   const auto recipe = songRecipe();
   const auto encoded = voice_design::encodeVoiceRecipe(recipe);
   if (!encoded) throw test::Failure{"encoding the song recipe failed: " + encoded.error().message};
+  // The checked-in fixture must describe the same voice the code builds. When this disagrees, either
+  // the song changed deliberately and the fixture has to be regenerated, or a drift was introduced
+  // that would make the retained definition describe a singer the test never rendered.
+  const auto fixture = fixtureDirectory();
+  if (std::filesystem::exists(fixture / "recipe.json")) {
+    const auto onDisk = core::readTextFileLimited(fixture / "recipe.json", 1U << 20U);
+    if (!onDisk) throw test::Failure{"reading the song fixture recipe failed: " + onDisk.error().message};
+    if (onDisk.value() != encoded.value())
+      throw test::Failure{
+          "the checked-in song fixture no longer matches the code recipe; regenerate it deliberately "
+          "(SEAM_SONG_FIXTURE_OUT=" + fixture.string() + ")"};
+  } else if (const char* out = std::getenv("SEAM_SONG_FIXTURE_OUT"); out != nullptr) {
+    std::filesystem::create_directories(out);
+    const auto written = core::durableAtomicWriteTextNew(
+        std::filesystem::path{out} / "recipe.json", encoded.value());
+    if (!written) throw test::Failure{"writing the song fixture recipe failed: " + written.error().message};
+  }
   std::ofstream(source / "recipe.json", std::ios::binary | std::ios::trunc) << encoded.value();
   distribution::ProceduralSingerManifest manifest;
   manifest.id = "song-01-original";
