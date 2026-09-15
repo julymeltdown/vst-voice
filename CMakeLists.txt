@@ -1911,6 +1911,15 @@ if(SEAM_BUILD_TESTS)
     seam_distribution seam_voice_design seam_core)
   seam_apply_compiler_options(seam_procedural_review_tests)
   add_test(NAME seam_procedural_review_tests COMMAND seam_procedural_review_tests)
+  add_executable(seam_expression_on_song_tests
+    tests/test_main.cpp
+    tests/test_expression_on_song.cpp)
+  target_include_directories(seam_expression_on_song_tests PRIVATE tests)
+  target_link_libraries(seam_expression_on_song_tests PRIVATE
+    seam_editor_ui seam_rendering seam_synthesis seam_voice_design seam_application
+    seam_domain seam_core)
+  seam_apply_compiler_options(seam_expression_on_song_tests)
+  add_test(NAME seam_expression_on_song_tests COMMAND seam_expression_on_song_tests)
   add_executable(seam_procedural_install_journey_tests
     tests/test_main.cpp
     tests/test_procedural_install_journey.cpp)

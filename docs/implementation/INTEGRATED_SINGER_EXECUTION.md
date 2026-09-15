@@ -1,5 +1,32 @@
 # Integrated Singer Execution
 
+## The expression lane is audible on a real song, not only drawn
+
+September 15, 2026 — D2 exit closed. The lane already drew, persisted and refused correctly, but its
+exit condition asks for something stronger: that a creator changes audible expression on the song and
+that the selected resource really supports the edited controls. Nothing had established that drawing a
+curve changed the audio, and the D1 packet's retained song is a source-filter singer, so the condition
+was testable without a listener.
+
+`tests/test_expression_on_song.cpp` renders one two-note phrase through the production path
+(`RenderSnapshotFactory::createProcedural` then `PhraseRenderPipeline`), edits one channel at a time,
+and renders again. Rendering the same project twice is bit-identical, so any later difference is the
+edit. It then measures the relative energy difference rather than asserting a directional claim about
+the change, because how the edit sounds is a listening judgment and this is not one.
+
+Verified. `seam_expression_on_song_tests` passes 3 of 3. All six channels — formant, breathiness,
+tension, airiness, gender and growl — move the rendered audio by more than the noise threshold when
+edited on a source-filter singer, so no drawn curve is silently discarded. A sample carrier refuses
+all six by name with the channel's own label in the message, and the same project with the procedural
+selection recorded allows all six, which is the applicability distinction the plan requires. Stored
+curves keep their own unit — semitones for formant, a normalized share for growl, bipolar for gender —
+and a stored formant curve changes the audio of a render that otherwise has none.
+
+Not claimed. This proves the edit reaches the audio and that applicability is enforced. It does not
+claim the six channels sound good, that they are musically useful, or that a creator would reach for
+them; that remains the unreviewed listening question in the D1 packet. The two-note test phrase
+reproduces the retained song's shape rather than loading the retained project file itself. No U-unit
+acceptance or Beta GO state changes.
 ## A signed singer this build cannot render is named, not hidden
 
 September 15, 2026 — D4.6 trust and reason surfacing added. Selection previously kept unusable
