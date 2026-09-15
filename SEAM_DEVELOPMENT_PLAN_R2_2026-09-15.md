@@ -3,7 +3,7 @@ title: SEAM development plan, revision 2 — listening-gated completion
 date: 2026-09-15
 status: active execution plan
 supersedes_sequencing: SEAM_REVISED_DEVELOPMENT_PLAN_2026-09-15.md (revision 1)
-baseline_commit: 9711eecbcd89281ecfa2a6ffcbf48151a824043e
+baseline_commit: f983c3c566edeeaa21ce9e388280f6816e9e2ce2
 input_review: SEAM_SECOND_DEVELOPER_REVIEW_2026-09-15.md
 implementation_performed_by_this_document: false
 ---
@@ -77,14 +77,14 @@ Sequencing and default work selection change in four ways:
 |---|---|---|
 | D0 growl checkpoint | **Done and published** | `b8fff071`; growl suite 8/8; closure passes |
 | D1 listening packet | **Rendered, retained, unreviewed** | 11 cases, 66 WAVs, 16-second melody, 335 hashes checked; `LISTENING NOT_REVIEWED` |
-| D2 expression lane | **Landed** | `68dada55`; lane suite 8/8; all six channels reachable |
+| D2 expression lane | **Exit closed** | `68dada55` lane; `f983c3c5` proves all six channels change the rendered audio on a source-filter song and that a sample carrier refuses them by name; `seam_expression_on_song_tests` 3/3 |
 | D4.1/D4.3 manifest and pack/verify | **Done** | `71955fc7`, `89c17ce4` |
 | D4.4 install and receipts | **Done** | `5cc5992a` |
 | D4.5 catalogue and resolve | **Done** | `3489f570` |
-| D4.6 native selection and copy-to-edit | **Done and pushed** | `bbc730d9` selection; `4d3b3739` copy-to-edit; `475e9eba` Designer save guard; journey 9/9 |
+| D4.6 native selection, copy-to-edit and reason surfacing | **Done and pushed** | `bbc730d9` selection; `4d3b3739` copy-to-edit; `475e9eba` Designer save guard; `0c43a690` names an unusable singer with its reason; journey 10/10 |
 | D4.7 compatibility | **Done** | `a84e672d` |
 | D4.2 review candidate | **Done and published** | `5d149f22`; `seam_procedural_review_tests` 10/10 |
-| D4.8 connected journey | **Done and published, and it found a real defect** | `9711eecb`; journey 6/6; installed selection now records the identity the renderer validates |
+| D4.8 connected journey | **Done and published, and it found a real defect** | `9711eecb`; journey 10/10; installed selection now records the identity the renderer validates |
 | D3 acoustic repair | **Blocked on human listening** | D1 decision record |
 | N1 neural feasibility | **Not started** | `tools/voice_model_training/` audited in intake docs only |
 | D5/D6 expansion and qualification | **Not started** | Gate is the first usable original-singer milestone |
@@ -95,8 +95,8 @@ Sequencing and default work selection change in four ways:
 |---|---|
 | Listening packet reproducible | **Yes** — packet rerenders and its hashes were checked |
 | Listening observation obtained | **No** — this is the blocking gap |
-| First usable procedural creator loop demonstrated | **No** — the lane exists but has only been exercised on a fixture project, not the retained song |
-| First usable original singer delivered | **No** — D4.2/D4.8 remain |
+| First usable procedural creator loop demonstrated | **Partly** — selection, the lane and audible expression edits are verified end to end, but no person has performed the loop unaided and no listening judgment exists |
+| First usable original singer delivered | **Partly** — the whole installed lifecycle is built and journey-tested, but no real producer has signed a package and no creator has used one unaided |
 | Full-Scope Beta GO accepted | **No** |
 
 A single global percentage would be fabricated precision: the tracked U-unit acceptance count is a
@@ -284,8 +284,9 @@ be the answer.
 2. ~~Implement D4.2~~ — published at `5d149f22`.
 3. ~~Implement D4.8~~ — published at `9711eecb`, and it located the installed-identity defect above.
 4. **Obtain the P1 listening observation (section 6). This is now the only engineering-blocking item
-   in the procedural route.** D3 cannot start without it, the expression lane is untested on real
-   material, and no amount of further implementation substitutes for it.
+   in the procedural route.** D3 cannot start without it, and no amount of further implementation
+   substitutes for it. The expression lane is no longer untested on real material: its audible
+   consequence is verified, so the remaining question is musical rather than mechanical.
 5. Start N1 checkpoint 1 independently.
 
 The natural next code work, if capacity is available while waiting on listening, is to connect the
