@@ -1,6 +1,25 @@
 # U26 helper process lifecycle primitive
 
-Status: worker-thread process primitive and fixture-backed native reading review are implemented and locally tested on macOS. Shipping resource trust, cross-platform supervision and U26 acceptance remain open; this is not a sandbox.
+## September 17 continuation: Windows process primitive landed; reading staging remains open
+
+`runBoundedHelperProcess` now has a native Windows implementation. It launches an explicit absolute
+executable with `CreateProcessW`, inherits only the three selected standard-I/O handles, supplies an empty
+environment, bounds all three streams, observes cancellation and deadlines, applies a job-object memory
+ceiling, samples process memory/CPU, and retires the process tree through kill-on-job-close. The dedicated
+Windows CI slice builds the helper and its neural/Japanese callers, runs the helper and neural protocol
+fixtures, and retains a source-contract check. Strict UTF conversion and secure wide-path reading remove
+the previous MSVC-only build failures.
+
+This closes the generic Windows process-backend gap. It does **not** qualify the complete Japanese reading
+workflow on Windows. `StagedJapaneseReadingResource` still uses POSIX descriptor-relative staging and its
+resource/capture/job tests are gated to Apple/Linux. No shipped Open JTalk resource, signed Windows resource
+manifest, private Windows staging implementation, native-language review or installed-host evidence is
+claimed. The historical checkpoints below remain accurate for the code state at which each was recorded;
+their statements that the Windows backend was then missing are superseded only by this continuation.
+
+Status: the generic bounded process primitive is implemented on macOS, Linux and Windows; fixture-backed
+native reading review is locally tested on macOS. Shipping resource trust, private Windows reading staging,
+installed-host qualification and U26 acceptance remain open; this is not a sandbox.
 
 ## Current continuation: native review, resource ceilings and cancellation retirement
 

@@ -1,5 +1,43 @@
 # Integrated Singer Execution
 
+## Windows bounded helper execution closes the U3.5 process gap
+
+September 17, 2026 — R4 unit U3.5 process-port slice.
+
+```text
+Engineering: DEMONSTRATED
+Creator workflow: NOT_OBSERVED
+Musical review: NOT_REVIEWED
+```
+
+The learned singer and Japanese reading paths both depend on the same bounded helper-process primitive.
+That primitive previously returned `Unsupported` on Windows, so the declared Windows product could build
+packaging metadata but could not execute neural inference. The native backend now launches an explicit
+absolute executable through `CreateProcessW`, supplies an empty environment, and uses an extended startup
+attribute list so only the selected stdin/stdout/stderr handles are inherited. It transports bounded input
+and output concurrently, observes cancellation and deadlines, and owns the process tree through a job
+object with kill-on-close and a process-memory ceiling. CPU time and memory are read from the process
+handle, and UTF-8 paths/arguments are converted strictly before launch.
+
+The port is exercised through the production boundary, not only a process mock. The Windows qualification
+job builds and runs `seam_helper_process_tests` and `seam_neural_worker_protocol_tests`; the latter invokes
+`runNeuralWorker` with the native probe and checks helper-content identity, request/response binding,
+malformed responses, memory and CPU ceilings, and cancellation. It also builds the Japanese pronunciation
+target and runs the Windows helper source contract. Cross-platform warnings-as-errors repairs were kept
+narrow: real shadow/copy/indentation defects were fixed, intentional cache-line alignment retains its
+targeted MSVC diagnostic exception, and Windows resource verification uses the secure wide-path file API.
+
+Local evidence at commit `c02106169256a5ec5239cbb42f277c2891ca4933`: the complete strict Ubuntu 24.04
+GCC 13 build passed; eight affected native suites passed; the aggregate `seam_tests` target passed; and
+both tracked-source closure checks passed. GitHub Actions run `35164428140` is the hosted Windows/macOS/Linux
+qualification run; its final result must be recorded here before this checkpoint is promoted to `master`.
+
+This closes only the Windows bounded-process engineering gap. It does not provide a rights-cleared learned
+singer, compatible trained vocoder, installed singer dossier, held-out-song result, creator observation or
+musician review. Japanese reading is also not end-to-end qualified on Windows: the caller compiles against
+the new primitive, but private verified helper/dictionary staging and its resource/capture/job acceptance
+tests remain POSIX-only. REAPER and Bitwig host evidence remains a separate U5.1 gate.
+
 ## Revision-2 breathiness conditioning reaches the learned acoustic output and production worker
 
 September 17, 2026 — R4 unit U3.4.

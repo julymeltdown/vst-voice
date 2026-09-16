@@ -307,8 +307,9 @@ recording-free voice-creation requirement survives any comparison; it cannot be 
 
 ## 5. M3 — a real learned singer
 
-M3.1 through M3.4 landed. M3.5 is the remaining engineering and is gated on a Windows x64 verification
-machine and, for singer qualification, rights-cleared voice material that does not exist yet.
+M3.1 through M3.4 landed. The M3.5 bounded-process implementation has also landed; the remaining M3.5
+work is product qualification and is gated on an installed rights-cleared learned singer, a compatible
+vocoder, a held-out song, musical review, and retained macOS/Windows execution evidence.
 
 ### U3.3 — the local vocoder path, before any sustained training
 
@@ -359,23 +360,19 @@ name and ignores the tensor fails the acoustic-effect test.
 
 ### U3.5 — qualify an installed neural singer, and close the Windows process gap
 
-**Blocking non-code item first.** `libs/seam-platform/src/helper_process.cpp:260` returns
-`Unsupported` for anything that is not Apple or Linux. The neural worker runs through
-`runBoundedHelperProcess` (`libs/seam-neural-synthesis/src/neural_phrase_backend.cpp:269`), so
-**neural inference cannot run on Windows at all today**, and Windows x64 is half the declared platform
-scope.
+**Process-port slice landed in `e925ce38..c0210616`.** `runBoundedHelperProcess` now has a native
+`CreateProcessW` implementation with an explicit inherited-handle list, empty environment, bounded
+stdin/stdout/stderr, cancellation and deadline enforcement, job-object process-tree retirement,
+process-memory ceilings, CPU-time observation and strict UTF-8/UTF-16 conversion. The real neural
+worker protocol test invokes the compiled helper and exercises response binding, malformed responses,
+memory/CPU limits and cancellation. The dedicated Windows CI job builds the helper plus both production
+caller targets so cross-platform compiler failures are not hidden behind the long full matrix.
 
-It is worse than one signature. The same `#else` at `helper_process.cpp:129` disables the *second*
-production caller, `JapaneseReadingCapture::read`
-(`libs/seam-authoring-runtime/src/japanese_reading_capture.cpp:97`), so Japanese reading capture is
-unavailable on Windows as well. The port therefore unblocks R9 **and** part of the M4.2 Japanese
-workflow — three surfaces, not two — and whoever does it has two callers to qualify, not one. That is
-also why U5.1 is scheduled ahead of the milestones it appears to serve.
-
-This is a bounded, self-contained port: `CreateProcessW` with an inherited-handle policy, a bounded
-wait, a job object for the memory ceiling, and `GetProcessMemoryInfo` for the usage reading that `:207`
-currently reports as unavailable. It needs a Windows machine to verify and does not need a corpus, so it
-is executable now and should not wait behind U3.3.
+The port closes the former Windows `Unsupported` branch for neural worker execution. It does **not** by
+itself qualify a learned singer. It also does not complete Windows Japanese reading: the caller now
+compiles against the process primitive, but private verified dictionary/helper staging and the higher-level
+capture/job acceptance tests remain POSIX-gated. Those are separate code/evidence requirements and must
+not be inferred from the process test.
 
 **The dossier could not tell a singer from a noise generator, and now it can.** A review of this unit
 found that `qualification.py` answered six automatic criteria — bundle admission, response binding,
@@ -454,11 +451,10 @@ suited to the algorithm.
 
 ## 7. M5 — supported standalone and DAW product
 
-### U5.1 — the Windows platform port (gated on a machine, not on code)
+### U5.1 — Windows host qualification after the process port
 
-Beyond the helper-process work in U3.5 — which this unit inherits and must not duplicate, since the
-same port also gates Japanese reading capture on Windows (`libs/seam-authoring-runtime/src/japanese_reading_capture.cpp:97`) —
-the declared host matrix covers Windows x64 REAPER and Bitwig for both CLAP and VST3.
+The shared helper-process code slice from U3.5 has landed and must not be duplicated here. The declared
+host matrix still covers Windows x64 REAPER and Bitwig for both CLAP and VST3.
 `scripts/build_windows_installer.ps1` and `package_windows_plugin.ps1` exist; what does not exist is a
 measured run on that platform. This unit is one machine plus one build plus recorded host evidence, and
 macOS results cannot substitute for it.
@@ -525,23 +521,24 @@ production turnaround is separate work and must not inherit that approval.
 | U1.4 creator observation | one person, unaided session | project owner |
 | U2.1 listening result | a Japanese-capable listener for triage; a musician for phrasing | owner + a recruited listener |
 | U2.2 repair | the observation above | follows from U2.1 |
-| U3.5 Windows neural | a Windows x64 machine | owner |
+| U3.5 learned singer qualification | installed rights-cleared learned singer, compatible vocoder, held-out song and reviewed result | owner + external |
+| U4.2a Windows Japanese staging | a Windows implementation and qualification of private verified reading-resource staging | engineering + owner |
+| U5.1 Windows host qualification | Windows x64 with installed REAPER/Bitwig and retained CLAP/VST3 evidence | owner |
 | U4.1 recorded source | an authorized recording with permissions | owner, external |
-| U4.2 language claims | native-speaker review per language | owner, external |
+| U4.2b language claims | native-speaker review per language | owner, external |
 | U4.3 style pair | two compatible aligned styles | follows from U4.1 |
 | M6 five independent creators | five participants meeting the canonical independence protocol | owner, external |
 
-Nothing above is unblocked by more code on the current machine. U1.3a-c, D1, U1.5, 8.2, D2, 8.3,
-U2.1, U3.3 and U3.4 have all landed cleanly. The next work is material/environment-gated; U3.5 and
-U5.1 require the Windows x64 machine, while qualification work requires the inputs named in the table.
-D3 is retired (§1.1, §8.1).
+U1.3a-c, D1, U1.5, 8.2, D2, 8.3, U2.1, U3.3, U3.4 and U3.5's bounded Windows process slice have landed.
+The next product claims are material, reviewer or installed-host gated as named in the table. Windows
+Japanese private staging remains genuine engineering work; a green process primitive must not be counted
+as an end-to-end reading workflow. D3 is retired (§1.1, §8.1).
 
 Two reorderings from the first draft of this section, both because an item was smaller than it looked.
-**U3.5's Windows helper-process port and U5.1's Windows host run moved out of the early queue**: they
-are real and they block three surfaces, but they need a Windows machine that is not present, so they
-belong in the blocked table's neighbourhood rather than at the head of an executable list. **D1** moved
-ahead of D2 rather than riding with it, because D1 is one predicate with two call sites, while D2 needs
-authored artwork; separating them keeps one of the pair in the executable queue.
+**U3.5's Windows helper-process port moved back into engineering and landed once hosted Windows CI was
+available.** U5.1 remains an installed-host evidence unit, not a compiler/build unit. **D1** moved ahead
+of D2 rather than riding with it, because D1 is one predicate with two call sites, while D2 needs authored
+artwork; separating them keeps one of the pair in the executable queue.
 
 ## 10. Suggested commit boundaries
 
@@ -559,8 +556,9 @@ One reviewable commit per unit, in this order, each with its own tests:
 10. `U3.3` the local vocoder reconstruction baseline.
 11. `U3.4` revision-2 breathiness conditioning from labels through the production native worker.
 
-Deferred until the machine exists: `U3.5`'s Windows helper-process port and `U5.1`'s Windows host run,
-as one reviewable change, since they share one port and one verification environment.
+Landed after item 11: `U3.5`'s bounded Windows helper-process implementation and cross-platform
+warnings-as-errors closure (`e925ce38..c0210616`). Deferred as separate evidence work: installed
+learned-singer qualification and `U5.1`'s REAPER/Bitwig host matrix.
 
 Update `docs/implementation/INTEGRATED_SINGER_EXECUTION.md` once per landed slice, insert-only at the
 top, and keep the three-line status block. A documentation-only change is not a unit.
