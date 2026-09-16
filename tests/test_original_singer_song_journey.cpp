@@ -29,12 +29,14 @@
 #include "seam/voicebank/wav.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <memory>
 #include <optional>
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace {
@@ -250,6 +252,25 @@ Installed installSongSinger(const std::string& label) {
   const auto result = distribution::installProceduralPackage(package, installed.installRoot, options);
   if (!result) throw test::Failure{"installing the song singer failed: " + result.error().message};
   return installed;
+}
+
+// Waits until the coordinator has published the sound for the revision the document is at now, or the
+// bound expires. Clause three of this milestone turns on what is *audible* while an edit is being
+// rendered, and a check that ran immediately after an edit would be reading a render that has not
+// happened yet, so every publication assertion in this file goes through here rather than sleeping a
+// fixed amount and hoping.
+authoring::RenderProgress waitForPublishedRevision(
+    authoring::AuthoringRenderCoordinator& coordinator, std::uint64_t revision,
+    std::chrono::milliseconds timeout = std::chrono::seconds{60}) {
+  const auto deadline = std::chrono::steady_clock::now() + timeout;
+  while (std::chrono::steady_clock::now() < deadline) {
+    const auto progress = coordinator.progress();
+    if (progress.requestedRevision == revision && progress.publishedRevision == revision &&
+        progress.state == authoring::RenderState::Ready)
+      return progress;
+    std::this_thread::sleep_for(std::chrono::milliseconds{5});
+  }
+  return coordinator.progress();
 }
 
 std::unique_ptr<standalone::AuthoringSession> makeSession(const Installed& installed) {
@@ -611,6 +632,83 @@ TEST_CASE("Tuning an installed singer survives undo, save, reopen and export") {
             audible->activeRenderer.find("source") != std::string::npos);
       CHECK(!audible->result.interleaved.empty());
     }
+  }
+
+  // Cancel a render that is already in flight, which is the one part of this milestone the journey
+  // could not reach before: the coordinator's cancellation behaviour is covered in isolation with an
+  // injected hook, but nothing demonstrated that an ordinary edit made while a render is pending ends
+  // in the audio the creator asked for along the shipped application path. What a cancellation must
+  // never do is leave the previous phrase published as though it were the new one.
+  {
+    const auto cancelBaseline = runtime.renderer().progress();
+    CHECK(cancelBaseline.state == authoring::RenderState::Ready);
+    const auto cancelStatsBefore = runtime.renderer().stats();
+
+    // Exactly the edit a creator makes: one formant step through the controller's own command. This is
+    // the assertion that found a real defect rather than passing on a quiet fixture: the nudge changed
+    // the project's revision while the coordinator's requested revision stayed put, because the
+    // timbral commands wrote through the session's performance-result path and never announced the
+    // edit. A creator's nudge would have been saved and never heard. The channels now report their own
+    // edit, and this check is what keeps that from regressing: the document's revision and the
+    // renderer's requested revision must both advance together.
+    const auto revisionBeforeEdit = runtime.document().session().revision();
+    const auto requestedBeforeEdit = runtime.renderer().progress().requestedRevision;
+    CHECK(editor.session->controller().nudgeFormantShift(1).hasValue());
+    const auto revisionAfterEdit = runtime.document().session().revision();
+    CHECK(revisionAfterEdit > revisionBeforeEdit);
+    // The runtime debounces, so the submission is waited for rather than assumed: reading progress on
+    // the next line would observe the previous publication.
+    const auto inFlightDeadline = std::chrono::steady_clock::now() + std::chrono::seconds{5};
+    while (std::chrono::steady_clock::now() < inFlightDeadline &&
+           runtime.renderer().progress().requestedRevision == requestedBeforeEdit)
+      std::this_thread::sleep_for(std::chrono::milliseconds{2});
+    const auto pending = runtime.renderer().progress();
+    CHECK(pending.requestedRevision > requestedBeforeEdit);
+    CHECK(pending.requestedRevision == revisionAfterEdit);
+    // The edit's revision is ahead of the sound, so the creator's own change is what is outstanding.
+    CHECK(pending.requestedRevision > pending.publishedRevision);
+    // The superseded phrase stays audible — that is deliberate, because silence during a re-render would
+    // be worse — but it is marked stale, and acquireCurrent() refuses it, so no surface can present the
+    // old phrase as the creator's current sound while the edit is still rendering.
+    CHECK(pending.audibleAudioStale);
+    CHECK(!runtime.renderer().acquireCurrent());
+
+    // Cancelling is synchronous in its progress report, so this read is deterministic.
+    runtime.renderer().cancel();
+    const auto cancelled = runtime.renderer().progress();
+    CHECK(cancelled.state == authoring::RenderState::Cancelled);
+    // A cancellation is not a failure. The distinction is asserted rather than assumed, because a
+    // cancelled render reported as Failed would surface to the creator as a render error.
+    CHECK(cancelled.failure == authoring::RenderFailureKind::None);
+    CHECK(runtime.renderer().stats().failed == cancelStatsBefore.failed);
+    // Cancelled audio never becomes current: a cancel that published would leave the new phrase audible
+    // while claiming the creator's edit had not been rendered.
+    CHECK(!runtime.renderer().acquireCurrent());
+
+    // Retry. The creator makes the same edit effective again through the application's own preview
+    // request, and publication must catch up to the document's own revision before anything is current.
+    const auto wantedRevision = runtime.document().session().revision();
+    runtime.requestPreview(true);
+    const auto published = waitForPublishedRevision(runtime.renderer(), wantedRevision);
+    CHECK(published.state == authoring::RenderState::Ready);
+    CHECK(published.publishedRevision == wantedRevision);
+    CHECK(!published.audibleAudioStale);
+    const auto recovered = runtime.renderer().acquireCurrent();
+    CHECK(static_cast<bool>(recovered));
+    if (recovered) CHECK(recovered->projectRevision == wantedRevision);
+    // The retried render is the singer's own audio and not a substitute voice, which is the same claim
+    // the clause above makes and the reason this recovery is worth asserting rather than merely counting.
+    if (recovered)
+      CHECK(recovered->activeRenderer.find("filter") != std::string::npos ||
+            recovered->activeRenderer.find("source") != std::string::npos);
+
+    // The cancellation block made one extra formant edit, so it is undone here and the render is
+    // allowed to settle before the next clause reads the sound. The undo sequence below is the
+    // milestone's own baseline-to-edit path, and it must start from the state its assertion assumes:
+    // the formant curve exactly as the clause above left it.
+    CHECK(runtime.undo().hasValue());
+    static_cast<void>(waitForPublishedRevision(
+        runtime.renderer(), runtime.document().session().revision()));
   }
 
   // Undo restores exactly the sound the project had before the edit.

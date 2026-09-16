@@ -1,5 +1,47 @@
 # Integrated Singer Execution
 
+## A creator's timbral nudge reached the document but never the renderer
+
+September 16, 2026 — U1.3a of the jointly agreed R4 plan, and the defect that writing its test exposed.
+
+The unit was to cancel a render mid-edit inside the song journey. Driving the edit through the
+controller's own command turned up something else: `nudgeFormantShift` advanced the document's
+revision while the coordinator's requested revision did not move at all. **The edit was stored and no
+render was ever asked for.**
+
+The mechanism is one skipped notification. The twelve timbral nudge and reset commands write through
+`EditorSession::executePerformanceResult`, and that path does not run the authoring runtime's
+after-command step, which is what turns a document change into a render request. Every other
+application-level edit reaches the renderer through `markDocumentChanged`, and these twelve were the
+only writers that never called it. A creator pressing the formant nudge would have seen the value
+change, saved it, and heard the previous phrase; the change was real, durable and inaudible.
+
+`NativeEditorController::commitTimbralEdit` now exists for this, wrapping all twelve call sites in one
+place so a future channel cannot be added without it. The renderer debounces, so a burst of nudges
+still coalesces into one render rather than one per keystroke.
+
+This is the class of defect a command-level test cannot see on its own: the fixture asserted the stored
+curve, the undo stack and the refusal paths, and all of those were correct. What was missing was the
+question of whether the edit reached the audio, and that question only got asked once the journey
+looked at the renderer instead of the project.
+
+**Cancellation is now connected in the journey too.** The song test nudges the formant channel,
+asserts the document revision and the renderer's requested revision advance together, waits for the
+request to be in flight, asserts the superseded phrase is marked stale and refused by
+`acquireCurrent()`, cancels, asserts the cancellation is reported as cancelled rather than failed and
+that nothing cancelled became current, then retries through the application's own preview request and
+asserts publication catches up to the document's revision with the source-filter singer's audio.
+
+Verified. `seam_original_singer_song_journey_tests` 2/2 across five consecutive runs; the full
+registered run passes 172/172; `SOURCE_CLOSURE=PASS`.
+
+Not claimed. The cancellation assertions observe the coordinator's published progress through the
+application path rather than injecting a render hook; the hook-injected cases in
+`test_authoring_render_coordinator.cpp` still own the fine-grained ordering cover. The creator-workflow
+observation remains NOT_OBSERVED and no musical judgement is made: in particular, this repair makes a
+tuning edit audible, and whether that edit sounds good is exactly what nobody has listened to yet.
+
+
 ## The neural path can now be exercised from the project's own renders, with its limits named
 
 September 16, 2026 — M3.1/M3.2 of the jointly agreed R3 plan. The neural pipeline was blocked on an authorized corpus: training needs a source with permission, admitted labels, and an admitted vocoder. A procedural render supplies the first two in a form no external recording can, because the renderer knows which phone it produced and when, so its phone timeline is a plan rather than an annotation someone had to make. That makes a bounded teacher/student experiment possible now instead of after a corpus is acquired.

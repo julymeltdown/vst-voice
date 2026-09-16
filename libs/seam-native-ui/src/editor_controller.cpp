@@ -3430,6 +3430,16 @@ void NativeEditorController::finishTextInput() const {
   if (callbacks_.endTextInput) callbacks_.endTextInput();
 }
 
+core::Result<void> NativeEditorController::commitTimbralEdit(core::Result<void> result) {
+  if (!result) return result;
+  // The edit is in the project, but nothing has asked for it to be rendered. markDocumentChanged is
+  // the hook every other application-level edit reaches the renderer through, and the renderer
+  // debounces it, so a burst of nudges coalesces into one render rather than one per keystroke.
+  markDocumentChanged();
+  repaint();
+  return result;
+}
+
 void NativeEditorController::markDocumentChanged() {
   dirty_ = true;
   if (callbacks_.documentChanged) callbacks_.documentChanged();
@@ -5540,7 +5550,7 @@ core::Result<void> NativeEditorController::nudgeFormantShift(int steps) {
   if (next == region->formantAutomation) return core::success();
   auto context = session_.capturePerformanceJob();
   if (!context) return core::Result<void>{context.error()};
-  return session_.executePerformanceResult(
+  const auto applied = session_.executePerformanceResult(
       context.value(),
       std::make_unique<application::EditPerformanceCommand>(
           std::vector<application::NoteExpressionEdit>{},
@@ -5548,6 +5558,7 @@ core::Result<void> NativeEditorController::nudgeFormantShift(int steps) {
           std::vector<application::TrackStyleEdit>{},
           std::vector<application::RegionOwnershipEdit>{},
           std::vector<application::RegionFormantEdit>{{regionId_, std::move(next)}}));
+  return commitTimbralEdit(applied);
 }
 
 core::Result<void> NativeEditorController::resetFormantCurve() {
@@ -5557,7 +5568,7 @@ core::Result<void> NativeEditorController::resetFormantCurve() {
   if (region->formantAutomation.points().empty()) return core::success();
   auto context = session_.capturePerformanceJob();
   if (!context) return core::Result<void>{context.error()};
-  return session_.executePerformanceResult(
+  const auto applied = session_.executePerformanceResult(
       context.value(),
       std::make_unique<application::EditPerformanceCommand>(
           std::vector<application::NoteExpressionEdit>{},
@@ -5566,6 +5577,7 @@ core::Result<void> NativeEditorController::resetFormantCurve() {
           std::vector<application::RegionOwnershipEdit>{},
           std::vector<application::RegionFormantEdit>{
               {regionId_, domain::FormantAutomation{}}}));
+  return commitTimbralEdit(applied);
 }
 
 float NativeEditorController::breathinessAtPlayhead() const noexcept {
@@ -5612,7 +5624,7 @@ core::Result<void> NativeEditorController::nudgeBreathiness(int steps) {
   if (next == region->breathinessAutomation) return core::success();
   auto context = session_.capturePerformanceJob();
   if (!context) return core::Result<void>{context.error()};
-  return session_.executePerformanceResult(
+  const auto applied = session_.executePerformanceResult(
       context.value(),
       std::make_unique<application::EditPerformanceCommand>(
           std::vector<application::NoteExpressionEdit>{},
@@ -5621,6 +5633,7 @@ core::Result<void> NativeEditorController::nudgeBreathiness(int steps) {
           std::vector<application::RegionOwnershipEdit>{},
           std::vector<application::RegionFormantEdit>{},
           std::vector<application::RegionBreathinessEdit>{{regionId_, std::move(next)}}));
+  return commitTimbralEdit(applied);
 }
 
 core::Result<void> NativeEditorController::resetBreathinessCurve() {
@@ -5630,7 +5643,7 @@ core::Result<void> NativeEditorController::resetBreathinessCurve() {
   if (region->breathinessAutomation.points().empty()) return core::success();
   auto context = session_.capturePerformanceJob();
   if (!context) return core::Result<void>{context.error()};
-  return session_.executePerformanceResult(
+  const auto applied = session_.executePerformanceResult(
       context.value(),
       std::make_unique<application::EditPerformanceCommand>(
           std::vector<application::NoteExpressionEdit>{},
@@ -5640,6 +5653,7 @@ core::Result<void> NativeEditorController::resetBreathinessCurve() {
           std::vector<application::RegionFormantEdit>{},
           std::vector<application::RegionBreathinessEdit>{
               {regionId_, domain::BreathinessAutomation{}}}));
+  return commitTimbralEdit(applied);
 }
 
 float NativeEditorController::tensionAtPlayhead() const noexcept {
@@ -5679,7 +5693,7 @@ core::Result<void> NativeEditorController::nudgeTension(int steps) {
   if (next == region->tensionAutomation) return core::success();
   auto context = session_.capturePerformanceJob();
   if (!context) return core::Result<void>{context.error()};
-  return session_.executePerformanceResult(
+  const auto applied = session_.executePerformanceResult(
       context.value(),
       std::make_unique<application::EditPerformanceCommand>(
           std::vector<application::NoteExpressionEdit>{},
@@ -5689,6 +5703,7 @@ core::Result<void> NativeEditorController::nudgeTension(int steps) {
           std::vector<application::RegionFormantEdit>{},
           std::vector<application::RegionBreathinessEdit>{},
           std::vector<application::RegionTensionEdit>{{regionId_, std::move(next)}}));
+  return commitTimbralEdit(applied);
 }
 
 core::Result<void> NativeEditorController::resetTensionCurve() {
@@ -5698,7 +5713,7 @@ core::Result<void> NativeEditorController::resetTensionCurve() {
   if (region->tensionAutomation.points().empty()) return core::success();
   auto context = session_.capturePerformanceJob();
   if (!context) return core::Result<void>{context.error()};
-  return session_.executePerformanceResult(
+  const auto applied = session_.executePerformanceResult(
       context.value(),
       std::make_unique<application::EditPerformanceCommand>(
           std::vector<application::NoteExpressionEdit>{},
@@ -5708,6 +5723,7 @@ core::Result<void> NativeEditorController::resetTensionCurve() {
           std::vector<application::RegionFormantEdit>{},
           std::vector<application::RegionBreathinessEdit>{},
           std::vector<application::RegionTensionEdit>{{regionId_, domain::TensionAutomation{}}}));
+  return commitTimbralEdit(applied);
 }
 
 float NativeEditorController::airinessAtPlayhead() const noexcept {
@@ -5746,7 +5762,7 @@ core::Result<void> NativeEditorController::nudgeAiriness(int steps) {
   if (next == region->airinessAutomation) return core::success();
   auto context = session_.capturePerformanceJob();
   if (!context) return core::Result<void>{context.error()};
-  return session_.executePerformanceResult(
+  const auto applied = session_.executePerformanceResult(
       context.value(),
       std::make_unique<application::EditPerformanceCommand>(
           std::vector<application::NoteExpressionEdit>{},
@@ -5757,6 +5773,7 @@ core::Result<void> NativeEditorController::nudgeAiriness(int steps) {
           std::vector<application::RegionBreathinessEdit>{},
           std::vector<application::RegionTensionEdit>{},
           std::vector<application::RegionAirinessEdit>{{regionId_, std::move(next)}}));
+  return commitTimbralEdit(applied);
 }
 
 core::Result<void> NativeEditorController::resetAirinessCurve() {
@@ -5766,7 +5783,7 @@ core::Result<void> NativeEditorController::resetAirinessCurve() {
   if (region->airinessAutomation.points().empty()) return core::success();
   auto context = session_.capturePerformanceJob();
   if (!context) return core::Result<void>{context.error()};
-  return session_.executePerformanceResult(
+  const auto applied = session_.executePerformanceResult(
       context.value(),
       std::make_unique<application::EditPerformanceCommand>(
           std::vector<application::NoteExpressionEdit>{},
@@ -5778,6 +5795,7 @@ core::Result<void> NativeEditorController::resetAirinessCurve() {
           std::vector<application::RegionTensionEdit>{},
           std::vector<application::RegionAirinessEdit>{
               {regionId_, domain::AirinessAutomation{}}}));
+  return commitTimbralEdit(applied);
 }
 
 float NativeEditorController::genderAtPlayhead() const noexcept {
@@ -5817,7 +5835,7 @@ core::Result<void> NativeEditorController::nudgeGender(int steps) {
   if (next == region->genderAutomation) return core::success();
   auto context = session_.capturePerformanceJob();
   if (!context) return core::Result<void>{context.error()};
-  return session_.executePerformanceResult(
+  const auto applied = session_.executePerformanceResult(
       context.value(),
       std::make_unique<application::EditPerformanceCommand>(
           std::vector<application::NoteExpressionEdit>{},
@@ -5829,6 +5847,7 @@ core::Result<void> NativeEditorController::nudgeGender(int steps) {
           std::vector<application::RegionTensionEdit>{},
           std::vector<application::RegionAirinessEdit>{},
           std::vector<application::RegionGenderEdit>{{regionId_, std::move(next)}}));
+  return commitTimbralEdit(applied);
 }
 
 core::Result<void> NativeEditorController::resetGenderCurve() {
@@ -5838,7 +5857,7 @@ core::Result<void> NativeEditorController::resetGenderCurve() {
   if (region->genderAutomation.points().empty()) return core::success();
   auto context = session_.capturePerformanceJob();
   if (!context) return core::Result<void>{context.error()};
-  return session_.executePerformanceResult(
+  const auto applied = session_.executePerformanceResult(
       context.value(),
       std::make_unique<application::EditPerformanceCommand>(
           std::vector<application::NoteExpressionEdit>{},
@@ -5850,6 +5869,7 @@ core::Result<void> NativeEditorController::resetGenderCurve() {
           std::vector<application::RegionTensionEdit>{},
           std::vector<application::RegionAirinessEdit>{},
           std::vector<application::RegionGenderEdit>{{regionId_, domain::GenderAutomation{}}}));
+  return commitTimbralEdit(applied);
 }
 
 float NativeEditorController::growlAtPlayhead() const noexcept {
@@ -5889,7 +5909,7 @@ core::Result<void> NativeEditorController::nudgeGrowl(int steps) {
   if (next == region->growlAutomation) return core::success();
   auto context = session_.capturePerformanceJob();
   if (!context) return core::Result<void>{context.error()};
-  return session_.executePerformanceResult(
+  const auto applied = session_.executePerformanceResult(
       context.value(),
       std::make_unique<application::EditPerformanceCommand>(
           std::vector<application::NoteExpressionEdit>{},
@@ -5902,6 +5922,7 @@ core::Result<void> NativeEditorController::nudgeGrowl(int steps) {
           std::vector<application::RegionAirinessEdit>{},
           std::vector<application::RegionGenderEdit>{},
           std::vector<application::RegionGrowlEdit>{{regionId_, std::move(next)}}));
+  return commitTimbralEdit(applied);
 }
 
 core::Result<void> NativeEditorController::resetGrowlCurve() {
@@ -5911,7 +5932,7 @@ core::Result<void> NativeEditorController::resetGrowlCurve() {
   if (region->growlAutomation.points().empty()) return core::success();
   auto context = session_.capturePerformanceJob();
   if (!context) return core::Result<void>{context.error()};
-  return session_.executePerformanceResult(
+  const auto applied = session_.executePerformanceResult(
       context.value(),
       std::make_unique<application::EditPerformanceCommand>(
           std::vector<application::NoteExpressionEdit>{},
@@ -5924,6 +5945,7 @@ core::Result<void> NativeEditorController::resetGrowlCurve() {
           std::vector<application::RegionAirinessEdit>{},
           std::vector<application::RegionGenderEdit>{},
           std::vector<application::RegionGrowlEdit>{{regionId_, domain::GrowlAutomation{}}}));
+  return commitTimbralEdit(applied);
 }
 
 }  // namespace seam::native_ui

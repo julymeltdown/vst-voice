@@ -485,6 +485,11 @@ private:
       domain::UnitSelectionOverride value);
   [[nodiscard]] core::Result<void> reorderSelectedTrackBy(int direction);
   void markDocumentChanged();
+  // The timbral channels are stored through the session's performance-result path, which the
+  // authoring runtime does not observe. Their commands therefore have to announce their own edit or
+  // the project changes while the renderer is never asked to follow: the creator's nudge would be
+  // saved and never heard. One place, so no future channel can be added without it.
+  [[nodiscard]] core::Result<void> commitTimbralEdit(core::Result<void> result);
   [[nodiscard]] std::string timeMapSemanticPrefix() const;
   [[nodiscard]] std::string hintSemanticPrefix() const;
   [[nodiscard]] std::string replacementSemanticPrefix() const;
