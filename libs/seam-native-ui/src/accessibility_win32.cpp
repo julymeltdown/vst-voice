@@ -81,6 +81,11 @@ std::optional<std::string> utf8FromWide(LPCWSTR text) {
   return result;
 }
 
+bool hasAction(const SemanticNode& node, SemanticAction action) noexcept {
+  return std::find(node.actions.begin(), node.actions.end(), action) !=
+         node.actions.end();
+}
+
 int controlType(const SemanticNode& node) noexcept {
   switch (node.role) {
     case SemanticRole::Window: return UIA_WindowControlTypeId;
@@ -90,18 +95,13 @@ int controlType(const SemanticNode& node) noexcept {
       return hasAction(node, SemanticAction::EditText)
                  ? UIA_EditControlTypeId
                  : UIA_CustomControlTypeId;
-    case SemanticRole::Timeline: return UIA_CanvasControlTypeId;
+    case SemanticRole::Timeline: return UIA_PaneControlTypeId;
     case SemanticRole::Toolbar: return UIA_ToolBarControlTypeId;
     case SemanticRole::Panel:
     case SemanticRole::Lane:
     case SemanticRole::Status: return UIA_GroupControlTypeId;
   }
   return UIA_CustomControlTypeId;
-}
-
-bool hasAction(const SemanticNode& node, SemanticAction action) noexcept {
-  return std::find(node.actions.begin(), node.actions.end(), action) !=
-         node.actions.end();
 }
 
 bool isSelectionItem(const SemanticNode& node) noexcept {
@@ -141,7 +141,9 @@ std::uint64_t semanticRuntimeId(std::string_view id) noexcept {
   return hash;
 }
 
-class AccessibilityElement final : public IRawElementProviderFragmentRoot,
+class AccessibilityElement final : public IRawElementProviderSimple,
+                                   public IRawElementProviderFragment,
+                                   public IRawElementProviderFragmentRoot,
                                    public IInvokeProvider,
                                    public IToggleProvider,
                                    public ISelectionItemProvider,
@@ -198,7 +200,7 @@ public:
   HRESULT STDMETHODCALLTYPE get_IsReadOnly(BOOL* readOnly) override;
   HRESULT STDMETHODCALLTYPE get_Value(BSTR* value) override;
 
-  ~AccessibilityElement() override = default;
+  ~AccessibilityElement() = default;
 
   [[nodiscard]] const SnapshotNode* snapshotNode() const noexcept {
     if (snapshot_ == nullptr || index_ < 0 ||
@@ -571,9 +573,10 @@ HRESULT STDMETHODCALLTYPE AccessibilityElement::QueryInterface(REFIID iid,
                                                                 void** object) {
   if (object == nullptr) return E_INVALIDARG;
   *object = nullptr;
-  if (iid == IID_IUnknown || iid == __uuidof(IRawElementProviderSimple) ||
-      iid == __uuidof(IRawElementProviderFragment)) {
-    *object = static_cast<IRawElementProviderFragmentRoot*>(this);
+  if (iid == IID_IUnknown || iid == __uuidof(IRawElementProviderSimple)) {
+    *object = static_cast<IRawElementProviderSimple*>(this);
+  } else if (iid == __uuidof(IRawElementProviderFragment)) {
+    *object = static_cast<IRawElementProviderFragment*>(this);
   } else if (iid == __uuidof(IRawElementProviderFragmentRoot) && index_ == 0) {
     *object = static_cast<IRawElementProviderFragmentRoot*>(this);
   } else if (iid == __uuidof(IInvokeProvider) && snapshotNode() != nullptr &&
@@ -669,7 +672,7 @@ HRESULT STDMETHODCALLTYPE AccessibilityElement::GetPropertyValue(
     return setString(hasAction(current->node, SemanticAction::EditText)
                          ? current->node.editableValue
                          : current->node.value);
-  } else if (propertyId == UIA_DescriptionPropertyId) {
+  } else if (propertyId == UIA_HelpTextPropertyId) {
     return setString(current->node.description);
   } else if (propertyId == UIA_ClassNamePropertyId) {
     return setString("ProjectSEAM");
@@ -696,7 +699,7 @@ HRESULT STDMETHODCALLTYPE AccessibilityElement::get_HostRawElementProvider(
     IRawElementProviderSimple** provider) {
   if (provider == nullptr) return E_INVALIDARG;
   *provider = nullptr;
-  return state_ == nullptr || state_->window == nullptr
+  return index_ != 0 || state_ == nullptr || state_->window == nullptr
              ? S_OK
              : UiaHostProviderFromHwnd(state_->window, provider);
 }
@@ -793,7 +796,7 @@ HRESULT STDMETHODCALLTYPE AccessibilityElement::SetFocus() {
     return UIA_E_ELEMENTNOTAVAILABLE;
   }
   if (state_ == nullptr || state_->window == nullptr) return E_FAIL;
-  SetFocus(state_->window);
+  ::SetFocus(state_->window);
   const auto result = state_->dispatch(current->node.id, SemanticAction::SetFocus);
   if (!result) return E_FAIL;
   state_->refresh();

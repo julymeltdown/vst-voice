@@ -23,6 +23,8 @@ REQUIRED: dict[str, tuple[str, ...]] = {
     "libs/seam-native-ui/src/accessibility_win32.cpp": (
         "#include <ole2.h>",
         "#include <UIAutomation.h>",
+        "public IRawElementProviderSimple",
+        "public IRawElementProviderFragment,",
         "IRawElementProviderFragmentRoot",
         "UiaReturnRawElementProvider",
     ),
