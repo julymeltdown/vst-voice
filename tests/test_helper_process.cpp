@@ -1,6 +1,7 @@
 #include "test_framework.hpp"
 #include "seam/platform/helper_process.hpp"
 #include <cstdint>
+#include <cstdlib>
 #include <thread>
 #if defined(_WIN32)
 #include <windows.h>
@@ -14,7 +15,17 @@ TEST_CASE("bounded helper captures separate streams and rejects failure overflow
 #if defined(__APPLE__) || defined(__linux__) || defined(_WIN32)
   using namespace seam::platform;
   HelperProcessRequest request{SEAM_READING_PROCESS_PROBE, {"echo"}};
+#if defined(_WIN32)
+  CHECK(::_putenv_s("SEAM_HELPER_SECRET", "must-not-reach-child") == 0);
+#else
+  CHECK(::setenv("SEAM_HELPER_SECRET", "must-not-reach-child", 1) == 0);
+#endif
   const auto success = runBoundedHelperProcess(request); CHECK(success);
+#if defined(_WIN32)
+  CHECK(::_putenv_s("SEAM_HELPER_SECRET", "") == 0);
+#else
+  CHECK(::unsetenv("SEAM_HELPER_SECRET") == 0);
+#endif
   CHECK(success.value().standardOutput == "ok\n"); CHECK(success.value().standardError == "diagnostic\n");
 #if defined(__APPLE__) || defined(__linux__)
   const int inherited = ::open("/dev/null", O_RDONLY); CHECK(inherited >= 0);

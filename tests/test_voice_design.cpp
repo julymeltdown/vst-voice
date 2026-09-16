@@ -1416,7 +1416,7 @@ TEST_CASE("phonation follows compiled melody with deterministic block-continuous
   auto source = voice_design::PhonationSource::create(recipe, score.value(), 0); CHECK(source);
   const auto whole = source.value().render(48000U); CHECK(whole);
   CHECK(whole.value().startFrame == 0); CHECK(source.value().position() == 48000);
-  for (const auto [offset, expected] : {std::pair{4800U, 261.625565}, std::pair{28800U, 391.995436}}) {
+  for (const auto& [offset, expected] : {std::pair{4800U, 261.625565}, std::pair{28800U, 391.995436}}) {
     const auto measured = voicebank::analyzePitch(std::span<const float>{whole.value().samples}.subspan(offset, 12000U), 48000U);
     CHECK(measured); CHECK_NEAR(voicebank::medianVoicedPitch(measured.value()), expected, 4.0);
   }

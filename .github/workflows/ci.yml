@@ -6,6 +6,34 @@ on:
   workflow_dispatch:
 
 jobs:
+  windows-helper-process:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - name: Install OpenSSL 3
+        shell: pwsh
+        run: choco install openssl --no-progress -y
+      - name: Configure bounded helper tests
+        shell: pwsh
+        run: |
+          $roots = @(
+            "C:\Program Files\OpenSSL-Win64",
+            "C:\Program Files\OpenSSL"
+          )
+          $root = $roots | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $root) { throw "OpenSSL 3 installation root was not found" }
+          cmake -S . -B build/windows-helper -DSEAM_BUILD_TESTS=ON -DSEAM_BUILD_BENCHMARKS=OFF -DSEAM_WARNINGS_AS_ERRORS=ON -DOPENSSL_ROOT_DIR="$root" -DSEAM_RUN_NATIVE_GUI_TESTS=OFF
+      - name: Build bounded helper callers
+        run: cmake --build build/windows-helper --config Debug --parallel 2 --target seam_helper_process_tests seam_japanese_pronunciation_tests seam_neural_worker_protocol_tests
+      - name: Exercise bounded helper callers
+        shell: pwsh
+        run: ctest --test-dir build/windows-helper -C Debug --output-on-failure -R "^(seam_helper_process_tests|seam_japanese_pronunciation_tests|seam_neural_worker_protocol_tests)$"
+      - name: Verify Windows helper source contract
+        run: python scripts/verify_phase8_platform_sources.py --root .
+
   native-platform-matrix:
     strategy:
       fail-fast: false
