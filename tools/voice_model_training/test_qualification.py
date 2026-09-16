@@ -1,5 +1,6 @@
 import hashlib
 import json
+import math
 import struct
 import tempfile
 import unittest
@@ -15,7 +16,7 @@ def vocabulary_file(tokens=("SP", "a", "i")):
                        "tokens": list(tokens)}, separators=(",", ":")).encode()
 
 
-def item(frames=64, phones=("a", "i"), **changes):
+def item(frames=48000, phones=("a", "i"), **changes):
     record = {"itemId": "held-1", "songId": "song-9", "phones": list(phones),
               "frameCount": frames, "frequencyHz": 210.0, "gain": 0.5, "requestId": 1}
     record.update(changes)
@@ -28,13 +29,28 @@ def configuration(directory, manifest_sha256, items=None):
                        "manifestSha256": manifest_sha256, "maximumBundleBytes": 1048576},
             "heldOut": items if items is not None else
             [{"itemId": "held-1", "songId": "song-9", "phones": ["a", "i"],
-              "frameCount": 64, "frequencyHz": 210.0, "gain": 0.5}],
+              "frameCount": 48000, "frequencyHz": 210.0, "gain": 0.5}],
             "repetitions": 2}
 
 
-def response(request, prepared, value=0.25):
+def sine(frames, frequency_hz, amplitude=0.25, sample_rate=48000):
+    """A sung-note stand-in: a steady tone at the requested frequency.
+
+    The earlier fixtures emitted a constant value, which has no pitch at all. That was enough for
+    every criterion except pitch-adherence, and it is exactly the gap this criterion exists to close:
+    constant audio is finite, non-silent, deterministic and fast.
+    """
+    return struct.pack("<" + str(frames) + "f",
+                       *[amplitude * math.sin(2.0 * math.pi * frequency_hz * index / sample_rate)
+                         for index in range(frames)])
+
+
+def response(request, prepared, value=0.25, frequency_hz=None):
     count = prepared["frameCount"]
-    pcm = struct.pack("<" + str(count) + "f", *([value] * count))
+    if frequency_hz is None:
+        pcm = struct.pack("<" + str(count) + "f", *([value] * count))
+    else:
+        pcm = sine(count, frequency_hz, value)
     reply = {"kind": "seam-neural-response-v3", "requestId": prepared["requestId"],
              "requestContentHash": hashlib.sha256(request).hexdigest(),
              "frameCount": count, "sampleRate": 48000, "channels": 1,
@@ -44,13 +60,23 @@ def response(request, prepared, value=0.25):
     return struct.pack("<4sHBBIQ", b"SNW1", 1, 2, 0, len(header), len(pcm)) + header + pcm
 
 
-def runs_for(prepared, vocabulary, values=(0.25, 0.25), codes=None, frames=None):
+CONSTANT_AUDIO = -1.0   # loud, steady, and unpitched: the shape a broken candidate emits
+
+def runs_for(prepared, vocabulary, values=(0.25, 0.25), codes=None, frames=None,
+             frequency_hz=None):
     request = build_request(prepared, vocabulary, "b" * 64,
                             {"modelId": "fixture", "modelVersion": "1", "manifestSha256": "a" * 64})
+    # Default to singing the requested note, so a case that is not about pitch is not silently a pitch
+    # failure. A case that tests pitch passes its own frequency.
+    if frequency_hz == CONSTANT_AUDIO:
+        sung = None
+    else:
+        sung = prepared["frequencyHz"] if frequency_hz is None else frequency_hz
     runs = []
     for index, value in enumerate(values):
         count = frames[index] if frames is not None else prepared["frameCount"]
-        payload = response(request, dict(prepared, frameCount=count), value)
+        payload = response(request, dict(prepared, frameCount=count), value,
+                           frequency_hz=sung)
         runs.append({"returncode": 0 if codes is None else codes[index], "stdout": payload,
                      "stderr": b"", "request": request, "milliseconds": 12.5 + index})
     return runs
@@ -97,7 +123,69 @@ class EvaluationTests(unittest.TestCase):
         self.assertEqual(over["status"], "FAIL")
         self.assertIn("budget", over["detail"])
 
-    def test_held_out_phone_outside_the_vocabulary_fails_the_item(self):
+    def test_audio_that_does_not_sing_the_requested_note_is_reported(self):
+        """The criterion the other automatic ones could not substitute for.
+
+        Every fixture this command had emitted a constant value, which is finite, non-silent,
+        deterministic and fast, and which contains no pitch at all. It passed admission, coverage,
+        determinism, finite audio and the runtime budget. A candidate can also be a whole octave or a
+        fifth away and pass all of those. This case pins the comparison that closes the gap.
+        """
+        prepared = item()
+        vocabulary = {"SP": 0, "a": 1, "i": 2}
+        # Singing the requested note passes.
+        in_tune = evaluate_item(prepared, runs_for(prepared, vocabulary), vocabulary, 1000)
+        self.assertEqual(in_tune["status"], "PASS")
+        self.assertAlmostEqual(in_tune["measuredPitchHz"], 210.0, delta=2.0)
+        self.assertLess(abs(in_tune["pitchErrorCents"]), 5.0)
+        # A fifth sharp fails, and the detail says what was measured rather than only that it failed.
+        wrong = evaluate_item(prepared,
+                              runs_for(prepared, vocabulary, frequency_hz=315.0),
+                              vocabulary, 1000)
+        self.assertEqual(wrong["status"], "FAIL")
+        self.assertEqual(wrong["criteria"]["pitch-adherence"], "FAIL")
+        self.assertIn("sang", wrong["detail"])
+        self.assertIn("against the requested 210.0 Hz", wrong["detail"])
+        self.assertIn("210.0", wrong["detail"])
+        # An octave error is named as one, because that is the failure a listener would describe and
+        # the one a reader needs to recognize without doing the arithmetic.
+        octave = evaluate_item(prepared,
+                               runs_for(prepared, vocabulary, frequency_hz=105.0),
+                               vocabulary, 1000)
+        self.assertEqual(octave["criteria"]["pitch-adherence"], "FAIL")
+        self.assertIn("octave error", octave["detail"])
+        # Pitch slightly out is not a failure. The criterion is a gross-error detector, and a
+        # candidate must not be failed for a tuning nuance a listener has not judged.
+        near = evaluate_item(prepared,
+                             runs_for(prepared, vocabulary, frequency_hz=210.0 * 2.0 ** (30.0 / 1200.0)),
+                             vocabulary, 1000)
+        self.assertEqual(near["status"], "PASS")
+
+    def test_audio_with_no_measurable_pitch_fails_adherence_but_a_short_item_does_not(self):
+        prepared = item()
+        vocabulary = {"SP": 0, "a": 1, "i": 2}
+        # Constant audio is measured and found to contain no pitch. That is a finding about the
+        # candidate, so it is a failure.
+        flat = evaluate_item(prepared, runs_for(prepared, vocabulary, values=(0.25, 0.25), frequency_hz=CONSTANT_AUDIO),
+                             vocabulary, 1000)
+        self.assertEqual(flat["criteria"]["pitch-adherence"], "FAIL")
+        self.assertIn("no voiced pitch", flat["detail"])
+        # An item too short to contain the note it names cannot support a pitch claim. That is a
+        # limitation of the item, so it is UNRESOLVED rather than a candidate failure -- blaming the
+        # model for an unusable held-out item is the mistake this distinction prevents.
+        tiny = item(frames=64)
+        short = evaluate_item(tiny, runs_for(tiny, vocabulary), vocabulary, 1000)
+        self.assertEqual(short["criteria"]["pitch-adherence"], "UNRESOLVED")
+        self.assertIn("too short", short["detail"])
+
+    def test_a_failed_worker_is_not_reported_as_a_pitch_problem(self):
+        """A more fundamental failure must be reported instead of an unmeasurable pitch."""
+        prepared = item()
+        vocabulary = {"SP": 0, "a": 1, "i": 2}
+        failed = evaluate_item(prepared, runs_for(prepared, vocabulary, codes=(8, 8)), vocabulary, None)
+        self.assertEqual(failed["detail"].startswith("worker exit status 8"), True)
+        self.assertEqual(failed["criteria"]["pitch-adherence"], "PASS")
+
         prepared = item(phones=("a", "u"))
         record = evaluate_item(prepared, [], {"SP": 0, "a": 1, "i": 2}, None)
         self.assertEqual(record["status"], "FAIL")
@@ -216,8 +304,11 @@ class CommandTests(unittest.TestCase):
             vocabulary = {"SP": 0, "a": 1, "i": 2}
 
             def runner(worker_path, arguments, request, timeout):
+                # The stub sings the requested note, because the end-to-end case is about publication,
+                # overwrite refusal and an honest verdict rather than about pitch. A stub emitting
+                # constant audio would now be a legitimate pitch failure and would test the wrong thing.
                 prepared = item()
-                return 0, response(request, prepared), b""
+                return 0, response(request, prepared, frequency_hz=prepared["frequencyHz"]), b""
 
             output = root / "dossier.json"
             from tools.voice_model_training.qualification import qualify, publish_new

@@ -316,9 +316,16 @@ aligned spans from a render, so a reconstruction baseline is reachable without a
 Keep `labelOrigin` recorded and keep `releaseEligible` false — a vocoder trained on renderer-intent
 labels cannot inherit a release approval.
 
-**Exit.** Held-out reconstruction with retained numbers; exact hop/padding/trim lengths asserted;
-sample-rate and profile mismatch refused; resume after a completed checkpoint and cancellation both
-tested. Retain the checkpoint and its receipt.
+A review of this unit found that "held-out reconstruction with retained numbers" names retention but
+not the measurement, and a vocoder can produce plausible audio that is not a reconstruction of its
+input. State the comparison instead: **the rendered output against the source audio its mel and F0 were
+extracted from**, by a named spectral distance plus an F0 error, so "reconstruction" cannot be
+satisfied by "it ran and sounded like singing". The same pitch measurement added to U3.5 applies here,
+since a vocoder that shifts the pitch of its own input is not reconstructing it.
+
+**Exit.** A named reconstruction measurement over held-out items, with its reference and the numbers
+retained; exact hop/padding/trim lengths asserted; sample-rate and profile mismatch refused; resume
+after a completed checkpoint and cancellation both tested. Retain the checkpoint and its receipt.
 
 ### U3.4 — connect one real conditioning control end to end
 
@@ -365,10 +372,33 @@ wait, a job object for the memory ceiling, and `GetProcessMemoryInfo` for the us
 currently reports as unavailable. It needs a Windows machine to verify and does not need a corpus, so it
 is executable now and should not wait behind U3.3.
 
+**The dossier could not tell a singer from a noise generator, and now it can.** A review of this unit
+found that `qualification.py` answered six automatic criteria — bundle admission, response binding,
+vocabulary coverage, determinism, finite audio, runtime budget — and **not one of them asked whether
+the audio sings the requested notes.** A model a fifth flat, or producing the wrong phones, is finite,
+non-silent, deterministic and fast, and reached the dossier as PASS with only the human columns
+unresolved. That is the same failure this week found in the editor one layer down: the contract is
+satisfied and the sound is wrong. The requested frequency was already captured as conditioning and
+never compared against what came back.
+
+`pitch-adherence` now makes that comparison. It measures the median voiced pitch of the returned audio
+by sub-sample-refined autocorrelation, over the central half of the item so onset and release do not
+decide the answer, and reports the error against the item's declared target with an octave error named
+when it is one. The window is sized from the requested note rather than fixed, so a low note and a high
+note are measured with the same reliability. It is deliberately a gross-error detector, not a tuning
+judgement: the tolerance is a quarter tone, because a listener has not judged anything yet and a
+candidate must not be failed for vibrato or portamento.
+
+Two outcomes are kept distinct, because conflating them would blame the model for an unusable item. An
+item whose audio contains no measurable pitch is a **FAIL**: it was measured and it does not sing. An
+item too short to contain the note it names is **UNRESOLVED**: the audio cannot support a pitch claim at
+all. The criterion is reported last, so a worker that crashed, disagreed with itself or overran its
+budget still reports that more fundamental finding first.
+
 **Then.** Replace the arithmetic fixtures in `tests/test_neural_production_render.cpp` with an actual
 admitted learned candidate for the retained acceptance run, keeping the fixtures as routing
-regressions. Use `qualify-candidate` / `qualification.py` for the measured dossier and leave the human
-judgment columns unresolved rather than printing QUALIFIED.
+regressions. Use `qualify-candidate` for the measured dossier and leave the human judgment columns
+unresolved rather than printing QUALIFIED.
 
 **Exit.** A learned original singer renders a held-out song through ordinary UI selection on macOS
 arm64 **and** Windows x64, with permissions, a compatible vocoder and a reviewed result recorded.

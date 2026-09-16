@@ -4,7 +4,7 @@ The command drives the production worker over every held-out item in a captured
 qualification configuration and writes a dossier that separates three things:
 
 * what this command actually measured (admission, vocabulary coverage, determinism,
-  finite audio, runtime);
+  finite audio, runtime, and whether the audio sings the pitch it was asked for);
 * what it refuses to judge (intelligibility, identity, musicality -- these need
   independent human listeners and are always UNRESOLVED here);
 * what must never be inferred (release eligibility, product approval).
@@ -14,6 +14,15 @@ criterion and still produce a dossier whose verdict is UNRESOLVED, because no nu
 deterministic runs is evidence about a voice. A candidate that fails an automatic
 criterion is reported as FAILED while the auditable model and measurements stay in the
 dossier.
+
+pitch-adherence exists because the other automatic criteria were all satisfiable by audio
+that is wrong. Admission, vocabulary coverage, determinism, finite audio and runtime say the
+pipeline ran; not one of them asks whether the result sings the notes it was given. A model a
+fifth flat, or on the wrong phones, is finite, non-silent, deterministic and fast, and would
+reach the dossier as PASS with only the human columns unresolved. The requested frequency was
+already captured as conditioning and never compared against what came back. Comparing it is
+machine-checkable, it does not touch the human columns, and it means an obviously wrong singer
+fails before a listener is scheduled.
 """
 import hashlib
 import json
@@ -32,8 +41,22 @@ MAXIMUM_FRAMES = 48000
 MINIMUM_FRAMES = 16
 SAMPLE_RATE = 48000
 AUTOMATIC_CRITERIA = ("bundle-admission", "response-binding", "vocabulary-coverage",
-                      "determinism", "finite-audio", "runtime-budget")
+                      "determinism", "finite-audio", "pitch-adherence", "runtime-budget")
 HUMAN_CRITERIA = ("intelligibility", "identity", "musicality")
+# How far the sung pitch may sit from the requested one, in cents, before the item is reported as a
+# pitch failure rather than as a voice that merely needs listening. The window is wide on purpose: it
+# is a gross-error detector, not a tuning judgement, because a real model has vibrato, portamento and
+# a slight onset glide, and an unreviewed candidate must not be failed for musical nuance. A quarter
+# tone is the smallest interval a listener reliably hears as a wrong note, and anything inside it is
+# left for the human columns.
+MAXIMUM_PITCH_ERROR_CENTS = 50.0
+# Pitch is measured over the central half of the item in windows this long, so onset and release
+# transitions do not decide the answer and a single unlucky frame cannot fail an otherwise steady item.
+PITCH_WINDOW_SAMPLES = 2048
+# The normalized autocorrelation a window must reach to count as voiced. Below this the window is
+# noise or a transition rather than a pitch, and including it would report a pitch the audio does not
+# actually hold. A window is either voiced enough to estimate or it is not counted at all.
+MINIMUM_PERIODICITY = 0.5
 HUMAN_REASON = ("requires independent human listening; this command measures only "
                 "machine-checkable behaviour")
 
@@ -207,6 +230,113 @@ def decode_response(stdout: bytes, request: bytes, item: dict) -> tuple:
     return reply, pcm
 
 
+
+def measure_median_pitch_hz(samples, sample_rate: int, requested_hz: float):
+    """Median voiced pitch of one item, its voiced coverage, and why it could not be measured.
+
+    Autocorrelation rather than a spectral peak, because a sung note's strongest partial is often
+    not the fundamental, and a spectral peak pick would report an octave or a twelfth of the note
+    that was asked for. The window is sized from the requested note rather than fixed, so the lag
+    search always covers at least two periods of the pitch under test: a fixed window cannot measure
+    a low note and a high note with the same reliability. The central half of the item is used so the
+    onset glide and the release do not decide the answer, and the median is taken rather than the mean
+    so one unstable window cannot move the result.
+
+    The third return value is a reason string rather than a number when the audio cannot support a
+    pitch claim at all -- too short to contain the note, or the numeric library is unavailable. That
+    is deliberately distinct from 'the audio has no voiced pitch', which is a measurement and a
+    finding. Callers report the first as UNRESOLVED and the second as a failure, because 'we could
+    not look' and 'we looked and it does not sing' are different statements.
+    """
+    if sample_rate <= 0 or requested_hz <= 0.0:
+        return None, 0.0, "the item declares no usable sample rate or frequency"
+    try:
+        import numpy as np
+    except ImportError:  # pragma: no cover - the pinned environment provides NumPy
+        return None, 0.0, "NumPy is unavailable, so pitch cannot be measured"
+    samples = np.asarray(samples, dtype=np.float64)
+    period_samples = sample_rate / requested_hz
+    # Four periods support the lag search with margin at the expected period; the floor keeps a very
+    # high note from producing a window too short for the correlation to mean anything.
+    window = int(max(256, math.ceil(4.0 * period_samples)))
+    window = min(window, PITCH_WINDOW_SAMPLES)
+    if samples.size < window + int(math.ceil(period_samples)):
+        return (None, 0.0,
+                "the item is too short to contain the requested "
+                + format(requested_hz, ".1f") + " Hz note, so pitch cannot be measured")
+    start = samples.size // 4
+    end = (3 * samples.size) // 4
+    if end - start < window:
+        start, end = 0, samples.size
+    minimum_lag = max(2, int(math.floor(sample_rate / (requested_hz * 2.0))))
+    maximum_lag = max(minimum_lag + 1, int(math.ceil(sample_rate / (requested_hz / 2.0))))
+    maximum_lag = min(maximum_lag, window - 1)
+    if maximum_lag <= minimum_lag:
+        return None, 0.0, "the requested note leaves no measurable lag range"
+    estimates = []
+    windows = 0
+    step = max(1, window // 2)
+    position = start
+    while position + window <= end:
+        segment = samples[position:position + window]
+        position += step
+        windows += 1
+        segment = segment - segment.mean()
+        energy = float(np.dot(segment, segment))
+        # Silence cannot be pitch-tracked, and its autocorrelation is numerically meaningless.
+        if energy <= 1e-12:
+            continue
+        # Normalized autocorrelation over the lag range only; the surrounding region is irrelevant and
+        # computing it would let a long item cost quadratic work.
+        lags = np.arange(minimum_lag, maximum_lag + 1)
+        best_lag, best = 0, 0.0
+        correlations = {}
+        for lag in lags:
+            head = segment[:-lag]
+            tail = segment[lag:]
+            denominator = math.sqrt(energy * float(np.dot(tail, tail)))
+            if denominator <= 1e-12:
+                continue
+            correlation = float(np.dot(head, tail)) / denominator
+            correlations[int(lag)] = correlation
+            if correlation > best:
+                best, best_lag = correlation, int(lag)
+        # A weak peak is unvoiced: a breathy frame, a fricative, or a boundary between two notes.
+        if best_lag > 0 and best >= MINIMUM_PERIODICITY:
+            # The lag grid is whole samples, so the peak it finds is quantized and the pitch it
+            # implies is biased toward the nearest lag. At 48 kHz a 210 Hz note wants a lag of 228.6
+            # samples, and taking 229 reads a third of a semitone flat. Fitting a parabola through the
+            # peak and its two neighbours recovers the sub-sample position, which is standard practice
+            # for period estimators and is what makes this measurement independent of the pitch's
+            # relationship to the sample grid.
+            refined = float(best_lag)
+            left = correlations.get(best_lag - 1)
+            right = correlations.get(best_lag + 1)
+            if left is not None and right is not None:
+                denominator = left - 2.0 * best + right
+                if abs(denominator) > 1e-12:
+                    refined += 0.5 * (left - right) / denominator
+            if refined > minimum_lag:
+                estimates.append(sample_rate / refined)
+    if not estimates or windows == 0:
+        return None, 0.0, None
+    estimates.sort()
+    middle = len(estimates) // 2
+    median = (estimates[middle] if len(estimates) % 2 == 1
+              else 0.5 * (estimates[middle - 1] + estimates[middle]))
+    return median, len(estimates) / windows, None
+
+
+def pitch_adherence_detail(requested_hz: float, measured_hz: float, coverage: float) -> str:
+    """One clause naming the measured pitch error, its size, and whether it is an octave error."""
+    cents = 1200.0 * math.log(measured_hz / requested_hz, 2.0)
+    octave = abs(abs(cents) - 1200.0) <= MAXIMUM_PITCH_ERROR_CENTS
+    return ("sang " + format(measured_hz, ".1f") + " Hz against the requested "
+            + format(requested_hz, ".1f") + " Hz (" + format(cents, ".0f") + " cents"
+            + (", octave error" if octave else "") + ", voiced coverage "
+            + format(coverage, ".2f") + ")")
+
+
 def evaluate_item(item: dict, runs: list, vocabulary: dict, maximum_milliseconds,
                   repetitions: int = 2) -> dict:
     """One held-out item's record. Never approves musical content.
@@ -235,6 +365,7 @@ def evaluate_item(item: dict, runs: list, vocabulary: dict, maximum_milliseconds
     if not runs:
         return failed("bundle-admission", "no worker run was recorded")
     frames = []
+    measured = []
     for run in runs:
         result["milliseconds"].append(round(run["milliseconds"], 3))
         if run["returncode"] != 0:
@@ -254,12 +385,44 @@ def evaluate_item(item: dict, runs: list, vocabulary: dict, maximum_milliseconds
         result["audioSha256"] = hashlib.sha256(pcm).hexdigest()
         result["modelContentHash"] = reply.get("modelContentHash")
         result["backendId"] = reply.get("backendId")
+        measured.append(measure_median_pitch_hz(samples, SAMPLE_RATE, float(item["frequencyHz"])))
     if criteria["determinism"] == "PASS" and len(set(frames)) != 1:
         return failed("determinism", "repeated identical requests produced different audio")
     if maximum_milliseconds is not None and max(result["milliseconds"]) > maximum_milliseconds:
         return failed("runtime-budget",
                       "slowest run " + str(max(result["milliseconds"])) + " ms exceeds the declared "
                       + str(maximum_milliseconds) + " ms budget")
+    # Pitch is judged last, on purpose. This is the criterion the others could not substitute for:
+    # everything above establishes that the pipeline ran, and only this asks whether what came back
+    # sings the note it was given. It is reported last because a worker that crashed, disagreed with
+    # itself or overran its budget has a more fundamental finding, and reporting an unmeasurable pitch
+    # for audio from a failed run would send a reader after the wrong defect.
+    #
+    # The requested frequency is already captured as conditioning, so this comparison costs no extra
+    # run. The first run is measured, not an average: determinism has just established that every run
+    # produced identical bytes, so averaging identical measurements would only hide that fact.
+    measured_hz, coverage, reason = measured[0] if measured else (None, 0.0, "no run was measured")
+    result["requestedFrequencyHz"] = round(float(item["frequencyHz"]), 3)
+    result["measuredPitchHz"] = None if measured_hz is None else round(measured_hz, 3)
+    result["voicedCoverage"] = round(coverage, 4)
+    result["pitchReason"] = reason
+    if measured_hz is None:
+        if reason is not None:
+            # The audio cannot support a pitch claim at all, which is not the same finding as audio
+            # that was measured and does not sing. Reporting it as a failure would blame the
+            # candidate for a limitation of the item or of this environment.
+            criteria["pitch-adherence"] = "UNRESOLVED"
+            result["detail"] = reason
+            return result
+        return failed("pitch-adherence",
+                      "no voiced pitch could be measured in the central half of this audio, so it "
+                      "does not sing a note that can be compared with the requested "
+                      + format(float(item["frequencyHz"]), ".1f") + " Hz")
+    error_cents = 1200.0 * math.log(measured_hz / float(item["frequencyHz"]), 2.0)
+    result["pitchErrorCents"] = round(error_cents, 3)
+    if abs(error_cents) > MAXIMUM_PITCH_ERROR_CENTS:
+        return failed("pitch-adherence",
+                      pitch_adherence_detail(float(item["frequencyHz"]), measured_hz, coverage))
     return result
 
 

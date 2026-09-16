@@ -1,5 +1,58 @@
 # Integrated Singer Execution
 
+## The qualification dossier could not tell a singer from a noise generator
+
+September 16, 2026 — R4 unit U3.5, found by review before the unit was reached.
+
+`qualification.py` is the command whose entire job is to decide whether a learned singer is worth a
+listener's time. A review of R4 found that its six automatic criteria — bundle admission, response
+binding, vocabulary coverage, determinism, finite audio, runtime budget — **did not include any question
+about whether the audio sings the requested notes.** A model a fifth flat, or producing the wrong
+phones, is finite, non-silent, deterministic and fast, and would have reached the dossier as PASS with
+only the human columns unresolved.
+
+That is the same failure the editor journey found one layer down this week, in the same shape: the
+contract is satisfied and the sound is wrong. The requested frequency was already being sent to the
+worker as conditioning and was never compared against what came back, so the fix cost no extra run.
+
+**`pitch-adherence` now makes that comparison.** It measures the median voiced pitch of the returned
+audio by autocorrelation with sub-sample refinement, over the central half of the item so the onset
+glide and the release do not decide the answer, and reports the error against the item's declared
+target. Two details are load-bearing. The window is sized from the requested note rather than fixed,
+because a fixed window cannot measure a low note and a high note with the same reliability. And the
+lag grid is whole samples, so the peak it finds is quantized — a 210 Hz note at 48 kHz wants a lag of
+228.6 samples, and taking 229 reads a third of a semitone flat. Fitting a parabola through the peak and
+its neighbours recovers the sub-sample position, which is what makes the measurement independent of
+where the pitch falls relative to the sample grid. Measured accuracy is within a few cents from 110 Hz
+to 880 Hz.
+
+It is deliberately a gross-error detector, not a tuning judgement: the tolerance is a quarter tone,
+because no listener has judged anything yet and a candidate must not be failed for vibrato or
+portamento. An octave error is named as one, because that is the failure a listener would describe.
+
+**Two outcomes are kept apart, because conflating them would blame the model for an unusable item.** An
+item whose audio contains no measurable pitch is a FAIL — it was measured and it does not sing. An item
+too short to contain the note it names is UNRESOLVED — the audio cannot support a pitch claim at all.
+The criterion is also reported last, so a worker that crashed, disagreed with itself or overran its
+budget still reports that more fundamental finding first.
+
+The test fixtures had to change with it, and that is evidence for the finding rather than incidental
+work: every fixture in this command emitted a constant value, which has no pitch at all but satisfied
+every criterion the command had. The fixtures now sing a tone, so a case that is not about pitch is not
+silently a pitch failure.
+
+Verified. `seam_voice_model_training_tests` passes with 91 tests, including the new cases for an
+in-tune pass, a fifth sharp, an octave error named as one, a 30-cent error inside tolerance that must
+not fail, unpitched audio, an item too short to measure, and a failed worker reported as a worker
+failure rather than a pitch problem. `seam_tests` passes. `SOURCE_CLOSURE=PASS`.
+
+Not claimed. No model was trained and no candidate was qualified, so this changes what the command
+measures and not what any voice sounds like. Pass on `pitch-adherence` is not a quality claim: it says
+the candidate sang the requested note within a quarter tone, and says nothing about intelligibility,
+identity or whether the tone is pleasant. The tolerance is an engineering choice for a gross-error
+detector and is not a perceptual threshold. R9 remains untouched.
+
+
 ## A creator's timbral nudge reached the document but never the renderer
 
 September 16, 2026 — U1.3a of the jointly agreed R4 plan, and the defect that writing its test exposed.
