@@ -87,11 +87,12 @@ jobs:
         run: ctest --test-dir build/ci -C Debug --output-on-failure
       - name: Platform source contract
         run: python scripts/verify_phase8_platform_sources.py --root .
-      - name: Master-only and license audit
+      - name: Master-only branch audit
+        if: github.ref == 'refs/heads/master'
         shell: bash
-        run: |
-          python scripts/verify_master_branch.py --root .
-          python tools/license-auditor/audit.py --root .
+        run: python scripts/verify_master_branch.py --root .
+      - name: License audit
+        run: python tools/license-auditor/audit.py --root .
 
   isolated-release-candidate:
     runs-on: ubuntu-latest
