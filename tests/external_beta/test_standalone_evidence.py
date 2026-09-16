@@ -25,7 +25,7 @@ def _record(root: Path) -> dict:
             "status": "PASS",
             "evidence": [{
                 "kind": "journey-artifact",
-                "path": str(path.relative_to(root)),
+                "path": path.relative_to(root).as_posix(),
                 "sha256": hashlib.sha256(content).hexdigest(),
                 "capturedAt": "2026-08-21T12:00:00Z",
                 "reviewer": "ua-reviewer",

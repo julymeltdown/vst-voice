@@ -21,7 +21,7 @@ def _record(root: Path) -> dict:
         path.write_text(family, encoding="utf-8")
         fixtures.append({
             "family": family,
-            "archivePath": str(path.relative_to(root)),
+            "archivePath": path.relative_to(root).as_posix(),
             "beforeSha256": _digest(f"before-{family}"),
             "afterSha256": _digest(f"after-{family}"),
             "archiveSha256": _digest(f"archive-{family}"),

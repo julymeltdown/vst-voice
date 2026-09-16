@@ -22,7 +22,7 @@ def _record(root: Path, target_id: str = "HOST-001") -> dict:
         path.parent.mkdir(parents=True, exist_ok=True)
         content = f"{name}-evidence".encode("utf-8")
         path.write_bytes(content)
-        evidence.append({"kind": name, "path": str(path.relative_to(root)), "sha256": hashlib.sha256(content).hexdigest(), "capturedAt": "2026-08-22T12:00:00Z", "reviewer": "A4"})
+        evidence.append({"kind": name, "path": path.relative_to(root).as_posix(), "sha256": hashlib.sha256(content).hexdigest(), "capturedAt": "2026-08-22T12:00:00Z", "reviewer": "A4"})
     artifact = root / "installed" / "ProjectSEAMEditor.clap"
     artifact.parent.mkdir()
     artifact.write_bytes(b"installed-plugin-bytes")

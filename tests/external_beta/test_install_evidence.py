@@ -30,7 +30,7 @@ def _record(root: Path, platform: str = "macos") -> dict:
             "postInventorySha256": "2" * 64,
             "evidence": [{
                 "kind": "installer-log",
-                "path": str(path.relative_to(root)),
+                "path": path.relative_to(root).as_posix(),
                 "sha256": digest,
                 "capturedAt": "2026-08-22T12:00:00Z",
                 "reviewer": "A6",

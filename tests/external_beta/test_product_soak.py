@@ -36,7 +36,7 @@ def _record(root: Path, duration: int = 1800, platform: str = "macos") -> dict:
         path.parent.mkdir(parents=True, exist_ok=True)
         content = json.dumps({"kind": name}, sort_keys=True).encode()
         path.write_bytes(content)
-        evidence.append({"kind": name, "path": str(path.relative_to(root)), "sha256": hashlib.sha256(content).hexdigest(), "capturedAt": "2026-08-21T12:00:00Z", "reviewer": "soak-reviewer"})
+        evidence.append({"kind": name, "path": path.relative_to(root).as_posix(), "sha256": hashlib.sha256(content).hexdigest(), "capturedAt": "2026-08-21T12:00:00Z", "reviewer": "soak-reviewer"})
     samples = [_sample(0), _sample(duration)]
     summary = {
         "rssGrowthBytes": 0,
