@@ -72,7 +72,7 @@ bool HostWindow::create(std::uint32_t width, std::uint32_t height) {
   windowClass.style = CS_OWNDC;
   windowClass.lpfnWndProc = &windowProcedure;
   windowClass.hInstance = state.instance;
-  windowClass.hCursor = LoadCursorW(nullptr, IDC_ARROW);
+  windowClass.hCursor = LoadCursorW(nullptr, MAKEINTRESOURCEW(32512U));
   windowClass.hbrBackground = static_cast<HBRUSH>(GetStockObject(BLACK_BRUSH));
   windowClass.lpszClassName = kClassName;
   state.classAtom = RegisterClassExW(&windowClass);

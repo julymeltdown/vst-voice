@@ -77,6 +77,22 @@ class WindowsSourceContractTests(unittest.TestCase):
         self.assertIn(".actions = {},", bridge[page_start:page_end])
         self.assertIn("UIA_E_ELEMENTNOTAVAILABLE", bridge)
 
+    def test_wide_window_classes_use_a_wide_cursor_resource(self) -> None:
+        sources = (
+            "apps/seam-clap-editor-host/platform_host_win32.cpp",
+            "libs/seam-clap-editor/src/embedded_view_win32.cpp",
+            "libs/seam-native-ui/src/native_window_win32.cpp",
+            "libs/seam-standalone/src/native_project_dialog_win32.cpp",
+        )
+        for relative in sources:
+            with self.subTest(source=relative):
+                source = (ROOT / relative).read_text()
+                self.assertIn(
+                    "LoadCursorW(nullptr, MAKEINTRESOURCEW(32512U))",
+                    source,
+                )
+                self.assertNotIn("LoadCursorW(nullptr, IDC_ARROW)", source)
+
     def test_ui_automation_runtime_ids_follow_stable_semantic_ids(self) -> None:
         bridge = (ROOT / "libs/seam-native-ui/src/accessibility_win32.cpp").read_text()
         self.assertIn("semanticRuntimeId", bridge)

@@ -181,7 +181,7 @@ public:
     windowClass.cbSize = sizeof(windowClass);
     windowClass.lpfnWndProc = &Win32NativeNewProjectDialog::windowProcedure;
     windowClass.hInstance = GetModuleHandleW(nullptr);
-    windowClass.hCursor = LoadCursorW(nullptr, IDC_ARROW);
+    windowClass.hCursor = LoadCursorW(nullptr, MAKEINTRESOURCEW(32512U));
     windowClass.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
     windowClass.lpszClassName = kDialogClassName;
     const auto registered = RegisterClassExW(&windowClass);

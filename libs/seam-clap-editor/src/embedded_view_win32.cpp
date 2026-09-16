@@ -154,7 +154,7 @@ public:
     windowClass.style = CS_OWNDC | CS_DBLCLKS;
     windowClass.lpfnWndProc = &Win32EmbeddedView::windowProcedure;
     windowClass.hInstance = instance_;
-    windowClass.hCursor = LoadCursorW(nullptr, IDC_ARROW);
+    windowClass.hCursor = LoadCursorW(nullptr, MAKEINTRESOURCEW(32512U));
     windowClass.lpszClassName = kClassName;
     classAtom_ = RegisterClassExW(&windowClass);
     if (classAtom_ == 0U && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) {
