@@ -3,7 +3,10 @@ function(seam_apply_compiler_options target)
     message(FATAL_ERROR "Address/Undefined sanitizers cannot be combined with ThreadSanitizer")
   endif()
   if(MSVC)
-    target_compile_options(${target} PRIVATE /W4 /permissive- /utf-8 /Zc:__cplusplus)
+    # C4324 reports the padding required by explicit cache-line alignas members.
+    # The padding is the design of the lock-free queues, not accidental layout
+    # waste, so retain the alignment while keeping every other /W4 diagnostic.
+    target_compile_options(${target} PRIVATE /W4 /wd4324 /permissive- /utf-8 /Zc:__cplusplus)
     # Test fixtures intentionally inspect and mutate process environment state.
     # Production code uses seam::core::environmentVariable's owned _dupenv_s
     # snapshot; keep MSVC's legacy getenv deprecation local to test binaries.

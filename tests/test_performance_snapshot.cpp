@@ -430,7 +430,7 @@ TEST_CASE("procedural vowel sequences transition poses across owned checkpoint b
   CHECK(gapAudio.value().proceduralMarkers.empty());
   CHECK(pcm[4800] == 0.0F); CHECK(pcm[9599] == 0.0F);
   CHECK(pcm[14400] == 0.0F); CHECK(pcm[21599] == 0.0F);
-  for (const auto [start, end] : {std::pair{0U, 4800U}, std::pair{9600U, 14400U}, std::pair{21600U, 24000U}})
+  for (const auto& [start, end] : {std::pair{0U, 4800U}, std::pair{9600U, 14400U}, std::pair{21600U, 24000U}})
     CHECK(std::all_of(pcm.begin() + start, pcm.begin() + end, [](float value) { return value == 0.0F; }));
   CHECK(std::any_of(pcm.begin() + 4800, pcm.begin() + 9600, [](float value) { return value != 0.0F; }));
   CHECK(std::any_of(pcm.begin() + 14400, pcm.begin() + 21600, [](float value) { return value != 0.0F; }));

@@ -221,7 +221,8 @@ core::Result<std::vector<float>> StreamingPcmSource::readChunk(
         core::ErrorCode::Unsupported, "Streaming PCM chunk is too large");
   }
   const auto bytesToRead = frames * blockAlign_;
-  if (bytesToRead > std::numeric_limits<std::streamsize>::max() ||
+  if (bytesToRead > static_cast<std::uint64_t>(
+                        std::numeric_limits<std::streamsize>::max()) ||
       firstFrame * blockAlign_ > dataBytes_ - bytesToRead) {
     return core::failure<std::vector<float>>(
         core::ErrorCode::InvariantViolation, "Streaming PCM chunk exceeds data bounds");

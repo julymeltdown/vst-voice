@@ -495,7 +495,7 @@ TEST_CASE("note cleanup previews exact duration changes and uses canonical undoa
     const auto regionId = factory.addRegion(project, track, "Phrase", time::Tick{0}, time::Tick{9600});
     project.settings().snapGrid = time::Tick{240};
     std::vector<domain::NoteId> ids;
-    for (const auto [start, duration] : std::vector<std::pair<int, int>>{{0,720},{480,240},{1200,240},{1550,100},{1920,240}}) {
+    for (const auto& [start, duration] : std::vector<std::pair<int, int>>{{0,720},{480,240},{1200,240},{1550,100},{1920,240}}) {
       auto [lyric, note] = factory.makeNote(time::Tick{start}, time::Tick{duration}, 60U, U"la", domain::Language::English);
       note.vibrato.enabled = true; ids.push_back(note.id);
       project.findRegion(regionId)->lyrics.push_back(lyric); project.findRegion(regionId)->notes.push_back(note);

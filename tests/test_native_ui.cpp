@@ -1594,7 +1594,7 @@ TEST_CASE("editor status bar paints within the supported minimum width") {
 
 TEST_CASE("microscope close bounds stay inside the modal panel") {
   const seam::native_ui::EditorSceneLayout layout;
-  for (const auto [width, height] : {
+  for (const auto& [width, height] : {
            std::pair{320.0, 320.0}, std::pair{480.0, 320.0},
            std::pair{800.0, 480.0}, std::pair{1280.0, 720.0}}) {
     const auto panel = layout.microscopePanelBounds(width, height);

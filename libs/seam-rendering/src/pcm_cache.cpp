@@ -63,8 +63,8 @@ bool validRendererIdentity(std::string_view value) noexcept {
     return false;
   }
   return std::all_of(value.begin(), value.end(), [](char byte) {
-    const auto value = static_cast<unsigned char>(byte);
-    return value >= 0x21U && value <= 0x7eU;
+    const auto unsignedByte = static_cast<unsigned char>(byte);
+    return unsignedByte >= 0x21U && unsignedByte <= 0x7eU;
   });
 }
 
