@@ -9,6 +9,7 @@
 // inference session. This executable never serves the v1 transport fixture
 // contract, so a probe cannot satisfy the production launch by accident.
 #include "seam/core/sha256.hpp"
+#include "seam/core/standard_stream_mode.hpp"
 #include "seam/neural_synthesis/bundle_metadata.hpp"
 #include "seam/neural_synthesis/diffsinger_inputs.hpp"
 #include "seam/neural_synthesis/worker_protocol.hpp"
@@ -242,6 +243,7 @@ seam::core::Result<std::vector<float>> executePadded(const FrozenNeuralBundle& b
 }
 
 int main(int argc,char** argv) {
+  if (!seam::core::useBinaryStandardStreams()) return fail(2,"Cannot configure binary standard streams");
   using namespace seam::neural_synthesis;
   if (argc!=7 || std::string_view{argv[1]}!="--seam-neural-worker-v2")
     return fail(2,"Usage: seam-neural-worker --seam-neural-worker-v2 BUNDLE_DIR MODEL_ID MODEL_VERSION "

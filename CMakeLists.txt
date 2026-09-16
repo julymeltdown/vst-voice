@@ -697,11 +697,19 @@ add_executable(seam_realtime_allocation_probe
 target_link_libraries(seam_realtime_allocation_probe PRIVATE
   seam_playback_platform seam_platform seam_core)
 seam_apply_compiler_options(seam_realtime_allocation_probe)
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+  # These probes intentionally replace global new/delete with a malloc/free
+  # counter. GCC's interprocedural mismatch heuristic cannot model that pair.
+  target_compile_options(seam_realtime_allocation_probe PRIVATE -Wno-mismatched-new-delete)
+endif()
 if(SEAM_BUILD_NATIVE_DESKTOP)
   add_executable(seam_candidate_audition_probe tools/realtime-allocation-probe/main.cpp)
   target_compile_definitions(seam_candidate_audition_probe PRIVATE SEAM_CANDIDATE_AUDITION_PROBE=1)
   target_link_libraries(seam_candidate_audition_probe PRIVATE seam_native_ui seam_playback_platform seam_platform seam_core)
   seam_apply_compiler_options(seam_candidate_audition_probe)
+  if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    target_compile_options(seam_candidate_audition_probe PRIVATE -Wno-mismatched-new-delete)
+  endif()
 endif()
 
 add_executable(seam_phase1_demo apps/seam-phase1-demo/main.cpp)
@@ -1405,6 +1413,8 @@ if(SEAM_BUILD_TESTS)
   seam_apply_compiler_options(seam_neural_bundle_transport_probe)
   add_executable(seam_reading_process_probe tests/helpers/reading_process_probe.cpp)
   add_executable(seam_reading_capture_process_probe tests/helpers/reading_capture_process_probe.cpp)
+  target_include_directories(seam_reading_process_probe PRIVATE libs/seam-core/include)
+  target_include_directories(seam_reading_capture_process_probe PRIVATE libs/seam-core/include)
   seam_apply_compiler_options(seam_reading_capture_process_probe)
   target_compile_definitions(seam_japanese_pronunciation_tests PRIVATE SEAM_READING_CAPTURE_PROCESS_PROBE="$<TARGET_FILE:seam_reading_capture_process_probe>")
   add_dependencies(seam_japanese_pronunciation_tests seam_reading_capture_process_probe)

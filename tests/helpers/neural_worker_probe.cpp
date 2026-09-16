@@ -1,5 +1,6 @@
 #include "seam/neural_synthesis/worker_protocol.hpp"
 #include "seam/core/sha256.hpp"
+#include "seam/core/standard_stream_mode.hpp"
 #include "seam/neural_synthesis/neural_phrase_backend.hpp"
 #include "seam/neural_synthesis/deployment_descriptor.hpp"
 #include "seam/formats/json_value.hpp"
@@ -10,6 +11,7 @@
 #include <thread>
 
 int main(int argc, char** argv) {
+  if (!seam::core::useBinaryStandardStreams()) return 2;
   if (argc==6 && std::string_view{argv[1]}=="--seam-neural-deployment-load-probe") {
     // Generated ephemeral key is test-only, never a release credential.
     const std::string_view version{argv[5]};

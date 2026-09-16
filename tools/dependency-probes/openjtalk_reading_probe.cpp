@@ -1,6 +1,11 @@
 // Development-only dependency probe. Not linked into SEAM or a shipping helper.
 // Build against the exact checkout recorded in JAPANESE_READING_INTAKE_2026-09-08.md.
 #include "mecab.h"
+#if defined(_WIN32)
+#include <cstdio>
+#include <fcntl.h>
+#include <io.h>
+#endif
 #include <cstring>
 #include <iostream>
 #include <string_view>
@@ -49,6 +54,11 @@ std::optional<std::vector<std::string>> fields(std::string_view feature) {
 }
 
 int main(int argc, char** argv) {
+#if defined(_WIN32)
+  if (::_setmode(::_fileno(stdin), _O_BINARY) == -1 ||
+      ::_setmode(::_fileno(stdout), _O_BINARY) == -1 ||
+      ::_setmode(::_fileno(stderr), _O_BINARY) == -1) return 2;
+#endif
   if (argc >= 2 && std::string_view{argv[1]} == "--compile-dictionary")
     return mecab_dict_index(argc - 1, argv + 1);
   const bool useStdin = argc == 3 && std::string_view{argv[1]} == "--read-stdin";

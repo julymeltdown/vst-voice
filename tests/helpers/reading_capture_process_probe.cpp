@@ -1,8 +1,10 @@
+#include "seam/core/standard_stream_mode.hpp"
 #include <iostream>
 #include <string>
 #include <string_view>
 
 int main(int argc, char** argv) {
+  if (!seam::core::useBinaryStandardStreams()) return 2;
   if (argc != 3 || std::string_view{argv[1]} != "--read-stdin") return 2;
   std::string source((std::istreambuf_iterator<char>(std::cin)), std::istreambuf_iterator<char>());
   if (source.empty() || source.size() > 4096U) return 2;

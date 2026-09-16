@@ -2,6 +2,7 @@
 #include "seam/neural_synthesis/bundle_metadata.hpp"
 #include "seam/core/sha256.hpp"
 #include "seam/core/file_io.hpp"
+#include "seam/core/standard_stream_mode.hpp"
 #include <charconv>
 #include <iostream>
 #include <thread>
@@ -10,6 +11,7 @@
 #endif
 
 int main(int argc,char** argv) {
+  if (!seam::core::useBinaryStandardStreams()) return 2;
   using namespace seam::neural_synthesis;
   if (argc!=7 || std::string_view{argv[1]}!="--seam-neural-worker-v2") return 2;
   std::size_t budget{};

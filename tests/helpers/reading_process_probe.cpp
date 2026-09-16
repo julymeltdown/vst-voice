@@ -1,3 +1,4 @@
+#include "seam/core/standard_stream_mode.hpp"
 #include <array>
 #include <chrono>
 #include <cstdint>
@@ -28,6 +29,7 @@ bool hasSecretEnvironment() {
 }
 }
 int main(int argc, char** argv) {
+  if (!seam::core::useBinaryStandardStreams()) return 2;
   if (argc < 2) return 2;
   const std::string_view mode{argv[1]};
   if (mode == "argument") {
