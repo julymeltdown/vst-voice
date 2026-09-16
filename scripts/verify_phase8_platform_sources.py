@@ -20,6 +20,12 @@ REQUIRED: dict[str, tuple[str, ...]] = {
         'L"EDIT"',
         "SEAM_NATIVE_WIN32",
     ),
+    "libs/seam-native-ui/src/accessibility_win32.cpp": (
+        "#include <ole2.h>",
+        "#include <UIAutomation.h>",
+        "IRawElementProviderFragmentRoot",
+        "UiaReturnRawElementProvider",
+    ),
     "libs/seam-platform/src/wasapi_audio_device.cpp": (
         "IAudioClient",
         "IAudioRenderClient",
