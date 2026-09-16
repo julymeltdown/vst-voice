@@ -24,6 +24,7 @@
 #include <array>
 #include <charconv>
 #include <cmath>
+#include <cstdio>
 #include <iostream>
 #include <span>
 #include <string>
@@ -56,15 +57,17 @@ int fail(int code,std::string_view message) {
 seam::core::Result<std::string> readRequestFrame() {
   std::string frame;
   std::array<char,65536> block{};
-  while (std::cin) {
-    std::cin.read(block.data(),static_cast<std::streamsize>(block.size()));
-    const auto count=static_cast<std::size_t>(std::cin.gcount());
+  for (;;) {
+    const auto count=std::fread(block.data(),1U,block.size(),stdin);
     if (count>kMaximumFrameBytes-frame.size())
       return seam::core::failure<std::string>(ErrorCode::InvalidArgument,"Neural request frame exceeds the byte limit");
     frame.append(block.data(),count);
+    if (count!=block.size()) {
+      if (std::ferror(stdin))
+        return seam::core::failure<std::string>(ErrorCode::IoError,"Neural request frame read failed");
+      if (std::feof(stdin)) break;
+    }
   }
-  if (!std::cin.eof())
-    return seam::core::failure<std::string>(ErrorCode::IoError,"Neural request frame read failed");
   return seam::core::success(std::move(frame));
 }
 
@@ -279,8 +282,6 @@ int main(int argc,char** argv) {
   if (!response) return fail(8,response.error().message);
   const auto encoded=encodeResponse(response.value());
   if (!encoded) return fail(9,encoded.error().message);
-  std::cout.write(reinterpret_cast<const char*>(encoded.value().data()),
-      static_cast<std::streamsize>(encoded.value().size()));
-  std::cout.flush();
-  return std::cout?0:10;
+  const auto written=std::fwrite(encoded.value().data(),1U,encoded.value().size(),stdout);
+  return written==encoded.value().size() && std::fflush(stdout)==0?0:10;
 }

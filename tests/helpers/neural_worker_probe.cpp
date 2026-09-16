@@ -6,6 +6,7 @@
 #include "seam/formats/json_value.hpp"
 
 #include <array>
+#include <cstdio>
 #include <iostream>
 #include <vector>
 #include <thread>
@@ -80,13 +81,15 @@ int main(int argc, char** argv) {
   std::string input;
   std::array<char, 65536U> block{};
   const auto maximum = seam::neural_synthesis::WorkerProtocolLimits{}.maximumFrameBytes;
-  while (std::cin) {
-    std::cin.read(block.data(), static_cast<std::streamsize>(block.size()));
-    const auto count = static_cast<std::size_t>(std::cin.gcount());
+  for (;;) {
+    const auto count = std::fread(block.data(), 1U, block.size(), stdin);
     if (count > maximum - input.size()) return 6;
     input.append(block.data(), count);
+    if (count != block.size()) {
+      if (std::ferror(stdin)) return 7;
+      if (std::feof(stdin)) break;
+    }
   }
-  if (!std::cin.eof()) return 7;
   const auto request = seam::neural_synthesis::decodeRequest(
       std::span<const std::byte>{reinterpret_cast<const std::byte*>(input.data()), input.size()});
   if (!request) return 3;
@@ -113,8 +116,7 @@ int main(int argc, char** argv) {
   }
   const auto encoded = seam::neural_synthesis::encodeResponse(response);
   if (!encoded) return 4;
-  std::cout.write(reinterpret_cast<const char*>(encoded.value().data()),
-                  static_cast<std::streamsize>(encoded.value().size()));
-  std::cerr << "neural worker probe\n";
-  return std::cout ? 0 : 5;
+  const auto written = std::fwrite(encoded.value().data(), 1U, encoded.value().size(), stdout);
+  std::fputs("neural worker probe\n", stderr);
+  return written == encoded.value().size() && std::fflush(stdout) == 0 && std::fflush(stderr) == 0 ? 0 : 5;
 }
