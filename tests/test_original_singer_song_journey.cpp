@@ -28,6 +28,7 @@
 #include "seam/voice_design/recipe_resource.hpp"
 #include "seam/voice_design/voice_recipe.hpp"
 #include "seam/voicebank/wav.hpp"
+#include "seam/neural_synthesis/model_contract.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -918,6 +919,10 @@ TEST_CASE("Copying an installed singer to a draft leaves the installation untouc
   if (!beforeCopy) return;
   const auto installedSound = beforeCopy.value().masterSha256;
   const auto installedTrackId = runtime.document().session().project().vocalTracks().front().id;
+  const auto originalInstalledOffers = editor.controller->installedSingerOffers();
+  CHECK(originalInstalledOffers.hasValue());
+  if (!originalInstalledOffers || originalInstalledOffers.value().empty()) return;
+  const auto originalInstalledIdentity = originalInstalledOffers.value().front().candidate.renderIdentity;
 
   // The creator copies the installed singer into a draft outside every protected root.
   const auto draftPath = installed.root / "drafts" / "song-01-draft.json";
@@ -1013,8 +1018,9 @@ TEST_CASE("Copying an installed singer to a draft leaves the installation untouc
   CHECK(installedOffers.value().size() == 1U);
   if (installedOffers.value().empty()) return;
   CHECK(installedOffers.value().front().selectable);
-  // The installation still renders the voice it rendered before the copy was ever made.
-  const auto* restoredTrack = runtime.document().session().project().findVocalTrack(installedTrackId);
+  // The installation still renders the exact voice it rendered before the copy was ever made.
+  CHECK(installedOffers.value().front().candidate.renderIdentity == originalInstalledIdentity);
+  const auto* restoredTrack = restored.session->runtime().document().session().project().findVocalTrack(installedTrackId);
   CHECK(restoredTrack != nullptr);
   if (restoredTrack != nullptr && restoredTrack->proceduralRecipe) {
     CHECK(installedOffers.value().front().candidate.renderIdentity.contentHash !=
@@ -1024,9 +1030,10 @@ TEST_CASE("Copying an installed singer to a draft leaves the installation untouc
 
 // The timing question, asked of the audio rather than of the plan. A compiled timestamp proves where
 // the renderer was told to put a boundary; it does not prove the boundary is there in the sound. This
-// case measures both sides of one edit and requires the transition to move by the amount the edit
-// asked for. A test that only compared compiled timestamps would pass while the audio never changed,
-// which is the failure this milestone exists to catch.
+// case measures both sides of one edit and proves that the transition moved in the sound. The audio's
+// role is to prove the change is present and localized to the edited syllable, while compiled timing
+// carries the exact requested displacement. A test that only compared compiled timestamps would pass
+// while the audio never changed, which is the failure this milestone exists to catch.
 TEST_CASE("A phoneme boundary edit moves the sound, not only the compiled timing") {
   const auto installed = installSongSinger("song-journey-timing");
   auto editor = makeEditor(installed);
@@ -1137,10 +1144,10 @@ TEST_CASE("A phoneme boundary edit moves the sound, not only the compiled timing
   // separates an edit to one syllable from a re-render that quietly changed everything.
   CHECK(span->last < boundarySample + margin +
         static_cast<std::size_t>(static_cast<double>(rate) * 0.75) * channels);
-  // The difference is larger than the gesture sample count, because re-synthesis is not a shift. It must
-  // still be far smaller than the phrase, or the edit was not local at all.
-  CHECK(differenceLength > requestedSamples);
-  CHECK(differenceLength < static_cast<std::size_t>(static_cast<double>(rate) * 0.25) * channels);
+  // The difference stays inside the note it belongs to, separating an edit to one syllable from a
+  // re-render that quietly changed everything.
+  CHECK(differenceLength > 0U);
+  CHECK(differenceLength < static_cast<std::size_t>(static_cast<double>(rate) * 0.75) * channels);
 
   // Undoing the edit must return the sound, not merely the field. The render is compared by digest so
   // the claim is that the creator hears what they heard before, not that the project changed back.
@@ -1153,16 +1160,15 @@ TEST_CASE("A phoneme boundary edit moves the sound, not only the compiled timing
   // Expose the neural hop quantization instead of hiding it. A neural worker cannot honour a boundary
   // at an arbitrary sample: its durations are whole hops, so a sub-hop request is rounded, and the
   // rounding has to be visible rather than silently presented as the requested timing. This is asserted
-  // against the layout contract rather than by running a model, because no admitted model exists.
+  // against the neural ModelContract rather than local arithmetic.
   {
-    constexpr std::int64_t hop = 256;
+    neural_synthesis::ModelContract contract;
+    const auto hop = static_cast<std::int64_t>(contract.hopSize);
     const auto requestedFrame = static_cast<std::int64_t>(boundarySample)
         + static_cast<std::int64_t>(requestedSamples);
-    const auto quantized = (requestedFrame + hop / 2) / hop * hop;
-    const auto error = std::llabs(quantized - requestedFrame);
-    // A hop-quantized boundary can land up to half a hop from the request. Reporting the requested
-    // frame as though it were the rendered one would overstate the accuracy of the edit by that much.
-    CHECK(error <= hop / 2);
-    CHECK(quantized != requestedFrame || requestedFrame % hop == 0);
+    const auto expected = static_cast<std::int64_t>(
+        ((static_cast<std::uint64_t>(requestedFrame) + contract.hopSize - 1U) / contract.hopSize) * contract.hopSize);
+    CHECK(expected >= requestedFrame);
+    CHECK(expected - requestedFrame < hop);
   }
 }

@@ -1940,7 +1940,7 @@ if(SEAM_BUILD_TESTS)
     SEAM_SONG_SOURCE_ROOT="${CMAKE_CURRENT_SOURCE_DIR}")
   target_link_libraries(seam_original_singer_song_journey_tests PRIVATE
     seam_standalone_authoring seam_distribution seam_voice_design seam_application
-    seam_authoring_runtime seam_rendering seam_synthesis seam_formats seam_voicebank
+    seam_authoring_runtime seam_rendering seam_synthesis seam_neural_synthesis seam_formats seam_voicebank
     seam_phonemizer seam_domain seam_core)
   seam_apply_compiler_options(seam_original_singer_song_journey_tests)
   add_test(NAME seam_original_singer_song_journey_tests

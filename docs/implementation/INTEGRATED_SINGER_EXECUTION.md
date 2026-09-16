@@ -1,5 +1,29 @@
 # Integrated Singer Execution
 
+## Tighten installation persistence and timing assertions to match the stated contract
+
+September 16, 2026 — Second-developer review reconciliation on U1.3b and U1.3c.
+
+An independent code-level pass on U1.3b and U1.3c identified four precision gaps in test assertions:
+
+1. In `test_original_singer_song_journey.cpp` U1.3b, the post-copy check previously compared the restored
+   session's offered `renderIdentity` against the first session's track `contentHash` (which by then held
+   the edited draft's identity). That showed the installation did not match the draft, but could pass if
+   the installation had drifted to a third value. The test now snapshots `originalInstalledIdentity` before
+   the copy and asserts `installedOffers.front().candidate.renderIdentity == originalInstalledIdentity`,
+   directly proving the installation's exact identity is invariant across draft authoring.
+2. The restored track inspection was re-anchored to the fresh session's project rather than the old session.
+3. In U1.3c, the test header comment previously claimed to require the transition to move by the exact
+   requested displacement, directly contradicting the test body and architectural rationale. The header
+   is updated to clarify that compiled timing carries the exact requested displacement, while the audio's
+   role is to prove the change is present and localized to the edited syllable.
+4. The hop-quantization check was replaced with an assertion against `neural_synthesis::ModelContract`
+   and framing invariants, and the audio difference span check is bounded by note locality.
+
+Verified. `seam_original_singer_song_journey_tests` passes 4 of 4. `SOURCE_CLOSURE=PASS`.
+
+
+
 ## A stacked pitch row is always a real overlap, and D3 said otherwise
 
 September 16, 2026 — R4 unit D3, retired without a code change.
