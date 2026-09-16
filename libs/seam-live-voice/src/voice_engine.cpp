@@ -163,7 +163,8 @@ void VoiceEngine::renderLiveRange(float* const* outputs,
                                   std::uint32_t endFrame) noexcept {
   if (outputs == nullptr || channels == 0U || endFrame <= beginFrame) return;
   std::array<float*, phase12c::kMaxVoices / 4U> sliced{};
-  const auto boundedChannels = std::min<std::uint32_t>(channels, sliced.size());
+  const auto boundedChannels = std::min(
+      channels, static_cast<std::uint32_t>(sliced.size()));
   for (std::uint32_t channel = 0U; channel < boundedChannels; ++channel) {
     sliced[channel] = outputs[channel] + beginFrame;
   }

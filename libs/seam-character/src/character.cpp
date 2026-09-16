@@ -252,7 +252,9 @@ core::Result<Package> loadPackage(const std::filesystem::path& packageRoot,
                                     candidate.string());
     }
     const auto relative = canonicalAsset.lexically_relative(canonicalRoot);
-    if (relative.empty() || relative.native().starts_with("..")) {
+    if (relative.empty() ||
+        (relative.begin() != relative.end() &&
+         *relative.begin() == std::filesystem::path{".."})) {
       return core::failure<Package>(core::ErrorCode::InvariantViolation,
                                     "Character state asset escapes package root",
                                     candidate.string());
@@ -270,7 +272,9 @@ core::Result<Package> loadPackage(const std::filesystem::path& packageRoot,
                                     candidate.string());
     }
     const auto relative = canonicalAsset.lexically_relative(canonicalRoot);
-    if (relative.empty() || relative.native().starts_with("..")) {
+    if (relative.empty() ||
+        (relative.begin() != relative.end() &&
+         *relative.begin() == std::filesystem::path{".."})) {
       return core::failure<Package>(core::ErrorCode::InvariantViolation,
                                     "Character performance asset escapes package root",
                                     candidate.string());
