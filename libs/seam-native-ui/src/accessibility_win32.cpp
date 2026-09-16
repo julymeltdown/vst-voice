@@ -505,26 +505,30 @@ struct BridgeState final {
   [[nodiscard]] UiaRect screenRectangle(
       const std::shared_ptr<const Snapshot>& value,
       const ui::Rect& bounds) const noexcept {
-    const auto client = geometry(value);
+    const auto clientGeometry = geometry(value);
     return UiaRect{
-        .left = static_cast<double>(client.origin.x) +
-                (bounds.x - client.logicalBounds.x) * client.scaleX,
-        .top = static_cast<double>(client.origin.y) +
-               (bounds.y - client.logicalBounds.y) * client.scaleY,
-        .width = std::max(0.0, bounds.width * client.scaleX),
-        .height = std::max(0.0, bounds.height * client.scaleY),
+        .left = static_cast<double>(clientGeometry.origin.x) +
+                (bounds.x - clientGeometry.logicalBounds.x) *
+                    clientGeometry.scaleX,
+        .top = static_cast<double>(clientGeometry.origin.y) +
+               (bounds.y - clientGeometry.logicalBounds.y) *
+                   clientGeometry.scaleY,
+        .width = std::max(0.0, bounds.width * clientGeometry.scaleX),
+        .height = std::max(0.0, bounds.height * clientGeometry.scaleY),
     };
   }
 
   [[nodiscard]] ui::Point logicalPoint(
       const std::shared_ptr<const Snapshot>& value, double x,
       double y) const noexcept {
-    const auto client = geometry(value);
+    const auto clientGeometry = geometry(value);
     return ui::Point{
-        .x = client.logicalBounds.x +
-             (x - static_cast<double>(client.origin.x)) / client.scaleX,
-        .y = client.logicalBounds.y +
-             (y - static_cast<double>(client.origin.y)) / client.scaleY,
+        .x = clientGeometry.logicalBounds.x +
+             (x - static_cast<double>(clientGeometry.origin.x)) /
+                 clientGeometry.scaleX,
+        .y = clientGeometry.logicalBounds.y +
+             (y - static_cast<double>(clientGeometry.origin.y)) /
+                 clientGeometry.scaleY,
     };
   }
 
