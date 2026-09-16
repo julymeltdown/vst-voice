@@ -1,5 +1,40 @@
 # Integrated Singer Execution
 
+## A refused channel is visible in the inspector, not only in the lane it was drawn on
+
+September 16, 2026 — R4 unit U1.5, the last executable unit in M1.
+
+The automation lane already stated a channel's applicability, but only once the band was open. A
+creator working in the track inspector had no way to see that the selected singer refuses a channel
+until they drew a curve and watched it fail to render. `TrackInspectorModel::snapshot` returned track
+metadata only, so there was no row to look at.
+
+`TrackInspectorSnapshot` now carries up to three expression rows. Each names the channel, its unit, its
+stored point count and its value at the playhead the caller supplies, and carries the refusal in the
+**same words** `validateExpressionCarrier` gives the lane — the row and the band answer from one
+resolver, so the two surfaces cannot tell a creator different things about the same singer. The row is
+shown when the track has a stored curve or when the singer refuses the channel, which is the pair a
+creator needs to see: a channel they are working with, and a channel that will silently drop their
+work. A supported and untasted channel is not listed, because the panel's height is fixed and three
+rows is its budget.
+
+The playhead is an optional parameter rather than a new required one. Two existing callers read only
+track metadata and are unchanged, and the controller passes the playhead it already owns, so the row
+reports the curve's value where the creator is working rather than the channel's neutral. The value is
+read against the region the playhead is inside, exactly as the lane reads it, rather than averaged
+across regions the creator is not looking at.
+
+Verified. `seam_tests` passes 914 of 914 including the new inspector case, which asserts the refusal
+matches the lane's message character for character, that a stored curve earns a row on a singer that
+cannot render it, that the row carries the channel's own unit rather than a generic range, and that the
+reported value follows the playhead. The full registered run passes 172 of 172; `SOURCE_CLOSURE=PASS`.
+
+Not claimed. This is presentation of an existing decision, not a new capability: the set of channels a
+singer supports is unchanged. No creator has read these rows unaided, so the workflow observation
+remains NOT_OBSERVED, and the row count and wording are engineering choices that a creator session may
+well revise.
+
+
 ## A timing edit is measured in the audio, and the measurement states what it cannot prove
 
 September 16, 2026 — R4 unit U1.3c, the unit a review flagged as the easiest place to assert a

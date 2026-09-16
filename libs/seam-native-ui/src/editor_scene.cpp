@@ -19,6 +19,20 @@
 namespace seam::native_ui {
 namespace {
 
+// A channel value in the inspector is shown with its own precision: a semitone channel carries a signed
+// value and a normalized share does not, and printing both the same way would present a share of 0.35 as
+// "0" or a shift of 4 as "4.000000". Two decimals carry a share and one carries a semitone shift,
+// which is finer than the step either channel moves by.
+std::string formatInspectorValue(float value) {
+  const auto magnitude = std::abs(static_cast<double>(value));
+  const auto decimals = magnitude >= 2.0 ? 1 : 2;
+  std::ostringstream stream;
+  stream.setf(std::ios::fixed);
+  stream.precision(decimals);
+  stream << value;
+  return stream.str();
+}
+
 std::string formatRevision(std::uint64_t revision) {
   return "REV " + std::to_string(revision);
 }
@@ -1314,6 +1328,32 @@ void EditorScenePainter::paintArrangement(
       const ui::Rect style{dynamics.x + dynamics.width + 4.0, dynamics.y, dynamics.width, dynamics.height};
       canvas.strokeRect(style, theme_.gridStrong, 1.0);
       canvas.drawText(style, "STYLE", state.styleEditable ? theme_.accent : theme_.secondaryText, layout_.inspectorFontSize);
+      // One row per timbral channel the track carries or its singer refuses. The words come from the
+      // same descriptor and the same carrier validation the automation lane uses, so the panel cannot
+      // tell a creator the channel is supported while the lane refuses it, or the reverse.
+      auto rowTop = edit.y + edit.height + 4.0;
+      for (const auto& row : state.inspector.expressionRows) {
+        const auto rowWidth = width - layout_.inspectorTextWidthInset;
+        const auto supported = row.refusal.empty();
+        const auto text = supported
+            ? row.label + " " + formatInspectorValue(row.valueAtPlayhead) + " " + row.unit
+            : row.label + " UNAVAILABLE";
+        canvas.drawText(ui::Point{inspectorX, rowTop}, fitUtf8Text(text, rowWidth,
+                            layout_.panelTextCharacterWidth),
+                        supported ? theme_.primaryText : theme_.secondaryText,
+                        layout_.inspectorFontSize);
+        // The refusal is printed under its channel rather than instead of it, so the creator sees which
+        // channel cannot be applied and why, not merely that something is unavailable.
+        if (!supported) {
+          canvas.drawText(ui::Point{inspectorX, rowTop + layout_.inspectorFieldAdvance},
+                          fitUtf8Text(row.refusal, rowWidth, layout_.panelTextCharacterWidth),
+                          theme_.warningText, layout_.inspectorFontSize);
+          rowTop += layout_.inspectorFieldAdvance * 2.0;
+        } else {
+          rowTop += layout_.inspectorFieldAdvance;
+        }
+        if (rowTop > contentBottom) break;
+      }
     }
   }
 }

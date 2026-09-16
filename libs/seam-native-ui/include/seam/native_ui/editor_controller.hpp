@@ -215,7 +215,7 @@ public:
   }
   [[nodiscard]] core::Result<void> selectSupportReport(std::size_t index);
   [[nodiscard]] TrackInspectorSnapshot trackInspector() const noexcept {
-    return TrackInspectorModel::snapshot(session_.project(), selectedTrackId_);
+    return TrackInspectorModel::snapshot(session_.project(), selectedTrackId_, playheadTick_);
   }
   [[nodiscard]] domain::TrackId selectedTrack() const noexcept {
     return selectedTrackId_;

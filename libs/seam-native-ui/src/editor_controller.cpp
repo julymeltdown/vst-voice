@@ -244,8 +244,10 @@ EditorSceneState NativeEditorController::sceneState() const {
   state.detail = interaction_.detail();
   state.overlapDetail = overlapDetail_;
   state.arrangementTracks = arrangementPanel_.tracks();
-  state.inspector = TrackInspectorModel::snapshot(session_.project(),
-                                                  selectedTrackId_);
+  // The playhead is passed so a channel row can report its value where the creator is working, in the
+  // same way the automation lane does, rather than only at the channel's neutral.
+  state.inspector = TrackInspectorModel::snapshot(session_.project(), selectedTrackId_,
+                                                  playheadTick_);
   state.vibratoEditable = state.inspector.vocal && session_.project().findRegion(regionId_) &&
       !session_.selection().empty() && session_.selection().noteIds().size() <= 10000U;
   const auto* dynamicsRegion = session_.project().findRegion(regionId_);

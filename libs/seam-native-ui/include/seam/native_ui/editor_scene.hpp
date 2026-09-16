@@ -82,6 +82,7 @@ struct EditorSceneTheme final {
   Color focusRing{255, 221, 101, 255};
   Color primaryText{241, 235, 242, 255};
   Color secondaryText{170, 159, 171, 255};
+  Color warningText{214, 156, 96, 255};
   Color accent{170, 77, 116, 255};
   Color accentSecondary{110, 90, 134, 255};
   Color playhead{98, 192, 190, 255};
@@ -484,7 +485,10 @@ struct EditorSceneLayout final {
   double regionTextWidthInset{34.0};
   double regionAdvance{19.0};
   double regionBottomPadding{1.0};
-  double inspectorHeight{140.0};
+  // The panel has room for the track fields, the three edit buttons, and three expression rows. Each row
+  // states a channel's unit, its value at the playhead and its applicability, which is what makes a
+  // refusal visible without opening the automation band.
+  double inspectorHeight{182.0};
   double inspectorDividerInset{8.0};
   double inspectorTextInsetX{12.0};
   double inspectorNameBaseline{20.0};
