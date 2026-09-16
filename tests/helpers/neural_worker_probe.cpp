@@ -78,6 +78,12 @@ int main(int argc, char** argv) {
     return seam::neural_synthesis::NeuralHelperPackage::decode(manifest,argv[2])?0:8;
   }
   if (argc != 2 || std::string_view{argv[1]} != "--seam-neural-worker-v1") return 2;
+  const auto phase = [](const char* value) {
+    std::fputs(value, stderr);
+    std::fputc('\n', stderr);
+    std::fflush(stderr);
+  };
+  phase("worker-phase:start");
   std::string input;
   std::array<char, 65536U> block{};
   const auto maximum = seam::neural_synthesis::WorkerProtocolLimits{}.maximumFrameBytes;
@@ -90,9 +96,11 @@ int main(int argc, char** argv) {
       if (std::feof(stdin)) break;
     }
   }
+  phase("worker-phase:input-eof");
   const auto request = seam::neural_synthesis::decodeRequest(
       std::span<const std::byte>{reinterpret_cast<const std::byte*>(input.data()), input.size()});
   if (!request) return 3;
+  phase("worker-phase:request-decoded");
   // Remain observable long enough for the parent's memory-limit regression.
   if (request.value().requestId==46U) std::this_thread::sleep_for(std::chrono::milliseconds{250});
   if (request.value().requestId==47U) {
@@ -116,7 +124,9 @@ int main(int argc, char** argv) {
   }
   const auto encoded = seam::neural_synthesis::encodeResponse(response);
   if (!encoded) return 4;
+  phase("worker-phase:response-encoded");
   const auto written = std::fwrite(encoded.value().data(), 1U, encoded.value().size(), stdout);
-  std::fputs("neural worker probe\n", stderr);
-  return written == encoded.value().size() && std::fflush(stdout) == 0 && std::fflush(stderr) == 0 ? 0 : 5;
+  const auto flushed = std::fflush(stdout);
+  phase("worker-phase:output-flushed");
+  return written == encoded.value().size() && flushed == 0 ? 0 : 5;
 }

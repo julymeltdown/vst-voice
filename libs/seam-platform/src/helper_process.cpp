@@ -555,7 +555,8 @@ core::Result<HelperProcessOutput> runBoundedHelperProcess(const HelperProcessReq
   } else if (failureMessage == nullptr && stdinState.failed.load()) {
     failureMessage = "Cannot deliver helper input";
   }
-  if (failureMessage != nullptr) return fail(failureCode, failureMessage);
+  if (failureMessage != nullptr)
+    return core::failure<Output>(failureCode, failureMessage, std::move(output.standardError));
   return output;
 #else
   return fail(core::ErrorCode::Unsupported, "Bounded helper execution is not implemented on this platform");
