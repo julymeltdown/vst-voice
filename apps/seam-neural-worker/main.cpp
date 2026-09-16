@@ -162,15 +162,24 @@ seam::core::Result<std::vector<float>> executePadded(const FrozenNeuralBundle& b
   Ort::Session acousticSession=open(acousticBytes);
   Ort::Session vocoderSession=open(vocoderBytes);
   const auto vectorSteps=metadata.stepsLayout=="vector1";
-  const std::array acousticInputs{TensorInterface{"tokens",ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64,2},
+  const bool hasBreathinessInput=acousticSession.GetInputCount()==5;
+  if (!hasBreathinessInput && !request.breathiness.empty())
+    return rejected(ErrorCode::Unsupported,
+        "The admitted acoustic graph cannot consume request breathiness conditioning");
+  const std::array acousticInputs4{TensorInterface{"tokens",ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64,2},
       TensorInterface{"durations",ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64,2},
       TensorInterface{"f0",ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT,2},
       TensorInterface{"steps",ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64,vectorSteps?1:0}};
+  const std::array acousticInputs5{TensorInterface{"tokens",ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64,2},
+      TensorInterface{"durations",ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64,2},
+      TensorInterface{"f0",ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT,2},
+      TensorInterface{"steps",ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64,vectorSteps?1:0},
+      TensorInterface{"breathiness",ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT,2}};
   const std::array acousticOutputs{TensorInterface{"mel",ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT,3}};
   const std::array vocoderInputs{TensorInterface{"mel",ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT,3},
       TensorInterface{"f0",ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT,2}};
   const std::array vocoderOutputs{TensorInterface{metadata.vocoderOutput.c_str(),ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT,2}};
-  if (!sessionMatches(acousticSession,acousticInputs,acousticOutputs) ||
+  if (!sessionMatches(acousticSession,hasBreathinessInput?std::span<const TensorInterface>{acousticInputs5}:std::span<const TensorInterface>{acousticInputs4},acousticOutputs) ||
       !sessionMatches(vocoderSession,vocoderInputs,vocoderOutputs))
     return rejected(ErrorCode::InvalidArgument,"Loaded inference sessions disagree with the admitted graph interface");
   auto memory=Ort::MemoryInfo::CreateCpu(OrtArenaAllocator,OrtMemTypeDefault);
@@ -187,7 +196,14 @@ seam::core::Result<std::vector<float>> executePadded(const FrozenNeuralBundle& b
       inputs.f0Hz.size(),frameShape.data(),frameShape.size()));
   acousticValues.push_back(Ort::Value::CreateTensor<std::int64_t>(memory,&steps,1,
       vectorSteps?vectorStepShape.data():nullptr,vectorSteps?1U:0U));
-  const std::array<const char*,4> acousticNames{"tokens","durations","f0","steps"};
+  std::vector<const char*> acousticNames{"tokens","durations","f0","steps"};
+  if (hasBreathinessInput) {
+    if (inputs.breathiness.size()!=static_cast<std::size_t>(frames))
+      inputs.breathiness.assign(static_cast<std::size_t>(frames),0.0F);
+    acousticValues.push_back(Ort::Value::CreateTensor<float>(memory,inputs.breathiness.data(),
+        inputs.breathiness.size(),frameShape.data(),frameShape.size()));
+    acousticNames.push_back("breathiness");
+  }
   const char* melName="mel";
   auto mel=acousticSession.Run(Ort::RunOptions{nullptr},acousticNames.data(),acousticValues.data(),
       acousticValues.size(),&melName,1);

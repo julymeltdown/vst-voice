@@ -111,10 +111,23 @@ def export_acoustic(deployment_model) -> bytes:
     shape[0].dim_value = 1
     shape[2].dim_value = deployment_model.diffusion.out_dims
     onnx.checker.check_model(merged, full_check=True)
-    if {item.name for item in merged.graph.input} != {"tokens", "durations", "f0", "steps"}:
+    conditioned = deployment_model.fs2.use_breathiness_embed is True
+    expected_inputs = {"tokens", "durations", "f0", "steps"} | ({"breathiness"} if conditioned else set())
+    if {item.name for item in merged.graph.input} != expected_inputs:
         raise ValueError("Merged acoustic graph has unexpected public inputs")
     if [item.name for item in merged.graph.output] != ["mel"]:
         raise ValueError("Merged acoustic graph has unexpected public outputs")
+    if conditioned:
+        for key, value in (
+                ("seam.conditioning.revision", "2"),
+                ("seam.conditioning.breathiness.type", "float32"),
+                ("seam.conditioning.breathiness.unit", "normalized-periodic-aperiodic-balance"),
+                ("seam.conditioning.breathiness.minimum", "0"),
+                ("seam.conditioning.breathiness.maximum", "1"),
+                ("seam.conditioning.breathiness.default", "0"),
+                ("seam.conditioning.breathiness.supported", "true")):
+            entry = merged.metadata_props.add()
+            entry.key, entry.value = key, value
     payload = merged.SerializeToString()
     if len(payload) > 128 * 1024 * 1024:
         raise ValueError("Merged acoustic graph exceeds 128 MiB")
@@ -134,16 +147,21 @@ def check_acoustic_runtime(deployment_model) -> dict:
     options.inter_op_num_threads = 1
     session = ort.InferenceSession(payload, sess_options=options, providers=["CPUExecutionProvider"])
     cases = []
+    conditioned = deployment_model.fs2.use_breathiness_embed is True
     for lengths, steps in (([5, 6, 5], 1), ([1, 0, 2], 4), ([9, 14], 8)):
-        result = session.run(["mel"], dict(tokens=np.array([list(range(1, len(lengths) + 1))], dtype=np.int64),
+        inputs = dict(tokens=np.array([list(range(1, len(lengths) + 1))], dtype=np.int64),
             durations=np.array([lengths], dtype=np.int64), f0=np.full((1, sum(lengths)), 220., dtype=np.float32),
-            steps=np.array(steps, dtype=np.int64)))[0]
+            steps=np.array(steps, dtype=np.int64))
+        if conditioned:
+            inputs["breathiness"] = np.linspace(0, 1, sum(lengths), dtype=np.float32)[None]
+        result = session.run(["mel"], inputs)[0]
         passed = (result.shape == (1, sum(lengths), deployment_model.diffusion.out_dims)
                   and np.isfinite(result).all())
         cases.append(dict(frames=sum(lengths), steps=steps, shape=list(result.shape), passed=bool(passed)))
     return dict(passed=all(case["passed"] for case in cases), cases=cases,
                 graphBytes=len(payload), graphSha256=hashlib.sha256(payload).hexdigest(),
                 runtimeVersion=ort.__version__, stochasticNumericalParityVerified=False,
+                conditioningControls=["breathiness"] if conditioned else [], conditioningRevision=2,
                 offlineGraphInspection=inspection["status"],
                 completeAcousticGraph=True, vocoderIntegrated=False, graphRetained=False,
                 singerQualified=False, releaseEligible=False)

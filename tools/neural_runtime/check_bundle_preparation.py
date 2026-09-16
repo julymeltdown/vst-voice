@@ -14,6 +14,7 @@ import sys
 import tempfile
 
 from check_paired_runtime import graphs
+from inspect_graph import inspect_bytes
 
 
 PROFILE = dict(profileId="seam-full-hop-slaney-v1", sampleRate=48000, fftSize=1024,
@@ -31,7 +32,7 @@ def canonical(value):
 
 
 def write_exports(root, acoustic, vocoder, *, acoustic_profile=None, vocoder_profile=None,
-                  vocabulary=None, smoke=True):
+                  vocabulary=None, smoke=True, conditioned=False):
     acoustic_profile = PROFILE if acoustic_profile is None else acoustic_profile
     vocoder_profile = PROFILE if vocoder_profile is None else vocoder_profile
     for name, graph_bytes, profile, graph_field, sha_field, bytes_field in (
@@ -41,8 +42,10 @@ def write_exports(root, acoustic, vocoder, *, acoustic_profile=None, vocoder_pro
         directory.mkdir(exist_ok=True)
         graph_name = "graph.onnx"
         (directory / graph_name).write_bytes(graph_bytes)
-        report = dict(formatId="com.project-seam.acoustic-export" if name.startswith("acoustic")
-                      else "com.project-seam.vocoder-export", schemaVersion=1,
+        is_acoustic = name.startswith("acoustic")
+        report = dict(formatId="com.project-seam.acoustic-export" if is_acoustic
+                      else "com.project-seam.vocoder-export",
+                      schemaVersion=2 if is_acoustic and conditioned else 1,
                       checkpointReceiptSha256=hashlib.sha256(name.encode()).hexdigest(),
                       checkpointSha256=hashlib.sha256((name + "-checkpoint").encode()).hexdigest(),
                       profile=profile, profileSha256=hashlib.sha256(canonical(profile)).hexdigest(),
@@ -51,10 +54,21 @@ def write_exports(root, acoustic, vocoder, *, acoustic_profile=None, vocoder_pro
         report[graph_field] = graph_name
         report[sha_field] = hashlib.sha256(graph_bytes).hexdigest()
         report[bytes_field] = len(graph_bytes)
-        if name.startswith("acoustic"):
+        if is_acoustic:
             report["vocabulary"] = list(TOKENS if vocabulary is None else vocabulary)
             report["runtimeSmokePassed"] = smoke
             report["revision"] = "336cf01b57f2ad44c6b37a79cf33993043291759"
+            if conditioned:
+                report.update(
+                    conditioningRevision=2,
+                    conditioningControls=[dict(name="breathiness", type="float32", shape=[1, "T"],
+                        unit="normalized-periodic-aperiodic-balance", minimum=0, maximum=1,
+                        default=0, supported=True)],
+                    inspection=inspect_bytes(graph_bytes),
+                    encoderRuntimeCheck=dict(breathinessConditionEffectPassed=True,
+                                             maximumBreathinessConditionEffect=.25),
+                    deploymentBridgeCheck=dict(breathinessConditionEffectPassed=True,
+                                               maximumBreathinessMelEffect=.1))
         else:
             report["trainingRevision"] = "4d0889c4c180c75ad3000cc565864656344f8190"
             report["deploymentRevision"] = "336cf01b57f2ad44c6b37a79cf33993043291759"
@@ -144,6 +158,44 @@ def main():
         pcm = struct.unpack(f"<{FRAMES}f", run.stdout[20 + size:])
         expected = (210.0 * 0.0011 + 0.02 + 0.003 + 0.001) * 0.5
         assert all(abs(sample - expected) < 1e-6 for sample in pcm)
+
+        # The revision-2 bundle path carries breathiness through its receipt, graph interface,
+        # native admission, request plane, hop conversion and production worker execution.
+        conditioned_root = root / "conditioned-export"
+        conditioned_root.mkdir()
+        conditioned_acoustic_graph, conditioned_vocoder_graph = graphs(conditioned=True)
+        conditioned_acoustic, conditioned_vocoder = write_exports(
+            conditioned_root, conditioned_acoustic_graph, conditioned_vocoder_graph, conditioned=True)
+        conditioned_bundle = root / "conditioned-bundle"
+        composed = compose(script, conditioned_acoustic, conditioned_vocoder, conditioned_bundle)
+        assert composed.returncode == 0, composed.stderr
+        conditioned_report = json.loads(composed.stdout)
+        assert conditioned_report["conditioningRevision"] == 2
+        assert conditioned_report["conditioningControls"][0]["name"] == "breathiness"
+        conditioned_digest = conditioned_report["manifestSha256"]
+        conditioned_metadata = dict(metadata, requestId=92, modelContentHash=conditioned_digest,
+                                    bundleContentHash=conditioned_digest, hasBreathiness=True)
+        conditioned_header = json.dumps(
+            conditioned_metadata, sort_keys=True, separators=(",", ":")).encode()
+        conditioned_payload = struct.pack(
+            f"<{FRAMES * 3}f", *([210.0] * FRAMES + [0.5] * FRAMES + [0.75] * FRAMES))
+        conditioned_request = (struct.pack("<4sHBBIQ", b"SNW1", 1, 1, 0,
+                                           len(conditioned_header), len(conditioned_payload))
+                               + conditioned_header + conditioned_payload)
+        conditioned_run = subprocess.run(
+            [worker, "--seam-neural-worker-v2", str(conditioned_bundle), "fixture", "1",
+             conditioned_digest, "1048576"], input=conditioned_request,
+            capture_output=True, timeout=60)
+        assert conditioned_run.returncode == 0, conditioned_run.stderr
+        _, _, _, _, conditioned_size, conditioned_payload_size = struct.unpack(
+            "<4sHBBIQ", conditioned_run.stdout[:20])
+        conditioned_reply = json.loads(conditioned_run.stdout[20:20 + conditioned_size])
+        assert conditioned_reply["requestContentHash"] == hashlib.sha256(conditioned_request).hexdigest()
+        assert conditioned_payload_size == FRAMES * 4
+        conditioned_pcm = struct.unpack(
+            f"<{FRAMES}f", conditioned_run.stdout[20 + conditioned_size:])
+        conditioned_expected = expected + (((FRAMES + 255) // 256) * 0.75 * 0.02) * 0.5
+        assert all(abs(sample - conditioned_expected) < 1e-6 for sample in conditioned_pcm)
 
         # Composition refusals: each one is a real declaration fault.
         tampered = root / "tampered"

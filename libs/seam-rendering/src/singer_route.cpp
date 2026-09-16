@@ -54,6 +54,10 @@ ResolvedSingerRoute resolveSingerRouteForResource(
   route.resource = resource;
   route.carrier = carrier;
   route.capabilities = synthesis::rendererCapabilities(carrier);
+  if (carrier == synthesis::RendererCarrier::Neural) {
+    for (const auto control : environment.neuralConditioningControls)
+      route.capabilities.supported[static_cast<std::size_t>(control)] = true;
+  }
   route.declaration = environment.declaration;
   route.reviewed = environment.reviewed;
   route.reviewDetail = environment.reviewDetail;
@@ -89,11 +93,10 @@ core::Result<void> validateRouteControl(const ResolvedSingerRoute& route,
   if (!route.renderable())
     return core::failure(core::ErrorCode::Unsupported,
         "The selected singer cannot render this phrase: " + route.diagnostic);
-  synthesis::RendererControlRequest request;
-  request.require(control);
-  const auto decision = synthesis::validateRendererCapabilities(route.carrier, request);
-  if (!decision)
-    return core::failure(core::ErrorCode::Unsupported, decision.error().message);
+  if (!route.capabilities.supports(control))
+    return core::failure(core::ErrorCode::Unsupported,
+        "The selected singer lacks required control: " +
+        std::string{synthesis::rendererControlName(control)});
   return core::success();
 }
 

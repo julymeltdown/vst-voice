@@ -15,6 +15,13 @@ class TrainingCommandTests(unittest.TestCase):
         result = model_settings(config)
         self.assertEqual(result["hidden_size"], 32)
         self.assertFalse(result["use_shallow_diffusion"])
+        self.assertFalse(result["use_breathiness_embed"])
+        conditioned = model_settings(config | dict(schemaVersion=2, conditioningControls=["breathiness"]))
+        self.assertTrue(conditioned["use_breathiness_embed"])
+        self.assertFalse(conditioned["use_variance_scaling"])
+        for controls in (["breathiness", "breathiness"], ["tension"], "breathiness"):
+            with self.assertRaises(ValueError):
+                model_settings(config | dict(schemaVersion=2, conditioningControls=controls))
         for update in (dict(hiddenSize=33), dict(hiddenSize=1024), dict(encoderLayers=True),
                        dict(timesteps=1001), dict(seed=-1), dict(learningRate=float("nan")),
                        dict(maximumUpdates=0), dict(maximumSeconds=0), dict(loss="other"),

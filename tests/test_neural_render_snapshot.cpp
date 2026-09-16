@@ -30,9 +30,9 @@ std::string configuration(std::uint32_t version,std::uint32_t sampleRate,std::ui
 }
 
 seam::core::Result<seam::synthesis::FrozenNeuralBundle> freezeBundle(std::uint32_t sampleRate,
-    std::uint64_t maximumFrames=48000U,std::uint32_t version=3U) {
+    std::uint64_t maximumFrames=48000U,std::uint32_t version=3U,bool includeBreathiness=false) {
   using namespace seam::synthesis;
-  const std::string acoustic=seam::test::onnx::onnxAcousticGraph();
+  const std::string acoustic=seam::test::onnx::onnxAcousticGraph(80U,1U,{},"seam-test",9U,17U,includeBreathiness);
   const std::string vocoder=seam::test::onnx::onnxVocoderGraph(80U,1U,"audio");
   const std::string declaration=configuration(version,sampleRate,maximumFrames);
   const std::string vocabulary=R"({"formatId":"com.project-seam.neural-vocabulary","schemaVersion":1,"tokens":["<PAD>","SP","aa1","k"]})";
@@ -282,4 +282,34 @@ TEST_CASE("unadmitted and legacy neural resources stay non-executable for render
   RenderSnapshot sample{};
   sample.resource=seam::synthesis::SampleSingerResource{};
   CHECK(renderResourceFamily(sample)==RenderResourceFamily::Sample);
+}
+
+TEST_CASE("neural snapshot refuses breathiness control unless admitted graph declares it") {
+  using namespace seam::rendering;
+  const auto frozenDefault = freezeBundle(48000U, 48000U, 3U, false); CHECK(frozenDefault);
+  const auto admittedDefault = AdmittedNeuralBundle::admit(frozenDefault.value(), 65536U, 10); CHECK(admittedDefault);
+  CHECK(!admittedDefault.value().acousticGraph().supportsConditioningControl("breathiness"));
+
+  const auto frozenWithBreath = freezeBundle(48000U, 48000U, 3U, true); CHECK(frozenWithBreath);
+  const auto admittedWithBreath = AdmittedNeuralBundle::admit(frozenWithBreath.value(), 65536U, 10); CHECK(admittedWithBreath);
+  CHECK(admittedWithBreath.value().acousticGraph().supportsConditioningControl("breathiness"));
+
+  const NeuralRenderProvenance provenance{.workerVersion="seam-neural-worker-1",
+      .runtimeVersion="onnxruntime-1.30.0",.provider="CPUExecutionProvider"};
+
+  auto music = score();
+  auto* region = music.project.findRegion(music.region);
+  CHECK(region != nullptr);
+  CHECK(region->breathinessAutomation.upsert(seam::domain::BreathinessAutomationPoint{seam::time::Tick{0}, 0.5F}).hasValue());
+
+  const auto refused = RenderSnapshotFactory{}.createNeural(music.project, admittedDefault.value(), provenance,
+      music.track, music.region, 1U, RenderQuality::Final, 48000U, "original");
+  CHECK(!refused);
+  CHECK(refused.error().code == seam::core::ErrorCode::Unsupported);
+  CHECK(refused.error().message.find("breathiness") != std::string::npos);
+
+  const auto accepted = RenderSnapshotFactory{}.createNeural(music.project, admittedWithBreath.value(), provenance,
+      music.track, music.region, 1U, RenderQuality::Final, 48000U, "original");
+  CHECK(accepted);
+  CHECK(accepted.value().neuralExecution->acousticGraph().supportsConditioningControl("breathiness"));
 }

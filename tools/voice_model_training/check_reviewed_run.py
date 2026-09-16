@@ -34,6 +34,9 @@ def check_reviewed_run(model, optimizer, *, objective, model_metadata: dict,
     import numpy as np
     import torch
     fixture_seed = bytes(range(32))
+    model_configuration = model_metadata.get("configuration") if isinstance(model_metadata, dict) else None
+    conditioned = (isinstance(model_configuration, dict)
+                   and model_configuration.get("use_breathiness_embed") is True)
 
     def review_for(kind, configuration_hash):
         label = kind == "label"
@@ -85,14 +88,18 @@ def check_reviewed_run(model, optimizer, *, objective, model_metadata: dict,
                                     kind="PROCEDURAL_SYNTHESIS", evidenceId="fixture",
                                     evidenceSha256=hashlib.sha256(evidence).hexdigest(), reviewRevision="test-only",
                                     permissions=dict.fromkeys(TRAINING_PERMISSIONS, True)))
-            labels.append(dict(sourceSha256=digest, audioSha256=record["audioSha256"],
+            label_entry = dict(sourceSha256=digest, audioSha256=record["audioSha256"],
                                label=dict(sourceId=identity, frameCount=4096, hopSize=256,
                                           f0Hz=[frequency] * 16, voiced=[True] * 16, reviewRevision=None,
                                           phonemes=[dict(symbol="a", startFrame=0, endFrame=4096, confidence=1)]),
                                score=dict(language="en", silencePhones=[],
                                           syllables=[dict(lyric="fixture", phoneStart=0, phoneEnd=1)],
                                           notes=[dict(startFrame=0, endFrame=4096, midi=(57, 64, 69)[index],
-                                                      syllable=0, slur=False)])))
+                                                      syllable=0, slur=False)]))
+            if conditioned:
+                label_entry["conditioning"] = dict(
+                    revision=2, breathiness=np.linspace(0., 1., 16).tolist())
+            labels.append(label_entry)
         # Select a fixture seed solely to exercise all three partitions. Never
         # select a real study split by model performance or held-out outcomes.
         for index in range(1000):
@@ -106,7 +113,8 @@ def check_reviewed_run(model, optimizer, *, objective, model_metadata: dict,
                                  sampleRate=48000, sources=sources, evidence={"fixture": "fixture-evidence.txt"},
                                  manifest=dict(formatId="com.project-seam.training-permission-manifest",
                                                schemaVersion=1, sources=permissions))
-        label_config = dict(formatId="com.project-seam.voice-training-label-config", schemaVersion=3,
+        label_config = dict(formatId="com.project-seam.voice-training-label-config",
+                            schemaVersion=4 if conditioned else 3,
                             sampleRate=48000, sources=sources, vocabulary=["a", "i", "u"],
                             minimumConfidence=.8, labels=labels)
         publish_new(root / "permissions.json", permission_config)
@@ -132,12 +140,15 @@ def check_reviewed_run(model, optimizer, *, objective, model_metadata: dict,
         snapshot = assemble_dataset(**inputs, now=int(time.time()), conditioning_directory=shards)
         profile = record["profileSha256"]
         before = {key: value.detach().clone() for key, value in model.named_parameters()}
+        run_metadata = dict(model=model_metadata, syntheticInputs=True,
+                            assemblyConfigurationSha256=configuration_hash,
+                            fixturePolicyOnly=True, singerQualified=False)
+        if conditioned:
+            run_metadata["configuration"] = model_configuration
         receipt = train_reviewed_epoch(model, optimizer, dataset_inputs=inputs,
                                       conditioning_directory=shards, targets=targets,
                                       expected_profile_sha256=profile, output=root / "checkpoint",
-                                      run_metadata=dict(model=model_metadata, syntheticInputs=True,
-                                                        assemblyConfigurationSha256=configuration_hash,
-                                                        fixturePolicyOnly=True, singerQualified=False),
+                                      run_metadata=run_metadata,
                                       maximum_updates=3, objective=objective, objective_id=objective.objective_id)
         changed = sum(not torch.equal(before[key], value.detach()) for key, value in model.named_parameters())
         receipt_hash = hashlib.sha256((root / "checkpoint" / "checkpoint.json").read_bytes()).hexdigest()
@@ -158,9 +169,12 @@ def check_reviewed_run(model, optimizer, *, objective, model_metadata: dict,
                                         recordSha256=hashlib.sha256(encode_report(record)).hexdigest(), binary=path.name))
             inventory = dict(formatId="com.project-seam.training-target-inventory", schemaVersion=1,
                              profileSha256=profile, targets=target_rows)
-            settings = dict(formatId="com.project-seam.ddpm-training-config", schemaVersion=1,
+            settings = dict(formatId="com.project-seam.ddpm-training-config",
+                            schemaVersion=2 if conditioned else 1,
                             hiddenSize=32, encoderLayers=1, channels=32, layers=2, timesteps=8,
                             seed=17, learningRate=.001, maximumUpdates=3, maximumSeconds=60, loss="l2")
+            if conditioned:
+                settings["conditioningControls"] = ["breathiness"]
             publish_new(root / "targets.json", inventory)
             publish_new(root / "training.json", settings)
             command = [sys.executable, "-m", "tools.voice_model_training.train",

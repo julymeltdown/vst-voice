@@ -307,8 +307,8 @@ recording-free voice-creation requirement survives any comparison; it cannot be 
 
 ## 5. M3 — a real learned singer
 
-M3.1 and M3.2 landed. M3.3 through M3.5 are the remaining engineering, and all three are gated on
-material that does not exist yet.
+M3.1 through M3.4 landed. M3.5 is the remaining engineering and is gated on a Windows x64 verification
+machine and, for singer qualification, rights-cleared voice material that does not exist yet.
 
 ### U3.3 — the local vocoder path, before any sustained training
 
@@ -321,6 +321,18 @@ into `vocoder_training_run.py`, recording `labelOrigin` (`com.project-seam.train
 exact framing invariants in `test_vocoder_reconstruction.py` (7/7 pass). All 98 tests pass in `seam_voice_model_training_tests`.
 
 ### U3.4 — connect one real conditioning control end to end
+
+**Landed.** Breathiness now uses conditioning revision 2 and the exact
+`normalized-periodic-aperiodic-balance` range `[0,1]` from reviewed labels through dataset shards,
+DDPM optimization, deployment/export, graph admission, the worker protocol, hop conversion, native
+inference and the resolved neural route/UI capability. Neutral requests bind an all-zero tensor;
+conditioned requests bind the captured curve. The acoustic graph must expose float32 `[1,T]`, carry
+the complete metadata declaration, and prove a path to `mel`, including through recursively inspected
+ONNX `If`/`Loop` lexical captures. Unknown metadata, wrong type/rank/unit/range/length, ignored inputs,
+unsupported routes and stale legacy configurations fail closed. The real pinned DiffSinger gate trains,
+restores, exports and executes the conditioned graph; fixed-noise deployment comparison proves both a
+non-zero encoder-condition effect and a non-zero final-mel effect. The conditioned export receipt is
+then composed into a bundle and executed by the production native worker with the third request plane.
 
 **Why.** `DiffSingerAcousticInputs` carries tokens, durations, F0 and steps with dynamics applied as
 output gain. It carries no formant, breathiness, tension, gender or growl. Choose one control the
@@ -513,16 +525,16 @@ production turnaround is separate work and must not inherit that approval.
 | U1.4 creator observation | one person, unaided session | project owner |
 | U2.1 listening result | a Japanese-capable listener for triage; a musician for phrasing | owner + a recruited listener |
 | U2.2 repair | the observation above | follows from U2.1 |
-| U3.3 vocoder | compute time; the generated-teacher path removes the corpus dependency | none external |
 | U3.5 Windows neural | a Windows x64 machine | owner |
 | U4.1 recorded source | an authorized recording with permissions | owner, external |
 | U4.2 language claims | native-speaker review per language | owner, external |
 | U4.3 style pair | two compatible aligned styles | follows from U4.1 |
 | M6 five independent creators | five participants meeting the canonical independence protocol | owner, external |
 
-Nothing above is unblocked by more code. The next executable engineering, in order, is: U3.4 (connect one real
-conditioning control end to end), then the material-gated work. U1.3a-c, D1, U1.5, 8.2, D2, 8.3, U2.1, and U3.3
-have all landed cleanly. D3 is retired (§1.1, §8.1).
+Nothing above is unblocked by more code on the current machine. U1.3a-c, D1, U1.5, 8.2, D2, 8.3,
+U2.1, U3.3 and U3.4 have all landed cleanly. The next work is material/environment-gated; U3.5 and
+U5.1 require the Windows x64 machine, while qualification work requires the inputs named in the table.
+D3 is retired (§1.1, §8.1).
 
 Two reorderings from the first draft of this section, both because an item was smaller than it looked.
 **U3.5's Windows helper-process port and U5.1's Windows host run moved out of the early queue**: they
@@ -545,6 +557,7 @@ One reviewable commit per unit, in this order, each with its own tests:
 `D3` is retired before its slot: the premise was false (§1.1, §8.1). No work is scheduled for it.
 9. `8.3` aspect-correct portrait use, then declared mouth artwork.
 10. `U3.3` the local vocoder reconstruction baseline.
+11. `U3.4` revision-2 breathiness conditioning from labels through the production native worker.
 
 Deferred until the machine exists: `U3.5`'s Windows helper-process port and `U5.1`'s Windows host run,
 as one reviewable change, since they share one port and one verification environment.

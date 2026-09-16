@@ -391,8 +391,9 @@ EditorSceneState NativeEditorController::sceneState() const {
     if (!session_.project().findVocalTrack(selectedTrackId_)) {
       state.expression.refusal = "Select a vocal track to see channel applicability";
     } else {
-      const auto allowed = ui::validateExpressionCarrier(session_.project(), selectedTrackId_,
-                                                         expressionChannel_);
+      const auto allowed = callbacks_.validateSingerControl
+          ? callbacks_.validateSingerControl(selectedTrackId_, descriptor.control)
+          : ui::validateExpressionCarrier(session_.project(), selectedTrackId_, expressionChannel_);
       state.expression.refusal = allowed ? std::string{} : allowed.error().message;
     }
   }
@@ -5607,8 +5608,21 @@ core::Result<void> NativeEditorController::nudgeBreathiness(int steps) {
   const auto carrier = synthesis::rendererCarrierFor(*track);
   synthesis::RendererControlRequest request;
   request.require(synthesis::RendererControl::Breathiness);
-  const auto allowed = synthesis::validateRendererCapabilities(carrier, request);
+  auto allowed = core::success();
+  if (callbacks_.validateSingerControl) {
+    allowed = callbacks_.validateSingerControl(
+        selectedTrackId_, synthesis::RendererControl::Breathiness);
+  } else {
+    const auto decision = synthesis::validateRendererCapabilities(carrier, request);
+    if (!decision) allowed = core::Result<void>{decision.error()};
+  }
   if (!allowed) {
+    if (callbacks_.validateSingerControl) {
+      return core::Result<void>{core::Error{core::ErrorCode::Unsupported,
+          std::string{"The selected singer cannot apply a breathiness curve. "} +
+              allowed.error().message +
+              ". Select a singer whose admitted route declares breathiness conditioning."}};
+    }
     return core::Result<void>{core::Error{core::ErrorCode::Unsupported,
         std::string{"The selected singer does not generate the excitation a breathiness curve would "
                     "rebalance, so it cannot apply one. "} +
@@ -5988,7 +6002,14 @@ core::Result<void> NativeEditorController::closeExpressionLane() {
 
 core::Result<ui::ExpressionLaneModel*> NativeEditorController::ensureExpressionDraft() {
   if (expressionDraft_) return &expressionDraft_.value();
-  auto prepared = ui::ExpressionLaneModel::prepare(session_, regionId_, expressionChannel_);
+  const bool resolved = static_cast<bool>(callbacks_.validateSingerControl);
+  if (resolved) {
+    const auto allowed = callbacks_.validateSingerControl(
+        selectedTrackId_, ui::describeExpressionChannel(expressionChannel_).control);
+    if (!allowed) return core::Result<ui::ExpressionLaneModel*>{allowed.error()};
+  }
+  auto prepared = ui::ExpressionLaneModel::prepare(
+      session_, regionId_, expressionChannel_, {}, resolved);
   if (!prepared) return core::Result<ui::ExpressionLaneModel*>{prepared.error()};
   expressionDraft_.emplace(std::move(prepared.value()));
   return &expressionDraft_.value();

@@ -49,6 +49,7 @@ def main():
     from utils.hparams import hparams
     config = dict(hidden_size=32, enc_layers=1, enc_ffn_kernel_size=3, ffn_act="gelu",
                   dropout=0., num_heads=2, use_pos_embed=True, use_spk_id=False,
+                  use_breathiness_embed=True, use_variance_scaling=False,
                   diffusion_type="ddpm", use_shallow_diffusion=False, timesteps=8, K_step=8,
                   backbone_type="wavenet", backbone_args=dict(num_layers=2, num_channels=32, dilation_cycle_length=2),
                   spec_min=[-12], spec_max=[0], schedule_type="linear", max_beta=.02,
@@ -64,7 +65,8 @@ def main():
     batch = dict(sourceId="synthetic-architecture-check-not-a-singer", partition="train", hopSize=256,
                  frameOffset=0, phraseAnalysisFrames=16, tokens=[1, 2, 3], mel2ph=[1]*5 + [2]*6 + [3]*5,
                  columns=dict(phoneId=[1]*5 + [2]*6 + [3]*5, f0Hz=[220.]*16, voiced=[True]*16,
-                              midi=[57]*16, rest=[False]*16, slur=[False]*16, validSamples=[256]*16),
+                              midi=[57]*16, rest=[False]*16, slur=[False]*16,
+                              breathiness=np.linspace(0, 1, 16).tolist(), validSamples=[256]*16),
                  melTargets=mel_targets)
     objective = DiffSingerDDPMObjective("l2")
     losses = []
@@ -112,12 +114,13 @@ def main():
     model.eval()
     resumed_model.eval()
     with torch.no_grad():
+        breathiness = torch.linspace(0., 1., 16)[None]
         torch.manual_seed(91)
         output = model(torch.tensor([batch["tokens"]]), mel2ph=torch.tensor([batch["mel2ph"]]),
-                       f0=torch.full((1, 16), 220.), infer=True).diff_out
+                       f0=torch.full((1, 16), 220.), breathiness=breathiness, infer=True).diff_out
         torch.manual_seed(91)
         restored_output = resumed_model(torch.tensor([batch["tokens"]]), mel2ph=torch.tensor([batch["mel2ph"]]),
-                                       f0=torch.full((1, 16), 220.), infer=True).diff_out
+                                       f0=torch.full((1, 16), 220.), breathiness=breathiness, infer=True).diff_out
     inference_equal = torch.equal(output, restored_output)
     continuation = []
     for candidate, candidate_optimizer in ((model, optimizer), (resumed_model, resumed_optimizer)):

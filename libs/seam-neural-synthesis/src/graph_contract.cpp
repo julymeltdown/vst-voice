@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <iterator>
 #include <optional>
+#include <set>
 
 namespace seam::neural_synthesis {
 namespace {
@@ -11,26 +12,22 @@ namespace {
 // The operator set this build admits: the standard ONNX domain as used by the pinned first-party
 // export family plus the primitives those graphs are built from. Membership is a deliberate
 // decision, because the child that executes an admitted graph trusts it. The graph-bearing
-// operators (If, Loop, Scan) are not in the set: their subgraphs are not inspected here, so
-// admitting them would admit bytes nothing in this reader validated.
+// control-flow operators are admitted only because their subgraphs are recursively inspected under
+// the same aggregate budgets. Scan is intentionally still excluded until an owned export needs it.
 constexpr std::string_view kAdmittedOperators[]{
     "Abs", "Add", "And", "ArgMax", "ArgMin", "AveragePool", "BatchNormalization", "Cast", "Ceil",
     "Clip", "Concat", "Constant", "ConstantOfShape", "Conv", "ConvTranspose", "Cos", "CumSum",
     "DequantizeLinear", "Div", "Dropout", "Einsum", "Elu", "Equal", "Erf", "Exp", "Expand",
     "Flatten", "Floor", "Gather", "GatherElements", "GatherND", "Gemm", "GlobalAveragePool",
     "GlobalMaxPool", "Greater", "GreaterOrEqual", "GRU", "HardSigmoid", "HardSwish", "Identity",
-    "InstanceNormalization", "LayerNormalization", "LeakyRelu", "Less", "LessOrEqual", "Log",
-    "LogSoftmax", "LSTM", "MatMul", "Max", "MaxPool", "Mean", "Min", "Mod", "Mul", "Neg",
+    "If", "InstanceNormalization", "LayerNormalization", "LeakyRelu", "Less", "LessOrEqual", "Log",
+    "LogSoftmax", "Loop", "LSTM", "MatMul", "Max", "MaxPool", "Mean", "Min", "Mod", "Mul", "Neg",
     "NonZero", "Not", "Or", "Pad", "Pow", "PRelu", "QuantizeLinear", "RNN", "Range", "Reciprocal",
     "ReduceL1", "ReduceL2", "ReduceLogSum", "ReduceLogSumExp", "ReduceMax", "ReduceMean",
     "ReduceMin", "ReduceProd", "ReduceSum", "ReduceSumSquare", "Relu", "Reshape", "Resize",
-    "Round", "ScatterElements", "ScatterND", "Shape", "Sigmoid", "Sign", "Sin", "Size", "Slice",
+    "RandomNormalLike", "Round", "ScatterElements", "ScatterND", "Shape", "Sigmoid", "Sign", "Sin", "Size", "Slice",
     "Softmax", "Softplus", "Split", "Sqrt", "Squeeze", "Sub", "Sum", "Tanh", "Tile", "TopK",
     "Transpose", "Trilu", "Unsqueeze", "Where", "Xor"};
-
-// The two AttributeProto fields that carry a subgraph. They are named separately so the refusal
-// says what was found instead of reporting a generic unknown field.
-constexpr std::uint32_t kAttributeGraphFields[]{6U, 11U};
 
 core::Error truncated(std::string_view what) {
   return {core::ErrorCode::ParseError, std::string{what} + " is truncated or malformed"};
@@ -132,6 +129,9 @@ struct Budget final {
   std::size_t tensors{0U};
   std::uint64_t initializerBytes{0U};
 };
+
+core::Result<void> parseGraph(Reader& reader, GraphContract& contract, Budget& budget,
+    const GraphInspectionLimits& limits, std::size_t depth, bool topLevel);
 
 core::Result<void> parseDimension(Reader& reader, GraphTensorContract& tensor,
     const GraphInspectionLimits& limits) {
@@ -276,7 +276,8 @@ core::Result<void> parseValueInfo(Reader& reader, GraphTensorContract& tensor,
   return core::success();
 }
 
-core::Result<void> parseTensor(Reader& reader, Budget& budget, const GraphInspectionLimits& limits) {
+core::Result<void> parseTensor(Reader& reader, Budget& budget, const GraphInspectionLimits& limits,
+    std::string& name) {
   std::uint32_t dataType = 0U;
   std::uint64_t elements = 1U;
   bool bounded = false;
@@ -327,8 +328,9 @@ core::Result<void> parseTensor(Reader& reader, Budget& budget, const GraphInspec
     if (field == 3U) return refused("ONNX initializer", "declares a tensor segment");
     if (field == 6U) return refused("ONNX initializer", "declares string tensor data");
     if ((field == 8U || field == 12U) && wire == 2U) {
-      std::string_view ignored;
-      if (!reader.text(ignored, limits.maximumNameBytes)) return truncated("ONNX initializer");
+      std::string_view text;
+      if (!reader.text(text, limits.maximumNameBytes)) return truncated("ONNX initializer");
+      if (field == 8U) name = std::string{text};
       continue;
     }
     if (field == 9U || field == 4U || field == 5U || field == 7U || field == 10U || field == 11U ||
@@ -338,6 +340,7 @@ core::Result<void> parseTensor(Reader& reader, Budget& budget, const GraphInspec
     }
     return unknownField("ONNX initializer", field);
   }
+  if (name.empty()) return refused("ONNX initializer", "declares no name");
   if (dataType == 0U) return refused("ONNX initializer", "declares no element type");
   if (!bounded) elements = 1U;
   const auto width = elementBytes(dataType);
@@ -351,19 +354,33 @@ core::Result<void> parseTensor(Reader& reader, Budget& budget, const GraphInspec
   return core::success();
 }
 
-core::Result<void> parseAttribute(Reader& reader, const GraphInspectionLimits& limits) {
+core::Result<void> parseAttribute(Reader& reader, GraphNodeContract& node, GraphContract& contract,
+    Budget& budget, const GraphInspectionLimits& limits, std::size_t depth) {
   while (!reader.done()) {
     std::uint32_t field = 0U, wire = 0U;
     if (!reader.field(field, wire)) return truncated("ONNX operator attribute");
-    for (const auto graphField : kAttributeGraphFields)
-      if (field == graphField)
-        return refused("ONNX operator attribute", "carries a subgraph this reader does not admit");
+    if ((field == 6U || field == 11U) && wire == 2U) {
+      std::span<const std::byte> graph;
+      if (!reader.submessage(graph)) return truncated("ONNX operator attribute subgraph");
+      GraphContract subgraph;
+      Reader nested{graph};
+      const auto parsed = parseGraph(nested, subgraph, budget, limits, depth + 1U, false);
+      if (!parsed) return parsed;
+      contract.initializerCount += subgraph.initializerCount;
+      for (const auto& op : subgraph.operators)
+        if (std::find(contract.operators.begin(), contract.operators.end(), op) == contract.operators.end())
+          contract.operators.push_back(op);
+      for (const auto& capture : subgraph.captures)
+        if (std::find(node.inputs.begin(), node.inputs.end(), capture) == node.inputs.end())
+          node.inputs.push_back(capture);
+      continue;
+    }
     if ((field == 1U || field == 4U || field == 13U || field == 21U) && wire == 2U) {
       std::string_view ignored;
       if (!reader.text(ignored, limits.maximumBytes)) return truncated("ONNX operator attribute");
       continue;
     }
-    if (field == 2U || field == 3U || field == 5U || field == 6U || field == 7U || field == 8U ||
+    if (field == 2U || field == 3U || field == 5U || field == 7U || field == 8U ||
         field == 9U || field == 10U || field == 14U || field == 15U || field == 20U ||
         field == 22U || field == 23U) {
       if (!reader.skip(wire)) return truncated("ONNX operator attribute");
@@ -380,12 +397,18 @@ core::Result<void> parseNode(Reader& reader, GraphContract& contract, Budget& bu
   if (budget.nodes >= limits.maximumNodes) return refused("ONNX graph", "declares more operators than admitted");
   ++budget.nodes;
   std::string opType, domain;
+  GraphNodeContract node;
   while (!reader.done()) {
     std::uint32_t field = 0U, wire = 0U;
     if (!reader.field(field, wire)) return truncated("ONNX operator");
     if ((field == 1U || field == 2U) && wire == 2U) {
-      std::string_view ignored;
-      if (!reader.text(ignored, limits.maximumNameBytes)) return truncated("ONNX operator");
+      std::string_view value;
+      if (!reader.text(value, limits.maximumNameBytes)) return truncated("ONNX operator");
+      // ONNX uses an empty input name for an omitted optional operator argument.
+      // Outputs, by contrast, must name the value other nodes can consume.
+      if (value.empty() && field == 1U) continue;
+      if (value.empty()) return refused("ONNX operator", "declares an empty output tensor name");
+      (field == 1U ? node.inputs : node.outputs).emplace_back(value);
       continue;
     }
     if (field == 4U && wire == 2U) {
@@ -404,7 +427,7 @@ core::Result<void> parseNode(Reader& reader, GraphContract& contract, Budget& bu
       std::span<const std::byte> attribute;
       if (!reader.submessage(attribute)) return truncated("ONNX operator");
       Reader nested{attribute};
-      const auto parsed = parseAttribute(nested, limits);
+      const auto parsed = parseAttribute(nested, node, contract, budget, limits, depth);
       if (!parsed) return parsed;
       continue;
     }
@@ -418,14 +441,17 @@ core::Result<void> parseNode(Reader& reader, GraphContract& contract, Budget& bu
   if (opType.empty()) return refused("ONNX operator", "declares no operator type");
   if (!domain.empty() && domain != "ai.onnx")
     return refused("ONNX operator", "declares a custom operator domain");
-  if (!admits(opType)) return refused("ONNX operator", "is not in the admitted operator set");
+  if (!admits(opType))
+    return refused("ONNX operator " + std::string{opType}, "is not in the admitted operator set");
+  if (node.outputs.empty()) return refused("ONNX operator", "declares no output");
   if (std::find(contract.operators.begin(), contract.operators.end(), opType) == contract.operators.end())
     contract.operators.push_back(opType);
+  contract.nodes.push_back(std::move(node));
   return core::success();
 }
 
 core::Result<void> parseGraph(Reader& reader, GraphContract& contract, Budget& budget,
-    const GraphInspectionLimits& limits, std::size_t depth) {
+    const GraphInspectionLimits& limits, std::size_t depth, bool topLevel) {
   if (depth > limits.maximumDepth) return refused("ONNX graph", "exceeds the admitted nesting depth");
   while (!reader.done()) {
     std::uint32_t field = 0U, wire = 0U;
@@ -443,8 +469,13 @@ core::Result<void> parseGraph(Reader& reader, GraphContract& contract, Budget& b
       if (!reader.submessage(initializer)) return truncated("ONNX graph");
       if (budget.tensors >= limits.maximumTensors) return refused("ONNX graph", "declares more tensors than admitted");
       Reader nested{initializer};
-      const auto parsed = parseTensor(nested, budget, limits);
+      std::string name;
+      const auto parsed = parseTensor(nested, budget, limits, name);
       if (!parsed) return parsed;
+      if (std::find(contract.initializerNames.begin(), contract.initializerNames.end(), name) !=
+          contract.initializerNames.end())
+        return refused("ONNX graph", "declares a duplicate initializer name");
+      contract.initializerNames.push_back(std::move(name));
       ++contract.initializerCount;
       continue;
     }
@@ -474,8 +505,19 @@ core::Result<void> parseGraph(Reader& reader, GraphContract& contract, Budget& b
       return refused("ONNX graph", "declares quantization or sparse data this reader does not admit");
     return unknownField("ONNX graph", field);
   }
-  if (contract.inputs.empty()) return refused("ONNX graph", "declares no input");
+  if (topLevel && contract.inputs.empty()) return refused("ONNX graph", "declares no input");
   if (contract.outputs.empty()) return refused("ONNX graph", "declares no output");
+  std::set<std::string> localDefinitions{contract.initializerNames.begin(), contract.initializerNames.end()};
+  for (const auto& input : contract.inputs) localDefinitions.insert(input.name);
+  for (const auto& node : contract.nodes)
+    for (const auto& output : node.outputs) localDefinitions.insert(output);
+  std::set<std::string> captures;
+  for (const auto& node : contract.nodes)
+    for (const auto& input : node.inputs)
+      if (!localDefinitions.contains(input)) captures.insert(input);
+  contract.captures.assign(captures.begin(), captures.end());
+  if (topLevel && !contract.captures.empty())
+    return refused("ONNX graph", "references values not defined by the top-level graph");
   return core::success();
 }
 
@@ -505,17 +547,23 @@ core::Result<void> parseOperatorSet(Reader& reader, GraphContract& contract,
   return core::success();
 }
 
-core::Result<void> parseMetadata(Reader& reader, const GraphInspectionLimits& limits) {
+core::Result<void> parseMetadata(Reader& reader, GraphContract& contract,
+    const GraphInspectionLimits& limits) {
+  std::string key, value;
   while (!reader.done()) {
     std::uint32_t field = 0U, wire = 0U;
     if (!reader.field(field, wire)) return truncated("ONNX model metadata");
     if ((field == 1U || field == 2U) && wire == 2U) {
       std::string_view text;
       if (!reader.text(text, limits.maximumBytes)) return truncated("ONNX model metadata");
+      (field == 1U ? key : value) = std::string{text};
       continue;
     }
     return unknownField("ONNX model metadata", field);
   }
+  if (key.empty()) return refused("ONNX model metadata", "declares an empty key");
+  if (!contract.metadata.emplace(std::move(key), std::move(value)).second)
+    return refused("ONNX model metadata", "declares a duplicate key");
   return core::success();
 }
 
@@ -553,7 +601,7 @@ core::Result<void> parseModel(Reader& reader, GraphContract& contract, Budget& b
       std::span<const std::byte> message;
       if (!reader.submessage(message)) return truncated("ONNX model");
       Reader nested{message};
-      const auto parsed = parseGraph(nested, contract, budget, limits, 1U);
+      const auto parsed = parseGraph(nested, contract, budget, limits, 1U, true);
       if (!parsed) return parsed;
       graph = true;
       continue;
@@ -572,7 +620,7 @@ core::Result<void> parseModel(Reader& reader, GraphContract& contract, Budget& b
       std::span<const std::byte> message;
       if (!reader.submessage(message)) return truncated("ONNX model");
       Reader nested{message};
-      const auto parsed = parseMetadata(nested, limits);
+      const auto parsed = parseMetadata(nested, contract, limits);
       if (!parsed) return parsed;
       continue;
     }
@@ -581,6 +629,46 @@ core::Result<void> parseModel(Reader& reader, GraphContract& contract, Budget& b
   }
   if (!graph) return refused("ONNX model", "declares no graph");
   if (!opset) return refused("ONNX model", "declares no operator set");
+  return core::success();
+}
+
+bool reachesGraphOutput(const GraphContract& contract, std::string_view input) {
+  std::set<std::string> reachable{std::string{input}};
+  bool changed = true;
+  while (changed) {
+    changed = false;
+    for (const auto& node : contract.nodes) {
+      const auto consumesReachable = std::any_of(node.inputs.begin(), node.inputs.end(),
+          [&](const std::string& name) { return reachable.contains(name); });
+      if (!consumesReachable) continue;
+      for (const auto& output : node.outputs) changed = reachable.insert(output).second || changed;
+    }
+  }
+  return std::any_of(contract.outputs.begin(), contract.outputs.end(),
+      [&](const GraphTensorContract& output) { return reachable.contains(output.name); });
+}
+
+core::Result<void> validateBreathinessMetadata(const GraphContract& contract) {
+  constexpr std::pair<std::string_view, std::string_view> required[]{
+      {"seam.conditioning.revision", "2"},
+      {"seam.conditioning.breathiness.type", "float32"},
+      {"seam.conditioning.breathiness.unit", "normalized-periodic-aperiodic-balance"},
+      {"seam.conditioning.breathiness.minimum", "0"},
+      {"seam.conditioning.breathiness.maximum", "1"},
+      {"seam.conditioning.breathiness.default", "0"},
+      {"seam.conditioning.breathiness.supported", "true"},
+  };
+  for (const auto& [key, value] : required) {
+    const auto found = contract.metadata.find(std::string{key});
+    if (found == contract.metadata.end() || found->second != value)
+      return refused("ONNX conditioning control breathiness", "metadata is absent or incompatible");
+  }
+  for (const auto& [key, unused] : contract.metadata) {
+    if (!key.starts_with("seam.conditioning.")) continue;
+    const auto known = std::any_of(std::begin(required), std::end(required),
+        [&](const auto& entry) { return entry.first == key; });
+    if (!known) return refused("ONNX conditioning metadata", "declares an unsupported key");
+  }
   return core::success();
 }
 
@@ -601,6 +689,17 @@ const GraphTensorContract* GraphContract::findOutput(std::string_view name) cons
   const auto found = std::find_if(outputs.begin(), outputs.end(),
       [&](const GraphTensorContract& tensor) { return tensor.name == name; });
   return found == outputs.end() ? nullptr : &*found;
+}
+
+const ConditioningControlContract* GraphContract::findConditioningControl(std::string_view name) const noexcept {
+  const auto found = std::find_if(conditioningControls.begin(), conditioningControls.end(),
+      [&](const ConditioningControlContract& control) { return control.name == name; });
+  return found == conditioningControls.end() ? nullptr : &*found;
+}
+
+bool GraphContract::supportsConditioningControl(std::string_view name) const noexcept {
+  const auto* control = findConditioningControl(name);
+  return control != nullptr && control->supported;
 }
 
 bool isAdmittedOperator(std::string_view opType) noexcept { return admits(opType); }
@@ -643,6 +742,41 @@ core::Result<GraphContract> inspectNeuralGraph(std::span<const std::byte> graph,
   std::sort(contract.operators.begin(), contract.operators.end());
   contract.nodeCount = budget.nodes;
   contract.initializerBytes = budget.initializerBytes;
+  bool hasBreathiness = false;
+  for (const auto& input : contract.inputs) {
+    if (input.name == "breathiness") {
+      hasBreathiness = true;
+      if (input.elementType != 1U) {
+        return core::failure<Output>(core::ErrorCode::Unsupported,
+            "ONNX conditioning control breathiness must be float32");
+      }
+      if (input.dimensions != std::vector<std::int64_t>{1, -1}) {
+        return core::failure<Output>(core::ErrorCode::Unsupported,
+            "ONNX conditioning control breathiness must be dynamic 2D [1, T]");
+      }
+      const auto metadata = validateBreathinessMetadata(contract);
+      if (!metadata) return core::Result<Output>{metadata.error()};
+      if (!reachesGraphOutput(contract, "breathiness"))
+        return core::failure<Output>(core::ErrorCode::Unsupported,
+            "ONNX conditioning control breathiness does not affect a graph output");
+      contract.conditioningControls.push_back(ConditioningControlContract{
+          .name = "breathiness",
+          .type = "float32",
+          .dimensions = input.dimensions,
+          .unit = "normalized-periodic-aperiodic-balance",
+          .minimumValue = 0.0F,
+          .maximumValue = 1.0F,
+          .defaultValue = 0.0F,
+          .supported = true,
+      });
+    }
+  }
+  if (!hasBreathiness) {
+    for (const auto& [key, unused] : contract.metadata)
+      if (key.starts_with("seam.conditioning."))
+        return core::failure<Output>(core::ErrorCode::Unsupported,
+            "ONNX conditioning metadata exists without a breathiness input");
+  }
   return core::success(std::move(contract));
 }
 

@@ -4,6 +4,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <map>
 #include <span>
 #include <string>
 #include <string_view>
@@ -36,16 +37,35 @@ struct GraphTensorContract final {
   friend bool operator==(const GraphTensorContract&, const GraphTensorContract&) = default;
 };
 
+// One declared conditioning control. Validated at graph admission and carried to the worker.
+struct ConditioningControlContract final {
+  std::string name;
+  std::string type{"float32"};
+  std::vector<std::int64_t> dimensions{1, -1};
+  std::string unit{"normalized-periodic-aperiodic-balance"};
+  float minimumValue{0.0F};
+  float maximumValue{1.0F};
+  float defaultValue{0.0F};
+  bool supported{true};
+  friend bool operator==(const ConditioningControlContract&, const ConditioningControlContract&) = default;
+};
+
+struct GraphNodeContract final {
+  std::vector<std::string> inputs;
+  std::vector<std::string> outputs;
+  friend bool operator==(const GraphNodeContract&, const GraphNodeContract&) = default;
+};
+
 // What a graph file actually declares, read from its own bytes rather than from a side declaration:
 // the IR and operator-set revisions, the operator set used, and every graph input and output with
 // its element type and shape.
 //
 // The shape is closed. Unknown fields in any message are refused instead of skipped, so a second
 // representation cannot ride along unnoticed. Tensor data is refused as external data outright: an
-// admitted graph is self-contained. Only the standard ONNX operator domains are admitted, and an
-// operator outside the admitted set -- including the graph-bearing operators, whose subgraphs this
-// reader does not inspect -- is refused by name. A contract says what a graph declares, not that
-// the graph is correct, useful, trained or safe to execute.
+// admitted graph is self-contained. Only the standard ONNX operator domains are admitted. Control-
+// flow subgraphs are recursively inspected under the same aggregate budgets and their lexical
+// captures are made explicit on the parent node for data-flow validation. A contract says what a
+// graph declares, not that the graph is correct, useful, trained or safe to execute.
 struct GraphContract final {
   std::uint32_t irVersion{0U};
   std::uint32_t opset{0U};
@@ -53,10 +73,18 @@ struct GraphContract final {
   // Unique and sorted; a non-standard domain is reported as "domain:operator".
   std::vector<std::string> operators;
   std::vector<GraphTensorContract> inputs, outputs;
+  std::vector<GraphNodeContract> nodes;
+  // Initializers define local values. Captures are values referenced by a subgraph but defined by
+  // its enclosing graph; top-level graphs are refused if this list is non-empty.
+  std::vector<std::string> initializerNames, captures;
+  std::map<std::string, std::string> metadata;
+  std::vector<ConditioningControlContract> conditioningControls;
   std::size_t nodeCount{0U}, initializerCount{0U};
   std::uint64_t initializerBytes{0U};
   [[nodiscard]] const GraphTensorContract* findInput(std::string_view name) const noexcept;
   [[nodiscard]] const GraphTensorContract* findOutput(std::string_view name) const noexcept;
+  [[nodiscard]] const ConditioningControlContract* findConditioningControl(std::string_view name) const noexcept;
+  [[nodiscard]] bool supportsConditioningControl(std::string_view name) const noexcept;
 };
 
 [[nodiscard]] core::Result<GraphContract> inspectNeuralGraph(std::span<const std::byte> graph,

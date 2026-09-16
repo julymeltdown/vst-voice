@@ -224,13 +224,15 @@ core::Result<void> validateExpressionCarrier(const domain::Project& project,
 ExpressionLaneModel::ExpressionLaneModel(application::PerformanceJobContext context,
                                          domain::RegionId region, domain::TrackId track,
                                          ExpressionChannel channel, std::uint64_t revision,
-                                         std::vector<ExpressionPoint> points)
+                                         std::vector<ExpressionPoint> points,
+                                         bool resolvedCarrierValidated)
     : context_(std::move(context)), region_(region), track_(track), channel_(channel),
-      revision_(revision), source_(std::move(points)), draft_(source_) {}
+      revision_(revision), resolvedCarrierValidated_(resolvedCarrierValidated),
+      source_(std::move(points)), draft_(source_) {}
 
 core::Result<ExpressionLaneModel> ExpressionLaneModel::prepare(
     const application::EditorSession& session, domain::RegionId regionId,
-    ExpressionChannel channel, std::stop_token stop) {
+    ExpressionChannel channel, std::stop_token stop, bool resolvedCarrierValidated) {
   if (stop.stop_requested())
     return core::failure<ExpressionLaneModel>(core::ErrorCode::Conflict,
                                               "Expression lane capture cancelled");
@@ -252,12 +254,13 @@ core::Result<ExpressionLaneModel> ExpressionLaneModel::prepare(
                                               "Expression lane capture cancelled");
   auto points = readPoints(*region, channel);
   return ExpressionLaneModel{std::move(context.value()), regionId, *track, channel,
-                             session.revision(), std::move(points)};
+                             session.revision(), std::move(points), resolvedCarrierValidated};
 }
 
 core::Result<void> ExpressionLaneModel::editable() const {
   if (state_ != State::Ready)
     return core::failure(core::ErrorCode::Conflict, "Expression lane draft is closed");
+  if (resolvedCarrierValidated_) return core::success();
   return validateExpressionCarrier(context_.sourceProject(), track_, channel_);
 }
 

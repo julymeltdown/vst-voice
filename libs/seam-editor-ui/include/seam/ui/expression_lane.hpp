@@ -64,7 +64,8 @@ public:
 
   [[nodiscard]] static core::Result<ExpressionLaneModel> prepare(
       const application::EditorSession& session, domain::RegionId region,
-      ExpressionChannel channel, std::stop_token stop = {});
+      ExpressionChannel channel, std::stop_token stop = {},
+      bool resolvedCarrierValidated = false);
 
   [[nodiscard]] ExpressionChannel channel() const noexcept { return channel_; }
   [[nodiscard]] ExpressionChannelDescriptor descriptor() const noexcept {
@@ -98,7 +99,7 @@ public:
 private:
   ExpressionLaneModel(application::PerformanceJobContext context, domain::RegionId region,
                       domain::TrackId track, ExpressionChannel channel, std::uint64_t revision,
-                      std::vector<ExpressionPoint> points);
+                      std::vector<ExpressionPoint> points, bool resolvedCarrierValidated);
   [[nodiscard]] core::Result<void> validatePoint(ExpressionPoint point) const;
   [[nodiscard]] core::Result<void> commit(application::EditorSession& session) const;
 
@@ -107,6 +108,7 @@ private:
   domain::TrackId track_;
   ExpressionChannel channel_{ExpressionChannel::Formant};
   std::uint64_t revision_{0U};
+  bool resolvedCarrierValidated_{false};
   std::vector<ExpressionPoint> source_;
   std::vector<ExpressionPoint> draft_;
   State state_{State::Ready};

@@ -365,6 +365,21 @@ TEST_CASE("A singer without its own excitation refuses the nudge and keeps the s
   CHECK(region->breathinessAutomation.points().empty());
 }
 
+TEST_CASE("The editor accepts breathiness when the installed singer route proves support") {
+  CarrierFixture fixture{false};
+  native_ui::EditorHostCallbacks callbacks{
+      .validateSingerControl = [](domain::TrackId, synthesis::RendererControl control) {
+        return control == synthesis::RendererControl::Breathiness
+            ? core::success()
+            : core::failure(core::ErrorCode::Unsupported, "unsupported fixture control");
+      }};
+  native_ui::NativeEditorController controller{
+      fixture.session, fixture.factory, fixture.regionId, std::move(callbacks)};
+  controller.setPlayheadTick(time::Tick{240});
+  CHECK(controller.nudgeBreathiness(5));
+  CHECK_NEAR(controller.breathinessAtPlayhead(), 0.5, 1e-6);
+}
+
 TEST_CASE("Breathiness rebalances the excitation and leaves the melody alone") {
   const auto fixture = makeVowelProject();
   const auto plain = renderVowel(fixture, fixture.project);

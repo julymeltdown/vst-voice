@@ -6,6 +6,7 @@ adapters must target it explicitly; no tensor renaming or reshaping is guessed.
 import hashlib
 import json
 
+import onnx
 from onnx import TensorProto
 
 from inspect_graph import MAX_ELEMENTS, inspect_bytes
@@ -28,6 +29,7 @@ def inspect_pair(acoustic_bytes: bytes, vocoder_bytes: bytes, *, bins: int,
     if frames * bins > MAX_ELEMENTS:
         raise ValueError("Mel tensor budget exceeded")
     acoustic, vocoder = inspect_bytes(acoustic_bytes), inspect_bytes(vocoder_bytes)
+    acoustic_model = onnx.load_model_from_string(acoustic_bytes)
 
     def tensors(report, key, expected):
         entries = report[key]
@@ -54,7 +56,9 @@ def inspect_pair(acoustic_bytes: bytes, vocoder_bytes: bytes, *, bins: int,
             raise ValueError("Mel layout, bins or batch mismatch")
         return shape[time_axis]
 
-    inputs = tensors(acoustic, "inputs", ("tokens", "durations", "f0", "steps"))
+    conditioned = any(entry["name"] == "breathiness" for entry in acoustic["inputs"])
+    expected_acoustic_inputs = ("tokens", "durations", "f0", "steps") + (("breathiness",) if conditioned else ())
+    inputs = tensors(acoustic, "inputs", expected_acoustic_inputs)
     outputs = tensors(acoustic, "outputs", ("mel",))
     token_axis = sequence(inputs["tokens"], TensorProto.INT64)
     if sequence(inputs["durations"], TensorProto.INT64) != token_axis:
@@ -62,6 +66,59 @@ def inspect_pair(acoustic_bytes: bytes, vocoder_bytes: bytes, *, bins: int,
     frame_axis = sequence(inputs["f0"], TensorProto.FLOAT)
     if frame_axis == token_axis or mel(outputs["mel"]) != frame_axis:
         raise ValueError("Acoustic time axes disagree")
+    if conditioned:
+        if sequence(inputs["breathiness"], TensorProto.FLOAT) != frame_axis:
+            raise ValueError("Breathiness and acoustic time axes disagree")
+        required = {
+            "seam.conditioning.revision": "2",
+            "seam.conditioning.breathiness.type": "float32",
+            "seam.conditioning.breathiness.unit": "normalized-periodic-aperiodic-balance",
+            "seam.conditioning.breathiness.minimum": "0",
+            "seam.conditioning.breathiness.maximum": "1",
+            "seam.conditioning.breathiness.default": "0",
+            "seam.conditioning.breathiness.supported": "true",
+        }
+        metadata = {entry.key: entry.value for entry in acoustic_model.metadata_props}
+        if (len(metadata) != len(acoustic_model.metadata_props)
+                or any(metadata.get(key) != value for key, value in required.items())
+                or any(key.startswith("seam.conditioning.") and key not in required for key in metadata)):
+            raise ValueError("Breathiness graph metadata is missing, stale or unsupported")
+
+        def captures(graph):
+            definitions = ({entry.name for entry in graph.input}
+                           | {entry.name for entry in graph.initializer}
+                           | {name for node in graph.node for name in node.output if name})
+            uses = {name for node in graph.node for name in node.input if name}
+            for node in graph.node:
+                for attribute in node.attribute:
+                    if attribute.type == onnx.AttributeProto.GRAPH:
+                        uses.update(captures(attribute.g))
+                    elif attribute.type == onnx.AttributeProto.GRAPHS:
+                        for nested in attribute.graphs:
+                            uses.update(captures(nested))
+            return uses - definitions
+
+        reachable = {"breathiness"}
+        changed = True
+        while changed:
+            changed = False
+            for node in acoustic_model.graph.node:
+                node_inputs = {name for name in node.input if name}
+                for attribute in node.attribute:
+                    if attribute.type == onnx.AttributeProto.GRAPH:
+                        node_inputs.update(captures(attribute.g))
+                    elif attribute.type == onnx.AttributeProto.GRAPHS:
+                        for nested in attribute.graphs:
+                            node_inputs.update(captures(nested))
+                if reachable.isdisjoint(node_inputs):
+                    continue
+                before = len(reachable)
+                reachable.update(name for name in node.output if name)
+                changed = changed or len(reachable) != before
+        if "mel" not in reachable:
+            raise ValueError("Breathiness input does not reach the acoustic output")
+    elif any(entry.key.startswith("seam.conditioning.") for entry in acoustic_model.metadata_props):
+        raise ValueError("Acoustic graph declares conditioning metadata without a control input")
     steps_shape = tensor(inputs["steps"], TensorProto.INT64, 0 if steps_layout == "scalar" else 1)
     if steps_layout == "vector1" and steps_shape != [1]:
         raise ValueError("Steps vector must contain one value")
@@ -79,6 +136,8 @@ def inspect_pair(acoustic_bytes: bytes, vocoder_bytes: bytes, *, bins: int,
                 "vocoderHash": vocoder["sha256"], "bins": bins, "layout": layout,
                 "hopSize": hop_size, "maximumSampleFrames": maximum_sample_frames,
                 "maximumMelFrames": frames, "maximumMelElements": frames * bins}
+    if conditioned:
+        contract.update(conditioningRevision=2, conditioningControls=["breathiness"])
     digest = hashlib.sha256(json.dumps(contract, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
     return {"status": "OFFLINE_PAIR_INSPECTED", "contract": contract,
             "contractHash": digest, "executionAdmitted": False, "releaseEligible": False}

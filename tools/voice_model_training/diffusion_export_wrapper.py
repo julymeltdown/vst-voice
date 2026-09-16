@@ -13,6 +13,8 @@ class DiffusionExportWrapper(torch.nn.Module):
         self.diffusion = diffusion
 
     def forward(self, condition: torch.Tensor, steps: int) -> torch.Tensor:
+        # Variance controls are already embedded in `condition` by the duration
+        # encoder. A second control argument here would be a silently ignored input.
         condition = condition.transpose(1, 2)
         noise = torch.randn((1, self.diffusion.num_feats, self.diffusion.out_dims, condition.shape[2]),
                             device=condition.device)

@@ -119,6 +119,23 @@ TEST_CASE("A neural singer is its own carrier and does not inherit the six chann
   CHECK(!refused.hasValue());
 }
 
+TEST_CASE("An admitted neural control extends only that resolved route") {
+  auto song = makeSong();
+  auto* track = song.project.findVocalTrack(song.track);
+  CHECK(track != nullptr);
+  if (track == nullptr) return;
+  track->neuralResource = domain::NeuralResourceReference{
+      .resource = identity(domain::SingerResourceKind::Neural, "conditioned")};
+  rendering::SingerRouteEnvironment environment{};
+  environment.neuralConditioningControls = {synthesis::RendererControl::Breathiness};
+  const auto route = rendering::resolveSingerRoute(song.project, song.track, environment);
+  CHECK(route.hasValue());
+  if (!route) return;
+  CHECK(route.value().supportsControl(synthesis::RendererControl::Breathiness));
+  CHECK(rendering::validateRouteControl(route.value(), synthesis::RendererControl::Breathiness));
+  CHECK(!route.value().supportsControl(synthesis::RendererControl::Formant));
+}
+
 TEST_CASE("An unavailable singer is reported with its reason and stays unreviewed") {
   auto song = makeSong();
   auto* track = song.project.findVocalTrack(song.track);

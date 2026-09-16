@@ -82,6 +82,9 @@ struct SingerRouteEnvironment final {
   std::string reviewDetail;
   // Why the resource is unavailable, when the caller knows. Used verbatim in the diagnostic.
   std::string unavailableReason;
+  // Controls proven by the admitted neural graph, not by the carrier family.
+  // Other carriers ignore this list.
+  std::vector<synthesis::RendererControl> neuralConditioningControls;
 };
 
 // Resolve one track's singing route. A track with neither a procedural nor a neural selection is the

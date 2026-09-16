@@ -773,9 +773,12 @@ core::Result<RenderSnapshot> RenderSnapshotFactory::createNeural(
   if (requiresFormantShift(*region))
     return core::failure<RenderSnapshot>(core::ErrorCode::Unsupported,
         formantShiftUnsupportedMessage("neural model"), trackId.toString());
-  if (requiresBreathiness(*region))
-    return core::failure<RenderSnapshot>(core::ErrorCode::Unsupported,
-        breathinessUnsupportedMessage("neural model"), trackId.toString());
+  if (requiresBreathiness(*region)) {
+    if (!bundle.acousticGraph().supportsConditioningControl("breathiness")) {
+      return core::failure<RenderSnapshot>(core::ErrorCode::Unsupported,
+          breathinessUnsupportedMessage("neural model"), trackId.toString());
+    }
+  }
   if (requiresTension(*region))
     return core::failure<RenderSnapshot>(core::ErrorCode::Unsupported,
         tensionUnsupportedMessage("neural model"), trackId.toString());

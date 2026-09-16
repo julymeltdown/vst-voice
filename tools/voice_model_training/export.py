@@ -62,21 +62,33 @@ def main():
         hparams.clear()
         hparams.update(configuration)
         from modules.toplevel import DiffSingerAcoustic
-        from .export_adapter import prepare_acoustic_export
+        from .export_adapter import check_deployment_bridge, prepare_acoustic_export
         from .onnx_acoustic import export_acoustic
+        from .onnx_encoder import check_encoder_runtime
         from tools.neural_runtime.inspect_graph import inspect_bytes
         torch.set_num_threads(1)
         model = DiffSingerAcoustic(vocab_size=len(vocabulary) + 1, out_dims=profile["bins"])
         model.load_state_dict(state["model"], strict=True)
+        deployment_check = check_deployment_bridge(
+            model, configuration=configuration, acoustic_profile=profile)
+        if not deployment_check["passed"]:
+            raise ValueError("Export deployment conditioning effect check failed")
         deployment = prepare_acoustic_export(model, configuration=configuration, acoustic_profile=profile)
+        encoder_check = check_encoder_runtime(deployment)
+        if not encoder_check["passed"]:
+            raise ValueError("Export encoder parity or conditioning effect check failed")
         graph = export_acoustic(deployment)
         inspection = inspect_bytes(graph)
         options = ort.SessionOptions()
         options.intra_op_num_threads = options.inter_op_num_threads = 1
         session = ort.InferenceSession(graph, sess_options=options, providers=["CPUExecutionProvider"])
-        result = session.run(["mel"], dict(tokens=np.ones((1, 2), dtype=np.int64),
+        smoke_inputs = dict(tokens=np.ones((1, 2), dtype=np.int64),
             durations=np.array([[2, 3]], dtype=np.int64), f0=np.full((1, 5), 220., dtype=np.float32),
-            steps=np.array(1, dtype=np.int64)))[0]
+            steps=np.array(1, dtype=np.int64))
+        conditioned = configuration.get("use_breathiness_embed", False)
+        if conditioned:
+            smoke_inputs["breathiness"] = np.linspace(0, 1, 5, dtype=np.float32)[None]
+        result = session.run(["mel"], smoke_inputs)[0]
         if result.shape != (1, 5, profile["bins"]) or not np.isfinite(result).all():
             raise ValueError("Export runtime smoke failed")
         args.output.mkdir(mode=0o700)
@@ -84,12 +96,18 @@ def main():
             stream.write(graph)
             stream.flush()
             os.fsync(stream.fileno())
-        report = dict(formatId="com.project-seam.acoustic-export", schemaVersion=1,
+        controls = ([dict(name="breathiness", type="float32", shape=[1, "T"],
+                          unit="normalized-periodic-aperiodic-balance", minimum=0, maximum=1,
+                          default=0, supported=True)] if conditioned else [])
+        report = dict(formatId="com.project-seam.acoustic-export", schemaVersion=2,
                       acousticPath="acoustic.onnx", acousticSha256=hashlib.sha256(graph).hexdigest(),
                       acousticBytes=len(graph), checkpointReceiptSha256=args.receipt_sha256,
                       checkpointSha256=receipt["checkpointSha256"], revision=REVISION,
                       profile=profile, profileSha256=state["metadata"]["profileSha256"], vocabulary=vocabulary,
                       inspection=inspection, runtimeSmokePassed=True, runtimeVersion=ort.__version__,
+                      encoderRuntimeCheck=encoder_check, deploymentBridgeCheck=deployment_check,
+                      conditioningRevision=2,
+                      conditioningControls=controls,
                       sourceRightsRevalidated=False, modelBundleAdmitted=False, singerQualified=False,
                       releaseEligible=False)
         publish_new(args.output / "export.json", report)

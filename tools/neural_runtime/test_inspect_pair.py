@@ -36,6 +36,27 @@ class PairTests(unittest.TestCase):
         return inspect_pair((acoustic or fixture()).SerializeToString(),
                             (vocoder or fixture(False)).SerializeToString(), **args)
 
+    def conditioned(self):
+        model = fixture()
+        model.graph.input.append(helper.make_tensor_value_info("breathiness", T.FLOAT, [1, "frames"]))
+        model.graph.node[0].output[0] = "base"
+        model.graph.node.extend([
+            helper.make_node("ReduceSum", ["breathiness"], ["breathiness_sum"], keepdims=0),
+            helper.make_node("Add", ["base", "breathiness_sum"], ["mel"]),
+        ])
+        for key, value in {
+                "seam.conditioning.revision": "2",
+                "seam.conditioning.breathiness.type": "float32",
+                "seam.conditioning.breathiness.unit": "normalized-periodic-aperiodic-balance",
+                "seam.conditioning.breathiness.minimum": "0",
+                "seam.conditioning.breathiness.maximum": "1",
+                "seam.conditioning.breathiness.default": "0",
+                "seam.conditioning.breathiness.supported": "true",
+        }.items():
+            entry = model.metadata_props.add()
+            entry.key, entry.value = key, value
+        return model
+
     def test_both_layouts_and_hash_binding(self):
         for layout in ("BTF", "BFT"):
             report = self.inspect(fixture(layout=layout), fixture(False, layout), layout=layout)
@@ -77,6 +98,20 @@ class PairTests(unittest.TestCase):
         for entry in model.graph.input:
             entry.type.tensor_type.shape.dim[1].dim_param = "vocoder_time"
         self.assertEqual(self.inspect(vocoder=model)["status"], "OFFLINE_PAIR_INSPECTED")
+
+    def test_breathiness_requires_exact_metadata_shape_and_output_reachability(self):
+        model = self.conditioned()
+        report = self.inspect(model)
+        self.assertEqual(report["contract"]["conditioningRevision"], 2)
+        self.assertEqual(report["contract"]["conditioningControls"], ["breathiness"])
+        model.metadata_props[2].value = "normalized-amplitude"
+        with self.assertRaisesRegex(ValueError, "metadata"):
+            self.inspect(model)
+        ignored = self.conditioned()
+        del ignored.graph.node[-2:]
+        ignored.graph.node[0].output[0] = "mel"
+        with self.assertRaisesRegex(ValueError, "does not reach"):
+            self.inspect(ignored)
 
     def test_bounds(self):
         for options in ({"bins": True}, {"hop_size": 0}, {"maximum_sample_frames": 4194305},

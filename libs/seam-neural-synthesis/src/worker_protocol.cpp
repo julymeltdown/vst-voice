@@ -99,6 +99,22 @@ bool hasOnlyKeys(const JsonValue& root,
   return true;
 }
 
+bool hasAllowedKeys(const JsonValue& root,
+                    std::initializer_list<std::string_view> required,
+                    std::initializer_list<std::string_view> optional = {}) {
+  if (!root.isObject()) return false;
+  for (const auto key : required) {
+    if (root.find(key) == nullptr) return false;
+  }
+  for (const auto& [key, unused] : root.asObject()) {
+    if (std::find(required.begin(), required.end(), key) == required.end() &&
+        std::find(optional.begin(), optional.end(), key) == optional.end()) {
+      return false;
+    }
+  }
+  return true;
+}
+
 core::Result<std::uint64_t> requiredUnsigned(const JsonValue& root,
                                              std::string_view key,
                                              std::uint64_t maximum) {
@@ -236,6 +252,13 @@ core::Result<void> NeuralRequest::validate(const WorkerProtocolLimits& limits) c
     return core::failure(core::ErrorCode::InvalidArgument, "Neural request identity or shape is invalid");
   for (const auto value : f0Hz) if (!std::isfinite(value) || value < 0.0F || value > 20'000.0F) return core::failure(core::ErrorCode::InvalidArgument, "Neural request F0 is invalid");
   for (const auto value : dynamics) if (!std::isfinite(value) || value < 0.0F || value > 4.0F) return core::failure(core::ErrorCode::InvalidArgument, "Neural request dynamics are invalid");
+  if (!breathiness.empty()) {
+    if (breathiness.size() != frameCount)
+      return core::failure(core::ErrorCode::InvalidArgument, "Neural request breathiness shape differs from frameCount");
+    for (const auto value : breathiness)
+      if (!std::isfinite(value) || value < 0.0F || value > 1.0F)
+        return core::failure(core::ErrorCode::InvalidArgument, "Neural request breathiness value out of range [0, 1]");
+  }
   if (conditioning) return conditioning->validate(frameCount,vocabularySize,limits);
   if (vocabularySize!=0U) return core::failure(core::ErrorCode::InvalidArgument,"Unconditioned neural request cannot declare a vocabulary size");
   return core::success();
@@ -277,7 +300,11 @@ core::Result<std::vector<std::byte>> encodeRequest(const NeuralRequest& request,
     metadata.emplace("vocabularyHash",request.conditioning->vocabularyHash);
     metadata.emplace("vocabularySize",JsonValue{static_cast<std::int64_t>(request.vocabularySize)});
   }
-  std::vector<float> payload; payload.reserve(request.f0Hz.size() + request.dynamics.size()); payload.insert(payload.end(), request.f0Hz.begin(), request.f0Hz.end()); payload.insert(payload.end(), request.dynamics.begin(), request.dynamics.end());
+  if (!request.breathiness.empty()) {
+    metadata.emplace("hasBreathiness", JsonValue{true});
+  }
+  std::vector<float> payload; payload.reserve(request.f0Hz.size() + request.dynamics.size() + request.breathiness.size()); payload.insert(payload.end(), request.f0Hz.begin(), request.f0Hz.end()); payload.insert(payload.end(), request.dynamics.begin(), request.dynamics.end());
+  if (!request.breathiness.empty()) payload.insert(payload.end(), request.breathiness.begin(), request.breathiness.end());
   return encodeFrame(kRequestType, metadata, payload, limits);
 }
 
@@ -289,7 +316,7 @@ core::Result<NeuralRequest> decodeRequest(std::span<const std::byte> frame,
   if (!kind || (kind.value()!="seam-neural-request-v1" && kind.value()!="seam-neural-request-v2" && kind.value()!="seam-neural-request-v3")) return core::failure<NeuralRequest>(core::ErrorCode::ParseError,"Neural request kind is invalid");
   const bool bundled=kind.value()=="seam-neural-request-v3";
   const bool conditioned=bundled || kind.value()=="seam-neural-request-v2";
-  if (!(bundled?hasOnlyKeys(metadata,{"kind","requestId","modelId","modelVersion","modelContentHash","pronunciationHash","sampleRate","channels","frameCount","featureKind","vocabularyHash","vocabularySize","phonemes","bundleContentHash"}):conditioned?hasOnlyKeys(metadata,{"kind","requestId","modelId","modelVersion","modelContentHash","pronunciationHash","sampleRate","channels","frameCount","featureKind","vocabularyHash","vocabularySize","phonemes"}):hasOnlyKeys(metadata, {"kind", "requestId", "modelId", "modelVersion", "modelContentHash", "pronunciationHash", "sampleRate", "channels", "frameCount", "featureKind"})))
+  if (!(bundled?hasAllowedKeys(metadata,{"kind","requestId","modelId","modelVersion","modelContentHash","pronunciationHash","sampleRate","channels","frameCount","featureKind","vocabularyHash","vocabularySize","phonemes","bundleContentHash"},{"hasBreathiness"}):conditioned?hasAllowedKeys(metadata,{"kind","requestId","modelId","modelVersion","modelContentHash","pronunciationHash","sampleRate","channels","frameCount","featureKind","vocabularyHash","vocabularySize","phonemes"},{"hasBreathiness"}):hasAllowedKeys(metadata,{"kind","requestId","modelId","modelVersion","modelContentHash","pronunciationHash","sampleRate","channels","frameCount","featureKind"},{"hasBreathiness"})))
     return core::failure<NeuralRequest>(core::ErrorCode::ParseError, "Neural request metadata fields are unsupported");
   auto id = requiredUnsigned(metadata, "requestId", std::numeric_limits<std::uint64_t>::max()); if (!id) return core::Result<NeuralRequest>{id.error()};
   auto model = requiredString(metadata, "modelId", limits.maximumModelIdBytes); if (!model) return core::Result<NeuralRequest>{model.error()};
@@ -319,8 +346,13 @@ core::Result<NeuralRequest> decodeRequest(std::span<const std::byte> frame,
     const auto valid=conditioning->validate(frames.value(),vocabularySize,limits);
     if (!valid) return core::Result<NeuralRequest>{valid.error()};
   }
-  const auto values = decodeFloats(decoded.value().payload, frames.value() * 2U); if (!values) return core::Result<NeuralRequest>{values.error()};
-  NeuralRequest result{.requestId = id.value(), .modelId = std::move(model).value(), .modelVersion = std::move(version).value(), .modelContentHash = std::move(modelHash).value(), .pronunciationHash = std::move(pronunciation).value(), .sampleRate = rate.value(), .channels = channels.value(), .frameCount = frames.value(), .f0Hz = {}, .dynamics = {}};
+  const auto* breathinessFlag = metadata.find("hasBreathiness");
+  if (breathinessFlag != nullptr && (!breathinessFlag->isBool() || !breathinessFlag->asBool()))
+    return core::failure<NeuralRequest>(core::ErrorCode::ParseError,
+        "Neural request breathiness flag must be true when present");
+  const bool hasBreathiness = breathinessFlag != nullptr;
+  const auto values = decodeFloats(decoded.value().payload, frames.value() * (hasBreathiness ? 3U : 2U)); if (!values) return core::Result<NeuralRequest>{values.error()};
+  NeuralRequest result{.requestId = id.value(), .modelId = std::move(model).value(), .modelVersion = std::move(version).value(), .modelContentHash = std::move(modelHash).value(), .pronunciationHash = std::move(pronunciation).value(), .sampleRate = rate.value(), .channels = channels.value(), .frameCount = frames.value(), .f0Hz = {}, .dynamics = {}, .breathiness = {}};
   result.conditioning=std::move(conditioning); result.vocabularySize=vocabularySize;
   if (bundled) {
     const auto hash=requiredString(metadata,"bundleContentHash",limits.maximumHashBytes);
@@ -329,7 +361,10 @@ core::Result<NeuralRequest> decodeRequest(std::span<const std::byte> frame,
     result.bundleContentHash=hash.value();
   }
   result.f0Hz.assign(values.value().begin(), values.value().begin() + static_cast<std::ptrdiff_t>(frames.value()));
-  result.dynamics.assign(values.value().begin() + static_cast<std::ptrdiff_t>(frames.value()), values.value().end());
+  result.dynamics.assign(values.value().begin() + static_cast<std::ptrdiff_t>(frames.value()), values.value().begin() + static_cast<std::ptrdiff_t>(frames.value() * 2U));
+  if (hasBreathiness) {
+    result.breathiness.assign(values.value().begin() + static_cast<std::ptrdiff_t>(frames.value() * 2U), values.value().end());
+  }
   const auto valid = result.validate(limits); if (!valid) return core::Result<NeuralRequest>{valid.error()};
   return result;
 }

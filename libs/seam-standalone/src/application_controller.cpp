@@ -229,6 +229,17 @@ StandaloneApplicationController::neuralResources() const {
         track->neuralResource->resource.id == resource.id &&
         track->neuralResource->resource.version == resource.version &&
         track->neuralResource->resource.contentHash == resource.contentHash;
+    rendering::SingerRouteEnvironment environment{};
+    if (neuralSelection_) {
+      domain::NeuralResourceReference reference{{domain::SingerResourceKind::Neural,
+          resource.id, resource.version, resource.contentHash}};
+      const auto admitted = neuralSelection_->select(
+          session_.runtime().selectedTrack(), reference, *neuralResources_);
+      environment.available = admitted.hasValue();
+      if (admitted && admitted.value().bundle->acousticGraph().supportsConditioningControl("breathiness"))
+        environment.neuralConditioningControls.push_back(synthesis::RendererControl::Breathiness);
+      if (!admitted) environment.unavailableReason = admitted.error().message;
+    }
     result.push_back(platform::NeuralResourceMenuItem{
         .id = resource.id,
         .version = resource.version,
@@ -244,10 +255,39 @@ StandaloneApplicationController::neuralResources() const {
                                                 .id = resource.id,
                                                 .version = resource.version,
                                                 .contentHash = resource.contentHash},
-                synthesis::RendererCarrier::Neural, {})),
+                synthesis::RendererCarrier::Neural, environment)),
     });
   }
   return result;
+}
+
+core::Result<void> StandaloneApplicationController::validateSingerControl(
+    domain::TrackId trackId, synthesis::RendererControl control) const {
+  const auto& project = session_.runtime().document().session().project();
+  const auto* track = project.findVocalTrack(trackId);
+  if (track == nullptr)
+    return core::failure(core::ErrorCode::NotFound, "Singer control has no vocal track");
+  if (!track->neuralResource) {
+    const auto route = rendering::resolveSingerRoute(project, trackId);
+    if (!route) return core::Result<void>{route.error()};
+    return rendering::validateRouteControl(route.value(), control);
+  }
+  const auto& identity = track->neuralResource->resource;
+  if (!cachedNeuralRouteIdentity_ || *cachedNeuralRouteIdentity_ != identity || !cachedNeuralRoute_) {
+    if (!neuralSelection_ || !neuralResources_)
+      return core::failure(core::ErrorCode::NotFound,
+          "This installation cannot resolve the selected neural singer");
+    const auto admitted = neuralSelection_->select(trackId, *track->neuralResource, *neuralResources_);
+    if (!admitted) return core::Result<void>{admitted.error()};
+    rendering::SingerRouteEnvironment environment{};
+    if (admitted.value().bundle->acousticGraph().supportsConditioningControl("breathiness"))
+      environment.neuralConditioningControls.push_back(synthesis::RendererControl::Breathiness);
+    const auto route = rendering::resolveSingerRoute(project, trackId, environment);
+    if (!route) return core::Result<void>{route.error()};
+    cachedNeuralRouteIdentity_ = identity;
+    cachedNeuralRoute_ = route.value();
+  }
+  return rendering::validateRouteControl(*cachedNeuralRoute_, control);
 }
 
 core::Result<void> StandaloneApplicationController::selectNeuralResource(
@@ -271,6 +311,8 @@ core::Result<void> StandaloneApplicationController::selectNeuralResource(
       std::make_unique<application::SetTrackNeuralResourceCommand>(trackId,
           track->neuralResource, candidate));
   if (!changed) return changed;
+  cachedNeuralRouteIdentity_.reset();
+  cachedNeuralRoute_.reset();
   const auto recorded = onDocumentChanged();
   if (!recorded) return recorded;
   notifyStateChanged();
@@ -287,6 +329,8 @@ core::Result<void> StandaloneApplicationController::clearNeuralResource() {
       std::make_unique<application::SetTrackNeuralResourceCommand>(trackId,
           track->neuralResource, std::nullopt));
   if (!changed) return changed;
+  cachedNeuralRouteIdentity_.reset();
+  cachedNeuralRoute_.reset();
   const auto recorded = onDocumentChanged();
   if (!recorded) return recorded;
   notifyStateChanged();

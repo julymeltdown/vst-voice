@@ -32,6 +32,9 @@ SUPPORTED_PROFILE = dict(profileId="seam-full-hop-slaney-v1", sampleRate=48000,
                          minimumHz=20, maximumHz=24000, amplitudeScale="ln-amplitude",
                          melFrequencyScale="slaney", floor=1e-5, layout="TF")
 PROFILE_FIELDS = tuple(SUPPORTED_PROFILE)
+BREATHINESS_CONTROL = dict(name="breathiness", type="float32", shape=[1, "T"],
+                           unit="normalized-periodic-aperiodic-balance", minimum=0, maximum=1,
+                           default=0, supported=True)
 
 
 def canonical_json(value, *, compact=False):
@@ -132,6 +135,20 @@ def prepare(acoustic_directory, vocoder_directory, output, maximum_frames,
         "vocoderPath", "vocoderSha256", "vocoderBytes")
     if acoustic.get("runtimeSmokePassed") is not True:
         raise ValueError("Acoustic export did not record a passing runtime smoke test")
+    controls = acoustic.get("conditioningControls", [])
+    if controls not in ([], [BREATHINESS_CONTROL]):
+        raise ValueError("Acoustic export declares unsupported conditioning controls")
+    if controls:
+        if (acoustic.get("schemaVersion") != 2 or acoustic.get("conditioningRevision") != 2
+                or acoustic.get("encoderRuntimeCheck", {}).get("breathinessConditionEffectPassed") is not True
+                or acoustic.get("encoderRuntimeCheck", {}).get("maximumBreathinessConditionEffect", 0) <= 1e-7
+                or acoustic.get("deploymentBridgeCheck", {}).get("breathinessConditionEffectPassed") is not True
+                or acoustic.get("deploymentBridgeCheck", {}).get("maximumBreathinessMelEffect", 0) <= 1e-7):
+            raise ValueError("Breathiness export lacks a passing acoustic-effect receipt")
+        graph_inputs = acoustic.get("inspection", {}).get("inputs", [])
+        declared = next((entry for entry in graph_inputs if entry.get("name") == "breathiness"), None)
+        if declared is None or declared.get("dtype") != 1 or declared.get("shape") != [1, "n_frames"]:
+            raise ValueError("Breathiness export graph interface differs from [1, T] float32")
     if acoustic["profileSha256"] != vocoder["profileSha256"] or acoustic["profile"] != vocoder["profile"]:
         raise ValueError("Acoustic and vocoder exports disagree on the acoustic profile")
     if len(acoustic_graph) == 0 or len(vocoder_graph) == 0:
@@ -170,6 +187,7 @@ def prepare(acoustic_directory, vocoder_directory, output, maximum_frames,
                 vocoderCheckpointReceiptSha256=vocoder["checkpointReceiptSha256"],
                 maximumFrames=maximum_frames, stepsLayout=steps_layout,
                 vocoderOutput=vocoder_output, sourceRightsRevalidated=False,
+                conditioningRevision=2, conditioningControls=controls,
                 modelBundleAdmitted=False, singerQualified=False, releaseEligible=False)
 
 

@@ -154,9 +154,46 @@ TEST_CASE("graph inspection reports what a graph file declares") {
   CHECK(tensorElementTypeName(mel->elementType)=="float32");
   CHECK(tensorElementTypeName(7U)=="int64");
   CHECK(isAdmittedOperator("ConvTranspose"));
-  // The graph-bearing operators are not admitted: their subgraphs are not inspected here.
-  CHECK(!isAdmittedOperator("Loop"));
+  // Owned DiffSinger exports require inspected If/Loop bodies; Scan remains outside the profile.
+  CHECK(isAdmittedOperator("Loop"));
+  CHECK(isAdmittedOperator("If"));
+  CHECK(!isAdmittedOperator("Scan"));
   CHECK(!isAdmittedOperator("SeamCustomOp"));
+}
+
+TEST_CASE("graph inspection recursively validates control-flow bodies and lexical captures") {
+  using namespace seam::neural_synthesis;
+  using namespace seam::test::onnx;
+  const auto branch=[&](std::string_view op) {
+    return onnxGraph({}, {onnxValueInfo("branch_output",1U,{"1","T","80"})},
+                     {onnxNode(op,{"mel"},{"branch_output"})});
+  };
+  const auto makeAttribute=[&](std::string_view name,std::string_view graph) {
+    std::string attribute;
+    protoBytesField(attribute,1U,name);
+    protoBytesField(attribute,6U,graph);
+    return attribute;
+  };
+  const auto makeIf=[&](std::string_view bodyOperator) {
+    std::string node;
+    protoBytesField(node,1U,"condition");
+    protoBytesField(node,2U,"audio");
+    protoBytesField(node,4U,"If");
+    protoBytesField(node,5U,makeAttribute("then_branch",branch(bodyOperator)));
+    protoBytesField(node,5U,makeAttribute("else_branch",branch("Identity")));
+    return onnxModel(onnxGraph(
+        {onnxValueInfo("mel",1U,{"1","T","80"}),onnxValueInfo("condition",9U,{})},
+        {onnxValueInfo("audio",1U,{"1","T","80"})},{node}));
+  };
+  const auto valid=makeIf("Identity");
+  const auto contract=inspectNeuralGraph(std::as_bytes(std::span{valid.data(),valid.size()}));
+  REQUIRE(contract);
+  CHECK((contract.value().operators==std::vector<std::string>{"Identity","If"}));
+  CHECK(contract.value().nodeCount==3U);
+  CHECK(contract.value().captures.empty());
+  CHECK(contract.value().nodes.front().inputs==std::vector<std::string>{"condition","mel"});
+  const auto invalid=makeIf("SeamCustomOp");
+  CHECK(!inspectNeuralGraph(std::as_bytes(std::span{invalid.data(),invalid.size()})));
 }
 
 TEST_CASE("graph inspection refuses bytes no admitted export family produces") {
@@ -180,7 +217,7 @@ TEST_CASE("graph inspection refuses bytes no admitted export family produces") {
       {onnxValueInfo("audio",1U,{"1","samples"})},
       {onnxNode("FancyNeuralOp",{"mel"},{"audio"})}));
   CHECK(!inspect(unknownOperator));
-  // A node attribute that carries a subgraph is refused: this reader does not inspect subgraphs.
+  // A malformed subgraph payload is refused rather than skipped.
   std::string attribute;
   protoBytesField(attribute,1U,"body");
   protoBytesField(attribute,6U,"subgraph bytes");
@@ -249,4 +286,61 @@ TEST_CASE("admission refuses a pair of individually valid graphs that disagree")
   CHECK(refused(acousticGraph(),seam::test::onnx::onnxVocoderGraph(80U,1U,"audio","2")));
   // The pair the configuration describes is admitted, so the refusals above are the difference.
   CHECK(!refused(acousticGraph(),vocoderGraph()));
+}
+
+TEST_CASE("graph admission validates and binds declared conditioning controls") {
+  using namespace seam::neural_synthesis;
+  const auto inspect = [](const std::string& graph) {
+    return inspectNeuralGraph(std::as_bytes(std::span{graph.data(), graph.size()}), {});
+  };
+  // Valid breathiness input [1, T] float32 is admitted and declared
+  const auto valid = seam::test::onnx::onnxAcousticGraph(80U, 1U, {}, "seam-test", 9U, 17U, true, 1U, {"1", "T"});
+  const auto inspected = inspect(valid);
+  CHECK(inspected.hasValue());
+  CHECK(inspected.value().supportsConditioningControl("breathiness"));
+  const auto* control = inspected.value().findConditioningControl("breathiness");
+  CHECK(control != nullptr);
+  CHECK(control->name == "breathiness");
+  CHECK(control->type == "float32");
+  CHECK(control->unit == "normalized-periodic-aperiodic-balance");
+  CHECK(control->minimumValue == 0.0F);
+  CHECK(control->maximumValue == 1.0F);
+  CHECK(control->defaultValue == 0.0F);
+
+  // Invalid element type: int64 (7U) is refused
+  const auto badType = seam::test::onnx::onnxAcousticGraph(80U, 1U, {}, "seam-test", 9U, 17U, true, 7U, {"1", "T"});
+  const auto badTypeResult = inspect(badType);
+  CHECK(!badTypeResult.hasValue());
+  CHECK(badTypeResult.error().code == seam::core::ErrorCode::Unsupported);
+  CHECK(badTypeResult.error().message.find("must be float32") != std::string::npos);
+
+  // Invalid rank: 3D [1, T, 80] is refused
+  const auto badRank = seam::test::onnx::onnxAcousticGraph(80U, 1U, {}, "seam-test", 9U, 17U, true, 1U, {"1", "T", "80"});
+  const auto badRankResult = inspect(badRank);
+  CHECK(!badRankResult.hasValue());
+  CHECK(badRankResult.error().code == seam::core::ErrorCode::Unsupported);
+  CHECK(badRankResult.error().message.find("dynamic 2D") != std::string::npos);
+
+  // Invalid batch: batch 2 is refused
+  const auto badBatch = seam::test::onnx::onnxAcousticGraph(80U, 1U, {}, "seam-test", 9U, 17U, true, 1U, {"2", "T"});
+  const auto badBatchResult = inspect(badBatch);
+  CHECK(!badBatchResult.hasValue());
+  CHECK(badBatchResult.error().code == seam::core::ErrorCode::Unsupported);
+  CHECK(badBatchResult.error().message.find("dynamic 2D") != std::string::npos);
+
+  const auto fixedTime = inspect(seam::test::onnx::onnxAcousticGraph(
+      80U, 1U, {}, "seam-test", 9U, 17U, true, 1U, {"1", "32"}));
+  CHECK(!fixedTime);
+  CHECK(fixedTime.error().message.find("dynamic 2D") != std::string::npos);
+
+  const auto wrongUnit = inspect(seam::test::onnx::onnxAcousticGraph(
+      80U, 1U, {}, "seam-test", 9U, 17U, true, 1U, {"1", "T"}, "bipolar"));
+  CHECK(!wrongUnit);
+  CHECK(wrongUnit.error().message.find("metadata") != std::string::npos);
+
+  const auto ignored = inspect(seam::test::onnx::onnxAcousticGraph(
+      80U, 1U, {}, "seam-test", 9U, 17U, true, 1U, {"1", "T"},
+      "normalized-periodic-aperiodic-balance", false));
+  CHECK(!ignored);
+  CHECK(ignored.error().message.find("does not affect") != std::string::npos);
 }

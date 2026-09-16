@@ -21,10 +21,15 @@ REVISION = "336cf01b57f2ad44c6b37a79cf33993043291759"
 def model_settings(value: dict) -> dict:
     fields = {"hiddenSize", "encoderLayers", "channels", "layers", "timesteps",
               "seed", "learningRate", "maximumUpdates", "maximumSeconds", "loss"}
-    if (not isinstance(value, dict) or set(value) != fields | {"formatId", "schemaVersion"}
+    schema = value.get("schemaVersion") if isinstance(value, dict) else None
+    expected = fields | {"formatId", "schemaVersion"} | ({"conditioningControls"} if schema == 2 else set())
+    if (not isinstance(value, dict) or set(value) != expected
             or value["formatId"] != "com.project-seam.ddpm-training-config"
-            or type(value["schemaVersion"]) is not int or value["schemaVersion"] != 1):
+            or type(schema) is not int or schema not in (1, 2)):
         raise ValueError("Unsupported DDPM training configuration")
+    controls = value.get("conditioningControls", [])
+    if not isinstance(controls, list) or controls not in ([], ["breathiness"]):
+        raise ValueError("Training conditioning controls must be empty or exactly breathiness")
     for name, low, high in (("hiddenSize", 16, 256), ("encoderLayers", 1, 8),
                             ("channels", 16, 256), ("layers", 1, 16), ("timesteps", 8, 1000),
                             ("seed", 0, 2**63 - 1), ("maximumUpdates", 1, 100000)):
@@ -40,6 +45,7 @@ def model_settings(value: dict) -> dict:
     return dict(hidden_size=value["hiddenSize"], enc_layers=value["encoderLayers"],
                 enc_ffn_kernel_size=3, ffn_act="gelu", dropout=0., num_heads=2,
                 use_pos_embed=True, use_spk_id=False, diffusion_type="ddpm",
+                use_breathiness_embed=controls == ["breathiness"], use_variance_scaling=False,
                 use_shallow_diffusion=False, timesteps=value["timesteps"], K_step=value["timesteps"],
                 backbone_type="wavenet", backbone_args=dict(num_layers=value["layers"],
                     num_channels=value["channels"], dilation_cycle_length=2),

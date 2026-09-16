@@ -34,6 +34,20 @@ class ReviewedRunTests(unittest.TestCase):
             self.assertEqual(admit.call_count, 3)
             self.assertTrue(admit.call_args.kwargs["reuse_conditioning"])
             self.assertEqual(epoch.call_args.kwargs["expected_source_frames"], {"s": 8})
+            conditioned_snapshot = deepcopy(snapshot)
+            conditioned_snapshot["conditioning"][0].update(
+                conditioningRevision=2, conditioningControls=["breathiness"])
+            admit.return_value = conditioned_snapshot
+            conditioned_options = options | dict(
+                run_metadata={"configuration": {"use_breathiness_embed": True}})
+            self.assertEqual(train_reviewed_epoch(None, None, **conditioned_options), {"published": True})
+            admit.return_value = snapshot
+            with self.assertRaisesRegex(ValueError, "revision-2 supervision"):
+                train_reviewed_epoch(None, None, **conditioned_options)
+            admit.return_value = conditioned_snapshot
+            with self.assertRaisesRegex(ValueError, "silently discard"):
+                train_reviewed_epoch(None, None, **options)
+            admit.return_value = snapshot
             epoch.reset_mock()
             publish.reset_mock()
             with self.assertRaisesRegex(ValueError, "checkpoint dataset"):

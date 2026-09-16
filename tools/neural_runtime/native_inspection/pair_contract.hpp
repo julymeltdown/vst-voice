@@ -1,6 +1,8 @@
 #pragma once
 #include "onnx/onnx.pb.h"
+#include <functional>
 #include <map>
+#include <set>
 #include <stdexcept>
 #include <string>
 
@@ -43,12 +45,84 @@ inline bool pairContract(const onnx::ModelProto& acoustic,const onnx::ModelProto
       if (!fixed(dims.dim(0),1) || !fixed(dims.dim(layout=="BTF"?2:1),bins)) throw std::runtime_error("mel geometry");
       return symbol(dims.dim(layout=="BTF"?1:2));
     };
-    const auto ai=entries(acoustic.graph().input(),{"tokens","durations","f0","steps"});
+    Map ai;
+    for (const auto& value:acoustic.graph().input())
+      if (!ai.emplace(value.name(),&value).second) throw std::runtime_error("duplicate interface");
+    const bool conditioned=ai.contains("breathiness");
+    if (ai.size()!=(conditioned?5U:4U)) throw std::runtime_error("unexpected interface");
+    for (const auto* name:{"tokens","durations","f0","steps"})
+      if (!ai.contains(name)) throw std::runtime_error("missing interface");
     const auto ao=entries(acoustic.graph().output(),{"mel"});
     const auto tokenAxis=sequence(ai.at("tokens"),onnx::TensorProto::INT64);
     const auto timeAxis=sequence(ai.at("f0"),onnx::TensorProto::FLOAT);
     if (sequence(ai.at("durations"),onnx::TensorProto::INT64)!=tokenAxis ||
         tokenAxis==timeAxis || mel(ao.at("mel"))!=timeAxis) return false;
+    if (conditioned) {
+      if (sequence(ai.at("breathiness"),onnx::TensorProto::FLOAT)!=timeAxis) return false;
+      const std::map<std::string,std::string> required{
+          {"seam.conditioning.revision","2"},
+          {"seam.conditioning.breathiness.type","float32"},
+          {"seam.conditioning.breathiness.unit","normalized-periodic-aperiodic-balance"},
+          {"seam.conditioning.breathiness.minimum","0"},
+          {"seam.conditioning.breathiness.maximum","1"},
+          {"seam.conditioning.breathiness.default","0"},
+          {"seam.conditioning.breathiness.supported","true"}};
+      std::map<std::string,std::string> metadata;
+      for (const auto& entry:acoustic.metadata_props())
+        if (!metadata.emplace(entry.key(),entry.value()).second) return false;
+      for (const auto& [key,value]:required)
+        if (!metadata.contains(key) || metadata.at(key)!=value) return false;
+      for (const auto& [key,value]:metadata)
+        if (key.starts_with("seam.conditioning.") && !required.contains(key)) return false;
+      // ONNX control-flow bodies capture enclosing values implicitly. Make those lexical captures
+      // explicit for the reachability proof; otherwise a real DiffSinger If/Loop graph would look
+      // as though it discarded the encoder condition at the branch boundary.
+      std::function<std::set<std::string>(const onnx::GraphProto&)> captures;
+      captures=[&](const onnx::GraphProto& graph) {
+        std::set<std::string> definitions,uses;
+        for (const auto& input:graph.input()) definitions.insert(input.name());
+        for (const auto& initializer:graph.initializer()) definitions.insert(initializer.name());
+        for (const auto& node:graph.node()) {
+          for (const auto& output:node.output()) if (!output.empty()) definitions.insert(output);
+          for (const auto& input:node.input()) if (!input.empty()) uses.insert(input);
+          for (const auto& attribute:node.attribute()) {
+            if (attribute.has_g()) {
+              const auto nested=captures(attribute.g());
+              uses.insert(nested.begin(),nested.end());
+            }
+            for (const auto& nestedGraph:attribute.graphs()) {
+              const auto nested=captures(nestedGraph);
+              uses.insert(nested.begin(),nested.end());
+            }
+          }
+        }
+        for (const auto& definition:definitions) uses.erase(definition);
+        return uses;
+      };
+      const auto consumes=[&](const onnx::NodeProto& node,const std::set<std::string>& reachable) {
+        for (const auto& input:node.input()) if (reachable.contains(input)) return true;
+        for (const auto& attribute:node.attribute()) {
+          if (attribute.has_g())
+            for (const auto& capture:captures(attribute.g())) if (reachable.contains(capture)) return true;
+          for (const auto& nestedGraph:attribute.graphs())
+            for (const auto& capture:captures(nestedGraph)) if (reachable.contains(capture)) return true;
+        }
+        return false;
+      };
+      std::set<std::string> reachable{"breathiness"};
+      bool changed=true;
+      while (changed) {
+        changed=false;
+        for (const auto& node:acoustic.graph().node()) {
+          if (!consumes(node,reachable)) continue;
+          for (const auto& name:node.output()) changed=reachable.insert(name).second || changed;
+        }
+      }
+      if (!reachable.contains("mel")) return false;
+    } else {
+      for (const auto& entry:acoustic.metadata_props())
+        if (entry.key().starts_with("seam.conditioning.")) return false;
+    }
     const auto& stepShape=shape(ai.at("steps"),onnx::TensorProto::INT64,steps=="scalar"?0:1);
     if (steps=="vector1" && !fixed(stepShape.dim(0),1)) return false;
     const auto vi=entries(vocoder.graph().input(),{"mel","f0"});

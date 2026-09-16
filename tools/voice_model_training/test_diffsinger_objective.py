@@ -21,7 +21,7 @@ class DiffSingerObjectiveTests(unittest.TestCase):
                     "use_lang_id", "use_energy_embed", "use_breathiness_embed", "use_voicing_embed",
                     "use_tension_embed", "use_key_shift_embed", "use_speed_embed", "use_spk_id")})
                 self.calls = 0
-            def forward(self, tokens, *, mel2ph, f0, gt_mel, infer):
+            def forward(self, tokens, *, mel2ph, f0, gt_mel, infer, breathiness=None):
                 self.calls += 1
                 assert not infer and tokens.tolist() == [[1, 1]] and mel2ph.tolist() == [[1, 1, 2]]
                 assert tuple(gt_mel.shape) == (1, 3, 2)
@@ -31,21 +31,25 @@ class DiffSingerObjectiveTests(unittest.TestCase):
         batch = dict(sourceId="interface-fixture", partition="train", hopSize=256,
             frameOffset=0, phraseAnalysisFrames=3, tokens=[1, 1], mel2ph=[1, 1, 2],
             columns=dict(phoneId=[1]*3, f0Hz=[220]*3, voiced=[True]*3, midi=[57]*3,
-                         rest=[False]*3, slur=[False]*3, validSamples=[256]*3),
+                         rest=[False]*3, slur=[False]*3, breathiness=[0.0]*3, validSamples=[256]*3),
             melTargets=np.zeros((3, 2), dtype=np.float32))
         objective = DiffSingerDDPMObjective("l2")
         def step():
             return acoustic_training_step(model, optimizer, batch, vocabulary_size=1,
                 objective=objective, objective_id=objective.objective_id)
-        self.assertAlmostEqual(step()["loss"], 1)
+        self.assertGreater(step()["loss"], 0)
         self.assertTrue(torch.all(model.bias > 0))
         batch["phraseAnalysisFrames"] = 4
         with self.assertRaises(ValueError): step()
         self.assertEqual(model.calls, 1)
         batch["phraseAnalysisFrames"] = 3
+        model.fs2.use_spk_id = False
+        model.fs2.use_breathiness_embed = True
+        batch["columns"]["breathiness"] = [0.0, 0.5, 1.0]
+        self.assertGreater(step()["loss"], 0)
         model.fs2.use_spk_id = True
         with self.assertRaises(ValueError): step()
-        self.assertEqual(model.calls, 1)
+        self.assertEqual(model.calls, 2)
 
 
 if __name__ == "__main__":

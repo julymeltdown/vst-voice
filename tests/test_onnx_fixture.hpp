@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 namespace seam::test::onnx {
@@ -96,7 +97,8 @@ inline std::string onnxGraph(const std::vector<std::string>& inputs,
 }
 
 inline std::string onnxModel(std::string_view graph, std::uint32_t irVersion = 9U,
-                             std::uint32_t opset = 17U, std::string_view producer = "seam-test") {
+                             std::uint32_t opset = 17U, std::string_view producer = "seam-test",
+                             const std::vector<std::pair<std::string, std::string>>& metadata = {}) {
   std::string opsetImport;
   protoVarintField(opsetImport, 2U, opset);
   std::string model;
@@ -104,6 +106,12 @@ inline std::string onnxModel(std::string_view graph, std::uint32_t irVersion = 9
   protoBytesField(model, 2U, producer);
   protoBytesField(model, 7U, graph);
   protoBytesField(model, 8U, opsetImport);
+  for (const auto& [key, value] : metadata) {
+    std::string entry;
+    protoBytesField(entry, 1U, key);
+    protoBytesField(entry, 2U, value);
+    protoBytesField(model, 14U, entry);
+  }
   return model;
 }
 
@@ -111,14 +119,37 @@ inline std::string onnxModel(std::string_view graph, std::uint32_t irVersion = 9
 inline std::string onnxAcousticGraph(std::uint32_t bins = 80U, std::uint32_t elementType = 1U,
                                      const std::string& featureDimension = {},
                                      std::string_view producer = "seam-test",
-                                     std::uint32_t irVersion = 9U, std::uint32_t opset = 17U) {
+                                     std::uint32_t irVersion = 9U, std::uint32_t opset = 17U,
+                                     bool includeBreathiness = false,
+                                     std::uint32_t breathinessElementType = 1U,
+                                     const std::vector<std::string>& breathinessDimensions = {"1", "T"},
+                                     std::string_view breathinessUnit = "normalized-periodic-aperiodic-balance",
+                                     bool connectBreathiness = true) {
   const auto features = featureDimension.empty() ? std::to_string(bins) : featureDimension;
+  std::vector<std::string> inputs{onnxValueInfo("phones", 7U, {"1", "T"})};
+  if (includeBreathiness) {
+    inputs.push_back(onnxValueInfo("breathiness", breathinessElementType, breathinessDimensions));
+  }
+  std::vector<std::string> nodes{onnxNode("MatMul", {"phones", "embedding"},
+      {includeBreathiness && connectBreathiness ? "base_mel" : "mel"})};
+  if (includeBreathiness && connectBreathiness)
+    nodes.push_back(onnxNode("Add", {"base_mel", "breathiness"}, {"mel"}));
+  std::vector<std::pair<std::string, std::string>> metadata;
+  if (includeBreathiness) metadata = {
+      {"seam.conditioning.revision", "2"},
+      {"seam.conditioning.breathiness.type", "float32"},
+      {"seam.conditioning.breathiness.unit", std::string{breathinessUnit}},
+      {"seam.conditioning.breathiness.minimum", "0"},
+      {"seam.conditioning.breathiness.maximum", "1"},
+      {"seam.conditioning.breathiness.default", "0"},
+      {"seam.conditioning.breathiness.supported", "true"},
+  };
   return onnxModel(onnxGraph(
-      {onnxValueInfo("phones", 7U, {"1", "T"})},
+      inputs,
       {onnxValueInfo("mel", elementType, {"1", "T", features})},
-      {onnxNode("MatMul", {"phones", "embedding"}, {"mel"})},
+      nodes,
       {onnxInitializer("embedding", 1U, {std::to_string(bins), "1"}, 4U * bins)}),
-      irVersion, opset, producer);
+      irVersion, opset, producer, metadata);
 }
 
 inline std::string onnxVocoderGraph(std::uint32_t bins = 80U, std::uint32_t elementType = 1U,

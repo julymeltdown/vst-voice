@@ -2,6 +2,7 @@
 import argparse
 import hashlib
 import json
+import math
 import os
 import stat
 from pathlib import Path
@@ -244,8 +245,10 @@ def assemble_dataset(permission_config: Path, permission_hash: str, label_config
             conditioning_directory.mkdir(mode=0o700)  # Exclusive: never mix attempts.
     conditioning, stored_bytes = [], 0
     for index, entry in enumerate(sorted(captured_labels["labels"], key=lambda e: e["label"]["sourceId"])):
+        control = entry.get("conditioning")
         features = build_conditioning(entry["label"], entry["score"],
-                        vocabulary=captured_labels["vocabulary"], minimum_confidence=captured_labels["minimumConfidence"])
+                        vocabulary=captured_labels["vocabulary"], minimum_confidence=captured_labels["minimumConfidence"],
+                        breathiness=None if control is None else control["breathiness"])
         if conditioning_directory is None:
             conditioning.append(features)
         else:
@@ -259,7 +262,9 @@ def assemble_dataset(permission_config: Path, permission_hash: str, label_config
             else:
                 publish_new(conditioning_directory / name, features)
             conditioning.append(dict(sourceId=features["sourceId"], path=name,
-                sha256=hashlib.sha256(payload).hexdigest(), sizeBytes=len(payload), frameCount=len(features["frames"])))
+                sha256=hashlib.sha256(payload).hexdigest(), sizeBytes=len(payload), frameCount=len(features["frames"]),
+                conditioningRevision=features["conditioningRevision"],
+                conditioningControls=["breathiness"] if features["hasBreathiness"] else []))
     conditioning_hash = hashlib.sha256(encode_report(conditioning)).hexdigest()
     identity = dict(permissionConfigurationSha256=permission_hash, labelConfigurationSha256=label_hash,
                     rightsReviewSha256=rights["reviewSha256"], labelReviewSha256=annotations["reviewSha256"],
@@ -387,7 +392,7 @@ def inspect_label_config(config: Path, expected_hash: str, root: Path) -> dict:
     fields = {"formatId", "schemaVersion", "sampleRate", "sources", "labels", "vocabulary", "minimumConfidence"}
     if (not isinstance(value, dict) or set(value) != fields
             or value["formatId"] != "com.project-seam.voice-training-label-config"
-            or type(value["schemaVersion"]) is not int or value["schemaVersion"] not in (1, 2, 3)):
+            or type(value["schemaVersion"]) is not int or value["schemaVersion"] not in (1, 2, 3, 4)):
         raise ValueError("Unsupported label configuration")
     vocabulary = value["vocabulary"]
     if (not isinstance(vocabulary, list) or not 1 <= len(vocabulary) <= 4096
@@ -407,6 +412,8 @@ def inspect_label_config(config: Path, expected_hash: str, root: Path) -> dict:
         item_fields = {"sourceSha256", "audioSha256", "label"}
         if value["schemaVersion"] >= 2:
             item_fields.add("score")
+        if value["schemaVersion"] == 4:
+            item_fields.add("conditioning")
         if not isinstance(item, dict) or set(item) != item_fields:
             raise ValueError("Invalid source-bound label fields")
         report = label_report(item["label"], vocabulary=set(vocabulary), minimum_confidence=value["minimumConfidence"])
@@ -423,7 +430,19 @@ def inspect_label_config(config: Path, expected_hash: str, root: Path) -> dict:
         if value["schemaVersion"] >= 2:
             report["scoreSupervision"] = score_report(item["score"], frame_count=source["frameCount"],
                                                      phoneme_count=len(item["label"]["phonemes"]),
-                                                     explicit_silence=value["schemaVersion"] == 3)
+                                                     explicit_silence=value["schemaVersion"] >= 3)
+        if value["schemaVersion"] == 4:
+            conditioning = item["conditioning"]
+            expected = len(item["label"]["f0Hz"])
+            if (not isinstance(conditioning, dict)
+                    or set(conditioning) != {"revision", "breathiness"}
+                    or type(conditioning["revision"]) is not int or conditioning["revision"] != 2
+                    or not isinstance(conditioning["breathiness"], list)
+                    or len(conditioning["breathiness"]) != expected
+                    or any(type(control) not in (int, float) or not math.isfinite(control)
+                           or not 0.0 <= control <= 1.0 for control in conditioning["breathiness"])):
+                raise ValueError("Breathiness supervision must be revision 2 normalized [0, 1] at every analysis frame")
+            report["conditioningSupervision"] = dict(revision=2, controls=["breathiness"], frameCount=expected)
         reports.append(report)
     reports.sort(key=lambda item: item["sourceId"])
     passed = all(item["consistencyPassed"] for item in reports)
@@ -443,7 +462,7 @@ def admit_labels(config: Path, expected_hash: str, root: Path, *, review: dict, 
     verified = verify_label_review(review, policy=policy, trusted_policy_sha256=trusted_policy_sha256,
                                    configuration_sha256=expected_hash, now=now)
     inspected = inspect_label_config(config, expected_hash, root)
-    if inspected["schemaVersion"] != 3:
+    if inspected["schemaVersion"] not in (3, 4):
         raise ValueError("Label admission requires explicit score and silence ownership")
     admitted = []
     for source in inspected["sources"]:

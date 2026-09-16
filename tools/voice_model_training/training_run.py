@@ -62,6 +62,17 @@ def train_reviewed_epoch(model, optimizer, *, dataset_inputs: dict,
         return snapshot
 
     snapshot = refresh()
+    configuration = run_metadata.get("configuration", {})
+    breathiness_enabled = configuration.get("use_breathiness_embed", False) if isinstance(configuration, dict) else False
+    if type(breathiness_enabled) is not bool:
+        raise ValueError("Training run breathiness embedding declaration must be boolean")
+    controls = [row.get("conditioningControls") for row in snapshot["conditioning"]]
+    revisions = [row.get("conditioningRevision") for row in snapshot["conditioning"]]
+    if breathiness_enabled:
+        if any(value != ["breathiness"] for value in controls) or any(value != 2 for value in revisions):
+            raise ValueError("Breathiness-enabled training requires revision-2 supervision for every phrase")
+    elif any(value not in (None, []) for value in controls):
+        raise ValueError("Training configuration cannot silently discard captured breathiness supervision")
     if expected_dataset_sha256 is not None and snapshot["datasetSha256"] != expected_dataset_sha256:
         raise ValueError("Resumed checkpoint dataset differs from fresh admission")
     selected = {source for group in snapshot["bindings"]["split"]["groups"]

@@ -285,6 +285,13 @@ core::Result<void> NativeEditorApp::initialize() {
         }
         if (window_ != nullptr) window_->requestRepaint();
       },
+      .validateSingerControl = [this](domain::TrackId trackId,
+                                      synthesis::RendererControl control) {
+        if (applicationController_ == nullptr)
+          return core::failure(core::ErrorCode::InvalidState,
+                               "Singer capability resolution is unavailable");
+        return applicationController_->validateSingerControl(trackId, control);
+      },
       .cancelExport = [this] {
         if (applicationController_ != nullptr) {
           applicationController_->cancelExport();

@@ -119,8 +119,10 @@ def iter_conditioning_batches(snapshot: dict, directory: Path, *, partition: str
         if ref["path"] != name:
             raise ValueError("Unexpected feature shard path")
         entry = labels[ref["sourceId"]]
+        control = entry.get("conditioning")
         features = build_conditioning(entry["label"], entry["score"], vocabulary=snapshot["vocabulary"],
-                                      minimum_confidence=0)
+                                      minimum_confidence=0,
+                                      breathiness=None if control is None else control["breathiness"])
         payload = _encoded(features)
         if (ref["sizeBytes"] != len(payload) or ref["frameCount"] != len(features["frames"])
                 or ref["sha256"] != hashlib.sha256(payload).hexdigest()):

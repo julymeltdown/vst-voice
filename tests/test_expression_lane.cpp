@@ -258,6 +258,18 @@ TEST_CASE("A singer without the excitation reports the refusal and keeps the sto
   }
 }
 
+TEST_CASE("A resolved admitted route can authorize its graph-backed expression control") {
+  LaneFixture fixture{false};
+  auto lane = ExpressionLaneModel::prepare(fixture.session, fixture.regionId,
+      ExpressionChannel::Breathiness, {}, true);
+  CHECK(lane.hasValue());
+  if (!lane) return;
+  CHECK(lane.value().upsert(ExpressionPoint{time::Tick{240}, 0.75F}));
+  CHECK(lane.value().apply(fixture.session, fixture.regionId));
+  CHECK_NEAR(fixture.session.project().findRegion(fixture.regionId)
+                 ->breathinessAutomation.valueAt(time::Tick{240}), 0.75, 1e-6);
+}
+
 TEST_CASE("A lane edit survives a save, reload and re-export of the same curve") {
   LaneFixture fixture;
   auto lane = ExpressionLaneModel::prepare(fixture.session, fixture.regionId,

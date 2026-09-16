@@ -273,6 +273,40 @@ TEST_CASE("neural worker request and response frames round-trip with bounded met
   const auto bound=encodeResponse(response); CHECK(bound);
   CHECK(decodeResponse(bound.value()).value()==response);
   response.requestContentHash="invalid"; CHECK(!encodeResponse(response));
+
+  auto breathinessReq = request();
+  breathinessReq.breathiness = {0.1F, 0.5F, 0.9F, 0.0F};
+  const auto encodedB = encodeRequest(breathinessReq);
+  CHECK(encodedB);
+  const auto decodedB = decodeRequest(encodedB.value());
+  CHECK(decodedB);
+  CHECK(decodedB.value() == breathinessReq);
+  CHECK(decodedB.value().breathiness == breathinessReq.breathiness);
+  const std::string breathinessWire{
+      reinterpret_cast<const char*>(encodedB.value().data()), encodedB.value().size()};
+  const auto flag = breathinessWire.find("\"hasBreathiness\":true");
+  CHECK(flag != std::string::npos);
+  auto falseFlag = encodedB.value();
+  const auto valueOffset = flag + std::string_view{"\"hasBreathiness\":"}.size();
+  falseFlag[valueOffset] = std::byte{'n'};
+  falseFlag[valueOffset + 1U] = std::byte{'u'};
+  falseFlag[valueOffset + 2U] = std::byte{'l'};
+  falseFlag[valueOffset + 3U] = std::byte{'l'};
+  CHECK(!decodeRequest(falseFlag));
+  auto badBreathinessLen = breathinessReq;
+  badBreathinessLen.breathiness.pop_back();
+  CHECK(!badBreathinessLen.validate());
+  CHECK(!encodeRequest(badBreathinessLen));
+  auto badBreathinessVal = breathinessReq;
+  badBreathinessVal.breathiness[0] = 1.5F;
+  CHECK(!badBreathinessVal.validate());
+  CHECK(!encodeRequest(badBreathinessVal));
+  badBreathinessVal.breathiness[0] = -0.1F;
+  CHECK(!badBreathinessVal.validate());
+  CHECK(!encodeRequest(badBreathinessVal));
+  badBreathinessVal.breathiness[0] = std::numeric_limits<float>::quiet_NaN();
+  CHECK(!badBreathinessVal.validate());
+  CHECK(!encodeRequest(badBreathinessVal));
 }
 
 TEST_CASE("neural worker protocol rejects stale, malformed and non-finite frames before allocation") {
@@ -611,6 +645,16 @@ TEST_CASE("DiffSinger inputs conserve hop durations and retain phone ownership a
   CHECK(prepared.value().tokens==(std::vector<std::int64_t>{1,2,3}));
   CHECK(prepared.value().durations==(std::vector<std::int64_t>{1,1,1}));
   CHECK(prepared.value().f0Hz==(std::vector<float>{0,440,0}));
+  CHECK(prepared.value().breathiness==(std::vector<float>{0.0F,0.0F,0.0F}));
+  static_assert(kDiffSingerInputRevision == 2U);
+  auto inputWithBreath = input;
+  inputWithBreath.breathiness = {0.1F, 0.1F, 0.5F, 0.5F, 0.5F, 0.5F, 0.8F, 0.8F, 0.8F, 0.8F, 0.8F};
+  const auto preparedWithBreath = prepareDiffSingerAcousticInputs(inputWithBreath, model, vocabulary.value(), 20);
+  CHECK(preparedWithBreath);
+  CHECK(preparedWithBreath.value().breathiness.size() == 3U);
+  CHECK(std::abs(preparedWithBreath.value().breathiness[0] - 0.1F) < 1e-6F);
+  CHECK(std::abs(preparedWithBreath.value().breathiness[1] - 0.5F) < 1e-6F);
+  CHECK(std::abs(preparedWithBreath.value().breathiness[2] - 0.8F) < 1e-6F);
   CHECK(prepared.value().outputSampleFrames==11U); CHECK(prepared.value().paddedSampleFrames==12U);
   CHECK(prepared.value().steps==20);
   auto changed=input; changed.conditioning->spans[0].tokenId=0;

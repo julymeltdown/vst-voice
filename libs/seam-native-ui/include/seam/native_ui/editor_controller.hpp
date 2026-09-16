@@ -117,6 +117,10 @@ struct EditorHostCallbacks final {
   std::function<void()> endTextInput;
   std::function<core::Result<void>(bool)> setPlaying;
   std::function<void()> documentChanged;
+  // Resolve controls against the selected installed singer. When absent, the
+  // editor uses the conservative carrier-wide capability table.
+  std::function<core::Result<void>(domain::TrackId, synthesis::RendererControl)>
+      validateSingerControl;
   std::function<core::Result<void>()> stopPlaying;
   std::function<void()> cancelExport;
   std::function<core::Result<void>(time::Tick)> seekTick;

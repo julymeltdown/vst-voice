@@ -26,8 +26,9 @@ struct NeuralExecutionIdentity final {
 // declared execution identity once, outside the audio callback. The two graph
 // files are read from their own bytes rather than from the configuration's
 // description of them: an unknown field, a custom operator domain, an operator
-// outside the admitted set, external tensor data and a subgraph attribute are
-// refused, and the acoustic graph's mel output must agree with the vocoder
+// outside the admitted set and external tensor data are refused; control-flow
+// subgraphs are recursively inspected under the same aggregate limits. The acoustic graph's mel
+// output must agree with the vocoder
 // graph's mel input on rank, element type and feature dimension, so a pair of
 // individually valid files that disagree about the feature representation is
 // refused here instead of failing inside a render. Every phrase then shares the

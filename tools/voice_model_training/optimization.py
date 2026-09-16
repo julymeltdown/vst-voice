@@ -160,14 +160,19 @@ def _acoustic_step(model, optimizer, batch: dict, *, vocabulary_size: int,
         raise ValueError("Loss mask must select at least one core frame")
     columns, hop = batch["columns"], batch["hopSize"]
     keys = ("phoneId", "f0Hz", "voiced", "midi", "rest", "slur", "validSamples")
-    if type(hop) is not int or not 1 <= hop <= 8192 or any(len(columns[key]) != count for key in keys):
+    breathiness_values = columns.get("breathiness", [0.0] * count)
+    if (type(hop) is not int or not 1 <= hop <= 8192 or any(len(columns[key]) != count for key in keys)
+            or not isinstance(breathiness_values, list) or len(breathiness_values) != count):
         raise ValueError("Training batch clocks differ")
     for i in range(count):
         phone, f0, voiced, midi, rest, slur, valid = (columns[key][i] for key in keys)
+        breathiness = breathiness_values[i]
         if (type(phone) is not int or not 1 <= phone <= vocabulary_size
                 or type(f0) not in (int, float) or not math.isfinite(f0) or not 0 <= f0 <= 20000
                 or type(voiced) is not bool or voiced != (f0 > 0)
                 or type(rest) is not bool or type(slur) is not bool
+                or type(breathiness) not in (int, float) or not math.isfinite(breathiness)
+                or not 0.0 <= breathiness <= 1.0
                 or (rest and (midi is not None or slur))
                 or (not rest and (type(midi) is not int or not 0 <= midi <= 127))
                 or type(valid) is not int or not 1 <= valid <= hop):
@@ -181,6 +186,7 @@ def _acoustic_step(model, optimizer, batch: dict, *, vocabulary_size: int,
     inputs = {name: torch.tensor([columns[key]], dtype=dtype, device=device) for name, key, dtype in
               (("phoneIds", "phoneId", torch.int64), ("f0Hz", "f0Hz", torch.float32),
                ("voiced", "voiced", torch.bool), ("rest", "rest", torch.bool), ("slur", "slur", torch.bool))}
+    inputs["breathiness"] = torch.tensor([breathiness_values], dtype=torch.float32, device=device)
     inputs["midi"] = torch.tensor([[0 if value is None else value for value in columns["midi"]]],
                                   dtype=torch.int64, device=device)
     inputs["frameOffset"] = batch.get("frameOffset")

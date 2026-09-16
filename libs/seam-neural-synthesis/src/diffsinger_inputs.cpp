@@ -42,6 +42,7 @@ core::Result<DiffSingerAcousticInputs> prepareDiffSingerAcousticInputs(
     previous=boundary;
   }
   result.f0Hz.resize(static_cast<std::size_t>(count));
+  result.breathiness.assign(static_cast<std::size_t>(count), 0.0F);
   std::uint64_t frame=0U;
   for (std::size_t phone=0U;phone<result.tokens.size();++phone) {
     const auto& span=request.conditioning->spans[phone];
@@ -51,6 +52,9 @@ core::Result<DiffSingerAcousticInputs> prepareDiffSingerAcousticInputs(
       // silence/unvoiced intervals. The score compiler already applied vibrato.
       const auto sample=std::clamp(frame*hop+hop/2U,span.startFrame,span.endFrame-1U);
       result.f0Hz[static_cast<std::size_t>(frame)]=request.f0Hz[static_cast<std::size_t>(sample)];
+      if (!request.breathiness.empty() && sample < request.breathiness.size()) {
+        result.breathiness[static_cast<std::size_t>(frame)]=request.breathiness[static_cast<std::size_t>(sample)];
+      }
     }
   }
   if (stop.stop_requested()) return cancelled();

@@ -17,6 +17,11 @@ class ExportCommandTests(unittest.TestCase):
         state = dict(metadata=dict(profileSha256=digest, run=dict(revision=REVISION, settings=settings,
                      configuration=model_settings(settings), vocabulary=["a"])), epoch=dict(profileSha256=digest))
         self.assertEqual(export_identity(state, profile)[1], ["a"])
+        conditioned_settings = settings | dict(schemaVersion=2, conditioningControls=["breathiness"])
+        conditioned = copy.deepcopy(state)
+        conditioned["metadata"]["run"]["settings"] = conditioned_settings
+        conditioned["metadata"]["run"]["configuration"] = model_settings(conditioned_settings)
+        self.assertTrue(export_identity(conditioned, profile)[0]["use_breathiness_embed"])
         for field, value in (("revision", "wrong"), ("configuration", {}), ("vocabulary", ["a", "a"]),
                              ("vocabulary", [])):
             changed = copy.deepcopy(state)

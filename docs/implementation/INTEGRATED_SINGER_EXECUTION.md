@@ -1,5 +1,53 @@
 # Integrated Singer Execution
 
+## Revision-2 breathiness conditioning reaches the learned acoustic output and production worker
+
+September 17, 2026 — R4 unit U3.4.
+
+```text
+Engineering: DEMONSTRATED
+Creator workflow: NOT_OBSERVED
+Musical review: NOT_REVIEWED
+```
+
+Breathiness previously existed as an editor expression but the learned singer had no admitted path for
+it; accepting that control would have allowed the UI to claim an effect the model silently discarded.
+U3.4 closes the complete machine boundary while retaining the distinction between an engineering effect
+and perceptually qualified singing quality.
+
+Implementation:
+- Versioned reviewed label configuration schema 4 and DDPM configuration schema 2 carry per-frame
+  breathiness supervision in the exact normalized range `[0,1]`. Legacy schema-3/schema-1 material remains
+  neutral-compatible; a conditioned model refuses missing supervision and an unconditioned model refuses
+  supervised controls rather than discarding them.
+- The real pinned DiffSinger architecture enables `use_breathiness_embed`, trains the tensor, restores it
+  exactly, and exports float32 `[1,n_frames]` as a fifth acoustic input. Export receipts record the exact
+  name, type, shape, unit, range, default and supported flag.
+- Export validation compares trained and deployment encoders, verifies a measurable varied-versus-neutral
+  condition difference, then resets the diffusion RNG for both paths and verifies a measurable final-mel
+  difference under identical noise. The ONNX encoder and denoiser retain numerical parity with PyTorch.
+- Native graph admission requires conditioning revision 2 metadata and proves that `breathiness` reaches
+  `mel`. The bounded parser now recursively inspects the standard `If` and `Loop` bodies used by the owned
+  DiffSinger exporter and makes lexical captures explicit for reachability; hidden custom operators,
+  undefined top-level captures and uninspected `Scan` remain refused.
+- Worker protocol v3 optionally transports the full-resolution breathiness plane. Hop conversion happens
+  once in `prepareDiffSingerAcousticInputs`; conditioned graphs receive the sampled curve and neutral
+  requests receive an explicit zero tensor. A request carrying breathiness refuses a four-input graph.
+- Resolved singer routes now publish graph-derived neural conditioning capabilities. The standalone editor
+  admits the selected bundle before enabling breathiness and reports a visible refusal when the selected
+  route cannot implement it; static carrier assumptions no longer misclassify a neural singer.
+- The bundle-preparation integration now composes a conditioned export receipt, admits its five-input graph,
+  sends the third request plane through the real production worker and checks the resulting PCM against the
+  arithmetic fixture's exact expected breathiness contribution.
+
+Verified. The real pinned DiffSinger train/checkpoint/export/ONNX/native-probe gate passes with 45 changed
+parameter tensors, encoder-condition and fixed-noise final-mel effects, five encoder parity cases, eight
+denoiser parity cases, and three complete acoustic runtime shapes. `seam_tests` passes 915 of 915;
+the voice-model training suite passes 99 of 99; neural-runtime Python tests pass 48 of 48; and the full
+CTest suite passes 172 of 172. These are engineering results only: no rights-cleared singer, unaided creator
+workflow or musician listening review is claimed.
+
+
 ## Local vocoder reconstruction baseline and named spectral/pitch measurement
 
 September 16, 2026 — R4 unit U3.3.

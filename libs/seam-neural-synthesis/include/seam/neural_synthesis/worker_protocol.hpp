@@ -48,6 +48,7 @@ struct NeuralRequest final {
   std::uint64_t frameCount{0U};
   std::vector<float> f0Hz;
   std::vector<float> dynamics;
+  std::vector<float> breathiness;
   std::optional<PhoneticConditioning> conditioning{};
   std::uint32_t vocabularySize{0U};
   // Nonempty selects metadata v3. Identity of the canonical frozen bundle;

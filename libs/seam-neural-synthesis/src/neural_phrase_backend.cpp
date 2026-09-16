@@ -200,6 +200,8 @@ core::Result<NeuralRequest> prepareNeuralScoreRequest(
       .sampleRate=model.sampleRate,.channels=model.outputChannels,.frameCount=static_cast<std::uint64_t>(end-origin),
       .f0Hz={},.dynamics={},.conditioning=conditioning.value(),.vocabularySize=vocabulary.size()};
   request.f0Hz.resize(static_cast<std::size_t>(request.frameCount)); request.dynamics.resize(request.f0Hz.size());
+  std::vector<float> breathiness(static_cast<std::size_t>(request.frameCount), 0.0F);
+  bool anyBreathiness = false;
   for (const auto& span:request.conditioning->spans) {
     const auto active=activeStarts.find(span.startFrame);
     if (active==activeStarts.end()) continue;
@@ -219,8 +221,11 @@ core::Result<NeuralRequest> prepareNeuralScoreRequest(
       if (active->second.voiced && value.scoreFrequencyHz) request.f0Hz[frame]=static_cast<float>(*value.scoreFrequencyHz);
       // Explicit phonetic extensions must not inherit a closed note envelope.
       request.dynamics[frame]=value.dynamicsGain*(sampled==absolute?value.articulationGain:1.0F);
+      breathiness[frame]=std::clamp(value.breathiness, 0.0F, 1.0F);
+      if (value.breathiness != 0.0F) anyBreathiness = true;
     }
   }
+  if (anyBreathiness) request.breathiness = std::move(breathiness);
   if (stop.stop_requested()) return cancelled();
   const auto checked=model.validateRequest(request,limits); if (!checked) return core::Result<NeuralRequest>{checked.error()};
   return request;

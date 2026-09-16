@@ -1,6 +1,7 @@
 #include <onnxruntime_cxx_api.h>
 #include "seam/neural_synthesis/diffsinger_inputs.hpp"
 #include "seam/neural_synthesis/bundle_metadata.hpp"
+#include "seam/neural_synthesis/graph_contract.hpp"
 #include "seam/core/sha256.hpp"
 #if defined(SEAM_NATIVE_GRAPH_INSPECTION)
 #include "inspection.hpp"
@@ -58,7 +59,8 @@ int pairedProfile(Ort::Session& acoustic,Ort::Session& vocoder,
     const seam::neural_synthesis::NeuralBundleMetadata& metadata,
     const seam::neural_synthesis::NeuralRequest* supplied=nullptr) {
   using namespace seam::neural_synthesis;
-  if (acoustic.GetInputCount()!=4 || acoustic.GetOutputCount()!=1 ||
+  const bool conditioned=acoustic.GetInputCount()==5;
+  if ((acoustic.GetInputCount()!=4 && !conditioned) || acoustic.GetOutputCount()!=1 ||
       vocoder.GetInputCount()!=2 || vocoder.GetOutputCount()!=1) return 3;
   auto memory=Ort::MemoryInfo::CreateCpu(OrtArenaAllocator,OrtMemTypeDefault);
   const auto& model=metadata.model;
@@ -116,7 +118,15 @@ int pairedProfile(Ort::Session& acoustic,Ort::Session& vocoder,
     inputs.push_back(Ort::Value::CreateTensor<std::int64_t>(memory,durations.data(),durations.size(),phoneShape.data(),2));
     inputs.push_back(Ort::Value::CreateTensor<float>(memory,f0.data(),f0.size(),f0Shape.data(),2));
     inputs.push_back(Ort::Value::CreateTensor<std::int64_t>(memory,&steps,1,stepsShape.data(),stepsShape.size()));
-    const std::array<const char*,4> names{"tokens","durations","f0","steps"};
+    std::vector<const char*> names{"tokens","durations","f0","steps"};
+    std::vector<float> breathiness;
+    if (conditioned) {
+      auto& preparedBreathiness=prepared.value().breathiness;
+      if (preparedBreathiness.size()!=f0.size()) preparedBreathiness.assign(f0.size(),0.0F);
+      breathiness=preparedBreathiness;
+      inputs.push_back(Ort::Value::CreateTensor<float>(memory,breathiness.data(),breathiness.size(),f0Shape.data(),2));
+      names.push_back("breathiness");
+    }
     const char* melName="mel";
     auto mel=acoustic.Run(Ort::RunOptions{nullptr},names.data(),inputs.data(),inputs.size(),&melName,1);
     if (!shapeMatches(mel.front(),{1,frames,80})) return 5;
@@ -211,8 +221,19 @@ int main(int argc,char** argv) {
 #else
       throw std::runtime_error("Acoustic export requires native graph inspection support");
 #endif
+      seam::neural_synthesis::GraphInspectionLimits seamLimits;
+      seamLimits.maximumBytes=bytes.size();
+      seamLimits.maximumInitializerBytes=bytes.size();
+      const auto seamContract=seam::neural_synthesis::inspectNeuralGraph(
+          std::as_bytes(std::span{bytes.data(),bytes.size()}),seamLimits);
+      if (!seamContract)
+        throw std::runtime_error("SEAM acoustic graph contract rejected export: "+
+                                 seamContract.error().message);
       Ort::Session session{environment,bytes.data(),bytes.size(),options};
-      if (session.GetInputCount()!=4 || session.GetOutputCount()!=1)
+      const bool conditioned=session.GetInputCount()==5;
+      if (conditioned!=seamContract.value().supportsConditioningControl("breathiness"))
+        throw std::runtime_error("Runtime and admitted conditioning interfaces disagree");
+      if ((session.GetInputCount()!=4 && !conditioned) || session.GetOutputCount()!=1)
         throw std::runtime_error("Unexpected acoustic export tensor count");
       const auto outputType=session.GetOutputTypeInfo(0);
       if (outputType.GetONNXType()!=ONNX_TYPE_TENSOR)
@@ -223,17 +244,21 @@ int main(int argc,char** argv) {
           outputShape[0]!=1 || outputShape[1]!=-1 || outputShape[2]<1 || outputShape[2]>512)
         throw std::runtime_error("Acoustic output must be dynamic BTF mel");
       auto memory=Ort::MemoryInfo::CreateCpu(OrtArenaAllocator,OrtMemTypeDefault);
-      const std::array<const char*,4> names{"tokens","durations","f0","steps"};
+      std::vector<const char*> names{"tokens","durations","f0","steps"};
+      if (conditioned) names.push_back("breathiness");
       const char* outputName="mel";
       for (const std::int64_t frames:{3,16,23}) {
         std::array<std::int64_t,2> tokens{1,1},durations{1,frames-1},tokenShape{1,2},frameShape{1,frames};
         std::int64_t steps=4;
         std::vector<float> f0(static_cast<std::size_t>(frames),220.0F);
-        std::array<Ort::Value,4> inputs{
-          Ort::Value::CreateTensor<std::int64_t>(memory,tokens.data(),tokens.size(),tokenShape.data(),tokenShape.size()),
-          Ort::Value::CreateTensor<std::int64_t>(memory,durations.data(),durations.size(),tokenShape.data(),tokenShape.size()),
-          Ort::Value::CreateTensor<float>(memory,f0.data(),f0.size(),frameShape.data(),frameShape.size()),
-          Ort::Value::CreateTensor<std::int64_t>(memory,&steps,1,nullptr,0)};
+        std::vector<Ort::Value> inputs;
+        inputs.push_back(Ort::Value::CreateTensor<std::int64_t>(memory,tokens.data(),tokens.size(),tokenShape.data(),tokenShape.size()));
+        inputs.push_back(Ort::Value::CreateTensor<std::int64_t>(memory,durations.data(),durations.size(),tokenShape.data(),tokenShape.size()));
+        inputs.push_back(Ort::Value::CreateTensor<float>(memory,f0.data(),f0.size(),frameShape.data(),frameShape.size()));
+        inputs.push_back(Ort::Value::CreateTensor<std::int64_t>(memory,&steps,1,nullptr,0));
+        std::vector<float> breathiness(static_cast<std::size_t>(frames),0.5F);
+        if (conditioned)
+          inputs.push_back(Ort::Value::CreateTensor<float>(memory,breathiness.data(),breathiness.size(),frameShape.data(),frameShape.size()));
         auto results=session.Run(Ort::RunOptions{nullptr},names.data(),inputs.data(),inputs.size(),&outputName,1);
         if (!shapeMatches(results.front(),{1,frames,outputShape[2]}))
           throw std::runtime_error("Acoustic export returned unexpected shape");

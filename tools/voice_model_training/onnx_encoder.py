@@ -28,17 +28,30 @@ def export_duration_encoder(deployment_model) -> bytes:
         def forward(self, tokens, durations, f0):
             return self.encoder(tokens, durations, f0, variances={})
 
-    wrapper = Encoder(deployment_model).eval()
+    class ConditionedEncoder(torch.nn.Module):
+        def __init__(self, model):
+            super().__init__()
+            self.encoder = model.fs2
+
+        def forward(self, tokens, durations, f0, breathiness):
+            return self.encoder(tokens, durations, f0, variances={"breathiness": breathiness})
+
+    conditioned = deployment_model.fs2.use_breathiness_embed is True
+    wrapper = (ConditionedEncoder(deployment_model) if conditioned else Encoder(deployment_model)).eval()
+    tokens = torch.tensor([[1, min(2, deployment_model.fs2.txt_embed.num_embeddings - 1),
+                            min(3, deployment_model.fs2.txt_embed.num_embeddings - 1)]], dtype=torch.long)
+    durations = torch.tensor([[5, 6, 5]], dtype=torch.long)
+    f0 = torch.full((1, 16), 220., dtype=torch.float32)
+    example = (tokens, durations, f0, torch.linspace(0., 1., 16)[None]) if conditioned else (tokens, durations, f0)
+    input_names = ["tokens", "durations", "f0"] + (["breathiness"] if conditioned else [])
+    dynamic_axes = {"tokens": {1: "n_tokens"}, "durations": {1: "n_tokens"},
+                    "f0": {1: "n_frames"}, "condition": {1: "n_frames"}}
+    if conditioned:
+        dynamic_axes["breathiness"] = {1: "n_frames"}
     buffer = io.BytesIO()
     with torch.no_grad():
-        torch.onnx.export(wrapper,
-            (torch.tensor([[1, min(2, deployment_model.fs2.txt_embed.num_embeddings - 1),
-                            min(3, deployment_model.fs2.txt_embed.num_embeddings - 1)]], dtype=torch.long),
-             torch.tensor([[5, 6, 5]], dtype=torch.long),
-             torch.full((1, 16), 220., dtype=torch.float32)), buffer,
-            input_names=["tokens", "durations", "f0"], output_names=["condition"],
-            dynamic_axes={"tokens": {1: "n_tokens"}, "durations": {1: "n_tokens"},
-                          "f0": {1: "n_frames"}, "condition": {1: "n_frames"}},
+        torch.onnx.export(wrapper, example, buffer,
+            input_names=input_names, output_names=["condition"], dynamic_axes=dynamic_axes,
             opset_version=17, dynamo=False, external_data=False)
     payload = buffer.getvalue()
     if not 1 <= len(payload) <= 64 * 1024 * 1024:
@@ -85,20 +98,34 @@ def check_encoder_runtime(deployment_model) -> dict:
     options.inter_op_num_threads = 1
     session = ort.InferenceSession(payload, sess_options=options, providers=["CPUExecutionProvider"])
     cases = []
+    conditioned = deployment_model.fs2.use_breathiness_embed is True
+    maximum_control_effect = 0.0
     for ids, lengths in (([1, 2, 3], [5, 6, 5]), ([1, 2, 3], [1, 0, 2]),
                          ([1, 3], [9, 14]), ([3, 2, 1, 3, 1], [1, 2, 3, 4, 5]),
                          ([1] * 1025, [1] * 1025)):
         tokens, durations = np.array([ids], dtype=np.int64), np.array([lengths], dtype=np.int64)
         f0 = np.linspace(110, 440, sum(lengths), dtype=np.float32)[None]
+        breathiness = np.linspace(0, 1, sum(lengths), dtype=np.float32)[None]
+        variances = {"breathiness": torch.from_numpy(breathiness)} if conditioned else {}
         with torch.no_grad():
             expected = deployment_model.forward_fs2_aux(torch.from_numpy(tokens), torch.from_numpy(durations),
-                                                       torch.from_numpy(f0), variances={}).numpy()
-        actual = session.run(["condition"], dict(tokens=tokens, durations=durations, f0=f0))[0]
+                                                       torch.from_numpy(f0), variances=variances).numpy()
+        runtime_inputs = dict(tokens=tokens, durations=durations, f0=f0)
+        if conditioned:
+            runtime_inputs["breathiness"] = breathiness
+        actual = session.run(["condition"], runtime_inputs)[0]
+        if conditioned:
+            neutral = session.run(["condition"], runtime_inputs | {"breathiness": np.zeros_like(breathiness)})[0]
+            maximum_control_effect = max(maximum_control_effect, float(np.max(np.abs(actual - neutral))))
         passed = (actual.shape == expected.shape and np.isfinite(actual).all()
                   and np.allclose(actual, expected, atol=1e-5, rtol=1e-5))
         cases.append(dict(tokens=len(ids), frames=sum(lengths), maximumAbsoluteError=float(np.max(np.abs(actual - expected))),
                           passed=bool(passed)))
-    return dict(passed=all(case["passed"] for case in cases), cases=cases,
+    effect_passed = not conditioned or maximum_control_effect > 1e-7
+    return dict(passed=all(case["passed"] for case in cases) and effect_passed, cases=cases,
                 graphBytes=len(payload), graphSha256=hashlib.sha256(payload).hexdigest(),
                 runtimeVersion=ort.__version__, encoderOnly=True, completeAcousticGraph=False,
+                conditioningControls=["breathiness"] if conditioned else [],
+                maximumBreathinessConditionEffect=maximum_control_effect,
+                breathinessConditionEffectPassed=effect_passed,
                 graphRetained=False, releaseEligible=False)

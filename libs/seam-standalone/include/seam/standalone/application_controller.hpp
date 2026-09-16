@@ -16,6 +16,7 @@
 #include "seam/platform/file_dialog.hpp"
 #include "seam/standalone/authoring_session.hpp"
 #include "seam/native_ui/export_progress_panel.hpp"
+#include "seam/rendering/singer_route.hpp"
 
 #include <chrono>
 #include <filesystem>
@@ -187,6 +188,8 @@ public:
   // the surface ships no verified deployment, which is the honest answer rather
   // than a list of bundles nothing could execute.
   [[nodiscard]] std::vector<platform::NeuralResourceMenuItem> neuralResources() const override;
+  [[nodiscard]] core::Result<void> validateSingerControl(
+      domain::TrackId trackId, synthesis::RendererControl control) const;
   // Selects or clears the neural singer of the selected track. The identity is
   // resolved through the installed index before the edit, so a selection this
   // installation cannot run is never saved into a project.
@@ -375,6 +378,8 @@ private:
   std::unique_ptr<authoring::VoicebankInstallerService> voicebankInstaller_;
   std::optional<authoring::NeuralSelectionService> neuralSelection_;
   std::optional<authoring::NeuralResourceRegistry> neuralResources_;
+  mutable std::optional<domain::SingerResourceIdentity> cachedNeuralRouteIdentity_;
+  mutable std::optional<rendering::ResolvedSingerRoute> cachedNeuralRoute_;
   std::uint64_t automaticProposalCounter_{0U};
   // Fixed so the same material and take identity always produce the same proposal;
   // the counter is what makes successive proposals distinct takes.
