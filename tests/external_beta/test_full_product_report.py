@@ -2,21 +2,25 @@ from __future__ import annotations
 
 import hashlib
 import json
+from pathlib import Path
 import subprocess
 import sys
 import tempfile
 import unittest
-from pathlib import Path
+from unittest import mock
 
+from tests.external_beta.full_product_report_fixture import complete_report
 from tests.external_beta.release_gate_fixtures import candidate
+from tools.external_beta import full_product_report as full_product_report_module
 from tools.external_beta import release_gate
 from tools.external_beta.full_product_report import (
     FullProductReportError,
+    REFERENCE_READ_CHUNK_BYTES,
+    _read_regular_reference,
     _safe_reference_path,
     validate_full_product_report_reference,
     validate_full_product_report,
 )
-from tests.external_beta.full_product_report_fixture import complete_report
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -86,6 +90,44 @@ class FullProductReportReaderTests(unittest.TestCase):
             root = Path(directory)
             with self.assertRaises(FullProductReportError):
                 _safe_reference_path("../outside", root, "rawEvidence")
+
+    def test_small_reference_reads_do_not_allocate_the_policy_maximum(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path = root / "evidence.json"
+            payload = b'{"status":"PASS"}'
+            path.write_bytes(payload)
+            requests: list[int] = []
+            real_fdopen = full_product_report_module.os.fdopen
+
+            class RecordingReader:
+                def __init__(self, stream):
+                    self.stream = stream
+
+                def fileno(self):
+                    return self.stream.fileno()
+
+                def read(self, size=-1):
+                    requests.append(size)
+                    return self.stream.read(size)
+
+                def __enter__(self):
+                    return self
+
+                def __exit__(self, exception_type, exception, traceback):
+                    self.stream.close()
+
+            with mock.patch.object(
+                full_product_report_module.os,
+                "fdopen",
+                side_effect=lambda descriptor, mode: RecordingReader(real_fdopen(descriptor, mode)),
+            ):
+                contents = _read_regular_reference(
+                    self._reference(path), base=root, label="rawEvidence"
+                )
+            self.assertEqual(payload, contents)
+            self.assertEqual(len(payload) + 1, requests[0])
+            self.assertLessEqual(max(requests), REFERENCE_READ_CHUNK_BYTES)
 
     def test_cli_exposes_blocked_semantic_result(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

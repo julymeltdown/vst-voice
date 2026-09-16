@@ -51,6 +51,7 @@ SCHEMA_PATH = ROOT / "docs/product/full-product-beta-evidence.schema.json"
 MAXIMUM_REPORT_BYTES = 64 * 1024 * 1024
 MAXIMUM_REFERENCE_BYTES = 256 * 1024 * 1024
 MAXIMUM_JSON_DEPTH = 96
+REFERENCE_READ_CHUNK_BYTES = 1024 * 1024
 
 
 class FullProductReportError(ValueError):
@@ -172,13 +173,34 @@ def _read_regular_reference(
                 raise FullProductReportError(f"{label} must reference a regular file")
             if (before.st_dev, before.st_ino) != (opened.st_dev, opened.st_ino):
                 raise FullProductReportError(f"{label} changed while opening")
-            contents = stream.read(maximum_bytes + 1)
+            # Do not ask the buffered reader to allocate the policy maximum for
+            # every small evidence file.  A complete report validates tens of
+            # thousands of references; Windows commits those oversized buffers
+            # eagerly enough to turn the contract suite into memory thrashing.
+            # Read one byte beyond the handle-bound size in bounded chunks so
+            # growth and shrinkage still fail closed without speculative
+            # 256-MiB allocations.
+            contents = bytearray()
+            remaining = before.st_size + 1
+            while remaining > 0:
+                chunk = stream.read(min(remaining, REFERENCE_READ_CHUNK_BYTES))
+                if not chunk:
+                    break
+                contents.extend(chunk)
+                remaining -= len(chunk)
+            after = os.fstat(stream.fileno())
     except FullProductReportError:
         raise
     except OSError as error:
         raise FullProductReportError(f"{label} cannot be read: {error}") from error
-    if len(contents) > maximum_bytes:
-        raise FullProductReportError(f"{label} exceeds the {maximum_bytes} byte limit")
+    if (
+        len(contents) != before.st_size
+        or (opened.st_dev, opened.st_ino, opened.st_size)
+        != (after.st_dev, after.st_ino, after.st_size)
+        or after.st_size != before.st_size
+    ):
+        raise FullProductReportError(f"{label} changed while reading")
+    contents = bytes(contents)
     if _sha256_bytes(contents) != digest:
         raise FullProductReportError(f"{label} content digest does not match its bytes")
     return contents
