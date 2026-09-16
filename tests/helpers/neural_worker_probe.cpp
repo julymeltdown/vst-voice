@@ -5,8 +5,8 @@
 #include "seam/neural_synthesis/deployment_descriptor.hpp"
 #include "seam/formats/json_value.hpp"
 
+#include <array>
 #include <iostream>
-#include <iterator>
 #include <vector>
 #include <thread>
 
@@ -77,7 +77,16 @@ int main(int argc, char** argv) {
     return seam::neural_synthesis::NeuralHelperPackage::decode(manifest,argv[2])?0:8;
   }
   if (argc != 2 || std::string_view{argv[1]} != "--seam-neural-worker-v1") return 2;
-  const std::string input{std::istreambuf_iterator<char>{std::cin}, std::istreambuf_iterator<char>{}};
+  std::string input;
+  std::array<char, 65536U> block{};
+  const auto maximum = seam::neural_synthesis::WorkerProtocolLimits{}.maximumFrameBytes;
+  while (std::cin) {
+    std::cin.read(block.data(), static_cast<std::streamsize>(block.size()));
+    const auto count = static_cast<std::size_t>(std::cin.gcount());
+    if (count > maximum - input.size()) return 6;
+    input.append(block.data(), count);
+  }
+  if (!std::cin.eof()) return 7;
   const auto request = seam::neural_synthesis::decodeRequest(
       std::span<const std::byte>{reinterpret_cast<const std::byte*>(input.data()), input.size()});
   if (!request) return 3;
