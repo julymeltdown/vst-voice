@@ -1,4 +1,5 @@
 #include "seam/voicebank/catalog.hpp"
+#include "seam/core/environment.hpp"
 
 #include "seam/core/file_io.hpp"
 #include "seam/formats/json_value.hpp"
@@ -100,15 +101,15 @@ std::vector<std::filesystem::path> manifestPathsFor(
 }
 
 void addEnvironmentRoots(std::vector<VoicebankSearchRoot>& roots) {
-  const auto* value = std::getenv("SEAM_VOICEBANK_PATH");
-  if (value == nullptr || *value == '\0') return;
+  const auto value = core::environmentVariable("SEAM_VOICEBANK_PATH");
+  if (!value || value->empty()) return;
 #ifdef _WIN32
   constexpr char separator = ';';
 #else
   constexpr char separator = ':';
 #endif
   std::string current;
-  for (const char character : std::string_view{value}) {
+  for (const char character : *value) {
     if (character == separator) {
       if (!current.empty()) {
         roots.push_back({std::filesystem::path{current}, VoicebankRootKind::Installed});
@@ -286,22 +287,22 @@ std::vector<VoicebankSearchRoot> defaultVoicebankSearchRoots() {
   std::vector<VoicebankSearchRoot> result;
   addEnvironmentRoots(result);
 #ifdef _WIN32
-  if (const auto* local = std::getenv("LOCALAPPDATA"); local != nullptr) {
-    result.push_back({std::filesystem::path{local} / "ProjectSEAM" / "Voicebanks",
+  if (const auto local = core::environmentVariable("LOCALAPPDATA"); local) {
+    result.push_back({std::filesystem::path{*local} / "ProjectSEAM" / "Voicebanks",
                       VoicebankRootKind::Installed});
   }
 #elif defined(__APPLE__)
-  if (const auto* home = std::getenv("HOME"); home != nullptr) {
-    result.push_back({std::filesystem::path{home} / "Library" /
+  if (const auto home = core::environmentVariable("HOME"); home) {
+    result.push_back({std::filesystem::path{*home} / "Library" /
                           "Application Support" / "ProjectSEAM" / "Voicebanks",
                       VoicebankRootKind::Installed});
   }
 #else
-  if (const auto* xdg = std::getenv("XDG_DATA_HOME"); xdg != nullptr) {
-    result.push_back({std::filesystem::path{xdg} / "project-seam" / "voicebanks",
+  if (const auto xdg = core::environmentVariable("XDG_DATA_HOME"); xdg) {
+    result.push_back({std::filesystem::path{*xdg} / "project-seam" / "voicebanks",
                       VoicebankRootKind::Installed});
-  } else if (const auto* home = std::getenv("HOME"); home != nullptr) {
-    result.push_back({std::filesystem::path{home} / ".local" / "share" /
+  } else if (const auto home = core::environmentVariable("HOME"); home) {
+    result.push_back({std::filesystem::path{*home} / ".local" / "share" /
                           "project-seam" / "voicebanks",
                       VoicebankRootKind::Installed});
   }

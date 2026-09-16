@@ -1,6 +1,7 @@
 #include "seam/text/text_engine.hpp"
 
 #include "seam/core/file_io.hpp"
+#include "seam/core/environment.hpp"
 #include "seam/core/sha256.hpp"
 #include "seam/text/unicode.hpp"
 
@@ -40,10 +41,10 @@ bool isEmojiCodePoint(char32_t value) noexcept {
 }
 
 PreferredScript inferredScript() {
-  const char* locale = std::getenv("LC_ALL");
-  if (locale == nullptr || *locale == '\0') locale = std::getenv("LC_CTYPE");
-  if (locale == nullptr || *locale == '\0') locale = std::getenv("LANG");
-  const std::string value = locale == nullptr ? std::string{} : std::string{locale};
+  auto locale = core::environmentVariable("LC_ALL");
+  if (!locale || locale->empty()) locale = core::environmentVariable("LC_CTYPE");
+  if (!locale || locale->empty()) locale = core::environmentVariable("LANG");
+  const std::string value = locale.value_or(std::string{});
   if (value.starts_with("ko")) return PreferredScript::Korean;
   if (value.starts_with("ja")) return PreferredScript::Japanese;
   if (value.starts_with("zh_TW") || value.starts_with("zh_HK") ||

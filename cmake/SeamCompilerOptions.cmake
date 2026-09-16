@@ -4,6 +4,12 @@ function(seam_apply_compiler_options target)
   endif()
   if(MSVC)
     target_compile_options(${target} PRIVATE /W4 /permissive- /utf-8 /Zc:__cplusplus)
+    # Test fixtures intentionally inspect and mutate process environment state.
+    # Production code uses seam::core::environmentVariable's owned _dupenv_s
+    # snapshot; keep MSVC's legacy getenv deprecation local to test binaries.
+    if("${target}" MATCHES "_tests$")
+      target_compile_definitions(${target} PRIVATE _CRT_SECURE_NO_WARNINGS)
+    endif()
     if(SEAM_WARNINGS_AS_ERRORS)
       target_compile_options(${target} PRIVATE /WX)
     endif()

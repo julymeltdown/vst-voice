@@ -1,4 +1,5 @@
 #include "seam/platform/file_dialog.hpp"
+#include "seam/core/environment.hpp"
 
 #include <cstdlib>
 
@@ -10,10 +11,10 @@ class UnavailableFileDialog final : public IFileDialog {
 public:
   core::Result<std::optional<std::filesystem::path>> choose(
       const FileDialogRequest&) override {
-    if (const auto* injected = std::getenv("SEAM_FILE_DIALOG_PATH");
-        injected != nullptr && *injected != '\0') {
+    if (const auto injected = core::environmentVariable("SEAM_FILE_DIALOG_PATH");
+        injected && !injected->empty()) {
       return std::optional<std::filesystem::path>{
-          std::filesystem::path{injected}};
+          std::filesystem::path{*injected}};
     }
     return core::failure<std::optional<std::filesystem::path>>(
         core::ErrorCode::Unsupported,

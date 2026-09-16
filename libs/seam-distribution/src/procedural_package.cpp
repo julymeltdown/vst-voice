@@ -1,4 +1,5 @@
 #include "seam/distribution/procedural_package.hpp"
+#include "seam/core/environment.hpp"
 
 #include "seam/core/file_io.hpp"
 #include "seam/core/sha256.hpp"
@@ -781,22 +782,22 @@ ProceduralResolution resolveProceduralSinger(
 std::vector<ProceduralSearchRoot> defaultProceduralSearchRoots() {
   std::vector<ProceduralSearchRoot> result;
 #ifdef _WIN32
-  if (const auto* local = std::getenv("LOCALAPPDATA"); local != nullptr) {
-    result.push_back({std::filesystem::path{local} / "ProjectSEAM" / "Singers",
+  if (const auto local = core::environmentVariable("LOCALAPPDATA"); local) {
+    result.push_back({std::filesystem::path{*local} / "ProjectSEAM" / "Singers",
                       ProceduralRootKind::Installed});
   }
 #elif defined(__APPLE__)
-  if (const auto* home = std::getenv("HOME"); home != nullptr) {
-    result.push_back({std::filesystem::path{home} / "Library" / "Application Support" /
+  if (const auto home = core::environmentVariable("HOME"); home) {
+    result.push_back({std::filesystem::path{*home} / "Library" / "Application Support" /
                           "ProjectSEAM" / "Singers",
                       ProceduralRootKind::Installed});
   }
 #else
-  if (const auto* xdg = std::getenv("XDG_DATA_HOME"); xdg != nullptr) {
-    result.push_back({std::filesystem::path{xdg} / "project-seam" / "singers",
+  if (const auto xdg = core::environmentVariable("XDG_DATA_HOME"); xdg) {
+    result.push_back({std::filesystem::path{*xdg} / "project-seam" / "singers",
                       ProceduralRootKind::Installed});
-  } else if (const auto* home = std::getenv("HOME"); home != nullptr) {
-    result.push_back({std::filesystem::path{home} / ".local" / "share" / "project-seam" /
+  } else if (const auto home = core::environmentVariable("HOME"); home) {
+    result.push_back({std::filesystem::path{*home} / ".local" / "share" / "project-seam" /
                           "singers",
                       ProceduralRootKind::Installed});
   }

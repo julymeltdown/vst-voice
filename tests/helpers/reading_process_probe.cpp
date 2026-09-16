@@ -13,6 +13,20 @@
 #include <fcntl.h>
 #include <unistd.h>
 #endif
+namespace {
+bool hasSecretEnvironment() {
+#if defined(_WIN32)
+  char* value = nullptr;
+  std::size_t length = 0U;
+  const int result = ::_dupenv_s(&value, &length, "SEAM_HELPER_SECRET");
+  const bool present = result == 0 && value != nullptr;
+  std::free(value);
+  return present;
+#else
+  return std::getenv("SEAM_HELPER_SECRET") != nullptr;
+#endif
+}
+}
 int main(int argc, char** argv) {
   if (argc < 2) return 2;
   const std::string_view mode{argv[1]};
@@ -32,7 +46,7 @@ int main(int argc, char** argv) {
   }
 #endif
   if (argc != 2) return 2;
-  if (mode == "echo") { std::fputs("ok\n", stdout); std::fputs("diagnostic\n", stderr); return std::getenv("SEAM_HELPER_SECRET") || std::getchar() != EOF ? 3 : 0; }
+  if (mode == "echo") { std::fputs("ok\n", stdout); std::fputs("diagnostic\n", stderr); return hasSecretEnvironment() || std::getchar() != EOF ? 3 : 0; }
   if (mode == "fail") { std::fputs("partial", stdout); return 7; }
   if (mode == "input") {
     std::array<char, 128> buffer{};

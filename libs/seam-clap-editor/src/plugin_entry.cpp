@@ -1,5 +1,6 @@
 #include "seam/build/version.hpp"
 #include "seam/clap_editor/editor_runtime.hpp"
+#include "seam/core/environment.hpp"
 #include "seam/clap_editor/embedded_view.hpp"
 #include "seam/clap_editor/host_timeline.hpp"
 #include "seam/clap_editor/host_transport_publication.hpp"
@@ -75,21 +76,21 @@ std::filesystem::path resolveCharacterPackage() {
 
 core::Result<void> openStandaloneVoicebankInstaller() {
   std::vector<std::filesystem::path> candidates;
-  if (const auto* configured = std::getenv("SEAM_STANDALONE_PATH");
-      configured != nullptr && *configured != '\0') {
-    candidates.emplace_back(configured);
+  if (const auto configured = core::environmentVariable("SEAM_STANDALONE_PATH");
+      configured && !configured->empty()) {
+    candidates.emplace_back(*configured);
   }
 #if defined(__APPLE__)
   candidates.emplace_back("/Applications/Project SEAM.app");
-  if (const auto* home = std::getenv("HOME");
-      home != nullptr && *home != '\0') {
-    candidates.emplace_back(std::filesystem::path{home} / "Applications" /
+  if (const auto home = core::environmentVariable("HOME");
+      home && !home->empty()) {
+    candidates.emplace_back(std::filesystem::path{*home} / "Applications" /
                             "Project SEAM.app");
   }
 #elif defined(_WIN32)
-  if (const auto* programFiles = std::getenv("ProgramFiles");
-      programFiles != nullptr && *programFiles != '\0') {
-    candidates.emplace_back(std::filesystem::path{programFiles} /
+  if (const auto programFiles = core::environmentVariable("ProgramFiles");
+      programFiles && !programFiles->empty()) {
+    candidates.emplace_back(std::filesystem::path{*programFiles} /
                             "Project SEAM" / "Project SEAM.exe");
   }
 #endif

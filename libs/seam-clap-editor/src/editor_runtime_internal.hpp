@@ -1,6 +1,7 @@
 #pragma once
 
 #include "seam/clap_editor/editor_runtime.hpp"
+#include "seam/core/environment.hpp"
 #include "seam/native_ui/editor_frame_layout.hpp"
 
 #include <algorithm>
@@ -14,30 +15,30 @@
 namespace seam::clap_editor::detail {
 
 inline std::filesystem::path previewCacheRoot() {
-  if (const auto* configured = std::getenv("SEAM_PREVIEW_CACHE_ROOT");
-      configured != nullptr && *configured != '\0') {
-    return std::filesystem::path{configured};
+  if (const auto configured = core::environmentVariable("SEAM_PREVIEW_CACHE_ROOT");
+      configured && !configured->empty()) {
+    return std::filesystem::path{*configured};
   }
 #if defined(_WIN32)
-  if (const auto* local = std::getenv("LOCALAPPDATA");
-      local != nullptr && *local != '\0') {
-    return std::filesystem::path{local} / "ProjectSEAM" / "Cache" /
+  if (const auto local = core::environmentVariable("LOCALAPPDATA");
+      local && !local->empty()) {
+    return std::filesystem::path{*local} / "ProjectSEAM" / "Cache" /
            "PluginPreview";
   }
 #elif defined(__APPLE__)
-  if (const auto* home = std::getenv("HOME");
-      home != nullptr && *home != '\0') {
-    return std::filesystem::path{home} / "Library" / "Caches" /
+  if (const auto home = core::environmentVariable("HOME");
+      home && !home->empty()) {
+    return std::filesystem::path{*home} / "Library" / "Caches" /
            "ProjectSEAM" / "PluginPreview";
   }
 #else
-  if (const auto* xdg = std::getenv("XDG_CACHE_HOME");
-      xdg != nullptr && *xdg != '\0') {
-    return std::filesystem::path{xdg} / "project-seam" / "plugin-preview";
+  if (const auto xdg = core::environmentVariable("XDG_CACHE_HOME");
+      xdg && !xdg->empty()) {
+    return std::filesystem::path{*xdg} / "project-seam" / "plugin-preview";
   }
-  if (const auto* home = std::getenv("HOME");
-      home != nullptr && *home != '\0') {
-    return std::filesystem::path{home} / ".cache" / "project-seam" /
+  if (const auto home = core::environmentVariable("HOME");
+      home && !home->empty()) {
+    return std::filesystem::path{*home} / ".cache" / "project-seam" /
            "plugin-preview";
   }
 #endif
@@ -47,9 +48,9 @@ inline std::filesystem::path previewCacheRoot() {
   return root / "project-seam" / "plugin-preview";
 }
 
-inline bool targetRuntimeFixtureEnabled() noexcept {
-  const auto* configured = std::getenv("SEAM_TARGET_RUNTIME_FIXTURE_ROOT");
-  return configured != nullptr && configured[0] != '\0';
+inline bool targetRuntimeFixtureEnabled() {
+  const auto configured = core::environmentVariable("SEAM_TARGET_RUNTIME_FIXTURE_ROOT");
+  return configured && !configured->empty();
 }
 
 inline PreviewStatus previewStatusFor(
@@ -89,11 +90,11 @@ inline std::vector<voicebank::VoicebankSearchRoot> runtimeVoicebankRoots(
     });
   }
 #endif
-  if (const auto* targetFixture =
-          std::getenv("SEAM_TARGET_RUNTIME_FIXTURE_ROOT");
-      targetFixture != nullptr && targetFixture[0] != '\0') {
+  if (const auto targetFixture =
+          core::environmentVariable("SEAM_TARGET_RUNTIME_FIXTURE_ROOT");
+      targetFixture && !targetFixture->empty()) {
     roots.push_back(voicebank::VoicebankSearchRoot{
-        .path = std::filesystem::path{targetFixture},
+        .path = std::filesystem::path{*targetFixture},
         .kind = voicebank::VoicebankRootKind::Development,
     });
   }

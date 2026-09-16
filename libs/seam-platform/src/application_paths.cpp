@@ -1,4 +1,5 @@
 #include "seam/platform/application_paths.hpp"
+#include "seam/core/environment.hpp"
 
 #include <cstdlib>
 #include <system_error>
@@ -51,10 +52,10 @@ std::filesystem::path absolutePath(std::filesystem::path path) {
 }
 
 std::filesystem::path environmentPath(const char* name) {
-  const auto* value = std::getenv(name);
-  return value == nullptr || *value == '\0'
+  const auto value = core::environmentVariable(name);
+  return !value || value->empty()
              ? std::filesystem::path{}
-             : absolutePath(std::filesystem::path{value});
+             : absolutePath(std::filesystem::path{*value});
 }
 
 ApplicationPaths fromRoots(std::filesystem::path installRoot,
