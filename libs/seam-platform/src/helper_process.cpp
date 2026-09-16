@@ -499,7 +499,11 @@ core::Result<HelperProcessOutput> runBoundedHelperProcess(const HelperProcessReq
     if (stdinState.failed.load()) { failureMessage = "Cannot deliver helper input"; break; }
     if (stop.stop_requested()) { failureCode = core::ErrorCode::Conflict; failureMessage = "Helper cancelled"; break; }
     if (std::chrono::steady_clock::now() >= deadline) {
-      failureCode = core::ErrorCode::Conflict; failureMessage = "Helper deadline exceeded"; break;
+      failureCode = core::ErrorCode::Conflict;
+      if (!stdinState.done.load()) failureMessage = "Helper deadline exceeded while delivering input";
+      else if (!exited) failureMessage = "Helper deadline exceeded while waiting for process exit";
+      else failureMessage = "Helper deadline exceeded while draining output";
+      break;
     }
     if (!exited && (request.maximumResidentBytes != 0U || request.maximumCpuTime.count() != 0)) {
       const auto usage = windowsChildUsage(process.value);
