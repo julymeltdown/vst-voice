@@ -1418,6 +1418,9 @@ void NativeEditorApp::paint(native_ui::RasterCanvas& canvas) noexcept {
     state.characterMouth = character_.mouth(frame->mouth);
   }
   state.characterPortrait = character_.portrait();
+  // Layout asks the package, not the decoded frame, so the dock cannot appear or vanish because the
+  // render status changed which state's artwork is being shown.
+  state.characterDockReserved = character_.dockVisible(state.characterMode);
   authoring_->controller().setCharacterPortrait(state.characterPortrait);
   if (state.characterName.empty()) state.characterName = character_.displayName();
   if (state.characterStyle.empty()) state.characterStyle = character_.styleName();

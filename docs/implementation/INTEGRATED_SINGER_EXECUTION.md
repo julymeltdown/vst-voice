@@ -1,5 +1,45 @@
 # Integrated Singer Execution
 
+## One predicate decides whether the character dock exists
+
+September 16, 2026 — R4 unit D1, the latent divergence found by reading source.
+
+The two surfaces that draw the character answered different questions about the same package. The
+plug-in tested whether a portrait had decoded; standalone tested the display mode. The portrait is
+published for the **current render status**, so the plug-in's answer could change when the state
+artwork changed — the dock appearing or vanishing while nothing about the creator's intent had moved.
+Neither surface was wrong in isolation; they disagreed.
+
+This was reported as a latent divergence rather than a defect because no loadable package can trigger
+it today: all six states are mandatory at load, so a decoded portrait always exists for a package that
+loaded at all. That is what made it worth fixing before it became visible rather than after — the
+change that would expose it was already planned, since the character-asset work in D2 makes the
+per-state artwork matter.
+
+`CharacterPresentation::dockVisible(mode)` is now the one answer: the dock exists when the display mode
+is not Off and a package loaded. It deliberately does not consult a decoded frame. A portrait is what
+the dock draws; this is whether there is a dock. Both surfaces store the result on the scene state they
+publish, and layout reads that rather than the portrait. The controller sets it from the portrait for
+callers that publish only a frame, so the in-memory path and the package path agree instead of one
+silently reserving nothing.
+
+The scene's remaining portrait check is annotated rather than converted: the toolbar's compact portrait
+asks whether there is a frame to draw, which is genuinely a drawing question, and asking the package
+there would be the same category error in the other direction.
+
+Verified. `seam_tests` passes 914 of 914, including a new case asserting that Off hides the dock
+whatever the package offers, that Full and Minimal both reserve it, that an unloaded presentation
+reserves nothing in any mode, and that the answer does not change as the render status walks the six
+states. The two existing dock-layout suites were updated to state the field they now depend on; both
+describe packages, so reserving the dock is the answer they intended. The full registered run passes
+172 of 172; `SOURCE_CLOSURE=PASS`.
+
+Not claimed. No visual review was performed: this is asserted through the scene state and the layout
+function rather than by looking at a rendered window, and no creator has confirmed that the dock's
+presence now reads as intended. The character artwork itself is unchanged and remains a development
+turnaround.
+
+
 ## A refused channel is visible in the inspector, not only in the lane it was drawn on
 
 September 16, 2026 — R4 unit U1.5, the last executable unit in M1.

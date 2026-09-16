@@ -124,6 +124,9 @@ TEST_CASE("Painting a phrase changes the dock, and reduced motion removes only t
   native_ui::PixelSurface portrait{220U, 200U};
   portrait.clear(native_ui::Color{40U, 20U, 60U, 255U});
   state.characterPortrait = &portrait;
+  // The package reserves the dock. Dock presence is a package question rather than a
+  // frame question, so a caller building scene state by hand has to answer it too.
+  state.characterDockReserved = true;
   state.characterName = "Pilot";
 
   native_ui::EditorScenePainter painter;
@@ -173,6 +176,9 @@ TEST_CASE("A declared mouth asset replaces the dock's own drawing") {
   native_ui::PixelSurface portrait{220U, 200U};
   portrait.clear(native_ui::Color{30U, 10U, 40U, 255U});
   state.characterPortrait = &portrait;
+  // The package reserves the dock. Dock presence is a package question rather than a
+  // frame question, so a caller building scene state by hand has to answer it too.
+  state.characterDockReserved = true;
   state.characterPerformance = view(character::MouthShape::Open, 0.8F, true);
 
   native_ui::EditorScenePainter painter;
@@ -211,6 +217,9 @@ TEST_CASE("The dock says what is singing and whether that phrase has fallen behi
   native_ui::PixelSurface portrait{220U, 200U};
   portrait.clear(native_ui::Color{30U, 10U, 40U, 255U});
   state.characterPortrait = &portrait;
+  // The package reserves the dock. Dock presence is a package question rather than a
+  // frame question, so a caller building scene state by hand has to answer it too.
+  state.characterDockReserved = true;
   state.characterPerformance = view(character::MouthShape::Open, 0.8F, true);
 
   const auto dockValue = [&](const native_ui::EditorSceneState& candidate) {

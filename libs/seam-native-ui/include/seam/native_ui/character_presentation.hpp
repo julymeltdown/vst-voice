@@ -37,6 +37,20 @@ public:
   [[nodiscard]] bool developmentOnly() const noexcept {
     return package_.has_value() && package_->manifest.developmentOnly;
   }
+  // Whether this window should reserve the character dock. One predicate, because the surfaces that
+  // ask the question disagreed: the plug-in tested whether a portrait had decoded, while standalone
+  // tested the display mode, so the same project could reserve the dock in one and not the other. The
+  // question is about the package and the display mode, and neither a decoded frame nor a loaded
+  // portrait answers it. The mode is a parameter rather than read from this object's own state because
+  // each surface owns its mode and they are set at different times in their own lifecycles.
+  [[nodiscard]] bool dockVisible(domain::CharacterDisplayMode mode) const noexcept {
+    // The display mode decides how much room the dock takes, not whether it exists: Full and Minimal
+    // both show it and Off hides it. A decoded portrait is a drawing concern and is deliberately not
+    // consulted, because a package that cannot draw is a load failure rather than a reason to reserve
+    // the dock in one surface and not the other. Every state is mandatory at load, so a loaded package
+    // is by construction one the dock can draw from.
+    return mode != domain::CharacterDisplayMode::Off && loaded();
+  }
   void setState(character::State state) noexcept { state_ = state; }
   [[nodiscard]] character::State state() const noexcept { return state_; }
   void setDisplayMode(domain::CharacterDisplayMode mode) noexcept { mode_ = mode; }

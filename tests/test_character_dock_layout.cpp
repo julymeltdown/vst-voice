@@ -89,6 +89,9 @@ TEST_CASE("A narrow window drops the portrait, then the dock, and never the musi
   native_ui::PixelSurface portrait{220U, 200U};
   portrait.clear(kPortraitColor);
   state.characterPortrait = &portrait;
+  // The package reserves the dock. Dock presence is a package question rather than a
+  // frame question, so a caller building scene state by hand has to answer it too.
+  state.characterDockReserved = true;
   state.characterPerformance = native_ui::EditorSceneState::CharacterPerformanceView{
       .mouth = character::MouthShape::Open,
       .energy = 0.8F,

@@ -237,6 +237,11 @@ EditorSceneState NativeEditorController::sceneState() const {
       .characterName = characterName_,
       .characterStyle = characterStyle_,
       .characterPortrait = characterPortrait_,
+      // Dock presence asks whether there is a package the dock can draw from, which the surface that
+      // owns the package knows. A surface that publishes only a portrait is one that has already decided
+      // the dock belongs, so a decoded frame is the answer available here; the surfaces that own a
+      // package set this from CharacterPresentation::dockVisible and overwrite it.
+      .characterDockReserved = characterPortrait_ != nullptr,
   };
   state.selectedNoteCount = session_.selection().noteIds().size();
   state.hoveredNote = interaction_.hoveredNote();

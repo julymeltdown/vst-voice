@@ -162,9 +162,13 @@ TechnicalLaneHeights resolveEditorTechnicalLaneHeights(
 }
 
 bool editorDockVisible(const EditorSceneState& state) noexcept {
+  // Dock presence is decided by the package and the display mode, through the predicate both surfaces
+  // share. The previous test asked whether a portrait had decoded, and the portrait is published for the
+  // current render status, so a singer whose state artwork changed could make the dock appear or vanish
+  // while nothing about the creator's intent had changed.
   const auto characterFull =
       state.characterMode == domain::CharacterDisplayMode::Full &&
-      state.voiceIdentity.characterActive && state.characterPortrait != nullptr;
+      state.voiceIdentity.characterActive && state.characterDockReserved;
   const auto arrangementVisible =
       !state.recoverySupport.visible && !state.voicebankBrowserVisible &&
       !state.audioSettings.visible &&
@@ -187,7 +191,7 @@ void EditorScenePainter::paint(RasterCanvas& canvas, ui::PianoRollModel& model,
   const auto width = canvas.logicalWidth();
   const auto height = canvas.logicalHeight();
   const auto characterFull =
-      state.voiceIdentity.characterActive && state.characterPortrait != nullptr &&
+      state.voiceIdentity.characterActive && state.characterDockReserved &&
       (state.characterMode == domain::CharacterDisplayMode::Full ||
        (state.characterMode == domain::CharacterDisplayMode::Minimal &&
         state.dockWidthOverride.value_or(0.0) > 0.0));
@@ -461,6 +465,9 @@ void EditorScenePainter::paintToolbar(RasterCanvas& canvas,
       std::to_string(state.meter.numerator) + "/" + std::to_string(state.meter.denominator),
       theme_.secondaryText, 8.0);
 
+  // This one is about whether there is a frame to draw in the header, which is a drawing question,
+  // so it keeps asking about the portrait. Dock presence, which is a layout question, asks the
+  // package through characterDockReserved instead.
   const auto portraitVisible =
       !layout_.compactToolbar(width) &&
       state.characterMode == domain::CharacterDisplayMode::Minimal &&
@@ -1094,7 +1101,7 @@ void EditorScenePainter::paintCharacter(RasterCanvas& canvas,
                                         double editorRight,
                                         double contentBottom) const noexcept {
   if (state.characterMode != domain::CharacterDisplayMode::Full ||
-      !state.voiceIdentity.characterActive || state.characterPortrait == nullptr ||
+      !state.voiceIdentity.characterActive || !state.characterDockReserved ||
       editorRight >= canvas.logicalWidth()) {
     return;
   }

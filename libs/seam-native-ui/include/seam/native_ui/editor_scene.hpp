@@ -224,6 +224,11 @@ struct EditorSceneState final {
   std::string characterName;
   std::string characterStyle;
   const PixelSurface* characterPortrait{nullptr};
+  // Whether the loaded character package and the display mode together reserve the dock. Set from
+  // CharacterPresentation::dockVisible by the surface that owns the package, so layout does not have to
+  // ask whether a particular frame decoded. A portrait is what the dock draws; this is whether there is
+  // a dock.
+  bool characterDockReserved{false};
   bool voicebankBrowserVisible{false};
   std::vector<authoring::VoicebankCard> voicebankCards;
   std::vector<ArrangementTrackItem> arrangementTracks;

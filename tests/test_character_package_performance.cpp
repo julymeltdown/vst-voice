@@ -196,3 +196,42 @@ TEST_CASE("Renaming a development package cannot promote it") {
 }
 
 }  // namespace
+
+// One predicate decides whether a window reserves the character dock. The surfaces disagreed: the
+// plug-in asked whether a portrait had decoded, standalone asked the display mode. Since the portrait is
+// published for the current render status, the plug-in's answer could change when the state artwork
+// changed -- the dock appearing or disappearing while nothing about the creator's intent had moved.
+TEST_CASE("Dock presence follows the package and the display mode, not a decoded frame") {
+  const auto root = test::support::temporaryDirectory("character-dock-presence");
+  const auto packageRoot = writePackage(root / "package", 1, Mouths::None, std::nullopt);
+  native_ui::CharacterPresentation presentation;
+  CHECK(presentation.load(packageRoot).hasValue());
+
+  // Off hides the dock whatever the package offers, which is a creator's explicit instruction.
+  CHECK(!presentation.dockVisible(domain::CharacterDisplayMode::Off));
+  // Full and Minimal both reserve it. Minimal is a smaller presentation, not an absent one, and reading
+  // it as absence is exactly the disagreement this predicate removes.
+  const auto visible = presentation.dockVisible(domain::CharacterDisplayMode::Full) &&
+                       presentation.dockVisible(domain::CharacterDisplayMode::Minimal);
+  CHECK(visible);
+
+  // A presentation with no package reserves nothing, whatever mode is asked, because the dock would have
+  // no artwork to draw and the roll should keep the room.
+  native_ui::CharacterPresentation empty;
+  CHECK(!empty.loaded());
+  for (const auto mode : {domain::CharacterDisplayMode::Full, domain::CharacterDisplayMode::Minimal,
+                          domain::CharacterDisplayMode::Off}) {
+    CHECK(!empty.dockVisible(mode));
+  }
+
+  // The answer does not depend on which frame is currently being drawn, which is the property that
+  // makes it usable for layout. Asking twice with a different render status in between -- the states a
+  // render cycle walks -- must give the same answer.
+  for (const auto state : {character::State::Neutral, character::State::Rendering,
+                           character::State::Complete, character::State::Warning,
+                           character::State::Error}) {
+    presentation.setState(state);
+    CHECK(presentation.portrait() != nullptr);
+    CHECK(presentation.dockVisible(domain::CharacterDisplayMode::Full));
+  }
+}

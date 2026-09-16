@@ -23,10 +23,13 @@ void EditorRuntime::rebuildTechnicalModelsLocked() {
   if (region == nullptr) return;
   auto phonemes = phonemesLocked();
   const auto layout = painter_.layout();
+  // One predicate, shared with the standalone surface, so both reserve the dock for the same package.
+  // The previous test asked whether a portrait had decoded, which is a drawing question, and answered
+  // the layout question with it.
   const auto characterFull =
       session_.project().settings().characterDisplay ==
           domain::CharacterDisplayMode::Full &&
-      character_.portrait(character::State::Neutral) != nullptr;
+      character_.dockVisible(session_.project().settings().characterDisplay);
   const auto editorRight = std::max(
       layout.keyboardWidth + layout.minimumTimelineWidth,
       logicalWidth_ - (characterFull ? layout.characterDockWidth : 0.0));
@@ -199,6 +202,10 @@ native_ui::EditorSceneState EditorRuntime::sceneState() const {
   auto state = controller_->sceneState();
   state.characterMode = session_.project().settings().characterDisplay;
   state.characterPortrait = character_.portrait(state.characterState);
+  // The same predicate the standalone surface uses, so a package reserves the dock in both or in
+  // neither. The portrait above is what the dock draws for the current render status; this is whether
+  // there is a dock at all.
+  state.characterDockReserved = character_.dockVisible(state.characterMode);
   if (state.characterName.empty()) state.characterName = character_.displayName();
   if (state.characterStyle.empty()) state.characterStyle = character_.styleName();
   if (microscopeUnitId_.has_value()) {
