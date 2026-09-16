@@ -163,7 +163,10 @@ derivable from the rule printed beside it, which defeated the purpose of stating
 is gone; the total now says what it is — weighted engineering, not completion.
 ## 3. M1 — finish the first usable session
 
-M1.1 and M1.2 are closed. What remains in M1 is three code units and one observation.
+M1.1, M1.2 and M1.3's clauses are now closed by code: the route view, the song fixture, the tuning
+edits, cancellation inside the journey, the copy-to-draft loop and a measured timing edit all have
+engineering evidence. What remains in M1 is one presentation unit (U1.5) and the human observation
+(U1.4), which no amount of code can substitute for.
 
 ### U1.3a — cancel a render during a pending edit, inside the song journey
 
