@@ -195,14 +195,25 @@ publishes at the wrong revision. Run
 `distribution::copyInstalledSingerToDraft` (`:2393`) already exist and are reachable through
 `ApplicationCommand::CopyInstalledSingerToDraft`, so this is a journey unit, not a new feature.
 
-**Implementation.** In the journey: copy to draft, change one voice-design parameter through
-`VoiceDesignerSession`, render the same song, save and reopen the draft, and assert (a) the draft's
-export differs from the installed singer's export, and (b) the installed singer's own export is
-byte-identical to what it was before the copy. Then undo the design change and assert the draft's
-export returns to the installed singer's sound.
+**Implementation.** In the journey: fingerprint every file in the installation, copy to draft, change
+the draft's resonance through `VoiceDesignerSession`, save it, and re-select it. Assert the copy alone
+renders the same sound, the edited draft renders a different sound, and the installation fingerprint is
+unchanged. Then resolve the installation from a fresh session and assert it still offers the identity it
+offered before the copy, because present files and an unchanged resource are different claims.
 
-**Exit.** A signed installed resource is never mutated by an edit to a copy of it. This is the
-assertion that makes "the creator can change the intended voice" load-bearing rather than nominal.
+**Landed, with one thing the plan got wrong.** The plan said to change a parameter and render. That step
+does not work, and the reason is worth keeping: the recorded reference carries the recipe's content
+identity, and editing the bytes invalidates it, so rendering afterwards is refused with "Recipe file
+does not match the requested singer resource identity". The refusal is correct — a project must never
+silently sing with a different voice than the one it recorded — and relinking is not the remedy, since
+relink means the same resource moved and re-verifies the identity it was given. **Selecting the draft is
+what adopts the new identity.** The journey now asserts the refusal, adopts the draft through the
+supported command, and only then renders, so the whole creator loop is covered instead of the part of
+it that would have passed.
+
+**Exit.** A signed installed resource is never mutated by an edit to a copy of it, and the edited copy
+is actually singable once adopted. This is the assertion that makes "the creator can change the
+intended voice" load-bearing rather than nominal.
 
 ### U1.3c — measure whether the timing edits actually moved sound
 

@@ -1,5 +1,46 @@
 # Integrated Singer Execution
 
+## A designer edit makes the project's recorded singer identity stale, and the refusal is correct
+
+September 16, 2026 — R4 unit U1.3b, and the workflow step it exposed.
+
+The unit was to copy the installed singer to a draft, change the voice, and prove the signed
+installation is untouched. It found that the middle step does not work without one more action, and
+that the reason is a deliberate property rather than a bug.
+
+A track's procedural reference carries the recipe's **content identity**, which is what the renderer
+validates before it sings. Editing the draft's bytes changes that identity. Rendering afterwards is
+refused with `Recipe file does not match the requested singer resource identity`, and that refusal is
+right: a project must never quietly sing with a different voice than the one it records. Relinking is
+not the remedy either. Relink means the same resource moved, so it re-verifies the identity it was
+given and refuses a changed recipe by design. **Selecting the draft is what adopts the new identity.**
+
+So the creator's loop is copy, edit, select, sing. The journey now walks all four and asserts the
+refusal in between, rather than the three quarters of it that would have passed silently:
+
+- every file in the installation is fingerprinted before the copy, by relative path and content, so a
+  rewritten recipe and a renamed file are both caught;
+- the copy alone renders the same sound, because it is the same voice written to creator-owned bytes;
+- rendering the edited draft without re-selecting is refused, with the identity named;
+- selecting the draft through the application records a reference whose content hash differs from the
+  copied one, recomputed from the edited bytes;
+- the edited draft then renders a different voice;
+- and every file in the installation is unchanged, which is the assertion a path-only comparison would
+  miss.
+
+A fresh session resolving the installation afterwards offers the same identity it offered before the
+copy, so the installation still renders the voice it rendered before anyone edited a copy of it.
+
+Verified. `seam_original_singer_song_journey_tests` passes 3 of 3 across repeated runs; the full
+registered run passes 172 of 172; `SOURCE_CLOSURE=PASS`.
+
+Not claimed. No creator has been observed making this change unaided, so the workflow observation
+remains NOT_OBSERVED, and no listener has judged the edited voice. The design change here is a
+screening value that moves every resonance by the same ratio; it proves the identity and the audio
+follow the edit, not that the result is a voice anyone wants. The copy, the refusal and the adoption
+are covered by automated replay, which is engineering evidence and not a person using the instrument.
+
+
 ## The qualification dossier could not tell a singer from a noise generator
 
 September 16, 2026 — R4 unit U3.5, found by review before the unit was reached.

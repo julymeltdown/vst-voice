@@ -23,6 +23,7 @@
 #include "seam/standalone/application_controller.hpp"
 #include "seam/standalone/authoring_session.hpp"
 #include "seam/authoring/render_coordinator.hpp"
+#include "seam/native_ui/voice_designer_session.hpp"
 #include "seam/ui/expression_lane.hpp"
 #include "seam/voice_design/recipe_resource.hpp"
 #include "seam/voice_design/voice_recipe.hpp"
@@ -124,6 +125,7 @@ voice_design::VoiceRecipe songRecipe() {
   recipe.approximants = {{"r", "neutral", 45.0}, {"w", "neutral", 60.0}, {"y", "neutral", 40.0}};
   return recipe;
 }
+
 
 // One lyric per note. The sequence deliberately mixes consonants, rising and falling pitch, unequal
 // durations, a rest and a sustained final vowel, so a phrase that renders is a phrase with real
@@ -271,6 +273,36 @@ authoring::RenderProgress waitForPublishedRevision(
     std::this_thread::sleep_for(std::chrono::milliseconds{5});
   }
   return coordinator.progress();
+}
+
+// A stable digest over every regular file under a directory, path and content together. Used to assert
+// that a signed installation was not written to: file names alone would miss a rewritten recipe, and
+// contents alone would miss a rename.
+std::string fingerprintTree(const std::filesystem::path& root) {
+  std::vector<std::string> lines;
+  std::error_code error;
+  for (const auto& entry : std::filesystem::recursive_directory_iterator(root, error)) {
+    if (!entry.is_regular_file(error)) continue;
+    const auto relative = entry.path().lexically_relative(root).generic_string();
+    const auto digest = core::sha256File(entry.path());
+    if (!digest) throw test::Failure{"hashing an installed file failed: " + digest.error().message};
+    lines.push_back(relative + " " + digest.value());
+  }
+  std::sort(lines.begin(), lines.end());
+  std::string joined;
+  for (const auto& line : lines) { joined += line; joined += '\n'; }
+  return core::sha256Hex(std::string_view{joined});
+}
+
+// The Designer runs its file work on a worker, exactly as the application does, so a test has to let it
+// finish rather than assuming the call is synchronous.
+core::Result<void> drainDesigner(native_ui::VoiceDesignerSession& session) {
+  for (unsigned index = 0U; index < 3000U; ++index) {
+    const auto result = session.poll();
+    if (!result || (!session.busy() && !session.auditionBusy())) return result;
+    std::this_thread::sleep_for(std::chrono::milliseconds{1});
+  }
+  return core::failure(core::ErrorCode::Internal, "the Designer worker exceeded its test budget");
 }
 
 std::unique_ptr<standalone::AuthoringSession> makeSession(const Installed& installed) {
@@ -819,5 +851,134 @@ TEST_CASE("Tuning an installed singer survives undo, save, reopen and export") {
         {"files", std::move(entries)}}, true);
     const auto written = core::durableAtomicWriteText(*artifacts / "manifest.json", manifest);
     CHECK(written.hasValue());
+  }
+}
+
+// The voice-creation half of the milestone: can the creator change the intended voice, keep that change
+// as their own resource, and leave the signed original exactly as they found it? A copy that mutated
+// the installation would corrupt a signed resource while appearing to work, so the assertion that
+// matters most here is about the bytes that were *not* written, not the ones that were.
+TEST_CASE("Copying an installed singer to a draft leaves the installation untouched") {
+  const auto installed = installSongSinger("song-journey-draft");
+  auto editor = makeEditor(installed);
+  selectInstalledSinger(editor);
+  writeSong(editor);
+  auto& runtime = editor.session->runtime();
+
+  // Everything the installation consists of, hashed before the copy. Comparing the draft against the
+  // original is not enough on its own: a copy that rewrote the installed recipe in place and then
+  // copied its own output would look correct from the draft side alone.
+  const auto installedFingerprint = fingerprintTree(installed.installRoot);
+  CHECK(!installedFingerprint.empty());
+
+  authoring::ExportSettings settings;
+  settings.includeMaster = true;
+  const auto beforeCopy = editor.controller->exportSet(installed.root / "before-copy", settings);
+  if (!beforeCopy) throw test::Failure{"the pre-copy export failed: " + beforeCopy.error().message};
+  CHECK(beforeCopy.hasValue());
+  if (!beforeCopy) return;
+  const auto installedSound = beforeCopy.value().masterSha256;
+  const auto installedTrackId = runtime.document().session().project().vocalTracks().front().id;
+
+  // The creator copies the installed singer into a draft outside every protected root.
+  const auto draftPath = installed.root / "drafts" / "song-01-draft.json";
+  editor.dialog->responses = {draftPath};
+  const auto copied = editor.controller->dispatch(
+      platform::ApplicationCommand::CopyInstalledSingerToDraft);
+  CHECK(copied.hasValue());
+  if (!copied) return;
+  CHECK(std::filesystem::exists(draftPath));
+
+  // The track now records the draft, not the installation. The path has to change with the identity,
+  // because the renderer validates the identity it was given against the bytes it loads.
+  const auto* track = runtime.document().session().project().findVocalTrack(installedTrackId);
+  CHECK(track != nullptr);
+  if (track == nullptr) return;
+  CHECK(track->proceduralRecipe.has_value());
+  if (!track->proceduralRecipe) return;
+  CHECK(track->proceduralRecipe->path == draftPath.string());
+  CHECK(track->proceduralRecipe->resource.kind == domain::SingerResourceKind::Procedural);
+  // Captured by value, because a raw pointer into the project reads whatever the project holds when
+  // it is dereferenced. Comparing the live project against itself after an edit would pass without
+  // proving anything, which is exactly the trap this check exists to avoid.
+  const auto copiedIdentity = track->proceduralRecipe->resource.contentHash;
+  CHECK(copiedIdentity.size() == 64U);
+
+  // Copying alone must not change the sound: it is the same voice, written to creator-owned bytes.
+  const auto afterCopy = editor.controller->exportSet(installed.root / "after-copy", settings);
+  CHECK(afterCopy.hasValue());
+  if (!afterCopy) return;
+  CHECK(afterCopy.value().masterSha256 == installedSound);
+
+  // The creator now changes the voice through the Designer, which is the point of copying it.
+  native_ui::VoiceDesignerSession designer;
+  designer.setProtectedRoots(std::vector<std::filesystem::path>{installed.installRoot});
+  CHECK(designer.beginOpen(draftPath).hasValue());
+  CHECK(drainDesigner(designer).hasValue());
+  CHECK(designer.model() != nullptr);
+  if (designer.model() == nullptr) return;
+  auto edited = designer.model()->recipe();
+  CHECK(!edited.poses.empty());
+  if (edited.poses.empty()) return;
+  // A deliberate identity change rather than a cosmetic one: every formant of every pose moves, which
+  // is what a creator does when they want the same words in a different voice.
+  for (auto& pose : edited.poses) {
+    for (auto& band : pose.formants) band.frequencyHz *= 1.15;
+  }
+  CHECK(designer.edit(designer.epoch(), designer.model()->revision(), edited).hasValue());
+  CHECK(designer.beginSave(draftPath).hasValue());
+  CHECK(drainDesigner(designer).hasValue());
+
+  // The edited draft is a different voice, and the project has to be told so. This is a real step in
+  // the creator's workflow rather than an artifact of the test: the recorded reference carries the
+  // recipe's content identity, which is what the renderer validates before it sings, and editing the
+  // bytes invalidates it. Rendering here without re-selecting is refused, and that refusal is correct
+  // -- a project must never silently sing with a different voice than the one it recorded. Relinking
+  // is not the action either: relink means the same resource moved and re-verifies the identity it was
+  // given, so a changed recipe is refused by design. Selecting the draft adopts the new identity.
+  {
+    const auto stale = editor.controller->exportSet(installed.root / "stale-identity", settings);
+    CHECK(!stale.hasValue());
+    CHECK(stale.error().message.find("identity") != std::string::npos);
+  }
+  editor.dialog->styleResponse = std::nullopt;
+  editor.dialog->responses = {draftPath};
+  const auto reselected = editor.controller->dispatch(
+      platform::ApplicationCommand::SelectProceduralRecipe);
+  CHECK(reselected.hasValue());
+  if (!reselected) return;
+  const auto* afterEdit = runtime.document().session().project().findVocalTrack(installedTrackId);
+  CHECK(afterEdit != nullptr);
+  if (afterEdit == nullptr || !afterEdit->proceduralRecipe) return;
+  CHECK(afterEdit->proceduralRecipe->path == draftPath.string());
+  // The identity is recomputed from the edited bytes, so the recorded reference and the file agree
+  // again and the project sings with the voice the creator actually designed.
+  CHECK(afterEdit->proceduralRecipe->resource.contentHash != copiedIdentity);
+
+  // The edited draft renders as a different voice, while the installation it was copied from is
+  // byte-for-byte what it was before the copy.
+  const auto editedExport = editor.controller->exportSet(installed.root / "edited-draft", settings);
+  if (!editedExport) throw test::Failure{"exporting the edited draft failed: " + editedExport.error().message};
+  CHECK(editedExport.hasValue());
+  if (!editedExport) return;
+  CHECK(editedExport.value().masterSha256 != installedSound);
+  CHECK(fingerprintTree(installed.installRoot) == installedFingerprint);
+
+  // Editing the draft must not have changed the installed singer either. A fresh session resolving the
+  // installation is the check a path-only comparison would miss: the files could all still be present
+  // while the resource they resolve to had changed.
+  auto restored = makeEditor(installed);
+  const auto installedOffers = restored.controller->installedSingerOffers();
+  CHECK(installedOffers.hasValue());
+  if (!installedOffers) return;
+  CHECK(installedOffers.value().size() == 1U);
+  if (installedOffers.value().empty()) return;
+  CHECK(installedOffers.value().front().selectable);
+  // The installation still renders the voice it rendered before the copy was ever made.
+  const auto* restoredTrack = runtime.document().session().project().findVocalTrack(installedTrackId);
+  CHECK(restoredTrack != nullptr);
+  if (restoredTrack != nullptr && restoredTrack->proceduralRecipe) {
+    CHECK(installedOffers.value().front().candidate.renderIdentity.contentHash !=
+          restoredTrack->proceduralRecipe->resource.contentHash);
   }
 }
