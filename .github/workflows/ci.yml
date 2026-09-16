@@ -17,6 +17,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.x"
+      - name: Install Python contract-test dependencies
+        run: python -m pip install --disable-pip-version-check jsonschema==4.26.0
       - name: Verify tracked source closure
         run: python scripts/verify_tracked_source_closure.py --root .
       - name: External Beta contract suite
@@ -69,6 +71,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.x"
+      - name: Install Python contract-test dependencies
+        run: python -m pip install --disable-pip-version-check jsonschema==4.26.0
       - name: Install build dependencies
         run: |
           sudo apt-get update
