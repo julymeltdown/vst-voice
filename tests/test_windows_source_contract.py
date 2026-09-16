@@ -142,6 +142,7 @@ class WindowsSourceContractTests(unittest.TestCase):
         self.assertIn("generated/ProjectSEAM.rc", cmake)
         self.assertIn("ProjectSEAMBuildID", rc)
         self.assertIn("ProjectSEAMSourceCommit", rc)
+        self.assertIn('target_link_options(seam_editor_native PRIVATE "/MANIFEST:NO")', cmake)
         self.assertIn("uiautomationcore", cmake)
         self.assertIn("oleacc", cmake)
         self.assertIn("comdlg32", cmake)

@@ -5,6 +5,7 @@
 #include "seam/text/unicode.hpp"
 
 #include <algorithm>
+#include <array>
 #include <filesystem>
 #include <string>
 

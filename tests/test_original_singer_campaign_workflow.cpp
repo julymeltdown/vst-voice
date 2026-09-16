@@ -250,9 +250,18 @@ TEST_CASE("a collected generation campaign take becomes the installed bank of a 
   const auto retakeWav = root / "retake.wav";
   CHECK(voicebank::writeWav(retakeWav, {.sampleRate = 48000U, .channels = 1U,
       .sampleFormat = voicebank::WavSampleFormat::Pcm24},
-      test::support::sineWave(48000U, 440.0, 0.18, 0.18F)));
+      // Keep the requested A4 pitch but use a non-zero phase so this raw retake
+      // cannot become byte-identical to a platform's procedural campaign
+      // fixture. Two takes need distinct material identities even when they
+      // intentionally sing the same note.
+      test::support::sineWave(48000U, 440.0, 0.18, 0.18F, 0.37)));
   CHECK(controller.inspectTake(retakeWav, 69));
-  CHECK(controller.importSelectedTake(retakeWav, "2026-09-14T12:03:00Z"));
+  const auto importedRetake =
+      controller.importSelectedTake(retakeWav, "2026-09-14T12:03:00Z");
+  if (!importedRetake) {
+    throw test::Failure{"retake import failed: " + importedRetake.error().message +
+                        " | " + importedRetake.error().context};
+  }
   CHECK(controller.productionProject());
   const auto retakeTakeId = controller.productionProject()->unitAssignments.front().takeId;
   CHECK(!retakeTakeId.empty());

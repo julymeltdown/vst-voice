@@ -355,7 +355,13 @@ TEST_CASE("standalone_voicebank_workflow_installs_browses_selects_and_reports_co
   CHECK(dialogPtr->requests.size() == 2U);
   CHECK(dialogPtr->requests.back().purpose ==
         seam::platform::FileDialogPurpose::RelinkVoicebank);
-  std::this_thread::sleep_for(std::chrono::milliseconds{50});
+  const auto relinkDeadline =
+      std::chrono::steady_clock::now() + std::chrono::seconds{5};
+  while (session.value()->runtime().renderer().stats().submitted <=
+             submittedBeforeRelink &&
+         std::chrono::steady_clock::now() < relinkDeadline) {
+    std::this_thread::sleep_for(std::chrono::milliseconds{5});
+  }
   CHECK(session.value()->runtime().renderer().stats().submitted >
         submittedBeforeRelink);
   const auto coverage = controller.value()->selectedRegionCoverage();

@@ -1,0 +1,7 @@
+# Direct Python dependencies imported by the full CTest and external Beta suites.
+# Keep this environment small and exact; trained-model experiments have separate
+# requirement locks under tools/voice_model_training.
+jsonschema==4.26.0
+numpy==2.4.4
+Pillow==12.2.0
+PyYAML==6.0.3

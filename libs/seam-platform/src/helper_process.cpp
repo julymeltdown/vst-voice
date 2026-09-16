@@ -64,6 +64,7 @@ struct Child {
     int status{};
     while (::waitpid(pid, &status, 0) < 0 && errno == EINTR) {}
   }
+  void release() noexcept { pid = -1; }
 };
 bool inputPair(Descriptor& read, Descriptor& write) {
   int raw[2]; if (::socketpair(AF_UNIX, SOCK_STREAM, 0, raw) != 0) return false;
@@ -92,6 +93,31 @@ struct ChildUsage final {
   std::uint64_t cpuNanoseconds{0U};
 };
 
+std::uint64_t timevalNanoseconds(const timeval& value) {
+  if (value.tv_sec < 0 || value.tv_usec < 0) return 0U;
+  const auto seconds = static_cast<std::uint64_t>(value.tv_sec);
+  const auto microseconds = static_cast<std::uint64_t>(value.tv_usec);
+  if (seconds > (std::numeric_limits<std::uint64_t>::max() - microseconds * 1000U) /
+          1000000000U)
+    return std::numeric_limits<std::uint64_t>::max();
+  return seconds * 1000000000U + microseconds * 1000U;
+}
+
+ChildUsage completedChildUsage(const rusage& usage) {
+  const auto user = timevalNanoseconds(usage.ru_utime);
+  const auto system = timevalNanoseconds(usage.ru_stime);
+  const auto cpu = user > std::numeric_limits<std::uint64_t>::max() - system
+      ? std::numeric_limits<std::uint64_t>::max() : user + system;
+#ifdef __APPLE__
+  const auto resident = usage.ru_maxrss < 0 ? 0U : static_cast<std::uint64_t>(usage.ru_maxrss);
+#else
+  const auto kilobytes = usage.ru_maxrss < 0 ? 0U : static_cast<std::uint64_t>(usage.ru_maxrss);
+  const auto resident = kilobytes > std::numeric_limits<std::uint64_t>::max() / 1024U
+      ? std::numeric_limits<std::uint64_t>::max() : kilobytes * 1024U;
+#endif
+  return ChildUsage{resident, cpu};
+}
+
 std::optional<ChildUsage> childUsage(pid_t pid) {
 #ifdef __APPLE__
   rusage_info_v4 usage{};
@@ -100,12 +126,13 @@ std::optional<ChildUsage> childUsage(pid_t pid) {
   return ChildUsage{usage.ri_resident_size, usage.ri_user_time + usage.ri_system_time};
 #elif defined(__linux__)
   std::ifstream status{"/proc/" + std::to_string(pid) + "/status"};
+  if (!status.is_open()) return std::nullopt;
   std::string line;
   std::uint64_t resident = 0U;
   while (std::getline(status, line)) {
     if (!line.starts_with("VmRSS:")) continue;
     std::size_t value = 6U;
-    while (value < line.size() && line[value] == ' ') ++value;
+    while (value < line.size() && (line[value] == ' ' || line[value] == '\t')) ++value;
     std::uint64_t kilobytes = 0U;
     while (value < line.size() && line[value] >= '0' && line[value] <= '9') {
       if (kilobytes > (std::numeric_limits<std::uint64_t>::max() - 9U) / 10U) return std::nullopt;
@@ -114,7 +141,10 @@ std::optional<ChildUsage> childUsage(pid_t pid) {
     resident = kilobytes * 1024U;
     break;
   }
-  if (!status || resident == 0U) return std::nullopt;
+  // VmRSS can legitimately be absent or zero during the first scheduling
+  // slice and after the process has become a zombie. Treat that as a zero
+  // live sample: wait4 supplies the authoritative peak before success.
+  if (status.bad()) return std::nullopt;
   std::ifstream stat{"/proc/" + std::to_string(pid) + "/stat"};
   std::string contents{std::istreambuf_iterator<char>{stat}, std::istreambuf_iterator<char>{}};
   const auto close = contents.rfind(')');
@@ -360,12 +390,22 @@ core::Result<HelperProcessOutput> runBoundedHelperProcess(const HelperProcessReq
     if (std::chrono::steady_clock::now() >= deadline) return fail(core::ErrorCode::Conflict, "Helper deadline exceeded");
     if (request.maximumResidentBytes != 0U || request.maximumCpuTime.count() != 0) {
       const auto usage = childUsage(child.pid);
-      if (!usage) return fail(core::ErrorCode::Unsupported, "Child resource usage is unavailable on this platform");
-      if (request.maximumResidentBytes != 0U && usage->residentBytes > request.maximumResidentBytes)
-        return fail(core::ErrorCode::Conflict, "Helper resident-memory limit exceeded");
-      if (request.maximumCpuTime.count() != 0 && usage->cpuNanoseconds >
-          static_cast<std::uint64_t>(request.maximumCpuTime.count()) * 1000000ULL)
-        return fail(core::ErrorCode::Conflict, "Helper CPU-time limit exceeded");
+      if (!usage) {
+        // A short-lived helper can become a zombie between the live /proc or
+        // proc_pid_rusage sample and this check. Its authoritative peak usage
+        // is collected with wait4 below; only a still-running child without an
+        // observable usage record is an unsupported platform condition.
+        siginfo_t exited{};
+        if (::waitid(P_PID, static_cast<id_t>(child.pid), &exited,
+                WEXITED | WNOHANG | WNOWAIT) != 0 || exited.si_pid != child.pid)
+          return fail(core::ErrorCode::Unsupported, "Child resource usage is unavailable on this platform");
+      } else {
+        if (request.maximumResidentBytes != 0U && usage->residentBytes > request.maximumResidentBytes)
+          return fail(core::ErrorCode::Conflict, "Helper resident-memory limit exceeded");
+        if (request.maximumCpuTime.count() != 0 && usage->cpuNanoseconds >
+            static_cast<std::uint64_t>(request.maximumCpuTime.count()) * 1000000ULL)
+          return fail(core::ErrorCode::Conflict, "Helper CPU-time limit exceeded");
+      }
     }
     if (inWrite.value >= 0) {
 #ifdef __APPLE__
@@ -405,7 +445,20 @@ core::Result<HelperProcessOutput> runBoundedHelperProcess(const HelperProcessReq
     }
     if (info.si_pid == child.pid && outRead.value < 0 && errRead.value < 0) {
       if (inputOffset != request.standardInput.size()) return fail(core::ErrorCode::Internal, "Helper exited before input delivery");
-      if (info.si_code != CLD_EXITED || info.si_status != 0) return fail(core::ErrorCode::Internal, "Helper exited unsuccessfully");
+      int status = 0;
+      rusage finalUsage{};
+      pid_t reaped = -1;
+      do { reaped = ::wait4(child.pid, &status, 0, &finalUsage); } while (reaped < 0 && errno == EINTR);
+      if (reaped != child.pid) return fail(core::ErrorCode::Internal, "Cannot collect helper exit status");
+      child.release();
+      const auto completed = completedChildUsage(finalUsage);
+      if (request.maximumResidentBytes != 0U && completed.residentBytes > request.maximumResidentBytes)
+        return fail(core::ErrorCode::Conflict, "Helper resident-memory limit exceeded");
+      if (request.maximumCpuTime.count() != 0 && completed.cpuNanoseconds >
+          static_cast<std::uint64_t>(request.maximumCpuTime.count()) * 1000000ULL)
+        return fail(core::ErrorCode::Conflict, "Helper CPU-time limit exceeded");
+      if (!WIFEXITED(status) || WEXITSTATUS(status) != 0)
+        return fail(core::ErrorCode::Internal, "Helper exited unsuccessfully");
       return output;
     }
     std::array<pollfd, 3U> pending{{{outRead.value, POLLIN, 0}, {errRead.value, POLLIN, 0}, {inWrite.value, POLLOUT, 0}}};

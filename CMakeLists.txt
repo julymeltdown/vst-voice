@@ -841,6 +841,12 @@ if(SEAM_BUILD_NATIVE_DESKTOP)
       apps/seam-editor-native/windows_application.cpp
       ${CMAKE_CURRENT_BINARY_DIR}/generated/ProjectSEAM.rc)
     set_target_properties(seam_editor_native PROPERTIES WIN32_EXECUTABLE TRUE)
+    if(MSVC)
+      # ProjectSEAM.rc embeds the product's DPI/long-path manifest as resource
+      # 1. Disable LINK's generated default manifest so cvtres never receives
+      # two RT_MANIFEST/1 resources.
+      target_link_options(seam_editor_native PRIVATE "/MANIFEST:NO")
+    endif()
     target_link_libraries(seam_editor_native PRIVATE shell32)
     add_custom_command(TARGET seam_editor_native POST_BUILD
       COMMAND ${CMAKE_COMMAND} -E remove_directory

@@ -218,7 +218,8 @@ TEST_CASE("AppKit accessibility bridge exposes runtime hierarchy and lazy pages"
 
     id tempo = findAccessibilityElement(children, @"toolbar.tempo");
     CHECK(tempo != nil);
-    CHECK([[tempo accessibilityRole] isEqual:NSAccessibilityGroupRole]);
+    CHECK([[tempo accessibilityRole] isEqual:NSAccessibilityTextFieldRole]);
+    CHECK([tempo accessibilityIsAttributeSettable:NSAccessibilityValueAttribute]);
     CHECK([tempo accessibilityFrame].size.width > 0.0);
     [tempo setAccessibilityFocused:YES];
     CHECK(client.actionReceived);
