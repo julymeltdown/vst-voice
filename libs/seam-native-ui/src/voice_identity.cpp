@@ -66,6 +66,7 @@ VoiceIdentityView resolveVoiceIdentity(const VoiceIdentityInput& input) noexcept
   if (result.characterActive) {
     result.accentPrimary = input.character->accentPrimary;
     result.accentSecondary = input.character->accentSecondary;
+    result.hasPerformanceAssets = input.character->hasPerformance;
   }
   return result;
 }

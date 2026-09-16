@@ -22,6 +22,7 @@ struct VoiceIdentityInput final {
     std::string voicebankId;
     std::string accentPrimary;
     std::string accentSecondary;
+    bool hasPerformance{false};
   };
   const CharacterBinding* character{nullptr};
   RenderStatusView renderStatus;
@@ -36,6 +37,7 @@ struct VoiceIdentityView final {
   std::string identity;
   std::string recovery;
   bool characterActive{false};
+  bool hasPerformanceAssets{false};
   std::string accentPrimary;
   std::string accentSecondary;
 };

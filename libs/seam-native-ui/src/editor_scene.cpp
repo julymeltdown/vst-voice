@@ -545,8 +545,16 @@ void EditorScenePainter::paintToolbar(RasterCanvas& canvas,
   }
   if (portraitVisible) {
     const auto side = layout_.portraitSide;
-    const ui::Rect portraitBounds{width - layout_.portraitRightInset,
-                                  layout_.portraitTop, side, side};
+    const auto imageW = static_cast<double>(state.characterPortrait->width());
+    const auto imageH = static_cast<double>(state.characterPortrait->height());
+    const auto scale = (imageW > 0.0 && imageH > 0.0)
+                           ? std::min(side / imageW, side / imageH)
+                           : 1.0;
+    const auto fitW = imageW * scale;
+    const auto fitH = imageH * scale;
+    const auto fitX = (width - layout_.portraitRightInset) + (side - fitW) * 0.5;
+    const auto fitY = layout_.portraitTop + (side - fitH) * 0.5;
+    const ui::Rect portraitBounds{fitX, fitY, fitW, fitH};
     canvas.drawImageNearest(portraitBounds, *state.characterPortrait,
                             layout_.imageScale);
     canvas.strokeRect(portraitBounds, theme_.accent, layout_.controlStrokeWidth);
@@ -1142,10 +1150,24 @@ void EditorScenePainter::paintCharacter(RasterCanvas& canvas,
   if (presentation == CharacterDockPresentation::Full) {
     const auto portraitBounds = layout_.characterDockPortraitBounds(
         editorRight, contentBottom, canvas.logicalWidth());
-    canvas.drawImageNearest(portraitBounds, *state.characterPortrait,
-                            layout_.characterDockPortraitScale);
-    canvas.strokeRect(portraitBounds, theme_.gridStrong,
-                      layout_.characterDockPortraitBorderWidth);
+    if (state.characterPortrait != nullptr && state.characterPortrait->width() > 0U &&
+        state.characterPortrait->height() > 0U) {
+      const auto imageW = static_cast<double>(state.characterPortrait->width());
+      const auto imageH = static_cast<double>(state.characterPortrait->height());
+      const auto scale = std::min(portraitBounds.width / imageW, portraitBounds.height / imageH);
+      const auto fitW = imageW * scale;
+      const auto fitH = imageH * scale;
+      const auto fitX = portraitBounds.x + (portraitBounds.width - fitW) * 0.5;
+      const auto fitY = portraitBounds.y + (portraitBounds.height - fitH) * 0.5;
+      const ui::Rect fittedRect{fitX, fitY, fitW, fitH};
+      canvas.drawImageNearest(fittedRect, *state.characterPortrait,
+                              layout_.characterDockPortraitScale);
+      canvas.strokeRect(fittedRect, theme_.gridStrong,
+                        layout_.characterDockPortraitBorderWidth);
+    } else {
+      canvas.strokeRect(portraitBounds, theme_.gridStrong,
+                        layout_.characterDockPortraitBorderWidth);
+    }
     textTop = layout_.characterDockMetadataTop(portraitBounds);
   }
   // Every metadata line is drawn inside the dock's own width so a long name is ellipsized instead of

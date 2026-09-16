@@ -575,6 +575,7 @@ core::Result<void> NativeEditorApp::initialize() {
             .voicebankId = package->manifest.voicebankId,
             .accentPrimary = package->manifest.accent.primary,
             .accentSecondary = package->manifest.accent.secondary,
+            .hasPerformance = character_.hasPerformanceAssets(),
         });
       }
       authoring_->controller().setCharacterPortrait(

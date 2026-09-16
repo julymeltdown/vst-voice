@@ -206,6 +206,7 @@ EditorRuntime::EditorRuntime(
           .voicebankId = package->manifest.voicebankId,
           .accentPrimary = package->manifest.accent.primary,
           .accentSecondary = package->manifest.accent.secondary,
+          .hasPerformance = character_.hasPerformanceAssets(),
       });
     }
     controller_->setCharacterPortrait(

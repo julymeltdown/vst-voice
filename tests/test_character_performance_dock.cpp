@@ -361,4 +361,24 @@ TEST_CASE("A completed render binds the dock to the phrase it published") {
   if (audible != nullptr) CHECK(audible->renderRevision == 2U);
 }
 
+// D2: assets/character-01 declares complete performance artwork, enabling real mouth assets instead of fallback glyphs.
+TEST_CASE("Character 01 declares complete performance artwork and loads with performance capability") {
+  native_ui::CharacterPresentation presentation;
+  const auto loaded = presentation.load("assets/character-01");
+  CHECK(loaded.hasValue());
+  CHECK(presentation.loaded());
+  CHECK(presentation.hasPerformanceAssets());
+  CHECK(presentation.developmentOnly());
+  for (const auto shape : {character::MouthShape::Closed, character::MouthShape::Narrow,
+                           character::MouthShape::Nasal, character::MouthShape::Open,
+                           character::MouthShape::Wide, character::MouthShape::Round}) {
+    const auto* mouth = presentation.mouth(shape);
+    CHECK(mouth != nullptr);
+    if (mouth != nullptr) {
+      CHECK(mouth->width() == 24U);
+      CHECK(mouth->height() == 24U);
+    }
+  }
+}
+
 }  // namespace

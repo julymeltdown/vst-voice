@@ -1,5 +1,35 @@
 # Integrated Singer Execution
 
+## Character performance artwork declared and aspect-correct portrait fitting restored
+
+September 16, 2026 — R4 units D2 and 8.3.
+
+The owner's design review noted that Character 01 was underutilized and that portrait artwork was
+distorted into square boxes. An audit of `assets/character-01` and character presentation code showed:
+1. `manifest.json` was on schemaVersion 1 and declared no `mouths` table, causing `hasPerformanceAssets()`
+   to remain false and forcing the character dock to fall back to a generic geometric level glyph.
+2. `editor_scene.cpp` drew the 2:3 aspect ratio portrait (320x480 PPM) directly into a square 48x48
+   header rectangle and unconstrained dock bounds, stretching and distorting the artwork.
+3. `hasPerformanceAssets()` had zero call sites in `libs/` and `apps/`.
+
+Implementation:
+- Generated the six runtime performance mouth PPM assets (`mouth-closed.ppm`, `mouth-narrow.ppm`,
+  `mouth-nasal.ppm`, `mouth-open.ppm`, `mouth-wide.ppm`, `mouth-round.ppm`) in `assets/character-01/runtime/`.
+- Updated `assets/character-01/manifest.json` to schemaVersion 2, declaring `developmentOnly: true`
+  and the complete `mouths` mapping for all six `MouthShape` values.
+- Extended `VoiceIdentityInput::CharacterBinding` and `VoiceIdentityView` with `hasPerformance` and
+  `hasPerformanceAssets`, wired from `character_.hasPerformanceAssets()` in both standalone and CLAP
+  editor runtime surfaces.
+- Updated `editor_scene.cpp` in both `paintToolbar` and `paintCharacter` to compute aspect-correct
+  bounding boxes for character portraits, preserving the native 2:3 aspect ratio and centering within
+  the reserved bounds.
+
+Verified. `seam_character_package_performance_tests` passes 6 of 6. `seam_character_performance_dock_tests`
+passes 6 of 6, including a new test asserting that Character 01 loads with `hasPerformanceAssets() == true`
+and returns decoded 24x24 pixel surfaces for all six mouth shapes. `SOURCE_CLOSURE=PASS`.
+
+
+
 ## Unified ellipsis policy bounds variable-length strings and process bring-up absorbs load tails
 
 September 16, 2026 — R4 unit 8.2, plus test process readiness hardening.
