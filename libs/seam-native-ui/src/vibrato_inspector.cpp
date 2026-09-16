@@ -4,7 +4,7 @@
 
 namespace seam::native_ui {
 namespace {
-constexpr std::array<std::optional<float> ui::VibratoFields::*, 6U> fields{
+constexpr std::array<decltype(&ui::VibratoFields::startFraction), 6U> fields{
     &ui::VibratoFields::startFraction, &ui::VibratoFields::fadeInFraction, &ui::VibratoFields::fadeOutFraction,
     &ui::VibratoFields::depthCents, &ui::VibratoFields::periodMilliseconds, &ui::VibratoFields::phaseTurns};
 std::string format(std::optional<float> value) {

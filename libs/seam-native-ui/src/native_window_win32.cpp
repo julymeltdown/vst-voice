@@ -176,7 +176,7 @@ public:
     windowClass.style = CS_OWNDC | CS_DBLCLKS;
     windowClass.lpfnWndProc = &Win32NativeWindow::windowProcedure;
     windowClass.hInstance = instance_;
-    windowClass.hCursor = LoadCursorW(nullptr, IDC_ARROW);
+    windowClass.hCursor = LoadCursorW(nullptr, MAKEINTRESOURCEW(32512U));
     windowClass.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
     windowClass.lpszClassName = kWindowClassName;
     classAtom_ = RegisterClassExW(&windowClass);

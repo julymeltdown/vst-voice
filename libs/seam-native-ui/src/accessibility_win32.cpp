@@ -8,7 +8,7 @@
 #define NOMINMAX
 #endif
 #include <windows.h>
-#include <uiautomationcore.h>
+#include <UIAutomation.h>
 
 #include <algorithm>
 #include <array>
