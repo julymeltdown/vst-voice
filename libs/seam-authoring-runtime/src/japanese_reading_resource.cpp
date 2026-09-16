@@ -13,6 +13,12 @@
 
 namespace seam::authoring {
 namespace {
+struct FileCloser final {
+  void operator()(FILE* file) const noexcept {
+    if (file != nullptr) static_cast<void>(std::fclose(file));
+  }
+};
+
 bool hex(std::string_view value, std::size_t count) {
   return value.size() == count && std::all_of(value.begin(), value.end(), [](char c) {
     return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f');
@@ -35,10 +41,10 @@ core::Result<void> checkFile(const std::filesystem::path& path, std::string_view
   if (::fstat(descriptor, &opened) != 0 || !S_ISREG(opened.st_mode)) {
     ::close(descriptor); return core::failure(core::ErrorCode::InvalidArgument, "Reading resource handle is not a regular file");
   }
-  std::unique_ptr<FILE, decltype(&std::fclose)> input{::fdopen(descriptor, "rb"), &std::fclose};
+  std::unique_ptr<FILE, FileCloser> input{::fdopen(descriptor, "rb")};
   if (!input) { ::close(descriptor); return core::failure(core::ErrorCode::IoError, "Cannot read resource handle"); }
 #else
-  std::unique_ptr<FILE, decltype(&std::fclose)> input{std::fopen(path.string().c_str(), "rb"), &std::fclose};
+  std::unique_ptr<FILE, FileCloser> input{std::fopen(path.string().c_str(), "rb")};
   if (!input) return core::failure(core::ErrorCode::IoError, "Cannot open reading resource");
 #endif
   core::Sha256 hash; std::array<char, 65536U> buffer{}; std::uintmax_t readBytes = 0U;
