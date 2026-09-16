@@ -4,9 +4,9 @@
 #include <cstdint>
 #include <exception>
 #include <process.h>
-#include <sddl.h>
 #include <thread>
 #include <windows.h>
+#include <sddl.h>
 
 namespace seam::platform {
 namespace {

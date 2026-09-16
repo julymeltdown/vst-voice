@@ -1,4 +1,5 @@
 #include "seam/platform/audio_device_catalog.hpp"
+#include "win32_text.hpp"
 
 #if defined(SEAM_AUDIO_WASAPI)
 
@@ -10,6 +11,7 @@
 #endif
 
 #include <mmdeviceapi.h>
+#include <functiondiscoverykeys_devpkey.h>
 #include <propkey.h>
 #include <wrl/client.h>
 
@@ -77,9 +79,12 @@ public:
         }
         PropVariantClear(&value);
       }
+      const auto idUtf8 = detail::utf8FromWide(id);
+      const auto nameUtf8 = detail::utf8FromWide(name);
+      if (!idUtf8 || !nameUtf8) continue;
       snapshot.devices.push_back(AudioDeviceDescription{
-          .id = std::string{id.begin(), id.end()},
-          .name = std::string{name.begin(), name.end()},
+          .id = *idUtf8,
+          .name = *nameUtf8,
           .isDefault = id == defaultId,
           .physical = true,
           .generation = generation_,

@@ -3,6 +3,7 @@
 #if defined(SEAM_AUDIO_WASAPI)
 
 #include "seam/domain/routing.hpp"
+#include "win32_text.hpp"
 
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -126,8 +127,9 @@ public:
     if (config.deviceId.empty()) {
       result = enumerator->GetDefaultAudioEndpoint(eRender, eConsole, &device_);
     } else {
-      const std::wstring requested{config.deviceId.begin(), config.deviceId.end()};
-      result = enumerator->GetDevice(requested.c_str(), &device_);
+      const auto requested = detail::wideFromUtf8(config.deviceId);
+      if (!requested) return failOpen("WASAPI device ID is not valid UTF-8", E_INVALIDARG);
+      result = enumerator->GetDevice(requested->c_str(), &device_);
     }
     if (FAILED(result)) return failOpen("Unable to obtain default WASAPI output", result);
     result = device_->Activate(__uuidof(IAudioClient), CLSCTX_ALL, nullptr,
@@ -161,8 +163,10 @@ public:
     if (config_.deviceId.empty()) {
       LPWSTR rawId = nullptr;
       if (SUCCEEDED(device_->GetId(&rawId)) && rawId != nullptr) {
-        config_.deviceId = std::string{rawId, rawId + wcslen(rawId)};
+        const auto id = detail::utf8FromWide(rawId);
         CoTaskMemFree(rawId);
+        if (!id) return failOpen("WASAPI returned an invalid UTF-16 device ID", E_INVALIDARG);
+        config_.deviceId = *id;
       }
     }
     processor_ = &processor;

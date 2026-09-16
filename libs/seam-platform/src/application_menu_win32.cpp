@@ -1,7 +1,9 @@
 #include "seam/platform/application_menu.hpp"
 
 #if defined(_WIN32)
+#ifndef NOMINMAX
 #define NOMINMAX
+#endif
 #include <windows.h>
 #include <shellapi.h>
 
