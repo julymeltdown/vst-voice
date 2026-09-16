@@ -190,9 +190,9 @@ TEST_CASE("project rendering routes a neural track through the selected runner")
   const auto extent=std::size_t(performance->notes().back().endFrame-performance->notes().front().startFrame);
   const rendering::NeuralRenderProvenance provenance{.workerVersion="seam-neural-worker-1",
       .runtimeVersion="onnxruntime-1.30.0",.provider="CPUExecutionProvider"};
-  const auto render=[&](std::shared_ptr<const AuthoringNeuralPhraseRunner> runner) {
+  const auto render=[&](std::shared_ptr<const AuthoringNeuralPhraseRunner> phraseRunner) {
     const std::vector<rendering::TrackSingerSource> sources{rendering::TrackNeuralSource{
-        prepared.track,prepared.admitted,provenance,std::move(runner)}};
+        prepared.track,prepared.admitted,provenance,std::move(phraseRunner)}};
     return rendering::ProductionProjectRenderer{}.renderWithSources(prepared.project,sources,
         prepared.track,prepared.region,1U,48000U);
   };

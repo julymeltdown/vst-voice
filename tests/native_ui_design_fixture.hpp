@@ -60,7 +60,7 @@ struct Fixture final {
     for (std::size_t index = 0U; index < lyrics.size(); ++index) {
       auto [lyric, note] = factory.makeNote(
           time::Tick{960 + static_cast<std::int64_t>(index) * 180},
-          time::Tick{960}, 64U, std::move(lyrics[index]),
+          time::Tick{960}, 64U, lyrics[index],
           domain::Language::Japanese);
       noteIds.push_back(note.id);
       region->lyrics.push_back(std::move(lyric));

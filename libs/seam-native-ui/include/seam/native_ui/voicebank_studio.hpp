@@ -63,8 +63,20 @@ public:
   // A modal/worker capability binds the entire edited manifest, not just its
   // dirty flag. A selection round trip also invalidates it.
   struct SampleReviewContext final {
-    std::uint64_t epoch{0U}, generation{0U}, selectionRevision{0U};
-    std::size_t selectedIndex{0U};
+    SampleReviewContext()
+        : epoch(0U), generation(0U), selectionRevision(0U), selectedIndex(0U) {}
+    SampleReviewContext(std::uint64_t epochValue, std::uint64_t generationValue,
+        std::uint64_t selectionRevisionValue, std::size_t selectedIndexValue,
+        std::string projectSha256Value, std::string manifestSha256Value,
+        std::string unitIdValue)
+        : epoch(epochValue), generation(generationValue),
+          selectionRevision(selectionRevisionValue), selectedIndex(selectedIndexValue),
+          projectSha256(std::move(projectSha256Value)),
+          manifestSha256(std::move(manifestSha256Value)),
+          unitId(std::move(unitIdValue)) {}
+
+    std::uint64_t epoch, generation, selectionRevision;
+    std::size_t selectedIndex;
     std::string projectSha256, manifestSha256, unitId;
     friend bool operator==(const SampleReviewContext&, const SampleReviewContext&) = default;
   };
@@ -350,12 +362,23 @@ private:
   [[nodiscard]] core::Result<void> pollSampleReviewWork();
   struct SampleReviewWorkResult final {
     struct LoadedUnit final {
+      LoadedUnit() : index(0U), dirty(false) {}
+      LoadedUnit(voicebank::Manifest manifestValue, voicebank::AudioBuffer audioValue,
+          ui::SampleMicroscopeModel microscopeValue,
+          std::filesystem::path manifestPathValue, std::filesystem::path rootValue,
+          std::size_t indexValue, bool dirtyValue, SampleAudioBindings audioBindingsValue)
+          : manifest(std::move(manifestValue)), audio(std::move(audioValue)),
+            microscope(std::move(microscopeValue)),
+            manifestPath(std::move(manifestPathValue)), root(std::move(rootValue)),
+            index(indexValue), dirty(dirtyValue),
+            audioBindings(std::move(audioBindingsValue)) {}
+
       voicebank::Manifest manifest;
       voicebank::AudioBuffer audio;
       ui::SampleMicroscopeModel microscope;
       std::filesystem::path manifestPath, root;
-      std::size_t index{0U};
-      bool dirty{false};
+      std::size_t index;
+      bool dirty;
       SampleAudioBindings audioBindings;
     };
     SampleReviewContext context;

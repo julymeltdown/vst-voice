@@ -85,8 +85,8 @@ TEST_CASE("host tempo map records a versioned history of what the host reported"
   CHECK(map.revision() == revision + 1U);
   CHECK(map.observations()[1].bpm == 90.0);
   CHECK(map.size() == 3U);
-  for (const auto invalid : {std::pair<double, double>{-1.0, 120.0}, {1.0, 0.0}, {1.0, 1001.0},
-                             {std::nan(""), 120.0}, {1.0, std::nan("")}}) {
+  for (const auto& invalid : {std::pair<double, double>{-1.0, 120.0}, {1.0, 0.0}, {1.0, 1001.0},
+                              {std::nan(""), 120.0}, {1.0, std::nan("")}}) {
     CHECK(!map.observe(invalid.first, invalid.second));
   }
   CHECK(map.size() == 3U);

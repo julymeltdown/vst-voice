@@ -2307,15 +2307,15 @@ core::Result<void> NativeEditorController::dispatchAccessibility(
           }
           const auto actionName = element.substr(indexEnd + 1U);
           const auto& actions = diagnosticPanel_.entries()[index].diagnostic.actions;
-          const auto action = std::find_if(
+          const auto matchingAction = std::find_if(
               actions.begin(), actions.end(), [actionName](const auto candidate) {
                 return authoring::toString(candidate) == actionName;
               });
-          if (action == actions.end()) {
+          if (matchingAction == actions.end()) {
             return core::failure(core::ErrorCode::InvalidArgument,
                                  "Diagnostic action is not available");
           }
-          return activateDiagnostic(index, *action);
+          return activateDiagnostic(index, *matchingAction);
         }
         if (element.rfind("diagnostic.", 0U) == 0U &&
             requested == SemanticAction::SetFocus) {

@@ -2691,7 +2691,8 @@ TEST_CASE("native diagnostic Find works without a vocal region and never runs re
   for (unsigned page = 0U; page < 20U; ++page) {
     const auto view = controller.sceneState().replacementReview;
     for (const auto& line : view.rows) { CHECK(text::utf8DisplayWidth(line) <= 32U); full += line; }
-    if (!view.enabled[1]) break; CHECK(controller.replacementReviewAction(1U));
+    if (!view.enabled[1]) break;
+    CHECK(controller.replacementReviewAction(1U));
   }
   CHECK(full.find("Scope: global or unspecified; no note binding") != std::string::npos);
   CHECK(full.find(issue.detail) != std::string::npos);
@@ -2719,7 +2720,8 @@ TEST_CASE("native diagnostic Find pages opaque references and rejects changed di
   std::string full;
   for (unsigned page = 0U; page < 100U; ++page) {
     const auto view = controller.sceneState().replacementReview; for (const auto& line : view.rows) full += line;
-    if (!view.enabled[1]) break; CHECK(controller.replacementReviewAction(1U));
+    if (!view.enabled[1]) break;
+    CHECK(controller.replacementReviewAction(1U));
   }
   CHECK(full.find(longId) != std::string::npos); CHECK(full.find("not note targets") != std::string::npos);
   CHECK(controller.replacementReviewAction(4U));

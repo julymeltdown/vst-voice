@@ -541,7 +541,8 @@ struct QualityDialog final : seam::platform::IFileDialog {
   std::vector<std::string> reviewers;
   seam::core::Result<std::optional<std::filesystem::path>> choose(const seam::platform::FileDialogRequest& request) override {
     CHECK(request.purpose == seam::platform::FileDialogPurpose::SourceQualityEvidence);
-    if (duringChoose) duringChoose(); return evidence;
+    if (duringChoose) duringChoose();
+    return evidence;
   }
   seam::core::Result<std::optional<seam::platform::SourceQualityDecisionInput>> chooseSourceQualityDecision(
       std::string_view text,const std::vector<std::string>& choices) override {
@@ -660,7 +661,8 @@ struct RegistrationDialog final : platform::IFileDialog {
   std::string summary;
   core::Result<std::optional<std::filesystem::path>> choose(const platform::FileDialogRequest& request) override {
     CHECK(request.purpose==platform::FileDialogPurpose::SourceLicenseEvidence);
-    if (duringChoose) duringChoose(); return evidence;
+    if (duringChoose) duringChoose();
+    return evidence;
   }
   core::Result<std::optional<platform::SourceRegistrationInput>> chooseSourceRegistration(std::string_view text) override {
     summary=text; if (duringForm) duringForm(); return input;
