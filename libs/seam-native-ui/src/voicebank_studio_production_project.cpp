@@ -1096,7 +1096,10 @@ core::Result<void> VoicebankStudioController::importSelectedTake(
       {.action = retake ? "retake" : "import",
        .subjectId = takeId,
        .operatorId = productionOperatorId_,
-       .occurredAtUtc = std::move(occurredAtUtc)});
+       // The same timestamp is also stored in the review above. Function-call
+       // argument evaluation order must not decide whether that review sees a
+       // moved-from string (GCC evaluates this order differently from Clang).
+       .occurredAtUtc = occurredAtUtc});
   if (!imported) return core::Result<void>{imported.error()};
   stagedRecoveryCandidateCount_ =
       productionRepository_->inspectStaged(*productionProject_).size();

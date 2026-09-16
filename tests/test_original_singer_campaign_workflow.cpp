@@ -275,6 +275,12 @@ TEST_CASE("a collected generation campaign take becomes the installed bank of a 
   const auto retakeSha = retaken->rawAssetSha256;
   CHECK(retakeSha.size() == 64U);
   CHECK(retakeSha != generatedSha);
+  const auto retakeReview = std::find_if(controller.productionProject()->reviews.begin(),
+      controller.productionProject()->reviews.end(),
+      [&](const production::ReviewRecord& review) { return review.takeId == retakeTakeId; });
+  CHECK(retakeReview != controller.productionProject()->reviews.end());
+  if (retakeReview != controller.productionProject()->reviews.end())
+    CHECK(retakeReview->reviewedAtUtc == "2026-09-14T12:03:00Z");
   // The assessment recorded for the previous material does not qualify this one.
   CHECK(!production::requireTakeSourceQualification(*controller.productionProject(), retakeTakeId));
 

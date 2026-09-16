@@ -4671,6 +4671,8 @@ TEST_CASE("graphical voicebank studio loads audio and commits validated marker e
   CHECK(controller.productionProject()->takes.size() == 1U);
   CHECK(controller.productionProject()->reviews.size() == 1U);
   CHECK(controller.productionProject()->reviews.front().result == "PASS");
+  CHECK(controller.productionProject()->reviews.front().reviewedAtUtc ==
+        "2026-08-31T11:01:00Z");
   CHECK(controller.productionQueues().markerReview == 1U);
   const auto productionRawHash =
       controller.productionProject()->takes.front().rawAssetSha256;
