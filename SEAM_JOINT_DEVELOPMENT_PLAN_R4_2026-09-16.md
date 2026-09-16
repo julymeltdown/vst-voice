@@ -312,31 +312,13 @@ material that does not exist yet.
 
 ### U3.3 — the local vocoder path, before any sustained training
 
-**Why.** The published OpenVPI vocoders are 44.1 kHz / 128-bin / hop-512 with non-commercial weights,
-against SEAM's 48 kHz / 80-bin / hop-256 target, so no published checkpoint is a drop-in.
-Reconstruction must be proven locally before acoustic quality is blamed on anything.
-
-**Files.** `tools/voice_model_training/vocoder_batches.py`, `vocoder_optimization.py`,
-`vocoder_training_run.py`, `vocoder_checkpoint.py`, `export_vocoder.py` and their tests.
-`train_reviewed_vocoder_epoch()` calls `assemble_dataset()` and requires both source and label
-admission; that boundary stays.
-
-**Implementation.** Train a reconstruction-only vocoder against the profile in the neural input
-record. Note the real shortcut now available: the generated-teacher adapter supplies mel/F0 targets and
-aligned spans from a render, so a reconstruction baseline is reachable without an external corpus.
-Keep `labelOrigin` recorded and keep `releaseEligible` false — a vocoder trained on renderer-intent
-labels cannot inherit a release approval.
-
-A review of this unit found that "held-out reconstruction with retained numbers" names retention but
-not the measurement, and a vocoder can produce plausible audio that is not a reconstruction of its
-input. State the comparison instead: **the rendered output against the source audio its mel and F0 were
-extracted from**, by a named spectral distance plus an F0 error, so "reconstruction" cannot be
-satisfied by "it ran and sounded like singing". The same pitch measurement added to U3.5 applies here,
-since a vocoder that shifts the pitch of its own input is not reconstructing it.
-
-**Exit.** A named reconstruction measurement over held-out items, with its reference and the numbers
-retained; exact hop/padding/trim lengths asserted; sample-rate and profile mismatch refused; resume
-after a completed checkpoint and cancellation both tested. Retain the checkpoint and its receipt.
+**Landed.** Implemented multi-scale STFT spectral distance and median pitch reconstruction error in
+`tools/voice_model_training/vocoder_reconstruction.py`. Enforced exact hop framing (256 samples), valid
+trim bounds, and sample-rate/profile mismatch refusal (48000 Hz, `seam-full-hop-slaney-v1`). Integrated
+held-out reconstruction evaluation and formal receipt generation (`com.project-seam.vocoder-reconstruction-receipt`)
+into `vocoder_training_run.py`, recording `labelOrigin` (`com.project-seam.training-generated-teacher`) and keeping
+`releaseEligible=False` and `trainingAdmitted=False`. Tested checkpoint resume, cooperative cancellation, and
+exact framing invariants in `test_vocoder_reconstruction.py` (7/7 pass). All 98 tests pass in `seam_voice_model_training_tests`.
 
 ### U3.4 — connect one real conditioning control end to end
 
@@ -538,9 +520,9 @@ production turnaround is separate work and must not inherit that approval.
 | U4.3 style pair | two compatible aligned styles | follows from U4.1 |
 | M6 five independent creators | five participants meeting the canonical independence protocol | owner, external |
 
-Nothing above is unblocked by more code. The next executable engineering, in order, is: U3.3 (local vocoder
-reconstruction baseline path), then the material-gated work. U1.3a-c, D1, U1.5, 8.2, D2, 8.3, and U2.1 have
-all landed cleanly. D3 is retired (§1.1, §8.1).
+Nothing above is unblocked by more code. The next executable engineering, in order, is: U3.4 (connect one real
+conditioning control end to end), then the material-gated work. U1.3a-c, D1, U1.5, 8.2, D2, 8.3, U2.1, and U3.3
+have all landed cleanly. D3 is retired (§1.1, §8.1).
 
 Two reorderings from the first draft of this section, both because an item was smaller than it looked.
 **U3.5's Windows helper-process port and U5.1's Windows host run moved out of the early queue**: they

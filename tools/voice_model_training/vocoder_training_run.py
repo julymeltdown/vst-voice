@@ -12,13 +12,15 @@ from .__main__ import assemble_dataset
 from .vocoder_batches import iter_vocoder_batches
 from .vocoder_checkpoint import publish_vocoder_checkpoint, _schedulers
 from .vocoder_optimization import vocoder_gan_step
+from .vocoder_reconstruction import evaluate_held_out_reconstruction
 
 
 def train_reviewed_vocoder_epoch(generator, discriminators, generator_optimizer, discriminator_optimizer,
         *, dataset_inputs, conditioning_directory, targets, pcm_sources, expected_profile_sha256,
         output, run_metadata, reconstruction_loss, objective_id, maximum_updates,
         maximum_seconds=600, cancelled=None, schedulers=None, expected_dataset_sha256=None,
-        maximum_checkpoint_file_bytes=512 * 1024 * 1024):
+        maximum_checkpoint_file_bytes=512 * 1024 * 1024, held_out_items=None,
+        label_origin=None):
     """Use the same admitted phrase segmentation as acoustic training (<=4096 hops).
 
 The reconstruction callable and model/configuration provenance are caller-owned.
@@ -111,14 +113,25 @@ Deadline/cancellation is cooperative between model updates and publication phase
     revalidate()
     for scheduler in (schedulers or {}).values():
         scheduler.step()
+    effective_label_origin = label_origin or snapshot.get("labelOrigin") or metadata.get("labelOrigin") or "com.project-seam.training-generated-teacher"
     epoch = dict(formatId="com.project-seam.vocoder-epoch-result", schemaVersion=1,
         datasetSha256=snapshot["datasetSha256"], profileSha256=expected_profile_sha256,
         objectiveId=objective_id, updates=len(covered), sourceCount=len(covered), validSamples=total,
         meanGeneratorLoss=gl / total, meanDiscriminatorLoss=dl / total,
         coveredSourceSamples=covered, epochComplete=True, coverageVerified=True,
-        trainingAdmitted=False, releaseEligible=False)
+        labelOrigin=effective_label_origin, trainingAdmitted=False, releaseEligible=False)
+    reconstruction_receipt = None
+    if held_out_items:
+        reconstruction_receipt = evaluate_held_out_reconstruction(
+            generator_fn=generator,
+            items=held_out_items,
+            dataset_sha256=snapshot["datasetSha256"],
+            profile_sha256=expected_profile_sha256,
+            label_origin=effective_label_origin,
+        )
+        epoch["reconstructionSummary"] = reconstruction_receipt.get("summary")
     return publish_vocoder_checkpoint(generator, discriminators, generator_optimizer, discriminator_optimizer,
         output, metadata=dict(run=metadata, datasetBindings=snapshot["bindings"],
             datasetSha256=snapshot["datasetSha256"], profileSha256=expected_profile_sha256,
-            objectiveId=objective_id), epoch=epoch, schedulers=schedulers,
+            objectiveId=objective_id, labelOrigin=effective_label_origin), epoch=epoch, schedulers=schedulers,
         maximum_bytes=maximum_checkpoint_file_bytes, before_publish=revalidate)

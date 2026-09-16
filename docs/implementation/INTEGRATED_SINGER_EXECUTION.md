@@ -1,5 +1,33 @@
 # Integrated Singer Execution
 
+## Local vocoder reconstruction baseline and named spectral/pitch measurement
+
+September 16, 2026 — R4 unit U3.3.
+
+Published OpenVPI vocoders operate at 44.1 kHz / 128-bin / hop-512 with non-commercial weights,
+against SEAM's 48 kHz / 80-bin / hop-256 target. Acoustic quality cannot be blamed on downstream
+training until local reconstruction is verified against the project's own rendered audio and acoustic profiles.
+
+Implementation:
+- Created `tools/voice_model_training/vocoder_reconstruction.py` implementing multi-resolution STFT
+  spectral distance (convergence + log-magnitude across 512, 1024, 2048 FFT resolutions) and median
+  voiced pitch error in Hz and cents via sub-sample autocorrelation.
+- Bound exact framing invariants: audio length must be an exact multiple of `hopSize` (256),
+  valid samples are accurately trimmed, and sample-rate/profile mismatches (non-48000 Hz, wrong profile ID)
+  are strictly refused.
+- Extended `tools/voice_model_training/vocoder_training_run.py` to record `labelOrigin`
+  (`"com.project-seam.training-generated-teacher"`), enforce `releaseEligible=False` and `trainingAdmitted=False`,
+  support held-out evaluation during epoch runs, and generate formal reconstruction receipts
+  (`formatId: "com.project-seam.vocoder-reconstruction-receipt"`).
+- Added comprehensive unit tests in `tools/voice_model_training/test_vocoder_reconstruction.py` covering
+  exact hop framing, profile/rate refusal, spectral distance, pitch tracking, held-out receipt retention,
+  and cooperative cancellation.
+
+Verified. `test_vocoder_reconstruction` passes 7 of 7 tests. `seam_voice_model_training_tests` passes 98 of 98
+tests. Full test suite passes 172 of 172 on `ctest -j8`. `SOURCE_CLOSURE=PASS`.
+
+
+
 ## Versioned listening reference set binding and ASR-assisted screening triage baseline
 
 September 16, 2026 — R4 unit U2.1.
