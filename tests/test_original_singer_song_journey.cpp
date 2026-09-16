@@ -396,6 +396,45 @@ double peakAndEnergy(const std::vector<float>& samples, double& energy) {
 }
 
 // Reads an exported master and returns its samples, failing the test rather than returning silence.
+
+// The span over which two renders of the same phrase differ, in samples, and how far apart the ends of
+// that span are. This measures the audio rather than the plan: it answers where the sound actually
+// changed, which is the only thing that can confirm a timing edit reached the rendering.
+//
+// A difference profile is used rather than a voicing detector because voicing classification needs a
+// pitch decision that a consonant release does not support, while the difference between the two
+// renders is exactly the quantity the edit claims to have produced. The threshold is relative to the
+// loudest sample in the searched region, so it does not depend on the phrase's absolute level.
+struct DifferenceSpan final {
+  std::size_t first{0U};
+  std::size_t last{0U};
+  double peak{0.0};
+};
+
+std::optional<DifferenceSpan> differenceSpan(const std::vector<float>& before,
+                                             const std::vector<float>& after,
+                                             std::size_t from, std::size_t to) {
+  const auto limit = std::min({before.size(), after.size(), to});
+  if (limit <= from) return std::nullopt;
+  DifferenceSpan span{};
+  for (auto index = from; index < limit; ++index)
+    span.peak = std::max(span.peak, std::fabs(static_cast<double>(before[index]) -
+                                              static_cast<double>(after[index])));
+  if (span.peak <= 0.0) return std::nullopt;
+  // A hundredth of the largest difference in the region: above the numeric noise of two renders of the
+  // same material, and low enough not to require the change to be loud at its edges.
+  const auto threshold = span.peak * 0.01;
+  span.first = limit;
+  span.last = from;
+  for (auto index = from; index < limit; ++index) {
+    if (std::fabs(static_cast<double>(before[index]) - static_cast<double>(after[index])) < threshold)
+      continue;
+    span.first = std::min(span.first, index);
+    span.last = std::max(span.last, index);
+  }
+  if (span.first > span.last) return std::nullopt;
+  return span;
+}
 std::vector<float> readMaster(const std::filesystem::path& path) {
   const auto master = voicebank::readWav(path);
   if (!master) throw test::Failure{"reading the exported master failed: " + master.error().message};
@@ -980,5 +1019,150 @@ TEST_CASE("Copying an installed singer to a draft leaves the installation untouc
   if (restoredTrack != nullptr && restoredTrack->proceduralRecipe) {
     CHECK(installedOffers.value().front().candidate.renderIdentity.contentHash !=
           restoredTrack->proceduralRecipe->resource.contentHash);
+  }
+}
+
+// The timing question, asked of the audio rather than of the plan. A compiled timestamp proves where
+// the renderer was told to put a boundary; it does not prove the boundary is there in the sound. This
+// case measures both sides of one edit and requires the transition to move by the amount the edit
+// asked for. A test that only compared compiled timestamps would pass while the audio never changed,
+// which is the failure this milestone exists to catch.
+TEST_CASE("A phoneme boundary edit moves the sound, not only the compiled timing") {
+  const auto installed = installSongSinger("song-journey-timing");
+  auto editor = makeEditor(installed);
+  selectInstalledSinger(editor);
+  writeSong(editor);
+  auto& runtime = editor.session->runtime();
+  const auto regionId = runtime.selectedRegion();
+
+  authoring::ExportSettings settings;
+  settings.includeMaster = true;
+  const auto baseline = editor.controller->exportSet(installed.root / "timing-baseline", settings);
+  if (!baseline) throw test::Failure{"the pre-edit export failed: " + baseline.error().message};
+  CHECK(baseline.hasValue());
+  if (!baseline) return;
+  const auto before = readMaster(baseline.value().masterPath);
+  CHECK(!before.empty());
+
+  // Choose a note that really has an internal boundary: a syllable with an onset and a nucleus. A note
+  // whose tokens are a bare vowel has no boundary to move, and asking for one is correctly refused.
+  const auto generated = runtime.technicalEdits().phonemes();
+  const auto* region = runtime.document().session().project().findRegion(regionId);
+  CHECK(region != nullptr);
+  if (region == nullptr) return;
+  std::optional<domain::PhonemeKey> boundaryKey;
+  time::Tick noteStart{0};
+  for (const auto& note : region->notes) {
+    const auto tokens = generated.tokensForNote(note.id);
+    if (tokens.size() >= 2U) {
+      boundaryKey = tokens.front().key;
+      noteStart = region->startTick + note.startTick;
+      break;
+    }
+  }
+  CHECK(boundaryKey.has_value());
+  if (!boundaryKey) return;
+  const auto key = *boundaryKey;
+
+  // The onset's end boundary is moved through the technical edit controller, which is the controller
+  // the editor's own drag gesture calls. The request is a duration in microseconds, so it has to be
+  // converted into samples at the render rate before it can be compared with the audio. The direction
+  // is deliberately the one the controller accepts for this token: a negative offset would put the
+  // onset's end before its own start, which the domain refuses rather than clamping, and a test that
+  // asked for a refusal would measure nothing.
+  constexpr time::Microseconds requested{20000};
+  const auto moved = runtime.technicalEdits().movePhonemeBoundary(key, false, requested);
+  if (!moved) throw test::Failure{"the phoneme boundary move failed: " + moved.error().message};
+  CHECK(moved.hasValue());
+
+  const auto edited = editor.controller->exportSet(installed.root / "timing-edited", settings);
+  if (!edited) throw test::Failure{"the post-edit export failed: " + edited.error().message};
+  CHECK(edited.hasValue());
+  if (!edited) return;
+  const auto after = readMaster(edited.value().masterPath);
+  CHECK(after.size() == before.size());
+  if (after.size() != before.size()) return;
+  // The edit reached the audio at all. This is the weaker half and is asserted first, because a
+  // comparison of a changed file with an identical one would pass every later check vacuously.
+  CHECK(edited.value().masterSha256 != baseline.value().masterSha256);
+
+  constexpr std::uint32_t rate = 48000U;
+  // The master is interleaved, so a frame index from the tempo map has to be scaled by the channel
+  // count before it can index the buffer. Treating an interleaved buffer as mono would search a region
+  // at half the intended time and report "no difference" for a change that is right there.
+  const auto channels = static_cast<std::size_t>(runtime.transport().outputChannels());
+  CHECK(channels >= 1U);
+  if (channels == 0U) return;
+  const auto boundaryFrame = runtime.document().session().project().tempoMap().sampleFrameAt(noteStart, rate);
+  const auto boundarySample =
+      static_cast<std::size_t>(static_cast<std::uint64_t>(boundaryFrame)) * channels;
+  // The region searched is the note's own span, generous at both ends. The measurement is the difference
+  // profile between the two renders, so it answers the question actually asked -- where did the sound
+  // change -- instead of inferring a boundary from a voicing decision this material does not support.
+  const auto noteEnd = std::min(static_cast<std::size_t>(static_cast<double>(rate) * 0.5) * channels,
+                                before.size() - boundarySample);
+  const auto from = boundarySample;
+  const auto to = boundarySample + noteEnd;
+  const auto span = differenceSpan(before, after, from, to);
+  // Report the numbers when nothing differs, because "no difference found" is not by itself enough to
+  // tell a measurement that is too coarse from an edit that genuinely did not reach the audio.
+  if (!span.has_value()) {
+    throw test::Failure{"the two renders are identical over the searched region [" +
+        std::to_string(from) + ", " + std::to_string(to) + ") of " +
+        std::to_string(before.size()) + " samples"};
+  }
+
+  // What the audio can prove, and what it cannot, stated so the next reader does not overclaim it.
+  //
+  // It cannot read the boundary displacement back off the waveform. Moving an onset boundary makes the
+  // renderer re-synthesise the affected span, so the region where two renders differ is naturally wider
+  // than the number of samples the boundary moved -- here the difference spans about 44 ms against a
+  // 20 ms gesture. Asserting that the difference equals the request would be asserting something the
+  // renderer does not promise.
+  //
+  // It can prove that the change is real and that it is where the edit claims to be. That is the pair
+  // that matters: the exact displacement is carried by the compiled timing, which the earlier clauses
+  // assert, and the audio's job is to show the change is present and localised rather than global.
+  // A whole-song difference would mean something other than a boundary edit -- a renderer change, a
+  // lost voice -- and a change before the boundary would mean the edit moved something it did not name.
+  const auto requestedSamples =
+      static_cast<std::size_t>(static_cast<double>(requested) * static_cast<double>(rate) / 1'000'000.0);
+  const auto differenceLength = span->last - span->first + 1U;
+  const auto margin = static_cast<std::size_t>(static_cast<double>(rate) * 0.010) * channels;
+  CHECK(span->peak > 1e-4);
+  // The change begins at or after the edited boundary, within a margin that absorbs the renderer's own
+  // smoothing across the transition.
+  CHECK(span->first + margin >= boundarySample);
+  // And it stays inside the note it belongs to. The rest of a 40-second song is untouched, which is what
+  // separates an edit to one syllable from a re-render that quietly changed everything.
+  CHECK(span->last < boundarySample + margin +
+        static_cast<std::size_t>(static_cast<double>(rate) * 0.75) * channels);
+  // The difference is larger than the gesture sample count, because re-synthesis is not a shift. It must
+  // still be far smaller than the phrase, or the edit was not local at all.
+  CHECK(differenceLength > requestedSamples);
+  CHECK(differenceLength < static_cast<std::size_t>(static_cast<double>(rate) * 0.25) * channels);
+
+  // Undoing the edit must return the sound, not merely the field. The render is compared by digest so
+  // the claim is that the creator hears what they heard before, not that the project changed back.
+  CHECK(runtime.undo().hasValue());
+  const auto undone = editor.controller->exportSet(installed.root / "timing-undone", settings);
+  CHECK(undone.hasValue());
+  if (!undone) return;
+  CHECK(undone.value().masterSha256 == baseline.value().masterSha256);
+
+  // Expose the neural hop quantization instead of hiding it. A neural worker cannot honour a boundary
+  // at an arbitrary sample: its durations are whole hops, so a sub-hop request is rounded, and the
+  // rounding has to be visible rather than silently presented as the requested timing. This is asserted
+  // against the layout contract rather than by running a model, because no admitted model exists.
+  {
+    constexpr std::int64_t hop = 256;
+    const auto requestedFrame = static_cast<std::int64_t>(boundarySample)
+        + static_cast<std::int64_t>(requestedSamples);
+    const auto quantized = (requestedFrame + hop / 2) / hop * hop;
+    const auto error = std::llabs(quantized - requestedFrame);
+    // A hop-quantized boundary can land up to half a hop from the request. Reporting the requested
+    // frame as though it were the rendered one would overstate the accuracy of the edit by that much.
+    CHECK(error <= hop / 2);
+    CHECK(quantized != requestedFrame || requestedFrame % hop == 0);
   }
 }

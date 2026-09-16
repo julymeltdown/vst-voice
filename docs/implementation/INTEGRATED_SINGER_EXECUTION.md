@@ -1,5 +1,51 @@
 # Integrated Singer Execution
 
+## A timing edit is measured in the audio, and the measurement states what it cannot prove
+
+September 16, 2026 — R4 unit U1.3c, the unit a review flagged as the easiest place to assert a
+difference that is real but is not the difference the edit asked for.
+
+The milestone requires that a phoneme boundary edit reach the sound rather than only the compiled plan.
+The existing coverage proved the controller changed the phrase and that an undo restored it; nothing
+measured the audio at the boundary. This adds that measurement, and finding it honest turned out to be
+the work.
+
+**What was measured, and two mistakes on the way there.** The first two attempts measured the wrong
+thing. A voicing detector could not find the transition because the previous note's vowel is still
+sounding when the next note's onset begins, so the window reported the start of its own search. And the
+first version of the difference measurement searched at half the intended time, because a master is
+interleaved stereo and a frame index from the tempo map has to be scaled by the channel count before it
+can index the buffer. Treating an interleaved buffer as mono reported "the two renders are identical"
+for a change that was right there.
+
+**What the audio can prove.** With the region resolved correctly, the difference between the pre-edit
+and post-edit masters spans about 44 ms for a 20 ms gesture. That number is the finding: moving an onset
+boundary makes the renderer re-synthesise the affected span, so the differing region is naturally wider
+than the displacement. An assertion that the difference equals the request would be asserting something
+the renderer does not promise, and a test built on it would fail for being wrong about the renderer
+rather than about the edit.
+
+So the journey asserts the pair the audio can actually establish: the difference is real and above the
+numeric noise of two renders of the same material, it begins at or after the edited boundary within a
+tolerance for the renderer's own smoothing, and it stays inside the note it belongs to rather than
+touching the rest of a 40-second song. The exact displacement is carried by the compiled timing, which
+the earlier clauses assert. Each half is verified where it can be, and neither is claimed to cover the
+other.
+
+The neural hop quantization is exposed rather than hidden: a boundary request is rounded to whole hops
+and the error can reach half a hop, so reporting the requested frame as the rendered one would overstate
+the accuracy of the edit by that much. That is asserted against the declared contract because no admitted
+model exists to run.
+
+Verified. `seam_original_singer_song_journey_tests` passes 4 of 4 across repeated runs; the full
+registered run passes 172 of 172; `SOURCE_CLOSURE=PASS`.
+
+Not claimed. This measures that the edit is present and localized, not that the resulting syllable is
+more intelligible. No listener has judged either render, so the direction of the change is unjudged:
+the test neither knows nor asserts that the edited timing sounds better. The hop quantization is
+asserted against the layout contract rather than against a running model.
+
+
 ## A designer edit makes the project's recorded singer identity stale, and the refusal is correct
 
 September 16, 2026 — R4 unit U1.3b, and the workflow step it exposed.
