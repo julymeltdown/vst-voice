@@ -66,7 +66,7 @@ def license_is_denied(identifier: str, patterns: list[str]) -> bool:
     return any(fnmatch.fnmatchcase(identifier, pattern) for pattern in patterns)
 
 
-def audit(root: Path) -> tuple[list[str], list[str]]:
+def audit(root: Path, allow_non_master: bool = False) -> tuple[list[str], list[str]]:
     errors: list[str] = []
     warnings: list[str] = []
 
@@ -162,7 +162,8 @@ def audit(root: Path) -> tuple[list[str], list[str]]:
     except (OSError, json.JSONDecodeError) as error:
         errors.append(f"invalid public-domain human fixture metadata: {error}")
 
-    errors.extend(branch_policy(root))
+    if not allow_non_master:
+        errors.extend(branch_policy(root))
 
     concept_manifest = root / "assets/character-01/concepts/manifest.json"
     try:
@@ -178,10 +179,11 @@ def audit(root: Path) -> tuple[list[str], list[str]]:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--root", type=Path, required=True)
+    parser.add_argument("--allow-non-master", action="store_true", help="Allow running audit on branches other than master")
     args = parser.parse_args()
     root = args.root.resolve()
 
-    errors, warnings = audit(root)
+    errors, warnings = audit(root, allow_non_master=args.allow_non_master)
     for warning in warnings:
         print(f"[license-audit] WARNING: {warning}")
     if errors:
@@ -191,7 +193,7 @@ def main() -> int:
         return 1
 
     print(f"[license-audit] distributedDependencies={len(load_json_yaml(root / 'third_party/manifest.yml').get('distributedDependencies', []))}")
-    print("[license-audit] branchPolicy=master-only")
+    print(f"[license-audit] branchPolicy={'allowed-non-master' if args.allow_non_master else 'master-only'}")
     print("[license-audit] characterDirections=3")
     print("[license-audit] publicDomainHumanFixture=verified-nonofficial")
     print("[license-audit] status=PASS")

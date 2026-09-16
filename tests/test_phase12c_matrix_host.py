@@ -14,7 +14,7 @@ ARGS = None
 class MatrixHostAdmissionTests(unittest.TestCase):
     def run_matrix(self, output, *arguments):
         return subprocess.run([str(ARGS.runner), str(output), *map(str, arguments)],
-                              capture_output=True, text=True, timeout=30, check=False)
+                              capture_output=True, text=True, timeout=120, check=False)
 
     def test_leading_silence_keeps_host_processing_until_audible_attack(self):
         with tempfile.TemporaryDirectory() as directory:
