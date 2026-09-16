@@ -43,6 +43,11 @@ core::Result<void> checkFile(const std::filesystem::path& path, std::string_view
   }
   std::unique_ptr<FILE, FileCloser> input{::fdopen(descriptor, "rb")};
   if (!input) { ::close(descriptor); return core::failure(core::ErrorCode::IoError, "Cannot read resource handle"); }
+#elif defined(_WIN32)
+  FILE* rawInput = nullptr;
+  if (::_wfopen_s(&rawInput, path.c_str(), L"rb") != 0 || rawInput == nullptr)
+    return core::failure(core::ErrorCode::IoError, "Cannot open reading resource");
+  std::unique_ptr<FILE, FileCloser> input{rawInput};
 #else
   std::unique_ptr<FILE, FileCloser> input{std::fopen(path.string().c_str(), "rb")};
   if (!input) return core::failure(core::ErrorCode::IoError, "Cannot open reading resource");
