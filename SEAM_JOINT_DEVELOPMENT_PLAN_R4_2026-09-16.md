@@ -510,44 +510,25 @@ someone later widens the grouping rule to include mere proximity.
 complaint. It needs a drawing change — spacing, band height, a count affordance — and should be
 scheduled as a visual change with a rendered before and after, not as a semantics fix.
 
-### 8.2 Text overflow (partly handled — one rule to finish)
+### 8.2 Text overflow (landed)
 
-The scene already clips most strings and ellipsizes long character names
-(`libs/seam-native-ui/src/editor_scene.cpp:340` and `:1114`), so this is narrower than it looks. The
-unhandled cases are the two added most recently: the expression lane's refusal text and unit hint
-(`:846`, `:867`), and the singer capability summary in the picker. Both are variable-length strings
-drawn into fixed-width regions.
+**Landed in 37bd03a7.** Added `ellipsizeToWidth(canvas, text, bounds, color, fontSize, characterWidth)` in
+`libs/seam-native-ui/src/editor_scene.cpp` and routed the expression lane's refusal text, unit hint, and
+voicebank card fields through bounded rectangles. Added a regression test in `tests/test_expression_lane.cpp`
+proving long refusal and unit strings render in-lane without leaking error-tinted pixels past `editorRight`.
 
-**Change.** Add one helper in `editor_scene.cpp` — `ellipsizeToWidth(canvas, text, rect, font)` — and
-route those call sites through it, so every variable-length string in the editor shares one policy.
-Then extend `tests/test_expression_lane.cpp` (which already has a minimum-window case) with a
-maximum-length refusal and unit string and assert the drawn text stays inside its rectangle.
+### 8.3 Character assets (landed — D1, D2, 8.3)
 
-### 8.3 Character assets (real — D2)
+**Landed in 2822dd3a and 0851ad9a.**
+- **D1 (2822dd3a):** Unified the dock-presence predicate into `CharacterPresentation::dockVisible(mode)`.
+- **D2 & 8.3 (0851ad9a):** Generated six runtime performance mouth PPM assets (`runtime/mouth-*.ppm`),
+  updated `assets/character-01/manifest.json` to schemaVersion 2 declaring `developmentOnly: true` and
+  the complete `mouths` mapping for all six `MouthShape` shapes. Wired `hasPerformanceAssets()` into
+  `VoiceIdentityInput::CharacterBinding` and `VoiceIdentityView` in both standalone and CLAP runtimes.
+  Updated `editor_scene.cpp` to fit portraits aspect-correctly (preserving 2:3 ratio) in both the header
+  toolbar and character dock. Verified with new test in `tests/test_character_performance_dock.cpp`.
 
-Two distinct problems, and they should land as two commits.
-
-**Unify the dock-presence predicate (D1).** `editor_runtime_paint.cpp:29` and
-`native_editor_app.cpp:1420` answer one question — should this window reserve the character dock — with
-two different inputs: an asset lookup in the plug-in and the display mode in standalone. Add one
-predicate, `CharacterPresentation::dockVisible(CharacterDisplayMode)`, that reads the manifest and the
-mode together, and call it from both surfaces so the question has one answer. It must not be built on
-`portrait(Neutral) != nullptr`: because all six states are mandatory at load (D1 in section 1.1), that
-lookup is a mere existence test whose failure has a different meaning than the layout assumes. Keep the
-existing `defaultState` fallback in `Manifest::assetFor` — it is reachable for a hand-built in-memory
-manifest and is not part of this question.
-
-**Use the artwork that exists, then extend it.** `assets/character-01/runtime/*.ppm` is 320x480 and
-the standalone header draws it into a 48x48 square
-(`libs/seam-native-ui/include/seam/native_ui/editor_scene.hpp:446`), which discards the aspect ratio
-and wastes the detail; `production-development/portrait-512.png` (512x768) and `key-art-1024.png` are
-referenced by their own asset manifest and used by nothing in `libs/` or `apps/`. So: (1) give the
-header portrait an aspect-correct fit and use the 512x768 portrait, (2) declare `mouthAssets` for the
-six `MouthShape` values so the dock can stop drawing a glyph, and (3) wire `hasPerformanceAssets()` so
-a performance-capable package is reported. The artwork itself is a content task; the code change is
-bounding-box fit plus reading the declared map.
-
-**Note the license boundary.** `assets/character-01` is `developmentOnly: true` with
+**Note the license boundary.** `assets/character-01` remains `developmentOnly: true` with
 `productionStatus: NOT_A_PRODUCTION_TURNAROUND`, so this improves the development presentation. A
 production turnaround is separate work and must not inherit that approval.
 
@@ -565,9 +546,9 @@ production turnaround is separate work and must not inherit that approval.
 | U4.3 style pair | two compatible aligned styles | follows from U4.1 |
 | M6 five independent creators | five participants meeting the canonical independence protocol | owner, external |
 
-Nothing above is unblocked by more code. The next executable engineering, in order, is: `8.2`, then
-D2, then `8.3`, then U2.1, then U3.3, then the material-gated work. U1.3a-c, D1 and U1.5 have landed.
-D3 is retired and scheduled nowhere (§1.1, §8.1).
+Nothing above is unblocked by more code. The next executable engineering, in order, is: U2.1 (reference set
+manifest binding and ASR triage runner), then U3.3 (local vocoder reconstruction baseline path), then the
+material-gated work. U1.3a-c, D1, U1.5, 8.2, D2, and 8.3 have all landed cleanly. D3 is retired (§1.1, §8.1).
 
 Two reorderings from the first draft of this section, both because an item was smaller than it looked.
 **U3.5's Windows helper-process port and U5.1's Windows host run moved out of the early queue**: they
