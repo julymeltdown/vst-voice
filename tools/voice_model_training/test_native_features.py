@@ -17,13 +17,16 @@ class NativeFeatureTests(unittest.TestCase):
             pid_file = root / "leader.pid"
             executable = root / "forking-fixture"
             executable.write_text(f"#!{sys.executable}\nimport os,time\n"
-                f"open({str(pid_file)!r}, 'w').write(str(os.getpid()))\n"
-                "if os.fork() == 0:\n time.sleep(10)\n os._exit(0)\nos._exit(0)\n")
+                f"with open({str(pid_file)!r}, 'w') as f:\n"
+                f"    f.write(str(os.getpid()))\n"
+                f"    f.flush()\n"
+                f"    os.fsync(f.fileno())\n"
+                "if os.fork() == 0:\n time.sleep(60)\n os._exit(0)\nos._exit(0)\n")
             executable.chmod(0o700)
             original_killpg = os.killpg
             with patch("tools.voice_model_training.native_features.os.killpg", wraps=original_killpg) as kill:
                 with self.assertRaisesRegex(ValueError, "timed out"):
-                    extract_pitch(executable, source, timeout_seconds=3)
+                    extract_pitch(executable, source, timeout_seconds=15)
                 leader = int(pid_file.read_text())
                 kill.assert_called_once_with(leader, signal.SIGKILL)
 

@@ -86,7 +86,7 @@ TEST_CASE("native Japanese reading review is inspectable, safely gated, and undo
   CHECK(!controller.sceneState().replacementReview.enabled[3]);
 
   bool ready = false;
-  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{5};
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{30};
   while (std::chrono::steady_clock::now() < deadline) {
     controller.pollReplacementReview();
     const auto view = controller.sceneState().replacementReview;
@@ -128,7 +128,7 @@ TEST_CASE("native Japanese reading review is inspectable, safely gated, and undo
   // though the UI no longer retains its resource identity.
   CHECK(controller.openJapaneseReadingReview());
   CHECK(controller.replacementReviewAction(4U));
-  const auto retireDeadline = std::chrono::steady_clock::now() + std::chrono::seconds{5};
+  const auto retireDeadline = std::chrono::steady_clock::now() + std::chrono::seconds{30};
   bool reopened = false;
   while (std::chrono::steady_clock::now() < retireDeadline && !reopened) {
     const auto retry = controller.openJapaneseReadingReview();

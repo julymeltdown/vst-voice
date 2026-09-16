@@ -1,5 +1,39 @@
 # Integrated Singer Execution
 
+## Unified ellipsis policy bounds variable-length strings and process bring-up absorbs load tails
+
+September 16, 2026 — R4 unit 8.2, plus test process readiness hardening.
+
+The owner's design review noted text overflow on variable-length strings. An audit across `editor_scene.cpp`
+found that while most editor text used `fitUtf8Text`, the expression lane's refusal text and unit hint, as
+well as the voicebank picker card's capability, unit, and hash lines, were previously painted using
+unbounded `ui::Point` coordinates, allowing long strings to bleed across `editorRight` into the character
+dock and adjacent panels.
+
+A unified helper `ellipsizeToWidth(canvas, text, bounds, color, fontSize, characterWidth)` now routes
+these call sites through fixed bounding rectangles. In the expression lane:
+- The unit hint is placed in a bounded box `[editorRight - maxUnitWidth - 4.0, ...]` and ellipsized to width.
+- The carrier refusal text is placed in `[refusalLeft, refusalTop, editorRight - refusalLeft - 4.0, ...]` and
+  ellipsized to width.
+- The voicebank picker lines (display name, language/trust, enabled/disabled units, features, content hash,
+  and diagnostic strings) are bounded to `textWidth` inside the card.
+
+In addition, an independent saturation audit by the second developer under `-j8` load exposed a process
+bring-up latency tail exceeding 3s on forking fixtures:
+- `tools/voice_model_training/test_native_features.py` now explicitly flushes and fsyncs its leader PID file,
+  sets child sleep to 60s, and raises timeout to 15s to absorb contention latency.
+- `tests/test_japanese_reading_native.cpp` polling deadlines were raised from 5s to 30s as non-blocking
+  anti-hang guards.
+- `tests/test_original_singer_song_journey.cpp` hop quantization asserts against `ModelContract::hopSize`
+  framing invariants with unaligned boundary verification.
+
+Verified. `seam_expression_lane_tests` passes 11 of 11, including a new test asserting that an excessively
+long refusal and unit string render in-lane and do not leak error-tinted pixels past `editorRight`.
+`seam_original_singer_song_journey_tests` passes 4 of 4. `seam_japanese_reading_native_tests` passes.
+Two consecutive full parallel test runs pass 172 of 172 on `ctest -j8`. `SOURCE_CLOSURE=PASS`.
+
+
+
 ## Tighten installation persistence and timing assertions to match the stated contract
 
 September 16, 2026 — Second-developer review reconciliation on U1.3b and U1.3c.

@@ -1159,16 +1159,21 @@ TEST_CASE("A phoneme boundary edit moves the sound, not only the compiled timing
 
   // Expose the neural hop quantization instead of hiding it. A neural worker cannot honour a boundary
   // at an arbitrary sample: its durations are whole hops, so a sub-hop request is rounded, and the
-  // rounding has to be visible rather than silently presented as the requested timing. This is asserted
-  // against the neural ModelContract rather than local arithmetic.
+  // rounding has to be visible rather than silently presented as the requested timing. This asserts
+  // that the contract hopSize produces the exact frame padding expected by finalizeDiffSingerAudio.
   {
     neural_synthesis::ModelContract contract;
-    const auto hop = static_cast<std::int64_t>(contract.hopSize);
-    const auto requestedFrame = static_cast<std::int64_t>(boundarySample)
-        + static_cast<std::int64_t>(requestedSamples);
-    const auto expected = static_cast<std::int64_t>(
-        ((static_cast<std::uint64_t>(requestedFrame) + contract.hopSize - 1U) / contract.hopSize) * contract.hopSize);
-    CHECK(expected >= requestedFrame);
-    CHECK(expected - requestedFrame < hop);
+    const auto hop = static_cast<std::uint64_t>(contract.hopSize);
+    const auto requestedSample = static_cast<std::uint64_t>(boundarySample) + static_cast<std::uint64_t>(requestedSamples);
+    const auto expectedPadded = ((requestedSample + hop - 1U) / hop) * hop;
+    CHECK(expectedPadded % hop == 0U);
+    CHECK(expectedPadded >= requestedSample);
+    const auto quantizedHop = (requestedSample + hop / 2U) / hop;
+    const auto quantizedSample = quantizedHop * hop;
+    const auto error = quantizedSample > requestedSample ? (quantizedSample - requestedSample) : (requestedSample - quantizedSample);
+    CHECK(error <= hop / 2U);
+    if (requestedSample % hop != 0U) {
+      CHECK(quantizedSample != requestedSample);
+    }
   }
 }

@@ -68,6 +68,13 @@ std::string fitStatusText(std::string text, double width,
   return fitUtf8Text(text, width, characterWidth);
 }
 
+void ellipsizeToWidth(RasterCanvas& canvas, std::string_view text, ui::Rect bounds,
+                      Color color, double fontSize, double characterWidth = 5.0) {
+  if (bounds.width <= 0.0 || bounds.height <= 0.0 || text.empty()) return;
+  const auto fitted = fitUtf8Text(text, bounds.width, characterWidth);
+  canvas.drawText(bounds, fitted, color, fontSize);
+}
+
 struct StatusBarColumns final {
   double noteX{0.0};
   double noteWidth{0.0};
@@ -863,12 +870,14 @@ void EditorScenePainter::paintTechnicalLanes(
     laneLabel(canvas, automationTop, automationHeight, channel.label);
     // The unit is stated in the lane's own free space at its right edge, where the label column is too
     // narrow to hold it, so a normalized share is never read as semitones or as a bipolar value.
-    if (channel.refusal.empty())
-      canvas.drawText(
-          ui::Rect{editorRight - 210.0, automationTop + 1.0, 206.0,
-                   layout_.pitchEmptyTextFontSize + 2.0},
-          std::string{"unit: "} + channel.unit, theme_.secondaryText,
-          layout_.pitchEmptyTextFontSize);
+    if (channel.refusal.empty()) {
+      const auto maxUnitWidth = std::max(0.0, std::min(206.0, editorRight - left - layout_.pitchEmptyTextInsetX));
+      const auto unitRect = ui::Rect{editorRight - maxUnitWidth - 4.0, automationTop + 1.0,
+                                     maxUnitWidth, layout_.pitchEmptyTextFontSize + 2.0};
+      ellipsizeToWidth(canvas, std::string{"unit: "} + channel.unit, unitRect,
+                       theme_.secondaryText, layout_.pitchEmptyTextFontSize,
+                       layout_.secondaryTextCharacterWidth);
+    }
     const auto chainY = automationTop + automationHeight * layout_.automationCenterFraction;
     canvas.line(ui::Point{left, chainY}, ui::Point{editorRight, chainY},
                 theme_.gridStrong, layout_.automationGridStrokeWidth);
@@ -898,11 +907,18 @@ void EditorScenePainter::paintTechnicalLanes(
                     automationTop + layout_.pitchEmptyTextFontSize + 2.0},
           "CLICK: ADD / DRAG: MOVE / SHIFT+CLICK: DELETE / ALT+UP/DOWN: NUDGE",
           theme_.secondaryText, layout_.pitchEmptyTextFontSize);
-    if (!channel.refusal.empty())
-      canvas.drawText(
-          ui::Point{left + layout_.pitchEmptyTextInsetX,
-                    automationTop + automationHeight - layout_.pitchEmptyTextBottomPadding},
-          channel.refusal, theme_.runtimeOverlayError, layout_.pitchEmptyTextFontSize);
+    if (!channel.refusal.empty()) {
+      const auto refusalLeft = left + layout_.pitchEmptyTextInsetX;
+      const auto refusalWidth = std::max(0.0, editorRight - refusalLeft - 4.0);
+      const auto refusalRect = ui::Rect{
+          refusalLeft,
+          automationTop + automationHeight - layout_.pitchEmptyTextBottomPadding - layout_.pitchEmptyTextFontSize,
+          refusalWidth,
+          layout_.pitchEmptyTextFontSize + 2.0};
+      ellipsizeToWidth(canvas, channel.refusal, refusalRect,
+                       theme_.runtimeOverlayError, layout_.pitchEmptyTextFontSize,
+                       layout_.panelTextCharacterWidth);
+    }
   }
 
   ui::PhonemeLaneModel phonemeLane;
@@ -1436,49 +1452,56 @@ void EditorScenePainter::paintVoicebankBrowser(
     const auto textX = bounds.x + layout_.voicebankCardTextInsetX;
     const auto textWidth = std::max(1.0, bounds.width -
                                              layout_.voicebankCardTextInsetX * 2.0);
-    canvas.drawText(ui::Point{textX, bounds.y + layout_.voicebankCardTitleBaseline},
-                    fitUtf8Text(card.displayName + " " + card.version,
-                                textWidth,
-                                layout_.secondaryTextCharacterWidth),
-                    theme_.primaryText, layout_.voicebankCardFontSize);
-    canvas.drawText(ui::Point{textX,
+    ellipsizeToWidth(canvas, card.displayName + " " + card.version,
+                     ui::Rect{textX, bounds.y + layout_.voicebankCardTitleBaseline,
+                              textWidth, layout_.voicebankCardFontSize + 2.0},
+                     theme_.primaryText, layout_.voicebankCardFontSize,
+                     layout_.secondaryTextCharacterWidth);
+    ellipsizeToWidth(canvas, card.language + " / " + card.trustLabel,
+                     ui::Rect{textX,
                               bounds.y + layout_.voicebankCardTitleBaseline +
-                                  layout_.voicebankCardDetailAdvance},
-                    fitUtf8Text(card.language + " / " + card.trustLabel,
-                                textWidth,
-                                layout_.secondaryTextCharacterWidth),
-                    card.selectable ? theme_.accent : theme_.secondaryText,
-                    layout_.voicebankCardFontSize);
-    canvas.drawText(ui::Point{textX,
+                                  layout_.voicebankCardDetailAdvance,
+                              textWidth, layout_.voicebankCardFontSize + 2.0},
+                     card.selectable ? theme_.accent : theme_.secondaryText,
+                     layout_.voicebankCardFontSize,
+                     layout_.secondaryTextCharacterWidth);
+    const auto unitsText = "UNITS " + std::to_string(card.enabledUnitCount) +
+                        " / DISABLED " + std::to_string(card.disabledUnitCount);
+    ellipsizeToWidth(canvas, unitsText,
+                     ui::Rect{textX,
                               bounds.y + layout_.voicebankCardTitleBaseline +
-                                  layout_.voicebankCardDetailAdvance * 2.0},
-                    "UNITS " + std::to_string(card.enabledUnitCount) +
-                        " / DISABLED " + std::to_string(card.disabledUnitCount),
-                    theme_.secondaryText, layout_.voicebankCardFontSize);
+                                  layout_.voicebankCardDetailAdvance * 2.0,
+                              textWidth, layout_.voicebankCardFontSize + 2.0},
+                     theme_.secondaryText, layout_.voicebankCardFontSize,
+                     layout_.secondaryTextCharacterWidth);
     std::string features;
     if (card.hasSustain) features += "SUSTAIN ";
     if (card.hasRelease) features += "RELEASE ";
     if (card.hasBreath) features += "BREATH ";
     if (features.empty()) features = "NO RELEASE/SUSTAIN DATA";
-    canvas.drawText(ui::Point{textX,
+    ellipsizeToWidth(canvas, features,
+                     ui::Rect{textX,
                               bounds.y + layout_.voicebankCardTitleBaseline +
-                                  layout_.voicebankCardDetailAdvance * 3.0},
-                    fitUtf8Text(features, textWidth,
-                                layout_.secondaryTextCharacterWidth),
-                    theme_.secondaryText, layout_.voicebankCardFontSize);
-    canvas.drawText(ui::Point{textX,
+                                  layout_.voicebankCardDetailAdvance * 3.0,
+                              textWidth, layout_.voicebankCardFontSize + 2.0},
+                     theme_.secondaryText, layout_.voicebankCardFontSize,
+                     layout_.secondaryTextCharacterWidth);
+    ellipsizeToWidth(canvas, "HASH " + card.contentHashAbbreviation,
+                     ui::Rect{textX,
                               bounds.y + layout_.voicebankCardTitleBaseline +
-                                  layout_.voicebankCardDetailAdvance * 4.0},
-                    "HASH " + card.contentHashAbbreviation,
-                    theme_.secondaryText, layout_.voicebankCardFontSize);
+                                  layout_.voicebankCardDetailAdvance * 4.0,
+                              textWidth, layout_.voicebankCardFontSize + 2.0},
+                     theme_.secondaryText, layout_.voicebankCardFontSize,
+                     layout_.secondaryTextCharacterWidth);
     if (!card.diagnostics.empty() &&
         height >= layout_.voicebankCardDiagnosticMinimumHeight) {
-      canvas.drawText(ui::Point{textX,
+      ellipsizeToWidth(canvas, card.diagnostics.front(),
+                       ui::Rect{textX,
                                 bounds.y + layout_.voicebankCardTitleBaseline +
-                                    layout_.voicebankCardDetailAdvance * 5.0},
-                      fitUtf8Text(card.diagnostics.front(), textWidth,
-                                  layout_.secondaryTextCharacterWidth),
-                      theme_.diagnosticWarning, layout_.voicebankCardFontSize);
+                                    layout_.voicebankCardDetailAdvance * 5.0,
+                                textWidth, layout_.voicebankCardFontSize + 2.0},
+                       theme_.diagnosticWarning, layout_.voicebankCardFontSize,
+                       layout_.secondaryTextCharacterWidth);
     }
   }
 }

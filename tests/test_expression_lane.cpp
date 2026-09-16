@@ -16,6 +16,7 @@
 #include "seam/native_ui/editor_scene.hpp"
 #include "seam/native_ui/editor_semantics.hpp"
 #include "seam/native_ui/pixel_surface.hpp"
+#include "seam/native_ui/editor_frame_layout.hpp"
 #include "seam/text/text_engine.hpp"
 #include "seam/ui/expression_lane.hpp"
 #include "seam/rendering/render_pipeline.hpp"
@@ -520,6 +521,81 @@ TEST_CASE("The expression lane reports its channel, unit, value and refusal to a
   CHECK(bankValue.find("Formant") != std::string::npos);
   CHECK(bankValue.find("semitones") != std::string::npos);
   CHECK(bankValue.find("refused") != std::string::npos);
+}
+
+// 8.2: Variable-length editor strings (such as expression refusal and unit hints) must be ellipsized
+// and bounded to the lane width, never painting past editorRight into adjacent panels or dock artwork.
+TEST_CASE("Long refusal and unit strings are ellipsized and stay bounded to the lane") {
+  LaneFixture fixture{false};
+  native_ui::NativeEditorController controller{fixture.session, fixture.factory, fixture.regionId, {}};
+  controller.resize(1024.0, 768.0);
+  CHECK(controller.openExpressionLane(ExpressionChannel::Breathiness).hasValue());
+  auto state = controller.sceneState();
+  state.expression.unit = "extremely_long_measurement_unit_that_greatly_exceeds_the_allocated_horizontal_space_in_lane";
+  state.expression.refusal = "The selected singer carrier refuses this channel because the voice model requires an external source-filter excitation that was not bundled with the current release and therefore cannot be rendered";
+
+  auto engine = text::TextEngine::createSystem();
+  CHECK(engine.hasValue());
+  if (!engine) return;
+
+  native_ui::PixelSurface surface{1024U, 768U};
+  surface.clear(native_ui::Color{0, 0, 0, 255});
+  native_ui::RasterCanvas canvas{surface, 1.0, engine.value().get()};
+  native_ui::EditorScenePainter painter;
+  painter.paint(canvas, controller.pianoRoll(), state);
+
+  const auto dockWidth = native_ui::resolveEditorDockWidth(state, painter.layout());
+  const auto technical = native_ui::resolveEditorTechnicalLaneHeights(
+      state, painter.layout(), surface.height() - painter.layout().statusHeight);
+  const auto automationTop = technical.pianoBottom + technical.values[0U] + technical.values[1U] + technical.values[2U];
+  const auto automationHeight = technical.values[3U];
+  const auto layout = native_ui::buildEditorFrameLayout({
+      .logicalWidth = 1024.0,
+      .logicalHeight = 768.0,
+      .toolbarHeight = painter.layout().toolbarHeight,
+      .rulerHeight = painter.layout().rulerHeight,
+      .statusHeight = painter.layout().statusHeight,
+      .keyboardWidth = painter.layout().keyboardWidth,
+      .minimumTimelineWidth = painter.layout().minimumTimelineWidth,
+      .dockWidth = dockWidth,
+      .pianoBottom = technical.pianoBottom,
+      .phonemeHeight = technical.values[0U],
+      .unitHeight = technical.values[1U],
+      .seamHeight = technical.values[2U],
+      .pitchHeight = technical.values[3U],
+      .dockVisible = dockWidth > 0.0,
+  });
+  const auto editorRight = static_cast<std::size_t>(layout.editorRight);
+  CHECK(editorRight < surface.width());
+
+  const auto isErrorTinted = [](std::uint32_t p) {
+    const auto r = (p >> 16U) & 0xFFU;
+    const auto g = (p >> 8U) & 0xFFU;
+    const auto b = p & 0xFFU;
+    // runtimeOverlayError is {205, 126, 126}, so red is dominant and green/blue are roughly equal.
+    return r > 60U && r > g + 25U && std::abs(static_cast<int>(g) - static_cast<int>(b)) <= 12;
+  };
+
+  bool renderedInLane = false;
+  bool leakedPastEditorRight = false;
+  const auto laneYStart = static_cast<std::size_t>(std::max(0.0, automationTop));
+  const auto laneYEnd = static_cast<std::size_t>(std::min(static_cast<double>(surface.height()), automationTop + automationHeight));
+  for (std::size_t y = laneYStart; y < laneYEnd; ++y) {
+    for (std::size_t x = 0U; x < editorRight; ++x) {
+      if (isErrorTinted(surface.pixels()[y * surface.width() + x])) {
+        renderedInLane = true;
+      }
+    }
+    for (std::size_t x = editorRight; x < surface.width(); ++x) {
+      const auto p = surface.pixels()[y * surface.width() + x];
+      if (isErrorTinted(p)) {
+        leakedPastEditorRight = true;
+        break;
+      }
+    }
+  }
+  CHECK(renderedInLane);
+  CHECK(!leakedPastEditorRight);
 }
 
 
