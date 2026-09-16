@@ -353,19 +353,27 @@ target_include_directories(seam_formats PUBLIC libs/seam-formats/include)
 target_link_libraries(seam_formats PUBLIC seam_domain seam_core)
 seam_apply_compiler_options(seam_formats)
 
+add_library(seam_neural_worker_protocol
+  libs/seam-neural-synthesis/src/worker_protocol.cpp)
+target_include_directories(seam_neural_worker_protocol PUBLIC
+  libs/seam-neural-synthesis/include)
+target_link_libraries(seam_neural_worker_protocol PUBLIC
+  seam_formats seam_domain seam_core)
+seam_apply_compiler_options(seam_neural_worker_protocol)
+
 add_library(seam_neural_synthesis
   libs/seam-neural-synthesis/src/bundle_metadata.cpp
   libs/seam-neural-synthesis/src/bundle_directory.cpp
   libs/seam-neural-synthesis/src/diffsinger_inputs.cpp
   libs/seam-neural-synthesis/src/deployment_descriptor.cpp
-  libs/seam-neural-synthesis/src/worker_protocol.cpp
   libs/seam-neural-synthesis/src/model_contract.cpp
   libs/seam-neural-synthesis/src/model_bundle.cpp
   libs/seam-neural-synthesis/src/graph_contract.cpp
   libs/seam-neural-synthesis/src/neural_phrase_backend.cpp)
 target_include_directories(seam_neural_synthesis PUBLIC
   libs/seam-neural-synthesis/include)
-target_link_libraries(seam_neural_synthesis PUBLIC seam_synthesis seam_formats seam_core seam_platform seam_distribution)
+target_link_libraries(seam_neural_synthesis PUBLIC
+  seam_neural_worker_protocol seam_synthesis seam_formats seam_core seam_platform seam_distribution)
 seam_apply_compiler_options(seam_neural_synthesis)
 
 
@@ -1408,6 +1416,7 @@ if(SEAM_BUILD_TESTS)
   add_executable(seam_neural_phrase_runner_tests
     tests/test_main.cpp tests/test_neural_phrase_runner.cpp)
   add_executable(seam_neural_worker_probe tests/helpers/neural_worker_probe.cpp)
+  add_executable(seam_neural_worker_transport_probe tests/helpers/neural_worker_transport_probe.cpp)
   add_executable(seam_neural_bundle_transport_probe tests/helpers/neural_bundle_transport_probe.cpp)
   target_link_libraries(seam_neural_bundle_transport_probe PRIVATE seam_neural_synthesis)
   seam_apply_compiler_options(seam_neural_bundle_transport_probe)
@@ -1502,12 +1511,15 @@ if(SEAM_BUILD_TESTS)
   set_tests_properties(seam_neural_selection_tests PROPERTIES TIMEOUT 180)
   target_link_libraries(seam_neural_worker_probe PRIVATE seam_neural_synthesis)
   seam_apply_compiler_options(seam_neural_worker_probe)
-  add_dependencies(seam_neural_worker_protocol_tests seam_neural_worker_probe)
+  target_link_libraries(seam_neural_worker_transport_probe PRIVATE
+    seam_neural_worker_protocol seam_core)
+  seam_apply_compiler_options(seam_neural_worker_transport_probe)
+  add_dependencies(seam_neural_worker_protocol_tests seam_neural_worker_transport_probe)
   add_dependencies(seam_neural_worker_protocol_tests seam_neural_bundle_transport_probe)
   target_compile_definitions(seam_neural_worker_protocol_tests PRIVATE
     SEAM_NEURAL_BUNDLE_TRANSPORT_PROBE="$<TARGET_FILE:seam_neural_bundle_transport_probe>")
   target_compile_definitions(seam_neural_worker_protocol_tests PRIVATE
-    SEAM_NEURAL_WORKER_PROBE="$<TARGET_FILE:seam_neural_worker_probe>")
+    SEAM_NEURAL_WORKER_PROBE="$<TARGET_FILE:seam_neural_worker_transport_probe>")
   target_include_directories(seam_phoneme_timing_tests PRIVATE tests)
   target_link_libraries(seam_phoneme_timing_tests PRIVATE seam_synthesis seam_application)
   seam_apply_compiler_options(seam_phoneme_timing_tests)
@@ -2267,9 +2279,10 @@ if(SEAM_BUILD_TESTS)
     SEAM_SOURCE_PRODUCTION_VOICEBANK="${CMAKE_CURRENT_SOURCE_DIR}/assets/demo-human-voicebank-public-domain/production-bank"
     SEAM_CRASH_CAPTURE_PROBE_PATH="$<TARGET_FILE:seam_crash_capture_probe>"
     SEAM_READING_CAPTURE_PROCESS_PROBE="$<TARGET_FILE:seam_reading_capture_process_probe>"
-    SEAM_NEURAL_WORKER_PROBE="$<TARGET_FILE:seam_neural_worker_probe>")
+    SEAM_NEURAL_WORKER_PROBE="$<TARGET_FILE:seam_neural_worker_transport_probe>")
   add_dependencies(seam_tests seam_reading_capture_process_probe)
   add_dependencies(seam_tests seam_neural_worker_probe)
+  add_dependencies(seam_tests seam_neural_worker_transport_probe)
   add_dependencies(seam_tests seam_neural_bundle_transport_probe)
   target_compile_definitions(seam_tests PRIVATE
     SEAM_NEURAL_BUNDLE_TRANSPORT_PROBE="$<TARGET_FILE:seam_neural_bundle_transport_probe>")
