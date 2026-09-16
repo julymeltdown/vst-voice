@@ -261,7 +261,7 @@ private:
         finish(std::optional<authoring::NewProjectRequest>{});
         return 0;
       case WM_NCDESTROY:
-        SetWindowLongPtrW(window, GWLP_USERDATA, 0);
+        SetWindowLongPtrW(window_, GWLP_USERDATA, 0);
         window_ = nullptr;
         return 0;
       default:

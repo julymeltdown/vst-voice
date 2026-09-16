@@ -96,10 +96,10 @@ TEST_CASE("reconciliation rejects unbounded mixed note duplicate and edited base
 TEST_CASE("alignment agrees with exhaustive independent correspondence enumeration") {
   std::vector<std::string> words{""};
   for (std::size_t length = 1U; length <= 4U; ++length) {
-    for (std::size_t mask = 0U; mask < (1U << length); ++mask) {
+    for (std::size_t mask = 0U; mask < (std::size_t{1U} << length); ++mask) {
       std::string word(length, 'a');
       for (std::size_t bit = 0U; bit < length; ++bit) {
-        if ((mask & (1U << bit)) != 0U) word[bit] = 'b';
+        if ((mask & (std::size_t{1U} << bit)) != 0U) word[bit] = 'b';
       }
       words.push_back(word);
     }

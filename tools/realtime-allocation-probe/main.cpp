@@ -30,6 +30,7 @@ std::atomic<std::uint64_t> allocations{0U};
 std::atomic<std::uint64_t> deallocations{0U};
 thread_local bool probeCallback{false};
 
+#if !defined(SEAM_CANDIDATE_AUDITION_PROBE)
 std::shared_ptr<const seam::rendering::RoutedPlaybackTimeline> makeTimeline(
     std::uint8_t channels, std::size_t frames) {
   auto timeline = std::make_shared<seam::rendering::RoutedPlaybackTimeline>(
@@ -70,6 +71,7 @@ std::shared_ptr<const seam::rendering::RoutedPlaybackTimeline> makeTimeline(
                           std::move(timeline)}
                     : nullptr;
 }
+#endif
 
 }
 
@@ -202,7 +204,7 @@ int main(int argc, char** argv) {
   std::cout << "candidate_callbacks=" << candidateCallbacks << " allocations=" << allocations.load()
             << " deallocations=" << deallocations.load() << " mismatches=" << outputMismatches << '\n';
   return candidatePass && hash && report ? 0 : 1;
-#endif
+#else
   constexpr std::array<std::size_t, 4> blockSizes{64U, 128U, 256U, 512U};
   constexpr std::array<std::uint8_t, 4> channels{1U, 2U, 4U, 8U};
   constexpr std::size_t blocksPerConfiguration = 6250U;
@@ -334,4 +336,5 @@ int main(int argc, char** argv) {
             << " unexpected_underflow=" << unexpectedUnderflowFrames
             << " result=" << (pass ? "PASS" : "FAIL") << '\n';
   return pass ? 0 : 1;
+#endif
 }

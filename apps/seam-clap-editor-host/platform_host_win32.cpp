@@ -159,7 +159,7 @@ bool HostWindow::capture(const std::filesystem::path& path) const {
   DeleteObject(bitmap);
   DeleteDC(memory);
   ReleaseDC(impl_->state.content, source);
-  if (copied == FALSE || read != static_cast<UINT>(height)) return false;
+  if (copied == FALSE || read != height) return false;
   std::ofstream output(path, std::ios::binary | std::ios::trunc);
   output << "P6\n" << width << ' ' << height << "\n255\n";
   for (int y = 0; y < height; ++y) {
