@@ -1,5 +1,49 @@
 # Integrated Singer Execution
 
+## A stacked pitch row is always a real overlap, and D3 said otherwise
+
+September 16, 2026 — R4 unit D3, retired without a code change.
+
+D3 asked for a `NoteVisualCrowding { none, timeOverlap, densityOnly }` enum in
+`note_visual_layout.cpp` so the editor could say *these notes sound together* separately from *there are
+too many notes here*. The reasoning was that `NoteVisualLayout` folds bands past the third into
+`hiddenByDensity` and publishes one `drawsOverlapIndicator`, so a creator reading the indicator cannot
+tell which claim is being made. I implemented it.
+
+Then I tested the premise instead of the implementation, and the premise is false. Two independent
+results, both reproduced:
+
+1. A probe over 20,000 randomly generated same-pitch note sets, through the real grouper, formed 23,585
+   stacked groups. **Zero** of them contained a member lacking a genuine time overlap with another
+   member.
+2. The grouping rule itself, `note_visual_layout.cpp:52`, admits a note to a group only when
+   `items[groupEnd].start < connectedEnd` — that is, only when it genuinely sounds while an earlier
+   member is still sounding. Density alone can never form a group, so `densityOnly` is unreachable.
+
+That makes the two cases D3 wanted to distinguish not conflated at all: one of them cannot occur. There
+was no latent defect. I had read the plan's own wording as evidence about the code and scheduled work
+from it; the source says otherwise. The whole D3 implementation was reverted.
+
+What replaced it is the invariant that is actually true, pinned in `tests/test_ui.cpp`: over 2,000
+generated layouts, every note in a stacked group has at least one same-pitch partner sounding during
+it, with `CHECK(stackedGroups > 0U)` so a vacuous pass is impossible. The test is written against
+generated orderings rather than one hand-picked example because the interesting failure would be a rare
+ordering, not a chosen one.
+
+Retiring D3 also removes the §8.1 code change and its proposed hatch/badge markers. The honest entry
+for the owner's design critique is that overlap is *not* a modeling gap: the indicator is truthful, and
+the remaining gap on that item is legibility, not correctness.
+
+Verified. `seam_tests` passes 915 of 915 from the repository root, including the new case. The full
+registered run passes 172 of 172; `SOURCE_CLOSURE=PASS`.
+
+Not claimed. No visual review was performed. The stacked band may well still be hard to read at a
+glance — that complaint was about legibility and this change does not address it, because the fix D3
+proposed would have added a distinction that cannot arise. If the band reads badly, the remedy is a
+drawing change, and it should be scheduled as one.
+
+
+
 ## One predicate decides whether the character dock exists
 
 September 16, 2026 — R4 unit D1, the latent divergence found by reading source.

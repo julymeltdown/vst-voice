@@ -51,11 +51,13 @@ Two corrections to R3's own wording, because a reader of R3 alone would expect t
 
 ### 1.1 Defects found by reading source during this reconciliation
 
-These three are **not** reproduced failures. They are places where the code and its own stated
-intent diverge, found by reading. D1 is a latent divergence with no reproduction available; D2 and D3
-are live gaps whose effect is visible on every run, which is why those two are drawn from the owner's
-design review and D1 is not. Each is listed with the test that would prove or disprove it, and each is
-scheduled below rather than fixed silently, so a fix is reviewable on its own commit.
+These findings are **not** reproduced failures. They are places where the code and its own stated
+intent diverge, found by reading. D1 is a latent divergence with no reproduction available; D2 is a live
+gap whose effect is visible on every run, which is why D2 is drawn from the owner's design review and D1
+is not. Each is listed with the test that would prove or disprove it, and each is scheduled below rather
+than fixed silently, so a fix is reviewable on its own commit. **D3 is retained below as a retired
+heading rather than deleted**, because a plan that quietly drops a wrong item hides the reasoning error
+that produced it.
 
 **D1 — the two surfaces decide dock presence by asking different questions.**
 This one was overstated in the first draft of this section, and a review round corrected it in yet a
@@ -94,13 +96,16 @@ and the performance snapshot all exist; the artwork does not. This is the asset-
 owner raised in design review, and it is the one item in that critique that is a *content* problem
 rather than a layout problem.
 
-**D3 — overlapping notes are folded into a stacked band instead of being shown as overlap.**
-`libs/seam-editor-ui/src/note_visual_layout.cpp:78` computes up to three visible bands and folds the
-rest into `hiddenByDensity`, and `libs/seam-editor-ui/src/piano_roll_model.cpp:106` publishes that as
-`drawsOverlapIndicator`. The result is legible but ambiguous: a creator cannot tell *these notes
-overlap in time* from *these notes are dense*, and nothing in the layout separates the two cases.
-*Proving test:* two notes that overlap in time and two notes that are merely close report which case
-they are.
+**D3 — retired. Overlap and density are not conflated; one of the two cases cannot occur.**
+This was written as a real finding and it is not one. The claim was that `note_visual_layout.cpp`
+folds bands past the third into `hiddenByDensity` and publishes a single `drawsOverlapIndicator`, so a
+creator could not tell *these notes overlap in time* from *these notes are dense*. Measured against the
+source, the distinction does not need carrying: the grouper at `note_visual_layout.cpp:52` admits a note
+to a group only when `items[groupEnd].start < connectedEnd`, so a group member always genuinely sounds
+while an earlier member still does. A probe over 20,000 random same-pitch sets formed 23,585 groups and
+none had a member without a true overlap. The indicator is truthful; the `densityOnly` case is
+unreachable. D3 was scheduled from this plan's own wording rather than from the code, and the test that
+replaced it pins the true invariant (see §8.1).
 
 ## 2. Progress, stated on two scopes
 
@@ -480,27 +485,30 @@ supported-host run. `tools/external_beta` already owns the cohort and host evide
 ## 8. The design critique, converted to work
 
 The owner asked for a design-improvement plan naming overlapping notes, text overflow and underused
-character assets. All three are real; they are not all the same *kind* of real, and the difference
-decides the work. Overlap (8.1) is a modeling gap in one function. Text overflow (8.2) is one policy
-the scene already applies in most places and omits in two recently added call sites, so it needs one
-helper and not a rebuild. Character assets (8.3) is the only one that needs authored content as well
-as code, and the code half of it is small.
+character assets. Two of the three survive contact with the source and one does not, and the difference
+decides the work. Overlap (8.1) is **not** a gap: the indicator is truthful and the proposed fix would
+have labeled a case that cannot occur, so this section now records a withdrawal. Text overflow (8.2) is
+one policy the scene already applies in most places and omits in two recently added call sites, so it
+needs one helper and not a rebuild. Character assets (8.3) is the only one that needs authored content
+as well as code, and the code half of it is small.
 
-### 8.1 Overlapping notes (real — D3)
+### 8.1 Overlapping notes (not a modeling gap — D3 retired)
 
-**Change `libs/seam-editor-ui/src/note_visual_layout.cpp`.** Keep the band stacking, which is the
-correct legibility answer for a dense chord, and add to `NoteVisualLayout` a typed reason:
-`enum class NoteVisualCrowding { none, timeOverlap, densityOnly }`. A note belongs to `timeOverlap`
-when another note of the same pitch sounds during any part of its span, and to `densityOnly` when the
-group exceeded three bands without any same-pitch collision. Publish `crowding` through
-`PianoRollNoteVisual` (`libs/seam-editor-ui/src/piano_roll_model.cpp:106` replaces
-`drawsOverlapIndicator`) and paint a distinct marker: a hatch for `timeOverlap`, a count badge for
-`densityOnly`. The inspector then gets one row naming the actual cause, because printing OVERLAP for a
-dense chord is a false statement.
+**No code change. The correction is the finding.** The critique said notes are shown as overlap when
+they are merely dense. They are not: `note_visual_layout.cpp:52` groups a note only when it sounds
+during an earlier member's span, so "stacked" and "really overlapping" are the same statement here and
+there is no second case to label. A 20,000-set probe through the real grouper formed 23,585 groups with
+zero false members. Adding the proposed `NoteVisualCrowding` enum, the hatch and badge markers and the
+inspector row would have shipped a distinction that can never be drawn.
 
-**Proving test.** Extend `tests/test_ui.cpp` with a four-note same-pitch collision and a four-note
-dense non-colliding run; assert the two report different `crowding` values and counts, and that a
-two-note collision reports overlap rather than density.
+**What landed instead.** `tests/test_ui.cpp` pins the true invariant over 2,000 generated layouts —
+every member of a stacked group has a same-pitch partner sounding during it — with a non-vacuous group
+count. It is regression protection for the property that makes the indicator honest, and it will fail if
+someone later widens the grouping rule to include mere proximity.
+
+**What remains is legibility, not correctness.** A dense chord reading as an unlabeled stack is a fair
+complaint. It needs a drawing change — spacing, band height, a count affordance — and should be
+scheduled as a visual change with a rendered before and after, not as a semantics fix.
 
 ### 8.2 Text overflow (partly handled — one rule to finish)
 
@@ -557,8 +565,9 @@ production turnaround is separate work and must not inherit that approval.
 | U4.3 style pair | two compatible aligned styles | follows from U4.1 |
 | M6 five independent creators | five participants meeting the canonical independence protocol | owner, external |
 
-Nothing above is unblocked by more code. The next executable engineering, in order, is: U1.3a, U1.3b,
-U1.3c, D1, U1.5, U2.1, D2, D3, `8.2`, `8.3`, U3.3, then the material-gated work.
+Nothing above is unblocked by more code. The next executable engineering, in order, is: `8.2`, then
+D2, then `8.3`, then U2.1, then U3.3, then the material-gated work. U1.3a-c, D1 and U1.5 have landed.
+D3 is retired and scheduled nowhere (§1.1, §8.1).
 
 Two reorderings from the first draft of this section, both because an item was smaller than it looked.
 **U3.5's Windows helper-process port and U5.1's Windows host run moved out of the early queue**: they
@@ -578,7 +587,7 @@ One reviewable commit per unit, in this order, each with its own tests:
 5. `U1.5` the inspector states a channel's applicability.
 6. `U2.1` the listening reference set and the ASR triage runner.
 7. `8.2` one ellipsis policy for variable-length editor strings.
-8. `D3` overlap and density are different claims.
+`D3` is retired before its slot: the premise was false (§1.1, §8.1). No work is scheduled for it.
 9. `8.3` aspect-correct portrait use, then declared mouth artwork.
 10. `U3.3` the local vocoder reconstruction baseline.
 

@@ -1,5 +1,8 @@
 #include "test_framework.hpp"
 
+#include <random>
+#include <set>
+
 #include "seam/application/editor_session.hpp"
 #include "seam/application/project_factory.hpp"
 #include "seam/ui/note_spatial_index.hpp"
@@ -436,4 +439,58 @@ TEST_CASE("phoneme lane exposes generated and manually timed phonemes") {
   lane.rebuild(pianoRoll, syllables, 600.0, 32.0);
   CHECK(!lane.visuals().empty());
   CHECK(lane.visuals()[3].timingConflict);
+}
+
+// A stacked pitch row is always a real time overlap, and this pins it so nobody re-derives the opposite.
+//
+// The suspicion this answers is reasonable: a row that draws only three bands folds the rest into a
+// count, so it looks like the layout is conflating "these notes sound together" with "these notes are
+// too many to draw". It is not. A note joins a group only when its start is before the group's running
+// end, which means it genuinely sounds while an earlier member of the group still does. Density alone
+// can never form a group, so no surface is ever in a position to print the wrong reason -- the
+// distinction does not need carrying because one of its two cases cannot occur.
+//
+// The property is asserted over generated layouts rather than over one example, because the interesting
+// failure is a rare ordering, not a hand-picked one.
+TEST_CASE("A stacked pitch row is always a genuine time overlap") {
+  std::mt19937 engine{20260916U};
+  std::uniform_int_distribution<int> count{2, 8};
+  std::uniform_int_distribution<int> start{0, 40};
+  std::uniform_int_distribution<int> length{1, 12};
+  std::size_t stackedGroups = 0U;
+  for (std::size_t trial = 0U; trial < 2000U; ++trial) {
+    std::vector<seam::ui::NoteVisualLayoutItem> items;
+    const auto notes = count(engine);
+    for (int index = 0; index < notes; ++index) {
+      const auto from = start(engine);
+      items.push_back(seam::ui::NoteVisualLayoutItem{
+          .noteId = seam::domain::NoteId{static_cast<std::uint64_t>(index + 1)},
+          .midiKey = 64U,
+          .start = seam::time::Tick{static_cast<long>(from)},
+          .end = seam::time::Tick{static_cast<long>(from + length(engine))},
+          .timelineBounds = seam::ui::Rect{0.0, 0.0, 10.0, 4.0},
+      });
+    }
+    const auto layouts = seam::ui::layoutNoteVisuals(items);
+    CHECK(layouts.size() == items.size());
+    std::set<std::size_t> visited;
+    for (std::size_t index = 0U; index < layouts.size(); ++index) {
+      const auto& layout = layouts[index];
+      if (layout.groupMemberCount <= 1U) continue;
+      if (visited.insert(layout.groupIndex).second) ++stackedGroups;
+      // Every note in a stacked group has at least one other note of the same pitch sounding during
+      // it. A group whose members were merely close would be a group with no such partner.
+      bool soundsWithAnother = false;
+      for (std::size_t other = 0U; other < layouts.size() && !soundsWithAnother; ++other) {
+        if (other == index || layouts[other].groupIndex != layout.groupIndex) continue;
+        const auto& mine = items[index];
+        const auto& theirs = items[other];
+        soundsWithAnother = theirs.start < mine.end && mine.start < theirs.end;
+      }
+      CHECK(soundsWithAnother);
+    }
+  }
+  // The generator has to have produced stacked rows, or the property passed vacuously. A run with no
+  // groups would prove nothing about groups.
+  CHECK(stackedGroups > 0U);
 }
