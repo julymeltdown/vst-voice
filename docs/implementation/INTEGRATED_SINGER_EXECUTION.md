@@ -1,5 +1,32 @@
 # Integrated Singer Execution
 
+## Versioned listening reference set binding and ASR-assisted screening triage baseline
+
+September 16, 2026 — R4 unit U2.1.
+
+Regression evidence for listening quality previously lacked a versioned reference set that survives
+changes, risking untracked acoustic regression or conflation between technical differences and musical quality.
+
+Implementation:
+- Extended `scripts/compare_listening_packets.py` with full reference-set manifest binding (`formatId: "com.project-seam.listening-reference-set"`),
+  capturing per item: score identity, recipe identity and hash, resource identity, engine/compiler/render revision,
+  render settings, the WAV digest, and measurements (sampleRate, channels, frames, durationSeconds, peak, rms,
+  clippedSamples, spectralDistance, f0Rmse, levelDb).
+- Added reference promotion rule: `--promote-reference DEST` writes a new versioned reference beside the old one;
+  strictly requires an explicit `--reason REASON`; rejects regenerating or overwriting references in place.
+- Added automated ASR triage runner: `--asr-triage` screens candidates with pinned model identity
+  (`seam-asr-triage-ja-phonetic-v1`), decoding settings (Japanese phonetic screening), and pinned negative controls
+  (synthetic silence, pink noise, unvoiced impulse glitch). The output verdict strictly carries the label `triage` — never `PASS`.
+- Updated comparison runner to name the reference used (`REFERENCE=...`, `CANDIDATE=...`) and report per-item identity and measurement differences.
+- Fixed test working-directory and aspect-correct portrait centering assertions in `tests/test_character_performance_dock.cpp` and `tests/test_character_dock_layout.cpp`.
+
+Verified. `seam_listening_packet_comparison` passes 13 of 13 tests in `tests/test_listening_packet_comparison.py`,
+verifying reference-set binding, promotion enforcement, ASR triage labeling, and CLI help documentation.
+`seam_character_performance_dock_tests` passes 6 of 6. `seam_character_dock_layout_tests` passes 2 of 2.
+Full test suite passes 172 of 172 on `ctest -j8`. `SOURCE_CLOSURE=PASS`.
+
+
+
 ## Character performance artwork declared and aspect-correct portrait fitting restored
 
 September 16, 2026 — R4 units D2 and 8.3.

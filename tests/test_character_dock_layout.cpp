@@ -147,8 +147,9 @@ TEST_CASE("A narrow window drops the portrait, then the dock, and never the musi
 
   // The same sample point inside the artwork's rectangle tells the whole story: the portrait, then the
   // dock's own background, then the window's.
-  const auto sampleY = static_cast<std::uint32_t>(painterLayout.toolbarHeight) +
-                       static_cast<std::uint32_t>(painterLayout.characterDockPortraitTopInset) + 4U;
+  const auto portraitBounds = painterLayout.characterDockPortraitBounds(
+      wide.first, state.logicalHeight - painterLayout.statusHeight, 560.0);
+  const auto sampleY = static_cast<std::uint32_t>(portraitBounds.y + portraitBounds.height * 0.5);
   const auto sampleX = [&](double editorRight) {
     return static_cast<std::uint32_t>(editorRight) +
            static_cast<std::uint32_t>(painterLayout.characterDockPadding) + 4U;

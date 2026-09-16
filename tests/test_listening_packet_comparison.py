@@ -14,7 +14,11 @@ import tempfile
 
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
-from scripts.compare_listening_packets import compare, compare_artifacts  # noqa: E402
+from scripts.compare_listening_packets import (  # noqa: E402
+    compare, compare_artifacts, bind_reference_item, bind_reference_manifest,
+    promote_reference, run_asr_triage, DEFAULT_ASR_MODEL, DEFAULT_DECODING_SETTINGS,
+    PINNED_NEGATIVE_CONTROLS, REFERENCE_SET_FORMAT_ID
+)
 
 
 def manifest(packet_id: str, commit: str, outputs: list) -> dict:
@@ -121,7 +125,155 @@ class ListeningPacketComparison(unittest.TestCase):
         statuses = {f['status'] for f in findings}
         self.assertEqual(statuses, {'identical'}, str(findings))
 
+    def test_reference_set_manifest_binding_binds_all_contract_fields(self):
+        sample_output = output(
+            'song/baseline/master.wav', 'a' * 64, recipeHash='r1',
+            scoreIdentity='song', recipeIdentity='baseline', resourceIdentity='character-01',
+            engineRevision='c1', renderRevision='p1',
+            renderSettings={'sampleRate': 48000, 'channels': 2, 'hopSize': 256},
+            sampleRate=48000, channels=2, frames=96000, durationSeconds=2.0,
+            peak=0.08, rms=0.02, clippedSamples=0,
+            spectralDistance=0.12, f0Rmse=1.5, levelDb=-14.2
+        )
+        bound_item = bind_reference_item(sample_output, 'song', {'packetId': 'p1', 'sourceCommit': 'c1'})
+        self.assertEqual(bound_item['scoreIdentity'], 'song')
+        self.assertEqual(bound_item['recipeIdentity'], 'baseline')
+        self.assertEqual(bound_item['recipeHash'], 'r1')
+        self.assertEqual(bound_item['resourceIdentity'], 'character-01')
+        self.assertEqual(bound_item['engineRevision'], 'c1')
+        self.assertEqual(bound_item['renderRevision'], 'p1')
+        self.assertEqual(bound_item['wavSha256'], 'a' * 64)
+        self.assertEqual(bound_item['measurements']['spectralDistance'], 0.12)
+        self.assertEqual(bound_item['measurements']['f0Rmse'], 1.5)
+        self.assertEqual(bound_item['measurements']['levelDb'], -14.2)
+
+        packet = manifest('p1', 'c1', [sample_output])
+        ref_set = bind_reference_manifest(packet, reference_set_id='ref-01', reason='Initial baseline')
+        self.assertEqual(ref_set['formatId'], REFERENCE_SET_FORMAT_ID)
+        self.assertEqual(ref_set['referenceSetId'], 'ref-01')
+        self.assertEqual(ref_set['reason'], 'Initial baseline')
+        self.assertEqual(len(ref_set['items']), 1)
+        self.assertEqual(ref_set['verdict'], 'UNRANKED')
+
+    def test_comparison_reports_named_reference_and_measurements_change(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            ref_item = output('song/baseline/master.wav', 'a' * 64, recipeHash='r1',
+                              sampleRate=48000, channels=2, frames=96000, durationSeconds=2.0,
+                              peak=0.08, rms=0.02, clippedSamples=0, spectralDistance=0.10)
+            cand_item = output('song/baseline/master.wav', 'b' * 64, recipeHash='r1',
+                               sampleRate=48000, channels=2, frames=96000, durationSeconds=2.0,
+                               peak=0.08, rms=0.02, clippedSamples=0, spectralDistance=0.25)
+            ref_manifest = bind_reference_manifest(manifest('ref-packet', 'c1', [ref_item]), reference_set_id='retained-ref-01')
+            cand_manifest = manifest('cand-packet', 'c2', [cand_item])
+            ref_path = root / 'reference_set.json'
+            cand_path = root / 'candidate_packet.json'
+            ref_path.write_text(json.dumps(ref_manifest))
+            cand_path.write_text(json.dumps(cand_manifest))
+            completed = subprocess.run(
+                [sys.executable, str(REPO / 'scripts' / 'compare_listening_packets.py'),
+                 str(ref_path), str(cand_path)],
+                capture_output=True, text=True)
+            self.assertEqual(completed.returncode, 3)
+            self.assertIn('REFERENCE=retained-ref-01', completed.stdout)
+            self.assertIn('CANDIDATE=cand-packet', completed.stdout)
+            self.assertIn('spectralDistance', completed.stdout)
+            self.assertIn('reference=retained-ref-01', completed.stdout)
+
+    def test_promotion_requires_reason_and_rejects_in_place_overwrite(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            ref_path = root / 'reference.json'
+            cand_path = root / 'candidate.json'
+            ref_path.write_text(json.dumps(manifest('p1', 'c1', [output('song/baseline/master.wav', 'a' * 64)])))
+            cand_path.write_text(json.dumps(manifest('p2', 'c2', [output('song/baseline/master.wav', 'b' * 64)])))
+
+            # Promotion without --reason fails
+            failed_reason = subprocess.run(
+                [sys.executable, str(REPO / 'scripts' / 'compare_listening_packets.py'),
+                 str(ref_path), str(cand_path), '--promote-reference', str(root / 'new_ref.json')],
+                capture_output=True, text=True)
+            self.assertEqual(failed_reason.returncode, 2)
+            self.assertIn('--reason is required', failed_reason.stdout)
+
+            # In-place overwrite (promoting onto existing file) fails
+            existing_file = root / 'already_exists.json'
+            existing_file.write_text('{}')
+            failed_overwrite = subprocess.run(
+                [sys.executable, str(REPO / 'scripts' / 'compare_listening_packets.py'),
+                 str(ref_path), str(cand_path), '--promote-reference', str(existing_file),
+                 '--reason', 'Valid reason'],
+                capture_output=True, text=True)
+            self.assertEqual(failed_overwrite.returncode, 2)
+            self.assertIn('already exists', failed_overwrite.stdout)
+
+            # Promoting beside the old one with explicit reason succeeds
+            promoted_dest = root / 'promoted_ref_01.json'
+            success = subprocess.run(
+                [sys.executable, str(REPO / 'scripts' / 'compare_listening_packets.py'),
+                 str(ref_path), str(cand_path), '--promote-reference', str(promoted_dest),
+                 '--reason', 'Auditioned vowel balance upgrade', '--allow-changes'],
+                capture_output=True, text=True)
+            self.assertEqual(success.returncode, 0, success.stderr)
+            self.assertTrue(promoted_dest.exists())
+            promoted_content = json.loads(promoted_dest.read_text())
+            self.assertEqual(promoted_content['formatId'], REFERENCE_SET_FORMAT_ID)
+            self.assertEqual(promoted_content['reason'], 'Auditioned vowel balance upgrade')
+            self.assertEqual(promoted_content['verdict'], 'UNRANKED')
+
+    def test_asr_triage_runner_pins_model_decoding_and_strictly_labels_triage(self):
+        sample_manifest = manifest('p1', 'c1', [
+            output('song/baseline/master.wav', 'a' * 64, peak=0.08, rms=0.02, clippedSamples=0, durationSeconds=2.0),
+            output('song/baseline/silent.wav', 'b' * 64, peak=0.0, rms=0.00001, clippedSamples=0, durationSeconds=2.0),
+        ])
+        triage_report = run_asr_triage(sample_manifest)
+        self.assertEqual(triage_report['formatId'], 'com.project-seam.listening-asr-triage')
+        self.assertEqual(triage_report['label'], 'triage')
+        self.assertEqual(triage_report['verdict'], 'triage')
+        self.assertNotIn('pass', triage_report['verdict'].lower())
+        self.assertEqual(triage_report['model'], DEFAULT_ASR_MODEL)
+        self.assertEqual(triage_report['decodingSettings']['language'], 'ja')
+        self.assertEqual(triage_report['decodingSettings']['beamSize'], 5)
+        self.assertEqual(len(triage_report['negativeControls']), 3)
+        for ctrl in triage_report['negativeControls']:
+            self.assertEqual(ctrl['status'], 'PINNED_HELD')
+            self.assertFalse(ctrl['detected'])
+        # The second output was near-silent, so it should be flagged for investigation
+        self.assertEqual(triage_report['summary']['flaggedItems'], 1)
+        self.assertEqual(triage_report['summary']['readyForListening'], 1)
+
+    def test_asr_triage_cli_strictly_outputs_label_triage_never_pass(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            packet_path = root / 'packet.json'
+            report_path = root / 'triage_report.json'
+            packet_path.write_text(json.dumps(manifest('p1', 'c1', [
+                output('song/baseline/master.wav', 'a' * 64, peak=0.08, rms=0.02, clippedSamples=0, durationSeconds=2.0),
+            ])))
+            completed = subprocess.run(
+                [sys.executable, str(REPO / 'scripts' / 'compare_listening_packets.py'),
+                 str(packet_path), '--asr-triage', '--report', str(report_path)],
+                capture_output=True, text=True)
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertIn('ASR_TRIAGE=TRIAGE', completed.stdout)
+            self.assertNotIn('ASR_TRIAGE=PASS', completed.stdout)
+            self.assertTrue(report_path.exists())
+            rep = json.loads(report_path.read_text())
+            self.assertIn('asrTriage', rep)
+            self.assertEqual(rep['asrTriage']['label'], 'triage')
+            self.assertEqual(rep['asrTriage']['verdict'], 'triage')
+            self.assertNotIn('pass', rep['asrTriage']['verdict'].lower())
+
+    def test_cli_help_documents_reference_set_and_promotion_and_asr_triage(self):
+        completed = subprocess.run(
+            [sys.executable, str(REPO / 'scripts' / 'compare_listening_packets.py'), '--help'],
+            capture_output=True, text=True)
+        self.assertEqual(completed.returncode, 0)
+        self.assertIn('--promote-reference', completed.stdout)
+        self.assertIn('--reason', completed.stdout)
+        self.assertIn('--asr-triage', completed.stdout)
+        self.assertIn('reference set', completed.stdout.lower())
+
 
 if __name__ == '__main__':
     unittest.main()
-

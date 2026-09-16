@@ -363,8 +363,16 @@ TEST_CASE("A completed render binds the dock to the phrase it published") {
 
 // D2: assets/character-01 declares complete performance artwork, enabling real mouth assets instead of fallback glyphs.
 TEST_CASE("Character 01 declares complete performance artwork and loads with performance capability") {
+  std::filesystem::path assetPath = "assets/character-01";
+  if (!std::filesystem::is_directory(assetPath)) {
+    if (std::filesystem::is_directory("../../assets/character-01")) {
+      assetPath = "../../assets/character-01";
+    } else if (std::filesystem::is_directory("../assets/character-01")) {
+      assetPath = "../assets/character-01";
+    }
+  }
   native_ui::CharacterPresentation presentation;
-  const auto loaded = presentation.load("assets/character-01");
+  const auto loaded = presentation.load(assetPath);
   CHECK(loaded.hasValue());
   CHECK(presentation.loaded());
   CHECK(presentation.hasPerformanceAssets());

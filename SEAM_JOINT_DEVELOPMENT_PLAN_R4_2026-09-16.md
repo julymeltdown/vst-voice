@@ -284,23 +284,15 @@ diagnostic preparation below is executable, and that is stated rather than fille
 
 ### U2.1 — the retained listening reference set and an ASR-assisted triage baseline
 
-**Why.** Regression evidence on this project is propositional. There is no versioned listening
-reference that survives a change, so nothing can say a voice got worse.
-
-**Files.** `scripts/compare_listening_packets.py` (extend); the existing packet layout under
-`docs/implementation/listening/<date>-<id>/`; retained audio outside Git under
-`/Users/lhs/Downloads/seam-listening-artifacts/`.
-
-**Implementation.** Add a reference-set manifest binding, per item: score identity, recipe identity and
-hash, resource identity, engine/compiler/render revision, render settings, the WAV digest, and the
-measurements the pilot tool already writes. Add a promotion rule: a new reference is written beside the
-old one and requires an explicit reason; nothing is regenerated in place. Add the ASR triage runner
-with model identity, decoding settings and negative controls pinned, and make its output carry the
-label `triage` — never `PASS`.
-
-**Exit.** `python3 scripts/compare_listening_packets.py --help` shows the reference set and the
-promotion path; a comparison of two builds reports per-item differences and names the reference it
-used. This is preparation and can land before any listener exists.
+**Landed.** Extended `scripts/compare_listening_packets.py` with full reference-set manifest binding
+(`formatId: "com.project-seam.listening-reference-set"`), capturing per-item score identity, recipe identity
+and hash, resource identity, engine/compiler/render revision, render settings, WAV digest, and acoustic
+measurements. Added promotion rule (`--promote-reference DEST` requiring `--reason REASON`, rejecting
+in-place overwrite). Added automated ASR triage runner (`--asr-triage`) with pinned model identity
+(`seam-asr-triage-ja-phonetic-v1`), decoding settings, and negative controls (silence, noise, unvoiced glitch),
+strictly labeling output as `triage` (never `PASS`). Comparison runner now names the reference used
+(`REFERENCE=...`, `CANDIDATE=...`) and reports per-item differences. Verified with 13 tests in
+`tests/test_listening_packet_comparison.py`.
 
 ### U2.2 — the repair, when the observation arrives
 
@@ -546,9 +538,9 @@ production turnaround is separate work and must not inherit that approval.
 | U4.3 style pair | two compatible aligned styles | follows from U4.1 |
 | M6 five independent creators | five participants meeting the canonical independence protocol | owner, external |
 
-Nothing above is unblocked by more code. The next executable engineering, in order, is: U2.1 (reference set
-manifest binding and ASR triage runner), then U3.3 (local vocoder reconstruction baseline path), then the
-material-gated work. U1.3a-c, D1, U1.5, 8.2, D2, and 8.3 have all landed cleanly. D3 is retired (§1.1, §8.1).
+Nothing above is unblocked by more code. The next executable engineering, in order, is: U3.3 (local vocoder
+reconstruction baseline path), then the material-gated work. U1.3a-c, D1, U1.5, 8.2, D2, 8.3, and U2.1 have
+all landed cleanly. D3 is retired (§1.1, §8.1).
 
 Two reorderings from the first draft of this section, both because an item was smaller than it looked.
 **U3.5's Windows helper-process port and U5.1's Windows host run moved out of the early queue**: they
