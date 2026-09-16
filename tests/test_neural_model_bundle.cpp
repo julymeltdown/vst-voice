@@ -187,11 +187,12 @@ TEST_CASE("graph inspection recursively validates control-flow bodies and lexica
   };
   const auto valid=makeIf("Identity");
   const auto contract=inspectNeuralGraph(std::as_bytes(std::span{valid.data(),valid.size()}));
-  REQUIRE(contract);
+  CHECK(contract);
+  if (!contract) return;
   CHECK((contract.value().operators==std::vector<std::string>{"Identity","If"}));
   CHECK(contract.value().nodeCount==3U);
   CHECK(contract.value().captures.empty());
-  CHECK(contract.value().nodes.front().inputs==std::vector<std::string>{"condition","mel"});
+  CHECK((contract.value().nodes.front().inputs==std::vector<std::string>{"condition","mel"}));
   const auto invalid=makeIf("SeamCustomOp");
   CHECK(!inspectNeuralGraph(std::as_bytes(std::span{invalid.data(),invalid.size()})));
 }

@@ -31,6 +31,14 @@ REQUIRED: dict[str, tuple[str, ...]] = {
         "GetDefaultAudioEndpoint(eCapture",
         "SEAM_AUDIO_WASAPI",
     ),
+    "libs/seam-platform/src/helper_process.cpp": (
+        "CreateProcessW",
+        "PROC_THREAD_ATTRIBUTE_HANDLE_LIST",
+        "AssignProcessToJobObject",
+        "JOB_OBJECT_LIMIT_PROCESS_MEMORY",
+        "GetProcessMemoryInfo",
+        "TerminateJobObject",
+    ),
     "libs/seam-native-ui/src/native_window_appkit.mm": (
         "NSTextInputClient",
         "setMarkedText",
@@ -60,6 +68,7 @@ CMAKE_MARKERS = (
     "SEAM_NATIVE_APPKIT=1",
     "SEAM_AUDIO_WASAPI=1",
     "SEAM_AUDIO_COREAUDIO=1",
+    "psapi",
     "SEAM_RUN_NATIVE_GUI_TESTS",
     "seam_native_editor_platform_smoke",
     "seam_voicebank_studio_platform_smoke",
@@ -102,7 +111,7 @@ def main() -> int:
         for failure in failures:
             print(f"[phase8-platform-source] ERROR: {failure}", file=sys.stderr)
         return 1
-    print("[phase8-platform-source] Windows Win32/TSF/WASAPI source contract=PASS")
+    print("[phase8-platform-source] Windows Win32/TSF/WASAPI/helper-process source contract=PASS")
     print("[phase8-platform-source] macOS AppKit/NSTextInputClient/CoreAudio source contract=PASS")
     print("[phase8-platform-source] runtime verification remains platform-specific")
     return 0

@@ -19,18 +19,19 @@ struct HelperProcessRequest final {
   // neural worker protocol). The historical 4096-byte default remains the
   // safe limit for dictionary/reading helpers.
   std::size_t maximumStdinBytes{4096U};
-  // Optional best-effort child resource ceilings. The POSIX runner samples
-  // resident memory and CPU time while draining the channels; exceeding a
-  // ceiling kills the owned process group. Zero disables that ceiling.
+  // Optional child resource ceilings. POSIX samples resident memory/CPU while
+  // draining channels. Windows additionally applies its memory ceiling to the
+  // owned job object. Exceeding a ceiling kills the owned process tree. Zero
+  // disables that ceiling.
   std::size_t maximumResidentBytes{0U};
   std::chrono::milliseconds maximumCpuTime{0};
 };
 struct HelperProcessOutput final { std::string standardOutput, standardError; };
 // Blocking worker-thread primitive for an explicitly selected application helper.
 // No shell/PATH lookup; not binary/resource verification or a security sandbox.
-// POSIX implementation; unsupported platforms fail explicitly.
-// Requires exclusive ownership of child reaping (no external SIGCHLD handler
-// or waitpid(-1) consumer). Plug-in hosts need a qualified supervisor boundary.
+// POSIX and Windows implementations; unsupported platforms fail explicitly.
+// POSIX requires exclusive ownership of child reaping (no external SIGCHLD
+// handler or waitpid(-1) consumer). Plug-in hosts still need host qualification.
 [[nodiscard]] core::Result<HelperProcessOutput> runBoundedHelperProcess(
     const HelperProcessRequest& request, std::stop_token stop = {});
 }

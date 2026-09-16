@@ -1,20 +1,31 @@
 #include "test_framework.hpp"
 #include "seam/platform/helper_process.hpp"
+#include <cstdint>
 #include <thread>
+#if defined(_WIN32)
+#include <windows.h>
+#endif
 #if defined(__APPLE__) || defined(__linux__)
 #include <fcntl.h>
 #include <unistd.h>
 #endif
 
 TEST_CASE("bounded helper captures separate streams and rejects failure overflow timeout and cancellation") {
-#if defined(__APPLE__) || defined(__linux__)
+#if defined(__APPLE__) || defined(__linux__) || defined(_WIN32)
   using namespace seam::platform;
   HelperProcessRequest request{SEAM_READING_PROCESS_PROBE, {"echo"}};
   const auto success = runBoundedHelperProcess(request); CHECK(success);
   CHECK(success.value().standardOutput == "ok\n"); CHECK(success.value().standardError == "diagnostic\n");
+#if defined(__APPLE__) || defined(__linux__)
   const int inherited = ::open("/dev/null", O_RDONLY); CHECK(inherited >= 0);
   request.arguments = {"descriptors"}; const auto isolated = runBoundedHelperProcess(request);
   ::close(inherited); CHECK(isolated);
+#else
+  SECURITY_ATTRIBUTES security{sizeof(SECURITY_ATTRIBUTES), nullptr, TRUE};
+  const HANDLE inherited = ::CreateEventW(&security, TRUE, FALSE, nullptr); CHECK(inherited != nullptr);
+  request.arguments = {"handle", std::to_string(reinterpret_cast<std::uintptr_t>(inherited))};
+  const auto isolated = runBoundedHelperProcess(request); ::CloseHandle(inherited); CHECK(isolated);
+#endif
   for (const auto* mode : {"fail", "flood", "stderr", "sleep", "descendant"}) {
     request.arguments = {mode}; request.timeout = std::chrono::milliseconds{100};
     request.maximumStdoutBytes = 8192U; request.maximumStderrBytes = 8192U;
@@ -32,12 +43,15 @@ TEST_CASE("bounded helper captures separate streams and rejects failure overflow
   request.executable = "relative-path"; CHECK(!runBoundedHelperProcess(request));
   request.executable = SEAM_READING_PROCESS_PROBE; request.arguments = {std::string("a\0b", 3U)};
   CHECK(!runBoundedHelperProcess(request));
+  request.arguments = {"argument", "space \\\"quoted\\\" tail\\\\"};
+  const auto quoted = runBoundedHelperProcess(request); CHECK(quoted);
+  CHECK(quoted.value().standardOutput == "space \\\"quoted\\\" tail\\\\");
   request.arguments = {}; request.executable = "/nonexistent-seam-helper-fixture"; CHECK(!runBoundedHelperProcess(request));
 #endif
 }
 
 TEST_CASE("helper stdin delivers exact private binary input with EOF and simultaneous output") {
-#if defined(__APPLE__) || defined(__linux__)
+#if defined(__APPLE__) || defined(__linux__) || defined(_WIN32)
   using namespace seam::platform;
   HelperProcessRequest request{SEAM_READING_PROCESS_PROBE, {"input"}};
   request.standardInput = "私の歌\n"; request.standardInput.push_back('\0'); request.standardInput += "tail";
@@ -56,7 +70,7 @@ TEST_CASE("helper stdin delivers exact private binary input with EOF and simulta
 }
 
 TEST_CASE("helper resource ceilings terminate an over-budget child with a bounded diagnostic") {
-#if defined(__APPLE__) || defined(__linux__)
+#if defined(__APPLE__) || defined(__linux__) || defined(_WIN32)
   using namespace seam::platform;
   HelperProcessRequest request{SEAM_READING_PROCESS_PROBE, {"sleep"}};
   request.timeout = std::chrono::milliseconds{500};

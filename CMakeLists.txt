@@ -556,7 +556,7 @@ if(WIN32)
     libs/seam-platform/src/crash_capture_win32.cpp)
   target_compile_definitions(seam_platform PRIVATE
     SEAM_AUDIO_WASAPI=1 WIN32_LEAN_AND_MEAN NOMINMAX _WIN32_WINNT=0x0A00)
-  target_link_libraries(seam_platform PRIVATE ole32 uuid avrt shell32 advapi32)
+  target_link_libraries(seam_platform PRIVATE ole32 uuid avrt shell32 advapi32 psapi)
 elseif(APPLE)
   enable_language(OBJCXX)
   target_sources(seam_platform PRIVATE
