@@ -131,7 +131,7 @@ engineering plus gates is 100% and the internally checkable figure is the produc
 | M4 production, languages, style | 20% | 35% | 65% | 7.0% |
 | M5 supported standalone and DAW product | 15% | 65% | 35% | 9.8% |
 | M6 full-scope Beta GO evidence | 10% | 5% | 95% | 0.5% |
-| **Total** | **100%** | | | **50.3%** |
+| **Total** | **100%** | | | **50.3% weighted engineering** |
 
 Read the two halves apart, because neither alone is the answer. **The engineering half is about 50%
 of the specification's own weight** — that is the part a developer can still close without help, and it
@@ -140,15 +140,27 @@ human has observed the workflow, no listener has judged any audio, no authorized
 native language has been reviewed and no Windows machine has run the product. The gate shares are what
 the remaining distance actually consists of, and a completed engineering column would not move them.
 
-Two notes on how these figures were chosen, so they can be argued with rather than trusted. The
-specification shares follow the count of units each milestone owns in section 10 of R3, rounded to the
-nearest five percent, with M6 kept small because it consumes the other five milestones' evidence rather
-than producing its own. M6's engineering share of 5% is the one row that changed on review: it was
-reported as fully engineering-checkable at 15%, which was wrong in the revealing direction, since M6's
-content is independent reviewers, five pre-GO creator sessions and restored-archive audits — the most
-human-gated milestone in the project, not the least. An earlier draft of this section published a single
-weighted total of 26.4%; that column was dropped because the numbers behind it were not derivable from
-the rule printed beside them, which defeated the purpose of stating the rule.
+Three notes on how these figures were chosen, and one on what changed, so they can be argued with
+rather than trusted.
+
+The specification shares follow the count of units each milestone owns in section 10 of R3, rounded to
+the nearest five percent, with M6 kept small because it consumes the other five milestones' evidence
+rather than producing its own.
+
+Two engineering figures changed in the review round of this document, and both are recorded rather than
+silently adjusted, because a number that moved without a stated reason is the one cell a reader cannot
+argue with. **M6 dropped from 15% to 5%**: it was reported as mostly engineering-checkable, which was
+wrong in the revealing direction, since M6's content is independent reviewers, five pre-GO creator
+sessions and restored-archive audits — the most human-gated milestone in the project, not the least.
+**M5 rose from 60% to 65%** on re-reading the milestone: its deterministic halves are further along than
+the first draft credited, because SMF and USTX round-trips, the character binding and the recovery paths
+are implemented and tested, and what M5 still lacks is concentrated in the host/platform runs recorded
+against the matrix rather than evenly spread across its units. Its gate share of 35% is that host-run
+evidence, which is why the engineering rise does not move M5 much.
+
+An earlier draft of this section published a single weighted total of 26.4% and a column that was not
+derivable from the rule printed beside it, which defeated the purpose of stating the rule. That column
+is gone; the total now says what it is — weighted engineering, not completion.
 ## 3. M1 — finish the first usable session
 
 M1.1 and M1.2 are closed. What remains in M1 is three code units and one observation.

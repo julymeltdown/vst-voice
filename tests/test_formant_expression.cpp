@@ -28,6 +28,7 @@
 #include <numbers>
 #include <span>
 #include <string>
+
 #include <vector>
 
 namespace {
@@ -393,3 +394,56 @@ TEST_CASE("A shift moves the envelope and leaves the fundamental alone") {
 }
 
 }  // namespace
+
+// Every timbral channel a creator can nudge has to announce its edit, because the renderer only learns
+// about an edit through the host notification. This case exists because twelve of them did not: they
+// wrote through the session's performance-result path, which the authoring runtime never observes, so a
+// nudge changed the project while no render was ever requested. A creator would have seen the value
+// move, saved it, and heard the previous phrase. Asserting the stored curve could not catch that; only
+// asking whether the edit was announced can.
+TEST_CASE("Every timbral channel announces its edit to the host") {
+  CarrierFixture fixture{true};
+  int announcements = 0;
+  native_ui::NativeEditorController controller{fixture.session, fixture.factory, fixture.regionId,
+                                              {.documentChanged = [&] { ++announcements; }}};
+  controller.setPlayheadTick(time::Tick{480});
+
+  // The six channels the source-filter carrier owns, each nudged through its own command. One is not
+  // enough: the defect was that a shared write path skipped the notification, so the check has to
+  // cover the family rather than the member that happened to be tested first.
+  const auto beforeAny = announcements;
+  CHECK(controller.nudgeFormantShift(1).hasValue());
+  CHECK(controller.nudgeBreathiness(1).hasValue());
+  CHECK(controller.nudgeTension(1).hasValue());
+  CHECK(controller.nudgeAiriness(1).hasValue());
+  CHECK(controller.nudgeGender(1).hasValue());
+  CHECK(controller.nudgeGrowl(1).hasValue());
+  CHECK(announcements == beforeAny + 6);
+
+  // Resetting a curve is an edit too, and it takes the same path.
+  const auto beforeReset = announcements;
+  CHECK(controller.resetFormantCurve().hasValue());
+  CHECK(controller.resetBreathinessCurve().hasValue());
+  CHECK(controller.resetTensionCurve().hasValue());
+  CHECK(controller.resetAirinessCurve().hasValue());
+  CHECK(controller.resetGenderCurve().hasValue());
+  CHECK(controller.resetGrowlCurve().hasValue());
+  CHECK(announcements == beforeReset + 6);
+
+  // A nudge that changes nothing is not an edit, so it must not announce one. This is the other half
+  // of the contract, and it is what keeps a held key from filling the undo stack and the render queue
+  // with entries that describe no change.
+  const auto beforeNoOp = announcements;
+  CHECK(controller.nudgeFormantShift(0).hasValue());
+  CHECK(announcements == beforeNoOp);
+
+  // A channel the selected singer cannot render is refused, and a refusal is not an edit either.
+  const auto beforeRefusal = announcements;
+  CarrierFixture unit{false};
+  native_ui::NativeEditorController unitController{unit.session, unit.factory, unit.regionId,
+                                                   {.documentChanged = [&] { ++announcements; }}};
+  unitController.setPlayheadTick(time::Tick{480});
+  const auto refused = unitController.nudgeFormantShift(1);
+  CHECK(!refused.hasValue());
+  CHECK(announcements == beforeRefusal);
+}
