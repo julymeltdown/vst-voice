@@ -51,7 +51,6 @@ TEST_CASE("reading resource verification binds executable and exact dictionary s
 }
 
 TEST_CASE("private reading staging owns verified independent copies until the last consumer retires") {
-#if defined(__APPLE__) || defined(__linux__)
   using namespace seam; using namespace seam::authoring;
   const auto root = test::support::temporaryDirectory("reading-stage");
   std::filesystem::create_directory(root / "dictionary");
@@ -70,7 +69,9 @@ TEST_CASE("private reading staging owns verified independent copies until the la
     CHECK(stageRoot != root); CHECK(staged.value().resource().identity() == verified.value().identity());
     CHECK(staged.value().resource().revalidate());
     const auto mode = std::filesystem::status(stageRoot).permissions();
+#if !defined(_WIN32)
     CHECK((mode & std::filesystem::perms::group_all) == std::filesystem::perms::none);
+#endif
     CHECK((mode & std::filesystem::perms::owner_write) == std::filesystem::perms::none);
     std::filesystem::resize_file(spec.executable, 1U);
     std::filesystem::resize_file(spec.dictionaryDirectory / "sys.dic", 1U);
@@ -88,5 +89,4 @@ TEST_CASE("private reading staging owns verified independent copies until the la
   CHECK(!StagedJapaneseReadingResource::prepare(verified.value(), root)); CHECK(count() == before);
   std::stop_source stop; stop.request_stop();
   CHECK(!StagedJapaneseReadingResource::prepare(verified.value(), root, stop.get_token())); CHECK(count() == before);
-#endif
 }

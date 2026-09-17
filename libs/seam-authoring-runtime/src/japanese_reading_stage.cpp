@@ -4,6 +4,13 @@
 #include <algorithm>
 #include <cerrno>
 #include <optional>
+#if defined(_WIN32)
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#include <atomic>
+#endif
 #if defined(__APPLE__) || defined(__linux__)
 #include <fcntl.h>
 #include <sys/stat.h>
@@ -33,6 +40,27 @@ struct StagedJapaneseReadingResource::Owner {
           S_ISDIR(named.st_mode) && held.st_dev == named.st_dev && held.st_ino == named.st_ino) ::rmdir(directory.c_str());
       ::close(root);
     } else if (created) ::rmdir(directory.c_str()); // Only our newly created empty directory.
+  }
+#elif defined(_WIN32)
+  std::wstring directory;
+  bool created{false};
+  ~Owner() {
+    if (!directory.empty() && created) {
+      const auto dictDir = directory + L"\\dictionary";
+      for (const auto* name : kJapaneseDictionaryFiles) {
+        std::wstring wname(name, name + std::char_traits<char>::length(name));
+        const auto filePath = dictDir + L"\\" + wname;
+        ::SetFileAttributesW(filePath.c_str(), FILE_ATTRIBUTE_NORMAL);
+        ::DeleteFileW(filePath.c_str());
+      }
+      ::SetFileAttributesW(dictDir.c_str(), FILE_ATTRIBUTE_NORMAL);
+      ::RemoveDirectoryW(dictDir.c_str());
+      const auto readerPath = directory + L"\\reader";
+      ::SetFileAttributesW(readerPath.c_str(), FILE_ATTRIBUTE_NORMAL);
+      ::DeleteFileW(readerPath.c_str());
+      ::SetFileAttributesW(directory.c_str(), FILE_ATTRIBUTE_NORMAL);
+      ::RemoveDirectoryW(directory.c_str());
+    }
   }
 #endif
 };
@@ -73,6 +101,68 @@ core::Result<void> copyVerified(const std::filesystem::path& source, int directo
   remaining -= total;
   return core::success();
 }
+#elif defined(_WIN32)
+struct WindowsHandle final {
+  HANDLE handle{INVALID_HANDLE_VALUE};
+  ~WindowsHandle() { if (handle != INVALID_HANDLE_VALUE) ::CloseHandle(handle); }
+};
+
+core::Result<void> copyVerifiedWindows(const std::filesystem::path& source,
+    const std::filesystem::path& destination, std::string_view expected,
+    std::size_t maximum, std::size_t& remaining, std::stop_token stop) {
+  maximum = std::min(maximum, remaining);
+  WindowsHandle input{::CreateFileW(source.c_str(), GENERIC_READ, FILE_SHARE_READ,
+      nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr)};
+  if (input.handle == INVALID_HANDLE_VALUE)
+    return core::failure(core::ErrorCode::InvalidArgument, "Cannot stage a bounded regular reading resource");
+  BY_HANDLE_FILE_INFORMATION info{};
+  if (!::GetFileInformationByHandle(input.handle, &info) ||
+      (info.dwFileAttributes & (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT)) != 0 ||
+      info.nNumberOfLinks > 1U)
+    return core::failure(core::ErrorCode::InvalidArgument, "Reading resource is not a regular file");
+  LARGE_INTEGER fileSize{};
+  if (!::GetFileSizeEx(input.handle, &fileSize) || fileSize.QuadPart <= 0 ||
+      static_cast<std::uintmax_t>(fileSize.QuadPart) > maximum)
+    return core::failure(core::ErrorCode::InvalidArgument, "Cannot stage a bounded regular reading resource");
+
+  WindowsHandle output{::CreateFileW(destination.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_NEW,
+      FILE_ATTRIBUTE_NORMAL, nullptr)};
+  if (output.handle == INVALID_HANDLE_VALUE)
+    return core::failure(core::ErrorCode::IoError, "Cannot exclusively create staged reading resource");
+
+  std::array<char, 65536U> buffer{};
+  core::Sha256 digest;
+  std::size_t total = 0U;
+  for (;;) {
+    if (stop.stop_requested())
+      return core::failure(core::ErrorCode::Conflict, "Reading resource staging cancelled");
+    DWORD bytesRead = 0U;
+    if (!::ReadFile(input.handle, buffer.data(), static_cast<DWORD>(buffer.size()), &bytesRead, nullptr))
+      return core::failure(core::ErrorCode::IoError, "Cannot read staging source");
+    if (bytesRead == 0U) break;
+    const auto bytes = static_cast<std::size_t>(bytesRead);
+    if (bytes > maximum - total)
+      return core::failure(core::ErrorCode::InvalidArgument, "Staging source grew beyond bounds");
+    total += bytes;
+    digest.update(std::string_view(buffer.data(), bytes));
+    DWORD written = 0U;
+    while (written < bytesRead) {
+      if (stop.stop_requested())
+        return core::failure(core::ErrorCode::Conflict, "Reading resource staging cancelled");
+      DWORD chunk = 0U;
+      if (!::WriteFile(output.handle, buffer.data() + written, bytesRead - written, &chunk, nullptr) || chunk == 0U)
+        return core::failure(core::ErrorCode::IoError, "Cannot write staged resource");
+      written += chunk;
+    }
+  }
+  if (!::FlushFileBuffers(output.handle))
+    return core::failure(core::ErrorCode::IoError, "Cannot flush staged resource");
+  if (total != static_cast<std::uintmax_t>(fileSize.QuadPart) || digest.hexDigest() != expected)
+    return core::failure(core::ErrorCode::Conflict, "Staging source does not match its verified identity");
+  ::SetFileAttributesW(destination.c_str(), FILE_ATTRIBUTE_READONLY);
+  remaining -= total;
+  return core::success();
+}
 #endif
 }
 const VerifiedJapaneseReadingResource& StagedJapaneseReadingResource::resource() const noexcept { return *owner_->verified; }
@@ -83,7 +173,45 @@ core::Result<StagedJapaneseReadingResource> StagedJapaneseReadingResource::prepa
   const auto current = source.revalidate(stop); if (!current) return core::Result<Output>{current.error()};
   if (!parent.is_absolute() || parent.string().size() > 3800U || parent.string().find('\0') != std::string::npos)
     return core::failure<Output>(core::ErrorCode::InvalidArgument, "Staging parent must be an absolute bounded application path");
-#if defined(__APPLE__) || defined(__linux__)
+#if defined(_WIN32)
+  std::error_code error;
+  const auto canonical = std::filesystem::canonical(parent, error);
+  if (error || !std::filesystem::is_directory(canonical, error))
+    return core::failure<Output>(core::ErrorCode::InvalidArgument, "Staging parent is unavailable");
+  static std::atomic<std::uint64_t> counter{0U};
+  const auto uniqueName = L"seam-reading-" + std::to_wstring(::GetCurrentProcessId()) + L"-" +
+                          std::to_wstring(counter.fetch_add(1U, std::memory_order_relaxed));
+  auto owner = std::make_shared<Owner>();
+  const auto stageDir = canonical / uniqueName;
+  if (!::CreateDirectoryW(stageDir.c_str(), nullptr))
+    return core::failure<Output>(core::ErrorCode::IoError, "Cannot create private reading staging directory");
+  owner->created = true;
+  owner->directory = stageDir.wstring();
+  const auto dictDir = stageDir / "dictionary";
+  if (!::CreateDirectoryW(dictDir.c_str(), nullptr))
+    return core::failure<Output>(core::ErrorCode::IoError, "Cannot create private staged dictionary");
+
+  auto spec = source.spec();
+  std::size_t remaining = 256U * 1024U * 1024U;
+  const auto executable = copyVerifiedWindows(spec.executable, stageDir / "reader",
+      spec.executableSha256, 64U * 1024U * 1024U, remaining, stop);
+  if (!executable) return core::Result<Output>{executable.error()};
+  for (std::size_t i = 0; i < 4U; ++i) {
+    const auto copied = copyVerifiedWindows(spec.dictionaryDirectory / kJapaneseDictionaryFiles[i],
+        dictDir / kJapaneseDictionaryFiles[i], spec.dictionarySha256[i], 128U * 1024U * 1024U, remaining, stop);
+    if (!copied) return core::Result<Output>{copied.error()};
+  }
+  spec.executable = stageDir / "reader";
+  spec.dictionaryDirectory = dictDir;
+  auto verified = VerifiedJapaneseReadingResource::verify(std::move(spec), stop);
+  if (!verified) return core::Result<Output>{verified.error()};
+  if (verified.value().identity() != source.identity())
+    return core::failure<Output>(core::ErrorCode::Conflict, "Staged reading identity differs");
+  ::SetFileAttributesW(dictDir.c_str(), FILE_ATTRIBUTE_READONLY);
+  ::SetFileAttributesW(stageDir.c_str(), FILE_ATTRIBUTE_READONLY);
+  owner->verified.emplace(std::move(verified.value()));
+  return Output{std::move(owner)};
+#elif defined(__APPLE__) || defined(__linux__)
   std::error_code error; const auto canonical = std::filesystem::canonical(parent, error);
   if (error || !std::filesystem::is_directory(canonical, error) || error) return core::failure<Output>(core::ErrorCode::InvalidArgument, "Staging parent is unavailable");
   auto owner = std::make_shared<Owner>(); owner->directory = (canonical / "seam-reading-XXXXXX").string();

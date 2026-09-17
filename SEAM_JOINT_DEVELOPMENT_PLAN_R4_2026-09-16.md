@@ -522,17 +522,16 @@ production turnaround is separate work and must not inherit that approval.
 | U2.1 listening result | a Japanese-capable listener for triage; a musician for phrasing | owner + a recruited listener |
 | U2.2 repair | the observation above | follows from U2.1 |
 | U3.5 learned singer qualification | installed rights-cleared learned singer, compatible vocoder, held-out song and reviewed result | owner + external |
-| U4.2a Windows Japanese staging | a Windows implementation and qualification of private verified reading-resource staging | engineering + owner |
+| U4.2a Windows Japanese staging | landed: Win32 exclusive staging, streaming SHA-256 verification, and RAII cleanup | engineering |
 | U5.1 Windows host qualification | Windows x64 with installed REAPER/Bitwig and retained CLAP/VST3 evidence | owner |
 | U4.1 recorded source | an authorized recording with permissions | owner, external |
 | U4.2b language claims | native-speaker review per language | owner, external |
 | U4.3 style pair | two compatible aligned styles | follows from U4.1 |
 | M6 five independent creators | five participants meeting the canonical independence protocol | owner, external |
 
-U1.3a-c, D1, U1.5, 8.2, D2, 8.3, U2.1, U3.3, U3.4 and U3.5's bounded Windows process slice have landed.
-The next product claims are material, reviewer or installed-host gated as named in the table. Windows
-Japanese private staging remains genuine engineering work; a green process primitive must not be counted
-as an end-to-end reading workflow. D3 is retired (§1.1, §8.1).
+U1.3a-c, D1, U1.5, 8.2, D2, 8.3, U2.1, U3.3, U3.4, U3.5's bounded Windows process slice, and U4.2a's
+Windows private reading staging have landed.
+The next product claims are material, reviewer or installed-host gated as named in the table. D3 is retired (§1.1, §8.1).
 
 Two reorderings from the first draft of this section, both because an item was smaller than it looked.
 **U3.5's Windows helper-process port moved back into engineering and landed once hosted Windows CI was
@@ -557,7 +556,7 @@ One reviewable commit per unit, in this order, each with its own tests:
 11. `U3.4` revision-2 breathiness conditioning from labels through the production native worker.
 
 Landed after item 11: `U3.5`'s bounded Windows helper-process implementation and cross-platform
-warnings-as-errors closure (`e925ce38..c0210616`). Deferred as separate evidence work: installed
+warnings-as-errors closure (`e925ce38..c0210616`), followed by `U4.2a`'s Windows private reading staging. Deferred as separate evidence work: installed
 learned-singer qualification and `U5.1`'s REAPER/Bitwig host matrix.
 
 Update `docs/implementation/INTEGRATED_SINGER_EXECUTION.md` once per landed slice, insert-only at the

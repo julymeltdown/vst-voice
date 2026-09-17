@@ -8,7 +8,6 @@
 #include "seam/phonemizer/pronunciation_resolver.hpp"
 
 TEST_CASE("reading capture binds contextual words to notes and guards source generation and explicit hints") {
-#if defined(__APPLE__) || defined(__linux__)
   using namespace seam; using namespace seam::authoring;
   const auto root = test::support::temporaryDirectory("reading-capture");
   std::filesystem::create_directory(root / "dictionary");
@@ -64,11 +63,9 @@ TEST_CASE("reading capture binds contextual words to notes and guards source gen
   (*notes)[1].startTick = time::Tick{1080}; (*notes)[2].startTick = time::Tick{2160};
   const auto rests = JapaneseReadingCapture::prepare(session, region, ids, staged.value()); CHECK(rests);
   CHECK(rests.value().source() == "学 学 へ");
-#endif
 }
 
 TEST_CASE("validated single-note reading Apply persists phones and identity with exact undo and reload") {
-#if defined(__APPLE__) || defined(__linux__)
   using namespace seam; using namespace seam::authoring;
   const auto root = test::support::temporaryDirectory("reading-apply"); auto staged = [&]() -> core::Result<StagedJapaneseReadingResource> {
     std::filesystem::create_directory(root / "dictionary");
@@ -92,5 +89,4 @@ TEST_CASE("validated single-note reading Apply persists phones and identity with
   CHECK(phones.value().pronunciation.tokens[0].symbol == "k"); CHECK(phones.value().pronunciation.tokens[2].symbol == "N"); CHECK(session.project().findRegion(region)->findLyric(lyric.id)->surface == U"漢");
   CHECK(formats::ProjectJsonCodec{}.save(session.project(), root / "applied.seam")); const auto reloaded = formats::ProjectJsonCodec{}.load(root / "applied.seam"); CHECK(reloaded); CHECK(reloaded.value() == session.project());
   CHECK(session.undo()); CHECK(session.project() == project); CHECK(session.redo()); CHECK(session.project().findRegion(region)->findNote(noteId)->phoneticHint == "k a N");
-#endif
 }

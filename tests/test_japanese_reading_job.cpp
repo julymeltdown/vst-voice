@@ -47,7 +47,6 @@ seam::core::Result<seam::authoring::StagedJapaneseReadingResource> resource(cons
 }
 
 TEST_CASE("Japanese reading job runs staged helper off-thread and adopts only current result") {
-#if defined(__APPLE__) || defined(__linux__)
   using namespace seam; Fixture f; application::EditorSession session{f.project}; const auto root = test::support::temporaryDirectory("reading-job");
   auto staged = resource(root); CHECK(staged); const auto identity = staged.value().resource().identity();
   authoring::JapaneseReadingJob job; CHECK(job.start(session, f.region, f.notes, std::move(staged.value()))); CHECK(job.state() == authoring::JapaneseReadingJob::State::Preparing); CHECK(job.requestId() == 1U);
@@ -67,11 +66,9 @@ TEST_CASE("Japanese reading job runs staged helper off-thread and adopts only cu
     CHECK(!waitForReadingJob([&] { return job.poll(session, f.region, identity); }));
   }
   CHECK(job.state() == authoring::JapaneseReadingJob::State::Failed); CHECK(job.current(session, f.region, identity) == nullptr);
-#endif
 }
 
 TEST_CASE("Japanese reading job rejects concurrent starts and preserves terminal failure details") {
-#if defined(__APPLE__) || defined(__linux__)
   using namespace seam; Fixture f; application::EditorSession session{f.project}; const auto root = test::support::temporaryDirectory("reading-job-failure");
   auto staged = resource(root); CHECK(staged); const auto identity = staged.value().resource().identity();
   authoring::JapaneseReadingJob job; CHECK(job.start(session, f.region, f.notes, std::move(staged.value())));
@@ -84,11 +81,12 @@ TEST_CASE("Japanese reading job rejects concurrent starts and preserves terminal
   const auto missingPath = missing.value().resource().spec().executable;
   std::filesystem::permissions(missingPath.parent_path(), std::filesystem::perms::owner_write,
       std::filesystem::perm_options::add);
+  std::filesystem::permissions(missingPath, std::filesystem::perms::owner_write,
+      std::filesystem::perm_options::add);
   CHECK(std::filesystem::remove(missingPath));
   CHECK(job.start(session, f.region, f.notes, std::move(missing.value())));
   CHECK(!waitForReadingJob([&] { return job.poll(session, f.region, identity); }));
   CHECK(job.state() == authoring::JapaneseReadingJob::State::Failed); CHECK(!job.error().empty());
   CHECK(job.poll(session, f.region, identity)); CHECK(job.state() == authoring::JapaneseReadingJob::State::Failed);
   CHECK(!job.current(session, f.region, identity));
-#endif
 }

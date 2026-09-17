@@ -1,6 +1,6 @@
 # U26 helper process lifecycle primitive
 
-## September 17 continuation: Windows process primitive landed; reading staging remains open
+## September 17 continuation: Windows process primitive and private staging landed
 
 `runBoundedHelperProcess` now has a native Windows implementation. It launches an explicit absolute
 executable with `CreateProcessW`, inherits only the three selected standard-I/O handles, supplies an empty
@@ -10,16 +10,17 @@ Windows CI slice builds the helper and its neural/Japanese callers, runs the hel
 fixtures, and retains a source-contract check. Strict UTF conversion and secure wide-path reading remove
 the previous MSVC-only build failures.
 
-This closes the generic Windows process-backend gap. It does **not** qualify the complete Japanese reading
-workflow on Windows. `StagedJapaneseReadingResource` still uses POSIX descriptor-relative staging and its
-resource/capture/job tests are gated to Apple/Linux. No shipped Open JTalk resource, signed Windows resource
-manifest, private Windows staging implementation, native-language review or installed-host evidence is
-claimed. The historical checkpoints below remain accurate for the code state at which each was recorded;
-their statements that the Windows backend was then missing are superseded only by this continuation.
+In U4.2a, `StagedJapaneseReadingResource` now has a native Windows implementation using exclusive
+handle-based copying (`CreateFileW` with `CREATE_NEW`), streaming SHA-256 verification, size enforcement,
+read-only permission sealing, and RAII directory cleanup. The Japanese reading resource, capture, and
+job suites are no longer gated to Apple/Linux and run on Windows.
+No shipped Open JTalk resource, signed Windows resource manifest, native-language review or installed-host
+evidence is claimed. The historical checkpoints below remain accurate for the code state at which each was
+recorded; their statements that the Windows backend was then missing are superseded only by this continuation.
 
-Status: the generic bounded process primitive is implemented on macOS, Linux and Windows; fixture-backed
-native reading review is locally tested on macOS. Shipping resource trust, private Windows reading staging,
-installed-host qualification and U26 acceptance remain open; this is not a sandbox.
+Status: the generic bounded process primitive and private reading staging are implemented on macOS, Linux
+and Windows; fixture-backed native reading review is verified on macOS. Shipping resource trust, native-language
+review, installed-host qualification and U26 acceptance remain open; this is not a sandbox.
 
 ## Current continuation: native review, resource ceilings and cancellation retirement
 
