@@ -499,6 +499,7 @@ TEST_CASE("authoring_render_coordinator_orders_same_revision_publications") {
     const auto progress = coordinator.progress();
     std::lock_guard lock(gateMutex);
     if (publicationCalls >= 2U && progress.state == seam::authoring::RenderState::Ready &&
+        progress.publishedQuality == seam::rendering::RenderQuality::Final &&
         coordinator.stats().completed >= 1U) {
       break;
     }
