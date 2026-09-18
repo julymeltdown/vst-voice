@@ -56,6 +56,8 @@ struct UstxMeter final {
 };
 
 struct UstxPitchPoint final {
+  // Signed milliseconds relative to note onset; negative values are normal
+  // OpenUtau pickup/portamento points, not negative project positions.
   double offsetMilliseconds{0.0};
   double y{0.0};
   std::string shape{"l"};

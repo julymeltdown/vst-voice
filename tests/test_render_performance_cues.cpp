@@ -19,6 +19,7 @@
 #include "seam/rendering/render_snapshot.hpp"
 #include "seam/synthesis/performance_compiler.hpp"
 #include "seam/voice_design/recipe_resource.hpp"
+#include "seam/voicebank/wav.hpp"
 
 #include <algorithm>
 #include <array>
@@ -151,6 +152,33 @@ TEST_CASE("A region's pronunciation identity is framed, not concatenated") {
   CHECK(first != second);
   CHECK(rendering::renderedPronunciationIdentity(split) == first);
   CHECK(rendering::renderedPronunciationIdentity({}).empty());
+}
+
+TEST_CASE("Sample performance identity uses the prepared sole style on cold and cached renders") {
+  auto sung = makeSungProject();
+  CHECK(sung.project.findVocalTrack(sung.track)->styleSelection.styleId.empty());
+  const auto root = test::support::temporaryDirectory("performance-sole-style");
+  const auto wave = test::support::sineWave(48000U, 440.0, 0.5);
+  CHECK(voicebank::writeMonoPcm16Wav(root / "unit.wav", 48000U, wave));
+  const auto manifest = test::support::makeManifest({
+      test::support::makeUnit("a", {"a"}, "unit.wav"),
+      test::support::makeUnit("ka", {"k", "a"}, "unit.wav")});
+  const std::array sources{rendering::TrackVoicebankSource{
+      sung.track, manifest, root, std::string(64U, 'a'), voicebank::VoicebankTrust::DevelopmentFixture}};
+  rendering::PcmCache cache{root / "cache"};
+  for (const bool cached : {false, true}) {
+    const auto rendered = rendering::ProductionProjectRenderer{}.render(
+        sung.project, sources, sung.track, sung.region, 1U, 48000U,
+        rendering::RenderQuality::Final, {}, &cache);
+    CHECK(rendered);
+    CHECK(!rendered.value().interleaved.empty());
+    CHECK(!rendered.value().performanceCues.empty());
+    CHECK(rendered.value().performanceIdentity.has_value());
+    CHECK(rendered.value().performanceIdentity->complete());
+    CHECK(rendered.value().performanceIdentity->style == "original");
+    CHECK((rendered.value().cacheHits > 0U) == cached);
+    CHECK(sung.project.findVocalTrack(sung.track)->styleSelection.styleId.empty());
+  }
 }
 
 TEST_CASE("The product's own symbols decide the shape the dock may draw") {

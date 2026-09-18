@@ -12,6 +12,38 @@ This ledger records implementation evidence for [the approved plan](../plans/202
 
 ## Active implementation
 
+2026-09-19 — Three-agent production-path repair and real audio evaluation, integrated
+against `7839c72f`. English pronunciation hints now accept the already-supported
+`ao` inventory with stress variants; Japanese/English/Korean regressions use pinned
+OpenUtau examples with explicit inventory mapping and MIT attribution. USTX import
+and export now use cents and cycle percentages for vibrato, retain signed pitch
+pickups in rests, and report unsupported nonlinear/cross-note behavior instead of
+claiming fidelity. CLAP character artwork follows published rendered cues and host
+transport; integration also repaired missing performance identity when the renderer
+selects an implicit sole bank style. A mouth-pointer mutation fails the exact pixel
+regression, and restoring the implementation passes.
+
+The former ASR routine never read audio and hard-coded successful negative controls.
+Replaced it with optional local faster-whisper inference, checked WAV/model identities,
+executed signal controls, unprompted transcripts, and optional post-inference text
+comparison. Actual inference on the unchanged 66-WAV retained packet produced 31
+empty transcripts and zero exact normalized lyric matches for its six complete-song
+outputs; all three negative controls produced no text. The same backend recognized
+an independent local Japanese speech control with normalized CER 0.0. These are
+diagnostics, not calibrated singing-quality or release evidence; historical schema-1
+reports remain retained but invalid as recognition evidence.
+
+Full Release build passes. First complete CTest run: 171/172 in 127.94 seconds, with
+an unchanged native ONNX owned-bytes test timing out at 20.02 seconds. That test then
+passed five consecutive isolated runs; a second complete run on unchanged source
+passes 172/172 in 91.01 seconds. No test or timeout was weakened; the first timeout's
+cause remains unestablished. Source closure and diff checks pass. The parked
+coordinator race was not changed. The second-developer task reviewed the corrected
+English report and work sequencing read-only; it did not independently rerun these
+experiments. See `SEAM_AUTOMATED_VERIFICATION_AND_ACCELERATION_2026-09-19.md` for
+artifact hashes, findings, four concrete next batches, and automation boundaries.
+No roadmap percentage or Beta GO acceptance is increased by this maintenance batch.
+
 Render-throughput root cause of the only red CI job: the Ubuntu `native-platform-matrix` job was failing `seam_original_singer_song_journey_tests` on its 180s CTest timeout. Three logs from that same job show it is throughput, not a stall: run `35375628884` timed out at 180.06s, while run `35362687374` passed in 135.31s and run `35321985263` passed in 156.83s. A `sample(1)` profile of the Debug binary attributes ~98% of worker time to `ArticulatedStream::renderOwned` -> `PhonationSource::render` -> `CompiledScorePerformance::at/evaluate` and `applyCompiledPerformanceGain`, all of which run once per output frame. Two behaviour-preserving repairs landed in `3276b7df`: `CompiledScorePerformance::hasManualPerformance_` lets `evaluate()` skip the 12 accepted-channel and 24 ownership bucket searches when the region carries no manual performance record, and `PhonationSource` substitutes the exact constant taper window `2.0` for `cos(pi * 0.0)`, which is bit-identical because `0.5 * (1.0 + cos(0.0))` is exactly `1.0` with both operands exact powers of two. `tests/test_framework.hpp` now prints and flushes a `[START]` line and an elapsed `[PASS]` line per case, so a CTest timeout names its slow case instead of leaving no evidence. Measured on Debug with all four cases passing: 94.71s -> 62.37s. The full local Release suite passes 172/172 under `-j8` in 117.70s with the song journey at 13.27s. No test was weakened or removed; `SOURCE_CLOSURE=PASS`. Independent review by the second-developer session confirmed both changes as bit-exact and safe against the only construction path.
 
 2026-09-12 — Direct inspection of the planned DiffSinger backend identified the

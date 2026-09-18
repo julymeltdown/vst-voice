@@ -71,6 +71,12 @@ Projects listed under `plannedOrReferenceOnly` in
 are not included in the build or archive as dependencies. This includes iPlug2,
 Skia, OpenUtau, and vLabeler.
 
+Selected pronunciation test inputs and format semantics are cross-checked against
+OpenUtau revision `83e02c7e4a4d9ea5fca72806b2aa27c5382be015`. The exact sources,
+mapping boundaries, and MIT license are recorded in
+`libs/seam-phonemizer/OPENUTAU_REFERENCE_NOTICE.md`. No OpenUtau runtime,
+dictionary, voicebank, or singing audio is shipped by these tests.
+
 ## Development tools
 
 CMake, compilers, Python, Ninja, Git, Xvfb, GitHub Actions runners, and optional

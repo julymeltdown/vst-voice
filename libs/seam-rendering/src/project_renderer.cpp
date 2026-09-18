@@ -281,7 +281,7 @@ core::Result<ProjectRenderResult> ProductionProjectRenderer::renderWithSources(
             sample.manifest.id,
             sample.manifest.version,
             sample.contentHash,
-            track.styleSelection.styleId,
+            rendered.value().resolvedStyle,
             renderedPronunciationIdentity(rendered.value().phrasePronunciationDigests),
             revision,
             sampleRate};

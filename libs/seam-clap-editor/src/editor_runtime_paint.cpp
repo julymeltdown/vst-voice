@@ -3,6 +3,7 @@
 
 #include "seam/application/render_commands.hpp"
 #include "seam/application/lyric_commands.hpp"
+#include "seam/native_ui/character_performance_binding.hpp"
 #include "seam/phonemizer/japanese_phonemizer.hpp"
 #include "seam/rendering/region_renderer.hpp"
 #include "seam/synthesis/timing_solver.hpp"
@@ -11,6 +12,7 @@
 #include <algorithm>
 #include <cmath>
 #include <filesystem>
+#include <limits>
 #include <memory>
 #include <utility>
 
@@ -198,9 +200,61 @@ void EditorRuntime::paintPhase12BOverlay(
                   layout.runtimeOverlayHostFontSize);
 }
 
-native_ui::EditorSceneState EditorRuntime::sceneState() const {
+native_ui::EditorSceneState EditorRuntime::sceneState() {
+  // Follow the same published phrase as the preview. The publication handle avoids copying the
+  // cue list on every repaint; its request id changes even for a same-revision rerender.
+  const auto published = authoring_->renderer().acquire();
+  const auto preview = acquireRenderedPreview();
+  const auto ready = published && published->state == authoring::RenderState::Ready &&
+      preview && preview->status == PreviewStatus::Ready &&
+      published->result.interleaved.storageIdentity() == preview->interleaved.storageIdentity();
+  if (!ready) {
+    characterPerformanceRequest_.reset();
+    character_.clearPerformanceSnapshot();
+  } else if (characterPerformanceRequest_ != published->requestId) {
+    characterPerformanceRequest_ = published->requestId;
+    character_.clearPerformanceSnapshot();
+    const auto& result = published->result;
+    if (result.performanceIdentity.has_value() && !result.performanceCues.empty()) {
+      const auto& identity = *result.performanceIdentity;
+      native_ui::CharacterPerformanceBindingRequest request;
+      request.resourceId = identity.resourceId;
+      request.resourceVersion = identity.resourceVersion;
+      request.resourceContentHash = identity.resourceContentHash;
+      request.style = identity.style;
+      request.pronunciationIdentity = identity.pronunciationIdentity;
+      request.renderRevision = identity.renderRevision;
+      request.sampleRate = identity.sampleRate;
+      request.channelCount = result.channelCount;
+      request.interleaved = {result.interleaved.data(), result.interleaved.size()};
+      request.cues = result.performanceCues;
+      if (auto built = native_ui::buildPublishedCharacterPerformance(request); built) {
+        static_cast<void>(character_.followSinger(character::performanceBindingKey(built.value())));
+        static_cast<void>(character_.setPerformanceSnapshot(std::move(built).value()));
+      }
+    }
+  }
+  controller_->clearCharacterPerformance();
+  if (const auto* performance = character_.performanceSnapshot(); performance != nullptr) {
+    const auto mapped = HostTimelineMapper::map(
+        hostTimelineState_, session_.project(), static_cast<double>(performance->sampleRate));
+    character::CharacterPerformanceFrame frame;
+    if (mapped.audible && mapped.sourceFrame <=
+            static_cast<std::uint64_t>(std::numeric_limits<time::SampleFrame>::max())) {
+      frame = character_.performanceFrameAt(static_cast<time::SampleFrame>(mapped.sourceFrame));
+    }
+    controller_->setCharacterPerformance({
+        .mouth = frame.mouth,
+        .energy = frame.energy,
+        .expression = frame.expression,
+        .performing = frame.performing,
+        .audibleStale = authoring_->renderer().progress().audibleAudioStale,
+    });
+  }
   auto state = controller_->sceneState();
   state.characterMode = session_.project().settings().characterDisplay;
+  if (state.characterPerformance.has_value())
+    state.characterMouth = character_.mouth(state.characterPerformance->mouth);
   state.characterPortrait = character_.portrait(state.characterState);
   // The same predicate the standalone surface uses, so a package reserves the dock in both or in
   // neither. The portrait above is what the dock draws for the current render status; this is whether

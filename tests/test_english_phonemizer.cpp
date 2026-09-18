@@ -52,6 +52,91 @@ TEST_CASE("English phonemizer keeps stressed dictionary output and explicit hint
   CHECK(!phonemizer::parseEnglishPhoneHint("not-a-phone"));
 }
 
+TEST_CASE("OpenUtau English hint examples preserve exact phones roles and source identity") {
+  using namespace seam;
+  // OpenUtau.Test/Plugins/EnArpaTest.cs HintTest and EnArpaPlusTest.cs
+  // SyllableCCVTest, OpenUtau commit 83e02c7e4a4d9ea5fca72806b2aa27c5382be015
+  // (MIT; see libs/seam-phonemizer/OPENUTAU_REFERENCE_NOTICE.md).
+  // These are explicit phone hints, not bank aliases: r/iy/d and m/ao/r
+  // have the same symbols in SEAM. Oto suffixes, color, and release aliases
+  // are intentionally outside this comparison. No dictionary reading is imported.
+  struct Example final {
+    const char32_t* lyric;
+    const char* hint;
+    std::vector<std::string> phones;
+  };
+  const Example examples[]{
+      {U"read", "r iy d", {"r", "iy", "d"}},
+      {U"asdfjkl", "r iy d", {"r", "iy", "d"}},
+      {U"", "r iy d", {"r", "iy", "d"}},
+      {U"more", "m ao r", {"m", "ao", "r"}}};
+  const std::vector<domain::PhonemeRole> expectedRoles{
+      domain::PhonemeRole::Onset, domain::PhonemeRole::Nucleus, domain::PhonemeRole::Coda};
+  for (const auto& example : examples) {
+    Fixture fixture; fixture.add(0, example.lyric);
+    auto* region = fixture.project.findRegion(fixture.region);
+    region->notes.front().phoneticHint = example.hint;
+    const auto original = *region;
+    const auto parsed = phonemizer::parseEnglishPhoneHint(example.hint);
+    CHECK(parsed); CHECK(parsed.value() == example.phones);
+    const auto resolved = phonemizer::resolveEnglishPronunciation(*region); CHECK(resolved);
+    CHECK(resolved.value().pronunciation.warnings.empty());
+    CHECK(*region == original);
+    const auto& tokens = resolved.value().pronunciation.tokens;
+    CHECK(tokens.size() == example.phones.size());
+    for (std::size_t index = 0U; index < tokens.size(); ++index) {
+      CHECK(tokens[index].symbol == example.phones[index]);
+      CHECK(tokens[index].role == expectedRoles[index]);
+      CHECK(tokens[index].key.noteId == fixture.notes.front());
+      CHECK(tokens[index].key.ordinal == index);
+      CHECK(tokens[index].lyricOwner == region->notes.front().lyricTokenId);
+      CHECK(tokens[index].contextId.size() == 64U);
+    }
+  }
+}
+
+TEST_CASE("English ao hints retain stress and edits cannot cross a changed vowel context") {
+  using namespace seam;
+  Fixture fixture; fixture.add(0, U"more"); fixture.add(960, U"-");
+  auto* region = fixture.project.findRegion(fixture.region);
+  const auto estimated = phonemizer::resolveEnglishPronunciation(*region); CHECK(estimated);
+  CHECK(estimated.value().pronunciation.warnings.size() == 2U);
+  for (const auto& warning : estimated.value().pronunciation.warnings)
+    CHECK(warning.code == phonemizer::WarningCode::EstimatedPronunciation);
+
+  for (const auto* vowel : {"ao", "ao0", "ao1", "ao2"}) {
+    region->notes.front().phoneticHint = std::string{"m "} + vowel + " r";
+    const auto resolved = phonemizer::resolveEnglishPronunciation(*region); CHECK(resolved);
+    CHECK(resolved.value().pronunciation.warnings.empty());
+    CHECK(resolved.value().pronunciation.tokens[1].symbol == vowel);
+    CHECK(resolved.value().pronunciation.tokens[1].role == domain::PhonemeRole::Nucleus);
+    CHECK(resolved.value().pronunciation.tokens[1].voiced);
+    const auto continued = resolved.value().pronunciation.tokensForNote(fixture.notes.back());
+    CHECK(continued.size() == 1U); CHECK(continued.front().symbol == vowel);
+    CHECK(continued.front().lyricOwner == region->notes.back().lyricTokenId);
+    CHECK(resolved.value().identity != estimated.value().identity);
+  }
+  region->notes.front().phoneticHint = "m ao1 r";
+  const auto base = phonemizer::resolveEnglishPronunciation(*region); CHECK(base);
+  const auto key = base.value().pronunciation.tokens[1].key;
+  const auto context = phonemizer::phonemeEditContextId(base.value(), key); CHECK(context);
+  region->phonemeOverrides = {{.key = key, .symbol = "ow1", .locked = true, .sourceContextId = context}};
+  const auto edited = phonemizer::resolveEnglishPronunciation(*region); CHECK(edited);
+  CHECK(edited.value().pronunciation.tokens[1].symbol == "ow1");
+  CHECK(edited.value().pronunciation.tokens[1].locked);
+  region->notes.front().phoneticHint = "m ao2 r";
+  const auto stale = phonemizer::resolveEnglishPronunciation(*region); CHECK(stale);
+  CHECK(stale.value().pronunciation.tokens[1].symbol == "ao2");
+  CHECK(!stale.value().pronunciation.tokens[1].locked);
+  CHECK(stale.value().pronunciation.warnings.size() == 1U);
+  CHECK(stale.value().pronunciation.warnings.front().code == phonemizer::WarningCode::OrphanOverride);
+  CHECK(region->phonemeOverrides.front().sourceContextId == context);
+  region->phonemeOverrides.clear(); region->notes.front().phoneticHint.reset();
+  const auto restored = phonemizer::resolveEnglishPronunciation(*region); CHECK(restored);
+  CHECK(restored.value().identity == estimated.value().identity);
+  CHECK(!phonemizer::parseEnglishPhoneHint("ao3"));
+}
+
 TEST_CASE("English resolver binds tokens to source identity and rejects unknown words without fallback") {
   using namespace seam;
   Fixture fixture;

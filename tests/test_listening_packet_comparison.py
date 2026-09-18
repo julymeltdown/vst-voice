@@ -5,10 +5,13 @@ regenerating the reference in place, and treating a difference as a request for 
 cannot say a voice got worse, so these cases check that the tool never tries to.
 '''
 import hashlib
+import contextlib
+import io
 import json
 import subprocess
 import sys
 import unittest
+from unittest import mock
 from pathlib import Path
 import tempfile
 
@@ -221,28 +224,15 @@ class ListeningPacketComparison(unittest.TestCase):
             self.assertEqual(promoted_content['reason'], 'Auditioned vowel balance upgrade')
             self.assertEqual(promoted_content['verdict'], 'UNRANKED')
 
-    def test_asr_triage_runner_pins_model_decoding_and_strictly_labels_triage(self):
+    def test_asr_triage_refuses_metadata_only_confidence_without_a_real_model(self):
         sample_manifest = manifest('p1', 'c1', [
             output('song/baseline/master.wav', 'a' * 64, peak=0.08, rms=0.02, clippedSamples=0, durationSeconds=2.0),
             output('song/baseline/silent.wav', 'b' * 64, peak=0.0, rms=0.00001, clippedSamples=0, durationSeconds=2.0),
         ])
-        triage_report = run_asr_triage(sample_manifest)
-        self.assertEqual(triage_report['formatId'], 'com.project-seam.listening-asr-triage')
-        self.assertEqual(triage_report['label'], 'triage')
-        self.assertEqual(triage_report['verdict'], 'triage')
-        self.assertNotIn('pass', triage_report['verdict'].lower())
-        self.assertEqual(triage_report['model'], DEFAULT_ASR_MODEL)
-        self.assertEqual(triage_report['decodingSettings']['language'], 'ja')
-        self.assertEqual(triage_report['decodingSettings']['beamSize'], 5)
-        self.assertEqual(len(triage_report['negativeControls']), 3)
-        for ctrl in triage_report['negativeControls']:
-            self.assertEqual(ctrl['status'], 'PINNED_HELD')
-            self.assertFalse(ctrl['detected'])
-        # The second output was near-silent, so it should be flagged for investigation
-        self.assertEqual(triage_report['summary']['flaggedItems'], 1)
-        self.assertEqual(triage_report['summary']['readyForListening'], 1)
+        with self.assertRaisesRegex(ValueError, '--asr-model is required'):
+            run_asr_triage(sample_manifest)
 
-    def test_asr_triage_cli_strictly_outputs_label_triage_never_pass(self):
+    def test_asr_triage_cli_emits_no_evidence_when_no_model_is_configured(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             packet_path = root / 'packet.json'
@@ -254,15 +244,29 @@ class ListeningPacketComparison(unittest.TestCase):
                 [sys.executable, str(REPO / 'scripts' / 'compare_listening_packets.py'),
                  str(packet_path), '--asr-triage', '--report', str(report_path)],
                 capture_output=True, text=True)
-            self.assertEqual(completed.returncode, 0, completed.stderr)
-            self.assertIn('ASR_TRIAGE=TRIAGE', completed.stdout)
+            self.assertEqual(completed.returncode, 2, completed.stderr)
+            self.assertIn('ASR_TRIAGE=NOT_RUN', completed.stdout)
             self.assertNotIn('ASR_TRIAGE=PASS', completed.stdout)
-            self.assertTrue(report_path.exists())
-            rep = json.loads(report_path.read_text())
-            self.assertIn('asrTriage', rep)
-            self.assertEqual(rep['asrTriage']['label'], 'triage')
-            self.assertEqual(rep['asrTriage']['verdict'], 'triage')
-            self.assertNotIn('pass', rep['asrTriage']['verdict'].lower())
+            self.assertFalse(report_path.exists())
+
+    def test_control_breach_is_retained_and_cannot_be_accepted_with_allow_changes(self):
+        from scripts import compare_listening_packets as cli
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            packet = root / 'packet.json'
+            report = root / 'report.json'
+            packet.write_text(json.dumps(manifest('p', 'c', [])))
+            # Explicit CLI orchestration double; real control execution is tested separately.
+            breach = {'model': {'backend': 'TEST_DOUBLE'}, 'label': 'triage',
+                      'verdict': 'triage_control_breach',
+                      'summary': {'totalItems': 1, 'flaggedItems': 0, 'controlsBreached': True}}
+            with mock.patch.object(sys, 'argv', [str(cli.__file__), str(packet), '--asr-triage',
+                                               '--report', str(report), '--allow-changes']), \
+                 mock.patch.object(cli, 'run_asr_triage', return_value=breach), \
+                 contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(cli.main(), 3)
+            self.assertEqual(json.loads(report.read_text())['asrTriage']['verdict'],
+                             'triage_control_breach')
 
     def test_cli_help_documents_reference_set_and_promotion_and_asr_triage(self):
         completed = subprocess.run(

@@ -1,5 +1,8 @@
 #include "seam/clap_editor/editor_runtime.hpp"
+#include "seam/core/file_io.hpp"
+#include "seam/formats/json_value.hpp"
 #include "seam/native_ui/editor_frame_layout.hpp"
+#include "test_support.hpp"
 
 #include <atomic>
 #include <algorithm>
@@ -36,6 +39,108 @@ bool awaitRender(seam::clap_editor::EditorRuntime& runtime, Trigger trigger,
   lock.unlock();
   runtime.setRenderReadyCallback({});
   return completed;
+}
+
+// A real published phrase must reach the plug-in's drawing surface. Only the card's character
+// association is supplied by this fixture: the public-domain demo bank ships without an avatar.
+bool verifyCharacterDock(seam::clap_editor::EditorRuntime& runtime,
+                         const std::filesystem::path& packageRoot) {
+  using namespace seam;
+  native_ui::CharacterPresentation artwork;
+  if (!artwork.load(packageRoot)) return false;
+  const auto& manifest = artwork.package()->manifest;
+  auto cards = runtime.controller().sceneState().voicebankCards;
+  const auto project = runtime.projectCopy();
+  const auto& bank = project.vocalTracks().front().voicebank;
+  for (auto& card : cards) {
+    if (card.id == bank.id && card.version == bank.version && card.contentHash == bank.contentHash) {
+      card.characterId = manifest.characterId;
+      card.characterVersion = manifest.version;
+    }
+  }
+  runtime.controller().setVoicebankCards(std::move(cards));
+  runtime.controller().setCharacterBinding({
+      .id = manifest.characterId, .version = manifest.version, .voicebankId = bank.id,
+      .hasPerformance = artwork.hasPerformanceAssets()});
+  if (runtime.controller().voicebankBrowserVisible())
+    runtime.keyDown({.key = native_ui::NativeKey::V});
+  runtime.resize(1100.0, 720.0);
+  const native_ui::EditorSceneLayout layout;
+  const native_ui::EditorScenePainter painter;
+  const auto dockLeft = 1100.0 - layout.characterDockWidth;
+  const auto check = [&](clap_editor::HostTimelineState host,
+                          character::MouthShape mouth, bool performing) {
+    runtime.setHostTimelineState(host);
+    native_ui::PixelSurface actual{1100U, 720U};
+    native_ui::RasterCanvas canvas{actual};
+    runtime.paint(canvas);
+    const auto state = runtime.controller().sceneState();
+    if (!state.voiceIdentity.characterActive || !state.characterPerformance.has_value() ||
+        state.characterPerformance->mouth != mouth ||
+        state.characterPerformance->performing != performing) {
+      std::cerr << "CLAP character performance mismatch at " << host.seconds << " seconds"
+                << " active=" << state.voiceIdentity.characterActive
+                << " snapshot=" << state.characterPerformance.has_value();
+      if (state.characterPerformance.has_value())
+        std::cerr << " mouth=" << character::mouthShapeName(state.characterPerformance->mouth)
+                  << " performing=" << state.characterPerformance->performing;
+      std::cerr << " expected=" << character::mouthShapeName(mouth) << '/' << performing << '\n';
+      return false;
+    }
+    const auto& performance = *state.characterPerformance;
+    const auto overlay = layout.diagnosticHeight(!state.diagnostics.empty()) +
+                         layout.exportHeight(state.exportProgress.totalFiles != 0U);
+    const auto portrait = layout.characterDockPortraitBounds(
+        dockLeft, 720.0 - layout.statusHeight - overlay, 1100.0);
+    const auto top = layout.characterDockMetadataTop(portrait) +
+        layout.characterDockNameToRoleAdvance + layout.characterDockRoleToStateAdvance +
+        layout.characterDockStateToModeAdvance + layout.characterDockPerformanceAdvance;
+    const ui::Rect mouthBounds{
+        dockLeft + layout.characterDockTextInsetX + layout.characterDockPerformanceBarWidth,
+        top - layout.characterDockMouthAssetHeight,
+        layout.characterDockMouthAssetWidth, layout.characterDockMouthAssetHeight};
+    native_ui::PixelSurface expected{1100U, 720U};
+    native_ui::RasterCanvas expectedCanvas{expected};
+    expected.clear(painter.theme().characterBackground);
+    if (!performance.reducedMotion) {
+      if (const auto* asset = artwork.mouth(mouth); asset != nullptr) {
+        expectedCanvas.drawImageNearest(mouthBounds, *asset, layout.characterDockPortraitScale);
+      } else {
+        const auto height = layout.characterDockPerformanceGlyphHeight *
+                            (0.2 + 0.8 * performance.energy);
+        expectedCanvas.fillRect({mouthBounds.x, top - height,
+                                  layout.characterDockPerformanceGlyphWidth, height},
+            performing ? painter.theme().accent : painter.theme().gridStrong);
+      }
+    }
+    for (auto y = static_cast<std::uint32_t>(mouthBounds.y);
+         y < static_cast<std::uint32_t>(mouthBounds.bottom()); ++y) {
+      for (auto x = static_cast<std::uint32_t>(mouthBounds.x);
+           x < static_cast<std::uint32_t>(mouthBounds.right()); ++x) {
+        if (actual.pixels()[y * 1100U + x] != expected.pixels()[y * 1100U + x]) {
+          std::cerr << "CLAP mouth artwork/fallback pixel mismatch at " << x << ',' << y << '\n';
+          return false;
+        }
+      }
+    }
+    return true;
+  };
+  const auto firstVowel = project.tempoMap().secondsAt(time::Tick{500});
+  const auto secondVowel = project.tempoMap().secondsAt(time::Tick{1000});
+  if (!check({.playing = true, .hasSeconds = true, .seconds = firstVowel},
+             character::MouthShape::Round, true) ||
+      !check({.playing = true, .hasSeconds = true, .seconds = secondVowel},
+             character::MouthShape::Wide, true) ||
+      !check({.playing = false, .hasSeconds = true, .seconds = secondVowel},
+             character::MouthShape::Closed, false) ||
+      !check({.playing = true, .hasSeconds = true, .seconds = firstVowel + 1.0,
+              .loopActive = true, .loopHasSeconds = true,
+              .loopStartSeconds = 0.0, .loopEndSeconds = 1.0},
+             character::MouthShape::Round, true) ||
+      !check({.playing = true, .hasSeconds = true, .seconds = 20.0},
+             character::MouthShape::Closed, false)) return false;
+  runtime.setHostTimelineState({});
+  return true;
 }
 
 int main() {
@@ -126,6 +231,36 @@ int main() {
     energy += std::abs(static_cast<double>(sample));
   }
   if (energy <= 1.0) return 5;
+
+  auto dockProject = runtime.projectCopy();
+  dockProject.settings().characterDisplay = seam::domain::CharacterDisplayMode::Full;
+  {
+    seam::clap_editor::EditorRuntime performanceRuntime{dockProject, "assets/character-01", roots};
+    if (!awaitRender(performanceRuntime, [&] { performanceRuntime.requestRender(48000U); }, [&] {
+          return performanceRuntime.renderedPreview()->status == seam::clap_editor::PreviewStatus::Ready;
+        }) || !verifyCharacterDock(performanceRuntime, "assets/character-01")) return 47;
+  }
+  // Legacy status-only packages still draw their fallback glyph, without borrowing a mouth from
+  // another package. The source package is copied into a process-private temporary directory.
+  const auto statusRoot = seam::test::support::temporaryDirectory("clap-status-character");
+  std::filesystem::copy("assets/character-01/runtime", statusRoot / "runtime",
+                        std::filesystem::copy_options::recursive);
+  const auto manifestText = seam::core::readTextFileLimited("assets/character-01/manifest.json", 65536U);
+  if (!manifestText) return 48;
+  auto statusManifest = seam::formats::parseJson(manifestText.value());
+  if (!statusManifest) return 48;
+  statusManifest.value().asObject().erase("mouths");
+  statusManifest.value().asObject().erase("developmentOnly");
+  statusManifest.value().asObject()["schemaVersion"] = seam::formats::JsonValue{std::int64_t{1}};
+  if (!seam::core::durableAtomicWriteText(statusRoot / "manifest.json",
+          seam::formats::stringifyJson(statusManifest.value()))) return 48;
+  {
+    seam::clap_editor::EditorRuntime statusRuntime{dockProject, statusRoot, roots};
+    if (!awaitRender(statusRuntime, [&] { statusRuntime.requestRender(48000U); }, [&] {
+          return statusRuntime.renderedPreview()->status == seam::clap_editor::PreviewStatus::Ready;
+        }) || !verifyCharacterDock(statusRuntime, statusRoot)) return 49;
+  }
+  std::filesystem::remove_all(statusRoot);
 
   runtime.resize(480.0, 320.0);
   const seam::native_ui::EditorSceneLayout compactLayout;

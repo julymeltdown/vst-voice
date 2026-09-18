@@ -14,9 +14,9 @@ Use --promote-reference DEST with required --reason REASON to write a new versio
 the old one. In-place overwriting and regeneration are strictly rejected.
 
 ASR Triage Runner:
-Use --asr-triage to run automated phonetic and acoustic screening with pinned model identity,
-decoding settings, and negative controls (silence, noise, unvoiced glitch). The triage runner output
-strictly carries the label 'triage' — never 'PASS'.
+Use --asr-triage --asr-model LOCAL_DIRECTORY for real transcription of hash-verified audio and
+generated negative controls. Optional dependencies are required; no model is downloaded implicitly.
+Outputs record model file hashes and runtime versions. Recognition is diagnostic, never acceptance.
 
 Exit 0 when every case matches the reference exactly, 3 when output differs or is missing (reported
 per case, not as a single pass/fail), and 2 for a malformed input.
@@ -28,6 +28,12 @@ import json
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from tools.singing_quality.asr_triage import (  # noqa: E402
+    DEFAULT_ASR_MODEL, DEFAULT_DECODING_SETTINGS, PINNED_NEGATIVE_CONTROLS,
+    FasterWhisperBackend, screen_packet,
+)
+
 REFERENCE_SET_FORMAT_ID = 'com.project-seam.listening-reference-set'
 REQUIRED_MANIFEST_KEYS = ('packetId', 'sourceCommit', 'cases', 'artifacts')
 REQUIRED_REFERENCE_SET_KEYS = ('formatId', 'referenceSetId', 'items')
@@ -36,21 +42,6 @@ IDENTITY_KEYS = (
     'recipeHash', 'recipeIdentity', 'scoreIdentity', 'resourceIdentity',
     'engineRevision', 'renderRevision', 'sampleRate', 'channels', 'frames',
     'spectralDistance', 'f0Rmse', 'levelDb', 'peak', 'rms', 'clippedSamples'
-)
-
-DEFAULT_ASR_MODEL = 'seam-asr-triage-ja-phonetic-v1'
-DEFAULT_DECODING_SETTINGS = {
-    'language': 'ja',
-    'beamSize': 5,
-    'temperature': 0.0,
-    'sampleRate': 16000,
-    'normalizeText': True,
-    'minPhoneticConfidence': 0.60,
-}
-PINNED_NEGATIVE_CONTROLS = (
-    {'id': 'control_synthetic_silence', 'description': 'Zero-energy audio frame sequence', 'expectedDetection': False},
-    {'id': 'control_synthetic_pink_noise', 'description': 'Stationary spectral white/pink noise', 'expectedDetection': False},
-    {'id': 'control_unvoiced_impulse_glitch', 'description': 'Single-sample Dirac impulse glitch', 'expectedDetection': False},
 )
 
 
@@ -179,106 +170,20 @@ def promote_reference(source: dict, dest: Path, reason: str, reference_manifest:
 
 
 def run_asr_triage(manifest: dict, audio_root: Path | None = None,
-                   model: str = DEFAULT_ASR_MODEL,
+                   model: Path | None = None,
                    decoding_settings: dict | None = None,
-                   negative_controls: tuple = PINNED_NEGATIVE_CONTROLS) -> dict:
-    settings = dict(DEFAULT_DECODING_SETTINGS)
-    if decoding_settings:
-        settings.update(decoding_settings)
-
-    controls_results = []
-    control_breached = False
-    for ctrl in negative_controls:
-        detected = False
-        expected = ctrl.get('expectedDetection', False)
-        held = (detected == expected)
-        if not held:
-            control_breached = True
-        controls_results.append({
-            'id': ctrl['id'],
-            'description': ctrl.get('description', ''),
-            'detected': detected,
-            'expectedDetection': expected,
-            'controlHeld': held,
-            'status': 'PINNED_HELD' if held else 'BREACH',
-        })
-
-    items = []
-    if 'items' in manifest:
-        items = manifest['items']
-    elif 'cases' in manifest:
-        for case in manifest['cases']:
-            cid = case.get('id', 'default')
-            for out in case.get('outputs', []):
-                items.append(bind_reference_item(out, cid, manifest))
-
-    triage_items = []
-    flagged_count = 0
-    for it in items:
-        path = it.get('path', '')
-        peak = it.get('peak', 0.0)
-        rms = it.get('rms', 0.0)
-        clipped = it.get('clippedSamples', 0)
-        dur = it.get('durationSeconds', 0.0)
-
-        flagged = False
-        reasons = []
-        if clipped > 0:
-            flagged = True
-            reasons.append(f"clipped_samples={clipped}")
-        if peak >= 0.999:
-            flagged = True
-            reasons.append(f"peak_near_ceiling={peak:.4f}")
-        if rms < 0.0005:
-            flagged = True
-            reasons.append(f"low_rms={rms:.6f}")
-        if dur <= 0.0:
-            flagged = True
-            reasons.append("zero_or_negative_duration")
-
-        confidence = 0.0 if flagged else max(0.0, min(1.0, 1.0 - (clipped * 0.1) - (0.1 if rms < 0.005 else 0.0)))
-        if confidence < settings.get('minPhoneticConfidence', 0.60):
-            flagged = True
-            reasons.append(f"low_confidence={confidence:.2f}")
-
-        if flagged:
-            flagged_count += 1
-            triage_status = 'triage_flagged_for_investigation'
-        else:
-            triage_status = 'triage_ready_for_human_listening'
-
-        triage_items.append({
-            'path': path,
-            'scoreIdentity': it.get('scoreIdentity', Path(path).parts[0] if path else 'unknown'),
-            'recipeIdentity': it.get('recipeIdentity', 'baseline'),
-            'label': 'triage',
-            'triageStatus': triage_status,
-            'flagged': flagged,
-            'reasons': reasons,
-            'confidence': confidence,
-            'peak': peak,
-            'rms': rms,
-            'clippedSamples': clipped,
-            'durationSeconds': dur,
-        })
-
-    verdict = 'triage_control_breach' if control_breached else 'triage'
-    return {
-        'formatId': 'com.project-seam.listening-asr-triage',
-        'schemaVersion': 1,
-        'label': 'triage',
-        'verdict': verdict,
-        'model': model,
-        'decodingSettings': settings,
-        'negativeControls': controls_results,
-        'items': triage_items,
-        'summary': {
-            'totalItems': len(triage_items),
-            'flaggedItems': flagged_count,
-            'readyForListening': len(triage_items) - flagged_count,
-            'controlsBreached': control_breached,
-        },
-    }
+                   expected_text: dict | None = None, progress=None) -> dict:
+    if model is None:
+        raise ValueError('--asr-model is required: provide a local faster-whisper model directory')
+    settings = {} if decoding_settings is None else decoding_settings
+    if not isinstance(settings, dict) or set(settings) - {'language'}:
+        raise ValueError('ASR settings permit only language; decoding and unprompted controls are fixed')
+    if audio_root is None:
+        if '_path' not in manifest:
+            raise ValueError('ASR needs an audio root or a loaded manifest path')
+        audio_root = Path(manifest['_path']).parent
+    backend = FasterWhisperBackend(Path(model), settings.get('language', 'ja'))
+    return screen_packet(manifest, audio_root, backend, expected_text, progress)
 
 
 def index_outputs(manifest: dict) -> dict:
@@ -425,12 +330,17 @@ def main() -> int:
     parser.add_argument('--reason',
                         help='Explicit reason explaining the promotion of a new reference set. Required when --promote-reference is used.')
     parser.add_argument('--asr-triage', action='store_true',
-                        help='Run automated ASR triage runner with pinned model identity, decoding settings, and negative controls. Output strictly carries label triage, never PASS.')
-    parser.add_argument('--asr-model', default=DEFAULT_ASR_MODEL,
-                        help=f'Pinned ASR model identity for triage screening (default: {DEFAULT_ASR_MODEL}).')
+                        help='Transcribe real audio with generated controls. Requires a local model; never qualifies a singer.')
+    parser.add_argument('--asr-model', type=Path,
+                        help=f'Local model directory, e.g. a snapshot of {DEFAULT_ASR_MODEL}.')
     parser.add_argument('--asr-decoding-settings', type=Path,
-                        help='Optional JSON file with pinned decoding settings overrides.')
+                        help='Optional JSON object containing only language: ja, en, or ko. Other decoding is fixed.')
+    parser.add_argument('--asr-expected-text', type=Path,
+                        help='Optional JSON mapping case IDs to intended text for diagnostic character error rates.')
     arguments = parser.parse_args()
+    if arguments.report is not None and arguments.report.exists():
+        print('LISTENING_COMPARISON=INVALID report already exists')
+        return 2
     if arguments.promote_reference is not None:
         if not arguments.reason or not arguments.reason.strip():
             print('LISTENING_COMPARISON=INVALID --reason is required for --promote-reference')
@@ -473,13 +383,18 @@ def main() -> int:
             except (OSError, json.JSONDecodeError) as err:
                 print(f"LISTENING_COMPARISON=INVALID invalid asr decoding settings: {err}")
                 return 2
-        triage_result = run_asr_triage(
-            manifest=target_for_triage,
-            audio_root=arguments.rerender_root,
-            model=arguments.asr_model,
-            decoding_settings=decoding_overrides,
-        )
-        ctrl_status = 'BREACH' if triage_result['summary']['controlsBreached'] else 'PINNED_HELD'
+        try:
+            expected = (json.loads(arguments.asr_expected_text.read_text(encoding='utf-8'))
+                        if arguments.asr_expected_text else None)
+            triage_result = run_asr_triage(
+                manifest=target_for_triage, audio_root=arguments.rerender_root,
+                model=arguments.asr_model, decoding_settings=decoding_overrides,
+                expected_text=expected, progress=lambda message: print(message, flush=True),
+            )
+        except (OSError, ValueError, RuntimeError) as error:
+            print('ASR_TRIAGE=NOT_RUN ' + str(error))
+            return 2
+        ctrl_status = 'BREACH' if triage_result['summary']['controlsBreached'] else 'OBSERVED_NO_TEXT'
         print(f"ASR_TRIAGE=TRIAGE items_evaluated={triage_result['summary']['totalItems']} flagged={triage_result['summary']['flaggedItems']} model={triage_result['model']} controls={ctrl_status}")
     counts = {}
     for finding in findings:
@@ -507,9 +422,12 @@ def main() -> int:
         if arguments.report.exists():
             print('LISTENING_COMPARISON=INVALID report already exists')
             return 2
-        arguments.report.write_text(json.dumps(report, indent=2) + chr(10))
+        with arguments.report.open('x', encoding='utf-8') as stream:
+            stream.write(json.dumps(report, indent=2, ensure_ascii=False, allow_nan=False) + chr(10))
     print('REFERENCE=' + ref_name)
     print('CANDIDATE=' + cand_name)
+    if triage_result is not None and triage_result['summary']['controlsBreached']:
+        return 3
     for status in ('changed', 'missing', 'added'):
         for finding in findings:
             if finding['status'] != status:

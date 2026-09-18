@@ -5,7 +5,8 @@ title: SEAM automated verification and acceleration plan
 date: 2026-09-19
 branch: codex/production-readiness-completion
 baseline_commit: 3276b7df
-status: analysis and plan; implementation performed only where named
+followup_audit_baseline: 7839c72f
+status: revised after source audit; implementation and validation recorded below
 language: English
 companions: SEAM_JOINT_DEVELOPMENT_PLAN_R4_2026-09-16.md, SEAM_DETAILED_DEVELOPMENT_PLAN_2026-09-19.md
 reviewed_with: second-developer session 01a0a066-1eba-71f2-8c0d-e21f9419cbcc
@@ -20,18 +21,15 @@ Three questions, asked directly:
 3. Can the human verification gates be replaced by Codex, open-source projects, downloaded audio, or
    other services, with OpenUtau as the main reference?
 
-The short answers: the month was not wasted effort, but it was spent on the wrong risk; yes, the
-remaining engineering can be parallelised, with hard conditions; and no, not all human gates can be
-replaced — but **five of the seven can be partly or wholly replaced, and the two that cannot are
-narrower than the current plan implies**. Section 7 gives the unit-by-unit boundary and the strongest
-honest substitute for each.
+The source audit gives a more useful answer than the roadmap labels alone: **there is still
+valuable engineering to do, and some earlier verification was only a stub**. Three agents can repair
+independent product paths while an integrator runs real audio evaluation and a second developer
+reviews the evidence. Automated checks can resolve mechanical claims; their ability to predict
+acceptable singing must itself be measured. No current machine result establishes Beta GO.
 
-## 1. The most important finding: the roadmap is nearly out of engineering work
+## 1. Corrected finding: the queue hides unfinished engineering inside gate labels
 
-This is the fact that reframes everything else, and it is the reason a month of continued work has not
-produced a shippable product.
-
-In R4 section 9, **every remaining unit is a human or external gate**:
+R4 section 9 presents the remaining top-level units as human or external gates:
 
 | Unit | What it needs | Who |
 |---|---|---|
@@ -44,21 +42,58 @@ In R4 section 9, **every remaining unit is a human or external gate**:
 | U5.1 | Windows host with installed DAWs | owner |
 | M6 | five independent creators | owner + external |
 
-There is no engineering-only unit left in the queue. That means **adding more engineering does not move
-the product closer to Beta GO**, which is exactly what the last month demonstrated empirically. The
-project did not stall because the agents were slow. It stalled because the remaining distance is gated
-on people and materials that no amount of code can supply, and the plan kept generating code anyway.
-The second developer identified this correctly and early: "We have reduced implementation uncertainty
-far faster than musical uncertainty."
+An earlier version inferred that no further engineering could advance Beta GO. **That inference is
+withdrawn.** A milestone's final sign-off dependency says nothing about whether the machinery below
+it is complete or correct. The follow-up audit with the second developer found these counterexamples:
 
-So the honest answer to "why has this taken a month" is: the first month bought a large, tested,
-deterministic codebase and a precise map of what remains. That map is genuinely valuable — it is why
-this document can be specific rather than speculative. But the map is now the asset, not the code. The
-next month must be spent on the gates, and the automation below is how to shrink most of them.
+| Source defect at `7839c72f` | Consequence | Current repair |
+|---|---|---|
+| `scripts/compare_listening_packets.py::run_asr_triage` never opened audio; controls always assigned `detected = False` | Fabricated recognition confidence and unexecuted controls looked like evidence | Actual local recognizer, WAV hash verification, generated controls, schema-2 diagnostic results |
+| English hint inventory omitted `ao`, although the shared classifier supported it | Valid English pronunciations were rejected | Inventory correction plus stressed/unstressed hint, continuation, and stale-edit regressions |
+| USTX depth multiplied by ten; phase treated as degrees | A 25-cent vibrato became 200 cents; a 0.75-cycle export wrote invalid shift 270 | Upstream cents/percentage units and independent import/export assertions |
+| USTX `sp` interpreted as Step | A smooth pitch segment became discontinuous | Smooth approximation with explicit loss; exact nonlinear preservation remains open |
+| Plugin scene lacked performance/mouth binding; sample renders also published an empty implicit style | Available mouth artwork could not follow DAW playback | Carry the actual prepared style, bind immutable published cues to host time, and draw declared assets |
 
-## 2. Work completed in this session
+These findings explain a concrete weakness in the process: self-consistency tests and nominal report
+fields did not establish the intended user behavior. A round trip can preserve a reciprocal unit
+mistake; a test asserting hard-coded control success can pass without processing audio. They do not
+justify a complete retrospective judgment about every week of development, but they do require a
+change in how the remaining work is selected and verified.
 
-The only failing CI job was diagnosed and repaired at the root, not silenced.
+The working rule is now: choose a usable singing outcome, inspect its complete production path, use
+independent expectations, and retain the observed result. Engineering and external acceptance proceed
+in parallel. Do not automatically raise the progress percentage when adding tests or repairing a bug;
+reassess the corresponding contract requirement against its complete acceptance criteria.
+
+### 1.1 Why the owner's concern is justified
+
+The concern is justified: a month of activity is not an acceptable substitute for a demonstrated
+singing product. This audit cannot reconstruct every hour of that month, but it identifies concrete
+causes of wasted effort and misleading confidence:
+
+1. **The main outcome was tested too indirectly.** Recognition confidence existed without a
+   recognizer. The corrected run now exposes an unresolved result that should have been visible
+   earlier. A passing infrastructure suite cannot answer whether a lyric song is understandable.
+2. **Tests sometimes shared the implementation's assumptions.** Reciprocal USTX conversion errors
+   survived round trips; independent upstream values found them. More tests of the same assumption
+   would not have fixed this.
+3. **Gate labels were used to stop engineering discovery.** An external final judgment was mistaken
+   for proof that all prerequisite code was finished. The concrete defects above refute that inference.
+4. **Integration discipline wasted build time.** Concurrent builds in one directory damaged generated
+   dependency state. More agents are useful only when ownership and integration are controlled.
+5. **A genuine research dependency remains.** A compatible learned singer, vocoder, usable source
+   material, and held-out singing results cannot be obtained merely by adding admission machinery.
+   This work needs actual candidate experiments and retained output.
+
+The remedy is not to abandon testing. It is to spend verification effort on an installed singer and
+the same 30–60-second song, then expand that proven workflow. Every implementation batch must show
+what a creator can now do, what audio actually came out, and what remains unproven. Repairs and
+documentation do not automatically count as additional completed roadmap units.
+
+## 2. Initial CI repair and its historical evidence
+
+The native-matrix timeout was diagnosed and repaired at the root. The separately parked coordinator
+failure remains described in section 3.
 
 **Diagnosis.** The single red job was `native-platform-matrix (ubuntu-latest)`, failing
 `seam_original_singer_song_journey_tests` on its 180-second CTest timeout. Three logs from that same
@@ -97,7 +132,9 @@ including the subnormal and signed-zero cases and the `harmonic * frequency == 0
 and confirmed that no construction path can produce a score performance with non-empty accepted or
 ownership records while the flag is false.
 
-## 3. CI result and what remains red
+## 3. CI result for the initial repair and what remained red
+
+This section records run `35392919351`, not CI qualification of the later follow-up changes.
 
 Run `35392919351` confirms the diagnosis and the fix. `native-platform-matrix (ubuntu-latest)` —
 the only job that was red — now **passes**, together with the macOS and Windows matrix jobs and
@@ -126,7 +163,8 @@ fixed or its owning test split, because a red job makes every future green resul
 
 ### 4.1 A reusable, machine-checkable oracle for pronunciation and lyric handling
 
-Cloned to `/tmp/ou/OpenUtau`, MIT licensed, commit `83e02c7e`.
+Cloned to `/tmp/ou/OpenUtau`, MIT licensed, commit
+[`83e02c7e4a4d9ea5fca72806b2aa27c5382be015`](https://github.com/openutau/OpenUtau/tree/83e02c7e4a4d9ea5fca72806b2aa27c5382be015).
 
 This is the strongest reusable asset, and it is real rather than aspirational.
 **`OpenUtau.Test/Plugins/` contains 117 golden phonemizer vectors** that run headlessly under Xunit:
@@ -153,8 +191,17 @@ naming.
 `OpenUtau.Test/Classic/UstTest.cs` is substantive rather than a smoke test: it unpacks real-world UST
 archives and asserts that loading produces valid note structures, and it specifically covers the legacy
 edge cases that break naive importers — `=` inside lyrics, multi-point pitch bend curves (PBS/PBW/PBY),
-and legacy vibrato parameters. `UstLoadingTest` and `EqualInLyric` are usable as conformance fixtures
-for SEAM's R12 (USTX/SMF round-trip) and R13 interchange work.
+and legacy vibrato parameters. These are **UST**, not USTX or SMF, and cannot directly establish
+conformance of SEAM's supported importers. They are semantic references only unless legacy UST
+support is separately implemented. The present changes instead use
+`OpenUtau.Core/Ustx/UNote.cs`, `Render/RenderPhrase.cs`, and `Util/MusicMath.cs` at the pinned revision.
+
+Primary implementation references:
+
+- [UNote: vibrato units, pitch shapes, and note-relative coordinates](https://github.com/openutau/OpenUtau/blob/83e02c7e4a4d9ea5fca72806b2aa27c5382be015/OpenUtau.Core/Ustx/UNote.cs).
+- [RenderPhrase: overlapping pitch-curve composition](https://github.com/openutau/OpenUtau/blob/83e02c7e4a4d9ea5fca72806b2aa27c5382be015/OpenUtau.Core/Render/RenderPhrase.cs).
+- [UstxYamlTest: an independent negative-X fixture](https://github.com/openutau/OpenUtau/blob/83e02c7e4a4d9ea5fca72806b2aa27c5382be015/OpenUtau.Test/Core/USTx/UstxYamlTest.cs).
+- [Phonemizer test inventory](https://github.com/openutau/OpenUtau/tree/83e02c7e4a4d9ea5fca72806b2aa27c5382be015/OpenUtau.Test/Plugins).
 
 ### 4.3 What OpenUtau cannot do
 
@@ -184,10 +231,11 @@ mechanics.** If the requirement is "the same input produces the same output", "e
 has coverage", "the file round-trips without loss", or "the plugin loads in a host", a machine decides
 it completely and better than a person.
 
-**Automation can partly replace perceptual gates, as a negative screen.** A machine can prove that
-audio is not silent, not clipping, not NaN, not pitch-wrong, not discontinuously spliced, and that its
-phonetic content is recoverable. It can catch gross failure reliably at scale. It cannot prove
-naturalness, and a metric-satisfying render can still sound robotic.
+**Automation can partly replace perceptual gates, as a negative screen.** A machine can measure
+silence, clipping, nonfinite samples, estimated pitch error, splice discontinuities, and recovered
+text. Exact sample properties are distinct from fallible pitch/transcription estimates. Calibrated
+metrics can catch gross failures at scale, but a successful metric result does not prove naturalness;
+a metric-satisfying render can still sound robotic.
 
 **Automation cannot replace two specific things.** It cannot produce an authorized recording, which is
 a legal and physical fact. And it cannot supply a human's first-impression usability judgment, which is
@@ -197,16 +245,18 @@ Section 7 applies this unit by unit.
 
 ## 6. Acceleration: how to run the remaining work with multiple agents
 
-The parallelisable work is real but narrower than it looks, because most open units are gates. Three
-lanes can proceed at once, and two of them are verification infrastructure rather than product code.
+Parallelism should follow independent production paths, not the labels on the remaining gates.
+This session used three implementation agents for pronunciation, interchange, and plugin character
+binding; the integrator owned real audio evaluation and cross-cutting renderer integration. The next
+work can follow the three lanes below, with explicit file ownership and a single build owner.
 
 ### Lane 1 — pronunciation and interchange conformance (highest value, lowest risk)
 
-Port OpenUtau's 117 phonemizer vectors into SEAM's test suite as fixtures, asserting SEAM's
-`resolvePronunciation` output against the expected aliases where the two projects model the same
-decision, and recording the remainder as explicit divergences with reasons. Add the UST and USTX
-conformance fixtures from `UstTest.cs` as R12 round-trip evidence. This directly strengthens R7, R11
-and R12 with an independent implementation as the oracle, at no scope cost.
+Select comparable decisions from OpenUtau's fixtures and source, with explicit inventory mapping.
+Assert actual SEAM phones, roles, ownership, and context; bank-specific oto aliases are not phonemes.
+Use independently specified USTX wire values for import and export so reciprocal errors cannot hide
+inside a round trip. Record unsupported behavior as loss or refusal. The 117 upstream cases are a
+reference inventory, not a promise that 117 directly portable SEAM cases exist.
 
 ### Lane 2 — acoustic and phonetic triage
 
@@ -234,57 +284,202 @@ The second developer's warning is correct and should be a hard rule:
 - **Never weaken a test to make a lane green.** This session's own CI repair is the model: find the
   root cause and fix throughput, rather than raising the timeout.
 
-## 7. Unit-by-unit verdict on the seven gates
+## 7. Unit-by-unit verdict on the remaining gates
 
 | Gate | Automatable? | Strongest honest substitute | What stays human |
 |---|---|---|---|
 | **U1.4** creator observation | **No** | Headless workflow qualification: drive the real controller and document scene through a scripted session (add notes, edit lyric, apply expression, preview, export), asserting no blocking modal, no error path, and a preview-latency budget. Records "Workflow machinery: PASS"; the ergonomic claim stays open. | Whether a naive person finds it usable without coaching. |
-| **U2.1** listening result | **Partly** | Negative screen over the retained packet: ASR intelligibility of the intended lyrics, pitch criteria already implemented, spectral-distance and continuity checks, plus pinned negative controls (silence, noise, glitch) that must fail. Records "Acoustic triage: PASS"; perceptual naturalness stays UNREVIEWED. | Whether it sounds good, and whether phrasing is musical. |
+| **U2.1** listening result | **Partly** | Negative screen over retained audio: actual transcription, optional text comparison, existing pitch measurements, spectral/continuity diagnostics, and executed controls. Record the measurements and failures; do not issue an ASR-based acceptance verdict. | Whether it sounds good, and whether phrasing is musical. |
 | **U3.5** learned-singer qualification | **Yes, for the technical half** | Admit a real ONNX candidate and run the existing qualification pipeline: pitch adherence, spectral distance, determinism, latency budget, vocoder receipt. The blocker is a rights-cleared model, not the harness. | Timbral verdict on the learned voice. |
 | **U4.1** authorized recording | **No** | Use the generated-teacher path (`tools/voice_model_training/generated_teacher.py`) to exercise every downstream mechanic — marker extraction, take rejection, review invalidation, lineage — and declare the origin as synthetic. | The legal rights and the physical session. Nothing substitutes. |
 | **U4.2b** native-speaker review | **Partly** | Automated coverage and phonotactic legality: 100% vocabulary coverage per declared language against an independent dictionary, plus OpenUtau cross-checks for kana and Hangul decomposition. Records "Phonetic coverage: PASS"; accent and naturalness stay UNREVIEWED. | Whether the pronunciation is acceptable to a native speaker. |
 | **U4.3** style pair | **Yes, technically** | Produce two distinct style profiles with identical phone inventories from the procedural carrier (for example neutral versus soft/whisper phonation), then run the existing StyleBlend suite for crossfade continuity, phase continuity and missing-pair refusal. | Whether the styles are musically the right pair. |
-| **U5.1** Windows host | **Mostly, with an important correction** | A headless host harness with plugin validation produces genuine non-human scan, session-log and bounce evidence, and the Windows CI job already exists (`native-platform-matrix (windows-latest)`, currently passing). | The `external-beta-host-matrix.json` contract currently names REAPER and Bitwig on real installed hosts with `screenshot` evidence, so a scripted harness strengthens the evidence but does not satisfy that contract as written. Changing it is a contract revision, not an engineering task. |
+| **U5.1** Windows host | **Mostly** | Automate the named, installed DAWs and retain real scan, session-log, bounce, and screenshot evidence. A generic headless host provides an additional mechanical check. | Actual named-host installation and full required artifacts remain necessary. A generic harness alone does not prove REAPER/Bitwig behavior. |
+| **M6** independent creator cohort | **Partly** | Automate installation, instrumentation, task capture, artifact checks, and analysis. Agent sessions can reveal workflow defects before recruitment. | Agents do not count as five independent human creators under the current contract. |
 
-One correction to the second developer's summary, from reading the contract directly: U5.1 is not
-"completely" automatable as stated. `docs/product/external-beta-host-matrix.json` requires REAPER and
-Bitwig on both platforms in both CLAP and VST3, with `scan`, `session-log`, `bounce` **and
-`screenshot`** evidence, and the gate is evaluated by
-`tools/external_beta/full_product_contract_validation.py`. A headless harness can supply three of the
-four evidence kinds; the fourth is defined by the contract. The right move is to propose an explicit
-contract revision that accepts scripted host evidence, and to say plainly that it is a revision.
+`docs/product/external-beta-host-matrix.json` requires REAPER and Bitwig on both platforms in both
+CLAP and VST3, with `scan`, `session-log`, `bounce` and `screenshot` evidence. A screenshot can itself
+be automated. Thus scripted execution in the actual named hosts need not imply a contract revision;
+substituting a different headless host or omitting required artifacts would. The evaluator remains
+`tools/external_beta/full_product_contract_validation.py`.
 
 ## 8. Recommended plan
 
 Ordered so that each step either retires a real gate or produces an asset that does:
 
 1. **Land the CI repair** (done, `3276b7df`) and confirm the Ubuntu job is green.
-2. **Lane 1**: port the OpenUtau phonemizer vectors and UST/USTX conformance fixtures. This is
-   independent verification of R7/R11/R12 and is the single highest-value remaining engineering task.
-   *Started:* `71f99a68` lands the first slice — every Japanese kana that OpenUtau's golden vectors
-   treat as a valid mora now has to decompose in SEAM with the expected consonant/vowel split, asserted
-   as the absence of a phonemizer warning. All 14 pass, and the case was shown to fail when a vector is
-   deliberately wrong, so it is not vacuous. The English, Korean and UST/USTX fixtures are the rest of
-   this lane.
+2. **Lane 1**: repair comparable pronunciation and USTX semantics using pinned OpenUtau source.
+   `71f99a68` started with 14 Japanese exact-symbol cases. The follow-up expands Japanese to 18
+   inputs, adds selected English/Korean mappings, fixes English `ao` admission and USTX vibrato
+   units, and reports curve approximations. Signed pitch offsets and pickups in rests now survive
+   import/export. Cross-note portamento composition, neighbor-note `snap_first`, and exact nonlinear
+   curve preservation still need implementation before broad USTX claims.
 3. **Lane 2**: build the ASR negative screen over the retained packet, with pinned negative controls.
    Publish it as triage, with the wording the project already uses for unreviewed audio.
-4. **U1.4 substitute**: build the headless workflow qualification and record it as machinery-only.
-5. **U4.1 substitute**: exercise the full production pipeline from generated-teacher audio, labelling
+4. **U1.4 mechanical companion**: extend the existing installed-song/controller journeys to cover
+   missing actions; record them as machinery-only, not a replacement for the human observation.
+5. **U4.1 mechanical companion**: exercise the full production pipeline from generated-teacher audio, labelling
    the origin as synthetic.
 6. **U3.5**: admit a real candidate model the moment a rights-cleared one exists — the harness is ready.
-7. **U5.1**: write the contract revision proposal for scripted host evidence, then implement the
-   harness. Do not claim host acceptance under the current contract without the contract change.
-8. **U2.1, U4.2b, U6**: these need people. Recruit a listener, a native speaker and five creators, and
+7. **U5.1**: automate the actual named host matrix, including screenshots. Use a generic plugin
+   harness for additional coverage. Propose a contract revision only if substituting required hosts
+   or evidence kinds, not merely because execution is automated.
+8. **U2.1, U4.2b, M6**: these need people under the existing contract. Recruit a listener, a native speaker and five creators, and
    start that now rather than after the code — it is the long pole and it does not run faster later.
 
-The realistic conclusion: steps 1-5 are achievable by agents in a short sequence of working sessions
-and will move every automatable gate to done. Steps 6-8 are the irreducible ones, and they should be
-started in parallel with the engineering rather than treated as the reward for finishing it.
+These are work streams, not completion promises. Each needs its own inspected production path and
+observed acceptance evidence. External inputs can be prepared alongside the engineering. A scripted
+workflow still needs installed-surface coverage; generated teacher success still needs a learned
+singer and an audio-quality result. No generic agent count or elapsed-time estimate resolves those.
 
-## 9. What this document is not
+## 9. Evidence correction and current implementation
 
-It is not acceptance evidence for any unit, and it does not authorise release. It performs no
-implementation beyond the CI repair and the Japanese cross-implementation test named in section 2 and
-the ledger entry that records them. Where it
-cites OpenUtau, the citation is to a specific file and, where given, a specific line. Where automation
-cannot establish a claim, the claim is marked UNREVIEWED rather than passed.
+The previous `packet-01/asr-triage.json` is retained unchanged for audit history. Its schema-1
+`confidence` and `PINNED_HELD` fields are **invalid as recognition or negative-control evidence**:
+the producing code never opened audio or invoked a recognizer. No later report may use them to
+establish intelligibility. Schema 2 records actual transcripts, model-file hashes, runtime versions,
+fixed unprompted decoding, WAV hashes, executed control results, and optional character error rates.
+
+Character error rate is orthographic only. Japanese kanji/kana alternatives, held vowels, isolated
+morae, and singing differ from normal speech recognition; disagreement cannot by itself diagnose a
+singer defect. Empty output means no text was recognized under the recorded configuration. Negative
+controls alone do not measure sensitivity to intelligible singing. A control hallucination makes the
+run's calibration fail and the CLI exit nonzero, while retaining its diagnostic output. No fabricated
+confidence, readiness rating, or perceptual acceptance is emitted.
+
+The optional recognizer is [faster-whisper](https://github.com/SYSTRAN/faster-whisper) with a local
+[base-model snapshot](https://huggingface.co/Systran/faster-whisper-base/tree/ebe41f70d5b6dfa9166e2c581c45c9c0cfc57b66).
+Model files are fetched separately; the runner itself operates locally. The implementation is
+`tools/singing_quality/asr_triage.py`; usage and evidence limits are in `tools/singing_quality/README.md`.
+
+### 9.1 Actual recognition run, 2026-09-19
+
+Executed on all 66 WAVs in `/Users/lhs/seam-listening-reference/packet-01`, without changing that
+packet. Backend: faster-whisper 1.2.1, CTranslate2 4.8.2, CPU int8, four threads, fixed Japanese
+decoding. Model `model.bin` SHA-256:
+`d01c3014881c9c6f3133c182f3d2887eb6ca1c789a7538c5c007196857a0a6a9`.
+Runner SHA-256:
+`f62684d585090f711ec7d98d7da2e292748f6f216cd7759610f2bf3d68b2b75a`.
+
+| Observation | Result | Interpretation |
+|---|---|---|
+| Actual retained WAVs transcribed | 66/66 | Executed inference, with each audio hash checked |
+| Empty transcripts | 31/66 | No text recognized in this configuration; not an intelligibility score |
+| Nonempty transcripts | 35/66 | Includes repetitive/hallucinated text; not 35 successful lyric recognitions |
+| Silence, white noise, impulse controls | 3/3 produced no text | This negative screen held on these three signals |
+| Complete-song outputs | 0/6 exact normalized matches to intended kana text | Diagnostic failure to recover the reference text; no broad perceptual verdict |
+| Independent local Japanese speech control | Normalized CER 0.0 | The same backend/settings can transcribe this known speech example |
+
+The original packet run deliberately retained unprompted transcripts without expected-text input:
+its `textComparedItems` is therefore **0**, not 66. The complete-song comparison above was computed
+after capture with the same `character_error_rate` function, against the 29 kana from
+`tools/singing_quality/listening_packet.py::CASES`, joining note lyrics and omitting the terminal
+continuation marker. CER ranges from 2.6552 to 7.6552 (insertion errors can exceed 1.0). Baseline
+master output repeatedly mentions ice cream; other variants repeatedly output unrelated words or
+the same kana. These are observed transcripts, not claims that the rendered singer literally sang
+those words. Orthographic alternatives and speech-to-singing domain shift still limit interpretation.
+
+The positive speech control was generated locally using macOS `say`, voice Kyoko, rate 160, mono
+PCM16 at 16 kHz, reading: `今日は晴れです。私は音楽を作っています。明日も一緒に歌いましょう。`.
+Its WAV SHA-256 is `28036f65de7a8fbccbf73eb158cfefad3d55f57075521e5f15aeeb3f678a6ab0`.
+The returned text differs only in punctuation. This is a diagnostic speech control, not a singing
+voicebank, training corpus, or proof that Whisper is calibrated for singing. No control audio is
+redistributed in the repository.
+
+Retained artifacts:
+
+- `/Users/lhs/seam-listening-reference/packet-01-asr-schema2-2026-09-19.json`
+  — SHA-256 `df630e040f40013231bc445e5dea2ea49366d8911478bf58547dcdeae64bac1f`.
+- `/Users/lhs/seam-listening-reference/japanese-speech-control-asr-schema2-2026-09-19.json`
+  — SHA-256 `f3551018282d6b4b8ccb56e2f8f3504d8ff2e8f52ce55e258b8d6c653048f71b`.
+- `/Users/lhs/seam-listening-reference/speech-control-2026-09-19/`
+  — control WAV, manifest and exact expected text. Historical packet/report files remain unchanged.
+
+The immediate conclusion is that the former metadata-only ASR report was masking an unresolved
+recognition problem. Next, compare the same backend with independently intelligible singing and a
+stronger recognizer before attributing every failure to SEAM's articulation. Meanwhile, production
+timing/pitch/pronunciation/interchange fixes can proceed on their own evidence.
+
+Pronunciation attribution and the upstream MIT text are in
+`libs/seam-phonemizer/OPENUTAU_REFERENCE_NOTICE.md`. USTX tests refer to the same OpenUtau commit,
+with explicit independent wire expectations. Current changes make selected product paths more
+correct; they do not complete all 117 reference cases, exact OpenUtau compatibility, or Beta GO.
+
+## 10. Next development batches and concrete exit evidence
+
+Use three implementation agents with distinct files, one integrator, and the existing second-developer
+task for review. The cap remains below the owner's limit of 30. A shared build directory also needs
+one owner: separate source ownership does not make concurrent Ninja invocations safe.
+
+| Batch | Code and intended change | Evidence required before calling the batch complete |
+|---|---|---|
+| A — faithful authoring/interchange | Build on the now-supported signed offsets/rest pickups: finish previous-note absolute-pitch composition, exact nonlinear curve handling, and `snap_first` in `libs/seam-interchange`; extend controller/import service journeys | Independent OpenUtau wire cases and sampled pitch values across note boundaries; preserved notes/lyrics/tempo/part offsets; explicit losses for genuinely unsupported fields; import → tune → save/reopen → export on the production route |
+| B — useful audio diagnosis | Calibrate `tools/singing_quality/asr_triage.py` with known intelligible speech, rights-documented intelligible singing, synthetic failures, and the retained SEAM packet; combine with existing pitch/timing diagnostics | Real transcripts and model/audio hashes; false-positive/false-negative observations; declared limits per language; no acceptance from self-derived reference labels or source loudness |
+| C — installed creator surfaces | Extend existing `tests/test_original_singer_song_journey.cpp`, plugin editor tests, and native controller journeys instead of creating a second rendering stack | One original singer and 30–60-second lyric song; edit/undo/redo, preview, transport seek/loop, save/reopen, cancellation, and decoded export. Record measured latency and test conditions; do not invent a 50 ms render target or call an agent an unaided human creator |
+| D — deployable singer and host matrix | Run the actual generated-teacher → corpus → train → ONNX → vocoder → admitted singer route, alongside scripted named-DAW installation/scan/session/bounce/screenshots | A retained compatible learned-singer artifact with truthful source rights/provenance and held-out rendering; required platform/DAW artifacts. Arithmetic fixtures, teacher reconstruction, and a generic plugin host do not close the corresponding full-product requirement |
+
+Batches A–C can expose product defects without waiting for a listening verdict. Batch D should begin
+with an inventory of actual usable models/corpora/runtime artifacts, not another layer of hypothetical
+admission documents. If a needed input is absent, keep working on independent mechanics and identify
+the exact missing artifact. Stop adding new acceptance abstractions unless a concrete executed path
+demonstrates that they are necessary.
+
+Release acceptance remains the existing full-product contract. Proposed changes to that contract
+must be shown explicitly; this execution plan changes work ordering and evidence quality, not the
+definition of the user's virtual-singer goal.
+
+## 11. How to use outside materials without creating another verification shortcut
+
+| Material | Appropriate use in the next batch | What it does not establish |
+|---|---|---|
+| Pinned OpenUtau source and test fixtures | Independently specified pitch/vibrato/lyric cases; compare intermediate phonemes and sampled pitch curves; retain attribution and inventory mappings | Availability of a singing corpus, identical bank aliases, acoustic quality, or complete compatibility |
+| Rights-documented external singing recordings | Positive ASR calibration and pitch/timing diagnostics using retained source, license, hash, transcript, and evaluation-only purpose | Permission to train a singer, redistribute samples, or reproduce a person's voice merely because the file can be downloaded |
+| Another service's public documentation and example projects | Reproduce note-entry, tuning, transport, and export workflows against SEAM's actual installed surfaces | Access to private source code or proof that SEAM implements the documented behavior |
+| A compatible public model or vocoder | Inspect the actual input/output tensors, sample rate, hop, vocabulary, runtime support, and applicable usage terms before running held-out inference | Drop-in compatibility or commercial redistribution rights from the repository's top-level code license alone |
+| Codex-driven UI and source review | Repeatable journeys, visual/layout inspections, exception detection, independent assertions, and review of retained output | Five independent creators, native-speaker acceptance, or evidence from a model that never actually consumed the audio |
+
+For an audio-quality comparison, freeze the candidate and comparison inputs first. Run the same
+recognizer/settings on an independently intelligible singing control, deliberately degraded controls,
+and the candidate; retain failures as well as successes. Use a second recognizer to investigate
+disagreement, not to select whichever score looks best. A known lyric must not be supplied as the
+decoder's prompt and then counted as successful recognition. Compare speech and singing separately.
+
+The throughput rule is equally concrete: each batch should end with a usable behavior and its
+executed evidence, not another framework for accepting hypothetical evidence. Run focused tests per
+agent; run the full suite once on the integrated source. After a shared-header change, rebuild all
+affected consumers. Never run two build processes in the same build directory. In this session,
+concurrent builds damaged Ninja's generated dependency database and forced substantial rebuilding;
+the database was preserved outside the build tree, regenerated, and an unchanged build subsequently
+completed in 0.195 seconds. This was avoidable integration overhead, not product development.
+
+## 12. Integrated verification and handoff
+
+The follow-up source is based on `7839c72f`, with the repairs described in sections 1 and 9.
+Verification ran locally on arm64 macOS in the existing Release configuration:
+
+| Check | Observed result |
+|---|---|
+| Full native build: `cmake --build build/release --parallel 8` | PASS; unchanged follow-up build reports `ninja: no work to do` |
+| First full suite: `ctest --test-dir build/release --output-on-failure -j8` | 171/172 passed in 127.94 seconds; `seam_neural_native_owned_bytes` timed out at 20.02 seconds |
+| Unchanged isolated timeout investigation | The same native-owned-bytes test passed five consecutive runs in 0.04–0.08 seconds each; 0.24 seconds total |
+| Second complete suite, unchanged source and same `-j8` | **172/172 passed in 91.01 seconds**; native-owned-bytes passed in 0.05 seconds |
+| CLAP mouth mutation | Removing only the mouth-artwork pointer failed the exact pixel assertion; restoring it passed |
+| Pronunciation and USTX regressions | Independent wire/phone expectations failed before their fixes and pass after integration; USTX has 14 cases |
+| Actual ASR execution | 66 retained WAVs plus generated negative controls; separate positive speech-control execution; results in section 9.1 |
+| Source closure and whitespace | `SOURCE_CLOSURE=PASS`; `git diff --check` and staged diff check pass |
+
+The first timeout is not erased by the successful rerun. Its cause was not established, and neither
+its source nor its timeout was changed. It is distinct from the already parked coordinator race;
+that race was not worked. The full-suite result is local evidence, not a claim that a new remote CI
+run, the named installed-DAW matrix, or the Beta contract has passed.
+
+The second-developer task reviewed the revised scope, evidence interpretation, OpenUtau references,
+and sequencing and reported no remaining overclaims in that review. Its final review was read-only:
+it did not independently rerun the full suite or the audio inference. The integration results above
+come from the actual local executions, not from that review statement.
+
+Remaining limits are explicit: nonlinear/cross-note USTX semantics are not fully preserved; the
+CLAP regression binds a test character card and does not qualify the demo bank's character identity;
+ASR is not calibrated for singing; a deployed learned singer, complete installed-host evidence, and
+the required human observations remain open. The implementation goal continues. No full-scope
+roadmap unit or Beta GO gate is newly accepted solely because this repair batch passed.

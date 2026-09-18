@@ -62,3 +62,55 @@ python3 -m tools.singing_quality \
 The command prints the fresh packet directory. `input-provenance.json` identifies the inputs, executables and environment; `output-provenance.json` lists resulting artifacts; `commands/` retains exact argument vectors, exit/time records and stdout/stderr. Each case directory contains `dry.wav`, `saved-project.seam`, `diagnostics.json` and the analyzer outputs. An interrupted or failed run can leave an incomplete packet with command/error records; it never emits a completion or qualification flag.
 
 Focused Python tests: `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests/singing_quality -v`. The four native workflow tests skip unless their explicit driver/analyzer/build-evidence environment is present. The CMake workflow test supplies these values and must execute without skips before claiming the native path verified. Listening and independent quality acceptance remain separate work under the full-scope plan.
+
+## Actual ASR diagnostic screening
+
+The schema-1 ASR reports produced by `compare_listening_packets.py` before the
+2026-09-19 correction contain no recognition evidence. Their confidence came from
+manifest loudness metadata and their control outcomes were hard-coded. Keep those
+historical files unchanged, but do not use `confidence` or `PINNED_HELD` as evidence.
+
+The replacement reads every WAV, checks its retained SHA-256, and actually executes
+the optional recognizer on the audio and three generated controls. It fails with
+exit 2 and `ASR_TRIAGE=NOT_RUN` when no local model is configured. It never downloads
+a model implicitly and does not send audio to an external service.
+
+For an isolated environment, install `requirements-asr.txt`. Obtain the model
+separately from the pinned upstream revision (about 145 MB):
+
+```sh
+python -c 'from huggingface_hub import snapshot_download; snapshot_download("Systran/faster-whisper-base", revision="ebe41f70d5b6dfa9166e2c581c45c9c0cfc57b66", local_dir="/absolute/model-directory", allow_patterns=["config.json", "model.bin", "tokenizer.json", "vocabulary.txt", "README.md"])'
+python scripts/compare_listening_packets.py /absolute/packet/manifest.json \
+  --asr-triage --asr-model /absolute/model-directory \
+  --report /absolute/new-asr-report.json
+```
+
+Use the isolated environment's Python for both commands. An optional
+`--asr-expected-text /absolute/expected.json` accepts a JSON object such as
+`{"unfamiliar-song": "あさのそらあおいかぜこえがひびくきみとうたうあさのそらこえ"}`.
+Supply only actual case IDs whose intended text is known. Nonlexical events and
+held-vowel exercises can be left unscored. References are used only after inference;
+they are never supplied as a recognizer prompt. `--asr-decoding-settings` accepts
+only `{"language": "ja"}`, `en`, or `ko`; the rest of decoding stays fixed.
+
+Schema 2 retains actual transcripts/segments, native model scores (not calibrated
+phonetic confidence), model-file digests, runtime versions, runner digest, and every
+audio digest. Controls are two-second silence, seeded white noise, and one impulse.
+All go through the same recognizer as the packet. Text on a control produces
+`triage_control_breach` and exit 3, even if candidate transcripts appear plausible.
+The diagnostic report is still saved. Missing/changed/escaping files abort instead
+of generating successful controls. Existing reports and source audio are not overwritten.
+
+Optional character error rate uses NFKC, case folding, katakana-to-hiragana conversion,
+and edit distance. Kanji readings are not guessed, so equivalent spellings can look
+different. No frozen singing-intelligibility threshold has been calibrated for this
+model. Empty transcripts, mismatches, and control hallucinations are investigation
+signals. Nonempty transcripts do not establish correct lyrics. Negative controls
+alone do not establish recognition sensitivity; known intelligible singing and
+known unintelligible singing are still needed for calibration. `perceptualStatus`
+remains `UNREVIEWED` and `releaseEligible` remains false in every report.
+
+The orchestration tests use explicitly named fake recognizers to exercise hash
+checks, control breaches, absent references, and text comparison. They establish
+tool behavior only. Real retained-packet runs are recorded separately in the root
+`SEAM_AUTOMATED_VERIFICATION_AND_ACCELERATION_2026-09-19.md` report.

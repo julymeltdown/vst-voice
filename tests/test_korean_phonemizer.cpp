@@ -199,6 +199,58 @@ TEST_CASE("Korean cross-note liaison preserves ownership and stops at rests or e
   CHECK(hinted.value().pronunciation.tokensForNote(fixture.notes.back()).size() == 1U);
 }
 
+TEST_CASE("selected OpenUtau Korean boundary examples retain exact phones across note splits") {
+  using namespace seam;
+  using Role = domain::PhonemeRole;
+  // Source-comment examples in OpenUtau.Core/KoreanPhonemizerUtil.cs Variate,
+  // commit 83e02c7e4a4d9ea5fca72806b2aa27c5382be015 (MIT; see the reference
+  // notice in libs/seam-phonemizer). These four transformations have explicit
+  // semantic mappings: ㅌ -> th, ㅋ -> kh, ㅊ -> chh, ㄲ -> kk, ㅡ -> eu,
+  // and a coda/following lateral ㄹ -> l. They are not oto alias comparisons
+  // or a claim of parity with every rule in the upstream Korean utility.
+  struct Example final {
+    const char32_t* word;
+    const char32_t* first;
+    const char32_t* second;
+    std::size_t firstPhoneCount;
+    std::vector<std::string> phones;
+    std::vector<Role> roles;
+  };
+  const Example examples[]{
+      {U"많다", U"많", U"다", 3U, {"m", "a", "n", "th", "a"},
+          {Role::Onset, Role::Nucleus, Role::Coda, Role::Onset, Role::Nucleus}},
+      {U"끓다", U"끓", U"다", 3U, {"kk", "eu", "l", "th", "a"},
+          {Role::Onset, Role::Nucleus, Role::Coda, Role::Onset, Role::Nucleus}},
+      {U"축하", U"축", U"하", 2U, {"chh", "u", "kh", "a"},
+          {Role::Onset, Role::Nucleus, Role::Onset, Role::Nucleus}},
+      {U"칼날", U"칼", U"날", 3U, {"kh", "a", "l", "l", "a", "l"},
+          {Role::Onset, Role::Nucleus, Role::Coda, Role::Onset, Role::Nucleus, Role::Coda}}};
+  for (const auto& example : examples) {
+    for (const bool split : {false, true}) {
+      Fixture fixture;
+      fixture.add(0, split ? example.first : example.word);
+      if (split) fixture.add(960, example.second);
+      const auto* region = fixture.project.findRegion(fixture.region);
+      const auto original = *region;
+      const auto resolved = phonemizer::resolveKoreanPronunciation(*region); CHECK(resolved);
+      CHECK(resolved.value().pronunciation.warnings.empty());
+      CHECK(*region == original);
+      const auto& tokens = resolved.value().pronunciation.tokens;
+      CHECK(tokens.size() == example.phones.size());
+      for (std::size_t index = 0U; index < tokens.size(); ++index) {
+        const bool onSecond = split && index >= example.firstPhoneCount;
+        const auto noteIndex = onSecond ? 1U : 0U;
+        CHECK(tokens[index].symbol == example.phones[index]);
+        CHECK(tokens[index].role == example.roles[index]);
+        CHECK(tokens[index].key.noteId == fixture.notes[noteIndex]);
+        CHECK(tokens[index].key.ordinal == (onSecond ? index - example.firstPhoneCount : index));
+        CHECK(tokens[index].lyricOwner == region->notes[noteIndex].lyricTokenId);
+        CHECK(tokens[index].contextId.size() == 64U);
+      }
+    }
+  }
+}
+
 TEST_CASE("Korean compatibility jamo remain in source order with an explicit diagnostic") {
   using namespace seam;
   Fixture fixture;

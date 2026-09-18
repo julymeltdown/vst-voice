@@ -67,10 +67,18 @@ std::int64_t tickAtSeconds(const std::vector<UstxTempo>& tempos, double seconds)
   return cursor + static_cast<std::int64_t>(std::llround((seconds - elapsed) * bpm * kUstxPpq / 60.0));
 }
 
-std::string shapeFor(domain::CurveInterpolation interpolation) {
+std::string shapeFor(domain::CurveInterpolation interpolation,
+                     std::string_view path, std::vector<UstxIssue>& issues,
+                     const UstxLimits& limits) {
   switch (interpolation) {
-    case domain::CurveInterpolation::Step: return "sp";
-    case domain::CurveInterpolation::Smooth: return "io";
+    case domain::CurveInterpolation::Step:
+      addIssue(issues, UstxIssueSeverity::Loss, std::string(path),
+               "USTX has no step pitch shape; the segment was approximated as linear", limits);
+      return "l";
+    case domain::CurveInterpolation::Smooth:
+      addIssue(issues, UstxIssueSeverity::Loss, std::string(path),
+               "SEAM smoothstep pitch was approximated as USTX sine-in-out", limits);
+      return "io";
     case domain::CurveInterpolation::Linear: return "l";
   }
   return "l";
@@ -81,8 +89,13 @@ domain::CurveInterpolation interpolationFor(std::string_view shape,
                                              std::vector<UstxIssue>& issues,
                                              const UstxLimits& limits) {
   if (shape == "l") return domain::CurveInterpolation::Linear;
-  if (shape == "sp") return domain::CurveInterpolation::Step;
-  if (shape == "io" || shape == "i" || shape == "o") return domain::CurveInterpolation::Smooth;
+  // OpenUtau PitchPointShape.sp is a spline, not a step. Its sine and spline
+  // shapes have no exact equivalent in SEAM's cubic smoothstep interpolation.
+  if (shape == "sp" || shape == "io" || shape == "i" || shape == "o") {
+    addIssue(issues, UstxIssueSeverity::Loss, std::string(path),
+             "USTX " + std::string(shape) + " pitch shape was approximated as SEAM smoothstep", limits);
+    return domain::CurveInterpolation::Smooth;
+  }
   addIssue(issues, UstxIssueSeverity::Loss, std::string(path), "unknown USTX pitch shape was approximated as smooth", limits);
   return domain::CurveInterpolation::Smooth;
 }
@@ -152,8 +165,21 @@ core::Result<UstxProjectDraft> importUstxProject(
     const auto regionId = factory.addRegion(project, trackIds[source.trackNo], source.name.empty() ? "Voice Part" : source.name, time::Tick{partStart.value()}, time::Tick{partDuration.value()});
     auto* region = project.findRegion(regionId);
     if (!region) return core::failure<Output>(core::ErrorCode::InvariantViolation, "USTX import region was not created");
+    // Query the latest end of every preceding note without scanning the whole
+    // part per pitch point. Input note order need not be chronological.
+    std::vector<std::pair<std::int64_t, std::int64_t>> priorNoteEnds;
+    priorNoteEnds.reserve(source.notes.size());
+    for (const auto& sourceNote : source.notes)
+      priorNoteEnds.emplace_back(sourceNote.position.value(), sourceNote.position.value() + sourceNote.duration.value());
+    std::sort(priorNoteEnds.begin(), priorNoteEnds.end());
+    for (std::size_t index = 1U; index < priorNoteEnds.size(); ++index)
+      priorNoteEnds[index].second = std::max(priorNoteEnds[index - 1U].second, priorNoteEnds[index].second);
     for (std::size_t noteIndex = 0U; noteIndex < source.notes.size(); ++noteIndex) {
       const auto& inputNote = source.notes[noteIndex];
+      const auto notePath = "ustx.voice_parts[" + std::to_string(partIndex) + "].notes[" + std::to_string(noteIndex) + "]";
+      const auto earlier = std::lower_bound(priorNoteEnds.begin(), priorNoteEnds.end(), inputNote.position.value(),
+                                            [](const auto& entry, std::int64_t position) { return entry.first < position; });
+      const auto priorEnd = earlier == priorNoteEnds.begin() ? -1 : (earlier - 1)->second;
       auto noteStart = scaleTick(inputNote.position.value(), kUstxPpq, kSeamPpq, "ustx.voice_parts.notes.position", issues, limits); if (!noteStart) return core::Result<Output>{noteStart.error()};
       auto noteDuration = scaleTick(inputNote.duration.value(), kUstxPpq, kSeamPpq, "ustx.voice_parts.notes.duration", issues, limits); if (!noteDuration) return core::Result<Output>{noteDuration.error()}; if (noteDuration.value() <= 0) return core::failure<Output>(core::ErrorCode::InvalidArgument, "USTX note duration rounded to zero");
       const auto lyric = domain::fromUtf8(inputNote.lyric); if (!lyric) return core::Result<Output>{lyric.error()};
@@ -163,14 +189,29 @@ core::Result<UstxProjectDraft> importUstxProject(
         note.vibrato.startFraction = static_cast<float>(std::clamp(1.0 - inputNote.vibrato.length / 100.0, 0.0, 1.0));
         note.vibrato.fadeInFraction = static_cast<float>(std::clamp(inputNote.vibrato.fadeIn / 100.0, 0.0, 1.0));
         note.vibrato.fadeOutFraction = static_cast<float>(std::clamp(inputNote.vibrato.fadeOut / 100.0, 0.0, 1.0));
-        note.vibrato.depthCents = static_cast<float>(std::clamp(inputNote.vibrato.depth * 10.0, 0.0, 200.0));
-        note.vibrato.periodMilliseconds = static_cast<float>(std::clamp(inputNote.vibrato.period, 5.0, 500.0));
-        note.vibrato.phaseTurns = static_cast<float>(std::fmod(std::abs(inputNote.vibrato.shift) / 360.0, 1.0));
+        const auto normalized = [&](double value, double minimum, double maximum,
+                                    std::string_view field) {
+          const auto clamped = std::clamp(value, minimum, maximum);
+          if (clamped != value)
+            addIssue(issues, UstxIssueSeverity::Loss, notePath + ".vibrato." + std::string(field),
+                     "vibrato value was clamped to the OpenUtau range", limits);
+          return clamped;
+        };
+        // OpenUtau UVibrato uses cents directly and a percentage of one period
+        // for shift. PitchPoint.Y has different units (tenths of a semitone).
+        note.vibrato.depthCents = static_cast<float>(normalized(inputNote.vibrato.depth, 5.0, 200.0, "depth"));
+        note.vibrato.periodMilliseconds = static_cast<float>(normalized(inputNote.vibrato.period, 5.0, 500.0, "period"));
+        note.vibrato.phaseTurns = static_cast<float>(std::fmod(normalized(inputNote.vibrato.shift, 0.0, 100.0, "shift") / 100.0, 1.0));
+        if (inputNote.vibrato.drift != 0.0)
+          addIssue(issues, UstxIssueSeverity::Loss, notePath + ".vibrato.drift",
+                   "vibrato pitch drift is not represented in SEAM", limits);
+        if (inputNote.vibrato.volumeLink != 0.0)
+          addIssue(issues, UstxIssueSeverity::Loss, notePath + ".vibrato.vol_link",
+                   "vibrato-linked volume modulation is not represented in SEAM", limits);
         if (note.vibrato.fadeInFraction + note.vibrato.fadeOutFraction > 1.0F) { note.vibrato.fadeOutFraction = 1.0F - note.vibrato.fadeInFraction; addIssue(issues, UstxIssueSeverity::Warning, "ustx.voice_parts[" + std::to_string(partIndex) + "].notes[" + std::to_string(noteIndex) + "].vibrato", "vibrato fades were clamped to the SEAM span", limits); }
       }
       region->lyrics.push_back(std::move(token));
       region->notes.push_back(std::move(note));
-      const auto notePath = "ustx.voice_parts[" + std::to_string(partIndex) + "].notes[" + std::to_string(noteIndex) + "]";
       if (source.position.value() > limits.maximumTick - inputNote.position.value() ||
           source.position.value() + inputNote.position.value() > limits.maximumTick - inputNote.duration.value())
         return core::failure<Output>(core::ErrorCode::InvalidArgument, "USTX note absolute tick overflows the configured limit");
@@ -187,11 +228,22 @@ core::Result<UstxProjectDraft> importUstxProject(
         for (std::size_t pointIndex = 0U; pointIndex < inputNote.pitch.size(); ++pointIndex) {
           const auto& point = inputNote.pitch[pointIndex];
           const auto target = tickAtSeconds(document.tempos, secondsAt(document.tempos, absoluteNoteTick) + point.offsetMilliseconds / 1000.0);
-          if (target < absoluteNoteTick || target > noteEnd || target < source.position.value() || target > source.position.value() + source.duration.value()) {
-            addIssue(issues, UstxIssueSeverity::Loss, notePath + ".pitch[" + std::to_string(pointIndex) + "]", "pitch point falls outside its note or part and was omitted", limits); continue;
+          if (target < source.position.value() || target > source.position.value() + source.duration.value()) {
+            addIssue(issues, UstxIssueSeverity::Loss, notePath + ".pitch[" + std::to_string(pointIndex) + "]", "pitch point falls outside its part and was omitted", limits); continue;
+          }
+          if (target > noteEnd) {
+            addIssue(issues, UstxIssueSeverity::Loss, notePath + ".pitch[" + std::to_string(pointIndex) + "]", "pitch point falls after its note and was omitted", limits); continue;
+          }
+          if (target < absoluteNoteTick && target - source.position.value() <= priorEnd) {
+            // OpenUtau composes overlapping note curves in absolute pitch,
+            // subtracting the preceding note's base tone. A single region
+            // cents curve cannot reproduce that by copying one negative-X
+            // point. Rest pickups are safe; cross-note ramps need composition.
+            addIssue(issues, UstxIssueSeverity::Loss, notePath + ".pitch[" + std::to_string(pointIndex) + "]",
+                     "cross-note portamento requires absolute pitch curve composition and was omitted", limits); continue;
           }
           auto relative = scaleTick(target - source.position.value(), kUstxPpq, kSeamPpq, notePath + ".pitch[" + std::to_string(pointIndex) + "]", issues, limits); if (!relative) return core::Result<Output>{relative.error()};
-          const auto interpolation = interpolationFor(point.shape, notePath, issues, limits);
+          const auto interpolation = interpolationFor(point.shape, notePath + ".pitch[" + std::to_string(pointIndex) + "].shape", issues, limits);
           const auto result = region->pitchAutomation.upsert({time::Tick{relative.value()}, static_cast<float>(inputNote.tuning + point.y * 10.0), interpolation});
           if (!result) return core::Result<Output>{result.error()};
         }
@@ -233,29 +285,67 @@ core::Result<UstxExportResult> exportUstxProject(const domain::Project& project,
       UstxPart part{region.name, static_cast<std::uint32_t>(trackNumber), time::Tick{partPosition.value()}, time::Tick{partDuration.value()}, {}};
       std::map<domain::LyricTokenId, const domain::LyricToken*> lyrics;
       for (const auto& lyric : region.lyrics) lyrics.emplace(lyric.id, &lyric);
+      // A pitch point in a rest belongs to the next note as a negative-X
+      // pickup. Resolve that ownership before writing notes so storage order
+      // does not matter, and never attach it across an intervening note span.
+      struct PitchNoteSpan final {
+        time::Tick start;
+        time::Tick latestEnd;
+        std::size_t noteIndex;
+      };
+      std::vector<PitchNoteSpan> pitchSpans;
+      pitchSpans.reserve(region.notes.size());
+      for (std::size_t index = 0U; index < region.notes.size(); ++index)
+        pitchSpans.push_back({region.notes[index].startTick, region.notes[index].endTick(), index});
+      std::sort(pitchSpans.begin(), pitchSpans.end(), [](const auto& left, const auto& right) {
+        return left.start != right.start ? left.start < right.start : left.noteIndex < right.noteIndex;
+      });
+      for (std::size_t index = 1U; index < pitchSpans.size(); ++index)
+        pitchSpans[index].latestEnd = std::max(pitchSpans[index - 1U].latestEnd, pitchSpans[index].latestEnd);
+      const auto& pitchPoints = region.pitchAutomation.points();
+      std::vector<std::size_t> pickupOwners(pitchPoints.size(), region.notes.size());
+      for (std::size_t index = 0U; index < pitchPoints.size(); ++index) {
+        const auto next = std::upper_bound(pitchSpans.begin(), pitchSpans.end(), pitchPoints[index].tick,
+                                           [](time::Tick tick, const auto& span) { return tick < span.start; });
+        if (next != pitchSpans.begin() && (next - 1)->latestEnd >= pitchPoints[index].tick) continue;
+        const auto path = "project.vocalTracks[" + std::to_string(trackNumber) + "].regions[" + std::to_string(regionNumber) + "].pitch[" + std::to_string(index) + "]";
+        if (next == pitchSpans.end()) {
+          addIssue(issues, UstxIssueSeverity::Loss, path, "pitch point after the last note has no USTX note owner and was omitted", limits);
+        } else if (next + 1 != pitchSpans.end() && (next + 1)->start == next->start) {
+          addIssue(issues, UstxIssueSeverity::Loss, path, "rest pickup precedes simultaneous notes with ambiguous ownership and was omitted", limits);
+        } else {
+          pickupOwners[index] = next->noteIndex;
+        }
+      }
       for (std::size_t noteNumber = 0U; noteNumber < region.notes.size(); ++noteNumber) {
         const auto& note = region.notes[noteNumber];
+        const auto notePath = "project.vocalTracks[" + std::to_string(trackNumber) + "].regions[" + std::to_string(regionNumber) + "].notes[" + std::to_string(noteNumber) + "]";
         const auto lyric = lyrics.find(note.lyricTokenId);
         if (lyric == lyrics.end()) return core::failure<Output>(core::ErrorCode::InvariantViolation, "USTX export note references a missing lyric", note.id.toString());
         auto notePosition = scaleTick(note.startTick.value(), project.ppq(), kUstxPpq, "project.note.startTick", issues, limits); if (!notePosition) return core::Result<Output>{notePosition.error()};
         auto noteDuration = scaleTick(note.durationTick.value(), project.ppq(), kUstxPpq, "project.note.durationTick", issues, limits); if (!noteDuration) return core::Result<Output>{noteDuration.error()};
         UstxNote exported{time::Tick{notePosition.value()}, time::Tick{noteDuration.value()}, note.midiKey, domain::toUtf8(lyric->second->surface), 0.0, {}, false, {}, false};
-        for (const auto& point : region.pitchAutomation.points()) {
-          if (point.tick < note.startTick || point.tick > note.endTick()) continue;
+        for (std::size_t pointIndex = 0U; pointIndex < pitchPoints.size(); ++pointIndex) {
+          const auto& point = pitchPoints[pointIndex];
+          if (point.tick > note.endTick() || (point.tick < note.startTick && pickupOwners[pointIndex] != noteNumber)) continue;
           const auto absolutePoint = region.startTick + point.tick;
           const auto absoluteNote = region.startTick + note.startTick;
           const auto milliseconds = (project.tempoMap().secondsAt(absolutePoint) - project.tempoMap().secondsAt(absoluteNote)) * 1000.0;
-          if (!std::isfinite(milliseconds) || milliseconds < 0.0) continue;
-          exported.pitch.push_back({milliseconds, static_cast<double>(point.cents) / 10.0, shapeFor(point.interpolation)});
+          if (!std::isfinite(milliseconds)) continue;
+          exported.pitch.push_back({milliseconds, static_cast<double>(point.cents) / 10.0,
+                                    shapeFor(point.interpolation, notePath + ".pitch[" + std::to_string(exported.pitch.size()) + "].shape", issues, limits)});
         }
         if (note.vibrato.enabled) {
           exported.hasVibrato = true;
           exported.vibrato.length = std::clamp((1.0 - static_cast<double>(note.vibrato.startFraction)) * 100.0, 0.0, 100.0);
           exported.vibrato.period = note.vibrato.periodMilliseconds;
-          exported.vibrato.depth = static_cast<double>(note.vibrato.depthCents) / 10.0;
+          exported.vibrato.depth = std::max(5.0, static_cast<double>(note.vibrato.depthCents));
+          if (note.vibrato.depthCents < 5.0F)
+            addIssue(issues, UstxIssueSeverity::Loss, notePath + ".vibrato.depth",
+                     "vibrato depth was raised to OpenUtau's minimum of 5 cents", limits);
           exported.vibrato.fadeIn = static_cast<double>(note.vibrato.fadeInFraction) * 100.0;
           exported.vibrato.fadeOut = static_cast<double>(note.vibrato.fadeOutFraction) * 100.0;
-          exported.vibrato.shift = static_cast<double>(note.vibrato.phaseTurns) * 360.0;
+          exported.vibrato.shift = static_cast<double>(note.vibrato.phaseTurns) * 100.0;
         }
         part.notes.push_back(std::move(exported));
         if (note.articulation != domain::NoteArticulation::Normal || note.slurGroup.has_value() || note.phoneticHint.has_value()) addIssue(issues, UstxIssueSeverity::Loss, "project.note[" + std::to_string(noteNumber) + "]", "SEAM articulation/slur/phonetic hint is not represented in USTX", limits);

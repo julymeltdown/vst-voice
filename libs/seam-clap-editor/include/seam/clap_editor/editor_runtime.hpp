@@ -334,7 +334,7 @@ private:
   void configureControllerCallbacks();
   void requestRepaint() const;
   void requestRenderAfterEdit();
-  [[nodiscard]] native_ui::EditorSceneState sceneState() const;
+  [[nodiscard]] native_ui::EditorSceneState sceneState();
   void refreshVoicebankResolutionLocked();
   void refreshAllVoicebankResolutionsLocked();
   void rebuildVoicebankCardsLocked();
@@ -369,6 +369,8 @@ private:
   std::unique_ptr<native_ui::NativeEditorController> controller_;
   native_ui::EditorScenePainter painter_;
   native_ui::CharacterPresentation character_;
+  // Only the bounded performance model survives a repaint, never the published PCM.
+  std::optional<std::uint64_t> characterPerformanceRequest_;
   mutable RealtimePreviewPublication previewPublication_;
   mutable RealtimePreviewPublication offlinePublication_;
   live_voice::VoiceEngine live_;

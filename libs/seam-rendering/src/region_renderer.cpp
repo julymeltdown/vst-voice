@@ -121,6 +121,7 @@ core::Result<RegionRenderResult> ProductionRegionRenderer::render(
           revision, sampleRate, quality, style, options, cache, stopToken, continueOnPhraseFailure);
       if (!child) return core::Result<RegionRenderResult>{child.error()};
       auto& audio = child.value();
+      if (!audio.resolvedStyle.empty()) mixed.resolvedStyle = audio.resolvedStyle;
       if (mixed.mono.size() < audio.mono.size()) mixed.mono.resize(audio.mono.size(), 0.0F);
       for (std::size_t i = 0; i < audio.mono.size(); ++i) {
         if (i % 4096U == 0U && stopToken.stop_requested()) return core::failure<RegionRenderResult>(
@@ -176,6 +177,7 @@ core::Result<RegionRenderResult> ProductionRegionRenderer::render(
       continue;
     }
 
+    output.resolvedStyle = snapshot.value().style;
     // The cue partition comes from the prepared snapshot itself, before the cache branch decides
     // whether this phrase is rendered or reused, so a cache hit publishes the same presentation data
     // as a fresh render instead of silently having none.

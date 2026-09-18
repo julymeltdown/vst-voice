@@ -45,6 +45,8 @@ struct RegionRenderResult final {
   // One pronunciation digest per published phrase, in the same order as the phrase list. The caller
   // that knows the singer's own identity combines these into the region's performance identity.
   std::vector<std::string> phrasePronunciationDigests;
+  // Effective style from the prepared phrases, including an implicit sole bank style.
+  std::string resolvedStyle;
   std::vector<RegionRenderPhraseFailure> failures;
   std::size_t unitCount{0U};
   std::size_t fallbackCount{0U};

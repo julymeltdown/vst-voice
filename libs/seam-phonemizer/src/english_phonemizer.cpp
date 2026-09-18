@@ -245,7 +245,7 @@ core::Result<EnglishReading> parseEnglishReading(std::string_view text) {
         "English phone hint is empty or exceeds 4096 bytes");
   static const auto inventory = [] {
     std::unordered_set<std::string> values{
-        "aa", "ae", "ah", "ax", "axr", "aw", "ay", "eh", "er",
+        "aa", "ae", "ah", "ao", "ax", "axr", "aw", "ay", "eh", "er",
         "ey", "ih", "iy", "ow", "oy", "uh", "uw", "p", "b", "t",
         "d", "k", "g", "m", "n", "ng", "f", "v", "th", "dh", "s",
         "z", "sh", "zh", "hh", "ch", "j", "l", "r", "w", "y", "pau",
