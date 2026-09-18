@@ -30,6 +30,7 @@ MEDIAN_CENTS_LIMIT: Final = 30.0
 WITHIN_50_PERCENT_LIMIT: Final = 90.0
 WITHIN_50_CENTS: Final = 50.0
 DISPLACEMENT_LIMIT_SAMPLES: Final = 1
+DURATION_LIMIT_FRAMES: Final = 0
 MINIMUM_CONFIDENCE: Final = 0.5
 # The analyzer F0 estimator is bounded by maximumHz 1200.0. A frame reported at
 # or above that ceiling is a lock to the estimator bound (or a harmonic of it),
@@ -356,6 +357,52 @@ def timing_displacement_within_limit(placements: tuple[TimingPlacement, ...],
 
 
 @dataclass(frozen=True, slots=True)
+class DurationPlacement:
+    """One placement requested span against the frames it actually produced."""
+
+    unit_id: str
+    requested_start_frame: int
+    requested_end_frame: int
+    produced_frames: int | None
+
+    @property
+    def requested_frames(self) -> int:
+        return self.requested_end_frame - self.requested_start_frame
+
+    @property
+    def duration_error(self) -> int | None:
+        if self.produced_frames is None:
+            return None
+        return self.produced_frames - self.requested_frames
+
+
+def measure_duration_placement(measured: PhraseMeasurement) -> tuple[DurationPlacement, ...]:
+    return tuple(
+        DurationPlacement(
+            unit_id=placement.unit_id,
+            requested_start_frame=placement.destination_start_frame,
+            requested_end_frame=placement.destination_end_frame,
+            produced_frames=placement.frame_count,
+        )
+        for placement in measured.placements
+    )
+
+
+def duration_within_limit(placements: tuple[DurationPlacement, ...],
+                          limit: int = DURATION_LIMIT_FRAMES) -> bool:
+    """Every placement must produce exactly the span its destination requested.
+
+    Independent duration mapping is a V06 obligation, so a placement that
+    renders shorter or longer than the score asked for is a measured failure
+    rather than a stylistic choice.
+    """
+    measured = [p for p in placements if p.duration_error is not None]
+    if not measured:
+        return False
+    return all(abs(p.duration_error) <= limit for p in measured)
+
+
+@dataclass(frozen=True, slots=True)
 class CaseAcousticSummary:
     case_id: str
     pitch: PitchErrorReport
@@ -363,6 +410,8 @@ class CaseAcousticSummary:
     used_fallback: bool
     timing_displacement_ok: bool
     renderers: RendererAudit = RendererAudit(0, 0, ())
+    durations: tuple[DurationPlacement, ...] = ()
+    duration_ok: bool = False
 
     def to_json(self) -> str:
         payload = {
@@ -401,6 +450,19 @@ class CaseAcousticSummary:
             },
             "used_fallback": self.used_fallback,
             "renderers": json.loads(self.renderers.to_json()),
+            "duration": {
+                "threshold_frames": DURATION_LIMIT_FRAMES,
+                "within_frozen_limit": self.duration_ok,
+                "placements": [
+                    {
+                        "unit_id": item.unit_id,
+                        "requested_frames": item.requested_frames,
+                        "produced_frames": item.produced_frames,
+                        "duration_error_frames": item.duration_error,
+                    }
+                    for item in self.durations
+                ],
+            },
         }
         return json.dumps(payload, indent=2) + "\n"
 
@@ -409,6 +471,8 @@ def summarise_case(case_directory: Path, case_id: str) -> CaseAcousticSummary:
     phrases = load_phrase_measurements(case_directory)
     all_placements = tuple(
         placement for phrase in phrases for placement in phrase.placements)
+    durations = tuple(
+        item for phrase in phrases for item in measure_duration_placement(phrase))
     errors: list[float] = []
     voiced = low_confidence = unvoiced = octave_errors = saturated = 0
     placements: list[TimingPlacement] = []
@@ -433,6 +497,8 @@ def summarise_case(case_directory: Path, case_id: str) -> CaseAcousticSummary:
         used_fallback=used_fallback,
         timing_displacement_ok=timing_displacement_within_limit(tuple(placements)),
         renderers=audit_renderer_substitutions(all_placements),
+        durations=durations,
+        duration_ok=duration_within_limit(durations),
     )
 
 

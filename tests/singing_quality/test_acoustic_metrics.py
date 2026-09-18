@@ -297,11 +297,60 @@ class PilotPitchReportTests(unittest.TestCase):
         self.assertFalse(report.within_limits())
 
 
+class DurationPlacementTests(unittest.TestCase):
+
+    """V06 requires independent duration mapping, measured per placement."""
+
+    def setUp(self) -> None:
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.root = Path(self.temporary.name)
+
+    def build(self, produced: int | None) -> Path:
+        case = self.root / "case"
+        write_case(case, 67, 48000, 60000,
+                   [voiced(48000 + 256 * i, midi_hz(67)) for i in range(10)])
+        diagnostics = json.loads((case / "diagnostics.json").read_text())
+        placement = diagnostics["phrases"][0]["rendered_placements"][0]
+        if produced is None:
+            # A record that never stated its produced length must not read as exact.
+            placement.pop("frame_count", None)
+        else:
+            placement["frame_count"] = produced
+        (case / "diagnostics.json").write_text(json.dumps(diagnostics))
+        return case
+
+    def test_exact_span_is_within_the_frozen_limit(self) -> None:
+        case = self.build(12000)
+        summary = summarise_case(case, "case")
+        self.assertEqual(1, len(summary.durations))
+        self.assertEqual(0, summary.durations[0].duration_error)
+        self.assertTrue(summary.duration_ok)
+        record = json.loads(summary.to_json())
+        self.assertTrue(record["duration"]["within_frozen_limit"])
+        self.assertEqual(0, record["duration"]["threshold_frames"])
+
+    def test_shorter_than_requested_is_measured_as_a_failure(self) -> None:
+        case = self.build(11990)
+        summary = summarise_case(case, "case")
+        self.assertEqual(-10, summary.durations[0].duration_error)
+        self.assertFalse(summary.duration_ok)
+
+    def test_longer_than_requested_is_measured_as_a_failure(self) -> None:
+        case = self.build(12007)
+        summary = summarise_case(case, "case")
+        self.assertEqual(7, summary.durations[0].duration_error)
+        self.assertFalse(summary.duration_ok)
+
+    def test_a_missing_frame_count_is_not_treated_as_a_pass(self) -> None:
+        case = self.build(None)
+        summary = summarise_case(case, "case")
+        self.assertIsNone(summary.durations[0].duration_error)
+        self.assertFalse(summary.duration_ok)
 
 
 class RendererSubstitutionTests(unittest.TestCase):
     """A silent backend change is the hidden fallback V06 forbids."""
-
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
