@@ -8,6 +8,7 @@ baseline_commit: 3276b7df
 followup_audit_baseline: 7839c72f
 status: revised after source audit; implementation and validation recorded below
 latest_followup_baseline: ba6dbfa086596cea66a89c9de95b7ec411406764
+persistent_training_batch_baseline: cddf4f9f0a38ef83f6f1acbffc16f15b8bc1b6b3
 language: English
 companions: SEAM_JOINT_DEVELOPMENT_PLAN_R4_2026-09-16.md, SEAM_DETAILED_DEVELOPMENT_PLAN_2026-09-19.md
 reviewed_with: second-developer session 01a0a066-1eba-71f2-8c0d-e21f9419cbcc
@@ -703,3 +704,123 @@ retained. Neither this repair batch nor another large test count completes R9,
 U3.5 or Beta GO. A new percentage is unwarranted without re-evaluating the complete
 requirement denominator. The central schedule risk remains the quality of an actual
 original singer and its source/model path, not the amount of remaining documentation.
+
+## 15. Next implementation completed: persistent training and imported glide ownership
+
+This batch starts from `cddf4f9f` and executes parts of lanes A and B above. It does
+not reclassify the original-singer requirement as an oscillator reconstruction task.
+Two agents worked on independent orchestration and interchange paths; the integrator
+implemented the training CLI and exercised actual upstream training/export.
+
+### 15.1 Persistent vocoder command
+
+`tools/voice_model_training/train_vocoder.py` is now a usable CPU entrypoint over
+the existing reviewed dataset, batch reader, GAN optimizer and checkpoint services.
+`vocoder_epochs.py` retains each complete epoch and its held-out reconstruction in
+a new run directory. It supports explicit additional epochs, a captured resume
+receipt, seeded execution, bounded threads, cooperative time/cancellation limits,
+and cumulative checkpoint-byte limits. Config/commands and failure semantics are
+documented in `tools/voice_model_training/README.md` under “Persistent vocoder GAN
+training and resume.”
+
+Resume restores the generator, discriminator buffers, both optimizers, both
+schedulers, and Python/NumPy/Torch random states. It requires the same captured
+inputs and selected library versions; source/label admission is checked again.
+Earlier complete checkpoints survive a failed or interrupted later epoch. Partial
+files do not have a completion receipt and cannot be promoted as success.
+
+The former 512 MiB limit was per file, while a complete GAN has two state files.
+The new aggregate limit is checked **before each write** across both streams and
+against the run's remaining binary-checkpoint budget. An exact asymmetric-file
+budget succeeds; a one-byte-smaller budget fails without exceeding it. JSON and
+reconstruction audio are explicitly outside this binary budget and need separate
+disk provisioning. Deadlines are cooperative and begin after model initialization;
+they are not hard OS-level resource isolation.
+
+### 15.2 Actual training → restart → retained ONNX execution
+
+Executed the new production command using pinned SingingVocoders on the existing
+original oscillator engineering fixtures. These are short synthetic waveforms with
+explicitly public **fixture-only** review keys, not human voice, singing supervision,
+production rights authority or an admitted original-singer corpus. All fixture data,
+commands, logs, checkpoints and held-out audio are retained at:
+
+`/Users/lhs/seam-listening-reference/vocoder-runner-2026-09-19-attempt1/`
+
+The repeatable entrypoint is `python -B -m
+tools.voice_model_training.check_vocoder_train_command --trusted-checkout CHECKOUT
+--output NEW_DIRECTORY`. It reuses the existing fixture admission path rather than
+mocking training, file verification or checkpoint restore.
+
+| Execution | Observed result |
+|---|---|
+| Two uninterrupted upstream GAN epochs | Completed one full training-phrase update per epoch; generator loss 218.6424255 → 213.5378571, discriminator loss 4.9229078 → 4.4336958 |
+| Separate process resumes epoch 1 | Epoch 2 generator/discriminator state, optimizer/scheduler/RNG state and held-out WAV bytes exactly equal the uninterrupted result |
+| Persistent checkpoint size | 553,464,732 bytes each; three retained complete GAN checkpoints total 1,660,394,196 bytes |
+| Held-out fixture reconstruction | Correctly **fails**: spectral distance 3.970544, whole-phrase median pitch difference 979.128 cents |
+| Existing `export_vocoder` consumes resumed checkpoint | Retained 168,336-byte ONNX graph; Torch/ONNX comparisons pass for 1, 3, 16 and 23 frames; maximum observed error 3.3527613e-8 |
+
+The model weights actually changed; this is no longer an untrained forward-only
+check. But two oscillator updates do not create a singer or support any inference
+about singing naturalness/intelligibility. Loss movement is not quality acceptance.
+The exact resume result is measured on this runtime/configuration, not guaranteed
+across other hardware, thread counts, libraries or arbitrary forward methods.
+No new native learned-singer bundle or installed singer is claimed by this export.
+
+Selected artifact identities:
+
+- `vocoder-command-check.json`: `240fbde892163c9c5f331dcd8396e3c6c535c9599dbd6e58ef56748bf66f25c7`.
+- Resumed `epoch-000002/checkpoint.json`:
+  `7f15ea687e9aa87ea7684fd429921743dfc1405b63da9657317d5c40e85f14a4`.
+- Resumed held-out `reconstruction-000002/item-000001.wav`:
+  `e0a56174ba971a1af537f862087c63c3f167523bde1f6170cc5a4097aa113ac3`.
+- `vocoder-export/vocoder.onnx`:
+  `76c75fafb3b93bad306be67708248d104dc8b03f6d81732aa38f0f8a7c248bca`.
+- `vocoder-export/export.json`:
+  `aca6b5acd93f4453a82306af9ac5b54be6b3df291387f10116ecaa1831ae948b`.
+
+Fixture review expiry is intentionally short. Retention preserves evidence; it
+does not make those reviews permanent production authorization. No downloaded
+PJS recording or retained SEAM song was silently substituted into these fixtures.
+
+### 15.3 Imported continuation pitch now has explicit ownership
+
+A new actual-sampler regression reproduced another 400-cent error: a touching
+continuation began at 5800 cents instead of the independently specified 6200 cents.
+The imported curve already described portamento, but SEAM applied its automatic
+continuation glide a second time.
+
+Successful linear USTX composition now persists the existing whole-region
+`Pitch/Replace` ownership contract. The compiler suppresses only the duplicate
+automatic glide while that ownership applies. No schema or import-only hidden flag
+was introduced. Native unowned and additive manual glides remain unchanged;
+continuation phonetics, reattack, articulation and dynamics remain independent.
+Compiler revision 16 invalidates old cached renders.
+
+Tests cover four sample rates, JSON save/reopen, actual `at()` and `inspectAt()`,
+and exact scoped ownership boundaries. Nonlinear/polyphonic fallbacks remain
+unowned and explicitly lossy. USTX export reports the ownership-metadata loss;
+this is not a new lossless-round-trip claim.
+
+### 15.4 Verification and remaining highest-value work
+
+- Full Release rebuild: PASS, 377 build actions.
+- Complete CTest: **172/172 PASS in 104.54 seconds**, including source closure.
+- Optional neural-runtime Python discovery: **128/128 PASS in 38.436 seconds**.
+- Agent-focused USTX 22 cases and compiler 20 cases pass. Runner/checkpoint-related
+  focused tests: 31 pass; counts overlap the complete suites.
+- Independent CLI review found a non-object receipt could raise `AttributeError`.
+  Added failing array/null/string cases, then repaired the guard; they now reject
+  through the controlled error path. Source and staged diff checks pass.
+- The second-developer task reviewed scope, restore and write-budget handling
+  read-only. Actual executions above are the integrator's evidence, not proof
+  derived from that task's description. The parked coordinator race was untouched.
+
+Lane A's persistent-runner subtask and lane B's duplicate-glide repair are complete.
+Remaining priority: assemble useful, explicitly authorized original singing material,
+retain a genuinely singer-trained acoustic/vocoder candidate, and run it through the
+normal native deployment and installed-song workflow. A teacher corpus whose lyrics
+are already unclear cannot be assumed to become intelligible through reconstruction.
+Independent audio diagnostics, nonlinear interchange cases and named-host evidence
+continue in parallel. No source-rights policy, human observation, full-product
+denominator, R9 or Beta GO acceptance has been replaced by this fixture success.

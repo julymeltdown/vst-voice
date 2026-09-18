@@ -12,6 +12,26 @@ This ledger records implementation evidence for [the approved plan](../plans/202
 
 ## Active implementation
 
+2026-09-19 — Persistent vocoder training batch against `cddf4f9f`. Added production
+`train_vocoder` CLI and multi-epoch orchestration over existing admission/batch/GAN
+services, with complete-state resume, per-epoch retained audio and exact cumulative
+binary-checkpoint write limits. Actual pinned upstream GAN command ran two epochs
+on explicitly synthetic oscillator fixture-policy data; a separate-process resume
+reproduced all model/optimizer/scheduler/RNG state and held-out WAV bytes exactly.
+Retained three GAN checkpoints total 1,660,394,196 bytes. Actual resumed checkpoint
+exports to 168,336-byte ONNX with Torch parity maximum error 3.3527613e-8.
+Fixture reconstruction still fails (spectral 3.970544, pitch 979.128c); no usable
+learned singer, real-source approval, native deployment or Beta GO is claimed.
+
+In parallel, fixed imported continuation double glide: successful composed USTX
+pitch persists existing Pitch/Replace ownership; compiler revision 16 suppresses
+only the duplicate automatic glide. Regression corrects 5800c to 6200c and preserves
+ordinary native glide/phonetics. Save/reopen, four rates and ownership boundaries
+pass; nonlinear/polyphonic/export-loss limits remain explicit. Complete Release
+build and CTest 172/172 pass (104.54s); optional Python tests 128/128 pass (38.436s).
+Source closure passes; parked coordinator unchanged. Report section 15 and training
+README contain executable commands, exact artifact hashes and remaining work.
+
 2026-09-19 — Follow-up against `ba6dbfa0`: two implementation agents plus integrator
 repaired OpenUtau linear cross-note pitch composition/snap, a production last-frame
 manual-pitch ownership bug (5800 vs 6199.270833 cents), float32 renderer-WAV intake,

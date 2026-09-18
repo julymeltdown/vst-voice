@@ -944,5 +944,91 @@ This diagnostic initializes an untrained upstream MiniNSF model, measures native
 F0 and reconstructs a maximum two-second source crop. Exit 0 means tensor/audio
 execution passed, even when the retained reconstruction-quality result fails.
 It does not load trained weights, train, execute ONNX, establish a held-out study,
-or authenticate source-use permission. A persistent vocoder training CLI and a
-retained learned-singer deployment remain separate unfinished work.
+or authenticate source-use permission. A retained learned-singer deployment
+remains separate from this diagnostic and the persistent training command below.
+
+### Persistent vocoder GAN training and resume
+
+`python -B -m tools.voice_model_training.train_vocoder --help` exposes the CPU
+entrypoint. It uses the clean pinned SingingVocoders training checkout, freshly
+revalidates the existing source/label reviews, reads the actual WAV/conditioning/
+mel targets, and trains the export-supported deterministic MiniNSF configuration.
+There is no pretrained-weight download, admission bypass or implicit conversion.
+
+Capture this closed JSON configuration and supply its exact file SHA-256:
+
+```json
+{
+  "formatId": "com.project-seam.vocoder-training-config",
+  "schemaVersion": 1,
+  "seed": 928,
+  "learningRate": 0.0001,
+  "learningRateDecay": 0.999,
+  "maximumUpdates": 10,
+  "maximumSeconds": 600,
+  "cpuThreads": 1,
+  "evaluationSeed": 932,
+  "heldOutSources": ["your-validation-source-id"],
+  "labelOrigin": "renderer-intent-not-acoustic-truth"
+}
+```
+
+`heldOutSources` must select admitted validation/test IDs. Supply the actual label
+origin for the material; the example describes a procedural teacher, not real
+recordings or reviewed acoustic truth. The architecture is fixed to the supported
+48 kHz/80-bin/256-hop/1024-FFT configuration. The label config supplies source WAV
+paths; target inventory is the existing `training-target-inventory` schema.
+
+```sh
+python -B -m tools.voice_model_training.train_vocoder \
+  --training-config TRAINING_JSON --training-sha256 TRAINING_FILE_SHA256 \
+  --dataset-config DATASET_JSON --dataset-sha256 DATASET_FILE_SHA256 \
+  --targets TARGET_INVENTORY --targets-sha256 TARGET_INVENTORY_FILE_SHA256 \
+  --source-root SOURCE_ROOT --conditioning CONDITIONING_DIRECTORY \
+  --trusted-checkout PINNED_SINGING_VOCODERS_CHECKOUT \
+  --rights-policy-sha256 TRUSTED_RIGHTS_ANCHOR \
+  --label-policy-sha256 TRUSTED_LABEL_ANCHOR \
+  --output NEW_RUN_DIRECTORY --epochs 2 --maximum-run-seconds 1200 \
+  --maximum-total-checkpoint-bytes 2147483648
+```
+
+Each completed epoch publishes `epoch-NNNNNN/checkpoint.json` after `models.pt`
+and `training.pt`. Corresponding `reconstruction-NNNNNN` directories retain exact
+held-out WAVs and receipts. `run.json` appears only after every requested epoch
+finishes. Models, discriminator buffers, both AdamW optimizers, both exponential
+LR schedulers, Python/NumPy/Torch RNG and configuration identities are persisted.
+
+To resume, use the same captured inputs/environment and a **new** output directory,
+adding `--resume PREVIOUS_RUN/epoch-000001 --resume-receipt-sha256 RECEIPT_FILE_SHA256`.
+The `--epochs` count is additional epochs. Fresh admission must still pass; expired
+reviews do not become valid because a checkpoint exists. Changed data/configuration/
+runtime versions reject. No exact-reproduction claim is made across different
+hardware, software or thread settings.
+
+Each state file is bounded to 512 MiB. A separate aggregate cap is enforced during
+writes across both files and across the run, including partial final writes. This
+binary-checkpoint budget excludes JSON and held-out audio; provision those separately.
+An observed full upstream checkpoint is about 553 MB, not 10 MB. Time limits and
+API cancellation are cooperative between operations, not hard process preemption;
+the run deadline begins after model initialization. Ctrl-C exits 130. Invalid input
+or a failed attempt exits 2. Earlier completed checkpoints remain; partial files
+without a completion receipt must not be resumed or promoted.
+
+Exit 0 means training/persistence/evaluation executed, **not** that reconstruction
+passed or a singer is qualified. Check the retained reconstruction result, including
+unresolved pitch. The existing `export_vocoder` command consumes a completed epoch
+directory and can retain/compare its learned ONNX graph separately.
+
+The repeatable CLI diagnostic is:
+
+```sh
+python -B -m tools.voice_model_training.check_vocoder_train_command \
+  --trusted-checkout PINNED_SINGING_VOCODERS_CHECKOUT --output NEW_FIXTURE_DIRECTORY
+```
+
+It retains explicitly synthetic oscillator fixtures under public fixture-only keys,
+runs two actual upstream GAN epochs, resumes epoch 1, and compares full state and
+held-out WAV bytes. Allow about 1.7 GB for its three complete GAN checkpoints.
+Those keys authenticate engineering fixtures only, never real-source permission
+or singer approval. Fixture review expiry is intentionally short; the diagnostic
+is a reproducible test, not a permanently admitted production corpus.

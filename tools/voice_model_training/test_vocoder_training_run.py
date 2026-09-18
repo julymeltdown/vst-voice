@@ -77,6 +77,13 @@ class VocoderEpochTests(unittest.TestCase):
             self.assertEqual(result["validSamples"], 2000)
             self.assertEqual(result["meanGeneratorLoss"], 2.)
             self.assertEqual(refresh.call_count, 3)
+            train_reviewed_vocoder_epoch(None, [], None, None, **options, maximum_checkpoint_total_bytes=12345)
+            self.assertEqual(publish.call_args.kwargs["maximum_total_bytes"], 12345)
+            step.reset_mock()
+            for bound in (0, True, 1024 * 1024 * 1024 + 1):
+                with self.assertRaises(ValueError):
+                    train_reviewed_vocoder_epoch(None, [], None, None, **options, maximum_checkpoint_total_bytes=bound)
+                step.assert_not_called()
             for supplied in ([], [batch, batch], [dict(batch, validSamples=1999)],
                              [dict(batch, partition="test")], [dict(batch, frameOffset=1)]):
                 batches.side_effect = lambda *a, rows=supplied, **k: iter(rows)

@@ -16,14 +16,16 @@ def _bytes(value):
     return json.dumps(value, sort_keys=True, ensure_ascii=False, separators=(",", ":"), allow_nan=False).encode()
 
 
-def publish_checkpoint(model, optimizer, output, *, metadata, epoch, maximum_bytes=LIMIT, before_publish=None):
+def publish_checkpoint(model, optimizer, output, *, metadata, epoch, maximum_bytes=LIMIT,
+                       maximum_total_bytes=2 * LIMIT, before_publish=None):
     import torch
     from .__main__ import publish_new
     if (type(maximum_bytes) is not int or not 1 <= maximum_bytes <= LIMIT
+            or type(maximum_total_bytes) is not int or not 1 <= maximum_total_bytes <= 2 * LIMIT
             or not isinstance(metadata, dict) or not isinstance(epoch, dict)
             or epoch.get("epochComplete") is not True or epoch.get("coverageVerified") is not True
             or before_publish is not None and not callable(before_publish)):
-        raise ValueError("Require complete epoch and a per-file bound up to 512 MiB")
+        raise ValueError("Require complete epoch, per-file bound up to 512 MiB and aggregate bound up to 1 GiB")
     captured = _bytes(dict(metadata=metadata, epoch=epoch))
     if len(captured) > 1024 * 1024:
         raise ValueError("GAN metadata exceeds 1 MiB")
@@ -32,7 +34,7 @@ def publish_checkpoint(model, optimizer, output, *, metadata, epoch, maximum_byt
     if any(not isinstance(v, torch.Tensor) or v.device.type != "cpu" for v in model_state.values()):
         raise ValueError("GAN checkpoints require CPU model tensors")
     output.mkdir(mode=0o700)
-    records = []
+    records, total_written = [], 0
     for name, state in (("models.pt", model_state),
                          ("training.pt", dict(optimizer=optimizer.state_dict(), rng=torch.get_rng_state()))):
         digest, count = hashlib.sha256(), 0
@@ -40,12 +42,14 @@ def publish_checkpoint(model, optimizer, output, *, metadata, epoch, maximum_byt
             class Writer:
                 failure = None
                 def write(self, data):
-                    nonlocal count
+                    nonlocal count, total_written
                     if self.failure is not None:
                         raise self.failure
                     try:
                         if count + len(data) > maximum_bytes:
                             raise ValueError("GAN state file exceeds bound; incomplete output retained")
+                        if total_written + len(data) > maximum_total_bytes:
+                            raise ValueError("GAN aggregate state exceeds bound; incomplete output retained")
                         written = stream.write(data)
                         if written != len(data):
                             raise OSError("Incomplete GAN checkpoint write")
@@ -53,6 +57,7 @@ def publish_checkpoint(model, optimizer, output, *, metadata, epoch, maximum_byt
                         self.failure = error
                         raise
                     count += written
+                    total_written += written
                     digest.update(data)
                     return written
                 def flush(self):

@@ -1,6 +1,7 @@
 #include "test_framework.hpp"
 
 #include "seam/application/project_factory.hpp"
+#include "seam/formats/project_json.hpp"
 #include "seam/interchange/ustx_codec.hpp"
 #include "seam/interchange/ustx_project_conversion.hpp"
 #include "seam/phonemizer/pronunciation_resolver.hpp"
@@ -445,6 +446,7 @@ TEST_CASE("USTX import reports unsupported nonlinear cross-note portamento") {
   seam::application::ProjectFactory factory{1000000U};
   const auto imported = seam::interchange::importUstxProject(bytes(source), factory);
   CHECK(imported);
+  CHECK(imported.value().project.vocalTracks().front().regions.front().performance.ownership.empty());
   const auto& pitch = imported.value().project.vocalTracks().front().regions.front().pitchAutomation;
   CHECK(std::none_of(pitch.points().begin(), pitch.points().end(), [](const auto& point) {
     return point.tick == seam::time::Tick{230};
@@ -635,6 +637,7 @@ TEST_CASE("USTX pitch composition keeps explicit polyphonic losses and bounded s
   seam::application::ProjectFactory factory{1060000U};
   const auto polyphonic = seam::interchange::importUstxProject(bytes(overlapping), factory);
   CHECK(polyphonic);
+  CHECK(polyphonic.value().project.vocalTracks().front().regions.front().performance.ownership.empty());
   CHECK(hasLossAt(polyphonic.value().issues, "ustx.voice_parts[0].pitch.composition"));
   CHECK(hasLossAt(polyphonic.value().issues, "ustx.voice_parts[0].notes[1].pitch[0]"));
 
@@ -664,6 +667,57 @@ TEST_CASE("USTX pitch endpoint half-ticks follow OpenUtau ties-to-even rounding"
   const auto imported = seam::interchange::importUstxProject(bytes(source), factory);
   CHECK(imported);
   CHECK(imported.value().project.vocalTracks().front().regions.front().pitchAutomation.points().front().tick == seam::time::Tick{240});
+}
+
+TEST_CASE("USTX authored continuation pitch is not combined with an automatic melisma glide") {
+  auto source = linearPortamentoFixture();
+  source.replace(source.find("lyric: \"a\""), std::string{"lyric: \"a\""}.size(), "lyric: \"あ\"");
+  source.replace(source.find("lyric: \"i\""), std::string{"lyric: \"i\""}.size(), "lyric: \"ー\"");
+  seam::application::ProjectFactory factory{1090000U};
+  const auto imported = seam::interchange::importUstxProject(bytes(source), factory);
+  CHECK(imported);
+  const auto& project = imported.value().project;
+  const auto& region = project.vocalTracks().front().regions.front();
+  CHECK(region.performance.ownership.size() == 1U);
+  const auto& ownership = region.performance.ownership.front();
+  CHECK(ownership.channel == seam::domain::PerformanceChannel::Pitch);
+  CHECK(ownership.mode == seam::domain::ManualPerformanceMode::Replace);
+  CHECK((std::get<seam::domain::PerformanceTimeRange>(ownership.scope) ==
+      seam::domain::PerformanceTimeRange{seam::time::Tick{0}, region.durationTick}));
+  const seam::formats::ProjectJsonCodec codec;
+  const auto saved = codec.encode(project);
+  CHECK(saved);
+  const auto reopened = codec.decode(saved.value());
+  CHECK(reopened);
+  CHECK(reopened.value().vocalTracks().front().regions.front().performance == region.performance);
+  // OpenUtau 83e02c7e: UNote.cs:108-114 snaps the first point to 6025c;
+  // RenderPhrase.cs:301-352 composes its linear ramp to 6375c over source
+  // ticks360..600. There is no additional automatic glide at note onset.
+  for (const auto* candidate : {&project, &reopened.value()}) {
+    const auto& candidateRegion = candidate->vocalTracks().front().regions.front();
+    const auto pronunciation = seam::phonemizer::resolveJapanesePronunciation(candidateRegion);
+    CHECK(pronunciation);
+    for (const auto rate : {8000U, 44100U, 48000U, 192000U}) {
+      const auto compiled = seam::synthesis::compileScorePerformance(*candidate, candidateRegion, rate,
+          pronunciation.value().pronunciation.tokens);
+      CHECK(compiled);
+      const auto& continuation = compiled.value().notes().back();
+      CHECK(!continuation.reattack);
+      CHECK(continuation.transitionFromMidi == 60U);
+      for (const auto& [tick, expected] : std::vector<std::pair<std::int64_t, double>>{
+               {960, 6200.0}, {984, 6217.5}, {1008, 6235.0}, {1200, 6375.0}}) {
+        const auto frame = candidate->tempoMap().sampleFrameAt(seam::time::Tick{tick}, rate);
+        const auto sample = compiled.value().inspectAt(frame);
+        CHECK(sample.scoreFrequencyHz.has_value());
+        CHECK(compiled.value().at(frame).scoreFrequencyHz == sample.scoreFrequencyHz);
+        CHECK_NEAR(6900.0 + 1200.0 * std::log2(*sample.scoreFrequencyHz / 440.0), expected, 1e-3);
+        CHECK(!sample.reattack);
+      }
+    }
+  }
+  const auto exported = seam::interchange::exportUstxProject(project);
+  CHECK(exported);
+  CHECK(hasLossAt(exported.value().issues, "project.vocalTracks.regions[0]"));
 }
 
 TEST_CASE("pitch boundary ownership preserves ordinary controls rests and melisma transitions") {
@@ -719,4 +773,33 @@ TEST_CASE("pitch boundary ownership preserves ordinary controls rests and melism
   // continuation glide; this boundary fix does not disable or restart it.
   CHECK_NEAR(6900.0 + 1200.0 * std::log2(*onset.scoreFrequencyHz / 440.0), 5950.0, 1e-4);
   CHECK_NEAR(6900.0 + 1200.0 * std::log2(*settled.scoreFrequencyHz / 440.0), 6350.0, 1e-4);
+
+  // Explicit additive ownership retains native glide. Only Replace owns the
+  // absolute score-base transition, for its exact note or time-range scope.
+  region->performance.ownership = {{seam::domain::PerformanceChannel::Pitch,
+      region->notes.back().id, seam::domain::ManualPerformanceMode::PitchOffset, {}}};
+  const auto additive = seam::synthesis::compileScorePerformance(project, *region, 48000U,
+      pronunciation.value().pronunciation.tokens);
+  CHECK(additive);
+  CHECK_NEAR(*additive.value().inspectAt(continuation.startFrame).scoreFrequencyHz, *onset.scoreFrequencyHz, 1e-5);
+  region->performance.ownership.front().mode = seam::domain::ManualPerformanceMode::Replace;
+  const auto manual = seam::synthesis::compileScorePerformance(project, *region, 48000U,
+      pronunciation.value().pronunciation.tokens);
+  CHECK(manual);
+  const auto replaced = manual.value().inspectAt(continuation.startFrame);
+  CHECK(!replaced.reattack);
+  CHECK_NEAR(*replaced.scoreFrequencyHz, *settled.scoreFrequencyHz, 1e-5);
+  CHECK_NEAR(replaced.dynamicsGain, onset.dynamicsGain, 1e-6);
+  CHECK_NEAR(replaced.articulationGain, onset.articulationGain, 1e-6);
+  region->performance.ownership.front().scope = seam::domain::PerformanceTimeRange{
+      seam::time::Tick{965}, seam::time::Tick{970}};
+  const auto scoped = seam::synthesis::compileScorePerformance(project, *region, 48000U,
+      pronunciation.value().pronunciation.tokens);
+  CHECK(scoped);
+  const auto begin = project.tempoMap().sampleFrameAt(region->startTick + seam::time::Tick{965}, 48000.0);
+  const auto end = project.tempoMap().sampleFrameAt(region->startTick + seam::time::Tick{970}, 48000.0);
+  CHECK_NEAR(*scoped.value().inspectAt(begin - 1).scoreFrequencyHz, *linked.value().inspectAt(begin - 1).scoreFrequencyHz, 1e-5);
+  CHECK_NEAR(*scoped.value().inspectAt(begin).scoreFrequencyHz, *settled.scoreFrequencyHz, 1e-5);
+  CHECK_NEAR(*scoped.value().inspectAt(end - 1).scoreFrequencyHz, *settled.scoreFrequencyHz, 1e-5);
+  CHECK_NEAR(*scoped.value().inspectAt(end).scoreFrequencyHz, *linked.value().inspectAt(end).scoreFrequencyHz, 1e-5);
 }

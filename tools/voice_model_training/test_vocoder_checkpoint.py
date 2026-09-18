@@ -54,6 +54,30 @@ class VocoderCheckpointTests(unittest.TestCase):
                                    epoch=dict(epochComplete=True, coverageVerified=True))
             self.assertFalse((output / "checkpoint.json").exists())
 
+    def test_real_serializer_enforces_aggregate_bound_without_halving_files(self):
+        import torch
+        from tools.voice_model_training.gan_checkpoint_storage import publish_checkpoint
+        model = torch.nn.Linear(1, 1)
+        optimizer = torch.optim.AdamW(model.parameters())
+        with tempfile.TemporaryDirectory() as root:
+            root = Path(root)
+            options = dict(metadata={}, epoch=dict(epochComplete=True, coverageVerified=True))
+            receipt = publish_checkpoint(model, optimizer, root / "reference", **options)
+            total = receipt["checkpointBytes"]
+            self.assertNotEqual(receipt["files"][0]["bytes"], receipt["files"][1]["bytes"])
+            exact = publish_checkpoint(model, optimizer, root / "exact",
+                                       maximum_total_bytes=total, **options)
+            self.assertEqual(exact["checkpointBytes"], total)
+            output = root / "bounded"
+            with self.assertRaisesRegex(ValueError, "aggregate.*bound"):
+                publish_checkpoint(model, optimizer, output, maximum_total_bytes=total - 1, **options)
+            self.assertLessEqual(sum(path.stat().st_size for path in output.glob("*.pt")), total - 1)
+            self.assertFalse((output / "checkpoint.json").exists())
+            for bound in (0, True, 1024 * 1024 * 1024 + 1):
+                with self.assertRaises(ValueError):
+                    publish_checkpoint(model, optimizer, root / "invalid", maximum_total_bytes=bound, **options)
+                self.assertFalse((root / "invalid").exists())
+
     def test_complete_gan_continuation_and_rng(self):
         import numpy as np
         import torch

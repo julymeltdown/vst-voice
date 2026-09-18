@@ -433,14 +433,6 @@ ScorePerformanceSample CompiledScorePerformance::evaluate(time::SampleFrame fram
       result.vibratoCents = vibrato.depthCents * envelope * std::sin(2.0 * std::numbers::pi * cycles);
     }
   }
-  auto scoreMidi = static_cast<double>(note.midiKey);
-  if (note.transitionFromMidi && frame < note.transitionEndFrame) {
-    auto t = static_cast<double>(frame - note.startFrame) / static_cast<double>(note.transitionEndFrame - note.startFrame);
-    t = t * t * (3.0 - 2.0 * t);
-    scoreMidi = static_cast<double>(*note.transitionFromMidi) + t * (scoreMidi - *note.transitionFromMidi);
-  }
-  std::optional<double> baseCents = scoreMidi * 100.0;
-  bool generatedPitch = false;
   const auto activeIndex = [&](const auto& index, const auto& scopes) -> std::optional<std::size_t> {
     const auto upper = std::upper_bound(index.begin(), index.end(), frame,
         [&](auto position, auto i) { return position < scopes[i].start; });
@@ -453,6 +445,18 @@ ScorePerformanceSample CompiledScorePerformance::evaluate(time::SampleFrame fram
     return activeIndex(ownershipIndex_[static_cast<std::size_t>(channel) * 2U +
         static_cast<std::size_t>(mode)], ownershipScopes_).has_value();
   };
+  const bool manualPitchReplaces = owns(domain::PerformanceChannel::Pitch, domain::ManualPerformanceMode::Replace);
+  auto scoreMidi = static_cast<double>(note.midiKey);
+  // Replace means the authored curve also owns portamento. Keeping the
+  // automatic glide would apply its base-note transition a second time.
+  // Continuation phonetics, reattack and release remain independent of pitch.
+  if (!manualPitchReplaces && note.transitionFromMidi && frame < note.transitionEndFrame) {
+    auto t = static_cast<double>(frame - note.startFrame) / static_cast<double>(note.transitionEndFrame - note.startFrame);
+    t = t * t * (3.0 - 2.0 * t);
+    scoreMidi = static_cast<double>(*note.transitionFromMidi) + t * (scoreMidi - *note.transitionFromMidi);
+  }
+  std::optional<double> baseCents = scoreMidi * 100.0;
+  bool generatedPitch = false;
   // Every bucket is empty when the region carries no manual performance at all, so the searches below
   // cannot produce a value for any frame. The evaluator runs once per output frame, so this dead work is
   // skipped by the guard rather than repeated for every sample, and every evaluated sample is identical.
@@ -462,7 +466,8 @@ ScorePerformanceSample CompiledScorePerformance::evaluate(time::SampleFrame fram
       if (!active) continue;
       const auto i = *active;
       const auto& selection = performance_.accepted[i];
-      const bool replaced = owns(selection.channel, domain::ManualPerformanceMode::Replace);
+      const bool replaced = selection.channel == domain::PerformanceChannel::Pitch
+          ? manualPitchReplaces : owns(selection.channel, domain::ManualPerformanceMode::Replace);
       if (!acceptedScopes_[i].contains(note.id, frame) ||
           (selection.channel == domain::PerformanceChannel::Pitch && vibrato.enabled) ||
           (replaced && !(inspect && selection.channel == domain::PerformanceChannel::Dynamics))) continue;

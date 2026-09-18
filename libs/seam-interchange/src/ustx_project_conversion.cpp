@@ -434,7 +434,17 @@ core::Result<UstxProjectDraft> importUstxProject(
       }
       if (inputNote.snapFirst) addIssue(issues, UstxIssueSeverity::Warning, notePath + ".pitch.snap_first", "snap_first is retained only as imported pitch points; neighboring-note materialization is not repeated", limits);
     }
-    if (composed.value().has_value()) region->pitchAutomation = std::move(*composed.value());
+    if (composed.value().has_value()) {
+      region->pitchAutomation = std::move(*composed.value());
+      // This curve already composes the source's absolute pitch, represented
+      // as offsets from each active score note. It owns pitch, including
+      // portamento; applying SEAM's automatic continuation glide as well
+      // would apply the note-base transition twice. Persist that authority
+      // through the existing manual-performance contract, not import flags.
+      region->performance.ownership.push_back({domain::PerformanceChannel::Pitch,
+          domain::PerformanceTimeRange{time::Tick{0}, region->durationTick},
+          domain::ManualPerformanceMode::Replace, region->performance.revision});
+    }
     region->sortNotes();
   }
   const auto valid = project.validate(); if (!valid) return core::Result<Output>{valid.error()};
@@ -535,7 +545,7 @@ core::Result<UstxExportResult> exportUstxProject(const domain::Project& project,
         part.notes.push_back(std::move(exported));
         if (note.articulation != domain::NoteArticulation::Normal || note.slurGroup.has_value() || note.phoneticHint.has_value()) addIssue(issues, UstxIssueSeverity::Loss, "project.note[" + std::to_string(noteNumber) + "]", "SEAM articulation/slur/phonetic hint is not represented in USTX", limits);
       }
-      if (!region.phonemeOverrides.empty() || !region.unitSelectionOverrides.empty() || !region.seamOverrides.empty() || !region.dynamicsAutomation.points().empty() || !region.formantAutomation.points().empty() || !region.performance.takes.empty() || !region.performance.accepted.empty()) addIssue(issues, UstxIssueSeverity::Loss, "project.vocalTracks.regions[" + std::to_string(regionNumber) + "]", "SEAM phoneme, dynamics, formant and generated-performance metadata is not represented in USTX", limits);
+      if (!region.phonemeOverrides.empty() || !region.unitSelectionOverrides.empty() || !region.seamOverrides.empty() || !region.dynamicsAutomation.points().empty() || !region.formantAutomation.points().empty() || !region.performance.ownership.empty() || !region.performance.takes.empty() || !region.performance.accepted.empty()) addIssue(issues, UstxIssueSeverity::Loss, "project.vocalTracks.regions[" + std::to_string(regionNumber) + "]", "SEAM phoneme, dynamics, formant, manual-ownership and generated-performance metadata is not represented in USTX", limits);
       const auto requiredDuration = part.notes.empty() ? 0 : std::max_element(part.notes.begin(), part.notes.end(), [](const auto& lhs, const auto& rhs) { return lhs.position + lhs.duration < rhs.position + rhs.duration; })->position.value() + std::max_element(part.notes.begin(), part.notes.end(), [](const auto& lhs, const auto& rhs) { return lhs.position + lhs.duration < rhs.position + rhs.duration; })->duration.value();
       if (part.duration.value() < requiredDuration) { part.duration = time::Tick{requiredDuration}; addIssue(issues, UstxIssueSeverity::Warning, "project.vocalTracks.regions.durationTick", "part duration was extended to contain all rounded notes", limits); }
       document.parts.push_back(std::move(part));

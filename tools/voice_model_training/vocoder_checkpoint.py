@@ -62,12 +62,13 @@ def _schedulers(schedulers, go, do):
 
 def publish_vocoder_checkpoint(generator, discriminators, generator_optimizer, discriminator_optimizer,
                                output, *, metadata, epoch, schedulers=None,
-                               maximum_bytes=512 * 1024 * 1024, before_publish=None):
+                               maximum_bytes=512 * 1024 * 1024,
+                               maximum_total_bytes=1024 * 1024 * 1024, before_publish=None):
     owners = _owners(generator, discriminators, generator_optimizer, discriminator_optimizer)
     schedulers = _schedulers(schedulers, generator_optimizer, discriminator_optimizer)
     return publish_checkpoint(owners, _TrainingState(generator_optimizer, discriminator_optimizer, schedulers),
         output, metadata=_metadata(metadata, len(discriminators), generator_optimizer, discriminator_optimizer, schedulers), epoch=epoch,
-        maximum_bytes=maximum_bytes, before_publish=before_publish)
+        maximum_bytes=maximum_bytes, maximum_total_bytes=maximum_total_bytes, before_publish=before_publish)
 
 
 def restore_vocoder_checkpoint(generator, discriminators, generator_optimizer, discriminator_optimizer,

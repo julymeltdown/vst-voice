@@ -4,6 +4,7 @@ The deliberately public signing seed authenticates only temporary engineering
 fixtures under a fixture-local policy. It conveys no real-person approval.
 """
 import base64
+from contextlib import nullcontext
 import hashlib
 import io
 import json
@@ -29,7 +30,9 @@ from .training_run import train_reviewed_epoch
 
 def check_reviewed_run(model, optimizer, *, objective, model_metadata: dict,
                        trusted_checkout: Path | None = None, check_export: bool = False,
-                       native_probe: Path | None = None, vocoder_checkout: Path | None = None) -> dict:
+                       native_probe: Path | None = None, vocoder_checkout: Path | None = None,
+                       vocoder_command_checkout: Path | None = None,
+                       retained_fixture_root: Path | None = None) -> dict:
     """Exercise real file admission, optimization, publication and held-out I/O."""
     import numpy as np
     import torch
@@ -58,7 +61,14 @@ def check_reviewed_run(model, optimizer, *, objective, model_metadata: dict,
         review["recordSha256"] = sha256_json(review)
         return review, policy, anchor
 
-    with tempfile.TemporaryDirectory(prefix="seam-reviewed-training-fixture-") as temporary:
+    if retained_fixture_root is not None:
+        retained_fixture_root = Path(retained_fixture_root)
+        if retained_fixture_root.is_symlink() or not retained_fixture_root.parent.is_dir():
+            raise ValueError("Retained fixture output needs a new real directory")
+        retained_fixture_root.mkdir(mode=0o700)
+    context = (tempfile.TemporaryDirectory(prefix="seam-reviewed-training-fixture-")
+               if retained_fixture_root is None else nullcontext(retained_fixture_root))
+    with context as temporary:
         root = Path(temporary)
         evidence = b"Synthetic oscillator engineering fixture; no human voice or actual lyric supervision."
         (root / "fixture-evidence.txt").write_bytes(evidence)
@@ -276,10 +286,18 @@ def check_reviewed_run(model, optimizer, *, objective, model_metadata: dict,
                 conditioning_directory=shards, targets=targets, profile_sha256=profile,
                 deployment_checkout=trusted_checkout if check_export else None,
                 pcm_sources={row["sourceId"]: root / row["path"] for row in sources})
+        vocoder_command = None
+        if vocoder_command_checkout is not None:
+            from .check_vocoder_train_command import check_vocoder_train_command
+            vocoder_command = check_vocoder_train_command(vocoder_command_checkout, root=root,
+                dataset_hash=configuration_hash, targets=targets, profile_sha256=profile,
+                rights_anchor=rights_anchor, label_anchor=label_anchor,
+                held_out_sources=[row['sourceIds'][0] for row in split['groups']
+                                  if row['partition'] == 'validation'])
         passed = changed > 0 and exact and len(validation) == 1 and receipt["epoch"]["coverageVerified"]
-        passed = passed and (vocoder is None or vocoder["passed"])
+        passed = passed and (vocoder is None or vocoder["passed"]) and (vocoder_command is None or vocoder_command['passed'])
         return dict(passed=passed, changedParameterTensors=changed, checkpointRestoredExact=exact,
                     epoch=receipt["epoch"], partitionCounts=split["counts"], validation=validation,
-                    trainingCommand=command_result, vocoderEpoch=vocoder,
+                    trainingCommand=command_result, vocoderEpoch=vocoder, vocoderCommand=vocoder_command,
                     syntheticInputs=True, fixturePolicyOnly=True, singerQualified=False,
-                    checkpointRetained=False, releaseEligible=False)
+                    checkpointRetained=retained_fixture_root is not None, releaseEligible=False)

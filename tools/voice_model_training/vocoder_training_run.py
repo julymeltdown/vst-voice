@@ -20,7 +20,8 @@ def train_reviewed_vocoder_epoch(generator, discriminators, generator_optimizer,
         output, run_metadata, reconstruction_loss, objective_id, maximum_updates,
         maximum_seconds=600, cancelled=None, schedulers=None, expected_dataset_sha256=None,
         maximum_checkpoint_file_bytes=512 * 1024 * 1024, held_out_items=None,
-        label_origin=None, reconstruction_directory=None, evaluation_seed=0):
+        label_origin=None, reconstruction_directory=None, evaluation_seed=0,
+        maximum_checkpoint_total_bytes=1024 * 1024 * 1024):
     """Use the same admitted phrase segmentation as acoustic training (<=4096 hops).
 
 The reconstruction callable and model/configuration provenance are caller-owned.
@@ -42,7 +43,9 @@ and item receipts; the complete measurement receipt is also checkpointed.
             or type(maximum_seconds) not in (int, float) or not math.isfinite(maximum_seconds)
             or not 0 < maximum_seconds <= 86400 or cancelled is not None and not callable(cancelled)
             or type(maximum_checkpoint_file_bytes) is not int
-            or not 1 <= maximum_checkpoint_file_bytes <= 512 * 1024 * 1024):
+            or not 1 <= maximum_checkpoint_file_bytes <= 512 * 1024 * 1024
+            or type(maximum_checkpoint_total_bytes) is not int
+            or not 1 <= maximum_checkpoint_total_bytes <= 1024 * 1024 * 1024):
         raise ValueError("Invalid vocoder epoch objective or resource bounds")
     output, conditioning_directory = Path(output), Path(conditioning_directory)
     if output.exists() or output.is_symlink() or not output.parent.is_dir():
@@ -194,4 +197,5 @@ and item receipts; the complete measurement receipt is also checkpointed.
         output, metadata=dict(run=metadata, datasetBindings=snapshot["bindings"],
             datasetSha256=snapshot["datasetSha256"], profileSha256=expected_profile_sha256,
             objectiveId=objective_id, labelOrigin=effective_label_origin), epoch=epoch, schedulers=schedulers,
-        maximum_bytes=maximum_checkpoint_file_bytes, before_publish=revalidate)
+        maximum_bytes=maximum_checkpoint_file_bytes, maximum_total_bytes=maximum_checkpoint_total_bytes,
+        before_publish=revalidate)
