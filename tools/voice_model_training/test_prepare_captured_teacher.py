@@ -8,9 +8,9 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from .__main__ import encode_report
-from .prepare_captured_teacher import capture_inputs, prepare_bundle
-from .test_generated_teacher import captured_pitch, mono_wav
+from tools.voice_model_training.__main__ import encode_report
+from tools.voice_model_training.prepare_captured_teacher import capture_inputs, prepare_bundle
+from tools.voice_model_training.test_generated_teacher import captured_pitch, mono_wav
 
 
 class PrepareBundleTest(unittest.TestCase):
@@ -128,7 +128,7 @@ class PrepareBundleTest(unittest.TestCase):
         for field in ("independentSplitCreated", "sourceRightsAdmitted", "labelsAdmitted",
                       "trainingAdmitted", "releaseEligible"):
             self.assertIs(result[field], False)
-        from .train import load_targets
+        from tools.voice_model_training.train import load_targets
         targets, _ = load_targets(output / "targets.json", result["artifacts"]["targets.json"])
         self.assertEqual(targets["test"][0]["analysisFrameCount"], 8)
         self.assertEqual(hashlib.sha256(targets["test"][1].read_bytes()).hexdigest(), result["targetSha256"])
