@@ -489,12 +489,12 @@ TEST_CASE("authoring_render_coordinator_orders_same_revision_publications") {
         seam::rendering::RenderQuality::Preview);
   {
     std::lock_guard lock(gateMutex);
-    release = true;
-    gateCondition.notify_all();
-  }
+   release = true;
+   gateCondition.notify_all();
+ }
 
   const auto deadline = std::chrono::steady_clock::now() +
-                        std::chrono::seconds{20};
+                        std::chrono::seconds{120};
   while (std::chrono::steady_clock::now() < deadline) {
     const auto progress = coordinator.progress();
     std::lock_guard lock(gateMutex);

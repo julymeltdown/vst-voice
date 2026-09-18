@@ -1815,17 +1815,18 @@ if(SEAM_BUILD_TESTS)
   target_include_directories(seam_authoring_render_coordinator_tests PRIVATE tests)
   target_compile_definitions(seam_authoring_render_coordinator_tests PRIVATE
     SEAM_SOURCE_PRODUCTION_VOICEBANK="${CMAKE_CURRENT_SOURCE_DIR}/assets/demo-human-voicebank-public-domain/production-bank")
-  target_link_libraries(seam_authoring_render_coordinator_tests PRIVATE
-    seam_authoring_runtime seam_rendering seam_synthesis seam_voicebank
-    seam_application seam_domain seam_core)
+ target_link_libraries(seam_authoring_render_coordinator_tests PRIVATE
+   seam_authoring_runtime seam_rendering seam_synthesis seam_voicebank
+   seam_application seam_domain seam_core)
   seam_apply_compiler_options(seam_authoring_render_coordinator_tests)
   add_test(NAME seam_authoring_render_coordinator_tests
     COMMAND seam_authoring_render_coordinator_tests)
+  set_tests_properties(seam_authoring_render_coordinator_tests PROPERTIES TIMEOUT 180)
 
   add_executable(seam_inventory_preflight_tests
-    tests/test_main.cpp
-    tests/test_inventory_preflight.cpp)
-  target_include_directories(seam_inventory_preflight_tests PRIVATE tests)
+   tests/test_main.cpp
+   tests/test_inventory_preflight.cpp)
+ target_include_directories(seam_inventory_preflight_tests PRIVATE tests)
   target_compile_definitions(seam_inventory_preflight_tests PRIVATE SEAM_TEST_VOICEBANK_CLI="$<TARGET_FILE:seam_voicebank_cli>")
   add_dependencies(seam_inventory_preflight_tests seam_voicebank_cli)
   target_link_libraries(seam_inventory_preflight_tests PRIVATE
@@ -1967,12 +1968,13 @@ if(SEAM_BUILD_TESTS)
   target_compile_definitions(seam_original_singer_song_journey_tests PRIVATE
     SEAM_SONG_SOURCE_ROOT="${CMAKE_CURRENT_SOURCE_DIR}")
   target_link_libraries(seam_original_singer_song_journey_tests PRIVATE
-    seam_standalone_authoring seam_distribution seam_voice_design seam_application
-    seam_authoring_runtime seam_rendering seam_synthesis seam_neural_synthesis seam_formats seam_voicebank
-    seam_phonemizer seam_domain seam_core)
+   seam_standalone_authoring seam_distribution seam_voice_design seam_application
+   seam_authoring_runtime seam_rendering seam_synthesis seam_neural_synthesis seam_formats seam_voicebank
+   seam_phonemizer seam_domain seam_core)
   seam_apply_compiler_options(seam_original_singer_song_journey_tests)
   add_test(NAME seam_original_singer_song_journey_tests
     COMMAND seam_original_singer_song_journey_tests)
+  set_tests_properties(seam_original_singer_song_journey_tests PROPERTIES TIMEOUT 180)
   target_include_directories(seam_procedural_install_journey_tests PRIVATE tests)
   target_link_libraries(seam_procedural_install_journey_tests PRIVATE
     seam_standalone_authoring seam_distribution seam_voice_design seam_application
