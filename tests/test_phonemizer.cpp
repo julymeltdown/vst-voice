@@ -42,6 +42,37 @@ std::vector<std::string> symbols(
 
 }  // namespace
 
+// OpenUtau ships golden Japanese phonemizer vectors that assert the exact oto alias its own
+// phonemizers must produce for a given lyric. SEAM does not resolve oto aliases, so the alias strings
+// themselves are not portable, but the lyric set is: every kana OpenUtau's suite treats as a valid
+// mora has to decompose in SEAM too, and the consonant/vowel split has to agree where the two projects
+// model the same decision. That makes OpenUtau an independent oracle for this table rather than a copy
+// of it. The table below is transcribed from OpenUtau.Test/Plugins/JaVcvTest.cs,
+// JaCvvcTest.cs and JaPresampTest.cs at commit 83e02c7e4a4d9ea5fca72806b2aa27c5382be015
+// (MIT licensed); the expected phones are SEAM's own and are therefore the thing under test.
+TEST_CASE("Japanese morae agree with OpenUtau's golden phonemizer lyrics") {
+  const std::vector<std::pair<std::u32string, std::vector<std::string>>> vectors{
+      {U"あ", {"a"}}, {U"お", {"o"}}, {U"ら", {"r", "a"}},
+      {U"り", {"r", "i"}}, {U"る", {"r", "u"}}, {U"が", {"g", "a"}},
+      {U"にょ", {"ny", "o"}}, {U"ひょ", {"hy", "o"}}, {U"びょ", {"by", "o"}},
+      {U"ぴょ", {"py", "o"}}, {U"みょ", {"my", "o"}}, {U"りょ", {"ry", "o"}},
+      // A katakana lyric and a voiced-katakana lyric: OpenUtau's fixture writes these as the katakana
+      // given here, and its normalization is what makes them the same mora as the hiragana above.
+      {U"ラ", {"r", "a"}}, {U"リ", {"r", "i"}}, {U"ル", {"r", "u"}},
+      {U"ヴ", {"v", "u"}},
+  };
+  for (const auto& [kana, expected] : vectors) {
+    PhonemizerFixture fixture;
+    const auto note = fixture.add(kana, seam::time::Tick{0});
+    seam::phonemizer::JapaneseKanaPhonemizer phonemizer;
+    const auto result = phonemizer.phonemize(*fixture.project.findRegion(fixture.regionId));
+    // An unresolved kana becomes a warning plus a pause in SEAM, so agreement with OpenUtau's lyric
+    // set is exactly the absence of a warning here.
+    CHECK(result.warnings.empty());
+    CHECK(symbols(result.tokensForNote(note)) == expected);
+  }
+}
+
 TEST_CASE("Japanese phonemizer handles hiragana katakana and contracted mora") {
   PhonemizerFixture fixture;
   const auto noteA = fixture.add(U"きゃ", seam::time::Tick{0});
