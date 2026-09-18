@@ -97,6 +97,83 @@ class PhraseMeasurement:
     pitch_frames: tuple[dict, ...]
 
 
+@dataclass(frozen=True, slots=True)
+class RendererSubstitution:
+    """One placement whose actual renderer disagrees with the requested one."""
+
+    unit_id: str
+    requested_renderer: str
+    actual_renderer: str
+    reported_fallback: bool
+
+
+@dataclass(frozen=True, slots=True)
+class RendererAudit:
+    """Whether any placement was silently substituted, as V06 requires."""
+
+    placements: int
+    fallbacks: int
+    substitutions: tuple[RendererSubstitution, ...]
+
+    def hidden_substitutions(self) -> tuple[RendererSubstitution, ...]:
+        """A change of backend that the record did not report as a fallback.
+
+        A reported fallback is a truthful degradation. An unreported change of
+        renderer is the hidden fallback V06 forbids, because the exported audio
+        would then come from a backend the record does not name.
+        """
+        return tuple(item for item in self.substitutions if not item.reported_fallback)
+
+    def has_hidden_fallback(self) -> bool:
+        return bool(self.hidden_substitutions())
+
+    def to_json(self) -> str:
+        return json.dumps({
+            "placements": self.placements,
+            "fallbacks": self.fallbacks,
+            "substitutions": [
+                {
+                    "unit_id": item.unit_id,
+                    "requested_renderer": item.requested_renderer,
+                    "actual_renderer": item.actual_renderer,
+                    "reported_fallback": item.reported_fallback,
+                }
+                for item in self.substitutions
+            ],
+            "has_hidden_fallback": self.has_hidden_fallback(),
+        }, indent=2)
+
+
+def audit_renderer_substitutions(placements: tuple[PlacementTiming, ...]) -> RendererAudit:
+    """Compare each placement requested and actual renderer name.
+
+    The comparison is by name, so a placement that asked for classic-psola and
+    was served by raw is a substitution regardless of how it was reported. Only
+    substitutions that were not reported as a fallback are hidden.
+    """
+    substitutions = []
+    fallbacks = 0
+    for placement in placements:
+        if placement.used_fallback:
+            fallbacks += 1
+        if placement.requested_renderer != placement.actual_renderer:
+            substitutions.append(RendererSubstitution(
+                unit_id=placement.unit_id,
+                requested_renderer=placement.requested_renderer,
+                actual_renderer=placement.actual_renderer,
+                reported_fallback=placement.used_fallback,
+            ))
+    return RendererAudit(
+        placements=len(placements),
+        fallbacks=fallbacks,
+        substitutions=tuple(substitutions),
+    )
+    phrase_id: str
+    sample_rate: int
+    placements: tuple[PlacementTiming, ...]
+    pitch_frames: tuple[dict, ...]
+
+
 def _optional_int(value: object) -> int | None:
     if isinstance(value, bool) or not isinstance(value, int):
         return None
@@ -285,6 +362,7 @@ class CaseAcousticSummary:
     placements: tuple[TimingPlacement, ...]
     used_fallback: bool
     timing_displacement_ok: bool
+    renderers: RendererAudit = RendererAudit(0, 0, ())
 
     def to_json(self) -> str:
         payload = {
@@ -322,12 +400,15 @@ class CaseAcousticSummary:
                 ],
             },
             "used_fallback": self.used_fallback,
+            "renderers": json.loads(self.renderers.to_json()),
         }
         return json.dumps(payload, indent=2) + "\n"
 
 
 def summarise_case(case_directory: Path, case_id: str) -> CaseAcousticSummary:
     phrases = load_phrase_measurements(case_directory)
+    all_placements = tuple(
+        placement for phrase in phrases for placement in phrase.placements)
     errors: list[float] = []
     voiced = low_confidence = unvoiced = octave_errors = saturated = 0
     placements: list[TimingPlacement] = []
@@ -351,6 +432,7 @@ def summarise_case(case_directory: Path, case_id: str) -> CaseAcousticSummary:
         placements=tuple(placements),
         used_fallback=used_fallback,
         timing_displacement_ok=timing_displacement_within_limit(tuple(placements)),
+        renderers=audit_renderer_substitutions(all_placements),
     )
 
 

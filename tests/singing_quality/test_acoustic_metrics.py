@@ -297,5 +297,53 @@ class PilotPitchReportTests(unittest.TestCase):
         self.assertFalse(report.within_limits())
 
 
+
+
+class RendererSubstitutionTests(unittest.TestCase):
+    """A silent backend change is the hidden fallback V06 forbids."""
+
+    def setUp(self) -> None:
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.root = Path(self.temporary.name)
+
+    def write_case(self, actual: str, used_fallback: bool, requested: str = "classic-psola") -> Path:
+        case = self.root / "case"
+        write_case(case, 67, 48000, 60000,
+                   [voiced(48000 + 256 * i, midi_hz(67)) for i in range(10)])
+        diagnostics = json.loads((case / "diagnostics.json").read_text())
+        placement = diagnostics["phrases"][0]["rendered_placements"][0]
+        placement["requested_renderer"] = requested
+        placement["actual_renderer"] = actual
+        placement["used_fallback"] = used_fallback
+        (case / "diagnostics.json").write_text(json.dumps(diagnostics))
+        return case
+
+    def test_matching_renderer_is_not_a_substitution(self) -> None:
+        case = self.write_case("classic-psola", False)
+        summary = summarise_case(case, "case")
+        self.assertEqual(1, summary.renderers.placements)
+        self.assertEqual(0, summary.renderers.fallbacks)
+        self.assertFalse(summary.renderers.has_hidden_fallback())
+
+    def test_reported_fallback_is_truthful_not_hidden(self) -> None:
+        case = self.write_case("raw", True)
+        summary = summarise_case(case, "case")
+        self.assertEqual(1, summary.renderers.fallbacks)
+        self.assertEqual(1, len(summary.renderers.substitutions))
+        self.assertFalse(summary.renderers.has_hidden_fallback())
+
+    def test_unreported_renderer_change_is_a_hidden_fallback(self) -> None:
+        case = self.write_case("raw", False)
+        summary = summarise_case(case, "case")
+        self.assertTrue(summary.renderers.has_hidden_fallback())
+        hidden = summary.renderers.hidden_substitutions()
+        self.assertEqual(1, len(hidden))
+        self.assertEqual("classic-psola", hidden[0].requested_renderer)
+        self.assertEqual("raw", hidden[0].actual_renderer)
+        payload = json.loads(summary.to_json())
+        self.assertTrue(payload["renderers"]["has_hidden_fallback"])
+
+
 if __name__ == "__main__":
     unittest.main()
