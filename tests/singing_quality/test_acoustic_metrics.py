@@ -17,6 +17,7 @@ from tools.singing_quality.acoustic_metrics import (
     PitchErrorReport,
     measure_pitch_error,
     load_phrase_measurements,
+    load_pilot_pitch,
     summarise_case,
     timing_displacement_within_limit,
 )
@@ -212,6 +213,88 @@ class PacketRejectionTests(unittest.TestCase):
         write_case(case, 67, 48000, 48300, frames, sample_rate=44100)
         phrases = load_phrase_measurements(case)
         self.assertEqual(44100, phrases[0].sample_rate)
+
+
+class PilotPitchReportTests(unittest.TestCase):
+    """The singer pilot records per-note pitch; this re-expresses it as a measurement."""
+
+    def setUp(self) -> None:
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.root = Path(self.temporary.name)
+
+    def write_pilot(self, notes: list[dict], status: str = "DIAGNOSTIC_NOT_QUALIFICATION") -> Path:
+        path = self.root / "baseline-pitch.json"
+        path.write_text(json.dumps({
+            "status": status,
+            "audioSha256": "a" * 64,
+            "windowPolicy": "central-half-full-analysis-windows-no-data-dependent-exclusions",
+            "notes": notes,
+        }), encoding="utf-8")
+        return path
+
+    @staticmethod
+    def note(index: int, hz: float, median: float | None, voiced: int = 16,
+             within: int | None = None, large: int = 0) -> dict:
+        return {
+            "noteIndex": index,
+            "expectedHz": hz,
+            "windowStartTick": index * 480,
+            "windowEndTick": index * 480 + 240,
+            "windowStartFrame": 3000,
+            "windowEndFrame": 9000,
+            "analysisFrames": voiced,
+            "voicedFrames": voiced,
+            "within50CentsFrames": voiced if within is None else within,
+            "largePitchErrorFrames": large,
+            "medianAbsoluteCents": median,
+        }
+
+    def test_accurate_range_reports_a_pass_against_frozen_limits(self) -> None:
+        path = self.write_pilot([
+            self.note(0, 261.6, 0.35), self.note(1, 329.6, 0.09),
+            self.note(2, 523.3, 0.23),
+        ])
+        report = load_pilot_pitch(path, "baseline")
+        self.assertEqual(3, len(report.notes))
+        self.assertLess(report.median_absolute_cents(), MEDIAN_CENTS_LIMIT)
+        self.assertEqual(100.0, report.within_50_percent())
+        self.assertTrue(report.within_limits())
+        payload = json.loads(report.to_json())
+        self.assertEqual("none", payload["qualification"])
+        self.assertEqual("singer-pilot", payload["source"])
+        self.assertEqual(261.6, payload["lowest_target_hz"])
+        self.assertEqual(523.3, payload["highest_target_hz"])
+
+    def test_large_pitch_error_frames_prevent_a_pass(self) -> None:
+        path = self.write_pilot([
+            self.note(0, 261.6, 0.35),
+            self.note(1, 329.6, 0.09, large=1, within=15),
+        ])
+        report = load_pilot_pitch(path, "baseline")
+        self.assertEqual(1, report.large_pitch_error_frames())
+        self.assertFalse(report.within_limits())
+
+    def test_median_above_threshold_prevents_a_pass(self) -> None:
+        path = self.write_pilot([self.note(0, 261.6, MEDIAN_CENTS_LIMIT + 5.0)])
+        report = load_pilot_pitch(path, "baseline")
+        self.assertFalse(report.within_limits())
+
+    def test_missing_expected_frequency_is_rejected(self) -> None:
+        path = self.write_pilot([{"noteIndex": 0, "medianAbsoluteCents": 1.0}])
+        with self.assertRaises(AcousticMetricError):
+            load_pilot_pitch(path, "baseline")
+
+    def test_empty_notes_are_rejected(self) -> None:
+        path = self.write_pilot([])
+        with self.assertRaises(AcousticMetricError):
+            load_pilot_pitch(path, "baseline")
+
+    def test_null_median_is_retained_but_not_counted(self) -> None:
+        path = self.write_pilot([self.note(0, 261.6, None)])
+        report = load_pilot_pitch(path, "baseline")
+        self.assertIsNone(report.median_absolute_cents())
+        self.assertFalse(report.within_limits())
 
 
 if __name__ == "__main__":

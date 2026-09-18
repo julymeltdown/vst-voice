@@ -53,6 +53,14 @@ def _cents(measured_hz: float, target_hz: float) -> float:
     return 1200.0 * math.log2(measured_hz / target_hz)
 
 
+def _median(values: list[float]) -> float:
+    ordered = sorted(values)
+    middle = len(ordered) // 2
+    if len(ordered) % 2:
+        return ordered[middle]
+    return (ordered[middle - 1] + ordered[middle]) / 2.0
+
+
 def _object(payload: bytes, name: str) -> dict:
     try:
         value = json.loads(payload)
@@ -343,4 +351,128 @@ def summarise_case(case_directory: Path, case_id: str) -> CaseAcousticSummary:
         placements=tuple(placements),
         used_fallback=used_fallback,
         timing_displacement_ok=timing_displacement_within_limit(tuple(placements)),
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class PilotNoteMeasurement:
+    """One score note measured from a singer-pilot pitch record."""
+
+    note_index: int
+    expected_hz: float
+    analysis_frames: int
+    voiced_frames: int
+    within_50_cents_frames: int
+    large_pitch_error_frames: int
+    median_absolute_cents: float | None
+
+
+@dataclass(frozen=True, slots=True)
+class PilotPitchReport:
+    """Declared-range transposition measured from a pilot pitch record."""
+
+    variant: str
+    audio_sha256: str
+    status: str
+    notes: tuple[PilotNoteMeasurement, ...]
+
+    def median_absolute_cents(self) -> float | None:
+        values = [note.median_absolute_cents for note in self.notes
+                  if note.median_absolute_cents is not None]
+        return _median(values) if values else None
+
+    def within_50_percent(self) -> float | None:
+        scored = sum(note.within_50_cents_frames for note in self.notes)
+        voiced = sum(note.voiced_frames for note in self.notes)
+        if voiced <= 0:
+            return None
+        return 100.0 * scored / voiced
+
+    def large_pitch_error_frames(self) -> int:
+        return sum(note.large_pitch_error_frames for note in self.notes)
+
+    def lowest_target_hz(self) -> float | None:
+        return min((note.expected_hz for note in self.notes), default=None)
+
+    def highest_target_hz(self) -> float | None:
+        return max((note.expected_hz for note in self.notes), default=None)
+
+    def within_limits(self) -> bool:
+        median = self.median_absolute_cents()
+        within = self.within_50_percent()
+        return (median is not None and median <= MEDIAN_CENTS_LIMIT
+                and within is not None and within >= WITHIN_50_PERCENT_LIMIT
+                and self.large_pitch_error_frames() == 0)
+
+    def to_json(self) -> str:
+        payload = {
+            "schema_version": 1,
+            "evidence_class": "auditory-diagnostic-measurement",
+            "qualification": "none",
+            "source": "singer-pilot",
+            "variant": self.variant,
+            "status": self.status,
+            "audio_sha256": self.audio_sha256,
+            "threshold_median_cents": MEDIAN_CENTS_LIMIT,
+            "threshold_within_50_percent": WITHIN_50_PERCENT_LIMIT,
+            "note_count": len(self.notes),
+            "lowest_target_hz": self.lowest_target_hz(),
+            "highest_target_hz": self.highest_target_hz(),
+            "median_absolute_cents": self.median_absolute_cents(),
+            "within_50_percent": self.within_50_percent(),
+            "large_pitch_error_frames": self.large_pitch_error_frames(),
+            "within_frozen_limits": self.within_limits(),
+            "notes": [
+                {
+                    "note_index": note.note_index,
+                    "expected_hz": note.expected_hz,
+                    "analysis_frames": note.analysis_frames,
+                    "voiced_frames": note.voiced_frames,
+                    "within_50_cents_frames": note.within_50_cents_frames,
+                    "large_pitch_error_frames": note.large_pitch_error_frames,
+                    "median_absolute_cents": note.median_absolute_cents,
+                }
+                for note in self.notes
+            ],
+        }
+        return json.dumps(payload, indent=2) + "\n"
+
+
+def load_pilot_pitch(path: Path, variant: str) -> PilotPitchReport:
+    """Read one singer-pilot <name>-pitch.json record.
+
+    The pilot already refuses to present its own record as a qualification; this
+    loader keeps that boundary and only re-expresses the retained per-note numbers
+    against the frozen thresholds.
+    """
+    payload = _object(read_bounded(path), path.name)
+    raw_notes = payload.get("notes")
+    if not isinstance(raw_notes, list) or not raw_notes:
+        raise AcousticMetricError(path.name + ": notes must be a nonempty array")
+    notes = []
+    for entry in raw_notes:
+        if not isinstance(entry, dict):
+            raise AcousticMetricError(path.name + ": note must be an object")
+        expected = entry.get("expectedHz")
+        if not isinstance(expected, (int, float)) or isinstance(expected, bool) or expected <= 0.0:
+            raise AcousticMetricError(path.name + ": expectedHz must be a positive number")
+        median = entry.get("medianAbsoluteCents")
+        if isinstance(median, bool) or not isinstance(median, (int, float)):
+            median = None
+        else:
+            median = float(median)
+        notes.append(PilotNoteMeasurement(
+            note_index=int(entry.get("noteIndex", -1)),
+            expected_hz=float(expected),
+            analysis_frames=int(entry.get("analysisFrames", 0)),
+            voiced_frames=int(entry.get("voicedFrames", 0)),
+            within_50_cents_frames=int(entry.get("within50CentsFrames", 0)),
+            large_pitch_error_frames=int(entry.get("largePitchErrorFrames", 0)),
+            median_absolute_cents=median,
+        ))
+    return PilotPitchReport(
+        variant=variant,
+        audio_sha256=str(payload.get("audioSha256", "")),
+        status=str(payload.get("status", "")),
+        notes=tuple(notes),
     )
