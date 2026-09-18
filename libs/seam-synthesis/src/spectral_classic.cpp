@@ -76,9 +76,11 @@ double midiRatio(std::int32_t targetMidi,
 }
 
 double wrappedPhaseDifference(double target, double source) noexcept {
+  if (!std::isfinite(target) || !std::isfinite(source)) return 0.0;
   auto difference = target - source;
-  while (difference > std::numbers::pi) difference -= 2.0 * std::numbers::pi;
-  while (difference < -std::numbers::pi) difference += 2.0 * std::numbers::pi;
+  // Use std::remainder for a bounded phase wrap instead of unbounded while
+  // loops that spin forever on non-finite differences under GCC -O3.
+  difference = std::remainder(difference, 2.0 * std::numbers::pi);
   return difference;
 }
 
