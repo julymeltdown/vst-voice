@@ -17,6 +17,7 @@ import re
 import sys
 
 from .__main__ import encode_report, load_config, publish_new
+from .generated_teacher import label_config_from_exports
 from .prepare_captured_teacher import prepare_bundle
 from .split import split_sources
 
@@ -110,6 +111,24 @@ def prepare_corpus(*, config, config_sha256, output):
         # to test, which removes it from training rather than leaking it.
         if forced and song["partition"] != "test":
             raise ValueError("Declared held-out songs must partition into the test set")
+    # Dataset assembly consumes one label configuration covering every source, so the
+    # per-song captures are merged here rather than left for the caller to hand-edit.
+    # Each export is re-read and digest-checked against the preparation receipt, so a
+    # changed file cannot enter the corpus configuration silently.
+    exports, relative_paths = [], {}
+    for index, song in enumerate(songs):
+        directory = output / song["directory"]
+        payload = (directory / "export.json").read_bytes()
+        if hashlib.sha256(payload).hexdigest() != song["artifacts"]["export.json"]:
+            raise ValueError("A prepared export differs from its recorded digest")
+        export = json.loads(payload)
+        exports.append(export)
+        relative_paths[export["sourceId"]] = f"{song['directory']}/source.wav"
+    vocabulary = sorted({phone["symbol"] for export in exports for phone in export["label"]["phonemes"]})
+    labels = label_config_from_exports(exports=exports, sample_rate=48000,
+        relative_paths=relative_paths, vocabulary=vocabulary, minimum_confidence=0.0)
+    publish_new(output / "labels.json", labels)
+    labels_sha256 = hashlib.sha256(encode_report(labels)).hexdigest()
     digests["songs"] = hashlib.sha256(encode_report([
         {key: song[key] for key in ("sourceId", "directory", "partition", "heldOutRequested",
                                     "sourceSha256", "preparationSha256")} for song in songs])).hexdigest()
@@ -125,6 +144,7 @@ def prepare_corpus(*, config, config_sha256, output):
         state="PREPARED_UNAPPROVED", configurationSha256=config_sha256, seed=value["seed"],
         extractor=value["extractor"], songs=songs, split=split,
         heldOutSongIds=sorted(value["heldOutSongIds"]), songsSha256=digests["songs"],
+        labelsSha256=labels_sha256, vocabulary=vocabulary,
         totalSourceFrames=sum(song["sourceFrameCount"] for song in songs),
         totalAnalysisFrames=sum(song["analysisFrameCount"] for song in songs),
         distinctAudioCount=len({song["sourceSha256"] for song in songs}),

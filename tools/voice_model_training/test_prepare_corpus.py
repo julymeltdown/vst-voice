@@ -97,6 +97,23 @@ class PrepareCorpusTest(unittest.TestCase):
         self.assertEqual(result["totalAnalysisFrames"], sum((2048 + 512 * i + 255) // 256 for i in range(3)))
         for index in range(3):
             self.assertTrue((output / f"song-{index:03d}" / "preparation.json").is_file())
+        # The merged label configuration must pass the project's own label inspection,
+        # which re-inspects every WAV and re-derives each label from its export.
+        from tools.voice_model_training.__main__ import inspect_label_config
+        inspection = inspect_label_config(output / "labels.json", result["labelsSha256"], output)
+        self.assertEqual(inspection["sources"].__len__(), 3)
+        self.assertEqual(len(result["vocabulary"]), len(set(result["vocabulary"])))
+        self.assertIn("s", result["vocabulary"])
+        self.assertEqual({item["sourceId"] for item in inspection["sources"]},
+                         {"song-000", "song-001", "song-002"})
+        for entry in inspection["sources"]:
+            # Preparation cannot report clean labels: no reviewer has signed these
+            # yet, so the only queued correction must be that missing revision.
+            self.assertFalse(entry["consistencyPassed"])
+            self.assertEqual([issue["code"] for issue in entry["correctionQueue"]],
+                             ["review-revision-missing"])
+        self.assertFalse(inspection["trainingAdmitted"])
+        self.assertFalse(inspection["releaseEligible"])
         with self.assertRaises(ValueError): prepare_corpus(config=self.root / "corpus-config.json",
                                                           config_sha256=self.digest, output=output)
 
