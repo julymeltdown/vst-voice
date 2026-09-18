@@ -166,7 +166,32 @@ class VocoderReconstructionTests(unittest.TestCase):
         self.assertAlmostEqual(result["f0MedianErrorCents"], 0.0, delta=1.0)
         self.assertEqual(result["validSamples"], len(audio))
         self.assertEqual(result["paddedSamples"], 0)
+        self.assertFalse(result["reconstructionSatisfied"])
+        self.assertEqual(result["pitchStatus"], "UNRESOLVED")
+        self.assertTrue(result["f0MedianErrorCentsDiagnosticOnly"])
+        self.assertIsNone(result["f0RmseHz"])
+
+    def test_explicit_framewise_tracks_require_exact_canonical_audio_binding(self):
+        from tools.voice_model_training.test_pitch_comparison import track, wav
+        audio = _generate_sine(220., duration_sec=.5)
+        native = track([220.] * (len(audio) // 256),
+                       digest=hashlib.sha256(wav(audio)).hexdigest())
+        options = dict(rendered_audio=audio, source_audio=audio, pitch_tracks=dict(source=native, rendered=native))
+        result = measure_vocoder_reconstruction(**options)
         self.assertTrue(result["reconstructionSatisfied"])
+        self.assertEqual(result["pitchComparison"]["meanAbsoluteCents"], 0.)
+        self.assertEqual(result["f0RmseHz"], 0.)
+        self.assertEqual(result["pitchStatus"], "PASS")
+        for tracks in (dict(source=native), dict(source=native, rendered=dict(native, sourceSha256="0" * 64))):
+            with self.assertRaises(ValueError):
+                measure_vocoder_reconstruction(**(options | dict(pitch_tracks=tracks)))
+        with self.assertRaisesRegex(ValueError, "binding"):
+            measure_vocoder_reconstruction(**(options | dict(rendered_audio=audio * .5)))
+        shifted = track([440.] * (len(audio) // 256), digest=native["sourceSha256"])
+        result = measure_vocoder_reconstruction(**(options | dict(pitch_tracks=dict(source=native, rendered=shifted))))
+        self.assertEqual(result["pitchStatus"], "FAIL")
+        self.assertEqual(result["pitchComparison"]["rootMeanSquareCents"], 1200.)
+        self.assertFalse(result["reconstructionSatisfied"])
 
     def test_pitch_shifted_audio_fails_f0_error(self):
         source = _generate_sine(220.0, duration_sec=0.5)

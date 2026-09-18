@@ -6,6 +6,7 @@
 #include <cmath>
 #include <limits>
 #include <map>
+#include <numbers>
 #include <optional>
 #include <string_view>
 #include <utility>
@@ -111,10 +112,10 @@ domain::CurveInterpolation interpolationFor(std::string_view shape,
 
 // OpenUtau composes pitch contributions in absolute cents. A negative-X point
 // cannot be copied into SEAM's region-wide offset curve across a tone change.
-// This event sweep handles linear monophonic compositions without expanding a
-// long note into one allocation per tick. Nonlinear/polyphonic cases retain
-// their explicitly lossy point-import fallback.
-core::Result<std::optional<domain::PitchAutomation>> composeLinearPitch(
+// Sine easing is linearized with an analytic error/work budget before the
+// sparse event sweep. Long notes do not require one allocation per tick.
+// Splines, unknown shapes and polyphony retain their explicitly lossy fallback.
+core::Result<std::optional<domain::PitchAutomation>> composePitch(
     const UstxPart& part, const std::vector<UstxTempo>& tempos,
     const std::string& partPath, std::vector<UstxIssue>& issues,
     const UstxLimits& limits) {
@@ -164,7 +165,7 @@ core::Result<std::optional<domain::PitchAutomation>> composeLinearPitch(
       const auto& point = note.pitch[pointIndex];
       if (pointIndex > 0U && point.offsetMilliseconds < note.pitch[pointIndex - 1U].offsetMilliseconds) {
         addIssue(issues, UstxIssueSeverity::Loss, notePath + ".pitch.composition",
-                 "unordered pitch points are outside the supported linear composition", limits);
+                 "unordered pitch points are outside the supported pitch composition", limits);
         return Output{};
       }
       const auto target = tickAtSeconds(tempos, secondsAt(tempos, absoluteNote) + point.offsetMilliseconds / 1000.0);
@@ -207,15 +208,89 @@ core::Result<std::optional<domain::PitchAutomation>> composeLinearPitch(
     }
     if (preparedPoints > pointLimit)
       return core::failure<Output>(core::ErrorCode::InvalidArgument, "USTX composed pitch exceeds the supported point limit");
+    const bool changingCurve = std::any_of(curve.points.begin(), curve.points.end(), [&](const auto& point) {
+      return point.absoluteCents != curve.points.front().absoluteCents;
+    });
     for (std::size_t point = 1U; point < curve.points.size(); ++point) {
-      if (curve.points[point - 1U].shape != "l" &&
-          curve.points[point - 1U].absoluteCents != curve.points[point].absoluteCents) {
+      const auto& left = curve.points[point - 1U];
+      // A spline with equal endpoints can still bend toward a neighboring
+      // control. Only an entirely constant spline curve is safely flat here.
+      if ((left.shape == "sp" && changingCurve) ||
+          (left.shape != "l" && left.shape != "io" && left.shape != "i" && left.shape != "o" &&
+           left.absoluteCents != curve.points[point].absoluteCents)) {
         addIssue(issues, UstxIssueSeverity::Loss, notePath + ".pitch.composition",
-                 "nonlinear USTX pitch composition is unsupported; individual points use the documented approximation", limits);
+                 "spline or unknown USTX pitch composition is unsupported; individual points use the documented approximation", limits);
         return Output{};
       }
     }
     curves.push_back(std::move(curve));
+  }
+  // Bound the SUM of simultaneous curve errors, not each curve independently.
+  // Half-open spans ensure adjacent segments do not inflate this count. This
+  // depends on overlap, not song duration or the total number of score notes.
+  std::vector<std::pair<std::int64_t, int>> nonlinearSpans;
+  for (const auto& curve : curves) {
+    for (std::size_t index = 1U; index < curve.points.size(); ++index) {
+      const auto& left = curve.points[index - 1U];
+      const auto& right = curve.points[index];
+      if (left.shape != "l" && left.absoluteCents != right.absoluteCents) {
+        nonlinearSpans.emplace_back(left.tick, 1);
+        nonlinearSpans.emplace_back(right.tick, -1);
+      }
+    }
+  }
+  std::sort(nonlinearSpans.begin(), nonlinearSpans.end());
+  int active = 0, maximumOverlap = 0;
+  for (const auto& [tick, change] : nonlinearSpans) {
+    (void)tick;
+    active += change;
+    maximumOverlap = std::max(maximumOverlap, active);
+  }
+  constexpr double kLinearizationBudgetCents = 0.25;
+  const auto segmentBudget = kLinearizationBudgetCents / std::max(1, maximumOverlap);
+  std::size_t subdivisionWork = 0U;
+  for (auto& curve : curves) {
+    std::vector<Point> linear;
+    linear.push_back({curve.points.front().tick, curve.points.front().absoluteCents, "l"});
+    for (std::size_t index = 1U; index < curve.points.size(); ++index) {
+      const auto& left = curve.points[index - 1U];
+      const auto& right = curve.points[index];
+      if (left.shape == "l" || left.absoluteCents == right.absoluteCents) {
+        linear.push_back({right.tick, right.absoluteCents, "l"});
+        continue;
+      }
+      const auto width = static_cast<double>(right.tick - left.tick);
+      const auto delta = right.absoluteCents - left.absoluteCents;
+      // OpenUtau MusicMath.cs:123-150, after RenderPhrase converts X to ticks.
+      const auto valueAt = [&](std::int64_t tick) {
+        const auto t = static_cast<double>(tick - left.tick) / width;
+        const auto eased = left.shape == "io" ? (1.0 - std::cos(std::numbers::pi * t)) / 2.0
+            : left.shape == "i" ? 1.0 - std::cos(std::numbers::pi * t / 2.0)
+                                : std::sin(std::numbers::pi * t / 2.0);
+        return left.absoluteCents + delta * eased;
+      };
+      const auto curvature = std::abs(delta) * std::numbers::pi * std::numbers::pi *
+          (left.shape == "io" ? 0.5 : 0.25);
+      const auto subdivide = [&](auto&& self, std::int64_t begin, std::int64_t end,
+                                  double endValue) -> bool {
+        if (++subdivisionWork > pointLimit * 2U) return false;
+        const auto relativeWidth = static_cast<double>(end - begin) / width;
+        // Linear interpolation error <= max|f''| * h^2 / 8. At a one-tick
+        // interval both representable sample positions are exact endpoints;
+        // sub-tick temporal reconstruction is explicitly outside this bound.
+        if (end - begin <= 1 || curvature * relativeWidth * relativeWidth / 8.0 <= segmentBudget) {
+          linear.push_back({end, endValue, "l"});
+          return true;
+        }
+        if (++preparedPoints > pointLimit) return false;
+        const auto middle = begin + (end - begin) / 2;
+        return self(self, begin, middle, valueAt(middle)) && self(self, middle, end, endValue);
+      };
+      if (!subdivide(subdivide, left.tick, right.tick, right.absoluteCents))
+        return core::failure<Output>(core::ErrorCode::InvalidArgument,
+            "USTX nonlinear pitch linearization exceeds the supported point/work budget");
+    }
+    curve.points = std::move(linear);
   }
   struct Event final { double valueDelta{0.0}; double slopeDelta{0.0}; };
   std::map<std::int64_t, Event> events;
@@ -274,6 +349,9 @@ core::Result<std::optional<domain::PitchAutomation>> composeLinearPitch(
   }
   for (auto& issue : compositionIssues)
     addIssue(issues, issue.severity, std::move(issue.path), std::move(issue.message), limits);
+  if (maximumOverlap > 0)
+    addIssue(issues, UstxIssueSeverity::Loss, partPath + ".pitch.approximation",
+             "sine/ease pitch was linearized with a total 0.25-cent analytic interpolation budget at 960 PPQ ticks; floating-point, endpoint rounding, sub-tick/frame sampling and OpenUtau's 5-tick render grid are additional differences", limits);
   if (tickGridLoss)
     addIssue(issues, UstxIssueSeverity::Loss, partPath + ".pitch.tick_grid",
              "pitch discontinuities were materialized on adjacent 960 PPQ ticks; sub-tick contours are approximated", limits);
@@ -345,7 +423,7 @@ core::Result<UstxProjectDraft> importUstxProject(
     const auto regionId = factory.addRegion(project, trackIds[source.trackNo], source.name.empty() ? "Voice Part" : source.name, time::Tick{partStart.value()}, time::Tick{partDuration.value()});
     auto* region = project.findRegion(regionId);
     if (!region) return core::failure<Output>(core::ErrorCode::InvariantViolation, "USTX import region was not created");
-    auto composed = composeLinearPitch(source, document.tempos,
+    auto composed = composePitch(source, document.tempos,
         "ustx.voice_parts[" + std::to_string(partIndex) + "]", issues, limits);
     if (!composed) return core::Result<Output>{composed.error()};
     // Query the latest end of every preceding note without scanning the whole

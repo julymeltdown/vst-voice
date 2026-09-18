@@ -22,6 +22,7 @@ import numpy as np
 from scipy.signal import stft
 
 from .qualification import measure_median_pitch_hz
+from .pitch_comparison import compare_pitch_tracks
 
 EXPECTED_SAMPLE_RATE = 48000
 EXPECTED_HOP_SIZE = 256
@@ -105,7 +106,11 @@ def compute_f0_reconstruction_error(
     sample_rate: int = EXPECTED_SAMPLE_RATE,
     target_hz: float | None = None,
 ) -> tuple[float | None, float | None, str | None]:
-    """Measure median pitch on rendered and source audio, computing error in Hz and cents."""
+    """Legacy diagnostic only: difference of phrase medians, not framewise RMSE.
+
+    This statistic cannot establish melody, timing or reconstruction correctness.
+    target_hz only guides this legacy estimator, never the native comparison.
+    """
     ref_hz = target_hz
     src_pitch, src_cov, src_reason = None, 0.0, None
     if ref_hz is None:
@@ -208,6 +213,7 @@ def measure_vocoder_reconstruction(
     profile: dict | None = None,
     valid_samples: int | None = None,
     target_hz: float | None = None,
+    pitch_tracks: dict | None = None,
     max_acceptable_spectral_distance: float = 3.5,
     max_acceptable_pitch_error_cents: float = 50.0,
 ) -> dict:
@@ -218,7 +224,14 @@ def measure_vocoder_reconstruction(
     - Exact hop size framing and trim lengths
     - Profile validation
     - Multi-scale STFT spectral distance
-    - Median F0 reconstruction error
+    - Optional time-aligned native F0 reconstruction error
+
+    pitch_tracks must contain source/rendered native feature records extracted
+    from the exact canonical float32 mono WAV bytes (_float_wav) for each trimmed
+    array. Their WAV hashes are checked here. Without both tracks, legacy median
+    numbers remain diagnostic and pitch reconstruction is UNRESOLVED. Caller-
+    supplied tracks do not authenticate extractor provenance; use compare_wavs
+    for direct native extraction from existing retained WAVs.
     """
     if sample_rate != EXPECTED_SAMPLE_RATE:
         raise ValueError(f"Sample rate mismatch: vocoder requires {EXPECTED_SAMPLE_RATE} Hz, got {sample_rate}")
@@ -263,17 +276,29 @@ def measure_vocoder_reconstruction(
     spec_dist = compute_stft_spectral_distance(
         rendered_valid, source_valid, sample_rate=sample_rate
     )
-    f0_cents, f0_rmse, pitch_reason = compute_f0_reconstruction_error(
+    f0_cents, median_difference_hz, legacy_pitch_reason = compute_f0_reconstruction_error(
         rendered_valid, source_valid, sample_rate=sample_rate, target_hz=target_hz
     )
+    pitch_comparison = None
+    if pitch_tracks is not None:
+        if not isinstance(pitch_tracks, dict) or set(pitch_tracks) != {"source", "rendered"}:
+            raise ValueError("Framewise pitch requires source/rendered native track pairs")
+        pitch_comparison = compare_pitch_tracks(pitch_tracks["source"], pitch_tracks["rendered"],
+            reference_sha256=hashlib.sha256(_float_wav(source_valid, sample_rate)).hexdigest(),
+            candidate_sha256=hashlib.sha256(_float_wav(rendered_valid, sample_rate)).hexdigest(),
+            sample_rate=sample_rate, frame_count=valid_samples, hop_size=hop_size,
+            maximum_error_cents=max_acceptable_pitch_error_cents)
 
     rendered_peak = float(np.max(np.abs(rendered_valid)))
     rendered_rms = float(np.sqrt(np.mean(np.square(rendered_valid))))
     source_peak = float(np.max(np.abs(source_valid)))
     source_rms = float(np.sqrt(np.mean(np.square(source_valid))))
 
-    pitch_ok = f0_cents is not None and abs(f0_cents) <= max_acceptable_pitch_error_cents
-    pitch_status = "UNRESOLVED" if f0_cents is None else "PASS" if pitch_ok else "FAIL"
+    pitch_ok = pitch_comparison is not None and pitch_comparison["comparisonSatisfied"]
+    pitch_status = ("PASS" if pitch_ok else "FAIL" if pitch_comparison is not None
+                    and pitch_comparison["status"] == "MISMATCH" else "UNRESOLVED")
+    pitch_reason = ("native_framewise_tracks_not_supplied" if pitch_comparison is None
+                    else None if pitch_ok else pitch_comparison["status"])
     spec_ok = spec_dist <= max_acceptable_spectral_distance
     energy_ok = (rendered_peak > 1e-4 or source_peak < 1e-4) and float(np.max(np.abs(rendered))) <= 1.05
 
@@ -281,7 +306,7 @@ def measure_vocoder_reconstruction(
 
     return {
         "formatId": "com.project-seam.vocoder-reconstruction-measurement",
-        "schemaVersion": 1,
+        "schemaVersion": 2,
         "sampleRate": sample_rate,
         "hopSize": hop_size,
         "profileId": profile.get("profileId", EXPECTED_PROFILE_ID) if profile else EXPECTED_PROFILE_ID,
@@ -289,11 +314,16 @@ def measure_vocoder_reconstruction(
         "paddedSamples": int(padded_samples),
         "totalFrames": int(len(rendered) // hop_size),
         "spectralDistance": round(float(spec_dist), 6),
-        "f0RmseHz": round(float(f0_rmse), 4) if f0_rmse is not None else None,
+        "f0RmseHz": pitch_comparison["f0RmseHz"] if pitch_comparison is not None else None,
         "f0MedianErrorCents": round(float(f0_cents), 3) if f0_cents is not None else None,
+        "f0MedianErrorCentsDiagnosticOnly": True,
+        "legacyMedianDifferenceHz": round(float(median_difference_hz), 4) if median_difference_hz is not None else None,
+        "legacyPitchReason": legacy_pitch_reason,
+        "legacyPitchMetric": "difference-between-whole-phrase-median-F0-estimates-diagnostic-only",
         "pitchReason": pitch_reason,
         "pitchStatus": pitch_status,
-        "pitchMetric": "difference-between-whole-phrase-median-F0-estimates",
+        "pitchMetric": "time-aligned-native-F0-absolute-cents",
+        "pitchComparison": pitch_comparison,
         "renderedPeak": round(rendered_peak, 6),
         "renderedRms": round(rendered_rms, 6),
         "sourcePeak": round(source_peak, 6),
@@ -343,7 +373,7 @@ def evaluate_held_out_reconstruction(
     measurements = []
     total_samples = 0
     spec_distances = []
-    f0_errors = []
+    legacy_f0_errors, f0_error_sum, f0_error_frames = [], 0.0, 0
 
     seen = set()
     with _evaluation_mode(generator_fn, seed) as torch:
@@ -373,7 +403,7 @@ def evaluate_held_out_reconstruction(
             measurement = measure_vocoder_reconstruction(
                 rendered_audio=rendered_pcm, source_audio=source_pcm, sample_rate=sample_rate,
                 hop_size=hop_size, profile=profile, valid_samples=item.get("validSamples"),
-                target_hz=item.get("frequencyHz"))
+                target_hz=item.get("frequencyHz"), pitch_tracks=item.get("pitchTracks"))
             if check_running is not None:
                 check_running()
             valid = measurement["validSamples"]
@@ -401,13 +431,17 @@ def evaluate_held_out_reconstruction(
             total_samples += valid
             spec_distances.append(measurement["spectralDistance"])
             if measurement["f0MedianErrorCents"] is not None:
-                f0_errors.append(abs(measurement["f0MedianErrorCents"]))
+                legacy_f0_errors.append(abs(measurement["f0MedianErrorCents"]))
+            comparison = measurement["pitchComparison"]
+            if comparison is not None and comparison["measurableVoicedPairs"]:
+                f0_error_frames += comparison["measurableVoicedPairs"]
+                f0_error_sum += sum(abs(error) for error in comparison["frameErrorsCents"] if error is not None)
     if not measurements:
         raise ValueError("Held-out evaluation requires at least one item")
 
     receipt = {
         "formatId": "com.project-seam.vocoder-reconstruction-receipt",
-        "schemaVersion": 1,
+        "schemaVersion": 2,
         "createdAt": datetime.now(timezone.utc).isoformat(),
         "datasetSha256": dataset_sha256,
         "profileSha256": profile_sha256,
@@ -419,7 +453,9 @@ def evaluate_held_out_reconstruction(
             "itemCount": len(measurements),
             "totalValidSamples": total_samples,
             "meanSpectralDistance": round(float(np.mean(spec_distances)), 6),
-            "meanAbsolutePitchErrorCents": round(float(np.mean(f0_errors)), 3) if f0_errors else None,
+            "meanAbsolutePitchErrorCents": round(f0_error_sum / f0_error_frames, 3) if f0_error_frames else None,
+            "measurablePitchFrames": f0_error_frames,
+            "legacyMeanAbsoluteMedianDifferenceCents": round(float(np.mean(legacy_f0_errors)), 3) if legacy_f0_errors else None,
             "allReconstructionsSatisfied": all(m["reconstructionSatisfied"] for m in measurements),
             "unresolvedPitchItems": sum(m["pitchStatus"] == "UNRESOLVED" for m in measurements),
         },
