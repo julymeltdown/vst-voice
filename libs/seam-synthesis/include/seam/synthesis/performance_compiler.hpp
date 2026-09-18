@@ -119,6 +119,11 @@ private:
   std::array<std::vector<std::size_t>, 24U> ownershipIndex_;
   std::array<std::vector<std::size_t>, 12U> acceptedIndex_;
   std::vector<std::pair<std::size_t, std::size_t>> acceptedLanes_;
+  // True only when at least one accepted selection or manual ownership record exists anywhere in the
+  // region. When it is false every per-channel search below is provably dead: each bucket is empty, so
+  // activeIndex() cannot return a value for any frame and owns() cannot be true. The score evaluator
+  // runs once per output frame, so that dead work is skipped by this one flag rather than repeated.
+  bool hasManualPerformance_{false};
 };
 
 [[nodiscard]] core::Result<CompiledScorePerformance> compileScorePerformance(

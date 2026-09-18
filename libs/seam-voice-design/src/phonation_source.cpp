@@ -85,8 +85,15 @@ core::Result<synthesis::PhraseAudio> PhonationSource::render(std::size_t frames,
       for (std::size_t h = 0; h < count; ++h) {
         const auto harmonic = static_cast<double>(h + 1U);
         const auto taperPosition = std::clamp((harmonic * frequency - 0.35 * rate) / (0.1 * rate), 0.0, 1.0);
-        const auto amplitude =
-            appliedHarmonics_[h] * 0.5 * (1.0 + std::cos(std::numbers::pi * taperPosition));
+        // At and below its own corner the taper window is cos(0), so its value there is the constant
+        // 1.0 + 1.0 rather than a cosine the loop has to evaluate. Substituting that constant keeps the
+        // operands of the product below identical to the ones the cosine produced, so the sample is
+        // bit-identical, and it removes one transcendental per partial per output sample for every
+        // partial the taper does not touch, which is the common case for the recipe's own spectrum.
+        const auto taperWindow = taperPosition == 0.0
+            ? 2.0
+            : 1.0 + std::cos(std::numbers::pi * taperPosition);
+        const auto amplitude = appliedHarmonics_[h] * 0.5 * taperWindow;
         voiced += amplitude * std::sin(2.0 * std::numbers::pi * harmonic * phase);
         weight += std::abs(amplitude);
       }

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <chrono>
 #include <cmath>
 #include <exception>
 #include <functional>
@@ -53,23 +54,41 @@ inline void checkNear(double lhs, double rhs, double epsilon,
   }
 }
 
+// Seconds elapsed since a case started, to three decimals. Reported for every case so a CTest
+// timeout names its slow case and a load-sensitive case can be told apart from a stalled one.
+inline double elapsedSeconds(const std::chrono::steady_clock::time_point& started) {
+  const auto elapsed = std::chrono::steady_clock::now() - started;
+  return std::chrono::duration<double>(elapsed).count();
+}
+
 inline int runAll() {
   std::size_t passed = 0;
   std::size_t failed = 0;
   for (const auto& test : registry()) {
+    // A case that hangs under a CTest timeout leaves no evidence of which case it was unless the
+    // name is on the stream before the work starts, and an unflushed std::cout is discarded when the
+    // process is killed. Both lines are therefore written and flushed around every case; the elapsed
+    // figure is what distinguishes a genuine stall from a slow-but-finite case on a loaded runner.
+    std::cout << "[START] " << test.name << '\n';
+    std::cout.flush();
+    const auto started = std::chrono::steady_clock::now();
     try {
       test.function();
       ++passed;
-      std::cout << "[PASS] " << test.name << '\n';
+      std::cout << "[PASS] " << test.name << " (" << elapsedSeconds(started) << " s)\n";
     } catch (const std::exception& exception) {
       ++failed;
       std::cerr << "[FAIL] " << test.name << "\n       " << exception.what() << '\n';
+      std::cerr.flush();
     } catch (...) {
       ++failed;
       std::cerr << "[FAIL] " << test.name << "\n       unknown exception\n";
+      std::cerr.flush();
     }
+    std::cout.flush();
   }
   std::cout << "\n" << passed << " passed, " << failed << " failed\n";
+  std::cout.flush();
   return failed == 0 ? 0 : 1;
 }
 

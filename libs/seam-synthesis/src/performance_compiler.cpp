@@ -370,6 +370,8 @@ core::Result<CompiledScorePerformance> compileScorePerformance(
   };
   sortIndex(result.ownershipIndex_, result.ownershipScopes_);
   sortIndex(result.acceptedIndex_, result.acceptedScopes_);
+  result.hasManualPerformance_ = !result.performance_.accepted.empty() ||
+      !result.performance_.ownership.empty();
   return result;
 }
 
@@ -445,56 +447,62 @@ ScorePerformanceSample CompiledScorePerformance::evaluate(time::SampleFrame fram
     return scopes[i].contains(note.id, frame) ? std::optional<std::size_t>{i} : std::nullopt;
   };
   const auto owns = [&](domain::PerformanceChannel channel, domain::ManualPerformanceMode mode) {
+    if (!hasManualPerformance_) return false;
     return activeIndex(ownershipIndex_[static_cast<std::size_t>(channel) * 2U +
         static_cast<std::size_t>(mode)], ownershipScopes_).has_value();
   };
-  for (const auto& index : acceptedIndex_) {
-    const auto active = activeIndex(index, acceptedScopes_);
-    if (!active) continue;
-    const auto i = *active;
-    const auto& selection = performance_.accepted[i];
-    const bool replaced = owns(selection.channel, domain::ManualPerformanceMode::Replace);
-    if (!acceptedScopes_[i].contains(note.id, frame) ||
-        (selection.channel == domain::PerformanceChannel::Pitch && vibrato.enabled) ||
-        (replaced && !(inspect && selection.channel == domain::PerformanceChannel::Dynamics))) continue;
-    const auto [takeIndex, laneIndex] = acceptedLanes_[i];
-    const auto* lane = &performance_.takes[takeIndex].lanes[laneIndex];
-    const auto& scope = acceptedScopes_[i];
-    const auto sourceStart = scope.startTick + selection.sourceTickOffset;
-    const auto sourceEnd = scope.endTick + selection.sourceTickOffset;
-    const auto upper = std::upper_bound(lane->points.begin(), lane->points.end(), frame,
-        [&](time::SampleFrame outputFrame, const auto& point) {
-          // Points outside the selected source window need no absolute-time
-          // arithmetic. In-window offsets are bounded by validated ownership.
-          if (point.tick < sourceStart) return false;
-          if (point.tick > sourceEnd) return true;
-          const auto destinationTick = point.tick - selection.sourceTickOffset;
-          return outputFrame < tempo_.sampleFrameAt(regionStart_ + destinationTick, sampleRate_);
-        });
-    const auto value = laneValue(*lane, tick + selection.sourceTickOffset,
-        static_cast<std::size_t>(upper - lane->points.begin()));
-    if (inspect && selection.channel == domain::PerformanceChannel::Dynamics && value)
-      result.selectedGeneratedDynamicsGain = static_cast<float>(*value);
-    if (replaced) continue;
-    if (selection.channel == domain::PerformanceChannel::Pitch) {
-      baseCents = value;
-      generatedPitch = true;
-    } else if (selection.channel == domain::PerformanceChannel::Attack) {
-      result.attackMilliseconds = value;
-    } else if (selection.channel == domain::PerformanceChannel::Release) {
-      result.releaseMilliseconds = value;
-    } else if (selection.channel == domain::PerformanceChannel::Dynamics && value) {
-      result.dynamicsGain = static_cast<float>(*value);
-    } else if (selection.channel == domain::PerformanceChannel::Formant && value) {
-      // A manual formant edit is authoritative over the generated curve, exactly as a manual dynamics
-      // edit is: the channel's own unit is semitones, so the value is applied as it was written.
-      result.formantSemitones = static_cast<float>(*value);
+  // Every bucket is empty when the region carries no manual performance at all, so the searches below
+  // cannot produce a value for any frame. The evaluator runs once per output frame, so this dead work is
+  // skipped by the guard rather than repeated for every sample, and every evaluated sample is identical.
+  if (hasManualPerformance_) {
+    for (const auto& index : acceptedIndex_) {
+      const auto active = activeIndex(index, acceptedScopes_);
+      if (!active) continue;
+      const auto i = *active;
+      const auto& selection = performance_.accepted[i];
+      const bool replaced = owns(selection.channel, domain::ManualPerformanceMode::Replace);
+      if (!acceptedScopes_[i].contains(note.id, frame) ||
+          (selection.channel == domain::PerformanceChannel::Pitch && vibrato.enabled) ||
+          (replaced && !(inspect && selection.channel == domain::PerformanceChannel::Dynamics))) continue;
+      const auto [takeIndex, laneIndex] = acceptedLanes_[i];
+      const auto* lane = &performance_.takes[takeIndex].lanes[laneIndex];
+      const auto& scope = acceptedScopes_[i];
+      const auto sourceStart = scope.startTick + selection.sourceTickOffset;
+      const auto sourceEnd = scope.endTick + selection.sourceTickOffset;
+      const auto upper = std::upper_bound(lane->points.begin(), lane->points.end(), frame,
+          [&](time::SampleFrame outputFrame, const auto& point) {
+            // Points outside the selected source window need no absolute-time
+            // arithmetic. In-window offsets are bounded by validated ownership.
+            if (point.tick < sourceStart) return false;
+            if (point.tick > sourceEnd) return true;
+            const auto destinationTick = point.tick - selection.sourceTickOffset;
+            return outputFrame < tempo_.sampleFrameAt(regionStart_ + destinationTick, sampleRate_);
+          });
+      const auto value = laneValue(*lane, tick + selection.sourceTickOffset,
+          static_cast<std::size_t>(upper - lane->points.begin()));
+      if (inspect && selection.channel == domain::PerformanceChannel::Dynamics && value)
+        result.selectedGeneratedDynamicsGain = static_cast<float>(*value);
+      if (replaced) continue;
+      if (selection.channel == domain::PerformanceChannel::Pitch) {
+        baseCents = value;
+        generatedPitch = true;
+      } else if (selection.channel == domain::PerformanceChannel::Attack) {
+        result.attackMilliseconds = value;
+      } else if (selection.channel == domain::PerformanceChannel::Release) {
+        result.releaseMilliseconds = value;
+      } else if (selection.channel == domain::PerformanceChannel::Dynamics && value) {
+        result.dynamicsGain = static_cast<float>(*value);
+      } else if (selection.channel == domain::PerformanceChannel::Formant && value) {
+        // A manual formant edit is authoritative over the generated curve, exactly as a manual dynamics
+        // edit is: the channel's own unit is semitones, so the value is applied as it was written.
+        result.formantSemitones = static_cast<float>(*value);
+      }
+      // Every other channel stays out of the per-frame audio path on purpose. A
+      // generated timing proposal is consumed by the ordered timing plan, and the
+      // remaining channels are reported unsupported by the renderer capability table.
+      // None of them is an amplitude, which is what a fallback assignment here would
+      // have claimed by writing a microsecond offset into a gain.
     }
-    // Every other channel stays out of the per-frame audio path on purpose. A
-    // generated timing proposal is consumed by the ordered timing plan, and the
-    // remaining channels are reported unsupported by the renderer capability table.
-    // None of them is an amplitude, which is what a fallback assignment here would
-    // have claimed by writing a microsecond offset into a gain.
   }
   if (result.attackMilliseconds && *result.attackMilliseconds > 0.0 && note.reattack) {
     const auto attackFrames = *result.attackMilliseconds * static_cast<double>(sampleRate_) / 1000.0;
