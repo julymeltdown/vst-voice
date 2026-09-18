@@ -12,6 +12,30 @@ This ledger records implementation evidence for [the approved plan](../plans/202
 
 ## Active implementation
 
+2026-09-19 — Follow-up against `ba6dbfa0`: two implementation agents plus integrator
+repaired OpenUtau linear cross-note pitch composition/snap, a production last-frame
+manual-pitch ownership bug (5800 vs 6199.270833 cents), float32 renderer-WAV intake,
+captured note/phone/melisma label ownership, exact native-pitch source binding,
+real Torch vocoder evaluation, and admitted held-out source selection. Compiler
+revision 15 invalidates stale rendered caches. Unsupported nonlinear/polyphonic
+USTX and automatic-glide interactions remain explicit limits.
+
+Actual retained 16s SEAM render now passes acoustic-target extraction and ordinary
+label-config/conditioning paths: 3000 hops, 50 phones, 30 notes, 29 syllables, 1 slur. Actual
+pinned SingingVocoders forward on a PJS crop passes tensor/length checks and
+correctly fails untrained reconstruction (spectral 51.173231, pitch 832.909c).
+Stronger Whisper-small breaches all 3 negative controls; it is not adopted as an
+approval oracle. PJS samples are retained locally for evaluation only, not training.
+
+Complete Release build passes. Full CTest 171/172 in 85.58s; only source closure failed
+because the new diagnostic was not yet staged. After staging, closure and its CTest
+rerun pass (0.25s). Optional neural-environment Python discovery 115/115 passes.
+No test weakening, coordinator repair, learned-singer qualification or new roadmap
+unit acceptance. Second-developer review agrees with the three-lane next order:
+persistent learned-candidate training/deployment, music-preserving interchange,
+and calibrated diagnostics plus installed-song journeys. See report sections 13–14
+for commands/artifact hashes, demonstrated limits and code-level exit criteria.
+
 2026-09-19 — Three-agent production-path repair and real audio evaluation, integrated
 against `7839c72f`. English pronunciation hints now accept the already-supported
 `ao` inventory with stress variants; Japanese/English/Korean regressions use pinned

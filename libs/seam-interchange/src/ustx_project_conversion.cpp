@@ -6,6 +6,7 @@
 #include <cmath>
 #include <limits>
 #include <map>
+#include <optional>
 #include <string_view>
 #include <utility>
 
@@ -52,19 +53,27 @@ double secondsAt(const std::vector<UstxTempo>& tempos, std::int64_t tick) noexce
 
 std::int64_t tickAtSeconds(const std::vector<UstxTempo>& tempos, double seconds) noexcept {
   if (tempos.empty() || !std::isfinite(seconds)) return 0;
-  if (seconds <= 0.0) return static_cast<std::int64_t>(std::llround(seconds * tempos.front().bpm * kUstxPpq / 60.0));
+  // OpenUtau TimeAxis.MsPosToTickPos uses Math.Round's ties-to-even rule on
+  // the complete tick position, including the tempo segment's origin.
+  const auto roundTick = [](double value) {
+    const auto lower = std::floor(value);
+    const auto fraction = value - lower;
+    const auto rounded = fraction < 0.5 || (fraction == 0.5 && std::fmod(lower, 2.0) == 0.0) ? lower : lower + 1.0;
+    return static_cast<std::int64_t>(rounded);
+  };
+  if (seconds <= 0.0) return roundTick(seconds * tempos.front().bpm * kUstxPpq / 60.0);
   double elapsed = 0.0;
   std::int64_t cursor = 0;
   double bpm = tempos.front().bpm;
   for (std::size_t index = 1U; index < tempos.size(); ++index) {
     const auto end = tempos[index].position.value();
     const auto segment = static_cast<double>(end - cursor) * 60.0 / (bpm * kUstxPpq);
-    if (seconds <= elapsed + segment) return cursor + static_cast<std::int64_t>(std::llround((seconds - elapsed) * bpm * kUstxPpq / 60.0));
+    if (seconds <= elapsed + segment) return roundTick(static_cast<double>(cursor) + (seconds - elapsed) * bpm * kUstxPpq / 60.0);
     elapsed += segment;
     cursor = end;
     bpm = tempos[index].bpm;
   }
-  return cursor + static_cast<std::int64_t>(std::llround((seconds - elapsed) * bpm * kUstxPpq / 60.0));
+  return roundTick(static_cast<double>(cursor) + (seconds - elapsed) * bpm * kUstxPpq / 60.0);
 }
 
 std::string shapeFor(domain::CurveInterpolation interpolation,
@@ -98,6 +107,177 @@ domain::CurveInterpolation interpolationFor(std::string_view shape,
   }
   addIssue(issues, UstxIssueSeverity::Loss, std::string(path), "unknown USTX pitch shape was approximated as smooth", limits);
   return domain::CurveInterpolation::Smooth;
+}
+
+// OpenUtau composes pitch contributions in absolute cents. A negative-X point
+// cannot be copied into SEAM's region-wide offset curve across a tone change.
+// This event sweep handles linear monophonic compositions without expanding a
+// long note into one allocation per tick. Nonlinear/polyphonic cases retain
+// their explicitly lossy point-import fallback.
+core::Result<std::optional<domain::PitchAutomation>> composeLinearPitch(
+    const UstxPart& part, const std::vector<UstxTempo>& tempos,
+    const std::string& partPath, std::vector<UstxIssue>& issues,
+    const UstxLimits& limits) {
+  using Output = std::optional<domain::PitchAutomation>;
+  const bool needed = std::any_of(part.notes.begin(), part.notes.end(), [&](const auto& note) {
+    return !note.pitch.empty() && (note.snapFirst ||
+        (part.notes.size() > 1U && std::any_of(note.pitch.begin(), note.pitch.end(),
+            [](const auto& point) { return point.offsetMilliseconds < 0.0; })));
+  });
+  if (!needed) return Output{};
+  std::vector<std::size_t> order;
+  order.reserve(part.notes.size());
+  for (std::size_t index = 0U; index < part.notes.size(); ++index) order.push_back(index);
+  std::sort(order.begin(), order.end(), [&](auto left, auto right) {
+    return part.notes[left].position != part.notes[right].position
+        ? part.notes[left].position < part.notes[right].position : left < right;
+  });
+  for (std::size_t index = 1U; index < order.size(); ++index) {
+    const auto& previous = part.notes[order[index - 1U]];
+    if (previous.position + previous.duration > part.notes[order[index]].position) {
+      addIssue(issues, UstxIssueSeverity::Loss, partPath + ".pitch.composition",
+               "overlapping score notes cannot share a monophonic USTX pitch composition", limits);
+      return Output{};
+    }
+  }
+  struct Point final { std::int64_t tick; double absoluteCents; std::string shape; };
+  struct Curve final { std::vector<Point> points; double tone; double previousTone; std::int64_t previousEnd; };
+  std::vector<Curve> curves;
+  curves.reserve(order.size());
+  std::vector<UstxIssue> compositionIssues;
+  // The performance compiler accepts at most 16,384 region pitch points.
+  const auto pointLimit = std::min<std::size_t>(limits.maximumCurvePoints, 16'384U);
+  std::size_t preparedPoints = 0U;
+  for (std::size_t ordered = 0U; ordered < order.size(); ++ordered) {
+    const auto index = order[ordered];
+    const auto& note = part.notes[index];
+    const auto notePath = partPath + ".notes[" + std::to_string(index) + "]";
+    const auto* previous = ordered == 0U ? nullptr : &part.notes[order[ordered - 1U]];
+    const auto tone = static_cast<double>(note.tone) * 100.0 + note.tuning;
+    const auto previousTone = previous ? static_cast<double>(previous->tone) * 100.0 + previous->tuning : tone;
+    Curve curve{{}, tone, previousTone,
+                previous ? (previous->position.value() + previous->duration.value()) * 2 : 0};
+    const auto noteStart = note.position.value() * 2;
+    const auto noteEnd = (note.position.value() + note.duration.value()) * 2;
+    const auto absoluteNote = part.position.value() + note.position.value();
+    for (std::size_t pointIndex = 0U; pointIndex < note.pitch.size(); ++pointIndex) {
+      const auto& point = note.pitch[pointIndex];
+      if (pointIndex > 0U && point.offsetMilliseconds < note.pitch[pointIndex - 1U].offsetMilliseconds) {
+        addIssue(issues, UstxIssueSeverity::Loss, notePath + ".pitch.composition",
+                 "unordered pitch points are outside the supported linear composition", limits);
+        return Output{};
+      }
+      const auto target = tickAtSeconds(tempos, secondsAt(tempos, absoluteNote) + point.offsetMilliseconds / 1000.0);
+      const auto pointPath = notePath + ".pitch[" + std::to_string(pointIndex) + "]";
+      if (target < part.position.value() || target > part.position.value() + part.duration.value()) {
+        addIssue(compositionIssues, UstxIssueSeverity::Loss, pointPath, "pitch point falls outside its part and was omitted", limits);
+        continue;
+      }
+      const auto tick = (target - part.position.value()) * 2;
+      if (tick > noteEnd) {
+        addIssue(compositionIssues, UstxIssueSeverity::Loss, pointPath, "pitch point falls after its note and was omitted", limits);
+        continue;
+      }
+      auto cents = tone + point.y * 10.0;
+      if (pointIndex == 0U && note.snapFirst)
+        cents = previous && previous->position + previous->duration == note.position ? previousTone : tone;
+      if (!curve.points.empty() && curve.points.back().tick == tick) {
+        curve.points.back() = {tick, cents, point.shape};
+        addIssue(compositionIssues, UstxIssueSeverity::Loss, pointPath,
+                 "pitch points coincident on the USTX tick grid were merged", limits);
+      } else {
+        if (++preparedPoints > pointLimit)
+          return core::failure<Output>(core::ErrorCode::InvalidArgument, "USTX composed pitch exceeds the supported point limit");
+        curve.points.push_back({tick, cents, point.shape});
+      }
+    }
+    if (curve.points.empty()) {
+      curve.points.push_back({noteStart, tone, "l"});
+      curve.points.push_back({noteEnd, tone, "l"});
+      preparedPoints += 2U;
+    } else {
+      if (curve.points.front().tick > noteStart) {
+        curve.points.insert(curve.points.begin(), {noteStart, curve.points.front().absoluteCents, "l"});
+        ++preparedPoints;
+      }
+      if (curve.points.back().tick < noteEnd) {
+        curve.points.push_back({noteEnd, curve.points.back().absoluteCents, "l"});
+        ++preparedPoints;
+      }
+    }
+    if (preparedPoints > pointLimit)
+      return core::failure<Output>(core::ErrorCode::InvalidArgument, "USTX composed pitch exceeds the supported point limit");
+    for (std::size_t point = 1U; point < curve.points.size(); ++point) {
+      if (curve.points[point - 1U].shape != "l" &&
+          curve.points[point - 1U].absoluteCents != curve.points[point].absoluteCents) {
+        addIssue(issues, UstxIssueSeverity::Loss, notePath + ".pitch.composition",
+                 "nonlinear USTX pitch composition is unsupported; individual points use the documented approximation", limits);
+        return Output{};
+      }
+    }
+    curves.push_back(std::move(curve));
+  }
+  struct Event final { double valueDelta{0.0}; double slopeDelta{0.0}; };
+  std::map<std::int64_t, Event> events;
+  const auto event = [&](std::int64_t tick, double value, double slope) {
+    if (value == 0.0 && slope == 0.0) return true;
+    if (!events.contains(tick) && events.size() >= pointLimit) return false;
+    auto& entry = events[tick];
+    entry.valueDelta += value;
+    entry.slopeDelta += slope;
+    return true;
+  };
+  const auto span = [&](std::int64_t begin, std::int64_t end, double first, double last) {
+    if (begin >= end) return true;
+    const auto slope = (last - first) / static_cast<double>(end - begin);
+    return event(begin, first, slope) && event(end, -last, -slope);
+  };
+  bool bounded = event(0, part.notes[order.front()].tuning, 0.0);
+  for (std::size_t ordered = 0U; ordered < order.size() && bounded; ++ordered) {
+    const auto& note = part.notes[order[ordered]];
+    const auto& curve = curves[ordered];
+    if (ordered > 0U) bounded = event(curve.previousEnd,
+        note.tuning - part.notes[order[ordered - 1U]].tuning, 0.0);
+    for (std::size_t index = 1U; index < curve.points.size() && bounded; ++index) {
+      const auto& left = curve.points[index - 1U];
+      const auto& right = curve.points[index];
+      const auto split = std::clamp(curve.previousEnd, left.tick, right.tick);
+      const auto middle = left.absoluteCents + (right.absoluteCents - left.absoluteCents) *
+          static_cast<double>(split - left.tick) / static_cast<double>(right.tick - left.tick);
+      bounded = span(left.tick, split, left.absoluteCents - curve.previousTone, middle - curve.previousTone) &&
+                span(split, right.tick, middle - curve.tone, right.absoluteCents - curve.tone);
+    }
+  }
+  if (!bounded)
+    return core::failure<Output>(core::ErrorCode::InvalidArgument, "USTX composed pitch exceeds the supported point limit");
+  domain::PitchAutomation pitch;
+  const auto emit = [&](std::int64_t tick, double cents, domain::CurveInterpolation interpolation) {
+    if ((pitch.points().empty() || pitch.points().back().tick != time::Tick{tick}) && pitch.points().size() >= pointLimit)
+      return core::failure(core::ErrorCode::InvalidArgument, "USTX composed pitch exceeds the supported point limit");
+    return pitch.upsert({time::Tick{tick}, static_cast<float>(cents), interpolation});
+  };
+  double value = 0.0, slope = 0.0;
+  std::int64_t previousTick = 0;
+  bool tickGridLoss = false;
+  for (const auto& [tick, change] : events) {
+    const auto left = value + slope * static_cast<double>(tick - previousTick);
+    if (tick > 0 && std::abs(change.valueDelta) > 1e-7) {
+      const auto guard = emit(tick - 1, left - slope, domain::CurveInterpolation::Step);
+      if (!guard) return core::Result<Output>{guard.error()};
+      tickGridLoss = true;
+    }
+    value = left + change.valueDelta;
+    slope += change.slopeDelta;
+    previousTick = tick;
+    const auto added = emit(tick, value, domain::CurveInterpolation::Linear);
+    if (!added) return core::Result<Output>{added.error()};
+  }
+  for (auto& issue : compositionIssues)
+    addIssue(issues, issue.severity, std::move(issue.path), std::move(issue.message), limits);
+  if (tickGridLoss)
+    addIssue(issues, UstxIssueSeverity::Loss, partPath + ".pitch.tick_grid",
+             "pitch discontinuities were materialized on adjacent 960 PPQ ticks; sub-tick contours are approximated", limits);
+  return Output{std::move(pitch)};
 }
 
 }  // namespace
@@ -165,6 +345,9 @@ core::Result<UstxProjectDraft> importUstxProject(
     const auto regionId = factory.addRegion(project, trackIds[source.trackNo], source.name.empty() ? "Voice Part" : source.name, time::Tick{partStart.value()}, time::Tick{partDuration.value()});
     auto* region = project.findRegion(regionId);
     if (!region) return core::failure<Output>(core::ErrorCode::InvariantViolation, "USTX import region was not created");
+    auto composed = composeLinearPitch(source, document.tempos,
+        "ustx.voice_parts[" + std::to_string(partIndex) + "]", issues, limits);
+    if (!composed) return core::Result<Output>{composed.error()};
     // Query the latest end of every preceding note without scanning the whole
     // part per pitch point. Input note order need not be chronological.
     std::vector<std::pair<std::int64_t, std::int64_t>> priorNoteEnds;
@@ -217,6 +400,7 @@ core::Result<UstxProjectDraft> importUstxProject(
         return core::failure<Output>(core::ErrorCode::InvalidArgument, "USTX note absolute tick overflows the configured limit");
       const auto absoluteNoteTick = source.position.value() + inputNote.position.value();
       const auto noteEnd = absoluteNoteTick + inputNote.duration.value();
+      if (composed.value().has_value()) continue;
       if (inputNote.pitch.empty()) {
         const auto start = scaleTick(inputNote.position.value(), kUstxPpq, kSeamPpq, notePath + ".position", issues, limits);
         const auto end = scaleTick(inputNote.position.value() + inputNote.duration.value(), kUstxPpq, kSeamPpq, notePath + ".duration", issues, limits);
@@ -250,6 +434,7 @@ core::Result<UstxProjectDraft> importUstxProject(
       }
       if (inputNote.snapFirst) addIssue(issues, UstxIssueSeverity::Warning, notePath + ".pitch.snap_first", "snap_first is retained only as imported pitch points; neighboring-note materialization is not repeated", limits);
     }
+    if (composed.value().has_value()) region->pitchAutomation = std::move(*composed.value());
     region->sortNotes();
   }
   const auto valid = project.validate(); if (!valid) return core::Result<Output>{valid.error()};

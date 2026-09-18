@@ -3,8 +3,11 @@
 #include "seam/application/project_factory.hpp"
 #include "seam/interchange/ustx_codec.hpp"
 #include "seam/interchange/ustx_project_conversion.hpp"
+#include "seam/phonemizer/pronunciation_resolver.hpp"
+#include "seam/synthesis/performance_compiler.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -114,6 +117,28 @@ bool hasLossAt(const std::vector<seam::interchange::UstxIssue>& issues,
   return std::any_of(issues.begin(), issues.end(), [&](const auto& issue) {
     return issue.severity == seam::interchange::UstxIssueSeverity::Loss && issue.path == path;
   });
+}
+
+std::string linearPortamentoFixture() {
+  return R"USTX(ustx_version: "0.9"
+time_signatures: [{bar_position: 0, beat_per_bar: 4, beat_unit: 4}]
+tempos: [{position: 0, bpm: 120}]
+tracks: [{track_name: Lead}]
+voice_parts:
+  - track_no: 0
+    position: 0
+    duration: 960
+    notes:
+      - {position: 0, duration: 480, tone: 60, tuning: 25, lyric: "a"}
+      - position: 480
+        duration: 480
+        tone: 64
+        tuning: -25
+        lyric: "i"
+        pitch:
+          data: [{x: -125, y: 99, shape: l}, {x: 125, y: 0, shape: l}]
+          snap_first: true
+)USTX";
 }
 
 }  // namespace
@@ -412,8 +437,9 @@ TEST_CASE("USTX import reports negative pitch beyond the part instead of clampin
   }
 }
 
-TEST_CASE("USTX import reports cross-note portamento that needs absolute curve composition") {
+TEST_CASE("USTX import reports unsupported nonlinear cross-note portamento") {
   std::string source{negativePitchFixture()};
+  source.replace(source.find("{x: 5, y: 0"), std::string{"{x: 5, y: 0"}.size(), "{x: 5, y: 10");
   const auto notes = source.find("    notes:\n") + std::string{"    notes:\n"}.size();
   source.insert(notes, "      - {position: 0, duration: 120, tone: 60, lyric: \"la\"}\n");
   seam::application::ProjectFactory factory{1000000U};
@@ -424,6 +450,7 @@ TEST_CASE("USTX import reports cross-note portamento that needs absolute curve c
     return point.tick == seam::time::Tick{230};
   }));
   CHECK(hasLossAt(imported.value().issues, "ustx.voice_parts[0].notes[1].pitch[0]"));
+  CHECK(hasLossAt(imported.value().issues, "ustx.voice_parts[0].notes[1].pitch.composition"));
   CHECK(std::any_of(imported.value().issues.begin(), imported.value().issues.end(), [](const auto& issue) {
     return issue.path == "ustx.voice_parts[0].notes[1].pitch[0]" &&
            issue.message.find("cross-note") != std::string::npos;
@@ -488,4 +515,208 @@ TEST_CASE("USTX export writes rest pickups as negative milliseconds on the upcom
       return point.offsetMilliseconds < 0.0;
     }));
   }
+}
+
+// Oracle: OpenUtau 83e02c7e UNote.cs:35-36,108-114 replaces snapped Y from
+// adjusted neighboring tones. RenderPhrase.cs:304-307,339-352 adds each note
+// curve's absolute pitch minus the appropriate previous/current adjusted base.
+// These expected pitches are independent numeric samples, not SEAM round trips.
+TEST_CASE("USTX linear cross-note portamento preserves adjusted absolute pitch and snap_first") {
+  seam::application::ProjectFactory factory{1020000U};
+  const auto imported = seam::interchange::importUstxProject(bytes(linearPortamentoFixture()), factory);
+  CHECK(imported);
+  const auto& region = imported.value().project.vocalTracks().front().regions.front();
+  const auto& pitch = region.pitchAutomation;
+  CHECK_NEAR(6000.0 + pitch.valueAt(seam::time::Tick{720}), 6025.0, 1e-4);
+  CHECK_NEAR(6000.0 + pitch.valueAt(seam::time::Tick{840}), 6112.5, 1e-4);
+  CHECK_NEAR(6000.0 + pitch.valueAt(seam::time::Tick{959}), 6199.270833333, 1e-3);
+  CHECK_NEAR(6400.0 + pitch.valueAt(seam::time::Tick{960}), 6200.0, 1e-4);
+  CHECK_NEAR(6400.0 + pitch.valueAt(seam::time::Tick{1080}), 6287.5, 1e-4);
+  CHECK_NEAR(6400.0 + pitch.valueAt(seam::time::Tick{1200}), 6375.0, 1e-4);
+  CHECK_NEAR(6400.0 + pitch.valueAt(seam::time::Tick{1500}), 6375.0, 1e-4);
+  CHECK(!hasLossAt(imported.value().issues, "ustx.voice_parts[0].notes[1].pitch[0]"));
+  CHECK(hasLossAt(imported.value().issues, "ustx.voice_parts[0].pitch.tick_grid"));
+
+  const auto compiled = seam::synthesis::compileScorePerformance(imported.value().project, region, 48000U);
+  CHECK(compiled);
+  for (const auto& [tick, expected] : std::vector<std::pair<std::int64_t, double>>{
+           {720, 6025.0}, {840, 6112.5}, {959, 6199.270833333},
+           {960, 6200.0}, {1080, 6287.5}, {1200, 6375.0}}) {
+    const auto frame = imported.value().project.tempoMap().sampleFrameAt(seam::time::Tick{tick}, 48000.0);
+    const auto sample = compiled.value().inspectAt(frame);
+    CHECK(sample.scoreFrequencyHz.has_value());
+    CHECK_NEAR(6900.0 + 1200.0 * std::log2(*sample.scoreFrequencyHz / 440.0), expected, 1e-3);
+  }
+  const auto boundary = imported.value().project.tempoMap().sampleFrameAt(seam::time::Tick{960}, 48000.0);
+  const auto lastPreviousFrame = compiled.value().inspectAt(boundary - 1);
+  CHECK(lastPreviousFrame.noteId == region.notes.front().id);
+  CHECK(lastPreviousFrame.scoreFrequencyHz.has_value());
+  // Nearest-tick rounding must not apply the incoming note's -200c offset
+  // while the previous note's MIDI60 base is still active on this frame.
+  CHECK_NEAR(6900.0 + 1200.0 * std::log2(*lastPreviousFrame.scoreFrequencyHz / 440.0), 6199.270833333, 1e-3);
+
+  auto unsnapped = linearPortamentoFixture();
+  unsnapped.replace(unsnapped.find("y: 99"), std::string{"y: 99"}.size(), "y: -20");
+  unsnapped.replace(unsnapped.find("snap_first: true"), std::string{"snap_first: true"}.size(), "snap_first: false");
+  const auto manual = seam::interchange::importUstxProject(bytes(unsnapped), factory);
+  CHECK(manual);
+  const auto& manualPitch = manual.value().project.vocalTracks().front().regions.front().pitchAutomation;
+  CHECK_NEAR(6000.0 + manualPitch.valueAt(seam::time::Tick{720}), 6175.0, 1e-4);
+  CHECK_NEAR(6400.0 + manualPitch.valueAt(seam::time::Tick{960}), 6275.0, 1e-4);
+}
+
+TEST_CASE("USTX cross-note composition adds preceding pitch contributions instead of replacing them") {
+  auto source = linearPortamentoFixture();
+  const std::string oldNote{"      - {position: 0, duration: 480, tone: 60, tuning: 25, lyric: \"a\"}"};
+  source.replace(source.find(oldNote), oldNote.size(),
+      "      - position: 0\n        duration: 480\n        tone: 60\n        tuning: 25\n        lyric: \"a\"\n"
+      "        pitch: {data: [{x: 0, y: 0, shape: l}, {x: 500, y: 4, shape: l}], snap_first: false}");
+  seam::application::ProjectFactory factory{1030000U};
+  const auto imported = seam::interchange::importUstxProject(bytes(source), factory);
+  CHECK(imported);
+  const auto& pitch = imported.value().project.vocalTracks().front().regions.front().pitchAutomation;
+  // At source tick420, preceding +35c combines with incoming +87.5c on 6025c.
+  CHECK_NEAR(6000.0 + pitch.valueAt(seam::time::Tick{840}), 6147.5, 1e-4);
+  CHECK_NEAR(6000.0 + pitch.valueAt(seam::time::Tick{720}), 6055.0, 1e-4);
+  // OpenUtau contribution intervals exclude their final endpoint: the first
+  // note's +40c contribution ends as the second score note begins.
+  CHECK_NEAR(6400.0 + pitch.valueAt(seam::time::Tick{960}), 6200.0, 1e-4);
+}
+
+TEST_CASE("USTX snap_first resets to the current adjusted tone after a gap") {
+  auto source = linearPortamentoFixture();
+  source.replace(source.find("duration: 480, tone: 60"), std::string{"duration: 480, tone: 60"}.size(), "duration: 120, tone: 60");
+  source.replace(source.find("{x: 125, y: 0"), std::string{"{x: 125, y: 0"}.size(), "{x: 125, y: 10");
+  seam::application::ProjectFactory factory{1040000U};
+  const auto imported = seam::interchange::importUstxProject(bytes(source), factory);
+  CHECK(imported);
+  const auto& pitch = imported.value().project.vocalTracks().front().regions.front().pitchAutomation;
+  CHECK_NEAR(6400.0 + pitch.valueAt(seam::time::Tick{960}), 6425.0, 1e-4);
+  CHECK_NEAR(6400.0 + pitch.valueAt(seam::time::Tick{1200}), 6475.0, 1e-4);
+  CHECK_NEAR(6000.0 + pitch.valueAt(seam::time::Tick{120}), 6025.0, 1e-4);
+
+  const std::string firstNote{"      - {position: 0, duration: 120, tone: 60, tuning: 25, lyric: \"a\"}\n"};
+  source.erase(source.find(firstNote), firstNote.size());
+  const auto first = seam::interchange::importUstxProject(bytes(source), factory);
+  CHECK(first);
+  CHECK_NEAR(6400.0 + first.value().project.vocalTracks().front().regions.front().pitchAutomation.valueAt(seam::time::Tick{960}), 6425.0, 1e-4);
+}
+
+TEST_CASE("USTX portamento millisecond endpoints follow the full tempo axis before interpolation") {
+  auto source = linearPortamentoFixture();
+  source.replace(source.find("tempos: [{position: 0, bpm: 120}]"), std::string{"tempos: [{position: 0, bpm: 120}]"}.size(),
+                 "tempos: [{position: 0, bpm: 120}, {position: 480, bpm: 240}]");
+  source.replace(source.find("tuning: 25"), std::string{"tuning: 25"}.size(), "tuning: 0");
+  source.replace(source.find("tuning: -25"), std::string{"tuning: -25"}.size(), "tuning: 0");
+  seam::application::ProjectFactory factory{1050000U};
+  const auto imported = seam::interchange::importUstxProject(bytes(source), factory);
+  CHECK(imported);
+  const auto& pitch = imported.value().project.vocalTracks().front().regions.front().pitchAutomation;
+  // -125 ms maps to source tick360, +125 ms to720. OpenUtau interpolates
+  // between those converted tick positions, not linearly in wall-clock time.
+  CHECK_NEAR(6000.0 + pitch.valueAt(seam::time::Tick{840}), 6066.6666667, 1e-3);
+  CHECK_NEAR(6400.0 + pitch.valueAt(seam::time::Tick{960}), 6133.3333333, 1e-3);
+  CHECK_NEAR(6400.0 + pitch.valueAt(seam::time::Tick{1200}), 6266.6666667, 1e-3);
+  CHECK_NEAR(6400.0 + pitch.valueAt(seam::time::Tick{1440}), 6400.0, 1e-3);
+  const auto& region = imported.value().project.vocalTracks().front().regions.front();
+  const auto compiled = seam::synthesis::compileScorePerformance(imported.value().project, region, 48000U);
+  CHECK(compiled);
+  for (const auto& [tick, expected] : std::vector<std::pair<std::int64_t, double>>{
+           {840, 6066.6666667}, {960, 6133.3333333}, {1200, 6266.6666667}, {1440, 6400.0}}) {
+    const auto sample = compiled.value().inspectAt(imported.value().project.tempoMap().sampleFrameAt(seam::time::Tick{tick}, 48000.0));
+    CHECK(sample.scoreFrequencyHz.has_value());
+    CHECK_NEAR(6900.0 + 1200.0 * std::log2(*sample.scoreFrequencyHz / 440.0), expected, 1e-3);
+  }
+}
+
+TEST_CASE("USTX pitch composition keeps explicit polyphonic losses and bounded sparse output") {
+  auto overlapping = linearPortamentoFixture();
+  overlapping.replace(overlapping.find("duration: 480, tone: 60"), std::string{"duration: 480, tone: 60"}.size(), "duration: 600, tone: 60");
+  seam::application::ProjectFactory factory{1060000U};
+  const auto polyphonic = seam::interchange::importUstxProject(bytes(overlapping), factory);
+  CHECK(polyphonic);
+  CHECK(hasLossAt(polyphonic.value().issues, "ustx.voice_parts[0].pitch.composition"));
+  CHECK(hasLossAt(polyphonic.value().issues, "ustx.voice_parts[0].notes[1].pitch[0]"));
+
+  seam::interchange::UstxLimits limits;
+  limits.maximumCurvePoints = 4U;
+  CHECK(!seam::interchange::importUstxProject(bytes(linearPortamentoFixture()), factory, {}, limits));
+  auto longScore = seam::interchange::decodeUstx(bytes(linearPortamentoFixture()));
+  CHECK(longScore);
+  auto& part = longScore.value().parts.front();
+  part.duration = seam::time::Tick{960'000'000};
+  part.notes.front().duration = seam::time::Tick{480'000'000};
+  part.notes.back().position = seam::time::Tick{480'000'000};
+  part.notes.back().duration = seam::time::Tick{480'000'000};
+  const auto encoded = seam::interchange::encodeUstx(longScore.value());
+  CHECK(encoded);
+  const auto sparse = seam::interchange::importUstxProject(encoded.value(), factory);
+  CHECK(sparse);
+  CHECK(sparse.value().project.vocalTracks().front().regions.front().pitchAutomation.points().size() < 16U);
+}
+
+TEST_CASE("USTX pitch endpoint half-ticks follow OpenUtau ties-to-even rounding") {
+  // TimeAxis.cs:222-230 uses Math.Round; absolute tick1080.5 becomes1080.
+  std::string source{negativePitchFixture()};
+  source.replace(source.find("position: 120"), std::string{"position: 120"}.size(), "position: 121");
+  source.replace(source.find("x: -5"), std::string{"x: -5"}.size(), "x: -0.5208333333333334");
+  seam::application::ProjectFactory factory{1070000U};
+  const auto imported = seam::interchange::importUstxProject(bytes(source), factory);
+  CHECK(imported);
+  CHECK(imported.value().project.vocalTracks().front().regions.front().pitchAutomation.points().front().tick == seam::time::Tick{240});
+}
+
+TEST_CASE("pitch boundary ownership preserves ordinary controls rests and melisma transitions") {
+  seam::application::ProjectFactory factory{1080000U};
+  auto project = factory.createProject("Pitch boundary sampling");
+  const auto trackId = factory.addVocalTrack(project, "Lead");
+  const auto regionId = factory.addRegion(project, trackId, "Verse", seam::time::Tick{960}, seam::time::Tick{2880});
+  auto* region = project.findRegion(regionId);
+  CHECK(region != nullptr);
+  for (const auto key : {60U, 64U}) {
+    auto [lyric, note] = factory.makeNote(seam::time::Tick{key == 60U ? 0 : 960}, seam::time::Tick{960},
+                                        static_cast<std::uint8_t>(key), U"あ", seam::domain::Language::Japanese);
+    region->lyrics.push_back(lyric);
+    region->notes.push_back(note);
+  }
+  CHECK(region->pitchAutomation.upsert({seam::time::Tick{0}, 50.0F, seam::domain::CurveInterpolation::Step}));
+  CHECK(region->pitchAutomation.upsert({seam::time::Tick{960}, -50.0F, seam::domain::CurveInterpolation::Step}));
+  CHECK(region->dynamicsAutomation.replacePoints({{seam::time::Tick{0}, 0.2F}, {seam::time::Tick{960}, 0.8F}}));
+  for (const auto rate : {8000U, 44100U, 48000U, 192000U}) {
+    const auto compiled = seam::synthesis::compileScorePerformance(project, *region, rate);
+    CHECK(compiled);
+    const auto& first = compiled.value().notes().front();
+    const auto& second = compiled.value().notes().back();
+    const auto last = compiled.value().inspectAt(first.endFrame - 1);
+    const auto next = compiled.value().inspectAt(second.startFrame);
+    CHECK(last.noteId == first.id);
+    CHECK(next.noteId == second.id);
+    CHECK(last.scoreFrequencyHz.has_value());
+    CHECK(next.scoreFrequencyHz.has_value());
+    CHECK_NEAR(6900.0 + 1200.0 * std::log2(*last.scoreFrequencyHz / 440.0), 6050.0, 1e-4);
+    CHECK_NEAR(6900.0 + 1200.0 * std::log2(*next.scoreFrequencyHz / 440.0), 6350.0, 1e-4);
+    // Dynamics is still sampled on its existing rounded region tick.
+    CHECK_NEAR(last.dynamicsGain, 0.8, 1e-6);
+    CHECK(!compiled.value().inspectAt(first.startFrame - 1).scoreFrequencyHz);
+    CHECK(!compiled.value().inspectAt(second.endFrame).scoreFrequencyHz);
+  }
+
+  region->lyrics.back().surface = U"ー";
+  region->notes.back().articulation = seam::domain::NoteArticulation::Legato;
+  const auto pronunciation = seam::phonemizer::resolveJapanesePronunciation(*region);
+  CHECK(pronunciation);
+  const auto linked = seam::synthesis::compileScorePerformance(project, *region, 48000U,
+      pronunciation.value().pronunciation.tokens);
+  CHECK(linked);
+  const auto& continuation = linked.value().notes().back();
+  CHECK(!continuation.reattack);
+  CHECK(continuation.transitionFromMidi == 60U);
+  const auto onset = linked.value().inspectAt(continuation.startFrame);
+  const auto settled = linked.value().inspectAt(continuation.transitionEndFrame);
+  CHECK(onset.scoreFrequencyHz.has_value());
+  CHECK(settled.scoreFrequencyHz.has_value());
+  // Ordinary authored offsets still combine with the existing automatic
+  // continuation glide; this boundary fix does not disable or restart it.
+  CHECK_NEAR(6900.0 + 1200.0 * std::log2(*onset.scoreFrequencyHz / 440.0), 5950.0, 1e-4);
+  CHECK_NEAR(6900.0 + 1200.0 * std::log2(*settled.scoreFrequencyHz / 440.0), 6350.0, 1e-4);
 }

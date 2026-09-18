@@ -14,6 +14,18 @@ from tools.voice_model_training.acoustics import log_mel_targets, wav_log_mel_ta
 
 @unittest.skipUnless(importlib.util.find_spec("numpy"), "Optional acoustic-target NumPy environment not installed")
 class AcousticTargetsTests(unittest.TestCase):
+    def test_float_teacher_uses_exact_samples_without_integer_reinterpretation(self):
+        import numpy as np
+        from tools.voice_model_training.test_audio_source import float_wav
+        samples = ([0.25, -0.125, 0.0, 0.5] * 512) + [0.125]
+        payload = float_wav(samples)
+        record, targets = wav_log_mel_targets(payload, expected_sha256=hashlib.sha256(payload).hexdigest(), sample_rate=48000)
+        expected = log_mel_targets(np.asarray(samples, dtype=np.float32), sample_rate=48000)
+        np.testing.assert_array_equal(targets, expected)
+        self.assertEqual(record['sourceFrameCount'], 2049)
+        self.assertEqual(record['analysisFrameCount'], 9)
+        self.assertFalse(record['trainingAdmitted'])
+
     def test_byte_bound_pcm_widths_and_sign_extension(self):
         import numpy as np
         results = []

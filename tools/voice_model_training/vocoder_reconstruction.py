@@ -9,12 +9,14 @@ acoustic profile mismatches are refused.
 """
 from __future__ import annotations
 
+from contextlib import contextmanager
 from datetime import datetime, timezone
 import hashlib
 import json
 import math
 from pathlib import Path
-from typing import Sequence
+import struct
+from typing import Iterable, Sequence
 
 import numpy as np
 from scipy.signal import stft
@@ -24,6 +26,7 @@ from .qualification import measure_median_pitch_hz
 EXPECTED_SAMPLE_RATE = 48000
 EXPECTED_HOP_SIZE = 256
 EXPECTED_PROFILE_ID = "seam-full-hop-slaney-v1"
+MAXIMUM_SAMPLES = 4096 * EXPECTED_HOP_SIZE
 
 STFT_RESOLUTIONS = (
     {"n_fft": 512, "hop_size": 128, "win_length": 512},
@@ -115,18 +118,85 @@ def compute_f0_reconstruction_error(
     else:
         src_pitch, src_cov, src_reason = measure_median_pitch_hz(source, sample_rate, ref_hz)
 
-    if ref_hz is None or ref_hz <= 0.0:
+    if src_pitch is None or ref_hz is None or ref_hz <= 0.0:
         return None, None, "unvoiced_or_unmeasurable_source"
 
     rend_pitch, rend_cov, rend_reason = measure_median_pitch_hz(rendered, sample_rate, ref_hz)
     if rend_pitch is None:
         return None, None, f"rendered_unvoiced: {rend_reason}"
 
-    f0_rmse_hz = abs(rend_pitch - (src_pitch if src_pitch is not None else ref_hz))
-    cents_ratio = rend_pitch / (src_pitch if src_pitch is not None else ref_hz)
+    f0_rmse_hz = abs(rend_pitch - src_pitch)
+    cents_ratio = rend_pitch / src_pitch
     f0_median_error_cents = 1200.0 * math.log2(cents_ratio) if cents_ratio > 0.0 else None
 
     return f0_median_error_cents, f0_rmse_hz, None
+
+
+def _mono_audio(value, name):
+    """Capture bounded mono CPU audio without flattening multiple channels."""
+    try:
+        import torch
+    except ImportError:
+        torch = None
+    if torch is not None and isinstance(value, torch.Tensor):
+        if value.device.type != "cpu" or value.dtype != torch.float32 or value.layout != torch.strided:
+            raise ValueError(f"{name} must be a dense CPU float32 tensor")
+        value = value.detach().numpy()
+    value = np.asarray(value)
+    if (value.dtype.kind not in "fi" or value.ndim not in (1, 2, 3)
+            or any(size != 1 for size in value.shape[:-1])
+            or not 1 <= value.shape[-1] <= MAXIMUM_SAMPLES):
+        raise ValueError(f"{name} must be bounded mono audio [S], [1,S], or [1,1,S]")
+    result = value.reshape(-1).astype(np.float32, copy=True)
+    if not np.isfinite(result).all():
+        raise ValueError(f"Nonfinite samples in {name}")
+    return result
+
+
+@contextmanager
+def _evaluation_mode(generator, seed):
+    """Preserve CPU RNG, gradients and mixed module modes, including on failure.
+
+    Arbitrary custom forward methods that mutate parameters/buffers are not rolled
+    back. Standard running statistics stay unchanged because inference uses eval.
+    """
+    try:
+        import torch
+    except ImportError:
+        yield None
+        return
+    module = isinstance(generator, torch.nn.Module)
+    if module and any(value.device.type != "cpu" for value in
+                      (*generator.parameters(), *generator.buffers())):
+        raise ValueError("Vocoder evaluation supports CPU models only")
+    modes = [(child, child.training) for child in generator.modules()] if module else []
+    try:
+        with torch.random.fork_rng(devices=[]), torch.no_grad():
+            torch.random.default_generator.manual_seed(seed)
+            if module:
+                generator.eval()
+            yield torch if module else None
+    finally:
+        for child, training in modes:
+            child.training = training
+
+
+def _conditioning_tensor(value, name, torch):
+    if isinstance(value, np.ndarray):
+        if value.dtype != np.float32:
+            raise ValueError(f"Vocoder {name} must be float32")
+        value = torch.from_numpy(value.copy())
+    if (not isinstance(value, torch.Tensor) or value.device.type != "cpu"
+            or value.dtype != torch.float32 or value.layout != torch.strided
+            or not torch.isfinite(value).all()):
+        raise ValueError(f"Vocoder {name} must be finite dense CPU float32")
+    return value.detach()
+
+
+def _float_wav(audio, sample_rate):
+    pcm = audio.astype("<f4", copy=False).tobytes()
+    return struct.pack("<4sI4s4sIHHIIHH4sI", b"RIFF", 36 + len(pcm), b"WAVE", b"fmt ",
+                       16, 3, 1, sample_rate, sample_rate * 4, 4, 32, b"data", len(pcm)) + pcm
 
 
 def measure_vocoder_reconstruction(
@@ -136,6 +206,7 @@ def measure_vocoder_reconstruction(
     sample_rate: int = EXPECTED_SAMPLE_RATE,
     hop_size: int = EXPECTED_HOP_SIZE,
     profile: dict | None = None,
+    valid_samples: int | None = None,
     target_hz: float | None = None,
     max_acceptable_spectral_distance: float = 3.5,
     max_acceptable_pitch_error_cents: float = 50.0,
@@ -151,6 +222,11 @@ def measure_vocoder_reconstruction(
     """
     if sample_rate != EXPECTED_SAMPLE_RATE:
         raise ValueError(f"Sample rate mismatch: vocoder requires {EXPECTED_SAMPLE_RATE} Hz, got {sample_rate}")
+    if type(hop_size) is not int or hop_size != EXPECTED_HOP_SIZE:
+        raise ValueError("Vocoder reconstruction requires hop size 256")
+    if target_hz is not None and (type(target_hz) not in (int, float)
+                                 or not math.isfinite(target_hz) or not 0 < target_hz <= 20000):
+        raise ValueError("Pitch reference must be finite and positive")
 
     if profile is not None:
         if profile.get("profileId") != EXPECTED_PROFILE_ID:
@@ -162,22 +238,22 @@ def measure_vocoder_reconstruction(
         if profile.get("tailPadding") != "zero-to-whole-hop":
             raise ValueError("Profile requires zero-to-whole-hop tail padding")
 
-    rendered = np.asarray(rendered_audio, dtype=np.float32).reshape(-1)
-    source = np.asarray(source_audio, dtype=np.float32).reshape(-1)
-
-    if not np.isfinite(rendered).all():
-        raise ValueError("Nonfinite samples in rendered vocoder output")
-    if not np.isfinite(source).all():
-        raise ValueError("Nonfinite samples in source audio")
+    rendered = _mono_audio(rendered_audio, "rendered vocoder output")
+    source = _mono_audio(source_audio, "source audio")
 
     if len(rendered) % hop_size != 0:
         raise ValueError(
             f"Rendered audio length {len(rendered)} is not a multiple of hop size {hop_size}"
         )
 
-    valid_samples = min(len(rendered), len(source))
-    if valid_samples < hop_size:
+    valid_samples = len(source) if valid_samples is None else valid_samples
+    if type(valid_samples) is not int or not 512 <= valid_samples <= MAXIMUM_SAMPLES:
         raise ValueError(f"Audio payload too short ({valid_samples} samples) for vocoder reconstruction")
+    expected_samples = ((valid_samples + hop_size - 1) // hop_size) * hop_size
+    if len(rendered) != expected_samples or len(source) not in (valid_samples, expected_samples):
+        raise ValueError("Vocoder output/source length differs from the exact full-hop phrase length")
+    if np.any(source[valid_samples:] != 0):
+        raise ValueError("Source padding must be zero outside valid samples")
 
     padded_samples = len(rendered) - valid_samples
 
@@ -196,9 +272,10 @@ def measure_vocoder_reconstruction(
     source_peak = float(np.max(np.abs(source_valid)))
     source_rms = float(np.sqrt(np.mean(np.square(source_valid))))
 
-    pitch_ok = (f0_cents is not None and abs(f0_cents) <= max_acceptable_pitch_error_cents) or (target_hz is None and pitch_reason is not None)
+    pitch_ok = f0_cents is not None and abs(f0_cents) <= max_acceptable_pitch_error_cents
+    pitch_status = "UNRESOLVED" if f0_cents is None else "PASS" if pitch_ok else "FAIL"
     spec_ok = spec_dist <= max_acceptable_spectral_distance
-    energy_ok = (rendered_peak > 1e-4 or source_peak < 1e-4) and rendered_peak <= 1.05
+    energy_ok = (rendered_peak > 1e-4 or source_peak < 1e-4) and float(np.max(np.abs(rendered))) <= 1.05
 
     reconstruction_satisfied = bool(spec_ok and pitch_ok and energy_ok)
 
@@ -215,6 +292,8 @@ def measure_vocoder_reconstruction(
         "f0RmseHz": round(float(f0_rmse), 4) if f0_rmse is not None else None,
         "f0MedianErrorCents": round(float(f0_cents), 3) if f0_cents is not None else None,
         "pitchReason": pitch_reason,
+        "pitchStatus": pitch_status,
+        "pitchMetric": "difference-between-whole-phrase-median-F0-estimates",
         "renderedPeak": round(rendered_peak, 6),
         "renderedRms": round(rendered_rms, 6),
         "sourcePeak": round(source_peak, 6),
@@ -225,15 +304,17 @@ def measure_vocoder_reconstruction(
 
 def evaluate_held_out_reconstruction(
     generator_fn,
-    items: Sequence[dict],
+    items: Iterable[dict],
     *,
     dataset_sha256: str,
     profile_sha256: str,
     output_directory: Path | None = None,
-    label_origin: str = "com.project-seam.training-generated-teacher",
+    label_origin: str = "unspecified",
     sample_rate: int = EXPECTED_SAMPLE_RATE,
     hop_size: int = EXPECTED_HOP_SIZE,
     profile: dict | None = None,
+    seed: int = 0,
+    check_running=None,
 ) -> dict:
     """Evaluate vocoder reconstruction over held-out items and retain the measurement receipt.
 
@@ -241,37 +322,88 @@ def evaluate_held_out_reconstruction(
     - labelOrigin is permanently recorded.
     - releaseEligible is strictly False.
     - trainingAdmitted is strictly False.
+
+    This low-level measurement accepts caller-owned items; it does not itself
+    authenticate a dataset or establish a held-out study. The reviewed epoch
+    service selects and reads admitted validation/test sources before calling it.
+    A partial final hop is measured over validSamples and retained WAVs contain
+    exactly those samples. Failures may leave item files without a final receipt.
     """
-    if not items:
-        raise ValueError("Held-out evaluation requires at least one item")
+    if type(seed) is not int or not 0 <= seed < 2**63:
+        raise ValueError("Vocoder evaluation requires a nonnegative 63-bit seed")
+    if not isinstance(label_origin, str) or not label_origin:
+        raise ValueError("Vocoder evaluation requires a label origin")
+    if output_directory is not None:
+        output_directory = Path(output_directory)
+        if output_directory.is_symlink() or not output_directory.is_dir():
+            raise ValueError("Reconstruction output must be an existing regular directory")
+        if (output_directory / "reconstruction_receipt.json").exists():
+            raise ValueError("Reconstruction receipt already exists")
 
     measurements = []
     total_samples = 0
     spec_distances = []
     f0_errors = []
 
-    for item in items:
-        source_id = item["sourceId"]
-        source_pcm = item["pcm"]
-        mel = item["mel"]
-        f0 = item.get("f0")
-        target_hz = item.get("frequencyHz")
-
-        rendered_pcm = generator_fn(mel, f0)
-        measurement = measure_vocoder_reconstruction(
-            rendered_audio=rendered_pcm,
-            source_audio=source_pcm,
-            sample_rate=sample_rate,
-            hop_size=hop_size,
-            profile=profile,
-            target_hz=target_hz,
-        )
-        measurement["sourceId"] = source_id
-        measurements.append(measurement)
-        total_samples += measurement["validSamples"]
-        spec_distances.append(measurement["spectralDistance"])
-        if measurement["f0MedianErrorCents"] is not None:
-            f0_errors.append(abs(measurement["f0MedianErrorCents"]))
+    seen = set()
+    with _evaluation_mode(generator_fn, seed) as torch:
+        for item in items:
+            if check_running is not None:
+                check_running()
+            source_id = item["sourceId"]
+            if not isinstance(source_id, str) or not source_id or source_id in seen or len(seen) >= 256:
+                raise ValueError("Held-out evaluation requires 1..256 distinct source IDs")
+            seen.add(source_id)
+            if item.get("partition") not in (None, "validation", "test"):
+                raise ValueError("Reconstruction input cannot use the training partition")
+            if (item.get("datasetSha256", dataset_sha256) != dataset_sha256
+                    or item.get("profileSha256", profile_sha256) != profile_sha256):
+                raise ValueError("Reconstruction input identity differs from the selected dataset/profile")
+            source_pcm = _mono_audio(item["pcm"], "source audio")
+            mel, f0 = item["mel"], item.get("f0")
+            if torch is not None:
+                mel = _conditioning_tensor(mel, "mel", torch)
+                f0 = _conditioning_tensor(f0, "f0", torch)
+                if (mel.ndim != 3 or mel.shape[:2] != (1, 80) or not 2 <= mel.shape[2] <= 4096
+                        or f0.shape != (1, mel.shape[2]) or torch.any(f0 < 0) or torch.any(f0 > 20000)):
+                    raise ValueError("Vocoder conditioning requires mel [1,80,T] and f0 [1,T]")
+            rendered_pcm = _mono_audio(generator_fn(mel, f0), "rendered vocoder output")
+            if torch is not None and len(rendered_pcm) != mel.shape[2] * hop_size:
+                raise ValueError("Vocoder output length differs from its conditioning frame count")
+            measurement = measure_vocoder_reconstruction(
+                rendered_audio=rendered_pcm, source_audio=source_pcm, sample_rate=sample_rate,
+                hop_size=hop_size, profile=profile, valid_samples=item.get("validSamples"),
+                target_hz=item.get("frequencyHz"))
+            if check_running is not None:
+                check_running()
+            valid = measurement["validSamples"]
+            measurement.update(sourceId=source_id, partition=item.get("partition"),
+                renderedPaddedPcmSha256=hashlib.sha256(rendered_pcm.astype("<f4").tobytes()).hexdigest(),
+                sourcePcmSha256=hashlib.sha256(source_pcm[:valid].astype("<f4").tobytes()).hexdigest())
+            for key in ("sourceSha256", "audioSha256", "targetSha256", "frameOffset", "phraseAnalysisFrames"):
+                if key in item:
+                    measurement[key] = item[key]
+            if torch is not None:
+                for name, value in (("mel", mel), ("f0", f0)):
+                    measurement[name + "Sha256"] = hashlib.sha256(value.numpy().astype("<f4").tobytes()).hexdigest()
+            if output_directory is not None:
+                stem = f"item-{len(measurements) + 1:06d}"
+                payload = _float_wav(rendered_pcm[:valid], sample_rate)
+                measurement.update(audioPath=stem + ".wav", outputAudioSha256=hashlib.sha256(payload).hexdigest(),
+                                   outputAudioBytes=len(payload), outputEncoding="IEEE-float32-mono-WAV")
+                with (output_directory / measurement["audioPath"]).open("xb") as stream:
+                    stream.write(payload)
+                encoded = (json.dumps(measurement, indent=2, allow_nan=False) + "\n").encode()
+                with (output_directory / (stem + ".json")).open("xb") as stream:
+                    stream.write(encoded)
+                measurement.update(measurementPath=stem + ".json", measurementSha256=hashlib.sha256(encoded).hexdigest())
+            measurements.append(measurement)
+            total_samples += valid
+            spec_distances.append(measurement["spectralDistance"])
+            if measurement["f0MedianErrorCents"] is not None:
+                f0_errors.append(abs(measurement["f0MedianErrorCents"]))
+    if not measurements:
+        raise ValueError("Held-out evaluation requires at least one item")
 
     receipt = {
         "formatId": "com.project-seam.vocoder-reconstruction-receipt",
@@ -282,12 +414,14 @@ def evaluate_held_out_reconstruction(
         "labelOrigin": label_origin,
         "releaseEligible": False,
         "trainingAdmitted": False,
+        "evaluationSeed": seed,
         "summary": {
             "itemCount": len(measurements),
             "totalValidSamples": total_samples,
             "meanSpectralDistance": round(float(np.mean(spec_distances)), 6),
             "meanAbsolutePitchErrorCents": round(float(np.mean(f0_errors)), 3) if f0_errors else None,
             "allReconstructionsSatisfied": all(m["reconstructionSatisfied"] for m in measurements),
+            "unresolvedPitchItems": sum(m["pitchStatus"] == "UNRESOLVED" for m in measurements),
         },
         "items": measurements,
         "verdict": "RECONSTRUCTION_MEASURED",
@@ -295,7 +429,7 @@ def evaluate_held_out_reconstruction(
 
     if output_directory is not None:
         out_path = Path(output_directory) / "reconstruction_receipt.json"
-        raw = json.dumps(receipt, indent=2) + "\n"
+        raw = json.dumps(receipt, indent=2, allow_nan=False) + "\n"
         with out_path.open("x", encoding="utf-8") as stream:
             stream.write(raw)
 

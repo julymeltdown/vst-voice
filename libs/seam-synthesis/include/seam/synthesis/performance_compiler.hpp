@@ -8,7 +8,7 @@
 #include <stop_token>
 
 namespace seam::synthesis {
-inline constexpr std::uint32_t kPerformanceCompilerRevision = 14U;
+inline constexpr std::uint32_t kPerformanceCompilerRevision = 15U;
 inline constexpr std::size_t kMaximumScoreVoiceAllocationNotes = 4096U;
 
 struct ScoreVoicePlan final {
@@ -71,6 +71,10 @@ struct ScoreNoteSpan final {
   bool reattack{true};
   std::optional<std::uint8_t> transitionFromMidi{};
   time::SampleFrame transitionEndFrame{0};
+  // Region-relative score bounds retain pitch-offset ownership when a frame
+  // immediately before endFrame rounds to the following score tick.
+  time::Tick startTick{};
+  time::Tick endTick{};
 };
 
 // Bounded immutable score evaluator; no per-frame song arrays or worker phase.

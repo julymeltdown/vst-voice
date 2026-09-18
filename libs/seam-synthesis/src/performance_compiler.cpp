@@ -289,6 +289,8 @@ core::Result<CompiledScorePerformance> compileScorePerformance(
     const auto release = staccato ? std::min<time::SampleFrame>(sampleRate / 100U, gateEnd - start) : 0;
     result.notes_.push_back({note.id, start, end, note.midiKey, note.vibrato, note.articulation,
         gateEnd, gateEnd - release});
+    result.notes_.back().startTick = note.startTick;
+    result.notes_.back().endTick = note.endTick();
   }
   std::sort(result.notes_.begin(), result.notes_.end(), [](const auto& a, const auto& b) { return a.startFrame < b.startFrame; });
   for (std::size_t i = 1; i < result.notes_.size(); ++i) {
@@ -517,7 +519,12 @@ ScorePerformanceSample CompiledScorePerformance::evaluate(time::SampleFrame fram
   }
   if (!baseCents) return result;
   const bool additive = owns(domain::PerformanceChannel::Pitch, domain::ManualPerformanceMode::PitchOffset);
-  const auto manualCents = !generatedPitch || additive ? static_cast<double>(pitch_.valueAt(tick)) : 0.0;
+  // Active notes are selected by half-open frame spans. Nearest-tick rounding
+  // must not read an incoming note's offset against the previous MIDI base on
+  // the last few frames of the previous note. Other control channels retain
+  // their existing region-wide sampling; rests and source tails return above.
+  const auto pitchTick = std::clamp(tick, note.startTick, note.endTick - time::Tick{1});
+  const auto manualCents = !generatedPitch || additive ? static_cast<double>(pitch_.valueAt(pitchTick)) : 0.0;
   const auto midi = (*baseCents + manualCents + result.vibratoCents) / 100.0;
   result.scoreFrequencyHz = 440.0 * std::exp2((midi - 69.0) / 12.0);
   return result;

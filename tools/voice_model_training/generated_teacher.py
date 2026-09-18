@@ -21,10 +21,12 @@ preparation pipeline already consumes, so no downstream stage needs a special ca
 from __future__ import annotations
 
 import hashlib
-import io
-import json
 import math
-import wave
+import re
+
+from .audio_source import read_pcm_source, inspect_pcm_source
+from .features import apply_pitch_features
+from .labels import score_report
 
 
 FORMAT_ID = "com.project-seam.training-generated-teacher"
@@ -55,14 +57,8 @@ def audio_sha256(payload: bytes) -> str:
     Identical samples at a different clock are a different source, so the geometry is
     hashed with the payload rather than beside it.
     """
-    with wave.open(io.BytesIO(payload), "rb") as reader:
-        channels, width, rate, frames = (reader.getnchannels(), reader.getsampwidth(),
-                                        reader.getframerate(), reader.getnframes())
-        declared = reader.readframes(frames)
-    geometry = dict(sampleRate=rate, channels=channels, sampleWidthBytes=width, frameCount=frames)
-    return hashlib.sha256(
-        json.dumps(geometry, sort_keys=True, separators=(",", ":")).encode() + b"\0" + declared
-    ).hexdigest()
+    source, _ = read_pcm_source(payload, expected_sha256=pcm_sha256(payload))
+    return source["audioSha256"]
 
 
 def build_label(*, source_id: str, hop_size: int, frame_count: int,
@@ -194,6 +190,9 @@ def build_export(*, source_id: str, song_id: str, session_id: str, lineage_id: s
         if not isinstance(value, str) or len(value) != 64 or any(c not in "0123456789abcdef" for c in value):
             raise ValueError(f"Generated teacher {name} must be a lowercase SHA-256")
     _require_text(engine_id, "engineId")
+    captured = inspect_pcm_source(pcm_payload, expected_sha256=pcm_sha256(pcm_payload), sample_rate=sample_rate)
+    if captured["frameCount"] != frame_count:
+        raise ValueError("Generated teacher declared frames differ from captured WAV")
     return dict(
         formatId=FORMAT_ID, schemaVersion=SCHEMA_VERSION,
         sourceId=_require_text(source_id, "sourceId"),
@@ -201,7 +200,7 @@ def build_export(*, source_id: str, song_id: str, session_id: str, lineage_id: s
         sessionId=_require_text(session_id, "sessionId"),
         lineageId=_require_text(lineage_id, "lineageId"),
         sampleRate=sample_rate, hopSize=hop_size, frameCount=frame_count,
-        sourceSha256=pcm_sha256(pcm_payload), audioSha256=audio_sha256(pcm_payload),
+        sourceSha256=captured["sourceSha256"], audioSha256=captured["audioSha256"],
         recipeSha256=recipe_sha256, scoreSha256=score_sha256,
         engineId=engine_id, engineRevision=engine_revision,
         label=label, score=score,
@@ -278,11 +277,20 @@ def export_from_candidate(*, candidate: dict, pitch_features: dict, source_id: s
 
     The measured F0 is used, not the written score, because the teacher is an expressive synthesizer
     and a student should learn what it sang rather than what the note asked for.
+
+    Lyric/MIDI inputs describe captured notes, not individual phones. Canonical marker keys retain
+    note ownership across consonants, vowels and continuation notes. Intervals here follow renderer
+    ownership, not the original piano-roll clock; anticipated consonants can move those boundaries.
+    Unkeyed legacy input is accepted only for unambiguous one-phone-per-note captures.
     """
     if not isinstance(candidate, dict) or candidate.get("formatId") != "com.project-seam.procedural-candidate":
         raise ValueError("Generated teacher requires a captured procedural candidate")
     if candidate.get("approval") != "unapproved":
         raise ValueError("A captured candidate must still be unapproved when it is used as teaching material")
+    digest = pcm_sha256(pcm_payload)
+    # The native candidate field hashes the entire WAV, unlike the training inspector's audioSha256.
+    if candidate.get("audioSha256") != digest:
+        raise ValueError("Captured candidate audio hash differs from the source WAV")
     markers = candidate.get("markers")
     if not isinstance(markers, list) or not 1 <= len(markers) <= 4096:
         raise ValueError("Captured candidate markers are missing or oversized")
@@ -298,40 +306,70 @@ def export_from_candidate(*, candidate: dict, pitch_features: dict, source_id: s
                           # confidence is fully 1.0 in the span sense even though the span is not
                           # proof of an acoustic boundary.
                           confidence=1.0))
-    frames = pitch_features.get("pitchFrames") if isinstance(pitch_features, dict) else None
-    if not isinstance(frames, list) or not frames:
-        raise ValueError("Captured candidate requires its measured pitch frames")
-    f0_hz = [float(frame["f0Hz"]) for frame in frames]
-    voiced = [frame["voiced"] for frame in frames]
-    if len(syllable_lyrics) != len(note_midi):
-        raise ValueError("Generated teacher needs one MIDI value per syllable lyric")
-    # Notes and rests must partition the source frames, so each captured marker span becomes one note
-    # in order and the syllable follows the marker's phone. A marker whose phone is a declared silence
-    # keeps the rest semantics rather than being forced into a syllable.
-    notes, next_frame, syllable = [], 0, 0
+    count = (frame_count + 255) // 256
+    if count > 65536:
+        raise ValueError("Captured candidate exceeds the pitch feature budget")
+    seed_label = build_label(source_id=source_id, hop_size=256, frame_count=frame_count,
+                             phone_spans=spans, f0_hz=[0.0] * count, voiced=[False] * count)
+    measured = apply_pitch_features(seed_label, pitch_features, source_sha256=digest,
+                                    sample_rate=candidate["sampleRate"],
+                                    vocabulary={span["symbol"] for span in spans}, minimum_confidence=0.0)
+    groups, seen_notes, seen_keys = [], set(), set()
+    keyed = ["key" in marker for marker in markers]
+    if any(keyed) and not all(keyed):
+        raise ValueError("Captured candidate cannot mix keyed and unkeyed markers")
+    previous_note, previous_ordinal = None, -1
     for index, marker in enumerate(markers):
-        start = _require_int(marker["startFrame"], "note startFrame", maximum=frame_count)
-        end = _require_int(marker["endFrame"], "note endFrame", maximum=frame_count)
-        if start != next_frame or not start < end:
-            raise ValueError("Captured candidate markers must partition the phrase contiguously")
-        midi = note_midi[index] if index < len(note_midi) else None
+        if all(keyed):
+            key = marker["key"]
+            if not isinstance(key, str) or not re.fullmatch(r"[0-9a-f]{16}:(0|[1-9][0-9]{0,4})", key):
+                raise ValueError("Captured candidate marker key is not canonical")
+            note, ordinal_text = key.split(":")
+            ordinal = int(ordinal_text)
+            if int(note, 16) == 0 or ordinal >= 16384 or key in seen_keys:
+                raise ValueError("Captured candidate marker key is invalid or duplicated")
+            seen_keys.add(key)
+        else:
+            note, ordinal = index, 0
+        if note != previous_note:
+            if note in seen_notes:
+                raise ValueError("Captured candidate note ownership must be contiguous")
+            seen_notes.add(note)
+            groups.append([index, index + 1])
+            previous_ordinal = -1
+        else:
+            groups[-1][1] = index + 1
+        if ordinal <= previous_ordinal:
+            raise ValueError("Captured candidate phone ordinals must increase within a note")
+        previous_note, previous_ordinal = note, ordinal
+    if (not isinstance(syllable_lyrics, list) or not isinstance(note_midi, list)
+            or len(groups) != len(note_midi) or len(groups) != len(syllable_lyrics)):
+        raise ValueError("Generated teacher needs one lyric and MIDI value per captured note")
+    notes, syllables, silence, active_syllable = [], [], [], None
+    for (first, end_phone), lyric, midi in zip(groups, syllable_lyrics, note_midi):
+        start, end = spans[first]["startFrame"], spans[end_phone - 1]["endFrame"]
         if midi is None:
             notes.append(dict(startFrame=start, endFrame=end, midi=None, syllable=None, slur=False))
+            silence.extend(range(first, end_phone))
+            active_syllable = None
         else:
-            if syllable >= len(syllable_lyrics):
-                raise ValueError("Captured candidate has more pitched markers than declared syllables")
+            _require_text(lyric, "note lyric")
+            continuation = lyric in ("-", "ー", "〜")
+            if continuation:
+                if active_syllable is None:
+                    raise ValueError("Captured continuation needs an immediately preceding sung syllable")
+                syllables[active_syllable]["phoneEnd"] = end_phone
+            else:
+                active_syllable = len(syllables)
+                syllables.append(dict(lyric=lyric, phoneStart=first, phoneEnd=end_phone))
             notes.append(dict(startFrame=start, endFrame=end, midi=_require_int(midi, "note midi", maximum=127),
-                              syllable=syllable, slur=False))
-            syllable += 1
-        next_frame = end
-    if next_frame != frame_count:
-        raise ValueError("Captured candidate markers must cover the complete phrase")
-    score = build_score(language="ja", syllable_lyrics=list(syllable_lyrics),
-                        note_spans=notes, frame_count=frame_count, silence_indices=[])
+                              syllable=active_syllable, slur=continuation))
+    score = dict(language="ja", syllables=syllables, notes=notes, silencePhones=silence)
+    score_report(score, frame_count=frame_count, phoneme_count=len(spans), explicit_silence=True)
     return build_export(source_id=source_id, song_id=song_id, session_id=session_id,
                         lineage_id=lineage_id, sample_rate=candidate["sampleRate"],
                         hop_size=256, frame_count=frame_count, phone_spans=spans,
-                        f0_hz=f0_hz, voiced=voiced, score=score, pcm_payload=pcm_payload,
+                        f0_hz=measured["f0Hz"], voiced=measured["voiced"], score=score, pcm_payload=pcm_payload,
                         recipe_sha256=candidate["recipeHash"], engine_id="seam.source-filter.v1",
                         # The captured candidate records the renderer revision that produced the audio,
                         # and that revision is part of what the material is. Defaulting a missing one

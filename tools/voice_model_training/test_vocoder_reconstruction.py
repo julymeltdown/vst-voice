@@ -7,6 +7,8 @@ Section 5 (U3.3) of the joint development plan:
 - Label origin recorded, releaseEligible strictly False;
 - Checkpoint resumption and cancellation tested.
 """
+import hashlib
+import importlib.util
 import json
 import math
 from pathlib import Path
@@ -16,6 +18,7 @@ import unittest
 from unittest.mock import patch
 
 import numpy as np
+from scipy.io import wavfile
 
 from tools.voice_model_training.vocoder_reconstruction import (
     compute_stft_spectral_distance,
@@ -43,6 +46,109 @@ class VocoderReconstructionTests(unittest.TestCase):
             "hopSize": EXPECTED_HOP_SIZE,
             "tailPadding": "zero-to-whole-hop",
         }
+
+    @unittest.skipUnless(importlib.util.find_spec("torch"), "Optional Torch environment required")
+    def test_torch_inference_restores_modes_rng_and_retains_real_output(self):
+        import torch
+
+        class Generator(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.scale = torch.nn.Parameter(torch.tensor(.1))
+                self.child = torch.nn.Dropout(.5)
+
+            def forward(self, mel, f0):
+                self.observed = (self.training, self.child.training, torch.is_grad_enabled())
+                return self.scale * torch.randn(1, 1, mel.shape[2] * 256)
+
+        model = Generator().train()
+        model.child.eval()
+        model.scale.grad = torch.tensor(7.)
+        rng = torch.get_rng_state().clone()
+        item = dict(sourceId="held", pcm=torch.zeros(1, 1, 1024),
+                    mel=torch.zeros(1, 80, 4), f0=torch.zeros(1, 4), validSamples=1000)
+        with tempfile.TemporaryDirectory() as root:
+            receipt = evaluate_held_out_reconstruction(model, [item], dataset_sha256="d" * 64,
+                profile_sha256="b" * 64, output_directory=Path(root), profile=self.profile)
+            self.assertEqual(model.observed, (False, False, False))
+            self.assertTrue(model.training)
+            self.assertFalse(model.child.training)
+            self.assertTrue(torch.equal(rng, torch.get_rng_state()))
+            self.assertEqual(float(model.scale.grad), 7.)
+            self.assertEqual(receipt["items"][0]["validSamples"], 1000)
+            self.assertEqual(receipt["items"][0]["paddedSamples"], 24)
+            result = receipt["items"][0]
+            path = Path(root) / result["audioPath"]
+            self.assertEqual(hashlib.sha256(path.read_bytes()).hexdigest(), result["outputAudioSha256"])
+            rate, rendered = wavfile.read(path)
+            self.assertEqual((rate, rendered.dtype, rendered.shape), (48000, np.dtype("float32"), (1000,)))
+            self.assertEqual(hashlib.sha256((Path(root) / result["measurementPath"]).read_bytes()).hexdigest(),
+                             result["measurementSha256"])
+            with self.assertRaisesRegex(ValueError, "already exists"):
+                evaluate_held_out_reconstruction(model, [item], dataset_sha256="d" * 64,
+                    profile_sha256="b" * 64, output_directory=Path(root), profile=self.profile)
+
+    @unittest.skipUnless(importlib.util.find_spec("torch"), "Optional Torch environment required")
+    def test_torch_failure_restores_state_and_rejects_bad_output_geometry(self):
+        import torch
+
+        class Generator(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.child = torch.nn.Dropout(.5)
+                self.failure = True
+
+            def forward(self, mel, f0):
+                torch.rand(1)
+                if self.failure:
+                    raise RuntimeError("deliberate forward failure")
+                return torch.zeros(1, 1, 768)
+
+        model = Generator().train()
+        model.child.eval()
+        rng = torch.get_rng_state().clone()
+        item = dict(sourceId="held", pcm=torch.zeros(1024), mel=torch.zeros(1, 80, 4), f0=torch.zeros(1, 4))
+        for failure, error in ((True, RuntimeError), (False, ValueError)):
+            model.failure = failure
+            with self.subTest(failure=failure), self.assertRaises(error):
+                evaluate_held_out_reconstruction(model, [item], dataset_sha256="a" * 64, profile_sha256="b" * 64)
+            self.assertTrue(model.training)
+            self.assertFalse(model.child.training)
+            self.assertTrue(torch.equal(rng, torch.get_rng_state()))
+        for bad in (torch.zeros(1, 80, 4, device="meta"), torch.zeros(1, 80, 4, dtype=torch.float64)):
+            with self.assertRaisesRegex(ValueError, "CPU float32"):
+                evaluate_held_out_reconstruction(model, [dict(item, mel=bad)],
+                    dataset_sha256="a" * 64, profile_sha256="b" * 64)
+
+    def test_source_padding_and_channels_are_not_silently_discarded(self):
+        for value in (np.zeros((2, 1024)), np.zeros((1, 2, 512))):
+            with self.assertRaisesRegex(ValueError, "mono"):
+                measure_vocoder_reconstruction(rendered_audio=value, source_audio=np.zeros(1024))
+        source = np.zeros(1024)
+        source[1000] = .1
+        with self.assertRaisesRegex(ValueError, "padding must be zero"):
+            measure_vocoder_reconstruction(rendered_audio=np.zeros(1024), source_audio=source, valid_samples=1000)
+        rendered = np.zeros(1024)
+        rendered[-1] = np.nan
+        with self.assertRaisesRegex(ValueError, "Nonfinite"):
+            measure_vocoder_reconstruction(rendered_audio=rendered, source_audio=np.zeros(1000))
+
+    def test_missing_or_extra_whole_hop_is_rejected(self):
+        source = _generate_sine(220., duration_sec=.1)
+        for rendered in (source[:-256], np.pad(source, (0, 256))):
+            with self.subTest(samples=len(rendered)), self.assertRaisesRegex(ValueError, "length"):
+                measure_vocoder_reconstruction(rendered_audio=rendered, source_audio=source)
+
+    def test_unmeasurable_pitch_is_unresolved_not_satisfied(self):
+        result = measure_vocoder_reconstruction(rendered_audio=np.zeros(1024),
+                                                source_audio=np.zeros(1024))
+        self.assertIsNone(result["f0MedianErrorCents"])
+        self.assertFalse(result["reconstructionSatisfied"])
+        self.assertEqual(result["pitchStatus"], "UNRESOLVED")
+        result = measure_vocoder_reconstruction(rendered_audio=_generate_sine(220., duration_sec=.1),
+            source_audio=np.zeros(4864), target_hz=220.)
+        self.assertEqual(result["pitchStatus"], "UNRESOLVED")
+        self.assertFalse(result["reconstructionSatisfied"])
 
     def test_identical_audio_has_zero_spectral_distance_and_zero_pitch_error(self):
         audio = _generate_sine(220.0, duration_sec=0.5)
@@ -106,19 +212,20 @@ class VocoderReconstructionTests(unittest.TestCase):
                 profile=self.profile,
             )
 
-        # Valid padding accounting: rendered is padded to next hop boundary
-        padded_rendered = np.zeros(valid_len + EXPECTED_HOP_SIZE, dtype=np.float32)
-        padded_rendered[:valid_len] = source
+        # Only the final partial hop is padding, never an extra whole hop.
+        partial_source = source[:-37]
+        padded_rendered = np.zeros(valid_len, dtype=np.float32)
+        padded_rendered[:len(partial_source)] = partial_source
         res = measure_vocoder_reconstruction(
             rendered_audio=padded_rendered,
-            source_audio=source,
+            source_audio=partial_source,
             sample_rate=EXPECTED_SAMPLE_RATE,
             hop_size=EXPECTED_HOP_SIZE,
             profile=self.profile,
         )
-        self.assertEqual(res["validSamples"], valid_len)
-        self.assertEqual(res["paddedSamples"], EXPECTED_HOP_SIZE)
-        self.assertEqual(res["totalFrames"], 11)
+        self.assertEqual(res["validSamples"], valid_len - 37)
+        self.assertEqual(res["paddedSamples"], 37)
+        self.assertEqual(res["totalFrames"], 10)
 
     def test_sample_rate_and_profile_mismatch_refused(self):
         audio = _generate_sine(220.0, duration_sec=0.5)
@@ -210,8 +317,11 @@ class VocoderReconstructionTests(unittest.TestCase):
         snapshot = dict(
             schemaVersion=3, preparationIssues=[], sourcePermissionsAdmitted=True,
             labelsAdmitted=True, expiresAt=200, datasetSha256="a" * 64,
-            sources=[dict(sourceId="s", frameCount=2000)], conditioning=[dict(sourceId="s", frameCount=8)],
-            bindings=dict(split=dict(groups=[dict(partition="train", sourceIds=["s"])]))
+            sources=[dict(sourceId="s", frameCount=2000),
+                     dict(sourceId="held", frameCount=2000, sourceSha256="c" * 64, audioSha256="e" * 64)],
+            conditioning=[dict(sourceId="s", frameCount=8), dict(sourceId="held", frameCount=8)],
+            bindings=dict(split=dict(groups=[dict(partition="train", sourceIds=["s"]),
+                                             dict(partition="test", sourceIds=["held"])]))
         )
         inputs = dict.fromkeys((
             "permission_config", "permission_hash", "label_config", "label_hash", "root",
@@ -220,21 +330,26 @@ class VocoderReconstructionTests(unittest.TestCase):
         ))
         batch = dict(sourceId="s", partition="train", datasetSha256="a" * 64, profileSha256="b" * 64,
                      frameOffset=0, mel=SimpleNamespace(shape=(1, 80, 8)), f0=None, pcm=None, hopSize=256, validSamples=2000)
-        audio = _generate_sine(220.0, duration_sec=0.25)
-        held_out_items = [
-            {"sourceId": "held", "pcm": audio, "mel": None, "f0": None, "frequencyHz": 220.0}
-        ]
+        audio = _generate_sine(220.0, duration_sec=2000 / 48000)
+        padded = audio.copy()
+        padded[2000:] = 0
+        held = dict(batch, sourceId="held", partition="test", pcm=padded,
+                    sourceSha256="c" * 64, audioSha256="e" * 64, targetSha256="f" * 64,
+                    phraseAnalysisFrames=8)
         prefix = "tools.voice_model_training.vocoder_training_run."
         with tempfile.TemporaryDirectory() as root, patch(prefix + "time.time", return_value=100), \
                 patch(prefix + "assemble_dataset", return_value=snapshot), \
-                patch(prefix + "iter_vocoder_batches", side_effect=lambda *a, **k: iter([batch])), \
+                patch(prefix + "iter_vocoder_batches", side_effect=lambda *a, **k:
+                      iter([batch] if k["partition"] == "train" else [held])), \
                 patch(prefix + "vocoder_gan_step", return_value=dict(generatorLoss=1.5, discriminatorLoss=2.5)), \
                 patch(prefix + "publish_vocoder_checkpoint") as publish:
             options = dict(
-                dataset_inputs=inputs, conditioning_directory=Path(root), targets={}, pcm_sources={},
+                dataset_inputs=inputs, conditioning_directory=Path(root),
+                targets={"held": (dict(profile=self.profile), None)}, pcm_sources={},
                 expected_profile_sha256="b" * 64, output=Path(root) / "out", run_metadata={},
                 reconstruction_loss=lambda a, b: None, objective_id="fixture", maximum_updates=1,
-                held_out_items=held_out_items,
+                held_out_items=["held"], reconstruction_directory=Path(root),
+                label_origin="renderer-intent-not-acoustic-truth",
             )
             def finish(*args, **kwargs):
                 kwargs["before_publish"]()
@@ -242,10 +357,11 @@ class VocoderReconstructionTests(unittest.TestCase):
             publish.side_effect = finish
             mock_gen = lambda m, f: audio
             result = train_reviewed_vocoder_epoch(mock_gen, [], None, None, **options)
-            self.assertEqual(result["labelOrigin"], "com.project-seam.training-generated-teacher")
+            self.assertEqual(result["labelOrigin"], "renderer-intent-not-acoustic-truth")
             self.assertFalse(result["releaseEligible"])
             self.assertIn("reconstructionSummary", result)
             self.assertEqual(result["reconstructionSummary"]["itemCount"], 1)
+            self.assertEqual(result["reconstruction"]["items"][0]["sourceSha256"], "c" * 64)
 
             # Cooperative cancellation test
             with self.assertRaisesRegex(RuntimeError, "cancelled"):

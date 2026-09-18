@@ -346,9 +346,9 @@ Exit 0 means extraction completed, not permission admission, model compatibility
 training success or musical qualification. Dataset-to-target joining remains open.
 
 `acoustics.wav_log_mel_targets` now connects the target extractor to exact WAV
-bytes. It verifies the expected container digest, mono integer PCM geometry and
+bytes. It verifies the expected container digest, mono PCM geometry and
 sample rate through the existing source inspector, decodes 16/24/32-bit signed
-little-endian PCM without resampling or normalization, and returns target data
+little-endian PCM or finite normalized IEEE float32 without resampling or normalization, and returns target data
 plus source/PCM identities. The record binds the explicit profile, NumPy version,
 target shape/byte count, and SHA-256 of row-major little-endian float32 targets.
 The API writes no files and grants no source rights. Tests exercise identical
@@ -438,12 +438,16 @@ rejections and no split-ready inventory. Exit 2 signals configuration/publicatio
 failure. Reports bind configuration SHA-256, actual source and PCM identities;
 existing outputs are never replaced. No audio is copied, segmented or transformed.
 
-`inspect_pcm_source` inspects captured mono 16/24/32-bit integer PCM WAV bytes
+`inspect_pcm_source` inspects captured mono 16/24/32-bit integer PCM or normalized float32 WAV bytes
 under a 64 MiB/ten-minute bound and an explicit expected rate. It verifies the
 source file hash and derives a separate geometry-plus-PCM `audioSha256` suitable
 for split duplicate grouping. Container-only metadata differences do not hide
 identical PCM. Different rates/widths remain distinct; this is not perceptual
-duplicate detection. Stereo, floating-point and compressed sources require an
+duplicate detection. Float32 uses inspection schema 2 with an encoding discriminator
+in the audio identity; existing integer schema-1 identities are unchanged. NaN,
+infinity and samples outside [-1,1] reject without clipping. Standard and extensible
+WAV formats are checked for complete frames, clock/alignment and duplicate chunks.
+Stereo and compressed sources require an
 explicit future conversion stage, never an implicit rewrite. Source inspection
 does not approve permissions, speaker consent, labels or audio quality.
 
@@ -786,7 +790,7 @@ directory-entry power-loss durability and automatic recovery are not claimed.
 start_frame=..., end_frame=...)` returns `(new_wav_bytes, provenance_record)`.
 The source has exactly `sourceId`, `songId`, `sessionId`, `lineageId`,
 `sourceSha256`. It verifies the original bytes, crops a half-open source-frame
-interval, preserves integer PCM samples/rate/width, and returns separate parent
+interval, preserves integer or float32 PCM sample bytes/rate/width, and returns separate parent
 and child container/PCM identities. Descendants inherit song/session/lineage;
 do not replace these with per-clip identifiers when splitting the dataset.
 Original bytes remain unchanged. Crop output is a canonical WAV, not a copy of
@@ -895,3 +899,50 @@ This command does not train, export, qualify a singer, or authorize release.
 `trainingAdmitted` and `releaseEligible` remain false even on exit 0. The current
 join accepts directly reviewed sources; a separate derived-clip admission join
 is not yet implemented.
+
+### Captured procedural teacher and real vocoder evaluation (2026-09-19)
+
+`generated_teacher.export_from_candidate` accepts the native captured candidate,
+the native extractor's complete pitch document, and one lyric/MIDI entry per
+captured note (not per phone). It checks the candidate WAV digest and the pitch
+document's digest, clock, complete hop grid and estimator settings. Canonical
+`note-id:ordinal` marker keys group consonants/vowels into one note; `-`, `ー`,
+and `〜` continue the immediately preceding syllable. Explicit rests retain
+silence-phone indices. Ambiguous mixed keys, duplicate/reordered keys, incomplete
+coverage and mismatched note counts reject; missing notes never become implicit
+rests. Legacy unkeyed input only supports one phone per declared note.
+
+The current adapter is Japanese and uses renderer-marker ownership intervals,
+not original piano-roll note boundaries. It must not be used as evidence of
+acoustic phoneme correctness. `labelOrigin=renderer-intent-not-acoustic-truth`
+and all approval flags remain false. The ordinary label-config inspector and
+frame conditioning code consume its output without a bypass.
+
+`train_reviewed_vocoder_epoch(..., held_out_items=[source_id, ...])` selects
+admitted validation/test source IDs, not arbitrary supplied tensors. It resolves
+their source/conditioning/target bytes through `iter_vocoder_batches`. Evaluation
+uses CPU float32 Torch `eval`/`no_grad`, detaches output, and restores standard
+module modes and CPU RNG. Arbitrary forward-method mutations are not rolled back.
+The output must contain exactly `ceil(validSamples/256)*256` samples; only declared
+tail padding may be trimmed. Unknown pitch produces `UNRESOLVED`, not a successful
+pitch measurement. An existing `reconstruction_directory` retains per-item float
+WAVs, hashes, measurements and a final receipt. Partial output without that final
+receipt is an incomplete attempt. Pitch currently compares whole-phrase medians,
+not note-by-note melodic accuracy. No reconstruction receipt qualifies a singer.
+
+For a bounded real upstream forward check, use:
+
+```sh
+python -B -m tools.voice_model_training.check_vocoder_reconstruction \
+  --source CAPTURED_48K_MONO_INTEGER_WAV --source-sha256 WAV_SHA256 \
+  --trusted-checkout PINNED_SINGING_VOCODERS_CHECKOUT \
+  --pitch-extractor build/release/seam_voicebank_cli \
+  --offset-samples 48000 --sample-count 48037 --output NEW_DIRECTORY
+```
+
+This diagnostic initializes an untrained upstream MiniNSF model, measures native
+F0 and reconstructs a maximum two-second source crop. Exit 0 means tensor/audio
+execution passed, even when the retained reconstruction-quality result fails.
+It does not load trained weights, train, execute ONNX, establish a held-out study,
+or authenticate source-use permission. A persistent vocoder training CLI and a
+retained learned-singer deployment remain separate unfinished work.

@@ -1,9 +1,10 @@
 """Sample-exact PCM phrase extraction with immutable parent lineage."""
 import hashlib
 import io
+import struct
 import wave
 
-from .audio_source import inspect_pcm_source
+from .audio_source import inspect_pcm_source, read_pcm_source
 from .labels import label_report, score_report
 from .features import apply_pitch_features
 
@@ -97,22 +98,27 @@ def segment_source(payload: bytes, *, source: dict, sample_rate: int,
             raise ValueError("Invalid segmentation identity text")
     if segment_id == source["sourceId"]:
         raise ValueError("Segment must have a distinct source identity")
-    parent = inspect_pcm_source(payload, expected_sha256=source["sourceSha256"], sample_rate=sample_rate)
+    parent, samples = read_pcm_source(payload, expected_sha256=source["sourceSha256"], sample_rate=sample_rate)
     if (type(start_frame) is not int or type(end_frame) is not int
             or not 0 <= start_frame < end_frame <= parent["frameCount"]):
         raise ValueError("Segment interval must be inside the captured source")
-    with wave.open(io.BytesIO(payload), "rb") as reader:
-        reader.setpos(start_frame)
-        pcm = reader.readframes(end_frame - start_frame)
+    width = parent["sampleWidthBytes"]
+    pcm = samples[start_frame * width:end_frame * width]
     if len(pcm) != (end_frame - start_frame) * parent["sampleWidthBytes"]:
         raise ValueError("Segment PCM length differs from interval")
-    output = io.BytesIO()
-    with wave.open(output, "wb") as writer:
-        writer.setnchannels(1)
-        writer.setsampwidth(parent["sampleWidthBytes"])
-        writer.setframerate(sample_rate)
-        writer.writeframes(pcm)
-    result = output.getvalue()
+    if parent.get("sampleEncoding") == "ieee-float32-le":
+        fmt = struct.pack("<HHIIHH", 3, 1, sample_rate, sample_rate * 4, 4, 32)
+        fact = b"fact" + struct.pack("<II", 4, end_frame - start_frame)
+        body = b"WAVEfmt " + struct.pack("<I", len(fmt)) + fmt + fact + b"data" + struct.pack("<I", len(pcm)) + pcm
+        result = b"RIFF" + struct.pack("<I", len(body)) + body
+    else:
+        output = io.BytesIO()
+        with wave.open(output, "wb") as writer:
+            writer.setnchannels(1)
+            writer.setsampwidth(width)
+            writer.setframerate(sample_rate)
+            writer.writeframes(pcm)
+        result = output.getvalue()
     child = inspect_pcm_source(result, expected_sha256=hashlib.sha256(result).hexdigest(), sample_rate=sample_rate)
     identity = {key: source[key] for key in ("songId", "sessionId", "lineageId")}
     record = dict(formatId="com.project-seam.training-segment", schemaVersion=1,

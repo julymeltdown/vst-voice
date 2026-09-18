@@ -9,6 +9,22 @@ from tools.voice_model_training.split import split_sources
 
 
 class SegmentTests(unittest.TestCase):
+    def test_float_crop_preserves_sample_bytes_and_encoding(self):
+        from tools.voice_model_training.audio_source import inspect_pcm_source
+        from tools.voice_model_training.test_audio_source import float_wav
+        samples = [0.0, -0.0, 0.25, -0.5, 0.875, -1.0]
+        payload = float_wav(samples)
+        source = dict(sourceId='parent', songId='song', sessionId='session', lineageId='family',
+                      sourceSha256=hashlib.sha256(payload).hexdigest())
+        audio, record = segment_source(payload, source=source, sample_rate=48000,
+                                       segment_id='child', start_frame=1, end_frame=5)
+        inspected = inspect_pcm_source(audio, expected_sha256=record['sourceSha256'], sample_rate=48000)
+        self.assertEqual(inspected['sampleEncoding'], 'ieee-float32-le')
+        import struct
+        self.assertEqual(audio[-16:], struct.pack('<4f', *samples[1:5]))
+        self.assertEqual(record['parentAudioSha256'], inspect_pcm_source(
+            payload, expected_sha256=source['sourceSha256'], sample_rate=48000)['audioSha256'])
+
     def test_score_crop_reindexes_melisma_and_silence(self):
         label = dict(frameCount=600, phonemes=[dict(startFrame=0, endFrame=100),
             dict(startFrame=100, endFrame=500), dict(startFrame=500, endFrame=600)])

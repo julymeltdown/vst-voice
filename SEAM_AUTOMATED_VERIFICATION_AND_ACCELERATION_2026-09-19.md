@@ -7,6 +7,7 @@ branch: codex/production-readiness-completion
 baseline_commit: 3276b7df
 followup_audit_baseline: 7839c72f
 status: revised after source audit; implementation and validation recorded below
+latest_followup_baseline: ba6dbfa086596cea66a89c9de95b7ec411406764
 language: English
 companions: SEAM_JOINT_DEVELOPMENT_PLAN_R4_2026-09-16.md, SEAM_DETAILED_DEVELOPMENT_PLAN_2026-09-19.md
 reviewed_with: second-developer session 01a0a066-1eba-71f2-8c0d-e21f9419cbcc
@@ -483,3 +484,222 @@ CLAP regression binds a test character card and does not qualify the demo bank's
 ASR is not calibrated for singing; a deployed learned singer, complete installed-host evidence, and
 the required human observations remain open. The implementation goal continues. No full-scope
 roadmap unit or Beta GO gate is newly accepted solely because this repair batch passed.
+
+## 13. Executed next batch: production defects, not hypothetical gates
+
+This follow-up starts from `ba6dbfa0`. Two implementation agents worked independently
+on interchange and vocoder evaluation; the integrator repaired captured-source intake
+and teacher labels. The requested second-developer task reviewed the evidence and
+agreed to the corrections below. No second build process shared the Release directory.
+
+### 13.1 What actually changed
+
+| Production path | Reproduced defect | Repair and limits |
+|---|---|---|
+| USTX → compiled pitch | Previous/current tuning and negative-offset contours were not composed correctly; `snap_first` was not materialized | Sparse bounded linear composition using absolute cents, complete tempo conversion and ties-to-even endpoints; explicit losses remain for nonlinear/polyphonic cases and sub-tick discontinuities |
+| Compiled pitch at a note boundary | The last frame of a note sampled the next note's offset against the previous MIDI base: **5800 instead of 6199.270833 cents** in the regression | Retain note tick bounds and clamp manual pitch sampling to the active note; compiler revision 14 → 15 invalidates stale caches; non-pitch controls unchanged |
+| Captured SEAM WAV → training targets | Source inspection rejected the renderer's own IEEE float32 WAVs | Bounded float32/extensible-WAV inspection and exact-byte cropping; no clipping/resampling; integer identities unchanged and float encoding included in its identity |
+| Candidate phones → score supervision | One phone became one note; extra consonants/vowels silently became rests after MIDI inputs ran out | Group canonical marker keys by note, preserve multi-phone syllables and continuation ownership, require exact note counts, verify WAV and native pitch hashes/grid/settings |
+| Real Torch vocoder → evaluation | NumPy conversion could crash on gradient-bearing output; minimum-length slicing hid missing audio; unknown pitch could satisfy reconstruction | `eval`/`no_grad`, detached CPU float32 capture, exact hop/padding lengths, unresolved-pitch status, retained per-item WAVs and complete receipts |
+| Reviewed epoch → held-out inputs | Caller-supplied tensor dictionaries were not a demonstrated held-out dataset path | Select validation/test source IDs; obtain exact source/target/conditioning bytes through the existing admitted batch reader |
+
+The OpenUtau oracle remains commit `83e02c7e4a4d9ea5fca72806b2aa27c5382be015`,
+specifically `UNote.cs:35–36,108–114`, `RenderPhrase.cs:301–352`, and
+`TimeAxis.cs:222–230`. These provided independent pitch-composition and rounding
+expectations; see the [pinned renderer source](https://github.com/openutau/OpenUtau/blob/83e02c7e4a4d9ea5fca72806b2aa27c5382be015/OpenUtau.Core/Render/RenderPhrase.cs).
+Four composition regressions failed before implementation. The production sampler
+then exposed the separate last-frame error. Final focused tests cover tuning,
+touching notes, gaps, tempo changes, four sample rates, silence/tails and ordinary
+controls. Exact imported melisma pitch is **not** claimed: the existing automatic
+glide can still combine with authored offsets. Step-edge export remains explicitly lossy.
+
+### 13.2 Real audio executions and what they establish
+
+**SEAM captured teacher.** The retained original float32 render at
+`/Users/lhs/Downloads/seam-listening-artifacts/2026-09-15-d1-02/unfamiliar-song/baseline/candidates/0000000000016379-000000000001637a.wav`
+has SHA-256 `6bea61ba18acc3861111479ce3be93f99cf20bb27e502c53f8682876cb4bf13a`.
+The normal acoustic-target CLI now consumes its exact bytes and produces 3,000 × 80
+mel values. Native pitch extraction, the repaired teacher adapter, the ordinary
+label-config inspector and frame conditioning also execute successfully:
+
+- 48 kHz, 768,000 samples / 16 seconds, 3,000 analysis frames;
+- 50 phones → 30 captured notes → 29 syllables, including one continuation;
+- `labelOrigin=renderer-intent-not-acoustic-truth`; no rights/label/training approval;
+- note intervals follow captured renderer-marker ownership, not the original
+  piano-roll clock. This distinction matters for anticipated consonants.
+
+This is a usable data-path repair. It is not proof of good articulation, a training
+run, a learned singer, or a deployable voicebank. The adapter currently covers
+Japanese; ambiguous/uncovered inputs reject rather than inventing supervision.
+
+**Independent speech/singing controls.** Downloaded only the two small PJS samples
+linked by its authors, Junya Koguchi and Shinnosuke Takamichi. Their
+[publisher page](https://sites.google.com/site/shinnosuketakamichi/research-topics/pjs_corpus)
+identifies 48 kHz speech/singing material and CC BY-SA 4.0 terms. This experiment uses
+the samples locally for evaluation, not training or redistribution. Original URLs,
+attribution, hashes and the evaluation-only purpose are retained in `manifest.json`.
+No full corpus was downloaded and no original female singer was qualified.
+
+The base recognizer returned lyric-related but imperfect text for the song and
+speech. Its three generated negative controls returned no text. This single
+speech/song pair is not enough to estimate sensitivity, specificity or language-wide
+quality thresholds; unusual proper nouns and orthography further confound exact match.
+
+The stronger [faster-whisper-small model](https://huggingface.co/Systran/faster-whisper-small),
+pinned at `536b0662742c02347bc0e980a01041f333bce120`, produced text on **all three
+negative controls**: silence, white noise and an impulse. The report correctly
+records `triage_control_breach`, and the command exits 3. Its model.bin hash is
+`3e305921506d8872816023e4c273e75d2419fb89b24da97b4fe7bce14170d671`.
+Do not choose this run because a singing transcript looks better, suppress its
+controls, or treat a larger model as inherently more reliable. Further recognizer
+work must predeclare decoding/control rules and validate them on separate material.
+
+**Actual upstream vocoder execution.** The new bounded
+`tools/voice_model_training/check_vocoder_reconstruction.py` executed pinned
+SingingVocoders `4d0889c4c180c75ad3000cc565864656344f8190`, using a 48 kHz/80-mel/
+256-hop/1024-FFT MiniNSF configuration and native measured F0. A PJS song crop
+starting at sample 48,000 contains 48,037 valid samples. The model produces
+188 hops / 48,128 samples; the retained output contains exactly 48,037 samples,
+accounting for 91 padding samples. This tests the real Torch adapter, not a NumPy mock.
+
+Tensor/audio execution passes. **Untrained reconstruction correctly fails**:
+spectral distance 51.173231 and whole-phrase median pitch difference 832.909 cents.
+Output WAV SHA-256 is `754921fd27dc59761b2006a69327beacdc9257f0caf1bcdec44bd539d0c31534`.
+About 427 KB of diagnostic artifacts are retained. This experiment did not train,
+load learned weights, export ONNX, execute a native learned bundle, or establish a
+held-out singing study. The separately observed complete GAN checkpoint is about
+553 MB; earlier “under 10 MB” full-checkpoint estimates were incorrect.
+
+### 13.3 Retained evidence
+
+Root: `/Users/lhs/seam-listening-reference/pjs-calibration-2026-09-19-tsamkb/`.
+These files are local evaluation artifacts, not Git-distributed audio assets.
+
+| Relative artifact | SHA-256 |
+|---|---|
+| `manifest.json` | `b44600cdebffb81615e2f50c88ec8e7b56f88ea4cd38a4aafefd68ba42fabd6d` |
+| `asr-base-unprompted.json` | `66f9b9dd2cbde5c03b62dd0f7bc12e86325f4af603aed7d9fbb5381562e8a400` |
+| `asr-small-unprompted.json` | `b1b6f439586b5964ae13c497e9a409658c2403ba7ceca3c530f9140ad0179c79` |
+| `real-teacher-labels/check.json` | `ce43e4b5a5f73028c914cffb93d9a897a9447a8017498bcd59d197cdef47e8cf` |
+| `real-teacher-labels/inspection.json` | `875048c13b71edcf5d8a5fbd5884d9b0af0ad48246045718c666577f085b9e27` |
+| `real-teacher-acoustic-targets/target.json` | `5c4f44c4a8ea40d46fe0bea4a3f17b29b7c894f713a2bd49eab6e34907c12598` |
+| `untrained-vocoder-reconstruction-v2/check.json` | `abe79e9d03a382eca6688e016e1855d7937557728e5e03818ba965a8becdc25e` |
+
+`capture_retained_teacher.py` in the same root reproduces the captured-teacher
+experiment against a new output directory. Original input bytes and failed ASR
+results are retained unchanged. The README documents the upstream diagnostic command.
+
+### 13.4 Integrated verification
+
+- Complete Release build: PASS, 380 build actions after the compiler-header change.
+- Full CTest: **171/172 PASS in 85.58 seconds**. The sole failure was source closure:
+  the new reconstruction diagnostic was not yet in the Git index. It was staged;
+  `SOURCE_CLOSURE=PASS` and the failed CTest then passed in 0.25 seconds. This is
+  a combined full-run + one-check rerun result, not a claimed all-green single run.
+- Optional neural-environment Python discovery: **115 tests PASS in 31.805 seconds**.
+- Focused captured-audio/labels/features tests: **34 PASS**; agent vocoder tests:
+  **18 PASS**; focused USTX **21 cases** and performance compiler **20 cases** pass.
+  Counts overlap and must not be added into a fabricated independent-test total.
+- Independent source review found no issue in float32 intake/cropping or teacher
+  grouping/source binding. This was source review, not another runtime execution.
+- No timeout, assertion or approval policy was weakened. The parked coordinator
+  race was not modified. No new remote CI or installed-DAW pass is claimed here.
+
+## 14. Agreed next execution order: three capability lanes
+
+This section updates section 10's immediate order using the executed results.
+Keep one implementation owner per lane, one integrator, and the existing
+second-developer task as a read-only reviewer. Do not spawn agents to write
+parallel versions of the same acceptance document. The broad contract is unchanged.
+
+### Lane A — retain and deploy an actually trained candidate
+
+**Priority: highest.** The missing deliverable is learned output, not another
+demonstration that an untrained model can execute.
+
+1. Add a persistent, bounded vocoder training entrypoint around
+   `vocoder_training_run.py`, `vocoder_checkpoint.py`, `vocoder_batches.py`, and
+   the existing pinned upstream model configuration. Reuse current admission and
+   checkpoint services; do not introduce a second training architecture.
+2. Accept explicit dataset/config/profile identities, CPU thread count, update/time/
+   disk bounds, seed, resume checkpoint and a new destination. Record the actual
+   model/optimizer/scheduler/configuration and completed-epoch identity. Cancellation
+   must preserve the last complete checkpoint and label partial attempts honestly.
+3. Assemble a small, source-documented corpus through the existing path. Keep teacher
+   reconstruction separate from independent singing evaluation; split by song and
+   shared source lineage, never random frames. Do not fabricate review signatures.
+   Determine exact authority/input gaps while continuing independent implementation.
+4. Train, stop, resume, and retain both model artifacts and held-out WAVs. Report loss
+   movement and complete reconstruction results. A lower training loss is not an
+   intelligibility result; use a predeclared finite experiment budget.
+5. Export the retained checkpoint using the existing vocoder/acoustic exporters;
+   compare Torch/ONNX outputs on the same captured tensors, then feed the actual
+   compatible bundle through `libs/seam-neural-synthesis` and the normal worker.
+   Reuse the native route already present; do not count arithmetic fixtures as new
+   learned-model deployment evidence.
+
+**Exit artifact:** retained checkpoints, reproducible resume command, compatible
+ONNX bundle, Python/native comparison, and held-out decoded song audio with exact
+hashes and truthful provenance. This closes an engineering experiment only until
+the full singer requirement's musical and release criteria are independently met.
+
+### Lane B — preserve authored music across import and editing
+
+Build on the linear cross-note/snap work already completed, rather than scheduling
+it again. Own `libs/seam-interchange`, the necessary narrow compiler changes, and
+their production-journey tests.
+
+1. Resolve imported manual-pitch versus automatic melisma-glide ownership using a
+   failing actual-sampler case. Do not remove native SEAM glides globally.
+2. Implement the next bounded nonlinear curve semantics against pinned OpenUtau
+   values, or retain explicit loss. Examine Step export and polyphonic limits
+   separately; no blanket “lossless round trip” target is justified.
+3. Exercise a multi-part score through import → tune → undo/redo → save/reopen →
+   export. Assert independent sampled pitch and note/lyric/tempo/part identities,
+   not just importer/exporter agreement.
+
+**Exit artifact:** runnable production journey and a field-by-field supported/lossy
+matrix backed by values from the OpenUtau implementation. Exact compatibility is
+claimed only for the cases actually represented.
+
+### Lane C — make automation useful on the installed song workflow
+
+Own diagnostics and installed-surface journeys, not model training or interchange.
+
+1. Keep base ASR as an observed diagnostic on these controls, not a universally
+   correct rejection screen. Add independently sourced singing material across
+   phones/ranges, negative/degraded versions and predeclared settings. Report
+   control breaches and disagreement; do not tune until a preferred singer passes.
+2. Extend pitch evaluation from whole-phrase medians to time-aligned voiced frames,
+   retaining voicing disagreement, unmeasurable spans and note-level errors. A song
+   with reversed notes can preserve its median, so the present 50-cent aggregate
+   tolerance cannot establish melodic fidelity.
+3. Run the same 30–60-second lyric song on the installed standalone/available named
+   DAWs: input, tuning, preview, seek/loop, save/reopen and decoded bounce. Capture
+   real timings, screenshots and errors with the actual installed singer. Clearly
+   separate scripted-host results from the remaining platform/DAW matrix.
+
+**Exit artifact:** reproducible installed-surface song journey and an audio-diagnostic
+report that demonstrates its own limits. Agent-driven UI runs do not count as five
+independent creators or native-speaker acceptance.
+
+### What automation replaces—and what it does not
+
+Codex plus independent open-source expectations can perform source review, execute
+fixtures and UI journeys, validate hashes/clocks/shapes, detect numerical regressions,
+measure timing, compare native/ONNX output and screen audio for suspicious results.
+That removes a large amount of repetitive human QA. It must actually consume the
+inputs and fail when deliberately corrupted; naming a tool is not verification.
+
+The current evidence does **not** support replacing final lyric intelligibility,
+naturalness, musical phrasing, unaided-creator usability or source authorization
+with machine scores. This is an evidence limit, not a claim that such assessments
+can never improve. Existing explicit human/rights requirements cannot be silently
+redefined. Obtain those observations against a frozen candidate while the three
+engineering lanes continue; do not let them stop unrelated development.
+
+The next progress claim must name what a creator can do or what learned audio was
+retained. Neither this repair batch nor another large test count completes R9,
+U3.5 or Beta GO. A new percentage is unwarranted without re-evaluating the complete
+requirement denominator. The central schedule risk remains the quality of an actual
+original singer and its source/model path, not the amount of remaining documentation.

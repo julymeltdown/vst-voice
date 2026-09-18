@@ -4,6 +4,7 @@ import json
 import unittest
 import wave
 import hashlib
+import copy
 
 from tools.voice_model_training.generated_teacher import (
     build_export, build_label, build_score, export_from_candidate, label_config_from_exports,
@@ -37,7 +38,105 @@ def fixture_f0(frames: int, hop: int) -> tuple[list[float], list[bool]]:
     return f0, [value > 0 for value in f0]
 
 
+def captured_pitch(payload, frames, rate=48000):
+    return dict(formatId='com.project-seam.training-pitch-features', schemaVersion=1,
+        sourceSha256=hashlib.sha256(payload).hexdigest(), sampleRate=rate, frameCount=frames,
+        windowFrames=2048, hopSize=256, minimumHz=60, maximumHz=1200, voicingThreshold=0.32,
+        algorithm='fft-autocorrelation-v1', coverage='full-hop-zero-padded',
+        trainingAdmitted=False, releaseEligible=False,
+        pitchFrames=[dict(sourceFrame=i * 256, f0Hz=220.0, confidence=0.9, voiced=True)
+                     for i in range((frames + 255) // 256)])
+
+
 class GeneratedTeacherTest(unittest.TestCase):
+    def test_multi_phone_notes_and_continuation_keep_score_ownership(self):
+        from tools.voice_model_training.test_audio_source import float_wav
+        from tools.voice_model_training.conditioning import build_conditioning
+        payload = float_wav([0.25, -0.25] * 1024)
+        candidate = dict(formatId='com.project-seam.procedural-candidate', schemaVersion=8,
+            approval='unapproved', sampleRate=48000, frameCount=2048,
+            audioSha256=hashlib.sha256(payload).hexdigest(), recipeHash='e' * 64,
+            renderContentHash='f' * 64, proceduralRevision=14,
+            markers=[dict(key=f'{note:016x}:{ordinal}', phone=phone, startFrame=start, endFrame=end)
+                     for note, ordinal, phone, start, end in
+                     [(1, 0, 's', 0, 256), (1, 1, 'a', 256, 768),
+                      (2, 0, 'a', 768, 1280), (3, 0, 'm', 1280, 1536), (3, 1, 'i', 1536, 2048)]])
+        pitch = captured_pitch(payload, 2048)
+        def run(value=candidate, measured=pitch):
+            return export_from_candidate(candidate=value, pitch_features=measured,
+                source_id='p', song_id='song', session_id='session', lineage_id='lineage',
+                syllable_lyrics=['さ', 'ー', 'み'], note_midi=[60, 62, 64], pcm_payload=payload)
+        result = run()
+        self.assertEqual(result['score']['syllables'], [dict(lyric='さ', phoneStart=0, phoneEnd=3),
+                                                       dict(lyric='み', phoneStart=3, phoneEnd=5)])
+        self.assertEqual([(n['startFrame'], n['endFrame'], n['midi'], n['syllable'], n['slur'])
+                          for n in result['score']['notes']],
+                         [(0, 768, 60, 0, False), (768, 1280, 62, 0, True), (1280, 2048, 64, 1, False)])
+        conditioning = build_conditioning(result['label'], result['score'],
+                                          vocabulary=['s', 'a', 'm', 'i'], minimum_confidence=0.0)
+        self.assertEqual(len(conditioning['frames']), 8)
+        self.assertEqual([f['noteIndex'] for f in conditioning['frames']], [0, 0, 0, 1, 1, 2, 2, 2])
+        changed = dict(candidate, audioSha256='0' * 64)
+        with self.assertRaises(ValueError): run(changed)
+        with self.assertRaises(ValueError): run(measured=dict(pitch, sourceSha256='0' * 64))
+        changed = copy.deepcopy(candidate)
+        changed['markers'][2]['key'] = '0000000000000001:1'
+        with self.assertRaises(ValueError): run(changed)
+        for key in ('1:0', '0000000000000000:0', '0000000000000002:00', '0000000000000002:16384'):
+            changed = copy.deepcopy(candidate)
+            changed['markers'][2]['key'] = key
+            with self.subTest(key=key), self.assertRaises(ValueError): run(changed)
+        changed = copy.deepcopy(candidate)
+        del changed['markers'][2]['key']
+        with self.assertRaises(ValueError): run(changed)
+        changed_pitch = copy.deepcopy(pitch)
+        changed_pitch['pitchFrames'][1]['sourceFrame'] += 1
+        with self.assertRaises(ValueError): run(measured=changed_pitch)
+
+    def test_explicit_rest_and_continuation_ownership_are_not_inferred(self):
+        payload = mono_wav(1536)
+        candidate = dict(formatId='com.project-seam.procedural-candidate', approval='unapproved',
+            sampleRate=48000, frameCount=1536, audioSha256=hashlib.sha256(payload).hexdigest(),
+            recipeHash='a' * 64, renderContentHash='b' * 64, proceduralRevision=14,
+            markers=[dict(key=f'{i+1:016x}:0', phone=phone, startFrame=i*512, endFrame=(i+1)*512)
+                     for i, phone in enumerate(['a', 'sil', 'i'])])
+        def run(lyrics, midi, value=candidate):
+            return export_from_candidate(candidate=value, pitch_features=captured_pitch(payload, 1536),
+                source_id='p', song_id='s', session_id='x', lineage_id='l',
+                syllable_lyrics=lyrics, note_midi=midi, pcm_payload=payload)
+        result = run(['あ', '', 'い'], [60, None, 64])
+        self.assertEqual(result['score']['silencePhones'], [1])
+        self.assertEqual(result['score']['syllables'][1]['phoneStart'], 2)
+        self.assertIsNone(result['score']['notes'][1]['syllable'])
+        for lyrics, midi in [(['あ', '', 'ー'], [60, None, 64]),
+                            (['ー', 'し', 'い'], [60, 62, 64]),
+                            (['あ', 'い'], [60, 64])]:
+            with self.subTest(lyrics=lyrics), self.assertRaises(ValueError): run(lyrics, midi)
+        changed = copy.deepcopy(candidate)
+        changed['markers'][2]['key'] = '0000000000000001:1'
+        with self.assertRaises(ValueError): run(['あ', '', 'い'], [60, None, 64], changed)
+
+    def test_float_teacher_identity_and_declared_geometry_match_the_inspector(self):
+        from tools.voice_model_training.test_audio_source import float_wav
+        from tools.voice_model_training.audio_source import inspect_pcm_source
+        from tools.voice_model_training.generated_teacher import audio_sha256
+        payload = float_wav([0.25, -0.25] * 512)
+        inspected = inspect_pcm_source(payload, expected_sha256=hashlib.sha256(payload).hexdigest(), sample_rate=48000)
+        self.assertEqual(audio_sha256(payload), inspected['audioSha256'])
+        score = build_score(language='ja', syllable_lyrics=['あ'], frame_count=1024,
+                            note_spans=[dict(startFrame=0, endFrame=1024, midi=60, syllable=0, slur=False)],
+                            silence_indices=[])
+        def export(rate=48000, frames=1024):
+            return build_export(source_id='p', song_id='song', session_id='s', lineage_id='l',
+                sample_rate=rate, hop_size=256, frame_count=frames,
+                phone_spans=[dict(symbol='a', startFrame=0, endFrame=frames, confidence=1.0)],
+                f0_hz=[220.0] * ((frames + 255) // 256), voiced=[True] * ((frames + 255) // 256),
+                score=score, pcm_payload=payload, recipe_sha256='a' * 64,
+                engine_id='seam.source-filter.v1', engine_revision=14, score_sha256='b' * 64)
+        self.assertEqual(export()['audioSha256'], inspected['audioSha256'])
+        with self.assertRaises(ValueError): export(rate=44100)
+        with self.assertRaises(ValueError): export(frames=1023)
+
     def test_export_satisfies_the_admitted_label_and_score_checks(self):
         frames, hop = 4096, 256
         f0, voiced = fixture_f0(frames, hop)
@@ -181,11 +280,11 @@ class GeneratedTeacherTest(unittest.TestCase):
         payload = mono_wav(frames, rate)
         candidate = dict(formatId="com.project-seam.procedural-candidate", schemaVersion=4,
                          approval="unapproved", sampleRate=rate, frameCount=frames,
+                         audioSha256=hashlib.sha256(payload).hexdigest(),
                          recipeHash="e" * 64, renderContentHash="f" * 64, proceduralRevision=14,
                          markers=[dict(phone="a", startFrame=0, endFrame=512),
                                   dict(phone="a", startFrame=512, endFrame=1024)])
-        pitch = dict(pitchFrames=[dict(sourceFrame=index * 256, f0Hz=220.0, confidence=0.9, voiced=True)
-                                  for index in range(4)])
+        pitch = captured_pitch(payload, frames)
         export = export_from_candidate(candidate=candidate, pitch_features=pitch,
                                        source_id="p", song_id="s", session_id="x", lineage_id="l",
                                        syllable_lyrics=["a", "a"], note_midi=[62, 64],
@@ -211,11 +310,11 @@ class GeneratedTeacherTest(unittest.TestCase):
     def test_a_candidate_with_a_marker_gap_is_refused(self):
         candidate = dict(formatId="com.project-seam.procedural-candidate", approval="unapproved",
                          sampleRate=48000, frameCount=1024, recipeHash="a" * 64,
+                         audioSha256=hashlib.sha256(mono_wav(1024)).hexdigest(),
                          renderContentHash="b" * 64, proceduralRevision=14,
                          markers=[dict(phone="a", startFrame=0, endFrame=512),
                                   dict(phone="i", startFrame=600, endFrame=1024)])
-        pitch = dict(pitchFrames=[dict(sourceFrame=index * 256, f0Hz=220.0, confidence=0.9, voiced=True)
-                                  for index in range(4)])
+        pitch = captured_pitch(mono_wav(1024), 1024)
         with self.assertRaises(ValueError):
             export_from_candidate(candidate=candidate, pitch_features=pitch,
                                   source_id="p", song_id="s", session_id="x", lineage_id="l",
