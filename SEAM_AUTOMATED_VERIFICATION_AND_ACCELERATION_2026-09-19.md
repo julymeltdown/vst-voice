@@ -23,7 +23,7 @@ Three questions, asked directly:
 The short answers: the month was not wasted effort, but it was spent on the wrong risk; yes, the
 remaining engineering can be parallelised, with hard conditions; and no, not all human gates can be
 replaced — but **five of the seven can be partly or wholly replaced, and the two that cannot are
-narrower than the current plan implies**. Section 6 gives the unit-by-unit boundary and the strongest
+narrower than the current plan implies**. Section 7 gives the unit-by-unit boundary and the strongest
 honest substitute for each.
 
 ## 1. The most important finding: the roadmap is nearly out of engineering work
@@ -97,11 +97,36 @@ including the subnormal and signed-zero cases and the `harmonic * frequency == 0
 and confirmed that no construction path can produce a score performance with non-empty accepted or
 ownership records while the flag is false.
 
-## 3. What OpenUtau actually provides
+## 3. CI result and what remains red
+
+Run `35392919351` confirms the diagnosis and the fix. `native-platform-matrix (ubuntu-latest)` —
+the only job that was red — now **passes**, together with the macOS and Windows matrix jobs and
+`windows-helper-process`. `seam_original_singer_song_journey_tests` no longer appears in the failure
+list, so the 180-second treadmill it had been on is cleared.
+
+One job remains red: `isolated-release-candidate`, failing
+`seam_authoring_render_coordinator_tests` and the `seam_tests` target that embeds it. This is the
+pre-existing, documented GCC `-O3` flake, and it is **not** caused by this session's changes:
+
+- It has failed and passed on unchanged sources across separate runs (`9bcfd9c9` failed, `04427155`
+  passed), so it is intermittent by observation.
+- The diagnostic signature differs between the two jobs in this single run — `progState=1, stale=0`
+  in one and `progState=2, stale=1` in the other — which is a race's signature, not a deterministic
+  defect.
+- The affected test renders through the **sample-bank** path
+  (`tests/test_authoring_render_coordinator.cpp:101-102` selects `ClassicPsola` and `Raw` unit
+  renderers over `SEAM_SOURCE_PRODUCTION_VOICEBANK`). This session changed the **procedural** path
+  only (`CompiledScorePerformance` and `PhonationSource`), which that test never enters.
+- It passes 15 consecutive times on this machine's arm64 Release build.
+
+The owner has explicitly parked this race, so it is reported as a fact rather than worked. It should be
+fixed or its owning test split, because a red job makes every future green result harder to trust.
+
+## 4. What OpenUtau actually provides
+
+### 4.1 A reusable, machine-checkable oracle for pronunciation and lyric handling
 
 Cloned to `/tmp/ou/OpenUtau`, MIT licensed, commit `83e02c7e`.
-
-### 3.1 A reusable, machine-checkable oracle for pronunciation and lyric handling
 
 This is the strongest reusable asset, and it is real rather than aspirational.
 **`OpenUtau.Test/Plugins/` contains 117 golden phonemizer vectors** that run headlessly under Xunit:
@@ -123,7 +148,7 @@ and others) and a G2p directory covering arpabet, German, French, Italian, Japan
 reference implementations suitable for cross-checking SEAM's own decompositions, under MIT terms with
 naming.
 
-### 3.2 A conformance fixture for interchange
+### 4.2 A conformance fixture for interchange
 
 `OpenUtau.Test/Classic/UstTest.cs` is substantive rather than a smoke test: it unpacks real-world UST
 archives and asserts that loading produces valid note structures, and it specifically covers the legacy
@@ -131,7 +156,7 @@ edge cases that break naive importers — `=` inside lyrics, multi-point pitch b
 and legacy vibrato parameters. `UstLoadingTest` and `EqualInLyric` are usable as conformance fixtures
 for SEAM's R12 (USTX/SMF round-trip) and R13 interchange work.
 
-### 3.3 What OpenUtau cannot do
+### 4.3 What OpenUtau cannot do
 
 It cannot replace a listening judgment, and two of its components are weaker than their names suggest:
 
@@ -146,7 +171,7 @@ One practical caveat: the suite needs the .NET SDK, which is not installed on th
 extracting the expected aliases and asserting them against SEAM's own phonemizer output, which avoids
 the toolchain dependency entirely.
 
-## 4. The honest boundary: what automation can and cannot replace
+## 5. The honest boundary: what automation can and cannot replace
 
 This is the part where the answer must be exact, because the project's failure mode so far has been
 optimistic evidence, and an equally optimistic "we will automate the gates" would repeat that error in
@@ -168,9 +193,9 @@ naturalness, and a metric-satisfying render can still sound robotic.
 a legal and physical fact. And it cannot supply a human's first-impression usability judgment, which is
 by definition the observation of a person interacting without prior knowledge.
 
-Section 6 applies this unit by unit.
+Section 7 applies this unit by unit.
 
-## 5. Acceleration: how to run the remaining work with multiple agents
+## 6. Acceleration: how to run the remaining work with multiple agents
 
 The parallelisable work is real but narrower than it looks, because most open units are gates. Three
 lanes can proceed at once, and two of them are verification infrastructure rather than product code.
@@ -209,7 +234,7 @@ The second developer's warning is correct and should be a hard rule:
 - **Never weaken a test to make a lane green.** This session's own CI repair is the model: find the
   root cause and fix throughput, rather than raising the timeout.
 
-## 6. Unit-by-unit verdict on the seven gates
+## 7. Unit-by-unit verdict on the seven gates
 
 | Gate | Automatable? | Strongest honest substitute | What stays human |
 |---|---|---|---|
@@ -229,13 +254,18 @@ Bitwig on both platforms in both CLAP and VST3, with `scan`, `session-log`, `bou
 four evidence kinds; the fourth is defined by the contract. The right move is to propose an explicit
 contract revision that accepts scripted host evidence, and to say plainly that it is a revision.
 
-## 7. Recommended plan
+## 8. Recommended plan
 
 Ordered so that each step either retires a real gate or produces an asset that does:
 
 1. **Land the CI repair** (done, `3276b7df`) and confirm the Ubuntu job is green.
 2. **Lane 1**: port the OpenUtau phonemizer vectors and UST/USTX conformance fixtures. This is
    independent verification of R7/R11/R12 and is the single highest-value remaining engineering task.
+   *Started:* `71f99a68` lands the first slice — every Japanese kana that OpenUtau's golden vectors
+   treat as a valid mora now has to decompose in SEAM with the expected consonant/vowel split, asserted
+   as the absence of a phonemizer warning. All 14 pass, and the case was shown to fail when a vector is
+   deliberately wrong, so it is not vacuous. The English, Korean and UST/USTX fixtures are the rest of
+   this lane.
 3. **Lane 2**: build the ASR negative screen over the retained packet, with pinned negative controls.
    Publish it as triage, with the wording the project already uses for unreviewed audio.
 4. **U1.4 substitute**: build the headless workflow qualification and record it as machinery-only.
@@ -251,9 +281,10 @@ The realistic conclusion: steps 1-5 are achievable by agents in a short sequence
 and will move every automatable gate to done. Steps 6-8 are the irreducible ones, and they should be
 started in parallel with the engineering rather than treated as the reward for finishing it.
 
-## 8. What this document is not
+## 9. What this document is not
 
 It is not acceptance evidence for any unit, and it does not authorise release. It performs no
-implementation beyond the CI repair named in section 2 and the ledger entry that records it. Where it
+implementation beyond the CI repair and the Japanese cross-implementation test named in section 2 and
+the ledger entry that records them. Where it
 cites OpenUtau, the citation is to a specific file and, where given, a specific line. Where automation
 cannot establish a claim, the claim is marked UNREVIEWED rather than passed.
