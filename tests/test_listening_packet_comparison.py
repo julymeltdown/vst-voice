@@ -275,5 +275,53 @@ class ListeningPacketComparison(unittest.TestCase):
         self.assertIn('reference set', completed.stdout.lower())
 
 
+
+
+class ListeningPacketSpectralMeasurement(unittest.TestCase):
+    """V06 needs a formant change to be visible, not only peak and rms."""
+
+    def setUp(self) -> None:
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.root = Path(self.temporary.name)
+
+    def write_tone(self, name: str, frequency: float, seconds: float = 0.5,
+                   rate: int = 48000) -> Path:
+        import math as _math
+        import struct as _struct
+        frames = int(rate * seconds)
+        payload = b"".join(
+            _struct.pack("<f", 0.25 * _math.sin(2.0 * _math.pi * frequency * i / rate))
+            for i in range(frames))
+        header = _struct.pack("<4sI4s4sIHHIIHH4sI", b"RIFF", 36 + len(payload), b"WAVE",
+                              b"fmt ", 16, 3, 1, rate, rate * 4, 4, 32, b"data", len(payload))
+        path = self.root / name
+        path.write_bytes(header + payload)
+        return path
+
+    def test_measurements_include_spectral_shape_beyond_peak_and_rms(self) -> None:
+        from tools.singing_quality.listening_packet import wav_measurements
+        measured = wav_measurements(self.write_tone("tone.wav", 440.0))
+        for key in ("levelDb", "spectralDistance", "spectralCentroidHz", "spectralRolloffHz"):
+            self.assertIn(key, measured)
+        self.assertLess(measured["levelDb"], 0.0)
+        self.assertGreater(measured["spectralCentroidHz"], 0.0)
+        self.assertGreater(measured["spectralDistance"], 0.0)
+
+    def test_a_higher_frequency_tone_has_a_higher_centroid(self) -> None:
+        from tools.singing_quality.listening_packet import wav_measurements
+        low = wav_measurements(self.write_tone("low.wav", 220.0))
+        high = wav_measurements(self.write_tone("high.wav", 880.0))
+        self.assertLess(low["spectralCentroidHz"], high["spectralCentroidHz"])
+        self.assertLess(low["spectralRolloffHz"], high["spectralRolloffHz"])
+
+    def test_measurement_never_claims_a_qualification(self) -> None:
+        from tools.singing_quality.listening_packet import wav_measurements
+        measured = wav_measurements(self.write_tone("plain.wav", 440.0))
+        text = json.dumps(measured).lower()
+        self.assertNotIn("qualified", text)
+        self.assertNotIn("\"pass\"", text)
+
+
 if __name__ == '__main__':
     unittest.main()

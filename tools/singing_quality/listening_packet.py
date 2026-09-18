@@ -40,6 +40,12 @@ CASES = [
         "こ:62:1920", "え:60:1920", "ー:60:2880"]),
 ]
 MAX_FILE_BYTES = 256 * 1024 * 1024
+# Bounded analysis budget for the per-file spectra. The packet is a screening
+# artifact, so a fixed window ceiling keeps generation predictable instead of
+# letting a long song dominate the run.
+SPECTRAL_WINDOW = 2048
+SPECTRAL_HOP = 2048
+SPECTRAL_MAX_WINDOWS = 512
 MAX_PACKET_BYTES = 1024 * 1024 * 1024
 
 
@@ -55,6 +61,51 @@ def write_new(path: Path, value) -> None:
     with path.open("x", encoding="utf-8") as stream:
         json.dump(value, stream, ensure_ascii=False, indent=2, allow_nan=False)
         stream.write("\n")
+
+
+def _mean_spectrum(samples, rate: int) -> dict:
+    """Bounded mean spectrum and the shape statistics a formant change moves.
+
+    Non-overlapping Hann windows capped at SPECTRAL_MAX_WINDOWS keep the cost
+    independent of song length. Returns the distance of the mean spectrum from a
+    flat distribution in dB, plus the spectral centroid and 85 percent rolloff in
+    Hz. This is screening measurement: it reports that a spectrum moved, not
+    which formant moved, and it never carries a musical verdict.
+    """
+    if not samples or rate <= 0:
+        return dict(distance=0.0, centroidHz=0.0, rolloffHz=0.0)
+    try:
+        import numpy as np
+    except ImportError:  # pragma: no cover - numpy is pinned for CI
+        return dict(distance=0.0, centroidHz=0.0, rolloffHz=0.0)
+    data = np.asarray(samples, dtype=np.float64)
+    size = int(min(SPECTRAL_WINDOW, data.size))
+    if size < 64:
+        return dict(distance=0.0, centroidHz=0.0, rolloffHz=0.0)
+    hop = max(1, int(min(SPECTRAL_HOP, size)))
+    starts = list(range(0, data.size - size + 1, hop))[:SPECTRAL_MAX_WINDOWS] or [0]
+    window = np.hanning(size)
+    bins = size // 2
+    accumulator = np.zeros(bins, dtype=np.float64)
+    for start in starts:
+        frame = data[start:start + size]
+        if frame.size < size:
+            frame = np.pad(frame, (0, size - frame.size))
+        accumulator += np.abs(np.fft.rfft(frame * window))[:bins]
+    magnitudes = accumulator / len(starts)
+    total = float(magnitudes.sum())
+    if total <= 0.0:
+        return dict(distance=0.0, centroidHz=0.0, rolloffHz=0.0)
+    normalized = magnitudes / total
+    flat = 1.0 / bins
+    distance = float(np.abs(np.log10(np.maximum(normalized, 1e-12)) - math.log10(flat)).mean())
+    freqs = np.fft.rfftfreq(size, 1.0 / rate)[:bins]
+    centroid = float((freqs * normalized).sum())
+    cumulative = np.cumsum(normalized)
+    crossings = np.nonzero(cumulative >= 0.85)[0]
+    rolloff = float(freqs[crossings[0]]) if crossings.size else 0.0
+    return dict(distance=distance, centroidHz=centroid, rolloffHz=rolloff)
+
 
 
 def wav_measurements(path: Path) -> dict:
@@ -90,9 +141,20 @@ def wav_measurements(path: Path) -> dict:
         energy += value * value
         clipped += abs(value) >= 1.0
     frames = len(payload) // alignment
+    values = struct.unpack("<%df" % (len(payload) // 4), payload)
+    if channels > 1:
+        mono = [sum(values[i:i + channels]) / channels
+                for i in range(0, len(values), channels)]
+    else:
+        mono = list(values)
+    spectrum = _mean_spectrum(mono, rate)
     return dict(sampleRate=rate, channels=channels, frames=frames,
                 durationSeconds=frames / rate, peak=peak,
-                rms=math.sqrt(energy / (frames * channels)), clippedSamples=clipped)
+                rms=math.sqrt(energy / (frames * channels)), clippedSamples=clipped,
+                levelDb=20.0 * math.log10(max(peak, 1e-12)),
+                spectralDistance=round(spectrum["distance"], 6),
+                spectralCentroidHz=round(spectrum["centroidHz"], 3),
+                spectralRolloffHz=round(spectrum["rolloffHz"], 3))
 
 
 def run(binary: Path, output: Path, repo: Path) -> None:
