@@ -8,6 +8,7 @@ import sys
 import tempfile
 
 from .contract_types import CorpusError
+from .acoustic_metrics import AcousticMetricError, summarise_case
 from .corpus_contract import verify_corpus
 from .packet_io import digest_bytes, read_bounded, write_new
 from .process_capture import Command, ExecutableIdentity, capture_command
@@ -71,6 +72,15 @@ def run_corpus(settings: RunSettings) -> Path:
                                 str(destination / "analysis"))
                 capture_command(Command(analyze_argv, analyzer, stem + "-analyze"), packet)
                 read_bounded(destination / "analysis/analysis.json")
+                # Measurements are derived only from the retained artifacts and
+                # never replace them; a measurement failure must not fail the run.
+                try:
+                    summary = summarise_case(destination, stem)
+                except (CorpusError, AcousticMetricError) as error:
+                    write_new(destination / "measurement-error.json",
+                              (json.dumps({"error": str(error)}, indent=2) + "\n").encode())
+                else:
+                    write_new(destination / "measurement.json", summary.to_json().encode())
                 for path in sorted(destination.rglob("*")):
                     if path.is_file():
                         payload = read_bounded(path)
