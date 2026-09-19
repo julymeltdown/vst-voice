@@ -102,8 +102,16 @@ def validate_artifact(kind: str, path: Path, platform: str | None = None) -> lis
             if not binaries:
                 errors.append("vst3: bundle contains no platform binary")
             if platform in {"windows", "win32"}:
-                if (path / "moduleinfo.json").is_symlink() or not (path / "moduleinfo.json").is_file():
-                    errors.append("vst3: Windows folder package requires moduleinfo.json")
+                # VST3 specification: moduleinfo.json lives in Contents/Resources/
+                # for folder packages on every desktop platform, not at the
+                # bundle root. The SDK's own loader and moduleinfotool generator
+                # both use Contents/Resources/moduleinfo.json.
+                module_info = path / "Contents" / "Resources" / "moduleinfo.json"
+                if module_info.is_symlink() or not module_info.is_file():
+                    errors.append(
+                        "vst3: Windows folder package requires "
+                        "Contents/Resources/moduleinfo.json"
+                    )
                 if any(item.is_file() and item.suffix.lower() in {".dll", ".vst3"} for item in path.iterdir()):
                     errors.append("vst3: Windows executable must be nested below an architecture directory")
             if platform in {"darwin", "macos"}:

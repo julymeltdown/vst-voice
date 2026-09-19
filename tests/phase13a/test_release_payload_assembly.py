@@ -294,7 +294,9 @@ class ReleasePayloadAssemblyTests(unittest.TestCase):
             self.write(
                 "VST3/ProjectSEAMEditor.vst3/Contents/x86_64-win/ProjectSEAMEditor.vst3"
             )
-            self.write("VST3/ProjectSEAMEditor.vst3/moduleinfo.json", "{}")
+            self.write(
+                "VST3/ProjectSEAMEditor.vst3/Contents/Resources/moduleinfo.json", "{}"
+            )
             self.write(
                 "VST3/ProjectSEAMEditor.vst3/wrapper-manifest.json",
                 json.dumps(

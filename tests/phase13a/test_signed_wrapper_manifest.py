@@ -89,7 +89,9 @@ class SignedWrapperManifestTests(unittest.TestCase):
             binary = vst3 / "x86_64-win" / "ProjectSEAMEditor.vst3"
             binary.parent.mkdir(parents=True)
             binary.write_bytes(b"unsigned vst3")
-            (vst3 / "moduleinfo.json").write_text("{}\n", encoding="utf-8")
+            module_info = vst3 / "Contents" / "Resources" / "moduleinfo.json"
+            module_info.parent.mkdir(parents=True, exist_ok=True)
+            module_info.write_text("{}\n", encoding="utf-8")
             (vst3 / "wrapper-manifest.json").write_text(
                 json.dumps(
                     distribution_manifest.build_wrapper_manifest(

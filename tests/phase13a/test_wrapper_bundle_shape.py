@@ -16,7 +16,9 @@ class WrapperBundleShapeTests(unittest.TestCase):
         binary = bundle / "Contents" / "x86_64-win" / "ProjectSEAMEditor.vst3"
         binary.parent.mkdir(parents=True)
         binary.write_bytes(b"MZ" + b"binary")
-        (bundle / "moduleinfo.json").write_text("{}\n", encoding="utf-8")
+        module_info = bundle / "Contents" / "Resources" / "moduleinfo.json"
+        module_info.parent.mkdir(parents=True, exist_ok=True)
+        module_info.write_text("{}\n", encoding="utf-8")
         manifest = distribution_manifest.build_wrapper_manifest("VST3", "windows", "x64", "0.14.0", "com.project-seam.editor.vst3", "a" * 64, bundle)
         (bundle / "wrapper-manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
         return bundle
@@ -25,8 +27,23 @@ class WrapperBundleShapeTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             bundle = self._windows_bundle(Path(directory))
             self.assertEqual([], distribution_manifest.validate_wrapper_bundle("vst3", bundle, "windows", "a" * 64))
-            (bundle / "moduleinfo.json").unlink()
+            (bundle / "Contents" / "Resources" / "moduleinfo.json").unlink()
             self.assertTrue(any("moduleinfo" in error for error in distribution_manifest.validate_wrapper_bundle("vst3", bundle, "windows", "a" * 64)))
+
+    def test_windows_moduleinfo_at_bundle_root_is_not_accepted(self):
+        # Regression: the VST3 specification places moduleinfo.json in
+        # Contents/Resources. A file at the bundle root does not satisfy it.
+        with tempfile.TemporaryDirectory() as directory:
+            bundle = self._windows_bundle(Path(directory))
+            (bundle / "Contents" / "Resources" / "moduleinfo.json").unlink()
+            (bundle / "moduleinfo.json").write_text("{}\n", encoding="utf-8")
+            errors = distribution_manifest.validate_wrapper_bundle(
+                "vst3", bundle, "windows", "a" * 64
+            )
+            self.assertTrue(
+                any("Contents/Resources/moduleinfo.json" in error for error in errors),
+                errors,
+            )
 
     def test_mismatched_canonical_clap_hash_is_blocked(self):
         with tempfile.TemporaryDirectory() as directory:

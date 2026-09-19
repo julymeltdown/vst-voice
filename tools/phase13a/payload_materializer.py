@@ -105,12 +105,20 @@ def materialize_vst3(
     version: str,
     release_identity: dict[str, str | int],
     configuration: str,
+    module_info_tool: Path | None = None,
 ) -> Path:
     source = first_artifact_from(
         (wrapper_build, output), "ProjectSEAMEditor.vst3", configuration
     )
     destination = output / "VST3" / source.name
     copy_artifact(source, destination)
+    # Folder packages carry their metadata at Contents/Resources/moduleinfo.json
+    # per the VST3 specification. Generate it before the wrapper manifest is
+    # computed so the manifest binds the final artifact bytes.
+    if module_info_tool is not None and destination.is_dir():
+        from tools.phase13a.vst3_moduleinfo import create_module_info
+
+        create_module_info(module_info_tool, destination, version, wrapper_build)
     manifest_path = destination / "wrapper-manifest.json"
     if destination.is_dir() and host_system.casefold() in {"darwin", "macos"}:
         manifest_path = destination / "Contents/Resources/wrapper-manifest.json"

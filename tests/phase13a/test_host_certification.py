@@ -18,7 +18,9 @@ class HostCertificationTests(unittest.TestCase):
         binary = artifact / "Contents" / "x86_64-win" / "ProjectSEAMEditor.vst3"
         binary.parent.mkdir(parents=True)
         binary.write_bytes(b"installed-vst3")
-        (artifact / "moduleinfo.json").write_text("{}\n", encoding="utf-8")
+        module_info = artifact / "Contents" / "Resources" / "moduleinfo.json"
+        module_info.parent.mkdir(parents=True, exist_ok=True)
+        module_info.write_text("{}\n", encoding="utf-8")
         return artifact
 
     def candidate(self, artifact_sha256: str) -> host_certification.JsonObject:

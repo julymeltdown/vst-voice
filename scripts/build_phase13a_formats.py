@@ -38,6 +38,7 @@ from tools.phase13a.sdk_lock import (  # noqa: E402
     validate_lock,
 )
 from tools.phase13a.static_openssl import prepare_static_openssl  # noqa: E402
+from tools.phase13a.vst3_moduleinfo import build_module_info_tool  # noqa: E402
 from tools.phase13a.wrapper_preflight import validate_preflight  # noqa: E402
 
 
@@ -180,6 +181,14 @@ def main(argv: list[str] | None = None) -> int:
             "--config", args.configuration, "--parallel", "2",
         ], environment)
 
+        # The VST3 specification requires folder packages to carry their
+        # metadata at Contents/Resources/moduleinfo.json. clap-wrapper produces
+        # the folder layout but never runs Steinberg's moduleinfotool, so build
+        # that utility from the pinned SDK and derive the metadata from the real
+        # plug-in binary's class registry.
+        module_info_tool = build_module_info_tool(
+            dependencies / "vst3sdk", build_root / "moduleinfotool"
+        )
         vst3_output = materialize_vst3(
             wrapper_build,
             output,
@@ -188,6 +197,7 @@ def main(argv: list[str] | None = None) -> int:
             version,
             identity.as_dict(),
             args.configuration,
+            module_info_tool,
         )
         vst3_sha256 = tree_sha256(vst3_output)
 

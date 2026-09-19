@@ -61,7 +61,8 @@ $ProductVersion = $payloadVersion
 $BuildId = $payloadBuildId
 $SourceCommit = $payloadSourceCommit
 if (-not (Get-Item (Join-Path $PayloadRoot 'VST3\ProjectSEAMEditor.vst3')).PSIsContainer) { throw 'Windows Phase 13A installer requires a package-shaped VST3 folder' }
-if (-not (Test-Path (Join-Path $PayloadRoot 'VST3\ProjectSEAMEditor.vst3\moduleinfo.json'))) { throw 'Windows Phase 13A VST3 package is missing moduleinfo.json' }
+$moduleInfo = Join-Path $PayloadRoot 'VST3\ProjectSEAMEditor.vst3\Contents\Resources\moduleinfo.json'
+if (-not (Test-Path $moduleInfo)) { throw 'Windows Phase 13A VST3 package is missing Contents\Resources\moduleinfo.json' }
 $versionOutput = & makensis.exe /VERSION
 if ($LASTEXITCODE -ne 0 -or $versionOutput -notmatch '^v?3\.12') { throw "NSIS 3.12 is required, found: $versionOutput" }
 $escapedPayload=(Resolve-Path $PayloadRoot).Path
