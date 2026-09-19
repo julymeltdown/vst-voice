@@ -11,6 +11,14 @@ import wrapper_preflight  # noqa: E402
 
 
 class WrapperPreflightTests(unittest.TestCase):
+    def test_windows_macro_guard_precedes_sdk_and_generated_wrapper_targets(self):
+        project = (ROOT / "packaging/phase13a/wrapper-project/CMakeLists.txt").read_text()
+        guard = project.index("if(WIN32)")
+        end = project.index("endif()", guard)
+        self.assertIn("add_compile_definitions(NOMINMAX)", project[guard:end])
+        self.assertLess(end, project.index('add_subdirectory("${CLAP_WRAPPER_ROOT}"'))
+        self.assertLess(end, project.index("target_add_vst3_wrapper("))
+
     def _lock(self):
         return json.loads((ROOT / "phase13a/dependency-lock.json").read_text(encoding="utf-8"))
 

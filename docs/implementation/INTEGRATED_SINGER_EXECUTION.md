@@ -1,5 +1,25 @@
 # Integrated Singer Execution
 
+## Windows wrapper macro collision repaired after native Perl clears OpenSSL
+
+September 20, 2026 — repaired-candidate Windows job 105918018013 at `149b9752`
+is terminal. It progressed through OpenSSL and the canonical build, then failed
+in the VST3 wrapper with MSVC C2589/C2059 at pinned SDK fstring.h:353 and nearby
+numeric_limits<int32>::max() expressions. Confirmed these expressions in the
+SDK's exact base submodule `fcf9da0bd27a16f7f03773a3a39822f28f5c8477` referenced
+by the locked SDK revision. The wrapper project lacked NOMINMAX.
+
+Added Windows-only directory-level NOMINMAX before importing the SDK/wrapper
+subdirectory or generating targets, so it covers internal wrapper libraries as
+well as the public module. No SDK pin, validator gate or compiler warning policy
+was relaxed. A source-order regression protects this placement. Local Phase13A
+suite: 184 discovered, four skipped, 180 executed, all pass (10.23 s). Contracts
+and diff checks pass; this does not establish a Windows compile result yet.
+
+All jobs in Phase13A run 35451001647 are now terminal, allowing a fresh branch
+dispatch including this Windows fix and the complete macOS parser repairs.
+Existing main macOS CI is independent and remains undisturbed.
+
 ## Header-only tempo parsing repaired and full local native suite passes
 
 September 20, 2026 — Phase13A macOS AUv2/VST3 jobs 105918017926 and

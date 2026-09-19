@@ -21,6 +21,12 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
+if(WIN32)
+  # Apply before SDK subdirectories and generated wrapper targets: windows.h
+  # max/min macros otherwise corrupt the pinned SDK's numeric_limits::max().
+  add_compile_definitions(NOMINMAX)
+endif()
+
 foreach(required CLAP_WRAPPER_ROOT CLAP_SDK_ROOT VST3_SDK_ROOT
                  SEAM_CLAP_MODULE SEAM_RESOURCE_DIR SEAM_ARTIFACT_DIR)
   if(NOT DEFINED ${required} OR "${${required}}" STREQUAL "")
