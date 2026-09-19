@@ -1,5 +1,22 @@
 # Integrated Singer Execution
 
+## moduleinfo.json generation is ordered before bundle signing, not after
+
+September 20, 2026 — adding a resource to an already-signed macOS bundle is
+destructive, so the new moduleinfo.json step was checked against that risk
+rather than assumed safe. Verified empirically with a minimal sealed bundle:
+codesign --force --sign - on a test .vst3 verifies clean, then writing
+Contents/Resources/moduleinfo.json afterwards makes codesign --verify --deep
+--strict report "a sealed resource is missing or invalid".
+
+The pipeline is nevertheless correctly ordered. moduleinfo.json is generated
+during payload assembly inside the unsigned build, and the only macOS signing
+stage is scripts/sign_macos_plugin_payload.sh in the separate distribution
+workflow, which signs each payload item with --force --deep and re-seals the
+whole bundle including the new file before verifying it. No verification step
+runs against the wrapper bundle between generation and that re-sign. This note
+exists so the ordering is not silently reversed later.
+
 ## Vocoder training resumed from the update-450 checkpoint on restored disk
 
 September 20, 2026 — the disk condition that stopped r2 cleared: free space went
