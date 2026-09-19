@@ -997,6 +997,18 @@ failure. The larger model's upstream training/deployment PyTorch forward parity 
 been checked at 1/3/16/23 frames; learned quality, new training and its ONNX export
 are separate experiments that must still pass. Do not launch while storage is low.
 
+The larger profile now also passes the actual synthetic GAN mechanics update and
+ONNX Runtime parity check (maximum observed sample error below 3e-8). Reproduce with:
+
+```sh
+python -m tools.voice_model_training.check_vocoder_model TRAINING_CHECKOUT DEPLOYMENT_CHECKOUT \
+  --architecture-profile mini-nsf-512-mrf-v1 --mini-only --check-gan --check-onnx
+```
+
+This writes no checkpoints unless `--check-resume` is explicitly added. It uses short
+synthetic inputs, not the admitted corpus; singing quality and whole-phrase resource
+requirements remain unverified. Runtime parity does not imply pitch accuracy.
+
 The CLI and epoch service enforce free-space headroom before allocation, around
 updates/evaluation and before checkpoint serialization. The budget includes the
 configured checkpoint ceiling, retained evaluation WAVs/metadata and a 256 MiB

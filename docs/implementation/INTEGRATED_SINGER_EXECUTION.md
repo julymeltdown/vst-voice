@@ -1,5 +1,42 @@
 # Integrated Singer Execution
 
+## Larger vocoder GAN mechanics and actual ONNX Runtime parity
+
+September 19, 2026 — extended the existing reproducible architecture probe.
+
+`check_vocoder_model` now accepts a named `--architecture-profile` and optional
+`--mini-only`. Default behavior remains the original two-family smoke test. Executed:
+
+```sh
+build/neural-runtime/diffsinger-model-env/bin/python -m tools.voice_model_training.check_vocoder_model \
+  build/neural-runtime/singing-vocoders-source build/neural-runtime/DiffSinger-source \
+  --architecture-profile mini-nsf-512-mrf-v1 --mini-only --check-gan --check-onnx
+```
+
+Actual pinned models strictly share state and have identical PyTorch forward outputs
+at 1/3/16/23 frames. A short synthetic supervised update changes 236 parameter tensors.
+The subsequent actual GAN update reports discriminator loss 4.989897, generator loss
+212.546906, reconstruction loss 4.618786 and verified gradient ownership. These are
+mechanics measurements on synthetic audio, not admitted corpus training or learning
+curves. No resume test was requested and no checkpoints were written.
+
+The updated adapter exports a 55,762,986-byte ONNX graph, SHA-256
+`cc9e91d90df6a4112073617dc93759cd0968e5ef1e1782a222c2f07c77a05c8c`.
+Actual ONNX Runtime CPU inference matches PyTorch at all four lengths, maximum error
+2.9336661e-8. Graph inspection passes; the graph is not retained. This checks the
+Python ORT deployment adapter, not a shipped native-worker or installed-app journey.
+Synthetic pitch accuracy fails, as it should for a nearly untrained candidate.
+The earlier no-GAN probe also passed but exported different weights/hash; do not mix
+the two observations.
+
+Nine configuration/export unit tests pass. Disk had recovered to about 2.8 GiB during
+these bounded probes. The original epoch-seven run remains stopped; no long training
+run was launched. Before full-capacity corpus training, measure whole-phrase update
+memory/time and checkpoint footprint: short 16-frame mechanics are not evidence that
+the existing roughly 1100-frame whole-phrase loop fits available RAM/disk. If bounded
+segment training is needed, preserve explicit sample coverage/context and held-out
+whole-song evaluation instead of silently truncating the training corpus.
+
 ## Disk exhaustion now checked before expensive vocoder work
 
 September 19, 2026 — follows the confirmed ENOSPC exit, not a training restart.

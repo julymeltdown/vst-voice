@@ -149,6 +149,10 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("training_checkout", type=Path)
     parser.add_argument("deployment_checkout", type=Path)
+    parser.add_argument("--architecture-profile", default="mini-nsf-32-smoke-v1",
+                        choices=("mini-nsf-32-smoke-v1", "mini-nsf-512-mrf-v1"))
+    parser.add_argument("--mini-only", action="store_true",
+                        help="Check only the deterministic MiniNSF family used for deployment")
     parser.add_argument("--check-onnx", action="store_true", help="Export and compare deterministic MiniNSF only")
     parser.add_argument("--check-gan", action="store_true", help="Run one real MiniNSF GAN mechanics step on synthetic PCM")
     parser.add_argument("--check-resume", action="store_true", help="Verify complete upstream GAN checkpoint continuation; requires --check-gan")
@@ -169,13 +173,9 @@ def main():
     from deployment.modules.nsf_hifigan import NSFHiFiGANONNX
 
     reports = []
-    for mini in (False, True):
-        config = dict(sampling_rate=48000, num_mels=80, hop_size=256, n_fft=1024,
-                      win_size=1024, fmin=20, fmax=24000, mini_nsf=mini,
-                      noise_sigma=0.0, upsample_rates=[8, 8, 2, 2],
-                      upsample_kernel_sizes=[16, 16, 4, 4], upsample_initial_channel=32,
-                      resblock_kernel_sizes=[3], resblock_dilation_sizes=[[1, 3, 5]],
-                      resblock="1", pc_aug=False)
+    for mini in ((True,) if args.mini_only else (False, True)):
+        config = vocoder_configuration(args.architecture_profile)
+        config["mini_nsf"] = mini
         torch.manual_seed(918)
         model = source.Generator(source.AttrDict(config))
         adapter = NSFHiFiGANONNX(config)
@@ -277,7 +277,8 @@ def main():
                             fixtureLoss=loss.item(), changedParameterTensors=changed,
                             ganStep=gan,
                             onnxRuntime=check_onnx(adapter) if mini and args.check_onnx else None))
-    print(json.dumps(dict(passed=True, trainingRevision=TRAINING_REVISION,
+    print(json.dumps(dict(passed=True, architectureProfile=args.architecture_profile,
+                          trainingRevision=TRAINING_REVISION,
                           deploymentRevision=DEPLOYMENT_REVISION, models=reports,
                           syntheticInputs=True, ganStepVerified=args.check_gan, ganTrainingVerified=False,
                           onnxExported=args.check_onnx, singerQualified=False, releaseEligible=False), indent=2))
