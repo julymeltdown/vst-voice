@@ -1,5 +1,25 @@
 # Integrated Singer Execution
 
+## Full native suite passes with the accumulated session repairs
+
+September 20, 2026 — the session's changes had so far been verified mainly by the
+Phase13A subprocess suite and by individual CI jobs. Rebuilt the whole release
+tree and ran the complete native CTest set instead of that narrower subset.
+
+Build: cmake --build build/release -j 6 completed with exit 0 (125 targets).
+Duplicate-library linker warnings persist across many targets and are nonfatal,
+as recorded earlier. Full run: ctest --test-dir build/release -j 4 gave
+173/173 PASS, 0 failed, 86.99 seconds real. Label summary: 9
+neural-native-experiment tests and 2 voice-model-training tests included, so the
+parsing, editor, interchange and payload changes did not regress those paths.
+
+This is the broadest local verification of the session so far, covering the
+from_chars/finite-decimal portability work (ustx_codec, vibrato inspector,
+dynamics lane, Voicebank Studio), the moduleinfo and payload-materializer
+changes, and the installer scripts, together with the pre-existing suite. It is
+still macOS-local evidence: Windows and Linux platform behavior, and any real
+singer acceptance, remain separate.
+
 ## r3 training steady past the quarter mark
 
 September 20, 2026 — the resumed r3 run is stable and progressing. Verified
