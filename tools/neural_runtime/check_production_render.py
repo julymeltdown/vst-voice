@@ -15,6 +15,7 @@ import os
 import re
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 
 
@@ -115,6 +116,33 @@ def main():
         run_render(binary, directory, manifest_sha256, 1048576)
         run_render(binary, directory, manifest_sha256, 1048576,
                    project=project, output=root / "application-export")
+        # Exercise the actual preparation alias through score conditioning, the
+        # production worker and saved-project export, with default SP lookup.
+        sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+        from tools.voice_model_training.prepare_bundle import vocabulary_asset
+        tokens = json.loads((directory / "vocabulary").read_bytes())["tokens"]
+        assert tokens[1] == "SP"
+        tokens[1] = "pau"
+        alias_directory = root / "aliased-bundle"
+        alias_directory.mkdir()
+        for name in ("acoustic", "vocoder", "configuration"):
+            (alias_directory / name).write_bytes((directory / name).read_bytes())
+        (alias_directory / "vocabulary").write_bytes(vocabulary_asset(tokens, "pau"))
+        alias_prepared = subprocess.run(
+            [str(cli), "prepare-neural-bundle", str(alias_directory), "fixture", "1", "1048576"],
+            check=True, capture_output=True, text=True, timeout=20)
+        alias_digest = json.loads(alias_prepared.stdout)["manifestSha256"]
+        assert alias_digest != manifest_sha256
+        run_render(binary, alias_directory, alias_digest, 1048576)
+        alias_export = root / "aliased-application-export"
+        run_render(binary, alias_directory, alias_digest, 1048576,
+                   project=project, output=alias_export)
+        original_wavs = sorted((root / "application-export").rglob("*.wav"))
+        assert original_wavs
+        for original in original_wavs:
+            counterpart = alias_export / original.relative_to(root / "application-export")
+            assert counterpart.read_bytes() == original.read_bytes(), original
+        print("trained-ID silence alias preserves production export audio exactly (fixture only)")
         print("production worker render check passed; no musical claim was made")
 
 

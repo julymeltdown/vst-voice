@@ -19,6 +19,17 @@ prove packaging/admission mechanics, not a trained singer's silence or audio qua
 The epoch-142 acoustic export still cannot use this option: it lacks trained silence.
 The larger vocoder training process remained live and was not restarted or modified.
 
+Follow-up native execution: the production-render driver now constructs a second
+fixture bundle with trained token `pau` at the original silence ID and preparation's
+`SP` alias. It runs normal score conditioning and the production worker with default
+`SP`, checks render-window equivalence, exports and reopens the saved project, and
+compares every exported WAV byte-for-byte with the canonical-SP fixture. All match;
+the changed vocabulary has a different manifest identity as required. The actual
+`seam_neural_production_render` CTest passes (2.49 seconds). This closes the alias's
+application integration check, not the absent silence-trained acoustic candidate.
+Training session 72412 remained live; last collected progress was 100/2804 updates
+at 409.04 seconds, with no completed epoch or quality evaluation yet.
+
 ## Fresh larger-model segmented training launched
 
 September 19, 2026 — actual corpus updates, not a synthetic mechanics probe.
