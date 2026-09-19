@@ -83,6 +83,31 @@ The wrappedPhaseDifference function at spectral_classic.cpp:78 uses unbounded wh
 If target or source is NaN or infinity, these loops spin forever. GCC -O3 may optimize floating
 point differently, producing non-finite values that do not occur under Clang.
 
+### 3.2b Root cause hypothesis is disproven as written (September 19)
+
+Section 3.2 proposed that `wrappedPhaseDifference`'s unbounded `while` loops spin forever on non-finite
+input under GCC -O3. That guard is already in the tree at commit `add7332f` ("guard
+wrappedPhaseDifference against non-finite inputs and use bounded remainder"), and the failure persists,
+so the hypothesis is disproven as the explanation for this test.
+
+Two further observations narrow it, both from CI logs rather than from reading:
+
+- The two failing tests are `seam_authoring_render_coordinator_tests` and `seam_tests`, the same test
+  case in both, and the diagnostic differs between runs (`progState=2, stale=1` in one, `progState=1,
+  stale=0` in the next). A deterministic compiler misoptimization would not change its own diagnostic
+  between runs of the same commit.
+- Commit `24db1b55` failed this job while changing only `BETA_READINESS_ISSUES.md`, and `529f006e`
+  passed `project-seam-ci` while failing only `phase11-plugin-formats`. No C++ changed in either
+  direction, so this is an intermittent scheduling failure in the coordinator, not a code regression.
+
+The reliable reproduction and fix now require either an Ubuntu GCC environment with the coordinator
+under instrumentation, or a host-level investigation of the 20-millisecond coalescing window in
+`workerLoop` and `submitWithSources`, where a second submitted request can be consumed as stale before
+the first publication completes. Neither is available on this machine, which builds with Clang and
+passes 19 of 19 locally on every run. **Phase 1's exit criterion is therefore not reachable by editing
+the file named in 3.4.** The two CI-blocking defects that were reachable, the uncompilable USTX oracle
+and the stale phase11 source verifier, are fixed and pushed.
+
 ### 3.3 Fix plan
 
 1. Guard wrappedPhaseDifference against non-finite inputs: return 0 for NaN/inf.
