@@ -47,6 +47,25 @@ training on far more material for far longer, and it is the same wall this proje
 `trainingAdmitted`, `singerQualified` and `releaseEligible` remain false. No listener has heard
 anything, and no claim of a usable voice is made here.
 
+### Training stopped at 853 epochs because the volume filled
+
+The continuation run resumed from epoch 300 and reached **epoch 1153**, of which 853 carry a
+published receipt; the newest readable checkpoint is `epoch-001153` at loss 0.37997, down from
+0.79547 at epoch 1. The process was killed when the filesystem reached 117 MB free, not by a
+defect in training: `run.json` was never published, so the run correctly does not claim completion.
+
+Two properties of the current design cause this. Every epoch retains its own checkpoint, so cost is
+linear in epochs; at 4.1 MB for the small configuration and 272 MB for the maximum one, a 900-epoch
+max-capacity run would need roughly 245 GB. And `~/.codex/sessions` had grown to 21 GB from this
+conversation's own transcripts. The failed probe runs (`run-max`, the superseded 6-song `run-600ep`)
+held a further 5.6 GB and were moved to `/Users/lhs/.seam-archive-2026-09-19/`, which recovered the
+volume to 30 GB.
+
+The actionable consequence is material volume, not code. `generate_procedural_corpus.py` is being
+run at 400 phrases to give the denoiser substantially more to learn from, because the measured
+requirement is a high-timestep noise error far below the current 0.40 and that is a data-and-hours
+problem rather than a wiring one.
+
 ## The acoustic model is the only broken link, and it is not yet trained enough
 
 September 19, 2026 — procedural corpus at trainable size, isolation diagnostic, sampling determinism.
