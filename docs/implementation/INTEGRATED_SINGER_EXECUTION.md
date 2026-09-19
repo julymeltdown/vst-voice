@@ -34,6 +34,15 @@ Completion and quality must be recorded from the resulting receipt, not inferred
 from launch. Existing vocoder session 72412 continues unchanged; latest observed
 progress is 900/2804 at 3518.6 seconds. No new singer-quality claim is made.
 
+The acoustic run subsequently completed successfully: 267 updates, all 267
+training sources covered, 74,406,000 valid PCM samples, mean DDPM L1 loss
+0.6882709397509083. Checkpoint size is 27,197,159 bytes, SHA-256
+`1ef85f82b3b318d6ff4cb3304c8be8728866f7e5792ef65df0d3eaad30627a68`;
+receipt SHA-256 `4d58ac9d23bf9e5e4cc0387ba2cd79cea817fc1d52751b774f803b412f0215a9`.
+This is the first complete combined-vocabulary epoch, not held-out synthesis or
+musical acceptance. The terminal session must not be restarted as though missing;
+further optimization requires explicit resume from this captured checkpoint.
+
 ## Verified recovery at a corpus song boundary
 
 September 19, 2026 — added explicit `--resume-song-captures` for interrupted
