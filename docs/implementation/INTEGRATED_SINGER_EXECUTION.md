@@ -1,5 +1,28 @@
 # Integrated Singer Execution
 
+## macOS privileged installer lifecycle passes end to end
+
+September 20, 2026 — job 105957102051 in run 35465098962 at `0aadfd23` reports
+`MACOS_CLEAN_INSTALL_UPDATE_UNINSTALL=PASS`. This is the first time this job has
+passed in the whole session; it previously either failed before running (its
+`auv2` dependency failed in every earlier candidate) or failed inside the
+install.
+
+Raw-log sequence confirms the real work happened rather than a skipped path: the
+standalone PKG was built, the first privileged install reports "The install was
+successful", the same-version reinstall runs from a distinct candidate
+(`candidate-9e6b8ea1...` after the initial `candidate-b91ce5bc...`), and the job
+then completes its owned-payload, receipt, and replay-state assertions.
+
+That closes the macOS chain this session: plugin compilation (from_chars,
+NOMINMAX, OBJCXX), spec-compliant VST3 metadata, AUv2, packaging, privileged
+install, replay rejection and uninstall. The artifact download for this job did
+not return bytes to inspect here, so the assertion detail comes from the job log.
+
+Windows VST3 was still building. This is installer/platform conformance, not
+singer or release acceptance; sound quality and the language/media matrix remain
+open. Full Beta remains NO_GO.
+
 ## VST3 folder packages now carry valid vendor-generated moduleinfo
 
 September 20, 2026 — verified the moduleinfo work end to end rather than
