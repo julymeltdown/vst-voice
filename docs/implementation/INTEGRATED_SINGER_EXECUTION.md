@@ -1,5 +1,35 @@
 # Integrated Singer Execution
 
+## CI queue containment while model training continues
+
+September 19, 2026 — observed four older `project-seam-ci` runs in progress while
+newer native/packaging runs remained queued. Runs 35442747290 and 35443067690 had
+successful Linux, Windows-helper, Windows-qualified-target and isolated-release
+jobs but their macOS Test steps were still active (started 13:16:24Z and 13:27:54Z).
+Current run 35445864001 had queued jobs with no steps started. This locates the
+unfinished older work but does not prove the runner-capacity cause or identify
+which test is stalled; no active/queued historical run was manually cancelled.
+
+Both workflows now group push runs by workflow/ref and supersede older pushes;
+manual runs use unique run IDs and are not cancelled by push concurrency. This
+applies to future grouped runs, not a retroactive cleanup of the historical queue.
+See GitHub's workflow concurrency specification:
+https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax
+Native/release and plugin CTest invocations now have a 300-second default for
+tests without an explicit timeout, plus bounded Actions test steps. Explicit
+CTest per-test limits remain authoritative. Timeout is failure, never acceptance;
+existing macOS diagnostics and failure-log retention remain intact.
+
+Local YAML parsing, phase11 source checks and diff checks pass; hosted behavior
+and the unresolved macOS abort remain unverified. Acoustic session 63313 remains
+live with epoch eight published. Under its configured retention policy, only
+new-run epoch-six/seven binaries were removed after verified successors; their
+receipts remain, epoch eight is retained, and earlier runs are untouched. Removed
+binaries cannot be restored from receipts alone. Free disk is about 1.6 GiB.
+The local release coordinator and original-singer song-journey CTests pass with
+`--timeout 300` (0.84 and 13.94 seconds, 14.79 total); source closure passes.
+This is focused local evidence, not current hosted-matrix acceptance.
+
 ## Bounded acoustic checkpoint retention and continuation through epoch thirteen
 
 September 19, 2026 — added opt-in `--retain-checkpoints N` to acoustic training.

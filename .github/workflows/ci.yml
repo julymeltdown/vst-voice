@@ -5,6 +5,11 @@ on:
     branches: [master]
   workflow_dispatch:
 
+# Pushes qualify the newest revision; manual evidence runs remain independent.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'push' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'push' }}
+
 jobs:
   windows-helper-process:
     runs-on: windows-latest
@@ -86,7 +91,8 @@ jobs:
       - name: Test
         id: native-tests
         if: runner.os != 'Windows'
-        run: ctest --test-dir build/ci -C Debug --output-on-failure
+        timeout-minutes: 30
+        run: ctest --test-dir build/ci -C Debug --output-on-failure --timeout 300
       - name: Diagnose macOS song journey after a native test failure
         if: failure() && runner.os == 'macOS' && steps.native-tests.outcome == 'failure'
         timeout-minutes: 4
@@ -94,7 +100,8 @@ jobs:
         run: lldb --batch -o run -o "thread backtrace all" -- build/ci/seam_original_singer_song_journey_tests
       - name: Test Windows qualified targets
         if: runner.os == 'Windows'
-        run: ctest --test-dir build/ci -C Debug --output-on-failure -R "^(seam_helper_process_tests|seam_japanese_pronunciation_tests|seam_neural_worker_protocol_tests)$"
+        timeout-minutes: 15
+        run: ctest --test-dir build/ci -C Debug --output-on-failure --timeout 300 -R "^(seam_helper_process_tests|seam_japanese_pronunciation_tests|seam_neural_worker_protocol_tests)$"
       - name: Retain native CTest failure logs
         if: failure()
         uses: actions/upload-artifact@v4
@@ -135,4 +142,5 @@ jobs:
       - name: Build isolated release candidate
         run: cmake --build --preset release --parallel 2
       - name: Test isolated release candidate
-        run: ctest --preset release --output-on-failure
+        timeout-minutes: 30
+        run: ctest --preset release --output-on-failure --timeout 300

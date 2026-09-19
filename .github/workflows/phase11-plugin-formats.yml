@@ -4,6 +4,10 @@ on:
   push:
     branches: [master]
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'push' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'push' }}
+
 jobs:
   clap-editor:
     strategy:
@@ -40,10 +44,12 @@ jobs:
       - name: Build
         run: cmake --build build/phase11 --config Debug --parallel 2
       - name: Core tests
-        run: ctest --test-dir build/phase11 -C Debug -R 'seam_phase11_tests' --output-on-failure
+        timeout-minutes: 15
+        run: ctest --test-dir build/phase11 -C Debug -R 'seam_phase11_tests' --output-on-failure --timeout 300
       - name: Linux dynamic GUI host
         if: runner.os == 'Linux'
-        run: xvfb-run -a ctest --test-dir build/phase11 -R 'seam_phase11_clap_editor_host_smoke' --output-on-failure
+        timeout-minutes: 10
+        run: xvfb-run -a ctest --test-dir build/phase11 -R 'seam_phase11_clap_editor_host_smoke' --output-on-failure --timeout 300
       - name: Source and rights boundary
         run: python scripts/verify_phase11_sources.py --root .
       - name: Package macOS CLAP
