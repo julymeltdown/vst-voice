@@ -205,12 +205,16 @@ def main(argv=None):
             restore_vocoder_checkpoint(generator, discriminators, go, do, args.resume,
                 receipt_sha256=args.resume_receipt_sha256, expected_metadata=previous, schedulers=schedulers)
         from .vocoder_epochs import run_reviewed_vocoder_epochs
+        def progress(event):
+            print(json.dumps(dict(formatId='com.project-seam.vocoder-training-progress', schemaVersion=1,
+                                  **event), sort_keys=True, allow_nan=False), file=sys.stderr, flush=True)
         result = run_reviewed_vocoder_epochs(generator, discriminators, go, do,
             output=args.output, epochs=args.epochs, completed_epochs=completed,
             parent_receipt_sha256=args.resume_receipt_sha256, metadata=metadata,
             maximum_run_seconds=args.maximum_run_seconds,
             maximum_total_checkpoint_bytes=args.maximum_total_checkpoint_bytes,
             retain_checkpoints=args.retain_checkpoints,
+            on_progress=progress,
             epoch_options=dict(dataset_inputs=inputs, conditioning_directory=args.conditioning,
                 targets=targets, pcm_sources=sources, expected_profile_sha256=profile,
                 reconstruction_loss=reconstruction, objective_id=OBJECTIVE_ID,

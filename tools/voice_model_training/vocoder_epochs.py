@@ -22,7 +22,7 @@ def run_reviewed_vocoder_epochs(generator, discriminators, generator_optimizer, 
         parent_receipt_sha256: str | None = None, metadata: dict, epoch_options: dict,
         maximum_run_seconds: float = 3600,
         maximum_total_checkpoint_bytes: int = 2 * 1024**3, cancelled=None,
-        retain_checkpoints: int | None = None) -> dict:
+        retain_checkpoints: int | None = None, on_progress=None) -> dict:
     """Publish each complete epoch into a new child of a new run directory.
 
 Checkpoint binary bytes, including partial files from a failed final attempt,
@@ -55,9 +55,10 @@ total and time limits are capped by the remaining run budgets.
             or retain_checkpoints is not None and
                (type(retain_checkpoints) is not int or not 1 <= retain_checkpoints <= 1000)
             or not isinstance(metadata, dict) or not isinstance(epoch_options, dict)
+            or on_progress is not None and not callable(on_progress)
             or cancelled is not None and not callable(cancelled)):
         raise ValueError("Invalid vocoder training run limits or lineage")
-    if {"output", "run_metadata", "reconstruction_directory"} & set(epoch_options):
+    if {"output", "run_metadata", "reconstruction_directory", "on_progress"} & set(epoch_options):
         raise ValueError("Vocoder epoch output and lineage are owned by the run")
     options, metadata = dict(epoch_options), deepcopy(metadata)
     epoch_seconds = options.get("maximum_seconds", 600)
@@ -73,7 +74,12 @@ total and time limits are capped by the remaining run budgets.
     output = Path(output)
     if output.exists() or output.is_symlink() or not output.parent.is_dir():
         raise ValueError("Vocoder training run output must be new with an existing parent")
-    deadline = time.monotonic() + maximum_run_seconds
+    started = time.monotonic()
+    deadline = started + maximum_run_seconds
+
+    def report(stage, **values):
+        if on_progress is not None:
+            on_progress(dict(stage=stage, runElapsedSeconds=time.monotonic() - started, **values))
 
     def stopped():
         return (time.monotonic() >= deadline
@@ -89,6 +95,7 @@ total and time limits are capped by the remaining run budgets.
     total_bytes, summaries = 0, []
     written_bytes, retained = 0, []
     initial_parent = parent_receipt_sha256
+    report("run-started", startingCompletedEpochs=completed_epochs, requestedEpochs=epochs)
     for index in range(epochs):
         check_running()
         remaining = maximum_total_checkpoint_bytes - total_bytes
@@ -105,10 +112,18 @@ total and time limits are capped by the remaining run budgets.
             raise RuntimeError("Vocoder training run deadline exceeded; completed checkpoints retained")
         epoch_metadata = dict(metadata, completedEpochs=number, parentReceiptSha256=parent_receipt_sha256)
         allowed_bytes = min(remaining, total_limit)
-        receipt = train_reviewed_vocoder_epoch(generator, discriminators, generator_optimizer, discriminator_optimizer,
-            output=epoch_output, run_metadata=epoch_metadata, reconstruction_directory=reconstruction,
-            **(options | dict(maximum_seconds=seconds, cancelled=stopped,
-                            maximum_checkpoint_file_bytes=file_limit, maximum_checkpoint_total_bytes=allowed_bytes)))
+        report("epoch-started", epoch=number, remainingCheckpointBytes=remaining)
+        def epoch_progress(event):
+            report(event["stage"], epoch=number, **{key: value for key, value in event.items() if key != "stage"})
+        try:
+            receipt = train_reviewed_vocoder_epoch(generator, discriminators, generator_optimizer, discriminator_optimizer,
+                output=epoch_output, run_metadata=epoch_metadata, reconstruction_directory=reconstruction,
+                on_progress=epoch_progress if on_progress is not None else None,
+                **(options | dict(maximum_seconds=seconds, cancelled=stopped,
+                                maximum_checkpoint_file_bytes=file_limit, maximum_checkpoint_total_bytes=allowed_bytes)))
+        except (Exception, KeyboardInterrupt) as error:
+            report("epoch-failed", epoch=number, errorType=type(error).__name__)
+            raise
         payload = encode_report(receipt)
         verify_exact_file(epoch_output / "checkpoint.json", payload)
         if (type(receipt.get("checkpointBytes")) is not int or not 1 <= receipt["checkpointBytes"] <= allowed_bytes
@@ -141,6 +156,8 @@ total and time limits are capped by the remaining run budgets.
                 total_bytes -= prune_checkpoint_binaries(output / old["path"], old["receiptSha256"])
                 old["binariesRetained"] = False
                 retained.pop(0)
+        report("epoch-completed", epoch=number, receiptSha256=parent_receipt_sha256,
+               retainedCheckpointBytes=total_bytes, writtenCheckpointBytes=written_bytes)
     check_running()
     result = dict(formatId="com.project-seam.vocoder-training-run", schemaVersion=1,
         requestedEpochs=epochs, startingCompletedEpochs=completed_epochs, completedEpochs=completed_epochs + epochs,
@@ -151,4 +168,5 @@ total and time limits are capped by the remaining run budgets.
         result.update(schemaVersion=2, retainCheckpoints=retain_checkpoints,
                       writtenCheckpointBytes=written_bytes)
     publish_new(output / "run.json", result)
+    report("run-completed", completedEpochs=completed_epochs + epochs)
     return result

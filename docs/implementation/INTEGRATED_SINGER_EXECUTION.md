@@ -1,5 +1,33 @@
 # Integrated Singer Execution
 
+## Observable vocoder training stages; native packaging confirmed
+
+September 19, 2026 — long-running training now emits structured progress on stderr.
+
+The epoch and multi-epoch services accept optional progress callbacks. The CLI emits flushed JSON
+records for admission, update start, the first/every 25th/final update, re-admission, held-out
+reconstruction, checkpoint publication start, verified epoch completion, and run completion.
+Updates report sample-weighted losses, exact completed/total update counts and elapsed time; epoch
+completion includes the verified receipt digest and retained/cumulative checkpoint byte counts.
+Exceptions during epoch execution emit `epoch-failed` with its epoch number and exception type before
+propagating. Progress records are diagnostics, not completion or qualification receipts. The existing
+single final JSON result on stdout remains intact. Redirect stderr when retaining a training log.
+
+Seventeen focused orchestration, resume, retention and CLI-intake tests pass, including event ordering,
+epoch binding, failure without a false completion event, and a failed update-progress sink preventing
+checkpoint publication. Source closure passes. The currently running process 65038 imported its code
+before this change, so it has not gained these events retroactively and has not been restarted.
+
+The CPU-thread experiment was stopped because it competed with active training and increased memory
+pressure. Its 4-thread measurements (22.340/15.364 seconds) and 8-thread measurements
+(11.498/11.696 seconds) are confounded observations, not grounds for changing the training settings.
+The 12-thread comparison was interrupted. Only the benchmark was stopped; the training process remains
+live. No source, checkpoint, or user data was deleted.
+
+CI run 35438897394 at `bd0021fa` now passes all six plugin-format jobs: macOS/Windows/Linux CLAP,
+clap-validator, and both wrapper source contracts. This confirms the native packaging repairs. The
+main native test matrix is still running and is not covered by that success claim.
+
 ## Neural output windows preserve full musical context
 
 September 19, 2026 — prepared neural snapshots now support owned-output subdivision.

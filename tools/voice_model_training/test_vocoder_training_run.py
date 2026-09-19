@@ -77,6 +77,21 @@ class VocoderEpochTests(unittest.TestCase):
             self.assertEqual(result["validSamples"], 2000)
             self.assertEqual(result["meanGeneratorLoss"], 2.)
             self.assertEqual(refresh.call_count, 3)
+            events = []
+            train_reviewed_vocoder_epoch(None, [], None, None, **options, on_progress=events.append)
+            self.assertEqual([event["stage"] for event in events],
+                ["admission-started", "updates-started", "updates-progress", "readmission-started", "checkpoint-started"])
+            update = events[2]
+            self.assertEqual((update["completedUpdates"], update["totalUpdates"], update["validSamples"]), (1, 1, 2000))
+            self.assertEqual(update["meanGeneratorLoss"], result["meanGeneratorLoss"])
+            self.assertTrue(all(event["elapsedSeconds"] >= 0 for event in events))
+            publish.reset_mock()
+            def reject_progress(event):
+                if event["stage"] == "updates-progress":
+                    raise RuntimeError("progress sink failed")
+            with self.assertRaisesRegex(RuntimeError, "progress sink failed"):
+                train_reviewed_vocoder_epoch(None, [], None, None, **options, on_progress=reject_progress)
+            publish.assert_not_called()
             train_reviewed_vocoder_epoch(None, [], None, None, **options, maximum_checkpoint_total_bytes=12345)
             self.assertEqual(publish.call_args.kwargs["maximum_total_bytes"], 12345)
             step.reset_mock()

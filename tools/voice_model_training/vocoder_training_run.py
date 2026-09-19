@@ -21,7 +21,7 @@ def train_reviewed_vocoder_epoch(generator, discriminators, generator_optimizer,
         maximum_seconds=600, cancelled=None, schedulers=None, expected_dataset_sha256=None,
         maximum_checkpoint_file_bytes=512 * 1024 * 1024, held_out_items=None,
         label_origin=None, reconstruction_directory=None, evaluation_seed=0,
-        pitch_executable=None,
+        pitch_executable=None, on_progress=None,
         maximum_checkpoint_total_bytes=1024 * 1024 * 1024):
     """Use the same admitted phrase segmentation as acoustic training (<=4096 hops).
 
@@ -43,6 +43,7 @@ and item receipts; the complete measurement receipt is also checkpointed.
             or type(maximum_updates) is not int or not 1 <= maximum_updates <= 100000
             or type(maximum_seconds) not in (int, float) or not math.isfinite(maximum_seconds)
             or not 0 < maximum_seconds <= 86400 or cancelled is not None and not callable(cancelled)
+            or on_progress is not None and not callable(on_progress)
             or type(maximum_checkpoint_file_bytes) is not int
             or not 1 <= maximum_checkpoint_file_bytes <= 512 * 1024 * 1024
             or type(maximum_checkpoint_total_bytes) is not int
@@ -54,7 +55,12 @@ and item receipts; the complete measurement receipt is also checkpointed.
     inputs, metadata = deepcopy(dataset_inputs), deepcopy(run_metadata)
     schedulers = _schedulers(schedulers, generator_optimizer, discriminator_optimizer)
     target_inventory, source_inventory = deepcopy(targets), deepcopy(pcm_sources)
-    deadline = time.monotonic() + maximum_seconds
+    started = time.monotonic()
+    deadline = started + maximum_seconds
+
+    def report(stage, **values):
+        if on_progress is not None:
+            on_progress(dict(stage=stage, elapsedSeconds=time.monotonic() - started, **values))
 
     def check_running():
         if cancelled is not None and cancelled():
@@ -73,6 +79,7 @@ and item receipts; the complete measurement receipt is also checkpointed.
         check_running()
         return snapshot
 
+    report("admission-started")
     snapshot = refresh()
     if expected_dataset_sha256 is not None and snapshot["datasetSha256"] != expected_dataset_sha256:
         raise ValueError("Resumed vocoder dataset differs from fresh admission")
@@ -116,6 +123,7 @@ and item receipts; the complete measurement receipt is also checkpointed.
         if time.time() >= snapshot["expiresAt"]:
             raise ValueError("Source review expired during vocoder epoch")
 
+    report("updates-started", totalUpdates=len(selected))
     covered, total, gl, dl = {}, 0, 0.0, 0.0
     for batch in iter_vocoder_batches(snapshot, conditioning_directory, target_inventory, source_inventory,
             expected_profile_sha256=expected_profile_sha256, partition="train", batch_frames=4096):
@@ -136,6 +144,9 @@ and item receipts; the complete measurement receipt is also checkpointed.
         total += count
         gl += result["generatorLoss"] * count
         dl += result["discriminatorLoss"] * count
+        if len(covered) == 1 or len(covered) % 25 == 0 or len(covered) == len(selected):
+            report("updates-progress", completedUpdates=len(covered), totalUpdates=len(selected),
+                   validSamples=total, meanGeneratorLoss=gl / total, meanDiscriminatorLoss=dl / total)
     if covered != expected:
         raise ValueError("Vocoder epoch incomplete; no checkpoint may be published")
 
@@ -144,6 +155,7 @@ and item receipts; the complete measurement receipt is also checkpointed.
         if current["datasetSha256"] != snapshot["datasetSha256"]:
             raise ValueError("Dataset identity changed during vocoder epoch")
 
+    report("readmission-started")
     revalidate()
     for scheduler in (schedulers or {}).values():
         scheduler.step()
@@ -182,6 +194,7 @@ and item receipts; the complete measurement receipt is also checkpointed.
         profiles = [target_inventory[source][0]["profile"] for source in sorted(held_ids)]
         if any(profile != profiles[0] for profile in profiles):
             raise ValueError("Held-out acoustic profiles differ")
+        report("reconstruction-started", heldOutItems=len(held_ids), pitchEnabled=pitch_executable is not None)
         reconstruction_receipt = evaluate_held_out_reconstruction(
             generator_fn=generator,
             items=held_out_batches(),
@@ -195,6 +208,7 @@ and item receipts; the complete measurement receipt is also checkpointed.
         epoch["reconstructionSummary"] = reconstruction_receipt.get("summary")
         epoch["reconstruction"] = reconstruction_receipt
         revalidate()
+    report("checkpoint-started", completedUpdates=len(covered))
     return publish_vocoder_checkpoint(generator, discriminators, generator_optimizer, discriminator_optimizer,
         output, metadata=dict(run=metadata, datasetBindings=snapshot["bindings"],
             datasetSha256=snapshot["datasetSha256"], profileSha256=expected_profile_sha256,

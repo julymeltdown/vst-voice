@@ -62,6 +62,27 @@ class VocoderEpochRunTests(unittest.TestCase):
             self.assertIsNone(train.call_args.kwargs["reconstruction_directory"])
             self.assertTrue((root / "run" / "run.json").exists())
 
+    def test_progress_binds_epoch_and_reports_failure_without_completion(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            events = []
+            def epoch(*args, **kwargs):
+                kwargs["on_progress"](dict(stage="updates-progress", completedUpdates=1, totalUpdates=2,
+                                           elapsedSeconds=.5))
+                if kwargs["run_metadata"]["completedEpochs"] == 2:
+                    raise RuntimeError("training failed")
+                return self.epoch(*args, **kwargs)
+            with patch("tools.voice_model_training.vocoder_epochs.train_reviewed_vocoder_epoch", epoch):
+                with self.assertRaisesRegex(RuntimeError, "training failed"):
+                    run_reviewed_vocoder_epochs(None, [], None, None, output=Path(temporary) / "run",
+                        **self.options(on_progress=events.append))
+            self.assertEqual([event["stage"] for event in events], ["run-started", "epoch-started",
+                "updates-progress", "epoch-completed", "epoch-started", "updates-progress", "epoch-failed"])
+            self.assertEqual([event["epoch"] for event in events[1:]], [1, 1, 1, 2, 2, 2])
+            self.assertEqual(events[-1]["errorType"], "RuntimeError")
+            self.assertEqual(events[3]["retainedCheckpointBytes"], 100)
+            self.assertEqual(len(events[3]["receiptSha256"]), 64)
+            self.assertFalse((Path(temporary) / "run" / "run.json").exists())
+
     def test_failure_and_budget_exhaustion_preserve_last_complete_checkpoint(self):
         for failure in (RuntimeError("fixture failure"), KeyboardInterrupt()):
             with self.subTest(failure=type(failure).__name__), tempfile.TemporaryDirectory() as temporary:
@@ -166,6 +187,7 @@ class VocoderEpochRunTests(unittest.TestCase):
     def test_invalid_options_and_existing_output_rejected_before_epoch(self):
         changes = (dict(epochs=0), dict(epochs=True), dict(epochs=1001), dict(completed_epochs=-1),
                    dict(retain_checkpoints=0), dict(retain_checkpoints=True), dict(retain_checkpoints=1001),
+                   dict(on_progress=False), dict(epoch_options=dict(on_progress=lambda event: None)),
                    dict(completed_epochs=1), dict(parent_receipt_sha256="a" * 64),
                    dict(completed_epochs=1, parent_receipt_sha256="X" * 64),
                    dict(maximum_run_seconds=float("nan")), dict(maximum_run_seconds=True),
