@@ -247,8 +247,22 @@ jobs:
         run: |
           $cert = New-SelfSignedCertificate -Type CodeSigningCert -Subject 'CN=Project SEAM Development Test' -CertStoreLocation Cert:\CurrentUser\My
           Export-Certificate -Cert $cert -FilePath "$env:RUNNER_TEMP\project-seam-development.cer" | Out-Null
-          Import-Certificate -FilePath "$env:RUNNER_TEMP\project-seam-development.cer" -CertStoreLocation Cert:\CurrentUser\Root | Out-Null
+          # Trust the self-signed certificate as a root so signtool can chain it.
+          # Import-Certificate against Cert:\CurrentUser\Root opens a blocking
+          # confirmation prompt that never returns on a non-interactive runner:
+          # this step sat for over two hours before it was diagnosed. The .NET
+          # store API performs the same import without any prompt. The job had
+          # always been skipped because the VST3 job failed first, so the stall
+          # was not observed until that gate was cleared.
+          $store = New-Object System.Security.Cryptography.X509Certificates.X509Store('Root', 'CurrentUser')
+          try {
+            $store.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
+            $store.Add($cert)
+          } finally {
+            $store.Close()
+          }
           "WINDOWS_DEVELOPMENT_SIGN_CERT_SHA1=$($cert.Thumbprint)" | Out-File -FilePath $env:GITHUB_ENV -Append
+          if (-not (Test-Path "Cert:\CurrentUser\Root\$($cert.Thumbprint)")) { throw 'Development root certificate was not trusted' }
       - name: Locate downloaded payload and build unsigned installer
         shell: powershell
         run: |
