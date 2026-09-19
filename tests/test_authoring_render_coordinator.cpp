@@ -459,14 +459,15 @@ TEST_CASE("authoring_render_coordinator_orders_same_revision_publications") {
   std::size_t publicationCalls = 0U;
 
   seam::authoring::RenderCoordinatorHooks hooks;
-  hooks.beforePublication = [&](std::uint64_t revision, std::stop_token) {
+  hooks.beforePublication = [&](std::uint64_t revision, std::stop_token stopToken) {
     if (revision != 301U) return;
     std::unique_lock lock(gateMutex);
     ++publicationCalls;
+    gateCondition.notify_all();
     if (publicationCalls != 1U) return;
     firstEntered = true;
     gateCondition.notify_all();
-    static_cast<void>(gateCondition.wait(lock, [&] { return release; }));
+    static_cast<void>(gateCondition.wait(lock, stopToken, [&] { return release; }));
   };
   seam::authoring::AuthoringRenderCoordinator coordinator{
       uniqueTempRoot("render-coordinator-same-revision"), std::move(hooks)};
@@ -487,33 +488,37 @@ TEST_CASE("authoring_render_coordinator_orders_same_revision_publications") {
         seam::rendering::RenderQuality::Final);
   CHECK(replacementProgress.publishedQuality ==
         seam::rendering::RenderQuality::Preview);
+  const auto deadline = std::chrono::steady_clock::now() +
+                        std::chrono::seconds{120};
   {
-    std::lock_guard lock(gateMutex);
-   release = true;
-   gateCondition.notify_all();
- }
+    std::unique_lock lock(gateMutex);
+    release = true;
+    gateCondition.notify_all();
+    // Release the hook mutex while waiting. Sleeping with it held can starve
+    // either publication hook for the entire timeout on an unfair mutex.
+    CHECK(gateCondition.wait_until(lock, deadline,
+                                  [&] { return publicationCalls >= 2U; }));
+  }
 
- const auto deadline = std::chrono::steady_clock::now() +
-                       std::chrono::seconds{120};
- while (std::chrono::steady_clock::now() < deadline) {
-   const auto progress = coordinator.progress();
-   std::lock_guard lock(gateMutex);
-   if (publicationCalls >= 2U && progress.state == seam::authoring::RenderState::Ready &&
-       progress.publishedQuality == seam::rendering::RenderQuality::Final &&
-       coordinator.stats().completed >= 1U) {
-     break;
-   }
+  while (std::chrono::steady_clock::now() < deadline) {
+    const auto progress = coordinator.progress();
+    if (progress.state == seam::authoring::RenderState::Ready &&
+        progress.publishedQuality == seam::rendering::RenderQuality::Final &&
+        coordinator.stats().completed >= 1U) {
+      break;
+    }
     if (progress.state == seam::authoring::RenderState::Failed) {
       break;
     }
-   std::this_thread::sleep_for(std::chrono::milliseconds{5});
- }
+    std::this_thread::sleep_for(std::chrono::milliseconds{5});
+  }
 
- const auto published = coordinator.acquire();
- CHECK(published);
+  const auto published = coordinator.acquire();
+  CHECK(published);
   if (!published || published->quality != seam::rendering::RenderQuality::Final) {
     const auto prog = coordinator.progress();
     const auto st = coordinator.stats();
+    std::lock_guard lock(gateMutex);
     std::string diag = "DIAG: pubQuality=" +
         std::to_string(published ? static_cast<int>(published->quality) : -1) +
         ", progState=" + std::to_string(static_cast<int>(prog.state)) +
@@ -525,8 +530,8 @@ TEST_CASE("authoring_render_coordinator_orders_same_revision_publications") {
         ", failed=" + std::to_string(st.failed);
     throw seam::test::Failure(diag);
   }
- CHECK(published->quality == seam::rendering::RenderQuality::Final);
- const auto stats = coordinator.stats();
+  CHECK(published->quality == seam::rendering::RenderQuality::Final);
+  const auto stats = coordinator.stats();
   CHECK(stats.completed == 1U);
   CHECK(stats.stale >= 1U);
 }

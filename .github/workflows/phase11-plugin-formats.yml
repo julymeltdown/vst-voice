@@ -49,7 +49,8 @@ jobs:
       - name: Package macOS CLAP
         if: runner.os == 'macOS'
         run: |
-          binary=$(find build/phase11 -type f -name 'ProjectSEAMEditor.clap' | head -1)
+          binary=$(find build/phase11 -type f -path '*/ProjectSEAMEditor.clap/Contents/MacOS/ProjectSEAMEditor' | head -1)
+          test -n "$binary" && test -f "$binary"
           bash scripts/package_macos_clap.sh "$binary" out/ProjectSEAMEditor.clap
       - name: Package Windows CLAP
         if: runner.os == 'Windows'

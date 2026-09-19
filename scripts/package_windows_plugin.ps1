@@ -12,4 +12,6 @@ Copy-Item (Join-Path $root 'packaging\windows\install-project-seam.ps1') $stage
 Copy-Item (Join-Path $root 'packaging\windows\uninstall-project-seam.ps1') $stage
 New-Item -ItemType Directory -Force (Join-Path $stage 'ProjectSEAMEditor.resources') | Out-Null
 Copy-Item (Join-Path $root 'packaging\release-resource-inventory.json') (Join-Path $stage 'ProjectSEAMEditor.resources\release-resource-inventory.json')
+$outputParent = Split-Path -Parent ([System.IO.Path]::GetFullPath($OutputZip))
+New-Item -ItemType Directory -Force $outputParent | Out-Null
 Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $OutputZip -Force

@@ -40,9 +40,9 @@ authoring_render_coordinator_orders_same_revision_publications:
 - seam_authoring_render_coordinator_tests (#57)
 - seam_tests (#106, which includes the same file)
 
-The failure is a genuine stall in the GCC -O3 Release build on Linux: the second (Final-quality)
-render never returns within 120 seconds. This is pre-existing and intermittent, not introduced by
-recent commits. Local macOS builds pass 12/12 runs.
+The failure is a genuine 120-second publication stall in Linux CI. The diagnostic alone does not
+establish whether rendering or the test's publication hook is stalled. The test held the hook mutex
+while sleeping in its polling loop; the repair and current verification are recorded in section 3.2c.
 
 ### 2.3 Landed R4 units
 
@@ -94,11 +94,11 @@ Two further observations narrow it, both from CI logs rather than from reading:
 
 - The two failing tests are `seam_authoring_render_coordinator_tests` and `seam_tests`, the same test
   case in both, and the diagnostic differs between runs (`progState=2, stale=1` in one, `progState=1,
-  stale=0` in the next). A deterministic compiler misoptimization would not change its own diagnostic
-  between runs of the same commit.
+  stale=0` in the next). These snapshots do not establish the cause or exclude a compiler issue.
 - Commit `24db1b55` failed this job while changing only `BETA_READINESS_ISSUES.md`, and `529f006e`
   passed `project-seam-ci` while failing only `phase11-plugin-formats`. No C++ changed in either
-  direction, so this is an intermittent scheduling failure in the coordinator, not a code regression.
+  direction. This shows that the failure can vary without a C++ change; it does not locate the defect
+  in the coordinator rather than in the test.
 
 The reliable reproduction and fix now require either an Ubuntu GCC environment with the coordinator
 under instrumentation, or a host-level investigation of the 20-millisecond coalescing window in
@@ -108,16 +108,36 @@ passes 19 of 19 locally on every run. **Phase 1's exit criterion is therefore no
 the file named in 3.4.** The two CI-blocking defects that were reachable, the uncompilable USTX oracle
 and the stale phase11 source verifier, are fixed and pushed.
 
+### 3.2c Test synchronization defect and new packaging failures (September 19)
+
+Run 35428208489 at `6be73b6f` still fails this case after 125.93 seconds. Source inspection found
+that its polling loop holds `gateMutex` across every 5 ms sleep. Both publication hooks need that
+mutex. Repeated reacquisition can starve the worker; `pubCalls=1` is compatible with either the first
+hook waiting to reacquire it or the second hook waiting to enter. The prior claim that local
+investigation was unavailable was incorrect.
+
+The test now waits on a condition variable for the second hook, releasing the mutex while waiting,
+and polls final publication without that mutex. The first hook responds to cancellation so assertion
+failure can unwind safely. Final quality, exactly one accepted completion, and a stale Preview remain
+required. Five consecutive local runs pass (5.69 seconds total); Linux CI confirmation is pending.
+
+Run 35428208464 confirms phase11 source verification passes. Packaging then fails because macOS
+searches for a flat `.clap` file although CMake emits a bundle, and Windows lacks the ZIP's parent
+directory. The workflow now locates the bundle executable, and the Windows packager creates the
+output parent. Local macOS packaging and plist validation pass; Windows execution awaits CI.
+
 ### 3.3 Fix plan
 
-1. Guard wrappedPhaseDifference against non-finite inputs: return 0 for NaN/inf.
-2. Add instrumentation to workerLoop to report which stage the second render stalls in.
-3. Push and verify against CI.
+1. Verify the corrected test synchronization on Linux CI without extending timeouts.
+2. Verify both platform packaging repairs on their native runners.
+3. Investigate any remaining failure using its new diagnostic; do not infer renderer failure from a
+   hook blocked by the test harness.
 
 ### 3.4 Files to change
 
-- libs/seam-synthesis/src/spectral_classic.cpp:78 -- guard the while loops
-- tests/test_authoring_render_coordinator.cpp -- optional: add stage-reporting hooks
+- tests/test_authoring_render_coordinator.cpp -- release the publication mutex during waits
+- .github/workflows/phase11-plugin-formats.yml -- locate the macOS bundle executable
+- scripts/package_windows_plugin.ps1 -- create the ZIP output parent
 
 ## 4. Development Phases
 
@@ -126,12 +146,12 @@ and the stale phase11 source verifier, are fixed and pushed.
 Goal: Get all CI jobs green, merge to master.
 
 Tasks:
-1. Fix wrappedPhaseDifference infinite loop vulnerability
-2. Verify fix passes CI isolated-release-candidate job
-3. Once all 5 CI jobs pass, fast-forward merge to master
-4. Push master
+1. Land the test synchronization and native packaging repairs described in section 3.2c
+2. Verify the isolated-release-candidate and native matrix jobs
+3. Verify the plugin-format packaging jobs
+4. Keep master and the development branch synchronized without claiming CI acceptance before results
 
-Files: spectral_classic.cpp, possibly render_coordinator.cpp
+Files: see section 3.4
 Duration estimate: 1-2 hours engineering, 30 min CI verification
 
 ### Phase 2: Score Correctness Foundation (V02-V05)

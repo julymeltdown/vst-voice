@@ -1,5 +1,33 @@
 # Integrated Singer Execution
 
+## Publication-test synchronization and native packaging repairs
+
+September 19, 2026 — follow-up against CI at `6be73b6f`.
+
+The previous turn made concrete progress by wiring pitch extraction. This continuation verified
+that CI is terminal rather than queued: run 35428208489 still fails the same-revision publication
+test, while run 35428208464 passes source verification and fails native packaging.
+
+The test held `gateMutex` throughout each polling sleep, which can starve the publication hook on
+an unfair mutex. It now uses a condition-variable wait which releases that mutex,
+then checks final publication without holding it. The first hook is cancellation-aware for safe
+failure teardown, diagnostic counter reads are synchronized, and the original total 120-second
+deadline and stale/accepted publication assertions remain. Five consecutive local coordinator-suite
+runs passed before the final shared-deadline refinement. After that refinement both the focused
+suite and aggregate `seam_tests` passed (34.93 seconds combined). Source closure and phase11 source
+verification pass. Linux confirmation remains pending.
+
+The macOS workflow searched for a flat `.clap` file despite CMake producing a bundle. It now finds
+the bundle's Mach-O executable. Packaging that local binary into a fresh temporary bundle passed,
+including plist validation. The Windows packager now creates the ZIP parent directory, whose absence
+was the exact CI error. PowerShell is unavailable locally; native Windows verification remains pending.
+
+Training observation: PID 54554 is absent, no `train_vocoder` process is present, and epochs 1–6 have
+checkpoint directories. Reconstruction 6 reports mean spectral distance 1.250432 and 12 unresolved
+pitch items; reconstruction 7 has no completed receipt. The log contains only a framework warning,
+so the process exit cause is unknown. No restart or new training success is claimed. Available disk
+space is approximately 6.6 GiB. Singer qualification and release eligibility remain unproven.
+
 ## The reconstruction gate is now evaluable, and it reports a real pitch failure
 
 September 19, 2026 — pitch extraction wired into the held-out vocoder evaluation.
