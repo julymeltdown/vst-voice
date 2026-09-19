@@ -12,6 +12,7 @@ from tools.voice_model_training.vocoder_checkpoint import (
     publish_vocoder_partial_checkpoint, restore_vocoder_partial_checkpoint, restore_vocoder_checkpoint,
 )
 from tools.voice_model_training.vocoder_recovery_cursor import build_recovery_plan, partial_cursor
+from tools.voice_model_training.vocoder_retention import verified_checkpoint_files
 
 
 @unittest.skipUnless(importlib.util.find_spec("torch") and importlib.util.find_spec("numpy"), "Torch/NumPy required")
@@ -52,6 +53,10 @@ class PartialCheckpointTests(unittest.TestCase):
             receipt = publish_vocoder_partial_checkpoint(g, [d], go, do, output, metadata=metadata,
                 recovery_plan=plan, cursor=cursor, schedulers=schedulers)
             self.assertEqual(receipt["formatId"], "com.project-seam.gan-partial-checkpoint")
+            retained, paths = verified_checkpoint_files(output,
+                hashlib.sha256(encode_report(receipt)).hexdigest(), _recovery_plan=plan)
+            self.assertEqual(retained, receipt)
+            self.assertEqual(len(paths), 2)
             self.assertFalse(receipt["epoch"]["epochComplete"])
             bad = Path(temporary) / "false-completion"
             with self.assertRaises(ValueError):

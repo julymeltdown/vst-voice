@@ -4,11 +4,12 @@ import os
 from pathlib import Path
 import stat
 
-from .__main__ import load_config, publish_new
+from .__main__ import encode_report, load_config, publish_new
 from .gan_checkpoint_storage import LIMIT
+from .vocoder_recovery_cursor import verify_partial_cursor
 
 
-def verified_checkpoint_files(directory, receipt_sha256):
+def verified_checkpoint_files(directory, receipt_sha256, *, _recovery_plan=None):
     directory = Path(directory)
     if directory.is_symlink() or not directory.is_dir():
         raise ValueError("Retention requires a real checkpoint directory")
@@ -16,12 +17,24 @@ def verified_checkpoint_files(directory, receipt_sha256):
     if not isinstance(receipt, dict):
         raise ValueError("Retention requires a checkpoint receipt object")
     records = receipt.get("files")
-    if (receipt.get("formatId") != "com.project-seam.gan-checkpoint"
+    if _recovery_plan is not None:
+        if receipt.get("formatId") != "com.project-seam.gan-partial-checkpoint":
+            raise ValueError("Partial retention requires a partial checkpoint")
+        verify_partial_cursor(receipt.get("epoch"), _recovery_plan)
+        metadata = receipt.get("metadata", {})
+        if (not isinstance(metadata, dict)
+                or metadata.get("datasetSha256") != _recovery_plan["datasetSha256"]
+                or metadata.get("profileSha256") != _recovery_plan["profileSha256"]
+                or hashlib.sha256(encode_report(metadata.get("run"))).hexdigest() != _recovery_plan["runSha256"]):
+            raise ValueError("Partial retention run identity differs")
+    elif (receipt.get("formatId") != "com.project-seam.gan-checkpoint"
             or not isinstance(receipt.get("epoch"), dict)
             or receipt.get("epoch", {}).get("epochComplete") is not True
             or receipt.get("epoch", {}).get("coverageVerified") is not True
             or not isinstance(records, list) or len(records) != 2):
         raise ValueError("Retention requires a complete two-file GAN checkpoint")
+    if not isinstance(records, list) or len(records) != 2:
+        raise ValueError("Retention requires exactly two binary records")
     paths = []
     for record, name in zip(records, ("models.pt", "training.pt")):
         if (not isinstance(record, dict) or record.get("path") != name
@@ -63,3 +76,31 @@ def prune_checkpoint_binaries(directory, receipt_sha256):
         receiptSha256=receipt_sha256, removedBytes=receipt["checkpointBytes"],
         resumable=False))
     return receipt["checkpointBytes"]
+
+
+def prune_superseded_partial(root, older, older_sha256, newer, newer_sha256, *, recovery_plan):
+    """Only call with a recovery root created by the current epoch invocation.
+
+    Verify the durable successor and both predecessor binaries before deleting
+    fixed filenames. External resume directories must never be passed as root.
+    """
+    root, older, newer = Path(root), Path(older), Path(newer)
+    if root.is_symlink() or not root.is_dir() or older.parent != root or newer.parent != root or older == newer:
+        raise ValueError("Partial retention requires distinct children of the owned recovery root")
+    successor, _ = verified_checkpoint_files(newer, newer_sha256, _recovery_plan=recovery_plan)
+    previous, paths = verified_checkpoint_files(older, older_sha256, _recovery_plan=recovery_plan)
+    for directory, receipt in ((older, previous), (newer, successor)):
+        if directory.name != f"update-{receipt['epoch']['completedUpdates']:06d}":
+            raise ValueError("Partial retention directory differs from its cursor")
+    if (successor["epoch"]["completedUpdates"] <= previous["epoch"]["completedUpdates"]
+            or successor["metadata"] != previous["metadata"]):
+        raise ValueError("Partial successor must advance the same epoch state lineage")
+    marker = older / "pruned-binaries.json"
+    if marker.exists() or marker.is_symlink():
+        raise ValueError("Partial retention marker already exists")
+    for path in paths:
+        path.unlink()
+    publish_new(marker, dict(formatId="com.project-seam.vocoder-pruned-binaries", schemaVersion=1,
+        receiptSha256=older_sha256, successorReceiptSha256=newer_sha256,
+        removedBytes=previous["checkpointBytes"], resumable=False))
+    return previous["checkpointBytes"]

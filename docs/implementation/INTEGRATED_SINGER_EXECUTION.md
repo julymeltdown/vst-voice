@@ -1,5 +1,24 @@
 # Integrated Singer Execution
 
+## Verified successor prerequisite for partial checkpoint retention
+
+September 19, 2026 — added explicit partial-checkpoint verification and a
+superseded-partial pruning helper. The normal retention reader still refuses
+partial checkpoints. The opt-in path verifies canonical cursor, dataset/profile/
+run identity and both binary hashes without Torch deserialization. Pruning requires
+distinct cursor-named children of a caller-owned recovery root, identical epoch
+metadata and a strictly newer verified successor; original receipts remain with
+a non-resumable pruning record. External resume directories are excluded by the
+caller contract and direct-child validation. No real training artifacts were
+deleted during this change.
+
+Seventeen Torch-environment tests pass, including verification of an actual Torch
+partial receipt, corrupt-successor preservation, reverse-order refusal and wrong
+root refusal. System selection passes 15 cases with one optional skip. This is
+the retention prerequisite, not automatic training retention: loop integration
+and distinct retained-versus-written byte accounting remain required, followed
+by captured-corpus interruption verification. No large training job was started.
+
 ## Partial recovery CLI and multi-epoch ownership
 
 September 19, 2026 — added CLI `--resume-partial` plus its receipt hash, distinct
