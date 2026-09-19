@@ -20,6 +20,39 @@ The register distinguishes implementation from release proof. A source contract,
 
 ## P0: Release blockers
 
+### SEAM-BETA-P0-08: The shipped vocoder is untrained and emits noise, not voice
+
+**Discovered:** 2026-09-19, during the first full-song render through the shipped native worker.
+
+**Evidence**
+
+- The logistic entry in [docs/implementation/INTEGRATED_SINGER_EXECUTION.md](docs/implementation/INTEGRATED_SINGER_EXECUTION.md)
+  states "the vocoder is correct; the acoustic model is not". That claim is withdrawn there, with the
+  measurement that contradicts it.
+- Feeding the vocoder the ground-truth mel of a held-out corpus song plus its measured f0 gives an
+  output whose energy share above 16 kHz is **0.48** and whose spectral peak is **21000 Hz**, against a
+  source that peaks at **294 Hz** with 0.05 above 16 kHz.
+- Rescaling the mel by `1/ln(10)` and by `ln(10)` to test the log-base convention leaves the peak at
+  21000 Hz in both cases, so this is not a normalization mismatch.
+- A constant mel with constant f0 at 110, 220 and 440 Hz produces the same noise instead of the
+  harmonic series the f0 conditioning should place.
+- The checkpoint the shipped export was built from is
+  `/Users/lhs/seam-corpus-2026-09-19/six-vocoder-run-4/epoch-000001`, which records `updates: 3`,
+  `completedEpochs: 1` and `validSamples: 180000`.
+- The project's own retained receipt already reported `meanSpectralDistance` 51.17,
+  `f0MedianErrorCents` 832.9, `pitchStatus` FAIL and `allReconstructionsSatisfied: false`.
+
+**Consequence.** Every acoustic model measurement taken through this vocoder, including the
+`pitch-adherence FAIL` verdicts in the qualification dossiers, was taken through a stage that cannot
+pass them, so those numbers understate what the acoustic stage learned. Two broken links exist in the
+signal path, not one, and the vocoder is upstream of the other.
+
+**Status:** OPEN. A bounded vocoder run (`/Users/lhs/seam-corpus-xl-2026-09-19/vocoder-xl`, 400 epochs,
+60000-update cap, 400-song admitted corpus) was started on 2026-09-19. Closure requires a trained
+checkpoint whose reconstruction receipt reports `allReconstructionsSatisfied: true` against held-out
+source audio, followed by a re-export and a repeated full-song render whose spectrum is consistent with
+the source rather than with broadband noise.
+
 ### SEAM-BETA-P0-01: No rights-cleared, usable Beta Voicebank
 
 **Evidence**
