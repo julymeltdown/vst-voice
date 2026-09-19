@@ -1,5 +1,47 @@
 # Integrated Singer Execution
 
+## The vocoder training plan cannot reach its epoch target at this throughput
+
+September 19, 2026 — measured cost of one vocoder epoch.
+
+```text
+Engineering: DEMONSTRATED
+Creator workflow: NOT_OBSERVED
+Musical review: NOT_REVIEWED
+```
+
+The vocoder run was launched requesting 400 epochs with a 4 GB checkpoint budget. Two measured facts
+about that configuration were not known before it started, and together they make the target
+unreachable:
+
+| measured | value |
+|---|---|
+| wall time per epoch | about 51 minutes (epoch 1 at 14:17, epoch 2 at 15:08) |
+| bytes retained per epoch | 553,464,732 (models.pt 184 MB + training.pt 369 MB) |
+| epochs the 4 GB budget allows | about 7 |
+| wall time for the requested 400 epochs | about 14 days |
+| bytes for the requested 400 epochs | about 211 GB |
+
+So the run stops on its byte budget around epoch 7 long before it stops on its epoch count, and the
+machine has 9 GB free with no second volume to spill to. The per-epoch cost is 304 updates, one whole
+admitted phrase each, on 12 CPU threads; there is no GPU path in this checkout.
+
+Two things this does not mean. It is not evidence that the approach is wrong: the first two epochs moved
+mean spectral distance from 51.17 to 1.272 against a 3.5 threshold, and generated audio that now has
+measurable pitch where the previous checkpoint had none. And it is not a reason to lower the acceptance
+threshold. It means the vocoder needs one of three things before it can finish, none of which is a code
+change and all of which are decisions rather than work:
+
+1. A GPU, which is the difference between 51 minutes and a few seconds per epoch.
+2. Sharded retention, so a completed run keeps only its latest checkpoint plus its receipts instead of
+   every epoch's optimizer state. That removes the byte wall but not the 14-day wall.
+3. A smaller admitted training set for the vocoder than for the acoustic model, since the vocoder run's
+   epoch cost scales with the number of admitted phrases and the acoustic model already shows the
+   corpus is large enough for its own stage.
+
+Status: the vocoder run continues within its budget. Its recorded epochs are real and its receipts are
+retained. trainingAdmitted, singerQualified and releaseEligible remain false.
+
 ## The vocoder does follow f0 on synthetic input, and locks to the hop rate on real mel
 
 September 19, 2026 — correction to the frame-rate-lock entry above.
