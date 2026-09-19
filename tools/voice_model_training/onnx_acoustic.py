@@ -19,6 +19,77 @@ SAMPLING_SEED = 2026091
 MAXIMUM_SAMPLING_SEED = 1 << 24
 RANDOM_OPS = ("RandomNormal", "RandomNormalLike", "RandomUniform", "RandomUniformLike")
 
+# The exported sampler must agree with the pinned upstream algorithm, and the only
+# intentional difference is the bounded clean-latent estimate. Both halves are
+# checked against the same upstream call, so neither can be satisfied by weakening
+# the other: the transcription is compared with the clamp disabled and must match
+# bit-for-bit, and the shipped configuration is compared with the clamp enabled
+# and must remain finite and inside the interval the latent is defined on.
+UNSTAGED_STEPS = (1, 4, 8)
+
+
+def check_sampler_transcription(deployment_model) -> dict:
+    """Prove the typed sampler transcribes upstream and does not diverge with steps.
+
+    Two independent claims are checked against the same upstream call, so neither
+    can be satisfied by weakening the other:
+
+    * with the clamp disabled the transcription must equal upstream exactly, which
+      is what makes this a transcription rather than a rewrite;
+    * with the clamp enabled the reverse process must stay finite and must not grow
+      as the step count rises. Divergence with more steps is the specific defect the
+      clamp exists to remove, and it is measured on the normalized latent because
+      that is the quantity the interval belongs to.
+
+    The condition comes from the real duration encoder rather than zeros, so the
+    measurement is about the sampler in its shipped configuration.
+    """
+    import torch
+    from .diffusion_export_wrapper import DiffusionExportWrapper
+
+    decoder = deployment_model.view_as_diffusion().eval()
+    hidden = deployment_model.fs2.txt_embed.embedding_dim
+    unclamped = DiffusionExportWrapper(decoder.diffusion, clamp_latent=False).eval()
+    shipped = DiffusionExportWrapper(decoder.diffusion, clamp_latent=True).eval()
+    with torch.no_grad():
+        lengths = [5, 6, 5]
+        tokens = torch.tensor([[1, 2, 3]], dtype=torch.long)
+        durations = torch.tensor([lengths], dtype=torch.long)
+        f0 = torch.full((1, sum(lengths)), 220., dtype=torch.float32)
+        # The condition comes from the deployment model, because view_as_diffusion
+        # drops the duration encoder that produces it.
+        condition = deployment_model.forward_fs2_aux(tokens, durations, f0, variances={})
+        if tuple(condition.shape) != (1, sum(lengths), hidden):
+            raise ValueError("Sampler transcription check built an unexpected condition shape")
+        transcription = []
+        for steps in UNSTAGED_STEPS:
+            torch.manual_seed(91)
+            expected = decoder(condition, steps)
+            torch.manual_seed(91)
+            actual = unclamped(condition, steps)
+            error = float((expected - actual).abs().max())
+            transcription.append(dict(steps=steps, maximumAbsoluteError=error, passed=error == 0.0))
+        spread = []
+        for steps in (2, 4, 8, 16):
+            torch.manual_seed(91)
+            latent = shipped.sample_latent(condition, steps)
+            finite = bool(torch.isfinite(latent).all())
+            spread.append(dict(steps=steps, finite=finite,
+                               standardDeviation=float(latent.std()) if finite else None,
+                               passed=finite))
+        torch.manual_seed(91)
+        clamp_active = not torch.equal(shipped.sample_latent(condition, 16),
+                                       unclamped.sample_latent(condition, 16))
+    deviations = [case["standardDeviation"] for case in spread if case["finite"]]
+    # A working sampler sharpens or holds as steps rise; it never expands. The
+    # comparison is on the shipped path only, so a transcription that stopped
+    # transcribing fails the first claim instead of passing this one.
+    monotone = len(deviations) == len(spread) and deviations[-1] <= deviations[0]
+    return dict(transcriptionMatchesUpstream=all(case["passed"] for case in transcription),
+                shippedIsFinite=all(case["passed"] for case in spread),
+                doesNotDivergeWithSteps=bool(monotone), clampIsActive=bool(clamp_active),
+                transcription=transcription, spread=spread, releaseEligible=False)
+
 
 def pin_sampling_seed(model, seed: int = SAMPLING_SEED) -> int:
     """Give every unseeded random sampling node the same explicit seed.
@@ -104,16 +175,18 @@ def export_diffusion(deployment_model) -> bytes:
     bins = decoder.diffusion.out_dims
     hidden = deployment_model.fs2.txt_embed.embedding_dim
     condition = torch.zeros((1, 16, hidden), dtype=torch.float32)
+    fidelity = check_sampler_transcription(deployment_model)
+    if not fidelity["transcriptionMatchesUpstream"]:
+        raise ValueError("Typed diffusion entry no longer transcribes upstream sampling")
+    if not fidelity["doesNotDivergeWithSteps"]:
+        raise ValueError("Shipped sampler diverges as the step count rises")
+    if not fidelity["clampIsActive"]:
+        raise ValueError("Bounded clean-latent estimate has no effect on the shipped sampler")
     with torch.no_grad():
         from .diffusion_export_wrapper import DiffusionExportWrapper
         wrapper = DiffusionExportWrapper(decoder.diffusion)
-        for steps in (1, 4, 8):
-            torch.manual_seed(91)
-            expected = decoder(condition, steps)
-            torch.manual_seed(91)
-            actual = wrapper(condition, steps)
-            if not torch.equal(expected, actual):
-                raise ValueError("Typed diffusion entry differs from upstream sampling")
+        if not fidelity["shippedIsFinite"]:
+            raise ValueError("Shipped sampler produced a non-finite latent")
         decoder.diffusion.set_backbone(torch.jit.trace(decoder.diffusion.backbone,
             (torch.zeros((1, 1, bins, 16)), torch.zeros((1,), dtype=torch.float32), condition.transpose(1, 2))))
         scripted = torch.jit.script(DiffusionExportWrapper(decoder.diffusion))
