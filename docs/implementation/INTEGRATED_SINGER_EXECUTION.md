@@ -1,5 +1,27 @@
 # Integrated Singer Execution
 
+## Linux install smoke resolves paths before changing subprocess directories
+
+September 20, 2026 — diagnosed Linux development-package job 105915734499
+at `24c4fb32`. Compilation and ZIP creation succeeded; smoke failed because
+`out/linux-install-sandbox/extracted/ProjectSEAM/install.sh` was passed to Bash
+while already using the extracted payload as cwd. Sandbox environment paths
+were relative too. Existing tests supplied only absolute temporary paths.
+
+Added a real CLI/subprocess regression using relative package/sandbox/report
+arguments and a sandbox name containing spaces. It reproduced the exact exit-127
+missing-script error before the fix. Smoke now resolves package and sandbox
+paths once before extraction, environment construction and subprocess execution.
+The regression passes and checks install/resource status, uninstall removal and
+absolute sandbox reporting. The shell scripts execute with fixture payload bytes;
+this proves path/install mechanics, not that a native plugin loads or renders.
+
+Full local Phase13A discovery: 181 discovered, four skipped, 177 executed, all
+successful (9.96 seconds); diff check passes. Remote corrected Linux installation
+still needs a new candidate run. Current CLAP validator job has passed; native
+Linux/Windows, isolated release and editor builds are still active. Preserve
+those jobs and push this repair to the development branch only for now.
+
 ## Windows native OpenSSL interpreter selection repaired
 
 September 20, 2026 — inspected failed Phase13A Windows job 105915734611

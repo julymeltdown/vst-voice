@@ -42,6 +42,10 @@ def _safe_extract(package: Path, destination: Path) -> None:
 
 
 def run_smoke(package: Path, sandbox: Path) -> dict[str, object]:
+    # Installer subprocesses run from the extracted payload, not the caller's cwd.
+    # Script paths and sandbox environment paths must share one absolute base.
+    package = package.resolve()
+    sandbox = sandbox.resolve()
     if not package.is_file() or package.stat().st_size == 0:
         raise ValueError("developer package must be a non-empty ZIP file")
     if sandbox.exists():
