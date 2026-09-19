@@ -42,6 +42,14 @@ class VocoderCommandTests(unittest.TestCase):
         self.assertEqual(large['resblock_kernel_sizes'], [3, 7, 11])
         self.assertEqual(large['resblock_dilation_sizes'], [[1, 3, 5]] * 3)
         self.assertEqual(large['hop_size'], legacy['hop_size'])
+        segmented = settings() | dict(schemaVersion=3, architectureProfile='mini-nsf-512-mrf-v1',
+                                      trainingSegmentFrames=128)
+        self.assertEqual(model_settings(segmented), large)
+        for length in (0, True, 15, 4097):
+            with self.subTest(length=length), self.assertRaises(ValueError):
+                model_settings(segmented | dict(trainingSegmentFrames=length))
+        with self.assertRaises(ValueError):
+            model_settings(settings() | dict(trainingSegmentFrames=128))
         for change in (dict(schemaVersion=2), dict(schemaVersion=2, architectureProfile='unknown'),
                        dict(architectureProfile='mini-nsf-512-mrf-v1')):
             with self.subTest(change=change), self.assertRaises(ValueError):

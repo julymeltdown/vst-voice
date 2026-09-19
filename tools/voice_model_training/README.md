@@ -1016,6 +1016,19 @@ chosen 6 GiB RSS safety budget before completing. Use a resource supervisor for
 large probes; the frame bound alone is not a memory guarantee. Retain full-song
 evaluation when investigating shorter training segments.
 
+For bounded segmented updates, use training configuration `schemaVersion: 3` with
+both `architectureProfile` and `trainingSegmentFrames` (16..4096 hops; e.g. 128).
+Schema 1/2 retain whole-phrase behavior. The setting is part of the captured run
+configuration, so changing it is not compatible with an existing resume identity.
+Set `maximumUpdates` high enough for the sum of `ceil(sourceHops / segmentFrames)`
+over all training sources; an epoch is never completed after only the first crop.
+Each source is split into balanced contiguous pieces to avoid a one-hop remainder.
+The final partial hop retains its explicit zero padding and valid sample count.
+Receipts distinguish update count from source count and record each source's coverage.
+Held-out evaluation always uses complete songs. There is no training halo or random
+crop selection in this version: segment boundaries change optimizer context, and
+their musical consequences must be measured rather than presumed harmless.
+
 The CLI and epoch service enforce free-space headroom before allocation, around
 updates/evaluation and before checkpoint serialization. The budget includes the
 configured checkpoint ceiling, retained evaluation WAVs/metadata and a 256 MiB

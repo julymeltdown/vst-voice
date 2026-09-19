@@ -1,5 +1,44 @@
 # Integrated Singer Execution
 
+## Bounded vocoder training segments with complete source ownership
+
+September 19, 2026 — implemented the alternative required by the memory probe.
+
+Training configuration schema 3 requires an explicit `architectureProfile` and
+`trainingSegmentFrames` (16..4096). Schema 1/2 behavior is unchanged. Captured settings
+remain part of the strict resume identity; an old whole-phrase checkpoint is not
+silently resumed under different segmentation.
+
+The batch reader still verifies complete byte-bound source/conditioning/target input,
+then emits owned tensor copies for balanced contiguous frame ranges. Balancing avoids
+a one-hop tail that cannot support the reflection-padded STFT. Per-source PCM, F0 and
+mel ownership is nonoverlapping and complete; only the final partial hop has padding.
+No corpus sample is dropped. The epoch checks exact expected offsets, segment lengths
+and valid sample counts before each update, refuses incomplete/duplicate/reordered
+coverage, and refuses too-small update budgets before touching the optimizer. Receipts
+record updates separately from sources, per-source update counts, geometry and exact
+covered samples. Progress also counts segment updates rather than source files.
+
+Held-out evaluation retains whole-source batches and the same acceptance criteria.
+This version has no training halo, overlap or random crop selection; it changes
+optimizer context at boundaries and does not claim numerical equivalence to full-phrase
+training. Whole-song quality remains the arbiter of whether it is useful.
+
+Verification: all 23 focused command, batch, epoch and orchestration tests pass in the
+actual Torch environment, including owned-copy isolation, partial tail, wrong-offset,
+missing/duplicate segment, insufficient update budget and unchanged held-out geometry.
+Source closure, phase11 source checks and diff checks pass.
+
+Actual retained-corpus data-path check (no new training/admission): source
+`procedural-song-00001`, SHA-256
+`80dab2106e3ccf139fd96efae1220bbe67c93a3f61f91708751368f12b1c4df1`, dataset
+`eb3c842548cc5f2059d1727c70beb495573674e8cd5ca519d7e2a1a8974d3fb5`.
+Its 282,000 valid samples split into nine segments of 123/123/123/123/122/122/122/122/122
+hops, with 112 padding samples in the last segment only. Concatenating each of the
+mel, F0 and PCM tensor sequences is exactly equal to the original whole-source batch.
+This establishes input ownership, not learned singing quality. No long training was
+started during this implementation batch and Beta GO remains open.
+
 ## Measured larger-model update cost and bounded whole-phrase stop
 
 September 19, 2026 — `check_vocoder_model --fixture-frames N` now accepts 16..4096

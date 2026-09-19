@@ -9,7 +9,7 @@ from pathlib import Path
 import time
 
 from .__main__ import assemble_dataset
-from .vocoder_batches import iter_vocoder_batches
+from .vocoder_batches import iter_vocoder_batches, segment_frame_ranges
 from .vocoder_checkpoint import publish_vocoder_checkpoint, _schedulers
 from .vocoder_optimization import vocoder_gan_step
 from .vocoder_reconstruction import evaluate_held_out_reconstruction
@@ -22,9 +22,9 @@ def train_reviewed_vocoder_epoch(generator, discriminators, generator_optimizer,
         maximum_seconds=600, cancelled=None, schedulers=None, expected_dataset_sha256=None,
         maximum_checkpoint_file_bytes=512 * 1024 * 1024, held_out_items=None,
         label_origin=None, reconstruction_directory=None, evaluation_seed=0,
-        pitch_executable=None, on_progress=None,
+        pitch_executable=None, on_progress=None, training_segment_frames=None,
         maximum_checkpoint_total_bytes=1024 * 1024 * 1024):
-    """Use the same admitted phrase segmentation as acoustic training (<=4096 hops).
+    """Admit complete sources (<=4096 hops), optionally train balanced owned segments.
 
 The reconstruction callable and model/configuration provenance are caller-owned.
 Schedulers, if supplied, step once after a complete epoch and are checkpointed.
@@ -33,6 +33,9 @@ held_out_items selects source IDs, never caller-supplied audio or conditioning.
 Selected validation/test phrases are loaded through the same byte-bound batch
 reader as training. An optional existing reconstruction_directory retains WAVs
 and item receipts; the complete measurement receipt is also checkpointed.
+Held-out inference remains whole-source even when training_segment_frames is set.
+Segments introduce independent training boundaries; numerical equivalence to a
+whole-phrase optimizer update is neither expected nor claimed.
 """
     required = {"permission_config", "permission_hash", "label_config", "label_hash", "root",
                 "rights_review", "rights_policy", "rights_anchor", "label_review", "label_policy",
@@ -51,6 +54,9 @@ and item receipts; the complete measurement receipt is also checkpointed.
             or not 1 <= maximum_checkpoint_total_bytes <= 1024 * 1024 * 1024):
         raise ValueError("Invalid vocoder epoch objective or resource bounds")
     output, conditioning_directory = Path(output), Path(conditioning_directory)
+    if training_segment_frames is not None and (type(training_segment_frames) is not int or
+                                                not 16 <= training_segment_frames <= 4096):
+        raise ValueError("Training segment budget must be 16..4096 hops")
     if output.exists() or output.is_symlink() or not output.parent.is_dir():
         raise ValueError("Vocoder epoch needs a new checkpoint directory")
     inputs, metadata = deepcopy(dataset_inputs), deepcopy(run_metadata)
@@ -92,6 +98,12 @@ and item receipts; the complete measurement receipt is also checkpointed.
             or any(type(n) is not int or not 1 <= n <= 4096 for n in phrases.values())
             or any(type(n) is not int or not 1 <= n <= 1048576 for n in expected.values())):
         raise ValueError("Vocoder epoch requires complete bounded whole phrases and enough updates")
+    ranges = {source: (list(segment_frame_ranges(frames, training_segment_frames))
+                      if training_segment_frames is not None else [(0, frames)])
+              for source, frames in phrases.items()}
+    planned_updates = sum(len(parts) for parts in ranges.values())
+    if planned_updates > maximum_updates:
+        raise ValueError("Vocoder update budget cannot cover all training segments")
     held_ids = set()
     partitions = {source: group["partition"] for group in snapshot["bindings"]["split"]["groups"]
                   for source in group["sourceIds"]}
@@ -138,31 +150,42 @@ and item receipts; the complete measurement receipt is also checkpointed.
             raise ValueError("Source review expired during vocoder epoch")
 
     check_lifetime()
-    report("updates-started", totalUpdates=len(selected))
+    report("updates-started", totalUpdates=planned_updates)
     covered, total, gl, dl = {}, 0, 0.0, 0.0
+    source_updates, updates = {}, 0
+    segment_options = {} if training_segment_frames is None else dict(training_segment_frames=training_segment_frames)
     for batch in iter_vocoder_batches(snapshot, conditioning_directory, target_inventory, source_inventory,
-            expected_profile_sha256=expected_profile_sha256, partition="train", batch_frames=4096):
+            expected_profile_sha256=expected_profile_sha256, partition="train", batch_frames=4096, **segment_options):
         check_lifetime()
         identity = batch["sourceId"]
-        if (identity not in selected or identity in covered or batch["partition"] != "train"
+        part = source_updates.get(identity, 0)
+        if identity not in selected or part >= len(ranges[identity]):
+            raise ValueError("Vocoder segment source or ownership is duplicated")
+        begin, end = ranges[identity][part]
+        hop = batch["hopSize"]
+        owned = min((end - begin) * hop, expected[identity] - begin * hop)
+        if (batch["partition"] != "train"
                 or batch["datasetSha256"] != snapshot["datasetSha256"]
-                or batch["profileSha256"] != expected_profile_sha256 or batch["frameOffset"] != 0
-                or batch["mel"].shape[2] != phrases[identity]
-                or batch["validSamples"] != expected[identity]):
+                or batch["profileSha256"] != expected_profile_sha256 or batch["frameOffset"] != begin
+                or batch["mel"].shape[2] != end - begin or owned <= 0
+                or begin * hop != covered.get(identity, 0)
+                or batch["validSamples"] != owned):
             raise ValueError("Vocoder batch identity or whole-phrase coverage differs")
         result = vocoder_gan_step(generator, discriminators, generator_optimizer, discriminator_optimizer,
             mel=batch["mel"], f0=batch["f0"], pcm=batch["pcm"], hop_size=batch["hopSize"],
             partition="train", reconstruction_loss=reconstruction_loss)
         check_lifetime()
         count = batch["validSamples"]
-        covered[identity] = count
+        covered[identity] = covered.get(identity, 0) + count
+        source_updates[identity] = part + 1
+        updates += 1
         total += count
         gl += result["generatorLoss"] * count
         dl += result["discriminatorLoss"] * count
-        if len(covered) == 1 or len(covered) % 25 == 0 or len(covered) == len(selected):
-            report("updates-progress", completedUpdates=len(covered), totalUpdates=len(selected),
+        if updates == 1 or updates % 25 == 0 or updates == planned_updates:
+            report("updates-progress", completedUpdates=updates, totalUpdates=planned_updates,
                    validSamples=total, meanGeneratorLoss=gl / total, meanDiscriminatorLoss=dl / total)
-    if covered != expected:
+    if covered != expected or updates != planned_updates:
         raise ValueError("Vocoder epoch incomplete; no checkpoint may be published")
 
     def revalidate():
@@ -177,10 +200,13 @@ and item receipts; the complete measurement receipt is also checkpointed.
     effective_label_origin = label_origin or snapshot.get("labelOrigin") or metadata.get("labelOrigin") or "unspecified"
     epoch = dict(formatId="com.project-seam.vocoder-epoch-result", schemaVersion=1,
         datasetSha256=snapshot["datasetSha256"], profileSha256=expected_profile_sha256,
-        objectiveId=objective_id, updates=len(covered), sourceCount=len(covered), validSamples=total,
+        objectiveId=objective_id, updates=updates, sourceCount=len(covered), validSamples=total,
         meanGeneratorLoss=gl / total, meanDiscriminatorLoss=dl / total,
         coveredSourceSamples=covered, epochComplete=True, coverageVerified=True,
         labelOrigin=effective_label_origin, trainingAdmitted=False, releaseEligible=False)
+    if training_segment_frames is not None:
+        epoch.update(trainingSegmentFrames=training_segment_frames, sourceUpdates=source_updates,
+                     trainingGeometry="balanced-contiguous-complete-coverage-v1")
     if held_ids:
         def held_out_batches():
             seen = set()
@@ -223,7 +249,7 @@ and item receipts; the complete measurement receipt is also checkpointed.
         epoch["reconstructionSummary"] = reconstruction_receipt.get("summary")
         epoch["reconstruction"] = reconstruction_receipt
         revalidate()
-    report("checkpoint-started", completedUpdates=len(covered))
+    report("checkpoint-started", completedUpdates=updates)
     # before_publish runs after writing binaries; checking there would require
     # headroom for a second copy. Check immediately before serialization instead.
     check_storage()

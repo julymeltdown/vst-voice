@@ -26,12 +26,17 @@ def model_settings(value):
     fields = {'formatId', 'schemaVersion', 'seed', 'learningRate', 'learningRateDecay',
               'maximumUpdates', 'maximumSeconds', 'cpuThreads', 'evaluationSeed',
               'heldOutSources', 'labelOrigin'}
-    if isinstance(value, dict) and type(value.get('schemaVersion')) is int and value['schemaVersion'] == 2:
+    if isinstance(value, dict) and type(value.get('schemaVersion')) is int and value['schemaVersion'] in (2, 3):
         fields.add('architectureProfile')
+        if value['schemaVersion'] == 3:
+            fields.add('trainingSegmentFrames')
     if (not isinstance(value, dict) or set(value) != fields
             or value['formatId'] != 'com.project-seam.vocoder-training-config'
-            or type(value['schemaVersion']) is not int or value['schemaVersion'] not in (1, 2)):
+            or type(value['schemaVersion']) is not int or value['schemaVersion'] not in (1, 2, 3)):
         raise ValueError('Unsupported vocoder training configuration')
+    if value['schemaVersion'] == 3 and (type(value['trainingSegmentFrames']) is not int or
+                                        not 16 <= value['trainingSegmentFrames'] <= 4096):
+        raise ValueError('Training segments require 16..4096 analysis hops')
     for key, lower, upper in (('seed', 0, 2**63-1), ('evaluationSeed', 0, 2**63-1),
                                ('cpuThreads', 1, 32), ('maximumUpdates', 1, 100000)):
         if type(value[key]) is not int or not lower <= value[key] <= upper:
@@ -223,7 +228,8 @@ def main(argv=None):
                 schedulers=schedulers, expected_dataset_sha256=snapshot['datasetSha256'],
                 held_out_items=settings['heldOutSources'], label_origin=settings['labelOrigin'],
                 evaluation_seed=settings['evaluationSeed'],
-                pitch_executable=args.pitch_executable))
+                pitch_executable=args.pitch_executable,
+                training_segment_frames=settings.get('trainingSegmentFrames')))
         print(json.dumps(result, sort_keys=True))
         return 0
     except KeyboardInterrupt:
