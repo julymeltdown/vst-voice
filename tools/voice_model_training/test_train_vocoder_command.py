@@ -3,9 +3,12 @@ import hashlib
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
+from types import SimpleNamespace
 
 from tools.voice_model_training.__main__ import encode_report, publish_new
 from tools.voice_model_training.train_vocoder import model_settings, load_pcm_sources, resume_identity
+from tools.voice_model_training.gan_checkpoint_storage import require_disk_headroom, DISK_RESERVE_BYTES
 
 
 def settings():
@@ -16,6 +19,21 @@ def settings():
 
 
 class VocoderCommandTests(unittest.TestCase):
+    def test_disk_headroom_boundary_and_invalid_budgets(self):
+        with patch('tools.voice_model_training.gan_checkpoint_storage.shutil.disk_usage') as usage:
+            usage.return_value = SimpleNamespace(free=DISK_RESERVE_BYTES + 100)
+            self.assertEqual(require_disk_headroom(Path('/tmp'), 100)['requiredBytes'],
+                             DISK_RESERVE_BYTES + 100)
+            with self.assertRaises(OSError) as raised:
+                require_disk_headroom(Path('/tmp'), 101)
+            self.assertEqual(raised.exception.errno, 28)
+            for value in (-1, True, 1.5):
+                with self.subTest(value=value), self.assertRaises(ValueError):
+                    require_disk_headroom(Path('/tmp'), value)
+            usage.side_effect = OSError('volume unavailable')
+            with self.assertRaisesRegex(OSError, 'volume unavailable'):
+                require_disk_headroom(Path('/tmp'), 100)
+
     def test_larger_architecture_is_explicit_not_a_legacy_default_change(self):
         legacy = model_settings(settings())
         large = model_settings(settings() | dict(schemaVersion=2, architectureProfile='mini-nsf-512-mrf-v1'))

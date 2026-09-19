@@ -997,6 +997,14 @@ failure. The larger model's upstream training/deployment PyTorch forward parity 
 been checked at 1/3/16/23 frames; learned quality, new training and its ONNX export
 are separate experiments that must still pass. Do not launch while storage is low.
 
+The CLI and epoch service enforce free-space headroom before allocation, around
+updates/evaluation and before checkpoint serialization. The budget includes the
+configured checkpoint ceiling, retained evaluation WAVs/metadata and a 256 MiB
+safety reserve. It is a conservative check, not an OS reservation: concurrent disk
+use can still fail a write. A failed publication without `checkpoint.json` is not
+resumable. Resume only an earlier complete checkpoint into a new directory; no
+automatic deletion or restart is performed by the trainer.
+
 For future acoustic training, generate explicit pause examples with
 `generate_procedural_corpus --include-pauses`; preparation retains `pau` as a distinct
 rest token. Select that same symbol in the deployed surface's silence setting

@@ -9,6 +9,11 @@ from tools.voice_model_training.vocoder_training_run import train_reviewed_vocod
 
 
 class VocoderEpochTests(unittest.TestCase):
+    def setUp(self):
+        storage = patch("tools.voice_model_training.vocoder_training_run.require_disk_headroom")
+        self.storage = storage.start()
+        self.addCleanup(storage.stop)
+
     def test_held_out_selection_and_batch_identity_cannot_bypass_partition(self):
         import numpy as np
         snapshot = dict(schemaVersion=3, preparationIssues=[], sourcePermissionsAdmitted=True,
@@ -94,6 +99,20 @@ class VocoderEpochTests(unittest.TestCase):
             publish.assert_not_called()
             train_reviewed_vocoder_epoch(None, [], None, None, **options, maximum_checkpoint_total_bytes=12345)
             self.assertEqual(publish.call_args.kwargs["maximum_total_bytes"], 12345)
+            step.reset_mock()
+            publish.reset_mock()
+            self.storage.side_effect = OSError(28, "no checkpoint headroom")
+            with self.assertRaisesRegex(OSError, "headroom"):
+                train_reviewed_vocoder_epoch(None, [], None, None, **options)
+            step.assert_not_called()
+            publish.assert_not_called()
+            # Space can disappear during an update. Refuse publication as well.
+            self.storage.side_effect = [None, None, OSError(28, "headroom lost")]
+            with self.assertRaisesRegex(OSError, "headroom lost"):
+                train_reviewed_vocoder_epoch(None, [], None, None, **options)
+            step.assert_called_once()
+            publish.assert_not_called()
+            self.storage.side_effect = None
             step.reset_mock()
             for bound in (0, True, 1024 * 1024 * 1024 + 1):
                 with self.assertRaises(ValueError):

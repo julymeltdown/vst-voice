@@ -13,6 +13,7 @@ from .vocoder_batches import iter_vocoder_batches
 from .vocoder_checkpoint import publish_vocoder_checkpoint, _schedulers
 from .vocoder_optimization import vocoder_gan_step
 from .vocoder_reconstruction import evaluate_held_out_reconstruction
+from .gan_checkpoint_storage import require_disk_headroom
 
 
 def train_reviewed_vocoder_epoch(generator, discriminators, generator_optimizer, discriminator_optimizer,
@@ -118,11 +119,25 @@ and item receipts; the complete measurement receipt is also checkpointed.
     if type(evaluation_seed) is not int or not 0 <= evaluation_seed < 2**63:
         raise ValueError("Vocoder evaluation requires a nonnegative 63-bit seed")
 
+    checkpoint_budget = min(maximum_checkpoint_total_bytes, 2 * maximum_checkpoint_file_bytes)
+    # Retained float WAVs plus a conservative metadata allowance per item.
+    evaluation_budget = (sum(source_rows[source]["frameCount"] * 4 + 1024 * 1024
+                             for source in held_ids) if reconstruction_directory is not None else 0)
+
+    def check_storage():
+        require_disk_headroom(output.parent, checkpoint_budget + evaluation_budget)
+        if reconstruction_directory is not None:
+            # It may reside on another volume. Checking the aggregate on both
+            # paths is intentionally conservative, not an actual reservation.
+            require_disk_headroom(Path(reconstruction_directory), checkpoint_budget + evaluation_budget)
+
     def check_lifetime():
         check_running()
+        check_storage()
         if time.time() >= snapshot["expiresAt"]:
             raise ValueError("Source review expired during vocoder epoch")
 
+    check_lifetime()
     report("updates-started", totalUpdates=len(selected))
     covered, total, gl, dl = {}, 0, 0.0, 0.0
     for batch in iter_vocoder_batches(snapshot, conditioning_directory, target_inventory, source_inventory,
@@ -209,6 +224,9 @@ and item receipts; the complete measurement receipt is also checkpointed.
         epoch["reconstruction"] = reconstruction_receipt
         revalidate()
     report("checkpoint-started", completedUpdates=len(covered))
+    # before_publish runs after writing binaries; checking there would require
+    # headroom for a second copy. Check immediately before serialization instead.
+    check_storage()
     return publish_vocoder_checkpoint(generator, discriminators, generator_optimizer, discriminator_optimizer,
         output, metadata=dict(run=metadata, datasetBindings=snapshot["bindings"],
             datasetSha256=snapshot["datasetSha256"], profileSha256=expected_profile_sha256,

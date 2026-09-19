@@ -4,12 +4,28 @@ Each file is at most 512 MiB, combined at most 1 GiB. Loading trusted Torch stat
 can require more memory than file size; this is not hostile-archive admission.
 """
 import hashlib
+import errno
 import io
 import json
 import os
 import stat
+import shutil
 
 LIMIT = 512 * 1024 * 1024
+DISK_RESERVE_BYTES = 256 * 1024 * 1024
+
+
+def require_disk_headroom(directory, pending_bytes):
+    """Conservative check, not a reservation against concurrent writes."""
+    if type(pending_bytes) is not int or pending_bytes < 0:
+        raise ValueError("Pending checkpoint/evaluation bytes must be nonnegative")
+    free = shutil.disk_usage(directory).free
+    required = pending_bytes + DISK_RESERVE_BYTES
+    if free < required:
+        raise OSError(errno.ENOSPC,
+                      f"Vocoder needs {required} free bytes including safety reserve; "
+                      f"only {free} available. No automatic cleanup or restart.", str(directory))
+    return dict(freeBytes=free, requiredBytes=required, reserveBytes=DISK_RESERVE_BYTES)
 
 
 def _bytes(value):

@@ -17,6 +17,7 @@ from .__main__ import assemble_dataset, load_config, load_dataset_inputs
 from .check_vocoder_model import TRAINING_REVISION, trusted_checkout, vocoder_configuration
 from .train import load_targets
 from .vocoder_checkpoint import restore_vocoder_checkpoint
+from .gan_checkpoint_storage import require_disk_headroom
 
 OBJECTIVE_ID = 'nsf-lsgan-logmel-48k80-v1'
 
@@ -152,6 +153,8 @@ def main(argv=None):
             raise ValueError('Invalid bounded vocoder run limits')
         settings = load_config(args.training_config, args.training_sha256)
         configuration = model_settings(settings)
+        # Refuse before corpus assembly or Torch model/optimizer allocation.
+        require_disk_headroom(args.output.parent, min(args.maximum_total_checkpoint_bytes, 1024**3))
         inputs = load_dataset_inputs(args.dataset_config, args.dataset_sha256, args.source_root,
             rights_anchor=args.rights_policy_sha256, label_anchor=args.label_policy_sha256)
         targets, profile = load_targets(args.targets, args.targets_sha256)

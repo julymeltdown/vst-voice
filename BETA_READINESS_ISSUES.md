@@ -58,9 +58,13 @@ voiced pairs**, and **12/12 FAIL**, with zero unresolved items. For song 00008, 
 exactly with its conditioning on the measured comparison frames while rendered pitch remains near
 187.5 Hz. Thus synthetic conditioning response does not establish realistic reconstruction.
 
-The live continuation `vocoder-xl-pitch-r1` resumes epoch 6 for three more epochs, enables native pitch
-extraction, and retains the newest two new checkpoints under a 2 GiB binary budget. Rolling retention
-addresses checkpoint growth but does not fix pitch quality. See the execution log for artifact hashes.
+The continuation `vocoder-xl-pitch-r1` stopped with ENOSPC during epoch-seven checkpoint publication.
+Its completed evaluation still fails: mean spectral distance 1.239364 and mean pitch error
+1506.023 cents. No epoch-seven completion receipt exists; epoch six remains the verified resume point.
+The failed run's partial optimizer binary was removed to recover working space; model bytes and
+evaluation evidence remain. New disk-headroom checks run before allocation, around updates and before
+checkpoint serialization. Rolling retention cannot free an old checkpoint before a verified successor
+exists and does not fix pitch quality. See the execution log for artifact hashes and exact limitations.
 
 **The closure condition originally written here was unreachable and has been corrected.** It required a
 reconstruction receipt reporting `allReconstructionsSatisfied: true`, which is `spec_ok and pitch_ok and

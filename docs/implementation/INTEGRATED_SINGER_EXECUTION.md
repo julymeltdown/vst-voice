@@ -1,5 +1,42 @@
 # Integrated Singer Execution
 
+## Disk exhaustion now checked before expensive vocoder work
+
+September 19, 2026 — follows the confirmed ENOSPC exit, not a training restart.
+
+The CLI now checks disk headroom before dataset assembly and Torch model/optimizer
+allocation. The epoch service checks before the first update, around every update,
+during held-out evaluation, and immediately before checkpoint serialization. Required
+space is the configured per-checkpoint ceiling (bounded by both file and aggregate
+limits), retained float-WAV sizes plus 1 MiB metadata allowance per held-out item,
+and a 256 MiB safety reserve. Checkpoint and evaluation destinations are both checked
+conservatively, including when they reside on different volumes.
+
+This is not a filesystem reservation: another process can consume space after a
+check. Existing short-write/ENOSPC detection and receipt-last publication still apply.
+The final receipt callback deliberately does not demand room for another checkpoint
+after the binaries have already been written. Failure invalidates the current attempt;
+only an earlier completed checkpoint may be resumed. No automatic cleanup or restart
+was added, and disk requirements do not weaken source/label admission.
+
+Storage pressure briefly prevented a source patch; the worktree remained unchanged
+after that failure. To recover editing room, removed exactly the failed run's
+`/Users/lhs/seam-corpus-xl-2026-09-19/vocoder-xl-pitch-r1/epoch-000007/training.pt`
+(347,896,000 bytes). The file was a partial optimizer publication with no completion
+receipt. It is not recoverable via this cleanup and cannot be recreated exactly from
+the partial checkpoint; another epoch must start from verified epoch six. The
+184,529,823-byte `models.pt`, reconstruction receipts/audio, and every complete
+checkpoint remain untouched. This supersedes the earlier statement that both partial
+files were retained. No unrelated user data was deleted.
+
+Nineteen focused command/epoch/orchestration tests ran: 18 passed, one optional Torch
+test skipped. Tests cover exact free-space boundary, invalid budgets, unavailable
+volume, refusal before an update, and space lost during an update with no publication.
+Source closure, phase11 source verification and diff checks pass. A live headroom
+query later observed 1,943,252,992 free bytes versus 1,342,177,280 required and passed;
+free space is fluctuating, so this is not a promise that another training run fits.
+The failed training run remains stopped; no new model quality or Beta GO is claimed.
+
 ## Real-mel F0 intervention and explicit non-smoke vocoder capacity
 
 September 19, 2026 — the live training run was left unchanged.
