@@ -1,5 +1,40 @@
 # Integrated Singer Execution
 
+## Distinct partial GAN state transport with real continuation equivalence
+
+September 19, 2026 — connected the exact recovery cursor to an explicit
+`com.project-seam.gan-partial-checkpoint` transport. Normal complete-checkpoint
+loading still refuses this format before Torch decoding. The opt-in partial
+publisher/loader verifies the canonical cursor and binds its dataset/profile/run
+identities to checkpoint metadata; the GAN boundary is `partial-update`, never
+`complete-epoch`. Existing full-epoch transport semantics remain unchanged.
+
+Partial state carries generator/discriminator tensors, both optimizer states,
+scheduler states, Python and NumPy RNG, and Torch RNG through the existing bounded
+two-file local transport. This is trusted local state, not public checkpoint import
+or source admission. Actual training must still freshly admit its dataset before
+restore and discard all owners if restoration fails.
+
+A real small Torch fixture saves after an update, continues twice uninterrupted,
+then restores into fresh owners and repeats those stochastic updates. Losses and
+all model tensors match exactly, as do scheduler state and all three RNG streams.
+Tests also refuse changed run/dataset identity, false completion, corrupt binary
+bytes before decoding, and size-budget failure without publishing a receipt.
+This establishes state-transport equivalence, not segmented training-loop restart
+equivalence or correctness on the large singer model. Periodic update-boundary
+publication, verified-prefix replay, CLI selection and retention are still to be
+connected before any long vocoder run is restarted. No old failed state was
+recovered and no large checkpoint was written on the low-space disk.
+
+Verification: 36 real Torch-environment checkpoint/cursor/epoch/reconstruction/
+orchestration tests pass; after stricter partial metadata type comparison, the
+five checkpoint/partial-checkpoint cases pass again. Full system discovery passes
+221 tests with 36 optional skips (185 executed). The first broad run exposed a
+mock-publisher reconstruction test depending on actual host free space; isolated
+its storage check, matching its mocked training/publication scope. Production
+storage guards and dedicated low-space refusal tests are unchanged. Source closure,
+phase11 source and diff checks pass. Disk remains about 1.0 GiB free.
+
 ## Partial-epoch recovery cursor contract, not yet a resumable GAN checkpoint
 
 September 19, 2026 — added `vocoder_recovery_cursor` as the first layer of

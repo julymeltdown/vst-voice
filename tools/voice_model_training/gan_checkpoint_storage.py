@@ -33,15 +33,19 @@ def _bytes(value):
 
 
 def publish_checkpoint(model, optimizer, output, *, metadata, epoch, maximum_bytes=LIMIT,
-                       maximum_total_bytes=2 * LIMIT, before_publish=None):
+                       maximum_total_bytes=2 * LIMIT, before_publish=None, _recovery_plan=None):
     import torch
     from .__main__ import publish_new
     if (type(maximum_bytes) is not int or not 1 <= maximum_bytes <= LIMIT
             or type(maximum_total_bytes) is not int or not 1 <= maximum_total_bytes <= 2 * LIMIT
             or not isinstance(metadata, dict) or not isinstance(epoch, dict)
-            or epoch.get("epochComplete") is not True or epoch.get("coverageVerified") is not True
+            or (_recovery_plan is None and
+                (epoch.get("epochComplete") is not True or epoch.get("coverageVerified") is not True))
             or before_publish is not None and not callable(before_publish)):
         raise ValueError("Require complete epoch, per-file bound up to 512 MiB and aggregate bound up to 1 GiB")
+    if _recovery_plan is not None:
+        from .vocoder_recovery_cursor import verify_partial_cursor
+        verify_partial_cursor(epoch, _recovery_plan)
     captured = _bytes(dict(metadata=metadata, epoch=epoch))
     if len(captured) > 1024 * 1024:
         raise ValueError("GAN metadata exceeds 1 MiB")
@@ -92,7 +96,8 @@ def publish_checkpoint(model, optimizer, output, *, metadata, epoch, maximum_byt
         records.append(dict(path=name, bytes=count, sha256=digest.hexdigest()))
     if before_publish is not None:
         before_publish()
-    receipt = dict(formatId="com.project-seam.gan-checkpoint", schemaVersion=1,
+    receipt = dict(formatId=("com.project-seam.gan-partial-checkpoint" if _recovery_plan is not None
+                            else "com.project-seam.gan-checkpoint"), schemaVersion=1,
                    files=records, checkpointBytes=sum(r["bytes"] for r in records),
                    checkpointSha256=hashlib.sha256(_bytes(records)).hexdigest(),
                    metadataSha256=hashlib.sha256(captured).hexdigest(), torchVersion=str(torch.__version__),
@@ -101,7 +106,7 @@ def publish_checkpoint(model, optimizer, output, *, metadata, epoch, maximum_byt
     return receipt
 
 
-def load_local_checkpoint(directory, *, receipt_sha256, maximum_bytes=LIMIT):
+def load_local_checkpoint(directory, *, receipt_sha256, maximum_bytes=LIMIT, _recovery_plan=None):
     import torch
     from .__main__ import load_config
     from .checkpoint import load_local_checkpoint as legacy_load
@@ -110,19 +115,24 @@ def load_local_checkpoint(directory, *, receipt_sha256, maximum_bytes=LIMIT):
     if directory.is_symlink() or not directory.is_dir():
         raise ValueError("GAN checkpoint directory must be real")
     receipt = load_config(directory / "checkpoint.json", receipt_sha256)
-    if isinstance(receipt, dict) and receipt.get("formatId") == "com.project-seam.training-checkpoint":
+    if _recovery_plan is None and isinstance(receipt, dict) and receipt.get("formatId") == "com.project-seam.training-checkpoint":
         return legacy_load(directory, receipt_sha256=receipt_sha256, maximum_bytes=maximum_bytes)
     fields = {"formatId", "schemaVersion", "files", "checkpointBytes", "checkpointSha256",
               "metadataSha256", "torchVersion", "metadata", "epoch", "trainingAdmitted", "releaseEligible"}
     if (not isinstance(receipt, dict) or set(receipt) != fields
-            or receipt["formatId"] != "com.project-seam.gan-checkpoint"
+            or receipt["formatId"] != ("com.project-seam.gan-partial-checkpoint" if _recovery_plan is not None
+                                       else "com.project-seam.gan-checkpoint")
             or type(receipt["schemaVersion"]) is not int or receipt["schemaVersion"] != 1
             or receipt["torchVersion"] != str(torch.__version__)
             or not isinstance(receipt["metadata"], dict) or not isinstance(receipt["epoch"], dict)
-            or receipt["epoch"].get("epochComplete") is not True or receipt["epoch"].get("coverageVerified") is not True
+            or (_recovery_plan is None and (receipt["epoch"].get("epochComplete") is not True
+                                            or receipt["epoch"].get("coverageVerified") is not True))
             or receipt["trainingAdmitted"] is not False or receipt["releaseEligible"] is not False
             or not isinstance(receipt["files"], list) or len(receipt["files"]) != 2):
         raise ValueError("Invalid GAN completion receipt")
+    if _recovery_plan is not None:
+        from .vocoder_recovery_cursor import verify_partial_cursor
+        verify_partial_cursor(receipt["epoch"], _recovery_plan)
     captured = _bytes(dict(metadata=receipt["metadata"], epoch=receipt["epoch"]))
     if len(captured) > 1024 * 1024 or hashlib.sha256(captured).hexdigest() != receipt["metadataSha256"]:
         raise ValueError("GAN metadata identity differs")

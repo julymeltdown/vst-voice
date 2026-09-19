@@ -363,6 +363,7 @@ class VocoderReconstructionTests(unittest.TestCase):
                     phraseAnalysisFrames=8)
         prefix = "tools.voice_model_training.vocoder_training_run."
         with tempfile.TemporaryDirectory() as root, patch(prefix + "time.time", return_value=100), \
+                patch(prefix + "require_disk_headroom"), \
                 patch(prefix + "assemble_dataset", return_value=snapshot), \
                 patch(prefix + "iter_vocoder_batches", side_effect=lambda *a, **k:
                       iter([batch] if k["partition"] == "train" else [held])), \

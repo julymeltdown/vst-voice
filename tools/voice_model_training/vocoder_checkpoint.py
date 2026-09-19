@@ -4,6 +4,7 @@ No third-party checkpoint import or source authorization is provided. Caller mus
 re-admit the dataset before continuing and discard objects after a failed restore.
 """
 import random
+import hashlib
 
 from .gan_checkpoint_storage import load_local_checkpoint, publish_checkpoint
 
@@ -25,14 +26,21 @@ def _owners(generator, discriminators, generator_optimizer, discriminator_optimi
     return owners
 
 
-def _metadata(metadata, count, go, do, schedulers):
+def _metadata(metadata, count, go, do, schedulers, recovery_plan=None):
     import numpy as np
     if not isinstance(metadata, dict) or "ganCheckpoint" in metadata:
         raise ValueError("Caller metadata must not override GAN checkpoint identity")
+    if recovery_plan is not None:
+        from .__main__ import encode_report
+        if (metadata.get("datasetSha256") != recovery_plan["datasetSha256"]
+                or metadata.get("profileSha256") != recovery_plan["profileSha256"]
+                or not isinstance(metadata.get("run"), dict)
+                or hashlib.sha256(encode_report(metadata["run"])).hexdigest() != recovery_plan["runSha256"]):
+            raise ValueError("Partial checkpoint plan differs from captured run/dataset/profile identity")
     def identity(value):
         return f"{type(value).__module__}.{type(value).__qualname__}"
     return dict(metadata, ganCheckpoint=dict(schemaVersion=1, discriminatorCount=count,
-        numpyVersion=str(np.__version__), boundary="complete-epoch",
+        numpyVersion=str(np.__version__), boundary="partial-update" if recovery_plan is not None else "complete-epoch",
         optimizerTypes=dict(generator=identity(go), discriminator=identity(do)),
         schedulerTypes={name: identity(value) for name, value in schedulers.items()}))
 
@@ -63,24 +71,32 @@ def _schedulers(schedulers, go, do):
 def publish_vocoder_checkpoint(generator, discriminators, generator_optimizer, discriminator_optimizer,
                                output, *, metadata, epoch, schedulers=None,
                                maximum_bytes=512 * 1024 * 1024,
-                               maximum_total_bytes=1024 * 1024 * 1024, before_publish=None):
+                               maximum_total_bytes=1024 * 1024 * 1024, before_publish=None,
+                               _recovery_plan=None):
     owners = _owners(generator, discriminators, generator_optimizer, discriminator_optimizer)
     schedulers = _schedulers(schedulers, generator_optimizer, discriminator_optimizer)
     return publish_checkpoint(owners, _TrainingState(generator_optimizer, discriminator_optimizer, schedulers),
-        output, metadata=_metadata(metadata, len(discriminators), generator_optimizer, discriminator_optimizer, schedulers), epoch=epoch,
-        maximum_bytes=maximum_bytes, maximum_total_bytes=maximum_total_bytes, before_publish=before_publish)
+        output, metadata=_metadata(metadata, len(discriminators), generator_optimizer, discriminator_optimizer, schedulers, _recovery_plan), epoch=epoch,
+        maximum_bytes=maximum_bytes, maximum_total_bytes=maximum_total_bytes, before_publish=before_publish,
+        _recovery_plan=_recovery_plan)
 
 
 def restore_vocoder_checkpoint(generator, discriminators, generator_optimizer, discriminator_optimizer,
                                directory, *, receipt_sha256, expected_metadata, schedulers=None,
-                               maximum_bytes=512 * 1024 * 1024):
+                               maximum_bytes=512 * 1024 * 1024, _recovery_plan=None):
     import numpy as np
     import torch
     owners = _owners(generator, discriminators, generator_optimizer, discriminator_optimizer)
     schedulers = _schedulers(schedulers, generator_optimizer, discriminator_optimizer)
-    state, receipt = load_local_checkpoint(directory, receipt_sha256=receipt_sha256, maximum_bytes=maximum_bytes)
-    if state["metadata"] != _metadata(expected_metadata, len(discriminators), generator_optimizer, discriminator_optimizer, schedulers):
+    state, receipt = load_local_checkpoint(directory, receipt_sha256=receipt_sha256, maximum_bytes=maximum_bytes,
+                                            _recovery_plan=_recovery_plan)
+    expected = _metadata(expected_metadata, len(discriminators), generator_optimizer, discriminator_optimizer, schedulers, _recovery_plan)
+    if state["metadata"] != expected:
         raise ValueError("GAN checkpoint metadata differs from expected run identity")
+    if _recovery_plan is not None:
+        from .__main__ import encode_report
+        if encode_report(state["metadata"]) != encode_report(expected):
+            raise ValueError("Partial checkpoint metadata types differ from captured run identity")
     training = state["optimizer"]
     if (not isinstance(training, dict) or set(training) != {
             "generator", "discriminator", "schedulers", "pythonRng", "numpyRng"}
@@ -105,3 +121,15 @@ def restore_vocoder_checkpoint(generator, discriminators, generator_optimizer, d
     np.random.set_state(numpy_state)
     torch.set_rng_state(state["rng"])
     return receipt
+
+
+def publish_vocoder_partial_checkpoint(*args, recovery_plan, cursor, **kwargs):
+    """Explicit partial transport; no complete-epoch receipt or authority implied."""
+    from .vocoder_recovery_cursor import verify_partial_cursor
+    verify_partial_cursor(cursor, recovery_plan)
+    return publish_vocoder_checkpoint(*args, epoch=cursor, _recovery_plan=recovery_plan, **kwargs)
+
+
+def restore_vocoder_partial_checkpoint(*args, recovery_plan, **kwargs):
+    """Caller must freshly admit the plan and discard owners on any restore error."""
+    return restore_vocoder_checkpoint(*args, _recovery_plan=recovery_plan, **kwargs)
