@@ -1,5 +1,45 @@
 # Integrated Singer Execution
 
+## The acoustic model is the only broken link, and it is not yet trained enough
+
+September 19, 2026 — procedural corpus at trainable size, isolation diagnostic, sampling determinism.
+
+```text
+Engineering: DEMONSTRATED
+Creator workflow: NOT_OBSERVED
+Musical review: NOT_REVIEWED
+```
+
+Three findings, in the order they were established.
+
+**The corpus, not the code, was the first blocker.** The six-song corpus reaching training held 1303
+analysis frames, 6.95 seconds of audio. A model trained on it produced audio with no measurable pitch
+at all. `generate_procedural_corpus.py` now authors phrases through the same production pilot export
+path; 40 phrases give 242 seconds of audio and 45484 analysis frames over an admitted 30/5/5 split.
+No third-party recording is involved and every sample keeps a receipt binding its project, audio and
+recipe.
+
+**The vocoder is correct; the acoustic model is not.** Feeding the trained vocoder the ground-truth
+mel of a real captured song plus its measured f0 produces finite, non-silent audio at peak 0.068 and
+RMS 0.028. Feeding it the acoustic model's sampled mel produces nothing with measurable pitch. The
+vocoder therefore needs no change, and every remaining quality gap sits in the acoustic stage.
+
+**Sampling now reproduces.** An earlier bundle failed `determinism` because the exported graph
+generated its diffusion noise with an unseeded `RandomNormalLike` node and ONNX Runtime seeds that
+generator per session. Pinning the seed keeps the admitted interface unchanged, and the large-corpus
+bundle now reports `determinism PASS` on three held-out songs.
+
+**What is not established.** Trained 300 epochs on the large corpus, 9000 updates, loss fell
+0.7955 -> 0.4227 and was still descending. The sampled mel ranges from about -3354 to +3332 while the
+trained targets range from -11.5 to -0.4, so the denoiser has not learned the target distribution and
+the qualified dossier reports `pitch-adherence FAIL` with zero voiced coverage on every held-out item.
+Upstream DiffSinger's own acoustic configuration trains for 100000 updates; this run is at nine
+percent of that on six minutes of audio. That is the honest gap, and it is a compute-and-material
+gap rather than a defect in the pipeline.
+
+`trainingAdmitted`, `singerQualified` and `releaseEligible` remain false, the label origin is still
+the renderer's intent rather than acoustic truth, and no listener has heard anything.
+
 ## A real six-song corpus now reaches admitted training
 
 September 19, 2026 — captured-teacher corpus, review authoring, dataset assembly.
