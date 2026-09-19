@@ -1,5 +1,58 @@
 # Integrated Singer Execution
 
+## Epoch 6 follows synthetic F0 but still fails every held-out reconstruction
+
+September 19, 2026 — evaluated a completed checkpoint while the resumed training process continued.
+
+Checkpoint `vocoder-xl/epoch-000006` was re-exported using the pinned deployment checkout. Torch/ONNX
+parity passed all four lengths, maximum error below 7e-9. Synthetic constant-mel tests now report
+107.143, 214.293, 461.405, and 857.481 Hz for requested 110, 220, 440, and 880 Hz respectively;
+`pitchFollowsRequestedNote` is true. This is a change from the earlier hop-rate-locked synthetic test.
+
+Ground-truth-mel reconstruction through that exported ONNX graph, using the existing byte-bound batch
+reader and all 12 configured held-out source IDs, tells a different story. The retained receipt reports:
+
+| Measurement | Epoch 6 |
+|---|---:|
+| Source samples | 3,390,000 |
+| Mean spectral distance | 1.250432 |
+| Mean absolute pitch error, measurable voiced pairs | 1506.563 cents |
+| Measurable voiced pairs | 12,162 |
+| Unresolved items | 0 |
+| Failed pitch items | 12 of 12 |
+| All reconstructions satisfied | false |
+
+For song 00008, separately extracting the source and comparing it with captured conditioning gives
+0 cents error across 1,042 confident source frames. The retained 16-bit rendered WAV has median
+measured pitch 187.4968 Hz versus a conditioning median of 495.4755 Hz on its 1,029 comparable frames.
+The float-audio receipt's source/render comparison has 1,021 pairs and 1648.637623 cents mean error;
+these are different comparisons and must not be presented as one identical frame set. The dominant
+hop-rate artifact persists under real mel conditioning. A synthetic response check alone would have
+overstated progress.
+
+Artifacts below are under `/Users/lhs/seam-corpus-xl-2026-09-19/`:
+
+- `vocoder-xl/epoch-000006/checkpoint.json`: SHA-256
+  `ce3379466061aa9ce3b011a4882ded9314ecc0dab9c0b0c19aaa591dfa081b63`.
+- `vocoder-export-e6/vocoder.onnx`: 168336 bytes, SHA-256
+  `f6cb411fa6ee3569478664627d25e7288292a479fab8047090ab391d3b147040`.
+- `vocoder-export-e6/export.json`: SHA-256
+  `7eea528b0161fca0fdbf71cde1a182dc2daae000eed56438f633d1a8ec169285`.
+- `recon-e6-native-pitch/reconstruction_receipt.json`: SHA-256
+  `908ccb0207016259b3a177a5120f348eb5b464da93b028833f52dac5efdb382f`.
+- `recon-e6-native-pitch/item-*.json` and `item-*.wav`: per-source diagnostics and rendered audio.
+
+Evaluation used ONNX Runtime 1.30.0 CPU, one intra/inter-op thread, the captured dataset/target/profile
+identities, evaluation seed 933, and the native `seam_voicebank_cli` pitch extractor. It performed no
+training or new rights admission. The active three-epoch continuation was not restarted. No qualified
+singer or release result is claimed. Next compare its new pitch-bearing receipts against this baseline;
+spectral improvement alone is insufficient.
+
+Correction to older gate discussion: `compare_pitch_tracks` tolerates padded edge windows in its
+matching verdict. Interior low-confidence voiced frames cause UNRESOLVED. It is incorrect to say
+that *every* unmeasurable span prevents success. None of that uncertainty explains away the measured
+out-of-tolerance pitch errors above.
+
 ## Observable vocoder training stages; native packaging confirmed
 
 September 19, 2026 — long-running training now emits structured progress on stderr.

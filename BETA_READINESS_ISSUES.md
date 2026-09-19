@@ -20,11 +20,11 @@ The register distinguishes implementation from release proof. A source contract,
 
 ## P0: Release blockers
 
-### SEAM-BETA-P0-08: The shipped vocoder is untrained and emits noise, not voice
+### SEAM-BETA-P0-08: Vocoder reconstruction remains pitch-inaccurate after training
 
 **Discovered:** 2026-09-19, during the first full-song render through the shipped native worker.
 
-**Evidence**
+**Initial evidence (three-update checkpoint)**
 
 - The logistic entry in [docs/implementation/INTEGRATED_SINGER_EXECUTION.md](docs/implementation/INTEGRATED_SINGER_EXECUTION.md)
   states "the vocoder is correct; the acoustic model is not". That claim is withdrawn there, with the
@@ -45,13 +45,19 @@ The register distinguishes implementation from release proof. A source contract,
 **Consequence.** Every acoustic model measurement taken through this vocoder, including the
 `pitch-adherence FAIL` verdicts in the qualification dossiers, was taken through a stage that cannot
 pass them, so those numbers understate what the acoustic stage learned. Two broken links exist in the
-signal path, not one, and the vocoder is upstream of the other.
+signal path, not one; the vocoder is downstream of the acoustic model.
 
-**Status:** OPEN. A bounded vocoder run (`/Users/lhs/seam-corpus-xl-2026-09-19/vocoder-xl`, 400 epochs,
-60000-update cap, 400-song admitted corpus) was started on 2026-09-19; its first two epochs moved mean
-spectral distance from 51.17 to 1.272, but it stops on its 4 GB checkpoint budget around epoch 7 because
-each epoch retains 553 MB and the host has under 10 GB free. See the execution log for the measured
-per-epoch cost.
+**Status:** OPEN. The first run retained six complete epochs and is no longer running. Epoch 6 was
+exported with passing Torch/ONNX parity and passes the synthetic constant-mel `pitchFollowsRequestedNote`
+check. However, independent native-pitch evaluation on all 12 configured held-out songs reports
+mean spectral distance **1.250432**, mean absolute pitch error **1506.563 cents**, **12162 measurable
+voiced pairs**, and **12/12 FAIL**, with zero unresolved items. For song 00008, source pitch agrees
+exactly with its conditioning on the measured comparison frames while rendered pitch remains near
+187.5 Hz. Thus synthetic conditioning response does not establish realistic reconstruction.
+
+The live continuation `vocoder-xl-pitch-r1` resumes epoch 6 for three more epochs, enables native pitch
+extraction, and retains the newest two new checkpoints under a 2 GiB binary budget. Rolling retention
+addresses checkpoint growth but does not fix pitch quality. See the execution log for artifact hashes.
 
 **The closure condition originally written here was unreachable and has been corrected.** It required a
 reconstruction receipt reporting `allReconstructionsSatisfied: true`, which is `spec_ok and pitch_ok and
@@ -61,15 +67,16 @@ satisfied and every receipt reported it UNRESOLVED. The producer now exists
 real verdict.
 
 Closure now requires all four of the following, and the second is deliberately not `pitch_ok`, because
-measured on a real 1080-frame song only 908 frames are measurable and `comparisonSatisfied` tolerates no
-unmeasurable span at any vocoder quality:
+measured on one real song only 908 frames were measurable. The comparator permits padded edge windows,
+but any interior low-confidence voiced frame prevents a matching verdict even for identical audio:
 
 1. A trained checkpoint whose reconstruction receipt reports `spec_ok` and a measured pitch error inside a
    stated budget on the measurable frames.
 2. An owner decision on whether the pitch term is a conjunct of `reconstruction_satisfied` or a separate
-   gate with its own threshold, since the current strictness cannot be passed by a correct vocoder.
+   gate with its own threshold and coverage requirements, calibrated against identical-source controls.
 3. A re-export whose graph is verified to follow the requested note, using the
-   `pitchFollowsRequestedNote` measurement now recorded in the vocoder export receipt.
+   `pitchFollowsRequestedNote` measurement now recorded in the vocoder export receipt. Epoch 6 satisfies
+   this synthetic diagnostic only; it does not substitute for item 1 or item 4.
 4. A repeated full-song render whose spectrum is consistent with the source rather than with broadband
    noise or the hop-rate artifact.
 
