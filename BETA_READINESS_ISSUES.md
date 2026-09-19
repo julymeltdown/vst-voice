@@ -26,6 +26,20 @@ The register distinguishes implementation from release proof. A source contract,
 
 **Initial evidence (three-update checkpoint)**
 
+> **Status note added 2026-09-20.** The measurements below are historical. They still describe the
+> three-update 32-channel smoke checkpoint they were taken from, but the headline signature — peak at
+> 21000 Hz with energy share 0.48 above 16 kHz — **does not reproduce on any retained artifact read
+> today**. Direct measurement of the retained outputs gives a spectral peak at 187.5 Hz with 0.85% of
+> energy above 16 kHz for `recon-tracked4/item-000001.wav`, and a peak at 562.6 Hz with about 1.2% above
+> 16 kHz for the four items under `recon-e6-native-pitch/`. The current defect is a harmonic comb at
+> exactly 48000/256 = 187.5 Hz — the mel frame rate, which is closure condition 4's "hop-rate artifact" —
+> plus a level error: `renderedRms` 0.001872 against `sourceRms` 0.025662, about 13.8 dB low. The
+> frame numbers below (908 measurable voiced frames, median error 1276.6 cents, mean 1525.4 cents) *do*
+> still reproduce. Also note the subject: the 168336-byte export this evidence describes is the
+> 32-channel `mini-nsf-32-smoke-v1` fixture, not the 512-channel `mini-nsf-512-mrf-v1` architecture
+> that the current r3 run is training, so none of these numbers characterize the capacity SEAM is
+> actually building. See SEAM_COMPLETION_REVIEW_2026-09-20.md sections 3.3 and 3.4.
+
 - The logistic entry in [docs/implementation/INTEGRATED_SINGER_EXECUTION.md](docs/implementation/INTEGRATED_SINGER_EXECUTION.md)
   states "the vocoder is correct; the acoustic model is not". That claim is withdrawn there, with the
   measurement that contradicts it.

@@ -139,26 +139,40 @@ using the available GPU is the difference between a training campaign that can i
 cannot. This is a throughput defect, not a quality defect, and it is worth fixing before the next run —
 but it must not be changed underneath the run that is currently in flight.
 
-### 3.4 P0-08's headline evidence no longer reproduces — re-verify before spending more on it
+### 3.4 P0-08's headline measurement no longer reproduces, but its diagnosis now looks right
 
-`BETA_READINESS_ISSUES.md` P0-08 states the vocoder output has energy share **0.48 above 16 kHz** and a spectral peak at **21000 Hz**. I measured the retained outputs directly:
+`BETA_READINESS_ISSUES.md` P0-08 opens with "the vocoder output has energy share **0.48 above 16 kHz**
+and a spectral peak at **21000 Hz**", attributed to the three-update checkpoint. It labels that
+"Initial evidence", and its closure condition 4 already requires "a repeated full-song render whose
+spectrum is consistent with the source rather than with broadband noise **or the hop-rate artifact**".
+So the hop-rate mechanism is not a discovery here — it is an already-named acceptance criterion.
+
+I measured the retained outputs directly to see whether the initial evidence still holds:
 
 | Artifact | Spectral peak | Energy > 16 kHz |
 |---|---|---|
 | `recon-tracked4/item-000001.wav` | **187.5 Hz** | **0.0085** |
 | `recon-e6-native-pitch/item-00000{1..4}.wav` | **562.6 Hz** | 0.011–0.012 |
 
-The ultrasonic-noise signature is **gone** on both the older and the newest run.
+The ultrasonic-noise signature does **not** reproduce on either the older or the newest run. The retained
+artifacts are quiet and low, not bright and noisy. Treat the 21 kHz / 0.48 figures as historical
+measurements of a three-update checkpoint rather than as a current property of the pipeline.
 
-What the newest run *does* still fail is real, and the measurements say something more specific than the register does:
+The confirmed failure is different, and the numbers sharpen P0-08's closure condition 4 rather than
+contradicting it:
 
 - Pitch: 908 measurable voiced frames, **0 within 50 cents**, median error **1276.6 cents**, mean **1525.4 cents**, max 3377 cents.
 - Level: `renderedRms` **0.001872** vs `sourceRms` **0.025662** — the output is about **13.8 dB too quiet**.
 - Spectrum: a harmonic comb at **exactly 187.5 Hz** = 48000/256, i.e. the **analysis hop rate**, with harmonics at 187.5 / 375 / 562.4 Hz and near-zero energy at the intended 220/440/880 Hz.
 
-187.5 Hz is the mel-spectrogram frame rate. Its presence as the dominant audio fundamental means the vocoder is emitting content tied to the frame grid, not tracking the requested f0.
+187.5 Hz is the mel-spectrogram frame rate. Its presence as the dominant audio fundamental is the hop-rate
+artifact P0-08 already names, now confirmed quantitatively: the artifact is real, and it is the dominant
+one.
 
-**Action:** rewrite P0-08 with the numbers above and retire the 21 kHz claim, or mark it unreproduced. The entry currently points a future engineer at a symptom that is not there.
+**Action:** keep P0-08 open and keep closure condition 4, but replace the "Initial evidence" block with
+these current numbers and mark the 21 kHz figure as unreproduced. As written, the entry opens on a symptom
+that is no longer present, which risks sending the next engineer looking for broadband noise when the
+actual defect is a frame-rate comb plus a level error.
 
 ## 4. Remaining work, ranked by what actually blocks Beta GO
 
@@ -210,8 +224,9 @@ Stop expanding breadth. The repository has strong, well-tested infrastructure an
    campaign, or several of them, affordable.
 3. **Fix the frame-rate artifact** in the vocoder/resynthesis path — the 187.5 Hz comb and the −13.8 dB
    level error are reproducible, measurable, and cheap to attack compared with model quality.
-4. **Re-verify and rewrite P0-08** so the register matches reality (3.4), and record that its headline
-   numbers were taken from a 34,986-parameter smoke fixture.
+4. **Refresh P0-08's evidence block** (3.4) so it opens on the confirmed frame-rate comb and level error
+   instead of the unreproduced 21 kHz figure, and record that the headline numbers came from a
+   34,986-parameter smoke fixture.
 5. **Run the first real listening session.** It is the only thing that converts "self-consistent" into
    "musical", and it is free.
 6. **Land the small wins** (Windows CI gate, merge to master) to stop paying interest on them.
