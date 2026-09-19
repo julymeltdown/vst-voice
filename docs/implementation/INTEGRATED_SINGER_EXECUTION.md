@@ -1,5 +1,53 @@
 # Integrated Singer Execution
 
+## The vocoder does follow f0 on synthetic input, and locks to the hop rate on real mel
+
+September 19, 2026 — correction to the frame-rate-lock entry above.
+
+```text
+Engineering: DEMONSTRATED
+Creator workflow: NOT_OBSERVED
+Musical review: NOT_REVIEWED
+```
+
+The entry above reports that the vocoder's pitch is locked to 187.5 Hz regardless of f0. That was
+measured, but it was measured on one kind of input, and stating it as a property of the vocoder was too
+broad. The export check now measures the note the vocoder actually sings for four requested pitches,
+and it separates the two cases:
+
+| requested | synthetic constant mel | real mel (song-000) |
+|---|---|---|
+| 110 Hz | 187.5 Hz (coverage 1.00) | 187.5 Hz (coverage 0.97) |
+| 220 Hz | 428.6 Hz (coverage 1.00) | 187.5 Hz (coverage 0.96) |
+| 440 Hz | 857.1 Hz (coverage 1.00) | 666.6 Hz (coverage 0.02) |
+| 880 Hz | 1714.2 Hz (coverage 1.00) | 1500.3 Hz (coverage 0.02) |
+
+So the excitation does respond to f0 when the mel is a synthetic ramp, and it does not when the mel is a
+real frame. Two things follow, and neither is the conclusion the earlier entry drew.
+
+First, the synthetic column is roughly one octave high (220 requested, 428.6 measured; 440 requested,
+857.1 measured). That is a consistent factor of about two at the top of the range and 1.7 at the bottom,
+which is a measurement-window effect rather than proof about the excitation: the measurer sizes its
+window from the requested note, and a signal whose true period is half the request will correlate
+strongly at the half-period lag. The synthetic column therefore shows that f0 reaches the excitation,
+and it does not establish which octave is correct.
+
+Second, the real-mel column is the one that matters, and it is genuinely locked: two requested notes
+produce 187.5 Hz at 0.96-0.97 coverage, and the two higher notes collapse to 0.02 coverage, which is
+the measurer reporting that it found almost nothing periodic to measure rather than reporting a pitch.
+That is consistent with the real frames carrying much less energy than the synthetic ramp and the
+generator's output being dominated by the frame-rate component of its own upsampling.
+
+The practical consequence is that this is still an undertrained generator, not a wiring defect: f0
+provably reaches the output, so the graph and the conditioning path are correct, and what is missing is
+a learned excitation. It also means the earlier entry's claim was measured on an input that flattered
+the vocoder, and the export check has been changed so that the note actually sung is recorded with the
+same measurer the qualification path uses. The check reports rather than refuses, because an
+undertrained vocoder is a state this export must be able to describe honestly.
+
+Status: two epochs trained, vocoder run still in progress, spectral distance 1.272 against a 3.5
+threshold. trainingAdmitted, singerQualified and releaseEligible remain false.
+
 ## The sampler is fixed, the vocoder is training, and pitch is still frame-rate locked
 
 September 19, 2026 — first admitted end-to-end render with a trained vocoder.

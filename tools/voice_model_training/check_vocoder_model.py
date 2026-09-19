@@ -21,6 +21,8 @@ def export_checked_onnx(adapter):
     import onnx
     import onnxruntime as ort
     import torch
+    import numpy as np
+    from .qualification import measure_median_pitch_hz
     adapter.eval()
     stream = io.BytesIO()
     torch.onnx.export(adapter, (torch.full((1, 16, 80), -4.), torch.full((1, 16), 220.)),
@@ -41,6 +43,7 @@ def export_checked_onnx(adapter):
     options.inter_op_num_threads = 1
     session = ort.InferenceSession(payload, options, providers=["CPUExecutionProvider"])
     cases = []
+    conditioning = []
     with torch.no_grad():
         for frames in (1, 3, 16, 23):
             mel = torch.linspace(-8, -1, frames * 80).reshape(1, frames, 80)
@@ -53,8 +56,32 @@ def export_checked_onnx(adapter):
             torch.testing.assert_close(actual, expected, atol=1e-5, rtol=1e-5)
             cases.append(dict(frames=frames, samples=actual.shape[1],
                               maximumError=(actual - expected).abs().max().item()))
+        # Parity says the graph computes the same thing as PyTorch; it says nothing
+        # about whether pitch conditioning reaches the output as pitch. A vocoder
+        # whose harmonic excitation is not yet learned emits a fixed frame-rate tone
+        # and still passes parity perfectly, so the note it actually sings has to be
+        # measured. The predicted frequency is reported rather than asserted against
+        # a threshold: an undertrained vocoder is a state this export must be able to
+        # describe, and a hard check here would make the honest case unrepresentable.
+        frames = 64
+        mel = torch.linspace(-6, -2, frames * 80).reshape(1, frames, 80)
+        for hz in (110.0, 220.0, 440.0, 880.0):
+            f0 = torch.full((1, frames), hz)
+            audio = session.run(["waveform"], {"mel": mel.numpy(), "f0": f0.numpy()})[0]
+            rendered, coverage, reason = measure_median_pitch_hz(
+                np.asarray(audio, dtype=np.float64).ravel(), 48000, hz)
+            conditioning.append(dict(
+                requestedHz=hz,
+                measuredHz=None if rendered is None else round(float(rendered), 3),
+                voicedCoverage=round(float(coverage), 6),
+                measurementReason=reason,
+                finite=bool(np.isfinite(audio).all())))
+    measurable = [case for case in conditioning if case["measuredHz"] is not None]
+    # The pitch is only followed if different notes give different measured pitches.
+    followed = bool(measurable) and len({case["measuredHz"] for case in measurable}) > 1
     return payload, dict(passed=True, graphBytes=len(payload), graphSha256=inspection["sha256"],
-                cases=cases, graphRetained=False, deterministicMiniNSFOnly=True)
+                cases=cases, conditioning=conditioning, pitchFollowsRequestedNote=followed,
+                graphRetained=False, deterministicMiniNSFOnly=True)
 
 
 def check_onnx(adapter):
