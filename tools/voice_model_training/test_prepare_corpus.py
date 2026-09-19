@@ -5,6 +5,7 @@ import importlib.util
 import json
 from pathlib import Path
 import tempfile
+import sys
 import unittest
 from unittest.mock import patch
 
@@ -14,6 +15,24 @@ from tools.voice_model_training.test_generated_teacher import captured_pitch, mo
 
 
 class PrepareCorpusTest(unittest.TestCase):
+    @unittest.skipUnless(sys.platform == "darwin" and importlib.util.find_spec("numpy"),
+                         "macOS and NumPy required")
+    def test_cloned_corpus_preserves_full_preparation_contract(self):
+        actual = prepare_corpus
+        def cloned(**kwargs):
+            return actual(**kwargs, clone_captures=True)
+        with patch(__name__ + ".prepare_corpus", side_effect=cloned):
+            self.test_corpus_prepares_distinct_songs_and_proves_the_held_out_partition()
+
+    def test_requested_headroom_refuses_before_output_creation(self):
+        output = self.root / "no-space"
+        with patch("tools.voice_model_training.prepare_corpus.shutil.disk_usage") as usage:
+            usage.return_value.free = 10
+            with self.assertRaisesRegex(OSError, "headroom"):
+                prepare_corpus(config=self.root / "corpus-config.json",
+                               config_sha256=self.digest, output=output, minimum_free_bytes=11)
+        self.assertFalse(output.exists())
+
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)

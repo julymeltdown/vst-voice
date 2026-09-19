@@ -1,5 +1,36 @@
 # Integrated Singer Execution
 
+## Copy-on-write corpus preparation and real headroom refusal
+
+September 19, 2026 — added explicit macOS `--clone-captures` preparation using
+`fclonefileat`: distinct inodes, content-hash verification, no hard links and no
+full-copy fallback. WAV capture and duplicate flat mel assets use independent
+copy-on-write files; pitch, features, labels and corpus admission are still fresh.
+`--minimum-free-bytes` checks available space before output creation, each song
+and target publication. It is a periodic guard, not an OS reservation or a promise
+against other processes consuming disk space.
+
+Twenty-six focused tests pass, including source/destination mutation isolation,
+wrong-hash rejection, symlink/size/platform refusal, no overwrite, low-space refusal
+and the full existing corpus contract exercised through actual macOS clones.
+Full discovery also exposed the previous combination test's relative imports;
+changed them to package-qualified imports so the CMake discovery invocation can load it.
+Rerun: 209 discovered tests, 174 passed and 35 skipped for optional dependencies,
+33.97 seconds. This system-Python run is not Torch-dependent model validation.
+Source closure, phase11 source checks and diff checks pass.
+
+Actual combined preparation ran with a 1,610,612,736-byte headroom floor at
+`/Users/lhs/seam-corpus-pauses-2026-09-19-r1/prepared-combined`. It stopped on that
+guard after 375 of 424 song preparation records. Partial outputs are retained;
+no complete corpus or training admission is claimed. No old approval was reused.
+Free space subsequently read about 1.7 GiB. Do not rerun into this directory or
+lower the floor merely to force completion; retained-output verification/recovery
+or adequate headroom is needed before completing the combined corpus.
+
+The existing vocoder process (PID 69937, session 72412) remains live and unchanged;
+latest collected progress is 775/2804 updates at 3040.5 seconds. No completed
+checkpoint, held-out quality pass, qualified singer or Beta GO follows from this work.
+
 ## Combined sung/pause source declaration without evaluation leakage
 
 September 19, 2026 — added `combine_corpus_sources`, taking exact source-config

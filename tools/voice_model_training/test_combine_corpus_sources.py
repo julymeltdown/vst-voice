@@ -4,9 +4,9 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from .__main__ import publish_new
-from .combine_corpus_sources import combine
-from .prepare_corpus import load_corpus_config
+from tools.voice_model_training.__main__ import publish_new
+from tools.voice_model_training.combine_corpus_sources import combine
+from tools.voice_model_training.prepare_corpus import load_corpus_config
 
 
 class CombineTests(unittest.TestCase):

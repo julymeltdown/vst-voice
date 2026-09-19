@@ -16,6 +16,7 @@ import os
 from pathlib import Path
 import re
 import sys
+import shutil
 
 from .__main__ import encode_report, load_config, publish_new
 from .generated_teacher import label_config_from_exports
@@ -79,8 +80,15 @@ def load_corpus_config(path, expected_hash):
     return value
 
 
-def prepare_corpus(*, config, config_sha256, output):
+def prepare_corpus(*, config, config_sha256, output, clone_captures=False, minimum_free_bytes=0):
     """Prepare every song independently, then publish the corpus binding last."""
+    if type(clone_captures) is not bool or (clone_captures and sys.platform != "darwin"):
+        raise ValueError("Explicit copy-on-write preparation requires macOS")
+    if type(minimum_free_bytes) is not int or not 0 <= minimum_free_bytes <= 1024**4:
+        raise ValueError("Minimum free bytes must be a bounded non-negative integer")
+    def check_space(path):
+        if shutil.disk_usage(path).free < minimum_free_bytes:
+            raise OSError("Corpus preparation stopped to preserve requested disk headroom")
     output = Path(output)
     if output.exists() or output.is_symlink() or not output.parent.is_dir():
         raise ValueError("Corpus output must be new with an existing parent")
@@ -90,14 +98,17 @@ def prepare_corpus(*, config, config_sha256, output):
         raise ValueError("Corpus source identifiers must be unique")
     if len({entry["songId"] for entry in value["songs"]}) != len(value["songs"]):
         raise ValueError("Each prepared song must declare a distinct song identity")
+    check_space(output.parent)
     output.mkdir(mode=0o700)
     songs, digests = [], {}
     for index, entry in enumerate(value["songs"]):
+        check_space(output)
         directory = output / f"song-{index:03d}"
         report = prepare_bundle(export_root=Path(entry["exportRoot"]),
             receipt_sha256=entry["receiptSha256"], candidate_path=entry["candidatePath"],
             extractor=Path(value["extractor"]), output=directory, source_id=entry["sourceId"],
-            song_id=entry["songId"], session_id=entry["sessionId"], lineage_id=entry["lineageId"])
+            song_id=entry["songId"], session_id=entry["sessionId"], lineage_id=entry["lineageId"],
+            **({"clone_captures": True} if clone_captures else {}))
         report["directory"] = directory.name
         report["preparationSha256"] = hashlib.sha256(encode_report(report)).hexdigest()
         songs.append(report)
@@ -185,6 +196,7 @@ def prepare_corpus(*, config, config_sha256, output):
     profiles = set()
     target_rows = []
     for song in songs:
+        check_space(output)
         directory = output / song["directory"]
         record_payload = (directory / "target.json").read_bytes()
         if hashlib.sha256(record_payload).hexdigest() != song["artifacts"]["target.json"]:
@@ -197,10 +209,14 @@ def prepare_corpus(*, config, config_sha256, output):
         record_name = song["sourceId"] + "-target.json"
         binary_name = song["sourceId"] + ".f32le"
         publish_new(output / record_name, record)
-        with (output / binary_name).open("xb") as stream:
-            stream.write(mel)
-            stream.flush()
-            os.fsync(stream.fileno())
+        if clone_captures:
+            from .clone_capture import clone_verified_file
+            clone_verified_file(directory / "mel.f32le", output / binary_name, song["targetSha256"])
+        else:
+            with (output / binary_name).open("xb") as stream:
+                stream.write(mel)
+                stream.flush()
+                os.fsync(stream.fileno())
         target_rows.append(dict(sourceId=song["sourceId"], record=record_name,
             recordSha256=hashlib.sha256(record_payload).hexdigest(), binary=binary_name))
     if len(profiles) != 1:
@@ -251,9 +267,13 @@ def main():
     parser.add_argument("--config", type=Path, required=True)
     parser.add_argument("--config-sha256", required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--clone-captures", action="store_true",
+                        help="macOS copy-on-write WAV/duplicate-mel capture; no fallback copying")
+    parser.add_argument("--minimum-free-bytes", type=int, default=0)
     args = parser.parse_args()
     try:
-        result = prepare_corpus(config=args.config, config_sha256=args.config_sha256, output=args.output)
+        result = prepare_corpus(config=args.config, config_sha256=args.config_sha256, output=args.output,
+                                clone_captures=args.clone_captures, minimum_free_bytes=args.minimum_free_bytes)
         print(json.dumps(dict(state=result["state"], songs=len(result["songs"]),
             counts=result["split"]["counts"], distinctAudioCount=result["distinctAudioCount"],
             totalAnalysisFrames=result["totalAnalysisFrames"], trainingAdmitted=False),

@@ -159,7 +159,7 @@ def capture_inputs(root, receipt_sha256, candidate_path):
 
 
 def prepare_bundle(*, export_root, receipt_sha256, candidate_path, extractor, output,
-                   source_id, song_id, session_id, lineage_id):
+                   source_id, song_id, session_id, lineage_id, clone_captures=False):
     output = Path(output)
     if output.exists() or output.is_symlink() or not output.parent.is_dir():
         raise ValueError("Preparation output must be new with an existing parent")
@@ -167,8 +167,14 @@ def prepare_bundle(*, export_root, receipt_sha256, candidate_path, extractor, ou
     # Copy only the selected, already verified WAV. The native process and all
     # downstream stages consume this stable local capture, never a changing source.
     output.mkdir(mode=0o700)
-    with (output / "source.wav").open("xb") as stream:
-        stream.write(payload)
+    if clone_captures:
+        from .clone_capture import clone_verified_file
+        clone_verified_file(_path(Path(export_root).resolve(strict=True),
+                                 candidate_path.removesuffix(".json") + ".wav"),
+                            output / "source.wav", provenance["sourceSha256"])
+    else:
+        with (output / "source.wav").open("xb") as stream:
+            stream.write(payload)
     pitch = extract_pitch(Path(extractor), output / "source.wav")
     export = export_from_candidate(candidate=candidate, pitch_features=pitch, source_id=source_id,
         song_id=song_id, session_id=session_id, lineage_id=lineage_id,
