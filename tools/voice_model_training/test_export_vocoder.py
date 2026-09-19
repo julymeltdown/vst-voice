@@ -4,7 +4,7 @@ import json
 import unittest
 
 from tools.voice_model_training.export_vocoder import export_identity, TRAINING_REVISION
-from tools.voice_model_training.check_vocoder_model import summarize_pitch_conditioning
+from tools.voice_model_training.check_vocoder_model import summarize_pitch_conditioning, vocoder_configuration
 
 
 class VocoderPitchDiagnosticTests(unittest.TestCase):
@@ -67,6 +67,12 @@ class VocoderExportIdentityTests(unittest.TestCase):
                      epoch=dict(identity, formatId="com.project-seam.vocoder-epoch-result"))
         receipt = dict(formatId="com.project-seam.gan-checkpoint")
         self.assertEqual(export_identity(state, receipt, profile), config)
+        large = copy.deepcopy(state)
+        large_config = vocoder_configuration("mini-nsf-512-mrf-v1")
+        large["metadata"]["run"]["configuration"] = large_config
+        self.assertEqual(export_identity(large, receipt, profile), large_config)
+        large["metadata"]["run"]["configuration"]["upsample_initial_channel"] = 256
+        with self.assertRaises(ValueError): export_identity(large, receipt, profile)
         for field, value in (("profileSha256", "0" * 64), ("datasetSha256", "b" * 64),
                              ("objectiveId", "unsupported")):
             broken = copy.deepcopy(state)

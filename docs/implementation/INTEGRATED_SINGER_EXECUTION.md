@@ -1,5 +1,68 @@
 # Integrated Singer Execution
 
+## Real-mel F0 intervention and explicit non-smoke vocoder capacity
+
+September 19, 2026 — the live training run was left unchanged.
+
+A one-thread ONNX intervention held song 00008's real mel fixed and changed only
+F0. The native pitch extractor (confidence >= 0.6, no requested-pitch search window)
+measured the following output. These are whole-output medians, not framewise accuracy
+scores or perceptual judgments:
+
+| F0 scale | Median confident pitch Hz | Confident frames | RMS difference from original-F0 render |
+|---|---:|---:|---:|
+| 1 | 187.4971 | 1054 | 0 |
+| 0 | 187.4994 | 1059 | 0.000162794 |
+| 0.5 | 187.5007 | 1057 | 0.000236305 |
+| 2 | 187.5091 | 1057 | 0.000209801 |
+
+All four outputs have strongest spectral bin at 562.5532 Hz; original-F0 output RMS
+is 0.003380797. F0 does affect waveform bytes, but does not control dominant pitch
+in this example. This narrows the failure to vocoder behavior under real mel rather
+than an acoustic-model output issue. It does not establish why the vocoder learned it.
+
+Graph SHA-256: `f6cb411fa6ee3569478664627d25e7288292a479fab8047090ab391d3b147040`.
+Target SHA-256: `04ea09f6035711495f9bfe9c8e708d605ed079e3aab269ec9ca485d3542fcb33`.
+Conditioning SHA-256: `e16d6a6f88da273b7199433025e847270cf32130a3d64072b59624d9246a44e7`.
+The probe read retained epoch-six artifacts, checked graph/target digests and source
+identity, and did not modify them or train anything.
+
+Inspection found training/export locked to 32 initial channels and one residual
+kernel, inherited from the original mechanics experiment. The pinned upstream
+`configs/nsf_hifigan_fast.yaml` uses 512 channels and kernels 3/7/11. This is a capacity
+difference, not proof of the failure's cause. Training schema 2 now permits explicit
+`architectureProfile: mini-nsf-512-mrf-v1`; schema 1 retains the exact old model.
+Training and export share named, closed configurations. Checkpoint resume still
+rejects configuration changes; a larger experiment must start fresh and cannot
+reinterpret existing weights. New export receipts expose configuration and parameter
+count. The audio profile and training objective have not changed.
+
+An actual fresh 512-channel generator has 13,936,386 parameters. Its weights load
+strictly into the pinned deployment adapter, and forward output is exactly equal at
+1, 3, 16 and 23 frames, including zero-F0 input. This verifies PyTorch bridge
+compatibility only, not ONNX export, optimization, learned quality or Beta acceptance.
+Eight configuration/export tests pass. No full-size training was launched: free disk
+fell below 1 GiB. Next retain its completed
+evaluation, resolve storage capacity, then compare a deliberately bounded larger
+model experiment using the same source/profile and held-out pitch criteria.
+
+Terminal observation later in this same batch: PID 65038 is absent and its original
+execution session 84830 returned exit code 2 with `[Errno 28] No space left on device`.
+Free disk reached 153 MiB. The epoch-seven reconstruction receipt completed, SHA-256
+`3373f0570265d43ebe6ea1aa1ba0201cd58e1ba304ef7d3ad12a25f72cb72089`:
+12 items, mean spectral distance 1.239364, mean absolute pitch error 1506.023 cents,
+12,186 measurable voiced pairs, zero unresolved items, all reconstructions satisfied
+false. Compared with epoch six, spectral distance improves slightly while pitch
+error is essentially unchanged; another epoch did not resolve pitch control.
+
+`vocoder-xl-pitch-r1/epoch-000007` contains about 508 MiB of `models.pt` and
+`training.pt`, but **no checkpoint.json completion receipt**. It is an incomplete
+publication, not an accepted epoch checkpoint or resumable state. Those partial files
+and the successful evaluation are retained; none were deleted. Epoch six remains the
+last verified resume point. No new run was started. Storage must be made available
+before retrying checkpoint-producing work; the rolling-retention option cannot prune
+before a verified successor exists.
+
 ## Synthetic pitch response no longer masquerades as note accuracy
 
 September 19, 2026 — corrected an overly permissive export diagnostic.

@@ -16,6 +16,19 @@ def settings():
 
 
 class VocoderCommandTests(unittest.TestCase):
+    def test_larger_architecture_is_explicit_not_a_legacy_default_change(self):
+        legacy = model_settings(settings())
+        large = model_settings(settings() | dict(schemaVersion=2, architectureProfile='mini-nsf-512-mrf-v1'))
+        self.assertEqual(legacy['upsample_initial_channel'], 32)
+        self.assertEqual(large['upsample_initial_channel'], 512)
+        self.assertEqual(large['resblock_kernel_sizes'], [3, 7, 11])
+        self.assertEqual(large['resblock_dilation_sizes'], [[1, 3, 5]] * 3)
+        self.assertEqual(large['hop_size'], legacy['hop_size'])
+        for change in (dict(schemaVersion=2), dict(schemaVersion=2, architectureProfile='unknown'),
+                       dict(architectureProfile='mini-nsf-512-mrf-v1')):
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                model_settings(settings() | change)
+
     def test_closed_bounded_export_compatible_settings(self):
         config = model_settings(settings())
         self.assertEqual((config['sampling_rate'], config['num_mels'], config['hop_size']), (48000, 80, 256))

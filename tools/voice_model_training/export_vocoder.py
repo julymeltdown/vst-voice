@@ -14,7 +14,7 @@ import sys
 from .__main__ import load_config, publish_new
 from .gan_checkpoint_storage import load_local_checkpoint
 from .check_vocoder_model import (TRAINING_REVISION, DEPLOYMENT_REVISION,
-                                 trusted_checkout, export_checked_onnx)
+                                 trusted_checkout, export_checked_onnx, vocoder_configuration)
 
 
 def export_identity(state, receipt, profile):
@@ -24,12 +24,9 @@ def export_identity(state, receipt, profile):
             or not isinstance(run, dict) or run.get("trainingRevision") != TRAINING_REVISION):
         raise ValueError("Require a reviewed local vocoder epoch checkpoint")
     configuration = run.get("configuration")
-    supported = dict(sampling_rate=48000, num_mels=80, hop_size=256, n_fft=1024,
-        win_size=1024, fmin=20, fmax=24000, mini_nsf=True, noise_sigma=0.,
-        upsample_rates=[8, 8, 2, 2], upsample_kernel_sizes=[16, 16, 4, 4],
-        upsample_initial_channel=32, resblock_kernel_sizes=[3],
-        resblock_dilation_sizes=[[1, 3, 5]], resblock="1", pc_aug=False)
-    if configuration != supported:
+    supported = [vocoder_configuration(name) for name in
+                 ("mini-nsf-32-smoke-v1", "mini-nsf-512-mrf-v1")]
+    if configuration not in supported:
         raise ValueError("Unsupported vocoder architecture; no implicit configuration conversion")
     expected_profile = dict(profileId="seam-full-hop-slaney-v1", sampleRate=48000,
         fftSize=1024, windowSize=1024, hopSize=256, bins=80, minimumHz=20, maximumHz=24000,
@@ -89,6 +86,8 @@ def main():
         report = dict(formatId="com.project-seam.vocoder-export", schemaVersion=1,
             vocoderPath="vocoder.onnx", vocoderSha256=hashlib.sha256(graph).hexdigest(),
             vocoderBytes=len(graph), checkpointReceiptSha256=args.receipt_sha256,
+            architectureConfiguration=configuration,
+            generatorParameterCount=sum(p.numel() for p in adapter.generator.parameters()),
             checkpointSha256=receipt["checkpointSha256"], trainingRevision=TRAINING_REVISION,
             deploymentRevision=DEPLOYMENT_REVISION, profile=profile,
             profileSha256=receipt["metadata"]["profileSha256"],

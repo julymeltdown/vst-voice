@@ -14,7 +14,7 @@ import sys
 import time
 
 from .__main__ import assemble_dataset, load_config, load_dataset_inputs
-from .check_vocoder_model import TRAINING_REVISION, trusted_checkout
+from .check_vocoder_model import TRAINING_REVISION, trusted_checkout, vocoder_configuration
 from .train import load_targets
 from .vocoder_checkpoint import restore_vocoder_checkpoint
 
@@ -25,9 +25,11 @@ def model_settings(value):
     fields = {'formatId', 'schemaVersion', 'seed', 'learningRate', 'learningRateDecay',
               'maximumUpdates', 'maximumSeconds', 'cpuThreads', 'evaluationSeed',
               'heldOutSources', 'labelOrigin'}
+    if isinstance(value, dict) and type(value.get('schemaVersion')) is int and value['schemaVersion'] == 2:
+        fields.add('architectureProfile')
     if (not isinstance(value, dict) or set(value) != fields
             or value['formatId'] != 'com.project-seam.vocoder-training-config'
-            or type(value['schemaVersion']) is not int or value['schemaVersion'] != 1):
+            or type(value['schemaVersion']) is not int or value['schemaVersion'] not in (1, 2)):
         raise ValueError('Unsupported vocoder training configuration')
     for key, lower, upper in (('seed', 0, 2**63-1), ('evaluationSeed', 0, 2**63-1),
                                ('cpuThreads', 1, 32), ('maximumUpdates', 1, 100000)):
@@ -48,11 +50,7 @@ def model_settings(value):
         raise ValueError('Capture the actual label origin; do not infer acoustic truth')
     # This is the architecture supported by export_vocoder today. Other models
     # need an explicit configuration/export change, not a silent conversion.
-    return dict(sampling_rate=48000, num_mels=80, hop_size=256, n_fft=1024,
-        win_size=1024, fmin=20, fmax=24000, mini_nsf=True, noise_sigma=0.,
-        upsample_rates=[8, 8, 2, 2], upsample_kernel_sizes=[16, 16, 4, 4],
-        upsample_initial_channel=32, resblock_kernel_sizes=[3],
-        resblock_dilation_sizes=[[1, 3, 5]], resblock='1', pc_aug=False)
+    return vocoder_configuration(value.get('architectureProfile', 'mini-nsf-32-smoke-v1'))
 
 
 def load_pcm_sources(root, labels):

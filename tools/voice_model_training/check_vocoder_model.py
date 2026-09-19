@@ -18,6 +18,24 @@ TRAINING_REVISION = "4d0889c4c180c75ad3000cc565864656344f8190"
 DEPLOYMENT_REVISION = "336cf01b57f2ad44c6b37a79cf33993043291759"
 
 
+def vocoder_configuration(profile="mini-nsf-32-smoke-v1"):
+    """Named architectures shared by training and strict checkpoint export.
+
+    The larger profile adopts the pinned upstream channel/kernel capacity, not
+    pretrained weights or a claim of quality. Acoustic geometry stays SEAM's.
+    """
+    if profile not in ("mini-nsf-32-smoke-v1", "mini-nsf-512-mrf-v1"):
+        raise ValueError("Unsupported vocoder architecture profile")
+    large = profile == "mini-nsf-512-mrf-v1"
+    return dict(sampling_rate=48000, num_mels=80, hop_size=256, n_fft=1024,
+                win_size=1024, fmin=20, fmax=24000, mini_nsf=True, noise_sigma=0.,
+                upsample_rates=[8, 8, 2, 2], upsample_kernel_sizes=[16, 16, 4, 4],
+                upsample_initial_channel=512 if large else 32,
+                resblock_kernel_sizes=[3, 7, 11] if large else [3],
+                resblock_dilation_sizes=[[1, 3, 5] for _ in range(3 if large else 1)],
+                resblock="1", pc_aug=False)
+
+
 def summarize_pitch_conditioning(cases):
     """Separate a responsive pitch diagnostic from accurate note following.
 

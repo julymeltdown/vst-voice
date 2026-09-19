@@ -979,6 +979,30 @@ recordings or reviewed acoustic truth. The architecture is fixed to the supporte
 48 kHz/80-bin/256-hop/1024-FFT configuration. The label config supplies source WAV
 paths; target inventory is the existing `training-target-inventory` schema.
 
+Architecture selection is explicit. Schema 1 preserves the original 32-channel,
+single-residual-kernel smoke model; it must not be confused with the capacity of the
+pinned upstream singing-vocoder configuration. For a new capacity experiment, use
+`"schemaVersion": 2` and add `"architectureProfile": "mini-nsf-512-mrf-v1"` to the
+otherwise unchanged settings above. This selects 512 initial channels and kernels
+3/7/11, retaining deterministic MiniNSF and SEAM's exact acoustic geometry. The
+alternative `mini-nsf-32-smoke-v1` is available explicitly in schema 2 as well.
+Unknown profiles and unreviewed arbitrary architecture fields are refused. Export
+accepts only these exact configurations and records configuration/parameter count.
+
+Do not resume a 32-channel checkpoint into the 512-channel model: the existing
+resume identity check rejects that change. Start in a new output directory and
+budget for larger optimizer/checkpoint memory and disk usage; old measured checkpoint
+sizes do not apply. No claim is made that capacity alone fixes the measured pitch
+failure. The larger model's upstream training/deployment PyTorch forward parity has
+been checked at 1/3/16/23 frames; learned quality, new training and its ONNX export
+are separate experiments that must still pass. Do not launch while storage is low.
+
+For future acoustic training, generate explicit pause examples with
+`generate_procedural_corpus --include-pauses`; preparation retains `pau` as a distinct
+rest token. Select that same symbol in the deployed surface's silence setting
+(`--silence-phone pau` in `check_production_render.py`). This cannot repair an old
+checkpoint that never trained on silence, and requires fresh corpus admission.
+
 ```sh
 python -B -m tools.voice_model_training.train_vocoder \
   --training-config TRAINING_JSON --training-sha256 TRAINING_FILE_SHA256 \
