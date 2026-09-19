@@ -1,5 +1,25 @@
 # Integrated Singer Execution
 
+## r3 training steady past the quarter mark
+
+September 20, 2026 — the resumed r3 run is stable and progressing. Verified
+series (completedUpdates, meanGeneratorLoss): 450 (resume), 475 45.83, 500 45.30,
+525 44.84, 550 44.31, 600 43.63, 650 42.91, 675 42.55, 700 42.22, 725 41.99,
+750 41.71, 775 41.41, 800 41.14. Mean discriminator loss over the same span moved
+2.20 to 2.12. Recovery checkpoints publish every 50 updates with distinct
+receipts (update-500 `dca68bb9...`, 550 `e1bc6133...`, 600 `9ef80923...`, 650
+`70515c69...`, 700 `5a7fb7a1...`, 750 `26a14274...`, 800 `3a596611...`), each
+720,450,469 bytes.
+
+Retention behaves as configured: older partial directories keep only
+`checkpoint.json` and `pruned-binaries.json` while only the newest holds
+`models.pt` and `training.pt`, so the whole r3 tree stays about 700 MiB against
+73 GiB free. The process held roughly 107% CPU throughout and was never
+restarted.
+
+This is iteration progress on an unqualified model. No complete epoch, no
+held-out acceptance, no listening review. Full Beta remains NO_GO.
+
 ## Quantified the hop-rate artifact behind the held-out pitch verdict
 
 September 20, 2026 — audited `recon-tracked4/item-000001.wav` directly to test a
