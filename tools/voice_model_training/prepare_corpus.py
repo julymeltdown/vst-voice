@@ -39,9 +39,13 @@ def load_corpus_config(path, expected_hash):
             or any(ord(c) < 32 or ord(c) == 127 for c in value["seed"])):
         raise ValueError("Corpus seed must be bounded printable text")
     songs = value["songs"]
-    if not isinstance(songs, list) or not 2 <= len(songs) <= 64:
+    # The bound matches what the stages this corpus feeds actually accept: source
+    # preparation and label configuration both take up to 10000 records. An earlier
+    # limit of 64 was arbitrary and refused a corpus of 400 rendered phrases, which
+    # is the size a trained acoustic model needs rather than a defect in the input.
+    if not isinstance(songs, list) or not 2 <= len(songs) <= 10000:
         # A corpus of one cannot hold anything out; refuse rather than pretend.
-        raise ValueError("A corpus requires 2..64 songs")
+        raise ValueError("A corpus requires 2..10000 songs")
     for entry in songs:
         if not isinstance(entry, dict) or set(entry) != ENTRY_FIELDS:
             raise ValueError("Corpus entries must declare exactly the export and identity fields")

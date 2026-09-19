@@ -157,6 +157,27 @@ class PrepareCorpusTest(unittest.TestCase):
             with self.subTest(change=change), self.assertRaises(ValueError):
                 load_corpus_config(self.root / "corpus-config.json", self.digest)
 
+    def test_a_corpus_larger_than_the_old_64_song_limit_is_accepted(self):
+        # A trained acoustic model needs hundreds of phrases, and the stages this
+        # corpus feeds accept up to 10000 records, so the earlier 64-song bound
+        # refused a legitimate corpus rather than an invalid one.
+        entry = self.entries[0]
+        songs = []
+        for index in range(120):
+            songs.append({**entry, "sourceId": f"song-{index:04d}", "songId": f"song-{index:04d}",
+                          "sessionId": f"session-{index:04d}", "lineageId": f"lineage-{index:04d}"})
+        self.value = {**self.value, "songs": songs, "heldOutSongIds": ["song-0119"]}
+        self.write_config()
+        loaded = load_corpus_config(self.root / "corpus-config.json", self.digest)
+        self.assertEqual(len(loaded["songs"]), 120)
+        # One past the supported maximum is still refused.
+        too_many = [{**song, "sourceId": f"s{i:05d}", "songId": f"s{i:05d}"} for i, song in enumerate(songs)]
+        self.value = {**self.value,
+                      "songs": too_many + [{**entry, "sourceId": "extra", "songId": "extra"}] * 9881}
+        self.write_config()
+        with self.assertRaises(ValueError):
+            load_corpus_config(self.root / "corpus-config.json", self.digest)
+
     @unittest.skipUnless(importlib.util.find_spec("numpy"), "optional NumPy required")
     def test_corpus_without_a_trainable_source_is_refused(self):
         # Holding out two of three songs leaves one training source; holding out

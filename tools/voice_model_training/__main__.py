@@ -24,6 +24,14 @@ from .conditioning import build_conditioning
 from .qualification import qualify_command
 from .generated_teacher import label_config_from_exports
 
+# A label configuration inlines every source's labels, so its size grows with the
+# corpus rather than staying constant: 1.2 MiB for 40 songs, 11.4 MiB for 400. The
+# earlier 8 MiB cap therefore refused corpora that the rest of this toolchain already
+# accepts (source preparation takes 10000 records, and the neighbouring capture
+# budgets are 64 MiB), which made a trainable corpus size unreachable. The bound is
+# raised to the next established budget rather than removed.
+MAXIMUM_CONFIGURATION_BYTES = 64 * 1024 * 1024
+
 
 def acoustic_targets_command(config: Path, expected_hash: str, source: Path, output: Path) -> None:
     value = load_config(config, expected_hash)
@@ -345,9 +353,9 @@ def load_config(config: Path, expected_hash: str) -> dict:
     with os.fdopen(os.open(config, flags), "rb") as stream:
         if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
             raise ValueError("Opened configuration is not a regular file")
-        payload = stream.read(8 * 1024 * 1024 + 1)
-    if len(payload) > 8 * 1024 * 1024:
-        raise ValueError("Configuration exceeds 8 MiB")
+        payload = stream.read(MAXIMUM_CONFIGURATION_BYTES + 1)
+    if len(payload) > MAXIMUM_CONFIGURATION_BYTES:
+        raise ValueError("Configuration exceeds the capture budget")
     if hashlib.sha256(payload).hexdigest() != expected_hash:
         raise ValueError("Configuration differs from captured SHA-256")
     def unique(pairs):
