@@ -1,5 +1,39 @@
 # Integrated Singer Execution
 
+## Combined corpus admitted and fresh acoustic epoch started
+
+September 19, 2026 — authored fresh first-party rights and label records for the
+completed 424-source corpus, using the existing operator key and unchanged policy
+anchors. Both records explicitly state `selfAuthored=true` and
+`independenceClaimed=false`; these authorize this generated-material experiment,
+not independent phonetic correctness, naturalness or release qualification.
+Rights configuration SHA-256:
+`947701b55f8badfbbbd1efed7a657fd2d0f6ea59d4fe712f1db53bc350cd5a06`.
+Rights review record: `5f43839cecb9f73742bc518432f03be38f7cf09fa4d2ecdc5494ac265cbf51eb`.
+Label review record: `f622aa4c186b3fb2919edb704c1440100198ce6aaa9ab7da78967f1c62bea465`.
+
+Assembly configuration SHA-256:
+`27b74319987effd37bbac77bff5b6455044d2998f061e4917775fb2b0b472098`.
+Fresh snapshot identity:
+`8052a51506124ca853f685f2d66a2c999bfdab16b422afb455fa0aa8477750d1`.
+Source permissions and labels are admitted with zero preparation issues;
+conditioning shards occupy 88,208,268 bytes. Snapshot `trainingAdmitted` remains
+false: actual training revalidates these inputs at the execution boundary.
+Vocabulary has 18 non-padding phones including `pau`. The protected evaluation
+songs and 267/33/124 split remain unchanged.
+
+Started a fresh seed-933 acoustic model, not a resumed checkpoint with modified
+vocabulary. Configuration is `prepared-combined/training-combined.json`, SHA-256
+`11278a6a5af0ed1f8a55b21995f0986428522c7bc4214ecccd6b09f9894348cd`:
+128 hidden/channels, 3 encoder layers, 6 diffusion backbone layers, 1000 timesteps,
+L1 loss, learning rate 0.0008, 267 maximum updates, 900 seconds per epoch.
+One epoch requested, one CPU thread, 1200-second run limit and 64 MiB checkpoint
+cap. Output is `/Users/lhs/seam-corpus-pauses-2026-09-19-r1/acoustic-combined-r1`;
+execution session 66651. Start-time free disk was approximately 1.7 GiB.
+Completion and quality must be recorded from the resulting receipt, not inferred
+from launch. Existing vocoder session 72412 continues unchanged; latest observed
+progress is 900/2804 at 3518.6 seconds. No new singer-quality claim is made.
+
 ## Verified recovery at a corpus song boundary
 
 September 19, 2026 — added explicit `--resume-song-captures` for interrupted
