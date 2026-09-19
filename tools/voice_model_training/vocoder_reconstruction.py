@@ -470,3 +470,46 @@ def evaluate_held_out_reconstruction(
             stream.write(raw)
 
     return receipt
+
+def build_pitch_tracks(executable, source_audio, rendered_audio, *, sample_rate, sample_rate_hz=None,
+                       timeout_seconds=30.0):
+    """Framewise native pitch for both audio signals, as the comparison requires.
+
+    The acceptance predicate includes a pitch term that can only be evaluated when both
+    tracks exist, and until now no producer supplied them, so the term could never be
+    satisfied. Both tracks are measured by the same pinned first-party extractor over
+    identical geometry, so a comparison between them is a real difference between two
+    measurements rather than between a measurement and a transcription.
+
+    Returns the two tracks keyed by ``source`` and ``rendered`` alongside the exact WAV
+    digests the extractor bound its frames to. Those digests are not incidental: the
+    comparison refuses a track whose binding does not match the bytes it is given, so
+    inheriting them from this function is what keeps the caller from having to rebuild
+    the same WAV a second time and risk disagreeing with it.
+
+    Both signals must already be the same length, because the extractor's frame grid is
+    derived from the sample count and the comparison requires matching grids. Padding a
+    shorter signal would invent pitch for samples that were never synthesized, so a
+    length mismatch is refused rather than repaired.
+    """
+    import tempfile
+    from .native_features import extract_pitch
+
+    source = _mono_audio(source_audio, "source audio")
+    rendered = _mono_audio(rendered_audio, "rendered vocoder output")
+    rate = sample_rate if sample_rate_hz is None else sample_rate_hz
+    if len(rendered) != len(source):
+        raise ValueError("Pitch tracks require equally long source and rendered audio")
+    with tempfile.TemporaryDirectory(prefix="seam-pitch-tracks-") as directory:
+        directory = Path(directory)
+        tracks, digests = {}, {}
+        for name, audio in (("source", source), ("rendered", rendered)):
+            path = directory / f"{name}.wav"
+            payload = _float_wav(audio, rate)
+            path.write_bytes(payload)
+            # The extractor binds each track to the digest of the WAV file it was given,
+            # not to the raw sample bytes, so the comparison must be handed the same
+            # file-level digest or it refuses a track that is actually correct.
+            digests[name] = hashlib.sha256(payload).hexdigest()
+            tracks[name] = extract_pitch(executable, path, timeout_seconds=timeout_seconds)
+    return tracks, digests

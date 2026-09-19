@@ -1,5 +1,51 @@
 # Integrated Singer Execution
 
+## The pitch term is now wired, and the gate's own strictness is the next question
+
+September 19, 2026 — first producer for the pitch tracks the acceptance predicate requires.
+
+```text
+Engineering: DEMONSTRATED
+Creator workflow: NOT_OBSERVED
+Musical review: NOT_REVIEWED
+```
+
+The entry above found that the vocoder reconstruction gate can never report success because its pitch
+term needs framewise tracks that no producer supplies. `build_pitch_tracks` in
+`vocoder_reconstruction.py` now supplies them: it writes both signals as float WAVs, runs the pinned
+first-party extractor (`seam_voicebank_cli extract-pitch`) over each, and returns the two tracks with
+the file digests the extractor bound them to. Measured on a held-out corpus song, both tracks carry
+1008 frames on the full-hop grid, and the comparison now discriminates:
+
+| signals compared | comparison status | satisfied |
+|---|---|---|
+| identical audio | UNRESOLVED | false |
+| audio shifted by 4800 samples | MISMATCH | false |
+
+One detail that cost a wrong first attempt and is worth keeping: the extractor binds each track to the
+digest of the WAV file it was handed, not to the digest of the sample bytes. Passing the PCM digest makes
+the comparison refuse a track that is actually correct, which is what happened before the helper returned
+the file digests.
+
+**The wiring exposes a second question, and it is not mine to answer.** The comparison reports
+`comparisonSatisfied` only for `MATCH_ON_MEASURABLE_FRAMES`, which requires no unmeasurable spans *and*
+no voiced frame on either side below 0.6 confidence. Identical audio does not reach it: the identical
+comparison reports UNRESOLVED on a real song. So even with a producer, a vocoder whose output is
+genuinely correct can fail the pitch term because a fraction of its frames are low-confidence.
+
+That is a gate-strictness decision rather than a defect, and it has three honest resolutions:
+
+1. Let `pitch_ok` accept a measured-frames verdict with an explicit low-confidence budget, so the gate
+   states how much of the phrase must be measurable instead of requiring all of it.
+2. Keep the strict predicate and require a separately justified, higher-confidence evaluation signal.
+3. Score the vocoder on spectral and energy reconstruction, and treat pitch as its own gate with its own
+   threshold, rather than as a conjunct that can only be satisfied by a perfect measurement.
+
+I am recording rather than choosing, because each changes what the gate proves about the product.
+
+Status: wiring landed and measured; 185 of 185 training tests pass. trainingAdmitted, singerQualified and
+releaseEligible remain false.
+
 ## The vocoder reconstruction gate cannot report success as currently wired
 
 September 19, 2026 — the acceptance predicate and its only producer disagree.
