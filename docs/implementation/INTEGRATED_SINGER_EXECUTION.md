@@ -1,5 +1,23 @@
 # Integrated Singer Execution
 
+## Windows repair reached the static OpenSSL compile
+
+September 20, 2026 — job 105955865842 in run 35465098962 at `0aadfd23` has been
+in its build step for roughly 50 minutes, so its log was inspected to distinguish
+a stall from real work. The log shows MSVC actively compiling the pinned OpenSSL
+static library (crypto/x509/v3_*.c with the expected AES/BSAES/SHA asm defines),
+which is the long pole rather than a hang.
+
+This matters as evidence for the native-Perl repair in `5040bff2`. The earlier
+Windows failure aborted within seconds at OpenSSL Configure with
+"Can't locate OpenSSL/fallback.pm". Reaching sustained compilation of OpenSSL
+means interpreter selection succeeded and that defect is cleared in the real
+environment. It also confirms the NOMINMAX and moduleinfo changes did not break
+configuration, since the build is past configure.
+
+No Windows result is claimed yet: the wrapper, moduleinfotool and validator
+targets have not run in this job.
+
 ## Full native suite passes with the accumulated session repairs
 
 September 20, 2026 — the session's changes had so far been verified mainly by the
