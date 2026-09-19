@@ -1,5 +1,30 @@
 # Integrated Singer Execution
 
+## Real trained pause candidate completes application export and reopen
+
+September 19, 2026 — the apparent unresolved consonant was the standalone `pau`
+event. Neural snapshots already selected `ProceduralInNote`, but a single Silence
+token had neither a vowel nucleus nor an inferred start. The compiler now resolves
+the score-owned start for a sole untimed unvoiced Silence token, without inventing
+a nucleus, changing explicit timing or resolving arbitrary consonant clusters.
+Timing policy revision is now 4 and is already bound into neural/procedural cache
+identity. Tests cover three sample rates, unchanged source-dependent behavior,
+preserved explicit edits and continued refusal to infer a lone onset.
+
+Built the affected timing and production-render targets with two build jobs.
+Both CTests pass. The actual candidate `bundle-e9-v6` then renders the held-out
+`phrase-00423/baseline/project.seam` with default `SP` alias lookup, normal coordinator
+and native neural worker. It commits master/stems/project and the harness reopens
+the saved project and verifies its neural resource identity. Output is
+`/Users/lhs/seam-corpus-pauses-2026-09-19-r1/application-e9-v6-export`.
+Master SHA-256:
+`253368afd3b25367e1c534f139301be52d0f436f1db44210193be29780b74130`.
+The harness reports 300,000 interleaved output samples, all nonzero, and completes
+in 1.20175 seconds. This is execution/export evidence, not silence accuracy,
+isolated inference performance, intelligibility or singer qualification. In
+particular, the vocoder is the old known pitch-failing epoch-six candidate, not
+the larger run still in progress. No installed resource was replaced.
+
 ## Schedule-derived sampler bound and real pause-candidate deployment
 
 September 19, 2026 — replaced the unjustified standard-deviation monotonicity

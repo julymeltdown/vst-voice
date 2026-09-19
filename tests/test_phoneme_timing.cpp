@@ -161,6 +161,33 @@ TEST_CASE("procedural timing allocates untimed onsets without rewriting explicit
   CHECK(phones == fixture.tokens());
 }
 
+TEST_CASE("a standalone pause has score timing without inventing a vowel nucleus") {
+  using namespace seam;
+  TimingFixture fixture;
+  auto phones = fixture.tokens();
+  phones.resize(1U); phones[0].symbol = "pau";
+  phones[0].role = domain::PhonemeRole::Silence; phones[0].voiced = false;
+  for (auto rate : {44100U, 48000U, 96000U}) {
+    const auto source = synthesis::compilePhonemeTimingPlan(fixture.project, fixture.region(), phones, rate);
+    CHECK(source); CHECK(!source.value()[0].inferredStartFrame);
+    const auto resolved = synthesis::compilePhonemeTimingPlan(fixture.project, fixture.region(), phones, rate,
+        synthesis::PhonemeTimingPolicy::ProceduralInNote);
+    CHECK(resolved);
+    CHECK(resolved.value()[0].inferredStartFrame == std::optional{source.value()[0].nucleusFrame});
+    CHECK(resolved.value()[0].endFrame == source.value()[0].endFrame);
+    CHECK(!resolved.value()[0].nucleusKey); CHECK(!resolved.value()[0].explicitStartFrame);
+    CHECK(!resolved.value()[0].voiced.value());
+  }
+  phones[0].timing.startOffset = 10000;
+  const auto edited = synthesis::compilePhonemeTimingPlan(fixture.project, fixture.region(), phones, 48000U,
+      synthesis::PhonemeTimingPolicy::ProceduralInNote);
+  CHECK(edited); CHECK(edited.value()[0].explicitStartFrame); CHECK(!edited.value()[0].inferredStartFrame);
+  phones[0].timing.startOffset.reset(); phones[0].role = domain::PhonemeRole::Onset;
+  const auto unresolved = synthesis::compilePhonemeTimingPlan(fixture.project, fixture.region(), phones, 48000U,
+      synthesis::PhonemeTimingPolicy::ProceduralInNote);
+  CHECK(unresolved); CHECK(!unresolved.value()[0].inferredStartFrame);
+}
+
 TEST_CASE("procedural voiced onsets receive distinct timing without changing voicing or manual ownership") {
   using namespace seam;
   TimingFixture fixture; fixture.region().lyrics.front().surface=U"まな";
