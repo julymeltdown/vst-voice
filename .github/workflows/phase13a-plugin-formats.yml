@@ -106,9 +106,10 @@ jobs:
         run: |
           cmake -S "$RUNNER_TEMP/phase13a-deps/vst3sdk" -B "$RUNNER_TEMP/vst3sdk-build" \
             -DCMAKE_BUILD_TYPE=Release \
-            -DSMTG_ADD_VST3_PLUGINS_SAMPLES=OFF \
-            -DSMTG_ADD_VST3_HOSTING_SAMPLES=ON \
-            -DSMTG_CREATE_PLUGIN_LINK=OFF
+            -DSMTG_ENABLE_VST3_PLUGIN_EXAMPLES=OFF \
+            -DSMTG_ENABLE_VST3_HOSTING_EXAMPLES=OFF \
+            -DSMTG_CREATE_PLUGIN_LINK=OFF \
+            -DCMAKE_PROJECT_vstsdk_INCLUDE="$GITHUB_WORKSPACE/packaging/phase13a/cmake/vst3-validator-macos-language.cmake"
           cmake --build "$RUNNER_TEMP/vst3sdk-build" --config Release --target validator --parallel 2
       - name: Run vst3-validator and preserve raw log
         shell: bash

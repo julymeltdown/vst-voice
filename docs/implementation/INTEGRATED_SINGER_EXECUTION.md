@@ -1,5 +1,50 @@
 # Integrated Singer Execution
 
+## Steinberg vst3-validator macOS build: wrong CMake flag names, missing OBJCXX
+
+September 20, 2026 — repaired-candidate macOS VST3 job 105921858081 at
+`8d4ceda9` progressed past every prior compile failure: "Build canonical CLAP
+and VST3 wrapper" fully succeeded (build files written, no errors), confirming
+the from_chars/NOMINMAX fixes hold on macOS 15. It then failed in the separate
+"Build Steinberg vst3-validator" step with "CMake Error: Error required
+internal CMake variable not set... Missing variable is:
+CMAKE_OBJCXX_COMPILE_OBJECT" while generating build rules for the SDK's
+"validator" target.
+
+Traced through the pinned SDK source at commit
+`3cdf9ca5d1f5b1b21e0a86832aa4abe55607bd96` (submodule
+`vst3_public_sdk@586dc5e6c8012c3e4b01c79389375cbe96bdb1da`). Root causes,
+both confirmed by reading the SDK's actual CMakeLists.txt, not assumed:
+
+1. The workflow passed `-DSMTG_ADD_VST3_PLUGINS_SAMPLES=OFF` and
+   `-DSMTG_ADD_VST3_HOSTING_SAMPLES=ON`, but the SDK's real option names are
+   `SMTG_ENABLE_VST3_PLUGIN_EXAMPLES` and `SMTG_ENABLE_VST3_HOSTING_EXAMPLES`.
+   The wrong names were silently ignored (both stayed at their ON default),
+   so every CI run was needlessly configuring ~15 plugin examples and the
+   editorhost/audiohost/inspectorapp hosting samples we never use.
+2. `validator/CMakeLists.txt` compiles `module_mac.mm` directly for the
+   `validator` target (unconditional, not gated by either example flag). The
+   SDK's own top-level CMakeLists.txt never calls `enable_language(OBJCXX)`;
+   it relies on the Xcode generator's implicit handling. Our workflow invokes
+   plain `cmake -S -B` (Unix Makefiles generator on this runner), and that
+   combination hit the missing-variable error at generate time.
+
+Verified the fix mechanism locally with a minimal standalone CMake reproduction
+(unrelated to and not requiring the SDK checkout): a subdirectory target with a
+`.mm` source, configured without an explicit `enable_language(OBJCXX)`, then
+configured again with `-DCMAKE_PROJECT_<name>_INCLUDE=<file>` injecting
+`enable_language(OBJCXX)`; the injected form built and linked an OBJCXX
+executable cleanly under Unix Makefiles with the same CMake 4.1.1 present on
+this machine. Corrected both flag names to their real SDK option names (now
+OFF/OFF, since `validator` itself is built unconditionally regardless of
+either flag) and added `packaging/phase13a/cmake/vst3-validator-macos-language.cmake`,
+injected only on Apple via `CMAKE_PROJECT_vstsdk_INCLUDE`, so the pinned SDK
+checkout is not modified. Local Phase13A suite: 184 discovered, four skipped,
+180 executed, all pass (9.58 s); source closure and contract checks pass. This
+is local verification of the isolated CMake mechanism and static SDK-source
+tracing, not yet a green remote macOS validator build; that still needs a new
+CI run.
+
 ## Windows wrapper macro collision repaired after native Perl clears OpenSSL
 
 September 20, 2026 — repaired-candidate Windows job 105918018013 at `149b9752`
