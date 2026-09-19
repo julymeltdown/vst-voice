@@ -1,4 +1,5 @@
 #include "options.hpp"
+#include "seam/core/finite_decimal.hpp"
 
 #include "seam/native_ui/native_window.hpp"
 #include "seam/native_ui/voicebank_studio.hpp"
@@ -1533,10 +1534,11 @@ public:
       return seam::core::failure(seam::core::ErrorCode::Conflict, "Designer value target is stale or busy");
     std::size_t control = 0U; const auto index = id.substr(prefix.size());
     const auto parsedIndex = std::from_chars(index.data(), index.data()+index.size(), control);
-    double number = 0.0; const auto parsed = std::from_chars(value.data(), value.data()+value.size(), number);
+    double number = 0.0;
+    const auto parsed = seam::core::parseFiniteDecimal(value, number);
     const auto* model = designer_.model(); const auto count = designerControlCount(model->recipe(), designer_.auditionPose());
     if (parsedIndex.ec != std::errc{} || parsedIndex.ptr != index.data()+index.size() || control >= count ||
-        parsed.ec != std::errc{} || parsed.ptr != value.data()+value.size() || !std::isfinite(number))
+        !parsed)
       return seam::core::failure(seam::core::ErrorCode::InvalidArgument, "Designer numeric value is invalid");
     stopAudition();
     seam::core::Result<void> result = seam::core::success();

@@ -1,6 +1,7 @@
 #include "seam/interchange/ustx_codec.hpp"
 
 #include "seam/domain/note.hpp"
+#include "seam/core/finite_decimal.hpp"
 #include "seam/formats/json_value.hpp"
 
 #include <algorithm>
@@ -186,18 +187,7 @@ private:
     const auto integerResult = std::from_chars(token.data(), token.data() + token.size(), integer);
     if (integerResult.ec == std::errc{} && integerResult.ptr == token.data() + token.size()) return Node{integer};
     double number = 0.0;
-    // Older Apple libc++ has integer from_chars but deletes its floating overload.
-    // Match the locale-independent stream conversion used by our JSON reader.
-    std::istringstream numberStream{std::string{token}};
-    numberStream.imbue(std::locale::classic());
-    numberStream >> std::noskipws >> number;
-    if (token.front() != '+' && token.find_first_not_of("0123456789.eE+-") == std::string_view::npos &&
-        numberStream.eof() && !numberStream.fail()) {
-      if (!std::isfinite(number)) return fail("USTX number is not finite");
-      // Streams can silently round underflow to zero; from_chars rejected it.
-      const auto mantissa = token.substr(0, token.find_first_of("eE"));
-      if (number == 0.0 && mantissa.find_first_of("123456789") != std::string_view::npos)
-        return fail("USTX numeric scalar is malformed or out of range");
+    if (core::parseFiniteDecimal(token, number)) {
       return Node{number};
     }
     const auto numericCandidate = token.front() == '-' || token.front() == '+' ||

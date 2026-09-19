@@ -1,4 +1,5 @@
 #include "seam/native_ui/vibrato_inspector.hpp"
+#include "seam/core/finite_decimal.hpp"
 #include <charconv>
 #include <cmath>
 
@@ -73,8 +74,8 @@ core::Result<void> VibratoInspectorDraft::rebuild(const application::EditorSessi
       else if (value == "Off" || value == "off" || value == "0") patch.enabled = false;
       else valid = false;
     } else {
-      float number{}; const auto parsed = std::from_chars(value.data(), value.data() + value.size(), number);
-      valid = !value.empty() && parsed.ec == std::errc{} && parsed.ptr == value.data() + value.size() && std::isfinite(number);
+      float number{};
+      valid = core::parseFiniteDecimal(value, number);
       if (valid) patch.*fields[i - 1U] = number;
     }
     if (!valid) {

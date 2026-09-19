@@ -1,5 +1,24 @@
 # Integrated Singer Execution
 
+## Floating parser portability covers native authoring controls too
+
+September 20, 2026 — follow-up source audit found the same floating from_chars
+dependency in vibrato inspector input, dynamics-point gain input (a generic
+lambda instantiated for float) and native Voice Designer numeric controls.
+Replaced these with shared `core::parseFiniteDecimal`, also used by USTX.
+Integer parsing is unchanged. The helper is explicitly for non-realtime input;
+it uses classic-locale streams, decimal-only/full-token checks, finite/range
+checks and no output mutation on rejection.
+
+New direct float/double regression covers invalid grammar, whitespace, plus sign,
+NaN/Infinity, hex, overflow/underflow, negative zero and float-vs-double range.
+Existing USTX locale test remains. Rebuilt USTX, vibrato, dynamics and the actual
+Voicebank Studio app. Three selected CTest suites pass (1.80 s); source closure
+and diff checks pass. Linker duplicate-library warnings persist but did not fail
+the build. This is local compilation/workflow coverage, not a Voice Designer GUI
+interaction run or older-macOS remote verification. Phase13A run 35451001647
+predates this follow-up; do not credit its results to these changes.
+
 ## Corrected Linux GUI CI now has actual runtime evidence
 
 September 20, 2026 — inspected completed job 105915735448 at `24c4fb32`,

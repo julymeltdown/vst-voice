@@ -1,4 +1,5 @@
 #include "seam/native_ui/editor_controller.hpp"
+#include "seam/core/finite_decimal.hpp"
 
 #include "seam/native_ui/editor_frame_layout.hpp"
 #include "seam/native_ui/diagnostic_presentation.hpp"
@@ -611,8 +612,12 @@ core::Result<domain::DynamicsAutomationPoint> NativeEditorController::dynamicsPo
   std::int64_t tick{}; float gain{};
   const auto parse = [](const std::string& textValue, auto& value) {
     if (textValue.empty() || textValue.size() > 64U) return false;
-    const auto result = std::from_chars(textValue.data(), textValue.data() + textValue.size(), value);
-    return result.ec == std::errc{} && result.ptr == textValue.data() + textValue.size();
+    if constexpr (std::is_floating_point_v<std::remove_reference_t<decltype(value)>>) {
+      return core::parseFiniteDecimal(textValue, value);
+    } else {
+      const auto result = std::from_chars(textValue.data(), textValue.data() + textValue.size(), value);
+      return result.ec == std::errc{} && result.ptr == textValue.data() + textValue.size();
+    }
   };
   if (!parse(dynamicsPointEdit_->tickText, tick) || !parse(dynamicsPointEdit_->gainText, gain))
     return core::failure<domain::DynamicsAutomationPoint>(core::ErrorCode::InvalidArgument, "Enter an integer tick and a finite linear gain");

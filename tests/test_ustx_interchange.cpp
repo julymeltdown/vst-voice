@@ -1,4 +1,5 @@
 #include "test_framework.hpp"
+#include "seam/core/finite_decimal.hpp"
 
 #include "seam/application/project_factory.hpp"
 #include "seam/formats/project_json.hpp"
@@ -196,6 +197,27 @@ TEST_CASE("USTX floating scalars preserve decimal grammar and range rejection") 
   for (const auto value : {"+0.25", "1e9999", "1e-9999", "0.25junk", "1e", "--1", "0x1p-2", "nan", "NAN", "NaN(payload)", "inf", "INFINITY", ".inf"}) {
     CHECK(!withPan(value));
   }
+}
+
+TEST_CASE("portable finite decimal parser bounds float and double without mutating rejected output") {
+  const auto exercise = []<typename Floating>() {
+    for (const auto token : {"", " ", " 1", "1 ", "+1", "nan", "inf", "0x1p0", "1e9999", "1e-9999", "1.2.3", "1e", "--1"}) {
+      Floating value{7};
+      CHECK(!seam::core::parseFiniteDecimal(token, value));
+      CHECK(value == Floating{7});
+    }
+    Floating value{};
+    CHECK(seam::core::parseFiniteDecimal("2.5e-1", value));
+    CHECK(value == Floating{0.25});
+    CHECK(seam::core::parseFiniteDecimal("-0.0", value));
+    CHECK(std::signbit(value));
+  };
+  exercise.operator()<float>();
+  exercise.operator()<double>();
+  float small{};
+  double large{};
+  CHECK(!seam::core::parseFiniteDecimal("1e40", small));
+  CHECK(seam::core::parseFiniteDecimal("1e40", large));
 }
 
 TEST_CASE("USTX decimal decoding is independent of the global numeric locale") {
