@@ -1,5 +1,105 @@
 # Integrated Singer Execution
 
+## r3 epoch 1 completed: the 512-channel vocoder tracks pitch and the hop-rate comb is gone
+
+September 20, 2026 — the resumed `vocoder-512-segments-r3` run finished its epoch rather than stopping
+at a partial checkpoint. 2,804 of 2,804 planned updates completed, `epoch-000001` and `run.json` were
+published, and the held-out reconstruction ran with the native pitch extractor enabled. Mean generator
+loss fell from 45.83 at the 450-update resume to 34.12 at update 2,175 and continued to the epoch end.
+
+Checkpoint: `epoch-000001/checkpoint.json`, receipt SHA-256
+`cec64e7c5adb3ec81cceaa7c81046ca8d62447e0126f49df2bba639fe536dd94`, `checkpointBytes` 720,450,469,
+`epochComplete` and `coverageVerified` both true. Its metadata records
+`upsample_initial_channel` 512 with resblock kernels 3/7/11, so this epoch is the real
+`mini-nsf-512-mrf-v1` architecture, not the 32-channel smoke fixture.
+
+### Held-out reconstruction, 12 items
+
+| Measure | Value | Budget | Verdict |
+|---|---|---|---|
+| `meanSpectralDistance` | **0.970694** | 3.5 | passes |
+| `meanAbsolutePitchErrorCents` | **46.676** | -- | see below |
+| `measurablePitchFrames` | 12,186 | -- | -- |
+| frames within 50 cents | **11,376 (93.35%)** | -- | -- |
+| `legacyMeanAbsoluteMedianDifferenceCents` | 77.544 | -- | diagnosis-only |
+| `allReconstructionsSatisfied` | **false** | -- | `unresolvedPitchItems` is 0 |
+
+Per item, 91.3% to 95.3% of measurable voiced frames fall inside 50 cents, and the per-item **median**
+absolute error is 0.46 to 0.69 cents. A median under 1 cent with a mean near 47 cents means the pitch is
+tracked correctly on the large majority of frames and is dragged by a minority of outliers.
+
+**Comparison against the previously measured model.** The 1,506-cent figure quoted throughout the issue
+register was measured through the 32-channel smoke export. Against this epoch it is **46.676 cents** on the
+same 12 held-out songs, a 32-fold reduction.
+
+### The export now follows pitch, on every reference note
+
+Exporting `epoch-000001` produced a 55,762,986-byte ONNX graph recording
+`generatorParameterCount` 13,936,386 (compare the smoke export's 168,336 bytes). Its revision-2
+conditioning diagnostic requests four notes and recovers them far better:
+
+| Requested | Smoke export (measured) | This export (measured) | This export error |
+|---|---|---|---|
+| 110 Hz | 107.143 Hz | 110.543 Hz | 8.53 cents |
+| 220 Hz | 214.293 Hz | 220.266 Hz | 2.09 cents |
+| 440 Hz | 461.405 Hz | 440.787 Hz | 3.09 cents |
+| 880 Hz | 857.481 Hz | 883.590 Hz | 7.05 cents |
+
+`pitchFollowsRequestedNote` is now **true** on all four notes with full voiced coverage, where the smoke
+export failed the 440 Hz case at 82.24 cents. Torch/ONNX parity passes at 1/3/16/23 frames with a maximum
+error of 7.0e-08 samples.
+
+### The hop-rate artifact is gone
+
+Measured on the epoch's own held-out renders, which is the first time this has been measured through a
+real-capacity model:
+
+| Artifact | Spectral peak | Energy above 16 kHz | 187.5 Hz band share |
+|---|---|---|---|
+| Smoke model (`recon-tracked4`) | 187.5 Hz | 0.0085 | dominant comb |
+| Smoke model (`recon-e6-native-pitch`) | 562.6 Hz | 0.011-0.012 | present |
+| **This epoch** | **293.8-494.0 Hz** | **0.0002-0.0018** | **~1e-5** |
+
+The spectral peak now sits at real musical fundamentals that differ per song, and the comb at
+48000/256 = 187.5 Hz is effectively absent. Closure condition 4 of SEAM-BETA-P0-08 ("a repeated
+full-song render whose spectrum is consistent with the source rather than with broadband noise or the
+hop-rate artifact") is therefore met for held-out reconstruction. It is not yet met for a full-song render
+through the shipped native worker.
+
+### The pitch conjunct is unsatisfiable as specified, and the control proves it
+
+`pitch_ok` requires `comparisonSatisfied`, which `pitch_comparison.py:155` defines as
+`status == "MATCH_ON_MEASURABLE_FRAMES"`, and that status is `MISMATCH` if **any** single frame lies
+outside 50 cents. Running the identical-source control the register asks for, comparing a held-out render
+against itself, returns:
+
+```
+IDENTICAL-AUDIO CONTROL -> UNRESOLVED | measurable 958 | within 958 | outside 0
+                        | voicingMismatch 0 | unmeasurable 45 | maxAbsCents 0.0
+```
+
+Identical audio yields zero frames outside tolerance and still does not satisfy the conjunct, because 45
+unmeasurable frames keep the status at `UNRESOLVED`. The synthetic fixture test passes because its
+constructed tracks have no unmeasurable spans. **This is exactly the owner decision P0-08 closure item 2
+describes**, and it now has the control evidence the item asked for rather than an argument.
+
+Reading the measured 93.35% against the contract's stated criterion `pitch-within-50` of "minimum 90 percent"
+(docs/product/full-product-beta-contract.json), the release-bar-shaped rule would pass at this epoch while
+the zero-tolerance conjunct cannot, on any audio including bit-identical audio.
+
+### What is still not true
+
+- `allReconstructionsSatisfied` is false, so the register's P0-08 conjunction stays unmet.
+- The renders sit about 5.7 to 7.6 dB below their sources in RMS, so level restoration is still unhandled.
+- This is **epoch 1 of 1**, against a 60,000-update budget — 2,804 updates. The model is trained, not
+  converged.
+- The corpus labels are `com.project-seam.training-generated-teacher`, so this establishes that the
+  architecture and pipeline work, not that the voice is usable. R9 still requires a rights-cleared corpus.
+- No listener has heard it. `docs/implementation/listening/2026-09-15-d1-02/decision.md` remains
+  `NOT_REVIEWED`.
+
+
+
 ## Windows repair reached the static OpenSSL compile
 
 September 20, 2026 — job 105955865842 in run 35465098962 at `0aadfd23` has been
