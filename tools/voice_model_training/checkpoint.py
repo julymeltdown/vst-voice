@@ -97,6 +97,14 @@ def publish_checkpoint(model, optimizer, output: Path, *, metadata: dict, epoch:
                         **captured_value), LimitedWriter())
         stream.flush()
         os.fsync(stream.fileno())
+    # A written checkpoint must be readable before it is published. Two long runs
+    # produced archives whose central directory Torch could not read, and because
+    # the receipt was published from the writer's own byte count rather than from a
+    # verification of the bytes on disk, that failure surfaced only when a later
+    # resume or export tried to load the file. Re-reading here turns it into an
+    # explicit refusal that leaves no receipt, which is the contract the directory
+    # already implies by publishing checkpoint.json last.
+    verify_written_checkpoint(output, digest.hexdigest(), written)
     if before_publish is not None:
         before_publish()
     receipt = dict(formatId="com.project-seam.training-checkpoint", schemaVersion=1,
@@ -105,3 +113,32 @@ def publish_checkpoint(model, optimizer, output: Path, *, metadata: dict, epoch:
                    **captured_value, trainingAdmitted=False, releaseEligible=False)
     publish_new(output / "checkpoint.json", receipt)
     return receipt
+
+
+def verify_written_checkpoint(directory: Path, expected_sha256: str, expected_bytes: int) -> None:
+    """Re-read a just-written checkpoint and refuse a truncated or unreadable file.
+
+    This is not an untrusted-archive importer: the caller has just produced the bytes
+    in this own directory. It exists because write errors and interrupted archives
+    are silent at the write boundary, and a receipt published over an unreadable file
+    converts a local failure into a later, more confusing one.
+    """
+    import io
+    import torch
+    path = directory / "checkpoint.pt"
+    if path.is_symlink():
+        raise ValueError("A written checkpoint cannot be a symlink")
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+    with os.fdopen(os.open(path, flags), "rb") as stream:
+        info = os.fstat(stream.fileno())
+        if not stat.S_ISREG(info.st_mode) or info.st_size != expected_bytes:
+            raise ValueError("Written checkpoint size differs from the bytes reported written")
+        payload = stream.read(expected_bytes + 1)
+    if len(payload) != expected_bytes or hashlib.sha256(payload).hexdigest() != expected_sha256:
+        raise ValueError("Written checkpoint bytes differ from the digest of the write")
+    try:
+        state = torch.load(io.BytesIO(payload), map_location="cpu", weights_only=True)
+    except Exception as error:
+        raise ValueError(f"Written checkpoint is not readable: {str(error)[:128]}") from error
+    if not isinstance(state, dict) or "model" not in state or "optimizer" not in state or "rng" not in state:
+        raise ValueError("Written checkpoint does not contain the expected training state")
