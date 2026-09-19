@@ -1,5 +1,36 @@
 # Integrated Singer Execution
 
+## Bounded acoustic checkpoint retention and continuation through epoch thirteen
+
+September 19, 2026 — added opt-in `--retain-checkpoints N` to acoustic training.
+The default still retains every checkpoint. Opt-in runs verify each newly completed
+binary against its receipt before considering retirement; only binaries created
+inside that new run are eligible. Before removing an older `checkpoint.pt`, its
+receipt and exact binary bytes are rechecked and a retention record names the
+verified successor. Receipts remain, and run schema 2 distinguishes retained bytes
+from cumulative written bytes and marks each summary's binary availability.
+The budget includes N+1 binaries during publication. Retired binaries are not
+recoverable from receipts alone; earlier runs and the resume source are untouched.
+This is not hostile-directory concurrent-mutation or power-loss-atomic retention.
+
+Added `--minimum-free-bytes`: before each epoch, available space must cover the
+requested floor plus the remaining per-checkpoint budget. This is a periodic
+preflight, not an OS reservation against other processes. Tests verify new-run-only
+retirement, preserved receipts/latest binary, corrupt-successor refusal without
+pruning, headroom refusal, and unchanged default lineage/budget behavior. Five
+epoch/train-command tests pass in both system and Torch environments.
+
+Resumed epoch five into new `acoustic-combined-r3` for eight epochs (target epoch
+thirteen), same captured training/dataset inputs, 2400-second limit, 64 MiB live
+checkpoint budget, retention one and 1,610,612,736-byte disk floor. Session 63313;
+completion and validation improvements are not yet observed. The matching epoch
+one/five probe's frame-weighted mel MAE is 5.555892 -> 4.158173 (25.1574% reduction),
+which motivates this bounded continuation but does not establish usable singing.
+Vocoder session 72412 remains live; latest collected progress 1075/2804 at 4194.2s.
+Full discovery passes 217 tests with 35 optional skips (182 executed), 34.14 seconds.
+Phase11 source and diff checks pass; the continuation remains a live experiment,
+not a completed epoch-thirteen result.
+
 ## Separate acoustic reconstruction from vocoder quality
 
 September 19, 2026 — resumed the exact combined-corpus checkpoint for four further

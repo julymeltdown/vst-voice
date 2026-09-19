@@ -96,6 +96,9 @@ def main():
     parser.add_argument("--epochs", type=int, default=1)
     parser.add_argument("--maximum-run-seconds", type=float, default=3600)
     parser.add_argument("--maximum-total-checkpoint-bytes", type=int, default=2 * 1024**3)
+    parser.add_argument("--retain-checkpoints", type=int,
+                        help="Keep newest N binaries from this new run; keep all receipts and need N+1 space")
+    parser.add_argument("--minimum-free-bytes", type=int, default=0)
     args = parser.parse_args()
     try:
         if (args.resume is None) != (args.resume_receipt_sha256 is None):
@@ -161,6 +164,7 @@ def main():
             completed_epochs=completed_epochs, parent_receipt_sha256=args.resume_receipt_sha256,
             metadata=metadata, maximum_run_seconds=args.maximum_run_seconds,
             maximum_total_checkpoint_bytes=args.maximum_total_checkpoint_bytes,
+            retain_checkpoints=args.retain_checkpoints, minimum_free_bytes=args.minimum_free_bytes,
             epoch_options=dict(dataset_inputs=inputs,
             conditioning_directory=args.conditioning, targets=targets, expected_profile_sha256=profile,
             maximum_updates=settings["maximumUpdates"], maximum_seconds=settings["maximumSeconds"],
