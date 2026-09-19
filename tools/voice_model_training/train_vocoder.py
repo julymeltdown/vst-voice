@@ -134,6 +134,8 @@ def main(argv=None):
     parser.add_argument('--epochs', type=int, default=1)
     parser.add_argument('--maximum-run-seconds', type=float, default=3600)
     parser.add_argument('--maximum-total-checkpoint-bytes', type=int, default=2 * 1024**3)
+    parser.add_argument('--retain-checkpoints', type=int,
+        help='Keep newest N checkpoints from this new run; preserve all receipts and allow space for N+1')
     # Optional because it costs one subprocess per held-out signal. Supplying it is
     # what makes the reconstruction receipt's pitch term evaluable; omitting it leaves
     # that term UNRESOLVED, which the receipt states rather than disguises.
@@ -147,7 +149,8 @@ def main(argv=None):
             raise ValueError('Training output must be new with an existing parent')
         if (not 1 <= args.epochs <= 1000 or not math.isfinite(args.maximum_run_seconds)
                 or not 0 < args.maximum_run_seconds <= 86400
-                or not 1 <= args.maximum_total_checkpoint_bytes <= 8 * 1024**3):
+                or not 1 <= args.maximum_total_checkpoint_bytes <= 8 * 1024**3
+                or args.retain_checkpoints is not None and not 1 <= args.retain_checkpoints <= 1000):
             raise ValueError('Invalid bounded vocoder run limits')
         settings = load_config(args.training_config, args.training_sha256)
         configuration = model_settings(settings)
@@ -207,6 +210,7 @@ def main(argv=None):
             parent_receipt_sha256=args.resume_receipt_sha256, metadata=metadata,
             maximum_run_seconds=args.maximum_run_seconds,
             maximum_total_checkpoint_bytes=args.maximum_total_checkpoint_bytes,
+            retain_checkpoints=args.retain_checkpoints,
             epoch_options=dict(dataset_inputs=inputs, conditioning_directory=args.conditioning,
                 targets=targets, pcm_sources=sources, expected_profile_sha256=profile,
                 reconstruction_loss=reconstruction, objective_id=OBJECTIVE_ID,

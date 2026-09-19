@@ -165,6 +165,7 @@ class VocoderEpochRunTests(unittest.TestCase):
 
     def test_invalid_options_and_existing_output_rejected_before_epoch(self):
         changes = (dict(epochs=0), dict(epochs=True), dict(epochs=1001), dict(completed_epochs=-1),
+                   dict(retain_checkpoints=0), dict(retain_checkpoints=True), dict(retain_checkpoints=1001),
                    dict(completed_epochs=1), dict(parent_receipt_sha256="a" * 64),
                    dict(completed_epochs=1, parent_receipt_sha256="X" * 64),
                    dict(maximum_run_seconds=float("nan")), dict(maximum_run_seconds=True),
@@ -189,6 +190,70 @@ class VocoderEpochRunTests(unittest.TestCase):
                                            **self.options(cancelled=lambda: True))
             self.assertFalse((root / "cancelled").exists())
             train.assert_not_called()
+
+    def binary_epoch(self, *args, **kwargs):
+        destination = kwargs["output"]
+        destination.mkdir()
+        records = []
+        for name in ("models.pt", "training.pt"):
+            payload = b"x" * 50
+            (destination / name).write_bytes(payload)
+            records.append(dict(path=name, bytes=len(payload), sha256=hashlib.sha256(payload).hexdigest()))
+        receipt = dict(formatId="com.project-seam.gan-checkpoint", files=records,
+            checkpointBytes=100, checkpointSha256="a" * 64,
+            metadata=dict(datasetSha256="b" * 64, run=kwargs["run_metadata"]),
+            epoch=dict(epochComplete=True, coverageVerified=True, updates=1,
+                       meanGeneratorLoss=.5, meanDiscriminatorLoss=.25))
+        publish_new(destination / "checkpoint.json", receipt)
+        return receipt
+
+    def test_rolling_retention_preserves_receipts_and_bounds_peak_bytes(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "run"
+            peak = []
+            def epoch(*args, **kwargs):
+                receipt = self.binary_epoch(*args, **kwargs)
+                peak.append(sum(path.stat().st_size for path in root.glob("*/*.pt")))
+                return receipt
+            with patch("tools.voice_model_training.vocoder_epochs.train_reviewed_vocoder_epoch", epoch):
+                result = run_reviewed_vocoder_epochs(None, [], None, None, output=root,
+                    **self.options(epochs=5, retain_checkpoints=1))
+            self.assertEqual(peak, [100, 200, 200, 200, 200])
+            self.assertEqual(result["schemaVersion"], 2)
+            self.assertEqual(result["checkpointBytes"], 100)
+            self.assertEqual(result["writtenCheckpointBytes"], 500)
+            self.assertEqual([c["binariesRetained"] for c in result["checkpoints"]], [False]*4 + [True])
+            for entry in result["checkpoints"]:
+                directory = root / entry["path"]
+                self.assertEqual(hashlib.sha256((directory / "checkpoint.json").read_bytes()).hexdigest(),
+                                 entry["receiptSha256"])
+                self.assertEqual((directory / "models.pt").exists(), entry["binariesRetained"])
+                self.assertEqual((directory / "pruned-binaries.json").exists(), not entry["binariesRetained"])
+
+    def test_failed_or_corrupt_successor_never_prunes_last_checkpoint(self):
+        for corruption in ("failure", "bytes", "symlink"):
+            with self.subTest(corruption=corruption), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary) / "run"
+                def epoch(*args, **kwargs):
+                    second = kwargs["run_metadata"]["completedEpochs"] == 2
+                    if second and corruption == "failure":
+                        raise RuntimeError("incomplete successor")
+                    receipt = self.binary_epoch(*args, **kwargs)
+                    if second:
+                        path = kwargs["output"] / "training.pt"
+                        if corruption == "bytes":
+                            path.write_bytes(b"y" * 50)
+                        else:
+                            path.unlink()
+                            path.symlink_to(root / "epoch-000001" / "training.pt")
+                    return receipt
+                with patch("tools.voice_model_training.vocoder_epochs.train_reviewed_vocoder_epoch", epoch):
+                    with self.assertRaises((RuntimeError, ValueError)):
+                        run_reviewed_vocoder_epochs(None, [], None, None, output=root,
+                            **self.options(retain_checkpoints=1))
+                self.assertTrue((root / "epoch-000001" / "models.pt").is_file())
+                self.assertEqual((root / "epoch-000001" / "training.pt").read_bytes(), b"x" * 50)
+                self.assertFalse((root / "run.json").exists())
 
     @unittest.skipUnless(importlib.util.find_spec("torch"), "Optional Torch environment required")
     def test_real_small_gan_checkpoint_roundtrip_and_cumulative_budget(self):
@@ -224,6 +289,14 @@ class VocoderEpochRunTests(unittest.TestCase):
             self.assertFalse((bounded / "epoch-000002" / "checkpoint.json").exists())
             self.assertFalse((bounded / "run.json").exists())
             self.assertLessEqual(sum(path.stat().st_size for path in bounded.glob("*/*.pt")), 2 * first_size - 1)
+            rolling = run_reviewed_vocoder_epochs(generator, [discriminator], go, do, output=root / "rolling",
+                **self.options(epochs=4, retain_checkpoints=1, maximum_total_checkpoint_bytes=2 * first_size))
+            final = root / "rolling" / "epoch-000004"
+            restore_vocoder_checkpoint(generator, [discriminator], go, do, final,
+                receipt_sha256=rolling["receiptSha256"],
+                expected_metadata=dict(datasetSha256="b" * 64, run=self.options()["metadata"] |
+                    dict(completedEpochs=4, parentReceiptSha256=rolling["checkpoints"][-2]["receiptSha256"])))
+            self.assertEqual(len(list((root / "rolling").glob("*/*.pt"))), 2)
 
 
 if __name__ == "__main__":

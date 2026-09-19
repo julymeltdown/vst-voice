@@ -1,5 +1,36 @@
 # Integrated Singer Execution
 
+## Rolling vocoder checkpoints and measured full-update cost
+
+September 19, 2026 — storage-limited training can now retain a bounded set of resumable epochs.
+
+`train_vocoder --retain-checkpoints N` opts into retaining the newest N binary checkpoints from
+the newly created run directory. Every original completion receipt and reconstruction stays in
+place. After a successor is published and both binary hashes verify, the runner verifies the old
+checkpoint and removes only its fixed `models.pt` and `training.pt` files, recording
+`pruned-binaries.json`. External resume checkpoints and previous runs are outside the deletion scope.
+No existing corpus/checkpoint files were pruned while implementing this feature; tests used temporary
+directories. The default still retains everything.
+
+The byte limit includes the temporary N+1 checkpoint peak. At the observed 553,464,732 bytes per
+checkpoint, retaining two needs about 1.55 GiB for binaries at peak, plus receipt/audio storage.
+Schema-2 run receipts distinguish retained `checkpointBytes` from cumulative `writtenCheckpointBytes`
+and mark each epoch's `binariesRetained`. Pruned epochs retain provenance but are not resumable.
+An interrupted publication never causes the previous complete checkpoint to be pruned. As before,
+incomplete attempts must be discarded and a complete checkpoint resumed with fresh admission.
+
+Validation: 187 training tests ran, 186 passed and one skipped. The retention tests exercise peak-byte
+accounting, unchanged receipt hashes, failed/corrupt/symlinked successors, and real Torch restoration
+from the newest checkpoint after pruning. This proves storage behavior, not model quality.
+
+A full `vocoder_gan_step` profile with the production architecture, 12 CPU threads, and a synthetic
+1080-frame / 48 kHz phrase took 8.789 seconds: backpropagation 4.609 seconds, discriminator output
+calls 3.883 seconds (overlapping nested convolution time), and `isfinite` checks 0.438 seconds.
+This is a synthetic one-update measurement, not an epoch benchmark or listening result. It explains
+much of the previously unexplained roughly 10 seconds/update; short forward-only or short-segment
+measurements cannot estimate the cost of the whole-phrase GAN training loop. Retention fixes storage
+growth, not this compute cost or the unresolved pitch mismatch.
+
 ## Publication-test synchronization and native packaging repairs
 
 September 19, 2026 — follow-up against CI at `6be73b6f`.
