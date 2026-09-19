@@ -1,5 +1,50 @@
 # Integrated Singer Execution
 
+## Disk headroom terminated both training runs; epoch nine remains recoverable
+
+September 19, 2026 — authoritative session results supersede earlier live status.
+Acoustic session 63313 exited 2 with `Acoustic checkpoint budget would cross the
+requested disk headroom`. Latest complete checkpoint is epoch nine, not thirteen.
+It covers all 267 training sources with mean training loss 0.3494700011; file size
+27,197,223 bytes, SHA-256
+`1e204d139452ea917e5b07226c6c48e4fbda6c29da66b909d95874b0270772de`.
+Receipt SHA-256 `ce175925e4ae433c2e5ccc96771a78353f482d9fee40214bcffe5a1c95564b2c`.
+Retention removed only new-run epoch-six through eight binaries; their receipts
+remain and previous runs are intact. Those binaries cannot be recovered from
+receipts alone. No complete eight-epoch run result exists.
+
+Vocoder session 72412 also exited 2, after its last reported 1150/2804 updates.
+Its epoch-failed event is at 4540.4 seconds: required free space 1,368,320,192 bytes,
+available 1,122,127,872. The output directory contains no files and uses zero
+reported disk blocks; no checkpoint or trained model from this attempt survived.
+The in-memory updates are lost, not resumable progress. Both PIDs are absent.
+No restart was attempted and neither guard was lowered. Volume inspection found
+no separate user data volume with useful training headroom; system/update/simulator
+mounts are not appropriate storage targets and were not modified. Free disk was
+about 1.2 GiB. Periodic guards detect competition; they do not reserve disk space.
+
+Evaluated the retained epoch nine on the unchanged five-source/32-step/seed-937
+validation probe. Frame-weighted natural-log mel MAE is 3.666258, versus 4.158173
+at epoch five and 5.555892 at epoch one (11.83% and 34.01% reductions respectively).
+All five items improve; pause-region MAEs remain 4.442728 and 4.873524. This is
+acoustic-only reconstruction, still not usable-singer acceptance. Report:
+`/Users/lhs/seam-corpus-pauses-2026-09-19-r1/acoustic-combined-e9-validation.json`.
+
+Next training work must address stable headroom and recoverable intra-epoch GAN
+state before repeating a multi-hour attempt. Any partial-update receipt must stay
+distinct from epoch-complete/coverage-complete evidence, bind ordered segment
+cursor and dataset/configuration identities, preserve optimizer/scheduler/RNG
+state, and prove resumed equivalence to uninterrupted execution. Do not label
+the failed 512-channel run as a candidate or fall back to the known pitch-failing
+small vocoder as if it were qualified. Epoch-nine acoustic export is being attempted
+separately; no bundle or waveform quality claim follows from graph publication.
+
+Actual export subsequently succeeded at `export-combined-e9`: 11,255,229-byte
+ONNX graph SHA-256 `4170b7c801347bd440f063a8e79124111e8b427bb35a532fc74f4e2f98666d49`.
+Deployment bridge, encoder checks, sampler checks and ONNX runtime smoke passed.
+Exporter emitted upstream tracing/constant-folding warnings; smoke success is not
+all-input parity or a singing-quality verdict. No installed resource was replaced.
+
 ## CI queue containment while model training continues
 
 September 19, 2026 — observed four older `project-seam-ci` runs in progress while
