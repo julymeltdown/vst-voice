@@ -1,5 +1,36 @@
 # Integrated Singer Execution
 
+## Second large vocoder attempt stopped on disk guard; update 450 is recoverable
+
+September 19, 2026 — session 65581 is terminal, exit 2; PID 23699 is absent.
+At run elapsed 2209.91 seconds, the disk guard required 1,368,320,192 free bytes
+but measured 1,321,984,000. Subsequent `df` reports about 1.2 GiB free. This
+supersedes all earlier live status. No automatic restart or weaker guard was used.
+
+Unlike r1, r2 retained a real partial checkpoint at
+`/Users/lhs/seam-corpus-xl-2026-09-19/vocoder-512-segments-r2/recovery-000001/update-000450`.
+Receipt SHA-256:
+`9fcd1f421353d8c9d68e57b013767d953f0cbd6c2f4a842fd19610e3e4abc8a8`.
+Reconstructed the canonical recovery plan from the captured dataset snapshot and
+receipt-bound run metadata, then reverified both binaries and exact cursor after
+the process exited: 720,450,469 bytes, 450/2804 updates, 14,072,000 covered samples.
+Next segment is `procedural-song-00079`, offset 125, 125 hops / 32,000 samples.
+Updates after this checkpoint were not saved and must be recomputed. No complete
+epoch, held-out reconstruction report or qualified vocoder exists from r2.
+
+Continuation must use the unchanged captured training/dataset/target inputs with
+`--resume-partial` pointing to this directory and `--resume-partial-sha256` above,
+plus a new output directory. Preserve the external resume checkpoint. Existing
+1 GiB final and 2 GiB recovery budgets require roughly 3.25 GiB free at preflight
+before evaluation allowance; more headroom is needed against external competition.
+Only about 1.2 GiB is currently available, so no continuation was launched.
+
+Further read-only inspection found `build/linux-debug` (897 MiB) has a CMake home
+of `/workspace`, unlike the native checkout. It was not cleaned through mismatched
+build scripts. Corpus, historical checkpoints, release build and runtime remain
+intact. Native Linux CI is still live; its final diagnostics remain actionable
+independent work while large training needs stable storage.
+
 ## Isolated-release failure traced to test import mode and repaired
 
 September 19, 2026 — isolated-release job 105910668085 at remote candidate
