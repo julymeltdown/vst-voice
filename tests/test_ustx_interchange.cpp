@@ -683,11 +683,12 @@ TEST_CASE("USTX simultaneous nonlinear pickups share the total interpolation err
     // Their identical +100c ramps add; a per-curve0.25c budget would permit
     // eight times the promised error and fails this independent dense oracle.
     for (std::int64_t index = 0; index < 8; ++index) {
+      const double offset = -500.0 * static_cast<double>(index);
       seam::interchange::UstxNote note;
       note.position = seam::time::Tick{index * 480};
       note.lyric = "あ";
       note.snapFirst = false;
-      note.pitch = {{-500.0 * index, 0.0, shape}, {250.0 - 500.0 * index, 10.0, "l"}};
+      note.pitch = {{offset, 0.0, shape}, {250.0 + offset, 10.0, "l"}};
       part.notes.push_back(std::move(note));
     }
     const auto source = seam::interchange::encodeUstx(document.value());
