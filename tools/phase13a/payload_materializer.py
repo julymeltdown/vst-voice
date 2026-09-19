@@ -152,6 +152,17 @@ def materialize_vst3(
     )
     if errors:
         raise RuntimeError("; ".join(errors))
+    # The wrapper project's own artifact directory is the payload root, so the
+    # build also leaves a generated copy of the package at the root, beside the
+    # declared VST3/ surface. On Windows that copy is a folder package named
+    # ProjectSEAMEditor.vst3 and validate_payload_shape rejects it as an
+    # undeclared top-level entry. macOS writes a bundle the same way but the
+    # assembler removes it later, which is why this only failed on Windows.
+    # Retire it here, as materialize_auv2 already does, so the payload root
+    # holds only declared surfaces.
+    generated_copy = output / source.name
+    if generated_copy != destination and generated_copy.exists():
+        shutil.rmtree(generated_copy) if generated_copy.is_dir() else generated_copy.unlink()
     return destination
 
 
