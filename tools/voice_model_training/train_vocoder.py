@@ -134,6 +134,11 @@ def main(argv=None):
     parser.add_argument('--epochs', type=int, default=1)
     parser.add_argument('--maximum-run-seconds', type=float, default=3600)
     parser.add_argument('--maximum-total-checkpoint-bytes', type=int, default=2 * 1024**3)
+    # Optional because it costs one subprocess per held-out signal. Supplying it is
+    # what makes the reconstruction receipt's pitch term evaluable; omitting it leaves
+    # that term UNRESOLVED, which the receipt states rather than disguises.
+    parser.add_argument('--pitch-executable', type=Path,
+        help='Trusted first-party feature extractor used for framewise reconstruction pitch')
     args = parser.parse_args(argv)
     try:
         if (args.resume is None) != (args.resume_receipt_sha256 is None):
@@ -208,7 +213,8 @@ def main(argv=None):
                 maximum_updates=settings['maximumUpdates'], maximum_seconds=settings['maximumSeconds'],
                 schedulers=schedulers, expected_dataset_sha256=snapshot['datasetSha256'],
                 held_out_items=settings['heldOutSources'], label_origin=settings['labelOrigin'],
-                evaluation_seed=settings['evaluationSeed']))
+                evaluation_seed=settings['evaluationSeed'],
+                pitch_executable=args.pitch_executable))
         print(json.dumps(result, sort_keys=True))
         return 0
     except KeyboardInterrupt:
