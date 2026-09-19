@@ -1,5 +1,34 @@
 # Integrated Singer Execution
 
+## Measured larger-model update cost and bounded whole-phrase stop
+
+September 19, 2026 — `check_vocoder_model --fixture-frames N` now accepts 16..4096
+analysis hops, defaults to 16, and records update geometry and separate supervised/GAN
+elapsed times. The bound matches training input admission, not available RAM. Invalid
+values fail before upstream loading. ONNX parity lengths remain separately fixed.
+
+Actual one-thread 512-channel MiniNSF probe at 128 hops (32,768 samples, 0.683 seconds):
+supervised update 0.929181 s; GAN update 4.312136 s; whole process 12.05 s; maximum RSS
+from macOS `/usr/bin/time -l` 2,703,900,672 bytes. Gradient ownership and finite updates
+pass. This is synthetic mechanics, not corpus training or steady-state throughput.
+
+A separate 1080-hop probe was supervised every 0.5 seconds with 6 GiB RSS, 1 GiB
+free-disk and 120-second wall-time stop thresholds. SIGTERM stopped it after 16.354842 s
+at observed RSS 6,495,305,728 bytes. No final report was produced: a completed
+whole-phrase GAN update and its elapsed time are unproven. Sampled RSS is an observed
+high-water mark, not the exact peak. The attempt exceeded the chosen safe budget on
+this busy machine; this does not prove that a 48 GiB machine can never train it.
+No checkpoint or retained model was created.
+
+Next: an explicit, provenance-bound segmented training option using the existing
+bounded batch reader, with contiguous nonoverlapping ownership covering every source,
+last-segment trim, accurate update/source counts and unchanged whole-song held-out
+evaluation. Keep whole-phrase mode compatible with existing checkpoints. Training
+one crop must never be reported as coverage of the complete source.
+
+Ten focused export/configuration tests pass, including invalid probe lengths. No
+training job was restarted and Beta GO remains unproven.
+
 ## Larger vocoder GAN mechanics and actual ONNX Runtime parity
 
 September 19, 2026 — extended the existing reproducible architecture probe.

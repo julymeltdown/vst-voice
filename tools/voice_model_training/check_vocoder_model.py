@@ -13,6 +13,7 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import time
 
 TRAINING_REVISION = "4d0889c4c180c75ad3000cc565864656344f8190"
 DEPLOYMENT_REVISION = "336cf01b57f2ad44c6b37a79cf33993043291759"
@@ -153,10 +154,14 @@ def main():
                         choices=("mini-nsf-32-smoke-v1", "mini-nsf-512-mrf-v1"))
     parser.add_argument("--mini-only", action="store_true",
                         help="Check only the deterministic MiniNSF family used for deployment")
+    parser.add_argument("--fixture-frames", type=int, default=16,
+                        help="Synthetic update length in 256-sample hops (16..4096); longer probes need more RAM")
     parser.add_argument("--check-onnx", action="store_true", help="Export and compare deterministic MiniNSF only")
     parser.add_argument("--check-gan", action="store_true", help="Run one real MiniNSF GAN mechanics step on synthetic PCM")
     parser.add_argument("--check-resume", action="store_true", help="Verify complete upstream GAN checkpoint continuation; requires --check-gan")
     args = parser.parse_args()
+    if not 16 <= args.fixture_frames <= 4096:
+        parser.error("--fixture-frames must be between 16 and 4096")
     if args.check_resume and not args.check_gan:
         parser.error("--check-resume requires --check-gan")
     training = trusted_checkout(args.training_checkout, TRAINING_REVISION)
@@ -204,9 +209,10 @@ def main():
         model.train()
         optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4)
         before = {name: value.detach().clone() for name, value in model.named_parameters()}
-        mel = torch.full((1, 80, 16), -4.0)
-        f0 = torch.full((1, 16), 220.0)
-        target = .1 * torch.sin(torch.arange(4096) * (2 * torch.pi * 220 / 48000))
+        mel = torch.full((1, 80, args.fixture_frames), -4.0)
+        f0 = torch.full((1, args.fixture_frames), 220.0)
+        target = .1 * torch.sin(torch.arange(args.fixture_frames * 256) * (2 * torch.pi * 220 / 48000))
+        update_started = time.perf_counter()
         optimizer.zero_grad(set_to_none=True)
         predicted = model(mel, f0)
         loss = (predicted - target.reshape(1, 1, -1)).abs().mean()
@@ -216,6 +222,7 @@ def main():
         torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0, error_if_nonfinite=True)
         optimizer.step()
         changed = sum(not torch.equal(before[name], value) for name, value in model.named_parameters())
+        supervised_seconds = time.perf_counter() - update_started
         if not changed or not all(torch.isfinite(p).all() for p in model.parameters()):
             raise AssertionError("Vocoder optimization did not produce finite changed weights")
         adapter.generator.load_state_dict(model.state_dict(), strict=True)
@@ -237,9 +244,11 @@ def main():
             discriminator_optimizer = torch.optim.AdamW(
                 [p for d in discriminators for p in d.parameters()], lr=1e-4, betas=(.8, .99), weight_decay=0)
             generator_optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4, betas=(.8, .99), weight_decay=0)
+            gan_started = time.perf_counter()
             gan = vocoder_gan_step(model, discriminators, generator_optimizer, discriminator_optimizer,
                 mel=conditioned_mel, f0=f0, pcm=pcm, hop_size=256, partition="train",
                 reconstruction_loss=lambda generated, real: (logarithmic_mel(generated) - logarithmic_mel(real)).abs().mean())
+            gan["elapsedSeconds"] = time.perf_counter() - gan_started
             if args.check_resume:
                 from tools.voice_model_training.vocoder_checkpoint import publish_vocoder_checkpoint, restore_vocoder_checkpoint
                 metadata = dict(trainingRevision=TRAINING_REVISION, deploymentRevision=DEPLOYMENT_REVISION,
@@ -274,6 +283,8 @@ def main():
                                                 checkpointRetained=False, fixtureOnly=True)
             adapter.generator.load_state_dict(model.state_dict(), strict=True)
         reports.append(dict(configuration=config, cases=cases, strictStateLoad=True,
+                            fixtureFrames=args.fixture_frames, fixtureSamples=args.fixture_frames * 256,
+                            supervisedUpdateSeconds=supervised_seconds,
                             fixtureLoss=loss.item(), changedParameterTensors=changed,
                             ganStep=gan,
                             onnxRuntime=check_onnx(adapter) if mini and args.check_onnx else None))

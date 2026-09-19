@@ -1009,6 +1009,13 @@ This writes no checkpoints unless `--check-resume` is explicitly added. It uses 
 synthetic inputs, not the admitted corpus; singing quality and whole-phrase resource
 requirements remain unverified. Runtime parity does not imply pitch accuracy.
 
+Use `--fixture-frames 128` to measure a longer synthetic update; accepted lengths
+are 16..4096 hops, default 16. Reports separate supervised and GAN update times.
+Longer lengths increase memory demand: a 1080-hop larger-model probe exceeded the
+chosen 6 GiB RSS safety budget before completing. Use a resource supervisor for
+large probes; the frame bound alone is not a memory guarantee. Retain full-song
+evaluation when investigating shorter training segments.
+
 The CLI and epoch service enforce free-space headroom before allocation, around
 updates/evaluation and before checkpoint serialization. The budget includes the
 configured checkpoint ceiling, retained evaluation WAVs/metadata and a 256 MiB

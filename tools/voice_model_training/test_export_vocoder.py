@@ -2,12 +2,24 @@ import copy
 import hashlib
 import json
 import unittest
+import subprocess
+import sys
 
 from tools.voice_model_training.export_vocoder import export_identity, TRAINING_REVISION
 from tools.voice_model_training.check_vocoder_model import summarize_pitch_conditioning, vocoder_configuration
 
 
 class VocoderPitchDiagnosticTests(unittest.TestCase):
+    def test_probe_rejects_unbounded_lengths_before_loading_upstream(self):
+        for value in ("0", "15", "4097", "1.5"):
+            result = subprocess.run([sys.executable, "-m",
+                "tools.voice_model_training.check_vocoder_model", "/missing-training", "/missing-deployment",
+                "--fixture-frames", value], capture_output=True, text=True, timeout=10)
+            with self.subTest(value=value):
+                self.assertEqual(result.returncode, 2)
+                self.assertIn("--fixture-frames", result.stderr)
+                self.assertNotIn("Traceback", result.stderr)
+
     def cases(self):
         return [dict(requestedHz=hz, measuredHz=hz, voicedCoverage=1.,
                      measurementReason=None, finite=True) for hz in (110., 220., 440., 880.)]
