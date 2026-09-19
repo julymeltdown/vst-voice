@@ -1,5 +1,6 @@
 #pragma once
 #include "seam/core/result.hpp"
+#include "seam/core/finite_decimal.hpp"
 #include "seam/time/tempo_map.hpp"
 #include "seam/time/meter_map.hpp"
 #include "seam/domain/project.hpp"
@@ -24,9 +25,7 @@ inline core::Result<double> parseTempoEditText(std::string_view text) {
   if (text.empty() || text.size() > 64U)
     return core::failure<double>(core::ErrorCode::InvalidArgument, "Enter a bounded numeric BPM value");
   double bpm = 0.0;
-  const auto parsed = std::from_chars(text.data(), text.data() + text.size(), bpm);
-  if (parsed.ec != std::errc{} || parsed.ptr != text.data() + text.size() ||
-      !std::isfinite(bpm) || bpm <= 0.0 || bpm > 1000.0)
+  if (!core::parseFiniteDecimal(text, bpm) || bpm <= 0.0 || bpm > 1000.0)
     return core::failure<double>(core::ErrorCode::InvalidArgument, "Enter a finite BPM in (0, 1000]");
   return core::success(bpm);
 }

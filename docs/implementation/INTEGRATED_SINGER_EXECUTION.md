@@ -1,5 +1,29 @@
 # Integrated Singer Execution
 
+## Header-only tempo parsing repaired and full local native suite passes
+
+September 20, 2026 — Phase13A macOS AUv2/VST3 jobs 105918017926 and
+105918018141 at `149b9752` fail on floating from_chars in tempo_meter_model.hpp
+and editor_controller.cpp. The controller call was already repaired in `49896ecf`,
+which these jobs do not contain. The previous audit was limited to .cpp files and
+missed the header-only tempo parser; it now uses the same finite-decimal helper.
+Expanded the header/Objective-C++/inline-source search; remaining header calls
+are integer tick and meter parsing.
+
+Extended the existing native tempo regression with scientific notation and
+plus/hex/overflow/underflow/trailing-space rejection while retaining exact BPM
+round-trip and captured-event ownership assertions. Rebuilt the full seam_tests
+target (including native AppKit and studio dependencies); CTest seam_tests PASS,
+23.37 seconds. No remote older-SDK success is claimed yet. Duplicate-library
+link warnings remain nonfatal.
+
+Also verified the completed native Linux CI raw log at `24c4fb32`: 170/170 CTest
+targets pass in 1286.24 seconds. Windows native qualified selection passes 3/3
+in 6.10 seconds; Windows CLAP packaging passes its one selected suite and uploads
+artifact 10587201561. These are separate scopes, not all-platform equivalence.
+Main macOS CI and repaired-candidate Windows VST3 remain active; preserve them
+before promoting or rerunning the accumulated parser fixes.
+
 ## Isolated release suite and corrected Linux package pass remotely
 
 September 20, 2026 — raw logs for isolated-release job 105915735797 at

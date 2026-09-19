@@ -3306,8 +3306,10 @@ TEST_CASE("tempo text round trips precision and captured event ticks cannot reta
     const auto parsed = native_ui::parseTempoEditText(native_ui::tempoEditText(value));
     CHECK(parsed); CHECK(parsed.value() == value);
   }
-  for (const auto value : {"", "nan", "inf", "120x", " 120", "0", "1001"})
+  for (const auto value : {"", "nan", "inf", "120x", " 120", "0", "1001", "+120", "0x1p7", "1e9999", "1e-9999", "120 "})
     CHECK(!native_ui::parseTempoEditText(value));
+  const auto scientific = native_ui::parseTempoEditText("1.205e2");
+  CHECK(scientific); CHECK(scientific.value() == 120.5);
   NativeUiFixture fixture;
   const double precise = 120.12345678901234;
   CHECK(fixture.session.project().tempoMap().addOrReplace(time::Tick{0}, precise));
