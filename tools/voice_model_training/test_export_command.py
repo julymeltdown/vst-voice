@@ -3,7 +3,7 @@ import hashlib
 import json
 import unittest
 
-from tools.voice_model_training.export import export_identity
+from tools.voice_model_training.export import export_identity, published_vocabulary
 from tools.voice_model_training.train import model_settings, REVISION
 
 
@@ -28,6 +28,21 @@ class ExportCommandTests(unittest.TestCase):
             changed["metadata"]["run"][field] = value
             with self.assertRaises(ValueError): export_identity(changed, profile)
         with self.assertRaises(ValueError): export_identity(state, dict(bins=81))
+
+    def test_published_vocabulary_is_pad_prefixed_and_keeps_checkpoint_order(self):
+        # The trained embedding reserves token zero for padding, which is why the
+        # model is built with len(vocabulary) + 1. A published list without that
+        # leading entry describes the same model with every ID shifted by one, and
+        # the bundle step refuses it, so the published form is asserted here.
+        self.assertEqual(published_vocabulary(["a", "i", "u"]), ["<PAD>", "a", "i", "u"])
+        self.assertEqual(published_vocabulary(["s"]), ["<PAD>", "s"])
+        # An apostrophe- and case-bearing phone survives unchanged and in order.
+        published = published_vocabulary(["N", "a", "g", "ts"])
+        self.assertEqual(published[1:], ["N", "a", "g", "ts"])
+        self.assertEqual(len(set(published)), len(published))
+        # A captured padding token would collide with the reserved slot.
+        with self.assertRaises(ValueError): published_vocabulary(["a", "<PAD>"])
+        with self.assertRaises(ValueError): published_vocabulary(["<PAD>"])
 
 
 if __name__ == "__main__":

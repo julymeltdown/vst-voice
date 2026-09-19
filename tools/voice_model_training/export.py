@@ -35,6 +35,25 @@ def export_identity(state: dict, profile: dict) -> tuple[dict, list]:
     return configuration, vocabulary
 
 
+def published_vocabulary(vocabulary: list) -> list:
+    """Return the pad-prefixed vocabulary the native bundle contract expects.
+
+    The trained embedding reserves token zero for padding and places the first
+    symbol at one, which is why the model is built with ``len(vocabulary) + 1``.
+    The native contract states the same thing in the other direction: a published
+    vocabulary is an ordered list whose first entry is ``<PAD>``, and a symbol's ID
+    is its index there. Publishing the bare symbol list therefore described the
+    same model with IDs shifted by one, and the bundle step refused every real
+    export because its first entry was not padding.
+
+    The symbol list stays in checkpoint order; this only makes the published
+    document agree with the IDs the model actually uses.
+    """
+    if any(token == "<PAD>" for token in vocabulary):
+        raise ValueError("A captured vocabulary must not already contain the padding token")
+    return ["<PAD>", *vocabulary]
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ("checkpoint", "profile", "trusted-checkout", "output"):
@@ -103,7 +122,10 @@ def main():
                       acousticPath="acoustic.onnx", acousticSha256=hashlib.sha256(graph).hexdigest(),
                       acousticBytes=len(graph), checkpointReceiptSha256=args.receipt_sha256,
                       checkpointSha256=receipt["checkpointSha256"], revision=REVISION,
-                      profile=profile, profileSha256=state["metadata"]["profileSha256"], vocabulary=vocabulary,
+                      profile=profile, profileSha256=state["metadata"]["profileSha256"],
+                      # Published pad-prefixed, because token zero is the model's own
+                      # padding slot and the native contract starts the list with it.
+                      vocabulary=published_vocabulary(vocabulary),
                       inspection=inspection, runtimeSmokePassed=True, runtimeVersion=ort.__version__,
                       encoderRuntimeCheck=encoder_check, deploymentBridgeCheck=deployment_check,
                       conditioningRevision=2,
