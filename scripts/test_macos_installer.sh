@@ -34,11 +34,39 @@ verified_install() {
 }
 create_handoff handoff-install
 verified_install "$evidence/handoff-install/handoff-result.json" 2>&1 | tee "$evidence/install.log"
+# A replayed handoff must be refused by the privileged installer itself. The
+# installer log does not carry package-script output, but its exit status still
+# reports the refusal, so assert on that rather than on script text.
 if verified_install "$evidence/handoff-install/handoff-result.json" >"$evidence/replay.log" 2>&1; then
   echo 'replayed installer handoff was accepted' >&2
   exit 4
 fi
-grep -q 'INSTALLER_HANDOFF=BLOCKED' "$evidence/replay.log"
+# macOS Installer runs package scripts from installd and does not forward their
+# stdout/stderr into the installer log, so a replayed handoff's rejection cannot
+# be observed by grepping the installer output. Ask the verifier directly, the
+# same way the Windows oracle does, and require the specific exit code and
+# message that prove the replay state was consumed.
+result="$evidence/handoff-install/handoff-result.json"
+# Capture without tripping errexit: a replayed handoff is expected to fail.
+replay_status=0
+if replay_output="$(sudo "$verifier" \
+    --handoff "$(field "$result" handoff)" \
+    --manifest "$(field "$result" manifest)" \
+    --policy "$(field "$result" policy)" \
+    --staging-root "$(field "$result" stagingRoot)" \
+    --expected-candidate "$(field "$result" candidateId)" \
+    --expected-handoff-sha256 "$(field "$result" handoffSha256)" 2>&1)"; then
+  replay_status=0
+else
+  replay_status=$?
+fi
+printf '%s\n' "$replay_output" > "$evidence/replay-verifier.log"
+if [[ "$replay_status" -ne 6 ]]; then
+  echo "replay verifier exit was $replay_status, expected 6" >&2
+  printf '%s\n' "$replay_output" >&2
+  exit 4
+fi
+grep -q 'already consumed' "$evidence/replay-verifier.log"
 create_handoff handoff-reinstall
 verified_install "$evidence/handoff-reinstall/handoff-result.json" 2>&1 | tee "$evidence/reinstall.log"
 test -d "/Applications/Project SEAM.app"

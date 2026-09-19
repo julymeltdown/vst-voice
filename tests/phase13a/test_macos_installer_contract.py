@@ -218,6 +218,12 @@ class MacosInstallerContractTests(unittest.TestCase):
         self.assertIn("ownership_values ownedPackageReceipts", oracle)
         self.assertIn("standaloneLaunch", oracle)
         self.assertIn("open -na", oracle)
+        # The installer does not forward package-script output, so replay
+        # rejection must be proven by exit status plus a direct verifier call
+        # rather than by grepping installer log text that never contains it.
+        self.assertNotIn("grep -q 'INSTALLER_HANDOFF=BLOCKED'", oracle)
+        self.assertIn("replay-verifier.log", oracle)
+        self.assertIn("already consumed", oracle)
 
 
 if __name__ == "__main__":
