@@ -1,5 +1,26 @@
 # Integrated Singer Execution
 
+## Isolated release suite and corrected Linux package pass remotely
+
+September 20, 2026 — raw logs for isolated-release job 105915735797 at
+`24c4fb32` confirm 168/168 CTest targets passed, 483.70 seconds. This replaces
+the earlier 167/168 result and verifies the Python discovery correction on CI.
+It does not cover newer commits or establish Beta GO: the suite includes checks
+whose intended success is refusal of unqualified release evidence.
+
+Repaired Phase13A Linux development-package job 105918018072 at `149b9752`
+also passed. Its raw smoke report confirms installedClap=true,
+installedResources=true and uninstalledClap=true using an absolute sandbox path.
+This provides remote validation of the relative-path and sidecar-location repairs.
+Artifact 10586756529 is retained in run 35451001647; GitHub reports uploaded ZIP
+SHA-256 `3acacce8d181f0e7ec5ed97e9ee88beb74baa198cc7856f046760f4206ea7207`.
+This package was not loaded in a real DAW during the installation smoke.
+
+Rechecked after a bounded wait: Linux native tests, Windows native build and
+Linux/Windows VST3 builds remain active; macOS jobs queued. No restart or
+master push cancelled them. Current training headroom remains about 2.8 GiB,
+below the unchanged recovery preflight requirement.
+
 ## Floating parser portability covers native authoring controls too
 
 September 20, 2026 — follow-up source audit found the same floating from_chars
