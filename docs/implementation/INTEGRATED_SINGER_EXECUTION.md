@@ -1,5 +1,50 @@
 # Integrated Singer Execution
 
+## A real six-song corpus now reaches admitted training
+
+September 19, 2026 — captured-teacher corpus, review authoring, dataset assembly.
+
+```text
+Engineering: DEMONSTRATED
+Creator workflow: NOT_OBSERVED
+Musical review: NOT_REVIEWED
+```
+
+Every training run in this repository previously used three synthetic oscillator tones. The
+preparation, admission and training stages each worked in isolation, and nothing joined them, so
+the pipeline had never once processed real singing end to end.
+
+Six songs were authored by `seam_singer_pilot` through the production export path, with distinct
+lyrics and melodies, and prepared as one corpus. Each song is bound to its own export receipt, so
+the project, candidate metadata, audio and recipe used for training are the ones the export
+actually committed. The corpus separates songs by song, session and lineage: a corpus whose songs
+share a session merges into one group and is refused when holding one out would leave nothing to
+train on, which is the split's duplicate-audio guard rather than a naming convention.
+
+Four tools closed the gap. `prepare_captured_teacher.py` turns one receipt-bound export into
+measured labels, conditioning and mel targets; `prepare_corpus.py` prepares several songs and
+merges them into one label configuration, one permission capture and one target inventory;
+`author_review.py` signs a configuration so admission can verify it; and
+`assemble_corpus_dataset.py` binds the corpus and its reviews into the dataset configuration that
+assembly consumes.
+
+Against real material the corpus reports six distinct audio identities and a complete
+train/validation/test split of 3/1/2 over 1303 analysis frames and 13 phones. Dataset assembly
+completes with no preparation issues and records `sourcePermissionsAdmitted` and `labelsAdmitted`
+true, `trainingAdmitted` false.
+
+Training then ran on that dataset with the pinned DiffSinger revision: one epoch, three updates,
+`epochComplete` true, `coverageVerified` true, covering three training sources and 180000 valid
+samples at mean loss 1.0098.
+
+This is an engineering milestone and nothing more. Three updates on 1303 frames cannot produce a
+usable voice, no audio was rendered from the checkpoint, the label origin is still the renderer's
+intent rather than acoustic truth, and the six songs share one voice recipe, so the split
+separates melodies rather than voices. The reviews are self-authored by the owner over their own
+first-party renders: they authorize the material and are not an independent assessment of legal
+scope, annotation quality or voice quality. `trainingAdmitted`, `singerQualified` and
+`releaseEligible` remain false, and no listener has heard anything.
+
 ## Windows bounded helper execution closes the U3.5 process gap
 
 September 17, 2026 — R4 unit U3.5 process-port slice.
