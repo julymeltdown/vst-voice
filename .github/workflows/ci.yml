@@ -35,7 +35,8 @@ jobs:
         run: cmake --build build/windows-helper --config Debug --parallel 2 --target seam_helper_process_tests seam_japanese_pronunciation_tests seam_neural_worker_protocol_tests
       - name: Exercise bounded helper callers
         shell: pwsh
-        run: ctest --test-dir build/windows-helper -C Debug --output-on-failure -R "^(seam_helper_process_tests|seam_japanese_pronunciation_tests|seam_neural_worker_protocol_tests)$"
+        timeout-minutes: 15
+        run: ctest --test-dir build/windows-helper -C Debug --output-on-failure --timeout 300 --no-tests=error -R "^(seam_helper_process_tests|seam_japanese_pronunciation_tests|seam_neural_worker_protocol_tests)$"
       - name: Verify Windows helper source contract
         run: python scripts/verify_phase8_platform_sources.py --root .
 
@@ -92,7 +93,7 @@ jobs:
         id: native-tests
         if: runner.os != 'Windows'
         timeout-minutes: 30
-        run: ctest --test-dir build/ci -C Debug --output-on-failure --timeout 300
+        run: ctest --test-dir build/ci -C Debug --output-on-failure --timeout 300 --no-tests=error
       - name: Diagnose macOS song journey after a native test failure
         if: failure() && runner.os == 'macOS' && steps.native-tests.outcome == 'failure'
         timeout-minutes: 4
@@ -101,7 +102,7 @@ jobs:
       - name: Test Windows qualified targets
         if: runner.os == 'Windows'
         timeout-minutes: 15
-        run: ctest --test-dir build/ci -C Debug --output-on-failure --timeout 300 -R "^(seam_helper_process_tests|seam_japanese_pronunciation_tests|seam_neural_worker_protocol_tests)$"
+        run: ctest --test-dir build/ci -C Debug --output-on-failure --timeout 300 --no-tests=error -R "^(seam_helper_process_tests|seam_japanese_pronunciation_tests|seam_neural_worker_protocol_tests)$"
       - name: Retain native CTest failure logs
         if: failure()
         uses: actions/upload-artifact@v4
@@ -143,4 +144,4 @@ jobs:
         run: cmake --build --preset release --parallel 2
       - name: Test isolated release candidate
         timeout-minutes: 30
-        run: ctest --preset release --output-on-failure --timeout 300
+        run: ctest --preset release --output-on-failure --timeout 300 --no-tests=error

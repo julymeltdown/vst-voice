@@ -1,5 +1,22 @@
 # Integrated Singer Execution
 
+## Empty-test refusal extended to the native/release workflow
+
+September 19, 2026 — all four CTest commands in `ci.yml` now use
+`--no-tests=error`, matching the three plugin-workflow commands. The bounded
+Windows helper step also gets the existing 300-second default per-test limit
+and a 15-minute step limit. Explicit CTest per-test limits remain authoritative.
+Parsed both workflow YAML documents and checked all seven CTest invocations.
+This prevents an empty selection from passing; it does not assert that every
+expected case exists in a nonempty grouped selection.
+
+Downloaded the completed Windows helper job log (105910667946) directly through
+the GitHub job-log API because `gh run view --log` refuses logs while sibling jobs
+are still active. All three selected suites actually ran and passed: helper
+process, Japanese pronunciation and neural worker protocol, 19.38 seconds total.
+The Linux native job has now entered its Test step. No full workflow acceptance
+is claimed while Windows builds and macOS jobs remain unfinished.
+
 ## Linux GUI-host CI false green found and repaired in workflow source
 
 September 19, 2026 — completed job 105910669530 from run 35448173276 at
