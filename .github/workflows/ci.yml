@@ -84,11 +84,25 @@ jobs:
       - name: Build
         run: cmake --build build/ci --config Debug --parallel 2
       - name: Test
+        id: native-tests
         if: runner.os != 'Windows'
         run: ctest --test-dir build/ci -C Debug --output-on-failure
+      - name: Diagnose macOS song journey after a native test failure
+        if: failure() && runner.os == 'macOS' && steps.native-tests.outcome == 'failure'
+        timeout-minutes: 4
+        continue-on-error: true
+        run: lldb --batch -o run -o "thread backtrace all" -- build/ci/seam_original_singer_song_journey_tests
       - name: Test Windows qualified targets
         if: runner.os == 'Windows'
         run: ctest --test-dir build/ci -C Debug --output-on-failure -R "^(seam_helper_process_tests|seam_japanese_pronunciation_tests|seam_neural_worker_protocol_tests)$"
+      - name: Retain native CTest failure logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-test-failure-${{ matrix.os }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: build/ci/Testing/Temporary/*.log
+          if-no-files-found: ignore
+          retention-days: 7
       - name: Platform source contract
         run: python scripts/verify_phase8_platform_sources.py --root .
       - name: Master-only branch audit

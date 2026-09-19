@@ -651,6 +651,8 @@ TEST_CASE("An installed original singer renders an authored lyric song") {
 // back the same after the project is saved and reopened in a fresh session? A re-render that silently
 // lost the installed singer would produce different audio, so the comparison is meaningful.
 TEST_CASE("Tuning an installed singer survives undo, save, reopen and export") {
+  const auto stage=[](const char* name) { std::cerr << "[tuning-stage] " << name << std::endl; };
+  stage("install-and-author");
   const auto installed = installSongSinger("song-journey-tuning");
   auto editor = makeEditor(installed);
   selectInstalledSinger(editor);
@@ -660,6 +662,7 @@ TEST_CASE("Tuning an installed singer survives undo, save, reopen and export") {
 
   authoring::ExportSettings settings;
   settings.includeMaster = true;
+  stage("baseline-export");
   const auto baseline = editor.controller->exportSet(installed.root / "baseline", settings);
   if (!baseline) throw test::Failure{"baseline export failed: " + baseline.error().message};
   CHECK(baseline.hasValue());
@@ -677,6 +680,7 @@ TEST_CASE("Tuning an installed singer survives undo, save, reopen and export") {
   CHECK(lane.value().upsert(ui::ExpressionPoint{time::Tick{4800}, 4.0F}).hasValue());
   CHECK(lane.value().apply(runtime.document().session(), regionId).hasValue());
 
+  stage("tuned-export");
   const auto tuned = editor.controller->exportSet(installed.root / "tuned", settings);
   if (!tuned) throw test::Failure{"tuned export failed: " + tuned.error().message};
   CHECK(tuned.hasValue());
@@ -712,6 +716,7 @@ TEST_CASE("Tuning an installed singer survives undo, save, reopen and export") {
   // in the audio the creator asked for along the shipped application path. What a cancellation must
   // never do is leave the previous phrase published as though it were the new one.
   {
+    stage("cancel-and-retry");
     const auto cancelBaseline = runtime.renderer().progress();
     CHECK(cancelBaseline.state == authoring::RenderState::Ready);
     const auto cancelStatsBefore = runtime.renderer().stats();
@@ -746,6 +751,7 @@ TEST_CASE("Tuning an installed singer survives undo, save, reopen and export") {
     CHECK(!runtime.renderer().acquireCurrent());
 
     // Cancelling is synchronous in its progress report, so this read is deterministic.
+    stage("cancel");
     runtime.renderer().cancel();
     const auto cancelled = runtime.renderer().progress();
     CHECK(cancelled.state == authoring::RenderState::Cancelled);
@@ -760,6 +766,7 @@ TEST_CASE("Tuning an installed singer survives undo, save, reopen and export") {
     // Retry. The creator makes the same edit effective again through the application's own preview
     // request, and publication must catch up to the document's own revision before anything is current.
     const auto wantedRevision = runtime.document().session().revision();
+    stage("retry-preview");
     runtime.requestPreview(true);
     const auto published = waitForPublishedRevision(runtime.renderer(), wantedRevision);
     CHECK(published.state == authoring::RenderState::Ready);
@@ -798,6 +805,7 @@ TEST_CASE("Tuning an installed singer survives undo, save, reopen and export") {
   // Save and reopen in a new session, then export again. The reopened project must resolve the same
   // installed singer and reproduce the tuned sound.
   const auto projectPath = installed.root / "song-01.seam";
+  stage("save-and-reopen");
   editor.dialog->responses = {projectPath};
   const auto saved = editor.controller->dispatch(platform::ApplicationCommand::SaveProjectAs);
   CHECK(saved.hasValue());
@@ -813,6 +821,7 @@ TEST_CASE("Tuning an installed singer survives undo, save, reopen and export") {
   CHECK(regionAfter != nullptr);
   if (regionAfter == nullptr) return;
   CHECK(regionAfter->formantAutomation.points().size() == 2U);
+  stage("reopened-export");
   const auto reopenedExport = reopened.controller->exportSet(installed.root / "reopened", settings);
   CHECK(reopenedExport.hasValue());
   if (!reopenedExport) return;
@@ -856,6 +865,7 @@ TEST_CASE("Tuning an installed singer survives undo, save, reopen and export") {
   // Retain listenable audio beside a manifest when a caller names an artifact root. The material is
   // what the workflow and perceptual observations need, and it is written outside the repository
   // because a master WAV is not source. Absent the variable this test leaves nothing behind.
+  stage("artifact-retention");
   if (const auto artifacts = artifactRoot(); artifacts.has_value()) {
     std::filesystem::create_directories(*artifacts);
     struct Retained final { const char* name; std::filesystem::path from; std::string sha; };
@@ -892,6 +902,7 @@ TEST_CASE("Tuning an installed singer survives undo, save, reopen and export") {
     const auto written = core::durableAtomicWriteText(*artifacts / "manifest.json", manifest);
     CHECK(written.hasValue());
   }
+  stage("session-teardown");
 }
 
 // The voice-creation half of the milestone: can the creator change the intended voice, keep that change

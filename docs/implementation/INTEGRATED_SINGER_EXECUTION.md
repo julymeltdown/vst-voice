@@ -1,5 +1,21 @@
 # Integrated Singer Execution
 
+## Instrument the unresolved macOS song-journey abort
+
+September 19, 2026 — added flushed tuning-stage markers around installation,
+exports, cancellation/retry, save/reopen and teardown. No assertion, timeout,
+musical operation or render synchronization was weakened. Three consecutive
+rebuilt local runs pass (20.32 / 14.17 / 15.45 seconds; 49.96 total), so the older
+hosted macOS abort is still not reproduced or explained.
+
+On a failing macOS native-test step, CI now attempts one bounded four-minute LLDB
+run of the song-journey executable and prints all thread backtraces. That diagnostic
+alone is continue-on-error; the original CTest step remains failure-authoritative.
+The platform matrix retains CTest temporary logs for seven days on failure. Local
+YAML parsing, source closure, phase11 source checks and diff checks pass; hosted
+debugger launch and future crash capture are not yet verified. This is diagnostic
+coverage, not an abort fix or a CI PASS. Vocoder PID 69937 remains live, unchanged.
+
 ## Cross-cutting regression verification after pause and sampler repairs
 
 September 19, 2026 — rebuilt 12 affected native test targets from source at
