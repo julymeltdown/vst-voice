@@ -1,5 +1,43 @@
 # Integrated Singer Execution
 
+## Quantified the hop-rate artifact behind the held-out pitch verdict
+
+September 20, 2026 — audited `recon-tracked4/item-000001.wav` directly to test a
+mel-profile mismatch hypothesis before accepting "undertrained" as the cause.
+The hypothesis was wrong and the existing diagnosis holds, but the numbers now
+bound it.
+
+Goertzel magnitudes over a 4096-sample steady span of the rendered file, compared
+against the frame rate 48000/256 = 187.5 Hz:
+
+| frequency | magnitude |
+|---|---:|
+| 187.5 Hz (frame rate x1) | 0.001606 |
+| 375.0 Hz (x2) | 0.001456 |
+| 562.5 Hz (x3) | 0.001263 |
+| 495.5 Hz | 0.000035 |
+| 440.0 Hz | 0.000048 |
+| 220.0 Hz | 0.000261 |
+
+Frame-rate energy exceeds every tested musical-band component by 6x to 46x, and
+the per-frame crest factor is 3.88 against about 1.41 for a sinusoid, so the
+output is impulse-like pulsing at the frame rate rather than a harmonic series.
+This also explains the headline number arithmetically: the source conditioning
+median is 495.5 Hz, and 495.5 against a dominant 187.5 is 1680 cents, which is
+the order of the reported 1506.563 and 1525.381 cent errors.
+
+Checked the mel profile for a train/inference mismatch and found none.
+tools/voice_model_training/acoustics.py and export_vocoder.py agree on
+profileId seam-full-hop-slaney-v1 (slaney mel, slaney-area normalization,
+ln-amplitude, floor 1e-5, fftSize 1024). The differing fftSize=2048,
+minimumHz=40, maximumHz=16000 values in tools/neural_runtime/runtime_probe.cpp
+belong to freezeFixtureBundle, a paired-mode test fixture, not the production
+conditioning path. No wiring change is warranted on this evidence.
+
+So the earlier conclusion stands and is now quantitatively supported: f0 reaches
+the excitation, and what is missing is learned harmonic excitation, which is a
+training-duration property in the live r3 run rather than a defect to patch.
+
 ## macOS privileged installer lifecycle passes end to end
 
 September 20, 2026 — job 105957102051 in run 35465098962 at `0aadfd23` reports
