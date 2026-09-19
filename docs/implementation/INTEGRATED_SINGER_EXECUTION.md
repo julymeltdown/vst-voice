@@ -1,5 +1,36 @@
 # Integrated Singer Execution
 
+## Actual pause-containing acoustic training material prepared
+
+September 19, 2026 — generated 24 new eight-event phrases through the native
+`seam_singer_pilot`, seed `pause-v1`, indices 400..423, with `--include-pauses`.
+Artifacts are `/Users/lhs/seam-corpus-pauses-2026-09-19-r1`; no existing corpus,
+checkpoint or live training setting was modified. Scope declarations carry the
+same seven requested scopes as the earlier generated corpus; no new signed rights
+or label approval is claimed.
+
+`corpus-sources.json` SHA-256:
+`ffe2ec6e41ed29eb510dee9a5ef3903a5ead2fc4b012827041d81911e0a783f3`.
+Ordinary `prepare_corpus` completed, including native measured pitch and acoustic
+targets. `prepared/corpus.json` SHA-256:
+`b45396a7868bcd21a7fef05cea984897b0f26ef3a4b58d44dd658f9fe93b0199`.
+
+There are 24 distinct recordings, 72.25 seconds total, 13,558 analysis frames,
+and a 20/2/2 train/validation/test preview. Every song contains exactly one
+explicit `pau` phone owned by a rest note (null MIDI and syllable). Vocabulary has
+18 non-padding phones including `pau`. Pauses last 12,000/18,000/24,000 samples;
+all 24 central-half pause windows have exact zero PCM peak. There are 1,570 rest
+analysis frames; 93 still have measured voicing from the native estimator. Those
+measurements were not overwritten to flatter silence labels; boundary/window
+behavior requires examination before training admission. A shared procedural
+recipe is not evidence of generalization to another singer or natural voice.
+
+State remains `PREPARED_UNAPPROVED`, not training-admitted. Next: validate measured
+pause transitions, bind this material into a fresh reviewed dataset and train an
+acoustic vocabulary that includes silence. Do not resume the old vocabulary by
+inserting an untrained embedding or use these extra songs as previously frozen
+vocoder held-out results. Live vocoder PID 69937 was confirmed running throughout.
+
 ## Preserve trained silence IDs through default application lookup
 
 September 19, 2026 — `prepare_bundle --silence-phone pau` (also `sil` or `SP`)
