@@ -309,19 +309,18 @@ TEST_CASE("neural phrase runner prepares a bound request and returns window-exac
   CHECK(rendered.value().rendered.audio.samples.front()==0.0F);
   // A second request on the same runner gets its own request identity.
   const auto again=seam::rendering::PhraseRenderPipeline{selected}.render(prepared.snapshot); CHECK(again);
-  // Partial neural windows are refused today. Request preparation will not
-  // invent spans for phonemes outside the window, and this runner does not clip
-  // a score silently to make one fit. A later package must define how
-  // out-of-window phonemes are represented before windowed neural render ships.
+  // Output ownership keeps complete conditioning and crops only returned PCM.
   const seam::synthesis::PhraseFrameRange second{performance->notes().back().startFrame,
       performance->notes().back().endFrame};
   const auto windowed=boundedSnapshot(prepared,second); CHECK(windowed.ownedFrames==second);
-  CHECK(seam::rendering::PhraseRenderPipeline{selected}.render(windowed).error().code==
-      seam::core::ErrorCode::InvalidArgument);
+  const auto secondAudio=seam::rendering::PhraseRenderPipeline{selected}.render(windowed); CHECK(secondAudio);
+  CHECK(secondAudio.value().rendered.audio.startFrame==second.start);
+  CHECK(secondAudio.value().rendered.audio.samples.size()==static_cast<std::size_t>(second.end-second.start));
   const seam::synthesis::PhraseFrameRange cut{second.start,
       second.start+static_cast<seam::time::SampleFrame>((second.end-second.start)/2)};
-  CHECK(seam::rendering::PhraseRenderPipeline{selected}.render(boundedSnapshot(prepared,cut)).error().code==
-      seam::core::ErrorCode::InvalidArgument);
+  const auto cutAudio=seam::rendering::PhraseRenderPipeline{selected}.render(boundedSnapshot(prepared,cut)); CHECK(cutAudio);
+  CHECK(cutAudio.value().rendered.audio.startFrame==cut.start);
+  CHECK(cutAudio.value().rendered.audio.samples.size()==static_cast<std::size_t>(cut.end-cut.start));
 }
 
 TEST_CASE("neural phrase runner refuses unsafe options, foreign bundles and cancellation") {

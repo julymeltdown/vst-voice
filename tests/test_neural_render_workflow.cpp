@@ -163,6 +163,28 @@ seam::authoring::RenderProgress waitForTerminal(seam::authoring::AuthoringRender
 
 }  // namespace
 
+TEST_CASE("neural owned output keeps preceding phones in the worker context") {
+  const auto root=seam::test::support::temporaryDirectory("neural-owned-output");
+  seam::application::ProjectFactory factory{9100U};
+  auto project=factory.createProject("Neural owned output");
+  const auto track=addNeuralTrack(project,factory,root/"voice","ak","seam.voice.owned","1.0.0",seam::time::Tick{960});
+  const auto snapshot=seam::rendering::RenderSnapshotFactory{}.createNeural(project,*track.bundle,provenance(),
+      track.track,track.region,1U,seam::rendering::RenderQuality::Final,48000U,"original"); CHECK(snapshot);
+  const auto& notes=snapshot.value().compiledPerformance->notes();
+  const seam::synthesis::PhraseFrameRange context{notes.front().startFrame,notes.back().endFrame};
+  const auto chunks=seam::rendering::RenderSnapshotFactory{}.splitOwnedOutput(snapshot.value(),context,17003U); CHECK(chunks);
+  auto next=context.start;
+  for (const auto& chunk:chunks.value()) {
+    const auto audio=track.runner->render(chunk,{}); CHECK(audio);
+    CHECK(audio.value().audio.startFrame==next);
+    CHECK(audio.value().audio.samples.size()==static_cast<std::size_t>(chunk.ownedFrames->end-next));
+    next=chunk.ownedFrames->end;
+  }
+  CHECK(next==context.end);
+  auto invalid=snapshot.value(); invalid.ownedFrames=seam::synthesis::PhraseFrameRange{context.start-1,context.end};
+  CHECK(!track.runner->render(invalid,{}));
+}
+
 TEST_CASE("two simultaneous neural tracks publish distinct admitted identities") {
   const auto root=seam::test::support::temporaryDirectory("neural-workflow-multi");
   seam::application::ProjectFactory factory{9300U};

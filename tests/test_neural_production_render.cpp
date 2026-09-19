@@ -204,6 +204,22 @@ TEST_CASE("an admitted bundle renders non-silent audio through the production wo
   // The transport probe publishes silence; a real execution must not.
   CHECK(nonzero > 0U);
   CHECK(nonzero * 2U >= published->result.interleaved.size());
+  // Ownership splits must preserve full model context, even at non-hop-aligned
+  // boundaries. This uses the real ONNX worker, not the silent transport probe.
+  const auto snapshot=seam::rendering::RenderSnapshotFactory{}.createNeural(project,*bundle,provenance,
+      phrase.track,phrase.region,8U,seam::rendering::RenderQuality::Final,48000U,"original"); CHECK(snapshot);
+  const auto& selected=*std::get<TrackNeuralSource>(sources.front()).runner;
+  const auto whole=selected.render(snapshot.value(),{}); CHECK(whole);
+  const auto& notes=snapshot.value().compiledPerformance->notes();
+  const seam::synthesis::PhraseFrameRange context{notes.front().startFrame,notes.back().endFrame};
+  const auto chunks=seam::rendering::RenderSnapshotFactory{}.splitOwnedOutput(snapshot.value(),context,17003U); CHECK(chunks);
+  std::vector<float> stitched;
+  for (const auto& chunk:chunks.value()) {
+    const auto audio=selected.render(chunk,{}); CHECK(audio);
+    CHECK(audio.value().audio.startFrame==context.start+static_cast<seam::time::SampleFrame>(stitched.size()));
+    stitched.insert(stitched.end(),audio.value().audio.samples.begin(),audio.value().audio.samples.end());
+  }
+  CHECK(stitched==whole.value().audio.samples);
   // State what actually happened, so a caller cannot mistake a skipped phase for a
   // completed render.
   std::cout << "production worker rendered " << published->result.interleaved.size()

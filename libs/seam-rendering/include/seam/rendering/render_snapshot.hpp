@@ -70,6 +70,8 @@ struct RenderSnapshot final {
   // Neural tag: nothing may read resource bytes as a model, and bundle identity
   // comes only from this admitted handle.
   std::shared_ptr<const neural_synthesis::AdmittedNeuralBundle> neuralExecution{};
+  // Captured execution identity is needed when deriving owned-output chunks.
+  std::optional<NeuralRenderProvenance> neuralProvenance{};
   // Checked carriers. `sample()` and `procedural()` trap when the snapshot holds
   // another family, so prefer these pointers whenever the family is not already
   // proven. A neural snapshot returns nullptr from both.

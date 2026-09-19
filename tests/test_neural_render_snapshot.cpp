@@ -173,7 +173,22 @@ TEST_CASE("neural snapshot binds an admitted bundle to pronunciation and score i
       music.track,music.region,7U,RenderQuality::Final,48000U,"original",window); CHECK(narrowed);
   CHECK(narrowed.value().contentHash!=snapshot.value().contentHash);
   CHECK(narrowed.value().ownedFrames==window);
-  CHECK(RenderSnapshotFactory{}.splitOwnedOutput(narrowed.value(),window,128U).error().code==seam::core::ErrorCode::Unsupported);
+  const auto chunks=RenderSnapshotFactory{}.splitOwnedOutput(narrowed.value(),window,128U); CHECK(chunks);
+  CHECK(chunks.value().size()==2U);
+  for (const auto& chunk:chunks.value()) {
+    CHECK(chunk.project==narrowed.value().project);
+    CHECK(chunk.compiledPerformance==narrowed.value().compiledPerformance);
+    CHECK(chunk.neuralExecution==narrowed.value().neuralExecution);
+    const auto direct=RenderSnapshotFactory{}.createNeural(music.project,admitted.value(),provenance,
+        music.track,music.region,7U,RenderQuality::Final,48000U,"original",chunk.ownedFrames); CHECK(direct);
+    CHECK(chunk.contentHash==direct.value().contentHash);
+  }
+  CHECK(chunks.value()[0].contentHash!=chunks.value()[1].contentHash);
+  CHECK(!RenderSnapshotFactory{}.splitOwnedOutput(chunks.value()[0],window,128U));
+  auto incomplete=narrowed.value(); incomplete.neuralProvenance.reset();
+  CHECK(!RenderSnapshotFactory{}.splitOwnedOutput(incomplete,window,128U));
+  CHECK(!RenderSnapshotFactory{}.splitOwnedOutput(snapshot.value(),
+      {performance.notes().front().startFrame,performance.notes().back().endFrame+1},1024U));
   // Identity is per execution and per music, never shareable across either.
   const auto otherSteps=AdmittedNeuralBundle::admit(frozen.value(),65536U,4); CHECK(otherSteps);
   const auto changed=RenderSnapshotFactory{}.createNeural(music.project,otherSteps.value(),provenance,

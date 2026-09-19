@@ -1,5 +1,38 @@
 # Integrated Singer Execution
 
+## Neural output windows preserve full musical context
+
+September 19, 2026 — prepared neural snapshots now support owned-output subdivision.
+
+The worker runner previously passed the requested publication window as the model's input context.
+For a later window, earlier phonemes fell outside that range and request preparation rejected the
+render. Existing runner tests explicitly expected that rejection. The snapshot splitter also refused
+all neural bundles, despite other carriers supporting owned-output windows.
+
+The runner now prepares and infers the complete compiled phrase, validates the response against that
+full extent, and crops only its returned PCM to the requested half-open window. The snapshot retains
+its execution provenance so the splitter can derive each window's identity using the same admitted
+bundle, worker/runtime/provider, pronunciation, and music. It shares the immutable full-context
+objects across chunks. Ownership cannot expand beyond the parent or phrase, malformed carriers are
+rejected, and aggregate chunk metadata remains bounded. The neural cache identity revision changed
+to prevent reuse of audio under the earlier context semantics.
+
+Verification: neural snapshot, runner, workflow, and production-worker tests pass. The existing
+performance-snapshot suite and aggregate `seam_tests` also pass (37.27 seconds combined); source
+closure and phase11 source verification pass. The production
+test runs the real ONNX worker and checks that concatenating output windows cut at non-hop-aligned
+17,003-sample boundaries equals the full rendered PCM exactly. A separate transport test starts the
+phrase at a nonzero project offset and exercises windows containing later phonemes. The ONNX models
+are arithmetic fixtures: this verifies execution/context/publication correctness, not singing quality.
+
+This is output subdivision, not streaming inference: every chunk still infers the complete phrase.
+The admitted model's full-context size limit remains enforced. Efficient shared inference or longer
+musical-context segmentation remains separate work and cannot be claimed from these tests.
+
+CI observation for `bd0021fa`: macOS and Linux plugin jobs and clap-validator are now green;
+Windows packaging and the main native test matrix are still running. Training process 65038 remains
+live in `vocoder-xl-pitch-r1`, resumed from epoch 6 with pitch extraction and two-checkpoint retention.
+
 ## Rolling vocoder checkpoints and measured full-update cost
 
 September 19, 2026 — storage-limited training can now retain a bounded set of resumable epochs.

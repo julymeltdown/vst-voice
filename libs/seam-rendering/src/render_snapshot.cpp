@@ -618,7 +618,7 @@ core::Result<std::string> buildNeuralIdentity(const domain::Project& project,
   const auto& execution = bundle.execution();
   const auto& metadata = bundle.metadata();
   IdentityWriter identity;
-  identity.tag("project-seam-neural-bundle-v1");
+  identity.tag("project-seam-neural-bundle-v2-full-context-owned-output");
   identity.integer(synthesis::kPerformanceCompilerRevision);
   identity.integer(synthesis::kProceduralTimingPolicyRevision);
   identity.integer(neural_synthesis::kDiffSingerInputRevision);
@@ -843,7 +843,8 @@ core::Result<RenderSnapshot> RenderSnapshotFactory::createNeural(
       .pronunciationIdentity = pronunciation.value().identity,
       .compiledPerformance = std::make_shared<const synthesis::CompiledScorePerformance>(performance.value()),
       .ownedFrames = ownedFrames,
-      .neuralExecution = std::make_shared<const neural_synthesis::AdmittedNeuralBundle>(bundle)};
+      .neuralExecution = std::make_shared<const neural_synthesis::AdmittedNeuralBundle>(bundle),
+      .neuralProvenance = provenance};
 }
 
 core::Result<std::vector<RenderSnapshot>> RenderSnapshotFactory::splitOwnedOutput(
@@ -852,11 +853,37 @@ core::Result<std::vector<RenderSnapshot>> RenderSnapshotFactory::splitOwnedOutpu
   using Output = std::vector<RenderSnapshot>;
   const auto windows = synthesis::planOwnedPhraseWindows(output, maximumChunkFrames, maximumChunks);
   if (!windows) return core::Result<Output>{windows.error()};
-  // Subdivision needs a per-window identity that includes the admitted bundle.
-  // Refuse it explicitly instead of letting a neural snapshot fall into the
-  // sample branch and fail on missing sample material.
-  if (source.neuralExecution) return core::failure<Output>(core::ErrorCode::Unsupported,
-      "Neural snapshot subdivision is not implemented for prepared bundles");
+  if (source.neuralExecution) {
+    if (!source.project || !source.sourceProjectId.valid() || !source.phonemes ||
+        !source.pronunciationIdentity || !source.compiledPerformance ||
+        source.compiledPerformance->notes().empty() || !source.neuralProvenance ||
+        !source.neuralProvenance->validate() || !source.neuralExecution->valid() ||
+        !std::holds_alternative<synthesis::NeuralSingerResource>(source.resource) ||
+        source.sampleRate != source.compiledPerformance->sampleRate() ||
+        source.sampleRate != source.neuralExecution->metadata().model.sampleRate)
+      return core::failure<Output>(core::ErrorCode::InvalidArgument, "Neural chunk source is incomplete");
+    const auto& notes = source.compiledPerformance->notes();
+    const synthesis::PhraseFrameRange context{notes.front().startFrame, notes.back().endFrame};
+    const auto valid = synthesis::PhraseOutputContract{source.sampleRate, context, output}.validate();
+    if (!valid) return core::Result<Output>{valid.error()};
+    if (source.ownedFrames && (output.start < source.ownedFrames->start || output.end > source.ownedFrames->end))
+      return core::failure<Output>(core::ErrorCode::Conflict, "Chunk subdivision cannot expand existing output ownership");
+    if (source.segment.noteIds.size() > 65536U / windows.value().size())
+      return core::failure<Output>(core::ErrorCode::Unsupported, "Neural chunks exceed aggregate note metadata budget");
+    Output result;
+    result.reserve(windows.value().size());
+    for (const auto window : windows.value()) {
+      const auto identity = buildNeuralIdentity(*source.project, *source.neuralExecution,
+          *source.pronunciationIdentity, *source.neuralProvenance, source.style,
+          source.quality, source.sampleRate, window);
+      if (!identity) return core::Result<Output>{identity.error()};
+      auto chunk = source;
+      chunk.ownedFrames = window;
+      chunk.contentHash = identity.value();
+      result.push_back(std::move(chunk));
+    }
+    return result;
+  }
   if (const auto* procedural = std::get_if<synthesis::ProceduralSingerResource>(&source.resource)) {
     if (!source.sourceProjectId.valid() || !source.pronunciationIdentity) return core::failure<Output>(
         core::ErrorCode::InvalidArgument, "Procedural chunk source identity is missing");

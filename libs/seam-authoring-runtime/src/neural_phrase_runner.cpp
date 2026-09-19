@@ -62,7 +62,7 @@ core::Result<synthesis::PhraseRenderResult> AuthoringNeuralPhraseRunner::render(
   if (stopToken.stop_requested()) return core::failure<Output>(core::ErrorCode::Conflict,
       "Neural phrase rendering cancelled");
   if (!snapshot.neuralExecution || !snapshot.neuralExecution->valid() || !snapshot.compiledPerformance ||
-      !snapshot.phonemes || !snapshot.pronunciationIdentity)
+      !snapshot.phonemes || !snapshot.pronunciationIdentity || snapshot.compiledPerformance->notes().empty())
     return core::failure<Output>(core::ErrorCode::InvalidArgument,"Neural snapshot is incomplete");
   const auto& execution=snapshot.neuralExecution->execution();
   // The child re-admits whatever the directory now holds. Refuse to hand it a
@@ -77,12 +77,14 @@ core::Result<synthesis::PhraseRenderResult> AuthoringNeuralPhraseRunner::render(
   const auto full=synthesis::PhraseFrameRange{performance.notes().front().startFrame,
       performance.notes().back().endFrame};
   const auto range=snapshot.ownedFrames.value_or(full);
+  const auto outputValid=synthesis::PhraseOutputContract{snapshot.sampleRate,full,range}.validate();
+  if (!outputValid) return core::Result<Output>{outputValid.error()};
   const auto requestId=nextRequestId_->fetch_add(1U);
   if (requestId==0U || requestId>kMaximumRequestId) return core::failure<Output>(
       core::ErrorCode::InvalidState,"Neural runner exhausted its request identity range");
   auto prepared=neural_synthesis::prepareNeuralScoreRequest(requestId,metadata.model,
       metadata.vocabulary,performance,snapshot.phonemes->tokens,
-      snapshot.pronunciationIdentity->sequenceHash,range.start,range.end,options_.silencePhone,
+      snapshot.pronunciationIdentity->sequenceHash,full.start,full.end,options_.silencePhone,
       options_.worker.limits,stopToken);
   if (!prepared) return core::Result<Output>{prepared.error()};
   // Building the score request is model-agnostic; the bundle launch contract is
@@ -102,7 +104,15 @@ core::Result<synthesis::PhraseRenderResult> AuthoringNeuralPhraseRunner::render(
   if (stopToken.stop_requested()) return core::failure<Output>(core::ErrorCode::Conflict,
       "Neural phrase rendering cancelled");
   // A model result carries audio only: no sample unit plan and no markers.
-  return core::success(Output{.audio={range.start,response.pcm},.placements={}});
+  // Ownership is a publication crop, not an acoustic context boundary. Every
+  // chunk uses the same full phrase conditioning, including preceding phones.
+  const auto begin=static_cast<std::size_t>(range.start-full.start);
+  const auto end=static_cast<std::size_t>(range.end-full.start);
+  if (response.pcm.size()!=static_cast<std::size_t>(full.end-full.start))
+    return core::failure<Output>(core::ErrorCode::Conflict,"Neural PCM length differs from full context");
+  return core::success(Output{.audio={range.start,std::vector<float>(
+      response.pcm.begin()+static_cast<std::ptrdiff_t>(begin),
+      response.pcm.begin()+static_cast<std::ptrdiff_t>(end))},.placements={}});
 }
 
 }  // namespace seam::authoring
