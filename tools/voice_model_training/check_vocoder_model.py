@@ -8,6 +8,7 @@ import hashlib
 import importlib.util
 import io
 import json
+import math
 from pathlib import Path
 import subprocess
 import sys
@@ -15,6 +16,37 @@ import tempfile
 
 TRAINING_REVISION = "4d0889c4c180c75ad3000cc565864656344f8190"
 DEPLOYMENT_REVISION = "336cf01b57f2ad44c6b37a79cf33993043291759"
+
+
+def summarize_pitch_conditioning(cases):
+    """Separate a responsive pitch diagnostic from accurate note following.
+
+    This remains synthetic, target-windowed autocorrelation, not an independent
+    held-out singing-quality gate. Missing/low-coverage cases cannot pass.
+    """
+    expected = (110.0, 220.0, 440.0, 880.0)
+    maximum_error, minimum_coverage = 50.0, 0.8
+    if len(cases) != len(expected) or tuple(c.get("requestedHz") for c in cases) != expected:
+        raise ValueError("Pitch diagnostic requires all four ordered reference notes")
+    annotated = []
+    for case in cases:
+        measured, coverage = case.get("measuredHz"), case.get("voicedCoverage")
+        if (type(coverage) not in (int, float) or not math.isfinite(coverage) or
+                not 0 <= coverage <= 1 or type(case.get("finite")) is not bool):
+            raise ValueError("Invalid pitch diagnostic coverage or finiteness")
+        if measured is not None and (type(measured) not in (int, float) or
+                                     not math.isfinite(measured) or measured <= 0):
+            raise ValueError("Invalid measured pitch")
+        error = None if measured is None else abs(1200 * math.log2(measured / case["requestedHz"]))
+        passed = (case["finite"] and case.get("measurementReason") is None and error is not None
+                  and error <= maximum_error and coverage >= minimum_coverage)
+        annotated.append(dict(case, absoluteErrorCents=error, withinTolerance=bool(passed)))
+    pitches = {case["measuredHz"] for case in annotated if case["measuredHz"] is not None}
+    return dict(conditioning=annotated, pitchChangesWithRequestedNote=len(pitches) > 1,
+                pitchFollowsRequestedNote=all(case["withinTolerance"] for case in annotated),
+                pitchDiagnosticRevision=2, maximumPitchErrorCents=maximum_error,
+                minimumVoicedCoverage=minimum_coverage,
+                pitchEstimator="target-windowed-autocorrelation-diagnostic-only")
 
 
 def export_checked_onnx(adapter):
@@ -72,15 +104,13 @@ def export_checked_onnx(adapter):
                 np.asarray(audio, dtype=np.float64).ravel(), 48000, hz)
             conditioning.append(dict(
                 requestedHz=hz,
-                measuredHz=None if rendered is None else round(float(rendered), 3),
-                voicedCoverage=round(float(coverage), 6),
+                measuredHz=None if rendered is None else float(rendered),
+                voicedCoverage=float(coverage),
                 measurementReason=reason,
                 finite=bool(np.isfinite(audio).all())))
-    measurable = [case for case in conditioning if case["measuredHz"] is not None]
-    # The pitch is only followed if different notes give different measured pitches.
-    followed = bool(measurable) and len({case["measuredHz"] for case in measurable}) > 1
+    pitch_summary = summarize_pitch_conditioning(conditioning)
     return payload, dict(passed=True, graphBytes=len(payload), graphSha256=inspection["sha256"],
-                cases=cases, conditioning=conditioning, pitchFollowsRequestedNote=followed,
+                cases=cases, **pitch_summary,
                 graphRetained=False, deterministicMiniNSFOnly=True)
 
 

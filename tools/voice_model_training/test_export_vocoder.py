@@ -4,6 +4,46 @@ import json
 import unittest
 
 from tools.voice_model_training.export_vocoder import export_identity, TRAINING_REVISION
+from tools.voice_model_training.check_vocoder_model import summarize_pitch_conditioning
+
+
+class VocoderPitchDiagnosticTests(unittest.TestCase):
+    def cases(self):
+        return [dict(requestedHz=hz, measuredHz=hz, voicedCoverage=1.,
+                     measurementReason=None, finite=True) for hz in (110., 220., 440., 880.)]
+
+    def test_all_requested_notes_must_be_accurate(self):
+        cases = self.cases()
+        self.assertTrue(summarize_pitch_conditioning(cases)["pitchFollowsRequestedNote"])
+        for case in cases:
+            case["measuredHz"] *= 2
+        report = summarize_pitch_conditioning(cases)
+        self.assertTrue(report["pitchChangesWithRequestedNote"])
+        self.assertFalse(report["pitchFollowsRequestedNote"])
+        self.assertEqual([c["absoluteErrorCents"] for c in report["conditioning"]], [1200.] * 4)
+
+    def test_epoch_six_synthetic_diagnostic_is_not_accurate_following(self):
+        cases = self.cases()
+        for case, hz in zip(cases, (107.143, 214.293, 461.405, 857.481)):
+            case["measuredHz"] = hz
+        result = summarize_pitch_conditioning(cases)
+        self.assertTrue(result["pitchChangesWithRequestedNote"])
+        self.assertFalse(result["pitchFollowsRequestedNote"])
+
+    def test_missing_low_coverage_nonfinite_and_unresolved_cannot_pass(self):
+        for change in (dict(measuredHz=None), dict(voicedCoverage=.79), dict(finite=False),
+                       dict(measurementReason="unresolved"), dict(measuredHz=187.5)):
+            cases = self.cases()
+            cases[0].update(change)
+            with self.subTest(change=change):
+                self.assertFalse(summarize_pitch_conditioning(cases)["pitchFollowsRequestedNote"])
+        for change in (dict(measuredHz=float("nan")), dict(measuredHz=0),
+                       dict(voicedCoverage=float("nan")), dict(voicedCoverage=2)):
+            cases = self.cases()
+            cases[0].update(change)
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                summarize_pitch_conditioning(cases)
+        with self.assertRaises(ValueError): summarize_pitch_conditioning(self.cases()[:2])
 
 
 class VocoderExportIdentityTests(unittest.TestCase):

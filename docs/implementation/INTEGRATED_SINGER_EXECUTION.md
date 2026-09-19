@@ -1,5 +1,41 @@
 # Integrated Singer Execution
 
+## Synthetic pitch response no longer masquerades as note accuracy
+
+September 19, 2026 — corrected an overly permissive export diagnostic.
+
+Runtime source inspection confirms that `prepareNeuralScoreRequest` fills F0 only
+for voiced phones, and leaves inserted silence intervals zero. No speculative
+pause-F0 patch was needed. Inspection of the export diagnostic instead found that
+`pitchFollowsRequestedNote` meant only "at least two measured frequencies differ".
+It could pass octave errors or partially missing observations.
+
+Export diagnostic revision 2 records `pitchChangesWithRequestedNote` separately.
+`pitchFollowsRequestedNote` now requires all four fixed requested notes (110, 220,
+440, 880 Hz), finite output, no unresolved measurement reason, at least 80% voiced
+coverage per case and no more than 50 cents absolute error per case. Both thresholds
+and per-case errors are recorded, and new evaluations do not round measurements
+before deciding. These are explicit synthetic diagnostic criteria, not a calibrated
+perceptual acceptance standard. The estimator is now named
+`target-windowed-autocorrelation-diagnostic-only`; held-out native-pitch evidence
+remains mandatory. ONNX/Torch numerical parity stays a separate result.
+
+Recomputing the summary from the unchanged epoch-six export receipt gives errors
+45.5591, 45.5026, 82.2361 and 44.8786 cents, with full voiced coverage. Consequently
+pitch response is true and accurate following is false. The historical receipt and
+model files were not modified; this reclassification is not a new inference run.
+The earlier entry's true flag below describes the old implementation only and must
+not be cited as a current accuracy pass.
+
+Four focused export tests pass, including octave-shift false positives, missing or
+unresolved measurements, low coverage, invalid numerics and the retained epoch-six
+measurements. Combined export, command and reconstruction coverage ran 20 tests:
+18 passed and two optional Torch tests were skipped in the system Python environment.
+Source closure, phase11 source verification and diff checks pass.
+Training PID 65038 remains live; no restart or additional training was
+launched. Free disk fluctuates below 1 GiB. The actual vocoder pitch failure and
+missing trained silence token remain unresolved; no singer or Beta GO claim changes.
+
 ## Explicit pause supervision through the real renderer and training preparation
 
 September 19, 2026 — silence coverage repair for future acoustic training.

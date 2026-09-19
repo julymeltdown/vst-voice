@@ -48,8 +48,11 @@ pass them, so those numbers understate what the acoustic stage learned. Two brok
 signal path, not one; the vocoder is downstream of the acoustic model.
 
 **Status:** OPEN. The first run retained six complete epochs and is no longer running. Epoch 6 was
-exported with passing Torch/ONNX parity and passes the synthetic constant-mel `pitchFollowsRequestedNote`
-check. However, independent native-pitch evaluation on all 12 configured held-out songs reports
+exported with passing Torch/ONNX parity. Its old synthetic `pitchFollowsRequestedNote` flag only
+required two different measured pitches, not accuracy. Revision 2 separates pitch response from
+accurate following: epoch 6 fails the latter because requested 440 Hz measured 461.405 Hz
+(82.24 cents, exceeding the stated 50-cent diagnostic budget). Independent native-pitch evaluation
+on all 12 configured held-out songs reports
 mean spectral distance **1.250432**, mean absolute pitch error **1506.563 cents**, **12162 measurable
 voiced pairs**, and **12/12 FAIL**, with zero unresolved items. For song 00008, source pitch agrees
 exactly with its conditioning on the measured comparison frames while rendered pitch remains near
@@ -75,8 +78,10 @@ but any interior low-confidence voiced frame prevents a matching verdict even fo
 2. An owner decision on whether the pitch term is a conjunct of `reconstruction_satisfied` or a separate
    gate with its own threshold and coverage requirements, calibrated against identical-source controls.
 3. A re-export whose graph is verified to follow the requested note, using the
-   `pitchFollowsRequestedNote` measurement now recorded in the vocoder export receipt. Epoch 6 satisfies
-   this synthetic diagnostic only; it does not substitute for item 1 or item 4.
+   revision-2 `pitchFollowsRequestedNote` measurement recorded in the vocoder export receipt, requiring
+   all four notes within 50 cents and at least 80% voiced coverage each. Epoch 6 does not satisfy this
+   accuracy diagnostic. Even a pass would not substitute for item 1 or item 4; its estimator is
+   target-windowed, whereas held-out evaluation uses the independent native pitch extractor.
 4. A repeated full-song render whose spectrum is consistent with the source rather than with broadband
    noise or the hop-rate artifact.
 
