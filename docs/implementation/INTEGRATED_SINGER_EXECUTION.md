@@ -1,5 +1,23 @@
 # Integrated Singer Execution
 
+## Linux native result closes the previous candidate diagnostic pass
+
+September 19, 2026 — native Linux job 105910668024 at `138009ea` completed:
+169/170 CTest targets passed, 1282.66 seconds. Its only failure is the same
+partial-retention relative-import error as the isolated release job, already
+repaired and verified locally through actual CTest discovery in `ca90fbdc`.
+No additional failing target is reported. Windows native qualified targets and
+plugin packaging had already completed successfully. macOS jobs remained queued,
+not executed; there is no macOS CI PASS.
+
+All active Linux/Windows jobs from the old candidate have finished, so accumulated
+development fixes can now be promoted to master without cancelling their ongoing
+execution. The next CI run must verify cancellation propagation, actual Linux
+GUI-host registration, empty-selection refusal and corrected Python discovery.
+Superseding the old queued macOS jobs does not constitute validation of them.
+Training remains terminal at r2, with verified update-450 state and approximately
+1.2 GiB free disk; no continuation was launched.
+
 ## Second large vocoder attempt stopped on disk guard; update 450 is recoverable
 
 September 19, 2026 — session 65581 is terminal, exit 2; PID 23699 is absent.
