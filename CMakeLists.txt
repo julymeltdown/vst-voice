@@ -2139,6 +2139,11 @@ if(SEAM_BUILD_TESTS)
     add_test(NAME seam_tracked_source_closure_unit
       COMMAND ${Python3_EXECUTABLE} -m unittest
         tests/test_tracked_source_closure.py)
+    add_test(NAME seam_verifier_required_paths_unit
+      COMMAND ${Python3_EXECUTABLE} -m unittest
+        tests/test_verifier_required_paths.py)
+    set_tests_properties(seam_verifier_required_paths_unit PROPERTIES
+      WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} TIMEOUT 60)
     add_test(NAME seam_runtime_process_lifecycle_tests
       COMMAND ${Python3_EXECUTABLE} -m unittest tools.neural_runtime.test_process_lifecycle)
     set_tests_properties(seam_runtime_process_lifecycle_tests PROPERTIES

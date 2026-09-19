@@ -6,7 +6,19 @@ from pathlib import Path
 
 REQUIRED = (
     'libs/seam-clap-editor/src/plugin_entry.cpp',
-    'libs/seam-clap-editor/src/editor_runtime.cpp',
+    # The single editor_runtime.cpp was split into the files below by 6e3be9ec
+    # ("convert CLAP editor to shared authoring adapter"), which deleted it and
+    # did not update this list, so this check had been failing on every run since.
+    # Each successor is named here rather than replacing the entry with one path,
+    # because the contract previously carried by that one file is now spread
+    # across them and a single-file check would silently cover a quarter of it.
+    'libs/seam-clap-editor/src/editor_runtime_adapter.cpp',
+    'libs/seam-clap-editor/src/editor_runtime_input.cpp',
+    'libs/seam-clap-editor/src/editor_runtime_paint.cpp',
+    'libs/seam-clap-editor/src/editor_runtime_preview.cpp',
+    'libs/seam-clap-editor/src/editor_runtime_project.cpp',
+    'libs/seam-clap-editor/src/editor_runtime_state.cpp',
+    'libs/seam-clap-editor/src/editor_runtime_internal.hpp',
     'libs/seam-clap-editor/src/embedded_view_x11.cpp',
     'libs/seam-clap-editor/src/embedded_view_win32.cpp',
     'libs/seam-clap-editor/src/embedded_view_appkit.mm',
