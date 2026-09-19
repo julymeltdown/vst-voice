@@ -196,7 +196,28 @@ returned early on determinism and left the criterion at its initial value).
 - The reproducibility tolerance for the neural backend is measured against the frozen project and
   recorded, rather than asserted from the contract's presence.
 
-**Status:** OPEN (not addressed by the vocabulary-padding repair at `8393458b`).
+**Closure (2026-09-19)**
+
+Fixed at the graph-assembly step. ONNX stores a random op's seed in a float32 field, and ONNX Runtime
+seeds the generator per session, so a fresh session repeats even though repeated calls within one
+session do not. Because `seam_neural_worker` completes exactly one request per process, pinning the
+seed on every random sampling node while the graph is merged makes an identical request bit-identical
+in the shipped path, without changing the declared inputs the worker admits.
+
+`tools/voice_model_training/onnx_acoustic.py::pin_sampling_seed` seeds each unseeded sampling node,
+leaves a matching seed alone, refuses a conflicting one rather than rewriting it, and the export
+fails when a graph has no sampling node to pin. The shipped constant is below `2**24` so its float32
+round trip is exact; the first constant chosen was silently rounded by two, which the round-trip test
+now pins.
+
+Verified at the worker boundary: four separate processes given byte-identical requests returned
+identical audio digests (`016c3808e8f90383` for `held-out-0`/`corpus-song-f` and `6107901c5cf8cfa6`
+for `held-out-1`/`corpus-song-c`), and the re-qualified dossier
+(`/Users/lhs/seam-corpus-2026-09-19/dossier-seeded.json`) reports `determinism PASS`.
+
+**Status:** CLOSED. The same run now fails `pitch-adherence` instead: the rendered audio has zero
+voiced coverage, so it does not sing the requested note at all. That is the honest result of three
+training updates on 1303 frames and is tracked as remaining work, not as a determinism defect.
 
 ### SEAM-BETA-P1-01: Repeated support export can collide
 

@@ -5,6 +5,48 @@ import io
 from .onnx_encoder import export_duration_encoder
 
 
+# The diffusion sampler draws its initial noise inside the graph, and ONNX Runtime
+# seeds that generator per session rather than per call. Without a seed the same
+# request produced a different waveform in every worker process, which contradicts
+# the product's own neural reproducibility contract. Pinning the seed is the fix
+# that keeps the native graph interface intact: the worker admits exactly
+# ``tokens``, ``durations``, ``f0`` and ``steps``, so the noise cannot simply be
+# passed in as another input without changing that admission contract.
+# ONNX stores a random op's seed in a float32 field, so the value must be exactly
+# representable: any integer below 2**24 is. A larger constant would be silently
+# rounded, and the rounded value is what a later check would then compare against.
+SAMPLING_SEED = 2026091
+MAXIMUM_SAMPLING_SEED = 1 << 24
+RANDOM_OPS = ("RandomNormal", "RandomNormalLike", "RandomUniform", "RandomUniformLike")
+
+
+def pin_sampling_seed(model, seed: int = SAMPLING_SEED) -> int:
+    """Give every unseeded random sampling node the same explicit seed.
+
+    ONNX Runtime reseeds a fresh session from a wall-clock-independent constant and
+    then advances it per call, so a seeded node repeats across processes and across
+    a single-call process, which is the contract the worker actually ships. A node
+    that already carries a seed is left alone, and an existing seed that disagrees
+    is refused rather than silently rewritten: the export must describe one
+    sampling behaviour, not whichever seed happened to survive process order.
+    """
+    from onnx import helper
+    if type(seed) is not int or not 0 <= seed < MAXIMUM_SAMPLING_SEED:
+        raise ValueError("Sampling seed must be an exactly representable nonnegative integer")
+    pinned = 0
+    for node in model.graph.node:
+        if node.op_type not in RANDOM_OPS:
+            continue
+        existing = [attribute for attribute in node.attribute if attribute.name == "seed"]
+        if existing:
+            if existing[0].f != float(seed):
+                raise ValueError("Acoustic graph already carries a different sampling seed")
+            continue
+        node.attribute.extend([helper.make_attribute("seed", float(seed))])
+        pinned += 1
+    return pinned
+
+
 def check_denoiser_runtime(deployment_model) -> dict:
     """Compare the actual trained denoiser with identical owned inputs across runtimes.
 
@@ -101,6 +143,10 @@ def export_acoustic(deployment_model) -> bytes:
                                          name_map=mapping)
         model.graph.CopyFrom(graph)
     merged = compose.merge_models(encoder, diffusion, io_map=[("condition", "condition")])
+    # Pin sampling before the interface checks so a graph that cannot be made
+    # reproducible is refused here rather than shipped and discovered by a listener.
+    if pin_sampling_seed(merged) == 0:
+        raise ValueError("Acoustic graph has no random sampling node to make reproducible")
     revisions = {(entry.domain, entry.version) for entry in merged.opset_import}
     if revisions != {("", 17)}:
         raise ValueError("Merged acoustic graph must use only standard opset 17")
