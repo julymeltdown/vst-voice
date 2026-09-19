@@ -181,8 +181,10 @@ core::Result<NeuralRequest> prepareNeuralScoreRequest(
   const auto conditioning=vocabulary.conditionScore(phones,performance.phonemeTiming(),origin,end,silencePhone,limits);
   if (!conditioning) return core::Result<NeuralRequest>{conditioning.error()};
   std::map<domain::PhonemeKey,bool> voiced;
+  std::map<domain::PhonemeKey,bool> silent;
   for (const auto& phone:phones) voiced.emplace(phone.key,phone.voiced);
-  struct PhoneOwner { bool voiced; const synthesis::ScoreNoteSpan* note; };
+  for (const auto& phone:phones) silent.emplace(phone.key,phone.role==domain::PhonemeRole::Silence);
+  struct PhoneOwner { bool voiced; bool silent; const synthesis::ScoreNoteSpan* note; };
   std::map<domain::NoteId,const synthesis::ScoreNoteSpan*> notes;
   for (const auto& note:performance.notes()) notes.emplace(note.id,&note);
   std::map<std::uint64_t,PhoneOwner> activeStarts;
@@ -193,7 +195,7 @@ core::Result<NeuralRequest> prepareNeuralScoreRequest(
     const auto owner=notes.find(anchor.key.noteId);
     if (owner==notes.end() || owner->second->endFrame<=owner->second->startFrame)
       return core::failure<NeuralRequest>(core::ErrorCode::Conflict,"Neural phoneme has no valid owning note");
-    activeStarts.emplace(static_cast<std::uint64_t>(start-origin),PhoneOwner{voiced.at(anchor.key),owner->second});
+    activeStarts.emplace(static_cast<std::uint64_t>(start-origin),PhoneOwner{voiced.at(anchor.key),silent.at(anchor.key),owner->second});
   }
   NeuralRequest request{.requestId=requestId,.modelId=model.modelId,.modelVersion=model.modelVersion,
       .modelContentHash=model.modelContentHash,.pronunciationHash=std::move(pronunciationHash),
@@ -205,6 +207,9 @@ core::Result<NeuralRequest> prepareNeuralScoreRequest(
   for (const auto& span:request.conditioning->spans) {
     const auto active=activeStarts.find(span.startFrame);
     if (active==activeStarts.end()) continue;
+    // A declared silence owns no audible note envelope, just like a score gap.
+    // Unvoiced consonants and breaths still receive dynamics; F0 alone is not a mute.
+    if (active->second.silent) continue;
     const auto& owner=*active->second.note;
     const auto extension=static_cast<time::SampleFrame>(performance.sampleRate())*2;
     if (origin+static_cast<time::SampleFrame>(span.startFrame)<owner.startFrame-extension ||

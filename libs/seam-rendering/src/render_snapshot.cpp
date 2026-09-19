@@ -1,5 +1,6 @@
 #include "seam/rendering/render_snapshot.hpp"
 #include "seam/neural_synthesis/diffsinger_inputs.hpp"
+#include "seam/neural_synthesis/neural_phrase_backend.hpp"
 #include "seam/rendering/render_pipeline.hpp"
 
 #include "seam/build/version.hpp"
@@ -619,6 +620,7 @@ core::Result<std::string> buildNeuralIdentity(const domain::Project& project,
   const auto& metadata = bundle.metadata();
   IdentityWriter identity;
   identity.tag("project-seam-neural-bundle-v2-full-context-owned-output");
+  identity.integer(neural_synthesis::kNeuralScoreRequestRevision);
   identity.integer(synthesis::kPerformanceCompilerRevision);
   identity.integer(synthesis::kProceduralTimingPolicyRevision);
   identity.integer(neural_synthesis::kDiffSingerInputRevision);

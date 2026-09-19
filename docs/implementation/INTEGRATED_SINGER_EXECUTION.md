@@ -1,5 +1,37 @@
 # Integrated Singer Execution
 
+## Explicit score silence and measured candidate quality remain separate
+
+September 19, 2026 — measured the first actual application export against the
+held-out procedural source (150,000 frames, 48 kHz). For analysis only, averaged
+the two PCM32 master channels and divided by 2^31; no alignment shift, trimming
+or resampling. Native framewise comparison at confidence 0.6 and 50-cent tolerance
+reports 127 measurable voiced pairs, zero within tolerance, 382 unmeasurable frames
+and mean absolute error 1665.999448 cents. Spectral distance is 2.9599420375.
+This is an end-to-end comparison, not isolated acoustic or vocoder reconstruction.
+The pause's central half has RMS 0.0072944275, versus exact zero in the source.
+The candidate fails musical pitch screening and remains unqualified.
+
+Source inspection found a separate score bug: explicit Silence tokens inherited
+their owning note's dynamics, whereas inserted gaps kept zero dynamics. Request
+preparation now leaves F0/dynamics/breathiness zero for Silence-role ownership;
+it does not mute unvoiced consonants or breaths merely because F0 is zero. The
+phone/token conditioning still reaches the model. Neural score-request revision 2
+is included in render-cache identity. This is score-envelope enforcement, not
+evidence that either learned model reconstructs silence correctly.
+
+Both worker-protocol and production-render CTests pass. Rerendered the same learned
+candidate and held-out project to
+`/Users/lhs/seam-corpus-pauses-2026-09-19-r1/application-e9-v6-score-silence`.
+Master SHA-256:
+`aac8e9691c6c3db9a8f8a72e81acd1073837d24a7495471b3dd4fbe3bbebb5b7`.
+All PCM samples in the explicit pause [66000,78000) are exactly zero; every sample
+outside that interval is byte-for-byte unchanged from the prior export. Export
+and project reopen pass. No model weights, training measurements, frozen held-out
+sets or old audio artifacts were changed. Larger vocoder training remains live;
+latest collected progress was 425/2804 at 1673.44 seconds, without completed
+held-out evaluation yet.
+
 ## Real trained pause candidate completes application export and reopen
 
 September 19, 2026 — the apparent unresolved consonant was the standalone `pau`

@@ -115,6 +115,17 @@ TEST_CASE("neural score conditioning uses compiled timing and explicit silence w
   const auto unvoicedRequest=prepareNeuralScoreRequest(102U,model,vocabulary.value(),unvoicedPerformance.value(),unvoiced,std::string(64U,'b'),0,12010,"SP"); CHECK(unvoicedRequest);
   CHECK(unvoicedRequest.value().f0Hz[500]==0.0F); CHECK(unvoicedRequest.value().dynamics[500]>0.0F);
   CHECK(unvoicedRequest.value().f0Hz[5000]>0.0F);
+  std::vector<domain::PhonemeToken> silencePhones{
+      {.key={domain::NoteId{5U},0U},.symbol="SP",.role=domain::PhonemeRole::Silence,.voiced=false}};
+  const auto silentPerformance=synthesis::compileScorePerformance(project,region,48000U,silencePhones,
+      synthesis::PhonemeTimingPolicy::ProceduralInNote); CHECK(silentPerformance);
+  const auto silentRequest=prepareNeuralScoreRequest(105U,model,vocabulary.value(),silentPerformance.value(),
+      silencePhones,std::string(64U,'b'),0,12010,"SP"); CHECK(silentRequest);
+  for (std::size_t i=0;i<silentRequest.value().f0Hz.size();++i) {
+    CHECK(silentRequest.value().f0Hz[i]==0.0F);
+    CHECK(silentRequest.value().dynamics[i]==0.0F);
+  }
+  CHECK(silentRequest.value().breathiness.empty());
   auto delayed=region; delayed.durationTick=time::Tick{1920}; delayed.notes[0].startTick=time::Tick{480};
   std::vector<domain::PhonemeToken> extendedPhones{
       {.key={domain::NoteId{5U},0U},.symbol="z",.role=domain::PhonemeRole::Onset,.voiced=true,.timing={.startOffset=-100000}},
