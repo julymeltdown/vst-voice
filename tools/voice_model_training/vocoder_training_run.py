@@ -21,6 +21,7 @@ def train_reviewed_vocoder_epoch(generator, discriminators, generator_optimizer,
         maximum_seconds=600, cancelled=None, schedulers=None, expected_dataset_sha256=None,
         maximum_checkpoint_file_bytes=512 * 1024 * 1024, held_out_items=None,
         label_origin=None, reconstruction_directory=None, evaluation_seed=0,
+        pitch_executable=None,
         maximum_checkpoint_total_bytes=1024 * 1024 * 1024):
     """Use the same admitted phrase segmentation as acoustic training (<=4096 hops).
 
@@ -189,6 +190,7 @@ and item receipts; the complete measurement receipt is also checkpointed.
             label_origin=effective_label_origin,
             profile=profiles[0], output_directory=reconstruction_directory,
             seed=evaluation_seed, check_running=check_lifetime,
+            pitch_executable=pitch_executable,
         )
         epoch["reconstructionSummary"] = reconstruction_receipt.get("summary")
         epoch["reconstruction"] = reconstruction_receipt

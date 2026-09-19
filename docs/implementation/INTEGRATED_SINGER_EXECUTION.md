@@ -1,5 +1,56 @@
 # Integrated Singer Execution
 
+## The reconstruction gate is now evaluable, and it reports a real pitch failure
+
+September 19, 2026 — pitch extraction wired into the held-out vocoder evaluation.
+
+```text
+Engineering: DEMONSTRATED
+Creator workflow: NOT_OBSERVED
+Musical review: NOT_REVIEWED
+```
+
+The previous entry added `build_pitch_tracks` but nothing called it, so the gate was still unevaluable.
+`evaluate_held_out_reconstruction` now takes an optional `pitch_executable`, and when given one it
+extracts framewise pitch for the source and the rendered signal of every held-out item and passes the
+pair to the measurement. Extraction is opt-in because it costs a subprocess per signal and the
+low-level measurement is also used without one; omitting it leaves the pitch term UNRESOLVED and never
+PASS.
+
+Measured on one held-out corpus song through the two-epoch vocoder, before and after:
+
+| summary field | before wiring | after wiring |
+|---|---|---|
+| measurablePitchFrames | 0 | 908 |
+| unresolvedPitchItems | 12 of 12 | 0 |
+| meanAbsolutePitchErrorCents | null | 1525.381 |
+| pitchStatus per item | UNRESOLVED | FAIL (MISMATCH) |
+| meanSpectralDistance | 1.272 | 1.281 |
+
+Three things follow, and the first matters most.
+
+**The gate is no longer structurally unreachable.** Every performance number the qualification and
+reconstruction paths previously produced for this vocoder was reported against a pitch term that could
+not be evaluated at all. It now returns a verdict, and the verdict is a real measurement: the two-epoch
+vocoder is 1525 cents away from the source pitch, which is roughly fifteen semitones and consistent with
+the hop-rate lock recorded above. The earlier report that the vocoder was 1.272 spectral distance from
+the source was true and was never the whole story.
+
+**The strictness question from the previous entry is now answered by measurement rather than argument.**
+Identical audio reports UNRESOLVED because `comparisonSatisfied` requires `MATCH_ON_MEASURABLE_FRAMES`,
+which tolerates no unmeasurable span and no voiced frame below 0.6 confidence on either side. On a real
+1080-frame song, 908 frames were measurable and the rest were not. So the gate as written cannot pass on
+a real phrase regardless of vocoder quality, which is a property of the predicate and not of the
+vocoder. That still needs an owner decision among the three options the previous entry listed.
+
+**A wiring detail that a reader will otherwise re-derive the hard way.** The extraction must be run on
+exactly the arrays the measurement hashes, and the extractor binds each track to the WAV file digest
+rather than the sample digest. Truncating to `validSamples` differently in the two places produces
+tracks that look correct and are refused as unbound.
+
+Status: wiring landed and measured; 185 of 185 training tests pass. The vocoder run continues.
+trainingAdmitted, singerQualified and releaseEligible remain false.
+
 ## The pitch term is now wired, and the gate's own strictness is the next question
 
 September 19, 2026 — first producer for the pitch tracks the acceptance predicate requires.

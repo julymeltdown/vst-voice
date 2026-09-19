@@ -345,6 +345,7 @@ def evaluate_held_out_reconstruction(
     profile: dict | None = None,
     seed: int = 0,
     check_running=None,
+    pitch_executable: Path | None = None,
 ) -> dict:
     """Evaluate vocoder reconstruction over held-out items and retain the measurement receipt.
 
@@ -400,10 +401,27 @@ def evaluate_held_out_reconstruction(
             rendered_pcm = _mono_audio(generator_fn(mel, f0), "rendered vocoder output")
             if torch is not None and len(rendered_pcm) != mel.shape[2] * hop_size:
                 raise ValueError("Vocoder output length differs from its conditioning frame count")
+            # The acceptance predicate has a pitch term that is only evaluable when both
+            # tracks exist. The caller opts in by supplying the pinned extractor, because
+            # extraction costs a subprocess per signal and this low-level measurement is
+            # also used without one; omitting it leaves the term UNRESOLVED, never PASS.
+            tracks = None
+            if pitch_executable is not None:
+                # Extraction must use exactly the arrays the measurement will hash,
+                # because it re-derives each track's file digest from source_valid and
+                # rendered_valid itself. Truncating differently here would produce
+                # tracks that look correct and are refused as unbound.
+                source_valid = source_pcm[:item.get("validSamples", len(source_pcm))]
+                rendered_valid = rendered_pcm[:len(source_valid)]
+                extracted, _digests = build_pitch_tracks(
+                    pitch_executable, source_valid, rendered_valid,
+                    sample_rate=sample_rate, sample_rate_hz=sample_rate)
+                tracks = {"source": extracted["source"], "rendered": extracted["rendered"]}
             measurement = measure_vocoder_reconstruction(
                 rendered_audio=rendered_pcm, source_audio=source_pcm, sample_rate=sample_rate,
                 hop_size=hop_size, profile=profile, valid_samples=item.get("validSamples"),
-                target_hz=item.get("frequencyHz"), pitch_tracks=item.get("pitchTracks"))
+                target_hz=item.get("frequencyHz"),
+                pitch_tracks=item.get("pitchTracks") or tracks)
             if check_running is not None:
                 check_running()
             valid = measurement["validSamples"]
