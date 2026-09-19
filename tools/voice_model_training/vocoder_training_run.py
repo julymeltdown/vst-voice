@@ -1,16 +1,20 @@
 """Freshly reviewed whole-phrase vocoder GAN epoch and final checkpoint publication.
 
 Exceptions invalidate the entire in-memory attempt, including a partially updated
-GAN. Discard those objects; only a previously completed checkpoint may be resumed.
+GAN. Discard those objects; resume only a verified complete or explicit partial
+checkpoint after fresh dataset admission and exact prefix validation.
 """
 from copy import deepcopy
+import hashlib
 import math
 from pathlib import Path
 import time
 
-from .__main__ import assemble_dataset
+from .__main__ import assemble_dataset, encode_report, load_config
 from .vocoder_batches import iter_vocoder_batches, segment_frame_ranges
-from .vocoder_checkpoint import publish_vocoder_checkpoint, _schedulers
+from .vocoder_checkpoint import (publish_vocoder_checkpoint, publish_vocoder_partial_checkpoint,
+                                restore_vocoder_partial_checkpoint, _schedulers)
+from .vocoder_recovery_cursor import build_recovery_plan, partial_cursor, verify_partial_cursor
 from .vocoder_optimization import vocoder_gan_step
 from .vocoder_reconstruction import evaluate_held_out_reconstruction
 from .gan_checkpoint_storage import require_disk_headroom
@@ -23,7 +27,10 @@ def train_reviewed_vocoder_epoch(generator, discriminators, generator_optimizer,
         maximum_checkpoint_file_bytes=512 * 1024 * 1024, held_out_items=None,
         label_origin=None, reconstruction_directory=None, evaluation_seed=0,
         pitch_executable=None, on_progress=None, training_segment_frames=None,
-        maximum_checkpoint_total_bytes=1024 * 1024 * 1024):
+        maximum_checkpoint_total_bytes=1024 * 1024 * 1024,
+        recovery_directory=None, checkpoint_interval_updates=None,
+        maximum_recovery_bytes=2 * 1024**3,
+        resume_partial=None, resume_partial_sha256=None):
     """Admit complete sources (<=4096 hops), optionally train balanced owned segments.
 
 The reconstruction callable and model/configuration provenance are caller-owned.
@@ -36,6 +43,12 @@ and item receipts; the complete measurement receipt is also checkpointed.
 Held-out inference remains whole-source even when training_segment_frames is set.
 Segments introduce independent training boundaries; numerical equivalence to a
 whole-phrase optimizer update is neither expected nor claimed.
+
+Opt-in recovery writes only after both optimizers finish an owned segment. It
+uses a separate new directory and aggregate byte budget; no retention or CLI
+selection is implied here. Resume rereads the verified prefix without optimizing
+it, then restores state immediately before the next update. Schedulers still step
+only once at complete-epoch coverage. Saved snapshots are not admission authority.
 """
     required = {"permission_config", "permission_hash", "label_config", "label_hash", "root",
                 "rights_review", "rights_policy", "rights_anchor", "label_review", "label_policy",
@@ -59,6 +72,21 @@ whole-phrase optimizer update is neither expected nor claimed.
         raise ValueError("Training segment budget must be 16..4096 hops")
     if output.exists() or output.is_symlink() or not output.parent.is_dir():
         raise ValueError("Vocoder epoch needs a new checkpoint directory")
+    if ((recovery_directory is None) != (checkpoint_interval_updates is None)
+            or (resume_partial is None) != (resume_partial_sha256 is None)
+            or type(maximum_recovery_bytes) is not int or not 1 <= maximum_recovery_bytes <= 8 * 1024**3):
+        raise ValueError("Recovery requires paired explicit paths/intervals and bounded storage")
+    recovery_enabled = recovery_directory is not None or resume_partial is not None
+    if recovery_enabled and training_segment_frames is None:
+        raise ValueError("Partial recovery currently requires explicit balanced training segments")
+    if recovery_directory is not None:
+        recovery_directory = Path(recovery_directory)
+        if (type(checkpoint_interval_updates) is not int or not 1 <= checkpoint_interval_updates <= 100000
+                or recovery_directory.exists() or recovery_directory.is_symlink()
+                or not recovery_directory.parent.is_dir()
+                or recovery_directory.resolve().is_relative_to(output.resolve())
+                or output.resolve().is_relative_to(recovery_directory.resolve())):
+            raise ValueError("Recovery output must be new, separate and have an existing parent")
     inputs, metadata = deepcopy(dataset_inputs), deepcopy(run_metadata)
     schedulers = _schedulers(schedulers, generator_optimizer, discriminator_optimizer)
     target_inventory, source_inventory = deepcopy(targets), deepcopy(pcm_sources)
@@ -149,6 +177,37 @@ whole-phrase optimizer update is neither expected nor claimed.
         if time.time() >= snapshot["expiresAt"]:
             raise ValueError("Source review expired during vocoder epoch")
 
+    def revalidate():
+        current = refresh()
+        if current["datasetSha256"] != snapshot["datasetSha256"]:
+            raise ValueError("Dataset identity changed during vocoder epoch")
+
+    effective_label_origin = label_origin or snapshot.get("labelOrigin") or metadata.get("labelOrigin") or "unspecified"
+    state_metadata = dict(run=metadata, datasetBindings=snapshot["bindings"],
+        datasetSha256=snapshot["datasetSha256"], profileSha256=expected_profile_sha256,
+        objectiveId=objective_id, labelOrigin=effective_label_origin)
+    plan, resume_cursor = None, None
+    if recovery_enabled:
+        profiles = [target_inventory[source][0]["profile"] for source in sorted(selected)]
+        if any(profile != profiles[0] for profile in profiles):
+            raise ValueError("Recovery sources must share one acoustic profile")
+        plan = build_recovery_plan([dict(sourceId=source, analysisFrames=phrases[source],
+                                        sourceSamples=expected[source]) for source in sorted(selected)],
+            dataset_sha256=snapshot["datasetSha256"], profile_sha256=expected_profile_sha256,
+            run_sha256=hashlib.sha256(encode_report(metadata)).hexdigest(),
+            segment_frames=training_segment_frames, hop_size=profiles[0]["hopSize"])
+        if len(plan["segments"]) != planned_updates:
+            raise ValueError("Recovery plan update count differs")
+        if resume_partial is not None:
+            resume_partial = Path(resume_partial)
+            saved = load_config(resume_partial / "checkpoint.json", resume_partial_sha256)
+            if saved.get("formatId") != "com.project-seam.gan-partial-checkpoint":
+                raise ValueError("Partial resume requires a partial-state receipt")
+            resume_cursor = verify_partial_cursor(saved["epoch"], plan)
+    recovery_bytes, restored = 0, resume_cursor is None
+    if recovery_directory is not None:
+        require_disk_headroom(recovery_directory.parent,
+                              min(maximum_recovery_bytes, checkpoint_budget) + checkpoint_budget + evaluation_budget)
     check_lifetime()
     report("updates-started", totalUpdates=planned_updates)
     covered, total, gl, dl = {}, 0, 0.0, 0.0
@@ -171,6 +230,27 @@ whole-phrase optimizer update is neither expected nor claimed.
                 or begin * hop != covered.get(identity, 0)
                 or batch["validSamples"] != owned):
             raise ValueError("Vocoder batch identity or whole-phrase coverage differs")
+        if plan is not None:
+            actual = dict(sourceId=identity, frameOffset=begin, frameCount=end-begin, validSamples=owned)
+            if updates >= len(plan["segments"]) or actual != plan["segments"][updates]:
+                raise ValueError("Training batches differ from canonical recovery order")
+        if resume_cursor is not None and updates < resume_cursor["completedUpdates"]:
+            # Still read/verify every skipped source and segment, but do not optimize it again.
+            covered[identity] = covered.get(identity, 0) + owned
+            source_updates[identity] = part + 1
+            updates += 1
+            total += owned
+            continue
+        if not restored:
+            if covered != resume_cursor["coveredSourceSamples"] or total != resume_cursor["validSamples"]:
+                raise ValueError("Replayed prefix differs from retained recovery cursor")
+            revalidate()
+            restore_vocoder_partial_checkpoint(generator, discriminators, generator_optimizer, discriminator_optimizer,
+                resume_partial, receipt_sha256=resume_partial_sha256, expected_metadata=state_metadata,
+                recovery_plan=plan, schedulers=schedulers, maximum_bytes=maximum_checkpoint_file_bytes)
+            gl, dl = resume_cursor["generatorLossSum"], resume_cursor["discriminatorLossSum"]
+            restored = True
+            report("partial-restored", completedUpdates=updates, totalUpdates=planned_updates)
         result = vocoder_gan_step(generator, discriminators, generator_optimizer, discriminator_optimizer,
             mel=batch["mel"], f0=batch["f0"], pcm=batch["pcm"], hop_size=batch["hopSize"],
             partition="train", reconstruction_loss=reconstruction_loss)
@@ -182,22 +262,33 @@ whole-phrase optimizer update is neither expected nor claimed.
         total += count
         gl += result["generatorLoss"] * count
         dl += result["discriminatorLoss"] * count
+        if recovery_directory is not None and updates < planned_updates and updates % checkpoint_interval_updates == 0:
+            remaining_recovery = maximum_recovery_bytes - recovery_bytes
+            if remaining_recovery <= 0:
+                raise RuntimeError("Recovery checkpoint budget exhausted; saved partial checkpoints retained")
+            revalidate()
+            allowed = min(checkpoint_budget, remaining_recovery)
+            require_disk_headroom(recovery_directory.parent, allowed + checkpoint_budget + evaluation_budget)
+            if not recovery_directory.exists():
+                recovery_directory.mkdir(mode=0o700)
+            child = recovery_directory / f"update-{updates:06d}"
+            cursor = partial_cursor(plan, completed_updates=updates, generator_loss_sum=gl, discriminator_loss_sum=dl)
+            saved = publish_vocoder_partial_checkpoint(generator, discriminators, generator_optimizer, discriminator_optimizer,
+                child, metadata=state_metadata, recovery_plan=plan, cursor=cursor, schedulers=schedulers,
+                maximum_bytes=maximum_checkpoint_file_bytes, maximum_total_bytes=allowed, before_publish=revalidate)
+            recovery_bytes += saved["checkpointBytes"]
+            report("partial-checkpoint", completedUpdates=updates, checkpointDirectory=str(child),
+                   receiptSha256=hashlib.sha256(encode_report(saved)).hexdigest(), recoveryBytes=recovery_bytes)
         if updates == 1 or updates % 25 == 0 or updates == planned_updates:
             report("updates-progress", completedUpdates=updates, totalUpdates=planned_updates,
                    validSamples=total, meanGeneratorLoss=gl / total, meanDiscriminatorLoss=dl / total)
-    if covered != expected or updates != planned_updates:
+    if covered != expected or updates != planned_updates or not restored:
         raise ValueError("Vocoder epoch incomplete; no checkpoint may be published")
-
-    def revalidate():
-        current = refresh()
-        if current["datasetSha256"] != snapshot["datasetSha256"]:
-            raise ValueError("Dataset identity changed during vocoder epoch")
 
     report("readmission-started")
     revalidate()
     for scheduler in (schedulers or {}).values():
         scheduler.step()
-    effective_label_origin = label_origin or snapshot.get("labelOrigin") or metadata.get("labelOrigin") or "unspecified"
     epoch = dict(formatId="com.project-seam.vocoder-epoch-result", schemaVersion=1,
         datasetSha256=snapshot["datasetSha256"], profileSha256=expected_profile_sha256,
         objectiveId=objective_id, updates=updates, sourceCount=len(covered), validSamples=total,
@@ -254,8 +345,6 @@ whole-phrase optimizer update is neither expected nor claimed.
     # headroom for a second copy. Check immediately before serialization instead.
     check_storage()
     return publish_vocoder_checkpoint(generator, discriminators, generator_optimizer, discriminator_optimizer,
-        output, metadata=dict(run=metadata, datasetBindings=snapshot["bindings"],
-            datasetSha256=snapshot["datasetSha256"], profileSha256=expected_profile_sha256,
-            objectiveId=objective_id, labelOrigin=effective_label_origin), epoch=epoch, schedulers=schedulers,
+        output, metadata=state_metadata, epoch=epoch, schedulers=schedulers,
         maximum_bytes=maximum_checkpoint_file_bytes, maximum_total_bytes=maximum_checkpoint_total_bytes,
         before_publish=revalidate)

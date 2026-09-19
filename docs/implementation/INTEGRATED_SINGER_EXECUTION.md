@@ -1,5 +1,42 @@
 # Integrated Singer Execution
 
+## Periodic partial publication and verified-prefix resume in the epoch service
+
+September 19, 2026 — wired the partial transport into
+`train_reviewed_vocoder_epoch` behind explicit recovery-directory/interval and
+partial-resume path/hash arguments. Defaults remain unchanged. Recovery currently
+requires the existing balanced-segment path; the new recovery directory must be
+separate and newly created. Partial publication occurs only after both optimizer
+phases complete and accounted samples/loss sums are updated, with fresh source
+readmission before publication and before the final receipt. Partial state has its
+own cumulative byte budget and conservative disk preflight; no automatic retention
+or large-job restart is enabled yet.
+
+Resume freshly admits the original dataset, reconstructs the canonical plan, and
+rereads every preceding source/segment without optimization. It verifies exact
+prefix geometry and sample accounting, then restores model/optimizer/scheduler/RNG
+immediately before the next update. Complete-epoch loss totals include the saved
+prefix exactly once. Schedulers advance only after final full coverage. Subsequent
+partial saves use the continued cursor, not a reset update index.
+
+A real small Torch generator/discriminator loop now proves interruption after
+update one -> save -> fresh owners -> resume updates two/three equals uninterrupted
+three-update execution: exact epoch losses, sample coverage, model tensors,
+schedulers and Python/NumPy/Torch RNG. A spy confirms only two optimizer steps
+execute after resume. A second partial at update two is published correctly; a
+changed skipped segment refuses before any optimizer call. Admission and batch
+fixtures are mocked in this test; the optimizers and state transport are real.
+This is not yet real-corpus/CLI recovery or large-model equivalence.
+
+Thirty-seven Torch cursor/checkpoint/epoch/reconstruction/orchestration tests pass
+in 2.69 seconds. Phase11 source and diff checks pass. Next wire CLI/multi-epoch
+selection and bounded partial retention, then exercise interruption on actual
+captured corpus data before another long vocoder attempt. Disk remains below the
+large run's safety floor; no large training process was started.
+System discovery passes 222 tests with 37 optional skips (185 executed), 33.46
+seconds; source closure passes. Recovery startup also preflights partial-plus-final
+checkpoint headroom before any optimizer update, not just at the first save.
+
 ## Distinct partial GAN state transport with real continuation equivalence
 
 September 19, 2026 — connected the exact recovery cursor to an explicit
