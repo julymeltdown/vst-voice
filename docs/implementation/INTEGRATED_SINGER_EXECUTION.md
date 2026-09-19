@@ -1,5 +1,54 @@
 # Integrated Singer Execution
 
+## Vocoder training resumed from the update-450 checkpoint on restored disk
+
+September 20, 2026 — the disk condition that stopped r2 cleared: free space went
+from about 2.2 GiB to 74-78 GiB, and the recovery checkpoint at update-450 still
+hashes to `9fcd1f421353d8c9d68e57b013767d953f0cbd6c2f4a842fd19610e3e4abc8a8`,
+byte-identical to its recorded receipt. Both captured input digests were
+re-verified before launch: training config
+`74e1f77f699ed352796d72c14f8347c1d53cbb0aca50e49e1778087dfa385e48` and dataset
+`5e0c71c4d3aaa3bb43cb330025d71a5413bf3b6b7fbf092df46af3fd414a68a8`. The
+`--trusted-checkout` tree, conditioning directory and target inventory are all
+present. The launch command is the identical captured r2 invocation, differing
+only in `--output` (new r3 directory) plus the recorded resume flags.
+
+Run r3 is live at
+`/Users/lhs/seam-corpus-xl-2026-09-19/vocoder-512-segments-r3`, log
+`vocoder-512-segments-r3.log`. Verified progression: run-started ->
+epoch-started -> admission-started -> updates-started (2804 total) ->
+partial-restored at completedUpdates 450 -> updates-progress 475, 500, 525.
+Mean generator loss moved 45.83 -> 45.30 -> 44.84 across those reports; recovery
+checkpoint update-500 published with receipt
+`dca68bb98549656bd9c6b42e0a111452ba169f65fe586192d1e39f7df9bf99ec`
+(720,450,469 bytes), matching the expected partial size.
+
+The earlier note "Reviewed training cancelled; discard the attempt" in run-xl.log
+is timestamped 15:10, before this checkpoint was written at 23:50, so it refers to
+an earlier attempt and not to this recovery point. Two launch mechanisms were
+tried and rejected on evidence: `setsid` is absent on macOS, and `launchctl
+submit` left the interpreter blocked in CPython's path bootstrap at 0% CPU with
+no output directory. The run is now hosted in a persistent session under the
+normal shell environment.
+
+This is resumption of the acoustic/vocoder objective only. It is not a qualified
+singer, no complete epoch has finished, and no reconstruction or listening
+acceptance exists yet. Full Beta remains NO_GO.
+
+## moduleinfotool generation needed OBJCXX injection and a CLAP path
+
+September 20, 2026 — the generation added in `ec7f58df` failed on remote CI in
+two distinct ways, both environment issues rather than metadata-content issues.
+macOS configuration hit the same missing `CMAKE_OBJCXX_COMPILE_OBJECT` error as
+the validator step, because the pinned SDK compiles `.mm` sources without ever
+calling `enable_language(OBJCXX)`; the fix reuses the existing injection file.
+Ubuntu built and linked the tool, then exited 1 with "Calling
+'GetPluginFactory' returned nullptr" because moduleinfotool loads the packaged
+plug-in to read its class registry and the wrapper locates its inner CLAP through
+`CLAP_PATH`, which that invocation did not set. Both corrected in `0cfcb61b`.
+Local suite passes (183 executed, 4 skipped); remote tool-build and real
+folder-package verification still required.
+
 ## Steinberg vst3-validator macOS build: wrong CMake flag names, missing OBJCXX
 
 September 20, 2026 — repaired-candidate macOS VST3 job 105921858081 at
