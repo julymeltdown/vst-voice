@@ -22,7 +22,8 @@ class PrepareCorpusTest(unittest.TestCase):
         for index, midi in enumerate((60, 64, 67)):
             self.entries.append(self.build_song(index, midi))
         self.value = dict(formatId="com.project-seam.captured-teacher-corpus-config", schemaVersion=1,
-            seed="corpus-seed", extractor="unused", songs=self.entries, heldOutSongIds=["song-002"])
+            seed="corpus-seed", extractor="unused", songs=self.entries, heldOutSongIds=["song-002"],
+            trainingScopes=["sourceUse", "transformation", "modelTraining"])
         self.write_config()
 
     def build_song(self, index, midi):
@@ -114,6 +115,22 @@ class PrepareCorpusTest(unittest.TestCase):
                              ["review-revision-missing"])
         self.assertFalse(inspection["trainingAdmitted"])
         self.assertFalse(inspection["releaseEligible"])
+        # The permission capture must join to the actual WAVs, and it must report the
+        # declared scopes rather than an assumed complete set.
+        from tools.voice_model_training.__main__ import inspect_permission_config
+        permissions = inspect_permission_config(output / "permissions.json",
+                                                result["permissionsSha256"], output)
+        self.assertTrue(permissions["sourceBytesVerified"])
+        self.assertEqual(len(permissions["sources"]), 3)
+        self.assertEqual(result["trainingScopes"], ["modelTraining", "sourceUse", "transformation"])
+        self.assertIs(result["assertionsComplete"], False)
+        for source in permissions["sources"]:
+            self.assertEqual(source["missingScopes"],
+                             ["singingBankRedistribution", "commercialRenders", "modelRedistribution",
+                              "commercialModels"])
+        self.assertFalse(permissions["assertionsComplete"])
+        self.assertFalse(permissions["trainingAdmitted"])
+        self.assertFalse(permissions["reviewAuthenticated"])
         with self.assertRaises(ValueError): prepare_corpus(config=self.root / "corpus-config.json",
                                                           config_sha256=self.digest, output=output)
 
@@ -186,6 +203,19 @@ class PrepareCorpusTest(unittest.TestCase):
             self.write_config()
             with self.subTest(candidate=candidate), self.assertRaises(ValueError):
                 load_corpus_config(self.root / "corpus-config.json", self.digest)
+
+    def test_unknown_duplicate_or_missing_training_scopes_are_refused(self):
+        for scopes in (["sourceUse", "modelTraining", "modelTraining"], ["sourceUse", "inventedScope"],
+                       [], "sourceUse", ["sourceUse", None]):
+            self.value = {**self.value, "trainingScopes": scopes}
+            self.write_config()
+            with self.subTest(scopes=scopes), self.assertRaises(ValueError):
+                load_corpus_config(self.root / "corpus-config.json", self.digest)
+        # Omitting the declaration entirely is a refusal, never a default scope set.
+        self.value = {key: item for key, item in self.value.items() if key != "trainingScopes"}
+        self.write_config()
+        with self.assertRaises(ValueError):
+            load_corpus_config(self.root / "corpus-config.json", self.digest)
 
     @unittest.skipUnless(importlib.util.find_spec("numpy"), "optional NumPy required")
     def test_failure_in_one_song_publishes_no_corpus_receipt(self):
