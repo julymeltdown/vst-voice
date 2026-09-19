@@ -1,5 +1,28 @@
 # Integrated Singer Execution
 
+## Cross-cutting regression verification after pause and sampler repairs
+
+September 19, 2026 — rebuilt 12 affected native test targets from source at
+`08ef3154` with two build jobs, then ran them serially. All 12 pass in 28.75 seconds:
+articulation context, voice design, performance compiler, neural worker protocol,
+neural render snapshots, neural phrase runner, neural render workflow, neural
+selection, phoneme timing, performance snapshots, expression-on-song, and the
+original-singer song journey (15.30 seconds). This is the selected impact set, not
+the full platform/host release matrix. Thirty-one Python tests also pass in the
+actual Torch environment: sampler wrapper, features, captured preparation, corpus
+preparation, acoustic export command and training command.
+
+Remote CI is not accepted for this revision: current runs remain queued behind
+older in-progress runs. Historical run 35441494583 at `a96141dd` failed one of 168
+macOS native tests: original-singer song journey aborted after 19.53 seconds, after
+its first case passed and during `Tuning an installed singer survives undo, save,
+reopen and export`. The available failed-job log contains no assertion or stack
+trace establishing the cause. Do not describe this as a timeout or assume the
+current local pass fixes it. Preserve the failure as an unresolved CI observation;
+next isolate the abort with target-platform diagnostics if it recurs on current CI.
+The twelve local passes establish local regression coverage only. Live vocoder
+PID 69937 was confirmed active; no training restart, corpus edit or quality claim.
+
 ## Explicit score silence and measured candidate quality remain separate
 
 September 19, 2026 — measured the first actual application export against the
