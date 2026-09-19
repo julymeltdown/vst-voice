@@ -10,6 +10,28 @@ except ImportError:
 
 @unittest.skipIf(torch is None, "Optional Torch/NumPy training environment required")
 class ReviewedIntegrationTests(unittest.TestCase):
+    def test_captured_corpus_vocoder_partial_recovery(self):
+        from tools.voice_model_training.check_reviewed_run import check_reviewed_run
+
+        class Model(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.level = torch.nn.Parameter(torch.tensor(0.))
+
+        class Objective:
+            objective_id = "recovery-fixture-l2"
+
+            def __call__(self, model, inputs, target):
+                return (model.level.expand_as(target) - target).square()
+
+        model = Model()
+        result = check_reviewed_run(model, torch.optim.AdamW(model.parameters(), lr=.001),
+            objective=Objective(), model_metadata={"testModel": "scalar"}, check_partial_recovery=True)
+        self.assertTrue(result["passed"])
+        self.assertTrue(result["vocoderRecovery"]["exactModelTensors"])
+        self.assertEqual(result["vocoderRecovery"]["validSamples"], 12288)
+        self.assertFalse(result["vocoderRecovery"]["admissionMocked"])
+
     def test_complete_reviewed_run_without_mocking_admission_or_training(self):
         from tools.voice_model_training.check_reviewed_run import check_reviewed_run
 

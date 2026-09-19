@@ -1,5 +1,29 @@
 # Integrated Singer Execution
 
+## Captured oscillator-corpus recovery through real admission and batch readers
+
+September 19, 2026 — extended the signed synthetic integration diagnostic with
+an opt-in 48-hop corpus and a tiny GAN recovery check. Three captured WAVs have
+actual PCM hashes, derived mel files, labels, fixture-local signed permissions,
+conditioning shards and separate train/validation/test partitions. The fixture
+key is deliberately public and conveys no production rights or human review.
+
+The new check runs the actual reviewed epoch service uninterrupted, interrupts
+after one durable partial publication, creates fresh model/optimizer owners and
+resumes the two remaining segments. Full epoch metrics, model tensors, both AdamW
+states and Python/NumPy/Torch RNG match exactly. The run accounts for 12,288
+training samples across three updates. Admission, source/batch reading, optimizer
+steps, checkpoint transport and the production disk reserve are not mocked.
+Existing shorter fixtures remain unchanged unless this diagnostic is selected.
+
+Seven focused real Torch integration/recovery/retention tests pass in 3.01 seconds;
+phase11 and diff checks pass. Temporary engineering fixture files are removed by
+their temporary-directory lifecycle; no existing corpus artifacts are modified.
+This is captured synthetic-file integration, not the 424-song production corpus,
+not a process-kill/restart proof, not the large vocoder, and not singer quality.
+Those boundaries remain explicit next steps. Available disk at entry was 641 MiB;
+no large training job was started or storage guard lowered.
+
 ## Automatic per-epoch partial retention and separate byte accounting
 
 September 19, 2026 — wired the verified-successor helper into the actual epoch

@@ -32,7 +32,7 @@ def check_reviewed_run(model, optimizer, *, objective, model_metadata: dict,
                        trusted_checkout: Path | None = None, check_export: bool = False,
                        native_probe: Path | None = None, vocoder_checkout: Path | None = None,
                        vocoder_command_checkout: Path | None = None,
-                       retained_fixture_root: Path | None = None) -> dict:
+                       retained_fixture_root: Path | None = None, check_partial_recovery: bool = False) -> dict:
     """Exercise real file admission, optimization, publication and held-out I/O."""
     import numpy as np
     import torch
@@ -73,10 +73,12 @@ def check_reviewed_run(model, optimizer, *, objective, model_metadata: dict,
         evidence = b"Synthetic oscillator engineering fixture; no human voice or actual lyric supervision."
         (root / "fixture-evidence.txt").write_bytes(evidence)
         sources, permissions, labels, targets, split_rows = [], [], [], {}, []
+        fixture_samples = 12288 if check_partial_recovery else 4096
+        fixture_hops = fixture_samples // 256
         for index, frequency in enumerate((220., 330., 440.)):
             identity = f"fixture-{index}"
             buffer = io.BytesIO()
-            samples = .2 * np.sin(2 * np.pi * frequency * np.arange(4096) / 48000)
+            samples = .2 * np.sin(2 * np.pi * frequency * np.arange(fixture_samples) / 48000)
             with wave.open(buffer, "wb") as writer:
                 writer.setnchannels(1)
                 writer.setsampwidth(2)
@@ -99,16 +101,16 @@ def check_reviewed_run(model, optimizer, *, objective, model_metadata: dict,
                                     evidenceSha256=hashlib.sha256(evidence).hexdigest(), reviewRevision="test-only",
                                     permissions=dict.fromkeys(TRAINING_PERMISSIONS, True)))
             label_entry = dict(sourceSha256=digest, audioSha256=record["audioSha256"],
-                               label=dict(sourceId=identity, frameCount=4096, hopSize=256,
-                                          f0Hz=[frequency] * 16, voiced=[True] * 16, reviewRevision=None,
-                                          phonemes=[dict(symbol="a", startFrame=0, endFrame=4096, confidence=1)]),
+                               label=dict(sourceId=identity, frameCount=fixture_samples, hopSize=256,
+                                          f0Hz=[frequency] * fixture_hops, voiced=[True] * fixture_hops, reviewRevision=None,
+                                          phonemes=[dict(symbol="a", startFrame=0, endFrame=fixture_samples, confidence=1)]),
                                score=dict(language="en", silencePhones=[],
                                           syllables=[dict(lyric="fixture", phoneStart=0, phoneEnd=1)],
-                                          notes=[dict(startFrame=0, endFrame=4096, midi=(57, 64, 69)[index],
+                                          notes=[dict(startFrame=0, endFrame=fixture_samples, midi=(57, 64, 69)[index],
                                                       syllable=0, slur=False)]))
             if conditioned:
                 label_entry["conditioning"] = dict(
-                    revision=2, breathiness=np.linspace(0., 1., 16).tolist())
+                    revision=2, breathiness=np.linspace(0., 1., fixture_hops).tolist())
             labels.append(label_entry)
         # Select a fixture seed solely to exercise all three partitions. Never
         # select a real study split by model performance or held-out outcomes.
@@ -294,10 +296,18 @@ def check_reviewed_run(model, optimizer, *, objective, model_metadata: dict,
                 rights_anchor=rights_anchor, label_anchor=label_anchor,
                 held_out_sources=[row['sourceIds'][0] for row in split['groups']
                                   if row['partition'] == 'validation'])
+        recovery = None
+        if check_partial_recovery:
+            from .check_vocoder_recovery import check_vocoder_recovery
+            recovery = check_vocoder_recovery(root=root, dataset_inputs=inputs,
+                conditioning_directory=shards, targets=targets, profile_sha256=profile,
+                pcm_sources={row["sourceId"]: root / row["path"] for row in sources})
         passed = changed > 0 and exact and len(validation) == 1 and receipt["epoch"]["coverageVerified"]
+        passed = passed and (recovery is None or recovery["passed"])
         passed = passed and (vocoder is None or vocoder["passed"]) and (vocoder_command is None or vocoder_command['passed'])
         return dict(passed=passed, changedParameterTensors=changed, checkpointRestoredExact=exact,
                     epoch=receipt["epoch"], partitionCounts=split["counts"], validation=validation,
                     trainingCommand=command_result, vocoderEpoch=vocoder, vocoderCommand=vocoder_command,
+                    vocoderRecovery=recovery,
                     syntheticInputs=True, fixturePolicyOnly=True, singerQualified=False,
                     checkpointRetained=retained_fixture_root is not None, releaseEligible=False)
