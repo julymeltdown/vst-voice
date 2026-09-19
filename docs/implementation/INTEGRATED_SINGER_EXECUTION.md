@@ -1,5 +1,54 @@
 # Integrated Singer Execution
 
+## Saved-project neural export regression and learned-vocabulary mismatch
+
+September 19, 2026 — production application integration, not singer qualification.
+
+The production-render harness now accepts `--candidate-bundle`, `--project` and
+`--output`. It captures the manifest/project hashes, selects the candidate only in
+memory, retains musical controls, renders through the normal coordinator and native
+worker, and exports master/stems/project through `ExportService`. Export destinations
+must be new. The harness reopens the exported project and checks its neural resource
+identity. Default arithmetic-fixture coverage still checks exact full-context chunk
+equivalence and now additionally exercises saved-project export.
+
+Verification: rebuilt `seam_export_tests` and `seam_neural_production_render`; both
+CTest targets pass (34.35 seconds combined). Source closure, phase11 source checks
+and `git diff --check` pass. No full-suite or new cross-platform acceptance is claimed.
+
+This exposed a production defect: project/recipe packaging assumed every non-bank
+source was procedural and performed `std::get<TrackRecipeFileSource>` on a neural
+source. The service now preserves both bank and neural sources as external references
+and packages only procedural recipes. Neural model binaries are not copied or granted
+redistribution rights. The new fixture test failed with `bad_variant_access` before
+the repair and passes afterward.
+
+Actual experiment: acoustic epoch 142 plus vocoder epoch 6 was prepared in
+`/Users/lhs/seam-corpus-xl-2026-09-19/bundle-e142-v6-application-waveform`, manifest
+SHA-256 `14e12b3c0d361d58f783e037da6f4ebb00814bdbb0a485cdcc1f0c379baa343d`.
+The first preparation used the tool's default `audio` output and native admission
+correctly rejected it; the actual graph requires `waveform`. Both experiment
+directories are retained. The corrected bundle reaches the runner but fails with
+`Admitted vocabulary has no explicit silence symbol`. Its vocabulary contains PAD
+and 17 sung phones, with no SP/silence token. No completed learned song export is
+claimed. Do not alias silence to a sung phone or insert an untrained token into the
+export. Next repair training/deployment vocabulary agreement with explicit silence
+examples and unchanged token ownership, then repeat this same application journey.
+
+Reproduction (using the existing neural Python environment):
+
+```sh
+build/neural-runtime/diffsinger-model-env/bin/python tools/neural_runtime/check_production_render.py \
+  build/release/seam_neural_production_render build/release/seam_voicebank_cli \
+  --candidate-bundle /Users/lhs/seam-corpus-xl-2026-09-19/bundle-e142-v6-application-waveform \
+  --project /Users/lhs/seam-corpus-xl-2026-09-19/phrase-00000/baseline/project.seam \
+  --output /Users/lhs/seam-corpus-xl-2026-09-19/application-e142-v6-export
+```
+
+Training PID 65038 remained live during this work; it was not restarted. Disk space
+dropped to approximately 1.2 GiB, so avoid further heavy parallel experiments.
+The epoch-six pitch failure below remains open independently of this integration fix.
+
 ## Epoch 6 follows synthetic F0 but still fails every held-out reconstruction
 
 September 19, 2026 — evaluated a completed checkpoint while the resumed training process continued.

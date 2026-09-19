@@ -1,34 +1,91 @@
 """Render a phrase through the normal authoring path with the shipped worker.
 
-The bundle carries arithmetic fixture graphs, so a pass proves that the production
-worker executed inside the render path and that its audio was published. It says
-nothing about a voice.
+By default the bundle carries arithmetic fixture graphs. Optional candidate-bundle,
+project and output arguments exercise a learned bundle without installing it.
+A pass proves execution and export, never singer qualification or musical quality.
 
 The C++ binary is the renderer: this script only prepares the real ONNX bundle it
-needs. The first invocation collects the phones the phrase requires, the second
-renders with the admitted bundle.
+needs. Fixture mode checks both output-window equivalence and saved-project export.
+Exported projects retain external neural resource identities, not model binaries.
 """
+import argparse
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 import subprocess
-import sys
 import tempfile
 
-from check_paired_runtime import graphs
+
+def run_render(binary, directory, manifest_sha256, maximum_bytes, *, project=None,
+               output=None, model_id="fixture", version="1"):
+    # Do not let a caller's stale probe variables silently skip rendering.
+    environment = {k: v for k, v in os.environ.items()
+                   if not k.startswith("SEAM_NEURAL_PRODUCTION_")}
+    environment.update(SEAM_NEURAL_PRODUCTION_BUNDLE=str(directory),
+                       SEAM_NEURAL_PRODUCTION_MANIFEST_SHA256=manifest_sha256,
+                       SEAM_NEURAL_PRODUCTION_MAXIMUM_BYTES=str(maximum_bytes),
+                       SEAM_NEURAL_PRODUCTION_MODEL_ID=model_id,
+                       SEAM_NEURAL_PRODUCTION_MODEL_VERSION=version)
+    if project is not None:
+        if project.stat().st_size > 4 * 1024 * 1024:
+            raise ValueError("Project exceeds the native intake limit")
+        environment.update(SEAM_NEURAL_PRODUCTION_PROJECT=str(project),
+                           SEAM_NEURAL_PRODUCTION_PROJECT_SHA256=hashlib.sha256(project.read_bytes()).hexdigest(),
+                           SEAM_NEURAL_PRODUCTION_EXPORT=str(output))
+    rendered = subprocess.run([str(binary)], capture_output=True, text=True,
+                              timeout=300, env=environment)
+    if rendered.returncode:
+        raise RuntimeError(rendered.stdout + rendered.stderr)
+    report = rendered.stdout
+    match = re.search(r"with (\d+) nonzero samples", report)
+    assert "seam.neural-worker.v1" in report and match and int(match[1]) > 0, report
+    if project is not None:
+        assert "singerQualified=false" in report, report
+        assert output.is_dir(), report
+    print(report.strip())
 
 
 def main():
-    binary = Path(sys.argv[1]).resolve()
-    cli = Path(sys.argv[2]).resolve()
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("binary", type=Path)
+    parser.add_argument("cli", type=Path)
+    parser.add_argument("--candidate-bundle", type=Path)
+    parser.add_argument("--project", type=Path)
+    parser.add_argument("--output", type=Path)
+    args = parser.parse_args()
+    binary, cli = args.binary.resolve(), args.cli.resolve()
+    if any((args.candidate_bundle, args.project, args.output)):
+        if not all((args.candidate_bundle, args.project, args.output)):
+            parser.error("candidate-bundle, project and output must be supplied together")
+        directory, project, output = (p.resolve() for p in
+                                      (args.candidate_bundle, args.project, args.output))
+        if output.exists() or not output.parent.is_dir():
+            parser.error("output must be a new path with an existing parent")
+        resource_path = directory / "resource.json"
+        manifest_path = directory / "manifest.json"
+        if resource_path.stat().st_size > 16384 or manifest_path.stat().st_size > 1048576:
+            raise ValueError("Candidate metadata exceeds intake limits")
+        resource = json.loads(resource_path.read_bytes())
+        digest = hashlib.sha256(manifest_path.read_bytes()).hexdigest()
+        if (resource.get("formatId") != "com.project-seam.neural-resource"
+                or resource.get("schemaVersion") != 1 or resource.get("contentHash") != digest):
+            raise ValueError("Candidate resource identity does not match its manifest")
+        run_render(binary, directory, digest, 256 * 1024 * 1024, project=project,
+                   output=output, model_id=resource["id"], version=resource["version"])
+        print("candidate execution/export verified; singer remains unqualified")
+        return
+    from check_paired_runtime import graphs
     with tempfile.TemporaryDirectory(prefix="seam-production-render-") as temporary:
         root = Path(temporary)
         directory = root / "bundle"
         directory.mkdir()
         exported = root / "exported-phones.json"
+        project = root / "fixture.seam"
         collected = subprocess.run([str(binary)], capture_output=True, timeout=120,
-                                   env=dict(os.environ, SEAM_NEURAL_PRODUCTION_VOCABULARY_OUT=str(exported)))
+                                   env=dict(os.environ, SEAM_NEURAL_PRODUCTION_VOCABULARY_OUT=str(exported),
+                                            SEAM_NEURAL_PRODUCTION_PROJECT_OUT=str(project)))
         assert collected.returncode == 0, collected.stderr
         mapping = json.loads(exported.read_text())
         assert mapping.get("SP") == 1 and len(mapping) >= 1, mapping
@@ -51,19 +108,9 @@ def main():
                                   check=True, capture_output=True, text=True, timeout=20)
         manifest_sha256 = json.loads(prepared.stdout)["manifestSha256"]
 
-        rendered = subprocess.run([str(binary)], capture_output=True, timeout=300,
-                                  env=dict(os.environ,
-                                           SEAM_NEURAL_PRODUCTION_BUNDLE=str(directory),
-                                           SEAM_NEURAL_PRODUCTION_MANIFEST_SHA256=manifest_sha256,
-                                           SEAM_NEURAL_PRODUCTION_MAXIMUM_BYTES="1048576"))
-        assert rendered.returncode == 0, rendered.stderr.decode()
-        report = rendered.stdout.decode()
-        # A skipped phase would also exit zero, so require the render to name itself.
-        assert "seam.neural-worker.v1" in report, report
-        assert "nonzero samples" in report, report
-        nonzero = int(report.split("with ")[1].split(" nonzero")[0])
-        assert nonzero > 0, report
-        print(report.strip())
+        run_render(binary, directory, manifest_sha256, 1048576)
+        run_render(binary, directory, manifest_sha256, 1048576,
+                   project=project, output=root / "application-export")
         print("production worker render check passed; no musical claim was made")
 
 

@@ -17,6 +17,8 @@
 #include "seam/application/project_factory.hpp"
 #include "seam/authoring/neural_phrase_runner.hpp"
 #include "seam/authoring/render_coordinator.hpp"
+#include "seam/authoring/export_service.hpp"
+#include "seam/formats/project_json.hpp"
 #include "seam/core/file_io.hpp"
 #include "seam/core/sha256.hpp"
 #include "seam/neural_synthesis/bundle_metadata.hpp"
@@ -134,21 +136,46 @@ TEST_CASE("an admitted bundle renders non-silent audio through the production wo
   const auto root = seam::test::support::temporaryDirectory("neural-production-render");
   seam::application::ProjectFactory factory{9400U};
   auto project = factory.createProject("Production neural render");
-  const auto phrase = buildPhrase(factory, project);
+  auto phrase = buildPhrase(factory, project);
   if (vocabularyOut != nullptr) {
     writeVocabulary(phrase.symbols, std::filesystem::path{vocabularyOut});
+    if (const auto* projectOut=std::getenv("SEAM_NEURAL_PRODUCTION_PROJECT_OUT")) {
+      const auto json=seam::formats::ProjectJsonCodec{}.encode(project); CHECK(json);
+      CHECK(seam::core::durableAtomicWriteNew(projectOut,std::as_bytes(std::span{json.value()})));
+    }
     return;
+  }
+
+  const auto* projectInput=std::getenv("SEAM_NEURAL_PRODUCTION_PROJECT");
+  if (projectInput!=nullptr) {
+    const auto json=seam::core::readTextFileLimited(projectInput,4U*1024U*1024U); CHECK(json);
+    CHECK(seam::core::sha256Hex(json.value())==requireEnvironment("SEAM_NEURAL_PRODUCTION_PROJECT_SHA256"));
+    auto decoded=seam::formats::ProjectJsonCodec{}.decode(json.value()); CHECK(decoded);
+    project=std::move(decoded).value();
+    CHECK(project.vocalTracks().size()==1U);
+    CHECK(project.audioTracks().empty());
+    auto& track=project.vocalTracks().front();
+    CHECK(track.regions.size()==1U && !track.regions.front().notes.empty());
+    phrase.track=track.id; phrase.region=track.regions.front().id;
+    // Explicit experiment selection in memory; never overwrite the input song.
+    track.proceduralRecipe.reset();
+    track.voicebank={};
   }
 
   const std::filesystem::path directory{bundleDirectory};
   const std::string manifestSha256 = requireEnvironment("SEAM_NEURAL_PRODUCTION_MANIFEST_SHA256");
   const auto maximumBytes = static_cast<std::size_t>(
       std::stoull(requireEnvironment("SEAM_NEURAL_PRODUCTION_MAXIMUM_BYTES")));
+  const auto* selectedId=std::getenv("SEAM_NEURAL_PRODUCTION_MODEL_ID");
+  const auto* selectedVersion=std::getenv("SEAM_NEURAL_PRODUCTION_MODEL_VERSION");
   const auto identity = seam::domain::SingerResourceIdentity{
-      seam::domain::SingerResourceKind::Neural, "fixture", "1", manifestSha256};
+      seam::domain::SingerResourceKind::Neural, selectedId ? selectedId : "fixture",
+      selectedVersion ? selectedVersion : "1", manifestSha256};
+  if (projectInput!=nullptr)
+    project.vocalTracks().front().neuralResource=seam::domain::NeuralResourceReference{identity};
   const auto frozen = seam::neural_synthesis::loadNeuralBundleDirectory(directory, identity, maximumBytes);
   if (!frozen) throw seam::test::Failure{"bundle load failed: " + frozen.error().message};
-  const auto admitted = AdmittedNeuralBundle::admit(frozen.value(), 65536U, 10);
+  const auto admitted = AdmittedNeuralBundle::admit(frozen.value(), 4U*1024U*1024U, 10);
   if (!admitted) throw seam::test::Failure{"bundle admission failed: " + admitted.error().message};
   auto bundle = std::make_shared<const AdmittedNeuralBundle>(std::move(admitted).value());
 
@@ -162,7 +189,7 @@ TEST_CASE("an admitted bundle renders non-silent audio through the production wo
       .helper = helper,
       .helperContentHash = helperHash.value(),
       .timeout = std::chrono::seconds{60},
-      .maximumResidentBytes = 256U * 1024U * 1024U,
+      .maximumResidentBytes = (projectInput ? 1024U : 256U) * 1024U * 1024U,
       .maximumCpuTime = std::chrono::seconds{30},
       .protocolVersion = 2U};
   const auto runner = AuthoringNeuralPhraseRunner::create(options);
@@ -187,7 +214,7 @@ TEST_CASE("an admitted bundle renders non-silent audio through the production wo
   // published phrase can never be attributed to the probe or to another bundle.
   CHECK(published->activeRenderer == "seam.neural-worker.v1");
   CHECK(published->neuralIdentities.size() == 1U);
-  CHECK(published->neuralIdentities.front().modelId == "fixture");
+  CHECK(published->neuralIdentities.front().modelId == identity.id);
   CHECK(published->neuralIdentities.front().bundleContentHash == manifestSha256);
   CHECK(published->neuralIdentities.front().provider == "CPUExecutionProvider");
   CHECK(published->result.activeUnitPlan.empty());
@@ -204,8 +231,25 @@ TEST_CASE("an admitted bundle renders non-silent audio through the production wo
   // The transport probe publishes silence; a real execution must not.
   CHECK(nonzero > 0U);
   CHECK(nonzero * 2U >= published->result.interleaved.size());
+  if (projectInput!=nullptr) {
+    seam::authoring::ExportSettings settings{};
+    settings.includeMaster=true; settings.includeStems=true; settings.includeProjectAndRecipes=true;
+    const auto exported=seam::authoring::ExportService{}.exportSetWithSources(project,sources,
+        phrase.track,phrase.region,8U,requireEnvironment("SEAM_NEURAL_PRODUCTION_EXPORT"),settings);
+    if (!exported) throw seam::test::Failure{"candidate export failed: "+exported.error().message};
+    CHECK(exported.value().state==seam::authoring::ExportState::Committed);
+    CHECK(!exported.value().masterSha256.empty());
+    const auto restored=seam::formats::ProjectJsonCodec{}.load(
+        std::filesystem::path{requireEnvironment("SEAM_NEURAL_PRODUCTION_EXPORT")} / "project.seam");
+    CHECK(restored);
+    CHECK(restored.value().vocalTracks().front().neuralResource);
+    CHECK(restored.value().vocalTracks().front().neuralResource->resource==identity);
+    std::cout << "candidate application export committed with master SHA256 "
+              << exported.value().masterSha256 << "; singerQualified=false" << std::endl;
+  }
   // Ownership splits must preserve full model context, even at non-hop-aligned
   // boundaries. This uses the real ONNX worker, not the silent transport probe.
+  if (projectInput==nullptr) {
   const auto snapshot=seam::rendering::RenderSnapshotFactory{}.createNeural(project,*bundle,provenance,
       phrase.track,phrase.region,8U,seam::rendering::RenderQuality::Final,48000U,"original"); CHECK(snapshot);
   const auto& selected=*std::get<TrackNeuralSource>(sources.front()).runner;
@@ -220,6 +264,7 @@ TEST_CASE("an admitted bundle renders non-silent audio through the production wo
     stitched.insert(stitched.end(),audio.value().audio.samples.begin(),audio.value().audio.samples.end());
   }
   CHECK(stitched==whole.value().audio.samples);
+  }
   // State what actually happened, so a caller cannot mistake a skipped phase for a
   // completed render.
   std::cout << "production worker rendered " << published->result.interleaved.size()

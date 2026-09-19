@@ -675,7 +675,13 @@ core::Result<ExportResult> ExportService::exportSetWithSources(
     std::size_t recipeBytes = 0U;
     for (const auto& source : voicebanks) {
       if (stopToken.stop_requested()) return core::failure<ExportResult>(core::ErrorCode::Conflict, "Recipe packaging cancelled");
-      if (std::holds_alternative<rendering::TrackVoicebankSource>(source)) { frozenSources.push_back(source); continue; }
+      // Bank and neural resources remain external, identity-bound references in
+      // the saved project. Only procedural recipes are copied into this package.
+      if (std::holds_alternative<rendering::TrackVoicebankSource>(source) ||
+          std::holds_alternative<rendering::TrackNeuralSource>(source)) {
+        frozenSources.push_back(source);
+        continue;
+      }
       rendering::TrackProceduralSource frozen;
       if (const auto* value = std::get_if<rendering::TrackProceduralSource>(&source)) frozen = *value;
       else {
