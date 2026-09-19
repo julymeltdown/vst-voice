@@ -1,5 +1,24 @@
 # Integrated Singer Execution
 
+## Preserve trained silence IDs through default application lookup
+
+September 19, 2026 — `prepare_bundle --silence-phone pau` (also `sil` or `SP`)
+can explicitly bind the application's default `SP` lookup to an existing trained
+silence ID. The vocabulary keeps its original token array and adds only an alias;
+the ordinary manifest binds the changed vocabulary bytes. No embedding is invented,
+renumbered or renamed. Without the option vocabulary conversion is unchanged.
+Missing selected tokens, sung-phone/padding selections and an existing conflicting
+`SP` ID are refused before the output directory is created. The preparation report
+records the selection; resource metadata and native configuration schemas are unchanged.
+
+The native bundle-preparation integration test covers all three accepted symbols,
+unchanged default behavior, exact token preservation, native manifest agreement,
+and refusal without output for four invalid selections. It also retains actual
+worker inference checks using deterministic arithmetic ONNX fixtures. These fixtures
+prove packaging/admission mechanics, not a trained singer's silence or audio quality.
+The epoch-142 acoustic export still cannot use this option: it lacks trained silence.
+The larger vocoder training process remained live and was not restarted or modified.
+
 ## Fresh larger-model segmented training launched
 
 September 19, 2026 — actual corpus updates, not a synthetic mechanics probe.

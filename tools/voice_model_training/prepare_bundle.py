@@ -73,7 +73,7 @@ def read_report(directory, expected_format, graph_field, sha_field, bytes_field)
     return report, graph
 
 
-def vocabulary_asset(tokens):
+def vocabulary_asset(tokens, silence_phone=None):
     if type(tokens) is not list or len(tokens) < 2 or tokens[0] != "<PAD>":
         raise ValueError("Export vocabulary must be an ordered list beginning with <PAD>")
     mapping = {}
@@ -83,7 +83,23 @@ def vocabulary_asset(tokens):
         mapping.setdefault(token, index)
     # Reuse the native-compatible converter so token order, padding and aliases
     # stay identical to the CLI conversion path.
-    return convert_vocabulary(json.dumps(mapping).encode("utf-8"))
+    converted = convert_vocabulary(json.dumps(mapping).encode("utf-8"))
+    if silence_phone is None:
+        return converted
+    if silence_phone not in ("SP", "pau", "sil") or silence_phone not in mapping:
+        raise ValueError("Selected silence phone must already exist in the trained vocabulary")
+    index = mapping[silence_phone]
+    if "SP" in mapping and mapping["SP"] != index:
+        raise ValueError("Default SP silence conflicts with the selected trained silence ID")
+    if "SP" in mapping:
+        return converted
+    # Add only a lookup alias, never a new embedding or a renamed trained token.
+    vocabulary = json.loads(converted)
+    vocabulary["aliases"]["SP"] = index
+    result = canonical_json(vocabulary)
+    if len(result) > 4 * 1024 * 1024:
+        raise ValueError("Aliased vocabulary exceeds the native parser envelope")
+    return result
 
 
 def configuration_asset(profile, maximum_frames, steps_layout, vocoder_output):
@@ -114,7 +130,8 @@ def manifest_asset(assets):
 
 
 def prepare(acoustic_directory, vocoder_directory, output, maximum_frames,
-            steps_layout, vocoder_output, resource_id=None, resource_version=None):
+            steps_layout, vocoder_output, resource_id=None, resource_version=None,
+            silence_phone=None):
     if output.exists() or output.is_symlink() or not output.parent.is_dir():
         raise ValueError("Output must be a new directory with an existing parent")
     if type(maximum_frames) is not int or not 1 <= maximum_frames <= MAXIMUM_FRAMES_LIMIT:
@@ -153,7 +170,7 @@ def prepare(acoustic_directory, vocoder_directory, output, maximum_frames,
         raise ValueError("Acoustic and vocoder exports disagree on the acoustic profile")
     if len(acoustic_graph) == 0 or len(vocoder_graph) == 0:
         raise ValueError("Exported graphs must be nonempty")
-    vocabulary = vocabulary_asset(acoustic.get("vocabulary"))
+    vocabulary = vocabulary_asset(acoustic.get("vocabulary"), silence_phone)
     configuration = configuration_asset(acoustic["profile"], maximum_frames,
                                         steps_layout, vocoder_output)
     assets = [("acoustic", "acoustic", acoustic_graph), ("vocoder", "vocoder", vocoder_graph),
@@ -180,7 +197,7 @@ def prepare(acoustic_directory, vocoder_directory, output, maximum_frames,
             stream.flush()
             os.fsync(stream.fileno())
     return dict(manifestSha256=sha256(manifest), resourceId=resource_id,
-                resourceVersion=resource_version,
+                resourceVersion=resource_version, silencePhone=silence_phone,
                 assets=[dict(role=role, name=name, sha256=sha256(payload), bytes=len(payload))
                         for role, name, payload in assets],
                 acousticCheckpointReceiptSha256=acoustic["checkpointReceiptSha256"],
@@ -201,11 +218,13 @@ def main():
     parser.add_argument("--vocoder-output", choices=("audio", "waveform"), default="audio")
     parser.add_argument("--resource-id")
     parser.add_argument("--resource-version")
+    parser.add_argument("--silence-phone", choices=("SP", "pau", "sil"),
+                        help="Alias default SP lookup to an existing trained silence token")
     args = parser.parse_args()
     try:
         report = prepare(args.acoustic_export, args.vocoder_export, args.output,
                          args.maximum_frames, args.steps_layout, args.vocoder_output,
-                         args.resource_id, args.resource_version)
+                         args.resource_id, args.resource_version, args.silence_phone)
         print(json.dumps(report))
         return 0
     except (OSError, ValueError, KeyError) as error:

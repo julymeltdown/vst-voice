@@ -114,6 +114,50 @@ def main():
             (native.stdout, report["manifestSha256"])
         assert (native_bundle / "manifest.json").read_bytes() == manifest
 
+        # Explicit silence aliases preserve trained IDs and pass native admission.
+        # Fixture models establish packaging mechanics, not learned silence quality.
+        for symbol in ("pau", "sil", "SP"):
+            silence_root = root / ("silence-export-" + symbol)
+            silence_root.mkdir()
+            silence_tokens = ["<PAD>", "aa1", symbol, "k"]
+            sa, sv = write_exports(silence_root, acoustic_graph, vocoder_graph,
+                                   vocabulary=silence_tokens)
+            unaliased = root / ("silence-unaliased-" + symbol)
+            unchanged = compose(script, sa, sv, unaliased)
+            assert unchanged.returncode == 0, unchanged.stderr
+            original = json.loads((unaliased / "vocabulary").read_bytes())
+            assert original["tokens"] == silence_tokens and original["aliases"] == {}
+            sb = root / ("silence-bundle-" + symbol)
+            result = compose(script, sa, sv, sb, "--silence-phone", symbol)
+            assert result.returncode == 0, result.stderr
+            value = json.loads((sb / "vocabulary").read_bytes())
+            assert value["tokens"] == silence_tokens
+            assert value["aliases"] == ({} if symbol == "SP" else {"SP": 2})
+            if symbol == "SP":
+                assert (sb / "vocabulary").read_bytes() == (unaliased / "vocabulary").read_bytes()
+            assert json.loads(result.stdout)["silencePhone"] == symbol
+            native_silence = root / ("silence-native-" + symbol)
+            native_silence.mkdir()
+            for name in ("acoustic", "vocoder", "vocabulary", "configuration"):
+                (native_silence / name).write_bytes((sb / name).read_bytes())
+            admitted = subprocess.run(
+                [cli, "prepare-neural-bundle", str(native_silence), "fixture", "1", "1048576"],
+                capture_output=True, text=True, timeout=20)
+            assert admitted.returncode == 0, admitted.stderr
+            assert (native_silence / "manifest.json").read_bytes() == (sb / "manifest.json").read_bytes()
+        for label, tokens, selection in (
+                ("missing", TOKENS, "pau"),
+                ("conflict", ["<PAD>", "SP", "pau"], "pau"),
+                ("sung", TOKENS, "aa1"),
+                ("padding", TOKENS, "<PAD>")):
+            invalid_root = root / ("invalid-silence-" + label)
+            invalid_root.mkdir()
+            sa, sv = write_exports(invalid_root, acoustic_graph, vocoder_graph, vocabulary=tokens)
+            refused_output = root / ("refused-silence-" + label)
+            result = compose(script, sa, sv, refused_output, "--silence-phone", selection)
+            assert result.returncode == 2, result.stdout
+            assert not refused_output.exists()
+
         # An installed bundle also carries the resource record a project saves, so
         # the identity can be resolved back to these bytes. The record's digest
         # must be the manifest digest, and the manifest must not change for it.
