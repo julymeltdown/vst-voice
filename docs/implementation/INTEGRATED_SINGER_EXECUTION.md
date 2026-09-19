@@ -1,5 +1,36 @@
 # Integrated Singer Execution
 
+## Schedule-derived sampler bound and real pause-candidate deployment
+
+September 19, 2026 — replaced the unjustified standard-deviation monotonicity
+export gate. For bounded clean estimates, DDIM has form `q*x + c*clean` and
+ancestral sampling has form `c1*clean + c2*x + sigma*noise`. Triangle inequalities
+give a per-schedule absolute envelope, using the same seeded initial/per-step
+noise independently of denoiser predictions. A 1e-4 floating-point tolerance is
+explicit. Checks still require exact unclamped upstream transcription, finite
+shipped output and active clamping. Spread remains a diagnostic only, under
+diagnostic revision 2; historical reports are not rewritten. The helper restores
+the caller's RNG state and is CPU-only, matching this export path.
+
+All seven Torch sampler tests pass, including both transition paths, three signed
+denoiser predictions, RNG preservation, unbounded-output rejection and a large DC
+offset that a spread-only comparison would miss. Source checks pass. These bounded
+probes do not establish every-input safety or musical quality.
+
+Actual epoch-nine export now succeeds: 11,255,229-byte acoustic graph SHA-256
+`c4150f7635191da0b734a44a96970e01ea1b19b333262812143bb88209df9aae`, with ONNX
+runtime smoke passing. Combined with the known-unqualified epoch-six vocoder and
+explicit `pau` -> `SP` alias in `bundle-e9-v6`, manifest SHA-256 is
+`123ec0d95af05e0fe3fde72fe7b326161935e1b909735be08ce0636db2657622`.
+All new artifacts are under `/Users/lhs/seam-corpus-pauses-2026-09-19-r1`.
+
+The actual held-out `phrase-00423/baseline/project.seam` now passes vocabulary
+admission, but production rendering refuses unresolved consonant timing before
+inference. No completed application export exists. Next repair the score-to-neural
+timing path with real pronunciation ownership; do not bypass timing refusal or
+invent equal-duration consonants merely to get sound. Vocoder PID 69937 remains
+live and unchanged. Singer qualification and Beta GO remain unproven.
+
 ## Pause checkpoint export refusal narrowed to a sampler heuristic
 
 September 19, 2026 — epoch-one export refused before graph publication with

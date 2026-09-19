@@ -76,6 +76,21 @@ if HAVE_TORCH:
 
 @unittest.skipUnless(HAVE_TORCH, "Optional Torch environment not installed")
 class ClampedSamplerTests(unittest.TestCase):
+    def test_schedule_envelope_covers_both_paths_and_rejects_unbounded_output(self):
+        from tools.voice_model_training.diffusion_export_wrapper import sampling_absolute_bound
+        for timesteps, steps in ((1000, 2), (1000, 4), (1000, 16), (10, 10)):
+            for prediction in (-8., 0., 8.):
+                with self.subTest(timesteps=timesteps, steps=steps, prediction=prediction):
+                    diffusion, latent = self.sample(steps, True, prediction, timesteps)
+                    before = torch.get_rng_state().clone()
+                    bound = sampling_absolute_bound(diffusion, 3, steps, 3)
+                    self.assertTrue(torch.equal(before, torch.get_rng_state()))
+                    self.assertLessEqual(float(latent.abs().max()), bound + 1e-4)
+                    # A large DC offset has zero spread but violates the envelope.
+                    self.assertGreater(float(torch.full_like(latent, 1000.).abs().max()), bound + 1e-4)
+        diffusion, unbounded = self.sample(16, False)
+        self.assertGreater(float(unbounded.abs().max()), sampling_absolute_bound(diffusion, 3, 16, 3))
+
     def sample(self, steps, clamp_latent, predicted_noise=8.0, timesteps=1000):
         from tools.voice_model_training.diffusion_export_wrapper import DiffusionExportWrapper
 

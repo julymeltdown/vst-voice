@@ -34,6 +34,36 @@ CLAMPED_LATENT_MIN = -1.0
 CLAMPED_LATENT_MAX = 1.0
 
 
+def sampling_absolute_bound(diffusion, frames: int, steps: int, seed: int) -> float:
+    """CPU diagnostic envelope from the schedule, bounded clean estimate and RNG.
+
+    This is not a quality threshold. DDIM is q*x + c*clean; ancestral is
+    c1*clean + c2*x + sigma*noise. Triangle inequalities bound either path,
+    including residual noise outside [-1, 1]. No denoiser prediction is used.
+    """
+    with torch.random.fork_rng(devices=[]):
+        torch.manual_seed(seed)
+        noise = torch.randn((1, diffusion.num_feats, diffusion.out_dims, frames))
+        bound = float(noise.abs().max())
+        speedup = max(1, diffusion.timesteps // steps)
+        speedup = int(diffusion.timestep_factors[
+            torch.sum(diffusion.timestep_factors <= speedup) - 1])
+        for t in reversed(range(0, diffusion.k_step, speedup)):
+            if speedup > 1:
+                a = float(diffusion.alphas_cumprod[t])
+                previous = float(diffusion.alphas_cumprod[max(t - speedup, 0)])
+                q = ((1 - previous) / (1 - a)) ** .5
+                c = previous ** .5 - q * a ** .5
+                bound = abs(q) * bound + abs(c)
+            else:
+                noise = torch.randn_like(noise)
+                bound = (abs(float(diffusion.posterior_mean_coef1[t]))
+                         + abs(float(diffusion.posterior_mean_coef2[t])) * bound
+                         + (float(torch.exp(.5 * diffusion.posterior_log_variance_clipped[t]))
+                            * float(noise.abs().max()) if t > 0 else 0))
+    return bound
+
+
 def _extract(values: torch.Tensor, timestep: torch.Tensor) -> torch.Tensor:
     """Broadcast a schedule entry over a [B, F, M, T] latent, as upstream does."""
     return values[timestep].reshape((1, 1, 1, 1))
