@@ -21,8 +21,10 @@
 
 #include <algorithm>
 #include <cmath>
+#include <chrono>
 #include <filesystem>
 #include <numbers>
+#include <thread>
 #include <vector>
 
 namespace {
@@ -699,6 +701,31 @@ TEST_CASE("renderer dispatcher reports an actual raw fallback") {
   CHECK(rendered.value().actual == seam::voicebank::RendererHint::Raw);
   CHECK(rendered.value().usedFallback);
   CHECK(!rendered.value().diagnostic.empty());
+}
+
+TEST_CASE("raw fallback observes cancellation requested during a long render") {
+  constexpr std::uint32_t sampleRate = 48000;
+  const auto samples = seam::test::support::sineWave(sampleRate, 440.0, 0.5);
+  seam::voicebank::AudioBuffer source{
+      .sampleRate = sampleRate, .channels = 1, .interleaved = samples};
+  auto unit = seam::test::support::makeUnit(
+      "cancel-short-loop", {"a"}, "audio/a.wav", 69,
+      seam::voicebank::UnitKind::Sustain, samples.size());
+  unit.renderer = seam::voicebank::RendererHint::Stretch;
+  unit.markers.loopStart = 8000;
+  unit.markers.loopEnd = 8010;
+  std::stop_source cancellation;
+  // The short loop forces the same fallback as the provenance test above.
+  // Long output keeps Raw busy after dispatch; no elapsed-time PASS threshold.
+  std::jthread stopper([&] {
+    std::this_thread::sleep_for(std::chrono::milliseconds{20});
+    cancellation.request_stop();
+  });
+  const auto rendered = seam::synthesis::UnitRendererDispatcher{}.render(
+      unit, source, sampleRate, 8 * 1024 * 1024, 69, {}, cancellation.get_token());
+  stopper.join();
+  CHECK(!rendered);
+  CHECK(rendered.error().code == seam::core::ErrorCode::Conflict);
 }
 
 TEST_CASE("spectral classic preserves exact length and moves harmonic energy") {

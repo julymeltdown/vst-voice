@@ -40,10 +40,10 @@ core::Result<RenderedUnit> rawFallback(
     std::uint32_t outputSampleRate,
     time::SampleFrame outputFrames,
     std::int32_t targetMidi,
-    const RawRenderParameters& parameters) {
+    const RawRenderParameters& parameters, std::stop_token stopToken) {
   RawLoopRenderer fallback;
   return fallback.render(unit, source, outputSampleRate, outputFrames,
-                         targetMidi, parameters);
+                         targetMidi, parameters, stopToken);
 }
 
 DispatchedRenderedUnit fallbackResult(RenderedUnit unit,
@@ -79,7 +79,7 @@ core::Result<DispatchedRenderedUnit> UnitRendererDispatcher::render(
   if (!capabilities) return core::Result<DispatchedRenderedUnit>{capabilities.error()};
   if (capabilities.value().canFallbackToRaw) {
     auto raw = rawFallback(unit, source, outputSampleRate, outputFrames,
-                           targetMidi, parameters.raw);
+                           targetMidi, parameters.raw, stopToken);
     if (!raw) return core::Result<DispatchedRenderedUnit>{raw.error()};
     return fallbackResult(std::move(raw).value(), requested,
                           capabilities.value().diagnostic);
@@ -135,7 +135,7 @@ core::Result<DispatchedRenderedUnit> UnitRendererDispatcher::render(
 
   const auto diagnostic = rendered.error().message;
   auto raw = rawFallback(unit, source, outputSampleRate, outputFrames,
-                         targetMidi, parameters.raw);
+                         targetMidi, parameters.raw, stopToken);
   if (!raw) return core::Result<DispatchedRenderedUnit>{raw.error()};
   return fallbackResult(std::move(raw).value(), requested, diagnostic);
 }

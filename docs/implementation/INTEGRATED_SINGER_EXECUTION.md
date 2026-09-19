@@ -1,5 +1,68 @@
 # Integrated Singer Execution
 
+## Raw fallback cancellation propagation repaired
+
+September 19, 2026 — added a delayed-stop long-output regression using the same
+short-loop Stretch-to-Raw fallback fixture as the existing provenance test. On
+unmodified dispatcher code it failed at `CHECK(!rendered)`: rendering returned
+success after cancellation. Both fallback paths now forward the caller's stop
+token through the private helper to RawLoopRenderer. No renderer selection,
+fallback diagnostics, synthesis algorithm or persisted schema changed.
+
+After rebuilding, the 34-case synthesis/voicebank/sample-rate suite passed five
+consecutive runs (3.40 seconds combined). Rebuilt coordinator and original-singer
+journey targets also passed (15.03 seconds). The regression uses delayed concurrent
+cancellation, not a deterministic scheduler or a hard real-time latency assertion;
+the observed pre-fix failure establishes coverage of the missing propagation.
+Linking emitted duplicate-library warnings but succeeded.
+
+Training independently published update-100 partial receipt
+`ce0fef04d828dd3b11bcdbf10cdc870f44ad89d31ec80331ce514bae1aa5ba90`:
+720,450,469 bytes retained, 1,440,900,938 bytes written, 3,143,712 PCM samples
+accounted. Training remains live. Existing remote candidate CI continues; its
+CLAP validator job passed while other builds are active and macOS jobs queued.
+Keep this native repair locally committed until the running CI finishes rather
+than superseding that evidence before completion.
+
+## Native musical-workflow regression pass while vocoder training continues
+
+September 19, 2026 — ran 26 focused CTest suites serially against the existing
+release build while training continued. All passed in 27.79 seconds: authoring
+performance, voice design, compiled/automatic performance, USTX interchange,
+capabilities, phoneme timing, contracts/context/state/schema/commands/snapshots,
+edit preservation, vibrato/expression lanes, authored-song and installed-singer
+journeys, and six procedural timbral-expression channels. This is automated
+native workflow evidence, not human usability, listening or multi-platform PASS.
+
+Source inspection identified a remaining cancellation propagation defect in
+`libs/seam-synthesis/src/renderer_dispatcher.cpp`: both calls through `rawFallback`
+omit the caller's stop token, although direct backend calls forward it. A stop
+requested during fallback work can therefore be ignored by the Raw rendering
+loop. Existing fallback tests establish provenance/success, not mid-flight
+cancellation. A targeted propagation repair and regression check remain next;
+no native source was changed for this observation. Training session 65581 reached
+75/2804 updates; current Linux/Windows CI was building and macOS remained queued.
+
+## First real 512-channel partial checkpoint verified
+
+September 19, 2026 — live session 65581 published
+`vocoder-512-segments-r2/recovery-000001/update-000050` at 255.67 seconds.
+Receipt SHA-256 is
+`e56303c7680ae3a8d561fd98c31f8721e5fec811e2c41a0d1c2759df08cf89ac`.
+Independent read-only verification reconstructed the canonical 2804-update plan
+from the captured original dataset snapshot and receipt-bound run identity, then
+verified the cursor and both binary hashes. Checkpoint bytes: 720,450,469;
+completed updates: 50; covered PCM samples: 1,582,464. The receipt explicitly
+remains `epochComplete=false`. No restore into the running job was attempted.
+
+Training continues on the same process. Disk after publication is about 2.9 GiB
+free. This establishes an actual large-model saved recovery point, not full-epoch
+coverage, recovered-run numerical equivalence at this scale, or singing quality.
+Linux/Windows native and plugin CI jobs are active; macOS jobs remain queued.
+Leave the current pushed candidate unchanged while that CI matrix runs; retain
+this evidence locally for the next implementation commit rather than superseding
+CI with another documentation-only push.
+
 ## Scoped generated-build cleanup and fresh recoverable large-vocoder attempt
 
 September 19, 2026 — storage inspection found inactive debug/sanitizer outputs
