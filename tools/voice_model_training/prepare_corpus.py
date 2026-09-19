@@ -12,6 +12,7 @@ still required before any training run may use these bytes.
 import argparse
 import hashlib
 import json
+import os
 from pathlib import Path
 import re
 import sys
@@ -172,6 +173,38 @@ def prepare_corpus(*, config, config_sha256, output):
                       sources=permission_rows))
     publish_new(output / "permissions.json", permission_config)
     permissions_sha256 = hashlib.sha256(encode_report(permission_config)).hexdigest()
+    # Training reads one target inventory whose record and binary names are flat
+    # files beside it, so the per-song copies are republished under unique names.
+    # Each record is re-read and digest-checked, and the shared profile is
+    # confirmed identical rather than assumed, because a corpus that mixed
+    # acoustic profiles could not be trained as one run.
+    profiles = set()
+    target_rows = []
+    for song in songs:
+        directory = output / song["directory"]
+        record_payload = (directory / "target.json").read_bytes()
+        if hashlib.sha256(record_payload).hexdigest() != song["artifacts"]["target.json"]:
+            raise ValueError("A prepared target record differs from its recorded digest")
+        record = json.loads(record_payload)
+        profiles.add(record["profileSha256"])
+        mel = (directory / "mel.f32le").read_bytes()
+        if hashlib.sha256(mel).hexdigest() != song["targetSha256"]:
+            raise ValueError("A prepared target matrix differs from its recorded digest")
+        record_name = song["sourceId"] + "-target.json"
+        binary_name = song["sourceId"] + ".f32le"
+        publish_new(output / record_name, record)
+        with (output / binary_name).open("xb") as stream:
+            stream.write(mel)
+            stream.flush()
+            os.fsync(stream.fileno())
+        target_rows.append(dict(sourceId=song["sourceId"], record=record_name,
+            recordSha256=hashlib.sha256(record_payload).hexdigest(), binary=binary_name))
+    if len(profiles) != 1:
+        raise ValueError("A corpus must share one acoustic profile to be trained as one run")
+    targets = dict(formatId="com.project-seam.training-target-inventory", schemaVersion=1,
+                   profileSha256=profiles.pop(), targets=target_rows)
+    publish_new(output / "targets.json", targets)
+    targets_sha256 = hashlib.sha256(encode_report(targets)).hexdigest()
     digests["songs"] = hashlib.sha256(encode_report([
         {key: song[key] for key in ("sourceId", "directory", "partition", "heldOutRequested",
                                     "sourceSha256", "preparationSha256")} for song in songs])).hexdigest()
@@ -189,6 +222,7 @@ def prepare_corpus(*, config, config_sha256, output):
         heldOutSongIds=sorted(value["heldOutSongIds"]), songsSha256=digests["songs"],
         labelsSha256=labels_sha256, vocabulary=vocabulary,
         permissionsSha256=permissions_sha256, trainingScopes=sorted(declared_scopes),
+        targetsSha256=targets_sha256, targetCount=len(target_rows),
         assertionsComplete=len(declared_scopes) == len(TRAINING_PERMISSIONS),
         totalSourceFrames=sum(song["sourceFrameCount"] for song in songs),
         totalAnalysisFrames=sum(song["analysisFrameCount"] for song in songs),

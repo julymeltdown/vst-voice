@@ -131,6 +131,20 @@ class PrepareCorpusTest(unittest.TestCase):
         self.assertFalse(permissions["assertionsComplete"])
         self.assertFalse(permissions["trainingAdmitted"])
         self.assertFalse(permissions["reviewAuthenticated"])
+        # The merged target inventory is what training actually reads, so it must
+        # load through the real loader and bind each matrix by digest.
+        from tools.voice_model_training.train import load_targets
+        targets, profile = load_targets(output / "targets.json", result["targetsSha256"])
+        self.assertEqual(len(targets), 3)
+        self.assertEqual({identity for identity in targets},
+                         {"song-000", "song-001", "song-002"})
+        self.assertEqual(result["targetCount"], 3)
+        for identity, (record, path) in targets.items():
+            with self.subTest(identity=identity):
+                self.assertEqual(record["profileSha256"], profile)
+                self.assertEqual(hashlib.sha256(path.read_bytes()).hexdigest(),
+                                 next(song["targetSha256"] for song in result["songs"]
+                                      if song["sourceId"] == identity))
         with self.assertRaises(ValueError): prepare_corpus(config=self.root / "corpus-config.json",
                                                           config_sha256=self.digest, output=output)
 
