@@ -198,6 +198,7 @@ def main(argv: list[str] | None = None) -> int:
             identity.as_dict(),
             args.configuration,
             module_info_tool,
+            clap_output.parent,
         )
         vst3_sha256 = tree_sha256(vst3_output)
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import platform
 import shutil
 from pathlib import Path
@@ -106,6 +107,7 @@ def materialize_vst3(
     release_identity: dict[str, str | int],
     configuration: str,
     module_info_tool: Path | None = None,
+    clap_path: Path | None = None,
 ) -> Path:
     source = first_artifact_from(
         (wrapper_build, output), "ProjectSEAMEditor.vst3", configuration
@@ -118,7 +120,16 @@ def materialize_vst3(
     if module_info_tool is not None and destination.is_dir():
         from tools.phase13a.vst3_moduleinfo import create_module_info
 
-        create_module_info(module_info_tool, destination, version, wrapper_build)
+        module_info_environment = None
+        if clap_path is not None:
+            module_info_environment = dict(os.environ, CLAP_PATH=str(clap_path))
+        create_module_info(
+            module_info_tool,
+            destination,
+            version,
+            wrapper_build,
+            module_info_environment,
+        )
     manifest_path = destination / "wrapper-manifest.json"
     if destination.is_dir() and host_system.casefold() in {"darwin", "macos"}:
         manifest_path = destination / "Contents/Resources/wrapper-manifest.json"

@@ -16,9 +16,19 @@ import subprocess
 from pathlib import Path
 
 
-def _run(command, cwd=None):
+# The pinned SDK's own top-level CMakeLists.txt never calls
+# enable_language(OBJCXX) but does compile a .mm source for macOS utilities and
+# hosting targets. Injecting the language declaration keeps this configure step
+# consistent with the wrapper build, which needs the same treatment.
+LANGUAGE_PROBE = (
+    Path(__file__).resolve().parents[2]
+    / "packaging" / "phase13a" / "cmake" / "vst3-validator-macos-language.cmake"
+)
+
+
+def _run(command, cwd=None, environment=None):
     print("+", " ".join(map(str, command)))
-    subprocess.run(list(map(str, command)), cwd=cwd, check=True)
+    subprocess.run(list(map(str, command)), cwd=cwd, env=environment, check=True)
 
 
 def build_module_info_tool(sdk_root: Path, build_directory: Path) -> Path:
@@ -28,6 +38,7 @@ def build_module_info_tool(sdk_root: Path, build_directory: Path) -> Path:
         "-DSMTG_ENABLE_VST3_PLUGIN_EXAMPLES=OFF",
         "-DSMTG_ENABLE_VST3_HOSTING_EXAMPLES=OFF",
         "-DSMTG_CREATE_PLUGIN_LINK=OFF",
+        f"-DCMAKE_PROJECT_vstsdk_INCLUDE={LANGUAGE_PROBE}",
     ])
     _run([
         "cmake", "--build", build_directory,
@@ -42,17 +53,24 @@ def build_module_info_tool(sdk_root: Path, build_directory: Path) -> Path:
     return sorted(candidates, key=lambda path: (len(path.parts), str(path)))[0]
 
 
-def create_module_info(tool: Path, bundle: Path, version: str, runtime_output: Path) -> Path:
+def create_module_info(
+    tool: Path, bundle: Path, version: str, runtime_output: Path, environment=None
+) -> Path:
     if not bundle.is_dir():
         raise RuntimeError("folder VST3 package does not exist: " + str(bundle))
     destination = bundle / "Contents" / "Resources" / "moduleinfo.json"
     destination.parent.mkdir(parents=True, exist_ok=True)
     if destination.exists():
         destination.unlink()
-    _run([
-        tool, "-create", "-version", version, "-path", bundle,
-        "-output", destination,
-    ], cwd=runtime_output)
+    # moduleinfotool loads the packaged plug-in to read its class registry, so
+    # the inner CLAP must be resolvable at run time. The clap-wrapper discovers
+    # it through CLAP_PATH, the same variable its own build step sets.
+    _run(
+        [tool, "-create", "-version", version, "-path", bundle,
+         "-output", destination],
+        cwd=runtime_output,
+        environment=environment,
+    )
     if not destination.is_file() or destination.stat().st_size == 0:
         raise RuntimeError("moduleinfotool did not write " + str(destination))
     return destination
