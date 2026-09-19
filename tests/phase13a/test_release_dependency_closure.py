@@ -165,6 +165,74 @@ class ReleaseDependencyClosureTests(unittest.TestCase):
                 self.assertEqual("BLOCKED", result.status)
                 self.assertTrue(any(dependency in error for error in result.errors))
 
+    def test_windows_shipped_payload_import_set_passes(self) -> None:
+        # The exact import set read from the phase13a Windows payload artifact
+        # (run 35465098962, artifact phase13a-vst3-Windows). Parsing the PE
+        # import tables of every shipped binary yields these thirteen names and
+        # nothing else, so the closure has to admit all of them. The single API
+        # Set entry is the reason this test exists: before it was admitted the
+        # Windows job failed with exit code 4 while every other job passed.
+        dependencies = self.release_binaries(PayloadPlatform.WINDOWS_X64)
+        dependencies["Standalone/seam_editor_native.exe"] = (
+            "ADVAPI32.dll",
+            "api-ms-win-core-synch-l1-2-0.dll",
+            "AVRT.dll",
+            "COMDLG32.dll",
+            "CRYPT32.dll",
+            "GDI32.dll",
+            "KERNEL32.dll",
+            "ole32.dll",
+            "OLEAUT32.dll",
+            "SHELL32.dll",
+            "UIAutomationCore.DLL",
+            "USER32.dll",
+            "WS2_32.dll",
+        )
+        dependencies["CLAP/ProjectSEAMEditor.clap"] = (
+            "api-ms-win-core-synch-l1-2-0.dll",
+            "GDI32.dll",
+            "KERNEL32.dll",
+            "OLEAUT32.dll",
+            "SHELL32.dll",
+            "UIAutomationCore.DLL",
+            "USER32.dll",
+        )
+
+        result = verify_dependency_closure(
+            self.payload,
+            PayloadPlatform.WINDOWS_X64,
+            FakeInspector(self.payload, dependencies),
+            "a" * 40,
+        )
+
+        self.assertEqual("PASS", result.status)
+        self.assertEqual((), result.errors)
+
+    def test_windows_admitted_api_set_is_matched_exactly(self) -> None:
+        # The admitted name is an allowlist entry, not a prefix rule: a different
+        # schema version or a lookalike still fails closed, so an unrelated
+        # third-party DLL cannot borrow the API Set family name.
+        for dependency in (
+            "api-ms-win-core-synch-l1-1-0.dll",
+            "api-ms-win-core-synch-l1-2-0.dll.evil",
+            "evil-api-ms-win-core-synch-l1-2-0.dll",
+            "api-ms-win-core-synch-l1-2-0.dll.dll",
+            "api-ms-win-core-synch-l1-2-1.dll",
+        ):
+            with self.subTest(dependency=dependency):
+                dependencies = self.release_binaries(PayloadPlatform.WINDOWS_X64)
+                dependencies["Standalone/seam_editor_native.exe"] = (dependency,)
+
+                result = verify_dependency_closure(
+                    self.payload,
+                    PayloadPlatform.WINDOWS_X64,
+                    FakeInspector(self.payload, dependencies),
+                    "a" * 40,
+                )
+
+                self.assertEqual("BLOCKED", result.status)
+                self.assertTrue(any(dependency in error for error in result.errors))
+
     def test_windows_vc_runtime_must_not_remain_a_dynamic_dependency(self) -> None:
         dependencies = self.release_binaries(PayloadPlatform.WINDOWS_X64)
         dependencies["Standalone/seam_editor_native.exe"] = ("MSVCP140.dll",)

@@ -47,6 +47,15 @@ WINDOWS_SYSTEM_DLLS: Final = frozenset(
         "user32.dll",
         "winmm.dll",
         "ws2_32.dll",
+        # API Set stub. The MSVC/UCRT runtime reaches the Windows synchronisation
+        # primitives through the apiset schema instead of importing KERNEL32 for
+        # them, so modern builds link this stub directly. The loader resolves it
+        # on every supported Windows version and it is never redistributed
+        # beside the application. It is recorded here as the exact name the
+        # shipped Windows payload imports, not matched by prefix: every other
+        # api-ms-win-shaped or ext-ms-win-shaped name still fails closed, so an
+        # unrelated third-party DLL cannot hide behind the family.
+        "api-ms-win-core-synch-l1-2-0.dll",
     }
 )
 WINDOWS_DLL_PATTERN: Final = re.compile(r"^[A-Za-z0-9_.+-]+\.dll$", re.IGNORECASE)
