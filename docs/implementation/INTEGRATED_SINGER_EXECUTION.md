@@ -1,5 +1,29 @@
 # Integrated Singer Execution
 
+## Combined sung/pause source declaration without evaluation leakage
+
+September 19, 2026 — added `combine_corpus_sources`, taking exact source-config
+and prepared-corpus receipt hashes. It preserves captured source/song/session/
+lineage identities, rejects collisions and mismatched extractor/scope declarations,
+and conservatively forces every previously validation/test song into the new test
+set. This changes partition semantics and is a fresh experiment, not continued
+acceptance against an old benchmark. Duplicate audio and actual source bytes must
+still pass ordinary preparation/admission; this metadata step does not approve them.
+
+Combined the existing 400-song corpus with the 24 pause songs. Output:
+`/Users/lhs/seam-corpus-pauses-2026-09-19-r1/combined-corpus-sources.json`, SHA-256
+`6c2f3caaef40c2a02093f7981f83bfd2784663572fafa7c45e287cc56ff5f42e`.
+There are 424 declarations and 100 protected non-training songs. Eleven focused
+combination/corpus tests pass, including no-overwrite, no-input-mutation, stale
+digest refusal, scope mismatch, identity collision and invalid partition refusal.
+
+No audio was copied and no old review was reused. Fresh preparation, source and
+label reviews, snapshot assembly and a fresh-vocabulary acoustic run remain required.
+Free space was 1.7 GiB versus 981 MiB for the existing prepared large corpus;
+duplicating it now would compete with live vocoder checkpoint headroom. Deferred
+that allocation, not the combined experiment's scope. PID 69937 remains live and
+its config, source bytes, split and output were not changed.
+
 ## Instrument the unresolved macOS song-journey abort
 
 September 19, 2026 — added flushed tuning-stage markers around installation,
