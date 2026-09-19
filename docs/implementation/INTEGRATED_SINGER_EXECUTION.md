@@ -1,5 +1,33 @@
 # Integrated Singer Execution
 
+## Pause checkpoint export refusal narrowed to a sampler heuristic
+
+September 19, 2026 — epoch-one export refused before graph publication with
+`Shipped sampler diverges as the step count rises`. Kept the guard unchanged and
+resumed the exact verified checkpoint for eight bounded epochs (one CPU thread,
+240-second run ceiling, 256 MiB aggregate checkpoint budget). All eight completed,
+20 updates each, with full source coverage; epoch-nine mean loss is 0.6772924559
+versus epoch one's 0.7972144219. Total new checkpoint bytes: 216,986,424.
+Output: `/Users/lhs/seam-corpus-pauses-2026-09-19-r1/acoustic-r2`.
+Epoch-nine checkpoint SHA-256:
+`3bbf9ed014d5b5e4d18a312d6957d2f621f65ecd22e0020ed1f7d177f86719c9`;
+receipt SHA-256:
+`6b6fd8c14d423ff347c1cb8f4d35cf6b2e28e091ce80fa2e6357a6a80e63cc97`.
+
+Epoch-nine export also refused; neither `export-e1` nor `export-e9` published a
+graph. Direct inspection of the same checkpoint's sampler diagnostic shows exact
+unclamped transcription agreement with upstream at 1/4/8 steps, finite shipped
+latents, and an active clamp. Latent standard deviations at 2/4/8/16 steps are
+0.91777915 / 0.95246136 / 0.95260960 / 0.95034039. The current rejection predicate
+is simply final standard deviation greater than initial standard deviation. These
+observations do not establish unbounded numerical divergence: the error message
+overstates what that heuristic measures. Nor do they establish audio quality.
+
+Next action: inspect the actual bounded-latent contract and replace or justify this
+heuristic with appropriate invariant and adversarial tests before more training.
+Do not disable it merely to export this candidate. No application-render result
+exists for the new learned model yet. The larger vocoder training remains untouched.
+
 ## Fresh pause-vocabulary acoustic checkpoint completed
 
 September 19, 2026 — moved the new pause corpus through actual admission and one
