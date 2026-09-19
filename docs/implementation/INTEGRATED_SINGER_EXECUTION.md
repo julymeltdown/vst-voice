@@ -1,5 +1,52 @@
 # Integrated Singer Execution
 
+## The sampler amplifies an honest training shortfall, and the gap is now quantified
+
+September 19, 2026 — noise-prediction measurement, capacity probe, amplifier calculation.
+
+```text
+Engineering: DEMONSTRATED
+Creator workflow: NOT_OBSERVED
+Musical review: NOT_REVIEWED
+```
+
+The open question was whether the acoustic divergence was a bug in the inference path or
+simply insufficient training. Four measurements separate them.
+
+**The export is faithful.** The project's own denoiser parity check
+(`onnx_acoustic.check_denoiser_runtime`) reports `passed: true` and a worst-case maximum error of
+**exactly 0** across its cases, comparing the PyTorch denoiser against the exported graph on
+byte-identical inputs. Serialization is not the problem. Comparing whole sampled waveforms between
+the two runtimes would prove nothing here, because sampling draws its own random noise and the two
+paths would diverge for that reason alone; the deterministic denoiser is the meaningful comparison.
+
+**The training path learns.** Overfitting a single phrase with the maximum permitted
+configuration (hidden 256, channels 256, layers 16, 22.7M parameters) drives the training loss
+from 0.80 to 0.179. The same phrase with the small configuration (hidden 64, channels 64, layers
+3) only reaches 0.423. Capacity was a real limit, and the objective and shapes are wired
+correctly: the trivial baseline for predicting unit noise is mean absolute value 0.798, which is
+exactly the step-0 loss.
+
+**The model has learned real signal but only part of it.** Measured noise-prediction error at the
+timesteps the sampler actually visits: t=0 gives 0.802, t=100 gives 0.496, t=300 gives 0.419,
+t=500 gives 0.398, t=700 gives 0.400, t=900 gives 0.401. Against a trivial-zero baseline of
+0.798 the model is genuinely predicting, and it needs roughly 0.40 to sample cleanly.
+
+**The sampler turns that residual into divergence, by arithmetic.** The reverse process starts at
+t=900, where `sqrt_recipm1_alphas_cumprod` is 60.8. A residual of 0.40 mel units is therefore
+multiplied by about 61 in the first step alone, injecting roughly 24 mel units of error into a
+signal whose entire trained range is -11.5 to -0.4. This is why more sampling steps make the output
+worse, not better, and why an overfit model still emits out-of-range mel.
+
+So the sampling mathematics is not defective and the training code is not defective; the trained
+denoiser is not yet accurate enough at high noise levels for its own reverse process. Closing this
+needs a denoiser whose high-timestep error is far below 0.40, which is the ordinary result of
+training on far more material for far longer, and it is the same wall this project has been at:
+9000 then roughly 26000 updates against upstream's 100000, on six minutes of audio.
+
+`trainingAdmitted`, `singerQualified` and `releaseEligible` remain false. No listener has heard
+anything, and no claim of a usable voice is made here.
+
 ## The acoustic model is the only broken link, and it is not yet trained enough
 
 September 19, 2026 — procedural corpus at trainable size, isolation diagnostic, sampling determinism.
