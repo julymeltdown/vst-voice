@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <locale>
 #include <numbers>
 #include <string>
 #include <vector>
@@ -180,6 +181,35 @@ TEST_CASE("native USTX decoder rejects aliases, duplicate keys, documents and ho
   limits = {};
   limits.maximumNodes = 8U;
   CHECK(!decodeUstx(bytes(fixture()), limits));
+}
+
+TEST_CASE("USTX floating scalars preserve decimal grammar and range rejection") {
+  const auto withPan = [](std::string_view value) {
+    std::string source{fixture()};
+    source.replace(source.find("pan: 0.25"), std::string_view{"pan: 0.25"}.size(),
+                   "pan: " + std::string{value});
+    return seam::interchange::decodeUstx(bytes(source));
+  };
+  for (const auto value : {"0.25", ".25", "2.5e-1", "2.5E-1", "-0.25", "0.", "-0.0", "0e-9999"}) {
+    CHECK(withPan(value));
+  }
+  for (const auto value : {"+0.25", "1e9999", "1e-9999", "0.25junk", "1e", "--1", "0x1p-2", "nan", "NAN", "NaN(payload)", "inf", "INFINITY", ".inf"}) {
+    CHECK(!withPan(value));
+  }
+}
+
+TEST_CASE("USTX decimal decoding is independent of the global numeric locale") {
+  struct CommaDecimal final : std::numpunct<char> {
+    char do_decimal_point() const override { return ','; }
+  };
+  struct RestoreLocale final {
+    std::locale previous{std::locale()};
+    ~RestoreLocale() { std::locale::global(previous); }
+  } restore;
+  std::locale::global(std::locale{std::locale::classic(), new CommaDecimal});
+  const auto decoded = seam::interchange::decodeUstx(bytes(fixture()));
+  CHECK(decoded);
+  CHECK(decoded.value().tracks.front().pan == 0.25);
 }
 
 TEST_CASE("USTX import maps tempo meter pitch vibrato and track identity without source mutation") {

@@ -1,5 +1,27 @@
 # Integrated Singer Execution
 
+## USTX floating parsing no longer requires newer Apple libc++ from_chars
+
+September 20, 2026 — macOS AUv2 job 105915734464 at `24c4fb32` failed at
+ustx_codec.cpp:188 because its libc++ deletes floating-point from_chars.
+Integer parsing remains unchanged. Floating conversion now uses the classic-locale
+stream pattern already used by SEAM's JSON reader, with full-token consumption,
+decimal-character restriction, leading-plus rejection, finite checks and explicit
+nonzero-mantissa underflow-to-zero rejection. Case-insensitive non-finite scalars
+remain rejected. No process-wide locale is changed by the parser.
+
+New regressions exercise decimal/scientific forms, overflow, underflow, trailing
+junk, hexadecimal input, non-finite variants and an independently installed
+comma-decimal global locale restored after the test. Initial testing caught the
+stream accepting hex input; the decimal restriction fixes that behavior. The
+rebuilt native USTX suite passes all 30 cases. This is current local macOS
+verification, not a rerun on the older remote SDK/toolchain.
+
+Linux VST3 job 105915734639 completed the validator with zero failed tests but
+failed downstream packet creation: the validator result resolves to duplicated
+`out/phase13a/out/phase13a/Linux/vst3-validator/result.json`. Repair that evidence
+path without claiming the overall job or release gate passed.
+
 ## Developer package now installs resources at the plugin lookup location
 
 September 20, 2026 — source review found a second Linux developer-package defect:
