@@ -47,11 +47,31 @@ The register distinguishes implementation from release proof. A source contract,
 pass them, so those numbers understate what the acoustic stage learned. Two broken links exist in the
 signal path, not one, and the vocoder is upstream of the other.
 
-**Status:** OPEN. A bounded vocoder run (`/Users/lhs/seam-corpus-xl-2026-09-19/vocoder-xl`, 400 epochs,
-60000-update cap, 400-song admitted corpus) was started on 2026-09-19. Closure requires a trained
-checkpoint whose reconstruction receipt reports `allReconstructionsSatisfied: true` against held-out
-source audio, followed by a re-export and a repeated full-song render whose spectrum is consistent with
-the source rather than with broadband noise.
++**Status:** OPEN. A bounded vocoder run (`/Users/lhs/seam-corpus-xl-2026-09-19/vocoder-xl`, 400 epochs,
+60000-update cap, 400-song admitted corpus) was started on 2026-09-19; its first two epochs moved mean
+spectral distance from 51.17 to 1.272, but it stops on its 4 GB checkpoint budget around epoch 7 because
+each epoch retains 553 MB and the host has under 10 GB free. See the execution log for the measured
+per-epoch cost.
+
+**The closure condition originally written here was unreachable and has been corrected.** It required a
+reconstruction receipt reporting `allReconstructionsSatisfied: true`, which is `spec_ok and pitch_ok and
+energy_ok`; `pitch_ok` needs framewise pitch tracks that no producer supplied, so the term could never be
+satisfied and every receipt reported it UNRESOLVED. The producer now exists
+(`build_pitch_tracks` plus a `--pitch-executable` flag on the training CLI), so those receipts now carry a
+real verdict.
+
+Closure now requires all four of the following, and the second is deliberately not `pitch_ok`, because
+measured on a real 1080-frame song only 908 frames are measurable and `comparisonSatisfied` tolerates no
+unmeasurable span at any vocoder quality:
+
+1. A trained checkpoint whose reconstruction receipt reports `spec_ok` and a measured pitch error inside a
+   stated budget on the measurable frames.
+2. An owner decision on whether the pitch term is a conjunct of `reconstruction_satisfied` or a separate
+   gate with its own threshold, since the current strictness cannot be passed by a correct vocoder.
+3. A re-export whose graph is verified to follow the requested note, using the
+   `pitchFollowsRequestedNote` measurement now recorded in the vocoder export receipt.
+4. A repeated full-song render whose spectrum is consistent with the source rather than with broadband
+   noise or the hop-rate artifact.
 
 ### SEAM-BETA-P0-01: No rights-cleared, usable Beta Voicebank
 
