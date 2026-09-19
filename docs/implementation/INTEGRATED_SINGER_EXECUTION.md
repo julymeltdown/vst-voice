@@ -1,5 +1,31 @@
 # Integrated Singer Execution
 
+## Partial-epoch recovery cursor contract, not yet a resumable GAN checkpoint
+
+September 19, 2026 — added `vocoder_recovery_cursor` as the first layer of
+intra-epoch recovery. A canonical plan binds dataset/profile/run identities,
+source ordering, balanced segment geometry, hop clock and exact owned samples.
+The cursor names only a strict nonempty prefix, carries sample-weighted loss
+sums, re-derives per-source coverage and the next segment, and explicitly sets
+epochComplete/coverageVerified/trainingAdmitted/releaseEligible false. Invalid
+identities, geometry, extra fields, numeric/boolean type substitutions, skipped
+prefixes and completion claims reject. The update inventory is allocation-bounded.
+
+Checked the geometry against the failed run's actual snapshot: 304 training
+sources -> 2804 updates. Prefix 1150 accounts for exactly 35,836,464 samples,
+matching its last observed progress record; the next segment is source
+`procedural-song-00173`, offset 369, 123 hops / 31,488 samples. This was a read-only
+geometry diagnostic with placeholder loss sums, not recovered optimizer/model
+state or a publishable recovery record. No fake partial checkpoint was written.
+
+Three cursor tests pass; the cursor/epoch/orchestration selection runs 18 tests
+with one optional-dependency skip (17 executed). Existing complete-checkpoint
+publication and loading are unchanged. Remaining implementation is a distinct
+partial-state transport, update-boundary publication, fresh-admission restore
+and skipping only the verified prefix, plus numerical equivalence tests covering
+model/optimizer/scheduler and Python/NumPy/Torch RNG state. The failed run still
+cannot be resumed, and no large training job was restarted on the low-space disk.
+
 ## Disk headroom terminated both training runs; epoch nine remains recoverable
 
 September 19, 2026 — authoritative session results supersede earlier live status.
