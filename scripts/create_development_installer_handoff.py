@@ -91,6 +91,30 @@ def main(argv: list[str] | None = None) -> int:
             "stagingRoot": str(staging),
             "candidateId": candidate,
         }
+        # macOS Installer does not propagate the invoking shell's environment to
+        # package scripts, so the privileged preinstall hook cannot receive the
+        # trust inputs through "sudo env". Record the same values beside the
+        # staged archive instead; the hook resolves them from PACKAGE_PATH.
+        # Values stay single-line and printable so the hook's strict key/value
+        # parser accepts them. The hook still re-verifies everything through
+        # seam_installer_verifier, so this grants no trust by itself.
+        intent_keys = {
+            "handoff": "SEAM_INSTALLER_HANDOFF",
+            "manifest": "SEAM_UPDATE_MANIFEST",
+            "policy": "SEAM_UPDATE_POLICY",
+            "stagingRoot": "SEAM_UPDATE_STAGING_ROOT",
+            "candidateId": "SEAM_EXPECTED_CANDIDATE",
+            "handoffSha256": "SEAM_EXPECTED_HANDOFF_SHA256",
+        }
+        intent_lines: list[str] = []
+        for key, name in intent_keys.items():
+            value = str(result[key])
+            if not value or not value.isprintable() or "=" in value:
+                raise ValueError(f"installer intent value is not usable: {key}")
+            intent_lines.append(f"{name}={value}\n")
+        (staging / candidate / "installer-intent.env").write_text(
+            "".join(intent_lines), encoding="utf-8"
+        )
         result_path = output / "handoff-result.json"
         result_path.write_text(
             json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8"

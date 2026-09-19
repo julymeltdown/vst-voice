@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -9,6 +11,120 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class MacosInstallerContractTests(unittest.TestCase):
+    _HOOK_EPILOGUE = 'script_root='
+
+    def _reporting_hook(self, root: Path) -> Path:
+        # Replace the verifier invocation with a dump of the resolved trust
+        # inputs so the test observes exactly what the real hook would forward.
+        source = (ROOT / "packaging/macos/scripts/preinstall").read_text(
+            encoding="utf-8"
+        )
+        hook = root / "preinstall"
+        hook.write_text(
+            source[: source.index(self._HOOK_EPILOGUE)]
+            + 'for name in "${required[@]}"; do printf "%s=%s\\n" "$name" "${!name}"; done\n'
+            + "exit 0\n",
+            encoding="utf-8",
+        )
+        return hook
+
+    @staticmethod
+    def _run(hook: Path, environment: dict[str, str]):
+        return subprocess.run(
+            ["/bin/bash", str(hook)],
+            env=environment,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+    def test_preinstall_recovers_trust_inputs_from_intent_beside_archive(self) -> None:
+        # macOS Installer does not forward the caller's environment to package
+        # scripts, so the hook must recover its inputs from the staged candidate
+        # directory that PACKAGE_PATH points into.
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            hook = self._reporting_hook(root)
+            candidate = root / "staging/candidate-abc"
+            candidate.mkdir(parents=True)
+            digest = "a" * 64
+            (candidate / "installer-intent.env").write_text(
+                "\n".join(
+                    [
+                        "SEAM_INSTALLER_HANDOFF=/x/handoff.json",
+                        "SEAM_UPDATE_MANIFEST=/x/update-manifest.json",
+                        "SEAM_UPDATE_POLICY=/x/update-trust-policy.json",
+                        "SEAM_UPDATE_STAGING_ROOT=/x/staging",
+                        "SEAM_EXPECTED_CANDIDATE=candidate-abc",
+                        f"SEAM_EXPECTED_HANDOFF_SHA256={digest}",
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            package = candidate / "ProjectSEAM-0.13.1-unsigned.pkg"
+            package.touch()
+            clean = {"PATH": "/usr/bin:/bin", "PACKAGE_PATH": str(package)}
+            result = self._run(hook, clean)
+            self.assertEqual(0, result.returncode, result.stderr)
+            self.assertIn(f"SEAM_EXPECTED_HANDOFF_SHA256={digest}", result.stdout)
+            self.assertIn("SEAM_EXPECTED_CANDIDATE=candidate-abc", result.stdout)
+            self.assertIn("SEAM_UPDATE_STAGING_ROOT=/x/staging", result.stdout)
+
+            # An ambient environment still wins and needs no intent file.
+            explicit = dict(clean)
+            explicit.update(
+                {
+                    "SEAM_INSTALLER_HANDOFF": "/y/handoff.json",
+                    "SEAM_UPDATE_MANIFEST": "/y/update-manifest.json",
+                    "SEAM_UPDATE_POLICY": "/y/update-trust-policy.json",
+                    "SEAM_UPDATE_STAGING_ROOT": "/y/staging",
+                    "SEAM_EXPECTED_CANDIDATE": "candidate-y",
+                    "SEAM_EXPECTED_HANDOFF_SHA256": "b" * 64,
+                }
+            )
+            result = self._run(hook, explicit)
+            self.assertEqual(0, result.returncode, result.stderr)
+            self.assertIn("SEAM_EXPECTED_CANDIDATE=candidate-y", result.stdout)
+
+    def test_preinstall_rejects_missing_unexpected_and_symlinked_intent(self) -> None:
+        hook = ROOT / "packaging/macos/scripts/preinstall"
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            candidate = root / "staging/candidate-abc"
+            candidate.mkdir(parents=True)
+            package = candidate / "ProjectSEAM-0.13.1-unsigned.pkg"
+            package.touch()
+            clean = {"PATH": "/usr/bin:/bin", "PACKAGE_PATH": str(package)}
+
+            # No intent and no environment: refuse instead of guessing.
+            result = self._run(hook, clean)
+            self.assertEqual(70, result.returncode)
+            self.assertIn("missing installer trust input", result.stderr)
+
+            # Unknown keys must not be silently accepted.
+            (candidate / "installer-intent.env").write_text(
+                "SEAM_INSTALLER_HANDOFF=/x/handoff.json\nEVIL=1\n",
+                encoding="utf-8",
+            )
+            result = self._run(hook, clean)
+            self.assertEqual(70, result.returncode)
+            self.assertIn("unexpected installer intent key", result.stderr)
+
+            # A symlinked intent must not redirect the privileged read.
+            target = root / "elsewhere.env"
+            target.write_text(
+                "SEAM_INSTALLER_HANDOFF=/z/handoff.json\n", encoding="utf-8"
+            )
+            (candidate / "installer-intent.env").unlink()
+            (candidate / "installer-intent.env").symlink_to(target)
+            result = self._run(hook, clean)
+            self.assertEqual(70, result.returncode)
+
+            # Without PACKAGE_PATH the hook cannot resolve anything at all.
+            result = self._run(hook, {"PATH": "/usr/bin:/bin"})
+            self.assertEqual(70, result.returncode)
+
     def test_installer_ownership_is_explicit_and_outer_package_is_signed(self) -> None:
         ownership = json.loads(
             (ROOT / "packaging/macos/installer-ownership.json").read_text(

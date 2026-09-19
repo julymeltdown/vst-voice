@@ -1,5 +1,19 @@
 #!/usr/bin/env bash
 set -euo pipefail
+# macOS Installer runs package scripts from installd and does NOT propagate the
+# invoking shell's environment. A privileged preinstall sees only
+# Installer-supplied values (PACKAGE_PATH, INSTALLER_TEMP, INSTALLER_PAYLOAD_DIR,
+# SCRIPT_NAME, ...); SEAM_* variables exported through "sudo env" arrive UNSET.
+# Verified empirically before this change: with `env SEAM_TEST_ALPHA=aval
+# installer -pkg ...`, the script observed SEAM_TEST_ALPHA=[UNSET].
+#
+# The development handoff therefore also records its intent in an
+# installer-intent.env file in the staged candidate directory beside the product
+# archive, and this hook reads it back through PACKAGE_PATH, which Installer does
+# provide. The intent supplies expected identities and the pinned intent digest
+# only. It grants no trust: seam_installer_verifier still re-verifies the signed
+# manifest, trust policy, publisher key, candidate identity, package hash and
+# replay state before any system mutation happens.
 required=(
   SEAM_INSTALLER_HANDOFF
   SEAM_UPDATE_MANIFEST
@@ -8,6 +22,34 @@ required=(
   SEAM_EXPECTED_CANDIDATE
   SEAM_EXPECTED_HANDOFF_SHA256
 )
+resolve_installer_intent() {
+  [[ -n "${PACKAGE_PATH:-}" ]] || return 1
+  local intent
+  intent="$(/usr/bin/dirname "$PACKAGE_PATH")/installer-intent.env"
+  [[ -f "$intent" && ! -L "$intent" ]] || return 1
+  while IFS='=' read -r key value; do
+    [[ -n "$key" ]] || continue
+    case "$key" in
+      SEAM_INSTALLER_HANDOFF|SEAM_UPDATE_MANIFEST|SEAM_UPDATE_POLICY|SEAM_UPDATE_STAGING_ROOT|SEAM_EXPECTED_CANDIDATE|SEAM_EXPECTED_HANDOFF_SHA256) ;;
+      *) echo "unexpected installer intent key: $key" >&2; return 1 ;;
+    esac
+    case "$value" in
+      *[![:print:]]*) echo "installer intent value is not printable: $key" >&2; return 1 ;;
+    esac
+    export "$key=$value"
+  done < "$intent"
+  return 0
+}
+missing=()
+for name in "${required[@]}"; do
+  [[ -n "${!name:-}" ]] || missing+=("$name")
+done
+if (( ${#missing[@]} > 0 )); then
+  if ! resolve_installer_intent; then
+    echo "missing installer trust input: ${missing[*]}" >&2
+    exit 70
+  fi
+fi
 for name in "${required[@]}"; do
   [[ -n "${!name:-}" ]] || { echo "missing installer trust input: $name" >&2; exit 70; }
 done
