@@ -29,6 +29,23 @@ class VocoderEpochRunTests(unittest.TestCase):
             self.assertEqual(result["recoveryWrittenBytes"], 140)
             self.assertEqual([c["maximum_recovery_bytes"] for c in calls], [100, 70])
 
+    def test_complete_epoch_releases_recovery_budget_for_next_epoch(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            calls = []
+            def epoch(*args, **kwargs):
+                calls.append(kwargs)
+                kwargs["on_progress"](dict(stage="partial-checkpoint", recoveryBytes=40, recoveryWrittenBytes=40))
+                result = self.epoch(*args, **kwargs)
+                kwargs["on_progress"](dict(stage="partial-retention-completed", recoveryBytes=0, recoveryWrittenBytes=40))
+                return result
+            with patch("tools.voice_model_training.vocoder_epochs.train_reviewed_vocoder_epoch", epoch):
+                result = run_reviewed_vocoder_epochs(None, [], None, None, output=Path(temporary)/"run",
+                    **self.options(checkpoint_interval_updates=1, maximum_recovery_bytes=40,
+                                   retain_partial_checkpoints=1))
+            self.assertEqual(result["recoveryCheckpointBytes"], 0)
+            self.assertEqual(result["recoveryWrittenBytes"], 80)
+            self.assertEqual([c["maximum_recovery_bytes"] for c in calls], [40, 40])
+
     def test_partial_resume_only_first_epoch_and_recovery_budget_is_shared(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

@@ -360,7 +360,16 @@ only once at complete-epoch coverage. Saved snapshots are not admission authorit
     # before_publish runs after writing binaries; checking there would require
     # headroom for a second copy. Check immediately before serialization instead.
     check_storage()
-    return publish_vocoder_checkpoint(generator, discriminators, generator_optimizer, discriminator_optimizer,
+    completed = publish_vocoder_checkpoint(generator, discriminators, generator_optimizer, discriminator_optimizer,
         output, metadata=state_metadata, epoch=epoch, schedulers=schedulers,
         maximum_bytes=maximum_checkpoint_file_bytes, maximum_total_bytes=maximum_checkpoint_total_bytes,
         before_publish=revalidate)
+    if retain_partial_checkpoints is not None and retained_partials:
+        from .vocoder_retention import prune_completed_partial
+        complete_digest = hashlib.sha256(encode_report(completed)).hexdigest()
+        for old, digest in retained_partials:
+            recovery_bytes -= prune_completed_partial(recovery_directory, old, digest,
+                output, complete_digest, recovery_plan=plan)
+        report("partial-retention-completed", recoveryBytes=recovery_bytes,
+               recoveryWrittenBytes=recovery_written, successorReceiptSha256=complete_digest)
+    return completed

@@ -1,5 +1,6 @@
 """Verify and prune only binary files of completed checkpoints owned by this run."""
 import hashlib
+from copy import deepcopy
 import os
 from pathlib import Path
 import stat
@@ -103,4 +104,43 @@ def prune_superseded_partial(root, older, older_sha256, newer, newer_sha256, *, 
     publish_new(marker, dict(formatId="com.project-seam.vocoder-pruned-binaries", schemaVersion=1,
         receiptSha256=older_sha256, successorReceiptSha256=newer_sha256,
         removedBytes=previous["checkpointBytes"], resumable=False))
+    return previous["checkpointBytes"]
+
+
+def prune_completed_partial(root, older, older_sha256, complete, complete_sha256, *, recovery_plan):
+    """Retire an owned partial only after its exact epoch has durable full coverage."""
+    root, older, complete = Path(root), Path(older), Path(complete)
+    if (root.is_symlink() or not root.is_dir() or older.parent != root
+            or complete.resolve().is_relative_to(root.resolve())):
+        raise ValueError("Completion retention requires an owned partial and separate complete checkpoint")
+    successor, _ = verified_checkpoint_files(complete, complete_sha256)
+    previous, paths = verified_checkpoint_files(older, older_sha256, _recovery_plan=recovery_plan)
+    if older.name != f"update-{previous['epoch']['completedUpdates']:06d}":
+        raise ValueError("Partial directory differs from cursor")
+    expected_metadata = deepcopy(previous["metadata"])
+    gan = expected_metadata.get("ganCheckpoint")
+    if not isinstance(gan, dict) or gan.get("boundary") != "partial-update":
+        raise ValueError("Partial checkpoint has no partial GAN boundary")
+    gan["boundary"] = "complete-epoch"
+    covered, updates = {}, {}
+    for segment in recovery_plan["segments"]:
+        source = segment["sourceId"]
+        covered[source] = covered.get(source, 0) + segment["validSamples"]
+        updates[source] = updates.get(source, 0) + 1
+    epoch = successor["epoch"]
+    if (encode_report(expected_metadata) != encode_report(successor.get("metadata"))
+            or epoch.get("datasetSha256") != recovery_plan["datasetSha256"]
+            or epoch.get("profileSha256") != recovery_plan["profileSha256"]
+            or epoch.get("updates") != len(recovery_plan["segments"])
+            or epoch.get("validSamples") != sum(covered.values())
+            or epoch.get("coveredSourceSamples") != covered or epoch.get("sourceUpdates") != updates):
+        raise ValueError("Complete successor differs from partial epoch lineage or coverage")
+    marker = older / "pruned-binaries.json"
+    if marker.exists() or marker.is_symlink():
+        raise ValueError("Partial retention marker already exists")
+    for path in paths:
+        path.unlink()
+    publish_new(marker, dict(formatId="com.project-seam.vocoder-pruned-binaries", schemaVersion=1,
+        receiptSha256=older_sha256, successorReceiptSha256=complete_sha256,
+        successorKind="complete-epoch", removedBytes=previous["checkpointBytes"], resumable=False))
     return previous["checkpointBytes"]

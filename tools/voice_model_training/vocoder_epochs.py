@@ -40,6 +40,10 @@ after a newer checkpoint is published and its binary hashes are verified. The
 byte budget includes this temporary N+1 peak. External resume inputs are never
 pruned. Without retention the original cumulative budget behavior is unchanged.
 
+Partial retention keeps N recovery checkpoints while each epoch runs, then retires
+those owned binaries after verified complete publication. Receipts remain; written
+bytes and currently retained bytes are reported separately across the run.
+
 epoch_options is forwarded to train_reviewed_vocoder_epoch, except output,
 run_metadata and reconstruction_directory are owned here. Its cancellation
 callback is combined with the run callback and deadline; its per-epoch checkpoint
@@ -130,7 +134,7 @@ total and time limits are capped by the remaining run budgets.
         epoch_recovery_written = 0
         def epoch_progress(event):
             nonlocal epoch_recovery_bytes, epoch_recovery_written
-            if event["stage"] == "partial-checkpoint":
+            if event["stage"] in ("partial-checkpoint", "partial-retention-completed"):
                 count = event.get("recoveryBytes")
                 floor = 0 if retain_partial_checkpoints is not None else epoch_recovery_bytes
                 written = event.get("recoveryWrittenBytes", count)

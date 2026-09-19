@@ -164,7 +164,7 @@ def main(argv=None):
     parser.add_argument('--resume-partial-sha256')
     parser.add_argument('--checkpoint-interval-updates', type=int, help='Save partial recovery state every N updates')
     parser.add_argument('--retain-partial-checkpoints', type=int,
-                        help='Keep newest N partial binaries per new epoch; budget must fit N+1 before pruning')
+                        help='Keep newest N partial binaries until verified epoch completion; budget must fit N+1')
     parser.add_argument('--maximum-recovery-bytes', type=int, default=2 * 1024**3,
                         help='Separate aggregate partial-checkpoint budget for this new run')
     parser.add_argument('--epochs', type=int, default=1)

@@ -6,7 +6,7 @@ import unittest
 
 from .__main__ import encode_report, publish_new
 from .vocoder_recovery_cursor import build_recovery_plan, partial_cursor
-from .vocoder_retention import prune_superseded_partial, verified_checkpoint_files
+from .vocoder_retention import prune_completed_partial, prune_superseded_partial, verified_checkpoint_files
 
 
 class PartialRetentionTests(unittest.TestCase):
@@ -25,12 +25,43 @@ class PartialRetentionTests(unittest.TestCase):
                 (directory / name).write_bytes(data)
                 records.append(dict(path=name, bytes=len(data), sha256=hashlib.sha256(data).hexdigest()))
             receipt = dict(formatId="com.project-seam.gan-partial-checkpoint",
-                metadata=dict(run=run, datasetSha256="a"*64, profileSha256="b"*64),
+                metadata=dict(run=run, datasetSha256="a"*64, profileSha256="b"*64,
+                              ganCheckpoint=dict(boundary="partial-update")),
                 epoch=partial_cursor(plan, completed_updates=update, generator_loss_sum=1., discriminator_loss_sum=2.),
                 files=records, checkpointBytes=sum(r["bytes"] for r in records))
             publish_new(directory / "checkpoint.json", receipt)
             outputs.append((directory, hashlib.sha256(encode_report(receipt)).hexdigest()))
         return plan, outputs
+
+    def test_corrupt_complete_checkpoint_cannot_retire_partial(self):
+        import json
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)/"partials"
+            root.mkdir()
+            plan, ((old, oh), _) = self.fixture(root)
+            complete = Path(tmp)/"complete"
+            complete.mkdir()
+            receipt = json.loads((old/"checkpoint.json").read_bytes())
+            receipt["formatId"] = "com.project-seam.gan-checkpoint"
+            receipt["metadata"]["ganCheckpoint"]["boundary"] = "complete-epoch"
+            receipt["epoch"] = dict(epochComplete=True, coverageVerified=True,
+                datasetSha256="a"*64, profileSha256="b"*64, updates=3, validSamples=96,
+                coveredSourceSamples={"song": 96}, sourceUpdates={"song": 3})
+            for name in ("models.pt", "training.pt"):
+                (complete/name).write_bytes((old/name).read_bytes())
+            publish_new(complete/"checkpoint.json", receipt)
+            digest = hashlib.sha256(encode_report(receipt)).hexdigest()
+            original = (complete/"training.pt").read_bytes()
+            (complete/"training.pt").write_bytes(b"corrupt")
+            with self.assertRaises(ValueError):
+                prune_completed_partial(root, old, oh, complete, digest, recovery_plan=plan)
+            self.assertTrue((old/"models.pt").is_file())
+            self.assertTrue((old/"training.pt").is_file())
+            (complete/"training.pt").write_bytes(original)
+            removed = prune_completed_partial(root, old, oh, complete, digest, recovery_plan=plan)
+            self.assertEqual(removed, receipt["checkpointBytes"])
+            self.assertTrue((old/"checkpoint.json").is_file())
+            self.assertFalse((old/"models.pt").exists())
 
     def test_verified_successor_prunes_only_older_binaries(self):
         with tempfile.TemporaryDirectory() as tmp:

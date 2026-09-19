@@ -93,7 +93,10 @@ class LoopRecoveryTests(unittest.TestCase):
             self.assertEqual(retained_result["epoch"], expected["epoch"])
             self.assertTrue((root/"retained-recovery/update-000001/pruned-binaries.json").is_file())
             self.assertFalse((root/"retained-recovery/update-000001/models.pt").exists())
-            self.assertTrue((root/"retained-recovery/update-000002/models.pt").is_file())
+            self.assertFalse((root/"retained-recovery/update-000002/models.pt").exists())
+            self.assertTrue((root/"retained-recovery/update-000002/pruned-binaries.json").is_file())
+            completed_retention = [e for e in retained_events if e["stage"] == "partial-retention-completed"]
+            self.assertEqual(completed_retention[0]["recoveryBytes"], 0)
             self.assertTrue((saved/"models.pt").is_file())  # External resume remains intact.
             saves = [e for e in retained_events if e["stage"] == "partial-checkpoint"]
             self.assertGreater(saves[-1]["recoveryWrittenBytes"], saves[-1]["recoveryBytes"])

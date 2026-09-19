@@ -1,5 +1,28 @@
 # Integrated Singer Execution
 
+## Release partial storage only after verified complete epoch publication
+
+September 19, 2026 — optional partial retention now retires the epoch's remaining
+owned partial binaries after complete publication. The helper verifies both complete
+binary hashes, the partial cursor, identical model/run metadata except the expected
+partial-to-complete GAN boundary, and exact dataset/profile/update/source-sample
+coverage reconstructed from the recovery plan. Complete output must be separate
+from the owned recovery directory. Original partial receipts and successor-linked
+non-resumable pruning records remain; external resume inputs never enter the list.
+
+The epoch reports retained recovery bytes after cleanup, allowing the multi-epoch
+runner to reuse that budget rather than accumulating one recovery set per finished
+epoch. Cumulative written bytes remain visible. Defaults without partial retention
+are unchanged. Failure before complete verification preserves the partials; no
+space is reclaimed speculatively before writing the successor.
+
+Twenty-nine focused Torch tests pass in 9.23 seconds, including real captured-file
+admission/process recovery, real optimizer-loop retention, corrupt-complete binary
+preservation, and shared budget reuse across two epochs. Phase11 and diff checks
+pass. No historical training artifact was deleted; deletion tests use owned
+temporary fixtures. The production-corpus/large-model execution and quality gates
+remain open; this completes the bounded recovery-storage lifecycle, not the singer.
+
 ## Hard-exit and fresh-process recovery equivalence
 
 September 19, 2026 — the captured-corpus diagnostic now starts three independent
