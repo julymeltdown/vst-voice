@@ -218,8 +218,11 @@ describes.
 3. **Level restoration** — renders are 5.7-7.6 dB below source RMS.
 4. **Listening** — still `NOT_REVIEWED`. Nobody has heard it.
 
-The 187.5 Hz artifact is gone but the level error is not, so recommendation 3 in section 6 narrows to the
-level term.
+One correction to an earlier reading of the level numbers: `energy_ok` is `rendered_peak > 1e-4` plus a
+no-clipping check (`vocoder_reconstruction.py:303`), and it **passes**. The 5.7-7.6 dB RMS shortfall is real
+but is not a gate term, so the `allReconstructionsSatisfied` conjunction fails on pitch alone. Combined with
+3.4's finding that no audio can satisfy the pitch term, **the outstanding blocker on this issue is an owner
+decision, not model quality**.
 
 
 ## 4. Remaining work, ranked by what actually blocks Beta GO
@@ -270,8 +273,10 @@ Stop expanding breadth. The repository has strong, well-tested infrastructure an
    path is a longer campaign (this was 1 epoch of a 60,000-update budget) and a real corpus.
 2. **Fix the GPU/thread throughput defect before the next run** (3.3b). This is what makes a 60,000-update
    campaign, or several of them, affordable.
-3. **Fix the level error** — the 187.5 Hz comb resolved with the trained 512-channel model (3.5), but
-   renders still sit 5.7-7.6 dB below source RMS. That term is separate and remains open.
+3. **Investigate the level/peakyness mismatch** — the 187.5 Hz comb resolved with the trained 512-channel
+   model (3.5). The remaining RMS shortfall (5.7-7.6 dB low, with peaks 1.8-2.5x high) is a quality
+   observation rather than a gate failure, since `energy_ok` is peak-based. Treat it as the next
+   measurable improvement after training depth.
 4. **Refresh P0-08's evidence block** (3.4) so it opens on the confirmed frame-rate comb and level error
    instead of the unreproduced 21 kHz figure, and record that the headline numbers came from a
    34,986-parameter smoke fixture.

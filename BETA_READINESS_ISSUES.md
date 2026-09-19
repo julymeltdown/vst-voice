@@ -132,10 +132,16 @@ audio cannot satisfy `comparisonSatisfied`, because `pitch_comparison.py:155` re
 canonical contract's own `pitch-within-50` criterion asks for "minimum 90 percent" and this epoch measures
 93.35%.
 
-**Status stays OPEN.** `allReconstructionsSatisfied` is still false; renders remain 5.7-7.6 dB below source
-RMS; this is one epoch against a 60,000-update budget; the labels are
+**Status stays OPEN, and the conjunct now reduces to a single term.** `allReconstructionsSatisfied` is
+`spec_ok and pitch_ok and energy_ok` (`vocoder_reconstruction.py:302-305`). `spec_ok` passes at 0.97
+against a 3.5 budget. `energy_ok` also passes: it is a peak-floor plus no-clipping check and never compares
+RMS to the source, so the 5.7-7.6 dB RMS shortfall visible in the receipts is a quality observation, not a
+gate failure. That leaves `pitch_ok` alone, which the control above shows no audio can satisfy. The live
+blocker is therefore the owner decision in closure item 2, not the model.
+
+Also still true: this is one epoch against a 60,000-update budget; the labels are
 `com.project-seam.training-generated-teacher` so R9 still requires a rights-cleared corpus; and no listener
-has heard the output. The owner decision in closure item 2 is the live blocker, not the model.
+has heard the output.
 
 
 

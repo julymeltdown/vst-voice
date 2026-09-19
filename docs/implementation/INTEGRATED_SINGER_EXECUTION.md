@@ -89,8 +89,17 @@ the zero-tolerance conjunct cannot, on any audio including bit-identical audio.
 
 ### What is still not true
 
-- `allReconstructionsSatisfied` is false, so the register's P0-08 conjunction stays unmet.
-- The renders sit about 5.7 to 7.6 dB below their sources in RMS, so level restoration is still unhandled.
+- `allReconstructionsSatisfied` is false, and the **only** failing term is pitch. `spec_ok` passes at 0.97
+  against a 3.5 budget, and `energy_ok` passes on its own definition. Read
+  `vocoder_reconstruction.py:302-305`: `energy_ok` is `rendered_peak > 1e-4` plus a no-clipping check,
+  and it never compares RMS to the source. So the conjunct reduces entirely to the unsatisfiable pitch
+  term above, and clearing the owner decision in P0-08 closure item 2 is what would let any item satisfy.
+- The renders do sit about 5.7 to 7.6 dB below their sources in RMS while their peaks are 1.8 to 2.5 times
+  higher, so they are more peaky than the source. That is worth investigating as a quality matter, but it
+  is **not** a gate failure and must not be reported as one.
+  ```
+  item-000001: renderedRms 0.011506 vs sourceRms 0.025662 (-6.97 dB), renderedPeak 0.239535 vs sourcePeak 0.130510
+  ```
 - This is **epoch 1 of 1**, against a 60,000-update budget — 2,804 updates. The model is trained, not
   converged.
 - The corpus labels are `com.project-seam.training-generated-teacher`, so this establishes that the
