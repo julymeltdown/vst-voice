@@ -1,5 +1,54 @@
 # Integrated Singer Execution
 
+## Ten times the material roughly halves the error the sampler amplifies
+
+September 19, 2026 — 400-phrase corpus, admitted and training.
+
+```text
+Engineering: DEMONSTRATED
+Creator workflow: NOT_OBSERVED
+Musical review: NOT_REVIEWED
+```
+
+The measured requirement was a high-timestep noise error far below 0.40, since the reverse process
+multiplies that residual by 60.8 at its first step. More material moves that number directly.
+
+A 400-phrase corpus was rendered by the same production pilot path, prepared and admitted as a
+304/51/45 split over 450084 analysis frames and a 17-phone vocabulary, with no preparation issues.
+Training on it reaches a lower loss in far fewer updates than the 40-song corpus did:
+
+| corpus | epochs | updates | loss |
+|---|---|---|---|
+| 40 songs (45484 frames) | 1 | 30 | 0.7955 |
+| 40 songs | 300 | 9000 | 0.4227 |
+| 40 songs | 1153 | ~28600 | 0.37997 |
+| 400 songs (450084 frames) | 1 | 304 | 0.6736 |
+| 400 songs | 23 | 6992 | 0.2276 |
+
+Measured noise-prediction error at the timesteps the sampler visits, on the 400-song checkpoint at
+epoch 23, against the 40-song checkpoint at epoch 300:
+
+| t | amplifier | 40 songs: err | injected | 400 songs: err | injected |
+|---|---|---|---|---|---|
+| 100 | 0.3 | 0.4962 | 0.15 | 0.2949 | 0.10 |
+| 300 | 1.2 | 0.4194 | 0.50 | 0.2191 | 0.27 |
+| 500 | 3.4 | 0.3980 | 1.37 | 0.2152 | 0.74 |
+| 700 | 12.0 | 0.4000 | 4.80 | 0.2180 | 2.62 |
+| 900 | 60.8 | 0.4009 | 24.38 | 0.2295 | 13.96 |
+
+The error the sampler injects at its first step roughly halved, and the sampled mel std moved from
+241 to 7.9 at two steps. Sampling is still out of range at ten steps, so this is progress and not
+completion: the requirement remains a residual low enough that 60.8x multiplication stays inside the
+trained range of -11.5 to -0.4, which needs roughly another factor of three in that column.
+
+Two limits had to be raised first, and both refused legitimate input rather than invalid input: the
+corpus loader capped at 64 songs against the 10000 its downstream stages accept, and the
+configuration reader capped at 8 MiB while a label configuration inlines every source's labels
+(1.2 MiB for 40 songs, 11.4 MiB for 400).
+
+`trainingAdmitted`, `singerQualified` and `releaseEligible` remain false. No listener has heard
+anything.
+
 ## The sampler amplifies an honest training shortfall, and the gap is now quantified
 
 September 19, 2026 — noise-prediction measurement, capacity probe, amplifier calculation.
