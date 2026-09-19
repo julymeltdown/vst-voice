@@ -1,5 +1,36 @@
 # Integrated Singer Execution
 
+## Corrected Linux GUI CI now has actual runtime evidence
+
+September 20, 2026 — inspected completed job 105915735448 at `24c4fb32`,
+not just its green status. Raw logs show core phase11 PASS (1.57 s), GUI host
+PASS (4.57 s) and missing-bank host PASS (2.52 s). This closes the earlier
+empty-test selection defect for this Linux harness.
+
+Downloaded artifact 10586318618 (`phase11-linux-gui-host-evidence`, 157,579 bytes)
+to `/tmp/seam-linux-gui-evidence.Dt9TVi` and inspected its JSON/WAV contents.
+Uploaded ZIP digest reported by GitHub:
+`ae85f1b2727bb2d997fb096fefc2d1969d39b9c04ab3b39d18b41f775bb801e8`.
+The normal summary binds demo.public-domain.human.production 0.12.0 and reports
+visible GUI, 24,576 captured frames, four output channels, nonzero note energy,
+complete score bounce, rate-change re-preparation and exact state byte equality.
+The missing-bank run reports zero energy and exact state equality. The artifact
+contains both PPMs, summaries, the normal PCM16/48 kHz/four-channel WAV and CTest
+log. Missing-bank audioWritten=true means no audio path was requested, not a
+second WAV; confirmed in the host source. Screenshots have not been visually
+reviewed and no listening-quality acceptance is implied.
+
+Cross-checked host source: score-bounce checks render without NOTE_ON/MIDI,
+live checks require energy or expected missing-bank silence, and state hashes
+derive from actual saved byte buffers. This is fixture/harness runtime evidence,
+not full DAW-host or original-singer qualification. Windows helper job 105915735608
+also passed its three selected suites; broader native jobs are still active.
+
+Repaired Phase13A run 35451001647 at `149b9752` is live; source contract passed,
+Linux/Windows builds active, macOS queued. Disk remains about 2.8 GiB free and
+no vocoder training process exists. Do not resume under the existing preflight
+budget or weaken its guard. Full Beta remains NO_GO.
+
 ## VST3 workflow packet paths now follow the verifier's artifact-root contract
 
 September 20, 2026 — Phase13A Linux job 105915734639 passed native VST3
