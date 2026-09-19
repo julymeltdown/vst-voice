@@ -15,6 +15,34 @@ from tools.voice_model_training.test_generated_teacher import captured_pitch, mo
 
 
 class PrepareCorpusTest(unittest.TestCase):
+    @unittest.skipUnless(importlib.util.find_spec("numpy"), "NumPy required")
+    def test_recover_song_boundary_rederives_without_rewriting_retained_files(self):
+        from tools.voice_model_training.prepare_captured_teacher import prepare_bundle
+        output = self.root / "recovery"
+        def measured(executable, path):
+            payload = path.read_bytes()
+            return captured_pitch(payload, (len(payload) - 44) // 2)
+        def interrupted(**kwargs):
+            if kwargs["source_id"] == "song-001":
+                raise OSError("simulated disk floor")
+            return prepare_bundle(**kwargs)
+        args = dict(config=self.root / "corpus-config.json", config_sha256=self.digest, output=output)
+        with patch("tools.voice_model_training.prepare_captured_teacher.extract_pitch", side_effect=measured):
+            with patch("tools.voice_model_training.prepare_corpus.prepare_bundle", side_effect=interrupted):
+                with self.assertRaisesRegex(OSError, "disk floor"):
+                    prepare_corpus(**args)
+            retained = {p.name: (p.read_bytes(), p.stat().st_mtime_ns)
+                        for p in (output / "song-000").iterdir()}
+            result = prepare_corpus(**args, resume_song_captures=True)
+        self.assertEqual(len(result["songs"]), 3)
+        self.assertFalse(result["trainingAdmitted"])
+        for name, (data, stamp) in retained.items():
+            path = output / "song-000" / name
+            self.assertEqual(path.read_bytes(), data)
+            self.assertEqual(path.stat().st_mtime_ns, stamp)
+        with self.assertRaisesRegex(ValueError, "before corpus publication"):
+            prepare_corpus(**args, resume_song_captures=True)
+
     @unittest.skipUnless(sys.platform == "darwin" and importlib.util.find_spec("numpy"),
                          "macOS and NumPy required")
     def test_cloned_corpus_preserves_full_preparation_contract(self):

@@ -1,5 +1,39 @@
 # Integrated Singer Execution
 
+## Verified recovery at a corpus song boundary
+
+September 19, 2026 — added explicit `--resume-song-captures` for interrupted
+preparation before corpus-level publication. The existing root may contain only
+expected song directories. Retained songs must contain the complete expected file
+set, with no symlinks, extras or partial captures. Each is re-derived from the
+original receipt-bound project/candidate/WAV using fresh native pitch extraction,
+mel analysis, labels, conditioning and inspection. Every retained byte is compared
+against that derivation, including the final preparation receipt; no retained file
+is overwritten. Missing songs use ordinary new preparation. The same disk floor
+remains in force. This is not recovery after partial corpus-manifest publication,
+nor a reuse of approvals, cached pitch or unverified preparation receipts.
+
+Recovery tests prove unchanged bytes and modification times across a simulated
+song-boundary interruption; changed identities/WAV/features/receipt, incomplete
+captures, symlink directories and unexpected files reject. Full discovery passed
+211 tests with 35 optional-dependency skips (176 executed); an additional partial/
+symlink refusal case then passed with the 23-case captured/corpus test set.
+Phase11 source and diff checks pass. Actual recovery was launched against the
+retained 375-song partial combined corpus with the same 1.5 GiB headroom floor;
+completion and fresh dataset admission must be recorded separately.
+
+Actual recovery completed successfully: 424 distinct sources, 463,642 analysis
+frames, partitions 267 train / 33 validation / 124 test. State is
+`PREPARED_UNAPPROVED`, not admitted training material. The 375 retained song
+captures passed fresh re-derivation and the remaining 49 were prepared; final
+corpus publication now exists under `prepared-combined`. Rights/label reviews,
+snapshot assembly and fresh combined-vocabulary acoustic training remain next.
+Corpus SHA-256: `ec77cc91df61718f171b83114a26bbe7df0e28d09f52357b2443844c3a9216ca`.
+Labels SHA-256: `be846bc099797a5fe580b79430d7537ff55191b3ef3d132fd1123c4683aa6059`.
+Targets SHA-256: `9b77f87fd048b1d2149f9f6294d26a9972e441e04c1abda052a34829ec21a050`.
+Disk remained approximately 1.8 GiB free and vocoder PID 69937 was live at
+57:36 elapsed; neither its source inputs nor its run were changed.
+
 ## Copy-on-write corpus preparation and real headroom refusal
 
 September 19, 2026 — added explicit macOS `--clone-captures` preparation using

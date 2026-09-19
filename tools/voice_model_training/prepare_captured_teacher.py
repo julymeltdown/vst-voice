@@ -159,15 +159,43 @@ def capture_inputs(root, receipt_sha256, candidate_path):
 
 
 def prepare_bundle(*, export_root, receipt_sha256, candidate_path, extractor, output,
-                   source_id, song_id, session_id, lineage_id, clone_captures=False):
+                   source_id, song_id, session_id, lineage_id, clone_captures=False,
+                   verify_existing=False):
     output = Path(output)
-    if output.exists() or output.is_symlink() or not output.parent.is_dir():
+    if type(verify_existing) is not bool:
+        raise ValueError("Existing capture verification must be explicit")
+    expected_files = {"source.wav", "pitch.json", "export.json", "conditioning.json",
+                      "label-config.json", "target.json", "provenance.json", "inspection.json",
+                      "mel.f32le", "targets.json", "preparation.json"}
+    if verify_existing:
+        if (output.is_symlink() or not output.is_dir()
+                or {path.name for path in output.iterdir()} != expected_files
+                or any(path.is_symlink() or not path.is_file() for path in output.iterdir())):
+            raise ValueError("Existing capture must be complete with only regular expected files")
+    elif output.exists() or output.is_symlink() or not output.parent.is_dir():
         raise ValueError("Preparation output must be new with an existing parent")
+    def write_bytes(name, data):
+        path = output / name
+        if verify_existing:
+            with path.open("rb") as stream:
+                if stream.read(len(data) + 1) != data:
+                    raise ValueError(f"Existing capture differs from fresh derivation: {name}")
+        else:
+            with path.open("xb") as stream:
+                stream.write(data)
+    def publish(path, value):
+        if verify_existing:
+            write_bytes(path.name, encode_report(value))
+        else:
+            publish_new(path, value)
     candidate, payload, lyrics, midi, provenance = capture_inputs(export_root, receipt_sha256, candidate_path)
     # Copy only the selected, already verified WAV. The native process and all
     # downstream stages consume this stable local capture, never a changing source.
-    output.mkdir(mode=0o700)
-    if clone_captures:
+    if not verify_existing:
+        output.mkdir(mode=0o700)
+    if verify_existing:
+        write_bytes("source.wav", payload)
+    elif clone_captures:
         from .clone_capture import clone_verified_file
         clone_verified_file(_path(Path(export_root).resolve(strict=True),
                                  candidate_path.removesuffix(".json") + ".wav"),
@@ -190,19 +218,18 @@ def prepare_bundle(*, export_root, receipt_sha256, candidate_path, extractor, ou
     digests = {}
     for name, value in (("pitch.json", pitch), ("export.json", export), ("conditioning.json", conditioning),
                         ("label-config.json", labels), ("target.json", target), ("provenance.json", provenance)):
-        publish_new(output / name, value)
+        publish(output / name, value)
         digests[name] = hashlib.sha256(encode_report(value)).hexdigest()
     inspection = inspect_label_config(output / "label-config.json", digests["label-config.json"], output)
     # Missing reviewRevision is expected for unapproved preparation. Other defects
     # are rejected by build_conditioning above; inspection is retained, not hidden.
-    publish_new(output / "inspection.json", inspection)
+    publish(output / "inspection.json", inspection)
     raw = matrix.astype("<f4", copy=False).tobytes(order="C")
-    with (output / "mel.f32le").open("xb") as stream:
-        stream.write(raw)
+    write_bytes("mel.f32le", raw)
     targets = dict(formatId="com.project-seam.training-target-inventory", schemaVersion=1,
         profileSha256=target["profileSha256"], targets=[dict(sourceId=source_id,
         record="target.json", recordSha256=digests["target.json"], binary="mel.f32le")])
-    publish_new(output / "targets.json", targets)
+    publish(output / "targets.json", targets)
     digests["targets.json"] = hashlib.sha256(encode_report(targets)).hexdigest()
     report = dict(formatId="com.project-seam.captured-teacher-preparation", schemaVersion=1,
         state="PREPARED_UNAPPROVED", **provenance, sourceId=source_id, sourceFrameCount=export["frameCount"],
@@ -214,7 +241,7 @@ def prepare_bundle(*, export_root, receipt_sha256, candidate_path, extractor, ou
         noteClock="renderer-marker-ownership-not-piano-roll", independentSplitCreated=False,
         sourceRightsAdmitted=False, labelsAdmitted=False, trainingAdmitted=False, releaseEligible=False)
     # Complete receipt last. Failed attempts remain inspectable but are incomplete.
-    publish_new(output / "preparation.json", report)
+    publish(output / "preparation.json", report)
     return report
 
 

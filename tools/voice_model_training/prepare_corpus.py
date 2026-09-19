@@ -80,7 +80,8 @@ def load_corpus_config(path, expected_hash):
     return value
 
 
-def prepare_corpus(*, config, config_sha256, output, clone_captures=False, minimum_free_bytes=0):
+def prepare_corpus(*, config, config_sha256, output, clone_captures=False, minimum_free_bytes=0,
+                   resume_song_captures=False):
     """Prepare every song independently, then publish the corpus binding last."""
     if type(clone_captures) is not bool or (clone_captures and sys.platform != "darwin"):
         raise ValueError("Explicit copy-on-write preparation requires macOS")
@@ -90,25 +91,38 @@ def prepare_corpus(*, config, config_sha256, output, clone_captures=False, minim
         if shutil.disk_usage(path).free < minimum_free_bytes:
             raise OSError("Corpus preparation stopped to preserve requested disk headroom")
     output = Path(output)
-    if output.exists() or output.is_symlink() or not output.parent.is_dir():
+    if type(resume_song_captures) is not bool:
+        raise ValueError("Song-capture recovery must be explicit")
+    if output.is_symlink() or not output.parent.is_dir():
+        raise ValueError("Corpus output must have an existing parent and not be a symlink")
+    if not resume_song_captures and output.exists():
         raise ValueError("Corpus output must be new with an existing parent")
     value = load_corpus_config(config, config_sha256)
+    if resume_song_captures:
+        allowed = {f"song-{index:03d}" for index in range(len(value["songs"]))}
+        if (not output.is_dir() or any(path.name not in allowed or path.is_symlink()
+                                      or not path.is_dir() for path in output.iterdir())):
+            raise ValueError("Recovery supports only song captures before corpus publication")
     # Identity collisions are cheapest to refuse before any capture or extraction.
     if len({entry["sourceId"] for entry in value["songs"]}) != len(value["songs"]):
         raise ValueError("Corpus source identifiers must be unique")
     if len({entry["songId"] for entry in value["songs"]}) != len(value["songs"]):
         raise ValueError("Each prepared song must declare a distinct song identity")
     check_space(output.parent)
-    output.mkdir(mode=0o700)
+    if not resume_song_captures:
+        output.mkdir(mode=0o700)
     songs, digests = [], {}
     for index, entry in enumerate(value["songs"]):
-        check_space(output)
         directory = output / f"song-{index:03d}"
+        existing = resume_song_captures and directory.exists()
+        if not existing:
+            check_space(output)
         report = prepare_bundle(export_root=Path(entry["exportRoot"]),
             receipt_sha256=entry["receiptSha256"], candidate_path=entry["candidatePath"],
             extractor=Path(value["extractor"]), output=directory, source_id=entry["sourceId"],
             song_id=entry["songId"], session_id=entry["sessionId"], lineage_id=entry["lineageId"],
-            **({"clone_captures": True} if clone_captures else {}))
+            **({"clone_captures": True} if clone_captures else {}),
+            **({"verify_existing": True} if existing else {}))
         report["directory"] = directory.name
         report["preparationSha256"] = hashlib.sha256(encode_report(report)).hexdigest()
         songs.append(report)
@@ -270,10 +284,13 @@ def main():
     parser.add_argument("--clone-captures", action="store_true",
                         help="macOS copy-on-write WAV/duplicate-mel capture; no fallback copying")
     parser.add_argument("--minimum-free-bytes", type=int, default=0)
+    parser.add_argument("--resume-song-captures", action="store_true",
+                        help="Re-derive and verify complete retained songs before corpus publication")
     args = parser.parse_args()
     try:
         result = prepare_corpus(config=args.config, config_sha256=args.config_sha256, output=args.output,
-                                clone_captures=args.clone_captures, minimum_free_bytes=args.minimum_free_bytes)
+                                clone_captures=args.clone_captures, minimum_free_bytes=args.minimum_free_bytes,
+                                resume_song_captures=args.resume_song_captures)
         print(json.dumps(dict(state=result["state"], songs=len(result["songs"]),
             counts=result["split"]["counts"], distinctAudioCount=result["distinctAudioCount"],
             totalAnalysisFrames=result["totalAnalysisFrames"], trainingAdmitted=False),

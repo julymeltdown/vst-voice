@@ -14,6 +14,45 @@ from tools.voice_model_training.test_generated_teacher import captured_pitch, mo
 
 
 class PrepareBundleTest(unittest.TestCase):
+    @unittest.skipUnless(importlib.util.find_spec("numpy"), "NumPy required")
+    def test_existing_capture_requires_fresh_exact_derivation(self):
+        output = self.root / "prepared"
+        args = dict(export_root=self.root, receipt_sha256=self.digest, candidate_path=self.path,
+                    extractor="unused", output=output, source_id="source", song_id="song",
+                    session_id="session", lineage_id="lineage")
+        with patch("tools.voice_model_training.prepare_captured_teacher.extract_pitch",
+                   return_value=captured_pitch(self.audio, 2048)):
+            expected = prepare_bundle(**args)
+            self.assertEqual(prepare_bundle(**args, verify_existing=True), expected)
+            with self.assertRaises(ValueError):
+                prepare_bundle(**{**args, "song_id": "other"}, verify_existing=True)
+            for name in ("source.wav", "pitch.json", "export.json", "mel.f32le", "preparation.json"):
+                path = output / name
+                original = path.read_bytes()
+                path.write_bytes(original + b" ")
+                with self.subTest(name=name), self.assertRaises(ValueError):
+                    prepare_bundle(**args, verify_existing=True)
+                self.assertEqual(path.read_bytes(), original + b" ")
+                path.write_bytes(original)
+            (output / "unexpected").write_bytes(b"preserve")
+            with self.assertRaisesRegex(ValueError, "only regular expected"):
+                prepare_bundle(**args, verify_existing=True)
+
+    def test_existing_capture_refuses_incomplete_or_symlink_directory(self):
+        output = self.root / "partial"
+        output.mkdir()
+        (output / "source.wav").write_bytes(self.audio)
+        args = dict(export_root=self.root, receipt_sha256=self.digest, candidate_path=self.path,
+                    extractor="unused", output=output, source_id="source", song_id="song",
+                    session_id="session", lineage_id="lineage", verify_existing=True)
+        with self.assertRaisesRegex(ValueError, "complete"):
+            prepare_bundle(**args)
+        alias = self.root / "alias"
+        alias.symlink_to(output, target_is_directory=True)
+        with self.assertRaisesRegex(ValueError, "complete"):
+            prepare_bundle(**{**args, "output": alias})
+        self.assertEqual((output / "source.wav").read_bytes(), self.audio)
+
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
