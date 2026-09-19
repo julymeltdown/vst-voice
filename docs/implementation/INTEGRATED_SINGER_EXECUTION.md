@@ -1,5 +1,28 @@
 # Integrated Singer Execution
 
+## Hard-exit and fresh-process recovery equivalence
+
+September 19, 2026 — the captured-corpus diagnostic now starts three independent
+Python workers: uninterrupted baseline, interrupted training and resumed training.
+The interrupted worker calls `os._exit(73)` immediately after the first partial
+checkpoint event, bypassing Python cleanup and discarding all in-memory owners.
+The parent requires exactly that exit code and no complete-epoch receipt, then
+launches a fresh worker against the saved partial. All workers read a hash-bound
+diagnostic request and freshly execute signed fixture admission and batch reading.
+No fixture optimizer, source reader, disk guard or checkpoint transport is mocked.
+
+Verified loading of both final complete checkpoints proves exact equality of the
+entire decoded state: model, optimizer, RNG, metadata and epoch accounting. The
+two reviewed integration tests pass in 10.65 seconds including all three workers.
+Each worker has a 60-second process timeout; a timeout is a failed diagnostic,
+never grounds to silently restart a training attempt. This covers a deliberate
+process exit after publication, not power loss, a crash during a write, production
+CLI architecture, the 424-song corpus or large-vocoder quality. Fixture-local
+permissions remain synthetic-only and do not convey production approval.
+The broader focused Torch selection passes 21 cases in 9.76 seconds; phase11 and
+diff checks pass. Latest observed pre-push CI remains queued. Disk is 613 MiB free;
+no large training process was started and no unrelated storage was removed.
+
 ## Captured oscillator-corpus recovery through real admission and batch readers
 
 September 19, 2026 — extended the signed synthetic integration diagnostic with

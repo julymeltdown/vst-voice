@@ -31,6 +31,8 @@ class ReviewedIntegrationTests(unittest.TestCase):
         self.assertTrue(result["vocoderRecovery"]["exactModelTensors"])
         self.assertEqual(result["vocoderRecovery"]["validSamples"], 12288)
         self.assertFalse(result["vocoderRecovery"]["admissionMocked"])
+        self.assertTrue(result["vocoderRecovery"]["processRecovery"]["completeStateExact"])
+        self.assertEqual(result["vocoderRecovery"]["processRecovery"]["hardExitCode"], 73)
 
     def test_complete_reviewed_run_without_mocking_admission_or_training(self):
         from tools.voice_model_training.check_reviewed_run import check_reviewed_run
