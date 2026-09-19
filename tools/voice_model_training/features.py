@@ -4,6 +4,33 @@ import math
 from .labels import label_report
 
 
+def rest_pitch_diagnostics(score: dict, features: dict) -> dict:
+    """Classify measured voicing against already-validated score rest intervals.
+
+    Native pitch windows start at sourceFrame, not at a centered timestamp.
+    This is diagnostic only: neither labels nor measured features are changed.
+    """
+    rests = [note for note in score["notes"] if note["midi"] is None]
+    queue = []
+    rest_frames = 0
+    for index, frame in enumerate(features["pitchFrames"]):
+        start = frame["sourceFrame"]
+        rest = next((note for note in rests if note["startFrame"] <= start < note["endFrame"]), None)
+        if rest is None:
+            continue
+        rest_frames += 1
+        if frame["voiced"]:
+            end = start + features["windowFrames"]
+            queue.append(dict(frameIndex=index, sourceFrame=start, windowEndFrame=end,
+                              restEndFrame=rest["endFrame"],
+                              code="voiced-rest-boundary-window" if end > rest["endFrame"]
+                              else "voiced-rest-interior-window"))
+    return dict(restAnalysisFrames=rest_frames,
+                voicedBoundaryWindows=sum(row["code"] == "voiced-rest-boundary-window" for row in queue),
+                voicedInteriorWindows=sum(row["code"] == "voiced-rest-interior-window" for row in queue),
+                correctionQueue=queue, diagnosticOnly=True, trainingAdmitted=False)
+
+
 def pitch_corrections(label: dict, features: dict, *, source_sha256: str, sample_rate: int,
                       vocabulary: set[str], minimum_confidence: float) -> dict:
     """Flag uncertain estimates using an explicitly supplied review threshold."""

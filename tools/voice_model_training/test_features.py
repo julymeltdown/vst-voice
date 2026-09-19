@@ -1,9 +1,27 @@
 import copy
 import unittest
-from tools.voice_model_training.features import apply_pitch_features, pitch_corrections
+from tools.voice_model_training.features import apply_pitch_features, pitch_corrections, rest_pitch_diagnostics
 
 
 class FeatureTests(unittest.TestCase):
+    def test_rest_voicing_distinguishes_interior_from_forward_window_overlap(self):
+        score = dict(notes=[dict(startFrame=256, endFrame=1024, midi=None),
+                            dict(startFrame=1024, endFrame=2048, midi=60)])
+        features = dict(windowFrames=512, pitchFrames=[
+            dict(sourceFrame=i * 256, voiced=i != 2) for i in range(6)])
+        before = copy.deepcopy(features)
+        result = rest_pitch_diagnostics(score, features)
+        self.assertEqual(result['restAnalysisFrames'], 3)
+        self.assertEqual(result['voicedInteriorWindows'], 1)
+        self.assertEqual(result['voicedBoundaryWindows'], 1)
+        self.assertEqual([r['sourceFrame'] for r in result['correctionQueue']], [256, 768])
+        self.assertFalse(result['trainingAdmitted'])
+        self.assertEqual(features, before)
+        features['pitchFrames'][2]['voiced'] = True
+        # A window ending exactly at the rest boundary is still wholly interior.
+        self.assertEqual(rest_pitch_diagnostics(score, features)['voicedInteriorWindows'], 2)
+        self.assertEqual(rest_pitch_diagnostics(dict(notes=[]), features)['restAnalysisFrames'], 0)
+
     def test_grid_settings_and_frame_values_reject(self):
         label = dict(sourceId="source", frameCount=257, hopSize=256,
             phonemes=[dict(symbol="a", startFrame=0, endFrame=257, confidence=1)],

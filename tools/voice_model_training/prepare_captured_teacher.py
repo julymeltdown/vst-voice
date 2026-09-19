@@ -17,6 +17,7 @@ from .__main__ import encode_report, inspect_label_config, load_config, publish_
 from .conditioning import build_conditioning
 from .generated_teacher import export_from_candidate, label_config_from_exports
 from .native_features import extract_pitch
+from .features import rest_pitch_diagnostics
 
 
 def _path(root, relative):
@@ -203,6 +204,7 @@ def prepare_bundle(*, export_root, receipt_sha256, candidate_path, extractor, ou
         noteCount=len(export["score"]["notes"]), syllableCount=len(export["score"]["syllables"]),
         slurCount=sum(note["slur"] for note in export["score"]["notes"]),
         artifacts=digests, targetSha256=target["targetSha256"], labelOrigin=export["labelOrigin"],
+        restPitchDiagnostics=rest_pitch_diagnostics(export["score"], pitch),
         noteClock="renderer-marker-ownership-not-piano-roll", independentSplitCreated=False,
         sourceRightsAdmitted=False, labelsAdmitted=False, trainingAdmitted=False, releaseEligible=False)
     # Complete receipt last. Failed attempts remain inspectable but are incomplete.

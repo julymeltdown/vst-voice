@@ -1,5 +1,26 @@
 # Integrated Singer Execution
 
+## Pause voicing traced to forward-window overlap
+
+September 19, 2026 — inspected all 93 measured voiced rest frames in the new
+24-song pause corpus. Every 2048-sample native pitch window crosses the rest's
+end into the next sung event. Their start positions are 32..1968 samples before
+that boundary; zero voiced windows are wholly inside a rest. Analysis of actual
+PCM confirms those windows include neighboring signal, while the previously
+measured central-half pause windows remain exactly zero. A last 256-sample hop
+can itself straddle the boundary (maximum observed hop peak 0.03795522), so even
+forcing every rest-anchored hop to zero would discard real transition evidence.
+
+New preparation diagnostics classify voiced rest windows as boundary-overlapping
+or interior, with exact source/window/rest endpoints. This does not modify F0,
+voicing, PCM or admission rules. It records review candidates rather than granting
+a pass. The helper reproduced 1570 rest frames, 93 boundary windows and zero
+interior windows on the retained corpus without rewriting any existing artifacts.
+Future preparation receipts include these diagnostics. All 20 feature/capture/
+corpus unit tests pass, including exact-boundary behavior and non-mutation; source
+closure, phase11 source checks and diff checks pass. The live training process
+was confirmed running and was not restarted.
+
 ## Actual pause-containing acoustic training material prepared
 
 September 19, 2026 — generated 24 new eight-event phrases through the native
