@@ -1,5 +1,53 @@
 # Integrated Singer Execution
 
+## The vocoder reconstruction gate cannot report success as currently wired
+
+September 19, 2026 — the acceptance predicate and its only producer disagree.
+
+```text
+Engineering: DEMONSTRATED
+Creator workflow: NOT_OBSERVED
+Musical review: NOT_REVIEWED
+```
+
+`measure_vocoder_reconstruction` decides success as `spec_ok and pitch_ok and energy_ok`. The `pitch_ok`
+term is true only when `pitch_comparison` is not None, and `pitch_comparison` is built only from a
+`pitch_tracks` argument containing `source` and `rendered` native feature records. `pitch_tracks` comes
+from `item.get("pitchTracks")`, and no producer anywhere writes that key:
+
+```
+$ grep -rn pitchTracks tools/ voicebank/ scripts/
+tools/voice_model_training/vocoder_reconstruction.py:406:   target_hz=..., pitch_tracks=item.get("pitchTracks"))
+```
+
+That single occurrence is the reader. The held-out items are yielded by `held_out_batches()` in
+`vocoder_training_run.py`, which passes the batch through unchanged and adds no `pitchTracks`.
+
+So every held-out item reports `pitchStatus: "UNRESOLVED"` for the reason
+`native_framewise_tracks_not_supplied`, `unresolvedPitchItems` equals `itemCount`, and
+`allReconstructionsSatisfied` is `false` regardless of how good the audio becomes. Both measured
+checkpoints show exactly this: 12 of 12 items unresolved, `measuredPitchFrames` 0. The spectral term is
+working and has already crossed its threshold (51.17 to 1.272 against 3.5); the pitch term cannot be
+evaluated at all.
+
+This matters for the plan rather than for the scoreboard. Any statement of the form "the vocoder is
+qualified once its reconstruction receipt reports `allReconstructionsSatisfied: true`" is not a
+reachable target under the current wiring, including the closure condition just written into
+SEAM-BETA-P0-08. Closing that P0 requires either:
+
+1. A producer that extracts framewise native pitch for both the source audio and the rendered audio of
+   each held-out item and attaches it as `pitchTracks`. The extraction already exists as
+   `tools/voice_model_training/native_features.py::extract_pitch` against
+   `build/release/seam_voicebank_cli`, so this is a wiring task rather than new capability.
+2. Or a decision that the vocoder's acceptance is the spectral and energy terms alone, with pitch
+   measured separately. That is a weaker gate and would need to say so explicitly.
+
+I am not choosing between them here, because the second is a reduction in what the gate proves and that
+is the owner's call rather than mine.
+
+Status: measured, not repaired. The vocoder run continues. trainingAdmitted, singerQualified and
+releaseEligible remain false.
+
 ## The vocoder training plan cannot reach its epoch target at this throughput
 
 September 19, 2026 — measured cost of one vocoder epoch.
