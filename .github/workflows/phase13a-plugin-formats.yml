@@ -264,6 +264,7 @@ jobs:
           if (-not $payload) { throw 'Downloaded Windows verifier payload root was not found' }
           ./scripts/test_windows_installer.ps1 -Installer "$env:RUNNER_TEMP\ProjectSEAM-$version-unsigned.exe" -EvidenceDirectory out\phase13a\windows\installer-clean -Verifier (Join-Path $payload.FullName 'Tools\seam_installer_verifier.exe')
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: phase13a-windows-unsigned-installer-smoke
           path: |
@@ -305,6 +306,7 @@ jobs:
           version="$(python3 tools/phase13a/release_identity.py --source-root . --field version)"
           bash scripts/test_macos_installer.sh "$RUNNER_TEMP/ProjectSEAM-${version}-unsigned.pkg" out/phase13a/macos/installer-clean "$payload/Tools/seam_installer_verifier"
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: phase13a-macos-unsigned-installer-smoke
           path: |

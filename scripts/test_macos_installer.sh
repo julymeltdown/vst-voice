@@ -30,7 +30,7 @@ verified_install() {
     SEAM_UPDATE_STAGING_ROOT="$(field "$result" stagingRoot)" \
     SEAM_EXPECTED_CANDIDATE="$(field "$result" candidateId)" \
     SEAM_EXPECTED_HANDOFF_SHA256="$(field "$result" handoffSha256)" \
-    /usr/sbin/installer -pkg "$(field "$result" stagedPackage)" -target /
+    /usr/sbin/installer -verboseR -dumplog -pkg "$(field "$result" stagedPackage)" -target /
 }
 create_handoff handoff-install
 verified_install "$evidence/handoff-install/handoff-result.json" 2>&1 | tee "$evidence/install.log"
