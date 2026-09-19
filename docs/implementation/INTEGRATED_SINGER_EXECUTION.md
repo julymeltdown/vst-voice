@@ -1,5 +1,28 @@
 # Integrated Singer Execution
 
+## Linux GUI-host CI false green found and repaired in workflow source
+
+September 19, 2026 — completed job 105910669530 from run 35448173276 at
+`138009ea` reported success, but its downloaded job log explicitly says
+`No tests were found!!!` in the Linux dynamic GUI-host step. Only the core
+`seam_phase11_tests` test ran successfully. Therefore that job is not GUI-host
+runtime evidence. The same log reports no `out` files for Linux artifact upload.
+
+CMake registers native GUI tests only with `SEAM_RUN_NATIVE_GUI_TESTS=ON`;
+the workflow had left its default off. Linux configuration now enables it.
+The host and missing-bank cases run as separate exact-name selections, each with
+`--no-tests=error`; CMake already wraps these tests in xvfb, so the redundant outer
+wrapper is removed. Core test selection also fails if empty. Linux captures GUI
+screenshots, summaries, WAV and CTest log independently; package uploads are only
+for Windows/macOS and now error if absent instead of warning.
+
+Workflow YAML parsed successfully and registration/empty-selection guards were
+inspected. A deliberate absent-test selection locally exits 8 with
+`--no-tests=error`, proving missing tests no longer silently pass. Phase11 source
+and diff checks pass. Actual corrected Linux GUI execution still requires the next
+CI run; neither the old green job nor source checks establish that result. Existing
+native CI remains active and this repair is held locally with the cancellation fix.
+
 ## Raw fallback cancellation propagation repaired
 
 September 19, 2026 — added a delayed-stop long-output regression using the same

@@ -40,16 +40,29 @@ jobs:
         run: cmake -S . -B build/phase11 -DSEAM_BUILD_BENCHMARKS=OFF -DSEAM_WARNINGS_AS_ERRORS=ON -DOPENSSL_ROOT_DIR="$(brew --prefix openssl@3)"
       - name: Configure Linux
         if: runner.os == 'Linux'
-        run: cmake -S . -B build/phase11 -DSEAM_BUILD_BENCHMARKS=OFF -DSEAM_WARNINGS_AS_ERRORS=ON
+        run: cmake -S . -B build/phase11 -DSEAM_BUILD_BENCHMARKS=OFF -DSEAM_WARNINGS_AS_ERRORS=ON -DSEAM_RUN_NATIVE_GUI_TESTS=ON
       - name: Build
         run: cmake --build build/phase11 --config Debug --parallel 2
       - name: Core tests
         timeout-minutes: 15
-        run: ctest --test-dir build/phase11 -C Debug -R 'seam_phase11_tests' --output-on-failure --timeout 300
+        run: ctest --test-dir build/phase11 -C Debug -R '^seam_phase11_tests$' --output-on-failure --timeout 300 --no-tests=error
       - name: Linux dynamic GUI host
         if: runner.os == 'Linux'
         timeout-minutes: 10
-        run: xvfb-run -a ctest --test-dir build/phase11 -R 'seam_phase11_clap_editor_host_smoke' --output-on-failure --timeout 300
+        run: |
+          ctest --test-dir build/phase11 -R '^seam_phase11_clap_editor_host_smoke$' --output-on-failure --timeout 300 --no-tests=error
+          ctest --test-dir build/phase11 -R '^seam_phase11_clap_editor_missing_bank_smoke$' --output-on-failure --timeout 300 --no-tests=error
+      - name: Preserve Linux GUI host evidence
+        if: runner.os == 'Linux' && always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase11-linux-gui-host-evidence
+          path: |
+            build/phase11/phase11-clap-editor*.ppm
+            build/phase11/phase11-clap-editor*.json
+            build/phase11/phase11-clap-editor-live.wav
+            build/phase11/Testing/Temporary/LastTest.log
+          if-no-files-found: error
       - name: Source and rights boundary
         run: python scripts/verify_phase11_sources.py --root .
       - name: Package macOS CLAP
@@ -65,9 +78,11 @@ jobs:
           $binary = Get-ChildItem build/phase11 -Recurse -Filter ProjectSEAMEditor.clap | Select-Object -First 1
           scripts/package_windows_plugin.ps1 -ClapBinary $binary.FullName -OutputZip out/ProjectSEAMEditor-windows.zip
       - uses: actions/upload-artifact@v4
+        if: runner.os != 'Linux'
         with:
           name: ProjectSEAMEditor-${{ matrix.os }}
           path: out
+          if-no-files-found: error
 
   clap-validator:
     runs-on: ubuntu-latest
