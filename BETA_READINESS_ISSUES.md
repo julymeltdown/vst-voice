@@ -152,6 +152,52 @@ Even if individual checks pass, the team cannot prove what was authorized, shipp
 
 ## P1: Product and operating defects
 
+### SEAM-BETA-P1-08: An admitted neural singer cannot render the same audio twice
+
+**Evidence (2026-09-19, branch `codex/production-readiness-completion`)**
+
+The first trained neural bundle this repository has produced was qualified on held-out material and
+failed one automatic criterion. The dossier is
+`/Users/lhs/seam-corpus-2026-09-19/dossier-1000.json` (verdict `FAILED`, failed `determinism`);
+runs at `timesteps=1000` and at `timesteps=8` both fail identically, so this is not an artifact of a
+small training configuration.
+
+The exported acoustic graph generates its own diffusion noise rather than accepting it:
+`onnx.load(.../bundle-1000/acoustic).graph.node` contains a `RandomNormalLike` node with inputs
+`['diffusion//ConstantOfShape_output_0']`, and the graph's declared inputs are exactly
+`['tokens','durations','f0','steps']` — there is no noise or seed input to bind. Four separate
+`seam_neural_worker` processes given byte-identical SNW1 requests returned four different audio
+digests (`d88d8bc8…`, `76c9a4ea…`, `3b9f03c0…`, `d6383f9d…`).
+
+The generator is seeded per session rather than per request: within one ONNX Runtime session two
+consecutive calls differ, while two freshly created sessions return the same first result. Because
+`seam_neural_worker` completes exactly one request per process, per-request determinism is absent in
+the shipped path even though a single-call session is reproducible.
+
+**Impact**
+
+The same project renders differently on every export for the neural backend, which contradicts the
+product's own `reproducibility-tolerances/*/neural/pcm-error` contract. A creator cannot reproduce a
+take, a reviewer cannot compare candidates on identical bytes, and no release evidence can be
+re-derived from a frozen project.
+
+**Not a defect in the candidate's sound**
+
+Bundle admission, response binding, vocabulary coverage, finite non-silent audio and runtime budget
+all pass. Pitch adherence is reported `UNRESOLVED` because the run failed before pitch was measured;
+it is no longer reported as `PASS`, which it was until this register entry (`qualification.py`
+returned early on determinism and left the criterion at its initial value).
+
+**Closure criteria**
+
+- The acoustic deployment graph exposes its initial diffusion noise as an explicit input, or takes a
+  seed input, so an identical request is bit-identical across processes and repeated calls.
+- A qualified held-out run reports `determinism PASS` on at least two independent requests per item.
+- The reproducibility tolerance for the neural backend is measured against the frozen project and
+  recorded, rather than asserted from the contract's presence.
+
+**Status:** OPEN (not addressed by the vocabulary-padding repair at `8393458b`).
+
 ### SEAM-BETA-P1-01: Repeated support export can collide
 
 `NativeEditorApp` always targets `Support/latest-diagnostic.zip`, while `SupportBundleService` rejects an existing destination. A second export can therefore fail unless the previous archive is removed.
