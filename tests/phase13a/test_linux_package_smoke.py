@@ -1,6 +1,7 @@
 import tempfile
 import json
 import subprocess
+import os
 import unittest
 from pathlib import Path
 import sys
@@ -13,6 +14,36 @@ import linux_package_smoke  # noqa: E402
 
 
 class LinuxPackageSmokeTests(unittest.TestCase):
+    def test_resources_install_beside_module_and_uninstall_preserves_neighbors(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            clap = root / 'ProjectSEAMEditor.clap'
+            clap.write_bytes(b'clap-binary')
+            resources = root / 'ProjectSEAMEditor.resources'
+            (resources / 'character-01').mkdir(parents=True)
+            (resources / 'character-01/manifest.json').write_bytes(b'character-fixture')
+            package = root / 'package.zip'
+            developer_package.create_developer_package(clap, resources, package, '0.13.0')
+            extraction = root / 'extracted'
+            linux_package_smoke._safe_extract(package, extraction)
+            payload = extraction / 'ProjectSEAM'
+            installed = root / 'plugins'
+            installed.mkdir()
+            neighbor = installed / 'OtherPlugin.clap'
+            neighbor.write_bytes(b'preserve')
+            data = root / 'data/ProjectSEAM'
+            env = dict(os.environ, SEAM_INSTALL_ROOT=str(data), SEAM_CLAP_ROOT=str(installed))
+            subprocess.run(['bash', str(payload / 'install.sh')], cwd=payload, env=env, check=True, timeout=30)
+            sidecar = installed / 'ProjectSEAMEditor.resources'
+            self.assertEqual(b'character-fixture', (sidecar / 'character-01/manifest.json').read_bytes())
+            self.assertEqual(b'clap-binary', (installed / 'ProjectSEAMEditor.clap').read_bytes())
+            self.assertIn(str(sidecar), (data / 'installed-files.txt').read_text().splitlines())
+            subprocess.run(['bash', str(payload / 'uninstall.sh')], cwd=payload, env=env, check=True, timeout=30)
+            self.assertFalse(sidecar.exists())
+            self.assertFalse((installed / 'ProjectSEAMEditor.clap').exists())
+            self.assertFalse(data.exists())
+            self.assertEqual(b'preserve', neighbor.read_bytes())
+
     def test_cli_relative_paths_work_from_changed_installer_directory(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

@@ -17,10 +17,10 @@ data_root="${SEAM_INSTALL_ROOT:-${XDG_DATA_HOME:-$HOME/.local/share}/ProjectSEAM
 clap_root="${SEAM_CLAP_ROOT:-$HOME/.clap}"
 mkdir -p "$data_root" "$clap_root"
 cp "$root/CLAP/ProjectSEAMEditor.clap" "$clap_root/ProjectSEAMEditor.clap"
-rm -rf "$data_root/ProjectSEAMEditor.resources"
-cp -R "$root/CLAP/ProjectSEAMEditor.resources" "$data_root/ProjectSEAMEditor.resources"
+rm -rf "$clap_root/ProjectSEAMEditor.resources"
+cp -R "$root/CLAP/ProjectSEAMEditor.resources" "$clap_root/ProjectSEAMEditor.resources"
 cp "$root/developer-package.json" "$data_root/developer-package.json"
-printf '%s\n' "$clap_root/ProjectSEAMEditor.clap" > "$data_root/installed-files.txt"
+printf '%s\n' "$clap_root/ProjectSEAMEditor.clap" "$clap_root/ProjectSEAMEditor.resources" > "$data_root/installed-files.txt"
 """
 
 UNINSTALL_SCRIPT = b"""#!/usr/bin/env bash
@@ -28,6 +28,7 @@ set -euo pipefail
 data_root="${SEAM_INSTALL_ROOT:-${XDG_DATA_HOME:-$HOME/.local/share}/ProjectSEAM}"
 clap_root="${SEAM_CLAP_ROOT:-$HOME/.clap}"
 rm -f "$clap_root/ProjectSEAMEditor.clap"
+rm -rf "$clap_root/ProjectSEAMEditor.resources"
 rm -rf "$data_root"
 """
 

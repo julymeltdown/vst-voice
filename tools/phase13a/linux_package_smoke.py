@@ -71,9 +71,14 @@ def run_smoke(package: Path, sandbox: Path) -> dict[str, object]:
     })
     subprocess.run(["bash", str(install)], cwd=payload, env=env, check=True)
     installed = (clap_root / "ProjectSEAMEditor.clap").is_file()
-    resources = (data_root / "ProjectSEAMEditor.resources").is_dir()
+    # plugin_entry.cpp resolves resources beside the loaded CLAP module.
+    resources = (clap_root / "ProjectSEAMEditor.resources").is_dir()
     subprocess.run(["bash", str(uninstall)], cwd=payload, env=env, check=True)
-    uninstalled = not (clap_root / "ProjectSEAMEditor.clap").exists() and not data_root.exists()
+    uninstalled = (
+        not (clap_root / "ProjectSEAMEditor.clap").exists()
+        and not (clap_root / "ProjectSEAMEditor.resources").exists()
+        and not data_root.exists()
+    )
     status = "PASS" if installed and resources and uninstalled else "FAIL"
     return {
         "schemaVersion": 1,

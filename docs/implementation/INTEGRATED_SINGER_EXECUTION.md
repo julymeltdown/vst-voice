@@ -1,5 +1,27 @@
 # Integrated Singer Execution
 
+## Developer package now installs resources at the plugin lookup location
+
+September 20, 2026 — source review found a second Linux developer-package defect:
+the embedded installer copied resources into the data directory, but
+`libs/seam-clap-editor/src/plugin_entry.cpp` resolves character and voicebank
+sidecars beside the loaded module. The smoke check repeated the wrong location,
+so successful file-copy checks could mask missing plugin resources.
+
+Changed smoke verification to require the module-adjacent sidecar and its removal
+on uninstall. Both install tests then failed with installedResources=false before
+the installer correction. Generated install/uninstall scripts now place and remove
+the sidecar next to the module and record it in installed-files.txt. Metadata stays
+in the data directory. Four focused tests pass, including real shell execution,
+exact installed character/module bytes, recorded sidecar path, removal and
+preservation of an unrelated neighboring plugin. The full suite before adding
+the fourth focused test passed: 181 discovered, four skipped, 177 executed.
+This is fixture installation evidence, not native module loading or GUI evidence.
+
+Current macOS AUv2 job 105915734464 failed compilation in ustx_codec.cpp:188
+on floating-point std::from_chars, reported deleted by its selected library.
+That is the next confirmed platform repair; macOS VST3 and Linux VST3 remain active.
+
 ## Linux install smoke resolves paths before changing subprocess directories
 
 September 20, 2026 — diagnosed Linux development-package job 105915734499
