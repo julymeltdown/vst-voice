@@ -1,5 +1,42 @@
 # Integrated Singer Execution
 
+## Fresh larger-model segmented training launched
+
+September 19, 2026 — actual corpus updates, not a synthetic mechanics probe.
+
+Started a fresh `mini-nsf-512-mrf-v1` run through `train_vocoder`, not a resume or a
+reinterpretation of the 32-channel checkpoint. Training configuration schema 3 uses
+128-hop balanced segments, one CPU thread, seed 929, learning rate 0.0002, decay 0.999
+and evaluation seed 933. The existing 12 held-out source IDs and native pitch
+extractor are unchanged. No new rights claim, external recording or listener approval
+was introduced; the trainer freshly admitted the existing captured dataset through
+its ordinary signed-policy checks before updating.
+
+Artifacts under `/Users/lhs/seam-corpus-xl-2026-09-19/`:
+
+- Config `prepared/vocoder-training-512-segments.json`, SHA-256
+  `74e1f77f699ed352796d72c14f8347c1d53cbb0aca50e49e1778087dfa385e48`.
+- Dataset config SHA-256
+  `5e0c71c4d3aaa3bb43cb330025d71a5413bf3b6b7fbf092df46af3fd414a68a8`.
+- Target inventory SHA-256
+  `7a980b3458c1982f760b645d818407351bde681901c89f955c8ce87e2a8b7386`.
+- Output `vocoder-512-segments-r1`; one requested epoch, six-hour wall bound,
+  1 GiB aggregate checkpoint budget, retain one new checkpoint. No prior files changed.
+- Process PID 69937, execution session 72412; confirmed live during this entry.
+
+The trainer reports 2804 planned updates. First update completed at 21.68 seconds
+after epoch start, covering 31,488 samples, generator loss 161.098526 and discriminator
+loss 5.049006. These startup numbers do not predict convergence or epoch duration.
+No checkpoint, completed held-out result, learned pitch improvement or singer
+qualification exists yet for this run. Do not restart it merely because an observation
+times out; inspect the same process/session. Disk headroom is checked around updates
+and before serialization. The generated-teacher limitation remains, including the
+separate acoustic model's missing trained silence symbol.
+
+Independent CI status refresh: run 35438897358 at the earlier `bd0021fa` repair is
+fully successful: Windows/macOS/Ubuntu native matrices, Windows helper and isolated
+release candidate. This does not confer CI acceptance on the newer training commits.
+
 ## Bounded vocoder training segments with complete source ownership
 
 September 19, 2026 — implemented the alternative required by the memory probe.
