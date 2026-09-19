@@ -1,5 +1,52 @@
 # Integrated Singer Execution
 
+## The sampler had a second, fixable defect: an unclamped x0 estimate
+
+September 19, 2026 — reverse-process diagnose, clamped/unclamped comparison.
+
+```text
+Engineering: DEMONSTRATED
+Creator workflow: NOT_OBSERVED
+Musical review: NOT_REVIEWED
+```
+
+The previous entry concluded that the sampler amplifies an honest training shortfall, and that the
+only remedy was more signal. That conclusion was incomplete. The amplification is real, but the
+sampler was also feeding an unbounded estimate back into its own recurrence, which turns a small
+residual into an unbounded one. Same checkpoint, same schedule, same conditioning, one difference:
+
+| steps | unclamped std / range | x0-clamped std / range |
+|---|---|---|
+| 2 | 5.98 / [-82.0, 78.4] | 2.89 / [-12.24, 0.23] |
+| 4 | 26.39 / [-375.0, 403.5] | 2.77 / [-12.24, 0.23] |
+| 10 | 91.68 / [-1295.6, 1424.4] | 2.63 / [-12.25, 0.23] |
+| 50 | 195.85 / [-2764.9, 3054.0] | 2.65 / [-12.25, 0.23] |
+| 100 | 216.27 / [-3053.9, 3374.6] | 2.68 / [-12.25, 0.23] |
+
+Ground truth over the same frames is std 2.364, range [-11.513, -0.779]. The clamped column is
+inside that range and stable in the step count; the unclamped column grows without bound and gets
+*worse* with more steps, which is the signature of an unstable recurrence rather than of a model
+that merely lacks signal. Upstream sets the same clamp and disables it by comment; this checkout had
+neither.
+
+Two further measurements, both on checkpoint epoch 45 (loss 0.17393):
+
+- Truncating the reverse schedule alone, without clamping, does **not** fix it. Starting at t=300
+  still produces std 3.01 at 30 steps and range [-30, 18]. The instability follows the recursion, not
+  the starting timestep.
+- The clamped sampler is producing the target, not in-range noise: correlation with ground truth
+  rises 0.314 -> 0.556 as steps go 2 -> 100, and normalized MAE falls 1.138 -> 0.818. A clamp that
+  merely hid a broken model would not correlate at all.
+
+What this changes: the trained model was always better than the sampler allowed it to sound. The
+residual target from the previous entry still matters for quality, but it is no longer the sole
+blocker and it is no longer a precondition for hearing anything coherent. The clamp is a one-line
+change in `tools/voice_model_training/diffusion_export_wrapper.py` and it changes the exported ONNX,
+so the parity check and the deployment comparison must both be re-run before this is called closed.
+
+Status: measured, not yet landed. `trainingAdmitted`, `singerQualified` and `releaseEligible` remain
+false. No listener has heard anything.
+
 ## Ten times the material roughly halves the error the sampler amplifies
 
 September 19, 2026 — 400-phrase corpus, admitted and training.
