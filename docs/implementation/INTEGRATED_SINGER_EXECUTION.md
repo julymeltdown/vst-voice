@@ -1,5 +1,50 @@
 # Integrated Singer Execution
 
+## Separate acoustic reconstruction from vocoder quality
+
+September 19, 2026 — resumed the exact combined-corpus checkpoint for four further
+epochs (through epoch five), same dataset/configuration/vocabulary/optimizer/RNG
+lineage, new output `acoustic-combined-r2`, 2400-second limit and 128 MiB aggregate
+checkpoint cap. The first completed epoch is retained unchanged.
+
+Added `tools.voice_model_training.acoustic_reconstruction`: revalidates the dataset
+and checkpoint identities, permits explicitly selected validation items only (not
+training or final test items), verifies target and conditioning bytes, and runs
+the deployment duration encoder plus bounded-clean Torch diffusion sampler.
+Reports natural-log mel MAE/RMSE, with score-phone pause frames separately. It
+uses captured alignment and measured F0: this isolates acoustic reconstruction,
+not score-to-phoneme generation, waveform quality, ONNX parity or musical approval.
+Output never overwrites; stable per-source seeds make selection order irrelevant.
+Tests cover exact metrics, non-finite/shape refusal, full monotonic phrase
+alignment including zero-duration/repeated phones, and validation-only selection.
+
+Frozen development probe: validation sources 00003, 00005, 00024, 00402, 00420
+(each prefixed `procedural-song-`), 32 steps, seed 937. Epoch-one output at
+`/Users/lhs/seam-corpus-pauses-2026-09-19-r1/acoustic-combined-e1-validation.json`
+reports item MAE 5.531027 / 5.532211 / 5.560471 / 5.610914 / 5.590075.
+Pause MAE is 5.865961 / 5.945073 for the two pause-containing items. This is a
+substantial acoustic reconstruction error independent of vocoder quality; no pass
+threshold or singer acceptance is inferred. Compare the completed epoch-five
+checkpoint on these same inputs and seeds before extending training.
+
+All four additional epochs completed, 267 updates each, totaling 1335 updates
+through epoch five. New checkpoint bytes total 108,788,892. Epoch-five checkpoint
+SHA-256 `ef8e439a90ce6a7ca4faad51bae1c57b84b7ef5a8355716a223c5a1ac13c85d5`;
+receipt `b3e5d64e5cfcff1585cb8d2dfe15e2ec722aec29a50bdbbe0632a26f29a84a5d`.
+Loss changed from 0.688271 at epoch one to 0.416786 at epoch five; this is training
+noise-prediction loss, not held-out reconstruction quality. Full system-Python
+discovery passes 215 tests with 35 optional skips (180 executed); source closure,
+phase11 source checks and diff checks pass. Real epoch-one evaluation separately
+ran in the Torch environment. Epoch-five same-input evaluation is now running.
+
+Epoch-five probe subsequently completed. The same five item MAEs are now
+4.110222 / 4.129503 / 4.177201 / 4.255457 / 4.181064; pause MAEs are
+4.593820 / 5.059366. All five improve, but substantial absolute error remains.
+This supports a further bounded training experiment, not singer acceptance or
+an assumption that vocoder reconstruction alone will solve the pipeline.
+Eleven acoustic-probe/sampler/export-adapter unit tests also pass in the actual
+Torch environment. The larger vocoder run and final test partition are untouched.
+
 ## Combined corpus admitted and fresh acoustic epoch started
 
 September 19, 2026 — authored fresh first-party rights and label records for the
