@@ -2,10 +2,35 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import shutil
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
+
+
+def native_windows_perl() -> str:
+    """Reject Git/MSYS Perl: VC-WIN64A requires native Windows path semantics."""
+    candidates = dict.fromkeys(
+        str(Path(entry.strip('"')) / "perl.exe")
+        for entry in os.get_exec_path() if entry
+    )
+    for candidate in candidates:
+        if not Path(candidate).is_file():
+            continue
+        try:
+            result = subprocess.run(
+                (candidate, "-e", 'print $^O'),
+                check=True, capture_output=True, text=True, timeout=10,
+            )
+        except (OSError, subprocess.SubprocessError):
+            continue
+        if result.stdout.strip() == "MSWin32":
+            return str(Path(candidate).resolve())
+    raise RuntimeError(
+        "OpenSSL VC-WIN64A requires native Windows Perl (for example Strawberry "
+        "Perl) on PATH; Git/MSYS/Cygwin Perl is not supported"
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -24,6 +49,8 @@ def openssl_build_plan(
     source: Path,
     prefix: Path,
     source_commit: str,
+    *,
+    perl_executable: str = "perl",
 ) -> OpenSslBuildPlan:
     system = host_system.casefold()
     machine = architecture.casefold()
@@ -64,7 +91,7 @@ def openssl_build_plan(
         )
 
     configure = (
-        "perl",
+        perl_executable,
         str(source / "Configure"),
         target,
         *(("/MT",) if system == "windows" else ()),
@@ -143,7 +170,8 @@ def prepare_static_openssl(
 ) -> Path:
     prefix = build_root / "static-openssl-install"
     plan = openssl_build_plan(
-        host_system, architecture, source, prefix, source_commit
+        host_system, architecture, source, prefix, source_commit,
+        perl_executable=native_windows_perl() if host_system.casefold() == "windows" else "perl",
     )
     build_static_openssl(plan, build_root / "static-openssl-build")
     return prefix

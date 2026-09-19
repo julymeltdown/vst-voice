@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 import json
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from tools.phase13a.static_openssl import build_static_openssl, openssl_build_plan
+from tools.phase13a.static_openssl import (
+    build_static_openssl, native_windows_perl, openssl_build_plan,
+    prepare_static_openssl,
+)
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -14,6 +18,62 @@ OPENSSL_COMMIT = "8cf17aaeb4599f8af87fefd810b5b5fee90fe69e"
 
 
 class StaticOpenSslTests(unittest.TestCase):
+    def test_native_perl_skips_git_bash_perl_even_when_first_on_path(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            candidates = [root / name for name in ("git usr", "strawberry")]
+            for path in candidates:
+                path.mkdir()
+                (path / "perl.exe").touch()
+            with patch("tools.phase13a.static_openssl.os.get_exec_path", return_value=list(map(str, candidates))), patch(
+                "tools.phase13a.static_openssl.subprocess.run",
+                side_effect=[subprocess.CompletedProcess([], 0, "msys"),
+                             subprocess.CompletedProcess([], 0, "MSWin32")],
+            ) as run:
+                self.assertEqual(str((candidates[1] / "perl.exe").resolve()), native_windows_perl())
+                self.assertEqual(2, run.call_count)
+                self.assertEqual(10, run.call_args.kwargs["timeout"])
+
+    def test_native_perl_rejects_missing_unix_and_broken_interpreters(self) -> None:
+        for outcome in (subprocess.CompletedProcess([], 0, "cygwin"),
+                        subprocess.TimeoutExpired("perl", 10), OSError("unavailable")):
+            with self.subTest(outcome=outcome), patch(
+                "tools.phase13a.static_openssl.os.get_exec_path", return_value=["/candidate"]
+            ), patch("tools.phase13a.static_openssl.Path.is_file", return_value=True), patch(
+                "tools.phase13a.static_openssl.subprocess.run",
+                **({"side_effect": outcome} if isinstance(outcome, Exception) else {"return_value": outcome}),
+            ):
+                with self.assertRaisesRegex(RuntimeError, "native Windows Perl"):
+                    native_windows_perl()
+        with patch("tools.phase13a.static_openssl.os.get_exec_path", return_value=[]):
+            with self.assertRaisesRegex(RuntimeError, "native Windows Perl"):
+                native_windows_perl()
+
+    def test_windows_preparation_binds_verified_perl_into_build_and_receipt(self) -> None:
+        with patch("tools.phase13a.static_openssl.native_windows_perl", return_value="C:/Strawberry/perl/bin/perl.exe"), patch(
+            "tools.phase13a.static_openssl.build_static_openssl"
+        ) as build:
+            prepare_static_openssl("Windows", "AMD64", Path("C:/source"), Path("C:/build"), OPENSSL_COMMIT)
+            plan = build.call_args.args[0]
+            self.assertEqual("C:/Strawberry/perl/bin/perl.exe", plan.configure[0])
+            self.assertIn("VC-WIN64A", plan.configure)
+
+    def test_missing_native_perl_fails_before_build_or_cache_mutation(self) -> None:
+        with patch("tools.phase13a.static_openssl.native_windows_perl", side_effect=RuntimeError("native Windows Perl unavailable")), patch(
+            "tools.phase13a.static_openssl.build_static_openssl"
+        ) as build:
+            with self.assertRaisesRegex(RuntimeError, "native Windows Perl"):
+                prepare_static_openssl("Windows", "AMD64", Path("C:/source"), Path("C:/build"), OPENSSL_COMMIT)
+            build.assert_not_called()
+
+    def test_non_windows_preparation_does_not_probe_windows_perl(self) -> None:
+        with patch("tools.phase13a.static_openssl.native_windows_perl") as probe, patch(
+            "tools.phase13a.static_openssl.build_static_openssl"
+        ) as build:
+            prepare_static_openssl("Linux", "x86_64", Path("/source"), Path("/build"), OPENSSL_COMMIT)
+            probe.assert_not_called()
+            self.assertEqual("perl", build.call_args.args[0].configure[0])
+
     def test_dependency_lock_pins_openssl_357(self) -> None:
         lock = json.loads(
             (ROOT / "phase13a/dependency-lock.json").read_text(encoding="utf-8")

@@ -1,5 +1,31 @@
 # Integrated Singer Execution
 
+## Windows native OpenSSL interpreter selection repaired
+
+September 20, 2026 — inspected failed Phase13A Windows job 105915734611
+at `24c4fb32`. OpenSSL Configure ran under Git/MSYS Perl, with Unix `@INC`
+entries and a Windows source pathname, and failed to locate OpenSSL/fallback.pm.
+This was a dependency configuration failure, not a VST3 validator result.
+
+Windows preparation now probes Perl executables on PATH and selects an absolute
+interpreter path only when Perl reports `MSWin32`. Unix interpreters and broken
+or timed-out probes are rejected; absence of native Perl fails before the build
+or cache is modified. The selected executable is included in the existing
+configure receipt. Linux/macOS behavior is unchanged.
+
+Local Phase13A directory discovery: 180 discovered, 4 skipped, 176 executed,
+all successful (9.76 seconds). New mocked regressions cover Git/MSYS precedence,
+native selection, missing/broken interpreters, early failure and non-Windows
+preservation. Source closure, Phase13A source contracts and diff checks pass.
+These are not execution of native Windows Perl or a successful Windows build;
+the repaired candidate still needs remote validation.
+
+Other jobs remain active, including macOS AUv2 and Linux VST3. The Linux
+development-package job 105915734499 has now failed in isolated install with
+exit 127 from install.sh; its cause remains to be diagnosed. Keep this fix on the
+development branch while current jobs finish, avoiding cancellation by a new
+master push. Full Beta remains NO_GO; training has not been restarted.
+
 ## Linux native result closes the previous candidate diagnostic pass
 
 September 19, 2026 — native Linux job 105910668024 at `138009ea` completed:
