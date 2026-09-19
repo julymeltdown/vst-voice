@@ -1,5 +1,52 @@
 # Integrated Singer Execution
 
+## Explicit pause supervision through the real renderer and training preparation
+
+September 19, 2026 — silence coverage repair for future acoustic training.
+
+The generated corpus previously contained adjacent sung events only. Vocabulary is
+derived from captured phones, so the absence of a silence token in epoch 142 is
+consistent with its training input, not a token conversion failure. Existing corpus
+bytes and checkpoints remain unchanged and cannot gain a trained silence embedding
+by editing their exported vocabulary.
+
+`generate_procedural_corpus --include-pauses` now replaces one interior event per
+phrase with an explicit `pau:MIDI:TICKS` event, preserving durations and event count.
+At least three events are required. The option is off by default to preserve previous
+seed behavior. The pilot gives this event a `pau` phonetic hint using its existing
+pause closure; its placeholder piano-roll MIDI key is excluded from pitch scoring.
+Captured-teacher preparation verifies that every phone owned by the pause note is
+`pau` and writes a score rest with `midi=null`, `syllable=null`, and explicit
+`silencePhones` ownership. It never classifies ordinary unvoiced consonants as rests.
+
+The production candidate harness accepts `--silence-phone pau` (or explicit `SP`/`sil`)
+to select the token actually trained by the candidate. This uses the runner's existing
+silence option; it does not alias or invent embeddings. The epoch-142 candidate still
+has none of these symbols and remains unusable through this path. A new corpus with
+pause examples, fresh admission, training and export is still required. The installed
+surface must select the same trained silence symbol through its existing surface
+configuration; the harness flag is not installed-product acceptance.
+
+Actual retained experiment, not just mocked fixtures:
+
+- Root: `/tmp/seam-pause-8adynG` (temporary diagnostic artifacts, not release evidence).
+- Native pilot phrase: `あ:60:960 pau:60:960 い:64:960`; three recipe variants rendered.
+- Captured source: 72,000 samples at 48 kHz; SHA-256
+  `42500b54d49895c3866b77b6ae3245a3c173f6c0fdd79374942f633294f45646`.
+- Actual preparation produced three phones, two syllables and a rest at samples
+  `[24000,48000)`. Its 282 conditioning frames include 94 rest frames, all with null
+  MIDI; vocabulary is `a,i,pau`. Eight rest-overlapping analysis frames are measured
+  voiced and remain unchanged rather than being forced to zero.
+- The real pilot regression confirms exact zero audio in the central half of the pause
+  and pitch-diagnostic note indices `[0,2]` (no fabricated pitch target for the pause).
+
+Verification: pilot CLI CTest passes (10.27 s), production neural-render CTest passes
+(3.08 s), and 32 focused preparation/generation/label-conditioning tests pass. Source
+closure, phase11 source checks and diff checks pass. The vocoder continuation PID
+65038 remains live; no training restart was performed. Free disk is approximately
+1 GiB, so no new large corpus or training run was launched. Neither singer quality nor
+Beta GO is established by this supervision repair.
+
 ## Saved-project neural export regression and learned-vocabulary mismatch
 
 September 19, 2026 — production application integration, not singer qualification.

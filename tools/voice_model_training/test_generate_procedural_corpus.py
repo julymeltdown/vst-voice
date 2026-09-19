@@ -28,6 +28,18 @@ def fake_pilot(root: Path, script: Path) -> Path:
 
 
 class ProceduralCorpusTests(unittest.TestCase):
+    def test_pause_examples_preserve_durations_and_sung_context(self):
+        for count in (3, 16, 64):
+            plain = _phrase("pause", 3, count)
+            paused = _phrase("pause", 3, count, True)
+            self.assertEqual(len(paused), count)
+            self.assertEqual(_total_ticks(paused), _total_ticks(plain))
+            self.assertEqual([i for i, token in enumerate(paused) if token.startswith("pau:")],
+                             [count // 2])
+            self.assertEqual(paused[:count // 2], plain[:count // 2])
+            self.assertEqual(paused[count // 2 + 1:], plain[count // 2 + 1:])
+        with self.assertRaises(ValueError): _phrase("pause", 0, 2, True)
+
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
@@ -75,7 +87,9 @@ class ProceduralCorpusTests(unittest.TestCase):
             run.side_effect = lay_out
             result = generate(pilot=self.pilot, output=output, count=4, seed="unit-seed",
                               extractor="/tmp/extractor", training_scopes=["sourceUse", "modelTraining"],
-                              notes=8)
+                              notes=8, include_pauses=True)
+            for call in run.call_args_list:
+                self.assertEqual(sum(token.startswith("pau:") for token in call.args[0][3:]), 1)
         self.assertEqual(result["songs"], 4)
         self.assertEqual(len(result["heldOutSongIds"]), 1)
         # The produced configuration must pass the corpus loader that will consume it.

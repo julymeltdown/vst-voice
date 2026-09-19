@@ -180,6 +180,21 @@ def main():
             if audio.parent.name == "candidates":
                 metadata = json.loads(audio.with_suffix(".json").read_text())
                 assert [m["phone"] for m in metadata["markers"]] == ["m", "a", "t", "a", "a", "N", "a"]
+        paused = root / "explicit-pause"
+        subprocess.run([str(binary), str(paused), "phrase", "あ:60:960", "pau:60:960", "い:64:960"],
+                       check=True, capture_output=True, timeout=60)
+        metadata_path = next((paused / "baseline" / "candidates").glob("*.json"))
+        metadata = json.loads(metadata_path.read_text())
+        assert [m["phone"] for m in metadata["markers"]] == ["a", "pau", "i"]
+        pause = metadata["markers"][1]
+        rate, samples = _float_mono(metadata_path.with_suffix(".wav").read_bytes())
+        # Keep boundaries out of this silence assertion; release/attack windows
+        # have their own articulation semantics. The central pause must be zero.
+        width = pause["endFrame"] - pause["startFrame"]
+        middle = samples[pause["startFrame"] + width // 4:pause["endFrame"] - width // 4]
+        assert middle and max(abs(s) for s in middle) == 0.0
+        diagnostic = json.loads((paused / "baseline-pitch.json").read_text())
+        assert [n["noteIndex"] for n in diagnostic["notes"]] == [0, 2]
         for index, tokens in enumerate((["あ:23"], ["あ:97"], ["あ:60x"], [":60"], ["あ"], [], ["あ:60"] * 65,
                                         ["あ:60:0"], ["あ:60:-1"], ["あ:60:3841"], ["あ:60:"], ["あ:60:20x"],
                                         ["あ:60:20:30"], ["あ:60:3840"] * 17)):

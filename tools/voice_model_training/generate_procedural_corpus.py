@@ -31,7 +31,7 @@ SCALE = (60, 62, 64, 67, 69, 71, 72, 74, 76, 79)
 MINIMUM_TICKS, MAXIMUM_TICKS = 480, 61440
 
 
-def _phrase(seed, index, notes):
+def _phrase(seed, index, notes, include_pauses=False):
     """Deterministic lyrics, melody and durations for one phrase."""
     # A small per-phrase random stream keeps the corpus reproducible from its seed
     # without making every song share the caller's global RNG state.
@@ -48,6 +48,14 @@ def _phrase(seed, index, notes):
         # note that cannot hold both rather than truncating the phone.
         duration = (480, 720, 960)[(window + position * 3) % 3]
         tokens.append(f"{syllable}:{midi}:{duration}")
+    if include_pauses:
+        if notes < 3:
+            raise ValueError("Pause examples require at least three score events")
+        # Replace one interior event; preserve the bounded event count and
+        # duration. Surrounding sung events establish attack/release context.
+        position = notes // 2
+        _, midi, duration = tokens[position].split(":")
+        tokens[position] = f"pau:{midi}:{duration}"
     return tokens
 
 
@@ -55,7 +63,8 @@ def _total_ticks(tokens):
     return sum(int(token.rsplit(":", 1)[1]) for token in tokens)
 
 
-def generate(*, pilot, output, count, seed, extractor, training_scopes, notes=16, start=0):
+def generate(*, pilot, output, count, seed, extractor, training_scopes, notes=16, start=0,
+             include_pauses=False):
     """Render ``count`` phrases and write the corpus configuration last."""
     pilot = Path(pilot)
     if not pilot.is_file() or not os.access(pilot, os.X_OK):
@@ -70,6 +79,8 @@ def generate(*, pilot, output, count, seed, extractor, training_scopes, notes=16
         raise ValueError("Corpus seed must be bounded printable text")
     if type(notes) is not int or not 1 <= notes <= 64:
         raise ValueError("Phrase notes must be between 1 and 64")
+    if type(include_pauses) is not bool or (include_pauses and notes < 3):
+        raise ValueError("Pause examples require a boolean option and at least three events")
     if type(start) is not int or start < 0:
         raise ValueError("Corpus start index must be a non-negative integer")
     if not isinstance(extractor, str) or not extractor:
@@ -83,7 +94,7 @@ def generate(*, pilot, output, count, seed, extractor, training_scopes, notes=16
     output.mkdir(mode=0o700)
     songs, rendered, skipped = [], 0, 0
     for index in range(start, start + count):
-        tokens = _phrase(seed, index, notes)
+        tokens = _phrase(seed, index, notes, include_pauses)
         # The pilot refuses a phrase longer than its own declared bound; keep the
         # corpus inside that bound instead of discovering it as a render failure.
         if not MINIMUM_TICKS <= _total_ticks(tokens) <= MAXIMUM_TICKS:
@@ -139,6 +150,8 @@ def main(argv=None):
                         help="Operator-declared scope; repeat once per scope")
     parser.add_argument("--notes", type=int, default=16)
     parser.add_argument("--start", type=int, default=0)
+    parser.add_argument("--include-pauses", action="store_true",
+                        help="Render an explicit interior pau event in every phrase")
     args = parser.parse_args(argv)
     try:
         print(json.dumps(generate(**vars(args)), ensure_ascii=False))

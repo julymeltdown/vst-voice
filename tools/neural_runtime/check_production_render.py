@@ -19,7 +19,7 @@ import tempfile
 
 
 def run_render(binary, directory, manifest_sha256, maximum_bytes, *, project=None,
-               output=None, model_id="fixture", version="1"):
+               output=None, model_id="fixture", version="1", silence_phone="SP"):
     # Do not let a caller's stale probe variables silently skip rendering.
     environment = {k: v for k, v in os.environ.items()
                    if not k.startswith("SEAM_NEURAL_PRODUCTION_")}
@@ -27,6 +27,7 @@ def run_render(binary, directory, manifest_sha256, maximum_bytes, *, project=Non
                        SEAM_NEURAL_PRODUCTION_MANIFEST_SHA256=manifest_sha256,
                        SEAM_NEURAL_PRODUCTION_MAXIMUM_BYTES=str(maximum_bytes),
                        SEAM_NEURAL_PRODUCTION_MODEL_ID=model_id,
+                       SEAM_NEURAL_PRODUCTION_SILENCE_PHONE=silence_phone,
                        SEAM_NEURAL_PRODUCTION_MODEL_VERSION=version)
     if project is not None:
         if project.stat().st_size > 4 * 1024 * 1024:
@@ -54,6 +55,8 @@ def main():
     parser.add_argument("--candidate-bundle", type=Path)
     parser.add_argument("--project", type=Path)
     parser.add_argument("--output", type=Path)
+    parser.add_argument("--silence-phone", default="SP", choices=("SP", "pau", "sil"),
+                        help="Explicit trained silence symbol; never alias a sung phone")
     args = parser.parse_args()
     binary, cli = args.binary.resolve(), args.cli.resolve()
     if any((args.candidate_bundle, args.project, args.output)):
@@ -73,7 +76,8 @@ def main():
                 or resource.get("schemaVersion") != 1 or resource.get("contentHash") != digest):
             raise ValueError("Candidate resource identity does not match its manifest")
         run_render(binary, directory, digest, 256 * 1024 * 1024, project=project,
-                   output=output, model_id=resource["id"], version=resource["version"])
+                   output=output, model_id=resource["id"], version=resource["version"],
+                   silence_phone=args.silence_phone)
         print("candidate execution/export verified; singer remains unqualified")
         return
     from check_paired_runtime import graphs

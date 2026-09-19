@@ -99,6 +99,12 @@ int main(int argc, char** argv) {
     // fixture names the exact phones the unit classes name rather than a lyric that happens to
     // phonemize the same way.
     std::vector<std::string> hints(lyrics.size());
+    if (custom) {
+      // An explicit pause event, not an invented sung syllable. Keep a real
+      // score owner so captured training markers remain receipt-bound.
+      for (std::size_t index=0; index<lyrics.size(); ++index)
+        if (lyrics[index]==U"pau") hints[index]="pau";
+    }
     if (events) {
       lyrics={U"あ",U"ぶ",U"く",U"ぐ",U"ぷ",U"あ"};
       pitches={60,62,64,65,67,64};
@@ -266,6 +272,9 @@ int main(int argc, char** argv) {
             const auto windowStartTick = noteStartTick + durations[index] / 4;
             const auto windowEndTick = noteStartTick + 3 * durations[index] / 4;
             noteStartTick += durations[index];
+            // Pauses have no target pitch; never score them against the UI note's
+            // placeholder MIDI key. The captured marker retains their duration.
+            if (hints[index]=="pau") continue;
             const auto begin = static_cast<std::size_t>(std::llround(project.tempoMap().secondsAt(
                 time::Tick{windowStartTick}) * wav.value().sampleRate));
             const auto end = static_cast<std::size_t>(std::llround(project.tempoMap().secondsAt(

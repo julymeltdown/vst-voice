@@ -76,6 +76,17 @@ class PrepareBundleTest(unittest.TestCase):
                 with self.assertRaises(ValueError): self.capture()
                 file.write_bytes(original)
 
+    def test_explicit_pause_has_no_sung_midi_target(self):
+        region = self.project["vocalTracks"][0]["regions"][0]
+        region["notes"][1]["phoneticHint"] = "pau"
+        self.candidate["markers"][2]["phone"] = "pau"
+        self.write_export()
+        self.assertEqual(self.capture()[3], [60, None])
+        self.candidate["markers"][2]["phone"] = "a"
+        self.write_export()
+        with self.assertRaisesRegex(ValueError, "pause hint"):
+            self.capture()
+
     def test_duplicate_receipt_entry_and_uncommitted_export_are_rejected(self):
         original = copy.deepcopy(self.receipt)
         for change in (dict(files=self.receipt["files"] * 2), dict(state="STAGING"),

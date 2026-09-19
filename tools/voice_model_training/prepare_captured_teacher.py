@@ -125,12 +125,13 @@ def capture_inputs(root, receipt_sha256, candidate_path):
     markers = candidate.get("markers")
     if not isinstance(markers, list) or not 1 <= len(markers) <= 4096:
         raise ValueError("Captured markers are missing or exceed bounds")
-    captured_ids = []
+    captured_ids, captured_phones = [], {}
     for marker in markers:
         key = marker.get("key") if isinstance(marker, dict) else None
         if not isinstance(key, str) or not re.fullmatch(r"[0-9a-f]{16}:(0|[1-9][0-9]{0,4})", key):
             raise ValueError("Preparation requires canonical captured note keys")
         note_id = int(key.split(":")[0], 16)
+        captured_phones.setdefault(note_id, []).append(marker.get("phone"))
         if not captured_ids or captured_ids[-1] != note_id:
             captured_ids.append(note_id)
     midi, surfaces = [], []
@@ -141,7 +142,10 @@ def capture_inputs(root, receipt_sha256, candidate_path):
         lyric = lyrics.get(_id(note.get("lyricId")))
         if lyric is None or lyric.get("language") != "ja":
             raise ValueError("Captured-teacher preparation currently requires explicit Japanese lyrics")
-        midi.append(note.get("midiKey"))
+        is_pause = note.get("phoneticHint") == "pau"
+        if is_pause and any(phone != "pau" for phone in captured_phones[identity]):
+            raise ValueError("Captured pause hint and rendered phones disagree")
+        midi.append(None if is_pause else note.get("midiKey"))
         surfaces.append(lyric.get("surface"))
     audio_path = candidate_path.removesuffix(".json") + ".wav"
     payload = read(audio_path, 64 * 1024**2, binary=True)

@@ -185,6 +185,8 @@ TEST_CASE("an admitted bundle renders non-silent audio through the production wo
   seam::authoring::NeuralPhraseRunnerOptions options{};
   options.bundleDirectory = std::filesystem::canonical(directory);
   options.maximumBundleBytes = maximumBytes;
+  if (const auto* silence=std::getenv("SEAM_NEURAL_PRODUCTION_SILENCE_PHONE"))
+    options.silencePhone=silence;
   options.worker = seam::neural_synthesis::NeuralWorkerRunOptions{
       .helper = helper,
       .helperContentHash = helperHash.value(),
