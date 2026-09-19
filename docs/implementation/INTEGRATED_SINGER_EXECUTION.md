@@ -7,7 +7,7 @@ remote candidate `138009ea`. Native job 105910667989 reports all three selected
 suites passing (helper process, Japanese pronunciation, neural worker protocol),
 5.64 seconds. This is the explicitly limited Windows selection, not the full
 native suite or desktop GUI acceptance. Its earlier contract-test log records
-180 executed tests.
+180 discovered tests, with one skipped (179 executed), all successful.
 
 Plugin job 105910669535 reports `seam_phase11_tests` PASS (3.63 seconds), source
 checks PASS, successful Windows CLAP ZIP packaging and artifact upload. Artifact
