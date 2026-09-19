@@ -1,5 +1,63 @@
 # Integrated Singer Execution
 
++## The sampler is fixed, the vocoder is training, and pitch is still frame-rate locked
+
+September 19, 2026 — first admitted end-to-end render with a trained vocoder.
+
+```text
+Engineering: DEMONSTRATED
+Creator workflow: NOT_OBSERVED
+Musical review: NOT_REVIEWED
+```
+
+Three separate measurements, taken after the two fixes at the top of this log.
+
+**The sampler fix holds on a trained checkpoint.** At epoch 142 the reverse process samples inside the
+trained range at every step count above one, where the same code previously expanded without bound:
+
+| steps | sampled mel min | max | std |
+|---|---|---|---|
+| 1 | -31.382 | 19.649 | 5.979 |
+| 2 | -12.217 | 0.249 | 2.751 |
+| 10 | -12.227 | 0.223 | 2.610 |
+| 50 | -12.231 | 0.223 | 2.589 |
+
+Ground truth over the same frames is min -11.513, max -0.779, std 2.364. The acoustic model is no longer
+the blocker it was reported to be: it samples in range, and it keeps improving (loss 0.1739 at epoch 45,
+0.1515 at 78, 0.1358 at 142).
+
+**The vocoder reconstruction is now measurable and greatly improved.** Two epochs on the 400-song
+corpus moved mean spectral distance from 51.17 to 1.272, against a 3.5 acceptance threshold, with
+generator loss 64.02 to 52.71. Its output peak frequency moved from 21000 Hz to 187.5 Hz. That is real
+progress and it is not yet a voice, for the reason below.
+
+**Pitch is locked to the hop rate, not to f0.** Feeding the trained vocoder a clean 80-bin mel with a
+constant f0 and sweeping the requested note gives the same measured pitch every time:
+
+| requested f0 | measured output pitch |
+|---|---|
+| 110 Hz | 187.5 Hz |
+| 220 Hz | 187.5 Hz |
+| 440 Hz | 187.5 Hz |
+| 880 Hz | 187.5 Hz |
+
+48000 Hz / 256 samples = 187.5 Hz, which is the hop rate. The autocorrelation of the output peaks at
+lag 256 and nowhere else. Confirmed spectrally: the vocoder's energy at 187.5 Hz is 1.000 of its own
+maximum at either requested note, while the source audio's energy at 187.5 Hz is 0.006. So the
+dominant component is a frame-rate artifact rather than a harmonic series.
+
+f0 does reach the graph: changing it from 220 to 440 Hz changes the output by 0.0019 against a signal
+RMS of 0.0019, so the conditioning is connected and not ignored. The harmonic excitation has simply
+not been learned in two epochs. Upstream's own vocoder configuration trains for far longer, and this
+run is capped at 400 epochs.
+
+A full held-out song now renders through the shipped worker with 97 percent voiced coverage, where the
+same path previously produced audio with no measurable pitch at all. That is coverage, not melody: the
+voice sings at 187.5 Hz regardless of the score, so no listener would recognise the tune yet.
+
+Status: two live runs, both bounded and both recorded. trainingAdmitted, singerQualified and
+releaseEligible remain false. No listener has heard anything.
+
 ## The vocoder was never trained, and the claim that it was correct is withdrawn
 
 September 19, 2026 — first full-song render through the shipped worker.
