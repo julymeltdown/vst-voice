@@ -1,5 +1,24 @@
 # Integrated Singer Execution
 
+## Windows native qualified targets and CLAP package completed remotely
+
+September 19, 2026 — downloaded completed Windows job logs for the unchanged
+remote candidate `138009ea`. Native job 105910667989 reports all three selected
+suites passing (helper process, Japanese pronunciation, neural worker protocol),
+5.64 seconds. This is the explicitly limited Windows selection, not the full
+native suite or desktop GUI acceptance. Its earlier contract-test log records
+180 executed tests.
+
+Plugin job 105910669535 reports `seam_phase11_tests` PASS (3.63 seconds), source
+checks PASS, successful Windows CLAP ZIP packaging and artifact upload. Artifact
+ID 10586528352, `ProjectSEAMEditor-windows-latest`, 3,900,061 bytes, uploaded ZIP
+SHA-256 `4bceb65a6d3f4bfef44ab664fe940331def3c34dbbdf77ce9b9bfe3b97437b74`.
+Evidence: https://github.com/julymeltdown/vst-voice/actions/runs/35448173276/artifacts/10586528352
+The artifact was not downloaded or installed locally; no signing, DAW-host or
+Windows GUI qualification follows from packaging. Linux native/release tests and
+macOS jobs remain unfinished. Development fixes through `1dd32372` are separately
+pushed to the development branch and are not covered by these older-candidate jobs.
+
 ## Empty-test refusal extended to the native/release workflow
 
 September 19, 2026 — all four CTest commands in `ci.yml` now use
