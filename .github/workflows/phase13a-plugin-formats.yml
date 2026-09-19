@@ -159,14 +159,14 @@ jobs:
             --create \
             --root out/phase13a \
             --packet "out/phase13a/${{ runner.os }}/vst3-validator/packet.json" \
-            --result "out/phase13a/${{ runner.os }}/vst3-validator/result.json" \
-            --stdout-log "out/phase13a/${{ runner.os }}/vst3-validator/validator.log" \
-            --stderr-log "out/phase13a/${{ runner.os }}/vst3-validator/validator.stderr.log" \
-            --plugin "$plugin" \
-            --clap out/phase13a/payload/CLAP/ProjectSEAMEditor.clap \
-            --validator "out/phase13a/${{ runner.os }}/vst3-validator/validator" \
-            --runner-metadata "out/phase13a/${{ runner.os }}/runner.json" \
-            --build-result out/phase13a/phase13a-build-result.json
+            --result "${{ runner.os }}/vst3-validator/result.json" \
+            --stdout-log "${{ runner.os }}/vst3-validator/validator.log" \
+            --stderr-log "${{ runner.os }}/vst3-validator/validator.stderr.log" \
+            --plugin "${plugin#out/phase13a/}" \
+            --clap payload/CLAP/ProjectSEAMEditor.clap \
+            --validator "${{ runner.os }}/vst3-validator/validator" \
+            --runner-metadata "${{ runner.os }}/runner.json" \
+            --build-result phase13a-build-result.json
       - uses: actions/upload-artifact@v4
         if: always()
         with:

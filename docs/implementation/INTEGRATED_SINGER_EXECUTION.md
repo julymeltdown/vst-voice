@@ -1,5 +1,27 @@
 # Integrated Singer Execution
 
+## VST3 workflow packet paths now follow the verifier's artifact-root contract
+
+September 20, 2026 — Phase13A Linux job 105915734639 passed native VST3
+validation but failed packet creation because workflow inputs repeated the
+`out/phase13a` prefix already supplied by --root. Fixed artifact inputs to be
+root-relative, including the discovered plugin path. Packet output remains
+caller-relative as required by the existing CLI; verifier containment and content
+hash checks are unchanged.
+
+A new regression extracts and executes the actual workflow packet shell command
+against a fixture artifact tree, then independently verifies the resulting
+packet. Substituting the pre-fix workflow reproduces the exact doubled-path
+failure; the corrected workflow passes. Six packet tests pass; full Phase13A
+discovery passes with 183 discovered, four skipped, 179 executed (10.61 seconds).
+Fixtures are not fresh native validator evidence. Phase13A source contracts and
+diff checks pass.
+
+All old Phase13A jobs are terminal. Main native CI and Windows editor packaging
+remain active, so leave master unchanged and dispatch the repaired Phase13A
+candidate from the development branch. Linux editor CI now reports success;
+inspect its raw test log before treating this as corrected GUI-runtime evidence.
+
 ## USTX floating parsing no longer requires newer Apple libc++ from_chars
 
 September 20, 2026 — macOS AUv2 job 105915734464 at `24c4fb32` failed at

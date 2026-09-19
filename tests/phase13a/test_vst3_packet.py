@@ -4,6 +4,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import textwrap
 from pathlib import Path
 
 from tools.phase13a.distribution_manifest import tree_sha256
@@ -21,6 +22,27 @@ def digest(path: Path) -> str:
 
 
 class Vst3PacketTests(unittest.TestCase):
+    def test_workflow_packet_command_uses_artifact_root_relative_inputs(self) -> None:
+        workflow = (ROOT / '.github/workflows/phase13a-plugin-formats.yml').read_text()
+        start = workflow.index('          plugin="$(find out/phase13a/payload')
+        end = workflow.index('\n      - uses:', start)
+        command = textwrap.dedent(workflow[start:end]).replace('${{ runner.os }}', 'Linux')
+        command = command.replace('python3 scripts/verify_phase13a_vst3_packet.py',
+                                  f'"{sys.executable}" "{ROOT / "scripts/verify_phase13a_vst3_packet.py"}"')
+        with tempfile.TemporaryDirectory() as directory:
+            workspace = Path(directory)
+            root = workspace / 'out/phase13a'
+            inputs = self.fixture(root)
+            (root / 'Linux').mkdir()
+            inputs.result.parent.rename(root / 'Linux/vst3-validator')
+            inputs.validator.rename(root / 'Linux/vst3-validator/validator')
+            inputs.runner_metadata.rename(root / 'Linux/runner.json')
+            result = subprocess.run(['bash', '-eu', '-c', command], cwd=workspace,
+                                    capture_output=True, text=True, timeout=30)
+            self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+            packet = root / 'Linux/vst3-validator/packet.json'
+            self.assertEqual([], verify_packet(packet, root))
+
     def fixture(self, root: Path) -> Vst3PacketInputs:
         plugin = root / "payload/VST3/ProjectSEAMEditor.vst3"
         (plugin / "Contents/aarch64-linux").mkdir(parents=True)
