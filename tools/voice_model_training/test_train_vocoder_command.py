@@ -7,7 +7,7 @@ from unittest.mock import patch
 from types import SimpleNamespace
 
 from tools.voice_model_training.__main__ import encode_report, publish_new
-from tools.voice_model_training.train_vocoder import model_settings, load_pcm_sources, resume_identity
+from tools.voice_model_training.train_vocoder import model_settings, load_pcm_sources, resume_identity, partial_resume_identity, main
 from tools.voice_model_training.gan_checkpoint_storage import require_disk_headroom, DISK_RESERVE_BYTES
 
 
@@ -19,6 +19,42 @@ def settings():
 
 
 class VocoderCommandTests(unittest.TestCase):
+    def test_partial_lineage_continues_current_epoch_not_next(self):
+        current = dict(configuration={"a": 1}, trainingRevision="revision")
+        receipt = dict(formatId="com.project-seam.gan-partial-checkpoint",
+            metadata=dict(run=current | dict(completedEpochs=3, parentReceiptSha256="c"*64),
+                          profileSha256="b"*64, datasetSha256="a"*64, objectiveId="objective"),
+            epoch=dict(epochComplete=False, coverageVerified=False, datasetSha256="a"*64, profileSha256="b"*64))
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary)/"checkpoint.json"
+            def inspect(value):
+                payload = encode_report(value)
+                path.write_bytes(payload)
+                return partial_resume_identity(path.parent, hashlib.sha256(payload).hexdigest(), metadata=current,
+                    profile="b"*64, dataset="a"*64, objective_id="objective")
+            self.assertEqual(inspect(receipt), (2, "c"*64))
+            first = receipt | dict(metadata=receipt["metadata"] | dict(run=current | dict(completedEpochs=1, parentReceiptSha256=None)))
+            self.assertEqual(inspect(first), (0, None))
+            for bad in ([], receipt | dict(formatId="com.project-seam.gan-checkpoint"),
+                        receipt | dict(epoch=receipt["epoch"] | dict(epochComplete=True)),
+                        receipt | dict(metadata=receipt["metadata"] | dict(run=current | dict(completedEpochs=3, parentReceiptSha256=None)))):
+                with self.assertRaises(ValueError):
+                    inspect(bad)
+
+    def test_cli_refuses_conflicting_or_unpaired_resume_before_loading_inputs(self):
+        required = []
+        for name in ("training-config", "dataset-config", "targets", "source-root", "conditioning", "trusted-checkout", "output"):
+            required += ["--"+name, "unused"]
+        for name in ("training-sha256", "dataset-sha256", "targets-sha256", "rights-policy-sha256", "label-policy-sha256"):
+            required += ["--"+name, "a"*64]
+        for extra in (["--resume-partial", "partial"], ["--resume-partial-sha256", "b"*64],
+                      ["--resume", "complete", "--resume-receipt-sha256", "c"*64,
+                       "--resume-partial", "partial", "--resume-partial-sha256", "d"*64],
+                      ["--checkpoint-interval-updates", "0"]):
+            with patch("tools.voice_model_training.train_vocoder.load_config") as load:
+                self.assertEqual(main(required+extra), 2)
+                load.assert_not_called()
+
     def test_disk_headroom_boundary_and_invalid_budgets(self):
         with patch('tools.voice_model_training.gan_checkpoint_storage.shutil.disk_usage') as usage:
             usage.return_value = SimpleNamespace(free=DISK_RESERVE_BYTES + 100)

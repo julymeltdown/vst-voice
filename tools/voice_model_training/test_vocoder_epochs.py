@@ -10,6 +10,32 @@ from tools.voice_model_training.vocoder_epochs import run_reviewed_vocoder_epoch
 
 
 class VocoderEpochRunTests(unittest.TestCase):
+    def test_partial_resume_only_first_epoch_and_recovery_budget_is_shared(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            calls = []
+            def epoch(*args, **kwargs):
+                calls.append(kwargs)
+                kwargs["on_progress"](dict(stage="partial-checkpoint", recoveryBytes=40,
+                                           completedUpdates=1))
+                return self.epoch(*args, **kwargs)
+            with patch("tools.voice_model_training.vocoder_epochs.train_reviewed_vocoder_epoch", epoch):
+                result = run_reviewed_vocoder_epochs(None, [], None, None, output=root/"run",
+                    **self.options(checkpoint_interval_updates=5, maximum_recovery_bytes=80,
+                                   resume_partial=root/"prior", resume_partial_sha256="c"*64))
+            self.assertEqual(result["recoveryCheckpointBytes"], 80)
+            self.assertEqual(result["schemaVersion"], 3)
+            self.assertEqual(calls[0]["resume_partial"], root/"prior")
+            self.assertNotIn("resume_partial", calls[1])
+            self.assertEqual([c["maximum_recovery_bytes"] for c in calls], [80, 40])
+            self.assertEqual([c["recovery_directory"].name for c in calls], ["recovery-000001", "recovery-000002"])
+            with patch("tools.voice_model_training.vocoder_epochs.train_reviewed_vocoder_epoch", epoch):
+                with self.assertRaisesRegex(RuntimeError, "recovery budget exhausted"):
+                    run_reviewed_vocoder_epochs(None, [], None, None, output=root/"limited",
+                        **self.options(checkpoint_interval_updates=5, maximum_recovery_bytes=40))
+            self.assertTrue((root/"limited/epoch-000001/checkpoint.json").is_file())
+            self.assertFalse((root/"limited/run.json").exists())
+
     def options(self, **updates):
         return dict(epochs=2, completed_epochs=0, parent_receipt_sha256=None,
                     metadata=dict(configuration={"generator": "test-only"}, trainingRevision="fixture"),

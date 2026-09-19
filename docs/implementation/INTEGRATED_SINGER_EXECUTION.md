@@ -1,5 +1,32 @@
 # Integrated Singer Execution
 
+## Partial recovery CLI and multi-epoch ownership
+
+September 19, 2026 — added CLI `--resume-partial` plus its receipt hash, distinct
+from complete-epoch `--resume`; conflicting/unpaired modes refuse before input
+loading. Partial lineage identifies the unfinished epoch and its original complete
+parent, so the runner resumes that epoch rather than counting it as completed.
+State restoration remains inside the freshly admitted epoch service after prefix
+verification. The CLI also exposes `--checkpoint-interval-updates` and a separate
+`--maximum-recovery-bytes` aggregate run budget, with partial-plus-final preflight
+before model allocation. These options require explicit segmented training.
+
+The multi-epoch runner owns distinct `recovery-NNNNNN` directories, forwards partial
+resume only to its first epoch, and reduces the shared recovery budget across
+subsequent epochs even without a user progress callback. It refuses exhaustion
+without publishing a completed run. Recovery-enabled run reports use schema 3 and
+identify consumed recovery bytes and the resumed partial receipt. Defaults remain
+unchanged. No existing partial artifacts are overwritten or deleted.
+
+Twenty-one Torch CLI/runner/real-loop tests pass, including original-epoch lineage,
+conflicting argument refusal, first-epoch-only restoration, separate directories,
+aggregate-budget exhaustion and real optimizer-loop equivalence. System selection
+passes 20 tests with one optional skip. CLI help, phase11 source and diff checks
+pass. Automatic partial retention and actual captured-corpus subprocess recovery
+remain next; no large job was started while disk headroom is insufficient.
+Full system discovery passes 225 tests with 37 optional skips (188 executed),
+33.99 seconds. Source closure is checked before committing the integration.
+
 ## Periodic partial publication and verified-prefix resume in the epoch service
 
 September 19, 2026 — wired the partial transport into

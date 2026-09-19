@@ -9,6 +9,7 @@ import json
 import math
 from pathlib import Path
 import random
+import re
 import subprocess
 import sys
 import time
@@ -118,6 +119,30 @@ def _profile(targets):
         raise ValueError('Vocoder requires the exact 48k/80/256/1024 acoustic profile')
 
 
+def partial_resume_identity(directory, digest, *, metadata, profile, dataset, objective_id):
+    """Inspect partial lineage; actual state restoration stays inside the admitted epoch."""
+    receipt = load_config(Path(directory) / 'checkpoint.json', digest)
+    if not isinstance(receipt, dict) or not isinstance(receipt.get('metadata'), dict):
+        raise ValueError('Partial resume requires a captured checkpoint object')
+    previous = receipt.get('metadata', {})
+    run, cursor = previous.get('run', {}), receipt.get('epoch', {})
+    if (receipt.get('formatId') != 'com.project-seam.gan-partial-checkpoint'
+            or not isinstance(run, dict) or not isinstance(cursor, dict)
+            or {key: value for key, value in run.items()
+                if key not in ('completedEpochs', 'parentReceiptSha256')} != metadata
+            or previous.get('profileSha256') != profile or previous.get('datasetSha256') != dataset
+            or previous.get('objectiveId') != objective_id
+            or cursor.get('datasetSha256') != dataset or cursor.get('profileSha256') != profile
+            or cursor.get('epochComplete') is not False or cursor.get('coverageVerified') is not False):
+        raise ValueError('Partial resume requires identical captured inputs and an incomplete epoch')
+    number, parent = run.get('completedEpochs'), run.get('parentReceiptSha256')
+    if (type(number) is not int or not 1 <= number <= 100000
+            or (parent is not None if number == 1 else
+                not isinstance(parent, str) or re.fullmatch(r'[0-9a-f]{64}', parent) is None)):
+        raise ValueError('Partial checkpoint epoch lineage differs')
+    return number - 1, parent
+
+
 def _module(checkout, name, relative):
     spec = importlib.util.spec_from_file_location(name, checkout / relative)
     module = importlib.util.module_from_spec(spec)
@@ -135,6 +160,11 @@ def main(argv=None):
         parser.add_argument('--' + name, required=True)
     parser.add_argument('--resume', type=Path, help='Trusted local complete epoch directory')
     parser.add_argument('--resume-receipt-sha256')
+    parser.add_argument('--resume-partial', type=Path, help='Trusted local partial-update directory; not a complete epoch')
+    parser.add_argument('--resume-partial-sha256')
+    parser.add_argument('--checkpoint-interval-updates', type=int, help='Save partial recovery state every N updates')
+    parser.add_argument('--maximum-recovery-bytes', type=int, default=2 * 1024**3,
+                        help='Separate aggregate partial-checkpoint budget for this new run')
     parser.add_argument('--epochs', type=int, default=1)
     parser.add_argument('--maximum-run-seconds', type=float, default=3600)
     parser.add_argument('--maximum-total-checkpoint-bytes', type=int, default=2 * 1024**3)
@@ -149,6 +179,11 @@ def main(argv=None):
     try:
         if (args.resume is None) != (args.resume_receipt_sha256 is None):
             raise ValueError('Resume requires a local checkpoint and its captured receipt digest')
+        if ((args.resume_partial is None) != (args.resume_partial_sha256 is None)
+                or args.resume is not None and args.resume_partial is not None
+                or args.checkpoint_interval_updates is not None and not 1 <= args.checkpoint_interval_updates <= 100000
+                or not 1 <= args.maximum_recovery_bytes <= 8 * 1024**3):
+            raise ValueError('Select one paired resume mode and bounded recovery limits')
         if args.output.exists() or args.output.is_symlink() or not args.output.parent.is_dir():
             raise ValueError('Training output must be new with an existing parent')
         if (not 1 <= args.epochs <= 1000 or not math.isfinite(args.maximum_run_seconds)
@@ -158,8 +193,14 @@ def main(argv=None):
             raise ValueError('Invalid bounded vocoder run limits')
         settings = load_config(args.training_config, args.training_sha256)
         configuration = model_settings(settings)
+        if ((args.resume_partial is not None or args.checkpoint_interval_updates is not None)
+                and settings.get('trainingSegmentFrames') is None):
+            raise ValueError('Partial recovery requires explicit segmented training configuration')
         # Refuse before corpus assembly or Torch model/optimizer allocation.
         require_disk_headroom(args.output.parent, min(args.maximum_total_checkpoint_bytes, 1024**3))
+        if args.checkpoint_interval_updates is not None:
+            require_disk_headroom(args.output.parent, min(args.maximum_total_checkpoint_bytes, 1024**3)
+                                  + min(args.maximum_recovery_bytes, args.maximum_total_checkpoint_bytes, 1024**3))
         inputs = load_dataset_inputs(args.dataset_config, args.dataset_sha256, args.source_root,
             rights_anchor=args.rights_policy_sha256, label_anchor=args.label_policy_sha256)
         targets, profile = load_targets(args.targets, args.targets_sha256)
@@ -188,9 +229,13 @@ def main(argv=None):
             targetInventorySha256=args.targets_sha256, torchVersion=str(torch.__version__),
             numpyVersion=np.__version__, scipyVersion=scipy.__version__, singerQualified=False)
         previous, completed = None, 0
+        parent_receipt = args.resume_receipt_sha256
         if args.resume is not None:
             previous, completed = resume_identity(args.resume, args.resume_receipt_sha256, metadata=metadata,
                 profile=profile, dataset=snapshot['datasetSha256'], objective_id=OBJECTIVE_ID)
+        elif args.resume_partial is not None:
+            completed, parent_receipt = partial_resume_identity(args.resume_partial, args.resume_partial_sha256,
+                metadata=metadata, profile=profile, dataset=snapshot['datasetSha256'], objective_id=OBJECTIVE_ID)
         if completed + args.epochs > 100000:
             raise ValueError('Vocoder completed-epoch bound exceeded')
         source = _module(checkout, 'seam_train_vocoder_architecture', 'models/nsf_HiFigan/models.py')
@@ -216,10 +261,13 @@ def main(argv=None):
                                   **event), sort_keys=True, allow_nan=False), file=sys.stderr, flush=True)
         result = run_reviewed_vocoder_epochs(generator, discriminators, go, do,
             output=args.output, epochs=args.epochs, completed_epochs=completed,
-            parent_receipt_sha256=args.resume_receipt_sha256, metadata=metadata,
+            parent_receipt_sha256=parent_receipt, metadata=metadata,
             maximum_run_seconds=args.maximum_run_seconds,
             maximum_total_checkpoint_bytes=args.maximum_total_checkpoint_bytes,
             retain_checkpoints=args.retain_checkpoints,
+            checkpoint_interval_updates=args.checkpoint_interval_updates,
+            maximum_recovery_bytes=args.maximum_recovery_bytes,
+            resume_partial=args.resume_partial, resume_partial_sha256=args.resume_partial_sha256,
             on_progress=progress,
             epoch_options=dict(dataset_inputs=inputs, conditioning_directory=args.conditioning,
                 targets=targets, pcm_sources=sources, expected_profile_sha256=profile,
@@ -233,7 +281,7 @@ def main(argv=None):
         print(json.dumps(result, sort_keys=True))
         return 0
     except KeyboardInterrupt:
-        print('Vocoder training interrupted; earlier complete checkpoints retained', file=sys.stderr)
+        print('Vocoder training interrupted; earlier verified checkpoints retained', file=sys.stderr)
         return 130
     except (ValueError, OSError, RuntimeError, ImportError, RecursionError, subprocess.SubprocessError) as error:
         print(str(error)[:512], file=sys.stderr)

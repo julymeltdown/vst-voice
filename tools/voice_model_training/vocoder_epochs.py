@@ -1,7 +1,7 @@
 """Bounded multi-epoch GAN runs retaining only genuine epoch completion receipts.
 
-Failure or cancellation invalidates the in-memory attempt. Resume only from a
-completed child checkpoint after fresh dataset admission; this wrapper does not
+Failure or cancellation invalidates the in-memory attempt. Resume from a completed
+child or an explicitly selected partial checkpoint after fresh admission; this wrapper does not
 grant source permission, certify model quality, or import checkpoint state.
 """
 from copy import deepcopy
@@ -22,7 +22,9 @@ def run_reviewed_vocoder_epochs(generator, discriminators, generator_optimizer, 
         parent_receipt_sha256: str | None = None, metadata: dict, epoch_options: dict,
         maximum_run_seconds: float = 3600,
         maximum_total_checkpoint_bytes: int = 2 * 1024**3, cancelled=None,
-        retain_checkpoints: int | None = None, on_progress=None) -> dict:
+        retain_checkpoints: int | None = None, on_progress=None,
+        checkpoint_interval_updates=None, maximum_recovery_bytes=2 * 1024**3,
+        resume_partial=None, resume_partial_sha256=None) -> dict:
     """Publish each complete epoch into a new child of a new run directory.
 
 Checkpoint binary bytes, including partial files from a failed final attempt,
@@ -56,9 +58,15 @@ total and time limits are capped by the remaining run budgets.
                (type(retain_checkpoints) is not int or not 1 <= retain_checkpoints <= 1000)
             or not isinstance(metadata, dict) or not isinstance(epoch_options, dict)
             or on_progress is not None and not callable(on_progress)
+            or checkpoint_interval_updates is not None and (type(checkpoint_interval_updates) is not int
+                                                             or not 1 <= checkpoint_interval_updates <= 100000)
+            or type(maximum_recovery_bytes) is not int or not 1 <= maximum_recovery_bytes <= 8 * 1024**3
+            or (resume_partial is None) != (resume_partial_sha256 is None)
+            or resume_partial is not None and not valid_digest(resume_partial_sha256)
             or cancelled is not None and not callable(cancelled)):
         raise ValueError("Invalid vocoder training run limits or lineage")
-    if {"output", "run_metadata", "reconstruction_directory", "on_progress"} & set(epoch_options):
+    if {"output", "run_metadata", "reconstruction_directory", "on_progress", "recovery_directory",
+        "checkpoint_interval_updates", "maximum_recovery_bytes", "resume_partial", "resume_partial_sha256"} & set(epoch_options):
         raise ValueError("Vocoder epoch output and lineage are owned by the run")
     options, metadata = dict(epoch_options), deepcopy(metadata)
     epoch_seconds = options.get("maximum_seconds", 600)
@@ -94,6 +102,7 @@ total and time limits are capped by the remaining run budgets.
     output.mkdir(mode=0o700)
     total_bytes, summaries = 0, []
     written_bytes, retained = 0, []
+    recovery_bytes = 0
     initial_parent = parent_receipt_sha256
     report("run-started", startingCompletedEpochs=completed_epochs, requestedEpochs=epochs)
     for index in range(epochs):
@@ -113,17 +122,35 @@ total and time limits are capped by the remaining run budgets.
         epoch_metadata = dict(metadata, completedEpochs=number, parentReceiptSha256=parent_receipt_sha256)
         allowed_bytes = min(remaining, total_limit)
         report("epoch-started", epoch=number, remainingCheckpointBytes=remaining)
+        epoch_recovery_bytes = 0
         def epoch_progress(event):
+            nonlocal epoch_recovery_bytes
+            if event["stage"] == "partial-checkpoint":
+                count = event.get("recoveryBytes")
+                if type(count) is not int or not epoch_recovery_bytes <= count <= maximum_recovery_bytes - recovery_bytes:
+                    raise ValueError("Recovery progress exceeds run budget")
+                epoch_recovery_bytes = count
             report(event["stage"], epoch=number, **{key: value for key, value in event.items() if key != "stage"})
+        recovery_options = {}
+        if checkpoint_interval_updates is not None:
+            if maximum_recovery_bytes - recovery_bytes <= 0:
+                raise RuntimeError("Vocoder run recovery budget exhausted; existing checkpoints retained")
+            recovery_options.update(recovery_directory=output / f"recovery-{number:06d}",
+                checkpoint_interval_updates=checkpoint_interval_updates,
+                maximum_recovery_bytes=maximum_recovery_bytes - recovery_bytes)
+        if index == 0 and resume_partial is not None:
+            recovery_options.update(resume_partial=resume_partial, resume_partial_sha256=resume_partial_sha256)
         try:
             receipt = train_reviewed_vocoder_epoch(generator, discriminators, generator_optimizer, discriminator_optimizer,
                 output=epoch_output, run_metadata=epoch_metadata, reconstruction_directory=reconstruction,
-                on_progress=epoch_progress if on_progress is not None else None,
+                on_progress=epoch_progress if on_progress is not None or checkpoint_interval_updates is not None else None,
+                **recovery_options,
                 **(options | dict(maximum_seconds=seconds, cancelled=stopped,
                                 maximum_checkpoint_file_bytes=file_limit, maximum_checkpoint_total_bytes=allowed_bytes)))
         except (Exception, KeyboardInterrupt) as error:
             report("epoch-failed", epoch=number, errorType=type(error).__name__)
             raise
+        recovery_bytes += epoch_recovery_bytes
         payload = encode_report(receipt)
         verify_exact_file(epoch_output / "checkpoint.json", payload)
         if (type(receipt.get("checkpointBytes")) is not int or not 1 <= receipt["checkpointBytes"] <= allowed_bytes
@@ -167,6 +194,9 @@ total and time limits are capped by the remaining run budgets.
     if retain_checkpoints is not None:
         result.update(schemaVersion=2, retainCheckpoints=retain_checkpoints,
                       writtenCheckpointBytes=written_bytes)
+    if checkpoint_interval_updates is not None or resume_partial is not None:
+        result.update(schemaVersion=3, recoveryCheckpointBytes=recovery_bytes,
+                      resumedPartialReceiptSha256=resume_partial_sha256)
     publish_new(output / "run.json", result)
     report("run-completed", completedEpochs=completed_epochs + epochs)
     return result
