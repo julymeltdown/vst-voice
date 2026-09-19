@@ -7,6 +7,14 @@
 > kept explained rather than deleted, because it is the failure mode that has been costing this project
 > time — measuring one artifact and drawing a conclusion about a different one.
 
+> **Second update (same day, later).** The r3 run finished its epoch while this review was being written,
+> and the result changes section 3.4 and the neural blocker. Held-out mean absolute pitch error is
+> **46.676 cents** against the 1,506 cents previously quoted, the export's `pitchFollowsRequestedNote` is
+> now true on all four reference notes, and the 187.5 Hz comb is gone (spectral peaks now sit at
+> per-song fundamentals with under 0.002 of energy above 16 kHz). See section 3.5 and
+> `docs/implementation/INTEGRATED_SINGER_EXECUTION.md` for the measurements. The review's structural
+> conclusions stand: there is still no accepted evidence for any of the 20 requirements.
+
 - **Date:** 2026-09-20
 - **Branch:** `codex/production-readiness-completion` (HEAD `2d4125f6`, 24 commits ahead of `origin/master`, not merged)
 - **Decision:** Beta GO **NO-GO**. Nothing in this document is acceptance evidence.
@@ -174,6 +182,46 @@ these current numbers and mark the 21 kHz figure as unreproduced. As written, th
 that is no longer present, which risks sending the next engineer looking for broadband noise when the
 actual defect is a frame-rate comb plus a level error.
 
++### 3.5 The r3 epoch completed, and it changes this review's central conclusions
+
+While this document was being written, `vocoder-512-segments-r3` finished its epoch (2,804/2,804 updates)
+and exported. Measured now, not inferred:
+
+| Measure | Before (32-channel smoke) | **This epoch (512-channel)** |
+|---|---|---|
+| Held-out mean absolute pitch error | 1,506.56 cents | **46.676 cents** |
+| Frames within 50 cents | 0 of 908 (0%) | **11,376 of 12,186 (93.35%)** |
+| Per-item median absolute error | -- | **0.46-0.69 cents** |
+| Export pitch conditioning, 440 Hz | 461.405 Hz (82.24 cents off) | **440.787 Hz (3.09 cents off)** |
+| Export `pitchFollowsRequestedNote` | false at 440 Hz | **true on all four notes** |
+| Export size / parameters | 168,336 bytes | **55,762,986 bytes / 13,936,386** |
+| Spectral peak | 187.5 Hz (the hop rate) | **293.8-494.0 Hz (real fundamentals)** |
+| Energy above 16 kHz | 0.0085-0.012 | **0.0002-0.0018** |
+
+So 3.4's "hop-rate comb" defect **is resolved for held-out reconstruction**, and the pitch failure that has
+anchored P0-08 since 2026-09-19 is largely gone once the correct architecture is trained. The previously
+measured numbers were not wrong, but they were about a 34,986-parameter fixture at three updates.
+
+One finding does not resolve, and it is a specification problem rather than a model problem: the
+`allReconstructionsSatisfied` conjunct cannot be satisfied by **any** audio, including bit-identical audio.
+`pitch_comparison.py:155` requires `MATCH_ON_MEASURABLE_FRAMES`, and 45 unmeasurable frames in a real
+held-out render keep the status at `UNRESOLVED` even when all 958 measurable frames agree exactly. The
+contract's own `pitch-within-50` criterion asks for "minimum 90 percent"; this epoch measures 93.35%. That
+gap between a zero-tolerance conjunct and a 90% release criterion is the owner decision P0-08 closure item 2
+describes.
+
+**Revised neural assessment.** The blocker is no longer pitch tracking or vocoder capacity. It is:
+
+1. **Training depth** — one epoch against a 60,000-update budget.
+2. **Corpus quality** — labels are `com.project-seam.training-generated-teacher`, so this proves the
+   pipeline works, not that the voice is good. R9 still needs a rights-cleared human corpus.
+3. **Level restoration** — renders are 5.7-7.6 dB below source RMS.
+4. **Listening** — still `NOT_REVIEWED`. Nobody has heard it.
+
+The 187.5 Hz artifact is gone but the level error is not, so recommendation 3 in section 6 narrows to the
+level term.
+
+
 ## 4. Remaining work, ranked by what actually blocks Beta GO
 
 | # | Blocker | Owner | Nature | Estimate |
@@ -217,13 +265,13 @@ To be fair to the work: the *product-shaped* half is in good condition.
 
 Stop expanding breadth. The repository has strong, well-tested infrastructure and one unsolved core: **the voice**.
 
-1. **Let r3 finish, then export and re-qualify the 512-channel model.** Do not restart it: it is the first
-   run of the correct architecture on the real corpus, and its result is the first honest datapoint on
-   this path.
+1. ~~**Let r3 finish, then export and re-qualify the 512-channel model.**~~ **Done** (3.5). It finished,
+   exported, and re-qualified: 46.676 cents, pitch follows all four notes, comb gone. The next step on this
+   path is a longer campaign (this was 1 epoch of a 60,000-update budget) and a real corpus.
 2. **Fix the GPU/thread throughput defect before the next run** (3.3b). This is what makes a 60,000-update
    campaign, or several of them, affordable.
-3. **Fix the frame-rate artifact** in the vocoder/resynthesis path — the 187.5 Hz comb and the −13.8 dB
-   level error are reproducible, measurable, and cheap to attack compared with model quality.
+3. **Fix the level error** — the 187.5 Hz comb resolved with the trained 512-channel model (3.5), but
+   renders still sit 5.7-7.6 dB below source RMS. That term is separate and remains open.
 4. **Refresh P0-08's evidence block** (3.4) so it opens on the confirmed frame-rate comb and level error
    instead of the unreproduced 21 kHz figure, and record that the headline numbers came from a
    34,986-parameter smoke fixture.

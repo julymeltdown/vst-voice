@@ -103,6 +103,42 @@ but any interior low-confidence voiced frame prevents a matching verdict even fo
 4. A repeated full-song render whose spectrum is consistent with the source rather than with broadband
    noise or the hop-rate artifact.
 
+### SEAM-BETA-P0-08 update: the 512-channel epoch was evaluated, and the pitch failure largely clears
+
+**Measured 2026-09-20**, appended rather than rewriting the entry above.
+
+The r3 run completed its epoch (2,804/2,804 updates, `epoch-000001`, receipt
+`cec64e7c5adb3ec81cceaa7c81046ca8d62447e0126f49df2bba639fe536dd94`) and was exported and evaluated. It is
+the 512-channel `mini-nsf-512-mrf-v1` architecture, 13,936,386 generator parameters.
+
+| Measure | 32-channel smoke fixture | 512-channel epoch 1 |
+|---|---|---|
+| held-out mean absolute pitch error | 1506.563 cents | **46.676 cents** |
+| frames within 50 cents | 0 of 908 | **11,376 of 12,186 (93.35%)** |
+| per-item median absolute error | -- | **0.46-0.69 cents** |
+| export `pitchFollowsRequestedNote` | false (440 Hz off by 82.24 cents) | **true, all four notes within 8.53 cents** |
+| spectral peak | 187.5 Hz, the hop rate | **293.8-494.0 Hz, per-song fundamentals** |
+| energy above 16 kHz | 0.0085-0.012 | **0.0002-0.0018** |
+
+So the pitch inaccuracy this issue is named for is largely resolved once the correct architecture is
+trained, and **closure condition 4 is met for held-out reconstruction** — the spectrum is now consistent
+with the source and the hop-rate artifact is effectively absent (187.5 Hz band share about 1e-5).
+
+**Closure condition 2 now has the control it asked for, and the answer is that the conjunct is
+unsatisfiable.** Comparing a held-out render against itself returns
+`UNRESOLVED | measurable 958 | within 958 | outside 0 | voicingMismatch 0 | unmeasurable 45`. Bit-identical
+audio cannot satisfy `comparisonSatisfied`, because `pitch_comparison.py:155` requires
+`MATCH_ON_MEASURABLE_FRAMES` and any unmeasurable interior span holds the status at `UNRESOLVED`. The
+canonical contract's own `pitch-within-50` criterion asks for "minimum 90 percent" and this epoch measures
+93.35%.
+
+**Status stays OPEN.** `allReconstructionsSatisfied` is still false; renders remain 5.7-7.6 dB below source
+RMS; this is one epoch against a 60,000-update budget; the labels are
+`com.project-seam.training-generated-teacher` so R9 still requires a rights-cleared corpus; and no listener
+has heard the output. The owner decision in closure item 2 is the live blocker, not the model.
+
+
+
 ### SEAM-BETA-P0-01: No rights-cleared, usable Beta Voicebank
 
 **Evidence**
