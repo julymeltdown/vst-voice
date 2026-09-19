@@ -84,6 +84,19 @@ class LoopRecoveryTests(unittest.TestCase):
             for key in original[4]:
                 self.assertEqual(original[4][key].state_dict(), resumed[4][key].state_dict())
             self.assertEqual([e["completedUpdates"] for e in events if e["stage"]=="partial-restored"], [1])
+            retained_model = setup()
+            retained_events = []
+            retained_result = train_reviewed_vocoder_epoch(*retained_model[:4], schedulers=retained_model[4],
+                output=root/"retained-complete", recovery_directory=root/"retained-recovery",
+                checkpoint_interval_updates=1, retain_partial_checkpoints=1,
+                maximum_recovery_bytes=1024**2, on_progress=retained_events.append, **options)
+            self.assertEqual(retained_result["epoch"], expected["epoch"])
+            self.assertTrue((root/"retained-recovery/update-000001/pruned-binaries.json").is_file())
+            self.assertFalse((root/"retained-recovery/update-000001/models.pt").exists())
+            self.assertTrue((root/"retained-recovery/update-000002/models.pt").is_file())
+            self.assertTrue((saved/"models.pt").is_file())  # External resume remains intact.
+            saves = [e for e in retained_events if e["stage"] == "partial-checkpoint"]
+            self.assertGreater(saves[-1]["recoveryWrittenBytes"], saves[-1]["recoveryBytes"])
             # A changed already-completed prefix is still read and rejected, never silently skipped.
             reader.side_effect = lambda *a, **k: iter([batches[0] | dict(validSamples=31), *batches[1:]])
             with patch(prefix+"vocoder_gan_step") as step, self.assertRaises(ValueError):

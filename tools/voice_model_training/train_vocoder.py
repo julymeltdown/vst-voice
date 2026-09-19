@@ -163,6 +163,8 @@ def main(argv=None):
     parser.add_argument('--resume-partial', type=Path, help='Trusted local partial-update directory; not a complete epoch')
     parser.add_argument('--resume-partial-sha256')
     parser.add_argument('--checkpoint-interval-updates', type=int, help='Save partial recovery state every N updates')
+    parser.add_argument('--retain-partial-checkpoints', type=int,
+                        help='Keep newest N partial binaries per new epoch; budget must fit N+1 before pruning')
     parser.add_argument('--maximum-recovery-bytes', type=int, default=2 * 1024**3,
                         help='Separate aggregate partial-checkpoint budget for this new run')
     parser.add_argument('--epochs', type=int, default=1)
@@ -177,6 +179,9 @@ def main(argv=None):
         help='Trusted first-party feature extractor used for framewise reconstruction pitch')
     args = parser.parse_args(argv)
     try:
+        if args.retain_partial_checkpoints is not None and (args.checkpoint_interval_updates is None
+                or not 1 <= args.retain_partial_checkpoints <= 1000):
+            raise ValueError('Partial retention requires periodic recovery and a bounded count')
         if (args.resume is None) != (args.resume_receipt_sha256 is None):
             raise ValueError('Resume requires a local checkpoint and its captured receipt digest')
         if ((args.resume_partial is None) != (args.resume_partial_sha256 is None)
@@ -200,7 +205,9 @@ def main(argv=None):
         require_disk_headroom(args.output.parent, min(args.maximum_total_checkpoint_bytes, 1024**3))
         if args.checkpoint_interval_updates is not None:
             require_disk_headroom(args.output.parent, min(args.maximum_total_checkpoint_bytes, 1024**3)
-                                  + min(args.maximum_recovery_bytes, args.maximum_total_checkpoint_bytes, 1024**3))
+                                  + min(args.maximum_recovery_bytes,
+                                        min(args.maximum_total_checkpoint_bytes, 1024**3) *
+                                        (args.retain_partial_checkpoints + 1 if args.retain_partial_checkpoints is not None else 1)))
         inputs = load_dataset_inputs(args.dataset_config, args.dataset_sha256, args.source_root,
             rights_anchor=args.rights_policy_sha256, label_anchor=args.label_policy_sha256)
         targets, profile = load_targets(args.targets, args.targets_sha256)
@@ -267,6 +274,7 @@ def main(argv=None):
             retain_checkpoints=args.retain_checkpoints,
             checkpoint_interval_updates=args.checkpoint_interval_updates,
             maximum_recovery_bytes=args.maximum_recovery_bytes,
+            retain_partial_checkpoints=args.retain_partial_checkpoints,
             resume_partial=args.resume_partial, resume_partial_sha256=args.resume_partial_sha256,
             on_progress=progress,
             epoch_options=dict(dataset_inputs=inputs, conditioning_directory=args.conditioning,

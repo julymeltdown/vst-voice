@@ -29,7 +29,7 @@ def train_reviewed_vocoder_epoch(generator, discriminators, generator_optimizer,
         pitch_executable=None, on_progress=None, training_segment_frames=None,
         maximum_checkpoint_total_bytes=1024 * 1024 * 1024,
         recovery_directory=None, checkpoint_interval_updates=None,
-        maximum_recovery_bytes=2 * 1024**3,
+        maximum_recovery_bytes=2 * 1024**3, retain_partial_checkpoints=None,
         resume_partial=None, resume_partial_sha256=None):
     """Admit complete sources (<=4096 hops), optionally train balanced owned segments.
 
@@ -45,8 +45,8 @@ Segments introduce independent training boundaries; numerical equivalence to a
 whole-phrase optimizer update is neither expected nor claimed.
 
 Opt-in recovery writes only after both optimizers finish an owned segment. It
-uses a separate new directory and aggregate byte budget; no retention or CLI
-selection is implied here. Resume rereads the verified prefix without optimizing
+uses a separate new directory and aggregate byte budget. Optional retention keeps
+the newest N partial binaries with space for the N+1 peak. Resume rereads the verified prefix without optimizing
 it, then restores state immediately before the next update. Schedulers still step
 only once at complete-epoch coverage. Saved snapshots are not admission authority.
 """
@@ -77,6 +77,9 @@ only once at complete-epoch coverage. Saved snapshots are not admission authorit
             or type(maximum_recovery_bytes) is not int or not 1 <= maximum_recovery_bytes <= 8 * 1024**3):
         raise ValueError("Recovery requires paired explicit paths/intervals and bounded storage")
     recovery_enabled = recovery_directory is not None or resume_partial is not None
+    if retain_partial_checkpoints is not None and (recovery_directory is None
+            or type(retain_partial_checkpoints) is not int or not 1 <= retain_partial_checkpoints <= 1000):
+        raise ValueError("Partial retention requires periodic recovery and a bounded count")
     if recovery_enabled and training_segment_frames is None:
         raise ValueError("Partial recovery currently requires explicit balanced training segments")
     if recovery_directory is not None:
@@ -205,9 +208,12 @@ only once at complete-epoch coverage. Saved snapshots are not admission authorit
                 raise ValueError("Partial resume requires a partial-state receipt")
             resume_cursor = verify_partial_cursor(saved["epoch"], plan)
     recovery_bytes, restored = 0, resume_cursor is None
+    recovery_written, retained_partials = 0, []
     if recovery_directory is not None:
         require_disk_headroom(recovery_directory.parent,
-                              min(maximum_recovery_bytes, checkpoint_budget) + checkpoint_budget + evaluation_budget)
+                              min(maximum_recovery_bytes, checkpoint_budget *
+                                  (retain_partial_checkpoints + 1 if retain_partial_checkpoints is not None else 1))
+                              + checkpoint_budget + evaluation_budget)
     check_lifetime()
     report("updates-started", totalUpdates=planned_updates)
     covered, total, gl, dl = {}, 0, 0.0, 0.0
@@ -277,8 +283,18 @@ only once at complete-epoch coverage. Saved snapshots are not admission authorit
                 child, metadata=state_metadata, recovery_plan=plan, cursor=cursor, schedulers=schedulers,
                 maximum_bytes=maximum_checkpoint_file_bytes, maximum_total_bytes=allowed, before_publish=revalidate)
             recovery_bytes += saved["checkpointBytes"]
+            recovery_written += saved["checkpointBytes"]
+            digest = hashlib.sha256(encode_report(saved)).hexdigest()
+            retained_partials.append((child, digest))
+            if retain_partial_checkpoints is not None:
+                from .vocoder_retention import prune_superseded_partial
+                while len(retained_partials) > retain_partial_checkpoints:
+                    old, old_digest = retained_partials[0]
+                    recovery_bytes -= prune_superseded_partial(recovery_directory, old, old_digest,
+                        child, digest, recovery_plan=plan)
+                    retained_partials.pop(0)
             report("partial-checkpoint", completedUpdates=updates, checkpointDirectory=str(child),
-                   receiptSha256=hashlib.sha256(encode_report(saved)).hexdigest(), recoveryBytes=recovery_bytes)
+                   receiptSha256=digest, recoveryBytes=recovery_bytes, recoveryWrittenBytes=recovery_written)
         if updates == 1 or updates % 25 == 0 or updates == planned_updates:
             report("updates-progress", completedUpdates=updates, totalUpdates=planned_updates,
                    validSamples=total, meanGeneratorLoss=gl / total, meanDiscriminatorLoss=dl / total)

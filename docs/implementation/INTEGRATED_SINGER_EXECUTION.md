@@ -1,5 +1,32 @@
 # Integrated Singer Execution
 
+## Automatic per-epoch partial retention and separate byte accounting
+
+September 19, 2026 — wired the verified-successor helper into the actual epoch
+loop behind `--retain-partial-checkpoints N`, requiring periodic checkpoints.
+Only partial directories produced by that epoch invocation enter its retention
+list; an external resume input never does. Publication is capped by remaining
+retained-byte budget before pruning, so a successor must fit the temporary N+1
+peak. Preflight accounts for the configured peak plus final-checkpoint and
+evaluation space. Defaults keep all partials as before.
+
+Progress now separates retained recovery bytes from cumulative written bytes.
+The multi-epoch runner permits retained usage to decrease only with retention
+enabled, validates cumulative written usage, and emits schema 4 with both counts.
+Newest partials from completed epochs remain retained and count against the shared
+run budget; cross-epoch cleanup after complete-checkpoint verification is not
+implemented. Exhaustion still refuses rather than deleting external data.
+
+Twenty-five focused Torch tests pass. The real small-model loop confirms unchanged
+epoch results with automatic pruning, retained newest state, preserved predecessor
+receipts and untouched external resume input. Runner tests cover decreasing retained
+bytes and increasing written bytes across epochs. These use fixture admission,
+not actual captured-corpus qualification. No large training was restarted and no
+existing corpus or training artifact was deleted.
+Full system module selection passes 229 tests with 37 optional skips (192
+executed), 33.63 seconds. Directory discovery was inapplicable to this namespace
+package; explicit discovered module names were used. Phase11 and diff checks pass.
+
 ## Verified successor prerequisite for partial checkpoint retention
 
 September 19, 2026 — added explicit partial-checkpoint verification and a

@@ -10,6 +10,25 @@ from tools.voice_model_training.vocoder_epochs import run_reviewed_vocoder_epoch
 
 
 class VocoderEpochRunTests(unittest.TestCase):
+    def test_partial_retention_accounts_retained_and_written_separately(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            calls = []
+            def epoch(*args, **kwargs):
+                calls.append(kwargs)
+                self.assertEqual(kwargs["retain_partial_checkpoints"], 1)
+                for count, written in ((40, 40), (30, 70)):
+                    kwargs["on_progress"](dict(stage="partial-checkpoint", recoveryBytes=count,
+                                               recoveryWrittenBytes=written))
+                return self.epoch(*args, **kwargs)
+            with patch("tools.voice_model_training.vocoder_epochs.train_reviewed_vocoder_epoch", epoch):
+                result = run_reviewed_vocoder_epochs(None, [], None, None, output=Path(temporary)/"run",
+                    **self.options(checkpoint_interval_updates=1, maximum_recovery_bytes=100,
+                                   retain_partial_checkpoints=1))
+            self.assertEqual(result["schemaVersion"], 4)
+            self.assertEqual(result["recoveryCheckpointBytes"], 60)
+            self.assertEqual(result["recoveryWrittenBytes"], 140)
+            self.assertEqual([c["maximum_recovery_bytes"] for c in calls], [100, 70])
+
     def test_partial_resume_only_first_epoch_and_recovery_budget_is_shared(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
