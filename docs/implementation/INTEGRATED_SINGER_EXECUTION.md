@@ -1,5 +1,42 @@
 # Integrated Singer Execution
 
+## Fresh pause-vocabulary acoustic checkpoint completed
+
+September 19, 2026 — moved the new pause corpus through actual admission and one
+bounded acoustic epoch, not a vocabulary patch to epoch 142.
+
+Self-authored rights and label reviews use the existing first-party operator key
+and policy identities; no independent reviewer was named or implied. Their review
+digests are `0610f74c74fcdc373682ecc23391db6c81b931f8b7f9d18fc9eed287c20de642`
+and `bc105f9c6b7350095fa3895a6be23bab6d57f97fadb54266510bbb0e13ae33e1`.
+Dataset configuration SHA-256 is
+`2e1a02593be0907377be225f1314188f935d5165235eaa0cf2798df7d90fe1bb`.
+Fresh assembly verifies source permissions and labels with zero preparation issues;
+snapshot dataset identity is
+`ceb7833b44eff4b2d32905605e7acc9aa5516a115ddaee4bc1560064a5633124`.
+These reviews bind generated renderer-intent labels, not naturalness or independent
+phonetic correctness. Historical corpus preparation remains unapproved as recorded;
+the separate newer snapshot carries the verified admission result.
+
+Training config `prepared/training-pauses.json` SHA-256
+`215813cf4cc015ccbe10c7d3c40268b5d4dfad40b6805daebecacce48f260e47`
+uses the existing 128-hidden/128-channel, 3-encoder/6-backbone-layer architecture,
+1000 diffusion timesteps, one CPU thread and fresh seed 931. Limits: 20 updates,
+180 seconds per epoch, 240 seconds per run, 256 MiB aggregate checkpoints. No old
+model was resumed and no trained ID was reused under a different vocabulary.
+
+Actual result in `/Users/lhs/seam-corpus-pauses-2026-09-19-r1/acoustic-r1`:
+one complete epoch, 20 updates, all 20 training sources covered, 2,886,000 valid
+PCM samples, mean DDPM loss 0.7972144219. Checkpoint is 27,123,239 bytes,
+SHA-256 `5afbbcc8c4db51bed66eed920b74b4475c9f4e1f0cb4d88750ac0d22e3175d94`;
+receipt SHA-256 `48c0282df27a815ec92f257baf55d6ef8b9fdc70c3fb16d5a7910f2804251dcf`.
+Vocabulary includes `pau` in actual training examples; this is not evidence that
+one epoch learned correct silence or qualified singing. No new audio-quality claim
+is made. Next steps require held-out reconstruction/export and adequate mixed sung/
+pause training, not replacing the old acoustic candidate with this immature model.
+The larger vocoder run stayed untouched; latest collected progress was 200/2804
+updates at 800.43 seconds, no completed quality evaluation yet.
+
 ## Pause voicing traced to forward-window overlap
 
 September 19, 2026 — inspected all 93 measured voiced rest frames in the new
