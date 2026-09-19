@@ -386,8 +386,14 @@ def evaluate_item(item: dict, runs: list, vocabulary: dict, maximum_milliseconds
         result["modelContentHash"] = reply.get("modelContentHash")
         result["backendId"] = reply.get("backendId")
         measured.append(measure_median_pitch_hz(samples, SAMPLE_RATE, float(item["frequencyHz"])))
-    if criteria["determinism"] == "PASS" and len(set(frames)) != 1:
-        return failed("determinism", "repeated identical requests produced different audio")
+        # Every criterion still reported as PASS must have been evaluated. Pitch is
+        # judged last, so a determinism failure returns before it is measured; leaving
+        # it at its initial PASS would have the dossier claim a measured property it
+        # never measured. Report UNRESOLVED, which is what is actually known.
+        if criteria["determinism"] == "PASS" and len(set(frames)) != 1:
+            criteria["pitch-adherence"] = "UNRESOLVED"
+            result["pitchReason"] = "not measured: determinism failed on this item"
+            return failed("determinism", "repeated identical requests produced different audio")
     if maximum_milliseconds is not None and max(result["milliseconds"]) > maximum_milliseconds:
         return failed("runtime-budget",
                       "slowest run " + str(max(result["milliseconds"])) + " ms exceeds the declared "

@@ -99,6 +99,13 @@ class EvaluationTests(unittest.TestCase):
                                vocabulary, None)
         self.assertEqual(record["status"], "FAIL")
         self.assertIn("different audio", record["detail"])
+        # Pitch is judged last, so this item never reached it. Leaving the criterion at
+        # its initial PASS made the dossier claim a measurement that never happened on
+        # audio that differed between runs.
+        self.assertEqual(record["criteria"]["pitch-adherence"], "UNRESOLVED")
+        self.assertIn("not measured", record["pitchReason"])
+        self.assertIsNone(record.get("measuredPitchHz"))
+        self.assertIsNone(record.get("pitchErrorCents"))
 
     def test_silence_nonfinite_and_wrong_length_are_rejected(self):
         prepared = item()
