@@ -1,5 +1,51 @@
 # Integrated Singer Execution
 
+## The vocoder was never trained, and the claim that it was correct is withdrawn
+
+September 19, 2026 — first full-song render through the shipped worker.
+
+```text
+Engineering: DEMONSTRATED
+Creator workflow: NOT_OBSERVED
+Musical review: NOT_REVIEWED
+```
+
+An earlier entry in this log states: "The vocoder is correct; the acoustic model is not." That claim
+is wrong and this entry withdraws it. It was drawn from a check that fed the vocoder the ground-truth
+mel and observed finite, non-silent audio at peak 0.068 and RMS 0.028. Finite and non-silent are not
+reconstruction, and the project's own retained receipt already said so: `meanSpectralDistance` 51.17,
+`f0MedianErrorCents` 832.9, `pitchStatus` FAIL, `allReconstructionsSatisfied: false`.
+
+Measuring the spectrum of the vocoder's output against the source it should reproduce shows why.
+
+| signal | energy share 0-500 Hz | 500 Hz-2 kHz | 2-8 kHz | 8-16 kHz | 16-24 kHz | peak frequency |
+|---|---|---|---|---|---|---|
+| source audio | 0.20 | 0.06 | 0.46 | 0.24 | 0.05 | 294 Hz |
+| vocoder on ground-truth mel | 0.03 | 0.07 | 0.21 | 0.19 | 0.48 | 21000 Hz |
+
+The vocoder puts nearly half its energy above 16 kHz and peaks at the top of the band. The source
+peaks at 294 Hz. That is noise, not a voice, and it cannot be a convention error: scaling the mel by
+1/ln(10) or ln(10) to test the log-base mismatch leaves the peak at 21000 Hz in both cases. Feeding a
+constant mel with a constant f0 of 110, 220 or 440 Hz produces the same result at every pitch, so the
+harmonics the f0 conditioning should place are absent entirely.
+
+The cause is visible in the checkpoint the export was built from: `six-vocoder-run-4/epoch-000001`
+records `updates: 3`, `epochs: 1`, `sourceCount: 3`, `validSamples: 180000`. Three updates on 3.75
+seconds of audio. The generator never learned a spectral envelope, so it emits broadband noise, and
+the acoustic model was then measured through it.
+
+What this changes about the previous entry's conclusion. That entry isolated "the acoustic model is
+the only broken link." There are two broken links, and the vocoder's is upstream of the acoustic
+model in the signal path: no acoustic model can sound correct through a vocoder that outputs noise.
+The sampler defect recorded above is still real and still fixed. The noise-residual target is still
+real. But the acoustic measurements that were taken through this vocoder, including the
+`pitch-adherence FAIL` verdicts, were taken through a stage that cannot pass them, so they understate
+whatever the acoustic stage actually learned.
+
+Status: measured. No vocoder with more than three updates exists in this checkout, so this is a
+training gap, not a code defect. `trainingAdmitted`, `singerQualified` and `releaseEligible` remain
+false. No listener has heard anything.
+
 ## The sampler had a second, fixable defect: an unclamped x0 estimate
 
 September 19, 2026 — reverse-process diagnose, clamped/unclamped comparison.
@@ -181,10 +227,16 @@ path; 40 phrases give 242 seconds of audio and 45484 analysis frames over an adm
 No third-party recording is involved and every sample keeps a receipt binding its project, audio and
 recipe.
 
-**The vocoder is correct; the acoustic model is not.** Feeding the trained vocoder the ground-truth
-mel of a real captured song plus its measured f0 produces finite, non-silent audio at peak 0.068 and
-RMS 0.028. Feeding it the acoustic model's sampled mel produces nothing with measurable pitch. The
-vocoder therefore needs no change, and every remaining quality gap sits in the acoustic stage.
+**Correction, September 19: the claim below is withdrawn as unsupported.** That entry read as "the
+vocoder is correct; the acoustic model is not", on the strength of finite non-silent output. A later
+spectral measurement showed the vocoder emits broadband noise peaked at 21 kHz, and the checkpoint
+behind it had been trained for three updates. Finite and non-silent is not reconstruction; the
+original wording is preserved here so the reasoning error stays visible, and the correcting entry is
+at the top of this log.
+
+**The vocoder emits finite, non-silent audio; the acoustic model does not.** Feeding the trained
+vocoder the ground-truth mel of a real captured song plus its measured f0 produces audio at peak 0.068
+and RMS 0.028. Feeding it the acoustic model's sampled mel produces nothing with measurable pitch.
 
 **Sampling now reproduces.** An earlier bundle failed `determinism` because the exported graph
 generated its diffusion noise with an unseeded `RandomNormalLike` node and ONNX Runtime seeds that
