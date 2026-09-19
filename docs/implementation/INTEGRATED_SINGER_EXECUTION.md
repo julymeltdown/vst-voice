@@ -1,5 +1,35 @@
 # Integrated Singer Execution
 
+## VST3 folder packages now carry valid vendor-generated moduleinfo
+
+September 20, 2026 — verified the moduleinfo work end to end rather than
+trusting green job status. Run 35465098962 at `0aadfd23`: macOS VST3, Ubuntu
+VST3 and Linux packaging all pass. Downloaded artifact 105955865687 and inspected
+`ProjectSEAMEditor.vst3/Contents/Resources/moduleinfo.json` (704 bytes):
+"Project SEAM" vendor, "Project SEAM Editor" class, SDKVersion VST 3.8.1, and a
+CID of `8A10B64D9F834B1485A805C9A89F1301`, which is exactly the
+SINGLE_PLUGIN_TUID configured for this wrapper. So the metadata is derived from
+the real binary's class registry, not hard-coded.
+
+Confirmed Steinberg's own validator accepted the bundle with that file present:
+result.json status PASS with pluginSha256
+`594654cb1f4d66e860fb39032ee8d41c548f482e8b411f0358cc199654a981d4` and
+canonicalClapSha256 `39518c6255692cd5c03fba3077d5a8f1de771419ab933dfcf154f02e1488ecdc`.
+Checked the raw validator log to rule out an empty-selection false green, having
+found exactly that class of defect earlier in this session: 278 lines showing
+real suites (General, Single Precision, Double Precision) and
+"Result: 47 tests passed, 0 tests failed". The three samplerate ERROR lines are
+the SDK's own informational probes for unsupported rates, not failures.
+
+The trailing commas in the generated file are Steinberg's own JSONC convention:
+moduleinfocreator.cpp and moduleinfoparser.cpp both include the same jsoncxx.h,
+so writer and reader agree. Nothing in SEAM parses this file strictly, and the
+file is generated during unsigned payload assembly, before the separate
+distribution-workflow signing stage that re-seals the bundle.
+
+Windows VST3 and macOS AUv2 remained in progress at this point. This is
+packaging/format conformance evidence only, not singer or release acceptance.
+
 ## moduleinfo.json generation is ordered before bundle signing, not after
 
 September 20, 2026 — adding a resource to an already-signed macOS bundle is
