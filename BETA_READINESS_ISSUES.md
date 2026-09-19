@@ -47,7 +47,7 @@ The register distinguishes implementation from release proof. A source contract,
 pass them, so those numbers understate what the acoustic stage learned. Two broken links exist in the
 signal path, not one, and the vocoder is upstream of the other.
 
-+**Status:** OPEN. A bounded vocoder run (`/Users/lhs/seam-corpus-xl-2026-09-19/vocoder-xl`, 400 epochs,
+**Status:** OPEN. A bounded vocoder run (`/Users/lhs/seam-corpus-xl-2026-09-19/vocoder-xl`, 400 epochs,
 60000-update cap, 400-song admitted corpus) was started on 2026-09-19; its first two epochs moved mean
 spectral distance from 51.17 to 1.272, but it stops on its 4 GB checkpoint budget around epoch 7 because
 each epoch retains 553 MB and the host has under 10 GB free. See the execution log for the measured
