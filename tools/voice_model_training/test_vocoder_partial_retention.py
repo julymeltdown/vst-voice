@@ -4,9 +4,9 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from .__main__ import encode_report, publish_new
-from .vocoder_recovery_cursor import build_recovery_plan, partial_cursor
-from .vocoder_retention import prune_completed_partial, prune_superseded_partial, verified_checkpoint_files
+from tools.voice_model_training.__main__ import encode_report, publish_new
+from tools.voice_model_training.vocoder_recovery_cursor import build_recovery_plan, partial_cursor
+from tools.voice_model_training.vocoder_retention import prune_completed_partial, prune_superseded_partial, verified_checkpoint_files
 
 
 class PartialRetentionTests(unittest.TestCase):

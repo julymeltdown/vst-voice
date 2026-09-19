@@ -1,5 +1,23 @@
 # Integrated Singer Execution
 
+## Isolated-release failure traced to test import mode and repaired
+
+September 19, 2026 — isolated-release job 105910668085 at remote candidate
+`138009ea` completed with 167/168 CTest targets passing. The sole failing target
+was `seam_voice_model_training_tests`: the newly added partial-retention test
+used package-relative imports, but CMake invokes directory discovery without a
+package top-level. It failed with `attempted relative import with no known parent
+package`. Earlier local explicit-module runs did not exercise that invocation;
+the prior assumption that directory discovery was inapplicable was incorrect.
+
+Changed that test to the repository's absolute-import convention. No training,
+retention or admission behavior changed. The actual CTest target now passes in
+36.19 seconds: 232 tests discovered, 38 optional skips, 194 executed. All four
+partial-retention tests also pass under directory discovery in the Torch
+environment. No remaining test file in this directory uses relative imports.
+This is local verification of the reported defect, not a green rerun of the
+remote release candidate. The Linux native job is still active; macOS is queued.
+
 ## Windows native qualified targets and CLAP package completed remotely
 
 September 19, 2026 — downloaded completed Windows job logs for the unchanged
