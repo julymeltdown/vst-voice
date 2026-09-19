@@ -1,6 +1,6 @@
 # Integrated Singer Execution
 
-+## The sampler is fixed, the vocoder is training, and pitch is still frame-rate locked
+## The sampler is fixed, the vocoder is training, and pitch is still frame-rate locked
 
 September 19, 2026 — first admitted end-to-end render with a trained vocoder.
 
