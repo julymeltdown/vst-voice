@@ -232,6 +232,63 @@ class WarmStartIntegrationTests(unittest.TestCase):
             initialize_checkpoint(model, optimizer, dict(model=captured), receipt,
                 metadata=metadata, profile="f" * 64, receipt_sha256="2" * 64, warm_start=True)
 
+    def test_schema3_auxiliary_warm_start_keeps_architecture_and_dataset(self):
+        # The auxiliary objective is a governed settings change like the
+        # conditioning addition: schema 3 is accepted, no parameters are added
+        # and the dataset identity must still match exactly.
+        prior = self.settings(["breathiness"])
+        receipt = self.receipt(prior)
+        captured = self.capture(conditioned=True)
+        current = self.settings(["breathiness"]) | dict(
+            schemaVersion=3,
+            auxiliaryObjective=dict(kind="unvoiced-clean-mel-shape-level", weight=0.0,
+                                    unvoicedSymbols=["h", "f", "k", "s", "t", "ch", "ts"]))
+        model = _FakeAcoustic(conditioned=True)
+        optimizer = torch.optim.AdamW(model.parameters(), lr=current["learningRate"])
+        result, dataset, completed = initialize_checkpoint(
+            model, optimizer, dict(model=captured), receipt,
+            metadata=self.metadata(current), profile="f" * 64,
+            receipt_sha256="2" * 64, warm_start=True)
+        self.assertEqual(completed, 0)
+        self.assertEqual(dataset, "1" * 64)
+        self.assertNotIn("addedParameters", result["warmStart"])
+        state = model.state_dict()
+        for name, value in captured.items():
+            self.assertTrue(torch.equal(state[name], value), name)
+
+    def test_schema3_receipt_requires_the_auxiliary_objective_identity(self):
+        # A schema-3 parent that ran the auxiliary objective cannot masquerade
+        # as the base objective: lineage compares the recorded objective id.
+        prior = self.settings(["breathiness"]) | dict(
+            schemaVersion=3,
+            auxiliaryObjective=dict(kind="unvoiced-clean-mel-shape-level", weight=0.0,
+                                    unvoicedSymbols=["h", "f", "k", "s", "t", "ch", "ts"]))
+        receipt = self.receipt(prior)  # epoch still claims the base objective id
+        captured = self.capture(conditioned=True)
+        model = _FakeAcoustic(conditioned=True)
+        optimizer = torch.optim.AdamW(model.parameters(), lr=prior["learningRate"])
+        with self.assertRaises(ValueError):
+            initialize_checkpoint(model, optimizer, dict(model=captured), receipt,
+                metadata=self.metadata(prior), profile="f" * 64,
+                receipt_sha256="2" * 64, warm_start=True)
+
+    def test_schema3_warm_start_cannot_drop_the_auxiliary_declaration(self):
+        # Removing the auxiliary declaration is a schema regression, not a
+        # permitted loss/LR change.
+        prior = self.settings(["breathiness"]) | dict(
+            schemaVersion=3,
+            auxiliaryObjective=dict(kind="unvoiced-clean-mel-shape-level", weight=0.0,
+                                    unvoicedSymbols=["h", "f", "k", "s", "t", "ch", "ts"]))
+        receipt = self.receipt(prior, objective="diffsinger-ddpm-l1-unvoiced-clean-mel-shape-level-v1")
+        captured = self.capture(conditioned=True)
+        current = self.settings(["breathiness"])
+        model = _FakeAcoustic(conditioned=True)
+        optimizer = torch.optim.AdamW(model.parameters(), lr=current["learningRate"])
+        with self.assertRaises(ValueError):
+            initialize_checkpoint(model, optimizer, dict(model=captured), receipt,
+                metadata=self.metadata(current), profile="f" * 64,
+                receipt_sha256="2" * 64, warm_start=True)
+
 
 if __name__ == "__main__":
     unittest.main()

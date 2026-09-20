@@ -11,7 +11,8 @@ import subprocess
 import sys
 
 from .__main__ import encode_report, load_config, load_dataset_inputs
-from .diffsinger_objective import DiffSingerDDPMObjective
+from .diffsinger_objective import (DiffSingerDDPMObjective, DiffSingerDDPMUnvoicedSpectralObjective,
+                                 UNVOICED_AUXILIARY_KIND, objective_id_for_settings)
 from .conditioning import ADDED_CONDITIONING_PARAMETERS, added_parameters
 from .checkpoint import load_local_checkpoint
 from .epochs import run_reviewed_epochs
@@ -23,14 +24,31 @@ def model_settings(value: dict) -> dict:
     fields = {"hiddenSize", "encoderLayers", "channels", "layers", "timesteps",
               "seed", "learningRate", "maximumUpdates", "maximumSeconds", "loss"}
     schema = value.get("schemaVersion") if isinstance(value, dict) else None
-    expected = fields | {"formatId", "schemaVersion"} | ({"conditioningControls"} if schema == 2 else set())
+    expected = fields | {"formatId", "schemaVersion"}
+    if schema == 2:
+        expected |= {"conditioningControls"}
+    elif schema == 3:
+        expected |= {"conditioningControls", "auxiliaryObjective"}
     if (not isinstance(value, dict) or set(value) != expected
             or value["formatId"] != "com.project-seam.ddpm-training-config"
-            or type(schema) is not int or schema not in (1, 2)):
+            or type(schema) is not int or schema not in (1, 2, 3)):
         raise ValueError("Unsupported DDPM training configuration")
     controls = value.get("conditioningControls", [])
     if not isinstance(controls, list) or controls not in ([], ["breathiness"]):
         raise ValueError("Training conditioning controls must be empty or exactly breathiness")
+    if schema == 3:
+        auxiliary = value["auxiliaryObjective"]
+        if (not isinstance(auxiliary, dict) or set(auxiliary) != {"kind", "weight", "unvoicedSymbols"}
+                or auxiliary["kind"] != UNVOICED_AUXILIARY_KIND
+                or type(auxiliary["weight"]) not in (int, float)
+                or not math.isfinite(auxiliary["weight"]) or not 0 <= auxiliary["weight"] <= 1
+                or not isinstance(auxiliary["unvoicedSymbols"], list)
+                or not 1 <= len(auxiliary["unvoicedSymbols"]) <= 64
+                or len(set(auxiliary["unvoicedSymbols"])) != len(auxiliary["unvoicedSymbols"])
+                or any(type(symbol) is not str or not 1 <= len(symbol) <= 16
+                       or any(ord(char) < 32 or ord(char) > 126 for char in symbol)
+                       for symbol in auxiliary["unvoicedSymbols"])):
+            raise ValueError("Invalid auxiliary objective declaration")
     for name, low, high in (("hiddenSize", 16, 256), ("encoderLayers", 1, 8),
                             ("channels", 16, 256), ("layers", 1, 16), ("timesteps", 8, 1000),
                             ("seed", 0, 2**63 - 1), ("maximumUpdates", 1, 100000)):
@@ -170,7 +188,7 @@ def initialize_checkpoint(model, optimizer, state, receipt, *, metadata, profile
     if (type(warm_start) is not bool
             or model_settings(metadata.get("settings")) != metadata.get("configuration")
             or model_settings(prior_settings) != captured.get("configuration")
-            or receipt["epoch"].get("objectiveId") != DiffSingerDDPMObjective(prior_settings["loss"]).objective_id):
+            or receipt["epoch"].get("objectiveId") != objective_id_for_settings(prior_settings)):
         raise ValueError("Checkpoint settings, architecture and objective disagree")
     if warm_start:
         allowed = {"loss", "learningRate"}
@@ -180,7 +198,7 @@ def initialize_checkpoint(model, optimizer, state, receipt, *, metadata, profile
         # schema 2, and `model_settings` already rejects any other pairing of
         # schema and declared controls. Pin the version to the addition so the
         # bookkeeping field cannot drift on its own.
-        governed = {"conditioningControls", "schemaVersion"}
+        governed = {"conditioningControls", "auxiliaryObjective", "schemaVersion"}
         prior_fields = set(prior_settings) - governed
         current_fields = set(current_settings) - governed
         # `configuration` is a pure function of `settings`, and both sides are
@@ -194,7 +212,9 @@ def initialize_checkpoint(model, optimizer, state, receipt, *, metadata, profile
         if (prior_fields != current_fields
                 or any(prior_settings[key] != current_settings[key]
                        for key in prior_fields if key not in allowed)
-                or current_settings["schemaVersion"] != (2 if additions else prior_settings["schemaVersion"])
+                or current_settings["schemaVersion"] != (
+                    3 if "auxiliaryObjective" in current_settings
+                    else (2 if additions else prior_settings["schemaVersion"]))
                 or {k: v for k, v in captured.items() if k not in excluded}
                     != {k: v for k, v in metadata.items() if k not in excluded}
                 or not _digest(captured.get("trainingConfigurationSha256"))
@@ -283,7 +303,17 @@ def main():
         torch.manual_seed(settings["seed"])
         model = DiffSingerAcoustic(vocab_size=len(vocabulary) + 1, out_dims=dimensions[0])
         optimizer = torch.optim.AdamW(model.parameters(), lr=settings["learningRate"])
-        objective = DiffSingerDDPMObjective(settings["loss"])
+        auxiliary = settings.get("auxiliaryObjective")
+        if auxiliary is None:
+            objective = DiffSingerDDPMObjective(settings["loss"])
+        else:
+            token_ids = {symbol: index + 1 for index, symbol in enumerate(vocabulary)}
+            missing = [symbol for symbol in auxiliary["unvoicedSymbols"] if symbol not in token_ids]
+            if missing:
+                raise ValueError("Auxiliary unvoiced symbols are absent from the captured vocabulary")
+            objective = DiffSingerDDPMUnvoicedSpectralObjective(
+                settings["loss"], auxiliary["weight"],
+                unvoiced_ids=[token_ids[symbol] for symbol in auxiliary["unvoicedSymbols"]])
         metadata = dict(trainingConfigurationSha256=args.training_sha256,
                         assemblyConfigurationSha256=args.dataset_sha256, targetInventorySha256=args.targets_sha256,
                         configuration=hparams_value, settings=settings, revision=REVISION,
@@ -302,6 +332,14 @@ def main():
             # the dataset digest by construction and equality can never hold.
             if metadata.get("warmStart", {}).get("addedParameters"):
                 captured_bindings = previous["metadata"]["datasetBindings"]
+        step_records = []
+        def record_step(result):
+            row = dict(sourceId=result["sourceId"], loss=result["loss"],
+                       gradientNorm=result["gradientNorm"], lossFrames=result["lossFrames"],
+                       validSamples=result["validSamples"])
+            if result.get("draw") is not None:
+                row["draw"] = result["draw"]
+            step_records.append(row)
         result = run_reviewed_epochs(model, optimizer, output=args.output, epochs=args.epochs,
             completed_epochs=completed_epochs, parent_receipt_sha256=parent_digest,
             metadata=metadata, maximum_run_seconds=args.maximum_run_seconds,
@@ -312,7 +350,12 @@ def main():
             maximum_updates=settings["maximumUpdates"], maximum_seconds=settings["maximumSeconds"],
             objective=objective, objective_id=objective.objective_id,
             expected_dataset_sha256=expected_dataset,
-            expected_conditioning_bindings=captured_bindings))
+            expected_conditioning_bindings=captured_bindings, on_step=record_step))
+        from .__main__ import publish_new
+        publish_new(args.output / "steps.json", dict(
+            formatId="com.project-seam.training-steps", schemaVersion=1,
+            objectiveId=objective.objective_id,
+            trainingConfigurationSha256=args.training_sha256, steps=step_records))
         print(json.dumps(result, sort_keys=True))
         return 0
     except KeyboardInterrupt:

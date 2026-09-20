@@ -1,5 +1,100 @@
 # Integrated Singer Execution
 
+## Matched acoustic objective experiment: the unvoiced auxiliary restores energy, not aperiodic structure
+
+A paired one-epoch experiment now isolates the acoustic objective itself. Both
+arms warm-start from the same epoch-8 conditioned checkpoint
+(receipt 04f72263b700804cc4557879208def3ca4157d68955dea516b179140f755007e),
+fresh AdamW at the captured learning rate, seed 933, identical dataset,
+identical source order and identical timestep/noise draws. The control arm runs
+the auxiliary adapter at weight zero, which reproduces the base objective bit
+for bit, so adapter implementation is not a variable either.
+
+The new objective is implemented as
+`DiffSingerDDPMUnvoicedSpectralObjective` in
+`tools/voice_model_training/diffsinger_objective.py`. It reproduces the
+upstream training forward exactly (fs2, norm_spec, the same randint timestep
+draw, the same randn noise draw, q_sample, denoise_fn), then reconstructs the
+predicted clean spectrogram from that same draw, denormalizes with the
+checkpoint's spec_min/spec_max, and applies a smooth-L1 spectral-shape plus
+log-energy term on labeled non-silent unvoiced frames, weighted by the schedule
+value alpha_bar_t and a single calibrated coefficient. The epsilon L1 term is
+unchanged. `components()` exposes the base and unscaled auxiliary element
+losses separately, and `last_draw` records each step's timesteps, noise
+SHA-256 and unvoiced frame count. Schema-3 training configurations declare
+`auxiliaryObjective {kind, weight, unvoicedSymbols}`; warm start accepts it
+as a governed change with no added parameters, and the lineage check now
+compares the recorded settings' objective identity via
+`objective_id_for_settings`. Per-step loss, gradient norm and draw records
+are published to `steps.json` beside each checkpoint.
+
+`tools/voice_model_training/calibrate_unvoiced_aux.py` performs the
+gradient-only calibration: forked RNG, eval mode, no checkpoint/optimizer/RNG
+mutation, at most eight training phrases with unvoiced coverage. On the e8
+weights (aux-calibration-e8-r1.json) eight phrases carried 33-113 unvoiced
+frames each; the median lambda for a 10% auxiliary-to-base gradient ratio is
+0.06308904744202135 (range 0.0454-0.1539). Its fixed-timestep inspection shows
+a healthy denoiser at low and mid noise (clean-mel L1 0.048 at t=0, 1.14 at
+t=250, 3.60 at t=500) degrading at high noise (18.2 at t=749, 166.6 at t=999),
+which is schedule-inherent and is exactly what the alpha_bar_t weight
+down-weights.
+
+Paired run evidence. Control acoustic-aux-control-e9-r1 (receipt a88d43a1,
+checkpoint 3378c8e8, meanLoss 0.2249104754896993); treatment
+acoustic-aux-unvoiced-e9-r1 (receipt 6abaa610, checkpoint 2acdc442, meanLoss
+0.23441057725473138 including the auxiliary term). Both completed 267 updates
+with verified coverage of all 74,406,000 valid sample frames. The steps.json
+pair shows zero draw mismatches across all 267 steps: identical source order,
+identical timesteps, identical noise digests and identical unvoiced coverage
+(21,553 frames); the median treatment-to-control step loss ratio is 1.045.
+
+Exports a7dbde0f (control) and 088980aa (treatment); bundles 9d2499f8 and
+4c58e6fc share identical configuration, vocabulary and vocoder
+(ae9bbee2) so only the acoustic differs. Both campaigns ran through the same
+production worker (workerSha256 f46d175a identical): control
+campaign-aux-control-e9-r1 passed 5/5; the first treatment run hit a transient
+helper failure on song-00003 whose direct re-render passed, and the re-run
+campaign-aux-unvoiced-e9-r2 passed 5/5.
+
+Results (compare-aux-control-vs-unvoiced-e9.json, HAS_REGRESSIONS on minor
+coverage metrics only): weighted mean absolute pitch error 99.56 -> 54.26
+cents, within-tolerance 92.5% -> 94.8%, spectral distance lower on all five
+songs, measurable voiced pairs 3915 -> 3957. Context: the control arm's extra
+same-objective epoch regressed pitch versus the epoch-8 starting point (36.40
+cents in campaign-breathiness-e8-r4), and the auxiliary arm recovered roughly
+half of that regression.
+
+On the defect this unit was built to probe, the answer is negative but
+informative. Unvoiced waveform lag-256 periodicity is essentially unchanged
+(control 0.579, treatment 0.566, reference -0.004), while unvoiced energy
+suppression partially recovered (mean RMS ratio 0.523 -> 0.734 toward 1.0) and
+voiced energy improved (0.395 -> 0.470). Predicted-mel flatness moved the same
+way: unvoiced 0.0526 -> 0.0434 against a 0.7139 reference (still ~15x too
+flat), voiced 0.0279 -> 0.0110 against a 0.0464 reference. The auxiliary term
+provably changed training (different losses, different weights, restored
+level), yet the model still does not produce noise-like spectra on unvoiced
+frames even when penalized directly in clean-mel space. Combined with the
+paired vocoder arm's residual periodicity (0.226 vs control 0.462), the
+aperiodicity defect is shared across both stages rather than located in one.
+
+Caveats: one seed, one epoch, five procedural songs - an initial diagnostic,
+not a verdict on the objective family. The r1 treatment campaign's transient
+helper failure is retained on disk and was not counted; r2 is the compared
+receipt. combinedModelHoldoutVerified remains false, three of five sources
+overlap vocoder training, every song still reports pitchStatus=MISMATCH, all
+receipts stay singerQualified=False and releaseEligible=False, and no listener
+has judged anything.
+
+Verification: 406 voice_model_training tests pass, including new coverage that
+weight zero reproduces base loss and gradients bit for bit under identical RNG,
+that only non-rest unvoiced frames carry the auxiliary, that masked-out
+unvoiced frames contribute nothing through the harness, schema-3 configuration
+validation, warm-start schema-2-to-3 acceptance with identical dataset and
+architecture, and refusal when a schema-3 parent masquerades under the base
+objective identity.
+
+# Integrated Singer Execution
+
 ## The conditioned bundle renders through the production worker; pitch error fell an order of magnitude
 
 The first schema-4 conditioned bundle failed every production render with the

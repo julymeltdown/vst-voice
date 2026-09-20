@@ -24,7 +24,8 @@ def train_reviewed_epoch(model, optimizer, *, dataset_inputs: dict,
                          objective=None, objective_id="mel-l1",
                          expected_dataset_sha256: str | None = None,
                          expected_conditioning_bindings: dict | None = None,
-                         maximum_checkpoint_bytes: int = 512 * 1024 * 1024) -> dict:
+                         maximum_checkpoint_bytes: int = 512 * 1024 * 1024,
+                         on_step=None) -> dict:
     """Train whole phrases (at most 4096 frames) and publish only after rechecks.
 
     The caller must own stable model/optimizer state, trusted architecture code,
@@ -37,7 +38,8 @@ def train_reviewed_epoch(model, optimizer, *, dataset_inputs: dict,
                 "label_review", "label_policy", "label_anchor", "seed", "held_out_songs"}
     if not isinstance(dataset_inputs, dict) or set(dataset_inputs) != required:
         raise ValueError("Training requires the complete captured dataset admission inputs")
-    if not isinstance(run_metadata, dict) or (cancelled is not None and not callable(cancelled)):
+    if (not isinstance(run_metadata, dict) or (cancelled is not None and not callable(cancelled))
+            or (on_step is not None and not callable(on_step))):
         raise ValueError("Invalid training metadata or cancellation callback")
     if expected_conditioning_bindings is not None and (expected_dataset_sha256 is None
                                                       or not isinstance(expected_conditioning_bindings, dict)):
@@ -108,7 +110,8 @@ def train_reviewed_epoch(model, optimizer, *, dataset_inputs: dict,
                               expected_profile_sha256=expected_profile_sha256,
                               vocabulary_size=len(snapshot["vocabulary"]),
                               maximum_updates=maximum_updates, maximum_seconds=maximum_seconds,
-                              cancelled=check_lifetime, objective=objective, objective_id=objective_id,
+                              cancelled=check_lifetime, on_step=on_step,
+                              objective=objective, objective_id=objective_id,
                               expected_source_frames=coverage)
 
     def revalidate():

@@ -236,4 +236,5 @@ def _acoustic_step(model, optimizer, batch: dict, *, vocabulary_size: int,
     return dict(loss=float(loss.detach()), objectiveId=objective_id, gradientNorm=norm, evaluation=evaluation,
                 partition=batch["partition"], analysisFrames=count, lossFrames=sum(loss_mask),
                 validSamples=sum(value for value, included in zip(columns["validSamples"], loss_mask) if included), sourceId=batch["sourceId"],
+                draw=(getattr(objective, "last_draw", None) if objective is not None else None),
                 trainingAdmitted=False, releaseEligible=False)

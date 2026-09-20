@@ -28,6 +28,34 @@ class TrainingCommandTests(unittest.TestCase):
                        dict(executable="arbitrary-code"), dict(schemaVersion=True)):
             with self.assertRaises(ValueError): model_settings(config | update)
 
+    def test_schema3_auxiliary_objective_configuration(self):
+        config = dict(formatId="com.project-seam.ddpm-training-config", schemaVersion=3,
+                      hiddenSize=32, encoderLayers=1, channels=32, layers=2, timesteps=8,
+                      seed=17, learningRate=.001, maximumUpdates=3, maximumSeconds=60, loss="l1",
+                      conditioningControls=["breathiness"],
+                      auxiliaryObjective=dict(kind="unvoiced-clean-mel-shape-level", weight=0.05,
+                                              unvoicedSymbols=["h", "f", "k", "s", "t", "ch", "ts"]))
+        result = model_settings(config)
+        self.assertTrue(result["use_breathiness_embed"])
+        self.assertNotIn("auxiliaryObjective", result)
+        for auxiliary in (dict(kind="other", weight=.05, unvoicedSymbols=["s"]),
+                          dict(kind="unvoiced-clean-mel-shape-level", weight=-.1, unvoicedSymbols=["s"]),
+                          dict(kind="unvoiced-clean-mel-shape-level", weight=float("nan"), unvoicedSymbols=["s"]),
+                          dict(kind="unvoiced-clean-mel-shape-level", weight=.05, unvoicedSymbols=[]),
+                          dict(kind="unvoiced-clean-mel-shape-level", weight=.05, unvoicedSymbols=["s", "s"]),
+                          dict(kind="unvoiced-clean-mel-shape-level", weight=.05, unvoicedSymbols=[""]),
+                          dict(kind="unvoiced-clean-mel-shape-level", weight=.05, unvoicedSymbols=[123]),
+                          dict(kind="unvoiced-clean-mel-shape-level", weight=.05),
+                          "unvoiced-clean-mel-shape-level"):
+            with self.assertRaises(ValueError):
+                model_settings(config | dict(auxiliaryObjective=auxiliary))
+        missing_auxiliary = {key: value for key, value in config.items() if key != "auxiliaryObjective"}
+        for value in (missing_auxiliary, config | dict(schemaVersion=2),
+                      config | dict(schemaVersion=1),
+                      config | dict(schemaVersion=3, conditioningControls=["tension"])):
+            with self.assertRaises(ValueError):
+                model_settings(value)
+
     def test_target_capture_and_rejections(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
