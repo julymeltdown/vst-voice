@@ -1,5 +1,45 @@
 # Integrated Singer Execution
 
+## Correction: the fricative defect originates in the acoustic model
+
+Earlier work established that the vocoder is part of the problem, because
+replacing predicted features with source-derived features did not remove the
+consonant periodicity. A spectral-flatness measurement now identifies the
+dominant upstream cause. (Inverted via `exp` before taking flatness; the target
+is `ln`-amplitude mel.)
+
+On development song 00005, comparing the predicted acoustic mel against the
+reference analysis mel over the same phone intervals:
+
+| Phone occurrence | Reference flatness | Predicted flatness | Difference |
+| --- | ---: | ---: | ---: |
+| h at 84000 | 0.6637 | 0.0468 | -0.6169 |
+| k at 108000 | 0.7662 | 0.0416 | -0.7246 |
+| h at 156000 | 0.6783 | 0.0265 | -0.6518 |
+| k at 168000 | 0.8028 | 0.0272 | -0.7756 |
+| k at 192000 | 0.8115 | 0.0412 | -0.7703 |
+| s at 228000 | 0.5461 | 0.0420 | -0.5042 |
+| ts at 246000 | 0.5712 | 0.0393 | -0.5319 |
+| t at 264000 | 0.8560 | 0.0019 | -0.8542 |
+
+The reference fricatives are correctly noise-like (flatness roughly 0.55-0.86),
+while the predicted features are strongly harmonic (roughly 0.002-0.047). The
+acoustic model is therefore producing tonal spectra where noise is required, and
+the vocoder faithfully renders that tonal input as frame-rate periodicity. Fixing
+only the vocoder would treat a downstream symptom.
+
+This does not excuse the vocoder, which still shows source-mel artifacts, and it
+does not establish the acoustic model as the sole cause. It does mean the
+periodicity objective on the vocoder is likely misdirected as a primary repair.
+The next acoustic-side investigation should check whether this is a training
+coverage problem, a loss/objective problem, or a label/vocoder-conditioning
+problem, and confirm the pattern across more than one development song before any
+objective change.
+
+Evidence: `spectral_flatness_diagnostic` plus this run on the retained epoch-21
+acoustic and epoch-2 vocoder. 31 phone rows measured, 28 analysis frames uncovered
+by any phone and reported rather than assumed silent.
+
 ## Bounded optimizer probe: periodicity term is a real gradient signal
 
 Added `run_periodicity_probe` / `periodicity_optimizer_probe`, which load a
