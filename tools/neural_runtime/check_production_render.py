@@ -130,6 +130,10 @@ def main():
         assert sum(captured['durations']) == len(captured['f0'])
         assert captured['paddedSampleFrames'] == len(captured['f0']) * 256
         assert all(value > 0 for value in captured['f0']) and captured['steps'] == 10
+        runs = captured['dynamicsRuns']
+        assert runs and runs[-1][0] == captured['outputSampleFrames']
+        assert all(0 <= gain <= 1 for _, gain in runs)
+        assert all(left[0] < right[0] for left, right in zip(runs, runs[1:]))
         try:
             run_render(binary, directory, manifest_sha256, 1048576, inputs_output=inputs_output)
         except ValueError:

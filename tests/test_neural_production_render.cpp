@@ -289,6 +289,19 @@ TEST_CASE("an admitted bundle renders non-silent audio through the production wo
     };
     append("tokens",inputs.value().tokens); append("durations",inputs.value().durations);
     append("f0",inputs.value().f0Hz); append("breathiness",inputs.value().breathiness);
+    // Finalization gains are sample-domain, not acoustic F0 or score-rest masks.
+    // Retain exact runs so replay need not guess note-envelope behavior.
+    json << ",\"dynamicsRuns\":[";
+    const auto& dynamics=request.value().dynamics;
+    for (std::size_t start=0;start<dynamics.size();) {
+      auto end=start+1U;
+      while (end<dynamics.size() && dynamics[end]==dynamics[start]) ++end;
+      if (start) json << ',';
+      json << '[' << end << ',' << dynamics[start] << ']';
+      CHECK(json.tellp()<=static_cast<std::streamoff>(8U*1024U*1024U));
+      start=end;
+    }
+    json << ']';
     json << '}';
     CHECK(json.str().size()<=8U*1024U*1024U);
     CHECK(seam::core::durableAtomicWriteTextNew(capture,json.str()));

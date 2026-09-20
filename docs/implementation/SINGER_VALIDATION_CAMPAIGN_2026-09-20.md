@@ -149,6 +149,12 @@ change that production value or its cache identity based on this one song.
 
 ### Initial sampler-step experiment (song 00005 only)
 
+**Superseded as a step-effect experiment:** this initial sweep reused an ONNX
+acoustic session. Its seeded random generator advances per call, unlike the
+production worker's fresh session per request. Therefore the 20/32-step rows
+change both noise draw and steps; they cannot isolate the effect of step count.
+The baseline 10-step replay remains valid. Artifacts are preserved, not erased.
+
 With the exact replay inputs and epoch-two vocoder fixed:
 
 | Steps | Mel MAE | Pitch mean absolute cents | Within 50 / measurable | Unmeasurable |
@@ -170,6 +176,38 @@ All three WAVs and full-grid pitch comparisons are retained. Production remains
 at 10 steps and the candidate bundle is unchanged.
 
 ## macOS authoring regression alongside training
+
+### Replay sweep correction and dynamics completeness
+
+The initial cohort extension `sampler-steps-e13-v2-cohort-r1` completed song
+00003, then stopped on song 00024 when the baseline differed from native output
+by 0.157964. This fail-closed parity check prevented using that replay as native
+evidence. Its reused acoustic session was the wrong execution model: see the
+explicit session-scoped RNG contract in `tools/voice_model_training/onnx_acoustic.py`.
+All previous multi-call sampler sweeps are confounded, including song 00003's
+apparent step regression. Do not select a production default from them.
+
+The test harness additionally exports exact sample-domain `dynamicsRuns`, so
+future replay applies native finalization gains instead of inferring them from
+rest labels. Both English and moraic-nasal CTests passed (3.99 seconds); song
+00024's rerender remains byte-identical to its baseline master. The updated
+capture is `replay-e2-00024-r2-inputs.json`. No shipped worker behavior changed.
+
+Corrected step experiments must create fresh acoustic sessions for every case,
+verify baseline parity per song, and retain the fixed five-song selection and
+all coverage losses. The fresh-session song 00005 rerun completed under
+`sampler-steps-e13-v2-00005-fresh-r2`:
+
+| Steps | Mel MAE | Pitch mean absolute cents | Within 50 / measurable | Unmeasurable |
+| --- | --- | --- | --- | --- |
+| 10 | 2.837745 | 114.587734 | 919 / 996 | 109 |
+| 20 | 2.763131 | 117.068838 | 928 / 1004 | 101 |
+| 32 | 2.766036 | 102.277514 | 929 / 1000 | 105 |
+
+All remain `MISMATCH`. The 10-step WAV again matches the original replay byte
+for byte. Higher steps are not the large pitch repair suggested by the confounded
+experiment. Native dynamics for song 00024 are exactly unity throughout, further
+excluding a missing gain mask as the cause of that failed baseline replay.
 
 Rebuilt `seam_original_singer_song_journey_tests` and
 `seam_procedural_install_journey_tests` from source at `300ad02c`, including
