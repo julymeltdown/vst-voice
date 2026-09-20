@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-08-22",
+  "generatedAt": "2026-09-21",
   "currentGate": "G1_FEATURE_ALPHA",
   "tasks": [
     {
@@ -49,7 +49,8 @@
       "id": "SEAM-P12-008",
       "priority": "P0",
       "status": "PARTIAL",
-      "title": "Certify Windows and macOS runtime paths"
+      "title": "Certify Windows and macOS runtime paths",
+      "note": "macOS paths certified locally; Windows certification deferred (no Windows host)."
     },
     {
       "id": "SEAM-P12-009",
@@ -118,5 +119,6 @@
       "title": "Complete user documentation, onboarding and support material"
     }
   ],
-  "nextPhase": "PHASE_14"
+  "nextPhase": "PHASE_14",
+  "notes": "Neural singer track status lives in docs/implementation/INTEGRATED_SINGER_EXECUTION.md; Windows support is deferred per README (macOS-only development host), so SEAM-P12-008 Windows certification remains parked, not failed."
 }
