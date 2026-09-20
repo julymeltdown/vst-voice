@@ -1,5 +1,23 @@
 # Integrated Singer Execution
 
+## Export change verified not to alter model bytes
+
+Re-exported the retained epoch-two checkpoint through the modified exporter to
+confirm the added `objectiveId` receipt field did not change the graph. The
+reproduced vocoder SHA-256 is `ae9bbee22289bed92ffd8cb9e80cc5fc873c1423e7fb472d69c2b919ab4e74eb`,
+byte-identical to the earlier export, with the same 55,762,986 graph bytes and
+13,936,386 generator parameters. The receipt now additionally records
+`objectiveId=nsf-lsgan-logmel-48k80-v1`.
+
+The same export re-measured an existing capability rather than a new one: the
+retained vocoder follows four requested pitches (110/220/440/880 Hz) at full
+voiced coverage with errors of 9.5 / 2.5 / 5.2 / 9.1 cents, inside the 50-cent
+diagnostic bound, and its Torch/ONNX parity cases stay below `6.1e-08`. This is a
+synthetic target-windowed diagnostic, not singing quality or a listener result.
+
+Regression check only: no baseline checkpoint was modified, and this does not
+substitute for the paired experiment, whose arms were still training.
+
 ## Comparison aggregation fixed after a real two-arm rehearsal
 
 Ran the complete comparison path on the five captured frozen replay sources with
