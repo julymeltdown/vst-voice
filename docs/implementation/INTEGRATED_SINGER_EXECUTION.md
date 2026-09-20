@@ -2,6 +2,25 @@
 
 ## Acoustic continuation from epoch 13 toward epoch 21
 
+**Completed:** run r5 exited successfully through epoch 21, with eight additional
+epochs of 267 updates each (2,136 total). Final coverage is complete and mean
+DDPM loss is 0.2607857085. Receipt SHA-256:
+`e8a688de4dacf9ef67aa925bfe353e71cd97c85af1882ad31737cbbb85f0eaf8`;
+verified binary SHA-256:
+`a99361b7483370ebd61a7a7438b4e5082941166797bcd7014d190d3c4b2d6a5d`.
+Configured retention kept epoch-20/21 binaries; epoch-14..19 binaries were removed
+after verified successors. Their receipts cannot restore those binaries. The
+external epoch-13 baseline remains untouched.
+
+Export `export-combined-e21` passed runtime smoke checks, acoustic graph SHA-256
+`73b8de9a119fccca7f7d9e8ad7a05b9ecf81ab83717b9f8e9a24ff4ed9757cf0`.
+Candidate `bundle-combined-e21-v512-e2` keeps vocoder epoch two and the existing
+configuration/vocabulary; manifest SHA-256
+`090d333627fd8cc551dc85fe37cc75b6762dd50baba82f02b430232d10fa63e0`.
+The fixed five-song application campaign is running at
+`campaign-e21-v512-e2-r1`, with training-overlap audit enabled. No quality outcome
+or singer qualification is inferred from the completed training/export.
+
 September 20, 2026 — after the fixed-cohort vocoder and conditioning diagnostics,
 the next bounded intervention is additional acoustic learning, not a pitch-gate
 change. Fresh single-call ONNX inference at 10 steps on the first five sorted
