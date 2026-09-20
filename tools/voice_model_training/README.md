@@ -1,5 +1,19 @@
 # Original voice model production
 
+Frozen evaluation reference capture (not a training corpus):
+
+```sh
+python -m tools.voice_model_training.render_frozen_evaluation \
+  --plan /absolute/plan.json --plan-sha256 PLAN_SHA256 \
+  --history /absolute/historical-phrase-index.json \
+  --pilot /absolute/build/release/seam_singer_pilot --output /absolute/new-output
+```
+
+This checks all phrase collisions before rendering, verifies captured project
+fingerprints and voice recipe, and retains every failed item. `capture.json`
+reports `INCOMPLETE` unless all items pass and the pilot executable is unchanged.
+No training admission, candidate evaluation or musical qualification is implied.
+
 The real export now passes native acoustic smoke execution and wrong-hash rejection.
 To meet native finite-tensor intake, encoder export maps only recognized scalar
 negative-infinity Where mask constants to finite float32 floor; other nonfinite
@@ -1221,3 +1235,18 @@ lists every selected song, without a success-only quality average. Exit status
 2 means at least one selected item failed. Singer/release qualification remains
 false in both cases. Interrupted campaigns retain their selection and completed
 per-song receipts; they must not be presented as completed campaigns.
+# Phrase-content checks
+
+`phrase_fingerprint.fingerprint(events, ppq=960)` returns four SHA-256
+fingerprints: exact score, transposed/time-scaled score family, lyric sequence,
+and melody/rhythm. `project_events(project)` reads a bounded, single-track,
+single-region pilot project; `token_events(tokens)` reads the procedural pilot's
+`lyric:midi:duration` tokens. These helpers reject overlapping notes and empty or
+all-rest phrases. They are not general-purpose project validation.
+
+Use these checks before rendering a frozen evaluation cohort and repeat them
+against the captured projects afterwards. Keep voice `recipeSha256` separate:
+sharing a voice recipe does not mean sharing a song. Conversely, changing IDs,
+transposing notes or uniformly scaling durations does not create an independent
+phrase. A non-match is not proof of acoustic, semantic or training independence;
+retain decoded-audio and declared-training-ancestry checks separately.

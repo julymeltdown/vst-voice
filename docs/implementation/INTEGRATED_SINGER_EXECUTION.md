@@ -1,5 +1,69 @@
 # Integrated Singer Execution
 
+## Frozen reference cohort rendered and prepared on macOS
+
+`render_frozen_evaluation` now consumes the hash-bound plan and historical index,
+rejects reused identities/fingerprints before rendering, and verifies every native
+project and recipe against that plan. It retains failures rather than replacing
+phrases, refuses overwrites, records the pilot binary hash, and never creates a
+training split or admits training. Its output is reference audio, not neural audio.
+
+All 16 frozen phrases rendered and passed capture verification. All 16 were then
+prepared through `prepare_captured_teacher` as `PREPARED_UNAPPROVED`, retaining
+measured pitch, conditioning, labels, mel targets and provenance. The existing
+training corpus and validation-only campaign admission rules remain unchanged.
+
+The declared ancestry audit was rerun for these 16 captured sources against both
+the epoch-21 acoustic and epoch-two vocoder histories. Every source reports
+`NO_OVERLAP_IN_DECLARED_FIELDS`, including exact decoded-audio identity. This
+does not establish perceptual independence, exclude undeclared pretraining, or
+test an unseen voice: all references deliberately share the known voice recipe.
+
+Local evidence under `/Users/lhs/seam-corpus-pauses-2026-09-19-r1/`:
+
+- `frozen-reference-r1/capture.json` SHA-256
+  `195d7de128aee10932b4216d3d6c54a14b4846bbfb8ed449aa0efbe1eedf59ef`.
+- `frozen-prepared-r1/evaluation-preparation.json` SHA-256
+  `8d752a5e41d536f3abf51ece599ccfae24943dee5d4d08a19936893f7a7583e3`.
+- `frozen-ancestry-r1/audit.json` SHA-256
+  `df0a8293aa6f45e815bcde28ff829c2244ac42d9dd69ab6bdd7b9c1214e05c7e`.
+
+Next: consume this evaluation-only inventory in native neural rendering and
+score all 16 outputs, retaining failures and coverage loss. No candidate model
+has yet been evaluated on this cohort; no singer or Beta qualification is claimed.
+
+## Same-voice evaluation phrases frozen before rendering
+
+Windows remains a README TODO; macOS singer work continues. Added bounded pilot
+score fingerprints in `tools/voice_model_training/phrase_fingerprint.py`.
+They distinguish exact scores, transposed/time-scaled score families, lyric
+sequences and melody/rhythm. Project IDs and expressive automation cannot hide
+reuse; PPQ, initial offset and Unicode normalization are handled explicitly.
+This is not a generic multi-track project importer or a semantic similarity test.
+
+Important correction: `recipeSha256` identifies the **voice design**, not the
+song. All 424 historical sources share one voice recipe. New phrases therefore
+test same-voice phrase generalization, not unseen voices or natural recordings.
+
+The frozen local cohort contains 16 phrases (indices 1000–1015), with eight
+interior-pause phrases, selected before candidate rendering. None matches any
+of the four fingerprints in the 424-source historical index or another planned
+phrase. Evidence directory:
+`/Users/lhs/seam-corpus-pauses-2026-09-19-r1/frozen-evaluation-r1/`.
+
+- `plan.json` SHA-256:
+  `32c35931beb5c3b9296f3a0d8e43a522da696eb6777c855c2611b5f4765f0b42`.
+- `historical-phrase-index.json` SHA-256:
+  `fdf020ddb6c3f202a71b46a18cef460de7ddb9982129ee26b4ac86916d79f6b7`.
+
+Pending: render the frozen reference tokens, verify actual project fingerprints
+and decoded-audio overlap, then evaluate the preserved epoch-21 candidate.
+Provide an evaluation-only preparation path: do not relabel these sources as
+training/validation or weaken the training corpus's strict held-out-subset rule.
+No new candidate audio has been measured on this cohort. Training ancestry,
+new-source audio overlap and musical qualification remain separate claims;
+`combinedModelHoldoutVerified`, `singerQualified` and `releaseEligible` stay false.
+
 ## Declared training ancestry audited across both model stages
 
 Implemented `tools.voice_model_training.training_ancestry`. It captures receipt
