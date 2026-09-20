@@ -2,7 +2,7 @@ import unittest
 from unittest.mock import patch
 import numpy as np
 
-from tools.voice_model_training.paired_vocoder_evaluation import run_graph, clip_phones
+from tools.voice_model_training.paired_vocoder_evaluation import run_graph, clip_phones, validate_arm_noises
 
 
 class GraphRunTests(unittest.TestCase):
@@ -58,6 +58,19 @@ class GraphRunTests(unittest.TestCase):
                 return type('S',(),{'run':staticmethod(lambda o,i:[np.zeros((1,i['mel'].shape[1]*256),np.float32)])})()
         for _ in range(2):run_graph(b'g',np.zeros((1,2,80),np.float32),np.zeros((1,2),np.float32),frames=2,_runtime=Runtime)
         self.assertEqual(len(created),2)
+
+class ArmNoiseTests(unittest.TestCase):
+    def test_common_nonzero_noise_rejected_and_distinct_arms_accepted(self):
+        arms = {'control': 'a', 'uvnoise': 'b'}
+        shared = np.ones((1, 128), np.float32)
+        with self.assertRaises(ValueError):
+            validate_arm_noises({'control': shared, 'uvnoise': shared.copy()}, arms)
+        zeros = np.zeros((1, 128), np.float32)
+        gated = np.ones((1, 128), np.float32)
+        validate_arm_noises({'control': zeros, 'uvnoise': gated}, arms)
+        validate_arm_noises({'control': zeros.copy(), 'uvnoise': zeros.copy()}, arms)
+        with self.assertRaises(ValueError):
+            validate_arm_noises({'stray': zeros}, arms)
 
 
 if __name__=='__main__':unittest.main()

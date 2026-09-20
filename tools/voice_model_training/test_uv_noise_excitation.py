@@ -9,22 +9,28 @@ from tools.voice_model_training.uv_noise_excitation import (
     uv_noise_generator_class)
 
 
-def _columns(voiced, rest):
-    return dict(voiced=list(voiced), rest=list(rest))
+PHONEMES = [dict(symbol='a'), dict(symbol='s'), dict(symbol='pau'), dict(symbol='k')]
+
+
+def _columns(indices):
+    return dict(phoneIndex=list(indices))
 
 
 class MaskTests(unittest.TestCase):
-    def test_non_rest_unvoiced_only(self):
-        mask = unvoiced_frame_mask(_columns(
-            [True, False, False, False], [False, False, True, False]))
-        self.assertEqual(mask.tolist(), [False, True, False, True])
+    def test_unvoiced_phones_only(self):
+        # a, s, pau, k, a -> only s and k are gated; pau and the f0=0 vowel are not.
+        mask = unvoiced_frame_mask(_columns([0, 1, 2, 3, 0]), PHONEMES)
+        self.assertEqual(mask.tolist(), [False, True, False, True, False])
 
     def test_rejects_bad_ownership(self):
-        for columns in (dict(voiced=[True], rest=[False, False]),
-                        dict(voiced=[1], rest=[False]),
-                        dict(voiced=[], rest=[])):
+        for columns, phonemes in (
+                (dict(phoneIndex=[0, 4]), PHONEMES),
+                (dict(phoneIndex=[0.5]), PHONEMES),
+                (dict(phoneIndex=[]), PHONEMES),
+                (dict(phoneIndex=[0]), []),
+                (dict(phoneIndex=[0]), [dict(nosymbol='a')])):
             with self.assertRaises(ValueError):
-                unvoiced_frame_mask(columns)
+                unvoiced_frame_mask(columns, phonemes)
 
 
 class NoiseTests(unittest.TestCase):
@@ -37,18 +43,17 @@ class NoiseTests(unittest.TestCase):
     def test_control_draws_match_and_zero(self):
         mask = np.array([True, False, True], dtype=bool)
         torch.manual_seed(7)
-        zero = build_excitation_noise(mask, 'zero-v1')
+        zero_raw, zero = build_excitation_noise(mask, 'zero-v1')
         torch.manual_seed(7)
-        gated = build_excitation_noise(mask, 'uv-gated-v1')
+        gated_raw, gated = build_excitation_noise(mask, 'uv-gated-v1')
         self.assertEqual(tuple(zero.shape), (1, 1, 3 * SOURCE_SAMPLES_PER_FRAME))
+        self.assertTrue(torch.equal(zero_raw, gated_raw))
         self.assertTrue(torch.equal(zero, torch.zeros_like(zero)))
         self.assertFalse(torch.equal(gated, torch.zeros_like(gated)))
         # Same draw sequence: the gated arm equals zero arm plus masked noise.
-        torch.manual_seed(7)
-        raw = torch.randn(1, 1, 3 * SOURCE_SAMPLES_PER_FRAME)
         gate = torch.from_numpy(np.repeat(mask.astype(np.float32),
                                           SOURCE_SAMPLES_PER_FRAME)).reshape(1, 1, -1)
-        self.assertTrue(torch.equal(gated, raw * gate * EXCITATION_AMPLITUDE['uv-gated-v1']))
+        self.assertTrue(torch.equal(gated, gated_raw * gate * EXCITATION_AMPLITUDE['uv-gated-v1']))
         # Voiced frames carry no noise.
         voiced_slice = gated[0, 0, SOURCE_SAMPLES_PER_FRAME:2 * SOURCE_SAMPLES_PER_FRAME]
         self.assertTrue(torch.equal(voiced_slice, torch.zeros_like(voiced_slice)))

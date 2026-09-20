@@ -86,6 +86,10 @@ only once at complete-epoch coverage. Saved snapshots are not admission authorit
         from .uv_noise_excitation import EXCITATION_IDS, build_excitation_noise
         if excitation_noise_id not in EXCITATION_IDS:
             raise ValueError('Unsupported excitation noise identity')
+        if resume_partial is not None:
+            # The per-segment noise digests are not yet chained through the
+            # recovery cursor; a resumed epoch would bind only its suffix.
+            raise ValueError('Excitation noise does not yet support partial resume')
     else:
         build_excitation_noise = None
     if recovery_directory is not None:
@@ -231,7 +235,8 @@ only once at complete-epoch coverage. Saved snapshots are not admission authorit
     report("updates-started", totalUpdates=planned_updates)
     covered, total, gl, dl = {}, 0, 0.0, 0.0
     source_updates, updates = {}, 0
-    excitation_digest = hashlib.sha256()
+    excitation_raw_digest = hashlib.sha256()
+    excitation_realized_digest = hashlib.sha256()
     segment_options = {} if training_segment_frames is None else dict(training_segment_frames=training_segment_frames)
     if excitation_noise_id is not None:
         segment_options['include_unvoiced_frames'] = True
@@ -278,10 +283,11 @@ only once at complete-epoch coverage. Saved snapshots are not admission authorit
             auxiliary['periodicity_mask'] = phone_mask(periodic_labels[identity],
                 sample_offset=begin * hop, sample_count=batch['pcm'].shape[2], valid_samples=owned)
         if build_excitation_noise is not None:
-            noise = build_excitation_noise(
+            raw, noise = build_excitation_noise(
                 batch['unvoicedFrames'][0].numpy(), excitation_noise_id)
             auxiliary['excitation_noise'] = noise
-            excitation_digest.update(noise.numpy().tobytes())
+            excitation_raw_digest.update(raw.numpy().tobytes())
+            excitation_realized_digest.update(noise.numpy().tobytes())
         result = vocoder_gan_step(generator, discriminators, generator_optimizer, discriminator_optimizer,
             mel=batch["mel"], f0=batch["f0"], pcm=batch["pcm"], hop_size=batch["hopSize"],
             partition="train", reconstruction_loss=reconstruction_loss, **auxiliary)
@@ -338,7 +344,8 @@ only once at complete-epoch coverage. Saved snapshots are not admission authorit
         labelOrigin=effective_label_origin, trainingAdmitted=False, releaseEligible=False)
     if excitation_noise_id is not None:
         epoch.update(excitationNoiseId=excitation_noise_id,
-                     excitationNoiseSha256=excitation_digest.hexdigest())
+                     excitationRawDrawSha256=excitation_raw_digest.hexdigest(),
+                     excitationRealizedSha256=excitation_realized_digest.hexdigest())
     if training_segment_frames is not None:
         epoch.update(trainingSegmentFrames=training_segment_frames, sourceUpdates=source_updates,
                      trainingGeometry="balanced-contiguous-complete-coverage-v1")

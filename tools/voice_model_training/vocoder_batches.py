@@ -41,6 +41,13 @@ is zero-padded according to the acoustic profile and explicitly counted.
     sources = {row["sourceId"]: row for row in snapshot["sources"]}
     if not isinstance(pcm_sources, dict) or set(pcm_sources) != set(sources):
         raise ValueError("PCM inventory must cover exactly the captured dataset")
+    phonemes_by_source = {}
+    if include_unvoiced_frames:
+        labels = {entry["label"]["sourceId"]: entry for entry in snapshot["labels"]}
+        if set(labels) != set(sources):
+            raise ValueError("Unvoiced gating requires labels for every captured source")
+        phonemes_by_source = {source: entry["label"]["phonemes"]
+                              for source, entry in labels.items()}
     active, samples, inspected = None, None, None
     for batch in iter_supervised_batches(snapshot, directory, targets,
             expected_profile_sha256=expected_profile_sha256, partition=partition,
@@ -92,7 +99,7 @@ is zero-padded according to the acoustic profile and explicitly counted.
         if include_unvoiced_frames:
             from .uv_noise_excitation import unvoiced_frame_mask
             captured["unvoicedFrames"] = torch.from_numpy(
-                unvoiced_frame_mask(batch["columns"])).unsqueeze(0)
+                unvoiced_frame_mask(batch["columns"], phonemes_by_source[identity])).unsqueeze(0)
         if training_segment_frames is None:
             yield captured
         else:

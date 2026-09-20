@@ -61,8 +61,25 @@ def clip_phones(labels, valid_samples):
     return rows
 
 
+def validate_arm_noises(noises, arms):
+    """Per-arm noise map rules for excitation experiments.
+
+    Keys must be arm names, and no two arms may share an identical nonzero
+    realization: a common nonzero tensor would excite a zero-noise control
+    and destroy the contrast the experiment exists to measure.
+    """
+    if noises is None:
+        return
+    if not isinstance(noises, dict) or set(noises) - set(arms):
+        raise ValueError('Noise realizations must be keyed by arm name')
+    nonzero = {name: value for name, value in noises.items()
+               if value is not None and np.asarray(value).any()}
+    if len({np.asarray(v).tobytes() for v in nonzero.values()}) < len(nonzero):
+        raise ValueError('Arms must not share an identical nonzero noise realization')
+
+
 def evaluate(source, labels, arms, *, mel_input, f0, gains, executable,
-             valid_samples=None, noise=None, _runtime=None):
+             valid_samples=None, noises=None, _runtime=None):
     """Return per-arm pitch and per-phone waveform comparison for one source."""
     import tempfile
     from pathlib import Path
@@ -87,6 +104,7 @@ def evaluate(source, labels, arms, *, mel_input, f0, gains, executable,
         raise ValueError('Compared samples must lie inside both captured source and padded output')
     reference, phones = reference[:valid_samples], clip_phones(labels, valid_samples)
     graph_hashes, results = {}, {}
+    validate_arm_noises(noises, arms)
     for name, export in arms.items():
         exported, graph = read_report(Path(export), VOCODER_FORMAT,
             'vocoderPath', 'vocoderSha256', 'vocoderBytes')
@@ -97,7 +115,10 @@ def evaluate(source, labels, arms, *, mel_input, f0, gains, executable,
         # zero-padded here rather than scaled by an unrelated gain value.
         owned = np.zeros(padded, np.float32)
         owned[:len(gains)] = gains
-        wave = (run_graph(graph, mel, f0, frames=frames, noise=noise, _runtime=_runtime)
+        arm_noise = None if noises is None else noises.get(name)
+        wave = (run_graph(graph, mel, f0, frames=frames,
+                          noise=arm_noise,
+                          _runtime=_runtime)
                 * owned)[:valid_samples]
         if not np.isfinite(wave).all() or float(np.max(np.abs(wave))) > 1:
             raise ValueError('Vocoder output is nonfinite or unnormalized')
@@ -110,6 +131,8 @@ def evaluate(source, labels, arms, *, mel_input, f0, gains, executable,
         results[name] = dict(vocoderSha256=exported['vocoderSha256'],
             objectiveId=exported.get('objectiveId'), waveSha256=hashlib.sha256(
                 wave.astype('<f4').tobytes()).hexdigest(),
+            noiseSha256=(None if arm_noise is None else hashlib.sha256(
+                np.asarray(arm_noise, dtype=np.float32).tobytes()).hexdigest()),
             pitch={key: comparison['comparison'][key] for key in (
                 'status', 'meanAbsoluteCents', 'measurableVoicedPairs',
                 'withinToleranceFrames', 'unmeasurableFrames', 'voicingMismatchFrames')},

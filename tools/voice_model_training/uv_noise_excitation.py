@@ -7,8 +7,12 @@ input summed into the harmonic source before source_conv. It introduces no
 new parameters, so a checkpoint's state_dict is identical to the base
 architecture and governed warm start still applies.
 
-The gate is admitted non-rest unvoiced ownership from conditioning frames
-((not voiced) and (not rest)); silence is never inferred from f0==0. The
+The gate is admitted unvoiced phone ownership: label phoneme symbols in the
+explicit renderer inventory (h, f, k, s, sh, t, ch, ts), mapped through each
+conditioning frame's phoneIndex. Conditioning voiced flags are F0-extractor
+voicing (voiced == f0>0), not phone ownership, and must not gate noise:
+an unvoiced-label vowel frame with f0=0 is not a fricative. Silence is never
+inferred from f0==0 either. The
 control arm draws the same random values and multiplies them by zero, so a
 paired experiment varies only the excitation content, not the draw sequence.
 
@@ -24,6 +28,8 @@ EXCITATION_IDS = ('zero-v1', 'uv-gated-v1')
 EXCITATION_AMPLITUDE = {'zero-v1': 0.0, 'uv-gated-v1': 1.0 / 3.0}
 # mini_nsf source rate: upsample_rates[:2] product (8*8=64 samples per frame).
 SOURCE_SAMPLES_PER_FRAME = 64
+UNVOICED_SYMBOLS = frozenset(('h', 'f', 'k', 's', 'sh', 't', 'ch', 'ts'))
+INVENTORY_ID = 'unvoiced-phone-inventory-v1'
 
 
 def excitation_amplitude(excitation_id):
@@ -32,15 +38,23 @@ def excitation_amplitude(excitation_id):
     return EXCITATION_AMPLITUDE[excitation_id]
 
 
-def unvoiced_frame_mask(columns):
-    """Boolean per-frame mask of admitted non-rest unvoiced ownership."""
+def unvoiced_frame_mask(columns, phonemes):
+    """Boolean per-frame mask of admitted unvoiced phone ownership.
+
+    columns['phoneIndex'] maps each conditioning frame to the label's phoneme
+    list; a frame is gated only when its phone's symbol is in the explicit
+    unvoiced inventory. Voiced phones with f0=0 stay ungated, and silence is
+    never inferred from pitch-extractor output.
+    """
     import numpy as np
-    voiced, rest = columns.get('voiced'), columns.get('rest')
-    if (not isinstance(voiced, list) or not isinstance(rest, list)
-            or len(voiced) != len(rest) or not 1 <= len(voiced) <= 4096
-            or any(type(v) is not bool for v in voiced + rest)):
-        raise ValueError('Expected bounded per-frame voiced/rest ownership')
-    return np.array([(not v) and (not r) for v, r in zip(voiced, rest)], dtype=bool)
+    indices = columns.get('phoneIndex')
+    symbols = [phone.get('symbol') for phone in phonemes]
+    if (not isinstance(indices, list) or not 1 <= len(indices) <= 4096
+            or any(type(i) is not int or not 0 <= i < len(symbols) for i in indices)
+            or not 1 <= len(symbols) <= 4096
+            or any(not isinstance(s, str) for s in symbols)):
+        raise ValueError('Expected bounded per-frame phoneIndex ownership and phoneme symbols')
+    return np.array([symbols[i] in UNVOICED_SYMBOLS for i in indices], dtype=bool)
 
 
 def build_excitation_noise(unvoiced_frames, excitation_id):
@@ -52,14 +66,32 @@ def build_excitation_noise(unvoiced_frames, excitation_id):
     """
     import numpy as np
     import torch
+    mask = np.asarray(unvoiced_frames, dtype=bool)
+    if mask.ndim != 1 or not 1 <= mask.size <= 4096:
+        raise ValueError('Expected a bounded per-frame unvoiced mask')
+    draws = torch.randn(1, 1, mask.size * SOURCE_SAMPLES_PER_FRAME)
+    return draws, realize_excitation(draws, mask, excitation_id)
+
+
+def realize_excitation(raw_draws, unvoiced_frames, excitation_id):
+    """Derive one arm's realized noise input from a shared raw draw.
+
+    Training and offline evaluation must derive per-arm inputs through this
+    single path so zero/noise contrast is enforced by construction: zero-v1
+    zeroes the shared draw, uv-gated-v1 gates it by the same ownership mask.
+    """
+    import numpy as np
+    import torch
     amplitude = excitation_amplitude(excitation_id)
     mask = np.asarray(unvoiced_frames, dtype=bool)
     if mask.ndim != 1 or not 1 <= mask.size <= 4096:
         raise ValueError('Expected a bounded per-frame unvoiced mask')
+    raw = torch.as_tensor(raw_draws, dtype=torch.float32)
+    if raw.shape != (1, 1, mask.size * SOURCE_SAMPLES_PER_FRAME) or not torch.isfinite(raw).all():
+        raise ValueError('Expected finite float32 raw draws at the source rate')
     gate = torch.from_numpy(
-        np.repeat(mask.astype(np.float32), SOURCE_SAMPLES_PER_FRAME))
-    draws = torch.randn(1, 1, mask.size * SOURCE_SAMPLES_PER_FRAME)
-    return draws * gate.reshape(1, 1, -1) * amplitude
+        np.repeat(mask.astype(np.float32), SOURCE_SAMPLES_PER_FRAME)).reshape(1, 1, -1)
+    return raw * gate * amplitude
 
 
 def uv_noise_forward(self, x, f0, noise):

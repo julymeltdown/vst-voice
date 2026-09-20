@@ -410,7 +410,7 @@ def evaluate_held_out_reconstruction(
                 import numpy as _np
                 mask = _np.asarray(unvoiced[0] if hasattr(unvoiced, '__getitem__') else unvoiced)
                 mask = _np.asarray(mask, dtype=bool).reshape(-1)
-                noise = build_excitation_noise(mask, excitation_noise_id)
+                _, noise = build_excitation_noise(mask, excitation_noise_id)
                 rendered_pcm = _mono_audio(generator_fn(mel, f0, noise), "rendered vocoder output")
             else:
                 rendered_pcm = _mono_audio(generator_fn(mel, f0), "rendered vocoder output")

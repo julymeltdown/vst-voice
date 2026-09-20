@@ -57,6 +57,45 @@ class VocoderBatchTailTests(unittest.TestCase):
         parts[0]["mel"].zero_()
         self.assertNotEqual(float(parts[1]["mel"].sum()), 0.)
 
+    def test_unvoiced_frames_slice_with_segments_and_phone_ownership(self):
+        import numpy as np
+        from tools.voice_model_training.audio_source import inspect_pcm_source
+        from tools.voice_model_training.vocoder_batches import iter_vocoder_batches
+        count = 129 * 256 - 13
+        buffer = io.BytesIO()
+        with wave.open(buffer, "wb") as writer:
+            writer.setnchannels(1); writer.setsampwidth(2); writer.setframerate(48000)
+            writer.writeframes(np.full(count, 8192, dtype="<i2").tobytes())
+        payload = buffer.getvalue()
+        source = inspect_pcm_source(payload, expected_sha256=hashlib.sha256(payload).hexdigest(), sample_rate=48000)
+        phonemes = [dict(symbol='a'), dict(symbol='s'), dict(symbol='pau'), dict(symbol='k')]
+        snapshot = dict(sources=[dict(source, sourceId="s")],
+                        labels=[dict(label=dict(sourceId='s', phonemes=phonemes))])
+        # 129 frames: a(0..63), s(64..95), pau(96..111), k(112..128)
+        phone_index = [0] * 64 + [1] * 32 + [2] * 16 + [3] * 17
+        batch = dict(sourceId="s", datasetSha256="d", targetSha256="t", frameOffset=0, hopSize=256,
+                     phraseAnalysisFrames=129,
+                     columns=dict(f0Hz=[220.] * 129, validSamples=[256] * 128 + [243],
+                                  phoneIndex=phone_index),
+                     melTargets=np.arange(129 * 80, dtype=np.float32).reshape(129, 80))
+        with tempfile.TemporaryDirectory() as root:
+            path = Path(root) / "s.wav"; path.write_bytes(payload)
+            targets = {"s": (dict(profile=dict(tailPadding="zero-to-whole-hop", amplitudeScale="ln-amplitude")), None)}
+            with patch("tools.voice_model_training.vocoder_batches.iter_supervised_batches", return_value=iter([batch])):
+                parts = list(iter_vocoder_batches(snapshot, Path(root), targets, {"s": path},
+                    expected_profile_sha256="p", partition="train", batch_frames=4096,
+                    training_segment_frames=128, include_unvoiced_frames=True))
+        first, second = parts[0]["unvoicedFrames"][0], parts[1]["unvoicedFrames"][0]
+        self.assertEqual(first.shape[0], 65)
+        self.assertEqual(second.shape[0], 64)
+        # Segment 1 (frames 0-64): vowel frames ungated, first 's' frame gated.
+        self.assertEqual(first[:64].tolist(), [False] * 64)
+        self.assertEqual(first[64].item(), True)
+        # Segment 2 (frames 65-128): 's' gated, 'pau' ungated, 'k' gated.
+        self.assertEqual(second[:31].tolist(), [True] * 31)
+        self.assertEqual(second[31:47].tolist(), [False] * 16)
+        self.assertEqual(second[47:].tolist(), [True] * 17)
+
     def test_partial_hop_is_explicit_and_owned(self):
         import numpy as np
         from tools.voice_model_training.audio_source import inspect_pcm_source

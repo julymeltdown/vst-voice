@@ -11,22 +11,34 @@ excitation identities exist: 'zero-v1' (control: identical randn draws
 multiplied by zero) and 'uv-gated-v1' (treatment: the same draws gated by
 admitted non-rest unvoiced ownership at one-third of the full-amplitude
 sine level, the classic NSF ratio). The gate comes from conditioning
-frames' (not voiced) and (not rest) flags - never f0==0 - so silence
-stays distinct, matching the review guardrail.
+phoneme symbols in the explicit unvoiced inventory (h, f, k, s, sh, t,
+ch, ts; inventory id unvoiced-phone-inventory-v1), mapped through each
+conditioning frame's phoneIndex. An earlier draft gated on conditioning
+voiced/rest flags and was rejected in review: those flags are
+F0-extractor voicing (voiced == f0>0), not phone ownership, and would
+inject noise into f0=0 vowel frames while missing consonant frames whose
+extractor reported spurious pitch. Silence and pau stay ungated by
+symbol; nothing is inferred from f0==0.
 
 Schema-5 training configurations declare excitationNoiseId; it joins
 objective/learning-rate/seed as a governed warm-start axis with lineage
 recorded. Both arms of an experiment instantiate the same subclassed
 generator (uv_noise_generator_class, an exact copy of the pinned
 upstream forward plus the noise addition), so the only between-arm
-difference is the excitation content, not the code path. Each segment's
-noise realization is hashed into the epoch receipt
-(excitationNoiseSha256) for draw verification. Held-out reconstruction
-rebuilds the gated noise under the evaluation seed so measured audio
-reflects trained behavior. Export accepts schema-5 checkpoints and emits
+difference is the excitation content, not the code path. Raw draws and
+realized (gated) tensors are hashed separately into the epoch receipt
+(excitationRawDrawSha256, excitationRealizedSha256) so matched draws are
+verifiable rather than inferred from equal scalar losses. Excitation
+runs refuse partial resume until per-segment digests are chained through
+the recovery cursor. Held-out reconstruction rebuilds the gated noise
+under the evaluation seed so measured audio reflects trained behavior.
+Export accepts schema-5 checkpoints and emits
 a three-input (mel, f0, noise) graph through UvNoiseONNXAdapter with
-seeded parity cases; paired_vocoder_evaluation.run_graph feeds the
-noise input when the graph declares it and refuses mismatched feeding.
+seeded parity cases; paired_vocoder_evaluation feeds a per-arm noise
+map, records each arm's noiseSha256, and rejects an identical nonzero
+realization shared across arms because both graphs accept the input
+structurally - excitationNoiseId selects the caller's tensor, so a
+common nonzero feed would destroy the zero/noise contrast.
 
 Production-inference decision, recorded before training per the review
 protocol: the exported graph takes noise as an explicit input and the
@@ -35,11 +47,13 @@ gated by the score's own phone ownership - the graph stays a pure
 function, so replay is exact. Worker/request integration is deferred
 until the experiment shows the variant matters.
 
-Verification: 415 voice_model_training tests pass including new coverage
-that the zero arm reproduces the two-input forward bit for bit, that the
-gate excludes voiced and rest frames, that control/treatment consume the
-identical draw sequence, that state_dict keys are warm-start compatible,
-and that governed seed changes reseed and record lineage. No training
+Verification: 420 voice_model_training tests pass, including a
+pinned-real-Generator fixture proving the zero-noise variant reproduces
+the genuine upstream forward and parameter gradients bit for bit (not
+just self-consistency), phone-ownership gating across segment slicing
+and partial tails, vowel-f0=0 and pau exclusions, identical raw draws
+with distinct realized tensors, common-nonzero-noise rejection, and
+warm-start state_dict compatibility. No training
 run, bundle or production binary changed in this step.
 
 ## Corrected diagnostics: residual correlation is concentrated at hop multiples; no stochastic excitation exists
