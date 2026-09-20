@@ -54,3 +54,36 @@ def decompose(reference, candidate, phones, *, minimum_frames=2):
                 referenceBinStd=None, biasConcentration=None)
         rows.append(row)
     return rows, int((~covered).sum())
+
+
+def error_share(reference, candidate, phones, symbols, *, minimum_frames=2):
+    """Compare a phone class's share of frames with its share of total error.
+
+    The acoustic objective weights frames by valid samples per hop, so a class
+    whose error share exceeds its frame share is already receiving proportionally
+    more gradient pressure, not less. That distinction decides whether frame
+    weighting can explain an underfit class. Thresholds are explicit inputs.
+    """
+    rows, uncovered = decompose(reference, candidate, phones, minimum_frames=minimum_frames)
+    if not isinstance(symbols, (tuple, list)) or not symbols:
+        raise ValueError('Select at least one phone symbol')
+    wanted = set(symbols)
+    class_frames = class_error = total_frames = total_error = 0.0
+    for row in rows:
+        if row['measurements'] != 'MEASURED':
+            continue
+        frames = row['analysisFrames']
+        error = row['meanAbsoluteError'] * frames
+        total_frames += frames
+        total_error += error
+        if row['phone'] in wanted:
+            class_frames += frames
+            class_error += error
+    return dict(formatId=None, symbols=sorted(wanted), classFrames=class_frames,
+        totalFrames=total_frames, classError=class_error, totalError=total_error,
+        frameShare=(class_frames / total_frames if total_frames else None),
+        errorShare=(class_error / total_error if total_error else None),
+        # > 1 means the class contributes more error than it occupies frames.
+        errorToFrameShareRatio=((class_error / total_error) / (class_frames / total_frames)
+                                if total_error and total_frames and class_frames else None),
+        uncoveredAnalysisFrames=uncovered)

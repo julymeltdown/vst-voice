@@ -1,5 +1,43 @@
 # Integrated Singer Execution
 
+## Frame weighting rejected: unvoiced phones already carry extra loss share
+
+Tested whether the fricative underfit is simply because the objective barely
+weights those frames. The acoustic objective weights each frame by its valid
+samples per hop, so the relevant check is the class's frame share versus its share
+of the objective's error.
+
+| Song | Unvoiced frame share | Unvoiced error share | Error-to-frame ratio |
+| --- | ---: | ---: | ---: |
+| 00003 | 0.0625 | 0.0818 | 1.310 |
+| 00005 | 0.0784 | 0.1045 | 1.333 |
+| 00024 | 0.0785 | 0.0960 | 1.224 |
+| 00402 | 0.0696 | 0.0861 | 1.237 |
+| 00420 | 0.0196 | 0.0208 | 1.063 |
+
+Every song shows a ratio above 1. Unvoiced phones occupy roughly 2-8% of frames
+but contribute 2-10% of the objective error, so they already receive *more*
+gradient pressure per frame than an average frame. Down-weighting or rebalancing
+the loss toward fricatives would not address a class that is already
+over-contributing to the loss, and the earlier suspicion that fricatives are
+starved of gradient is rejected.
+
+This tightens the remaining space further. Fricatives are not starved of coverage
+(7.4% of frames, balanced across partitions), not starved of gradient (ratio > 1),
+not fixed by a constant correction (80% of error is structured), and not fixed by
+more sampling (flat across 1-32 steps). What remains is the *form* of the
+objective and the output parameterization: a per-element regression that is
+minimized by a smooth conditional mean, scored against a target whose defining
+property on fricatives is frame-level randomness.
+
+That is now a specific, falsifiable claim about the objective's form rather than
+about its weighting. The next step is a bounded experiment on the objective form
+(for example scoring frication in a way that does not average away inter-frame
+randomness) with the baseline objective retained as the control, measured by the
+flatness and structured-error diagnostics already built.
+
+Evidence: `acoustic-error-share-r1.json`.
+
 ## Unvoiced mel error is mostly structure, not a constant bias
 
 Split the per-phone mel error into a per-bin bias and the residual structure left
