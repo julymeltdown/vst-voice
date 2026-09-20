@@ -79,6 +79,16 @@ class VocoderExportIdentityTests(unittest.TestCase):
                      epoch=dict(identity, formatId="com.project-seam.vocoder-epoch-result"))
         receipt = dict(formatId="com.project-seam.gan-checkpoint")
         self.assertEqual(export_identity(state, receipt, profile), config)
+        from tools.voice_model_training.unvoiced_periodicity import OBJECTIVE_ID as periodic
+        from tools.voice_model_training.test_train_vocoder_command import settings
+        changed=copy.deepcopy(state)
+        changed['metadata']['objectiveId']=changed['epoch']['objectiveId']=periodic
+        with self.assertRaises(ValueError):export_identity(changed,receipt,profile)
+        changed['metadata']['run']['settings']=dict(settings(),schemaVersion=4,
+            architectureProfile='mini-nsf-32-smoke-v1',trainingSegmentFrames=512,objectiveId=periodic)
+        self.assertEqual(export_identity(changed,receipt,profile),config)
+        changed['metadata']['run']['settings']['objectiveId']='nsf-lsgan-logmel-48k80-v1'
+        with self.assertRaises(ValueError):export_identity(changed,receipt,profile)
         large = copy.deepcopy(state)
         large_config = vocoder_configuration("mini-nsf-512-mrf-v1")
         large["metadata"]["run"]["configuration"] = large_config

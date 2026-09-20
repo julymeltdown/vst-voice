@@ -1,5 +1,13 @@
 # Original voice model production
 
+Vocoder training config schema four adds mandatory `objectiveId` to the schema
+three fields. Choose `nsf-lsgan-logmel-48k80-v1` for the existing objective or
+`nsf-lsgan-logmel-uvperiodic-48k80-v1` for the experimental Japanese-phone
+periodicity term (fixed coefficient 1). Older configurations are unchanged.
+An objective change cannot be applied with exact `--resume`. Export requires
+matching objective metadata and explicit schema-four settings for the new term.
+This does not authorize training data or qualify the resulting singer.
+
 Frozen evaluation reference capture (not a training corpus):
 
 ```sh

@@ -23,19 +23,30 @@ from .gan_checkpoint_storage import require_disk_headroom
 OBJECTIVE_ID = 'nsf-lsgan-logmel-48k80-v1'
 
 
+def training_objective(settings):
+    from .unvoiced_periodicity import OBJECTIVE_ID as PERIODIC_OBJECTIVE
+    objective = settings.get('objectiveId', OBJECTIVE_ID)
+    if objective not in (OBJECTIVE_ID, PERIODIC_OBJECTIVE):
+        raise ValueError('Unsupported vocoder objective')
+    return objective
+
+
 def model_settings(value):
     fields = {'formatId', 'schemaVersion', 'seed', 'learningRate', 'learningRateDecay',
               'maximumUpdates', 'maximumSeconds', 'cpuThreads', 'evaluationSeed',
               'heldOutSources', 'labelOrigin'}
-    if isinstance(value, dict) and type(value.get('schemaVersion')) is int and value['schemaVersion'] in (2, 3):
+    if isinstance(value, dict) and type(value.get('schemaVersion')) is int and value['schemaVersion'] in (2, 3, 4):
         fields.add('architectureProfile')
-        if value['schemaVersion'] == 3:
+        if value['schemaVersion'] in (3, 4):
             fields.add('trainingSegmentFrames')
+        if value['schemaVersion'] == 4:
+            fields.add('objectiveId')
     if (not isinstance(value, dict) or set(value) != fields
             or value['formatId'] != 'com.project-seam.vocoder-training-config'
-            or type(value['schemaVersion']) is not int or value['schemaVersion'] not in (1, 2, 3)):
+            or type(value['schemaVersion']) is not int or value['schemaVersion'] not in (1, 2, 3, 4)):
         raise ValueError('Unsupported vocoder training configuration')
-    if value['schemaVersion'] == 3 and (type(value['trainingSegmentFrames']) is not int or
+    training_objective(value)
+    if value['schemaVersion'] in (3, 4) and (type(value['trainingSegmentFrames']) is not int or
                                         not 16 <= value['trainingSegmentFrames'] <= 4096):
         raise ValueError('Training segments require 16..4096 analysis hops')
     for key, lower, upper in (('seed', 0, 2**63-1), ('evaluationSeed', 0, 2**63-1),
@@ -198,6 +209,7 @@ def main(argv=None):
             raise ValueError('Invalid bounded vocoder run limits')
         settings = load_config(args.training_config, args.training_sha256)
         configuration = model_settings(settings)
+        objective_id = training_objective(settings)
         if ((args.resume_partial is not None or args.checkpoint_interval_updates is not None)
                 and settings.get('trainingSegmentFrames') is None):
             raise ValueError('Partial recovery requires explicit segmented training configuration')
@@ -239,10 +251,10 @@ def main(argv=None):
         parent_receipt = args.resume_receipt_sha256
         if args.resume is not None:
             previous, completed = resume_identity(args.resume, args.resume_receipt_sha256, metadata=metadata,
-                profile=profile, dataset=snapshot['datasetSha256'], objective_id=OBJECTIVE_ID)
+                profile=profile, dataset=snapshot['datasetSha256'], objective_id=objective_id)
         elif args.resume_partial is not None:
             completed, parent_receipt = partial_resume_identity(args.resume_partial, args.resume_partial_sha256,
-                metadata=metadata, profile=profile, dataset=snapshot['datasetSha256'], objective_id=OBJECTIVE_ID)
+                metadata=metadata, profile=profile, dataset=snapshot['datasetSha256'], objective_id=objective_id)
         if completed + args.epochs > 100000:
             raise ValueError('Vocoder completed-epoch bound exceeded')
         source = _module(checkout, 'seam_train_vocoder_architecture', 'models/nsf_HiFigan/models.py')
@@ -279,7 +291,7 @@ def main(argv=None):
             on_progress=progress,
             epoch_options=dict(dataset_inputs=inputs, conditioning_directory=args.conditioning,
                 targets=targets, pcm_sources=sources, expected_profile_sha256=profile,
-                reconstruction_loss=reconstruction, objective_id=OBJECTIVE_ID,
+                reconstruction_loss=reconstruction, objective_id=objective_id,
                 maximum_updates=settings['maximumUpdates'], maximum_seconds=settings['maximumSeconds'],
                 schedulers=schedulers, expected_dataset_sha256=snapshot['datasetSha256'],
                 held_out_items=settings['heldOutSources'], label_origin=settings['labelOrigin'],

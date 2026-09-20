@@ -7,7 +7,7 @@ from unittest.mock import patch
 from types import SimpleNamespace
 
 from tools.voice_model_training.__main__ import encode_report, publish_new
-from tools.voice_model_training.train_vocoder import model_settings, load_pcm_sources, resume_identity, partial_resume_identity, main
+from tools.voice_model_training.train_vocoder import model_settings, load_pcm_sources, resume_identity, partial_resume_identity, main, training_objective, OBJECTIVE_ID
 from tools.voice_model_training.gan_checkpoint_storage import require_disk_headroom, DISK_RESERVE_BYTES
 
 
@@ -19,6 +19,18 @@ def settings():
 
 
 class VocoderCommandTests(unittest.TestCase):
+    def test_explicit_objective_versioning(self):
+        from tools.voice_model_training.unvoiced_periodicity import OBJECTIVE_ID as periodic
+        original=settings()
+        self.assertEqual(training_objective(original),OBJECTIVE_ID)
+        expanded=dict(original,schemaVersion=4,architectureProfile='mini-nsf-512-mrf-v1',
+                      trainingSegmentFrames=512,objectiveId=periodic)
+        self.assertEqual(model_settings(expanded)['upsample_initial_channel'],512)
+        self.assertEqual(training_objective(expanded),periodic)
+        for bad in (dict(original,objectiveId=periodic),dict(expanded,objectiveId='unknown'),
+                    dict(expanded,schemaVersion=3)):
+            with self.assertRaises(ValueError):model_settings(bad)
+
     def test_partial_lineage_continues_current_epoch_not_next(self):
         current = dict(configuration={"a": 1}, trainingRevision="revision")
         receipt = dict(formatId="com.project-seam.gan-partial-checkpoint",

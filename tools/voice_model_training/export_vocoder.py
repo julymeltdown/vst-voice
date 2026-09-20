@@ -39,10 +39,18 @@ def export_identity(state, receipt, profile):
     digest = hashlib.sha256(json.dumps(profile, sort_keys=True, separators=(",", ":"),
                                       allow_nan=False).encode()).hexdigest()
     epoch = state.get("epoch", {})
+    from .unvoiced_periodicity import OBJECTIVE_ID as PERIODIC_OBJECTIVE
+    objective = epoch.get('objectiveId')
+    if objective == PERIODIC_OBJECTIVE:
+        from .train_vocoder import model_settings, training_objective
+        settings = run.get('settings', {})
+        if (settings.get('schemaVersion') != 4 or model_settings(settings) != configuration
+                or training_objective(settings) != objective):
+            raise ValueError('Periodicity export requires explicit matching version-four settings')
     if (digest != metadata.get("profileSha256") or digest != epoch.get("profileSha256")
             or epoch.get("formatId") != "com.project-seam.vocoder-epoch-result"
             or epoch.get("datasetSha256") != metadata.get("datasetSha256")
-            or epoch.get("objectiveId") != "nsf-lsgan-logmel-48k80-v1"
+            or objective not in ("nsf-lsgan-logmel-48k80-v1", PERIODIC_OBJECTIVE)
             or metadata.get("objectiveId") != epoch.get("objectiveId")):
         raise ValueError("Vocoder checkpoint profile, dataset or objective identity differs")
     return configuration
@@ -92,6 +100,7 @@ def main():
             deploymentRevision=DEPLOYMENT_REVISION, profile=profile,
             profileSha256=receipt["metadata"]["profileSha256"],
             datasetSha256=receipt["metadata"]["datasetSha256"],
+            objectiveId=receipt["metadata"]["objectiveId"],
             parity=dict(parity, graphRetained=True), runtimeVersion=ort.__version__,
             sourceRightsRevalidated=False, modelBundleAdmitted=False,
             singerQualified=False, releaseEligible=False)

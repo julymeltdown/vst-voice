@@ -1,5 +1,26 @@
 # Integrated Singer Execution
 
+## CLI objective selection and export identity now versioned
+
+Training configuration schema four extends schema three with mandatory
+`objectiveId`. It accepts only the original `nsf-lsgan-logmel-48k80-v1` or the
+opt-in `nsf-lsgan-logmel-uvperiodic-48k80-v1`. Older schema versions retain their
+original meaning and reject an injected objective field. Architecture, segment,
+resource bounds and source admission checks are unchanged.
+
+The CLI passes the selected objective to complete/partial resume validation and
+the epoch loop. Exact resume still requires identical settings and objective;
+it cannot change the baseline's objective. Export accepts the new objective only
+when epoch/metadata agree and the captured schema-four settings select the same
+objective and architecture. The export receipt now records `objectiveId`.
+
+This enables explicit fresh training with the new objective and later export;
+it does not yet provide the weight-only warm start needed for the planned paired
+experiment. No training was launched. Remaining implementation is an explicitly
+selected CLI warm-start mode with generator/discriminator weight loading,
+fresh optimizers/schedulers, reset RNG, recorded ancestry and safe subsequent
+resume. The old checkpoint must remain byte-for-byte unchanged.
+
 ## Periodicity term integrated into optimizer and epoch service, opt-in only
 
 Added objective identity `nsf-lsgan-logmel-uvperiodic-48k80-v1` at the epoch-service
