@@ -1,5 +1,40 @@
 # Integrated Singer Execution
 
+## Over-smoothing is a training/objective problem, not sampling or coverage
+
+Two alternative explanations for the fricative collapse were tested directly and
+both were rejected with evidence.
+
+Coverage is balanced. Unvoiced frames are 7.40% of training (5,503,680 of
+74,406,000), 7.50% of test (2,620,800 of 34,944,000) and 8.15% of validation
+(757,440 of 9,294,000). Fricatives are not underrepresented in training, so the
+model is not failing for lack of examples.
+
+Diffusion step count does not recover the detail. Holding the phrase, seed and
+features fixed and varying only the exported graph's `steps` input:
+
+| Steps | Unvoiced windows | Reference flatness | Predicted flatness |
+| ---: | ---: | ---: | ---: |
+| 1 | 8 | 0.7120 | 0.00014 |
+| 4 | 8 | 0.7120 | 0.02401 |
+| 8 | 8 | 0.7120 | 0.02576 |
+| 16 | 8 | 0.7120 | 0.01937 |
+| 32 | 8 | 0.7120 | 0.02114 |
+
+Predicted flatness stays around 0.02 across a 32x change in sampler steps while
+the reference is 0.7120. Each step count produces a distinct mel hash, so the
+input is genuinely taking effect; the output simply never approaches the
+reference's noise content. The acoustic model is not failing to *sample* noise
+detail; it has not *learned* to represent it.
+
+Combined with the earlier finding that the vocoder also shows source-mel
+artifacts, the working conclusion is that the acoustic model's learned spectrum
+is over-smooth in fricatives, and this is the primary defect. The next work is on
+the acoustic training objective or its supervision, not on the sampler and not
+primarily on the vocoder. No objective, dataset or weight was modified here.
+
+Evidence: `acoustic-steps-flatness-probe-r1.json`.
+
 ## Fricative over-smoothing confirmed across the whole development set
 
 Extended the single-song flatness observation to all five frozen development
