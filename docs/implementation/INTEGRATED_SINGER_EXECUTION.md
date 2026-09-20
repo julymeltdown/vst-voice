@@ -1,5 +1,42 @@
 # Integrated Singer Execution
 
+## Consolidated statement of the acoustic fricative defect
+
+The investigation across the last several steps now has enough evidence to state
+the defect precisely and to name what remains untested. Writing it down so the
+next step starts from facts rather than from the earlier, partly wrong framing.
+
+Established by measurement, on the retained epoch-21 acoustic export:
+
+1. Predicted fricative spectra are peaky, not noise-like. Spectral flatness is
+   ~0.02 predicted against 0.55-0.86 reference, on both held-out and training
+   songs (27 unvoiced windows held-out, 3 training songs checked).
+2. It is not a generalization gap: training-partition songs fail the same way.
+3. It is not sampling: flatness is ~0.02 whether the graph runs 1 or 32 steps.
+4. It is not coverage: unvoiced frames are 7.40% / 7.50% / 8.15% of training,
+   test and validation respectively.
+5. It is not temporal over-smoothing: normalized frame-to-frame change is
+   *higher* predicted (0.33-0.37) than reference (0.06) on unvoiced phones, so
+   the earlier "over-smooth in time" description was wrong and is withdrawn.
+6. The target is well conditioned: median within-frame relative standard
+   deviation on unvoiced targets is 0.1637, so the model is not being asked to
+   reproduce something the encoding cannot express.
+
+What this leaves, and what is still a hypothesis rather than a finding: the DDPM
+objective is noise prediction over a whole phrase, and the loss is a plain L1/L2
+per element. A high-variance, low-correlation target like frication is exactly
+the case where a mean-seeking objective is least able to reproduce detail, and
+the peaky prediction is consistent with the model collapsing fricatives toward a
+dominant harmonic component. The objective and the export adapter have not yet
+been instrumented to confirm or reject this, so it stays a hypothesis.
+
+Concrete next step: measure, on unvoiced frames only, the achievable-versus-
+observed residual variance of the noise-prediction target under the current
+objective. If the loss already has near-zero reachable residual there while the
+flatness is still wrong, the objective is not the lever; if not, the loss or its
+reduction is the place to change. Do not change the objective, dataset, weights
+or deployed artifact before that measurement.
+
 ## Frame-to-frame fluctuation does not support a simple temporal-smoothing story
 
 Added `spectral_fluctuation` to test whether the acoustic model flattens temporal
