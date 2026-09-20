@@ -102,6 +102,30 @@ def main():
         (root / "vocoder").write_bytes(damaged)
         rejected = subprocess.run(arguments, capture_output=True, text=True, timeout=20)
         assert rejected.returncode == 7, (rejected.returncode, rejected.stderr)
+        # Schema 4: a conditioned graph with measured defaults must pass the
+        # same paired probe, not just metadata inspection.
+        conditioned_root = root / "conditioned"
+        conditioned_root.mkdir()
+        conditioned_acoustic, conditioned_vocoder = graphs(conditioned=True)
+        conditioned_configuration = dict(configuration, schemaVersion=4,
+                                         stepsLayout="scalar", vocoderOutput="audio",
+                                         conditioningDefaults={"breathiness": {"a": 0.4}})
+        (conditioned_root / "acoustic").write_bytes(conditioned_acoustic)
+        (conditioned_root / "vocoder").write_bytes(conditioned_vocoder)
+        (conditioned_root / "configuration").write_text(json.dumps(conditioned_configuration))
+        (conditioned_root / "vocabulary").write_bytes(assets["vocabulary"])
+        conditioned_prepared = subprocess.run(
+            [cli, "prepare-neural-bundle", str(conditioned_root), "fixture", "1", "1048576"],
+            check=True, capture_output=True, text=True, timeout=20)
+        conditioned_digest = json.loads(conditioned_prepared.stdout)["manifestSha256"]
+        conditioned_assets = {name: (conditioned_root / name).read_bytes()
+                              for name in ("acoustic", "vocoder", "vocabulary", "configuration")}
+        inspect_bundle((conditioned_root / "manifest.json").read_bytes(),
+                       conditioned_assets, conditioned_digest)
+        conditioned_result = subprocess.run(
+            [runtime, "--paired-bundle", str(conditioned_root), "fixture", "1", conditioned_digest],
+            check=True, capture_output=True, text=True, timeout=20)
+        assert json.loads(conditioned_result.stdout)["status"] == "PAIRED_PROFILE_INFERENCE_ONLY"
     print("CLI-prepared bundle passed native child reload and inference; changed bytes rejected. No learned singing claim.")
 
 

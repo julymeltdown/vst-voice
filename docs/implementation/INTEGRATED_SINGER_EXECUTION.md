@@ -23,7 +23,10 @@ synthesized silence spans and silence-role phones still receive exactly zero,
 and a drawn curve remains authoritative for the whole region because lane
 evaluation holds edge values outside the drawn range. The request only
 attaches the vector when some frame is nonzero, so an unconditioned model is
-never sent a control it cannot consume.
+never sent a *defaulted* channel. Drawn automation is a separate case that
+predates this change: a nonzero curve still attaches the vector on any model,
+and a graph that cannot consume it is rejected by the worker rather than
+silently dropped.
 
 The tooling half is symmetric: `prepare_bundle.py --breathiness-prior` binds a
 captured `com.project-seam.breathiness-prior` receipt (digest-verified,

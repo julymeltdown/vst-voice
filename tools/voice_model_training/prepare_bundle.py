@@ -141,32 +141,70 @@ def load_breathiness_prior(path, expected_sha256, tokens):
     if len(payload) > 4 * 1024 * 1024 or sha256(payload) != expected_sha256:
         raise ValueError("Breathiness prior differs from its declared SHA-256")
     prior = json.loads(payload)
+    # The margin is the producer's own constant, imported lazily because this
+    # file also runs as a plain script where package-relative imports fail.
+    try:
+        from .breathiness_prior import PERIODIC_MARGIN
+    except ImportError:
+        root = str(Path(__file__).resolve().parent.parent.parent)
+        if root not in sys.path:
+            sys.path.insert(0, root)
+        from tools.voice_model_training.breathiness_prior import PERIODIC_MARGIN
     if (type(prior) is not dict
             or prior.get("formatId") != "com.project-seam.breathiness-prior"
             or prior.get("schemaVersion") != 1
+            or prior.get("revision") != 1
             or prior.get("releaseEligible") is not False
             or prior.get("singerQualified") is not False
             or prior.get("supervisionAdmitted") is not False):
         raise ValueError("Breathiness prior is not a captured unqualified receipt")
+    minimum_windows = prior.get("minimumWindows")
+    if (type(minimum_windows) is not int or type(minimum_windows) is bool
+            or not 1 <= minimum_windows <= 1000000):
+        raise ValueError("Breathiness prior window bound is invalid")
     rows = prior.get("symbols")
     if type(rows) is not list or len(rows) > 4096:
         raise ValueError("Breathiness prior symbol table is invalid")
     known = set(tokens)
+    seen = set()
     defaults = {}
     for row in rows:
-        if (type(row) is not dict
-                or not {"symbol", "breathiness", "windows", "sourceMean", "measured", "periodic"}
-                <= set(row)):
+        if type(row) is not dict or set(row) != {"symbol", "breathiness", "windows",
+                                               "sourceMean", "measured", "periodic"}:
             raise ValueError("Breathiness prior row shape is invalid")
-        symbol, value = row["symbol"], row["breathiness"]
+        symbol = row["symbol"]
         if (type(symbol) is not str or not symbol or len(symbol.encode()) > 256
-                or any(ord(c) < 32 or ord(c) == 127 for c in symbol)
-                or type(value) not in (int, float) or type(value) is bool
-                or not 0 <= value <= 1):
-            raise ValueError("Breathiness prior symbol or value is invalid")
-        if value > 0:
-            if symbol not in known:
-                raise ValueError("Breathiness prior names a symbol outside the vocabulary")
+                or any(ord(c) < 32 or ord(c) == 127 for c in symbol)):
+            raise ValueError("Breathiness prior symbol is invalid")
+        if symbol in seen:
+            raise ValueError("Breathiness prior repeats a symbol")
+        seen.add(symbol)
+        # Membership is checked for every row, measured or not: an unknown
+        # symbol at zero is still a receipt naming something the voice never
+        # trained, and silently dropping it would hide the divergence.
+        if symbol not in known:
+            raise ValueError("Breathiness prior names a symbol outside the vocabulary")
+        value, windows, source_mean = row["breathiness"], row["windows"], row["sourceMean"]
+        measured, periodic = row["measured"], row["periodic"]
+        if (type(value) not in (int, float) or type(value) is bool or not 0 <= value <= 1
+                or type(windows) is not int or type(windows) is bool or windows < 0
+                or type(source_mean) not in (int, float) or type(source_mean) is bool
+                or not 0 <= source_mean <= 1
+                or type(measured) is not bool
+                or periodic not in ("MEASURED", "PINNED_PERIODIC")):
+            raise ValueError("Breathiness prior row values are invalid")
+        # A digest binds the file's bytes, not its internal consistency. Every
+        # row must equal what the producer's own rule would emit for its stated
+        # windows and mean, or the receipt is not the measured artifact it
+        # claims to be.
+        if measured != (windows >= minimum_windows):
+            raise ValueError("Breathiness prior measurement flag disagrees with its windows")
+        expected = float(source_mean) if measured and source_mean > PERIODIC_MARGIN else 0.0
+        if float(value) != expected:
+            raise ValueError("Breathiness prior value differs from its measured mean")
+        if periodic != ("PINNED_PERIODIC" if float(value) == 0.0 else "MEASURED"):
+            raise ValueError("Breathiness prior periodic flag disagrees with its value")
+        if float(value) > 0:
             defaults[symbol] = float(value)
     return defaults
 

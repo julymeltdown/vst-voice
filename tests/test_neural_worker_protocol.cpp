@@ -151,6 +151,17 @@ TEST_CASE("neural score conditioning uses compiled timing and explicit silence w
   CHECK(automatedRequest);
   CHECK(std::abs(automatedRequest.value().breathiness[500]-0.9F)<1e-6F);
   CHECK(std::abs(automatedRequest.value().breathiness[4800]-0.9F)<1e-6F);
+  // A deliberately drawn zero is still drawn automation: it must not be
+  // replaced by the model default, or intentional periodic rendering would be
+  // impossible under a defaulted model.
+  auto drawnZero=region;
+  CHECK(drawnZero.breathinessAutomation.upsert({time::Tick{0},0.0F}));
+  const auto drawnZeroPerformance=synthesis::compileScorePerformance(project,drawnZero,48000U,phones);
+  CHECK(drawnZeroPerformance);
+  const auto drawnZeroRequest=prepareNeuralScoreRequest(108U,defaultedModel,vocabulary.value(),
+      drawnZeroPerformance.value(),phones,std::string(64U,'b'),0,12010,"SP");
+  CHECK(drawnZeroRequest);
+  CHECK(drawnZeroRequest.value().breathiness.empty());
   auto delayed=region; delayed.durationTick=time::Tick{1920}; delayed.notes[0].startTick=time::Tick{480};
   std::vector<domain::PhonemeToken> extendedPhones{
       {.key={domain::NoteId{5U},0U},.symbol="z",.role=domain::PhonemeRole::Onset,.voiced=true,.timing={.startOffset=-100000}},

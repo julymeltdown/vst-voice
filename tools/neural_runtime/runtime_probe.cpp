@@ -85,7 +85,11 @@ int pairedProfile(Ort::Session& acoustic,Ort::Session& vocoder,
     foundSteps=true;
   }
   if (!foundSteps) return 3;
-  if (metadata.configurationVersion!=3U ||
+  // Schema 4 extends schema 3 only by declaring conditioning defaults, which
+  // this probe does not consume: it builds its own request or replays a
+  // supplied one. Admitting 4 keeps the paired diagnostic usable on repaired
+  // candidate bundles without weakening the steps-layout check.
+  if ((metadata.configurationVersion!=3U && metadata.configurationVersion!=4U) ||
       stepsShape!=(metadata.stepsLayout=="scalar"?std::vector<std::int64_t>{}:std::vector<std::int64_t>{1})) return 3;
   if (metadata.model.hopSize!=256U || metadata.features.bins!=80U || metadata.features.layout!="BTF") return 3;
   const auto lengths=supplied?std::vector<std::int64_t>{static_cast<std::int64_t>((supplied->frameCount+255U)/256U)}:
