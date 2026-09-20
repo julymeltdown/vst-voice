@@ -16,7 +16,13 @@ Three structural changes close the class rather than the instance:
 order when the merge produces a different one; `inspect_pair.py` enforces
 declared input/output order instead of set membership; and
 `pair_contract.hpp` rejects out-of-order interfaces at native admission, so a
-mis-ordered graph now fails inspection before a bundle can ship it.
+mis-ordered graph now fails inspection before a bundle can ship it. The
+boundary is stated precisely: `AdmittedNeuralBundle::admit` remains
+metadata-level and does not parse graph input order, so an order-only
+permutation still receives an admitted handle; rejection happens at offline
+inspection (`inspect_pair`/`inspect_bundle`) and inside the worker's
+pre-session `pairContract` check before ORT sessions are created. A
+permuted-order regression in `check_bundle_runtime.py` covers both layers.
 
 Re-exported from the same epoch-8 conditioned checkpoint
 (receipt 04f72263b700804cc4557879208def3ca4157d68955dea516b179140f755007e,
@@ -25,22 +31,55 @@ and re-composed with the same measured prior into
 bundle-breathiness-e8-v512-e2-r2 (manifest
 b34b7263d923d6371b2d00c038bd513bf07a288de2e6f76855a7da06701f0746). The
 five-song validation campaign then passed 5/5 through the production worker
-(campaign-breathiness-e8-r3), as did a same-binary re-run of the e37
-unconditioned baseline (campaign-e37-v512-e2-r3) — the earlier e37 receipt
-predates the binary rebuild and could not be revalidated, so the baseline was
-re-measured rather than assumed.
+(campaign-breathiness-e8-r4), as did a re-run of the e37 unconditioned
+baseline (campaign-e37-v512-e2-r4) — the earlier e37 receipt predates the
+binary rebuild and could not be revalidated, so the baseline was re-measured
+rather than assumed. Worker identity is now bound, not assumed: the render
+binary reports `workerSha256` for the helper it actually launched, each
+campaign records `inferenceWorkerSha256` (both r4 receipts carry
+f46d175abab46b743aafa58b3ba3d115eadcc652b04109a84685ee6910bbd656), a
+mid-campaign change fails the run, and `compare_campaigns` refuses
+campaigns whose recorded workers differ. Renderer and pitch-extractor
+digests remain pinned through the selection receipts as before.
 
-The comparison receipt (compare-e37r3-vs-breathiness-e8r3.json) reports
+The comparison receipt (compare-e37r4-vs-breathiness-e8r4.json) reports
 NO_REGRESSIONS_ON_REPORTED_METRICS with a large candidate improvement:
 weighted mean absolute pitch error 341.99 -> 36.40 cents, within-tolerance
 frames 81.0% -> 95.6%, and measurable voiced pairs 3319 -> 4077. This is a
-pitch-track diagnostic on five procedural songs, not perceptual evidence:
-the receipts still say singerQualified=False and releaseEligible=False, and
+pitch-track diagnostic on five procedural songs, not perceptual evidence.
+The comparison is whole-model — conditioned training plus the measured prior
+versus the unconditioned e37 model — so it does not isolate the prior's
+causal contribution; a zero-versus-measured-prior pair on the same
+checkpoint is the isolating experiment. All five songs in both campaigns
+still report pitchStatus=MISMATCH, three of the five selected sources
+overlap vocoder training, and combinedModelHoldoutVerified remains false.
+The receipts still say singerQualified=False and releaseEligible=False, and
 no listener has judged anything.
 
 Verification: check_paired_runtime, check_bundle_runtime (including the
-schema-4 conditioned scenario), check_bundle_preparation and inspect_bundle
-all pass on the rebuilt native binaries and the reordered real bundle.
+schema-4 conditioned scenario and the permuted-order rejection),
+check_bundle_preparation and inspect_bundle all pass on the rebuilt native
+binaries and the reordered real bundle.
+
+## Paired vocoder arms completed and compared on frozen replay inputs
+
+Both arms of the periodicity experiment completed their epoch (control
+checkpoint 0bfb7d8f, periodicity ae687426), exported through
+`paired_vocoder_experiment.export_arms`, and were evaluated over the five
+frozen replay sources under identical mel/F0/dynamics
+(paired-vocoder-comparison-r1.json). The periodicity objective moved both
+diagnostic classes in the intended direction without promoting anything:
+
+| Arm | Unvoiced lag correlation (ref / candidate) | Unvoiced RMS | Voiced lag correlation (ref / candidate) | Voiced RMS |
+| --- | --- | ---: | --- | ---: |
+| control | -0.0036 / 0.4615 | 0.945 | -0.1356 / -0.1298 | 0.855 |
+| periodicity | -0.0036 / 0.2257 | 0.804 | -0.1356 / -0.1380 | 0.974 |
+
+The periodicity arm halves the spurious lag-256 periodicity the control
+leaves in unvoiced phones and restores voiced energy (RMS 0.974 vs 0.855),
+at some unvoiced energy cost (0.804 vs 0.945). Descriptive only: 27 unvoiced
+and 86 voiced windows, no arm selected or qualified, and perceptual
+consonant quality still requires listening.
 
 ## Score-derived defaults now feed the aperiodicity channel without drawn automation
 

@@ -328,7 +328,7 @@ TEST_CASE("an admitted bundle renders non-silent audio through the production wo
   // completed render.
   std::cout << "production worker rendered " << published->result.interleaved.size()
             << " interleaved samples through " << published->activeRenderer << " with "
-            << nonzero << " nonzero samples" << std::endl;
+            << nonzero << " nonzero samples; workerSha256=" << helperHash.value() << std::endl;
 
   // A wrong captured manifest identity must be refused before any graph runs.
   const auto wrong = seam::neural_synthesis::loadNeuralBundleDirectory(directory,

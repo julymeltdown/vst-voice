@@ -127,6 +127,7 @@ def execute_campaign(binding, captured, bundle, renderer, pitch_executable, outp
         validationScope=scope, vocoderTrainingAudit=training_audit))
     selection_receipt_hash = _capture(output / 'selection.json', 1048576)[1]
     results = []
+    inference_worker_sha = None
     for index, (identity, source_bytes, project_bytes) in enumerate(captured):
         directory = output / ('song-%03d' % index)
         directory.mkdir()
@@ -142,9 +143,16 @@ def execute_campaign(binding, captured, bundle, renderer, pitch_executable, outp
                     raise ValueError('Executable changed during campaign')
             if capture_json(bundle / 'resource.json', 16384)[1] != resource_digest:
                 raise ValueError('Candidate resource changed during campaign')
-            run_render(renderer, bundle, manifest_digest, 256 * 1024 * 1024,
+            worker_sha = run_render(renderer, bundle, manifest_digest, 256 * 1024 * 1024,
                 project=project, output=directory / 'export', model_id=resource['id'],
                 version=resource['version'], silence_phone=silence_phone)
+            if (type(worker_sha) is not str or len(worker_sha) != 64
+                    or any(char not in '0123456789abcdef' for char in worker_sha)):
+                raise ValueError('Renderer did not report its inference worker digest')
+            if inference_worker_sha is None:
+                inference_worker_sha = worker_sha
+            elif inference_worker_sha != worker_sha:
+                raise ValueError('Inference worker changed during campaign')
             comparison = measure(source, directory / 'export' / 'master.wav', executable=pitch_executable)
             if comparison['referenceSha256'] != identity['sourceSha256']:
                 raise ValueError('Captured reference changed during measurement')
@@ -162,6 +170,7 @@ def execute_campaign(binding, captured, bundle, renderer, pitch_executable, outp
         **binding, items=results, selectedCount=len(results),
         selectionReceiptSha256=selection_receipt_hash,
         validationScope=scope, vocoderTrainingAudit=training_audit,
+        inferenceWorkerSha256=inference_worker_sha,
         combinedModelHoldoutVerified=False,
         executionPassed=all(row['execution'] == 'PASSED' for row in results),
         singerQualified=False, releaseEligible=False,

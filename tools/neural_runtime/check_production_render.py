@@ -47,10 +47,13 @@ def run_render(binary, directory, manifest_sha256, maximum_bytes, *, project=Non
     report = rendered.stdout
     match = re.search(r"with (\d+) nonzero samples", report)
     assert "seam.neural-worker.v1" in report and match and int(match[1]) > 0, report
+    worker = re.search(r"workerSha256=([0-9a-f]{64})", report)
+    assert worker, report
     if project is not None:
         assert "singerQualified=false" in report, report
         assert output.is_dir(), report
     print(report.strip())
+    return worker[1]
 
 
 def main():

@@ -90,7 +90,8 @@ def load_campaign(path, digest, executable):
         raise ValueError("Campaign execution summary disagrees with rows")
     if _capture(executable, 128 * 1024 * 1024)[1] != executable_hash:
         raise ValueError("Extractor changed during remeasurement")
-    return dict(campaignSha256=digest, selection=selection, rows=rows)
+    return dict(campaignSha256=digest, selection=selection, rows=rows,
+                inferenceWorkerSha256=report.get("inferenceWorkerSha256"))
 
 
 def summarize(rows):
@@ -110,6 +111,10 @@ def compare(baseline, candidate):
     for key in ("selectionSha256", "corpusSha256", "items", "silencePhone", "binarySha256"):
         if baseline["selection"].get(key) != candidate["selection"].get(key):
             raise ValueError("Campaigns use different selection, source, project, silence or executable identities")
+    baseline_worker = baseline.get("inferenceWorkerSha256")
+    candidate_worker = candidate.get("inferenceWorkerSha256")
+    if baseline_worker is not None and candidate_worker is not None and baseline_worker != candidate_worker:
+        raise ValueError("Campaigns ran different inference worker binaries")
     if len(baseline["rows"]) != len(candidate["rows"]):
         raise ValueError("Campaign row counts differ")
     rows = []

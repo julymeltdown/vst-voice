@@ -85,7 +85,7 @@ class ValidationCampaignTests(unittest.TestCase):
         with patch('tools.voice_model_training.validation_campaign.prepare_selection',
                    return_value=({}, captured + [second])), patch(
                    'tools.voice_model_training.validation_campaign.run_render',
-                   side_effect=[RuntimeError('render failed'), None]) as render, patch(
+                   side_effect=[RuntimeError('render failed'), 'a' * 64]) as render, patch(
                    'tools.voice_model_training.validation_campaign.measure', return_value=comparison):
             report = run_campaign(self.selection, self.sha, self.corpus, bundle, binary, binary,
                                   self.root / 'output')
@@ -96,7 +96,8 @@ class ValidationCampaignTests(unittest.TestCase):
         self.assertEqual(report['items'][1]['pitchStatus'], 'MISMATCH')
         self.assertFalse(report['singerQualified'])
         self.assertTrue((self.root / 'output' / 'song-000' / 'result.json').is_file())
-        with patch('tools.voice_model_training.validation_campaign.run_render'), patch(
+        with patch('tools.voice_model_training.validation_campaign.run_render',
+                   return_value='b' * 64), patch(
                 'tools.voice_model_training.validation_campaign.measure', return_value=comparison):
             mismatch = run_campaign(self.selection, self.sha, self.corpus, bundle, binary, binary,
                                     self.root / 'mismatch-output')
