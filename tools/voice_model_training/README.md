@@ -491,6 +491,21 @@ does not overwrite an existing destination and fsyncs the temporary file, but
 directory-fsync/power-loss durability and Windows runtime evidence remain open.
 Run all current tests with `python3 -m unittest discover -s tools/voice_model_training -p 'test_*.py'`.
 
+### Compare an application master with its source
+
+`python -m tools.voice_model_training.compare_application_export --reference SOURCE.wav
+--candidate MASTER.wav --pitch-executable build/release/seam_voicebank_cli --output REPORT.json`
+compares a mono reference with a 48 kHz PCM16/24/32 mono or stereo application export.
+Pass the command on one line. Inputs must have equal frame counts; the tool performs
+no alignment, trimming, resampling or gain fitting. Stereo is explicitly averaged,
+with per-channel RMS/peak/nonzero counts retained to expose cancellation. Both
+original file hashes and native extractor identity are recorded. Native pitch
+analysis uses captured, float32-encoded mono derivatives whose hashes and tracks
+are included; temporary derivative paths are not retained audio artifacts.
+The report contains the existing strict pitch verdict and multi-resolution spectral
+distance. It does not grant singer qualification or release acceptance. Requires
+the existing NumPy/SciPy training environment. Existing reports are never overwritten.
+
 Still required: source/permission admission, audio preparation, reviewed labels,
 remaining CLI subcommands, duplicate dossier, actual training and environment
 locking, checkpoint/export comparison, and held-out singing qualification. No

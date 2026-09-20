@@ -145,6 +145,49 @@ has heard the output.
 
 
 
+### SEAM-BETA-P0-08 application-path follow-up: improvement is not closure
+
+**Measured September 20, 2026.** The statement above that the blocker is "not the
+model" is too broad. Held-out vocoder reconstruction uses source mel/F0; the actual
+application also depends on the acoustic model and score conditioning. Likewise,
+one identical-input control with unmeasurable frames does not prove that *no audio*
+can satisfy the strict comparator. It demonstrates a coverage limitation for that
+control. Its 93.35% within-tolerance figure has measurable pairs as denominator,
+not all score frames, and does not by itself establish the product pitch criterion.
+
+The same saved pause song was exported with the existing epoch-9 acoustic model
+and the new 512-channel epoch-1 vocoder. Production-worker execution, committed
+master/stems/project, and saved-project reopen pass. The new master hash is
+`f5002b034a4e18d26d5c6fbf92a47038c7718d15adf7cb9cf4f391ce852a9197`.
+
+Both old and new masters were compared by the same new reproducible command,
+`tools.voice_model_training.compare_application_export`, with source
+`prepared/song-023/source.wav`, exact 150,000-frame alignment and arithmetic stereo
+downmix; no gain correction or time adjustment:
+
+| Application master | Spectral distance | Measurable voiced pairs | Within 50 cents | Mean absolute cents | Strict pitch |
+|---|---:|---:|---:|---:|---|
+| Old 32-channel epoch 6 | 2.76567 | 128 | 0 | 1668.23 | MISMATCH |
+| New 512-channel epoch 1 | 2.03145 | 364 | 227 | 675.69 | MISMATCH |
+
+The new result improves substantially but only 62.36% of measurable voiced pairs
+are within 50 cents. It is still a musical-quality failure. The earlier assertion
+that closure condition 4 was met by held-out reconstruction did not establish a
+successful application song render. No acceptance threshold was changed here.
+
+Reports under `/Users/lhs/seam-corpus-pauses-2026-09-19-r1/`:
+`application-e9-v512-e1/comparison.json` (SHA-256
+`a41b7942262abd564132f8c8da6c312531115bdc694a25ece3650eef7be8bfeb`) and
+`application-e9-v6-score-silence/comparison-v2.json` (SHA-256
+`a512c8cba13f0ff4a0d4ec27fcf999a2d835645bbd112fd3bac05c4682745e97`).
+The old historical measurement is preserved; these are fresh comparisons using
+captured float32 pitch inputs on both sides. The candidate remains unqualified.
+Verification: five new comparison tests cover signed PCM16/24/32 decoding,
+channel ordering/cancellation, identical-signal distance, truncation and unequal
+length refusal. Full training-tool discovery ran 237 tests with one skip and no
+failures; source closure and phase11 source checks passed. Real native extraction
+was executed for both reports above, separately from mocked unit-test pitch calls.
+
 ### SEAM-BETA-P0-01: No rights-cleared, usable Beta Voicebank
 
 **Evidence**
