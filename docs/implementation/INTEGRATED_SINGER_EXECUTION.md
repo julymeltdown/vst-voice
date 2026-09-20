@@ -1,5 +1,34 @@
 # Integrated Singer Execution
 
+## Seed-947 replicate confirms the periodicity-vocoder effect; UV-noise pair launched
+
+The second matched vocoder seed completed both arms cleanly (control
+receipt 23bb4adc, periodicity receipt 616f9ee5, 2804 matched updates
+each) and the staged assessment exported both and re-ran the identical
+five-source paired comparison. The directional finding replicates:
+the periodicity objective halves unvoiced residual lag correlation
+relative to control in both seeds (r1 0.465 to 0.229; r2 0.456 to
+0.216, reference -0.004) while voiced phones stay near zero in both
+(r1 +0.006/-0.002; r2 +0.002/+0.002). RMS ratios moved toward 1.0 in
+r2 for both arms (control 0.876, periodicity 1.023) rather than
+worsening, so the effect is seed-stable in direction even where
+magnitude drifts. Receipts: vocoder-periodicity-paired-r2-exports,
+paired-vocoder-comparison-r2.json, assess_r2.sh.
+
+With the replicate supporting the mechanism hypothesis and all
+implementation-review blockers closed, the UV-noise excitation pair
+launched under the declared protocol: identical dataset, parent
+checkpoint 401c082e, seed 929, one epoch, fixed periodicity
+objective, optimizer/scheduler/RNG reset in both arms, no partial
+resume, excitationNoiseId the only between-arm difference (zero-v1
+versus uv-gated-v1). Both processes run detached in tmux session
+seam-uvnoise after the sandbox reaped plain nohup children; launch
+records updated with the live PIDs. Early progress shows diverging
+generator losses by update 125, consistent with the gate actually
+engaging on unvoiced frames. Completion is expected in roughly 3.5
+hours, after which the same export-plus-comparison assessment runs
+against the frozen sources.
+
 ## UV-noise experiment cleared from implementation review; launch gated on replicate assessment
 
 Developer 2 confirmed commit 0f20d2e closes the evaluator integration
