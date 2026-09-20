@@ -1,5 +1,37 @@
 # Integrated Singer Execution
 
+## Frame-to-frame fluctuation does not support a simple temporal-smoothing story
+
+Added `spectral_fluctuation` to test whether the acoustic model flattens temporal
+dynamics on fricatives. The first version used raw mean absolute frame-to-frame
+difference and produced meaningless numbers (predicted 2.2-2.5 vs reference
+0.6-0.8), because that statistic is scale-dependent and the predicted mel has a
+different overall level. Normalizing each frame by its own mean magnitude removes
+the gain confound; the raw form is retained only as an explicitly non-normalized
+option.
+
+With normalization, on training-partition songs, the relationship reverses the
+naive expectation:
+
+| Song | Reference unvoiced fluctuation | Predicted unvoiced fluctuation |
+| --- | ---: | ---: |
+| 00096 | 0.0582 | 0.3657 |
+| 00161 | 0.0607 | 0.3625 |
+| 00166 | 0.0628 | 0.3277 |
+| 00178 | 0.0566 | 0.3530 |
+
+The prediction changes *more* between adjacent frames relative to its own level
+than the reference does. So the defect is **not** that the model is temporally
+over-smoothed on fricatives. This is consistent with the flatness finding in a
+more specific way: the predicted spectrum is concentrated into few bins (low
+flatness) with a peak that shifts frame to frame, rather than being flat and
+steady like noise. The peaky-spectrum description is what the evidence supports;
+the temporal-smoothing description is not supported and is withdrawn.
+
+The first fluctuation run published before the normalization fix is superseded
+and is not cited as evidence. Tests cover scale invariance, short intervals,
+geometric mismatch, zero-reference division and uncovered frames.
+
 ## The acoustic model cannot reproduce fricatives even on its training data
 
 This is the decisive control. The previous checks held out songs; if the defect
