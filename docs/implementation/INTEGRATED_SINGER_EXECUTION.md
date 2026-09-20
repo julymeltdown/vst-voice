@@ -1,5 +1,52 @@
 # Integrated Singer Execution
 
+## Phone-local mel ablation demonstrates a vocoder-side defect
+
+On development song 00005, replayed epoch-21 acoustic features and epoch-two
+vocoder output using captured native inputs. Fresh replay matches the native
+master after the known mixer pan factor with maximum absolute error
+`7.450580596923828e-08`. Then replaced only the vocoder mel input with source-
+derived mel, retaining the same native F0, dynamics, waveform length and fresh
+vocoder session. Source analysis profile and model graph hashes were checked.
+
+| Unvoiced phone | Reference confidently voiced windows | Predicted-mel vocoder | Source-mel vocoder |
+| --- | ---: | ---: | ---: |
+| h | 0 | 3 | 6 |
+| k | 0 | 10 | 5 |
+| s | 0 | 3 | 3 |
+| ts | 0 | 0 | 4 |
+| t | 0 | 3 | 1 |
+
+Replacing predicted mel does not eliminate unwanted voicing; the vocoder is
+therefore part of the observed defect, not merely passing through bad acoustic
+predictions. This one-phrase experiment does not exonerate the acoustic model
+or prove a complete causal mechanism. Native F0 values inside these phones are
+all zero (20/32/10/11/10 checked interior feature frames respectively).
+
+With source mel, all six `h` and all three `s` confidently voiced estimates are
+approximately 187.5 Hz, equal to 48000/256. `k` and `t` contain approximately
+1090.89 Hz estimates. These are estimator outputs, not independently confirmed
+perceptual pitches; inspect waveform periodicity before labeling their cause.
+
+Pinned source inspection provides a testable next hypothesis:
+`modules/nsf_hifigan/models.py` MiniNSF `fastsinegen` integrates phase without an
+explicit unvoiced mask; zero F0 can retain constant phase rather than zero
+excitation. The selected SEAM profile also sets `noise_sigma=0`, and the generator
+uses transposed-convolution upsampling. None of these facts alone proves the
+artifact's cause. Next controlled experiment: compare current excitation with
+an explicit unvoiced excitation mask using the same retained vocoder weights,
+checking both unvoiced artifacts and voiced/transitional regressions. Keep it
+diagnostic until train/export parity and complete phrase behavior are verified;
+do not silently mutate the pinned dependency or existing admitted model bundle.
+
+Evidence: `/Users/lhs/seam-corpus-pauses-2026-09-19-r1/unvoiced-ablation-e21-song5-r2/experiment.json`,
+SHA-256 `58f6d9064d162136ee977ab3a5fc13e05a394bef630499cd97d2c3b54ac15775`.
+The preceding `r1` attempt retains its predicted float WAV and ended because the
+integer-PCM application-master decoder correctly rejected float WAV. The `r2`
+measurement uses the existing float-capable pitch comparison, not a decoder
+bypass. The saved `r1` predicted waveform was reused and byte-bound in `r2`.
+No production behavior, model weights or qualification status changed.
+
 ## Development diagnosis narrows the next repair to unvoiced articulation
 
 Added `articulation_diagnostic.diagnose`, retaining every analysis frame in
