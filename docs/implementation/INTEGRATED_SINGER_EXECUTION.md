@@ -1,5 +1,54 @@
 # Integrated Singer Execution
 
+## First repair step: a derived aperiodicity channel, validated on real audio
+
+Added `aperiodicity.estimate`, which derives a bounded per-frame aperiodicity
+value in [0, 1] on the label hop clock from captured reference PCM. It combines two
+independent noise-like cues, normalized zero-crossing rate and frame spectral
+flatness, averaged so the result is bounded by construction rather than by
+clipping an unbounded statistic. Short final frames are zero-padded to match the
+existing whole-hop tail policy instead of being dropped. Silent frames report 0
+rather than NaN.
+
+Validated against real captured audio across 25 songs, per phone:
+
+| Symbol | Mean aperiodicity | Windows |
+| --- | ---: | ---: |
+| ch | 0.344 | 5 |
+| ts | 0.338 | 8 |
+| t | 0.120 | 32 |
+| k | 0.107 | 48 |
+| w | 0.058 | 11 |
+| r | 0.055 | 49 |
+| a | 0.039 | 102 |
+| u | 0.033 | 68 |
+| i | 0.032 | 60 |
+| o | 0.032 | 75 |
+| e | 0.031 | 76 |
+| n | 0.025 | 55 |
+| m | 0.025 | 40 |
+| N | 0.024 | 19 |
+
+Unvoiced phones average 0.2749 against voiced 0.0344, an 8x separation, and the
+fricatives the model currently collapses (`ch`, `ts`, `t`, `k`) rank at the top.
+The ordering tracks the phones' actual noise content, so the channel carries real
+information rather than a token-correlated constant.
+
+Caveats kept explicit: this is a two-cue estimate, not a validated aperiodicity
+measure such as a full periodicity transform, and it is derived from the same
+reference audio the model is trained to reproduce. It is a candidate channel, not
+admitted supervision, and nothing has been retrained. The `inspection` and label
+review path still own whether a channel may be used for training.
+
+This is the first concrete repair artifact for the identified root cause: the
+model has no aperiodicity input, and this provides a defensible one to review and
+wire in. Evidence: `aperiodicity-estimate-r1.json`.
+
+Scaled to the complete corpus through `run_aperiodicity_estimate`: all 424 songs,
+unvoiced mean 0.2829 against voiced 0.0334, an 8.5x separation that matches the
+25-song sample. The channel is not an artifact of a small selection. Evidence:
+`aperiodicity-estimate-r2.json`.
+
 ## The model never reaches the noise-like range on any frame
 
 Confirmed the root-cause reading with a distribution measurement rather than a
