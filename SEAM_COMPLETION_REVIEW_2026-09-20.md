@@ -164,9 +164,26 @@ Two conclusions, both contrary to the earlier draft:
    not from a larger batch.
 
 So the honest statement is: the machine could train roughly 1.5x faster than it does, not 10x. That is
-worth taking for a 60,000-update campaign, and it must not be changed underneath a run that is in
-flight, but it is not the reason training is slow. Training is slow because the budget is genuinely
-large and the model is trained on a single CPU host.
+not the reason training is slow. Training is slow because the budget is genuinely large and the model is
+trained on a single CPU host.
+
+**And raising the thread count is not free, which the earlier draft also missed.** `cpuThreads` is stored
+in the captured settings, and `resume_identity` compares `metadata['settings']` exactly
+(`train_vocoder.py:97-103`). The stored epoch-000001 settings include `"cpuThreads": 1`. A config with a
+different thread count therefore fails resume with "Resume requires identical captured inputs,
+environment and a complete epoch". That is the determinism guarantee working as designed, not a defect:
+reproducibility is promised per lineage.
+
+The real tradeoff is therefore:
+
+| Option | Cost | Benefit |
+|---|---|---|
+| Continue the current lineage at `cpuThreads: 1` | 2.6 s/update at 1x | keeps the trained epoch and its identity chain |
+| Start a fresh lineage at `cpuThreads: 12` | loses epoch 1 (about 3 hours) | 1.5x for the rest of the campaign |
+
+Breaking even needs roughly six further hours of training, and the epoch-1 lineage is the only trained
+pitch-tracking result this project has. Continuing the existing lineage is the better call unless the
+campaign is going to run far longer than that.
 
 ### 3.4 P0-08's headline measurement no longer reproduces, but its diagnosis now looks right
 
@@ -292,9 +309,9 @@ Stop expanding breadth. The repository has strong, well-tested infrastructure an
 1. ~~**Let r3 finish, then export and re-qualify the 512-channel model.**~~ **Done** (3.5). It finished,
    exported, and re-qualified: 46.676 cents, pitch follows all four notes, comb gone. The next step on this
    path is a longer campaign (this was 1 epoch of a 60,000-update budget) and a real corpus.
-2. **Raise `cpuThreads` for the next run** (3.3b). Measured: 12 threads is about 1.5x the throughput of 1,
-   and moving to the GPU is about 1.9x *slower*, so the only throughput win available is the thread count.
-   Worth taking for a 60,000-update campaign; not worth changing under a run in flight.
+2. **Continue the existing lineage rather than chasing threads** (3.3b). `cpuThreads` is part of the resume
+   identity, so raising it means abandoning the trained epoch; the 1.5x win does not pay for that unless the
+   campaign runs much longer. The GPU is a dead end (1.9x slower, measured).
 3. **Investigate the level/peakyness mismatch** — the 187.5 Hz comb resolved with the trained 512-channel
    model (3.5). The remaining RMS shortfall (5.7-7.6 dB low, with peaks 1.8-2.5x high) is a quality
    observation rather than a gate failure, since `energy_ok` is peak-based. Treat it as the next
