@@ -1,5 +1,47 @@
 # Integrated Singer Execution
 
+## Development diagnosis narrows the next repair to unvoiced articulation
+
+Added `articulation_diagnostic.diagnose`, retaining every analysis frame in
+vowel-interior, other-phone-interior, boundary, rest or padded groups. Reference
+and candidate coverage are counted independently; unvoiced and low-confidence
+frames cannot disappear into a pitch average. It consumes already validated
+pitch tracks and renderer-intent labels; this is a Japanese pilot diagnostic,
+not an expressive-pitch or intelligibility qualification.
+
+Re-measured the existing five-song epoch-21 development campaign, verified
+captured score/master bindings, and analyzed whole windows inside phone/note
+intervals. The frozen 16-phrase evaluation cohort was not used to select repairs.
+
+| Vowel-interior measurement | Procedural reference | Neural candidate |
+| --- | ---: | ---: |
+| Total windows | 3,357 | 3,357 |
+| Measurable voiced | 3,352 | 3,325 |
+| Unvoiced | 0 | 4 |
+| Low confidence | 5 | 28 |
+| Within 50 cents of written MIDI | 3,342 | 3,309 |
+| Weighted mean absolute score error | 4.0113 cents | 6.0707 cents |
+
+This does not support treating sustained-vowel pitch as the primary defect in
+these fixtures. More specific evidence: interiors of `f/h/k/s/t` contain
+respectively 4/11/18/14/12 confidently voiced candidate estimates, while the
+reference has zero confidently voiced estimates in all five phone groups.
+Voiced `N/m/n/r` interiors retain all 155 measured windows within 50 cents.
+There are also 871 boundary windows, 101 rest windows and 40 padded windows;
+none is silently recategorized as a successful sustained-pitch measurement.
+
+Native code inspection: `neural_phrase_backend.cpp` sets F0 only on declared
+voiced phones, while retaining dynamics on unvoiced consonants;
+`diffsinger_inputs.cpp` samples F0 within the owning phone. Muting consonants or
+forcing global pitch correction would therefore be an unjustified repair.
+Next: inspect actual unvoiced conditioning and perform a phone-local source-mel
+versus predicted-mel vocoder ablation on these development captures to separate
+acoustic-model leakage from vocoder behavior. Then change the responsible stage.
+
+Evidence: `/Users/lhs/seam-corpus-pauses-2026-09-19-r1/development-articulation-e21-r1.json`,
+SHA-256 `288cf855ce07904f921aa0b23cd5e9b9ae33d483cbb13e911a1b743dafd47fe5`.
+No model weights or production synthesis behavior were changed by this diagnosis.
+
 ## Frozen 16-phrase baseline completed: native execution passes, quality unqualified
 
 The epoch-21 acoustic / epoch-two vocoder campaign finished all 16 new phrases.
