@@ -12,6 +12,7 @@ import sys
 
 from .__main__ import encode_report, load_config, load_dataset_inputs
 from .diffsinger_objective import DiffSingerDDPMObjective
+from .conditioning import ADDED_CONDITIONING_PARAMETERS, added_parameters
 from .checkpoint import load_local_checkpoint
 from .epochs import run_reviewed_epochs
 
@@ -89,17 +90,51 @@ def _digest(value):
     return isinstance(value, str) and len(value) == 64 and all(c in "0123456789abcdef" for c in value)
 
 
+def _conditioning_additions(prior_settings, current_settings):
+    """Return the parameters an approved warm-start conditioning addition adds.
+
+    Only an enabled breathiness control may be added, because it is the single
+    architectural extension this project has measured evidence for: the acoustic
+    model cannot produce noise-like spectra without an aperiodicity channel.
+    """
+    return added_parameters(prior_settings.get("conditioningControls", []),
+                            current_settings.get("conditioningControls", []))
+
+
 def _warm_start_identity(value):
     hashes = {"sourceReceiptSha256", "sourceCheckpointSha256", "sourceTrainingConfigurationSha256"}
-    if (not isinstance(value, dict)
-            or set(value) != hashes | {"sourceCompletedEpochs", "optimizerReset", "rngReset", "epochNumbering"}
+    fields = hashes | {"sourceCompletedEpochs", "optimizerReset", "rngReset", "epochNumbering"}
+    added = value.get("addedParameters", []) if isinstance(value, dict) else None
+    if (not isinstance(value, dict) or set(value) - {"addedParameters"} != fields
             or any(not _digest(value[key]) for key in hashes)
             or type(value["sourceCompletedEpochs"]) is not int
             or not 1 <= value["sourceCompletedEpochs"] < 100000
             or value["optimizerReset"] is not True or value["rngReset"] is not True
-            or value["epochNumbering"] != "new-experiment-from-one"):
+            or value["epochNumbering"] != "new-experiment-from-one"
+            or not isinstance(added, list) or len(set(added)) != len(added)
+            or any(name not in ADDED_CONDITIONING_PARAMETERS for name in added)):
         raise ValueError("Invalid captured warm-start identity")
     return dict(value)
+
+
+def _load_warm_start_state(model, captured, additions):
+    """Load captured weights and zero-initialize an added conditioning embedding.
+
+    Zero initialization is what keeps the new run honest: the added embedding
+    contributes nothing until it is trained, so an untrained warm start begins at
+    exactly the captured model's behaviour instead of at a perturbed one.
+    """
+    import torch
+    present = set(model.state_dict())
+    if present - set(captured) != set(additions) or set(captured) - present:
+        raise ValueError("Warm-start conditioning addition does not match the captured architecture")
+    missing, unexpected = model.load_state_dict(captured, strict=False)
+    if set(unexpected) or set(missing) != set(additions):
+        raise ValueError("Warm start changed more than the declared conditioning addition")
+    parameters = dict(model.named_parameters())
+    with torch.no_grad():
+        for name in additions:
+            parameters[name].zero_()
 
 
 def initialize_checkpoint(model, optimizer, state, receipt, *, metadata, profile,
@@ -107,9 +142,12 @@ def initialize_checkpoint(model, optimizer, state, receipt, *, metadata, profile
     """Initialize only from a verified local checkpoint; never mutate its state.
 
     Warm start permits loss/learning-rate changes only, on the same admitted
-    dataset, architecture, vocabulary and runtime. It starts a new experiment;
-    exact resume inherits its immutable origin and restores optimizer/RNG state.
-    The caller must still re-admit the dataset before training/publication.
+    dataset, architecture, vocabulary and runtime, plus one approved exception:
+    enabling the breathiness conditioning control, which adds a zero-initialized
+    embedding and therefore reproduces the captured model's behaviour exactly at
+    the start of the new run. It starts a new experiment; exact resume inherits
+    its immutable origin and restores optimizer/RNG state. The caller must still
+    re-admit the dataset before training/publication.
     """
     import torch
     previous = receipt["metadata"].get("run")
@@ -137,10 +175,25 @@ def initialize_checkpoint(model, optimizer, state, receipt, *, metadata, profile
     if warm_start:
         allowed = {"loss", "learningRate"}
         current_settings = metadata["settings"]
-        if (set(prior_settings) != set(current_settings)
-                or any(prior_settings[key] != current_settings[key] for key in prior_settings if key not in allowed)
-                or {k: v for k, v in captured.items() if k not in ("settings", "trainingConfigurationSha256")}
-                    != {k: v for k, v in metadata.items() if k not in ("settings", "trainingConfigurationSha256")}
+        additions = _conditioning_additions(prior_settings, current_settings)
+        # Enabling the control is exactly what promotes a schema-1 configuration to
+        # schema 2, and `model_settings` already rejects any other pairing of
+        # schema and declared controls. Pin the version to the addition so the
+        # bookkeeping field cannot drift on its own.
+        governed = {"conditioningControls", "schemaVersion"}
+        prior_fields = set(prior_settings) - governed
+        current_fields = set(current_settings) - governed
+        if (prior_fields != current_fields
+                or any(prior_settings[key] != current_settings[key]
+                       for key in prior_fields if key not in allowed)
+                or current_settings["schemaVersion"] != (2 if additions else prior_settings["schemaVersion"])
+                # `configuration` is excluded because it is a pure function of
+                # `settings` and must differ when the control is added; both sides
+                # are already required to match their own settings above.
+                or {k: v for k, v in captured.items()
+                    if k not in ("settings", "trainingConfigurationSha256", "configuration")}
+                    != {k: v for k, v in metadata.items()
+                        if k not in ("settings", "trainingConfigurationSha256", "configuration")}
                 or not _digest(captured.get("trainingConfigurationSha256"))
                 or not _digest(metadata.get("trainingConfigurationSha256"))
                 or (prior_settings != current_settings
@@ -154,11 +207,16 @@ def initialize_checkpoint(model, optimizer, state, receipt, *, metadata, profile
             sourceCheckpointSha256=receipt["checkpointSha256"], sourceCompletedEpochs=completed,
             sourceTrainingConfigurationSha256=captured["trainingConfigurationSha256"],
             optimizerReset=True, rngReset=True, epochNumbering="new-experiment-from-one")
+        if additions:
+            result["warmStart"]["addedParameters"] = sorted(additions)
     elif captured != metadata:
         raise ValueError("Resume requires identical captured training inputs and environment")
     elif origin is not None:
         result["warmStart"] = origin
-    model.load_state_dict(state["model"], strict=True)
+    if warm_start:
+        _load_warm_start_state(model, state["model"], additions)
+    else:
+        model.load_state_dict(state["model"], strict=True)
     if warm_start:
         torch.manual_seed(metadata["settings"]["seed"])
     else:

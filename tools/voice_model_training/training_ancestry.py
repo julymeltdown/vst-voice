@@ -10,11 +10,13 @@ import json
 from pathlib import Path
 
 from .__main__ import encode_report, load_config, publish_new
+from .conditioning import declares_added_parameters
 from .pitch_comparison import _digest
 from .split import split_sources
 
 
 SOURCE_FIELDS = ("sourceId", "songId", "sessionId", "lineageId", "audioSha256")
+
 
 
 def trace(leaf, resolve):
@@ -51,7 +53,13 @@ def trace(leaf, resolve):
                         or origin.get("sourceCompletedEpochs") != number
                         or origin.get("sourceCheckpointSha256") != receipt.get("checkpointSha256")
                         or origin.get("sourceTrainingConfigurationSha256") != run.get("trainingConfigurationSha256")
-                        or origin.get("optimizerReset") is not True or origin.get("rngReset") is not True):
+                        or origin.get("optimizerReset") is not True or origin.get("rngReset") is not True
+                        # A warm start may declare the one approved architectural
+                        # addition. The audit validates the declaration is well
+                        # formed and confined to that embedding; it does not
+                        # re-derive weights, so an undeclared architecture change
+                        # remains out of scope for this receipt-level trace.
+                        or not declares_added_parameters(origin)):
                     raise ValueError("Warm-start ancestry differs from its captured origin")
             elif (child_run["completedEpochs"] != number + 1
                     or {k: v for k, v in child_run.items() if k not in ("completedEpochs", "parentReceiptSha256")}

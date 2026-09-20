@@ -1,5 +1,63 @@
 # Integrated Singer Execution
 
+## Warm start can now admit the aperiodicity channel, and only it
+
+The conditioning repair was blocked at one exact place, and it was not the
+training configuration. Enabling `use_breathiness_embed` changes the architecture:
+the conditioned model has 60 parameter tensors where the retained baseline has 58,
+differing only by `fs2.variance_embeds.breathiness.{weight,bias}`. Warm start
+loaded with `strict=True` and permitted only `loss` and `learningRate` changes, so
+**retraining the repair from the retained epoch-21 baseline was impossible**.
+Resume was never an option either, because resume demands identical settings. The
+only path the old code left was a cold start, which would have discarded 21 epochs
+of acoustic training and confounded the effect of the new channel with the loss of
+all prior learning.
+
+Measured, not assumed. Building the baseline and conditioned model from the same
+`model_settings` output and diffing their `state_dict` gave exactly two differing
+keys and no shape changes. Zeroing the added embedding reproduces the retained
+checkpoint's own loss bitwise: `0.33788320422172546` at breathiness 0.0, 0.5 and
+1.0, and identically for the unconditioned baseline. That is the property the fix
+rests on. The channel is additive conditioning, so a zero embedding contributes
+exactly nothing and an untrained warm start begins at precisely the captured
+model's behaviour instead of a perturbed one.
+
+An earlier probe in this session reported a breathiness embedding gradient of
+exactly zero and briefly looked like the channel was inert. That reading was
+wrong. DiffSinger zero-initializes the WaveNet output projection
+(`nn.init.zeros_(self.output_projection.weight)`), so at random initialization the
+noise prediction is exactly zero and every input gradient vanishes. Against the
+retained trained checkpoint the same probe returns a nonzero gradient that grows
+with the control value: loss `0.34945926` / grad `0.0` at 0.0, `0.34651175` /
+`0.005102189257740974` at 0.5, `0.34469929` / `0.009975554421544075` at 1.0. The
+channel is live; the first probe measured the initialization, not the wiring.
+
+What changed. `initialize_checkpoint` now accepts exactly one warm-start
+transition: an empty control list becoming `["breathiness"]`. That transition is
+also what promotes a schema-1 training configuration to schema 2, so
+`schemaVersion` is pinned to the addition rather than compared as a free field.
+`configuration` is excluded from the identity comparison because it is a pure
+function of `settings`, and both sides are still required to match their own
+settings. Every other architecture or identity change is still refused, and an
+unrelated schema change without the declared addition fails.
+
+The added parameters are zeroed explicitly after the weight load, so the property
+above is enforced rather than inherited from initializer luck. The warm-start
+receipt records `addedParameters` only when a transition occurred, so a plain
+loss/LR warm start keeps its exact prior shape; `_warm_start_identity` rejects an
+unknown or duplicated name, and `training_ancestry` validates the declaration so
+the ancestry audit can see a conditioning addition instead of silently accepting
+an architecture change. The parameter set lives in `conditioning.py` and is
+imported by both the initializer and the audit, so the two cannot drift apart.
+
+`Warm start permits only explicit loss/learning-rate changes` remains true for
+every case except this one documented addition. 375 tests pass, including seven
+new ones covering the approved transition, the refusals, the zero
+initialization, and a real `initialize_checkpoint` call. What remains is the
+retrain itself, measured with the existing flatness, separation and decomposition
+diagnostics; the artifact receipts stay `singerQualified=False`,
+`releaseEligible=False` and `trainingAdmitted=False` until that evidence exists.
+
 ## Aperiodicity supervision produced in the existing admitted schema
 
 Implemented `derive_conditioning_supervision`, which turns a captured schema-2/3

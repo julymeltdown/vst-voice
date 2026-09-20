@@ -1,6 +1,38 @@
 """Expand reviewed label geometry onto its analysis clock; no admission side effect."""
 from .labels import label_report, score_report
 
+# The single approved architectural addition to an acoustic model. Enabling the
+# breathiness control adds exactly this embedding and nothing else, which is what
+# lets a warm start stay closed to every other change. Warm-start initialization
+# and lineage auditing both import this set so the two cannot drift apart.
+ADDED_CONDITIONING_PARAMETERS = frozenset({
+    "fs2.variance_embeds.breathiness.weight",
+    "fs2.variance_embeds.breathiness.bias"})
+
+ADDED_CONDITIONING_CONTROLS = ("breathiness",)
+
+
+def added_parameters(prior_controls, current_controls):
+    """Return the parameters gained by enabling the control, else the empty set.
+
+    Raises for any transition that is not exactly enabling breathiness, so an
+    unsupported architectural change cannot be mistaken for the approved one.
+    """
+    prior = list(prior_controls or [])
+    current = list(current_controls or [])
+    if prior == current:
+        return frozenset()
+    if prior != [] or current != list(ADDED_CONDITIONING_CONTROLS):
+        raise ValueError("Warm start may only add an enabled breathiness control")
+    return ADDED_CONDITIONING_PARAMETERS
+
+
+def declares_added_parameters(value):
+    """Validate a captured warm-start declaration of the added parameters."""
+    added = value.get("addedParameters", []) if isinstance(value, dict) else None
+    return (isinstance(added, list) and len(set(added)) == len(added)
+            and all(name in ADDED_CONDITIONING_PARAMETERS for name in added))
+
 
 def build_conditioning(label: dict, score: dict, *, vocabulary: list[str],
                        minimum_confidence: float, maximum_frames: int = 65536,
