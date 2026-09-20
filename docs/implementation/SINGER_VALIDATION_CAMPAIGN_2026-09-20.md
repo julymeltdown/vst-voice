@@ -107,9 +107,7 @@ pause-corpus root. The prepared F0 at hop indices 14 and 993 is respectively
 Next: run the exact acoustic/vocoder graphs with these inputs and verify waveform
 parity before interpreting the intermediate mel as native-worker-equivalent.
 
-## macOS authoring regression alongside training
-
-### Completed graph replay and conditioning ablation
+## Completed graph replay and conditioning ablation
 
 Replay of the exported acoustic and epoch-two vocoder graphs with captured native
 inputs reproduces the song 00005 master within 6.7056e-8 maximum absolute sample
@@ -148,6 +146,30 @@ Next experiment: compare acoustic sampler-step settings with the same native
 inputs and fixed vocoder, then inspect conditioning/training discrepancies if
 the mel mismatch persists. The worker currently pins 10 steps. Do not silently
 change that production value or its cache identity based on this one song.
+
+### Initial sampler-step experiment (song 00005 only)
+
+With the exact replay inputs and epoch-two vocoder fixed:
+
+| Steps | Mel MAE | Pitch mean absolute cents | Within 50 / measurable | Unmeasurable |
+| --- | --- | --- | --- | --- |
+| 10 | 2.837745 | 114.587734 | 919 / 996 | 109 |
+| 20 | 2.725565 | 61.292000 | 943 / 984 | 114 |
+| 32 | 2.743716 | 54.068293 | 929 / 977 | 122 |
+
+All strict comparisons still fail. More steps improve this song's measured pitch
+error but lose measurable coverage, and 32 steps do not minimize mel MAE. The
+10-step raw WAV is byte-identical to the earlier ablation baseline. Do not pick
+a production default from this one training-overlap song. Native prepared-input
+exports for the other four fixed songs are being collected for the same sweep.
+
+Artifacts: `sampler-steps-e13-v2-00005-r1/` under the pause-corpus root.
+`experiment.json` SHA-256:
+`5d903255abcd52575efca88c1973a875d44d9520cfa024707a247ff39594940e`.
+All three WAVs and full-grid pitch comparisons are retained. Production remains
+at 10 steps and the candidate bundle is unchanged.
+
+## macOS authoring regression alongside training
 
 Rebuilt `seam_original_singer_song_journey_tests` and
 `seam_procedural_install_journey_tests` from source at `300ad02c`, including
