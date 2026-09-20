@@ -76,12 +76,14 @@ prior.
 
 ## Fricative cohort: conditioned training helps, the defect is not fixed
 
-Two committed diagnostics now measure the cohort at both levels.
+Two committed diagnostics measure the cohort at both levels.
 `run_spectral_flatness` compares predicted versus reference mel flatness per
-phone on the frozen replay inputs; `campaign_phone_diagnostics` measures
-lag-256 waveform periodicity and energy per labeled phone on each PASSED
-campaign export. Unvoiced and voiced classes stay separate; unmeasured
-windows stay explicit.
+phone on the frozen replay inputs (receipts now bind acoustic export,
+acoustic graph and every replay digest); `campaign_phone_diagnostics`
+measures lag-256 waveform periodicity and energy per labeled phone on each
+PASSED campaign export, bound to the recorded comparison receipt with
+explicit short-render and trimmed-tail coverage. Unvoiced and voiced
+classes stay separate; unmeasured windows stay explicit.
 
 Mel flatness (reference unvoiced 0.714, voiced 0.046):
 
@@ -90,6 +92,10 @@ Mel flatness (reference unvoiced 0.714, voiced 0.046):
 | e37 unconditioned | 0.0700 | 0.0287 |
 | e8 conditioned, zero channel | 0.0259 | 0.0084 |
 | e8 conditioned, measured prior | 0.0332 | 0.0087 |
+| e8 conditioned, reference-derived channel | 0.0341 | 0.0086 |
+| e8 conditioned, unvoiced b=0.50 | 0.0376 | 0.0087 |
+| e8 conditioned, unvoiced b=0.75 | 0.0432 | 0.0087 |
+| e8 conditioned, unvoiced b=1.00 | 0.0474 | 0.0087 |
 
 Waveform periodicity and energy (reference unvoiced -0.004, voiced -0.136):
 
@@ -99,15 +105,34 @@ Waveform periodicity and energy (reference unvoiced -0.004, voiced -0.136):
 | e8 conditioned, zero prior | 0.308 | 0.368 | -0.126 | 0.500 |
 | e8 conditioned, measured prior | 0.468 | 0.503 | -0.123 | 0.484 |
 
-Reading: every candidate still renders unvoiced phones far too periodic
-(reference -0.004). Conditioned training improves the cohort relative to
-e37 — unvoiced periodicity 0.31-0.47 versus 0.645, and it repairs a voiced
-lag-correlation sign error that e37 shipped (+0.059 versus reference
--0.136). The measured prior moves the channel but pushes unvoiced
-periodicity back up (0.308 -> 0.468) while barely lifting flatness
-(0.026 -> 0.033): the bound magnitudes produce breathy-but-periodic output
-rather than noise, consistent with the small pitch regression. Receipts:
-flatness-{e37,breathiness-e8}-{zero,prior}-r1.json,
+Reading (corrected after per-symbol energy review): every candidate still
+renders unvoiced phones far too periodic, and part of the e8 periodicity
+"improvement" is energy suppression rather than noise — /s/ RMS ratio falls
+0.484 (e37) to 0.107 (e8-zero), /ch/ to 0.098. The measured prior restores
+some energy (/s/ 0.272) while pushing periodicity back up. Single-lag
+correlation is not a correctness oracle — a pure sinusoid can score +1, 0
+or -1 at lag 256 — so the voiced sign change is reported as a measured
+statistic, not a repair. Mel flatness regresses versus e37 across every
+conditioned configuration.
+
+The decisive result is the response ceiling: the e8 model was trained with
+reference-derived per-frame supervision, yet feeding the same
+reference-derived channel at inference yields unvoiced flatness 0.034 —
+essentially the phone-mean prior's 0.033 — and even a saturated unvoiced
+channel (b=1.0) reaches only 0.047 against reference 0.714. The conditioning
+input cannot drive the mel toward noise; the limitation sits in the
+acoustic objective/model, not in prior shape or magnitude. Native-vs-replay
+parity for the applied channel was verified directly against a captured
+SNW1 request frame (max delta 2.8e-9 after the worker's own downsampling).
+
+Consequence for the roadmap: larger priors are not justified by the
+observed response; the next development unit is a matched acoustic
+loss/control experiment (auxiliary aperiodicity/spectral objective on
+unvoiced regions, or matched unconditioned continuation to separate
+conditioning from extra training), with the paired periodicity vocoder as
+the already-measured fallback if mel becomes healthy but audio stays
+periodic. Receipts: flatness-{e37,breathiness-e8}-{zero,prior}-r2.json,
+flatness-breathiness-e8-{ref,b050,b075,b100}-r1.json,
 phone-diagnostics-{e37,breathiness-e8,breathiness-e8-zero}-r*.json.
 Everything remains singerQualified=False; consonant intelligibility and
 naturalness still need listening.

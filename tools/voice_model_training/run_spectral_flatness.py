@@ -67,16 +67,25 @@ def run(*, corpus, corpus_sha256, root, replays, acoustic_export, vocoder_export
     _, vocoder = read_report(vocoder_export, VOCODER_FORMAT,
                              'vocoderPath', 'vocoderSha256', 'vocoderBytes')
     songs, seen = [], set()
+    replay_ids = []
     for replay in replays:
-        capture = load_config(replay, hashlib.sha256(Path(replay).read_bytes()).hexdigest())
+        replay_sha = hashlib.sha256(Path(replay).read_bytes()).hexdigest()
+        capture = load_config(replay, replay_sha)
+        replay_ids.append(dict(path=str(Path(replay).resolve()), sha256=replay_sha,
+                               projectSha256=capture['projectSha256']))
         song = next((row for row in corpus['songs']
                      if row['projectSha256'] == capture['projectSha256']), None)
         if song is None or song['sourceId'] in seen:
             raise ValueError('Replay inputs must map to distinct captured sources')
         seen.add(song['sourceId'])
         songs.append(analyze_song(root, song, replay, acoustic, steps))
+    acoustic_report = json.loads((Path(acoustic_export) / 'export.json').read_bytes())
     return dict(formatId='com.project-seam.predicted-flatness-diagnostic', schemaVersion=1,
         corpusSha256=corpus_sha256, steps=steps, songs=songs, aggregate=aggregate(songs),
+        acousticExportSha256=hashlib.sha256(
+            (Path(acoustic_export) / 'export.json').read_bytes()).hexdigest(),
+        acousticSha256=acoustic_report.get('acousticSha256'),
+        replays=replay_ids,
         policy='Whole phone intervals on the captured hop grid; ln-amplitude inverted before flatness',
         singerQualified=False, releaseEligible=False)
 

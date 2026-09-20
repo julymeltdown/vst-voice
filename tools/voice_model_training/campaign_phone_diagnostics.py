@@ -66,20 +66,36 @@ def diagnose(campaign_path, campaign_sha256, corpus_path, corpus_sha256, *, outp
         labels = load_config(directory / 'label-config.json', song['artifacts']['label-config.json'])
         phones = [dict(symbol=row['symbol'], startFrame=row['startFrame'], endFrame=row['endFrame'])
                   for row in labels['labels'][0]['label']['phonemes']]
+        # The recorded comparison receipt binds which export bytes were measured;
+        # a swapped or shortened render must not pass as the same coverage.
+        comparison = load_config(campaign_path.parent / item['directory'] / 'comparison.json',
+                                 item['comparisonSha256'])
         source, source_hash = load_wave(directory / 'source.wav')
-        if source_hash != song['sourceSha256']:
+        if (source_hash != song['sourceSha256']
+                or comparison.get('referenceSha256') != song['sourceSha256']):
             raise ValueError('Captured source changed since preparation')
         export_dir = campaign_path.parent / item['directory'] / 'export'
         if export_dir.is_symlink():
             raise ValueError('Export directory cannot be a symlink')
-        candidate, _ = load_wave(export_dir / 'master.wav')
-        valid = min(len(source), len(candidate))
-        rows = measure_phones(source[:valid], candidate[:valid], clip_phones(phones, valid))['rows']
+        candidate, candidate_hash = load_wave(export_dir / 'master.wav')
+        if candidate_hash != comparison.get('candidateSha256'):
+            raise ValueError('Rendered export differs from its recorded comparison')
+        if len(candidate) < len(source):
+            # A short render is incomplete coverage, never an aggregate success.
+            per_song.append(dict(directory=item['directory'], sourceId=song['sourceId'],
+                                 execution='PASSED', measured=False, coverage='SHORT_RENDER',
+                                 comparedSamples=len(candidate),
+                                 missingTailSamples=len(source) - len(candidate)))
+            continue
+        valid = len(source)
+        rows = measure_phones(source, candidate[:valid], clip_phones(phones, valid))['rows']
         summary = summarize(rows)
         unvoiced.extend(row for row in rows if row['phone'] in UNVOICED)
         voiced.extend(row for row in rows if row['phone'] in VOICED)
         per_song.append(dict(directory=item['directory'], sourceId=song['sourceId'],
-                             execution='PASSED', measured=True, comparedSamples=valid,
+                             execution='PASSED', measured=True,
+                             coverage='TRIMMED_TAIL' if len(candidate) > valid else 'COMPLETE',
+                             comparedSamples=valid,
                              excludedTailSamples=len(candidate) - valid,
                              unvoiced=summary['unvoiced'], voiced=summary['voiced'], rows=rows))
     report = dict(formatId='com.project-seam.campaign-phone-diagnostics', schemaVersion=1,
