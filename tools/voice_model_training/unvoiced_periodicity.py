@@ -1,0 +1,43 @@
+"""Experimental target-aware waveform loss; not yet an admitted GAN objective."""
+
+
+def periodicity_loss(predicted, target, unvoiced_mask):
+    """Compare lag-256 correlation and level in full unvoiced 1024-sample windows.
+
+    Inputs are batch-one mono PCM and an explicit per-sample boolean mask. The
+    caller must derive that mask from admitted phone ownership, not assume zero
+    F0 distinguishes consonants from silence. Every selected window uses actual
+    target statistics; voiced boundaries and silent targets are not optimized.
+    Existing waveform/spectral/adversarial losses must remain in the objective.
+    """
+    import torch
+    if (predicted.ndim != 3 or predicted.shape[:2] != (1, 1)
+            or not 1024 <= predicted.shape[2] <= 1048576
+            or predicted.shape != target.shape or predicted.shape != unvoiced_mask.shape
+            or predicted.dtype != torch.float32 or target.dtype != torch.float32
+            or unvoiced_mask.dtype != torch.bool
+            or predicted.device != target.device or predicted.device != unvoiced_mask.device
+            or not torch.isfinite(predicted).all() or not torch.isfinite(target).all()
+            or predicted.detach().abs().max() > 1 or target.detach().abs().max() > 1):
+        raise ValueError('Expected bounded normalized mono float32 PCM and boolean sample mask')
+    p = predicted.unfold(2, 1024, 256)[0, 0]
+    t = target.detach().unfold(2, 1024, 256)[0, 0]
+    mask = unvoiced_mask.unfold(2, 1024, 256)[0, 0].all(dim=-1)
+    p, t = p - p.mean(dim=-1, keepdim=True), t - t.mean(dim=-1, keepdim=True)
+    target_energy = t.square().mean(dim=-1)
+    selected = mask & (target_energy > 1e-8)
+    count = int(selected.sum().item())
+    if not count:
+        return predicted.sum() * 0, dict(selectedWindows=0, candidateWindows=int(mask.sum().item()))
+    p, t = p[selected], t[selected]
+    def correlation(x):
+        left, right = x[:, :-256], x[:, 256:]
+        denominator = (left.square().mean(dim=-1) * right.square().mean(dim=-1)).clamp_min(1e-16).sqrt()
+        return (left * right).mean(dim=-1) / denominator
+    periodic = (correlation(p) - correlation(t)).square().mean()
+    # Prevent a zero-output shortcut in this auxiliary loss; target scale is
+    # detached and bounded by selected-window energy admission above.
+    reference_rms = target_energy[selected].sqrt()
+    level = ((p.square().mean(dim=-1) + 1e-12).sqrt() / reference_rms - 1).square().mean()
+    return periodic + level, dict(selectedWindows=count, candidateWindows=int(mask.sum().item()),
+                                  correlationLoss=float(periodic.detach()), levelLoss=float(level.detach()))

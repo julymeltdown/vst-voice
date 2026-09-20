@@ -1,5 +1,40 @@
 # Integrated Singer Execution
 
+## Reference-aware periodicity loss implemented and probed on captured PCM
+
+Added `unvoiced_periodicity.periodicity_loss`, an experimental differentiable
+auxiliary loss, not yet wired into the admitted GAN objective. It compares
+lag-256 correlation and RMS against actual reference PCM in 1024-sample windows
+at a 256-sample stride. Windows must lie wholly inside an explicit per-sample
+unvoiced mask; target energy must exceed `1e-8`. The mask must come from phone
+ownership, not from treating all zero-F0 frames as consonants (silence differs).
+
+Reference tensors are detached. The level term prevents silence from being
+scored as a correct replacement for noisy consonants. Voiced/boundary samples
+receive no gradient from this auxiliary component. Existing reconstruction,
+adversarial and feature-matching losses remain necessary: this statistic alone
+does not establish correct phonetic content or timbre.
+
+Tests verify target identity, finite nonzero artifact gradients, detached
+reference, zero gradients outside the mask, full-window boundary exclusion,
+silent/no-window cases, collapse rejection and invalid input rejection.
+Real probe on development song 00005 using the retained Torch source-mel output:
+
+- 59 candidate windows; 36 have sufficient reference energy.
+- Total loss `0.65173274`: correlation `0.62185735`, level `0.02987542`.
+- Reference-against-itself loss `3.94746e-16`.
+- Finite gradient, L1 norm `29.40666`; outside-mask gradient exactly zero.
+
+Evidence: `/Users/lhs/seam-corpus-pauses-2026-09-19-r1/periodicity-loss-probe-song5-r1.json`,
+SHA-256 `52a37a5b7081518e49f4ff64df1909d393eb6599cb7e9d2b71d52394420dedd1`.
+This was an output-gradient probe, not a model training step or improved singer.
+
+Next: add an explicitly versioned opt-in GAN objective carrying this term,
+derive masks from admitted training phone ownership, record the coefficient and
+window policy in checkpoint identity, and enforce resume/export compatibility.
+Then compare a bounded paired training run against the unchanged objective.
+Do not train on the five development songs or the observed 16-phrase cohort.
+
 ## Reject frame-rate feature noise as an inference-only repair
 
 Implemented bounded `unvoiced_noise_diagnostic.fixed_feature_noise` for CPU
