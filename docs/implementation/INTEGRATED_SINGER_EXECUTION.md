@@ -1,5 +1,22 @@
 # Integrated Singer Execution
 
+## Paired export and comparison tooling ready for completed arms
+
+`paired_vocoder_experiment.export_arms` reads each arm's verified `run.json`,
+requires exactly one retained complete checkpoint whose receipt digest matches,
+and exports it with the declared profile and trusted checkout. Arms still
+training are reported `NOT_READY`; nothing is substituted and `allReady` stays
+false. `paired_vocoder_comparison` then evaluates every exported arm over the
+same frozen replay inputs (captured mel, F0, dynamics and phone ownership),
+verifying each arm's vocoder hash stays constant across sources, and aggregates
+unvoiced and voiced phone classes separately with signed candidate-minus-reference
+lag-correlation deltas plus RMS ratios. Empty or unmeasurable classes stay null;
+neither tool promotes a model or alters the baseline.
+
+Verification: full suite 323 tests, 322 passed and one skipped; focused export,
+comparison and evaluator tests 10 passed. These tools have not yet run on trained
+checkpoints because no arm has completed an epoch.
+
 ## Paired vocoder evaluator exercised on captured audio
 
 `paired_vocoder_evaluation.evaluate` runs a bounded set of byte-bound vocoder
