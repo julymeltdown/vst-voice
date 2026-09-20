@@ -232,6 +232,10 @@ jobs:
   windows-installer-smoke:
     needs: vst3
     runs-on: windows-2025
+    # This job had never executed before the Windows VST3 gate was cleared, and
+    # its first real run hung for over two hours inside one step. A hang must
+    # surface as a bounded failure rather than occupy the queue indefinitely.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: ilammy/msvc-dev-cmd@v1
@@ -245,8 +249,12 @@ jobs:
       - name: Create development-only uninstaller signing identity
         shell: powershell
         run: |
+          $ProgressPreference = 'SilentlyContinue'
+          Write-Host 'seam-step: creating self-signed development certificate'
           $cert = New-SelfSignedCertificate -Type CodeSigningCert -Subject 'CN=Project SEAM Development Test' -CertStoreLocation Cert:\CurrentUser\My
+          Write-Host "seam-step: created $($cert.Thumbprint)"
           Export-Certificate -Cert $cert -FilePath "$env:RUNNER_TEMP\project-seam-development.cer" | Out-Null
+          Write-Host 'seam-step: exported'
           # Trust the self-signed certificate as a root so signtool can chain it.
           # Import-Certificate against Cert:\CurrentUser\Root opens a blocking
           # confirmation prompt that never returns on a non-interactive runner:
@@ -261,8 +269,10 @@ jobs:
           } finally {
             $store.Close()
           }
+          Write-Host 'seam-step: root trust installed'
           "WINDOWS_DEVELOPMENT_SIGN_CERT_SHA1=$($cert.Thumbprint)" | Out-File -FilePath $env:GITHUB_ENV -Append
           if (-not (Test-Path "Cert:\CurrentUser\Root\$($cert.Thumbprint)")) { throw 'Development root certificate was not trusted' }
+          Write-Host 'seam-step: identity ready'
       - name: Locate downloaded payload and build unsigned installer
         shell: powershell
         run: |
