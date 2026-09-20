@@ -22,6 +22,17 @@ Observed execution session: `4887`; recheck actual liveness before using this
 historical handle. The run is active, not complete, at this entry. Output root:
 `/Users/lhs/seam-corpus-pauses-2026-09-19-r1/acoustic-combined-r6`.
 
+macOS-only continuation checkpoint: epoch 29 reports `epochComplete=true`,
+verified coverage, 267 updates and mean loss 0.2307327350. Its retained binary was
+rehashed against the receipt:
+`b370851489086f313917b9e83bde4470e4a501b548f08c834ea05896efdb52df`.
+PID 69382 was still active at this check; epoch 37 is not yet claimed complete.
+The four native original-singer, installation and neural-render CTest targets
+passed (17.30 seconds). The training-tool Python suite ran 258 tests: 257 passed,
+one skipped (46.934 seconds). These checks do not qualify the new model's audio.
+README now explicitly separates active macOS acceptance from the deferred
+Windows portion of the cross-platform gate. No Windows validation was performed.
+
 After completion, verify checkpoint integrity, export, retain vocoder epoch two
 and the existing 10-step production sampler, then repeat the exact five-song
 application campaign and acoustic partition diagnostic. Keep per-song and

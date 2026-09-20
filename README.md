@@ -30,6 +30,11 @@ The developer currently has **macOS only**. Windows work must not hold up macOS
 singer development; resume Windows-specific implementation and verification when
 a suitable Windows environment is available.
 
+**Immediate development priority:** complete and validate the macOS singer workflow
+(voice creation, song editing, rendering and export). Track macOS acceptance
+separately from the full cross-platform Beta GO gate below; deferred Windows TODOs
+must not stop this work or be reported as completed validation.
+
 The only development and verification host is a macOS arm64 machine (Apple M3 Max), so no Windows
 installed-product evidence can be produced here. Rather than keep spending CI cycles to discover
 Windows-only defects that cannot be confirmed or repaired locally, Windows is parked in a known,
