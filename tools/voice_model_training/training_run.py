@@ -12,6 +12,7 @@ import time
 from .__main__ import assemble_dataset
 from .batches import iter_supervised_batches
 from .checkpoint import publish_checkpoint
+from .conditioning import validate_conditioning_bindings
 from .optimization import run_acoustic_epoch
 
 
@@ -22,6 +23,7 @@ def train_reviewed_epoch(model, optimizer, *, dataset_inputs: dict,
                          maximum_seconds: float = 600, cancelled=None,
                          objective=None, objective_id="mel-l1",
                          expected_dataset_sha256: str | None = None,
+                         expected_conditioning_bindings: dict | None = None,
                          maximum_checkpoint_bytes: int = 512 * 1024 * 1024) -> dict:
     """Train whole phrases (at most 4096 frames) and publish only after rechecks.
 
@@ -37,6 +39,9 @@ def train_reviewed_epoch(model, optimizer, *, dataset_inputs: dict,
         raise ValueError("Training requires the complete captured dataset admission inputs")
     if not isinstance(run_metadata, dict) or (cancelled is not None and not callable(cancelled)):
         raise ValueError("Invalid training metadata or cancellation callback")
+    if expected_conditioning_bindings is not None and (expected_dataset_sha256 is None
+                                                      or not isinstance(expected_conditioning_bindings, dict)):
+        raise ValueError("Conditioning bindings require a captured dataset identity to compare against")
     if type(maximum_checkpoint_bytes) is not int or not 1 <= maximum_checkpoint_bytes <= 512 * 1024 * 1024:
         raise ValueError("Invalid checkpoint byte budget")
     output, conditioning_directory = Path(output), Path(conditioning_directory)
@@ -73,8 +78,14 @@ def train_reviewed_epoch(model, optimizer, *, dataset_inputs: dict,
             raise ValueError("Breathiness-enabled training requires revision-2 supervision for every phrase")
     elif any(value not in (None, []) for value in controls):
         raise ValueError("Training configuration cannot silently discard captured breathiness supervision")
-    if expected_dataset_sha256 is not None and snapshot["datasetSha256"] != expected_dataset_sha256:
-        raise ValueError("Resumed checkpoint dataset differs from fresh admission")
+    if expected_dataset_sha256 is not None:
+        # A warm start that adds conditioning supervision necessarily changes the
+        # dataset digest, so that case is verified binding-by-binding instead of by
+        # asserting an equality the approved repair can never satisfy.
+        if expected_conditioning_bindings is not None:
+            validate_conditioning_bindings(expected_conditioning_bindings, snapshot["bindings"])
+        elif snapshot["datasetSha256"] != expected_dataset_sha256:
+            raise ValueError("Resumed checkpoint dataset differs from fresh admission")
     selected = {source for group in snapshot["bindings"]["split"]["groups"]
                 if group["partition"] == "train" for source in group["sourceIds"]}
     coverage = {row["sourceId"]: row["frameCount"] for row in snapshot["conditioning"]

@@ -74,11 +74,16 @@ def run_reviewed_epochs(model, optimizer, *, output: Path, epochs: int,
         if minimum_free_bytes and shutil.disk_usage(output.parent).free < minimum_free_bytes + min(remaining, 512 * 1024**2):
             raise OSError("Acoustic checkpoint budget would cross the requested disk headroom")
         epoch_output = output if epochs == 1 else output / f"epoch-{completed_epochs + index + 1:06d}"
+        # Only the first epoch of a conditioning-addition run compares against the
+        # captured bindings. Later epochs continue from this run's own published
+        # identity, so from then on any conditioning change is rejected outright.
+        if index:
+            options.pop("expected_conditioning_bindings", None)
         receipt = train_reviewed_epoch(model, optimizer, output=epoch_output,
-            run_metadata=dict(metadata, completedEpochs=completed_epochs + index + 1,
-                              parentReceiptSha256=parent_receipt_sha256),
-            **(options | dict(maximum_seconds=min(options["maximum_seconds"], deadline - time.monotonic()),
-                            cancelled=expired, maximum_checkpoint_bytes=min(remaining, 512 * 1024 * 1024))))
+                run_metadata=dict(metadata, completedEpochs=completed_epochs + index + 1,
+                                  parentReceiptSha256=parent_receipt_sha256),
+                **(options | dict(maximum_seconds=min(options["maximum_seconds"], deadline - time.monotonic()),
+                                cancelled=expired, maximum_checkpoint_bytes=min(remaining, 512 * 1024 * 1024))))
         payload = encode_report(receipt)
         verify_exact_file(epoch_output / "checkpoint.json", payload)
         parent_receipt_sha256 = hashlib.sha256(payload).hexdigest()

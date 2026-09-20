@@ -13,6 +13,8 @@ except ImportError:
     torch = None
 
 from tools.voice_model_training.conditioning import ADDED_CONDITIONING_PARAMETERS
+from tools.voice_model_training.conditioning import (CONDITIONING_BINDING_FIELDS,
+    validate_conditioning_bindings)
 from tools.voice_model_training.train import (_conditioning_additions,
     _load_warm_start_state, _warm_start_identity, initialize_checkpoint, model_settings)
 
@@ -98,6 +100,47 @@ class ConditioningAdditionTests(unittest.TestCase):
             _load_warm_start_state(_FakeAcoustic(conditioned=True), captured, frozenset())
 
 
+class ConditioningBindingTests(unittest.TestCase):
+    """A conditioning addition may change supervision, and nothing else."""
+
+    def bindings(self, **updates):
+        value = dict(conditioningSha256="1" * 64, labelConfigurationSha256="2" * 64,
+                     labelReviewSha256="3" * 64, permissionConfigurationSha256="4" * 64,
+                     rightsReviewSha256="5" * 64, split=dict(seed="s", groups=[], heldOutSongIds=[]))
+        return value | updates
+
+    def test_only_conditioning_bindings_may_change(self):
+        current = self.bindings(conditioningSha256="a" * 64, labelConfigurationSha256="b" * 64,
+                                labelReviewSha256="c" * 64)
+        self.assertEqual(validate_conditioning_bindings(self.bindings(), current), current)
+        # The reviewed material, rights and split must be untouched, so the repair
+        # is measured against the same corpus the warm-start checkpoint used.
+        for field in ("permissionConfigurationSha256", "rightsReviewSha256", "split"):
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                validate_conditioning_bindings(self.bindings(), current | {field: "changed"})
+
+    def test_unchanged_conditioning_is_not_an_addition(self):
+        same = self.bindings()
+        with self.assertRaises(ValueError):
+            validate_conditioning_bindings(same, same)
+        partial = self.bindings(conditioningSha256="a" * 64)
+        with self.assertRaises(ValueError):
+            validate_conditioning_bindings(self.bindings(), partial)
+
+    def test_malformed_bindings_are_refused(self):
+        current = self.bindings(conditioningSha256="a" * 64, labelConfigurationSha256="b" * 64,
+                                labelReviewSha256="c" * 64)
+        for source in ({}, dict(current, extra="x"), None, "bindings"):
+            with self.subTest(source=source), self.assertRaises(ValueError):
+                validate_conditioning_bindings(source, current)
+        with self.assertRaises(ValueError):
+            validate_conditioning_bindings(self.bindings(), None)
+        # Every conditionable field must actually be present to be compared.
+        missing = {k: v for k, v in self.bindings().items() if k not in CONDITIONING_BINDING_FIELDS}
+        with self.assertRaises(ValueError):
+            validate_conditioning_bindings(missing, current)
+
+
 @unittest.skipIf(torch is None, "Torch is optional outside the training environment")
 class WarmStartIntegrationTests(unittest.TestCase):
     """Exercises the real initializer, not the helpers, on a real-shaped state."""
@@ -175,6 +218,19 @@ class WarmStartIntegrationTests(unittest.TestCase):
                 initialize_checkpoint(model, optimizer, dict(model=captured), receipt,
                     metadata=self.metadata(current), profile="f" * 64,
                     receipt_sha256="2" * 64, warm_start=True)
+
+    def test_plain_warm_start_still_requires_the_identical_dataset(self):
+        # The dataset-digest exemption belongs to the addition alone: without an
+        # addition, a changed assembly configuration must still be refused.
+        prior = self.settings()
+        receipt = self.receipt(prior)
+        captured = self.capture(conditioned=False)
+        metadata = self.metadata(prior) | dict(assemblyConfigurationSha256="7" * 64)
+        model = _FakeAcoustic(conditioned=False)
+        optimizer = torch.optim.AdamW(model.parameters(), lr=prior["learningRate"])
+        with self.assertRaises(ValueError):
+            initialize_checkpoint(model, optimizer, dict(model=captured), receipt,
+                metadata=metadata, profile="f" * 64, receipt_sha256="2" * 64, warm_start=True)
 
 
 if __name__ == "__main__":

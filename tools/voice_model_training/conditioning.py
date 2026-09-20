@@ -34,6 +34,35 @@ def declares_added_parameters(value):
             and all(name in ADDED_CONDITIONING_PARAMETERS for name in added))
 
 
+# The dataset-identity fields a conditioning addition is allowed to change. The
+# remaining bindings - reviewed sources, rights review, permission configuration
+# and the train/validation/test split - must stay byte-identical, so the repair
+# cannot quietly train on different material than the checkpoint it warms from.
+CONDITIONING_BINDING_FIELDS = (
+    "conditioningSha256", "labelConfigurationSha256", "labelReviewSha256")
+
+
+def validate_conditioning_bindings(source, current):
+    """Require a fresh dataset to differ from its captured one only in conditioning.
+
+    Adding the aperiodicity channel necessarily changes the dataset digest and the
+    three conditioning bindings. Requiring those to change, while requiring every
+    other binding to match, is what keeps a repaired run comparable to the model it
+    continues: the same reviewed songs, split, rights and permissions.
+    """
+    if (not isinstance(source, dict) or not isinstance(current, dict)
+            or set(source) != set(current) or not source
+            or not set(CONDITIONING_BINDING_FIELDS) <= set(source)):
+        raise ValueError("Conditioning addition requires matching dataset binding fields")
+    for name in sorted(set(source) - set(CONDITIONING_BINDING_FIELDS)):
+        if source[name] != current[name]:
+            raise ValueError(f"Conditioning addition may not change the {name} dataset binding")
+    for name in CONDITIONING_BINDING_FIELDS:
+        if source[name] == current[name]:
+            raise ValueError("Conditioning addition requires changed conditioning supervision")
+    return dict(current)
+
+
 def build_conditioning(label: dict, score: dict, *, vocabulary: list[str],
                        minimum_confidence: float, maximum_frames: int = 65536,
                        breathiness: list[float] | None = None) -> dict:

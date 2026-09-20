@@ -183,17 +183,20 @@ def initialize_checkpoint(model, optimizer, state, receipt, *, metadata, profile
         governed = {"conditioningControls", "schemaVersion"}
         prior_fields = set(prior_settings) - governed
         current_fields = set(current_settings) - governed
+        # `configuration` is a pure function of `settings`, and both sides are
+        # already required to match their own settings above. With an addition
+        # present, `assemblyConfigurationSha256` is excluded too: it digests the
+        # dataset assembly configuration, which must change once the conditioning
+        # supervision changes. `training_run` then re-verifies the dataset bindings
+        # field by field instead of trusting a digest the addition necessarily moves.
+        derived = {"configuration", "assemblyConfigurationSha256"} if additions else {"configuration"}
+        excluded = {"settings", "trainingConfigurationSha256"} | derived
         if (prior_fields != current_fields
                 or any(prior_settings[key] != current_settings[key]
                        for key in prior_fields if key not in allowed)
                 or current_settings["schemaVersion"] != (2 if additions else prior_settings["schemaVersion"])
-                # `configuration` is excluded because it is a pure function of
-                # `settings` and must differ when the control is added; both sides
-                # are already required to match their own settings above.
-                or {k: v for k, v in captured.items()
-                    if k not in ("settings", "trainingConfigurationSha256", "configuration")}
-                    != {k: v for k, v in metadata.items()
-                        if k not in ("settings", "trainingConfigurationSha256", "configuration")}
+                or {k: v for k, v in captured.items() if k not in excluded}
+                    != {k: v for k, v in metadata.items() if k not in excluded}
                 or not _digest(captured.get("trainingConfigurationSha256"))
                 or not _digest(metadata.get("trainingConfigurationSha256"))
                 or (prior_settings != current_settings
@@ -287,12 +290,18 @@ def main():
                         torchVersion=str(torch.__version__), numpyVersion=np.__version__, vocabulary=vocabulary,
                         singerQualified=False)
         expected_dataset, completed_epochs = None, 0
+        captured_bindings = None
         parent_digest = args.resume_receipt_sha256 or args.warm_start_receipt_sha256
         if args.resume is not None or args.warm_start is not None:
             state, previous = load_local_checkpoint(args.resume or args.warm_start, receipt_sha256=parent_digest)
             metadata, expected_dataset, completed_epochs = initialize_checkpoint(
                 model, optimizer, state, previous, metadata=metadata, profile=profile,
                 receipt_sha256=parent_digest, warm_start=args.warm_start is not None)
+            # A warm start that added the aperiodicity channel is evaluated against
+            # the captured dataset bindings, because the new conditioning changes
+            # the dataset digest by construction and equality can never hold.
+            if metadata.get("warmStart", {}).get("addedParameters"):
+                captured_bindings = previous["metadata"]["datasetBindings"]
         result = run_reviewed_epochs(model, optimizer, output=args.output, epochs=args.epochs,
             completed_epochs=completed_epochs, parent_receipt_sha256=parent_digest,
             metadata=metadata, maximum_run_seconds=args.maximum_run_seconds,
@@ -302,7 +311,8 @@ def main():
             conditioning_directory=args.conditioning, targets=targets, expected_profile_sha256=profile,
             maximum_updates=settings["maximumUpdates"], maximum_seconds=settings["maximumSeconds"],
             objective=objective, objective_id=objective.objective_id,
-            expected_dataset_sha256=expected_dataset))
+            expected_dataset_sha256=expected_dataset,
+            expected_conditioning_bindings=captured_bindings))
         print(json.dumps(result, sort_keys=True))
         return 0
     except KeyboardInterrupt:
