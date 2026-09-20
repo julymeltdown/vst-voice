@@ -18,8 +18,10 @@ inline bool pairContract(const onnx::ModelProto& acoustic,const onnx::ModelProto
     using Map=std::map<std::string,const onnx::ValueInfoProto*>;
     const auto entries=[](const auto& values,std::initializer_list<std::string> names) {
       Map result;
+      auto expected=names.begin();
       for (const auto& value:values)
         if (!result.emplace(value.name(),&value).second) throw std::runtime_error("duplicate interface");
+        else if (expected==names.end() || value.name()!=*expected++) throw std::runtime_error("interface order");
       if (result.size()!=names.size()) throw std::runtime_error("unexpected interface");
       for (const auto& name:names) if (!result.contains(name)) throw std::runtime_error("missing interface");
       return result;
@@ -46,8 +48,16 @@ inline bool pairContract(const onnx::ModelProto& acoustic,const onnx::ModelProto
       return symbol(dims.dim(layout=="BTF"?1:2));
     };
     Map ai;
-    for (const auto& value:acoustic.graph().input())
+    // The worker binds inputs positionally, so the declared order is part of
+    // the contract: tokens, durations, f0, steps, then the optional control.
+    const std::initializer_list<const char*> acousticOrder=
+        {"tokens","durations","f0","steps","breathiness"};
+    auto acousticExpected=acousticOrder.begin();
+    for (const auto& value:acoustic.graph().input()) {
       if (!ai.emplace(value.name(),&value).second) throw std::runtime_error("duplicate interface");
+      if (acousticExpected==acousticOrder.end() || value.name()!=*acousticExpected++)
+        throw std::runtime_error("interface order");
+    }
     const bool conditioned=ai.contains("breathiness");
     if (ai.size()!=(conditioned?5U:4U)) throw std::runtime_error("unexpected interface");
     for (const auto* name:{"tokens","durations","f0","steps"})

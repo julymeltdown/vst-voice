@@ -36,6 +36,8 @@ def inspect_pair(acoustic_bytes: bytes, vocoder_bytes: bytes, *, bins: int,
         mapped = {entry["name"]: entry for entry in entries}
         if len(mapped) != len(entries) or set(mapped) != set(expected):
             raise ValueError(f"Unexpected {key}: expected {expected}")
+        if [entry["name"] for entry in entries] != list(expected):
+            raise ValueError(f"Unexpected {key} order: expected {expected}")
         return mapped
 
     def tensor(entry, dtype, rank):

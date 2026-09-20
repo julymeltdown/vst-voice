@@ -1,5 +1,47 @@
 # Integrated Singer Execution
 
+## The conditioned bundle renders through the production worker; pitch error fell an order of magnitude
+
+The first schema-4 conditioned bundle failed every production render with the
+helper exiting on "Loaded inference sessions disagree with the admitted graph
+interface". Root cause: `compose.merge_models` appends the diffusion-only
+steps input after the encoder inputs, so the exported graph declared
+(tokens, durations, f0, breathiness, steps) while the admitted positional
+contract is (tokens, durations, f0, steps, breathiness). Offline inspection
+was name-keyed and could not see the divergence; only the worker's positional
+session check caught it, after the bundle was already admitted.
+
+Three structural changes close the class rather than the instance:
+`export_acoustic` now republishes `graph.input` in the canonical declared
+order when the merge produces a different one; `inspect_pair.py` enforces
+declared input/output order instead of set membership; and
+`pair_contract.hpp` rejects out-of-order interfaces at native admission, so a
+mis-ordered graph now fails inspection before a bundle can ship it.
+
+Re-exported from the same epoch-8 conditioned checkpoint
+(receipt 04f72263b700804cc4557879208def3ca4157d68955dea516b179140f755007e,
+new acoustic f77e09e238e44d55080e5fea6eabde687dbd73e1b575f5e89363818a5c625b8c)
+and re-composed with the same measured prior into
+bundle-breathiness-e8-v512-e2-r2 (manifest
+b34b7263d923d6371b2d00c038bd513bf07a288de2e6f76855a7da06701f0746). The
+five-song validation campaign then passed 5/5 through the production worker
+(campaign-breathiness-e8-r3), as did a same-binary re-run of the e37
+unconditioned baseline (campaign-e37-v512-e2-r3) — the earlier e37 receipt
+predates the binary rebuild and could not be revalidated, so the baseline was
+re-measured rather than assumed.
+
+The comparison receipt (compare-e37r3-vs-breathiness-e8r3.json) reports
+NO_REGRESSIONS_ON_REPORTED_METRICS with a large candidate improvement:
+weighted mean absolute pitch error 341.99 -> 36.40 cents, within-tolerance
+frames 81.0% -> 95.6%, and measurable voiced pairs 3319 -> 4077. This is a
+pitch-track diagnostic on five procedural songs, not perceptual evidence:
+the receipts still say singerQualified=False and releaseEligible=False, and
+no listener has judged anything.
+
+Verification: check_paired_runtime, check_bundle_runtime (including the
+schema-4 conditioned scenario), check_bundle_preparation and inspect_bundle
+all pass on the rebuilt native binaries and the reordered real bundle.
+
 ## Score-derived defaults now feed the aperiodicity channel without drawn automation
 
 The remaining half of the "channel defaults to silence" gap is closed. A

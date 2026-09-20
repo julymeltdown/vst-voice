@@ -246,6 +246,15 @@ def export_acoustic(deployment_model) -> bytes:
     expected_inputs = {"tokens", "durations", "f0", "steps"} | ({"breathiness"} if conditioned else set())
     if {item.name for item in merged.graph.input} != expected_inputs:
         raise ValueError("Merged acoustic graph has unexpected public inputs")
+    canonical_order = ["tokens", "durations", "f0", "steps"] + (["breathiness"] if conditioned else [])
+    if [item.name for item in merged.graph.input] != canonical_order:
+        # merge_models appends the diffusion-only "steps" input after the encoder
+        # inputs, which places a conditioned control ahead of steps. The admitted
+        # interface is positional, so publish the declared order rather than
+        # whatever the merge happened to produce.
+        ordered = sorted(merged.graph.input, key=lambda item: canonical_order.index(item.name))
+        del merged.graph.input[:]
+        merged.graph.input.extend(ordered)
     if [item.name for item in merged.graph.output] != ["mel"]:
         raise ValueError("Merged acoustic graph has unexpected public outputs")
     if conditioned:
