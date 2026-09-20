@@ -1,5 +1,21 @@
 # Integrated Singer Execution
 
+## Paired experiment evaluated: retain epoch 21; test smaller L1 updates
+
+Both L1 and L2 reset arms completed export and all five application executions.
+Neither improves the baseline: weighted pitch MAE is 45.7906/484.8801 cents
+versus epoch 21's 35.2267, with worse spectral distance on every song and worse
+fixed train/validation mel reconstruction. Both scored rests remain silent.
+Full results, coverage and artifact hashes are in the campaign report. No model
+is promoted, and neither training arm will be extended on these results.
+
+Next short comparison changes only the L1 warm-start learning rate to 0.00008,
+from the same epoch-21 parent, reset optimizer/RNG and seed. It requests two
+epochs, retaining both binaries. Output root: `acoustic-e21-reset-l1-low-lr-r1`.
+Config: `prepared-combined/training-l1-low-lr-warm-e21.json` under the existing
+pause corpus root. Compare with the completed L1 0.0008 control and the original
+epoch 21, not with unlike raw L2 losses. Success remains unproven.
+
 ## Explicit warm-start implementation and next controlled experiment
 
 `tools.voice_model_training.train` now separates exact resume from warm start.

@@ -1,5 +1,54 @@
 # Application singer validation campaign — September 20, 2026
 
+## Paired warm starts: neither L1 reset nor L2 replacement improves epoch 21
+
+Two epochs per arm, identical epoch-21 weights, reset optimizer/RNG, seed 933,
+learning rate 0.0008 and unchanged data. L1 is the reset-optimizer control; L2
+changes only the loss. Both completed 534 updates with full coverage. Both
+exports passed runtime checks and all ten application executions passed, but
+every strict pitch comparison remains `MISMATCH`.
+
+| Song | Pitch MAE baseline / L1 / L2 (cents) | Spectral distance L1 / L2 |
+| --- | --- | --- |
+| 00003 | 28.96 / 32.36 / 419.37 | 1.143787 / 1.799822 |
+| 00005 | 41.81 / 62.82 / 575.60 | 1.179731 / 1.814183 |
+| 00024 | 37.59 / 44.26 / 472.99 | 1.229705 / 1.762821 |
+| 00402 | 36.49 / 48.38 / 506.24 | 0.885078 / 1.544716 |
+| 00420 | 30.76 / 42.40 / 441.45 | 1.155833 / 1.763058 |
+
+| Aggregate | Epoch 21 | L1 reset | L2 reset |
+| --- | --- | --- | --- |
+| Weighted pitch MAE (cents) | 35.2267 | 45.7906 | 484.8801 |
+| Within 50 / measurable pairs | 3919 / 4116 | 3824 / 4008 | 2413 / 3242 |
+| Within-50 fraction | 95.2138% | 95.4092% | 74.4294% |
+| Unmeasurable frames | 260 | 343 | 1007 |
+| Voicing mismatches | 122 | 150 | 251 |
+| Train mel MAE, fixed 5510 frames | 2.391302 | 2.560466 | 3.966899 |
+| Validation mel MAE, fixed 4619 frames | 2.400242 | 2.552088 | 3.982111 |
+
+The slightly higher L1 within-50 fraction is not an improvement claim: fewer
+pairs remain measurable and mean error/voicing/spectral distance worsen.
+L1 has 74 interior + 110 boundary errors; L2 has 696 + 133. Both scored rests
+remain exactly zero in both channels. No failed frames or songs were dropped.
+Reject both as replacements; retain epoch 21. This short warm-start experiment
+does not establish that all L2 training or convergence schedules are inferior.
+
+Evidence under `/Users/lhs/seam-corpus-pauses-2026-09-19-r1/`:
+
+- `campaign-e21-reset-l1-r1/campaign.json`, SHA-256
+  `70da75007ae6100cd7e88a483b850dd38edd4068d7f9a4f9f6b7e9ddaee69393`.
+- `campaign-e21-reset-l2-r1/campaign.json`, SHA-256
+  `88b0dea2919346c2e54e4671007b52269d17baa46d06c02cffec1b9d97e4a53a`.
+- `acoustic-reset-l1-l2-partitions-r1/experiment.json`, SHA-256
+  `47a5bc67562572302c206019e780bd9f72cd1e1ab43fd2c58ed8a63b3c2916c6`.
+
+Next bounded hypothesis: two L1 warm-start epochs from the same epoch-21 parent,
+same reset and seed, changing only learning rate from 0.0008 to 0.00008. Compare
+against the L1 control and epoch 21 using the same generated-output metrics.
+This tests update-size sensitivity; it is not yet a demonstrated remedy.
+All qualification, training-overlap, independent-cohort and Windows TODO
+limitations remain unchanged.
+
 ## Acoustic epoch 37: reject as a replacement for epoch 21
 
 The 16-epoch continuation lowered training loss but **regressed on every fixed
