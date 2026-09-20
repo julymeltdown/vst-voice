@@ -57,9 +57,17 @@ existing review policy identities and passes admission:
    `26dfbaf43ec0be654b508dde96c80dadf2e6377ce29591985b1c2728178a4012`.
    Reported retained binary size: 720,450,469 bytes. This is partial progress,
    not completion of epoch 2.
-2. Require the complete epoch receipt and held-out reconstruction results before
+2. Require the complete epoch receipt and reconstruction diagnostic results before
    calling epoch 2 finished. A live process or reconstruction directory is insufficient.
-3. Compare epoch 2 against epoch 1 on the same held-out sources, then export and
-   evaluate the selected checkpoint through the actual song-rendering path.
+3. Export epoch 2 and compare it against epoch 1 on the same five regression
+   sources through source-driven reconstruction and the actual song-rendering path,
+   keeping acoustic epoch 13 fixed. These sources are not a jointly held-out cohort:
+   songs 00003, 00005 and 00024 overlap vocoder training. Preserve all five results
+   and failures; do not substitute easier songs or relax thresholds.
 4. Keep the generated-teacher corpus limitation and strict pitch diagnostic visible.
    Training progress does not establish a qualified original singing voice.
+
+For the frozen selection, training-overlap audit and baseline results, see
+[Singer validation campaign](SINGER_VALIDATION_CAMPAIGN_2026-09-20.md).
+A separate frozen cohort checked against both models' full training ancestry is
+still required for combined-singer qualification.
