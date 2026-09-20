@@ -1123,3 +1123,41 @@ held-out WAV bytes. Allow about 1.7 GB for its three complete GAN checkpoints.
 Those keys authenticate engineering fixtures only, never real-source permission
 or singer approval. Fixture review expiry is intentionally short; the diagnostic
 is a reproducible test, not a permanently admitted production corpus.
+# Fixed validation campaign
+
+Companion command `python -m tools.voice_model_training.score_application_export`
+accepts `--comparison`, `--comparison-sha256`, `--labels`, `--labels-sha256`,
+`--master`, and `--output`. Select the label digest from the captured corpus's
+`artifacts["label-config.json"]`, not from an unverified replacement label file.
+It binds the original source and master identities, validates the explicit score
+clock, recomputes strict pitch diagnostics from the captured full-hop tracks,
+and locates mismatching windows within notes, across transitions, or in rests.
+The written note is not ground truth for expressive pitch or consonants. Neither
+reference nor candidate errors are octave-corrected or excluded. Exact rests
+are checked on every PCM channel without downmix cancellation; scores without
+rests report `allRestsExactlyZero: null`, not a vacuous pass. This diagnostic
+does not independently authenticate supplied pitch tracks or qualify singing.
+
+`python -m tools.voice_model_training.validation_campaign` reruns an explicit
+selection through the native application renderer, saved-project export, and
+the existing no-alignment audio comparison. Required arguments are `--selection`,
+`--selection-sha256`, `--corpus`, `--bundle`, `--renderer`, `--pitch-executable`,
+and `--output` (new directory). `--silence-phone` defaults to `pau`; it must match
+the trained bundle, not substitute an arbitrary sung phone.
+
+Selection JSON uses formatId `com.project-seam.validation-selection`,
+schemaVersion `1`, exact `corpusSha256`, and `items` containing explicit
+`sourceId` and `projectPath` pairs. Paths are local artifact locations, not
+download instructions. The corpus must be a captured-teacher-corpus receipt.
+Only 1–16 unique validation songs are accepted; train/test/held-out membership,
+changed source/project bytes, and existing output paths are rejected before
+rendering. Inputs are copied into the new campaign directory.
+
+`selection.json` freezes input, candidate-manifest, and executable hashes before
+rendering. Per-song `result.json` retains execution failures; successful songs
+also retain `comparison.json` and the real application exports. `campaign.json`
+lists every selected song, without a success-only quality average. Exit status
+0 means all executions and measurements completed, **not** that pitch matched;
+2 means at least one selected item failed. Singer/release qualification remains
+false in both cases. Interrupted campaigns retain their selection and completed
+per-song receipts; they must not be presented as completed campaigns.

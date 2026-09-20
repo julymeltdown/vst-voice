@@ -179,3 +179,93 @@ source controls alongside application exports, retaining failed items and exact
 rest checks. Do not extend acoustic training or change pitch gates solely from
 the current aggregate fraction; the control demonstrates residual vocoder errors
 and the error-location analysis leaves multiple causes possible.
+
+## Reproducible application campaign runner
+
+Added `tools.voice_model_training.validation_campaign` so the next vocoder
+checkpoint can use this exact selection without ad hoc per-song shell loops.
+The explicit local selection is
+`/Users/lhs/seam-corpus-pauses-2026-09-19-r1/validation-selection-five.json`,
+SHA-256 `614f640fad06cf052dfab380eeeada5c2f584ee24a69fbd7d9620d9a4d377615`.
+It binds captured corpus SHA-256
+`ec77cc91df61718f171b83114a26bbe7df0e28d09f52357b2443844c3a9216ca`
+and the five original project paths. Keep that selection unchanged when swapping
+the completed vocoder candidate. Run with the training Python environment:
+
+```sh
+build/neural-runtime/diffsinger-model-env/bin/python \
+  -m tools.voice_model_training.validation_campaign \
+  --selection /Users/lhs/seam-corpus-pauses-2026-09-19-r1/validation-selection-five.json \
+  --selection-sha256 614f640fad06cf052dfab380eeeada5c2f584ee24a69fbd7d9620d9a4d377615 \
+  --corpus /Users/lhs/seam-corpus-pauses-2026-09-19-r1/prepared-combined/corpus.json \
+  --bundle /absolute/path/to/new-candidate-bundle \
+  --renderer "$PWD/build/release/seam_neural_production_render" \
+  --pitch-executable "$PWD/build/release/seam_voicebank_cli" \
+  --output /absolute/path/to/new-campaign-directory
+```
+
+The runner checks partition membership and captured source/project bytes before
+any render. Each output retains frozen inputs, application export and reopen
+verification, the unchanged strict comparison, and an item receipt. Execution
+failures remain in the campaign rather than disappearing from an average.
+Source-driven vocoder controls and exact rest checks remain separate required
+diagnostics; this runner does not claim to replace them or certify a singer.
+
+Verification: training-tool suite ran 248 tests, 247 passed and one skipped;
+the six focused campaign tests passed, including failed-item retention,
+continued execution after failure, and successful execution with MISMATCH quality.
+Phase 11 source checks passed. Windows remains a README TODO; none of this is
+Windows runtime or full-product Beta GO evidence.
+
+Real execution also completed for all five songs with acoustic epoch thirteen
+and vocoder epoch one. Results are retained at
+`/Users/lhs/seam-corpus-pauses-2026-09-19-r1/campaign-e13-v512-e1-r1/campaign.json`.
+Every item passed render/export/reopen and measurement; every strict pitch
+status remains MISMATCH. This rerun is execution evidence, not new training or
+an additional quality-qualified candidate.
+
+## Written-score comparison and exact-rest regression
+
+Added `score_application_export` with independently supplied comparison and label
+receipt hashes and a freshly captured application master. It validates captured
+score geometry, recomputes the original strict track comparison, retains its
+unmeasurable/voicing counts, and reports score-relative locations without changing
+the underlying quality result. Five focused regressions cover byte/clock binding,
+octave errors without correction, exact boundary ownership, padding, unmeasurable
+frames, and stereo rest cancellation. Combined campaign/score tests: 11 passed.
+
+Applied it to all five application outputs. All master hashes exactly match the
+previous individually executed epoch-13/vocoder-1 exports, despite copying project
+inputs into the campaign directory. Per-song `score-diagnostic-v2.json` receipts
+(including strict unmeasurable/voicing totals) are retained beside the campaign
+comparison receipts; the initial `score-diagnostic.json` results are preserved.
+
+| Song | Strict errors above 50 cents | Whole-window note interior | Reference within 50 of note | Candidate within 50 of note |
+|---|---:|---:|---:|---:|
+| 00003 | 65 | 38 | 30 | 7 |
+| 00005 | 66 | 32 | 31 | 2 |
+| 00024 | 64 | 37 | 23 | 17 |
+| 00402 | 32 | 10 | 1 | 9 |
+| 00420 | 25 | 4 | 0 | 4 |
+
+Of 252 strict measured errors, 121 are whole-window note interiors and 131 cross
+note boundaries. Among those 121, the reference is within 50 cents of the written
+note in 85 cases and the candidate in 39. These categories overlap: four have
+both individually within 50 but differ from each other by more than 50; one has
+both outside. These are diagnostic counts, not designated steady-state acceptance
+frames. Consonants, expressive pitch, source synthesis and pitch-estimator errors
+can all disagree with written note pitch; the score is not an independent acoustic
+oracle. Do not relabel or retrain the source to MIDI solely from these counts.
+
+Final combined tool verification: 253 tests run, 252 passed, one skipped in
+45.620 seconds. Tracked-source closure and Phase 11 source checks passed.
+
+Song 00402 rest `[84000,102000)` and song 00420 rest `[66000,78000)` contain
+zero nonzero PCM samples and zero peak on **both** channels. The other three
+scores have no rest: they receive no rest-pass claim. No strict pitch gate changed.
+
+Development decision: keep the completed acoustic epoch thirteen fixed and wait
+for the live vocoder's completed epoch-two artifact before comparing this same
+selection. Current evidence does not isolate a new timing compiler defect, justify
+octave correction, or warrant another acoustic training run. Vocoder/source control
+comparisons remain required; naturalness and lyric intelligibility remain unproven.

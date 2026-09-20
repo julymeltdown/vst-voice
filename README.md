@@ -26,6 +26,9 @@ Development uses the **`master` branch only**.
 ## Platform scope: macOS arm64 is the active target
 
 **Windows support is a TODO.** It is deferred, not abandoned and not failed.
+The developer currently has **macOS only**. Windows work must not hold up macOS
+singer development; resume Windows-specific implementation and verification when
+a suitable Windows environment is available.
 
 The only development and verification host is a macOS arm64 machine (Apple M3 Max), so no Windows
 installed-product evidence can be produced here. Rather than keep spending CI cycles to discover
