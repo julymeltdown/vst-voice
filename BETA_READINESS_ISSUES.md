@@ -207,6 +207,14 @@ song exports and reopens. See the [validation campaign](docs/implementation/SING
 for all results, the timing-policy revision and evidence boundaries. The earlier
 94.18% on one test song must not be generalized to the validation set.
 
+The planned combined acoustic continuation has since completed through epoch
+thirteen. With the same vocoder and fixed five validation songs, application
+within-50-cent accuracy improves to **3781/4033 measurable voiced pairs (93.75%)**,
+and mean absolute pitch error falls to **77.46 cents**. All five songs export and
+reopen, with exact zero audio in their explicit score rests. All strict pitch
+statuses still report `MISMATCH`. Per-song results and hashes are appended to the
+validation campaign report; this is measurable progress, not closure of P0-08.
+
 ### SEAM-BETA-P0-01: No rights-cleared, usable Beta Voicebank
 
 **Evidence**

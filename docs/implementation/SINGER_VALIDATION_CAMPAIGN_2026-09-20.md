@@ -80,3 +80,50 @@ phase11 source verification and staged diff checks pass.
 Next: compare completed vocoder epoch 2 on these same validation inputs; inspect
 remaining note/transition errors without changing thresholds or substituting easier
 songs. Naturalness, intelligibility and original-singer qualification remain open.
+
+## Completed acoustic epoch 13 comparison
+
+The previously unfinished acoustic training target is now complete. Epochs 10..13
+add 1,068 updates using unchanged inputs and configuration. See the continuation
+entry in `INTEGRATED_SINGER_EXECUTION.md` for checkpoint hashes and retention.
+Acoustic-only validation on the same five sources improves frame-weighted mel
+MAE from 3.6662582201 to 2.7009600825. The exported graph passes its runtime check.
+
+Application candidate `bundle-combined-e13-v512-e1` keeps the same epoch-one vocoder,
+vocabulary, score and configuration. Acoustic graph:
+`e4065bdf8b2ea033afa69a30da31290d29ffe67fd59218ebd0c7b9cf90eb455f`.
+Bundle manifest:
+`06f2143307a9e5c5e78cc13388c7e90d82b383d4b7418f75e6339a7b88bdb4d6`.
+All five actual application exports and saved-project reopens passed using timing
+policy 5. Their outputs are `validation-combined-e13-v512-e1-NNNNN` siblings.
+
+| Song | Spectral distance | Measurable voiced pairs | Within 50 cents | Mean absolute cents | Unmeasurable frames |
+|---|---:|---:|---:|---:|---:|
+| 00003 | 1.30853 | 1126 | 1061 | 79.31 | 97 |
+| 00005 | 1.28626 | 1025 | 959 | 104.37 | 85 |
+| 00024 | 1.42944 | 890 | 826 | 96.41 | 74 |
+| 00402 | 1.04810 | 500 | 468 | 31.73 | 42 |
+| 00420 | 1.24149 | 492 | 467 | 29.35 | 27 |
+
+Aggregate **3781/4033 = 93.75%** within 50 cents on measurable voiced pairs,
+versus **3090/3649 = 84.68%** for epoch nine. Frame-weighted mean absolute pitch
+error falls from **250.20 to 77.46 cents**. More frames are measurable, so the
+denominators intentionally differ; neither fraction is an all-frame or product
+completion percentage. Every strict pitch status remains `MISMATCH`. The exact
+score-rest intervals in 00402 and 00420 still contain zero nonzero PCM samples
+on either output channel. No signal normalization or threshold change was applied.
+
+Comparison receipt SHA-256 values:
+
+| Song | SHA-256 |
+|---|---|
+| 00003 | `2fbc98da07ebeb97944b1c10654dd07c72656a3c87be508398f1b1f00b54c9a7` |
+| 00005 | `067c860cc9830e3beba00af59a93463a9749903cc0d96e060f5789e00d989b57` |
+| 00024 | `1b7586866cf41a0142c7c3450282e3ca8348f7f18a9647789bb1cd6eefbbb408` |
+| 00402 | `c5db86fe50a7a255a3ec12552d89affe1baa45631cda1d32adee59d019b2e3e9` |
+| 00420 | `2923e70f179b2c35a634d9fea2d9e4a44af6fc523624020cac9f46f72b9ec50d` |
+
+Epoch thirteen is the stronger measured acoustic engineering candidate. Its
+vocoder/source limitations and missing musical qualification remain. The live
+vocoder epoch-two run is separate and must finish before its output can be
+compared; do not claim its completion from these acoustic results.

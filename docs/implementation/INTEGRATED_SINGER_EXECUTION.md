@@ -1,5 +1,62 @@
 # Integrated Singer Execution
 
+## Resume the unfinished combined acoustic run toward epoch thirteen
+
+September 20, 2026 — current-state inspection found no acoustic training process.
+The earlier `acoustic-combined-r3` plan targeted epoch thirteen, but its last
+published checkpoint is epoch nine. Both its receipt and binary were rehashed:
+`ce175925e4ae433c2e5ccc96771a78353f482d9fee40214bcffe5a1c95564b2c` and
+`1e204d139452ea917e5b07226c6c48e4fbda6c29da66b909d95874b0270772de`.
+Its receipt reports completed epoch nine, 267 updates and complete verified coverage.
+
+Resumed with the same training configuration, vocabulary, dataset, targets,
+optimizer/RNG state, pinned DiffSinger checkout, and NumPy 1.26.4/Torch 2.8.0
+environment (`build/neural-runtime/diffsinger-model-env/bin/python`). No training
+labels or frozen splits were changed in response to the validation measurements.
+
+New output under `/Users/lhs/seam-corpus-pauses-2026-09-19-r1/`:
+`acoustic-combined-r4`. Four additional epochs, 3600-second run limit, 900 seconds
+per epoch, 64 MiB live-checkpoint budget, retain one new checkpoint and a 1.5 GiB
+free-space floor. This retention may remove earlier r4 binaries after verifying
+their successors; receipts and the external epoch-nine resume source remain.
+The vocoder's independent live run is unchanged.
+
+Observed acoustic session `4140`, PID `79646`. These are historical handles:
+recheck their actual liveness rather than inferring it from this entry. Epoch ten
+has now published a completed checkpoint: 267 updates, complete verified coverage,
+mean DDPM loss 0.3257774588, receipt SHA-256
+`30f56abd13c9a0631b4d93cab0b7677725428fcb2495b1ffd68340c2bd6f45e6`, binary
+`791af2b1f927bf1b2742b772ef1677777e59a1ed1d9ebf2677e7511c6017a7c6`.
+The run subsequently completed all four requested epochs, through epoch thirteen:
+1,068 new updates, 267 per epoch, with full coverage at every epoch. Final receipt
+SHA-256 `330e321cc1e1f245ed9a0d32f0c9ac25dbfaefbf499cb156910b02246aeb8fd3`;
+final binary `592018a8da8c4c5074db4ec212977204e40c49999e4c7a7b002c826ce46d0386`.
+Both were rehashed after completion. Final mean DDPM loss is 0.2928593367.
+`run.json` reports completedEpochs=13 and the retained 27,197,223-byte epoch-13
+binary. Configured retention removed r4 epoch-10/11/12 binaries after verified
+successors; their receipts remain, but the removed binaries are not recoverable
+from those receipts. The external epoch-nine input remains unchanged.
+
+The final checkpoint was evaluated with the existing acoustic validation command
+on sources 00003, 00005, 00024, 00402 and 00420, with unchanged steps=32/seed=937.
+Frame-weighted validation mel MAE improves from 3.6662582201 at epoch nine to
+2.7009600825 at epoch thirteen (4,619 frames). This remains a mel diagnostic,
+not a musical-quality pass. The final ONNX export passes its runtime check;
+acoustic graph SHA-256 `e4065bdf8b2ea033afa69a30da31290d29ffe67fd59218ebd0c7b9cf90eb455f`.
+New bundle `bundle-combined-e13-v512-e1` retains vocoder epoch one, vocabulary and
+configuration, with resource version 4 and manifest SHA-256
+`06f2143307a9e5c5e78cc13388c7e90d82b383d4b7418f75e6339a7b88bdb4d6`.
+All five application validation songs exported and reopened with that same vocoder.
+Within-50-cent pitch pairs improve from 3090/3649 (84.68%) to 3781/4033 (93.75%),
+with mean absolute pitch error 250.20 -> 77.46 cents. All strict pitch statuses
+remain MISMATCH. Exact score rests remain zero on both channels. See
+`SINGER_VALIDATION_CAMPAIGN_2026-09-20.md` for per-song measurements and receipt
+hashes. This isolates the acoustic change while leaving the vocoder fixed.
+The matching profile file is `/Users/lhs/seam-corpus-xl-2026-09-19/prepared/profile.json`;
+its contents must still match the captured profile identity before export.
+Training loss is not singing quality, and this continuation does not establish
+naturalness, intelligibility, source independence or Beta GO.
+
 ## r3 epoch 1 completed: the 512-channel vocoder tracks pitch and the hop-rate comb is gone
 
 September 20, 2026 — the resumed `vocoder-512-segments-r3` run finished its epoch rather than stopping
