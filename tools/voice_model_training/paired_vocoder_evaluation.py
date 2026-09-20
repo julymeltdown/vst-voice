@@ -15,7 +15,7 @@ from .reconstruct_source_vocoder import checked_waveform
 def run_graph(graph, mel, f0, *, frames, _runtime=None):
     """Execute one bounded vocoder graph with a fresh session."""
     if (not isinstance(graph, bytes) or not 1 <= len(graph) <= 256 * 1024 * 1024
-            or mel.ndim != 3 or mel.shape[0] != 1 or mel.shape[2] != frames
+            or mel.ndim != 3 or mel.shape != (1, frames, 80)
             or f0.shape != (1, frames) or mel.dtype != np.float32 or f0.dtype != np.float32
             or not np.isfinite(mel).all() or not np.isfinite(f0).all()
             or type(frames) is not int or not 1 <= frames <= 4096):
@@ -27,6 +27,7 @@ def run_graph(graph, mel, f0, *, frames, _runtime=None):
     options.intra_op_num_threads = options.inter_op_num_threads = 1
     session = _runtime.InferenceSession(graph, options, providers=['CPUExecutionProvider'])
     predicted = session.run(['waveform'], dict(mel=mel, f0=f0))[0]
+    # The pinned graph consumes batch-first (frames, 80) mel, not channel-first.
     return checked_waveform(predicted, source_frames=frames * 256)
 
 
@@ -57,17 +58,20 @@ def evaluate(source, labels, arms, *, mel_input, f0, gains, executable,
     payload, source_hash = _capture(source, 64 * 1024 * 1024)
     mel, f0 = np.asarray(mel_input, np.float32), np.asarray(f0, np.float32)
     gains = np.asarray(gains, np.float32)
-    frames = mel.shape[2]
+    frames = mel.shape[1] if mel.ndim == 3 else -1
     padded = frames * 256
-    if (mel.ndim != 3 or f0.ndim != 2 or gains.shape != (padded,)
+    if (mel.ndim != 3 or mel.shape[0] != 1 or mel.shape[2] != 80
+            or f0.shape != (1, frames) or gains.shape != (len(gains),) or not 1 <= len(gains) <= padded
             or not isinstance(arms, dict) or not 1 <= len(arms) <= 4
             or not isinstance(labels, list) or not 1 <= len(labels) <= 128):
         raise ValueError('Expected captured source, bounded arms and complete label rows')
     reference = reference_wave(source)
     if valid_samples is None:
         valid_samples = len(reference)
+    # The captured source may be shorter than the vocoder's whole-hop output;
+    # the excluded tail is reported explicitly and never compared as audio.
     if (type(valid_samples) is not int or not 1 <= valid_samples <= min(len(reference), padded)
-            or len(reference) != padded):
+            or padded - len(reference) > 255):
         raise ValueError('Compared samples must lie inside both captured source and padded output')
     reference, phones = reference[:valid_samples], clip_phones(labels, valid_samples)
     graph_hashes, results = {}, {}
@@ -77,14 +81,18 @@ def evaluate(source, labels, arms, *, mel_input, f0, gains, executable,
         if exported['vocoderSha256'] in graph_hashes.values():
             raise ValueError('Arms must use distinct vocoder graphs')
         graph_hashes[name] = exported['vocoderSha256']
-        wave = (run_graph(graph, mel, f0, frames=frames, _runtime=_runtime) * gains)[:valid_samples]
+        # Dynamics ownership covers the captured samples; the padded tail is
+        # zero-padded here rather than scaled by an unrelated gain value.
+        owned = np.zeros(padded, np.float32)
+        owned[:len(gains)] = gains
+        wave = (run_graph(graph, mel, f0, frames=frames, _runtime=_runtime) * owned)[:valid_samples]
         if not np.isfinite(wave).all() or float(np.max(np.abs(wave))) > 1:
             raise ValueError('Vocoder output is nonfinite or unnormalized')
         with tempfile.TemporaryDirectory(prefix='seam-paired-vocoder-') as directory:
             candidate = Path(directory) / f'{name}.wav'
             wavfile.write(candidate, 48000, wave)
             comparison = compare_wavs(source, candidate, executable=executable)
-        if comparison['reference']['sha256'] != source_hash:
+        if comparison['reference']['sourceSha256'] != source_hash:
             raise ValueError('Measured source changed during comparison')
         results[name] = dict(vocoderSha256=exported['vocoderSha256'],
             objectiveId=exported.get('objectiveId'), waveSha256=hashlib.sha256(

@@ -7,6 +7,7 @@ from tools.voice_model_training.paired_vocoder_evaluation import run_graph, clip
 
 class GraphRunTests(unittest.TestCase):
     def test_tail_padding_is_excluded_not_compared(self):
+        from tools.voice_model_training.paired_vocoder_evaluation import clip_phones
         labels=[dict(phone='s',startFrame=0,endFrame=1024),
                 dict(phone='a',startFrame=1024,endFrame=2048)]
         rows=clip_phones(labels,1500)
@@ -18,24 +19,31 @@ class GraphRunTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             clip_phones([dict(phone='a',startFrame=5,endFrame=2048)],2048)
 
+    def test_partial_final_hop_is_allowed_but_large_truncation_is_not(self):
+        import numpy as np
+        from tools.voice_model_training import paired_vocoder_evaluation as module
+        with self.assertRaises((ValueError,OSError,TypeError)):
+            module.evaluate('missing.wav',[],{'arm':'missing'},mel_input=np.zeros((1,2,80),np.float32),
+                f0=np.zeros((1,2),np.float32),gains=np.zeros(512,np.float32),executable=None)
+
     def test_single_use_session_and_exact_padding(self):
         import onnxruntime as ort
         class Session:
             def __init__(self): self.runs=[]
             def run(self, outputs, inputs):
                 self.runs.append((outputs, inputs))
-                return [np.zeros((1, inputs['mel'].shape[2]*256), np.float32)]
+                return [np.zeros((1, inputs['mel'].shape[1]*256), np.float32)]
         session=Session();options=type('O',(),{'intra_op_num_threads':0,'inter_op_num_threads':0})()
         runtime=type('R',(),{'disable_telemetry_events':staticmethod(lambda:None),
             'SessionOptions':staticmethod(lambda:options),'InferenceSession':staticmethod(lambda *a,**k:session)})()
-        wave=run_graph(b'graph',np.zeros((1,80,3),np.float32),np.zeros((1,3),np.float32),frames=3,_runtime=runtime)
+        wave=run_graph(b'graph',np.zeros((1,3,80),np.float32),np.zeros((1,3),np.float32),frames=3,_runtime=runtime)
         self.assertEqual(wave.shape,(768,));self.assertEqual(session.runs[0][0],['waveform'])
         self.assertEqual(options.intra_op_num_threads,1)
-        for bad in (dict(frames=4),dict(mel=np.zeros((1,80,3),np.float64)),):
+        for bad in (dict(frames=4),dict(mel=np.zeros((1,3,80),np.float64)),dict(mel=np.zeros((1,80,3),np.float32))):
             with self.assertRaises(ValueError):
-                run_graph(b'graph',bad.get('mel',np.zeros((1,80,3),np.float32)),
+                run_graph(b'graph',bad.get('mel',np.zeros((1,3,80),np.float32)),
                           np.zeros((1,3),np.float32),frames=bad.get('frames',3),_runtime=runtime)
-        with self.assertRaises(ValueError):run_graph(b'',np.zeros((1,80,3),np.float32),np.zeros((1,3),np.float32),frames=3,_runtime=runtime)
+        with self.assertRaises(ValueError):run_graph(b'',np.zeros((1,3,80),np.float32),np.zeros((1,3),np.float32),frames=3,_runtime=runtime)
 
     def test_fresh_session_per_call(self):
         created=[]
@@ -47,8 +55,8 @@ class GraphRunTests(unittest.TestCase):
             @staticmethod
             def InferenceSession(*a,**k):
                 created.append(a)
-                return type('S',(),{'run':staticmethod(lambda o,i:[np.zeros((1,i['mel'].shape[2]*256),np.float32)])})()
-        for _ in range(2):run_graph(b'g',np.zeros((1,80,2),np.float32),np.zeros((1,2),np.float32),frames=2,_runtime=Runtime)
+                return type('S',(),{'run':staticmethod(lambda o,i:[np.zeros((1,i['mel'].shape[1]*256),np.float32)])})()
+        for _ in range(2):run_graph(b'g',np.zeros((1,2,80),np.float32),np.zeros((1,2),np.float32),frames=2,_runtime=Runtime)
         self.assertEqual(len(created),2)
 
 

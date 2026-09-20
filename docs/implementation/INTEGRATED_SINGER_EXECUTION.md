@@ -1,5 +1,36 @@
 # Integrated Singer Execution
 
+## Paired vocoder evaluator exercised on captured audio
+
+`paired_vocoder_evaluation.evaluate` runs a bounded set of byte-bound vocoder
+exports over identical features and controls with a fresh execution session per
+arm, then reports per-arm pitch and per-phone waveform statistics. With no arm
+directory names it is a diagnostic only: it never promotes a model, and the
+receipt keeps `singerQualified`/`releaseEligible` false.
+
+Two contract fixes were required and made: the pinned graph consumes
+time-first `(1, frames, 80)` mel, and captured dynamics cover only real samples,
+so the final partial hop is zero-padded for the multiply and reported as an
+excluded tail instead of being scaled by an unrelated gain or compared as audio.
+A source shorter than one whole final hop is still rejected.
+
+Real probe on development song 00005 with the retained epoch-two vocoder
+reproduced the earlier findings exactly: 31 phone rows, 294,000 compared samples,
+144 excluded tail samples, and lag-256 correlations of 0.893 (h at 84000),
+0.934 (h at 156000) and 0.947 (s at 228000) against source values near zero.
+This is a regression baseline, not evidence of improvement or of the
+consonant/noise distinction.
+
+Evidence: `/Users/lhs/seam-corpus-pauses-2026-09-19-r1/paired-vocoder-evaluator-probe-r2.json`,
+SHA-256 `48f7605f9f603468b0e1a7eb76630f4934a921a36c0816d728030777ed74d291`.
+Two earlier probe attempts failed on the wrong mel layout and the tail multiply;
+both are retained as ordinary local intermediates and are not committed state.
+
+Training remained live during this work: both arms reached 250/2804 updates
+(7,872,720 owned samples) with no restart. Consonant artifacts are still present
+in the baseline, so the comparison will be decisive only after the trained arms
+are exported and measured with this evaluator.
+
 ## Paired training remains live; reusable phone-level waveform comparison added
 
 Verified supervisor session 74808 and both child processes remain live. Both
