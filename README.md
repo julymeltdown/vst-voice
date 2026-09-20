@@ -23,6 +23,45 @@ This repository contains:
 
 Development uses the **`master` branch only**.
 
+## Platform scope: macOS arm64 is the active target
+
+**Windows support is a TODO.** It is deferred, not abandoned and not failed.
+
+The only development and verification host is a macOS arm64 machine (Apple M3 Max), so no Windows
+installed-product evidence can be produced here. Rather than keep spending CI cycles to discover
+Windows-only defects that cannot be confirmed or repaired locally, Windows is parked in a known,
+documented state and development continues on macOS.
+
+What this means in practice:
+
+- **macOS arm64 is the supported development and release target right now.** Build, test, and release
+  work targets macOS.
+- **Windows x64 stays a declared contract platform.** `docs/product/full-product-beta-contract.json`
+  still requires two platforms and nine host tuples including Windows, so **Beta GO is not reachable
+  while Windows is deferred.** This is a schedule decision, not a scope reduction. No requirement is
+  being deleted or relaxed to make the gate easier.
+- **The Windows jobs in `phase13a-plugin-formats.yml` are not green.** `windows-2025 VST3 build and
+  vst3-validator` passes. `windows-installer-smoke` has never produced a result: it was skipped for as
+  long as the VST3 job was red, and its first real runs hang in the signing-identity step.
+
+### Windows TODO
+
+| # | Item | State |
+|---|---|---|
+| 1 | `windows-installer-smoke` hangs in "Create development-only uninstaller signing identity" | Open. Import-Certificate, .NET `X509Store`, and `certutil -addstore` (without `-f`) were each observed hanging for the full 20-minute job timeout at the same statement. The step is instrumented and the job carries `timeout-minutes: 20`, so any recurrence localizes in under 20 minutes. Next candidate is `certutil -addstore -f`, currently unverified. |
+| 2 | Windows clean-install / same-version reinstall / uninstall lifecycle | Never executed. Blocked by item 1. |
+| 3 | Windows REAPER and Bitwig host tuples (CLAP and VST3) | Never executed. Needs a Windows host, not just CI. |
+| 4 | Windows x64 native pitch and acoustic acceptance | Not measured. All current measurements are macOS. |
+
+Previously repaired and verified, so not open work: `windows-2025 VST3 build` compiles the static
+OpenSSL from source with native Perl, links with `NOMINMAX`, and passes both the dependency closure and
+the payload-shape gates.
+
+**Prerequisite to resuming Windows:** a Windows host (physical or cloud) able to run the installer
+lifecycle and a DAW, plus interactive-session capability for the certificate-trust step. Until then,
+Windows items cannot be closed by engineering in this repository.
+
+
 > **Current maturity: Feature Alpha, not Release Candidate.** Phase 13B now adds evidence-backed Official Voicebank 01 and Character 01 release dossiers, deterministic Character 01 development assets, a development-only content bundle and a fail-closed G5 gate. Actual performer contract/recording, public-name and trademark clearance, production 3D assets, official validators, target-OS runtime evidence, signed installers and commercial DAW certification remain mandatory. See [`docs/STATUS_KO.md`](docs/STATUS_KO.md), [`docs/REMAINING_TASKS_KO.md`](docs/REMAINING_TASKS_KO.md), and [`docs/RELEASE_READINESS_KO.md`](docs/RELEASE_READINESS_KO.md).
 
 
