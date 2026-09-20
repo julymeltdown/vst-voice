@@ -47,6 +47,50 @@ regression. Evidence: `acoustic-e21-e37-steps-00005-r1/experiment.json`, with th
 source selection recorded before inference. This is a single-phrase mel-only
 diagnostic, not a replacement audio campaign. Production remains at 10 steps.
 
+### Fixed-noise diagnosis: loss improves while generation deteriorates
+
+Loaded both verified checkpoints into the clean pinned DiffSinger checkout,
+using the same ten previously selected phrases and captured training inputs.
+Training-versus-deployment encoder outputs match exactly on all ten phrases
+for both checkpoints. With identical Torch seed 91 and 10 sampling steps,
+frame-weighted sampled mel MAE worsens from 2.349434 to 2.852459 on training
+and from 2.376004 to 2.897271 on validation. Thus this regression also occurs
+in Torch; it is not solely an ONNX export/runtime problem. Torch and ONNX RNG
+streams differ, so these are paired within-Torch measurements, not waveform
+parity claims across runtimes.
+
+For each phrase, a fixed noise tensor was added to the same normalized target
+at timesteps 0/100/300/500/700/900/999. The actual trained denoiser predicted
+epsilon; the clean estimate was reconstructed using that checkpoint's schedule.
+Representative frame-weighted validation results:
+
+| Timestep | Noise MAE e21 → e37 | Unclamped clean MAE e21 → e37 | Clamped clean MAE e21 → e37 |
+| --- | --- | --- | --- |
+| 100 | 0.327994 → 0.294801 | 0.112259 → 0.100898 | 0.106643 → 0.098412 |
+| 500 | 0.197692 → 0.163974 | 0.680646 → 0.564555 | 0.385828 → 0.370394 |
+| 900 | 0.214189 → 0.165387 | 13.027494 → 10.059207 | 0.830599 → 1.017119 |
+| 999 | 0.214460 → 0.162709 | 33.757526 → 25.611612 | 0.894439 → 1.017367 |
+
+Clean errors are normalized-latent units, not mel units. At timestep 900,
+93.26%/89.08% of clean estimates require clamping for e21/e37 respectively;
+fewer clipped values do not imply better reconstruction. Both models remain
+poor high-noise reconstructors. The measured mechanism is consistent with
+epsilon-loss improvements failing to improve the bounded reverse trajectory;
+it does not establish that a particular loss, learning rate, or architecture
+change will fix generation. Preserve the clamp and acceptance thresholds.
+
+Evidence: `acoustic-e21-e37-fixed-noise-r1/experiment.json`, SHA-256
+`dac5f37e00aa8ad8dcafcb875086a7c8e356905fc1ef131bbe0f4e5fb10b86d4`.
+The saved pre-inference selection, checkpoint hashes, per-source/per-timestep
+results, target hashes and Torch/upstream versions are retained alongside it.
+
+Next implementation priority is a separately identified warm-start experiment
+path, not weakening strict resume identity: retain the best known epoch-21
+weights, explicitly record any optimizer/objective change with reset optimizer
+state, and evaluate short completed intervals using generated-output metrics.
+Any such run must preserve existing checkpoints and normal source/label admission.
+Do not silently edit optimizer state or label changed training as an exact resume.
+
 ## Acoustic epoch 21: consistent five-song improvement, still unqualified
 
 The eight-epoch acoustic continuation completed; the fixed vocoder remains epoch

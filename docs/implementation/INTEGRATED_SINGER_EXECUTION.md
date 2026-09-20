@@ -15,7 +15,13 @@ Next intervention: diagnose objective-versus-inference behavior, beginning with
 fresh-session sampling-step reconstruction comparisons on the same source and
 then fixed-noise denoiser/clean-estimate measurements. Keep production sampling
 unchanged and do not promote diagnostic improvements without the full campaign.
-No new training run is active.
+The fixed-noise diagnostic has now reproduced the sampling regression in Torch,
+with exact training/deployment conditioning parity on all ten selected phrases.
+High-noise epsilon error improves but the bounded clean estimate deteriorates;
+see the campaign report for the measured distinction. Next implement an explicit
+warm-start experiment path with immutable parent identity and reset optimizer,
+without weakening strict resume checks, before attempting an objective or
+learning-rate change. No new training run is active.
 
 ### Completed training and export
 
