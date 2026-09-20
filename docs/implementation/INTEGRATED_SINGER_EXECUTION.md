@@ -1,5 +1,58 @@
 # Integrated Singer Execution
 
+## Crossed acoustic-by-vocoder factorial: the defect is vocoder-dominant and not additive
+
+The auxiliary-objective experiment above changed one factor at a time. A 2x2
+factorial now crosses the acoustic arm (control vs unvoiced auxiliary) with
+the vocoder arm (control vs periodicity-trained) so each factor's effect is
+measured under both levels of the other. All four bundles share identical
+configuration, vocabulary and selection; only the acoustic export and vocoder
+export differ. Campaigns: campaign-aux-control-vcontrol-2x2-r1 (d9d294e2),
+campaign-aux-control-vperiodicity-2x2-r2 (2725bb38, the r1 attempt hit the
+same transient helper-failure pattern on song-00005 and is retained
+unmeasured), campaign-aux-unvoiced-vcontrol-2x2-r1 (5e33333d) and
+campaign-aux-unvoiced-vperiodicity-2x2-r1 (cbdb38e7). Every cell passed 5/5
+through the same production worker (f46d175a).
+
+Unvoiced lag-256 periodicity (phone-diagnostics-2x2-*.json, 27 windows per
+cell, reference -0.004): controlVocoder cells sit at 0.579 (control acoustic)
+and 0.586 (aux acoustic); periodicityVocoder cells drop to 0.251 and 0.348.
+The vocoder factor moves the defect by roughly 0.30-0.33 correlation; the
+acoustic factor moves it by less than 0.10 and in the wrong direction under
+the periodicity vocoder. Unvoiced energy is the mirror image: the auxiliary
+acoustic raises mean RMS ratio from 0.353 to 0.723 under the control vocoder
+and from 0.367 to 0.816 under the periodicity vocoder, while the vocoder
+factor barely changes level. The two factors act on different defect axes.
+
+Pitch (compare-2x2-*.json): under the control acoustic the periodicity
+vocoder halves weighted mean absolute pitch error (81.21 -> 38.69 cents,
+within-tolerance 92.5% -> 95.2%, voicing mismatches 208 -> 114). Under the
+auxiliary acoustic the same vocoder change improves pitch less (67.50 ->
+44.43 cents). Conversely the auxiliary acoustic improves pitch under the
+control vocoder (81.21 -> 67.50) but slightly worsens it under the
+periodicity vocoder (38.69 -> 44.43): a non-additive interaction, so single
+factor-at-a-time conclusions do not transfer.
+
+Multi-lag structure (unvoiced-multilag-2x2-r1.json, 27 windows per arm):
+the periodicity vocoder lowers candidate autocorrelation at every lag, but
+the peak still sits at lags 256-512 (0.251/0.222 control-acoustic,
+0.348/0.274 aux-acoustic) against a near-zero reference at every lag. The
+sung-fundamental leakage is reduced, not removed; even the best cell keeps
+roughly 0.35 correlation at the pitch period.
+
+Interpretation: the aperiodicity defect is vocoder-dominant. The periodicity-
+trained vocoder is the single largest improvement measured so far on both
+periodicity and pitch, yet it leaves about half the lag-256 correlation and
+the same spectral signature. The auxiliary acoustic's contribution is level
+restoration, not structure. Neither factor, alone or crossed, produces
+noise-like unvoiced spectra.
+
+Caveats: one seed and one epoch per factor, five procedural songs, all
+receipts singerQualified=False and releaseEligible=False, three of five
+sources overlap vocoder training, combinedModelHoldoutVerified remains
+false. The r1 control-x-periodicity campaign's transient helper failure is
+retained on disk and was not counted; r2 is the compared receipt.
+
 ## Matched acoustic objective experiment: the unvoiced auxiliary restores energy, not aperiodic structure
 
 A paired one-epoch experiment now isolates the acoustic objective itself. Both
