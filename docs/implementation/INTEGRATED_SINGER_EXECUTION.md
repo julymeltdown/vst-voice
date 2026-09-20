@@ -1,5 +1,38 @@
 # Integrated Singer Execution
 
+## The model never reaches the noise-like range on any frame
+
+Confirmed the root-cause reading with a distribution measurement rather than a
+class mean, because a mean can hide whether a model ever reaches the reference
+range at all. Across all 4,619 analysis frames of the five development songs:
+
+| Threshold | Reference frames above | Predicted frames above |
+| --- | ---: | ---: |
+| 0.05 | 2243 / 4619 | 82 / 4619 |
+| 0.10 | 479 / 4619 | 9 / 4619 |
+| 0.30 | 413 / 4619 | 0 / 4619 |
+| 0.50 | 393 / 4619 | 0 / 4619 |
+
+Reference flatness is p50 0.0496 and p95 0.6947. Predicted flatness is p50
+0.0062, p95 0.0288, and a **maximum of 0.1766 over all 4,619 frames**. Not one
+predicted frame reaches 0.3; the reference has 413 such frames.
+
+This is stronger than a bias or an underfit on a subpopulation. The model has
+never in these phrases produced a noise-like spectrum at all. Combined with the
+conditioning finding, the reading is now consistent and complete: with no
+aperiodicity input and no voicing channel, the acoustic function has no route to
+produce noise, and it does not. The low mean flatness, weak symbol separation and
+structured error are all consequences of that single missing capability, not
+independent defects.
+
+This also means the earlier framing of "under-used token" and "objective form"
+were both superseded: the model reads tokens and its objective trains what it can
+represent. The binding constraint is the conditioning and the checkpoint that was
+trained without it.
+
+No weights, dataset, objective or deployed artifact were modified. Evidence:
+`flatness-distribution-e21-r1.json`.
+
 ## Root cause identified: the acoustic model has no channel for frication
 
 Added `conditioning_coverage` and audited the channels the acoustic model actually
