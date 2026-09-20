@@ -26,8 +26,10 @@ Candidate and regression outputs are under
 `/Users/lhs/seam-corpus-pauses-2026-09-19-r1/`:
 `bundle-combined-e13-v512-e2` and `campaign-e13-v512-e2-r1`.
 The fixed five-song campaign was launched with the candidate-bound vocoder
-training audit enabled. Results are pending at this entry; successful training
-and export do not establish musical quality or singer qualification.
+training audit enabled. All five application executions and source-vocoder controls
+completed; the [campaign report](SINGER_VALIDATION_CAMPAIGN_2026-09-20.md) records
+mixed pitch results despite improved spectral distances. No singer qualification
+or release gate was passed.
 
 ### Historical restart evidence
 

@@ -1,5 +1,54 @@
 # Application singer validation campaign — September 20, 2026
 
+## Vocoder epoch-two comparison: completed, mixed quality outcome
+
+All five real production-worker render/export/reopen and measurement executions
+completed successfully with acoustic epoch 13 fixed and vocoder epoch two.
+Every song still reports strict pitch `MISMATCH`; neither candidate is qualified.
+The campaign embeds the candidate-bound training-overlap audit: songs 00003,
+00005 and 00024 are vocoder training sources, not jointly held-out evaluation.
+
+| Song | Spectral distance e1 → e2 | Pitch mean absolute cents e1 → e2 | Within 50 cents / measurable pairs, e2 |
+| --- | --- | --- | --- |
+| 00003 | 1.308529 → 1.218442 | 79.31 → 35.09 | 1083 / 1126 |
+| 00005 | 1.286255 → 1.226101 | 104.37 → 114.59 | 919 / 996 |
+| 00024 | 1.429443 → 1.298877 | 96.41 → 100.64 | 819 / 876 |
+| 00402 | 1.048101 → 1.005430 | 31.73 → 44.16 | 450 / 486 |
+| 00420 | 1.241492 → 1.149218 | 29.35 → 31.75 | 461 / 490 |
+
+The measurable-pair weighted mean decreases from 77.4599 to 70.1603 cents,
+but four of five per-song means worsen. The within-tolerance fraction changes
+from 3781/4033 (93.7515%) to 3732/3974 (93.9104%): the denominator also shrinks.
+Unmeasurable frames rise from 325 to 378; voicing mismatches change from 148
+to 144. Do not interpret the fraction alone as improved coverage or acceptance.
+
+Source-driven epoch-two vocoder controls also completed for all five sources.
+Their spectral distances are respectively 0.685116, 0.580071, 0.728925,
+0.527699 and 0.606079, each lower than its epoch-one control. All five controls
+still report pitch `MISMATCH`. These bypass acoustic prediction and application
+rest/dynamics processing; they are not numerical quality ceilings.
+
+Score-linked diagnostics retain all 242 measured >50-cent errors: 120 windows
+wholly inside a note and 122 crossing a note boundary. No boundary error is
+excluded. In the 120 interior windows, reference pitch is within 50 cents of
+the written note in 84 and candidate pitch in 37 (overlapping categories).
+Written notes are not ground truth for expressive or consonant pitch.
+Song 00402's [84000, 102000) rest and song 00420's [66000, 78000) rest remain
+exactly zero in both channels; the other three songs contain no scored rest.
+
+Evidence root: `/Users/lhs/seam-corpus-pauses-2026-09-19-r1/`.
+Campaign: `campaign-e13-v512-e2-r1/campaign.json`, SHA-256
+`914e60c63aaf1d7dd6b3a4751fb7c462f5ec2ed19e4af5320f989127696976dd`.
+Each song retains its comparison and `score-diagnostic.json`; source controls
+are `validation-source-vocoder-e2-NNNNN/diagnostic.json`.
+Checkpoint and export identities are in [the continuation record](VOCODER_RESUME_2026-09-20.md).
+
+Decision: retain both candidates. Do not promote epoch two as a pitch fix or
+close a musical gate. Before committing to further training, inspect the
+per-song regressions (especially 00005) against the source controls and captured
+pitch tracks. A separate ancestry-checked cohort and musical qualification
+remain required. Windows remains TODO; none of this is Windows evidence.
+
 ## macOS authoring regression alongside training
 
 Rebuilt `seam_original_singer_song_journey_tests` and
