@@ -1,5 +1,35 @@
 # Integrated Singer Execution
 
+## Next bounded continuation: epoch 21 toward epoch 37
+
+After the verified epoch-21 five-song improvement, residual score diagnostics
+contain 197 measured >50-cent errors: 74 whole-note-interior windows and 123
+note-boundary-crossing windows. The preceding epoch-13 candidate had 120 interior
+errors. No boundary frame is excluded and no quality threshold is changed.
+This improvement, together with lower training/validation reconstruction error,
+supports one larger continuation; it does not imply all residuals can be trained
+away or establish singer qualification.
+
+Run `acoustic-combined-r6` resumes the verified epoch-21 checkpoint with the same
+dataset, target inventory, policies, settings, vocabulary and optimizer/RNG state.
+It requests 16 additional epochs, targeting epoch 37, with a 14,400-second total
+limit and the existing 900-second/267-update epoch bounds. The new run retains
+two checkpoint binaries within 96 MiB, with a 1.5 GiB free-space floor. Older r6
+binaries may be removed after successor verification; receipts remain. External
+epoch-21 and epoch-13 baselines are untouched. No vocoder retraining is included.
+
+Observed execution session: `4887`; recheck actual liveness before using this
+historical handle. The run is active, not complete, at this entry. Output root:
+`/Users/lhs/seam-corpus-pauses-2026-09-19-r1/acoustic-combined-r6`.
+
+After completion, verify checkpoint integrity, export, retain vocoder epoch two
+and the existing 10-step production sampler, then repeat the exact five-song
+application campaign and acoustic partition diagnostic. Keep per-song and
+coverage regressions visible. If improvement stalls or reverses, retain epoch 21
+and reassess model/objective capacity instead of automatically extending training.
+The separate ancestry-checked qualification cohort and musical evidence remain
+open requirements; Windows remains TODO.
+
 ## Acoustic continuation from epoch 13 toward epoch 21
 
 **Completed:** run r5 exited successfully through epoch 21, with eight additional
