@@ -1,5 +1,32 @@
 # Integrated Singer Execution
 
+## Frozen evaluation-only native campaign launched
+
+Implemented `frozen_evaluation_campaign` and factored the existing native
+execution/measurement loop into `validation_campaign.execute_campaign`.
+Validation-only admission is unchanged. The new entry point verifies the frozen
+plan/history, full ordered capture/preparation cohort, source/project bytes,
+project phrase fingerprints and recipe provenance. This initial campaign accepts
+only the baseline model manifest declared before rendering the cohort.
+
+The receipt scope is `frozen-same-voice-unseen-phrase-engineering-only`, not a
+training partition or qualified holdout. All failures remain in the campaign.
+Source and project captures are copied before execution. Existing binary/resource
+checks, native renderer checks and exact-clock pitch/spectral measurements apply.
+
+Real run launched at:
+`/Users/lhs/seam-corpus-pauses-2026-09-19-r1/frozen-campaign-e21-r1/`.
+At this implementation checkpoint, the first four phrases completed native
+execution and each reported pitch `MISMATCH`; the remaining renders were still
+running. Do not interpret this partial checkpoint as the final campaign outcome.
+Read `campaign.json` only after it is published, then inspect every item and
+produce score-location/rest diagnostics before drawing cohort conclusions.
+
+Verification: full Python suite 293 tests, 292 passed and one skipped. Added
+tests for complete-cohort preservation, source/recipe tampering, frozen baseline
+identity and explicit evaluation scope. The existing validation tests still
+reject training/test partitions and retain failed native executions.
+
 ## Frozen reference cohort rendered and prepared on macOS
 
 `render_frozen_evaluation` now consumes the hash-bound plan and historical index,

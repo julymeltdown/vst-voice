@@ -14,6 +14,17 @@ fingerprints and voice recipe, and retains every failed item. `capture.json`
 reports `INCOMPLETE` unless all items pass and the pilot executable is unchanged.
 No training admission, candidate evaluation or musical qualification is implied.
 
+`python -m tools.voice_model_training.frozen_evaluation_campaign` consumes
+`--plan`, `--history`, `--capture`, `--preparation`, explicit SHA-256 arguments
+for the plan/capture/preparation, and the usual `--bundle`, `--renderer`,
+`--pitch-executable`, `--vocoder-export`, `--vocoder-checkpoint`, `--output`.
+It requires every frozen phrase in order, verifies captured source/project bytes
+and recipe provenance, and restricts this initial run to the model manifest frozen
+in the plan. Its scope is `frozen-same-voice-unseen-phrase-engineering-only`.
+It shares the native execution/measurement loop with validation campaigns without
+relaxing their validation-partition admission. Failed renders stay in the report;
+an execution pass does not mean a pitch or musical-quality pass.
+
 The real export now passes native acoustic smoke execution and wrong-hash rejection.
 To meet native finite-tensor intake, encoder export maps only recognized scalar
 negative-infinity Where mask constants to finite float32 floor; other nonfinite

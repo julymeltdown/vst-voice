@@ -100,6 +100,17 @@ def run_campaign(selection, selection_sha256, corpus, bundle, renderer, pitch_ex
     if output.exists() or output.is_symlink() or not output.parent.is_dir():
         raise ValueError('Output must be new with an existing parent')
     binding, captured = prepare_selection(selection, corpus, selection_sha256)
+    return execute_campaign(binding, captured, bundle, renderer, pitch_executable, output,
+        silence_phone=silence_phone, vocoder_export=vocoder_export,
+        vocoder_checkpoint=vocoder_checkpoint)
+
+
+def execute_campaign(binding, captured, bundle, renderer, pitch_executable, output, *,
+                     silence_phone='pau', vocoder_export=None, vocoder_checkpoint=None,
+                     scope='selected-acoustic-corpus-only'):
+    """Execute already verified captures; admission belongs to each entry point."""
+    if output.exists() or output.is_symlink() or not output.parent.is_dir():
+        raise ValueError('Output must be new with an existing parent')
     resource, resource_digest = capture_json(bundle / 'resource.json', 16384)
     manifest, manifest_digest = capture_json(bundle / 'manifest.json', 1048576)
     if (resource.get('formatId') != 'com.project-seam.neural-resource'
@@ -113,7 +124,7 @@ def run_campaign(selection, selection_sha256, corpus, bundle, renderer, pitch_ex
     publish_new(output / 'selection.json', dict(binding, items=[row[0] for row in captured],
         manifestSha256=manifest_digest, resourceSha256=resource_digest,
         binarySha256=binary_hashes, silencePhone=silence_phone,
-        validationScope='selected-acoustic-corpus-only', vocoderTrainingAudit=training_audit))
+        validationScope=scope, vocoderTrainingAudit=training_audit))
     selection_receipt_hash = _capture(output / 'selection.json', 1048576)[1]
     results = []
     for index, (identity, source_bytes, project_bytes) in enumerate(captured):
@@ -150,7 +161,7 @@ def run_campaign(selection, selection_sha256, corpus, bundle, renderer, pitch_ex
     report = dict(formatId='com.project-seam.validation-campaign', schemaVersion=1,
         **binding, items=results, selectedCount=len(results),
         selectionReceiptSha256=selection_receipt_hash,
-        validationScope='selected-acoustic-corpus-only', vocoderTrainingAudit=training_audit,
+        validationScope=scope, vocoderTrainingAudit=training_audit,
         combinedModelHoldoutVerified=False,
         executionPassed=all(row['execution'] == 'PASSED' for row in results),
         singerQualified=False, releaseEligible=False,
