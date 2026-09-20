@@ -1,5 +1,53 @@
 # Integrated Singer Execution
 
+## Score-derived defaults now feed the aperiodicity channel without drawn automation
+
+The remaining half of the "channel defaults to silence" gap is closed. A
+measured per-phone prior can now ride inside the model bundle, and the request
+builder applies it exactly where no breathiness curve was drawn.
+
+Bundle configuration schema 4 adds a closed `conditioningDefaults` object with
+one `breathiness` map from vocabulary symbol to a [0, 1] default.
+`inspectNeuralBundleMetadata` parses it into
+`ModelContract::breathinessDefaults` after checking every symbol against the
+bundle's own vocabulary, so a typo fails rather than silently dead-coding.
+`AdmittedNeuralBundle::admit` enforces the pairing invariant in both
+directions that matter: defaults with an unconditioned acoustic graph are
+refused, while a conditioned graph without defaults stays admissible and
+renders with zeros, matching the worker's zero-fill admission.
+
+On the request side, `CompiledScorePerformance::hasBreathinessAutomation()`
+exposes whether the region carries any drawn curve. When it does not,
+`prepareNeuralScoreRequest` substitutes the model default per phone span;
+synthesized silence spans and silence-role phones still receive exactly zero,
+and a drawn curve remains authoritative for the whole region because lane
+evaluation holds edge values outside the drawn range. The request only
+attaches the vector when some frame is nonzero, so an unconditioned model is
+never sent a control it cannot consume.
+
+The tooling half is symmetric: `prepare_bundle.py --breathiness-prior` binds a
+captured `com.project-seam.breathiness-prior` receipt (digest-verified,
+unqualified-only, vocabulary-checked) into schema-4 defaults and refuses the
+combination with an unconditioned export; `inspect_bundle.py` validates the
+same closed shape and repeats the graph-pairing refusal. The export-side gap
+found while reading this path is also fixed: `check_sampler_transcription`
+previously called `forward_fs2_aux` with an empty variance dict, which raises
+KeyError on the conditioned encoder; it now passes a nonzero ramp so the check
+measures the sampler through the conditioned path the export ships.
+
+Evidence: `seam_neural_worker_protocol_tests` 26/26 including the new
+schema-4 admission cases (defaults admitted with a conditioned graph, refused
+with an unconditioned graph, refused for unknown symbols and out-of-range
+values) and request-preparation cases (per-phone defaults applied, silence
+zero, automation authoritative); `test_inspect_bundle` 20/20 with the same
+refusals; `seam_neural_render_tests` 6/6 and
+`seam_neural_phrase_runner_tests` 4/4 unchanged.
+
+What remains is the conditioned export itself: run the completed epoch-8
+conditioned checkpoint through export, compose a schema-4 bundle with the
+captured prior, and measure the fricative cohort. Receipts stay
+`singerQualified=False`, `releaseEligible=False`.
+
 ## The repaired channel is live at inference but defaults to silence
 
 The acoustic-side repair now trains, and the first warm-started run is producing

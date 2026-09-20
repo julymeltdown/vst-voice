@@ -5,6 +5,7 @@
 #include "seam/core/sha256.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <set>
 
 namespace seam::neural_synthesis {
@@ -158,6 +159,13 @@ core::Result<void> ModelContract::validate(const WorkerProtocolLimits& limits) c
   };
   if (!validHash(modelContentHash) || !validHash(vocabularyHash))
     return core::failure(core::ErrorCode::InvalidArgument, "Neural model contract hash is invalid");
+  if (breathinessDefaults.size() > 4096U)
+    return core::failure(core::ErrorCode::InvalidArgument, "Neural conditioning defaults exceed their bound");
+  for (const auto& [symbol, value] : breathinessDefaults) {
+    if (symbol.empty() || symbol.size() > 256U || !domain::fromUtf8(symbol) ||
+        !std::isfinite(value) || value < 0.0F || value > 1.0F)
+      return core::failure(core::ErrorCode::InvalidArgument, "Neural conditioning default symbol or value is invalid");
+  }
   return core::success();
 }
 

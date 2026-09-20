@@ -11,7 +11,8 @@ namespace {
 
 using seam::neural_synthesis::AdmittedNeuralBundle;
 
-std::string configuration(std::uint32_t version,std::uint64_t maximumFrames) {
+std::string configuration(std::uint32_t version,std::uint64_t maximumFrames,
+    std::string_view conditioningDefaults={}) {
   const std::string basic=R"({"sampleRate":48000,"hopSize":256,"bins":80,"layout":"BTF",)"
       R"("amplitudeScale":"ln-amplitude","multiplier":1.0,"offset":0.0,"minimumHz":40.0,"maximumHz":16000.0})";
   const std::string extended=R"({"sampleRate":48000,"hopSize":256,"bins":80,"layout":"BTF",)"
@@ -23,14 +24,16 @@ std::string configuration(std::uint32_t version,std::uint64_t maximumFrames) {
       R"(,"vocoderFeatures":)"+features;
   if (version>=2U) result+=R"(,"stepsLayout":"scalar")";
   if (version>=3U) result+=R"(,"vocoderOutput":"audio")";
+  if (version>=4U) result+=R"(,"conditioningDefaults":)"+std::string{conditioningDefaults};
   return result+"}";
 }
 
 seam::core::Result<seam::synthesis::FrozenNeuralBundle> fixture(std::string_view acoustic,
     std::string_view vocoder,std::uint32_t version,std::uint64_t maximumFrames,
-    std::string_view vocabulary=R"({"formatId":"com.project-seam.neural-vocabulary","schemaVersion":1,"tokens":["<PAD>","SP","a"]})") {
+    std::string_view vocabulary=R"({"formatId":"com.project-seam.neural-vocabulary","schemaVersion":1,"tokens":["<PAD>","SP","a"]})",
+    std::string_view conditioningDefaults={}) {
   using namespace seam::synthesis;
-  const std::string declaration=configuration(version,maximumFrames);
+  const std::string declaration=configuration(version,maximumFrames,conditioningDefaults);
   const auto input=[&](NeuralAssetRole role,const char* name,std::string_view value) {
     return NeuralBundleAssetInput{role,name,std::as_bytes(std::span{value.data(),value.size()}),seam::core::sha256Hex(value)};
   };
@@ -123,6 +126,49 @@ TEST_CASE("admitted neural bundle refuses legacy, over-budget, mismatched and ca
   const auto undecodable=fixture(acousticGraph(),vocoderGraph(),3U,48000U,"{}");
   CHECK(undecodable);
   CHECK(!AdmittedNeuralBundle::admit(undecodable.value(),65536U,10));
+}
+
+TEST_CASE("schema four conditioning defaults bind to the vocabulary and the graph") {
+  using namespace seam::neural_synthesis;
+  const std::string defaults=R"({"breathiness":{"z":0.4,"a":0.0}})";
+  const std::string vocabulary=R"({"formatId":"com.project-seam.neural-vocabulary","schemaVersion":1,"tokens":["<PAD>","SP","a","z"]})";
+  const auto conditioned=seam::test::onnx::onnxAcousticGraph(80U,1U,{},"seam-test",9U,17U,true);
+  // Defaults pair with a graph that declares the channel: admission succeeds
+  // and the measured values reach the model contract.
+  const auto bundle=fixture(conditioned,vocoderGraph(),4U,48000U,vocabulary,defaults);
+  CHECK(bundle);
+  const auto admitted=AdmittedNeuralBundle::admit(bundle.value(),65536U,10);
+  CHECK(admitted);
+  if (admitted) {
+    const auto& model=admitted.value().metadata().model;
+    CHECK(admitted.value().metadata().configurationVersion==4U);
+    CHECK(model.breathinessDefaults.size()==2U);
+    CHECK(std::abs(model.breathinessDefaults.at("z")-0.4F)<1e-6F);
+    CHECK(model.breathinessDefaults.at("a")==0.0F);
+  }
+  // The same defaults against an unconditioned graph are refused: the bundle
+  // would send a control the worker cannot deliver.
+  const auto mismatched=fixture(acousticGraph(),vocoderGraph(),4U,48000U,vocabulary,defaults);
+  CHECK(mismatched);
+  CHECK(!AdmittedNeuralBundle::admit(mismatched.value(),65536U,10));
+  // A default naming a symbol outside the vocabulary is refused at inspection.
+  const auto unknown=fixture(conditioned,vocoderGraph(),4U,48000U,vocabulary,
+      R"({"breathiness":{"q":0.4}})");
+  CHECK(unknown);
+  CHECK(!AdmittedNeuralBundle::admit(unknown.value(),65536U,10));
+  // Out-of-range and malformed defaults fail closed validation.
+  for (const auto* bad:{R"({"breathiness":{"z":1.5}})",R"({"breathiness":{"z":-0.1}})",
+       R"({"breathiness":{"z":"high"}})",R"({"energy":{"z":0.4}})",R"({"breathiness":[]})",
+       R"({"breathiness":{"z":0.4},"extra":{}})"}) {
+    const auto invalid=fixture(conditioned,vocoderGraph(),4U,48000U,vocabulary,bad);
+    CHECK(invalid);
+    CHECK(!AdmittedNeuralBundle::admit(invalid.value(),65536U,10));
+  }
+  // A conditioned graph without defaults stays admissible: the channel is
+  // optional and renders with zeros when nothing supplies it.
+  const auto bare=fixture(conditioned,vocoderGraph(),4U,48000U,vocabulary,R"({"breathiness":{}})");
+  CHECK(bare);
+  CHECK(AdmittedNeuralBundle::admit(bare.value(),65536U,10));
 }
 
 TEST_CASE("graph inspection reports what a graph file declares") {

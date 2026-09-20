@@ -57,7 +57,15 @@ def check_sampler_transcription(deployment_model) -> dict:
         f0 = torch.full((1, sum(lengths)), 220., dtype=torch.float32)
         # The condition comes from the deployment model, because view_as_diffusion
         # drops the duration encoder that produces it.
-        condition = deployment_model.forward_fs2_aux(tokens, durations, f0, variances={})
+        # A conditioned encoder requires its declared control: passing an empty
+        # variance dict raises KeyError before the sampler is ever measured. A
+        # nonzero ramp exercises the conditioned path the export actually ships.
+        conditioned = deployment_model.fs2.use_breathiness_embed is True
+        variances = ({"breathiness": torch.linspace(0., 1., sum(lengths),
+                                                   dtype=torch.float32)[None]}
+                     if conditioned else {})
+        condition = deployment_model.forward_fs2_aux(tokens, durations, f0,
+                                                   variances=variances)
         if tuple(condition.shape) != (1, sum(lengths), hidden):
             raise ValueError("Sampler transcription check built an unexpected condition shape")
         transcription = []

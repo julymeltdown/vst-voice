@@ -145,6 +145,44 @@ class BundleTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Unexpected outputs"):
             inspect_bundle(manifest, self.assets, digest)
 
+    def test_version_four_binds_conditioning_defaults(self):
+        self.configuration.update(schemaVersion=4, stepsLayout="scalar", vocoderOutput="audio",
+                                  conditioningDefaults={"breathiness": {"z": 0.4, "a": 0.0}})
+        for role in ("acousticFeatures", "vocoderFeatures"):
+            self.configuration[role].update(fftSize=2048, windowSize=1024, melFrequencyScale="slaney")
+        self.assets["acoustic"], self.assets["vocoder"] = graphs(conditioned=True)
+        self.assets["vocabulary"] = encode(dict(formatId="com.project-seam.neural-vocabulary",
+                                                schemaVersion=1, tokens=["<PAD>", "SP", "a", "z"]))
+        self.assets["configuration"] = encode(self.configuration)
+        manifest, digest = self.manifest()
+        report = inspect_bundle(manifest, self.assets, digest)
+        self.assertEqual(report["pair"]["contract"]["conditioningControls"], ["breathiness"])
+        # Defaults against an unconditioned graph are refused, like native admission.
+        self.assets["acoustic"], _ = graphs()
+        manifest, digest = self.manifest()
+        with self.assertRaisesRegex(ValueError, "conditioned acoustic graph"):
+            inspect_bundle(manifest, self.assets, digest)
+
+    def test_version_four_rejects_orphaned_and_invalid_defaults(self):
+        self.configuration.update(schemaVersion=4, stepsLayout="scalar", vocoderOutput="audio",
+                                  conditioningDefaults={"breathiness": {"q": 0.4}})
+        for role in ("acousticFeatures", "vocoderFeatures"):
+            self.configuration[role].update(fftSize=2048, windowSize=1024, melFrequencyScale="slaney")
+        self.assets["acoustic"], self.assets["vocoder"] = graphs(conditioned=True)
+        for defaults, pattern in (
+                ({"breathiness": {"q": 0.4}}, "outside the vocabulary"),
+                ({"breathiness": {"a": 1.5}}, "default value"),
+                ({"breathiness": {"a": -0.1}}, "default value"),
+                ({"breathiness": {"a": "high"}}, "default value"),
+                ({"breathiness": []}, "defaults"),
+                ({"energy": {"a": 0.4}}, "Unexpected"),
+                ({"breathiness": {"a": 0.4}, "extra": {}}, "Unexpected")):
+            self.configuration["conditioningDefaults"] = defaults
+            self.assets["configuration"] = encode(self.configuration)
+            manifest, digest = self.manifest()
+            with self.assertRaisesRegex(ValueError, pattern):
+                inspect_bundle(manifest, self.assets, digest)
+
     def test_vocabulary_aliases_preserve_shared_id(self):
         vocabulary = dict(formatId="com.project-seam.neural-vocabulary", schemaVersion=2,
                           tokens=["<PAD>", "SP", "ja/a"], aliases={"en/aa": 2, "ko/a": 2})

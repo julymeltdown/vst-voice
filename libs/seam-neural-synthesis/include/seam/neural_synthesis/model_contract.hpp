@@ -26,6 +26,13 @@ struct ModelContract final {
   std::uint8_t outputChannels{1U};
   std::uint64_t maximumFrames{4U * 1024U * 1024U};
   std::size_t maximumModelBytes{512U * 1024U * 1024U};
+  // Measured per-phone defaults for the aperiodicity conditioning channel,
+  // keyed by vocabulary phone symbol. They are a property of the deployed
+  // model, not of the score: the bundle configuration carries them so a render
+  // without drawn automation still feeds the channel the voice was trained
+  // with. An empty map means the model declares no defaults, which is also
+  // the only correct state for a graph that cannot consume the channel.
+  std::map<std::string,float,std::less<>> breathinessDefaults;
 
   [[nodiscard]] core::Result<void> validate(
       const WorkerProtocolLimits& limits = {}) const;

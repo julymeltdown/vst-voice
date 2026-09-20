@@ -83,6 +83,15 @@ core::Result<AdmittedNeuralBundle> AdmittedNeuralBundle::admit(
       "Neural acoustic graph does not declare a bounded mel output for the configured feature layout");
   if (!vocoderMel) return core::failure<Output>(core::ErrorCode::Conflict,
       "Neural vocoder graph does not declare a bounded mel input for the configured feature layout");
+  // A bundle that ships measured conditioning defaults must pair them with a
+  // graph that actually consumes the channel; otherwise every render would
+  // send a control the worker has to reject, or silently drop the repair the
+  // defaults encode. The reverse direction stays optional: a conditioned
+  // graph without defaults still renders with an all-zero channel.
+  if (!inspected.model.breathinessDefaults.empty() &&
+      !acousticGraph.value().supportsConditioningControl("breathiness"))
+    return core::failure<Output>(core::ErrorCode::Conflict,
+        "Neural bundle declares breathiness defaults its acoustic graph cannot consume");
   if (acousticMel->elementType!=vocoderMel->elementType)
     return core::failure<Output>(core::ErrorCode::Conflict,
         "Neural acoustic and vocoder graphs disagree about the mel element type");

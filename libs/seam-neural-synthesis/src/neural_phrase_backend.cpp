@@ -184,7 +184,18 @@ core::Result<NeuralRequest> prepareNeuralScoreRequest(
   std::map<domain::PhonemeKey,bool> silent;
   for (const auto& phone:phones) voiced.emplace(phone.key,phone.voiced);
   for (const auto& phone:phones) silent.emplace(phone.key,phone.role==domain::PhonemeRole::Silence);
-  struct PhoneOwner { bool voiced; bool silent; const synthesis::ScoreNoteSpan* note; };
+  std::map<domain::PhonemeKey,float> defaults;
+  // Model-bound measured defaults apply only where no breathiness curve was
+  // drawn: the moment a region has any automation points, lane evaluation
+  // already produces a deliberate value on every frame, so the drawn curve is
+  // authoritative and the prior stays out of its way.
+  const bool useDefaults=!performance.hasBreathinessAutomation() && !model.breathinessDefaults.empty();
+  if (useDefaults)
+    for (const auto& phone:phones) {
+      const auto found=model.breathinessDefaults.find(phone.symbol);
+      defaults.emplace(phone.key,found==model.breathinessDefaults.end()?0.0F:found->second);
+    }
+  struct PhoneOwner { bool voiced; bool silent; float defaultBreathiness; const synthesis::ScoreNoteSpan* note; };
   std::map<domain::NoteId,const synthesis::ScoreNoteSpan*> notes;
   for (const auto& note:performance.notes()) notes.emplace(note.id,&note);
   std::map<std::uint64_t,PhoneOwner> activeStarts;
@@ -195,7 +206,8 @@ core::Result<NeuralRequest> prepareNeuralScoreRequest(
     const auto owner=notes.find(anchor.key.noteId);
     if (owner==notes.end() || owner->second->endFrame<=owner->second->startFrame)
       return core::failure<NeuralRequest>(core::ErrorCode::Conflict,"Neural phoneme has no valid owning note");
-    activeStarts.emplace(static_cast<std::uint64_t>(start-origin),PhoneOwner{voiced.at(anchor.key),silent.at(anchor.key),owner->second});
+    activeStarts.emplace(static_cast<std::uint64_t>(start-origin),PhoneOwner{voiced.at(anchor.key),silent.at(anchor.key),
+        useDefaults?defaults.at(anchor.key):0.0F,owner->second});
   }
   NeuralRequest request{.requestId=requestId,.modelId=model.modelId,.modelVersion=model.modelVersion,
       .modelContentHash=model.modelContentHash,.pronunciationHash=std::move(pronunciationHash),
@@ -226,8 +238,9 @@ core::Result<NeuralRequest> prepareNeuralScoreRequest(
       if (active->second.voiced && value.scoreFrequencyHz) request.f0Hz[frame]=static_cast<float>(*value.scoreFrequencyHz);
       // Explicit phonetic extensions must not inherit a closed note envelope.
       request.dynamics[frame]=value.dynamicsGain*(sampled==absolute?value.articulationGain:1.0F);
-      breathiness[frame]=std::clamp(value.breathiness, 0.0F, 1.0F);
-      if (value.breathiness != 0.0F) anyBreathiness = true;
+      const auto amount=useDefaults?active->second.defaultBreathiness:std::clamp(value.breathiness,0.0F,1.0F);
+      breathiness[frame]=amount;
+      if (amount != 0.0F) anyBreathiness = true;
     }
   }
   if (anyBreathiness) request.breathiness = std::move(breathiness);

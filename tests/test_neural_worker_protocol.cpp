@@ -126,6 +126,31 @@ TEST_CASE("neural score conditioning uses compiled timing and explicit silence w
     CHECK(silentRequest.value().dynamics[i]==0.0F);
   }
   CHECK(silentRequest.value().breathiness.empty());
+  // Model-bound measured defaults fill the channel per phone where no curve
+  // was drawn: "z" carries its measured prior, "a" defaults to zero, and the
+  // synthesized silence spans stay exactly zero.
+  auto defaultedModel=model;
+  defaultedModel.breathinessDefaults={{"z",0.4F},{"a",0.0F}};
+  const auto defaultedRequest=prepareNeuralScoreRequest(106U,defaultedModel,vocabulary.value(),
+      performance.value(),phones,std::string(64U,'b'),0,12010,"SP");
+  CHECK(defaultedRequest);
+  CHECK(defaultedRequest.value().breathiness.size()==12010U);
+  CHECK(defaultedRequest.value().breathiness[0]==0.0F);
+  CHECK(std::abs(defaultedRequest.value().breathiness[500]-0.4F)<1e-6F);
+  CHECK(std::abs(defaultedRequest.value().breathiness[4799]-0.4F)<1e-6F);
+  CHECK(defaultedRequest.value().breathiness[4800]==0.0F);
+  CHECK(defaultedRequest.value().breathiness[12000]==0.0F);
+  // A drawn curve is authoritative for the whole region: the same defaults
+  // must not leak into a request whose performance carries automation.
+  auto automated=region;
+  CHECK(automated.breathinessAutomation.upsert({time::Tick{0},0.9F}));
+  const auto automatedPerformance=synthesis::compileScorePerformance(project,automated,48000U,phones);
+  CHECK(automatedPerformance);
+  const auto automatedRequest=prepareNeuralScoreRequest(107U,defaultedModel,vocabulary.value(),
+      automatedPerformance.value(),phones,std::string(64U,'b'),0,12010,"SP");
+  CHECK(automatedRequest);
+  CHECK(std::abs(automatedRequest.value().breathiness[500]-0.9F)<1e-6F);
+  CHECK(std::abs(automatedRequest.value().breathiness[4800]-0.9F)<1e-6F);
   auto delayed=region; delayed.durationTick=time::Tick{1920}; delayed.notes[0].startTick=time::Tick{480};
   std::vector<domain::PhonemeToken> extendedPhones{
       {.key={domain::NoteId{5U},0U},.symbol="z",.role=domain::PhonemeRole::Onset,.voiced=true,.timing={.startOffset=-100000}},

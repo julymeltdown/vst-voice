@@ -104,11 +104,12 @@ def inspect_bundle(manifest_bytes, asset_bytes, expected_hash):
     if names != sorted(names) or set(names) != set(asset_bytes):
         raise ValueError("Asset ordering or closure differs")
     configuration = parse(by_role["configuration"], 4 * 1024 * 1024,
-                          maximum_nodes=128, maximum_entries=16)
-    output_bound = type(configuration) is dict and configuration.get("schemaVersion") == 3
+                          maximum_nodes=16384, maximum_entries=4096)
+    conditioned = type(configuration) is dict and configuration.get("schemaVersion") == 4
+    output_bound = conditioned or (type(configuration) is dict and configuration.get("schemaVersion") == 3)
     extended = output_bound or (type(configuration) is dict and configuration.get("schemaVersion") == 2)
-    fields(configuration, ("formatId", "schemaVersion", "maximumFrames", "acousticFeatures", "vocoderFeatures") + (("stepsLayout",) if extended else ()) + (("vocoderOutput",) if output_bound else ()))
-    if configuration["formatId"] != "com.project-seam.neural-bundle-configuration" or type(configuration["schemaVersion"]) is not int or configuration["schemaVersion"] not in (1, 2, 3):
+    fields(configuration, ("formatId", "schemaVersion", "maximumFrames", "acousticFeatures", "vocoderFeatures") + (("stepsLayout",) if extended else ()) + (("vocoderOutput",) if output_bound else ()) + (("conditioningDefaults",) if conditioned else ()))
+    if configuration["formatId"] != "com.project-seam.neural-bundle-configuration" or type(configuration["schemaVersion"]) is not int or configuration["schemaVersion"] not in (1, 2, 3, 4):
         raise ValueError("Unsupported configuration schema")
     feature = configuration["acousticFeatures"]
     fields(feature, ("sampleRate", "hopSize", "bins", "layout", "amplitudeScale", "multiplier", "offset", "minimumHz", "maximumHz") + (("fftSize", "windowSize", "melFrequencyScale") if extended else ()))
@@ -150,11 +151,33 @@ def inspect_bundle(manifest_bytes, asset_bytes, expected_hash):
         for alias, index in aliases.items():
             if not alias or alias in canonical_tokens or any(ord(c) < 32 or ord(c) == 127 for c in alias) or type(index) is not int or not 1 <= index < len(tokens):
                 raise ValueError("Invalid vocabulary alias target or name")
+    if conditioned:
+        # Schema 4 carries measured per-phone defaults for the aperiodicity
+        # channel. The shape is closed and every symbol must resolve against
+        # the bundle's own vocabulary, so a typo cannot silently dead-code.
+        defaults = configuration["conditioningDefaults"]
+        fields(defaults, ("breathiness",))
+        breathiness = defaults["breathiness"]
+        if type(breathiness) is not dict or len(breathiness) > 4096:
+            raise ValueError("Invalid breathiness defaults")
+        known = set(tokens) | set(vocabulary.get("aliases", {}))
+        for symbol, value in breathiness.items():
+            if not symbol or len(symbol.encode("utf-8")) > 256 or any(ord(c) < 32 or ord(c) == 127 for c in symbol):
+                raise ValueError("Invalid breathiness default symbol")
+            if symbol not in known:
+                raise ValueError("Breathiness default names a symbol outside the vocabulary")
+            if type(value) not in (int, float) or type(value) is bool or not math.isfinite(value) or not 0 <= value <= 1:
+                raise ValueError("Invalid breathiness default value")
     pair = inspect_pair(by_role["acoustic"], by_role["vocoder"], bins=feature["bins"],
                         layout=feature["layout"], hop_size=feature["hopSize"],
                         maximum_sample_frames=configuration["maximumFrames"],
                         steps_layout=configuration["stepsLayout"] if extended else "scalar",
                         vocoder_output=configuration["vocoderOutput"] if output_bound else "audio")
+    # The same invariant the native admission enforces: measured defaults may
+    # only ship with a graph that consumes the channel they feed.
+    if (conditioned and configuration["conditioningDefaults"]["breathiness"]
+            and "breathiness" not in pair["contract"].get("conditioningControls", [])):
+        raise ValueError("Breathiness defaults require a conditioned acoustic graph")
     return {"status": "OFFLINE_BUNDLE_INSPECTED", "bundleHash": expected_hash,
             "vocabularyHash": hashlib.sha256(by_role["vocabulary"]).hexdigest(),
             "pair": pair, "executionAdmitted": False, "releaseEligible": False}

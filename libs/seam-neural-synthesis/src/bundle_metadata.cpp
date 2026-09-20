@@ -52,13 +52,14 @@ core::Result<NeuralBundleMetadata> inspectNeuralBundleMetadata(const synthesis::
   }
   if (!configuration || !vocabulary) return core::failure<Output>(core::ErrorCode::InvalidArgument,"Neural bundle metadata assets are missing");
   const auto parsed=formats::parseJson(bytes(*configuration),{.maximumInputBytes=4U*1024U*1024U,.maximumDepth=3U,
-      .maximumNodes=128U,.maximumStringBytes=128U,.maximumCollectionEntries=16U});
+      .maximumNodes=16384U,.maximumStringBytes=256U,.maximumCollectionEntries=4096U});
   if (!parsed) return core::Result<Output>{parsed.error()};
   const auto& root=parsed.value();
   const auto* version=root.find("schemaVersion");
-  const bool outputBound=version && version->isInteger() && version->asInt64()==3;
+  const bool conditioned=version && version->isInteger() && version->asInt64()==4;
+  const bool outputBound=conditioned || (version && version->isInteger() && version->asInt64()==3);
   const bool extended=outputBound || (version && version->isInteger() && version->asInt64()==2);
-  if (!(outputBound?fields(root,{"formatId","schemaVersion","maximumFrames","acousticFeatures","vocoderFeatures","stepsLayout","vocoderOutput"}):extended?fields(root,{"formatId","schemaVersion","maximumFrames","acousticFeatures","vocoderFeatures","stepsLayout"}):
+  if (!(conditioned?fields(root,{"formatId","schemaVersion","maximumFrames","acousticFeatures","vocoderFeatures","stepsLayout","vocoderOutput","conditioningDefaults"}):outputBound?fields(root,{"formatId","schemaVersion","maximumFrames","acousticFeatures","vocoderFeatures","stepsLayout","vocoderOutput"}):extended?fields(root,{"formatId","schemaVersion","maximumFrames","acousticFeatures","vocoderFeatures","stepsLayout"}):
       fields(root,{"formatId","schemaVersion","maximumFrames","acousticFeatures","vocoderFeatures"})) ||
       !root.find("formatId")->isString() || root.find("formatId")->asString()!="com.project-seam.neural-bundle-configuration" ||
       !root.find("schemaVersion")->isInteger() || (!extended && root.find("schemaVersion")->asInt64()!=1) ||
@@ -86,10 +87,39 @@ core::Result<NeuralBundleMetadata> inspectNeuralBundleMetadata(const synthesis::
   model.modelId=bundle.identity().id; model.modelVersion=bundle.identity().version; model.modelContentHash=bundle.identity().contentHash;
   model.vocabularyHash=vocabulary->sha256(); model.sampleRate=acoustic.value().sampleRate; model.hopSize=acoustic.value().hopSize;
   model.maximumFrames=static_cast<std::uint64_t>(root.find("maximumFrames")->asInt64());
+  if (conditioned) {
+    // Schema 4 carries the measured per-phone defaults for the aperiodicity
+    // channel. The shape is closed: one "breathiness" object mapping a
+    // vocabulary symbol to a bounded default. Symbols are validated against
+    // the bundle's own vocabulary below, so a typo cannot silently dead-code.
+    const auto* defaults=root.find("conditioningDefaults");
+    if (!defaults->isObject() || defaults->asObject().size()!=1U)
+      return core::failure<Output>(core::ErrorCode::InvalidArgument,
+          "Neural conditioning defaults must declare exactly the breathiness map");
+    const auto* breathiness=defaults->find("breathiness");
+    if (!breathiness || !breathiness->isObject() || breathiness->asObject().size()>4096U)
+      return core::failure<Output>(core::ErrorCode::InvalidArgument,
+          "Neural breathiness defaults are missing or exceed their bound");
+    for (const auto& [symbol,value]:breathiness->asObject()) {
+      if (symbol.empty() || symbol.size()>256U ||
+          std::any_of(symbol.begin(),symbol.end(),[](unsigned char c){return c<32U||c==127U;}) ||
+          !value.isNumber() || !std::isfinite(value.asNumber()) ||
+          value.asNumber()<0.0 || value.asNumber()>1.0)
+        return core::failure<Output>(core::ErrorCode::InvalidArgument,
+            "Neural breathiness default symbol or value is invalid");
+      model.breathinessDefaults.emplace(symbol,static_cast<float>(value.asNumber()));
+    }
+  }
   const auto valid=model.validate(); if (!valid) return core::Result<Output>{valid.error()};
   auto decoded=NeuralVocabulary::decode(bytes(*vocabulary),model);
   if (!decoded) return core::Result<Output>{decoded.error()};
+  for (const auto& [symbol,value]:model.breathinessDefaults) {
+    const auto token=decoded.value().tokenId(symbol);
+    if (!token)
+      return core::failure<Output>(core::ErrorCode::Conflict,
+          "Neural breathiness default names a symbol outside the model vocabulary");
+  }
   if (stop.stop_requested()) return cancelled();
-  return Output{std::move(model),std::move(decoded.value()),acoustic.value(),outputBound?3U:extended?2U:1U,std::move(steps),std::move(output)};
+  return Output{std::move(model),std::move(decoded.value()),acoustic.value(),conditioned?4U:outputBound?3U:extended?2U:1U,std::move(steps),std::move(output)};
 }
 }

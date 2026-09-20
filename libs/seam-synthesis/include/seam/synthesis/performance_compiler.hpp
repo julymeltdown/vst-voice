@@ -87,6 +87,11 @@ public:
   [[nodiscard]] std::span<const ScoreNoteSpan> notes() const noexcept { return notes_; }
   [[nodiscard]] std::uint32_t sampleRate() const noexcept { return sampleRate_; }
   [[nodiscard]] std::span<const PhonemeTimingAnchor> phonemeTiming() const noexcept { return phonemeTiming_; }
+  // Whether the region carries any drawn breathiness curve. When false, a
+  // neural consumer may substitute the model's measured per-phone defaults;
+  // when true, the drawn curve is authoritative for the whole region because
+  // lane evaluation holds edge values outside the drawn range.
+  [[nodiscard]] bool hasBreathinessAutomation() const noexcept { return !breathiness_.points().empty(); }
 private:
   [[nodiscard]] ScorePerformanceSample evaluate(time::SampleFrame absoluteFrame, bool inspect) const noexcept;
   friend core::Result<CompiledScorePerformance> compileScorePerformance(
