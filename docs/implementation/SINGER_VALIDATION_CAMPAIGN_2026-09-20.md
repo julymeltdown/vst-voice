@@ -127,3 +127,55 @@ Epoch thirteen is the stronger measured acoustic engineering candidate. Its
 vocoder/source limitations and missing musical qualification remain. The live
 vocoder epoch-two run is separate and must finish before its output can be
 compared; do not claim its completion from these acoustic results.
+
+## Same-source vocoder controls and remaining error locations
+
+Ran `reconstruct_source_vocoder` on all five fixed validation sources with the
+same epoch-one vocoder. Each source digest was selected from the corpus capture.
+This bypasses the acoustic model using source-derived mel and native measured F0;
+it also omits application dynamics/rest muting, so it is a diagnostic comparison,
+not an interchangeable application output or a numerical quality ceiling.
+
+| Song | Spectral distance | Measurable pairs | Within 50 cents | Mean absolute cents |
+|---|---:|---:|---:|---:|
+| 00003 | 0.87526 | 1181 | 1101 | 56.19 |
+| 00005 | 0.80773 | 1055 | 1007 | 27.16 |
+| 00024 | 1.03779 | 902 | 834 | 72.47 |
+| 00402 | 0.73947 | 515 | 476 | 36.61 |
+| 00420 | 0.87574 | 494 | 463 | 48.04 |
+
+Control aggregate: **3881/4147 (93.59%)**, mean absolute error **48.94 cents**.
+Every strict status is MISMATCH. Application epoch thirteen is 93.75% with
+77.46 cents mean error and a different measurable denominator. Similar aggregate
+fractions do not establish identical failure mechanisms.
+
+At exact matching analysis indices, 95 frames exceed 50 cents in both paths;
+157 exceed it only in the application and 171 only in the control. "Only" means
+the other path does not have a measured error above 50 at that index; it can also
+be unmeasurable, not necessarily correct. No error or confidence threshold changed.
+
+Of the application's 252 measured errors above 50 cents, 131 native 2048-sample
+windows cross a score-note boundary and 168 cross a phoneme boundary. A crossing
+means `windowStart < boundary < windowEnd`. These counts overlap and are not
+exclusions: all remain in the published comparison. This suggests separate
+transition and interior investigations, but does not prove a timing compiler bug
+or justify changing training/runtime frame conventions to improve this metric.
+
+Controls are retained as `validation-source-vocoder-e1-NNNNN/{source.wav,
+reconstruction.wav,diagnostic.json}` under the same external artifact root.
+Diagnostic receipt SHA-256:
+
+| Song | SHA-256 |
+|---|---|
+| 00003 | `961cdfed19a9ccd4c186f2f8adbed1274b6e64dc21ab9bab9bc0bb301e62865c` |
+| 00005 | `87995be1a46c78ed17071dcac7e5670941d9c0c282a6992130f95388fea2c87d` |
+| 00024 | `5e0cc5c04210de6471b4c74843b7e4191545a360593805d7e84e8d6acab2a664` |
+| 00402 | `d69a453ad81b501fc332e7d1b26f1bbf03d9374d22ebe595eacda8ffd715c066` |
+| 00420 | `5db5b5a1692714341c20395c7bd3d0d30f597686ee4b724d8b66f6b923bc05c4` |
+
+Next candidate comparison keeps acoustic epoch thirteen fixed and substitutes
+only the completed vocoder epoch-two export when available. Run the same five
+source controls alongside application exports, retaining failed items and exact
+rest checks. Do not extend acoustic training or change pitch gates solely from
+the current aggregate fraction; the control demonstrates residual vocoder errors
+and the error-location analysis leaves multiple causes possible.
