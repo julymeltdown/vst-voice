@@ -1,5 +1,50 @@
 # Integrated Singer Execution
 
+## Paired evaluator binds noise feeds to each arm's declared excitation identity
+
+A review pass on the staged UV-noise experiment found the evaluator's
+remaining integrity gap: paired_vocoder_evaluation previously accepted a
+caller-built per-arm noise map and only rejected an identical nonzero
+realization shared across arms. That left the zero/noise contrast
+dependent on the caller choosing the right tensor for each arm - a
+reversed or nonzero control feed would still reach the graph
+structurally. evaluate() now takes a single noise specification (seed,
+one shared rawDraw, and the phone-owned unvoicedFrames gate) and
+derives each arm's feed from the arm's own export receipt:
+architectureConfiguration.excitationNoiseId selects the realization
+through realize_excitation, so zero-v1 always receives zeros and
+uv-gated-v1 receives the shared draw multiplied by the same gate at
+one-third amplitude. Feeds are derived from declared arm identity,
+never caller-supplied per arm, which removes the entire class of
+arm-mismatch errors rather than detecting one case of it. Arms whose
+exports declare no excitation identity receive no noise input at all,
+so older two-input exports remain comparable under the same code path.
+The receipt now carries a noiseBinding block (seed, rawDrawSha256,
+unvoicedGateSha256, gateFrames, inventoryId) plus per-arm
+excitationNoiseId and noiseSha256, so any reader can re-derive every
+fed tensor from first principles.
+
+Two reporting corrections from the same review are recorded here.
+First, the earlier claim that gating tests covered excitation on a
+partial final hop was overstated: the segment-slicing test ran with
+include_unvoiced_frames disabled, so what is actually verified is
+whole-final-hop excitation with valid-sample trimming downstream (the
+evaluator compares only valid_samples and excludes the padded tail),
+not a gate cut mid-hop. Second, the XL corpus inventory was checked
+directly: no conditioning frame whose symbol is a rest (pau/sil) sits
+inside a phone that also carries a gated unvoiced symbol, so the
+symbol-inventory gate and the rest boundary cannot conflict on this
+dataset. That is a property of this corpus, not a guarantee of the
+mechanism - any future corpus or phone set needs an explicit
+rest-versus-phone-clock ownership policy before the same gate is
+assumed safe.
+
+Verification: 424 voice_model_training tests pass, including new cases
+that the zero arm receives zeros regardless of the raw draw, the
+gated arm receives exactly draw x gate x 1/3 with zeros off-gate, a
+declared-but-unspecified arm is rejected, malformed specs are rejected,
+and the derived feed demonstrably reaches the ONNX session inputs.
+
 ## UV-gated noise excitation implemented as a zero-parameter vocoder variant
 
 The falsifiable excitation experiment is now buildable end to end.

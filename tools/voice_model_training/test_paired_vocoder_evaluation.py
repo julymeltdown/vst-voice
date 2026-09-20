@@ -2,7 +2,8 @@ import unittest
 from unittest.mock import patch
 import numpy as np
 
-from tools.voice_model_training.paired_vocoder_evaluation import run_graph, clip_phones, validate_arm_noises
+from tools.voice_model_training.paired_vocoder_evaluation import (
+    run_graph, clip_phones, derive_arm_noise, validate_noise_spec)
 
 
 class GraphRunTests(unittest.TestCase):
@@ -59,18 +60,67 @@ class GraphRunTests(unittest.TestCase):
         for _ in range(2):run_graph(b'g',np.zeros((1,2,80),np.float32),np.zeros((1,2),np.float32),frames=2,_runtime=Runtime)
         self.assertEqual(len(created),2)
 
+    def test_noise_feed_reaches_declared_input_and_is_rejected_otherwise(self):
+        feeds_seen=[]
+        class Session:
+            def get_inputs(self):
+                return [type('I',(),{'name':n}) for n in ('mel','f0','noise')]
+            def run(self, outputs, inputs):
+                feeds_seen.append(inputs)
+                return [np.zeros((1, inputs['mel'].shape[1]*256), np.float32)]
+        runtime=type('R',(),{'disable_telemetry_events':staticmethod(lambda:None),
+            'SessionOptions':staticmethod(lambda:type('O',(),{'intra_op_num_threads':0,'inter_op_num_threads':0})()),
+            'InferenceSession':staticmethod(lambda *a,**k:Session())})
+        noise=np.zeros((1,2*64),np.float32)
+        run_graph(b'g',np.zeros((1,2,80),np.float32),np.zeros((1,2),np.float32),frames=2,noise=noise,_runtime=runtime)
+        self.assertIn('noise',feeds_seen[0])
+        with self.assertRaises(ValueError):
+            run_graph(b'g',np.zeros((1,2,80),np.float32),np.zeros((1,2),np.float32),frames=2,_runtime=runtime)
+        with self.assertRaises(ValueError):
+            run_graph(b'g',np.zeros((1,2,80),np.float32),np.zeros((1,2),np.float32),frames=2,
+                      noise=np.zeros((1,64),np.float32),_runtime=runtime)
+
 class ArmNoiseTests(unittest.TestCase):
-    def test_common_nonzero_noise_rejected_and_distinct_arms_accepted(self):
-        arms = {'control': 'a', 'uvnoise': 'b'}
-        shared = np.ones((1, 128), np.float32)
+    def spec(self, frames=8):
+        rng = np.random.default_rng(5)
+        return dict(seed=5,
+            rawDraw=rng.standard_normal((1, 1, frames * 64)).astype(np.float32),
+            unvoicedFrames=np.array([True] * 4 + [False] * 4))
+
+    def test_zero_arm_receives_zeros_regardless_of_raw_draw(self):
+        exported = dict(architectureConfiguration=dict(excitationNoiseId='zero-v1'))
+        noise, ident = derive_arm_noise(exported, self.spec(), 8)
+        self.assertEqual(ident, 'zero-v1')
+        self.assertFalse(np.asarray(noise).any())
+
+    def test_uvnoise_arm_receives_gated_draw_and_off_gate_is_zero(self):
+        exported = dict(architectureConfiguration=dict(excitationNoiseId='uv-gated-v1'))
+        spec = self.spec()
+        noise, ident = derive_arm_noise(exported, spec, 8)
+        self.assertEqual(ident, 'uv-gated-v1')
+        gate = np.repeat(np.asarray(spec['unvoicedFrames'], np.float32), 64)
+        expected = spec['rawDraw'].reshape(-1) * gate * (1.0 / 3.0)
+        np.testing.assert_allclose(np.asarray(noise).reshape(-1), expected, rtol=0, atol=0)
+        self.assertFalse(np.asarray(noise).reshape(-1)[4 * 64:].any())
+
+    def test_missing_spec_and_missing_identity(self):
+        exported = dict(architectureConfiguration=dict(excitationNoiseId='uv-gated-v1'))
         with self.assertRaises(ValueError):
-            validate_arm_noises({'control': shared, 'uvnoise': shared.copy()}, arms)
-        zeros = np.zeros((1, 128), np.float32)
-        gated = np.ones((1, 128), np.float32)
-        validate_arm_noises({'control': zeros, 'uvnoise': gated}, arms)
-        validate_arm_noises({'control': zeros.copy(), 'uvnoise': zeros.copy()}, arms)
+            derive_arm_noise(exported, None, 8)
+        plain = dict(architectureConfiguration=dict())
+        noise, ident = derive_arm_noise(plain, self.spec(), 8)
+        self.assertIsNone(noise)
+        self.assertIsNone(ident)
+
+    def test_spec_shape_validation(self):
+        bad = self.spec()
+        bad['rawDraw'] = np.zeros((1, 1, 8), np.float32)
         with self.assertRaises(ValueError):
-            validate_arm_noises({'stray': zeros}, arms)
+            validate_noise_spec(bad, 8)
+        bad2 = self.spec()
+        bad2['unvoicedFrames'] = np.array([True] * 4)
+        with self.assertRaises(ValueError):
+            validate_noise_spec(bad2, 8)
 
 
 if __name__=='__main__':unittest.main()

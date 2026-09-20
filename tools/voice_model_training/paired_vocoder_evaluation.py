@@ -61,25 +61,44 @@ def clip_phones(labels, valid_samples):
     return rows
 
 
-def validate_arm_noises(noises, arms):
-    """Per-arm noise map rules for excitation experiments.
+def validate_noise_spec(noise_spec, frames):
+    """Shared raw draw plus admitted phone-owned gate for arm derivation."""
+    if (not isinstance(noise_spec, dict)
+            or type(noise_spec.get('seed')) is not int
+            or not 0 <= noise_spec['seed'] < 2**63):
+        raise ValueError('Noise specification requires a bounded seed')
+    raw = np.asarray(noise_spec.get('rawDraw'), dtype=np.float32)
+    gate = np.asarray(noise_spec.get('unvoicedFrames'), dtype=bool).reshape(-1)
+    if (raw.shape != (1, 1, frames * 64) or not np.isfinite(raw).all()
+            or gate.shape != (frames,)):
+        raise ValueError('Raw draw and phone-owned gate must match the mel frames')
+    return raw, gate
 
-    Keys must be arm names, and no two arms may share an identical nonzero
-    realization: a common nonzero tensor would excite a zero-noise control
-    and destroy the contrast the experiment exists to measure.
+
+def derive_arm_noise(exported, noise_spec, frames):
+    """Derive one arm's noise input from its declared excitation identity.
+
+    The export's architectureConfiguration.excitationNoiseId selects the
+    realization through realize_excitation: zero-v1 always receives zeros,
+    uv-gated-v1 receives the shared raw draw gated by the same ownership
+    mask. Feeds are derived, never caller-supplied, so a reversed or
+    nonzero control input cannot reach the graph. Arms without an
+    excitation identity receive no noise input.
     """
-    if noises is None:
-        return
-    if not isinstance(noises, dict) or set(noises) - set(arms):
-        raise ValueError('Noise realizations must be keyed by arm name')
-    nonzero = {name: value for name, value in noises.items()
-               if value is not None and np.asarray(value).any()}
-    if len({np.asarray(v).tobytes() for v in nonzero.values()}) < len(nonzero):
-        raise ValueError('Arms must not share an identical nonzero noise realization')
+    configuration = exported.get('architectureConfiguration') or {}
+    excitation_id = configuration.get('excitationNoiseId')
+    if excitation_id is None:
+        return None, None
+    if noise_spec is None:
+        raise ValueError('Arm graph declares excitation noise; supply a noise specification')
+    raw, gate = validate_noise_spec(noise_spec, frames)
+    from .uv_noise_excitation import realize_excitation
+    realized = realize_excitation(raw, gate, excitation_id).numpy()
+    return realized, excitation_id
 
 
 def evaluate(source, labels, arms, *, mel_input, f0, gains, executable,
-             valid_samples=None, noises=None, _runtime=None):
+             valid_samples=None, noise_spec=None, _runtime=None):
     """Return per-arm pitch and per-phone waveform comparison for one source."""
     import tempfile
     from pathlib import Path
@@ -104,7 +123,6 @@ def evaluate(source, labels, arms, *, mel_input, f0, gains, executable,
         raise ValueError('Compared samples must lie inside both captured source and padded output')
     reference, phones = reference[:valid_samples], clip_phones(labels, valid_samples)
     graph_hashes, results = {}, {}
-    validate_arm_noises(noises, arms)
     for name, export in arms.items():
         exported, graph = read_report(Path(export), VOCODER_FORMAT,
             'vocoderPath', 'vocoderSha256', 'vocoderBytes')
@@ -115,7 +133,7 @@ def evaluate(source, labels, arms, *, mel_input, f0, gains, executable,
         # zero-padded here rather than scaled by an unrelated gain value.
         owned = np.zeros(padded, np.float32)
         owned[:len(gains)] = gains
-        arm_noise = None if noises is None else noises.get(name)
+        arm_noise, excitation_id = derive_arm_noise(exported, noise_spec, frames)
         wave = (run_graph(graph, mel, f0, frames=frames,
                           noise=arm_noise,
                           _runtime=_runtime)
@@ -129,7 +147,9 @@ def evaluate(source, labels, arms, *, mel_input, f0, gains, executable,
         if comparison['reference']['sourceSha256'] != source_hash:
             raise ValueError('Measured source changed during comparison')
         results[name] = dict(vocoderSha256=exported['vocoderSha256'],
-            objectiveId=exported.get('objectiveId'), waveSha256=hashlib.sha256(
+            objectiveId=exported.get('objectiveId'),
+            excitationNoiseId=excitation_id,
+            waveSha256=hashlib.sha256(
                 wave.astype('<f4').tobytes()).hexdigest(),
             noiseSha256=(None if arm_noise is None else hashlib.sha256(
                 np.asarray(arm_noise, dtype=np.float32).tobytes()).hexdigest()),
@@ -137,9 +157,17 @@ def evaluate(source, labels, arms, *, mel_input, f0, gains, executable,
                 'status', 'meanAbsoluteCents', 'measurableVoicedPairs',
                 'withinToleranceFrames', 'unmeasurableFrames', 'voicingMismatchFrames')},
             phones=measure_phones(reference, wave, phones)['rows'])
+    noise_binding = None
+    if noise_spec is not None:
+        raw, gate = validate_noise_spec(noise_spec, frames)
+        noise_binding = dict(seed=noise_spec['seed'],
+            rawDrawSha256=hashlib.sha256(raw.tobytes()).hexdigest(),
+            unvoicedGateSha256=hashlib.sha256(gate.tobytes()).hexdigest(),
+            gateFrames=int(gate.sum()), inventoryId='unvoiced-phone-inventory-v1')
     return dict(formatId='com.project-seam.paired-vocoder-evaluation', schemaVersion=1,
         sourceSha256=source_hash, frames=frames, comparedSamples=valid_samples,
         excludedTailSamples=padded - valid_samples, arms=results,
+        noiseBinding=noise_binding,
         policy='Identical features and controls; fresh session per arm; descriptive only',
         singerQualified=False, releaseEligible=False)
 
