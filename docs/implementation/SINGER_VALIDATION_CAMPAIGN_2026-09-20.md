@@ -1,5 +1,49 @@
 # Application singer validation campaign — September 20, 2026
 
+## Lower-rate L1 experiment: reconstruction improves, application audio does not
+
+The same two-epoch warm start at learning rate 0.00008 completed 534 updates
+with verified coverage. Both checkpoints remain; the final receipt SHA-256 is
+`38253f67c22baee4ec92386853f26ec205d6a9d47025daedbc3c7ae79ff17de6`,
+binary SHA-256 `f45c41569d3c12cfc0936c96561e4dfde75eb41e385e0f8356f1d6a025ceb98e`.
+Acoustic export passed runtime checks; graph SHA-256
+`e8fb0057382770106f1674b83ba7c53a1148b2908cf0f1710bc45311e0ccd878`.
+Bundle manifest SHA-256 `5f59e632858b4e136773c7177a9fc9120eae7d72df06a2aa757c9a89bf5692a1`.
+
+| Song | Pitch mean absolute cents | Within 50 / measurable pairs | Spectral distance |
+| --- | --- | --- | --- |
+| 00003 | 59.5739 | 1071 / 1123 | 1.201079 |
+| 00005 | 74.5030 | 936 / 996 | 1.222540 |
+| 00024 | 76.4914 | 829 / 885 | 1.245853 |
+| 00402 | 32.4922 | 475 / 502 | 0.917433 |
+| 00420 | 37.9838 | 448 / 476 | 1.191715 |
+
+All five executions pass; all strict comparisons remain `MISMATCH`. Weighted
+pitch MAE is 61.0730 cents, versus epoch 21's 35.2267 and the higher-rate L1
+control's 45.7906. Measurable pairs fall to 3982 (3759 within tolerance, 94.3998%);
+358 frames are unmeasurable and 165 have voicing mismatches. There are 110
+interior and 113 boundary-crossing pitch errors. Both scored rests remain
+exactly silent. Song 00402's mean pitch error improves relative to epoch 21,
+and song 00420 has zero voicing mismatches, but the aggregate and all five
+spectral distances regress. Preserve these mixed results without exclusions.
+
+Fresh-session fixed-selection mel MAE improves to 2.291161 on training and
+2.315017 on validation, versus 2.391302/2.400242 at epoch 21. This directly
+demonstrates why reconstruction loss alone cannot choose the deployed candidate.
+
+Evidence under `/Users/lhs/seam-corpus-pauses-2026-09-19-r1/`:
+`campaign-e21-reset-l1-low-lr-r1/campaign.json`, SHA-256
+`936bddb71832f824259f538f87e532d66513a6f91d67dee8647527db7f2c8806`;
+`acoustic-low-lr-partitions-r1/experiment.json`, SHA-256
+`d7c245a47be9fe25a53e9cd140528f74bb4b17a4d58e2a0425ed836f4c8ea940`.
+
+Decision: retain epoch 21, stop this short loss/learning-rate sweep, and do not
+promote or extend its failed candidates. Next strengthen reproducible candidate
+comparison and separately frozen cross-model ancestry/coverage evaluation.
+Strict diagnostic equality is not interchangeable with the product's designated
+steady-frame pitch criteria; neither is enough to prove intelligibility or
+naturalness. Keep the original full product acceptance requirements intact.
+
 ## Paired warm starts: neither L1 reset nor L2 replacement improves epoch 21
 
 Two epochs per arm, identical epoch-21 weights, reset optimizer/RNG, seed 933,

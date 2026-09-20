@@ -1,5 +1,22 @@
 # Integrated Singer Execution
 
+## Lower-rate experiment evaluated; stop the sweep, preserve epoch 21
+
+The two-epoch 0.00008 L1 arm completed, exported successfully and passed all five
+application executions. It nevertheless regresses overall: weighted pitch MAE
+61.0730 cents versus epoch 21's 35.2267, fewer measurable pairs, and worse spectral
+distance on all songs. Fixed train/validation mel MAE improves, demonstrating
+that even that proxy cannot select the deployed singer. Both rests remain silent;
+song 00402's pitch improvement is retained alongside the overall rejection.
+The campaign report contains full per-song results, bindings and artifact hashes.
+
+No training or evaluation process from this sweep remains active. Do not launch
+another continuation solely because loss improves. Retain the epoch-21 candidate
+and every experiment artifact. Next work is reusable, identity-bound candidate
+comparison plus independent cross-model ancestry/coverage evaluation. Neither
+strict diagnostic equality nor a successful render substitutes for full product
+qualification, and Windows remains TODO.
+
 ## Paired experiment evaluated: retain epoch 21; test smaller L1 updates
 
 Both L1 and L2 reset arms completed export and all five application executions.
