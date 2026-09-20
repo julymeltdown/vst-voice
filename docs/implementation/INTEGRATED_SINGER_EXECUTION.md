@@ -1,6 +1,26 @@
 # Integrated Singer Execution
 
-## Next bounded continuation: epoch 21 toward epoch 37
+## Completed training: epoch 21 through epoch 37; audio comparison in progress
+
+Run r6 completed all 16 requested additional epochs (4,272 updates) and exited
+successfully. Epoch 37 has complete verified coverage and mean loss
+0.1920211130. Its receipt and binary were rehashed:
+`6a25dcaad427fd2d7dd284ca438c213db00b270cefe7dd478e1f22d5f53a8965`
+and `d5cde8c18b8c6fafed976edd62fc927848090098425c43232fdcfc54e4f72055`.
+Retention kept epoch-36/37 binaries; epoch-22..35 receipts remain but their
+removed binaries cannot be restored from receipts. External baselines remain.
+
+Export `export-combined-e37` passed runtime smoke checks; acoustic graph SHA-256
+`f78e258790ba37ea6ee5481d64faca187b78b98552b08acae9c94458dbc85f29`.
+Bundle `bundle-combined-e37-v512-e2` uses unchanged vocoder epoch two,
+configuration and vocabulary; manifest SHA-256
+`d2966c1360479b9f0695f98bcb5ceb2f780ca11a12a1db5260c47553785d29d5`.
+The fixed five-song application comparison is running at
+`/Users/lhs/seam-corpus-pauses-2026-09-19-r1/campaign-e37-v512-e2-r1`.
+No audio improvement or qualification is claimed before its results are checked.
+The fresh-session train/validation mel diagnostic also remains to be repeated.
+
+### Run rationale and historical execution observations
 
 After the verified epoch-21 five-song improvement, residual score diagnostics
 contain 197 measured >50-cent errors: 74 whole-note-interior windows and 123
