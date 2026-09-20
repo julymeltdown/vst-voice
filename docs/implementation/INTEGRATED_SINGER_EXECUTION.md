@@ -1,5 +1,53 @@
 # Integrated Singer Execution
 
+## Resolved diagnostics locate the residual structure: hop-locked, excitation-dead on unvoiced input
+
+Two corrected diagnostics replace the earlier sparse multilag reading.
+unvoiced-multilag-2x2-r2.json runs a dense lag curve (every 16 samples,
+32-1024), per-window target-relative absolute error, per-song/per-phone
+breakdown, interior-versus-boundary regions and conditioning-F0-relative
+lags on identical window keys across all four factorial cells. The dense
+curve's top candidate lags are all hop multiples (256, 512, 768, 1024) in
+every cell, while the conditioning-F0-relative lag (median MIDI 60-79,
+~262-784 Hz) sits at -0.07 to +0.07 against a -0.002 reference. The
+residual structure is therefore hop-locked, not pitch-locked; the earlier
+"sung-fundamental leakage" attribution is withdrawn.
+
+vocoder-f0-variation-probe-r1.json then holds real mel windows fixed and
+sweeps the conditioning F0 through fresh single-use ONNX sessions. On a
+tiled unvoiced 's' window both vocoder arms produce output insensitive to
+f0 across 0/110/220/440/880 Hz (control lag-256 +0.970,
+periodicity +0.810, spectral peak ~5.4-5.6 kHz, hop-band share ~0.0005,
+statistics identical to the third decimal): the excitation input is dead
+on unvoiced mel. On a tiled voiced 'e'
+window the same graphs track F0 (peak 328/439/879 Hz following the
+request), so the excitation path is alive but gated off by the mel
+content, not by the f0 value.
+
+The architecture explains why. The exported configuration uses mini_nsf
+with noise_sigma 0.0: fastsinegen emits a pure sine with no noise term
+and no voiced/unvoiced masking, so at f0=0 the harmonic source is
+all-zeros, and conv_pre noise injection is disabled. The generator is a
+fully deterministic mel-to-waveform map with no aperiodic excitation
+anywhere. On slowly varying unvoiced mel it emits a near-identical
+waveform every 256-sample frame - the measured hop-locked periodicity.
+This unifies the earlier negative results: source-mel reconstruction
+stayed periodic because the generator is deterministic; masking the
+harmonic source changed nothing because it already contributed nothing
+on unvoiced frames; feature-space noise after conv_pre was too small and
+the wrong place; the periodicity objective halved the defect by
+decorrelating per-frame patterns but cannot manufacture noise that no
+input provides. The acoustic auxiliary's level restoration is orthogonal
+to this limit.
+
+Consequence: the next mechanism-directed change is an explicit aperiodic
+excitation for unvoiced frames (noise source at the generator input,
+UV-gated like classic NSF), trained as a new vocoder variant with matched
+controls - not another acoustic-objective sweep and not larger periodicity
+weights on a deterministic generator. Per the review protocol the second
+matched vocoder seed (control acoustic fixed) replicates the
+periodicity-arm advantage before that architecture change is trained.
+
 ## Crossed acoustic-by-vocoder factorial: the defect is vocoder-dominant and not additive
 
 The auxiliary-objective experiment above changed one factor at a time. A 2x2
@@ -17,35 +65,54 @@ through the same production worker (f46d175a).
 Unvoiced lag-256 periodicity (phone-diagnostics-2x2-*.json, 27 windows per
 cell, reference -0.004): controlVocoder cells sit at 0.579 (control acoustic)
 and 0.586 (aux acoustic); periodicityVocoder cells drop to 0.251 and 0.348.
-The vocoder factor moves the defect by roughly 0.30-0.33 correlation; the
-acoustic factor moves it by less than 0.10 and in the wrong direction under
+The conditional vocoder effect is 0.328 under the control acoustic and 0.238
+under the auxiliary acoustic (balanced average 0.283); the acoustic factor
+moves the same statistic by less than 0.10 and in the wrong direction under
 the periodicity vocoder. Unvoiced energy is the mirror image: the auxiliary
 acoustic raises mean RMS ratio from 0.353 to 0.723 under the control vocoder
 and from 0.367 to 0.816 under the periodicity vocoder, while the vocoder
-factor barely changes level. The two factors act on different defect axes.
+factor barely changes level. The two factors act on different measured axes.
 
 Pitch (compare-2x2-*.json): under the control acoustic the periodicity
 vocoder halves weighted mean absolute pitch error (81.21 -> 38.69 cents,
 within-tolerance 92.5% -> 95.2%, voicing mismatches 208 -> 114). Under the
 auxiliary acoustic the same vocoder change improves pitch less (67.50 ->
 44.43 cents). Conversely the auxiliary acoustic improves pitch under the
-control vocoder (81.21 -> 67.50) but slightly worsens it under the
-periodicity vocoder (38.69 -> 44.43): a non-additive interaction, so single
-factor-at-a-time conclusions do not transfer.
+control vocoder (81.21 -> 67.50) but under the periodicity vocoder it both
+worsens conditional MAE (38.69 -> 44.43 cents) and shrinks coverage:
+measurable voiced pairs 4071 -> 3928, unmeasurable frames 276 -> 423,
+voicing mismatches 114 -> 132, within-tolerance count 3875 -> 3752. The
+within-tolerance fraction rises only because the measurable denominator
+changed (95.2% -> 95.5%). This is a descriptive checkpoint-level
+interaction, not a replicated objective-level causal claim.
 
 Multi-lag structure (unvoiced-multilag-2x2-r1.json, 27 windows per arm):
-the periodicity vocoder lowers candidate autocorrelation at every lag, but
-the peak still sits at lags 256-512 (0.251/0.222 control-acoustic,
-0.348/0.274 aux-acoustic) against a near-zero reference at every lag. The
-sung-fundamental leakage is reduced, not removed; even the best cell keeps
-roughly 0.35 correlation at the pitch period.
+the periodicity vocoder lowers the signed mean autocorrelation at every
+tested lag, and the residual peak still sits at lags 256-512
+(0.251/0.222 control-acoustic, 0.348/0.274 aux-acoustic) against a
+near-zero reference at every lag. Two cautions apply to that reading.
+All five tested lags (64,128,256,512,1024) are multiples of the
+256-sample analysis hop, so the sparse curve cannot distinguish
+hop-locked structure from pitch-locked leakage; the score labels
+overlapping these intervals carry MIDI 60-79 (~262-784 Hz), not the
+187.5 Hz frame rate. And signed means hide direction: at lag 64 the
+paired mean absolute candidate-minus-reference discrepancy actually
+worsens under the periodicity vocoder (0.148 -> 0.188 control-acoustic,
+0.068 -> 0.090 aux-acoustic), with the signed mean going negative
+(+0.108 -> -0.152) against a +0.007 reference. A negative
+autocorrelation is still structure; near-zero signed mean is not a
+noise certificate.
 
-Interpretation: the aperiodicity defect is vocoder-dominant. The periodicity-
-trained vocoder is the single largest improvement measured so far on both
-periodicity and pitch, yet it leaves about half the lag-256 correlation and
-the same spectral signature. The auxiliary acoustic's contribution is level
-restoration, not structure. Neither factor, alone or crossed, produces
-noise-like unvoiced spectra.
+Interpretation, scoped to these four checkpoints and metrics: the vocoder
+intervention produces the larger reduction in tested lag-256/512
+correlation and improves conditional pitch metrics; the acoustic
+auxiliary mainly raises level and introduces a coverage tradeoff.
+Residual temporal structure at hop-related lags remains in every cell.
+Whether that structure originates in the excitation path or the
+upsampling/frame path, and whether the vocoder advantage generalizes
+across seeds, is unresolved; "vocoder-dominant" describes these measured
+contrasts, not a settled diagnosis of the architecture or the whole
+aperiodicity defect.
 
 Caveats: one seed and one epoch per factor, five procedural songs, all
 receipts singerQualified=False and releaseEligible=False, three of five
@@ -134,8 +201,12 @@ Multi-lag structure (unvoiced-multilag-aux-e9-r1.json, 27 windows per arm)
 shows what the periodicity is: candidate autocorrelation peaks at lags
 256-512 (control +0.58/+0.57, treatment +0.57/+0.49) and decays at lag 1024
 (+0.46/+0.38), while the reference stays near zero at every lag. The peak sits
-at the sung fundamental's period (~187 Hz), so unvoiced segments carry
-pitch-period leakage rather than noise. The b-sweep flatness receipts were
+at hop-related lags: 256 samples is the analysis hop (48000/256 = 187.5 Hz
+frame rate), while the score notes overlapping these intervals are MIDI
+60-79 (~262-784 Hz). The sparse hop-multiple lag curve cannot distinguish
+hop-locked structure from pitch-locked leakage, so unvoiced segments carry
+measured temporal structure at tested lags rather than noise; its origin is
+unresolved. The b-sweep flatness receipts were
 regenerated as flatness-breathiness-e8-b{050,075,100}-r2.json with replay and
 acoustic hash bindings; aggregates are identical to the unbound r1 files.
 
