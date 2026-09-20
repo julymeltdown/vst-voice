@@ -1,5 +1,42 @@
 # Integrated Singer Execution
 
+## Reject frame-rate feature noise as an inference-only repair
+
+Implemented bounded `unvoiced_noise_diagnostic.fixed_feature_noise` for CPU
+float32 diagnostic features. It uses a local seeded generator, preserves voiced
+feature values exactly, leaves global RNG/input tensors untouched, and bounds
+noise to at most 10% of captured feature RMS. It is not part of production
+inference or an admitted training profile.
+
+Tested three preselected amplitudes (0, 0.01, 0.1) with seed 933 on development
+song 00005, applying noise only to zero-F0 frames after the vocoder's `conv_pre`.
+All weights, source mel, F0, dynamics and Torch execution stayed fixed. The
+zero-noise waveform measurements reproduce the preceding Torch baseline.
+
+| Phone occurrence | Baseline lag-256 correlation | 1% feature noise | 10% feature noise |
+| --- | ---: | ---: | ---: |
+| h at 84000 | 0.8929 | 0.8935 | 0.8993 |
+| h at 156000 | 0.9343 | 0.9349 | 0.9378 |
+| s at 228000 | 0.9468 | 0.9468 | 0.9463 |
+| ts at 246000 | 0.8265 | 0.8268 | 0.8288 |
+
+No material periodicity reduction occurred. Whole-phrase reference pitch MAE is
+15.9427 / 15.9420 / 16.0349 cents respectively; these are source-mel vocoder
+diagnostics, not end-to-end singer scores. Slight changes do not establish a
+quality improvement. Do not promote the feature-noise helper into production.
+
+Next implementation direction: a target-aware unvoiced periodicity diagnostic
+and differentiable training penalty, measured against actual reference PCM
+rather than assuming every unvoiced segment must have zero correlation. Keep
+voiced samples excluded from that penalty, preserve the baseline GAN objective
+as a control, version any changed objective explicitly, and verify gradients,
+checkpoint identity and train/export compatibility before a bounded training
+experiment. No runtime waveform-noise or consonant-muting shortcut is justified.
+
+Evidence: `/Users/lhs/seam-corpus-pauses-2026-09-19-r1/unvoiced-feature-noise-song5-r1/experiment.json`,
+SHA-256 `95ade43e606724921cccfe3020d715db4b0434de2d12d422dc156942e6e0daff`.
+No model weights, trusted upstream source or production behavior changed.
+
 ## Reject unvoiced excitation masking; confirm waveform frame-rate periodicity
 
 Tested an explicit zero-F0 harmonic-source mask with the retained epoch-two
