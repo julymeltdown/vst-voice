@@ -1,5 +1,35 @@
 # Integrated Singer Execution
 
+## Aperiodicity supervision produced in the existing admitted schema
+
+Implemented `derive_conditioning_supervision`, which turns a captured schema-2/3
+label configuration into a schema-4 configuration carrying derived per-frame
+breathiness. It never edits the input and never admits training.
+
+Schema fit was checked against the real validator rather than assumed. The label
+configuration schema is closed: `inspect_label_config` requires exactly seven
+top-level fields and, for schema 4, requires each label to carry a `conditioning`
+object with exactly `{revision, breathiness}` at revision 2, length equal to the
+label's analysis frames and every value in [0, 1]. An earlier draft of this tool
+added extra top-level provenance fields, which that validator would have rejected;
+the provenance was moved to a separate sidecar receipt so the emitted
+configuration stays schema-valid.
+
+Safety properties enforced: refuses to overwrite an existing conditioning block,
+resolves source audio only from the configuration's own relative source inventory
+with a symlink-refusing bounded read, re-verifies the source digest against both
+the inventory and the label, and rejects a changed source.
+
+Real run on captured song 00003 produced schema 4 with breathiness over 1,266
+analysis frames, observed range 0.0 to 0.5341, and top-level fields matching the
+validator's exact set. Evidence: `conditioning-supervision-probe-r2.json`,
+SHA-256 `501f4ee9a2d378e908e59d4b216906dfd9b8f1cdf4d4566ee1b3304c9f0f11d3`.
+
+What remains, unchanged from the plan: a training configuration that enables
+`use_breathiness_embed`, export acceptance for such a checkpoint, and then a
+retrain measured with the existing diagnostics. Training admission is still the
+review gate; this tool produces reviewable supervision, not admitted supervision.
+
 ## Feasibility of the conditioning repair confirmed against pinned source
 
 Before treating the aperiodicity channel as a real path, checked that the pinned
