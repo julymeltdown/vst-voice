@@ -1,5 +1,44 @@
 # Integrated Singer Execution
 
+## Token swaps do move the fricative prediction, narrowing the mechanism again
+
+Added `token_sensitivity`: change exactly one phone's token to another unvoiced
+symbol's token, hold everything else fixed, and measure the mean absolute change
+over that phone's own aligned frames. The ratio is expressed against the phone's
+own prediction spread so a quiet phone is not scored as unresponsive.
+
+Across four development songs and 26 unvoiced single-token swaps, the mean
+change-to-spread ratio is **1.0199**. A swap moves the prediction by roughly the
+same magnitude as the phone's own variation, so the model is *not* ignoring the
+fricative token. It reads the token and changes its output.
+
+This rejects the "model cannot see the phone" explanation and further constrains
+the mechanism. Combining every result so far, the model:
+
+- reads the token (swap moves output, ratio ~1.0),
+- produces a spectrum whose energy is concentrated in few bins (flatness ~0.02
+  versus 0.55-0.86),
+- separates distinct unvoiced symbols far less than the data does (ratio 0.37-0.60,
+  while voiced stays 0.84-0.98),
+- and does so with error that is structured, not a constant offset.
+
+Those four together describe a model that responds to the phone identity but
+renders every unvoiced phone as a similar, harmonically dominated, low-flatness
+spectrum. A token swap does move the output, so this is not a wiring or
+conditioning dropout; it is what the trained function computes for unvoiced
+inputs at this checkpoint.
+
+Remaining candidate mechanisms are now sharply limited: the training target
+itself (what the reference mel looks like after the exact analysis profile), the
+objective's reduction over frames, or the base conditioning's representation of
+unvoiced segments (for example whether breathiness is the intended carrier of
+frication and is being zeroed). The next check should compare the *reference* mel
+of two different unvoiced phones directly, to confirm the target itself separates
+them; if it does, the gap is in the learned function, not in the data.
+
+Evidence: `token-sensitivity-e21-r1.json`, SHA-256
+`e70752da9ae8911316ece031e3e309b47fba57823dd359924a3046d8536d77ee`.
+
 ## Distinct fricatives collapse toward one spectrum while vowels do not
 
 Tested whether the model distinguishes different phone types at all, by measuring
