@@ -85,6 +85,25 @@ This is experiment infrastructure, not evidence that changing the loss improves
 singing. Evaluate generated output between short intervals; lower loss alone
 must not select a replacement model.
 
+Compare two frozen application campaigns with:
+
+```sh
+python -m tools.voice_model_training.compare_campaigns \
+  --baseline /absolute/baseline/campaign.json --baseline-sha256 BASELINE_SHA256 \
+  --candidate /absolute/candidate/campaign.json --candidate-sha256 CANDIDATE_SHA256 \
+  --pitch-executable /absolute/build/release/seam_voicebank_cli \
+  --output /absolute/new-paired-report.json
+```
+
+This re-measures captured source/master WAVs with the recorded native extractor,
+checks saved metrics, and requires the same complete source/project selection,
+silence policy and executable identities. Each song retains its changes and
+regressions. Failed/unmeasurable songs suppress the complete aggregate instead
+of disappearing from it. A better within-tolerance fraction does not erase lost
+measurable coverage. `NO_REGRESSIONS_ON_REPORTED_METRICS` is descriptive only,
+never singer qualification, automatic model promotion or independent-holdout
+proof. Vocoder training-overlap disclosures remain in the output.
+
 The training command supports `--resume` with a separately captured
 `--resume-receipt-sha256`. It restores local model/optimizer/CPU RNG state, requires
 unchanged captured configuration and environment, and matches the freshly admitted

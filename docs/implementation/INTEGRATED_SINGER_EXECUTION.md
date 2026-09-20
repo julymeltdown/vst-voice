@@ -1,5 +1,30 @@
 # Integrated Singer Execution
 
+## Candidate comparator implemented and exercised on real campaigns
+
+`python -m tools.voice_model_training.compare_campaigns` now accepts two
+explicitly hash-bound campaign receipts and the captured native pitch extractor.
+It verifies complete selection/project/source identities, rejects changed
+executables, re-measures every successful source/master pair, checks the saved
+metrics against those fresh measurements, and reports per-song changes.
+Failed or unmeasurable items remain visible and prevent a complete aggregate.
+No model promotion, independent-holdout claim or qualification is performed.
+
+Real runs reproduced the epoch-21 versus lower-rate comparison and the L1
+reset-control comparison, both `HAS_REGRESSIONS`. In the latter, the improved
+within-tolerance fraction does not hide fewer measurable pairs and increased
+pitch error. Evidence under `/Users/lhs/seam-corpus-pauses-2026-09-19-r1/`:
+
+- `paired-e21-low-lr-r1.json`, SHA-256
+  `34791eb00249d34a7d932e606d285f6928e169291cff4ebdb1bdc0a73d5166a7`.
+- `paired-e21-l1-r1.json`, SHA-256
+  `103ac70cb3b8e3ff093ff5ceb6085fadf3fae364355101ba088c1f04da039f54`.
+
+Next: source/recipe/audio ancestry coverage across both acoustic and vocoder
+training histories, followed by a separately frozen independent evaluation
+cohort. The current five songs remain regression fixtures, not qualification
+evidence. No new training run is active; epoch 21 remains preserved.
+
 ## Lower-rate experiment evaluated; stop the sweep, preserve epoch 21
 
 The two-epoch 0.00008 L1 arm completed, exported successfully and passed all five
