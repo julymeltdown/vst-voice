@@ -259,14 +259,16 @@ jobs:
           # `verify /pa` can build a chain to it; without this the dev-signed
           # uninstaller fails verification.
           #
-          # Both managed paths stall on a non-interactive runner and were
-          # observed doing so. Import-Certificate against Cert:\CurrentUser\Root
-          # blocks on a confirmation prompt. So does the .NET X509Store route:
-          # instrumented logs show 'exported' at 01:07:28 and then nothing until
-          # the job timeout, so the stall is inside $store.Open(ReadWrite) or
-          # $store.Add, before signtool ever runs. certutil is the
-          # non-interactive path and does not involve the shell prompt at all.
-          & certutil.exe -user -addstore Root "$env:RUNNER_TEMP\project-seam-development.cer"
+          # Every method that writes a certification authority into the root
+          # store blocks here without the force switch, and three were observed
+          # doing it. Instrumented logs locate the stall exactly: on run
+          # 35479314537 the step printed 'seam-step: exported' at 01:07:28 and
+          # then produced nothing until the 20-minute job timeout, so the store
+          # write was hanging before signtool ever ran. Import-Certificate and
+          # the .NET X509Store route both stalled the same way. What blocks is
+          # Windows' own consent prompt for installing a CA, which no
+          # non-interactive session can answer; certutil's -f suppresses it.
+          & certutil.exe -user -addstore -f Root "$env:RUNNER_TEMP\project-seam-development.cer"
           if ($LASTEXITCODE -ne 0) { throw "certutil failed to trust the development root: $LASTEXITCODE" }
           Write-Host 'seam-step: root trust installed'
           "WINDOWS_DEVELOPMENT_SIGN_CERT_SHA1=$($cert.Thumbprint)" | Out-File -FilePath $env:GITHUB_ENV -Append
