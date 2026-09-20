@@ -209,6 +209,16 @@ for byte. Higher steps are not the large pitch repair suggested by the confounde
 experiment. Native dynamics for song 00024 are exactly unity throughout, further
 excluding a missing gain mask as the cause of that failed baseline replay.
 
+The reusable `tools/voice_model_training/native_input_replay.py` now enforces
+fresh single-call sessions, bounded ten-second/48-kHz/80-bin geometry, exact
+sample-domain dynamics runs, finite controls and output checks including padding.
+Callers must still bind captured graph/project/source identities and validate
+native mixer parity. It does not authorize a model or alter production inference.
+Nine replay/source-vocoder unit tests pass, including session lifecycle and
+malformed-capture refusal. The real song 00024 replay now matches its native
+master within 6.7056e-8 maximum sample error with fixed center-pan gain, resolving
+the earlier 0.157964 mismatch without changing any graph or audio threshold.
+
 Rebuilt `seam_original_singer_song_journey_tests` and
 `seam_procedural_install_journey_tests` from source at `300ad02c`, including
 dependent AppKit/native-editor code, using `cmake --build build/release --target
