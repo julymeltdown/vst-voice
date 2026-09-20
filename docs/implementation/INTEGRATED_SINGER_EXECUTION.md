@@ -1,5 +1,23 @@
 # Integrated Singer Execution
 
+## UV-noise experiment cleared from implementation review; launch gated on replicate assessment
+
+Developer 2 confirmed commit 0f20d2e closes the evaluator integration
+P2 and independently re-ran the derive-to-session probe (both
+identities, frames 1 and 8, exact feed equality, an active-gate
+single-frame treatment case). All implementation-review blockers on
+the staged vocoder-uvnoise-paired-r1 pair are now closed. Clearance is
+explicitly bounded: launch only after the seed-947 periodicity
+replicate finishes and its assessment supports proceeding, no four-way
+concurrent training, and the declared one-epoch matched budget, fixed
+objective, complete-coverage raw-draw checks, and no-partial-resume
+rules stand. This is experimental-training clearance only - not
+production-worker compatibility, quality promotion, holdout
+validation, or any singer or release qualification. Launch and
+assessment scripts are staged under the corpus root: assess_r2.sh
+exports the replicate arms and diffs the paired comparison against
+r1, and the uvnoise launch.sh is written but marked do-not-run.
+
 ## Rank fix at the derivation-to-ONNX boundary
 
 A focused re-review of the arm-binding change caught one integration
