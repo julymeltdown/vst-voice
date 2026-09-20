@@ -1,0 +1,108 @@
+"""Compare two vocoder graphs on identical features; never selects a winner.
+
+Fresh single-use sessions per run, byte-bound graphs, explicit phone ownership.
+Descriptive per-arm and per-phone results only; no promotion or qualification.
+"""
+import hashlib
+import numpy as np
+
+from .pitch_comparison import _capture, compare_wavs
+from .phone_periodicity import measure as measure_phones
+from .prepare_bundle import read_report, VOCODER_FORMAT
+from .reconstruct_source_vocoder import checked_waveform
+
+
+def run_graph(graph, mel, f0, *, frames, _runtime=None):
+    """Execute one bounded vocoder graph with a fresh session."""
+    if (not isinstance(graph, bytes) or not 1 <= len(graph) <= 256 * 1024 * 1024
+            or mel.ndim != 3 or mel.shape[0] != 1 or mel.shape[2] != frames
+            or f0.shape != (1, frames) or mel.dtype != np.float32 or f0.dtype != np.float32
+            or not np.isfinite(mel).all() or not np.isfinite(f0).all()
+            or type(frames) is not int or not 1 <= frames <= 4096):
+        raise ValueError('Expected bounded graph bytes and float32 mel/F0 at matching frames')
+    if _runtime is None:
+        import onnxruntime as _runtime
+    _runtime.disable_telemetry_events()
+    options = _runtime.SessionOptions()
+    options.intra_op_num_threads = options.inter_op_num_threads = 1
+    session = _runtime.InferenceSession(graph, options, providers=['CPUExecutionProvider'])
+    predicted = session.run(['waveform'], dict(mel=mel, f0=f0))[0]
+    return checked_waveform(predicted, source_frames=frames * 256)
+
+
+def clip_phones(labels, valid_samples):
+    """Honest tail policy: drop phone frames that fall in excluded padding."""
+    if type(valid_samples) is not int or valid_samples <= 0:
+        raise ValueError('Compared sample count must be a positive integer')
+    end, rows = 0, []
+    for phone in labels:
+        start, stop = phone['startFrame'], phone['endFrame']
+        if start != end or not start < stop:
+            raise ValueError('Label phones must cover the source contiguously')
+        end = stop
+        left, right = min(start, valid_samples), min(stop, valid_samples)
+        if left < right:
+            rows.append(dict(phone, startFrame=left, endFrame=right))
+    if end < valid_samples:
+        raise ValueError('Label phones do not cover the compared samples')
+    return rows
+
+
+def evaluate(source, labels, arms, *, mel_input, f0, gains, executable,
+             valid_samples=None, _runtime=None):
+    """Return per-arm pitch and per-phone waveform comparison for one source."""
+    import tempfile
+    from pathlib import Path
+    from scipy.io import wavfile
+    payload, source_hash = _capture(source, 64 * 1024 * 1024)
+    mel, f0 = np.asarray(mel_input, np.float32), np.asarray(f0, np.float32)
+    gains = np.asarray(gains, np.float32)
+    frames = mel.shape[2]
+    padded = frames * 256
+    if (mel.ndim != 3 or f0.ndim != 2 or gains.shape != (padded,)
+            or not isinstance(arms, dict) or not 1 <= len(arms) <= 4
+            or not isinstance(labels, list) or not 1 <= len(labels) <= 128):
+        raise ValueError('Expected captured source, bounded arms and complete label rows')
+    reference = reference_wave(source)
+    if valid_samples is None:
+        valid_samples = len(reference)
+    if (type(valid_samples) is not int or not 1 <= valid_samples <= min(len(reference), padded)
+            or len(reference) != padded):
+        raise ValueError('Compared samples must lie inside both captured source and padded output')
+    reference, phones = reference[:valid_samples], clip_phones(labels, valid_samples)
+    graph_hashes, results = {}, {}
+    for name, export in arms.items():
+        exported, graph = read_report(Path(export), VOCODER_FORMAT,
+            'vocoderPath', 'vocoderSha256', 'vocoderBytes')
+        if exported['vocoderSha256'] in graph_hashes.values():
+            raise ValueError('Arms must use distinct vocoder graphs')
+        graph_hashes[name] = exported['vocoderSha256']
+        wave = (run_graph(graph, mel, f0, frames=frames, _runtime=_runtime) * gains)[:valid_samples]
+        if not np.isfinite(wave).all() or float(np.max(np.abs(wave))) > 1:
+            raise ValueError('Vocoder output is nonfinite or unnormalized')
+        with tempfile.TemporaryDirectory(prefix='seam-paired-vocoder-') as directory:
+            candidate = Path(directory) / f'{name}.wav'
+            wavfile.write(candidate, 48000, wave)
+            comparison = compare_wavs(source, candidate, executable=executable)
+        if comparison['reference']['sha256'] != source_hash:
+            raise ValueError('Measured source changed during comparison')
+        results[name] = dict(vocoderSha256=exported['vocoderSha256'],
+            objectiveId=exported.get('objectiveId'), waveSha256=hashlib.sha256(
+                wave.astype('<f4').tobytes()).hexdigest(),
+            pitch={key: comparison['comparison'][key] for key in (
+                'status', 'meanAbsoluteCents', 'measurableVoicedPairs',
+                'withinToleranceFrames', 'unmeasurableFrames', 'voicingMismatchFrames')},
+            phones=measure_phones(reference, wave, phones)['rows'])
+    return dict(formatId='com.project-seam.paired-vocoder-evaluation', schemaVersion=1,
+        sourceSha256=source_hash, frames=frames, comparedSamples=valid_samples,
+        excludedTailSamples=padded - valid_samples, arms=results,
+        policy='Identical features and controls; fresh session per arm; descriptive only',
+        singerQualified=False, releaseEligible=False)
+
+
+def reference_wave(source):
+    """Decode the reference PCM once, without resampling or normalization."""
+    from .audio_source import decode_pcm_source
+    payload, digest = _capture(source, 64 * 1024 * 1024)
+    _, audio = decode_pcm_source(payload, expected_sha256=digest, sample_rate=48000)
+    return audio
