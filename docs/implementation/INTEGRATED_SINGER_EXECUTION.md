@@ -1,5 +1,48 @@
 # Integrated Singer Execution
 
+## Paired original/periodicity vocoder experiment launched
+
+Frozen two schema-four configurations before training, then launched both via
+the normal CLI with fresh source admission and explicit warm start. Both arms
+use the same epoch-two generator/discriminator weights, seed 929, learning rate
+0.0002, decay 0.999, 128-hop segments, one CPU thread, existing training split
+and 12 held-out reconstructions. Both reset optimizers/schedulers/RNG. The only
+between-arm configuration difference is the objective ID.
+
+Each arm requests one complete epoch, with a 21,600-second run bound, 1 GiB
+aggregate checkpoint budget and retention of one new checkpoint. Initial free
+space was approximately 53 GiB. No old checkpoint or corpus artifact was removed
+or changed. Evaluation material was not added to the training split. Existing
+training overlap in older development fixtures remains disclosed; those fixtures
+are not independent qualification evidence.
+
+Artifacts: `/Users/lhs/seam-corpus-pauses-2026-09-19-r1/vocoder-periodicity-paired-r1/`.
+
+- `plan.json` SHA-256
+  `55029fadd3578b93381d0f54657954af7ba2860d23037417747931c252c7d0e6`.
+- `control-config.json` SHA-256
+  `ddc2c822ac3cec791add70798e044e2dd0fa83f2f95177159229fceca5ebca02`.
+- `periodicity-config.json` SHA-256
+  `01fac360555825c7c759f0d34d0d76f95620dd9351e6e32be58e83237841b8be`.
+
+Supervisor execution session 74808; initial child PIDs 89630 (control) and 89632
+(periodicity), both confirmed live during startup. Per-arm launch commands and
+stdout/stderr logs are retained. Terminal exit receipts and process-results are
+written only after children exit. A launch or live PID is not an epoch completion.
+Poll the existing session/processes; do not restart from a quiet log or timeout.
+
+After completion, verify full epoch coverage and ancestry, export both arms,
+then compare source-mel reconstruction and integrated acoustic/vocoder outputs.
+Measure unvoiced periodicity, spectrum/level, voiced pitch, coverage and
+transitions together. Lower training loss alone cannot select an improved model.
+No new checkpoint, musical improvement or singer qualification is claimed here.
+
+Startup verification: both arms passed fresh epoch admission, planned 2,804
+updates, and completed update one with 31,488 owned samples. Both initial losses
+were identical (generator 21.6879158, discriminator 1.8823533); this does not yet
+show whether later unvoiced segments benefit from the auxiliary term. Processes
+were still live after that observation.
+
 ## Explicit GAN warm start implemented and verified against retained baseline
 
 Added paired `--warm-start` / `--warm-start-receipt-sha256`, mutually exclusive
