@@ -17,9 +17,13 @@ Export `export-combined-e21` passed runtime smoke checks, acoustic graph SHA-256
 Candidate `bundle-combined-e21-v512-e2` keeps vocoder epoch two and the existing
 configuration/vocabulary; manifest SHA-256
 `090d333627fd8cc551dc85fe37cc75b6762dd50baba82f02b430232d10fa63e0`.
-The fixed five-song application campaign is running at
-`campaign-e21-v512-e2-r1`, with training-overlap audit enabled. No quality outcome
-or singer qualification is inferred from the completed training/export.
+The fixed five-song application campaign completed at
+`campaign-e21-v512-e2-r1`, with training-overlap audit enabled. All executions
+passed; spectral distance and mean pitch error improved on every song. Weighted
+pitch MAE fell from 70.1603 to 35.2267 cents and unmeasurable frames from 378 to
+260, with both scored rests exactly silent. All strict pitch comparisons still
+fail. See the [campaign report](SINGER_VALIDATION_CAMPAIGN_2026-09-20.md) for
+per-song results, limitations and the retained baseline. No singer qualification.
 
 September 20, 2026 — after the fixed-cohort vocoder and conditioning diagnostics,
 the next bounded intervention is additional acoustic learning, not a pitch-gate

@@ -1,5 +1,51 @@
 # Application singer validation campaign — September 20, 2026
 
+## Acoustic epoch 21: consistent five-song improvement, still unqualified
+
+The eight-epoch acoustic continuation completed; the fixed vocoder remains epoch
+two and production sampling remains 10 steps. All five real application
+render/export/reopen/measurement executions passed. Every strict pitch status
+remains `MISMATCH`; execution success is not musical qualification.
+
+| Song | Spectral distance e13 → e21 | Pitch mean absolute cents e13 → e21 | Within 50 / measurable pairs at e21 |
+| --- | --- | --- | --- |
+| 00003 | 1.218442 → 1.082442 | 35.09 → 28.96 | 1128 / 1172 |
+| 00005 | 1.226101 → 1.085034 | 114.59 → 41.81 | 976 / 1025 |
+| 00024 | 1.298877 → 1.148612 | 100.64 → 37.59 | 869 / 913 |
+| 00402 | 1.005430 → 0.796122 | 44.16 → 36.49 | 480 / 512 |
+| 00420 | 1.149218 → 1.038213 | 31.75 → 30.76 | 466 / 494 |
+
+Aggregate measurable-pair weighted mean absolute error improves from 70.1603
+to 35.2267 cents. Within-tolerance pairs increase from 3732/3974 (93.9104%) to
+3919/4116 (95.2138%), while unmeasurable frames fall from 378 to 260 and voicing
+mismatches from 144 to 122. Song 00005's voicing mismatches nevertheless rise
+from 39 to 41. Keep this regression visible alongside the improvements.
+These fractions do not substitute for the product's designated steady-frame
+acceptance, intelligibility, naturalness or listener evidence.
+
+The exact two-channel rest checks pass for song 00402 [84000,102000) and song
+00420 [66000,78000); other songs have no scored rests. Score-linked diagnostics
+are retained for all five songs without suppressing boundary errors.
+
+On the same fixed five-training/five-validation source selection, fresh-session
+10-step inference with training conditioning improves training mel MAE from
+2.839868 to 2.391302 (5510 frames), and validation from 2.831527 to 2.400242
+(4619 frames). This supports the continuation's engineering value, not general
+musical qualification or proof that further epochs must improve.
+
+Evidence root: `/Users/lhs/seam-corpus-pauses-2026-09-19-r1/`.
+Application campaign: `campaign-e21-v512-e2-r1/campaign.json`, SHA-256
+`c0b44c9efb7ed5f3cb154c6d3a900ad162d1f3e435b61461d1f4b9062c93d4fe`.
+Acoustic-only comparison: `acoustic-e21-train-validation-fresh-r1/experiment.json`,
+bound to the earlier saved source selection. The candidate-bound vocoder audit
+still discloses training overlaps 00003/00005/00024. No model was installed or
+promoted to qualified status; previous candidates remain available.
+
+Decision: retain epoch 21 as the improved experimental comparison candidate.
+Next inspect the remaining error locations and model-reconstruction gap before
+choosing another bounded intervention. Keep the same regression cohort and
+independent-cohort requirement; do not chase a threshold by dropping failures.
+
 ## Training-versus-native conditioning: compared, not a demonstrated fix
 
 The captured dataset snapshot matches acoustic epoch 13's dataset identity.
