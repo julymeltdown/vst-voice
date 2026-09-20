@@ -85,7 +85,7 @@ class ArmNoiseTests(unittest.TestCase):
         rng = np.random.default_rng(5)
         return dict(seed=5,
             rawDraw=rng.standard_normal((1, 1, frames * 64)).astype(np.float32),
-            unvoicedFrames=np.array([True] * 4 + [False] * 4))
+            unvoicedFrames=np.array([True] * (frames // 2) + [False] * (frames - frames // 2)))
 
     def test_zero_arm_receives_zeros_regardless_of_raw_draw(self):
         exported = dict(architectureConfiguration=dict(excitationNoiseId='zero-v1'))
@@ -121,6 +121,35 @@ class ArmNoiseTests(unittest.TestCase):
         bad2['unvoicedFrames'] = np.array([True] * 4)
         with self.assertRaises(ValueError):
             validate_noise_spec(bad2, 8)
+
+    def test_derived_feed_reaches_session_at_graph_rank(self):
+        # Connected regression: derive_arm_noise -> run_graph must hand the
+        # session a rank-2 [1, frames*64] array, not the training rank.
+        feeds_seen = []
+        class Session:
+            def get_inputs(self):
+                return [type('I', (), {'name': n}) for n in ('mel', 'f0', 'noise')]
+            def run(self, outputs, inputs):
+                feeds_seen.append(inputs)
+                return [np.zeros((1, inputs['mel'].shape[1] * 256), np.float32)]
+        runtime = type('R', (), {'disable_telemetry_events': staticmethod(lambda: None),
+            'SessionOptions': staticmethod(lambda: type('O', (), {'intra_op_num_threads': 0, 'inter_op_num_threads': 0})()),
+            'InferenceSession': staticmethod(lambda *a, **k: Session())})
+        for frames in (1, 8):
+            for identity in ('zero-v1', 'uv-gated-v1'):
+                spec = self.spec(frames)
+                exported = dict(architectureConfiguration=dict(excitationNoiseId=identity))
+                noise, _ = derive_arm_noise(exported, spec, frames)
+                self.assertEqual(np.asarray(noise).shape, (1, frames * 64))
+                feeds_seen.clear()
+                run_graph(b'g', np.zeros((1, frames, 80), np.float32),
+                          np.zeros((1, frames), np.float32), frames=frames,
+                          noise=noise, _runtime=runtime)
+                fed = feeds_seen[0]['noise']
+                self.assertEqual(fed.shape, (1, frames * 64))
+                np.testing.assert_array_equal(fed, noise)
+                if identity == 'uv-gated-v1' and frames == 8:
+                    self.assertFalse(fed.reshape(-1)[4 * 64:].any())
 
 
 if __name__=='__main__':unittest.main()

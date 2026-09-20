@@ -1,5 +1,20 @@
 # Integrated Singer Execution
 
+## Rank fix at the derivation-to-ONNX boundary
+
+A focused re-review of the arm-binding change caught one integration
+defect before any experiment consumed it: realize_excitation returns
+the training rank [1, 1, N] while the exported graph declares a rank-2
+[1, N] noise input, so every excitation arm would have failed
+run_graph's feed validation. derive_arm_noise now drops only the
+singleton channel axis at the boundary; the training helper's rank is
+unchanged. A connected regression drives derive_arm_noise into
+run_graph for both identities at one frame and at eight frames and
+asserts the session receives the exact derived [1, N] array including
+off-gate zeros - the earlier feed test had constructed the tensor by
+hand and the derive tests flattened before comparing, so neither saw
+the mismatch. 425 voice_model_training tests pass.
+
 ## Paired evaluator binds noise feeds to each arm's declared excitation identity
 
 A review pass on the staged UV-noise experiment found the evaluator's

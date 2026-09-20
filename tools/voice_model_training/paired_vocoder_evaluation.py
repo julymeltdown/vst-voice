@@ -94,7 +94,10 @@ def derive_arm_noise(exported, noise_spec, frames):
     raw, gate = validate_noise_spec(noise_spec, frames)
     from .uv_noise_excitation import realize_excitation
     realized = realize_excitation(raw, gate, excitation_id).numpy()
-    return realized, excitation_id
+    # realize_excitation keeps the training rank [1, 1, N]; the exported
+    # graph declares a rank-2 [1, N] noise input, so drop only the
+    # singleton channel axis at this boundary.
+    return realized[:, 0, :], excitation_id
 
 
 def evaluate(source, labels, arms, *, mel_input, f0, gains, executable,
