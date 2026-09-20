@@ -77,6 +77,15 @@ frames even when penalized directly in clean-mel space. Combined with the
 paired vocoder arm's residual periodicity (0.226 vs control 0.462), the
 aperiodicity defect is shared across both stages rather than located in one.
 
+Multi-lag structure (unvoiced-multilag-aux-e9-r1.json, 27 windows per arm)
+shows what the periodicity is: candidate autocorrelation peaks at lags
+256-512 (control +0.58/+0.57, treatment +0.57/+0.49) and decays at lag 1024
+(+0.46/+0.38), while the reference stays near zero at every lag. The peak sits
+at the sung fundamental's period (~187 Hz), so unvoiced segments carry
+pitch-period leakage rather than noise. The b-sweep flatness receipts were
+regenerated as flatness-breathiness-e8-b{050,075,100}-r2.json with replay and
+acoustic hash bindings; aggregates are identical to the unbound r1 files.
+
 Caveats: one seed, one epoch, five procedural songs - an initial diagnostic,
 not a verdict on the objective family. The r1 treatment campaign's transient
 helper failure is retained on disk and was not counted; r2 is the compared
