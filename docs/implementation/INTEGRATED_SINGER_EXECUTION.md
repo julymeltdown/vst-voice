@@ -1,5 +1,26 @@
 # Integrated Singer Execution
 
+## Comparison aggregation fixed after a real two-arm rehearsal
+
+Ran the complete comparison path on the five captured frozen replay sources with
+two existing vocoder exports, which exposed a nesting defect: the unvoiced/voiced
+class summary was placed inside itself. Fixed and covered by a regression test
+asserting each class key holds its own windows and signed delta.
+
+The rehearsal also shows the RMS-ratio term doing real work rather than decorating
+the report. On the same 27 unvoiced and 86 voiced windows:
+
+| Arm | Unvoiced mean lag correlation (ref / candidate) | Unvoiced RMS ratio | Voiced mean lag correlation (ref / candidate) | Voiced RMS ratio |
+| --- | --- | ---: | --- | ---: |
+| epoch-2 export | -0.0036 / 0.4630 | 0.869 | -0.1356 / -0.1253 | 0.860 |
+| older export | -0.0036 / 0.7891 | 0.579 | -0.1356 / 0.9258 | 0.044 |
+
+The older export's voiced RMS ratio of 0.044 reveals a near-silent output that the
+correlation column alone would have made look closer to the noisy reference. These
+are two pre-existing exports, not the trained arms, so no arm is selected,
+promoted or qualified. Evidence: `paired-rehearsal-r2.json`, SHA-256
+`77499414bc722c652eaf18aed001f3c363dc3a16427634c6648a6f62e7a9e3fb`.
+
 ## Unvoiced mask coverage audited before conclusions
 
 Confirmed the auxiliary objective operates on real signal rather than an empty

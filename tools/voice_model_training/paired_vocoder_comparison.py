@@ -84,7 +84,9 @@ def compare(arms, replays, corpus, executable, *, output):
                 row for row in arm['phones'] if row['phone'] in VOICED)
     aggregate = {}
     for name, groups in per_arm.items():
-        aggregate[name] = {label: summarize(rows) for label, rows in groups.items()}
+        # summarize() already returns both classes; select the matching one so the
+        # class does not nest inside itself.
+        aggregate[name] = {label: summarize(rows)[label] for label, rows in groups.items()}
     report = dict(formatId='com.project-seam.paired-vocoder-comparison', schemaVersion=1,
         armVocoderSha256=identities,
         sources=[dict(sourceId=item['sourceId'], replaySha256=item['replaySha256'])

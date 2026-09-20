@@ -30,6 +30,15 @@ class SummaryTests(unittest.TestCase):
     def test_class_inventories_do_not_overlap(self):
         self.assertFalse(set(UNVOICED) & set(VOICED))
 
+    def test_class_keys_hold_their_own_measurements(self):
+        # Guards against nesting one class summary inside the other.
+        rows=[row('s',.0,.5),row('a',.4,.35)]
+        unvoiced, voiced = summarize(rows)['unvoiced'], summarize(rows)['voiced']
+        self.assertEqual(unvoiced['phoneWindows'],1)
+        self.assertEqual(voiced['phoneWindows'],1)
+        self.assertAlmostEqual(unvoiced['meanCandidateMinusReferenceCorrelation'],.5)
+        self.assertAlmostEqual(voiced['meanCandidateMinusReferenceCorrelation'],-.05)
+
 
 if __name__ == '__main__':
     unittest.main()
