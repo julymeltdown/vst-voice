@@ -1,5 +1,50 @@
 # Integrated Singer Execution
 
+## Per-phone mel error quantified, with a caveat that limits what it proves
+
+Added `acoustic_frame_error` and its CLI: per-bin mel L1 error against a
+constant-spectrum baseline, reported per phone and per song. On the five
+development replay sources:
+
+| Class | Windows | Mean model error | Mean constant error | Mean ratio | Windows no better than constant |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Unvoiced | 27 | 3.1754 | 1.2483 | 4.61 | 27 / 27 |
+| Voiced | 86 | 2.3927 | 0.2617 | 10.48 | 86 / 86 |
+
+**Important caveat, stated before the numbers are used:** that "constant"
+baseline is computed from the ground-truth mel of the very phone being scored. It
+is an oracle that has seen the answer, so "the model is 4.6x worse than a
+constant" is not a fair contest and is not, by itself, proof that the model
+collapsed. A supervised model is expected to lose to an oracle on stationary
+intervals, and the ratio is largest exactly where the reference is most stationary
+(mean reference temporal spread 0.313 for the song with ratio 10.6, versus 1.726
+for the song with ratio 3.6). Reporting that ratio as a collapse would be wrong.
+
+What the numbers do support is narrower and still useful, per song on unvoiced
+phones:
+
+| Song | Windows | Model error | Constant error | Reference spread |
+| --- | ---: | ---: | ---: | ---: |
+| 00003 | 7 | 3.197 | 1.509 | 1.720 |
+| 00005 | 8 | 3.328 | 1.379 | 1.567 |
+| 00024 | 7 | 3.018 | 0.830 | 0.974 |
+| 00402 | 4 | 3.228 | 1.510 | 1.726 |
+| 00420 | 1 | 2.700 | 0.254 | 0.313 |
+
+The model's unvoiced mel error (roughly 3.0-3.3 in ln-amplitude units, about a
+20x amplitude ratio) exceeds the reference's own within-phone variation (0.3-1.7)
+by roughly 2-10x. Removing a per-class mean offset only reduced song 00005's
+unvoiced error from 3.345 to 3.271, so this is not merely a gain difference. The
+mel is still being predicted with large error on the phones that matter, which
+is consistent with the flatness finding even though it does not independently
+prove the collapse mechanism.
+
+Next measurement, unchanged in intent: separate the unvoiced mel error into
+binwise bias versus residual structure, so a per-bin calibration issue can be
+distinguished from a genuine inability to place noise energy. That distinction
+determines whether the fix belongs in the objective, the output parameterization,
+or the conditioning.
+
 ## Consolidated statement of the acoustic fricative defect
 
 The investigation across the last several steps now has enough evidence to state
