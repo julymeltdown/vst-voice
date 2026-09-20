@@ -1,5 +1,39 @@
 # Integrated Singer Execution
 
+## Feasibility of the conditioning repair confirmed against pinned source
+
+Before treating the aperiodicity channel as a real path, checked that the pinned
+upstream architecture can consume it. In `modules/fastspeech/acoustic_encoder.py`
+at the declared DiffSinger revision, `use_breathiness_embed` is read and, when
+true, appends `breathiness` to `variance_embed_list`. `configs/acoustic.yaml`
+declares `use_breathiness_embed: false`, which matches the deployed checkpoint.
+
+So the capability exists upstream and is a supported configuration this project
+never enabled. That makes the repair a configuration and data change rather than
+an architecture change: supply per-frame breathiness (now derived and validated),
+enable the embedding, and retrain. No new module or custom layer is required.
+
+This also confirms the earlier export adapter behavior is correct for the current
+state: the export adapter feeds a zero breathiness tensor only when
+`use_breathiness_embed` is true, and the deployment bridge reports a passed
+control-effect check when breathiness is not used. Nothing in the export path
+needs to change for the model as it exists today.
+
+Concrete remaining work for the repair, none of it started here:
+
+1. Record the derived aperiodicity channel as label-reviewable supervision with
+   its own provenance and review gate, rather than as a silent transform.
+2. Add a training configuration that enables the breathiness embedding and
+   carries the new channel through batches and checkpoints.
+3. Extend export acceptance so a checkpoint with the embedding enabled is not
+   rejected, since the current guard assumes the channel is absent.
+4. Retrain from the retained baseline and measure with the flatness,
+   separation, decomposition and periodicity diagnostics already built.
+
+Items 1-3 are mechanical but touch admission, training and export paths, so they
+are recorded as the defined next task rather than half-done here. The measurements
+in this document remain the acceptance tests for the result.
+
 ## First repair step: a derived aperiodicity channel, validated on real audio
 
 Added `aperiodicity.estimate`, which derives a bounded per-frame aperiodicity
