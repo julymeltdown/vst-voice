@@ -1,5 +1,32 @@
 # Integrated Singer Execution
 
+## Explicit warm-start implementation and next controlled experiment
+
+`tools.voice_model_training.train` now separates exact resume from warm start.
+Warm start verifies the local parent checkpoint, loads only model weights,
+requires a fresh optimizer at the captured learning rate, resets CPU RNG to the
+configured seed, and records parent receipt/binary/configuration hashes and epoch.
+It starts new epoch numbering at one. Only loss and learning rate may change;
+architecture, profile, vocabulary, dataset/target configuration, runtime and all
+other settings remain identical. Normal fresh dataset admission is unchanged.
+Exact resume preserves the origin record and still restores optimizer and RNG.
+
+Next bounded comparison: two new epochs per arm from the same verified epoch-21
+parent. Both reset optimizer/RNG. Control uses the original L1 configuration;
+treatment changes only loss to L2 (learning rate remains 0.0008). New config:
+`/Users/lhs/seam-corpus-pauses-2026-09-19-r1/prepared-combined/training-l2-warm-e21.json`,
+SHA-256 `a1ce31a46972941ad42463ca9bbb6cb2fc3d63ce9caffecbe2b128c4b1aef9c6`.
+Preserve both completed epochs in each arm and all older baselines. Do not
+compare raw L1 and L2 training losses as if they were the same metric. Compare
+fresh-session reconstruction and the unchanged five-song application campaign
+with the fixed epoch-two vocoder and 10 production sampling steps. A short
+experiment cannot qualify a singer or establish final convergence.
+
+Planned new output roots are `acoustic-e21-reset-l1-r1` and
+`acoustic-e21-reset-l2-r1` under the existing pause corpus directory. Neither
+arm is claimed completed here. No architecture, sampler or quality threshold
+changes accompany this experiment.
+
 ## Epoch 37 evaluated and rejected; retain epoch 21
 
 The completed five-song application campaign regressed on every song: weighted

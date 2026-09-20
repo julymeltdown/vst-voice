@@ -70,7 +70,22 @@ budgets are explicit. Separate resumed invocations remain supported. See
 `TRAINING_COMMAND.md`; automatic quality-based stopping and review renewal remain
 unfinished, alongside model export and actual singer qualification.
 
-The training command now supports `--resume` with a separately captured
+The training command also supports `--warm-start CHECKPOINT` with
+`--warm-start-receipt-sha256 DIGEST` for a **new experiment**, not exact resume.
+It loads verified model weights only, resets optimizer and CPU RNG, starts epoch
+numbering at one, and records the original receipt/binary/configuration hashes
+and source epoch in every new checkpoint. Only `loss` and `learningRate` may
+change; unchanged settings are allowed as a reset-optimizer control arm.
+Architecture, vocabulary, dataset/targets, profile, runtime and other settings
+must match. Normal fresh source/label admission still applies before every epoch.
+The parent checkpoint is not edited. The two initialization modes are mutually
+exclusive and each requires its own paired receipt digest. Exact resume of a
+warm-start experiment preserves its recorded origin and restores optimizer/RNG.
+This is experiment infrastructure, not evidence that changing the loss improves
+singing. Evaluate generated output between short intervals; lower loss alone
+must not select a replacement model.
+
+The training command supports `--resume` with a separately captured
 `--resume-receipt-sha256`. It restores local model/optimizer/CPU RNG state, requires
 unchanged captured configuration and environment, and matches the freshly admitted
 dataset before training. New checkpoints retain completed-epoch count and parent

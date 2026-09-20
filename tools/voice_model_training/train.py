@@ -85,14 +85,99 @@ def load_targets(config: Path, digest: str) -> tuple[dict, str]:
     return result, profile
 
 
+def _digest(value):
+    return isinstance(value, str) and len(value) == 64 and all(c in "0123456789abcdef" for c in value)
+
+
+def _warm_start_identity(value):
+    hashes = {"sourceReceiptSha256", "sourceCheckpointSha256", "sourceTrainingConfigurationSha256"}
+    if (not isinstance(value, dict)
+            or set(value) != hashes | {"sourceCompletedEpochs", "optimizerReset", "rngReset", "epochNumbering"}
+            or any(not _digest(value[key]) for key in hashes)
+            or type(value["sourceCompletedEpochs"]) is not int
+            or not 1 <= value["sourceCompletedEpochs"] < 100000
+            or value["optimizerReset"] is not True or value["rngReset"] is not True
+            or value["epochNumbering"] != "new-experiment-from-one"):
+        raise ValueError("Invalid captured warm-start identity")
+    return dict(value)
+
+
+def initialize_checkpoint(model, optimizer, state, receipt, *, metadata, profile,
+                          receipt_sha256, warm_start=False):
+    """Initialize only from a verified local checkpoint; never mutate its state.
+
+    Warm start permits loss/learning-rate changes only, on the same admitted
+    dataset, architecture, vocabulary and runtime. It starts a new experiment;
+    exact resume inherits its immutable origin and restores optimizer/RNG state.
+    The caller must still re-admit the dataset before training/publication.
+    """
+    import torch
+    previous = receipt["metadata"].get("run")
+    dataset = receipt["metadata"].get("datasetSha256")
+    completed = previous.get("completedEpochs") if isinstance(previous, dict) else None
+    if (not isinstance(previous, dict) or not _digest(receipt_sha256)
+            or not _digest(dataset) or type(completed) is not int or not 1 <= completed < 100000
+            or receipt["metadata"].get("profileSha256") != profile
+            or receipt["epoch"].get("epochComplete") is not True
+            or receipt["epoch"].get("coverageVerified") is not True
+            or receipt["epoch"].get("datasetSha256") != dataset):
+        raise ValueError("Initialization requires a complete captured checkpoint lineage and matching profile")
+    origin = previous.get("warmStart")
+    if "warmStart" in previous:
+        origin = _warm_start_identity(origin)
+    captured = {key: value for key, value in previous.items()
+                if key not in ("completedEpochs", "parentReceiptSha256", "warmStart")}
+    result = dict(metadata)
+    prior_settings = captured.get("settings")
+    if (type(warm_start) is not bool
+            or model_settings(metadata.get("settings")) != metadata.get("configuration")
+            or model_settings(prior_settings) != captured.get("configuration")
+            or receipt["epoch"].get("objectiveId") != DiffSingerDDPMObjective(prior_settings["loss"]).objective_id):
+        raise ValueError("Checkpoint settings, architecture and objective disagree")
+    if warm_start:
+        allowed = {"loss", "learningRate"}
+        current_settings = metadata["settings"]
+        if (set(prior_settings) != set(current_settings)
+                or any(prior_settings[key] != current_settings[key] for key in prior_settings if key not in allowed)
+                or {k: v for k, v in captured.items() if k not in ("settings", "trainingConfigurationSha256")}
+                    != {k: v for k, v in metadata.items() if k not in ("settings", "trainingConfigurationSha256")}
+                or not _digest(captured.get("trainingConfigurationSha256"))
+                or not _digest(metadata.get("trainingConfigurationSha256"))
+                or (prior_settings != current_settings
+                    and captured["trainingConfigurationSha256"] == metadata["trainingConfigurationSha256"])
+                or not _digest(receipt.get("checkpointSha256"))):
+            raise ValueError("Warm start permits only explicit loss/learning-rate changes on identical training inputs")
+        if (optimizer.state or not optimizer.param_groups
+                or any(group["lr"] != current_settings["learningRate"] for group in optimizer.param_groups)):
+            raise ValueError("Warm start requires a fresh optimizer at the captured learning rate")
+        result["warmStart"] = dict(sourceReceiptSha256=receipt_sha256,
+            sourceCheckpointSha256=receipt["checkpointSha256"], sourceCompletedEpochs=completed,
+            sourceTrainingConfigurationSha256=captured["trainingConfigurationSha256"],
+            optimizerReset=True, rngReset=True, epochNumbering="new-experiment-from-one")
+    elif captured != metadata:
+        raise ValueError("Resume requires identical captured training inputs and environment")
+    elif origin is not None:
+        result["warmStart"] = origin
+    model.load_state_dict(state["model"], strict=True)
+    if warm_start:
+        torch.manual_seed(metadata["settings"]["seed"])
+    else:
+        optimizer.load_state_dict(state["optimizer"])
+        torch.set_rng_state(state["rng"])
+    return result, dataset, 0 if warm_start else completed
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ("training_config", "dataset_config", "targets", "source_root", "conditioning", "trusted_checkout", "output"):
         parser.add_argument("--" + name.replace("_", "-"), type=Path, required=True)
     for name in ("training_sha256", "dataset_sha256", "targets_sha256", "rights_policy_sha256", "label_policy_sha256"):
         parser.add_argument("--" + name.replace("_", "-"), required=True)
-    parser.add_argument("--resume", type=Path, help="Trusted locally produced checkpoint directory")
+    start = parser.add_mutually_exclusive_group()
+    start.add_argument("--resume", type=Path, help="Trusted locally produced checkpoint directory")
+    start.add_argument("--warm-start", type=Path, help="Reuse weights; reset optimizer/RNG; allow only loss/LR changes")
     parser.add_argument("--resume-receipt-sha256", help="Independently captured checkpoint.json file digest")
+    parser.add_argument("--warm-start-receipt-sha256", help="Captured checkpoint.json digest for a new experiment")
     parser.add_argument("--epochs", type=int, default=1)
     parser.add_argument("--maximum-run-seconds", type=float, default=3600)
     parser.add_argument("--maximum-total-checkpoint-bytes", type=int, default=2 * 1024**3)
@@ -103,6 +188,8 @@ def main():
     try:
         if (args.resume is None) != (args.resume_receipt_sha256 is None):
             raise ValueError("Resume requires both a local checkpoint and its captured receipt digest")
+        if (args.warm_start is None) != (args.warm_start_receipt_sha256 is None):
+            raise ValueError("Warm start requires both a local checkpoint and its captured receipt digest")
         if args.output.exists() or args.output.is_symlink() or not args.output.parent.is_dir():
             raise ValueError("Checkpoint output must be new with an existing parent")
         settings = load_config(args.training_config, args.training_sha256)
@@ -142,26 +229,14 @@ def main():
                         torchVersion=str(torch.__version__), numpyVersion=np.__version__, vocabulary=vocabulary,
                         singerQualified=False)
         expected_dataset, completed_epochs = None, 0
-        if args.resume is not None:
-            state, previous = load_local_checkpoint(args.resume, receipt_sha256=args.resume_receipt_sha256)
-            previous_run = previous["metadata"].get("run")
-            if (not isinstance(previous_run, dict)
-                    or {key: value for key, value in previous_run.items()
-                        if key not in ("completedEpochs", "parentReceiptSha256")} != metadata
-                    or previous["metadata"].get("profileSha256") != profile
-                    or previous["epoch"].get("objectiveId") != objective.objective_id):
-                raise ValueError("Resume requires identical captured training inputs and environment")
-            completed_epochs = previous_run.get("completedEpochs")
-            expected_dataset = previous["metadata"].get("datasetSha256")
-            if (type(completed_epochs) is not int or not 1 <= completed_epochs < 100000
-                    or not isinstance(expected_dataset, str) or len(expected_dataset) != 64
-                    or any(c not in "0123456789abcdef" for c in expected_dataset)):
-                raise ValueError("Resume requires a versioned completed-epoch lineage")
-            model.load_state_dict(state["model"], strict=True)
-            optimizer.load_state_dict(state["optimizer"])
-            torch.set_rng_state(state["rng"])
+        parent_digest = args.resume_receipt_sha256 or args.warm_start_receipt_sha256
+        if args.resume is not None or args.warm_start is not None:
+            state, previous = load_local_checkpoint(args.resume or args.warm_start, receipt_sha256=parent_digest)
+            metadata, expected_dataset, completed_epochs = initialize_checkpoint(
+                model, optimizer, state, previous, metadata=metadata, profile=profile,
+                receipt_sha256=parent_digest, warm_start=args.warm_start is not None)
         result = run_reviewed_epochs(model, optimizer, output=args.output, epochs=args.epochs,
-            completed_epochs=completed_epochs, parent_receipt_sha256=args.resume_receipt_sha256,
+            completed_epochs=completed_epochs, parent_receipt_sha256=parent_digest,
             metadata=metadata, maximum_run_seconds=args.maximum_run_seconds,
             maximum_total_checkpoint_bytes=args.maximum_total_checkpoint_bytes,
             retain_checkpoints=args.retain_checkpoints, minimum_free_bytes=args.minimum_free_bytes,
