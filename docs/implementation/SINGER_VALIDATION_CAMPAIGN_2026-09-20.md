@@ -49,9 +49,7 @@ per-song regressions (especially 00005) against the source controls and captured
 pitch tracks. A separate ancestry-checked cohort and musical qualification
 remain required. Windows remains TODO; none of this is Windows evidence.
 
-## macOS authoring regression alongside training
-
-### Follow-up: fixed-frame pitch regression in song 00005
+## Follow-up: fixed-frame pitch regression in song 00005
 
 Comparing only indices measurable in both epochs is a supplemental diagnostic,
 not a replacement for the full-grid results above. For song 00005, 978 common
@@ -89,6 +87,27 @@ F0 inputs for these windows, bind them to the candidate/project, and compare
 with source-derived inputs. Test conditioning mismatch or hop-periodic artifacts
 before choosing further training or changing synthesis. Preserve the existing
 strict diagnostic and both candidate outputs.
+
+### Native prepared-input replay export
+
+The production-render test harness now accepts an explicit `--inputs-output`
+through `tools/neural_runtime/check_production_render.py`. It exports native
+snapshot-derived tokens, durations, F0, optional breathiness, steps and geometry,
+bound to project, bundle and worker digests. Publication refuses an existing
+file. This is **prepared-input replay**, not a capture of worker mel tensors;
+the shipped worker has no new file-writing hook or environment override.
+
+Both English and moraic-nasal production-render CTests passed (4.05 seconds).
+Song 00005's diagnostic rerender produced the exact original epoch-two master
+hash `66eeec3a3166d0fe90ddd1dd0debeafedfb4d9f4e01388bf0bf6e67a058272b8`.
+Artifacts: `replay-e2-00005-inputs.json` and `replay-e2-00005-export/` under the
+pause-corpus root. The prepared F0 at hop indices 14 and 993 is respectively
+587.329529 and 659.255127 Hz, matching the intended notes rather than the
+187.5/93.75-Hz output estimates. The replay uses the worker's existing 10 steps.
+Next: run the exact acoustic/vocoder graphs with these inputs and verify waveform
+parity before interpreting the intermediate mel as native-worker-equivalent.
+
+## macOS authoring regression alongside training
 
 Rebuilt `seam_original_singer_song_journey_tests` and
 `seam_procedural_install_journey_tests` from source at `300ad02c`, including

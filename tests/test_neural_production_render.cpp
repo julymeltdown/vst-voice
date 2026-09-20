@@ -23,6 +23,7 @@
 #include "seam/core/sha256.hpp"
 #include "seam/neural_synthesis/bundle_metadata.hpp"
 #include "seam/neural_synthesis/model_bundle.hpp"
+#include "seam/neural_synthesis/diffsinger_inputs.hpp"
 #include "seam/phonemizer/language_resolver.hpp"
 #include "seam/rendering/project_renderer.hpp"
 
@@ -31,6 +32,8 @@
 #include <cstdlib>
 #include <iostream>
 #include <fstream>
+#include <iomanip>
+#include <sstream>
 #include <memory>
 #include <set>
 #include <string>
@@ -252,6 +255,43 @@ TEST_CASE("an admitted bundle renders non-silent audio through the production wo
     CHECK(restored.value().vocalTracks().front().neuralResource->resource==identity);
     std::cout << "candidate application export committed with master SHA256 "
               << exported.value().masterSha256 << "; singerQualified=false" << std::endl;
+  }
+  // Explicit test-harness replay inputs, not a production worker capture hook.
+  // Reconstruct from the same native snapshot/score conversion as the runner.
+  // A downstream replay must prove output parity before claiming worker tensors.
+  if (const auto* capture=std::getenv("SEAM_NEURAL_PRODUCTION_INPUTS_OUT")) {
+    const auto snapshot=seam::rendering::RenderSnapshotFactory{}.createNeural(project,*bundle,provenance,
+        phrase.track,phrase.region,8U,seam::rendering::RenderQuality::Final,48000U,"original"); CHECK(snapshot);
+    const auto& value=snapshot.value();
+    const auto& metadata=value.neuralExecution->metadata();
+    const auto& performance=*value.compiledPerformance;
+    const auto request=seam::neural_synthesis::prepareNeuralScoreRequest(1U,metadata.model,
+        metadata.vocabulary,performance,value.phonemes->tokens,value.pronunciationIdentity->sequenceHash,
+        performance.notes().front().startFrame,performance.notes().back().endFrame,options.silencePhone);
+    CHECK(request);
+    const auto inputs=seam::neural_synthesis::prepareDiffSingerAcousticInputs(
+        request.value(),metadata.model,metadata.vocabulary,10); CHECK(inputs);
+    std::ostringstream json;
+    json << std::setprecision(17)
+         << "{\"formatId\":\"com.project-seam.native-input-replay\",\"schemaVersion\":1,"
+         << "\"workerTensorCapture\":false,\"singerQualified\":false,\"releaseEligible\":false,"
+         << "\"manifestSha256\":\"" << manifestSha256 << "\",\"workerSha256\":\"" << helperHash.value()
+         << "\",\"inputRevision\":" << seam::neural_synthesis::kDiffSingerInputRevision
+         << ",\"steps\":" << inputs.value().steps
+         << ",\"outputSampleFrames\":" << inputs.value().outputSampleFrames
+         << ",\"paddedSampleFrames\":" << inputs.value().paddedSampleFrames;
+    if (projectInput) json << ",\"projectSha256\":\""
+        << requireEnvironment("SEAM_NEURAL_PRODUCTION_PROJECT_SHA256") << '"';
+    const auto append=[&](const char* name,const auto& values) {
+      json << ",\"" << name << "\":[";
+      for (std::size_t i=0;i<values.size();++i) { if (i) json << ','; json << values[i]; }
+      json << ']';
+    };
+    append("tokens",inputs.value().tokens); append("durations",inputs.value().durations);
+    append("f0",inputs.value().f0Hz); append("breathiness",inputs.value().breathiness);
+    json << '}';
+    CHECK(json.str().size()<=8U*1024U*1024U);
+    CHECK(seam::core::durableAtomicWriteTextNew(capture,json.str()));
   }
   // Ownership splits must preserve full model context, even at non-hop-aligned
   // boundaries. This uses the real ONNX worker, not the silent transport probe.

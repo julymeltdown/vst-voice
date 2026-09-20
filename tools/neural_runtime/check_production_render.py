@@ -20,7 +20,7 @@ import tempfile
 
 
 def run_render(binary, directory, manifest_sha256, maximum_bytes, *, project=None,
-               output=None, model_id="fixture", version="1", silence_phone="SP"):
+               output=None, model_id="fixture", version="1", silence_phone="SP", inputs_output=None):
     # Do not let a caller's stale probe variables silently skip rendering.
     environment = {k: v for k, v in os.environ.items()
                    if not k.startswith("SEAM_NEURAL_PRODUCTION_")}
@@ -30,6 +30,10 @@ def run_render(binary, directory, manifest_sha256, maximum_bytes, *, project=Non
                        SEAM_NEURAL_PRODUCTION_MODEL_ID=model_id,
                        SEAM_NEURAL_PRODUCTION_SILENCE_PHONE=silence_phone,
                        SEAM_NEURAL_PRODUCTION_MODEL_VERSION=version)
+    if inputs_output is not None:
+        if inputs_output.exists() or inputs_output.is_symlink() or not inputs_output.parent.is_dir():
+            raise ValueError("Input replay output must be new with an existing parent")
+        environment['SEAM_NEURAL_PRODUCTION_INPUTS_OUT'] = str(inputs_output)
     if project is not None:
         if project.stat().st_size > 4 * 1024 * 1024:
             raise ValueError("Project exceeds the native intake limit")
@@ -56,6 +60,7 @@ def main():
     parser.add_argument("--candidate-bundle", type=Path)
     parser.add_argument("--project", type=Path)
     parser.add_argument("--output", type=Path)
+    parser.add_argument("--inputs-output", type=Path, help="Test-only native prepared-input replay; not worker tensor capture")
     parser.add_argument("--silence-phone", default="SP", choices=("SP", "pau", "sil"),
                         help="Explicit trained silence symbol; never alias a sung phone")
     args = parser.parse_args()
@@ -78,7 +83,7 @@ def main():
             raise ValueError("Candidate resource identity does not match its manifest")
         run_render(binary, directory, digest, 256 * 1024 * 1024, project=project,
                    output=output, model_id=resource["id"], version=resource["version"],
-                   silence_phone=args.silence_phone)
+                   silence_phone=args.silence_phone, inputs_output=args.inputs_output)
         print("candidate execution/export verified; singer remains unqualified")
         return
     from check_paired_runtime import graphs
@@ -114,8 +119,23 @@ def main():
         manifest_sha256 = json.loads(prepared.stdout)["manifestSha256"]
 
         run_render(binary, directory, manifest_sha256, 1048576)
+        inputs_output = root / 'inputs.json'
         run_render(binary, directory, manifest_sha256, 1048576,
-                   project=project, output=root / "application-export")
+                   project=project, output=root / "application-export", inputs_output=inputs_output)
+        captured = json.loads(inputs_output.read_bytes())
+        assert captured['manifestSha256'] == manifest_sha256
+        assert captured['projectSha256'] == hashlib.sha256(project.read_bytes()).hexdigest()
+        assert captured['workerTensorCapture'] is False and captured['singerQualified'] is False
+        assert len(captured['tokens']) == len(captured['durations'])
+        assert sum(captured['durations']) == len(captured['f0'])
+        assert captured['paddedSampleFrames'] == len(captured['f0']) * 256
+        assert all(value > 0 for value in captured['f0']) and captured['steps'] == 10
+        try:
+            run_render(binary, directory, manifest_sha256, 1048576, inputs_output=inputs_output)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError('Existing replay output must be preserved')
         # Exercise the actual preparation alias through score conditioning, the
         # production worker and saved-project export, with default SP lookup.
         sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
