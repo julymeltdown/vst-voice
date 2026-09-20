@@ -188,6 +188,16 @@ length refusal. Full training-tool discovery ran 237 tests with one skip and no
 failures; source closure and phase11 source checks passed. Real native extraction
 was executed for both reports above, separately from mocked unit-test pitch calls.
 
+Further stage isolation on September 20: replacing only the pause-only acoustic
+graph with the existing combined-corpus epoch-9 export raises this application's
+within-50-cent count to **421/447 measurable voiced pairs**, with mean error
+**102.93 cents** and spectral distance **1.62676**. The source-driven vocoder control
+measures **474/504**, **40.75 cents**, and **0.92164**, but produces voiced rest
+noise without the application's score envelope. All strict comparisons still
+report `MISMATCH`. See [stage comparison](docs/implementation/SINGER_STAGE_COMPARISON_2026-09-20.md)
+for fixed inputs, graph/audio hashes, G5 diagnosis, test-set limitations and next
+steps. These results improve the engineering candidate; P0-08 remains open.
+
 ### SEAM-BETA-P0-01: No rights-cleared, usable Beta Voicebank
 
 **Evidence**

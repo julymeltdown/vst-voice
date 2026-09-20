@@ -506,6 +506,18 @@ The report contains the existing strict pitch verdict and multi-resolution spect
 distance. It does not grant singer qualification or release acceptance. Requires
 the existing NumPy/SciPy training environment. Existing reports are never overwritten.
 
+For a source-driven vocoder control, run `python -m
+tools.voice_model_training.reconstruct_source_vocoder --source SOURCE.wav
+--source-sha256 SHA256 --vocoder-export EXPORT_DIRECTORY --pitch-executable
+build/release/seam_voicebank_cli --output NEW_DIRECTORY` on one line. This uses
+an explicitly trusted local export, verifies its graph/profile binding, derives
+mel and native measured F0 from captured source audio, and runs the ONNX vocoder
+without an acoustic model. It retains source/reconstruction WAVs and a diagnostic
+receipt. Only declared final-hop padding is trimmed; invalid samples in that padding
+are still rejected. Inputs are bounded to 4096 hops at 48 kHz. NumPy, SciPy and
+ONNX Runtime are required. This control is separate from application output: it
+does not apply score dynamics or mute score rests, and is not release acceptance.
+
 Still required: source/permission admission, audio preparation, reviewed labels,
 remaining CLI subcommands, duplicate dossier, actual training and environment
 locking, checkpoint/export comparison, and held-out singing qualification. No
