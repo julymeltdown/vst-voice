@@ -6,6 +6,31 @@ it does not establish singer qualification or Beta GO.
 
 ## Recovery evidence
 
+### Completed continuation and candidate export
+
+Run r5 exited successfully after all 2,804 epoch-two updates, with
+`epochComplete: true` and `coverageVerified: true`. The complete checkpoint is
+`vocoder-512-segments-r5/epoch-000002`; its receipt SHA-256 is
+`401c082eba6f0a381f48d038eeb56499f0a31b8646b74bd2e4ac9f3f69ae4e5a`.
+Independent hashes of `models.pt` and `training.pt` match the receipt. The trainer
+retired partial checkpoint binaries after publishing the verified successor;
+the external epoch-one checkpoint remains unchanged.
+
+Export `vocoder-export-r5e2` passed ONNX parity and diagnostic pitch-conditioning
+checks. Graph SHA-256:
+`ae9bbee22289bed92ffd8cb9e80cc5fc873c1423e7fb472d69c2b919ab4e74eb`.
+The new candidate keeps acoustic epoch 13 fixed. Its manifest SHA-256 is
+`b572deddb3d585562cd37787b3bba0aeb371253279cc74a4ca442d94c378fb49`.
+
+Candidate and regression outputs are under
+`/Users/lhs/seam-corpus-pauses-2026-09-19-r1/`:
+`bundle-combined-e13-v512-e2` and `campaign-e13-v512-e2-r1`.
+The fixed five-song campaign was launched with the candidate-bound vocoder
+training audit enabled. Results are pending at this entry; successful training
+and export do not establish musical quality or singer qualification.
+
+### Historical restart evidence
+
 - The previous execution handle `56187` no longer exists, and process inspection
   found no running vocoder trainer before starting this continuation.
 - `vocoder-512-segments-r3/epoch-000001/checkpoint.json` matches the recorded
