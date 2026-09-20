@@ -69,6 +69,24 @@ class CampaignComparisonTests(unittest.TestCase):
         self.assertFalse(result["combinedModelHoldoutVerified"])
         self.assertFalse(result["releaseEligible"])
 
+    def test_worker_digest_states_are_explicit(self):
+        before, after = campaign(), campaign()
+        before["inferenceWorkerSha256"] = "0" * 64
+        after["inferenceWorkerSha256"] = "0" * 64
+        report = compare(before, after)
+        self.assertEqual(report["inferenceWorkerComparison"], "IDENTICAL")
+        self.assertEqual(report["inferenceWorkerSha256"],
+                         dict(baseline="0" * 64, candidate="0" * 64))
+        after["inferenceWorkerSha256"] = "1" * 64
+        with self.assertRaisesRegex(ValueError, "worker"):
+            compare(before, after)
+        del after["inferenceWorkerSha256"]
+        report = compare(before, after)
+        self.assertEqual(report["inferenceWorkerComparison"], "UNKNOWN")
+        del before["inferenceWorkerSha256"]
+        report = compare(before, after)
+        self.assertEqual(report["inferenceWorkerComparison"], "UNKNOWN")
+
 
 class CampaignCaptureTests(unittest.TestCase):
     def setUp(self):
@@ -137,6 +155,21 @@ class CampaignCaptureTests(unittest.TestCase):
         self.selection["items"] = []
         with self.assertRaises(ValueError):
             self.load()
+
+    def test_malformed_worker_digest_refused(self):
+        result, _ = self.load()
+        self.assertIsNone(result["inferenceWorkerSha256"])
+        self.report["inferenceWorkerSha256"] = "not-a-digest"
+        payload = json.dumps(self.report).encode()
+        (self.root / "campaign.json").write_bytes(payload)
+        with self.assertRaisesRegex(ValueError, "worker digest"):
+            load_campaign(self.root / "campaign.json", digest(payload), self.binary)
+        self.report["inferenceWorkerSha256"] = "9" * 64
+        payload = json.dumps(self.report).encode()
+        (self.root / "campaign.json").write_bytes(payload)
+        with patch("tools.voice_model_training.compare_campaigns.measure", return_value=self.measured):
+            result = load_campaign(self.root / "campaign.json", digest(payload), self.binary)
+        self.assertEqual(result["inferenceWorkerSha256"], "9" * 64)
 
     def test_failed_execution_retained_without_measurement(self):
         self.item.update(execution="FAILED", error="failed render", errorType="RuntimeError")

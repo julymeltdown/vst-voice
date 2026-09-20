@@ -28,6 +28,9 @@ def load_campaign(path, digest, executable):
             or type(report.get("schemaVersion")) is not int or report["schemaVersion"] != 1
             or report.get("singerQualified") is not False or report.get("releaseEligible") is not False):
         raise ValueError("Expected an unqualified validation campaign")
+    worker = report.get("inferenceWorkerSha256")
+    if worker is not None and not _digest(worker):
+        raise ValueError("Recorded inference worker digest is malformed")
     selection = load_config(path.parent / "selection.json", report["selectionReceiptSha256"])
     items = report.get("items")
     if (not isinstance(items, list) or not 1 <= len(items) <= 16
@@ -91,7 +94,7 @@ def load_campaign(path, digest, executable):
     if _capture(executable, 128 * 1024 * 1024)[1] != executable_hash:
         raise ValueError("Extractor changed during remeasurement")
     return dict(campaignSha256=digest, selection=selection, rows=rows,
-                inferenceWorkerSha256=report.get("inferenceWorkerSha256"))
+                inferenceWorkerSha256=worker)
 
 
 def summarize(rows):
@@ -137,10 +140,18 @@ def compare(baseline, candidate):
     status = ("INCOMPLETE" if not all(row["comparable"] for row in rows)
               else "HAS_REGRESSIONS" if any(row["regressions"] for row in rows)
               else "NO_REGRESSIONS_ON_REPORTED_METRICS")
+    if baseline_worker is None or candidate_worker is None:
+        worker_status = "UNKNOWN"
+    elif baseline_worker == candidate_worker:
+        worker_status = "IDENTICAL"
+    else:
+        worker_status = "DIFFERENT"
     return dict(formatId="com.project-seam.paired-campaign-diagnostic", schemaVersion=1,
         baselineCampaignSha256=baseline["campaignSha256"], candidateCampaignSha256=candidate["campaignSha256"],
         rows=rows, status=status, baselineSummary=summarize(baseline["rows"]),
         candidateSummary=summarize(candidate["rows"]),
+        inferenceWorkerSha256=dict(baseline=baseline_worker, candidate=candidate_worker),
+        inferenceWorkerComparison=worker_status,
         baselineVocoderTrainingAudit=baseline["selection"].get("vocoderTrainingAudit"),
         candidateVocoderTrainingAudit=candidate["selection"].get("vocoderTrainingAudit"),
         combinedModelHoldoutVerified=False, singerQualified=False, releaseEligible=False,

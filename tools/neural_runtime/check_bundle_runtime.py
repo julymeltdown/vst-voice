@@ -144,21 +144,24 @@ def main():
         permuted_prepared = subprocess.run(
             [cli, "prepare-neural-bundle", str(permuted_root), "fixture", "1", "1048576"],
             capture_output=True, text=True, timeout=20)
-        if permuted_prepared.returncode == 0:
-            permuted_digest = json.loads(permuted_prepared.stdout)["manifestSha256"]
-            try:
-                inspect_bundle((permuted_root / "manifest.json").read_bytes(),
-                               {name: (permuted_root / name).read_bytes()
-                                for name in ("acoustic", "vocoder", "vocabulary", "configuration")},
-                               permuted_digest)
-            except ValueError:
-                pass
-            else:
-                raise AssertionError("Offline inspection accepted a permuted input order")
-            permuted_result = subprocess.run(
-                [runtime, "--paired-bundle", str(permuted_root), "fixture", "1", permuted_digest],
-                capture_output=True, text=True, timeout=20)
-            assert permuted_result.returncode != 0, permuted_result.stdout
+        # Preparation is metadata-level and must succeed; the rejections under
+        # test are the order checks in offline and native inspection, not any
+        # incidental preparation failure.
+        assert permuted_prepared.returncode == 0, permuted_prepared.stderr
+        permuted_digest = json.loads(permuted_prepared.stdout)["manifestSha256"]
+        try:
+            inspect_bundle((permuted_root / "manifest.json").read_bytes(),
+                           {name: (permuted_root / name).read_bytes()
+                            for name in ("acoustic", "vocoder", "vocabulary", "configuration")},
+                           permuted_digest)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("Offline inspection accepted a permuted input order")
+        permuted_result = subprocess.run(
+            [runtime, "--paired-bundle", str(permuted_root), "fixture", "1", permuted_digest],
+            capture_output=True, text=True, timeout=20)
+        assert permuted_result.returncode != 0, permuted_result.stdout
     print("CLI-prepared bundle passed native child reload and inference; changed bytes rejected. No learned singing claim.")
 
 

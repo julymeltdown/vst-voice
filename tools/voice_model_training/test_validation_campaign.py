@@ -107,6 +107,39 @@ class ValidationCampaignTests(unittest.TestCase):
         self.assertEqual(mismatch['selectionReceiptSha256'], digest(
             (self.root / 'mismatch-output' / 'selection.json').read_bytes()))
 
+    def test_worker_change_mid_campaign_and_missing_digest_fail_the_item(self):
+        bundle = self.root / 'bundle'
+        bundle.mkdir()
+        (bundle / 'manifest.json').write_text('{}')
+        (bundle / 'resource.json').write_text(json.dumps(dict(
+            formatId='com.project-seam.neural-resource', schemaVersion=1,
+            contentHash=digest(b'{}'), id='test', version='1')))
+        binary = self.root / 'binary'
+        binary.write_bytes(b'binary')
+        captured = self.prepare()[1]
+        second = (dict(captured[0][0], sourceId='two'), b'source', b'project')
+        comparison = dict(referenceSha256=digest(b'source'), pitch=dict(comparison=dict(status='MISMATCH')))
+        with patch('tools.voice_model_training.validation_campaign.prepare_selection',
+                   return_value=({}, captured + [second])), patch(
+                   'tools.voice_model_training.validation_campaign.run_render',
+                   side_effect=['a' * 64, 'b' * 64]), patch(
+                   'tools.voice_model_training.validation_campaign.measure', return_value=comparison):
+            report = run_campaign(self.selection, self.sha, self.corpus, bundle, binary, binary,
+                                  self.root / 'worker-output')
+        self.assertFalse(report['executionPassed'])
+        self.assertEqual(report['items'][0]['execution'], 'PASSED')
+        self.assertIn('worker', report['items'][1]['error'].lower())
+        self.assertEqual(report['inferenceWorkerSha256'], 'a' * 64)
+        with patch('tools.voice_model_training.validation_campaign.prepare_selection',
+                   return_value=({}, captured)), patch(
+                   'tools.voice_model_training.validation_campaign.run_render',
+                   return_value='not-a-digest'), patch(
+                   'tools.voice_model_training.validation_campaign.measure', return_value=comparison):
+            report = run_campaign(self.selection, self.sha, self.corpus, bundle, binary, binary,
+                                  self.root / 'digest-output')
+        self.assertFalse(report['executionPassed'])
+        self.assertIn('worker digest', report['items'][0]['error'].lower())
+
     def test_existing_output_preserved(self):
         with self.assertRaisesRegex(ValueError, 'Output must be new'):
             run_campaign(self.selection, self.sha, self.corpus, self.root, self.project,
