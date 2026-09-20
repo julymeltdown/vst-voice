@@ -1,5 +1,34 @@
 # Integrated Singer Execution
 
+## Bounded optimizer probe: periodicity term is a real gradient signal
+
+Added `run_periodicity_probe` / `periodicity_optimizer_probe`, which load a
+verified checkpoint into memory only, then run the same phrase, seed, steps and
+learning rate twice with and without the auxiliary term. Real run on development
+song 00005, five alternating GAN updates per arm, learning rate 2e-4, seed 933:
+
+| Arm | Unvoiced windows | Mean lag-256 correlation | Candidate peak |
+| --- | ---: | ---: | ---: |
+| control (no term) | 8 | 0.00423 | 0.01651 |
+| periodicity term | 8 | 0.00291 | 0.01649 |
+
+Only eight unvoiced windows fall in this one short phrase, so the difference is
+small and is **not** evidence of a quality improvement. Both arms stayed finite
+and within range, which is the useful result here: the auxiliary gradient does
+not destabilize the optimizer, and the term is reachable by real updates rather
+than only by mocks. The multi-thousand-update experiment remains the meaningful
+test.
+
+Three defects were found and fixed while building this probe, each of which would
+otherwise have produced a misleading report: a `[0, :n]` slice that retained the
+channel axis and tripped the equal-length check, a hard failure on non-finite
+output that hid optimizer divergence behind an exception, and no handling of a
+length disagreement. Divergence, over-range peak and length mismatch are now
+reported fields instead of silent passes or crashes. Evidence:
+`periodicity-optimizer-probe-r1.json`.
+
+No promoted model, no training admission and no singer qualification resulted.
+
 ## Export change verified not to alter model bytes
 
 Re-exported the retained epoch-two checkpoint through the modified exporter to
