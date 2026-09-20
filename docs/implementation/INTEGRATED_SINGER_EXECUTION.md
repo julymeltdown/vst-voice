@@ -1,5 +1,42 @@
 # Integrated Singer Execution
 
+## The acoustic model cannot reproduce fricatives even on its training data
+
+This is the decisive control. The previous checks held out songs; if the defect
+were generalization, training-partition songs should reproduce correctly. They do
+not.
+
+Selected the three training-partition songs with the most unvoiced content and
+ran the retained epoch-21 acoustic export on their own transcriptions:
+
+| Training song | Unvoiced windows | Reference flatness | Predicted flatness | Mean delta |
+| --- | ---: | ---: | ---: | ---: |
+| procedural-song-00312 | 13 | 0.6615 | 0.0311 | -0.6304 |
+| procedural-song-00161 | 12 | 0.6540 | 0.0231 | -0.6309 |
+| procedural-song-00233 | 12 | 0.6899 | 0.0249 | -0.6650 |
+
+Predicted fricative flatness is essentially the same on seen songs (0.023-0.031)
+as on the held-out development songs (0.030), while the reference is 0.65-0.69.
+An under-fit model reproducing training data poorly is an optimization, capacity
+or objective defect, not a generalization gap.
+
+This resolves the causal chain built over the last several steps and rules out
+three candidates by direct evidence rather than argument:
+
+1. Not coverage: unvoiced frames are 7.4% of training, balanced across partitions.
+2. Not sampling: flatness is flat (~0.02) from 1 to 32 diffusion steps.
+3. Not generalization: training songs fail the same way held-out songs do.
+
+What remains is the acoustic training objective or its supervision. The concrete
+next hypothesis is that a plain per-frame regression (L1/L2) objectives for
+fricatives is being minimized by predicting the conditional mean, which is smooth
+by construction and cannot express a noise-like spectrum. That is a testable
+statement about the loss and can be checked by measuring per-target residual
+variance against achievable variance on unvoiced frames, rather than assuming it.
+
+No weights, dataset, objective or deployed artifact were changed. Evidence:
+`acoustic-trainfit-probe-r1.json`.
+
 ## Over-smoothing is a training/objective problem, not sampling or coverage
 
 Two alternative explanations for the fricative collapse were tested directly and
