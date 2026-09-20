@@ -198,6 +198,15 @@ report `MISMATCH`. See [stage comparison](docs/implementation/SINGER_STAGE_COMPA
 for fixed inputs, graph/audio hashes, G5 diagnosis, test-set limitations and next
 steps. These results improve the engineering candidate; P0-08 remains open.
 
+The subsequent fixed five-song validation campaign measures **3090/3649 (84.68%)**
+within 50 cents on measurable voiced pairs, with every strict comparison still
+`MISMATCH`. It also exposed and repaired a separate application blocker: standalone
+Japanese `ん` notes lacked resolved start timing. The compiler now supports a sole
+untimed voiced moraic `N` without inventing a vowel, and the previously rejected
+song exports and reopens. See the [validation campaign](docs/implementation/SINGER_VALIDATION_CAMPAIGN_2026-09-20.md)
+for all results, the timing-policy revision and evidence boundaries. The earlier
+94.18% on one test song must not be generalized to the validation set.
+
 ### SEAM-BETA-P0-01: No rights-cleared, usable Beta Voicebank
 
 **Evidence**

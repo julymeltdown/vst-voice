@@ -2815,6 +2815,12 @@ if(SEAM_ONNXRUNTIME_ROOT)
           COMMAND "${SEAM_NATIVE_ONNX_PYTHON}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/neural_runtime/check_production_render.py"
             $<TARGET_FILE:seam_neural_production_render> $<TARGET_FILE:seam_voicebank_cli>)
         set_tests_properties(seam_neural_production_render PROPERTIES TIMEOUT 300 LABELS "neural-native-experiment")
+        add_test(NAME seam_neural_production_render_moraic_nasal
+          COMMAND ${CMAKE_COMMAND} -E env "SEAM_TEST_MORAIC_NASAL=1"
+            "${SEAM_NATIVE_ONNX_PYTHON}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/neural_runtime/check_production_render.py"
+            $<TARGET_FILE:seam_neural_production_render> $<TARGET_FILE:seam_voicebank_cli>)
+        set_tests_properties(seam_neural_production_render_moraic_nasal PROPERTIES
+          TIMEOUT 300 LABELS "neural-native-experiment")
         # Packaging truth check against the real worker: whichever the load-command
         # analysis reports, staging must agree with it, so the packaged payload can
         # never claim a helper whose runtime it cannot load.

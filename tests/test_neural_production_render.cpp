@@ -57,6 +57,7 @@ struct Phrase final {
 // One deterministic project in both phases: the vocabulary the worker loads has to
 // cover exactly the phones this phrase asks for.
 Phrase buildPhrase(seam::application::ProjectFactory& factory, seam::domain::Project& project) {
+  const bool nasalFixture = std::getenv("SEAM_TEST_MORAIC_NASAL") != nullptr;
   Phrase result{};
   result.track = factory.addVocalTrack(project, "Neural fixture");
   result.region = factory.addRegion(project, result.track, "Phrase", seam::time::Tick{0},
@@ -66,11 +67,14 @@ Phrase buildPhrase(seam::application::ProjectFactory& factory, seam::domain::Pro
   for (std::size_t index = 0U; index < 2U; ++index) {
     auto note = factory.makeNote(
         seam::time::Tick{960 * static_cast<std::int64_t>(index)}, seam::time::Tick{960},
-        69U, U"a", seam::domain::Language::English);
+        69U, nasalFixture ? (index == 0U ? U"あ" : U"ん") : U"a",
+        nasalFixture ? seam::domain::Language::Japanese : seam::domain::Language::English);
     region->lyrics.push_back(std::move(note.first));
     region->notes.push_back(std::move(note.second));
   }
   region->sortNotes();
+  // The companion nasal fixture keeps the original English coverage and adds a
+  // whole-note N through the real worker without a vowel or authored override.
   const auto pronunciation = seam::phonemizer::resolvePronunciation(*region);
   if (!pronunciation) throw seam::test::Failure{"phonemizer fixture failed: " + pronunciation.error().message};
   for (const auto& token : pronunciation.value().pronunciation.tokens) {

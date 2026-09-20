@@ -188,6 +188,40 @@ TEST_CASE("a standalone pause has score timing without inventing a vowel nucleus
   CHECK(unresolved); CHECK(!unresolved.value()[0].inferredStartFrame);
 }
 
+TEST_CASE("a standalone Japanese moraic nasal owns its note without becoming a vowel") {
+  using namespace seam;
+  TimingFixture fixture; fixture.region().lyrics.front().surface = U"ん";
+  auto phones = fixture.tokens();
+  CHECK(phones.size() == 1U); CHECK(phones[0].symbol == "N");
+  CHECK(phones[0].role == domain::PhonemeRole::Coda); CHECK(phones[0].voiced);
+  for (auto rate : {44100U, 48000U, 96000U}) {
+    const auto source = synthesis::compilePhonemeTimingPlan(fixture.project, fixture.region(), phones, rate);
+    const auto resolved = synthesis::compilePhonemeTimingPlan(fixture.project, fixture.region(), phones, rate,
+        synthesis::PhonemeTimingPolicy::ProceduralInNote);
+    CHECK(source); CHECK(resolved); CHECK(!source.value()[0].inferredStartFrame);
+    CHECK(resolved.value()[0].inferredStartFrame == std::optional{source.value()[0].nucleusFrame});
+    CHECK(resolved.value()[0].endFrame == source.value()[0].endFrame);
+    CHECK(!resolved.value()[0].nucleusKey); CHECK(!resolved.value()[0].explicitStartFrame);
+    CHECK(resolved.value()[0].voiced == std::optional{true});
+  }
+  phones[0].timing.startOffset = 10000; phones[0].timing.endOffset = 300000;
+  const auto edited = synthesis::compilePhonemeTimingPlan(fixture.project, fixture.region(), phones, 48000U,
+      synthesis::PhonemeTimingPolicy::ProceduralInNote);
+  const auto sourceEdited = synthesis::compilePhonemeTimingPlan(fixture.project, fixture.region(), phones, 48000U);
+  CHECK(edited); CHECK(sourceEdited); CHECK(!edited.value()[0].inferredStartFrame);
+  CHECK(edited.value()[0].explicitStartFrame == sourceEdited.value()[0].explicitStartFrame);
+  CHECK(edited.value()[0].endFrame == sourceEdited.value()[0].endFrame);
+  phones[0].timing.startOffset.reset(); phones[0].timing.endOffset.reset();
+  phones[0].symbol = "n"; phones[0].role = domain::PhonemeRole::Onset;
+  const auto onset = synthesis::compilePhonemeTimingPlan(fixture.project, fixture.region(), phones, 48000U,
+      synthesis::PhonemeTimingPolicy::ProceduralInNote);
+  CHECK(onset); CHECK(!onset.value()[0].inferredStartFrame);
+  fixture.region().lyrics.front().surface = U"んん"; phones = fixture.tokens(); CHECK(phones.size() == 2U);
+  const auto cluster = synthesis::compilePhonemeTimingPlan(fixture.project, fixture.region(), phones, 48000U,
+      synthesis::PhonemeTimingPolicy::ProceduralInNote);
+  CHECK(cluster); CHECK(!cluster.value()[0].inferredStartFrame); CHECK(!cluster.value()[1].inferredStartFrame);
+}
+
 TEST_CASE("procedural voiced onsets receive distinct timing without changing voicing or manual ownership") {
   using namespace seam;
   TimingFixture fixture; fixture.region().lyrics.front().surface=U"まな";

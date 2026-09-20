@@ -7,7 +7,7 @@
 
 namespace seam::synthesis {
 enum class PhonemeTimingPolicy { SourceDependent, ProceduralInNote };
-inline constexpr std::uint32_t kProceduralTimingPolicyRevision = 4U;
+inline constexpr std::uint32_t kProceduralTimingPolicyRevision = 5U;
 struct PhonemeTimingAnchor final {
   domain::PhonemeKey key;
   time::SampleFrame nucleusFrame{0};
@@ -37,6 +37,7 @@ struct PhonemeTimingAnchor final {
 // Generated starts remain separate from explicit edits. Edited/unsupported
 // groups retain source-dependent timing; the backend must validate them.
 // A sole untimed unvoiced Silence token owns its score note span without a nucleus.
+// So does a sole untimed voiced Japanese moraic nasal N, retaining its Coda role.
 [[nodiscard]] core::Result<std::vector<PhonemeTimingAnchor>> compilePhonemeTimingPlan(
     const domain::Project& project, const domain::VocalRegion& region,
     std::span<const domain::PhonemeToken> tokens, std::uint32_t sampleRate,

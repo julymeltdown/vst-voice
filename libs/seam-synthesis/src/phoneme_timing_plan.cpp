@@ -162,11 +162,15 @@ core::Result<std::vector<PhonemeTimingAnchor>> compilePhonemeTimingPlan(
     std::vector<std::optional<time::SampleFrame>> generatedStarts(nuclei.size());
     std::vector<std::optional<std::size_t>> generatedCodas(nuclei.size());
     if (policy == PhonemeTimingPolicy::ProceduralInNote) {
-      // A whole-note pause has no vowel nucleus or source-dependent consonant
-      // duration. Its score-owned start is resolved, not an inferred vowel.
+      // A whole-note pause or Japanese moraic nasal has no vowel nucleus.
+      // Its score-owned start is resolved without changing the phone's role.
       // Keep edited spans and mixed/nucleus-free clusters on the existing path.
-      if (end == begin + 1U && tokens[begin].role == domain::PhonemeRole::Silence &&
-          !tokens[begin].voiced && !tokens[begin].timing.startOffset && !tokens[begin].timing.endOffset)
+      const auto& wholeNotePhone = tokens[begin];
+      const bool wholeNotePause = wholeNotePhone.role == domain::PhonemeRole::Silence && !wholeNotePhone.voiced;
+      const bool wholeNoteNasal = wholeNotePhone.role == domain::PhonemeRole::Coda &&
+          wholeNotePhone.symbol == "N" && wholeNotePhone.voiced;
+      if (end == begin + 1U && (wholeNotePause || wholeNoteNasal) &&
+          !wholeNotePhone.timing.startOffset && !wholeNotePhone.timing.endOffset)
         result[begin].inferredStartFrame = result[begin].nucleusFrame;
       std::vector<std::optional<std::size_t>> onsets(nuclei.size());
       std::vector<std::optional<std::size_t>> codas(nuclei.size());
