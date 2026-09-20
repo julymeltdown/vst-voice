@@ -1,9 +1,21 @@
 import unittest
 import torch
-from tools.voice_model_training.unvoiced_periodicity import periodicity_loss
+from tools.voice_model_training.unvoiced_periodicity import periodicity_loss, phone_mask
 
 
 class PeriodicityTests(unittest.TestCase):
+    def test_phone_mask_clips_segments_and_excludes_padding_silence(self):
+        entry=dict(score=dict(language='ja'),label=dict(frameCount=3000,phonemes=[
+            dict(startFrame=0,endFrame=1000,symbol='s'),
+            dict(startFrame=1000,endFrame=2000,symbol='a'),
+            dict(startFrame=2000,endFrame=3000,symbol='pau')]))
+        mask=phone_mask(entry,sample_offset=500,sample_count=3000,valid_samples=2500)
+        self.assertEqual(int(mask.sum()),500)
+        self.assertTrue(mask[:,:,:500].all())
+        self.assertFalse(mask[:,:,500:].any())
+        entry['score']['language']='en'
+        with self.assertRaises(ValueError):phone_mask(entry,sample_offset=0,sample_count=3000,valid_samples=3000)
+
     def fixture(self):
         generator = torch.Generator().manual_seed(71)
         target = torch.randn(1,1,4096,generator=generator)*.02

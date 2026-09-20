@@ -1,4 +1,33 @@
-"""Experimental target-aware waveform loss; not yet an admitted GAN objective."""
+"""Experimental opt-in epoch objective; not yet enabled by the training CLI."""
+
+OBJECTIVE_ID = 'nsf-lsgan-logmel-uvperiodic-48k80-v1'
+
+
+def phone_mask(entry, *, sample_offset, sample_count, valid_samples):
+    """Build a bounded Japanese pilot mask from already admitted exact intervals."""
+    import torch
+    if (entry['score']['language'] != 'ja'
+            or any(type(v) is not int for v in (sample_offset, sample_count, valid_samples))
+            or sample_offset < 0 or not 1 <= valid_samples <= sample_count <= 1048576
+            or sample_offset + valid_samples > entry['label']['frameCount']):
+        raise ValueError('Periodicity objective requires bounded Japanese phone ownership')
+    mask = torch.zeros(1, 1, sample_count, dtype=torch.bool)
+    end = 0
+    for phone in entry['label']['phonemes']:
+        start, stop = phone['startFrame'], phone['endFrame']
+        if type(start) is not int or type(stop) is not int or start != end or not start < stop <= entry['label']['frameCount']:
+            raise ValueError('Phone intervals must cover the source contiguously')
+        end = stop
+        # Explicit renderer inventory; pau and voiced phones are never inferred
+        # to be unvoiced from pitch-extractor uncertainty or a zero F0 value.
+        if phone['symbol'] in ('h', 'f', 'k', 's', 'sh', 't', 'ch', 'ts'):
+            left = max(start, sample_offset) - sample_offset
+            right = min(stop, sample_offset + valid_samples) - sample_offset
+            if left < right:
+                mask[:, :, left:right] = True
+    if end != entry['label']['frameCount']:
+        raise ValueError('Incomplete phone ownership')
+    return mask
 
 
 def periodicity_loss(predicted, target, unvoiced_mask):

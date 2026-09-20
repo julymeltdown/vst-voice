@@ -9,7 +9,8 @@ import math
 
 def vocoder_gan_step(generator, discriminators, generator_optimizer, discriminator_optimizer,
                      *, mel, f0, pcm, hop_size, partition, reconstruction_loss,
-                     reconstruction_weight=45.0, feature_weight=2.0):
+                     reconstruction_weight=45.0, feature_weight=2.0,
+                     periodicity_mask=None):
     import torch
     if partition != "train":
         raise ValueError("Vocoder updates require the training partition")
@@ -20,6 +21,10 @@ def vocoder_gan_step(generator, discriminators, generator_optimizer, discriminat
         raise ValueError("Invalid reconstruction objective or weights")
     if not discriminators:
         raise ValueError("Discriminators are required")
+    if periodicity_mask is not None:
+        from .unvoiced_periodicity import periodicity_loss
+        # Validate the complete opt-in mask and PCM before either optimizer moves.
+        periodicity_loss(pcm, pcm, periodicity_mask)
     if (mel.ndim != 3 or mel.shape[0] != 1 or not 1 <= mel.shape[1] <= 512 or
             not 1 <= mel.shape[2] <= 4096 or tuple(f0.shape) != (1, mel.shape[2]) or
             tuple(pcm.shape) != (1, 1, mel.shape[2] * hop_size) or pcm.numel() > 1048576):
@@ -109,6 +114,12 @@ def vocoder_gan_step(generator, discriminators, generator_optimizer, discriminat
         if reconstruction.ndim != 0 or not torch.isfinite(reconstruction):
             raise ValueError("Invalid reconstruction loss")
         gloss = adversarial + feature_weight * feature + reconstruction_weight * reconstruction
+        periodicity_report = {}
+        if periodicity_mask is not None:
+            periodic, coverage = periodicity_loss(predicted, pcm, periodicity_mask)
+            gloss = gloss + periodic
+            periodicity_report = dict(periodicityLoss=float(periodic.detach()),
+                                     periodicityCoverage=coverage)
         gnorm = checked_step(gloss, gp, generator_optimizer)
         if any(p.grad is not None for p in dp):
             raise AssertionError("Generator update leaked discriminator gradients")
@@ -116,7 +127,7 @@ def vocoder_gan_step(generator, discriminators, generator_optimizer, discriminat
                     adversarialLoss=adversarial.item(), featureLoss=feature.item(),
                     reconstructionLoss=reconstruction.item(), generatorGradientNorm=gnorm,
                     discriminatorGradientNorm=dnorm, gradientOwnershipVerified=True,
-                    trainingAdmitted=False, releaseEligible=False)
+                    trainingAdmitted=False, releaseEligible=False, **periodicity_report)
     finally:
         for parameter in dp:
             parameter.requires_grad_(True)

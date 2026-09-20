@@ -1,5 +1,36 @@
 # Integrated Singer Execution
 
+## Periodicity term integrated into optimizer and epoch service, opt-in only
+
+Added objective identity `nsf-lsgan-logmel-uvperiodic-48k80-v1` at the epoch-service
+API. That identity selects the fixed lag-256/window-1024/stride-256 auxiliary
+loss with coefficient 1, in addition to the unchanged adversarial, feature and
+log-mel terms. The default objective and optimizer output remain unchanged when
+the mask is absent. This version is restricted to the declared Japanese pilot
+phone policy: h/f/k/s/sh/t/ch/ts; silence and other phones are excluded.
+
+`phone_mask` derives sample ownership from freshly admitted snapshot labels,
+checks full contiguous phone coverage, clips each training segment by its actual
+source offset and valid sample count, and excludes padded samples. It does not
+classify consonants from measured F0. `vocoder_gan_step` validates mask/PCM before
+either optimizer updates and reports auxiliary loss/window coverage. Existing
+gradient-ownership and failed-attempt discard semantics remain intact.
+
+Tests execute an actual alternating optimizer update with the auxiliary term,
+check invalid masks before discriminator mutation, and verify epoch orchestration
+passes the expected sample mask and records the new objective in both checkpoint
+metadata and epoch result. The orchestration fixture is mocked and is not evidence
+of admitted real-data training. Existing partition and complete-coverage checks
+still apply.
+
+Remaining before a real experiment: CLI configuration version, explicit
+objective-changing warm start with reset optimizer state and recorded ancestry,
+export acceptance for the unchanged architecture/new objective, plus bounded
+paired-run configuration. The current CLI still selects the original objective,
+and export still rejects the new objective. Do not bypass those guards or claim
+the new objective has trained an improved singer. No checkpoint was created or
+modified in this step.
+
 ## Reference-aware periodicity loss implemented and probed on captured PCM
 
 Added `unvoiced_periodicity.periodicity_loss`, an experimental differentiable

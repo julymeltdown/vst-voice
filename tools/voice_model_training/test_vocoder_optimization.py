@@ -38,6 +38,7 @@ class VocoderOptimizationTests(unittest.TestCase):
         before_g = g.gain.detach().clone()
         before_d = d.conv.weight.detach().clone()
         report = vocoder_gan_step(g, [d], go, do, **inputs)
+        self.assertNotIn('periodicityLoss', report)
         self.assertTrue(report["gradientOwnershipVerified"])
         self.assertFalse(report["trainingAdmitted"])
         self.assertFalse(torch.equal(before_g, g.gain))
@@ -56,6 +57,21 @@ class VocoderOptimizationTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 vocoder_gan_step(g, [d], go, do, **dict(inputs, **patch))
             self.assertTrue(torch.equal(before, g.gain))
+
+    def test_periodicity_opt_in_and_invalid_mask_before_updates(self):
+        import torch
+        g,d,go,do,inputs=self.fixture()
+        before=d.conv.weight.detach().clone()
+        with self.assertRaises(ValueError):
+            vocoder_gan_step(g,[d],go,do,**inputs,periodicity_mask=torch.zeros(1,1,8,dtype=torch.bool))
+        self.assertTrue(torch.equal(before,d.conv.weight))
+        generator=torch.Generator().manual_seed(4)
+        inputs.update(mel=torch.sin(torch.arange(2048)*2*torch.pi/128).reshape(1,1,-1).repeat(1,2,1),
+                      f0=torch.zeros(1,2048),pcm=torch.randn(1,1,4096,generator=generator)*.02)
+        result=vocoder_gan_step(g,[d],go,do,**inputs,periodicity_mask=torch.ones(1,1,4096,dtype=torch.bool))
+        self.assertGreater(result['periodicityLoss'],0)
+        self.assertEqual(result['periodicityCoverage']['selectedWindows'],13)
+        self.assertTrue(result['gradientOwnershipVerified'])
 
     def test_failed_generator_phase_restores_flags_but_requires_discard(self):
         import torch

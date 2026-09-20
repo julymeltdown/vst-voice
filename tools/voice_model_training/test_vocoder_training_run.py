@@ -153,6 +153,19 @@ class VocoderEpochTests(unittest.TestCase):
             publish.assert_not_called()
             train_reviewed_vocoder_epoch(None, [], None, None, **options, maximum_checkpoint_total_bytes=12345)
             self.assertEqual(publish.call_args.kwargs["maximum_total_bytes"], 12345)
+            from tools.voice_model_training.unvoiced_periodicity import OBJECTIVE_ID
+            import torch
+            snapshot['labels'] = [dict(score=dict(language='ja'), label=dict(sourceId='s',
+                frameCount=2000, phonemes=[dict(startFrame=0,endFrame=1000,symbol='s'),
+                                         dict(startFrame=1000,endFrame=2000,symbol='a')]))]
+            batch['pcm'] = torch.zeros(1,1,2048)
+            periodic = train_reviewed_vocoder_epoch(None, [], None, None,
+                **(options | dict(objective_id=OBJECTIVE_ID)))
+            self.assertEqual(periodic['objectiveId'], OBJECTIVE_ID)
+            self.assertEqual(publish.call_args.kwargs['metadata']['objectiveId'], OBJECTIVE_ID)
+            mask = step.call_args.kwargs['periodicity_mask']
+            self.assertEqual(int(mask.sum()),1000)
+            self.assertFalse(mask[:,:,2000:].any())
             step.reset_mock()
             publish.reset_mock()
             self.storage.side_effect = OSError(28, "no checkpoint headroom")

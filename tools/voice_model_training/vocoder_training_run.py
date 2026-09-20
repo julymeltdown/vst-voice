@@ -139,6 +139,13 @@ only once at complete-epoch coverage. Saved snapshots are not admission authorit
     partitions = {source: group["partition"] for group in snapshot["bindings"]["split"]["groups"]
                   for source in group["sourceIds"]}
     source_rows = {row["sourceId"]: row for row in snapshot["sources"]}
+    from .unvoiced_periodicity import OBJECTIVE_ID as PERIODIC_OBJECTIVE, phone_mask
+    periodic_labels = None
+    if objective_id == PERIODIC_OBJECTIVE:
+        periodic_labels = {entry['label']['sourceId']: entry for entry in snapshot['labels']}
+        if any(source not in periodic_labels or periodic_labels[source]['score']['language'] != 'ja'
+               for source in selected):
+            raise ValueError('Periodicity objective requires admitted Japanese training labels')
     phrase_rows = {row["sourceId"]: row for row in snapshot["conditioning"]}
     if held_out_items is not None:
         if (not isinstance(held_out_items, (list, tuple)) or not 1 <= len(held_out_items) <= 256
@@ -257,9 +264,13 @@ only once at complete-epoch coverage. Saved snapshots are not admission authorit
             gl, dl = resume_cursor["generatorLossSum"], resume_cursor["discriminatorLossSum"]
             restored = True
             report("partial-restored", completedUpdates=updates, totalUpdates=planned_updates)
+        auxiliary = {}
+        if periodic_labels is not None:
+            auxiliary['periodicity_mask'] = phone_mask(periodic_labels[identity],
+                sample_offset=begin * hop, sample_count=batch['pcm'].shape[2], valid_samples=owned)
         result = vocoder_gan_step(generator, discriminators, generator_optimizer, discriminator_optimizer,
             mel=batch["mel"], f0=batch["f0"], pcm=batch["pcm"], hop_size=batch["hopSize"],
-            partition="train", reconstruction_loss=reconstruction_loss)
+            partition="train", reconstruction_loss=reconstruction_loss, **auxiliary)
         check_lifetime()
         count = batch["validSamples"]
         covered[identity] = covered.get(identity, 0) + count
