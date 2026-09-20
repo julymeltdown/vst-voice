@@ -1,5 +1,52 @@
 # Application singer validation campaign — September 20, 2026
 
+## Acoustic epoch 37: reject as a replacement for epoch 21
+
+The 16-epoch continuation lowered training loss but **regressed on every fixed
+application song**. All five application executions passed; all strict pitch
+comparisons remain `MISMATCH`. Vocoder epoch two, production 10-step sampling,
+source projects, reference audio and evaluation thresholds were unchanged.
+
+| Song | Spectral distance e21 → e37 | Pitch mean absolute cents e21 → e37 | Within 50 / measurable pairs at e37 |
+| --- | --- | --- | --- |
+| 00003 | 1.082442 → 1.728768 | 28.96 → 350.44 | 768 / 954 |
+| 00005 | 1.085034 → 1.728485 | 41.81 → 342.76 | 659 / 825 |
+| 00024 | 1.148612 → 1.750579 | 37.59 → 444.65 | 585 / 723 |
+| 00402 | 0.796122 → 1.433498 | 36.49 → 228.48 | 367 / 420 |
+| 00420 | 1.038213 → 1.632547 | 30.76 → 253.25 | 309 / 397 |
+
+Weighted pitch MAE worsens from 35.2267 to 341.9935 cents; within-tolerance
+pairs fall from 3919/4116 (95.2138%) to 2688/3319 (80.9882%). Unmeasurable
+frames increase from 260 to 975 and voicing mismatches from 122 to 214.
+Score-linked diagnostics locate 519 interior and 112 boundary-crossing errors;
+none are excluded. Both scored rests remain exactly silent in both channels.
+
+On the identical saved five-training/five-validation selection, fresh-session
+10-step training-conditioning inference worsens train mel MAE from 2.391302 to
+2.917484 (5510 frames), and validation from 2.400242 to 2.948018 (4619 frames).
+Because reconstruction worsens on the training sample too, these observations
+alone do not establish ordinary held-out overfitting. Lower DDPM training loss
+is not a sufficient checkpoint-selection metric. No further training extension
+is justified by these results; retain epoch 21 while diagnosing the mismatch
+between the training objective and deployed sampling.
+
+Evidence under `/Users/lhs/seam-corpus-pauses-2026-09-19-r1/`:
+`campaign-e37-v512-e2-r1/campaign.json`, SHA-256
+`c26e63083b6e45cb739101760caf74eff0bd6bf63e8ccfc5107b18f06494814e`;
+`acoustic-e37-train-validation-fresh-r1/experiment.json`, SHA-256
+`d46b871841222aedff0e70fb5375655614ed9ec890f1f437986908ce4809a6e9`.
+All per-song artifacts, failed comparisons and prior candidates are retained.
+The vocoder training-overlap limitation and independent qualification-cohort
+requirement remain unchanged. Neither candidate is a qualified singer.
+
+A bounded follow-up on song 00005 used captured training conditioning and a
+fresh ONNX session for each epoch/step pair. Requested steps 10/20/32 yield mel
+MAE 2.417955/2.336895/2.297900 for epoch 21 versus
+2.978614/3.023851/2.960633 for epoch 37. More requested steps do not rescue this
+regression. Evidence: `acoustic-e21-e37-steps-00005-r1/experiment.json`, with the
+source selection recorded before inference. This is a single-phrase mel-only
+diagnostic, not a replacement audio campaign. Production remains at 10 steps.
+
 ## Acoustic epoch 21: consistent five-song improvement, still unqualified
 
 The eight-epoch acoustic continuation completed; the fixed vocoder remains epoch

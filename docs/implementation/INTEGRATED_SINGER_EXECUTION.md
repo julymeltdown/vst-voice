@@ -1,6 +1,23 @@
 # Integrated Singer Execution
 
-## Completed training: epoch 21 through epoch 37; audio comparison in progress
+## Epoch 37 evaluated and rejected; retain epoch 21
+
+The completed five-song application campaign regressed on every song: weighted
+pitch MAE 35.2267 → 341.9935 cents, unmeasurable frames 260 → 975, and spectral
+distance worse throughout. Fresh-session mel diagnostics also worsened on both
+fixed train and validation selections. Epoch 21 remains the comparison baseline;
+do not extend the epoch-37 run merely because its training loss is lower.
+All application executions passed and both rests remain exactly silent, but
+neither fact overrides the audio regression. Full results and artifact hashes
+are in [the campaign report](SINGER_VALIDATION_CAMPAIGN_2026-09-20.md).
+
+Next intervention: diagnose objective-versus-inference behavior, beginning with
+fresh-session sampling-step reconstruction comparisons on the same source and
+then fixed-noise denoiser/clean-estimate measurements. Keep production sampling
+unchanged and do not promote diagnostic improvements without the full campaign.
+No new training run is active.
+
+### Completed training and export
 
 Run r6 completed all 16 requested additional epochs (4,272 updates) and exited
 successfully. Epoch 37 has complete verified coverage and mean loss
@@ -15,10 +32,10 @@ Export `export-combined-e37` passed runtime smoke checks; acoustic graph SHA-256
 Bundle `bundle-combined-e37-v512-e2` uses unchanged vocoder epoch two,
 configuration and vocabulary; manifest SHA-256
 `d2966c1360479b9f0695f98bcb5ceb2f780ca11a12a1db5260c47553785d29d5`.
-The fixed five-song application comparison is running at
+The fixed five-song application comparison completed at
 `/Users/lhs/seam-corpus-pauses-2026-09-19-r1/campaign-e37-v512-e2-r1`.
-No audio improvement or qualification is claimed before its results are checked.
-The fresh-session train/validation mel diagnostic also remains to be repeated.
+Its results and the repeated train/validation diagnostic reject this candidate
+as a replacement for epoch 21. No singer qualification is claimed.
 
 ### Run rationale and historical execution observations
 
