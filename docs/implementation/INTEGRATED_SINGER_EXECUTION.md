@@ -1,52 +1,63 @@
 # Integrated Singer Execution
 
-## Resolved diagnostics locate the residual structure: hop-locked, excitation-dead on unvoiced input
+## Corrected diagnostics: residual correlation is concentrated at hop multiples; no stochastic excitation exists
 
 Two corrected diagnostics replace the earlier sparse multilag reading.
-unvoiced-multilag-2x2-r2.json runs a dense lag curve (every 16 samples,
+unvoiced-multilag-2x2-r3.json runs a dense lag curve (every 16 samples,
 32-1024), per-window target-relative absolute error, per-song/per-phone
-breakdown, interior-versus-boundary regions and conditioning-F0-relative
-lags on identical window keys across all four factorial cells. The dense
-curve's top candidate lags are all hop multiples (256, 512, 768, 1024) in
-every cell, while the conditioning-F0-relative lag (median MIDI 60-79,
-~262-784 Hz) sits at -0.07 to +0.07 against a -0.002 reference. The
-residual structure is therefore hop-locked, not pitch-locked; the earlier
-"sung-fundamental leakage" attribution is withdrawn.
+breakdown, full versus 256-sample-trimmed-interior regions (not a
+boundary-only measurement or receptive-field isolation) and
+nominal-score-period lags derived from the MIDI labels (median MIDI
+60-79, ~262-784 Hz, reported separately from zero-F0 ownership) on
+identical window keys across all four factorial cells. The top four
+signed-mean candidate lags are hop multiples (256, 512, 768, 1024) in
+every cell. The score-period branch's signed means sit at -0.07 to +0.07
+against a -0.002 reference, but its paired mean absolute errors are
+0.142/0.116 (control acoustic) and 0.080/0.050 (aux acoustic): near-zero
+signed means do not exclude residual score-period-related structure in
+individual windows, only that there is no consistent directional
+component. The earlier "sung-fundamental leakage" attribution remains
+withdrawn; hop-related repetition is the measured statement.
 
-vocoder-f0-variation-probe-r1.json then holds real mel windows fixed and
-sweeps the conditioning F0 through fresh single-use ONNX sessions. On a
-tiled unvoiced 's' window both vocoder arms produce output insensitive to
-f0 across 0/110/220/440/880 Hz (control lag-256 +0.970,
-periodicity +0.810, spectral peak ~5.4-5.6 kHz, hop-band share ~0.0005,
-statistics identical to the third decimal): the excitation input is dead
-on unvoiced mel. On a tiled voiced 'e'
-window the same graphs track F0 (peak 328/439/879 Hz following the
-request), so the excitation path is alive but gated off by the mel
-content, not by the f0 value.
+vocoder-f0-variation-probe-r2.json then holds real mel windows fixed and
+sweeps the conditioning F0 through fresh single-use ONNX sessions with
+all input bytes bound (graph SHA-256 verified against the recorded arm
+exports, mel payload and tiled tensors hashed, frame bounds and provider
+recorded). On a tiled unvoiced 's' window both arms are weakly sensitive
+to f0: normalized waveform difference versus the f0=0 output is
+0.4-0.7% RMS (control) and 0.8-1.4% (periodicity) across f0
+110/220/440/880 Hz, with lag-256 staying +0.970/+0.810. On a tiled
+voiced 'e' window the same graphs are strongly F0-responsive
+(normalized differences 0.95-12.1; harmonic spectral peaks at 328/439/879
+Hz for 110/220/880 requests - an F0-responsive harmonic spectrum, not
+verified fundamental tracking).
 
-The architecture explains why. The exported configuration uses mini_nsf
-with noise_sigma 0.0: fastsinegen emits a pure sine with no noise term
-and no voiced/unvoiced masking, so at f0=0 the harmonic source is
-all-zeros, and conv_pre noise injection is disabled. The generator is a
-fully deterministic mel-to-waveform map with no aperiodic excitation
-anywhere. On slowly varying unvoiced mel it emits a near-identical
-waveform every 256-sample frame - the measured hop-locked periodicity.
-This unifies the earlier negative results: source-mel reconstruction
-stayed periodic because the generator is deterministic; masking the
-harmonic source changed nothing because it already contributed nothing
-on unvoiced frames; feature-space noise after conv_pre was too small and
-the wrong place; the periodicity objective halved the defect by
-decorrelating per-frame patterns but cannot manufacture noise that no
-input provides. The acoustic auxiliary's level restoration is orthogonal
-to this limit.
+The exported configuration uses mini_nsf with noise_sigma 0.0:
+fastsinegen emits a pure sine with no noise term and no voiced/unvoiced
+masking, so at f0=0 the harmonic source is all-zeros, and conv_pre noise
+injection is disabled. The current family therefore has no stochastic
+excitation input. Determinism is reproducibility, not periodicity: these
+observations do not establish that a deterministic generator is
+incapable of aperiodic output or uniquely identify the causal mechanism
+of the hop-related repetition. They do make an explicit UV-gated
+aperiodic excitation a well-motivated, falsifiable intervention: add a
+noise input gated by admitted non-rest unvoiced ownership (distinct from
+silence), hold the loss fixed against a control receiving the same extra
+updates, and require deterministic production replay through an explicit
+seeded or captured noise realization with matching train/inference
+distributions and export/native contract checks.
 
-Consequence: the next mechanism-directed change is an explicit aperiodic
-excitation for unvoiced frames (noise source at the generator input,
-UV-gated like classic NSF), trained as a new vocoder variant with matched
-controls - not another acoustic-objective sweep and not larger periodicity
-weights on a deterministic generator. Per the review protocol the second
-matched vocoder seed (control acoustic fixed) replicates the
-periodicity-arm advantage before that architecture change is trained.
+Consequence: the next mechanism-directed experiment is a matched
+UV-gated noise-excitation vocoder variant, not another acoustic-objective
+sweep. Per the review protocol the second matched vocoder seed pair
+(control acoustic fixed, governed seed change now permitted and recorded
+as seedChanged lineage in vocoder_warm_start) replicates the
+periodicity-arm advantage before architecture-variant training begins;
+the excitation design proceeds in parallel as a falsifiable experiment.
+Success criteria are target-relative dense-lag/spectral structure plus
+level, pitch coverage, voiced-phone preservation, silence/clipping and
+subsequent listening - added noise trivially lowers correlation and is
+not itself success.
 
 ## Crossed acoustic-by-vocoder factorial: the defect is vocoder-dominant and not additive
 
@@ -91,8 +102,8 @@ the periodicity vocoder lowers the signed mean autocorrelation at every
 tested lag, and the residual peak still sits at lags 256-512
 (0.251/0.222 control-acoustic, 0.348/0.274 aux-acoustic) against a
 near-zero reference at every lag. Two cautions apply to that reading.
-All five tested lags (64,128,256,512,1024) are multiples of the
-256-sample analysis hop, so the sparse curve cannot distinguish
+All five tested lags (64,128,256,512,1024) are hop-related - multiples
+or subdivisions of the 256-sample analysis hop - so the sparse curve cannot distinguish
 hop-locked structure from pitch-locked leakage; the score labels
 overlapping these intervals carry MIDI 60-79 (~262-784 Hz), not the
 187.5 Hz frame rate. And signed means hide direction: at lag 64 the

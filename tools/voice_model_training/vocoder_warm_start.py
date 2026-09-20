@@ -28,10 +28,15 @@ def initialize(generator, discriminators, go, do, directory, digest, *, metadata
     if ({k:v for k,v in run.items() if k not in allowed_run}
             != {k:v for k,v in metadata.items() if k not in allowed_run}):
         raise ValueError('Warm start cannot change architecture, source bindings or runtime')
-    allowed_settings = {'schemaVersion', 'objectiveId', 'learningRate'}
+    # Objective, learning rate and seed are the governed experiment axes:
+    # a paired replicate may change any of them while dataset, architecture,
+    # source bindings and runtime stay identical. The changed seed is
+    # recorded in the returned lineage so a replicate is never mistaken
+    # for a resume of the same draws.
+    allowed_settings = {'schemaVersion', 'objectiveId', 'learningRate', 'seed'}
     if ({k:v for k,v in run['settings'].items() if k not in allowed_settings}
             != {k:v for k,v in metadata['settings'].items() if k not in allowed_settings}):
-        raise ValueError('Warm start only permits objective/learning-rate changes')
+        raise ValueError('Warm start only permits objective/learning-rate/seed changes')
     if go.state or do.state:
         raise ValueError('Warm start requires fresh optimizers')
     if any(group['lr'] != metadata['settings']['learningRate']
@@ -50,5 +55,7 @@ def initialize(generator, discriminators, go, do, directory, digest, *, metadata
     return dict(sourceReceiptSha256=digest, sourceCheckpointSha256=receipt['checkpointSha256'],
         sourceTrainingConfigurationSha256=run['trainingConfigurationSha256'],
         sourceCompletedEpochs=number, sourceObjectiveId=previous['objectiveId'],
+        sourceSeed=run['settings'].get('seed'),
+        seedChanged=run['settings'].get('seed') != seed,
         optimizerReset=True, schedulerReset=True, rngReset=True,
         epochNumbering='new-experiment-from-one')

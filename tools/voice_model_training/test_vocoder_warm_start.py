@@ -41,15 +41,30 @@ class WarmStartTests(unittest.TestCase):
         self.assertTrue(torch.equal(torch.rand(3),torch.rand(3,generator=expected)))
 
     def test_changed_dataset_settings_and_partial_rejected_before_mutation(self):
-        for change in ('dataset','seed','partial','weights'):
+        for change in ('dataset','partial','weights'):
             args,kwargs,state,receipt=self.fixture();before=args[0].weight.detach().clone()
             if change=='dataset':kwargs['dataset']='wrong'
-            elif change=='seed':kwargs['metadata']['settings']['seed']+=1
             elif change=='partial':state['epoch']['epochComplete']=False
             else:state['model']['generator.weight'][0,0]=float('nan')
             with patch('tools.voice_model_training.vocoder_warm_start.load_local_checkpoint',return_value=(state,receipt)):
                 with self.assertRaises(ValueError):initialize(*args,**kwargs)
             self.assertTrue(torch.equal(before,args[0].weight))
+
+    def test_governed_seed_change_reseeds_and_records_lineage(self):
+        args,kwargs,state,receipt=self.fixture()
+        kwargs['metadata']['settings']['seed']+=1
+        with patch('tools.voice_model_training.vocoder_warm_start.load_local_checkpoint',return_value=(state,receipt)):
+            result=initialize(*args,**kwargs)
+        self.assertTrue(result['seedChanged'])
+        self.assertEqual(result['sourceSeed'],kwargs['metadata']['settings']['seed']-1)
+        expected=torch.Generator().manual_seed(kwargs['metadata']['settings']['seed'])
+        self.assertTrue(torch.equal(torch.rand(3),torch.rand(3,generator=expected)))
+
+    def test_same_seed_reports_unchanged(self):
+        args,kwargs,state,receipt=self.fixture()
+        with patch('tools.voice_model_training.vocoder_warm_start.load_local_checkpoint',return_value=(state,receipt)):
+            result=initialize(*args,**kwargs)
+        self.assertFalse(result['seedChanged'])
 
     def test_dirty_optimizer_rejected(self):
         args,kwargs,state,receipt=self.fixture();args[2].state[args[0].weight]['step']=1
