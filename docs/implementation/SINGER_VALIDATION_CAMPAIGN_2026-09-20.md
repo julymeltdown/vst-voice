@@ -51,6 +51,45 @@ remain required. Windows remains TODO; none of this is Windows evidence.
 
 ## macOS authoring regression alongside training
 
+### Follow-up: fixed-frame pitch regression in song 00005
+
+Comparing only indices measurable in both epochs is a supplemental diagnostic,
+not a replacement for the full-grid results above. For song 00005, 978 common
+application pairs worsen from 81.1355 to 100.1555 cents mean absolute error;
+47 previously measurable pairs disappear and 18 appear. Fifteen common pairs
+newly exceed 50 cents and five recover. In contrast, 1,052 common source-control
+pairs improve from 26.2929 to 24.5183 cents. This rules out changing measurement
+coverage as the sole explanation for the application regression, without proving
+which conditioning component causes it.
+
+At source frame 3,584, source/control pitch is approximately 587 Hz, while the
+epoch-two application estimate is 187.591 Hz. At frame 254,208, source/control
+pitch is approximately 659 Hz, while the application estimate is 93.752 Hz.
+Both analysis windows are inside scored notes, not rest or boundary exclusions.
+These estimates correspond to periods near one and two 256-sample vocoder hops.
+
+Independent direct normalized autocorrelation on the captured stereo-mean PCM,
+using the same mean-centered 2,048-sample windows, confirms the selector behavior:
+
+| Source frame | Intended lag | e1 correlation | e2 correlation | e2 winning lag / correlation |
+| --- | --- | --- | --- | --- |
+| 3,584 | 82 | 0.769599 | 0.598695 | 256 / 0.706022 |
+| 254,208 | 73 | 0.663135 | 0.441063 | 512 / 0.663002 |
+
+`libs/seam-voicebank/src/pitch.cpp` selects the first local peak meeting both
+the voicing threshold and 92% of the strongest correlation. The intended peaks
+fail that rule in epoch two. This is not evidence to lower the threshold.
+Supplemental 4,096-sample Hann-window frequency projections still show substantial
+intended-note energy; low-frequency projections alone do not establish a dominant
+93.75/187.5-Hz sinusoid. The waveform has competing periodic structure, and an
+audible pitch or perceptual quality conclusion requires stronger evidence.
+
+Next bounded experiment: capture the actual application acoustic mel and vocoder
+F0 inputs for these windows, bind them to the candidate/project, and compare
+with source-derived inputs. Test conditioning mismatch or hop-periodic artifacts
+before choosing further training or changing synthesis. Preserve the existing
+strict diagnostic and both candidate outputs.
+
 Rebuilt `seam_original_singer_song_journey_tests` and
 `seam_procedural_install_journey_tests` from source at `300ad02c`, including
 dependent AppKit/native-editor code, using `cmake --build build/release --target
