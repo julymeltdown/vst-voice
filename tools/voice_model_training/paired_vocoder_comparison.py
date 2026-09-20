@@ -16,6 +16,9 @@ from .native_input_replay import prepare_inputs
 from .paired_vocoder_evaluation import evaluate
 
 
+# Declared policy inventory. `sh` and `j` are listed for completeness but do not
+# occur in the current Japanese procedural corpus; a class with no measured
+# window stays null rather than being reported as a clean result.
 UNVOICED = ('h', 'f', 'k', 's', 'sh', 't', 'ch', 'ts')
 VOICED = ('a', 'i', 'u', 'e', 'o', 'N', 'm', 'n', 'r', 'w', 'j')
 

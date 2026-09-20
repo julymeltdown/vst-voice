@@ -1,5 +1,18 @@
 # Integrated Singer Execution
 
+## Unvoiced mask coverage audited before conclusions
+
+Confirmed the auxiliary objective operates on real signal rather than an empty
+mask: 40 captured songs contain 789,120 frames of declared unvoiced phones.
+Observed counts in those songs are h 48, f 11, k 76, s 57, t 51, ch 14, ts 17,
+with zero `sh`; voiced counts include a 151, i 106, u 115, e 121, o 117, N 30,
+m 71, n 81, r 78, w 21 and zero `j`. `sh` and `j` therefore remain unmeasured in
+this corpus and must not be reported as covered. Unvoiced and voiced classes stay
+separate in the comparison, and an empty class stays null instead of zero.
+
+Training remained live at 300/2804 updates per arm with no restart and no
+checkpoint published yet.
+
 ## Paired export and comparison tooling ready for completed arms
 
 `paired_vocoder_experiment.export_arms` reads each arm's verified `run.json`,
