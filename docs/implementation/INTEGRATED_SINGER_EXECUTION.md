@@ -1,5 +1,43 @@
 # Integrated Singer Execution
 
+## Acoustic continuation from epoch 13 toward epoch 21
+
+September 20, 2026 — after the fixed-cohort vocoder and conditioning diagnostics,
+the next bounded intervention is additional acoustic learning, not a pitch-gate
+change. Fresh single-call ONNX inference at 10 steps on the first five sorted
+training IDs yields frame-weighted mel MAE 2.839868 (5,510 frames); the existing
+five validation IDs yield 2.831527 (4,619 frames), using their captured training
+conditioning. This small descriptive sample shows poor reconstruction on both
+partitions; it is not statistical proof of underfitting or generalization.
+
+Evidence: `/Users/lhs/seam-corpus-pauses-2026-09-19-r1/acoustic-e13-train-validation-fresh-r1/`.
+Selection was saved before inference, shards/targets were verified using normal
+batch readers, and dataset identity matches epoch 13. `experiment.json` SHA-256:
+`dc6d475182f18a4cb0418d59d4db7ebf186490b98de74e43bddbcdbba0b33c8d`.
+The earlier epoch-9-to-13 validation improvement supports testing a continuation;
+it does not guarantee further improvement.
+
+Run `acoustic-combined-r5` resumes the verified epoch-13 receipt
+`330e321cc1e1f245ed9a0d32f0c9ac25dbfaefbf499cb156910b02246aeb8fd3`
+with unchanged config/dataset/targets, policies, vocabulary, optimizer/RNG state
+and pinned checkout. Eight additional epochs target epoch 21, bounded to 7,200
+seconds total and the existing 900 seconds/267 updates per epoch. Checkpoint
+budget is 96 MiB; retain two new binaries with a 1.5 GiB free-space floor.
+Earlier r5 binaries may be removed after successor verification; receipts and
+the external epoch-13 baseline remain. No vocoder training is running.
+
+Observed execution session `38274`, PID `47632` (recheck live state before reuse).
+Epoch 14 has already published complete coverage, 267 updates and mean loss
+0.2888373052. The remaining epochs are still running at this entry. Quiet stdout
+is expected: this acoustic CLI prints its full run result only at completion.
+Do not restart on a polling timeout.
+
+After completion: verify retained checkpoints, export the selected completed
+candidate, keep vocoder epoch two fixed, and rerun the same five application
+songs and fresh-session diagnostic selections. Keep all regressions and training
+overlap disclosures. Production sampler remains at 10 steps, Windows is TODO,
+and neither training loss nor a completed epoch establishes Beta GO.
+
 ## Resume the unfinished combined acoustic run toward epoch thirteen
 
 September 20, 2026 — current-state inspection found no acoustic training process.
