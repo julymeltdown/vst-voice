@@ -1,5 +1,47 @@
 # Integrated Singer Execution
 
+## Root cause identified: the acoustic model has no channel for frication
+
+Added `conditioning_coverage` and audited the channels the acoustic model actually
+receives. This closes the causal chain.
+
+Findings, all measured:
+
+1. `breathiness` is exactly 0.0 in every one of the 463,642 captured frames across
+   all 424 songs. Zero frames are non-zero.
+2. The cause is source-level, not a bug in the batch builder: 0 of the 424 label
+   configurations contain a `conditioning` block at all, and `breathiness` is only
+   populated from that optional block.
+3. The deployed epoch-21 checkpoint (receipt
+   `e8a688de4dacf9ef67aa925bfe353e71cd97c85af1882ad31737cbbb85f0eaf8`) declares
+   `use_breathiness_embed = False`. The model is not merely ignoring breathiness;
+   it has no input path for it. `use_spk_id` and language embeddings are also off.
+
+That explains every downstream observation without contradiction. For an unvoiced
+phone the model receives: a phone token, and an f0 of exactly zero. It receives no
+aperiodicity, no voicing flag, and no noise amount. The only channel that could
+carry "this segment is noise, not tone" is the phone token embedding, and the
+model does use it (token swaps move the output, ratio ~1.0) but collapses toward a
+shared, harmonically dominated spectrum because the target's noise content has no
+dedicated input or supervision to attach to.
+
+This is consistent with, and now explains, each earlier result: low flatness, weak
+between-symbol separation on unvoiced phones, structured rather than constant
+error, and no improvement from more sampling steps.
+
+Rejected by measurement earlier, so they stay rejected: coverage gaps, frame
+weighting, sampling steps, constant bias, temporal smoothing, training duration
+(the run reached 21 epochs and its loss settled), and generalization.
+
+The concrete repair this implies is a conditioning change, not a sampler or loss
+tweak: provide unvoiced/aperiodicity information to the acoustic model and enable
+the corresponding embedding, then retrain. That is a deliberate scope change with
+its own data requirements, so it is recorded as the next planned change rather
+than started here. No weights, dataset, objective or deployed artifact were
+modified in this investigation.
+
+Evidence: `conditioning_coverage` plus the full-frame audit above.
+
 ## Token swaps do move the fricative prediction, narrowing the mechanism again
 
 Added `token_sensitivity`: change exactly one phone's token to another unvoiced
