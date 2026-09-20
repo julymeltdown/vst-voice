@@ -1125,6 +1125,15 @@ or singer approval. Fixture review expiry is intentionally short; the diagnostic
 is a reproducible test, not a permanently admitted production corpus.
 # Fixed validation campaign
 
+**Partition scope:** the selected corpus validates the acoustic split, not every
+model in the singer. `combinedModelHoldoutVerified` is always false. Optional
+paired `--vocoder-export` and `--vocoder-checkpoint` inputs audit the candidate's
+complete exported epoch training IDs. The receipt must bind to the export and
+the export graph to the bundle manifest. Overlap is reported, never dropped;
+missing evidence is NOT_AUDITED. One epoch without overlap does not establish
+independence across all ancestry or duplicated audio. Three of the September 20
+five-song regression sources were used to train the vocoder.
+
 Companion command `python -m tools.voice_model_training.score_application_export`
 accepts `--comparison`, `--comparison-sha256`, `--labels`, `--labels-sha256`,
 `--master`, and `--output`. Select the label digest from the captured corpus's

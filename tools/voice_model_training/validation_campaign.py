@@ -19,6 +19,39 @@ def capture_json(path, limit=8 * 1024 * 1024):
     return json.loads(payload), digest
 
 
+def audit_vocoder_training(items, manifest, export, checkpoint):
+    """Positive training overlap is decisive; absence does not prove holdout.
+
+Receipts describe one epoch, not necessarily all pretraining or resume ancestry.
+Source-ID matching is conservative and cannot prove independent source audio.
+"""
+    if export is None and checkpoint is None:
+        return dict(status='NOT_AUDITED', combinedModelHoldoutVerified=False)
+    if export is None or checkpoint is None:
+        raise ValueError('Vocoder export and checkpoint receipt must be supplied together')
+    from .prepare_bundle import read_report, VOCODER_FORMAT
+    exported, _ = read_report(export, VOCODER_FORMAT,
+        'vocoderPath', 'vocoderSha256', 'vocoderBytes')
+    assets = [asset for asset in manifest['assets'] if asset['role'] == 'vocoder']
+    receipt, digest = capture_json(checkpoint)
+    if (len(assets) != 1 or assets[0]['sha256'] != exported['vocoderSha256']
+            or digest != exported['checkpointReceiptSha256']
+            or receipt['epoch']['datasetSha256'] != exported['datasetSha256']
+            or receipt['epoch']['epochComplete'] is not True
+            or receipt['epoch']['coverageVerified'] is not True):
+        raise ValueError('Vocoder training receipt does not bind the complete candidate epoch')
+    updates = receipt['epoch']['sourceUpdates']
+    if not isinstance(updates, dict) or not updates or any(
+            type(count) is not int or count <= 0 for count in updates.values()):
+        raise ValueError('Invalid vocoder training coverage')
+    overlap = [item['sourceId'] for item in items if item['sourceId'] in updates]
+    return dict(status='TRAINING_SOURCE_ID_OVERLAP' if overlap else 'NO_SOURCE_ID_OVERLAP_IN_THIS_EPOCH',
+        checkpointReceiptSha256=digest, datasetSha256=exported['datasetSha256'],
+        vocoderSha256=exported['vocoderSha256'], trainingSourceIdOverlap=overlap,
+        combinedModelHoldoutVerified=False,
+        limitation='No absence or independent-audio claim across pretraining/resume ancestry')
+
+
 def prepare_selection(selection, corpus, expected_sha256):
     config, digest = capture_json(selection)
     if digest != expected_sha256:
@@ -63,21 +96,24 @@ def prepare_selection(selection, corpus, expected_sha256):
 
 
 def run_campaign(selection, selection_sha256, corpus, bundle, renderer, pitch_executable,
-                 output, *, silence_phone='pau'):
+                 output, *, silence_phone='pau', vocoder_export=None, vocoder_checkpoint=None):
     if output.exists() or output.is_symlink() or not output.parent.is_dir():
         raise ValueError('Output must be new with an existing parent')
     binding, captured = prepare_selection(selection, corpus, selection_sha256)
     resource, resource_digest = capture_json(bundle / 'resource.json', 16384)
-    _, manifest_digest = capture_json(bundle / 'manifest.json', 1048576)
+    manifest, manifest_digest = capture_json(bundle / 'manifest.json', 1048576)
     if (resource.get('formatId') != 'com.project-seam.neural-resource'
             or resource.get('schemaVersion') != 1 or resource.get('contentHash') != manifest_digest):
         raise ValueError('Candidate resource identity mismatch')
+    training_audit = audit_vocoder_training([row[0] for row in captured], manifest,
+                                            vocoder_export, vocoder_checkpoint)
     binary_hashes = {str(path): _capture(path, 256 * 1024 * 1024)[1]
                      for path in (renderer, pitch_executable)}
     output.mkdir()
     publish_new(output / 'selection.json', dict(binding, items=[row[0] for row in captured],
         manifestSha256=manifest_digest, resourceSha256=resource_digest,
-        binarySha256=binary_hashes, silencePhone=silence_phone))
+        binarySha256=binary_hashes, silencePhone=silence_phone,
+        validationScope='selected-acoustic-corpus-only', vocoderTrainingAudit=training_audit))
     selection_receipt_hash = _capture(output / 'selection.json', 1048576)[1]
     results = []
     for index, (identity, source_bytes, project_bytes) in enumerate(captured):
@@ -114,6 +150,8 @@ def run_campaign(selection, selection_sha256, corpus, bundle, renderer, pitch_ex
     report = dict(formatId='com.project-seam.validation-campaign', schemaVersion=1,
         **binding, items=results, selectedCount=len(results),
         selectionReceiptSha256=selection_receipt_hash,
+        validationScope='selected-acoustic-corpus-only', vocoderTrainingAudit=training_audit,
+        combinedModelHoldoutVerified=False,
         executionPassed=all(row['execution'] == 'PASSED' for row in results),
         singerQualified=False, releaseEligible=False,
         qualityPolicy='Per-song strict diagnostics; no failed-item exclusion or qualification')
@@ -126,6 +164,8 @@ def main():
     for name in ('selection', 'corpus', 'bundle', 'renderer', 'pitch-executable', 'output'):
         parser.add_argument('--' + name, type=Path, required=True)
     parser.add_argument('--selection-sha256', required=True)
+    parser.add_argument('--vocoder-export', type=Path)
+    parser.add_argument('--vocoder-checkpoint', type=Path)
     parser.add_argument('--silence-phone', choices=('pau', 'SP', 'sil'), default='pau')
     args = parser.parse_args()
     report = run_campaign(**vars(args))

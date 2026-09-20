@@ -1,5 +1,45 @@
 # Application singer validation campaign — September 20, 2026
 
+> **Qualification correction:** this is an acoustic-validation regression set,
+> not a jointly held-out acoustic-plus-vocoder set. Songs 00003, 00005 and 00024
+> occur in the vocoder's completed training coverage. The measurements remain
+> valid diagnostics, but none establishes combined-model generalization.
+
+## Cross-stage training overlap audit
+
+The original vocoder 400-song corpus and combined acoustic 424-song corpus use
+different splits. Exact source-WAV digest comparison found that all 31 original
+corpus songs in the combined acoustic validation partition are vocoder training
+data. The other two acoustic validation songs, 00402 and 00420, are absent from
+the original vocoder corpus. Absence does not prove source/recipe independence.
+
+For the fixed five songs, the actual completed vocoder epoch-one receipt also
+records positive training updates for 00003, 00005 and 00024. Receipt SHA-256
+`cec64e7c5adb3ec81cceaa7c81046ca8d62447e0126f49df2bba639fe536dd94`
+binds the export's dataset identity, and the export graph matches the bundle.
+Retained evidence: `campaign-e13-v512-e1-r1/vocoder-training-audit.json` under
+the external pause-corpus artifact root.
+
+The runner now declares `validationScope=selected-acoustic-corpus-only` and
+`combinedModelHoldoutVerified=false`. Supply `--vocoder-export` and
+`--vocoder-checkpoint` together to inspect candidate-bound epoch training IDs.
+Missing evidence is NOT_AUDITED; inconsistent receipt/export/bundle identities
+refuse before rendering. No overlap within one epoch still cannot establish
+absence across pretraining/resume ancestry or duplicated audio.
+
+Keep all five regression songs, retaining the distinction between vocoder-seen
+and absent-from-original-corpus sources. Do not reshuffle existing partitions to
+claim independence. Combined-singer qualification needs a separately frozen
+cohort checked against both models' complete training ancestry, including audio,
+grouping/recipe and rights identities. Epoch two can continue as a reconstruction
+experiment; improvements on this cohort are not held-out qualification.
+
+Overlap-audit verification: seven campaign tests passed; the full training-tool
+suite ran 254 tests, 253 passed and one skipped in 45.654 seconds. Tests reject
+wrong candidate graphs and changed checkpoint receipts and retain unverified
+holdout status when no overlap is found. The real candidate-bound audit reports
+the three overlapping IDs above. Source-closure and Phase 11 checks passed.
+
 Selection recorded before application rendering: use the five sources already
 selected by `acoustic-combined-e9-validation.json`: procedural-song-00003,
 00005, 00024, 00402 and 00420. Their membership in the validation partition was

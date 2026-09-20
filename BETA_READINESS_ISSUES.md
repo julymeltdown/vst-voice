@@ -1,5 +1,20 @@
 # Project SEAM Beta Readiness: Discovered Issues
 
+## September 20 correction: combined-model validation overlap
+
+The five-song acoustic validation regression cohort is **not jointly held out**
+from the acoustic model and vocoder. Songs 00003, 00005 and 00024 occur in the
+candidate vocoder's completed epoch-one training coverage. The source-WAV hashes
+also match its original training corpus. Songs 00402/00420 are absent from that
+original corpus; this alone does not prove independent source/recipe ancestry.
+
+Prior acoustic/vocoder comparison numbers remain diagnostics, not generalization
+or Beta qualification. The campaign now exposes acoustic-only validation scope,
+keeps combined-model holdout unverified, and optionally audits checkpoint/export/
+bundle-bound vocoder training overlap. Retain all five regression songs; qualify
+on a separate frozen cohort checked against both models' entire training ancestry.
+Details and exact evidence: `docs/implementation/SINGER_VALIDATION_CAMPAIGN_2026-09-20.md`.
+
 - **Snapshot date:** 2026-08-30
 - **Branch:** `codex/external-beta-completion`
 - **Source commit:** `970d159d06a2daa11932a9dbc22a337ecf9dbe25`

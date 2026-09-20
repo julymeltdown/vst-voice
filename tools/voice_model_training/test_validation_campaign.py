@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from tools.voice_model_training.validation_campaign import prepare_selection, run_campaign
+from tools.voice_model_training.validation_campaign import audit_vocoder_training, prepare_selection, run_campaign
 
 
 def digest(payload):
@@ -111,6 +111,31 @@ class ValidationCampaignTests(unittest.TestCase):
             run_campaign(self.selection, self.sha, self.corpus, self.root, self.project,
                          self.project, self.root)
         self.assertEqual(self.project.read_bytes(), b'project')
+
+    def test_candidate_bound_vocoder_overlap_and_absence_are_not_holdout(self):
+        receipt = self.root / 'checkpoint.json'
+        receipt.write_text(json.dumps(dict(epoch=dict(datasetSha256='d' * 64,
+            epochComplete=True, coverageVerified=True, sourceUpdates={'one': 4}))))
+        exported = dict(vocoderSha256='v' * 64, datasetSha256='d' * 64,
+                        checkpointReceiptSha256=digest(receipt.read_bytes()))
+        manifest = dict(assets=[dict(role='vocoder', sha256='v' * 64)])
+        with patch('tools.voice_model_training.prepare_bundle.read_report', return_value=(exported, b'graph')):
+            overlap = audit_vocoder_training([dict(sourceId='one')], manifest, self.root, receipt)
+            self.assertEqual(overlap['trainingSourceIdOverlap'], ['one'])
+            self.assertEqual(overlap['status'], 'TRAINING_SOURCE_ID_OVERLAP')
+            absent = audit_vocoder_training([dict(sourceId='two')], manifest, self.root, receipt)
+            self.assertFalse(absent['combinedModelHoldoutVerified'])
+            self.assertEqual(absent['status'], 'NO_SOURCE_ID_OVERLAP_IN_THIS_EPOCH')
+            manifest['assets'][0]['sha256'] = 'wrong'
+            with self.assertRaisesRegex(ValueError, 'does not bind'):
+                audit_vocoder_training([], manifest, self.root, receipt)
+            manifest['assets'][0]['sha256'] = 'v' * 64
+            receipt.write_text('{}')
+            with self.assertRaisesRegex(ValueError, 'does not bind'):
+                audit_vocoder_training([], manifest, self.root, receipt)
+        self.assertEqual(audit_vocoder_training([], {}, None, None)['status'], 'NOT_AUDITED')
+        with self.assertRaisesRegex(ValueError, 'together'):
+            audit_vocoder_training([], {}, self.root, None)
 
 
 if __name__ == '__main__':
