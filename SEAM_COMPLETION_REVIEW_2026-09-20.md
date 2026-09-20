@@ -134,18 +134,39 @@ teacher itself produced. Capacity and update count are necessary, not sufficient
 singing corpus is still the binding constraint on R9/R16**, and it is the item no amount of engineering
 in this repository can substitute for.
 
-### 3.3b Training throughput is leaving the machine idle
+### 3.3b Training throughput: the GPU is not the answer, but the thread count is — measured, not assumed
 
-The host is an M3 Max with a 40-core GPU and 48 GB of memory. The live run is pinned to **one CPU core**:
+An earlier draft of this section claimed the run was "leaving the machine idle" by not using the 40-core
+GPU. **I benchmarked it, and that claim is wrong.** The relevant facts, then the measurements.
 
-- `vocoder-training-512-segments.json` sets `cpuThreads: 1`
-- `train_vocoder.py:230` applies it with `torch.set_num_threads(settings['cpuThreads'])`
-- Torch reports `mps.is_available() == True`; nothing in the pipeline ever selects a device
+The run is pinned to one CPU thread: `vocoder-training-512-segments.json` sets `cpuThreads: 1`, and
+`train_vocoder.py:230` applies it with `torch.set_num_threads(settings['cpuThreads'])`. Torch reports
+`mps.is_available() == True`, and nothing in the pipeline ever selects a device.
 
-For scale, the run is doing 2,804 updates in about 2 hours and the configuration permits 60,000. Not
-using the available GPU is the difference between a training campaign that can iterate and one that
-cannot. This is a throughput defect, not a quality defect, and it is worth fixing before the next run —
-but it must not be changed underneath the run that is currently in flight.
+Benchmarks, generator training step at the configured `trainingSegmentFrames` 128 and the configured
+512-channel architecture (one representative step per row, `.abs().mean()` objective):
+
+| Device / threads | Batch | s/step | s/sample | frames/s |
+|---|---|---|---|---|
+| CPU, 1 thread | 1 | 0.837 | 0.837 | 153 |
+| CPU, 12 threads | 1 | 0.559 | 0.559 | 229 |
+| CPU, 12 threads | 8 | 4.115 | 0.514 | 249 |
+| **MPS (GPU)** | 1 | **1.572** | 1.572 | **81** |
+
+Two conclusions, both contrary to the earlier draft:
+
+1. **MPS is about 1.9x slower than a single CPU thread** at this batch size (1.572 vs 0.837 s/step), and
+   2.8x slower than 12-thread CPU. For a small model with short sequences, kernel-launch and dispatch
+   overhead dominates and the GPU loses. Moving training to MPS would make it a *worse* use of the
+   machine, not a better one. There is no GPU defect to fix.
+2. **The thread count is a real, modest win.** 12 threads gives about 1.5x the throughput of 1 thread.
+   Batching adds little beyond that (0.514 vs 0.559 s/sample at batch 8), so the win comes from threads,
+   not from a larger batch.
+
+So the honest statement is: the machine could train roughly 1.5x faster than it does, not 10x. That is
+worth taking for a 60,000-update campaign, and it must not be changed underneath a run that is in
+flight, but it is not the reason training is slow. Training is slow because the budget is genuinely
+large and the model is trained on a single CPU host.
 
 ### 3.4 P0-08's headline measurement no longer reproduces, but its diagnosis now looks right
 
@@ -271,8 +292,9 @@ Stop expanding breadth. The repository has strong, well-tested infrastructure an
 1. ~~**Let r3 finish, then export and re-qualify the 512-channel model.**~~ **Done** (3.5). It finished,
    exported, and re-qualified: 46.676 cents, pitch follows all four notes, comb gone. The next step on this
    path is a longer campaign (this was 1 epoch of a 60,000-update budget) and a real corpus.
-2. **Fix the GPU/thread throughput defect before the next run** (3.3b). This is what makes a 60,000-update
-   campaign, or several of them, affordable.
+2. **Raise `cpuThreads` for the next run** (3.3b). Measured: 12 threads is about 1.5x the throughput of 1,
+   and moving to the GPU is about 1.9x *slower*, so the only throughput win available is the thread count.
+   Worth taking for a 60,000-update campaign; not worth changing under a run in flight.
 3. **Investigate the level/peakyness mismatch** — the 187.5 Hz comb resolved with the trained 512-channel
    model (3.5). The remaining RMS shortfall (5.7-7.6 dB low, with peaks 1.8-2.5x high) is a quality
    observation rather than a gate failure, since `energy_ok` is peak-based. Treat it as the next
