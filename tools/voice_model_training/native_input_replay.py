@@ -92,3 +92,31 @@ def replay(acoustic_graph, vocoder_graph, captured, *, steps, _runtime=None):
     if not np.isfinite(wave).all() or np.max(np.abs(wave)) > 1:
         raise ValueError('Invalid finalized replay waveform')
     return mel, wave
+
+
+def predicted_mel(acoustic_graph, captured, *, steps, _runtime=None):
+    """Return only the acoustic mel for a captured replay request.
+
+    Uses a fresh single-use session, matching the production worker's behavior;
+    seeded random operators must not be reused across requests.
+    """
+    inputs, breathiness, _ = prepare_inputs(captured, steps)
+    if any(not isinstance(graph, bytes) or not 1 <= len(graph) <= 256 * 1024 * 1024
+           for graph in (acoustic_graph,)):
+        raise ValueError('Replay requires bounded captured acoustic graph bytes')
+    if _runtime is None:
+        import onnxruntime as _runtime
+    _runtime.disable_telemetry_events()
+    options = _runtime.SessionOptions()
+    options.intra_op_num_threads = options.inter_op_num_threads = 1
+    acoustic = _runtime.InferenceSession(acoustic_graph, options, providers=['CPUExecutionProvider'])
+    names = {value.name for value in acoustic.get_inputs()}
+    if names == set(inputs) | {'breathiness'}:
+        inputs['breathiness'] = (np.zeros_like(inputs['f0']) if breathiness is None else breathiness)
+    elif names != set(inputs):
+        raise ValueError('Replay controls differ from the acoustic graph interface')
+    mel = acoustic.run(['mel'], inputs)[0]
+    if (mel.dtype != np.float32 or mel.shape != (1, inputs['f0'].shape[1], 80)
+            or not np.isfinite(mel).all()):
+        raise ValueError('Invalid acoustic replay mel')
+    return mel

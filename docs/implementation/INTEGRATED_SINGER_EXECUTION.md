@@ -1,5 +1,33 @@
 # Integrated Singer Execution
 
+## Fricative over-smoothing confirmed across the whole development set
+
+Extended the single-song flatness observation to all five frozen development
+replay sources (00003, 00005, 00024, 00402, 00420) with the retained epoch-21
+acoustic export and epoch-2 vocoder graph. Every selected song was analyzed; no
+song or phone was dropped.
+
+| Class | Measured windows | Mean reference flatness | Mean predicted flatness | Mean delta | Worsened |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Unvoiced | 27 | 0.7139 | 0.0302 | -0.6837 | 27 / 27 |
+| Voiced | 86 | 0.0464 | 0.0080 | -0.0384 | 86 / 86 |
+
+The fricative collapse is consistent, not a single-phrase accident: the acoustic
+model predicts roughly 24x less spectral flatness than the reference in unvoiced
+phones. The voiced class also moves in the same direction but about 18x less, so
+this looks like a general over-smoothing with a much larger effect on noise-like
+segments. That framing is consistent with an acoustic model that regresses toward
+smooth harmonic output, but a per-song check cannot prove the mechanism: no loss,
+data or conditioning cause has been isolated yet.
+
+Also fixed a coverage-counting defect found while generalizing: phones too short
+to measure were being counted as uncovered frames. Ownership and measurability
+are now separate, and the corrected real report shows 0 uncovered frames here.
+
+Evidence: `predicted-flatness-e21-r1.json`; new `run_spectral_flatness` CLI plus
+`acoustic_export.load_acoustic_graph` and `native_input_replay.predicted_mel`.
+No acoustic or vocoder objective was changed in this step.
+
 ## Correction: the fricative defect originates in the acoustic model
 
 Earlier work established that the vocoder is part of the problem, because

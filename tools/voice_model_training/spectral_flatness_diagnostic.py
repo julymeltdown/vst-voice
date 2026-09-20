@@ -42,8 +42,10 @@ def per_phone_flatness(flatness, phones, *, minimum_frames=2):
         left, right = (start + 255) // 256, stop // 256
         row = dict(phone=symbol, startFrame=start, endFrame=stop,
                    analysisFrames=max(0, right - left))
+        # Coverage is ownership, independent of whether the interval is long
+        # enough to measure. Counting short phones as uncovered overstated it.
+        covered[left:right] = True
         if right - left >= minimum_frames:
-            covered[left:right] = True
             row.update(measurements='MEASURED', meanFlatness=float(np.mean(flatness[left:right])),
                        minimumFlatness=float(np.min(flatness[left:right])),
                        maximumFlatness=float(np.max(flatness[left:right])))

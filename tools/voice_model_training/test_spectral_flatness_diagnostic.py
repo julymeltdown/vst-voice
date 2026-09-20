@@ -19,7 +19,9 @@ class FlatnessTests(unittest.TestCase):
         self.assertEqual(rows[0]['measurements'], 'MEASURED')
         self.assertEqual(rows[1]['measurements'], 'TOO_FEW_FRAMES')
         self.assertIsNone(rows[1]['meanFlatness'])
-        self.assertEqual(uncovered, 6)
+        # flatness spans 16 hops (4096 samples); the phones cover only 2816,
+        # so the trailing 5 analysis frames are genuinely uncovered.
+        self.assertEqual(uncovered, 5)
 
     def test_signed_difference_and_alignment(self):
         phones = [dict(symbol='s', startFrame=0, endFrame=5120)]
