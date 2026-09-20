@@ -1,5 +1,45 @@
 # Integrated Singer Execution
 
+## Distinct fricatives collapse toward one spectrum while vowels do not
+
+Tested whether the model distinguishes different phone types at all, by measuring
+the mean spectrum of each symbol and the average L1 distance between symbols, then
+comparing the predicted separation to the reference separation. The checkpoint is
+not undertrained: the retained run trained 140+ epochs and its own track reached
+mean loss ~0.12, so a converged objective still leaves this pattern.
+
+| Song | Class | Reference separation | Predicted separation | Ratio |
+| --- | --- | ---: | ---: | ---: |
+| 00003 | unvoiced | 3.223 | 1.787 | 0.554 |
+| 00005 | unvoiced | 2.809 | 1.677 | 0.597 |
+| 00024 | unvoiced | 2.940 | 1.635 | 0.556 |
+| 00402 | unvoiced | 2.873 | 1.049 | 0.365 |
+| 00003 | voiced | 0.886 | 0.864 | 0.975 |
+| 00005 | voiced | 0.833 | 0.728 | 0.873 |
+| 00024 | voiced | 0.854 | 0.720 | 0.843 |
+| 00402 | voiced | 0.843 | 0.774 | 0.917 |
+| 00420 | voiced | 0.973 | 0.897 | 0.922 |
+
+Predicted unvoiced symbols sit at 37-60% of the reference separation, while
+voiced symbols stay at 84-98%. Different fricatives are being collapsed toward a
+shared spectrum roughly twice as hard as different vowels are, and the voiced
+class is essentially preserved.
+
+This is the sharpest description of the defect so far, and it is consistent with
+the flatness result: spectrum energy concentrated into few bins *and* not varying
+meaningfully between distinct fricative tokens. It also explains why the earlier
+checks found no gain offset and no temporal smoothing to fix, while the mel error
+stayed large.
+
+The base conditioning gives every unvoiced phone the same f0 of zero, so the only
+signal separating /s/ from /t/ is the phone token embedding. That is the concrete
+mechanism worth testing next: whether the acoustic model is under-using the phone
+token for unvoiced phones, which would point at the conditioning or the embedding
+rather than at the loss form or the sampler. This remains a hypothesis; the
+separation measurement does not by itself prove which component is at fault.
+
+Evidence: `phone-spectrum-separation-e21-r1.json`.
+
 ## Frame weighting rejected: unvoiced phones already carry extra loss share
 
 Tested whether the fricative underfit is simply because the objective barely
