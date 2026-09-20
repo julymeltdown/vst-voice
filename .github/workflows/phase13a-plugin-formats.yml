@@ -255,20 +255,19 @@ jobs:
           Write-Host "seam-step: created $($cert.Thumbprint)"
           Export-Certificate -Cert $cert -FilePath "$env:RUNNER_TEMP\project-seam-development.cer" | Out-Null
           Write-Host 'seam-step: exported'
-          # Trust the self-signed certificate as a root so signtool can chain it.
-          # Import-Certificate against Cert:\CurrentUser\Root opens a blocking
-          # confirmation prompt that never returns on a non-interactive runner:
-          # this step sat for over two hours before it was diagnosed. The .NET
-          # store API performs the same import without any prompt. The job had
-          # always been skipped because the VST3 job failed first, so the stall
-          # was not observed until that gate was cleared.
-          $store = New-Object System.Security.Cryptography.X509Certificates.X509Store('Root', 'CurrentUser')
-          try {
-            $store.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
-            $store.Add($cert)
-          } finally {
-            $store.Close()
-          }
+          # Trust the self-signed certificate as a root so signtool's
+          # `verify /pa` can build a chain to it; without this the dev-signed
+          # uninstaller fails verification.
+          #
+          # Both managed paths stall on a non-interactive runner and were
+          # observed doing so. Import-Certificate against Cert:\CurrentUser\Root
+          # blocks on a confirmation prompt. So does the .NET X509Store route:
+          # instrumented logs show 'exported' at 01:07:28 and then nothing until
+          # the job timeout, so the stall is inside $store.Open(ReadWrite) or
+          # $store.Add, before signtool ever runs. certutil is the
+          # non-interactive path and does not involve the shell prompt at all.
+          & certutil.exe -user -addstore Root "$env:RUNNER_TEMP\project-seam-development.cer"
+          if ($LASTEXITCODE -ne 0) { throw "certutil failed to trust the development root: $LASTEXITCODE" }
           Write-Host 'seam-step: root trust installed'
           "WINDOWS_DEVELOPMENT_SIGN_CERT_SHA1=$($cert.Thumbprint)" | Out-File -FilePath $env:GITHUB_ENV -Append
           if (-not (Test-Path "Cert:\CurrentUser\Root\$($cert.Thumbprint)")) { throw 'Development root certificate was not trusted' }
