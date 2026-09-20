@@ -109,6 +109,46 @@ parity before interpreting the intermediate mel as native-worker-equivalent.
 
 ## macOS authoring regression alongside training
 
+### Completed graph replay and conditioning ablation
+
+Replay of the exported acoustic and epoch-two vocoder graphs with captured native
+inputs reproduces the song 00005 master within 6.7056e-8 maximum absolute sample
+error after the source-defined float32 center-pan gain. No gain fitting, offset
+search, trimming beyond declared final-hop padding, or resampling was used.
+The two master channels are identical. This supports using replay intermediates
+for this candidate and song, not a blanket cross-platform parity claim.
+
+Four retained raw-mono vocoder experiments vary mel and F0 independently. The
+predicted mel is computed once with the native score inputs; replacing vocoder
+F0 does not recompute acoustic mel.
+
+| Mel / vocoder F0 | Pitch mean absolute cents | Within 50 / measurable | Unmeasurable |
+| --- | --- | --- | --- |
+| Predicted / score | 114.587734 | 919 / 996 | 109 |
+| Predicted / measured source | 118.309962 | 917 / 1002 | 106 |
+| Source / score | 15.942844 | 1039 / 1063 | 34 |
+| Source / measured source | 34.245985 | 1011 / 1058 | 41 |
+
+All four strict statuses remain `MISMATCH`. At frames 3,584 and 254,208, changing
+F0 alone retains estimates near 187.59/93.75 Hz. Substituting source mel with the
+same score F0 yields 587.16/659.30 Hz, close to the intended notes. Predicted versus
+source mel mean absolute difference is 2.837745. These interventions implicate
+predicted-mel conditioning in the observed regression; they do not prove which
+acoustic feature, sampler setting or training distribution causes it, nor prove
+the vocoder is otherwise correct. Source-derived mel is a diagnostic oracle, not
+an implementable inference substitute for a new song.
+
+Retained artifact directory: `conditioning-ablation-e2-00005-r1/` under the pause
+corpus root, containing all four WAVs and full pitch comparisons. `ablation.json`
+SHA-256: `8e5860bd32d210e6072364aafb8f23db822f219baac728a9cab782907f62b5dc`.
+Input replay SHA-256: `b763ad4d667490d78f7eda627fae5fe7a17ae37c0cd540b324163152995956c8`.
+The song overlaps vocoder training, and no qualification claim follows.
+
+Next experiment: compare acoustic sampler-step settings with the same native
+inputs and fixed vocoder, then inspect conditioning/training discrepancies if
+the mel mismatch persists. The worker currently pins 10 steps. Do not silently
+change that production value or its cache identity based on this one song.
+
 Rebuilt `seam_original_singer_song_journey_tests` and
 `seam_procedural_install_journey_tests` from source at `300ad02c`, including
 dependent AppKit/native-editor code, using `cmake --build build/release --target
