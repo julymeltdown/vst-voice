@@ -1,5 +1,41 @@
 # Integrated Singer Execution
 
+## The repaired channel is live at inference but defaults to silence
+
+The acoustic-side repair now trains, and the first warm-started run is producing
+lower loss than its baseline (0.2607857085384099 at epoch 21, then 0.247768,
+0.247176, 0.234563 across the first three epochs of the new experiment). That
+number alone does not establish a fricative fix and is not offered as one. It is
+recorded here because training is advancing and the artifact receipts stay
+`releaseEligible=False`.
+
+A second gap was found while checking how the trained channel would actually be
+used, and it is a product gap rather than a training one. Both inference paths
+default breathiness to zero everywhere, so the repaired model would receive an
+all-zero control at render time unless something supplies it:
+
+- `libs/seam-neural-synthesis/src/diffsinger_inputs.cpp` line 45 initialises
+  `result.breathiness` to 0.0 across every frame and copies request values only
+  where the caller provided them.
+- `libs/seam-neural-synthesis/src/neural_phrase_backend.cpp` line 205 does the
+  same, and then only attaches the vector when at least one frame is nonzero
+  (`if (anyBreathiness)`), so an unautomated project sends no conditioning at all.
+
+The worker side is already correct and was verified: `apps/seam-neural-worker/main.cpp`
+detects the fifth input, rejects a request carrying breathiness to a graph that
+cannot consume it, and fills zeros only when the caller supplies nothing. The
+existing project-level control is user automation through
+`libs/seam-domain/src/breathiness_automation.cpp`.
+
+The honest consequence: an all-zero control is exactly where the zero-initialized
+warm start begins, so an unautomated render should reproduce the old model's
+behaviour closely. Whether the channel helps by default therefore depends on
+deriving breathiness from the score and phoneme context rather than on a human
+drawing it. That derivation does not exist yet; it is the next requirement for
+this repair, and until it is built and measured, the fricative defect cannot be
+claimed fixed in the product even if the acoustic model has learned to use the
+channel.
+
 ## Warm start can now admit the aperiodicity channel, and only it
 
 The conditioning repair was blocked at one exact place, and it was not the
