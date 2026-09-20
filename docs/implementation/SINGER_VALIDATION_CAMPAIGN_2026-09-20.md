@@ -1,5 +1,41 @@
 # Application singer validation campaign — September 20, 2026
 
+## Corrected five-song sampler sweep: no production change
+
+All 15 cases (five fixed songs at 10, 20 and 32 steps) completed with fresh
+acoustic/vocoder sessions per case and exact captured native dynamics. Every
+10-step baseline matches both native master channels after the fixed float32
+center-pan gain, with maximum sample errors between 6.3330e-8 and 7.4506e-8.
+No fitted gain, offset search, changed pitch threshold or excluded failure was used.
+This supersedes the session-reusing step experiments preserved below.
+
+| Steps | Within 50 cents / measurable pairs | Weighted pitch MAE (cents) | Unmeasurable frames | Voicing mismatches |
+| --- | --- | --- | --- | --- |
+| 10 | 3732 / 3974 (93.9104%) | 70.1603 | 378 | 144 |
+| 20 | 3749 / 3992 (93.9128%) | 69.8606 | 364 | 142 |
+| 32 | 3755 / 3997 (93.9455%) | 66.4902 | 357 | 142 |
+
+All 15 strict pitch comparisons remain `MISMATCH`. Song 00420 worsens from
+31.7524 to 38.8146 cents at 32 steps; the aggregate is not universal improvement.
+Mel MAE improves slightly at 20 steps on all five songs and is slightly worse at
+32 than at 20. Changing steps alone does not resolve the conditioning problem.
+These are diagnostic measurable-pair statistics, not full-product acceptance.
+
+Artifacts: `/Users/lhs/seam-corpus-pauses-2026-09-19-r1/sampler-steps-e13-v2-cohort-fresh-r2/`.
+Each song retains all three WAVs, full pitch comparisons, capture/source hashes
+and baseline parity. Top-level `experiment.json` SHA-256:
+`8f9a076a35d8c92c3b05e1e5094ed7f8abee3f47510da48cc33d55729b4bcde2`.
+The four refreshed captures plus the earlier song 00024 capture now all contain
+native dynamics runs; their application rerenders retain the original master hashes.
+Full Python training-tool suite: 258 tests run, 257 passed, one skipped (46.834 s).
+
+Decision: keep production at 10 steps and retain both vocoder candidates. Next
+compare native tokens/durations/F0 against the acoustic training-conditioning
+representation for the same captured sources. Resolve any proven mismatch before
+further training; do not change labels or boundaries solely to improve a metric.
+The three known vocoder-training overlaps remain disclosed, and musical
+qualification is still open. Windows support remains TODO.
+
 ## Vocoder epoch-two comparison: completed, mixed quality outcome
 
 All five real production-worker render/export/reopen and measurement executions
