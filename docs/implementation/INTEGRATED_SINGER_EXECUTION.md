@@ -22,10 +22,24 @@ fresh-session reconstruction and the unchanged five-song application campaign
 with the fixed epoch-two vocoder and 10 production sampling steps. A short
 experiment cannot qualify a singer or establish final convergence.
 
-Planned new output roots are `acoustic-e21-reset-l1-r1` and
-`acoustic-e21-reset-l2-r1` under the existing pause corpus directory. Neither
-arm is claimed completed here. No architecture, sampler or quality threshold
-changes accompany this experiment.
+Both arms completed two epochs with full coverage, 267 updates per epoch, and
+both checkpoint binaries retained. Output roots are `acoustic-e21-reset-l1-r1`
+and `acoustic-e21-reset-l2-r1` under the existing pause corpus directory.
+Final receipt hashes:
+
+- L1: `57c0a81c15fcd8d9d4a82d6eba6b45ebf8e1b7f658c231b16abd2c6c3ab5da69`;
+  binary `436d64bf9dc52e3147367f0ce194d426f7878ddc10e898165d5bfd6e6ae3e74c`.
+- L2: `b7b7cf0a770d73704a5359a48893c9b6fc2e239db149c2aa82db9f38e71be040`;
+  binary `581ebb1b6afda109a9eb42ee5ee2efbde9a0d525d956a08d1934aa0787c947e9`.
+
+Training session 95948 exited successfully. Evaluation session 35697 is running
+the completion/lineage checks, export, bundle preparation and fixed application
+campaign sequentially for L1 then L2. Recheck session liveness before reuse.
+New artifact stems are `export-e21-reset-{l1,l2}-r1`,
+`bundle-e21-reset-{l1,l2}-r1`, and `campaign-e21-reset-{l1,l2}-r1`.
+No audio winner is claimed yet. No architecture, sampler or quality threshold
+changes accompany this experiment. Implementation verification: 266 Python tests
+run, 265 passed and one skipped; tracked-source closure and diff checks passed.
 
 ## Epoch 37 evaluated and rejected; retain epoch 21
 
