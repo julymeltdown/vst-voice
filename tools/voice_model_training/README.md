@@ -25,6 +25,16 @@ It shares the native execution/measurement loop with validation campaigns withou
 relaxing their validation-partition admission. Failed renders stay in the report;
 an execution pass does not mean a pitch or musical-quality pass.
 
+After the final campaign receipt is published, use
+`python -m tools.voice_model_training.summarize_frozen_campaign --campaign PATH
+--campaign-sha256 SHA --preparation PATH --pitch-executable PATH --output NEW`.
+It remeasures every successful WAV against the captured executable, checks the
+full preparation cohort, and binds score/rest diagnostics to each comparison.
+The full-cohort aggregate is null if any execution fails or lacks measurable
+pitch. Silence is checked separately per channel; no-rest songs are not silence
+passes. Reference mismatch diagnostics do not replace the product contract's
+steady-frame, median-pitch or independent musical-review requirements.
+
 The real export now passes native acoustic smoke execution and wrong-hash rejection.
 To meet native finite-tensor intake, encoder export maps only recognized scalar
 negative-infinity Where mask constants to finite float32 floor; other nonfinite

@@ -1,5 +1,54 @@
 # Integrated Singer Execution
 
+## Frozen 16-phrase baseline completed: native execution passes, quality unqualified
+
+The epoch-21 acoustic / epoch-two vocoder campaign finished all 16 new phrases.
+Every native execution passed; every strict reference pitch comparison reported
+`MISMATCH`. No phrase was replaced or omitted. Fresh WAV remeasurement reproduced
+the saved metrics, and score/rest diagnostics were bound to captured labels.
+
+| Measurement | Full 16-phrase result |
+| --- | ---: |
+| Measurable voiced pairs | 16,613 |
+| Within 50 cents of the procedural reference | 16,001 / 16,613 (96.3161%) |
+| Frame-weighted mean absolute reference pitch error | 32.1154 cents |
+| Unmeasurable frames | 1,088 |
+| Voicing-mismatch frames | 493 |
+| Out-of-tolerance pairs inside notes / crossing transitions | 254 / 358 |
+| Explicit rests exactly zero in both channels | 8 / 8 |
+
+The percentage is conditional on measurable voiced pairs, not all frames. The
+strict comparator flags any excessive error or voicing mismatch, so its status
+is not equivalent to the contract's steady-frame and median-pitch gates. Written
+notes are also not expressive-pitch ground truth. Among the 254 interior
+reference/candidate mismatches, 130 reference estimates and 136 candidate
+estimates were within 50 cents of the written note; those counts can overlap.
+It would be incorrect to attribute every disagreement to the neural model.
+
+This demonstrates execution and measured same-voice phrase behavior beyond the
+declared training identities. It does not prove natural female timbre, lyrical
+intelligibility, expressive phrasing, independent musical approval, multilingual
+coverage, or Beta GO. These are results for the preserved model, not a new model
+improvement. Do not tune against this cohort and continue calling it untouched.
+
+Implemented `summarize_frozen_campaign`: fresh full-cohort remeasurement plus
+hash-bound score/rest diagnostics. Any failed or unmeasurable song prevents a
+complete aggregate; per-song records remain. Full suite: 295 tests, 294 passed,
+one skipped. Evidence under `/Users/lhs/seam-corpus-pauses-2026-09-19-r1/`:
+
+- `frozen-campaign-e21-r1/campaign.json`, SHA-256
+  `ffbe4eaf1b5486568f1839dde161f8ea6df5d02611e25f47eb4fef701973c144`.
+- `frozen-campaign-e21-diagnostic-r1.json`, SHA-256
+  `cdfa6972a09c55a06bb747483895d4cb085d382abfcd6d88695920e97287181e`.
+
+Next development: measure score-grounded steady voiced regions and articulation
+coverage on the existing development set, explicitly separating intended
+unvoiced consonants and expressive transitions from sustained-note errors.
+Preserve the strict whole-frame diagnostics alongside those measurements. Use
+the findings to choose a specific acoustic/renderer repair instead of another
+blind training sweep. This evaluation cohort is now observed and must remain a
+named regression baseline, not be reused as an untouched final qualification set.
+
 ## Frozen evaluation-only native campaign launched
 
 Implemented `frozen_evaluation_campaign` and factored the existing native
