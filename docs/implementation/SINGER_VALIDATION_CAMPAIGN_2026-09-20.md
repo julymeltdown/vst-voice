@@ -1,5 +1,49 @@
 # Application singer validation campaign — September 20, 2026
 
+## Training-versus-native conditioning: compared, not a demonstrated fix
+
+The captured dataset snapshot matches acoustic epoch 13's dataset identity.
+The normal conditioning batch reader revalidated shard bytes against captured
+labels before comparison. All five native token sequences match the training
+vocabulary/sequence exactly. Training/native phone-frame differences are small:
+
+| Song | Phone-frame mismatches | F0 voiced/unvoiced differences | Common voiced frames | Mean absolute F0 difference (cents) |
+| --- | --- | --- | --- | --- |
+| 00003 | 7 / 1266 | 50 | 1178 | 35.3310 |
+| 00005 | 12 / 1149 | 49 | 1049 | 25.0367 |
+| 00024 | 16 / 1008 | 48 | 918 | 43.7510 |
+| 00402 | 7 / 633 | 20 | 516 | 25.2048 |
+| 00420 | 5 / 563 | 15 | 501 | 35.5406 |
+
+Duration discrepancies are one-frame boundary ownership differences; training F0
+is measured whereas native F0 is score/voicing conditioned. Neither difference
+alone establishes a bug or authorizes changing existing labels/cache revisions.
+
+A fresh-session 10-step ablation on song 00005, preserving native sample dynamics,
+tests these differences directly. Each changed F0 conditions both acoustic and
+vocoder graphs, unlike the earlier vocoder-only F0 swap.
+
+| Conditioning | Mel MAE | Pitch mean absolute cents | Within 50 / measurable | Unmeasurable |
+| --- | --- | --- | --- | --- |
+| Native baseline | 2.837745 | 114.587734 | 919 / 996 | 109 |
+| Training durations only | 2.842628 | 109.514191 | 920 / 992 | 107 |
+| Training F0 only | 2.838651 | 120.080445 | 916 / 1003 | 107 |
+| Both training inputs | 2.843495 | 119.644037 | 911 / 998 | 104 |
+
+All cases remain `MISMATCH`; training-input substitution does not repair mel
+reconstruction in this example. Native baseline WAV is byte-identical to prior
+replay. Retained directory: `training-conditioning-ablation-00005-r1/` under
+the pause-corpus root. `experiment.json` SHA-256:
+`7883d23689c5ef34a1c34d78c1ca9bf500e45561dfa8241fc7cd99ba0358ac41`.
+It binds the dataset, native inputs, graphs and source. This song overlaps vocoder
+training; neither this ablation nor the cohort establishes musical qualification.
+
+Decision: do not patch duration rounding, substitute measured F0 at runtime, or
+relax pitch checks based on these results. Next assess acoustic reconstruction
+on training and validation material under the same fresh-session inference
+contract to distinguish poor learned reconstruction from generalization alone,
+then select a bounded training/model intervention with frozen regression checks.
+
 ## Corrected five-song sampler sweep: no production change
 
 All 15 cases (five fixed songs at 10, 20 and 32 steps) completed with fresh
