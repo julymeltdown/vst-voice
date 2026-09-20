@@ -87,6 +87,18 @@ class VocoderEpochRunTests(unittest.TestCase):
         publish_new(destination / "checkpoint.json", receipt)
         return receipt
 
+    def test_warm_start_parent_for_new_epoch_one(self):
+        with tempfile.TemporaryDirectory() as temporary, patch(
+                'tools.voice_model_training.vocoder_epochs.train_reviewed_vocoder_epoch',side_effect=self.epoch) as train:
+            options=self.options(epochs=1,parent_receipt_sha256='a'*64)
+            options['metadata']['warmStart']=dict(sourceReceiptSha256='a'*64)
+            run_reviewed_vocoder_epochs(None,[],None,None,output=Path(temporary)/'run',**options)
+            self.assertEqual(train.call_args.kwargs['run_metadata']['completedEpochs'],1)
+            self.assertEqual(train.call_args.kwargs['run_metadata']['parentReceiptSha256'],'a'*64)
+            options['parent_receipt_sha256']=None
+            with self.assertRaises(ValueError):
+                run_reviewed_vocoder_epochs(None,[],None,None,output=Path(temporary)/'bad',**options)
+
     def test_lineage_remaining_bound_reconstruction_and_metadata(self):
         with tempfile.TemporaryDirectory() as temporary, \
                 patch("tools.voice_model_training.vocoder_epochs.train_reviewed_vocoder_epoch",

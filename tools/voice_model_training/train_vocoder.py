@@ -148,7 +148,9 @@ def partial_resume_identity(directory, digest, *, metadata, profile, dataset, ob
         raise ValueError('Partial resume requires identical captured inputs and an incomplete epoch')
     number, parent = run.get('completedEpochs'), run.get('parentReceiptSha256')
     if (type(number) is not int or not 1 <= number <= 100000
-            or (parent is not None if number == 1 else
+            or (parent is not None and not (isinstance(run.get('warmStart'), dict)
+                    and run['warmStart'].get('sourceReceiptSha256') == parent
+                    and isinstance(parent, str) and re.fullmatch(r'[0-9a-f]{64}', parent)) if number == 1 else
                 not isinstance(parent, str) or re.fullmatch(r'[0-9a-f]{64}', parent) is None)):
         raise ValueError('Partial checkpoint epoch lineage differs')
     return number - 1, parent
@@ -171,6 +173,8 @@ def main(argv=None):
         parser.add_argument('--' + name, required=True)
     parser.add_argument('--resume', type=Path, help='Trusted local complete epoch directory')
     parser.add_argument('--resume-receipt-sha256')
+    parser.add_argument('--warm-start', type=Path)
+    parser.add_argument('--warm-start-receipt-sha256')
     parser.add_argument('--resume-partial', type=Path, help='Trusted local partial-update directory; not a complete epoch')
     parser.add_argument('--resume-partial-sha256')
     parser.add_argument('--checkpoint-interval-updates', type=int, help='Save partial recovery state every N updates')
@@ -190,6 +194,9 @@ def main(argv=None):
         help='Trusted first-party feature extractor used for framewise reconstruction pitch')
     args = parser.parse_args(argv)
     try:
+        if ((args.warm_start is None) != (args.warm_start_receipt_sha256 is None)
+                or args.warm_start is not None and (args.resume is not None or args.resume_partial is not None)):
+            raise ValueError('Select one paired warm-start or resume mode')
         if args.retain_partial_checkpoints is not None and (args.checkpoint_interval_updates is None
                 or not 1 <= args.retain_partial_checkpoints <= 1000):
             raise ValueError('Partial retention requires periodic recovery and a bounded count')
@@ -248,6 +255,13 @@ def main(argv=None):
             targetInventorySha256=args.targets_sha256, torchVersion=str(torch.__version__),
             numpyVersion=np.__version__, scipyVersion=scipy.__version__, singerQualified=False)
         previous, completed = None, 0
+        inherited_path = args.resume or args.resume_partial
+        if inherited_path is not None:
+            inherited = load_config(inherited_path / 'checkpoint.json',
+                                    args.resume_receipt_sha256 or args.resume_partial_sha256)
+            origin = inherited.get('metadata', {}).get('run', {}).get('warmStart')
+            if origin is not None:
+                metadata['warmStart'] = origin
         parent_receipt = args.resume_receipt_sha256
         if args.resume is not None:
             previous, completed = resume_identity(args.resume, args.resume_receipt_sha256, metadata=metadata,
@@ -274,6 +288,12 @@ def main(argv=None):
         if previous is not None:
             restore_vocoder_checkpoint(generator, discriminators, go, do, args.resume,
                 receipt_sha256=args.resume_receipt_sha256, expected_metadata=previous, schedulers=schedulers)
+        elif args.warm_start is not None:
+            from .vocoder_warm_start import initialize
+            metadata['warmStart'] = initialize(generator, discriminators, go, do,
+                args.warm_start, args.warm_start_receipt_sha256, metadata=metadata,
+                profile=profile, dataset=snapshot['datasetSha256'], objective=objective_id)
+            parent_receipt = args.warm_start_receipt_sha256
         from .vocoder_epochs import run_reviewed_vocoder_epochs
         def progress(event):
             print(json.dumps(dict(formatId='com.project-seam.vocoder-training-progress', schemaVersion=1,

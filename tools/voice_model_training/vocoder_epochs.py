@@ -56,7 +56,11 @@ total and time limits are capped by the remaining run budgets.
     if (type(epochs) is not int or not 1 <= epochs <= 1000
             or type(completed_epochs) is not int or not 0 <= completed_epochs < 100000
             or completed_epochs + epochs > 100000
-            or (parent_receipt_sha256 is not None if completed_epochs == 0 else not valid_digest(parent_receipt_sha256))
+            or (not (parent_receipt_sha256 is None and isinstance(metadata, dict) and 'warmStart' not in metadata or
+                     isinstance(metadata, dict) and isinstance(metadata.get('warmStart'), dict)
+                     and valid_digest(parent_receipt_sha256)
+                     and metadata['warmStart'].get('sourceReceiptSha256') == parent_receipt_sha256)
+                if completed_epochs == 0 else not valid_digest(parent_receipt_sha256))
             or type(maximum_run_seconds) not in (int, float) or not math.isfinite(maximum_run_seconds)
             or not 0 < maximum_run_seconds <= 86400
             or type(maximum_total_checkpoint_bytes) is not int

@@ -59,7 +59,10 @@ class VocoderCommandTests(unittest.TestCase):
             required += ["--"+name, "unused"]
         for name in ("training-sha256", "dataset-sha256", "targets-sha256", "rights-policy-sha256", "label-policy-sha256"):
             required += ["--"+name, "a"*64]
-        for extra in (["--resume-partial", "partial"], ["--resume-partial-sha256", "b"*64],
+        for extra in (["--warm-start", "complete"], ["--warm-start-receipt-sha256", "b"*64],
+                      ["--warm-start", "complete", "--warm-start-receipt-sha256", "a"*64,
+                       "--resume", "other", "--resume-receipt-sha256", "b"*64],
+                      ["--resume-partial", "partial"], ["--resume-partial-sha256", "b"*64],
                       ["--resume", "complete", "--resume-receipt-sha256", "c"*64,
                        "--resume-partial", "partial", "--resume-partial-sha256", "d"*64],
                       ["--checkpoint-interval-updates", "0"]):

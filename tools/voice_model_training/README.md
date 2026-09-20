@@ -8,6 +8,14 @@ An objective change cannot be applied with exact `--resume`. Export requires
 matching objective metadata and explicit schema-four settings for the new term.
 This does not authorize training data or qualify the resulting singer.
 
+For a controlled objective/learning-rate experiment, use `--warm-start DIR`
+together with `--warm-start-receipt-sha256 SHA`, instead of either resume mode.
+This requires identical architecture, dataset/profile, source/target bindings,
+runtime and remaining settings. It copies both generator and discriminator
+weights, creates fresh optimizer/scheduler state, resets RNG, and starts a new
+epoch-one lineage pointing to the parent receipt. The source checkpoint is not
+modified. Subsequent exact or partial resume preserves that warm-start origin.
+
 Frozen evaluation reference capture (not a training corpus):
 
 ```sh

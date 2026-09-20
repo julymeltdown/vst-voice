@@ -1,5 +1,36 @@
 # Integrated Singer Execution
 
+## Explicit GAN warm start implemented and verified against retained baseline
+
+Added paired `--warm-start` / `--warm-start-receipt-sha256`, mutually exclusive
+with complete/partial resume. The helper loads the hash-verified complete GAN
+checkpoint, requires unchanged dataset/profile/architecture/runtime and source
+bindings, and permits only objective/schema and learning-rate setting changes.
+Every generator/discriminator tensor is checked for matching keys, shape, dtype
+and finite values before mutation. Optimizers must be empty and match the new
+captured learning rate. No optimizer state is imported; the CLI creates fresh
+schedulers and the helper resets Torch/Python/NumPy RNG to the captured seed.
+
+New experiment epoch one points to the source receipt and records weight/config
+digests, original objective, source epoch and reset policy. Epoch-run lineage
+allows this explicit parent only with matching warm-start metadata. Complete
+and partial resume inherit the origin while still requiring identical current
+settings. An orphan warm-start declaration is rejected by the run wrapper.
+
+Real load-only probe succeeded against epoch-two baseline receipt
+`401c082eba6f0a381f48d038eeb56499f0a31b8646b74bd2e4ac9f3f69ae4e5a`:
+13,936,386 generator parameters and two discriminators loaded, optimizer states
+empty. No optimizer step or checkpoint publication occurred. Evidence:
+`/Users/lhs/seam-corpus-pauses-2026-09-19-r1/vocoder-warm-start-probe-r1.json`,
+SHA-256 `0e7682febfe6d7db6fc33f5aa302de8fa16aac65174ef3061c476e4484c0fe25`.
+
+Full suite: 309 tests, 308 passed and one skipped; subsequent focused lineage
+and warm-start suite: 19 passed, including the newly added epoch-one parent test.
+Next: freeze and launch bounded paired original/periodicity objective training
+with identical warm-start controls, then evaluate unvoiced periodicity alongside
+voiced pitch, level, spectra and transitions. Preserve the baseline. Training
+admission must be refreshed; do not add evaluation sources to the training split.
+
 ## CLI objective selection and export identity now versioned
 
 Training configuration schema four extends schema three with mandatory
