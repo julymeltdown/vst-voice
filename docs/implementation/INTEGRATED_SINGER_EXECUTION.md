@@ -1,5 +1,53 @@
 # Integrated Singer Execution
 
+## Reject unvoiced excitation masking; confirm waveform frame-rate periodicity
+
+Tested an explicit zero-F0 harmonic-source mask with the retained epoch-two
+vocoder weights and source mel on development song 00005. The original harmonic
+excitation reaches `0.9999987483` in zero-F0 regions, but removing that excitation
+does **not** resolve the measured artifact. Both paired Torch arms produce the
+same confident/unvoiced window counts for every inspected consonant. Do not
+promote this mask or present it as an implemented synthesis repair.
+
+The long-phrase Torch baseline differs from the existing ONNX source-mel WAV by
+maximum `7.9788733e-05`, exceeding the attempted absolute `1e-5` check. The first
+attempt stopped; the second explicitly records this failed parity criterion and
+compares two Torch arms with identical weights/inputs. No parity threshold or
+production export acceptance rule was relaxed. This result is diagnostic only.
+
+Direct waveform analysis confirms a 256-sample periodicity in frication, rather
+than relying solely on an autocorrelation pitch label. After removing DC over
+each full captured phone interval, lag-256 correlations are:
+
+| Phone occurrence | Source | Baseline vocoder | Masked vocoder |
+| --- | ---: | ---: | ---: |
+| h at frame 84000 | 0.0008 | 0.8929 | 0.8940 |
+| h at frame 156000 | -0.0628 | 0.9343 | 0.9328 |
+| s at frame 228000 | 0.0505 | 0.9468 | 0.9468 |
+| ts at frame 246000 | 0.0419 | 0.8265 | 0.8265 |
+
+RMS levels remain broadly comparable; this is not simply a muted reference.
+The inspected k/t intervals do not show strong lag-256 correlation, so their
+pitch-estimator voicing classifications need a separate explanation. Do not
+generalize the frication result to every consonant.
+
+Next repair direction: the vocoder's unvoiced noise/upsampling representation,
+with phone-local periodicity included in validation. First implement a bounded
+diagnostic noise-input experiment with a fixed reproducible stream; evaluate
+frication spectrum, level, voiced-note accuracy and transitions before deciding
+whether a new trainable/versioned vocoder profile is warranted. Do not add random
+noise to the final waveform, mute consonants, overwrite the baseline weights, or
+modify the trusted upstream checkout as a shortcut.
+
+Evidence under `/Users/lhs/seam-corpus-pauses-2026-09-19-r1/unvoiced-excitation-mask-song5-r2/`:
+
+- `experiment.json`, SHA-256
+  `295a4a474005d5cb3587266cde7c8796c7c825c08257dd303381909e36af38a8`.
+- `periodicity.json`, SHA-256
+  `d82fdbc1b1be1169531a0c3383b3fd7c6c539fa08ed2fcaae6b7d7e309e96ca3`.
+
+No production code or weights changed; the current baseline remains preserved.
+
 ## Phone-local mel ablation demonstrates a vocoder-side defect
 
 On development song 00005, replayed epoch-21 acoustic features and epoch-two
