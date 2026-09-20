@@ -1,5 +1,29 @@
 # Integrated Singer Execution
 
+## Paired training remains live; reusable phone-level waveform comparison added
+
+Verified supervisor session 74808 and both child processes remain live. Both
+arms reached 25/2804 updates (791,328 owned samples each), with no restart.
+The objectives' loss values now differ; because the new objective includes an
+extra term, those raw values are not directly comparable quality scores.
+
+Added `phone_periodicity.measure` to evaluate all captured phone intervals with
+paired RMS, peak, DC, lag correlation, lag-difference RMS ratio and output/source
+RMS ratio. Too-short intervals and absent centered energy are explicit, not
+dropped or scored favorably. Constant DC is handled without roundoff-induced
+fake correlation. Inputs require bounded normalized equal-length mono waveforms
+and complete contiguous phone ownership. Callers retain responsibility for
+source/label/audio hash binding; the helper grants no qualification.
+
+Three focused tests pass. Exercised the helper on the byte-bound development
+baseline: all eight previously inspected unvoiced-phone correlations reproduce
+within `1e-12`, and all 31 phone rows remain in the new report. Evidence:
+`/Users/lhs/seam-corpus-pauses-2026-09-19-r1/phone-periodicity-baseline-song5-r1.json`,
+SHA-256 `ab4619d1ac5e744dfb465da166a9fe6546a1a3911efc4714c64ee06ae9261658`.
+
+This prepares consistent comparison of the trained arms. Neither training arm
+has completed an epoch at this checkpoint; no model was promoted or restarted.
+
 ## Paired original/periodicity vocoder experiment launched
 
 Frozen two schema-four configurations before training, then launched both via
