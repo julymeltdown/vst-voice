@@ -1,5 +1,23 @@
 # Application singer validation campaign — September 20, 2026
 
+## macOS authoring regression alongside training
+
+Rebuilt `seam_original_singer_song_journey_tests` and
+`seam_procedural_install_journey_tests` from source at `300ad02c`, including
+dependent AppKit/native-editor code, using `cmake --build build/release --target
+seam_original_singer_song_journey_tests seam_procedural_install_journey_tests -j 2`.
+Both CTest targets passed in 14.02 seconds: four authored-song cases and fifteen
+installation/management cases. This covers installed procedural song rendering,
+tuning with undo/save/reopen/export, copying to a draft without mutating the
+installation, audible timing changes, missing/replacement/interrupted installs,
+review invalidation and application menu/dialog dispatch.
+
+These are real application-controller regression tests, not physical mouse/keyboard
+creator observation, DAW validation, Windows evidence, or learned-voice qualification.
+No source repair was needed. Vocoder training stayed live and reached 925/2804
+epoch-two updates during this check; that count is historical, not a completion
+receipt. No roadmap unit or musical acceptance gate is closed by this rerun.
+
 > **Qualification correction:** this is an acoustic-validation regression set,
 > not a jointly held-out acoustic-plus-vocoder set. Songs 00003, 00005 and 00024
 > occur in the vocoder's completed training coverage. The measurements remain
