@@ -30,7 +30,7 @@ def train_reviewed_vocoder_epoch(generator, discriminators, generator_optimizer,
         maximum_checkpoint_total_bytes=1024 * 1024 * 1024,
         recovery_directory=None, checkpoint_interval_updates=None,
         maximum_recovery_bytes=2 * 1024**3, retain_partial_checkpoints=None,
-        resume_partial=None, resume_partial_sha256=None):
+        resume_partial=None, resume_partial_sha256=None, excitation_noise_id=None):
     """Admit complete sources (<=4096 hops), optionally train balanced owned segments.
 
 The reconstruction callable and model/configuration provenance are caller-owned.
@@ -82,6 +82,12 @@ only once at complete-epoch coverage. Saved snapshots are not admission authorit
         raise ValueError("Partial retention requires periodic recovery and a bounded count")
     if recovery_enabled and training_segment_frames is None:
         raise ValueError("Partial recovery currently requires explicit balanced training segments")
+    if excitation_noise_id is not None:
+        from .uv_noise_excitation import EXCITATION_IDS, build_excitation_noise
+        if excitation_noise_id not in EXCITATION_IDS:
+            raise ValueError('Unsupported excitation noise identity')
+    else:
+        build_excitation_noise = None
     if recovery_directory is not None:
         recovery_directory = Path(recovery_directory)
         if (type(checkpoint_interval_updates) is not int or not 1 <= checkpoint_interval_updates <= 100000
@@ -225,7 +231,10 @@ only once at complete-epoch coverage. Saved snapshots are not admission authorit
     report("updates-started", totalUpdates=planned_updates)
     covered, total, gl, dl = {}, 0, 0.0, 0.0
     source_updates, updates = {}, 0
+    excitation_digest = hashlib.sha256()
     segment_options = {} if training_segment_frames is None else dict(training_segment_frames=training_segment_frames)
+    if excitation_noise_id is not None:
+        segment_options['include_unvoiced_frames'] = True
     for batch in iter_vocoder_batches(snapshot, conditioning_directory, target_inventory, source_inventory,
             expected_profile_sha256=expected_profile_sha256, partition="train", batch_frames=4096, **segment_options):
         check_lifetime()
@@ -268,6 +277,11 @@ only once at complete-epoch coverage. Saved snapshots are not admission authorit
         if periodic_labels is not None:
             auxiliary['periodicity_mask'] = phone_mask(periodic_labels[identity],
                 sample_offset=begin * hop, sample_count=batch['pcm'].shape[2], valid_samples=owned)
+        if build_excitation_noise is not None:
+            noise = build_excitation_noise(
+                batch['unvoicedFrames'][0].numpy(), excitation_noise_id)
+            auxiliary['excitation_noise'] = noise
+            excitation_digest.update(noise.numpy().tobytes())
         result = vocoder_gan_step(generator, discriminators, generator_optimizer, discriminator_optimizer,
             mel=batch["mel"], f0=batch["f0"], pcm=batch["pcm"], hop_size=batch["hopSize"],
             partition="train", reconstruction_loss=reconstruction_loss, **auxiliary)
@@ -322,6 +336,9 @@ only once at complete-epoch coverage. Saved snapshots are not admission authorit
         meanGeneratorLoss=gl / total, meanDiscriminatorLoss=dl / total,
         coveredSourceSamples=covered, epochComplete=True, coverageVerified=True,
         labelOrigin=effective_label_origin, trainingAdmitted=False, releaseEligible=False)
+    if excitation_noise_id is not None:
+        epoch.update(excitationNoiseId=excitation_noise_id,
+                     excitationNoiseSha256=excitation_digest.hexdigest())
     if training_segment_frames is not None:
         epoch.update(trainingSegmentFrames=training_segment_frames, sourceUpdates=source_updates,
                      trainingGeometry="balanced-contiguous-complete-coverage-v1")
@@ -331,7 +348,8 @@ only once at complete-epoch coverage. Saved snapshots are not admission authorit
             for partition in sorted({partitions[source] for source in held_ids}):
                 check_lifetime()
                 for batch in iter_vocoder_batches(snapshot, conditioning_directory, target_inventory, source_inventory,
-                        expected_profile_sha256=expected_profile_sha256, partition=partition, batch_frames=4096):
+                        expected_profile_sha256=expected_profile_sha256, partition=partition, batch_frames=4096,
+                        include_unvoiced_frames=excitation_noise_id is not None):
                     check_lifetime()
                     source = batch["sourceId"]
                     if source not in held_ids:
@@ -363,6 +381,7 @@ only once at complete-epoch coverage. Saved snapshots are not admission authorit
             profile=profiles[0], output_directory=reconstruction_directory,
             seed=evaluation_seed, check_running=check_lifetime,
             pitch_executable=pitch_executable,
+            excitation_noise_id=excitation_noise_id,
         )
         epoch["reconstructionSummary"] = reconstruction_receipt.get("summary")
         epoch["reconstruction"] = reconstruction_receipt

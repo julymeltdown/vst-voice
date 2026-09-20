@@ -41,12 +41,19 @@ def export_identity(state, receipt, profile):
     epoch = state.get("epoch", {})
     from .unvoiced_periodicity import OBJECTIVE_ID as PERIODIC_OBJECTIVE
     objective = epoch.get('objectiveId')
-    if objective == PERIODIC_OBJECTIVE:
+    settings = run.get('settings', {})
+    excitation_noise_id = settings.get('excitationNoiseId')
+    if objective == PERIODIC_OBJECTIVE or excitation_noise_id is not None:
         from .train_vocoder import model_settings, training_objective
-        settings = run.get('settings', {})
-        if (settings.get('schemaVersion') != 4 or model_settings(settings) != configuration
+        expected_schema = 5 if excitation_noise_id is not None else 4
+        if (settings.get('schemaVersion') != expected_schema or model_settings(settings) != configuration
                 or training_objective(settings) != objective):
-            raise ValueError('Periodicity export requires explicit matching version-four settings')
+            raise ValueError('Variant export requires explicit matching versioned settings')
+    if excitation_noise_id is not None:
+        from .uv_noise_excitation import EXCITATION_IDS
+        if excitation_noise_id not in EXCITATION_IDS:
+            raise ValueError('Unsupported excitation noise identity')
+        configuration = dict(configuration, excitationNoiseId=excitation_noise_id)
     if (digest != metadata.get("profileSha256") or digest != epoch.get("profileSha256")
             or epoch.get("formatId") != "com.project-seam.vocoder-epoch-result"
             or epoch.get("datasetSha256") != metadata.get("datasetSha256")
@@ -74,8 +81,16 @@ def main():
         import onnxruntime as ort
         torch.set_num_threads(1)
         sys.path.insert(0, str(checkout))
-        from deployment.modules.nsf_hifigan import NSFHiFiGANONNX
-        adapter = NSFHiFiGANONNX(configuration)
+        excitation_noise_id = configuration.get('excitationNoiseId')
+        if excitation_noise_id is not None:
+            from deployment.modules.nsf_hifigan import Generator as _BaseGenerator
+            from .uv_noise_excitation import UvNoiseONNXAdapter, uv_noise_generator_class
+            from modules.nsf_hifigan.env import AttrDict
+            adapter = UvNoiseONNXAdapter.build(
+                uv_noise_generator_class(_BaseGenerator), AttrDict(configuration))
+        else:
+            from deployment.modules.nsf_hifigan import NSFHiFiGANONNX
+            adapter = NSFHiFiGANONNX(configuration)
         weights = {key.removeprefix("generator."): value for key, value in state["model"].items()
                    if key.startswith("generator.")}
         adapter.generator.load_state_dict(weights, strict=True)
@@ -84,7 +99,7 @@ def main():
         # The verified transport captures both GAN files before decoding. Export
         # needs only generator weights; release optimizer/discriminator memory.
         del state, weights
-        graph, parity = export_checked_onnx(adapter)
+        graph, parity = export_checked_onnx(adapter, excitation_noise=excitation_noise_id is not None)
         args.output.mkdir(mode=0o700)
         with (args.output / "vocoder.onnx").open("xb") as stream:
             if stream.write(graph) != len(graph):

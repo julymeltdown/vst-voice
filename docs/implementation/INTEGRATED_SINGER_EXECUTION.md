@@ -1,5 +1,47 @@
 # Integrated Singer Execution
 
+## UV-gated noise excitation implemented as a zero-parameter vocoder variant
+
+The falsifiable excitation experiment is now buildable end to end.
+tools/voice_model_training/uv_noise_excitation.py adds a caller-owned
+noise input summed into the mini-NSF harmonic source before source_conv.
+It introduces no parameters, so the variant's state_dict is identical to
+the base architecture and governed warm start applies unchanged. Two
+excitation identities exist: 'zero-v1' (control: identical randn draws
+multiplied by zero) and 'uv-gated-v1' (treatment: the same draws gated by
+admitted non-rest unvoiced ownership at one-third of the full-amplitude
+sine level, the classic NSF ratio). The gate comes from conditioning
+frames' (not voiced) and (not rest) flags - never f0==0 - so silence
+stays distinct, matching the review guardrail.
+
+Schema-5 training configurations declare excitationNoiseId; it joins
+objective/learning-rate/seed as a governed warm-start axis with lineage
+recorded. Both arms of an experiment instantiate the same subclassed
+generator (uv_noise_generator_class, an exact copy of the pinned
+upstream forward plus the noise addition), so the only between-arm
+difference is the excitation content, not the code path. Each segment's
+noise realization is hashed into the epoch receipt
+(excitationNoiseSha256) for draw verification. Held-out reconstruction
+rebuilds the gated noise under the evaluation seed so measured audio
+reflects trained behavior. Export accepts schema-5 checkpoints and emits
+a three-input (mel, f0, noise) graph through UvNoiseONNXAdapter with
+seeded parity cases; paired_vocoder_evaluation.run_graph feeds the
+noise input when the graph declares it and refuses mismatched feeding.
+
+Production-inference decision, recorded before training per the review
+protocol: the exported graph takes noise as an explicit input and the
+caller supplies a deterministic seeded realization bound to the request,
+gated by the score's own phone ownership - the graph stays a pure
+function, so replay is exact. Worker/request integration is deferred
+until the experiment shows the variant matters.
+
+Verification: 415 voice_model_training tests pass including new coverage
+that the zero arm reproduces the two-input forward bit for bit, that the
+gate excludes voiced and rest frames, that control/treatment consume the
+identical draw sequence, that state_dict keys are warm-start compatible,
+and that governed seed changes reseed and record lineage. No training
+run, bundle or production binary changed in this step.
+
 ## Corrected diagnostics: residual correlation is concentrated at hop multiples; no stochastic excitation exists
 
 Two corrected diagnostics replace the earlier sparse multilag reading.

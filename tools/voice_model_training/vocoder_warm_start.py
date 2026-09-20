@@ -33,7 +33,8 @@ def initialize(generator, discriminators, go, do, directory, digest, *, metadata
     # source bindings and runtime stay identical. The changed seed is
     # recorded in the returned lineage so a replicate is never mistaken
     # for a resume of the same draws.
-    allowed_settings = {'schemaVersion', 'objectiveId', 'learningRate', 'seed'}
+    allowed_settings = {'schemaVersion', 'objectiveId', 'learningRate', 'seed',
+                        'excitationNoiseId'}
     if ({k:v for k,v in run['settings'].items() if k not in allowed_settings}
             != {k:v for k,v in metadata['settings'].items() if k not in allowed_settings}):
         raise ValueError('Warm start only permits objective/learning-rate/seed changes')

@@ -10,6 +10,7 @@ import math
 def vocoder_gan_step(generator, discriminators, generator_optimizer, discriminator_optimizer,
                      *, mel, f0, pcm, hop_size, partition, reconstruction_loss,
                      reconstruction_weight=45.0, feature_weight=2.0,
+                     excitation_noise=None,
                      periodicity_mask=None):
     import torch
     if partition != "train":
@@ -29,6 +30,11 @@ def vocoder_gan_step(generator, discriminators, generator_optimizer, discriminat
             not 1 <= mel.shape[2] <= 4096 or tuple(f0.shape) != (1, mel.shape[2]) or
             tuple(pcm.shape) != (1, 1, mel.shape[2] * hop_size) or pcm.numel() > 1048576):
         raise ValueError("Require bounded batch-one BFT mel, BF pitch and B1S PCM")
+    if excitation_noise is not None:
+        if (not torch.is_tensor(excitation_noise) or excitation_noise.dtype != torch.float32
+                or excitation_noise.device.type != "cpu" or excitation_noise.requires_grad
+                or not torch.isfinite(excitation_noise).all()):
+            raise ValueError("Excitation noise must be a finite owned CPU float32 tensor")
     for value in (mel, f0, pcm):
         if value.dtype != torch.float32 or value.device.type != "cpu" or value.requires_grad or not torch.isfinite(value).all():
             raise ValueError("Training inputs must be finite owned CPU float32 tensors")
@@ -75,7 +81,8 @@ def vocoder_gan_step(generator, discriminators, generator_optimizer, discriminat
             model.train()
         generator_optimizer.zero_grad(set_to_none=True)
         discriminator_optimizer.zero_grad(set_to_none=True)
-        predicted = generator(mel, f0)
+        predicted = (generator(mel, f0, excitation_noise) if excitation_noise is not None
+                     else generator(mel, f0))
         if predicted.shape != pcm.shape or not torch.isfinite(predicted).all():
             raise ValueError("Generator PCM geometry or values invalid")
         dloss = torch.zeros(())

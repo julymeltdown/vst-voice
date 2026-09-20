@@ -346,6 +346,7 @@ def evaluate_held_out_reconstruction(
     seed: int = 0,
     check_running=None,
     pitch_executable: Path | None = None,
+    excitation_noise_id: str | None = None,
 ) -> dict:
     """Evaluate vocoder reconstruction over held-out items and retain the measurement receipt.
 
@@ -362,6 +363,10 @@ def evaluate_held_out_reconstruction(
     """
     if type(seed) is not int or not 0 <= seed < 2**63:
         raise ValueError("Vocoder evaluation requires a nonnegative 63-bit seed")
+    if excitation_noise_id is not None:
+        from .uv_noise_excitation import EXCITATION_IDS, build_excitation_noise
+        if excitation_noise_id not in EXCITATION_IDS:
+            raise ValueError('Unsupported excitation noise identity')
     if not isinstance(label_origin, str) or not label_origin:
         raise ValueError("Vocoder evaluation requires a label origin")
     if output_directory is not None:
@@ -398,7 +403,17 @@ def evaluate_held_out_reconstruction(
                 if (mel.ndim != 3 or mel.shape[:2] != (1, 80) or not 2 <= mel.shape[2] <= 4096
                         or f0.shape != (1, mel.shape[2]) or torch.any(f0 < 0) or torch.any(f0 > 20000)):
                     raise ValueError("Vocoder conditioning requires mel [1,80,T] and f0 [1,T]")
-            rendered_pcm = _mono_audio(generator_fn(mel, f0), "rendered vocoder output")
+            if excitation_noise_id is not None:
+                unvoiced = item.get("unvoicedFrames")
+                if unvoiced is None:
+                    raise ValueError("Excitation-noise evaluation requires admitted unvoiced ownership")
+                import numpy as _np
+                mask = _np.asarray(unvoiced[0] if hasattr(unvoiced, '__getitem__') else unvoiced)
+                mask = _np.asarray(mask, dtype=bool).reshape(-1)
+                noise = build_excitation_noise(mask, excitation_noise_id)
+                rendered_pcm = _mono_audio(generator_fn(mel, f0, noise), "rendered vocoder output")
+            else:
+                rendered_pcm = _mono_audio(generator_fn(mel, f0), "rendered vocoder output")
             if torch is not None and len(rendered_pcm) != mel.shape[2] * hop_size:
                 raise ValueError("Vocoder output length differs from its conditioning frame count")
             # The acceptance predicate has a pitch term that is only evaluable when both

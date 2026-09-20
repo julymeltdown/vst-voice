@@ -12,7 +12,7 @@ from .prepare_bundle import read_report, VOCODER_FORMAT
 from .reconstruct_source_vocoder import checked_waveform
 
 
-def run_graph(graph, mel, f0, *, frames, _runtime=None):
+def run_graph(graph, mel, f0, *, frames, noise=None, _runtime=None):
     """Execute one bounded vocoder graph with a fresh session."""
     if (not isinstance(graph, bytes) or not 1 <= len(graph) <= 256 * 1024 * 1024
             or mel.ndim != 3 or mel.shape != (1, frames, 80)
@@ -26,7 +26,19 @@ def run_graph(graph, mel, f0, *, frames, _runtime=None):
     options = _runtime.SessionOptions()
     options.intra_op_num_threads = options.inter_op_num_threads = 1
     session = _runtime.InferenceSession(graph, options, providers=['CPUExecutionProvider'])
-    predicted = session.run(['waveform'], dict(mel=mel, f0=f0))[0]
+    feeds = dict(mel=mel, f0=f0)
+    declared = ({item.name for item in session.get_inputs()}
+                if hasattr(session, 'get_inputs') else {'mel', 'f0'})
+    if 'noise' in declared:
+        if noise is None:
+            raise ValueError('Vocoder graph declares a noise input; supply a realization')
+        noise = np.asarray(noise, dtype=np.float32)
+        if noise.shape != (1, frames * 64) or not np.isfinite(noise).all():
+            raise ValueError('Expected finite float32 source-rate noise matching the frames')
+        feeds['noise'] = noise
+    elif noise is not None:
+        raise ValueError('Noise supplied to a graph without a noise input')
+    predicted = session.run(['waveform'], feeds)[0]
     # The pinned graph consumes batch-first (frames, 80) mel, not channel-first.
     return checked_waveform(predicted, source_frames=frames * 256)
 
@@ -50,7 +62,7 @@ def clip_phones(labels, valid_samples):
 
 
 def evaluate(source, labels, arms, *, mel_input, f0, gains, executable,
-             valid_samples=None, _runtime=None):
+             valid_samples=None, noise=None, _runtime=None):
     """Return per-arm pitch and per-phone waveform comparison for one source."""
     import tempfile
     from pathlib import Path
@@ -85,7 +97,8 @@ def evaluate(source, labels, arms, *, mel_input, f0, gains, executable,
         # zero-padded here rather than scaled by an unrelated gain value.
         owned = np.zeros(padded, np.float32)
         owned[:len(gains)] = gains
-        wave = (run_graph(graph, mel, f0, frames=frames, _runtime=_runtime) * owned)[:valid_samples]
+        wave = (run_graph(graph, mel, f0, frames=frames, noise=noise, _runtime=_runtime)
+                * owned)[:valid_samples]
         if not np.isfinite(wave).all() or float(np.max(np.abs(wave))) > 1:
             raise ValueError('Vocoder output is nonfinite or unnormalized')
         with tempfile.TemporaryDirectory(prefix='seam-paired-vocoder-') as directory:

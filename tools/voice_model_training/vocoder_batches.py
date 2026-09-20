@@ -26,7 +26,8 @@ def segment_frame_ranges(frames, maximum_frames):
 
 
 def iter_vocoder_batches(snapshot, directory, targets, pcm_sources, *, expected_profile_sha256,
-                         partition, batch_frames=256, training_segment_frames=None):
+                         partition, batch_frames=256, training_segment_frames=None,
+                         include_unvoiced_frames=False):
     """Yield owned CPU float32 BFT mel, BF F0 and B1S PCM for one source at a time.
 
 pcm_sources maps each captured source ID to its trusted local WAV path. No
@@ -88,6 +89,10 @@ is zero-padded according to the acoustic profile and explicitly counted.
                    mel=torch.from_numpy(batch["melTargets"].T.copy()).unsqueeze(0),
                    f0=torch.from_numpy(f0.copy()).unsqueeze(0),
                    pcm=torch.from_numpy(audio).reshape(1, 1, -1), trainingAdmitted=False)
+        if include_unvoiced_frames:
+            from .uv_noise_excitation import unvoiced_frame_mask
+            captured["unvoicedFrames"] = torch.from_numpy(
+                unvoiced_frame_mask(batch["columns"])).unsqueeze(0)
         if training_segment_frames is None:
             yield captured
         else:
@@ -97,8 +102,11 @@ is zero-padded according to the acoustic profile and explicitly counted.
                 owned = min((end - begin) * hop, valid - begin * hop)
                 if owned <= 0:
                     raise ValueError("Training segment has no owned source samples")
-                yield dict(captured, frameOffset=begin, validSamples=owned,
-                           paddedSamples=(end - begin) * hop - owned,
-                           mel=captured["mel"][:, :, begin:end].clone(),
-                           f0=captured["f0"][:, begin:end].clone(),
-                           pcm=captured["pcm"][:, :, begin * hop:end * hop].clone())
+                segment = dict(captured, frameOffset=begin, validSamples=owned,
+                               paddedSamples=(end - begin) * hop - owned,
+                               mel=captured["mel"][:, :, begin:end].clone(),
+                               f0=captured["f0"][:, begin:end].clone(),
+                               pcm=captured["pcm"][:, :, begin * hop:end * hop].clone())
+                if include_unvoiced_frames:
+                    segment["unvoicedFrames"] = captured["unvoicedFrames"][:, begin:end].clone()
+                yield segment

@@ -35,20 +35,26 @@ def model_settings(value):
     fields = {'formatId', 'schemaVersion', 'seed', 'learningRate', 'learningRateDecay',
               'maximumUpdates', 'maximumSeconds', 'cpuThreads', 'evaluationSeed',
               'heldOutSources', 'labelOrigin'}
-    if isinstance(value, dict) and type(value.get('schemaVersion')) is int and value['schemaVersion'] in (2, 3, 4):
+    if isinstance(value, dict) and type(value.get('schemaVersion')) is int and value['schemaVersion'] in (2, 3, 4, 5):
         fields.add('architectureProfile')
-        if value['schemaVersion'] in (3, 4):
+        if value['schemaVersion'] in (3, 4, 5):
             fields.add('trainingSegmentFrames')
-        if value['schemaVersion'] == 4:
+        if value['schemaVersion'] in (4, 5):
             fields.add('objectiveId')
+        if value['schemaVersion'] == 5:
+            fields.add('excitationNoiseId')
     if (not isinstance(value, dict) or set(value) != fields
             or value['formatId'] != 'com.project-seam.vocoder-training-config'
-            or type(value['schemaVersion']) is not int or value['schemaVersion'] not in (1, 2, 3, 4)):
+            or type(value['schemaVersion']) is not int or value['schemaVersion'] not in (1, 2, 3, 4, 5)):
         raise ValueError('Unsupported vocoder training configuration')
     training_objective(value)
-    if value['schemaVersion'] in (3, 4) and (type(value['trainingSegmentFrames']) is not int or
+    if value['schemaVersion'] in (3, 4, 5) and (type(value['trainingSegmentFrames']) is not int or
                                         not 16 <= value['trainingSegmentFrames'] <= 4096):
         raise ValueError('Training segments require 16..4096 analysis hops')
+    if value['schemaVersion'] == 5:
+        from .uv_noise_excitation import EXCITATION_IDS
+        if value['excitationNoiseId'] not in EXCITATION_IDS:
+            raise ValueError('Unsupported excitation noise identity')
     for key, lower, upper in (('seed', 0, 2**63-1), ('evaluationSeed', 0, 2**63-1),
                                ('cpuThreads', 1, 32), ('maximumUpdates', 1, 100000)):
         if type(value[key]) is not int or not lower <= value[key] <= upper:
@@ -273,7 +279,12 @@ def main(argv=None):
             raise ValueError('Vocoder completed-epoch bound exceeded')
         source = _module(checkout, 'seam_train_vocoder_architecture', 'models/nsf_HiFigan/models.py')
         mel_module = _module(checkout, 'seam_train_vocoder_mel', 'utils/wav2mel.py')
-        generator = source.Generator(source.AttrDict(configuration))
+        excitation_noise_id = settings.get('excitationNoiseId')
+        if excitation_noise_id is not None:
+            from .uv_noise_excitation import uv_noise_generator_class
+            generator = uv_noise_generator_class(source.Generator)(source.AttrDict(configuration))
+        else:
+            generator = source.Generator(source.AttrDict(configuration))
         discriminators = [source.MultiScaleDiscriminator(), source.MultiPeriodDiscriminator([3, 5])]
         go = torch.optim.AdamW(generator.parameters(), lr=settings['learningRate'], betas=(.8, .99), weight_decay=0)
         do = torch.optim.AdamW([p for model in discriminators for p in model.parameters()],
@@ -317,7 +328,8 @@ def main(argv=None):
                 held_out_items=settings['heldOutSources'], label_origin=settings['labelOrigin'],
                 evaluation_seed=settings['evaluationSeed'],
                 pitch_executable=args.pitch_executable,
-                training_segment_frames=settings.get('trainingSegmentFrames')))
+                training_segment_frames=settings.get('trainingSegmentFrames'),
+                excitation_noise_id=excitation_noise_id))
         print(json.dumps(result, sort_keys=True))
         return 0
     except KeyboardInterrupt:

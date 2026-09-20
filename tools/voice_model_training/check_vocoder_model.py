@@ -68,7 +68,7 @@ def summarize_pitch_conditioning(cases):
                 pitchEstimator="target-windowed-autocorrelation-diagnostic-only")
 
 
-def export_checked_onnx(adapter):
+def export_checked_onnx(adapter, *, excitation_noise=False):
     import onnx
     import onnxruntime as ort
     import torch
@@ -76,10 +76,17 @@ def export_checked_onnx(adapter):
     from .qualification import measure_median_pitch_hz
     adapter.eval()
     stream = io.BytesIO()
-    torch.onnx.export(adapter, (torch.full((1, 16, 80), -4.), torch.full((1, 16), 220.)),
-                      stream, input_names=["mel", "f0"], output_names=["waveform"],
-                      dynamic_axes={"mel": {1: "n_frames"}, "f0": {1: "n_frames"},
-                                    "waveform": {1: "n_samples"}},
+    example = [torch.full((1, 16, 80), -4.), torch.full((1, 16), 220.)]
+    names, axes = ["mel", "f0"], {"mel": {1: "n_frames"}, "f0": {1: "n_frames"},
+                                  "waveform": {1: "n_samples"}}
+    if excitation_noise:
+        torch.manual_seed(0)
+        example.append(torch.randn(1, 16 * 64))
+        names.append("noise")
+        axes["noise"] = {1: "n_source_samples"}
+    torch.onnx.export(adapter, tuple(example),
+                      stream, input_names=names, output_names=["waveform"],
+                      dynamic_axes=axes,
                       opset_version=17, dynamo=False, external_data=False)
     graph = onnx.load_model_from_string(stream.getvalue())
     # This bridge supports batch one and mono audio only, as executed below.
@@ -100,8 +107,15 @@ def export_checked_onnx(adapter):
             mel = torch.linspace(-8, -1, frames * 80).reshape(1, frames, 80)
             f0 = torch.linspace(180, 260, frames).reshape(1, frames)
             f0[:, 0] = 0
-            expected = adapter(mel, f0)
-            actual = torch.from_numpy(session.run(["waveform"], {"mel": mel.numpy(), "f0": f0.numpy()})[0])
+            feeds = {"mel": mel.numpy(), "f0": f0.numpy()}
+            args = [mel, f0]
+            if excitation_noise:
+                torch.manual_seed(frames)
+                noise = torch.randn(1, frames * 64)
+                feeds["noise"] = noise.numpy()
+                args.append(noise)
+            expected = adapter(*args)
+            actual = torch.from_numpy(session.run(["waveform"], feeds)[0])
             if tuple(actual.shape) != (1, frames * 256) or not torch.isfinite(actual).all():
                 raise AssertionError("Exported vocoder PCM geometry or values invalid")
             torch.testing.assert_close(actual, expected, atol=1e-5, rtol=1e-5)
@@ -118,7 +132,11 @@ def export_checked_onnx(adapter):
         mel = torch.linspace(-6, -2, frames * 80).reshape(1, frames, 80)
         for hz in (110.0, 220.0, 440.0, 880.0):
             f0 = torch.full((1, frames), hz)
-            audio = session.run(["waveform"], {"mel": mel.numpy(), "f0": f0.numpy()})[0]
+            feeds = {"mel": mel.numpy(), "f0": f0.numpy()}
+            if excitation_noise:
+                torch.manual_seed(int(hz))
+                feeds["noise"] = torch.randn(1, frames * 64).numpy()
+            audio = session.run(["waveform"], feeds)[0]
             rendered, coverage, reason = measure_median_pitch_hz(
                 np.asarray(audio, dtype=np.float64).ravel(), 48000, hz)
             conditioning.append(dict(
