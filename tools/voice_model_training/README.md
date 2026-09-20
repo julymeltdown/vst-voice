@@ -104,6 +104,23 @@ measurable coverage. `NO_REGRESSIONS_ON_REPORTED_METRICS` is descriptive only,
 never singer qualification, automatic model promotion or independent-holdout
 proof. Vocoder training-overlap disclosures remain in the output.
 
+`python -m tools.voice_model_training.training_ancestry --config CONFIG.json
+--config-sha256 SHA256 --output NEW.json` audits declared complete checkpoint
+histories without loading Torch weights. The hash-bound configuration names
+`acousticLeaf` and `vocoderLeaf` receipt digests, a `receipts` digest-to-file
+index, captured `snapshots` (`path`, `sha256`), and up to 256 explicit `candidates`
+with `sourceId`, `songId`, `sessionId`, `lineageId`, and `audioSha256`.
+Use format `com.project-seam.training-ancestry-audit-config`, schema 1.
+
+It rejects missing/cyclic histories, incomplete epochs, wrong warm-start parent
+links, changed resume settings, changed dataset splits and mismatched training
+coverage. It joins source identities across every declared ancestor and detects
+exact-audio aliases as well as shared song/session/lineage IDs. Retained receipts
+are sufficient for this declared-history audit, not for restoring deleted model
+binaries. `NO_OVERLAP_IN_DECLARED_FIELDS` is not independence: recipe equivalence,
+undeclared pretraining, source rights and musical qualification remain separate
+and are never approved by this command.
+
 The training command supports `--resume` with a separately captured
 `--resume-receipt-sha256`. It restores local model/optimizer/CPU RNG state, requires
 unchanged captured configuration and environment, and matches the freshly admitted

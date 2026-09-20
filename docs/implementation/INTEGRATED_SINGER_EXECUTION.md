@@ -1,5 +1,33 @@
 # Integrated Singer Execution
 
+## Declared training ancestry audited across both model stages
+
+Implemented `tools.voice_model_training.training_ancestry`. It captures receipt
+identities, follows exact-resume and explicit warm-start parent links, validates
+metadata/dataset bindings, recomputes source splits, and requires recorded epoch
+coverage to match the trained source inventory. Missing ancestors are errors,
+not an empty training set. Pruned binaries are not required to inspect retained
+receipts, but this is not a restoration or undeclared-pretraining proof.
+
+For the preserved epoch-21 acoustic / epoch-two vocoder candidate, the audit
+reaches the declared roots through 21 acoustic and two vocoder receipts. It
+finds 267 acoustic and 304 vocoder training sources, from two dataset identities.
+Songs 00003/00005/00024 overlap vocoder training by all five checked identities:
+source, song, session, lineage and exact decoded-audio SHA-256. No selected song
+matches the acoustic training inventory. Songs 00402/00420 have no match in the
+declared vocoder fields, which is explicitly **not** an independence claim.
+
+Evidence: `/Users/lhs/seam-corpus-pauses-2026-09-19-r1/ancestry-e21-v2-r1/`.
+Configuration SHA-256 `1fed0421cd6920d9ad0401e241ceb81ab2760982edf01bd146daa9f420d5c456`;
+audit SHA-256 `18c83864148cc6fb1f7df2f9d0aa7dcfcc29b7e9454db3452b015a6d7260289b`.
+The CLI re-read the captured inputs and reproduced byte-identical output.
+
+Next: bind generated recipe provenance and freeze new evaluation sources before
+rendering the candidate. Keep this five-song set as regression evidence, not a
+qualified independent cohort. The report deliberately retains
+`recipeEquivalenceAudited=false`, `undeclaredPretrainingExcluded=false`, and
+`combinedModelHoldoutVerified=false`; no singer or release qualification.
+
 ## Candidate comparator implemented and exercised on real campaigns
 
 `python -m tools.voice_model_training.compare_campaigns` now accepts two
