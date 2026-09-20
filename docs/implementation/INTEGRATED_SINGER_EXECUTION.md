@@ -1,5 +1,36 @@
 # Integrated Singer Execution
 
+## Unvoiced mel error is mostly structure, not a constant bias
+
+Split the per-phone mel error into a per-bin bias and the residual structure left
+after it, on all five development replay sources (23 unvoiced and 77 voiced
+measured phone windows). The bias is fit on the phone being scored, so it is an
+upper bound on what any constant correction could remove, not an achievable gain.
+
+| Class | Windows | Mean error | Mean bias | Mean structured error | Bias-explained fraction | Bias concentration |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Unvoiced | 23 | 3.1662 | 2.0005 | 2.4957 | 0.2005 | 0.6022 |
+| Voiced | 77 | 2.3879 | 1.5775 | 1.8813 | 0.2107 | 0.6575 |
+
+Even with a per-phone oracle bias, roughly 80% of the unvoiced error remains as
+structured, frame-level error (2.4957 of 3.1662). A constant per-bin correction
+accounts for only about 20% of the error, and bias concentration (mean |bias|
+over mean |residual|) is 0.60, not near 1.
+
+This narrows the repair. Because most of the unvoiced error is not a fixed offset,
+a simple output calibration or per-bin gain correction cannot fix fricatives. The
+model is getting the time-varying spectral content wrong, which is consistent with
+treating the noise-like target as a smooth conditional mean rather than resolving
+its frames. That now points specifically at how the objective scores and
+parameterizes unvoiced frames, rather than at a level correction.
+
+This still does not prove the objective is the cause. The next measurement should
+test the objective directly by checking whether the training loss actually
+penalizes unvoiced frames proportionally, or whether fricatives are a small enough
+share of the total loss that the optimizer is not pushed to fit them.
+
+Evidence: `acoustic-error-decomposition-r1.json`.
+
 ## Per-phone mel error quantified, with a caveat that limits what it proves
 
 Added `acoustic_frame_error` and its CLI: per-bin mel L1 error against a
