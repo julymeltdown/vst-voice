@@ -67,11 +67,26 @@ class PeriodicityTests(unittest.TestCase):
         self.assertGreater(float(loss.detach()),.5)
         loss.backward()
         self.assertTrue(torch.isfinite(p.grad).all())
-        # Mean-over-lags reduction: a single-lag call with one member of the
-        # set bounds the multi-lag value within the same scale, not 6x it.
-        single,_=periodicity_loss(p.detach(),t,m,lags=(256,))
+        # Exact mean-of-single-lag identity: the multi-lag total equals the
+        # mean of the per-lag totals (level term counted once) - the
+        # mean-not-sum proof for both value and gradient.
+        singles=[periodicity_loss(p.detach(),t,m,lags=(lag,))[0] for lag in MULTILAGS]
+        expected=sum(singles)/len(singles)
         multi,_=periodicity_loss(p.detach(),t,m,lags=MULTILAGS)
-        self.assertLess(float(multi),float(single)*len(MULTILAGS))
+        self.assertAlmostEqual(float(multi),float(expected),places=6)
+        grads=[]
+        for lag in MULTILAGS:
+            q=p.detach().clone().requires_grad_()
+            periodicity_loss(q,t,m,lags=(lag,))[0].backward()
+            grads.append(q.grad)
+        q=p.detach().clone().requires_grad_()
+        periodicity_loss(q,t,m,lags=MULTILAGS)[0].backward()
+        expected_grad=sum(grads)/len(grads)
+        self.assertLess(float((q.grad-expected_grad).abs().max()),1e-8)
+        # Default lags=(256,) retains legacy single-lag behavior.
+        legacy,_=periodicity_loss(p.detach(),t,m)
+        explicit,_=periodicity_loss(p.detach(),t,m,lags=(256,))
+        self.assertEqual(float(legacy),float(explicit))
 
     def test_multilag_catches_non256_structure(self):
         # A 384-sample-period artifact sits inside the lag set but reads

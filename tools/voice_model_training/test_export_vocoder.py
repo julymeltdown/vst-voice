@@ -89,6 +89,29 @@ class VocoderExportIdentityTests(unittest.TestCase):
         self.assertEqual(export_identity(changed,receipt,profile),config)
         changed['metadata']['run']['settings']['objectiveId']='nsf-lsgan-logmel-48k80-v1'
         with self.assertRaises(ValueError):export_identity(changed,receipt,profile)
+        # Staged schema-5 multi-lag arm: governed objective plus zero-v1
+        # excitation feeds the same export-identity path.
+        from tools.voice_model_training.unvoiced_periodicity import MULTILAG_OBJECTIVE_ID as multilag
+        staged=copy.deepcopy(state)
+        staged['metadata']['objectiveId']=staged['epoch']['objectiveId']=multilag
+        staged['metadata']['run']['configuration']=vocoder_configuration('mini-nsf-512-mrf-v1')
+        staged['metadata']['run']['settings']=dict(settings(),schemaVersion=5,
+            architectureProfile='mini-nsf-512-mrf-v1',trainingSegmentFrames=128,
+            objectiveId=multilag,excitationNoiseId='zero-v1')
+        exported=export_identity(staged,receipt,profile)
+        self.assertEqual(exported['excitationNoiseId'],'zero-v1')
+        self.assertEqual(exported['upsample_initial_channel'],512)
+        # Mismatched settings/epoch/metadata still reject.
+        for mutation in (
+            lambda s:s['metadata']['run']['settings'].update(objectiveId=periodic),
+            lambda s:s['epoch'].update(objectiveId=periodic),
+            lambda s:s['metadata'].update(objectiveId=periodic),
+            lambda s:s['metadata']['run']['settings'].update(excitationNoiseId='bogus'),
+            lambda s:s['metadata']['run']['settings'].update(schemaVersion=4),
+        ):
+            broken=copy.deepcopy(staged)
+            mutation(broken)
+            with self.assertRaises(ValueError):export_identity(broken,receipt,profile)
         large = copy.deepcopy(state)
         large_config = vocoder_configuration("mini-nsf-512-mrf-v1")
         large["metadata"]["run"]["configuration"] = large_config

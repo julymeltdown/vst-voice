@@ -39,11 +39,12 @@ def export_identity(state, receipt, profile):
     digest = hashlib.sha256(json.dumps(profile, sort_keys=True, separators=(",", ":"),
                                       allow_nan=False).encode()).hexdigest()
     epoch = state.get("epoch", {})
-    from .unvoiced_periodicity import OBJECTIVE_ID as PERIODIC_OBJECTIVE
+    from .unvoiced_periodicity import OBJECTIVE_ID as PERIODIC_OBJECTIVE, \
+        MULTILAG_OBJECTIVE_ID, SUPPORTED_OBJECTIVE_IDS
     objective = epoch.get('objectiveId')
     settings = run.get('settings', {})
     excitation_noise_id = settings.get('excitationNoiseId')
-    if objective == PERIODIC_OBJECTIVE or excitation_noise_id is not None:
+    if objective in (PERIODIC_OBJECTIVE, MULTILAG_OBJECTIVE_ID) or excitation_noise_id is not None:
         from .train_vocoder import model_settings, training_objective
         expected_schema = 5 if excitation_noise_id is not None else 4
         if (settings.get('schemaVersion') != expected_schema or model_settings(settings) != configuration
@@ -57,7 +58,7 @@ def export_identity(state, receipt, profile):
     if (digest != metadata.get("profileSha256") or digest != epoch.get("profileSha256")
             or epoch.get("formatId") != "com.project-seam.vocoder-epoch-result"
             or epoch.get("datasetSha256") != metadata.get("datasetSha256")
-            or objective not in ("nsf-lsgan-logmel-48k80-v1", PERIODIC_OBJECTIVE)
+            or objective not in SUPPORTED_OBJECTIVE_IDS
             or metadata.get("objectiveId") != epoch.get("objectiveId")):
         raise ValueError("Vocoder checkpoint profile, dataset or objective identity differs")
     return configuration

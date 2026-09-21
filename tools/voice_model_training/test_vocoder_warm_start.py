@@ -6,7 +6,8 @@ import torch
 from tools.voice_model_training.vocoder_warm_start import initialize
 from tools.voice_model_training.test_train_vocoder_command import settings
 from tools.voice_model_training.train_vocoder import model_settings, OBJECTIVE_ID
-from tools.voice_model_training.unvoiced_periodicity import OBJECTIVE_ID as PERIODIC_OBJECTIVE
+from tools.voice_model_training.unvoiced_periodicity import (
+    OBJECTIVE_ID as PERIODIC_OBJECTIVE, MULTILAG_OBJECTIVE_ID)
 
 
 class WarmStartTests(unittest.TestCase):
@@ -70,6 +71,26 @@ class WarmStartTests(unittest.TestCase):
         args,kwargs,state,receipt=self.fixture();args[2].state[args[0].weight]['step']=1
         with patch('tools.voice_model_training.vocoder_warm_start.load_local_checkpoint',return_value=(state,receipt)):
             with self.assertRaisesRegex(ValueError,'fresh optimizers'):initialize(*args,**kwargs)
+
+    def test_multilag_parent_is_a_supported_source_objective(self):
+        # A completed multi-lag checkpoint must be continuable as a future
+        # parent: same governed compatibility, no identity bypass.
+        args,kwargs,state,receipt=self.fixture()
+        for holder in (state['metadata'], state['epoch']):
+            holder['objectiveId']=MULTILAG_OBJECTIVE_ID
+        state['metadata']['run']['settings']=dict(
+            state['metadata']['run']['settings'],schemaVersion=4,
+            objectiveId=MULTILAG_OBJECTIVE_ID)
+        kwargs['objective']=MULTILAG_OBJECTIVE_ID
+        kwargs['metadata']['settings']['objectiveId']=MULTILAG_OBJECTIVE_ID
+        with patch('tools.voice_model_training.vocoder_warm_start.load_local_checkpoint',return_value=(state,receipt)):
+            result=initialize(*args,**kwargs)
+        self.assertEqual(result['sourceObjectiveId'],MULTILAG_OBJECTIVE_ID)
+        # An unsupported source objective still rejects.
+        args,kwargs,state,receipt=self.fixture()
+        state['metadata']['objectiveId']=state['epoch']['objectiveId']='bogus'
+        with patch('tools.voice_model_training.vocoder_warm_start.load_local_checkpoint',return_value=(state,receipt)):
+            with self.assertRaises(ValueError):initialize(*args,**kwargs)
 
 
 if __name__=='__main__':unittest.main()

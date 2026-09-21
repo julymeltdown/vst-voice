@@ -1,5 +1,24 @@
 # Integrated Singer Execution
 
+## Objective lifecycle closed: governed supported-ID policy across training, warm start, export
+
+Pre-launch review caught the multi-lag objective failing at export:
+export_identity allowed only base and single-lag IDs, and
+vocoder_warm_start would likewise have rejected a completed
+multi-lag checkpoint as a future parent. Both consumers now share
+one governed policy - SUPPORTED_OBJECTIVE_IDS in
+unvoiced_periodicity (base, single-lag, multi-lag) - used by
+train_vocoder.training_objective, export_vocoder.export_identity,
+and vocoder_warm_start.initialize. The staged schema-5 multi-lag arm
+now passes export identity with excitationNoiseId recorded, and
+mismatched settings/epoch/metadata still reject. The exact
+mean-of-single-lag value and gradient identity regression replaces
+the weaker scale bound, and default lags=(256,) is verified to
+retain legacy behavior. The launcher now runs inside tmux because
+plain nohup children were reaped between exec calls in this
+environment. 433 voice_model_training tests pass. Launch still
+awaits the reviewer's confirmation of this wiring fix.
+
 ## Multi-lag periodicity objective implemented and staged for review
 
 Per the directed next experiment, the periodicity objective now takes

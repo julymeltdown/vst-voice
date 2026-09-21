@@ -5,6 +5,10 @@ MULTILAG_OBJECTIVE_ID = 'nsf-lsgan-logmel-uvmultilag-48k80-v1'
 # Fixed modest lag set inside the existing 1024-sample windows; reviewed
 # experiment design, not a sweep.
 MULTILAGS = (64, 128, 192, 256, 384, 512)
+# One governed supported-ID policy shared by training, warm start and
+# export consumers; adding an objective elsewhere is not sufficient.
+BASE_OBJECTIVE_ID = 'nsf-lsgan-logmel-48k80-v1'
+SUPPORTED_OBJECTIVE_IDS = (BASE_OBJECTIVE_ID, OBJECTIVE_ID, MULTILAG_OBJECTIVE_ID)
 
 
 def phone_mask(entry, *, sample_offset, sample_count, valid_samples):
