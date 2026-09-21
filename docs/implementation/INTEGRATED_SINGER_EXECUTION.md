@@ -1,5 +1,41 @@
 # Integrated Singer Execution
 
+## Zero-noise counterfactual: inference noise is inert on the residual; the arm difference is learned weights
+
+Following the review protocol, a frozen-weight counterfactual probe
+held mel, F0, gains, gate, and measurement crop identical on the
+treatment graph and varied only the noise feed: the normal gated
+realization at three predeclared inference seeds (933-935) versus an
+explicit zeros feed, with the frozen control arm as baseline. Every
+feed tensor is hashed into the receipt and the waves differ per
+condition, so the noise provably reaches the graph.
+
+Result across the five frozen sources (unvoiced signed residual,
+candidate minus reference): uvnoise gated 0.2386/0.2395/0.2399 across
+seeds, uvnoise zeros 0.2408, control zeros 0.2607. Inference-time
+gated noise at one-third sine amplitude changes the residual by less
+than 0.003 - effectively inert on this metric - while the trained
+treatment weights carry essentially the whole ~0.02 arm advantage.
+Per-source detail matches (song-00003: gated 0.1052-0.1058, zeros
+0.1057, control 0.1295). Two conclusions follow. First, the
+hop-locked residual is produced by the generator's learned response
+to mel/F0 conditioning, not by absent stochastic excitation at
+inference. Second, training with gated noise did shift the weights
+enough to yield the modest measured gain - but the same gain might
+arise from any training perturbation; a matched second UV-noise seed
+or a control retrain would be needed to attribute it specifically,
+which is not currently justified by effect size.
+
+This also bounds the interpretation of the earlier arm result:
+excitation content is not the residual's mechanism, leaving the mel
+conditioning path (the comparison uses source-recomputed mel, not
+predicted acoustic mel) and the learned upsampling response as the
+remaining candidates. The temporal-mel sensitivity study is next.
+
+Receipt: vocoder-noise-counterfactual-probe-r1.json with per-source
+per-condition wave/noise/rawDraw/gate digests, torch version, and
+the per-source seed-reset policy recorded.
+
 ## UV-noise excitation experiment: gated noise helps modestly; hop-locked residual persists
 
 The vocoder-uvnoise-paired-r1 pair completed under the declared
@@ -20,26 +56,41 @@ from its declared excitationNoiseId. The comparison receipt now
 carries per-source noiseBinding plus per-arm excitationNoiseId and
 noiseSha256, so every fed tensor is re-derivable.
 
-Result on the five frozen sources: unvoiced residual lag correlation
-drops from 0.226 (zero-noise control) to 0.203 (uv-gated) against a
--0.004 reference - a real but small improvement, comparable in
-magnitude to the periodicity objective's own effect (0.216 in the
-seed-947 replicate) and far from eliminating the defect. Voiced
-phones stay near zero in both arms (+0.042 control, +0.024 uvnoise),
-so the gate does not damage voiced regions. Unvoiced RMS ratio moved
-0.965 to 0.822 (the gated noise does not simply add measured energy
-in these windows); voiced RMS ratio moved 0.659 to 0.888.
+Result on the five frozen sources: the signed unvoiced residual
+(candidate minus reference, ideal 0) drops from 0.226 (zero-noise
+control) to 0.203 (uv-gated); candidate correlations are 0.223 to
+0.199 against a -0.004 reference. The incremental effect is 0.024,
+about ten percent of the control residual and roughly one tenth of
+the periodicity objective's own 0.239 effect in the seed-947
+replicate - the two are not comparable in magnitude. Target-relative
+absolute correlation discrepancy improves 0.238 to 0.214. This is a
+modest measured improvement on this cohort and realization; a
+replicated or statistically established UV-noise benefit is not
+claimed (one training seed, one inference seed).
+
+Voiced safety is not established by the near-zero signed residual.
+The stronger retained evidence is mixed: voiced mean absolute
+candidate-reference correlation error improves 0.0997 to 0.0660 and
+weighted conditional pitch error improves 25.65 to 23.23 cents with
+more measurable pairs (4139 to 4167), yet procedural-song-00024
+worsens on both pitch (27.66 to 33.30 cents) and unvoiced absolute
+correlation discrepancy (0.284 to 0.304), song-00420 pitch worsens
+(18.01 to 20.69), and unvoiced mean |rmsRatio-1| worsens 0.172 to
+0.189. The honest statement is aggregate gains with per-song and
+energy tradeoffs. Unvoiced RMS ratio moved 0.965 to 0.822; voiced
+RMS ratio moved 0.659 to 0.888.
 
 Interpretation, stated conservatively: stochastic excitation alone
-does not explain the hop-locked residual. The remaining candidate
-mechanisms are (a) the mel conditioning itself carries the structure
-and the vocoder faithfully reproduces it - testable cheaply by
-feeding flattened or smoothed mel at fixed f0 and measuring output
-correlation, (b) the learned generator weights produce the structure
-regardless of excitation, and (c) gate coverage or amplitude is
-insufficient. A mel-variation probe is the cheapest discriminator
-between (a) and (b) and is the suggested next diagnostic before any
-further training spend.
+does not explain the hop-locked residual. Note the comparison
+recomputes mel from source audio and pairs it with frozen replay
+F0/gains, so this is source-mel vocoder reconstruction evidence,
+not proof that the acoustic model passes a periodic defect. The
+remaining candidates are the conditioning path and the learned
+upsampling response acting jointly; the zero-noise counterfactual
+above already shows inference-time excitation is inert on the
+residual, which leaves learned weights and mel sensitivity as the
+open questions. A within-phone temporal-mel sensitivity study is
+the suggested next diagnostic before any further training spend.
 
 Receipts: vocoder-uvnoise-paired-r1-exports,
 paired-vocoder-comparison-uvnoise-r1.json,
