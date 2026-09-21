@@ -223,14 +223,16 @@ def evaluate_development(arm_name, graph_bytes, root, replay_path, song_dir, sou
         try:
             wave = run_graph(_VOCODER_GRAPH, cand, f0, frames=frames, noise=noise)
         except ValueError as error:
-            # A peak>=1.0 rejection IS the clip guardrail; other failures are
-            # recorded as draw failures, not clipping, and keep the draw out of
-            # the matched denominators.
+            # String-matching the rejection is a hint only, not a trustworthy
+            # failure classifier: every rejected draw is a failed draw, so all
+            # guardrails depending on it are incomplete rather than silently
+            # computed over a favorable subset.
             is_clip = "whole-hop" in str(error) or "normalized" in str(error)
             clip_or_silence.append(dict(draw=d, newClip=is_clip, newSilence=False,
-                                        vocoderRejected=is_clip))
-            if not is_clip:
-                failed_draws.append(dict(draw=d, reason=str(error)[:200]))
+                                        vocoderRejected=True,
+                                        clipClassification="string-match-unverified"))
+            failed_draws.append(dict(draw=d, reason=str(error)[:200],
+                                     clipSuspected=is_clip))
             continue
         wave = wave[:len(audio)]
         # Apply captured per-sample dynamics gains (nonunity in pau regions).
@@ -282,6 +284,7 @@ def evaluate_development(arm_name, graph_bytes, root, replay_path, song_dir, sou
                 phoneWaveRows=phone_wave_rows, denseLag=dense_lag_rows,
                 pitch=pitch_acc, clipOrSilence=clip_or_silence,
                 failedDraws=failed_draws,
+                guardrailsComplete=not failed_draws,
                 melDrawSha256=[s for _, s in draws])
 
 
@@ -333,6 +336,10 @@ def evaluate_heldout(arm_name, graph_bytes, root, song_dir, out_dir):
                 measurablePitchPairs=comp["measurableVoicedPairs"],
                 pitchStatus=comp["status"],
                 unvoicedRmsRatioMean=(float(np.mean(uv_ratios)) if uv_ratios else None),
+                # Per-phone ratios retained so the frozen gate aggregates
+                # phone-weighted across items, not as a mean of item means.
+                unvoicedRmsRatioPerPhone=[float(r) for r in uv_ratios],
+                unvoicedPhoneCount=len(uv_ratios),
                 reconstructionSatisfied=comp["comparisonSatisfied"])
 
 
@@ -363,8 +370,10 @@ def main():
     arms = {}
     for spec in args.arm:
         name, sep, path = spec.partition("=")
-        if not sep or not name or not path:
-            raise SystemExit("Each --arm must be NAME=DIR")
+        if (not sep or not name or not path
+                or not all(char.isalnum() or char in "-_" for char in name)):
+            raise SystemExit(
+                "Each --arm must be NAME=DIR with a simple alphanumeric/-/_ name")
         if name in arms:
             raise SystemExit(f"Duplicate arm name {name}")
         arms[name] = (Path(path) / "acoustic.onnx").read_bytes()
@@ -394,6 +403,11 @@ def main():
         for song in heldout:
             report["arms"][name]["heldoutItems"].append(
                 evaluate_heldout(name, graph, args.source_root, song, args.output))
+    # A failed or missing draw makes the affected guardrails incomplete;
+    # they are never silently recomputed over a favorable draw subset.
+    report["guardrailsComplete"] = all(
+        item["guardrailsComplete"]
+        for arm in report["arms"].values() for item in arm["development"])
     publish_new(args.output / "pair-eval.json", report)
     print(json.dumps(dict(done=True, output=str(args.output))))
 

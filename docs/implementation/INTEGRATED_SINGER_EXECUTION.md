@@ -1,5 +1,51 @@
 # Integrated Singer Execution
 
+## 2x2 component ablation executed: STOP, auxiliary family closed at this setting
+
+Developer 2 cleared exactly the two staged arms (flat-only, level-only)
+with a reporting correction: the equivalence evidence is a 24-update
+empirical prefix equivalence, with continuation supported by the
+unchanged deterministic equal-corner implementation - not an empirical
+verification of all 267 updates. Evaluator cautions applied before the
+run: --arm names restricted to simple alphanumeric/-/_ literals, every
+vocoder rejection now records a failed draw (clip classification marked
+string-match-unverified), per-source guardrailsComplete plus a
+report-level guardrailsComplete flag, and per-phone RMS ratios retained
+on held-out items so the frozen gate aggregates phone-weighted.
+
+Both arms completed 267/267 verified updates with 0 draw mismatches vs
+the recorded pair draws (epochComplete, coverageVerified). Exports:
+flat-only and level-only acoustic graphs produced under the pinned
+checkout. The corrected evaluator ran all four cells
+(flatness-ablation-eval-e9-r1/pair-eval.json); guardrailsComplete true,
+no failed draws on any arm.
+
+Component decision under the frozen rule (receipt
+flatness-ablation-eval-e9-r1/assessment.json, sha
+0023b724ad8cd9d1b866be53abf235f59fa26f7c1c8d94692d25173466446dbe):
+
+- Target-relative unvoiced flatness error (retain requires strictly
+  lower than base 2.8325 nats): combined 3.7984, flat-only 3.9403,
+  level-only 3.8243 - every auxiliary cell moved further from the
+  reference than base; 0/5 songs improved for either isolated cell.
+- Guardrails: flat-only UV RMS ratio 0.753 FAIL range [0.8,1.2];
+  level-only 0.610 FAIL; voiced flatness error flat-only +0.976 and
+  level-only +0.733 nats both FAIL (+0.05 limit); pitch pairs/weighted
+  cents PASS for both; no clip/silence.
+- Held-out panel (separately labeled, one-draw zero-breathiness):
+  level-only improved spectral distance 1.2295 vs base 1.3076 and
+  weighted pitch 54.8 vs 75.8 cents, but the frozen decision rule is
+  evaluated on the development panel and the isolated level term still
+  fails primary plus two guardrails there.
+
+Verdict: STOP. Neither component qualifies for retention at
+lambda = 0.08040502229238589 on this dataset/parent; the
+unvoiced-target-log-flatness auxiliary family is closed at this tested
+setting and no layer/weight sweep is opened. The combined cell being
+less harmful than either isolated term is recorded as a bounded
+interaction observation only. singerQualified, releaseEligible and
+combinedModelHoldoutVerified remain false; listening NOT_REVIEWED.
+
 ## Flatness/level 2x2 component ablation staged; cell-reuse equivalence PASSED
 
 Developer 2 accepted the crossover result and directed a narrow 2x2
