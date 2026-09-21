@@ -10,8 +10,8 @@ import math
 def vocoder_gan_step(generator, discriminators, generator_optimizer, discriminator_optimizer,
                      *, mel, f0, pcm, hop_size, partition, reconstruction_loss,
                      reconstruction_weight=45.0, feature_weight=2.0,
-                     excitation_noise=None,
-                     periodicity_mask=None):
+                    excitation_noise=None,
+                     periodicity_mask=None, periodicity_lags=(256,)):
     import torch
     if partition != "train":
         raise ValueError("Vocoder updates require the training partition")
@@ -25,7 +25,7 @@ def vocoder_gan_step(generator, discriminators, generator_optimizer, discriminat
     if periodicity_mask is not None:
         from .unvoiced_periodicity import periodicity_loss
         # Validate the complete opt-in mask and PCM before either optimizer moves.
-        periodicity_loss(pcm, pcm, periodicity_mask)
+        periodicity_loss(pcm, pcm, periodicity_mask, lags=periodicity_lags)
     if (mel.ndim != 3 or mel.shape[0] != 1 or not 1 <= mel.shape[1] <= 512 or
             not 1 <= mel.shape[2] <= 4096 or tuple(f0.shape) != (1, mel.shape[2]) or
             tuple(pcm.shape) != (1, 1, mel.shape[2] * hop_size) or pcm.numel() > 1048576):
@@ -123,7 +123,8 @@ def vocoder_gan_step(generator, discriminators, generator_optimizer, discriminat
         gloss = adversarial + feature_weight * feature + reconstruction_weight * reconstruction
         periodicity_report = {}
         if periodicity_mask is not None:
-            periodic, coverage = periodicity_loss(predicted, pcm, periodicity_mask)
+            periodic, coverage = periodicity_loss(predicted, pcm, periodicity_mask,
+                                                  lags=periodicity_lags)
             gloss = gloss + periodic
             periodicity_report = dict(periodicityLoss=float(periodic.detach()),
                                      periodicityCoverage=coverage)

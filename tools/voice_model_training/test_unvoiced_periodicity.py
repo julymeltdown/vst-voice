@@ -1,6 +1,7 @@
 import unittest
 import torch
-from tools.voice_model_training.unvoiced_periodicity import periodicity_loss, phone_mask
+from tools.voice_model_training.unvoiced_periodicity import (
+    periodicity_loss, phone_mask, MULTILAG_OBJECTIVE_ID, MULTILAGS)
 
 
 class PeriodicityTests(unittest.TestCase):
@@ -56,6 +57,38 @@ class PeriodicityTests(unittest.TestCase):
             with self.assertRaises(ValueError):periodicity_loss(p,t,bad)
         p=p.detach();p[0,0,0]=float('nan')
         with self.assertRaises(ValueError):periodicity_loss(p,t,m)
+
+    def test_multilag_matches_target_and_averages_over_lags(self):
+        p,t,m=self.fixture()
+        equal,info=periodicity_loss(t,t,m,lags=MULTILAGS)
+        self.assertLess(float(equal),1e-10)
+        self.assertEqual(info['lags'],list(MULTILAGS))
+        loss,info=periodicity_loss(p,t,m,lags=MULTILAGS)
+        self.assertGreater(float(loss.detach()),.5)
+        loss.backward()
+        self.assertTrue(torch.isfinite(p.grad).all())
+        # Mean-over-lags reduction: a single-lag call with one member of the
+        # set bounds the multi-lag value within the same scale, not 6x it.
+        single,_=periodicity_loss(p.detach(),t,m,lags=(256,))
+        multi,_=periodicity_loss(p.detach(),t,m,lags=MULTILAGS)
+        self.assertLess(float(multi),float(single)*len(MULTILAGS))
+
+    def test_multilag_catches_non256_structure(self):
+        # A 384-sample-period artifact sits inside the lag set but reads
+        # only -0.5 at lag 256, so the multi-lag term must exceed it.
+        generator=torch.Generator().manual_seed(3)
+        t=torch.randn(1,1,4096,generator=generator)*.02
+        p=(.02*torch.sin(torch.arange(4096)*2*torch.pi/384)).reshape(1,1,-1)
+        m=torch.ones_like(t,dtype=torch.bool)
+        multi,_=periodicity_loss(p,t,m,lags=MULTILAGS)
+        single,_=periodicity_loss(p,t,m,lags=(256,))
+        self.assertGreater(float(multi),float(single))
+
+    def test_lag_set_validation(self):
+        p,t,m=self.fixture()
+        for bad in ((),(256,256),(8,),(1024,),[256],'256'):
+            with self.assertRaises((ValueError,TypeError,AttributeError)):
+                periodicity_loss(p,t,m,lags=bad)
 
 
 if __name__=='__main__':unittest.main()

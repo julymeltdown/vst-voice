@@ -149,9 +149,13 @@ only once at complete-epoch coverage. Saved snapshots are not admission authorit
     partitions = {source: group["partition"] for group in snapshot["bindings"]["split"]["groups"]
                   for source in group["sourceIds"]}
     source_rows = {row["sourceId"]: row for row in snapshot["sources"]}
-    from .unvoiced_periodicity import OBJECTIVE_ID as PERIODIC_OBJECTIVE, phone_mask
+    from .unvoiced_periodicity import (OBJECTIVE_ID as PERIODIC_OBJECTIVE,
+                                      MULTILAG_OBJECTIVE_ID, MULTILAGS, phone_mask)
+    periodicity_lags = ((256,) if objective_id == PERIODIC_OBJECTIVE
+                        else MULTILAGS if objective_id == MULTILAG_OBJECTIVE_ID
+                        else None)
     periodic_labels = None
-    if objective_id == PERIODIC_OBJECTIVE:
+    if periodicity_lags is not None:
         periodic_labels = {entry['label']['sourceId']: entry for entry in snapshot['labels']}
         if any(source not in periodic_labels or periodic_labels[source]['score']['language'] != 'ja'
                for source in selected):
@@ -290,7 +294,8 @@ only once at complete-epoch coverage. Saved snapshots are not admission authorit
             excitation_realized_digest.update(noise.numpy().tobytes())
         result = vocoder_gan_step(generator, discriminators, generator_optimizer, discriminator_optimizer,
             mel=batch["mel"], f0=batch["f0"], pcm=batch["pcm"], hop_size=batch["hopSize"],
-            partition="train", reconstruction_loss=reconstruction_loss, **auxiliary)
+            partition="train", reconstruction_loss=reconstruction_loss,
+            periodicity_lags=periodicity_lags or (256,), **auxiliary)
         check_lifetime()
         count = batch["validSamples"]
         covered[identity] = covered.get(identity, 0) + count

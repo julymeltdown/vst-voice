@@ -1,6 +1,10 @@
-"""Experimental opt-in epoch objective; not yet enabled by the training CLI."""
+"""Experimental opt-in epoch objectives; enabled per training configuration."""
 
 OBJECTIVE_ID = 'nsf-lsgan-logmel-uvperiodic-48k80-v1'
+MULTILAG_OBJECTIVE_ID = 'nsf-lsgan-logmel-uvmultilag-48k80-v1'
+# Fixed modest lag set inside the existing 1024-sample windows; reviewed
+# experiment design, not a sweep.
+MULTILAGS = (64, 128, 192, 256, 384, 512)
 
 
 def phone_mask(entry, *, sample_offset, sample_count, valid_samples):
@@ -30,8 +34,8 @@ def phone_mask(entry, *, sample_offset, sample_count, valid_samples):
     return mask
 
 
-def periodicity_loss(predicted, target, unvoiced_mask):
-    """Compare lag-256 correlation and level in full unvoiced 1024-sample windows.
+def periodicity_loss(predicted, target, unvoiced_mask, lags=(256,)):
+    """Compare lag correlation and level in full unvoiced 1024-sample windows.
 
     Inputs are batch-one mono PCM and an explicit per-sample boolean mask. The
     caller must derive that mask from admitted phone ownership, not assume zero
@@ -49,6 +53,10 @@ def periodicity_loss(predicted, target, unvoiced_mask):
             or not torch.isfinite(predicted).all() or not torch.isfinite(target).all()
             or predicted.detach().abs().max() > 1 or target.detach().abs().max() > 1):
         raise ValueError('Expected bounded normalized mono float32 PCM and boolean sample mask')
+    if (not isinstance(lags, tuple) or not 1 <= len(lags) <= 16
+            or any(type(lag) is not int or not 16 <= lag <= 512 for lag in lags)
+            or len(set(lags)) != len(lags)):
+        raise ValueError('Expected a bounded set of distinct window lags')
     p = predicted.unfold(2, 1024, 256)[0, 0]
     t = target.detach().unfold(2, 1024, 256)[0, 0]
     mask = unvoiced_mask.unfold(2, 1024, 256)[0, 0].all(dim=-1)
@@ -59,14 +67,19 @@ def periodicity_loss(predicted, target, unvoiced_mask):
     if not count:
         return predicted.sum() * 0, dict(selectedWindows=0, candidateWindows=int(mask.sum().item()))
     p, t = p[selected], t[selected]
-    def correlation(x):
-        left, right = x[:, :-256], x[:, 256:]
+    def correlation(x, lag):
+        left, right = x[:, :-lag], x[:, lag:]
         denominator = (left.square().mean(dim=-1) * right.square().mean(dim=-1)).clamp_min(1e-16).sqrt()
         return (left * right).mean(dim=-1) / denominator
-    periodic = (correlation(p) - correlation(t)).square().mean()
+    # Mean across lags and windows: averaging rather than summing keeps the
+    # term's scale independent of the lag-set size, matching actual target
+    # correlations rather than forcing all correlations to zero.
+    periodic = torch.stack([(correlation(p, lag) - correlation(t, lag)).square().mean()
+                            for lag in lags]).mean()
     # Prevent a zero-output shortcut in this auxiliary loss; target scale is
     # detached and bounded by selected-window energy admission above.
     reference_rms = target_energy[selected].sqrt()
     level = ((p.square().mean(dim=-1) + 1e-12).sqrt() / reference_rms - 1).square().mean()
     return periodic + level, dict(selectedWindows=count, candidateWindows=int(mask.sum().item()),
+                                  lags=list(lags),
                                   correlationLoss=float(periodic.detach()), levelLoss=float(level.detach()))

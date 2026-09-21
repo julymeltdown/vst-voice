@@ -1,5 +1,40 @@
 # Integrated Singer Execution
 
+## Multi-lag periodicity objective implemented and staged for review
+
+Per the directed next experiment, the periodicity objective now takes
+a lag set instead of a fixed lag-256: periodicity_loss(predicted,
+target, mask, lags) computes the mean target-relative squared
+correlation discrepancy across the set inside the same 1024-sample
+windows, plus the unchanged level term. Averaging over lags keeps the
+term's scale independent of set size and matches actual target
+correlations rather than forcing all correlations to zero. The new
+governed identity is nsf-lsgan-logmel-uvmultilag-48k80-v1 with the
+fixed reviewed set 64/128/192/256/384/512; the single-lag objective
+is unchanged as lags=(256,). vocoder_training_run derives the lag set
+from the objective identity and passes it to vocoder_gan_step; the
+mask, energy admission, Japanese-label requirement, and all existing
+mel/adversarial/feature losses are untouched.
+
+The staged pair (vocoder-multilag-paired-r1, not launched) continues
+both arms from the frozen zero-v1 control checkpoint f4da8688 with
+identical dataset, seed 929, budget, zero-v1 feed, and fresh matched
+optimizer/scheduler/RNG; objectiveId is the only between-arm
+difference (control config sha 751bbcd0 is byte-identical to the
+uvnoise control). Plan sha e08d3290. Launch waits on implementation
+review per protocol.
+
+Evaluation plan for the pair: natural unedited source mel through the
+existing paired comparison plus target-relative dense-lag errors at
+trained AND unseen lags, per-phone and per-song absolute/squared
+metrics, level, pitch coverage, silence/clipping, and listening -
+the trained-lag metric alone cannot promote the arm.
+
+Verification: 430 voice_model_training tests pass, including new
+cases that multi-lag matches target identity, averages over lags
+rather than summing, catches a 384-sample-period artifact the
+single-lag term underreads, and validates the lag set.
+
 ## Temporal-mel sensitivity: flattening conditioning worsens the residual; structure is generator-internal
 
 The within-phone mel sensitivity study ran on the frozen pair across
@@ -13,28 +48,38 @@ arm ran its normal zero feed; the treatment arm ran its normal gated
 feed (a zero-noise treatment arm was already characterized by the
 counterfactual probe). Per-phone rows are retained in the receipt.
 
-Result (mean lag-256 correlation on phone interiors): control real
-0.223, smoothed 0.328, constant 0.336; treatment real 0.199, smoothed
-0.287, constant 0.481. Removing temporal variation from the mel makes
-the residual WORSE, not better - monotonically in the control and
-more than doubling it in the treatment under constant input. The
-hop-locked structure is therefore generated inside the vocoder's
-deterministic upsampling path, and real mel variation partially
-decorrelates it rather than carrying it. Hop-band power share stays
-below 0.001 in all cells, consistent with the earlier finding that
-the structure is broadband hop-periodic rather than a narrow 187.5 Hz
-Tone. Constant inputs are out-of-distribution, so this is a
-sensitivity statement about the combined input/model system - it
-does not by itself localize the defect to a specific layer.
+Result (mean lag-256 correlation measured on the full phone interval,
+with the one-hop-trimmed interior in parentheses): control real
+0.223 (0.210), smoothed 0.328 (0.357), constant 0.336 (0.368);
+treatment real 0.199 (0.177), smoothed 0.287 (0.216), constant
+0.481 (0.452). Target-relative absolute lag-256 error, recovered by
+joining the retained rows to the prior reference measurements,
+worsens in aggregate: control 0.238 to 0.333 to 0.340; treatment
+0.214 to 0.294 to 0.485. The deterioration is aggregate, not
+universal - constant input lowers lag-256 in 12 of 27 control
+phones and 6 of 27 treatment phones.
 
-Combined with the counterfactual result, the defect picture is now:
-neither inference-time excitation nor mel-borne structure produces
-the residual; the learned generator's response to quasi-static
-conditioning does. That points the fix at the generator/training
-objective rather than the input pipeline - for example explicit
-aperiodicity targets, anti-periodicity regularization on unvoiced
-segments, or an architecture with a genuinely stochastic source
-path. Any such step is a new experiment requiring its own review.
+Two measurement caveats bound the reading. First, ln-amplitude
+averaging is a geometric mean in linear amplitude, so these are
+joint temporal/envelope perturbations, not level-matched temporal
+contrasts: mean reference-relative output RMS moved 0.965 to 0.952
+to 0.574 (control) and 0.822 to 0.650 to 0.562 (treatment), with
+individual constant phones down to 0.174x. Second, the probe's
+hop-band figure integrates only 0.95-1.05 times 187.5 Hz; it is
+small mean power near the hop fundamental, not evidence about a
+harmonic comb or higher hop harmonics (prior peaks sat near
+5.4-5.6 kHz), and cell means under 0.001 coexist with retained
+windows up to 0.0031.
+
+The defensible conclusion: the tested temporal/envelope
+simplifications worsen aggregate target-relative lag-256 error, so
+naive mel smoothing is not a repair on this cohort. Together with
+the small immediate-noise effect this motivates a targeted
+generator-training experiment; causal localization between
+conditioning, excitation path, and learned response remains
+unresolved. Review has directed the next bounded experiment toward
+a target-matched multi-lag vocoder objective extending the existing
+lag-256 objective rather than further source-path redesign.
 
 Receipt: vocoder-mel-sensitivity-probe-r1.json (per-phone rows,
 input-mel variation, full and one-hop-trimmed interiors, hop-band

@@ -24,9 +24,9 @@ OBJECTIVE_ID = 'nsf-lsgan-logmel-48k80-v1'
 
 
 def training_objective(settings):
-    from .unvoiced_periodicity import OBJECTIVE_ID as PERIODIC_OBJECTIVE
+    from .unvoiced_periodicity import OBJECTIVE_ID as PERIODIC_OBJECTIVE, MULTILAG_OBJECTIVE_ID
     objective = settings.get('objectiveId', OBJECTIVE_ID)
-    if objective not in (OBJECTIVE_ID, PERIODIC_OBJECTIVE):
+    if objective not in (OBJECTIVE_ID, PERIODIC_OBJECTIVE, MULTILAG_OBJECTIVE_ID):
         raise ValueError('Unsupported vocoder objective')
     return objective
 
