@@ -1,5 +1,18 @@
 # Integrated Singer Execution
 
+## Multi-lag pair relaunched after disk-exhaustion failure
+
+The first multilag launch failed both arms at roughly update 2400
+with Errno 28: the volume had under 1.2 GB free against the 1.37 GB
+checkpoint reserve. The failed run directories are preserved under
+/tmp (ml-control-failed, ml-multilag-failed) and the failure is
+recorded rather than treated as a completed pair, per protocol.
+A 6 GB Ubuntu ISO in Downloads was deleted to restore headroom
+(re-downloadable; noted for the user). The pair relaunched in tmux
+session seam-multilag (control pid 99488, multilag pid 99491, same
+reviewed config digests) and update-1 losses match the first
+attempt exactly, confirming the deterministic restart.
+
 ## Multi-lag pair launched under review clearance
 
 Developer 2 confirmed the lifecycle fix and cleared
