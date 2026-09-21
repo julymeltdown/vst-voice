@@ -1,5 +1,51 @@
 # Integrated Singer Execution
 
+## Gradient-only probe: the auxiliary trains an unbounded clean estimate the sampler never emits
+
+Developer 2 cleared a read-only gradient diagnostic (no optimizer step,
+parameter update, training, or checkpoint mutation). The probe
+(acoustic_gradient_probe.py, receipt acoustic-gradient-probe-e9-r1)
+loaded all three frozen checkpoints (e8 parent, control, treatment) and
+ran a teacher-forced DDPM forward on phrases 00001/00002/00006 at
+timesteps 0/495/999 with identical explicit noise per condition. Model
+state hashes before/after are identical for every checkpoint (read-only
+confirmed). Loss reconstruction holds: combined == base + lambda*(flat
++level) and weight-0 == base on every row.
+
+Findings:
+
+- The flatness and level gradient directions are near-identical
+  (cos(flatness, level) ~ 0.94 at every condition). The auxiliary is
+  effectively redundant with the level term; it does not supply an
+  independent spectral-shape signal.
+- The clean estimate the auxiliary supervises is unbounded and diverges
+  at high noise: at t=999 the unclamped x0 saturates ~96% of bins and
+  the unclamped UV log-flatness error is ~1230 nats, versus ~4.1 after
+  the export wrapper's [-1,1] clamp. The auxiliary therefore optimizes a
+  quantity the deployed sampler never emits - the clamped trajectory
+  re-derives noise from the bounded estimate and stays near the data
+  manifold. This is a verified structural supervision/sampling mismatch,
+  and a concrete hypothesis for why improving the auxiliary's target did
+  not improve sampled output.
+- The treatment checkpoint has HIGHER clean-estimate saturation than
+  control (t=495: 0.32 vs 0.22; t=999: 0.965 vs 0.964) and worse
+  post-clamp UV flatness error (3.59/4.99 vs 3.19/4.14 nats) - the
+  auxiliary pushed the unclamped estimate further into saturation.
+- Gradient magnitudes: aux/base ratio ~0.95-1.16 at t=495 (the
+  calibrated 10% figure was measured at a single timestep and is not an
+  across-schedule guarantee); base-flatness cosine is near zero for
+  control (0.017) but rises for treatment (0.16), consistent with the
+  auxiliary reshaping the base gradient direction.
+
+Interpretation is bounded: these are instantaneous teacher-forced
+gradients and a clamp counterfactual, not the accumulated AdamW update
+and not free-running sampler evidence. The negative pair result is
+scoped to this coefficient/epoch/parent/conditioning/sampler. Next
+candidate under review: supervise the clamped clean estimate (or the
+quantity the sampler actually feeds forward) rather than the unbounded
+x0. singerQualified/releaseEligible/combinedModelHoldoutVerified remain
+false; listening NOT_REVIEWED.
+
 ## Flatness pair assessment corrected after developer-2 review (STOP upheld, record repaired)
 
 Developer 2 upheld the STOP verdict but required corrections to the
