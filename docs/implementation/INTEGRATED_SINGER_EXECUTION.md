@@ -1,5 +1,44 @@
 # Integrated Singer Execution
 
+## Free-running 10-step sampler trace: treatment clamps to a worse clean estimate at every step
+
+Developer 2 cleared a read-only frozen-weight trace of the actual
+export-wrapper DDIM trajectory (acoustic_sampler_trace.py, receipt
+acoustic-sampler-trace-e9-r1). The instrumented loop reproduces the
+uninstrumented wrapper bit-for-bit under the same seed on every phrase
+and checkpoint (reproducesWrapper true). Six trajectories: control and
+treatment on phrases 00001/00002/00006, seed 933, 10 DDIM steps
+(timesteps 900..0, speedup 100), CPU single-thread.
+
+Findings:
+
+- The production sampler visits timesteps 900,800,...,0 (speedup 100),
+  not 999/495. At every step the treatment's post-clamp UV log-flatness
+  error is worse than control (e.g. phrase 00001 t=900: 4.97 vs 4.08;
+  t=0: 2.95 vs 2.36 nats) - the trajectories diverge early and the clamp
+  does not recover the gap. The treatment's clamped clean estimate is
+  worse at every step, not just at the final output.
+- On UV-eligible bins the treatment's high-side saturation is actually
+  LOWER than control (0.40 vs 0.50 at t=900) while its post-clamp
+  flatness error is worse - the harm is not simple over-saturation but a
+  shifted clean estimate that stays worse after bounding.
+- Hard-clamped supervision would remove most of its own gradient: the
+  clamped-auxiliary gradient support ratio is 0.01-0.32 across steps
+  (near zero at high noise where saturation is worst). This confirms the
+  reviewer warning that supervising a hard-clamped clean estimate can
+  eliminate the restoring gradient exactly where it is needed, so a
+  clamped-objective treatment is NOT a sound next step.
+
+Bounded interpretation: the auxiliary trained on the unbounded
+teacher-forced clean estimate shifted the model's denoiser so that the
+free-running clamped trajectory lands on a worse clean estimate at every
+step. The mechanism is a supervision/sampling mismatch; the fix is not
+clamped supervision (which loses gradient support) but a supervision
+target aligned with the quantity the sampler actually propagates. This
+is a PyTorch export-wrapper trace, not ONNX bitwise parity and not the
+AdamW update. The pair remains STOP; singerQualified/releaseEligible/
+combinedModelHoldoutVerified remain false; listening NOT_REVIEWED.
+
 ## Gradient-only probe: the auxiliary trains an unbounded clean estimate the sampler never emits
 
 Developer 2 cleared a read-only gradient diagnostic (no optimizer step,
