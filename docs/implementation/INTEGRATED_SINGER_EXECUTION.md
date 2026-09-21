@@ -1,5 +1,49 @@
 # Integrated Singer Execution
 
+## Flatness-objective pair assessed under the frozen rule: STOP, line does not advance
+
+Developer 2 cleared launch of exactly the two bounded one-epoch runs at
+commit 7179b2f5 (control weight 0, treatment weight 0.08040502229238589,
+both warm-started from acoustic-breathiness-r1 epoch-000008). Both arms
+completed cleanly: 267/267 verified updates each, epochComplete true,
+and the post-run audit confirmed all 267 source/timestep/noise draws are
+identical between arms (0 mismatches). Control meanLoss 0.2249,
+treatment 0.2336. Exports: control acoustic a7dbde0f, treatment 7515a3a9.
+
+The frozen evaluation (receipt flatness-pair-eval-e9-r1/pair-eval.json,
+script tools/voice_model_training/acoustic_flatness_pair_eval.py) drew
+eight conditioned mel samples per source inside one ONNX session,
+rendered every retained mel through the fixed vocoder (0731edd1, graph
+9a733810, zero-v1 feed), and ran the 12-item held-out
+acoustic-then-vocoder reconstruction panel.
+
+Frozen decision rule applied to measured outputs:
+
+- Primary statistic FAILS: unvoiced mean flatness moved 0.0398 -> 0.0206
+  (ratio treatment/control 0.517, far below the required >= 1.15) and 0
+  of 5 songs improved.
+- Target-relative error FAILS: mean |log_flatness_hat -
+  log_flatness_ref| on nonsilent unvoiced frames rose 2.832 -> 3.798
+  nats (+0.966), where the rule requires a strict decrease.
+- Guardrails: unvoiced RMS ratio in range (0.929 vs control 0.657, PASS);
+  unvoiced mean |rmsRatio-1| FAILS (0.703 vs 0.629, +0.073 > 0.05);
+  voiced pitch pairs and weighted pitch error PASS (32542 pairs, 37.6 vs
+  43.3 cents); no new clip/silence; voiced target-relative flatness
+  error FAILS (1.777 vs 0.848, +0.929 > 0.05 nats).
+- Held-out panel (acoustic-then-vocoder): spectral distance 1.308 ->
+  1.328, pitch 76.9 -> 66.8 cents; ancestry/independence limits stated,
+  combinedModelHoldoutVerified stays false.
+
+Interpretation: the target-relative log-flatness auxiliary at this
+weight moved unvoiced mel predictions AWAY from the reference - more
+spectrally concentrated, more tonal - the opposite of the intended
+aperiodic direction, even though the level term held unvoiced RMS nearer
+reference. This is a null/negative result: the acoustic line returns to
+mechanism analysis. Assessment receipt
+flatness-pair-eval-e9-r1/assessment.json. singerQualified,
+releaseEligible and combinedModelHoldoutVerified remain false; listening
+remains NOT_REVIEWED.
+
 ## Assessment corrections after developer-2 review (upheld STOP, corrected statistics)
 
 Developer 2 upheld the STOP verdict but identified errors in the
