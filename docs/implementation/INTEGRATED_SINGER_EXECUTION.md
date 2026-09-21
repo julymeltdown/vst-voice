@@ -1,5 +1,45 @@
 # Integrated Singer Execution
 
+## Multi-lag objective result: single-lag continuation wins on every measured axis
+
+The multilag pair completed cleanly after the disk-exhaustion
+restart (control receipt 0731edd1, multilag receipt 8a284ea8, both
+2804 updates, coverageVerified, identical raw-draw digests
+3f547f6a, identical realized zero feeds, zero-v1 excitation).
+Exports passed parity; the paired comparison and dense-lag probe
+ran on the five frozen sources.
+
+Result: continued single-lag training beats the multi-lag
+replacement on every measured axis. Unvoiced signed lag-256
+residual: control 0.126, multilag 0.176 (reference -0.004) - the
+control's extra epoch on the same objective improved the parent's
+0.226 by nearly half, while the multi-lag arm both lost the
+headline metric and failed to buy generality: mean target-relative
+absolute error is worse on its OWN trained lags (0.115 vs 0.106)
+and no better on unseen lags (0.046 vs 0.049). Max absolute error
+favors multilag marginally (0.555 vs 0.579). Voiced residuals stay
+near zero in both (-0.003 / +0.006). Unvoiced RMS ratio 1.009
+control vs 0.892 multilag; voiced 0.863 vs 0.945. Per-source pitch
+diagnostics actually favor multilag on 4 of 5 sources (e.g. 7.66
+vs 12.96 cents on song-00420), so the tradeoff is not unidirectional.
+
+Interpretation: at this budget and lag set, spreading the
+aperiodicity objective across six lags diluted the lag-256 gain
+without purchasing unseen-lag robustness - the multi-lag hypothesis
+is rejected at this effect size. The more consequential finding is
+that a second matched epoch on the single-lag objective nearly
+halved the residual (0.226 to 0.126): optimization budget on the
+existing objective is currently the strongest lever on the defect,
+stronger than excitation content, mel conditioning, or objective
+shape. Whether the residual keeps falling with further matched
+epochs - and where it saturates - is the natural next question,
+and it is cheap to answer because the control arm now exists as a
+trained anchor.
+
+Receipts: vocoder-multilag-paired-r1-exports,
+paired-vocoder-comparison-multilag-r1.json,
+vocoder-dense-lag-probe-multilag-r1.json.
+
 ## Multi-lag pair relaunched after disk-exhaustion failure
 
 The first multilag launch failed both arms at roughly update 2400
