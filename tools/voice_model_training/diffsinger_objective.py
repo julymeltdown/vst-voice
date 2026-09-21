@@ -60,6 +60,28 @@ class DiffSingerDDPMObjective:
 UNVOICED_AUXILIARY_KIND = "unvoiced-clean-mel-shape-level"
 UNVOICED_FLATNESS_KIND = "unvoiced-target-log-flatness"
 
+# Captured mel targets are ln-amplitude with a real floor at ln(1e-5);
+# frames whose reference log-mean amplitude sits at that floor carry no
+# measurable spectral shape, so a flatness statistic on them is noise
+# about a degenerate target rather than supervision. They are excluded
+# from the auxiliary (the base epsilon loss still trains them).
+SILENT_LEVEL_FLOOR = -11.5
+
+
+def log_flatness(z):
+    """Per-frame log spectral flatness of a log-mel tensor [B,T,M].
+
+    Flatness is geometric-mean over arithmetic-mean magnitude. In log-mel
+    space z, log flatness is mean(z) - (logsumexp(z) - log M) per frame.
+    The result is <= 0, equals 0 only for a perfectly flat spectrum, and is
+    invariant to a uniform additive shift of z (a pure level change).
+    """
+    import math
+    import torch
+    bins = z.shape[2]
+    return z.mean(dim=2, keepdim=True) - (
+        torch.logsumexp(z, dim=2, keepdim=True) - math.log(bins))
+
 
 def objective_id_for_settings(settings: dict) -> str:
     """Objective identity for a captured training configuration's settings.
@@ -219,13 +241,14 @@ class DiffSingerDDPMUnvoicedFlatnessObjective:
     """Epsilon DDPM loss plus a target-relative log-flatness term on unvoiced
     frames, with the same log-energy level term retained for protection.
 
-    Motivation (see INTEGRATED_SINGER_EXECUTION): the conditioned acoustic
-    model produces diverse but spectrally concentrated (peaky) predictions on
-    unvoiced phones - the learned posterior never reaches noise-like flatness.
-    This auxiliary scores the per-frame log spectral flatness of the predicted
-    clean mel against the reference's own log flatness, so the target is the
-    measured statistic of the data rather than an absolute "flat" target that
-    would reward white-noise spectra at any level.
+    Motivation (see INTEGRATED_SINGER_EXECUTION): on the tested configuration
+    (one song, eight posterior draws, ten sampler steps), the conditioned
+    acoustic model produced spectrally concentrated predictions on unvoiced
+    phones - no evaluated draw reached the reference's noise-like flatness
+    range. This auxiliary scores the per-frame log spectral flatness of the
+    predicted clean mel against the reference's own log flatness, so the
+    target is the measured statistic of the data rather than an absolute
+    "flat" target that would reward white-noise spectra at any level.
 
     In log-mel space z (per frame, M bins), spectral flatness is
     exp(mean(z)) / mean(exp(z)), so log-flatness is
@@ -265,11 +288,9 @@ class DiffSingerDDPMUnvoicedFlatnessObjective:
         base = error.abs() if self.loss_type == "l1" else error.square()
         base = base[:, 0].transpose(1, 2)
         bins = target.shape[2]
-        # Log spectral flatness per frame: mean(z) - (logsumexp(z) - log M).
-        flat_hat = z_hat.mean(dim=2, keepdim=True) - (
-            torch.logsumexp(z_hat, dim=2, keepdim=True) - math.log(bins))
-        flat_ref = z_ref.mean(dim=2, keepdim=True) - (
-            torch.logsumexp(z_ref, dim=2, keepdim=True) - math.log(bins))
+        # Log spectral flatness per frame via the shared helper.
+        flat_hat = log_flatness(z_hat)
+        flat_ref = log_flatness(z_ref)
         flatness = F.smooth_l1_loss(flat_hat, flat_ref, reduction="none").expand(
             -1, -1, bins)
         level_hat = torch.logsumexp(z_hat, dim=2, keepdim=True) - math.log(bins)
@@ -277,13 +298,21 @@ class DiffSingerDDPMUnvoicedFlatnessObjective:
         level = F.smooth_l1_loss(level_hat, level_ref, reduction="none").expand_as(flatness)
         unvoiced = torch.isin(mask_inputs[0], torch.tensor(
             self.unvoiced_ids, dtype=mask_inputs[0].dtype, device=target.device)) & ~mask_inputs[1]
-        mask = unvoiced[:, :, None].to(target.dtype)
+        # Exclude silent/near-floor targets: their log-mean amplitude sits at
+        # the capture floor, so flatness on them is degenerate supervision.
+        silent = (level_ref.squeeze(2) <= SILENT_LEVEL_FLOOR)
+        eligible = unvoiced & ~silent
+        mask = eligible[:, :, None].to(target.dtype)
         alpha_bar = diffusion.alphas_cumprod[t].view(batch, 1, 1)
         auxiliary = (flatness + level) * mask * alpha_bar
         self.last_draw = dict(timesteps=[int(value) for value in t],
                               noiseSha256=hashlib.sha256(
                                   noise.detach().cpu().numpy().tobytes()).hexdigest(),
-                              unvoicedFrames=int(mask.sum()))
+                              unvoicedFrames=int(unvoiced.sum()),
+                              excludedSilentFrames=int((unvoiced & silent).sum()),
+                              eligibleFrames=int(eligible.sum()),
+                              flatnessTerm=float((flatness * mask * alpha_bar).sum().detach()),
+                              levelTerm=float((level * mask * alpha_bar).sum().detach()))
         return base, auxiliary
 
     def __call__(self, model, inputs, target):

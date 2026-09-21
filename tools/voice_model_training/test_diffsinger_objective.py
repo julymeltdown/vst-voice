@@ -6,7 +6,8 @@ import unittest
 from tools.voice_model_training.diffsinger_objective import (
     DiffSingerDDPMObjective, DiffSingerDDPMUnvoicedSpectralObjective,
     DiffSingerDDPMUnvoicedFlatnessObjective,
-    UNVOICED_AUXILIARY_KIND, UNVOICED_FLATNESS_KIND, objective_id_for_settings)
+    UNVOICED_AUXILIARY_KIND, UNVOICED_FLATNESS_KIND, SILENT_LEVEL_FLOOR,
+    log_flatness, objective_id_for_settings)
 from tools.voice_model_training.optimization import acoustic_training_step
 
 
@@ -286,8 +287,51 @@ class UnvoicedFlatnessObjectiveTests(unittest.TestCase):
             self.assertIn(name, grads_a)
             self.assertTrue(torch.equal(grads_a[name], parameter.grad), name)
 
-    def test_flatness_term_rewards_matching_reference_concentration(self):
-        """The auxiliary is zero when predicted clean mel equals the reference."""
+    def test_log_flatness_exact_target_is_zero(self):
+        """Identical log-mels give zero flatness error and zero level error."""
+        import torch
+        import torch.nn.functional as F
+        z = torch.linspace(-8, -2, steps=16).reshape(1, 4, 4)
+        flat = F.smooth_l1_loss(log_flatness(z), log_flatness(z), reduction="none")
+        self.assertTrue(bool((flat == 0).all()))
+
+    def test_log_flatness_concentration_change_at_equal_level(self):
+        """Same log-mean amplitude, different concentration -> positive error."""
+        import torch
+        import torch.nn.functional as F
+        flat_spectrum = torch.full((1, 1, 4), -3.0)
+        peaky = torch.tensor([[[-1.0, -5.0, -5.0, -5.0]]])
+        # Equalize log-mean amplitude so only concentration differs.
+        peaky = peaky - peaky.mean() + flat_spectrum.mean()
+        error = F.smooth_l1_loss(log_flatness(peaky), log_flatness(flat_spectrum),
+                                 reduction="none")
+        self.assertTrue(bool((error > 0).all()))
+
+    def test_log_flatness_invariant_to_uniform_level_shift(self):
+        """Adding a constant to every bin leaves log flatness unchanged."""
+        import torch
+        z = torch.linspace(-8, -2, steps=16).reshape(1, 4, 4)
+        self.assertTrue(torch.allclose(log_flatness(z), log_flatness(z + 3.0)))
+
+    def test_silent_target_frames_are_excluded(self):
+        """Unvoiced frames whose reference sits at the capture floor get no loss."""
+        import torch
+        Model = _fixture_model()
+        torch.manual_seed(7)
+        model = Model(4)
+        # Frame 0 unvoiced but at the silent floor; frames 1-2 unvoiced real.
+        inputs = self._inputs([2, 2, 2], [False, False, False], [2], [1, 1, 1])
+        target = torch.linspace(-8, -2, steps=12).reshape(1, 3, 4).clone()
+        target[0, 0, :] = -11.512925464970229  # ln(1e-5), the capture floor
+        auxiliary = DiffSingerDDPMUnvoicedFlatnessObjective("l1", weight=0.5, unvoiced_ids=[2])
+        torch.manual_seed(5)
+        base_elem, aux_elem = auxiliary.components(model, inputs, target)
+        self.assertTrue(bool((aux_elem[0, 0] == 0).all()))
+        self.assertEqual(auxiliary.last_draw["unvoicedFrames"], 3)
+        self.assertEqual(auxiliary.last_draw["excludedSilentFrames"], 1)
+        self.assertEqual(auxiliary.last_draw["eligibleFrames"], 2)
+
+    def test_flatness_and_level_parts_logged_separately(self):
         import torch
         Model = _fixture_model()
         torch.manual_seed(7)
@@ -296,15 +340,9 @@ class UnvoicedFlatnessObjectiveTests(unittest.TestCase):
         target = torch.linspace(-8, -2, steps=8).reshape(1, 2, 4)
         auxiliary = DiffSingerDDPMUnvoicedFlatnessObjective("l1", weight=0.5, unvoiced_ids=[2])
         torch.manual_seed(5)
-        base_elem, aux_elem = auxiliary.components(model, inputs, target)
-        self.assertTrue(torch.isfinite(aux_elem).all())
-        self.assertTrue(bool((aux_elem >= 0).all()))
-        # A flatness target equal to the reference's own means the term can
-        # approach zero; a wrong-concentration prediction cannot zero it.
-        scalar = (aux_elem * torch.ones(1, 2, 1)).sum()
-        grads = torch.autograd.grad(scalar, list(model.parameters()),
-                                    retain_graph=True, allow_unused=True)
-        self.assertTrue(any(float(g.square().sum()) > 0 for g in grads if g is not None))
+        auxiliary.components(model, inputs, target)
+        self.assertIn("flatnessTerm", auxiliary.last_draw)
+        self.assertIn("levelTerm", auxiliary.last_draw)
 
     def test_masking_limits_auxiliary_to_unvoiced_non_rest_frames(self):
         import torch
