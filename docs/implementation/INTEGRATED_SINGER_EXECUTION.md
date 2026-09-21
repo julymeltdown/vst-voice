@@ -1,5 +1,58 @@
 # Integrated Singer Execution
 
+## Assessment corrections after developer-2 review (upheld STOP, corrected statistics)
+
+Developer 2 upheld the STOP verdict but identified errors in the
+first-published numbers, corrected here:
+
+(a) The frozen criterion is the mean ABSOLUTE lag-256 error, not the
+signed residual. The correct retained per-phone absolute errors from
+the dense receipt are control 0.1311 -> continuation 0.0580 (the
+earlier 0.1263 -> 0.0442 quoted signed candidate-minus-reference
+correlations). The PASS direction is unchanged.
+
+(b) Spectral distance 0.7011 -> 0.6060 (~13.6 percent) is the sole
+passing axis; the OR rule does not require all three. The frozen
+unseen-lag set is NON-HOP-ALIGNED lags only (lag mod 256 != 0): on
+that subset the mean-of-phone-means regresses 0.0441 -> 0.0511. The
+frozen pitch statistic is weighted by measurable voiced pairs:
+27.16 -> 29.99 cents, worse; the unweighted 27.46 -> 30.43 quoted
+earlier was not the frozen statistic.
+
+(c) The stop rests on a conservative guardrail judgment, not a frozen
+numeric tolerance - none was declared. The stronger per-phone reading
+supports it: mean |rmsRatio - 1| worsens 0.1032 -> 0.1337, with 18 of
+27 unvoiced phones and 4 of 5 song-level means worse. The earlier
+claim that other guardrails cleared was over-broad: coverage
+12138 -> 12203 does not establish same-frame pitch quality or
+silence/clipping. Numeric guardrail tolerances must be frozen before
+the next run.
+
+Mechanism correction: the earlier wording implied attenuation bought
+the correlation gain and matched the e8 acoustic shortcut. That is
+overclaimed. Normalized autocorrelation is scale-invariant outside
+numerical-floor effects, and the periodicity loss already contains an
+((candidate_rms/reference_rms)-1)^2 term; the supported statement is
+that lag-256 structure improved concurrently with lower unvoiced
+level, an unacceptable tradeoff under the criterion. Whether
+per-window level weighting is inadequate is a preflight question, not
+a conclusion.
+
+Sample-variance correction (receipt acoustic-sample-variance-e8-r2
+supersedes r1): the r1 phone masks used floor(start/256) while
+per_phone_flatness uses ceil, and r1 quoted the range across phones of
+draw-averaged means as if it were per-draw flatness. Under matched
+masks with a bound reference: eight draws give unvoiced mel std 2.56,
+voiced 2.06; phone-by-draw flatness spans 0.0011-0.0885 on unvoiced
+phones against a reference mean of 0.712 (voiced 0.0035-0.0262 vs
+0.0463). The supported statement is narrower than first written: none
+of the eight evaluated draws achieved reference-like unvoiced
+flatness; seed variation alone did not fix this tested configuration.
+Eight samples cannot establish zero support for noise-like output or
+rule out sampler repair, and log-mel variation does not by itself
+prove spectral-shape diversity. Training-signal or capacity repair
+remains a hypothesis, not a localization proof.
+
 ## Continuation assessed against the frozen joint criterion: STOP, line does not advance
 
 The restarted single-lag continuation completed cleanly (2804 updates,
