@@ -1,5 +1,45 @@
 # Integrated Singer Execution
 
+## Temporal-mel sensitivity: flattening conditioning worsens the residual; structure is generator-internal
+
+The within-phone mel sensitivity study ran on the frozen pair across
+all 27 admitted unvoiced phone interiors in the five frozen sources.
+Each phone's mel frames were edited strictly inside the phone (whole-
+hop interior frames only, no cross-boundary smoothing) under three
+conditions - real, 5-frame ln-amplitude moving average, and
+time-constant mean-envelope repetition - with F0, gains, duration,
+crop, and the seed-933 noise realization held identical. The control
+arm ran its normal zero feed; the treatment arm ran its normal gated
+feed (a zero-noise treatment arm was already characterized by the
+counterfactual probe). Per-phone rows are retained in the receipt.
+
+Result (mean lag-256 correlation on phone interiors): control real
+0.223, smoothed 0.328, constant 0.336; treatment real 0.199, smoothed
+0.287, constant 0.481. Removing temporal variation from the mel makes
+the residual WORSE, not better - monotonically in the control and
+more than doubling it in the treatment under constant input. The
+hop-locked structure is therefore generated inside the vocoder's
+deterministic upsampling path, and real mel variation partially
+decorrelates it rather than carrying it. Hop-band power share stays
+below 0.001 in all cells, consistent with the earlier finding that
+the structure is broadband hop-periodic rather than a narrow 187.5 Hz
+Tone. Constant inputs are out-of-distribution, so this is a
+sensitivity statement about the combined input/model system - it
+does not by itself localize the defect to a specific layer.
+
+Combined with the counterfactual result, the defect picture is now:
+neither inference-time excitation nor mel-borne structure produces
+the residual; the learned generator's response to quasi-static
+conditioning does. That points the fix at the generator/training
+objective rather than the input pipeline - for example explicit
+aperiodicity targets, anti-periodicity regularization on unvoiced
+segments, or an architecture with a genuinely stochastic source
+path. Any such step is a new experiment requiring its own review.
+
+Receipt: vocoder-mel-sensitivity-probe-r1.json (per-phone rows,
+input-mel variation, full and one-hop-trimmed interiors, hop-band
+share, level).
+
 ## Zero-noise counterfactual: inference noise is inert on the residual; the arm difference is learned weights
 
 Following the review protocol, a frozen-weight counterfactual probe
@@ -11,26 +51,32 @@ feed tensor is hashed into the receipt and the waves differ per
 condition, so the noise provably reaches the graph.
 
 Result across the five frozen sources (unvoiced signed residual,
-candidate minus reference): uvnoise gated 0.2386/0.2395/0.2399 across
-seeds, uvnoise zeros 0.2408, control zeros 0.2607. Inference-time
-gated noise at one-third sine amplitude changes the residual by less
-than 0.003 - effectively inert on this metric - while the trained
-treatment weights carry essentially the whole ~0.02 arm advantage.
-Per-source detail matches (song-00003: gated 0.1052-0.1058, zeros
-0.1057, control 0.1295). Two conclusions follow. First, the
-hop-locked residual is produced by the generator's learned response
-to mel/F0 conditioning, not by absent stochastic excitation at
-inference. Second, training with gated noise did shift the weights
-enough to yield the modest measured gain - but the same gain might
-arise from any training perturbation; a matched second UV-noise seed
-or a control retrain would be needed to attribute it specifically,
-which is not currently justified by effect size.
+candidate minus reference). Two weightings are reported and named:
+the probe's own song-weighted means (five song means equally) give
+uvnoise gated 0.2386/0.2395/0.2399 across seeds, uvnoise zeros
+0.2408, control zeros 0.2607; on the original phone-window weighting
+(27 windows, recomputed in review) the same conditions give control
+zeros 0.2263, treatment zeros 0.2048, treatment gated 0.2027/0.2027/
+0.2034, with absolute discrepancies 0.2380/0.2156/0.2136/0.2135/
+0.2144. Under the phone-window weighting the seed-933 arm difference
+of 0.0236 decomposes into 0.0215 between frozen checkpoints at zero
+feed and 0.0021 from the gated feed itself - roughly 91 percent
+checkpoint, 9 percent feed for this metric and realization. The
+per-source deltas are small and mixed-sign (seed-933 song-00005
+-0.0065; seed-935 song-00402 -0.0063, song-00420 +0.0046), so no
+per-source or all-lag inertness is claimed.
 
-This also bounds the interpretation of the earlier arm result:
-excitation content is not the residual's mechanism, leaving the mel
-conditioning path (the comparison uses source-recomputed mel, not
-predicted acoustic mel) and the learned upsampling response as the
-remaining candidates. The temporal-mel sensitivity study is next.
+The defensible conclusion is bounded: at fixed treatment weights,
+gated noise changes the aggregate lag-256 discrepancy only modestly
+across three realizations, and most of the observed checkpoint
+difference persists with a zero feed. This local sensitivity result
+does not identify or exclude a general excitation mechanism -
+insufficient learned source-path sensitivity, injection location or
+bandwidth, gate/amplitude adequacy, and excitation-by-conditioning
+interaction all remain open. A graph trained to attenuate an input
+can be insensitive to its removal even where an effective
+excitation pathway would matter. The temporal-mel sensitivity study
+tests conditioning sensitivity next, without additional training.
 
 Receipt: vocoder-noise-counterfactual-probe-r1.json with per-source
 per-condition wave/noise/rawDraw/gate digests, torch version, and
