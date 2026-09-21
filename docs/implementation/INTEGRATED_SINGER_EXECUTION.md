@@ -1,5 +1,22 @@
 # Integrated Singer Execution
 
+## Partner review received; stale probe binary diagnosed (no code change)
+
+The partner thread's verdict on the combined-model training audit
+(commit 9a28c399) arrived as a completed turn whose items are not
+exposed through read_thread; the rollout record shows the reviewer
+verified the deployed-graph/checkpoint binding and ancestry-receipt
+validation and returned a final "Yes." — approved.
+
+seam_neural_native_bundle_runtime was failing with exit 7
+("Neural bundle configuration shape or frame bound is invalid")
+against the schema-4 conditioned fixture. Root cause: the
+seam_onnx_runtime_probe binary predated the schema-4
+bundle_metadata.cpp change (commit 3f0ed579). After a full
+ninja rebuild the conditioned bundle passes and all 17
+neural-labelled CTests are green. No code change was required;
+this was a stale-artifact failure, not a regression.
+
 ## Combined-model training audit: both leaves bound, declared ancestry consumable
 
 The validation campaign's training audit checked only the vocoder's leaf epoch
