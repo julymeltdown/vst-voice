@@ -301,8 +301,13 @@ class UnvoicedFlatnessObjectiveTests(unittest.TestCase):
         import torch.nn.functional as F
         flat_spectrum = torch.full((1, 1, 4), -3.0)
         peaky = torch.tensor([[[-1.0, -5.0, -5.0, -5.0]]])
-        # Equalize log-mean amplitude so only concentration differs.
-        peaky = peaky - peaky.mean() + flat_spectrum.mean()
+        # Equalize log-mean amplitude (logsumexp - log M) so only
+        # concentration differs.
+        def level(z):
+            import math
+            return torch.logsumexp(z, dim=2, keepdim=True) - math.log(z.shape[2])
+        peaky = peaky - level(peaky) + level(flat_spectrum)
+        self.assertTrue(torch.allclose(level(peaky), level(flat_spectrum)))
         error = F.smooth_l1_loss(log_flatness(peaky), log_flatness(flat_spectrum),
                                  reduction="none")
         self.assertTrue(bool((error > 0).all()))
@@ -341,8 +346,8 @@ class UnvoicedFlatnessObjectiveTests(unittest.TestCase):
         auxiliary = DiffSingerDDPMUnvoicedFlatnessObjective("l1", weight=0.5, unvoiced_ids=[2])
         torch.manual_seed(5)
         auxiliary.components(model, inputs, target)
-        self.assertIn("flatnessTerm", auxiliary.last_draw)
-        self.assertIn("levelTerm", auxiliary.last_draw)
+        self.assertIn("flatnessMaskedBinSum", auxiliary.last_draw)
+        self.assertIn("levelMaskedBinSum", auxiliary.last_draw)
 
     def test_masking_limits_auxiliary_to_unvoiced_non_rest_frames(self):
         import torch

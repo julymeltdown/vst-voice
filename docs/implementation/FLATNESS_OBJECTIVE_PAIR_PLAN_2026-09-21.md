@@ -1,8 +1,8 @@
 # Acoustic flatness-objective paired experiment plan (staged, awaiting clearance)
 
-Status: STAGED for developer-2 re-review after the correction pass.
-Nothing below has been launched; the r2 calibration receipt exists but
-no training run has started.
+Status: STAGED for developer-2 clearance after the second correction
+pass. Nothing below has been launched; the r2 calibration receipt
+exists but no training run has started.
 
 ## Question
 
@@ -68,12 +68,36 @@ weight zero reproduces the base objective bit for bit.
 Primary statistic: per-phone mean predicted-mel flatness (arithmetic
 flatness, the run_spectral_flatness statistic) on the five development
 replay sources, aggregated as the mean of per-phone means. The
-treatment ADVANCES only if BOTH hold:
+treatment ADVANCES only if ALL of the following hold:
 
 - the unvoiced primary statistic improves versus the control arm by at
   least 15 percent relative (ratio treatment/control >= 1.15) AND at
-  least 4 of 5 songs improve on their own per-song mean;
+  least 4 of 5 songs improve on their own per-song mean; AND
+- the mean absolute target-relative unvoiced flatness error decreases
+  versus the control arm: mean over eligible frames of
+  |log_flatness_hat - log_flatness_ref| must be strictly lower for the
+  treatment than for the control (raising raw flatness while moving
+  further from the reference does not count as an advance);
 - no guardrail below fires.
+
+Frozen eligible-frame and aggregation specification (applies to the
+target-relative error term above and to the voiced guardrail below):
+
+- eligible frames are exactly those with reference log-mean amplitude
+  level_ref > -11.5 (the same nonsilent threshold the objective uses),
+  taken within the ceil/floor phone-boundary spans used by
+  per_phone_flatness so train-time and eval-time masks agree;
+- flatness is computed per phone per draw, averaged over the eight
+  draws per phone first, then over a fixed phone inventory that is
+  identical across both arms (a phone is in the inventory iff it has
+  at least one eligible frame in the reference);
+- the reference flatness summary is recomputed on this nonsilent
+  subset, not on all labeled unvoiced frames;
+- results are reported per song, per panel aggregate, and with the
+  excluded-frame counts per source;
+- the voiced log-flatness guardrail uses the same aggregation shape:
+  per-phone-per-draw log flatness, averaged over draws, then over the
+  fixed voiced phone inventory on its own eligible-frame subset.
 
 Guardrails (each evaluated on its own panel; no cross-panel
 cancellation):
@@ -131,25 +155,62 @@ never treated as a pass by absence.
 
 ## Launch specification
 
-Frozen command per arm (run inside tmux; literal expected hashes at
-dispatch, not recomputed):
+Frozen dispatch context (literal, not recomputed at run time):
 
-  python -m tools.voice_model_training.train \
-    --training-config <cfg> --training-sha256 <cfg sha> \
-    --dataset-config prepared-combined/dataset-config-conditioned-r1.json \
+- working directory: /Users/lhs/Downloads/project-seam-usable-alpha-u3-master
+- interpreter: /Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/neural-runtime/diffsinger-telemetry-free-env/bin/python
+- corpus root: /Users/lhs/seam-corpus-pauses-2026-09-19-r1
+- all dataset, target, source, conditioning, warm-start and output
+  paths below are absolute under that corpus root; the trusted
+  checkout path is absolute under the repo root;
+- each arm is launched as its own tmux session with its own literal
+  command line (no brace expansion); before dispatch, verify both
+  output directories do not already exist and that at least 4 GiB of
+  disk is free.
+
+Control arm command:
+
+  cd /Users/lhs/Downloads/project-seam-usable-alpha-u3-master && \
+  /Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/neural-runtime/diffsinger-telemetry-free-env/bin/python \
+    -m tools.voice_model_training.train \
+    --training-config /Users/lhs/seam-corpus-pauses-2026-09-19-r1/prepared-combined/training-flatness-aux-calibration-r1.json \
+    --training-sha256 bb5d5e5a202db45f3dc06835074d0186ece51a3019a0fc789c24e3b51d1182d8 \
+    --dataset-config /Users/lhs/seam-corpus-pauses-2026-09-19-r1/prepared-combined/dataset-config-conditioned-r1.json \
     --dataset-sha256 b4a5bf1cfd4da9a625dc36443ea61ba3bbe3a5ca2723b2796ef400554132d327 \
-    --targets prepared-combined/targets.json \
+    --targets /Users/lhs/seam-corpus-pauses-2026-09-19-r1/prepared-combined/targets.json \
     --targets-sha256 9b77f87fd048b1d2149f9f6294d26a9972e441e04c1abda052a34829ec21a050 \
-    --source-root prepared-combined \
-    --conditioning prepared-combined/conditioning-breathiness-r1 \
-    --trusted-checkout build/neural-runtime/DiffSinger-source \
-    --warm-start acoustic-breathiness-r1/epoch-000008 \
+    --source-root /Users/lhs/seam-corpus-pauses-2026-09-19-r1/prepared-combined \
+    --conditioning /Users/lhs/seam-corpus-pauses-2026-09-19-r1/prepared-combined/conditioning-breathiness-r1 \
+    --trusted-checkout /Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/neural-runtime/DiffSinger-source \
+    --warm-start /Users/lhs/seam-corpus-pauses-2026-09-19-r1/acoustic-breathiness-r1/epoch-000008 \
     --warm-start-receipt-sha256 04f72263b700804cc4557879208def3ca4157d68955dea516b179140f755007e \
     --rights-policy-sha256 ec1f39f07b9b881565956dbed4f4abd8a1375284b0813ba152132e035cae0185 \
     --label-policy-sha256 e3f2fe1b4c270611cdd4cfc22a035bacdce78e4d6deb90c57997c3aae379e81b \
     --epochs 1 --maximum-run-seconds 900 --retain-checkpoints 1 \
     --minimum-free-bytes 4294967296 \
-    --output acoustic-flatness-{control,unvoiced}-e9-r1
+    --output /Users/lhs/seam-corpus-pauses-2026-09-19-r1/acoustic-flatness-control-e9-r1
+
+Treatment arm command:
+
+  cd /Users/lhs/Downloads/project-seam-usable-alpha-u3-master && \
+  /Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/neural-runtime/diffsinger-telemetry-free-env/bin/python \
+    -m tools.voice_model_training.train \
+    --training-config /Users/lhs/seam-corpus-pauses-2026-09-19-r1/prepared-combined/training-flatness-aux-unvoiced-r1.json \
+    --training-sha256 ebc255e6f95fedb834ea10f1ccc5eedcbf7ea1f322540da7cb9d95f951c92e5d \
+    --dataset-config /Users/lhs/seam-corpus-pauses-2026-09-19-r1/prepared-combined/dataset-config-conditioned-r1.json \
+    --dataset-sha256 b4a5bf1cfd4da9a625dc36443ea61ba3bbe3a5ca2723b2796ef400554132d327 \
+    --targets /Users/lhs/seam-corpus-pauses-2026-09-19-r1/prepared-combined/targets.json \
+    --targets-sha256 9b77f87fd048b1d2149f9f6294d26a9972e441e04c1abda052a34829ec21a050 \
+    --source-root /Users/lhs/seam-corpus-pauses-2026-09-19-r1/prepared-combined \
+    --conditioning /Users/lhs/seam-corpus-pauses-2026-09-19-r1/prepared-combined/conditioning-breathiness-r1 \
+    --trusted-checkout /Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/neural-runtime/DiffSinger-source \
+    --warm-start /Users/lhs/seam-corpus-pauses-2026-09-19-r1/acoustic-breathiness-r1/epoch-000008 \
+    --warm-start-receipt-sha256 04f72263b700804cc4557879208def3ca4157d68955dea516b179140f755007e \
+    --rights-policy-sha256 ec1f39f07b9b881565956dbed4f4abd8a1375284b0813ba152132e035cae0185 \
+    --label-policy-sha256 e3f2fe1b4c270611cdd4cfc22a035bacdce78e4d6deb90c57997c3aae379e81b \
+    --epochs 1 --maximum-run-seconds 900 --retain-checkpoints 1 \
+    --minimum-free-bytes 4294967296 \
+    --output /Users/lhs/seam-corpus-pauses-2026-09-19-r1/acoustic-flatness-unvoiced-e9-r1
 
 Caps: maximumUpdates 267 (inside the config), maximum-run-seconds 900,
 minimum free disk 4 GiB at launch; a run that does not complete 267

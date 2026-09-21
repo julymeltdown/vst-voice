@@ -311,8 +311,10 @@ class DiffSingerDDPMUnvoicedFlatnessObjective:
                               unvoicedFrames=int(unvoiced.sum()),
                               excludedSilentFrames=int((unvoiced & silent).sum()),
                               eligibleFrames=int(eligible.sum()),
-                              flatnessTerm=float((flatness * mask * alpha_bar).sum().detach()),
-                              levelTerm=float((level * mask * alpha_bar).sum().detach()))
+                              # Unnormalized masked bin sums for attribution;
+                              # not per-parameter gradient contributions.
+                              flatnessMaskedBinSum=float((flatness * mask * alpha_bar).sum().detach()),
+                              levelMaskedBinSum=float((level * mask * alpha_bar).sum().detach()))
         return base, auxiliary
 
     def __call__(self, model, inputs, target):
