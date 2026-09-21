@@ -1,5 +1,38 @@
 # Integrated Singer Execution
 
+## Sample-variance probe: the conditioned acoustic posterior is diverse but peaky
+
+Measured whether the epoch-8 conditioned acoustic model's low unvoiced
+flatness reflects a collapsed posterior (every draw returns the same
+conditional mean) or an expressive but wrong one. Eight independent
+posterior draws of the same captured replay request were taken inside a
+single onnxruntime session so the seeded RandomNormal ops advance per
+Run; mel output, per-frame mel standard deviation and per-draw flatness
+were compared on labeled unvoiced versus voiced phones of song-00005.
+
+Result: mel standard deviation across draws is 2.55 on unvoiced phones
+and 2.06 on voiced phones - the posterior is not collapsed and produces
+materially different spectra per draw. Yet per-draw unvoiced flatness
+stays 0.0106-0.0483 (flatness std 0.0137), never approaching the
+reference's noise-like range (~0.71). Voiced flatness is 0.006-0.015
+(std 0.0027), consistent with a tighter, correctly harmonic posterior.
+
+Reading: the learned conditional distribution over mel on unvoiced
+frames is a family of *peaky* spectra - different draws move the peak,
+which matches the earlier normalized-fluctuation finding (high
+frame-to-frame change, low flatness). The defect is not that the model
+returns one smooth mean; it is that every reachable sample is
+harmonic-like. Additional sampling, seed variation or posterior
+reshaping cannot recover noise-like output because no such output is in
+the learned distribution. This strengthens the case that the repair is
+in the training signal or model capacity for the aperiodic class, not
+in the sampler, and it rules out "stochasticity will eventually produce
+noise" as a cheap fix.
+
+No weights, dataset, objective or deployed artifact were changed.
+Evidence: acoustic-sample-variance-e8-r1.json (8 draws, 10 steps,
+acousticSha256 f77e09e2, replay-e2-00005-ref-r1 bound by digest).
+
 ## Voice-training CTest interpreter made explicit; full suite green after rebuild
 
 seam_voice_model_training_tests failed under CTest because the general
