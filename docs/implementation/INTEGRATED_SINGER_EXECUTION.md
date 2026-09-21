@@ -1,5 +1,20 @@
 # Integrated Singer Execution
 
+## Multi-lag pair launched under review clearance
+
+Developer 2 confirmed the lifecycle fix and cleared
+vocoder-multilag-paired-r1 to launch as the bounded offline
+experiment: two matched arms continuing from frozen zero-v1
+checkpoint f4da8688, seed 929, zero-v1 feeds, one 2804-update epoch
+each, fresh matched optimizer/scheduler/RNG, no partial resume,
+declared wall-clock/storage caps. Both processes verified live in
+tmux session seam-multilag (control pid 27242, multilag pid 27246,
+config digests 751bbcd0/141cacdf matching the reviewed plan
+e08d3290). Completion expected in roughly 3.5 hours; post-run audit
+will check full coverage and identical raw-draw digests, then the
+paired comparison plus dense-lag evaluation at trained AND unseen
+lags runs on the frozen sources.
+
 ## Objective lifecycle closed: governed supported-ID policy across training, warm start, export
 
 Pre-launch review caught the multi-lag objective failing at export:
