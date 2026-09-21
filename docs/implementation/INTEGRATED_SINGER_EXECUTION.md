@@ -1,5 +1,35 @@
 # Integrated Singer Execution
 
+## Encoder x denoiser crossover: the first-step gap is denoiser-driven
+
+Developer 2 cleared a read-only 2x2 crossover at the first actual DDIM
+step (t=900, speedup 100) with a shared initial latent
+(acoustic_encoder_denoiser_crossover.py, receipt
+acoustic-crossover-e9-r1). Each checkpoint's trained fs2 encoder (C) was
+paired with each checkpoint's denoiser (D), four combinations on phrases
+00001/00002/00006, 12 denoiser evaluations total, no gradients. Full
+named state_dict hashes are unchanged before/after for both checkpoints;
+deployment diffusion interfaces (spec_min/spec_max/alphas_cumprod/
+timestep_factors/k_step) verified identical between arms.
+
+Result: post-clamp UV log-flatness error clusters by DENOISER, not
+encoder. Across all three phrases, D-control gives ~3.8-4.1 nats and
+D-treatment gives ~4.9-5.2 nats regardless of which encoder produced the
+conditioning (e.g. phrase 00001: C-c/D-c 4.08, C-t/D-c 3.99, C-c/D-t
+5.05, C-t/D-t 4.97). The encoder contributes almost nothing to the gap;
+the trained denoiser weights do. Diagonal combos reproduce the existing
+first-step diagnostics. Total UV saturation is nearly unchanged
+(~0.91); the treatment shifts mass to the low clamp boundary while
+worsening post-clamp flatness.
+
+Bounded interpretation: the first-step control/treatment gap is
+predominantly a denoiser-weight effect, not an encoder-conditioning
+effect. Hybrids are out-of-distribution diagnostics, not deployable
+checkpoints or proof of a unique cause. This narrows the mechanism to
+how the auxiliary changed the denoiser, not the conditioning path. The
+pair remains STOP; singerQualified/releaseEligible/
+combinedModelHoldoutVerified remain false; listening NOT_REVIEWED.
+
 ## Free-running 10-step sampler trace: treatment clamps to a worse clean estimate at every step
 
 Developer 2 cleared a read-only frozen-weight trace of the actual
@@ -29,15 +59,21 @@ Findings:
   eliminate the restoring gradient exactly where it is needed, so a
   clamped-objective treatment is NOT a sound next step.
 
-Bounded interpretation: the auxiliary trained on the unbounded
-teacher-forced clean estimate shifted the model's denoiser so that the
-free-running clamped trajectory lands on a worse clean estimate at every
-step. The mechanism is a supervision/sampling mismatch; the fix is not
-clamped supervision (which loses gradient support) but a supervision
-target aligned with the quantity the sampler actually propagates. This
-is a PyTorch export-wrapper trace, not ONNX bitwise parity and not the
-AdamW update. The pair remains STOP; singerQualified/releaseEligible/
-combinedModelHoldoutVerified remain false; listening NOT_REVIEWED.
+Bounded interpretation (corrected after developer-2 review): the
+treatment's clamped clean estimate is worse than control at every
+sampled step, but this trace does NOT isolate why training produced that
+difference. The clampGradSupportRatio is a denoiser gradient-norm ratio,
+not a fraction of useful/restoring directions, and does not prove
+hard-clamped supervision cannot work. The t=0 clean estimate is not the
+final returned output (at t=0 the DDIM step returns x unchanged). Shared
+initial noise does not isolate the denoiser because each checkpoint's
+trained fs2 encoder also differs. The supervision/sampling mismatch is a
+verified structural observation, not a proven cause; a clamped- or
+straight-through-objective treatment is NOT cleared by this evidence.
+This is a PyTorch export-wrapper trace, not ONNX bitwise parity and not
+the AdamW update. The pair remains STOP; singerQualified/
+releaseEligible/combinedModelHoldoutVerified remain false; listening
+NOT_REVIEWED.
 
 ## Gradient-only probe: the auxiliary trains an unbounded clean estimate the sampler never emits
 
@@ -53,10 +89,12 @@ confirmed). Loss reconstruction holds: combined == base + lambda*(flat
 
 Findings:
 
-- The flatness and level gradient directions are near-identical
-  (cos(flatness, level) ~ 0.94 at every condition). The auxiliary is
-  effectively redundant with the level term; it does not supply an
-  independent spectral-shape signal.
+- The flatness and level gradient directions are strongly aligned at
+  mid/high noise (cos ~0.94 at t=495/999) but not at t=0 (cos ~0.57) and
+  range 0.47-0.95 across all 27 conditions. They are locally aligned in
+  this regime, not identical or globally redundant; log-flatness is
+  level-shift-invariant while the level statistic is not, so they remain
+  distinct output statistics.
 - The clean estimate the auxiliary supervises is unbounded and diverges
   at high noise: at t=999 the unclamped x0 saturates ~96% of bins and
   the unclamped UV log-flatness error is ~1230 nats, versus ~4.1 after
@@ -70,9 +108,11 @@ Findings:
   control (t=495: 0.32 vs 0.22; t=999: 0.965 vs 0.964) and worse
   post-clamp UV flatness error (3.59/4.99 vs 3.19/4.14 nats) - the
   auxiliary pushed the unclamped estimate further into saturation.
-- Gradient magnitudes: aux/base ratio ~0.95-1.16 at t=495 (the
-  calibrated 10% figure was measured at a single timestep and is not an
-  across-schedule guarantee); base-flatness cosine is near zero for
+- Gradient magnitudes: the UNWEIGHTED aux/base ratio is ~0.95-1.16 at
+  t=495, but the lambda-weighted ratio is 7.7-9.3% at t=495, ~0.2% at
+  t=999 and ~0.002% at t=0 - consistent with the intended local 10%
+  calibration, which was measured at a single timestep and is not an
+  across-schedule guarantee. Base-flatness cosine is near zero for
   control (0.017) but rises for treatment (0.16), consistent with the
   auxiliary reshaping the base gradient direction.
 
