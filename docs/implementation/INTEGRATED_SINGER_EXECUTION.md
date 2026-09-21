@@ -1,5 +1,49 @@
 # Integrated Singer Execution
 
+## Continuation assessed against the frozen joint criterion: STOP, line does not advance
+
+The restarted single-lag continuation completed cleanly (2804 updates,
+coverageVerified, receipt 9decd9f6, checkpoint 695e349a,
+zero-v1 excitation, plan a37b78e2, config 751bbcd0). Exports passed
+parity (continuation vocoder 2f06254c); the paired comparison, the
+retained-per-lag dense probe and the 12-item held-out reconstruction
+panel ran on the same frozen sources as parent and control.
+
+Frozen criterion applied to measured outputs:
+
+(a) Unvoiced lag-256 error, no regression allowed: control 0.1263 ->
+continuation 0.0442 mean target-relative absolute correlation error.
+PASS, a large improvement.
+
+(b) At least one improvement among {unseen non-hop-aligned dense-lag
+error, 12-item spectral distance, weighted pitch error}: spectral
+distance improves 0.7011 -> 0.6060 (matching the multilag arm's best
+axis); unseen-lag absolute error regresses 0.0530 -> 0.0570 and held-out
+pitch regresses 27.46 -> 30.43 cents. PASS via spectral distance only.
+
+(c) No guardrail worsens materially: unvoiced RMS level ratio moves
+from 1.0085 (control, essentially at reference level) to 0.8699 -
+about 13 percent below reference and materially further from 1.0.
+Voiced residual stays near zero (+0.0034), pitch coverage does not
+drop (12138 -> 12203 measurable pairs). FAIL on unvoiced level.
+
+Verdict under the frozen criterion: regression on (c) triggers
+assessment and stop. The continuation is NOT promoted, the line does
+not advance past 0731edd1, and no fourth epoch is launched
+automatically. The mechanism is legible and worth recording: the
+periodicity objective's lag-256 gain was bought partly by attenuating
+unvoiced energy (RMS 0.87), the same shortcut the e8 acoustic arm
+showed. A per-lag breakdown retains the detail the earlier probe
+dropped: the continuation's largest remaining absolute errors sit at
+lags 32 (0.44) and 128 (0.46) on the worst phone window, not at the
+trained lag.
+
+Receipts: vocoder-continuation-r1-exports,
+paired-vocoder-comparison-continuation-r1.json,
+vocoder-dense-lag-probe-continuation-r1.json,
+heldout-reconstruction-continuation-r1.json. All artifacts remain
+singerQualified=False and releaseEligible=False.
+
 ## Sample-variance probe: the conditioned acoustic posterior is diverse but peaky
 
 Measured whether the epoch-8 conditioned acoustic model's low unvoiced
