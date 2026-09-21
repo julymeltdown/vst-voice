@@ -19,7 +19,42 @@ def capture_json(path, limit=8 * 1024 * 1024):
     return json.loads(payload), digest
 
 
-def audit_vocoder_training(items, manifest, export, checkpoint):
+_MODEL_LEAF_SPEC = {
+    'vocoder': dict(format='com.project-seam.vocoder-export', graph_field='vocoderPath',
+                    sha_field='vocoderSha256', bytes_field='vocoderBytes',
+                    coverage_field='sourceUpdates'),
+    'acoustic': dict(format='com.project-seam.acoustic-export', graph_field='acousticPath',
+                     sha_field='acousticSha256', bytes_field='acousticBytes',
+                     coverage_field='coveredSourceFrames'),
+}
+
+
+def _bind_model_leaf(manifest, export, checkpoint, role):
+    """Bind one deployed graph asset to its claimed complete checkpoint epoch."""
+    spec = _MODEL_LEAF_SPEC[role]
+    from .prepare_bundle import read_report
+    exported, _ = read_report(export, spec['format'], spec['graph_field'],
+                              spec['sha_field'], spec['bytes_field'])
+    assets = [asset for asset in manifest['assets'] if asset['role'] == role]
+    receipt, digest = capture_json(checkpoint)
+    if (len(assets) != 1 or assets[0]['sha256'] != exported[spec['sha_field']]
+            or digest != exported['checkpointReceiptSha256']
+            or receipt['epoch']['epochComplete'] is not True
+            or receipt['epoch']['coverageVerified'] is not True):
+        raise ValueError(role + ' training receipt does not bind the complete candidate epoch')
+    # The vocoder export records its dataset digest; the acoustic export does not,
+    # so the acoustic leaf binds on receipt identity alone.
+    if exported.get('datasetSha256') is not None and \
+            receipt['epoch'].get('datasetSha256') != exported['datasetSha256']:
+        raise ValueError(role + ' training receipt does not bind the complete candidate epoch')
+    coverage = receipt['epoch'].get(spec['coverage_field'])
+    if not isinstance(coverage, dict) or not coverage or any(
+            type(count) is not int or count <= 0 for count in coverage.values()):
+        raise ValueError('Invalid ' + role + ' training coverage')
+    return exported, receipt, digest, coverage
+
+
+def audit_model_training(items, manifest, export, checkpoint, role):
     """Positive training overlap is decisive; absence does not prove holdout.
 
 Receipts describe one epoch, not necessarily all pretraining or resume ancestry.
@@ -28,28 +63,79 @@ Source-ID matching is conservative and cannot prove independent source audio.
     if export is None and checkpoint is None:
         return dict(status='NOT_AUDITED', combinedModelHoldoutVerified=False)
     if export is None or checkpoint is None:
-        raise ValueError('Vocoder export and checkpoint receipt must be supplied together')
-    from .prepare_bundle import read_report, VOCODER_FORMAT
-    exported, _ = read_report(export, VOCODER_FORMAT,
-        'vocoderPath', 'vocoderSha256', 'vocoderBytes')
-    assets = [asset for asset in manifest['assets'] if asset['role'] == 'vocoder']
-    receipt, digest = capture_json(checkpoint)
-    if (len(assets) != 1 or assets[0]['sha256'] != exported['vocoderSha256']
-            or digest != exported['checkpointReceiptSha256']
-            or receipt['epoch']['datasetSha256'] != exported['datasetSha256']
-            or receipt['epoch']['epochComplete'] is not True
-            or receipt['epoch']['coverageVerified'] is not True):
-        raise ValueError('Vocoder training receipt does not bind the complete candidate epoch')
-    updates = receipt['epoch']['sourceUpdates']
-    if not isinstance(updates, dict) or not updates or any(
-            type(count) is not int or count <= 0 for count in updates.values()):
-        raise ValueError('Invalid vocoder training coverage')
-    overlap = [item['sourceId'] for item in items if item['sourceId'] in updates]
-    return dict(status='TRAINING_SOURCE_ID_OVERLAP' if overlap else 'NO_SOURCE_ID_OVERLAP_IN_THIS_EPOCH',
-        checkpointReceiptSha256=digest, datasetSha256=exported['datasetSha256'],
-        vocoderSha256=exported['vocoderSha256'], trainingSourceIdOverlap=overlap,
+        raise ValueError(role.capitalize() + ' export and checkpoint receipt must be supplied together')
+    exported, receipt, digest, coverage = _bind_model_leaf(manifest, export, checkpoint, role)
+    overlap = [item['sourceId'] for item in items if item['sourceId'] in coverage]
+    result = dict(status='TRAINING_SOURCE_ID_OVERLAP' if overlap else 'NO_SOURCE_ID_OVERLAP_IN_THIS_EPOCH',
+        checkpointReceiptSha256=digest, trainingSourceIdOverlap=overlap,
         combinedModelHoldoutVerified=False,
         limitation='No absence or independent-audio claim across pretraining/resume ancestry')
+    if exported.get('datasetSha256') is not None:
+        result['datasetSha256'] = exported['datasetSha256']
+    result[_MODEL_LEAF_SPEC[role]['sha_field']] = exported[_MODEL_LEAF_SPEC[role]['sha_field']]
+    return result
+
+
+def audit_vocoder_training(items, manifest, export, checkpoint):
+    return audit_model_training(items, manifest, export, checkpoint, 'vocoder')
+
+
+def audit_combined_training(items, manifest, vocoder_export, vocoder_checkpoint,
+                            acoustic_export, acoustic_checkpoint, ancestry_audit):
+    """Audit both deployed models and, when supplied, their declared ancestry.
+
+The leaf checks bind each deployed graph to its claimed complete epoch. The
+optional ancestry audit widens the overlap question from the leaf epoch to every
+declared training source across both receipt chains. It is a receipt-level audit:
+recipe equivalence and undeclared pretraining remain unprovable, so the combined
+holdout is never reported verified by this command.
+"""
+    result = dict(vocoder=audit_model_training(items, manifest, vocoder_export,
+                                             vocoder_checkpoint, 'vocoder'),
+                  acoustic=audit_model_training(items, manifest, acoustic_export,
+                                                acoustic_checkpoint, 'acoustic'),
+                  combinedModelHoldoutVerified=False)
+    if ancestry_audit is None:
+        result['ancestry'] = dict(status='NOT_AUDITED')
+        return result
+    if vocoder_checkpoint is None or acoustic_checkpoint is None:
+        raise ValueError('Ancestry audit requires both deployed checkpoint receipts')
+    report, digest = capture_json(ancestry_audit)
+    if (report.get('formatId') != 'com.project-seam.training-ancestry-audit'
+            or report.get('schemaVersion') != 1):
+        raise ValueError('Ancestry audit is not a training-ancestry-audit receipt')
+    vocoder_digest = result['vocoder']['checkpointReceiptSha256']
+    acoustic_digest = result['acoustic']['checkpointReceiptSha256']
+    verdicts = {}
+    for role, leaf in (('vocoder', vocoder_digest), ('acoustic', acoustic_digest)):
+        section = report.get(role)
+        if (not isinstance(section, dict)
+                or section.get('declaredReceiptChainComplete') is not True
+                or not isinstance(section.get('receiptSha256s'), list)
+                or not section['receiptSha256s'] or section['receiptSha256s'][0] != leaf):
+            raise ValueError('Ancestry audit does not bind the deployed ' + role + ' leaf')
+        candidates = section.get('candidates')
+        if not isinstance(candidates, list):
+            raise ValueError('Ancestry audit has no ' + role + ' candidate verdicts')
+        verdicts[role] = {row['sourceId']: row.get('status') for row in candidates
+                          if isinstance(row, dict) and isinstance(row.get('sourceId'), str)}
+    missing = [item['sourceId'] for item in items
+               if item['sourceId'] not in verdicts['vocoder']
+               or item['sourceId'] not in verdicts['acoustic']]
+    if missing:
+        raise ValueError('Ancestry audit does not cover every selected source: ' + ', '.join(missing))
+    overlap = {}
+    for role in ('vocoder', 'acoustic'):
+        overlap[role] = [item['sourceId'] for item in items
+                         if verdicts[role][item['sourceId']] == 'TRAINING_OVERLAP']
+    result['ancestry'] = dict(status='DECLARED_ANCESTRY_AUDITED',
+        auditSha256=digest,
+        vocoderReceipts=len(report['vocoder']['receiptSha256s']),
+        acousticReceipts=len(report['acoustic']['receiptSha256s']),
+        vocoderTrainingSourceIdOverlap=overlap['vocoder'],
+        acousticTrainingSourceIdOverlap=overlap['acoustic'],
+        limitation='Declared receipt/split/source identity only; recipe equivalence and undeclared pretraining unprovable')
+    return result
 
 
 def prepare_selection(selection, corpus, expected_sha256):
@@ -96,17 +182,20 @@ def prepare_selection(selection, corpus, expected_sha256):
 
 
 def run_campaign(selection, selection_sha256, corpus, bundle, renderer, pitch_executable,
-                 output, *, silence_phone='pau', vocoder_export=None, vocoder_checkpoint=None):
+                 output, *, silence_phone='pau', vocoder_export=None, vocoder_checkpoint=None,
+                 acoustic_export=None, acoustic_checkpoint=None, ancestry_audit=None):
     if output.exists() or output.is_symlink() or not output.parent.is_dir():
         raise ValueError('Output must be new with an existing parent')
     binding, captured = prepare_selection(selection, corpus, selection_sha256)
     return execute_campaign(binding, captured, bundle, renderer, pitch_executable, output,
         silence_phone=silence_phone, vocoder_export=vocoder_export,
-        vocoder_checkpoint=vocoder_checkpoint)
+        vocoder_checkpoint=vocoder_checkpoint, acoustic_export=acoustic_export,
+        acoustic_checkpoint=acoustic_checkpoint, ancestry_audit=ancestry_audit)
 
 
 def execute_campaign(binding, captured, bundle, renderer, pitch_executable, output, *,
                      silence_phone='pau', vocoder_export=None, vocoder_checkpoint=None,
+                     acoustic_export=None, acoustic_checkpoint=None, ancestry_audit=None,
                      scope='selected-acoustic-corpus-only'):
     """Execute already verified captures; admission belongs to each entry point."""
     if output.exists() or output.is_symlink() or not output.parent.is_dir():
@@ -116,15 +205,18 @@ def execute_campaign(binding, captured, bundle, renderer, pitch_executable, outp
     if (resource.get('formatId') != 'com.project-seam.neural-resource'
             or resource.get('schemaVersion') != 1 or resource.get('contentHash') != manifest_digest):
         raise ValueError('Candidate resource identity mismatch')
-    training_audit = audit_vocoder_training([row[0] for row in captured], manifest,
-                                            vocoder_export, vocoder_checkpoint)
+    training_audit = audit_combined_training([row[0] for row in captured], manifest,
+        vocoder_export, vocoder_checkpoint, acoustic_export, acoustic_checkpoint,
+        ancestry_audit)
     binary_hashes = {str(path): _capture(path, 256 * 1024 * 1024)[1]
                      for path in (renderer, pitch_executable)}
     output.mkdir()
     publish_new(output / 'selection.json', dict(binding, items=[row[0] for row in captured],
         manifestSha256=manifest_digest, resourceSha256=resource_digest,
         binarySha256=binary_hashes, silencePhone=silence_phone,
-        validationScope=scope, vocoderTrainingAudit=training_audit))
+        validationScope=scope, vocoderTrainingAudit=training_audit['vocoder'],
+        acousticTrainingAudit=training_audit['acoustic'],
+        combinedTrainingAncestry=training_audit['ancestry']))
     selection_receipt_hash = _capture(output / 'selection.json', 1048576)[1]
     results = []
     inference_worker_sha = None
@@ -169,7 +261,9 @@ def execute_campaign(binding, captured, bundle, renderer, pitch_executable, outp
     report = dict(formatId='com.project-seam.validation-campaign', schemaVersion=1,
         **binding, items=results, selectedCount=len(results),
         selectionReceiptSha256=selection_receipt_hash,
-        validationScope=scope, vocoderTrainingAudit=training_audit,
+        validationScope=scope, vocoderTrainingAudit=training_audit['vocoder'],
+        acousticTrainingAudit=training_audit['acoustic'],
+        combinedTrainingAncestry=training_audit['ancestry'],
         inferenceWorkerSha256=inference_worker_sha,
         combinedModelHoldoutVerified=False,
         executionPassed=all(row['execution'] == 'PASSED' for row in results),
@@ -186,6 +280,9 @@ def main():
     parser.add_argument('--selection-sha256', required=True)
     parser.add_argument('--vocoder-export', type=Path)
     parser.add_argument('--vocoder-checkpoint', type=Path)
+    parser.add_argument('--acoustic-export', type=Path)
+    parser.add_argument('--acoustic-checkpoint', type=Path)
+    parser.add_argument('--ancestry-audit', type=Path)
     parser.add_argument('--silence-phone', choices=('pau', 'SP', 'sil'), default='pau')
     args = parser.parse_args()
     report = run_campaign(**vars(args))

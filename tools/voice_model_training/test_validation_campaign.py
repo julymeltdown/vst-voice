@@ -5,7 +5,8 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from tools.voice_model_training.validation_campaign import audit_vocoder_training, prepare_selection, run_campaign
+from tools.voice_model_training.validation_campaign import (
+    audit_combined_training, audit_vocoder_training, prepare_selection, run_campaign)
 
 
 def digest(payload):
@@ -170,6 +171,75 @@ class ValidationCampaignTests(unittest.TestCase):
         self.assertEqual(audit_vocoder_training([], {}, None, None)['status'], 'NOT_AUDITED')
         with self.assertRaisesRegex(ValueError, 'together'):
             audit_vocoder_training([], {}, self.root, None)
+
+    def _leaf_pair(self, role, coverage_field, trained):
+        receipt = self.root / (role + '-checkpoint.json')
+        receipt.write_text(json.dumps(dict(epoch=dict(datasetSha256='d' * 64,
+            epochComplete=True, coverageVerified=True, **{coverage_field: trained}))))
+        graph_field = role + 'Sha256'
+        exported = dict(**{graph_field: 'v' * 64}, datasetSha256='d' * 64,
+                        checkpointReceiptSha256=digest(receipt.read_bytes()))
+        manifest = dict(assets=[dict(role=role, sha256='v' * 64)])
+        return receipt, exported, manifest
+
+    def _ancestry_report(self, vocoder_leaf, acoustic_leaf, candidates):
+        return dict(formatId='com.project-seam.training-ancestry-audit', schemaVersion=1,
+            vocoder=dict(declaredReceiptChainComplete=True, receiptSha256s=[vocoder_leaf],
+                         datasetSha256s=[], trainingSourceCount=len(candidates), candidates=candidates),
+            acoustic=dict(declaredReceiptChainComplete=True, receiptSha256s=[acoustic_leaf],
+                          datasetSha256s=[], trainingSourceCount=len(candidates), candidates=candidates))
+
+    def test_combined_audit_binds_both_leaves_and_consumes_ancestry(self):
+        vocoder_receipt, vocoder_exported, manifest = self._leaf_pair(
+            'vocoder', 'sourceUpdates', {'one': 4})
+        acoustic_receipt, acoustic_exported, _ = self._leaf_pair(
+            'acoustic', 'coveredSourceFrames', {'one': 4})
+        manifest['assets'].append(dict(role='acoustic', sha256='v' * 64))
+        vocoder_leaf = digest(vocoder_receipt.read_bytes())
+        acoustic_leaf = digest(acoustic_receipt.read_bytes())
+        items = [dict(sourceId='one'), dict(sourceId='two')]
+        candidates = [dict(sourceId='one', status='TRAINING_OVERLAP'),
+                      dict(sourceId='two', status='NO_OVERLAP_IN_DECLARED_FIELDS')]
+        report = self.root / 'ancestry.json'
+        report.write_text(json.dumps(self._ancestry_report(vocoder_leaf, acoustic_leaf, candidates)))
+        with patch('tools.voice_model_training.prepare_bundle.read_report',
+                   side_effect=lambda d, f, g, s, b: (vocoder_exported if 'vocoder' in f else acoustic_exported, b'g')):
+            result = audit_combined_training(items, manifest, self.root, vocoder_receipt,
+                                             self.root, acoustic_receipt, report)
+        self.assertEqual(result['ancestry']['status'], 'DECLARED_ANCESTRY_AUDITED')
+        self.assertEqual(result['ancestry']['vocoderTrainingSourceIdOverlap'], ['one'])
+        self.assertEqual(result['ancestry']['acousticTrainingSourceIdOverlap'], ['one'])
+        self.assertFalse(result['combinedModelHoldoutVerified'])
+
+    def test_combined_audit_rejects_unbound_or_uncovering_ancestry(self):
+        vocoder_receipt, vocoder_exported, manifest = self._leaf_pair(
+            'vocoder', 'sourceUpdates', {'one': 4})
+        acoustic_receipt, acoustic_exported, _ = self._leaf_pair(
+            'acoustic', 'coveredSourceFrames', {'one': 4})
+        manifest['assets'].append(dict(role='acoustic', sha256='v' * 64))
+        vocoder_leaf = digest(vocoder_receipt.read_bytes())
+        acoustic_leaf = digest(acoustic_receipt.read_bytes())
+        items = [dict(sourceId='one')]
+        candidates = [dict(sourceId='one', status='NO_OVERLAP_IN_DECLARED_FIELDS')]
+        with patch('tools.voice_model_training.prepare_bundle.read_report',
+                   side_effect=lambda d, f, g, s, b: (vocoder_exported if 'vocoder' in f else acoustic_exported, b'g')):
+            # A report bound to a different leaf is refused.
+            wrong = self.root / 'ancestry-wrong.json'
+            wrong.write_text(json.dumps(self._ancestry_report('0' * 64, acoustic_leaf, candidates)))
+            with self.assertRaisesRegex(ValueError, 'deployed vocoder leaf'):
+                audit_combined_training(items, manifest, self.root, vocoder_receipt,
+                                        self.root, acoustic_receipt, wrong)
+            # A report that does not cover a selected source is refused.
+            uncovered = self.root / 'ancestry-uncovered.json'
+            uncovered.write_text(json.dumps(self._ancestry_report(
+                vocoder_leaf, acoustic_leaf, [dict(sourceId='other', status='NO_OVERLAP_IN_DECLARED_FIELDS')])))
+            with self.assertRaisesRegex(ValueError, 'does not cover every selected source'):
+                audit_combined_training(items, manifest, self.root, vocoder_receipt,
+                                        self.root, acoustic_receipt, uncovered)
+            # Ancestry requires both deployed checkpoints.
+            with self.assertRaisesRegex(ValueError, 'both deployed checkpoint'):
+                audit_combined_training(items, manifest, self.root, vocoder_receipt,
+                                        None, None, wrong)
 
 
 if __name__ == '__main__':

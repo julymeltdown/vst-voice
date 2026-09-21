@@ -1,5 +1,29 @@
 # Integrated Singer Execution
 
+## Combined-model training audit: both leaves bound, declared ancestry consumable
+
+The validation campaign's training audit checked only the vocoder's leaf epoch
+coverage and never looked at the acoustic model, so a song trained in an earlier
+epoch or under a different dataset would evade the overlap check. The audit is
+now per-role: a shared leaf-binding helper verifies each deployed graph asset
+against its claimed complete checkpoint epoch (receipt identity, epochComplete,
+coverageVerified, and the dataset digest where the export records one). The
+acoustic export binds on receipt identity alone because it does not carry a
+datasetSha256. A new audit_combined_training runs both roles and, when a
+training-ancestry-audit receipt is supplied, verifies it binds both deployed
+leaf digests and covers every selected source, then maps each selection to its
+declared-ancestry overlap verdict.
+
+combinedModelHoldoutVerified stays false: the ancestry audit is receipt-level
+and cannot prove recipe equivalence or exclude undeclared pretraining. The
+change widens the overlap question from the leaf epoch to the full declared
+training inventory of both models; it does not assert a clean holdout. The
+campaign report now carries acousticTrainingAudit and combinedTrainingAncestry
+beside vocoderTrainingAudit, and the CLI accepts --acoustic-export,
+--acoustic-checkpoint and --ancestry-audit. Two new tests cover the bound
+consumption and the refusal of an unbound or uncovering audit. The
+voice_model_training suite passes 433 tests with one skip.
+
 ## Continuation launched; joint evaluation criterion frozen before outputs
 
 The single restarted continuation launched under review clearance
