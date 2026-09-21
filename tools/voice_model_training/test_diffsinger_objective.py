@@ -6,7 +6,9 @@ import unittest
 from tools.voice_model_training.diffsinger_objective import (
     DiffSingerDDPMObjective, DiffSingerDDPMUnvoicedSpectralObjective,
     DiffSingerDDPMUnvoicedFlatnessObjective,
-    UNVOICED_AUXILIARY_KIND, UNVOICED_FLATNESS_KIND, SILENT_LEVEL_FLOOR,
+    DiffSingerDDPMUnvoicedFlatnessComponentsObjective,
+    UNVOICED_AUXILIARY_KIND, UNVOICED_FLATNESS_KIND,
+    UNVOICED_FLATNESS_COMPONENTS_KIND, SILENT_LEVEL_FLOOR,
     log_flatness, objective_id_for_settings)
 from tools.voice_model_training.optimization import acoustic_training_step
 
@@ -373,6 +375,139 @@ class UnvoicedFlatnessObjectiveTests(unittest.TestCase):
             objective_id_for_settings(dict(loss="l1", auxiliaryObjective=dict(
                 kind=UNVOICED_FLATNESS_KIND))),
             "diffsinger-ddpm-l1-unvoiced-target-log-flatness-v1")
+
+
+@unittest.skipUnless(importlib.util.find_spec("torch"), "Optional Torch environment not installed")
+class UnvoicedFlatnessComponentsObjectiveTests(unittest.TestCase):
+    """Split-coefficient ablation variant: flatness and level weights are
+    independent, and the equal-weight corners reproduce the single-weight
+    objective bit for bit."""
+
+    def _inputs(self, phone_ids, rest, tokens, mel2ph):
+        import torch
+        count = len(phone_ids)
+        return dict(phoneIds=torch.tensor([phone_ids]), f0Hz=torch.tensor([[220.0] * count]),
+                    voiced=torch.tensor([[True] * count]), rest=torch.tensor([rest]),
+                    slur=torch.tensor([[False] * count]), breathiness=torch.zeros(1, count),
+                    midi=torch.tensor([[57] * count]), frameOffset=0, phraseAnalysisFrames=count,
+                    tokens=torch.tensor([tokens]), mel2ph=torch.tensor([mel2ph]))
+
+    def test_equal_weight_matches_single_weight_bitwise(self):
+        import torch
+        Model = _fixture_model()
+        torch.manual_seed(7)
+        model_a, model_b = Model(4), Model(4)
+        model_b.load_state_dict(model_a.state_dict())
+        inputs = self._inputs([1, 2, 2], [False, False, False], [1, 2], [1, 2, 2])
+        target = torch.linspace(-8, -2, steps=12).reshape(1, 3, 4)
+        single = DiffSingerDDPMUnvoicedFlatnessObjective("l1", weight=0.5, unvoiced_ids=[2])
+        split = DiffSingerDDPMUnvoicedFlatnessComponentsObjective(
+            "l1", flatness_weight=0.5, level_weight=0.5, unvoiced_ids=[2])
+        torch.manual_seed(3)
+        elem_a = single(model_a, inputs, target)
+        torch.manual_seed(3)
+        elem_b = split(model_b, inputs, target)
+        self.assertTrue(torch.equal(elem_a, elem_b))
+        self.assertEqual(single.last_draw, split.last_draw)
+        weights = torch.ones(1, 3, 1)
+        for model, elem in ((model_a, elem_a), (model_b, elem_b)):
+            (elem * weights).sum().backward()
+        grads_a = {k: p.grad.clone() for k, p in model_a.named_parameters() if p.grad is not None}
+        for name, parameter in model_b.named_parameters():
+            self.assertIn(name, grads_a)
+            self.assertTrue(torch.equal(grads_a[name], parameter.grad), name)
+
+    def test_zero_zero_matches_base_loss_draws_and_gradients(self):
+        import torch
+        Model = _fixture_model()
+        torch.manual_seed(7)
+        model_a, model_b = Model(4), Model(4)
+        model_b.load_state_dict(model_a.state_dict())
+        inputs = self._inputs([1, 2, 2], [False, False, False], [1, 2], [1, 2, 2])
+        target = torch.linspace(-8, -2, steps=12).reshape(1, 3, 4)
+        base = DiffSingerDDPMObjective("l1")
+        split = DiffSingerDDPMUnvoicedFlatnessComponentsObjective(
+            "l1", flatness_weight=0.0, level_weight=0.0, unvoiced_ids=[2])
+        torch.manual_seed(3)
+        elem_a = base(model_a, inputs, target)
+        torch.manual_seed(3)
+        elem_b = split(model_b, inputs, target)
+        self.assertTrue(torch.equal(elem_a, elem_b))
+        weights = torch.ones(1, 3, 1)
+        for model, elem in ((model_a, elem_a), (model_b, elem_b)):
+            (elem * weights).sum().backward()
+        grads_a = {k: p.grad.clone() for k, p in model_a.named_parameters() if p.grad is not None}
+        for name, parameter in model_b.named_parameters():
+            self.assertIn(name, grads_a)
+            self.assertTrue(torch.equal(grads_a[name], parameter.grad), name)
+
+    def test_flatness_only_uses_only_the_flatness_part(self):
+        """At (w, 0) the masked auxiliary bin sum equals w * flatness sum."""
+        import torch
+        Model = _fixture_model()
+        torch.manual_seed(7)
+        model = Model(4)
+        inputs = self._inputs([1, 2, 2], [False, False, False], [1, 2], [1, 2, 2])
+        target = torch.linspace(-8, -2, steps=12).reshape(1, 3, 4)
+        split = DiffSingerDDPMUnvoicedFlatnessComponentsObjective(
+            "l1", flatness_weight=0.5, level_weight=0.0, unvoiced_ids=[2])
+        torch.manual_seed(5)
+        _, aux_elem = split.components(model, inputs, target)
+        flat_sum = split.last_draw["flatnessMaskedBinSum"]
+        level_sum = split.last_draw["levelMaskedBinSum"]
+        # The fixture's prediction is not level-exact, so the level part is
+        # nonzero and this test actually exercises the zero gating.
+        self.assertTrue(level_sum > 0)
+        self.assertAlmostEqual(float(aux_elem.sum()), 0.5 * flat_sum, places=5)
+
+    def test_level_only_uses_only_the_level_part(self):
+        import torch
+        Model = _fixture_model()
+        torch.manual_seed(7)
+        model = Model(4)
+        inputs = self._inputs([1, 2, 2], [False, False, False], [1, 2], [1, 2, 2])
+        target = torch.linspace(-8, -2, steps=12).reshape(1, 3, 4)
+        split = DiffSingerDDPMUnvoicedFlatnessComponentsObjective(
+            "l1", flatness_weight=0.0, level_weight=0.5, unvoiced_ids=[2])
+        torch.manual_seed(5)
+        _, aux_elem = split.components(model, inputs, target)
+        flat_sum = split.last_draw["flatnessMaskedBinSum"]
+        level_sum = split.last_draw["levelMaskedBinSum"]
+        self.assertTrue(flat_sum > 0)
+        self.assertAlmostEqual(float(aux_elem.sum()), 0.5 * level_sum, places=5)
+
+    def test_masking_and_silent_exclusion_match_single_weight(self):
+        import torch
+        Model = _fixture_model()
+        torch.manual_seed(7)
+        model = Model(4)
+        inputs = self._inputs([2, 2, 2], [False, False, False], [2], [1, 1, 1])
+        target = torch.linspace(-8, -2, steps=12).reshape(1, 3, 4).clone()
+        target[0, 0, :] = -11.512925464970229  # ln(1e-5), the capture floor
+        split = DiffSingerDDPMUnvoicedFlatnessComponentsObjective(
+            "l1", flatness_weight=0.5, level_weight=0.25, unvoiced_ids=[2])
+        torch.manual_seed(5)
+        split.components(model, inputs, target)
+        self.assertEqual(split.last_draw["unvoicedFrames"], 3)
+        self.assertEqual(split.last_draw["excludedSilentFrames"], 1)
+        self.assertEqual(split.last_draw["eligibleFrames"], 2)
+
+    def test_declared_validation(self):
+        for flat_w, level_w in ((-0.1, 0.5), (0.5, 1.1), (float("nan"), 0.5),
+                                (0.5, float("inf"))):
+            with self.assertRaises(ValueError):
+                DiffSingerDDPMUnvoicedFlatnessComponentsObjective(
+                    "l1", flatness_weight=flat_w, level_weight=level_w, unvoiced_ids=[2])
+        with self.assertRaises(ValueError):
+            DiffSingerDDPMUnvoicedFlatnessComponentsObjective(
+                "l3", flatness_weight=0.5, level_weight=0.5, unvoiced_ids=[2])
+        with self.assertRaises(ValueError):
+            DiffSingerDDPMUnvoicedFlatnessComponentsObjective(
+                "l1", flatness_weight=0.5, level_weight=0.5, unvoiced_ids=[])
+        self.assertEqual(
+            objective_id_for_settings(dict(loss="l1", auxiliaryObjective=dict(
+                kind=UNVOICED_FLATNESS_COMPONENTS_KIND))),
+            "diffsinger-ddpm-l1-unvoiced-target-log-flatness-components-v2")
 
 
 if __name__ == "__main__":

@@ -59,6 +59,7 @@ class DiffSingerDDPMObjective:
 
 UNVOICED_AUXILIARY_KIND = "unvoiced-clean-mel-shape-level"
 UNVOICED_FLATNESS_KIND = "unvoiced-target-log-flatness"
+UNVOICED_FLATNESS_COMPONENTS_KIND = "unvoiced-target-log-flatness-components"
 
 # Captured mel targets are ln-amplitude with a real floor at ln(1e-5);
 # frames whose reference log-mean amplitude sits at that floor carry no
@@ -93,9 +94,11 @@ def objective_id_for_settings(settings: dict) -> str:
     if auxiliary is None:
         return DiffSingerDDPMObjective(settings["loss"]).objective_id
     kind = auxiliary["kind"] if isinstance(auxiliary, dict) else None
-    if kind not in (UNVOICED_AUXILIARY_KIND, UNVOICED_FLATNESS_KIND):
+    if kind not in (UNVOICED_AUXILIARY_KIND, UNVOICED_FLATNESS_KIND,
+                    UNVOICED_FLATNESS_COMPONENTS_KIND):
         raise ValueError("Unsupported auxiliary objective kind")
-    return f"diffsinger-ddpm-{settings['loss']}-{kind}-v1"
+    version = "v2" if kind == UNVOICED_FLATNESS_COMPONENTS_KIND else "v1"
+    return f"diffsinger-ddpm-{settings['loss']}-{kind}-{version}"
 
 
 def _validate_ddpm_contract(model, inputs, target):
@@ -235,6 +238,99 @@ class DiffSingerDDPMUnvoicedSpectralObjective:
     def __call__(self, model, inputs, target):
         base, auxiliary = self.components(model, inputs, target)
         return base + self.weight * auxiliary
+
+
+class DiffSingerDDPMUnvoicedFlatnessComponentsObjective:
+    """Split-coefficient variant of the unvoiced flatness auxiliary.
+
+    Same forward, draws, masking, silent-frame exclusion and alpha_bar
+    weighting as DiffSingerDDPMUnvoicedFlatnessObjective, but the flatness
+    and level terms carry independent coefficients so a 2x2 component
+    ablation can isolate each term:
+
+        loss = base + (flatness_weight * flatness
+                       + level_weight * level) * mask * alpha_bar
+
+    Equivalence corners by construction, verified empirically by the
+    ablation equivalence probe before any reuse of earlier cells:
+
+    - flatness_weight == level_weight == w: the auxiliary reduces to the
+      single-weight objective's (flatness + level) * mask * alpha_bar
+      computed in the same operation order, so the loss is bitwise
+      identical to DiffSingerDDPMUnvoicedFlatnessObjective at weight w
+      (w == 0 included, which is the base objective bit for bit).
+    - Unequal weights compute the same terms with the same masking; only
+      the scalar combination differs.
+
+    This is an experimental ablation objective, not a proven fix.
+    """
+    def __init__(self, loss_type: str, flatness_weight: float, level_weight: float,
+                 unvoiced_ids):
+        if loss_type not in ("l1", "l2"):
+            raise ValueError("DDPM loss must be l1 or l2")
+        import math
+        for weight in (flatness_weight, level_weight):
+            if (type(weight) not in (int, float) or not math.isfinite(weight)
+                    or not 0 <= weight <= 1):
+                raise ValueError("Auxiliary weights must be finite values in [0, 1]")
+        ids = sorted({int(value) for value in unvoiced_ids})
+        if (not ids or len(set(unvoiced_ids)) != len(unvoiced_ids) or len(ids) > 64
+                or any(type(value) is not int or value < 1 for value in unvoiced_ids)):
+            raise ValueError("Unvoiced token ids must be distinct positive integers")
+        self.loss_type = loss_type
+        self.flatness_weight = float(flatness_weight)
+        self.level_weight = float(level_weight)
+        self.unvoiced_ids = ids
+        self.objective_id = (
+            f"diffsinger-ddpm-{loss_type}-{UNVOICED_FLATNESS_COMPONENTS_KIND}-v2")
+        self.last_draw = None
+
+    def components(self, model, inputs, target):
+        """Return (base, unscaled_auxiliary) per-element [B,T,M] losses and run
+        the identical forward the single-weight objective performs."""
+        import hashlib
+        import math
+        import torch
+        import torch.nn.functional as F
+        batch, t, noise, predicted, z_hat, z_ref, mask_inputs, diffusion = (
+            _ddpm_forward(model, inputs, target))
+        error = predicted - noise
+        base = error.abs() if self.loss_type == "l1" else error.square()
+        base = base[:, 0].transpose(1, 2)
+        bins = target.shape[2]
+        flat_hat = log_flatness(z_hat)
+        flat_ref = log_flatness(z_ref)
+        flatness = F.smooth_l1_loss(flat_hat, flat_ref, reduction="none").expand(
+            -1, -1, bins)
+        level_hat = torch.logsumexp(z_hat, dim=2, keepdim=True) - math.log(bins)
+        level_ref = torch.logsumexp(z_ref, dim=2, keepdim=True) - math.log(bins)
+        level = F.smooth_l1_loss(level_hat, level_ref, reduction="none").expand_as(flatness)
+        unvoiced = torch.isin(mask_inputs[0], torch.tensor(
+            self.unvoiced_ids, dtype=mask_inputs[0].dtype, device=target.device)) & ~mask_inputs[1]
+        silent = (level_ref.squeeze(2) <= SILENT_LEVEL_FLOOR)
+        eligible = unvoiced & ~silent
+        mask = eligible[:, :, None].to(target.dtype)
+        alpha_bar = diffusion.alphas_cumprod[t].view(batch, 1, 1)
+        if self.flatness_weight == self.level_weight:
+            # Equal-weight corner: reproduce the single-weight objective's
+            # operation order exactly so the loss is bitwise identical.
+            auxiliary = self.flatness_weight * ((flatness + level) * mask * alpha_bar)
+        else:
+            auxiliary = ((self.flatness_weight * flatness
+                          + self.level_weight * level) * mask * alpha_bar)
+        self.last_draw = dict(timesteps=[int(value) for value in t],
+                              noiseSha256=hashlib.sha256(
+                                  noise.detach().cpu().numpy().tobytes()).hexdigest(),
+                              unvoicedFrames=int(unvoiced.sum()),
+                              excludedSilentFrames=int((unvoiced & silent).sum()),
+                              eligibleFrames=int(eligible.sum()),
+                              flatnessMaskedBinSum=float((flatness * mask * alpha_bar).sum().detach()),
+                              levelMaskedBinSum=float((level * mask * alpha_bar).sum().detach()))
+        return base, auxiliary
+
+    def __call__(self, model, inputs, target):
+        base, auxiliary = self.components(model, inputs, target)
+        return base + auxiliary
 
 
 class DiffSingerDDPMUnvoicedFlatnessObjective:

@@ -1,5 +1,48 @@
 # Integrated Singer Execution
 
+## Flatness/level 2x2 component ablation staged; cell-reuse equivalence PASSED
+
+Developer 2 accepted the crossover result and directed a narrow 2x2
+loss-component ablation instead of further weight-delta or layer-swap
+diagnostics: the completed pair answered "combined auxiliary vs none"
+but not whether the flatness term, the level term, or only their
+interaction produced the regression. Plan staged in
+FLATNESS_COMPONENT_ABLATION_PLAN_2026-09-22.md; no ablation training has
+launched.
+
+Implementation: new kind "unvoiced-target-log-flatness-components"
+(objective id ...-v2) with independent flatnessWeight/levelWeight over
+the identical forward, draws, masking, silent-frame exclusion and
+alpha_bar weighting; the equal-weight corner reproduces the
+single-weight operation order exactly. The corrected evaluator is
+generalized to N named arms (--arm NAME=DIR) so one evaluator covers
+all four cells. Two new configs staged:
+training-flatness-components-flat-only-r1.json
+(9035426ac73f3c93a0eda02c9c8c37ed71db602895e608fc557d8e62319fae52) and
+-level-only-r1.json
+(34005dd69a2954cfeddc23a01f9ed1070577c59b7852f75745116f106f08605f),
+lambda = 0.08040502229238589, no coefficient recalibration.
+
+Cell reuse justified empirically, not algebraically:
+acoustic_ablation_equivalence.py replayed the first 24 admitted
+production updates in lockstep under both objectives per corner
+(receipt ablation-equivalence-e8-r1.json, file sha
+0e1d4869d08e49ce80c322fab99348f2c8869d2434a9d4379db3186d9c507d47).
+Result: equivalent = true - per-update loss, gradientNorm, sourceId,
+timesteps, noiseSha256 and masked part sums match the recorded
+production steps.json bitwise; post-update model parameters and AdamW
+state are torch.equal between the lockstepped models on all 24 steps of
+both corners. Equivalence extends inductively to the remaining updates
+(deterministic ops, identical RNG consumption order). The existing
+control and combined cells are therefore reusable as (0,0) and
+(lambda,lambda).
+
+Frozen decision rule (pre-launch): retain a term only if its isolated
+cell improves target-relative FINAL-output unvoiced flatness error vs
+base without firing any frozen guardrail; if neither isolated cell
+helps, this auxiliary family stops at the tested setting with no
+layer/weight sweep. Panels and listening status unchanged.
+
 ## Encoder x denoiser crossover: the first-step gap is denoiser-driven
 
 Developer 2 cleared a read-only 2x2 crossover at the first actual DDIM

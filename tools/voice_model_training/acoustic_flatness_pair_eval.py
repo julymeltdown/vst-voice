@@ -1,11 +1,13 @@
-"""Frozen paired acoustic evaluation for the flatness-objective experiment.
+"""Frozen paired/multi-arm acoustic evaluation for the flatness-objective
+experiments.
 
-Compares two acoustic checkpoints (control weight-0 vs treatment) by exporting
-each to ONNX, drawing eight conditioned mel samples per development replay
-source inside ONE session (seeded RandomNormal ops advance per Run), rendering
-every retained mel through the fixed vocoder under the zero-v1 feed, and
-scoring the frozen primary statistic, target-relative error term, guardrails
-and the 12-item held-out acoustic-then-vocoder reconstruction panel.
+Compares two or more acoustic checkpoints (e.g. control weight-0 vs treatment,
+or the four cells of the flatness/level component ablation) by exporting each
+to ONNX, drawing eight conditioned mel samples per development replay source
+inside ONE session (seeded RandomNormal ops advance per Run), rendering every
+retained mel through the fixed vocoder under the zero-v1 feed, and scoring the
+frozen primary statistic, target-relative error term, guardrails and the
+12-item held-out acoustic-then-vocoder reconstruction panel.
 
 Diagnostic only: no promotion, qualification, or release eligibility.
 """
@@ -347,7 +349,9 @@ def _aggregate_uv(rows_by_source, key):
 def main():
     global _VOCODER_GRAPH, _PITCH_EXEC
     ap = argparse.ArgumentParser(description=__doc__)
-    for n in ("control-export", "treatment-export", "vocoder-export", "source-root",
+    ap.add_argument("--arm", action="append", required=True, metavar="NAME=DIR",
+                    help="Named acoustic export directory; repeat for each arm (2 or more)")
+    for n in ("vocoder-export", "source-root",
               "pitch-executable", "output"):
         ap.add_argument("--" + n, type=Path, required=True)
     ap.add_argument("--replay-dir", type=Path, required=True)
@@ -356,8 +360,16 @@ def main():
         raise SystemExit("Output must be new")
     _PITCH_EXEC = args.pitch_executable
     _VOCODER_GRAPH = (args.vocoder_export / "vocoder.onnx").read_bytes()
-    arms = {"control": (args.control_export / "acoustic.onnx").read_bytes(),
-            "treatment": (args.treatment_export / "acoustic.onnx").read_bytes()}
+    arms = {}
+    for spec in args.arm:
+        name, sep, path = spec.partition("=")
+        if not sep or not name or not path:
+            raise SystemExit("Each --arm must be NAME=DIR")
+        if name in arms:
+            raise SystemExit(f"Duplicate arm name {name}")
+        arms[name] = (Path(path) / "acoustic.onnx").read_bytes()
+    if len(arms) < 2:
+        raise SystemExit("At least two --arm entries are required")
     dev = [("replay-e2-00003-r2-inputs.json", "song-003", "procedural-song-00003"),
            ("replay-e2-00005-r2-inputs.json", "song-005", "procedural-song-00005"),
            ("replay-e2-00024-r2-inputs.json", "song-024", "procedural-song-00024"),
@@ -365,7 +377,7 @@ def main():
            ("replay-e2-00420-r2-inputs.json", "song-420", "procedural-song-00420")]
     heldout = ["song-000", "song-004", "song-007", "song-018", "song-023", "song-038",
                "song-008", "song-011", "song-017", "song-019", "song-021", "song-029"]
-    report = dict(formatId="com.project-seam.acoustic-flatness-pair-eval", schemaVersion=1,
+    report = dict(formatId="com.project-seam.acoustic-flatness-pair-eval", schemaVersion=2,
                   draws=DRAWS, steps=STEPS, singerQualified=False, releaseEligible=False,
                   combinedModelHoldoutVerified=False, listening="NOT_REVIEWED",
                   developmentDrawsPerSource=DRAWS,

@@ -13,7 +13,9 @@ import sys
 from .__main__ import encode_report, load_config, load_dataset_inputs
 from .diffsinger_objective import (DiffSingerDDPMObjective, DiffSingerDDPMUnvoicedSpectralObjective,
                                  DiffSingerDDPMUnvoicedFlatnessObjective,
+                                 DiffSingerDDPMUnvoicedFlatnessComponentsObjective,
                                  UNVOICED_AUXILIARY_KIND, UNVOICED_FLATNESS_KIND,
+                                 UNVOICED_FLATNESS_COMPONENTS_KIND,
                                  objective_id_for_settings)
 from .conditioning import ADDED_CONDITIONING_PARAMETERS, added_parameters
 from .checkpoint import load_local_checkpoint
@@ -40,10 +42,18 @@ def model_settings(value: dict) -> dict:
         raise ValueError("Training conditioning controls must be empty or exactly breathiness")
     if schema == 3:
         auxiliary = value["auxiliaryObjective"]
-        if (not isinstance(auxiliary, dict) or set(auxiliary) != {"kind", "weight", "unvoicedSymbols"}
-                or auxiliary["kind"] not in (UNVOICED_AUXILIARY_KIND, UNVOICED_FLATNESS_KIND)
-                or type(auxiliary["weight"]) not in (int, float)
-                or not math.isfinite(auxiliary["weight"]) or not 0 <= auxiliary["weight"] <= 1
+        if not isinstance(auxiliary, dict):
+            raise ValueError("Invalid auxiliary objective declaration")
+        if auxiliary.get("kind") == UNVOICED_FLATNESS_COMPONENTS_KIND:
+            weight_keys = {"flatnessWeight", "levelWeight"}
+        else:
+            weight_keys = {"weight"}
+        if (set(auxiliary) != ({"kind", "unvoicedSymbols"} | weight_keys)
+                or auxiliary["kind"] not in (UNVOICED_AUXILIARY_KIND, UNVOICED_FLATNESS_KIND,
+                                             UNVOICED_FLATNESS_COMPONENTS_KIND)
+                or any(type(auxiliary[key]) not in (int, float)
+                       or not math.isfinite(auxiliary[key])
+                       or not 0 <= auxiliary[key] <= 1 for key in weight_keys)
                 or not isinstance(auxiliary["unvoicedSymbols"], list)
                 or not 1 <= len(auxiliary["unvoicedSymbols"]) <= 64
                 or len(set(auxiliary["unvoicedSymbols"])) != len(auxiliary["unvoicedSymbols"])
@@ -313,12 +323,17 @@ def main():
             missing = [symbol for symbol in auxiliary["unvoicedSymbols"] if symbol not in token_ids]
             if missing:
                 raise ValueError("Auxiliary unvoiced symbols are absent from the captured vocabulary")
-            objective_cls = (DiffSingerDDPMUnvoicedSpectralObjective
-                             if auxiliary["kind"] == UNVOICED_AUXILIARY_KIND
-                             else DiffSingerDDPMUnvoicedFlatnessObjective)
-            objective = objective_cls(
-                settings["loss"], auxiliary["weight"],
-                unvoiced_ids=[token_ids[symbol] for symbol in auxiliary["unvoicedSymbols"]])
+            if auxiliary["kind"] == UNVOICED_FLATNESS_COMPONENTS_KIND:
+                objective = DiffSingerDDPMUnvoicedFlatnessComponentsObjective(
+                    settings["loss"], auxiliary["flatnessWeight"], auxiliary["levelWeight"],
+                    unvoiced_ids=[token_ids[symbol] for symbol in auxiliary["unvoicedSymbols"]])
+            else:
+                objective_cls = (DiffSingerDDPMUnvoicedSpectralObjective
+                                 if auxiliary["kind"] == UNVOICED_AUXILIARY_KIND
+                                 else DiffSingerDDPMUnvoicedFlatnessObjective)
+                objective = objective_cls(
+                    settings["loss"], auxiliary["weight"],
+                    unvoiced_ids=[token_ids[symbol] for symbol in auxiliary["unvoicedSymbols"]])
         metadata = dict(trainingConfigurationSha256=args.training_sha256,
                         assemblyConfigurationSha256=args.dataset_sha256, targetInventorySha256=args.targets_sha256,
                         configuration=hparams_value, settings=settings, revision=REVISION,
