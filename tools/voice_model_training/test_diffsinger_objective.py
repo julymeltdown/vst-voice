@@ -5,7 +5,8 @@ import unittest
 
 from tools.voice_model_training.diffsinger_objective import (
     DiffSingerDDPMObjective, DiffSingerDDPMUnvoicedSpectralObjective,
-    UNVOICED_AUXILIARY_KIND, objective_id_for_settings)
+    DiffSingerDDPMUnvoicedFlatnessObjective,
+    UNVOICED_AUXILIARY_KIND, UNVOICED_FLATNESS_KIND, objective_id_for_settings)
 from tools.voice_model_training.optimization import acoustic_training_step
 
 
@@ -244,6 +245,91 @@ class UnvoicedSpectralObjectiveTests(unittest.TestCase):
             "diffsinger-ddpm-l1-unvoiced-clean-mel-shape-level-v1")
         self.assertEqual(objective_id_for_settings(dict(loss="l2")),
                          "diffsinger-ddpm-l2-whole-phrase-v2")
+
+
+@unittest.skipUnless(importlib.util.find_spec("torch"), "Optional Torch environment not installed")
+class UnvoicedFlatnessObjectiveTests(unittest.TestCase):
+    """The target-relative log-flatness auxiliary shares the spectral fixture."""
+
+    def _inputs(self, phone_ids, rest, tokens, mel2ph):
+        import torch
+        count = len(phone_ids)
+        return dict(phoneIds=torch.tensor([phone_ids]), f0Hz=torch.tensor([[220.0] * count]),
+                    voiced=torch.tensor([[True] * count]), rest=torch.tensor([rest]),
+                    slur=torch.tensor([[False] * count]), breathiness=torch.zeros(1, count),
+                    midi=torch.tensor([[57] * count]), frameOffset=0, phraseAnalysisFrames=count,
+                    tokens=torch.tensor([tokens]), mel2ph=torch.tensor([mel2ph]))
+
+    def test_weight_zero_reproduces_base_loss_draws_and_gradients(self):
+        import torch
+        Model = _fixture_model()
+        torch.manual_seed(7)
+        model_a, model_b = Model(4), Model(4)
+        model_b.load_state_dict(model_a.state_dict())
+        inputs = self._inputs([1, 2, 2], [False, False, False], [1, 2], [1, 2, 2])
+        target = torch.linspace(-8, -2, steps=12).reshape(1, 3, 4)
+        base = DiffSingerDDPMObjective("l1")
+        auxiliary = DiffSingerDDPMUnvoicedFlatnessObjective("l1", weight=0.0, unvoiced_ids=[2])
+        torch.manual_seed(3)
+        base_elem = base(model_a, inputs, target)
+        torch.manual_seed(3)
+        aux_elem = auxiliary(model_b, inputs, target)
+        self.assertTrue(torch.equal(base_elem, aux_elem))
+        torch.manual_seed(3)
+        expected_t = torch.randint(0, 8, (1,)).tolist()
+        self.assertEqual(auxiliary.last_draw["timesteps"], expected_t)
+        weights = torch.ones(1, 3, 1)
+        for model, elem in ((model_a, base_elem), (model_b, aux_elem)):
+            (elem * weights).sum().backward()
+        grads_a = {k: p.grad.clone() for k, p in model_a.named_parameters() if p.grad is not None}
+        for name, parameter in model_b.named_parameters():
+            self.assertIn(name, grads_a)
+            self.assertTrue(torch.equal(grads_a[name], parameter.grad), name)
+
+    def test_flatness_term_rewards_matching_reference_concentration(self):
+        """The auxiliary is zero when predicted clean mel equals the reference."""
+        import torch
+        Model = _fixture_model()
+        torch.manual_seed(7)
+        model = Model(4)
+        inputs = self._inputs([2, 2], [False, False], [2], [1, 1])
+        target = torch.linspace(-8, -2, steps=8).reshape(1, 2, 4)
+        auxiliary = DiffSingerDDPMUnvoicedFlatnessObjective("l1", weight=0.5, unvoiced_ids=[2])
+        torch.manual_seed(5)
+        base_elem, aux_elem = auxiliary.components(model, inputs, target)
+        self.assertTrue(torch.isfinite(aux_elem).all())
+        self.assertTrue(bool((aux_elem >= 0).all()))
+        # A flatness target equal to the reference's own means the term can
+        # approach zero; a wrong-concentration prediction cannot zero it.
+        scalar = (aux_elem * torch.ones(1, 2, 1)).sum()
+        grads = torch.autograd.grad(scalar, list(model.parameters()),
+                                    retain_graph=True, allow_unused=True)
+        self.assertTrue(any(float(g.square().sum()) > 0 for g in grads if g is not None))
+
+    def test_masking_limits_auxiliary_to_unvoiced_non_rest_frames(self):
+        import torch
+        Model = _fixture_model()
+        torch.manual_seed(7)
+        model = Model(4)
+        inputs = self._inputs([1, 2, 2, 2], [False, False, False, True], [1, 2, 2], [1, 2, 2, 3])
+        target = torch.linspace(-8, -2, steps=16).reshape(1, 4, 4)
+        auxiliary = DiffSingerDDPMUnvoicedFlatnessObjective("l1", weight=0.5, unvoiced_ids=[2])
+        torch.manual_seed(5)
+        base_elem, aux_elem = auxiliary.components(model, inputs, target)
+        self.assertTrue(bool((aux_elem[0, 0] == 0).all()))
+        self.assertTrue(bool((aux_elem[0, 3] == 0).all()))
+
+    def test_declared_validation(self):
+        for weight, ids in ((-0.1, [2]), (1.1, [2]), (float("nan"), [2]),
+                            (0.5, []), (0.5, [0]), (0.5, [2, 2])):
+            with self.assertRaises(ValueError):
+                DiffSingerDDPMUnvoicedFlatnessObjective("l1", weight=weight, unvoiced_ids=ids)
+        with self.assertRaises(ValueError):
+            DiffSingerDDPMUnvoicedFlatnessObjective("l3", weight=0.5, unvoiced_ids=[2])
+        self.assertEqual(
+            objective_id_for_settings(dict(loss="l1", auxiliaryObjective=dict(
+                kind=UNVOICED_FLATNESS_KIND))),
+            "diffsinger-ddpm-l1-unvoiced-target-log-flatness-v1")
 
 
 if __name__ == "__main__":

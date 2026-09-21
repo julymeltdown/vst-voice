@@ -12,7 +12,9 @@ import sys
 
 from .__main__ import encode_report, load_config, load_dataset_inputs
 from .diffsinger_objective import (DiffSingerDDPMObjective, DiffSingerDDPMUnvoicedSpectralObjective,
-                                 UNVOICED_AUXILIARY_KIND, objective_id_for_settings)
+                                 DiffSingerDDPMUnvoicedFlatnessObjective,
+                                 UNVOICED_AUXILIARY_KIND, UNVOICED_FLATNESS_KIND,
+                                 objective_id_for_settings)
 from .conditioning import ADDED_CONDITIONING_PARAMETERS, added_parameters
 from .checkpoint import load_local_checkpoint
 from .epochs import run_reviewed_epochs
@@ -39,7 +41,7 @@ def model_settings(value: dict) -> dict:
     if schema == 3:
         auxiliary = value["auxiliaryObjective"]
         if (not isinstance(auxiliary, dict) or set(auxiliary) != {"kind", "weight", "unvoicedSymbols"}
-                or auxiliary["kind"] != UNVOICED_AUXILIARY_KIND
+                or auxiliary["kind"] not in (UNVOICED_AUXILIARY_KIND, UNVOICED_FLATNESS_KIND)
                 or type(auxiliary["weight"]) not in (int, float)
                 or not math.isfinite(auxiliary["weight"]) or not 0 <= auxiliary["weight"] <= 1
                 or not isinstance(auxiliary["unvoicedSymbols"], list)
@@ -311,7 +313,10 @@ def main():
             missing = [symbol for symbol in auxiliary["unvoicedSymbols"] if symbol not in token_ids]
             if missing:
                 raise ValueError("Auxiliary unvoiced symbols are absent from the captured vocabulary")
-            objective = DiffSingerDDPMUnvoicedSpectralObjective(
+            objective_cls = (DiffSingerDDPMUnvoicedSpectralObjective
+                             if auxiliary["kind"] == UNVOICED_AUXILIARY_KIND
+                             else DiffSingerDDPMUnvoicedFlatnessObjective)
+            objective = objective_cls(
                 settings["loss"], auxiliary["weight"],
                 unvoiced_ids=[token_ids[symbol] for symbol in auxiliary["unvoicedSymbols"]])
         metadata = dict(trainingConfigurationSha256=args.training_sha256,

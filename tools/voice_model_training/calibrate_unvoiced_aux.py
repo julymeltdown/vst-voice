@@ -21,7 +21,9 @@ import time
 from .__main__ import assemble_dataset, load_config, load_dataset_inputs, publish_new
 from .batches import iter_supervised_batches
 from .checkpoint import load_local_checkpoint
-from .diffsinger_objective import DiffSingerDDPMUnvoicedSpectralObjective, UNVOICED_AUXILIARY_KIND
+from .diffsinger_objective import (DiffSingerDDPMUnvoicedSpectralObjective,
+                                   DiffSingerDDPMUnvoicedFlatnessObjective,
+                                   UNVOICED_AUXILIARY_KIND, UNVOICED_FLATNESS_KIND)
 from .train import REVISION, initialize_checkpoint, load_targets, model_settings
 
 FIXED_TIMESTEP_FRACTIONS = (0.0, 0.25, 0.5, 0.75, 1.0)
@@ -77,7 +79,8 @@ def main():
             raise ValueError("Calibration output must be a new path in an existing parent")
         settings = load_config(args.training_config, args.training_sha256)
         auxiliary = settings.get("auxiliaryObjective")
-        if (not isinstance(auxiliary, dict) or auxiliary.get("kind") != UNVOICED_AUXILIARY_KIND):
+        if (not isinstance(auxiliary, dict)
+                or auxiliary.get("kind") not in (UNVOICED_AUXILIARY_KIND, UNVOICED_FLATNESS_KIND)):
             raise ValueError("Calibration requires a schema-3 auxiliary objective configuration")
         hparams_value = model_settings(settings)
         inputs_config = load_dataset_inputs(args.dataset_config, args.dataset_sha256, args.source_root,
@@ -121,7 +124,10 @@ def main():
         missing = [symbol for symbol in auxiliary["unvoicedSymbols"] if symbol not in token_ids]
         if missing:
             raise ValueError("Auxiliary unvoiced symbols are absent from the captured vocabulary")
-        objective = DiffSingerDDPMUnvoicedSpectralObjective(
+        objective_cls = (DiffSingerDDPMUnvoicedSpectralObjective
+                         if auxiliary["kind"] == UNVOICED_AUXILIARY_KIND
+                         else DiffSingerDDPMUnvoicedFlatnessObjective)
+        objective = objective_cls(
             settings["loss"], weight=0.0,
             unvoiced_ids=[token_ids[symbol] for symbol in auxiliary["unvoicedSymbols"]])
         snapshot = assemble_dataset(**inputs_config, now=int(time.time()),
