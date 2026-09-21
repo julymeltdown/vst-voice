@@ -1,6 +1,29 @@
 # Integrated Singer Execution
 
-## Multi-lag objective result: single-lag continuation wins on every measured axis
+## Continuation launched; joint evaluation criterion frozen before outputs
+
+The single restarted continuation launched under review clearance
+(plan a37b78e2, config 751bbcd0 byte-identical to the reviewed
+control, parent 0731edd1, pid 57429 in tmux seam-continuation).
+The reviewed digest is passed literally at dispatch rather than
+recomputed. Storage preflight: ~34 GiB free against a ~3.2 GB
+conservative peak (checkpoint serialization, retained checkpoint,
+reconstruction WAVs, export graph, logs, safety reserve).
+
+Joint evaluation criterion, frozen before seeing any output: the
+continuation ADVANCES the line if, versus 0731edd1 on the same
+panels, (a) mean target-relative absolute lag-256 error on unvoiced
+phones does not regress AND (b) at least one of {mean absolute
+dense-lag error on unseen non-hop-aligned lags, mean spectral
+distance on the 12 configured held-out items, weighted conditional
+pitch error} improves, AND (c) no guardrail worsens materially:
+voiced residual stays near zero, pitch coverage does not drop,
+silence/clipping unchanged, unvoiced level does not move further
+from 1.0. A regression on (a) or (c), or no improvement anywhere
+in (b), triggers assessment and stop - not an automatic fourth
+epoch. One additional point cannot establish a saturation curve.
+
+## Multi-lag objective result: single-lag wins the primary criterion; multilag keeps secondary gains
 
 The multilag pair completed cleanly after the disk-exhaustion
 restart (control receipt 0731edd1, multilag receipt 8a284ea8, both
@@ -9,32 +32,43 @@ restart (control receipt 0731edd1, multilag receipt 8a284ea8, both
 Exports passed parity; the paired comparison and dense-lag probe
 ran on the five frozen sources.
 
-Result: continued single-lag training beats the multi-lag
-replacement on every measured axis. Unvoiced signed lag-256
-residual: control 0.126, multilag 0.176 (reference -0.004) - the
-control's extra epoch on the same objective improved the parent's
-0.226 by nearly half, while the multi-lag arm both lost the
-headline metric and failed to buy generality: mean target-relative
-absolute error is worse on its OWN trained lags (0.115 vs 0.106)
-and no better on unseen lags (0.046 vs 0.049). Max absolute error
-favors multilag marginally (0.555 vs 0.579). Voiced residuals stay
-near zero in both (-0.003 / +0.006). Unvoiced RMS ratio 1.009
-control vs 0.892 multilag; voiced 0.863 vs 0.945. Per-source pitch
-diagnostics actually favor multilag on 4 of 5 sources (e.g. 7.66
-vs 12.96 cents on song-00420), so the tradeoff is not unidirectional.
+Result: the multi-lag arm is not selected because it regressed the
+primary lag-256 and trained-set criterion, despite small gains on
+other diagnostics. Unvoiced signed lag-256 residual: control 0.126,
+multilag 0.176 (reference -0.004); mean target-relative absolute
+error on the treatment's six trained lags 0.106 control vs 0.115
+multilag. In multilag's favor: unseen-lag absolute error is LOWER
+(0.0462 vs 0.0488, about 5.5 percent), mean per-phone max absolute
+error is lower (0.555 vs 0.579), pitch diagnostics favor it on 4 of
+5 sources (7.66 vs 12.96 cents on song-00420), and its voiced RMS
+ratio is closer to 1.0 (0.945 vs 0.863). Objective dilution remains
+a hypothesis, not measured gradient causality, and the six-lag
+grouping is the treatment's trained set - the control trained only
+at 256.
 
-Interpretation: at this budget and lag set, spreading the
-aperiodicity objective across six lags diluted the lag-256 gain
-without purchasing unseen-lag robustness - the multi-lag hypothesis
-is rejected at this effect size. The more consequential finding is
-that a second matched epoch on the single-lag objective nearly
-halved the residual (0.226 to 0.126): optimization budget on the
-existing objective is currently the strongest lever on the defect,
-stronger than excitation content, mel conditioning, or objective
-shape. Whether the residual keeps falling with further matched
-epochs - and where it saturates - is the natural next question,
-and it is cheap to answer because the control arm now exists as a
-trained anchor.
+The configured held-out reconstruction panel adds a second signal:
+across the same 12 items, mean pitch error improves parent 33.92
+to control 27.16 and multilag 28.09 cents, while mean spectral
+distance improves parent 0.884 to control 0.701 and multilag 0.606
+- multilag's best axis. allReconstructionsSatisfied remains FALSE
+for all three. These are configured held-out summaries, not an
+independent ancestry-clean holdout.
+
+On the budget question: the control's signed residual improved
+0.226 to 0.126, an absolute 0.100 (~44 percent) - larger than the
+tested excitation increment (0.024) but smaller than the earlier
+replicated periodicity-objective change (0.239). The contrast
+tests an extra RESTARTED training epoch under the fixed protocol,
+not isolated optimization budget independent of restart policy,
+and mel perturbations were sensitivity diagnostics, not comparable
+interventions. Whether a third restarted epoch keeps helping is
+the next bounded question.
+
+Dense-probe limitation retained for the record: the probe measures
+full phones and keeps only group means/maxima, discarding per-lag
+values and squared discrepancies; the next evaluation must retain
+them and compare parent/control/continuation on the same lag set
+including unseen non-hop-aligned lags.
 
 Receipts: vocoder-multilag-paired-r1-exports,
 paired-vocoder-comparison-multilag-r1.json,
