@@ -1,5 +1,51 @@
 # Integrated Singer Execution
 
+## UV-noise excitation experiment: gated noise helps modestly; hop-locked residual persists
+
+The vocoder-uvnoise-paired-r1 pair completed under the declared
+protocol (control receipt f4da8688, uvnoise receipt cb2f7cc3, 2804
+matched updates, one epoch, seed 929, parent 401c082e, fixed
+periodicity objective). Both arms exported with parity passing
+(control graph 1b88b235, uvnoise graph 7638f849; the uvnoise export
+declares a three-input mel/f0/noise graph through UvNoiseONNXAdapter).
+
+Two plumbing pieces were added so the frozen-source comparison could
+feed the declared noise input honestly: paired_vocoder_comparison now
+derives a per-source noise specification - phone ownership by the
+conditioning left-edge rule over the label phonemes, gate through
+unvoiced_frame_mask, and a raw draw from a locally seeded torch
+generator (config noiseSeed 933, matching the training evaluation
+seed) - and passes it to evaluate(), which derives each arm's feed
+from its declared excitationNoiseId. The comparison receipt now
+carries per-source noiseBinding plus per-arm excitationNoiseId and
+noiseSha256, so every fed tensor is re-derivable.
+
+Result on the five frozen sources: unvoiced residual lag correlation
+drops from 0.226 (zero-noise control) to 0.203 (uv-gated) against a
+-0.004 reference - a real but small improvement, comparable in
+magnitude to the periodicity objective's own effect (0.216 in the
+seed-947 replicate) and far from eliminating the defect. Voiced
+phones stay near zero in both arms (+0.042 control, +0.024 uvnoise),
+so the gate does not damage voiced regions. Unvoiced RMS ratio moved
+0.965 to 0.822 (the gated noise does not simply add measured energy
+in these windows); voiced RMS ratio moved 0.659 to 0.888.
+
+Interpretation, stated conservatively: stochastic excitation alone
+does not explain the hop-locked residual. The remaining candidate
+mechanisms are (a) the mel conditioning itself carries the structure
+and the vocoder faithfully reproduces it - testable cheaply by
+feeding flattened or smoothed mel at fixed f0 and measuring output
+correlation, (b) the learned generator weights produce the structure
+regardless of excitation, and (c) gate coverage or amplitude is
+insufficient. A mel-variation probe is the cheapest discriminator
+between (a) and (b) and is the suggested next diagnostic before any
+further training spend.
+
+Receipts: vocoder-uvnoise-paired-r1-exports,
+paired-vocoder-comparison-uvnoise-r1.json,
+paired-vocoder-comparison-uvnoise-r1-config.json. 427
+voice_model_training tests pass.
+
 ## Seed-947 replicate confirms the periodicity-vocoder effect; UV-noise pair launched
 
 The second matched vocoder seed completed both arms cleanly (control
