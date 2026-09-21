@@ -41,6 +41,15 @@ DENSE_LAGS = list(range(32, 833, 16))
 DRAWS = 8
 STEPS = 10
 
+# Frozen replay-input identities (bound, not recomputed silently).
+REPLAY_SHA256 = {
+    "procedural-song-00003": "9b28a864c1afdcafc1698a3bb3893d32b267a6a2c2fa0d2c7bc153e2267fe7a6",
+    "procedural-song-00005": "34caa429d58b16b20cf0693aa7fe598c2d0d42215b263f40197c5c891bdafa7d",
+    "procedural-song-00024": "8d3ac7b481d553a1d007ebb12f5f00c1f8641c73356ada05c33507aa074ee5af",
+    "procedural-song-00402": "efb320582627c1334e99d2ca2b12ac7b9088ee907acf1733115840bf48c387f9",
+    "procedural-song-00420": "97a828dfaf0b57dee01bb3743ababb6998602947d57a17dc11cfbe88ea517fbb",
+}
+
 
 def _sha(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
@@ -126,7 +135,7 @@ def _eligible_frames(level_ref, spans, frames):
     return eligible
 
 
-def _panel_for_class(symbols, phones, eligible, level_ref):
+def _panel_for_class(symbols, phones, eligible):
     """Phones of a class containing >=1 eligible frame (reference nonsilent)."""
     inventory = []
     for i, p in enumerate(phones):
@@ -141,8 +150,8 @@ def _panel_for_class(symbols, phones, eligible, level_ref):
 def evaluate_development(arm_name, graph_bytes, root, replay_path, song_dir, source_id, out_dir):
     payload, label, phones, vocab, _ = _load_song(root, song_dir)
     src_sha = _sha(payload)
-    captured = load_config(Path(replay_path), _sha(Path(replay_path).read_bytes()))
-    inputs, breathiness, _ = prepare_inputs(captured, STEPS)
+    captured = load_config(Path(replay_path), REPLAY_SHA256[source_id])
+    inputs, breathiness, gains = prepare_inputs(captured, STEPS)
     if breathiness is not None:
         inputs["breathiness"] = breathiness
     _, reference_mel = wav_log_mel_targets(payload, expected_sha256=src_sha, sample_rate=48000)
@@ -159,73 +168,93 @@ def evaluate_development(arm_name, graph_bytes, root, replay_path, song_dir, sou
         (mel_dir / f"draw-{d:02d}.f32le").write_bytes(raw)
         draws.append((mel, _sha(raw)))
     del session
-    frames = min(len(reference_mel), draws[0][0].shape[1])
+    frames = len(reference_mel)
+    if draws[0][0].shape[1] != frames:
+        raise ValueError("Predicted/reference mel frame geometry differs")
     ref_mel = np.asarray(reference_mel[:frames], np.float64)
     ref_flat = spectral_flatness(np.exp(ref_mel))
     ref_logflat = _log_flatness_np(ref_mel)
     level_ref = _level_np(ref_mel)
     spans = _phone_spans(phones, frames)
     eligible = _eligible_frames(level_ref, spans, frames)
-    uv_inventory = _panel_for_class(UNVOICED, phones, eligible, level_ref)
-    v_inventory = _panel_for_class(VOICED, phones, eligible, level_ref)
+    uv_inventory = _panel_for_class(UNVOICED, phones, eligible)
+    v_inventory = _panel_for_class(VOICED, phones, eligible)
     rows = []
     for pi, p in enumerate(phones):
         left, right = (p["startFrame"] + 255) // 256, min(p["endFrame"] // 256, frames)
-        if right - left < 2:
-            continue
         elig = [f for f in range(left, right) if eligible[f]]
-        per_draw_flat, per_draw_err = [], []
+        if not elig:
+            continue
+        per_draw_flat, per_draw_err, per_draw_refflat = [], [], []
         for mel, _ in draws:
             cand = np.asarray(mel[0, :frames], np.float64)
             cand_flat = spectral_flatness(np.exp(cand))
             cand_logflat = _log_flatness_np(cand)
-            per_draw_flat.append(float(np.mean(cand_flat[left:right])))
-            if elig:
-                per_draw_err.append(float(np.mean(np.abs(
-                    cand_logflat[elig] - ref_logflat[elig]))))
+            per_draw_flat.append(float(np.mean(cand_flat[elig])))
+            per_draw_err.append(float(np.mean(np.abs(
+                cand_logflat[elig] - ref_logflat[elig]))))
+            per_draw_refflat.append(float(np.mean(ref_flat[elig])))
         row = dict(phone=p["symbol"], startFrame=p["startFrame"], endFrame=p["endFrame"],
                    spanFrames=right - left, eligibleFrames=len(elig),
                    unvoiced=p["symbol"] in UNVOICED, voiced=p["symbol"] in VOICED,
                    rest=p["symbol"] in REST,
                    flatnessMeanAcrossDraws=float(np.mean(per_draw_flat)),
                    flatnessPerDraw=per_draw_flat,
-                   targetRelativeErrorAcrossDraws=(float(np.mean(per_draw_err)) if elig else None),
-                   referenceFlatness=float(np.mean(ref_flat[left:right])))
+                   targetRelativeErrorAcrossDraws=float(np.mean(per_draw_err)),
+                   referenceFlatness=float(np.mean(per_draw_refflat)))
         rows.append(row)
+    # Silent-frame count: reference-floor frames inside unvoiced non-rest spans.
+    silent = 0
+    for p in phones:
+        if p["symbol"] in UNVOICED and p["symbol"] not in REST:
+            l, r = (p["startFrame"] + 255) // 256, min(p["endFrame"] // 256, frames)
+            silent += sum(1 for f in range(l, r) if level_ref[f] <= SILENT_LEVEL_FLOOR)
     # Waveform panel: render every retained mel through the fixed vocoder.
-    phone_wave_rows, dense_lag_acc, pitch_acc = [], [], []
+    # Captured dynamics gains are applied so output is native-equivalent.
+    phone_wave_rows, dense_lag_rows, pitch_acc = [], [], []
     clip_or_silence = []
+    failed_draws = []
     for d, (mel, msha) in enumerate(draws):
         cand = np.asarray(mel[0, :frames], np.float32)[None]
         f0 = inputs["f0"][:, :frames].astype(np.float32)
         noise = np.zeros((1, frames * 64), np.float32)
         try:
             wave = run_graph(_VOCODER_GRAPH, cand, f0, frames=frames, noise=noise)
-        except ValueError:
-            # checked_waveform rejects peaks above 1.0; that IS the clip guardrail.
-            clip_or_silence.append(dict(draw=d, newClip=True, newSilence=False,
-                                        vocoderRejected=True))
+        except ValueError as error:
+            # A peak>=1.0 rejection IS the clip guardrail; other failures are
+            # recorded as draw failures, not clipping, and keep the draw out of
+            # the matched denominators.
+            is_clip = "whole-hop" in str(error) or "normalized" in str(error)
+            clip_or_silence.append(dict(draw=d, newClip=is_clip, newSilence=False,
+                                        vocoderRejected=is_clip))
+            if not is_clip:
+                failed_draws.append(dict(draw=d, reason=str(error)[:200]))
             continue
         wave = wave[:len(audio)]
+        # Apply captured per-sample dynamics gains (nonunity in pau regions).
+        wave = wave * gains[:len(wave)]
         buf = io.BytesIO(); wavfile.write(buf, 48000, wave.astype(np.float32))
         (wav_dir / f"draw-{d:02d}.wav").write_bytes(buf.getvalue())
         pm = phone_measure(audio, wave, phones)
         phone_wave_rows.append(pm["rows"])
-        # dense-lag probe on unvoiced phone interiors
+        # dense-lag probe on unvoiced phone spans; retain per-lag detail.
         for p in phones:
             s, e = p["startFrame"], min(p["endFrame"], len(audio))
             if p["symbol"] not in UNVOICED or e - s < 2 * max(DENSE_LAGS):
                 continue
-            errs = []
+            per_lag = {}
             for lag in DENSE_LAGS:
                 r = _lag_corr(audio[s:e], lag); c = _lag_corr(wave[s:e], lag)
                 if r is not None and c is not None:
-                    errs.append(abs(c - r))
-            if errs:
-                dense_lag_acc.append(float(np.mean(errs)))
-        # clip / silence guardrail
+                    per_lag[str(lag)] = dict(reference=r, candidate=c,
+                                             absError=abs(c - r), signedError=c - r)
+            if per_lag:
+                dense_lag_rows.append(dict(draw=d, sourceId=source_id,
+                    symbol=p["symbol"], startFrame=s, endFrame=e, perLag=per_lag))
+        # clip / silence guardrail (candidate-side events; control comparison is
+        # done at assessment time on matching source/draw/phone).
         peak = float(np.max(np.abs(wave)))
-        new_clip = peak >= 1.0 and float(np.max(np.abs(audio))) < 1.0
+        new_clip = peak >= 1.0
         new_silence = False
         for p in phones:
             if p["symbol"] in VOICED:
@@ -247,9 +276,10 @@ def evaluate_development(arm_name, graph_bytes, root, replay_path, song_dir, sou
     return dict(sourceId=source_id, sourceSha256=src_sha,
                 comparedFrames=frames, phones=rows,
                 unvoicedInventory=uv_inventory, voicedInventory=v_inventory,
-                excludedSilentFrames=int((~eligible).sum()),
-                phoneWaveRows=phone_wave_rows, denseLag=dense_lag_acc,
+                excludedSilentFrames=silent,
+                phoneWaveRows=phone_wave_rows, denseLag=dense_lag_rows,
                 pitch=pitch_acc, clipOrSilence=clip_or_silence,
+                failedDraws=failed_draws,
                 melDrawSha256=[s for _, s in draws])
 
 
@@ -263,6 +293,7 @@ def evaluate_heldout(arm_name, graph_bytes, root, song_dir, out_dir):
                  for p in label["phonemes"]]
     f0 = np.asarray([label["f0Hz"]], np.float32)
     breath = np.asarray([[fr["breathiness"] for fr in conditioning["frames"]]], np.float32)
+    breath_nonzero = bool(conditioning.get("hasBreathiness")) and float(breath.max()) > 0
     inputs = dict(tokens=np.asarray([tokens], np.int64),
                   durations=np.asarray([durations], np.int64), f0=f0,
                   steps=np.asarray(STEPS, np.int64), breathiness=breath)
@@ -284,11 +315,22 @@ def evaluate_heldout(arm_name, graph_bytes, root, song_dir, out_dir):
         rp.write_bytes(payload); wavfile.write(cp, 48000, wave.astype(np.float32))
         pc = compare_wavs(rp, cp, executable=_PITCH_EXEC)
     comp = pc["comparison"]
+    # Unvoiced phone-window RMS ratio guardrail on this panel.
+    uv_ratios = []
+    for p in phones:
+        s, e = p["startFrame"], min(p["endFrame"], len(audio))
+        if p["symbol"] in UNVOICED and e > s:
+            ref_rms = float(np.sqrt(np.mean(audio[s:e] ** 2)))
+            cand_rms = float(np.sqrt(np.mean(wave[s:e] ** 2)))
+            if ref_rms:
+                uv_ratios.append(cand_rms / ref_rms)
     return dict(sourceId=label.get("sourceId", song_dir), sourceSha256=src_sha,
+                breathinessConditioning=("nonzero" if breath_nonzero else "zero"),
                 spectralDistance=float(dist),
                 meanAbsolutePitchCents=comp["meanAbsoluteCents"],
                 measurablePitchPairs=comp["measurableVoicedPairs"],
                 pitchStatus=comp["status"],
+                unvoicedRmsRatioMean=(float(np.mean(uv_ratios)) if uv_ratios else None),
                 reconstructionSatisfied=comp["comparisonSatisfied"])
 
 
@@ -326,6 +368,10 @@ def main():
     report = dict(formatId="com.project-seam.acoustic-flatness-pair-eval", schemaVersion=1,
                   draws=DRAWS, steps=STEPS, singerQualified=False, releaseEligible=False,
                   combinedModelHoldoutVerified=False, listening="NOT_REVIEWED",
+                  developmentDrawsPerSource=DRAWS,
+                  heldoutDrawsPerItem=1,
+                  heldoutPanelLabel="one-draw zero-breathiness (song-NNN/conditioning.json hasBreathiness=false); mel-based UV-level/voiced-flatness guardrails NOT_EVALUATED on this panel",
+                  developmentConditioning="zero-breathiness: all five frozen replay captures carry breathiness=0",
                   vocoderSha256=_sha(_VOCODER_GRAPH), arms={}, heldout={})
     for name, graph in arms.items():
         report["arms"][name] = dict(acousticSha256=_sha(graph), development=[], heldoutItems=[])

@@ -1,5 +1,57 @@
 # Integrated Singer Execution
 
+## Flatness pair assessment corrected after developer-2 review (STOP upheld, record repaired)
+
+Developer 2 upheld the STOP verdict but required corrections to the
+evaluator and the published statistics. The corrected evaluator
+(acoustic_flatness_pair_eval.py, r2) and a new matched-control probe
+(acoustic_heldout_conditioning_probe.py) were run; no retraining was
+needed to establish STOP.
+
+Corrections applied:
+
+- Primary statistic now uses the frozen nonsilent eligibility: per-phone
+  arithmetic flatness averaged over eligible (level_ref > -11.5) frames
+  within ceil/floor spans, over 8 draws, over the common unvoiced
+  inventory. Corrected values: control 0.0406284 -> treatment 0.0205014
+  (ratio 0.5046), reference 0.5863 on the 27-phone inventory, 0/5 songs
+  improve. The r1 figure (0.0398 -> 0.0206) was whole-span flatness, not
+  the frozen primary; the verdict is unchanged.
+- Target-relative error reproduced exactly: 2.8325 -> 3.7984 nats.
+- excludedSilentFrames now counts only reference-floor frames inside
+  unvoiced non-rest spans, not all ineligible frames.
+- The held-out panel is relabeled a one-draw ZERO-BREATHINESS panel;
+  mel-based UV-level/voiced-flatness guardrails are NOT_EVALUATED there,
+  and the UV RMS-ratio guardrail FAILS on that panel (mean 1.88/1.92 vs
+  [0.80,1.20]). Held-out pitch is reported weighted by measurable pairs
+  (75.77 -> 65.93 cents).
+- Dense-lag evidence is now retained per lag with signed/abs errors and
+  phone/draw identifiers; its mean improved 0.1205 -> 0.0936 while mel
+  flatness worsened - counterevidence to a blanket "more tonal" claim.
+- Captured dynamics gains are now applied to rendered waveforms, draw
+  failures are recorded separately from clipping, and replay inputs are
+  bound to their frozen SHA-256 rather than recomputed.
+
+Matched-control probe (heldout-conditioning-probe-e9-r1): rerunning both
+frozen acoustic graphs on the 12 held-out songs with the ADMITTED
+nonzero breathiness controls (mean max ~0.53) reproduces the same
+direction - treatment unvoiced flatness 0.0276 vs control 0.0476, and
+target-relative error 3.42 vs 2.65. The conditioning mismatch is
+therefore NOT the cause of the negative result; the flatness+level
+treatment genuinely pushed unvoiced mel away from the reference under
+both zero and admitted controls.
+
+Corrected interpretation: the combined flatness+level treatment produced
+more spectrally concentrated unvoiced mel and larger target-relative
+log-flatness error on the evaluated panels. The mean unvoiced RMS ratio
+moved nearer 1.0 but mean absolute level error worsened and dispersion
+increased. This does not isolate the flatness term as the cause, nor does
+it show temporal aperiodicity worsened. The negative result applies to
+this coefficient/epoch/parent/conditioning/sampler, not the objective
+family. Assessment receipt flatness-pair-eval-e9-r2/assessment.json.
+singerQualified/releaseEligible/combinedModelHoldoutVerified remain
+false; listening NOT_REVIEWED.
+
 ## Flatness-objective pair assessed under the frozen rule: STOP, line does not advance
 
 Developer 2 cleared launch of exactly the two bounded one-epoch runs at
