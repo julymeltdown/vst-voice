@@ -1,0 +1,423 @@
+{
+ "blindSeed": 20260922,
+ "clipCount": 46,
+ "clips": [
+  {
+   "clipId": "clip-01",
+   "panel": "heldout",
+   "path": "/Users/lhs/seam-corpus-pauses-2026-09-19-r1/vocoder-multilag-paired-r1/control/reconstruction-000001/item-000011.wav",
+   "role": "vocoder-reconstruction",
+   "sha256": "a2119e341ba7d1ae54736d2e38fad9bdffc2f0bd58933787ac567bc99c7b253e",
+   "song": "song-021"
+  },
+  {
+   "clipId": "clip-02",
+   "panel": "heldout",
+   "path": "/Users/lhs/seam-corpus-pauses-2026-09-19-r1/vocoder-multilag-paired-r1/control/reconstruction-000001/item-000004.wav",
+   "role": "vocoder-reconstruction",
+   "sha256": "7e0a49e5680c180fe6f1c99ee9c5549cc6c4d769ef5e2c5319cc28746a6c8475",
+   "song": "song-018"
+  },
+  {
+   "clipId": "clip-03",
+   "panel": "heldout",
+   "path": "/Users/lhs/seam-corpus-pauses-2026-09-19-r1/prepared-combined/song-021/source.wav",
+   "role": "reference",
+   "sha256": "0f1db395fcea067b56a0a8a10de4166aada3c78caa86966b47021062d7ce1dec",
+   "song": "song-021"
+  },
+  {
+   "clipId": "clip-04",
+   "panel": "development",
+   "path": "/Users/lhs/seam-corpus-pauses-2026-09-19-r1/prepared-combined/song-003/source.wav",
+   "role": "reference",
+   "sha256": "40d77d7aa846124bfcd686126763933edb297939fd621b869ce2b33dfb6e62dc",
+   "song": "song-003"
+  },
+  {
+   "clipId": "clip-05",
+   "panel": "development",
+   "path": "/Users/lhs/seam-corpus-pauses-2026-09-19-r1/flatness-ablation-eval-e9-r1/wav/base/procedural-song-00024/draw-00.wav",
+   "role": "acoustic-vocoder",
+   "sha256": "b48366721f249a7f4ef266388b62775a6b130c41febf1a21aa60cfc30fe9fd41",
+   "song": "song-024"
+  },
+  {
+   "clipId": "clip-06",
+   "panel": "heldout",
+   "path": "/Users/lhs/seam-corpus-pauses-2026-09-19-r1/prepared-combined/song-018/source.wav",
+   "role": "reference",
+   "sha256": "47ac21dc5cfae02d51ab815f6b076bd86d479c6b79156dfb76764d46b542b571",
+   "song": "song-018"
+  },
+  {
+   "clipId": "clip-07",
+   "panel": "heldout",
+   "path": "/Users/lhs/seam-corpus-pauses-2026-09-19-r1/vocoder-multilag-paired-r1/control/reconstruction-000001/item-000007.wav",
+   "role": "vocoder-reconstruction",
+   "sha256": "9c6b5b08ed6f1e2c4a844d4f29371abff4f8bea7ed474b151649390eec4ac403",
+   "song": "song-008"
+  },
+  {
+   "clipId": "clip-08",
+   "panel": "heldout",
+   "path": "/Users/lhs/seam-corpus-pauses-2026-09-19-r1/vocoder-multilag-paired-r1/control/reconstruction-000001/item-000003.wav",
+   "role": "vocoder-reconstruction",
+   "sha256": "7c64d467726c2b80619e394aa7e1bfedda79f521ab2384b958e67c17915e808f",
+   "song": "song-007"
+  },
+  {
+   "clipId": "clip-09",
+   "panel": "heldout",
+   "path": "/Users/lhs/seam-corpus-pauses-2026-09-19-r1/prepared-combined/song-029/source.wav",
+   "role": "reference",
+   "sha256": "2b8a29c65901263c09d4172d1bcea2401d9624a66438986bfd51caf7d7d2c83e",
+   "song": "song-029"
+  },
+  {
+   "clipId": "clip-10",
+   "panel": "development",
+   "path": "/Users/lhs/seam-corpus-pauses-2026-09-19-r1/prepared-combined/song-420/source.wav",
+   "role": "reference",
+   "sha256": "50b4b2c508e6f95c8fc8bb4544fd9a11c0dc4bcfd636aaf65e45a70add579881",
+   "song": "song-420"
+  },
+  {
+   "clipId": "clip-11",
+   "panel": "heldout",
+   "path": "/Users/lhs/seam-corpus-pauses-2026-09-19-r1/prepared-combined/song-017/source.wav",
+   "role": "reference",
+   "sha256": "8c56319b94bcc410d1a2e577343635adeaf46bcb617c571e1778b0b0ae1dedb1",
+   "song": "song-017"
+  },
+  {
+   "clipId": "clip-12",
+   "panel": "heldout",
+   "path": "/Users/lhs/seam-corpus-pauses-2026-09-19-r1/vocoder-multilag-paired-r1/control/reconstruction-000001/item-000006.wav",
+   "role": "vocoder-reconstruction",
+   "sha256": "78b0b9d8c44e4c649d1f4b35ab9b7add25e91dcb77f0a200d4f28fb366d49120",
+   "song": "song-038"
+  },
+  {
+   "clipId": "clip-13",
+   "panel": "heldout",
+   "path": "/Users/lhs/seam-corpus-pauses-2026-09-19-r1/vocoder-multilag-paired-r1/control/reconstruction-000001/item-000001.wav",
+   "role": "vocoder-reconstruction",
+   "sha256": "495bc69b2998352d057e21d5e232a1f6a2051b5d34c0520721cbcacffdbf1a28",
+   "song": "song-000"
+  },
+  {
+   "clipId": "clip-14",
+   "panel": "heldout",
+   "path": "/Users/lhs/seam-corpus-pauses-2026-09-19-r1/vocoder-multilag-paired-r1/control/reconstruction-000001/item-000012.wav",
+   "role": "vocoder-reconstruction",
+   "sha256": "1f68b01617425acbcd9877cc731397dee838e8b7db6e5d1eafed79e07f8fb779",
+   "song": "song-029"
+  },
+  {
+   "clipId": "clip-15",
+   "panel": "heldout",
+   "path": "/Users/lhs/seam-corpus-pauses-2026-09-19-r1/flatness-ablation-eval-e9-r1/heldout/base/song-011.wav",
+   "role": "acoustic-vocoder",
+   "sha256": "473b9e282b7f82a6a8425786500d4ddce96f38db331365ad67987fb317240959",
+   "song": "song-011"
+  },
+  {
+   "clipId": "clip-16",
+   "panel": "heldout",
+   "path": "/Users/lhs/seam-corpus-pauses-2026-09-19-r1/flatness-ablation-eval-e9-r1/heldout/base/song-008.wav",
+   "role": "acoustic-vocoder",
+   "sha256": "ad1e4d5ed1c46a133f4abc4c1c54e7789f4e8eb036c334d14890665e9846ecca",
+   "song": "song-008"
+  },
+  {
+   "clipId": "clip-17",
+   "panel": "heldout",
+   "path": "/Users/lhs/seam-corpus-pauses-2026-09-19-r1/vocoder-multilag-paired-r1/control/reconstruction-000001/item-000010.wav",
+   "role": "vocoder-reconstruction",
+   "sha256": "9008a2042d364a8f7deeb317399a8377fdeb4e74c38f2fa5f10fb2c59d445868",
+   "song": "song-019"
+  },
+  {
+   "clipId": "clip-18",
+   "panel": "development",
+   "path": "/Users/lhs/seam-corpus-pauses-2026-09-19-r1/flatness-ablation-eval-e9-r1/wav/base/procedural-song-00003/draw-00.wav",
+   "role": "acoustic-vocoder",
+   "sha256": "f52dd6b01e0b57f21f82e4292d543c6aa4ca19ed9e2e45f3510703c95606b2a7",
+   "song": "song-003"
+  },
+  {
+   "clipId": "clip-19",
+   "panel": "heldout",
+   "path": "/Users/lhs/seam-corpus-pauses-2026-09-19-r1/flatness-ablation-eval-e9-r1/heldout/base/song-018.wav",
+   "role": "acoustic-vocoder",
+   "sha256": "d3014da68ea9b882821a3a342adbbef12aea49af527d0da3dbed38ae8799025e",
+   "song": "song-018"
+  },
+  {
+   "clipId": "clip-20",
+   "panel": "heldout",
+   "path": "/Users/lhs/seam-corpus-pauses-2026-09-19-r1/flatness-ablation-eval-e9-r1/heldout/base/song-007.wav",
+   "role": "acoustic-vocoder",
+   "sha256": "7b9e36c536756f1167b55a45bf92944378619d9e30bf94e72af24cf14aacd266",
+   "song": "song-007"
+  },
+  {
+   "clipId": "clip-21",
+   "panel": "heldout",
+   "path": "/Users/lhs/seam-corpus-pauses-2026-09-19-r1/prepared-combined/song-008/source.wav",
+   "role": "reference",
+   "sha256": "acaf3473fb4a4c3672866d925ea46c83916c9c57854c6151301c34e6544dd201",
+   "song": "song-008"
+  },
+  {
+   "clipId": "clip-22",
+   "panel": "heldout",
+   "path": "/Users/lhs/seam-corpus-pauses-2026-09-19-r1/flatness-ablation-eval-e9-r1/heldout/base/song-004.wav",
+   "role": "acoustic-vocoder",
+   "sha256": "76a0482014453d7ca2fe88ab0f4c6f71f869e3d53fe9f7e754819821c6eb87ec",
+   "song": "song-004"
+  },
+  {
+   "clipId": "clip-23",
+   "panel": "heldout",
+   "path": "/Users/lhs/seam-corpus-pauses-2026-09-19-r1/prepared-combined/song-011/source.wav",
+   "role": "reference",
+   "sha256": "9d43a06c6a7f184030fe109573e6ea65c186b25bdc698ab69bf174315c2fa8a5",
+   "song": "song-011"
+  },
+  {
+   "clipId": "clip-24",
+   "panel": "development",
+   "path": "/Users/lhs/seam-corpus-pauses-2026-09-19-r1/flatness-ablation-eval-e9-r1/wav/base/procedural-song-00420/draw-00.wav",
+   "role": "acoustic-vocoder",
+   "sha256": "27299e793ee965b1fb18d7f965a885fddb3621811549d8c8708ab561115c39f7",
+   "song": "song-420"
+  },
+  {
+   "clipId": "clip-25",
+   "panel": "heldout",
+   "path": "/Users/lhs/seam-corpus-pauses-2026-09-19-r1/prepared-combined/song-019/source.wav",
+   "role": "reference",
+   "sha256": "31f3217330efbc81f35a14303f1057b5ddac759e968d4c3832266d9864e7fe75",
+   "song": "song-019"
+  },
+  {
+   "clipId": "clip-26",
+   "panel": "heldout",
+   "path": "/Users/lhs/seam-corpus-pauses-2026-09-19-r1/vocoder-multilag-paired-r1/control/reconstruction-000001/item-000005.wav",
+   "role": "vocoder-reconstruction",
+   "sha256": "83cb4048bceec32543ea5f712bdda5b8a1d84b1968b819cc557456f02c9cc876",
+   "song": "song-023"
+  },
+  {
+   "clipId": "clip-27",
+   "panel": "development",
+   "path": "/Users/lhs/seam-corpus-pauses-2026-09-19-r1/prepared-combined/song-024/source.wav",
+   "role": "reference",
+   "sha256": "509444fca08feac48f2efc10883541ee613e2336ba82eae89780118e2d49c5d0",
+   "song": "song-024"
+  },
+  {
+   "clipId": "clip-28",
+   "panel": "heldout",
+   "path": "/Users/lhs/seam-corpus-pauses-2026-09-19-r1/vocoder-multilag-paired-r1/control/reconstruction-000001/item-000009.wav",
+   "role": "vocoder-reconstruction",
+   "sha256": "4c4af05914b00a58b27525d699e24d2cdc890a0c404529645df8a42f73523dff",
+   "song": "song-017"
+  },
+  {
+   "clipId": "clip-29",
+   "panel": "heldout",
+   "path": "/Users/lhs/seam-corpus-pauses-2026-09-19-r1/flatness-ablation-eval-e9-r1/heldout/base/song-017.wav",
+   "role": "acoustic-vocoder",
+   "sha256": "0abaad4baacfb711b182b6935115e1276ba9b0ac4d2b99b66d872b6916993034",
+   "song": "song-017"
+  },
+  {
+   "clipId": "clip-30",
+   "panel": "heldout",
+   "path": "/Users/lhs/seam-corpus-pauses-2026-09-19-r1/prepared-combined/song-023/source.wav",
+   "role": "reference",
+   "sha256": "c4556effd91706623433041b10fd4e52b0f3ee3308dc4dfe6569fa948e5bfa04",
+   "song": "song-023"
+  },
+  {
+   "clipId": "clip-31",
+   "panel": "development",
+   "path": "/Users/lhs/seam-corpus-pauses-2026-09-19-r1/prepared-combined/song-005/source.wav",
+   "role": "reference",
+   "sha256": "b3b58a931414a8b35265b1fd86f6050cc0a43dd1e5ebd7ed464fef357469e610",
+   "song": "song-005"
+  },
+  {
+   "clipId": "clip-32",
+   "panel": "heldout",
+   "path": "/Users/lhs/seam-corpus-pauses-2026-09-19-r1/vocoder-multilag-paired-r1/control/reconstruction-000001/item-000008.wav",
+   "role": "vocoder-reconstruction",
+   "sha256": "42a0b4168ce3bcf31863400bc614cde3f7f547a7cb6c78ede9e85c555627c719",
+   "song": "song-011"
+  },
+  {
+   "clipId": "clip-33",
+   "panel": "heldout",
+   "path": "/Users/lhs/seam-corpus-pauses-2026-09-19-r1/prepared-combined/song-004/source.wav",
+   "role": "reference",
+   "sha256": "6b3351b5ad660904c4944db5b4f4475b7dbf4721ae7c80dada93820137d4ac34",
+   "song": "song-004"
+  },
+  {
+   "clipId": "clip-34",
+   "panel": "heldout",
+   "path": "/Users/lhs/seam-corpus-pauses-2026-09-19-r1/flatness-ablation-eval-e9-r1/heldout/base/song-021.wav",
+   "role": "acoustic-vocoder",
+   "sha256": "c3417ab86640a3ef2bb0f4336523507c42b1334b50b7c8fd8320f640fad16c65",
+   "song": "song-021"
+  },
+  {
+   "clipId": "clip-35",
+   "panel": "heldout",
+   "path": "/Users/lhs/seam-corpus-pauses-2026-09-19-r1/flatness-ablation-eval-e9-r1/heldout/base/song-023.wav",
+   "role": "acoustic-vocoder",
+   "sha256": "262bd81b39cafd02351b11dd30345f25e644cb5429af6fcff07bf990d2939ac4",
+   "song": "song-023"
+  },
+  {
+   "clipId": "clip-36",
+   "panel": "development",
+   "path": "/Users/lhs/seam-corpus-pauses-2026-09-19-r1/flatness-ablation-eval-e9-r1/wav/base/procedural-song-00005/draw-00.wav",
+   "role": "acoustic-vocoder",
+   "sha256": "9d064ccd792ee72d18bc80b338a0c808e2f5c141c06210e2244010204704586f",
+   "song": "song-005"
+  },
+  {
+   "clipId": "clip-37",
+   "panel": "heldout",
+   "path": "/Users/lhs/seam-corpus-pauses-2026-09-19-r1/flatness-ablation-eval-e9-r1/heldout/base/song-000.wav",
+   "role": "acoustic-vocoder",
+   "sha256": "b83d3cc1d2bdcb19ff319bc5d4e4816bca177510ff9d1593bae9585bc73110c7",
+   "song": "song-000"
+  },
+  {
+   "clipId": "clip-38",
+   "panel": "heldout",
+   "path": "/Users/lhs/seam-corpus-pauses-2026-09-19-r1/prepared-combined/song-038/source.wav",
+   "role": "reference",
+   "sha256": "5f87a8b41cea4934cf49385cfd39a53a8a4b6e312270a47a476e2dd390c7c0ea",
+   "song": "song-038"
+  },
+  {
+   "clipId": "clip-39",
+   "panel": "heldout",
+   "path": "/Users/lhs/seam-corpus-pauses-2026-09-19-r1/flatness-ablation-eval-e9-r1/heldout/base/song-038.wav",
+   "role": "acoustic-vocoder",
+   "sha256": "235d011099846b31d90ed768d3ce17921e764ec570e81fe12f3a1057e1454f6e",
+   "song": "song-038"
+  },
+  {
+   "clipId": "clip-40",
+   "panel": "heldout",
+   "path": "/Users/lhs/seam-corpus-pauses-2026-09-19-r1/vocoder-multilag-paired-r1/control/reconstruction-000001/item-000002.wav",
+   "role": "vocoder-reconstruction",
+   "sha256": "8573cd9366bb906962f66a6803b29a506a0828cdb37ebddd999020fa3018ea52",
+   "song": "song-004"
+  },
+  {
+   "clipId": "clip-41",
+   "panel": "development",
+   "path": "/Users/lhs/seam-corpus-pauses-2026-09-19-r1/prepared-combined/song-402/source.wav",
+   "role": "reference",
+   "sha256": "9875bdff843ba8c2581958b85507548b5473aeb98f371b567f81f0223f0f5553",
+   "song": "song-402"
+  },
+  {
+   "clipId": "clip-42",
+   "panel": "heldout",
+   "path": "/Users/lhs/seam-corpus-pauses-2026-09-19-r1/prepared-combined/song-000/source.wav",
+   "role": "reference",
+   "sha256": "b316ddf6a522d868c51b26268e68cd4c31f96065f7e53e443b0a6423a4a7b37a",
+   "song": "song-000"
+  },
+  {
+   "clipId": "clip-43",
+   "panel": "heldout",
+   "path": "/Users/lhs/seam-corpus-pauses-2026-09-19-r1/flatness-ablation-eval-e9-r1/heldout/base/song-029.wav",
+   "role": "acoustic-vocoder",
+   "sha256": "5a71331269df7ae9284a5258fe73b38676cb0e6bbba958ce6c1bf1d35dc57e6f",
+   "song": "song-029"
+  },
+  {
+   "clipId": "clip-44",
+   "panel": "heldout",
+   "path": "/Users/lhs/seam-corpus-pauses-2026-09-19-r1/prepared-combined/song-007/source.wav",
+   "role": "reference",
+   "sha256": "acab4b2341e64e530be3435ca498223cd4271f9186d84586f3553cccc5b2c97f",
+   "song": "song-007"
+  },
+  {
+   "clipId": "clip-45",
+   "panel": "heldout",
+   "path": "/Users/lhs/seam-corpus-pauses-2026-09-19-r1/flatness-ablation-eval-e9-r1/heldout/base/song-019.wav",
+   "role": "acoustic-vocoder",
+   "sha256": "11b26692a6e9324980add52a105be6c4f8e8df6713d01470369644a9bd62c382",
+   "song": "song-019"
+  },
+  {
+   "clipId": "clip-46",
+   "panel": "development",
+   "path": "/Users/lhs/seam-corpus-pauses-2026-09-19-r1/flatness-ablation-eval-e9-r1/wav/base/procedural-song-00402/draw-00.wav",
+   "role": "acoustic-vocoder",
+   "sha256": "bae2c220a7b278541948e438aeefbf16ea7ef834a091ad5b5a223e51c3d10ebe",
+   "song": "song-402"
+  }
+ ],
+ "combinedModelHoldoutVerified": false,
+ "created": "2026-09-22",
+ "formatId": "com.project-seam.stage-localization-listening-packet",
+ "listening": "NOT_REVIEWED",
+ "panels": {
+  "development": {
+   "acoustic": "base cell, draw-00 of 8, captured dynamics gains applied",
+   "drawsPerSong": 1,
+   "songs": [
+    "song-003",
+    "song-005",
+    "song-024",
+    "song-402",
+    "song-420"
+   ],
+   "stages": [
+    "reference",
+    "acoustic-vocoder"
+   ],
+   "vocoderReconstruction": "UNAVAILABLE: no reference-mel render under vocoder 0731edd1 exists for these sources; the e2 validation renders used a different vocoder identity"
+  },
+  "heldout": {
+   "acoustic": "base cell of the 2x2 ablation (acoustic-flatness-control-e9-r1, export a7dbde0f)",
+   "drawsPerSong": 1,
+   "songs": [
+    "song-000",
+    "song-004",
+    "song-007",
+    "song-008",
+    "song-011",
+    "song-017",
+    "song-018",
+    "song-019",
+    "song-021",
+    "song-023",
+    "song-029",
+    "song-038"
+   ],
+   "stages": [
+    "reference",
+    "vocoder-reconstruction",
+    "acoustic-vocoder"
+   ],
+   "vocoder": "0731edd1 graph 9a733810 zero-v1 (control arm of vocoder-multilag-paired-r1)"
+  }
+ },
+ "releaseEligible": false,
+ "schemaVersion": 1,
+ "singerQualified": false
+}

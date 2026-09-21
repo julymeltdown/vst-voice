@@ -1,5 +1,36 @@
 # Integrated Singer Execution
 
+## Developer-2 direction after ablation STOP: listening packet staged; U29 closed
+
+Developer 2 accepted the STOP verdict and redirected: (1) a
+listening-and-stage-localization packet from existing artifacts only,
+(2) one independently closable Beta gap in parallel.
+
+Listening packet staged at
+docs/implementation/listening/2026-09-22-stage-localization/ with
+artifacts under
+/Users/lhs/Downloads/seam-listening-artifacts/2026-09-22-stage-localization
+(manifest sha 1f1a18fef0b023573d53d6ff94a40d2baf7e8a8193624c68a37fbdffda2e15c1).
+46 blind clips, deterministic shuffle seed 20260922, sealed key. The
+held-out panel carries all three stages (reference, reference-mel
+through fixed vocoder 0731edd1, base acoustic-to-vocoder); the
+development panel carries reference vs acoustic-to-vocoder only - no
+reference-mel vocoder render under this vocoder identity exists for
+the dev sources, marked UNAVAILABLE rather than generated. No new
+training or inference was run. Listening stays NOT_REVIEWED.
+
+Beta-gap refresh (BETA_GAP_INVENTORY_REFRESH_2026-09-22.md) picked U29
+bounded interchange boundary as independently closable: boundary was
+implemented and partially tested but had no acceptance audit and
+missing scenario coverage. Added six scenario tests (oversized-input
+rejection, symlinked import, changed-bytes identity, parent-directory
+replacement, symlinked export destination, failed-export
+preservation). U29_ACCEPTANCE_AUDIT_2026-09-22.md maps every plan
+criterion and test scenario to named code/tests: Release and Debug
+runs pass 9/9 service, 31/31 USTX and 5/5 SMF cases. U29 receives
+local implementation acceptance only; U30/U31/U32 and Beta GO remain
+open.
+
 ## 2x2 component ablation executed: STOP, auxiliary family closed at this setting
 
 Developer 2 cleared exactly the two staged arms (flat-only, level-only)
