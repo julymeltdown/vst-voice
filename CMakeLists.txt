@@ -108,6 +108,13 @@ if(SEAM_REQUIRE_STATIC_OPENSSL)
 endif()
 find_package(Python3 COMPONENTS Interpreter)
 
+# The voice-model-training suite needs torch/onnxruntime, which live in the
+# telemetry-free training environment rather than the general test
+# interpreter. The path is machine-local and overridable at configure time;
+# it defaults to the general interpreter so other machines need no torch.
+set(SEAM_VOICE_TRAINING_PYTHON "${Python3_EXECUTABLE}"
+    CACHE FILEPATH "Interpreter for the voice-model-training test suite (needs torch)")
+
 set(SEAM_RENDER_ABI_ID "seam-render-abi-4.1-r1")
 set(SEAM_PHONEMIZER_REVISION 4)
 set(SEAM_UNIT_SELECTOR_REVISION 4)
@@ -2087,7 +2094,7 @@ if(SEAM_BUILD_TESTS)
     set_tests_properties(seam_static_protobuf_contract_tests PROPERTIES
       WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} TIMEOUT 60)
     add_test(NAME seam_voice_model_training_tests
-      COMMAND ${Python3_EXECUTABLE} -m unittest discover
+      COMMAND ${SEAM_VOICE_TRAINING_PYTHON} -m unittest discover
         -s tools/voice_model_training -p "test_*.py")
     set_tests_properties(seam_voice_model_training_tests PROPERTIES
       WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}

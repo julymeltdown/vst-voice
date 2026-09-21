@@ -1,5 +1,18 @@
 # Integrated Singer Execution
 
+## Voice-training CTest interpreter made explicit; full suite green after rebuild
+
+seam_voice_model_training_tests failed under CTest because the general
+test interpreter (/usr/local/bin/python3, 3.14) has no torch; the suite
+needs the telemetry-free training environment (3.11). Neither
+interpreter covers both dependency sets, so a new cache variable
+SEAM_VOICE_TRAINING_PYTHON defaults to Python3_EXECUTABLE and is set on
+this machine to the training environment. The path remains
+machine-local and is not hardcoded into project CMake. Under the
+training interpreter the suite runs 433 tests with one skip and the
+CTest entry passes in ~48s. A full rebuild plus the complete 174-test
+CTest run now shows zero failures.
+
 ## Partner review received; stale probe binary diagnosed (no code change)
 
 The partner thread's verdict on the combined-model training audit
