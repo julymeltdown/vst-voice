@@ -1,6 +1,6 @@
 # U6 performance compiler status
 
-## Production phonetic context, 2026-09-22 — pinned review pending
+## Production phonetic context, 2026-09-22 — independently approved
 
 Compiler 21 adds region-bounded resolved phonetic context and an explicit
 phone-owner view of edge pitch/dynamics with closed-tail preservation and
@@ -10,8 +10,12 @@ Timing policy 6 records existing whole-note breath/closure starts. Provisional
 independent review exposed a trailing-gap null gesture; a producer regression
 reproduced the crash before repair. All final producer checks pass: 12 selected
 Release/Debug targets (1,056/1,187 overlapping case executions), two real ONNX
-arithmetic-worker checks and 12 Python checks. Independent pinned approval is
-pending. See `U6_PHONETIC_CONTEXT_2026-09-22.md`. This closes neither accepted
+arithmetic-worker checks and 12 Python checks. Developer 2 APPROVED
+`c30f3399e2f9a23b9052d84aee3bd6d6ba2add90`, independently passing 358 focused
+case executions across both configurations and both real ONNX worker checks.
+The broad/Python/closure results were not independently rerun; no independent
+build or historical-crash reproduction was performed. See
+`U6_PHONETIC_CONTEXT_2026-09-22.md`. This closes neither accepted
 target-voicing conversion over voiced sample material nor full U6/Beta GO.
 
 Status: active, incomplete. The approved U6 goal remains a shared musical evaluator consumed by all three rendering families, not merely a standalone score utility.

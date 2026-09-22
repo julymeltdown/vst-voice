@@ -1,6 +1,6 @@
 # Integrated Singer Execution
 
-## U6 production phonetic context implemented; pinned review pending (2026-09-22)
+## U6 production phonetic context independently approved (2026-09-22)
 
 The two production regressions now admit region-contained authored pickups and
 release tails through procedural and neural factories, full rendering, owned
@@ -18,8 +18,13 @@ Full/trailing-only/checkpoint/scheduler regressions now pass. Final producer
 Release passes 12 targets / 1,056 overlapping case executions (20.99 seconds);
 Debug passes 12 / 1,187 (167.86 seconds). Both real ONNX arithmetic-worker
 fixtures pass separately (6.89 seconds), as do 12 captured-teacher Python tests.
-Source closure and whitespace checks pass. Pinned independent approval remains
-pending; provisional source review is not approval. See
+Source closure and whitespace checks pass. Developer 2 APPROVED
+c30f3399e2f9a23b9052d84aee3bd6d6ba2add90, independently passing 179 focused case
+executions per configuration (358 total), including the former crash, and both
+real ONNX worker checks (5.51 seconds). No remaining actionable scoped finding
+was established. The reviewer used existing binaries and did not rerun the
+monolithic/remaining producer targets, Python or source closure, or independently
+recreate the red crash. The earlier provisional review was not approval. See
 U6_PHONETIC_CONTEXT_2026-09-22.md for the failure history and evidence limits.
 Accepted target-voicing conversion over voiced sample material remains open;
 no complete U6/U7 unit, qualified singer or Beta GO is claimed.

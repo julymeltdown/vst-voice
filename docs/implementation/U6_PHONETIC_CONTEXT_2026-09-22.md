@@ -2,7 +2,8 @@
 
 Date: 2026-09-22. Baseline: `d3b763c361216844af772c4a1719ec718085ceff`.
 Scope: U6 timing consumption and U7 context/output ownership. Full U6, U7 and
-Beta acceptance are not claimed. Independent review is pending.
+Beta acceptance are not claimed. Developer 2 independently APPROVED
+`c30f3399e2f9a23b9052d84aee3bd6d6ba2add90` against the baseline above.
 
 ## Reproduced production gap
 
@@ -113,7 +114,7 @@ Final logs are `u6-context-review-final-{build,ctest}.log` in the first two
 build directories and `u6-context-native-review-final-{build,ctest}.log` in
 `build/release`. Source-closure validation passes after indexing this new
 report, and whitespace checks pass. These are producer-run development
-checks; independent pinned review remains pending.
+checks; the independent rerun scope is recorded below.
 
 The first broad runs passed ten selected targets in each configuration but
 failed the monolithic suite on the existing declared-event bake case (Release
@@ -139,8 +140,40 @@ accesses now require an active gesture. Source/filter/noise state continues
 advancing through uncovered context; the output window is not shrunk and
 valid timing is not rejected. The regression requires exact full extent, zero
 trailing PCM, no trailing phone marker, a trailing-only crop, independent and
-resumed chunks, and scheduler assembly. The final producer matrix above passes
-with this regression included; the pinned reviewer decision remains pending.
+resumed chunks, and scheduler assembly. Both the final producer matrix and the
+independent focused reruns pass with this regression included.
+
+## Independent pinned decision
+
+Developer 2 APPROVED `c30f3399e2f9a23b9052d84aee3bd6d6ba2add90`, with no
+remaining actionable scoped findings. The exact HEAD and clean checkout were
+verified before and after review, as was the baseline-to-candidate whitespace
+check. The reviewer inspected the full diff and surrounding compiler, timing,
+owner-control, snapshot, rendering, runner and scheduler contracts.
+
+Independent execution used existing binaries, not an independent rebuild:
+
+| Focused binary | Release | Debug |
+|---|---:|---:|
+| Phoneme timing | 25 | 25 |
+| Performance compiler | 23 | 23 |
+| Performance snapshots | 50 | 50 |
+| Voice design | 39 | 39 |
+| Neural worker protocol | 30 | 30 |
+| Neural render | 7 | 7 |
+| Neural phrase runner | 5 | 5 |
+| Total passing case executions | 179 | 179 |
+
+All 358 case executions passed; both command groups returned exit 0. An extra
+Release timing rerun (25/25) only recaptured truncated output and is not extra
+unique coverage. The reviewer also independently reran both native ONNX
+production-worker CTests in `build/release`: 2/2 PASS, exit 0, 5.51 seconds.
+The trailing-silence regression passed independently in both configurations.
+
+The reviewer did not rebuild, rerun the monolithic/remaining producer targets,
+Python checks or source-closure script, or recreate the historical red crash.
+Those evidence items remain producer-run. The approval covers this bounded
+implementation and repaired crash, not full U6/U7 or release qualification.
 
 ## Remaining boundaries
 
