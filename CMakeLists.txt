@@ -2595,6 +2595,13 @@ if(SEAM_BUILD_TESTS)
       DEPENDS seam_clap_state_pack_smoke TIMEOUT 30)
   endif()
   add_test(NAME seam_bank_tool_help COMMAND seam_bank_tool --help)
+  # The real publication chain: a designed recipe becomes a signed singer, verifies, and installs.
+  add_test(NAME seam_bank_tool_publish_singer
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_bank_tool_publish_singer.py
+            $<TARGET_FILE:seam_bank_tool>)
+  set_tests_properties(seam_bank_tool_publish_singer PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    ENVIRONMENT "PYTHONDONTWRITEBYTECODE=1" TIMEOUT 120)
   add_test(NAME seam_voicebank_cli_help COMMAND seam_voicebank_cli --help)
   add_test(NAME seam_voicebank_cli_validate
     COMMAND seam_voicebank_cli validate
