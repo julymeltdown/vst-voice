@@ -348,3 +348,99 @@ TEST_CASE("voicebank schema two migrates without a character binding") {
   CHECK(decoded.value().characterId.empty());
   CHECK(decoded.value().characterVersion.empty());
 }
+
+// U15 scenario 1: voiced-to-fricative material must retain separate voicing
+// states, and generated pitch marks must never bridge an unvoiced span.
+//
+// The fixture alternates sung vowel, unvoiced fricative, sung vowel. Every mark
+// the generator emits must be owned by a frame the pitch analyser itself declared
+// voiced: a mark is a claim that a glottal pulse belongs at that sample, and that
+// claim is only supported where the analysis found periodicity. Before the guard,
+// the nearest-frame lookup searched a voiced-only list and ignored the frames
+// between, so a voiced span, a fricative and a second voiced span produced marks
+// inside the fricative while the analysis had reported it unvoiced.
+TEST_CASE("pitch marks never bridge an unvoiced span") {
+  constexpr std::uint32_t kRate = 48000U;
+  constexpr std::size_t kFrames = 48000U;
+  constexpr std::size_t kVoicedEnd = 19200U;    // end of the first sung vowel
+  constexpr std::size_t kUnvoicedEnd = 28800U;  // end of the fricative
+  constexpr std::size_t kFrameSize = 2048U;
+  constexpr std::size_t kHop = 256U;
+
+  std::vector<float> samples(kFrames, 0.0F);
+  unsigned seed = 12345U;
+  auto noise = [&seed]() {
+    seed = seed * 1103515245U + 12345U;
+    return (static_cast<float>((seed >> 16U) & 0x7FFFU) / 16384.0F) - 1.0F;
+  };
+  for (std::size_t frame = 0U; frame < kFrames; ++frame) {
+    const auto time = static_cast<double>(frame) / static_cast<double>(kRate);
+    if (frame < kVoicedEnd)
+      samples[frame] = 0.5F * static_cast<float>(std::sin(2.0 * std::numbers::pi * 200.0 * time));
+    else if (frame < kUnvoicedEnd)
+      samples[frame] = 0.35F * noise();
+    else
+      samples[frame] = 0.5F * static_cast<float>(std::sin(2.0 * std::numbers::pi * 220.0 * time));
+  }
+
+  const seam::voicebank::PitchConfig pitch{
+      .frameSize = kFrameSize, .hopSize = kHop, .minimumHz = 60.0,
+      .maximumHz = 1200.0, .voicingThreshold = 0.32,
+      .correlationMethod = seam::voicebank::PitchCorrelationMethod::Fft};
+  const auto analysis = seam::voicebank::analyzePitch(samples, kRate, pitch);
+  CHECK(analysis);
+
+  seam::voicebank::PitchMarkGenerationConfig config;
+  config.pitch = pitch;
+  const auto marks = seam::voicebank::generatePitchMarks(
+      samples, kRate, seam::time::SampleFrame{0}, seam::time::SampleFrame{kFrames}, config);
+  CHECK(marks);
+  CHECK(marks.value().size() >= 3U);
+
+  // The analyser must actually have found the fricative unvoiced, or this fixture
+  // proves nothing about bridging.
+  std::size_t unvoicedFrames = 0U;
+  for (const auto& frame : analysis.value()) {
+    const auto start = static_cast<std::size_t>(frame.sourceFrame);
+    if (start >= kVoicedEnd && start < kUnvoicedEnd && !frame.voiced) ++unvoicedFrames;
+  }
+  CHECK(unvoicedFrames >= 3U);
+
+  // A mark is legitimate only where some voiced frame's window contains it, using
+  // the same window convention the generator used. That is the real invariant: a
+  // mark is a claim about a glottal pulse, and only a window the analyser found
+  // periodic can support that claim. Counting marks inside a hand-drawn span would
+  // be measuring the fixture rather than the generator, because a 2048-sample
+  // window legitimately reaches past the last voiced sample it started inside.
+  std::size_t unsupported = 0U;
+  for (const auto& mark : marks.value()) {
+    const auto at = static_cast<std::size_t>(mark.frame);
+    const bool owned = std::any_of(
+        analysis.value().begin(), analysis.value().end(), [&](const auto& frame) {
+          return frame.voiced && at >= frame.sourceFrame &&
+                 at < frame.sourceFrame + kFrameSize;
+        });
+    if (!owned) ++unsupported;
+  }
+  // Every mark must sit inside a window the analyser called voiced.
+  CHECK(unsupported == 0U);
+
+  // The fricative's middle must be left alone. The boundary is set by the analysis
+  // windows, not by the fixture: the last voiced window of the first region ends at
+  // 20480, and the first window the analyser already considers voiced in the second
+  // region begins at 27392 -- its 2048-sample window has only just reached the
+  // returning sine, which is why its confidence is the lowest in that run (0.450).
+  // Marks may therefore appear in [20480, 27392) nowhere at all.
+  std::size_t insideGap = 0U;
+  for (const auto& mark : marks.value()) {
+    const auto at = std::size_t(mark.frame);
+    if (at >= kVoicedEnd + kFrameSize && at < 27392U) ++insideGap;
+  }
+  CHECK(insideGap == 0U);
+
+  // And the generator must still reach the second sung vowel rather than giving up
+  // at the fricative: a guard that simply stopped would also produce no marks in
+  // the gap while silently truncating the take.
+  CHECK(std::any_of(marks.value().begin(), marks.value().end(),
+                    [](const auto& mark) { return std::size_t(mark.frame) >= kUnvoicedEnd; }));
+}
