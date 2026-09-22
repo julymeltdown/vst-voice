@@ -3,9 +3,10 @@
 Date: 2026-09-22. Baseline: `9484adedebad3e5d51f94926ae13d7c9dc07021e`.
 
 Initial implementation: `83dcaa1927365205a5ef92efe09e002cb5574c32`.
-Developer 2 returned **REQUEST CHANGES** on this commit. The repair below is
-implemented locally and awaiting exact-commit re-review; the initial passing
-tests did not establish CLAP interaction or complete modal isolation.
+Developer 2 returned **REQUEST CHANGES** on this commit, then **APPROVED** the
+repair at `afb655f2f38bfec1b9320a9cf3480b3030c97794`. The initial passing tests
+did not establish CLAP interaction or complete modal isolation; all three
+findings are now closed for this bounded increment.
 
 ## Delivered behavior
 
@@ -143,14 +144,29 @@ The repaired-tree broad runs also pass:
 
 Release currently has CLAP disabled; the connected CLAP coverage is Debug only,
 and Debug warnings-as-errors is disabled. Source closure and staged whitespace
-checks pass. Exact-commit independent re-review is still required. No failed
-build or initial red regression is counted as passing.
+checks pass. No failed build or initial red regression is counted as passing.
 
 Repair logs: `build/debug/u17-details-repair-{build,focused-ctest}.log`;
 the red native regression is retained in
 `build/debug/u17-details-focus-red-{build,ctest}.log`.
 Broad repair logs are `build/debug/u17-details-repair-broad-{build,ctest}.log`
 and `build-u4-macos/u17-details-repair-{configure,build,ctest}.log`.
+
+## Independent repair approval
+
+Developer 2 APPROVED `afb655f2f38bfec1b9320a9cf3480b3030c97794`, closing all
+three original P2 findings with no additional blocking regression established
+in this bounded repair. The reviewer checked callback wiring, recursive-lock
+safety, controller ownership after project replacement, read-only CLAP
+capabilities, modal virtual-note isolation and the early SetValue rejection.
+
+Independent existing-binary reruns passed 20 case executions: Debug CLAP
+microscope 2/2 and native microscope 4/4, Release native microscope 4/4 and style
+coverage 10/10. The reviewer verified a clean worktree at the exact hash and
+`git diff --check`. They did not rebuild or rerun the producer's broad,
+Phase 11/12B, monolithic or source-closure checks. CLAP runtime evidence remains
+Debug only. This approval does not establish installed AppKit/DAW/Windows,
+live assistive-technology operation, perceptual quality or a full U17/Beta gate.
 
 ## Scope retained
 

@@ -1,6 +1,6 @@
 # Integrated Singer Execution
 
-## U17 native selection details: repaired and verified; re-review pending (2026-09-22)
+## U17 native selection details independently approved after repair (2026-09-22)
 
 The shared sample microscope now offers lossless UTF-8-aware paged details for
 the captured selection rationale and unit/destination identity. Snapshot age is
@@ -25,8 +25,12 @@ four native cases and existing Phase 11/12B integrations. Fresh broad Release
 passes eight targets / 885 case executions (21.04 seconds); Debug passes nine
 targets / 993 case executions plus two integration executables (164.99 seconds).
 Release CLAP is disabled; connected CLAP coverage is Debug only. Source closure
-and whitespace checks pass. Exact-commit re-review remains pending. The captures
-are native raster fixtures, not installed AppKit/DAW screenshots. See
+and whitespace checks pass. Developer 2 APPROVED
+afb655f2f38bfec1b9320a9cf3480b3030c97794, independently passing 20 case executions
+across Debug CLAP/native and Release native/style suites. All three P2 findings
+are closed; no additional blocking regression was established in this scope.
+The broad and Phase 11/12B runs were not independently rerun. The captures are
+native raster fixtures, not installed AppKit/DAW screenshots. See
 U17_NATIVE_SELECTION_DETAILS_2026-09-22.md.
 Full U17, singer qualification, Windows verification and Beta GO remain open;
 no complete unit is counted.
