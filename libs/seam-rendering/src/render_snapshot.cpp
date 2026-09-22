@@ -20,6 +20,7 @@
 #include <cstdint>
 #include <limits>
 #include <map>
+#include <set>
 #include <span>
 #include <type_traits>
 #include <unordered_set>
@@ -559,6 +560,8 @@ core::Result<std::string> buildIdentity(
   writer.integer(ownedFrames.has_value() ? 1U : 0U);
   if (ownedFrames) { writer.integer(ownedFrames->start); writer.integer(ownedFrames->end); }
   writer.tag("resource.sample.v1");
+  writer.integer(synthesis::kUnitSelectionRevision);
+  writer.tag(unitPlan.selectionContextHash);
   writer.integer(synthesis::kPerformanceCompilerRevision);
   addAlgorithmRevisions(writer);
   writer.tag(projectJson.value());
@@ -983,7 +986,8 @@ core::Result<RenderSnapshot> RenderSnapshotFactory::create(
     std::uint32_t sampleRate,
     std::string style,
     const synthesis::PhraseRenderOptions& renderOptions,
-    std::optional<synthesis::PhraseFrameRange> ownedFrames) const {
+    std::optional<synthesis::PhraseFrameRange> ownedFrames, std::stop_token stop) const {
+  if (stop.stop_requested()) return core::failure<RenderSnapshot>(core::ErrorCode::Conflict, "Sample snapshot cancelled");
   const auto projectValidation = project.validate();
   if (!projectValidation) return core::Result<RenderSnapshot>{projectValidation.error()};
   if (renderOptions.renderer.raw.performance || renderOptions.renderer.raw.performanceVowelFrame || renderOptions.renderer.psola.performance || renderOptions.renderer.psola.sourceMap ||
@@ -1167,7 +1171,12 @@ core::Result<RenderSnapshot> RenderSnapshotFactory::create(
   std::vector<SelectedUnitIdentity> selectedUnits;
   std::vector<synthesis::FrozenUnitAudio> frozenAudio;
   std::map<std::string, synthesis::FrozenUnitAudio> frozenByUnit;
+  synthesis::UnitSelectionBudget selectionBudget;
+  if (phonemes.tokens.size() > synthesis::kMaximumSelectionTokens || voicebankValue.units.size() > 65536U) {
+    return core::failure<RenderSnapshot>(core::ErrorCode::Unsupported, "Sample selection exceeds token/inventory budget");
+  }
   const auto freezeUnit = [&](const voicebank::Unit& value) -> core::Result<void> {
+    if (stop.stop_requested()) return core::failure(core::ErrorCode::Conflict, "Sample selection cancelled");
     const auto* unit = &value;
     if (frozenByUnit.contains(unit->id)) return {};
     auto resolved = voicebank::resolveBankAsset(bankRoot, unit->audioPath);
@@ -1181,7 +1190,9 @@ core::Result<RenderSnapshot> RenderSnapshotFactory::create(
           std::min<std::uint64_t>(voicebank::kMaximumSupportedWavBytes,
                                   remainingEncoded));
       if (!bytes) return core::Result<void>{bytes.error()};
-      auto decoded = voicebank::readWav(bytes.value(), resolved.value().string());
+      auto decoded = voicebank::readWav(bytes.value(), resolved.value().string(),
+          voicebank::WavReadLimits{.maximumDecodedSamples =
+              (kMaximumFrozenPhraseDecodedBytes - frozenDecodedBytes) / sizeof(float)}, stop);
       if (!decoded) return core::Result<void>{decoded.error()};
       const auto decodedBytes =
           static_cast<std::uint64_t>(decoded.value().interleaved.size()) *
@@ -1244,37 +1255,94 @@ core::Result<RenderSnapshot> RenderSnapshotFactory::create(
   // Probe only phone-matching units whose edited span needs extra landmarks.
   // Reuse the same bounded frozen assets during final selection and rendering.
   std::vector<synthesis::SourceAlignmentEvidence> evidence;
-  for (const auto& unit : voicebankValue.units) {
+  std::vector<const voicebank::Unit*> orderedInventory;
+  for (const auto& unit : voicebankValue.units) orderedInventory.push_back(&unit);
+  std::sort(orderedInventory.begin(), orderedInventory.end(), [](const auto* a, const auto* b) { return a->id < b->id; });
+  IdentityWriter decision;
+  decision.tag("seam.source-boundary-selection");
+  decision.integer(synthesis::kUnitSelectionRevision);
+  decision.tag(style);
+  decision.tag(blend ? blend->targetStyleId : std::string{});
+  for (const auto* candidateUnit : orderedInventory) {
+    const auto& unit = *candidateUnit;
     if (!unit.enabled || (unit.style != style && (!blend || unit.style != blend->targetStyleId)) ||
         unit.phones.empty() || unit.phones.size() > phonemes.tokens.size()) continue;
     bool needsAlignment = false;
+    bool matches = false;
     for (std::size_t start = 0; start <= phonemes.tokens.size() - unit.phones.size(); ++start) {
+      const auto spent = selectionBudget.spend(synthesis::SelectionWork::Matching, unit.phones.size(), stop);
+      if (!spent) return core::Result<RenderSnapshot>{spent.error()};
       const auto covered = std::span<const domain::PhonemeToken>{phonemes.tokens}.subspan(start, unit.phones.size());
-      if (synthesis::supportsExplicitPhonemeTiming(covered) && !synthesis::hasMultipleNuclei(covered)) continue;
       if (std::equal(unit.phones.begin(), unit.phones.end(), covered.begin(),
           [](const auto& phone, const auto& token) { return phone == token.symbol; })) {
-        needsAlignment = true;
-        break;
+        matches = true;
+        if (!synthesis::supportsExplicitPhonemeTiming(covered) || synthesis::hasMultipleNuclei(covered)) needsAlignment = true;
       }
     }
+    if (matches) { decision.tag("matching-unit"); addUnitMetadata(decision, unit); }
     if (!needsAlignment) continue;
     const auto sidecar = bankRoot / "alignments" / (core::sha256Hex(unit.id) + ".json");
     std::error_code probeError;
     const auto sidecarStatus = std::filesystem::symlink_status(sidecar, probeError);
     if (probeError == std::errc::no_such_file_or_directory ||
-        (!probeError && !std::filesystem::exists(sidecarStatus))) continue;
+        (!probeError && !std::filesystem::exists(sidecarStatus))) {
+      decision.tag("alignment-absent"); continue;
+    }
     if (probeError) return core::failure<RenderSnapshot>(core::ErrorCode::IoError,
         "Cannot inspect candidate source alignment", sidecar.string());
     const auto frozen = freezeUnit(unit);
     if (!frozen) return core::Result<RenderSnapshot>{frozen.error()};
+    decision.tag(alignments.at(unit.id).sha256);
+    decision.tag(frozenByUnit.at(unit.id).verifiedAudioSha256);
     const auto& resource = frozenByUnit.at(unit.id);
     if (resource.sourceAlignment) evidence.push_back({&*resource.sourceAlignment,
         resource.verifiedAudioSha256, static_cast<time::SampleFrame>(resource.audio->frameCount())});
   }
+  // Enumerate before loading competitors, with the same limits and alignment
+  // evidence as the actual search. Every eligible competitor must be readable;
+  // an error is not permission to remove it from the optimization problem.
+  std::set<std::string> competingUnits;
+  synthesis::UnitSelectionContext selectionContext{.budget = &selectionBudget, .stop = stop};
+  const auto collect = [&](std::string_view selectedStyle) -> core::Result<void> {
+    const auto candidates = synthesis::UnitCandidateGenerator{}.generate(voicebankValue,
+        *phraseRegion, phonemes.tokens, selectedStyle, phraseRegion->unitSelectionOverrides, evidence, true, selectionContext);
+    if (!candidates) return core::Result<void>{candidates.error()};
+    for (const auto& candidate : candidates.value()) {
+      decision.tag(candidate.unitId); decision.integer(candidate.tokenStart); decision.integer(candidate.tokenCount);
+      decision.integer(candidate.targetMidi); decision.boolean(candidate.forced); addEnum(decision, candidate.renderer);
+      competingUnits.insert(candidate.unitId);
+    }
+    return {};
+  };
+  auto collected = collect(style);
+  if (!collected) return core::Result<RenderSnapshot>{collected.error()};
+  if (blend) {
+    collected = collect(blend->targetStyleId);
+    if (!collected) return core::Result<RenderSnapshot>{collected.error()};
+  }
+  std::vector<synthesis::UnitJoinAnalysis> joinAnalysis;
+  for (const auto& id : competingUnits) {
+    const auto* unit = voicebankValue.findUnit(id);
+    const auto frozen = freezeUnit(*unit);
+    if (!frozen) return core::Result<RenderSnapshot>{frozen.error()};
+    const auto& resource = frozenByUnit.at(id);
+    auto analyzed = synthesis::analyzeUnitJoin(*unit, *resource.audio, resource.verifiedAudioSha256, selectionBudget, stop);
+    if (!analyzed) return core::Result<RenderSnapshot>{analyzed.error()};
+    decision.tag(id); decision.tag(resource.verifiedAudioSha256); decision.tag(alignments.at(id).sha256);
+    joinAnalysis.push_back(std::move(analyzed).value());
+  }
+  const auto decisionHash = decision.finish();
+  selectionContext.analysis = joinAnalysis;
+  selectionContext.requireAcoustic = true;
+  const auto bindDecision = [&](synthesis::UnitPlan& selected) {
+    selected.selectionContextHash = decisionHash;
+    for (auto& entry : selected.entries) entry.rationale.evidenceHash = decisionHash;
+  };
   synthesis::DeterministicUnitSelector selector;
   auto plan = selector.select(voicebankValue, *phraseRegion, phonemes.tokens,
-                              style, phraseRegion->unitSelectionOverrides, evidence, true);
+                              style, phraseRegion->unitSelectionOverrides, evidence, true, selectionContext);
   if (!plan) return core::Result<RenderSnapshot>{plan.error()};
+  bindDecision(plan.value());
   selectedUnits.reserve(plan.value().entries.size());
   frozenAudio.reserve(plan.value().entries.size());
   for (const auto& entry : plan.value().entries) {
@@ -1290,9 +1358,10 @@ core::Result<RenderSnapshot> RenderSnapshotFactory::create(
   std::optional<synthesis::FrozenSampleStyle> secondary;
   if (blend) {
     auto secondPlan = selector.select(voicebankValue, *phraseRegion, phonemes.tokens,
-        blend->targetStyleId, phraseRegion->unitSelectionOverrides, evidence, true);
+        blend->targetStyleId, phraseRegion->unitSelectionOverrides, evidence, true, selectionContext);
     if (!secondPlan) return core::failure<RenderSnapshot>(secondPlan.error().code,
         "StyleBlend secondary selection failed: " + secondPlan.error().message, secondPlan.error().context);
+    bindDecision(secondPlan.value());
     if (secondPlan.value().entries.size() + plan.value().entries.size() > 8192U) {
       return core::failure<RenderSnapshot>(core::ErrorCode::Unsupported,
           "StyleBlend selected sources exceed the aggregate plan budget");

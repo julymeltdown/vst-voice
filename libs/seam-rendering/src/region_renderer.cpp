@@ -161,7 +161,7 @@ core::Result<RegionRenderResult> ProductionRegionRenderer::render(
     }
     auto snapshot = snapshots.create(project, manifest, trackId, segment,
                                      revision, quality, bankRoot, sampleRate,
-                                     style, options);
+                                     style, options, {}, stopToken);
     if (!snapshot) {
       if (!continueOnPhraseFailure ||
           (snapshot.error().code != core::ErrorCode::NotFound &&

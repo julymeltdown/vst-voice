@@ -70,6 +70,7 @@ TEST_CASE("unit lane exposes actual renderer fallback seam and alternatives") {
   const auto& visual = model.visuals().front();
   CHECK(visual.unitId == "k-a-main");
   CHECK(visual.alternatives == (std::vector<std::string>{"k-a-alt"}));
+  CHECK(visual.selectionRationale.find("Metadata-only") != std::string::npos);
   CHECK(visual.usedFallback);
   CHECK(visual.actualRenderer == seam::voicebank::RendererHint::Raw);
   CHECK_NEAR(visual.seamAmount, 0.88, 1.0e-6);

@@ -395,6 +395,7 @@ private:
   ui::SampleMicroscopeModel microscope_;
   voicebank::AudioBuffer microscopeAudio_;
   std::optional<std::string> microscopeUnitId_;
+  std::string microscopeSelectionRationale_;
   std::string microscopeFocusedId_;
   std::optional<domain::PhonemeKey> selectedUnitKey_;
   std::optional<domain::PhonemeKey> draggingPhonemeKey_;

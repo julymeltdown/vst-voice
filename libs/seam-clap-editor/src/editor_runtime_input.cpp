@@ -416,6 +416,7 @@ core::Result<void> EditorRuntime::openSampleMicroscope(
   std::lock_guard lock(mutex_);
   auto phonemes = phonemesLocked();
   const auto preview = renderedPreview();
+  if (!preview) return core::failure(core::ErrorCode::NotFound, "Rendered unit decision is unavailable");
   const synthesis::UnitPlanEntry* entry = nullptr;
   for (const auto& candidate : preview->unitPlan) {
     if (candidate.tokenStart < phonemes.tokens.size() &&
@@ -444,6 +445,7 @@ core::Result<void> EditorRuntime::openSampleMicroscope(
       layout.microscopeSpectrogramBounds(logicalWidth_, logicalHeight_));
   if (!rebuilt) return rebuilt;
   microscopeUnitId_ = entry->unitId;
+  microscopeSelectionRationale_ = synthesis::describeUnitSelection(*entry);
   microscopeFocusedId_ = "microscope.panel";
   selectedUnitKey_ = key;
   requestRepaint();

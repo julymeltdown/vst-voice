@@ -14,6 +14,7 @@
 #include "seam/core/file_io.hpp"
 #include "seam/core/sha256.hpp"
 #include "seam/rendering/region_renderer.hpp"
+#include "seam/rendering/project_renderer.hpp"
 #include "seam/rendering/singer_route.hpp"
 
 #include <cmath>
@@ -327,6 +328,63 @@ TEST_CASE("paired region cache publishes both source count and pair renderer pro
   CHECK(edited.value().mono != first.value().mono);
   // The sample renderer itself never advertises pair composition as a scalar.
   CHECK(!synthesis::rendererCapabilities(synthesis::RendererCarrier::SampleBank).supports(synthesis::RendererControl::StyleBlend));
+}
+
+TEST_CASE("multi-placement style endpoints preserve standalone project PCM and final WAV seam samples") {
+  Fixture f;
+  auto* region = f.project.findRegion(f.region);
+  region->notes.front().durationTick = time::Tick{480};
+  for (std::int64_t i = 1; i < 3; ++i) {
+    auto [lyric, note] = f.factory.makeNote(time::Tick{480 + i * 480}, time::Tick{480}, 69U,
+        U"あ", domain::Language::Japanese);
+    note.phoneticHint = "a"; region->lyrics.push_back(lyric); region->notes.push_back(note);
+  }
+  // Distinct attack/release envelopes, same source landmarks and target timing.
+  // Preserve phase so this checks seams rather than the cancellation refusal.
+  auto secondary = test::support::sineWave(48000U, 440.0, 0.5);
+  for (std::size_t i = 0; i < secondary.size(); ++i) {
+    const auto attack = std::min(1.0, static_cast<double>(i) / 2000.0);
+    const auto release = std::min(1.0, static_cast<double>(secondary.size() - i) / 3000.0);
+    secondary[i] *= static_cast<float>(0.8 * attack * release);
+  }
+  CHECK(voicebank::writeMonoPcm16Wav(f.root / "audio/b.wav", 48000U, secondary));
+  const std::vector<rendering::TrackVoicebankSource> sources{{.trackId = f.track, .manifest = f.bank,
+      .bankRoot = f.root, .contentHash = std::string(64U, 'a')}};
+  rendering::PcmCache cache{f.root / "project-pair-cache"};
+  const auto projectRender = [&](const domain::Project& score) {
+    return rendering::ProductionProjectRenderer{}.render(score, sources, f.track, f.region, 1U,
+        48000U, rendering::RenderQuality::Final, {}, &cache);
+  };
+  for (const float amount : {0.0F, 1.0F}) {
+    f.project.findVocalTrack(f.track)->styleSelection.blend->amount = amount;
+    const auto paired = projectRender(f.project); CHECK(paired);
+    CHECK(paired.value().activeUnitPlan.size() == 3U);
+    const auto cached = projectRender(f.project); CHECK(cached);
+    CHECK(cached.value().cacheHits > 0U); CHECK(cached.value().activeUnitPlan == paired.value().activeUnitPlan);
+    auto standalone = f.project;
+    standalone.findVocalTrack(f.track)->styleSelection = {domain::VoiceStyleOrigin::Explicit,
+        amount == 0.0F ? "original" : "soft"};
+    const auto expected = projectRender(standalone); CHECK(expected);
+    CHECK(paired.value().interleaved == expected.value().interleaved);
+    CHECK(voicebank::writeWav(f.root / "paired-export.wav",
+        {.sampleRate = 48000U, .channels = paired.value().channelCount, .sampleFormat = voicebank::WavSampleFormat::Float32},
+        std::span<const float>{paired.value().interleaved.data(), paired.value().interleaved.size()}));
+    const auto exported = voicebank::readWav(f.root / "paired-export.wav"); CHECK(exported);
+    CHECK(std::equal(exported.value().interleaved.begin(), exported.value().interleaved.end(), expected.value().interleaved.begin(), expected.value().interleaved.end()));
+  }
+  f.project.findVocalTrack(f.track)->styleSelection.blend->amount = 0.5F;
+  const auto frozen = f.snapshot(f.project); CHECK(frozen);
+  const auto whole = rendering::PhraseRenderPipeline{}.render(frozen.value()); CHECK(whole);
+  CHECK(whole.value().timing.placements.size() == 3U);
+  const auto& audio = whole.value().rendered.audio;
+  const auto chunks = rendering::RenderSnapshotFactory{}.splitOwnedOutput(frozen.value(),
+      {audio.startFrame, audio.startFrame + static_cast<time::SampleFrame>(audio.samples.size())}, 4096U);
+  CHECK(chunks); std::vector<float> stitched;
+  for (const auto& chunk : chunks.value()) {
+    const auto rendered = rendering::PhraseRenderPipeline{}.render(chunk); CHECK(rendered);
+    stitched.insert(stitched.end(), rendered.value().rendered.audio.samples.begin(), rendered.value().rendered.audio.samples.end());
+  }
+  CHECK(stitched == audio.samples);
 }
 
 TEST_CASE("paired mixing rejects aggregate work and disjoint spans before publishing audio") {

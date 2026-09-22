@@ -1,5 +1,23 @@
 # Integrated Singer Execution
 
+## U17 contextual source-unit selection implemented; review pending (2026-09-22)
+
+The production sample snapshot now measures frozen source-boundary level and
+short-lag correlation, and selects a complete sequence with distinct candidate
+occurrence states. Forced intervals cannot be jumped over. Enumeration, states,
+edges, metadata and measurements have explicit shared pair budgets; there is no
+silent beam pruning. Losing competitors and alignment eligibility enter decision
+identity. Actual plan rationale reaches cached/project results and inspection.
+
+This is a versioned source-domain proxy, not a post-render acoustic or perceptual
+quality claim. Pair arms keep independent standalone selection and refuse
+incompatible partitions. Strict Release passes seven targets / 958 case
+executions (22.27 s); Debug passes four focused targets / 104 cases (27.71 s).
+The CLAP editor also builds in Debug. The added three-placement pair test checks
+standalone-equal project endpoints, float-WAV samples and exact owned-output
+reconstruction. Independent implementation review is pending. See
+U17_CONTEXTUAL_SELECTION_2026-09-22.md. No complete unit or Beta GO is counted.
+
 ## U17 ordered sample-style crossfade independently approved (2026-09-22)
 
 Project schema 19 persists an explicit primary/secondary sample-style pair and

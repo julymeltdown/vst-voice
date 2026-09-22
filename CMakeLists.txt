@@ -481,6 +481,7 @@ add_library(seam_synthesis
   libs/seam-synthesis/src/neural_bundle.cpp
   libs/seam-synthesis/src/phrase_backend.cpp
   libs/seam-synthesis/src/unit_selection.cpp
+  libs/seam-synthesis/src/unit_join_analysis.cpp
   libs/seam-synthesis/src/timing_solver.cpp
   libs/seam-synthesis/src/phoneme_timing_plan.cpp
   libs/seam-synthesis/src/source_phoneme_alignment.cpp
@@ -1336,6 +1337,12 @@ endif()
 
 if(SEAM_BUILD_TESTS)
   enable_testing()
+  add_executable(seam_contextual_unit_selection_tests tests/test_main.cpp tests/test_contextual_unit_selection.cpp)
+  target_include_directories(seam_contextual_unit_selection_tests PRIVATE tests)
+  target_link_libraries(seam_contextual_unit_selection_tests PRIVATE seam_rendering seam_application seam_editor_inspection)
+  seam_apply_compiler_options(seam_contextual_unit_selection_tests)
+  add_test(NAME seam_contextual_unit_selection_tests COMMAND seam_contextual_unit_selection_tests)
+  set_tests_properties(seam_contextual_unit_selection_tests PROPERTIES TIMEOUT 120)
   add_executable(seam_singing_quality_render
     tools/singing_quality/render_main.cpp
     tools/singing_quality/render_inputs.cpp

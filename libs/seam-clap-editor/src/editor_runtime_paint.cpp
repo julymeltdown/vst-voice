@@ -266,7 +266,7 @@ native_ui::EditorSceneState EditorRuntime::sceneState() {
     state.sampleMicroscope = native_ui::EditorSceneState::SampleMicroscopeView{
         .model = &microscope_,
         .unitId = *microscopeUnitId_,
-        .destinationContext = "CLAP source unit",
+        .destinationContext = microscopeSelectionRationale_,
         .canPlay = false,
     };
   }

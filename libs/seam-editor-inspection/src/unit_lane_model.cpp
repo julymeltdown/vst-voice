@@ -52,6 +52,7 @@ void UnitLaneModel::rebuild(const domain::Project& project,
         .seamAmount = 0.7F,
         .seamCurve = domain::SeamCurve::HardCharacter,
         .diagnostic = {},
+        .selectionRationale = synthesis::describeUnitSelection(*planIterator),
     };
     if (rendered != nullptr && index < rendered->placements.size()) {
       const auto& renderInfo = rendered->placements[index];

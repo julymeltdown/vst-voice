@@ -122,7 +122,8 @@ public:
       std::uint32_t sampleRate = 0,
       std::string style = {},
       const synthesis::PhraseRenderOptions& renderOptions = {},
-      std::optional<synthesis::PhraseFrameRange> ownedFrames = {}) const;
+      std::optional<synthesis::PhraseFrameRange> ownedFrames = {},
+      std::stop_token stop = {}) const;
 };
 
 // Kept for persisted Phase 3/4 diagnostics. New render identities use SHA-256.

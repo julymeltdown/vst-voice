@@ -28,6 +28,7 @@ struct UnitLaneVisual final {
   float seamAmount{0.7F};
   domain::SeamCurve seamCurve{domain::SeamCurve::HardCharacter};
   std::string diagnostic;
+  std::string selectionRationale{};
 };
 
 class UnitLaneModel final {

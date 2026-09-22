@@ -277,7 +277,8 @@ void AuthoringSession::configureController() {
         std::string context = "DESTINATION";
         if (track != nullptr) context += " / " + track->name;
         if (region != nullptr) context += " / " + region->name;
-        context += " / MIDI " + std::to_string(view->entry.targetMidi);
+        context = synthesis::describeUnitSelection(view->entry) + " / " + context +
+            " / MIDI " + std::to_string(view->entry.targetMidi);
         return native_ui::SampleMicroscopeData{
             .unit = *unit,
             .audio = std::move(audio).value(),
