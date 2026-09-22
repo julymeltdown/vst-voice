@@ -191,10 +191,28 @@ class MacOSSourceContractTests(unittest.TestCase):
         self.assertIn('"recorded_wav="', source)
         self.assertIn("Voicebank Studio recording failed", source)
         self.assertIn("recording_.recordedFrames() > 0U", source)
+        # Publication must stay fail-closed now that the capture lifecycle lives
+        # in RecordingInputSession: a failed export returns before any
+        # acknowledgement, and only an explicit acknowledgement or discard may
+        # release a healthy completed capture.
         self.assertLess(
             source.index("if (!saved) return saved"),
-            source.index("recording_.clear()"),
+            source.index("recordingInput_.acknowledgePublished()"),
         )
+        self.assertIn(
+            'event.key == seam::native_ui::NativeKey::X && !event.repeat) record(discardRecording())',
+            source,
+        )
+        session_source = (
+            ROOT / "libs/seam-platform/src/recording_input_session.cpp"
+        ).read_text()
+        for operation in ("acknowledgePublished", "discardPending"):
+            body = session_source.split(
+                f"core::Result<void> RecordingInputSession::{operation}()"
+            )[1].split("}")[0]
+            self.assertIn("if (!pending())", body)
+            self.assertIn("recording_.clear();", body)
+            self.assertIn("state_ = State::Idle;", body)
 
     def test_demo_projects_persist_computed_voicebank_content_identity(self) -> None:
         for phase in ("2", "3", "4"):
