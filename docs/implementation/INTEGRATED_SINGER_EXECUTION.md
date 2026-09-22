@@ -15,7 +15,13 @@ AP-mask checks and descriptive clean-pair comparisons. Both C++ configurations
 pass ten engineering cases; Python 65 pass/four explicit native-driver skips.
 Cross-arm identities match; cross-build output bytes are not all identical. Old
 nine-case reports match except executable identity; historical speech assessment
-hashes remain unchanged. Independent implementation review is pending. See
+hashes remain unchanged. Developer 2 APPROVED `b148a0a`, independently rerunning
+ten C++ cases per configuration, five Python cases, all four full diagnostics,
+actual Float32 RMS/peak/pair measurements, and retained-artifact comparisons
+(4,529 files unchanged). No independent rebuild, broad suite or listening claim.
+Next agreed production slice is renderer-specific independent Formant automation
+for first-party Spectral Classic, through normal preview/export with exact neutral
+behavior and truthful unsupported combinations; it is not implemented yet. See
 U16_LF_CONTROL_RESULTS_2026-09-22.md for outcomes, pins, commands and remaining
 scope. The earlier "not executed yet" entry below describes its own checkpoint.
 No production change, additional accepted unit, qualified singer or Beta GO.

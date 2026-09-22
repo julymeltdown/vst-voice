@@ -1,7 +1,7 @@
 # U16 fixed low-frequency control panel: results and decision
 
 Date: 2026-09-22. Baseline: `e9877a9684f49425bfde2d55ab34c2375f9d8e9a`.
-Developer-only experiment; independent implementation review pending at this checkpoint.
+Developer-only experiment; independently APPROVED at `b148a0aa96c4fbe487efac03d357d94f712889b0`.
 No production promotion, qualified singer, extra accepted unit or Beta GO.
 
 ## Decision
@@ -160,3 +160,66 @@ python3 -B -m tools.singing_quality.lf_control_diagnostics /absolute/comparison.
 Run diagnostics separately for every arm/build using the packet path printed by
 WORLD-LF-CONTROLS. Existing output files refuse overwrite. This completes the
 fixed experiment, not U6/U16: locally accepted roadmap progress stays 6/48.
+
+## Independent review and final checks
+
+Developer 2 APPROVED `b148a0aa96c4fbe487efac03d357d94f712889b0` against the baseline
+above, strictly as a developer-only experiment/diagnostic increment. The review
+covered all seven changed files and established no actionable blocking finding.
+Independent existing-binary CTest: ten cases each in Release/Debug (15.18/85.07 s);
+five focused Python cases pass. All four diagnostics were recomputed in memory and
+equal their retained JSON, with all documented binary/comparison/diagnostic hashes
+verified. Every voiced component is bitwise its corresponding retained original
+synthetic source times Float32(0.2).
+
+The reviewer independently decoded Float32 outputs with SciPy, verified geometry,
+finite samples, actual RMS/peaks and clean-pair output RMS ratios, and reproduced
+all reported counts, ranges and cross-arm/build comparisons. The original numeric
+conjunction was recalculated from recorded metrics; no new independent NCC/band
+oracle was implemented. Before/after content-tree hashes across six artifact roots
+match (4,529 retained files), preserving old assessments, calibration and comparisons.
+The reviewer did not rebuild, rerun the full Python discovery/Ruff/source-closure
+checks, or run broad product, installed, host, Windows or listening suites.
+
+Separately, the producer decoded all 364 raw output WAV records across both arms
+and builds without normalization/clipping: peaks match exactly, and independently
+measured fixed-window RMS ratios differ by at most 5.774e-15 from C++ records.
+All 44 over-unity records (11 unique constructions repeated across arms/builds)
+remain retained. Source closure passes after indexing the new files, and a real
+CLI attempt to overwrite an existing diagnostics file exits 2 with unchanged bytes.
+
+Approval does not enable production unvoicing or close U6/U16/U39, any additional
+roadmap unit, singer quality or Beta GO. The fixed LF experiment is now complete;
+do not extend it into another parameter-search framework.
+
+## Agreed next production slice: Spectral Classic formant automation
+
+The reviewer recommends, and source inspection confirms the opportunity for,
+independent accepted/manual Formant automation in the existing first-party sample
+renderer. `ScorePerformanceSample::formantSemitones` already exists; the sample
+snapshot factory rejects Formant intent, while `spectral_classic.cpp` already
+estimates/interpolates envelopes for pitch-linked preservation (`formantFollow`).
+That preservation knob is not independent authored formant shifting.
+
+Implementation scope within U39, without reducing the full plan:
+
+1. Consume absolute compiled formant semitones in Spectral Classic envelope
+   shaping independently of excitation F0 and destination duration. Preserve the
+   exact existing neutral path and bounded work/output; do not silently clip or
+   normalize away an error. Audit transient, unvoiced and release bypasses before
+   advertising support for those combinations.
+2. Connect normal snapshot/dispatcher/preview/export admission. Capabilities must
+   be renderer-specific, not a blanket SampleBank flag. Unsupported Raw/PSOLA/
+   Stretch or fallback combinations must refuse the required control truthfully.
+   Bind the algorithm revision and effective controls to cache/provenance.
+3. Verify real PCM and normal workflow: manual versus accepted ownership,
+   neutral/undo/reload, pitch/duration preservation, tempo and chunk continuity,
+   envelope movement and headroom using existing authorized fixtures. Exercise
+   the ordinary preview/export path, not only a direct DSP test.
+4. Keep numerical and listening/resource qualification separate. Neither a new
+   capability label nor fixture tests qualify a natural voice. Production
+   target-unvoicing, other mandatory expressions and full U6/U16/U39 remain open.
+
+No new corpus/training/download is needed for that implementation slice. No formant
+DSP or admission change has been implemented by this LF-panel commit; the above is
+the next agreed action, not a completion claim.
