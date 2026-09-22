@@ -1,6 +1,6 @@
 # SEAM 최종 진행도 및 마무리 계획 (2026-09-22)
 
-기준 리비전: `ed41968d` + 검증 완료된 네이티브 입력/상호교환 통합 배치(이 문서와 같은 커밋)
+기준 리비전: `c077cf5d` (기준 `ed41968d` + 검증·커밋·푸시 완료된 네이티브 입력/상호교환 통합 배치)
 성격: 코드·테스트·계약 실행 증거에 기반한 진행도 평가와 마무리 작업 계획. 이 문서는 구현 승인, 단위 승인, 출시 승인을 새로 부여하지 않는다.
 이전 점검 문서: `SEAM_PROGRESS_AND_FINISHING_PLAN_2026-09-22_KO.md` (20:11 KST 시점 기록, 그대로 보존)
 
@@ -29,17 +29,24 @@
 | Release 가수/설계/설명 대상 | **4/4 통과, 23.47초** | voice_designer, voice_design, original_singer_song_journey, formant_expression. 기존 곡 여정이 아직 살아 있음 |
 | 전체 제품 계약 Python 검사 | **44개 통과, 21.9초** | 검증기 정의·게이트 동작 증거이며 제품 합격 증거가 아님 |
 | 계약 실시간 판정 | 요구사항 20, 사례 83, 정의 오류 0, 미확정 13, 출시 리소스 0 | `matrixStatus=UNRESOLVED`, `evaluationProfile.status=UNRESOLVED` |
-| 추적 소스 완전성 | 이전 실패(미등록 7개) → 이번 커밋으로 해소 | 파일 유실이 아니라 통합 전 미등록 상태였음 |
-| 원격 `origin/master` | `ed41968d` (이번 배치 푸시 후 갱신 확인 필요) | 로컬 HEAD와 동일했음 |
+| 추적 소스 완전성 | 이전 실패(미등록 7개) → **`SOURCE_CLOSURE=PASS`** | 파일 유실이 아니라 통합 전 미등록 상태였음 |
+| 원격 `origin/master` | **`c077cf5d`** (푸시 후 `ls-remote`로 확인) | `ed41968d → 162adc60 → 2a797b96 → c077cf5d` |
+| Release 전체 스위트 | 181개 중 **176개 통과 / 5개 실패** | 실패 5개는 `phase12b_contract`, `macos_source_contract`(이번에 수정), 미빌드 실행 파일 2개, `inventory_preflight`. 아래에서 원인 분리 |
 
-### 이번에 실제로 고친 결함
+### 이번에 실제로 고친 결함 (모두 커밋·푸시 완료)
 
-1. **USTX 회귀 1건 (테스트 결함)**: `tests/test_ustx_interchange.cpp`의 낡은 단언이 "빈 배열도 손실"이라고 기대했다. 계약대로 **빈 메타데이터는 손실 0, 값이 있는 메타데이터는 경로별 손실 보고**로 단언을 교체했다. 단순 삭제가 아니라 양성/음성 대조를 함께 유지했다.
-2. **Release/Debug 양 구성 동시 통과**를 확인해 미커밋 배치를 커밋·푸시할 수 있는 상태로 만들었다.
+1. **USTX 회귀 1건 (테스트 결함)**: `tests/test_ustx_interchange.cpp`의 낡은 단언이 "빈 배열도 손실"이라고 기대했다. 계약대로 **빈 메타데이터는 손실 0, 값이 있는 메타데이터는 경로별 손실 보고**로 단언을 교체했다. 단순 삭제가 아니라 양성/음성 대조를 함께 유지했다. (162adc6)
+2. **녹음 대기 상태의 복구 경로 부재 (실제 결함)**: `RecordingInputSession::discardPending()`을 추가해 메모리 캡처만 폐기하고 이미 저장된 WAV는 사용자 데이터로 보존한다. Studio에서 `X`가 폐기를 수행하고, 복구 재추출은 1회로 제한하며 두 번째 시도는 실행 가능한 안내 메시지로 거부한다. 회귀 테스트가 폐기 후 파일 바이트 동일성, 무효 폐기/승인 거부, 새 테이크 시작을 검증한다. (2a797b9)
+3. **macOS 소스 계약 드리프트 (테스트 결함)**: `test_voicebank_studio_exposes_a_fail_closed_recording_probe`가 Studio 내부 `recording_.clear()`를 찾고 있었다. 수명주기가 세션 API로 이동했으므로 계약을 실제 소유자로 옮기고, 실패한 내보내기가 승인보다 먼저 반환하며 승인/폐기 둘 다 pending을 요구한다는 단언을 추가했다. (c077cf5)
+4. **Release/Debug 양 구성 동시 통과**를 확인해 미커밋 배치를 커밋·푸시할 수 있는 상태로 만들었다.
 
-### 이번에 고치지 않고 남긴 것 (소스 수준으로 확인된 결함)
+### 이번에 고치지 않고 남긴 것 (소스/실행 수준으로 확인)
 
-- **녹음 대기 상태의 복구 경로 부재(소스 파생)**: WAV는 저장됐지만 해시 검증이 실패한 경우, 재시도는 항상 `Conflict`를 반환하고 `RecordingInputSession`에 폐기/재추출 API가 없다. 앱을 강제 종료하지 않고 빠져나갈 수 있는 명시적 복구·폐기 동작이 필요하다. 실제 UI 재현은 아직 하지 않았다.
+- **전체 스위트의 기존 실패 4건 (이번 변경과 무관, 확인 완료)**:
+  - `seam_phase12b_contract`: CLAP 편집기에서 `EditorSceneState::SampleMicroscopeView`, `microscopeWaveformBounds`, `microscopeSpectrogramBounds` 토큰 누락.
+  - `seam_contextual_unit_selection_tests`, `seam_sample_microscope_tests`: 실행 파일이 빌드 트리에 없어 `Not Run`. 이번에 개별 빌드하면 생성된다.
+  - `seam_inventory_preflight_tests`: "the CLI preflights a campaign into the directory its gate reads" 1건 실패(캠페인 정의가 동결 입력과 다름). 전체를 재실행하면 통과할 수 있는지 확인이 필요하다. 어느 것도 이번 배치가 만든 회귀는 아니다.
+- **아직 남은 것 (이번 배치 범위 밖)**:
 - **네이티브 모달 실제 조작 미검증**: AppKit 검토 대화상자 코드는 존재하지만 Return/Escape, 포커스 복원, 긴 텍스트 스크롤, 작은 화면은 실행 검증이 없다(이전 시도는 Mac 잠금으로 실패).
 - **실제 마이크 장치·권한·분리 동작 미검증**: 주입된 장치 팩토리 테스트는 하드웨어 증거가 아니다.
 - **CLAP 임베디드 편집기 상호교환 미구현**, **실제 OpenUtau/DAW 교환 미검증**.
