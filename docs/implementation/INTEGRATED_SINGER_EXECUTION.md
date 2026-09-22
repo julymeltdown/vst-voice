@@ -1,6 +1,6 @@
 # Integrated Singer Execution
 
-## U6 neural envelope and melisma parity verified; review pending (2026-09-22)
+## U6 neural envelope and melisma parity independently approved (2026-09-22)
 
 The cross-renderer audit reproduced two neural control losses. Explicit
 post-note phonetic extensions reopened completed staccato/release gates
@@ -20,8 +20,11 @@ release, following-note isolation, C4-G4-E4 continuation, actual acoustic token
 inputs, tempo/vibrato and block-independent shared gain. Fresh builds and eleven
 selected targets pass in each configuration: Release 1,027 case executions in
 25.66 seconds; Debug 1,158 in 164.78 seconds. Captured-teacher Python tests pass
-12/12; source closure and whitespace checks pass. Exact-commit review remains
-pending. No learned-model inference, training or listening
+12/12; source closure and whitespace checks pass. Developer 2 APPROVED
+fa93709d17ce0f749a6698a93e1eaae071503240, independently passing 107 focused case
+executions in each configuration (214 total), with no actionable scoped finding.
+The broad/Python results were not independently rerun. An earlier interrupted
+review acknowledgement was not counted as approval. No learned-model inference, training or listening
 acceptance is claimed. See U6_NEURAL_MUSICAL_CONTROL_PARITY_2026-09-22.md. Full U6
 and Beta remain open; no new complete unit is counted.
 

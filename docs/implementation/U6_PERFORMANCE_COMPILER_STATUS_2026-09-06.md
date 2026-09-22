@@ -11,7 +11,9 @@ syllables and explicit shifted boundaries stay separate. Three regressions first
 reproduced these two integration defects. Four new cases now cover tail/neighbor
 ownership, melisma acoustic inputs, tempo/vibrato and multi-rate shared-gain
 parity. Eleven selected targets pass per configuration (Release 1,027 and Debug
-1,158 case executions), plus 12 Python tests. Independent review is pending. See
+1,158 case executions), plus 12 Python tests. Developer 2 APPROVED
+`fa93709d17ce0f749a6698a93e1eaae071503240`, independently passing 107 focused
+cases per configuration with no actionable finding in this increment. See
 `U6_NEURAL_MUSICAL_CONTROL_PARITY_2026-09-22.md`. No full U6 or singer qualification
 is claimed; older entries below describe historical checkpoints.
 

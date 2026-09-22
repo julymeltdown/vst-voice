@@ -3,6 +3,8 @@
 Date: 2026-09-22. Baseline: `7513d3e47bbf96bfcf9fdd2569e696169c15c0f5`.
 Scope: shared musical-envelope authority and neural continuation conditioning.
 The complete U6 and full-product Beta contracts remain open.
+Developer 2 APPROVED the bounded increment at
+`fa93709d17ce0f749a6698a93e1eaae071503240`.
 
 ## Audit findings reproduced before repair
 
@@ -119,9 +121,29 @@ Fresh builds and all eleven selected CTest targets pass on the complete tree:
 Logs: `build/debug/u6-controls-final-{build,ctest}.log` and
 `build-u4-macos/u6-controls-final-{build,ctest}.log`. Earlier focused runs and
 red regressions are retained separately. Debug has warnings-as-errors disabled;
-the production Release build is strict. Independent exact-commit review remains
-pending. The installed singer journey is the automated development fixture,
+the production Release build is strict. The installed singer journey is the automated development fixture,
 not unaided creator, DAW, platform-distribution or perceptual acceptance.
+
+## Completed independent review
+
+Developer 2 APPROVED `fa93709d17ce0f749a6698a93e1eaae071503240` against the
+baseline above, with no actionable defects found in the tail-gate or melisma
+token-boundary repairs. The reviewer inspected the complete diff, surrounding
+continuation/ownership and timing validation, original phone-owner evaluation,
+post-control token joining, DiffSinger consumers and render-identity bindings.
+
+Independent existing-binary reruns passed in both Release and Debug: neural
+protocol 30/30, compiler 22/22, performance snapshots 48/48 and neural snapshots
+7/7. That is 107 case executions per configuration, 214 total, with all eight
+executions exiting zero. Exact HEAD, clean worktree and baseline-to-candidate
+whitespace checks were verified. No independent rebuild, monolithic run, other
+selected suite, Python run or historical red-run replay is claimed.
+
+The first review attempt was interrupted and ended with an acknowledgement,
+not a verdict; it was not counted as approval. The completed resumed review
+above is the sign-off. It approves this increment's input/control/finalization
+correctness, not full U6, trained-singer quality, Windows/installed-host or Beta
+acceptance. Historical listening material remains unmodified.
 
 ## U6 criterion map and remaining boundary
 
