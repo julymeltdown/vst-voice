@@ -1,0 +1,162 @@
+{
+  "schemaVersion": 1,
+  "repository": "https://github.com/mmorise/World",
+  "revision": "f8dd5fb289db6a7f7f704497752bf32b258f9151",
+  "referenceOpenUtauRevision": "8c0dc4007e6e8c8181f3a12c10205671800eeb8b",
+  "scope": "Source-only offline developer comparison: unpatched upstream and separately prepared exact OpenUtau D4C-guard variant. No media, models or upstream test fixtures; full patch retained for provenance, not fully applied.",
+  "files": [
+    {
+      "path": "LICENSE.txt",
+      "gitBlobSha1": "1c12e7699545c3f2a4340f339664c6925de4d634",
+      "size": 2808
+    },
+    {
+      "path": "src/cheaptrick.cpp",
+      "gitBlobSha1": "a2f9b198f08c275c3ef9a2977940fcece30d6912",
+      "size": 9805
+    },
+    {
+      "path": "src/codec.cpp",
+      "gitBlobSha1": "7d56f5df37f556a9fecf1c4fbcf08eb9ccaee29b",
+      "size": 13637
+    },
+    {
+      "path": "src/common.cpp",
+      "gitBlobSha1": "c44ecaeab0a284ef188492368ff75fe0e2367c4f",
+      "size": 9032
+    },
+    {
+      "path": "src/d4c.cpp",
+      "gitBlobSha1": "4e8104229d37eb4a0091012c7dce2e77e7a2ab31",
+      "size": 17515
+    },
+    {
+      "path": "src/dio.cpp",
+      "gitBlobSha1": "ec623d9e1f6fda0670334c7096e7f9763b6bf86a",
+      "size": 28107
+    },
+    {
+      "path": "src/fft.cpp",
+      "gitBlobSha1": "403db5f682cd258ae68859c8a9a97af664f3f4fa",
+      "size": 60885
+    },
+    {
+      "path": "src/harvest.cpp",
+      "gitBlobSha1": "762c24513f25e8f95a622bb7bc7762d037a54387",
+      "size": 52328
+    },
+    {
+      "path": "src/matlabfunctions.cpp",
+      "gitBlobSha1": "cbe93a82016983a884959e4173061ce2253f3e44",
+      "size": 9766
+    },
+    {
+      "path": "src/stonemask.cpp",
+      "gitBlobSha1": "e46b9d2db342a474f2975669856ff395eb5751fd",
+      "size": 9465
+    },
+    {
+      "path": "src/synthesis.cpp",
+      "gitBlobSha1": "458d1c5ae30a55cbbcbbec858de2dab8b51ef696",
+      "size": 16171
+    },
+    {
+      "path": "src/synthesisrealtime.cpp",
+      "gitBlobSha1": "e2ff34d892ee6cbb2821e76a4be99af616392245",
+      "size": 22534
+    },
+    {
+      "path": "src/world/cheaptrick.h",
+      "gitBlobSha1": "0d027a4b9f35806f39604fcad305c80c65320052",
+      "size": 3116
+    },
+    {
+      "path": "src/world/codec.h",
+      "gitBlobSha1": "7413cfa3be102a71818ad6c8f85b136fdd678272",
+      "size": 3402
+    },
+    {
+      "path": "src/world/common.h",
+      "gitBlobSha1": "34e2519fe6ad10722e5fed7952b758f2548408e7",
+      "size": 4890
+    },
+    {
+      "path": "src/world/constantnumbers.h",
+      "gitBlobSha1": "bde4be8613ed936b0173cbb1723ac236d78fd3ae",
+      "size": 1722
+    },
+    {
+      "path": "src/world/d4c.h",
+      "gitBlobSha1": "d4878f2050593a8e769ea033008221b7678e05f6",
+      "size": 1883
+    },
+    {
+      "path": "src/world/dio.h",
+      "gitBlobSha1": "7888986fb7b80e4acbff2fa5d202196af5984b78",
+      "size": 2327
+    },
+    {
+      "path": "src/world/fft.h",
+      "gitBlobSha1": "217dc956a53114edd1e231779887f394d9ddd1c3",
+      "size": 1275
+    },
+    {
+      "path": "src/world/harvest.h",
+      "gitBlobSha1": "49b10dc0965e02a9301f19fa245f604744226d3a",
+      "size": 2253
+    },
+    {
+      "path": "src/world/macrodefinitions.h",
+      "gitBlobSha1": "ced5b37afe470bfdedef05cd2361380b7ff13b48",
+      "size": 4636
+    },
+    {
+      "path": "src/world/matlabfunctions.h",
+      "gitBlobSha1": "c2cc98780e4af9cfbb460536abf4637b7e548f9d",
+      "size": 6552
+    },
+    {
+      "path": "src/world/stonemask.h",
+      "gitBlobSha1": "89c86980dca109df264f4e9f2d7a2b96fa7a1025",
+      "size": 1149
+    },
+    {
+      "path": "src/world/synthesis.h",
+      "gitBlobSha1": "fbc5fd2bb21b7b62d0c191759b0b1f33b3245941",
+      "size": 1460
+    },
+    {
+      "path": "src/world/synthesisrealtime.h",
+      "gitBlobSha1": "a8c5b6592c4c8a6d5dabfba23ee95abf4f1187b1",
+      "size": 5096
+    }
+  ],
+  "guardVariant": {
+    "id": "openutau-d4c-guard",
+    "description": "Only the exact D4C denominator guard extracted from the pinned OpenUtau patch; no synthesis/ABI changes.",
+    "d4c": {
+      "path": "src/d4c.cpp",
+      "size": 17675,
+      "gitBlobSha1": "bfebadf609bcd107b82f53742ee63d86a4e02183",
+      "sha256": "28fdbe66ef6d8c5aaca63b35aa04471accc6aaf3f9830935ae8c068ed6addfa6"
+    },
+    "fullPatch": {
+      "path": "OPENUTAU_WORLD_FULL_REFERENCE.patch",
+      "size": 5794,
+      "gitBlobSha1": "ae0d4156958ad7c6d7f54a356aa3febe653e3f35",
+      "sha256": "daba7824bfe790455a2d37770254fbcea535fae67b5d32b1d739298f5ec7fd89"
+    },
+    "guardHunk": {
+      "path": "OPENUTAU_D4C_GUARD.patch",
+      "size": 656,
+      "gitBlobSha1": "897b87798927f5478405462e599f29a32d98b255",
+      "sha256": "e3c30ca24cf523f339108db3b62b181e7bff48e46f14e4abd8d49aa3233a581a"
+    },
+    "license": {
+      "path": "OPENUTAU_REFERENCE_LICENSE.txt",
+      "size": 1074,
+      "gitBlobSha1": "4fd6a32829054a6c0671d7d7f032a0b3a139a4a9",
+      "sha256": "cdef6370f9e705c804fd1acbe1b1c65027c13186c466b51ccb0323d5607cc9c4"
+    }
+  }
+}

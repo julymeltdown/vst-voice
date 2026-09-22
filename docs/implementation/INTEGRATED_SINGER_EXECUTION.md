@@ -1,5 +1,31 @@
 # Integrated Singer Execution
 
+## U16 WORLD comparison and source-frequency diagnosis (2026-09-22)
+
+An opt-in, default-OFF reference compares the existing SEAM experiment with pinned
+upstream WORLD and a separately prepared exact OpenUtau D4C-denominator-guard arm.
+Unmodified upstream retains six synthetic AP-NaN rejections; the guard resolves
+those execution errors and its six synthetic unvoicing conjunctions pass. The
+three hypotheses on the SAME speech clip all still fail. Within each build the
+guard leaves speech analysis/output bytes unchanged. No production path changes.
+
+Fresh Release/Debug builds pass three selected targets / ten engineering cases
+each (5.41/31.99 s). Python: 57 passed, four native workflow cases explicitly
+skipped. Producer verification checks 372 hashes, 216 arrays and 36 AP admissions.
+Cross-arm source/time/F0/envelope identities match; cross-build results have small
+floating-point differences and are not advertised as bit-identical. A fresh
+default-OFF configure excludes the reference targets/sources.
+
+New additive source diagnostics find 98.304028% of the frozen speech window's
+rectangular DFT energy below 71 Hz, with only 1.072111% in DC. Direct standard-
+library DFT and Developer 2's independent SciPy/NumPy check agree. The original
+retained recording shows the same pattern near the documented crop. This is a
+source-suitability concern and plausible contributor, not a proven exclusive
+cause, API/gain exoneration, or reversal of any historical FAIL. The next acoustic
+step is a predeclared clean/LF-contaminated control panel, then source-only corpus
+stratification. See U16_WORLD_REFERENCE_COMPARISON_2026-09-22.md for exact pins,
+results and non-claims. Implementation review is pending; no unit or Beta GO.
+
 ## U6 oracle calibration: resonant noise exposes an excitation-classifier limit (2026-09-22)
 
 An additive, predeclared 168-control grid reuses the exact unchanged C++

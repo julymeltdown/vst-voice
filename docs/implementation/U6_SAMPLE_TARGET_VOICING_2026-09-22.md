@@ -60,6 +60,12 @@ measurement oracle independent of that synthesis parameter. The intermediate
 391.995-Hz run that also changed the oracle lag is not acceptance evidence.
 Both fixed-oracle cases are now rerun and recorded by the same executable.
 
+Subsequent additive WORLD/source-frequency diagnostics found that 98.304028% of
+this fixed speech window's rectangular spectral energy is below 71 Hz, mostly
+not DC. See U16_WORLD_REFERENCE_COMPARISON_2026-09-22.md. This materially limits
+its use as representative voiced material; it neither changes these FAILs nor
+qualifies the converter. The source, oracle and thresholds remain frozen.
+
 `assessment.json` distinguishes `executionStatus: PASS` from computed
 `acousticAssessment: FAIL`, and records `productionEnabled: false`,
 `releaseEligible: false`, `listeningStatus: NOT_REVIEWED`, exact thresholds,

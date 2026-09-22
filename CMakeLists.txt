@@ -1644,6 +1644,12 @@ if(SEAM_BUILD_TESTS)
     set_tests_properties(seam_sample_target_voicing_experiment_tests PROPERTIES TIMEOUT 120 LABELS "developer-experiment;acoustic-assessment-fail")
   endif()
 
+  option(SEAM_ENABLE_WORLD_REFERENCE_EXPERIMENT
+    "Build an offline developer-only comparison against explicitly pinned external WORLD source" OFF)
+  if(SEAM_ENABLE_WORLD_REFERENCE_EXPERIMENT)
+    include(cmake/WorldReferenceExperiment.cmake)
+  endif()
+
   add_executable(seam_style_blending_tests tests/test_main.cpp tests/test_style_blending.cpp)
   target_include_directories(seam_style_blending_tests PRIVATE tests)
   target_link_libraries(seam_style_blending_tests PRIVATE seam_application seam_rendering seam_voicebank seam_formats)

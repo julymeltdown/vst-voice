@@ -10,6 +10,19 @@ Reviewed for functional and architectural comparison; no source code or assets w
 - Rejected: USTX as Project SEAM's canonical model, external-resampler process model, UI replication.
 - Copied code: No.
 
+## WORLD offline reference comparison (2026-09-22)
+
+- Source: https://github.com/mmorise/World at `f8dd5fb289db6a7f7f704497752bf32b258f9151`.
+- This is OpenUtau `8c0dc4007e6e8c8181f3a12c10205671800eeb8b`'s upstream pin. One arm is unmodified; a separate arm applies only the exact D4C denominator guard from that revision's patch. Neither uses its full patch or renderer.
+- Studied: separate analysis F0, spectral envelope and aperiodicity; fixed-input reconstruction and forced-unvoiced synthesis.
+- Adopted: an explicit default-OFF developer reference target, not a production renderer or fallback.
+- External inputs: 25 pinned upstream source/header/license files; the separate guard directory also retains the full patch, extracted hunk and OpenUtau license. Bytes are verified against Git blobs, explicit SHA-256 pins where supplied, and a derived manifest at configure/build/run.
+- Guard provenance: full patch SHA-256 `daba7824bfe790455a2d37770254fbcea535fae67b5d32b1d739298f5ec7fd89`; extracted hunk `e3c30ca24cf523f339108db3b62b181e7bff48e46f14e4abd8d49aa3233a581a`; resulting D4C file `28fdbe66ef6d8c5aaca63b35aa04471accc6aaf3f9830935ae8c068ed6addfa6`.
+- License: WORLD BSD-style notice and OpenUtau MIT notice (copyright 2014 StAkira) are retained in the relevant external directories. No reference binary is installed or packaged with SEAM.
+- Copied code into SEAM repository: No. External upstream C++ is compiled only for the opt-in comparison; the first-party adapter calls its public API.
+- Copied media/models/voicebanks: No. The comparison uses the existing frozen SEAM speech fixture and independently generated controls.
+- Evidence/policy: `docs/implementation/U16_WORLD_REFERENCE_COMPARISON_2026-09-22.md`; numerical results cannot substitute for listening or U16 qualification.
+
 ## vLabeler
 
 - Source: https://github.com/sdercolin/vlabeler

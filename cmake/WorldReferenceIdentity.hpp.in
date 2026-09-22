@@ -1,0 +1,14 @@
+#pragma once
+#include <array>
+#include <string_view>
+#include <utility>
+namespace seam::world_reference {
+inline constexpr std::string_view variant = "@SEAM_WORLD_VARIANT@";
+inline constexpr std::string_view revision = "@SEAM_WORLD_REVISION@";
+inline constexpr std::string_view lockSha256 = "@SEAM_WORLD_LOCK_SHA256@";
+inline constexpr std::string_view sourceManifestSha256 = "@SEAM_WORLD_SOURCE_MANIFEST_SHA256@";
+inline constexpr std::string_view compiler = "@CMAKE_CXX_COMPILER_ID@ @CMAKE_CXX_COMPILER_VERSION@";
+inline constexpr std::string_view configuration = "@CMAKE_BUILD_TYPE@";
+inline constexpr std::array<std::pair<std::string_view, std::string_view>, @SEAM_WORLD_FILE_COUNT@> files{{
+@SEAM_WORLD_FILE_INITIALIZERS@}};
+}
