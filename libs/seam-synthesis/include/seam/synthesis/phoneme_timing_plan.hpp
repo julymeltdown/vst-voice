@@ -7,7 +7,7 @@
 
 namespace seam::synthesis {
 enum class PhonemeTimingPolicy { SourceDependent, ProceduralInNote };
-inline constexpr std::uint32_t kProceduralTimingPolicyRevision = 5U;
+inline constexpr std::uint32_t kProceduralTimingPolicyRevision = 6U;
 struct PhonemeTimingAnchor final {
   domain::PhonemeKey key;
   time::SampleFrame nucleusFrame{0};

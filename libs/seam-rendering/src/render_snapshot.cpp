@@ -354,7 +354,7 @@ core::Result<domain::VocalRegion> extractPhraseRegion(
 core::Result<domain::Project> extractPhraseProject(
     const domain::Project& source,
     domain::TrackId trackId,
-    const PhraseSegment& segment) {
+    const PhraseSegment& segment, bool includeRegionTiming = false) {
   const auto* sourceTrack = source.findVocalTrack(trackId);
   const auto* sourceRegion = sourceTrack == nullptr
       ? nullptr
@@ -371,7 +371,10 @@ core::Result<domain::Project> extractPhraseProject(
   result.settings().snapEnabled = false;
   result.settings().snapGrid = time::Tick{source.ppq()};
 
-  const auto absolutePhraseEnd = sourceRegion->startTick + segment.endTick;
+  // Complete-region adapters admit explicit phonetic tails after the final
+  // note. Preserve the tempo used to check that region's real frame boundary.
+  const auto absolutePhraseEnd = sourceRegion->startTick +
+      (includeRegionTiming ? sourceRegion->durationTick : segment.endTick);
   for (const auto& event : source.tempoMap().events()) {
     if (event.tick > absolutePhraseEnd) break;
     const auto inserted = result.tempoMap().addOrReplace(event.tick, event.bpm);
@@ -743,7 +746,7 @@ core::Result<RenderSnapshot> RenderSnapshotFactory::createProcedural(
     segment.endTick = std::max(segment.endTick, note.endTick());
     segment.noteIds.push_back(note.id);
   }
-  auto frozenProject = extractPhraseProject(project, trackId, segment);
+  auto frozenProject = extractPhraseProject(project, trackId, segment, true);
   if (!frozenProject) return core::Result<RenderSnapshot>{frozenProject.error()};
   const auto* frozenRegion = frozenProject.value().findRegion(regionId);
   const auto performance = synthesis::compileScorePerformance(frozenProject.value(), *frozenRegion, sampleRate,
@@ -757,7 +760,9 @@ core::Result<RenderSnapshot> RenderSnapshotFactory::createProcedural(
     const auto timing = voice_design::validateVowelTiming(performance.value());
     if (!timing) return core::Result<RenderSnapshot>{timing.error()};
   }
-  const synthesis::PhraseFrameRange context{performance.value().notes().front().startFrame, performance.value().notes().back().endFrame};
+  const auto fullContext = performance.value().phoneticContext();
+  if (!fullContext) return core::Result<RenderSnapshot>{fullContext.error()};
+  const auto context = fullContext.value();
   const auto outputValid = synthesis::PhraseOutputContract{sampleRate, context, ownedFrames.value_or(context)}.validate();
   if (!outputValid) return core::Result<RenderSnapshot>{outputValid.error()};
   const auto identity = buildProceduralIdentity(frozenProject.value(), resource, pronunciation.value().identity,
@@ -837,7 +842,7 @@ core::Result<RenderSnapshot> RenderSnapshotFactory::createNeural(
     segment.endTick = std::max(segment.endTick, note.endTick());
     segment.noteIds.push_back(note.id);
   }
-  auto frozenProject = extractPhraseProject(project, trackId, segment);
+  auto frozenProject = extractPhraseProject(project, trackId, segment, true);
   if (!frozenProject) return core::Result<RenderSnapshot>{frozenProject.error()};
   const auto* frozenRegion = frozenProject.value().findRegion(regionId);
   if (!frozenRegion) return core::failure<RenderSnapshot>(core::ErrorCode::InvariantViolation,
@@ -850,8 +855,9 @@ core::Result<RenderSnapshot> RenderSnapshotFactory::createNeural(
   const auto performance = synthesis::compileScorePerformance(frozenProject.value(), *frozenRegion, sampleRate,
       pronunciation.value().pronunciation.tokens, synthesis::PhonemeTimingPolicy::ProceduralInNote);
   if (!performance) return core::Result<RenderSnapshot>{performance.error()};
-  const synthesis::PhraseFrameRange context{performance.value().notes().front().startFrame,
-      performance.value().notes().back().endFrame};
+  const auto fullContext = performance.value().phoneticContext();
+  if (!fullContext) return core::Result<RenderSnapshot>{fullContext.error()};
+  const auto context = fullContext.value();
   const auto outputValid = synthesis::PhraseOutputContract{sampleRate, context, ownedFrames.value_or(context)}.validate();
   if (!outputValid) return core::Result<RenderSnapshot>{outputValid.error()};
   const auto identity = buildNeuralIdentity(frozenProject.value(), bundle, pronunciation.value().identity,
@@ -887,8 +893,9 @@ core::Result<std::vector<RenderSnapshot>> RenderSnapshotFactory::splitOwnedOutpu
         source.sampleRate != source.compiledPerformance->sampleRate() ||
         source.sampleRate != source.neuralExecution->metadata().model.sampleRate)
       return core::failure<Output>(core::ErrorCode::InvalidArgument, "Neural chunk source is incomplete");
-    const auto& notes = source.compiledPerformance->notes();
-    const synthesis::PhraseFrameRange context{notes.front().startFrame, notes.back().endFrame};
+    const auto fullContext = source.compiledPerformance->phoneticContext();
+    if (!fullContext) return core::Result<Output>{fullContext.error()};
+    const auto context = fullContext.value();
     const auto valid = synthesis::PhraseOutputContract{source.sampleRate, context, output}.validate();
     if (!valid) return core::Result<Output>{valid.error()};
     if (source.ownedFrames && (output.start < source.ownedFrames->start || output.end > source.ownedFrames->end))

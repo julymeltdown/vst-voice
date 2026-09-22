@@ -13,7 +13,7 @@ struct FormantControlSpan final {
 // edges and tick interpolation, not caller chunk cuts, determine DSP changes.
 [[nodiscard]] FormantControlSpan nextFormantControlSpan(
     const synthesis::CompiledScorePerformance& performance, time::SampleFrame origin,
-    std::size_t maximumFrames) noexcept;
+    std::size_t maximumFrames, std::optional<domain::NoteId> phoneticOwner = {}) noexcept;
 
 // Stateful linear oral/nasal-resonance stage, not a complete voice renderer.
 // Input is finite normalized excitation; gainDb is relative band weighting.

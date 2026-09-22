@@ -15,8 +15,9 @@ core::Result<std::vector<voice_design::ProceduralPhoneMarker>> projectProcedural
   const auto anchors = snapshot.compiledPerformance->phonemeTiming();
   if (anchors.size() != snapshot.phonemes->tokens.size()) return core::failure<Output>(core::ErrorCode::Conflict,
       "Procedural marker timing differs from snapshot pronunciation");
-  const auto notes = snapshot.compiledPerformance->notes();
-  const auto owned = snapshot.ownedFrames.value_or(synthesis::PhraseFrameRange{notes.front().startFrame, notes.back().endFrame});
+  const auto context = snapshot.compiledPerformance->phoneticContext();
+  if (!context) return core::Result<Output>{context.error()};
+  const auto owned = snapshot.ownedFrames.value_or(context.value());
   Output result;
   if (voice_design::requiresArticulation(snapshot.phonemes->tokens)) {
     const auto plan = voice_design::ArticulationPlan::compileRecipe(
@@ -55,8 +56,9 @@ core::Result<std::string> validateProceduralSnapshot(const RenderSnapshot& snaps
   if (!region) return core::failure<std::string>(core::ErrorCode::NotFound, "Procedural snapshot region is missing");
   const auto phrase = voice_design::validateProceduralPhrase(*region, snapshot.phonemes->tokens);
   if (!phrase) return core::Result<std::string>{phrase.error()};
-  const synthesis::PhraseFrameRange context{snapshot.compiledPerformance->notes().front().startFrame,
-      snapshot.compiledPerformance->notes().back().endFrame};
+  const auto fullContext = snapshot.compiledPerformance->phoneticContext();
+  if (!fullContext) return core::Result<std::string>{fullContext.error()};
+  const auto context = fullContext.value();
   const auto valid = synthesis::PhraseOutputContract{snapshot.sampleRate, context, snapshot.ownedFrames.value_or(context)}.validate();
   if (!valid) return core::Result<std::string>{valid.error()};
   if (voice_design::requiresArticulation(snapshot.phonemes->tokens)) {
@@ -99,9 +101,11 @@ core::Result<ProceduralSnapshotStream> ProceduralSnapshotStream::create(
     if (!stream) return core::Result<ProceduralSnapshotStream>{stream.error()};
     return ProceduralSnapshotStream{std::move(snapshot), std::move(stream.value())};
   }
+  const auto context = performance.phoneticContext();
+  if (!context) return core::Result<ProceduralSnapshotStream>{context.error()};
   auto stream = voice_design::SustainedPoseStream::create(
       std::get<synthesis::ProceduralSingerResource>(snapshot.resource), performance,
-      vowel.value(), snapshot.style, {performance.notes().front().startFrame, performance.notes().back().endFrame},
+      vowel.value(), snapshot.style, context.value(),
       512U, stopToken);
   if (!stream) return core::Result<ProceduralSnapshotStream>{stream.error()};
   const auto scheduled = stream.value().configureVowels(*snapshot.project->findRegion(snapshot.segment.regionId), snapshot.phonemes->tokens);
@@ -134,9 +138,10 @@ core::Result<voice_design::SustainedPoseResult> ProceduralSnapshotStream::render
       "Procedural checkpoint belongs to another immutable snapshot context");
   const auto valid = validateProceduralSnapshot(snapshot);
   if (!valid) return core::Result<voice_design::SustainedPoseResult>{valid.error()};
-  const auto& notes = snapshot.compiledPerformance->notes();
-  const auto owned = snapshot.ownedFrames.value_or(synthesis::PhraseFrameRange{notes.front().startFrame, notes.back().endFrame});
-  const auto allowed = snapshot_.ownedFrames.value_or(synthesis::PhraseFrameRange{notes.front().startFrame, notes.back().endFrame});
+  const auto context = snapshot.compiledPerformance->phoneticContext();
+  if (!context) return core::Result<voice_design::SustainedPoseResult>{context.error()};
+  const auto owned = snapshot.ownedFrames.value_or(context.value());
+  const auto allowed = snapshot_.ownedFrames.value_or(context.value());
   if (owned.start < allowed.start || owned.end > allowed.end) return core::failure<voice_design::SustainedPoseResult>(
       core::ErrorCode::Conflict, "Procedural checkpoint cannot expand its source output ownership");
   if (auto* vowel = std::get_if<voice_design::SustainedPoseStream>(&stream_)) return vowel->renderOwned(owned, stopToken);
@@ -169,19 +174,21 @@ core::Result<PhrasePipelineResult> PhraseRenderPipeline::render(
           "Neural snapshot disagrees with its admitted model identity");
     if (stopToken.stop_requested()) return core::failure<PhrasePipelineResult>(core::ErrorCode::Conflict,
         "Neural phrase rendering cancelled");
+    const auto context = snapshot.compiledPerformance->phoneticContext();
+    if (!context) return core::Result<PhrasePipelineResult>{context.error()};
+    const auto owned = snapshot.ownedFrames.value_or(context.value());
+    const auto outputValid = synthesis::PhraseOutputContract{snapshot.sampleRate, context.value(), owned}.validate();
+    if (!outputValid) return core::Result<PhrasePipelineResult>{outputValid.error()};
     auto rendered=neuralRunner_->render(snapshot,stopToken);
     if (!rendered) return core::Result<PhrasePipelineResult>{rendered.error()};
     // A model result carries no sample units or procedural markers. Reject a
     // runner that fabricated either instead of forwarding it downstream.
     if (!rendered.value().placements.empty()) return core::failure<PhrasePipelineResult>(
         core::ErrorCode::InvariantViolation,"Neural runner returned sample placement metadata");
-    if (snapshot.ownedFrames) {
-      const auto expected=static_cast<std::size_t>(snapshot.ownedFrames->end-snapshot.ownedFrames->start);
-      if (rendered.value().audio.startFrame!=snapshot.ownedFrames->start ||
-          rendered.value().audio.samples.size()!=expected)
-        return core::failure<PhrasePipelineResult>(core::ErrorCode::Conflict,
-            "Neural audio does not cover its declared owned window exactly");
-    }
+    const auto expected=static_cast<std::size_t>(owned.end-owned.start);
+    if (rendered.value().audio.startFrame!=owned.start || rendered.value().audio.samples.size()!=expected)
+      return core::failure<PhrasePipelineResult>(core::ErrorCode::Conflict,
+          "Neural audio does not cover its declared owned window exactly");
     return PhrasePipelineResult{.phonemes=*snapshot.phonemes,.unitPlan={},.timing={},
         .rendered=std::move(rendered).value(),.resourceKind=domain::SingerResourceKind::Neural,
         .proceduralMarkers={}};

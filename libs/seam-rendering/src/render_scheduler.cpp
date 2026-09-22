@@ -120,8 +120,9 @@ core::Result<void> BackgroundRenderScheduler::submitSnapshot(RenderSnapshot snap
   { std::scoped_lock lock{mutex_}; checkpointEpoch = epoch_; }
   auto outputFrames = frozen->ownedFrames;
   if (!outputFrames && std::holds_alternative<synthesis::ProceduralSingerResource>(frozen->resource)) {
-    outputFrames = synthesis::PhraseFrameRange{frozen->compiledPerformance->notes().front().startFrame,
-        frozen->compiledPerformance->notes().back().endFrame};
+    const auto context = frozen->compiledPerformance->phoneticContext();
+    if (!context) return core::Result<void>{context.error()};
+    outputFrames = context.value();
   }
   std::vector<voice_design::ProceduralPhoneMarker> markers;
   if (std::holds_alternative<synthesis::ProceduralSingerResource>(frozen->resource)) {
@@ -144,8 +145,9 @@ core::Result<void> BackgroundRenderScheduler::submitSnapshot(RenderSnapshot snap
 
 core::Result<synthesis::PhraseAudio> BackgroundRenderScheduler::renderProcedural(
     const RenderSnapshot& snapshot, std::uint64_t epoch, std::stop_token token) {
-  const auto start = snapshot.ownedFrames ? snapshot.ownedFrames->start :
-      snapshot.compiledPerformance->notes().front().startFrame;
+  const auto context = snapshot.compiledPerformance->phoneticContext();
+  if (!context) return core::Result<synthesis::PhraseAudio>{context.error()};
+  const auto start = snapshot.ownedFrames.value_or(context.value()).start;
   const auto group = snapshotGroupId(snapshot);
   std::shared_ptr<const ProceduralSnapshotStream> checkpoint;
   {

@@ -188,6 +188,31 @@ TEST_CASE("a standalone pause has score timing without inventing a vowel nucleus
   CHECK(unresolved); CHECK(!unresolved.value()[0].inferredStartFrame);
 }
 
+TEST_CASE("standalone closure and breath spans expose their existing note-owned start") {
+  using namespace seam;
+  TimingFixture fixture;
+  for (const auto role : {domain::PhonemeRole::Geminate, domain::PhonemeRole::Breath}) {
+    auto phones = fixture.tokens(); phones.resize(1U);
+    phones.front().symbol = role == domain::PhonemeRole::Geminate ? "cl" : "br";
+    phones.front().role = role; phones.front().voiced = false;
+    for (const auto end : {std::optional<time::Microseconds>{}, std::optional<time::Microseconds>{600000}}) {
+      phones.front().timing.endOffset = end;
+      const auto source = synthesis::compilePhonemeTimingPlan(fixture.project, fixture.region(), phones, 48000U); CHECK(source);
+      CHECK(!source.value().front().inferredStartFrame);
+      const auto resolved = synthesis::compilePhonemeTimingPlan(fixture.project, fixture.region(), phones, 48000U,
+          synthesis::PhonemeTimingPolicy::ProceduralInNote); CHECK(resolved);
+      CHECK(resolved.value().front().inferredStartFrame == std::optional{source.value().front().nucleusFrame});
+      CHECK(resolved.value().front().endFrame == source.value().front().endFrame);
+      CHECK(!resolved.value().front().nucleusKey); CHECK(!resolved.value().front().explicitStartFrame);
+      CHECK(!resolved.value().front().voiced.value());
+    }
+    phones.front().timing.startOffset = -10000;
+    const auto explicitStart = synthesis::compilePhonemeTimingPlan(fixture.project, fixture.region(), phones, 48000U,
+        synthesis::PhonemeTimingPolicy::ProceduralInNote); CHECK(explicitStart);
+    CHECK(explicitStart.value().front().explicitStartFrame); CHECK(!explicitStart.value().front().inferredStartFrame);
+  }
+}
+
 TEST_CASE("a standalone Japanese moraic nasal owns its note without becoming a vowel") {
   using namespace seam;
   TimingFixture fixture; fixture.region().lyrics.front().surface = U"ん";

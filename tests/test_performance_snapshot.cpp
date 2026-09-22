@@ -80,6 +80,158 @@ struct PerformanceSnapshotFixture final {
 
 }
 
+TEST_CASE("procedural production preserves region-contained phonetic pickup and release windows") {
+  using namespace seam;
+  for (const bool articulated : {false, true}) {
+    PerformanceSnapshotFixture fixture;
+    auto* region = fixture.project.findRegion(fixture.regionId);
+    region->notes.front().startTick = time::Tick{480};
+    region->notes.front().durationTick = time::Tick{480};
+    region->notes.front().vibrato.enabled = false;
+    region->notes.front().phoneticHint.reset();
+    region->lyrics.front().surface = articulated ? U"さ" : U"あ";
+    region->phonemeOverrides = {{.key = {fixture.noteId, 0U},
+        .timing = {.startOffset = -30000}, .locked = true}};
+    if (articulated) region->phonemeOverrides.push_back({.key = {fixture.noteId, 1U},
+        .timing = {.startOffset = 0, .endOffset = 280000}, .locked = true});
+    else region->phonemeOverrides.front().timing.endOffset = 280000;
+    voice_design::VoiceRecipe recipe; recipe.id = "phonetic-context";
+    recipe.poses = {{"a", "neutral", 0.0, {{700.0, 80.0, 0.0}, {1200.0, 100.0, -3.0}, {2600.0, 140.0, -6.0}}}};
+    recipe.frications = {{"s", "neutral", {.seed = 42U, .centerHz = 2500.0, .bandwidthHz = 1000.0}}};
+    const auto resource = voice_design::freezeVoiceRecipeResource(recipe); CHECK(resource);
+    for (const auto rate : {8000U, 44100U, 48000U, 192000U}) {
+      const auto snapshot = rendering::RenderSnapshotFactory{}.createProcedural(fixture.project, resource.value(),
+          fixture.trackId, fixture.regionId, 1U, rendering::RenderQuality::Final, rate);
+      if (!snapshot) throw test::Failure{"phonetic snapshot at " + std::to_string(rate) +
+          (articulated ? " articulated: " : " vowel: ") + snapshot.error().message};
+      const auto& note = snapshot.value().compiledPerformance->notes().front();
+      const auto extra = static_cast<time::SampleFrame>(rate * 30U / 1000U);
+      const synthesis::PhraseFrameRange extent{note.startFrame - extra, note.endFrame + extra};
+      const auto whole = rendering::PhraseRenderPipeline{}.render(snapshot.value()); CHECK(whole);
+      const auto& audio = whole.value().rendered.audio;
+      CHECK(audio.startFrame == extent.start);
+      CHECK(audio.samples.size() == static_cast<std::size_t>(extent.end - extent.start));
+      CHECK(std::any_of(audio.samples.begin(), audio.samples.begin() + extra, [](float x) { return x != 0.0F; }));
+      CHECK(std::any_of(audio.samples.end() - extra, audio.samples.end(), [](float x) { return x != 0.0F; }));
+      CHECK(whole.value().proceduralMarkers.front().ownedSpan.start == extent.start);
+      CHECK(whole.value().proceduralMarkers.back().ownedSpan.end == extent.end);
+      const auto chunks = rendering::RenderSnapshotFactory{}.splitOwnedOutput(snapshot.value(), extent, rate / 7U); CHECK(chunks);
+      std::vector<float> joined;
+      auto checkpoint = rendering::ProceduralSnapshotStream::create(snapshot.value()); CHECK(checkpoint);
+      for (const auto& chunk : chunks.value()) {
+        const auto part = rendering::PhraseRenderPipeline{}.render(chunk); CHECK(part);
+        const auto resumed = checkpoint.value().render(chunk); CHECK(resumed);
+        CHECK(resumed.value().audio.samples == part.value().rendered.audio.samples);
+        joined.insert(joined.end(), part.value().rendered.audio.samples.begin(), part.value().rendered.audio.samples.end());
+      }
+      CHECK(joined == audio.samples);
+      CHECK(!rendering::RenderSnapshotFactory{}.splitOwnedOutput(snapshot.value(), {extent.start - 1, extent.end}, rate));
+      CHECK(!rendering::RenderSnapshotFactory{}.splitOwnedOutput(snapshot.value(), {extent.start, extent.end + 1}, rate));
+      if (rate == 48000U) {
+        rendering::PcmCache cache{fixture.bankRoot / (articulated ? "articulated-context-cache" : "vowel-context-cache")};
+        rendering::BackgroundRenderScheduler scheduler{cache, 1U};
+        CHECK(scheduler.submitSnapshot(snapshot.value()));
+        CHECK(scheduler.waitIdle(std::chrono::seconds{20}));
+        const auto completed = scheduler.drainCompleted(); CHECK(completed.size() == 1U); CHECK(completed.front().pcm);
+        CHECK(completed.front().pcm->startFrame == extent.start);
+        CHECK(completed.front().pcm->samples == audio.samples);
+        for (const auto& chunk : chunks.value()) CHECK(scheduler.submitSnapshot(chunk));
+        CHECK(scheduler.waitIdle(std::chrono::seconds{20}));
+        const auto assembled = scheduler.assembleSnapshotCompletions(chunks.value(), scheduler.drainCompleted(), extent); CHECK(assembled);
+        CHECK(assembled.value().samples == audio.samples);
+      }
+    }
+    // Unlike a note box, the region is an actual publication boundary.
+    region->phonemeOverrides.front().timing.startOffset = -300000;
+    CHECK(!rendering::RenderSnapshotFactory{}.createProcedural(fixture.project, resource.value(),
+        fixture.trackId, fixture.regionId, 2U, rendering::RenderQuality::Final, 48000U));
+    region->startTick = time::Tick{0};
+    CHECK(!rendering::RenderSnapshotFactory{}.createProcedural(fixture.project, resource.value(),
+        fixture.trackId, fixture.regionId, 2U, rendering::RenderQuality::Final, 48000U));
+    region->phonemeOverrides.front().timing.startOffset = -250000;
+    const auto zero = rendering::RenderSnapshotFactory{}.createProcedural(fixture.project, resource.value(),
+        fixture.trackId, fixture.regionId, 2U, rendering::RenderQuality::Final, 48000U); CHECK(zero);
+    const auto zeroAudio = rendering::PhraseRenderPipeline{}.render(zero.value()); CHECK(zeroAudio);
+    CHECK(zeroAudio.value().rendered.audio.startFrame == 0);
+    // The old phone still owns its tail while the following score note is
+    // active. Changing that neighbour's pitch cannot rewrite the old tail.
+    auto pair = fixture.project;
+    auto* pairRegion = pair.findRegion(fixture.regionId);
+    auto [lyric, next] = fixture.factory.makeNote(time::Tick{960}, time::Tick{480}, 60U,
+        U"あ", domain::Language::Japanese);
+    const auto nextId = next.id;
+    pairRegion->lyrics.push_back(std::move(lyric)); pairRegion->notes.push_back(std::move(next));
+    pairRegion->phonemeOverrides.push_back({.key = {nextId, 0U}, .timing = {.startOffset = 30000}, .locked = true});
+    const auto renderPair = [&] {
+      const auto snapshot = rendering::RenderSnapshotFactory{}.createProcedural(pair, resource.value(),
+          fixture.trackId, fixture.regionId, 3U, rendering::RenderQuality::Final, 48000U); CHECK(snapshot);
+      const auto rendered = rendering::PhraseRenderPipeline{}.render(snapshot.value()); CHECK(rendered);
+      return rendered.value().rendered.audio;
+    };
+    const auto low = renderPair();
+    pairRegion->notes.back().midiKey = 84U;
+    const auto high = renderPair();
+    CHECK(low.startFrame == 0); CHECK(high.startFrame == 0);
+    CHECK(std::equal(low.samples.begin(), low.samples.begin() + 25440, high.samples.begin()));
+    CHECK(low.samples != high.samples);
+    pairRegion->notes.front().articulation = domain::NoteArticulation::Staccato;
+    const auto stopped = renderPair();
+    CHECK(std::all_of(stopped.samples.begin() + 18000, stopped.samples.begin() + 25440, [](float x) { return x == 0.0F; }));
+    CHECK(std::any_of(stopped.samples.begin() + 25440, stopped.samples.end(), [](float x) { return x != 0.0F; }));
+    // A tempo change after the last score note still defines the region edge.
+    region->durationTick = time::Tick{1920};
+    CHECK(fixture.project.tempoMap().addOrReplace(time::Tick{1440}, 600.0));
+    region->phonemeOverrides.back().timing.endOffset = 650000;
+    CHECK(!rendering::RenderSnapshotFactory{}.createProcedural(fixture.project, resource.value(),
+        fixture.trackId, fixture.regionId, 4U, rendering::RenderQuality::Final, 48000U));
+  }
+}
+
+TEST_CASE("articulated pickup with early release retains silent trailing output ownership") {
+  using namespace seam;
+  PerformanceSnapshotFixture fixture;
+  auto* region = fixture.project.findRegion(fixture.regionId);
+  region->notes.front().startTick = time::Tick{480}; region->notes.front().durationTick = time::Tick{480};
+  region->notes.front().phoneticHint.reset(); region->lyrics.front().surface = U"さ";
+  region->phonemeOverrides = {
+      {.key = {fixture.noteId, 0U}, .timing = {.startOffset = -30000}, .locked = true},
+      {.key = {fixture.noteId, 1U}, .timing = {.startOffset = 0, .endOffset = 200000}, .locked = true}};
+  voice_design::VoiceRecipe recipe; recipe.id = "early-release-context";
+  recipe.poses = {{"a", "neutral", 0.0, {{700.0, 80.0, 0.0}, {1200.0, 100.0, -3.0}, {2600.0, 140.0, -6.0}}}};
+  recipe.frications = {{"s", "neutral", {.seed = 42U}}};
+  const auto resource = voice_design::freezeVoiceRecipeResource(recipe); CHECK(resource);
+  const auto snapshot = rendering::RenderSnapshotFactory{}.createProcedural(fixture.project, resource.value(),
+      fixture.trackId, fixture.regionId, 1U, rendering::RenderQuality::Final, 48000U); CHECK(snapshot);
+  const auto& note = snapshot.value().compiledPerformance->notes().front();
+  const synthesis::PhraseFrameRange extent{note.startFrame - 1440, note.endFrame};
+  const auto whole = rendering::PhraseRenderPipeline{}.render(snapshot.value()); CHECK(whole);
+  const auto& pcm = whole.value().rendered.audio;
+  CHECK(pcm.startFrame == extent.start); CHECK(pcm.samples.size() == 13440U);
+  CHECK(whole.value().proceduralMarkers.back().ownedSpan.end == note.startFrame + 9600);
+  CHECK(std::all_of(pcm.samples.end() - 2400, pcm.samples.end(), [](float x) { return x == 0.0F; }));
+  CHECK(std::any_of(pcm.samples.begin(), pcm.samples.end() - 2400, [](float x) { return x != 0.0F; }));
+  const auto tail = rendering::RenderSnapshotFactory{}.splitOwnedOutput(snapshot.value(), {note.endFrame - 2400, note.endFrame}, 2400U); CHECK(tail);
+  const auto silent = rendering::PhraseRenderPipeline{}.render(tail.value().front()); CHECK(silent);
+  CHECK(silent.value().proceduralMarkers.empty());
+  CHECK(silent.value().rendered.audio.samples == std::vector<float>(2400U, 0.0F));
+  const auto chunks = rendering::RenderSnapshotFactory{}.splitOwnedOutput(snapshot.value(), extent, 6001U); CHECK(chunks);
+  auto checkpoint = rendering::ProceduralSnapshotStream::create(snapshot.value()); CHECK(checkpoint);
+  std::vector<float> joined;
+  rendering::PcmCache cache{fixture.bankRoot / "early-release-context-cache"};
+  rendering::BackgroundRenderScheduler scheduler{cache, 1U};
+  for (const auto& chunk : chunks.value()) {
+    const auto independent = rendering::PhraseRenderPipeline{}.render(chunk); CHECK(independent);
+    const auto resumed = checkpoint.value().render(chunk); CHECK(resumed);
+    CHECK(independent.value().rendered.audio.samples == resumed.value().audio.samples);
+    joined.insert(joined.end(), resumed.value().audio.samples.begin(), resumed.value().audio.samples.end());
+    CHECK(scheduler.submitSnapshot(chunk));
+  }
+  CHECK(joined == pcm.samples);
+  CHECK(scheduler.waitIdle(std::chrono::seconds{20}));
+  const auto assembled = scheduler.assembleSnapshotCompletions(chunks.value(), scheduler.drainCompleted(), extent); CHECK(assembled);
+  CHECK(assembled.value().samples == pcm.samples);
+}
+
 TEST_CASE("articulated snapshots preserve recipe timing PCM and markers through scheduler checkpoints") {
   using namespace seam;
   PerformanceSnapshotFixture fixture;
@@ -453,11 +605,13 @@ TEST_CASE("procedural vowel sequences transition poses across owned checkpoint b
   }
   CHECK(rampJoined == pcm);
   syllableRegion->phonemeOverrides[0].timing.startOffset = -1000;
-  CHECK(!rendering::RenderSnapshotFactory{}.createProcedural(syllables, resource.value(), f.trackId, f.regionId,
+  // Region-contained extensions are supported; the dedicated context test
+  // checks their PCM, bounds and complete-vs-window reconstruction.
+  CHECK(rendering::RenderSnapshotFactory{}.createProcedural(syllables, resource.value(), f.trackId, f.regionId,
       1U, rendering::RenderQuality::Preview, 48000U));
   syllableRegion->phonemeOverrides[0].timing.startOffset = 100000;
   syllableRegion->phonemeOverrides[1].timing.endOffset = 600000;
-  CHECK(!rendering::RenderSnapshotFactory{}.createProcedural(syllables, resource.value(), f.trackId, f.regionId,
+  CHECK(rendering::RenderSnapshotFactory{}.createProcedural(syllables, resource.value(), f.trackId, f.regionId,
       1U, rendering::RenderQuality::Preview, 48000U));
   syllableRegion->phonemeOverrides.clear();
   syllableRegion->lyrics.front().surface = U"あいあ";

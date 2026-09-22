@@ -2,13 +2,14 @@
 
 #include "seam/domain/project.hpp"
 #include "seam/synthesis/phoneme_timing_plan.hpp"
+#include "seam/synthesis/phrase_backend.hpp"
 #include <array>
 #include <optional>
 #include <span>
 #include <stop_token>
 
 namespace seam::synthesis {
-inline constexpr std::uint32_t kPerformanceCompilerRevision = 20U;
+inline constexpr std::uint32_t kPerformanceCompilerRevision = 21U;
 inline constexpr std::size_t kMaximumScoreVoiceAllocationNotes = 4096U;
 
 struct ScoreVoicePlan final {
@@ -94,19 +95,29 @@ struct ScoreNoteSpan final {
 class CompiledScorePerformance final {
 public:
   [[nodiscard]] ScorePerformanceSample at(time::SampleFrame absoluteFrame) const noexcept;
+  // For a resolved phone only: edge pitch/dynamics belong to its own note,
+  // never an overlapping neighbour. Timbral ownership remains at actual time.
+  [[nodiscard]] ScorePerformanceSample atPhonetic(time::SampleFrame absoluteFrame,
+      domain::NoteId owner) const noexcept;
+  // Union of score and resolved phonetic spans, bounded by the owning region.
+  // Source-dependent unresolved starts are not invented by this contract.
+  [[nodiscard]] core::Result<PhraseFrameRange> phoneticContext() const;
   [[nodiscard]] ScorePerformanceSample inspectAt(time::SampleFrame absoluteFrame) const noexcept;
   [[nodiscard]] std::span<const ScoreNoteSpan> notes() const noexcept { return notes_; }
   [[nodiscard]] std::uint32_t sampleRate() const noexcept { return sampleRate_; }
   [[nodiscard]] std::span<const PhonemeTimingAnchor> phonemeTiming() const noexcept { return phonemeTiming_; }
 private:
   [[nodiscard]] ScorePerformanceSample evaluate(time::SampleFrame absoluteFrame, bool inspect) const noexcept;
+  [[nodiscard]] const ScoreNoteSpan* findNote(domain::NoteId id) const noexcept;
   friend core::Result<CompiledScorePerformance> compileScorePerformance(
       const domain::Project&, const domain::VocalRegion&, std::uint32_t,
       std::span<const domain::PhonemeToken>, PhonemeTimingPolicy);
   std::vector<ScoreNoteSpan> notes_;
+  std::vector<std::pair<domain::NoteId, std::size_t>> noteIndex_;
   std::vector<PhonemeTimingAnchor> phonemeTiming_;
   time::TempoMap tempo_;
   time::Tick regionStart_;
+  time::Tick regionEnd_;
   std::uint32_t sampleRate_{48000U};
   domain::PitchAutomation pitch_;
   domain::DynamicsAutomation dynamics_;
@@ -149,7 +160,7 @@ private:
     PhonemeTimingPolicy policy = PhonemeTimingPolicy::SourceDependent);
 [[nodiscard]] core::Result<void> applyCompiledPerformanceGain(std::span<float> samples,
     const CompiledScorePerformance& performance, time::SampleFrame origin,
-    std::stop_token stopToken = {});
+    std::stop_token stopToken = {}, std::optional<domain::NoteId> phoneticOwner = {});
 struct CompiledVoicePerformance final {
   std::vector<domain::NoteId> noteIds;
   CompiledScorePerformance performance;

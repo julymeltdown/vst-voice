@@ -208,14 +208,16 @@ core::Result<ScoreVoicePlan> allocateScoreVoices(const domain::VocalRegion& regi
 }
 
 core::Result<void> applyCompiledPerformanceGain(std::span<float> samples,
-    const CompiledScorePerformance& performance, time::SampleFrame origin, std::stop_token stopToken) {
+    const CompiledScorePerformance& performance, time::SampleFrame origin, std::stop_token stopToken,
+    std::optional<domain::NoteId> phoneticOwner) {
   if (samples.size() > 32ULL * 1024ULL * 1024ULL ||
       origin > std::numeric_limits<time::SampleFrame>::max() - static_cast<time::SampleFrame>(samples.size())) {
     return core::failure(core::ErrorCode::InvalidArgument, "Performance gain output exceeds bounds");
   }
   for (std::size_t i = 0; i < samples.size(); ++i) {
     if ((i & 4095U) == 0U && stopToken.stop_requested()) return core::failure(core::ErrorCode::Conflict, "Performance gain was cancelled");
-    const auto value = performance.at(origin + static_cast<time::SampleFrame>(i));
+    const auto frame = origin + static_cast<time::SampleFrame>(i);
+    const auto value = phoneticOwner ? performance.atPhonetic(frame, *phoneticOwner) : performance.at(frame);
     const auto gain = value.dynamicsGain * value.articulationGain;
     const auto scaled = static_cast<double>(samples[i]) * static_cast<double>(gain);
     if (!std::isfinite(scaled) || std::abs(scaled) > std::numeric_limits<float>::max()) {
@@ -273,6 +275,7 @@ core::Result<CompiledScorePerformance> compileScorePerformance(
   CompiledScorePerformance result;
   result.tempo_ = project.tempoMap();
   result.regionStart_ = region.startTick;
+  result.regionEnd_ = region.startTick + region.durationTick;
   result.sampleRate_ = sampleRate;
   result.pitch_ = region.pitchAutomation;
   result.dynamics_ = region.dynamicsAutomation;
@@ -313,6 +316,8 @@ core::Result<CompiledScorePerformance> compileScorePerformance(
     result.notes_.back().endTick = note.endTick();
   }
   std::sort(result.notes_.begin(), result.notes_.end(), [](const auto& a, const auto& b) { return a.startFrame < b.startFrame; });
+  for (std::size_t i = 0U; i < result.notes_.size(); ++i) result.noteIndex_.emplace_back(result.notes_[i].id, i);
+  std::sort(result.noteIndex_.begin(), result.noteIndex_.end());
   for (std::size_t i = 1; i < result.notes_.size(); ++i) {
     if (result.notes_[i].startFrame < result.notes_[i - 1U].endFrame) return core::failure<CompiledScorePerformance>(
         core::ErrorCode::Unsupported, "Overlapping score notes require explicit voice allocation");
@@ -407,6 +412,54 @@ core::Result<CompiledScorePerformance> compileScorePerformance(
 
 ScorePerformanceSample CompiledScorePerformance::at(time::SampleFrame frame) const noexcept {
   return evaluate(frame, false);
+}
+const ScoreNoteSpan* CompiledScorePerformance::findNote(domain::NoteId id) const noexcept {
+  const auto found = std::lower_bound(noteIndex_.begin(), noteIndex_.end(), id,
+      [](const auto& entry, auto key) { return entry.first < key; });
+  return found != noteIndex_.end() && found->first == id ? &notes_[found->second] : nullptr;
+}
+core::Result<PhraseFrameRange> CompiledScorePerformance::phoneticContext() const {
+  if (notes_.empty()) return core::failure<PhraseFrameRange>(core::ErrorCode::InvalidArgument,
+      "Phonetic context requires a nonempty score");
+  PhraseFrameRange context{notes_.front().startFrame, notes_.back().endFrame};
+  const auto regionStart = tempo_.sampleFrameAt(regionStart_, sampleRate_);
+  const auto regionEnd = tempo_.sampleFrameAt(regionEnd_, sampleRate_);
+  for (const auto& phone : phonemeTiming_) {
+    const auto start = phone.nucleusKey == std::optional{phone.key} ? std::optional{phone.nucleusFrame} :
+        (phone.explicitStartFrame ? phone.explicitStartFrame : phone.inferredStartFrame);
+    if (!start) return core::failure<PhraseFrameRange>(core::ErrorCode::Unsupported,
+        "Phonetic context requires resolved phone starts");
+    if (!findNote(phone.key.noteId) || *start < regionStart || phone.endFrame > regionEnd || phone.endFrame <= *start)
+      return core::failure<PhraseFrameRange>(core::ErrorCode::Conflict,
+          "Phonetic context exceeds its owning region or has invalid phone coverage");
+    context.start = std::min(context.start, *start);
+    context.end = std::max(context.end, phone.endFrame);
+  }
+  const auto valid = context.validate();
+  if (!valid) return core::Result<PhraseFrameRange>{valid.error()};
+  return context;
+}
+ScorePerformanceSample CompiledScorePerformance::atPhonetic(time::SampleFrame frame,
+    domain::NoteId owner) const noexcept {
+  auto value = at(frame);
+  if (value.noteId == std::optional{owner}) return value;
+  const auto* note = findNote(owner);
+  if (!note) { value = {}; value.articulationGain = 0.0F; return value; }
+  const auto edge = at(std::clamp(frame, note->startFrame, note->endFrame - 1));
+  // Another note (or a score gap) cannot lend its timbral automation to this
+  // phone. Only the owner's pitch, dynamics and articulation extend.
+  value = {};
+  value.styleBlend = styleBlendDefault_;
+  value.noteId = owner;
+  value.scoreFrequencyHz = edge.scoreFrequencyHz;
+  value.vibratoCents = edge.vibratoCents;
+  value.dynamicsGain = edge.dynamicsGain;
+  value.reattack = edge.reattack;
+  value.articulation = edge.articulation;
+  value.attackMilliseconds = edge.attackMilliseconds;
+  value.releaseMilliseconds = edge.releaseMilliseconds;
+  value.articulationGain = frame >= note->endFrame && note->closesPhoneticTail ? 0.0F : 1.0F;
+  return value;
 }
 ScorePerformanceSample CompiledScorePerformance::inspectAt(time::SampleFrame frame) const noexcept {
   return evaluate(frame, true);

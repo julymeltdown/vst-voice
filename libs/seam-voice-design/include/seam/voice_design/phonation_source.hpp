@@ -11,7 +11,8 @@ class PhonationSource final {
 public:
   [[nodiscard]] static core::Result<PhonationSource> create(const VoiceRecipe& recipe,
       const synthesis::CompiledScorePerformance& performance, time::SampleFrame origin);
-  [[nodiscard]] core::Result<synthesis::PhraseAudio> render(std::size_t frames, std::stop_token stopToken = {});
+  [[nodiscard]] core::Result<synthesis::PhraseAudio> render(std::size_t frames, std::stop_token stopToken = {},
+      std::optional<domain::NoteId> phoneticOwner = {});
   void reset() noexcept;
   [[nodiscard]] time::SampleFrame position() const noexcept { return position_; }
 private:

@@ -81,7 +81,9 @@ core::Result<ArticulationPlan> ArticulationPlan::compileRecipe(
     else continue;
     palatalizedPhones.push_back(pose.phone);
   }
-  const synthesis::PhraseFrameRange context{notes.front().startFrame, notes.back().endFrame};
+  const auto full = performance.phoneticContext();
+  if (!full) return core::Result<ArticulationPlan>{full.error()};
+  const auto context = full.value();
   auto plan = compile(phones, performance.phonemeTiming(), bindings, performance.sampleRate(), context,nasals,plosives,affricates,approximants,palatalizedPhones,voicedAffricates,closures,breaths);
   if (!plan) return core::failure<ArticulationPlan>(plan.error().code,
       "Recipe '" + recipe.value().id + "', style '" + std::string(style) + "': " + plan.error().message);

@@ -228,22 +228,18 @@ core::Result<NeuralRequest> prepareNeuralScoreRequest(
     for (auto frame=span.startFrame;frame<span.endFrame;++frame) {
       if ((frame&4095U)==0U && stop.stop_requested()) return cancelled();
       const auto absolute=origin+static_cast<time::SampleFrame>(frame);
-      const auto sampled=std::clamp(absolute,owner.startFrame,owner.endFrame-1);
-      const auto value=performance.at(sampled);
+      const auto value=performance.atPhonetic(absolute,owner.id);
       if (value.noteId!=std::optional{owner.id})
         return core::failure<NeuralRequest>(core::ErrorCode::Conflict,"Neural phone context resolves to a different score voice");
       // scoreFrequencyHz already includes compiled pitch and vibrato.
       if (active->second.voiced && value.scoreFrequencyHz) request.f0Hz[frame]=static_cast<float>(*value.scoreFrequencyHz);
       // Explicit context retains edge pitch/dynamics, but a completed authored
       // gate stays closed. Use this phone's owner, not a following score note.
-      const auto envelope=absolute>=owner.endFrame && owner.closesPhoneticTail
-          ?0.0F:(sampled==absolute?value.articulationGain:1.0F);
-      request.dynamics[frame]=value.dynamicsGain*envelope;
+      request.dynamics[frame]=value.dynamicsGain*value.articulationGain;
       // Pitch/envelope can extend from the owning note's edge. Timbral ownership
       // cannot: use actual time and never borrow an overlapping neighbor's lane.
-      const auto timbre=sampled==absolute?value:performance.at(absolute);
-      const auto amount=timbre.noteId==std::optional{owner.id} && timbre.breathinessIsExplicit
-          ?std::clamp(timbre.breathiness,0.0F,1.0F):active->second.defaultBreathiness;
+      const auto amount=value.breathinessIsExplicit
+          ?std::clamp(value.breathiness,0.0F,1.0F):active->second.defaultBreathiness;
       breathiness[frame]=amount;
       if (amount != 0.0F) anyBreathiness = true;
     }

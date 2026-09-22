@@ -323,6 +323,51 @@ TEST_CASE("neural phrase runner prepares a bound request and returns window-exac
   CHECK(cutAudio.value().rendered.audio.samples.size()==static_cast<std::size_t>(cut.end-cut.start));
 }
 
+TEST_CASE("neural production runner retains authored pickup and release through owned windows") {
+  using namespace seam;
+  const auto directory = test::support::temporaryDirectory("neural-runner-phonetic-context");
+  auto prepared = prepare(directory, "a");
+  auto* region = prepared.project.findRegion(prepared.region);
+  region->notes.resize(1U);
+  region->notes.front().startTick = time::Tick{480};
+  region->notes.front().durationTick = time::Tick{480};
+  region->phonemeOverrides = {{.key = {region->notes.front().id, 0U},
+      .timing = {.startOffset = -30000, .endOffset = 280000}, .locked = true}};
+  const rendering::NeuralRenderProvenance provenance{.workerVersion="seam-neural-worker-1",
+      .runtimeVersion="onnxruntime-1.30.0",.provider="CPUExecutionProvider"};
+  const auto snapshot = rendering::RenderSnapshotFactory{}.createNeural(prepared.project, *prepared.admitted,
+      provenance, prepared.track, prepared.region, 2U, rendering::RenderQuality::Final, 48000U, "original"); CHECK(snapshot);
+  const auto runner = AuthoringNeuralPhraseRunner::create(options(directory)); CHECK(runner);
+  const auto selected = std::make_shared<const AuthoringNeuralPhraseRunner>(std::move(runner).value());
+  const auto whole = rendering::PhraseRenderPipeline{selected}.render(snapshot.value()); CHECK(whole);
+  const synthesis::PhraseFrameRange extent{10560, 25440};
+  CHECK(whole.value().rendered.audio.startFrame == extent.start);
+  CHECK(whole.value().rendered.audio.samples.size() == static_cast<std::size_t>(extent.end - extent.start));
+  const auto chunks = rendering::RenderSnapshotFactory{}.splitOwnedOutput(snapshot.value(), extent, 6000U); CHECK(chunks);
+  std::vector<float> joined;
+  for (const auto& chunk : chunks.value()) {
+    const auto part = rendering::PhraseRenderPipeline{selected}.render(chunk); CHECK(part);
+    joined.insert(joined.end(), part.value().rendered.audio.samples.begin(), part.value().rendered.audio.samples.end());
+  }
+  // The helper is a silence transport fixture, not a learned-singer quality test.
+  CHECK(joined == whole.value().rendered.audio.samples);
+  CHECK(!rendering::RenderSnapshotFactory{}.splitOwnedOutput(snapshot.value(), {extent.start - 1, extent.end}, 6000U));
+  CHECK(!rendering::RenderSnapshotFactory{}.splitOwnedOutput(snapshot.value(), {extent.start, extent.end + 1}, 6000U));
+  const auto create = [&] {
+    return rendering::RenderSnapshotFactory{}.createNeural(prepared.project, *prepared.admitted,
+        provenance, prepared.track, prepared.region, 3U, rendering::RenderQuality::Final, 48000U, "original");
+  };
+  region->phonemeOverrides.front().timing.startOffset = -300000;
+  CHECK(!create()); // Before frame zero is rejected, not silently clipped.
+  region->phonemeOverrides.front().timing.startOffset = -250000;
+  const auto zero = create(); CHECK(zero);
+  const auto zeroAudio = rendering::PhraseRenderPipeline{selected}.render(zero.value()); CHECK(zeroAudio);
+  CHECK(zeroAudio.value().rendered.audio.startFrame == 0);
+  CHECK(prepared.project.tempoMap().addOrReplace(time::Tick{1440}, 600.0));
+  region->phonemeOverrides.front().timing.endOffset = 650000;
+  CHECK(!create()); // Region ends at 800 ms after the post-note tempo change.
+}
+
 TEST_CASE("neural phrase runner refuses unsafe options, foreign bundles and cancellation") {
   const auto directory=seam::test::support::temporaryDirectory("neural-runner-reject");
   const auto prepared=prepare(directory,"ak");

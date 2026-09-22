@@ -10,10 +10,11 @@
 namespace seam::voice_design {
 
 FormantControlSpan nextFormantControlSpan(const synthesis::CompiledScorePerformance& performance,
-    time::SampleFrame origin, std::size_t maximumFrames) noexcept {
+    time::SampleFrame origin, std::size_t maximumFrames, std::optional<domain::NoteId> phoneticOwner) noexcept {
   if (maximumFrames == 0U) return {};
   const auto shiftAt = [&](time::SampleFrame frame) {
     const auto value = performance.at(frame);
+    if (phoneticOwner && value.noteId != phoneticOwner) return 0.0;
     return static_cast<double>(value.formantSemitones) +
         static_cast<double>(std::clamp(value.gender, -1.0F, 1.0F)) *
             static_cast<double>(domain::kGenderFormantSemitones);

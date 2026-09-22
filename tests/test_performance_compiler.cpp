@@ -48,6 +48,45 @@ TEST_CASE("score performance follows both melody notes independently of acoustic
   CHECK_NEAR(*compiled.value().at(a.startFrame).scoreFrequencyHz, 261.625565, 0.00001);
 }
 
+TEST_CASE("phonetic context extends only owning-note pitch dynamics and authored gates") {
+  using namespace seam;
+  Fixture f;
+  for (auto& note : f.region().notes) note.startTick += time::Tick{480};
+  CHECK(f.project.tempoMap().addOrReplace(time::Tick{1920}, 90.0));
+  CHECK(f.region().dynamicsAutomation.replacePoints({{time::Tick{0}, 0.2F}, {time::Tick{3840}, 0.8F}}));
+  CHECK(f.region().formantAutomation.replacePoints({{time::Tick{0}, 3.0F}}));
+  CHECK(f.region().breathinessAutomation.replacePoints({{time::Tick{0}, 0.5F}}));
+  for (const auto rate : {8000U, 44100U, 48000U, 192000U}) {
+    const auto score = synthesis::compileScorePerformance(f.project, f.region(), rate); CHECK(score);
+    const auto& a = score.value().notes()[0];
+    const auto& b = score.value().notes()[1];
+    const auto check = [&](time::SampleFrame frame, time::SampleFrame edge) {
+      const auto own = score.value().atPhonetic(frame, a.id);
+      const auto expected = score.value().at(edge);
+      CHECK(own.noteId == std::optional{a.id});
+      CHECK(own.scoreFrequencyHz == expected.scoreFrequencyHz);
+      CHECK(own.dynamicsGain == expected.dynamicsGain);
+      CHECK(own.articulationGain == 1.0F);
+      CHECK(own.formantSemitones == 0.0F);
+      CHECK(own.breathiness == 0.0F); CHECK(!own.breathinessIsExplicit);
+    };
+    check(a.startFrame - 1, a.startFrame);
+    check(b.startFrame + 17, a.endFrame - 1);
+    CHECK(score.value().at(b.startFrame + 17).scoreFrequencyHz != score.value().atPhonetic(b.startFrame + 17, a.id).scoreFrequencyHz);
+    CHECK(score.value().atPhonetic(a.startFrame, a.id).formantSemitones == 3.0F);
+    CHECK(score.value().atPhonetic(a.startFrame, a.id).breathinessIsExplicit);
+    CHECK(!score.value().at(a.startFrame - 1).noteId); // Score-only semantics did not change.
+    auto stopped = f.project;
+    stopped.findRegion(f.id)->notes.front().articulation = domain::NoteArticulation::Staccato;
+    const auto gated = synthesis::compileScorePerformance(stopped, *stopped.findRegion(f.id), rate); CHECK(gated);
+    CHECK(gated.value().atPhonetic(b.startFrame + 17, a.id).articulationGain == 0.0F);
+    CHECK(gated.value().at(b.startFrame + 17).articulationGain == 1.0F);
+    std::vector<float> carrier(127U, 1.0F);
+    CHECK(synthesis::applyCompiledPerformanceGain(carrier, gated.value(), a.endFrame, {}, a.id));
+    CHECK(std::all_of(carrier.begin(), carrier.end(), [](float x) { return x == 0.0F; }));
+  }
+}
+
 TEST_CASE("inspection exposes selected generated dynamics without changing audio ownership or silence semantics") {
   using namespace seam; using namespace domain; using time::Tick;
   Fixture f; const auto note = f.region().notes.front().id;

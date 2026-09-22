@@ -1,5 +1,29 @@
 # Integrated Singer Execution
 
+## U6 production phonetic context implemented; pinned review pending (2026-09-22)
+
+The two production regressions now admit region-contained authored pickups and
+release tails through procedural and neural factories, full rendering, owned
+chunks, checkpoints and scheduler output. A shared owner-aware evaluator retains
+the correct note's edge pitch/dynamics without borrowing a following note's
+controls or reopening closed release gates. Region timing retains post-note
+tempo changes. Compiler 21, procedural timing 6, sustained renderer 15 and
+articulated renderer 12 participate in existing cache identities.
+
+Broad verification caught and repaired the existing whole-note event timing
+boundary. Developer 2's provisional source review then found a P1 null gesture
+in articulated trailing silence. The producer reproduced a segmentation fault
+and guarded inactive pose/transition access without shrinking the output.
+Full/trailing-only/checkpoint/scheduler regressions now pass. Final producer
+Release passes 12 targets / 1,056 overlapping case executions (20.99 seconds);
+Debug passes 12 / 1,187 (167.86 seconds). Both real ONNX arithmetic-worker
+fixtures pass separately (6.89 seconds), as do 12 captured-teacher Python tests.
+Source closure and whitespace checks pass. Pinned independent approval remains
+pending; provisional source review is not approval. See
+U6_PHONETIC_CONTEXT_2026-09-22.md for the failure history and evidence limits.
+Accepted target-voicing conversion over voiced sample material remains open;
+no complete U6/U7 unit, qualified singer or Beta GO is claimed.
+
 ## U6 neural envelope and melisma parity independently approved (2026-09-22)
 
 The cross-renderer audit reproduced two neural control losses. Explicit

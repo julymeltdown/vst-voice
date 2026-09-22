@@ -265,9 +265,10 @@ TEST_CASE("an admitted bundle renders non-silent audio through the production wo
     const auto& value=snapshot.value();
     const auto& metadata=value.neuralExecution->metadata();
     const auto& performance=*value.compiledPerformance;
+    const auto context=performance.phoneticContext(); CHECK(context);
     const auto request=seam::neural_synthesis::prepareNeuralScoreRequest(1U,metadata.model,
         metadata.vocabulary,performance,value.phonemes->tokens,value.pronunciationIdentity->sequenceHash,
-        performance.notes().front().startFrame,performance.notes().back().endFrame,options.silencePhone);
+        context.value().start,context.value().end,options.silencePhone);
     CHECK(request);
     const auto inputs=seam::neural_synthesis::prepareDiffSingerAcousticInputs(
         request.value(),metadata.model,metadata.vocabulary,10); CHECK(inputs);
@@ -323,6 +324,32 @@ TEST_CASE("an admitted bundle renders non-silent audio through the production wo
     stitched.insert(stitched.end(),audio.value().audio.samples.begin(),audio.value().audio.samples.end());
   }
   CHECK(stitched==whole.value().audio.samples);
+  // Production ONNX execution must retain real nonzero pickup/tail samples,
+  // not only accept a widened transport request containing silent fixture PCM.
+  auto extendedProject=project;
+  auto* extendedRegion=extendedProject.findRegion(phrase.region);
+  extendedRegion->notes.resize(1U);
+  auto& extendedNote=extendedRegion->notes.front();
+  extendedNote.startTick=seam::time::Tick{480};
+  extendedNote.durationTick=seam::time::Tick{480};
+  extendedRegion->phonemeOverrides={{.key={extendedNote.id,0U},
+      .timing={.startOffset=-30000,.endOffset=280000},.locked=true}};
+  const auto extended=seam::rendering::RenderSnapshotFactory{}.createNeural(extendedProject,*bundle,provenance,
+      phrase.track,phrase.region,9U,seam::rendering::RenderQuality::Final,48000U,"original"); CHECK(extended);
+  const auto extendedAudio=selected.render(extended.value(),{}); CHECK(extendedAudio);
+  CHECK(extendedAudio.value().audio.startFrame==10560);
+  CHECK(extendedAudio.value().audio.samples.size()==14880U);
+  const auto& extendedSamples=extendedAudio.value().audio.samples;
+  CHECK(std::any_of(extendedSamples.begin(),extendedSamples.begin()+1440,[](float x) {return x!=0.0F;}));
+  CHECK(std::any_of(extendedSamples.end()-1440,extendedSamples.end(),[](float x) {return x!=0.0F;}));
+  const auto extendedChunks=seam::rendering::RenderSnapshotFactory{}.splitOwnedOutput(extended.value(),
+      {10560,25440},6001U); CHECK(extendedChunks);
+  std::vector<float> extendedJoined;
+  for (const auto& chunk:extendedChunks.value()) {
+    const auto audio=selected.render(chunk,{}); CHECK(audio);
+    extendedJoined.insert(extendedJoined.end(),audio.value().audio.samples.begin(),audio.value().audio.samples.end());
+  }
+  CHECK(extendedJoined==extendedSamples);
   }
   // State what actually happened, so a caller cannot mistake a skipped phase for a
   // completed render.

@@ -18,7 +18,7 @@ public:
   [[nodiscard]] core::Result<synthesis::PhraseAudio> renderOwned(synthesis::PhraseFrameRange owned, std::stop_token stop = {});
   void reset();
   [[nodiscard]] time::SampleFrame position() const noexcept { return voice_->position(); }
-  static constexpr std::uint32_t algorithmRevision = 11U;
+  static constexpr std::uint32_t algorithmRevision = 12U;
 private:
   ArticulatedStream() = default;
   std::shared_ptr<const ArticulationPlan> plan_;

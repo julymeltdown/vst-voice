@@ -9,6 +9,8 @@
 namespace seam::voice_design {
 core::Result<void> validateVowelTiming(const synthesis::CompiledScorePerformance& performance) {
   if (performance.phonemeTiming().empty()) return core::failure(core::ErrorCode::Conflict, "Procedural vowels require compiled timing");
+  const auto context = performance.phoneticContext();
+  if (!context) return core::Result<void>{context.error()};
   std::unordered_map<domain::NoteId, const synthesis::ScoreNoteSpan*> notes;
   for (const auto& note : performance.notes()) notes.emplace(note.id, &note);
   std::vector<synthesis::PhraseFrameRange> spans;
@@ -16,8 +18,6 @@ core::Result<void> validateVowelTiming(const synthesis::CompiledScorePerformance
     const auto found = notes.find(timing.key.noteId);
     if (found == notes.end() || timing.nucleusKey != std::optional<domain::PhonemeKey>{timing.key} ||
         timing.endFrame <= timing.nucleusFrame) return core::failure(core::ErrorCode::Conflict, "Procedural vowel timing has invalid note coverage");
-    if (timing.nucleusFrame < found->second->startFrame || timing.endFrame > found->second->endFrame)
-      return core::failure(core::ErrorCode::Unsupported, "Procedural vowel timing outside its score note requires extended phonation context");
     spans.push_back({timing.nucleusFrame, timing.endFrame});
   }
   std::sort(spans.begin(), spans.end(), [](const auto& a, const auto& b) { return a.start < b.start; });
@@ -102,9 +102,12 @@ core::Result<SustainedPoseStream> SustainedPoseStream::create(
 
 core::Result<void> SustainedPoseStream::configureVowels(const domain::VocalRegion& region,
     std::span<const domain::PhonemeToken> phonemes) {
-  if (!performance_ || !recipe_ || position() != context_.start ||
-      context_.start != performance_->notes().front().startFrame) return core::failure(core::ErrorCode::Conflict,
+  if (!performance_ || !recipe_ || position() != context_.start) return core::failure(core::ErrorCode::Conflict,
           "Vowel scheduling requires the initial full score context");
+  const auto full = performance_->phoneticContext();
+  if (!full) return core::Result<void>{full.error()};
+  if (context_ != full.value()) return core::failure(core::ErrorCode::Conflict,
+      "Vowel scheduling requires the complete phonetic context");
   const auto valid = validateSustainedVowelPhrase(region, phonemes);
   if (!valid) return core::Result<void>{valid.error()};
   const auto timing = performance_->phonemeTiming();
@@ -197,9 +200,10 @@ core::Result<SustainedPoseResult> SustainedPoseStream::renderOwned(synthesis::Ph
       if (spanIndex < activeSpans_->size()) count = std::min(count, static_cast<std::size_t>(
           (active ? (*activeSpans_)[spanIndex].end : (*activeSpans_)[spanIndex].start) - source.position()));
     }
-    const auto control = nextFormantControlSpan(*performance_, source.position(), count);
+    const auto owner = active && activeSpans_ ? std::optional{(*activeSpans_)[spanIndex].key.noteId} : std::nullopt;
+    const auto control = nextFormantControlSpan(*performance_, source.position(), count, owner);
     count = control.frames;
-    auto excitation = source.render(count, stopToken);
+    auto excitation = source.render(count, stopToken, owner);
     if (!excitation) return core::Result<SustainedPoseResult>{excitation.error()};
     if (!active) std::fill(excitation.value().samples.begin(), excitation.value().samples.end(), 0.0F);
     // Use the excitation's actual start, not the source's now-advanced position.
@@ -213,7 +217,7 @@ core::Result<SustainedPoseResult> SustainedPoseStream::renderOwned(synthesis::Ph
     // Gates and accepted dynamics belong after resonance, so filter ringing
     // cannot reopen a closed staccato gate or undo a manual gain decision.
     const auto gained = synthesis::applyCompiledPerformanceGain(shaped.value(), *performance_,
-        excitation.value().startFrame, stopToken);
+        excitation.value().startFrame, stopToken, owner);
     if (!gained) return core::Result<SustainedPoseResult>{gained.error()};
     if (!active) std::fill(shaped.value().begin(), shaped.value().end(), 0.0F);
     else if (activeSpans_) {

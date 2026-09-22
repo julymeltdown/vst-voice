@@ -34,7 +34,8 @@ core::Result<PhonationSource> PhonationSource::create(const VoiceRecipe& recipe,
   return result;
 }
 
-core::Result<synthesis::PhraseAudio> PhonationSource::render(std::size_t frames, std::stop_token stopToken) {
+core::Result<synthesis::PhraseAudio> PhonationSource::render(std::size_t frames, std::stop_token stopToken,
+    std::optional<domain::NoteId> phoneticOwner) {
   using Output = synthesis::PhraseAudio;
   if (!performance_ || frames == 0U || frames > 32U * 1024U * 1024U ||
       position_ > (time::SampleFrame{1} << 52) - static_cast<time::SampleFrame>(frames)) return core::failure<Output>(
@@ -48,7 +49,7 @@ core::Result<synthesis::PhraseAudio> PhonationSource::render(std::size_t frames,
   for (std::size_t i = 0; i < frames; ++i) {
     if (i % 256U == 0U && stopToken.stop_requested()) return core::failure<Output>(core::ErrorCode::Conflict, "Phonation rendering cancelled");
     const auto frame = position_ + static_cast<time::SampleFrame>(i);
-    const auto musical = performance_->at(frame);
+    const auto musical = phoneticOwner ? performance_->atPhonetic(frame, *phoneticOwner) : performance_->at(frame);
     // The white sample and the filtered aspiration are kept apart on purpose: the difference between
     // them is the part of the stream the aspiration filter rejected, which is the high-frequency band
     // the airiness channel adds.

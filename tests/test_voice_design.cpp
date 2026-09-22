@@ -956,7 +956,7 @@ TEST_CASE("recipe articulation prepares resolved score edits without caller supp
   region.durationTick = time::Tick{2880}; region.notes.push_back(second);
   const auto partial = synthesis::compileScorePerformance(project, region, 48000U, phones); CHECK(partial);
   CHECK(!voice_design::ArticulationPlan::compileRecipe(resource.value(), partial.value(), phones, "neutral"));
-  // An onset in a score gap cannot borrow the next note's pitch context.
+  // An onset in a score gap retains its own phonetic owner.
   auto nextPhones = phones;
   for (auto& phone : nextPhones) phone.key.noteId = second.id;
   nextPhones[0].timing.startOffset = -10000;
@@ -966,9 +966,9 @@ TEST_CASE("recipe articulation prepares resolved score edits without caller supp
   CHECK(voice_design::ArticulationPlan::compile(extendedPhones, extended.value().phonemeTiming(), explicitBindings,
       48000U, {extended.value().notes().front().startFrame, extended.value().notes().back().endFrame}));
   // The onset may begin before its own note, because the creator's offset is the authority for
-  // where it sits. The frames it spends in the score gap are governed by the score's own gain, so
-  // it still cannot borrow the next note's pitch context: what the recipe path refuses is a
-  // placement the phrase does not account for, which the overlap cases cover.
+  // where it sits. Its owning note now supplies edge pitch/dynamics there;
+  // another note cannot lend its controls. The ordered partition still
+  // refuses overlapping gestures, as the overlap cases cover.
   const auto extendedPlan = voice_design::ArticulationPlan::compileRecipe(resource.value(), extended.value(), extendedPhones, "neutral");
   CHECK(extendedPlan);
   if (extendedPlan) {

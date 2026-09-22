@@ -230,13 +230,17 @@ core::Result<synthesis::PhraseAudio> ArticulatedStream::renderOwned(synthesis::P
       }
     }
     auto count = static_cast<std::size_t>(std::min<time::SampleFrame>(static_cast<time::SampleFrame>(blockFrames_), boundary - position));
-    const auto control = candidate.tract_ ? nextFormantControlSpan(*performance_, position, count) :
+    const auto owner = active ? std::optional{gesture->key.noteId} : std::nullopt;
+    const auto control = candidate.tract_ ? nextFormantControlSpan(*performance_, position, count, owner) :
         FormantControlSpan{count, 0.0};
     count = control.frames;
     // A palatalized consonant puts its own palatal resonance in force for the whole gesture, even
     // when the gesture itself is unvoiced, so the release and the vowel's onset transition start
     // from the palatal shape. That transition into the vowel is what distinguishes きゃ from か.
-    const auto posePhone = gesture->posePhone.value_or(gesture->phone);
+    // An early final release leaves valid owned silence after the last
+    // gesture. Advance DSP below, but do not select a pose from a missing (or
+    // not-yet-active) gesture. Inactive tonal/noise spans publish silence.
+    const auto posePhone = active ? gesture->posePhone.value_or(gesture->phone) : std::string{};
     // A declared movement needs the pose it starts from and the pose it arrives at to be two points
     // in one parameter space: the same resonance count. The plan decides the kind from the gesture
     // classes, which is what identifies a coarticulation boundary, but only the recipe can say
@@ -252,13 +256,13 @@ core::Result<synthesis::PhraseAudio> ArticulatedStream::renderOwned(synthesis::P
       }
       return candidate.tract_->transitionTo(*recipe_, phone, style_, static_cast<std::size_t>(frames));
     };
-    if (candidate.tract_ && (tonal || gesture->posePhone.has_value()) && position == gesture->span.start && posePhone != candidate.currentPhone_) {
+    if (active && candidate.tract_ && (tonal || gesture->posePhone.has_value()) && position == gesture->span.start && posePhone != candidate.currentPhone_) {
       const auto frames = static_cast<std::size_t>(entryFrames);
       const auto applied = applyTransition(entry, posePhone, static_cast<time::SampleFrame>(frames));
       if (!applied) return core::Result<Output>{applied.error()};
       candidate.currentPhone_ = posePhone;
     }
-    if (glide && position >= gesture->span.end - glideFrames &&
+    if (active && glide && position >= gesture->span.end - glideFrames &&
         candidate.tract_->transitionFramesRemaining() == 0U) {
       const auto frames = std::min<time::SampleFrame>(glideFrames, gesture->span.end - position);
       if (frames > 0) {
@@ -267,7 +271,7 @@ core::Result<synthesis::PhraseAudio> ArticulatedStream::renderOwned(synthesis::P
         candidate.currentPhone_ = glide->phone;
       }
     }
-    auto excitation = candidate.voice_->render(count, stop);
+    auto excitation = candidate.voice_->render(count, stop, owner);
     if (!excitation) return core::Result<Output>{excitation.error()};
     std::optional<Output> stopAudio;
     if (voicedStop) {
@@ -321,7 +325,7 @@ core::Result<synthesis::PhraseAudio> ArticulatedStream::renderOwned(synthesis::P
       voicedSamples[index] = static_cast<float>(voicedSamples[index] * envelope * voicingGain) + noise.value().samples[index] +
           (stopAudio ? stopAudio->samples[index] : 0.0F);
     }
-    const auto gained = synthesis::applyCompiledPerformanceGain(voicedSamples, *performance_, position, stop);
+    const auto gained = synthesis::applyCompiledPerformanceGain(voicedSamples, *performance_, position, stop, owner);
     if (!gained) return core::Result<Output>{gained.error()};
     for (std::size_t index = 0U; index < count; ++index) {
       const auto frame = position + static_cast<time::SampleFrame>(index);

@@ -74,8 +74,9 @@ core::Result<synthesis::PhraseRenderResult> AuthoringNeuralPhraseRunner::render(
   if (!metadata.vocabulary.tokenId(options_.silencePhone)) return core::failure<Output>(
       core::ErrorCode::Unsupported,"Admitted vocabulary has no explicit silence symbol");
   const auto& performance=*snapshot.compiledPerformance;
-  const auto full=synthesis::PhraseFrameRange{performance.notes().front().startFrame,
-      performance.notes().back().endFrame};
+  const auto context=performance.phoneticContext();
+  if (!context) return core::Result<Output>{context.error()};
+  const auto full=context.value();
   const auto range=snapshot.ownedFrames.value_or(full);
   const auto outputValid=synthesis::PhraseOutputContract{snapshot.sampleRate,full,range}.validate();
   if (!outputValid) return core::Result<Output>{outputValid.error()};

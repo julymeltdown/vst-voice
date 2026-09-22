@@ -86,8 +86,7 @@ public:
     // Absent ownership means the full compiled extent, matching the other
     // families' "publish the complete rendered extent" rule.
     const auto fallback=snapshot.compiledPerformance!=nullptr
-        ? seam::synthesis::PhraseFrameRange{snapshot.compiledPerformance->notes().front().startFrame,
-                                            snapshot.compiledPerformance->notes().back().endFrame}
+        ? snapshot.compiledPerformance->phoneticContext().value()
         : seam::synthesis::PhraseFrameRange{0,0};
     const auto range=snapshot.ownedFrames.value_or(fallback);
     const auto count=static_cast<std::size_t>(range.end-range.start)+overlap_;
