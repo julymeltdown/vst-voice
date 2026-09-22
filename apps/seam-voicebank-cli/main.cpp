@@ -633,6 +633,60 @@ int exportScoreCommand(int argc, char** argv) {
   return 0;
 }
 
+// Read a foreign score into a new project through the editor's own conversion service. This is the
+// inbound half of the exchange the OpenUtau oracle exercises: a file another tool wrote must become a
+// project SEAM can hold, with every conversion loss named rather than dropped.
+int importScoreCommand(int argc, char** argv) {
+  if (argc != 4 && argc != 5) {
+    std::cerr << "usage: seam_voicebank_cli import-score SOURCE.ustx|.mid|.midi PROJECT.seam [PROJECT_NAME]\n";
+    return 1;
+  }
+  const std::filesystem::path source{argv[2]};
+  const std::filesystem::path destination{argv[3]};
+  const auto extension = source.extension().string();
+  seam::authoring::InterchangeImportRequest request;
+  if (extension == ".ustx") request.format = seam::authoring::InterchangeFormat::Ustx;
+  else if (extension == ".mid" || extension == ".midi")
+    request.format = seam::authoring::InterchangeFormat::Smf;
+  else {
+    std::cerr << "error: score import requires a .ustx, .mid or .midi source\n";
+    return 3;
+  }
+  request.projectName = argc == 5 ? std::string{argv[4]} : source.stem().string();
+  seam::application::ProjectFactory factory;
+  const auto imported = seam::authoring::InterchangeService{}.importFile(source, factory, request);
+  if (!imported) {
+    std::cerr << "error: " << imported.error().message;
+    if (!imported.error().context.empty()) std::cerr << " (" << imported.error().context << ')';
+    std::cerr << '\n';
+    return 4;
+  }
+  for (const auto& issue : imported.value().issues) {
+    std::cerr << (issue.loss ? "loss: " : "warning: ") << issue.path << ": " << issue.message << '\n';
+  }
+  // The draft is only written once every issue has been reported, so a refused conversion leaves no
+  // half-imported project behind for a later caller to mistake for a successful one.
+  const auto codec = seam::formats::ProjectJsonCodec{};
+  const auto encoded = codec.encode(imported.value().project);
+  if (!encoded) {
+    std::cerr << "error: " << encoded.error().message << '\n';
+    return 5;
+  }
+  const auto saved = codec.save(imported.value().project, destination);
+  if (!saved) {
+    std::cerr << "error: " << saved.error().message;
+    if (!saved.error().context.empty()) std::cerr << " (" << saved.error().context << ')';
+    std::cerr << '\n';
+    return 6;
+  }
+  const auto sourceHash = seam::core::sha256File(source);
+  std::cout << "project=" << destination.string() << '\n'
+            << "sourceHash=" << (sourceHash ? sourceHash.value() : imported.value().sourceHash) << '\n'
+            << "schemaVersion=" << codec.kSchemaVersion << '\n'
+            << "issues=" << imported.value().issues.size() << '\n';
+  return 0;
+}
+
 void printUsage() {
   std::cout
       << "SEAM Voicebank CLI\n\n"
@@ -648,6 +702,8 @@ void printUsage() {
       << "  seam_voicebank_cli bake-project PROJECT OUTPUT_DIRECTORY [SAMPLE_RATE]\n"
       << "  seam_voicebank_cli export-score PROJECT.seam DESTINATION.ustx|.mid|.midi\n"
       << "    Writes a score a DAW or OpenUtau can open, through the editor's own conversion service.\n"
+      << "  seam_voicebank_cli import-score SOURCE.ustx|.mid|.midi PROJECT.seam [PROJECT_NAME]\n"
+      << "    Reads a foreign score into a new project, reporting every conversion loss.\n"
       << "  seam_voicebank_cli run-generation JOB_DIRECTORY MANIFEST_SHA256\n"
       << "  seam_voicebank_cli run-generation-batch BATCH_JSON BATCH_SHA256 [MAX_TOTAL_FRAMES]\n"
       << "  seam_voicebank_cli import-generated-batch WORKSPACE BATCH_JSON BATCH_SHA256 OPERATOR UTC [MAX_TOTAL_FRAMES]\n"
@@ -762,6 +818,7 @@ int main(int argc, char** argv) {
   if (command == "prepare-generation-batch") return prepareGenerationBatchCommand(argc, argv);
   if (command == "bake-project") return bakeProjectCommand(argc, argv);
   if (command == "export-score") return exportScoreCommand(argc, argv);
+  if (command == "import-score") return importScoreCommand(argc, argv);
   if (command == "--help" || command == "-h" || command == "help") {
     printUsage();
     return 0;

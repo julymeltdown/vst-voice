@@ -204,8 +204,49 @@ def main():
             assert key == expected_key, (key, expected_key)
             assert velocity > 0, velocity
 
+        # --- Inbound half: a foreign file must become a SEAM project, then survive being sent back ---
+        # The MIDI round trip is the sharpest test available without a DAW. Importing the export of a
+        # pinned project and re-exporting it must reproduce the exact bytes, because nothing in this
+        # exchange is approximated; a regression that normalised timing or dropped a lyric would change
+        # the hash rather than merely shifting a rounding.
+        foreign = root / "foreign.mid"
+        imported_project = root / "imported.seam"
+        reexported = root / "reexported.mid"
+        run(executable, "export-score", str(PROJECT), str(foreign))
+        imported = run(executable, "import-score", str(foreign), str(imported_project), "Interop Round Trip")
+        imported_fields = fields(imported.stdout)
+        assert int(imported_fields["issues"]) == 0, imported.stderr
+        assert imported_project.is_file(), imported_project
+        document = json.loads(imported_project.read_text())
+        region = document["vocalTracks"][0]["regions"][0]
+        assert len(region["notes"]) == len(authored), len(region["notes"])
+        assert len(region["lyrics"]) == len(authored), len(region["lyrics"])
+        surfaces = sorted(item["surface"] for item in region["lyrics"])
+        assert surfaces == sorted(surface for *_rest, surface in authored), surfaces
+
+        run(executable, "export-score", str(imported_project), str(reexported))
+        assert reexported.read_bytes() == foreign.read_bytes(), "MIDI round trip changed the file"
+
+        # USTX is deliberately lossy, so byte equality is not the claim there. What must hold is that
+        # every approximation is named and that the notes the external reader confirmed still survive.
+        foreign_ustx = root / "foreign.ustx"
+        ustx_project = root / "imported-ustx.seam"
+        run(executable, "export-score", str(PROJECT), str(foreign_ustx))
+        ustx_import = run(executable, "import-score", str(foreign_ustx), str(ustx_project), "Ustx Round Trip")
+        for line in ustx_import.stderr.splitlines():
+            assert line.startswith(("loss: ", "warning: ")), line
+        ustx_document = json.loads(ustx_project.read_text())
+        ustx_region = ustx_document["vocalTracks"][0]["regions"][0]
+        assert len(ustx_region["notes"]) == len(authored), len(ustx_region["notes"])
+
         # --- Fail-closed behaviour: bad input must not produce a file ---
+        bad_extension = run(executable, "import-score", str(PROJECT), str(root / "never.seam"), expect=3)
+        assert "ustx" in bad_extension.stderr, bad_extension.stderr
+        assert not (root / "never.seam").exists()
+        run(executable, "import-score", str(root / "absent.ustx"), str(root / "none.seam"), expect=4)
+        assert not (root / "none.seam").exists()
         refused = run(executable, "export-score", str(PROJECT), str(root / "out.wav"), expect=3)
+
         assert "ustx" in refused.stderr, refused.stderr
         assert not (root / "out.wav").exists()
         missing = run(executable, "export-score", str(root / "absent.seam"), str(root / "never.ustx"), expect=2)
@@ -215,4 +256,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
