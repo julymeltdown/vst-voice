@@ -178,13 +178,43 @@ SemanticNode EditorSemanticTree::build(const EditorSceneState& state,
         .id = "microscope.close",
         .role = SemanticRole::Button,
         .name = "Close sample microscope",
-        .value = "Escape or double-click",
+        .value = "Click to close; Escape returns from details first",
         .bounds = closeBounds,
         .enabled = true,
         .focused = false,
         .actions = {SemanticAction::Activate, SemanticAction::SetFocus},
         .children = {},
     });
+    panel.children.push_back(SemanticNode{
+        .id = "microscope.details", .role = SemanticRole::Button,
+        .name = microscope.detailsVisible ? "Return to waveform" : "Read selection and destination details",
+        .value = "D", .bounds = layout.microscopeDetailsToggleBounds(root.bounds.width, root.bounds.height),
+        .enabled = true, .focused = false,
+        .actions = {SemanticAction::Activate, SemanticAction::SetFocus}, .children = {},
+    });
+    if (microscope.detailsVisible) {
+      panel.children.push_back(SemanticNode{
+          .id = "microscope.readout", .role = SemanticRole::Status,
+          .name = "Captured selection details; page " + std::to_string(microscope.detailsPage + 1U) +
+              " of " + std::to_string(microscope.detailsPageCount),
+          .value = microscope.detailsText,
+          .bounds = layout.microscopeDetailsBounds(root.bounds.width, root.bounds.height),
+          .enabled = true, .focused = false, .actions = {SemanticAction::SetFocus}, .children = {},
+      });
+      for (const auto next : {false, true}) {
+        const auto enabled = next ? microscope.detailsPage + 1U < microscope.detailsPageCount : microscope.detailsPage > 0U;
+        panel.children.push_back(SemanticNode{
+            .id = next ? "microscope.next" : "microscope.previous", .role = SemanticRole::Button,
+            .name = next ? "Next details page" : "Previous details page", .value = next ? "Right arrow" : "Left arrow",
+            .bounds = layout.microscopeDetailsPageBounds(root.bounds.width, root.bounds.height, next),
+            .enabled = enabled, .focused = false,
+            .actions = enabled ? std::vector<SemanticAction>{SemanticAction::Activate, SemanticAction::SetFocus} : std::vector<SemanticAction>{},
+            .children = {},
+        });
+      }
+      root.children.push_back(std::move(panel));
+      return root;
+    }
     panel.children.push_back(SemanticNode{
         .id = "microscope.waveform",
         .role = SemanticRole::Timeline,

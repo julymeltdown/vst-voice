@@ -244,6 +244,11 @@ struct EditorSceneState final {
     std::string unitId;
     std::string destinationContext;
     bool canPlay{false};
+    bool detailsVisible{false};
+    std::string detailsText;
+    std::vector<std::string> detailsLines;
+    std::size_t detailsPage{0U};
+    std::size_t detailsPageCount{1U};
   };
   std::optional<SampleMicroscopeView> sampleMicroscope;
   struct PhonemeReviewView final {
@@ -613,6 +618,8 @@ struct EditorSceneLayout final {
   double microscopeMarkerLabelBaselineOffset{4.0};
   double microscopeMarkerLabelFontSize{6.0};
   double microscopePitchMarkWidth{0.5};
+  double microscopeDetailsFontSize{12.0};
+  double microscopeDetailsLineHeight{22.0};
   std::size_t microscopeSpectrogramMaxColumns{280U};
   std::size_t microscopeSpectrogramMaxBins{180U};
   std::size_t microscopeSpectrogramGridDivisions{4U};
@@ -1148,45 +1155,48 @@ struct EditorSceneLayout final {
   }
   [[nodiscard]] ui::Rect microscopePanelBounds(double logicalWidth,
                                                double logicalHeight) const noexcept {
-    return ui::Rect{microscopePanelInsetX, microscopePanelTop,
-                    std::max(1.0, logicalWidth - microscopePanelInsetX * 2.0),
-                    std::max(1.0, logicalHeight - microscopePanelTop -
-                                      microscopePanelBottomInset)};
+    const auto inset = logicalWidth < 700.0 ? 16.0 : microscopePanelInsetX;
+    const auto top = logicalHeight < 480.0 ? 16.0 : microscopePanelTop;
+    const auto bottom = logicalHeight < 480.0 ? 16.0 : microscopePanelBottomInset;
+    return ui::Rect{inset, top, std::max(1.0, logicalWidth - inset * 2.0),
+                    std::max(1.0, logicalHeight - top - bottom)};
+  }
+  [[nodiscard]] ui::Rect microscopeContentBounds(double width, double height) const noexcept {
+    const auto panel = microscopePanelBounds(width, height);
+    return {panel.x + 16.0, panel.y + 64.0,
+            std::max(1.0, panel.width - 32.0), std::max(1.0, panel.height - 80.0)};
+  }
+  [[nodiscard]] ui::Rect microscopeDetailsBounds(double width, double height) const noexcept {
+    auto content = microscopeContentBounds(width, height);
+    content.height = std::max(1.0, content.height - 36.0);
+    return content;
+  }
+  [[nodiscard]] ui::Rect microscopeDetailsToggleBounds(double width, double height) const noexcept {
+    const auto close = microscopeCloseBounds(width, height);
+    return {close.x - 100.0, close.y, 92.0, close.height};
+  }
+  [[nodiscard]] ui::Rect microscopeDetailsPageBounds(double width, double height, bool next) const noexcept {
+    const auto content = microscopeContentBounds(width, height);
+    return {next ? content.right() - 84.0 : content.x, content.bottom() - 26.0, 84.0, 26.0};
   }
   [[nodiscard]] ui::Rect microscopeWaveformBounds(
       double logicalWidth, double logicalHeight) const noexcept {
-    const auto plotWidth = std::max(microscopePlotMinimumWidth,
-                                    logicalWidth - microscopePlotInsetX * 2.0);
-    const auto plotHeight = std::max(
-        microscopeWaveformMinimumHeight,
-        (logicalHeight - microscopePanelTop -
-         microscopeWaveformHeightAvailableInset) *
-            microscopeWaveformHeightFraction);
-    return ui::Rect{microscopePlotInsetX, microscopePlotTop, plotWidth,
-                    plotHeight};
+    const auto content = microscopeContentBounds(logicalWidth, logicalHeight);
+    return {content.x, content.y, content.width,
+            std::max(1.0, (content.height - microscopePlotGap) * microscopeWaveformHeightFraction)};
   }
   [[nodiscard]] ui::Rect microscopeSpectrogramBounds(
       double logicalWidth, double logicalHeight) const noexcept {
     const auto waveform = microscopeWaveformBounds(logicalWidth, logicalHeight);
+    const auto content = microscopeContentBounds(logicalWidth, logicalHeight);
     return ui::Rect{waveform.x, waveform.bottom() + microscopePlotGap,
                     waveform.width,
-                    std::max(microscopeSpectrogramMinimumHeight,
-                             logicalHeight - waveform.bottom() -
-                                 microscopeSpectrogramBottomInset)};
+                    std::max(1.0, content.bottom() - waveform.bottom() - microscopePlotGap)};
   }
   [[nodiscard]] ui::Rect microscopeCloseBounds(double logicalWidth,
                                                 double logicalHeight) const noexcept {
     const auto panel = microscopePanelBounds(logicalWidth, logicalHeight);
-    const auto maximumX = std::max(
-        panel.x, panel.right() - microscopeCloseRightGap - 1.0);
-    const auto closeX = std::clamp(
-        std::max(microscopeCloseMinimumX,
-                 logicalWidth - microscopeCloseRightInset),
-        panel.x, maximumX);
-    return ui::Rect{closeX, panel.y + microscopeCloseTop,
-                    std::max(1.0, panel.right() - closeX -
-                                      microscopeCloseRightGap),
-                    microscopeCloseHeight};
+    return {panel.right() - 100.0, panel.y + microscopeCloseTop, 84.0, microscopeCloseHeight};
   }
 };
 

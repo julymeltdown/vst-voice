@@ -481,6 +481,8 @@ private:
   void repaint() const;
   void finishTextInput() const;
   [[nodiscard]] core::Result<void> rebuildSampleMicroscope();
+  [[nodiscard]] core::Result<void> rebuildMicroscopeDetails();
+  [[nodiscard]] core::Result<void> microscopeDetailsAction(std::size_t action);
   [[nodiscard]] core::Result<domain::SeamOverride> selectedSeamValue() const;
   [[nodiscard]] core::Result<void> commitSeam(domain::SeamOverride value);
   [[nodiscard]] core::Result<domain::UnitSelectionOverride>
@@ -719,6 +721,11 @@ private:
   ui::SampleMicroscopeModel microscope_;
   std::string microscopeUnitId_;
   std::string microscopeDestinationContext_;
+  std::string microscopeDetailsText_;
+  std::vector<text::Utf8LineRange> microscopeDetailsLines_;
+  std::size_t microscopeDetailsPage_{0U};
+  std::size_t microscopeDetailsRows_{1U};
+  bool microscopeDetailsVisible_{false};
   std::optional<domain::PhonemeKey> microscopeKey_;
   EditorInteractionState interaction_;
   std::optional<EditorSceneState::OverlapDetail> overlapDetail_;

@@ -321,7 +321,20 @@ EditorSceneState NativeEditorController::sceneState() const {
         .unitId = microscopeUnitId_,
         .destinationContext = microscopeDestinationContext_,
         .canPlay = callbacks_.playMicroscopeSample != nullptr,
+        .detailsVisible = microscopeDetailsVisible_,
+        .detailsText = microscopeDetailsText_,
+        .detailsLines = {},
+        .detailsPage = microscopeDetailsPage_,
+        .detailsPageCount = std::max<std::size_t>(1U,
+            (microscopeDetailsLines_.size() + microscopeDetailsRows_ - 1U) / microscopeDetailsRows_),
     };
+    if (microscopeDetailsVisible_) {
+      const auto start = microscopeDetailsPage_ * microscopeDetailsRows_;
+      for (auto i = start; i < std::min(start + microscopeDetailsRows_, microscopeDetailsLines_.size()); ++i) {
+        const auto line = microscopeDetailsLines_[i];
+        state.sampleMicroscope->detailsLines.push_back(microscopeDetailsText_.substr(line.offset, line.length));
+      }
+    }
   }
   if (dragMode_ == DragMode::BoxSelect) {
     const auto left = std::min(dragStart_.x, dragCurrent_.x);
@@ -451,7 +464,8 @@ EditorSceneState NativeEditorController::sceneState() const {
         source && !targets.empty() && (!target || *reviewedTarget_ + 1U < targets.size()),
         source && target};
   }
-  if (const auto* focused = accessibilityTree_.focusedNode(); focused != nullptr) {
+  if (const auto* focused = accessibilityTree_.focusedNode(); focused != nullptr &&
+      (sampleMicroscopeOpen() == focused->id.starts_with("microscope."))) {
     state.focusedElementBounds = focused->bounds;
   }
   if (timeMapPanel_) {
@@ -1927,6 +1941,11 @@ core::Result<void> NativeEditorController::dispatchAccessibility(
   if (phonemeReview_ && !id.starts_with("phoneme.review.action.")) {
     return core::failure(core::ErrorCode::Conflict, "Close phoneme review before using background controls");
   }
+  if (sampleMicroscopeOpen()) {
+    if (!id.starts_with("microscope."))
+      return core::failure(core::ErrorCode::Conflict, "Close sample microscope before using background controls");
+    rebuildAccessibilityTree();
+  }
   return accessibilityTree_.dispatch(
       id, action,
       [this](std::string_view element, SemanticAction requested) {
@@ -1952,6 +1971,12 @@ core::Result<void> NativeEditorController::dispatchAccessibility(
           closeSampleMicroscope();
           return core::success();
         }
+        if (requested == SemanticAction::Activate && element == "microscope.details")
+          return microscopeDetailsAction(0U);
+        if (requested == SemanticAction::Activate && element == "microscope.previous")
+          return microscopeDetailsAction(1U);
+        if (requested == SemanticAction::Activate && element == "microscope.next")
+          return microscopeDetailsAction(2U);
         if (element == "microscope.waveform" &&
             requested == SemanticAction::Activate) {
           if (!callbacks_.playMicroscopeSample || !microscopeUnit_.has_value()) {
@@ -2477,6 +2502,39 @@ core::Result<void> NativeEditorController::setAccessibilityValue(
   return commitTextComposition(decoded.value());
 }
 
+core::Result<void> NativeEditorController::rebuildMicroscopeDetails() {
+  const auto oldLine = std::min(microscopeDetailsPage_ * microscopeDetailsRows_, microscopeDetailsLines_.size());
+  const auto anchor = oldLine < microscopeDetailsLines_.size() ? microscopeDetailsLines_[oldLine].offset : 0U;
+  const auto bounds = layout_.microscopeDetailsBounds(logicalWidth_, logicalHeight_);
+  // A full font-size advance per display column is deliberately conservative
+  // for proportional Latin/CJK text and unsplittable long identity strings.
+  const auto columns = static_cast<std::size_t>(std::clamp(std::floor(bounds.width / layout_.microscopeDetailsFontSize), 2.0, 1024.0));
+  auto lines = text::wrapUtf8ToDisplayWidth(microscopeDetailsText_, columns, 65536U);
+  if (!lines) return core::Result<void>{lines.error()};
+  microscopeDetailsLines_ = std::move(lines.value());
+  microscopeDetailsRows_ = static_cast<std::size_t>(std::clamp(std::floor(bounds.height / layout_.microscopeDetailsLineHeight), 1.0, 256.0));
+  std::size_t anchorLine = 0U;
+  while (anchorLine + 1U < microscopeDetailsLines_.size() && microscopeDetailsLines_[anchorLine + 1U].offset <= anchor) ++anchorLine;
+  microscopeDetailsPage_ = anchorLine / microscopeDetailsRows_;
+  return core::success();
+}
+
+core::Result<void> NativeEditorController::microscopeDetailsAction(std::size_t action) {
+  if (!sampleMicroscopeOpen() || action > 2U)
+    return core::failure(core::ErrorCode::Conflict, "Sample details are unavailable");
+  if (action == 0U) {
+    microscopeDetailsVisible_ = !microscopeDetailsVisible_;
+    dragMode_ = DragMode::None;
+    dragMicroscopeMarker_.reset(); dragMicroscopePitchMark_.reset();
+  } else if (!microscopeDetailsVisible_ ||
+      (action == 1U && microscopeDetailsPage_ == 0U) ||
+      (action == 2U && (microscopeDetailsPage_ + 1U) * microscopeDetailsRows_ >= microscopeDetailsLines_.size())) {
+    return core::failure(core::ErrorCode::Conflict, "Sample details page is unavailable");
+  } else if (action == 1U) --microscopeDetailsPage_;
+  else ++microscopeDetailsPage_;
+  rebuildAccessibilityTree(); repaint(); return core::success();
+}
+
 core::Result<void> NativeEditorController::rebuildSampleMicroscope() {
   if (!microscopeUnit_.has_value() || microscopeAudio_.frameCount() == 0U) {
     return core::failure(core::ErrorCode::InvalidState,
@@ -2491,6 +2549,8 @@ core::Result<void> NativeEditorController::rebuildSampleMicroscope() {
 
 core::Result<void> NativeEditorController::openSampleMicroscope(
     domain::PhonemeKey key) {
+  if (composition_.active() || replacementOpen_ || timeMapPanel_ || phonemeReview_ || dragMode_ != DragMode::None)
+    return core::failure(core::ErrorCode::Conflict, "Finish the active edit before opening sample inspection");
   if (!callbacks_.loadSampleMicroscope) {
     return core::failure(core::ErrorCode::Unsupported,
                          "Sample microscope source is not connected");
@@ -2502,16 +2562,29 @@ core::Result<void> NativeEditorController::openSampleMicroscope(
     return core::failure(core::ErrorCode::InvalidArgument,
                          "Sample microscope source contains no audio");
   }
+  constexpr std::size_t maximumContextBytes = 65536U;
+  if (data.unit.id.size() > maximumContextBytes || data.destinationContext.size() > maximumContextBytes - data.unit.id.size())
+    return core::failure(core::ErrorCode::Unsupported, "Sample inspection context exceeds 64 KiB");
+  const auto detailText = "Captured at open; reopen after edits or bank refresh.\n\nUnit: " + data.unit.id +
+      "\n\n" + (data.destinationContext.empty() ? std::string{"Destination unknown"} : data.destinationContext);
+  const auto validText = text::wrapUtf8ToDisplayWidth(detailText, 32U, 65536U);
+  if (!validText) return core::Result<void>{validText.error()};
   microscopeUnit_ = std::move(data.unit);
   microscopeAudio_ = std::move(data.audio);
   microscopeUnitId_ = microscopeUnit_->id;
   microscopeDestinationContext_ = std::move(data.destinationContext);
+  microscopeDetailsText_ = detailText;
+  microscopeDetailsLines_.clear(); microscopeDetailsPage_ = 0U; microscopeDetailsVisible_ = false;
+  const auto details = rebuildMicroscopeDetails();
+  if (!details) { closeSampleMicroscope(); return details; }
   microscopeKey_ = key;
   const auto rebuilt = rebuildSampleMicroscope();
   if (!rebuilt) {
     closeSampleMicroscope();
     return rebuilt;
   }
+  rebuildAccessibilityTree();
+  static_cast<void>(accessibilityTree_.setFocus("microscope.details"));
   repaint();
   return core::success();
 }
@@ -2619,6 +2692,8 @@ void NativeEditorController::closeSampleMicroscope() noexcept {
   microscopeAudio_ = {};
   microscopeUnitId_.clear();
   microscopeDestinationContext_.clear();
+  microscopeDetailsText_.clear(); microscopeDetailsLines_.clear();
+  microscopeDetailsPage_ = 0U; microscopeDetailsVisible_ = false;
   repaint();
 }
 
@@ -2685,6 +2760,7 @@ void NativeEditorController::resize(double logicalWidth,
   pianoRoll_.rebuildIndex();
   if (microscopeUnit_.has_value()) {
     static_cast<void>(rebuildSampleMicroscope());
+    static_cast<void>(rebuildMicroscopeDetails());
   }
   repaint();
 }
@@ -3754,6 +3830,18 @@ core::Result<void> NativeEditorController::pointerDown(
       return core::success();
     }
     if (event.button != PointerButton::Left) return core::success();
+    if (layout_.microscopeCloseBounds(logicalWidth_, logicalHeight_).contains(event.position)) {
+      closeSampleMicroscope(); return core::success();
+    }
+    if (layout_.microscopeDetailsToggleBounds(logicalWidth_, logicalHeight_).contains(event.position))
+      return microscopeDetailsAction(0U);
+    if (microscopeDetailsVisible_) {
+      if (layout_.microscopeDetailsPageBounds(logicalWidth_, logicalHeight_, false).contains(event.position))
+        return microscopeDetailsAction(1U);
+      if (layout_.microscopeDetailsPageBounds(logicalWidth_, logicalHeight_, true).contains(event.position))
+        return microscopeDetailsAction(2U);
+      return core::success();
+    }
     if (event.clickCount >= 2) {
       if (callbacks_.playMicroscopeSample && microscopeUnit_.has_value()) {
         const auto played = callbacks_.playMicroscopeSample(
@@ -4749,8 +4837,25 @@ core::Result<void> NativeEditorController::keyDown(const KeyEvent& event) {
     }
     return core::success();
   }
-  if (sampleMicroscopeOpen() && event.key == NativeKey::Escape) {
-    closeSampleMicroscope();
+  if (sampleMicroscopeOpen()) {
+    if (event.key == NativeKey::Escape) {
+      if (microscopeDetailsVisible_) return microscopeDetailsAction(0U);
+      closeSampleMicroscope(); return core::success();
+    }
+    if (event.key == NativeKey::Tab) {
+      rebuildAccessibilityTree();
+      const auto focused = accessibilityTree_.focusNext(event.modifiers.shift);
+      repaint(); return focused;
+    }
+    if (event.key == NativeKey::Enter) {
+      if (const auto* focused = accessibilityTree_.focusedNode()) {
+        const auto id = focused->id;
+        return dispatchAccessibility(id, SemanticAction::Activate);
+      }
+    }
+    if (event.key == NativeKey::D) return microscopeDetailsAction(0U);
+    if (microscopeDetailsVisible_ && (event.key == NativeKey::Left || event.key == NativeKey::Right))
+      return microscopeDetailsAction(event.key == NativeKey::Left ? 1U : 2U);
     return core::success();
   }
   if (recoverySupportPanel_.view().visible &&
@@ -5145,7 +5250,7 @@ void NativeEditorController::scroll(double deltaX, double deltaY,
         (positive ? Action::Right : Action::Left), (anchor.x - view.dynamicsPlot->bounds.x) / view.dynamicsPlot->bounds.width));
     return;
   }
-  if (phonemeReview_ || timeMapPanel_ || replacementOpen_ || replacementInput_) return;
+  if (phonemeReview_ || timeMapPanel_ || replacementOpen_ || replacementInput_ || sampleMicroscopeOpen()) return;
   const auto& support = recoverySupportPanel_.view();
   if (support.visible && !support.items.empty()) {
     const auto panelX = std::max(

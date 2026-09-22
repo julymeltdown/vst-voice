@@ -310,7 +310,6 @@ void EditorScenePainter::paint(RasterCanvas& canvas, ui::PianoRollModel& model,
   paintExportProgress(canvas, state);
   paintDiagnostics(canvas, state);
   paintStatus(canvas, model, state);
-  paintSampleMicroscope(canvas, state);
   paintPhonemeReview(canvas, state);
   const auto eventsButton = layout_.timeMapOpenBounds();
   canvas.fillRect(eventsButton, theme_.panel);
@@ -403,6 +402,8 @@ void EditorScenePainter::paint(RasterCanvas& canvas, ui::PianoRollModel& model,
       }
     }
   }
+  // Modal inspection is above background controls and transient editor panels.
+  paintSampleMicroscope(canvas, state);
   if (state.focusedElementBounds.has_value()) {
     auto focusBounds = *state.focusedElementBounds;
     focusBounds.x -= layout_.focusRingInset;
@@ -1898,29 +1899,50 @@ void EditorScenePainter::paintSampleMicroscope(
   canvas.strokeRect(panel, theme_.microscopeBorder,
                     layout_.microscopeBorderWidth);
   const auto closeBounds = layout_.microscopeCloseBounds(width, height);
-  const auto closeX = closeBounds.x;
-  const auto title = fitUtf8Text("SAMPLE MICROSCOPE / " + view.unitId,
-                                std::max(layout_.microscopeTitleMinimumWidth,
-                                         closeX -
-                                             layout_.microscopeTitleRightGap),
-                                8.0);
+  const auto detailsBounds = layout_.microscopeDetailsToggleBounds(width, height);
+  const auto headerX = panel.x + 16.0;
+  const auto title = fitUtf8Text("SAMPLE / " + view.unitId,
+                                std::max(1.0, detailsBounds.x - headerX - 12.0), 8.0);
   const auto context = fitUtf8Text(
       view.destinationContext.empty() ? "DESTINATION UNKNOWN"
                                       : view.destinationContext,
-      std::max(layout_.microscopeContextMinimumWidth,
-               width - layout_.microscopeContextRightInset),
-      5.0);
-  const auto headerX = panel.x + layout_.microscopeHeaderInsetX;
+      std::max(1.0, panel.width - 32.0), 7.0);
   canvas.drawText(
-      ui::Point{headerX, panel.y + layout_.microscopeTitleBaselineOffset},
+      ui::Rect{headerX, panel.y + 10.0, std::max(1.0, detailsBounds.x - headerX - 12.0), 20.0},
       title, theme_.primaryText, layout_.microscopeTitleFontSize);
   canvas.drawText(
-      ui::Point{headerX, panel.y + layout_.microscopeContextBaselineOffset},
-      context, theme_.secondaryText, layout_.microscopeContextFontSize);
-  canvas.drawText(
-      ui::Point{closeX, panel.y + layout_.microscopeTitleBaselineOffset},
-      "ESC / DOUBLE CLICK CLOSE", theme_.secondaryText,
-      layout_.microscopeCloseFontSize);
+      ui::Rect{headerX, panel.y + 38.0, panel.width - 32.0, 18.0},
+      context, theme_.secondaryText, 10.0);
+  const auto button = [&](ui::Rect bounds, std::string_view label, bool enabled) {
+    canvas.fillRect(bounds, theme_.microscopeWaveBackground);
+    canvas.strokeRect(bounds, enabled ? theme_.microscopeBorder : theme_.gridStrong);
+    canvas.drawText(ui::Rect{bounds.x + 8.0, bounds.y + 5.0, bounds.width - 16.0, bounds.height - 6.0},
+        label, enabled ? theme_.primaryText : theme_.secondaryText, 10.0);
+  };
+  button(closeBounds, "Close / Esc", true);
+  button(detailsBounds, view.detailsVisible ? "Waveform / D" : "Details / D", true);
+
+  if (view.detailsVisible) {
+    const auto body = layout_.microscopeDetailsBounds(width, height);
+    canvas.fillRect(body, theme_.microscopeWaveBackground);
+    for (std::size_t i = 0U; i < view.detailsLines.size(); ++i) {
+      const auto top = body.y + static_cast<double>(i) * layout_.microscopeDetailsLineHeight;
+      if (top + layout_.microscopeDetailsLineHeight > body.bottom()) break;
+      std::string_view line{view.detailsLines[i]};
+      while (!line.empty() && (line.back() == '\n' || line.back() == '\r')) line.remove_suffix(1U);
+      canvas.drawText(ui::Rect{body.x, top, body.width, layout_.microscopeDetailsLineHeight},
+          line, theme_.primaryText, layout_.microscopeDetailsFontSize);
+    }
+    const auto previous = layout_.microscopeDetailsPageBounds(width, height, false);
+    const auto next = layout_.microscopeDetailsPageBounds(width, height, true);
+    button(previous, "Previous", view.detailsPage > 0U);
+    button(next, "Next", view.detailsPage + 1U < view.detailsPageCount);
+    canvas.drawText(ui::Rect{previous.right() + 12.0, previous.y + 5.0,
+        std::max(1.0, next.x - previous.right() - 24.0), 20.0},
+        "Page " + std::to_string(view.detailsPage + 1U) + " / " + std::to_string(view.detailsPageCount),
+        theme_.secondaryText, 11.0);
+    return;
+  }
 
   const auto wave = model.waveformBounds();
   canvas.fillRect(wave, theme_.microscopeWaveBackground);

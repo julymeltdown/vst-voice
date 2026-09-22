@@ -1,5 +1,24 @@
 # Integrated Singer Execution
 
+## U17 native selection details implemented; review pending (2026-09-22)
+
+The shared sample microscope now offers lossless UTF-8-aware paged details for
+the captured selection rationale and unit/destination identity. Snapshot age is
+explicit; reopening refreshes it. Pointer, keyboard and semantic controls share
+the layout, and details cannot edit/play the sample or route background actions.
+Adaptive geometry fits both plots at 480x320. Visual verification caught and
+fixed a Time Map control painting above the modal; actual system glyph metrics
+also required taller detail rows. A pixel assertion and glyph-fit checks retain
+those findings.
+
+Release warnings-as-errors build and eight selected targets pass 885 case
+executions in 27.54 seconds, including 838 monolithic and four new microscope
+cases. Focused Debug passes; its broader monolithic run and independent review
+are pending. The captures are native raster fixtures, not installed AppKit/DAW
+screenshots. See U17_NATIVE_SELECTION_DETAILS_2026-09-22.md. Full U17, singer
+qualification, Windows verification and Beta GO remain open; no complete unit
+is counted.
+
 ## U17 second review repair: cancellation inside the coordinator debounce (2026-09-22)
 
 Developer 2 REQUESTED CHANGES at 08d45090 for source-proven undefined behavior:

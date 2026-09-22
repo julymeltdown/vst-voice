@@ -1742,6 +1742,12 @@ if(SEAM_BUILD_TESTS)
       phase12c/src/live_fixture.cpp)
   endif()
   if(SEAM_BUILD_NATIVE_DESKTOP)
+    add_executable(seam_sample_microscope_tests
+      tests/test_main.cpp tests/test_sample_microscope_details.cpp)
+    target_include_directories(seam_sample_microscope_tests PRIVATE tests)
+    target_link_libraries(seam_sample_microscope_tests PRIVATE seam_native_ui)
+    seam_apply_compiler_options(seam_sample_microscope_tests)
+    add_test(NAME seam_sample_microscope_tests COMMAND seam_sample_microscope_tests)
     add_executable(seam_diagnostic_search_tests
       tests/test_main.cpp tests/test_diagnostic_registry.cpp tests/test_diagnostic_panel.cpp)
     target_include_directories(seam_diagnostic_search_tests PRIVATE tests)
@@ -1794,6 +1800,7 @@ if(SEAM_BUILD_TESTS)
       tests/test_vibrato_inspector.cpp
       tests/test_dynamics_lane_workflow.cpp
       tests/test_measured_dynamics_workflow.cpp
+      tests/test_sample_microscope_details.cpp
       tests/test_style_coverage_sheet.cpp
       tests/test_standalone_authoring_integration.cpp
       tests/test_standalone_project_lifecycle.cpp
