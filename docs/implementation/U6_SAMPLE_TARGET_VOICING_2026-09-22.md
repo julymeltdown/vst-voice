@@ -1,7 +1,7 @@
 # U6 target-unvoicing experiment — acoustic FAIL, production disabled
 
 Date: 2026-09-22. Baseline: `2fe9871c64d19ab6010cc0932cddd5191acbd41f`.
-Status: developer experiment; pinned independent implementation review pending.
+Status: isolated developer experiment independently approved; acoustic FAIL and production disabled.
 **This does not close U6, U16, or any additional roadmap unit.**
 
 ## Outcome
@@ -156,6 +156,22 @@ against baseline `2fe9871c`. A fresh configure with the experiment option omitte
 records it OFF; the generated Ninja graph and CTest registry contain no experiment
 source or target. That check is configure-time isolation evidence, not another
 product build. The normal production behavior remains the already reviewed baseline.
+
+Developer 2 APPROVED commit `86a4ae43e4397a7cb8d9496e86594f6ea4689e80`
+against `2fe9871c64d19ab6010cc0932cddd5191acbd41f`, strictly for the isolated
+default-OFF experiment. The reviewer inspected the entire seven-file diff,
+existing default-OFF configure graph, production isolation and all four documented
+hashes, and independently ran both existing experiment binaries (5 cases each).
+Both reproduced the exact speech failures above. No actionable blocking finding
+was established. The reviewer did not rebuild, freshly configure, rerun the
+broader 956/1,087-case suites, validate Windows, measure in-flight cancellation
+latency or profile performance. Approval does not enable production, close
+U6/U16, or establish perceptual or release qualification.
+
+An additive calibration with the exact existing oracle, predeclared construction-
+labeled controls and unchanged thresholds was accepted as the next research step.
+Any replacement metric requires held-out controls, side-by-side old/new results
+and separate review. Calibration cannot retrospectively change either speech FAIL.
 
 Developer 2 recommends landing only the isolated default-off experiment and
 explicit failed assessment. U8 requires truthful admission; U16 requires

@@ -18,8 +18,13 @@ Its machine-readable assessment distinguishes engineering execution PASS from
 acoustic FAIL, and includes source, manifest, output and executable hashes.
 Fresh selected Release and Debug builds pass six CTest targets each (956/1,087
 overlapping case executions, 23.43/183.47 seconds). A clean configure confirms
-the target is absent without explicit opt-in. Pinned implementation review is
-pending. See U6_SAMPLE_TARGET_VOICING_2026-09-22.md for the experiment, failures,
+the target is absent without explicit opt-in. Developer 2 APPROVED
+`86a4ae43e4397a7cb8d9496e86594f6ea4689e80` strictly as an isolated experiment,
+independently rerunning its five cases in each configuration and reproducing
+both failures. The reviewer inspected the existing default-OFF graph and all
+four documented hashes, but did not rebuild/configure, rerun the broad suites,
+validate Windows or measure in-flight cancellation latency/performance.
+See U6_SAMPLE_TARGET_VOICING_2026-09-22.md for the experiment, failures,
 artifacts and next action. No complete unit, qualified singer or Beta GO is counted.
 
 ## U6 production phonetic context independently approved (2026-09-22)
