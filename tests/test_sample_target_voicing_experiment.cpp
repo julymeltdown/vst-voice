@@ -14,6 +14,7 @@
 #include <cmath>
 #include <limits>
 #include <numbers>
+#include <random>
 
 namespace {
 using namespace seam;
@@ -220,7 +221,9 @@ TEST_CASE("speech experiment executes and records both frozen acoustic failures 
   // the newly corrected synthesis parameter. Report both before and after.
   const auto sourceCorrelation = periodicity(a, rate, measuredHz);
   const auto referenceBands = bands(a, rate);
-  const std::filesystem::path artifacts{SEAM_TARGET_VOICING_REPORT_DIRECTORY};
+  const auto executableHash = core::sha256File(SEAM_TARGET_VOICING_EXECUTABLE); CHECK(executableHash);
+  // New executable identities must not overwrite the historical r1 assessment.
+  const auto artifacts = std::filesystem::path{SEAM_TARGET_VOICING_REPORT_DIRECTORY} / executableHash.value();
   using J = formats::JsonValue;
   J::Array cases;
   bool acousticPass = true;
@@ -257,7 +260,6 @@ TEST_CASE("speech experiment executes and records both frozen acoustic failures 
               << " source_periodicity=" << sourceCorrelation << " rms=" << ratio << " periodicity=" << correlation
               << " band_error=" << maximumBandError << " acoustic=" << (passed ? "PASS" : "FAIL") << '\n';
   }
-  const auto executableHash = core::sha256File(SEAM_TARGET_VOICING_EXECUTABLE); CHECK(executableHash);
   const J report{J::Object{{"formatId", J{"com.project-seam.sample-target-voicing-experiment"}},
       {"schemaVersion", J{std::int64_t{1}}}, {"algorithmRevision", J{std::int64_t{1}}},
       {"executionStatus", J{"PASS"}}, {"acousticAssessment", J{acousticPass ? "PASS" : "FAIL"}},
@@ -353,4 +355,130 @@ TEST_CASE("sample target voicing is local deterministic finite and cancellation 
   const auto neutral = fixture.compile(); CHECK(neutral.at(origin).scoreFrequencyHz);
   CHECK(voicing_experiment::applySampleTargetVoicing(cancelled, neutral, origin, 440.0, "neutral"));
   CHECK(cancelled == input);
+}
+
+TEST_CASE("source lag oracle calibration distinguishes construction labels from perceptual voicing") {
+  // Prospective calibration v1, not a replacement oracle or threshold tuning.
+  // Frozen grid: 2 rates x 3 centers x (1 tone + 3 seeds x
+  // (1 white + 5 resonated-noise + 3 tone/noise mixtures)) = 168 controls.
+  // Construction labels describe EXCITATION, not perceived voicing or quality.
+  constexpr std::array<std::uint32_t, 2U> rates{44100U, 48000U};
+  constexpr std::array<double, 3U> centers{220.0, 440.0, 991.01406569073924};
+  constexpr std::array<std::uint32_t, 3U> seeds{91073U, 71931U, 26701U};
+  constexpr std::array<double, 5U> widths{20.0, 50.0, 100.0, 200.0, 400.0};
+  constexpr std::array<double, 3U> mixtures{0.25, 0.5, 0.75};
+  using J = formats::JsonValue;
+  J::Array cases;
+  std::size_t aperiodicCount = 0U, periodicCount = 0U, mixedCount = 0U;
+  std::size_t falsePositives = 0U, falseNegatives = 0U;
+  const auto executableHash = core::sha256File(SEAM_TARGET_VOICING_EXECUTABLE); CHECK(executableHash);
+  const auto artifacts = std::filesystem::path{SEAM_TARGET_VOICING_REPORT_DIRECTORY} /
+      executableHash.value() / "oracle-calibration-v1";
+  for (const auto rate : rates) {
+    for (std::size_t centerIndex = 0U; centerIndex < centers.size(); ++centerIndex) {
+      const auto hz = centers[centerIndex];
+      const auto count = static_cast<std::size_t>(rate) * 8U / 10U;
+      const auto first = static_cast<std::size_t>(rate) / 2U;
+      const auto measured = static_cast<std::size_t>(rate) * 3U / 10U;
+      const auto prefix = std::to_string(rate) + "-center-" + std::to_string(centerIndex);
+      const auto record = [&](const std::string& suffix, std::vector<float> samples,
+          const std::string& label, std::uint32_t seed, double width, double mixture) {
+        CHECK(samples.size() == count);
+        float peak = 0.0F;
+        for (const auto sample : samples) { CHECK(std::isfinite(sample)); peak = std::max(peak, std::abs(sample)); }
+        CHECK(peak > 0.0F);
+        for (auto& sample : samples) sample *= 0.45F / peak;
+        const auto correlation = periodicity(std::span<const float>{samples}.subspan(first, measured), rate, hz);
+        CHECK(std::isfinite(correlation));
+        const bool detectedPeriodic = correlation >= 0.65;
+        // This audits ONLY the frozen NCC cutoff. The speech conjunction also
+        // includes RMS, source improvement and spectral retention; it is unchanged.
+        if (label == "aperiodic-excitation") { ++aperiodicCount; if (detectedPeriodic) ++falsePositives; }
+        else if (label == "periodic-excitation") { ++periodicCount; if (!detectedPeriodic) ++falseNegatives; }
+        else { CHECK(label == "mixed-excitation"); ++mixedCount; }
+        const auto filename = prefix + "-" + suffix + ".wav";
+        CHECK(voicebank::writeWav(artifacts / filename, {.sampleRate = rate, .channels = 1U,
+            .sampleFormat = voicebank::WavSampleFormat::Float32}, samples));
+        const auto reread = voicebank::readWav(artifacts / filename); CHECK(reread);
+        CHECK(reread.value().interleaved == samples);
+        const auto hash = core::sha256File(artifacts / filename); CHECK(hash);
+        cases.emplace_back(J::Object{{"id", J{prefix + "-" + suffix}}, {"constructionLabel", J{label}},
+            {"sampleRate", J{static_cast<std::int64_t>(rate)}}, {"oracleHz", J{hz}},
+            {"seed", seed ? J{static_cast<std::int64_t>(seed)} : J{}},
+            {"resonatorBandwidthHz", width > 0.0 ? J{width} : J{}},
+            {"resonatorPoleRadius", width > 0.0 ? J{std::exp(-std::numbers::pi * width / rate)} : J{}},
+            {"normalizedTonePowerWeight", mixture >= 0.0 ? J{mixture} : J{}},
+            {"analysisStartFrame", J{static_cast<std::int64_t>(first)}},
+            {"analysisFrameCount", J{static_cast<std::int64_t>(measured)}},
+            {"correlation", J{correlation}}, {"cutoffDetectsPeriodic", J{detectedPeriodic}},
+            {"outputFile", J{filename}}, {"outputSha256", J{hash.value()}}});
+        std::cout << "[ORACLE-CONTROL] " << prefix << '-' << suffix << " label=" << label
+                  << " correlation=" << correlation << " periodic_cutoff=" << detectedPeriodic << '\n';
+        return correlation;
+      };
+      std::vector<float> tone(count);
+      for (std::size_t i = 0U; i < count; ++i)
+        tone[i] = static_cast<float>(std::sin(2.0 * std::numbers::pi * hz * static_cast<double>(i) / rate));
+      CHECK(record("tone", tone, "periodic-excitation", 0U, 0.0, 1.0) > 0.9);
+      for (const auto seed : seeds) {
+        std::mt19937 random{seed};
+        std::vector<float> white(count);
+        for (auto& value : white)
+          value = static_cast<float>((static_cast<double>(random()) + 0.5) * 0x1.0p-31 - 1.0);
+        const auto seedLabel = "seed-" + std::to_string(seed);
+        CHECK(record(seedLabel + "-white", white, "aperiodic-excitation", seed, 0.0, 0.0) < 0.15);
+        for (const auto width : widths) {
+          // Independent causal two-pole noise filter, not production synthesis,
+          // FFT, phase randomization, or the envelope/noise conversion under test.
+          const auto radius = std::exp(-std::numbers::pi * width / rate);
+          const auto coefficient = 2.0 * radius * std::cos(2.0 * std::numbers::pi * hz / rate);
+          std::vector<float> colored(count);
+          double previous = 0.0, beforePrevious = 0.0;
+          for (std::size_t i = 0U; i < count; ++i) {
+            const auto value = white[i] + coefficient * previous - radius * radius * beforePrevious;
+            colored[i] = static_cast<float>(value);
+            beforePrevious = previous; previous = value;
+          }
+          record(seedLabel + "-bandwidth-" + std::to_string(static_cast<unsigned>(width)),
+              std::move(colored), "aperiodic-excitation", seed, width, 0.0);
+        }
+        const auto toneRms = std::sqrt(energy(tone) / static_cast<double>(count));
+        const auto noiseRms = std::sqrt(energy(white) / static_cast<double>(count));
+        for (const auto mixture : mixtures) {
+          std::vector<float> mixed(count);
+          for (std::size_t i = 0U; i < count; ++i)
+            mixed[i] = static_cast<float>(std::sqrt(mixture) * tone[i] / toneRms +
+                std::sqrt(1.0 - mixture) * white[i] / noiseRms);
+          record(seedLabel + "-tone-weight-" + std::to_string(static_cast<unsigned>(mixture * 100.0)),
+              std::move(mixed), "mixed-excitation", seed, 0.0, mixture);
+        }
+      }
+    }
+  }
+  const J report{J::Object{{"formatId", J{"com.project-seam.source-lag-oracle-calibration"}},
+      {"schemaVersion", J{std::int64_t{1}}}, {"calibrationRevision", J{std::int64_t{1}}},
+      {"executionStatus", J{"PASS"}},
+      {"assessment", J{falsePositives ? "EXCITATION_CLASSIFIER_SCOPE_LIMITATION" : "NO_COUNTEREXAMPLE_IN_GRID"}},
+      {"oracle", J{"source-lag-ncc-v1; exact unchanged C++ function used by the frozen speech experiment"}},
+      {"cutoffPeriodicMinimumInclusive", J{0.65}}, {"durationSeconds", J{0.8}},
+      {"analysisWindowSeconds", J{J::Array{J{0.5}, J{0.8}}}},
+      {"constructionLabelsArePerceptualLabels", J{false}}, {"productionEnabled", J{false}},
+      {"releaseEligible", J{false}}, {"listeningStatus", J{"NOT_REVIEWED"}},
+      {"historicalSpeechAssessment", J{"UNCHANGED_FAIL"}}, {"replacementMetric", J{}},
+      {"generator", J{"sine; std::mt19937(seed), uint32 half-bin uniform to Float32; causal y=x+2*r*cos(2*pi*hz/rate)*y[-1]-r*r*y[-2], r=exp(-pi*bandwidth/rate); no production DSP"}},
+      {"mixtures", J{"sqrt(weight)*unit-RMS tone + sqrt(1-weight)*unit-RMS white noise; weight is nominal component power, not exact total-waveform proportion; mixed labels excluded from binary errors"}},
+      {"waveformNormalization", J{"whole-control peak to 0.45, then Float32; measure serialized samples after 500 ms warmup"}},
+      {"executableSha256", J{executableHash.value()}},
+      {"aperiodicConstructionCount", J{static_cast<std::int64_t>(aperiodicCount)}},
+      {"periodicConstructionCount", J{static_cast<std::int64_t>(periodicCount)}},
+      {"mixedConstructionCount", J{static_cast<std::int64_t>(mixedCount)}},
+      {"falsePositivesAgainstAperiodicConstruction", J{static_cast<std::int64_t>(falsePositives)}},
+      {"falseNegativesAgainstPeriodicConstruction", J{static_cast<std::int64_t>(falseNegatives)}},
+      {"cases", J{std::move(cases)}}}};
+  CHECK(core::durableAtomicWriteText(artifacts / "calibration.json", formats::stringifyJson(report)));
+  std::cout << "[ORACLE-CALIBRATION] " << artifacts / "calibration.json" << " false_positive="
+            << falsePositives << '/' << aperiodicCount << " false_negative=" << falseNegatives
+            << '/' << periodicCount << " mixed=" << mixedCount << '\n';
+  CHECK(aperiodicCount == 108U); CHECK(periodicCount == 6U); CHECK(mixedCount == 54U);
+  CHECK(falsePositives > 0U); CHECK(falseNegatives == 0U);
 }

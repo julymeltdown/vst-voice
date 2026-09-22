@@ -117,10 +117,13 @@ cmake --build build-u4-macos --target seam_sample_target_voicing_experiment_test
 ctest --test-dir build-u4-macos -R '^seam_sample_target_voicing_experiment_tests$' -V
 ```
 
-Repeat with `build/debug` for the Debug configuration. The per-build
-`target-voicing-experiment/` directory contains source.wav,
+Repeat with `build/debug` for the Debug configuration. New runs write under
+`target-voicing-experiment/<executable-sha256>/`, preserving the historical
+reports directly in `target-voicing-experiment/`. The directory contains source.wav,
 declared-root-67.wav, estimated-pitch.wav and assessment.json. These are
 regenerable local development artifacts, not immutable release records.
+The additive `oracle-calibration-v1/` packet is documented in
+U6_VOICING_ORACLE_CALIBRATION_2026-09-22.md; it does not revise these failures.
 
 ## Review disposition and next action
 

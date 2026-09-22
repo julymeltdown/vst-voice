@@ -1,5 +1,25 @@
 # Integrated Singer Execution
 
+## U6 oracle calibration: resonant noise exposes an excitation-classifier limit (2026-09-22)
+
+An additive, predeclared 168-control grid reuses the exact unchanged C++
+source-lag correlation oracle: two rates, three tone/resonance centers, three
+seeds, five bandwidths and three tone/noise mixture weights. Independent
+random-noise excitation passed through a causal two-pole resonator exceeds the
+0.65 periodicity cutoff in 36/108 aperiodic constructions; all six periodic-tone
+controls are detected, and 54 mixed controls are reported separately. These are
+generator labels, not perceptual voicing labels or population error estimates.
+
+Fresh Release/Debug builds and all six dedicated engineering cases pass
+(1.71/14.57 seconds). Reports match across configurations except binary identity;
+all 168 WAV hashes per configuration verify. New results use executable-bound
+directories. Historical speech report hashes remain unchanged, and new speech
+results still reproduce both acoustic failures. No production code, thresholds,
+fixtures or original oracle changed. A replacement metric and production
+promotion require separate evidence/review; neither is implemented here.
+Pinned calibration review is pending. See
+U6_VOICING_ORACLE_CALIBRATION_2026-09-22.md. No additional complete unit or Beta GO.
+
 ## U6 target-unvoicing experiment: acoustic FAIL, production disabled (2026-09-22)
 
 The attempted shared envelope/noise conversion passed synthetic controls but
