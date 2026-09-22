@@ -70,7 +70,14 @@ did not cover two important cases:
 
 Revision 18 and the renderer revisions above supersede the first increment's
 audio identity. No training or learned-model inference was used for either
-repair. Independent re-review is pending.
+repair. Developer 2 APPROVED the bounded increment at
+`e6d816008a148c1a2b1848cf28bf977da39ca390`: both findings are closed, with no
+remaining blocking findings identified in this scope. The reviewer independently
+reran all five focused binaries in Release and Debug (142/142 each), and rebuilt
+the separate neural request probe: outside-note frames 8000/25000 now receive
+the z-phone prior 0.4 for both accepted-0.8 and manual-zero scenarios. The broad
+995-case Release log was inspected, not independently rerun. This is not full
+U6/U39, performance-budget, voice-quality, Windows, listening or Beta approval.
 
 ## Evidence
 
@@ -96,7 +103,7 @@ The broader Release rerun passed 8/8 CTest targets (995 individual cases) in
 `build-u4-macos/u6-timbre-final-ctest.log` and
 `build/debug/u6-timbre-final-ctest.log`; detailed case output is in each
 configuration's CTest `Testing/Temporary/LastTest.log` at this checkpoint.
-Independent re-review remains pending.
+The bounded independent approval is recorded above against the exact code commit.
 
 ## Remaining scope
 
