@@ -38,6 +38,17 @@ domain::TrackOutputRoute routeForTrack(const domain::TrackOutputRoute& route,
 
 }  // namespace
 
+core::Result<void> validateCompleteProjectRender(const ProjectRenderResult& rendered) {
+  if (rendered.diagnostics.empty()) return core::success();
+  const auto& first = rendered.diagnostics.front();
+  auto context = "track=" + first.trackId.toString() +
+                 "; region=" + first.regionId.toString();
+  if (!first.phraseId.empty()) context += "; phrase=" + first.phraseId;
+  if (!first.context.empty()) context += "; " + first.context;
+  return core::failure(first.code, "Project render is incomplete: " + first.message,
+                       std::move(context));
+}
+
 core::Result<ProjectRenderResult> ProductionProjectRenderer::render(
     const domain::Project& project,
     std::span<const TrackVoicebankSource> voicebanks,
@@ -522,6 +533,13 @@ core::Result<ProjectRenderResult> ProductionProjectRenderer::renderWithSources(
         .solo = track.solo,
     });
     ++output.trackCount;
+  }
+  // Preview deliberately retains successful clips for editing. A Final result
+  // promises the entire requested mix, even when at least one clip succeeded.
+  // Check before allocating/mixing PCM so no incomplete Final can be published.
+  if (quality == RenderQuality::Final) {
+    const auto complete = validateCompleteProjectRender(output);
+    if (!complete) return core::Result<ProjectRenderResult>{complete.error()};
   }
   if (clips.empty()) {
     if (!output.diagnostics.empty()) {

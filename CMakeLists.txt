@@ -1740,6 +1740,7 @@ if(SEAM_BUILD_TESTS)
     tests/test_export_dialog.cpp
     tests/test_editor_semantics.cpp
     tests/test_export_service.cpp
+    tests/test_final_render_completeness.cpp
     tests/test_audio_level_envelope.cpp
     tests/test_audio_settings.cpp
     tests/test_media_import_service.cpp
@@ -1927,6 +1928,18 @@ if(SEAM_BUILD_TESTS)
     seam_formats seam_application seam_domain seam_core)
   seam_apply_compiler_options(seam_export_tests)
   add_test(NAME seam_export_tests COMMAND seam_export_tests)
+  add_executable(seam_final_render_completeness_tests
+    tests/test_main.cpp tests/test_final_render_completeness.cpp)
+  target_include_directories(seam_final_render_completeness_tests PRIVATE tests)
+  target_link_libraries(seam_final_render_completeness_tests PRIVATE seam_authoring_runtime)
+  if(TARGET seam_clap_editor)
+    target_link_libraries(seam_final_render_completeness_tests PRIVATE seam_clap_editor)
+    target_compile_definitions(seam_final_render_completeness_tests PRIVATE SEAM_COMPLETENESS_CLAP=1)
+  endif()
+  seam_apply_compiler_options(seam_final_render_completeness_tests)
+  add_test(NAME seam_final_render_completeness_tests COMMAND seam_final_render_completeness_tests)
+  set_tests_properties(seam_final_render_completeness_tests PROPERTIES TIMEOUT 90
+    ENVIRONMENT "SEAM_PREVIEW_CACHE_ROOT=${CMAKE_BINARY_DIR}/completeness-preview-cache")
   add_executable(seam_style_owned_candidate_import_tests
     tests/test_main.cpp
     tests/test_style_owned_candidate_import.cpp)

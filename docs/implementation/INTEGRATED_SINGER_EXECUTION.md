@@ -1,6 +1,6 @@
 # Integrated Singer Execution
 
-## U39 Spectral Classic formant implementation awaiting independent review (2026-09-22)
+## U39 Spectral Classic formants: export-completeness review repair (2026-09-22)
 
 Independent sample formants now pass normal snapshot, Preview/Final, cache,
 reload and transactional Float32 export tests, with exact neutral/manual islands.
@@ -12,11 +12,25 @@ Spectral revision 8 invalidates old caches. Native standalone and CLAP adapters
 resolve conservative sample-inventory capabilities, not a blanket carrier claim.
 The CLAP test covers a real nudge/current preview/fixed-audio offline bounce.
 
-The initial Release regression run passed six targets, including 842 core cases.
-Debug passed five focused targets; final pinned evidence and independent review
-remain to be recorded in U39_SPECTRAL_FORMANT_CONTROL_2026-09-22.md. Mixed-inventory
-exact-plan UI refinement and perceptual/resource qualification remain open. No
-additional whole unit, qualified singer or Beta GO is counted.
+Developer 2 REQUESTED CHANGES at `2b760431`: no additional confirmed formant-DSP
+defect, but a pre-existing omission gap allowed partial project audio through
+Final/export. Their four Release targets pass; the independent Debug run failed
+during disk exhaustion, with the first assertion's cause still unestablished.
+Unsupported phrase errors already propagate, and CLAP already guarded partial
+Final bounce; neither is claimed as a newly missing boundary.
+
+Six red regressions reproduce incomplete Final/single-file/Export Set/direct-PCM
+acceptance. A shared check now refuses diagnostic-bearing Final results before
+mix publication and direct export before staging, while Preview remains partial.
+Existing/new destinations, already-rendered stems and muted/solo exclusions are
+covered. Fresh Release passes twelve targets / 1,246 overlapping case executions
+(41.24 seconds), including core 980 and the eight-case CLAP-enabled completeness
+suite. Fresh Debug passes seven targets / 127 overlapping case executions
+(72.86 seconds), including the formerly failing initialRegion case; its earlier
+failure cause remains unestablished. Pinned re-review remains pending; details
+and failed-run history are in U39_SPECTRAL_FORMANT_CONTROL_2026-09-22.md.
+Mixed-inventory exact-plan UI refinement and perceptual/resource qualification
+remain open. No additional whole unit, qualified singer or Beta GO is counted.
 
 ## U16 fixed LF panel executed: sensitivity reproduced, no production promotion (2026-09-22)
 

@@ -372,6 +372,10 @@ core::Result<ExportResult> ExportService::commitRendered(
     const rendering::ProjectRenderResult& rendered, std::uint64_t revision,
     const std::filesystem::path& destination, voicebank::WavSampleFormat format,
     std::stop_token stopToken) const {
+  // Callers may supply an already rendered Preview. Never publish its partial
+  // audio, or create staging/parent directories, when requested content failed.
+  const auto complete = rendering::validateCompleteProjectRender(rendered);
+  if (!complete) return core::Result<ExportResult>{complete.error()};
   ExportResult result{.state = ExportState::Preflight,
                       .masterPath = destination,
                       .projectRevision = revision};

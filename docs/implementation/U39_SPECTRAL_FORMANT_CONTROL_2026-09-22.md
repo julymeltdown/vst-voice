@@ -3,7 +3,8 @@
 Baseline: `ae2b4fd4e94133222a242ac15fefdf23ce2e4a82`. Date: 2026-09-22.
 This is a production implementation increment, not completion of U39 or Beta GO.
 The full R1–R20 / U1–U48 objective, qualified singer and listening requirements
-remain unchanged. Independent implementation review is pending.
+remain unchanged. The first independent review requested an export-completeness
+repair; the repaired candidate awaits re-review (details below).
 
 ## Delivered path
 
@@ -147,5 +148,81 @@ python3 -B scripts/verify_tracked_source_closure.py --root .
 ```
 
 The full CTest inventory was not rerun. No full U6/U16/U39, installed-host,
-language, singer or Beta acceptance is inferred. Independent review remains
-pending on the pinned implementation candidate.
+language, singer or Beta acceptance is inferred.
+
+## Independent review and Final-completeness repair
+
+Developer 2 reviewed `2b760431f719a5105a6b047a91a5d7b7e5de2933` against
+`ae2b4fd4e94133222a242ac15fefdf23ce2e4a82` and returned **REQUEST CHANGES**.
+No additional confirmed DSP defect was found in that formant diff. Their
+independent Release run passed four selected CTest targets in 5.33 seconds.
+Their Debug run was **not clean**: performance-snapshot, style-blending and
+formant targets failed during a run reporting disk exhaustion. The first
+`initialRegion` assertion failure's cause was not separately established; do not
+silently attribute it to storage or turn that run into a PASS.
+
+The blocking integration finding predates the formant change: project rendering
+collects recoverable failed sample phrases and failed backing media into
+diagnostics, but previously rejected them only if no valid clip remained. A
+successful clip could therefore let incomplete Final PCM reach single-file or
+Export Set publication. Direct `commitRendered` also accepted diagnostic-bearing
+PCM. Important corrections retained from review:
+
+- Region rendering only collects **NotFound/Conflict** phrase errors. Unsupported
+  formant capability/budget/headroom errors already propagate immediately.
+- CLAP offline preparation already rejects diagnostic-bearing Final results;
+  its guard was not missing and has not been removed or credited as a new repair.
+
+The new regression suite reproduced six failures before the fix: missing sample
+phrase, conflicting sample phrase, backing-media omission, single-file export,
+Export Set and direct rendered-PCM export all accepted incomplete content. Two
+control cases already passed: unsupported Formant refusal and CLAP offline
+refusal. The retained local red log is
+`build/release/Testing/final-completeness-red.log` (2 pass / 6 fail).
+
+`validateCompleteProjectRender` now owns a shared completeness check. Final
+project rendering applies it before final mix allocation/publication;
+`commitRendered` applies it before any destination or staging-directory changes.
+It retains the first failure's code, message and track/region/phrase/source
+context. Every current project diagnostic represents omitted requested content,
+not an informational warning; this is now explicit in the public result type.
+Partial Preview behavior and intentionally muted/non-soloed exclusions remain
+unchanged. Export Set inherits the shared Final check and its existing rollback
+cleans already-staged outputs.
+
+`tests/test_final_render_completeness.cpp` has seven base cases plus an optional
+actual-CLAP-runtime case. It covers a successful phrase beside a missing phrase,
+a successful singer beside a conflicting singer, missing paths/empty media,
+changed hashes/source geometry, muted/solo exclusions, existing and new export
+destinations, master-only and stems-only sets, cleanup after one successful stem,
+and direct incomplete-PCM rejection before parent creation. Directory structure
+and every retained file's hash are compared across failed publications. Complete
+exports remain successful; no failure assertion or existing test was weakened.
+
+The standalone new suite initially passed 8/8 after the repair in 0.76 seconds.
+Fresh Release builds then passed all 12 selected CTest targets in 41.24 seconds:
+authoring 13, singer-route 9, capabilities 6, performance-snapshot 50, style-blend
+11, CLAP microscope 2, offline-session 3, coordinator 21, export 26, completeness
+8, formants 17, and core 980 cases. These are **1,246 overlapping case executions**,
+not 1,246 distinct tests. The full CTest inventory was not run.
+
+The Debug Make configuration needed an explicit CMake regeneration before it
+knew the new target; the initial unknown-target command was not a C++ failure.
+Fresh Debug builds pass all seven selected targets in 72.86 seconds: singer-route
+9, capabilities 6, performance-snapshot 50, style-blend 11, export 26, completeness
+8 and formants 17 cases (127 overlapping case executions). The formerly failing
+`initialRegion` case now passes; this does not establish the earlier failure's
+cause. Independent re-review is pending. No storage was deleted for this repair.
+No new whole U unit, singer qualification or Beta GO is counted.
+Tracked source closure reports `SOURCE_CLOSURE=PASS`; staged whitespace checks
+also pass. The scope remains local macOS engineering verification.
+
+Reproduction:
+
+```sh
+cmake -S . -B build/debug
+cmake --build build/release --target seam_tests seam_export_tests seam_final_render_completeness_tests seam_formant_expression_tests seam_performance_snapshot_tests seam_style_blending_tests seam_authoring_render_coordinator_tests seam_authoring_performance_tests seam_renderer_capability_tests seam_singer_route_tests seam_clap_microscope_tests seam_offline_render_session_tests -j4
+ctest --test-dir build/release -R '^(seam_tests|seam_(export|final_render_completeness|formant_expression|performance_snapshot|style_blending|authoring_render_coordinator|authoring_performance|renderer_capability|singer_route|clap_microscope|offline_render_session)_tests)$' --output-on-failure
+cmake --build build/debug --target seam_final_render_completeness_tests seam_export_tests seam_formant_expression_tests seam_performance_snapshot_tests seam_style_blending_tests seam_renderer_capability_tests seam_singer_route_tests -j4
+ctest --test-dir build/debug -R '^seam_(export|final_render_completeness|formant_expression|performance_snapshot|style_blending|renderer_capability|singer_route)_tests$' --output-on-failure
+```

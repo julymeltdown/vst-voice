@@ -74,6 +74,8 @@ struct ProjectRenderResult final {
   // named no active region, when that region's render published no identity, or when the identity is
   // incomplete: a presentation binds to a complete identity or to nothing.
   std::optional<RenderedPerformanceIdentity> performanceIdentity;
+  // Omitted requested content, not informational warnings. Preview may retain
+  // the successful clips; Final rendering and export must reject these results.
   std::vector<ProjectRenderDiagnostic> diagnostics;
   std::size_t trackCount{0U};
   std::size_t regionCount{0U};
@@ -82,6 +84,10 @@ struct ProjectRenderResult final {
   std::size_t fallbackCount{0U};
   std::size_t cacheHits{0U};
 };
+
+// Shared publication boundary for Final rendering and direct PCM export.
+// Preserves the first failure's code and identifies its track/region/phrase.
+[[nodiscard]] core::Result<void> validateCompleteProjectRender(const ProjectRenderResult& rendered);
 
 class ProductionProjectRenderer final {
 public:
