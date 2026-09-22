@@ -118,6 +118,9 @@ public:
   // render setting.
   void setTempoMapOverride(std::optional<time::TempoMap> map);
   void setCompletionCallback(std::function<void()> callback);
+  // Owner-thread resource/document invalidation. Retain historical PCM but
+  // revoke current measurement authority and every pending debounce request.
+  void invalidatePreview();
   void requestPreview(
       bool immediate = false,
       application::CommandImpact impact = application::CommandImpact{

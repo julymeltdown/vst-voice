@@ -1,6 +1,22 @@
 # Integrated Singer Execution
 
-## U17 contextual source-unit selection implemented; review pending (2026-09-22)
+## U17 contextual selection: explicit-refresh review repair (2026-09-22)
+
+Developer 2 requested changes on 9d40f034 solely for explicit catalog refresh
+leaving old current-render/measurement evidence valid. The connected standalone
+regression reproduced the unchanged current request ID (four passed, one failed)
+after a losing source mutation and a public bank-install-triggered refresh.
+This was not a stale standalone export defect.
+
+Refresh now invalidates/cancels before catalog I/O and re-resolves afterward.
+Shared owner-thread invalidation also clears pending debounced work; dispatch is
+serialized with it so an obsolete request cannot revive current evidence after
+an unresolved refresh. Old immutable PCM remains historical. Release regression
+passes 832 core, 19 coordinator, four singer-journey and five standalone cases;
+Debug passes five standalone and 19 coordinator cases. Exact-hash independent
+re-review is pending. See U17_CONTEXTUAL_SELECTION_2026-09-22.md.
+
+## U17 contextual source-unit selection implemented (2026-09-22)
 
 The production sample snapshot now measures frozen source-boundary level and
 short-lag correlation, and selects a complete sequence with distinct candidate
@@ -15,7 +31,7 @@ incompatible partitions. Strict Release passes seven targets / 958 case
 executions (22.27 s); Debug passes four focused targets / 104 cases (27.71 s).
 The CLAP editor also builds in Debug. The added three-placement pair test checks
 standalone-equal project endpoints, float-WAV samples and exact owned-output
-reconstruction. Independent implementation review is pending. See
+reconstruction. Independent review requested the refresh repair recorded above. See
 U17_CONTEXTUAL_SELECTION_2026-09-22.md. No complete unit or Beta GO is counted.
 
 ## U17 ordered sample-style crossfade independently approved (2026-09-22)

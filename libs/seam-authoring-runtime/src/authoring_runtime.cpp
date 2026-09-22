@@ -403,22 +403,30 @@ void AuthoringRuntime::handleDocumentChanged() {
   requestPreview(false, document_->session().lastImpact());
 }
 
+void AuthoringRuntime::invalidatePreview() {
+  {
+    std::lock_guard lock(previewMutex_);
+    pendingPreview_.reset();
+    ++previewGeneration_;
+    // The debounce worker submits under this same lock. It cannot restore an
+    // obsolete request token after this owner-thread invalidation returns.
+    renderer_.invalidateCurrent();
+  }
+  previewCondition_.notify_all();
+}
+
 void AuthoringRuntime::requestPreview(bool immediate,
                                       application::CommandImpact impact) {
   if (!initialized_ || document_ == nullptr) return;
 
   // A previously prepared Final must not remain current during debounce.
   // The publication itself stays alive for readers and technical diagnostics.
-  renderer_.invalidateCurrent();
+  invalidatePreview();
 
   auto request = makePreviewRequest(std::move(impact));
   if (!request.has_value()) return;
   if (immediate) {
-    {
-      std::lock_guard lock(previewMutex_);
-      pendingPreview_.reset();
-      ++previewGeneration_;
-    }
+    std::lock_guard lock(previewMutex_);
     submitPreview(std::move(*request), true);
     return;
   }
@@ -537,9 +545,11 @@ void AuthoringRuntime::previewWorkerLoop(std::stop_token stopToken) {
         pendingPreview_.reset();
         break;
       }
+      if (!stopToken.stop_requested() && request.has_value()) {
+        submitPreview(std::move(*request), false);
+      }
     }
     if (stopToken.stop_requested()) break;
-    if (request.has_value()) submitPreview(std::move(*request), false);
   }
 }
 

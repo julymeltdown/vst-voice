@@ -5,6 +5,7 @@
 #include "seam/distribution/seambank.hpp"
 #include "seam/core/sha256.hpp"
 #include "seam/application/note_commands.hpp"
+#include "seam/authoring/audio_measurement_capture.hpp"
 #include "seam/distribution/signing.hpp"
 #include "seam/platform/application_menu.hpp"
 #include "seam/platform/file_dialog.hpp"
@@ -374,6 +375,88 @@ TEST_CASE("standalone_voicebank_workflow_installs_browses_selects_and_reports_co
   const auto oversized = controller.value()->selectedRegionCoverage();
   CHECK(!oversized);
   CHECK(oversized.error().message.find("bounds") != std::string::npos);
+}
+
+TEST_CASE("explicit bank refresh revokes current contextual audio and measurement after a losing source changes") {
+  using namespace seam;
+  const auto root = test::support::temporaryDirectory("contextual-refresh");
+  const auto bankRoot = root / "bank";
+  std::filesystem::create_directories(bankRoot / "audio");
+  auto samples = test::support::sineWave(48000U, 440.0, 0.15);
+  auto first = test::support::makeUnit("a-main", {"a"}, "audio/main.wav", 69,
+      voicebank::UnitKind::Sustain, samples.size());
+  auto losing = first; losing.id = "a-losing"; losing.audioPath = "audio/losing.wav"; losing.take = 2;
+  CHECK(voicebank::writeMonoPcm16Wav(bankRoot / first.audioPath, 48000U, samples));
+  CHECK(voicebank::writeMonoPcm16Wav(bankRoot / losing.audioPath, 48000U, samples));
+  const auto bank = test::support::makeManifest({first, losing});
+  CHECK(voicebank::ManifestJsonCodec{}.save(bank, bankRoot / "manifest.json"));
+  const auto key = distribution::generateSigningKeyPair(); CHECK(key);
+  const auto otherPackage = createPackage(root / "another-bank", key.value());
+  auto session = standalone::AuthoringSession::create(standalone::AuthoringSessionConfig{
+      .cacheRoot = root / "cache",
+      .voicebankRoots = {{.path = bankRoot, .kind = voicebank::VoicebankRootKind::Development}},
+      .sampleRate = 48000U, .outputChannels = 2U, .bindFirstAvailableVoicebank = false,
+      .allowDevelopmentVoicebanks = true});
+  CHECK(session);
+  auto controller = standalone::StandaloneApplicationController::create(*session.value(),
+      std::make_unique<FakeDialog>(), std::make_unique<FakePrompt>(),
+      standalone::StandaloneApplicationControllerConfig{
+          .autosaveRoot = root / "autosaves", .recentProjectsPath = root / "recent.json",
+          .voicebankInstallRoot = root / "installed", .trustedVoicebankKeys = {key.value().publicKey},
+          .allowDevelopmentVoicebanks = true});
+  CHECK(controller); CHECK(controller.value()->voicebankCards().size() == 1U);
+  const auto card = controller.value()->voicebankCards().front();
+  CHECK(controller.value()->selectVoicebank(card.id, card.version, card.contentHash));
+  auto& runtime = session.value()->runtime();
+  auto [lyric, note] = runtime.document().factory().makeNote(time::Tick{0}, time::Tick{480}, 69U,
+      U"あ", domain::Language::Japanese);
+  CHECK(runtime.execute(std::make_unique<application::AddNoteCommand>(session.value()->regionId(), lyric, note)));
+  runtime.setRenderQuality(rendering::RenderQuality::Final);
+  runtime.requestPreview(true);
+  const auto waitCurrent = [&] {
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{10};
+    while (std::chrono::steady_clock::now() < deadline) {
+      const auto publication = runtime.renderer().acquireCurrent();
+      if (publication && publication->quality == rendering::RenderQuality::Final &&
+          publication->projectRevision == runtime.document().session().revision()) return;
+      std::this_thread::sleep_for(std::chrono::milliseconds{5});
+    }
+    CHECK(false);
+  };
+  waitCurrent();
+  runtime.requestPreview(false);
+  runtime.invalidatePreview();
+  CHECK(!runtime.renderer().acquireCurrent());
+  const auto submittedAfterInvalidation = runtime.renderer().stats().submitted;
+  const auto drainDeadline = std::chrono::steady_clock::now() + std::chrono::milliseconds{150};
+  while (std::chrono::steady_clock::now() < drainDeadline) {
+    CHECK(runtime.renderer().stats().submitted == submittedAfterInvalidation);
+    CHECK(!runtime.renderer().acquireCurrent());
+    std::this_thread::sleep_for(std::chrono::milliseconds{5});
+  }
+  runtime.requestPreview(true);
+  waitCurrent();
+  const auto current = runtime.renderer().acquireCurrent(); CHECK(current);
+  CHECK(current->quality == rendering::RenderQuality::Final);
+  CHECK(current->result.activeUnitPlan.size() == 1U);
+  CHECK(current->result.activeUnitPlan.front().unitId == "a-main");
+  const auto capture = authoring::AudioMeasurementCapture::prepare(runtime.document().session(), runtime.renderer());
+  CHECK(capture); CHECK(capture.value().matches(runtime.document().session(), runtime.renderer()));
+  const auto revision = runtime.document().session().revision();
+  const auto requestId = current->requestId;
+  const auto pcm = current->result.interleaved;
+  for (auto& sample : samples) sample *= 0.6F;
+  CHECK(voicebank::writeMonoPcm16Wav(bankRoot / losing.audioPath, 48000U, samples));
+  // Public installation performs the explicit private browser/catalog refresh.
+  // No document edit or track reselection should be needed to revoke old evidence.
+  CHECK(controller.value()->installVoicebank(otherPackage));
+  CHECK(runtime.document().session().revision() == revision);
+  CHECK(!runtime.voicebanks().resolveTrack(runtime.document().session().project(), session.value()->trackId()).resolved());
+  const auto after = runtime.renderer().acquireCurrent();
+  CHECK(!after || after->requestId != requestId);
+  CHECK(!capture.value().matches(runtime.document().session(), runtime.renderer()));
+  CHECK(!authoring::AudioMeasurementCapture::prepare(runtime.document().session(), runtime.renderer()));
+  CHECK(capture.value().source().result.interleaved == pcm); // Historical frozen PCM remains usable as history.
 }
 
 // M1.P3 item 6: the installed-song regression must go past its one-unit fixture.

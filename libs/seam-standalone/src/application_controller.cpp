@@ -719,10 +719,18 @@ core::Result<void> StandaloneApplicationController::proposeAutomaticPerformance(
 }
 
 core::Result<void> StandaloneApplicationController::refreshVoicebankBrowser() {
+  // Explicit refresh is a source-generation boundary even when no score edit
+  // occurred. Revoke old measurement authority before I/O, including failures.
+  auto& runtime = session_.runtime();
+  runtime.invalidatePreview();
+  runtime.renderer().cancel();
   auto refreshed = session_.runtime().voicebanks().refresh();
   if (!refreshed) return refreshed;
   const auto candidates = session_.runtime().voicebanks().candidates();
   voicebankBrowser_.rebuild(candidates);
+  // A changed/unresolvable exact bank may produce no request. invalidatePreview
+  // has already removed older queued work, so it cannot revive stale evidence.
+  runtime.requestPreview(true);
   return core::success();
 }
 

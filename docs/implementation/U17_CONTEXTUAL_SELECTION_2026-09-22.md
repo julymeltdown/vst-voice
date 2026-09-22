@@ -155,9 +155,52 @@ not deduplicated coverage or quality qualification. Logs are
 Early strict builds caught a nonexistent cancellation enum spelling and missing
 `<set>` include; those were corrected without relaxing diagnostics or tests.
 
-Independent implementation review is pending. The earlier review of the design
-is not an implementation verdict. No new live AppKit/installed-host journey or
-listening run is claimed.
+Developer 2 REQUESTED CHANGES at `9d40f0344aadbd0a678643177156b83be2592b4a`.
+All four focused binaries passed independently in Release and Debug (104 cases
+each). The sole blocking finding was explicit-refresh measurement freshness,
+described below; no other blocking selection/pair finding was established.
+No new live AppKit/installed-host journey or listening run is claimed.
+
+### Explicit-refresh rework
+
+The reviewer traced a P2 gap: refreshing the bank catalog did not invalidate
+`acquireCurrent()` or `AudioMeasurementCapture::matches()`. The catalog could
+discover that a losing competitor changed, yet the native measured-output panel
+would still accept the previous publication as current evidence. This was not a
+stale WAV-export bug: export already re-resolves and renders afresh.
+
+A connected regression reproduced the gap on the unfixed implementation:
+`seam_u3_standalone_tests` passed four cases and failed the new case because the
+old current request ID survived refresh (`u17-refresh-red-test.log`). The private
+browser refresh is reached through the public successful install of another
+signed bank, after modifying an unselected source in the selected development
+bank. No track selection or project-revision change is involved.
+
+`AuthoringRuntime::invalidatePreview` now clears pending debounce requests and
+revokes current publication authority under the same lock used for debounce
+dispatch. `requestPreview` does this before source resolution, including when
+resolution returns no request; an obsolete queued request cannot later restore
+current status. Explicit browser refresh invalidates/cancels before catalog I/O
+and requests a newly resolved preview only after successful refresh. Failure or
+an unresolvable exact bank leaves previous PCM historical, not current evidence.
+
+The regression also drains a cancelled debounce window, requires immediate
+current/capture revocation, checks the unchanged document revision and now
+unresolved bank, and verifies that historical captured PCM remains unchanged.
+After rework, Release passes the 832-case monolithic suite, 19 coordinator cases,
+four original-singer journeys and five standalone workflow cases (21.49 seconds
+for those four targets). Debug passes the five standalone and 19 coordinator
+cases (5.00 seconds). The final expanded debounce assertion is included in the
+fresh Release monolithic and Debug focused binaries. The final Release focused
+rebuild/rerun also passes all five cases (0.77 seconds), with the expanded
+debounce assertion included.
+Logs: `u17-refresh-{build,final-ctest}.log` under each build directory, plus
+`build-u4-macos/u17-refresh-focused-{build,ctest}.log`.
+
+Independent re-review of this repair is pending. General filesystem watching is
+not introduced or claimed. The reviewer also noted a nonblocking efficiency
+follow-up: cache adjacent-note/rest lookups per boundary instead of scanning
+notes per expanded edge; no measured performance failure was reported.
 
 ## Still open
 
