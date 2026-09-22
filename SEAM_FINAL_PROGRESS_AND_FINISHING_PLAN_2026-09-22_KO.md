@@ -75,6 +75,21 @@ CI의 Windows 작업 두 개가 모두 `seam_synthesis` 빌드에서 실패하�
 ### 두 수리의 공통 교훈
 
 **macOS(Clang)만으로 개발하면 Windows(MSVC)와 Linux(GCC) 전용 컴파일 실패를 볼 수 없다.** 이번에 발견한 2건이 정확히 그 사례이며, 둘 다 **코드 로직이 아니라 이식성** 문제였다. 로컬 전체 스위트가 초록이어도 CI 3개 플랫폼 작업은 별도로 확인해야 한다.
+
+### CI 전체 통과 달성
+
+세 번째 결함은 **세 플랫폼 모두에서 동일하게** 나타났다. 10개 학습 테스트 모듈이 `torch`/`onnx` 같은 선택적 ML 의존성을 모듈 최상단에서 import해서, 해당 환경이 없는 러너에서는 `unittest`가 skip이 아니라 **import error**로 처리했다. CMake 주석과 `.github/requirements-ci.txt`는 애초에 "torch 없는 인터프리터에서도 동작해야 한다"는 설계였으므로, 저장소 자체 관례(`@unittest.skipUnless(importlib.util.find_spec(...))`)에 맞춰 가드를 넣었다. (9dc7def)
+
+**커버리지를 숨기지 않았음을 확인했다:** 일반 인터프리터(`python3`, torch/onnx 없음)는 387개 실행·89개 skip으로 OK, 학습 전용 인터프리터는 448개 실행·1개 skip으로 OK.
+
+| 항목 | 기준 `ed41968d` | 현재 `9dc7def8` |
+|---|---|---|
+| CI `project-seam-ci` 전체 | **failure** | **success** |
+| `native-platform-matrix` (macOS/Windows/Ubuntu) | 3개 모두 실패 | **3개 모두 success** |
+| `windows-helper-process` | failure | **success** |
+| `isolated-release-candidate` | failure | **success** |
+
+이것은 **CI 전체가 초록인 첫 상태**다. 단, 이는 **빌드·회귀·계약 증거**이며 가수 품질·설치 제품 승인이 아니다. 아래 남은 게이트는 그대로다.
 - **아직 남은 것 (이번 배치 범위 밖)**:
 - **네이티브 모달 실제 조작 미검증**: AppKit 검토 대화상자 코드는 존재하지만 Return/Escape, 포커스 복원, 긴 텍스트 스크롤, 작은 화면은 실행 검증이 없다(이전 시도는 Mac 잠금으로 실패).
 - **실제 마이크 장치·권한·분리 동작 미검증**: 주입된 장치 팩토리 테스트는 하드웨어 증거가 아니다.
