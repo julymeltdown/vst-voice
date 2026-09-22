@@ -10,6 +10,8 @@
 #include "seam/voicebank_production/project_codec.hpp"
 #include "seam/core/sha256.hpp"
 #include "seam/core/file_io.hpp"
+#include "seam/authoring/interchange_service.hpp"
+#include "seam/formats/project_json.hpp"
 #include "seam/neural_synthesis/model_contract.hpp"
 #include "seam/neural_synthesis/bundle_metadata.hpp"
 #include "seam/authoring/export_service.hpp"
@@ -588,6 +590,49 @@ int importProceduralCommand(int argc, char** argv) {
   return 0;
 }
 
+// Export a saved project as USTX or MIDI through the same service the editor uses. This exists so a
+// real external tool (OpenUtau, a DAW) can be handed a file SEAM actually produced, rather than a
+// fixture or a study script's output.
+int exportScoreCommand(int argc, char** argv) {
+  if (argc != 4) {
+    std::cerr << "usage: seam_voicebank_cli export-score PROJECT.seam DESTINATION.ustx|.mid\n";
+    return 1;
+  }
+  const auto project = seam::formats::ProjectJsonCodec{}.load(argv[2]);
+  if (!project) {
+    std::cerr << "error: " << project.error().message;
+    if (!project.error().context.empty()) std::cerr << " (" << project.error().context << ')';
+    std::cerr << '\n';
+    return 2;
+  }
+  const std::filesystem::path destination{argv[3]};
+  const auto extension = destination.extension().string();
+  seam::authoring::InterchangeExportRequest request;
+  request.destination = destination;
+  if (extension == ".ustx") request.format = seam::authoring::InterchangeFormat::Ustx;
+  else if (extension == ".mid" || extension == ".midi")
+    request.format = seam::authoring::InterchangeFormat::Smf;
+  else {
+    std::cerr << "error: score export requires a .ustx, .mid or .midi destination\n";
+    return 3;
+  }
+  const auto exported = seam::authoring::InterchangeService{}.exportFile(project.value(), request);
+  if (!exported) {
+    std::cerr << "error: " << exported.error().message;
+    if (!exported.error().context.empty()) std::cerr << " (" << exported.error().context << ')';
+    std::cerr << '\n';
+    return 4;
+  }
+  // Losses are reported rather than swallowed: the caller decides whether the conversion is usable.
+  for (const auto& issue : exported.value().issues) {
+    std::cerr << (issue.loss ? "loss: " : "warning: ") << issue.path << ": " << issue.message << '\n';
+  }
+  std::cout << "destination=" << exported.value().destination.string() << '\n'
+            << "contentHash=" << exported.value().contentHash << '\n'
+            << "issues=" << exported.value().issues.size() << '\n';
+  return 0;
+}
+
 void printUsage() {
   std::cout
       << "SEAM Voicebank CLI\n\n"
@@ -601,6 +646,8 @@ void printUsage() {
       << "  seam_voicebank_cli prepare-neural-bundle DIRECTORY MODEL_ID MODEL_VERSION MAX_PAYLOAD_BYTES\n"
       << "  seam_voicebank_cli analyze WAV OUTPUT_DIRECTORY\n"
       << "  seam_voicebank_cli bake-project PROJECT OUTPUT_DIRECTORY [SAMPLE_RATE]\n"
+      << "  seam_voicebank_cli export-score PROJECT.seam DESTINATION.ustx|.mid|.midi\n"
+      << "    Writes a score a DAW or OpenUtau can open, through the editor's own conversion service.\n"
       << "  seam_voicebank_cli run-generation JOB_DIRECTORY MANIFEST_SHA256\n"
       << "  seam_voicebank_cli run-generation-batch BATCH_JSON BATCH_SHA256 [MAX_TOTAL_FRAMES]\n"
       << "  seam_voicebank_cli import-generated-batch WORKSPACE BATCH_JSON BATCH_SHA256 OPERATOR UTC [MAX_TOTAL_FRAMES]\n"
@@ -714,6 +761,7 @@ int main(int argc, char** argv) {
   if (command == "prepare-generation") return prepareGenerationCommand(argc, argv);
   if (command == "prepare-generation-batch") return prepareGenerationBatchCommand(argc, argv);
   if (command == "bake-project") return bakeProjectCommand(argc, argv);
+  if (command == "export-score") return exportScoreCommand(argc, argv);
   if (command == "--help" || command == "-h" || command == "help") {
     printUsage();
     return 0;

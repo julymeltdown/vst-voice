@@ -2607,6 +2607,14 @@ if(SEAM_BUILD_TESTS)
   set_tests_properties(seam_bank_tool_publish_singer PROPERTIES
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     ENVIRONMENT "PYTHONDONTWRITEBYTECODE=1" TIMEOUT 120)
+  # External-interoperability contract for score export: the bytes SEAM writes must stay
+  # readable by a non-SEAM reader, with the exact conversion losses reported.
+  add_test(NAME seam_score_export_interop
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_score_export_interop.py
+            $<TARGET_FILE:seam_voicebank_cli>)
+  set_tests_properties(seam_score_export_interop PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    ENVIRONMENT "PYTHONDONTWRITEBYTECODE=1" TIMEOUT 180)
   add_test(NAME seam_voicebank_cli_help COMMAND seam_voicebank_cli --help)
   add_test(NAME seam_voicebank_cli_validate
     COMMAND seam_voicebank_cli validate
