@@ -1,6 +1,7 @@
 # U16 offline WORLD reference comparison — revision 2
 
-Status: both arms executed; implementation review pending. The exact extracted
+Status: both arms executed; independent review requested source-inventory repair,
+now implemented and awaiting final review. The exact extracted
 guard resolves the six observed synthetic AP rejections. All three speech
 hypotheses still FAIL the unchanged acoustic conjunction. Additive source-energy
 diagnostics identify a fixture limitation, not renderer acceptance.
@@ -181,7 +182,7 @@ rejections; finite AP would resolve only this observed defect on this grid.
 Output acoustic results are computed independently and cannot be promoted by
 that engineering check. Artifacts use `world-reference-experiment-v2/<variant>/<executable-sha256>/`.
 
-## Executed outcome and evidence
+## Initial review candidate outcome and evidence
 
 Fresh final builds pass three selected CTest targets in each configuration:
 two WORLD targets with two engineering cases each, plus the six-case unchanged
@@ -322,3 +323,49 @@ or corpus admission is claimed by this increment.
 No U6/U16 closure, qualified singer, extra accepted unit or Beta GO is claimed.
 Independent diagnostic concurrence is NOT implementation approval; the exact
 committed candidate still needs review.
+
+## Independent review and closed-inventory repair
+
+Developer 2 REQUESTED CHANGES on `5396f9885b07d541158986c1fd3a39f16d24a710`:
+the producer-reproduced P2 include-shadowing issue was independently confirmed.
+The helper checked every pinned file but permitted extra files under the public
+include directory. An added `src/math.h` retained the original source-manifest
+identity while Clang selected that unpinned header. Producer evidence lives in
+`/tmp/seam-world-shadow-probe.FklZ86`; the harmless `#error` stopped compilation.
+No live reference tree was modified. The initial review independently reproduced
+the numerical results and all 372 hashes, but was NOT approval.
+
+The repair admits only the exact variant-specific files and their required
+directories. Before opening source content, Python uses non-following directory
+inspection to reject unknown files/directories, symlinks and nonregular entries.
+The executable performs an equivalent closed-inventory check before source hashes
+or inference. No unknown directory is descended into. This is a source-admission
+check, not a claim of filesystem immutability against concurrent hostile changes
+after verification or qualification of the compiler/system headers.
+
+Regressions cover an unlisted shadow header, unknown nested directory, nested
+directory symlink, known/unlisted FIFO without opening, and missing expected files.
+Fresh configure rejection at `/tmp/seam-world-shadow-probe.FklZ86/rejected-configure`
+reports `Unlisted WORLD source entry: src/math.h` (CMake wraps the line), exit 1.
+A different clean tree configured successfully at
+`/tmp/seam-world-build-inventory.ZEGL8s/build`; after adding only the shadow header,
+building the source-check target rejects it with that same reason, exit 2.
+
+Fresh repaired Release/Debug builds pass three selected targets / twelve
+engineering cases each, 7.01/42.05 s. Full singing-quality Python: 64 discovered,
+60 pass, the same four native-driver tests skip. Ruff passes. The four regenerated
+reports match the initial candidate in EVERY field except executable identity;
+all 372 referenced file hashes were rechecked. Historical packets remain intact.
+Final repaired identities:
+
+| Build / arm | Executable SHA-256 | comparison.json SHA-256 |
+|---|---|---|
+| Release / upstream | `a42b571f4d101c3f40f12262d0e8d869deed83d2d5ede92698c56ab9fb8ef160` | `492cc3551f7af4f1620b5d41b4c20166ab686076ce57eee9a6ea79a1086751c6` |
+| Release / guard | `8dd3c8e203825fba54e308accf4c0bf6b0bc5782ff7d18bb8310738609e082fb` | `5ee4efbe49e747e86aeef04cc80f609fa0901e0d584cf18611d4d0a54cc82c5a` |
+| Debug / upstream | `0c5a896de4c6064ee4ad6b378609d79a327b058c572616a4ffa5ec92f3786641` | `984cc68b4fd4ce35b1501c97ee4929d72ce53ec12a887d8ca7210da1ff9b27ee` |
+| Debug / guard | `ae25062d2d57c28e36bbd4b8e3ead65e2b14917a08faac1a915020cd234889c5` | `d6a3c456d9d0a7791bf6757e8d5ebacb6c67844fc848cc1db3e9ec841292995d` |
+
+The same path convention above applies. Build/test logs now use
+`u16-world-inventory-final-{build,ctest}.log`; Python log and regenerated artifact
+summary use `build-u4-macos/u16-world-inventory-final-{python.log,artifact-check.json}`.
+Final independent repair review remains pending. No acoustic verdict changed.

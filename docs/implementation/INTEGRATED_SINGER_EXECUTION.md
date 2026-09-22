@@ -24,7 +24,14 @@ source-suitability concern and plausible contributor, not a proven exclusive
 cause, API/gain exoneration, or reversal of any historical FAIL. The next acoustic
 step is a predeclared clean/LF-contaminated control panel, then source-only corpus
 stratification. See U16_WORLD_REFERENCE_COMPARISON_2026-09-22.md for exact pins,
-results and non-claims. Implementation review is pending; no unit or Beta GO.
+results and non-claims. Initial independent review REQUESTED CHANGES at 5396f988:
+the source verifier admitted an extra include-shadowing header, independently
+reproducing the producer's finding. The repaired Python and executable admission
+now enforce exact file/directory inventories and reject symlinks/nonregular files
+before content access. Fresh configure and build reject the shadow-header probe.
+Rebuilt Release/Debug pass twelve cases each (7.01/42.05 s); Python 60 pass/four
+explicit skips. Regenerated report fields match except executable identity and
+all 372 file hashes verify. Final repair review is pending; no unit or Beta GO.
 
 ## U6 oracle calibration: resonant noise exposes an excitation-classifier limit (2026-09-22)
 

@@ -16,6 +16,10 @@
 #include <bit>
 #include <iomanip>
 #include <limits>
+#include <set>
+#ifndef _WIN32
+#include <sys/stat.h>
+#endif
 
 namespace {
 using namespace seam;
@@ -23,6 +27,31 @@ using namespace synthesis::experimental::diagnostics;
 using J = formats::JsonValue;
 constexpr double frameMs = 5.0;
 constexpr std::size_t maximumCells = 512U * 1024U;
+
+bool sourceInventoryMatches(const std::filesystem::path& directory,
+    std::span<const std::pair<std::string_view, std::string_view>> files) {
+  if (!std::filesystem::is_directory(std::filesystem::symlink_status(directory))) return false;
+  std::set<std::filesystem::path> allowedFiles, allowedDirectories, observedFiles;
+  for (const auto& [name, hash] : files) {
+    (void)hash;
+    const std::filesystem::path path{name}; allowedFiles.insert(path);
+    for (auto parent = path.parent_path(); !parent.empty(); parent = parent.parent_path())
+      allowedDirectories.insert(parent);
+  }
+  // Do not follow directory symlinks, and stop before descending into any
+  // unlisted directory. Content hashing runs only after this closed inventory.
+  for (const auto& entry : std::filesystem::recursive_directory_iterator(directory)) {
+    const auto relative = entry.path().lexically_relative(directory);
+    const auto status = entry.symlink_status();
+    if (std::filesystem::is_directory(status)) {
+      if (!allowedDirectories.contains(relative)) return false;
+    } else {
+      if (!std::filesystem::is_regular_file(status) || !allowedFiles.contains(relative)) return false;
+      observedFiles.insert(relative);
+    }
+  }
+  return observedFiles == allowedFiles;
+}
 
 bool geometry(std::uint32_t rate, std::size_t samples) {
   return (rate == 44100U || rate == 48000U) && samples >= rate * 4U / 10U && samples <= rate;
@@ -178,7 +207,35 @@ TEST_CASE("WORLD reference bounds reject unsupported geometry before inference")
   CHECK(!geometry(48000U, std::numeric_limits<std::size_t>::max()));
 }
 
+TEST_CASE("WORLD execution rejects unlisted source entries before hashing or inference") {
+  const std::array<std::pair<std::string_view, std::string_view>, 2U> files{{{"LICENSE.txt", "unused"}, {"src/unit.cpp", "unused"}}};
+  const auto fresh = [&] {
+    const auto directory = test::support::temporaryDirectory("world-inventory");
+    CHECK(core::durableAtomicWriteText(directory / "LICENSE.txt", "fixture"));
+    CHECK(core::durableAtomicWriteText(directory / "src/unit.cpp", "fixture"));
+    CHECK(sourceInventoryMatches(directory, files));
+    return directory;
+  };
+  const auto shadow = fresh();
+  CHECK(core::durableAtomicWriteText(shadow / "src/math.h", "#error unpinned\n"));
+  CHECK(!sourceInventoryMatches(shadow, files));
+  const auto nested = fresh();
+  std::filesystem::create_directory(nested / "src/unlisted");
+  CHECK(!sourceInventoryMatches(nested, files));
+  const auto missing = test::support::temporaryDirectory("world-missing");
+  CHECK(!sourceInventoryMatches(missing, files));
+#ifndef _WIN32
+  const auto symlink = fresh();
+  std::filesystem::create_directory_symlink(shadow, symlink / "src/linked");
+  CHECK(!sourceInventoryMatches(symlink, files));
+  const auto fifo = fresh();
+  CHECK(::mkfifo((fifo / "src/pipe.h").c_str(), 0600) == 0);
+  CHECK(!sourceInventoryMatches(fifo, files));
+#endif
+}
+
 TEST_CASE("pinned WORLD comparison retains every raw reconstruction and unvoicing outcome") {
+  CHECK(sourceInventoryMatches(SEAM_WORLD_SOURCE_DIR, world_reference::files));
   for (const auto& [path, expected] : world_reference::files) {
     const auto hash = core::sha256File(std::filesystem::path{SEAM_WORLD_SOURCE_DIR} / path, 256U * 1024U);
     CHECK(hash); CHECK(hash.value() == expected);

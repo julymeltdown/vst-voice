@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 from pathlib import Path, PurePosixPath
 import re
 import urllib.request
@@ -67,12 +68,37 @@ def expected_files(lock: dict, variant: str) -> list[dict]:
         guard["fullPatch"], guard["guardHunk"], guard["license"]]
 
 
+def verify_inventory(directory: Path, items: list[dict]) -> None:
+    """Reject unpinned include-shadowing files without traversing unknown trees."""
+    files = {item["path"] for item in items}
+    directories = {str(parent) for name in files for parent in PurePosixPath(name).parents}
+    pending = [PurePosixPath(".")]
+    while pending:
+        relative = pending.pop()
+        with os.scandir(directory / relative) as entries:
+            for entry in entries:
+                name = relative / entry.name
+                if entry.is_symlink():
+                    raise ValueError("WORLD source symlinks are not admitted")
+                if str(name) in directories:
+                    if not entry.is_dir(follow_symlinks=False):
+                        raise ValueError("WORLD source parent must be a directory: " + str(name))
+                    pending.append(name)
+                elif str(name) in files:
+                    if not entry.is_file(follow_symlinks=False):
+                        raise ValueError("WORLD source must be a regular file: " + str(name))
+                else:
+                    raise ValueError("Unlisted WORLD source entry: " + str(name))
+
+
 def verify(directory: Path, variant: str = "upstream") -> dict:
     lock, lock_hash = load_lock()
     if directory.is_symlink() or not directory.is_dir():
         raise ValueError("WORLD source must be a real directory")
+    items = expected_files(lock, variant)
+    verify_inventory(directory, items)
     files = []
-    for item in expected_files(lock, variant):
+    for item in items:
         path = directory / item["path"]
         for depth in range(1, len(PurePosixPath(item["path"]).parts) + 1):
             component = directory.joinpath(*PurePosixPath(item["path"]).parts[:depth])

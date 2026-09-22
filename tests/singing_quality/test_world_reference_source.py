@@ -1,5 +1,6 @@
 """Source-only reference admission; no network calls in these tests."""
 import hashlib
+import os
 from pathlib import Path
 import tempfile
 import unittest
@@ -63,14 +64,52 @@ class WorldReferenceSourceTests(unittest.TestCase):
 
     def test_partial_and_symlink_source_do_not_verify(self):
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
+            root = Path(directory) / "source"
+            root.mkdir()
             with self.assertRaisesRegex(ValueError, "missing"):
                 source.verify(root)
-            real = root / "notice"
+            real = Path(directory) / "notice"
             real.write_bytes(b"not the license")
             (root / "LICENSE.txt").symlink_to(real)
             with self.assertRaisesRegex(ValueError, "symlinks"):
                 source.verify(root)
+
+    def test_inventory_rejects_unpinned_shadow_headers_and_unknown_directories(self):
+        raw = b"a"
+        item = dict(size=1, gitBlobSha1=hashlib.sha1(b"blob 1\0a").hexdigest())
+        lock = {"files": [dict(item, path="LICENSE.txt"), dict(item, path="src/unit.cpp")]}
+        for extra in ("src/math.h", "unexpected-directory", "src/unlisted"):
+            with self.subTest(extra=extra), tempfile.TemporaryDirectory() as directory, \
+                    mock.patch.object(source, "load_lock", return_value=(lock, "b" * 64)):
+                root = Path(directory)
+                (root / "src").mkdir()
+                (root / "LICENSE.txt").write_bytes(raw)
+                (root / "src/unit.cpp").write_bytes(raw)
+                self.assertEqual(2, len(source.verify(root)["files"]))
+                if extra.endswith(".h"):
+                    (root / extra).write_text("#error unpinned header\n", encoding="utf-8")
+                else:
+                    (root / extra).mkdir()
+                with self.assertRaisesRegex(ValueError, "Unlisted"):
+                    source.verify(root)
+
+    def test_inventory_rejects_nested_symlink_without_following_it(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "source"
+            (root / "src").mkdir(parents=True)
+            (root / "src/linked").symlink_to(Path(directory), target_is_directory=True)
+            with self.assertRaisesRegex(ValueError, "symlinks"):
+                source.verify_inventory(root, [{"path": "src/unit.cpp"}])
+
+    @unittest.skipUnless(hasattr(os, "mkfifo"), "POSIX nonregular source probe")
+    def test_inventory_rejects_fifo_without_opening_it(self):
+        for name in ("LICENSE.txt", "unlisted.h"):
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                os.mkfifo(root / name)
+                with mock.patch.object(Path, "open", side_effect=AssertionError("must not open FIFO")):
+                    with self.assertRaisesRegex(ValueError, "regular file|Unlisted"):
+                        source.verify_inventory(root, [{"path": "LICENSE.txt"}])
 
     def test_modified_source_cannot_inherit_a_manifest_identity(self):
         raw = b"a"
