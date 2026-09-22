@@ -1,5 +1,6 @@
 #include "seam/voice_design/recipe_resource.hpp"
 #include "seam/core/sha256.hpp"
+#include <algorithm>
 
 namespace seam::voice_design {
 core::Result<synthesis::ProceduralSingerResource> loadVoiceRecipeResource(
@@ -44,24 +45,32 @@ core::Result<VoiceRecipe> decodeVoiceRecipeResource(
   if (stopToken.stop_requested()) return core::failure<VoiceRecipe>(core::ErrorCode::Conflict, "Recipe loading cancelled");
   const auto valid = resource.validate();
   if (!valid) return core::Result<VoiceRecipe>{valid.error()};
-  // Schema seven adds unvoiced affricates, schema eight voiced approximants, schema nine
-  // palatalized consonants, schema ten voiced affricates and schema eleven declared event spans:
-  // each borrows ordinary phonation, a
-  // base consonant's own source or a scored excitation the caller supplies, and the recipe's
-  // identical resonance poses, so none needs a new opt-in flag. The voiced extensions that
-  // change a source stay behind theirs.
+  // Schema support is separate from source capabilities. A newer schema can
+  // retain any earlier source family; its version must not bypass an opt-out.
   if (resource.identity.version != "1" && resource.identity.version != "2" && resource.identity.version != "3" && resource.identity.version != "4" &&
+      resource.identity.version != "5" && resource.identity.version != "6" &&
       resource.identity.version != "7" && resource.identity.version != "8" && resource.identity.version != "9" &&
-      resource.identity.version != "11" &&
-      resource.identity.version != "10" &&
-      !(allowVoicedFrication && resource.identity.version=="5") &&
-      !(allowVoicedStops && allowVoicedFrication && resource.identity.version=="6")) return core::failure<VoiceRecipe>(
+      resource.identity.version != "10" && resource.identity.version != "11") return core::failure<VoiceRecipe>(
       core::ErrorCode::Unsupported, "Procedural recipe resource version is unsupported");
   const auto bytes = resource.patch->bytes();
   auto decoded = decodeVoiceRecipe(std::string_view{reinterpret_cast<const char*>(bytes.data()), bytes.size()});
   if (!decoded) return decoded;
   if (decoded.value().id != resource.identity.id || resource.identity.version != std::to_string(voiceRecipeSchemaVersion(decoded.value()))) return core::failure<VoiceRecipe>(
       core::ErrorCode::Conflict, "Procedural resource identity differs from its recipe");
+  // These are resource-wide restrictions, including sources referenced by
+  // palatalized bindings or held in another style. A voiced affricate contains
+  // both a prevoiced closure and a voiced-frication tail, so it requires both.
+  const auto& recipe = decoded.value();
+  if (!allowVoicedFrication && (!recipe.voicedAffricates.empty() ||
+      std::any_of(recipe.frications.begin(), recipe.frications.end(),
+                  [](const auto& pose) { return pose.voicingGain.has_value(); })))
+    return core::failure<VoiceRecipe>(core::ErrorCode::Unsupported,
+        "Procedural recipe requires voiced-frication sources disabled by the caller");
+  if (!allowVoicedStops && (!recipe.voicedAffricates.empty() ||
+      std::any_of(recipe.plosives.begin(), recipe.plosives.end(),
+                  [](const auto& pose) { return pose.voicedClosure.has_value(); })))
+    return core::failure<VoiceRecipe>(core::ErrorCode::Unsupported,
+        "Procedural recipe requires voiced-stop sources disabled by the caller");
   if (stopToken.stop_requested()) return core::failure<VoiceRecipe>(core::ErrorCode::Conflict, "Recipe loading cancelled");
   return decoded;
 }

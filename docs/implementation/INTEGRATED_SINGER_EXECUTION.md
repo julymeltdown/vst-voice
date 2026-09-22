@@ -1,5 +1,21 @@
 # Integrated Singer Execution
 
+## U18 recipe source-capability admission repaired (2026-09-22)
+
+Caller source restrictions now inspect decoded content across schemas 1–11,
+instead of only gating versions 5/6. Pure voiced stops no longer require the
+unrelated frication permission; voiced affricates require both, and palatalized
+base/unused-style sources cannot bypass resource-wide restrictions. Default
+encoding, identity and DSP remain unchanged. Three red regressions precede the
+repair; new coverage includes all schemas/permission combinations, four resource
+entry paths, exact admissible PCM, full-width seed/file roundtrips and ordinary
+phonation controls. Fresh Release passes five targets (44/38/8/4/17 cases,
+22.93 s); Debug passes design/Designer (44/38 cases, 26.63 s). A test-only ordinal
+cast was corrected after strict compilation rejected its narrowing. Independent
+reviewer-task approval is pending; no full suite, full U18 or singer/Beta approval
+is inferred. Details: U18_RECIPE_CAPABILITY_ADMISSION_2026-09-22.md. Parallel work
+now targets the native import/review workflow, not another acoustic sweep.
+
 ## U39 Spectral Classic formants approved after export-completeness repair (2026-09-22)
 
 Independent sample formants now pass normal snapshot, Preview/Final, cache,

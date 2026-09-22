@@ -7,6 +7,10 @@ namespace seam::voice_design {
 // Canonical draft recipe bytes, not an approved bank or executable backend.
 [[nodiscard]] core::Result<synthesis::ProceduralSingerResource> freezeVoiceRecipeResource(
     const VoiceRecipe& recipe, std::stop_token stopToken = {});
+// Source opt-outs inspect all decoded bindings, independently of schema version
+// and selected score/style. Voiced affricates require both source capabilities;
+// ordinary vowel/nasal/approximant phonation requires neither. No source is
+// silently dropped or rewritten to satisfy a restriction.
 [[nodiscard]] core::Result<VoiceRecipe> decodeVoiceRecipeResource(
     const synthesis::ProceduralSingerResource& resource, std::stop_token stopToken = {},
     bool allowVoicedFrication = true, bool allowVoicedStops = true);

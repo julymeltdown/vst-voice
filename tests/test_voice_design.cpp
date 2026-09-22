@@ -1647,3 +1647,270 @@ TEST_CASE("voice recipes roundtrip exact draft controls poses and full width see
   }
   CHECK(!seam::voice_design::decodeVoiceRecipe(std::string(512U * 1024U + 1U, ' ')));
 }
+
+TEST_CASE("recipe source capability opt outs follow content across all later schema versions") {
+  using namespace seam;
+  for (const int version : {5, 6, 7, 8, 9, 10, 11}) {
+    for (const bool frication : {false, true}) {
+      if (!frication && version == 5) continue;
+      auto recipe = nasalFixture();
+      const auto addPose = [&](std::string phone) {
+        auto pose = recipe.poses.front(); pose.phone = std::move(phone);
+        recipe.poses.push_back(std::move(pose));
+      };
+      if (frication) {
+        addPose("z"); recipe.frications.push_back({"z", "neutral", {}, 0.4});
+      } else recipe.plosives.push_back({"b", "neutral", {}, 10.0, voice_design::VoiceRecipe::VoicedClosure{}});
+      if (version == 6 && frication)
+        recipe.plosives.push_back({"b", "neutral", {}, 10.0, voice_design::VoiceRecipe::VoicedClosure{}});
+      if (version == 7) recipe.affricates.push_back({"ts", "neutral", {}, {}, 10.0});
+      if (version == 8) { addPose("r"); recipe.approximants.push_back({"r", "neutral", 40.0}); }
+      if (version == 9) {
+        addPose("ky"); recipe.plosives.push_back({"k", "neutral", {}, 10.0});
+        recipe.palatalized.push_back({"ky", "neutral", "k"});
+      }
+      if (version == 10) { addPose("j"); recipe.voicedAffricates.push_back({"j", "neutral", {}, {}}); }
+      if (version == 11) recipe.closures.push_back({"cl", "neutral"});
+      CHECK(recipe.validate()); CHECK(voice_design::voiceRecipeSchemaVersion(recipe) == version);
+      const auto resource = voice_design::freezeVoiceRecipeResource(recipe); CHECK(resource);
+      const auto normal = voice_design::decodeVoiceRecipeResource(resource.value()); CHECK(normal); CHECK(normal.value() == recipe);
+      const auto denied = voice_design::decodeVoiceRecipeResource(resource.value(), {}, !frication, frication);
+      CHECK(!denied); CHECK(denied.error().code == core::ErrorCode::Unsupported);
+    }
+  }
+}
+
+namespace {
+seam::voice_design::VoiceRecipe admissionRecipe(int version, bool voicedFrication = false,
+                                               bool voicedStop = false) {
+  using namespace seam::voice_design;
+  auto recipe = nasalFixture();
+  recipe.seed = std::numeric_limits<std::uint64_t>::max();
+  if (version != 3) {
+    recipe.poses.front().nasal.reset();
+    recipe.poses.front().nasalCoupling = 0.0;
+  }
+  const auto addPose = [&](const std::string& phone) {
+    auto pose = recipe.poses.front();
+    pose.phone = phone;
+    recipe.poses.push_back(std::move(pose));
+  };
+  if (version == 2) recipe.frications.push_back({"s", "neutral", {}});
+  if (version == 4) recipe.plosives.push_back({"p", "neutral", {}, 10.0});
+  if (version == 5 || voicedFrication) {
+    addPose("z");
+    recipe.frications.push_back({"z", "neutral", {}, 0.4});
+  }
+  if (version == 6 || voicedStop)
+    recipe.plosives.push_back({"b", "neutral", {}, 10.0, VoiceRecipe::VoicedClosure{}});
+  if (version == 7) recipe.affricates.push_back({"ts", "neutral", {}, {}, 10.0});
+  if (version == 8) {
+    addPose("r");
+    recipe.approximants.push_back({"r", "neutral", 40.0});
+  }
+  if (version == 9) {
+    addPose("ky");
+    recipe.plosives.push_back({"k", "neutral", {}, 10.0});
+    recipe.palatalized.push_back({"ky", "neutral", "k"});
+  }
+  if (version == 10) {
+    addPose("j");
+    recipe.voicedAffricates.push_back({"j", "neutral", {}, {}});
+  }
+  if (version == 11) recipe.closures.push_back({"cl", "neutral"});
+  CHECK(recipe.validate());
+  CHECK(voiceRecipeSchemaVersion(recipe) == version);
+  return recipe;
+}
+}
+
+TEST_CASE("all recipe schemas enforce independent source opt outs without changing canonical identity") {
+  using namespace seam;
+  for (int version = 1; version <= 11; ++version) {
+    for (const bool addedFrication : {false, true}) {
+      if (version < 5 && addedFrication) continue;
+      for (const bool addedStop : {false, true}) {
+        if (version < 6 && addedStop) continue;
+        const auto recipe = admissionRecipe(version, addedFrication, addedStop);
+        const bool needsFrication = version == 5 || version == 10 || addedFrication;
+        const bool needsStop = version == 6 || version == 10 || addedStop;
+        const auto encoded = voice_design::encodeVoiceRecipe(recipe); CHECK(encoded);
+        const auto resource = voice_design::freezeVoiceRecipeResource(recipe); CHECK(resource);
+        const auto identity = resource.value().identity;
+        for (const bool allowFrication : {false, true}) {
+          for (const bool allowStop : {false, true}) {
+            const auto result = voice_design::decodeVoiceRecipeResource(
+                resource.value(), {}, allowFrication, allowStop);
+            const bool expected = (!needsFrication || allowFrication) && (!needsStop || allowStop);
+            if (result.hasValue() != expected)
+              throw test::Failure("Recipe admission matrix differs: schema=" + std::to_string(version) +
+                  " addedFrication=" + std::to_string(addedFrication) +
+                  " addedStop=" + std::to_string(addedStop) +
+                  " allowFrication=" + std::to_string(allowFrication) +
+                  " allowStop=" + std::to_string(allowStop));
+            if (result) {
+              CHECK(result.value() == recipe);
+              CHECK(voice_design::encodeVoiceRecipe(result.value()).value() == encoded.value());
+            } else CHECK(result.error().code == core::ErrorCode::Unsupported);
+            CHECK(resource.value().identity == identity);
+          }
+        }
+      }
+    }
+  }
+}
+
+TEST_CASE("source opt outs agree across recipe planner and both stream entrypoints") {
+  using namespace seam;
+  domain::Project project{domain::ProjectId{1U}, "Source admission"};
+  const domain::VocalRegion region{
+      .id = domain::RegionId{3U}, .durationTick = time::Tick{480},
+      .lyrics = {{domain::LyricTokenId{4U}, U"source", domain::Language::English}},
+      .notes = {{.id = domain::NoteId{5U}, .durationTick = time::Tick{480},
+                 .midiKey = 60U, .lyricTokenId = domain::LyricTokenId{4U}}}};
+  for (const int source : {0, 1, 2, 3, 4}) {
+    for (const bool newerSchema : {false, true}) {
+      // Frication, stop, voiced affricate, palatalized frication, palatalized stop.
+      auto recipe = admissionRecipe(source == 2 ? 10 : (source == 1 || source == 4 ? 6 : 5));
+      std::string phone = source == 2 ? "j" : (source == 1 || source == 4 ? "b" : "z");
+      if (source >= 3) {
+        const auto base = phone;
+        phone += "y";
+        auto pose = recipe.poses.front(); pose.phone = phone;
+        recipe.poses.push_back(std::move(pose));
+        recipe.palatalized.push_back({phone, "neutral", base});
+      }
+      if (newerSchema) recipe.closures.push_back({"cl", "neutral"});
+      CHECK(recipe.validate());
+      const auto resource = voice_design::freezeVoiceRecipeResource(recipe); CHECK(resource);
+      const std::vector<domain::PhonemeToken> phones{
+          {.key = {domain::NoteId{5U}, 0U}, .symbol = phone,
+           .role = domain::PhonemeRole::Onset, .voiced = true, .timing = {.startOffset = 0}},
+          {.key = {domain::NoteId{5U}, 1U}, .symbol = "a",
+           .role = domain::PhonemeRole::Nucleus, .voiced = true, .timing = {.startOffset = 100000}}};
+      const auto performance = synthesis::compileScorePerformance(project, region, 48000U, phones); CHECK(performance);
+      const auto plan = voice_design::ArticulationPlan::compileRecipe(
+          resource.value(), performance.value(), phones, "neutral"); CHECK(plan);
+      auto baseline = voice_design::ArticulatedStream::createFromRecipe(
+          resource.value(), performance.value(), phones, "neutral"); CHECK(baseline);
+      const synthesis::PhraseFrameRange range{0, performance.value().notes().back().endFrame};
+      const auto expectedAudio = baseline.value().renderOwned(range); CHECK(expectedAudio);
+      CHECK(std::any_of(expectedAudio.value().samples.begin(), expectedAudio.value().samples.end(),
+                        [](float value) { return std::abs(value) > 0.00001F; }));
+      const bool needsFrication = source != 1 && source != 4;
+      const bool needsStop = source == 1 || source == 2 || source == 4;
+      for (const bool allowFrication : {false, true}) {
+        for (const bool allowStop : {false, true}) {
+          const bool expected = (!needsFrication || allowFrication) && (!needsStop || allowStop);
+          const auto decoded = voice_design::decodeVoiceRecipeResource(
+              resource.value(), {}, allowFrication, allowStop);
+          const auto planned = voice_design::ArticulationPlan::compileRecipe(
+              resource.value(), performance.value(), phones, "neutral", {}, allowFrication, allowStop);
+          auto direct = voice_design::ArticulatedStream::create(
+              resource.value(), performance.value(), plan.value(), "neutral", 512U, allowFrication, allowStop);
+          auto prepared = voice_design::ArticulatedStream::createFromRecipe(
+              resource.value(), performance.value(), phones, "neutral", 512U, {}, allowFrication, allowStop);
+          CHECK(decoded.hasValue() == expected); CHECK(planned.hasValue() == expected);
+          CHECK(direct.hasValue() == expected); CHECK(prepared.hasValue() == expected);
+          if (expected) {
+            const auto directAudio = direct.value().renderOwned(range); CHECK(directAudio);
+            const auto preparedAudio = prepared.value().renderOwned(range); CHECK(preparedAudio);
+            CHECK(directAudio.value().samples == expectedAudio.value().samples);
+            CHECK(preparedAudio.value().samples == expectedAudio.value().samples);
+          } else {
+            CHECK(decoded.error().code == core::ErrorCode::Unsupported);
+            CHECK(planned.error().code == core::ErrorCode::Unsupported);
+            CHECK(direct.error().code == core::ErrorCode::Unsupported);
+            CHECK(prepared.error().code == core::ErrorCode::Unsupported);
+          }
+        }
+      }
+    }
+  }
+}
+
+TEST_CASE("all supported recipe schemas save and reopen without upgrading or mutating frozen resources") {
+  using namespace seam;
+  const auto root = test::support::temporaryDirectory("recipe-schema-persistence");
+  for (int version = 1; version <= 11; ++version) {
+    auto recipe = admissionRecipe(version);
+    auto otherStyle = recipe.poses.front(); otherStyle.style = "soft";
+    recipe.poses.push_back(std::move(otherStyle));
+    recipe.modulation = {7.0, 0.05, 3.0};
+    const auto path = root / ("schema-" + std::to_string(version) + ".json");
+    const auto encoded = voice_design::encodeVoiceRecipe(recipe); CHECK(encoded);
+    const auto frozen = voice_design::freezeVoiceRecipeResource(recipe); CHECK(frozen);
+    CHECK(voice_design::saveVoiceRecipeFile(path, recipe));
+    const auto before = core::sha256File(path); CHECK(before);
+    const auto loaded = voice_design::loadVoiceRecipeResource(path, frozen.value().identity); CHECK(loaded);
+    CHECK(loaded.value().identity == frozen.value().identity);
+    CHECK(loaded.value().identity.version == std::to_string(version));
+    const auto decoded = voice_design::decodeVoiceRecipeResource(loaded.value()); CHECK(decoded);
+    CHECK(decoded.value() == recipe);
+    CHECK(decoded.value().seed == std::numeric_limits<std::uint64_t>::max());
+    CHECK(core::sha256File(path).value() == before.value());
+    CHECK(core::readTextFileLimited(path, 512U * 1024U).value() == encoded.value());
+    auto changed = recipe; changed.phonation.openQuotient = 0.7;
+    CHECK(voice_design::saveVoiceRecipeFile(path, changed));
+    CHECK(voice_design::decodeVoiceRecipeResource(frozen.value()).value() == recipe);
+    CHECK(voice_design::decodeVoiceRecipeResource(loaded.value()).value() == recipe);
+    CHECK(!voice_design::loadVoiceRecipeResource(path, frozen.value().identity));
+    const auto reloaded = voice_design::loadVoiceRecipeResource(path); CHECK(reloaded);
+    CHECK(voice_design::decodeVoiceRecipeResource(reloaded.value()).value() == changed);
+    CHECK(reloaded.value().identity.version == std::to_string(version));
+    CHECK(reloaded.value().identity.contentHash != frozen.value().identity.contentHash);
+  }
+}
+
+TEST_CASE("recipe opt outs preserve ordinary phonation but reject restricted sources in unused styles") {
+  using namespace seam;
+  domain::Project project{domain::ProjectId{1U}, "Resource-wide opt outs"};
+  const domain::VocalRegion region{
+      .id = domain::RegionId{3U}, .durationTick = time::Tick{480},
+      .lyrics = {{domain::LyricTokenId{4U}, U"voice", domain::Language::English}},
+      .notes = {{.id = domain::NoteId{5U}, .durationTick = time::Tick{480},
+                 .midiKey = 60U, .lyricTokenId = domain::LyricTokenId{4U}}}};
+  for (const int version : {1, 3, 8}) {
+    auto recipe = admissionRecipe(version);
+    std::vector<domain::PhonemeToken> phones;
+    if (version != 1) {
+      if (version == 3) {
+        auto nasal = recipe.poses.front(); nasal.phone = "m";
+        recipe.poses.push_back(std::move(nasal));
+      }
+      phones.push_back({.key = {domain::NoteId{5U}, 0U}, .symbol = version == 3 ? "m" : "r",
+                        .role = domain::PhonemeRole::Onset, .voiced = true, .timing = {.startOffset = 0}});
+    }
+    phones.push_back({.key = {domain::NoteId{5U}, static_cast<std::uint16_t>(phones.size())}, .symbol = "a",
+                      .role = domain::PhonemeRole::Nucleus, .voiced = true,
+                      .timing = {.startOffset = version == 1 ? 0 : 100000}});
+    const auto resource = voice_design::freezeVoiceRecipeResource(recipe); CHECK(resource);
+    const auto performance = synthesis::compileScorePerformance(project, region, 48000U, phones); CHECK(performance);
+    auto stream = voice_design::ArticulatedStream::createFromRecipe(
+        resource.value(), performance.value(), phones, "neutral", 512U, {}, false, false); CHECK(stream);
+    const auto audio = stream.value().renderOwned({0, performance.value().notes().back().endFrame}); CHECK(audio);
+    CHECK(std::any_of(audio.value().samples.begin(), audio.value().samples.end(),
+                      [](float value) { return std::abs(value) > 0.00001F; }));
+
+    // No soft-style source is scored, but the caller restricted the resource,
+    // not just this phrase. Keeping those sources must therefore refuse it.
+    auto soft = recipe.poses.front(); soft.phone = "z"; soft.style = "soft";
+    recipe.poses.push_back(std::move(soft));
+    recipe.frications.push_back({"z", "soft", {}, 0.4});
+    recipe.closures.push_back({"cl", "neutral"});
+    const auto mixed = voice_design::freezeVoiceRecipeResource(recipe); CHECK(mixed);
+    const auto plan = voice_design::ArticulationPlan::compileRecipe(
+        mixed.value(), performance.value(), phones, "neutral"); CHECK(plan);
+    const auto decoded = voice_design::decodeVoiceRecipeResource(mixed.value(), {}, false, true);
+    const auto planned = voice_design::ArticulationPlan::compileRecipe(
+        mixed.value(), performance.value(), phones, "neutral", {}, false, true);
+    const auto direct = voice_design::ArticulatedStream::create(
+        mixed.value(), performance.value(), plan.value(), "neutral", 512U, false, true);
+    const auto prepared = voice_design::ArticulatedStream::createFromRecipe(
+        mixed.value(), performance.value(), phones, "neutral", 512U, {}, false, true);
+    CHECK(!decoded); CHECK(decoded.error().code == core::ErrorCode::Unsupported);
+    CHECK(!planned); CHECK(planned.error().code == core::ErrorCode::Unsupported);
+    CHECK(!direct); CHECK(direct.error().code == core::ErrorCode::Unsupported);
+    CHECK(!prepared); CHECK(prepared.error().code == core::ErrorCode::Unsupported);
+  }
+}
