@@ -7,6 +7,7 @@
 #include "seam/phonemizer/japanese_phonemizer.hpp"
 #include "seam/platform/accessibility_preferences.hpp"
 #include "seam/rendering/region_renderer.hpp"
+#include "seam/rendering/singer_route.hpp"
 #include "seam/synthesis/timing_solver.hpp"
 #include "seam/voicebank/wav.hpp"
 #include "seam/voicebank/style_resolution.hpp"
@@ -437,6 +438,22 @@ void EditorRuntime::configureControllerCallbacks() {
         dirty_ = authoring_->document().dirty();
         if (controller_) controller_->setDirty(dirty_);
         requestRepaint();
+      },
+      .validateSingerControl = [this](domain::TrackId trackId, synthesis::RendererControl control) -> core::Result<void> {
+        const auto& project = session_.project();
+        const auto* track = project.findVocalTrack(trackId);
+        if (!track) return core::failure(core::ErrorCode::NotFound, "Singer control has no vocal track");
+        rendering::SingerRouteEnvironment environment;
+        if (!track->proceduralRecipe && !track->neuralResource && control == synthesis::RendererControl::Formant) {
+          const auto bank = voicebankSession_.resolveTrackSnapshot(project, trackId);
+          const auto& resolved = bank->resolution();
+          if (!resolved.resolved()) return core::failure(core::ErrorCode::Unsupported,
+              "Cannot resolve sample formant route: " + resolved.diagnostic);
+          environment = rendering::sampleSingerRouteEnvironment(*track, resolved.candidate->manifest);
+        }
+        const auto route = rendering::resolveSingerRoute(project, trackId, environment);
+        if (!route) return core::Result<void>{route.error()};
+        return rendering::validateRouteControl(route.value(), control);
       },
       .setBounceTiming = [this](bool followHost) {
         // Persisted with the project, so the host's saved state carries the choice.

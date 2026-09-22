@@ -85,7 +85,16 @@ struct SingerRouteEnvironment final {
   // Controls proven by the admitted neural graph, not by the carrier family.
   // Other carriers ignore this list.
   std::vector<synthesis::RendererControl> neuralConditioningControls;
+  // Renderer-specific evidence for a sample route. Empty remains conservative.
+  // The route exposes only the intersection, never a capability family union.
+  std::vector<voicebank::RendererHint> sampleRenderers;
 };
+
+// Cheap metadata-only authoring check: all enabled units in the selected style
+// pair and active overrides must support the control. Mixed inventories remain
+// conservative here; snapshot admission checks the exact selected plans.
+[[nodiscard]] SingerRouteEnvironment sampleSingerRouteEnvironment(
+    const domain::VocalTrack& track, const voicebank::Manifest& manifest);
 
 // Resolve one track's singing route. A track with neither a procedural nor a neural selection is the
 // sample bank; a procedural selection is checked against the engine this build renders; a neural

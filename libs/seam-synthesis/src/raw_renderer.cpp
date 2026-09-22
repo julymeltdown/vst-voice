@@ -61,6 +61,8 @@ core::Result<RenderedUnit> RawLoopRenderer::render(
   if (!pitchCurveValidation) {
     return core::Result<RenderedUnit>{pitchCurveValidation.error()};
   }
+  if (parameters.performance && parameters.performance->requiresFormantControl())
+    return core::failure<RenderedUnit>(core::ErrorCode::Unsupported, "Raw cannot apply the required formant control", unit.id);
   if (parameters.performance && !parameters.pitchCurve.points().empty()) {
     return core::failure<RenderedUnit>(
         core::ErrorCode::InvalidArgument,

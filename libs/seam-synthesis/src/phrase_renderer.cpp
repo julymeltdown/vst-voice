@@ -200,6 +200,15 @@ core::Result<PhraseRenderResult> ConcatenativePhraseRenderer::render(
       dispatchParameters.controls.require(RendererControl::Release);
       dispatchParameters.controls.require(RendererControl::Vibrato);
     }
+    for (const auto* performance : {dispatchParameters.raw.performance.get(), dispatchParameters.psola.performance.get(),
+                                    dispatchParameters.spectral.performance.get(), dispatchParameters.stretch.performance.get()}) {
+      if (performance && performance->requiresFormantControl()) dispatchParameters.controls.require(RendererControl::Formant);
+    }
+    if (dispatchParameters.controls.requiresControl(RendererControl::Formant)) {
+      const auto allowed = validateRendererCapabilities(
+          resolveRequestedRenderer(*unit, dispatchParameters.policy, planEntry.renderer), dispatchParameters.controls, false);
+      if (!allowed) return core::Result<PhraseRenderResult>{allowed.error()};
+    }
     dispatchParameters.raw.performanceVowelFrame = placement.desiredVowelOnset;
     dispatchParameters.psola.performanceStartFrame = placement.destinationStart;
     dispatchParameters.spectral.performanceStartFrame = placement.destinationStart;

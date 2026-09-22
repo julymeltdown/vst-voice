@@ -1,5 +1,23 @@
 # Integrated Singer Execution
 
+## U39 Spectral Classic formant implementation awaiting independent review (2026-09-22)
+
+Independent sample formants now pass normal snapshot, Preview/Final, cache,
+reload and transactional Float32 export tests, with exact neutral/manual islands.
+The first-party Spectral stage covers onset/release/unvoiced spans after legacy
+carrier finalization, applies compiled gain once, and preflights scan/FFT budgets.
+Snapshot admission checks actual renderers in both style arms; dispatcher,
+direct unsupported renderers and the aligned-Raw phrase path cannot drop intent.
+Spectral revision 8 invalidates old caches. Native standalone and CLAP adapters
+resolve conservative sample-inventory capabilities, not a blanket carrier claim.
+The CLAP test covers a real nudge/current preview/fixed-audio offline bounce.
+
+The initial Release regression run passed six targets, including 842 core cases.
+Debug passed five focused targets; final pinned evidence and independent review
+remain to be recorded in U39_SPECTRAL_FORMANT_CONTROL_2026-09-22.md. Mixed-inventory
+exact-plan UI refinement and perceptual/resource qualification remain open. No
+additional whole unit, qualified singer or Beta GO is counted.
+
 ## U16 fixed LF panel executed: sensitivity reproduced, no production promotion (2026-09-22)
 
 The prospectively frozen 42-input panel now runs against both pinned WORLD arms,

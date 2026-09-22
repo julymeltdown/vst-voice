@@ -19,6 +19,8 @@ RendererCapabilityView makeCapabilities(voicebank::RendererHint renderer) noexce
   result.supported[static_cast<std::size_t>(RendererControl::Vibrato)] = true;
   result.supported[static_cast<std::size_t>(RendererControl::Attack)] = true;
   result.supported[static_cast<std::size_t>(RendererControl::Release)] = true;
+  result.supported[static_cast<std::size_t>(RendererControl::Formant)] =
+      renderer == voicebank::RendererHint::SpectralClassic;
   result.pitchPreservingTransient = renderer != voicebank::RendererHint::Raw;
   return result;
 }

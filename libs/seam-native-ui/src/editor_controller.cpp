@@ -5693,19 +5693,23 @@ core::Result<void> NativeEditorController::nudgeFormantShift(int steps) {
   if (region == nullptr || track == nullptr)
     return core::failure(core::ErrorCode::NotFound, "Formant edit has no region or track");
   if (steps == 0) return core::success();
-  // The channel is only real where the carrier owns its resonances. Everything else is refused with the
-  // reason and the change that would make it possible, and whatever curve is already stored stays
-  // exactly as it was.
+  // The host can resolve renderer-specific sample capabilities. Without that
+  // context remain conservative; the sample-bank family alone proves nothing.
   const auto carrier = synthesis::rendererCarrierFor(*track);
   synthesis::RendererControlRequest request;
   request.require(synthesis::RendererControl::Formant);
-  const auto allowed = synthesis::validateRendererCapabilities(carrier, request);
+  auto allowed = core::success();
+  if (callbacks_.validateSingerControl) {
+    allowed = callbacks_.validateSingerControl(selectedTrackId_, synthesis::RendererControl::Formant);
+  } else {
+    const auto decision = synthesis::validateRendererCapabilities(carrier, request);
+    if (!decision) allowed = core::Result<void>{decision.error()};
+  }
   if (!allowed) {
     return core::Result<void>{core::Error{core::ErrorCode::Unsupported,
-        std::string{"The selected singer cannot move its own vocal-tract resonances, so it cannot "
-                    "apply a formant shift. "} +
+        std::string{"The selected singer route cannot apply a formant shift. "} +
             allowed.error().message +
-            ". Select a source-filter (voice designer) singer to edit this channel."}};
+            ". Select a Spectral Classic sample route or a source-filter (voice designer) singer."}};
   }
   const auto current = region->formantAutomation.valueAt(playheadTick_);
   const auto target = snappedToNeutral(std::clamp(current + static_cast<float>(steps),

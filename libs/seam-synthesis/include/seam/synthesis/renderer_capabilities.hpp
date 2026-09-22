@@ -69,8 +69,9 @@ struct RendererCapabilityDecision final {
 // admitted neural model are different carriers with different controls, so a request is answered for
 // the carrier that will actually run instead of for a hint the carrier does not have. The formant,
 // breathiness, tension, airiness, gender and growl channels are where the answers differ today: the
-// source-filter engine owns its own resonances and its own excitation, and a concatenative bank and a
-// neural worker own neither, so they refuse those six by name. Neural is therefore its own carrier: a
+// source-filter engine owns its resonances and excitation. The sample-bank family
+// stays conservative; only an explicitly resolved Spectral Classic renderer
+// supports independent formant filtering. Neural is its own carrier: a
 // neural track is not a sample bank, and treating it as one would grant it controls its worker
 // refuses.
 enum class RendererCarrier { SampleBank, SourceFilter, Neural };

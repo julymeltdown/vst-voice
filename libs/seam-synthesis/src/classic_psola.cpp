@@ -87,6 +87,8 @@ core::Result<RenderedUnit> ClassicPsolaRenderer::render(
   }
   const auto curveValidation = parameters.pitchCurve.validate();
   if (!curveValidation) return core::Result<RenderedUnit>{curveValidation.error()};
+  if (parameters.performance && parameters.performance->requiresFormantControl())
+    return core::failure<RenderedUnit>(core::ErrorCode::Unsupported, "Classic PSOLA cannot apply the required formant control", unit.id);
   if (parameters.performance && (parameters.performance->sampleRate() != outputSampleRate ||
       !parameters.pitchCurve.points().empty() ||
       parameters.performanceStartFrame > std::numeric_limits<time::SampleFrame>::max() - outputFrames)) {

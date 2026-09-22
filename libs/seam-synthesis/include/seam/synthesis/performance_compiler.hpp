@@ -106,6 +106,9 @@ public:
   [[nodiscard]] std::span<const ScoreNoteSpan> notes() const noexcept { return notes_; }
   [[nodiscard]] std::uint32_t sampleRate() const noexcept { return sampleRate_; }
   [[nodiscard]] std::span<const PhonemeTimingAnchor> phonemeTiming() const noexcept { return phonemeTiming_; }
+  // Includes accepted neutral/manual-overridden intent: admission cannot silently
+  // drop a requested control just because its currently evaluated value is zero.
+  [[nodiscard]] bool requiresFormantControl() const noexcept { return formantIntent_; }
 private:
   [[nodiscard]] ScorePerformanceSample evaluate(time::SampleFrame absoluteFrame, bool inspect) const noexcept;
   [[nodiscard]] const ScoreNoteSpan* findNote(domain::NoteId id) const noexcept;
@@ -122,6 +125,7 @@ private:
   domain::PitchAutomation pitch_;
   domain::DynamicsAutomation dynamics_;
   domain::FormantAutomation formant_;
+  bool formantIntent_{false};
   domain::BreathinessAutomation breathiness_;
   domain::TensionAutomation tension_;
   domain::AirinessAutomation airiness_;

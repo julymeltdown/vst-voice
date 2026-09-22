@@ -1,5 +1,7 @@
 #include "seam/rendering/singer_route.hpp"
+#include "seam/synthesis/renderer_dispatcher.hpp"
 
+#include <algorithm>
 #include <array>
 
 namespace seam::rendering {
@@ -18,6 +20,46 @@ std::string engineDiagnostic(const SingerRouteDeclaration& declaration,
 }
 
 }  // namespace
+
+SingerRouteEnvironment sampleSingerRouteEnvironment(
+    const domain::VocalTrack& track, const voicebank::Manifest& manifest) {
+  SingerRouteEnvironment result;
+  auto style = track.styleSelection.styleId;
+  if (style.empty()) {
+    if (manifest.styles.size() != 1U ||
+        track.styleSelection.origin == domain::VoiceStyleOrigin::LegacyNeedsExactBankResolution) {
+      result.available = false; result.unavailableReason = "Select an exact sample style before editing formants";
+      return result;
+    }
+    style = manifest.styles.front();
+  }
+  bool primaryPresent = false, secondaryPresent = !track.styleSelection.blend;
+  const auto append = [&](voicebank::RendererHint renderer) {
+    if (std::find(result.sampleRenderers.begin(), result.sampleRenderers.end(), renderer) == result.sampleRenderers.end())
+      result.sampleRenderers.push_back(renderer);
+  };
+  for (const auto& unit : manifest.units) {
+    if (!unit.enabled) continue;
+    if (unit.style != style &&
+        (!track.styleSelection.blend || unit.style != track.styleSelection.blend->targetStyleId)) continue;
+    primaryPresent |= unit.style == style;
+    secondaryPresent |= track.styleSelection.blend && unit.style == track.styleSelection.blend->targetStyleId;
+    append(unit.renderer);
+  }
+  for (const auto& region : track.regions) {
+    for (const auto& overrideValue : region.unitSelectionOverrides) {
+      if (overrideValue.unresolved) continue;
+      const auto* unit = manifest.findUnit(overrideValue.unitId);
+      if (!unit || !unit->enabled) { result.available = false; result.unavailableReason = "Selected sample unit is absent or disabled"; continue; }
+      append(synthesis::resolveRequestedRenderer(*unit, synthesis::RenderPolicy::RespectVoicebank, overrideValue.renderer));
+    }
+  }
+  if (!primaryPresent || !secondaryPresent) {
+    result.available = false;
+    result.unavailableReason = "No enabled sample units in a selected style";
+  }
+  return result;
+}
 
 core::Result<ResolvedSingerRoute> resolveSingerRoute(
     const domain::Project& project, domain::TrackId trackId,
@@ -54,6 +96,15 @@ ResolvedSingerRoute resolveSingerRouteForResource(
   route.resource = resource;
   route.carrier = carrier;
   route.capabilities = synthesis::rendererCapabilities(carrier);
+  if (carrier == synthesis::RendererCarrier::SampleBank && !environment.sampleRenderers.empty()) {
+    route.capabilities = synthesis::rendererCapabilities(environment.sampleRenderers.front());
+    for (const auto renderer : environment.sampleRenderers) {
+      const auto next = synthesis::rendererCapabilities(renderer);
+      for (std::size_t i = 0; i < synthesis::kRendererControlCount; ++i)
+        route.capabilities.supported[i] = route.capabilities.supported[i] && next.supported[i];
+      route.capabilities.pitchPreservingTransient &= next.pitchPreservingTransient;
+    }
+  }
   if (carrier == synthesis::RendererCarrier::Neural) {
     for (const auto control : environment.neuralConditioningControls)
       route.capabilities.supported[static_cast<std::size_t>(control)] = true;

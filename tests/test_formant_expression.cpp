@@ -250,17 +250,22 @@ TEST_CASE("A bank that cannot move its resonances refuses the curve instead of d
       "a", {"a"}, "audio/a.wav", 45, voicebank::UnitKind::Sustain)});
   const auto bankRoot = test::support::temporaryDirectory("formant-bank-refusal");
   std::filesystem::create_directories(bankRoot / "audio");
+  CHECK(voicebank::writeMonoPcm16Wav(bankRoot / "audio/a.wav", 48000U,
+      test::support::sineWave(48000U, 110.0, 1.0)));
+  project.findVocalTrack(fixture.track)->voicebank = {manifest.id, manifest.version, std::string(64U, 'a')};
+  project.findVocalTrack(fixture.track)->styleSelection = {domain::VoiceStyleOrigin::Explicit, "original"};
+  const auto segments = rendering::PhraseSegmenter{}.segment(*project.findRegion(fixture.region)); CHECK(segments);
   auto refused = rendering::RenderSnapshotFactory{}.create(
-      project, manifest, fixture.track, rendering::PhraseSegment{.regionId = fixture.region}, 1U,
+      project, manifest, fixture.track, segments.value().front(), 1U,
       rendering::RenderQuality::Preview, bankRoot, 48000U);
   CHECK(!refused.hasValue());
   CHECK(refused.error().code == core::ErrorCode::Unsupported);
   CHECK(refused.error().message.find("formant") != std::string::npos);
 
   // The same region with a curve that asks for nothing is not a request, so it is not refused.
-  project = withFormantShift(fixture.project, fixture.region, 0.0F);
+  project = withFormantShift(project, fixture.region, 0.0F);
   auto neutral = rendering::RenderSnapshotFactory{}.create(
-      project, manifest, fixture.track, rendering::PhraseSegment{.regionId = fixture.region}, 1U,
+      project, manifest, fixture.track, segments.value().front(), 1U,
       rendering::RenderQuality::Preview, bankRoot, 48000U);
   if (!neutral) CHECK(neutral.error().code != core::ErrorCode::Unsupported);
 }

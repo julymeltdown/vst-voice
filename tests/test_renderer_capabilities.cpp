@@ -102,10 +102,12 @@ TEST_CASE("required unsupported controls fail before a renderer can hide them") 
   RendererControlRequest request;
   request.require(RendererControl::Formant);
   const auto rejected = validateRendererCapabilities(
-      seam::voicebank::RendererHint::SpectralClassic, request, true);
+      seam::voicebank::RendererHint::ClassicPsola, request, true);
   CHECK(!rejected);
   CHECK(rejected.error().code == seam::core::ErrorCode::Unsupported);
   CHECK(rejected.error().message.find("formant") != std::string::npos);
+  const auto spectral = validateRendererCapabilities(seam::voicebank::RendererHint::SpectralClassic, request, true);
+  CHECK(spectral); CHECK(!spectral.value().canFallbackToRaw);
 
   RendererControlRequest transient;
   transient.require(RendererControl::Pitch);

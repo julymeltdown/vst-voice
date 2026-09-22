@@ -1,6 +1,8 @@
 #include "seam/synthesis/spectral_classic.hpp"
 
 #include <algorithm>
+#include <array>
+#include <bit>
 #include <cmath>
 #include <complex>
 #include <limits>
@@ -115,6 +117,156 @@ void finishUnit(RenderedUnit& result,
   }
 }
 
+// Warp the envelope of the already pitch/time-rendered signal, not its harmonic
+// positions or phases. This covers recorded attacks, releases and unvoiced spans
+// which intentionally bypass the legacy sustain resynthesizer above.
+// Integer-semitone anchor deltas are interpolated at EACH destination sample's
+// compiled value. Only anchors needed in this FFT window are computed; a short
+// accepted/manual island between hop centers cannot disappear. Zero contributes
+// exactly zero delta, including inside a nonneutral phrase.
+struct FormantPlan {
+  std::vector<std::uint64_t> anchors;
+  std::size_t fftCells{0U};
+  time::SampleFrame firstCenter{0};
+};
+
+// No carrier DSP or destination PCM allocation precedes this exact work plan.
+// A separate scan bound also caps neutral/rapidly alternating automation; a
+// rejected curve is never decimated to fit. Scratch stays O(window count + FFT).
+core::Result<FormantPlan> prepareFormants(const SpectralRenderParameters& parameters,
+    time::SampleFrame length, std::stop_token stop) {
+  FormantPlan plan;
+  if (!parameters.performance || !parameters.performance->requiresFormantControl()) return plan;
+  constexpr int maximumSemitones = static_cast<int>(domain::kMaximumFormantShiftSemitones);
+  constexpr std::size_t maximumCells = 64U * 1024U * 1024U;
+  const auto hop = static_cast<time::SampleFrame>(parameters.hopSize);
+  const auto half = static_cast<time::SampleFrame>(parameters.fftSize / 2U);
+  const auto remainder = (parameters.performanceStartFrame % hop + hop) % hop;
+  plan.firstCenter = -remainder - ((half - 1 - remainder) / hop) * hop;
+  const auto count = static_cast<std::size_t>((length + half - plan.firstCenter + hop - 1) / hop);
+  if (count > maximumCells / parameters.fftSize)
+    return core::failure<FormantPlan>(core::ErrorCode::Unsupported, "Formant control scan exceeds the per-unit budget");
+  plan.anchors.reserve(count);
+  for (auto center = plan.firstCenter; center < length + half; center += hop) {
+    std::uint64_t mask = 0U;
+    const auto begin = std::max<time::SampleFrame>(0, center - half);
+    const auto end = std::min(length, center + half);
+    for (auto frame = begin; frame < end; ++frame) {
+      if ((frame & 1023) == 0 && stop.stop_requested())
+        return core::failure<FormantPlan>(core::ErrorCode::Conflict, "Formant planning was cancelled");
+      const auto value = parameters.performance->at(parameters.performanceStartFrame + frame).formantSemitones;
+      if (!std::isfinite(value) || std::abs(value) > domain::kMaximumFormantShiftSemitones)
+        return core::failure<FormantPlan>(core::ErrorCode::InvalidArgument, "Invalid compiled formant shift");
+      for (const auto anchor : {static_cast<int>(std::floor(value)), static_cast<int>(std::ceil(value))})
+        if (anchor != 0) mask |= std::uint64_t{1} << static_cast<unsigned>(anchor + maximumSemitones);
+    }
+    if (stop.stop_requested())
+      return core::failure<FormantPlan>(core::ErrorCode::Conflict, "Formant planning was cancelled");
+    const auto cells = mask == 0U ? 0U : parameters.fftSize * (static_cast<std::size_t>(std::popcount(mask)) + 1U);
+    if (cells > maximumCells - plan.fftCells)
+      return core::failure<FormantPlan>(core::ErrorCode::Unsupported, "Formant FFT work exceeds the per-unit budget");
+    plan.fftCells += cells;
+    plan.anchors.push_back(mask);
+  }
+  return plan;
+}
+
+core::Result<bool> shiftFormants(RenderedUnit& result, const SpectralRenderParameters& parameters,
+    const FormantPlan& plan,
+    std::uint32_t rate, std::vector<float>& overlap, std::vector<float>& weights,
+    std::stop_token stop) {
+  if (plan.fftCells == 0U) return false;
+  constexpr int maximumSemitones = static_cast<int>(domain::kMaximumFormantShiftSemitones);
+  const auto size = parameters.fftSize, half = size / 2U;
+  const auto length = static_cast<time::SampleFrame>(result.samples.size());
+  std::fill(overlap.begin(), overlap.end(), 0.0F);
+  std::fill(weights.begin(), weights.end(), 0.0F);
+  std::vector<std::complex<double>> spectrum(size), delta(size);
+  std::vector<double> envelope(half + 1U), prefix(half + 2U), values(size), window(size);
+  for (std::size_t i = 0; i < size; ++i)
+    window[i] = 0.5 - 0.5 * std::cos(2.0 * std::numbers::pi * static_cast<double>(i) /
+                                    static_cast<double>(size - 1U));
+  const auto radius = std::max<std::size_t>(1U, static_cast<std::size_t>(std::ceil(
+      300.0 * static_cast<double>(size) / static_cast<double>(rate))));
+  std::size_t windowIndex = 0U;
+  const auto hop = static_cast<time::SampleFrame>(parameters.hopSize);
+  for (auto center = plan.firstCenter; center < length + static_cast<time::SampleFrame>(half); center += hop) {
+    if (stop.stop_requested()) return core::failure<bool>(core::ErrorCode::Conflict, "Formant rendering was cancelled");
+    const auto needed = plan.anchors[windowIndex++];
+    if (needed == 0U) continue;
+    const auto begin = center - static_cast<time::SampleFrame>(half);
+    for (std::size_t i = 0; i < size; ++i) {
+      if ((i & 1023U) == 0U && stop.stop_requested())
+        return core::failure<bool>(core::ErrorCode::Conflict, "Formant rendering was cancelled");
+      const auto frame = begin + static_cast<time::SampleFrame>(i);
+      values[i] = 0.0;
+      spectrum[i] = {};
+      if (frame < 0 || frame >= length) continue;
+      const auto sample = result.samples[static_cast<std::size_t>(frame)];
+      if (!std::isfinite(sample)) return core::failure<bool>(core::ErrorCode::InvalidArgument, "Nonfinite formant source");
+      const auto semitones = parameters.performance->at(parameters.performanceStartFrame + frame).formantSemitones;
+      if (!std::isfinite(semitones) || std::abs(semitones) > domain::kMaximumFormantShiftSemitones)
+        return core::failure<bool>(core::ErrorCode::InvalidArgument, "Invalid compiled formant shift");
+      values[i] = semitones;
+      spectrum[i] = {static_cast<double>(sample) * window[i], 0.0};
+    }
+    fft(spectrum, false);
+    prefix[0] = 0.0;
+    for (std::size_t bin = 0; bin <= half; ++bin) prefix[bin + 1U] = prefix[bin] + std::abs(spectrum[bin]);
+    for (std::size_t bin = 0; bin <= half; ++bin) {
+      const auto first = bin > radius ? bin - radius : 0U, last = std::min(half, bin + radius);
+      envelope[bin] = (prefix[last + 1U] - prefix[first]) / static_cast<double>(last - first + 1U);
+    }
+    const auto floor = std::max(1.0e-12, *std::max_element(envelope.begin(), envelope.end()) * 1.0e-4);
+    for (int anchor = -maximumSemitones; anchor <= maximumSemitones; ++anchor) {
+      if ((needed & (std::uint64_t{1} << static_cast<unsigned>(anchor + maximumSemitones))) == 0U) continue;
+      if (stop.stop_requested()) return core::failure<bool>(core::ErrorCode::Conflict, "Formant rendering was cancelled");
+      const auto ratio = std::exp2(static_cast<double>(anchor) / 12.0);
+      for (std::size_t bin = 0; bin <= half; ++bin) {
+        const auto position = static_cast<double>(bin) / ratio;
+        double target = 0.0;
+        if (position <= static_cast<double>(half)) {
+          const auto left = static_cast<std::size_t>(position), right = std::min(left + 1U, half);
+          const auto fraction = position - static_cast<double>(left);
+          target = envelope[left] * (1.0 - fraction) + envelope[right] * fraction;
+        }
+        // Explicit regularization bounds the filter, not an output-driven gain
+        // normalization. Above-Nyquist source envelope is zero, never clamped to
+        // the last bin and invented as a high-frequency shelf.
+        const auto correction = std::clamp(target / std::max(envelope[bin], floor), 0.0, 16.0);
+        delta[bin] = spectrum[bin] * (correction - 1.0);
+        if (bin != 0U && bin != half) delta[size - bin] = std::conj(delta[bin]);
+      }
+      fft(delta, true);
+      for (std::size_t i = 0; i < size; ++i) {
+        const auto frame = begin + static_cast<time::SampleFrame>(i);
+        if (frame < 0 || frame >= length || values[i] == 0.0) continue;
+        const auto mix = std::max(0.0, 1.0 - std::abs(values[i] - static_cast<double>(anchor)));
+        overlap[static_cast<std::size_t>(frame)] += static_cast<float>(delta[i].real() * window[i] * mix);
+      }
+    }
+    for (std::size_t i = 0; i < size; ++i) {
+      const auto frame = begin + static_cast<time::SampleFrame>(i);
+      if (frame >= 0 && frame < length && values[i] != 0.0)
+        weights[static_cast<std::size_t>(frame)] += static_cast<float>(window[i] * window[i]);
+    }
+  }
+  const auto fadeFrames = std::min<std::size_t>(result.samples.size() / 2U, std::max<std::size_t>(1U, rate / 1000U));
+  for (std::size_t i = 0; i < result.samples.size(); ++i) {
+    if ((i & 1023U) == 0U && stop.stop_requested())
+      return core::failure<bool>(core::ErrorCode::Conflict, "Formant rendering was cancelled");
+    if (weights[i] > 1.0e-7F) {
+      const auto edge = std::min(i, result.samples.size() - 1U - i);
+      // The carrier already has its legacy fade. Fade only the added delta so
+      // filtering cannot reopen that edge, without double-fading the baseline.
+      const auto fade = edge < fadeFrames ? static_cast<float>(edge + 1U) / static_cast<float>(fadeFrames + 1U) : 1.0F;
+      result.samples[i] += overlap[i] / weights[i] * fade;
+    }
+    if (!std::isfinite(result.samples[i])) return core::failure<bool>(core::ErrorCode::Unsupported, "Formant output is nonfinite");
+  }
+  return true;
+}
+
 }  // namespace
 
 core::Result<RenderedUnit> SpectralClassicRenderer::render(
@@ -127,7 +279,7 @@ core::Result<RenderedUnit> SpectralClassicRenderer::render(
     std::stop_token stopToken) const {
   if (source.sampleRate == 0U || source.channels == 0U ||
       source.interleaved.empty() || outputSampleRate < 8000U ||
-      outputSampleRate > 384000U || outputFrames <= 0 || targetMidi < 0 ||
+      outputSampleRate > 384000U || outputFrames <= 0 || outputFrames > 32 * 1024 * 1024 || targetMidi < 0 ||
       targetMidi > 127 || !powerOfTwo(parameters.fftSize) ||
       parameters.fftSize < 128U || parameters.fftSize > 8192U ||
       parameters.hopSize == 0U || parameters.hopSize > parameters.fftSize / 2U ||
@@ -167,7 +319,12 @@ core::Result<RenderedUnit> SpectralClassicRenderer::render(
       return core::failure<RenderedUnit>(core::ErrorCode::Conflict, "Spectral source map does not match output extent", unit.id);
     }
   }
+  const auto formantPlan = prepareFormants(parameters, outputFrames, stopToken);
+  if (!formantPlan) return core::Result<RenderedUnit>{formantPlan.error()};
   const auto mono = source.monoMix();
+  if (parameters.performance && parameters.performance->requiresFormantControl() &&
+      !std::all_of(mono.begin(), mono.end(), [](float value) { return std::isfinite(value); }))
+    return core::failure<RenderedUnit>(core::ErrorCode::InvalidArgument, "Nonfinite formant source", unit.id);
   const auto sourcePerOutput = static_cast<double>(source.sampleRate) /
                                static_cast<double>(outputSampleRate);
   const auto& markers = unit.markers;
@@ -431,10 +588,16 @@ core::Result<RenderedUnit> SpectralClassicRenderer::render(
   }
 
   finishUnit(result, unit.gainDb + parameters.additionalGainDb, outputSampleRate);
+  const auto formants = shiftFormants(result, parameters, formantPlan.value(), outputSampleRate, overlap, weights, stopToken);
+  if (!formants) return core::Result<RenderedUnit>{formants.error()};
   if (parameters.performance) {
     const auto gain = applyCompiledPerformanceGain(result.samples, *parameters.performance, parameters.performanceStartFrame, stopToken);
     if (!gain) return core::Result<RenderedUnit>{gain.error()};
   }
+  if (formants.value() && std::any_of(result.samples.begin(), result.samples.end(),
+      [](float value) { return !std::isfinite(value) || std::abs(value) > 1.0F; }))
+    return core::failure<RenderedUnit>(core::ErrorCode::Unsupported,
+        "Formant output exceeds unit headroom; reduce source or unit gain", unit.id);
   return result;
 }
 

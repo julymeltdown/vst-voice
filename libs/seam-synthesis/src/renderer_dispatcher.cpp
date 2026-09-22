@@ -74,9 +74,17 @@ core::Result<DispatchedRenderedUnit> UnitRendererDispatcher::render(
   }
   const auto requested = resolveRequestedRenderer(
       unit, parameters.policy, parameters.rendererOverride);
+  auto controls = parameters.controls;
+  for (const auto* performance : {parameters.raw.performance.get(), parameters.psola.performance.get(),
+                                  parameters.spectral.performance.get(), parameters.stretch.performance.get()}) {
+    if (performance && performance->requiresFormantControl()) controls.require(RendererControl::Formant);
+  }
   const auto capabilities = validateRendererCapabilities(
-      requested, parameters.controls, parameters.allowRawFallback);
+      requested, controls, parameters.allowRawFallback);
   if (!capabilities) return core::Result<DispatchedRenderedUnit>{capabilities.error()};
+  if (controls.required[static_cast<std::size_t>(RendererControl::Formant)] && !parameters.spectral.performance)
+    return core::failure<DispatchedRenderedUnit>(core::ErrorCode::Unsupported,
+        "Formant rendering requires snapshot-owned compiled performance", unit.id);
   if (capabilities.value().canFallbackToRaw) {
     auto raw = rawFallback(unit, source, outputSampleRate, outputFrames,
                            targetMidi, parameters.raw, stopToken);
@@ -125,6 +133,7 @@ core::Result<DispatchedRenderedUnit> UnitRendererDispatcher::render(
     };
   }
   if (!parameters.allowRawFallback || requested == voicebank::RendererHint::Raw ||
+      controls.required[static_cast<std::size_t>(RendererControl::Formant)] ||
       parameters.controls.requiresPitchPreservingTransient ||
       (requested == voicebank::RendererHint::ClassicPsola && parameters.psola.performance) ||
       (requested == voicebank::RendererHint::SpectralClassic && parameters.spectral.performance) ||

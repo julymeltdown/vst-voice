@@ -280,6 +280,10 @@ core::Result<CompiledScorePerformance> compileScorePerformance(
   result.pitch_ = region.pitchAutomation;
   result.dynamics_ = region.dynamicsAutomation;
   result.formant_ = region.formantAutomation;
+  result.formantIntent_ = std::any_of(region.formantAutomation.points().begin(),
+      region.formantAutomation.points().end(), [](const auto& point) { return point.semitones != 0.0F; }) ||
+      std::any_of(region.performance.accepted.begin(), region.performance.accepted.end(),
+          [](const auto& selection) { return selection.channel == domain::PerformanceChannel::Formant; });
   result.breathiness_ = region.breathinessAutomation;
   result.tension_ = region.tensionAutomation;
   result.airiness_ = region.airinessAutomation;

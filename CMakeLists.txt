@@ -123,7 +123,7 @@ set(SEAM_TIMING_SOLVER_REVISION 11)
 # U5: vowel-landmark-preserving onset waveform retiming.
 set(SEAM_RAW_RENDERER_REVISION 10)
 set(SEAM_PSOLA_RENDERER_REVISION 10)
-set(SEAM_SPECTRAL_RENDERER_REVISION 7)
+set(SEAM_SPECTRAL_RENDERER_REVISION 8)
 set(SEAM_STRETCH_RENDERER_REVISION 5)
 set(SEAM_SEAM_COMPOSER_REVISION 2)
 set(SEAM_PCM_CACHE_FORMAT_REVISION 4)
@@ -1999,7 +1999,8 @@ if(SEAM_BUILD_TESTS)
 
   add_executable(seam_formant_expression_tests
     tests/test_main.cpp
-    tests/test_formant_expression.cpp)
+    tests/test_formant_expression.cpp
+    tests/test_spectral_formant.cpp)
   add_executable(seam_procedural_package_tests
     tests/test_main.cpp
     tests/test_procedural_package.cpp)
@@ -2052,11 +2053,17 @@ if(SEAM_BUILD_TESTS)
     COMMAND seam_procedural_install_journey_tests)
   target_include_directories(seam_formant_expression_tests PRIVATE tests)
   target_link_libraries(seam_formant_expression_tests PRIVATE
-    seam_rendering seam_voice_design seam_synthesis seam_application
+    seam_authoring_runtime seam_rendering seam_voice_design seam_synthesis seam_application
     seam_native_ui seam_formats seam_voicebank seam_domain seam_core)
+  if(TARGET seam_clap_editor)
+    target_link_libraries(seam_formant_expression_tests PRIVATE seam_clap_editor)
+    target_compile_definitions(seam_formant_expression_tests PRIVATE SEAM_FORMANT_CLAP=1)
+  endif()
   seam_apply_compiler_options(seam_formant_expression_tests)
   add_test(NAME seam_formant_expression_tests
     COMMAND seam_formant_expression_tests)
+  set_tests_properties(seam_formant_expression_tests PROPERTIES TIMEOUT 180
+    ENVIRONMENT "SEAM_PREVIEW_CACHE_ROOT=${CMAKE_BINARY_DIR}/formant-preview-cache")
 
   add_executable(seam_breathiness_expression_tests
     tests/test_main.cpp

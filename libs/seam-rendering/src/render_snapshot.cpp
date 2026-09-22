@@ -41,10 +41,9 @@ bool hasAcceptedChannel(const domain::VocalRegion& region, domain::PerformanceCh
       [channel](const auto& selection) { return selection.channel == channel; });
 }
 
-// The formant channel is a control a concatenative bank and an admitted model do not have. A curve
-// that asks for one would otherwise be dropped in silence, which is exactly what the capability rule
-// forbids, so the request is refused by name instead. A curve that is entirely neutral is not a
-// request.
+// Native neutral curves are inert, but accepted intent remains a required
+// capability even at zero or under manual replacement. Sample admission checks
+// the selected Spectral Classic renderer in both plans; neural remains unsupported.
 bool requiresFormantShift(const domain::VocalRegion& region) noexcept {
   return hasAcceptedChannel(region, domain::PerformanceChannel::Formant) ||
       std::any_of(region.formantAutomation.points().begin(),
@@ -992,8 +991,9 @@ core::Result<RenderSnapshot> RenderSnapshotFactory::create(
     std::filesystem::path bankRoot,
     std::uint32_t sampleRate,
     std::string style,
-    const synthesis::PhraseRenderOptions& renderOptions,
+    const synthesis::PhraseRenderOptions& requestedOptions,
     std::optional<synthesis::PhraseFrameRange> ownedFrames, std::stop_token stop) const {
+  auto renderOptions = requestedOptions;
   if (stop.stop_requested()) return core::failure<RenderSnapshot>(core::ErrorCode::Conflict, "Sample snapshot cancelled");
   const auto projectValidation = project.validate();
   if (!projectValidation) return core::Result<RenderSnapshot>{projectValidation.error()};
@@ -1032,8 +1032,7 @@ core::Result<RenderSnapshot> RenderSnapshotFactory::create(
         "Render style override differs from the saved ordered StyleBlend pair");
   }
   if (requiresFormantShift(*region))
-    return core::failure<RenderSnapshot>(core::ErrorCode::Unsupported,
-        formantShiftUnsupportedMessage("sample bank"), trackId.toString());
+    renderOptions.renderer.controls.require(synthesis::RendererControl::Formant);
   if (requiresBreathiness(*region))
     return core::failure<RenderSnapshot>(core::ErrorCode::Unsupported,
         breathinessUnsupportedMessage("sample bank"), trackId.toString());
@@ -1349,6 +1348,24 @@ core::Result<RenderSnapshot> RenderSnapshotFactory::create(
   auto plan = selector.select(voicebankValue, *phraseRegion, phonemes.tokens,
                               style, phraseRegion->unitSelectionOverrides, evidence, true, selectionContext);
   if (!plan) return core::Result<RenderSnapshot>{plan.error()};
+  // Validate the actual selected renderer, including explicit overrides, in both
+  // styles. A bank-family capability cannot prove that a particular unit applies
+  // this control. Persist the requirement in snapshot/cache/export identity.
+  const auto validateFormantPlan = [&](const synthesis::UnitPlan& selected) -> core::Result<void> {
+    if (!renderOptions.renderer.controls.required[static_cast<std::size_t>(synthesis::RendererControl::Formant)]) return {};
+    synthesis::RendererControlRequest required;
+    required.require(synthesis::RendererControl::Formant);
+    for (const auto& entry : selected.entries) {
+      const auto* unit = voicebankValue.findUnit(entry.unitId);
+      if (!unit) return core::failure(core::ErrorCode::NotFound, "Selected formant unit is absent", entry.unitId);
+      const auto allowed = synthesis::validateRendererCapabilities(
+          synthesis::resolveRequestedRenderer(*unit, renderOptions.renderer.policy, entry.renderer), required, false);
+      if (!allowed) return core::failure(allowed.error().code, allowed.error().message, entry.unitId);
+    }
+    return {};
+  };
+  const auto primaryAllowed = validateFormantPlan(plan.value());
+  if (!primaryAllowed) return core::Result<RenderSnapshot>{primaryAllowed.error()};
   bindDecision(plan.value());
   selectedUnits.reserve(plan.value().entries.size());
   frozenAudio.reserve(plan.value().entries.size());
@@ -1368,6 +1385,8 @@ core::Result<RenderSnapshot> RenderSnapshotFactory::create(
         blend->targetStyleId, phraseRegion->unitSelectionOverrides, evidence, true, selectionContext);
     if (!secondPlan) return core::failure<RenderSnapshot>(secondPlan.error().code,
         "StyleBlend secondary selection failed: " + secondPlan.error().message, secondPlan.error().context);
+    const auto secondaryAllowed = validateFormantPlan(secondPlan.value());
+    if (!secondaryAllowed) return core::Result<RenderSnapshot>{secondaryAllowed.error()};
     bindDecision(secondPlan.value());
     if (secondPlan.value().entries.size() + plan.value().entries.size() > 8192U) {
       return core::failure<RenderSnapshot>(core::ErrorCode::Unsupported,
