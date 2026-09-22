@@ -74,7 +74,15 @@ implies completion of every U18 requirement or its U9 dependency.
 
 A bounded subagent source review found no blocking defect; its two suggested
 resource-wide/ordinary-phonation controls were subsequently added and passed.
-Review by the existing independent reviewer task is pending at this checkpoint.
+The existing independent reviewer task APPROVED commit
+`62779c06c230c25ef36f2855c8d256534f44941a` against its direct parent `8820bc43`.
+They inspected the exact production/header diff, all 267 appended test lines,
+validation/schema selection, and planner/stream callers. Existing-binary reruns
+passed Designer 38 + design 44 cases in Release (6.54 s) and Debug (25.12 s).
+They inspected the retained red log and committed whitespace, but did not rebuild,
+rerun old source, reproduce the test compile error, or repeat the broader five-
+target suite. The bundled Korean completion plan and parallel P2 changes were
+outside their source-review scope. No actionable scoped findings remain.
 
 The full objective remains active. Next work is safe native interchange review:
 real AppKit wiring, stale-document protection, complete bounded loss accounting,

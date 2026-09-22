@@ -11,9 +11,11 @@ repair; new coverage includes all schemas/permission combinations, four resource
 entry paths, exact admissible PCM, full-width seed/file roundtrips and ordinary
 phonation controls. Fresh Release passes five targets (44/38/8/4/17 cases,
 22.93 s); Debug passes design/Designer (44/38 cases, 26.63 s). A test-only ordinal
-cast was corrected after strict compilation rejected its narrowing. Independent
-reviewer-task approval is pending; no full suite, full U18 or singer/Beta approval
-is inferred. Details: U18_RECIPE_CAPABILITY_ADMISSION_2026-09-22.md. Parallel work
+cast was corrected after strict compilation rejected its narrowing. Developer 2
+APPROVED `62779c0`, independently inspecting the exact scoped diff/callers and
+rerunning existing design/Designer binaries in Release (6.54 s) and Debug
+(25.12 s), 44/38 cases each; no rebuild or broad-suite rerun. No full U18 or
+singer/Beta approval is inferred. Details: U18_RECIPE_CAPABILITY_ADMISSION_2026-09-22.md. Parallel work
 now targets the native import/review workflow, not another acoustic sweep.
 
 ## U39 Spectral Classic formants approved after export-completeness repair (2026-09-22)
