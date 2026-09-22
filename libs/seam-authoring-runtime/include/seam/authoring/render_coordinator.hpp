@@ -7,6 +7,7 @@
 
 #include <array>
 #include <atomic>
+#include <chrono>
 #include <condition_variable>
 #include <cstddef>
 #include <cstdint>
@@ -166,6 +167,12 @@ struct RenderCoordinatorStats final {
 struct RenderCoordinatorHooks final {
   std::function<void(std::uint64_t, std::stop_token)> beforeRender;
   std::function<void(std::uint64_t, std::stop_token)> beforePublication;
+  // Test-only debounce observation. These callbacks run with the coordinator
+  // mutex held: they must not block or re-enter the coordinator. A longer test
+  // interval lets cancellation be synchronized inside the actual timed wait.
+  std::function<void(std::uint64_t)> beforeDebounceWait;
+  std::function<void(std::uint64_t)> afterDebounceWait;
+  std::chrono::milliseconds debounceInterval{20};
 };
 
 class AuthoringRenderCoordinator final {

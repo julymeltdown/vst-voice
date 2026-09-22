@@ -151,6 +151,43 @@ seam::authoring::RenderProgress waitForTerminal(
   return coordinator.progress();
 }
 
+struct DebounceObservation final {
+  std::mutex mutex;
+  std::condition_variable condition;
+  std::uint64_t startedRevision{0U};
+  std::uint64_t finishedRevision{0U};
+  std::vector<std::uint64_t> renderedRevisions;
+
+  seam::authoring::RenderCoordinatorHooks hooks() {
+    seam::authoring::RenderCoordinatorHooks result;
+    // Longer than every observation deadline below. The real timed wait must
+    // wake from cancellation/replacement, not expire before the assertion.
+    result.debounceInterval = std::chrono::seconds{30};
+    result.beforeDebounceWait = [this](std::uint64_t revision) {
+      std::lock_guard lock(mutex);
+      startedRevision = revision;
+      condition.notify_all();
+    };
+    result.afterDebounceWait = [this](std::uint64_t revision) {
+      std::lock_guard lock(mutex);
+      finishedRevision = revision;
+      condition.notify_all();
+    };
+    result.beforeRender = [this](std::uint64_t revision, std::stop_token) {
+      std::lock_guard lock(mutex);
+      renderedRevisions.push_back(revision);
+    };
+    return result;
+  }
+
+  bool waitFor(std::uint64_t revision, bool finished) {
+    std::unique_lock lock(mutex);
+    return condition.wait_for(lock, std::chrono::seconds{2}, [&] {
+      return (finished ? finishedRevision : startedRevision) == revision;
+    });
+  }
+};
+
 }  // namespace
 
 TEST_CASE("coordinator publishes typed procedural previews without sample bank approval") {
@@ -534,6 +571,78 @@ TEST_CASE("authoring_render_coordinator_orders_same_revision_publications") {
   const auto stats = coordinator.stats();
   CHECK(stats.completed == 1U);
   CHECK(stats.stale >= 1U);
+}
+
+TEST_CASE("coordinator cancellation wakes an admitted debounce without rendering and permits a fresh request") {
+  auto fixture = makeRenderFixture();
+  DebounceObservation observation;
+  seam::authoring::AuthoringRenderCoordinator coordinator{
+      uniqueTempRoot("render-coordinator-cancel-debounce"), observation.hooks()};
+
+  coordinator.submit(fixture.project, {fixture.source}, fixture.trackId,
+                     fixture.regionId, 301U, 48000U,
+                     seam::rendering::RenderQuality::Preview, false);
+  CHECK(observation.waitFor(301U, false));
+  // The entry callback holds the coordinator mutex. cancel() cannot clear the
+  // pending request until the actual inner condition-variable wait releases it.
+  coordinator.cancel();
+  CHECK(observation.waitFor(301U, true));
+  {
+    std::lock_guard lock(observation.mutex);
+    CHECK(observation.renderedRevisions.empty());
+  }
+  CHECK(coordinator.progress().state == seam::authoring::RenderState::Cancelled);
+  CHECK(coordinator.stats().cancelled == 1U);
+  CHECK(coordinator.stats().completed == 0U);
+  CHECK(coordinator.stats().failed == 0U);
+  CHECK(!coordinator.acquireCurrent());
+  CHECK(coordinator.latest()->state == seam::authoring::RenderState::Idle);
+
+  // The finished callback also holds the coordinator mutex. This submission
+  // cannot hide an empty pending_ before the worker rechecks it under that lock.
+  coordinator.submit(fixture.project, {fixture.source}, fixture.trackId,
+                     fixture.regionId, 302U, 48000U,
+                     seam::rendering::RenderQuality::Preview, true);
+  CHECK(waitForTerminal(coordinator, 302U).state ==
+        seam::authoring::RenderState::Ready);
+  const auto current = coordinator.acquireCurrent();
+  CHECK(current);
+  CHECK(current->projectRevision == 302U);
+  CHECK(!current->result.interleaved.empty());
+  CHECK(coordinator.stats().submitted == 2U);
+  CHECK(coordinator.stats().completed == 1U);
+  CHECK(coordinator.stats().failed == 0U);
+  {
+    std::lock_guard lock(observation.mutex);
+    CHECK(observation.renderedRevisions == std::vector<std::uint64_t>{302U});
+  }
+}
+
+TEST_CASE("coordinator immediate replacement wakes an admitted debounce and renders only the replacement") {
+  auto fixture = makeRenderFixture();
+  DebounceObservation observation;
+  seam::authoring::AuthoringRenderCoordinator coordinator{
+      uniqueTempRoot("render-coordinator-replace-debounce"), observation.hooks()};
+  coordinator.submit(fixture.project, {fixture.source}, fixture.trackId,
+                     fixture.regionId, 401U, 48000U,
+                     seam::rendering::RenderQuality::Preview, false);
+  CHECK(observation.waitFor(401U, false));
+  coordinator.submit(fixture.project, {fixture.source}, fixture.trackId,
+                     fixture.regionId, 402U, 48000U,
+                     seam::rendering::RenderQuality::Preview, true);
+  CHECK(observation.waitFor(401U, true));
+  CHECK(waitForTerminal(coordinator, 402U).state ==
+        seam::authoring::RenderState::Ready);
+  const auto current = coordinator.acquireCurrent();
+  CHECK(current);
+  CHECK(current->projectRevision == 402U);
+  CHECK(coordinator.stats().cancelled == 1U);
+  CHECK(coordinator.stats().completed == 1U);
+  CHECK(coordinator.stats().failed == 0U);
+  {
+    std::lock_guard lock(observation.mutex);
+    CHECK(observation.renderedRevisions == std::vector<std::uint64_t>{402U});
+  }
 }
 
 TEST_CASE("authoring_render_coordinator_cancel_invalidates_unpublished_audio") {

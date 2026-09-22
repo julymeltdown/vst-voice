@@ -340,6 +340,7 @@ void AuthoringRenderCoordinator::cancel() noexcept {
       .audibleAudioStale = current.audibleAudioStale,
       .diagnostic = "Production render request cancelled",
   });
+  condition_.notify_all();
   notifyCompletion();
 }
 
@@ -397,15 +398,25 @@ void AuthoringRenderCoordinator::workerLoop(std::stop_token stopToken) {
       condition_.wait(lock, stopToken, [this] { return pending_.has_value(); });
       if (stopToken.stop_requested()) break;
       if (!pending_->immediate) {
+        const auto debouncedRevision = pending_->revision;
         const auto deadline = std::chrono::steady_clock::now() +
-                              std::chrono::milliseconds{20};
+                              hooks_.debounceInterval;
+        if (hooks_.beforeDebounceWait) {
+          hooks_.beforeDebounceWait(debouncedRevision);
+        }
         static_cast<void>(condition_.wait_until(
             lock, deadline, [this, &stopToken] {
-              return stopToken.stop_requested() ||
-                     (pending_.has_value() && pending_->immediate);
+              return stopToken.stop_requested() || !pending_.has_value() ||
+                     pending_->immediate;
             }));
         if (stopToken.stop_requested()) break;
+        if (hooks_.afterDebounceWait) {
+          hooks_.afterDebounceWait(debouncedRevision);
+        }
       }
+      // The timed wait releases mutex_: cancellation can remove the admitted
+      // request without replacing it. Return to the outer wait in that case.
+      if (!pending_.has_value()) continue;
       request = std::move(*pending_);
       pending_.reset();
       activeStopSource_ = std::stop_source{};

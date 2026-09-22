@@ -197,10 +197,61 @@ debounce assertion included.
 Logs: `u17-refresh-{build,final-ctest}.log` under each build directory, plus
 `build-u4-macos/u17-refresh-focused-{build,ctest}.log`.
 
-Independent re-review of this repair is pending. General filesystem watching is
-not introduced or claimed. The reviewer also noted a nonblocking efficiency
+Independent re-review of `08d45090899f1406b1413c39b3385c598cf27609` returned
+REQUEST CHANGES for the inner coordinator debounce defect below. The reviewer
+accepted the freshness/outer-dispatch repair itself and reran the five standalone
+and 19 coordinator cases in each configuration (48 case executions, all passed).
+Those tests did not cover cancellation inside the coordinator's inner wait.
+General filesystem watching is not introduced or claimed. The reviewer also
+noted a nonblocking efficiency
 follow-up: cache adjacent-note/rest lookups per boundary instead of scanning
 notes per expanded edge; no measured performance failure was reported.
+
+### Inner-debounce cancellation repair
+
+The second review identified source-proven P1 undefined behavior, not an observed
+crash: `cancel()` clears `pending_` while the worker's 20 ms debounce wait has
+released the mutex. The old predicate ignored disappearance of that request,
+and extraction subsequently dereferenced the empty optional. The explicit
+refresh cancellation made this pre-existing path directly relevant when the
+changed bank could no longer resolve and no replacement request was submitted.
+
+Cancellation now notifies the worker, the timed predicate recognizes an empty
+queue, and extraction rechecks `pending_` while holding the coordinator mutex.
+An empty queue returns to the outer stop-aware wait without rendering or
+publishing anything. An immediate replacement still wakes and is consumed.
+
+Two default-empty observation hooks run under the coordinator mutex immediately
+before and after the real timed wait. They must not block or re-enter the
+coordinator. Tests alone extend its interval from the unchanged production
+default of 20 ms to 30 seconds, longer than their two-second observation
+deadlines. Cancellation/replacement therefore cannot acquire the mutex until
+the actual inner wait releases it, and a passing wake assertion cannot rely on
+normal timer expiration. The finished observation also precedes the pending
+recheck under that same lock, preventing the later fresh submission from hiding
+an empty-request extraction defect. Hook callbacks only record/notify; they do
+not wait on the test thread, so failed assertions can still stop/join the worker.
+
+The cancellation regression requires zero render-hook calls, no current audio,
+no new publication, one cancellation and no failure, followed by successful
+nonempty PCM publication from a fresh immediate request on the same coordinator.
+The replacement regression requires only the replacement revision to render.
+
+Fresh Release verification passes eight CTest targets / 968 case executions in
+22.06 seconds: 834 monolithic, 21 coordinator, five standalone, four installed
+original-singer journeys, 11 contextual-selection, 11 style-blending, 48
+performance-snapshot and 34 synthesis-quality cases. Release is configured with
+warnings-as-errors. Debug passes 21 coordinator and five standalone cases in
+5.23 seconds, followed by five successful repetitions of the entire 21-case
+coordinator suite (24.70 seconds). Debug uses its existing build configuration;
+this does not claim a new warnings-as-errors or sanitizer run. The production
+20 ms behavior remains covered by the existing default-hook cases.
+
+Logs are `u17-debounce-{build,ctest}.log` in each build directory and
+`build/debug/u17-debounce-repeat-ctest.log`. Source closure and diff whitespace
+checks pass. No observed crash on the old undefined-behavior path, new live
+native session, installed-host result or perceptual qualification is claimed.
+Exact-hash independent re-review is pending.
 
 ## Still open
 

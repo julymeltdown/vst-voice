@@ -1,5 +1,26 @@
 # Integrated Singer Execution
 
+## U17 second review repair: cancellation inside the coordinator debounce (2026-09-22)
+
+Developer 2 REQUESTED CHANGES at 08d45090 for source-proven undefined behavior:
+the worker could dereference an empty pending request after cancellation during
+its inner 20 ms wait. No observed crash was claimed. The explicit-refresh and
+outer-dispatch freshness repair itself was accepted, but its passing tests did
+not exercise this inner wait.
+
+Cancellation now notifies that wait, disappearance of the queued request wakes
+it, and the worker rechecks the optional under its mutex before extraction. Two
+observer hooks and a test-only longer debounce interval synchronize the actual
+condition-variable window. Regressions require no cancelled render/publication,
+successful later rendering on the same coordinator, and correct immediate
+replacement. The production default stays 20 ms.
+
+Fresh Release passes eight targets / 968 case executions in 22.06 seconds;
+Debug passes 26 cases in 5.23 seconds and five additional successful repetitions
+of the 21-case coordinator suite in 24.70 seconds. Source closure/diff checks
+pass. Exact-hash independent re-review is pending. Details and non-claims are in
+U17_CONTEXTUAL_SELECTION_2026-09-22.md. No complete unit or Beta GO is counted.
+
 ## U17 contextual selection: explicit-refresh review repair (2026-09-22)
 
 Developer 2 requested changes on 9d40f034 solely for explicit catalog refresh
@@ -13,8 +34,9 @@ Shared owner-thread invalidation also clears pending debounced work; dispatch is
 serialized with it so an obsolete request cannot revive current evidence after
 an unresolved refresh. Old immutable PCM remains historical. Release regression
 passes 832 core, 19 coordinator, four singer-journey and five standalone cases;
-Debug passes five standalone and 19 coordinator cases. Exact-hash independent
-re-review is pending. See U17_CONTEXTUAL_SELECTION_2026-09-22.md.
+Debug passes five standalone and 19 coordinator cases. Re-review subsequently
+requested the inner-debounce repair recorded above. See
+U17_CONTEXTUAL_SELECTION_2026-09-22.md.
 
 ## U17 contextual source-unit selection implemented (2026-09-22)
 
