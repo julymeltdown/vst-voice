@@ -1,6 +1,11 @@
 import copy
+import importlib.util
 import unittest
 from unittest.mock import patch
+
+if importlib.util.find_spec("torch") is None:
+    raise unittest.SkipTest("Optional Torch environment not installed")
+
 import torch
 
 from tools.voice_model_training.vocoder_warm_start import initialize

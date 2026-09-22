@@ -1,9 +1,15 @@
 import hashlib
+import importlib.util
 import json
 from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import patch
+
+# The campaign audit imports ONNX-backed bundle code, so it can only run in the
+# training environment. Skip instead of erroring where that is absent.
+if importlib.util.find_spec("onnx") is None:
+    raise unittest.SkipTest("Optional ONNX environment not installed")
 
 from tools.voice_model_training.validation_campaign import (
     audit_combined_training, audit_vocoder_training, prepare_selection, run_campaign)

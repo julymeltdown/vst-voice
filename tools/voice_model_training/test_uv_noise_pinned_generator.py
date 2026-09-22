@@ -5,7 +5,11 @@ same weights: identical output and gradients at zero noise, a changed output
 at nonzero noise, and identical state_dict keys for warm-start governance.
 Uses the small smoke architecture so the fixture stays in-memory.
 """
+import importlib.util
 import unittest
+
+if importlib.util.find_spec("torch") is None:
+    raise unittest.SkipTest("Optional Torch environment not installed")
 
 import torch
 

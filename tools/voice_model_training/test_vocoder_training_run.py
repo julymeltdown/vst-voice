@@ -1,4 +1,5 @@
 """Orchestration failures; mocks are not voice or real-source qualification."""
+import importlib.util
 from pathlib import Path
 from types import SimpleNamespace
 import tempfile
@@ -109,6 +110,9 @@ class VocoderEpochTests(unittest.TestCase):
                 train_reviewed_vocoder_epoch(None, [], None, None, **(options | dict(maximum_updates=2)))
             step.assert_not_called()
 
+    # This case builds a real Torch batch, so it needs the training environment.
+    @unittest.skipUnless(importlib.util.find_spec("torch"),
+                         "Optional Torch environment not installed")
     def test_complete_coverage_and_refresh_before_publication(self):
         snapshot = dict(schemaVersion=3, preparationIssues=[], sourcePermissionsAdmitted=True,
             labelsAdmitted=True, expiresAt=200, datasetSha256="a" * 64,

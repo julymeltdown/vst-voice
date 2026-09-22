@@ -1,4 +1,8 @@
+import importlib.util
 import unittest
+
+if importlib.util.find_spec("torch") is None:
+    raise unittest.SkipTest("Optional Torch environment not installed")
 
 import numpy as np
 import torch

@@ -1,8 +1,14 @@
 import hashlib
+import importlib.util
 import json
 import tempfile
 import unittest
 from pathlib import Path
+
+# This module imports ONNX-backed code, so it can only run in the training
+# environment. Skip instead of erroring where that environment is absent.
+if importlib.util.find_spec("onnx") is None:
+    raise unittest.SkipTest("Optional ONNX environment not installed")
 
 from tools.voice_model_training.prepare_bundle import (BREATHINESS_CONTROL,
     SUPPORTED_PROFILE, canonical_json, configuration_asset, load_breathiness_prior,

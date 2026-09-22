@@ -1,4 +1,9 @@
+import importlib.util
 import unittest
+
+if importlib.util.find_spec("torch") is None:
+    raise unittest.SkipTest("Optional Torch environment not installed")
+
 import torch
 from tools.voice_model_training.unvoiced_periodicity import (
     periodicity_loss, phone_mask, MULTILAG_OBJECTIVE_ID, MULTILAGS)

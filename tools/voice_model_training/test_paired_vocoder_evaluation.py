@@ -1,6 +1,12 @@
+import importlib.util
 import unittest
 from unittest.mock import patch
 import numpy as np
+
+# This module imports ONNX-backed code, so it can only run in the training
+# environment. Skip instead of erroring where that environment is absent.
+if importlib.util.find_spec("onnx") is None:
+    raise unittest.SkipTest("Optional ONNX environment not installed")
 
 from tools.voice_model_training.paired_vocoder_evaluation import (
     run_graph, clip_phones, derive_arm_noise, validate_noise_spec)
