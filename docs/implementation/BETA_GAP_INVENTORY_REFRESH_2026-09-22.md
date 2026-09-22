@@ -1,5 +1,10 @@
 # Beta gate inventory refresh and next closable pick (2026-09-22)
 
+Follow-up: local POSIX U29 was accepted by Developer 2 at commit 480a5e3
+after held-input and regression-harness repairs. See
+U29_ACCEPTANCE_AUDIT_2026-09-22.md for the precise evidence and limits.
+The U29 selection discussion below describes the earlier baseline.
+
 Scope: refreshed after the flatness/level component-ablation STOP
 (assessment 0023b724). This is a navigation refresh, not a fresh audit
 of all 48 units; statuses cite the execution ledger and acceptance

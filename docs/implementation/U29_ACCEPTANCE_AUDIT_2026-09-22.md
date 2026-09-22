@@ -2,10 +2,12 @@
 
 Date: 2026-09-22. Plan criterion source:
 docs/plans/2026-09-05-1718-feat-full-scope-beta-go-plan.md (U29).
-Verdict: POSIX production fixes independently verified; final regression
-harness review pending. This audit maps the local U29 boundary to code
-and tests, with the CreateNew interruption limitation stated below.
-Windows coverage and full-product Beta acceptance remain open.
+Verdict: LOCAL POSIX U29 ACCEPTED — independent review at
+480a5e3ed6fccb6b0eb1d61bac7cc36d4f0654d0. Developer 2 independently
+reran the Release and Debug service binaries (15/15 each), inspected
+the producer's Release monolithic result (830/830), and approved the
+corrected harness. The CreateNew interruption limitation is stated below.
+Windows, Linux runtime verification and full-product acceptance remain open.
 
 ## Criteria to evidence
 

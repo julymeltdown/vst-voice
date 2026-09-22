@@ -17,8 +17,11 @@ enumeration errors now fail on both creation and iteration.
 Fresh verification of this working tree: service tests 15/15 in Release
 and Debug; Release monolithic suite 830/830 (21.21 seconds). CTest exit
 codes were checked directly. This is regression evidence for the tested
-paths; no per-call-site execution coverage was measured. Final reviewer
-sign-off on this harness revision is pending.
+paths; no per-call-site execution coverage was measured. Developer 2
+APPROVED local POSIX U29 at 480a5e3ed6fccb6b0eb1d61bac7cc36d4f0654d0,
+independently rerunning both service binaries and inspecting the broad
+suite log. Windows, Linux runtime verification, U30/U31/U32, neural
+qualification and full Beta GO remain outside this acceptance.
 
 The preceding chat progress statement is withdrawn: the listed U1-U5 plus
 pending U29 cannot substantiate "7 of 48", and no current complete-unit
