@@ -1,6 +1,6 @@
 # Integrated Singer Execution
 
-## U39 Spectral Classic formants: export-completeness review repair (2026-09-22)
+## U39 Spectral Classic formants approved after export-completeness repair (2026-09-22)
 
 Independent sample formants now pass normal snapshot, Preview/Final, cache,
 reload and transactional Float32 export tests, with exact neutral/manual islands.
@@ -27,8 +27,13 @@ covered. Fresh Release passes twelve targets / 1,246 overlapping case executions
 (41.24 seconds), including core 980 and the eight-case CLAP-enabled completeness
 suite. Fresh Debug passes seven targets / 127 overlapping case executions
 (72.86 seconds), including the formerly failing initialRegion case; its earlier
-failure cause remains unestablished. Pinned re-review remains pending; details
-and failed-run history are in U39_SPECTRAL_FORMANT_CONTROL_2026-09-22.md.
+failure cause remains unestablished. Developer 2 APPROVED the repair and combined
+engineering increment at `550600ba7a7b9e729734558a920dae208b0041ef`, resolving the
+prior integration finding. Independent existing-binary checks pass three Release
+targets (51 case executions, 5.26 s) and five Debug targets (112 executions,
+67.25 s), plus source closure and whitespace. No independent rebuild or full
+CTest/host/listening qualification is claimed. Details and failed-run history
+are in U39_SPECTRAL_FORMANT_CONTROL_2026-09-22.md.
 Mixed-inventory exact-plan UI refinement and perceptual/resource qualification
 remain open. No additional whole unit, qualified singer or Beta GO is counted.
 
