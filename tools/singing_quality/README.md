@@ -114,3 +114,22 @@ The orchestration tests use explicitly named fake recognizers to exercise hash
 checks, control breaches, absent references, and text comparison. They establish
 tool behavior only. Real retained-packet runs are recorded separately in the root
 `SEAM_AUTOMATED_VERIFICATION_AND_ACCELERATION_2026-09-19.md` report.
+
+## Fixed LF contamination panel (developer-only)
+
+The default-OFF WORLD experiment includes a prospectively frozen 42-input panel.
+It does not change normal preview/export or replace the historical speech FAILs.
+See `docs/implementation/U16_LF_CONTROL_RESULTS_2026-09-22.md` for its exact
+protocol, build identities, failures and interpretation limits.
+
+```sh
+python3 -B -m tools.singing_quality.lf_control_diagnostics /absolute/comparison.json --output /absolute/new-diagnostics.json
+```
+
+Run on every arm/configuration's `lf-controls-v1/comparison.json`, not a selected
+passing subset. The tool checks all 42 retained cases and runs the unchanged
+source-frequency diagnostic on every combined source, then compares declared
+clean pairs descriptively. Rejected clean reconstructions stay unavailable.
+It performs no synthesis, filtering, normalization, automatic selection or quality
+approval. Outputs bind source/analysis/output identities, protocol, executable,
+source lock and diagnostic code; existing output files are never overwritten.

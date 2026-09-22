@@ -198,53 +198,53 @@ J measure(const std::filesystem::path& directory, const std::string& name,
       {"periodicity", J{correlation}}, {"sourcePeriodicity", J{sourceCorrelation}}, {"maximumBandShareError", J{maximumBandError}},
       {"peak", J{peak}}, {"nonfiniteFrames", J{std::int64_t{0}}}, {"outputSha256", J{hash.value()}}, {"outputFile", J{name + ".wav"}}}};
 }
-}
-
-TEST_CASE("WORLD reference bounds reject unsupported geometry before inference") {
-  CHECK(geometry(44100U, 22050U)); CHECK(geometry(48000U, 48000U));
-  CHECK(!geometry(8000U, 4000U)); CHECK(!geometry(192000U, 96000U));
-  CHECK(!geometry(44100U, 1U)); CHECK(!geometry(48000U, 48001U));
-  CHECK(!geometry(48000U, std::numeric_limits<std::size_t>::max()));
-}
-
-TEST_CASE("WORLD execution rejects unlisted source entries before hashing or inference") {
-  const std::array<std::pair<std::string_view, std::string_view>, 2U> files{{{"LICENSE.txt", "unused"}, {"src/unit.cpp", "unused"}}};
-  const auto fresh = [&] {
-    const auto directory = test::support::temporaryDirectory("world-inventory");
-    CHECK(core::durableAtomicWriteText(directory / "LICENSE.txt", "fixture"));
-    CHECK(core::durableAtomicWriteText(directory / "src/unit.cpp", "fixture"));
-    CHECK(sourceInventoryMatches(directory, files));
-    return directory;
-  };
-  const auto shadow = fresh();
-  CHECK(core::durableAtomicWriteText(shadow / "src/math.h", "#error unpinned\n"));
-  CHECK(!sourceInventoryMatches(shadow, files));
-  const auto nested = fresh();
-  std::filesystem::create_directory(nested / "src/unlisted");
-  CHECK(!sourceInventoryMatches(nested, files));
-  const auto missing = test::support::temporaryDirectory("world-missing");
-  CHECK(!sourceInventoryMatches(missing, files));
-#ifndef _WIN32
-  const auto symlink = fresh();
-  std::filesystem::create_directory_symlink(shadow, symlink / "src/linked");
-  CHECK(!sourceInventoryMatches(symlink, files));
-  const auto fifo = fresh();
-  CHECK(::mkfifo((fifo / "src/pipe.h").c_str(), 0600) == 0);
-  CHECK(!sourceInventoryMatches(fifo, files));
-#endif
-}
-
-TEST_CASE("pinned WORLD comparison retains every raw reconstruction and unvoicing outcome") {
-  CHECK(sourceInventoryMatches(SEAM_WORLD_SOURCE_DIR, world_reference::files));
-  for (const auto& [path, expected] : world_reference::files) {
-    const auto hash = core::sha256File(std::filesystem::path{SEAM_WORLD_SOURCE_DIR} / path, 256U * 1024U);
-    CHECK(hash); CHECK(hash.value() == expected);
+struct LfControl {
+  std::string id, cleanId;
+  std::uint32_t rate{};
+  unsigned midi{};
+  double voicedHz{}, lfHz{}, lfAmplitude{};
+  std::vector<float> voiced, lf, combined;
+};
+std::vector<LfControl> lfControls() {
+  std::vector<LfControl> result;
+  for (const auto rate : {44100U, 48000U}) for (const auto midi : {48U, 60U, 72U}) {
+    const auto hz = 440.0 * std::exp2((static_cast<double>(midi) - 69.0) / 12.0);
+    auto voiced = vowel(rate, hz);
+    for (auto& sample : voiced) sample *= 0.2F;
+    const auto prefix = "lf-" + std::to_string(rate) + "-" + std::to_string(midi);
+    const auto add = [&](double frequency, double amplitude, const std::string& suffix) {
+      LfControl control{prefix + suffix, prefix + "-none", rate, midi, hz, frequency, amplitude,
+          voiced, std::vector<float>(voiced.size()), std::vector<float>(voiced.size())};
+      for (std::size_t i = 0U; i < voiced.size(); ++i) {
+        control.lf[i] = static_cast<float>(amplitude * std::sin(2.0 * std::numbers::pi * frequency * static_cast<double>(i) / rate));
+        control.combined[i] = static_cast<float>(static_cast<double>(control.voiced[i]) + static_cast<double>(control.lf[i]));
+      }
+      result.push_back(std::move(control));
+    };
+    add(0.0, 0.0, "-none");
+    for (const auto frequency : {10U, 30U}) for (const auto amplitude : {5U, 20U, 60U})
+      add(frequency, static_cast<double>(amplitude) / 100.0,
+          "-" + std::to_string(frequency) + "hz-a" + (amplitude == 5U ? "05" : std::to_string(amplitude)));
   }
-  const auto executableHash = core::sha256File(SEAM_WORLD_EXECUTABLE); CHECK(executableHash);
-  const auto root = std::filesystem::path{SEAM_WORLD_REPORT_DIRECTORY} / executableHash.value();
-  J::Array results; bool successful = true;
-  std::size_t knownAnalysisRejections = 0U, unexpectedErrors = 0U;
-  const auto run = [&](const std::string& id, const std::vector<float>& input, std::uint32_t rate,
+  return result;
+}
+J retainComponent(const std::filesystem::path& directory, const std::string& name,
+    const std::vector<float>& samples, std::uint32_t rate) {
+  CHECK(voicebank::writeWav(directory / name, {.sampleRate = rate, .channels = 1U,
+      .sampleFormat = voicebank::WavSampleFormat::Float32}, samples));
+  const auto reread = voicebank::readWav(directory / name); CHECK(reread);
+  CHECK(reread.value().interleaved == samples);
+  const auto hash = core::sha256File(directory / name); CHECK(hash);
+  return J{J::Object{{"file", J{name}}, {"sha256", J{hash.value()}},
+      {"frames", J{static_cast<std::int64_t>(samples.size())}}}};
+}
+
+struct Comparison {
+  std::filesystem::path root;
+  J::Array results{};
+  bool successful{true};
+  std::size_t analysisRejections{0U}, unexpectedErrors{0U};
+  void run(const std::string& id, const std::vector<float>& input, std::uint32_t rate,
       double analysisHz, double carrierHz, double oracleHz, bool speech) {
     const auto directory = root / id;
     J::Array outputs;
@@ -305,8 +305,7 @@ TEST_CASE("pinned WORLD comparison retains every raw reconstruction and unvoicin
       record.emplace("parameters", J{std::move(parameters)});
       if (nonfinite || outOfRange) {
         successful = false;
-        if (world_reference::variant == "upstream" && !speech && nonfinite > 0 && outOfRange == 0) ++knownAnalysisRejections;
-        else ++unexpectedErrors;
+        ++analysisRejections;
         for (const auto* name : {"world-reconstruction", "world-forced-unvoiced"})
           outputs.emplace_back(J::Object{{"id", J{name}}, {"executionStatus", J{"NOT_RUN"}},
               {"reason", J{"REJECTED_INVALID_ANALYSIS_AP"}}, {"acousticAssessment", J{"NOT_RUN"}}});
@@ -335,10 +334,60 @@ TEST_CASE("pinned WORLD comparison retains every raw reconstruction and unvoicin
       record.emplace("outputs", J{std::move(outputs)});
       results.emplace_back(std::move(record));
     }
+  }
+};
+}
+
+TEST_CASE("WORLD reference bounds reject unsupported geometry before inference") {
+  CHECK(geometry(44100U, 22050U)); CHECK(geometry(48000U, 48000U));
+  CHECK(!geometry(8000U, 4000U)); CHECK(!geometry(192000U, 96000U));
+  CHECK(!geometry(44100U, 1U)); CHECK(!geometry(48000U, 48001U));
+  CHECK(!geometry(48000U, std::numeric_limits<std::size_t>::max()));
+}
+
+TEST_CASE("WORLD execution rejects unlisted source entries before hashing or inference") {
+  const std::array<std::pair<std::string_view, std::string_view>, 2U> files{{{"LICENSE.txt", "unused"}, {"src/unit.cpp", "unused"}}};
+  const auto fresh = [&] {
+    const auto directory = test::support::temporaryDirectory("world-inventory");
+    CHECK(core::durableAtomicWriteText(directory / "LICENSE.txt", "fixture"));
+    CHECK(core::durableAtomicWriteText(directory / "src/unit.cpp", "fixture"));
+    CHECK(sourceInventoryMatches(directory, files));
+    return directory;
   };
+  const auto shadow = fresh();
+  CHECK(core::durableAtomicWriteText(shadow / "src/math.h", "#error unpinned\n"));
+  CHECK(!sourceInventoryMatches(shadow, files));
+  const auto nested = fresh();
+  std::filesystem::create_directory(nested / "src/unlisted");
+  CHECK(!sourceInventoryMatches(nested, files));
+  const auto missing = test::support::temporaryDirectory("world-missing");
+  CHECK(!sourceInventoryMatches(missing, files));
+#ifndef _WIN32
+  const auto symlink = fresh();
+  std::filesystem::create_directory_symlink(shadow, symlink / "src/linked");
+  CHECK(!sourceInventoryMatches(symlink, files));
+  const auto fifo = fresh();
+  CHECK(::mkfifo((fifo / "src/pipe.h").c_str(), 0600) == 0);
+  CHECK(!sourceInventoryMatches(fifo, files));
+#endif
+}
+
+TEST_CASE("pinned WORLD comparison retains every raw reconstruction and unvoicing outcome") {
+  CHECK(sourceInventoryMatches(SEAM_WORLD_SOURCE_DIR, world_reference::files));
+  for (const auto& [path, expected] : world_reference::files) {
+    const auto hash = core::sha256File(std::filesystem::path{SEAM_WORLD_SOURCE_DIR} / path, 256U * 1024U);
+    CHECK(hash); CHECK(hash.value() == expected);
+  }
+  const auto executableHash = core::sha256File(SEAM_WORLD_EXECUTABLE); CHECK(executableHash);
+  const auto root = std::filesystem::path{SEAM_WORLD_REPORT_DIRECTORY} / executableHash.value();
+  Comparison comparison{root};
+  auto& results = comparison.results;
+  const auto& successful = comparison.successful;
+  const auto& knownAnalysisRejections = comparison.analysisRejections;
+  const auto& unexpectedErrors = comparison.unexpectedErrors;
   for (const auto rate : {44100U, 48000U}) for (const auto midi : {48U, 60U, 72U}) {
     const auto hz = 440.0 * std::exp2((static_cast<double>(midi) - 69.0) / 12.0);
-    run("synthetic-" + std::to_string(rate) + "-" + std::to_string(midi), vowel(rate, hz), rate, hz, hz, hz, false);
+    comparison.run("synthetic-" + std::to_string(rate) + "-" + std::to_string(midi), vowel(rate, hz), rate, hz, hz, hz, false);
   }
   const auto sourceHash = core::sha256File(SEAM_WORLD_SPEECH_FIXTURE); CHECK(sourceHash);
   CHECK(sourceHash.value() == "caf8ceb04b864c7501371a2adae46697495e617b9ade178560ba2ea1aa6b8cb9");
@@ -347,9 +396,9 @@ TEST_CASE("pinned WORLD comparison retains every raw reconstruction and unvoicin
   const auto pitch = voicebank::analyzePitch(input, rate); CHECK(pitch);
   const auto oracleHz = voicebank::medianVoicedPitch(pitch.value()); CHECK_NEAR(oracleHz, 991.014, 0.01);
   const auto rootHz = 440.0 * std::exp2(-2.0 / 12.0);
-  run("speech-root-67", input, rate, rootHz, rootHz, oracleHz, true);
-  run("speech-estimated-constant", input, rate, oracleHz, oracleHz, oracleHz, true);
-  run("speech-dio-stonemask", input, rate, 0.0, rootHz, oracleHz, true);
+  comparison.run("speech-root-67", input, rate, rootHz, rootHz, oracleHz, true);
+  comparison.run("speech-estimated-constant", input, rate, oracleHz, oracleHz, oracleHz, true);
+  comparison.run("speech-dio-stonemask", input, rate, 0.0, rootHz, oracleHz, true);
   const J report{J::Object{{"formatId", J{"com.project-seam.world-reference-experiment"}}, {"schemaVersion", J{std::int64_t{1}}},
       {"comparisonRevision", J{std::int64_t{2}}}, {"executionStatus", J{successful ? "PASS" : "ERROR"}},
       {"variant", J{std::string(world_reference::variant)}},
@@ -372,4 +421,98 @@ TEST_CASE("pinned WORLD comparison retains every raw reconstruction and unvoicin
   std::cout << "[WORLD-COMPARISON] " << root / "comparison.json" << " execution=" << (successful ? "PASS" : "ERROR") << '\n';
   CHECK(report.find("cases")->asArray().size() == 9U); CHECK(unexpectedErrors == 0U);
   CHECK(knownAnalysisRejections == (world_reference::variant == "upstream" ? 6U : 0U));
+  // The known-six policy belongs ONLY to this historical nine-case regression,
+  // never to the shared runner or a new experimental panel.
+  for (const auto& item : report.find("cases")->asArray()) {
+    const bool expectedRejection = world_reference::variant == "upstream" && item.find("id")->asString().starts_with("synthetic-");
+    CHECK(item.find("executionStatus")->asString() == (expectedRejection ? "ERROR" : "PASS"));
+    if (expectedRejection) CHECK(item.find("error")->asString() == "REJECTED_INVALID_ANALYSIS_AP");
+  }
+}
+
+TEST_CASE("frozen LF controls preserve paired voiced samples and exact Float32 recomposition") {
+  const auto controls = lfControls(); CHECK(controls.size() == 42U);
+  std::set<std::string> ids;
+  std::size_t cleanCount = 0U;
+  for (const auto& control : controls) {
+    CHECK(ids.insert(control.id).second);
+    CHECK(control.combined.size() == control.rate / 2U);
+    const auto clean = std::find_if(controls.begin(), controls.end(), [&](const auto& item) { return item.id == control.cleanId; });
+    CHECK(clean != controls.end()); CHECK(clean->voiced == control.voiced);
+    CHECK(clean->combined == control.voiced);
+    if (control.lfAmplitude == 0.0) {
+      ++cleanCount; CHECK(control.id == control.cleanId);
+      CHECK(std::all_of(control.lf.begin(), control.lf.end(), [](float value) { return value == 0.0F; }));
+    }
+    for (std::size_t i = 0U; i < control.combined.size(); ++i) {
+      CHECK(std::isfinite(control.combined[i])); CHECK(std::abs(control.combined[i]) <= 0.69F);
+      CHECK(control.combined[i] == static_cast<float>(static_cast<double>(control.voiced[i]) + control.lf[i]));
+    }
+  }
+  CHECK(cleanCount == 6U);
+}
+
+TEST_CASE("fixed LF contamination panel retains all 42 raw outcomes without promotion") {
+  constexpr std::string_view protocolHash = "348f0cc113908ae4690cb17cc2dba1ea90eafc05bb73542711cb13ceeee7e649";
+  const auto protocol = core::sha256File(SEAM_WORLD_LF_PROTOCOL); CHECK(protocol); CHECK(protocol.value() == protocolHash);
+  CHECK(sourceInventoryMatches(SEAM_WORLD_SOURCE_DIR, world_reference::files));
+  for (const auto& [path, expected] : world_reference::files) {
+    const auto hash = core::sha256File(std::filesystem::path{SEAM_WORLD_SOURCE_DIR} / path, 256U * 1024U);
+    CHECK(hash); CHECK(hash.value() == expected);
+  }
+  const auto executableHash = core::sha256File(SEAM_WORLD_EXECUTABLE); CHECK(executableHash);
+  const auto root = std::filesystem::path{SEAM_WORLD_REPORT_DIRECTORY} / executableHash.value() / "lf-controls-v1";
+  Comparison comparison{root};
+  const auto controls = lfControls();
+  std::size_t artifactErrors = 0U;
+  for (const auto& control : controls) {
+    const auto directory = root / control.id;
+    const auto previousCount = comparison.results.size();
+    J::Object metadata{{"cleanCaseId", J{control.cleanId}},
+        {"midi", J{static_cast<std::int64_t>(control.midi)}}, {"lfHz", J{control.lfHz}},
+        {"lfPeakAmplitude", J{control.lfAmplitude}}, {"voicedGainFloat32", J{0.2F}},
+        {"lfPhaseRadians", J{0.0}},
+        {"construction", J{"Float32(double(voicedSample) + double(lfSample)); fixed components, no normalization"}}};
+    try {
+      metadata.emplace("voicedComponent", retainComponent(directory, "voiced.wav", control.voiced, control.rate));
+      metadata.emplace("lfComponent", retainComponent(directory, "lf.wav", control.lf, control.rate));
+      comparison.run(control.id, control.combined, control.rate,
+          control.voicedHz, control.voicedHz, control.voicedHz, false);
+      const auto savedSource = voicebank::readWav(directory / "source.wav"); CHECK(savedSource);
+      const auto savedVoiced = voicebank::readWav(directory / "voiced.wav"); CHECK(savedVoiced);
+      const auto savedLf = voicebank::readWav(directory / "lf.wav"); CHECK(savedLf);
+      CHECK(savedSource.value().interleaved.size() == control.combined.size());
+      for (std::size_t i = 0U; i < control.combined.size(); ++i)
+        CHECK(savedSource.value().interleaved[i] == static_cast<float>(static_cast<double>(savedVoiced.value().interleaved[i]) + savedLf.value().interleaved[i]));
+    } catch (const std::exception& error) {
+      ++artifactErrors; comparison.successful = false;
+      if (comparison.results.size() == previousCount)
+        comparison.results.emplace_back(J::Object{{"id", J{control.id}}, {"executionStatus", J{"ERROR"}}});
+      comparison.results.back().asObject().insert_or_assign("artifactError", J{error.what()});
+    }
+    auto& record = comparison.results.back().asObject();
+    record.insert_or_assign("analysisPolicy", J{"known-underlying-voiced-component-constant; not estimated mixed-source F0"});
+    record.emplace("control", J{std::move(metadata)});
+  }
+  CHECK(comparison.results.size() == 42U);
+  const J report{J::Object{{"formatId", J{"com.project-seam.world-lf-controls"}}, {"schemaVersion", J{std::int64_t{1}}},
+      {"protocolSha256", J{std::string(protocolHash)}}, {"executionStatus", J{comparison.successful ? "PASS" : "ERROR"}},
+      {"variant", J{std::string(world_reference::variant)}},
+      {"analysisRejections", J{static_cast<std::int64_t>(comparison.analysisRejections)}},
+      {"unexpectedErrors", J{static_cast<std::int64_t>(comparison.unexpectedErrors)}},
+      {"artifactErrors", J{static_cast<std::int64_t>(artifactErrors)}},
+      {"evidencePacketStatus", J{artifactErrors == 0U && comparison.unexpectedErrors == 0U ? "COMPLETE" : "INCOMPLETE"}},
+      {"productionEnabled", J{false}}, {"releaseEligible", J{false}}, {"listeningStatus", J{"NOT_REVIEWED"}},
+      {"worldRevision", J{std::string(world_reference::revision)}}, {"sourceManifestSha256", J{std::string(world_reference::sourceManifestSha256)}},
+      {"sourceLockSha256", J{std::string(world_reference::lockSha256)}}, {"compiler", J{std::string(world_reference::compiler)}},
+      {"configuration", J{std::string(world_reference::configuration)}}, {"executableSha256", J{executableHash.value()}},
+      {"engineeringVerification", J{"SEPARATE_CTEST_RESULT; complete ERROR/NOT_RUN retention is not successful synthesis or acoustic qualification"}},
+      {"analysisPolicy", J{"known underlying voiced F0 held constant across clean/contaminated pairs; original CheapTrick/D4C options"}},
+      {"measurement", J{"unchanged 100-400ms source-lag-ncc-v1; RMS (0.7,1.3), NCC<0.65 and <source, max band-share error<0.20; reconstruction NCC not applicable"}},
+      {"rawFloat32NoGainClippingAlignmentOrCropping", J{true}},
+      {"randomness", J{"serial reseeded WORLD calls; existing constant vowel SEAM stream identity; exact same-build repeat analysis/synthesis"}},
+      {"cases", J{std::move(comparison.results)}}}};
+  CHECK(core::durableAtomicWriteText(root / "comparison.json", formats::stringifyJson(report)));
+  std::cout << "[WORLD-LF-CONTROLS] " << root / "comparison.json" << " execution=" << (comparison.successful ? "PASS" : "ERROR") << '\n';
+  CHECK(comparison.unexpectedErrors == 0U); CHECK(artifactErrors == 0U);
 }

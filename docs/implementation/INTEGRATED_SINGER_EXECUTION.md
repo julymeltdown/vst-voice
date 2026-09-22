@@ -1,5 +1,25 @@
 # Integrated Singer Execution
 
+## U16 fixed LF panel executed: sensitivity reproduced, no production promotion (2026-09-22)
+
+The prospectively frozen 42-input panel now runs against both pinned WORLD arms,
+with the independent SEAM comparator on every input. Upstream rejects 35 AP
+analyses, including all six clean controls; the exact D4C guard admits all 42.
+Guarded forced-unvoicing passes the fixed conjunction on six clean inputs and
+fails all 36 LF-added inputs. SEAM passes 42/42, but 11 raw outputs exceed unity.
+Neither result establishes quality or export safety. LF affects both the input
+denominator and analyzed envelope/reconstruction, not just presumed LF removal.
+
+All sources receive unchanged frequency diagnostics, exact component/pair checks,
+AP-mask checks and descriptive clean-pair comparisons. Both C++ configurations
+pass ten engineering cases; Python 65 pass/four explicit native-driver skips.
+Cross-arm identities match; cross-build output bytes are not all identical. Old
+nine-case reports match except executable identity; historical speech assessment
+hashes remain unchanged. Independent implementation review is pending. See
+U16_LF_CONTROL_RESULTS_2026-09-22.md for outcomes, pins, commands and remaining
+scope. The earlier "not executed yet" entry below describes its own checkpoint.
+No production change, additional accepted unit, qualified singer or Beta GO.
+
 ## U16 WORLD comparison and source-frequency diagnosis (2026-09-22)
 
 An opt-in, default-OFF reference compares the existing SEAM experiment with pinned

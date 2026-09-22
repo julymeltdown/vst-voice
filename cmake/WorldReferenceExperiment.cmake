@@ -49,6 +49,7 @@ function(seam_add_world_reference SEAM_WORLD_VARIANT SEAM_WORLD_DIR SEAM_WORLD_T
     SEAM_WORLD_SOURCE_DIR="${SEAM_WORLD_DIR}"
     SEAM_WORLD_IDENTITY_HEADER="seam/${SEAM_WORLD_TARGET}_identity.hpp"
     SEAM_WORLD_EXECUTABLE="$<TARGET_FILE:${SEAM_WORLD_TARGET}>"
+    SEAM_WORLD_LF_PROTOCOL="${CMAKE_CURRENT_SOURCE_DIR}/docs/implementation/U16_LF_CONTROL_PANEL_2026-09-22.md"
     SEAM_WORLD_REPORT_DIRECTORY="${CMAKE_CURRENT_BINARY_DIR}/world-reference-experiment-v2/${SEAM_WORLD_VARIANT}"
     SEAM_WORLD_SPEECH_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/assets/demo-human-voicebank-public-domain/production-bank/audio/human-vowel-demo.wav")
   seam_apply_compiler_options(${SEAM_WORLD_TARGET})
