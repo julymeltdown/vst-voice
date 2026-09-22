@@ -2,6 +2,7 @@
 
 #include "seam/application/editor_session.hpp"
 #include "seam/application/project_factory.hpp"
+#include "seam/authoring/interchange_service.hpp"
 #include "seam/authoring/authoring_runtime.hpp"
 #include "seam/authoring/voicebank_browser.hpp"
 #include "seam/core/result.hpp"
@@ -203,6 +204,16 @@ public:
 
   [[nodiscard]] domain::Project projectCopy() const;
   [[nodiscard]] core::Result<void> replaceProject(domain::Project project);
+  // The same interchange boundary the standalone surface uses, so an embedded session can open a
+  // USTX/SMF score and write one back. Import returns an unsaved draft for review; only an explicit
+  // acceptance replaces the live document, and export is create-new and never mutates it.
+  [[nodiscard]] core::Result<authoring::InterchangeImportDraft> prepareInterchangeImport(
+      const std::filesystem::path& source,
+      authoring::InterchangeImportRequest request = {}) const;
+  [[nodiscard]] core::Result<void> acceptInterchangeImport(
+      authoring::InterchangeImportDraft draft);
+  [[nodiscard]] core::Result<authoring::InterchangeExportReceipt> exportInterchange(
+      authoring::InterchangeExportRequest request) const;
   [[nodiscard]] domain::RegionId regionId() const noexcept { return regionId_; }
   [[nodiscard]] domain::TrackId trackId() const noexcept { return trackId_; }
   [[nodiscard]] std::uint64_t revision() const noexcept;

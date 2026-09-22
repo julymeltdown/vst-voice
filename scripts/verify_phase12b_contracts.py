@@ -80,6 +80,13 @@ def main() -> int:
             "ConfigureProjectOutputCommand",
             "SetHostStartOffsetCommand",
             "setRenderQuality",
+            # U32 requires the embedded editor to share the standalone interchange boundary, not a
+            # second conversion path: a draft import that the host reviews and explicitly accepts,
+            # and a create-new export that cannot mutate the live song.
+            "InterchangeService{}.importFile",
+            "InterchangeService{}.exportFile",
+            "acceptInterchangeImport",
+            "replaceProject(std::move(draft.project))",
         ],
         errors,
     )
